@@ -45,15 +45,21 @@ Full toolchain setup + a verification script:
 ## Quickstart
 
 ```bash
-# 1. Start from the project skeleton (GitHub template)
-#    → "Use this template" on z77-ch/z77-skeleton, then clone your new repo
+# 1. Create a new project from the skeleton — no GitHub account needed
+composer create-project z77/skeleton my-project
+cd my-project
 
-# 2. Install the framework (pulled into vendor/ via Composer)
-composer install
-
-# 3. Run it locally
+# 2. Run it locally
 composer dev            # serves http://localhost:8080 from public/
 ```
+
+That's it: `create-project` pulls the skeleton and the framework packages from Packagist
+and runs the installer, which lays out `public/`, `config/`, `data/`, and `override/` and
+seeds a runnable starter site.
+
+**Prefer GitHub?** The skeleton is also a template repo: open
+[z77-ch/z77-skeleton](https://github.com/z77-ch/z77-skeleton) → **Use this template** →
+clone your new repo → `composer install` → `composer dev`.
 
 You write your project in `override/z77/…`; the framework packages stay untouched in
 `vendor/`. Add your first page by following
