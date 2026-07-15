@@ -1,0 +1,21 @@
+/* Tokens live on the .fe viewArea wrapper, not :root (ADR-018). */
+.fe {
+    --fe-space-1:  0.25rem;   /*  4px */
+    --fe-space-2:  0.5rem;    /*  8px */
+    --fe-space-3:  0.75rem;   /* 12px */
+    --fe-space-4:  1rem;      /* 16px */
+    --fe-space-5:  1.5rem;    /* 24px */
+    --fe-space-6:  2rem;      /* 32px */
+    --fe-space-7:  3rem;      /* 48px */
+    --fe-space-8:  4rem;      /* 64px */
+    --fe-space-9:  6rem;      /* 96px */
+    --fe-space-10: 8rem;      /* 128px — used for hero vertical rhythm */
+
+    /* Page horizontal padding (gutter) */
+    --fe-gutter-mobile:  1.25rem;   /* 20px */
+    --fe-gutter-tablet:  2rem;      /* 32px */
+    --fe-gutter-desktop: 3rem;      /* 48px */
+
+    /* Page max-width container */
+    --fe-container-max: 1280px;
+}

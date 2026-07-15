@@ -1,0 +1,48 @@
+html {
+    font-family: var(--fe-font-sans);
+    font-size:   16px;
+    line-height: var(--fe-lh-base);
+    color:       var(--fe-text);
+    background:  var(--fe-bg);
+}
+
+body {
+    min-height: 100vh;
+    /* Make room for the fixed topbar */
+    padding-top: var(--fe-topbar-height);
+}
+
+h1, h2, h3, h4 {
+    font-family:    var(--fe-font-sans);
+    font-weight:    var(--fe-fw-bold);
+    line-height:    var(--fe-lh-tight);
+    letter-spacing: var(--fe-track-tight);
+    color:          var(--fe-text);
+}
+
+p {
+    font-size:   var(--fe-fs-md);
+    line-height: var(--fe-lh-base);
+    color:       var(--fe-text-soft);
+}
+
+a {
+    color:           var(--fe-text);
+    text-decoration: none;
+}
+
+a:hover {
+    text-decoration: underline;
+    text-underline-offset: 3px;
+}
+
+hr {
+    border: 0;
+    border-top: 1px solid var(--fe-line);
+    margin: 0;
+}
+
+small {
+    font-size: var(--fe-fs-xs);
+    color:     var(--fe-muted);
+}

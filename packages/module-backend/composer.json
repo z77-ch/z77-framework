@@ -1,0 +1,28 @@
+{
+    "name": "z77/module-backend",
+    "description": "Z77 Backend Module | admin interface for Z77 framework.",
+    "type": "library",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Peter Ruepp",
+            "email": "peter.ruepp@z77.ch"
+        }
+    ],
+    "autoload": {
+        "psr-4": {
+            "Z77\\Module\\Backend\\": "src/"
+        }
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true,
+    "extra": {
+        "branch-alias": {
+            "dev-main": "1.0.x-dev"
+        }
+    },
+    "require": {
+        "php": ">=8.2",
+        "z77/kernel": "^1.0"
+    }
+}

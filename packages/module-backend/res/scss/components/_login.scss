@@ -1,0 +1,81 @@
+// Login page — centered card on backend background
+.login {
+    flex:             1;
+    display:          flex;
+    align-items:      center;
+    justify-content:  center;
+    padding:          var(--space-8) var(--space-4);
+    background:       var(--be-bg);
+}
+
+.login__box {
+    width:         100%;
+    max-width:     380px;
+    background:    var(--be-surface);
+    border:        1px solid var(--be-line);
+    border-radius: var(--radius-lg);
+    box-shadow:    var(--shadow-md);
+    padding:       var(--space-10) var(--space-8);
+}
+
+// Logo mark — "z77" wordmark chip in accent color (width follows the content,
+// so the badge fits the three-glyph mark instead of a fixed square).
+.login__logo {
+    width:            fit-content;
+    height:           40px;
+    padding:          0 .7rem;
+    border-radius:    var(--radius-md);
+    background:       var(--be-accent);
+    color:            var(--be-surface);
+    display:          flex;
+    align-items:      center;
+    justify-content:  center;
+    font-family:      var(--font-family-display);
+    font-weight:      var(--font-weight-medium);
+    font-size:        1.25rem;
+    letter-spacing:   -0.01em;
+    margin-bottom:    var(--space-6);
+    user-select:      none;
+}
+
+.login__title {
+    font-family:    var(--font-family-display);
+    font-size:      1.625rem;
+    font-weight:    400;
+    letter-spacing: -0.02em;
+    color:          var(--be-text);
+    margin-bottom:  var(--space-1);
+}
+
+.login__sub {
+    font-size:     var(--font-size-sm);
+    color:         var(--be-muted);
+    margin-bottom: var(--space-6);
+}
+
+// Form overrides — the inputs sit on the card (--be-surface), so recess them
+// with the page background (--be-bg) and darken the labels for on-card
+// readability. Base `.be-form__control:focus` + `.be-btn--primary` are already
+// palette/theme-aware (accent ring, accent fill, `--color-text-inverse` label),
+// so no focus-ring or button override is needed here.
+// NOTE: these must match the template classes (`.be-form__*`, `.be-btn--*`) —
+// the pre-`be-` names left over from the .form→.be-form / .btn→.be-btn migration
+// (CSS-LIST-CONSOLIDATION-001) were dead selectors, so the inputs blended into
+// the card.
+.login .be-form__label {
+    color: var(--be-text);
+}
+
+.login .be-form__control {
+    background: var(--be-bg);
+}
+
+.login__error {
+    background:    var(--color-danger-bg);
+    border:        1px solid var(--color-danger-border);
+    color:         var(--color-danger);
+    border-radius: var(--radius-md);
+    padding:       var(--space-3) var(--space-4);
+    margin-bottom: var(--space-4);
+    font-size:     var(--font-size-sm);
+}

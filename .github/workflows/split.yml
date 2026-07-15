@@ -1,0 +1,57 @@
+name: Packages Split
+
+# Splits each packages/<pkg> into its own read-only repo z77-ch/<pkg>.
+# - Push to main  -> split branch history.
+# - Push a tag    -> split and propagate the tag (consumable via Composer as x.y.z).
+# Requires repository secret ACCESS_TOKEN: a PAT with push rights to the target repos.
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - '*'
+
+jobs:
+  packages_split:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package:
+          - kernel
+          - module-frontend
+          - module-backend
+          - module-dms
+
+    steps:
+      # The split action snapshot-copies the current package dir (no splitsh-lite),
+      # so a shallow checkout of HEAD is sufficient; HEAD is needed for the commit message.
+      - uses: actions/checkout@v4
+
+      # Branch split (only on branch pushes, not on tags)
+      - if: "!startsWith(github.ref, 'refs/tags/')"
+        uses: symplify/monorepo-split-github-action@v2.4.5
+        with:
+          package_directory: 'packages/${{ matrix.package }}'
+          repository_organization: 'z77-ch'
+          repository_name: '${{ matrix.package }}'
+          user_name: 'z77-ch'
+          user_email: 'peter.ruepp@z77.ch'
+          branch: 'main'
+        env:
+          GITHUB_TOKEN: ${{ secrets.ACCESS_TOKEN }}
+
+      # Tag split (only on tag pushes)
+      - if: "startsWith(github.ref, 'refs/tags/')"
+        uses: symplify/monorepo-split-github-action@v2.4.5
+        with:
+          tag: ${{ github.ref_name }}
+          package_directory: 'packages/${{ matrix.package }}'
+          repository_organization: 'z77-ch'
+          repository_name: '${{ matrix.package }}'
+          user_name: 'z77-ch'
+          user_email: 'peter.ruepp@z77.ch'
+          branch: 'main'
+        env:
+          GITHUB_TOKEN: ${{ secrets.ACCESS_TOKEN }}

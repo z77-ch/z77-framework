@@ -1,0 +1,40 @@
+// Font-size token set, parametrised by a scale expression. Single source of the
+// rem base values — used both for the global (slider-driven) scale and for the
+// capped scale in the .be-font-cap utility (see base/_utilities.scss).
+@mixin font-size-vars($scale) {
+    --font-size-xs:          calc(0.75rem   * #{$scale});   /* 12px × scale */
+    --font-size-sm:          calc(0.8125rem * #{$scale});   /* 13px × scale */
+    --font-size-md:          calc(0.875rem  * #{$scale});   /* 14px × scale — base */
+    --font-size-lg:          calc(0.9375rem * #{$scale});   /* 15px × scale */
+    --font-size-xl:          calc(1.125rem  * #{$scale});   /* 18px × scale */
+    --font-size-2xl:         calc(1.25rem   * #{$scale});   /* 20px × scale */
+}
+
+// Capped scale: grows with the slider but never past --be-font-scale-cap.
+// Apply via @include font-size-capped on any element/region whose font must not
+// blow up the layout at high slider values (buttons, dense info readouts).
+@mixin font-size-capped {
+    @include font-size-vars(min(var(--be-font-scale), var(--be-font-scale-cap)));
+}
+
+/* Tokens on the .be viewArea wrapper, not :root (ADR-018). */
+.be {
+    --font-family-base:      'GT Walsheim', system-ui, sans-serif;
+    --font-family-mono:      ui-monospace, 'Cascadia Code', monospace;
+    --font-family-ui:        'GT Walsheim', system-ui, sans-serif;
+    --font-family-display:   'GT Walsheim', system-ui, sans-serif;
+
+    --be-font-scale:         1;     /* live value, set on <html> by the slider */
+    --be-font-scale-cap:     1.0;   /* max growth for capped regions — 1.0 = frozen at base size */
+
+    @include font-size-vars(var(--be-font-scale));
+
+    --font-weight-normal:    400;
+    --font-weight-medium:    500;
+    --font-weight-semibold:  600;
+    --font-weight-bold:      700;
+
+    --line-height-tight:     1.2;
+    --line-height-base:      1.5;
+    --line-height-loose:     1.75;
+}

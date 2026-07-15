@@ -1,0 +1,12 @@
+/* Tokens live on the .fe viewArea wrapper, not :root (ADR-018). */
+.fe {
+    --fe-transition-fast: 120ms ease;
+    --fe-transition-base: 200ms ease;
+
+    --fe-topbar-height: 64px;
+
+    /* z-index lanes — kept below messages (1000) and flash (1100), aligned with backend */
+    --fe-z-base:       1;
+    --fe-z-nav-mobile: 300;   /* full-screen mobile overlay */
+    --fe-z-topbar:     400;   /* above overlay — brand + toggle stay visible */
+}

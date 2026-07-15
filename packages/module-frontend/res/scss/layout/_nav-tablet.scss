@@ -1,0 +1,4 @@
+/* Nav layout — tablet (768–1199px): hamburger visible (same as mobile),
+   inline nav hidden to keep the topbar uncluttered at narrow widths. */
+.fe-topbar__nav { display: none; }
+.fe-topbar__hamburger { display: flex; }

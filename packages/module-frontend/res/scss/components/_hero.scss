@@ -1,0 +1,31 @@
+/* Hero — page intro. No image, no button. Title + optional eyebrow + subline. */
+.fe-hero {
+    padding-top:    var(--fe-space-9);
+    padding-bottom: var(--fe-space-9);
+    border-bottom:  1px solid var(--fe-line);
+}
+
+.fe-hero__eyebrow {
+    font-size:      var(--fe-fs-xs);
+    font-weight:    var(--fe-fw-medium);
+    color:          var(--fe-muted);
+    text-transform: uppercase;
+    letter-spacing: var(--fe-track-wide);
+    margin-bottom:  var(--fe-space-5);
+}
+
+.fe-hero__title {
+    font-size:      var(--fe-fs-h1);
+    font-weight:    var(--fe-fw-bold);
+    line-height:    var(--fe-lh-tight);
+    letter-spacing: var(--fe-track-tight);
+    color:          var(--fe-text);
+    max-width:      18ch;
+}
+
+.fe-hero__subline {
+    margin-top:  var(--fe-space-5);
+    max-width:   52ch;
+    font-size:   var(--fe-fs-lg);
+    color:       var(--fe-text-soft);
+}

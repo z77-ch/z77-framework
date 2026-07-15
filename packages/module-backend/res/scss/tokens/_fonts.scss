@@ -1,0 +1,47 @@
+// GT Walsheim — local, woff2/woff only (no IE legacy)
+// Path relative to compiled CSS output at res/assets/css/
+
+@font-face {
+    font-family:   'GT Walsheim';
+    src:           url('../fonts/wh/wh-regular.woff2') format('woff2'),
+                   url('../fonts/wh/wh-regular.woff')  format('woff');
+    font-weight:   400;
+    font-style:    normal;
+    font-display:  swap;
+}
+
+@font-face {
+    font-family:   'GT Walsheim';
+    src:           url('../fonts/wh/wh-regular-italic.woff2') format('woff2'),
+                   url('../fonts/wh/wh-regular-italic.woff')  format('woff');
+    font-weight:   400;
+    font-style:    italic;
+    font-display:  swap;
+}
+
+@font-face {
+    font-family:   'GT Walsheim';
+    src:           url('../fonts/wh/GTWalsheim-Md.woff2') format('woff2'),
+                   url('../fonts/wh/GTWalsheim-Md.woff')  format('woff');
+    font-weight:   500;
+    font-style:    normal;
+    font-display:  swap;
+}
+
+@font-face {
+    font-family:   'GT Walsheim';
+    src:           url('../fonts/wh/wh-bold.woff2') format('woff2'),
+                   url('../fonts/wh/wh-bold.woff')  format('woff');
+    font-weight:   700;
+    font-style:    normal;
+    font-display:  swap;
+}
+
+@font-face {
+    font-family:   'GT Walsheim';
+    src:           url('../fonts/wh/wh-bold-italic.woff2') format('woff2'),
+                   url('../fonts/wh/wh-bold-italic.woff')  format('woff');
+    font-weight:   700;
+    font-style:    italic;
+    font-display:  swap;
+}

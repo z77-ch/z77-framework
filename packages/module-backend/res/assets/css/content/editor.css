@@ -1,0 +1,159 @@
+/* Content block editor (modal) — ce-* component.
+ * Pairs with content/editor.js. Uses backend design tokens with safe fallbacks
+ * so it renders even if a token is absent. */
+
+.ce { display: flex; flex-direction: column; gap: .6rem; }
+
+.ce__blocks { display: flex; flex-direction: column; gap: .6rem; }
+
+.ce__empty {
+    margin: 0;
+    padding: .9rem;
+    text-align: center;
+    font-size: .82rem;
+    color: var(--be-muted, #94a3b8);
+    border: 1px dashed var(--be-border, #e2e8f0);
+    border-radius: 8px;
+}
+.ce__empty[hidden] { display: none; }
+
+/* ── block card ──────────────────────────────────────────────────────────── */
+.ce-block {
+    border: 1px solid var(--be-border, #e2e8f0);
+    border-radius: 8px;
+    background: var(--be-surface, #fff);
+    overflow: hidden;
+}
+.ce-block__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .5rem;
+    padding: .4rem .55rem;
+    background: var(--be-surface-2, #f8fafc);
+    border-bottom: 1px solid var(--be-border, #e2e8f0);
+}
+.ce-block__type {
+    font-size: .72rem;
+    font-weight: 600;
+    letter-spacing: .03em;
+    text-transform: uppercase;
+    color: var(--be-muted, #64748b);
+}
+.ce-block__tools { display: flex; gap: .2rem; }
+
+.ce-block__body {
+    display: flex;
+    flex-direction: column;
+    gap: .55rem;
+    padding: .65rem;
+}
+
+.ce-block--unknown { border-style: dashed; }
+.ce-block__raw {
+    margin: 0;
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-size: .72rem;
+    white-space: pre-wrap;
+    word-break: break-word;
+    color: var(--be-muted, #64748b);
+}
+
+/* ── field ───────────────────────────────────────────────────────────────── */
+.ce-field { display: flex; flex-direction: column; gap: .2rem; }
+.ce-field__label {
+    font-size: .72rem;
+    font-weight: 600;
+    color: var(--be-muted, #64748b);
+}
+.ce-field input[type="text"],
+.ce-field input[type="url"],
+.ce-field select,
+.ce-field textarea {
+    width: 100%;
+    padding: .38rem .55rem;
+    font: inherit;
+    font-size: .82rem;
+    color: var(--be-text, #0f172a);
+    background: var(--be-input-bg, #fff);
+    border: 1px solid var(--be-border, #cbd5e1);
+    border-radius: 6px;
+}
+.ce-field textarea { resize: vertical; min-height: 2.4rem; }
+.ce-field input:focus,
+.ce-field select:focus,
+.ce-field textarea:focus {
+    outline: none;
+    border-color: var(--be-accent, #6366f1);
+    box-shadow: 0 0 0 3px var(--be-accent-soft, rgba(99, 102, 241, .15));
+}
+.ce-field--bool {
+    flex-direction: row;
+    align-items: center;
+    gap: .45rem;
+}
+
+/* ── list field (repeater) ───────────────────────────────────────────────── */
+.ce-list {
+    gap: .35rem;
+    padding: .5rem;
+    border: 1px solid var(--be-border, #e2e8f0);
+    border-radius: 6px;
+    background: var(--be-surface-2, #f8fafc);
+}
+.ce-list__rows { display: flex; flex-direction: column; gap: .35rem; }
+
+.ce-row { display: flex; align-items: flex-start; gap: .35rem; }
+.ce-row > input[type="text"] {
+    flex: 1 1 auto;
+    padding: .34rem .5rem;
+    font-size: .82rem;
+    border: 1px solid var(--be-border, #cbd5e1);
+    border-radius: 6px;
+    background: var(--be-input-bg, #fff);
+}
+.ce-row--object { align-items: stretch; }
+.ce-row__fields {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    gap: .3rem;
+    padding: .4rem;
+    border: 1px solid var(--be-border, #e2e8f0);
+    border-radius: 6px;
+    background: var(--be-surface, #fff);
+}
+
+.ce-list > [data-ce-row-add] { align-self: flex-start; }
+
+/* ── add-block bar ───────────────────────────────────────────────────────── */
+.ce-add { display: flex; gap: .4rem; align-items: center; }
+.ce-add__type {
+    padding: .38rem .55rem;
+    font: inherit;
+    font-size: .82rem;
+    border: 1px solid var(--be-border, #cbd5e1);
+    border-radius: 6px;
+    background: var(--be-input-bg, #fff);
+}
+
+/* ── json preview ────────────────────────────────────────────────────────── */
+.ce-preview { font-size: .78rem; }
+.ce-preview > summary {
+    cursor: pointer;
+    color: var(--be-muted, #64748b);
+    user-select: none;
+}
+.ce-preview > pre {
+    margin: .4rem 0 0;
+    padding: .55rem;
+    max-height: 220px;
+    overflow: auto;
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-size: .72rem;
+    line-height: 1.45;
+    color: var(--be-text, #0f172a);
+    background: var(--be-surface-2, #f8fafc);
+    border: 1px solid var(--be-border, #e2e8f0);
+    border-radius: 6px;
+}

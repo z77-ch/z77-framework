@@ -1,0 +1,115 @@
+/* ── Switch (toggle) ──────────────────────────────────────────────────────
+ * Reusable on/off slider. Wraps a hidden checkbox — value participates in
+ * normal form submission as 'true'/'false' (or whatever the `value` attr says).
+ *
+ * Usage:
+ *   <label class="be-switch">
+ *       <input type="checkbox" class="be-switch__input" name="active" value="1" checked>
+ *       <span class="be-switch__track"><span class="be-switch__thumb"></span></span>
+ *       <span class="be-switch__label">Aktiv</span>
+ *   </label>
+ *
+ * Modifiers:
+ *   .be-switch--sm    smaller variant for dense rows
+ *   .be-switch--block full-width row (label pushed right via margin-left:auto)
+ */
+
+.be-switch {
+    display:         inline-flex;
+    align-items:     center;
+    gap:             .5rem;
+    cursor:          pointer;
+    user-select:     none;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.be-switch__input {
+    position:        absolute;
+    width:           1px;
+    height:          1px;
+    opacity:         0;
+    pointer-events:  none;
+    margin:          0;
+}
+
+.be-switch__track {
+    position:        relative;
+    flex-shrink:     0;
+    width:           2.25rem;
+    height:          1.25rem;
+    background:      var(--be-line);
+    border-radius:   9999px;
+    transition:      background .15s ease;
+}
+
+.be-switch__thumb {
+    position:        absolute;
+    top:             .125rem;
+    left:            .125rem;
+    width:           1rem;
+    height:          1rem;
+    background:      var(--be-on-accent);
+    border-radius:   9999px;
+    box-shadow:      0 1px 2px rgba(0, 0, 0, .25);
+    transition:      transform .15s ease;
+}
+
+/* checked state */
+.be-switch__input:checked ~ .be-switch__track {
+    background: var(--be-accent);
+}
+.be-switch__input:checked ~ .be-switch__track > .be-switch__thumb {
+    transform: translateX(1rem);
+}
+
+/* focus (keyboard) */
+.be-switch__input:focus-visible ~ .be-switch__track {
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--be-accent) 25%, transparent);
+}
+
+/* disabled */
+.be-switch__input:disabled ~ .be-switch__track {
+    opacity:    .45;
+    cursor:     not-allowed;
+}
+.be-switch:has(.be-switch__input:disabled) {
+    cursor: not-allowed;
+}
+
+.be-switch__label {
+    font-size: .875rem;
+    color:     var(--be-text);
+}
+.be-switch__label small {
+    color:     var(--be-muted);
+    font-size: .75rem;
+    margin-left: .25rem;
+}
+
+/* ── Size variant ── */
+.be-switch--sm .be-switch__track {
+    width:  1.75rem;
+    height: 1rem;
+}
+.be-switch--sm .be-switch__thumb {
+    width:  .75rem;
+    height: .75rem;
+}
+.be-switch--sm .be-switch__input:checked ~ .be-switch__track > .be-switch__thumb {
+    transform: translateX(.75rem);
+}
+.be-switch--sm .be-switch__label {
+    font-size: .8rem;
+}
+
+/* ── Layout variant: full-row with label on the left, switch right ── */
+.be-switch--block {
+    display:         flex;
+    width:           100%;
+    justify-content: space-between;
+    padding:         .35rem 0;
+}
+.be-switch--block .be-switch__label {
+    order: -1;
+    margin-right: auto;
+}

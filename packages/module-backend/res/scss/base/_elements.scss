@@ -1,0 +1,36 @@
+html {
+    font-family:      var(--font-family-base);
+    font-size:        var(--font-size-md);
+    line-height:      var(--line-height-base);
+    color:            var(--color-text);
+    background-color: var(--color-bg);
+}
+
+body {
+    min-height: 100vh;
+}
+
+/* Slim scrollbars — backend-wide. Firefox via scrollbar-*, Chromium/WebKit via
+ * ::-webkit-scrollbar. Thumb uses --be-line so it stays subtle and palette-aware. */
+* {
+    scrollbar-width: thin;
+    scrollbar-color: var(--be-line) transparent;
+}
+
+::-webkit-scrollbar {
+    width:  8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    background:    var(--be-line);
+    border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--be-muted);
+}

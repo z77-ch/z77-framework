@@ -1,0 +1,624 @@
+// ── Backend Shell (3-column rebuild, Phase 1) ──────────────────────────────────
+// Self-contained: one grid (topbar spanning + column 1 | 2 | 3), own viewport height,
+// own responsive rules — independent of the legacy layout/*.scss (which target the old
+// `.backend-app`/`.backend-main` classes and stay unused under the shell skeleton).
+
+.be-shell {
+    --shell-c1:  248px;   // orientation column (drag-resizable)
+    --shell-c3:  320px;   // preview column (drag-resizable)
+    --shell-bar: 48px;    // topbar height
+
+    position:              relative;
+    height:                100dvh;
+    overflow:              hidden;
+    background:            var(--be-bg);
+    color:                 var(--be-text);
+    display:               grid;
+    grid-template-columns: var(--shell-c1) minmax(0, 1fr) var(--shell-c3);
+    grid-template-rows:    var(--shell-bar) minmax(0, 1fr);
+}
+
+// Shell body base — self-contained, replaces the legacy `body.backend` from
+// layout/_desktop.scss. The shell (.be-shell) owns its viewport height (100dvh) + all
+// internal scroll regions, so the body only carries the ground colour/font and clips
+// stray overflow. In base.css → applies at every breakpoint.
+body.backend {
+    background:  var(--be-bg);
+    color:       var(--be-text);
+    font-family: var(--font-family-ui);
+    overflow:    hidden;
+}
+
+// Preview column off (Phase 1 default; a host opts in with data-col3="on")
+.be-shell[data-col3="off"] {
+    grid-template-columns: var(--shell-c1) minmax(0, 1fr);
+}
+.be-shell[data-col3="off"] .be-shell-col--3,
+.be-shell[data-col3="off"] .be-shell__resizer--r { display: none; }
+
+// Preview fades in on desktop
+@keyframes be-shell-col3in { from { opacity: 0; transform: translateX(10px); } to { opacity: 1; transform: none; } }
+.be-shell[data-col3="on"] .be-shell-col--3 { animation: be-shell-col3in .24s ease; }
+
+// ── Columns ────────────────────────────────────────────────────────────────────
+.be-shell-col {
+    grid-row:  2;
+    min-width: 0;
+    min-height: 0;
+    overflow:  auto;
+    display:   flex;
+    flex-direction: column;
+}
+.be-shell-col--1 { grid-column: 1; background: var(--be-nav, var(--be-surface)); border-right: 1px solid var(--be-line); }
+.be-shell-col--2 { grid-column: 2; background: var(--be-bg);      border-right: 1px solid var(--be-line); }
+.be-shell-col--3 { grid-column: 3; background: var(--be-surface); }
+
+// Neutralize the legacy subnav's own frame — the shell column owns width + scroll now.
+.be-shell-col--1 .backend-subnav { width: 100%; height: auto; border: 0; }
+// The subnav's own section-title header is redundant in the shell — the topbar module
+// switcher already shows the active section; the hc1 slot is the column-1 header now.
+.be-shell-col--1 .backend-subnav__header { display: none; }
+
+// ── Dark left band (orientation rail) — LIGHT MODE ONLY, per palette ──────────────
+// Column 1 + the topbar module zone become a "dark island": the wrapper locally
+// redefines the standard --be-* tokens to a dark set (a very dark variant of each
+// palette's main colour), so every component inside (subnav tree, module switcher,
+// header partial, badges) renders dark-appropriate WITHOUT its own CSS (ADR-018 wrapper
+// tokens, applied locally). In dark mode the override drops → the band takes the normal
+// dark background (--be-surface fallback) and blends into the rest of the UI.
+.be:not([data-be-theme="dark"]) .be-shell-col--1,
+.be:not([data-be-theme="dark"]) .be-shell-topbar__mod {            // werkbank — indigo
+    --be-nav:#211d45; --be-text:#eae9f7; --be-muted:#a4a1c6; --be-line:#3a3563;
+    --be-surface:#2a2650; --be-surface2:#322d5a; --be-accent:#a5a3fb; --be-accent-soft:#363168; --be-on-accent:#211d45;
+}
+.be[data-be-palette="citrus"]:not([data-be-theme="dark"]) .be-shell-col--1,
+.be[data-be-palette="citrus"]:not([data-be-theme="dark"]) .be-shell-topbar__mod {   // grün
+    --be-nav:#1f2f16; --be-text:#ebf4e3; --be-muted:#a9bd9e; --be-line:#364d2d; --be-surface:#293e22; --be-surface2:#324a2b; --be-accent:#a3e635; --be-accent-soft:#313f22; --be-on-accent:#1f2f16;
+}
+.be[data-be-palette="coral"]:not([data-be-theme="dark"]) .be-shell-col--1,
+.be[data-be-palette="coral"]:not([data-be-theme="dark"]) .be-shell-topbar__mod {    // koralle
+    --be-nav:#37201a; --be-text:#f7e7e0; --be-muted:#c8a99e; --be-line:#573830; --be-surface:#452b23; --be-surface2:#52362c; --be-accent:#ff9070; --be-accent-soft:#4c2d22; --be-on-accent:#37201a;
+}
+.be[data-be-palette="lagune"]:not([data-be-theme="dark"]) .be-shell-col--1,
+.be[data-be-palette="lagune"]:not([data-be-theme="dark"]) .be-shell-topbar__mod {   // türkis
+    --be-nav:#143038; --be-text:#ddeff2; --be-muted:#9ec0c6; --be-line:#2e5863; --be-surface:#1d3f49; --be-surface2:#244c57; --be-accent:#35d4e6; --be-accent-soft:#1c3f48; --be-on-accent:#143038;
+}
+.be[data-be-palette="beere"]:not([data-be-theme="dark"]) .be-shell-col--1,
+.be[data-be-palette="beere"]:not([data-be-theme="dark"]) .be-shell-topbar__mod {    // beere
+    --be-nav:#371828; --be-text:#f6e1ea; --be-muted:#cca4b7; --be-line:#572c42; --be-surface:#452030; --be-surface2:#52273b; --be-accent:#f472a6; --be-accent-soft:#4a2234; --be-on-accent:#371828;
+}
+.be[data-be-palette="sonne"]:not([data-be-theme="dark"]) .be-shell-col--1,
+.be[data-be-palette="sonne"]:not([data-be-theme="dark"]) .be-shell-topbar__mod {    // sonne
+    --be-nav:#302211; --be-text:#f6ecd7; --be-muted:#c7b492; --be-line:#504028; --be-surface:#3d301b; --be-surface2:#493a23; --be-accent:#f5b528; --be-accent-soft:#43331b; --be-on-accent:#302211;
+}
+
+// Column head slot — the aligned header band across the columns. FIXED single-line
+// height (never grows): both columns' heads are always exactly equal, empty or filled,
+// so the band lines up regardless of content (see e.g. login-user/list where hc2 is
+// empty). Contract: the slot holds ONE line only — if a view needs more, it goes into a
+// dropdown or popup, NOT a taller band. `white-space: nowrap` enforces no vertical wrap;
+// deliberately NO `overflow: hidden` here so a panel opening from the band can escape it.
+.be-shell-col__head {
+    display:       flex;
+    align-items:   center;
+    gap:           var(--space-2);
+    height:        46px;
+    padding:       var(--space-2) var(--space-3);
+    border-bottom: 1px solid var(--be-line);
+    flex-shrink:   0;
+    white-space:   nowrap;
+}
+.be-shell-col__slot {
+    flex:           1;
+    font-weight:    var(--font-weight-medium);
+    font-size:      var(--font-size-sm);
+}
+.be-shell-col__body { flex: 1; min-height: 0; overflow: auto; padding: var(--space-3); }
+
+// Content-header slot (hc2): a controller/action partial pinned to the top of column 2
+// while its body (the action template) scrolls beneath. Own surface so scrolled content
+// never shows through. Left = context (e.g. language switcher), right = shortcut actions.
+.be-shell-col__head--sticky {
+    position:   sticky;
+    top:        0;
+    z-index:    2;
+    background: var(--be-surface);
+}
+// Per-column header background: hc1 matches the dark orientation band; hc2 sits seamlessly
+// on the content ground (a border-bottom divides it from the scrolling body). Both share the
+// `.be-shell-col__head` height (min-height 46px) so the band lines up across the columns.
+.be-shell-col--1 .be-shell-col__head--sticky { background: var(--be-nav, var(--be-surface)); }
+.be-shell-col--2 .be-shell-col__head--sticky { background: var(--be-bg); }
+
+// Column-1 header slot (hc1, dark orientation band) holds a single primary «+ add»
+// action → it fills the column width and centers its content.
+.be-shell-col--1 .be-shell-col__head .be-btn--primary {
+    width:           100%;
+    justify-content: center;
+}
+
+// hc1 add-PICKER: a full-width primary «＋ add» button that opens a small panel to choose
+// the entry TYPE — used where a view has several add kinds (e.g. translation: Text / Slug).
+// Built on the shared panel-toggle contract (data-panel-root / -trigger / -panel).
+.be-shell-add {
+    position: relative;
+    width:    100%;
+}
+.be-shell-add__panel {
+    position:       absolute;
+    top:            calc(100% + var(--space-1));
+    left:           0;
+    right:          0;
+    z-index:        var(--z-dropdown);
+    display:        flex;
+    flex-direction: column;
+    gap:            2px;
+    padding:        var(--space-1);
+    // Elevation: lift the panel OFF the dark orientation band instead of blending
+    // into it. In the dark band the local --be-surface is nearly the band colour, so
+    // we build a lighter, palette-tinted surface (surface2 mixed toward the light text
+    // colour) — "higher = lighter". Palette- and mode-correct, no hardcoded colours.
+    background:     color-mix(in srgb, var(--be-surface2) 80%, var(--be-text));
+    border:         1px solid color-mix(in srgb, var(--be-surface2) 55%, var(--be-text));
+    border-radius:  var(--radius-md);
+    box-shadow:     var(--shadow-lg);
+
+    &[hidden] { display: none; }   // attribute wins over the class `display:flex`
+}
+.be-shell-add__item {
+    display:       flex;
+    align-items:   center;
+    gap:           var(--space-2);
+    width:         100%;
+    padding:       var(--space-1) var(--space-2);
+    border:        0;
+    background:    transparent;
+    border-radius: var(--radius-sm);
+    color:         var(--be-text);
+    font:          inherit;
+    font-size:     var(--font-size-sm);
+    text-align:    left;
+    cursor:        pointer;
+    transition:    background var(--transition-fast);
+}
+.be-shell-add__item:hover {
+    background: color-mix(in srgb, var(--be-accent) 22%, transparent);
+    color:      var(--be-accent);
+}
+
+// Language switcher INSIDE a shell header slot (hc2): frameless — just the toggle buttons, no
+// banner frame and no label (per the prototype). The prominent framed `.be-lang-switch` banner
+// stays untouched for the not-yet-migrated inline views (e.g. metadata list).
+.be-shell-col__head .be-lang-switch { background: none; border: none; padding: 0; margin: 0; gap: var(--space-1); }
+.be-shell-col__head .be-lang-switch__label { display: none; }
+.be-shell-col__head .be-lang-switch__option { background: transparent; border-color: transparent; color: var(--be-muted); }
+.be-shell-col__head .be-lang-switch__option:hover,
+.be-shell-col__head .be-lang-switch__option--active { background: var(--be-accent-soft); border-color: transparent; color: var(--be-accent); }
+
+// Drive header slot (hc2): the DMS breadcrumb PANE (folder path) grows to fill the left, the
+// new-folder / trash action icons sit at the right — like every other view's hc2. The `.dms`
+// class on this wrapper supplies the `--dms-*` tokens the breadcrumb pane reads (the `--be-*`
+// tokens the `.be-icon-btn`s use inherit from the `.be` root regardless).
+.be-drive-head { display: flex; align-items: center; gap: var(--space-2); flex: 1; min-width: 0; }
+
+.be-shell-preview__empty {
+    height:          100%;
+    display:         flex;
+    flex-direction:  column;
+    align-items:     center;
+    justify-content: center;
+    gap:             var(--space-2);
+    color:           var(--be-muted);
+    font-size:       var(--font-size-sm);
+}
+
+.be-shell-iconbtn {
+    width:           30px;
+    height:          30px;
+    display:         grid;
+    place-items:     center;
+    border:          1px solid transparent;
+    border-radius:   var(--radius-md);
+    background:      transparent;
+    color:           var(--be-muted);
+    cursor:          pointer;
+    flex-shrink:     0;
+}
+.be-shell-iconbtn:hover { background: var(--be-accent-soft); color: var(--be-accent); }
+
+// ── Topbar (one continuous bar, no column strokes) ───────────────────────────────
+.be-shell-topbar {
+    grid-column:   1 / -1;
+    grid-row:      1;
+    display:       flex;
+    align-items:   center;
+    gap:           var(--space-2);
+    padding-right: var(--space-3);
+    background:    var(--be-rail);
+    color:         var(--be-rail-text);
+    border-bottom: 1px solid var(--be-line);
+    z-index:       var(--z-topbar);
+}
+
+// Module switcher zone — spans column 1 (so the search lines up at column 2)
+.be-shell-topbar__mod {
+    width:       var(--shell-c1);
+    height:      100%;
+    flex:        none;
+    display:     flex;
+    align-items: center;
+    padding:     0 var(--space-3);
+    background:  var(--be-nav, var(--be-surface));           // dark band cap (per-palette override above, light mode)
+    position:    relative;
+    z-index:     1;
+    box-shadow:  0 1px 0 var(--be-nav, var(--be-surface));   // cover the light topbar border under the dark band
+}
+
+.be-shell-mod {
+    position:        relative;
+    flex:            1;
+    min-width:       0;
+    display:         flex;
+    align-items:     center;
+    justify-content: space-between;   // name left, apps icon right
+    gap:             var(--space-1);
+}
+.be-shell-mod__name {
+    font-weight:     var(--font-weight-medium);
+    font-size:       1.125rem;              // match .backend-subnav__title (follows the font-size slider via rem)
+    letter-spacing:  -0.01em;
+    color:           var(--be-text);
+    text-decoration: none;
+    padding:         5px 8px;
+    border-radius:   var(--radius-sm);
+    overflow:        hidden;
+    text-overflow:   ellipsis;
+    white-space:     nowrap;
+}
+.be-shell-mod__name:hover { background: var(--be-accent-soft); color: var(--be-accent); }
+
+.be-shell-mod__apps {
+    flex-shrink:   0;
+    display:       grid;
+    place-items:   center;
+    padding:       0;
+    border:        none;
+    background:    transparent;
+    color:         var(--be-muted);
+    cursor:        pointer;
+    font-size:     1.475rem;              // drives the em-based glyph (~24px, scales with the font-size slider via rem)
+    transition:    color var(--transition-fast);
+}
+// Glyph sized like .dms-icon (1em → follows the current font-size), not the fixed sprite attributes.
+.be-shell-mod__apps .be-icon { width: 1em; height: 1em; }
+.be-shell-mod__apps:hover,
+.be-shell-mod[data-panel-open] .be-shell-mod__apps,
+.be-shell-mod__apps[aria-expanded="true"] { color: var(--be-accent); }
+
+.be-shell-mod__panel {
+    position:      absolute;
+    top:           calc(100% + var(--space-1));
+    left:          0;
+    z-index:       var(--z-dropdown);
+    width:         360px;
+    max-width:     78vw;
+    padding:       var(--space-2);
+    background:    var(--be-surface2);
+    border:        1px solid var(--be-line);
+    border-radius: var(--radius-lg);
+    box-shadow:    var(--shadow-lg, 0 22px 50px -16px rgba(0,0,0,.42));
+
+    &[hidden] { display: none; }   // visibility is panel-toggle.js controlled
+}
+.be-shell-mod__grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-1); }
+.be-shell-mod__tile {
+    display:         flex;
+    flex-direction:  column;
+    align-items:     center;
+    gap:             var(--space-2);
+    padding:         14px 8px 12px;
+    border:          1px solid transparent;
+    border-radius:   var(--radius-md);
+    text-decoration: none;
+    color:           var(--be-text);
+    cursor:          pointer;
+}
+.be-shell-mod__tile:hover { background: var(--be-accent-soft); }
+.be-shell-mod__tile--active { border-color: var(--be-accent); background: var(--be-accent-soft); }
+.be-shell-mod__tile--inert { opacity: .55; cursor: default; }
+.be-shell-mod__ico {
+    width:         38px;
+    height:        38px;
+    display:       grid;
+    place-items:   center;
+    border-radius: var(--radius-md);
+    background:    var(--be-surface);
+    border:        1px solid var(--be-line);
+    color:         var(--be-muted);
+}
+.be-shell-mod__tile--active .be-shell-mod__ico { background: var(--be-accent); border-color: var(--be-accent); color: var(--be-on-accent); }
+.be-shell-mod__label { font-size: 0.78125rem; font-weight: var(--font-weight-medium); text-align: center; }
+
+// Sandwich — hidden on desktop, shown on mobile
+.be-shell-topbar__burger {
+    display:       none;
+    width:         30px;
+    height:        30px;
+    margin-left:   var(--space-2);
+    flex-shrink:   0;
+    place-items:   center;
+    border:        1px solid var(--be-line);
+    border-radius: var(--radius-md);
+    background:    transparent;
+    color:         var(--be-text);
+    cursor:        pointer;
+}
+
+// Search
+.be-shell-topbar__mid { flex: 1; min-width: 0; display: flex; align-items: center; padding-left: var(--space-3); }
+.be-shell-topbar__search {
+    display:       flex;
+    align-items:   center;
+    gap:           var(--space-2);
+    height:        30px;
+    padding:       0 var(--space-2);
+    width:         min(380px, 100%);
+    background:    var(--be-surface2);
+    border:        1px solid var(--be-line);
+    border-radius: var(--radius-md);
+    color:         var(--be-muted);
+    font-size:     var(--font-size-sm);
+    cursor:        text;
+    transition:    border-color var(--transition-fast);
+}
+.be-shell-topbar__search:hover { border-color: var(--be-accent); }
+.be-shell-topbar__search-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
+.be-shell-topbar__search-key {
+    font-family:   var(--font-family-mono);
+    font-size:     var(--font-size-xs);
+    padding:       2px 5px;
+    background:    var(--be-line);
+    border-radius: 3px;
+    flex-shrink:   0;
+}
+
+// Right cluster — always visible (env + bell + avatar reuse the legacy component styles)
+.be-shell-topbar__right { flex: none; display: flex; align-items: center; gap: var(--space-2); }
+
+// ── Drag-resizers (grip on the divider) ──────────────────────────────────────────
+.be-shell__resizer {
+    grid-row:        2;
+    justify-self:    start;
+    width:           9px;
+    margin-left:     -5px;
+    z-index:         5;
+    cursor:          col-resize;
+    display:         flex;
+    align-items:     center;
+    justify-content: center;
+}
+.be-shell__resizer--l { grid-column: 2; }
+.be-shell__resizer--r { grid-column: 3; }
+.be-shell__resizer::before { content: ""; width: 2px; height: 36px; border-radius: 2px; background: var(--be-line); }
+.be-shell__resizer:hover::before,
+.be-shell__resizer.is-dragging::before { background: var(--be-accent); }
+
+// ── Backdrop (mobile drawers) ────────────────────────────────────────────────────
+.be-shell__backdrop { display: none; }
+
+// ── Mobile: column 1 = sandwich drawer, column 3 = right drawer ───────────────────
+@media (max-width: 767px) {
+    .be-shell { grid-template-columns: 1fr; }
+    .be-shell-topbar__mod { display: none; }
+    .be-shell-topbar__burger { display: grid; }
+    .be-shell__resizer { display: none; }
+
+    .be-shell-col--2 { grid-column: 1; border-right: 0; }
+
+    .be-shell-col--1 {
+        position:      absolute;
+        top:           var(--shell-bar);
+        left:          0;
+        height:        calc(100% - var(--shell-bar));
+        width:         min(300px, 84%);
+        z-index:       20;
+        transform:     translateX(-100%);
+        transition:    transform .28s ease;
+        box-shadow:    8px 0 40px -8px rgba(0,0,0,.4);
+    }
+    .be-shell.is-drawer-l .be-shell-col--1 { transform: none; }
+
+    .be-shell-col--3 {
+        display:       flex;
+        position:      absolute;
+        top:           var(--shell-bar);
+        right:         0;
+        height:        calc(100% - var(--shell-bar));
+        width:         min(320px, 88%);
+        z-index:       20;
+        transform:     translateX(100%);
+        opacity:       0;
+        transition:    transform .28s ease, opacity .28s ease;
+        box-shadow:    -8px 0 40px -8px rgba(0,0,0,.4);
+        border-left:   1px solid var(--be-line);
+    }
+    .be-shell.is-drawer-r .be-shell-col--3 { transform: none; opacity: 1; }
+
+    .be-shell__backdrop {
+        display:        block;
+        position:       absolute;
+        inset:          var(--shell-bar) 0 0 0;
+        background:     rgba(0,0,0,.34);
+        z-index:        15;
+        opacity:        0;
+        pointer-events: none;
+        transition:     opacity .2s;
+    }
+    .be-shell.is-drawer-l .be-shell__backdrop,
+    .be-shell.is-drawer-r .be-shell__backdrop { opacity: 1; pointer-events: auto; }
+
+    // Topbar right cluster on mobile: hide the env pill + bell (avatar + burger stay).
+    // Relocated from the retired layout/_nav-mobile.scss.
+    .backend-topbar__env,
+    .backend-topbar__bell { display: none; }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Shell topbar right cluster — environment switcher + bell + avatar.
+// Relocated from the deleted `components/_topbar.scss` (the legacy header is gone;
+// these `.backend-topbar__*` classes are still emitted by `partials/shell/topbar.tpl.php`,
+// so the CSS moves here with the rest of the shell). The dead legacy-header parts
+// (`.backend-topbar` container, brand/logo/name/version/modules/cmd/hamburger,
+// `.backend-module-tab*`) were dropped in the same pass. Class names kept as-is to
+// avoid touching the topbar markup + its `data-panel-open-class`.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Environment pill
+.backend-topbar__env {
+    display:       flex;
+    align-items:   center;
+    gap:           var(--space-1);
+    height:        30px;
+    padding:       0 var(--space-2);
+    background:    var(--be-bg);
+    border:        1px solid var(--be-line);
+    border-radius: var(--radius-md);
+    color:         var(--be-text);
+    cursor:        pointer;
+    font-family:   var(--font-family-mono);
+    font-size:     0.65625rem;
+    letter-spacing: 0.06em;
+    flex-shrink:   0;
+    transition:    background var(--transition-fast);
+}
+
+.backend-topbar__env:hover {
+    background: var(--be-surface);
+}
+
+.backend-topbar__env-dot {
+    width:         6px;
+    height:        6px;
+    border-radius: 50%;
+    background:    var(--be-accent);
+    flex-shrink:   0;
+}
+
+.backend-topbar__env--frontend .backend-topbar__env-dot {
+    background: var(--be-warn);
+}
+
+// Environment switcher — trigger label + chevron
+.backend-topbar__env-wrap {
+    position:    relative;
+    flex-shrink: 0;
+}
+
+.backend-topbar__env-label {
+    text-transform: uppercase;
+}
+
+.backend-topbar__env-chevron {
+    color:      var(--be-muted);
+    transition: transform var(--transition-fast);
+}
+
+.backend-topbar__env[aria-expanded="true"] .backend-topbar__env-chevron {
+    transform: rotate(180deg);
+}
+
+// Environment switcher — dropdown menu
+.backend-topbar__env-menu {
+    position:      absolute;
+    top:           calc(100% + var(--space-1));
+    right:         0;
+    min-width:     180px;
+    padding:       var(--space-1);
+    background:    var(--be-surface);
+    border:        1px solid var(--be-line);
+    border-radius: var(--radius-md);
+    box-shadow:    var(--shadow-md);
+    z-index:       var(--z-dropdown);
+    display:       flex;
+    flex-direction: column;
+    gap:           2px;
+
+    // Respect the [hidden] attribute — visibility is JS-controlled (panel-toggle).
+    // Without this the class rule above overrides the UA [hidden] rule and the
+    // menu would always be visible.
+    &[hidden] { display: none; }
+}
+
+.backend-topbar__env-item {
+    display:       flex;
+    align-items:   center;
+    gap:           var(--space-2);
+    padding:       var(--space-1) var(--space-2);
+    border-radius: var(--radius-sm);
+    color:         var(--be-text);
+    text-decoration: none;
+    font-size:     0.8125rem;
+    transition:    background var(--transition-fast);
+}
+
+.backend-topbar__env-item:hover {
+    background: var(--be-bg);
+}
+
+.backend-topbar__env-item--active {
+    color:       var(--be-accent);
+    font-weight: var(--font-weight-medium);
+}
+
+.backend-topbar__env-item-label {
+    flex: 1;
+}
+
+// Bell button
+.backend-topbar__bell {
+    width:            30px;
+    height:           30px;
+    flex-shrink:      0;
+    background:       transparent;
+    border:           1px solid var(--be-line);
+    border-radius:    var(--radius-md);
+    color:            var(--be-text);
+    cursor:           pointer;
+    display:          flex;
+    align-items:      center;
+    justify-content:  center;
+    transition:       background var(--transition-fast);
+}
+
+.backend-topbar__bell:hover {
+    background: var(--be-surface);
+}
+
+// Avatar + service panel wrapper
+.backend-topbar__avatar-wrap {
+    position:    relative;
+    flex-shrink: 0;
+    display:     flex;
+    align-items: center;
+}
+
+.backend-topbar__avatar {
+    width:            30px;
+    height:           30px;
+    border-radius:    50%;
+    background:       var(--be-accent);
+    color:            var(--be-surface);
+    display:          flex;
+    align-items:      center;
+    justify-content:  center;
+    font-size:        0.65rem;   // fits 3-char initials in the 30px circle
+    font-weight:      var(--font-weight-semibold);
+    line-height:      normal;
+    border:           none;
+    cursor:           pointer;
+    transition:       box-shadow var(--transition-fast);
+}
+
+.backend-topbar__avatar--open {
+    box-shadow: 0 0 0 2px var(--be-surface), 0 0 0 4px var(--be-accent);
+}

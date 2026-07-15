@@ -1,0 +1,29 @@
+/* Tokens on the .be viewArea wrapper, not :root (ADR-018). */
+.be {
+    --radius-sm:    4px;
+    --radius-md:    6px;
+    --radius-lg:    12px;
+    --radius-xl:    20px;
+    --radius-pill:  9999px;
+
+    --shadow-sm:    0 1px 3px rgba(0, 0, 0, .08), 0 1px 2px rgba(0, 0, 0, .04);
+    --shadow-md:    0 4px 12px rgba(0, 0, 0, .10);
+    --shadow-lg:    0 8px 24px rgba(0, 0, 0, .14);
+    --shadow-xl:    0 16px 48px rgba(0, 0, 0, .18);
+
+    --transition-fast:   150ms ease;
+    --transition-base:   250ms ease;
+    --transition-slow:   400ms ease;
+
+    --z-base:       1;
+    --z-topbar:     40;
+    --z-dropdown:   100;
+    --z-sticky:     200;
+    --z-overlay:    300;
+    --z-modal:      400;
+    --z-toast:      500;
+    // Feedback lanes (see docs/topics/messages.md). Bot reserved for future overlay.
+    --z-bot:        900;
+    --z-message:    1000;
+    --z-flash:      1100;
+}

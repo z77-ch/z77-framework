@@ -1,0 +1,22 @@
+// Guest layout — full-viewport wrapper for GUEST pages (login, setup) rendered
+// through `html-guest-skeleton.tpl.php`. Self-contained: carries its own base
+// (background, color, font, full-height flex column) so it does NOT depend on
+// the authenticated `body.backend` rules in the media-gated `layout/*.scss`.
+// The page content (`.login`) centers itself via `flex: 1`.
+.be-guest {
+    min-height:     100vh;
+    display:        flex;
+    flex-direction: column;
+    background:     var(--be-bg);
+    color:          var(--be-text);
+    font-family:    var(--font-family-ui);
+}
+
+// Content slot below the (absent) chrome — a flex column so a `flex: 1` child
+// (the login/setup card) fills the viewport and centers.
+.be-guest__main {
+    flex:           1;
+    display:        flex;
+    flex-direction: column;
+    min-height:     0;
+}

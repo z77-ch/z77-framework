@@ -1,0 +1,8 @@
+/* Page container — single source of horizontal padding + max-width.
+   Padding is set in layout files (media-bound). Here only max-width logic. */
+.fe-container {
+    width:        100%;
+    max-width:    var(--fe-container-max);
+    margin-left:  auto;
+    margin-right: auto;
+}

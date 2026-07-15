@@ -1,0 +1,33 @@
+# --- Dependencies (regeneriert via composer/npm) ---
+/vendor/
+/node_modules/
+/skeleton/vendor/
+
+# --- Tooling / lokale Konfiguration (nicht deployen) ---
+/.claude/
+# editor config — enthält sftp.json mit Deploy-Zugangsdaten, nie committen
+/.vscode/
+# lokale Maintainer-Docs (maschinen-/account-spezifisch: NAS, z77-ch-Zugang) — via NAS, nie ins Repo
+/docs/_local/
+.env
+# persönlicher git-Spickzettel, gehört nicht ins Repo
+/git-spick-zettel.md
+
+# --- Root-Runtime ---
+/data/
+/logs/
+/temp/
+*.zip
+
+# --- Skeleton: installer-generierte / Runtime-Artefakte ---
+# config/*.inc.php werden bei jedem `composer install` neu geschrieben (siehe installer.md)
+# data/ enthält geseedete Inhalte + provisioniertes loginUsers.json (Credential!) — nie committen
+# composer.lock: das Skeleton ist Vorlage/Testinstallation auf path-repos zum bewegten
+#   Monorepo — eine committete Lock veraltet bei jeder Framework-Änderung (ADR-023 kernel-Merge).
+#   Jede Installation erzeugt ihre eigene Lock.
+/skeleton/config/
+/skeleton/data/
+/skeleton/lib/
+/skeleton/public/assets/
+/skeleton/public/storage/
+/skeleton/composer.lock

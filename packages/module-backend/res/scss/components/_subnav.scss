@@ -1,0 +1,225 @@
+// Backend sub-navigation — tree sidebar
+.backend-subnav {
+    display:        flex;
+    flex-direction: column;
+    overflow:       hidden;
+    background:     var(--be-surface);
+    border-right:   1px solid var(--be-line);
+    min-height:     0;
+}
+
+.backend-subnav__header {
+    display:          flex;
+    align-items:      center;
+    justify-content:  space-between;
+    padding:          14px 14px 10px;
+    position:         sticky;
+    top:              0;
+    background:       var(--be-surface);
+    border-bottom:    1px solid var(--be-line);
+    z-index:          1;
+    flex-shrink:      0;
+}
+
+.backend-subnav__title {
+    font-family:    var(--font-family-display);
+    font-size:      1.125rem;
+    font-weight:    400;
+    letter-spacing: -0.02em;
+    color:          var(--be-text);
+}
+
+.backend-subnav__actions {
+    display:     flex;
+    align-items: center;
+    gap:         var(--space-1);
+}
+
+.backend-subnav__action {
+    width:            24px;
+    height:           24px;
+    background:       transparent;
+    border:           none;
+    color:            var(--be-muted);
+    cursor:           pointer;
+    border-radius:    var(--radius-sm);
+    display:          flex;
+    align-items:      center;
+    justify-content:  center;
+    transition:       background var(--transition-fast), color var(--transition-fast);
+}
+
+.backend-subnav__action:hover {
+    background: var(--be-bg);
+    color:      var(--be-text);
+}
+
+.backend-subnav__filter {
+    padding:     0 10px 10px;
+    flex-shrink: 0;
+}
+
+.backend-subnav__filter-field {
+    display:       flex;
+    align-items:   center;
+    gap:           var(--space-1);
+    padding:       0 var(--space-2);
+    height:        26px;
+    background:    var(--be-bg);
+    border:        1px solid var(--be-line);
+    border-radius: var(--radius-sm);
+    color:         var(--be-muted);
+    font-size:     0.71875rem;
+    cursor:        text;
+}
+
+.backend-subnav__tree {
+    flex:       1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding:    0 6px 14px;
+}
+
+// Tree group (section with label + children)
+.backend-tree-group {
+    margin-bottom: var(--space-2);
+}
+
+.backend-tree-group__label {
+    padding:        6px 10px 4px;
+    font-size:      0.59375rem;
+    font-weight:    var(--font-weight-semibold);
+    color:          var(--be-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-family:    var(--font-family-mono);
+}
+
+// Tree node
+.backend-tree-node {
+    position:      relative;
+    height:        26px;
+    display:       flex;
+    align-items:   center;
+    gap:           var(--space-1);
+    border-radius: var(--radius-sm);
+    margin-bottom: 1px;
+    cursor:        pointer;
+    font-size:     0.78125rem;
+    font-weight:   var(--font-weight-normal);
+    color:         var(--be-text);
+    transition:    background var(--transition-fast), color var(--transition-fast);
+}
+
+.backend-tree-node:hover {
+    // --be-surface2 (not --be-bg): the subnav lives in the dark orientation band, where
+    // the local token override recolours --be-text/--be-surface* to dark-appropriate values
+    // but deliberately leaves --be-bg at the light page background. Using --be-bg here made
+    // the hover light while the text stayed light → unreadable. --be-surface2 is overridden
+    // in the band (a subtle lift) and stays a light grey in the normal UI.
+    background: var(--be-surface2);
+}
+
+.backend-tree-node--active {
+    background:  var(--be-accent-soft);
+    color:       var(--be-accent);
+    font-weight: var(--font-weight-medium);
+}
+
+.backend-tree-node--active:hover {
+    background: var(--be-accent-soft);
+}
+
+.backend-tree-node__toggle {
+    width:            14px;
+    height:           14px;
+    flex-shrink:      0;
+    background:       transparent;
+    border:           none;
+    color:            var(--be-muted);
+    cursor:           pointer;
+    display:          flex;
+    align-items:      center;
+    justify-content:  center;
+    padding:          0;
+    visibility:       hidden;
+    transition:       transform var(--transition-fast);
+}
+
+.backend-tree-node--has-children > .backend-tree-node__toggle {
+    visibility: visible;
+    cursor:     pointer;
+}
+
+.backend-tree-node--open > .backend-tree-node__toggle {
+    transform: rotate(90deg);
+}
+
+.backend-tree-node__label {
+    flex:          1;
+    min-width:     0;
+    overflow:      hidden;
+    text-overflow: ellipsis;
+    white-space:   nowrap;
+}
+
+.backend-tree-node__count {
+    font-family: var(--font-family-mono);
+    font-size:   var(--font-size-xs);
+    color:       var(--be-muted);
+    opacity:     0.8;
+    flex-shrink: 0;
+    padding-right: var(--space-1);
+}
+
+.backend-tree-node--active .backend-tree-node__count {
+    color: var(--be-accent);
+}
+
+// Vertical depth-guide lines (rendered as absolute spans)
+.backend-tree-node__guide {
+    position:   absolute;
+    top:        0;
+    bottom:     0;
+    width:      1px;
+    background: var(--be-line);
+    opacity:    0.6;
+}
+
+// Opener (Sidebar group with children but no own route) — uses <details>/<summary>
+.backend-tree-opener > summary {
+    list-style: none;
+}
+
+.backend-tree-opener > summary::-webkit-details-marker {
+    display: none;
+}
+
+.backend-tree-opener[open] > summary > .backend-tree-node__toggle {
+    transform: rotate(90deg);
+}
+
+// Opener whose subtree contains the active page — "trail" emphasis: label
+// medium-weight, toggle chevron + count tinted accent so the branch leading to
+// the current page is recognizable without competing with the active node.
+.backend-tree-node--has-active-child .backend-tree-node__label {
+    font-weight: var(--font-weight-medium);
+}
+
+.backend-tree-node--has-active-child > .backend-tree-node__toggle,
+.backend-tree-node--has-active-child .backend-tree-node__count {
+    color: var(--be-accent);
+}
+
+// Ref entry — UI pointer to another page: a trailing ↗ glyph reading as "points
+// elsewhere" (no left border, by design — keeps every subnav row visually even). The
+// glyph follows currentColor, so it tints accent on the active ref and stays subdued
+// otherwise.
+.backend-tree-node--ref::after {
+    content:       "\2197"; // ↗ north-east arrow
+    flex-shrink:   0;
+    padding-right: var(--space-1);
+    font-size:     var(--font-size-xs);
+    color:         currentColor;
+    opacity:       0.55;
+}

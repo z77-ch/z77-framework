@@ -1,0 +1,247 @@
+// Backend list / tree component.
+// Shared by every backend listing (navigation, navigation groups, aliases,
+// metadata, content, translations, users). Lives in base.css so all lists look
+// identical and no controller needs to load a separate stylesheet.
+//
+// Blocks:
+//   .be-list   — the list body + section scaffolding + (navigation) filter/tabs
+//   .be-tree   — recursive node tree (container is .be-tree, each node .be-tree__node)
+//   .be-tabs   — group tab strip
+//
+// .be-tree__node--env / --slot carry no styles — they are JS hooks only.
+
+/* ── Filter (navigation list search) ── */
+.be-list__filter { position: relative; }
+.be-list__filter-input {
+    width:         200px;
+    padding:       .4rem .65rem .4rem 2rem;
+    border:        1px solid var(--be-line);
+    border-radius: var(--radius-md);
+    font-size:     var(--font-size-sm);
+    background:    var(--be-surface);
+    color:         var(--be-text);
+}
+.be-list__filter-input:focus {
+    outline:      none;
+    border-color: var(--be-accent);
+    box-shadow:   0 0 0 2px color-mix(in srgb, var(--be-accent) 15%, transparent);
+}
+.be-list__filter-icon {
+    position:       absolute;
+    left:           .5rem;
+    top:            50%;
+    transform:      translateY(-50%);
+    color:          var(--be-muted);
+    pointer-events: none;
+}
+
+/* ── Group tabs ── */
+.be-tabs {
+    display:     flex;
+    flex-wrap:   wrap;
+    align-items: center;
+    gap:         .25rem;
+    margin-top:  1rem;
+    padding-top: 1rem;
+    border-top:  1px solid var(--be-line);
+}
+.be-tabs__tab {
+    padding:       .3rem .75rem;
+    border:        1px solid var(--be-line);
+    border-radius: var(--radius-pill);
+    background:    transparent;
+    font-size:     .8rem;
+    font-weight:   var(--font-weight-medium);
+    color:         var(--be-muted);
+    white-space:   nowrap;
+    cursor:        pointer;
+    transition:    background var(--transition-fast), color var(--transition-fast);
+}
+.be-tabs__tab:hover    { background: var(--be-bg); color: var(--be-text); }
+.be-tabs__tab--active  { background: var(--be-accent); color: var(--color-text-inverse); border-color: var(--be-accent); }
+.be-tabs__tab--add     { border-style: dashed; }
+
+/* ── List body ── */
+.be-list { padding: 1.5rem 2rem; }
+
+/* ── Section (one per tag group) ── */
+.be-list__section { margin-bottom: 2rem; }
+.be-list__section-header {
+    display:       flex;
+    align-items:   center;
+    gap:           .75rem;
+    padding:       .5rem 0;
+    margin-bottom: .5rem;
+    border-bottom: 2px solid var(--be-line);
+}
+.be-list__section-title {
+    flex:        1;
+    margin:      0;
+    font-size:   .9rem;
+    font-weight: var(--font-weight-semibold);
+    color:       var(--be-text);
+}
+.be-list__section-badge {
+    font-size:   .7rem;
+    color:       var(--be-muted);
+    font-family: var(--font-family-mono);
+}
+.be-list__section-actions {
+    display:    flex;
+    gap:        .25rem;
+    opacity:    0;
+    transition: opacity var(--transition-fast);
+}
+.be-list__section-header:hover .be-list__section-actions { opacity: 1; }
+
+/* ── Render-slot subgroup (child tag under an environment) ── */
+.be-list__subsection {
+    margin:       .6rem 0 1.25rem;
+    padding-left: .75rem;
+    border-left:  2px solid var(--be-line);
+}
+.be-list__subsection-header {
+    display:       flex;
+    align-items:   center;
+    gap:           .6rem;
+    padding:       .3rem 0;
+    margin-bottom: .15rem;
+}
+.be-list__subsection-title {
+    flex:           1;
+    margin:         0;
+    font-size:      .68rem;
+    font-weight:    var(--font-weight-semibold);
+    text-transform: uppercase;
+    letter-spacing: .07em;
+    color:          var(--be-muted);
+    font-family:    var(--font-family-mono);
+}
+.be-list__subsection-header:hover .be-list__section-actions { opacity: 1; }
+
+/* ── Tree node ── */
+.be-tree__node { padding-left: calc(var(--node-depth, 0) * 1.5rem); }
+.be-tree__row {
+    display:       flex;
+    align-items:   center;
+    gap:           .6rem;
+    padding:       .45rem .5rem;
+    border-radius: var(--radius-md);
+    transition:    background var(--transition-fast);
+}
+.be-tree__row:hover { background: var(--be-bg); }
+.be-tree__toggle {
+    order:       -2;   /* stays first, ahead of the actions */
+    display:     flex;
+    align-items: center;
+    flex-shrink: 0;
+    width:       1rem;
+    color:       var(--be-muted);
+    cursor:      pointer;
+    transition:  transform var(--transition-fast);
+}
+.be-tree__node--has-children.is-open > .be-tree__row > .be-tree__toggle { transform: rotate(90deg); }
+.be-tree__node--has-children > .be-tree__children          { display: none; }
+.be-tree__node--has-children.is-open > .be-tree__children  { display: block; }
+.be-tree__name {
+    min-width:   140px;
+    font-size:   var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+    color:       var(--be-text);
+}
+.be-tree__url {
+    flex:        1;
+    font-family: var(--font-family-mono);
+    font-size:   .78rem;
+    color:       var(--be-muted);
+}
+.be-tree__canonical { opacity: .55; }
+.be-tree__route {
+    font-size:   var(--font-size-xs);
+    color:       var(--be-muted);
+    white-space: nowrap;
+}
+.be-tree__actions {
+    order:   -1;   /* sit at the row start, after the toggle and before the name */
+    display: flex;
+    gap:     .2rem;
+}
+
+/* ── Unified row anatomy (hub variant) ─────────────────────────────────────────
+ * Opt-in per container: add `be-tree--hub` on a `.be-tree`. Reusable across modules.
+ * Row = fixed left slots [toggle | active-switch | ⋮ menu] then [name] [info…], laid
+ * out with an EXPLICIT grid so every row aligns even when a slot is empty (e.g. a
+ * view without an active toggle). The ⋮ opens a per-row action hub modal (see the
+ * `actions` endpoint + `be-actions` below); the inline edit/trash icons are gone. */
+.be-tree--hub .be-tree__row {
+    display:               grid;
+    grid-template-columns: 1rem 2.4rem 1.6rem minmax(0, auto) minmax(0, 1fr) auto;
+    gap:                   .5rem;
+    align-items:           center;
+}
+.be-tree--hub .be-tree__toggle { grid-column: 1; }
+.be-tree--hub .be-tree__switch { grid-column: 2; margin: 0; justify-self: start; }
+.be-tree--hub .be-tree__menu   { grid-column: 3; }
+.be-tree--hub .be-tree__name   { grid-column: 4; min-width: 0; }
+.be-tree--hub .be-tree__url    { grid-column: 5; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.be-tree--hub .be-tree__route  { grid-column: 6; }
+
+/* ⋮ row-menu trigger — reusable in any hub row. */
+.be-tree__menu {
+    width:            1.6rem;
+    height:           1.6rem;
+    display:          inline-flex;
+    align-items:      center;
+    justify-content:  center;
+    padding:          0;
+    border:           0;
+    background:       transparent;
+    color:            var(--be-muted);
+    cursor:           pointer;
+    border-radius:    var(--radius-sm);
+    font-size:        1.05rem;
+    line-height:      1;
+    transition:       background var(--transition-fast), color var(--transition-fast);
+}
+.be-tree__menu:hover { background: var(--be-surface2); color: var(--be-text); }
+
+/* Row action hub (⋮) modal content — module-agnostic; any `actions` endpoint reuses it. */
+.be-actions__list { display: flex; flex-direction: column; gap: .35rem; }
+.be-actions__item { justify-content: flex-start; }
+
+/* ── Ref marker ── */
+.be-tree__node--ref > .be-tree__row { border-left: 2px solid var(--be-accent); padding-left: .4rem; }
+.be-tree__node--ref > .be-tree__row > .be-tree__toggle { color: var(--be-accent); cursor: default; }
+.be-tree__ref-label {
+    display:        inline-block;
+    padding:        0 .35rem;
+    margin-right:   .35rem;
+    border-radius:  var(--radius-sm);
+    background:     color-mix(in srgb, var(--be-accent) 12%, transparent);
+    color:          var(--be-accent);
+    font-size:      .68rem;
+    font-weight:    var(--font-weight-semibold);
+    text-transform: uppercase;
+    letter-spacing: .04em;
+}
+
+/* ── Inactive marker ── */
+/* Dim the labels only — controls (actions + active toggle) stay fully usable.
+ * (Row-level opacity would cascade onto the always-visible controls and cannot
+ * be overridden per child, so the dimming targets the text spans.) */
+.be-tree__node--inactive > .be-tree__row .be-tree__name { text-decoration: line-through; }
+.be-tree__node--inactive > .be-tree__row .be-tree__name,
+.be-tree__node--inactive > .be-tree__row .be-tree__url,
+.be-tree__node--inactive > .be-tree__row .be-tree__route { opacity: .45; }
+
+/* ── Drag & Drop ── */
+.be-tree__row[draggable="true"]         { cursor: grab; }
+.be-tree__row[draggable="true"]:active  { cursor: grabbing; }
+.be-tree__node--dragging > .be-tree__row    { opacity: .4; }
+.be-tree__node--drop-before > .be-tree__row { box-shadow: inset 0 2px 0 0 var(--be-accent); }
+.be-tree__node--drop-after  > .be-tree__row { box-shadow: inset 0 -2px 0 0 var(--be-accent); }
+.be-tree__node--drop-into   > .be-tree__row {
+    background:     color-mix(in srgb, var(--be-accent) 12%, transparent);
+    outline:        1px dashed var(--be-accent);
+    outline-offset: -2px;
+}

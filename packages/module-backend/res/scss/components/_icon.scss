@@ -1,0 +1,13 @@
+// Icon — renders a symbol from the sprite (partials/icon-sprite.tpl.php) via <use>.
+// The sprite holds geometry only; this is the single place that defines how every
+// backend icon looks: no fill, stroke in the current text color, uniform stroke
+// width and round caps (Lucide style). Display size comes from the consuming
+// element's width/height attributes, so icons keep their per-context sizing.
+.be-icon {
+    fill:            none;
+    stroke:          currentColor;
+    stroke-width:    2;
+    stroke-linecap:  round;
+    stroke-linejoin: round;
+    flex-shrink:     0;
+}

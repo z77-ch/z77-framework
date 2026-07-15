@@ -1,0 +1,429 @@
+@use '../tokens/typography' as typo;
+
+// Backend service panel — dropdown from avatar button
+@keyframes be-service-slide {
+    from { opacity: 0; transform: translateY(-4px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+.backend-service-panel {
+    position:      absolute;
+    top:           calc(100% + 8px);
+    right:         0;
+    // Width grows with the font-scale slider so larger text gets more room.
+    width:         calc(280px * var(--be-font-scale));
+    // Cap height to the viewport (48px topbar + 8px gap + 16px breathing room)
+    // and scroll internally — otherwise an expanded "Aussehen" section grows the
+    // panel past the viewport and the lower rows become unreachable.
+    max-height:    calc(100vh - 72px);
+    background:    var(--be-surface);
+    border:        1px solid var(--be-line);
+    border-radius: var(--radius-lg);
+    box-shadow:    var(--shadow-xl);
+    // hidden-x keeps the rounded corners; auto-y enables the scroll.
+    overflow:      hidden auto;
+    z-index:       var(--z-dropdown);
+    animation:     be-service-slide var(--transition-fast) ease-out;
+}
+
+// User identity header
+.backend-service-panel__identity {
+    display:       flex;
+    align-items:   center;
+    gap:           var(--space-2);
+    padding:       14px 14px 12px;
+    background:    var(--be-surface2);
+    border-bottom: 1px solid var(--be-line);
+}
+
+.backend-service-panel__avatar {
+    width:            36px;
+    height:           36px;
+    border-radius:    50%;
+    background:       var(--be-accent);
+    color:            var(--be-surface);
+    display:          flex;
+    align-items:      center;
+    justify-content:  center;
+    font-weight:      var(--font-weight-semibold);
+    font-size:        0.8125rem;
+    line-height:      normal;
+    flex-shrink:      0;
+}
+
+.backend-service-panel__name {
+    font-size:   0.8125rem;
+    font-weight: var(--font-weight-medium);
+    color:       var(--be-text);
+}
+
+.backend-service-panel__meta {
+    font-size:     var(--font-size-xs);
+    color:         var(--be-muted);
+    font-family:   var(--font-family-mono);
+    white-space:   nowrap;
+    overflow:      hidden;
+    text-overflow: ellipsis;
+    margin-top:    1px;
+}
+
+// Section wrapper
+.backend-service-panel__section {
+    padding: var(--space-2) var(--space-2) var(--space-1);
+}
+
+.backend-service-panel__section-label {
+    padding:        4px 10px 4px;
+    font-size:      0.59375rem;
+    font-weight:    var(--font-weight-semibold);
+    color:          var(--be-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-family:    var(--font-family-mono);
+}
+
+.backend-service-panel__divider {
+    height:     1px;
+    background: var(--be-line);
+    margin:     4px 0;
+}
+
+// Environment segmented switch
+.backend-service-panel__env-switch {
+    display:               grid;
+    grid-template-columns: 1fr 1fr;
+    gap:                   3px;
+    margin:                2px 8px 4px;
+    padding:               3px;
+    background:            var(--be-bg);
+    border:                1px solid var(--be-line);
+    border-radius:         var(--radius-md);
+}
+
+.backend-service-panel__env-btn {
+    display:          flex;
+    align-items:      center;
+    justify-content:  center;
+    gap:              var(--space-1);
+    height:           26px;
+    border:           none;
+    border-radius:    var(--radius-sm);
+    cursor:           pointer;
+    background:       transparent;
+    color:            var(--be-text);
+    font-size:        0.71875rem;
+    font-weight:      var(--font-weight-medium);
+    font-family:      inherit;
+    transition:       background var(--transition-fast);
+}
+
+.backend-service-panel__env-btn--active {
+    background:  var(--be-accent);
+    color:       var(--be-surface);
+    font-weight: var(--font-weight-semibold);
+}
+
+.backend-service-panel__env-dot {
+    width:         6px;
+    height:        6px;
+    border-radius: 50%;
+    flex-shrink:   0;
+}
+
+.backend-service-panel__env-status {
+    padding:   2px 12px 4px;
+    font-size: 0.65625rem;
+    color:     var(--be-muted);
+}
+
+// Forms inside the panel are invisible wrappers
+.backend-service-panel form {
+    margin:  0;
+    padding: 0;
+}
+
+// Action row (button or link inside the panel)
+a.backend-service-panel__row {
+    text-decoration: none;
+}
+
+.backend-service-panel__row {
+    display:       flex;
+    align-items:   center;
+    gap:           var(--space-2);
+    width:         100%;
+    padding:       10px var(--space-3);
+    background:    transparent;
+    border:        none;
+    border-radius: var(--radius-md);
+    cursor:        pointer;
+    color:         var(--be-text);
+    text-align:    left;
+    font-family:   inherit;
+    transition:    background var(--transition-fast);
+}
+
+.backend-service-panel__row:hover {
+    background: var(--be-accent-soft);
+}
+
+.backend-service-panel__row--danger {
+    color: var(--be-danger);
+}
+
+.backend-service-panel__row-icon {
+    width:            28px;
+    height:           28px;
+    border-radius:    var(--radius-md);
+    background:       var(--be-bg);
+    border:           1px solid var(--be-line);
+    display:          flex;
+    align-items:      center;
+    justify-content:  center;
+    color:            var(--be-muted);
+    flex-shrink:      0;
+}
+
+.backend-service-panel__row--danger .backend-service-panel__row-icon {
+    color: var(--be-danger);
+}
+
+.backend-service-panel__row-body {
+    flex:      1;
+    min-width: 0;
+}
+
+.backend-service-panel__row-label {
+    font-size:   0.78125rem;
+    font-weight: var(--font-weight-medium);
+}
+
+.backend-service-panel__row-sub {
+    font-size:  0.6875rem;
+    color:      var(--be-muted);
+    margin-top: 1px;
+}
+
+.backend-service-panel__row-badge {
+    @include typo.font-size-capped;   // fixed size — ignores the font-scale slider
+    font-family:   var(--font-family-mono);
+    font-size:     var(--font-size-xs);
+    color:         var(--be-muted);
+    padding:       3px 6px;
+    background:    var(--be-bg);
+    border:        1px solid var(--be-line);
+    border-radius: var(--radius-sm);
+    flex-shrink:   0;
+}
+
+// Toggle control
+.backend-service-panel__toggle {
+    width:         28px;
+    height:        16px;
+    border-radius: var(--radius-pill);
+    background:    var(--be-line);
+    position:      relative;
+    flex-shrink:   0;
+    transition:    background var(--transition-fast);
+}
+
+.backend-service-panel__toggle--on {
+    background: var(--be-accent);
+}
+
+.backend-service-panel__toggle-thumb {
+    position:      absolute;
+    top:           2px;
+    left:          2px;
+    width:         12px;
+    height:        12px;
+    border-radius: 50%;
+    background:    var(--be-surface);
+    transition:    left var(--transition-fast);
+}
+
+.backend-service-panel__toggle--on .backend-service-panel__toggle-thumb {
+    left: 14px;
+}
+
+// Collapsible section toggle (replaces static section-label where needed)
+.backend-service-panel__section-toggle {
+    display:        flex;
+    align-items:    center;
+    justify-content: space-between;
+    width:          100%;
+    padding:        4px 10px;
+    background:     transparent;
+    border:         none;
+    cursor:         pointer;
+    color:          var(--be-muted);
+    font-size:      0.59375rem;
+    font-weight:    var(--font-weight-semibold);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-family:    var(--font-family-mono);
+    transition:     color var(--transition-fast);
+}
+
+.backend-service-panel__section-toggle:hover {
+    color: var(--be-text);
+}
+
+.backend-service-panel__section-chevron {
+    flex-shrink: 0;
+    transition:  transform var(--transition-fast);
+}
+
+.backend-service-panel__section-toggle[aria-expanded="true"] .backend-service-panel__section-chevron {
+    transform: rotate(180deg);
+}
+
+// Info section — routing context (module / controller / action / template)
+.backend-service-panel__info {
+    margin:      2px 8px 6px;
+    display:     grid;
+    gap:         3px;
+    font-family: var(--font-family-mono);
+    font-size:   var(--font-size-xs);
+}
+
+// display:grid above overrides the UA [hidden] rule — restore it so the
+// data-collapse-trigger toggle can actually hide the section (same fix as the
+// env-menu in _topbar.scss).
+.backend-service-panel__info[hidden] { display: none; }
+
+.backend-service-panel__info-row {
+    display:               grid;
+    grid-template-columns: 84px 1fr;
+    gap:                   var(--space-2);
+}
+
+.backend-service-panel__info-row dt { color: var(--be-muted); }
+
+.backend-service-panel__info-row dd {
+    margin:     0;
+    color:      var(--be-text);
+    word-break: break-all;
+}
+
+// Palette picker
+.backend-service-panel__palette-grid {
+    display:               grid;
+    grid-template-columns: 1fr 1fr;
+    gap:                   var(--space-1);
+    margin:                4px 8px 6px;
+}
+
+.backend-service-panel__palette-btn {
+    display:     flex;
+    align-items: center;
+    gap:         7px;
+    height:      28px;
+    padding:     0 8px;
+    background:  var(--be-bg);
+    border:      1px solid var(--be-line);
+    border-radius: var(--radius-md);
+    cursor:      pointer;
+    color:       var(--be-text);
+    font-size:   0.6875rem;
+    font-weight: var(--font-weight-medium);
+    font-family: inherit;
+    white-space: nowrap;
+    overflow:    hidden;
+    transition:  border-color var(--transition-fast), background var(--transition-fast), color var(--transition-fast);
+}
+
+.backend-service-panel__palette-btn:hover {
+    background:    var(--be-surface2);
+    border-color:  var(--be-muted);
+}
+
+.backend-service-panel__palette-btn--active {
+    border-color: var(--be-accent);
+    color:        var(--be-accent);
+    background:   var(--be-accent-soft);
+}
+
+.backend-service-panel__palette-dot {
+    width:         8px;
+    height:        8px;
+    border-radius: 50%;
+    flex-shrink:   0;
+}
+
+// Font-scale slider row
+.backend-service-panel__font-row {
+    cursor: default;
+
+    &:hover { background: transparent; }
+}
+
+.backend-service-panel__font-slider {
+    display:     flex;
+    align-items: center;
+    gap:         var(--space-2);
+    margin-top:  6px;
+}
+
+.backend-service-panel__font-slider-a {
+    color:       var(--be-muted);
+    font-size:   0.625rem;
+    font-weight: var(--font-weight-semibold);
+    line-height: 1;
+    flex-shrink: 0;
+    user-select: none;
+}
+
+.backend-service-panel__font-slider-a--lg {
+    font-size: 0.9375rem;
+}
+
+.backend-service-panel__font-range {
+    flex:          1;
+    height:        4px;
+    appearance:    none;
+    background:    var(--be-line);
+    border-radius: var(--radius-pill);
+    outline:       none;
+    cursor:        pointer;
+}
+
+.backend-service-panel__font-range::-webkit-slider-thumb {
+    appearance:    none;
+    width:         14px;
+    height:        14px;
+    border-radius: 50%;
+    background:    var(--be-accent);
+    border:        2px solid var(--be-surface);
+    box-shadow:    0 0 0 1px var(--be-accent);
+    cursor:        pointer;
+    transition:    box-shadow var(--transition-fast);
+}
+
+.backend-service-panel__font-range::-moz-range-thumb {
+    width:         14px;
+    height:        14px;
+    border-radius: 50%;
+    background:    var(--be-accent);
+    border:        2px solid var(--be-surface);
+    box-shadow:    0 0 0 1px var(--be-accent);
+    cursor:        pointer;
+}
+
+.backend-service-panel__font-range:focus-visible::-webkit-slider-thumb {
+    box-shadow: 0 0 0 3px var(--be-accent-soft);
+}
+
+// Footer
+.backend-service-panel__footer {
+    display:          flex;
+    align-items:      center;
+    justify-content:  space-between;
+    padding:          var(--space-2) 14px;
+    background:       var(--be-surface2);
+    border-top:       1px solid var(--be-line);
+    font-family:      var(--font-family-mono);
+    font-size:        0.625rem;
+    color:            var(--be-muted);
+    letter-spacing:   0.04em;
+}

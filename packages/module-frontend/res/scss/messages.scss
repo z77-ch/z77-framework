@@ -1,0 +1,4 @@
+/* Entry point for frontend feedback (flash + popup messages).
+   Loaded by frontend layoutConfig as standalone stylesheet (`messages` asset). */
+@use 'components/flash-messages';
+@use 'components/popup-messages';

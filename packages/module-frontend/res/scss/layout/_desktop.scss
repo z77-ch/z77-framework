@@ -1,0 +1,23 @@
+/* Desktop page layout (≥ 1200px) — full hero scale, wide gutter, 3- and 4-col grids. */
+.fe-container {
+    padding-left:  var(--fe-gutter-desktop);
+    padding-right: var(--fe-gutter-desktop);
+}
+
+.fe-hero {
+    padding-top:    var(--fe-space-10);
+    padding-bottom: var(--fe-space-10);
+}
+.fe-hero__title { font-size: var(--fe-fs-display); }   /* 72px */
+
+/* Grid items default span — 4 cols of 3 (12 / 3) */
+.fe-grid > .fe-item { grid-column: span 3; }
+
+/* Half-width override available for 2-up layouts (used in /about) */
+.fe-grid > .fe-item--half { grid-column: span 6; }
+
+/* Footer: brand col + 2 link cols (3-col layout) */
+.fe-footer__grid {
+    grid-template-columns: 2fr 1fr 1fr;
+    gap: var(--fe-space-7);
+}

@@ -1,0 +1,16 @@
+/* Tablet page layout (768–1199px) — two-column grids, mid gutter. */
+.fe-container {
+    padding-left:  var(--fe-gutter-tablet);
+    padding-right: var(--fe-gutter-tablet);
+}
+
+.fe-hero__title { font-size: var(--fe-fs-h1); }    /* 48px */
+
+/* 12-col grid collapses to 2 columns of 6 */
+.fe-grid > .fe-item { grid-column: span 6; }
+
+/* Footer 2 cols (brand on top, then two lists) */
+.fe-footer__grid {
+    grid-template-columns: 1fr 1fr;
+}
+.fe-footer__grid > :first-child { grid-column: 1 / -1; }

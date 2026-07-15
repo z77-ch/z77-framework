@@ -1,0 +1,81 @@
+/* Backend content-editing language switch.
+ *
+ * A deliberately prominent banner so content is never entered in the wrong
+ * language: it states the active editing language and offers a per-language
+ * toggle. Session-sticky (see docs/topics/content.md) — the toggle links carry
+ * `?language=<code>` purely to switch; the active language lives in the session.
+ * Reused by the content list (and, later, metadata per language). */
+
+.be-lang-switch {
+    display:       flex;
+    align-items:   center;
+    gap:           var(--space-3);
+    padding:       var(--space-2) var(--space-3);
+    margin:        0 0 var(--space-4);
+    background:    var(--be-accent-soft);
+    border:        1px solid var(--be-accent);
+    border-left-width: 4px;
+    border-radius: var(--radius-md);
+}
+
+.be-lang-switch__label {
+    font-size:      0.75rem;
+    font-weight:    600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color:          var(--be-accent);
+}
+
+.be-lang-switch__current {
+    font-weight: 700;
+    color:       var(--be-text);
+}
+
+.be-lang-switch__options {
+    display:     flex;
+    gap:         var(--space-1);
+    margin-left: auto;
+}
+
+.be-lang-switch__option {
+    display:        inline-flex;
+    align-items:    center;
+    padding:        var(--space-1) var(--space-3);
+    font-size:      0.8rem;
+    font-weight:    600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color:          var(--be-muted);
+    background:     var(--be-surface);
+    border:         1px solid var(--be-line);
+    border-radius:  var(--radius-md);
+    text-decoration:none;
+    transition:     background var(--transition-fast),
+                    color      var(--transition-fast),
+                    border-color var(--transition-fast);
+}
+
+.be-lang-switch__option:hover {
+    color:        var(--be-text);
+    border-color: var(--be-accent);
+}
+
+.be-lang-switch__option--active {
+    color:        var(--color-text-inverse);
+    background:   var(--be-accent);
+    border-color: var(--be-accent);
+}
+
+/* Standalone language tag — e.g. the editor modal header, so the editing
+ * language stays visible while a document is open. */
+.be-lang-tag {
+    display:        inline-flex;
+    align-items:    center;
+    padding:        0.15rem var(--space-2);
+    font-size:      0.72rem;
+    font-weight:    700;
+    letter-spacing: 0.04em;
+    color:          var(--color-text-inverse);
+    background:     var(--be-accent);
+    border-radius:  var(--radius-md);
+}

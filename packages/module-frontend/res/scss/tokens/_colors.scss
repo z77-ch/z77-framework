@@ -1,0 +1,20 @@
+/* Frontend tokens — Swiss-Modern, monochrome.
+   Hierarchy comes from weight and size, not from colour.
+   Tokens live on the .fe viewArea wrapper, not :root (ADR-018). */
+.fe {
+    --fe-bg:           #ffffff;
+    --fe-surface:      #ffffff;
+    --fe-surface-alt:  #f6f6f6;   /* striped sections, hover surfaces */
+
+    --fe-text:         #0a0a0a;   /* almost-black for headlines / body */
+    --fe-text-soft:    #2a2a2a;   /* secondary body text */
+    --fe-muted:        #6a6a6a;   /* labels, metadata, captions */
+
+    --fe-line:         #e5e5e5;   /* hairlines, dividers */
+    --fe-line-strong:  #0a0a0a;   /* heavy section dividers */
+
+    --fe-accent:       #0a0a0a;   /* same as text — Swiss: weight is the accent, not colour */
+
+    --fe-on-dark-text: #ffffff;   /* used in inverted blocks (e.g. dark footer block) */
+    --fe-bg-dark:      #0a0a0a;
+}

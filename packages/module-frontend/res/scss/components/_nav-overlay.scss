@@ -1,0 +1,57 @@
+/* Full-screen mobile/tablet navigation overlay.
+   Hidden by default; toggled purely via the #fe-nav-toggle checkbox sibling — no JS.
+   The topbar sits above the overlay (higher z-index), so brand + hamburger-label
+   stay visible — padding-top clears the topbar height. Display rules (when the
+   hamburger is visible at all) live in nav-mobile / nav-tablet. */
+.fe-nav-overlay {
+    position:        fixed;
+    inset:           0;
+    z-index:         var(--fe-z-nav-mobile);
+    background:      var(--fe-bg);
+    display:         none;
+    flex-direction:  column;
+    padding:         calc(var(--fe-topbar-height) + var(--fe-space-5)) var(--fe-space-5) var(--fe-space-5);
+}
+
+.fe-nav-toggle:checked ~ .fe-nav-overlay { display: flex; }
+
+/* Lock page scroll while the overlay is open — :has() bridges the html boundary.
+   padding-right replaces the removed scrollbar's width (core.js publishes
+   --z77-scrollbar-width) so the page does not shift when the scrollbar disappears. */
+html:has(.fe-nav-toggle:checked) {
+    overflow: hidden;
+    padding-right: var(--z77-scrollbar-width, 0px);
+}
+
+.fe-nav-overlay__list {
+    display:    flex;
+    flex-direction: column;
+    gap:        var(--fe-space-4);
+}
+
+.fe-nav-overlay__link {
+    font-size:      var(--fe-fs-h2);
+    font-weight:    var(--fe-fw-bold);
+    line-height:    var(--fe-lh-tight);
+    letter-spacing: var(--fe-track-tight);
+    color:          var(--fe-text);
+}
+
+.fe-nav-overlay__link:hover { text-decoration: none; opacity: 0.6; }
+
+.fe-nav-overlay__link--active { text-decoration: underline; text-underline-offset: 6px; }
+
+/* Language switch inside the overlay — a horizontal row of uppercase codes,
+   separated from the main nav list by a top divider. */
+.fe-nav-overlay__list--lang {
+    flex-direction: row;
+    gap:            var(--fe-space-5);
+    padding-top:    var(--fe-space-5);
+    border-top:     1px solid var(--fe-line);
+}
+
+.fe-nav-overlay__link--lang {
+    font-size:      var(--fe-fs-lg);
+    text-transform: uppercase;
+    letter-spacing: var(--fe-track-wide);
+}

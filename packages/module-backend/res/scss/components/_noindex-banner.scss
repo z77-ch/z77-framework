@@ -1,0 +1,44 @@
+// Site-wide crawl-block Störer (SEO-NOINDEX-001, see metadata.md / bootstrap.md).
+// A large, full-width, non-dismissible band across the very top of the backend
+// shell whenever SEO_NOINDEX is active. White-on-danger for maximum, palette- and
+// theme-independent contrast — it must be impossible to overlook. Sits in normal
+// flow above `.be-shell`, so it pushes the chrome down (never overlaps content).
+
+.be-noindex-banner {
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+    box-sizing: border-box;
+    width: 100%;
+    padding: var(--space-4) var(--space-5);
+    background: var(--be-danger);
+    color: var(--be-on-accent);
+    box-shadow: var(--shadow-md);
+    z-index: var(--z-topbar);
+
+    &[hidden] { display: none; }
+}
+
+.be-noindex-banner__icon {
+    flex: 0 0 auto;
+    color: inherit;
+}
+
+.be-noindex-banner__text {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    line-height: 1.25;
+}
+
+.be-noindex-banner__title {
+    font-size: var(--font-size-lg);
+    font-weight: 700;
+    letter-spacing: 0.01em;
+}
+
+.be-noindex-banner__sub {
+    font-size: var(--font-size-sm);
+    font-weight: 500;
+    opacity: 0.92;
+}

@@ -1,0 +1,55 @@
+/* Frontend flash channel — top right, auto-dismiss for success/info, sticky for error.
+   Class names are shared with the other modules (server pushes the same envelope),
+   look is local to the frontend module. */
+.flash-messages {
+    position:       fixed;
+    top:            1.25rem;
+    right:          1.25rem;
+    z-index:        1100;
+    display:        flex;
+    flex-direction: column;
+    gap:            .65rem;
+    max-width:      24rem;
+    pointer-events: none;
+}
+
+.flash-msg {
+    display:        flex;
+    align-items:    flex-start;
+    gap:            .75rem;
+    padding:        .75rem 1rem;
+    border:         1px solid transparent;
+    border-radius:  .375rem;
+    font-size:      .9rem;
+    line-height:    1.35;
+    box-shadow:     0 2px 8px rgba(0, 0, 0, .12);
+    pointer-events: all;
+    animation:      fe-flash-in .2s ease;
+    background:     #fff;
+    color:          #111;
+}
+
+@keyframes fe-flash-in {
+    from { opacity: 0; transform: translateX(.5rem); }
+    to   { opacity: 1; transform: translateX(0); }
+}
+
+.flash-msg--success { background: #e6f4ec; border-color: #1a7f4b; color: #1a7f4b; }
+.flash-msg--info    { background: #e0f0fb; border-color: #0077b6; color: #0077b6; }
+.flash-msg--error   { background: #fef2f2; border-color: #b91c1c; color: #b91c1c; }
+
+.flash-msg__text { flex: 1; }
+
+.flash-msg__close {
+    flex-shrink: 0;
+    background:  none;
+    border:      none;
+    cursor:      pointer;
+    color:       inherit;
+    padding:     0;
+    line-height: 1;
+    font-size:   1.1rem;
+    opacity:     .7;
+
+    &:hover { opacity: 1; }
+}

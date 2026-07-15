@@ -1,0 +1,210 @@
+/* Tokens on the .be viewArea wrapper, not :root (ADR-018). The [data-be-*] theme/
+   palette overrides below keep the same specificity (0,1,0) as .be → cascade unchanged. */
+.be {
+    --color-primary:        #2563eb;
+    --color-primary-dark:   #1d4ed8;
+    --color-primary-light:  #60a5fa;
+
+    --color-success:        #1a7f4b;
+    --color-success-bg:     #e6f4ec;
+    --color-danger:         #b91c1c;
+    --color-danger-bg:      #fef2f2;
+    --color-danger-border:  #fca5a5;
+    --color-warning:        #e67e22;
+    --color-warning-bg:     #fef4e6;
+    --color-info:           #0077b6;
+    --color-info-bg:        #e0f0fb;
+
+    --color-text:           #1a1d23;
+    --color-text-muted:     #6b7280;
+    --color-text-inverse:   #ffffff;
+    --color-bg:             #f4f5f7;
+    --color-bg-surface:     #f4f5f7;
+    --color-bg-elevated:    #ffffff;
+    --color-border:         #dde1e7;
+    --color-border-focus:   var(--color-primary);
+
+    /* Backend theme tokens — Werkbank light (default): technical indigo.
+       Neutrals carry a subtle indigo bias (~244°) so the whole palette reads as one
+       family with the accent, not "indigo accent on a grey ground". */
+    --be-bg:          #f3f4fb;
+    --be-surface:     #fafbff;
+    --be-surface2:    #ffffff;
+    --be-rail:        #fafbff;
+    --be-rail-text:   #1c1f30;
+    --be-text:        #191c2b;
+    --be-muted:       #5f6480;
+    --be-line:        #dedfef;
+    --be-accent:      #4f46e5;
+    --be-accent-soft: #e9e7fd;
+    --be-good:        #1f9d57;
+    --be-warn:        #c0851c;
+    --be-danger:      #dc2626;   /* palette-independent; overridable per palette if needed */
+    --be-on-accent:   #ffffff;   /* indicator color on top of --be-accent (switch thumb, checkmark) */
+}
+
+/* Werkbank dark — technical indigo */
+[data-be-theme="dark"] {
+    --be-bg:          #12131f;
+    --be-surface:     #1a1c2b;
+    --be-surface2:    #24273a;
+    --be-rail:        #1a1c2b;
+    --be-rail-text:   #e7e8f5;
+    --be-text:        #e7e8f5;
+    --be-muted:       #8a8ea8;
+    --be-line:        #282b3e;
+    --be-accent:      #9698f5;
+    --be-accent-soft: #24243f;
+    --be-good:        #4ec98a;
+    --be-warn:        #dbaa4e;
+}
+
+/* Citrus — frisches Apfelgrün auf Eisweiß */
+[data-be-palette="citrus"] {
+    --be-bg:          #f4faf0;
+    --be-surface:     #ffffff;
+    --be-surface2:    #fafdf6;
+    --be-rail:        #ffffff;
+    --be-rail-text:   #0f1f0a;
+    --be-text:        #0f1f0a;
+    --be-muted:       #5d6e54;
+    --be-line:        #e1ebd6;
+    --be-accent:      #5cb338;
+    --be-accent-soft: #e2f3d6;
+    --be-good:        #5cb338;
+    --be-warn:        #e89930;
+}
+[data-be-palette="citrus"][data-be-theme="dark"] {
+    --be-bg:          #0d130a;
+    --be-surface:     #141b10;
+    --be-surface2:    #1c2516;
+    --be-rail:        #141b10;
+    --be-rail-text:   #e9f4dd;
+    --be-text:        #e9f4dd;
+    --be-muted:       #8a9b7c;
+    --be-line:        #26301d;
+    --be-accent:      #a3e635;
+    --be-accent-soft: #1f2c12;
+    --be-good:        #a3e635;
+    --be-warn:        #fbbf24;
+}
+
+/* Coral — Korallenrot auf Creme */
+[data-be-palette="coral"] {
+    --be-bg:          #fff8f3;
+    --be-surface:     #fffdf9;
+    --be-surface2:    #ffffff;
+    --be-rail:        #fffdf9;
+    --be-rail-text:   #2a1a14;
+    --be-text:        #2a1a14;
+    --be-muted:       #7c6359;
+    --be-line:        #f4dccd;
+    --be-accent:      #ff6b4a;
+    --be-accent-soft: #ffe0d5;
+    --be-good:        #3fa86a;
+    --be-warn:        #f4a224;
+}
+[data-be-palette="coral"][data-be-theme="dark"] {
+    --be-bg:          #1a110d;
+    --be-surface:     #221813;
+    --be-surface2:    #2c1e18;
+    --be-rail:        #221813;
+    --be-rail-text:   #fce8dc;
+    --be-text:        #fce8dc;
+    --be-muted:       #a6897c;
+    --be-line:        #33241d;
+    --be-accent:      #ff8866;
+    --be-accent-soft: #3a1f15;
+    --be-good:        #5fc485;
+    --be-warn:        #fbbf42;
+}
+
+/* Lagune — Türkis auf Eisweiß */
+[data-be-palette="lagune"] {
+    --be-bg:          #eff8f9;
+    --be-surface:     #ffffff;
+    --be-surface2:    #f7fcfd;
+    --be-rail:        #ffffff;
+    --be-rail-text:   #0a2226;
+    --be-text:        #0a2226;
+    --be-muted:       #5d7a80;
+    --be-line:        #d2e8ec;
+    --be-accent:      #0aa5b5;
+    --be-accent-soft: #cdecf0;
+    --be-good:        #3eb489;
+    --be-warn:        #f59e0b;
+}
+[data-be-palette="lagune"][data-be-theme="dark"] {
+    --be-bg:          #08161a;
+    --be-surface:     #0e1f24;
+    --be-surface2:    #13282e;
+    --be-rail:        #0e1f24;
+    --be-rail-text:   #dcf0f3;
+    --be-text:        #dcf0f3;
+    --be-muted:       #7c9aa1;
+    --be-line:        #1d343a;
+    --be-accent:      #22d3ee;
+    --be-accent-soft: #0f2a32;
+    --be-good:        #5fc99c;
+    --be-warn:        #fbbf24;
+}
+
+/* Beere — Magenta/Pflaume auf Rosé */
+[data-be-palette="beere"] {
+    --be-bg:          #fbf3f6;
+    --be-surface:     #fffdfe;
+    --be-surface2:    #ffffff;
+    --be-rail:        #fffdfe;
+    --be-rail-text:   #260e1c;
+    --be-text:        #260e1c;
+    --be-muted:       #7c5b6c;
+    --be-line:        #ecd6e0;
+    --be-accent:      #c2185b;
+    --be-accent-soft: #fad4e2;
+    --be-good:        #3fa86a;
+    --be-warn:        #e6a020;
+}
+[data-be-palette="beere"][data-be-theme="dark"] {
+    --be-bg:          #170a11;
+    --be-surface:     #1f1018;
+    --be-surface2:    #28161f;
+    --be-rail:        #1f1018;
+    --be-rail-text:   #f5dce7;
+    --be-text:        #f5dce7;
+    --be-muted:       #a3839a;
+    --be-line:        #2f1c25;
+    --be-accent:      #ec4899;
+    --be-accent-soft: #391421;
+    --be-good:        #5fc485;
+    --be-warn:        #fbbf42;
+}
+
+/* Sonne — Mango/Bernstein auf Bonbonweiß */
+[data-be-palette="sonne"] {
+    --be-bg:          #fffbed;
+    --be-surface:     #ffffff;
+    --be-surface2:    #fffefa;
+    --be-rail:        #ffffff;
+    --be-rail-text:   #231a08;
+    --be-text:        #231a08;
+    --be-muted:       #75674a;
+    --be-line:        #f3e6c2;
+    --be-accent:      #e08a1c;
+    --be-accent-soft: #ffe9b5;
+    --be-good:        #5cb338;
+    --be-warn:        #d97706;
+}
+[data-be-palette="sonne"][data-be-theme="dark"] {
+    --be-bg:          #15110a;
+    --be-surface:     #1d180e;
+    --be-surface2:    #262014;
+    --be-rail:        #1d180e;
+    --be-rail-text:   #fcf2d8;
+    --be-text:        #fcf2d8;
+    --be-muted:       #a6916a;
+    --be-line:        #2d2618;
+    --be-accent:      #f5b528;
+    --be-accent-soft: #332615;
+    --be-good:        #a3e635;
+    --be-warn:        #fb923c;
+}

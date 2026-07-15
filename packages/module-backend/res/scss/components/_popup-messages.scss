@@ -1,0 +1,49 @@
+.msg-popups {
+    position:       fixed;
+    bottom:         var(--space-5);
+    left:           var(--space-5);
+    z-index:        var(--z-message);
+    display:        flex;
+    flex-direction: column-reverse;
+    gap:            var(--space-3);
+    max-width:      24rem;
+    pointer-events: none;
+}
+
+.msg-popup {
+    display:        flex;
+    align-items:    flex-start;
+    gap:            var(--space-3);
+    padding:        var(--space-3) var(--space-4);
+    border:         1px solid transparent;
+    border-radius:  var(--radius-md);
+    font-size:      var(--font-size-sm);
+    box-shadow:     0 4px 14px rgba(0, 0, 0, 0.16);
+    pointer-events: all;
+    animation:      msg-popup-in 0.2s ease;
+}
+
+@keyframes msg-popup-in {
+    from { opacity: 0; transform: translateX(-0.5rem); }
+    to   { opacity: 1; transform: translateX(0); }
+}
+
+.msg-popup--success { background: var(--color-success-bg); border-color: var(--color-success); color: var(--color-success); }
+.msg-popup--info    { background: var(--color-info-bg);    border-color: var(--color-info);    color: var(--color-info); }
+.msg-popup--error   { background: var(--color-danger-bg);  border-color: var(--color-danger);  color: var(--color-danger); }
+
+.msg-popup__text { flex: 1; }
+
+.msg-popup__close {
+    flex-shrink: 0;
+    background:  none;
+    border:      none;
+    cursor:      pointer;
+    color:       inherit;
+    padding:     0;
+    line-height: 1;
+    font-size:   1rem;
+    opacity:     0.7;
+
+    &:hover { opacity: 1; }
+}

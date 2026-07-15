@@ -1,0 +1,93 @@
+{
+    "name": "myvendor/myproject",
+    "description": "A z77 framework project",
+    "type": "project",
+    "license": "MIT",
+
+    "authors": [
+        {
+          "name": "Peter Ruepp",
+          "email": "peter.ruepp@z77.ch"
+        }
+    ],
+
+    "minimum-stability": "dev",
+    "prefer-stable": true,
+
+    "require": {
+        "php": ">=8.2",
+        "z77/kernel": "*",
+        "z77/module-frontend": "*",
+        "z77/module-backend": "*",
+        "z77/module-dms": "*"
+    },
+
+    "repositories": [
+        {"type": "path", "url": "../packages/kernel"},
+        {"type": "path", "url": "../packages/module-frontend"},
+        {"type": "path", "url": "../packages/module-backend"},
+        {"type": "path", "url": "../packages/module-dms"}
+    ],
+
+    "autoload": {
+        "psr-4": {
+            "Z77\\Core\\": ["override/z77/core/src/"],
+            "Z77\\Shared\\": ["override/z77/shared/src/"],
+            "Z77\\Persistence\\": ["override/z77/persistence/src/"],
+            "Z77\\Module\\Frontend\\": ["override/z77/module/frontend/src/"],
+            "Z77\\Module\\Backend\\": ["override/z77/module/backend/src/"],
+            "Z77\\Module\\Dms\\": ["override/z77/module/dms/src/"]
+        }
+    },
+
+    "scripts": {
+        "post-install-cmd": [
+            "Z77\\Core\\Installer\\Install::run"
+        ],
+        "post-update-cmd": [
+            "Z77\\Core\\Installer\\Install::run"
+        ],
+        "dev": [
+            "@composer install",
+            "php -S localhost:8080 -t public"
+        ]
+    },
+
+    "extra": {
+        "core-bootstrap": {
+            "debug": true,
+            "timeZone": "Europe/Zurich",
+            "cacheDir": "lib/cache",
+            "htmlRoot": "public",
+            "overrideDir": "override",
+            "moduleDir": "module",
+            "assetDir": "assets",
+            "tplDir": "res/view/templates"
+        },
+        "core-module-manager": {
+            "frameworkPrefix": "Z77",
+            "modulePrefix": "Module",
+            "defaultModule": "frontend"
+        },
+        "directories": {
+            "moduleTree": {
+                "controllers": "<*overrideDir*>/<moduleDir>/<*module*>/src/Ui/Controllers",
+                "appServices": "<*overrideDir*>/<moduleDir>/<*module*>/src/App/Services",
+                "domain": {
+                    "a": "<*overrideDir*>/<moduleDir>/<*module*>/src/Dom/Entities",
+                    "b": "<*overrideDir*>/<moduleDir>/<*module*>/src/Dom/Repositories",
+                    "c": "<*overrideDir*>/<moduleDir>/<*module*>/src/Dom/Validators",
+                    "d": "<*overrideDir*>/<moduleDir>/<*module*>/src/Dom/Services"
+                },
+                "res": "<*overrideDir*>/<moduleDir>/<*module*>/<tplDir>"
+            },
+            "logs": "logs",
+            "publicAssetTree": {
+                "asset_css": "<htmlRoot>/<assetDir>/<*module*>/css",
+                "asset_js": "<htmlRoot>/<assetDir>/<*module*>/js",
+                "asset_images": "<htmlRoot>/<assetDir>/<*module*>/images",
+                "asset_storage": "<htmlRoot>/storage"
+            }
+        }
+    }
+}

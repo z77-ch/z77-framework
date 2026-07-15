@@ -1,0 +1,31 @@
+/* System fonts only — no web-font loading. Swiss-Modern leans on Helvetica
+   on macOS / Arial on Windows / Inter via system-ui on modern desktops.
+   Tokens live on the .fe viewArea wrapper, not :root (ADR-018). */
+.fe {
+    --fe-font-sans: 'Helvetica Neue', Helvetica, Arial, system-ui, sans-serif;
+    --fe-font-mono: ui-monospace, 'SF Mono', 'Cascadia Code', Menlo, Consolas, monospace;
+
+    /* Body scale */
+    --fe-fs-xs:  0.75rem;     /* 12px */
+    --fe-fs-sm:  0.875rem;    /* 14px */
+    --fe-fs-md:  1rem;        /* 16px — body */
+    --fe-fs-lg:  1.125rem;    /* 18px */
+
+    /* Display scale — set big, used for headlines + hero */
+    --fe-fs-h3:  1.5rem;      /* 24px  — section sub-heads */
+    --fe-fs-h2:  2.25rem;     /* 36px  — page sub-titles */
+    --fe-fs-h1:  3rem;        /* 48px  — page titles (tablet) */
+    --fe-fs-display: 4.5rem;  /* 72px  — hero (desktop)  */
+
+    --fe-fw-regular: 400;
+    --fe-fw-medium:  500;
+    --fe-fw-bold:    700;
+
+    --fe-lh-tight: 1.05;       /* headlines */
+    --fe-lh-snug:  1.25;
+    --fe-lh-base:  1.55;       /* body */
+
+    --fe-track-tight: -0.02em; /* used for large headlines */
+    --fe-track-base:  0;
+    --fe-track-wide:  0.08em;  /* eyebrow / overline labels */
+}

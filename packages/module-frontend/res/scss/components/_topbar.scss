@@ -1,0 +1,133 @@
+/* Fixed top navigation bar — sits above page content (body has padding-top).
+   Layout (which items are visible, hamburger vs full nav) is media-bound and
+   lives in nav-mobile / nav-tablet / nav-desktop.
+
+   The mobile/tablet overlay is driven by a hidden #fe-nav-toggle checkbox — no JS.
+   See _nav-overlay.scss for the open-state rules. */
+.fe-topbar {
+    position:   fixed;
+    top:        0;
+    left:       0;
+    right:      0;
+    z-index:    var(--fe-z-topbar);
+    height:     var(--fe-topbar-height);
+    background: var(--fe-bg);
+    border-bottom: 1px solid var(--fe-line);
+}
+
+.fe-topbar__inner {
+    height:          100%;
+    display:         flex;
+    align-items:     center;
+    justify-content: space-between;
+    gap:             var(--fe-space-5);
+}
+
+.fe-topbar__brand {
+    font-weight:    var(--fe-fw-bold);
+    font-size:      1.125rem;
+    letter-spacing: var(--fe-track-tight);
+    color:          var(--fe-text);
+}
+
+.fe-topbar__nav {
+    display:     flex;
+    align-items: center;
+    gap:         var(--fe-space-6);
+}
+
+.fe-topbar__link {
+    font-size:   var(--fe-fs-sm);
+    font-weight: var(--fe-fw-medium);
+    color:       var(--fe-text-soft);
+    padding-bottom: 2px;
+    border-bottom: 1px solid transparent;
+    transition:  color var(--fe-transition-fast), border-color var(--fe-transition-fast);
+}
+
+.fe-topbar__link:hover {
+    color:           var(--fe-text);
+    text-decoration: none;
+    border-color:    var(--fe-text);
+}
+
+.fe-topbar__link--active {
+    color:        var(--fe-text);
+    border-color: var(--fe-text);
+}
+
+/* Language switch — a compact, uppercase group set apart from the main nav
+   by a left divider. Carries fe-topbar__nav, so it shows/hides with the nav
+   per breakpoint (mobile/tablet route the switch into the overlay instead). */
+.fe-topbar__nav--lang {
+    gap:          var(--fe-space-3);
+    padding-left: var(--fe-space-5);
+    border-left:  1px solid var(--fe-line);
+}
+
+.fe-topbar__link--lang {
+    font-size:      var(--fe-fs-xs);
+    text-transform: uppercase;
+    letter-spacing: var(--fe-track-wide);
+}
+
+/* Hidden checkbox — drives overlay open/close via :has() / sibling selectors.
+   Visually hidden but keyboard-focusable for accessibility. */
+.fe-nav-toggle {
+    position: absolute;
+    width:    1px;
+    height:   1px;
+    margin:   -1px;
+    padding:  0;
+    border:   0;
+    overflow: hidden;
+    clip:     rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+}
+
+/* Hamburger label (rendered always; layout files decide when it shows).
+   Clicking the label toggles the hidden checkbox. */
+.fe-topbar__hamburger {
+    width:           40px;
+    height:          40px;
+    display:         flex;
+    align-items:     center;
+    justify-content: center;
+    border:          1px solid var(--fe-line);
+    cursor:          pointer;
+}
+
+.fe-topbar__hamburger:hover { border-color: var(--fe-text); }
+
+.fe-topbar__hamburger-icon,
+.fe-topbar__hamburger-icon::before,
+.fe-topbar__hamburger-icon::after {
+    display:    block;
+    width:      18px;
+    height:     2px;
+    background: var(--fe-text);
+    position:   relative;
+}
+
+.fe-topbar__hamburger-icon::before,
+.fe-topbar__hamburger-icon::after {
+    content:  '';
+    position: absolute;
+    left:     0;
+}
+
+.fe-topbar__hamburger-icon::before { top: -6px; }
+.fe-topbar__hamburger-icon::after  { top:  6px; }
+
+/* Open state — morph hamburger into a × at the same slot.
+   Driven purely by the hidden checkbox state. */
+.fe-nav-toggle:checked ~ .fe-topbar .fe-topbar__hamburger-icon         { background: transparent; }
+.fe-nav-toggle:checked ~ .fe-topbar .fe-topbar__hamburger-icon::before { top: 0; transform: rotate( 45deg); }
+.fe-nav-toggle:checked ~ .fe-topbar .fe-topbar__hamburger-icon::after  { top: 0; transform: rotate(-45deg); }
+
+/* Focus ring on the visual button when the hidden checkbox has keyboard focus. */
+.fe-nav-toggle:focus-visible ~ .fe-topbar .fe-topbar__hamburger {
+    outline:        2px solid var(--fe-text);
+    outline-offset: 2px;
+}

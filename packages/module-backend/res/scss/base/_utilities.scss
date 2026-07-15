@@ -1,0 +1,9 @@
+@use '../tokens/typography' as typo;
+
+// Font-size cap utility. Add .be-font-cap to any region that should follow the
+// font-scale slider only up to --be-font-scale-cap, then stop growing — so dense
+// or technical content (mono paths, info dumps) never blows up the layout.
+// Extend coverage by adding the class in markup; no other change needed.
+.be-font-cap {
+    @include typo.font-size-capped;
+}

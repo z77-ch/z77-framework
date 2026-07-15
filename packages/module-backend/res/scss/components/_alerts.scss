@@ -1,0 +1,13 @@
+/* ── Inline alert inside a modal body ──────────────────────────────────── */
+.be-modal__alert {
+    padding:       .65rem .8rem;
+    border-radius: .375rem;
+    font-size:     .8rem;
+    margin-bottom: 1rem;
+}
+
+.be-modal__alert--error {
+    background: color-mix(in srgb, var(--be-danger) 8%, transparent);
+    color:      var(--be-danger);
+    border:     1px solid color-mix(in srgb, var(--be-danger) 25%, transparent);
+}

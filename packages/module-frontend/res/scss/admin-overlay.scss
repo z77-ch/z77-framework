@@ -1,0 +1,122 @@
+// Admin overlay — self-contained, isolated styling.
+//
+// Deliberately defines its OWN design tokens and font on the root and does NOT
+// @use the frontend tokens, so it fully overrides the frontend's colours/fonts
+// and looks identical on any site. Compiles standalone to admin-overlay.css and
+// is loaded (only for admins) via AbstractFrontendController::html().
+//
+// Reveal: a single fixed element peeks ~30px (the rail) at the right edge and
+// slides fully in on hover/focus — one element, no hover-bridge gap.
+
+.z77-admin-overlay {
+    --ao-bg:      #1e2330;
+    --ao-surface: #272d3d;
+    --ao-line:    #3a4256;
+    --ao-text:    #e7ebf3;
+    --ao-muted:   #98a2b8;
+    --ao-accent:  #6ea8fe;
+
+    position:      fixed;
+    right:         0;
+    top:           50%;
+    transform:     translate(calc(100% - 30px), -50%);
+    display:       flex;
+    align-items:   stretch;
+    width:         270px;
+    max-width:     90vw;
+    background:    var(--ao-bg);
+    border:        1px solid var(--ao-line);
+    border-right:  none;
+    border-radius: 10px 0 0 10px;
+    box-shadow:    -8px 0 24px rgba(0, 0, 0, 0.35);
+    color:         var(--ao-text);
+    font-family:   ui-sans-serif, system-ui, "Segoe UI", Roboto, Arial, sans-serif;
+    font-size:     13px;
+    line-height:   1.4;
+    z-index:       2147483000;
+    transition:    transform 0.22s ease;
+
+    * { box-sizing: border-box; }
+
+    &:hover,
+    &:focus-within { transform: translate(0, -50%); }
+
+    &__rail {
+        flex:            0 0 30px;
+        display:         flex;
+        align-items:     center;
+        justify-content: center;
+        gap:             8px;
+        writing-mode:    vertical-rl;
+        text-orientation: mixed;
+        padding:         10px 0;
+        font-size:       11px;
+        letter-spacing:  0.14em;
+        text-transform:  uppercase;
+        color:           var(--ao-muted);
+        border-right:    1px solid var(--ao-line);
+        user-select:     none;
+    }
+    &__rail-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ao-accent); }
+
+    &__panel { flex: 1; min-width: 0; padding: 12px; }
+
+    &__identity {
+        display:       flex;
+        align-items:   center;
+        gap:           8px;
+        padding-bottom: 10px;
+        border-bottom: 1px solid var(--ao-line);
+        margin-bottom: 10px;
+    }
+    &__avatar {
+        width:           30px;
+        height:          30px;
+        border-radius:   50%;
+        background:      var(--ao-accent);
+        color:           var(--ao-bg);
+        display:         flex;
+        align-items:     center;
+        justify-content: center;
+        font-weight:     600;
+        font-size:       12px;
+        flex-shrink:     0;
+    }
+    &__id-text { display: flex; flex-direction: column; min-width: 0; }
+    &__name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    &__role { color: var(--ao-muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; }
+
+    &__section { margin-bottom: 10px; }
+    &__label   { color: var(--ao-muted); font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; margin: 0 0 5px; }
+
+    &__env {
+        display:       flex;
+        align-items:   center;
+        gap:           8px;
+        padding:       6px 8px;
+        border-radius: 7px;
+        color:         var(--ao-text);
+        text-decoration: none;
+    }
+    &__env:hover     { background: var(--ao-surface); }
+    &__env.is-active { color: var(--ao-accent); font-weight: 600; }
+    &__dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+
+    &__info { margin: 0; display: grid; gap: 3px; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 11px; }
+    &__info > div { display: grid; grid-template-columns: 70px 1fr; gap: 8px; }
+    &__info dt { color: var(--ao-muted); }
+    &__info dd { margin: 0; color: var(--ao-text); word-break: break-all; }
+
+    &__logout {
+        display:       block;
+        text-align:    center;
+        margin-top:    4px;
+        padding:       8px;
+        border-radius: 7px;
+        background:    var(--ao-surface);
+        color:         var(--ao-text);
+        text-decoration: none;
+        font-weight:   500;
+    }
+    &__logout:hover { background: #3a2230; color: #ff9aa8; }
+}

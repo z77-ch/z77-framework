@@ -1,0 +1,203 @@
+/* ── Basic form group (single column, vertical stack) ───────────────────── */
+.be-form__group {
+    display:        flex;
+    flex-direction: column;
+    gap:            .3rem;
+    margin-bottom:  .75rem;
+}
+
+.be-form__label {
+    font-size:   .8rem;
+    font-weight: 500;
+    color:       var(--be-muted);
+}
+
+.be-form__label--required::after {
+    content: ' *';
+    color:   var(--be-danger);
+}
+
+.be-form__control {
+    width:         100%;
+    padding:       .45rem .65rem;
+    border:        1px solid var(--be-line);
+    border-radius: .375rem;
+    font-size:     .875rem;
+    color:         var(--be-text);
+    background:    var(--be-surface);
+    transition:    border-color .12s, box-shadow .12s;
+}
+
+.be-form__control:focus {
+    border-color: var(--be-accent);
+    box-shadow:   0 0 0 2px color-mix(in srgb, var(--be-accent) 15%, transparent);
+    outline:      none;
+}
+
+/* ── Modal form grid (two-column edit layout) ───────────────────────────── */
+.be-form__grid {
+    display:               grid;
+    grid-template-columns: 1fr 1fr;
+    gap:                   .75rem 1rem;
+    margin-bottom:         1rem;
+}
+
+.be-form__field {
+    display:        flex;
+    flex-direction: column;
+    gap:            .3rem;
+}
+
+.be-form__field label {
+    font-size:   .8rem;
+    font-weight: 500;
+    color:       var(--be-muted);
+}
+
+.be-form__field input,
+.be-form__field select,
+.be-form__grid > select {
+    padding:       .45rem .65rem;
+    border:        1px solid var(--be-line);
+    border-radius: .375rem;
+    font-size:     .875rem;
+    background:    var(--be-surface);
+    color:         var(--be-text);
+}
+
+/* the normalize reset strips `appearance` from ALL form controls — a select then
+ * renders as bare text with no dropdown affordance; restore the native control
+ * (`.be-form__grid > select` covers bare selects placed straight in a grid, e.g.
+ * the ACL grant row of the Drive edit modal) */
+.be-form__field select,
+.be-form__grid > select {
+    appearance: auto;
+    cursor:     pointer;
+}
+
+.be-form__field input:focus,
+.be-form__field select:focus,
+.be-form__grid > select:focus {
+    outline:      none;
+    border-color: var(--be-accent);
+    box-shadow:   0 0 0 2px color-mix(in srgb, var(--be-accent) 15%, transparent);
+}
+
+.be-form__field input[aria-invalid="true"],
+.be-form__field select[aria-invalid="true"]        { border-color: var(--be-danger); }
+.be-form__field input[aria-invalid="true"]:focus,
+.be-form__field select[aria-invalid="true"]:focus  { border-color: var(--be-danger); box-shadow: 0 0 0 2px color-mix(in srgb, var(--be-danger) 15%, transparent); }
+.be-form__field-error                             { font-size: .75rem; color: var(--be-danger); margin-top: .15rem; }
+.be-form__hint                                    { font-size: .75rem; color: var(--be-muted); margin-top: .15rem; }
+
+/* ── Section heading inside modal forms ─────────────────────────────────── */
+.be-form__section {
+    font-size:      .8rem;
+    font-weight:    600;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    color:          var(--be-muted);
+    margin:         1rem 0 .5rem;
+}
+
+/* ── Choice: general radio / checkbox selection ─────────────────────────────
+ * Shared backend style for selectable radio/checkbox options. Both types render
+ * identically — a compact box that fills with a checkmark when selected, so the
+ * "set" state is obvious at a glance. Add .be-choice--filled to additionally
+ * tint the whole row. Group layout is the container's job (e.g. .be-form__tag-grid).
+ */
+.be-choice {
+    display:     inline-flex;
+    align-items: center;
+    gap:         .45rem;
+    font-size:   .875rem;
+    line-height: 1.2;
+    cursor:      pointer;
+}
+
+.be-choice__input {
+    appearance:         none;
+    -webkit-appearance: none;
+    flex:          0 0 auto;
+    width:         1.05rem;
+    height:        1.05rem;
+    margin:        0;
+    display:       grid;
+    place-content: center;
+    border:        1px solid var(--be-line);
+    border-radius: .25rem;
+    background:    var(--be-surface);
+    cursor:        pointer;
+    transition:    background .12s, border-color .12s;
+}
+
+.be-choice__input::after {
+    content:     "\2713"; // check — shown when selected
+    font-size:   .75rem;
+    font-weight: 700;
+    line-height: 1;
+    color:       var(--be-on-accent);
+    opacity:     0;
+    transition:  opacity .12s;
+}
+
+.be-choice:hover .be-choice__input { border-color: var(--be-accent); }
+
+.be-choice__input:focus-visible {
+    outline:    none;
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--be-accent) 25%, transparent);
+}
+
+.be-choice__input:checked {
+    background:   var(--be-accent);
+    border-color: var(--be-accent);
+}
+.be-choice__input:checked::after { opacity: 1; }
+
+.be-choice__label { color: var(--be-text); }
+
+/* optional: tint the whole option row when selected */
+.be-choice--filled {
+    padding:       .3rem .55rem;
+    border:        1px solid transparent;
+    border-radius: .375rem;
+    transition:    background .12s, border-color .12s;
+}
+.be-choice--filled:has(.be-choice__input:checked) {
+    border-color: var(--be-accent);
+    background:    color-mix(in srgb, var(--be-accent) 12%, var(--be-surface));
+}
+
+/* ── Tag picker layout (wraps .be-choice options) ───────────────────────── */
+.be-form__tag-grid { display: flex; flex-wrap: wrap; gap: .35rem 1rem; }
+
+.be-form__children-header {
+    display:         flex;
+    align-items:     center;
+    justify-content: space-between;
+    margin:          1.25rem 0 .5rem;
+}
+
+/* ── Params editor (dynamic key/value rows) ─────────────────────────────── */
+.be-form__param-row {
+    display:               grid;
+    grid-template-columns: 1fr 1fr auto;
+    gap:                   .4rem;
+    margin-bottom:         .35rem;
+    align-items:           center;
+}
+
+.be-form__param-row input {
+    padding:       .35rem .55rem;
+    border:        1px solid var(--be-line);
+    border-radius: .375rem;
+    font-size:     .85rem;
+    background:    var(--be-surface);
+    color:         var(--be-text);
+}
+
+.be-form__param-row input:focus {
+    outline:      none;
+    border-color: var(--be-accent);
+    box-shadow:   0 0 0 2px color-mix(in srgb, var(--be-accent) 15%, transparent);
+}

@@ -1,0 +1,18 @@
+{
+    "name": "z77-framework",
+    "private": true,
+    "scripts": {
+        "watch:backend": "sass --watch packages/module-backend/res/scss:packages/module-backend/res/assets/css",
+        "watch:frontend": "sass --watch packages/module-frontend/res/scss:packages/module-frontend/res/assets/css",
+        "watch:dms": "sass --watch packages/module-dms/res/scss:packages/module-dms/res/assets/css",
+        "watch": "sass --watch packages/module-backend/res/scss:packages/module-backend/res/assets/css packages/module-frontend/res/scss:packages/module-frontend/res/assets/css packages/module-dms/res/scss:packages/module-dms/res/assets/css",
+        "build:backend": "sass packages/module-backend/res/scss:packages/module-backend/res/assets/css --style=compressed --no-source-map",
+        "build:frontend": "sass packages/module-frontend/res/scss:packages/module-frontend/res/assets/css --style=compressed --no-source-map",
+        "build:dms": "sass packages/module-dms/res/scss:packages/module-dms/res/assets/css --style=compressed --no-source-map",
+        "build": "sass packages/module-backend/res/scss:packages/module-backend/res/assets/css packages/module-frontend/res/scss:packages/module-frontend/res/assets/css packages/module-dms/res/scss:packages/module-dms/res/assets/css --style=compressed --no-source-map",
+        "docs:check": "node docs-lint/index.js"
+    },
+    "devDependencies": {
+        "sass": "^1.99.0"
+    }
+}

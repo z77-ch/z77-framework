@@ -1,0 +1,54 @@
+@use '../tokens/typography' as typo;
+
+// Backend button system.
+// `.be-btn` is the single, palette-aware button used across the whole backend
+// (lists, modals, forms, login/setup). Colors reference --be-* tokens so buttons
+// follow the active palette + light/dark theme.
+
+.be-btn {
+    // Cap font growth so button labels never blow up the layout at high slider
+    // values (see tokens/_typography.scss). Applies to .be-btn--sm too.
+    @include typo.font-size-capped;
+
+    display:       inline-flex;
+    align-items:   center;
+    gap:           .35rem;
+    padding:       .4rem .85rem;
+    border:        1px solid transparent;
+    border-radius: var(--radius-md);
+    font-size:     var(--font-size-sm);
+    font-weight:   var(--font-weight-medium);
+    cursor:        pointer;
+    transition:    background var(--transition-fast), border-color var(--transition-fast);
+}
+
+.be-btn--primary       { background: var(--be-accent); color: var(--color-text-inverse); border-color: var(--be-accent); }
+.be-btn--primary:hover { filter: brightness(1.1); }
+
+.be-btn--ghost         { background: transparent; border-color: var(--be-line); color: var(--be-text); }
+.be-btn--ghost:hover   { background: var(--be-bg); }
+
+.be-btn--danger        { color: var(--be-danger); border-color: var(--color-danger-border); }
+.be-btn--danger:hover  { background: var(--color-danger-bg); }
+
+.be-btn--sm   { padding: .25rem .6rem; font-size: var(--font-size-xs); }
+.be-btn--full { width: 100%; justify-content: center; }
+
+.be-btn[disabled],
+.be-btn--disabled { opacity: .5; cursor: not-allowed; pointer-events: none; }
+
+// Icon-only action button (row actions, headers).
+.be-icon-btn {
+    display:       flex;
+    align-items:   center;
+    padding:       .25rem;
+    background:    none;
+    border:        1px solid transparent;
+    border-radius: var(--radius-sm);
+    color:         var(--be-muted);
+    cursor:        pointer;
+    transition:    background var(--transition-fast), color var(--transition-fast);
+}
+
+.be-icon-btn:hover         { background: var(--be-line); color: var(--be-text); }
+.be-icon-btn--danger:hover { background: var(--color-danger-bg); color: var(--be-danger); }

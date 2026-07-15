@@ -1,0 +1,125 @@
+.be-modal {
+    border:        none;
+    border-radius: .5rem;
+    padding:       0;
+    box-shadow:    0 20px 60px rgba(0, 0, 0, .25);
+    max-width:     760px;
+    width:         95vw;
+    max-height:    90vh;
+    overflow:      hidden;
+    background:    var(--be-surface);
+    color:         var(--be-text);
+    // Centre the modal both axes. The UA centres an open modal <dialog> via
+    // `margin:auto` (inset:0), but the global `* { margin:0 }` reset kills it —
+    // restore it here. Only `.be-modal` (dialog popups); panels are unaffected.
+    margin:        auto;
+}
+
+.be-modal::backdrop { background: rgba(0, 0, 0, .4); }
+
+.be-modal__inner {
+    position:       relative;
+    display:        flex;
+    flex-direction: column;
+    max-height:     90vh;
+    min-height:     0;
+}
+
+// The popup body + the injected <form> are flex columns too, so the flex chain
+// reaches .be-modal__body — without this the body never gets a bounded height
+// and overflows the dialog's `overflow:hidden` (clipped, no scroll).
+.be-modal__inner > .z77-popup__body,
+.be-modal__inner > .z77-popup__body > form {
+    display:        flex;
+    flex-direction: column;
+    flex:           1 1 auto;
+    min-height:     0;
+}
+
+// Fullscreen variant — toggled via [data-fullscreen] on the dialog by the popup
+// channel (data-popup-fullscreen button). Generic: applies to every popup.
+.be-modal[data-fullscreen] {
+    width:      98vw;
+    max-width:  98vw;
+    height:     96vh;
+    max-height: 96vh;
+}
+.be-modal[data-fullscreen] .be-modal__inner {
+    height:     100%;
+    max-height: 96vh;
+}
+
+.be-modal__fullscreen {
+    position:        absolute;
+    top:             .5rem;
+    right:           .6rem;
+    z-index:         2;
+    display:         inline-flex;
+    align-items:     center;
+    justify-content: center;
+    width:           1.9rem;
+    height:          1.9rem;
+    padding:         0;
+    border:          none;
+    border-radius:   .4rem;
+    background:      transparent;
+    color:           var(--be-muted);
+    cursor:          pointer;
+}
+.be-modal__fullscreen:hover {
+    background: var(--be-line);
+    color:      var(--be-text);
+}
+.be-modal__fs-icon--compress { display: none; }
+.be-modal[data-fullscreen] .be-modal__fs-icon--expand   { display: none; }
+.be-modal[data-fullscreen] .be-modal__fs-icon--compress { display: inline; }
+
+.be-modal__header {
+    display:         flex;
+    align-items:     center;
+    justify-content: space-between;
+    padding:         1rem 1.25rem;
+    border-bottom:   1px solid var(--be-line);
+    flex-shrink:     0;
+}
+
+.be-modal__title {
+    font-size:   1rem;
+    font-weight: 600;
+    margin:      0;
+}
+
+.be-modal__close {
+    background: none;
+    border:     none;
+    font-size:  1.25rem;
+    cursor:     pointer;
+    color:      var(--be-muted);
+}
+
+.be-modal__body {
+    overflow-y: auto;
+    padding:    1.25rem;
+    flex:       1 1 auto;
+    min-height: 0;
+}
+
+// Top-of-body collection row for status switches (active, …). Holds one or more
+// .be-switch and separates them from the form fields below.
+.be-modal__switches {
+    display:       flex;
+    flex-wrap:     wrap;
+    gap:           1rem .75rem;
+    padding-bottom: .85rem;
+    margin-bottom:  1rem;
+    border-bottom:  1px solid var(--be-line);
+}
+
+.be-modal__footer {
+    display:         flex;
+    justify-content: flex-end;
+    gap:             .5rem;
+    padding:         1rem 1.25rem;
+    border-top:      1px solid var(--be-line);
+    flex-shrink:     0;
+}
