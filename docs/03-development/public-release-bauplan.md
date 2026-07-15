@@ -1,6 +1,6 @@
 # Bauplan — z77 v1.0.0 Public Release (Doku-Gate)
 
-**Status:** `[IN PROGRESS]`
+**Status:** `[DONE]`
 **Date:** 2026-07-15
 
 Ziel: Framework öffentlich machen, um es ersten Entwicklern zu präsentieren.
@@ -12,18 +12,14 @@ Basis: Doku-Analyse vom 2026-07-15. Diese Datei ist die Abhak-Liste; nach jedem
 erledigten Schritt hier den Haken setzen und (wo betroffen) `npm run docs:check`
 grün halten.
 
-> **Stand 2026-07-15 — HIER WEITER:** Phase 1/2 durch; #6–#9 erledigt. #12
-> **Audit + Anonymisierung erledigt** (aktueller HEAD sauber: kein Kundenname,
-> keine internen Zugangsdetails, keine echten Secrets — Details unten).
-> **Offen und bewusst aufgeschoben: der Orphan-Squash** (History wegwerfen +
-> force-push) — Owner-Entscheid: erst als **allerletzter Schritt vor #11 (Public-
-> Schalten)** ausführen, Repo bleibt bis dahin privat. #10 **erledigt**. #11-Vorbereitung
-> läuft: Handbook-Gate **geschlossen** (conventions/vision/onboarding auf `[CURRENT]`,
-> Database-Aussage). **Korrigierte Public-Sequenz** (Grund: es gibt keinen `1.0.0`-Tag;
-> Tag+Split müssen auf der squash-bereinigten History sitzen → **Squash zuerst**):
-> **#13 Orphan-Squash (Monorepo bleibt privat) → `tag 1.0.0` + Split → Pakete public →
-> Packagist → Skeleton-Template → Monorepo public.** Nächster Schritt: **#13 Orphan-Squash**
-> (irreversibel — braucht Go/No-Go).
+> **✅ ERLEDIGT 2026-07-15 — Public-Release komplett.** Das z77 Framework ist öffentlich:
+> Monorepo (`z77-ch/z77-framework`), die 4 Pakete (`kernel`, `module-frontend`,
+> `module-backend`, `module-dms`) und das Skeleton (`z77-ch/z77-skeleton`) sind public auf
+> GitHub und auf Packagist gelistet (`z77/*`, Version `1.0.0`), anonym erreichbar. **Beide
+> Install-Wege verifiziert:** `composer create-project z77/skeleton my-project` (ohne git,
+> end-to-end getestet: Startseite HTTP 200) und „Use this template" (mit git). History via
+> Orphan-Squash bereinigt (kein Kundenname, keine Secrets). Alle Schritte #1–#13 erledigt.
+> Restliches Cleanup (archivierte Repos, Backup-Refs, 1.0.1-Tag) außerhalb dieser Liste.
 
 ---
 
@@ -91,8 +87,8 @@ als sauberes Referenzbeispiel).
       konsistent mit den Paket-Manifesten. `composer validate` grün. Kein `install`
       ausgeführt (kein `vendor/`/`composer.lock` erzeugt).
 
-- [~] **12. Git-History-Audit (BLOCKER vor public) — Audit + Anonymisierung erledigt
-      2026-07-15; Orphan-Squash aufgeschoben.**
+- [x] **12. Git-History-Audit (BLOCKER vor public) — erledigt 2026-07-15
+      (Audit + Anonymisierung; Squash siehe #13).**
       **Audit-Befund:** keine echten Secrets in der gesamten History (kein Token/Key/
       Klartext-Passwort/Hash; `.vscode/sftp.json` nie getrackt). Sensibel war (a) internes
       Maintainer-Wissen (alte `dev-environment.md`: Sync-Topologie, Zugangsdaten,
@@ -119,14 +115,19 @@ Packagist-Listing (MIT), `repositories`-Block in Projekten entfernen.
       **+ Auto-Split sind bereits seit 2026-07-10 LIVE** (git-journal); der Plan ist damit
       Referenz/Historie, nicht mehr auszuführen. Einzig real offener Rollout-Teil = Phase 2
       (Packagist + public) = #11.
-- [ ] **11. Repos auf public + Packagist-Listing + Projekt-`repositories`-Block entfernen.**
-- [ ] **13. Orphan-Squash — erster Schritt der Public-Sequenz (Monorepo bleibt privat).**
-      Neuer Initial-Commit aus dem finalen sauberen Stand, alte History verwerfen,
-      `push --force main`. Reihenfolge korrigiert (war „allerletzter Schritt"): muss VOR
-      `tag 1.0.0`/Split/Public sitzen, damit Tag und Paket-Repos aus der bereinigten
-      History entstehen. Der force-push auf `main` triggert den branch-Split (Mirror →
-      Paket-Repos werden überschrieben). Sicherheitsnetz: lokaler Backup-Ref der alten
-      History vor dem Squash. Monorepo geht erst im letzten Schritt public.
+- [x] **11. Repos auf public + Packagist-Listing.** Erledigt 2026-07-15 — 4 Pakete public
+      + auf Packagist (`z77/kernel`, `z77/module-*`, Version `1.0.0`), Webhooks aktiv,
+      `composer require z77/module-frontend:^1.0` end-to-end von Packagist verifiziert.
+      Skeleton (`z77-ch/z77-skeleton`) public + GitHub-Template + auf Packagist als
+      `z77/skeleton` → `composer create-project z77/skeleton` (git-los) getestet. Paket-
+      READMEs auf das Skeleton-Template verwiesen, „not ready for production" entfernt.
+      Monorepo als letzter Schritt public. (Projekt-`repositories`-Block-Entfernung
+      entfällt — die realen Projekte werden ohnehin nicht über dieses Repo verwaltet.)
+- [x] **13. Orphan-Squash — erledigt 2026-07-15.** Neuer Initial-Commit `09da7c5` aus dem
+      sauberen Stand, alte 58-Commit-History verworfen, `push --force main` → branch-Split
+      grün. Danach `tag 1.0.0` → tag-Split → alle 4 Paket-Repos getaggt. Reihenfolge
+      korrigiert (Squash VOR Tag/Split/Public). Lokaler Backup-Ref `pre-squash-backup`
+      als Sicherheitsnetz gesetzt (Cleanup separat).
 
 ---
 
