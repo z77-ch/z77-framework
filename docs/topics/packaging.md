@@ -1,8 +1,8 @@
 # packaging
 
-2026-07-10
+2026-07-16
 
-The kernel rollout is live: `z77-ch/kernel` + `module-frontend/backend/dms` are the active split targets; the obsolete `z77-ch/core`, `/shared`, `/persistence` repos are archived (read-only), superseded by kernel.
+Public since 2026-07-15: the monorepo and all split repos are public on GitHub and every package (`z77/kernel`, the three modules, `z77/skeleton`) is registered on Packagist with release tags (`1.0.x`). `z77-ch/kernel` + `module-frontend/backend/dms` are the active split targets; the obsolete `z77-ch/core`, `/shared`, `/persistence` repos are archived (read-only), superseded by kernel.
 
 ## entry
 
@@ -25,8 +25,9 @@ The monorepo `z77-ch/z77-framework` is the single development source. On every p
 - The **kernel** package ships three PSR-4 roots in one `composer.json` (`Z77\Core` → `core/src/`, `Z77\Shared` → `shared/src/`, `Z77\Persistence` → `persistence/src/`). They were merged because they are functionally inseparable and mutually cyclic — see ADR-023.
 - Module packages (`module-frontend`/`backend`/`dms`) each require only `z77/kernel` (`^1.0`).
 - The split action (`danharrin/monorepo-split-github-action`, formerly `symplify/…`) is a **snapshot copy**, not a history-preserving subtree split — it copies the current package directory and makes one commit. It does **not** use `splitsh-lite`.
-- Packages are kept in `dev` (no release tags). `extra.branch-alias` maps `dev-main` → `1.0.x-dev` so the `^1.0` requires resolve from the `main` branch without a tag.
-- No package is on Packagist and all split repos are **private** — deliberately, until `docs/01-handbook/` is complete (publish philosophy). Consumption today is via `repositories: [{type: vcs, url: git@github.com:z77-ch/<pkg>.git}]`; the skeleton uses local `path` repos for development.
+- Releases are **tagged** (`x.y.z`) in the monorepo; the tag push propagates to the split repos (see split flow) and Packagist picks it up. `extra.branch-alias` maps `dev-main` → `1.0.x-dev` so `^1.0` also resolves from `main` between releases.
+- All split repos are **public** and on **Packagist** (since 2026-07-15). Client projects consume via plain `composer require z77/*` / `composer create-project z77/skeleton` — no `repositories` entry needed. Only the monorepo's own `skeleton/` uses local `path` repos, for development against the moving framework.
+- `z77-ch/z77-skeleton` (Packagist `z77/skeleton`) is **not a split target** — a separate, hand-maintained repo (README + `composer.json` only, everything else is installer-generated). It is committed and tagged independently of the monorepo.
 - Vendor namespace is `z77/*` (e.g. `z77/kernel`); GitHub org is `z77-ch`. The two intentionally differ — repo name need not equal package name for VCS repositories.
 
 ## split flow
@@ -37,18 +38,12 @@ The monorepo `z77-ch/z77-framework` is the single development source. On every p
 
 ## consuming the framework
 
-```json
-{
-    "minimum-stability": "dev",
-    "prefer-stable": true,
-    "repositories": [
-        {"type": "vcs", "url": "git@github.com:z77-ch/kernel.git"},
-        {"type": "vcs", "url": "git@github.com:z77-ch/module-frontend.git"}
-    ]
-}
+```bash
+composer create-project z77/skeleton my-project   # new project (recommended entry)
+composer require z77/module-frontend:^1.0         # add a package to an existing project
 ```
 
-`composer require z77/module-frontend:^1.0` then resolves the whole graph (`module-frontend` → `z77/kernel`) from `dev-main`.
+Everything resolves from Packagist; `composer require z77/module-frontend:^1.0` pulls the whole graph (`module-frontend` → `z77/kernel`).
 
 ## rules
 
@@ -56,18 +51,19 @@ The monorepo `z77-ch/z77-framework` is the single development source. On every p
 - When adding a package that is required by, or requires, another `z77/*` package → MUST add `extra.branch-alias` (`dev-main` → `1.0.x-dev`) to its `composer.json`, or the `^1.0` constraints will not resolve from `dev-main`.
 - When adding a namespace to the foundation → MUST add it as another PSR-4 root inside `packages/kernel/composer.json` (nested dir like `core/src/`), MUST NOT create a new base package that would re-introduce a cycle with kernel (ADR-023).
 - When editing a split target repo directly → MUST NOT; the repo is read-only, changes MUST be made in `packages/<pkg>/` in the monorepo and pushed.
-- When a client project consumes these packages → MUST declare them as `vcs` repositories and MUST NOT expect Packagist; dist zipball download 404s on private repos without a GitHub token, Composer falls back to `git clone` (source).
-- When tagging a release → MUST NOT tag before `docs/01-handbook/` is complete (publish philosophy); until then packages stay on `dev-main`.
+- When a client project consumes these packages → MUST use Packagist (public since 2026-07-15) and MUST NOT add `vcs`/`path` repository entries for `z77/*` — those were the pre-release consume paths.
+- When releasing a change in `packages/` → MUST tag the monorepo (`x.y.z`) and push the tag; the workflow propagates it to the 4 split repos and Packagist picks it up. A push without a tag only updates `dev-main`.
+- When changing the skeleton (`README.md` / `composer.json`) → MUST commit and tag in `z77-ch/z77-skeleton` itself (not a split target) AND mirror behaviour-relevant changes in the monorepo's `skeleton/composer.json` (dev parity).
 
 ## known issues
 
 - **PKG-001**: don't assume the split preserves per-file history — the action is a snapshot copy, each monorepo push produces one commit in the target. The workflow uses a shallow checkout (no `splitsh-lite`, so full history is not needed).
 - **ARCH-PKG-002** — resolved 2026-07-09 by ADR-023. The former circular triangle `core ↔ shared ↔ persistence` is gone: the three ship as one `z77/kernel` package, so their internal references are no longer a Composer dependency. Modules depend downward on the single foundation.
-- **PKG-003**: don't consume from private split repos without a GitHub OAuth token or `prefer-source` in the client project — otherwise every install prints `404 from dist … trying from source` warnings (harmless, but noisy). Confirmed in the 2026-07-10 consume test: install still succeeds via the `git clone` (source) fallback.
+- **PKG-003** — resolved 2026-07-15 by the public release: the split repos are public, dist zipballs download without a token, the `404 from dist` warnings are gone.
 
 ## pending
 
-- Packagist registration + making repos public — deferred until `docs/01-handbook/` is complete and the publish decision is taken.
+- None documented.
 
 ## see also
 

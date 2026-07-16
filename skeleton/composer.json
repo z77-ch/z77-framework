@@ -48,6 +48,7 @@
             "Z77\\Core\\Installer\\Install::run"
         ],
         "dev": [
+            "Composer\\Config::disableProcessTimeout",
             "@composer install",
             "php -S localhost:8080 -t public"
         ]

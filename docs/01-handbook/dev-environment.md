@@ -11,7 +11,7 @@ exceed the minimums — they come from the code.
 | Tool | Minimum | Known-good | Notes |
 |---|---|---|---|
 | PHP (CLI) | 8.2 | 8.3 / 8.4 | on PATH |
-| PHP extensions | — | `curl apcu mbstring json openssl dom xml fileinfo gd` | all enabled in `php.ini`; APCu also for CLI (`apc.enable_cli=1`) |
+| PHP extensions | `mbstring fileinfo gd` | + `apcu` | required set is enforced by the packages' `composer.json` (`mbstring`/`fileinfo` → kernel, `gd` → module-dms); `apcu` is optional — shared data cache with a guarded per-request fallback, enable it also for CLI (`apc.enable_cli=1`) |
 | Composer | 2.x | 2.8 / 2.9 | — |
 | Node.js | 20 | 22 / 24 | `docs-lint` requires ≥20 |
 | npm | — | 11.x | ships with Node |

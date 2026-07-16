@@ -9,7 +9,7 @@ no hidden conventions you cannot look up. It runs with **no database** by defaul
 one JSON file per record), and a project never edits framework code — it **overrides**, so
 updates stay cheap.
 
-> **Status:** v1.0.0. Open source by conviction (MIT). The framework earns nothing by
+> **Status:** stable, v1.x on Packagist. Open source by conviction (MIT). The framework earns nothing by
 > itself — it earns through the client projects built with it. That is why it is public
 > and cleanly documented.
 
@@ -34,7 +34,7 @@ updates stay cheap.
 
 | To… | You need |
 |---|---|
-| **Run a project** | PHP **8.2+** (CLI) with `curl apcu mbstring json openssl dom xml fileinfo gd` enabled · Composer **2.x** |
+| **Run a project** | PHP **8.2+** (CLI) with `mbstring fileinfo gd` enabled (`apcu` recommended — faster cache, optional) · Composer **2.x** |
 | **Customize styles** | Node.js **≥20** + npm — compiles SCSS via Dart Sass (a local dev-dependency, not global) |
 
 The framework ships **pre-compiled CSS**, so a project runs with only PHP + Composer — npm

@@ -1,6 +1,6 @@
 {
     "name": "z77/module-frontend",
-    "description": "Z77 Frontend Module | public facing frontend for Z77 Order-Concept.",
+    "description": "Z77 Frontend Module | the public-facing site: routing, pages, navigation and localized rendering.",
     "type": "library",
     "license": "MIT",
     "authors": [
