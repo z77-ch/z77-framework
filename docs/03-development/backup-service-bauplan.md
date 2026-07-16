@@ -1,6 +1,6 @@
 # Bauplan — BackupService (data / db / full) + Backend-Sektion «Service»
 
-**Status:** `[IN PROGRESS]` — approved 2026-07-16
+**Status:** `[DONE]` — released 1.1.0, 2026-07-16
 **Date:** 2026-07-16
 
 Ziel: Installation-weiter Backup-Dienst mit drei Typen — `data` (nur `data/`),
@@ -133,7 +133,7 @@ return [
 - [x] **P3 Backend-UI:** Gruppe `service` (Config), `BackupController` + Templates,
       Navigation-Seed «Service»/«Backup»
 - [x] **P4 Doku:** topic `backup.md`, backend.md, installer.md, security.md, ADR-028; docs:check grün
-- [ ] **P5 Verifikation:** frisches create-project → Service-Sektion sichtbar (superUser),
+- [x] **P5 Verifikation:** frisches create-project → Service-Sektion sichtbar (superUser),
       alle 3 Typen manuell (db = «nicht konfiguriert»-Pfad), CLI-Lauf, Retention greift,
       Download + Delete; danach Release **1.1.0** (neues Feature → minor)
 
