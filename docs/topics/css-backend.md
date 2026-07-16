@@ -28,7 +28,7 @@ A **single `base.css`** carries tokens + all components + their responsive rules
 packages/module-backend/res/scss/
 ├── tokens/
 │   ├── _colors.scss        --be-* backend theme tokens (6 palettes × light/dark)
-│   ├── _typography.scss    GT Walsheim (ui/display), mono; --be-font-scale (slider) × font-size-vars mixin; --be-font-scale-cap + font-size-capped mixin
+│   ├── _typography.scss    Inter (ui/display, OFL — fonts/inter/), mono; --be-font-scale (slider) × font-size-vars mixin; --be-font-scale-cap + font-size-capped mixin
 │   ├── _spacing.scss
 │   └── _effects.scss       --z-topbar:40, --z-dropdown:100, --z-overlay:300, shadows, transitions, radii
 ├── base/

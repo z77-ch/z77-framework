@@ -19,10 +19,10 @@
 
 /* Tokens on the .be viewArea wrapper, not :root (ADR-018). */
 .be {
-    --font-family-base:      'GT Walsheim', system-ui, sans-serif;
+    --font-family-base:      'Inter', system-ui, sans-serif;
     --font-family-mono:      ui-monospace, 'Cascadia Code', monospace;
-    --font-family-ui:        'GT Walsheim', system-ui, sans-serif;
-    --font-family-display:   'GT Walsheim', system-ui, sans-serif;
+    --font-family-ui:        'Inter', system-ui, sans-serif;
+    --font-family-display:   'Inter', system-ui, sans-serif;
 
     --be-font-scale:         1;     /* live value, set on <html> by the slider */
     --be-font-scale-cap:     1.0;   /* max growth for capped regions — 1.0 = frozen at base size */
