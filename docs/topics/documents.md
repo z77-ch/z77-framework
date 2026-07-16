@@ -67,6 +67,8 @@ SOURCE=/packages/module-dms/res/view/templates/Documents/DriveController/_list.t
 SOURCE=/packages/module-dms/res/view/templates/Documents/DriveController/_preview.tpl.php
 SOURCE=/packages/module-dms/res/view/templates/Documents/DriveController/_upload.tpl.php
 SOURCE=/packages/module-dms/res/view/templates/Documents/DriveController/_folderMove.tpl.php
+SOURCE=/packages/module-dms/res/view/templates/Documents/DriveController/_bulkMove.tpl.php
+SOURCE=/packages/module-dms/res/view/templates/Documents/DriveController/_bulkConfirmDelete.tpl.php
 SOURCE=/packages/module-dms/res/view/templates/Documents/DriveController/_edit.tpl.php
 SOURCE=/packages/module-dms/res/view/templates/Documents/DriveController/_trash.tpl.php
 SOURCE=/packages/module-dms/res/view/templates/Documents/DriveController/_actions.tpl.php
@@ -91,6 +93,7 @@ SOURCE=/docs/03-development/dms-umbauplan.md
 SOURCE=/docs/03-development/dms-extraction-bauplan.md
 SOURCE=/docs/03-development/dms-authz-bauplan.md
 SOURCE=/docs/03-development/dms-drive-root-bauplan.md
+SOURCE=/docs/03-development/dms-bulk-select-bauplan.md
 
 ## mental model
 
@@ -198,7 +201,7 @@ purge is one directory removal. Images get **eager, config-profile-driven** deri
 - When classifying an upload → MUST resolve the kind via `DocumentKind::fromMime()` on a server-side `finfo` sniff; a `null` result MUST be rejected (the allowlist); MUST NOT trust the client-supplied content type or file extension alone.
 - When moving or renaming a document or reparenting a folder → MUST change metadata only; MUST NOT move blob bytes (layout B — that is the whole point of id-addressing).
 - When saving or moving a document → MUST target a folder; a `null` `folderId` is rejected. Since ADR-020 the top-level folders ARE the partitions (real entities) — the old "non-entity area root" special case is gone; a document may live directly in a root folder. `SaveService::save` / `DocumentService::move` throw on a null folder; `resolve()` refuses a `/media/<file>` with no folder segment; `move` additionally requires `write` on the target folder.
-- When deleting → soft-delete MUST set `deletedAt` and MUST NOT remove bytes; a hard purge MUST respect `retentionUntil` and MUST call `BlobStorage::delete(id)` (which removes ALL variants at once). Implemented (2026-07-01): `DocumentService::delete` (soft) / `restore` (clear `deletedAt`, folder must exist) / `purge` (record + blob, retention-gated) / `listDeleted`; the Drive exposes them via the "Papierkorb" panel (`DriveController::trashAction`).
+- When deleting → soft-delete MUST set `deletedAt` and MUST NOT remove bytes; a hard purge MUST respect `retentionUntil` and MUST call `BlobStorage::delete(id)` (which removes ALL variants at once). Implemented (2026-07-01): `DocumentService::delete` (soft) / `restore` (clear `deletedAt`, folder must exist) / `purge` (record + blob, retention-gated) / `listDeleted`; the Drive exposes them via the "Papierkorb" panel (`DriveController::trashAction`) — incl. «Papierkorb leeren» (`purgeAll` op, 2026-07-16: `<details>`-confirmed, loops the principal-scoped `listDeleted()` through the gated `purge()`, retention-blocked documents survive and are reported).
 - When adding image sizes → MUST define them as config-driven profiles consumed via `ImageProfileRegistry` (`module-dms` `Images`); MUST NOT hardcode a fixed variant set. When `showOriginal` (document) or `preserveOriginal` (profile) is set → MUST serve the original bytes untouched (only the 160px `admin.s` thumbnail is generated); MUST NOT reprocess through GD.
 - When a project needs image profiles (ADR-020 rev. 2026-07-13) → MUST define them in the project's DMS override config `override/z77/module/dms/src/App/Config/imageProfilesConfig.inc.php` (read via `ImageProfileRegistry::fromConfig()`; the framework ships none — a missing file = no project profiles), **two-level**: `partitionIdent => profileName => variantSpecs`, where the partition ident is the root folder's `key ?? slug`. The per-partition namespace is the collision safety (`front`'s `logo` ≠ `back`'s `logo`) — MUST NOT flatten it, MUST NOT name a profile `admin` (framework-fixed, built into `ImageProfileRegistry`), and MUST NOT resurrect the removed per-module `fromModules()` aggregation (a future module with programmatic saves defines its profiles under its partition key in this same file — module key = partition key).
 - When choosing WHICH profile an upload gets → the binding is the **folder assignment** `Folder::$profile` (inherited down the chain like `deliveryMode`), set ONLY via the gated `FolderService::setProfile()` (effective `manage`, validated against the partition's registry block, drive root refused; surface: the Drive's combined edit modal — the field renders only when the partition has profiles). The save path resolves AUTOMATICALLY when `SaveRequest.profile` is null (`SaveService::resolveProfile`): effective folder profile ?? the partition's reserved **`default`** profile ?? none (only `admin` variants) — deliberately LENIENT (a stale assignment falls back, never fails the upload); an EXPLICIT `SaveRequest.profile` stays strict (unknown → throw). The RESOLVED name is persisted on `Document.profile`. MUST NOT set `Folder::$profile` directly from a controller and MUST NOT expect new profile sizes to apply retroactively (variants are generated at save time only; reprocessing is a later phase).
@@ -226,6 +229,7 @@ purge is one directory removal. Images get **eager, config-profile-driven** deri
 - When wiring a multipart upload through a controller → MUST send it as a real multipart POST with the CSRF header (`documents/upload.js`, not the JSON fetch envelope) and read the files via `Request::getUploadedFiles()`; MUST NOT try to carry files through `_Z77.core.fetch.post` (JSON-only).
 - When delivering bytes from a controller action → MUST return the `FileResponse` from `DocumentService::serve()` directly (the `Dispatcher` calls `send()` on it; a `FileResponse` is not an `HtmlResponse`, so the page cache never stores it); the private backend preview/download (`DocumentDeliveryTrait`) MUST be `ADMIN`-gated by the host group, the public `/media` route stays `GUEST` and relies on `OutputController` → `canRead()` for the gate.
 - When exposing the public `/media/<root-slug>/…` route → MUST keep it as the `reservedRoutes` entry in `dmsConfig` (`/media` → `dms/media/output/serve`, highest routing precedence, matched before the Fetch short-circuit); the trailing path is the structural folder-slug walk (R3/R4/ADR-020). MUST NOT reintroduce a `/media` NavigationAlias, a flat `publicPath`, or an `area` path segment (all removed).
+- When adding a BULK Drive mutation (v1 built 2026-07-16: documents delete + move — [`../03-development/dms-bulk-select-bauplan.md`](../03-development/dms-bulk-select-bauplan.md)) → the endpoint MUST loop over the EXISTING per-document gated service methods (no bulk bypass in the domain; a denied/missing id is counted as skipped and reported in ONE flash, never an error); the POST carries no per-entity token → the action MUST be `#[Fetch]` (DMS-SEC-001 rule); the ids CSV MUST be re-gated server-side via `readableDoc` (`bulkDocs`, capped `BULK_MAX`); the selection UI stays client-state while the modal base URLs stay server-built (`data-bulk-*-url`, drive.js appends only `&ids=`); the ids MUST travel as ONE hidden CSV field in the modal form (`_z77CollectFormData` collapses repeated hidden fields — only checkbox GROUPS become arrays); the action-bar reveal is CSS `:has()`, not JS.
 - When adding a DMS management mutation (rename/move/delete/restore/purge/setActive/setDeliveryMode/grant/revoke/folder add-rename-move-delete/upload) → the authorization gate MUST live in the domain service (`DocumentService`/`FolderService`/`UploadService`) via `Authz::require($type, $id, $level)`, NOT in the controller/trait. Rationale: PHP trait precedence lets a host controller silently override a trait method (even `final`), and a host can mount a controller under a public route — a UI-layer gate is bypassable. The gate reads the principal from the **session** (`Authz::current()`), never a caller-supplied one (a caller could forge an admin `Principal`). Denials throw `NotFoundException` (404, no existence leak). GUEST (`userId 0`) is never owner and matches no ACE → rejected. System creation (`saveGenerated`/`SaveService::save`) stays ungated (trusted). MUST NOT rely on the host config role gate alone — that is the coarse first line; the domain gate is the un-bypassable second (R-authz-1, `../03-development/dms-authz-bauplan.md`).
 
 ## known issues
@@ -242,9 +246,56 @@ purge is one directory removal. Images get **eager, config-profile-driven** deri
 - The Drive is NOT host-scoped (ADR-020 (b), built 2026-07-02): it shows every partition root the principal may `read` — don't assume a per-host area isolation anymore; isolation is ACL (grant on a root = that partition). `showOriginal` is chosen at upload time only — toggling it later is not offered (variants are not retroactive; reprocess is a later phase). Image variants are reached via `?variant=s|m|l|xl` on the preview/serve URL, or as the `.<variant>.` filename segment on the structural `/media` path.
 - The File driver cannot enforce root-`key` uniqueness (no unique index, no transactions — ARCH-A003): don't assume a hard guarantee; `rootFolder()` resolves duplicates deterministically (smallest id wins) and re-checks after its own create (S3).
 - GD memory scales with PIXELS, not file size (a 24-MP photo decodes to ~120 MB) — don't assume the upload cap bounds processing memory. `GdImageProcessor::generate` guards this BEFORE decoding (`fitsMemory`: header dims × ~5 bytes/px + per-variant dest/convolution copies vs. remaining `memory_limit`, 20% margin): an image that does not fit yields NO derivatives (`[]`, original still stored/served — same graceful path as an unsupported format), never a mid-save fatal. Dev `memory_limit` raised 128M → 512M (2026-07-02) after a live upload fatal in `imageconvolution`.
+- **DMS-MEM-001 — `fitsMemory` false negative silently skips variants (found 2026-07-16, zihlundsee).**
+  Batch-uploading 45.4-MP photos left 3 of 9 documents WITHOUT any variants (no thumbnail, no
+  derivatives) and WITHOUT any error — every file reported "Hochgeladen". Root cause:
+  `GdImageProcessor::fitsMemory()` (and `UploadService::fitsMemory()`) subtract
+  `memory_get_usage(true)` — RESERVED memory incl. ZendMM's retained-but-reusable cached chunks —
+  from `memory_limit`. After a prior variant-generating request in the same persistent PHP worker
+  (php -S dev, LSAPI on cyon) the reserved figure stays elevated (measured 52–278 MB), so the guard
+  refuses images that actually process fine (real peak ~264 MB < 512M). NOT a real OOM, NOT the
+  batch design (`upload.js` is strictly sequential, one file per request), NOT the PHP limits.
+  **Guard FIXED 2026-07-16 (uncommitted):** both checks now measure against
+  `memory_get_usage(false)` — proven safe under limit pressure (ZendMM reuses its cached chunks:
+  the 3 failed originals process back-to-back under a 400M limit, full variant set each, real
+  `GdImageProcessor`). **Dev live-CONFIRMED same day (skeleton):** a fresh browser batch upload of
+  11 × 45.4-MP photos produced thumbnails/variants for ALL of them (before the fix the same batch
+  dropped 3). Still OPEN: (a) surface the no-variants outcome in the upload envelope/log
+  (today the skip reason is discarded — silent degradation); (b) repair the 3 zihlundsee docs
+  (delete + re-upload — a re-upload over the LIVE doc is checksum-skipped, so delete first);
+  (c) cyon re-test + `memory_limit` check (≥ ~380M needed). cyon note: `memory_get_usage()` is SAPI-independent;
+  long-lived LSAPI workers make the `(true)` degradation worse, but production `memory_limit`
+  must still be ≥ ~380M for 45-MP sources. Full analysis + repro:
+  [`../03-development/dms-upload-variants-review-2026-07-16.md`](../03-development/dms-upload-variants-review-2026-07-16.md).
+  Affected zihlundsee docs 35/37/39 need delete + re-upload once fixed (variants are not retroactive).
+
 - **DMS-DIM-001** — resolved 2026-07-14. `mediaImage($path, $variant)` returned the ORIGINAL `width`/`height` regardless of the requested variant (`imageForPath()` read `$entry['width']`/`['height']` — the doc dims — and ignored `$variant`), so an `<img>` for a derivative got the original's dimensions (wrong aspect hint / CLS). Fixed: `imageForPath()` now takes the variant's own `w`/`h` from `variants[$variant]` (`ProcessedVariant::toMeta` `{w,h,bytes,ext}`) for a named derivative, and the document dims only for the original (`$variant === null`). `buildPublicUrl()` already returns `null` for an unknown variant, so the branch is safe. Verified: dimension-selection logic (null→original, `m`/`s`→variant dims); live check pending in the project.
 
 ## pending
+
+- **Bulk selection + bulk actions v1 (delete/move) — BUILT + selection UI skeleton-confirmed 2026-07-16.**
+  Confirmed in the skeleton browser test: checkboxes (after the `appearance: auto` fix — the
+  backend normalize strips ALL form-control appearance, see [`css-dms.md`](css-dms.md)), bulkbar
+  reveal, counter, Alle/Keine. Still to click through: the bulk move/delete modals themselves +
+  «Papierkorb leeren».
+  Drive list rows carry a quiet checkbox (`.dms-file__select`, hover-revealed, always-on for
+  touch); once one is checked, a sticky action bar (`.dms-filelist-bulkbar`: counter, Alle/Keine,
+  Verschieben, Löschen) appears via pure CSS `:has()`. drive.js adds shift-click range, the
+  counter, and opens the bulk modals by appending `&ids=<csv>` to the server-built
+  `data-bulk-*-url`. Trait: `bulkMoveAction` (GET modal `_bulkMove` + POST) /
+  `bulkConfirmDeleteAction` (GET modal `_bulkConfirmDelete`) / `bulkRemoveAction` (POST) — all
+  `#[Fetch]`, ids re-gated via `bulkDocs()` (readableDoc, cap 500), loop over the existing gated
+  `DocumentService::delete/move`, partial success in ONE flash („N verschoben, M übersprungen“),
+  `paneRefresh` success. v1 scope (user-approved): documents only, delete + move only; further ops
+  dock onto the same bar later. Known limits: ids travel in the modal-GET query (very large
+  selections → URL length; POST-modal flow is the escalation) and each loop iteration triggers the
+  usual per-mutation `rebuildMaterialization`/cache clear (acceptable backend-tool cost, revisit if
+  bulk sizes grow). **Nachtrag same day: „Papierkorb leeren“** — the trash panel gained a
+  JS-free `<details>`-confirmed `purgeAll` op (`trashAction`, now `#[Fetch]` — the op spans n
+  documents, no per-entity token, DMS-SEC-001 rule; row ops keep their entity tokens): loops the
+  principal-scoped `listDeleted()` through the existing gated `purge()` — retention-blocked
+  documents are skipped, stay listed, and are reported in the flash.
+  Plan: [`../03-development/dms-bulk-select-bauplan.md`](../03-development/dms-bulk-select-bauplan.md).
 
 - **Folder-bound image profiles + project override config — DONE, framework side (2026-07-13).**
   Goal (reference project): a Drive folder (e.g. `drive/front/slider/home/main`) carries an

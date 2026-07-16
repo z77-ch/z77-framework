@@ -113,7 +113,8 @@ A dark set (`[data-be-theme="dark"] .dms`) matches the backend dark theme (see k
 |---|---|
 | `.dms-drive` | the 3-pane shell: `__toolbar` (breadcrumb + actions) over `__tree` \| `__list` \| `__preview`; CSS grid, collapses the preview below 60rem |
 | `.dms-tree` | left folder hierarchy; node depth via inline `--dms-depth`; `--active` / `--inactive` / `--has-children.is-open` |
-| `.dms-file` (in `.dms-filelist`) | one document row: `__thumb` (image thumbnail or kind-tinted icon), `__name` / `__meta`, `__badge--{public,protected,sealed}`, hover `__actions` |
+| `.dms-file` (in `.dms-filelist`) | one document row: `__select` (bulk checkbox, hover-revealed / always-on touch), `__thumb` (image thumbnail or kind-tinted icon), `__name` / `__meta`, `__badge--{public,protected,sealed}`, hover `__actions` |
+| `.dms-filelist-bulkbar` | sticky bulk-action bar (counter, Alle/Keine, Verschieben, Löschen); revealed purely by `.dms-filelist:has(.dms-file__select:checked)` — no JS (2026-07-16, [`../03-development/dms-bulk-select-bauplan.md`](../03-development/dms-bulk-select-bauplan.md)) |
 | `.dms-preview` | right pane: `__media` (image or large kind icon), `__name`, `__meta` grid, `__actions`; `__empty` state |
 | `.dms-btn` | labelled action button (`--primary` / `--ghost` / `--muted`) |
 | `.dms-icon` / `.dms-iconbtn` | inline SVG icon (sized by font, `currentColor`) / square borderless icon button |
@@ -126,6 +127,7 @@ A dark set (`[data-be-theme="dark"] .dms`) matches the backend dark theme (see k
 - When writing a dms component (R6b) → MUST prefix its block class `.dms-…` (component-selector isolation, ADR-018 rule 3); MUST NOT reuse an unprefixed block name that a host also defines (`.btn`, `.card`, …).
 - When the fragment must adapt to its container width → MUST use an internal `@media`/container query inside the component; MUST NOT add a page-level breakpoint or assume the host's layout.
 - When embedding the fragment in a host → the HOST MUST load `dms.css` via its own `layoutConfig.inc.php`; the dms module MUST NOT carry a page skeleton or its own `layoutConfig`.
+- When a dms component renders a NATIVE form control (checkbox, radio, select) → MUST explicitly restore `appearance: auto` (or style the control fully) in the component's SCSS. The backend host's normalize strips `appearance` from ALL form controls page-wide — a bare native control paints NOTHING inside the embedded fragment. Trapped twice: backend `<select>`s (2026-07-13, `_forms.scss`) and the bulk checkbox `.dms-file__select` (2026-07-16, `_filelist.scss`).
 - When running build commands → MUST run from the framework root (`npm run build:dms` / `npm run watch:dms`); MUST follow the workflow in [`css-watch.md`](css-watch.md).
 
 ## see also
