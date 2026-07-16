@@ -55,6 +55,7 @@ Structure is enforced by `npm run docs:check` ([docs-lint/STANDARD.md](../docs-l
 | You are working on / keywords | Read |
 |---|---|
 | backend, dashboard, service panel, user preferences, system pages | [topics/backend.md](topics/backend.md) |
+| backup, restore, cron, z77-backup CLI | [topics/backup.md](topics/backup.md) |
 | content block types | [topics/block-types.md](topics/block-types.md) |
 | bootstrap, DI container, debug flag | [topics/bootstrap.md](topics/bootstrap.md) |
 | cache, DataCache, APCu, page cache | [topics/cache.md](topics/cache.md) |

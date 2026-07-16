@@ -75,6 +75,7 @@ Backend groups exist for UI organisation only — they are NOT business-domain b
 | `system` | `dashboard` | Technical/system UI: dashboard, login/logout, cache + debug ops |
 | `content` | `navigation` | Content management: navigation CRUD, content documents, SEO metadata (see [`metadata.md`](metadata.md)), future stylesheet editor |
 | `users` | `user` | User management — placeholder; controller not yet built (navigation entry `id:7` 404s on purpose) |
+| `service` | `backup` | Installation service tools (topbar section «Service»): backups — SUPER_USER only, see [`backup.md`](backup.md) |
 
 ## controllers
 
@@ -86,6 +87,7 @@ Backend groups exist for UI organisation only — they are NOT business-domain b
 | `NavigationController` | `content` | `list` | Navigation ELEMENT CRUD: list (the shared navigation screen, grouped by config render-slots) / add / edit / confirmDelete / remove + `moveAction` (DnD tree mutation via `parentId` + `sortKey`) + `checkFieldAction` for blur-based field validation (see [`fetch.md`](fetch.md), [`entity-data-handling.md`](entity-data-handling.md)). URL: `/backend/content/navigation/list`. Render-slots + view areas are config (ADR-022) — there is no group controller. |
 | `MetaDataController` | `content` | `list` | Per-page SEO `MetaData` CRUD. `list` is "by navigation point", scoped to **public** environments (module config `'public' => true`) and grouped by level-0 environment, with a `?env` filter bar. add / edit / confirmDelete / remove. URL: `/backend/content/meta-data/{action}` (multi-word kebab segment). Identity (navigation_id, language) immutable on edit. See [`metadata.md`](metadata.md). |
 | `TranslationController` | `content` | `list` | i18n catalog editor: UI strings + route slugs (the two `data/framework/i18n/` families). `list` shows both as tables; a shared `?kind=ui\|slug` add / edit / confirmDelete / remove modal. Persistence + slug validation in the `TranslationCatalog` core service (NOT an `#[Entity]`). URL: `/backend/content/translation/{action}`. See [`translation.md`](translation.md) TRANS-TOOL-001. |
+| `BackupController` | `service` | `list` | Installation backups (data / db / full): history per type (directory scan), run / download / confirmDelete / remove + `actionsAction` hub. Thin glue over the kernel `BackupService` (shared with the CLI entry). ALL actions `SUPER_USER`. URL: `/backend/service/backup/{action}`. See [`backup.md`](backup.md). |
 
 `NavigationController` extends **`AbstractTreeEntityController`** (which extends `BackendAbstractController`): it provides the generic `moveAction` (resolve → cycle-guard → `TreeService::reorderInto` → renumber old group → persist) once; the subclass supplies `treeRepo()`, `treeService()`, and the entity-specific `applyMovePolicy()` (cross-slot + ref-parent guards). `NavigationGroupController` was removed with `NavigationGroup` (ADR-022); the base is kept as the reuse seam for future tree-entity controllers. Mechanics vs. policy — see [`tree.md`](tree.md) / ADR-009.
 

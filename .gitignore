@@ -33,3 +33,5 @@
 /skeleton/composer.lock
 # seeded by the installer (seed-once project context for AI assistants)
 /skeleton/CLAUDE.md
+# runtime backup archives (BackupService test runs)
+/skeleton/backup/

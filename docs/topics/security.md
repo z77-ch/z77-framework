@@ -55,9 +55,28 @@ z77 is open source — anything shipped is public, including the default admin h
 - No default credential is ever shipped in any `*.default.json` — `loginUsers.default.json` was removed (Phase 4).
 - The installer writes `config/auth.inc.php` (from `auth.default.inc.php` merged with composer extra `core-auth`, like `bootstrap.inc.php`) — `writeAuthConfig()`. The interactive admin prompt is tier-aware: under `veryStrong` it re-prompts until the password passes; otherwise it accepts a weak one with a warning and sets `password_weak`.
 
+## backups (2026-07-16)
+
+Backups are a security surface: the `data` and `full` archives contain the
+complete user store (`data/framework/auth/loginUsers.json` — bcrypt hashes),
+the `db` archive a full SQL dump. Consequences (owned by
+[`backup.md`](backup.md), summarized here):
+
+- Archives live under `{project}/backup/` — in the project root, NEVER under
+  `htmlRoot`, so they are not web-reachable; download only through
+  `/backend/service/backup/download` (`FileResponse`).
+- The whole backend surface (`BackupController`, group `service`) is
+  `AuthRole::SUPER_USER` on every action (ADR-021 governance).
+- The CLI entry (`vendor/bin/z77-backup`, ADR-028) has no HTTP auth by design:
+  shell access = permission (whoever can run PHP against the project files can
+  read them anyway). There is deliberately no token-gated backup URL.
+- DB credentials for the dump pass through a short-lived `0600` defaults file,
+  never the command line (process-list exposure) — see `MysqlDumper`.
+
 ## rules
 
 - When provisioning the admin at install → MUST generate it (interactive: hidden password prompt; non-interactive: write a one-time `SETUP_TOKEN` under `data/`); MUST NOT ship a working default credential in any `*.default.json`.
+- When handling backup archives → MUST keep them outside `htmlRoot` and MUST keep every backend backup action `SUPER_USER`-gated; archive names from request input MUST resolve through `BackupHistory::resolvePath()` (see [`backup.md`](backup.md)).
 - When setting or changing a password anywhere (installer, `LoginUserController`, setup) → MUST evaluate via `PasswordPolicy` (passing the configured `PasswordTier`) and persist the resulting `passwordWeak` flag; MUST NOT reject a weak password UNLESS the tier is `veryStrong` (the only tier that hard-blocks on save). For `notStrong`/`strong` the policy nags, never blocks.
 - When resolving the active password tier → MUST read it via `BackendAbstractController::passwordTier()` (runtime) or `PasswordTier::fromName($this->authConfig['passwordTier'])` (installer); MUST NOT hardcode a min length. `PasswordPolicy`/`PasswordTier` stay pure (no config/DI access) — the tier is passed IN.
 - When parsing a security-relevant config value into a typed value (e.g. `PasswordTier::fromName`) → MUST treat an absent value as the safe default but MUST throw on an unknown non-empty value; MUST NOT silently fall back (a typo must not quietly weaken the policy). Bind the shipped default to the enum (`PasswordTier::Strong->value`) so even the default cannot be a stray string.

@@ -14,6 +14,7 @@ class ModuleIcons
         'webseiten'  => 'icon-globe',
         'stammdaten' => 'icon-database',
         'drive'      => 'icon-hard-drive',
+        'service'    => 'icon-wrench',
     ];
 
     private const FALLBACK = 'icon-grid';

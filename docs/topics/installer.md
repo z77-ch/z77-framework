@@ -48,14 +48,15 @@ Runs as a Composer post-install/post-update hook. Reads `extra` config from `com
 | 7 | `writeModuleManagerConfig()` | → `config/moduleManager.inc.php` |
 | 8 | `writeAuthConfig()` | → `config/auth.inc.php` — **seed-once**: skipped if it already exists (INST-CONFIG-001) |
 | 9 | `writeI18nConfig()` | → `config/i18n.inc.php` — **seed-once**: skipped if it already exists (INST-CONFIG-001) |
-| 10 | `writeFileFinderConfig()` | → `config/fileFinder.inc.php` |
-| 11 | `writeDataFiles()` | seed `data/*.json` (skip if already exist) |
-| 12 | `provisionAdmin()` | create admin (interactive) or write `SETUP_TOKEN` (non-interactive) — skip if `loginUsers.json` exists |
-| 13 | `writeDebugFlag()` | create/remove `data/framework/debug.flag` per `debug` |
-| 14 | `seedProjectClaudeMd()` | seed `CLAUDE.md` (project context for AI assistants) from the kernel template — **seed-once**, never overwritten |
-| 15 | `renderAssetDriftNotice()` | print the collected asset drift (step 4) as ONE coloured notice (ADR-025) |
-| 16 | `promptAssetDeploy()` | interactive-only, per-file, default-No deploy of drifted assets (ADR-026) |
-| 17 | `offerDocsInstall()` | opt-in `z77/docs` require-dev (interactive: ask, default **Yes**; non-interactive: print the manual command) — **last output of the run** |
+| 10 | `writeBackupConfig()` | → `config/backup.inc.php` — **seed-once**: backup policy (retention, excludes, database), see [`backup.md`](backup.md) |
+| 11 | `writeFileFinderConfig()` | → `config/fileFinder.inc.php` |
+| 12 | `writeDataFiles()` | seed `data/*.json` (skip if already exist) |
+| 13 | `provisionAdmin()` | create admin (interactive) or write `SETUP_TOKEN` (non-interactive) — skip if `loginUsers.json` exists |
+| 14 | `writeDebugFlag()` | create/remove `data/framework/debug.flag` per `debug` |
+| 15 | `seedProjectClaudeMd()` | seed `CLAUDE.md` (project context for AI assistants) from the kernel template — **seed-once**, never overwritten |
+| 16 | `renderAssetDriftNotice()` | print the collected asset drift (step 4) as ONE coloured notice (ADR-025) |
+| 17 | `promptAssetDeploy()` | interactive-only, per-file, default-No deploy of drifted assets (ADR-026) |
+| 18 | `offerDocsInstall()` | opt-in `z77/docs` require-dev (interactive: ask, default **Yes**; non-interactive: print the manual command) — **last output of the run** |
 
 ## frameworkPrefix filter
 
@@ -93,8 +94,8 @@ All failures throw `\RuntimeException` — no silent errors:
 
 | Type | Path | Behaviour |
 |---|---|---|
-| Config (regenerate) | `config/*.inc.php` except `i18n.inc.php` / `auth.inc.php` | regenerated on every install |
-| Config (seed-once) | `config/i18n.inc.php`, `config/auth.inc.php` | user-adjustable (project languages / auth policy) — written once, never overwritten (INST-CONFIG-001) |
+| Config (regenerate) | `config/*.inc.php` except `i18n.inc.php` / `auth.inc.php` / `backup.inc.php` | regenerated on every install |
+| Config (seed-once) | `config/i18n.inc.php`, `config/auth.inc.php`, `config/backup.inc.php` | user-adjustable (project languages / auth policy / backup policy) — written once, never overwritten (INST-CONFIG-001) |
 | Data | `data/framework/**/*.json` | written once — never overwritten |
 
 > The blanket "config regenerated on every install" holds only for framework-controlled config (`bootstrap`, `moduleManager`, `fileFinder`). `i18n.inc.php` and `auth.inc.php` are developer-adjustable, so they are seed-once — deliberately decoupled from the `debug` flag (a caching/dev switch, not an overwrite policy).
@@ -232,7 +233,7 @@ Installer creates the override dirs, registers the module in `moduleManager.inc.
 
 ## rules
 
-- When editing a runtime config in `config/*.inc.php` → MUST NOT edit manually (regenerated on every `composer install`) — EXCEPT `config/i18n.inc.php` and `config/auth.inc.php`, which are seed-once and MAY be edited by the developer (the installer never overwrites them once they exist)
+- When editing a runtime config in `config/*.inc.php` → MUST NOT edit manually (regenerated on every `composer install`) — EXCEPT `config/i18n.inc.php`, `config/auth.inc.php` and `config/backup.inc.php`, which are seed-once and MAY be edited by the developer (the installer never overwrites them once they exist)
 - When changing a data file in `data/framework/**/*.json` → MUST be aware that the installer NEVER overwrites it after first install
 - When touching public asset / entry-file deployment → MUST keep `public/` seed-once (first install only, `public/` absent — ADR-024); MUST NOT add a `debug`-driven overwrite or an unattended / "yes-to-all" force command that writes into an existing `public/`. The ONE allowed write into an existing `public/` is the interactive, per-file, default-No deploy prompt (ADR-026, `promptAssetDeploy()`), which MUST stay interactive-only (`io->isInteractive()`) — non-interactive runs MUST remain read-only.
 - When adding error handling in installer code → MUST throw `\RuntimeException`; MUST NOT silently swallow failures

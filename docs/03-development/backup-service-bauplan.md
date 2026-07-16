@@ -126,13 +126,13 @@ return [
 
 ## Umsetzungs-Phasen
 
-- [ ] **P1 Kernel:** `BackupType`, `ZipArchiver`, `BackupHistory`, `BackupService`,
+- [x] **P1 Kernel:** `BackupType`, `ZipArchiver`, `BackupHistory`, `BackupService`,
       `DbDumperInterface`/`MysqlDumper`, `backup.default.inc.php` + Installer-Seed,
       kernel `ext-zip` Requirement
-- [ ] **P2 CLI:** `bin/z77-backup` + composer-bin + ADR-028
-- [ ] **P3 Backend-UI:** Gruppe `service` (Config), `BackupController` + Templates,
+- [x] **P2 CLI:** `bin/z77-backup` + composer-bin + ADR-028
+- [x] **P3 Backend-UI:** Gruppe `service` (Config), `BackupController` + Templates,
       Navigation-Seed «Service»/«Backup»
-- [ ] **P4 Doku:** topic `backup.md`, backend.md, installer.md, security.md, ADR-028; docs:check grün
+- [x] **P4 Doku:** topic `backup.md`, backend.md, installer.md, security.md, ADR-028; docs:check grün
 - [ ] **P5 Verifikation:** frisches create-project → Service-Sektion sichtbar (superUser),
       alle 3 Typen manuell (db = «nicht konfiguriert»-Pfad), CLI-Lauf, Retention greift,
       Download + Delete; danach Release **1.1.0** (neues Feature → minor)

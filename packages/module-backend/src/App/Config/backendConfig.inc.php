@@ -9,6 +9,7 @@ return [
         'system'    => 'dashboard',
         'content'   => 'navigation',
         'documents' => 'drive',
+        'service'   => 'backup',
     ],
     // View area: this module owns a layout and is a top-level UI environment.
     // The environment identity is the module key; its display label + navigation
@@ -196,6 +197,23 @@ return [
                 'actions'        => [
                     'previewAction'  => AuthRole::ADMIN,
                     'downloadAction' => AuthRole::ADMIN,
+                ],
+            ],
+        ],
+        // Installation service tools. Backups contain the whole user store
+        // (loginUsers.json) and possibly DB dumps — SUPER_USER only, on every
+        // action (ADR-021 governance; see docs/topics/backup.md).
+        'service' => [
+            'BackupController' => [
+                'defaultAction'  => 'list',
+                'controllerRole' => AuthRole::SUPER_USER,
+                'actions'        => [
+                    'listAction'          => AuthRole::SUPER_USER,
+                    'runAction'           => AuthRole::SUPER_USER,
+                    'downloadAction'      => AuthRole::SUPER_USER,
+                    'actionsAction'       => AuthRole::SUPER_USER,
+                    'confirmDeleteAction' => AuthRole::SUPER_USER,
+                    'removeAction'        => AuthRole::SUPER_USER,
                 ],
             ],
         ],
