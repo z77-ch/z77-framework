@@ -1,8 +1,8 @@
 {
-    "name": "z77/module-frontend",
-    "description": "Z77 Frontend Module | the public-facing site: routing, pages, navigation and localized rendering.",
+    "name": "z77/docs",
+    "description": "z77 framework documentation — AI-optimized handbook, ADRs and per-area topic docs. Install as require-dev to give an AI coding assistant full framework context inside the project.",
     "type": "library",
-    "keywords": ["php", "framework", "mvc", "frontend", "z77"],
+    "keywords": ["php", "framework", "documentation", "ai", "claude", "z77"],
     "homepage": "https://github.com/z77-ch/z77-framework",
     "license": "MIT",
     "authors": [
@@ -11,11 +11,6 @@
             "email": "peter.ruepp@z77.ch"
         }
     ],
-    "autoload": {
-        "psr-4": {
-            "Z77\\Module\\Frontend\\": "src/"
-        }
-    },
     "minimum-stability": "dev",
     "prefer-stable": true,
     "extra": {
@@ -23,13 +18,9 @@
             "dev-main": "1.0.x-dev"
         }
     },
-    "require": {
-        "php": ">=8.2",
-        "z77/kernel": "^1.0"
-    },
     "support": {
         "issues": "https://github.com/z77-ch/z77-framework/issues",
-        "source": "https://github.com/z77-ch/module-frontend",
+        "source": "https://github.com/z77-ch/docs",
         "docs": "https://github.com/z77-ch/z77-framework/tree/main/docs"
     },
     "readme": "README.md"

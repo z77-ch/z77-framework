@@ -1,9 +1,10 @@
 name: Packages Split
 
-# Splits each packages/<pkg> into its own read-only repo z77-ch/<pkg>.
+# Splits each source directory into its own read-only repo z77-ch/<name>.
 # - Push to main  -> split branch history.
 # - Push a tag    -> split and propagate the tag (consumable via Composer as x.y.z).
 # Requires repository secret ACCESS_TOKEN: a PAT with push rights to the target repos.
+# Targets: the 4 code packages under packages/ plus docs/ (published as z77/docs).
 
 on:
   push:
@@ -18,11 +19,17 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        package:
-          - kernel
-          - module-frontend
-          - module-backend
-          - module-dms
+        include:
+          - package: kernel
+            directory: packages/kernel
+          - package: module-frontend
+            directory: packages/module-frontend
+          - package: module-backend
+            directory: packages/module-backend
+          - package: module-dms
+            directory: packages/module-dms
+          - package: docs
+            directory: docs
 
     steps:
       # The split action snapshot-copies the current package dir (no splitsh-lite),
@@ -33,7 +40,7 @@ jobs:
       - if: "!startsWith(github.ref, 'refs/tags/')"
         uses: symplify/monorepo-split-github-action@v2.4.5
         with:
-          package_directory: 'packages/${{ matrix.package }}'
+          package_directory: '${{ matrix.directory }}'
           repository_organization: 'z77-ch'
           repository_name: '${{ matrix.package }}'
           user_name: 'z77-ch'
@@ -47,7 +54,7 @@ jobs:
         uses: symplify/monorepo-split-github-action@v2.4.5
         with:
           tag: ${{ github.ref_name }}
-          package_directory: 'packages/${{ matrix.package }}'
+          package_directory: '${{ matrix.directory }}'
           repository_organization: 'z77-ch'
           repository_name: '${{ matrix.package }}'
           user_name: 'z77-ch'

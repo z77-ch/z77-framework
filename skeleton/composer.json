@@ -26,7 +26,8 @@
         {"type": "path", "url": "../packages/kernel"},
         {"type": "path", "url": "../packages/module-frontend"},
         {"type": "path", "url": "../packages/module-backend"},
-        {"type": "path", "url": "../packages/module-dms"}
+        {"type": "path", "url": "../packages/module-dms"},
+        {"type": "path", "url": "../docs"}
     ],
 
     "autoload": {

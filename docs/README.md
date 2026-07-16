@@ -44,6 +44,46 @@ recipes — what a project follows when building).
 | [dms-images.md](01-handbook/dms-images.md) | Image-size profiles config + displaying DMS images (`mediaUrl`/`mediaImage`) |
 | [patterns/](01-handbook/patterns/README.md) | Reusable project components (slider, …) + graduation lifecycle |
 
+### [topics/](topics/) — Single Source of Truth per Work Area
+
+One file per work area: entry points, file map, mental model, rules, known issues,
+pendenzen. **Read the matching topic doc before writing or analyzing code in that area.**
+Structure is enforced by `npm run docs:check` ([docs-lint/STANDARD.md](../docs-lint/STANDARD.md)).
+
+#### Topic trigger map
+
+| You are working on / keywords | Read |
+|---|---|
+| backend, dashboard, service panel, user preferences, system pages | [topics/backend.md](topics/backend.md) |
+| content block types | [topics/block-types.md](topics/block-types.md) |
+| bootstrap, DI container, debug flag | [topics/bootstrap.md](topics/bootstrap.md) |
+| cache, DataCache, APCu, page cache | [topics/cache.md](topics/cache.md) |
+| content, structured content, content files | [topics/content.md](topics/content.md) |
+| CSS/SCSS backend, werkbank | [topics/css-backend.md](topics/css-backend.md) |
+| CSS/SCSS dms | [topics/css-dms.md](topics/css-dms.md) |
+| CSS/SCSS frontend, public design | [topics/css-frontend.md](topics/css-frontend.md) |
+| CSS watch, `npm run watch` / `build` | [topics/css-watch.md](topics/css-watch.md) |
+| documents, DMS, drive, upload, delivery | [topics/documents.md](topics/documents.md) |
+| entities, hydration, entity data handling | [topics/entity-data-handling.md](topics/entity-data-handling.md) |
+| fetch, AJAX, CSRF, form validation | [topics/fetch.md](topics/fetch.md) |
+| i18n, languages, locale switching | [topics/i18n.md](topics/i18n.md) |
+| installer, `composer install`, project setup | [topics/installer.md](topics/installer.md) |
+| login, auth, session, AccessGuard | [topics/login.md](topics/login.md) |
+| mail, SMTP | [topics/mail.md](topics/mail.md) |
+| messages, flash messages | [topics/messages.md](topics/messages.md) |
+| metadata, SEO | [topics/metadata.md](topics/metadata.md) |
+| navigation | [topics/navigation.md](topics/navigation.md) |
+| packaging, monorepo split, Packagist, release/tagging | [topics/packaging.md](topics/packaging.md) |
+| persistence design, repositories, drivers | [topics/persistence-architecture.md](topics/persistence-architecture.md) |
+| file driver, JSON storage | [topics/persistence-file.md](topics/persistence-file.md) |
+| routing, router, Request, ControllerHandler | [topics/routing.md](topics/routing.md) |
+| security, hardening, setup token, password policy | [topics/security.md](topics/security.md) |
+| stylesheet, asset pipeline, AssetCleaner | [topics/stylesheet.md](topics/stylesheet.md) |
+| translation, Translator | [topics/translation.md](topics/translation.md) |
+| tree, hierarchy | [topics/tree.md](topics/tree.md) |
+| view layer, partials, HtmlView | [topics/view-layer.md](topics/view-layer.md) |
+| templates (create/change) | [01-handbook/templates.md](01-handbook/templates.md) |
+
 ### [02-decisions/](02-decisions/) — Architecture Decision Records (ADRs)
 Why was X built this way and not another? Every important decision has its own document.
 Prevents successors from reversing decisions that have already been thought through.

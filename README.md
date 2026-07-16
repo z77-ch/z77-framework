@@ -72,6 +72,16 @@ npm install             # once, installs Dart Sass locally
 npm run watch           # recompiles SCSS → CSS on change
 ```
 
+## AI-assisted development
+
+z77 is built to be worked on with an AI coding assistant (e.g. Claude Code). During
+install the installer offers to add **`z77/docs`** — the complete, AI-optimized framework
+documentation — as a dev dependency (`vendor/z77/docs`, version-matched to the framework,
+excluded from `--no-dev` deploys). It also seeds a project **`CLAUDE.md`** that points the
+assistant at the docs and the override rules. Open the project, ask *"what do we have
+here?"* — the assistant reads the docs and can start working. Added it later?
+`composer require --dev z77/docs`.
+
 ---
 
 ## Documentation

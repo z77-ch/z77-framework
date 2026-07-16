@@ -11,6 +11,7 @@
 ## file map
 
 SOURCE=/packages/kernel/core/src/Installer/Install.php
+SOURCE=/packages/kernel/core/res/CLAUDE.project.md
 SOURCE=/packages/kernel/core/src/Config/bootstrap.default.inc.php
 SOURCE=/packages/kernel/core/src/Config/moduleManager.default.inc.php
 SOURCE=/packages/kernel/core/data/framework/routing/navigation.default.json
@@ -51,7 +52,10 @@ Runs as a Composer post-install/post-update hook. Reads `extra` config from `com
 | 11 | `writeDataFiles()` | seed `data/*.json` (skip if already exist) |
 | 12 | `provisionAdmin()` | create admin (interactive) or write `SETUP_TOKEN` (non-interactive) — skip if `loginUsers.json` exists |
 | 13 | `writeDebugFlag()` | create/remove `data/framework/debug.flag` per `debug` |
-| 14 | `renderAssetDriftNotice()` | print the collected asset drift (step 4) as ONE coloured notice — **last output of the run** (ADR-025) |
+| 14 | `seedProjectClaudeMd()` | seed `CLAUDE.md` (project context for AI assistants) from the kernel template — **seed-once**, never overwritten |
+| 15 | `renderAssetDriftNotice()` | print the collected asset drift (step 4) as ONE coloured notice (ADR-025) |
+| 16 | `promptAssetDeploy()` | interactive-only, per-file, default-No deploy of drifted assets (ADR-026) |
+| 17 | `offerDocsInstall()` | opt-in `z77/docs` require-dev (interactive: ask, default **Yes**; non-interactive: print the manual command) — **last output of the run** |
 
 ## frameworkPrefix filter
 
@@ -185,6 +189,26 @@ ADR-024/025's "never write into `public/`".
 - No manifest, nothing stored — the two on-disk trees (`vendor/…/res/assets` vs `public/assets/{name}`)
   are the whole truth. Zero maintenance.
 
+## AI docs + project CLAUDE.md
+
+Two pieces make a fresh project immediately workable with an AI coding assistant:
+
+- **`seedProjectClaudeMd()`** — seeds `CLAUDE.md` into the project root from the kernel
+  template `core/res/CLAUDE.project.md`. Content: docs pointer (`vendor/z77/docs`), CE
+  override rules in short form, deployment note. **Seed-once**: as soon as the file
+  exists it belongs to the developer and is never touched again. A missing template is
+  reported (packaging defect) but does not break the install.
+- **`offerDocsInstall()`** — offers the AI-optimized documentation package `z77/docs`
+  (the monorepo `docs/` published as its own split package, version-matched to the
+  framework) as **require-dev**, so `composer install --no-dev` deploys never carry it.
+  Skipped entirely when the package is already installed or required. Interactive:
+  one question, default **Yes** (deliberately inverted vs. the overwrite prompts —
+  a yes only adds a dev dependency, nothing existing is touched), then a nested
+  `composer require --dev z77/docs:^1.0` (same php + composer binary, rebuilt by
+  `composerCommand()`). A failure is **non-fatal**: the install is already complete,
+  the manual command is printed. Non-interactive: no question, no require — one hint
+  line with the manual command.
+
 ## placeholders in directories config
 
 | Placeholder | Type | Source |
@@ -214,6 +238,8 @@ Installer creates the override dirs, registers the module in `moduleManager.inc.
 - When adding error handling in installer code → MUST throw `\RuntimeException`; MUST NOT silently swallow failures
 - When changing skeleton configuration → MUST edit `skeleton/composer.json` (single source of truth)
 - When seeding auth data → MUST NOT ship a working credential in any `*.default.json`; the admin is provisioned by `provisionAdmin()` (interactive prompt) or deferred via `SETUP_TOKEN` (non-interactive). MUST write the token under `data/`, never `public/`.
+- When changing the project context template (`core/res/CLAUDE.project.md`) → MUST keep the seeded `CLAUDE.md` seed-once; existing projects are never overwritten (the file belongs to the developer).
+- When touching the docs offer (`offerDocsInstall()`) → MUST keep the nested `composer require` interactive-only (non-interactive prints the manual command), MUST keep a failure non-fatal, and MUST keep `z77/docs` a require-dev dependency (docs never reach a `--no-dev` production deploy).
 
 ## known issues
 

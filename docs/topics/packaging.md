@@ -2,7 +2,7 @@
 
 2026-07-16
 
-Public since 2026-07-15: the monorepo and all split repos are public on GitHub and every package (`z77/kernel`, the three modules, `z77/skeleton`) is registered on Packagist with release tags (`1.0.x`). `z77-ch/kernel` + `module-frontend/backend/dms` are the active split targets; the obsolete `z77-ch/core`, `/shared`, `/persistence` repos are archived (read-only), superseded by kernel.
+Public since 2026-07-15: the monorepo and all split repos are public on GitHub and every package (`z77/kernel`, the three modules, `z77/skeleton`, `z77/docs`) is registered on Packagist with release tags (`1.0.x`). `z77-ch/kernel` + `module-frontend/backend/dms` are the active split targets; the obsolete `z77-ch/core`, `/shared`, `/persistence` repos are archived (read-only), superseded by kernel.
 
 ## entry
 
@@ -13,6 +13,7 @@ Public since 2026-07-15: the monorepo and all split repos are public on GitHub a
 
 SOURCE=/.github/workflows/split.yml
 SOURCE=/packages/kernel/composer.json
+SOURCE=/docs/composer.json
 SOURCE=/packages/module-frontend/composer.json
 SOURCE=/packages/module-backend/composer.json
 SOURCE=/packages/module-dms/composer.json
@@ -20,7 +21,7 @@ SOURCE=/skeleton/composer.json
 
 ## mental model
 
-The monorepo `z77-ch/z77-framework` is the single development source. On every push to `main`, `split.yml` copies each `packages/<pkg>` directory into its own read-only repo `z77-ch/<pkg>`. There are **4 split targets**: `kernel` (the foundation — Core/Shared/Persistence in one package) plus `module-frontend`, `module-backend`, `module-dms`. Client projects consume those split repos via Composer. The split repos are never committed to directly — the monorepo is authoritative.
+The monorepo `z77-ch/z77-framework` is the single development source. On every push to `main`, `split.yml` copies each source directory into its own read-only repo `z77-ch/<name>`. There are **5 split targets**: `kernel` (the foundation — Core/Shared/Persistence in one package), `module-frontend`, `module-backend`, `module-dms`, plus `docs` (the monorepo `docs/` published as `z77/docs`). Client projects consume those split repos via Composer. The split repos are never committed to directly — the monorepo is authoritative.
 
 - The **kernel** package ships three PSR-4 roots in one `composer.json` (`Z77\Core` → `core/src/`, `Z77\Shared` → `shared/src/`, `Z77\Persistence` → `persistence/src/`). They were merged because they are functionally inseparable and mutually cyclic — see ADR-023.
 - Module packages (`module-frontend`/`backend`/`dms`) each require only `z77/kernel` (`^1.0`).
@@ -28,11 +29,12 @@ The monorepo `z77-ch/z77-framework` is the single development source. On every p
 - Releases are **tagged** (`x.y.z`) in the monorepo; the tag push propagates to the split repos (see split flow) and Packagist picks it up. `extra.branch-alias` maps `dev-main` → `1.0.x-dev` so `^1.0` also resolves from `main` between releases.
 - All split repos are **public** and on **Packagist** (since 2026-07-15). Client projects consume via plain `composer require z77/*` / `composer create-project z77/skeleton` — no `repositories` entry needed. Only the monorepo's own `skeleton/` uses local `path` repos, for development against the moving framework.
 - `z77-ch/z77-skeleton` (Packagist `z77/skeleton`) is **not a split target** — a separate, hand-maintained repo (README + `composer.json` only, everything else is installer-generated). It is committed and tagged independently of the monorepo.
+- `z77/docs` ships the documentation itself (`docs/composer.json` at the top of `docs/`, no autoload). Projects consume it as **require-dev** — offered by the installer (`offerDocsInstall()`, see [`installer.md`](installer.md)) so an AI coding assistant has the full framework context under `vendor/z77/docs`, version-matched to the code packages via the shared tags.
 - Vendor namespace is `z77/*` (e.g. `z77/kernel`); GitHub org is `z77-ch`. The two intentionally differ — repo name need not equal package name for VCS repositories.
 
 ## split flow
 
-1. Push to `main` → workflow matrix runs one job per package (kernel + 3 modules).
+1. Push to `main` → workflow matrix runs one job per split target (kernel + 3 modules + docs).
 2. Each job clones the target repo, checks out `main`, replaces its contents with the current `packages/<pkg>/`, commits, pushes.
 3. Tag push → same, plus the tag is propagated (consumable as `x.y.z` once tagging starts).
 

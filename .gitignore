@@ -31,3 +31,5 @@
 /skeleton/public/assets/
 /skeleton/public/storage/
 /skeleton/composer.lock
+# seeded by the installer (seed-once project context for AI assistants)
+/skeleton/CLAUDE.md

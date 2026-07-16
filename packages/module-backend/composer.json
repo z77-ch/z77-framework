@@ -2,6 +2,8 @@
     "name": "z77/module-backend",
     "description": "Z77 Backend Module | admin interface for Z77 framework.",
     "type": "library",
+    "keywords": ["php", "framework", "admin", "backend", "z77"],
+    "homepage": "https://github.com/z77-ch/z77-framework",
     "license": "MIT",
     "authors": [
         {
@@ -24,5 +26,11 @@
     "require": {
         "php": ">=8.2",
         "z77/kernel": "^1.0"
-    }
+    },
+    "support": {
+        "issues": "https://github.com/z77-ch/z77-framework/issues",
+        "source": "https://github.com/z77-ch/module-backend",
+        "docs": "https://github.com/z77-ch/z77-framework/tree/main/docs"
+    },
+    "readme": "README.md"
 }

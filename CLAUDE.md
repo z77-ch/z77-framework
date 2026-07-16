@@ -2,6 +2,10 @@
 
 This document is the primary context for Claude Code. Read it completely before analyzing or writing code.
 
+> **Why is this file public?** Deliberately. z77 is developed AI-assisted and documented
+> for knowledge transfer — successors will most likely work with an AI coding assistant
+> too. This file is part of the published working method, not a leftover internal.
+
 ## What is this?
 
 z77 is a PHP MVC framework for client projects. Successor to the Webdreams Framework (wdv-6.2.2). Developed by an experienced solo developer, documented for knowledge transfer to successors.
@@ -30,7 +34,7 @@ Read the matching topic doc BEFORE writing or analyzing code. Pendenzen, known b
 
 - Topic structure is enforced by `npm run docs:check` (deterministic linter, no AI).
 - Standard reference: [`docs-lint/STANDARD.md`](docs-lint/STANDARD.md)
-- Trigger map (which topic to read for which keyword): see memory `feedback_topic_docs.md`
+- Trigger map (which topic to read for which keyword): see [`docs/README.md` → Topic trigger map](docs/README.md#topic-trigger-map)
 
 When updating status/pendenzen for a work area → update the topic's `## known issues` / `## pending` sections, then verify `npm run docs:check` is green. Do NOT create memory files for pendenzen.
 
