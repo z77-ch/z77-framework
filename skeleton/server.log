@@ -1,0 +1,52 @@
+[Thu Jul 16 13:12:57 2026] PHP 8.3.26 Development Server (http://localhost:8226) started
+[Thu Jul 16 13:12:59 2026] [::1]:61244 Accepted
+[Thu Jul 16 13:12:59 2026] [::1]:61244 [200]: GET /login
+[Thu Jul 16 13:12:59 2026] [::1]:61244 Closing
+[Thu Jul 16 13:12:59 2026] [::1]:61245 Accepted
+[Thu Jul 16 13:12:59 2026] [::1]:61245 [302]: GET /backend
+[Thu Jul 16 13:12:59 2026] [::1]:61245 Closing
+[Thu Jul 16 13:13:36 2026] [::1]:64011 Accepted
+[Thu Jul 16 13:13:36 2026] [::1]:64011 [200]: GET /login
+[Thu Jul 16 13:13:36 2026] [::1]:64011 Closing
+[Thu Jul 16 13:13:36 2026] [::1]:64012 Accepted
+[Thu Jul 16 13:13:36 2026] [::1]:64012 [302]: POST /backend/system/login/login
+[Thu Jul 16 13:13:36 2026] [::1]:64012 Closing
+[Thu Jul 16 13:13:36 2026] [::1]:64013 Accepted
+[Thu Jul 16 13:13:36 2026] [::1]:64013 [200]: GET /login
+[Thu Jul 16 13:13:36 2026] [::1]:64013 Closing
+[Thu Jul 16 13:13:36 2026] [::1]:49288 Accepted
+[Thu Jul 16 13:13:37 2026] [::1]:49288 [302]: POST /backend/system/login/login
+[Thu Jul 16 13:13:37 2026] [::1]:49288 Closing
+[Thu Jul 16 13:13:37 2026] [::1]:49289 Accepted
+[Thu Jul 16 13:13:37 2026] [::1]:49289 [200]: GET /backend
+[Thu Jul 16 13:13:37 2026] [::1]:49289 Closing
+[Thu Jul 16 13:13:37 2026] [::1]:49290 Accepted
+[Thu Jul 16 13:13:37 2026] [::1]:49290 [200]: GET /backend/content/translation
+[Thu Jul 16 13:13:37 2026] [::1]:49290 Closing
+[Thu Jul 16 13:13:37 2026] [::1]:49291 Accepted
+[Thu Jul 16 13:13:37 2026] [::1]:49291 [200]: GET /backend/service/backup/list
+[Thu Jul 16 13:13:37 2026] [::1]:49291 Closing
+[Thu Jul 16 13:13:37 2026] [::1]:49292 Accepted
+[Thu Jul 16 13:13:37 2026] [::1]:49292 [404]: GET /backend/system/system
+[Thu Jul 16 13:13:37 2026] [::1]:49292 Closing
+[Thu Jul 16 13:13:37 2026] [::1]:49293 Accepted
+[Thu Jul 16 13:13:37 2026] [::1]:49293 [200]: GET /backend/content/translation
+[Thu Jul 16 13:13:37 2026] [::1]:49293 Closing
+[Thu Jul 16 13:13:37 2026] [::1]:49294 Accepted
+[Thu Jul 16 13:13:37 2026] [::1]:49294 [200]: GET /backend/system/dashboard/overview
+[Thu Jul 16 13:13:37 2026] [::1]:49294 Closing
+[Thu Jul 16 13:13:37 2026] [::1]:49295 Accepted
+[Thu Jul 16 13:13:37 2026] [::1]:49295 [302]: GET /backend/service/backup/list
+[Thu Jul 16 13:13:37 2026] [::1]:49295 Closing
+[Thu Jul 16 13:13:37 2026] [::1]:49296 Accepted
+[Thu Jul 16 13:13:37 2026] [::1]:49296 [302]: GET /backend/service/backup/download?type=data&file=x.zip
+[Thu Jul 16 13:13:37 2026] [::1]:49296 Closing
+[Thu Jul 16 13:28:11 2026] [::1]:50539 Accepted
+[Thu Jul 16 13:28:11 2026] [::1]:50539 [200]: GET /backend/service/backup/list
+[Thu Jul 16 13:28:11 2026] [::1]:50539 Closing
+[Thu Jul 16 13:28:11 2026] [::1]:50540 Accepted
+[Thu Jul 16 13:28:11 2026] [::1]:50540 [302]: GET /backend/service/backup/list
+[Thu Jul 16 13:28:11 2026] [::1]:50540 Closing
+[Thu Jul 16 13:28:11 2026] [::1]:50541 Accepted
+[Thu Jul 16 13:28:11 2026] [::1]:50541 [200]: GET /login
+[Thu Jul 16 13:28:11 2026] [::1]:50541 Closing

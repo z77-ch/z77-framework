@@ -23,7 +23,7 @@ Routing runs once in `Bootstrap::pullUp()`. `Request::runParsing()` extracts the
 
 - URL schema is 4 segments: `/module/group/controller/action` (since 2026-05-19, see ADR-005).
 - Fetch mode always skips navigation lookup → uses convention routing directly.
-- Per-controller `defaultAction` (since 2026-05-04): each controller defines its own default in module config.
+- Per-controller `defaultAction` (since 2026-05-04, deviation-only since 2026-07-16): the module-level `defaultAction` is the convention (backend `list`); a controller entry configures only a deviation.
 - Per-group `defaultController` (since 2026-05-19): each group declares its default controller in `groupDefaults`.
 - `ControllerHandler::has*()` methods both validate AND set state (CQS trade-off by design).
 - Old 3-segment URLs throw `NotFoundException` — strict, no redirect layer (see ADR-005).
@@ -107,23 +107,25 @@ Cascade order for partial URLs (positional segments 0–2):
 ## per-controller defaultAction
 
 `setController()` resolves default action in this order:
-1. `controllers[$group][$Controller]['defaultAction']` in module config (controller-level, group-nested)
-2. Module-level `defaultAction` (legacy fallback, used by frontend module's wildcard pattern)
+1. `controllers[$group][$Controller]['defaultAction']` in module config (controller-level, group-nested) — configure ONLY deviations
+2. Module-level `defaultAction` — the module's **convention** (backend: `list`, frontend: `home`; AUTH-B003, 2026-07-16)
 3. `NotFoundException` if neither defined
+
+A controller whose convention-resolved action method does not exist still 404s
+(`setAction()` throws) — e.g. `/backend/system/system` (POST-only fetch
+endpoints, no `listAction`) stays 404 by design (ADR-005).
 
 The `controllers` map is nested by group (mirrors the controller namespace) so
 base names only need to be unique within a group — see `backend.md` AUTH-B002 +
 ADR-005 (revised 2026-06-02).
 
 ```php
+'defaultAction' => 'list',                                     // module convention
 'controllers' => [
     'system' => [
-        'LoginController'     => ['defaultAction' => 'login',    ...],
-        'DashboardController' => ['defaultAction' => 'overview', ...],
-        'SystemController'    => [                                ...],   // no defaultAction — POST-only
-    ],
-    'content' => [
-        'NavigationController' => ['defaultAction' => 'list', ...],
+        'LoginController'     => ['defaultAction' => 'login',    ...],  // deviation
+        'DashboardController' => ['defaultAction' => 'overview', ...],  // deviation
+        // everything else inherits the `list` convention — no entry
     ],
 ]
 ```

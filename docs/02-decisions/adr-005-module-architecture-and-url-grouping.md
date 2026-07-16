@@ -215,6 +215,13 @@ actions. Its `defaultAction` is **removed**. Convention access to
 intentionally reachable only via explicit POST URLs (`/backend/system/system/clear-cache`,
 `/backend/system/system/toggle-debug`, `/backend/system/system/save-preferences`).
 
+> **Revised 2026-07-16 (AUTH-B003, deviation-only config):** `SystemController`
+> no longer has a config entry at all. The module-level `defaultAction: 'list'`
+> convention now resolves `/backend/system/system` to `listAction` — which does
+> not exist, so `setAction()` throws the same `NotFoundException`. The outcome
+> (404 by design, explicit POST URLs only) is unchanged; only the mechanism
+> moved from "no defaultAction configured" to "convention action absent".
+
 ---
 
 ## Reasoning
