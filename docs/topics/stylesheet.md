@@ -25,7 +25,8 @@ SOURCE=/packages/module-backend/res/view/templates/html-shell-skeleton.tpl.php
 
 CSS files are versioned by mtime. `StylesheetManager::getVersionedCss()` creates a snapshot copy `mobile_at-{mtime}.css` alongside the source and cleans up stale versions on each call. `LayoutManager` is the asset registry — `addCss()` registers files, `getCss()` returns the ordered list. `HtmlView::renderCss()` renders `<link>` tags into the `$css` skeleton variable in `<head>`.
 
-- Production source files MUST be `.min.css` — framework never minifies.
+- CSS filenames are debug-independent — the sass build (`npm run build`) compiles compressed CSS into the same filename (`base.css`, `mobile.css`, …). There is no `.min.css` variant.
+- JS is the only asset type with a `.min` suffix switch (`JavascriptManager::minSuffix()`, production → `.min.js`). The framework never minifies — `.min.js` files are created by the developer's build.
 - FileFinder resolves assets from a single tier `public/assets/{module}` (no public vendor tier — ADR-024); override precedence is at the source level (`override` before `vendor` in `sourcePaths`).
 - AssetCleaner runs on cache-clear and removes stale `*_at-{stamp}.{css,js,map}` files (with 30s grace period).
 
@@ -70,14 +71,26 @@ DI::getLayoutManager()->addCss('print', 'Z77\\Module\\Frontend', 'print');
 | Cleanup | Old versioned files removed on each `getVersionedCss()` call (30s grace) |
 | Cache-busting | Without query strings — works with aggressive CDN caching |
 
-## debug vs. production
+## debug vs. production (JS only)
 
-| debug | suffix | example |
+The `.min` suffix switch applies to **JS only** — CSS filenames never change (the sass
+build compiles compressed into the same filename).
+
+| debug | JS source | versioned copy |
 |---|---|---|
-| `true` | _(none)_ | `mobile_at-1741606223.css` |
-| `false` | `.min` | `mobile.min_at-1741606223.css` |
+| `true` | `shell.js` | `shell_at-1741606223.js` |
+| `false` | `shell.min.js` | `shell_at-1741606223.min.js` |
 
-In production the source must be `mobile.min.css`. Minification is not done by the framework.
+Minification is not done by the framework — `.min.js` must be created by the developer.
+
+**Missing `.min.js` fallback (production):** if the `.min.js` source is absent,
+`JavascriptManager::getVersionedJs()` logs an error (`logs/php-error.log`) and serves the
+unminified `{name}.js` instead of throwing — a skipped build step must not 500 every page
+(including the backend needed to re-enable debug). Additionally,
+`SystemController::toggleDebugAction()` checks all module-level `layoutConfig` JS entries
+when debug is switched OFF and flashes the admin a list of missing `.min.js` files.
+Controller-level `addJs()` registrations are not pre-checked — the runtime fallback covers
+them.
 
 ## asset path resolution
 
@@ -142,7 +155,8 @@ createCss(name, nameSpace, template, data, version)
 
 ## rules
 
-- When deploying production assets → MUST ensure source files are named `*.min.css` (framework does not minify)
+- When deploying production JS → MUST create `{name}.min.js` next to `{name}.js` (framework does not minify); a missing `.min.js` degrades to the unminified source with an error-log entry, it MUST NOT be relied on as a permanent state
+- When deploying production CSS → MUST run the sass build (`npm run build`, compressed output into the same filename); there is no `.min.css` variant
 - When emitting CSS to the page → MUST register via `LayoutManager` (rendered in `<head>`); MUST NOT use inline `<style>` blocks
 - When defining base CSS → MUST register in `layoutConfig.inc.php`; `addCss()` from controllers is for page-specific additions only
 - When resolving asset paths → MUST use the single tier `public/assets/{module}` (no public vendor tier — ADR-024); a project asset MUST override the framework one by sharing the filename there (the project build wins because the installer seeds `public/` once and never overwrites)
@@ -191,6 +205,7 @@ Race scenarios:
 
 ## known issues
 
+- **JS-MIN-FALLBACK-001** — resolved 2026-07-17. Deleting `debug.flag` without having built the `.min.js` sources 500'd every page (`FileFinder` threw on `js/shell.min.js`), locking the admin out of the backend that would re-create the flag. Fixed twofold: (1) `JavascriptManager::getVersionedJs()` now falls back to the unminified `{name}.js` with an `error_log` entry when the `.min.js` source is missing (LayoutManager's `addJs`/`resolveJsPath` error message names both tried variants when neither exists); (2) `SystemController::toggleDebugAction()` scans all module-level `layoutConfig` JS entries when debug is switched OFF and flashes the admin the list of missing `.min.js` files. Deliberately NOT in `FileFinder` — it is a generic lookup library with no `.min`/debug semantics. Same pass corrected stale docs claiming a `.min.css` production variant (CSS is compiled compressed into the same filename by the sass build; `StylesheetManager` has no min switch) — fixed here and in [`view-layer.md`](view-layer.md).
 - ARCH-009: `LayoutManager` is a God-Object (~430 lines, 5 responsibilities). Acceptable today; split when multiple parallel layout strategies appear.
 - **STYLES-DEAD-001** — resolved 2026-05-16. Hardcoded `<link>` tags to `/css/reset.css` / `/css/styles.css` no longer exist (asset-pipeline refactor 2026-05-06). Dead `'styles' => 'partials/head/styles'` reference removed from `module-backend/layoutConfig.inc.php`; empty `partials/head/styles.tpl.php` deleted.
 - **CSS-PREFIX-001** — resolved 2026-05-17. `.be-form__*`, `.be-modal__*` and `.be-modal__alert*` migrated from `list.css` into SCSS components (`_forms.scss`, `_modal.scss`, `_alerts.scss`) using `--be-*` tokens. `list.css` now contains only navigation-specific styles (`.be-nav-*`, `.be-icon-btn`, `.be-btn`, `.be-tag`, `.be-children-table`). Login template migrated from `.form__*` to `.be-form__*` (consistency). New token `--be-danger` added to `_colors.scss` (palette-independent).

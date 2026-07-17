@@ -49,14 +49,15 @@ Runs as a Composer post-install/post-update hook. Reads `extra` config from `com
 | 8 | `writeAuthConfig()` | → `config/auth.inc.php` — **seed-once**: skipped if it already exists (INST-CONFIG-001) |
 | 9 | `writeI18nConfig()` | → `config/i18n.inc.php` — **seed-once**: skipped if it already exists (INST-CONFIG-001) |
 | 10 | `writeBackupConfig()` | → `config/backup.inc.php` — **seed-once**: backup policy (retention, excludes, database), see [`backup.md`](backup.md) |
-| 11 | `writeFileFinderConfig()` | → `config/fileFinder.inc.php` |
-| 12 | `writeDataFiles()` | seed `data/*.json` (skip if already exist) |
-| 13 | `provisionAdmin()` | create admin (interactive) or write `SETUP_TOKEN` (non-interactive) — skip if `loginUsers.json` exists |
-| 14 | `writeDebugFlag()` | create/remove `data/framework/debug.flag` per `debug` |
-| 15 | `seedProjectClaudeMd()` | seed `CLAUDE.md` (project context for AI assistants) from the kernel template — **seed-once**, never overwritten |
-| 16 | `renderAssetDriftNotice()` | print the collected asset drift (step 4) as ONE coloured notice (ADR-025) |
-| 17 | `promptAssetDeploy()` | interactive-only, per-file, default-No deploy of drifted assets (ADR-026) |
-| 18 | `offerDocsInstall()` | opt-in `z77/docs` require-dev (interactive: ask, default **Yes**; non-interactive: print the manual command) — **last output of the run** |
+| 11 | `writeMailConfig()` | → `config/mail.inc.php` — **seed-once**: mail transport + sender identity (`enabled=true`, `transport='mail'`, empty `fromAddress` to fill per project), see [`mail.md`](mail.md) |
+| 12 | `writeFileFinderConfig()` | → `config/fileFinder.inc.php` |
+| 13 | `writeDataFiles()` | seed `data/*.json` (skip if already exist) |
+| 14 | `provisionAdmin()` | create admin (interactive) or write `SETUP_TOKEN` (non-interactive) — skip if `loginUsers.json` exists |
+| 15 | `writeDebugFlag()` | create/remove `data/framework/debug.flag` per `debug` |
+| 16 | `seedProjectClaudeMd()` | seed `CLAUDE.md` (project context for AI assistants) from the kernel template — **seed-once**, never overwritten |
+| 17 | `renderAssetDriftNotice()` | print the collected asset drift (step 4) as ONE coloured notice (ADR-025) |
+| 18 | `promptAssetDeploy()` | interactive-only, per-file, default-No deploy of drifted assets (ADR-026) |
+| 19 | `offerDocsInstall()` | opt-in `z77/docs` require-dev (interactive: ask, default **Yes**; non-interactive: print the manual command) — **last output of the run** |
 
 ## frameworkPrefix filter
 

@@ -1,6 +1,6 @@
 # view-layer
 
-2026-05-17
+2026-07-17
 
 ## entry
 
@@ -12,6 +12,9 @@
 
 SOURCE=/packages/kernel/core/src/Services/LayoutManager.php
 SOURCE=/packages/kernel/core/src/Services/HtmlView.php
+SOURCE=/packages/kernel/core/src/Services/TemplateRenderer.php
+SOURCE=/packages/kernel/core/src/Services/PartialLabels.php
+SOURCE=/packages/kernel/shared/res/assets/js/partial-labels.js
 SOURCE=/packages/kernel/core/src/Http/Response/HtmlResponse.php
 SOURCE=/packages/kernel/core/src/Controller/AbstractBaseController.php
 SOURCE=/packages/module-frontend/src/Ui/Config/layoutConfig.inc.php
@@ -96,7 +99,31 @@ Reference: `docs/01-handbook/templates.md`.
 ## assets
 
 CSS/JS versioned by filemtime → `{name}_at-{mtime}.css`. Bypasses CDN cache.
-Production expects `.min.css` / `.min.js`; debug uses non-minified.
+JS only: production expects `{name}.min.js`, debug uses `{name}.js`; a missing `.min.js`
+falls back to the unminified source (error-logged). CSS has no `.min` variant — the sass
+build compiles compressed into the same filename. Details: [`stylesheet.md`](stylesheet.md).
+
+## partial labels (dev tool)
+
+Built-in overlay showing which partial rendered each block — orientation for
+developers/designers, zero project code. Built 2026-07-17 from the zihlundsee
+prototype handoff (`{projekt}/work/docs/topics/partial-labels.md`).
+
+- **Mechanics:** when active, `TemplateRenderer::partial()` and
+  `HtmlView::renderPartials()` (body level) wrap every partial's output in
+  comment markers `<!--z77p:partials/intro-->…<!--/z77p-->` (`PartialLabels::wrap`);
+  the overlay script `partial-labels.js` (shared asset, auto-registered by
+  `LayoutManager::initialize()`) pairs the markers, measures each partial via a
+  DOM Range and floats a label at its top-left corner (nested partials indent by
+  depth; debounced reposition on resize + body ResizeObserver).
+- **Gate (`PartialLabels::active()`, all three required):**
+  `data/framework/partial-labels.flag` (backend service-panel toggle,
+  `SystemController::togglePartialLabelsAction` — same pattern as debug/noindex)
+  **AND** `DEBUG` **AND** session role >= admin. The DEBUG half is load-bearing:
+  under DEBUG the page cache is bypassed, so markers/script can never be cached
+  into visitor pages. Inactive → output byte-identical (verified).
+- **Resilient:** a missing `partial-labels.js` deployment logs an error and the
+  tool stays off — it never takes a page down.
 
 ## rules
 
@@ -116,7 +143,12 @@ Production expects `.min.css` / `.min.js`; debug uses non-minified.
 
 ## known issues
 
-_(none)_
+- **PARTIAL-LABELS-001** — built 2026-07-17 (see «partial labels» section). Verified: gate
+  matrix (flag/DEBUG/roles) + marker wrapping via CLI harness against the real zihlundsee
+  templates; live guest request with flag set stays marker- and script-free. Open: visual
+  pass of the overlay itself as an admin (labels position/indent/resize) — one panel-toggle
+  click away. Fetch-injected partials carry markers too, but the overlay repositions only on
+  resize/body-size changes; usually the popup resize triggers it, no dedicated hook (v1).
 
 ## pending
 

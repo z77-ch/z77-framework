@@ -3,6 +3,7 @@ namespace Z77\Module\Backend\Ui\Controllers\System;
 
 use Z77\Core\Http\Response\FetchResponse,
     Z77\Core\Services\AssetCleaner,
+    Z77\Core\Services\PartialLabels,
     Z77\Core\DI,
     Z77\Module\Backend\Ui\Controllers\BackendAbstractController,
     Z77\Shared\Attributes\Fetch,
@@ -53,9 +54,87 @@ class SystemController extends BackendAbstractController
         DI::getCacheManager()->page()->clearAll();
 
         $this->messageService->pushFlash('success', $newState ? 'Entwickler-Modus aktiviert' : 'Entwickler-Modus deaktiviert');
+
+        if (!$newState) {
+            $missing = $this->findMissingMinJs();
+            if ($missing) {
+                $this->messageService->pushFlash(
+                    'error',
+                    'Fehlende minifizierte JS-Dateien: ' . implode(', ', $missing)
+                    . ' — die Seite nutzt den unminifizierten Fallback. Build ausführen.'
+                );
+            }
+        }
+
         return $this->fetch()
             ->setStatus('success')
             ->setData(['devMode' => $newState]);
+    }
+
+    /**
+     * Checks every JS asset registered in the module-level layoutConfigs for a
+     * missing .min.js variant. Warns the admin at the moment debug is switched
+     * off — the moment the .min files become the served sources. Controller-level
+     * addJs() registrations are not scanned; those are covered at request time by
+     * the JavascriptManager fallback (unminified source + error log).
+     *
+     * @return string[] e.g. ['shell.min.js (Z77\Module\Backend)']
+     */
+    private function findMissingMinJs(): array
+    {
+        $missing = [];
+
+        foreach (array_keys(DI::getFileFinder()->getAllNamespaces()) as $nameSpace) {
+            $layoutConfig = DI::getConfigManager()->getArrayConfig(
+                configName: 'Ui/Config/layoutConfig',
+                nameSpace: $nameSpace,
+                throwError: false
+            );
+
+            foreach ($layoutConfig->get('javascripts', []) as $javascript) {
+                $name = $javascript['name'] ?? null;
+                if ($name === null) {
+                    continue;
+                }
+                $jsNameSpace = $javascript['nameSpace'] ?? $nameSpace;
+
+                $found = DI::getFileFinder()->getFirstAssetMatch(
+                    fileName: "js/{$name}.min.js",
+                    nameSpace: $jsNameSpace,
+                    throwError: false,
+                    cachePersist: false
+                );
+                if ($found === null) {
+                    $missing["{$jsNameSpace}|{$name}"] = "{$name}.min.js ({$jsNameSpace})";
+                }
+            }
+        }
+
+        return array_values($missing);
+    }
+
+    /**
+     * Toggles the partial-label overlay flag (dev tool — PartialLabels.php).
+     * Flag alone is not enough: labels render only under DEBUG for an admin
+     * session; no cache clearing needed (under DEBUG the page cache is
+     * bypassed, without DEBUG the flag has no effect).
+     */
+    #[Fetch, HttpMethod('POST')]
+    protected function togglePartialLabelsAction(): FetchResponse
+    {
+        $flag     = PartialLabels::flagFile();
+        $newState = !file_exists($flag);
+
+        if ($newState) {
+            touch($flag);
+        } else {
+            unlink($flag);
+        }
+
+        $this->messageService->pushFlash('success', $newState ? 'Partial-Labels aktiviert' : 'Partial-Labels deaktiviert');
+        return $this->fetch()
+            ->setStatus('success')
+            ->setData(['partialLabels' => $newState]);
     }
 
     #[Fetch, HttpMethod('POST')]

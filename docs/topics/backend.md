@@ -98,6 +98,8 @@ Backend groups exist for UI organisation only — they are NOT business-domain b
 | `clearCacheAction` | POST | Clears APCu (`CacheManager::clearAllApcu`), `PageCache::clearAll`, versioned assets (`AssetCleaner::clearAll` with 30s grace). Returns `FetchResponse` with deleted-asset count. |
 | `toggleDebugAction` | POST | Toggles DEBUG by creating/deleting `data/framework/debug.flag` (see [`bootstrap.md`](bootstrap.md)), then clears APCu + PageCache so stale entries from the previous DEBUG state cannot be served. |
 | `toggleNoindexAction` | POST | Toggles the site-wide crawl block by creating/deleting `data/framework/seo/noindex.flag` (constant `SEO_NOINDEX`, see [`bootstrap.md`](bootstrap.md) / [`metadata.md`](metadata.md) SEO-NOINDEX-001), then clears APCu + PageCache so cached frontend pages re-render with/without the `robots` meta. Returns `data.noindex`. |
+| `toggleDebugAction` (min-check) | — | On switching debug OFF it additionally scans all module-level `layoutConfig` JS entries for missing `.min.js` variants and flashes the admin the list (JS-MIN-FALLBACK-001, see [`stylesheet.md`](stylesheet.md)). |
+| `togglePartialLabelsAction` | POST | Toggles the partial-label overlay dev tool by creating/deleting `data/framework/partial-labels.flag` (`PartialLabels::flagFile()`). Flag alone is inert — labels render only under DEBUG for an admin session (see [`view-layer.md`](view-layer.md) partial labels). No cache clearing needed (DEBUG bypasses the page cache; without DEBUG the flag has no effect). Returns `data.partialLabels`. |
 | `savePreferencesAction` | POST | Persists `UserPreferences` to `LoginUser` JSON. |
 
 ## user preferences

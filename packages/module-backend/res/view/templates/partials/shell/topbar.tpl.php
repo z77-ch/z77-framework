@@ -14,6 +14,7 @@ $initials = $headerUser['initials'];
 $role     = $headerUser['role'];
 $devMode  = DEBUG;
 $noindex  = SEO_NOINDEX;
+$partialLabels = \Z77\Core\Services\PartialLabels::flagSet();
 
 // Resolve a section's first reachable URL (same logic as the legacy module tabs).
 $sectionUrl = function (array $item) use ($navigationService): string {
@@ -172,6 +173,14 @@ foreach ($sections as $item) {
                             <span class="backend-service-panel__row-sub">noindex für die ganze Website</span>
                         </span>
                         <span id="js-noindex-indicator" class="backend-service-panel__toggle<?= $noindex ? ' backend-service-panel__toggle--on' : '' ?>" aria-hidden="true"><span class="backend-service-panel__toggle-thumb"></span></span>
+                    </button>
+                    <button type="button" id="js-partial-labels-toggle" data-url="/backend/system/system/toggle-partial-labels" class="backend-service-panel__row">
+                        <span class="backend-service-panel__row-icon"><svg class="be-icon" width="14" height="14" aria-hidden="true"><use href="#icon-eye"/></svg></span>
+                        <span class="backend-service-panel__row-body">
+                            <span class="backend-service-panel__row-label">Partial-Labels</span>
+                            <span class="backend-service-panel__row-sub">Template-Namen einblenden (nur Entwickler-Modus)</span>
+                        </span>
+                        <span id="js-partial-labels-indicator" class="backend-service-panel__toggle<?= $partialLabels ? ' backend-service-panel__toggle--on' : '' ?>" aria-hidden="true"><span class="backend-service-panel__toggle-thumb"></span></span>
                     </button>
                     <button type="button" id="js-clear-cache" data-url="/backend/system/system/clear-cache" class="backend-service-panel__row">
                         <span class="backend-service-panel__row-icon"><svg class="be-icon" width="14" height="14" aria-hidden="true"><use href="#icon-trash"/></svg></span>
