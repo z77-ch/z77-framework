@@ -70,7 +70,7 @@ Structure is enforced by `npm run docs:check` ([docs-lint/STANDARD.md](../docs-l
 | i18n, languages, locale switching | [topics/i18n.md](topics/i18n.md) |
 | installer, `composer install`, project setup | [topics/installer.md](topics/installer.md) |
 | login, auth, session, AccessGuard | [topics/login.md](topics/login.md) |
-| mail, SMTP | [topics/mail.md](topics/mail.md) |
+| mail, email, e-mail versand / configure email sending, SMTP, contact form / kontaktformular, form mail, emailConfig, sender / from address, EmailService, backend mail settings | [topics/mail.md](topics/mail.md) |
 | messages, flash messages | [topics/messages.md](topics/messages.md) |
 | metadata, SEO | [topics/metadata.md](topics/metadata.md) |
 | navigation | [topics/navigation.md](topics/navigation.md) |

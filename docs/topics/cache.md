@@ -24,7 +24,7 @@ SOURCE=/packages/kernel/core/src/Http/Response/PageCacheStatus.php
 Two independent subsystems behind one facade. `DataCache` is an APCu-backed key-value store for application data; `PageCache` is full-page HTML on disk. `CacheManager` exposes both via `data()` and `page()`.
 
 - `DataCache` batches writes into a local array and flushes to APCu once at request end via `flush()`.
-- `PageCache` is auto-skipped in DEBUG, for non-GET/HEAD, for query strings, and in Fetch mode.
+- `PageCache` is auto-skipped in DEBUG, for admin sessions (role >= ADMIN), for non-GET/HEAD, for query strings, and in Fetch mode.
 - Storing `null` in `DataCache` is forbidden — indistinguishable from a miss.
 - `cachePersist` is always `false` in bootstrap config.
 
@@ -44,7 +44,7 @@ Layers: local array → APCu
 
 | Aspect | Detail |
 |---|---|
-| Skip conditions | DEBUG, non-GET/HEAD, query string, Fetch mode, module policy `enabled=false`, `ttl <= 0` |
+| Skip conditions | DEBUG, session role >= ADMIN (CACHE-ADMIN-001), non-GET/HEAD, query string, Fetch mode, module policy `enabled=false`, `ttl <= 0` |
 | ETag | `filemtime` of cache file |
 | Path | `cache/pages/{lang}/{module}/{controller}/{action}.html` |
 | Failure | Dispatcher wraps `PageCache::set()` in try/catch — write failure must not kill request |
@@ -58,6 +58,7 @@ Layers: local array → APCu
 PageCachePolicy::decide($request)
   │
   ├─ DEBUG=true                                              → NewPage  (BYPASS)
+  ├─ session role >= ADMIN                                   → NewPage  (BYPASS)
   ├─ !GET && !HEAD                                           → NewPage  (BYPASS)
   ├─ hasQueryString()                                        → NewPage  (BYPASS)
   ├─ RequestMode::Fetch                                      → NewPage  (BYPASS)
@@ -88,7 +89,7 @@ Dispatcher::resolveResponse(decision)
 |---|---|---|
 | `HIT` | Body loaded from PageCache file | `PageFromCache` + `PageCache::get()` returned a response |
 | `MISS` | Cache miss → rendered fresh and stored | `PageFromCache` + `get()` was null, fallthrough to render + `tryStore()` |
-| `BYPASS` | PageCache skipped or write failed | `NewPage` (DEBUG, POST, query, fetch, policy disabled) OR `tryStore()` threw |
+| `BYPASS` | PageCache skipped or write failed | `NewPage` (DEBUG, admin session, POST, query, fetch, policy disabled) OR `tryStore()` threw |
 
 ## module config
 
@@ -133,6 +134,7 @@ Marked today: `Navigation`, `Tag`, `MetaData`. Controllers MUST NOT call `cacheM
 - When editing bootstrap config → `cachePersist` MUST be `false` (config changes must take effect without cache clear)
 - When an entity's writes must invalidate frontend caches → MUST set `invalidatesCache: true` on its `#[Entity]` attribute; MUST NOT call `cacheManager->clearAllApcu()` from controllers
 - When adding a new entity that is NOT rendered into frontend pages (logs, statistics, auth) → MUST leave `invalidatesCache` at its `false` default
+- When rendering session-dependent content for roles < ADMIN on a cacheable page → MUST NOT: only role >= ADMIN sessions bypass the PageCache (CACHE-ADMIN-001); guest and member renders MUST stay byte-identical. If member-specific markup ever lands on a cacheable page, the bypass MUST be widened to every logged-in session first
 
 ## see also
 
@@ -143,6 +145,7 @@ Marked today: `Navigation`, `Tag`, `MetaData`. Controllers MUST NOT call `cacheM
 
 ## known issues
 
+- **CACHE-ADMIN-001** — resolved 2026-07-18. `PageCachePolicy` had no user dimension (`PageIdentity` = language/module/group/controller/action), so an admin's cache-miss render was stored into the **shared** PageCache — including the frontend admin overlay (admin name, role, backend URL, route info), served to every visitor for up to TTL. Inverse symptom: with the guest version cached, a logged-in admin got the cached page (server hit or 304) **without** the overlay. Fix: `decide()` returns `NewPage` for session role >= ADMIN, right after the DEBUG check (`AuthService` injected via Bootstrap; session is started by `AccessGuard` before `decide()`). Guest/member caching unchanged — see the byte-identical rule above. Verified via CLI harness matrix (guest/member → `PageFromCache`, admin/superUser → `NewPage`, DEBUG unchanged). Bauplan: [`../03-development/pagecache-admin-bypass-bauplan.md`](../03-development/pagecache-admin-bypass-bauplan.md).
 - **CACHE-INV001** — resolved. Stale-content-after-write fixed via `#[Entity(..., invalidatesCache: true)]`. `FileEntityManager` auto-clears `DataCache` + `PageCache` on `flush()`/`remove()`/`reorder()`. Removed 5 duplicated `clearAllApcu()` calls from `NavigationController`. End-to-end verified 2026-05-16.
 - **CACHE-INV-002** — resolved 2026-06-29. `DataCache::clearAllApcu()` cleared only APCu (`apcu_clear_cache()`), not the in-process tiers (`$localCache`/`$toCache`). Since `clearAllApcu()` runs on every `invalidatesCache` entity write (`FileEntityManager`) and `$localCache` is read **before** APCu, a read-after-write in the **same** request returned the stale value (surfaced in the DMS R5 smoke: `grant` an ACE → `canRead()` still `false`). `clearAllApcu()` now also drops both in-process tiers. Cross-request flows (write in request A, read in request B) were never affected; within-request grant-then-read (e.g. the DMS management surface, R6) would have been. See [`documents.md`](documents.md) R5.
 - **CACHE-FILE-001** — resolved 2026-05-17. `DataCache::filePersistPath` removed. Was dead code (no call site used the JSON-file fallback). `DataCache` is now strictly two-tier (local → APCu). `set()` parameter `$filePersistPath`, `get()` parameter `$filePersistPath`, `setCacheDir()`, `$absCacheDir` and the file branch in `flush()` are all gone. `CacheManager::setCacheDir()` no longer propagates the path to `DataCache` (only to `PageCache`).

@@ -192,6 +192,7 @@ Actions can declare their expected `RequestMode` and HTTP method via PHP attribu
 | `#[Fetch]` | Action requires `RequestMode::Fetch`. Page-mode (browser navigation) → 404. |
 | `#[Page]` | Action requires `RequestMode::Page`. Fetch-mode (AJAX call) → 404. |
 | `#[HttpMethod('POST', ...)]` | Action accepts only listed methods (variadic). Other methods → 404. |
+| `#[Csrf]` | Write methods require a valid CSRF token (`X-CSRF-Token` header or `csrf_token` body field). Enforced by `AccessGuard` (not the Dispatcher); failure → Fetch: error envelope, Page: 303 to `/`. See [`security.md`](security.md) CSRF contract. |
 
 Attributes are **opt-in**. Without any attribute the action handles dispatch itself (e.g. `LoginController::loginAction` branches on `isPost()` internally).
 

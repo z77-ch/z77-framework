@@ -25,6 +25,8 @@ SOURCE=/packages/module-backend/src/Ui/Controllers/System/SystemController.php
 SOURCE=/packages/kernel/core/src/Installer/Install.php
 SOURCE=/packages/kernel/core/src/Services/AccessGuard.php
 SOURCE=/packages/kernel/core/src/Http/Security/CsrfService.php
+SOURCE=/packages/kernel/shared/src/Forms/FormGuard.php
+SOURCE=/packages/kernel/shared/src/Attributes/Csrf.php
 SOURCE=/packages/kernel/core/src/Session/SessionManager.php
 SOURCE=/packages/kernel/core/src/Exception/ExceptionHandler.php
 RUNTIME=/skeleton/config/auth.inc.php
@@ -73,8 +75,40 @@ the `db` archive a full SQL dump. Consequences (owned by
 - DB credentials for the dump pass through a short-lived `0600` defaults file,
   never the command line (process-list exposure) — see `MysqlDumper`.
 
+## CSRF contract + public-form protection (2026-07-18)
+
+The CSRF token (`CsrfService`, session-bound, `$csrfToken` auto-injected into
+every `html()` context) travels on ONE of two paths, checked by `AccessGuard`:
+
+| Path | Token transport | Check |
+|---|---|---|
+| Fetch POST (JS `fetch()`) | **`X-CSRF-Token` header** | global — every Fetch+POST, unconditional |
+| Page-mode POST (form submit) | hidden field **`csrf_token`** | opt-in via the `#[Csrf]` action attribute (header also accepted) |
+
+- `#[Csrf]` (Z77\Shared\Attributes, enforced in `AccessGuard::enforce()` before
+  the action, write methods only): failure → Fetch = error envelope, Page = 303
+  to `/`. Actions that want a friendly failure UX (message + form re-render,
+  e.g. a public contact form) validate in-action via `CsrfService` instead —
+  both are legitimate; pick per endpoint.
+- Consumers: `AdminPanelController::togglePartialLabelsAction` (`#[Csrf]`),
+  zihlundsee contact form (in-action, UX). Origin: CONTACT-CHECK-001 — a project
+  fetch() sent the token only in the body and every blur check died at the
+  guard; see `docs/03-development/review-email-service-usage.md`.
+
+**FormGuard** (`Z77\Shared\Forms\FormGuard`, extracted from the zihlundsee
+contact form): session-based abuse protection for public forms, per form key
+(`FormGuard::forKey('contact')`) — time-trap (`armTimeTrap()` on render /
+`isTooFast()` on submit), per-session rate limit (`recordSend()` /
+`isRateLimited()`, sliding 1-h window), PRG confirmation flag (`markSent()` /
+`consumeSent()`). Honeypot fields stay on the form DTO (names differ per form).
+Convention on bot detection (honeypot OR too fast): pretend success, send
+nothing. Not a DI singleton — built per key like `Mailer::create()`.
+
 ## rules
 
+- When a project JS posts to a Fetch-mode endpoint → MUST send the CSRF token as the `X-CSRF-Token` header (`AccessGuard` checks ONLY the header on the global fetch path); a body copy alone dies at the guard (CONTACT-CHECK-001).
+- When adding a page-mode POST endpoint → MUST protect it against CSRF: `#[Csrf]` attribute (reject semantics) or in-action `CsrfService::validate` (friendly-UX semantics); the hidden field MUST be named `csrf_token` (matches the auto-injected `$csrfToken`).
+- When building a public form → MUST use `FormGuard` for time-trap / rate-limit / PRG-flag mechanics (no hand-rolled session keys) and honeypot fields on the form DTO; on bot detection MUST pretend success and send nothing.
 - When provisioning the admin at install → MUST generate it (interactive: hidden password prompt; non-interactive: write a one-time `SETUP_TOKEN` under `data/`); MUST NOT ship a working default credential in any `*.default.json`.
 - When handling backup archives → MUST keep them outside `htmlRoot` and MUST keep every backend backup action `SUPER_USER`-gated; archive names from request input MUST resolve through `BackupHistory::resolvePath()` (see [`backup.md`](backup.md)).
 - When setting or changing a password anywhere (installer, `LoginUserController`, setup) → MUST evaluate via `PasswordPolicy` (passing the configured `PasswordTier`) and persist the resulting `passwordWeak` flag; MUST NOT reject a weak password UNLESS the tier is `veryStrong` (the only tier that hard-blocks on save). For `notStrong`/`strong` the policy nags, never blocks.

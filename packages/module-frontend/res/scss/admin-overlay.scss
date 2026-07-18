@@ -107,6 +107,47 @@
     &__info dt { color: var(--ao-muted); }
     &__info dd { margin: 0; color: var(--ao-text); word-break: break-all; }
 
+    // Dev section — partial-label toggle (plain form POST, page reloads).
+    // Switch look mirrors the backend service panel, built from the overlay's
+    // own tokens (isolated styling — no backend CSS available here).
+    &__dev-form { margin: 0; }
+    &__dev-toggle {
+        display:         flex;
+        align-items:     center;
+        justify-content: space-between;
+        gap:             8px;
+        width:           100%;
+        padding:         6px 8px;
+        border:          none;
+        border-radius:   7px;
+        background:      transparent;
+        color:           var(--ao-text);
+        font:            inherit;
+        text-align:      left;
+        cursor:          pointer;
+    }
+    &__dev-toggle:hover { background: var(--ao-surface); }
+    &__dev-toggle.is-on { color: var(--ao-accent); font-weight: 600; }
+    &__dev-switch {
+        flex-shrink:   0;
+        width:         30px;
+        height:        17px;
+        padding:       2px;
+        border-radius: 999px;
+        background:    var(--ao-line);
+        transition:    background 0.15s ease;
+    }
+    &__dev-thumb {
+        display:       block;
+        width:         13px;
+        height:        13px;
+        border-radius: 50%;
+        background:    var(--ao-muted);
+        transition:    transform 0.15s ease, background 0.15s ease;
+    }
+    &__dev-toggle.is-on &__dev-switch { background: var(--ao-accent); }
+    &__dev-toggle.is-on &__dev-thumb  { transform: translateX(13px); background: var(--ao-bg); }
+
     &__logout {
         display:       block;
         text-align:    center;

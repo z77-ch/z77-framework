@@ -38,6 +38,7 @@ SOURCE=/packages/kernel/shared/res/assets/js/panel-toggle.js
 SOURCE=/packages/kernel/shared/src/Controller/RouteInfoTrait.php
 SOURCE=/packages/module-frontend/src/Ui/Controllers/AbstractFrontendController.php
 SOURCE=/packages/module-frontend/res/view/templates/partials/adminOverlay.tpl.php
+SOURCE=/packages/module-frontend/src/Ui/Controllers/Main/AdminPanelController.php
 SOURCE=/packages/module-frontend/res/scss/admin-overlay.scss
 SOURCE=/packages/module-backend/res/assets/js/appearance.js
 SOURCE=/packages/module-backend/res/scss/components/_list.scss
@@ -75,7 +76,7 @@ Backend groups exist for UI organisation only — they are NOT business-domain b
 | `system` | `dashboard` | Technical/system UI: dashboard, login/logout, cache + debug ops |
 | `content` | `navigation` | Content management: navigation CRUD, content documents, SEO metadata (see [`metadata.md`](metadata.md)), future stylesheet editor |
 | `users` | `user` | User management — placeholder; controller not yet built (navigation entry `id:7` 404s on purpose) |
-| `service` | `backup` | Installation service tools (topbar section «Service»): backups — SUPER_USER only, see [`backup.md`](backup.md) |
+| `service` | `backup` | Installation service tools (topbar section «Service»): backups (SUPER_USER, see [`backup.md`](backup.md)) + form-mail settings (ADMIN, see [`mail.md`](mail.md)) |
 
 ## controllers
 
@@ -88,6 +89,7 @@ Backend groups exist for UI organisation only — they are NOT business-domain b
 | `MetaDataController` | `content` | `list` | Per-page SEO `MetaData` CRUD. `list` is "by navigation point", scoped to **public** environments (module config `'public' => true`) and grouped by level-0 environment, with a `?env` filter bar. add / edit / confirmDelete / remove. URL: `/backend/content/meta-data/{action}` (multi-word kebab segment). Identity (navigation_id, language) immutable on edit. See [`metadata.md`](metadata.md). |
 | `TranslationController` | `content` | `list` | i18n catalog editor: UI strings + route slugs (the two `data/framework/i18n/` families). `list` shows both as tables; a shared `?kind=ui\|slug` add / edit / confirmDelete / remove modal. Persistence + slug validation in the `TranslationCatalog` core service (NOT an `#[Entity]`). URL: `/backend/content/translation/{action}`. See [`translation.md`](translation.md) TRANS-TOOL-001. |
 | `BackupController` | `service` | `list` | Installation backups (data / db / full): history per type (directory scan), run / download / confirmDelete / remove + `actionsAction` hub. Thin glue over the kernel `BackupService` (shared with the CLI entry). ALL actions `SUPER_USER`. URL: `/backend/service/backup/{action}`. See [`backup.md`](backup.md). |
+| `EmailSettingsController` | `service` | `list` | Form-mail settings editor (EmailService v2). List mirrors the navigation/login-user layout: `be-tree--hub` rows with an inline **active switch** (`toggle-active`, only where an override exists) + the ⋮ **actions hub** (`actions` → edit / confirm-reset). Per form key the effective to/cc/subject + routeKey routing; entity override vs. config seed with origin «Backend» / «Backend (inaktiv)» / «Config». Reset behind a confirm modal. Role ADMIN (module default — no config entry; owner decision E1). URL: `/backend/service/email-settings/{action}`. Navigation seed `id:27` («E-Mail» under Service) — existing projects add the entry via the backend. See [`mail.md`](mail.md). |
 
 `NavigationController` extends **`AbstractTreeEntityController`** (which extends `BackendAbstractController`): it provides the generic `moveAction` (resolve → cycle-guard → `TreeService::reorderInto` → renumber old group → persist) once; the subclass supplies `treeRepo()`, `treeService()`, and the entity-specific `applyMovePolicy()` (cross-slot + ref-parent guards). `NavigationGroupController` was removed with `NavigationGroup` (ADR-022); the base is kept as the reuse seam for future tree-entity controllers. Mechanics vs. policy — see [`tree.md`](tree.md) / ADR-009.
 
@@ -99,12 +101,15 @@ Backend groups exist for UI organisation only — they are NOT business-domain b
 | `toggleDebugAction` | POST | Toggles DEBUG by creating/deleting `data/framework/debug.flag` (see [`bootstrap.md`](bootstrap.md)), then clears APCu + PageCache so stale entries from the previous DEBUG state cannot be served. |
 | `toggleNoindexAction` | POST | Toggles the site-wide crawl block by creating/deleting `data/framework/seo/noindex.flag` (constant `SEO_NOINDEX`, see [`bootstrap.md`](bootstrap.md) / [`metadata.md`](metadata.md) SEO-NOINDEX-001), then clears APCu + PageCache so cached frontend pages re-render with/without the `robots` meta. Returns `data.noindex`. |
 | `toggleDebugAction` (min-check) | — | On switching debug OFF it additionally scans all module-level `layoutConfig` JS entries for missing `.min.js` variants and flashes the admin the list (JS-MIN-FALLBACK-001, see [`stylesheet.md`](stylesheet.md)). |
-| `togglePartialLabelsAction` | POST | Toggles the partial-label overlay dev tool by creating/deleting `data/framework/partial-labels.flag` (`PartialLabels::flagFile()`). Flag alone is inert — labels render only under DEBUG for an admin session (see [`view-layer.md`](view-layer.md) partial labels). No cache clearing needed (DEBUG bypasses the page cache; without DEBUG the flag has no effect). Returns `data.partialLabels`. |
-| `savePreferencesAction` | POST | Persists `UserPreferences` to `LoginUser` JSON. |
+| `savePreferencesAction` | POST | Persists the appearance fields into `UserPreferences` on the `LoginUser` JSON — starts from the stored preferences so fields owned elsewhere (e.g. `partial_labels`, PARTIAL-LABELS-002) survive. |
+
+The former `togglePartialLabelsAction` (global `partial-labels.flag`) was removed
+2026-07-18 — the partial-label overlay is now a per-user preference toggled in the
+frontend admin overlay (see [`view-layer.md`](view-layer.md) partial labels).
 
 ## user preferences
 
-`UserPreferences` is a value object (`palette`, `dark_mode`). Stored in `LoginUser::$preferences` (serialized via `#[Entity]` to `loginUsers.json`). `CurrentUserService` provides per-request caching — `LoginUser` is loaded once and reused. Controllers MUST NOT load `LoginUser` directly for preferences.
+`UserPreferences` is a value object (`palette`, `dark_mode`, `font_scale`, `partial_labels` — the latter a per-viewArea map for the partial-label overlay, see [`view-layer.md`](view-layer.md)). Stored in `LoginUser::$preferences` (serialized via `#[Entity]` to `loginUsers.json`). `CurrentUserService` provides per-request caching — `LoginUser` is loaded once and reused. Controllers MUST NOT load `LoginUser` directly for preferences. A controller updating preferences MUST start from `getPreferences()` and set only its own fields — building a fresh `UserPreferences` from request data drops fields owned by other surfaces.
 
 ```php
 // BackendAbstractController::html() auto-injects three context vars:
@@ -179,6 +184,15 @@ every full frontend page, via a right-edge hover overlay.
   defines its own tokens + font on `.z77-admin-overlay` and does NOT `@use` the
   frontend tokens, so it overrides the frontend look completely.
 - Routing info reuses the same shared `RouteInfoTrait`.
+- Under DEBUG an extra section «Entwicklung» renders: the per-user partial-label
+  toggle — a plain form POST (hidden CSRF + return path) to
+  `AdminPanelController::togglePartialLabelsAction` (module-frontend, role ADMIN
+  via frontendConfig), 303 back to the same page. See [`view-layer.md`](view-layer.md)
+  partial labels (PARTIAL-LABELS-002).
+- Cache safety: admin sessions never participate in the shared PageCache
+  (`PageCachePolicy` returns `NewPage` for role >= ADMIN) — the overlay can
+  neither be stored into visitor pages nor be missing on a cached hit. See
+  [`cache.md`](cache.md) CACHE-ADMIN-001.
 
 ## user management (LoginUserController)
 

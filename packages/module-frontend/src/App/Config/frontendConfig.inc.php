@@ -71,6 +71,11 @@ return [
     // group. See backendConfig + ADR-005 (revised 2026-06-02).
     'controllers' => [
         'main' => [
+            // Overlay endpoint (adminOverlay form posts). The specific entry
+            // replaces the '*' wildcard entirely → every action requires ADMIN.
+            'AdminPanelController' => [
+                'controllerRole' => AuthRole::ADMIN,
+            ],
             '*' => [
                 'controllerRole' => AuthRole::MEMBER,
                 'actions' => [

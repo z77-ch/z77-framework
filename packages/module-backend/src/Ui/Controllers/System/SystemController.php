@@ -3,12 +3,10 @@ namespace Z77\Module\Backend\Ui\Controllers\System;
 
 use Z77\Core\Http\Response\FetchResponse,
     Z77\Core\Services\AssetCleaner,
-    Z77\Core\Services\PartialLabels,
     Z77\Core\DI,
     Z77\Module\Backend\Ui\Controllers\BackendAbstractController,
     Z77\Shared\Attributes\Fetch,
-    Z77\Shared\Attributes\HttpMethod,
-    Z77\Shared\ValueObjects\UserPreferences;
+    Z77\Shared\Attributes\HttpMethod;
 
 class SystemController extends BackendAbstractController
 {
@@ -26,14 +24,17 @@ class SystemController extends BackendAbstractController
     #[Fetch, HttpMethod('POST')]
     protected function savePreferencesAction(): FetchResponse
     {
-        $body  = DI::getRequest()->getJsonBody();
-        $prefs = new UserPreferences([
-            'palette'    => $body['palette']   ?? 'werkbank',
-            'dark_mode'  => (bool) ($body['darkMode']  ?? false),
-            'font_scale' => (float) ($body['fontScale'] ?? 1.0),
-        ]);
+        $body = DI::getRequest()->getJsonBody();
 
-        DI::getCurrentUserService()->savePreferences($prefs);
+        // Start from the stored preferences — this panel owns only the
+        // appearance fields and must not drop others (e.g. partial_labels).
+        $service = DI::getCurrentUserService();
+        $prefs   = $service->getPreferences();
+        $prefs->setPalette($body['palette'] ?? 'werkbank');
+        $prefs->setDarkMode((bool) ($body['darkMode'] ?? false));
+        $prefs->setFontScale((float) ($body['fontScale'] ?? 1.0));
+
+        $service->savePreferences($prefs);
 
         return $this->fetch()->setStatus('success');
     }
@@ -111,30 +112,6 @@ class SystemController extends BackendAbstractController
         }
 
         return array_values($missing);
-    }
-
-    /**
-     * Toggles the partial-label overlay flag (dev tool — PartialLabels.php).
-     * Flag alone is not enough: labels render only under DEBUG for an admin
-     * session; no cache clearing needed (under DEBUG the page cache is
-     * bypassed, without DEBUG the flag has no effect).
-     */
-    #[Fetch, HttpMethod('POST')]
-    protected function togglePartialLabelsAction(): FetchResponse
-    {
-        $flag     = PartialLabels::flagFile();
-        $newState = !file_exists($flag);
-
-        if ($newState) {
-            touch($flag);
-        } else {
-            unlink($flag);
-        }
-
-        $this->messageService->pushFlash('success', $newState ? 'Partial-Labels aktiviert' : 'Partial-Labels deaktiviert');
-        return $this->fetch()
-            ->setStatus('success')
-            ->setData(['partialLabels' => $newState]);
     }
 
     #[Fetch, HttpMethod('POST')]

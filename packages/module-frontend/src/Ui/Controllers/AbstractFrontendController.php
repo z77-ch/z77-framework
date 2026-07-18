@@ -41,6 +41,20 @@ abstract class AbstractFrontendController extends AbstractBaseController
             ];
             $context['viewAreas']   = DI::getInstance()->get('NavigationService')->getViewAreas();
             $context['routeInfo'] ??= $this->routeInfo();
+
+            // Dev section (partial-label toggle) only under DEBUG — without
+            // DEBUG the PartialLabels gate is closed anyway, so the switch
+            // would be a dead control (PARTIAL-LABELS-002).
+            if (DEBUG) {
+                $request = DI::getRequest();
+                $context['overlayDev'] = [
+                    'partialLabels' => DI::getCurrentUserService()
+                        ->getPreferences()
+                        ->isPartialLabelsEnabled($request->getModule()),
+                    'returnPath'    => $request->getRawRequestUri(),
+                    'csrfToken'     => DI::getCsrfService()->getToken(),
+                ];
+            }
         }
 
         $response = parent::html($context);
