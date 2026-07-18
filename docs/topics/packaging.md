@@ -62,6 +62,7 @@ Everything resolves from Packagist; `composer require z77/module-frontend:^1.0` 
 - **PKG-001**: don't assume the split preserves per-file history — the action is a snapshot copy, each monorepo push produces one commit in the target. The workflow uses a shallow checkout (no `splitsh-lite`, so full history is not needed).
 - **ARCH-PKG-002** — resolved 2026-07-09 by ADR-023. The former circular triangle `core ↔ shared ↔ persistence` is gone: the three ship as one `z77/kernel` package, so their internal references are no longer a Composer dependency. Modules depend downward on the single foundation.
 - **PKG-003** — resolved 2026-07-15 by the public release: the split repos are public, dist zipballs download without a token, the `404 from dist` warnings are gone.
+- **PKG-004** (open, first hit at release 1.2.0): `git push && git push origin <tag>` starts TWO split workflow runs (branch push + tag push) that race each other pushing to the same split repos — the loser gets `cannot lock ref … but expected …` and its run fails partially. Content ends up correct only in combination; failed jobs must be re-run (`gh run rerun <id> --failed`, tag run first, then verify each split repo carries the tag: `gh api repos/z77-ch/{repo}/tags`). Proper fix ideas: push commit and tag atomically (`git push origin main <tag>` still triggers two runs — GitHub delivers separate push events) or add a `concurrency` group to the workflow so runs serialize. Until fixed: after every tagged release check both runs are green.
 
 ## pending
 
