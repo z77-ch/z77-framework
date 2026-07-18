@@ -1,6 +1,6 @@
 # persistence-file
 
-2026-05-10
+2026-07-18
 
 ## entry
 
@@ -126,6 +126,15 @@ Default templates live anywhere under `core/data/` as `*.default.json` (e.g.
 The Installer (`Install::writeDataFiles`) deploys each to the same relative path under
 `data/` with the `.default` marker stripped — created on first install, never overwritten.
 
+**Encoding: all `data/**/*.json` (and `core/data/**/*.default.json`) are UTF-8 WITHOUT
+BOM.** `FileStorage::save()` writes exactly that (`json_encode` with
+`JSON_UNESCAPED_UNICODE`, no BOM). Edit them through the backend UI (writes via
+`FileStorage`) or a UTF-8-safe editor — **never** round-trip through Windows PowerShell
+(`Get-Content` → `Set-Content` / `Out-File` / `>`, even `-Encoding utf8`), which reads
+no-BOM UTF-8 as CP1252 and double-encodes umlauts / adds a BOM (see DATA-JSON-001).
+`load()` tolerates a stray BOM and throws on a corrupt (non-empty, unparseable) file —
+it never silently returns `[]` for corruption.
+
 ## rules
 
 - When constructing a `FileStorage` path → MUST be relative to `ABS_BASE_PATH/data/`; MUST NOT be absolute
@@ -136,6 +145,7 @@ The Installer (`Install::writeDataFiles`) deploys each to the same relative path
 - When working with `Entity::$driver` → MUST NOT guard against external mutation (`DataSourceResolver` mutates it intentionally after attribute instantiation)
 - When an entity is read one record at a time by a natural key (not as a whole collection) and records are heavy → MUST use document mode (`#[Entity('file', '<dir>', perRecord: true, keyBy: [...])]`); MUST NOT pile such records into a single collection file (every read would load + hydrate the whole site). `keyBy` MUST be snake_case property names with non-empty values (they build the filename via `DocumentPath`). Renaming a key field (e.g. slug) writes a new file — the controller MUST remove the old record first (orphan-file avoidance)
 - When an entity's writes affect frontend rendering → MUST set `invalidatesCache: true` on its `#[Entity]` attribute. `FileEntityManager` then auto-clears `DataCache` + `PageCache` after `flush()` / `remove()` / `reorder()`. Controllers MUST NOT clear caches manually after writes.
+- When editing any `data/**/*.json` or `core/data/**/*.default.json` by hand/tooling → MUST keep it UTF-8 WITHOUT BOM (use the Read+Edit/Write tools or a UTF-8-safe editor); MUST NOT round-trip it through Windows PowerShell (`Get-Content` → `Set-Content`/`Out-File`/`>`, even `-Encoding utf8`), which corrupts umlauts / adds a BOM (DATA-JSON-001).
 
 ## see also
 
@@ -151,6 +161,7 @@ The Installer (`Install::writeDataFiles`) deploys each to the same relative path
 - **MED-P002** — resolved framing: `AuthService::savePreferences` does not belong in `AuthService` at all. Auth service is responsible for auth only; preference persistence is a controller concern. Architecture pending — see `backend.md`.
 - **MED-P003** — resolved. `LoginController` and `SystemController` use `UEM::getRepository(LoginUser::class)` instead of `new LoginUserRepository(...)`.
 - **CLEAN-P001** — resolved. `decamelize()` + `camelize()` removed from `core/src/autoload/prod/php/Functions.php`.
+- **DATA-JSON-001** — resolved 2026-07-18. `FileStorage::load()` did `json_decode($json) ?? []`, so ANY parse failure (a stray UTF-8 BOM, truncation, corruption) silently returned `[]` — a BOM'd `navigation.json` would blank the whole navigation with no error. Trigger: a Claude Code session edited `navigation.json` via Windows PowerShell 5.1 (`Get-Content` defaults to CP1252 for a no-BOM file; `Set-Content -Encoding utf8` re-adds a BOM), producing `Übersetzungen` → `Ãœbersetzungen` (`C3 9C` → `C3 83 C5 93`) and BOMs. Fix: `load()` strips a leading BOM, treats an empty/whitespace file as `[]` (legitimate), and THROWS `RuntimeException` on a non-empty unparseable file (fail-loud, never silent `[]`). Does NOT catch mojibake double-encoding (valid UTF-8, undetectable on read) — prevention is the UTF-8-no-BOM convention above + the CLAUDE.md rule (never PowerShell round-trip data JSON) + an optional project dev hook (`.claude/hooks/check-data-encoding.sh` scanning for `Ã`/BOM). Verified via CLI harness (valid/missing/empty/whitespace → correct; BOM+valid loads with umlaut intact; literal `null`/scalar → `[]`; corrupt and BOM+corrupt → throw). Handoff origin: `{projekt}/work/docs/topics/data-json-encoding.md`.
 
 ## pending
 

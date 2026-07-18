@@ -92,6 +92,12 @@ before deviating.
   decide → only then integrate (see Working Method).
 - **Do not deviate from an ADR unilaterally** — ADRs in `docs/02-decisions/` take
   precedence; if reality contradicts one, raise it, don't silently diverge.
+- **Do not edit `data/**/*.json` (or `core/data/**/*.default.json`) via PowerShell
+  round-trips** (`Get-Content` → `Set-Content` / `Out-File` / `>`, even with
+  `-Encoding utf8`) — Windows PowerShell 5.1 reads no-BOM UTF-8 as CP1252 and writes
+  a BOM, which corrupts umlauts (`Ü` → `Ãœ`) and makes `FileStorage::load()` blank the
+  file. Use the Read+Edit / Write tools (UTF-8, no BOM); if a shell is unavoidable, use
+  the Bash tool. → [`persistence-file.md` DATA-JSON-001](docs/topics/persistence-file.md).
 
 ## Working Method
 
