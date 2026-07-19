@@ -28,8 +28,9 @@
 /skeleton/config/
 /skeleton/data/
 /skeleton/lib/
-/skeleton/public/assets/
-/skeleton/public/storage/
+# public/ is seeded on first install from the kernel baseline (Install.php, ADR-024)
+# — tracking a copy here would duplicate packages/kernel/core/public/
+/skeleton/public/
 /skeleton/composer.lock
 # seeded by the installer (seed-once project context for AI assistants)
 /skeleton/CLAUDE.md
