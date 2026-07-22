@@ -137,25 +137,32 @@ NOT `emailConfig`, and NOT per-form; the sender is one installation identity):
 
 ### B. per form mail — add a form key
 
-1. **Body template** `res/view/templates/partials/emails/{key}.tpl.php` — escape
-   with `e()`; use `<tr data-str="new-line">` rows / closing block tags so the
-   plain-text alternative derives cleanly (`HtmlToText`, see «mental model»).
-2. **Declare the key** in the project's `emailConfig.inc.php` override `forms`:
+1. **Declare the form** as a `FormDefinition` (fields + `formKey()`) and drive it
+   with `PublicFormHandler` — that is the standard path, and it calls `sendForm()`
+   for you. → [`forms.md`](forms.md)
+2. **Body template:** the generic `['emails/publicForm', 'Z77\\Shared']` renders
+   whatever the definition declares — only write an own
+   `res/view/templates/partials/emails/{key}.tpl.php` when the mail must look
+   different (escape with `e()`; use `<tr data-str="new-line">` rows / closing
+   block tags so the plain-text alternative derives cleanly, see «mental model»).
+3. **Declare the key** in the project's `emailConfig.inc.php` override `forms`:
    `template` (required), `to` (developer test inbox — see «seed-address
    convention»), `subject`, optional `cc` / `routes`.
-3. **Send from the controller** — never hand-assemble mail:
+4. **Sending** happens inside the handler. Only when a mail is NOT a declared
+   public form (dynamic recipients, a backend action) call the service directly —
+   never hand-assemble mail:
 
    ```php
    DI::getEmailService()->sendForm('{key}', ['form' => $form], $replyTo);
    // optional 4th arg — subject/option-driven routing:
-   //   ..., routeKey: $form->getChoice()
+   //   ..., routeKey: $validatedChoice
    ```
 
 ### C. public-facing form — hardening
 
 | Concern | Do | Owner |
 |---|---|---|
-| Bot / rate limit / PRG flag | `FormGuard::forKey('{key}')` — `armTimeTrap()` on render, `isTooFast()` + `isRateLimited()` on submit, `markSent()` / `consumeSent()` | [`security.md`](security.md) |
+| Bot / rate limit | `FormGuard::forKey('{key}')` — `armTimeTrap()` on render, `isTooFast()` + `isRateLimited()` on submit, `disarmTimeTrap()` when the submit completed | [`security.md`](security.md) |
 | Honeypot | hidden fields on the form DTO; on trip pretend success, send nothing | [`security.md`](security.md) |
 | CSRF | in-action `CsrfService::validate` (friendly re-render) OR the `#[Csrf]` attribute; a JS `fetch` MUST send the `X-CSRF-Token` header | [`security.md`](security.md) |
 | Page cache | disable it for the form controller (module `cache.controllers.{segment}.enabled = false`) — the CSRF token + per-user form state must never be shared | [`cache.md`](cache.md) |
@@ -243,6 +250,7 @@ address in config:
 - When mailing a document → MUST go through `DocumentService::send()` (it enforces the `DocumentKind::mailable()` policy + reads bytes via `BlobStorage`); MUST NOT read the blob and build the attachment in a controller.
 - When mail might be unconfigured → MUST treat `Mailer::send()` throwing `RuntimeException` as expected (surface it as a flash); MUST NOT assume `config/mail.inc.php` exists or `enabled = true`.
 - When adding a transport → MUST implement `MailTransport::send(string $sender, array $recipients, string $data)` and assert reply codes; MUST NOT trust the visible `To:`/`From:` headers for the envelope (use the `MimeMessage::build()` envelope).
+- When a public form should send its mail → MUST declare it as a `FormDefinition` and let `PublicFormHandler::process()` call `sendForm()` ([`forms.md`](forms.md)); MUST NOT call `sendForm()` from a hand-written form cascade in the controller.
 - When sending a form/notification mail from app code → MUST go through `DI::getEmailService()`. Recipient ownership (owner decision 2026-07-18, review-email-service-usage.md §2): **static, operator-defined recipients** (contact-form class) → `sendForm()` + emailConfig form key (backend-editable in v2); **dynamic, data-driven recipients** (mail to a user, an entity owner) → `send(EmailMessage)` with `->to()` in the controller. MUST NOT hardcode a static operator recipient in a controller.
 - When setting a sender → MUST leave From to the installation identity (`config/mail.inc.php`, SPF/DKIM/DMARC-bound); the per-mail "sender" is Reply-To. `EmailMessage::from()` stays the exception for verified same-domain identities (a From control system is planned — see pending).
 - When passing user input into a mail → MUST hand it to the template context (templates escape via `e()`); the only user-controlled header is Reply-To (validated, silently dropped when invalid); MUST NOT feed user input into subjects, recipients, or template paths.
@@ -274,7 +282,10 @@ address in config:
   configs — multipart, RFC 2047 subject, Reply-To handling incl. injection attempt dropped,
   plain-text derivation, attachments, `mail()` arg splitting with Bcc), plus the live
   zihlundsee contact-form submit exercising the graceful `false` path (no local MTA on the
-  Windows dev box — expected). Real delivery check happens on cyon (pending). The
+  Windows dev box — expected). Real delivery **confirmed on cyon 2026-07-21** (zihlundsee
+  contact form → `webmaster@z77.ch`: recipient + forwarding, Reply-To = visitor address,
+  RFC 2047 subject, `multipart/alternative` with readable plain-text alternative, DKIM +
+  SPF pass, `PhpMailTransport` via `mail()`). The
   `RUNTIME=/skeleton/config/mail.inc.php` file-map line stays out until the next clean-install
   regenerates `skeleton/` (the linter requires listed paths to exist; the installer now seeds
   the file).
@@ -287,11 +298,10 @@ address in config:
 
 ## pending
 
-- **cyon go-live check (acceptance 1+2 of the bauplan):** deploy, submit the zihlundsee
-  contact form on the real host, confirm delivery (recipient + Reply-To + readable plain
-  text). _(Acceptance 4 is done early: the project's `ContactMailer` seam was deleted
-  entirely 2026-07-18 — the controller calls `sendForm()` directly; see
-  `../03-development/review-email-service-usage.md` §3.)_
+- **DMARC record for zihlundsee.ch (operational/DNS):** the 2026-07-21 cyon delivery passed
+  SPF + DKIM but the receiver reported `DMARC_NA` (no DMARC record). Not a blocker — the mail
+  was delivered as ham — but a DMARC record hardens deliverability for the `noreply@zihlundsee.ch`
+  From. Outside the app (DNS), tracked here as the go-live follow-up.
 - Manual check: configure a real SMTP relay in `config/mail.inc.php` (`transport='smtp'`, `enabled = true`) and send a document from the backend `documents` UI.
 - Phase 7 (integration): a module example (Fakturen) that generates a PDF → `saveGenerated()` → `DocumentService::send()`.
 - **v3 Kundenstamm:** resolve `ref:{source}:{id}` recipient entries against the customer
@@ -311,7 +321,8 @@ address in config:
 
 ## see also
 
-- [`security.md`](security.md) — `FormGuard` (public-form abuse protection: time-trap, rate limit, PRG flag) + the CSRF contract (`#[Csrf]` / `X-CSRF-Token`) every mail-sending form endpoint needs (see «developer setup» step C)
+- [`forms.md`](forms.md) — the public-form standard: a project declares fields + template, the framework owns validation, the submit cascade and the call into `sendForm()` (see «developer setup» step B)
+- [`security.md`](security.md) — `FormGuard` (public-form abuse protection: time-trap, rate limit) + the CSRF contract (`#[Csrf]` / `X-CSRF-Token`) every mail-sending form endpoint needs (see «developer setup» step C)
 - [`backend.md`](backend.md) — `EmailSettingsController` (Service → E-Mail): the backend editor for the per-form to/cc/subject/routes override + active toggle («developer setup» step E)
 - [`cache.md`](cache.md) — disabling the page cache for a form controller (CSRF token + per-user state must not be shared — «developer setup» step C)
 - [`documents.md`](documents.md) — `DocumentService::send()` is the first consumer; the DMS façade owns the mailable-document policy

@@ -195,7 +195,7 @@ zweimal (`sendForm` + `resolveFormSettings`) — bei Gelegenheit auf einen
 | 4 | `#[Csrf]`-Attribut (AccessGuard, Header ODER `csrf_token`-Body-Feld) + `AdminPanelController` umgestellt; `contactAction` behält die In-Action-Prüfung **bewusst** (freundliche Fehler-UX statt Reject — im Attribut-Docblock + security.md festgehalten) | ✅ umgesetzt (Abweichung dokumentiert) |
 | 5 | `ContactMailer` gelöscht, Direktaufruf `sendForm()` im Controller | ✅ umgesetzt |
 | 6 | `sendForm()` Config-Doppel-Load zusammengezogen | ✅ umgesetzt |
-| 7 | Blur-Check-Trait: notiert für das zweite Formular-Projekt | offen (bewusst) |
+| 7 | Blur-Check-Trait: `Z77\Shared\Controller\PublicFormCheckTrait` — gebaut 2026-07-20 als Teil des Public-Form-Standards ([`public-form-bauplan.md`](public-form-bauplan.md)); `checkAction` ist jetzt ein Einzeiler, die prüfbaren Felder kommen aus der `FormDefinition` | ✅ umgesetzt |
 | 8 | **v2-Bauplan To/Betreff** inkl. Owner-Anforderung Routing (Betreff-Auswahl → andere/mehrere Empfänger) + Kundenstamm-`ref:`-Seam: [`email-settings-v2-bauplan.md`](email-settings-v2-bauplan.md) | 📄 Entwurf — **wartet auf Owner-Freigabe** |
 
 Doku nachgeführt: `mail.md` (From/To-Rules, Pendenzen, see-also FormGuard),

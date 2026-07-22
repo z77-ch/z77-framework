@@ -1,0 +1,97 @@
+/* Public form (partials/publicForm.tpl.php) — the framework's reference form
+   styling. Deliberately plain: a project overrides the partial and brings its
+   own classes; only the data-* hooks are contractual (public-form-bauplan.md). */
+.fe-form {
+    padding-top:    var(--fe-space-8);
+    padding-bottom: var(--fe-space-8);
+    border-bottom:  1px solid var(--fe-line);
+}
+
+.fe-form__title { font-size: var(--fe-fs-h2); font-weight: var(--fe-fw-bold); }
+
+/* Honeypots: removed from view and from the a11y tree, but still submitted. */
+.fe-form__hp {
+    position: absolute;
+    left:     -9999px;
+    width:    1px;
+    height:   1px;
+    overflow: hidden;
+}
+
+.fe-form__error {
+    margin-bottom: var(--fe-space-5);
+    padding:       var(--fe-space-3) var(--fe-space-4);
+    border-left:   3px solid var(--fe-danger);
+    color:         var(--fe-danger);
+    background:    var(--fe-surface-alt);
+}
+
+.fe-form__row {
+    display:    grid;
+    gap:        var(--fe-space-2);
+    margin-top: var(--fe-space-5);
+    border:     0;          /* fieldset reset for the radio variant */
+    padding:    0;
+}
+
+.fe-form__row label,
+.fe-form__row legend {
+    font-size:      var(--fe-fs-xs);
+    text-transform: uppercase;
+    letter-spacing: var(--fe-track-wide);
+    color:          var(--fe-muted);
+    padding:        0;
+}
+
+.fe-form__row input[type='text'],
+.fe-form__row input[type='email'],
+.fe-form__row input[type='tel'],
+.fe-form__row textarea {
+    width:      100%;
+    padding:    var(--fe-space-3);
+    border:     1px solid var(--fe-line);
+    background: var(--fe-surface);
+    color:      var(--fe-text);
+    font:       inherit;
+}
+
+.fe-form__row textarea { min-height: 10rem; resize: vertical; }
+
+.fe-form__row input:focus-visible,
+.fe-form__row textarea:focus-visible { outline: 2px solid var(--fe-accent); outline-offset: 2px; }
+
+/* Radio / checkbox rows read as a list of choices, label after the control. */
+.fe-form__row--radio label,
+.fe-form__row--check label {
+    display:        flex;
+    gap:            var(--fe-space-3);
+    align-items:    center;
+    text-transform: none;
+    letter-spacing: normal;
+    font-size:      var(--fe-fs-md);
+    color:          var(--fe-text);
+}
+
+.fe-form__row--error input,
+.fe-form__row--error textarea { border-color: var(--fe-danger); }
+
+.fe-form__hint {
+    min-height: 1.25rem;      /* reserve the line — no layout jump on error */
+    font-size:  var(--fe-fs-xs);
+    color:      var(--fe-danger);
+}
+
+.fe-form__note { margin-top: var(--fe-space-5); font-size: var(--fe-fs-xs); color: var(--fe-muted); }
+
+.fe-form__submit {
+    margin-top:  var(--fe-space-5);
+    padding:     var(--fe-space-3) var(--fe-space-6);
+    border:      0;
+    background:  var(--fe-accent);
+    color:       var(--fe-on-dark-text);
+    font:        inherit;
+    font-weight: var(--fe-fw-medium);
+    cursor:      pointer;
+}
+
+.fe-form__submit:disabled { opacity: 0.5; cursor: default; }

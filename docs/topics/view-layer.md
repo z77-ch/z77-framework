@@ -152,6 +152,7 @@ prototype handoff (`{projekt}/work/docs/topics/partial-labels.md`).
 - [`fetch.md`](fetch.md) — Fetch-mode skeleton + JS architecture
 - [`messages.md`](messages.md) — `flashMessages` / `popupMessages` partials, container ids, BEM classes for both backend (`be-` prefix) and frontend (`fe-` prefix)
 - [`documents.md`](documents.md) — `mediaUrl('root-slug/folder-slug/file.ext')` global helper for DMS-managed image URLs in templates (`e()`-escape + null-guard)
+- [`forms.md`](forms.md) — `partials/publicForm` renders a whole form from its declaration; a project template that replaces it must keep the `data-*` attribute contract the framework JS binds to
 
 ## known issues
 

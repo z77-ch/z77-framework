@@ -47,6 +47,18 @@ return [
     'cache'         => [
         'enabled' => true,
         'ttl'     => 86400,
+        'controllers' => [
+            // Keys are URL SEGMENTS (Request::getController()/getAction()), not
+            // class or method names.
+            'index' => [
+                'actions' => [
+                    // The contact form carries a CSRF token and per-user form
+                    // state — never share that from a page cache (cache.md).
+                    'contact' => ['enabled' => false],
+                    'check'   => ['enabled' => false],   // POST endpoint
+                ],
+            ],
+        ],
     ],
 
     // Full structure (module-default → controller-override → action-override):
@@ -55,14 +67,14 @@ return [
     //     'enabled' => true,
     //     'ttl'     => 86400,
     //     'controllers' => [
-    //         'ContactController' => [
+    //         'contact' => [                              // URL segment
     //             'enabled' => true,
     //             'ttl'     => 600,
     //             'actions' => [
-    //                 'sendAction' => ['enabled' => false],   // POST endpoint, never cache
+    //                 'send' => ['enabled' => false],     // POST endpoint, never cache
     //             ],
     //         ],
-    //         'NewsController' => ['ttl' => 60],
+    //         'news' => ['ttl' => 60],
     //     ],
     // ],
 

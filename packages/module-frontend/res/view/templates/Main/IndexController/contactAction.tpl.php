@@ -1,5 +1,18 @@
 <?php
-/** @var string $pageTitle */
+/**
+ * Contact page — hero, direct contact details and the reference public form
+ * (docs/03-development/public-form-bauplan.md). The form's state comes from
+ * PublicFormHandler::viewContext(); the partial renders whatever
+ * ContactFormDefinition declares.
+ *
+ * @var string $pageTitle
+ * @var \Z77\Shared\Forms\PublicForm $form
+ * @var array<string,array>  $fields
+ * @var array<string,string> $errors
+ * @var string $formError
+ * @var string $checkUrl
+ * @var string $csrfToken
+ */
 ?>
 <section class="fe-hero">
     <div class="fe-container">
@@ -37,3 +50,12 @@
         </dl>
     </div>
 </section>
+
+<?= $this->partial('partials/publicForm', [
+    'form'      => $form,
+    'fields'    => $fields,
+    'errors'    => $errors,
+    'formError' => $formError,
+    'checkUrl'  => $checkUrl,
+    'csrfToken' => $csrfToken,
+]) ?>

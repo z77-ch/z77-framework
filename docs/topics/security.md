@@ -97,18 +97,27 @@ every `html()` context) travels on ONE of two paths, checked by `AccessGuard`:
 
 **FormGuard** (`Z77\Shared\Forms\FormGuard`, extracted from the zihlundsee
 contact form): session-based abuse protection for public forms, per form key
-(`FormGuard::forKey('contact')`) — time-trap (`armTimeTrap()` on render /
-`isTooFast()` on submit), per-session rate limit (`recordSend()` /
-`isRateLimited()`, sliding 1-h window), PRG confirmation flag (`markSent()` /
-`consumeSent()`). Honeypot fields stay on the form DTO (names differ per form).
-Convention on bot detection (honeypot OR too fast): pretend success, send
-nothing. Not a DI singleton — built per key like `Mailer::create()`.
+(`FormGuard::forKey('contact')`) — time-trap (`armTimeTrap()` on render,
+idempotent so a re-render does not restart the window / `isTooFast()` on submit
+/ `disarmTimeTrap()` once the submit completed), per-session rate limit (`recordSend()` /
+`isRateLimited()`, sliding 1-h window). No confirmation flag — the PRG target is
+a thank-you page of its own ([`forms.md`](forms.md), PUBLIC-FORM-004).
+Honeypot names are declared per form
+(`FormDefinition::honeypots()`, default `website`/`fax`). Convention on bot
+detection (honeypot OR too fast): pretend success, send nothing. Not a DI
+singleton — built per key like `Mailer::create()`.
+
+Since 2026-07-20 app code does **not** call `FormGuard` directly: a public form
+is declared as a `FormDefinition` and `PublicFormHandler` runs the whole cascade
+(CSRF → bot → validate → rate limit → send → PRG) in the fixed order above —
+see [`forms.md`](forms.md). `FormGuard` stays the mechanics underneath and is
+still the right tool for a non-form endpoint that needs the same protections.
 
 ## rules
 
 - When a project JS posts to a Fetch-mode endpoint → MUST send the CSRF token as the `X-CSRF-Token` header (`AccessGuard` checks ONLY the header on the global fetch path); a body copy alone dies at the guard (CONTACT-CHECK-001).
 - When adding a page-mode POST endpoint → MUST protect it against CSRF: `#[Csrf]` attribute (reject semantics) or in-action `CsrfService::validate` (friendly-UX semantics); the hidden field MUST be named `csrf_token` (matches the auto-injected `$csrfToken`).
-- When building a public form → MUST use `FormGuard` for time-trap / rate-limit / PRG-flag mechanics (no hand-rolled session keys) and honeypot fields on the form DTO; on bot detection MUST pretend success and send nothing.
+- When building a public form → MUST declare it as a `FormDefinition` and run it through `PublicFormHandler` ([`forms.md`](forms.md)), which applies the `FormGuard` mechanics (time-trap / rate-limit) and the honeypot convention (bot detected → pretend success, send nothing); MUST NOT hand-roll session keys or the cascade. For a non-form endpoint that needs the same protections, `FormGuard::forKey()` stays the direct tool.
 - When provisioning the admin at install → MUST generate it (interactive: hidden password prompt; non-interactive: write a one-time `SETUP_TOKEN` under `data/`); MUST NOT ship a working default credential in any `*.default.json`.
 - When handling backup archives → MUST keep them outside `htmlRoot` and MUST keep every backend backup action `SUPER_USER`-gated; archive names from request input MUST resolve through `BackupHistory::resolvePath()` (see [`backup.md`](backup.md)).
 - When setting or changing a password anywhere (installer, `LoginUserController`, setup) → MUST evaluate via `PasswordPolicy` (passing the configured `PasswordTier`) and persist the resulting `passwordWeak` flag; MUST NOT reject a weak password UNLESS the tier is `veryStrong` (the only tier that hard-blocks on save). For `notStrong`/`strong` the policy nags, never blocks.
@@ -127,6 +136,7 @@ nothing. Not a DI singleton — built per key like `Mailer::create()`.
 - [`backend.md`](backend.md) — `LoginUserController` user management (password meter + weak-flag on add/edit)
 - [`installer.md`](installer.md) — install flow, data-file seeding, debug flag
 - [`messages.md`](messages.md) — `pushMessageAfterRedirect` persistent channel used by the nag
+- [`forms.md`](forms.md) — `PublicFormHandler`: the standard cascade that applies `FormGuard` + the in-action CSRF check for every public form
 
 ## known issues
 
