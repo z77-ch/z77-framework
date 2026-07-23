@@ -60,9 +60,11 @@ Class names and JS namespace are module-agnostic (single shared `core.js`). Look
 ## delivery channel decision
 
 ```text
-will the user see a full page load next?
-   no  → MessageService::pushFlash(...)              / pushMessage(...)
-   yes → MessageService::pushFlashAfterRedirect(...) / pushMessageAfterRedirect(...)
+does the message belong to the response this request is about to send?
+   yes → MessageService::pushFlash(...)              / pushMessage(...)
+         (fetch → envelope, page render → this page)
+   no, a redirect happens first
+       → MessageService::pushFlashAfterRedirect(...) / pushMessageAfterRedirect(...)
 ```
 
 Concrete patterns:
@@ -75,6 +77,7 @@ Concrete patterns:
 | Redirect after login / logout | `pushFlashAfterRedirect` | Redirected page is a fresh full GET |
 | Validation error on fetch save | `pushFlash` | Popup stays open, flash next to form |
 | CSRF rejection from AccessGuard | `pushFlash` | Per-request error, error class makes it stick |
+| Rejected public-form submit (page re-render) | `pushFlash` | Same response carries the form again — the bar announces at the top of the viewport, the field hints hold the detail ([`forms.md`](forms.md)) |
 
 ## flow — in-place (no redirect)
 
@@ -107,7 +110,7 @@ return $this->redirect('/x')
 Request 2 (Controller)
 AbstractBaseController::html()
   if Page-Mode:
-    $context['_flashes']  = consumeFlashesForPage()    // unsets session key
+    $context['_flashes']  = consumeFlashesForPage()    // session key + this request's pushFlash()
     $context['_messages'] = consumeMessagesForPage()
 HtmlResponse renders
   flashMessages.tpl.php  → initial DOM in #flash-messages
@@ -166,8 +169,9 @@ A future AI chat bot will live in the bottom-right corner — the convention for
 
 ## rules
 
-- When the next user-visible step is a full page load (redirect, `reload` command, regular GET) → MUST use `pushFlashAfterRedirect()` / `pushMessageAfterRedirect()`; MUST NOT use the in-place variants because the response is discarded
-- When the response stays on the same page (`FetchResponse` without `reload` / `redirect`) → MUST use `pushFlash()` / `pushMessage()`; MUST NOT use the AfterRedirect variants because the next request is unrelated
+- When a redirect happens before the user sees anything (PRG, `reload` command) → MUST use `pushFlashAfterRedirect()` / `pushMessageAfterRedirect()`; MUST NOT use the in-place variants because the response carrying them is discarded
+- When the message belongs to the response this request is about to send → MUST use `pushFlash()` / `pushMessage()`; that covers a `FetchResponse` without `reload`/`redirect` AND a page render that reports on its own request (a rejected form submit re-rendering the form). MUST NOT use the AfterRedirect variants there — the message would surface one navigation too late
+- When pushing a flash for the page an action is about to render → MUST push before `$this->html()` (which is where `consumeFlashesForPage()` drains the session buffer and this request's in-place buffer together); MUST NOT push afterwards, the context is already built
 - When constructing a `FetchResponse` in a controller → MUST use `$this->fetch()` helper; MUST NOT instantiate `new FetchResponse()` directly (the helper drains the buffers into the envelope)
 - When emitting feedback from a service outside the controller flow (e.g. `AccessGuard`) → MUST push via `MessageService`, then call `consumeFlashesForEnvelope()` / `consumeMessagesForEnvelope()` and pass the result to `setFlashes()` / `setMessages()` on the `FetchResponse`
 - When calling `push*AfterRedirect()` outside an active PHP session → silently no-ops; MUST NOT rely on it from session-less endpoints
