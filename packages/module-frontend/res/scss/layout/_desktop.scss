@@ -21,3 +21,6 @@
     grid-template-columns: 2fr 1fr 1fr;
     gap: var(--fe-space-7);
 }
+
+/* Responsive text breaks (brText() helper): mobile-only breaks collapse here. */
+.z77-br--m { display: none; }

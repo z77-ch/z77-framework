@@ -98,6 +98,7 @@ packages/module-frontend/res/assets/css/
 | Mobile nav visibility (hamburger on / inline off) | `layout/_nav-mobile.scss` |
 | Tablet nav visibility | `layout/_nav-tablet.scss` |
 | Desktop nav visibility (inline on / hamburger off) | `layout/_nav-desktop.scss` |
+| Responsive text break visibility (`.z77-br--m` / `.z77-br--d`) | `layout/_mobile.scss` + `_tablet.scss` + `_desktop.scss` |
 
 ## frontend tokens (--fe-*)
 
@@ -117,6 +118,32 @@ Defined in `tokens/`, declared on the `.fe` viewArea wrapper (`<html class="fe">
 | `--fe-on-dark-text` | text on dark blocks |
 | `--fe-topbar-height` | fixed value used to offset body padding |
 | `--fe-container-max` | page max-width |
+
+## responsive text breaks (z77-br)
+
+The kernel helper `brText()` (next to `e()`, see
+[`../01-handbook/templates.md` → Output escaping](../01-handbook/templates.md#output-escaping))
+emits `<br class="z77-br--m">` / `<br class="z77-br--d">` for hand-placed,
+viewport-aware line breaks in flow text. The `z77-` prefix is deliberate: the
+helper is kernel-level and module-agnostic (like `--z77-scrollbar-width`), so the
+class is not owned by the `fe-` frontend namespace.
+
+Visibility is a CSS contract, driven by which media-scoped sheet the rule sits in
+— no `@media` queries, consistent with the frontend's `<link>`-scoped split. A
+`<br>` with `display: none` produces no break. The binary mobile/desktop intent
+maps onto the three breakpoints with **tablet on the desktop side** (≥ 768px):
+
+| Rule | Sheet | Effect |
+|---|---|---|
+| `.z77-br--d { display: none; }` | `layout/_mobile.scss` | desktop-only break collapses ≤ 767px |
+| `.z77-br--m { display: none; }` | `layout/_tablet.scss` | mobile-only break collapses 768–1199px |
+| `.z77-br--m { display: none; }` | `layout/_desktop.scss` | mobile-only break collapses ≥ 1200px |
+
+These three rules ship in this starter module as the reference. A consuming
+project owns the same contract: it replicates the three lines in its own
+media-scoped layout sheets (their breakpoints, their `.z77-br--*` classes). The
+project decides whether to use `brText()` at all — nothing breaks until a
+template opts in.
 
 ## page architecture
 

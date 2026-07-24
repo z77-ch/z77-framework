@@ -25,3 +25,6 @@
 /* Footer single column */
 .fe-footer__grid { grid-template-columns: 1fr; }
 .fe-footer__bottom { flex-direction: column; align-items: flex-start; }
+
+/* Responsive text breaks (brText() helper): desktop-only breaks collapse here. */
+.z77-br--d { display: none; }

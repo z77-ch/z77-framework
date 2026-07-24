@@ -14,3 +14,6 @@
     grid-template-columns: 1fr 1fr;
 }
 .fe-footer__grid > :first-child { grid-column: 1 / -1; }
+
+/* Responsive text breaks (brText() helper): tablet counts as desktop side. */
+.z77-br--m { display: none; }
