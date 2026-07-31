@@ -45,8 +45,8 @@ define('DEBUG', file_exists(ABS_BASE_PATH . '/data/framework/debug.flag'));
 
 **Was zu prüfen:**
 - `ABS_BASE_PATH` = `str_replace('\\', '/', dirname(__DIR__))` aus `skeleton/public/index.php`
-- Erwarteter Wert: `z:/z77-ch-framework-1.0.0/skeleton` (forward slashes)
-- Pfad zum Flag: `z:/z77-ch-framework-1.0.0/skeleton/data/framework/debug.flag`
+- Erwarteter Wert: `z:/z77/z77-ch-framework-1.0.0/skeleton` (forward slashes)
+- Pfad zum Flag: `z:/z77/z77-ch-framework-1.0.0/skeleton/data/framework/debug.flag`
 
 **Debug einfügen nach Zeile 75:**
 ```php
