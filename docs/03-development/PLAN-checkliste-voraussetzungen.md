@@ -1,7 +1,7 @@
 # Checkliste — Voraussetzungen vor der Umsetzung
 
 Vor Schritt A durchgehen. Jede Zeile hat einen Prüfbefehl und das erwartete Ergebnis.
-Verzeichnis: `Z:\z77-ch-framework-1.0.0`
+Verzeichnis: `Z:\z77\z77-ch-framework-1.0.0`
 
 ---
 

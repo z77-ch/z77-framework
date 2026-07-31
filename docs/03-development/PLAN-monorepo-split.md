@@ -14,8 +14,8 @@ Phase 2 (später): Packagist — dann entfällt der `repositories`-Block in Proj
 
 | Schritt | Verzeichnis |
 |---------|-------------|
-| A–C (Aufbau) | `Z:\z77-ch-framework-1.0.0`  ← hier startest du morgen |
-| D (Projekt)  | `Z:\z77-1.0.0-<project>.ch` ← eigene, zweite Session |
+| A–C (Aufbau) | `Z:\z77\z77-ch-framework-1.0.0`  ← hier startest du morgen |
+| D (Projekt)  | `Z:\z77\z77-1.0.0-<project>.ch` ← eigene, zweite Session |
 
 Eine Claude-Code-Session pro Ordner (nicht mischen).
 
@@ -31,7 +31,7 @@ Eine Claude-Code-Session pro Ordner (nicht mischen).
 ---
 
 ## Schritt A — Monorepo GitHub-fähig machen
-Verzeichnis: `Z:\z77-ch-framework-1.0.0`
+Verzeichnis: `Z:\z77\z77-ch-framework-1.0.0`
 
 ### A1 — .gitignore anlegen
 ```
@@ -73,7 +73,7 @@ git push -u origin main
 ---
 
 ## Schritt B — Auto-Split einrichten
-Verzeichnis: `Z:\z77-ch-framework-1.0.0`
+Verzeichnis: `Z:\z77\z77-ch-framework-1.0.0`
 
 ### B1 — 6 leere Ziel-Repos anlegen (read-only Konsum-Repos)
 ```bash
@@ -119,7 +119,7 @@ Prüfen: Werden die 6 Ziel-Repos befüllt und tragen sie den Tag `1.0.0`?
 ---
 
 ## Schritt C — Skeleton auf Composer-Bezug umstellen
-Verzeichnis: `Z:\z77-ch-framework-1.0.0\skeleton`
+Verzeichnis: `Z:\z77\z77-ch-framework-1.0.0\skeleton`
 
 ### C1 — composer.json: path -> vcs
 Alt (path, nicht portabel):
@@ -150,7 +150,7 @@ Neue Projekte künftig: "Use this template" -> klonen -> `composer install`.
 ---
 
 ## Schritt D — Projekt aufsetzen
-Verzeichnis: `Z:\z77-1.0.0-<project>.ch`  (zweite Session!)
+Verzeichnis: `Z:\z77\z77-1.0.0-<project>.ch`  (zweite Session!)
 
 1. Projekt aus dem Skeleton beziehen (Template klonen oder Skeleton-Inhalt übernehmen)
 2. `composer.json`: `name` auf `z77/<project>` setzen

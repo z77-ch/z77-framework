@@ -72,7 +72,7 @@ Keine Modul-zu-Modul-Abhängigkeiten; jedes Modul hängt genau an `z77/kernel`
 ---
 
 ## Schritt 0 — Werkzeuge & Zugang
-Verzeichnis: `Z:\z77-ch-framework-1.0.0`
+Verzeichnis: `Z:\z77\z77-ch-framework-1.0.0`
 
 - [ ] `winget install GitHub.cli`  (danach neue Shell öffnen)
 - [ ] `gh auth login`  → GitHub, HTTPS oder SSH, Scopes inkl. `repo`
@@ -87,7 +87,7 @@ Bereits vorhanden: git 2.54, composer 2.9.7, php 8.4.20, sass (npm).
 ---
 
 ## Schritt A — Monorepo GitHub-fähig machen
-Verzeichnis: `Z:\z77-ch-framework-1.0.0`
+Verzeichnis: `Z:\z77\z77-ch-framework-1.0.0`
 
 ### A1 — `.gitignore`
 ```
@@ -141,7 +141,7 @@ git push -u origin main
 ---
 
 ## Schritt B — Auto-Split einrichten
-Verzeichnis: `Z:\z77-ch-framework-1.0.0`
+Verzeichnis: `Z:\z77\z77-ch-framework-1.0.0`
 
 ### B1 — 4 leere Ziel-Repos (read-only Konsum-Repos)
 ```bash
@@ -184,7 +184,7 @@ kompilierten CSS-Assets?
 ---
 
 ## Schritt C — Skeleton auf Composer-Bezug umstellen
-Verzeichnis: `Z:\z77-ch-framework-1.0.0\skeleton`
+Verzeichnis: `Z:\z77\z77-ch-framework-1.0.0\skeleton`
 
 ### C1 — `composer.json`: path → vcs, Constraints `*` → `^1.0`
 Für den Deployment-Bezug (statt der lokalen `path`-Repos im Dev) auf 4 `vcs`-Repos:
@@ -209,7 +209,7 @@ Neue Projekte: „Use this template" → klonen → `composer install`.
 ---
 
 ## Schritt D — Projekt aufsetzen (Verifikation am realen Projekt)
-Verzeichnis: `Z:\z77-1.0.0-<project>.ch`  ← **eigene, zweite Claude-Session**
+Verzeichnis: `Z:\z77\z77-1.0.0-<project>.ch`  ← **eigene, zweite Claude-Session**
 
 1. Projekt aus dem Skeleton-Template beziehen
 2. `composer.json`: `name` → `z77/<project>`
