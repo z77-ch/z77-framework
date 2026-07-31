@@ -86,8 +86,19 @@ before deviating.
   that file is global (Rule 2).
 - **Do not add a JS file without a written reason** why CSS / server-generated CSS cannot
   do it (Rule 7).
-- **Do not store pendenzen, bugs, or status in memory or commit messages** — they belong in
-  the topic doc's `## known issues` / `## pending` sections.
+- **Do not store anything in assistant memory.** Not pendenzen, not bugs, not status, not
+  setup notes, not behavioural feedback — nothing. Pendenzen and bugs belong in the topic
+  doc's `## known issues` / `## pending` sections, binding decisions in an ADR, working
+  rules in this file, machine-specific setup in `docs/_local/`. The repo is edited from
+  changing computers; anything under `C:\Users\…` does not exist for the next one.
+- **Do not add debug or convenience helpers on stock** — no `dumpLayout()`, no profiler
+  hooks, no just-in-case getters. Every method in the framework is API surface to maintain
+  and noise when reading `LayoutManager`, `Request` and friends. Build the diagnostic
+  ad-hoc where it is needed, then remove it. This does not apply to helpers used daily
+  (`e()`, `partial()`, `replacePlaceholders()`) — those are deliberate.
+- **Do not remove debug output before the developer has seen it.** Show the finding,
+  explain it, wait for confirmation — then clean up. Debug output is his verification step,
+  not scaffolding to tidy away.
 - **Do not copy old-framework (wdv-6.2.2) code directly** — read → analyze → review →
   decide → only then integrate (see Working Method).
 - **Do not deviate from an ADR unilaterally** — ADRs in `docs/02-decisions/` take

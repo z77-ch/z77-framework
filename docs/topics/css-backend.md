@@ -76,6 +76,11 @@ npm run watch:backend    # watch + auto-compile on save (development)
 npm run build:backend    # one-time build, compressed, no source maps (deploy)
 ```
 
+The watch does **not** start on its own — without it, saved SCSS is simply not compiled
+and the browser keeps showing the old CSS. When a session starts on backend SCSS, ask
+whether to start `npm run watch:backend` and run it in the background if confirmed,
+rather than leaving it to be remembered every time.
+
 ## what goes where
 
 | Change | File |
