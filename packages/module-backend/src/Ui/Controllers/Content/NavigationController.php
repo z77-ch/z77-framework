@@ -6,6 +6,7 @@ use Z77\Core\Http\Response\HtmlResponse,
     Z77\Core\DI,
     Z77\Module\Backend\Ui\Controllers\AbstractTreeEntityController,
     Z77\Persistence\Cleaning\BodyCleaner,
+    Z77\Persistence\Concurrency\EntityStateHash,
     Z77\Persistence\Interface\RepositoryInterface,
     Z77\Shared\Attributes\Fetch,
     Z77\Shared\Attributes\HttpMethod,
@@ -190,6 +191,13 @@ class NavigationController extends AbstractTreeEntityController
         $knownSlots = array_keys($navSlots);
         $validator  = new NavigationValidator($nav, $this->repo(), $knownSlots);
 
+        // Optimistic locking: the form carries the hash of the state it was
+        // rendered from. On GET that is the freshly loaded entity; after a
+        // failed POST the SUBMITTED hash is re-issued unchanged — the form
+        // content is still based on that state, so a conflict stays a conflict
+        // until the user reloads.
+        $entityHash = '';
+
         if (DI::getRequest()->isPost()) {
             $body = DI::getRequest()->getJsonBody();
 
@@ -198,6 +206,9 @@ class NavigationController extends AbstractTreeEntityController
                 if (!DI::getCsrfService()->validateEntityToken($csrf, 'navigation', $nav->getId())) {
                     return $this->fetchError('Invalid token');
                 }
+
+                $entityHash = trim($body['entity_hash'] ?? '');
+                $validator->guardStoredState($entityHash);   // before mapFromArray — $nav still carries the stored state
             }
 
             $postedParentId = $isNew ? (int)($body['parent_id'] ?? 0) : 0;
@@ -260,6 +271,9 @@ class NavigationController extends AbstractTreeEntityController
         }
 
         $entityCsrf = !$isNew ? DI::getCsrfService()->generateEntityToken('navigation', $nav->getId()) : '';
+        if (!$isNew && !DI::getRequest()->isPost()) {
+            $entityHash = EntityStateHash::of($nav);
+        }
 
         $allEntries  = $this->repo()->findAll();
         $refTargets  = array_values(array_filter(
@@ -274,6 +288,7 @@ class NavigationController extends AbstractTreeEntityController
             'parent'      => $parent,
             'lockedSlot'  => $lockedSlot,
             'entityCsrf'  => $entityCsrf,
+            'entityHash'  => $entityHash,
             'navSlots'    => $navSlots,
             'refTargets'  => $refTargets,
             'validator'   => $validator,

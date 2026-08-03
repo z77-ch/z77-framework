@@ -2,13 +2,15 @@
 
 namespace Z77\Persistence\Validation;
 
-use Z77\Shared\Libraries\Convention\Naming;
+use Z77\Shared\Libraries\Convention\Naming,
+    Z77\Persistence\Concurrency\EntityStateHash;
 
 abstract class EntityValidator
 {
     protected object $entity;
     private array $errors = [];
     private array $fieldErrors = [];
+    private ?string $stateConflict = null;
 
     private string $currentField = '';
     private string $currentLabel = '';
@@ -32,8 +34,29 @@ abstract class EntityValidator
     {
         $this->errors      = [];
         $this->fieldErrors = [];
+        if ($this->stateConflict !== null) {
+            $this->errors[] = $this->stateConflict;
+        }
         $this->executeValidation($only);
         return empty($this->errors) && empty($this->fieldErrors);
+    }
+
+    /**
+     * Optimistic locking: compares the hash the edit form was rendered from
+     * (hidden entity_hash field) against the entity's CURRENT stored state.
+     * A mismatch means someone else saved in between — the save is rejected
+     * as a general validation error through the normal re-render path.
+     *
+     * MUST be called BEFORE mapFromArray() hydrates the POST body, while the
+     * entity still carries the freshly loaded stored state. New entities have
+     * no stored state — skip the call entirely. The conflict survives the
+     * per-call reset in isValid() (state, not a rule result).
+     */
+    final public function guardStoredState(string $submittedHash): void
+    {
+        if ($submittedHash === '' || EntityStateHash::of($this->entity) !== $submittedHash) {
+            $this->stateConflict = 'Der Eintrag wurde inzwischen geändert — neu laden und Änderung erneut anbringen.';
+        }
     }
 
     protected function executeValidation(?array $only = null): void

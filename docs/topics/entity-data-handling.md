@@ -1,6 +1,6 @@
 # entity-data-handling
 
-2026-05-17
+2026-08-03
 
 ## entry
 
@@ -24,6 +24,7 @@ SOURCE=/packages/kernel/persistence/src/Cleaning/Filters/BoolFilter.php
 SOURCE=/packages/kernel/persistence/src/Cleaning/Filters/ListFilter.php
 SOURCE=/packages/kernel/persistence/src/Cleaning/Filters/NullableFilter.php
 SOURCE=/packages/kernel/persistence/src/Validation/EntityValidator.php
+SOURCE=/packages/kernel/persistence/src/Concurrency/EntityStateHash.php
 SOURCE=/packages/kernel/persistence/src/File/Repository/FileRepository.php
 SOURCE=/packages/kernel/shared/src/Attributes/Clean.php
 SOURCE=/packages/kernel/shared/src/Validators/NavigationValidator.php
@@ -41,6 +42,7 @@ Entity data handling follows a three-step pipeline: **clean → hydrate → vali
 - Filter chains are compiled once per entity class and cached statically. Filter classes load only on first use (autoloader + lazy registry).
 - Properties without `#[Clean]` are pass-through — body value reaches the setter unchanged. Use this for already-typed values (e.g. internal dropdown ints) where cleaning would be no-op.
 - Validators receive already-cleaned values. Rule methods (`notEmpty`, `minLength`, etc.) do not re-trim — that is `TextFilter`'s job.
+- Concurrent edits are caught by optimistic locking: the form carries an `entity_hash` of the stored state (next to `entity_csrf`), `$validator->guardStoredState()` compares it against the freshly loaded entity on POST — a mismatch rejects the save through the normal validation channel (see [optimistic locking](#optimistic-locking-entity_hash)).
 
 ## flow
 
@@ -126,6 +128,12 @@ private function edit(EntityClass $entity): HtmlResponse|FetchResponse
     $isNew     = $entity->getId() === null;
     $validator = new EntityClassValidator($entity);
 
+    // Optimistic locking: on GET the form gets the hash of the freshly loaded
+    // state; after a failed POST the SUBMITTED hash is re-issued unchanged —
+    // the form content is still based on that state, so a conflict stays a
+    // conflict until the user reloads.
+    $entityHash = '';
+
     if (DI::getRequest()->isPost()) {
         $body = DI::getRequest()->getJsonBody();
 
@@ -135,6 +143,9 @@ private function edit(EntityClass $entity): HtmlResponse|FetchResponse
                 $this->messageService->pushFlash('error', 'Invalid token');
                 return $this->fetch()->setStatus('error');
             }
+
+            $entityHash = trim($body['entity_hash'] ?? '');
+            $validator->guardStoredState($entityHash);   // BEFORE mapFromArray — entity still carries the stored state
         }
 
         $entity->mapFromArray(BodyCleaner::cleanFor(EntityClass::class, $body));
@@ -152,7 +163,10 @@ private function edit(EntityClass $entity): HtmlResponse|FetchResponse
     }
 
     $entityCsrf = !$isNew ? DI::getCsrfService()->generateEntityToken('entity-type', $entity->getId()) : '';
-    $response = $this->html(['entry' => $entity, 'entityCsrf' => $entityCsrf, 'validator' => $validator]);
+    if (!$isNew && !DI::getRequest()->isPost()) {
+        $entityHash = EntityStateHash::of($entity);
+    }
+    $response = $this->html(['entry' => $entity, 'entityCsrf' => $entityCsrf, 'entityHash' => $entityHash, 'validator' => $validator]);
     $this->layoutManager->addPartials('edit', 'EntityClassController', self::NAMESPACE);
     return $response;
 }
@@ -269,6 +283,26 @@ Add new rules to `EntityValidator` as needed — one method per rule, guard with
 
 Entity CSRF is separate from the form-level session CSRF. Token type: `DI::getCsrfService()->generateEntityToken($type, $id)`.
 
+## optimistic locking (entity_hash)
+
+Two admins open the same edit form; whoever saves later silently overwrites the other's change. No lock can solve this human race — the conflict is DETECTED at save time and reported to the user (pattern carried over from the wdv framework, decision Peter).
+
+Mechanics (reference implementation: `NavigationController` + its `edit.tpl.php`):
+
+| Step | What happens |
+|---|---|
+| Render (existing entity) | `EntityStateHash::of($entity)` over the freshly loaded stored state → hidden `entity_hash` field, next to `entity_csrf` |
+| POST (existing entity) | `$validator->guardStoredState($body['entity_hash'])` BEFORE `mapFromArray()` — the entity still carries the freshly loaded stored state, so the guard compares form basis vs. current store |
+| Mismatch / missing hash | Conflict — `isValid()` returns `false` with the general error «Der Eintrag wurde inzwischen geändert — neu laden und Änderung erneut anbringen.»; the save flows through the normal re-render path, no special channel |
+| Re-render after failed POST | The SUBMITTED hash is re-issued unchanged — the form content is still based on that state, so a conflict stays a conflict until the user reloads |
+| New entity (no id) | Exempt — no stored state, guard not called, `entity_hash` stays `''` |
+
+- The conflict is validator STATE, not a rule result — it survives the per-call reset in `isValid()` (each call re-adds it to the general error channel).
+- `EntityStateHash` hashes `mapToArray()` normalised by recursive key sort — the `ArrayMappable` contract, not file-driver behaviour. Carrier-neutral: a driver with native versioning (e.g. a Doctrine version column) replaces only the hash source; the form/validator flow stays identical.
+- Hash comparison is consistent because both sides hash a HYDRATED entity (render and guard) — hydration is deterministic, so no false conflicts.
+- The general-error alert region in the edit template renders `$validator->getErrors()` — that is where the conflict message surfaces.
+- Verified: `tests/optimistic-locking.php` (11 checks over the real Navigation stack — conflict rejected + store keeps the other change, undisturbed save passes, missing hash fails loud, conflict coexists with field errors, new-entity exemption).
+
 ## rules
 
 - When defining a new entity property that should be writable from POST body → MUST add a `#[Clean(...)]` attribute and a corresponding dumb public setter
@@ -279,6 +313,9 @@ Entity CSRF is separate from the form-level session CSRF. Token type: `DI::getCs
 - When writing a validator rule method → MUST NOT re-trim or re-clean the value; cleaning ran in `BodyCleaner` before hydration
 - When a POST request fails validation → MUST fall through to the same form render path (no early `FetchResponse` for validation errors); MUST pass `$validator` to the template
 - When rendering a form after a failed POST → MUST regenerate the entity CSRF token (the previous one was consumed on the POST)
+- When rendering an edit form for an EXISTING entity → MUST include a hidden `entity_hash` field (`EntityStateHash::of()` over the freshly loaded entity, before any body hydration) next to `entity_csrf`; new entities carry `''`
+- When handling the POST of an EXISTING entity → MUST call `$validator->guardStoredState($body['entity_hash'])` BEFORE `mapFromArray()` (the guard needs the stored state, not the hydrated body); MUST NOT call it for new entities
+- When re-rendering an edit form after a failed POST → MUST re-issue the SUBMITTED `entity_hash` unchanged; MUST NOT compute a fresh hash — that would let a second save silently overwrite the very change the conflict just reported
 - When adding a new entity field that requires validation → MUST add a `validate{FieldName}()` method in the entity's validator
 - When constructing a new entity in `addAction()` → MUST use `new EntityClass()` (no data); MUST NOT pre-fill via constructor — hydration happens in `edit()` after POST
 - When implementing a `checkFieldAction()` → MUST run `BodyCleaner::cleanFor()` on the submitted value (same pipeline as the save path); MUST call `$validator->isValid([$field])`; MUST return an empty `$this->fetch()` on success
@@ -287,6 +324,7 @@ Entity CSRF is separate from the form-level session CSRF. Token type: `DI::getCs
 
 ## known issues
 
+- **CONC-EDIT-001** — resolved 2026-08-03. Concurrent edits of the same entity silently lost the earlier save (two admins, same form — last write wins with no warning). Fix: optimistic locking via `entity_hash` + `EntityValidator::guardStoredState()` (see [optimistic locking](#optimistic-locking-entity_hash)); reference implementation in `NavigationController` edit flow. Raised by the AXO3 B1 review; AXO3-side use (version in `EstateStore::updateOwn()`) comes with B10 — the framework mechanism + Navigation reference is complete. Verified: `tests/optimistic-locking.php` (11 checks).
 - **VAL-BLOCK-001** — resolved 2026-05-16. Both feedback channels live: server-rerender path (`edit.tpl.php` + `tagEdit.tpl.php` consume `$validator`) and client blur-check path (`NavigationController::checkFieldAction` + `data-check-url` + `_Z77.core.fields`). Reference flow: full POST validation in [`navigation.md`](navigation.md); blur-check in [`fetch.md`](fetch.md). Blueprint unblocked.
 
 ## pending

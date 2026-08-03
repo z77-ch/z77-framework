@@ -5,6 +5,7 @@
 /** @var array<string, string> $navSlots slug => label (config, ADR-022) */
 /** @var \Z77\Shared\Entities\Navigation[] $refTargets */
 /** @var string $entityCsrf */
+/** @var string $entityHash stored-state hash (optimistic locking) — '' for new entities */
 /** @var \Z77\Persistence\Validation\EntityValidator $validator */
 
 $isNew    = $entry->getId() === null;
@@ -20,6 +21,7 @@ $fieldError = function (string $name) use ($validator): string {
 <form data-fetch-post data-check-url="/backend/content/navigation/check-field">
     <?php if (!$isNew): ?>
     <input type="hidden" name="entity_csrf" value="<?= e($entityCsrf) ?>">
+    <input type="hidden" name="entity_hash" value="<?= e($entityHash) ?>">
     <?php endif; ?>
     <?php if ($hasParent): ?>
     <input type="hidden" name="parent_id" value="<?= e($parent->getId()) ?>">
@@ -36,7 +38,13 @@ $fieldError = function (string $name) use ($validator): string {
     <div class="be-modal__body">
         <?php if ($validator->hasErrors()): ?>
         <div class="be-modal__alert be-modal__alert--error">
-            Bitte überprüfe die markierten Eingaben.
+            <?php if ($validator->getErrors()): ?>
+                <?php foreach ($validator->getErrors() as $error): ?>
+                <div><?= e($error) ?></div>
+                <?php endforeach; ?>
+            <?php else: ?>
+                Bitte überprüfe die markierten Eingaben.
+            <?php endif; ?>
         </div>
         <?php endif; ?>
         <div class="be-modal__switches">
