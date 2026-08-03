@@ -47,6 +47,20 @@ class FileStorage
         return is_array($data) ? $data : [];
     }
 
+    /**
+     * Saves data atomically: write to a temp file in the same directory, then
+     * rename() onto the target. Readers always see either the old or the new
+     * file, never a partially written one (load() does not lock). The temp
+     * suffix is NOT .json, so a crash between write and rename leaves a file
+     * that list() (glob *.json) never picks up as data.
+     *
+     * Windows: rename() over an existing target works (MoveFileEx semantics)
+     * but fails with a sharing violation while a reader holds the target open
+     * — verified on NTFS and the Z: NAS share. Readers hold the handle only
+     * for the duration of file_get_contents(), so a short retry loop covers
+     * it; if the target stays locked beyond that, save() throws and the old
+     * file remains valid (fail-loud, like load() on corruption).
+     */
     public function save(string $path, array $data): void
     {
         $path = trim($path, '/');
@@ -58,7 +72,28 @@ class FileStorage
         }
 
         $json = json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
-        file_put_contents($full, $json, LOCK_EX);
+        if ($json === false) {
+            throw new \RuntimeException(
+                "Cannot encode data for '{$path}': " . json_last_error_msg()
+            );
+        }
+
+        $tmp = $full.'.'.getmypid().'.'.bin2hex(random_bytes(4)).'.tmp';
+        if (file_put_contents($tmp, $json) !== strlen($json)) {
+            @unlink($tmp);
+            throw new \RuntimeException("Cannot write temp file for '{$path}'");
+        }
+
+        for ($attempt = 1; $attempt <= 10; $attempt++) {
+            if (@rename($tmp, $full)) {
+                return;
+            }
+            usleep($attempt * 5000);   // target briefly held open by a reader
+        }
+
+        $error = error_get_last()['message'] ?? 'unknown error';
+        @unlink($tmp);
+        throw new \RuntimeException("Cannot replace '{$path}': {$error}");
     }
 
     public function delete(string $path): void
