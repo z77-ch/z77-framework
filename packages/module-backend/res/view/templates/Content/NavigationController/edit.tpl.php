@@ -45,6 +45,10 @@ $fieldError = function (string $name) use ($validator): string {
             <?php else: ?>
                 Bitte überprüfe die markierten Eingaben.
             <?php endif; ?>
+            <?php if ($validator->hasStateConflict()): ?>
+            <button type="button" class="be-btn be-btn--ghost be-btn--sm" style="margin-top:.5rem"
+                    data-fetch-get="/backend/content/navigation/edit?id=<?= e($entry->getId()) ?>">Neu laden</button>
+            <?php endif; ?>
         </div>
         <?php endif; ?>
         <div class="be-modal__switches">

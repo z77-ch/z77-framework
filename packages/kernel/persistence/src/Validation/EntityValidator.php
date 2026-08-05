@@ -72,6 +72,12 @@ abstract class EntityValidator
         }
     }
 
+    /**
+     * Whether guardStoredState() detected a concurrent modification. Lets the
+     * form template offer a reload control next to the conflict message.
+     */
+    final public function hasStateConflict(): bool { return $this->stateConflict !== null; }
+
     public function getErrors(): array { return $this->errors; }
     public function getFieldErrors(): array { return $this->fieldErrors; }
     public function hasErrors(): bool { return !empty($this->errors) || !empty($this->fieldErrors); }

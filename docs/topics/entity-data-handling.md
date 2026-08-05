@@ -300,7 +300,7 @@ Mechanics (reference implementation: `NavigationController` + its `edit.tpl.php`
 - The conflict is validator STATE, not a rule result — it survives the per-call reset in `isValid()` (each call re-adds it to the general error channel).
 - `EntityStateHash` hashes `mapToArray()` normalised by recursive key sort — the `ArrayMappable` contract, not file-driver behaviour. Carrier-neutral: a driver with native versioning (e.g. a Doctrine version column) replaces only the hash source; the form/validator flow stays identical.
 - Hash comparison is consistent because both sides hash a HYDRATED entity (render and guard) — hydration is deterministic, so no false conflicts.
-- The general-error alert region in the edit template renders `$validator->getErrors()` — that is where the conflict message surfaces.
+- The general-error alert region in the edit template renders `$validator->getErrors()` — that is where the conflict message surfaces. On a conflict (`$validator->hasStateConflict()`) the alert additionally renders a «Neu laden» button with `data-fetch-get` back to the edit GET URL — one click re-fetches the fresh form into the popup (core.js re-wires `data-fetch-get` on every `popup.show()`, no extra JS). The reload discards the entered values by design; the user re-applies the change on the fresh state.
 - Verified: `tests/optimistic-locking.php` (11 checks over the real Navigation stack — conflict rejected + store keeps the other change, undisturbed save passes, missing hash fails loud, conflict coexists with field errors, new-entity exemption).
 
 ## rules
@@ -316,6 +316,7 @@ Mechanics (reference implementation: `NavigationController` + its `edit.tpl.php`
 - When rendering an edit form for an EXISTING entity → MUST include a hidden `entity_hash` field (`EntityStateHash::of()` over the freshly loaded entity, before any body hydration) next to `entity_csrf`; new entities carry `''`
 - When handling the POST of an EXISTING entity → MUST call `$validator->guardStoredState($body['entity_hash'])` BEFORE `mapFromArray()` (the guard needs the stored state, not the hydrated body); MUST NOT call it for new entities
 - When re-rendering an edit form after a failed POST → MUST re-issue the SUBMITTED `entity_hash` unchanged; MUST NOT compute a fresh hash — that would let a second save silently overwrite the very change the conflict just reported
+- When the re-rendered form reports a state conflict (`$validator->hasStateConflict()`) → MUST render a reload button inside the error alert (`data-fetch-get` targeting the edit GET URL) so the user can re-fetch the fresh form without leaving the modal; MUST NOT add per-form JS for this (core.js wires `data-fetch-get` on every popup render)
 - When adding a new entity field that requires validation → MUST add a `validate{FieldName}()` method in the entity's validator
 - When constructing a new entity in `addAction()` → MUST use `new EntityClass()` (no data); MUST NOT pre-fill via constructor — hydration happens in `edit()` after POST
 - When implementing a `checkFieldAction()` → MUST run `BodyCleaner::cleanFor()` on the submitted value (same pipeline as the save path); MUST call `$validator->isValid([$field])`; MUST return an empty `$this->fetch()` on success
