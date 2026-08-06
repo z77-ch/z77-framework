@@ -2,6 +2,7 @@
 
 namespace Z77\Module\Member\Services;
 
+use Z77\Core\Config\AuthRole;
 use Z77\Core\DI;
 use Z77\Module\Member\Entities\MemberAccount;
 use Z77\Module\Member\Entities\MemberToken;
@@ -46,6 +47,10 @@ final class RegistrationFlow
      * @param \Closure(EmailMessage): bool      $sendMail mail to the registrant
      * @param \Closure(MemberAccount): bool     $notifyUs operator notification (config-keyed)
      * @param string $confirmUrl absolute URL of the confirm action; the token is appended
+     * @param ?\Closure(MemberAccount): ?string $activationHook the project side of
+     *     activate() — creates whatever the project attaches to an account (AXO3:
+     *     the tenant) and returns the reference for tenantRef. Null = no project
+     *     attachment (module standalone).
      */
     public function __construct(
         private MemberAccounts $accounts,
@@ -54,13 +59,22 @@ final class RegistrationFlow
         private \Closure $sendMail,
         private \Closure $notifyUs,
         private string $confirmUrl,
+        private ?\Closure $activationHook = null,
     ) {
     }
 
-    /** Production wiring: file persistence, EmailService transports. */
+    /**
+     * Production wiring: file persistence, EmailService transports, activation
+     * hook from the member App config (`activationHook` — FQCN of an invokable
+     * class `__invoke(MemberAccount): ?string`; a project sets it by overriding
+     * the config file whole).
+     */
     public static function create(string $confirmUrl): self
     {
-        $uem = new UnifiedEntityManager(new DataSourceResolver(['file' => 'File']));
+        $uem  = new UnifiedEntityManager(new DataSourceResolver(['file' => 'File']));
+        $fqcn = (string)DI::getConfigManager()
+            ->getArrayConfig('App/Config/memberConfig', 'Z77\\Module\\Member')
+            ->get('activationHook', '');
 
         return new self(
             new MemberAccounts($uem),
@@ -75,6 +89,7 @@ final class RegistrationFlow
                 }
             },
             $confirmUrl,
+            $fqcn !== '' ? static fn(MemberAccount $a): ?string => (new $fqcn())($a) : null,
         );
     }
 
@@ -179,6 +194,39 @@ final class RegistrationFlow
         );
 
         return true;
+    }
+
+    /**
+     * The operator's activation handgrip (B7 spec: backend action): confirmed
+     * → active with the MEMBER role, the project hook runs INSIDE the account
+     * transition (MemberAccounts::activate — a failing hook leaves the account
+     * 'confirmed' and this method rethrows; the caller reports). On success
+     * the «Sie sind freigeschaltet» mail goes out; a mail failure does not
+     * undo the activation (the account IS active — the operator sees the
+     * state, writing again is a human decision).
+     */
+    public function activate(MemberAccount $account, string $loginUrl, ?int $now = null): void
+    {
+        $this->accounts->activate($account, [AuthRole::MEMBER], $this->activationHook, $now);
+
+        ($this->sendMail)(
+            (new EmailMessage())
+                ->to($account->getEmail())
+                ->subject('Ihr Zugang ist freigeschaltet')
+                ->template('emails/activated', 'Z77\\Module\\Member', [
+                    'account'  => $account,
+                    'loginUrl' => $loginUrl,
+                ])
+        );
+    }
+
+    /**
+     * The operator's rejection handgrip: the account disappears, NO automatic
+     * mail (B7 spec: what we write, we write ourselves).
+     */
+    public function reject(MemberAccount $account): void
+    {
+        $this->accounts->delete($account);
     }
 
     // ── the mails ──────────────────────────────────────────────────────────

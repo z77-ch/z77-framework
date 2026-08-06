@@ -120,6 +120,32 @@ final class MemberAccounts
         $this->uem->flush();
     }
 
+    /**
+     * Daily cleanup (B7 spec): deletes accounts that were never confirmed
+     * within the grace period. 'confirmed' accounts stay untouched until an
+     * operator activates or rejects — that is an active decision, never a
+     * cron's. Returns the number of deleted accounts.
+     */
+    public function cleanup(int $graceDays, ?int $now = null): int
+    {
+        $now     = $now ?? time();
+        $cutoff  = $now - $graceDays * 86400;
+        $deleted = 0;
+
+        foreach ($this->all() as $account) {
+            if (!$account->isRegistered()) {
+                continue;
+            }
+            $created = strtotime((string)$account->getCreatedAt());
+            if ($created !== false && $created < $cutoff) {
+                $this->delete($account);
+                $deleted++;
+            }
+        }
+
+        return $deleted;
+    }
+
     public function save(MemberAccount $account): void
     {
         $this->uem->persist($account);

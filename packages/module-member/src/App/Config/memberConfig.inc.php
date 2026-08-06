@@ -25,6 +25,20 @@ return [
     ],
     'defaultAction' => 'index',
 
+    // FQCN of an invokable class `__invoke(MemberAccount): ?string` — the
+    // project side of activation (AXO3: creates the tenant, returns its ref).
+    // Null = accounts activate without a project attachment. A project sets
+    // this by overriding THIS FILE whole (override tree, first match wins).
+    'activationHook' => null,
+
+    // Path the «Sie sind freigeschaltet» mail links to (absolute URL is built
+    // from the request host at send time). Becomes the login entry with B8.
+    'memberEntryPath' => '/',
+
+    // Daily cleanup (bin/member-cleanup.php): never-confirmed accounts older
+    // than this are deleted; 'confirmed' accounts always wait for an operator.
+    'cleanupAfterDays' => 30,
+
     'viewArea'      => true,
     'viewAreaLabel' => 'Member',
     'public'        => true,

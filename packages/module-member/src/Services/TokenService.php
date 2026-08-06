@@ -91,6 +91,35 @@ final class TokenService
             : null;
     }
 
+    /**
+     * Cleanup companion (B7 daily run): drops every token that can never
+     * redeem again — used, expired, or belonging to an account that no longer
+     * exists (rejected / cleaned up). Returns the number of deleted tokens.
+     *
+     * @param string[] $validAccountIds ids of the accounts that still exist
+     */
+    public function purge(array $validAccountIds, ?int $now = null): int
+    {
+        $now     = $now ?? time();
+        $valid   = array_flip($validAccountIds);
+        $deleted = 0;
+
+        foreach ($this->repository()->findAll() as $token) {
+            if (!$token instanceof MemberToken) {
+                continue;
+            }
+            if ($token->isUsed() || $token->isExpired($now) || !isset($valid[$token->getAccountRef()])) {
+                $this->uem->remove($token);
+                $deleted++;
+            }
+        }
+        if ($deleted > 0) {
+            $this->uem->flush();
+        }
+
+        return $deleted;
+    }
+
     /** @return MemberToken[] unused tokens of the account for this purpose */
     private function openTokens(string $accountRef, string $purpose): array
     {
