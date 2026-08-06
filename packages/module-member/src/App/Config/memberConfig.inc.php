@@ -42,7 +42,9 @@ return [
     'viewArea'      => true,
     'viewAreaLabel' => 'Member',
     'public'        => true,
-
+    'navSlots'      => [
+        'main' => 'Hauptnavigation',
+    ],
     'moduleRole'    => AuthRole::GUEST,
 
     // Form pages carry CSRF tokens and per-user state — never page-cached.

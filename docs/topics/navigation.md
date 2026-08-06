@@ -260,6 +260,7 @@ A navigation tree-root carries a single **render-slot** slug (`Navigation::slot`
 | `frontend` | `frontend-meta` | frontend footer navigation (`getBySlot('frontend-meta')`) |
 | `backend` | `backend-main` | backend topbar sections (`iterateSections('backend-main')`, set as `navSlot`); subtree rendered in sidebar |
 | `backend` | `backend-auth` | login/logout entries — routing only, not rendered in any UI |
+| `member` | `member-main` | member view area — registered so entries can be assigned, but the minimal member layout has no `getBySlot('member-main')` call yet; a project adds one by overriding the member layout |
 
 Display labels of navigation entries come from `Navigation::getName()`; render-slot labels come from config (`navSlots`).
 
