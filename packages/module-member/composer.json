@@ -1,0 +1,36 @@
+{
+    "name": "z77/module-member",
+    "description": "Z77 Member Module | self-registration with confirmed e-mail (double opt-in), account states, shared token mechanism for confirmation and magic login.",
+    "type": "library",
+    "keywords": ["php", "framework", "member", "registration", "z77"],
+    "homepage": "https://github.com/z77-ch/z77-framework",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Peter Ruepp",
+            "email": "peter.ruepp@z77.ch"
+        }
+    ],
+    "autoload": {
+        "psr-4": {
+            "Z77\\Module\\Member\\": "src/"
+        }
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true,
+    "extra": {
+        "branch-alias": {
+            "dev-main": "1.0.x-dev"
+        }
+    },
+    "require": {
+        "php": ">=8.2",
+        "z77/kernel": "^1.0"
+    },
+    "support": {
+        "issues": "https://github.com/z77-ch/z77-framework/issues",
+        "source": "https://github.com/z77-ch/module-member",
+        "docs": "https://github.com/z77-ch/z77-framework/tree/main/docs"
+    },
+    "readme": "README.md"
+}
