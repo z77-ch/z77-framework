@@ -76,6 +76,21 @@ final class TokenService
         return $token->getAccountRef();
     }
 
+    /**
+     * Account id a plaintext belongs to — regardless of used/expired, WITHOUT
+     * redeeming. The confirm flow needs this to tell "link already used and
+     * the account is confirmed" (→ «bereits bestätigt») apart from a dead
+     * link (→ resend page); redeem() alone would answer null for both.
+     */
+    public function peek(string $plain, string $purpose): ?string
+    {
+        $token = $this->repository()->findOneBy(['token_hash' => hash('sha256', $plain)]);
+
+        return $token instanceof MemberToken && $token->getPurpose() === $purpose
+            ? $token->getAccountRef()
+            : null;
+    }
+
     /** @return MemberToken[] unused tokens of the account for this purpose */
     private function openTokens(string $accountRef, string $purpose): array
     {

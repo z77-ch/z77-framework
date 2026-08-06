@@ -1,0 +1,160 @@
+// member.scss — the module's single stylesheet (compiled to res/assets/css/member.css).
+//
+// Deliberately neutral: system font stack, one centered card, no brand. A project
+// with its own look overrides the layoutConfig and loads its own CSS instead —
+// this file is the works-out-of-the-box default, not a design statement.
+//
+// The form markup comes from the frontend module's generic publicForm partial
+// (one source of truth for the data-* contract), which is why the form styles
+// below address its fe-* classes.
+
+$me-text: #222;
+$me-muted: #666;
+$me-line: #d9d9d9;
+$me-error: #b3261e;
+$me-success: #1e6f42;
+
+.me-body {
+    margin: 0;
+    background: #f4f4f4;
+    color: $me-text;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 1rem;
+    line-height: 1.5;
+}
+
+.me-main {
+    display: flex;
+    justify-content: center;
+    padding: 3rem 1rem;
+}
+
+.me-card {
+    width: 100%;
+    max-width: 30rem;
+    background: #fff;
+    border: 1px solid $me-line;
+    padding: 2rem;
+
+    &__title {
+        margin: 0 0 1rem;
+        font-size: 1.5rem;
+        line-height: 1.2;
+    }
+
+    &__lead {
+        margin: 0 0 1.5rem;
+    }
+
+    &__aside {
+        margin: 1.5rem 0 0;
+        font-size: 0.875rem;
+        color: $me-muted;
+    }
+}
+
+// ── the shared form partial (fe-* classes) inside the member card ──────────
+
+.fe-form {
+    .fe-container {
+        padding: 0;
+    }
+
+    &__hp {
+        position: absolute;
+        left: -9999px;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+    }
+
+    &__error {
+        margin: 0 0 1rem;
+        padding: 0.75rem 1rem;
+        border: 1px solid $me-error;
+        color: $me-error;
+    }
+
+    &__row {
+        margin: 0 0 0.25rem;
+
+        label {
+            display: block;
+            margin-bottom: 0.25rem;
+            font-size: 0.875rem;
+        }
+
+        input[type="text"],
+        input[type="email"],
+        input[type="tel"],
+        textarea {
+            width: 100%;
+            box-sizing: border-box;
+            padding: 0.5rem 0.75rem;
+            border: 1px solid $me-line;
+            font: inherit;
+            color: inherit;
+
+            &:focus {
+                outline: 2px solid $me-text;
+                outline-offset: -1px;
+            }
+        }
+
+        &--error {
+            input,
+            textarea {
+                border-color: $me-error;
+            }
+        }
+    }
+
+    &__hint {
+        min-height: 1.25rem;
+        margin: 0 0 0.75rem;
+        font-size: 0.8125rem;
+        color: $me-error;
+    }
+
+    &__note {
+        margin: 1rem 0;
+        font-size: 0.8125rem;
+        color: $me-muted;
+    }
+
+    &__submit {
+        display: inline-block;
+        padding: 0.625rem 1.5rem;
+        border: 0;
+        background: $me-text;
+        color: #fff;
+        font: inherit;
+        cursor: pointer;
+
+        &:hover {
+            background: #000;
+        }
+    }
+}
+
+// ── flash channel ──────────────────────────────────────────────────────────
+
+.flash-messages {
+    position: sticky;
+    top: 0;
+}
+
+.flash-msg {
+    padding: 0.75rem 1rem;
+    text-align: center;
+
+    &--success {
+        background: #e6f2ec;
+        color: $me-success;
+    }
+
+    &--error {
+        background: #f9e5e3;
+        color: $me-error;
+    }
+}
