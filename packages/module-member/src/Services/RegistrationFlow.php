@@ -231,6 +231,17 @@ final class RegistrationFlow
 
     // ── the mails ──────────────────────────────────────────────────────────
 
+    /**
+     * The confirmation mail as a buildable piece (B8 needs it: a login
+     * request for a never-confirmed account answers with a fresh
+     * confirmation link, not a login link — spec table «Kontolage»).
+     * Issues a fresh confirm token (devaluing open ones) like every path.
+     */
+    public function confirmMailFor(MemberAccount $account, ?int $now = null): EmailMessage
+    {
+        return $this->confirmMail($account, $now ?? time());
+    }
+
     private function confirmMail(MemberAccount $account, int $now): EmailMessage
     {
         $plain = $this->tokens->issue(

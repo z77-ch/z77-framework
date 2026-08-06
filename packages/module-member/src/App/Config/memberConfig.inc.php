@@ -32,8 +32,8 @@ return [
     'activationHook' => null,
 
     // Path the «Sie sind freigeschaltet» mail links to (absolute URL is built
-    // from the request host at send time). Becomes the login entry with B8.
-    'memberEntryPath' => '/',
+    // from the request host at send time) — the B8 login page.
+    'memberEntryPath' => '/member/main/login',
 
     // Daily cleanup (bin/member-cleanup.php): never-confirmed accounts older
     // than this are deleted; 'confirmed' accounts always wait for an operator.
@@ -77,6 +77,33 @@ return [
                     'indexAction' => AuthRole::GUEST,
                     'dankeAction' => AuthRole::GUEST,
                     'checkAction' => AuthRole::GUEST,
+                ],
+            ],
+            // B8 — login is GUEST by nature (nobody is signed in yet); the
+            // profile guards itself via MemberAuth (member sessions are not
+            // the framework ACL — that one belongs to the admin login).
+            'LoginController' => [
+                'defaultAction'  => 'index',
+                'controllerRole' => AuthRole::GUEST,
+                'actions'        => [
+                    'indexAction'  => AuthRole::GUEST,
+                    'dankeAction'  => AuthRole::GUEST,
+                    'redeemAction' => AuthRole::GUEST,
+                    'checkAction'  => AuthRole::GUEST,
+                ],
+            ],
+            'LogoutController' => [
+                'defaultAction'  => 'index',
+                'controllerRole' => AuthRole::GUEST,
+                'actions'        => [
+                    'indexAction' => AuthRole::GUEST,
+                ],
+            ],
+            'ProfileController' => [
+                'defaultAction'  => 'index',
+                'controllerRole' => AuthRole::GUEST,
+                'actions'        => [
+                    'indexAction' => AuthRole::GUEST,
                 ],
             ],
         ],
