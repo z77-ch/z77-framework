@@ -36,6 +36,29 @@ $name = trim(($account->getFirstName() ?? '') . ' ' . ($account->getLastName() ?
         <dd><?= e($account->isActive() ? 'aktiv' : 'wartet auf Freischaltung') ?></dd>
     </dl>
 
+    <h2 class="me-card__subtitle">Zwei-Faktor-Schutz</h2>
+    <?php if ($account->hasTotp()): ?>
+    <p>
+        Aktiv seit <?= e(substr((string)$account->getTotpActivatedAt(), 0, 10)) ?> —
+        die Anmeldung fragt zusätzlich nach dem App-Code.
+    </p>
+    <form method="post" action="/member/main/profile/totp-remove" class="fe-form" novalidate>
+        <input type="hidden" name="csrf_token" value="<?= e($csrfToken) ?>">
+        <div class="fe-form__row">
+            <label for="totp-remove-code">Zum Entfernen: Code aus der App</label>
+            <input id="totp-remove-code" type="text" name="code" inputmode="numeric"
+                   autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required>
+        </div>
+        <button class="fe-form__submit" type="submit">2FA entfernen</button>
+    </form>
+    <?php else: ?>
+    <p>
+        Nicht aktiv. Mit einer Authenticator-App fragt die Anmeldung zusätzlich
+        zum Link einen 6-stelligen Code ab.
+    </p>
+    <p><a class="fe-form__submit" style="text-decoration:none" href="/member/main/profile/totp">2FA einrichten</a></p>
+    <?php endif; ?>
+
     <p class="me-card__aside">
         <a href="/member/main/logout">Abmelden</a>
     </p>

@@ -68,6 +68,32 @@ trait AccountsControllerTrait
         return $this->memberConfirmModal('confirmReject');
     }
 
+    /** Confirm modal for the 2FA reset (lost device — B8 spec handgrip). */
+    protected function confirmTotpResetAction(): HtmlResponse|FetchResponse
+    {
+        return $this->memberConfirmModal('confirmTotpReset');
+    }
+
+    #[Fetch, HttpMethod('POST')]
+    protected function totpResetAction(): FetchResponse
+    {
+        [$account, $error] = $this->memberAccountFromPost();
+        if ($error !== null) {
+            return $error;
+        }
+        if (!$account->hasTotp() && !$account->hasPendingTotpSetup()) {
+            return $this->fetchError('Für dieses Konto ist kein Zwei-Faktor-Schutz eingerichtet');
+        }
+
+        \Z77\Module\Member\Services\TotpSetup::create()->resetByOperator($account);
+        $this->messageService->pushFlashAfterRedirect(
+            'success',
+            'Zwei-Faktor-Schutz für «' . $account->getEmail() . '» zurückgesetzt — der Kunde richtet neu ein.'
+        );
+
+        return $this->fetch()->setStatus('success')->addCommand('close-modal')->addCommand('reload');
+    }
+
     #[Fetch, HttpMethod('POST')]
     protected function activateAction(): FetchResponse
     {

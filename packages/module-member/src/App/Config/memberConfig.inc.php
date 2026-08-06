@@ -89,6 +89,7 @@ return [
                     'indexAction'  => AuthRole::GUEST,
                     'dankeAction'  => AuthRole::GUEST,
                     'redeemAction' => AuthRole::GUEST,
+                    'totpAction'   => AuthRole::GUEST,
                     'checkAction'  => AuthRole::GUEST,
                 ],
             ],
@@ -103,7 +104,9 @@ return [
                 'defaultAction'  => 'index',
                 'controllerRole' => AuthRole::GUEST,
                 'actions'        => [
-                    'indexAction' => AuthRole::GUEST,
+                    'indexAction'      => AuthRole::GUEST,
+                    'totpAction'       => AuthRole::GUEST,
+                    'totpRemoveAction' => AuthRole::GUEST,
                 ],
             ],
         ],

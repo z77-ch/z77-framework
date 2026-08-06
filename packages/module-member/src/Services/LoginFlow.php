@@ -31,8 +31,12 @@ final class LoginFlow
 {
     public const LOGIN_TTL_SECONDS = 900; // spec default: 15 min
 
-    public const SESSION = 'session';
-    public const DEAD    = 'dead';
+    public const SESSION       = 'session';
+    public const TOTP_REQUIRED = 'totp-required';
+    public const DEAD          = 'dead';
+
+    public const TOTP_INVALID = 'invalid';
+    public const TOTP_LOCKED  = 'locked';
 
     /**
      * @param \Closure(EmailMessage): bool $sendMail
@@ -45,6 +49,8 @@ final class LoginFlow
         private MemberThrottle $throttle,
         private MemberSession $session,
         private RegistrationFlow $registration,
+        private TotpVault $totpVault,
+        private TotpGuard $totpGuard,
         private \Closure $sendMail,
         private string $redeemUrl,
         private string $registerUrl,
@@ -62,6 +68,8 @@ final class LoginFlow
             new MemberThrottle(rtrim(str_replace('\\', '/', ABS_BASE_PATH), '/') . '/data/framework/member/throttle'),
             new MemberSession(DI::getSessionManager()),
             RegistrationFlow::create($confirmUrl),
+            TotpVault::create(),
+            TotpGuard::create(),
             static fn(EmailMessage $mail): bool => DI::getEmailService()->send($mail),
             $redeemUrl,
             $registerUrl,
@@ -93,8 +101,10 @@ final class LoginFlow
 
     /**
      * The link click. 'session': the member session exists from this moment.
-     * 'dead': unknown, expired, used, or the account vanished meanwhile —
-     * one answer, the request page with a hint.
+     * 'totp-required': the link was valid, but 2FA is active — the account
+     * parks at the code prompt (5-minute window), NO session yet. 'dead':
+     * unknown, expired, used, or the account vanished meanwhile — one
+     * answer, the request page with a hint.
      */
     public function redeem(?string $plainToken, ?int $now = null): string
     {
@@ -116,7 +126,52 @@ final class LoginFlow
             return self::DEAD;
         }
 
+        if ($account->hasTotp()) {
+            $this->session->startTotpPending((string)$account->getId(), $now);
+
+            return self::TOTP_REQUIRED;
+        }
+
         $this->session->start((string)$account->getId(), $now);
+
+        return self::SESSION;
+    }
+
+    /**
+     * The code prompt submit (B8: only a valid app code creates the session).
+     * 'session' | 'invalid' (wrong code, counted) | 'locked' (five failures →
+     * 15-minute window; the RIGHT code is refused too) | 'dead' (nothing
+     * pending or the prompt window expired — back to the request page).
+     */
+    public function confirmTotp(string $code, ?int $now = null): string
+    {
+        $now ??= time();
+
+        $accountId = $this->session->totpPendingAccountId($now);
+        if ($accountId === null) {
+            return self::DEAD;
+        }
+        if ($this->totpGuard->isLocked($accountId, $now)) {
+            return self::TOTP_LOCKED;
+        }
+
+        $account = $this->accounts->findById($accountId);
+        $secret  = $account?->getTotpSecret() !== null ? $this->totpVault->decrypt($account->getTotpSecret()) : null;
+        if ($account === null || $secret === null) {
+            $this->session->clearTotpPending();
+
+            return self::DEAD; // account or vault entry gone — start over
+        }
+
+        if (!Totp::verify($secret, $code, $now)) {
+            $this->totpGuard->recordFailure($accountId, $now);
+
+            return $this->totpGuard->isLocked($accountId, $now) ? self::TOTP_LOCKED : self::TOTP_INVALID;
+        }
+
+        $this->totpGuard->reset($accountId);
+        $this->session->clearTotpPending();
+        $this->session->start($accountId, $now);
 
         return self::SESSION;
     }

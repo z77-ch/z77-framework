@@ -64,6 +64,11 @@ $badge = static fn(string $state): array => match ($state) {
                                 title="Konto löschen — ohne automatische Mail"
                                 data-fetch-get="/backend/service/member-accounts/confirm-reject?id=<?= e(rawurlencode((string)$account->getId())) ?>">Ablehnen</button>
                         <?php endif; ?>
+                        <?php if ($account->hasTotp()): ?>
+                        <button type="button" class="be-btn be-btn--ghost be-btn--sm"
+                                title="Zwei-Faktor-Schutz entfernen — nur bei verlorenem Gerät"
+                                data-fetch-get="/backend/service/member-accounts/confirm-totp-reset?id=<?= e(rawurlencode((string)$account->getId())) ?>">2FA-Reset</button>
+                        <?php endif; ?>
                     </span>
                 </div>
             </div>

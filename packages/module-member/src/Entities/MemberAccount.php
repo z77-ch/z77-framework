@@ -69,6 +69,17 @@ class MemberAccount
     #[Clean('nullable', 'text')]
     private ?string $activatedAt = null;
 
+    /**
+     * B8: TOTP secret, ENCRYPTED by TotpVault — never plaintext in the store.
+     * Set at setup start; 2FA is ACTIVE only once totpActivatedAt is set too
+     * (the customer confirmed the setup with a valid app code). null = off.
+     */
+    #[Clean('nullable', 'text')]
+    private ?string $totpSecret = null;
+
+    #[Clean('nullable', 'text')]
+    private ?string $totpActivatedAt = null;
+
     public function __construct(array $data = [])
     {
         if ($data) {
@@ -98,6 +109,16 @@ class MemberAccount
     public function isRegistered(): bool { return $this->state === self::STATE_REGISTERED; }
     public function isConfirmed(): bool { return $this->state === self::STATE_CONFIRMED; }
     public function isActive(): bool { return $this->state === self::STATE_ACTIVE; }
+
+    public function getTotpSecret(): ?string { return $this->totpSecret; }
+    public function getTotpActivatedAt(): ?string { return $this->totpActivatedAt; }
+    /** 2FA fully active: secret stored AND the setup was confirmed with a valid code. */
+    public function hasTotp(): bool { return $this->totpSecret !== null && $this->totpActivatedAt !== null; }
+    /** Setup started (QR shown) but not yet confirmed. */
+    public function hasPendingTotpSetup(): bool { return $this->totpSecret !== null && $this->totpActivatedAt === null; }
+
+    public function setTotpSecret(?string $totpSecret): void { $this->totpSecret = $totpSecret; }
+    public function setTotpActivatedAt(?string $totpActivatedAt): void { $this->totpActivatedAt = $totpActivatedAt; }
 
     public function setEmail(string $email): void { $this->email = self::normalizeEmail($email); }
     public function setCompany(?string $company): void { $this->company = $company; }

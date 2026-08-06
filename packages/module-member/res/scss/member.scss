@@ -51,6 +51,13 @@ $me-success: #1e6f42;
         font-size: 0.875rem;
         color: $me-muted;
     }
+
+    &__subtitle {
+        margin: 2rem 0 0.5rem;
+        padding-top: 1rem;
+        border-top: 1px solid $me-line;
+        font-size: 1.125rem;
+    }
 }
 
 // ── the shared form partial (fe-* classes) inside the member card ──────────

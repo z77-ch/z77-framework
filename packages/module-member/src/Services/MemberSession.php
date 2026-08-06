@@ -18,8 +18,13 @@ final class MemberSession
 {
     public const IDLE_SECONDS = 7200; // spec default: 2 h inactivity
 
-    private const KEY_ACCOUNT   = 'member.accountId';
-    private const KEY_LAST_SEEN = 'member.lastSeenAt';
+    /** How long the TOTP interstitial may take between link click and code. */
+    public const TOTP_PENDING_SECONDS = 300;
+
+    private const KEY_ACCOUNT      = 'member.accountId';
+    private const KEY_LAST_SEEN    = 'member.lastSeenAt';
+    private const KEY_TOTP_PENDING = 'member.totpPendingId';
+    private const KEY_TOTP_SINCE   = 'member.totpPendingAt';
 
     public function __construct(private SessionManager $session)
     {
@@ -62,7 +67,40 @@ final class MemberSession
     {
         $this->session->remove(self::KEY_ACCOUNT);
         $this->session->remove(self::KEY_LAST_SEEN);
+        $this->clearTotpPending();
         $this->regenerate();
+    }
+
+    // ── the TOTP interstitial (B8 stage B) ─────────────────────────────────
+
+    /** The redeemed link parks here when 2FA is active — no session yet. */
+    public function startTotpPending(string $accountId, ?int $now = null): void
+    {
+        $this->regenerate();
+        $this->session->set(self::KEY_TOTP_PENDING, $accountId);
+        $this->session->set(self::KEY_TOTP_SINCE, $now ?? time());
+    }
+
+    /** Account waiting at the code prompt, or null (none / took too long). */
+    public function totpPendingAccountId(?int $now = null): ?string
+    {
+        $accountId = $this->session->get(self::KEY_TOTP_PENDING);
+        if (!is_string($accountId) || $accountId === '') {
+            return null;
+        }
+        if (($now ?? time()) - (int)$this->session->get(self::KEY_TOTP_SINCE, 0) > self::TOTP_PENDING_SECONDS) {
+            $this->clearTotpPending();
+
+            return null;
+        }
+
+        return $accountId;
+    }
+
+    public function clearTotpPending(): void
+    {
+        $this->session->remove(self::KEY_TOTP_PENDING);
+        $this->session->remove(self::KEY_TOTP_SINCE);
     }
 
     private function regenerate(): void

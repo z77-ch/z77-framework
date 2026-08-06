@@ -49,7 +49,7 @@ class LoginController extends AbstractMemberController
         return $this->html(['pageTitle' => 'Anmeldung angefordert']);
     }
 
-    /** The link click: session or back to the request page with a hint. */
+    /** The link click: session, the TOTP prompt, or back with a hint. */
     protected function redeemAction(): RedirectResponse
     {
         $outcome = $this->loginFlow()->redeem(
@@ -59,6 +59,9 @@ class LoginController extends AbstractMemberController
         if ($outcome === LoginFlow::SESSION) {
             return $this->redirect('/member/main/profile');
         }
+        if ($outcome === LoginFlow::TOTP_REQUIRED) {
+            return $this->redirect('/member/main/login/totp');
+        }
 
         $this->messageService->pushFlashAfterRedirect(
             'error',
@@ -66,6 +69,56 @@ class LoginController extends AbstractMemberController
         );
 
         return $this->redirect('/member/main/login');
+    }
+
+    /**
+     * The 2FA interstitial (B8: only the valid app code creates the session).
+     * Reachable only while a redeemed link parks at the prompt (5-minute
+     * window) — otherwise back to the request page.
+     */
+    protected function totpAction(): HtmlResponse|RedirectResponse
+    {
+        $request = DI::getRequest();
+        $flow    = $this->loginFlow();
+
+        if ($request->isPost()) {
+            if (!DI::getCsrfService()->validate((string)$request->getPostParameter('csrf_token'))) {
+                return $this->redirect('/member/main/login/totp');
+            }
+
+            $outcome = $flow->confirmTotp((string)$request->getPostParameter('code'));
+
+            if ($outcome === LoginFlow::SESSION) {
+                return $this->redirect('/member/main/profile');
+            }
+            if ($outcome === LoginFlow::DEAD) {
+                $this->messageService->pushFlashAfterRedirect(
+                    'error',
+                    'Die Anmeldung ist abgelaufen — fordern Sie einen neuen Link an.'
+                );
+
+                return $this->redirect('/member/main/login');
+            }
+
+            return $this->html([
+                'pageTitle' => 'Code eingeben',
+                'error'     => $outcome === LoginFlow::TOTP_LOCKED
+                    ? 'Zu viele Fehlversuche — bitte warten Sie 15 Minuten.'
+                    : 'Der Code ist ungültig — bitte versuchen Sie es erneut.',
+            ]);
+        }
+
+        if (!$this->hasTotpPending()) {
+            return $this->redirect('/member/main/login');
+        }
+
+        return $this->html(['pageTitle' => 'Code eingeben', 'error' => '']);
+    }
+
+    private function hasTotpPending(): bool
+    {
+        return (new \Z77\Module\Member\Services\MemberSession(DI::getSessionManager()))
+            ->totpPendingAccountId() !== null;
     }
 
     /** Per-field blur validation (public-form standard). */
