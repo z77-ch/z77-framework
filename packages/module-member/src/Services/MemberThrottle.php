@@ -12,9 +12,12 @@ namespace Z77\Module\Member\Services;
  */
 final class MemberThrottle
 {
+    /** B7 spec default — also the session limit the login form runs on. */
+    public const MAX_PER_HOUR = 5;
+
     public function __construct(
         private string $dir,
-        private int $limit = 5,
+        private int $limit = self::MAX_PER_HOUR,
         private int $windowSeconds = 3600,
     ) {
     }

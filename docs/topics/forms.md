@@ -44,6 +44,14 @@ field name, the form partial and the notification-mail body can both be generic.
   `IndexController::contactAction` + `ContactFormDefinition` in `module-frontend` are the
   reference to copy — the same pair migrated the zihlundsee contact form and removed a DTO,
   a validator class, a JS file and a mail template from that project.
+- **The session rate limit is 3 successful sends per hour, and it is visible** — hitting
+  it renders the send-error banner. That is right for a contact form («nothing was sent»
+  is the honest answer) and wrong for a form whose page must stay indistinguishable
+  across submits. Adjust with `withRateLimit($maxPerHour, silent: true)`: silent makes
+  the limit behave like the bot path (nothing sent, caller redirects as on success). The
+  counter lives in the session and survives sign-out — `session_regenerate_id(true)`
+  keeps the data, deliberately, so the limit cannot be reset by logging out. The member
+  login runs it silently at 5/h (member.md MEM-010).
 - **Rules are an associative array**, not a string mini-language: `['required' => true,
   'min' => 2, 'max' => 80, 'email' => true, 'accepted' => true]`. A declared `options` map
   is the whitelist for that field's value. The set is deliberately small — new rules only

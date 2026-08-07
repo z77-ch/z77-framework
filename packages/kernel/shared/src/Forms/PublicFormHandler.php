@@ -63,6 +63,9 @@ final class PublicFormHandler
     private string $sendErrorKey       = 'form.error.send';
     private string $validationErrorKey = 'form.error.check';
 
+    private int  $rateLimitPerHour = 3;
+    private bool $rateLimitSilent  = false;
+
     private function __construct(private FormDefinition $definition)
     {
         $this->guard = FormGuard::forKey($definition->guardKey());
@@ -87,6 +90,25 @@ final class PublicFormHandler
         $this->csrfErrorKey       = $csrfError ?? $this->csrfErrorKey;
         $this->sendErrorKey       = $sendError ?? $this->sendErrorKey;
         $this->validationErrorKey = $validationError ?? $this->validationErrorKey;
+
+        return $this;
+    }
+
+    /**
+     * Adjusts the per-session send limit (successful sends within a sliding
+     * hour, {@see FormGuard::isRateLimited()}).
+     *
+     * `$silent` decides what hitting it looks like: by default the visitor
+     * gets the send-error banner — right for a contact form, where saying
+     * «not sent» is the honest answer. A form whose whole page must stay
+     * indistinguishable (the member login: every submit lands on the waiting
+     * page, MEM-005) sets `silent: true` instead — the submit then behaves
+     * like the bot path: nothing is sent, the caller redirects as if it were.
+     */
+    public function withRateLimit(int $maxPerHour, bool $silent = false): self
+    {
+        $this->rateLimitPerHour = $maxPerHour;
+        $this->rateLimitSilent  = $silent;
 
         return $this;
     }
@@ -125,7 +147,14 @@ final class PublicFormHandler
                     // visible at the top without scrolling to the failed field.
                     $this->errors    = $validator->getFieldErrors();
                     $this->formError = $this->translate($this->validationErrorKey);
-                } elseif ($this->guard->isRateLimited()) {
+                } elseif ($this->guard->isRateLimited($this->rateLimitPerHour)) {
+                    if ($this->rateLimitSilent) {
+                        // Same shape as the bot path above: send nothing, let
+                        // the caller redirect. The page must not reveal that
+                        // this submit was treated differently.
+                        $this->guard->disarmTimeTrap();
+                        return true;
+                    }
                     $this->formError = $this->translate($this->sendErrorKey);
                 } elseif ($this->dispatch($onValid)) {
                     $this->guard->recordSend();
