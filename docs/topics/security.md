@@ -137,6 +137,7 @@ still the right tool for a non-form endpoint that needs the same protections.
 - [`installer.md`](installer.md) — install flow, data-file seeding, debug flag
 - [`messages.md`](messages.md) — `pushMessageAfterRedirect` persistent channel used by the nag
 - [`forms.md`](forms.md) — `PublicFormHandler`: the standard cascade that applies `FormGuard` + the in-action CSRF check for every public form
+- [`member.md`](member.md) — the customer login: the working TOTP + magic-link implementation this topic's roadmap can reuse, and where SEC-005 bites hardest (MEM-006)
 
 ## known issues
 
@@ -145,11 +146,13 @@ still the right tool for a non-form endpoint that needs the same protections.
 - **SEC-002** (open): don't assume the error handler hides internals in production — `ExceptionHandler` gates trace output on `ini_get('display_errors')`, NOT the framework `DEBUG` flag; a prod server with `display_errors=On` leaks full filesystem paths + stack traces.
 - **SEC-003** — resolved 2026-07-17. `SessionManager::startSession()` now sets explicit cookie params before `session_start()`: `HttpOnly`, `SameSite=Lax` (CSRF defense-in-depth — PHP's ini default for samesite is EMPTY), `Secure` when the request is HTTPS (same detection as `Request::parseUrl`), plus `session.use_strict_mode=1` (rejects uninitialized ids — session fixation). Hardcoded sensible defaults, deliberately NO config keys (no settings on stock); found in the zihlundsee contact-form best-practice review.
 - **SEC-004** (open): don't assume login is brute-force-protected — `LoginController` has no rate-limit / lockout / throttle.
+- **SEC-005** (open): don't assume a generated absolute URL points at your own installation. `Request::parseUrl()` and every caller that builds one (`module-member`'s mail links, MEM-006) read `$_SERVER['HTTP_HOST']`, which the client sends. There is no trusted-host concept in the framework. Under a catch-all vhost this turns a magic-link mail into token exfiltration: the attacker requests a login for a victim's address with a forged Host, the victim gets a GENUINE mail whose link points at the attacker, and the token is redeemed on the real host. Pin `ServerName` in the deployment until this is closed. Found in the member login review (2026-08-07).
 
 ## pending
 
 - **Rate-limiting / lockout** on login (fixes SEC-004) — per-username + per-IP backoff.
 - **Error handler** (fixes SEC-002) — branch on the framework `DEBUG` flag; generic production page without paths/traces.
+- **Trusted host** (fixes SEC-005) — one canonical-host config value plus a `Request` accessor that validates against it, so every generated absolute URL (mail links above all) stops trusting a client header. Closes the `$_SERVER` reads that conventions rule 4 forbids but currently has no alternative for (`AbstractMemberController::absoluteUrl`, `AccountsControllerTrait`).
 - **Security headers** — CSP, `Strict-Transport-Security`, `X-Frame-Options`/`frame-ancestors`, `X-Content-Type-Options: nosniff`, `Referrer-Policy`.
 - **Docroot/deny hardening** — ship `.htaccess`/nginx deny rules so `data/` (password hashes) is never web-served even on a misconfigured docroot (defense-in-depth).
 - **`config/auth.inc.php` future tenants** — introduced for `passwordTier` (PWD-POLICY-001, resolved). Intended home for the remaining installation-wide auth-policy values once those pendenzen land: rate-limit / lockout thresholds (SEC-004). Add the keys there at that point — deliberately NOT pre-created (no settings on stock). NOTE: per-user auth properties (e.g. `secondFactor`) do NOT belong here; they live on the `LoginUser` entity (see roadmap below). Only a global *mandate* could ever be a config key.
