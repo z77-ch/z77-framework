@@ -106,16 +106,20 @@ final class LoginFlow
     {
         $now     = $now ?? time();
         $allowed = $this->throttle->allow($email, $now);
+        $account = $allowed ? $this->accounts->findByEmail($email) : null;
         $plain   = null;
 
-        if ($allowed) {
-            $account = $this->accounts->findByEmail($email);
-
-            ($this->sendMail)(match (true) {
-                $account === null        => $this->noAccountMail($email),
-                $account->isRegistered() => $this->registration->confirmMailFor($account, $now),
-                default                  => $this->loginMail($account, $remember, $now, $plain), // confirmed or active
-            });
+        // Order matters: the token first (the waiting record binds to its
+        // hash), then the record (the mail names its check digits), then the
+        // mail. A login token exists only for confirmed/active accounts.
+        if ($account !== null && !$account->isRegistered()) {
+            $plain = $this->tokens->issue(
+                (string)$account->getId(),
+                MemberToken::PURPOSE_LOGIN,
+                self::LOGIN_TTL_SECONDS,
+                $now,
+                $remember
+            );
         }
 
         $record = $this->pending->open(
@@ -126,6 +130,14 @@ final class LoginFlow
             $now
         );
         $this->session->setPendingLoginId((string)$record->getId());
+
+        if ($allowed) {
+            ($this->sendMail)(match (true) {
+                $plain !== null   => $this->loginMail($account, $plain, $record),
+                $account === null => $this->noAccountMail($email),
+                default           => $this->registration->confirmMailFor($account, $now),
+            });
+        }
 
         return $allowed;
     }
@@ -375,26 +387,25 @@ final class LoginFlow
 
     // ── the mails ──────────────────────────────────────────────────────────
 
-    /** @param ?string $plain out-param: the plaintext, so request() can bind the waiting record to it */
-    private function loginMail(MemberAccount $account, bool $remember, int $now, ?string &$plain = null): EmailMessage
+    /**
+     * The login mail. Subject and body carry the check digits and the context
+     * of the request — so the customer can tell an own login from one someone
+     * else started BEFORE clicking anything (spec 1.1.0).
+     */
+    private function loginMail(MemberAccount $account, string $plain, MemberPendingLogin $record): EmailMessage
     {
-        $plain = $this->tokens->issue(
-            (string)$account->getId(),
-            MemberToken::PURPOSE_LOGIN,
-            self::LOGIN_TTL_SECONDS,
-            $now,
-            $remember
-        );
-
         $link = $this->redeemUrl . (str_contains($this->redeemUrl, '?') ? '&' : '?')
               . 'token=' . urlencode($plain);
 
         return (new EmailMessage())
             ->to($account->getEmail())
-            ->subject('Ihr Anmelde-Link')
+            ->subject('Anmeldung bestätigen — Prüfzahl ' . $record->getCheckDigits())
             ->template('emails/login-link', 'Z77\\Module\\Member', [
                 'account'  => $account,
                 'loginUrl' => $link,
+                'digits'   => $record->getCheckDigits(),
+                'device'   => $record->getLabel(),
+                'when'     => date('d.m.Y, H:i', (int)strtotime($record->getRequestedAt())),
             ]);
     }
 

@@ -19,25 +19,30 @@
 <?php if ($confirmed): ?>
     <h1 class="me-card__title">Anmeldung bestätigt</h1>
     <p class="me-card__lead">
-        Das andere Gerät wird jetzt angemeldet. Sie können dieses Fenster
-        schliessen.
+        Das Gerät, an dem die Anmeldung angefordert wurde, meldet sich jetzt an
+        — das dauert wenige Sekunden. Sie können dieses Fenster schliessen.
     </p>
 <?php else: ?>
     <h1 class="me-card__title">Anmeldung bestätigen</h1>
 
     <?php if ($pending !== null): ?>
+    <p class="me-card__lead">
+        Diese Anmeldung wurde an einem anderen Bildschirm angefordert. Dort
+        steht dieselbe Prüfzahl:
+    </p>
     <dl class="me-profile">
+        <dt>Prüfzahl</dt>
+        <dd><strong class="me-check__digits"><?= e($pending->getCheckDigits()) ?></strong></dd>
         <dt>Angefordert</dt>
         <dd><?= e(date('d.m.Y, H:i', (int)strtotime($pending->getRequestedAt()))) ?> Uhr</dd>
         <dt>Gerät</dt>
         <dd><?= e($pending->getLabel()) ?></dd>
-        <dt>Prüfzahl</dt>
-        <dd><strong class="me-check__digits"><?= e($pending->getCheckDigits()) ?></strong></dd>
     </dl>
     <p class="me-card__note">
-        Bestätigen Sie nur, wenn Sie diese Anmeldung selbst angefordert haben
-        oder jemandem den Zugang bewusst freigeben. Stimmt die Prüfzahl nicht
-        mit Ihrem Bildschirm überein, schliessen Sie diese Seite.
+        Stimmen die Zahlen überein, bestätigen Sie hier — dann wird das andere
+        Gerät angemeldet, dieses nicht. Stimmen sie <strong>nicht</strong>
+        überein, hat jemand anderes die Anmeldung gestartet: Schliessen Sie
+        diese Seite, ohne etwas anzuklicken.
     </p>
 
     <form method="post" action="/member/main/login/redeem" class="fe-form" novalidate>
@@ -50,8 +55,9 @@
     </form>
     <?php else: ?>
     <p class="me-card__lead">
-        Zu diesem Link wartet kein Gerät mehr auf eine Bestätigung. Sie können
-        sich hier anmelden.
+        Zu diesem Link wartet kein Gerät mehr auf eine Bestätigung — die
+        Anfrage ist abgelaufen oder wurde bereits beantwortet. Sie können sich
+        aber hier anmelden.
     </p>
     <?php endif; ?>
 
@@ -59,8 +65,8 @@
         <input type="hidden" name="csrf_token" value="<?= e($csrfToken) ?>">
         <input type="hidden" name="token" value="<?= e($token) ?>">
         <input type="hidden" name="decision" value="here">
-        <button class="fe-form__submit fe-form__submit--quiet" type="submit">
-            Jetzt auf diesem Gerät anmelden
+        <button class="fe-form__submit<?= $pending !== null ? ' fe-form__submit--quiet' : '' ?>" type="submit">
+            <?= $pending !== null ? 'Stattdessen auf diesem Gerät anmelden' : 'Auf diesem Gerät anmelden' ?>
         </button>
     </form>
 <?php endif; ?>
