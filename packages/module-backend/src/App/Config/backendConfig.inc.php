@@ -97,6 +97,45 @@ return [
             'BackupController' => [
                 'controllerRole' => AuthRole::SUPER_USER,
             ],
+            // Deciding WHEN a job runs is installation governance: a job runs
+            // with the role its module declares and may delete data (ADR-031).
+            'JobController' => [
+                'controllerRole' => AuthRole::SUPER_USER,
+            ],
+        ],
+    ],
+
+    // Background jobs (ADR-031). The backup service itself lives in the kernel,
+    // but jobs are declared per MODULE and this module owns the service section
+    // that operates it — so the three entries sit here. A project without the
+    // backend keeps the manual CLI entry (`vendor/bin/z77-backup`).
+    //
+    // One class, three keys: the type travels in the payload.
+    //
+    // No 'defaultSchedule' anywhere: how often an installation is backed up,
+    // and how much disk that may cost, is the operator's call. The schedule is
+    // switched on in the backend, not by installing a package.
+    'jobs' => [
+        'backup-data' => [
+            'class'       => \Z77\Shared\Jobs\BackupJob::class,
+            'label'       => 'Backup — Daten',
+            'runAs'       => AuthRole::SUPER_USER,
+            'maxAttempts' => 2,
+            'payload'     => ['type' => 'data'],
+        ],
+        'backup-db' => [
+            'class'       => \Z77\Shared\Jobs\BackupJob::class,
+            'label'       => 'Backup — Datenbank',
+            'runAs'       => AuthRole::SUPER_USER,
+            'maxAttempts' => 2,
+            'payload'     => ['type' => 'db'],
+        ],
+        'backup-full' => [
+            'class'       => \Z77\Shared\Jobs\BackupJob::class,
+            'label'       => 'Backup — Gesamtprojekt',
+            'runAs'       => AuthRole::SUPER_USER,
+            'maxAttempts' => 2,
+            'payload'     => ['type' => 'full'],
         ],
     ],
 ];

@@ -306,5 +306,19 @@
         "param": "",
         "sort_key": 1,
         "parent_id": 25
+    },
+    {
+        "id": 28,
+        "name": "Jobs",
+        "module": "backend",
+        "group": "service",
+        "controller": "job",
+        "action": "list",
+        "slot": "",
+        "ref": null,
+        "active": true,
+        "param": "",
+        "sort_key": 2,
+        "parent_id": 25
     }
 ]
