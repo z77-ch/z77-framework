@@ -56,6 +56,7 @@ Everything resolves from Packagist; `composer require z77/module-frontend:^1.0` 
 - When a client project consumes these packages → MUST use Packagist (public since 2026-07-15) and MUST NOT add `vcs`/`path` repository entries for `z77/*` — those were the pre-release consume paths.
 - When releasing a change in `packages/` → MUST tag the monorepo (`x.y.z`) and push the tag; the workflow propagates it to the 4 split repos and Packagist picks it up. A push without a tag only updates `dev-main`.
 - When changing the skeleton (`README.md` / `composer.json`) → MUST commit and tag in `z77-ch/z77-skeleton` itself (not a split target) AND mirror behaviour-relevant changes in the monorepo's `skeleton/composer.json` (dev parity).
+- When adding a CLI binary to a package's `bin` list → MUST run `composer update z77/<pkg>` in every consuming project; `composer install` and `vendor-deploy.bat` do NOT create the new `vendor/bin` entry (PKG-005).
 
 ## known issues
 
@@ -63,6 +64,8 @@ Everything resolves from Packagist; `composer require z77/module-frontend:^1.0` 
 - **ARCH-PKG-002** — resolved 2026-07-09 by ADR-023. The former circular triangle `core ↔ shared ↔ persistence` is gone: the three ship as one `z77/kernel` package, so their internal references are no longer a Composer dependency. Modules depend downward on the single foundation.
 - **PKG-003** — resolved 2026-07-15 by the public release: the split repos are public, dist zipballs download without a token, the `404 from dist` warnings are gone.
 - **PKG-004** (open, first hit at release 1.2.0): `git push && git push origin <tag>` starts TWO split workflow runs (branch push + tag push) that race each other pushing to the same split repos — the loser gets `cannot lock ref … but expected …` and its run fails partially. Content ends up correct only in combination; failed jobs must be re-run (`gh run rerun <id> --failed`, tag run first, then verify each split repo carries the tag: `gh api repos/z77-ch/{repo}/tags`). Proper fix ideas: push commit and tag atomically (`git push origin main <tag>` still triggers two runs — GitHub delivers separate push events) or add a `concurrency` group to the workflow so runs serialize. Until fixed: after every tagged release check both runs are green.
+
+- **PKG-005**: don't assume a new `bin` entry reaches `vendor/bin` through `composer install` or `vendor-deploy.bat` — it does not. Composer builds `vendor/bin` from the bin list recorded in `composer.lock` / `vendor/composer/installed.json`, which `install` reads instead of re-resolving. Adding `bin/z77-run` to `packages/kernel/composer.json` left axo3 with the package file present (`vendor/z77/kernel/bin/z77-run`) but no proxy in `vendor/bin` — the lock still said `bin/z77-backup` only. Fix: `composer update z77/kernel` in the project, then re-run the deploy. The direct path (`php vendor/z77/kernel/bin/z77-run`) works regardless; `vendor/bin` exists so a cron line survives a package rename.
 
 ## pending
 

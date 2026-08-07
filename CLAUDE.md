@@ -119,6 +119,15 @@ before deviating.
 - Old framework (wdv-622): always read → analyze → review → decide → only then integrate. Never copy directly.
 - Language: all code, comments, docs, and exception messages in English. Communicate with the developer in German.
 
+### Talking to the developer
+
+- **Docs keep the jargon. Chat explains it.** In `docs/` the precise term wins — a successor
+  and an AI read those files. In the chat, write the term AND a plain-language line under it.
+  Translate, never replace: the term stays, the explanation is added.
+- **No walls of text.** One point at a time, then stop. He asks when he wants more — waiting
+  for that question is the default, not a courtesy. A finished analysis is delivered as its
+  first step, not as the whole document pasted into the chat.
+
 ### When updating topics
 
 - Edit `docs/topics/{thema}.md` directly, then run `npm run docs:check`.
