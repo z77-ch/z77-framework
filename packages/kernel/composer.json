@@ -21,7 +21,8 @@
         }
     },
     "bin": [
-        "bin/z77-backup"
+        "bin/z77-backup",
+        "bin/z77-run"
     ],
     "minimum-stability": "dev",
     "prefer-stable": true,
