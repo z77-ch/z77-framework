@@ -314,9 +314,10 @@ DI::getRequest()->getBaseUrl()                    // instead of $_SERVER['HTTP_H
 
 `getBaseUrl()` is the one source for absolute URLs that leave the request — mail links, the
 SEO canonical/hreflang set, anything rendered into a cacheable page. It returns the
-installation's configured `canonicalBaseUrl`; the `Host` header is the client's to choose,
-and the page cache keys on path only, so deriving an origin from it lets one forged request
-decide what every later visitor is served (SEC-005).
+installation's `canonicalBaseUrl` (`config/systemConfig.inc.php`, ADR-030) and throws when
+that is unset rather than guessing: the `Host` header is the client's to choose, and the page
+cache keys on path only, so deriving an origin from it lets one forged request decide what
+every later visitor is served (SEC-005).
 
 ## Security
 

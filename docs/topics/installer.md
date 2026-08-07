@@ -14,6 +14,7 @@ SOURCE=/packages/kernel/core/src/Installer/Install.php
 SOURCE=/packages/kernel/core/res/CLAUDE.project.md
 SOURCE=/packages/kernel/core/src/Config/bootstrap.default.inc.php
 SOURCE=/packages/kernel/core/src/Config/moduleManager.default.inc.php
+SOURCE=/packages/kernel/core/src/Config/systemConfig.default.inc.php
 SOURCE=/packages/kernel/core/data/framework/routing/navigation.default.json
 SOURCE=/packages/kernel/core/data/framework/seo/metadata.default.json
 SOURCE=/skeleton/composer.json
@@ -50,14 +51,15 @@ Runs as a Composer post-install/post-update hook. Reads `extra` config from `com
 | 9 | `writeI18nConfig()` | → `config/i18n.inc.php` — **seed-once**: skipped if it already exists (INST-CONFIG-001) |
 | 10 | `writeBackupConfig()` | → `config/backup.inc.php` — **seed-once**: backup policy (retention, excludes, database), see [`backup.md`](backup.md) |
 | 11 | `writeMailConfig()` | → `config/mail.inc.php` — **seed-once**: mail transport + sender identity (`enabled=true`, `transport='mail'`, empty `fromAddress` to fill per project), see [`mail.md`](mail.md) |
-| 12 | `writeFileFinderConfig()` | → `config/fileFinder.inc.php` |
-| 13 | `writeDataFiles()` | seed `data/*.json` (skip if already exist) |
-| 14 | `provisionAdmin()` | create admin (interactive) or write `SETUP_TOKEN` (non-interactive) — skip if `loginUsers.json` exists |
-| 15 | `writeDebugFlag()` | create/remove `data/framework/debug.flag` per `debug` |
-| 16 | `seedProjectClaudeMd()` | seed `CLAUDE.md` (project context for AI assistants) from the kernel template — **seed-once**, never overwritten |
-| 17 | `renderAssetDriftNotice()` | print the collected asset drift (step 4) as ONE coloured notice (ADR-025) |
-| 18 | `promptAssetDeploy()` | interactive-only, per-file, default-No deploy of drifted assets (ADR-026) |
-| 19 | `offerDocsInstall()` | opt-in `z77/docs` require-dev (interactive: ask, default **Yes**; non-interactive: print the manual command) — **last output of the run** |
+| 12 | `writeSystemConfig()` | → `config/systemConfig.inc.php` — **seed-once**: installation identity (`canonicalBaseUrl`), the one config NOT fed from `composer.json` (ADR-030) |
+| 13 | `writeFileFinderConfig()` | → `config/fileFinder.inc.php` |
+| 14 | `writeDataFiles()` | seed `data/*.json` (skip if already exist) |
+| 15 | `provisionAdmin()` | create admin (interactive) or write `SETUP_TOKEN` (non-interactive) — skip if `loginUsers.json` exists |
+| 16 | `writeDebugFlag()` | create/remove `data/framework/debug.flag` per `debug` |
+| 17 | `seedProjectClaudeMd()` | seed `CLAUDE.md` (project context for AI assistants) from the kernel template — **seed-once**, never overwritten |
+| 18 | `renderAssetDriftNotice()` | print the collected asset drift (step 4) as ONE coloured notice (ADR-025) |
+| 19 | `promptAssetDeploy()` | interactive-only, per-file, default-No deploy of drifted assets (ADR-026) |
+| 20 | `offerDocsInstall()` | opt-in `z77/docs` require-dev (interactive: ask, default **Yes**; non-interactive: print the manual command) — **last output of the run** |
 
 ## frameworkPrefix filter
 
@@ -95,11 +97,11 @@ All failures throw `\RuntimeException` — no silent errors:
 
 | Type | Path | Behaviour |
 |---|---|---|
-| Config (regenerate) | `config/*.inc.php` except `i18n.inc.php` / `auth.inc.php` / `backup.inc.php` | regenerated on every install |
-| Config (seed-once) | `config/i18n.inc.php`, `config/auth.inc.php`, `config/backup.inc.php` | user-adjustable (project languages / auth policy / backup policy) — written once, never overwritten (INST-CONFIG-001) |
+| Config (regenerate) | `config/bootstrap.inc.php`, `config/moduleManager.inc.php`, `config/fileFinder.inc.php` | regenerated on every install |
+| Config (seed-once) | `config/i18n.inc.php`, `config/auth.inc.php`, `config/backup.inc.php`, `config/mail.inc.php`, `config/systemConfig.inc.php` | user-adjustable (project languages / auth policy / backup policy / mail routes / installation identity) — written once, never overwritten (INST-CONFIG-001) |
 | Data | `data/framework/**/*.json` | written once — never overwritten |
 
-> The blanket "config regenerated on every install" holds only for framework-controlled config (`bootstrap`, `moduleManager`, `fileFinder`). `i18n.inc.php` and `auth.inc.php` are developer-adjustable, so they are seed-once — deliberately decoupled from the `debug` flag (a caching/dev switch, not an overwrite policy).
+> The blanket "config regenerated on every install" holds only for framework-controlled config (`bootstrap`, `moduleManager`, `fileFinder`) — those are fed from `composer.json`. Everything a developer or operator adjusts is seed-once. `systemConfig.inc.php` (ADR-030) is the strongest case: it holds what differs per INSTALLATION, so it is the one config file that is deliberately not fed from `composer.json` at all — that file is committed, and staging and production could then not differ.
 
 Each generated config file carries a policy note in its header (`header()` + `NOTE_REGENERATE` / `NOTE_SEED_ONCE`): regenerate-always files warn "DO NOT EDIT — configure via composer.json"; seed-once files state they are safe to edit and never overwritten.
 

@@ -90,6 +90,21 @@ class Bootstrap
         // frontend head emits `<meta name="robots" content="noindex, nofollow">` and
         // the backend shows a persistent Störer. Distinct from per-page MetaData.
         define('SEO_NOINDEX', file_exists(ABS_BASE_PATH . '/data/framework/seo/noindex.flag'));
+
+        // Installation identity (ADR-030), seed-once in config/systemConfig.inc.php.
+        // Published as a constant so a web request and a cron entry that boots the
+        // framework read the same value. Loading TOLERATES an empty or absent value —
+        // a fatal here would take the backend down too, i.e. the surface an operator
+        // needs to fix it. Whoever USES the value throws instead (Request::getBaseUrl).
+        $systemConfig = DI::getConfigManager()
+            ->getBaseConfig(
+                configName: 'config/systemConfig',
+                throwError: false,
+                cachePersist: false
+            )
+        ;
+        define('CANONICAL_BASE_URL', rtrim(trim((string)$systemConfig->getCanonicalBaseUrl('')), '/'));
+
         DI::getCacheManager()->setCacheDir($bootstrapConfig->getCacheDir());
 
         if (DEBUG) {

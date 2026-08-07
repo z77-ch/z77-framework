@@ -1,0 +1,48 @@
+// Shell-level Störer — the shared band for states that must not be overlooked.
+// A large, full-width, non-dismissible strip across the very top of the backend
+// shell. White-on-danger for maximum, palette- and theme-independent contrast.
+// Sits in normal flow above `.be-shell`, so it pushes the chrome down and never
+// overlaps content.
+//
+// Users: the site-wide crawl block (SEO-NOINDEX-001, metadata.md) and the
+// unconfigured canonical base URL (ADR-030). Add one only for a state that is
+// dangerous if left unnoticed — every further band costs the others their weight.
+
+.be-shell-banner {
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+    box-sizing: border-box;
+    width: 100%;
+    padding: var(--space-4) var(--space-5);
+    background: var(--be-danger);
+    color: var(--be-on-accent);
+    box-shadow: var(--shadow-md);
+    z-index: var(--z-topbar);
+
+    &[hidden] { display: none; }
+}
+
+.be-shell-banner__icon {
+    flex: 0 0 auto;
+    color: inherit;
+}
+
+.be-shell-banner__text {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    line-height: 1.25;
+}
+
+.be-shell-banner__title {
+    font-size: var(--font-size-lg);
+    font-weight: 700;
+    letter-spacing: 0.01em;
+}
+
+.be-shell-banner__sub {
+    font-size: var(--font-size-sm);
+    font-weight: 500;
+    opacity: 0.92;
+}

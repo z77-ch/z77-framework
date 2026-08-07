@@ -25,6 +25,7 @@ class Install
     private const I18N_CONFIG           = 'i18n';
     private const BACKUP_CONFIG         = 'backup';
     private const MAIL_CONFIG           = 'mail';
+    private const SYSTEM_CONFIG         = 'systemConfig';
     private const FILE_FINDER_CONFIG    = 'fileFinder.inc.php';
 
     private const AUTH_DIR              = 'data/framework/auth';
@@ -62,6 +63,7 @@ class Install
     private array  $i18nConfig          = [];
     private array  $backupConfig        = [];
     private array  $mailConfig          = [];
+    private array  $systemConfig        = [];
     private string $frameworkPrefix     = '';
     private string $modulePrefix        = '';
     private array  $additionalPsr4Paths = [];
@@ -145,6 +147,7 @@ class Install
         $this->writeI18nConfig();
         $this->writeBackupConfig();
         $this->writeMailConfig();
+        $this->writeSystemConfig();
         $this->writeFileFinderConfig();
         $this->writeDataFiles();
         $this->provisionAdmin();
@@ -865,6 +868,35 @@ class Install
      * same class as auth/i18n/backup. Once it exists the installer never
      * overwrites it. See docs/topics/mail.md.
      */
+    /**
+     * Installation identity (ADR-030) — seed-once like the mail config: written
+     * when absent, never overwritten, meant to be edited on the server. It must
+     * survive `composer install`, because it is the one place where an
+     * installation differs from every other one built from the same repository.
+     */
+    private function writeSystemConfig(): void
+    {
+        $dir  = $this->configDir();
+        $name = self::SYSTEM_CONFIG . '.inc.php';
+
+        $target = $this->trailingSlash($dir) . $name;
+        if (file_exists($target)) {
+            $this->io->write("Skipped: {$name} already exists (seed-once, not overwritten)");
+            return;
+        }
+
+        $this->io->write("Write System config → {$dir}/{$name}");
+
+        $content  = $this->header($name, self::NOTE_SEED_ONCE);
+        $content .= "return [\n";
+        foreach ($this->systemConfig as $key => $value) {
+            $content .= "    '{$key}' => " . $this->exportPhpValue($value) . ",\n";
+        }
+        $content .= "];\n";
+
+        $this->writeFile($dir, $name, $content);
+    }
+
     private function writeMailConfig(): void
     {
         $dir  = $this->configDir();
@@ -1296,6 +1328,11 @@ class Install
 
         $defaults              = require $dir . self::MAIL_CONFIG . '.default.inc.php';
         $this->mailConfig      = array_merge($defaults, $config['core-mail'] ?? []);
+
+        // ADR-030: installation identity — deliberately NOT merged from composer
+        // `extra`. composer.json is committed, so staging and production would
+        // share one value; these belong to the single installation.
+        $this->systemConfig    = require $dir . self::SYSTEM_CONFIG . '.default.inc.php';
 
         return $config;
     }

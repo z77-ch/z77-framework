@@ -24,6 +24,7 @@ return [
         'body' => [
             'iconSprite' => 'partials/icon-sprite',
             'noindexBanner' => 'partials/shell/noindex-banner', // site-wide crawl-block Störer (SEO-NOINDEX-001)
+            'systemBanner'  => 'partials/shell/system-banner',  // unconfigured installation identity (ADR-030)
             'shellTopbar' => 'partials/shell/topbar', // shell topbar (used by html-shell-skeleton)
             'subnav'  => 'partials/subnav',
             'preview' => 'partials/shell/preview',    // shell column 3 (optional)

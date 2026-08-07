@@ -32,8 +32,6 @@ class Request {
     /** Session key under which the chosen language is remembered (ADR-013). */
     private const SESSION_LANGUAGE_KEY = 'language';
 
-    /** getBaseUrl() warns once per request, not once per generated link. */
-    private static bool $baseUrlFallbackLogged = false;
 
     private ModuleManager $moduleManager;
     private ControllerHandler $controllerHandler;
@@ -493,35 +491,30 @@ class Request {
      * for every link generated to leave this request. Mail links above all: the
      * one-time login link is only as trustworthy as the host it points at.
      *
-     * Prefers the configured `canonicalBaseUrl`, because the Host header belongs
-     * to the client. Under a catch-all vhost a forged Host would otherwise put an
-     * attacker's domain into a genuine mail from this installation, handing over
-     * the token that link carries (SEC-005).
+     * Comes from `canonicalBaseUrl` (systemConfig, ADR-030), never from the Host
+     * header: that header belongs to the client, so under a catch-all vhost a
+     * forged Host would put an attacker's domain into a genuine mail from this
+     * installation and hand over the token that link carries (SEC-005).
      *
-     * Without the config value the request's own host is used — the framework
-     * cannot invent a hostname, and refusing to serve would break every existing
-     * installation — but it says so in the error log rather than trusting quietly.
+     * Throws when unconfigured — see the comment at the throw.
      */
     public function getBaseUrl(): string
     {
-        $configured = trim((string) DI::getConfigManager()
-            ->getBaseConfig('config/bootstrap', cachePersist: false)
-            ->getCanonicalBaseUrl(''));
-
+        $configured = defined('CANONICAL_BASE_URL') ? CANONICAL_BASE_URL : '';
         if ($configured !== '') {
-            return rtrim($configured, '/');
+            return $configured;
         }
 
-        if (!self::$baseUrlFallbackLogged) {
-            self::$baseUrlFallbackLogged = true;
-            error_log(
-                'Request::getBaseUrl(): no canonicalBaseUrl configured — generated links fall back '
-                . 'to the client-supplied Host header. Set extra.core-bootstrap.canonicalBaseUrl in '
-                . 'composer.json and re-run composer install (SEC-005).'
-            );
-        }
-
-        return $this->requestOrigin();
+        // No default is possible — any guessed host would be wrong, and wrong
+        // invisibly. So this throws rather than falling back to the header
+        // (ADR-030, point 4): a cron aborts instead of mailing links that point
+        // nowhere, and a page that never builds an absolute URL is unaffected.
+        throw new \RuntimeException(
+            "This installation has no canonicalBaseUrl. Set it in config/systemConfig.inc.php "
+            . "(e.g. 'https://kunde.ch') — it is the origin of every mail link and of the SEO "
+            . "canonical, and it cannot be derived from the request: the Host header is the "
+            . "client's to choose (SEC-005)."
+        );
     }
 
     /**

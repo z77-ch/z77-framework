@@ -9,10 +9,10 @@
 /** @var array{initials:string,name:string,role:string}|null $headerUser */
 if (empty($headerUser)) return; // no chrome for guests (mirrors topbar)
 ?>
-<div id="js-noindex-banner" class="be-noindex-banner" role="alert"<?= SEO_NOINDEX ? '' : ' hidden' ?>>
-    <svg class="be-icon be-noindex-banner__icon" width="22" height="22" aria-hidden="true"><use href="#icon-globe"/></svg>
-    <div class="be-noindex-banner__text">
-        <strong class="be-noindex-banner__title">Website für Suchmaschinen gesperrt</strong>
-        <span class="be-noindex-banner__sub">noindex ist aktiv — Google &amp; Co. werden ausgesperrt. Vor dem Go-Live im Benutzermenü deaktivieren.</span>
+<div id="js-noindex-banner" class="be-shell-banner" role="alert"<?= SEO_NOINDEX ? '' : ' hidden' ?>>
+    <svg class="be-icon be-shell-banner__icon" width="22" height="22" aria-hidden="true"><use href="#icon-globe"/></svg>
+    <div class="be-shell-banner__text">
+        <strong class="be-shell-banner__title">Website für Suchmaschinen gesperrt</strong>
+        <span class="be-shell-banner__sub">noindex ist aktiv — Google &amp; Co. werden ausgesperrt. Vor dem Go-Live im Benutzermenü deaktivieren.</span>
     </div>
 </div>

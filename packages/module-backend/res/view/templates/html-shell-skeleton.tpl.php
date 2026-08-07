@@ -17,6 +17,7 @@
 </head>
 <body class="backend">
     <?= $iconSprite ?? '' ?>
+    <?= $systemBanner ?? '' ?>
     <?= $noindexBanner ?? '' ?>
     <div class="be-shell" data-col3="off" data-shell>
         <?= $shellTopbar ?? '' ?>
