@@ -32,6 +32,9 @@ class Request {
     /** Session key under which the chosen language is remembered (ADR-013). */
     private const SESSION_LANGUAGE_KEY = 'language';
 
+    /** getBaseUrl() warns once per request, not once per generated link. */
+    private static bool $baseUrlFallbackLogged = false;
+
     private ModuleManager $moduleManager;
     private ControllerHandler $controllerHandler;
 
@@ -485,13 +488,57 @@ class Request {
         return RequestMode::Page;
     }
 
-    private function parseUrl(): array
+    /**
+     * Absolute origin of this installation — scheme + host, no trailing slash —
+     * for every link generated to leave this request. Mail links above all: the
+     * one-time login link is only as trustworthy as the host it points at.
+     *
+     * Prefers the configured `canonicalBaseUrl`, because the Host header belongs
+     * to the client. Under a catch-all vhost a forged Host would otherwise put an
+     * attacker's domain into a genuine mail from this installation, handing over
+     * the token that link carries (SEC-005).
+     *
+     * Without the config value the request's own host is used — the framework
+     * cannot invent a hostname, and refusing to serve would break every existing
+     * installation — but it says so in the error log rather than trusting quietly.
+     */
+    public function getBaseUrl(): string
+    {
+        $configured = trim((string) DI::getConfigManager()
+            ->getBaseConfig('config/bootstrap', cachePersist: false)
+            ->getCanonicalBaseUrl(''));
+
+        if ($configured !== '') {
+            return rtrim($configured, '/');
+        }
+
+        if (!self::$baseUrlFallbackLogged) {
+            self::$baseUrlFallbackLogged = true;
+            error_log(
+                'Request::getBaseUrl(): no canonicalBaseUrl configured — generated links fall back '
+                . 'to the client-supplied Host header. Set extra.core-bootstrap.canonicalBaseUrl in '
+                . 'composer.json and re-run composer install (SEC-005).'
+            );
+        }
+
+        return $this->requestOrigin();
+    }
+
+    /**
+     * Scheme + host as this request actually arrived. Routing uses it deliberately:
+     * whichever host answered is the one whose paths must resolve. Only URLs handed
+     * OUT go through getBaseUrl().
+     */
+    private function requestOrigin(): string
     {
         $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? "https" : "http";
-        $host   = $_SERVER['HTTP_HOST'] ?? 'localhost';
-        $rawUrl = $scheme . "://" . $host . $this->rawRequestUri;
 
-        return parse_url($rawUrl);
+        return $scheme . "://" . ($_SERVER['HTTP_HOST'] ?? 'localhost');
+    }
+
+    private function parseUrl(): array
+    {
+        return parse_url($this->requestOrigin() . $this->rawRequestUri);
     }
 
     private function setRawRequestUri(): void

@@ -38,11 +38,10 @@ trait AccountsControllerTrait
         return RegistrationFlow::create($this->memberAbsoluteUrl('/member/main/confirm'));
     }
 
+    /** Mail links (activation, confirm) — origin from the configured canonical base URL, not the Host header. */
     private function memberAbsoluteUrl(string $path): string
     {
-        $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
-
-        return $scheme . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost') . $path;
+        return DI::getRequest()->getBaseUrl() . $path;
     }
 
     protected function listAction(): HtmlResponse

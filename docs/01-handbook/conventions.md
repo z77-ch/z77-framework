@@ -307,9 +307,16 @@ Use `DI::getRequest()` — it wraps all HTTP input and provides a clean API:
 DI::getRequest()->isPost()                        // instead of $_SERVER['REQUEST_METHOD'] === 'POST'
 DI::getRequest()->getPostParameter('username')    // instead of $_POST['username']
 DI::getRequest()->getGetParameter('q')            // instead of $_GET['q']
+DI::getRequest()->getBaseUrl()                    // instead of $_SERVER['HTTP_HOST']
 ```
 
 `$_SERVER`, `$_POST`, and `$_GET` are only accessed inside `Request` itself.
+
+`getBaseUrl()` is the one source for absolute URLs that leave the request — mail links, the
+SEO canonical/hreflang set, anything rendered into a cacheable page. It returns the
+installation's configured `canonicalBaseUrl`; the `Host` header is the client's to choose,
+and the page cache keys on path only, so deriving an origin from it lets one forged request
+decide what every later visitor is served (SEC-005).
 
 ## Security
 

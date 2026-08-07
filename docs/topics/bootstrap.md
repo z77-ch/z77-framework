@@ -98,7 +98,12 @@ When `true`: the frontend head partial `head/meta.tpl.php` emits `<meta name="ro
 
 ## bootstrap config keys
 
-`debug` | `cacheDir` | `timezone` | `htmlRoot` | `cachePersist` (always `false`)
+`debug` | `cacheDir` | `timezone` | `htmlRoot` | `cachePersist` (always `false`) | `canonicalBaseUrl`
+
+`canonicalBaseUrl` is the installation's absolute origin (`https://kunde.ch`) and the source
+for every URL generated to leave the request — mail links and the SEO canonical/hreflang set.
+Empty falls back to the request's `Host` header, which the client controls, and `Request::getBaseUrl()`
+logs that it is doing so. A production installation MUST set it (SEC-005, see [`security.md`](security.md)).
 
 ## rules
 
@@ -106,6 +111,7 @@ When `true`: the frontend head partial `head/meta.tpl.php` emits `<meta name="ro
 - When writing a controller that needs `DataSourceResolver` or `EntityManager` → MUST obtain via DI; controllers MUST NOT instantiate these directly
 - When ordering pipeline steps in `pullUp()` → session start MUST happen after routing
 - When editing config → MUST edit `bootstrap.default.inc.php` (source) — runtime `bootstrap.inc.php` MUST NOT be hand-edited as source
+- When building an absolute URL that leaves the request (mail link, canonical, hreflang, anything rendered into a cached page) → MUST take the origin from `Request::getBaseUrl()`; MUST NOT read `$_SERVER['HTTP_HOST']`. The header is the client's to choose, and the page cache keys on path only, so one forged request would poison what every later visitor is served (SEC-005)
 
 ## see also
 
