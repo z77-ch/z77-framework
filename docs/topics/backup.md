@@ -20,6 +20,7 @@ SOURCE=/packages/kernel/shared/src/Backup/DbDumperInterface.php
 SOURCE=/packages/kernel/shared/src/Backup/MysqlDumper.php
 SOURCE=/packages/kernel/core/src/Config/backup.default.inc.php
 SOURCE=/packages/kernel/bin/z77-backup
+SOURCE=/packages/kernel/shared/src/Jobs/BackupJob.php
 SOURCE=/packages/module-backend/src/Ui/Controllers/Service/BackupController.php
 SOURCE=/packages/module-backend/res/view/templates/Service/BackupController/listAction.tpl.php
 SOURCE=/packages/module-backend/res/view/templates/Service/BackupController/actions.tpl.php
@@ -85,6 +86,20 @@ One line of output per run (cron-mail friendly), exit 0 = ok / 1 = error.
 cron line works on every installation. Authorization model: shell access =
 permission — no token, no HTTP (ADR-028).
 
+Since ADR-031 the same three types are also available as JOBS (`backup-data`,
+`backup-db`, `backup-full`, declared in `backendConfig`, all served by
+`Z77\Shared\Jobs\BackupJob` with the type in the payload). A schedule set in the
+backend then runs them through the single `z77-run` cron line, with history and
+failures visible on the job screen. `z77-backup` stays for the manual call —
+both go through `BackupService`. No backup job ships a `defaultSchedule`: how
+often an installation is backed up, and how much disk that costs, is the
+operator's call.
+
+A backup job cannot be sliced (`ZipArchive` writes one archive in one call, no
+resume point), so a large `full` run overruns the runner's time budget by
+design — the job lock stops a second copy, `maxParallel` keeps other jobs
+moving.
+
 ## rules
 
 - When adding backup behaviour → MUST go into `Z77\Shared\Backup\*` (kernel, HTTP-free) so UI and CLI stay two thin frontends over one implementation; MUST NOT put backup logic into the controller or the bin script
@@ -94,10 +109,11 @@ permission — no token, no HTTP (ADR-028).
 - When adding a database engine → MUST implement `DbDumperInterface`; credentials MUST NOT appear on the command line (process list) — use a defaults file or environment, like `MysqlDumper`
 - When exposing backup actions in the backend → MUST keep every action `AuthRole::SUPER_USER` (the archive IS the user store) and mutations Fetch-POST (global CSRF) + per-archive entity token
 - When adding another CLI task → MUST follow ADR-028 (own `bin/` script in the owning package, Composer `bin`, boot only what it needs)
+- When changing what a `data` or `full` archive contains → MUST keep `data/framework/jobs` excluded (`BackupService::DATA_EXCLUDES`, applied to both types and NOT configurable); it is transient runtime state and it changes while the archive is being written (BACKUP-JOBS-001)
 
 ## known issues
 
-- None documented.
+- **BACKUP-JOBS-001**: don't assume a data backup may contain `data/framework/jobs` — it must not, for two independent reasons. It is transient runtime state, so a restore would resurrect a queue of work from whenever the archive was taken (same argument that keeps a running job out of systemConfig, [`bootstrap.md`](bootstrap.md)). And it MOVES mid-archive: `ZipArchive` reads file contents at `close()`, not at `addFile()`, so `queue.json` being rename-replaced by the very backup job that is running fails the whole archive with `ZipArchive::close(): Read error`. Found 2026-08-07 when the backup types became jobs; fixed via `DATA_EXCLUDES`, applied to `data` and appended unconditionally to `fullExcludes` (the configured list is the operator's, this entry is not).
 
 ## pending
 
@@ -106,6 +122,7 @@ permission — no token, no HTTP (ADR-028).
 ## see also
 
 - [`../02-decisions/adr-028-cli-entry-point.md`](../02-decisions/adr-028-cli-entry-point.md) — why a dedicated Composer-bin binary per CLI task
+- [`../02-decisions/adr-031-job-queue-and-cron-runner.md`](../02-decisions/adr-031-job-queue-and-cron-runner.md) — the job queue the three backup types are scheduled through
 - [`security.md`](security.md) — role gate + storage placement of the archives
 - [`installer.md`](installer.md) — `writeBackupConfig()` seed-once config
 - [`backend.md`](backend.md) — group/controller conventions the backup surface follows

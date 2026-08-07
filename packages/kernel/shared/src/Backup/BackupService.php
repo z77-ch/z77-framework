@@ -17,6 +17,22 @@ final class BackupService
     private const DEFAULT_RETENTION = ['data' => 10, 'db' => 10, 'full' => 5];
     private const DEFAULT_EXCLUDES  = ['vendor', 'node_modules', 'backup', 'lib/cache'];
 
+    /**
+     * Never part of a data backup, relative to `data/`: the job runtime state
+     * (queue, schedules' bookkeeping, lock files, heartbeat).
+     *
+     * Two reasons, both binding. It is transient state — a restore must not
+     * resurrect a queue of work from whenever the archive was taken, the same
+     * argument that keeps a running job out of systemConfig (bootstrap.md).
+     * And it MOVES while the archive is being written: `ZipArchive` reads the
+     * files at `close()`, not at `addFile()`, so a `queue.json` replaced by the
+     * very backup job that is running fails the whole archive with
+     * "ZipArchive::close(): Read error".
+     *
+     * Not configurable — this is not an operator's choice.
+     */
+    private const DATA_EXCLUDES = ['framework/jobs'];
+
     private string $baseDir;
     private array  $config;
 
@@ -59,7 +75,7 @@ final class BackupService
         $zipPath = $dir . '/' . date('Y-m-d_His') . '_' . $type->value . '.zip';
 
         $files = match ($type) {
-            BackupType::Data => (new ZipArchiver())->zipDirectory($this->baseDir . '/data', $zipPath),
+            BackupType::Data => (new ZipArchiver())->zipDirectory($this->baseDir . '/data', $zipPath, self::DATA_EXCLUDES),
             BackupType::Full => (new ZipArchiver())->zipDirectory($this->baseDir, $zipPath, $this->fullExcludes()),
             BackupType::Db   => $this->runDbBackup($zipPath),
         };
@@ -118,6 +134,16 @@ final class BackupService
         $backupRel = ltrim(substr($this->backupRoot(), strlen($this->baseDir)), '/');
         if (!in_array($backupRel, $excludes, true)) {
             $excludes[] = $backupRel;
+        }
+
+        // The job runtime state is excluded here too, and unconditionally: the
+        // configured list is the operator's, but this one is not negotiable —
+        // see DATA_EXCLUDES for why (transient state + it moves mid-archive).
+        foreach (self::DATA_EXCLUDES as $jobPath) {
+            $rel = 'data/' . $jobPath;
+            if (!in_array($rel, $excludes, true)) {
+                $excludes[] = $rel;
+            }
         }
 
         return $excludes;
