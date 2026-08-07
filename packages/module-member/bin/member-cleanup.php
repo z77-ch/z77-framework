@@ -1,74 +1,83 @@
 <?php
 
 /**
- * CLI / cron entry for the B7 cleanup (spec: daily run). Deletes accounts
- * that were never confirmed within the grace period (memberConfig
- * `cleanupAfterDays`, default 30), every token that can no longer redeem
- * (used, expired, orphaned) and every waiting login past its window (B8
- * stage D — those expire after 15 minutes, so the daily run only sweeps up
- * what nobody came back for). 'confirmed' accounts are NEVER touched — they
- * wait for the operator's activate/reject decision.
+ * Manual entry for the B7 cleanup — a thin wrapper around the job of the same
+ * name (ADR-031). The rules live in MemberCleanupJob; this file only exists so
+ * the sweep can be triggered by hand without going through the queue, and so
+ * --dry-run answers straight away.
  *
  * Run from the PROJECT root (the installation whose data/ is cleaned):
  *
  *   php vendor/z77/module-member/bin/member-cleanup.php [--days=N] [--dry-run]
  *
- * Exit codes: 0 = ran (also when nothing was due), 1 = bootstrap failure.
+ * For the scheduled run use the job instead — one cron line covers every job:
+ *
+ *   * * * * * cd /path/to/project && php vendor/bin/z77-run
+ *
+ * Exit codes: 0 = ran (also when nothing was due), 1 = it could not run.
  */
 
-define('ABS_BASE_PATH', str_replace('\\', '/', getcwd()));
-
-if (!is_file(ABS_BASE_PATH . '/vendor/autoload.php')) {
-    fwrite(STDERR, "Run from the project root (vendor/autoload.php not found under " . ABS_BASE_PATH . ")\n");
+if (PHP_SAPI !== 'cli') {
+    fwrite(STDERR, "member-cleanup: CLI only.\n");
     exit(1);
 }
-require ABS_BASE_PATH . '/vendor/autoload.php';
 
-use Z77\Core\DI;
-use Z77\Core\Libraries\CacheManager;
-use Z77\Module\Member\Services\MemberAccounts;
-use Z77\Module\Member\Services\PendingLogins;
-use Z77\Module\Member\Services\TokenService;
-use Z77\Persistence\Resolver\DataSourceResolver;
-use Z77\Persistence\Resolver\UnifiedEntityManager;
+$projectRoot = str_replace('\\', '/', (string) getcwd());
+if (!is_file($projectRoot . '/vendor/autoload.php')) {
+    fwrite(STDERR, "Run from the project root (vendor/autoload.php not found under {$projectRoot})\n");
+    exit(1);
+}
 
-$days = 30;
-$dry  = in_array('--dry-run', $argv, true);
+define('ABS_BASE_PATH', $projectRoot);
+require $projectRoot . '/vendor/autoload.php';
+
+use Z77\Core\Bootstrap;
+use Z77\Core\Config\AuthRole;
+use Z77\Module\Member\Jobs\MemberCleanupJob;
+use Z77\Shared\Auth\AuthUser;
+use Z77\Shared\Jobs\JobContext;
+
+$payload = [];
 foreach ($argv as $arg) {
-    if (preg_match('/^--days=(\d+)$/', $arg, $m)) {
-        $days = (int)$m[1];
+    if ($arg === '--dry-run') {
+        $payload['dryRun'] = true;
+    } elseif (preg_match('/^--days=(\d+)$/', $arg, $m)) {
+        $payload['days'] = (int) $m[1];
     }
 }
 
-$cacheManager = new CacheManager();
-$cacheManager->setCacheDir('lib/cache');
-DI::getInstance()->set('CacheManager', $cacheManager, true);
-
-$uem      = new UnifiedEntityManager(new DataSourceResolver(['file' => 'File']));
-$accounts = new MemberAccounts($uem);
-$tokens   = new TokenService($uem);
-
-if ($dry) {
-    $cutoff = time() - $days * 86400;
-    $due    = 0;
-    foreach ($accounts->all() as $account) {
-        $created = strtotime((string)$account->getCreatedAt());
-        if ($account->isRegistered() && $created !== false && $created < $cutoff) {
-            $due++;
-            echo "would delete: {$account->getEmail()} (registered {$account->getCreatedAt()})\n";
-        }
-    }
-    echo "dry run — {$due} unconfirmed account(s) older than {$days} days, nothing deleted\n";
-    exit(0);
+try {
+    (new Bootstrap())->pullUpServices();
+} catch (\Throwable $e) {
+    fwrite(STDERR, 'member-cleanup: boot failed — ' . $e->getMessage() . "\n");
+    exit(1);
 }
 
-$deletedAccounts = $accounts->cleanup($days);
-$deletedTokens   = $tokens->purge(array_map(
-    static fn($a) => (string)$a->getId(),
-    $accounts->all()
-));
-$deletedPending  = (new PendingLogins($uem))->purge();
+// A manual run has no cron pass to fit into, so the deadline is generous; the
+// job does its three sweeps in one slice either way.
+$context = new JobContext(
+    'member-cleanup',
+    $payload,
+    null,
+    1,
+    time() + 300,
+    new AuthUser([
+        'id'        => 'cron',
+        'user_name' => 'cli:member-cleanup',
+        'roles'     => [AuthRole::CRON_JOB],
+        'realm'     => AuthUser::REALM_CRON,
+    ])
+);
 
-echo "member-cleanup: {$deletedAccounts} account(s) removed (never confirmed within {$days} days), "
-   . "{$deletedTokens} dead token(s) purged, {$deletedPending} expired waiting login(s) dropped\n";
-exit(0);
+try {
+    $result = (new MemberCleanupJob())->run($context);
+} catch (\Throwable $e) {
+    fwrite(STDERR, 'member-cleanup: FAILED — ' . $e->getMessage() . "\n");
+    exit(1);
+}
+
+foreach ($context->getLog() as $line) {
+    echo $line . "\n";
+}
+echo 'member-cleanup: ' . $result->getNote() . "\n";
+exit($result->hasFailed() ? 1 : 0);

@@ -36,9 +36,26 @@ return [
     // from the request host at send time) — the B8 login page.
     'memberEntryPath' => '/member/main/login',
 
-    // Daily cleanup (bin/member-cleanup.php): never-confirmed accounts older
-    // than this are deleted; 'confirmed' accounts always wait for an operator.
+    // Daily cleanup (job 'member-cleanup', or bin/member-cleanup.php by hand):
+    // never-confirmed accounts older than this are deleted; 'confirmed'
+    // accounts always wait for an operator.
     'cleanupAfterDays' => 30,
+
+    // Background jobs this module offers to the runner (ADR-031). The key is
+    // what a queue entry stores — never a class name or a script path, so a
+    // backend form can only ever pick from this list.
+    //
+    // No 'defaultSchedule' on purpose: this job DELETES. It runs when an
+    // operator switches a schedule on, or when someone queues it by hand —
+    // never merely because the module was installed.
+    'jobs' => [
+        'member-cleanup' => [
+            'class'       => \Z77\Module\Member\Jobs\MemberCleanupJob::class,
+            'label'       => 'Member-Bereinigung',
+            'runAs'       => AuthRole::CRON_JOB,
+            'maxAttempts' => 3,
+        ],
+    ],
 
     // How many login links one address and one browser may trigger per hour.
     // Feeds BOTH layers: the per-address throttle (file-based, survives a new
