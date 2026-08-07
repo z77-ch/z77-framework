@@ -8,8 +8,8 @@ login and against abuse, cross-checked against [`../topics/member.md`](../topics
 The cross-device design — the mail link opens a confirmation page and a human decides
 whether the REQUESTING or the READING device gets the session — is a deliberate decision
 (spec 1.1.0, decision 5) and was reviewed as such: the question is not *whether* but
-*whether the guardrails around it hold*. They do. Four findings are open; none of them
-breaks the login, one (F1) needs an operator-side decision.
+*whether the guardrails around it hold*. They do. Four findings, none of which broke the
+login; all were resolved or downgraded the same day — see the Verdict at the end.
 
 ## Scope reviewed
 
@@ -80,7 +80,20 @@ breaks the login, one (F1) needs an operator-side decision.
 
 ## Findings
 
-### F1 — Mail links are built from the Host header — Medium, decision needed
+### F1 — Mail links are built from the Host header — Medium — RESOLVED 2026-08-07
+
+> **Closed by [ADR-030](../02-decisions/adr-030-system-configuration.md).** The origin now
+> comes from `canonicalBaseUrl` in `config/systemConfig.inc.php` (seed-once, per
+> installation), published by `Bootstrap` as `CANONICAL_BASE_URL`; `Request::getBaseUrl()`
+> throws when it is unset rather than guessing. No Host-header fallback remains anywhere.
+>
+> Two things this finding got wrong, both found while fixing it: the blast radius was wider
+> than "mail links" — `AbstractBaseController::buildSeoLinks()` fed the SEO canonical and
+> hreflang from the same header into pages the `PageCache` keys by path only, so one forged
+> request poisoned what every later visitor was served. And the recommendation ("kernel-side
+> trusted host, one config value") named the wrong home: see the plan's superseded section.
+> The review scoped itself to `module-member`; a header-derived value needs a framework-wide
+> grep, not a per-module one.
 
 `AbstractMemberController::absoluteUrl()` and `AccountsControllerTrait::memberAbsoluteUrl()`
 build the login, confirm and activation links from `$_SERVER['HTTP_HOST']`. The header is
@@ -200,5 +213,10 @@ The login works and the mechanism is sound: high-entropy single-use tokens that 
 stored in the clear, a redemption path no automated fetch can trigger, a waiting record
 bound to the requesting session and to nothing an attacker can supply, second factor and
 device keys that are correctly ordered relative to each other, and a consistent anti-oracle
-answer. The one attack that reaches the token — F1 — comes in through the Host header from
-outside this module and is the kernel's to close.
+answer. The one attack that reached the token — F1 — came in through the Host header from
+outside this module and was the kernel's to close; it is closed (ADR-030).
+
+**Status 2026-08-07, end of day:** F1, F2 and F3 are resolved, F4 was downgraded to a note
+after a second reading. What remains open is not a defect but a decision: the emphasis of the
+two buttons on the confirmation page (see the notes above), plus setting `canonicalBaseUrl`
+on each installation — the mechanism cannot do that for you.

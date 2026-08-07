@@ -14,7 +14,7 @@ they stop being re-opened at every review.
 
 | # | Finding | Outcome |
 |---|---|---|
-| MEM-006 | Mail links from the Host header | **Built** — `canonicalBaseUrl` → `Request::getBaseUrl()`. Scope grew: the same header also fed the SEO canonical/hreflang, which the page cache stores by path only (see below) |
+| MEM-006 | Mail links from the Host header | **Built, then redesigned** — `canonicalBaseUrl` → `Request::getBaseUrl()`. Scope grew twice: the same header also fed the SEO canonical/hreflang (page cache stores it by path only), and the storage location this plan proposed turned out wrong. Final shape: [ADR-030](../02-decisions/adr-030-system-configuration.md) |
 | MEM-003 | `extract()` swallows `context` / `path` | **Built** — prefixed locals in all three render scopes; also closes review-create-css B1 |
 | MEM-005 | Throttled login answer differs | **Built** — `LoginFlow::request()` returns true unconditionally (login path only, deliberately) |
 | MEM-007 | Confirm link changes state on a GET | **Decided** — rule narrowed to state changes that grant access; the flow is unchanged |
@@ -48,7 +48,21 @@ does, but nothing calls it — see the cleanup note below.)
 **Attack:** a forged Host under a catch-all vhost turns a genuine login mail into token
 exfiltration, as described in the review (F1).
 
-### Proposal
+> **Superseded — read [ADR-030](../02-decisions/adr-030-system-configuration.md) instead.**
+> The proposal below was implemented and then redesigned the same day. Three of its five
+> points turned out wrong, and it is kept only because the reasoning that broke them is worth
+> having:
+>
+> | Proposed here | What it became | Why |
+> |---|---|---|
+> | Key in `bootstrap.default.inc.php`, fed from `composer.json` | Own seed-once file `config/systemConfig.inc.php` | `composer.json` is committed, so staging and production could not differ; `bootstrap.inc.php` is regenerated on install, so a value corrected on the server was lost |
+> | Empty falls back to the `Host` header, logged | Empty **throws** at the point of use | A logged fallback is a fallback nobody reads; and once the value has a real home, there is no installation left that needs the old behaviour |
+> | Accessor on `Request` | Constant `CANONICAL_BASE_URL` from `Bootstrap` | `Request` does not exist in CLI — a cron that mails a link had nothing to call |
+> | Installer seeds the value from the install host | Installer seeds the KEY, empty | `composer install` runs on a CLI with no HTTP host; there is nothing to derive |
+>
+> Points 2 (leave `parseUrl()` alone) and 4 (collapse the two call sites) survived unchanged.
+
+### Proposal (superseded)
 
 **1. One config value, semantically named.** `canonicalBaseUrl` in
 `packages/kernel/core/src/Config/bootstrap.default.inc.php` — it belongs next to

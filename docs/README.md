@@ -57,7 +57,7 @@ Structure is enforced by `npm run docs:check` ([docs-lint/STANDARD.md](../docs-l
 | backend, dashboard, service panel, user preferences, system pages | [topics/backend.md](topics/backend.md) |
 | backup, restore, cron, z77-backup CLI | [topics/backup.md](topics/backup.md) |
 | content block types | [topics/block-types.md](topics/block-types.md) |
-| bootstrap, DI container, debug flag | [topics/bootstrap.md](topics/bootstrap.md) |
+| bootstrap, DI container, debug flag, systemConfig, canonical base URL / site address, installation identity, absolute URLs in mails | [topics/bootstrap.md](topics/bootstrap.md) |
 | cache, DataCache, APCu, page cache | [topics/cache.md](topics/cache.md) |
 | content, structured content, content files | [topics/content.md](topics/content.md) |
 | CSS/SCSS backend, werkbank | [topics/css-backend.md](topics/css-backend.md) |

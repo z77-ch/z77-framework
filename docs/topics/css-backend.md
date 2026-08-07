@@ -51,7 +51,7 @@ packages/module-backend/res/scss/
 │   ├── _login.scss         Login box (Werkbank design)
 │   ├── _guest.scss         .be-guest — chrome-less full-page GUEST wrapper (login/setup)
 │   ├── _shell.scss         .be-shell* 3-column shell + .be-shell-add picker + topbar right cluster (.backend-topbar__env/__bell/__avatar) + body.backend base + own @media responsive
-│   ├── _noindex-banner.scss .be-noindex-banner — site-wide crawl-block Störer (danger band, top of shell; SEO-NOINDEX-001)
+│   ├── _shell-banner.scss  .be-shell-banner — shared Störer band at the top of the shell; users: crawl block (SEO-NOINDEX-001) + missing installation identity (ADR-030)
 │   ├── _subnav.scss        .backend-subnav + .backend-tree-*
 │   ├── _service-panel.scss .backend-service-panel (avatar dropdown)
 │   └── _overview.scss      .be-overview + .be-module-card (+ own @media responsive)
@@ -96,7 +96,7 @@ rather than leaving it to be remembered every time.
 | Login page | `components/_login.scss` |
 | GUEST full-page wrapper (login/setup, no chrome) | `components/_guest.scss` (`.be-guest`) |
 | Shell (3-column grid, header slots, add-picker, columns/drawers, topbar right cluster env/bell/avatar, `body.backend` base, responsive) | `components/_shell.scss` |
-| Site-wide crawl-block Störer (`.be-noindex-banner`, white-on-danger band; SEO-NOINDEX-001) | `components/_noindex-banner.scss` |
+| Shell Störer band (`.be-shell-banner`, white-on-danger, full width, non-dismissible) — shared by the crawl block (SEO-NOINDEX-001) and the missing canonical base URL (ADR-030) | `components/_shell-banner.scss` |
 | Left sidebar (subnav tree) | `components/_subnav.scss` |
 | Avatar dropdown panel | `components/_service-panel.scss` |
 | Dashboard overview page (+ its responsive) | `components/_overview.scss` |
