@@ -70,11 +70,11 @@ PascalCase/camelCase; JSON persistence keys are snake_case.**
 | Artefact | Casing | Example |
 |---|---|---|
 | Web-served asset file (`.js` / `.css`) | kebab-case, lowercase | `password-meter.js`, `nav-desktop.css` |
-| Asset subfolder | kebab-case, lowercase | `login-user/`, `navigation-group/` |
-| URL segment | kebab-case, lowercase | `/backend/system/login-user/list` |
+| Asset subfolder | kebab-case, lowercase | `backend-user/`, `navigation-group/` |
+| URL segment | kebab-case, lowercase | `/backend/system/backend-user/list` |
 | CSS class (BEM) | kebab-case | `login__box`, `btn--primary` |
 | `data-*` attribute / `scriptInit` key | kebab-case | `data-z77-password`, `_Z77.scriptInit['password-meter']` |
-| PHP namespace / class | PascalCase | `LoginUserController` |
+| PHP namespace / class | PascalCase | `BackendUserController` |
 | PHP method / property | camelCase | `passwordWeak`, `getSortKey()` |
 | JSON persistence key | snake_case | `password_hash`, `sort_key` |
 | Template file | `{action}Action.tpl.php` (action in camelCase) | `setupAction.tpl.php` |

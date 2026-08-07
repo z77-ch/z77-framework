@@ -54,7 +54,7 @@ Runs as a Composer post-install/post-update hook. Reads `extra` config from `com
 | 12 | `writeSystemConfig()` | → `config/systemConfig.inc.php` — **seed-once**: installation identity (`canonicalBaseUrl`), the one config NOT fed from `composer.json` (ADR-030) |
 | 13 | `writeFileFinderConfig()` | → `config/fileFinder.inc.php` |
 | 14 | `writeDataFiles()` | seed `data/*.json` (skip if already exist) |
-| 15 | `provisionAdmin()` | create admin (interactive) or write `SETUP_TOKEN` (non-interactive) — skip if `loginUsers.json` exists |
+| 15 | `provisionAdmin()` | create admin (interactive) or write `SETUP_TOKEN` (non-interactive) — skip if `backendUsers.json` exists |
 | 16 | `writeDebugFlag()` | create/remove `data/framework/debug.flag` per `debug` |
 | 17 | `seedProjectClaudeMd()` | seed `CLAUDE.md` (project context for AI assistants) from the kernel template — **seed-once**, never overwritten |
 | 18 | `renderAssetDriftNotice()` | print the collected asset drift (step 4) as ONE coloured notice (ADR-025) |
@@ -107,12 +107,12 @@ Each generated config file carries a policy note in its header (`header()` + `NO
 
 ## admin provisioning
 
-No credential is seeded — `loginUsers.default.json` does not exist (removed in
+No credential is seeded — `backendUsers.default.json` does not exist (removed in
 Phase 4; the framework is open source, so anything shipped is public). Instead
 `provisionAdmin()` creates the first account at install time — with role
 **`superUser`** (ADR-021: the installation/DMS governor; `admin` is a normal,
 grant-managed role and is never provisioned; the username stays `admin`). It is
-skipped whenever `data/framework/auth/loginUsers.json` already exists (re-install /
+skipped whenever `data/framework/auth/backendUsers.json` already exists (re-install /
 update never touch the user store).
 
 | Context (`io->isInteractive()`) | Action |
@@ -120,7 +120,7 @@ update never touch the user store).
 | interactive | `provisionAdminInteractive()` — username `admin`, roles `['superUser']`, hidden password prompt (twice, must match), `PasswordPolicy::evaluate()` → store JSON with `password_weak` flag, bcrypt cost 12 |
 | non-interactive | `provisionSetupToken()` — write a random 32-byte hex `SETUP_TOKEN` under `data/framework/auth/` (never `public/`); no account until the token-gated `/backend/system/setup/setup` runs |
 
-The store is written as plain JSON matching the `LoginUser` shape (snake_case) —
+The store is written as plain JSON matching the `BackendUser` shape (snake_case) —
 no DI / EntityManager boot at install time. The non-interactive path is consumed
 by `SetupController` (first-run setup), which validates the token, creates the
 account (also role `superUser`), and deletes the token. See [`security.md`](security.md).

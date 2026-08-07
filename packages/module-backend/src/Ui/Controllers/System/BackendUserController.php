@@ -10,20 +10,20 @@ use Z77\Core\Http\Response\HtmlResponse,
     Z77\Shared\Attributes\Fetch,
     Z77\Shared\Attributes\HttpMethod,
     Z77\Shared\Auth\PasswordPolicy,
-    Z77\Shared\Entities\LoginUser,
-    Z77\Shared\Repositories\LoginUserRepository,
-    Z77\Shared\Validators\LoginUserValidator
+    Z77\Shared\Entities\BackendUser,
+    Z77\Shared\Repositories\BackendUserRepository,
+    Z77\Shared\Validators\BackendUserValidator
 ;
 
 /**
- * Manages {@see LoginUser} accounts (backend user administration). Flat list —
+ * Manages {@see BackendUser} accounts (backend user administration). Flat list —
  * no hierarchy, no tree logic. `sortKey` gives a manual order (drag & drop via
  * {@see moveAction}); the modal add/edit/delete flow mirrors the navigation
  * controllers (fetch + entity-CSRF), without the tree machinery.
  *
- * URL: /backend/system/login-user/{action}.
+ * URL: /backend/system/backend-user/{action}.
  */
-class LoginUserController extends BackendAbstractController
+class BackendUserController extends BackendAbstractController
 {
     /**
      * German display labels — PRESENTATION ONLY. This map does NOT define which
@@ -61,16 +61,16 @@ class LoginUserController extends BackendAbstractController
         return $labels;
     }
 
-    private function repo(): LoginUserRepository
+    private function repo(): BackendUserRepository
     {
-        return $this->em()->getRepository(LoginUser::class);
+        return $this->em()->getRepository(BackendUser::class);
     }
 
-    /** @return LoginUser[] ordered by sortKey, then id as a stable tie-breaker. */
+    /** @return BackendUser[] ordered by sortKey, then id as a stable tie-breaker. */
     private function sortedUsers(): array
     {
         $users = $this->repo()->findAll();
-        usort($users, fn(LoginUser $a, LoginUser $b) => [$a->getSortKey(), $a->getId()] <=> [$b->getSortKey(), $b->getId()]);
+        usort($users, fn(BackendUser $a, BackendUser $b) => [$a->getSortKey(), $a->getId()] <=> [$b->getSortKey(), $b->getId()]);
         return $users;
     }
 
@@ -91,14 +91,14 @@ class LoginUserController extends BackendAbstractController
             'roleLabels' => $this->roleLabels(),
         ]);
 
-        $this->layoutManager->addJs('login-user/list', self::NAMESPACE);
+        $this->layoutManager->addJs('backend-user/list', self::NAMESPACE);
 
         return $response;
     }
 
     protected function addAction(): HtmlResponse|FetchResponse
     {
-        return $this->edit(new LoginUser());
+        return $this->edit(new BackendUser());
     }
 
     protected function editAction(): HtmlResponse|FetchResponse
@@ -113,7 +113,7 @@ class LoginUserController extends BackendAbstractController
         return $this->edit($user);
     }
 
-    private function edit(LoginUser $user): HtmlResponse|FetchResponse
+    private function edit(BackendUser $user): HtmlResponse|FetchResponse
     {
         $isNew     = $user->getId() === null;
         $validator = null;
@@ -124,7 +124,7 @@ class LoginUserController extends BackendAbstractController
 
             if (!$isNew) {
                 $csrf = trim($body['entity_csrf'] ?? '');
-                if (!DI::getCsrfService()->validateEntityToken($csrf, 'loginUser', $user->getId())) {
+                if (!DI::getCsrfService()->validateEntityToken($csrf, 'backendUser', $user->getId())) {
                     return $this->fetchError('Invalid token');
                 }
             }
@@ -134,7 +134,7 @@ class LoginUserController extends BackendAbstractController
             $originalSortKey  = $user->getSortKey();
             $originalWeak     = $user->isPasswordWeak();
 
-            $user->mapFromArray(BodyCleaner::cleanFor(LoginUser::class, $body));
+            $user->mapFromArray(BodyCleaner::cleanFor(BackendUser::class, $body));
 
             // Server-controlled / specially handled fields — never trust the body.
             // sortKey: preserve on edit, assigned via nextSortKey on add (after validation).
@@ -154,7 +154,7 @@ class LoginUserController extends BackendAbstractController
                 $user->setPasswordWeak(PasswordPolicy::isWeak($password, [$user->getUsername()], $tier));
             }
 
-            $validator = new LoginUserValidator($user, $this->repo(), $password, $isNew, $user->getId(), $tier);
+            $validator = new BackendUserValidator($user, $this->repo(), $password, $isNew, $user->getId(), $tier);
             if ($validator->isValid()) {
                 if ($password !== '') {
                     $user->setPasswordHash(password_hash($password, PASSWORD_BCRYPT, ['cost' => 12]));
@@ -179,16 +179,16 @@ class LoginUserController extends BackendAbstractController
             // validation failed — fall through to re-render the form with errors
         }
 
-        $entityCsrf = !$isNew ? DI::getCsrfService()->generateEntityToken('loginUser', $user->getId()) : '';
+        $entityCsrf = !$isNew ? DI::getCsrfService()->generateEntityToken('backendUser', $user->getId()) : '';
 
         $response = $this->html([
             'entry'             => $user,
             'entityCsrf'        => $entityCsrf,
             'roleLabels'        => $this->roleLabels(),
-            'validator'         => $validator ?? new LoginUserValidator($user),
+            'validator'         => $validator ?? new BackendUserValidator($user),
             'passwordMinLength' => $tier->minLength(),
         ]);
-        $this->layoutManager->addPartials('edit', 'System/LoginUserController', self::NAMESPACE);
+        $this->layoutManager->addPartials('edit', 'System/BackendUserController', self::NAMESPACE);
         // Live password-strength meter (hint only; server policy is authority on save).
         $response->addCommand('load-script', [
             'src'   => $this->layoutManager->resolveJsPath('password-meter', self::NAMESPACE),
@@ -209,14 +209,14 @@ class LoginUserController extends BackendAbstractController
         $id   = (int)DI::getRequest()->getGetParameter('id');
         $user = $id ? $this->repo()->find($id) : null;
 
-        $entityCsrf = $user ? DI::getCsrfService()->generateEntityToken('loginUser', $id) : '';
+        $entityCsrf = $user ? DI::getCsrfService()->generateEntityToken('backendUser', $id) : '';
 
         $response = $this->html([
             'entry'       => $user,
             'entityCsrf'  => $entityCsrf,
             'blockReason' => $user ? $this->deleteBlockReason($user) : 'Benutzer nicht gefunden',
         ]);
-        $this->layoutManager->addPartials('confirmDelete', 'System/LoginUserController', self::NAMESPACE);
+        $this->layoutManager->addPartials('confirmDelete', 'System/BackendUserController', self::NAMESPACE);
         return $response;
     }
 
@@ -230,7 +230,7 @@ class LoginUserController extends BackendAbstractController
         }
 
         $response = $this->html(['entry' => $user]);
-        $this->layoutManager->addPartials('actions', 'System/LoginUserController', self::NAMESPACE);
+        $this->layoutManager->addPartials('actions', 'System/BackendUserController', self::NAMESPACE);
         return $response;
     }
 
@@ -245,7 +245,7 @@ class LoginUserController extends BackendAbstractController
         }
 
         $entityCsrf = trim($body['entity_csrf'] ?? '');
-        if (!DI::getCsrfService()->validateEntityToken($entityCsrf, 'loginUser', $id)) {
+        if (!DI::getCsrfService()->validateEntityToken($entityCsrf, 'backendUser', $id)) {
             return $this->fetchError('Invalid token');
         }
 
@@ -276,7 +276,7 @@ class LoginUserController extends BackendAbstractController
      * `superUser` outranks an admin and counts here too.
      * Returns the reason string when deletion is blocked, null when allowed.
      */
-    private function deleteBlockReason(LoginUser $user): ?string
+    private function deleteBlockReason(BackendUser $user): ?string
     {
         if ($user->getId() === DI::getAuthService()->getCurrentUser()->getId()) {
             return 'Du kannst dein eigenes Konto nicht löschen.';
@@ -285,7 +285,7 @@ class LoginUserController extends BackendAbstractController
         if ($this->isAdminCapable($user)) {
             $remaining = count(array_filter(
                 $this->repo()->findAll(),
-                fn(LoginUser $u) => $u->getId() !== $user->getId() && $this->isAdminCapable($u)
+                fn(BackendUser $u) => $u->getId() !== $user->getId() && $this->isAdminCapable($u)
             ));
             if ($remaining === 0) {
                 return 'Es muss mindestens ein Benutzer mit Admin-Rechten erhalten bleiben.';
@@ -301,7 +301,7 @@ class LoginUserController extends BackendAbstractController
      * the role-level logic in {@see AuthService::hasSufficientRole}; the literal
      * `admin` role string is not required.
      */
-    private function isAdminCapable(LoginUser $user): bool
+    private function isAdminCapable(BackendUser $user): bool
     {
         return AuthRole::rolesSatisfy($user->getRoles(), AuthRole::ADMIN);
     }
@@ -315,14 +315,14 @@ class LoginUserController extends BackendAbstractController
             return $this->fetch();
         }
 
-        $cleaned = BodyCleaner::cleanFor(LoginUser::class, [$field => $body['value'] ?? '']);
-        $entity  = new LoginUser($cleaned);
+        $cleaned = BodyCleaner::cleanFor(BackendUser::class, [$field => $body['value'] ?? '']);
+        $entity  = new BackendUser($cleaned);
 
         // Format-only live check (no repo): the blur channel sends just {field,value}
         // — no id — so uniqueness, which must exclude the edited user, is enforced
         // on full submit (where the loaded entity carries its id) to avoid a false
         // "username taken" against the user's own name.
-        $validator = new LoginUserValidator($entity);
+        $validator = new BackendUserValidator($entity);
         $validator->isValid([$field]);
 
         $response = $this->fetch();
@@ -361,7 +361,7 @@ class LoginUserController extends BackendAbstractController
             return $this->fetchError('Benutzer nicht gefunden.');
         }
 
-        $rest     = array_values(array_filter($users, fn(LoginUser $u) => $u->getId() !== $entryId));
+        $rest     = array_values(array_filter($users, fn(BackendUser $u) => $u->getId() !== $entryId));
         $newIndex = min($newIndex, count($rest));
         array_splice($rest, $newIndex, 0, [$moved]);
 

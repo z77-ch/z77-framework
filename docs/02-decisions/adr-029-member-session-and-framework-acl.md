@@ -1,6 +1,6 @@
 # ADR-029 — Member Session and Framework ACL
 
-**Status:** `[OPEN]` — the separation below is in force; how the two meet is deliberately not decided yet
+**Status:** `[DECIDED 2026-08-07]` — second decision taken with AXO3 B10 (the first role-based member application), see «Second decision» below
 **Date:** 2026-08-07
 
 ---
@@ -70,6 +70,46 @@ member module:
 - When the second decision is taken, a **new role level for customer accounts** is the likely
   shape (rather than reusing `MEMBER`), so that DMS and cache semantics stay untouched. The
   cost is one more level in the hierarchy and a session that two services can write.
+
+## Second decision (2026-08-07, taken with AXO3 B10)
+
+The trigger the «later» clause waited for arrived: B10 is the first role-based member
+application, and the discussion (recorded in the AXO3 lab,
+`03-development/concepts/identitaeten-loginuser-member.md`) sharpened the picture to
+**one session identity, two account stores**:
+
+- `backendUsers.json` (entity renamed `LoginUser` → `BackendUser`) is the operator door:
+  admin-created, password, mail-independent — the bootstrap anchor. The public internet
+  never writes this store.
+- `MemberAccount` (module-member) is the door for all external people with a login —
+  what someone is (`customer` today, others later) is a ROLE on the account, not an
+  account type. Self-registration machinery (states, throttles, cleanup) stays here.
+
+Mechanism: `AuthBridgeInterface` (kernel) + `MemberAuthBridge` (module-member,
+registered via the module-config key `authBridges`). `AccessGuard::enforce()` runs the
+bridges before resolving the user; the bridge projects the member session into
+`auth_user` — realm `member`, string account id, account roles. The member session
+remains the source of truth (the projection is DERIVED per request, never dual-written),
+and the device-key resume now happens inside the bridge, i.e. before the guard.
+
+Guard rails that make this safe:
+
+- **New role level `customer` (15), below `member` (20).** Customer accounts never reach
+  the level that DMS role-ACEs and backend user administration mean by «Mitglied».
+- **`AuthUser` carries a `realm`** (`backend` | `member`). Consumers that map the id to
+  an entity check it: `CurrentUserService` returns null for member realm, the DMS
+  `Principal` enters the policy with `userId = 0` (no user-ACE/ownership match — the two
+  id spaces never cross).
+- **A backend identity always wins:** the bridge never overwrites a backend-realm
+  `auth_user`; an admin stays an admin even with a member session in the same browser.
+- **Redirect target per module:** `loginUrl` in memberConfig sends guests to the member
+  login, not the admin login.
+
+Consequences: member routes that need a sign-in are declared `AuthRole::CUSTOMER` in the
+module config (self-guarding controllers keep working but are no longer the guard);
+MEM-001 in `member.md` is resolved; the page-cache rule (CACHE-ADMIN-001) is unchanged —
+customer sessions stay below ADMIN and share the anonymous cache, so member-specific
+markup still must not appear on cacheable pages.
 
 ## Rejected Alternatives
 

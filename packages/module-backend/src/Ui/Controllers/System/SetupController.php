@@ -8,9 +8,9 @@ use Z77\Core\Http\Response\HtmlResponse,
     Z77\Module\Backend\Ui\Controllers\BackendAbstractController,
     Z77\Persistence\Cleaning\BodyCleaner,
     Z77\Shared\Auth\PasswordPolicy,
-    Z77\Shared\Entities\LoginUser,
-    Z77\Shared\Repositories\LoginUserRepository,
-    Z77\Shared\Validators\LoginUserValidator
+    Z77\Shared\Entities\BackendUser,
+    Z77\Shared\Repositories\BackendUserRepository,
+    Z77\Shared\Validators\BackendUserValidator
 ;
 
 /**
@@ -82,12 +82,12 @@ class SetupController extends BackendAbstractController
         // is flagged for the every-login nag (and hard-blocked under veryStrong,
         // enforced by the validator).
         $tier = $this->passwordTier();
-        $user = new LoginUser(BodyCleaner::cleanFor(LoginUser::class, ['username' => $username]));
+        $user = new BackendUser(BodyCleaner::cleanFor(BackendUser::class, ['username' => $username]));
         $user->setRoles([AuthRole::SUPER_USER]); // first account = the governor (ADR-021)
         $user->setSortKey(0);
         $user->setPasswordWeak(PasswordPolicy::isWeak($password, [$username], $tier));
 
-        $validator = new LoginUserValidator($user, $this->repo(), $password, true, null, $tier);
+        $validator = new BackendUserValidator($user, $this->repo(), $password, true, null, $tier);
         if (!$validator->isValid()) {
             return $this->renderForm(null, $username, $validator);
         }
@@ -110,7 +110,7 @@ class SetupController extends BackendAbstractController
         return $this->redirect('/login');
     }
 
-    private function renderForm(?string $error = null, string $username = 'admin', ?LoginUserValidator $validator = null): HtmlResponse
+    private function renderForm(?string $error = null, string $username = 'admin', ?BackendUserValidator $validator = null): HtmlResponse
     {
         $response = $this->html([
             'mode'              => 'form',
@@ -128,9 +128,9 @@ class SetupController extends BackendAbstractController
         return $response;
     }
 
-    private function repo(): LoginUserRepository
+    private function repo(): BackendUserRepository
     {
-        return $this->em()->getRepository(LoginUser::class);
+        return $this->em()->getRepository(BackendUser::class);
     }
 
     /** Absolute path of the one-time setup token (filesystem-only, never under public/). */

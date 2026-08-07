@@ -2,7 +2,7 @@
 /**
  * Form-mail settings row action hub (⋮): edit + reset. Launches the specific
  * modals via data-fetch-get (a click replaces this hub). Reset only when a
- * backend override exists. Mirrors the login-user / navigation actions hub.
+ * backend override exists. Mirrors the backend-user / navigation actions hub.
  *
  * @var string $formKey
  * @var bool $hasConfig

@@ -64,6 +64,16 @@ final class MemberSession
         return $accountId;
     }
 
+    /**
+     * Cheap presence probe for the AuthBridge: any sign of a member sign-in
+     * (live or TOTP-pending) without touching the idle clock or the store.
+     */
+    public function hasTraces(): bool
+    {
+        return $this->session->get(self::KEY_ACCOUNT) !== null
+            || $this->session->get(self::KEY_TOTP_PENDING) !== null;
+    }
+
     /** Signs out: member keys gone, fresh session id for whatever comes next. */
     public function end(): void
     {

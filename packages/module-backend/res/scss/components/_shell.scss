@@ -94,7 +94,7 @@ body.backend {
 
 // Column head slot — the aligned header band across the columns. FIXED single-line
 // height (never grows): both columns' heads are always exactly equal, empty or filled,
-// so the band lines up regardless of content (see e.g. login-user/list where hc2 is
+// so the band lines up regardless of content (see e.g. backend-user/list where hc2 is
 // empty). Contract: the slot holds ONE line only — if a view needs more, it goes into a
 // dropdown or popup, NOT a taller band. `white-space: nowrap` enforces no vertical wrap;
 // deliberately NO `overflow: hidden` here so a panel opening from the band can escape it.

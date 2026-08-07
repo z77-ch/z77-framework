@@ -198,7 +198,9 @@ final class RegistrationFlow
 
     /**
      * The operator's activation handgrip (B7 spec: backend action): confirmed
-     * → active with the MEMBER role, the project hook runs INSIDE the account
+     * → active with the CUSTOMER role (level 15 — deliberately NOT `member`:
+     * that level carries meaning elsewhere, e.g. DMS role-ACEs, and stays with
+     * backend-assigned Mitglieder), the project hook runs INSIDE the account
      * transition (MemberAccounts::activate — a failing hook leaves the account
      * 'confirmed' and this method rethrows; the caller reports). On success
      * the «Sie sind freigeschaltet» mail goes out; a mail failure does not
@@ -207,7 +209,7 @@ final class RegistrationFlow
      */
     public function activate(MemberAccount $account, string $loginUrl, ?int $now = null): void
     {
-        $this->accounts->activate($account, [AuthRole::MEMBER], $this->activationHook, $now);
+        $this->accounts->activate($account, [AuthRole::CUSTOMER], $this->activationHook, $now);
 
         ($this->sendMail)(
             (new EmailMessage())

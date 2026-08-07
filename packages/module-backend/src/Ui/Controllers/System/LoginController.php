@@ -5,7 +5,7 @@ use Z77\Core\Http\Response\HtmlResponse,
     Z77\Core\Http\Response\RedirectResponse,
     Z77\Core\DI,
     Z77\Module\Backend\Ui\Controllers\BackendAbstractController,
-    Z77\Shared\Entities\LoginUser,
+    Z77\Shared\Entities\BackendUser,
     Z77\Shared\Libraries\Convention\Naming
 ;
 
@@ -43,7 +43,7 @@ class LoginController extends BackendAbstractController
             return $this->renderForm(['error' => 'Benutzername und Passwort sind erforderlich.', 'username' => $username]);
         }
 
-        $user = DI::getUnifiedEntityManager()->getRepository(LoginUser::class)->findByUsername($username);
+        $user = DI::getUnifiedEntityManager()->getRepository(BackendUser::class)->findByUsername($username);
         $auth = $user !== null ? DI::getAuthService()->canLogin($user, $password) : null;
 
         if ($auth === null) {

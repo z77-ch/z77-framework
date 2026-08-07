@@ -29,7 +29,7 @@ class Install
     private const FILE_FINDER_CONFIG    = 'fileFinder.inc.php';
 
     private const AUTH_DIR              = 'data/framework/auth';
-    private const LOGIN_USERS_FILE      = 'loginUsers.json';
+    private const BACKEND_USERS_FILE      = 'backendUsers.json';
     private const SETUP_TOKEN_FILE      = 'SETUP_TOKEN';
     private const ADMIN_USERNAME        = 'admin';
     private const BCRYPT_COST           = 12;
@@ -1068,7 +1068,7 @@ class Install
     /**
      * Provisions the first account — the SUPER_USER (ADR-021) — WITHOUT ever shipping a
      * default credential (the framework is open source — anything seeded would be
-     * public). Runs once: if `loginUsers.json` already exists it is never touched
+     * public). Runs once: if `backendUsers.json` already exists it is never touched
      * (re-install / update). The username stays `admin` (cosmetic); the ROLE is
      * `superUser` — `admin` (level 80) is a normal, grant-managed role.
      *
@@ -1082,7 +1082,7 @@ class Install
     private function provisionAdmin(): void
     {
         $authDir   = $this->trailingSlash($this->baseDir) . self::AUTH_DIR;
-        $usersFile = $this->trailingSlash($authDir) . self::LOGIN_USERS_FILE;
+        $usersFile = $this->trailingSlash($authDir) . self::BACKEND_USERS_FILE;
 
         if (file_exists($usersFile)) {
             return;
@@ -1099,7 +1099,7 @@ class Install
      * Creates the admin from a hidden password prompt. The password is evaluated
      * against {@see PasswordPolicy} (length + blocklist, never composition): a weak
      * one is accepted but the resulting `password_weak` flag drives the every-login
-     * nag. The user store is written as plain JSON matching the {@see LoginUser}
+     * nag. The user store is written as plain JSON matching the {@see BackendUser}
      * shape (snake_case) — no DI / EntityManager boot needed at install time.
      */
     private function provisionAdminInteractive(string $authDir, string $usersFile): void
@@ -1146,8 +1146,8 @@ class Install
         ]];
 
         $json = json_encode($admin, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n";
-        $this->writeFile($authDir, self::LOGIN_USERS_FILE, $json);
-        $this->io->write('   ✓ Admin account created → ' . self::AUTH_DIR . '/' . self::LOGIN_USERS_FILE);
+        $this->writeFile($authDir, self::BACKEND_USERS_FILE, $json);
+        $this->io->write('   ✓ Admin account created → ' . self::AUTH_DIR . '/' . self::BACKEND_USERS_FILE);
     }
 
     /** Asks for a password twice (hidden) until non-empty and both entries match. */

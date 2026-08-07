@@ -1,6 +1,6 @@
-/* z77 login-user list — flat drag & drop reorder.
+/* z77 backend-user list — flat drag & drop reorder.
  *
- * Posts {entry_id, new_index} to /backend/system/login-user/move, where
+ * Posts {entry_id, new_index} to /backend/system/backend-user/move, where
  * new_index is the 0-based position among the OTHER users (the server inserts
  * the moved user into that rest-list and renumbers sortKey densely).
  */
@@ -77,7 +77,7 @@
 
         clearIndicators();
 
-        _Z77.core.fetch.post('/backend/system/login-user/move', {
+        _Z77.core.fetch.post('/backend/system/backend-user/move', {
             entry_id: entryId,
             new_index: newIndex
         }).then(function (env) {

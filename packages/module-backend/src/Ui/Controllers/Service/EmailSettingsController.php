@@ -98,7 +98,7 @@ class EmailSettingsController extends BackendAbstractController
     }
 
     /**
-     * Per-row action hub (⋮): edit + reset. Mirrors the login-user / navigation
+     * Per-row action hub (⋮): edit + reset. Mirrors the backend-user / navigation
      * hubs. Reset only offered when a backend record exists.
      */
     protected function actionsAction(): HtmlResponse|FetchResponse

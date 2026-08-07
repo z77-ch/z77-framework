@@ -29,10 +29,10 @@ SOURCE=/packages/kernel/shared/src/Traits/ArrayMappable.php
 SOURCE=/packages/kernel/shared/src/Attributes/Entity.php
 SOURCE=/packages/kernel/shared/src/Entities/Navigation.php
 SOURCE=/packages/kernel/shared/src/Entities/MetaData.php
-SOURCE=/packages/kernel/shared/src/Entities/LoginUser.php
+SOURCE=/packages/kernel/shared/src/Entities/BackendUser.php
 SOURCE=/packages/kernel/shared/src/Repositories/NavigationRepository.php
 SOURCE=/packages/kernel/shared/src/Repositories/MetaDataRepository.php
-SOURCE=/packages/kernel/shared/src/Repositories/LoginUserRepository.php
+SOURCE=/packages/kernel/shared/src/Repositories/BackendUserRepository.php
 
 ## mental model
 
@@ -103,7 +103,7 @@ Entity-specific repos extend `FileRepository` (inheritance, not composition). Do
 | `NavigationRepository` | _(none — all navigation query logic lives in `NavigationService`)_ |
 | `NavigationAliasRepository` | `findByPath(string): ?NavigationAlias` / `findByNavigationId(int): NavigationAlias[]` |
 | `MetaDataRepository` | `findByNavigationAndLanguage(int, string): ?MetaData` |
-| `LoginUserRepository` | `findByUsername(string): ?LoginUser` |
+| `BackendUserRepository` | `findByUsername(string): ?BackendUser` |
 | `ContentRepository` | `findBySlug(string, string): ?Content` |
 
 The `Navigation` tree is expressed by a `parentId` FK on each child (no embedded `children` array); children are resolved by `NavigationService::getChildren()` (ADR-008 tree foundation).
@@ -116,7 +116,7 @@ data/
     routing/navigation.json          ← Navigation entity
     routing/tags.json                ← Tag entity
     seo/metadata.json                ← MetaData entity
-    auth/loginUsers.json             ← LoginUser entity
+    auth/backendUsers.json             ← BackendUser entity
   content/{slug}.{lang}.json         ← Content entity (document mode, one file per record)
   project/{module}/*.json            ← project-specific entities
 ```
@@ -154,7 +154,7 @@ it never silently returns `[]` for corruption.
 
 ## see also
 
-- [`login.md`](login.md) — `LoginUserRepository` consumer; `passwordHash` round-trip fixed (BUG-P001 resolved)
+- [`login.md`](login.md) — `BackendUserRepository` consumer; `passwordHash` round-trip fixed (BUG-P001 resolved)
 - [`cache.md`](cache.md) — automatic cache invalidation via `#[Entity(..., invalidatesCache: true)]`
 - [`../03-development/review-persistence-repository.md`](../03-development/review-persistence-repository.md) — full review with reasoning
 
@@ -164,10 +164,10 @@ it never silently returns `[]` for corruption.
 - **DEAD-P001** — resolved. `packages/kernel/core/src/Routing/NavigationRepository.php` deleted.
 - **MED-P001** — resolved (fell out with DEAD-P001).
 - **MED-P002** — resolved framing: `AuthService::savePreferences` does not belong in `AuthService` at all. Auth service is responsible for auth only; preference persistence is a controller concern. Architecture pending — see `backend.md`.
-- **MED-P003** — resolved. `LoginController` and `SystemController` use `UEM::getRepository(LoginUser::class)` instead of `new LoginUserRepository(...)`.
+- **MED-P003** — resolved. `LoginController` and `SystemController` use `UEM::getRepository(BackendUser::class)` instead of `new BackendUserRepository(...)`.
 - **CLEAN-P001** — resolved. `decamelize()` + `camelize()` removed from `core/src/autoload/prod/php/Functions.php`.
 - **DATA-LOCK-001** — resolved 2026-08-03. Every read-merge-write cycle of the file driver (`CollectionStore::persistAll()`/`delete()`, `FileEntityManager::reorder()`) ran unguarded — two near-simultaneous requests both loaded the same base state and the later write silently dropped the earlier one (lost update; `persistAll` could additionally hand out duplicate auto-increment ids). `LOCK_EX` inside `save()` (and since DATA-ATOMIC-001 the tmp+rename) only makes the single WRITE atomic, never the cycle. Raised by the AXO3 B1 review. Fix: `FileStorage::withExclusiveLock($path, $fn)` — exclusive cross-process `flock` on a companion `<path>.lock` file (the target itself cannot carry the lock: rename-replace would leave the flock on a stale inode), acquired via non-blocking polling with a ~2 s budget, then `RuntimeException` (a plain blocking flock has no timeout and would hang on a stuck holder). The lock file is never unlinked (unlink races a blocked waiter) and is invisible to `list()` (globs `*.json`). `flock()` verified empirically on NTFS and the Z: NAS/SMB share (cross-process `LOCK_NB` contention + blocking acquisition after release). `DocumentStore` needs no cycle lock — it replaces whole records, no merge (write-write races there are the optimistic-locking concern, see [`entity-data-handling.md` → optimistic locking](entity-data-handling.md#optimistic-locking-entity_hash)). Verified: `tests/file-driver-concurrency.php` (7 checks — 60 concurrent cycles from 4 processes without a lost update or duplicate row, loud lock timeout, lock file invisible to `list()`).
-- **DATA-ATOMIC-001** — resolved 2026-08-03. `FileStorage::save()` wrote directly into the target with `file_put_contents(..., LOCK_EX)` — `LOCK_EX` only guards against other *locking writers*; `load()` does not lock, so a parallel reader could catch a half-written file (reachable corruption for every file-driven entity: `navigation.json`, `loginUsers.json`, content documents, AXO3 mirrors). Raised by the AXO3 B1 spec (§6: mirror must be replaced atomically on import). Fix: `save()` writes to a unique `<target>.<pid>.<rand>.tmp` in the same directory, then `rename()`s onto the target — readers see old or new, never a torn state. Windows verified empirically (NTFS + Z: NAS share): `rename()` over an existing target works (MoveFileEx semantics) but fails with a sharing violation while a reader holds the target open — covered by a retry loop (10 attempts, growing backoff, ~275 ms budget; readers hold handles only for the duration of `file_get_contents`). On exhaustion `save()` unlinks the tmp and throws while the old file stays valid (fail-loud, like DATA-JSON-001). `json_encode` failure now also throws instead of blanking the target. Encoding invariant unchanged (UTF-8 without BOM, `JSON_UNESCAPED_UNICODE`); `save()` signature unchanged. Verified: `tests/file-storage-atomicity.php` (14 checks incl. crash simulation between tmp write and rename, tmp leftovers invisible to `list()`, locked-target fail-loud) + AXO3 `work/harness/b1-estate-harness.php` (39 checks, via vendor symlink) — both green.
+- **DATA-ATOMIC-001** — resolved 2026-08-03. `FileStorage::save()` wrote directly into the target with `file_put_contents(..., LOCK_EX)` — `LOCK_EX` only guards against other *locking writers*; `load()` does not lock, so a parallel reader could catch a half-written file (reachable corruption for every file-driven entity: `navigation.json`, `backendUsers.json`, content documents, AXO3 mirrors). Raised by the AXO3 B1 spec (§6: mirror must be replaced atomically on import). Fix: `save()` writes to a unique `<target>.<pid>.<rand>.tmp` in the same directory, then `rename()`s onto the target — readers see old or new, never a torn state. Windows verified empirically (NTFS + Z: NAS share): `rename()` over an existing target works (MoveFileEx semantics) but fails with a sharing violation while a reader holds the target open — covered by a retry loop (10 attempts, growing backoff, ~275 ms budget; readers hold handles only for the duration of `file_get_contents`). On exhaustion `save()` unlinks the tmp and throws while the old file stays valid (fail-loud, like DATA-JSON-001). `json_encode` failure now also throws instead of blanking the target. Encoding invariant unchanged (UTF-8 without BOM, `JSON_UNESCAPED_UNICODE`); `save()` signature unchanged. Verified: `tests/file-storage-atomicity.php` (14 checks incl. crash simulation between tmp write and rename, tmp leftovers invisible to `list()`, locked-target fail-loud) + AXO3 `work/harness/b1-estate-harness.php` (39 checks, via vendor symlink) — both green.
 - **DATA-JSON-001** — resolved 2026-07-18. `FileStorage::load()` did `json_decode($json) ?? []`, so ANY parse failure (a stray UTF-8 BOM, truncation, corruption) silently returned `[]` — a BOM'd `navigation.json` would blank the whole navigation with no error. Trigger: a Claude Code session edited `navigation.json` via Windows PowerShell 5.1 (`Get-Content` defaults to CP1252 for a no-BOM file; `Set-Content -Encoding utf8` re-adds a BOM), producing `Übersetzungen` → `Ãœbersetzungen` (`C3 9C` → `C3 83 C5 93`) and BOMs. Fix: `load()` strips a leading BOM, treats an empty/whitespace file as `[]` (legitimate), and THROWS `RuntimeException` on a non-empty unparseable file (fail-loud, never silent `[]`). Does NOT catch mojibake double-encoding (valid UTF-8, undetectable on read) — prevention is the UTF-8-no-BOM convention above + the CLAUDE.md rule (never PowerShell round-trip data JSON) + an optional project dev hook (`.claude/hooks/check-data-encoding.sh` scanning for `Ã`/BOM). Verified via CLI harness (valid/missing/empty/whitespace → correct; BOM+valid loads with umlaut intact; literal `null`/scalar → `[]`; corrupt and BOM+corrupt → throw). Handoff origin: `{projekt}/work/docs/topics/data-json-encoding.md`.
 
 ## pending

@@ -120,8 +120,8 @@ Content-relevant entities opt in via the `#[Entity(..., invalidatesCache: true)]
 #[Entity('file', 'framework/routing/navigation.json', invalidatesCache: true)]  // Frontend content
 class Navigation { ... }
 
-#[Entity('file', 'framework/auth/loginUsers.json')]                              // no Frontend impact
-class LoginUser { ... }
+#[Entity('file', 'framework/auth/backendUsers.json')]                              // no Frontend impact
+class BackendUser { ... }
 ```
 
 Marked today: `Navigation`, `Tag`, `MetaData`. Controllers MUST NOT call `cacheManager->clearAllApcu()` after a save — the entity manager owns that.

@@ -99,7 +99,7 @@ login request ─▶ waiting record + mail (link, check digits, context) │
 
 ## known issues
 
-- **MEM-001:** don't assume the `roles` array on `MemberAccount` feeds the framework ACL. It holds `AuthRole` strings (e.g. `member`), but nothing reads them during dispatch — `AccessGuard` resolves `AuthUser` from `loginUsers.json`. A controller declared `AuthRole::MEMBER` locks signed-in customers OUT. See ADR-029.
+- **MEM-001** — resolved 2026-08-07 (ADR-029, second decision). The member session now DOES feed the framework ACL: `MemberAuthBridge` (registered in memberConfig under `authBridges`) runs inside `AccessGuard::enforce()` before role resolution and projects the member session into `auth_user` — realm `member`, string account id, the account's roles (`customer`, level 15). Member routes that need a sign-in carry `AuthRole::CUSTOMER` in the config; the guard redirects guests to the module's `loginUrl` (the member login, not the admin login). Two things deliberately did NOT change: `AuthRole::MEMBER` still means backend-assigned Mitglieder (a customer never reaches level 20 — DMS role-ACEs stay untouched), and the member session stays the source of truth — the bridge derives the projection per request, login/logout never write `auth_user` twice. The realm keeps the id spaces apart: `CurrentUserService` and the DMS `Principal` treat a member-realm identity as «no backend user» (no user-ACE/ownership matches).
 - **MEM-002:** don't assume a member session survives a page cache. Member pages are excluded via `cache.enabled = false` in the module config; if a project moves member-specific markup onto a cacheable page, the page-cache bypass has to be widened first (see `cache.md` CACHE-ADMIN-001).
 - **MEM-003** — resolved 2026-08-07. `TemplateRenderer` used to extract into a scope holding its own `$path` / `$context`, so a view variable of either name was silently dropped and the template saw the renderer's value. The render scope now carries prefixed locals (`$z77TplPath` / `$z77TplContext`) and no view variable can collide; the same shape was applied to `EmailService` and `StylesheetManager`, which had the inverse bug (no `EXTR_SKIP`, so a `tplPath` key chose the included file). View variables may now carry any name — this module's `pending` is no longer a work-around, just a good name.
 - **MEM-004:** don't assume a deleted device-key cookie can be cleaned up server-side. The cookie WAS the identity; the orphaned entry is indistinguishable from a second real device with the same browser. Only the cap and the profile list address it.
@@ -113,14 +113,14 @@ login request ─▶ waiting record + mail (link, check digits, context) │
 - **Roll device keys lazily (MEM-008)** — optional: only when `last_used_at` is older than a day, keeping the documented rolling-90-day semantics. Low value at today's write frequency; the reason to do it is if the idle window ever shrinks.
 - **Decide the confirm-button emphasis** — «Anmeldung bestätigen» is the primary button while it is the one that hands a stranger the session; «hier anmelden» is harmless. Reversing the weight trades the everyday case against the attack case; the check digits and the mail wording already carry the defence. Conscious decision, not a silent change.
 - **Set `canonicalBaseUrl` per installation** — one line in `config/systemConfig.inc.php`; without it the member pages throw as soon as they build a link (ADR-030).
-- Second factor for the ADMIN login (`LoginUser.secondFactor`, `security.md` roadmap) is untouched by this module — the TOTP implementation here (`Totp`, `TotpVault`, `TotpGuard`) is reusable for it, but no seam exists yet.
+- Second factor for the ADMIN login (`BackendUser.secondFactor`, `security.md` roadmap) is untouched by this module — the TOTP implementation here (`Totp`, `TotpVault`, `TotpGuard`) is reusable for it, but no seam exists yet.
 - Member session vs. framework ACL is an open architecture question — framed in ADR-029, to be decided when a role-based member application is built.
 - The member layout registers the `member-main` nav slot but does not render it (`navigation.md`); a project that wants member navigation overrides the layout.
 
 ## see also
 
 - [`login.md`](login.md) — the ADMIN login this module deliberately does not touch (`AuthUser`, `AccessGuard`, role resolution)
-- [`security.md`](security.md) — CSRF, throttling and the per-user second-factor roadmap for `LoginUser`
+- [`security.md`](security.md) — CSRF, throttling and the per-user second-factor roadmap for `BackendUser`
 - [`forms.md`](forms.md) — the public-form standard the register/login/resend pages are built on
 - [`mail.md`](mail.md) — `EmailMessage`, templates and the email settings the mails go out through
 - [`../02-decisions/adr-029-member-session-and-framework-acl.md`](../02-decisions/adr-029-member-session-and-framework-acl.md) — why the two auth worlds are separate and what has to be decided before they meet

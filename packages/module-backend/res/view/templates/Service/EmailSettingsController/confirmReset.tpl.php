@@ -2,7 +2,7 @@
 /**
  * Confirm resetting a form-mail override to the config seed — deletes the
  * backend record (the operator-entered recipients/subject/routes are lost; the
- * config default applies again). Mirrors the login-user / navigation confirm
+ * config default applies again). Mirrors the backend-user / navigation confirm
  * modals.
  *
  * @var string $formKey

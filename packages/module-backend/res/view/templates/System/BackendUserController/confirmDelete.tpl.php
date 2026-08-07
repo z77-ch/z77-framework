@@ -1,5 +1,5 @@
 <?php
-/** @var \Z77\Shared\Entities\LoginUser|null $entry */
+/** @var \Z77\Shared\Entities\BackendUser|null $entry */
 /** @var string $entityCsrf */
 /** @var string|null $blockReason */
 
@@ -24,7 +24,7 @@ if ($entry === null): ?>
 </div>
 <?php return; endif; ?>
 
-<form data-fetch-post="/backend/system/login-user/remove">
+<form data-fetch-post="/backend/system/backend-user/remove">
     <input type="hidden" name="id"          value="<?= (int)$entry->getId() ?>">
     <input type="hidden" name="entity_csrf" value="<?= e($entityCsrf) ?>">
     <div class="be-modal__header">

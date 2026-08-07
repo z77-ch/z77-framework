@@ -1,5 +1,5 @@
 <?php
-/** @var \Z77\Shared\Entities\LoginUser $entry */
+/** @var \Z77\Shared\Entities\BackendUser $entry */
 /** @var string $entityCsrf */
 /** @var array<string, string> $roleLabels */
 /** @var \Z77\Persistence\Validation\EntityValidator $validator */
@@ -12,7 +12,7 @@ $fieldError = function (string $name) use ($validator): string {
         : '';
 };
 ?>
-<form data-fetch-post data-check-url="/backend/system/login-user/check-field">
+<form data-fetch-post data-check-url="/backend/system/backend-user/check-field">
     <?php if (!$isNew): ?>
     <input type="hidden" name="entity_csrf" value="<?= e($entityCsrf) ?>">
     <?php endif; ?>

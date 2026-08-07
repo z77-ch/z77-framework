@@ -2,6 +2,7 @@
 namespace Z77\Module\Member\App;
 
 use Z77\Core\Config\AuthRole;
+use Z77\Module\Member\Services\MemberAuthBridge;
 
 /**
  * Member module — registration with confirmed e-mail (B7 origin).
@@ -47,6 +48,16 @@ return [
     ],
     'moduleRole'    => AuthRole::GUEST,
 
+    // The member login feeds the framework ACL (ADR-029, second decision):
+    // the bridge projects the member session into `auth_user` (realm member,
+    // role `customer`) before AccessGuard runs — protected routes below carry
+    // AuthRole::CUSTOMER instead of guarding themselves.
+    'authBridges'   => [MemberAuthBridge::class],
+
+    // Where AccessGuard sends a visitor who lacks the required role in THIS
+    // module — the member login, not the admin login.
+    'loginUrl'      => '/member/main/login',
+
     // Form pages carry CSRF tokens and per-user state — never page-cached.
     'cache' => [
         'enabled' => false,
@@ -79,9 +90,7 @@ return [
                     'checkAction' => AuthRole::GUEST,
                 ],
             ],
-            // B8 — login is GUEST by nature (nobody is signed in yet); the
-            // profile guards itself via MemberAuth (member sessions are not
-            // the framework ACL — that one belongs to the admin login).
+            // B8 — login is GUEST by nature (nobody is signed in yet).
             'LoginController' => [
                 'defaultAction'  => 'index',
                 'controllerRole' => AuthRole::GUEST,
@@ -102,15 +111,19 @@ return [
                     'indexAction' => AuthRole::GUEST,
                 ],
             ],
+            // Signed-in customers only — enforced by AccessGuard via the
+            // AuthBridge projection; a guest is sent to `loginUrl` above. The
+            // controller still loads its account through MemberAuth (it needs
+            // the entity, not just the role).
             'ProfileController' => [
                 'defaultAction'  => 'index',
-                'controllerRole' => AuthRole::GUEST,
+                'controllerRole' => AuthRole::CUSTOMER,
                 'actions'        => [
-                    'indexAction'           => AuthRole::GUEST,
-                    'totpAction'            => AuthRole::GUEST,
-                    'totpRemoveAction'      => AuthRole::GUEST,
-                    'deviceRemoveAction'    => AuthRole::GUEST,
-                    'deviceRemoveAllAction' => AuthRole::GUEST,
+                    'indexAction'           => AuthRole::CUSTOMER,
+                    'totpAction'            => AuthRole::CUSTOMER,
+                    'totpRemoveAction'      => AuthRole::CUSTOMER,
+                    'deviceRemoveAction'    => AuthRole::CUSTOMER,
+                    'deviceRemoveAllAction' => AuthRole::CUSTOMER,
                 ],
             ],
         ],

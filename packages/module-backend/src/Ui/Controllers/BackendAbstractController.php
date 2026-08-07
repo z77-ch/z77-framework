@@ -89,10 +89,10 @@ abstract class BackendAbstractController extends AbstractBaseController
         // leave this unset → the header partial self-skips on data absence.
         $user = DI::getAuthService()->getCurrentUser();
         if ($user !== null && $user->isLoggedIn()) {
-            // Avatar initials: the user-entered LoginUser::initials (2–3 chars) when set,
+            // Avatar initials: the user-entered BackendUser::initials (2–3 chars) when set,
             // otherwise derived from the username (first two letters, uppercased). The
-            // LoginUser is the one CurrentUserService already caches for this request.
-            $initials = trim(DI::getCurrentUserService()->getLoginUser()?->getInitials() ?? '');
+            // BackendUser is the one CurrentUserService already caches for this request.
+            $initials = trim(DI::getCurrentUserService()->getBackendUser()?->getInitials() ?? '');
             if ($initials === '') {
                 $initials = mb_strtoupper(mb_substr($user->getUserName(), 0, 2));
             }

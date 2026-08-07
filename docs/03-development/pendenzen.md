@@ -92,7 +92,7 @@ Review: [`review-persistence-repository.md`](review-persistence-repository.md)
 
 ### Architektur
 
-- [ ] **ARCH-P001** — `EntityRepository`-Basisklasse fehlt. `packages/kernel/shared/src/Repositories/` sind reine Delegations-Wrapper ohne Mehrwert. `UnifiedEntityManager::getRepository()` soll entity-spezifische Repos zurückgeben (`LoginUserRepository extends EntityRepository`). `FileEntityManager` muss entity-spezifische Repos instanzieren können, Fallback auf generischen `FileRepository`. **Vor Publikation beheben — vor MED-P002 und MED-P003.**
+- [ ] **ARCH-P001** — `EntityRepository`-Basisklasse fehlt. `packages/kernel/shared/src/Repositories/` sind reine Delegations-Wrapper ohne Mehrwert. `UnifiedEntityManager::getRepository()` soll entity-spezifische Repos zurückgeben (`BackendUserRepository extends EntityRepository`). `FileEntityManager` muss entity-spezifische Repos instanzieren können, Fallback auf generischen `FileRepository`. **Vor Publikation beheben — vor MED-P002 und MED-P003.**
 - [ ] **ARCH-P002** — `UserPreferences` liegt in `Z77\Shared\Auth\` statt `Z77\Shared\ValueObjects\`. Auth ist ausschliesslich Authentifizierungs-Logik. Verschieben + Imports anpassen (`AuthService`, `LoginController`).
 
 ### Toter Code
@@ -102,8 +102,8 @@ Review: [`review-persistence-repository.md`](review-persistence-repository.md)
 ### Medium
 
 - [ ] **MED-P001** — Hydrations-Logik für Navigation-Children dreifach vorhanden: `Core\Routing\NavigationRepository::hydrateFromArray()` (toter Code), `Shared\NavigationRepository::hydrateChild()`, `FileRepository::hydrate()` (generisch). Fällt mit DEAD-P001 + ARCH-P001 von selbst weg.
-- [ ] **MED-P002** — `AuthService::savePreferences(UserPreferences $prefs, LoginUserRepository $repo)` nimmt Repo als Parameter. DI-Pattern gebrochen — Repo soll im Konstruktor injiziert werden. Nach ARCH-P001 umsetzen.
-- [ ] **MED-P003** — `LoginController` instanziert `LoginUserRepository` direkt via `new`. Nach ARCH-P001 ersetzt durch `DI::getUnifiedEntityManager()->getRepository(LoginUser::class)`.
+- [ ] **MED-P002** — `AuthService::savePreferences(UserPreferences $prefs, BackendUserRepository $repo)` nimmt Repo als Parameter. DI-Pattern gebrochen — Repo soll im Konstruktor injiziert werden. Nach ARCH-P001 umsetzen.
+- [ ] **MED-P003** — `LoginController` instanziert `BackendUserRepository` direkt via `new`. Nach ARCH-P001 ersetzt durch `DI::getUnifiedEntityManager()->getRepository(BackendUser::class)`.
 
 ---
 

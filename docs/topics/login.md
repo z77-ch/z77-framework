@@ -6,7 +6,7 @@
 
 1. `packages/kernel/shared/src/Services/AuthService.php` — `canLogin` / `login` / `logout` / `getCurrentUser` / `resolveRole`
 2. `packages/module-backend/src/Ui/Controllers/System/LoginController.php` — `loginAction` (GET + POST) + `logoutAction`
-3. `packages/kernel/shared/src/Repositories/LoginUserRepository.php` — user lookup from JSON store
+3. `packages/kernel/shared/src/Repositories/BackendUserRepository.php` — user lookup from JSON store
 
 ## file map
 
@@ -17,20 +17,20 @@ SOURCE=/packages/kernel/core/src/Services/AccessGuard.php
 SOURCE=/packages/kernel/core/src/Http/Security/CsrfService.php
 SOURCE=/packages/kernel/core/public/index.php
 SOURCE=/packages/kernel/shared/src/Auth/AuthUser.php
-SOURCE=/packages/kernel/shared/src/Entities/LoginUser.php
+SOURCE=/packages/kernel/shared/src/Entities/BackendUser.php
 SOURCE=/packages/kernel/shared/src/Auth/PasswordPolicy.php
-SOURCE=/packages/kernel/shared/src/Repositories/LoginUserRepository.php
+SOURCE=/packages/kernel/shared/src/Repositories/BackendUserRepository.php
 SOURCE=/packages/kernel/shared/src/Services/AuthService.php
 SOURCE=/packages/module-backend/src/App/Config/backendConfig.inc.php
 SOURCE=/packages/module-backend/src/Ui/Config/layoutConfig.inc.php
 SOURCE=/packages/module-backend/src/Ui/Controllers/System/LoginController.php
 SOURCE=/packages/module-backend/res/view/templates/System/LoginController/loginAction.tpl.php
 
-RUNTIME=/skeleton/data/framework/auth/loginUsers.json
+RUNTIME=/skeleton/data/framework/auth/backendUsers.json
 
 ## mental model
 
-File-based authentication. Users are stored in `data/framework/auth/loginUsers.json`. `AuthService` reads/writes the `auth_user` slot via `SessionManager` and caches the current user per request. Role resolution is hierarchical: Action role > Controller role > Module role > GUEST. `AccessGuard` runs in the request pipeline and redirects unauthenticated requests to the alias `/login` (canonical: `/backend/system/login/login`), storing the original URL in session for post-login redirect. Post-login greeting and post-logout notice are delivered via `MessageService` session-flash (see [`messages.md`](messages.md)).
+File-based authentication. Users are stored in `data/framework/auth/backendUsers.json`. `AuthService` reads/writes the `auth_user` slot via `SessionManager` and caches the current user per request. Role resolution is hierarchical: Action role > Controller role > Module role > GUEST. `AccessGuard` runs in the request pipeline and redirects unauthenticated requests to the alias `/login` (canonical: `/backend/system/login/login`), storing the original URL in session for post-login redirect. Post-login greeting and post-logout notice are delivered via `MessageService` session-flash (see [`messages.md`](messages.md)).
 
 - `LoginController` extends `AbstractBaseController` (NOT a security controller) — login page must be accessible without auth.
 - Guest identity: `id=0`, `isLoggedIn()` returns `false` — `null` is never used for the current user.
@@ -83,12 +83,12 @@ Template: loginAction.tpl.php (form POST → /backend/system/login/login)
 ```text
 LoginController::handlePost()
   → CsrfService::validate($token)                 // session-global CSRF; fail → re-render with generic error
-  → LoginUserRepository::findByUsername($username)
-  → AuthService::canLogin(LoginUser, $password)   // verifies password_verify; returns ?self
+  → BackendUserRepository::findByUsername($username)
+  → AuthService::canLogin(BackendUser, $password)   // verifies password_verify; returns ?self
   → null: html(['error' => '...', ...])
   → success: AuthService::login()                 // writes auth_user via SessionManager
            → MessageService::pushFlashAfterRedirect('success', 'Hallo {Username}, du bist angemeldet')
-           → if LoginUser::isPasswordWeak() → pushMessageAfterRedirect('error', weak-password nag)
+           → if BackendUser::isPasswordWeak() → pushMessageAfterRedirect('error', weak-password nag)
              (persistent channel, fires on EVERY login — allowed but reminded; see security.md)
            → resolvePostLoginRedirect()
              → access.origin in session? → reconstruct URL → redirect
@@ -142,7 +142,7 @@ isLoggedIn(): bool                   // id > 0
 ## AuthService API
 
 ```php
-canLogin(LoginUser $user, string $password): ?self   // verifies credentials; returns self on success, null on failure
+canLogin(BackendUser $user, string $password): ?self   // verifies credentials; returns self on success, null on failure
 login(): void                                        // writes auth_user to session; throws if canLogin() was not called first
 logout(): void                                       // removes auth_user from session
 getCurrentUser(): AuthUser                           // loads from session, caches per request; returns guest if not logged in
@@ -150,7 +150,7 @@ hasSufficientRole(AuthUser, string $requiredRole): bool   // static
 resolveRoleForCurrentController(): string                 // reads module config
 ```
 
-## LoginUser entity (persistence)
+## BackendUser entity (persistence)
 
 ```php
 getId(): ?int
@@ -177,7 +177,7 @@ normal, grant-managed role and is never provisioned). The username stays `admin`
 | interactive | super-user account created now — hidden password prompt (twice), `PasswordPolicy`-evaluated → `password_weak` |
 | non-interactive | no account — one-time `SETUP_TOKEN` written under `data/framework/auth/`, account deferred to `/backend/system/setup/setup` (`SetupController`, also role `superUser`) |
 
-Provisioning runs once: an existing `data/framework/auth/loginUsers.json` is never
+Provisioning runs once: an existing `data/framework/auth/backendUsers.json` is never
 overwritten. See [`security.md`](security.md) and [`installer.md`](installer.md).
 
 ## rules
@@ -194,7 +194,7 @@ overwritten. See [`security.md`](security.md) and [`installer.md`](installer.md)
 
 ## see also
 
-- [`persistence-file.md`](persistence-file.md) — `LoginUserRepository`; `passwordHash` round-trip fixed (BUG-P001 resolved)
+- [`persistence-file.md`](persistence-file.md) — `BackendUserRepository`; `passwordHash` round-trip fixed (BUG-P001 resolved)
 - [`fetch.md`](fetch.md) — CSRF validation in `AccessGuard` (Fetch POSTs only; the login form is a classic POST and validates the token in the controller itself)
 - [`messages.md`](messages.md) — `LoginController::logoutAction` and `handlePost()` call `messageService->pushFlashAfterRedirect()` before returning the `RedirectResponse` for post-login greeting and logout confirmation
 - [`security.md`](security.md) — `PasswordPolicy`, `passwordWeak` nag, secure-by-default install + setup token, open security pendenzen (SEC-001…004)
@@ -203,7 +203,7 @@ overwritten. See [`security.md`](security.md) and [`installer.md`](installer.md)
 ## known issues
 
 - BUG-P001 — resolved. `Naming::toCamelCase` no longer destroys camelCase input; `passwordHash` round-trip works.
-- **ROLE-LEVEL-SSOT-001** — resolved 2026-07-07. The "highest role level ≥ threshold" calc was copied three times (`AuthUser::hasAtLeast`, `AuthService::hasSufficientRole`, `LoginUserController::isAdminCapable`). Consolidated the permissive form into one pure helper `AuthRole::rolesSatisfy(array $roles, string $minRole)` (unknown role → level 0); `hasAtLeast` + `isAdminCapable` now route through it. **`AuthService::hasSufficientRole` was deliberately left as-is** — it uses the fail-secure form (unknown REQUIRED role → `PHP_INT_MAX` → deny everyone), the security-critical dispatch gate, which must NOT be unified onto the 0-fallback semantics.
+- **ROLE-LEVEL-SSOT-001** — resolved 2026-07-07. The "highest role level ≥ threshold" calc was copied three times (`AuthUser::hasAtLeast`, `AuthService::hasSufficientRole`, `BackendUserController::isAdminCapable`). Consolidated the permissive form into one pure helper `AuthRole::rolesSatisfy(array $roles, string $minRole)` (unknown role → level 0); `hasAtLeast` + `isAdminCapable` now route through it. **`AuthService::hasSufficientRole` was deliberately left as-is** — it uses the fail-secure form (unknown REQUIRED role → `PHP_INT_MAX` → deny everyone), the security-critical dispatch gate, which must NOT be unified onto the 0-fallback semantics.
 - **LOGIN-UX-001** — resolved 2026-06-03. Show-password toggle added via `password-toggle.js` (backend asset). One accessible eye button (`aria-pressed` / `aria-label`, focusable), binds to `input[type="password"]` within scope — no template marker, no inline JS. Login + setup load it statically (`addJs`, self-inits on DOM ready); user-edit loads it lazily (`load-script`, popup-scoped) alongside the meter. `LoginController` form renders funnel through a single `renderForm()` so the toggle is registered on the initial GET and on every POST error re-render.
 
 ## pending

@@ -373,6 +373,10 @@ final class LoginFlow
      */
     public function logout(?int $now = null): void
     {
+        // The ACL projection (auth_user, realm member) is NOT touched here:
+        // it is derived per request by MemberAuthBridge, and the logout
+        // response is a redirect — the next request's bridge run finds no
+        // member session and clears it before AccessGuard reads it.
         $this->deviceKeys->forgetCurrent($now);
         $this->session->end();
     }

@@ -266,7 +266,7 @@ address in config:
   settings v2» section): `EmailFormSetting` entity (incl. `active` flag) +
   `EmailSettingsController` (Service → E-Mail, navigation seed id 27) + entity-first
   resolution (override applies only while active), `routeKey` routing and the `ref:`
-  Kundenstamm seam in `EmailService`. Backend layout mirrors navigation/login-user
+  Kundenstamm seam in `EmailService`. Backend layout mirrors navigation/backend-user
   (`be-tree--hub` + inline active switch + ⋮ actions hub → edit / confirm-reset). Verified
   via CLI harness (24 checks: config fallback, active override, dormant override → config +
   routeKey ignored, route hit with/without subject, unknown routeKey → defaults, `ref:`

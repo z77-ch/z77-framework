@@ -13,7 +13,7 @@ use Z77\Persistence\Resolver\UnifiedEntityManager;
  * nothing more. B9/B10 build their permission checks on top of this;
  * the member controllers use it as their page guard.
  *
- * Distinct from the z77 admin login (AuthUser/loginUsers.json) by design —
+ * Distinct from the z77 admin login (AuthUser/backendUsers.json) by design —
  * B8 is the customer login, the backend login stays untouched.
  */
 final class MemberAuth

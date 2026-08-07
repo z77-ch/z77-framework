@@ -4,7 +4,7 @@
 // overwritten — adapt retention / excludes / database per installation there.
 return [
     // Backup root, relative to the project root. MUST stay outside the web root
-    // (htmlRoot) — archives contain data/framework/auth/loginUsers.json.
+    // (htmlRoot) — archives contain data/framework/auth/backendUsers.json.
     'dir'          => 'backup',
 
     // Kept archives per type after each run; 0 = unlimited (no cleanup).

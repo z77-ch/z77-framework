@@ -111,7 +111,7 @@ A **driver-abstracted persistence layer with Repository Pattern and Port/Adapter
   │       │
   │       ├─ found  → new NavigationRepository(FileRepository)
   │       │              shared/src/Repositories/NavigationRepository.php
-  │       │              (also: MetaDataRepository, LoginUserRepository)
+  │       │              (also: MetaDataRepository, BackendUserRepository)
   │       │
   │       └─ not found  → returns generic FileRepository directly
   │

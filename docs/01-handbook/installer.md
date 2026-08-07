@@ -282,7 +282,7 @@ JSON files are written on first install only. If the file already exists it is n
 | `data/framework/routing/navigation.json` | `packages/kernel/core/data/framework/routing/navigation.default.json` |
 | `data/framework/seo/metadata.json` | `packages/kernel/core/data/framework/seo/metadata.default.json` |
 
-`data/framework/auth/loginUsers.json` is **not** seeded from a default — no credential is shipped (the framework is open source). The admin is created by `provisionAdmin()`: an interactive install prompts for a password; a non-interactive install writes a one-time `SETUP_TOKEN` under `data/framework/auth/` and defers admin creation to `/backend/system/setup/setup`. See [`docs/topics/security.md`](../topics/security.md).
+`data/framework/auth/backendUsers.json` is **not** seeded from a default — no credential is shipped (the framework is open source). The admin is created by `provisionAdmin()`: an interactive install prompts for a password; a non-interactive install writes a one-time `SETUP_TOKEN` under `data/framework/auth/` and defers admin creation to `/backend/system/setup/setup`. See [`docs/topics/security.md`](../topics/security.md).
 
 ---
 
@@ -381,7 +381,7 @@ composer install
                     ├── 9. Write config/fileFinder.inc.php
                     └── 10. Seed data files (skip if already exist)
                             ├── data/framework/routing/navigation.json
-                            ├── data/framework/auth/loginUsers.json
+                            ├── data/framework/auth/backendUsers.json
                             └── data/framework/seo/metadata.json
 ```
 

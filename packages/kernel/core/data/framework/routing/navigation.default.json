@@ -88,7 +88,7 @@
         "name": "Benutzer",
         "module": "backend",
         "group": "system",
-        "controller": "login-user",
+        "controller": "backend-user",
         "action": "list",
         "slot": "",
         "ref": null,

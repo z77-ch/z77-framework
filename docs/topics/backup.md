@@ -34,7 +34,7 @@ frontends: the backend screen `/backend/service/backup/list` (new group
 
 | Type | Source | Notes |
 |---|---|---|
-| `data` | the whole `data/` tree | includes `loginUsers.json` — hence the SUPER_USER gate |
+| `data` | the whole `data/` tree | includes `backendUsers.json` — hence the SUPER_USER gate |
 | `db` | SQL dump (v1: `mysqldump` via {@see MysqlDumper}) | only when the `database` block in `config/backup.inc.php` is set; otherwise UI shows "not configured", CLI no-ops with exit 0 |
 | `full` | project root minus `fullExcludes` | `vendor/`/`node_modules/` are regenerable from the lock files; the backup root itself is ALWAYS excluded (recursion guard) |
 
@@ -88,7 +88,7 @@ permission — no token, no HTTP (ADR-028).
 ## rules
 
 - When adding backup behaviour → MUST go into `Z77\Shared\Backup\*` (kernel, HTTP-free) so UI and CLI stay two thin frontends over one implementation; MUST NOT put backup logic into the controller or the bin script
-- When changing where archives are stored → MUST keep the backup root outside `htmlRoot` (archives contain `data/framework/auth/loginUsers.json`) and MUST keep the recursion guard (backup root excluded from `full`)
+- When changing where archives are stored → MUST keep the backup root outside `htmlRoot` (archives contain `data/framework/auth/backendUsers.json`) and MUST keep the recursion guard (backup root excluded from `full`)
 - When resolving a submitted archive name (download/delete) → MUST go through `BackupHistory::resolvePath()` (pattern + type check); MUST NOT concatenate request input into a path
 - When touching the run flow → MUST keep every failure a thrown `\RuntimeException` (installer error-model) and MUST keep the `.tmp`-then-rename write so aborted runs leave no listable archive
 - When adding a database engine → MUST implement `DbDumperInterface`; credentials MUST NOT appear on the command line (process list) — use a defaults file or environment, like `MysqlDumper`

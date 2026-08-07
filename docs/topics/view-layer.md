@@ -119,7 +119,7 @@ prototype handoff (`{projekt}/work/docs/topics/partial-labels.md`).
   depth; debounced reposition on resize + body ResizeObserver).
 - **Gate (`PartialLabels::active()`, all three required, PARTIAL-LABELS-002):**
   `DEBUG` **AND** session role >= admin **AND** the per-user preference
-  `partial_labels[viewArea]` on the `LoginUser` (`UserPreferences`, view area =
+  `partial_labels[viewArea]` on the `BackendUser` (`UserPreferences`, view area =
   request module key, ADR-022). Each user toggles the overlay for themselves —
   two simultaneously logged-in admins can have opposite states. The DEBUG part
   is load-bearing: under DEBUG the page cache is bypassed, so markers/script can
@@ -168,7 +168,7 @@ prototype handoff (`{projekt}/work/docs/topics/partial-labels.md`).
 - **PARTIAL-LABELS-002** — rebuilt 2026-07-18. The global flag
   (`data/framework/partial-labels.flag` + backend service-panel toggle) became a
   **per-user, per-viewArea preference** (`UserPreferences::partial_labels`, stored on the
-  `LoginUser`): each admin decides for themselves, concurrent admins are independent.
+  `BackendUser`): each admin decides for themselves, concurrent admins are independent.
   Toggle moved into the frontend admin overlay (form POST, no JS, only rendered under
   DEBUG); backend toggle, flag file, and `PartialLabels::flagFile()/flagSet()` removed —
   a leftover flag file is inert and can be deleted. Gate now DEBUG AND admin AND

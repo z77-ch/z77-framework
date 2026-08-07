@@ -3,7 +3,7 @@
 /** @var string|null $error */
 /** @var string $username */
 /** @var string $csrfToken */
-/** @var \Z77\Shared\Validators\LoginUserValidator|null $validator */
+/** @var \Z77\Shared\Validators\BackendUserValidator|null $validator */
 
 $mode      = $mode      ?? 'form';
 $error     = $error     ?? null;

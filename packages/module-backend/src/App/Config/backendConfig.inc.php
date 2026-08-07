@@ -91,7 +91,7 @@ return [
             ],
         ],
         // Installation service tools. Backups contain the whole user store
-        // (loginUsers.json) and possibly DB dumps — SUPER_USER on every action
+        // (backendUsers.json) and possibly DB dumps — SUPER_USER on every action
         // (inherited from controllerRole; ADR-021 governance, docs/topics/backup.md).
         'service' => [
             'BackupController' => [
