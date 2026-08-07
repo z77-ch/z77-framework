@@ -198,6 +198,7 @@ overwritten. See [`security.md`](security.md) and [`installer.md`](installer.md)
 - [`fetch.md`](fetch.md) — CSRF validation in `AccessGuard` (Fetch POSTs only; the login form is a classic POST and validates the token in the controller itself)
 - [`messages.md`](messages.md) — `LoginController::logoutAction` and `handlePost()` call `messageService->pushFlashAfterRedirect()` before returning the `RedirectResponse` for post-login greeting and logout confirmation
 - [`security.md`](security.md) — `PasswordPolicy`, `passwordWeak` nag, secure-by-default install + setup token, open security pendenzen (SEC-001…004)
+- [`member.md`](member.md) — the SECOND identity: passwordless customer accounts with their own session and their own guard. It never writes `auth_user`, so `AccessGuard` sees a signed-in customer as a guest; the separation is ADR-029
 
 ## known issues
 

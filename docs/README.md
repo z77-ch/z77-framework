@@ -72,6 +72,7 @@ Structure is enforced by `npm run docs:check` ([docs-lint/STANDARD.md](../docs-l
 | installer, `composer install`, project setup | [topics/installer.md](topics/installer.md) |
 | login, auth, session, AccessGuard | [topics/login.md](topics/login.md) |
 | mail, email, e-mail versand / configure email sending, SMTP, contact form / kontaktformular, form mail, emailConfig, sender / from address, EmailService, backend mail settings | [topics/mail.md](topics/mail.md) |
+| member accounts, customer login / kundenlogin, passwordless, magic link, registration / registrierung, TOTP 2FA, stay signed in / angemeldet bleiben, device keys | [topics/member.md](topics/member.md) |
 | messages, flash messages | [topics/messages.md](topics/messages.md) |
 | metadata, SEO | [topics/metadata.md](topics/metadata.md) |
 | navigation | [topics/navigation.md](topics/navigation.md) |

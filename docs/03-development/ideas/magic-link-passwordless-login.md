@@ -1,7 +1,27 @@
 # Magic Link — Passwordless Login
 
-**Status:** `[IDEA]`
-**Date:** 2026-04 (captured 2026-07-11)
+**Status:** `[BUILT]` — realised 2026-08-06/07 in `module-member`, for CUSTOMER accounts
+**Date:** 2026-04 (captured 2026-07-11, outcome recorded 2026-08-07)
+
+> **What became of this idea.** The passwordless login exists — see
+> [`../../topics/member.md`](../../topics/member.md). It was built for a different consumer
+> than the one sketched below (customer accounts of a property-management application, not a
+> shop checkout), and the cross-device part came out differently on purpose. The sections
+> below are kept as the original thinking; the deltas are listed here.
+>
+> | Idea | Built |
+> |---|---|
+> | Link click logs in immediately, any device | Link opens a confirmation page with two buttons — release the waiting device, or sign in here |
+> | Polling browser logs in when status flips to `confirmed` | Same mechanism (`/member/main/login/status`, 3 s), but the flip needs a human POST, never the GET from the mail: scanners and safe-link services fetch every link automatically and would release the session unattended |
+> | No signal to tell an own login from a stranger's | Check digits + context line (time, device) on both screens and in the mail subject — display only, never an input |
+> | Validity 5 min, rate limit 3 / 10 min | 15 min, 5 per address and hour (shared window with registration) |
+> | Login creates no account | Registration is a separate, confirmed flow with operator activation (accounts exist before login) |
+> | `login_requests` table | `MemberPendingLogin` + `MemberToken`, file-driven through the UEM |
+>
+> Still open from the questions below: binding strength for the cross-device case is answered
+> by the waiting record being bound to the requesting **session** (no fingerprinting); the
+> relationship to the `secondFactor` roadmap is unchanged — that roadmap is about `LoginUser`,
+> this login is a separate identity (ADR-029).
 **Context:** Originated from a client concept (wine-shop checkout) — replace password login to
 lower checkout friction. Framework-level relevance: the passwordless variant of the
 `secondFactor` roadmap in [`../../topics/security.md`](../../topics/security.md) (`none` / `totp` / `magic`).

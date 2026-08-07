@@ -1,6 +1,6 @@
 # security
 
-2026-07-03
+2026-08-07
 
 ## entry
 
@@ -154,3 +154,10 @@ still the right tool for a non-form endpoint that needs the same protections.
 - **Docroot/deny hardening** — ship `.htaccess`/nginx deny rules so `data/` (password hashes) is never web-served even on a misconfigured docroot (defense-in-depth).
 - **`config/auth.inc.php` future tenants** — introduced for `passwordTier` (PWD-POLICY-001, resolved). Intended home for the remaining installation-wide auth-policy values once those pendenzen land: rate-limit / lockout thresholds (SEC-004). Add the keys there at that point — deliberately NOT pre-created (no settings on stock). NOTE: per-user auth properties (e.g. `secondFactor`) do NOT belong here; they live on the `LoginUser` entity (see roadmap below). Only a global *mandate* could ever be a config key.
 - **Roadmap (stronger auth)** — second factor is a **per-user** property on the `LoginUser` entity (decided 2026-06-03), set by the admin in the user-edit form or by the user themselves (self-service later) — NOT installation/module config (a global config cannot hold per-account TOTP secrets). New field `secondFactor` (`none` / `totp` / `magic`) + a `SecondFactor` enum in `shared/src/Auth/` (domain value of `LoginUser`, alongside `PasswordTier`); TOTP enrolment adds a stored secret field. The login flow (`AuthService` / `LoginController`) branches on it. Separate, optional, later: a *mandate* policy (e.g. \"admins must enable 2FA\") — global/role-level, distinct from the per-user enablement field. Also: Passkeys/WebAuthn (passwordless, phishing-resistant); email on the account (set at setup) for password reset + 2FA delivery — email belongs on the account, NOT in `composer.json` as an install gate. See [`login.md`](login.md) (LoginUser entity) + [`backend.md`](backend.md) (user-edit form).
+  **Status note 2026-08-07:** none of this is done for `LoginUser`. What exists is a working
+  TOTP implementation in `module-member` (RFC 6238 with the RFC vectors, AES-256-GCM secret
+  vault, 5-failure / 15-minute lockout, QR enrolment) plus a passwordless magic-link login —
+  but for CUSTOMER accounts on a separate identity, not for `LoginUser`
+  (see [`member.md`](member.md), [`../02-decisions/adr-029-member-session-and-framework-acl.md`](../02-decisions/adr-029-member-session-and-framework-acl.md)).
+  Those services are reusable for the admin login when this roadmap item is taken up; the
+  `secondFactor` field, the enum and the `AuthService` branch are still missing.
