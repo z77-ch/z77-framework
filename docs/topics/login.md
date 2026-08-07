@@ -180,6 +180,17 @@ normal, grant-managed role and is never provisioned). The username stays `admin`
 Provisioning runs once: an existing `data/framework/auth/backendUsers.json` is never
 overwritten. See [`security.md`](security.md) and [`installer.md`](installer.md).
 
+## the second door (member login, ADR-029)
+
+This topic covers the BACKEND login (`BackendUser`, password). Since 2026-08-07
+the framework has a second door that feeds the SAME ACL: the member login
+(module-member, passwordless) projects its session into `auth_user` via
+`AuthBridgeInterface` / `MemberAuthBridge` — realm `member`, role `customer`
+(15), run by `AccessGuard::enforce()` before role resolution. A module carrying
+such routes sets its own `loginUrl` (memberConfig: `/member/main/login`) so the
+guard never sends a customer to the admin login. Details: `member.md`
+(MEM-001) and ADR-029, second decision.
+
 ## rules
 
 - When defining a controller for the login page → MUST extend `AbstractBaseController`, NOT a security controller (login page must be accessible without auth)
