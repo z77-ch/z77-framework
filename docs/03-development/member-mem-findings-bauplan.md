@@ -111,7 +111,7 @@ isolated scope must stay a method, not a static closure, for exactly that reason
 
 Blast radius, measured:
 
-- **240 framework templates + the zihlundsee project tree contain no `$path`, `$context`,
+- **120 framework templates and 48 project templates contain no `$path`, `$context`,
   `$data` or `$tplPath`.** The single hit is `slider.tpl.php`, where `$path` is a `foreach`
   value the template assigns itself before reading — unaffected either way.
 - **No caller passes a context key of those names.** Every `'path' =>` in the codebase is an
