@@ -96,6 +96,26 @@ final class TokenService
     }
 
     /**
+     * The LIVE token behind a plaintext — right purpose, unused, unexpired —
+     * WITHOUT redeeming it. The B8 confirmation page needs this: it shows the
+     * context of a link the visitor has not decided about yet, and only the
+     * button press may consume it.
+     */
+    public function inspect(string $plain, string $purpose, ?int $now = null): ?MemberToken
+    {
+        $now ??= time();
+
+        $token = $this->repository()->findOneBy(['token_hash' => hash('sha256', $plain)]);
+
+        return $token instanceof MemberToken
+            && $token->getPurpose() === $purpose
+            && !$token->isUsed()
+            && !$token->isExpired($now)
+                ? $token
+                : null;
+    }
+
+    /**
      * Account id a plaintext belongs to — regardless of used/expired, WITHOUT
      * redeeming. The confirm flow needs this to tell "link already used and
      * the account is confirmed" (→ «bereits bestätigt») apart from a dead

@@ -87,6 +87,8 @@ return [
                 'controllerRole' => AuthRole::GUEST,
                 'actions'        => [
                     'indexAction'  => AuthRole::GUEST,
+                    'wartenAction' => AuthRole::GUEST,
+                    'statusAction' => AuthRole::GUEST,
                     'dankeAction'  => AuthRole::GUEST,
                     'redeemAction' => AuthRole::GUEST,
                     'totpAction'   => AuthRole::GUEST,

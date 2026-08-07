@@ -3,8 +3,10 @@
 /**
  * CLI / cron entry for the B7 cleanup (spec: daily run). Deletes accounts
  * that were never confirmed within the grace period (memberConfig
- * `cleanupAfterDays`, default 30) and every token that can no longer redeem
- * (used, expired, orphaned). 'confirmed' accounts are NEVER touched — they
+ * `cleanupAfterDays`, default 30), every token that can no longer redeem
+ * (used, expired, orphaned) and every waiting login past its window (B8
+ * stage D — those expire after 15 minutes, so the daily run only sweeps up
+ * what nobody came back for). 'confirmed' accounts are NEVER touched — they
  * wait for the operator's activate/reject decision.
  *
  * Run from the PROJECT root (the installation whose data/ is cleaned):
@@ -25,6 +27,7 @@ require ABS_BASE_PATH . '/vendor/autoload.php';
 use Z77\Core\DI;
 use Z77\Core\Libraries\CacheManager;
 use Z77\Module\Member\Services\MemberAccounts;
+use Z77\Module\Member\Services\PendingLogins;
 use Z77\Module\Member\Services\TokenService;
 use Z77\Persistence\Resolver\DataSourceResolver;
 use Z77\Persistence\Resolver\UnifiedEntityManager;
@@ -64,7 +67,8 @@ $deletedTokens   = $tokens->purge(array_map(
     static fn($a) => (string)$a->getId(),
     $accounts->all()
 ));
+$deletedPending  = (new PendingLogins($uem))->purge();
 
 echo "member-cleanup: {$deletedAccounts} account(s) removed (never confirmed within {$days} days), "
-   . "{$deletedTokens} dead token(s) purged\n";
+   . "{$deletedTokens} dead token(s) purged, {$deletedPending} expired waiting login(s) dropped\n";
 exit(0);

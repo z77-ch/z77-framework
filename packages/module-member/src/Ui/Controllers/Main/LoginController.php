@@ -40,32 +40,111 @@ class LoginController extends AbstractMemberController
         );
 
         if ($form->process($onValid)) {
-            return $this->redirect('/member/main/login/danke');
+            return $this->redirect('/member/main/login/warten');
         }
 
         return $this->html(['pageTitle' => 'Anmelden'] + $form->viewContext());
     }
 
-    /** PRG target — neutral by spec: «falls ein Konto besteht, ist eine Mail unterwegs». */
-    protected function dankeAction(): HtmlResponse
+    /**
+     * PRG target — neutral by spec («falls ein Konto besteht, ist eine Mail
+     * unterwegs»), plus the check digits this request is waiting under. The
+     * page polls the status; a visitor who lands here without a waiting
+     * record (bookmark, reload after the window) just sees the neutral text.
+     */
+    protected function wartenAction(): HtmlResponse
     {
-        return $this->html(['pageTitle' => 'Anmeldung angefordert']);
+        $pending = $this->loginFlow()->currentPending();
+
+        if ($pending !== null) {
+            $this->layoutManager->addJs('login-wait', self::NAMESPACE, 'footer', true);
+        }
+
+        return $this->html([
+            'pageTitle' => 'Anmeldung angefordert',
+            'digits'    => $pending?->getCheckDigits() ?? '',
+        ]);
     }
 
-    /** The link click: session, the TOTP prompt, or back with a hint. */
-    protected function redeemAction(): RedirectResponse
+    /** The old PRG target — kept so bookmarked/queued links do not 404. */
+    protected function dankeAction(): RedirectResponse
     {
-        $outcome = $this->loginFlow()->redeem(
-            (string)DI::getRequest()->getGetParameter('token')
-        );
+        return $this->redirect('/member/main/login/warten');
+    }
 
-        if ($outcome === LoginFlow::SESSION) {
-            return $this->redirect('/member/main/profile');
-        }
-        if ($outcome === LoginFlow::TOTP_REQUIRED) {
-            return $this->redirect('/member/main/login/totp');
+    /**
+     * The status poll of the waiting device (JSON). Says only how far its OWN
+     * request got — never anything about an account, and never about someone
+     * else's record: the id comes from this browser's session, nowhere else.
+     */
+    protected function statusAction(): JsonResponse
+    {
+        $outcome = $this->loginFlow()->poll();
+
+        return new JsonResponse(match ($outcome) {
+            LoginFlow::SESSION       => ['state' => 'session', 'redirect' => '/member/main/profile'],
+            LoginFlow::TOTP_REQUIRED => ['state' => 'session', 'redirect' => '/member/main/login/totp'],
+            LoginFlow::WAITING       => ['state' => 'waiting'],
+            default                  => ['state' => 'dead'],
+        });
+    }
+
+    /**
+     * The link click — the confirmation page (spec 1.1.0, decision 5). GET
+     * shows what was requested (time, device, check digits) and two buttons;
+     * POST decides WHICH device gets the session:
+     *
+     *   confirm → releases the waiting record, the requesting device signs in
+     *   here    → this device signs in (the plain magic-link behaviour)
+     *
+     * A link whose waiting record is gone still offers «hier anmelden».
+     */
+    protected function redeemAction(): HtmlResponse|RedirectResponse
+    {
+        $request = DI::getRequest();
+        $flow    = $this->loginFlow();
+        $token   = (string)($request->isPost()
+            ? $request->getPostParameter('token')
+            : $request->getGetParameter('token'));
+
+        if ($request->isPost() && DI::getCsrfService()->validate((string)$request->getPostParameter('csrf_token'))) {
+            if ((string)$request->getPostParameter('decision') === 'confirm') {
+                if ($flow->approve($token) === LoginFlow::APPROVED) {
+                    return $this->html([
+                        'pageTitle' => 'Anmeldung bestätigt',
+                        'confirmed' => true,
+                        'pending'   => null,
+                        'token'     => '',
+                    ]);
+                }
+            } else {
+                $outcome = $flow->redeem($token);
+                if ($outcome === LoginFlow::SESSION) {
+                    return $this->redirect('/member/main/profile');
+                }
+                if ($outcome === LoginFlow::TOTP_REQUIRED) {
+                    return $this->redirect('/member/main/login/totp');
+                }
+            }
+
+            return $this->deadLink();
         }
 
+        $context = $flow->linkContext($token);
+        if ($context === null) {
+            return $this->deadLink();
+        }
+
+        return $this->html([
+            'pageTitle' => 'Anmeldung bestätigen',
+            'confirmed' => false,
+            'pending'   => $context['pending'],
+            'token'     => $token,
+        ]);
+    }
+
+    private function deadLink(): RedirectResponse
+    {
         $this->messageService->pushFlashAfterRedirect(
             'error',
             'Dieser Anmelde-Link ist nicht mehr gültig — fordern Sie einen neuen an.'

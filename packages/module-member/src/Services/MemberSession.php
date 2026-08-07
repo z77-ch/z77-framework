@@ -26,6 +26,7 @@ final class MemberSession
     private const KEY_TOTP_PENDING = 'member.totpPendingId';
     private const KEY_TOTP_SINCE   = 'member.totpPendingAt';
     private const KEY_TOTP_REMEMBER = 'member.totpPendingRemember';
+    private const KEY_PENDING_LOGIN = 'member.pendingLoginId';
 
     public function __construct(private SessionManager $session)
     {
@@ -114,6 +115,30 @@ final class MemberSession
         $this->session->remove(self::KEY_TOTP_PENDING);
         $this->session->remove(self::KEY_TOTP_SINCE);
         $this->session->remove(self::KEY_TOTP_REMEMBER);
+    }
+
+    // ── the waiting login (B8 stage D) ─────────────────────────────────────
+
+    /**
+     * The requesting device remembers ITS waiting record here — and nowhere
+     * else. That binding is the whole access control of the status poll: only
+     * the browser that asked can ask how it went.
+     */
+    public function setPendingLoginId(string $pendingId): void
+    {
+        $this->session->set(self::KEY_PENDING_LOGIN, $pendingId);
+    }
+
+    public function pendingLoginId(): ?string
+    {
+        $id = $this->session->get(self::KEY_PENDING_LOGIN);
+
+        return is_string($id) && $id !== '' ? $id : null;
+    }
+
+    public function clearPendingLogin(): void
+    {
+        $this->session->remove(self::KEY_PENDING_LOGIN);
     }
 
     private function regenerate(): void

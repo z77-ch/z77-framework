@@ -4,6 +4,7 @@ namespace Z77\Module\Member\Services;
 
 use Z77\Core\DI;
 use Z77\Module\Member\Entities\MemberAccount;
+use Z77\Module\Member\Entities\MemberPendingLogin;
 use Z77\Module\Member\Entities\MemberToken;
 use Z77\Persistence\Resolver\DataSourceResolver;
 use Z77\Persistence\Resolver\UnifiedEntityManager;
@@ -17,11 +18,18 @@ use Z77\Shared\Mail\EmailMessage;
  *              (spec table) — login link (confirmed/active), a fresh B7
  *              confirmation link (registered), or the "no account here"
  *              hint with the registration link (unknown). The page answer
- *              is identical in every case (anti-oracle).
- *   redeem()   the link click: 'session' (signed in) | 'dead' (unknown,
- *              expired or used — one answer, back to the request page).
- *              The TOTP interstitial (stage B) hooks in between.
+ *              is identical in every case (anti-oracle), and a waiting
+ *              record is opened for EVERY request (stage D).
+ *   redeem()   the link click, «here»: session on the READING device.
+ *   approve()  the link click, «confirm»: releases the waiting record so the
+ *              REQUESTING device can sign in (spec 1.1.0, decision 5).
+ *   poll()     what the requesting device asks every few seconds until its
+ *              record is released — this is where its session is born.
  *   logout()   ends the member session.
+ *
+ * Which device gets the session decides everything downstream: the TOTP
+ * prompt and the «angemeldet bleiben» key always follow the session, never
+ * the click.
  *
  * Login tokens live in the SAME store as confirmation tokens with
  * purpose 'login' (B7 spec: one mechanism, two effects) — but short-lived:
@@ -34,6 +42,11 @@ final class LoginFlow
     public const SESSION       = 'session';
     public const TOTP_REQUIRED = 'totp-required';
     public const DEAD          = 'dead';
+
+    /** poll(): the record is still waiting for the other device. */
+    public const WAITING  = 'waiting';
+    /** approve(): released — the requesting device takes it from here. */
+    public const APPROVED = 'approved';
 
     public const TOTP_INVALID = 'invalid';
     public const TOTP_LOCKED  = 'locked';
@@ -52,6 +65,7 @@ final class LoginFlow
         private TotpVault $totpVault,
         private TotpGuard $totpGuard,
         private DeviceKeys $deviceKeys,
+        private PendingLogins $pending,
         private \Closure $sendMail,
         private string $redeemUrl,
         private string $registerUrl,
@@ -72,6 +86,7 @@ final class LoginFlow
             TotpVault::create(),
             TotpGuard::create(),
             DeviceKeys::create(),
+            new PendingLogins($uem),
             static fn(EmailMessage $mail): bool => DI::getEmailService()->send($mail),
             $redeemUrl,
             $registerUrl,
@@ -82,23 +97,166 @@ final class LoginFlow
      * The request submit. False only on throttle; true otherwise — the
      * visitor-facing answer never reveals whether the address has an account
      * or in which state.
+     *
+     * A waiting record is opened either way (stage D) and remembered in this
+     * device's session: the waiting page must look identical whether a link
+     * went out or not. Without a link it simply never turns green.
      */
     public function request(string $email, bool $remember = false, ?int $now = null): bool
     {
-        $now ??= time();
-        if (!$this->throttle->allow($email, $now)) {
-            return false;
+        $now     = $now ?? time();
+        $allowed = $this->throttle->allow($email, $now);
+        $plain   = null;
+
+        if ($allowed) {
+            $account = $this->accounts->findByEmail($email);
+
+            ($this->sendMail)(match (true) {
+                $account === null        => $this->noAccountMail($email),
+                $account->isRegistered() => $this->registration->confirmMailFor($account, $now),
+                default                  => $this->loginMail($account, $remember, $now, $plain), // confirmed or active
+            });
         }
 
-        $account = $this->accounts->findByEmail($email);
+        $record = $this->pending->open(
+            $plain !== null ? hash('sha256', $plain) : null,
+            DeviceKeys::label((string)($_SERVER['HTTP_USER_AGENT'] ?? '')),
+            $remember,
+            self::LOGIN_TTL_SECONDS,
+            $now
+        );
+        $this->session->setPendingLoginId((string)$record->getId());
 
-        ($this->sendMail)(match (true) {
-            $account === null          => $this->noAccountMail($email),
-            $account->isRegistered()   => $this->registration->confirmMailFor($account, $now),
-            default                    => $this->loginMail($account, $remember, $now), // confirmed or active
-        });
+        return $allowed;
+    }
 
-        return true;
+    /** The waiting record of THIS device, or null (none, or past its window). */
+    public function currentPending(?int $now = null): ?MemberPendingLogin
+    {
+        $id = $this->session->pendingLoginId();
+        if ($id === null) {
+            return null;
+        }
+
+        $record = $this->pending->find($id);
+
+        return $record !== null && !$record->isExpired($now ?? time()) ? $record : null;
+    }
+
+    /**
+     * What the confirmation page shows BEFORE anything is consumed: the
+     * context of the request behind this link (digits, device, time), or null
+     * for a dead link. Returns the record too — a link whose waiting record is
+     * gone can still be used to sign in on the reading device, so the page
+     * then offers only that button.
+     *
+     * @return ?array{token: \Z77\Module\Member\Entities\MemberToken, pending: ?MemberPendingLogin}
+     */
+    public function linkContext(?string $plainToken, ?int $now = null): ?array
+    {
+        $now        = $now ?? time();
+        $plainToken = trim((string)$plainToken);
+        if ($plainToken === '') {
+            return null;
+        }
+
+        $token = $this->tokens->inspect($plainToken, MemberToken::PURPOSE_LOGIN, $now);
+        if ($token === null) {
+            return null;
+        }
+
+        $record = $this->pending->findByTokenHash($token->getTokenHash());
+
+        return [
+            'token'   => $token,
+            'pending' => $record !== null && !$record->isExpired($now) && !$record->isApproved() ? $record : null,
+        ];
+    }
+
+    /**
+     * «Anmeldung auf Gerät xy bestätigen» — consumes the link and releases the
+     * waiting record. NO session is created here: the reading device stays
+     * signed out, the requesting one picks it up in poll().
+     */
+    public function approve(?string $plainToken, ?int $now = null): string
+    {
+        $now        = $now ?? time();
+        $plainToken = trim((string)$plainToken);
+        if ($plainToken === '') {
+            return self::DEAD;
+        }
+
+        $token = $this->tokens->redeemToken($plainToken, MemberToken::PURPOSE_LOGIN, $now);
+        if ($token === null) {
+            return self::DEAD;
+        }
+
+        $account = $this->accounts->findById($token->getAccountRef());
+        if ($account === null || $account->isRegistered()) {
+            return self::DEAD;
+        }
+
+        $record = $this->pending->findByTokenHash($token->getTokenHash());
+        if ($record === null || $record->isExpired($now)) {
+            // The request behind this link is gone (window passed, or it was
+            // already used up elsewhere) — nothing left to release.
+            return self::DEAD;
+        }
+
+        $this->pending->approve($record, (string)$account->getId());
+
+        return self::APPROVED;
+    }
+
+    /**
+     * The status poll of the WAITING device. 'waiting' until the other device
+     * confirms; then the session is born right here — with the TOTP prompt
+     * first when 2FA is on, and the device key going to THIS device, because
+     * this is where the tick was set (spec 1.1.0).
+     */
+    public function poll(?int $now = null): string
+    {
+        $now = $now ?? time();
+
+        $id = $this->session->pendingLoginId();
+        if ($id === null) {
+            return self::DEAD;
+        }
+
+        $record = $this->pending->find($id);
+        if ($record === null || $record->isExpired($now)) {
+            $this->session->clearPendingLogin();
+
+            return self::DEAD;
+        }
+        if (!$record->isApproved()) {
+            return self::WAITING;
+        }
+
+        $account = $this->accounts->findById((string)$record->getAccountRef());
+        if ($account === null) {
+            $this->session->clearPendingLogin();
+            $this->pending->delete($record);
+
+            return self::DEAD;
+        }
+
+        $remember = $record->wantsRemember();
+        $this->session->clearPendingLogin();
+        $this->pending->delete($record); // the process is done, one way or another
+
+        if ($account->hasTotp()) {
+            $this->session->startTotpPending((string)$account->getId(), $remember, $now);
+
+            return self::TOTP_REQUIRED;
+        }
+
+        $this->session->start((string)$account->getId(), $now);
+        if ($remember) {
+            $this->deviceKeys->issueFor($account, null, $now);
+        }
+
+        return self::SESSION;
     }
 
     /**
@@ -126,6 +284,14 @@ final class LoginFlow
             // Vanished, or never confirmed (a login token should not exist
             // for a registered account — defense in depth): no session.
             return self::DEAD;
+        }
+
+        // «Hier anmelden» ends the other device's wait: its record dies with
+        // the link, so its poll answers 'dead' instead of hanging until the
+        // window closes.
+        $waiting = $this->pending->findByTokenHash($token->getTokenHash());
+        if ($waiting !== null) {
+            $this->pending->delete($waiting);
         }
 
         if ($account->hasTotp()) {
@@ -209,7 +375,8 @@ final class LoginFlow
 
     // ── the mails ──────────────────────────────────────────────────────────
 
-    private function loginMail(MemberAccount $account, bool $remember, int $now): EmailMessage
+    /** @param ?string $plain out-param: the plaintext, so request() can bind the waiting record to it */
+    private function loginMail(MemberAccount $account, bool $remember, int $now, ?string &$plain = null): EmailMessage
     {
         $plain = $this->tokens->issue(
             (string)$account->getId(),
