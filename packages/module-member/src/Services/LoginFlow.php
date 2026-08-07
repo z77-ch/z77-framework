@@ -94,13 +94,15 @@ final class LoginFlow
     }
 
     /**
-     * The request submit. False only on throttle; true otherwise — the
-     * visitor-facing answer never reveals whether the address has an account
-     * or in which state.
+     * The request submit. Always true — the visitor-facing answer never reveals
+     * whether the address has an account, in which state, or whether the
+     * throttle just swallowed the mail. Only the mail differs.
      *
-     * A waiting record is opened either way (stage D) and remembered in this
+     * A waiting record is opened in every case (stage D) and remembered in this
      * device's session: the waiting page must look identical whether a link
-     * went out or not. Without a link it simply never turns green.
+     * went out or not. Without a link it simply never turns green — which is
+     * also what a throttled visitor sees, deliberately. The throttle keeps
+     * doing its job; it just stops being visible.
      */
     public function request(string $email, bool $remember = false, ?int $now = null): bool
     {
@@ -139,7 +141,7 @@ final class LoginFlow
             });
         }
 
-        return $allowed;
+        return true;
     }
 
     /** The waiting record of THIS device, or null (none, or past its window). */

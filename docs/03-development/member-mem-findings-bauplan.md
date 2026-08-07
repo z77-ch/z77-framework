@@ -1,6 +1,7 @@
 # Member findings (MEM-001…008) — solution plan
 
-**Status:** proposal, awaiting decision — nothing here is implemented
+**Status:** `[DONE]` — MEM-003, 005, 006 built and MEM-007 decided on 2026-08-07;
+MEM-001/002/004 stay documented constraints, MEM-008 deferred with a named trigger
 **Date:** 2026-08-07
 **Source:** [`member-login-security-review-2026-08-07.md`](member-login-security-review-2026-08-07.md),
 [`../topics/member.md`](../topics/member.md) `## known issues`
@@ -11,16 +12,28 @@ they stop being re-opened at every review.
 
 ## Summary
 
-| # | Finding | Proposal | Effort | Risk | Recommendation |
-|---|---|---|---|---|---|
-| MEM-006 | Mail links from the Host header | Canonical base URL in the kernel + fail-loud for mail links | ~½ day | low | **Do it** — the only real security item |
-| MEM-003 | `extract()` swallows `context` / `path` | Rename the renderer's own locals | ~1 h | low | **Do it** — removes a footgun class-wide |
-| MEM-005 | Throttled login answer differs | `request()` always returns true | ~15 min | low | **Do it** — restores a clean invariant |
-| MEM-007 | Confirm link changes state on a GET | Narrow the rule, keep the flow | ~15 min | none | **Decide** — I argue against the code change |
-| MEM-008 | Resume rewrites `accounts.json` | Roll the key lazily | ~1 h | low | **Defer** — motivation is thin today |
-| MEM-001 | `MemberAccount.roles` is not an ACL input | Nothing now; ADR-029 owns it | — | — | **Defer** to the first role-based member app |
-| MEM-002 | Member session vs. page cache | Nothing; documented constraint | — | — | **Keep documented** |
-| MEM-004 | Orphaned device keys | Nothing; cap + list already answer it | — | — | **Keep documented** |
+| # | Finding | Outcome |
+|---|---|---|
+| MEM-006 | Mail links from the Host header | **Built** — `canonicalBaseUrl` → `Request::getBaseUrl()`. Scope grew: the same header also fed the SEO canonical/hreflang, which the page cache stores by path only (see below) |
+| MEM-003 | `extract()` swallows `context` / `path` | **Built** — prefixed locals in all three render scopes; also closes review-create-css B1 |
+| MEM-005 | Throttled login answer differs | **Built** — `LoginFlow::request()` returns true unconditionally (login path only, deliberately) |
+| MEM-007 | Confirm link changes state on a GET | **Decided** — rule narrowed to state changes that grant access; the flow is unchanged |
+| MEM-008 | Resume rewrites `accounts.json` | **Deferred** — trigger: a shortened idle window or a dropped session cookie |
+| MEM-001 | `MemberAccount.roles` is not an ACL input | **Deferred** — ADR-029 owns it; trigger is the first role-based member app |
+| MEM-002 | Member session vs. page cache | **Documented constraint** — nothing to build |
+| MEM-004 | Orphaned device keys | **Documented constraint** — cap + profile list are the answer |
+
+### What the implementation turned up that this plan did not
+
+Removing the dead-looking `url_origin()` preBoot helper showed it was not dead:
+`AbstractBaseController::buildSeoLinks()` used it to build the SEO canonical and hreflang
+URLs from `HTTP_HOST`, and those are rendered INTO the page. `PageCache` keys on
+`{language}/{module}/{group}/{controller}/{action}` — **no host** — so a single request with
+a forged Host poisoned the canonical served to every later visitor until the entry expired.
+That is a wider blast radius than the mail case this plan was written around, and it landed
+in the same commit through the same seam. The review missed it because it scoped to
+`module-member`; the lesson is that a header-derived value is worth grepping framework-wide,
+not per module.
 
 ---
 
