@@ -34,7 +34,10 @@ class LoginController extends AbstractMemberController
 
         $form = PublicFormHandler::create(new LoginFormDefinition());
 
-        $onValid = fn($valid): bool => $this->loginFlow()->request((string)$valid->get('email'));
+        $onValid = fn($valid): bool => $this->loginFlow()->request(
+            (string)$valid->get('email'),
+            (bool)$valid->get('remember')
+        );
 
         if ($form->process($onValid)) {
             return $this->redirect('/member/main/login/danke');

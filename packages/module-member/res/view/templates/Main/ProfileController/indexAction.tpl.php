@@ -1,13 +1,15 @@
 <?php
 /**
- * Profile page (B8, stage A): account data + state. A confirmed account sees
- * «wartet auf Freischaltung» (B7 decision 4 — sign-in works, access is this
- * page only); an active one is a full member. 2FA and the device list join
- * in the next stages.
+ * Profile page (B8): account data + state, the 2FA switch, and the devices
+ * that stay signed in. A confirmed account sees «wartet auf Freischaltung»
+ * (B7 decision 4 — sign-in works, access is this page only); an active one
+ * is a full member.
  *
  * @var string $pageTitle
  * @var \Z77\Module\Member\Entities\MemberAccount $account
+ * @var array<int,array<string,mixed>> $devices device keys, newest use first
  */
+$day = static fn(string $iso): string => $iso === '' ? '' : date('d.m.Y', (int)strtotime($iso));
 $name = trim(($account->getFirstName() ?? '') . ' ' . ($account->getLastName() ?? ''));
 ?>
 <div class="me-card">
@@ -57,6 +59,44 @@ $name = trim(($account->getFirstName() ?? '') . ' ' . ($account->getLastName() ?
         zum Link einen 6-stelligen Code ab.
     </p>
     <p><a class="fe-form__submit" style="text-decoration:none" href="/member/main/profile/totp">2FA einrichten</a></p>
+    <?php endif; ?>
+
+    <h2 class="me-card__subtitle">Angemeldete Geräte</h2>
+    <?php if ($devices === []): ?>
+    <p>
+        Kein Gerät bleibt angemeldet. Setzen Sie beim Anmelden das Häkchen
+        «Auf diesem Gerät angemeldet bleiben», wenn Sie nicht jedes Mal einen
+        neuen Link anfordern möchten.
+    </p>
+    <?php else: ?>
+    <table class="me-devices">
+        <thead>
+            <tr><th>Gerät</th><th>Zuletzt genutzt</th><th>Gültig bis</th><th></th></tr>
+        </thead>
+        <tbody>
+        <?php foreach ($devices as $device): ?>
+            <tr>
+                <td>
+                    <?= e((string)$device['label']) ?>
+                    <?php if ($device['current']): ?><span class="me-devices__here">dieses Gerät</span><?php endif; ?>
+                </td>
+                <td><?= e($day((string)$device['last_used_at'])) ?></td>
+                <td><?= e($day((string)$device['valid_until'])) ?></td>
+                <td>
+                    <form method="post" action="/member/main/profile/device-remove">
+                        <input type="hidden" name="csrf_token" value="<?= e($csrfToken) ?>">
+                        <input type="hidden" name="device" value="<?= e((string)$device['id']) ?>">
+                        <button type="submit">Abmelden</button>
+                    </form>
+                </td>
+            </tr>
+        <?php endforeach; ?>
+        </tbody>
+    </table>
+    <form method="post" action="/member/main/profile/device-remove-all" class="fe-form">
+        <input type="hidden" name="csrf_token" value="<?= e($csrfToken) ?>">
+        <button class="fe-form__submit" type="submit">Alle Geräte abmelden</button>
+    </form>
     <?php endif; ?>
 
     <p class="me-card__aside">

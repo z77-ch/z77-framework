@@ -80,6 +80,16 @@ class MemberAccount
     #[Clean('nullable', 'text')]
     private ?string $totpActivatedAt = null;
 
+    /**
+     * B8 «angemeldet bleiben»: one entry per device that may resume a session
+     * without a new magic link. The plaintext key exists only in the device's
+     * cookie — here lives its SHA-256 hash. Entries are managed exclusively by
+     * the DeviceKeys service (issue, roll, revoke).
+     *
+     * @var array<int,array{id:string,key_hash:string,label:string,created_at:string,last_used_at:string,valid_until:string}>
+     */
+    private array $deviceKeys = [];
+
     public function __construct(array $data = [])
     {
         if ($data) {
@@ -119,6 +129,11 @@ class MemberAccount
 
     public function setTotpSecret(?string $totpSecret): void { $this->totpSecret = $totpSecret; }
     public function setTotpActivatedAt(?string $totpActivatedAt): void { $this->totpActivatedAt = $totpActivatedAt; }
+
+    /** @return array<int,array<string,string>> */
+    public function getDeviceKeys(): array { return $this->deviceKeys; }
+    /** @param array<int,array<string,string>> $deviceKeys */
+    public function setDeviceKeys(array $deviceKeys): void { $this->deviceKeys = array_values($deviceKeys); }
 
     public function setEmail(string $email): void { $this->email = self::normalizeEmail($email); }
     public function setCompany(?string $company): void { $this->company = $company; }

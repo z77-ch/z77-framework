@@ -51,6 +51,7 @@ final class LoginFlow
         private RegistrationFlow $registration,
         private TotpVault $totpVault,
         private TotpGuard $totpGuard,
+        private DeviceKeys $deviceKeys,
         private \Closure $sendMail,
         private string $redeemUrl,
         private string $registerUrl,
@@ -70,6 +71,7 @@ final class LoginFlow
             RegistrationFlow::create($confirmUrl),
             TotpVault::create(),
             TotpGuard::create(),
+            DeviceKeys::create(),
             static fn(EmailMessage $mail): bool => DI::getEmailService()->send($mail),
             $redeemUrl,
             $registerUrl,
@@ -81,7 +83,7 @@ final class LoginFlow
      * visitor-facing answer never reveals whether the address has an account
      * or in which state.
      */
-    public function request(string $email, ?int $now = null): bool
+    public function request(string $email, bool $remember = false, ?int $now = null): bool
     {
         $now ??= time();
         if (!$this->throttle->allow($email, $now)) {
@@ -93,7 +95,7 @@ final class LoginFlow
         ($this->sendMail)(match (true) {
             $account === null          => $this->noAccountMail($email),
             $account->isRegistered()   => $this->registration->confirmMailFor($account, $now),
-            default                    => $this->loginMail($account, $now), // confirmed or active
+            default                    => $this->loginMail($account, $remember, $now), // confirmed or active
         });
 
         return true;
@@ -114,12 +116,12 @@ final class LoginFlow
             return self::DEAD;
         }
 
-        $accountRef = $this->tokens->redeem($plainToken, MemberToken::PURPOSE_LOGIN, $now);
-        if ($accountRef === null) {
+        $token = $this->tokens->redeemToken($plainToken, MemberToken::PURPOSE_LOGIN, $now);
+        if ($token === null) {
             return self::DEAD;
         }
 
-        $account = $this->accounts->findById($accountRef);
+        $account = $this->accounts->findById($token->getAccountRef());
         if ($account === null || $account->isRegistered()) {
             // Vanished, or never confirmed (a login token should not exist
             // for a registered account — defense in depth): no session.
@@ -127,12 +129,16 @@ final class LoginFlow
         }
 
         if ($account->hasTotp()) {
-            $this->session->startTotpPending((string)$account->getId(), $now);
+            // The device key waits for the second factor (stage C).
+            $this->session->startTotpPending((string)$account->getId(), $token->wantsRemember(), $now);
 
             return self::TOTP_REQUIRED;
         }
 
         $this->session->start((string)$account->getId(), $now);
+        if ($token->wantsRemember()) {
+            $this->deviceKeys->issueFor($account, null, $now);
+        }
 
         return self::SESSION;
     }
@@ -169,28 +175,48 @@ final class LoginFlow
             return $this->totpGuard->isLocked($accountId, $now) ? self::TOTP_LOCKED : self::TOTP_INVALID;
         }
 
+        $remember = $this->session->totpPendingRemember();
+
         $this->totpGuard->reset($accountId);
         $this->session->clearTotpPending();
         $this->session->start($accountId, $now);
+        if ($remember) {
+            $this->deviceKeys->issueFor($account, null, $now);
+        }
 
         return self::SESSION;
     }
 
-    /** Ends the member session (the device key path is stage C). */
-    public function logout(): void
+    /**
+     * Ends the member session AND this device's key — otherwise the next visit
+     * would silently resume and «abmelden» would be a lie.
+     */
+    public function logout(?int $now = null): void
     {
+        $this->deviceKeys->forgetCurrent($now);
         $this->session->end();
+    }
+
+    /**
+     * «Alle Geräte abmelden» (profile): every device key of the account dies,
+     * this one included. The current session stays — the customer is standing
+     * on the profile page and asked for the OTHER devices to be locked out.
+     */
+    public function logoutAllDevices(MemberAccount $account): void
+    {
+        $this->deviceKeys->revokeAll($account);
     }
 
     // ── the mails ──────────────────────────────────────────────────────────
 
-    private function loginMail(MemberAccount $account, int $now): EmailMessage
+    private function loginMail(MemberAccount $account, bool $remember, int $now): EmailMessage
     {
         $plain = $this->tokens->issue(
             (string)$account->getId(),
             MemberToken::PURPOSE_LOGIN,
             self::LOGIN_TTL_SECONDS,
-            $now
+            $now,
+            $remember
         );
 
         $link = $this->redeemUrl . (str_contains($this->redeemUrl, '?') ? '&' : '?')

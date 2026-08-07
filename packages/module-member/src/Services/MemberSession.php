@@ -25,6 +25,7 @@ final class MemberSession
     private const KEY_LAST_SEEN    = 'member.lastSeenAt';
     private const KEY_TOTP_PENDING = 'member.totpPendingId';
     private const KEY_TOTP_SINCE   = 'member.totpPendingAt';
+    private const KEY_TOTP_REMEMBER = 'member.totpPendingRemember';
 
     public function __construct(private SessionManager $session)
     {
@@ -73,12 +74,23 @@ final class MemberSession
 
     // ── the TOTP interstitial (B8 stage B) ─────────────────────────────────
 
-    /** The redeemed link parks here when 2FA is active — no session yet. */
-    public function startTotpPending(string $accountId, ?int $now = null): void
+    /**
+     * The redeemed link parks here when 2FA is active — no session yet. The
+     * link's «angemeldet bleiben» wish waits here too: the device key may only
+     * be issued once the second factor is in (stage C).
+     */
+    public function startTotpPending(string $accountId, bool $remember = false, ?int $now = null): void
     {
         $this->regenerate();
         $this->session->set(self::KEY_TOTP_PENDING, $accountId);
         $this->session->set(self::KEY_TOTP_SINCE, $now ?? time());
+        $this->session->set(self::KEY_TOTP_REMEMBER, $remember);
+    }
+
+    /** Did the link that parks at the code prompt ask to stay signed in? */
+    public function totpPendingRemember(): bool
+    {
+        return (bool)$this->session->get(self::KEY_TOTP_REMEMBER, false);
     }
 
     /** Account waiting at the code prompt, or null (none / took too long). */
@@ -101,6 +113,7 @@ final class MemberSession
     {
         $this->session->remove(self::KEY_TOTP_PENDING);
         $this->session->remove(self::KEY_TOTP_SINCE);
+        $this->session->remove(self::KEY_TOTP_REMEMBER);
     }
 
     private function regenerate(): void

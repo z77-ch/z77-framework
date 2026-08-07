@@ -25,9 +25,18 @@ final class TokenService
     /**
      * New token for the account: returns the PLAINTEXT — hand it to the mail
      * and forget it. Previous open tokens of the same account+purpose die now.
+     *
+     * $remember rides along on login tokens only (B8 «angemeldet bleiben»):
+     * the wish belongs to the link, because the device that redeems it need
+     * not be the one that asked.
      */
-    public function issue(string $accountRef, string $purpose, int $ttlSeconds, ?int $now = null): string
-    {
+    public function issue(
+        string $accountRef,
+        string $purpose,
+        int $ttlSeconds,
+        ?int $now = null,
+        bool $remember = false
+    ): string {
         $now ??= time();
 
         foreach ($this->openTokens($accountRef, $purpose) as $old) {
@@ -41,6 +50,7 @@ final class TokenService
         $token->setAccountRef($accountRef);
         $token->setPurpose($purpose);
         $token->setValidUntil(date(DATE_ATOM, $now + $ttlSeconds));
+        $token->setRemember($remember);
 
         $this->uem->persist($token);
         $this->uem->flush();
@@ -56,6 +66,15 @@ final class TokenService
      * token question).
      */
     public function redeem(string $plain, string $purpose, ?int $now = null): ?string
+    {
+        return $this->redeemToken($plain, $purpose, $now)?->getAccountRef();
+    }
+
+    /**
+     * Same redemption, but hands back the token itself — for callers that need
+     * more than the account id (B8: the link's «angemeldet bleiben» flag).
+     */
+    public function redeemToken(string $plain, string $purpose, ?int $now = null): ?MemberToken
     {
         $now ??= time();
         $hash = hash('sha256', $plain);
@@ -73,7 +92,7 @@ final class TokenService
         $this->uem->persist($token);
         $this->uem->flush();
 
-        return $token->getAccountRef();
+        return $token;
     }
 
     /**

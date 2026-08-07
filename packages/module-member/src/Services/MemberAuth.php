@@ -21,6 +21,7 @@ final class MemberAuth
     public function __construct(
         private MemberSession $session,
         private MemberAccounts $accounts,
+        private DeviceKeys $deviceKeys,
     ) {
     }
 
@@ -30,15 +31,22 @@ final class MemberAuth
         return new self(
             new MemberSession(DI::getSessionManager()),
             new MemberAccounts(new UnifiedEntityManager(new DataSourceResolver(['file' => 'File']))),
+            DeviceKeys::create(),
         );
     }
 
-    /** The signed-in account, or null (nobody, idle-expired, or meanwhile deleted). */
+    /**
+     * The signed-in account, or null (nobody, idle-expired, or meanwhile
+     * deleted). When the short session is gone, the «angemeldet bleiben»
+     * device key gets its say: a valid key resumes the session right here —
+     * that is the whole point of the key (B8 stage C), and it makes every
+     * page guard inherit the behaviour without knowing about it.
+     */
     public function current(?int $now = null): ?MemberAccount
     {
         $accountId = $this->session->currentAccountId($now);
         if ($accountId === null) {
-            return null;
+            return $this->resume($now);
         }
 
         $account = $this->accounts->findById($accountId);
@@ -48,6 +56,24 @@ final class MemberAuth
 
             return null;
         }
+
+        return $account;
+    }
+
+    /**
+     * No session — is this a device that may stay signed in? A valid key
+     * starts a fresh session; the key itself rolls forward in DeviceKeys.
+     * The key is only ever issued after a COMPLETE login (link, plus the app
+     * code when 2FA is on), so resuming is not a second-factor bypass.
+     */
+    private function resume(?int $now): ?MemberAccount
+    {
+        $account = $this->deviceKeys->restore($now);
+        if ($account === null) {
+            return null;
+        }
+
+        $this->session->start((string)$account->getId(), $now);
 
         return $account;
     }

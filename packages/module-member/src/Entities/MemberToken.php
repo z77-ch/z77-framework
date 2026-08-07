@@ -48,6 +48,14 @@ class MemberToken
     #[Clean('nullable', 'text')]
     private ?string $usedAt = null;
 
+    /**
+     * B8, login tokens only: the visitor ticked «angemeldet bleiben» on the
+     * request form. The wish must travel WITH the link, not with the browser
+     * that asked — the mail may well be opened on another device, and the
+     * device key belongs to the one that redeems. Meaningless for 'confirm'.
+     */
+    private bool $remember = false;
+
     public function __construct(array $data = [])
     {
         if ($data) {
@@ -61,11 +69,13 @@ class MemberToken
     public function getPurpose(): string { return $this->purpose; }
     public function getValidUntil(): string { return $this->validUntil; }
     public function getUsedAt(): ?string { return $this->usedAt; }
+    public function wantsRemember(): bool { return $this->remember; }
 
     public function setTokenHash(string $tokenHash): void { $this->tokenHash = $tokenHash; }
     public function setAccountRef(string $accountRef): void { $this->accountRef = $accountRef; }
     public function setValidUntil(string $validUntil): void { $this->validUntil = $validUntil; }
     public function setUsedAt(?string $usedAt): void { $this->usedAt = $usedAt; }
+    public function setRemember(bool|int|string $remember): void { $this->remember = (bool)$remember; }
 
     public function setPurpose(string $purpose): void
     {

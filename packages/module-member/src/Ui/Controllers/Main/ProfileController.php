@@ -5,7 +5,7 @@ namespace Z77\Module\Member\Ui\Controllers\Main;
 use Z77\Core\DI,
     Z77\Core\Http\Response\HtmlResponse,
     Z77\Core\Http\Response\RedirectResponse,
-    Z77\Module\Member\Entities\MemberAccount,
+    Z77\Module\Member\Services\DeviceKeys,
     Z77\Module\Member\Services\MemberAuth,
     Z77\Module\Member\Services\Totp,
     Z77\Module\Member\Services\TotpSetup,
@@ -14,11 +14,12 @@ use Z77\Core\DI,
 ;
 
 /**
- * B8 profile — the session-guarded page. Stage A shows the account and its
- * state (a 'confirmed' account signs in but sees only this page + «wartet
- * auf Freischaltung», B7 decision 4); 2FA setup and the device list join in
- * the next stages. The guard is MemberAuth, not the framework ACL — member
- * sessions are the customer login, the admin login stays untouched.
+ * B8 profile — the session-guarded page: the account and its state (a
+ * 'confirmed' account signs in but sees only this page + «wartet auf
+ * Freischaltung», B7 decision 4), the 2FA setup, and the list of devices
+ * that may stay signed in — each revocable, and all at once. The guard is
+ * MemberAuth, not the framework ACL — member sessions are the customer
+ * login, the admin login stays untouched.
  */
 class ProfileController extends AbstractMemberController
 {
@@ -32,7 +33,57 @@ class ProfileController extends AbstractMemberController
         return $this->html([
             'pageTitle' => 'Profil',
             'account'   => $account,
+            'devices'   => DeviceKeys::create()->listFor($account),
         ]);
+    }
+
+    /** One device out of the list — POST with its key id. */
+    protected function deviceRemoveAction(): RedirectResponse
+    {
+        $account = MemberAuth::create()->current();
+        if ($account === null) {
+            return $this->redirect('/member/main/login');
+        }
+
+        $request = DI::getRequest();
+        if ($request->isPost()
+            && DI::getCsrfService()->validate((string)$request->getPostParameter('csrf_token'))
+            && DeviceKeys::create()->revoke($account, (string)$request->getPostParameter('device'))
+        ) {
+            $this->messageService->pushFlashAfterRedirect(
+                'success',
+                'Das Gerät ist abgemeldet — es verlangt beim nächsten Besuch einen neuen Anmelde-Link.'
+            );
+        } else {
+            $this->messageService->pushFlashAfterRedirect('error', 'Dieses Gerät ist nicht (mehr) in der Liste.');
+        }
+
+        return $this->redirect('/member/main/profile');
+    }
+
+    /**
+     * «Alle Geräte abmelden» — every device key dies, this one included; the
+     * current session stays (the customer is standing on this page).
+     */
+    protected function deviceRemoveAllAction(): RedirectResponse
+    {
+        $account = MemberAuth::create()->current();
+        if ($account === null) {
+            return $this->redirect('/member/main/login');
+        }
+
+        $request = DI::getRequest();
+        if ($request->isPost()
+            && DI::getCsrfService()->validate((string)$request->getPostParameter('csrf_token'))
+        ) {
+            DeviceKeys::create()->revokeAll($account);
+            $this->messageService->pushFlashAfterRedirect(
+                'success',
+                'Alle Geräte sind abgemeldet — jeder Zugang verlangt wieder einen Anmelde-Link.'
+            );
+        }
+
+        return $this->redirect('/member/main/profile');
     }
 
     /**
