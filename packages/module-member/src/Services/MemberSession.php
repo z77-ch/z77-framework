@@ -32,10 +32,20 @@ final class MemberSession
     {
     }
 
-    /** Signs the account in: fresh session id, idle clock starts now. */
+    /**
+     * Signs the account in: fresh session id, idle clock starts now.
+     *
+     * One identity per browser: signing in at this door closes the other one
+     * (the backend password login) by dropping its ACL identity. Written
+     * through the session directly and not via AuthService — this runs in the
+     * harness too, where no DI container exists; `auth_user` is a plain
+     * session key, and the rule is symmetric with MemberAuthBridge, which
+     * clears THIS session when a backend login came last.
+     */
     public function start(string $accountId, ?int $now = null): void
     {
         $this->regenerate();
+        $this->session->remove('auth_user');
         $this->session->set(self::KEY_ACCOUNT, $accountId);
         $this->session->set(self::KEY_LAST_SEEN, $now ?? time());
     }

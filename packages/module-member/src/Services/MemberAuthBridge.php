@@ -19,6 +19,12 @@ use Z77\Shared\Auth\AuthBridgeInterface;
  * Cheap by design: without a member session key or device cookie it only
  * clears a (normally absent) stale member-realm identity and returns — no
  * store read on anonymous traffic (frontend, widget).
+ *
+ * One identity per browser: a backend-realm `auth_user` means the password
+ * door was used AFTER this one (MemberSession::start() drops `auth_user`, so
+ * both can only coexist in that order) — this door then closes: session ended,
+ * device key of THIS browser forgotten. Nothing to decide, the state says who
+ * came last.
  */
 final class MemberAuthBridge implements AuthBridgeInterface
 {
@@ -26,8 +32,17 @@ final class MemberAuthBridge implements AuthBridgeInterface
     {
         $auth    = DI::getAuthService();
         $session = new MemberSession(DI::getSessionManager());
+        $hasCookie = ($_COOKIE[DeviceCookie::NAME] ?? '') !== '';
 
-        if (!$session->hasTraces() && ($_COOKIE[DeviceCookie::NAME] ?? '') === '') {
+        if ($auth->getCurrentUser()->isBackendRealm() && $auth->getCurrentUser()->isLoggedIn()) {
+            if ($session->hasTraces() || $hasCookie) {
+                DeviceKeys::create()->forgetCurrent();
+                $session->end();
+            }
+            return;
+        }
+
+        if (!$session->hasTraces() && !$hasCookie) {
             $auth->clearMemberIdentity();
             return;
         }

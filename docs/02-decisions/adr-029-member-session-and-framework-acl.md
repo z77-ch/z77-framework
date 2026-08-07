@@ -104,6 +104,14 @@ Guard rails that make this safe:
   `auth_user`; an admin stays an admin even with a member session in the same browser.
 - **Redirect target per module:** `loginUrl` in memberConfig sends guests to the member
   login, not the admin login.
+- **One identity per browser** (added the same day, after live testing): signing in at one
+  door closes the other. `MemberSession::start()` drops `auth_user`; conversely a
+  backend-realm `auth_user` tells the bridge that the password door was used LAST — both
+  can only coexist in that order — so it ends the member session and forgets this
+  browser's device key. No flag and no event is needed: the state itself says who came
+  last. Without this, a browser carried two identities at once: the member profile kept
+  showing the customer account after a backend login, and a member login inherited the
+  admin rights already sitting in the session.
 
 Consequences: member routes that need a sign-in are declared `AuthRole::CUSTOMER` in the
 module config (self-guarding controllers keep working but are no longer the guard);
