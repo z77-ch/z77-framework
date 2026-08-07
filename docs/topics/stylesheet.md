@@ -108,6 +108,16 @@ its own files on top. The override happens at the **source** level (`override/z7
 `vendor/z77/*` in `sourcePaths`), not via a second asset directory. Config:
 `skeleton/config/fileFinder.inc.php`.
 
+⚠️ **`override/z77/**/res/assets/` is NOT an asset path.** Source override applies to PHP and
+templates, not to assets — `sourcePaths` and `assetPaths` are separate lists, and the installer
+publishes `res/assets/` from **vendor packages only**. A project asset placed under
+`override/.../res/assets/css/foo.css` is therefore never found: `addCss('foo', …)` throws
+«CSS file 'css/foo.css' not found in assets directory» although the file exists and
+`composer install` ran. Keeping it there as the versioned source is fine (`public/assets/` is
+usually gitignored) — but the copy into `public/assets/{module}/{css,js}/` is a manual step,
+locally and on every deploy. Same trap as the framework-asset case above: the app always serves
+from `public/assets`.
+
 ## responsive approach
 
 Seven CSS files — base always loaded, layout/nav files conditionally applied via media attribute:
