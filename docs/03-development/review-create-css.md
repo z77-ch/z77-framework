@@ -68,6 +68,14 @@ Cleanup (`AssetCleaner::cleanupVersionsFor`) läuft nur bei einem effektiven Neu
 
 ### B1 — `extract($data)` kann Closure-Parameter überschreiben (Bug)
 
+> **Status: gelöst 2026-08-07 — anders als hier vorgeschlagen.** Der unten empfohlene
+> `EXTR_SKIP` allein schützt zwar die Locals, lässt dafür aber einen gleichnamigen
+> Kontext-Key still verschwinden — genau der Fehler, den MEM-003 am `TemplateRenderer`
+> beschreibt. Statt einen Gewinner zu wählen, tragen jetzt alle drei Render-Scopes
+> präfixierte Locals (`$z77TplPath` / `$z77TplContext`), womit gar keine Kollision mehr
+> entstehen kann; `EXTR_SKIP` liegt zusätzlich darüber. Siehe
+> [`member-mem-findings-bauplan.md`](member-mem-findings-bauplan.md) → MEM-003.
+
 ```php
 $css = (static function (string $tplPath, array $data): string {
     extract($data);         // läuft NACH dem Closure-Parameter-Binding
@@ -144,7 +152,7 @@ Kein Exception, kein Log — die leere Datei existiert mit korrektem Namen, wird
 
 | # | Befund | Schwere | Empfehlung |
 |---|---|---|---|
-| B1 | `extract($data)` überschreibt `$tplPath` bei Key-Kollision | Mittel | `extract($data, EXTR_SKIP)` |
+| B1 | `extract($data)` überschreibt `$tplPath` bei Key-Kollision | Mittel | **gelöst 2026-08-07** — präfixierte Locals statt `EXTR_SKIP` allein (s.o.) |
 | B2 | Template-Änderungen in dev bleiben gecached | UX (Dev) | Topic-Doc ergänzen, oder `clearAll()` in Workflow |
 | B3 | Output-Dir implizit an `assetPaths[0]` gebunden | Gering | Kein Code-Fix nötig; Konvention dokumentieren |
 | B4 | Parallele Requests = doppelter Write (benign) | Info | Kein Fix nötig |

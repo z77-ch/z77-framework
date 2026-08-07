@@ -143,6 +143,7 @@ prototype handoff (`{projekt}/work/docs/topics/partial-labels.md`).
 - When using `raw()` → MUST be justified inline at the call site (trusted HTML only)
 - When handling Fetch mode → MUST render only `$main`; MUST NOT render the full document skeleton
 - When writing a template → MUST NOT fetch standard context yourself (`AbstractBaseController::html()` injects it)
+- When naming a context key → MAY use any name; the three render scopes (`TemplateRenderer`, `EmailService`, `StylesheetManager`) keep their locals behind the `z77Tpl` prefix so nothing is shadowed. When touching one of those scopes → MUST keep the prefix AND `EXTR_SKIP`: dropping the prefix silently swallows a same-named key, dropping `EXTR_SKIP` lets a key decide which file is included (resolved 2026-08-07, was MEM-003 + review-create-css B1)
 - When placing an action template or controller-owned partial → MUST nest it under `res/view/templates/{Group}/{Controller}/`, mirroring the controller namespace; MUST NOT place it flat by controller base name
 - When adding a controller-owned partial via `addPartials()` → MUST prefix the path with the group (`'Content/NavigationController'`); module-wide partials stay flat under `partials/`
 

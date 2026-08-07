@@ -11,9 +11,10 @@ The view layer turns a controller's `HtmlResponse` into rendered HTML. It is the
 output pipeline for `RequestMode::Page` and `RequestMode::Fetch`. Other output types (JSON,
 files, redirects, PDF, e-mail) have their own pipelines and do not use the view layer.
 
-Pure PHP templates — no template engine, no compiler. `extract($context, EXTR_SKIP)` makes
-context variables available, `require` includes the file, output buffering captures the
-result.
+Pure PHP templates — no template engine, no compiler. `extract()` makes context variables
+available, `require` includes the file, output buffering captures the result. The render
+scope holds only prefixed locals (`$z77TplPath` / `$z77TplContext`) plus `$this`, so a view
+variable may carry any name without colliding with the renderer's own.
 
 ---
 

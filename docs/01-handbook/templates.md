@@ -10,6 +10,10 @@
 `AbstractBaseController::html(array $context)` injects variables into every template.
 The context is passed through `LayoutManager` → `HtmlView` → `extract()`.
 
+Context keys may carry any name. The render scope holds only prefixed locals
+(`$z77TplPath` / `$z77TplContext`) besides `$this`, so nothing a controller passes can be
+shadowed by the renderer's own variables.
+
 ---
 
 ## Template location (group-nested)
