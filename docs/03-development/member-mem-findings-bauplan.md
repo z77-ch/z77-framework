@@ -90,8 +90,65 @@ it cannot become the next unnoticed source of a poisoned URL.
 **Now:** `TemplateRenderer::render(string $path, array $context)` extracts with
 `EXTR_SKIP`, so a view variable named `path` or `context` silently keeps the method's own
 value and the template renders the wrong thing — no error, no warning. It already bit once:
-this module named its variable `pending` to dodge it. `EmailService::render()`
-(`$tplPath`, `$context`) and `StylesheetManager` (`$data`) share the pattern.
+this module named its variable `pending` to dodge it.
+
+### Verified before proposing (2026-08-07)
+
+Reproduced against the real class, not reasoned about — probe renders a template with a
+context carrying `path`, `context` and a control key:
+
+```text
+CURRENT   path    = '…/mem003-probe.tpl.php'          ← the renderer's own local
+          context = array('path'=>…, 'context'=>…)     ← the whole context array
+          normal  = 'PROJECT-VALUE-NORMAL'
+PROPOSED  path    = 'PROJECT-VALUE-PATH'
+          context = 'PROJECT-VALUE-CONTEXT'
+          normal  = 'PROJECT-VALUE-NORMAL'             ← unchanged
+```
+
+`$this->partial()` still resolves from the private method (checked separately) — the
+isolated scope must stay a method, not a static closure, for exactly that reason.
+
+Blast radius, measured:
+
+- **240 framework templates + the zihlundsee project tree contain no `$path`, `$context`,
+  `$data` or `$tplPath`.** The single hit is `slider.tpl.php`, where `$path` is a `foreach`
+  value the template assigns itself before reading — unaffected either way.
+- **No caller passes a context key of those names.** Every `'path' =>` in the codebase is an
+  internal structure (asset registry, partial descriptors, cookie params, backup config),
+  never a template context.
+- **No template uses `get_defined_vars()` or `compact()`,** so nothing observes the scope's
+  shape.
+
+Conclusion: the change is additive. Names that are silently dead today start working; no
+template can lose a value it currently reads.
+
+### Three extract sites, two opposite failure modes
+
+| Site | Flag | Who wins | Failure |
+|---|---|---|---|
+| `TemplateRenderer::render` | `EXTR_SKIP` | the locals | context key silently dropped (MEM-003) |
+| `EmailService::render` | none | the context | a `tplPath` key would `include` the wrong file |
+| `StylesheetManager::createCss` | none | the context | same — and this is **B1**, still open |
+
+The second row is worth stating plainly: a context key called `tplPath` does not just render
+wrong, it selects the included file. Unreachable today (contexts are built by app code with
+fixed keys), but it is the sharper of the two edges.
+
+### This supersedes B1 in `review-create-css.md`
+
+[`review-create-css.md`](review-create-css.md) B1 found the `StylesheetManager` overwrite
+and proposed `extract($data, EXTR_SKIP)`. That fix was never applied, and it is the wrong
+direction: it protects the locals by making the context lose — which is precisely the
+behaviour MEM-003 complains about in `TemplateRenderer`. Adopting it would close B1 by
+spreading MEM-003 to a third site.
+
+Renaming the locals dissolves both findings at once: no collision is possible, so there is
+no winner to choose. Keep `EXTR_SKIP` on top as belt-and-braces, and a context key would
+have to be named `z77TplPath` to reach anything.
+
+**ADR check:** ADR-002 sketches `extract($context, EXTR_SKIP)` in a code comment, but it is
+descriptive and the ADR is marked superseded by ADR-003/004. No decision blocks this.
 
 ### Proposal
 
@@ -119,17 +176,27 @@ private function renderIsolated(string $z77TplPath, array $z77TplContext): strin
 }
 ```
 
-Same treatment for `EmailService::render()` and `StylesheetManager`, so the rule is «view
-variables may be named anything» everywhere rather than «anything except the three words
-that happen to be locals here».
+Same treatment for `EmailService::render()` and `StylesheetManager::createCss()` — both keep
+their static closures (templates must not reach `$this` there), only the parameter names
+change and `EXTR_SKIP` gets added. The rule then reads «view variables may be named
+anything» everywhere, instead of «anything except the words that happen to be locals here».
 
-**Risk:** a template that today relies on `$path`/`$context` silently being the renderer's
-own values would change behaviour — but that would be a latent bug, and a grep over
-`res/view/` settles it before the change.
+**Risk:** none measured — see the blast radius above. The residual is a template someone
+writes between now and the change that starts depending on the leak, which the same grep
+catches.
 
-**Verification:** grep the template tree for `$path` / `$context` / `$data` / `$tplPath`;
-render one page and one mail; then MEM-003 in `member.md` becomes resolved and the
-work-around note about `pending` can go.
+**Docs to update in the same commit:**
+
+| File | Change |
+|---|---|
+| `docs/topics/member.md` | MEM-003 → resolved; drop the note that this module uses `pending` as a work-around |
+| `docs/03-development/review-create-css.md` | B1 → resolved, by renaming rather than by the `EXTR_SKIP` it proposed |
+| `docs/03-development/concepts/view-layer.md` | line 14 states `extract($context, EXTR_SKIP)` — reword |
+| `docs/01-handbook/templates.md` | line 11 describes the pipeline — add that any name is safe |
+| `docs/topics/view-layer.md` | new rule: view variables may carry any name; the renderer's locals are prefixed |
+
+**Acceptance:** re-run `scratchpad/mem003-check.php` (both blocks print the project values),
+then render one page, one mail and one generated CSS in the running app.
 
 ---
 
