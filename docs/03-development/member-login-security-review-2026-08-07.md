@@ -189,14 +189,13 @@ shortened or the session cookie is ever dropped.
   TLS-terminating proxy that value is absent and the cookie goes out without the flag. This
   matches `SessionManager` exactly (SEC-003), so it is consistent, not a new gap — but both
   share the fragility.
-- **The dangerous button is the prominent one.** On the confirmation page «Anmeldung
-  bestätigen» is the primary button and «Stattdessen auf diesem Gerät anmelden» is the
-  quiet one. Pressing "here" when you did not start the login is harmless; pressing
-  "confirm" is what hands a stranger the session. Reversing the emphasis would put the
-  visual weight on the safe action. Left as-is deliberately: it trades the everyday case
-  (the customer who DID request the login and wants exactly the primary button) against a
-  case the check digits and the mail wording already address. Worth a conscious decision,
-  not a silent change.
+- **The dangerous button was the prominent one — REVERSED 2026-08-07 (decision Peter).**
+  On the confirmation page «Anmeldung bestätigen» hands another device the session, while
+  signing in here is harmless even when you did not start the login. The emphasis now sits
+  on the safe action: confirming is the quiet button, «auf diesem Gerät anmelden» the
+  primary one. The order stays as it was — confirming belongs directly under the check
+  digits it refers to. Covered structurally in the B7 harness (the confirm form carries
+  the quiet class, the here-form does not).
 - **`$_SERVER` is read outside `Request`** in `AbstractMemberController::absoluteUrl()`,
   `AccountsControllerTrait`, `LoginFlow` (User-Agent), `DeviceKeys` and `DeviceCookie` —
   a deviation from conventions rule 4. There is no alternative today: `Request` exposes
@@ -217,6 +216,8 @@ answer. The one attack that reached the token — F1 — came in through the Hos
 outside this module and was the kernel's to close; it is closed (ADR-030).
 
 **Status 2026-08-07, end of day:** F1, F2 and F3 are resolved, F4 was downgraded to a note
-after a second reading. What remains open is not a defect but a decision: the emphasis of the
-two buttons on the confirmation page (see the notes above), plus setting `canonicalBaseUrl`
-on each installation — the mechanism cannot do that for you.
+after a second reading. The one open decision — the emphasis of the two buttons on the
+confirmation page — was taken the same evening and the emphasis reversed (see the notes
+above). Nothing from this review is outstanding; what remains is operational, not a
+finding: `canonicalBaseUrl` has to be set on each installation, which no mechanism can do
+for you.

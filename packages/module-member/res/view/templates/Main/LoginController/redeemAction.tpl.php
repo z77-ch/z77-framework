@@ -49,7 +49,12 @@
         <input type="hidden" name="csrf_token" value="<?= e($csrfToken) ?>">
         <input type="hidden" name="token" value="<?= e($token) ?>">
         <input type="hidden" name="decision" value="confirm">
-        <button class="fe-form__submit" type="submit">
+        <?php /* Deliberately the QUIET button (security review 2026-08-07,
+                decision Peter): pressing it hands the session to another
+                device — the only action on this page that can help a
+                stranger. Signing in here is the harmless one and carries the
+                visual weight. */ ?>
+        <button class="fe-form__submit fe-form__submit--quiet" type="submit">
             Anmeldung auf «<?= e($pending->getLabel()) ?>» bestätigen
         </button>
     </form>
@@ -65,7 +70,7 @@
         <input type="hidden" name="csrf_token" value="<?= e($csrfToken) ?>">
         <input type="hidden" name="token" value="<?= e($token) ?>">
         <input type="hidden" name="decision" value="here">
-        <button class="fe-form__submit<?= $pending !== null ? ' fe-form__submit--quiet' : '' ?>" type="submit">
+        <button class="fe-form__submit" type="submit">
             <?= $pending !== null ? 'Stattdessen auf diesem Gerät anmelden' : 'Auf diesem Gerät anmelden' ?>
         </button>
     </form>
