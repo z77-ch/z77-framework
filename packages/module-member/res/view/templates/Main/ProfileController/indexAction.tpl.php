@@ -71,7 +71,7 @@ $name = trim(($account->getFirstName() ?? '') . ' ' . ($account->getLastName() ?
     <?php else: ?>
     <table class="me-devices">
         <thead>
-            <tr><th>Gerät</th><th>Zuletzt genutzt</th><th>Gültig bis</th><th></th></tr>
+            <tr><th>Gerät</th><th>Angemeldet seit</th><th>Zuletzt genutzt</th><th>Gültig bis</th><th></th></tr>
         </thead>
         <tbody>
         <?php foreach ($devices as $device): ?>
@@ -80,6 +80,7 @@ $name = trim(($account->getFirstName() ?? '') . ' ' . ($account->getLastName() ?
                     <?= e((string)$device['label']) ?>
                     <?php if ($device['current']): ?><span class="me-devices__here">dieses Gerät</span><?php endif; ?>
                 </td>
+                <td><?= e($day((string)$device['created_at'])) ?></td>
                 <td><?= e($day((string)$device['last_used_at'])) ?></td>
                 <td><?= e($day((string)$device['valid_until'])) ?></td>
                 <td>
@@ -93,6 +94,14 @@ $name = trim(($account->getFirstName() ?? '') . ' ' . ($account->getLastName() ?
         <?php endforeach; ?>
         </tbody>
     </table>
+    <p class="me-card__note">
+        Gezählt wird pro Browser, nicht pro Computer: Wer seine Cookies löscht,
+        ein privates Fenster nutzt oder einen zweiten Browser verwendet,
+        erscheint hier als weiteres Gerät — auch mit gleicher Bezeichnung. Alte
+        Einträge können Sie einzeln abmelden; sonst laufen sie nach 90 Tagen
+        von selbst ab.
+    </p>
+
     <form method="post" action="/member/main/profile/device-remove-all" class="fe-form">
         <input type="hidden" name="csrf_token" value="<?= e($csrfToken) ?>">
         <button class="fe-form__submit" type="submit">Alle Geräte abmelden</button>

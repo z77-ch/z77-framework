@@ -26,6 +26,17 @@ final class DeviceKeys
 {
     public const TTL_SECONDS = 7776000; // spec default: 90 days, rolling
 
+    /**
+     * How many devices may stay signed in at once (spec default: 5). A key
+     * whose cookie is gone — deleted, private window, reinstalled browser —
+     * can never be recognised again: the cookie WAS the identity. Such
+     * orphans would otherwise sit in the profile list until they expire, and
+     * they all carry the same label as the device that replaced them. The cap
+     * drops the one unused for longest, which is exactly the orphan; it makes
+     * no assumption about which device is which.
+     */
+    public const MAX_KEYS = 5;
+
     public function __construct(
         private MemberAccounts $accounts,
         private DeviceCookie $cookie,
@@ -57,7 +68,7 @@ final class DeviceKeys
             'valid_until'  => date(DATE_ATOM, $now + self::TTL_SECONDS),
         ];
 
-        $account->setDeviceKeys($keys);
+        $account->setDeviceKeys(self::capped($keys));
         $this->accounts->save($account);
 
         $this->cookie->write($account->getId() . '.' . $keyId . '.' . $secret, self::TTL_SECONDS, $now);
@@ -175,7 +186,7 @@ final class DeviceKeys
             $keys[$i]['current'] = $this->isCurrent($account, (string)($key['id'] ?? ''));
         }
 
-        usort($keys, static fn(array $a, array $b) => strcmp((string)$b['last_used_at'], (string)$a['last_used_at']));
+        usort($keys, static fn(array $a, array $b) => self::usedAt($b) <=> self::usedAt($a));
 
         return $keys;
     }
@@ -207,6 +218,33 @@ final class DeviceKeys
         };
 
         return $browser . ' auf ' . $system;
+    }
+
+    /**
+     * Trims the list to MAX_KEYS, newest use first — the entry nobody came
+     * back with goes. Compared as timestamps, not as strings: the ISO values
+     * carry their offset, and +02:00 vs +01:00 would sort wrong across the
+     * daylight-saving change.
+     *
+     * @param  array<int,array<string,string>> $keys
+     * @return array<int,array<string,string>>
+     */
+    private static function capped(array $keys): array
+    {
+        if (count($keys) <= self::MAX_KEYS) {
+            return $keys;
+        }
+
+        usort($keys, static fn(array $a, array $b) => self::usedAt($b) <=> self::usedAt($a));
+
+        return array_slice($keys, 0, self::MAX_KEYS);
+    }
+
+    private static function usedAt(array $key): int
+    {
+        $stamp = strtotime((string)($key['last_used_at'] ?? ''));
+
+        return $stamp === false ? 0 : $stamp;
     }
 
     /** @return ?array{0:string,1:string,2:string} accountId, keyId, secret */
