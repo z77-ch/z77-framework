@@ -99,10 +99,17 @@ final class MemberSession
      * The redeemed link parks here when 2FA is active — no session yet. The
      * link's «angemeldet bleiben» wish waits here too: the device key may only
      * be issued once the second factor is in (stage C).
+     *
+     * Closes the backend door here already, like {@see start()}: the redeemed
+     * link is the proof, the code prompt only completes it. Leaving
+     * `auth_user` in place would make the bridge treat this browser as
+     * «backend came last» and wipe the pending state before the code page
+     * renders — 2FA would be unusable while a backend session exists.
      */
     public function startTotpPending(string $accountId, bool $remember = false, ?int $now = null): void
     {
         $this->regenerate();
+        $this->session->remove('auth_user');
         $this->session->set(self::KEY_TOTP_PENDING, $accountId);
         $this->session->set(self::KEY_TOTP_SINCE, $now ?? time());
         $this->session->set(self::KEY_TOTP_REMEMBER, $remember);

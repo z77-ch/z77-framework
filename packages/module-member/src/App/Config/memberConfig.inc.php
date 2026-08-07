@@ -40,6 +40,14 @@ return [
     // than this are deleted; 'confirmed' accounts always wait for an operator.
     'cleanupAfterDays' => 30,
 
+    // How many login links one address and one browser may trigger per hour.
+    // Feeds BOTH layers: the per-address throttle (file-based, survives a new
+    // session) and the login form's per-session limit (silent — the waiting
+    // page appears either way, MEM-005/MEM-010). It protects a stranger's
+    // mailbox from being flooded through this form; raise it where support or
+    // testing needs more headroom.
+    'loginRequestsPerHour' => 5,
+
     'viewArea'      => true,
     'viewAreaLabel' => 'Member',
     'public'        => true,

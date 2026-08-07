@@ -80,7 +80,10 @@ final class LoginFlow
         return new self(
             new MemberAccounts($uem),
             new TokenService($uem),
-            new MemberThrottle(rtrim(str_replace('\\', '/', ABS_BASE_PATH), '/') . '/data/framework/member/throttle'),
+            new MemberThrottle(
+                rtrim(str_replace('\\', '/', ABS_BASE_PATH), '/') . '/data/framework/member/throttle',
+                self::requestsPerHour(),
+            ),
             new MemberSession(DI::getSessionManager()),
             RegistrationFlow::create($confirmUrl),
             TotpVault::create(),
@@ -91,6 +94,24 @@ final class LoginFlow
             $redeemUrl,
             $registerUrl,
         );
+    }
+
+    /**
+     * How many login links one address / one browser may trigger per hour —
+     * memberConfig `loginRequestsPerHour`, default {@see MemberThrottle::MAX_PER_HOUR}.
+     * Both layers run on this one number: the per-address throttle here and
+     * the per-session limit of the login form ({@see \Z77\Module\Member\Ui\Controllers\Main\LoginController}).
+     * Raise it on an installation where support or testing needs more; the
+     * limit protects a stranger's mailbox from being flooded through this
+     * form, so it stays a number, not a switch.
+     */
+    public static function requestsPerHour(): int
+    {
+        $configured = (int) (DI::getModuleManager()
+            ->getModuleConfig('member')
+            ?->get('loginRequestsPerHour', MemberThrottle::MAX_PER_HOUR) ?? MemberThrottle::MAX_PER_HOUR);
+
+        return $configured > 0 ? $configured : MemberThrottle::MAX_PER_HOUR;
     }
 
     /**

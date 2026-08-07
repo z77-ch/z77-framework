@@ -8,7 +8,6 @@ use Z77\Core\DI,
     Z77\Core\Http\Response\RedirectResponse,
     Z77\Module\Member\Services\LoginFlow,
     Z77\Module\Member\Services\MemberAuth,
-    Z77\Module\Member\Services\MemberThrottle,
     Z77\Module\Member\Ui\Controllers\AbstractMemberController,
     Z77\Module\Member\Ui\Form\LoginFormDefinition,
     Z77\Shared\Controller\PublicFormCheckTrait,
@@ -33,13 +32,14 @@ class LoginController extends AbstractMemberController
 
         $this->layoutManager->addJs('public-form', 'Z77\\Module\\Frontend', 'footer', true);
 
-        // Per-session limit raised to the address throttle's 5/h and made
-        // silent: the login page answers every submit with the waiting page
-        // (MEM-005). The handler default (3/h, visible send error) would both
-        // break that and lie — «Versand fehlgeschlagen» for a limit that a
-        // customer reaches legitimately (link in spam, second device).
+        // Per-session limit on the same number as the address throttle
+        // (memberConfig `loginRequestsPerHour`) and silent: the login page
+        // answers every submit with the waiting page (MEM-005). The handler
+        // default (3/h, visible send error) would both break that and lie —
+        // «Versand fehlgeschlagen» for a limit a customer reaches
+        // legitimately (link in spam, second device).
         $form = PublicFormHandler::create(new LoginFormDefinition())
-            ->withRateLimit(MemberThrottle::MAX_PER_HOUR, silent: true);
+            ->withRateLimit(LoginFlow::requestsPerHour(), silent: true);
 
         $onValid = fn($valid): bool => $this->loginFlow()->request(
             (string)$valid->get('email'),
