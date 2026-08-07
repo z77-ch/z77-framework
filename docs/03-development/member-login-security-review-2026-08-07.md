@@ -140,19 +140,28 @@ record and writes its id into the session, although the visitor never reaches th
 page. The record is garbage that only the cron collects, and the comment claiming the
 waiting page must look identical does not apply on this branch.
 
-### F4 — A remembered device rewrites `accounts.json` on every request — Medium, operational
+### F4 — A resumed session rewrites `accounts.json` — Low, operational
 
 `DeviceKeys::restore()` rolls `last_used_at` and `valid_until` on every hit and saves the
-account. `MemberAuth::current()` calls it on every guarded page view where the short
-session is gone, so each request from a remembered device rewrites the whole accounts
-store. Writes serialise through `FileStorage::withExclusiveLock()` with a ~2 s acquisition
-budget, then throw — with enough concurrent members this turns into failed requests, and
-it is write amplification long before that.
+whole account. Writes serialise through `FileStorage::withExclusiveLock()` with a ~2 s
+acquisition budget, then throw.
 
-The rolling TTL does not need per-request precision. Rolling only when `last_used_at` is
-older than a day (or when `valid_until` is inside the last N days of its window) keeps the
-documented semantics and makes the write rare. Not changed here — it is a behaviour change
-to a shipped mechanism and belongs in its own commit with the topic doc updated.
+**Corrected after a second reading:** this fires far less often than first stated here.
+`MemberAuth::current()` only reaches `restore()` when the member session is absent —
+
+```php
+$accountId = $this->session->currentAccountId($now);
+if ($accountId === null) { return $this->resume($now); }
+```
+
+— and `resume()` starts a session, so every following request takes the fast path. One
+write per browser start or per 2-hour idle timeout, not one per page view. That is the same
+order of magnitude as a login, which writes the store anyway.
+
+So this is a note, not a defect. Rolling lazily (only when `last_used_at` is older than a
+day) would still cut the writes and keeps the documented 90-day rolling semantics, but the
+motivation is thin at today's frequency — it becomes relevant if the idle window is
+shortened or the session cookie is ever dropped.
 
 ## Notes (accepted, no action proposed)
 
