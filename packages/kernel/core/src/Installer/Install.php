@@ -983,37 +983,83 @@ class Install
 
     /**
      * Seeds runtime data files from their defaults. Generic by convention: every
-     * `*.default.json` anywhere under the package `data/` directory is deployed to
-     * the same relative path with the `.default` marker stripped, e.g.
+     * `*.default.json` anywhere under a framework package's data directory is
+     * deployed to the same relative path with the `.default` marker stripped, e.g.
      *   `framework/routing/navigation.default.json` → `data/framework/routing/navigation.json`
      *   `content/home.de.default.json`              → `data/content/home.de.json`
      * `writeDataFile` skips targets that already exist, so existing runtime data
      * is preserved. Adding a new seeded entity needs no installer change — just drop
-     * its `*.default.json` under `data/` (framework scaffolding or starter content).
+     * its `*.default.json` under the package's data dir (framework scaffolding or
+     * starter content).
+     *
+     * Walks EVERY installed framework package (INST-SEED-001) — previously only the
+     * kernel's own `core/data` was scanned, so module seeds (e.g. module-dms
+     * `data/documents/folders.default.json`) never reached a project. The kernel is
+     * not special-cased anymore. On a rel-path collision across packages the first
+     * package wins (and seed-once protects existing runtime data either way).
      */
     private function writeDataFiles(): void
     {
-        $base = realpath(__DIR__ . '/../../data');
-        if ($base === false) {
-            return;
-        }
+        foreach ($this->frameworkDataRoots() as $base) {
+            $it = new \RecursiveIteratorIterator(
+                new \RecursiveDirectoryIterator($base, \FilesystemIterator::SKIP_DOTS)
+            );
 
-        $it = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($base, \FilesystemIterator::SKIP_DOTS)
-        );
+            foreach ($it as $file) {
+                if (!$file->isFile() || !str_ends_with($file->getFilename(), '.default.json')) {
+                    continue;
+                }
 
-        foreach ($it as $file) {
-            if (!$file->isFile() || !str_ends_with($file->getFilename(), '.default.json')) {
-                continue;
+                $relPath  = str_replace('\\', '/', substr($file->getPathname(), strlen($base) + 1));
+                $subDir   = trim(dirname($relPath), '.\\/');
+                $relDir   = 'data' . ($subDir !== '' ? '/' . $subDir : '');
+                $fileName = substr($file->getFilename(), 0, -strlen('.default.json')) . '.json';
+
+                $this->writeDataFile($relDir, $fileName, $file->getPathname());
             }
-
-            $relPath  = str_replace('\\', '/', substr($file->getPathname(), strlen($base) + 1));
-            $subDir   = trim(dirname($relPath), '.\\/');
-            $relDir   = 'data' . ($subDir !== '' ? '/' . $subDir : '');
-            $fileName = substr($file->getFilename(), 0, -strlen('.default.json')) . '.json';
-
-            $this->writeDataFile($relDir, $fileName, $file->getPathname());
         }
+    }
+
+    /**
+     * Absolute, existing data roots of all installed framework packages. Derived
+     * from each package's framework psr-4 paths with the same `stripSrc` logic
+     * `buildPaths()` uses: `core/src` → `{install}/core/data`, `src` → `{install}/data`.
+     * Deduplicated (a package exposing several namespaces from one root, e.g. the
+     * kernel, contributes each data dir once).
+     *
+     * @return string[]
+     */
+    private function frameworkDataRoots(): array
+    {
+        $roots   = [];
+        $manager = $this->composer->getInstallationManager();
+
+        foreach ($this->getInstalledPackages() as $package) {
+            $installPath = null;
+
+            foreach ($package->getAutoload()['psr-4'] ?? [] as $namespace => $path) {
+                if (!str_starts_with($namespace, $this->frameworkPrefix)) {
+                    continue;
+                }
+
+                $installPath ??= $manager->getInstallPath($package);
+                if ($installPath === null || $installPath === '') {
+                    break;  // metapackage — nothing on disk
+                }
+
+                foreach ((array) $path as $p) {
+                    $sub  = trim($this->stripSrc($p), '/');
+                    $dir  = $this->trailingSlash($installPath)
+                          . ($sub !== '' ? $sub . '/' : '') . 'data';
+                    $real = realpath($dir);
+                    if ($real !== false && is_dir($real)) {
+                        $roots[$real] = true;
+                    }
+                }
+            }
+        }
+
+        return array_keys($roots);
     }
 
     private function writeDebugFlag(): void

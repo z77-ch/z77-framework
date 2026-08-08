@@ -53,7 +53,7 @@ Runs as a Composer post-install/post-update hook. Reads `extra` config from `com
 | 11 | `writeMailConfig()` | → `config/mail.inc.php` — **seed-once**: mail transport + sender identity (`enabled=true`, `transport='mail'`, empty `fromAddress` to fill per project), see [`mail.md`](mail.md) |
 | 12 | `writeSystemConfig()` | → `config/systemConfig.inc.php` — **seed-once**: installation identity (`canonicalBaseUrl`), the one config NOT fed from `composer.json` (ADR-030) |
 | 13 | `writeFileFinderConfig()` | → `config/fileFinder.inc.php` |
-| 14 | `writeDataFiles()` | seed `data/*.json` (skip if already exist) |
+| 14 | `writeDataFiles()` | seed `data/*.json` from EVERY installed framework package's data roots (skip if already exist; INST-SEED-001) |
 | 15 | `provisionAdmin()` | create admin (interactive) or write `SETUP_TOKEN` (non-interactive) — skip if `backendUsers.json` exists |
 | 16 | `writeDebugFlag()` | create/remove `data/framework/debug.flag` per `debug` |
 | 17 | `seedProjectClaudeMd()` | seed `CLAUDE.md` (project context for AI assistants) from the kernel template — **seed-once**, never overwritten |
@@ -276,7 +276,7 @@ Installer creates the override dirs, registers the module in `moduleManager.inc.
   - TODO: classify the remaining framework-derived config targets — `bootstrap.inc.php`, `moduleManager.inc.php`, `fileFinder.inc.php` (regenerate-always is likely correct, but confirm each carries no developer-adjusted value before publication).
   - DECIDED 2026-08-08: `writeDataFiles()` stays **seed-once at file level** — the installer never merges records into an existing runtime file. The `merge` class is served by a separate, manual data import in the backend (ADR-032). Consistent with ADR-024/025: the installer reports, the developer decides.
 
-- **INST-SEED-001 — `writeDataFiles()` only scans the kernel's own data dir** — `$base = realpath(__DIR__ . '/../../data')` resolves to `packages/kernel/core/data`, so `*.default.json` shipped by any other package is never deployed. Concretely `packages/module-dms/data/documents/folders.default.json` (the DMS Drive root, `key: "drive"`) does not reach a project at all; the runtime `folders.json` only exists because it was created at runtime. Fix: iterate the installed framework packages (the same list `buildPaths()` already walks) and seed each package's `data/` tree. Prerequisite for module-owned seeds under ADR-032 — see [`navigation.md`](navigation.md) NAV-SEED-001.
+- **INST-SEED-001** — resolved 2026-08-08. `writeDataFiles()` now walks **every installed framework package**: data roots are derived from each package's framework psr-4 paths via the same `stripSrc` logic `buildPaths()` uses (`core/src` → `{install}/core/data`, `src` → `{install}/data`; new helper `frameworkDataRoots()`, install paths from Composer's `InstallationManager`, deduped, metapackages skipped). Previously only the kernel's own `core/data` was scanned, so module seeds never reached a project — concretely `packages/module-dms/data/documents/folders.default.json` (the DMS Drive root). On a rel-path collision across packages the first wins; seed-once protects existing runtime data either way. Verified in the skeleton: removed `data/documents/folders.json` → `composer install` seeds it from module-dms (Drive root, `key: "drive"`, `system: true`); re-install skips everything (0 writes).
 
 - **INST-IMPORT-001 — data import service (ADR-032)** — build the backend-side `ImportService`:
   `#[ImportIdentity]` / `#[ImportRef]` attributes (ref-capable rules, bijective matching), per-run
