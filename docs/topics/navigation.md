@@ -116,6 +116,7 @@ matchAlias(array $segments): ?array                    // longest-prefix match �
 | Method | Returns | Notes |
 |---|---|---|
 | `getId()` | `?int` | |
+| `getKey()` | `?string` | stable framework address (ADR-032, NAV-KEY-001) — the identity a data import matches on; same pattern as `Folder::key` (ADR-020). `null` for human-created entries; a code constant for shipped ones (`service`, `drive`, `jobs`, …). Unique among non-null keys (`validateKey`). Server-controlled: the edit POST path forces the stored value (like `parentId`), the form only displays it. Serialized as `key`; missing key in legacy runtime files hydrates to `null` |
 | `getName()` | `string` | |
 | `getUrl()` | `string` | the 4-tuple canonical path (= `getCanonicalPath()`); `''` for containers. Since Phase 4 there is no own url/params — for the PUBLIC url use `NavigationService::urlFor($entry)` (alias-aware), not this directly |
 | `getCanonicalUrl()` | `string` | alias of `getCanonicalPath()` (kept for routability checks `=== ''`) |
@@ -271,6 +272,13 @@ Project-specific tags are free. Tags stored in `tags.default.json` / `tags.json`
 Entries carry **no `url` / `params`** (removed Phase 4). Every entry carries `sort_key: int`
 (order within its sibling group). Public URLs live in `navigation_aliases.default.json` (see below).
 
+Since 2026-08-08 (NAV-KEY-001) the framework-owned entries carry a **`key`** — the stable import
+identity: containers (`webseiten`, `stammdaten`, `drive`, `service`), auth (`login`, `logout`) and
+all backend children (`navigation`, `benutzer`, `inhalte`, `metadaten`, `nav-alias`,
+`uebersetzungen`, `dokumente`, `backup`, `email`, `jobs`). The frontend starter pages
+(Home/About/…) and the ref entry (id 18) deliberately carry `key: null` — starter content belongs
+to the customer; their fallback identity is the 4-tuple (or parent+ref).
+
 | id | name | module | group | controller | action | tag | parent |
 |---|---|---|---|---|---|---|---|
 | 1 | Webseiten | — | — | — | — | `backend` | — |
@@ -320,6 +328,7 @@ the 4-tuple). Seeded from the former friendly `url` values.
 - In the backend subnav, ANY entry with children renders as an opener (`<details>`), regardless of whether it can produce a link of its own (render-level rule, distinct from the data-level "container" notion). The opener summary is a toggle, not a link — to keep an opener's own page reachable, add a ref-to-self child. Every rendered node MUST resolve its href the same way (ref → `urlFor(target).'?via='.refId`, else `urlFor(node)`); a node that resolves to an empty URL MUST render inert (`<span>`, never `<a href="">`). There is deliberately NO validation for dead links or childless openers.
 - An entry MUST have at most one parent — guaranteed by construction via the single `parentId` FK (the old double-parent case is structurally impossible, no validator needed). `parentId` MUST stay server-controlled: set by `addAction` (from the `?parent` target) and `moveAction` (with cycle / ref-parent / cross-slot guards), and forced server-side in the edit POST path so a crafted body cannot reparent
 - The **alias `path`** MUST be unique across all aliases — `NavigationAliasValidator` rejects duplicates (this replaced NAV-DUP-001's 4-tuple-uniqueness). Multiple navigation entries MAY share one 4-tuple; `NavigationValidator::validateModule()` only enforces the all-or-nothing routing-field structure. At most one canonical alias per navigation.
+- `Navigation::key` MUST stay server-controlled: never accepted from a request body (the edit POST forces the stored value, new backend entries get `null`), never editable in the form (display-only). It is set by shipped defaults or adopted by an import assignment (ADR-032). MUST be unique among non-null keys (`NavigationValidator::validateKey`).
 - `active: false` MUST NOT render the entry (or its subtree) in any UI iterator. NavigationService filters at the source (`iterateSections`, `iterateTree`, `getBySlot`, `resolveFirstNavigable`) — inactive entries do not enter the DOM. Routing (`findByPath`, `resolveCurrent`) ignores `active` — direct URL hits still resolve. The backend list view is the one exception: it calls `repo->findAll()` directly and renders inactive entries with the `.be-nav-node--inactive` modifier so they remain editable.
 - Sibling order MUST be read from `sortKey` (id as tie-breaker), never from file/record order — `getBySlot()` and `getChildren()` enforce this. New entries get the next free `sortKey` at the end of their group (`NavigationController::nextSortKey`); `moveAction` renumbers affected groups densely. `sortKey` is server-controlled — no edit-form field maps to it.
 - Cross-slot DnD moves MUST be rejected (`moveAction`). A frontend entry dropped into a backend subtree would silently change its slot; the constraint keeps slot scope explicit. To move across slots, edit the entry and reassign the slot manually.
@@ -391,6 +400,8 @@ the 4-tuple). Seeded from the former friendly `url` values.
 
 - **NAV-SLOTS-CONFIG-001** — resolved 2026-07-05 (ADR-022). View areas + render-slots moved out of the `NavigationGroup` entity into **module config** (`viewAreaLabel` + `navSlots` in `<module>Config.inc.php`, read via `ModuleManager::getViewAreaLabel`/`getNavSlots`/`getAllNavSlots`/`isKnownSlot`). `Navigation.navigationGroupId` (int FK) → **`slot`** (slug string, `#[Clean('ident')]`); `TreeService` scopeOf now `getSlot`. `NavigationService`: `getByGroupSlug`/`getByGroupId` → **`getBySlot`** (validates against the config registry, throws `UnknownNavigationSlotException` on an unknown slug — fail-fast for a template typo); `getActiveSectionByGroupSlug` → `getActiveSectionBySlot`; `getViewAreas` returns `{key,label,url,active}` from ModuleManager; the group methods + `groups-all`/`group-entity` caches are gone; ctor dep `NavigationGroupRepository` → `ModuleManager`. `NavigationValidator::validateSlot` inlines XOR + orphan + registry-membership (the shared `ElementAnchorRules`/`AnchorViolation` were **deleted** — Navigation was their only consumer). `MetaDataController` moved off `getTopLevelGroups` onto `getPublicViewAreaKeys` + `getViewAreaLabel`. **Removed:** `NavigationGroup` entity/repository/validator/`NavigationGroupController` + 5 templates + `navigation-group/list.js` + `navigation_groups*.json` + the backend ACL block. Data migrated (`navigation_group_id` → `slot`) + sandbox cleanup (orphan id 14/15/16 → non-existent parent 13; id 17 → deleted controller). Verified: `php -l` all green, JSON valid, dev-server `/`/`/home`/`/login` 200 + backend 302, CLI boot `getViewAreas`/`getBySlot`/`iterateSections`/fail-fast all correct. Build plan: [`../03-development/navigation-slots-config-bauplan.md`](../03-development/navigation-slots-config-bauplan.md). **Restpunkt:** the `AbstractTreeEntityController` base is kept (one consumer, `NavigationController`) as the reuse seam for future tree-entity controllers (ADR-008/009).
 
+- **NAV-KEY-001** — resolved 2026-08-08 (ADR-032 phase 1). `Navigation` gained the server-controlled `?string $key` field — the stable import identity, `Folder::key` pattern (ADR-020). `null` for human-created entries; `navigation.default.json` seeds 16 keys (containers, auth, backend children — frontend starter pages deliberately keyless, their identity is the 4-tuple). `NavigationValidator::validateKey` enforces uniqueness among non-null keys; the edit POST path forces the stored value alongside `parentId`/`sortKey` (BodyCleaner passes attribute-less fields through, so the server-side force is the actual protection); the edit form shows the key display-only. Legacy runtime files without the field hydrate to `null` (forward-compatible). Verified: `php -l` on all touched files, 11-check CLI smoke (hydration round-trip, blank→null normalization, duplicate rejected, self/null accepted, default-file key uniqueness, UTF-8 umlauts intact, legacy hydration).
+
 - **NAV-LIST-VM-001** — resolved 2026-07-07. `listAction.tpl.php` baute den Baum selbst rekursiv auf: ein `$renderNode`-Closure rief `navigationService->getChildren()` + `findById()` (Service-Zugriff + Ref-Auflösung im Template) und komponierte die URL-/Route-Zelle inline — Logik im Partial (Konventionsverstoss). Dieselbe URL-/Route-/Ref-Darstellung existierte ein zweites Mal im Controller (`edit`-Fetch-Update, eigener `htmlspecialchars`-Closure) → Duplikat mit Drift-Risiko. Fix: ein einziger Node-Display-Builder im Controller — `nodeDisplay(Navigation): array` (name/urlDisplay/route/isRef/active; `urlDisplay` intern escaped) + `nodeTree(Navigation, all): array` (rekursiv, `children`/`hasChildren` über `TreeService::children`). `listAction` liefert fertige verschachtelte Arrays; das Template ist reiner Renderer (kein Service-Call, keine Escaping-Entscheidung: `urlDisplay` = `raw()` (vor-escaped), Rest `e()`). Der `edit`-Fetch nutzt denselben `nodeDisplay` → eine Quelle für die Node-Darstellung. Verhaltensgleich: `TreeService::children` (parentId≠null → scope-irrelevant, sortiert) entspricht `getChildren`; Ref-Auflösung via `repo()->find()` wie im alten edit-Pfad. Verifiziert: `php -l` (Controller + Template) grün.
 
 ## pending
@@ -398,16 +409,6 @@ the 4-tuple). Seeded from the former friendly `url` values.
 - **ADR-015 addendum for `Navigation::param` (NAV-PARAM-002)** — write a short `docs/02-decisions` ADR recording that navigation MAY carry an OUTBOUND UI-state query param (switch trigger, like `?via=`), while routing stays param-free (the ADR-015 core). Until then the decision lives in NAV-PARAM-002 above.
 
 - **Umgebungs-Switcher — Rollen-Gate (offen)** — `getViewAreas()` filtert heute nur auf Erreichbarkeit (mind. ein navigierbarer Eintrag), nicht auf Rolle; der Backend-Topbar ist ohnehin auth-gated, daher aufgeschoben. (Der frühere Env-Delete-Schutz ist mit ADR-022 gegenstandslos — Umgebungen sind Config, es gibt keinen Delete-Pfad mehr.)
-
-- **NAV-KEY-001 — stable `key` on framework-owned entries (ADR-032)** — `Navigation` needs a
-  server-controlled `key` field (code constant, `null` for everything created in the backend),
-  the same pattern as `Folder.key` (ADR-020). It is the identity a data import matches on: without
-  it the framework's own containers («Service», «Drive», «Webseiten») carry no natural key — no
-  4-tuple, only a name the customer may rename — so they cannot be recognized, and every entry
-  below them becomes undecidable too. Scope: entity field + `mapFromArray`/`mapToArray`,
-  `NavigationValidator` (unique among key-bearing entries, never accepted from request input),
-  `navigation.default.json` (`service`, `drive`, `webseiten`, …), edit form shows it read-only.
-  Prerequisite for [`../02-decisions/adr-032-data-import-identity-and-content-hash.md`](../02-decisions/adr-032-data-import-identity-and-content-hash.md).
 
 - **NAV-SEED-001 — module-owned entries live in kernel data (ADR-032)** — «Drive»/«Dokumente»
   (ids 23/24) and «Jobs» (id 28) sit in `packages/kernel/core/data/framework/routing/navigation.default.json`,

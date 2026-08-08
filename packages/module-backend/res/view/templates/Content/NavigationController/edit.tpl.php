@@ -67,6 +67,11 @@ $fieldError = function (string $name) use ($validator): string {
                 <?= raw($fieldError('name')) ?>
             </div>
         </div>
+        <?php if ($entry->getKey() !== null): ?>
+        <p style="font-size:.75rem;color:var(--be-muted,#94a3b8);margin:-.25rem 0 .5rem">
+            Framework-Key: <code><?= e($entry->getKey()) ?></code> — feste Import-Identität dieses Eintrags, nicht editierbar (ADR-032).
+        </p>
+        <?php endif; ?>
         <p style="font-size:.75rem;color:var(--be-muted,#94a3b8);margin:-.25rem 0 .5rem">
             Öffentliche URLs (Aliase) werden separat unter
             <a href="/backend/content/navigation-alias/list">URL-Aliase</a> verwaltet (ADR-015).

@@ -216,13 +216,17 @@ class NavigationController extends AbstractTreeEntityController
 
             $originalParentId = $nav->getParentId();
             $originalSortKey  = $nav->getSortKey();
+            $originalKey      = $nav->getKey();
 
             $nav->mapFromArray(BodyCleaner::cleanFor(Navigation::class, $body));
 
-            // parentId/sortKey are server-controlled — never trust the body.
+            // parentId/sortKey/key are server-controlled — never trust the body.
             // New child: parent comes from the validated ?parent target. Existing
             // entry: preserve the stored values (reparent/reorder go via moveAction).
+            // key (ADR-032): a code constant / import-adopted identity — a crafted
+            // body must not set or clear it; new backend entries never carry one.
             $nav->setParentId($isNew ? $postedParent?->getId() : $originalParentId);
+            $nav->setKey($isNew ? null : $originalKey);
             if (!$isNew) {
                 $nav->setSortKey($originalSortKey);
             }
