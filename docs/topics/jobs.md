@@ -122,6 +122,7 @@ Only `every:` consults the last run; the wall-clock forms do not. Deliberately n
 - **JOBS-001**: don't assume the runner can stop a job at its deadline — it cannot. `pcntl` is absent on shared hosting, so the budget is cooperative. A job ignoring `hasTimeLeft()` runs to completion and delays the next pass for its own key only.
 - **JOBS-002**: don't assume `JobRun::state = running` means a process is alive. It survives a fatal, a kill and a reboot. The job lock is the evidence; `JobQueue::abandoned()` requires both an old `startedAt` AND no held lock.
 - **JOBS-003**: don't assume a backend click runs a job. It queues one. On an installation without the cron line nothing is ever picked up — which is what the heartbeat banner on the job screen exists to reveal.
+- **JOBS-004** — resolved 2026-08-08. The job list's action controls (queue / set schedule / toggle) overlapped: they sat in a `.be-tree__row` of a `.be-tree--hub` container, which is an explicit 6-column grid (`1rem 2.4rem 1.6rem …`), so each form auto-placed into a narrow icon column. Action rows are plain flex divs now; the `remove`/`retry` forms that DO belong into a row carry `grid-column: 6`. Same defect and same fix as the import screen ([`import.md`](import.md) IMP-005). Verified by a DOM audit over both templates (no `form`/`select` under a `.be-tree__row` without an explicit column).
 
 ## pending
 

@@ -94,13 +94,16 @@ $stateLabel = [
                     </span>
                 </div>
 
-                <div class="be-tree__row" style="padding-left:2rem;gap:.5rem;flex-wrap:wrap">
+                <?php // NOT a `be-tree__row`: in a `be-tree--hub` container that row is an
+                      // explicit 6-column grid (1rem/2.4rem/1.6rem/…), so free-form controls
+                      // auto-place into the narrow icon columns and overlap. ?>
+                <div style="padding:0 0 .6rem 2.1rem;display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">
                     <form data-fetch-post="/backend/service/job/run" style="margin:0">
                         <input type="hidden" name="job" value="<?= e($job['key']) ?>">
                         <button type="submit" class="be-btn be-btn--primary">Jetzt einreihen</button>
                     </form>
 
-                    <form data-fetch-post="/backend/service/job/schedule" style="margin:0;display:flex;gap:.35rem;align-items:flex-end">
+                    <form data-fetch-post="/backend/service/job/schedule" style="margin:0;display:flex;gap:.35rem;align-items:center">
                         <input type="hidden" name="job" value="<?= e($job['key']) ?>">
                         <div class="be-form__field" style="margin:0;width:11rem">
                             <input type="text" name="expression"
@@ -117,7 +120,7 @@ $stateLabel = [
                     </form>
                     <?php endif; ?>
 
-                    <span style="font-size:.7rem;<?= $muted ?>;align-self:center">
+                    <span style="font-size:.7rem;<?= $muted ?>">
                         Modul <?= e($job['module']) ?> · Rolle <?= e($job['runAs']) ?>
                     </span>
                 </div>
@@ -149,7 +152,9 @@ $stateLabel = [
                         <?php endif; ?>
                     </span>
                     <?php if ($entry->getState() !== 'running'): ?>
-                    <form data-fetch-post="/backend/service/job/remove" style="margin:0">
+                    <?php // grid-column:6 — the hub row is an explicit grid; without it the
+                          // form auto-places into the 2.4rem icon column. ?>
+                    <form data-fetch-post="/backend/service/job/remove" style="margin:0;grid-column:6">
                         <input type="hidden" name="id" value="<?= e((string) $entry->getId()) ?>">
                         <button type="submit" class="be-btn">Entfernen</button>
                     </form>
@@ -183,7 +188,7 @@ $stateLabel = [
                         <?php endif; ?>
                     </span>
                     <?php if ($entry->getState() === 'failed'): ?>
-                    <form data-fetch-post="/backend/service/job/retry" style="margin:0">
+                    <form data-fetch-post="/backend/service/job/retry" style="margin:0;grid-column:6">
                         <input type="hidden" name="id" value="<?= e((string) $entry->getId()) ?>">
                         <button type="submit" class="be-btn">Nochmals</button>
                     </form>
