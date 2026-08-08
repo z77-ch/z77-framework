@@ -278,20 +278,7 @@ Installer creates the override dirs, registers the module in `moduleManager.inc.
 
 - **INST-SEED-001** — resolved 2026-08-08. `writeDataFiles()` now walks **every installed framework package**: data roots are derived from each package's framework psr-4 paths via the same `stripSrc` logic `buildPaths()` uses (`core/src` → `{install}/core/data`, `src` → `{install}/data`; new helper `frameworkDataRoots()`, install paths from Composer's `InstallationManager`, deduped, metapackages skipped). Previously only the kernel's own `core/data` was scanned, so module seeds never reached a project — concretely `packages/module-dms/data/documents/folders.default.json` (the DMS Drive root). On a rel-path collision across packages the first wins; seed-once protects existing runtime data either way. Verified in the skeleton: removed `data/documents/folders.json` → `composer install` seeds it from module-dms (Drive root, `key: "drive"`, `system: true`); re-install skips everything (0 writes).
 
-- **INST-IMPORT-001 — data import service (ADR-032)** — build the backend-side `ImportService`:
-  `#[ImportIdentity]` / `#[ImportRef]` attributes (ref-capable rules, bijective matching), per-run
-  `source id → target id` map, normalized content hash (no `id`, no `sort_key`, refs as resolved
-  target identity), near-match pass, plan with five outcomes
-  (skipped / changed / new / unclear / blocked), iterative preview with key adoption on manual
-  assignment, per-record apply defaulting to No, writes through the existing validators,
-  `superUser`-only. Source-agnostic core (`ImportSource` reader seam): shipped defaults, upload,
-  staged snapshots in a framework-owned inbox (hash/index/lock, backup-excluded); plans persisted,
-  bulk apply as an ADR-031 job. Scope v1: Navigation, NavigationAlias, MetaData (decided — i18n
-  goes to `TranslationCatalog`, DMS folders excluded). v2 when the first real migration is due:
-  `ImportMapping` contract (project `override/` code) + restricted mysqldump-INSERT reader with
-  declared source encoding, for adopting wdv-6.2.2 data (e.g. Fakturierung / order tables).
-  Depends on NAV-KEY-001. A `docs/topics/import.md` is written together with the code.
-  → [`../02-decisions/adr-032-data-import-identity-and-content-hash.md`](../02-decisions/adr-032-data-import-identity-and-content-hash.md);
-  pre-build review (21 findings, 8 decisions):
-  [`../03-development/review-import-adr-032.md`](../03-development/review-import-adr-032.md);
-  build plan (6 phases + v2): [`../03-development/import-service-bauplan.md`](../03-development/import-service-bauplan.md)
+- **INST-IMPORT-001** — resolved 2026-08-08 (ADR-032 phases 1–6 built). The record-level `merge`
+  answer is the backend data import: `/backend/service/import/list` (SUPER_USER), core in
+  `Z77\Shared\Import`. Single source of truth from here: [`import.md`](import.md). Remaining
+  v2 work (mysqldump reader, `ImportMapping`, upload form) is tracked THERE, not here.

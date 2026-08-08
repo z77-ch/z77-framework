@@ -1,6 +1,8 @@
 # Bauplan — ImportService (Daten-Übernahme nach ADR-032)
 
-**Status:** `[READY]` — Konzept entschieden, Bau nicht begonnen
+**Status:** `[DONE]` — Phasen 1–6 gebaut und verifiziert (2026-08-08); offen: Klick-Durchlauf
+im Browser, Upload-Formular, v2 (Mapping + SQL-Reader) — Pendenzen in
+[`../topics/import.md`](../topics/import.md)
 **Date:** 2026-08-08
 **ADR:** [ADR-032](../02-decisions/adr-032-data-import-identity-and-content-hash.md) — bindende Entscheide (1–15)
 **Review:** [review-import-adr-032.md](review-import-adr-032.md) — IMP-R001…R021, alle 8 Owner-Entscheide
@@ -11,8 +13,21 @@ einem anderen z77-Projekt, später wdv-6.2.2-Bestände (Fakturierung) aus einem
 SQL-Dump. Kern: deklarierte Identität × Inhalts-Hash → Plan mit fünf Ergebnissen
 → der Entwickler entscheidet, der Dienst schreibt durch die Validatoren.
 
-> **Laufende Dokumentation ab Phase 6:** `docs/topics/import.md`. Dieses Dokument
+> **Laufende Dokumentation:** [`../topics/import.md`](../topics/import.md). Dieses Dokument
 > ist der Bauplan und bleibt als Entstehungsgeschichte stehen.
+>
+> **Bau-Protokoll (2026-08-08):** alle 6 Phasen an einem Tag, je einzeln committet und
+> verifiziert. Phase 1: 11-Check-Smoke (Hydration, Eindeutigkeit, UTF-8). Phase 2: Skeleton
+> seedet `folders.json` aus module-dms, Re-Install 0 Writes. Phase 3: 16-Check-Smoke gegen
+> Skeleton- und zihlundsee-Daten — drei Runden, `login-user`-Rename als `unclear`+Vorschlag
+> gefangen, Id-Kollisionen (zihlundsee 25/26/28) nie gepaart, Bijektivität hält. Phase 4:
+> E2E-Apply im Skeleton — 16 applied/0 failed, «E-Mail» mit Parent 25 + sortKey 3, Folgeplan
+> 31× skipped (volle Konvergenz), stale Fingerprints werfen. Phase 5: Wiring-Smoke (Registry,
+> Job, Vendor-Discovery über FileFinder) + Dev-Server 302. Zwei Planner-Korrekturen aus den
+> Smokes: blocked nur für Einfügungen (gematchte Einträge brauchen keine Ref-Auflösung) und
+> Ref-Diff bei ungeklärtem Gegenstück = «unbekannt», nicht «verschieden». Bewusste
+> v1-Scope-Kürzung: kein Upload-Formular (core.js postet JSON, kein Multipart) — die Inbox
+> deckt den Fall; als Pendenz im Topic.
 
 ## Owner-Entscheide (2026-08-08, aus dem Review)
 

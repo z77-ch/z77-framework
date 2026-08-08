@@ -117,7 +117,7 @@ moving.
 
 ## pending
 
-- Existing (pre-1.1.0) projects do not get the «Service» navigation section automatically (navigation data is seed-once) — the two entries are created via the backend navigation UI; documented in the 1.1.0 release notes. Same root cause as the «Jobs» entry ([`jobs.md`](jobs.md)); the decided fix is [ADR-032](../02-decisions/adr-032-data-import-identity-and-content-hash.md), not yet built.
+- Existing (pre-1.1.0) projects do not get the «Service» navigation section automatically (navigation data is seed-once). The fix is BUILT (ADR-032): the backend data import proposes the missing shipped entries — see [`import.md`](import.md). Manual creation via the navigation UI remains the fallback on installations whose framework predates the import screen.
 
 ## see also
 
