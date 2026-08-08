@@ -143,27 +143,27 @@ $fmt = static function (?string $iso): string {
                         $planView['acceptedCount'] > $jobThreshold ? ' (als Job)' : '' ?>
                 </button>
             </form>
-            <form data-fetch-post="/backend/service/import/bulk" style="margin:0">
-                <input type="hidden" name="outcome" value="new">
-                <input type="hidden" name="decision" value="accept">
-                <button type="submit" class="be-btn">Alle neuen markieren</button>
-            </form>
             <form data-fetch-post="/backend/service/import/discard" style="margin:0">
                 <button type="submit" class="be-btn be-btn--ghost">Plan verwerfen</button>
             </form>
         </div>
 
         <?php foreach ($planView['groups'] as $group): ?>
-        <div class="be-list__section" style="margin-top:1.25rem">
+        <div class="be-list__section" style="margin-top:1.5rem">
             <div class="be-list__section__head" style="margin-bottom:.5rem">
-                <h3 style="font-size:.85rem;margin:0"><?= e($group['label']) ?>
+                <h3 style="font-size:.85rem;margin:0 0 .2rem"><?= e($group['label']) ?>
                     <small style="<?= $muted ?>">(<?= count($group['rows']) ?>)</small></h3>
+                <p style="font-size:.75rem;<?= $muted ?>;margin:0;max-width:70ch"><?= e($group['hint']) ?></p>
+                <?php if ($group['bulkable']): ?>
+                <form data-fetch-post="/backend/service/import/bulk" style="margin:.5rem 0 0">
+                    <input type="hidden" name="group" value="<?= e($group['key']) ?>">
+                    <input type="hidden" name="decision" value="accept">
+                    <button type="submit" class="be-btn">Alle <?= count($group['rows']) ?> markieren</button>
+                </form>
+                <?php endif; ?>
             </div>
 
-            <?php if ($group['outcome'] === 'skipped'): ?>
-            <p style="font-size:.75rem;<?= $muted ?>;padding:.25rem .5rem">
-                Identisch vorhanden — nichts zu tun.
-            </p>
+            <?php if ($group['key'] === 'skipped'): ?>
             <?php else: ?>
             <div class="be-tree be-tree--hub">
                 <?php foreach ($group['rows'] as $row): ?>
@@ -172,14 +172,14 @@ $fmt = static function (?string $iso): string {
                         <span class="be-tree__toggle" aria-hidden="true"></span>
                         <span class="be-tree__name">
                             <?= e($row['label']) ?>
-                            <code style="font-size:.7rem;<?= $muted ?>"><?= e($row['entity']) ?></code>
                             <?php if ($row['decision'] === 'accept'): ?>
                             <span style="font-size:.7rem;color:var(--be-accent,#38bdf8)">✓ markiert</span>
                             <?php elseif ($row['decision'] === 'reject'): ?>
                             <span style="font-size:.7rem;<?= $muted ?>">abgelehnt</span>
                             <?php endif; ?>
                         </span>
-                        <span class="be-tree__url" style="font-family:inherit"><?= e($row['reason']) ?></span>
+                        <span class="be-tree__url" style="font-family:inherit"><?= e($row['consequence']) ?></span>
+                        <span class="be-tree__route"><?= e($row['entity']) ?></span>
                     </div>
 
                     <?php // Detail + action rows are NOT `be-tree__row`: the hub row is an
@@ -188,20 +188,19 @@ $fmt = static function (?string $iso): string {
                     <?php if ($row['diff'] !== []): ?>
                     <div style="padding:0 0 .25rem 2.1rem">
                         <table style="font-size:.72rem;border-collapse:collapse">
+                            <tr style="<?= $muted ?>">
+                                <th style="text-align:left;font-weight:normal;padding:0 .75rem .15rem 0">Feld</th>
+                                <th style="text-align:left;font-weight:normal;padding:0 .75rem .15rem 0">bei dir</th>
+                                <th style="text-align:left;font-weight:normal;padding:0 0 .15rem 0">wird zu</th>
+                            </tr>
                             <?php foreach ($row['diff'] as $d): ?>
                             <tr>
-                                <td style="padding:.1rem .75rem .1rem 0"><code><?= e($d['field']) ?></code></td>
-                                <td style="padding:.1rem .75rem .1rem 0;<?= $muted ?>">deins: <?= e($d['target']) ?></td>
-                                <td style="padding:.1rem 0">Quelle: <?= e($d['source']) ?></td>
+                                <td style="padding:.1rem .75rem .1rem 0"><?= e($d['field']) ?></td>
+                                <td style="padding:.1rem .75rem .1rem 0;<?= $muted ?>"><?= e($d['target']) ?></td>
+                                <td style="padding:.1rem 0"><?= e($d['source']) ?></td>
                             </tr>
                             <?php endforeach; ?>
                         </table>
-                    </div>
-                    <?php endif; ?>
-
-                    <?php if ($row['blockedBy'] !== null): ?>
-                    <div style="padding:0 0 .25rem 2.1rem;font-size:.72rem;<?= $muted ?>">
-                        wartet auf: <?= e($row['blockedBy']) ?>
                     </div>
                     <?php endif; ?>
 
@@ -213,14 +212,15 @@ $fmt = static function (?string $iso): string {
                                 <input type="hidden" name="decision" value="accept">
                                 <input type="hidden" name="target_id" value="<?= e((string) $row['suggestionId']) ?>">
                                 <button type="submit" class="be-btn be-btn--primary">
-                                    Zuordnen zu <?= e($row['suggestion']) ?>
+                                    Ist mein <?= e($row['suggestion']) ?>
                                 </button>
                             </form>
                             <?php endif; ?>
                             <?php if ($row['targets'] !== []): ?>
-                            <form data-fetch-post="/backend/service/import/decide" style="margin:0;display:flex;gap:.35rem">
+                            <form data-fetch-post="/backend/service/import/decide" style="margin:0;display:flex;gap:.35rem;align-items:center">
                                 <input type="hidden" name="key" value="<?= e($row['key']) ?>">
                                 <input type="hidden" name="decision" value="accept">
+                                <span style="font-size:.72rem;<?= $muted ?>">oder:</span>
                                 <select name="target_id" class="be-form__field" style="margin:0">
                                     <?php foreach ($row['targets'] as $target): ?>
                                     <option value="<?= e((string) $target['id']) ?>"><?= e($target['label']) ?></option>
@@ -233,9 +233,9 @@ $fmt = static function (?string $iso): string {
                                 <input type="hidden" name="key" value="<?= e($row['key']) ?>">
                                 <input type="hidden" name="decision" value="accept">
                                 <input type="hidden" name="force_new" value="1">
-                                <button type="submit" class="be-btn">Ist wirklich neu — anlegen</button>
+                                <button type="submit" class="be-btn">Habe ich nicht — neu anlegen</button>
                             </form>
-                        <?php elseif (in_array($row['outcome'], ['new', 'changed'], true)): ?>
+                        <?php elseif (in_array($row['group'], ['new', 'changed-content', 'changed-key'], true)): ?>
                             <?php if ($row['decision'] !== 'accept'): ?>
                             <form data-fetch-post="/backend/service/import/decide" style="margin:0">
                                 <input type="hidden" name="key" value="<?= e($row['key']) ?>">
@@ -244,7 +244,11 @@ $fmt = static function (?string $iso): string {
                                 <input type="hidden" name="target_id" value="<?= e((string) $row['targetId']) ?>">
                                 <?php endif; ?>
                                 <button type="submit" class="be-btn be-btn--primary">
-                                    <?= $row['outcome'] === 'new' ? 'Übernehmen' : 'Änderung übernehmen' ?>
+                                    <?= match ($row['group']) {
+                                        'new'         => 'Anlegen',
+                                        'changed-key' => 'Kennung setzen',
+                                        default       => 'Änderung übernehmen',
+                                    } ?>
                                 </button>
                             </form>
                             <?php endif; ?>

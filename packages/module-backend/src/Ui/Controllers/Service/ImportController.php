@@ -37,13 +37,76 @@ class ImportController extends BackendAbstractController
     /** Accepted records beyond this run as a job — a bulk apply is not request work. */
     private const JOB_THRESHOLD = 50;
 
-    private const OUTCOME_ORDER = [
-        'unclear' => 'Zuordnung nötig',
-        'changed' => 'Geändert — Übernahme pro Eintrag',
-        'new'     => 'Neu',
-        'blocked' => 'Blockiert',
-        'invalid' => 'Nicht importierbar',
-        'skipped' => 'Bereits vorhanden',
+    /**
+     * Display groups, in the order the developer should work through them. These
+     * are NOT the planner's outcomes: `changed` is split by what the change
+     * actually MEANS — a pure bookkeeping key backfill (harmless, bulk-acceptable)
+     * versus a real content difference that deserves a per-record look. The core
+     * outcome model (ADR-032 §6) stays untouched; this is presentation.
+     *
+     * Each group carries the sentence that explains it — the screen must be
+     * readable by someone who has not touched the import for six months.
+     */
+    private const GROUPS = [
+        'unclear' => [
+            'label' => 'Zuordnung nötig',
+            'hint'  => 'Diese Einträge liefert das Framework mit. Ob sie deinen bestehenden '
+                     . 'entsprechen, kann der Import nicht sicher entscheiden — deine tragen noch '
+                     . 'keine Kennung. Ordne zu, was dasselbe ist; der Rest wird neu angelegt.',
+        ],
+        'changed-content' => [
+            'label' => 'Inhalt weicht ab',
+            'hint'  => 'Denselben Eintrag gibt es bei dir, aber mit anderem Inhalt — meist weil '
+                     . 'das Framework etwas korrigiert hat oder du selbst angepasst hast. Nichts '
+                     . 'wird ohne dein Zutun überschrieben.',
+        ],
+        'new' => [
+            'label' => 'Neu',
+            'hint'  => 'Gibt es bei dir noch nicht — wird angelegt.',
+        ],
+        'changed-key' => [
+            'label' => 'Kennung nachtragen',
+            'hint'  => 'Diese Einträge hast du bereits und sie bleiben unverändert. Sie bekommen '
+                     . 'nur die feste Framework-Kennung, an der ein künftiger Import sie '
+                     . 'wiedererkennt — ohne sie fragt jeder Import erneut nach. Für Besucher '
+                     . 'ändert sich nichts.',
+        ],
+        'blocked' => [
+            'label' => 'Wartet auf anderes',
+            'hint'  => 'Hängt an einem Eintrag weiter oben, der noch offen ist. Löst sich von '
+                     . 'selbst, sobald der entschieden ist.',
+        ],
+        'invalid' => [
+            'label' => 'Nicht importierbar',
+            'hint'  => 'Die Quelle liefert diese Datensätze in einer Form, die nicht zur Entity passt.',
+        ],
+        'skipped' => [
+            'label' => 'Bereits vorhanden',
+            'hint'  => 'Identisch bei dir vorhanden — nichts zu tun.',
+        ],
+    ];
+
+    /** Field name → German label. Unknown fields fall back to the raw key. */
+    private const FIELD_LABELS = [
+        'key'            => 'Kennung',
+        'name'           => 'Name',
+        'module'         => 'Modul',
+        'group'          => 'Gruppe',
+        'controller'     => 'Controller',
+        'action'         => 'Action',
+        'slot'           => 'Render-Slot',
+        'param'          => 'UI-Parameter',
+        'active'         => 'Aktiv',
+        'ref'            => 'Verweis',
+        'parent_id'      => 'Übergeordnet',
+        'path'           => 'Pfad',
+        'is_canonical'   => 'Kanonisch',
+        'navigation_id'  => 'Navigation',
+        'language'       => 'Sprache',
+        'title'          => 'Titel',
+        'description'    => 'Beschreibung',
+        'theme_color'    => 'Themenfarbe',
+        'application_ld' => 'JSON-LD',
     ];
 
     private ?ImportService $service = null;
@@ -196,16 +259,19 @@ class ImportController extends BackendAbstractController
         return $this->fetch()->setStatus('success')->addCommand('reload');
     }
 
-    /** Bulk decision for every record of ONE outcome (the «alle neuen übernehmen» button). */
+    /** Bulk decision for a whole DISPLAY group (the per-group «alle markieren» button). */
     #[Fetch, HttpMethod('POST')]
     protected function bulkAction(): FetchResponse
     {
-        $body    = DI::getRequest()->getJsonBody();
-        $outcome = ImportOutcome::tryFrom(trim((string) ($body['outcome'] ?? '')));
+        $body     = DI::getRequest()->getJsonBody();
+        $group    = trim((string) ($body['group'] ?? ''));
         $decision = trim((string) ($body['decision'] ?? ''));
 
-        if ($outcome !== ImportOutcome::NewRecord && $outcome !== ImportOutcome::Changed) {
-            return $this->fetchError('Sammel-Entscheidung nur für neue oder geänderte Einträge');
+        // Only the two harmless-by-nature groups may be decided wholesale: new
+        // records and the key backfill. A content difference is looked at one by
+        // one — that is the whole point of the `changed` opt-in (ADR-032 §8).
+        if (!in_array($group, ['new', 'changed-key'], true)) {
+            return $this->fetchError('Sammel-Entscheidung nur für «Neu» und «Kennung nachtragen»');
         }
         if (!in_array($decision, [ImportPlanEntry::DECISION_ACCEPT, ImportPlanEntry::DECISION_REJECT], true)) {
             return $this->fetchError('Ungültige Entscheidung');
@@ -224,7 +290,10 @@ class ImportController extends BackendAbstractController
             return $this->fetchError($e->getMessage());
         }
 
-        foreach ($plan->byOutcome($outcome) as $entry) {
+        foreach ($plan->entries as $entry) {
+            if ($this->groupOf($entry) !== $group) {
+                continue;
+            }
             $key = $entry->entityClass . '#' . $entry->sourceIndex;
             $state['decisions'][$key] = ($state['decisions'][$key] ?? []);
             $state['decisions'][$key]['decision'] = $decision;
@@ -356,17 +425,30 @@ class ImportController extends BackendAbstractController
             }
         }
 
+        // Bucket every entry into its DISPLAY group (see self::GROUPS): the
+        // planner's `changed` splits by meaning — key-only backfill vs. real
+        // content difference.
+        $buckets = [];
+        foreach ($plan->entries as $entry) {
+            $buckets[$this->groupOf($entry)][] = $entry;
+        }
+
         $groups = [];
-        foreach (self::OUTCOME_ORDER as $outcomeValue => $label) {
-            $entries = $plan->byOutcome(ImportOutcome::from($outcomeValue));
-            if ($entries === []) {
+        foreach (self::GROUPS as $groupKey => $meta) {
+            if (empty($buckets[$groupKey])) {
                 continue;
             }
             $rows = [];
-            foreach ($entries as $entry) {
-                $rows[] = $this->buildRow($entry, $plan, $targetOptions);
+            foreach ($buckets[$groupKey] as $entry) {
+                $rows[] = $this->buildRow($entry, $plan, $targetOptions, $groupKey);
             }
-            $groups[] = ['outcome' => $outcomeValue, 'label' => $label, 'rows' => $rows];
+            $groups[] = [
+                'key'      => $groupKey,
+                'label'    => $meta['label'],
+                'hint'     => $meta['hint'],
+                'rows'     => $rows,
+                'bulkable' => in_array($groupKey, ['new', 'changed-key'], true),
+            ];
         }
 
         $acceptedCount = count(array_filter(
@@ -384,12 +466,12 @@ class ImportController extends BackendAbstractController
         ];
     }
 
-    private function buildRow(ImportPlanEntry $entry, ImportPlan $plan, array $targetOptions): array
+    private function buildRow(ImportPlanEntry $entry, ImportPlan $plan, array $targetOptions, string $groupKey): array
     {
         $diff = [];
         foreach ($entry->diff as $field => $values) {
             $diff[] = [
-                'field'  => $field,
+                'field'  => self::FIELD_LABELS[$field] ?? $field,
                 'source' => $this->valueLabel($values['source'] ?? null),
                 'target' => $this->valueLabel($values['target'] ?? null),
             ];
@@ -405,43 +487,96 @@ class ImportController extends BackendAbstractController
             $suggestionLabel ??= '#' . $entry->suggestionId;
         }
 
+        $blockedBy = $entry->blockedByIndex !== null
+            ? $this->contextLabel($plan->entries[$entry->blockedByIndex], $plan)
+            : null;
+
         return [
             'key'          => $entry->entityClass . '#' . $entry->sourceIndex,
             'entity'       => $this->shortName($entry->entityClass),
-            'label'        => $this->recordLabel($entry->record),
+            'label'        => $this->contextLabel($entry, $plan),
             'outcome'      => $entry->outcome->value,
-            'reason'       => $this->reasonText($entry, $suggestionLabel),
+            'group'        => $groupKey,
+            'consequence'  => $this->consequenceText($entry, $groupKey, $suggestionLabel, $blockedBy),
             'reasonRaw'    => $entry->reason,
             'decision'     => $entry->decision,
             'targetId'     => $entry->targetId,
-            'diff'         => $diff,
+            'diff'         => $groupKey === 'changed-key' ? [] : $diff,   // key-only: the sentence says it all
             'suggestionId' => $entry->suggestionId,
             'suggestion'   => $suggestionLabel,
             'targets'      => $entry->outcome === ImportOutcome::Unclear
                 ? ($targetOptions[$entry->entityClass] ?? [])
                 : [],
-            'blockedBy'    => $entry->blockedByIndex !== null
-                ? $plan->entries[$entry->blockedByIndex]->describe()
-                : null,
         ];
     }
 
     /**
-     * German one-liner for the screen. The planner's own `reason` stays English
-     * (framework code) and rides along as the row's tooltip — this is the
-     * display translation, derived from outcome + suggestion, not parsed text.
+     * Which DISPLAY group an entry belongs to. Only `changed` splits: a diff that
+     * touches nothing but `key` is the identity backfill (nothing visible
+     * changes), everything else is a real content difference.
      */
-    private function reasonText(ImportPlanEntry $entry, ?string $suggestionLabel): string
+    private function groupOf(ImportPlanEntry $entry): string
     {
-        return match ($entry->outcome) {
-            ImportOutcome::Skipped   => 'Identisch vorhanden.',
-            ImportOutcome::Changed   => 'Vorhandener Eintrag weicht ab in: ' . implode(', ', array_keys($entry->diff)),
-            ImportOutcome::NewRecord => 'Kein passender Eintrag vorhanden — wird angelegt.',
-            ImportOutcome::Blocked   => 'Wartet auf einen anderen Eintrag.',
-            ImportOutcome::Invalid   => 'Nicht importierbar: ' . $entry->reason,
-            ImportOutcome::Unclear   => $suggestionLabel !== null
-                ? 'Keine eindeutige Identität — vermutlich dein Eintrag ' . $suggestionLabel . '.'
-                : 'Keine eindeutige Identität — bitte zuordnen oder als neu anlegen.',
+        if ($entry->outcome !== ImportOutcome::Changed) {
+            return $entry->outcome->value;
+        }
+        return array_keys($entry->diff) === ['key'] ? 'changed-key' : 'changed-content';
+    }
+
+    /**
+     * The record's name WITH its position, so two entries called «Navigation»
+     * are tellable apart («Stammdaten › Navigation»). Walks the source-side
+     * parent chain through the plan itself — the source ids are only meaningful
+     * inside the source, which is exactly what the chain is built from.
+     */
+    private function contextLabel(ImportPlanEntry $entry, ImportPlan $plan): string
+    {
+        $name = $this->recordLabel($entry->record);
+
+        $byId = [];
+        foreach ($plan->entries as $other) {
+            if ($other->entityClass === $entry->entityClass && ($other->record['id'] ?? null) !== null) {
+                $byId[$other->record['id']] = $other->record;
+            }
+        }
+
+        $chain   = [];
+        $current = $entry->record;
+        $guard   = 0;
+        while (($parentId = $current['parent_id'] ?? null) !== null && $guard++ < 10) {
+            $parent = $byId[$parentId] ?? null;
+            if ($parent === null) {
+                break;
+            }
+            array_unshift($chain, $this->recordLabel($parent));
+            $current = $parent;
+        }
+
+        return $chain === [] ? $name : implode(' › ', $chain) . ' › ' . $name;
+    }
+
+    /**
+     * What happens if this row is accepted, in plain German. Says the
+     * CONSEQUENCE, never the field list — «weicht ab in: key» is meaningless
+     * six months later, «bekommt die Kennung navigation» is not.
+     */
+    private function consequenceText(ImportPlanEntry $entry, string $groupKey, ?string $suggestionLabel, ?string $blockedBy): string
+    {
+        return match ($groupKey) {
+            'changed-key' => 'bekommt die Kennung «' . ($entry->record['key'] ?? '?') . '»',
+            'changed-content' => 'überschreibt bei dir: ' . implode(', ', array_map(
+                fn(string $f) => self::FIELD_LABELS[$f] ?? $f,
+                array_keys($entry->diff)
+            )),
+            'new'     => 'wird neu angelegt',
+            'unclear' => $suggestionLabel !== null
+                ? 'ist vermutlich dein ' . $suggestionLabel
+                : 'kein ähnlicher Eintrag gefunden — zuordnen oder neu anlegen',
+            'blocked' => $blockedBy !== null
+                ? 'wird angelegt, sobald «' . $blockedBy . '» entschieden ist'
+                : 'wartet auf einen anderen Eintrag',
+            'invalid' => $entry->reason,
+            default   => 'unverändert',
         };
     }
 
@@ -467,7 +602,18 @@ class ImportController extends BackendAbstractController
     private function recordLabel(array $record): string
     {
         $label = $record['name'] ?? $record['path'] ?? $record['title'] ?? null;
-        return is_string($label) && $label !== '' ? $label : '#' . ($record['id'] ?? '?');
+        $label = is_string($label) && $label !== '' ? $label : '#' . ($record['id'] ?? '?');
+
+        // A ref entry carries no routing of its own — say so, otherwise
+        // «Navigation › Navigation» reads like a duplicate instead of a pointer.
+        if (($record['ref'] ?? null) !== null) {
+            $label .= ' (Verweis)';
+        }
+        // MetaData: title alone is ambiguous across languages.
+        if (isset($record['language']) && is_string($record['language']) && $record['language'] !== '') {
+            $label .= ' [' . $record['language'] . ']';
+        }
+        return $label;
     }
 
     private function valueLabel(mixed $value): string

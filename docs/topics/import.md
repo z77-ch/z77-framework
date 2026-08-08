@@ -59,6 +59,13 @@ they are in-file link addresses, rewritten through a per-run id map at apply.
 - **Five outcomes**: `skipped` (identical) · `changed` (field diff, per-record opt-in, default No)
   · `new` (bulk-acceptable) · `unclear` (assign a match / force-new — a human decides) · `blocked`
   (a referenced record is unclear/declined; transitive, only insertions block).
+- **The screen groups by MEANING, not by outcome** (`ImportController::GROUPS`): `changed` splits
+  into **«Kennung nachtragen»** (the diff touches nothing but `key` — pure identity backfill,
+  nothing visible changes, bulk-acceptable) and **«Inhalt weicht ab»** (a real difference, one by
+  one, with a `bei dir → wird zu` table). Every group carries its explanatory sentence, and each
+  row says the CONSEQUENCE («bekommt die Kennung «navigation»»), never a field list. Rows are
+  labelled with their tree position («Stammdaten › Navigation»), because a bare name repeats.
+  Presentation only — the core outcome model is untouched.
 - **A rule matches only bijectively** (unique on BOTH sides) — the 4-tuple is legally non-unique
   (ADR-015), ambiguity goes to `unclear`, never a guess.
 - **Near-match** downgrades a would-be `new` to `unclear` + suggestion when (resolved parent,
@@ -116,6 +123,11 @@ Quelle (Vendor-Defaults | Inbox-Datei + Entity-Typ aus der Whitelist)
   belongs to `moveAction` with its guards.
 - When reading a plan → MUST treat it as derived state: recompute from source + decisions, never
   serialize/patch computed entries (an assignment changes downstream outcomes).
+- When adding a row or group to the screen → MUST state what ACCEPTING does, in German, and MUST
+  NOT surface raw field names or planner English as the row text (the planner's `reason` belongs
+  in the `title` tooltip). A reader six months later has to understand the row without the ADR.
+- When adding a bulk («alle markieren») control → MUST restrict it to groups that are harmless by
+  nature (`new`, `changed-key`); a content difference MUST stay a per-record decision (ADR-032 §8).
 - When touching staging → MUST keep it under `data/framework/import` (backup-excluded,
   BACKUP-JOBS-001 pattern) and MUST NOT accept file paths from a request — inbox basenames only.
 
