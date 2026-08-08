@@ -102,7 +102,22 @@ return [
             'JobController' => [
                 'controllerRole' => AuthRole::SUPER_USER,
             ],
+            // Data import (ADR-032): adopts shipped/foreign records into the
+            // installation's data — writes navigation, aliases, metadata.
+            // Installation governance like backup/jobs.
+            'ImportController' => [
+                'controllerRole' => AuthRole::SUPER_USER,
+            ],
         ],
+    ],
+
+    // Importable entities (ADR-032): the whitelist the backend data import
+    // works on — aggregated by ModuleManager::getImportEntities(). The screen
+    // only ever offers these; an entity class never comes from a request.
+    'importEntities' => [
+        \Z77\Shared\Entities\Navigation::class,
+        \Z77\Shared\Entities\NavigationAlias::class,
+        \Z77\Shared\Entities\MetaData::class,
     ],
 
     // Background jobs (ADR-031). The backup service itself lives in the kernel,
@@ -136,6 +151,16 @@ return [
             'runAs'       => AuthRole::SUPER_USER,
             'maxAttempts' => 2,
             'payload'     => ['type' => 'full'],
+        ],
+        // Applies the CURRENT import plan (ADR-032) — queued from the import
+        // screen for bulk sets a web request must not carry. No payload: the
+        // plan store is the single source. maxAttempts 1: a stale plan must
+        // never be retried against data that moved.
+        'import-apply' => [
+            'class'       => \Z77\Shared\Jobs\ImportApplyJob::class,
+            'label'       => 'Import — Plan anwenden',
+            'runAs'       => AuthRole::SUPER_USER,
+            'maxAttempts' => 1,
         ],
     ],
 ];

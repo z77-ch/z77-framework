@@ -194,7 +194,10 @@ final class ImportPlanner
                 $entry = new ImportPlanEntry($class, $i, $src, ImportOutcome::Unclear,
                     reason: 'References a record that is neither part of the source nor matched.');
             } else {
-                $entry = $this->classifyUnmatched($desc, $i, $src, $targets, $claimed);
+                $entry = $this->classifyUnmatched(
+                    $desc, $i, $src, $targets, $claimed,
+                    forceNew: (bool) ($decision['force_new'] ?? false)
+                );
             }
 
             $entry->decision         = $decisionCode;
@@ -215,9 +218,11 @@ final class ImportPlanner
     /**
      * A record no rule could match: near-match pass (IMP-R003) or genuinely new.
      * A new record must also be APPLICABLE — every ref has to resolve to a match
-     * or to a fellow source record; otherwise it is unclear, not new.
+     * or to a fellow source record; otherwise it is unclear, not new. $forceNew
+     * is the developer's "this really is new" answer to an unclear record: it
+     * skips the near-match suggestion, never the applicability checks.
      */
-    private function classifyUnmatched(ImportDescriptor $desc, int $index, array $src, array $targets, array $claimed): ImportPlanEntry
+    private function classifyUnmatched(ImportDescriptor $desc, int $index, array $src, array $targets, array $claimed, bool $forceNew = false): ImportPlanEntry
     {
         foreach ($desc->getRefs() as $field => $ref) {
             $value = $src[$field] ?? null;
@@ -230,7 +235,7 @@ final class ImportPlanner
         }
 
         $nearFields = $desc->getNearMatchFields();
-        if ($nearFields !== []) {
+        if ($nearFields !== [] && !$forceNew) {
             $candidates = [];
             foreach ($targets as $id => $tgt) {
                 if (isset($claimed[$id])) continue;

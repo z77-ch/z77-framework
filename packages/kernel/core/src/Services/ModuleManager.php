@@ -23,6 +23,7 @@ class ModuleManager
 
     /** Memoized job registry (job key → definition); built once per request. */
     private ?array $jobs = null;
+    private ?array $importEntities = null;
 
     public function __construct(ConfigManager $configManager)
     {
@@ -412,6 +413,44 @@ class ModuleManager
         }
 
         return $this->jobs = $jobs;
+    }
+
+    /**
+     * Importable entity classes aggregated across all modules (ADR-032): the
+     * whitelist the backend data import works on. A module declares them under
+     * the `importEntities` config key; the union is deduplicated. Like the job
+     * registry this is what keeps the import a fixed menu — the screen never
+     * accepts an entity class from a request.
+     *
+     * ```php
+     * 'importEntities' => [Navigation::class, NavigationAlias::class, MetaData::class],
+     * ```
+     *
+     * @return list<class-string>
+     */
+    public function getImportEntities(): array
+    {
+        if ($this->importEntities !== null) {
+            return $this->importEntities;
+        }
+
+        $classes = [];
+        foreach ($this->getModuleKeys() as $moduleKey) {
+            $declared = $this->getModuleConfig($moduleKey)?->get('importEntities', []);
+            if (!is_array($declared)) {
+                continue;
+            }
+            foreach ($declared as $class) {
+                if (!is_string($class) || !class_exists($class)) {
+                    throw new \RuntimeException(
+                        "❌ importEntities of module '{$moduleKey}' names a non-existent class: " . var_export($class, true)
+                    );
+                }
+                $classes[$class] = true;
+            }
+        }
+
+        return $this->importEntities = array_keys($classes);
     }
 
     public function getModuleParameter(string $moduleKey, string $parameter): string | array
