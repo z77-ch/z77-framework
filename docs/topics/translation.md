@@ -168,6 +168,7 @@ discriminator.
 ## pending
 
 - **Content URL slug table** — only if content URLs ever localize their slug; today content is addressed by canonical slug + language, so no table is needed.
+- **TRANS-SEED-001 — missing-key adoption in the backend editor (ADR-032 scope decision, 2026-08-08)** — runtime catalogs are file-level seed-once, so UI-string keys added to the shipped `*.default.json` after installation never reach an existing project. Decided: this is NOT the ADR-032 entity import (catalogs are flat `key → value` maps, no entities) — instead `TranslationCatalog` gets a small compare-and-adopt feature: list keys present in the vendor default but absent in the runtime catalog, adopt selected ones (never overwrite an existing value). See [`../03-development/review-import-adr-032.md`](../03-development/review-import-adr-032.md) IMP-R012.
 
 ## see also
 

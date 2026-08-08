@@ -273,4 +273,25 @@ Installer creates the override dirs, registers the module in `moduleManager.inc.
   - DONE: `config/i18n.inc.php` → seed-once (`writeI18nConfig()` skips if it exists). Defines the project's languages, which the developer adapts after install; an update must not clobber that.
   - DONE: `config/auth.inc.php` → seed-once (`writeAuthConfig()` skips if it exists). Holds installation-wide auth policy (e.g. `passwordTier`) the developer adapts after install.
   - DONE: `copyFiles()` (public entry files) + public asset copy → seed-once on first install only (ADR-024, INST-ASSET-002). `public/` is developer-owned; the installer never overwrites it.
-  - TODO: classify the remaining framework-derived config targets — `bootstrap.inc.php`, `moduleManager.inc.php`, `fileFinder.inc.php` (regenerate-always is likely correct, but confirm each carries no developer-adjusted value before publication), plus `writeDataFiles()`.
+  - TODO: classify the remaining framework-derived config targets — `bootstrap.inc.php`, `moduleManager.inc.php`, `fileFinder.inc.php` (regenerate-always is likely correct, but confirm each carries no developer-adjusted value before publication).
+  - DECIDED 2026-08-08: `writeDataFiles()` stays **seed-once at file level** — the installer never merges records into an existing runtime file. The `merge` class is served by a separate, manual data import in the backend (ADR-032). Consistent with ADR-024/025: the installer reports, the developer decides.
+
+- **INST-SEED-001 — `writeDataFiles()` only scans the kernel's own data dir** — `$base = realpath(__DIR__ . '/../../data')` resolves to `packages/kernel/core/data`, so `*.default.json` shipped by any other package is never deployed. Concretely `packages/module-dms/data/documents/folders.default.json` (the DMS Drive root, `key: "drive"`) does not reach a project at all; the runtime `folders.json` only exists because it was created at runtime. Fix: iterate the installed framework packages (the same list `buildPaths()` already walks) and seed each package's `data/` tree. Prerequisite for module-owned seeds under ADR-032 — see [`navigation.md`](navigation.md) NAV-SEED-001.
+
+- **INST-IMPORT-001 — data import service (ADR-032)** — build the backend-side `ImportService`:
+  `#[ImportIdentity]` / `#[ImportRef]` attributes (ref-capable rules, bijective matching), per-run
+  `source id → target id` map, normalized content hash (no `id`, no `sort_key`, refs as resolved
+  target identity), near-match pass, plan with five outcomes
+  (skipped / changed / new / unclear / blocked), iterative preview with key adoption on manual
+  assignment, per-record apply defaulting to No, writes through the existing validators,
+  `superUser`-only. Source-agnostic core (`ImportSource` reader seam): shipped defaults, upload,
+  staged snapshots in a framework-owned inbox (hash/index/lock, backup-excluded); plans persisted,
+  bulk apply as an ADR-031 job. Scope v1: Navigation, NavigationAlias, MetaData (decided — i18n
+  goes to `TranslationCatalog`, DMS folders excluded). v2 when the first real migration is due:
+  `ImportMapping` contract (project `override/` code) + restricted mysqldump-INSERT reader with
+  declared source encoding, for adopting wdv-6.2.2 data (e.g. Fakturierung / order tables).
+  Depends on NAV-KEY-001. A `docs/topics/import.md` is written together with the code.
+  → [`../02-decisions/adr-032-data-import-identity-and-content-hash.md`](../02-decisions/adr-032-data-import-identity-and-content-hash.md);
+  pre-build review (21 findings, 8 decisions):
+  [`../03-development/review-import-adr-032.md`](../03-development/review-import-adr-032.md);
+  build plan (6 phases + v2): [`../03-development/import-service-bauplan.md`](../03-development/import-service-bauplan.md)

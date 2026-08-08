@@ -125,5 +125,5 @@ Only `every:` consults the last run; the wall-clock forms do not. Deliberately n
 
 ## pending
 
-- Existing projects do not get the «Jobs» navigation entry automatically (navigation data is seed-once, node id 28) — create it via the backend navigation UI, like the other Service entries (see backup.md).
+- Existing projects do not get the «Jobs» navigation entry automatically (navigation data is seed-once, node id 28) — create it via the backend navigation UI, like the other Service entries (see backup.md). The general fix is decided but not built: [ADR-032](../02-decisions/adr-032-data-import-identity-and-content-hash.md) — a backend data import that proposes the shipped records the installation is missing. Until it exists this stays a manual step for every new framework entry.
 - `JobSchedules::enqueueDue()` moves a schedule on even when the previous entry is still open, so a run that is permanently stuck silently skips its slots. Acceptable while the job screen shows the open entry; revisit if a "missed run" report is ever wanted.

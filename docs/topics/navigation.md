@@ -343,6 +343,7 @@ the 4-tuple). Seeded from the former friendly `url` values.
 - [`../03-development/navigation-umgebung-bauplan.md`](../03-development/navigation-umgebung-bauplan.md) — build plan for the environment switcher (group tree + `viewArea` + dropdown + hierarchical list)
 - [`../02-decisions/adr-009-tree-entity-naming-and-controller-split.md`](../02-decisions/adr-009-tree-entity-naming-and-controller-split.md) — `{Element}Group` naming convention + multi-word kebab controller URLs (the `NavigationGroup` split itself is **voided by ADR-022** — the group entity/controller were removed)
 - [`metadata.md`](metadata.md) — per-page SEO `MetaData` (read path `findMetaData` + `$metaData` injection live here; backend CRUD + `'public'` environment flag live there)
+- [`../02-decisions/adr-032-data-import-identity-and-content-hash.md`](../02-decisions/adr-032-data-import-identity-and-content-hash.md) — **binding decision**: how a shipped navigation entry reaches an EXISTING installation (declared identity + content hash, four outcomes, developer applies). Navigation is the driving case — it needs the `key` field (NAV-KEY-001) and it is the entity whose refs (`parentId`, `ref`) must be resolved through the id map
 
 ## known issues
 
@@ -397,5 +398,22 @@ the 4-tuple). Seeded from the former friendly `url` values.
 - **ADR-015 addendum for `Navigation::param` (NAV-PARAM-002)** — write a short `docs/02-decisions` ADR recording that navigation MAY carry an OUTBOUND UI-state query param (switch trigger, like `?via=`), while routing stays param-free (the ADR-015 core). Until then the decision lives in NAV-PARAM-002 above.
 
 - **Umgebungs-Switcher — Rollen-Gate (offen)** — `getViewAreas()` filtert heute nur auf Erreichbarkeit (mind. ein navigierbarer Eintrag), nicht auf Rolle; der Backend-Topbar ist ohnehin auth-gated, daher aufgeschoben. (Der frühere Env-Delete-Schutz ist mit ADR-022 gegenstandslos — Umgebungen sind Config, es gibt keinen Delete-Pfad mehr.)
+
+- **NAV-KEY-001 — stable `key` on framework-owned entries (ADR-032)** — `Navigation` needs a
+  server-controlled `key` field (code constant, `null` for everything created in the backend),
+  the same pattern as `Folder.key` (ADR-020). It is the identity a data import matches on: without
+  it the framework's own containers («Service», «Drive», «Webseiten») carry no natural key — no
+  4-tuple, only a name the customer may rename — so they cannot be recognized, and every entry
+  below them becomes undecidable too. Scope: entity field + `mapFromArray`/`mapToArray`,
+  `NavigationValidator` (unique among key-bearing entries, never accepted from request input),
+  `navigation.default.json` (`service`, `drive`, `webseiten`, …), edit form shows it read-only.
+  Prerequisite for [`../02-decisions/adr-032-data-import-identity-and-content-hash.md`](../02-decisions/adr-032-data-import-identity-and-content-hash.md).
+
+- **NAV-SEED-001 — module-owned entries live in kernel data (ADR-032)** — «Drive»/«Dokumente»
+  (ids 23/24) and «Jobs» (id 28) sit in `packages/kernel/core/data/framework/routing/navigation.default.json`,
+  although they belong to `module-dms` / the job module. Each package should ship its own navigation
+  seeds and the installer collect them across packages. Blocks nothing today (a project installs the
+  full kernel default), but a project without the DMS module gets a dead «Drive» section, and the
+  import plan cannot be scoped per module while the records are kernel-owned.
 
 - **Subnav — Folgepunkte aus NAV-SUBNAV-001** — drei bewusst offen gelassene Punkte aus der Subnav-Refaktorierung (2026-06-02): (1) **inert-Styling** — der Modifier `backend-tree-node--inert` (Leaf ohne erreichbare URL) ist gesetzt, aber im SCSS noch ungestylt; rendert wie ein normaler Knoten. (2) **inaktive Einträge** — die Subnav nutzt `getChildren()` (ungefiltert), inaktive Einträge (`active: false`) werden weiterhin gerendert — Abweichung von der `active`-Regel (kein öffentliches active-gefiltertes `getChildren`; `getActiveChildren` ist privat im NavigationService). (3) **Opener-Summary klickbar** — ein Opener-Knoten mit eigenem Link ist aktuell nur Toggle, nicht klickbar (Erreichbarkeit via Ref-auf-sich-selbst-Kind, id-18-Muster); offen, ob Summary zusätzlich Link sein soll.
