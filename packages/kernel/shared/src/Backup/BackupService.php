@@ -30,8 +30,13 @@ final class BackupService
      * "ZipArchive::close(): Read error".
      *
      * Not configurable — this is not an operator's choice.
+     *
+     * `framework/import` (ADR-032) is the same class of state: the staging
+     * area + persisted import plans are transient — restoring them into
+     * another environment would resurrect a half-decided import against data
+     * that no longer matches its fingerprints.
      */
-    private const DATA_EXCLUDES = ['framework/jobs'];
+    private const DATA_EXCLUDES = ['framework/jobs', 'framework/import'];
 
     private string $baseDir;
     private array  $config;
