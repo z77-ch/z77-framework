@@ -141,6 +141,19 @@ Quelle (Vendor-Defaults | Inbox-Datei + Entity-Typ aus der Whitelist)
 - **IMP-003**: don't assume the screen can upload — v1 sources are vendor defaults + the inbox
   (`data/framework/import/inbox/`, via FTP/Explorer). The fetch layer posts JSON, not multipart;
   an upload form needs its own path (see pending).
+- **IMP-004**: don't be surprised by missing backend chrome on an installation that has no
+  «Import» navigation entry yet. The screen is reachable by convention route
+  (`/backend/service/import/list`), but the backend chrome is driven by the CURRENT navigation
+  entry: `subnav.tpl.php` returns early when `getActiveSectionBySlot()` finds none (no sidebar),
+  and `topbar.tpl.php` falls back to the literal label «Menü» (the section switcher behind the
+  grid icon still works). Pre-existing behaviour of every convention route — the import screen is
+  just the first one meant to be used without an entry. Self-healing: the first import creates
+  the «Import» + «Jobs» entries, after which the chrome renders normally.
+- **IMP-005**: don't put free-form content into a `.be-tree__row` inside a `.be-tree--hub`
+  container — that row is an explicit 6-column grid (`1rem 2.4rem 1.6rem …`), so forms and
+  buttons auto-place into the narrow icon columns and overlap. Detail/action rows are plain flex
+  divs; a control that belongs INTO the row needs `grid-column: 6`. (The same misuse exists in
+  `Service/JobController/listAction.tpl.php` — its action buttons overlap for the same reason.)
 
 ## pending
 

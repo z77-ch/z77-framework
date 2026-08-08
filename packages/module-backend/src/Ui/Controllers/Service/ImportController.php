@@ -410,7 +410,8 @@ class ImportController extends BackendAbstractController
             'entity'       => $this->shortName($entry->entityClass),
             'label'        => $this->recordLabel($entry->record),
             'outcome'      => $entry->outcome->value,
-            'reason'       => $entry->reason,
+            'reason'       => $this->reasonText($entry, $suggestionLabel),
+            'reasonRaw'    => $entry->reason,
             'decision'     => $entry->decision,
             'targetId'     => $entry->targetId,
             'diff'         => $diff,
@@ -423,6 +424,25 @@ class ImportController extends BackendAbstractController
                 ? $plan->entries[$entry->blockedByIndex]->describe()
                 : null,
         ];
+    }
+
+    /**
+     * German one-liner for the screen. The planner's own `reason` stays English
+     * (framework code) and rides along as the row's tooltip — this is the
+     * display translation, derived from outcome + suggestion, not parsed text.
+     */
+    private function reasonText(ImportPlanEntry $entry, ?string $suggestionLabel): string
+    {
+        return match ($entry->outcome) {
+            ImportOutcome::Skipped   => 'Identisch vorhanden.',
+            ImportOutcome::Changed   => 'Vorhandener Eintrag weicht ab in: ' . implode(', ', array_keys($entry->diff)),
+            ImportOutcome::NewRecord => 'Kein passender Eintrag vorhanden — wird angelegt.',
+            ImportOutcome::Blocked   => 'Wartet auf einen anderen Eintrag.',
+            ImportOutcome::Invalid   => 'Nicht importierbar: ' . $entry->reason,
+            ImportOutcome::Unclear   => $suggestionLabel !== null
+                ? 'Keine eindeutige Identität — vermutlich dein Eintrag ' . $suggestionLabel . '.'
+                : 'Keine eindeutige Identität — bitte zuordnen oder als neu anlegen.',
+        };
     }
 
     // -------------------------------------------------------------------------

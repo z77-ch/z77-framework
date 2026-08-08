@@ -81,11 +81,13 @@ $fmt = static function (?string $iso): string {
                 <div class="be-tree__row">
                     <span class="be-tree__toggle" aria-hidden="true"></span>
                     <span class="be-tree__name">Framework-Standarddaten</span>
-                    <span class="be-tree__url">
+                    <span class="be-tree__url" style="font-family:inherit">
                         <?= e(implode(', ', $vendorClasses)) ?> — was das installierte Framework
                         mitliefert, verglichen mit deiner Installation
                     </span>
-                    <form data-fetch-post="/backend/service/import/start-vendor" style="margin:0">
+                    <?php // grid-column:6 — the hub row is an explicit grid; without it the
+                          // form auto-places into the 2.4rem icon column. ?>
+                    <form data-fetch-post="/backend/service/import/start-vendor" style="margin:0;grid-column:6">
                         <button type="submit" class="be-btn be-btn--primary">Plan berechnen</button>
                     </form>
                 </div>
@@ -93,14 +95,14 @@ $fmt = static function (?string $iso): string {
 
             <?php foreach ($inbox as $file): ?>
             <div class="be-tree__node" style="--node-depth:0">
-                <div class="be-tree__row" style="flex-wrap:wrap">
+                <div class="be-tree__row">
                     <span class="be-tree__toggle" aria-hidden="true"></span>
                     <span class="be-tree__name"><?= e($file['name']) ?></span>
-                    <span class="be-tree__url">
+                    <span class="be-tree__url" style="font-family:inherit">
                         Inbox · <?= e(number_format($file['size'] / 1024, 1, '.', "'")) ?> KB ·
                         <?= e(date('d.m.Y H:i', $file['mtime'])) ?>
                     </span>
-                    <form data-fetch-post="/backend/service/import/start-inbox" style="margin:0;display:flex;gap:.35rem">
+                    <form data-fetch-post="/backend/service/import/start-inbox" style="margin:0;grid-column:6;display:flex;gap:.35rem">
                         <input type="hidden" name="file" value="<?= e($file['name']) ?>">
                         <select name="entity" class="be-form__field" style="margin:0">
                             <?php foreach ($entityOptions as $class => $label): ?>
@@ -166,7 +168,7 @@ $fmt = static function (?string $iso): string {
             <div class="be-tree be-tree--hub">
                 <?php foreach ($group['rows'] as $row): ?>
                 <div class="be-tree__node" style="--node-depth:0">
-                    <div class="be-tree__row" style="flex-wrap:wrap">
+                    <div class="be-tree__row" title="<?= e($row['reasonRaw']) ?>">
                         <span class="be-tree__toggle" aria-hidden="true"></span>
                         <span class="be-tree__name">
                             <?= e($row['label']) ?>
@@ -177,11 +179,14 @@ $fmt = static function (?string $iso): string {
                             <span style="font-size:.7rem;<?= $muted ?>">abgelehnt</span>
                             <?php endif; ?>
                         </span>
-                        <span class="be-tree__url"><?= e($row['reason']) ?></span>
+                        <span class="be-tree__url" style="font-family:inherit"><?= e($row['reason']) ?></span>
                     </div>
 
+                    <?php // Detail + action rows are NOT `be-tree__row`: the hub row is an
+                          // explicit 6-column grid (1rem/2.4rem/1.6rem/…), so free-form
+                          // content would be squeezed into the icon columns and overlap. ?>
                     <?php if ($row['diff'] !== []): ?>
-                    <div class="be-tree__row" style="padding-left:2rem">
+                    <div style="padding:0 0 .25rem 2.1rem">
                         <table style="font-size:.72rem;border-collapse:collapse">
                             <?php foreach ($row['diff'] as $d): ?>
                             <tr>
@@ -195,12 +200,12 @@ $fmt = static function (?string $iso): string {
                     <?php endif; ?>
 
                     <?php if ($row['blockedBy'] !== null): ?>
-                    <div class="be-tree__row" style="padding-left:2rem;font-size:.72rem;<?= $muted ?>">
+                    <div style="padding:0 0 .25rem 2.1rem;font-size:.72rem;<?= $muted ?>">
                         wartet auf: <?= e($row['blockedBy']) ?>
                     </div>
                     <?php endif; ?>
 
-                    <div class="be-tree__row" style="padding-left:2rem;gap:.5rem;flex-wrap:wrap">
+                    <div style="padding:0 0 .6rem 2.1rem;display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">
                         <?php if ($row['outcome'] === 'unclear'): ?>
                             <?php if ($row['suggestionId'] !== null): ?>
                             <form data-fetch-post="/backend/service/import/decide" style="margin:0">
