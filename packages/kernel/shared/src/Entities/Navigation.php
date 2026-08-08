@@ -4,11 +4,21 @@ namespace Z77\Shared\Entities;
 
 use Z77\Shared\Attributes\Clean;
 use Z77\Shared\Attributes\Entity;
+use Z77\Shared\Attributes\ImportIdentity;
+use Z77\Shared\Attributes\ImportNearMatch;
+use Z77\Shared\Attributes\ImportRef;
 use Z77\Shared\Traits\ArrayMappable;
 use Z77\Shared\Tree\TreeNode;
 use Z77\Shared\Tree\TreeNodeTrait;
 
+// Import identity (ADR-032): framework key → routing 4-tuple → (parent, ref)
+// for ref entries. The 4-tuple is legally non-unique (ADR-015) — the planner's
+// bijectivity rule handles that. Near-match: same resolved parent + name + slot
+// catches renamed identities (framework rename, keyless hand-created container).
+// The parentId ref comes from TreeNodeTrait (#[ImportRef('self')]).
 #[Entity('file', 'framework/routing/navigation.json', invalidatesCache: true)]
+#[ImportIdentity(['key'], ['module', 'group', 'controller', 'action'], ['parentId', 'ref'])]
+#[ImportNearMatch(['parentId', 'name', 'slot'])]
 class Navigation implements TreeNode
 {
     use ArrayMappable;
@@ -63,6 +73,7 @@ class Navigation implements TreeNode
     private string $slot = '';
 
     #[Clean('nullable', 'int')]
+    #[ImportRef(Navigation::class)]
     private ?int $ref = null;
 
     #[Clean('bool')]
