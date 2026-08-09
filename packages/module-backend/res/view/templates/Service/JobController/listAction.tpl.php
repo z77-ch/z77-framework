@@ -47,22 +47,22 @@ $stateLabel = [
         Ohne Cron-Eintrag wird hier nichts ausgeführt. Auf dem Server eintragen:
         <code>* * * * * cd /pfad/zum/projekt &amp;&amp; php vendor/bin/z77-run</code>
     </div>
-    <?php else: ?>
-    <p style="font-size:.75rem;<?= $muted ?>;margin:0 0 1.25rem">
-        Letzter Durchlauf: <?= e($fmt($heartbeat['at'])) ?>
-    </p>
     <?php endif; ?>
+    <?php /* The healthy case says nothing here — the heartbeat line lives in the shell header
+             band (`list.hc2.tpl.php`). Only the FAILURE keeps a body block, because it carries
+             the cron command to paste and would never fit the 46px band. */ ?>
 
     <div class="be-list__section">
-        <div class="be-list__section__head" style="margin-bottom:.5rem">
-            <h2 style="font-size:.95rem;margin:0">Jobs</h2>
-            <p style="font-size:.75rem;<?= $muted ?>;margin:.15rem 0 0">
-                Zeitplan-Formen: <code><?= e($scheduleHelp) ?></code> — leer lassen entfernt den Zeitplan.
-            </p>
+        <div class="be-list__section-header">
+            <h2 class="be-list__section-title">Jobs</h2>
+            <span class="be-list__section-badge"><?= count($jobs) ?></span>
         </div>
+        <p class="be-list__section-hint">
+            Zeitplan-Formen: <code><?= e($scheduleHelp) ?></code> — leer lassen entfernt den Zeitplan.
+        </p>
 
         <?php if (empty($jobs)): ?>
-        <p style="font-size:.8rem;<?= $muted ?>;padding:.5rem">Kein Modul bietet Jobs an.</p>
+        <p class="be-list__empty">Kein Modul bietet Jobs an.</p>
         <?php endif; ?>
 
         <div class="be-tree be-tree--hub">
@@ -130,9 +130,10 @@ $stateLabel = [
     </div>
 
     <?php if (!empty($open)): ?>
-    <div class="be-list__section" style="margin-top:1.5rem">
-        <div class="be-list__section__head" style="margin-bottom:.5rem">
-            <h2 style="font-size:.95rem;margin:0">Wartet</h2>
+    <div class="be-list__section">
+        <div class="be-list__section-header">
+            <h2 class="be-list__section-title">Wartet</h2>
+            <span class="be-list__section-badge"><?= count($open) ?></span>
         </div>
         <div class="be-tree be-tree--hub">
             <?php foreach ($open as $entry): ?>
@@ -166,13 +167,14 @@ $stateLabel = [
     </div>
     <?php endif; ?>
 
-    <div class="be-list__section" style="margin-top:1.5rem">
-        <div class="be-list__section__head" style="margin-bottom:.5rem">
-            <h2 style="font-size:.95rem;margin:0">Verlauf</h2>
+    <div class="be-list__section">
+        <div class="be-list__section-header">
+            <h2 class="be-list__section-title">Verlauf</h2>
+            <span class="be-list__section-badge"><?= count($history) ?></span>
         </div>
         <div class="be-tree be-tree--hub">
             <?php if (empty($history)): ?>
-            <p style="font-size:.8rem;<?= $muted ?>;padding:.5rem">Noch keine abgeschlossenen Läufe.</p>
+            <p class="be-list__empty">Noch keine abgeschlossenen Läufe.</p>
             <?php endif; ?>
             <?php foreach ($history as $entry): ?>
             <div class="be-tree__node" style="--node-depth:0">

@@ -12,6 +12,10 @@
 
 SOURCE=/packages/module-backend/res/scss/
 SOURCE=/packages/module-backend/res/assets/css/
+SOURCE=/packages/kernel/shared/res/scss/components/_split.scss
+SOURCE=/packages/kernel/shared/res/assets/js/split.js
+SOURCE=/packages/module-backend/res/scss/components/_split-host.scss
+SOURCE=/packages/module-backend/res/assets/js/shell.js
 SOURCE=/packages/module-backend/src/Ui/Config/layoutConfig.inc.php
 SOURCE=/docs/01-handbook/css-conventions.md
 
@@ -19,7 +23,7 @@ SOURCE=/docs/01-handbook/css-conventions.md
 
 A **single `base.css`** carries tokens + all components + their responsive rules (`@media` blocks live inside the component partials — the shell and overview are self-contained). It is the only backend stylesheet (`layoutConfig.inc.php` `styleSheets` lists just `base`). The former per-breakpoint layout files (`mobile`/`tablet`/`desktop`/`nav-*`) were retired in the shell cleanup (their dead legacy-grid rules dropped; the live responsive bits moved into `_overview.scss` + `_shell.scss`). Design tokens (`--be-*` + generic `--color-*`/`--space-*`/…) are declared on the `.be` viewArea wrapper (`<html class="be">`), not `:root` (ADR-018); the six palettes × light/dark are layered on top via `[data-be-palette]` / `[data-be-theme]` attribute selectors on the same `<html>` element (same `(0,1,0)` specificity as `.be` → cascade unchanged).
 
-- Backend JS is external assets only, registered in `layoutConfig.inc.php` (`core`, `panel-toggle`, `appearance`, `system/cache`, `shell`) — no inline `<script>` (the legacy `partials/footer.tpl.php` was removed in the shell cleanup). No JS build pipeline.
+- Backend JS is external assets only, registered in `layoutConfig.inc.php` (`core`, `panel-toggle`, `split`, `appearance`, `system/cache`, `shell`) — no inline `<script>` (the legacy `partials/footer.tpl.php` was removed in the shell cleanup). No JS build pipeline. `core`, `panel-toggle` and `split` come from `Z77\Shared`, the rest from the module.
 - Watch / build workflow (incl. the start-of-session ask-for-watcher rule) is uniform across modules — see [`css-watch.md`](css-watch.md).
 
 ## scss source files
@@ -54,8 +58,16 @@ packages/module-backend/res/scss/
 │   ├── _shell-banner.scss  .be-shell-banner — shared Störer band at the top of the shell; users: crawl block (SEO-NOINDEX-001) + missing installation identity (ADR-030)
 │   ├── _subnav.scss        .backend-subnav + .backend-tree-*
 │   ├── _service-panel.scss .backend-service-panel (avatar dropdown)
-│   └── _overview.scss      .be-overview + .be-module-card (+ own @media responsive)
+│   ├── _overview.scss      .be-overview + .be-module-card (+ own @media responsive)
+│   ├── _dms-host.scss      host binding: maps --dms-* onto --be-* on `.be .dms` (ADR-018 rule 4)
+│   └── _split-host.scss    host binding: maps --z77-split-* onto --be-* on `.be .z77-split`
 └── base.scss               tokens + base + all components — the ONLY stylesheet
+```
+
+`base.scss` additionally `@use`s ONE partial from outside the module:
+
+```text
+packages/kernel/shared/res/scss/components/_split.scss   .z77-split — shared pane primitive
 ```
 
 (No `layout/` dir and no per-breakpoint entry files any more — the shell cleanup
@@ -92,7 +104,10 @@ rather than leaving it to be remembered every time.
 | CSS reset | `base/_normalize.scss` |
 | Button, form, card, alert, badge, table, modal, pagination | `components/_*.scss` |
 | Icon look (`.be-icon`) / add an icon (`<symbol>`) | `components/_icon.scss` / `res/view/templates/partials/icon-sprite.tpl.php` |
-| Backend list / tree / group tabs (all list views) | `components/_list.scss` (`.be-list` / `.be-tree` / `.be-tabs`) |
+| Backend list rows with real columns (v2 — use this for new screens) | `components/_list.scss` (`.be-list__frame` / `__table` / `__head` / `__row` / `__cell` / `__detail`) |
+| Legacy tree/hub rows (v1 — migration only, do not build new screens on it) | `components/_list.scss` (`.be-tree` / `.be-tree--hub`) |
+| Group tabs, section headers, empty state, section hint | `components/_list.scss` (`.be-tabs`, `.be-list__section-*`, `.be-list__empty`) |
+| Pager for a v2 list | `components/_pagination.scss` (`.be-pagination`) |
 | Login page | `components/_login.scss` |
 | GUEST full-page wrapper (login/setup, no chrome) | `components/_guest.scss` (`.be-guest`) |
 | Shell (3-column grid, header slots, add-picker, columns/drawers, topbar right cluster env/bell/avatar, `body.backend` base, responsive) | `components/_shell.scss` |
@@ -100,6 +115,9 @@ rather than leaving it to be remembered every time.
 | Left sidebar (subnav tree) | `components/_subnav.scss` |
 | Avatar dropdown panel | `components/_service-panel.scss` |
 | Dashboard overview page (+ its responsive) | `components/_overview.scss` |
+| Make an embedded foreign fragment (`.dms`, later others) follow the backend palette/theme | `components/_dms-host.scss` — bind that fragment's own tokens to `--be-*`; never edit the fragment |
+| Resizable panes, pane scrolling, drag handle, narrow-screen detail overlay | `kernel/shared/res/scss/components/_split.scss` (`.z77-split`) — SHARED, host-neutral; edit only for geometry |
+| Make `.z77-split` follow the backend palette | `components/_split-host.scss` (4 tokens) |
 
 ## backend theme tokens (--be-*)
 
@@ -151,9 +169,20 @@ packages/module-backend/res/view/templates/
 - When styling colors, spacing, or effects → MUST use `--be-*` token variables; values MUST NOT be hardcoded
 - When declaring tokens (`--be-*`, `--color-*`, `--space-*`, …) → MUST place the default block on the `.be` wrapper selector (the four `tokens/_*.scss` files), keeping the `[data-be-palette]` / `[data-be-theme]` override blocks after it; MUST NOT declare design tokens on `:root` (ADR-018; only `@font-face` in `tokens/_fonts.scss` stays global)
 - When adding component styles → MUST live in `components/_*.scss`; MUST NOT be added to layout files
+- When an embedded foreign fragment (`.dms`, later others) must follow the backend palette / dark mode → MUST bind that fragment's OWN tokens to `--be-*` in `components/_dms-host.scss` using a two-class selector (`.be .dms`, specificity `(0,2,0)` — the fragment's bundle loads AFTER `base.css`, so a one-class binding loses); MUST NOT edit the fragment's SCSS to reference `--be-*` (that breaks it for every other host — ADR-018 rule 4, [`css-dms.md`](css-dms.md) DMS-HOST-BIND-001)
+- When building a NEW backend list screen → MUST use `.be-list` v2 (`__frame` > `__table` > `__head` + `__item` > `__row` > `__cell`), declaring the columns once as `--be-list-cols` on `__table`; MUST NOT use `.be-tree--hub` (v1, migration only) and MUST NOT glue several fields into one cell with `·` — that is the defect v2 exists to remove
+- When a v2 list needs a select box, state switch, ⋮ menu, disclosure or action column → MUST add the matching `--`modifier on `__table` (`--select` / `--state` / `--menu` / `--disclose` / `--actions`); an absent modifier contributes NO track, so MUST NOT render a placeholder cell to fill a slot the list does not use
+- When a v2 column may be dropped on a narrow pane → MUST add `.be-list__table--drop`, a second track list `--be-list-cols-sm`, and the SAME `data-priority` on both the `__col` and its `__cell`; without the modifier the pane scrolls instead, which is the safe default
+- When a v2 row needs an expandable detail (diff, subform, error list) → MUST use the `__disclosure-input` checkbox + `__detail` sibling; MUST NOT use `<details>/<summary>` (a `<summary>` swallows clicks on the switches and submit buttons inside the row) and MUST NOT add JS for it
+- When sorting or paging a v2 list → MUST use server-side links (`?sort=` / `?dir=` / `?page=`) with `.be-list__col[data-sort]` / `.be-pagination`; MUST NOT sort or page in JavaScript
 - When adding backend interactivity → MUST remain inline vanilla IIFE in `partials/footer.tpl.php`; MUST NOT introduce a JS build pipeline
+- When a surface needs resizable side-by-side panes (workspace, list + detail, tree + list + preview) → MUST use the shared `.z77-split` primitive (`kernel/shared`) with the handle contract `data-z77-split-root` / `data-z77-split="--var"` / `-min` / `-max`; MUST NOT write a second drag implementation and MUST NOT rename its classes to `be-*` (it renders in frontend and member hosts too — ADR-018 R5–R7)
+- When a `.z77-split` handle is NOT a DOM sibling of the pane it resizes (e.g. a grid overlay like the shell's) → MUST state `data-z77-split-dir="1|-1"`; sibling handles infer the direction and MUST NOT carry it
+- When adding a colour/font/radius declaration to `_split.scss` → MUST stop: that breaks the geometry-only test (ADR-018 rule 5) and the component would no longer be shareable. Put the visual part in the consuming area's own component instead
 - When running build commands → MUST run from framework root (`npm run watch:backend` / `npm run build:backend`)
 - When building a radio/checkbox **selection** (select/choose one or many) → MUST use the shared `.be-choice` component (`__input` / `__label`, optional `--filled` for a tinted row); MUST NOT use `.be-switch` for that (the switch is on/off only)
+- The header band renders ALWAYS (both slots, even when empty) — it is a property of the shell, not of the screen (HEADER-BAND-ALWAYS-001). When a screen has no global action → MUST leave the slot empty rather than reintroduce a conditional band; MUST NOT invent an add button for a screen whose actions are all per row (use `.be-shell-status` for its state instead).
+- When a screen's health or queue state must be readable without reading the body (job runner, import plan, member queue) → MUST use `.be-shell-status` (`__dot` + `__text`, `--ok` / `--bad`) in hc2; MUST NOT use `.badge` for it — that component runs on the light-only `--color-*` set and is wrong in dark mode.
 - When filling a shell header slot (`{Group}/{Controller}/{action}.hc1|hc2|hc3.tpl.php`) → MUST keep it to a SINGLE line. `.be-shell-col__head` is a FIXED-height band (`height: 46px`, not `min-height`) so every column's head stays exactly equal (empty or filled) and the band lines up across columns. Content that needs more room MUST go into a dropdown or popup — MUST NOT make the band taller (would break the cross-column alignment). A view with SEVERAL add kinds MUST use the `.be-shell-add` hc1 picker (a «＋ add» button that opens a panel to choose the type, via the panel-toggle contract) rather than stacking multiple add buttons in the band (e.g. translation: Text / Slug). The band scales in fixed px, not `em`/`rem`: it is chrome and matches the font-capped buttons (see FONT-CAP-001) — the font slider scales content, not chrome. If a slot's text grows too large at high font scale, cap it with `.be-font-cap` rather than making the height relative.
 
 ## see also
@@ -163,6 +192,100 @@ packages/module-backend/res/view/templates/
 - [`../01-handbook/css-conventions.md`](../01-handbook/css-conventions.md) — BEM, tokens, component patterns
 
 ## known issues
+
+- **LIST-V2-001** — added 2026-08-08. `.be-list` v2 exists alongside `.be-tree--hub`; **new screens
+  use v2, v1 is migration-only** (LIST-ANATOMY-001 has the inventory that motivated it). Two
+  mechanisms carry it: (a) the LIST declares its columns once as `--be-list-cols` on
+  `.be-list__table` and every row is a `subgrid`, so column count is a property of the list rather
+  than a constant of the component — a variable matrix (translation: key × n languages) is then just
+  another value; (b) fixed lead slots are opt-in via `var(--x,)` with an EMPTY fallback, which
+  contributes no track at all, so the reserved-but-empty columns and the placeholder `<span>`s are
+  gone. Also new: real column headers (v1 had none anywhere, which is what made a truncated cell
+  unrecoverable), a real action column (retiring the `style="grid-column:6"` hacks), a full-width
+  row detail (retiring the `padding-left:2.1rem` rebuilds), and `.be-pagination`.
+  **All of it is CSS** — sorting/paging are server links, the row detail is a checkbox disclosure.
+  Two traps worth knowing: the container query lives on `.be-list__frame`, NOT on `__table` (an
+  element cannot query its own container — the first draft did and silently did nothing); and
+  `<details>/<summary>` was rejected for the disclosure because a `<summary>` swallows clicks on the
+  switches and submit buttons the rows carry. `.be-tree__menu` (the ⋮) is deliberately reused from
+  v1 and gets renamed when v1 is deleted. **Piloted on `service/backup/list`**: its five fields
+  (file / created / size / trigger / count) were one `·`-glued string and are five columns now, with
+  the last two dropping on a narrow pane instead of being cut off. **Not verified live.**
+
+- **SHELL-FILL-001** — added 2026-08-09. **A screen that fills the column says so itself; the shell
+  does not decide it.** `.be-shell-col--2` is a flex column with a definite height and the action
+  template is its direct child — so by default a screen has CONTENT height and the column is the
+  scroll region. That is right for a form or a document, and wrong for a workspace: a pane's
+  `overflow: auto` only ever fires if its ancestors hand down a definite height, otherwise the panes
+  grow and the column scrolls (found live in the DMS Drive, see [`css-dms.md`](css-dms.md)
+  DMS-FILL-001). `.z77-split` therefore carries `flex: 1 1 auto` **and** `height: 100%` — both,
+  because a flex-column host and a plain block host with a definite height resolve differently — so
+  a workspace placed straight into the column fills it without the screen doing anything. Removed in
+  the same pass: `.be-shell-col__body` (`flex: 1; min-height: 0; overflow: auto; padding`), a class
+  **no template ever rendered**. It would have solved this from the shell side, which is the wrong
+  side — the screen cannot reach it. Do not revive it.
+
+- **SPLIT-SHARED-001** — added 2026-08-08. The backend no longer owns pane resizing. New shared
+  primitive `.z77-split` (`packages/kernel/shared/res/scss/components/_split.scss` +
+  `res/assets/js/split.js`, both host-neutral per ADR-018 R5–R7): n panes, a handle on every
+  divider, per-pane scrolling, per-pane fullscreen via the existing `[data-…-full]` attribute
+  pattern, and a detail pane that becomes an **overlay** below a threshold instead of vanishing.
+  The threshold is a **container query, not `@media`** — panes are drag-resizable, so a pane can be
+  narrow inside a wide window and a viewport query would fire at exactly the wrong time.
+  The SCSS is a partial `@use`d into `base.css` (relative cross-package path), NOT a second
+  stylesheet — the backend keeps one sheet. Tokens bind in `components/_split-host.scss`.
+  **`shell.js` lost its own 25-line resize block and became the primitive's first consumer**
+  (`--shell-c1`, with an explicit `data-z77-split-dir` because the resizer is a grid overlay, not
+  a flex sibling); its stale `shell.min.js` was rewritten to match — it still carried the old
+  two-column logic and would have been served in production.
+  **Pane size is a `flex-basis`, never a `width`** (corrected 2026-08-09): the positional rules
+  need `.z77-split > .z77-split__pane:nth-child(n)` (0,3,0), which outranks every single-class
+  modifier (0,1,0) — so `--detail` got the positional 22rem instead of its overlay
+  `min(28rem, 88%)`, and `--grow` survived only because `flex-basis: 0` happens to beat a losing
+  `width`. The positional rules now set nothing but `--z77-split-w`, which the ONE `flex`
+  declaration on `.z77-split__pane` reads; a custom property cannot collide with a modifier, so
+  `--grow` / `--detail` win on source order. **Do not reintroduce a `width` here** — any new
+  modifier would silently lose to the position again.
+  **The drag start is MEASURED off the pane, not parsed off the token** (corrected 2026-08-09):
+  `getComputedStyle` does not resolve a custom property, so the DMS's markup-declared
+  `--z77-split-1: 16rem` came back as the string `16rem` and `parseInt` made it 16 — the first
+  drag jumped straight to the `min` bound and only the second one, working off the `…px` the
+  drag itself had written, behaved. `split.js` now trusts a `…px` value and otherwise measures
+  the target pane's box, so the variable may be declared in any unit and may also be left unset
+  (the stylesheet default then applies and is measured like any other). The target pane follows
+  the same neighbour rule as the drag direction, so the two cannot disagree. **Not verified live.**
+
+- **SHELL-COL3-REMOVED-001** — 2026-08-08. Shell column 3 (preview) is **gone**: skeleton column +
+  resizer, `data-col3`, the `be-shell-col3in` keyframes, `.be-shell-col--3`, the mobile right
+  drawer, the `preview` body section in `layoutConfig`, and `partials/shell/preview.tpl.php`.
+  It had never been in use — `data-col3` was hard-coded `"off"`, no `*.hc3.tpl.php` ever existed,
+  and the mobile right drawer had **no trigger anywhere in the repo** (the only
+  `[data-shell-drawer]` is the burger with `="l"`), so its close button closed something that
+  could not open. Detail beside a list is the workspace's job now, so there is one mechanism for
+  it instead of two. `.be-shell-preview__empty` survives renamed as **`.be-pane-empty`** (a pane
+  waiting for a selection is still a real state — the DMS preview pane is its first consumer).
+  **Consequence for the older SHELL-REBUILD notes below: `hc3` is retired.** The auto-loader still
+  iterates `hc1|hc2|hc3`, but there is no column 3 to render it into — do not build a `*.hc3`
+  partial expecting it to appear.
+
+- **HEADER-BAND-ALWAYS-001** — resolved 2026-08-08. **Was:** `html-shell-skeleton.tpl.php` rendered
+  the header band only when a slot was filled (`$hasHead = !empty($hc1) || !empty($hc2)`). The four
+  screens without slots — `backup`, `job`, `import`, `member-accounts` — therefore got NO band, so
+  their content started 46px higher than on every other screen: a visible jump when switching
+  screens, and the reason those four read as "different" (inventory finding B6, see
+  [`../03-development/arbeitsflaeche-bauplan.md`](../03-development/arbeitsflaeche-bauplan.md)).
+  **Fix:** the band renders unconditionally — it belongs to the shell, not to the screen. Same pass
+  filled the four empty bands with what each screen actually has, instead of inventing add buttons:
+  `backup` → `.be-shell-add` picker with its three kinds (per the existing several-add-kinds rule;
+  the db item stays visible but `disabled` with the reason in `title`, and the three per-section
+  "Jetzt sichern" buttons were removed); `job` → runner heartbeat as `.be-shell-status` (the failure
+  block stays in the body — it carries the cron line and would never fit 46px); `import` → the two
+  GLOBAL plan actions, rendered only while a plan exists (per-record decisions stay per row);
+  `member-accounts` → queue length ("N Konten warten auf Freischaltung"). New in this pass:
+  `.be-shell-status` (`_shell.scss`), `.be-list__empty` + `.be-list__section-hint` (`_list.scss`,
+  replacing the copy-pasted inline styles), `.be-shell-add__panel form { display: contents }` so a
+  POSTing picker item needs no inline style. `php -l` clean on all eight touched templates, base.css
+  rebuilt + deployed. **Not verified live** — wants a click-through of the four screens.
 
 - **LIST-ACTIONS-HUB-001** — added 2026-07-04. Supersedes LIST-ACTIONS-SWITCH-001's inline row-action model. The per-row edit/trash cluster (`.be-tree__actions`) was replaced by a single **`⋮` row-menu** (`.be-tree__menu`) that fetches a per-row `actions` endpoint rendering a shared **`.be-actions`** hub modal (edit + delete as `.be-actions__item` buttons). Opt-in via `.be-tree--hub` on the `.be-tree` container: an EXPLICIT 6-column grid `[toggle | active-switch | ⋮ menu | name | url | route]` in `components/_list.scss`, so every row aligns even when a slot is empty (views without an active toggle: navigation-group, backend-user, translation — the switch column stays reserved). Modeled on the DMS Drive hub (DriveController `actionsAction`, see [`css-dms.md`](css-dms.md)). Rolled across all 7 backend list screens: content, navigation, navigation-group, navigation-alias, metadata, translation, backend-user — each now uses `.be-tree--hub` + `.be-tree__menu` + an `actions.tpl.php` partial + a controller `actionsAction`. Auth: the six backend `actionsAction`s (and the inline `toggle-active` switch endpoints) are NOT listed per-action in `backendConfig.inc.php` — they resolve to the controller-level `AuthRole::ADMIN` via `AuthService::resolveRoleForCurrentController` (`$actionRole ?? $controllerRole`); only the Drive lists `actionsAction` explicitly. **Value-column caveat:** the hub `.be-tree__url` is `nowrap` + ellipsis, so translation's multi-language value summary truncates at narrow widths (the full text is in the edit modal). Orphaned by this change: the `.be-tree__actions` rule + its flex `order` overrides (from LIST-ACTIONS-SWITCH-001) in `_list.scss` — no template references it anymore; removal is a pending cleanup (see below). **Visual acceptance across the 7 lists is still open** — the `⋮` hub, the reserved-but-empty switch column on no-switch views (group / login / translation), and the value-column ellipsis want a live pass.
 
@@ -185,6 +308,24 @@ packages/module-backend/res/view/templates/
 - **CSS-CHOICE-001** — resolved 2026-05-30. Selected radios/checkboxes were only weakly indicated (bare native control). Added the shared `.be-choice` component in `_forms.scss`: an `appearance:none` box with a `::after` checkmark on `:checked`, type-agnostic so radio and checkbox look identical; optional `.be-choice--filled` tints the whole row (`color-mix` on `--be-accent`). The `NavigationController/edit.tpl.php` group picker migrated from the old `.be-form__tag-label` chip to `.be-choice`.
 
 ## pending
+
+- **LIST-ANATOMY-001 — the backend has no list component, it has a navigation-tree row.**
+  `.be-tree--hub` is a fixed 6-column grid `[toggle | active switch | ⋮ | name | url | route]`;
+  exactly 1 of the 12 list screens is actually a tree. Inventory (all 12 read in source,
+  2026-08-08): rows carry **3–10 real fields** into 3 text slots, so 8 screens glue several
+  values into one `·`-separated string that is `nowrap` + ellipsis — with no column headers
+  anywhere, truncated fields are unrecoverable. Columns 1/2 are empty-but-reserved on 11/8 of 12
+  screens (10 templates render an empty `<span class="be-tree__toggle">` purely to fill the
+  grid). 4 screens need row actions the ⋮ cannot hold and hack `style="grid-column:6"` against
+  the grid, twice with an identical explanatory comment. Two section-head variants exist and one
+  (`.be-list__section__head`, used by translation/backup/job/import) has **zero CSS** — its look
+  comes entirely from inline styles, which is why those four screens differ from the other four.
+  Sorting, pagination and column headers do not exist at all; `_tables.scss` and
+  `_pagination.scss` are fully defined and used by nothing. Blocking for the planned order-
+  processing and accounting modules. Full inventory, findings B1–B11 and the derived
+  requirements: [`../03-development/arbeitsflaeche-bauplan.md`](../03-development/arbeitsflaeche-bauplan.md).
+  Depends on the ADR-018 revision 2026-08-08 (shared structural layout primitives) because the
+  content layer must also render in a frontend host (DMS → customer invoices).
 
 - **Remove orphaned `.be-tree__actions` (LIST-ACTIONS-HUB-001).** After the `⋮`-hub rollout no template references `.be-tree__actions` anymore (repo-wide grep: only `components/_list.scss` line ~164). Dead: the `.be-tree__actions` rule + the flex `order` overrides added by LIST-ACTIONS-SWITCH-001 (`.be-tree__toggle { order:-2 }`, `.be-tree__actions { order:-1 }`). The base `.be-tree__row` (padding/border/hover) stays — only the flex layout is superseded by `.be-tree--hub`'s grid. Removal needs a `base.css` rebuild + a quick visual pass across the 7 lists before it lands.
 

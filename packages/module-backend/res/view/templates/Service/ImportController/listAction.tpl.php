@@ -135,18 +135,9 @@ $fmt = static function (?string $iso): string {
             </p>
         </div>
 
-        <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:1rem">
-            <form data-fetch-post="/backend/service/import/apply" style="margin:0">
-                <button type="submit" class="be-btn be-btn--primary"
-                        <?= $planView['acceptedCount'] === 0 ? 'disabled' : '' ?>>
-                    <?= (int) $planView['acceptedCount'] ?> markierte übernehmen<?=
-                        $planView['acceptedCount'] > $jobThreshold ? ' (als Job)' : '' ?>
-                </button>
-            </form>
-            <form data-fetch-post="/backend/service/import/discard" style="margin:0">
-                <button type="submit" class="be-btn be-btn--ghost">Plan verwerfen</button>
-            </form>
-        </div>
+<?php /* The two GLOBAL plan actions (übernehmen / verwerfen) moved to the shell header band:
+         `list.hc2.tpl.php` (auto-loaded). Per-record decisions stay below — those are per
+         row, not per screen. */ ?>
 
         <?php foreach ($planView['groups'] as $group): ?>
         <div class="be-list__section" style="margin-top:1.5rem">

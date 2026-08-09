@@ -1,7 +1,19 @@
 # ADR-018 — CSS design tokens scoped to the viewArea wrapper
 
 **Status:** `[APPROVED]`
-**Date:** 2026-06-22
+**Date:** 2026-06-22 (revised 2026-08-08)
+
+> **Revision 2026-08-08 — structural layout primitives MAY be shared; visual components stay
+> per-area.** The rejected option (a) below ("one shared token + component base package consumed
+> by all areas") is about **visual** components — buttons, forms, cards, badges, list rows. Those
+> remain per-area and unshared; the reasoning stands unchanged ("the DMS must not inherit the
+> host's button styling"). It does **not** reject sharing a **structural layout primitive**: a
+> component that contributes geometry only — track sizing, scroll containment, drag-resize
+> handles, collapse behaviour — and carries no typography, no fill colours, no radii, no
+> component identity. Driver: the content layer inside the shell (pane layout + resizing) must be
+> embeddable in a frontend or member host for the same reason the DMS fragment is (see Context).
+> Binding rules 5–7 below govern it. Without this precision the framework would grow a second
+> pane/resize implementation per host — the duplication ADR-018 exists to prevent, one layer up.
 
 ---
 
@@ -52,6 +64,23 @@ Binding rules:
    (`.dms { --color-primary: … }`) in CSS loaded *after* the embedded bundle. Whether the
    embedded bundle is loaded at all is the host's choice (its `layoutConfig`).
 
+Rules 5–7 govern **shared structural layout primitives** (revision 2026-08-08). They are the
+single exception to "no shared component base" and are gated by a hard test:
+
+5. **The geometry-only test decides.** Strip every declaration that names a colour, font, or
+   radius. If the component still does its job, it is structural and MAY be shared. If it stops
+   working or stops being recognisable, it is a visual component and stays per-area. A pane grid
+   with drag handles passes; a button, a badge, a list row does not.
+6. **A shared primitive lives in `packages/kernel/shared` and carries an area-independent
+   prefix** — never `.be-*` / `.fe-*` / `.dms-*`, since it renders inside all of them. Rule 3
+   (component-selector isolation) is satisfied by being the *same* component everywhere, not by
+   a per-area prefix.
+7. **Rule 1 applies unchanged: it declares its own COMPLETE token set on its own wrapper.** The
+   geometry-only test keeps that set small (line, handle, handle-active — not a palette). Each
+   host binds it inside its own scope per rule 4
+   (`.be .z77-split { --split-line: var(--be-line); … }`). A host that does not bind gets the
+   primitive's neutral defaults — never the host's values by accident.
+
 ## Reasoning
 
 - **Composability without a shared base.** Encapsulation per wrapper makes any viewArea
@@ -86,6 +115,7 @@ component-selector changes — they resolve `var()` at the wrapper.
 
 | Option | Why rejected |
 |---|---|
-| Single shared token + component base package (`module-ui`) consumed by all areas | Couples every area to one component library; an embedded DMS would inherit the host's component styling — the opposite of the "identical everywhere, host-independent" goal. More cross-package coupling than encapsulation buys. |
+| Single shared token + component base package (`module-ui`) consumed by all areas | Couples every area to one component library; an embedded DMS would inherit the host's component styling — the opposite of the "identical everywhere, host-independent" goal. More cross-package coupling than encapsulation buys. **Narrowed on revision (2026-08-08):** this rejection covers *visual* components only. Structural layout primitives (geometry, no colour/font/radius) may be shared under binding rules 5–7 — they carry no styling to inherit, so the reason above does not apply to them. |
+| Give every host its own pane/resize implementation (the strict reading of "no shared base") | Would put a second and third copy of grid-track sizing, scroll containment and pointer drag logic into frontend and member the moment the content layer is embedded there — the exact duplication this ADR prevents at the token layer. The `shell.js` resize is already hard-wired to two fixed column variables and cannot serve a second caller. |
 | Keep tokens on `:root`, prefix only DMS tokens (`--dms-*`) | Solves DMS but leaves the general `:root` collision risk for any future second-area-on-one-page case, and keeps a DMS special-case instead of a uniform rule. |
 | Per-area token name prefixes everywhere (`--fe-*`, `--be-*`, `--dms-*`) | Verbose; every component must reference its area's prefix. Wrapper scoping + complete sets achieves the same isolation with shared, simpler names. |

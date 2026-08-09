@@ -1,20 +1,53 @@
-.pagination          { display: flex; align-items: center; gap: var(--space-1); }
-.pagination__item    { }
+// Pager for `.be-list` v2. Server-side links (`?page=`), no JavaScript — it therefore works
+// without JS and survives a reload, and the current page is a real URL.
+//
+// Renamed from `.pagination` 2026-08-08. The old block had never been used by a single
+// template and ran on the `--color-*` set, which is NEVER redefined for dark mode — it would
+// have rendered a near-white pill on a dark surface the first time anyone reached for it.
+// Same defect class as `.badge` (see css-backend.md).
 
-.pagination__link {
+.be-pagination {
+    display:     flex;
+    align-items: center;
+    gap:         var(--space-1);
+    padding:     .75rem .5rem;
+}
+
+.be-pagination__link {
+    display:         flex;
+    align-items:     center;
+    justify-content: center;
+    min-width:       2rem;
+    height:          2rem;
+    padding:         0 .4rem;
+    border:          1px solid var(--be-line);
+    border-radius:   var(--radius-md);
+    background:      var(--be-surface);
+    color:           var(--be-text);
+    font-size:       var(--font-size-sm);
+    transition:      background var(--transition-fast), color var(--transition-fast);
+}
+.be-pagination__link:hover { background: var(--be-bg); }
+
+.be-pagination__link--active {
+    background:   var(--be-accent);
+    border-color: var(--be-accent);
+    color:        var(--be-on-accent);
+}
+.be-pagination__link--disabled { opacity: .4; pointer-events: none; }
+
+.be-pagination__ellipsis {
     display:         flex;
     align-items:     center;
     justify-content: center;
     width:           2rem;
-    height:          2rem;
-    border-radius:   var(--radius-md);
-    border:          1px solid var(--color-border);
-    color:           var(--color-text);
-    font-size:       var(--font-size-sm);
-    transition:      background var(--transition-fast), color var(--transition-fast);
+    color:           var(--be-muted);
 }
 
-.pagination__link:hover     { background: var(--color-bg-surface); }
-.pagination__link--active   { background: var(--color-primary); color: var(--color-text-inverse); border-color: var(--color-primary); }
-.pagination__link--disabled { opacity: 0.4; pointer-events: none; }
-.pagination__ellipsis       { display: flex; align-items: center; justify-content: center; width: 2rem; color: var(--color-text-muted); }
+// "31–60 of 214" — the count belongs next to the pager, not in a section badge: with paging,
+// the badge would otherwise report the PAGE size and read as the total.
+.be-pagination__count {
+    margin-left: auto;
+    font-size:   var(--font-size-xs);
+    color:       var(--be-muted);
+}

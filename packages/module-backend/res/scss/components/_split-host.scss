@@ -1,0 +1,15 @@
+// Host binding: backend → the shared `z77-split` primitive (ADR-018 rule 7).
+//
+// `.z77-split` ships a complete, neutral token set so it also renders correctly in a
+// frontend or member host. Binding it to the backend palette is the HOST's job — this is
+// the backend's half. Sibling of `_dms-host.scss`, same principle, different consumer.
+//
+// Two classes: `.be .z77-split` (0,2,0) beats the primitive's own `.z77-split` (0,1,0)
+// regardless of source order.
+
+.be .z77-split {
+    --z77-split-line:          var(--be-line);
+    --z77-split-handle:        var(--be-line);
+    --z77-split-handle-active: var(--be-accent);
+    --z77-split-backdrop:      color-mix(in srgb, var(--be-text) 34%, transparent);
+}

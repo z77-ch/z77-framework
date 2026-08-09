@@ -12,6 +12,11 @@
 
 SOURCE=/packages/module-dms/res/scss
 SOURCE=/packages/module-dms/res/assets/css
+SOURCE=/packages/module-dms/res/scss/tokens/_colors.scss
+SOURCE=/packages/module-backend/res/scss/components/_dms-host.scss
+SOURCE=/packages/module-dms/res/scss/components/_split-host.scss
+SOURCE=/packages/kernel/shared/res/scss/components/_split.scss
+SOURCE=/packages/module-dms/res/view/templates/Documents/DriveController/listAction.tpl.php
 SOURCE=/packages/module-dms/src/App/Config/dmsConfig.inc.php
 SOURCE=/docs/02-decisions/adr-018-css-tokens-scoped-to-viewarea-wrapper.md
 SOURCE=/docs/01-handbook/css-conventions.md
@@ -58,7 +63,8 @@ packages/module-dms/res/scss/
 ├── components/
 │   ├── _icon.scss         .dms-icon (inline SVG) + .dms-iconbtn (square action button)
 │   ├── _button.scss       .dms-btn (primary / ghost / muted)
-│   ├── _drive.scss        .dms-drive — the 3-pane Drive grid (toolbar + tree | list | preview)
+│   ├── _split-host.scss   binds --z77-split-* to --dms-* (the shared pane primitive)
+│   ├── _drive.scss        .dms-drive — FRAME + pane look only; layout is .z77-split
 │   ├── _tree.scss         .dms-tree — left folder hierarchy (depth via --dms-depth)
 │   ├── _filelist.scss     .dms-file — middle document rows (thumbnail / kind icon, badge, actions)
 │   └── _preview.scss      .dms-preview — right pane (media + metadata + actions)
@@ -94,7 +100,14 @@ Declared on the `.dms` wrapper. Spacing / typography / effects mirror the framew
 scale (only the names carry the dms prefix); colours **mirror the backend Werkbank palette**
 (technical indigo, 2026-07-03) as the `.dms` fragment's OWN separate copy — same values as
 `--be-*`, mapped to the `--dms-*` names, kept independent so a host can still override (ADR-018).
-A dark set (`[data-be-theme="dark"] .dms`) matches the backend dark theme (see known issues).
+
+`tokens/_colors.scss` holds **light values only, and no theme selector of its own** — they are
+the fragment's standalone default for a host that binds nothing. Palette and dark mode come from
+the HOST binding (ADR-018 rule 4): the backend's `components/_dms-host.scss` redeclares every
+`--dms-*` colour in terms of `--be-*` on `.be .dms`, which covers all six palettes × light/dark
+in one block. Do NOT add a `[data-be-theme="dark"] .dms` set back here — it would work for one
+host only and, at equal specificity but later load order, would override the binding
+(DMS-HOST-BIND-001).
 
 | Group | Tokens |
 |---|---|
@@ -111,7 +124,7 @@ A dark set (`[data-be-theme="dark"] .dms`) matches the backend dark theme (see k
 
 | Block | Role |
 |---|---|
-| `.dms-drive` | the 3-pane shell: `__toolbar` (breadcrumb + actions) over `__tree` \| `__list` \| `__preview`; CSS grid, collapses the preview below 60rem |
+| `.dms-drive` | FRAME of the 3-pane Drive (border, radius, background) + the per-pane look (`__tree` \| `__list` \| `__preview`). Layout, drag handles and the narrow-screen preview overlay come from the shared `.z77-split` (DMS-SPLIT-001) — the element and each pane carry both classes. The toolbar lives in the backend shell header band, not here. |
 | `.dms-tree` | left folder hierarchy; node depth via inline `--dms-depth`; `--active` / `--inactive` / `--has-children.is-open` |
 | `.dms-file` (in `.dms-filelist`) | one document row: `__select` (bulk checkbox, hover-revealed / always-on touch), `__thumb` (image thumbnail or kind-tinted icon), `__name` / `__meta`, `__badge--{public,protected,sealed}`, hover `__actions` |
 | `.dms-filelist-bulkbar` | sticky bulk-action bar (counter, Alle/Keine, Verschieben, Löschen); revealed purely by `.dms-filelist:has(.dms-file__select:checked)` — no JS (2026-07-16, [`../03-development/dms-bulk-select-bauplan.md`](../03-development/dms-bulk-select-bauplan.md)) |
@@ -124,6 +137,11 @@ A dark set (`[data-be-theme="dark"] .dms`) matches the backend dark theme (see k
 - When styling any colour, font, spacing, radius, shadow, transition, or z-index in dms CSS → MUST reference a `--dms-*` token; values MUST NOT be hardcoded outside `tokens/_*.scss`.
 - When declaring `--dms-*` tokens → MUST place them on the `.dms` wrapper selector in `tokens/_*.scss`; MUST NOT declare design tokens on `:root` (ADR-018).
 - When adding a token a dms component needs → MUST add it to `.dms` (keep the set complete); MUST NOT rely on a host token leaking into the fragment.
+- When a `--dms-*` colour must follow the host's palette or theme → MUST bind it HOST-side by redeclaring it on a two-class selector in the host's own bundle (backend: `.be .dms { --dms-x: var(--be-y) }` in `components/_dms-host.scss`); MUST NOT reference `--be-*` / `--fe-*` from dms SCSS and MUST NOT add a host-specific theme selector (`[data-be-theme="dark"] .dms`) to `tokens/_colors.scss` — both break every other host (DMS-HOST-BIND-001).
+- When adding a `--dms-*` colour token → MUST also add its binding to every host that binds (currently only the backend); an unbound token silently falls back to the fragment's light default and will be wrong in dark mode.
+- When touching the Drive layout → MUST change it in the shared `.z77-split` primitive, not in `_drive.scss`; `.dms-drive` MUST NOT declare `display`, `grid-template-*` or pane widths again (dms.css loads after the host bundle and would beat the primitive at equal specificity — DMS-SPLIT-001)
+- When a pane needs a class for layout or JS → MUST put it in the pane PARTIAL (`_tree` / `_list` / `_preview`), never only in `listAction.tpl.php`: `panes()` replaces those roots via `replace-html` (outerHTML), so a class set on the page alone is lost after the first navigation
+- When adding an element inside `.dms-drive` → MUST keep the order pane / handle / pane / handle / pane; the `nth-child` width rules in `_split.scss` read that order
 - When writing a dms component (R6b) → MUST prefix its block class `.dms-…` (component-selector isolation, ADR-018 rule 3); MUST NOT reuse an unprefixed block name that a host also defines (`.btn`, `.card`, …).
 - When the fragment must adapt to its container width → MUST use an internal `@media`/container query inside the component; MUST NOT add a page-level breakpoint or assume the host's layout.
 - When embedding the fragment in a host → the HOST MUST load `dms.css` via its own `layoutConfig.inc.php`; the dms module MUST NOT carry a page skeleton or its own `layoutConfig`.
@@ -140,6 +158,77 @@ A dark set (`[data-be-theme="dark"] .dms`) matches the backend dark theme (see k
 - [`../02-decisions/adr-018-css-tokens-scoped-to-viewarea-wrapper.md`](../02-decisions/adr-018-css-tokens-scoped-to-viewarea-wrapper.md) — the binding wrapper-token decision
 
 ## known issues
+
+- **DMS-SPLIT-001** — added 2026-08-08. **The Drive no longer owns its layout.** `.dms-drive` is now
+  the FRAME only (border, radius, background); pane widths, drag handles, per-pane scrolling and the
+  narrow-screen overlay come from the shared `.z77-split` primitive (`kernel/shared`, ADR-018 R5–R7).
+  Each pane carries two classes — `.dms-drive__*` for the look, `.z77-split__pane` for the geometry —
+  and those classes MUST sit in the pane PARTIALS: `DriveControllerTrait::panes()` replaces
+  `.dms-drive__tree|__list|__preview` via `replace-html` (outerHTML), so a class added only in
+  `listAction.tpl.php` would vanish after the first folder click. **Do NOT reintroduce `display: grid`
+  on `.dms-drive`** — `dms.css` loads after the host bundle, so a `display` declaration there beats
+  `.z77-split`'s `flex` at equal specificity and silently breaks the panes. Markup order inside the
+  split is pane / handle / pane / handle / pane (+ backdrop): the `nth-child` width rules in
+  `_split.scss` read that order, so nothing else may be inserted between them. Token binding lives in
+  the new `components/_split-host.scss` (`.dms .z77-split` → `--dms-*`), which deliberately outranks
+  the backend's `.be .z77-split` by load order — the innermost area owns its look.
+
+- **DMS-FILL-001** — added 2026-08-09. **A workspace needs a DEFINITE height all the way down, and
+  the `.dms` wrapper was breaking that chain.** The backend shell's content column is a flex column
+  with a definite height and the action template is its direct child, so a plain `.dms` is a flex
+  item on the main axis — content height. `.dms-drive { height: 100% }` then has no definite parent
+  to resolve against, falls back to `auto`, the panes grow with the file list, their `overflow: auto`
+  never has anything to do, and the shell COLUMN scrolls instead of each pane. Fixed with an opt-in
+  `.dms--fill` on the fragment wrapper (`base/_base.scss`), set by `listAction.tpl.php`. It carries
+  BOTH `flex: 1 1 auto` and `height: 100%` because the two host shapes resolve differently — flex
+  column vs. plain block with a definite height. **Opt-in on purpose:** a `.dms` fragment embedded as
+  a block in a page (upload box, small file list) must keep its content height, so this must never
+  move onto `.dms` itself. `.z77-split` carries the same pair for the same reason, which covers a
+  workspace placed directly in the column without a fragment wrapper.
+
+- **DMS-PREVIEW-NARROW-001** — resolved 2026-08-08 (by DMS-SPLIT-001). **Was:** below 60rem the
+  preview pane was hidden with the code comment "kept reachable via row click → modal in JS", but
+  `res/assets/js/documents/drive.js` contained **no width-dependent logic at all** (no `matchMedia`,
+  no `innerWidth`, no resize handler — verified by grep). The preview was simply gone with no way
+  back. Not a DMS-only gap: the backend shell's column 3 had the same hole from the other side (its
+  mobile right drawer had no trigger anywhere in the repo — see
+  [`css-backend.md`](css-backend.md) SHELL-COL3-REMOVED-001). **Now:** the preview is
+  `.z77-split__pane--detail` — it slides in as an overlay, opened by `data-z77-split-open` on the
+  file row, closed by the backdrop, the ✕ button or `Esc`. The threshold is a **container query**,
+  not `@media`: the Drive's own width decides, and its panes are drag-resizable, so a viewport query
+  would fire at the wrong moment. **Not verified live.**
+
+- **DMS-THUMB-TINT-001** — added 2026-08-08. **Don't assume the file-list thumbnails follow the
+  theme — five tile backgrounds are hardcoded.** `components/_filelist.scss` (~lines 99–104) paints
+  `.dms-file__thumb--image|document|text|archive|audio|video` with literal light hex values
+  (`#eef2fb`, `#fdecec`, `#eef0f3`, `#fdf4e3`, `#e8f3ec`) while their icon colour IS a token. They
+  therefore stay light tiles in dark mode and ignore the palette even now that DMS-HOST-BIND-001 is
+  fixed. This violates this topic's own first rule (no hardcoded colour outside `tokens/_*.scss`).
+  Fix belongs in the fragment, not the host: mix against `--dms-bg` from the same token the icon
+  already uses, e.g. `background: color-mix(in srgb, var(--dms-accent) 12%, var(--dms-bg))`. Left out
+  of the DMS-HOST-BIND-001 pass on purpose so the binding stayed verifiable on its own.
+
+- **DMS-HOST-BIND-001** — resolved 2026-08-08. **Was:** the embedded `.dms` fragment followed the
+  werkbank palette only. ADR-018 rule 4 (the host redeclares the embedded area's tokens on `.dms`)
+  was implemented by no host — repo-wide there was no `--dms-*` declaration in
+  `module-backend/res/scss/` or `module-frontend/res/scss/`, only a comment in `_shell.scss`.
+  DMS-PALETTE-001 had mirrored the werkbank values into `--dms-*` as **literal copies**, not
+  `var(--be-*)` references, so switching the backend palette to `citrus` / `coral` / `lagune` /
+  `beere` / `sonne` repainted the shell while the Drive stayed indigo. **Second, less obvious half:**
+  the fragment's own `[data-be-theme="dark"] .dms` dark set did not merely duplicate the host's job —
+  at `(0,2,0)` it TIED with the natural binding selector `.be .dms` and loaded later (`dms.css` is
+  added per action, after `base.css`), so it would have silently beaten any backend binding in dark
+  mode. A binding alone would have looked correct in light and been dead in dark.
+  **Fix (both halves):** new `module-backend/res/scss/components/_dms-host.scss` maps every
+  `--dms-*` colour onto `--be-*` on `.be .dms` — direct where a twin exists, `color-mix()` where none
+  does (`text-soft`, `line-strong`, the `*-bg` tints, `info`), and `accent-dark`/`accent-light` mixed
+  toward `--be-text` / `--be-bg` so "more/less contrast" stays correct in dark mode instead of
+  literally darkening. The `[data-be-theme="dark"] .dms` block was REMOVED from
+  `module-dms/res/scss/tokens/_colors.scss`, which now carries light standalone defaults and no theme
+  selector. Net effect: one block covers 6 palettes × 2 themes, and the fragment is genuinely
+  host-neutral for the coming frontend embedding. Supersedes the dark-set part of DMS-PALETTE-001.
+  **Not verified live yet** — wants a click-through of the Drive across the six palettes in both
+  themes (badges `public`/`protected`/`sealed`, button + link hover, focus rings, tree active row).
 
 - **DMS-PALETTE-001** — 2026-07-03. The `.dms` colour tokens were pulled from the neutral blue
   default (`--dms-accent: #2563eb`) to **mirror the backend Werkbank palette** (technical indigo,

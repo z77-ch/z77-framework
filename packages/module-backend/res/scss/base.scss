@@ -25,3 +25,9 @@
 @use 'components/overview';
 @use 'components/flash-messages';
 @use 'components/popup-messages';
+// Shared structural primitive from kernel/shared (ADR-018 R5–R7) + the backend's token
+// binding for it. The partial is compiled INTO this bundle — the backend keeps exactly one
+// stylesheet.
+@use '../../../kernel/shared/res/scss/components/split';
+@use 'components/split-host';
+@use 'components/dms-host';

@@ -16,7 +16,7 @@ $fileUrl  = function (string $base, ?int $folderId, int $docId): string {
 // Current drive selection appended to the ⋮ hub URL (so its active toggle refreshes this view).
 $ctx = '&folder=' . ($selectedFolderId ?? '') . '&doc=' . ($selectedDoc ?? '');
 ?>
-<div class="dms-drive__list">
+<div class="dms-drive__list z77-split__pane z77-split__pane--grow">
   <?php if (empty($files)): ?>
     <div class="dms-filelist__empty"><?= $selectedFolderId === null
         ? 'Wähle links einen Ordner — oder lege oben einen an. Dokumente liegen immer in einem Ordner.'
@@ -48,7 +48,12 @@ $ctx = '&folder=' . ($selectedFolderId ?? '') . '&doc=' . ($selectedDoc ?? '');
         <?php endif; ?>
       </span>
       <button type="button" class="dms-rowmenu" data-modal="<?= $base ?>/drive/actions?type=document&id=<?= (int) $f['id'] . $ctx ?>" title="Aktionen">⋮</button>
-      <a class="dms-file__main"
+      <?php /* `data-z77-split-open` reveals the preview pane as an overlay while the Drive is
+               narrow. On a wide Drive the attribute costs nothing — the pane is visible anyway
+               and the open-state attribute has no effect outside the container query. This is
+               what closes DMS-PREVIEW-NARROW-001: the preview used to be hidden below 60rem
+               with no way back to it. */ ?>
+      <a class="dms-file__main" data-z77-split-open
          href="<?= e($fileUrl($listBase, $selectedFolderId, $f['id'])) ?>"
          data-pane="<?= e($fileUrl($paneBase, $selectedFolderId, $f['id'])) ?>">
         <div class="dms-file__name"><?= e($f['displayName']) ?></div>

@@ -1,0 +1,62 @@
+// Host binding: backend → embedded `.dms` fragment (ADR-018 rule 4).
+//
+// The `.dms` wrapper ships a COMPLETE, standalone `--dms-*` set (ADR-018 rule 1) so the
+// fragment can also render inside a frontend or member host. That set is deliberately NOT
+// wired to `--be-*` — doing so would break every non-backend host. The binding is the
+// HOST's job, and this file is the backend's half of it: it redeclares the `--dms-*`
+// tokens in terms of `--be-*`, so the Drive follows the active palette AND light/dark
+// without the DMS knowing anything about the backend.
+//
+// Specificity: `.be .dms` is (0,2,0) and beats the fragment's own `.dms` (0,1,0)
+// regardless of load order — `dms.css` is added per action and therefore always loads
+// AFTER `base.css`. Keep it a two-class selector; a single-class binding would lose.
+//
+// Unbound on purpose: spacing, typography, radii and shadows. Those are the fragment's
+// own geometry and must stay identical across hosts (DMS-HOST-BIND-001).
+
+.be .dms {
+    /* ── Surfaces ──
+       The Drive is the elevated plane inside the backend page: its base is the backend's
+       lightest surface, its recessed panes (tree, preview) sit on the page background. */
+    --dms-bg:           var(--be-surface2);
+    --dms-surface:      var(--be-bg);
+    --dms-surface-alt:  var(--be-accent-soft);
+    --dms-elevated:     var(--be-surface2);
+
+    /* ── Text ──
+       `text-soft` has no `--be-*` twin; it is one step from body text toward muted. */
+    --dms-text:         var(--be-text);
+    --dms-text-soft:    color-mix(in srgb, var(--be-text) 75%, var(--be-muted));
+    --dms-muted:        var(--be-muted);
+    --dms-text-inverse: var(--be-on-accent);
+
+    /* ── Lines ── */
+    --dms-line:         var(--be-line);
+    --dms-line-strong:  color-mix(in srgb, var(--be-line) 70%, var(--be-muted));
+
+    /* ── Accent ──
+       `accent-dark` / `accent-light` mean "more" / "less" contrast against the ground,
+       not literally darker / lighter — mixing toward `--be-text` resp. `--be-bg` keeps
+       that intent correct in BOTH themes (in dark mode a literally darker hover would
+       reduce contrast). All three `accent-dark` uses are hover/active states. */
+    --dms-accent:       var(--be-accent);
+    --dms-accent-dark:  color-mix(in srgb, var(--be-accent) 82%, var(--be-text));
+    --dms-accent-light: color-mix(in srgb, var(--be-accent) 70%, var(--be-bg));
+    --dms-accent-soft:  var(--be-accent-soft);
+    --dms-on-accent:    var(--be-on-accent);
+    --dms-focus-ring:   color-mix(in srgb, var(--be-accent) 35%, transparent);
+
+    /* ── Semantic ──
+       Tinted backgrounds mix against `--be-surface2`, so they stay legible in dark mode
+       instead of carrying a fixed light tint. `info` has no `--be-*` equivalent; it maps
+       to the accent with a STRONGER tint than `--dms-surface-alt`, so the `protected`
+       badge stays distinguishable from `sealed` (which uses surface-alt). */
+    --dms-success:      var(--be-good);
+    --dms-success-bg:   color-mix(in srgb, var(--be-good) 15%, var(--be-surface2));
+    --dms-danger:       var(--be-danger);
+    --dms-danger-bg:    color-mix(in srgb, var(--be-danger) 15%, var(--be-surface2));
+    --dms-warning:      var(--be-warn);
+    --dms-warning-bg:   color-mix(in srgb, var(--be-warn) 15%, var(--be-surface2));
+    --dms-info:         var(--be-accent);
+    --dms-info-bg:      color-mix(in srgb, var(--be-accent) 18%, var(--be-surface2));
+}

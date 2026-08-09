@@ -1,11 +1,14 @@
-// ── Backend Shell (3-column rebuild, Phase 1) ──────────────────────────────────
-// Self-contained: one grid (topbar spanning + column 1 | 2 | 3), own viewport height,
-// own responsive rules — independent of the legacy layout/*.scss (which target the old
+// ── Backend Shell ──────────────────────────────────────────────────────────────
+// Self-contained: one grid (topbar spanning + column 1 | 2), own viewport height, own
+// responsive rules — independent of the legacy layout/*.scss (which target the old
 // `.backend-app`/`.backend-main` classes and stay unused under the shell skeleton).
+//
+// Column 3 (preview) was removed 2026-08-08 — it had never been switched on (`data-col3`
+// hard-coded "off", no `*.hc3` template, mobile drawer without a trigger). Detail beside a
+// list is the workspace's job (`.z77-split`), so there is one mechanism for it, not two.
 
 .be-shell {
-    --shell-c1:  248px;   // orientation column (drag-resizable)
-    --shell-c3:  320px;   // preview column (drag-resizable)
+    --shell-c1:  248px;   // orientation column (drag-resizable, via the shared z77-split handle)
     --shell-bar: 48px;    // topbar height
 
     position:              relative;
@@ -14,7 +17,7 @@
     background:            var(--be-bg);
     color:                 var(--be-text);
     display:               grid;
-    grid-template-columns: var(--shell-c1) minmax(0, 1fr) var(--shell-c3);
+    grid-template-columns: var(--shell-c1) minmax(0, 1fr);
     grid-template-rows:    var(--shell-bar) minmax(0, 1fr);
 }
 
@@ -29,17 +32,6 @@ body.backend {
     overflow:    hidden;
 }
 
-// Preview column off (Phase 1 default; a host opts in with data-col3="on")
-.be-shell[data-col3="off"] {
-    grid-template-columns: var(--shell-c1) minmax(0, 1fr);
-}
-.be-shell[data-col3="off"] .be-shell-col--3,
-.be-shell[data-col3="off"] .be-shell__resizer--r { display: none; }
-
-// Preview fades in on desktop
-@keyframes be-shell-col3in { from { opacity: 0; transform: translateX(10px); } to { opacity: 1; transform: none; } }
-.be-shell[data-col3="on"] .be-shell-col--3 { animation: be-shell-col3in .24s ease; }
-
 // ── Columns ────────────────────────────────────────────────────────────────────
 .be-shell-col {
     grid-row:  2;
@@ -50,8 +42,7 @@ body.backend {
     flex-direction: column;
 }
 .be-shell-col--1 { grid-column: 1; background: var(--be-nav, var(--be-surface)); border-right: 1px solid var(--be-line); }
-.be-shell-col--2 { grid-column: 2; background: var(--be-bg);      border-right: 1px solid var(--be-line); }
-.be-shell-col--3 { grid-column: 3; background: var(--be-surface); }
+.be-shell-col--2 { grid-column: 2; background: var(--be-bg); }
 
 // Neutralize the legacy subnav's own frame — the shell column owns width + scroll now.
 .be-shell-col--1 .backend-subnav { width: 100%; height: auto; border: 0; }
@@ -113,7 +104,11 @@ body.backend {
     font-weight:    var(--font-weight-medium);
     font-size:      var(--font-size-sm);
 }
-.be-shell-col__body { flex: 1; min-height: 0; overflow: auto; padding: var(--space-3); }
+// `.be-shell-col__body` was removed 2026-08-09 — no template ever rendered it. The action
+// template is the column's second child directly, so the column IS the scroll region. A
+// screen that wants to fill the column instead of scrolling it says so itself (`.z77-split`
+// carries `flex: 1 1 auto`, the DMS fragment has `.dms--fill`); reviving a wrapper class here
+// would put that decision in the shell, where the screen cannot reach it.
 
 // Content-header slot (hc2): a controller/action partial pinned to the top of column 2
 // while its body (the action template) scrolls beneath. Own surface so scrolled content
@@ -181,10 +176,42 @@ body.backend {
     cursor:        pointer;
     transition:    background var(--transition-fast);
 }
-.be-shell-add__item:hover {
+.be-shell-add__item:hover:not(:disabled) {
     background: color-mix(in srgb, var(--be-accent) 22%, transparent);
     color:      var(--be-accent);
 }
+// A picker item whose action POSTs (rather than opening a modal) is wrapped in its own
+// <form>. `display:contents` keeps the wrapper out of the panel's flex column, so the
+// button still lays out as a direct panel child — no inline style in the template.
+.be-shell-add__panel form { display: contents; }
+// An item can be offered but unavailable (e.g. database backup with no DB configured).
+// Kept visible on purpose: hiding it would silently shrink the menu and leave the user
+// wondering where the entry went; `title` carries the reason.
+.be-shell-add__item:disabled { opacity: .45; cursor: not-allowed; }
+
+// Compact state indicator for a header slot: a coloured dot + ONE line. For screens whose
+// health must be readable without reading the body (job-runner heartbeat, import plan state).
+// Deliberately not `.badge` — that component runs on the light-only `--color-*` set and is
+// wrong in dark mode; these tokens are palette- and theme-aware.
+.be-shell-status {
+    display:     inline-flex;
+    align-items: center;
+    gap:         var(--space-2);
+    min-width:   0;
+    font-size:   var(--font-size-sm);
+    color:       var(--be-muted);
+}
+.be-shell-status__text { overflow: hidden; text-overflow: ellipsis; }
+.be-shell-status__dot {
+    width:         .5rem;
+    height:        .5rem;
+    flex-shrink:   0;
+    border-radius: 50%;
+    background:    var(--be-muted);
+}
+.be-shell-status--ok  .be-shell-status__dot { background: var(--be-good); }
+.be-shell-status--bad .be-shell-status__dot { background: var(--be-danger); }
+.be-shell-status--bad { color: var(--be-danger); }
 
 // Language switcher INSIDE a shell header slot (hc2): frameless — just the toggle buttons, no
 // banner frame and no label (per the prototype). The prominent framed `.be-lang-switch` banner
@@ -201,7 +228,10 @@ body.backend {
 // tokens the `.be-icon-btn`s use inherit from the `.be` root regardless).
 .be-drive-head { display: flex; align-items: center; gap: var(--space-2); flex: 1; min-width: 0; }
 
-.be-shell-preview__empty {
+// Empty state of a pane that waits for a selection ("choose a document for the preview").
+// Was `.be-shell-preview__empty`, tied to the removed column 3; renamed because the workspace
+// detail pane is the consumer now — the DMS preview pane is the first one.
+.be-pane-empty {
     height:          100%;
     display:         flex;
     flex-direction:  column;
@@ -385,28 +415,21 @@ body.backend {
 // Right cluster — always visible (env + bell + avatar reuse the legacy component styles)
 .be-shell-topbar__right { flex: none; display: flex; align-items: center; gap: var(--space-2); }
 
-// ── Drag-resizers (grip on the divider) ──────────────────────────────────────────
+// ── Drag-resizer ─────────────────────────────────────────────────────────────────
+// PLACEMENT ONLY. The element also carries `.z77-split__handle`, which supplies the grip
+// look, the cursor and the drag behaviour (shared primitive). Keeping the look here too
+// would be a second source of truth for the same 4px of UI.
 .be-shell__resizer {
-    grid-row:        2;
-    justify-self:    start;
-    width:           9px;
-    margin-left:     -5px;
-    z-index:         5;
-    cursor:          col-resize;
-    display:         flex;
-    align-items:     center;
-    justify-content: center;
+    grid-row:     2;
+    grid-column:  2;
+    justify-self: start;
+    margin:       0 0 0 -5px;
 }
-.be-shell__resizer--l { grid-column: 2; }
-.be-shell__resizer--r { grid-column: 3; }
-.be-shell__resizer::before { content: ""; width: 2px; height: 36px; border-radius: 2px; background: var(--be-line); }
-.be-shell__resizer:hover::before,
-.be-shell__resizer.is-dragging::before { background: var(--be-accent); }
 
 // ── Backdrop (mobile drawers) ────────────────────────────────────────────────────
 .be-shell__backdrop { display: none; }
 
-// ── Mobile: column 1 = sandwich drawer, column 3 = right drawer ───────────────────
+// ── Mobile: column 1 = sandwich drawer ───────────────────────────────────────────
 @media (max-width: 767px) {
     .be-shell { grid-template-columns: 1fr; }
     .be-shell-topbar__mod { display: none; }
@@ -428,22 +451,6 @@ body.backend {
     }
     .be-shell.is-drawer-l .be-shell-col--1 { transform: none; }
 
-    .be-shell-col--3 {
-        display:       flex;
-        position:      absolute;
-        top:           var(--shell-bar);
-        right:         0;
-        height:        calc(100% - var(--shell-bar));
-        width:         min(320px, 88%);
-        z-index:       20;
-        transform:     translateX(100%);
-        opacity:       0;
-        transition:    transform .28s ease, opacity .28s ease;
-        box-shadow:    -8px 0 40px -8px rgba(0,0,0,.4);
-        border-left:   1px solid var(--be-line);
-    }
-    .be-shell.is-drawer-r .be-shell-col--3 { transform: none; opacity: 1; }
-
     .be-shell__backdrop {
         display:        block;
         position:       absolute;
@@ -454,8 +461,7 @@ body.backend {
         pointer-events: none;
         transition:     opacity .2s;
     }
-    .be-shell.is-drawer-l .be-shell__backdrop,
-    .be-shell.is-drawer-r .be-shell__backdrop { opacity: 1; pointer-events: auto; }
+    .be-shell.is-drawer-l .be-shell__backdrop { opacity: 1; pointer-events: auto; }
 
     // Topbar right cluster on mobile: hide the env pill + bell (avatar + burger stay).
     // Relocated from the retired layout/_nav-mobile.scss.
