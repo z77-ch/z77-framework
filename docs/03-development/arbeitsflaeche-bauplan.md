@@ -240,6 +240,14 @@ kommenden Module brauchen. Zwei weitere Bildschirme hätten sie offensichtlich v
 9. **Ein Detail-Pane muss auf schmalem Schirm zum Overlay werden**, nicht verschwinden — mit
    Auslöser, Hintergrund und Schliessen. Weder Shell noch DMS haben das heute (B11a/B11b); es
    ist neu zu bauen, nicht zu übernehmen.
+   *Erweitert 2026-08-09 nach dem ersten Durchklicken:* dasselbe gilt für die
+   **Orientierung**. Unter 40rem standen sonst zwei zu schmale Spalten nebeneinander. Die
+   Arbeitsfläche kennt deshalb drei Rollen — `--nav`, `--grow`, `--detail` — und ein
+   Bildschirm erbt das Schmalverhalten, indem er seine Bereiche benennt. Auftragsbearbeitung
+   und Buchhaltung bekommen es ohne eigenes CSS. Bedingung, die dabei nicht verhandelbar ist:
+   jedes Overlay bringt seinen Auslöser **innerhalb** der Arbeitsfläche mit — ein Auslöser im
+   Kopfband der Schale ist für eine Container-Query unerreichbar und im Frontend-Host gar nicht
+   vorhanden. Details: `css-backend.md` SPLIT-NARROW-001.
 
 ---
 

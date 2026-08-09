@@ -13,15 +13,46 @@
 // Markup contract — panes and handles alternate, one `--grow` pane takes the rest:
 //
 //   <div class="z77-split" data-z77-split-root style="--z77-split-1: 16rem">
-//       <div  class="z77-split__pane">…</div>
+//       <div  class="z77-split__pane z77-split__pane--nav">…orientation…</div>
 //       <span class="z77-split__handle" data-z77-split="--z77-split-1"
 //             data-z77-split-min="180" data-z77-split-max="480"></span>
-//       <div  class="z77-split__pane z77-split__pane--grow">…</div>
-//       <div  class="z77-split__backdrop" data-z77-split-backdrop></div>
+//       <div  class="z77-split__pane z77-split__pane--grow">
+//           <button class="z77-split__opener z77-split__opener--nav"
+//                   data-z77-split-open="nav">…</button>
+//           …the list…
+//       </div>
+//       <div  class="z77-split__pane z77-split__pane--detail">…detail…</div>
+//       <div  class="z77-split__backdrop" data-z77-split-close></div>
 //   </div>
 //
 // Widths are VALUES, not styling, so they sit as custom properties in the markup — the same
 // pattern the tree already uses for `--node-depth`.
+//
+// ── The narrow-screen contract, and why it is here and not in a module ──
+//
+// Every workspace has the same three roles: ORIENTATION (tree, folders, filters),
+// the LIST, and a DETAIL. On a narrow container the list must be the one that stays;
+// orientation and detail become overlays. That is not a DMS trait — orders and accounting
+// will want exactly this — so the mechanism belongs to the primitive and a screen inherits
+// it by naming its panes:
+//
+//   `--nav`     orientation. Overlay from the LEFT below 40rem.
+//   `--grow`    the list. Always visible, takes what is left.
+//   `--detail`  detail. Overlay from the RIGHT below 60rem.
+//
+// Below 40rem exactly one surface remains and both neighbours are a tap away. The two
+// thresholds are deliberately different: a detail pane is the wider one and has to yield
+// first, while orientation still fits alongside the list for a while.
+//
+// EVERY overlay must bring its own trigger INSIDE the split (`.z77-split__opener`, or any
+// element carrying `data-z77-split-open`). A trigger parked in the host's chrome — a shell
+// header band, say — cannot work: a container query cannot reach outside its container, and
+// the next host (frontend, member area) has no such chrome at all. The retired shell column 3
+// is the cautionary tale — a drawer whose only trigger did not exist, so its close button
+// closed something that could not open.
+//
+// The primitive owns the opener's `display` (hence the two-class selector, so a host's button
+// class cannot win by load order). The host owns everything else about it: colour, size, icon.
 
 // ── Tokens (complete set on the wrapper, ADR-018 rule 1) ──
 // Small by construction: a geometry component reads almost no colour. A host binds these
@@ -112,10 +143,14 @@
     flex:    1 1 auto;
 }
 
-// ── Backdrop (narrow-screen overlay) ──
+// ── Backdrop + overlay triggers (both idle while the container is wide) ──
 .z77-split__backdrop { display: none; }
+// Two classes on purpose: a host gives the opener its own button class, and that class will
+// carry a `display` of its own. The primitive must outrank it, or the trigger for an overlay
+// that is not showing would sit in the UI permanently.
+.z77-split .z77-split__opener { display: none; }
 
-// ── Narrow container: the detail pane becomes an overlay instead of vanishing ──
+// ── Narrow container: the DETAIL pane becomes an overlay instead of vanishing ──
 // The gap this closes: the shell's column 3 had a mobile drawer no trigger could ever open,
 // and the DMS simply hid its preview below 60rem with no fallback. A detail pane must stay
 // reachable.
@@ -134,8 +169,10 @@
         box-shadow:  -8px 0 40px -8px rgba(0, 0, 0, .4);
         border-left: 1px solid var(--z77-split-line);
     }
-    .z77-split[data-z77-split-detail] .z77-split__pane--detail { transform: none; }
+    .z77-split[data-z77-split-overlay="detail"] .z77-split__pane--detail { transform: none; }
+    .z77-split .z77-split__opener--detail { display: inline-flex; }
 
+    // Declared here, inside the WIDER query, so it also applies to the narrower one below.
     .z77-split__backdrop {
         display:        block;
         position:       absolute;
@@ -146,10 +183,33 @@
         pointer-events: none;
         transition:     opacity .2s;
     }
-    .z77-split[data-z77-split-detail] .z77-split__backdrop { opacity: 1; pointer-events: auto; }
+    .z77-split[data-z77-split-overlay="detail"] .z77-split__backdrop { opacity: 1; pointer-events: auto; }
+}
+
+// ── Narrower still: the ORIENTATION pane follows, and one surface is left ──
+// Same move mirrored. The threshold is lower than the detail pane's because orientation is
+// the narrower of the two and can share the width with the list for longer.
+@container (max-width: 40rem) {
+    .z77-split__pane--nav {
+        position:     absolute;
+        top:          0;
+        left:         0;
+        bottom:       0;
+        width:        min(18rem, 84%);
+        z-index:      20;
+        transform:    translateX(-100%);
+        transition:   transform .28s ease;
+        box-shadow:   8px 0 40px -8px rgba(0, 0, 0, .4);
+        border-right: 1px solid var(--z77-split-line);
+    }
+    .z77-split[data-z77-split-overlay="nav"] .z77-split__pane--nav { transform: none; }
+    .z77-split .z77-split__opener--nav { display: inline-flex; }
+
+    .z77-split[data-z77-split-overlay="nav"] .z77-split__backdrop { opacity: 1; pointer-events: auto; }
 }
 
 @media (prefers-reduced-motion: reduce) {
     .z77-split__pane--detail,
+    .z77-split__pane--nav,
     .z77-split__backdrop { transition: none; }
 }

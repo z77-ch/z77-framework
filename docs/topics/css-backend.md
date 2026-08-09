@@ -212,6 +212,41 @@ packages/module-backend/res/view/templates/
   (file / created / size / trigger / count) were one `·`-glued string and are five columns now, with
   the last two dropping on a narrow pane instead of being cut off. **Not verified live.**
 
+- **TOPBAR-SEARCH-001** — added 2026-08-09. Below 600px the topbar search collapses to its
+  magnifier (`__search-text` + `__search-key` hidden, button 30×30). The topbar is one row shared
+  by burger, search and the right cluster, and the search is the only element whose content is
+  expendable — the icon and `aria-label` still carry it. A `@media`, not a container query: the
+  topbar spans the viewport and sits in no resizable pane.
+  **Two open points found while doing this, neither fixed:**
+  (a) The button is **not wired to anything** — no handler in `shell.js` or `core.js`, no command
+  palette exists. It is a placeholder that looks like a control.
+  (b) The `⌘K` badge shows the **macOS** command glyph on a Windows installation, and promises a
+  shortcut nothing implements. Either drop the badge until the palette exists, or make it
+  platform-aware — which needs JS and therefore a written reason (conventions rule 7).
+
+- **SPLIT-NARROW-001** — added 2026-08-09. **The narrow-screen behaviour of a workspace is a
+  contract of the primitive, not a per-screen decision.** Every workspace has the same three
+  roles — orientation, list, detail — so a screen names its panes and inherits the rest:
+  `--nav` (overlay from the LEFT below 40rem), `--grow` (the list, always visible),
+  `--detail` (overlay from the RIGHT below 60rem). Below 40rem one surface remains and both
+  neighbours are one tap away. The thresholds differ on purpose: a detail pane is the wider of
+  the two and has to yield first. Orders and accounting get this without writing CSS.
+  Two rules that are not optional:
+  (a) **Every overlay brings its own trigger INSIDE the split** (`.z77-split__opener`, or any
+  element with `data-z77-split-open`). A trigger in the host's chrome — the shell header band —
+  cannot work: a container query cannot reach outside its container, and a frontend or member
+  host has no band at all. That is precisely how the retired shell column 3 failed.
+  (b) **The primitive owns the opener's `display`**, hence the two-class selector
+  `.z77-split .z77-split__opener` — a host's button class carries a `display` of its own and
+  would otherwise leave the trigger on screen permanently.
+  Mechanics: one attribute `data-z77-split-overlay="nav|detail"` on the root (written by
+  `split.js`, never by markup), so opening one closes the other. `data-z77-split-close` also
+  belongs on anything that COMPLETES the overlay's job — picking a folder in the nav overlay
+  shuts it. `split.js` does no width check at all: the attribute is set at any width and the
+  CSS only acts on it inside its container query, so the threshold has exactly one owner.
+  Replaces the old boolean `data-z77-split-detail`, and drops the unused selector value of
+  `data-z77-split-open` (no markup ever used it). **Not verified live.**
+
 - **SHELL-FILL-001** — added 2026-08-09. **A screen that fills the column says so itself; the shell
   does not decide it.** `.be-shell-col--2` is a flex column with a definite height and the action
   template is its direct child — so by default a screen has CONTENT height and the column is the

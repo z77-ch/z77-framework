@@ -412,6 +412,23 @@ body.backend {
     flex-shrink:   0;
 }
 
+// Narrow: the search collapses to its magnifier. The topbar is one row shared by the burger,
+// the search and the right cluster (environment, bell, avatar) — and the search is the only
+// one of the three whose content is expendable: the icon still says what it is, `aria-label`
+// still names it, and the click does the same thing at every width. A `@media` and not a
+// container query, deliberately: the topbar spans the viewport and is not inside any resizable
+// pane, so viewport width IS the thing that matters here.
+@media (max-width: 600px) {
+    .be-shell-topbar__mid { flex: none; padding-left: var(--space-2); }
+    .be-shell-topbar__search {
+        width:           30px;
+        justify-content: center;
+        padding:         0;
+    }
+    .be-shell-topbar__search-text,
+    .be-shell-topbar__search-key { display: none; }
+}
+
 // Right cluster — always visible (env + bell + avatar reuse the legacy component styles)
 .be-shell-topbar__right { flex: none; display: flex; align-items: center; gap: var(--space-2); }
 

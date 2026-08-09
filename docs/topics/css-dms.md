@@ -173,6 +173,34 @@ host only and, at equal specificity but later load order, would override the bin
   the new `components/_split-host.scss` (`.dms .z77-split` → `--dms-*`), which deliberately outranks
   the backend's `.be .z77-split` by load order — the innermost area owns its look.
 
+- **DMS-TREE-TOGGLE-001** — added 2026-08-09. **The folder caret was decoration.** Nothing was
+  wired to it: `is-open` came from the server for the path to the selection and nowhere else, so
+  the only way to see a folder's children was to NAVIGATE into it — one page load per level, and
+  the tree refolded around the new selection. Expanding and selecting are now two actions: each
+  node with children carries a visually hidden checkbox (`.dms-tree__switch`) that the caret
+  labels, and the CSS reads it with `~`. No JS. Deliberately **not** `<details>/<summary>`: a
+  summary is the click target for everything inside it and would swallow the row's own name link
+  and `⋮` menu — the same reason `.be-list` v2 rejected it. The checkbox stays `checked`
+  server-side when the node is on the path to the selection, so navigating still unfolds the way
+  there. It is focusable (keyboard reaches the caret) and its node is `position: relative` so
+  focusing it cannot make the pane jump. The caret glyph rotates, not the label — the hit area
+  must hold still. **Known limit:** the tree pane is replaced wholesale by
+  `DriveControllerTrait::panes()`, so manually expanded branches collapse on the next folder
+  click, back to whatever is on the path. Fixing that means carrying the open set across the
+  refresh — a server round-trip or JS state, not worth it until it actually annoys.
+  **Not verified live.**
+
+- **DMS-NARROW-001** — added 2026-08-09. The Drive now names its panes by ROLE and inherits the
+  shared narrow-screen behaviour (see [`css-backend.md`](css-backend.md) SPLIT-NARROW-001):
+  `.dms-drive__tree` is `--nav`, the file list is `--grow`, the preview is `--detail`. Below
+  40rem the folder tree stops squeezing the list into a second narrow column and becomes an
+  overlay from the left. Its trigger is `.dms-drive__nav-open` in the LIST pane — inside the
+  split, not in the shell's header band next to the breadcrumb, because a container query
+  cannot reach the band and the frontend host does not have one. The DMS supplies placement and
+  look (`.dms-btn`); whether the button shows at all is the primitive's call. Folder links in
+  the tree carry `data-z77-split-close` so picking one shuts the overlay — it has done its job.
+  **Not verified live.**
+
 - **DMS-FILL-001** — added 2026-08-09. **A workspace needs a DEFINITE height all the way down, and
   the `.dms` wrapper was breaking that chain.** The backend shell's content column is a flex column
   with a definite height and the action template is its direct child, so a plain `.dms` is a flex

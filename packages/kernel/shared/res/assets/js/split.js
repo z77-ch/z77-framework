@@ -13,8 +13,14 @@
  *   [data-z77-split-dir="1|-1"]              optional; only needed when the handle is not a
  *                                            sibling of the pane it resizes (the shell's
  *                                            resizer is a grid overlay, not a flex sibling)
- *   [data-z77-split-open="selector"]         opens the detail overlay of the matching root
- *   [data-z77-split-close]                   closes it (backdrop and close buttons)
+ *   [data-z77-split-open="nav|detail"]       opens that overlay ("detail" when the value is
+ *                                            omitted — the common case, a list row)
+ *   [data-z77-split-close]                   closes whichever is open (backdrop, close button,
+ *                                            and anything that COMPLETES the overlay's job:
+ *                                            picking a folder in the nav overlay should shut
+ *                                            it, so that link carries this too)
+ *   [data-z77-split-overlay="nav|detail"]    written by this file onto the root; the CSS reads
+ *                                            it. Never set it in markup.
  *
  * The width variable may be declared in ANY unit (the DMS uses rem, the shell px) — the drag
  * start is measured off the pane, not parsed off the token. See `currentPx`.
@@ -108,8 +114,16 @@
         handle.addEventListener('pointercancel', end);
     }
 
-    /* Detail overlay (narrow container). Delegated, so panes replaced by a fetch refresh
-     * keep working without re-wiring. */
+    /* Overlays on a narrow container (`nav` from the left, `detail` from the right). One
+     * attribute on the root holds WHICH one is open, so opening either closes the other —
+     * two overlays over one surface would just cover each other.
+     *
+     * Delegated, so panes replaced by a fetch refresh keep working without re-wiring, and so
+     * a close marker on a link inside a pane costs nothing to add.
+     *
+     * No width check anywhere: the attribute is written at any width and the CSS only acts on
+     * it inside its container query. A JS breakpoint would be a second, disagreeing source of
+     * truth for a threshold the stylesheet already owns. */
     function wireOverlay() {
         document.addEventListener('click', function (e) {
             if (!e.target || !e.target.closest) { return; }   // text/document targets
@@ -117,22 +131,23 @@
             var closer = e.target.closest('[data-z77-split-close]');
             if (closer) {
                 var openRoot = closer.closest('[data-z77-split-root]');
-                if (openRoot) { openRoot.removeAttribute('data-z77-split-detail'); }
+                if (openRoot) { openRoot.removeAttribute('data-z77-split-overlay'); }
                 return;
             }
 
             var opener = e.target.closest('[data-z77-split-open]');
             if (!opener) { return; }
-            var selector = opener.getAttribute('data-z77-split-open');
-            var target   = selector ? document.querySelector(selector)
-                                    : opener.closest('[data-z77-split-root]');
-            if (target) { target.setAttribute('data-z77-split-detail', ''); }
+            var root = opener.closest('[data-z77-split-root]');
+            if (root) {
+                root.setAttribute('data-z77-split-overlay',
+                                  opener.getAttribute('data-z77-split-open') || 'detail');
+            }
         });
 
         document.addEventListener('keydown', function (e) {
             if (e.key !== 'Escape') { return; }
-            document.querySelectorAll('[data-z77-split-detail]').forEach(function (root) {
-                root.removeAttribute('data-z77-split-detail');
+            document.querySelectorAll('[data-z77-split-overlay]').forEach(function (root) {
+                root.removeAttribute('data-z77-split-overlay');
             });
         });
     }

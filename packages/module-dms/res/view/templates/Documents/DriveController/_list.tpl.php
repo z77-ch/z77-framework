@@ -17,6 +17,16 @@ $fileUrl  = function (string $base, ?int $folderId, int $docId): string {
 $ctx = '&folder=' . ($selectedFolderId ?? '') . '&doc=' . ($selectedDoc ?? '');
 ?>
 <div class="dms-drive__list z77-split__pane z77-split__pane--grow">
+  <?php /* Trigger for the folder overlay. It sits INSIDE the split, not in the shell's header
+           band, and that is the rule rather than a detail: a container query cannot reach out
+           of its container, and a frontend host has no header band at all — a trigger parked
+           there would leave the overlay unopenable, exactly how the retired shell column 3
+           failed. `.z77-split__opener` owns the visibility (only while the nav pane is an
+           overlay); `.dms-btn` gives it its look. */ ?>
+  <button type="button" class="dms-drive__nav-open z77-split__opener z77-split__opener--nav dms-btn dms-btn--ghost"
+          data-z77-split-open="nav">
+    <svg class="dms-icon"><use href="#i-folder"/></svg> Ordner
+  </button>
   <?php if (empty($files)): ?>
     <div class="dms-filelist__empty"><?= $selectedFolderId === null
         ? 'Wähle links einen Ordner — oder lege oben einen an. Dokumente liegen immer in einem Ordner.'

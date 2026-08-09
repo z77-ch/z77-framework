@@ -39,6 +39,15 @@
 .dms-drive__list    { background: var(--dms-bg); }
 .dms-drive__preview { background: var(--dms-surface); }
 
+/* Trigger for the folder overlay (narrow Drive). Placement + look only — WHETHER it shows is
+   the primitive's call via `.z77-split__opener`, which outranks `.dms-btn`'s own `display`.
+   `align-self` keeps it from stretching across the pane, which is a flex column. */
+.dms-drive__nav-open {
+    align-self:  flex-start;
+    flex-shrink: 0;
+    margin:      var(--dms-space-2);
+}
+
 /* Close button — only meaningful while the preview is an OVERLAY (narrow Drive). On a wide
    Drive the pane is a plain column and there is nothing to close. */
 .dms-drive__preview-close { display: none; }
