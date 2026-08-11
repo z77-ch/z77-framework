@@ -2,7 +2,7 @@
 /**
  * Content-header middle slot (hc2) for `content/content/list`, loaded as a partial into the
  * shell's `contentHead` body section (shell rebuild Phase 2 — the aligned header band is
- * filled per controller/action). The `.be-shell-col__head` wrapper (flex row) is provided by
+ * filled per controller/action). The `.be-shell-band__slot` wrapper (flex row) is provided by
  * the skeleton; this partial supplies its inner content. Rendered with the action context
  * (same `$this->context` as `main`), so `$editLanguage` / `$editLanguages` are available.
  *

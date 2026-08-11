@@ -5,7 +5,7 @@
 ?>
 <div class="login">
     <div class="login__box">
-        <div class="login__logo" aria-hidden="true">z77</div>
+        <?= $this->partial('partials/brandMark', ['class' => 'login__logo'], 'Z77\\Shared') ?>
         <h1 class="login__title">Willkommen zurück</h1>
         <p class="login__sub">z77 Backend</p>
 

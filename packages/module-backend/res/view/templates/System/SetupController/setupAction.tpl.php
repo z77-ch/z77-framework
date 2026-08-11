@@ -22,7 +22,8 @@ $invalid = function (string $name) use ($validator): string {
 ?>
 <div class="login">
     <div class="login__box">
-        <div class="login__logo" aria-hidden="true">z77</div>
+        <?php /* Unlinked here: during setup the site root has nothing to show yet. */ ?>
+        <?= $this->partial('partials/brandMark', ['class' => 'login__logo', 'href' => ''], 'Z77\\Shared') ?>
 
         <?php if ($mode === 'locked'): ?>
             <h1 class="login__title">Setup abgeschlossen</h1>

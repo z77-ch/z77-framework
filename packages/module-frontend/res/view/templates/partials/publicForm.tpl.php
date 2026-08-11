@@ -28,6 +28,17 @@ $hint     = static fn (string $f): string => $errors[$f] ?? '';
 $required = static fn (array $spec): string => ($spec['rules']['required'] ?? false) || ($spec['rules']['accepted'] ?? false) ? ' required' : '';
 $maxLen   = static fn (array $spec): string => isset($spec['rules']['max']) ? ' maxlength="' . (int) $spec['rules']['max'] . '"' : '';
 $autoCmp  = static fn (array $spec): string => $spec['autocomplete'] !== '' ? ' autocomplete="' . e($spec['autocomplete']) . '"' : '';
+
+/* "Bitte alle Felder ausfüllen" is only TRUE when there is more than one field and
+   every one of them is mandatory. It used to render unconditionally, which told the
+   member login — a single e-mail field — to fill in "all fields" (PUBLIC-FORM-005).
+   A mixed form (some optional fields) gets no note rather than a wrong one; marking
+   the individual mandatory fields is a separate feature, not this line's job. */
+$requiredCount = count(array_filter(
+    $fields,
+    static fn (array $spec): bool => ($spec['rules']['required'] ?? false) || ($spec['rules']['accepted'] ?? false)
+));
+$showRequiredNote = $requiredCount > 1 && $requiredCount === count($fields);
 ?>
 <section class="fe-form">
     <div class="fe-container">
@@ -88,7 +99,9 @@ $autoCmp  = static fn (array $spec): string => $spec['autocomplete'] !== '' ? ' 
                 <p class="fe-form__hint" id="<?= e($hintId) ?>" data-hint-for="<?= e($name) ?>" aria-live="polite"><?= e($hint($name)) ?></p>
             <?php endforeach; ?>
 
+            <?php if ($showRequiredNote): ?>
             <p class="fe-form__note"><?= e(t('form.note.required')) ?></p>
+            <?php endif; ?>
             <button class="fe-form__submit" type="submit"><?= e(t('form.submit')) ?></button>
         </form>
     </div>

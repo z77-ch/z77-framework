@@ -3,5 +3,5 @@
  *  header band by BackendAbstractController::loadHeaderSlots(). */
 ?>
 <button type="button" class="be-btn be-btn--primary" data-fetch-get="/backend/system/backend-user/add">
-    <svg class="be-icon" width="14" height="14" aria-hidden="true"><use href="#icon-plus"/></svg> Benutzer
+    <svg class="be-icon" width="14" height="14" aria-hidden="true"><use href="#icon-plus"/></svg> <span class="be-btn__label">Benutzer</span>
 </button>

@@ -126,11 +126,20 @@ GET /kontakt/danke   ← the PRG target: a page of its own
 - When adding a per-field blur endpoint → MUST `use PublicFormCheckTrait` and return `$this->blurCheck($definition)`; MUST NOT add an in-action CSRF check (AccessGuard validates the `X-CSRF-Token` header, CONTACT-CHECK-001) and MUST NOT maintain a separate list of checkable fields.
 - When a form needs its own wording for a validation error → MUST put a translation KEY in the field spec's `messages` map and the text in the i18n dictionaries; MUST NOT put a literal there (an unknown key surfaces verbatim) and MUST NOT hard-code German text in a definition.
 - When a project template replaces the generic form partial → MUST keep the data-attribute contract (`data-public-form`, `data-check-url`, `data-validate`, `data-form-row`, `data-hint-for="{field}"`, `data-error-class` for a custom error class); MUST NOT couple the framework JS to project CSS class names.
+- When adding a form-level hint to the partial (required note, privacy line, …) → MUST gate it on the condition that makes it TRUE for the declaration at hand; MUST NOT print it unconditionally — the partial renders every form in the framework, from one field to a dozen (PUBLIC-FORM-005).
 - When a form field needs a rule that does not exist → MUST add it to `PublicFormValidator` plus a `form.error.{rule}` key in every shipped dictionary; MUST NOT smuggle validation into the template, the controller or the definition.
 - When installing this into an existing project → MUST add the `form.*` keys to `data/framework/i18n/{lang}.json` by hand — incl. `form.error.check` and `form.flash.sent` (the `*.default.json` are seed-once) — and MUST deploy `public-form.js` into `public/assets/{module}/js/`; MUST NOT assume `composer install` copies assets (it only reports the diff).
 
 ## known issues
 
+- **PUBLIC-FORM-005 — resolved 2026-08-11.** `partials/publicForm` printed the note
+  «Bitte alle Felder ausfüllen» unconditionally, so the member login — one e-mail field
+  plus an optional «angemeldet bleiben» checkbox — asked the visitor to fill in *all*
+  fields. The note now renders only when there is more than one field AND every one of
+  them is mandatory (`required` or `accepted`), which is exactly when the sentence is
+  true. A MIXED form gets no note instead of a wrong one; marking the individual
+  mandatory fields would be its own feature and is deliberately not in this line.
+  Verified live: register (4 mandatory) shows it, login and resend do not.
 - **PUBLIC-FORM-004 — rebuilt 2026-07-22.** The confirmation became a page. Before, a
   successful submit redirected the form page onto itself and `FormGuard::markSent()` /
   `consumeSent()` carried a one-shot session flag that made the template render a

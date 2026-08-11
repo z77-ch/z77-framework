@@ -25,11 +25,13 @@
     min-height:     0;
 }
 
-// The popup body + the injected <form> are flex columns too, so the flex chain
-// reaches .be-modal__body — without this the body never gets a bounded height
-// and overflows the dialog's `overflow:hidden` (clipped, no scroll).
+// The popup body + the injected panel root are flex columns too, so the flex
+// chain reaches .be-modal__body — without this the body never gets a bounded
+// height and overflows the dialog's `overflow:hidden` (clipped, no scroll).
+// The panel root is not always a <form>: modules inject plain wrappers as well
+// (.be-actions, .dms-trash, …), so the chain must not name the element.
 .be-modal__inner > .z77-popup__body,
-.be-modal__inner > .z77-popup__body > form {
+.be-modal__inner > .z77-popup__body > * {
     display:        flex;
     flex-direction: column;
     flex:           1 1 auto;

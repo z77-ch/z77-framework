@@ -8,15 +8,15 @@
 <div class="be-shell-add" data-panel-root>
     <button type="button" class="be-btn be-btn--primary" data-panel-trigger aria-haspopup="true" aria-expanded="false">
         <svg class="be-icon" width="14" height="14" aria-hidden="true"><use href="#icon-plus"/></svg>
-        Eintrag
+        <span class="be-btn__label">Eintrag</span>
         <svg class="be-icon" width="10" height="10" aria-hidden="true"><use href="#icon-chevron-down"/></svg>
     </button>
     <div class="be-shell-add__panel" hidden data-panel role="menu" aria-label="Eintrag hinzufügen">
         <button type="button" class="be-shell-add__item" role="menuitem" data-fetch-get="/backend/content/translation/add?kind=ui">
-            <svg class="be-icon" width="13" height="13" aria-hidden="true"><use href="#icon-type"/></svg> Text
+            <svg class="be-icon" width="13" height="13" aria-hidden="true"><use href="#icon-type"/></svg> <span class="be-btn__label">Text</span>
         </button>
         <button type="button" class="be-shell-add__item" role="menuitem" data-fetch-get="/backend/content/translation/add?kind=slug">
-            <svg class="be-icon" width="13" height="13" aria-hidden="true"><use href="#icon-link"/></svg> Slug
+            <svg class="be-icon" width="13" height="13" aria-hidden="true"><use href="#icon-link"/></svg> <span class="be-btn__label">Slug</span>
         </button>
     </div>
 </div>

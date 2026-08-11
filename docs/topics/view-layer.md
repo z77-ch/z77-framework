@@ -15,6 +15,7 @@ SOURCE=/packages/kernel/core/src/Services/HtmlView.php
 SOURCE=/packages/kernel/core/src/Services/TemplateRenderer.php
 SOURCE=/packages/kernel/core/src/Services/PartialLabels.php
 SOURCE=/packages/kernel/shared/res/assets/js/partial-labels.js
+SOURCE=/packages/kernel/shared/res/view/templates/partials/brandMark.tpl.php
 SOURCE=/packages/module-frontend/src/Ui/Controllers/Main/AdminPanelController.php
 SOURCE=/packages/kernel/core/src/Http/Response/HtmlResponse.php
 SOURCE=/packages/kernel/core/src/Controller/AbstractBaseController.php
@@ -97,6 +98,28 @@ The keys under `body` become template variables in the document skeleton. Backen
 
 Reference: `docs/01-handbook/templates.md`.
 
+## brand mark (logo)
+
+`partials/brandMark` in the **`Z77\Shared`** namespace is the one place the installation's
+logo lives. The framework default is the `z77` wordmark linked to `/`; a project replaces
+the whole file at `override/z77/shared/res/view/templates/partials/brandMark.tpl.php` and
+writes its own wordmark, `<img>` or inline SVG. That is the FileFinder override tier
+(`sourcePaths: override/z77/shared` before `vendor/z77/kernel/shared`) — the same CE
+mechanism as everywhere else, deliberately NOT a config value: the mark is markup, and a
+project that wants a picture needs HTML anyway.
+
+Rendered by the backend login, the setup page (unlinked — during setup the site root has
+nothing to show) and the member skeleton, which puts it above the card for every member
+page at once. The caller passes the block class its own bundle styles:
+
+```php
+<?= $this->partial('partials/brandMark', ['class' => 'login__logo'], 'Z77\\Shared') ?>
+```
+
+The partial carries no CSS of its own — the mark fails ADR-018's geometry-only test
+(colour, font and radius ARE the component), so only the markup is shared and each
+view-area styles the class it passed in.
+
 ## assets
 
 CSS/JS versioned by filemtime → `{name}_at-{mtime}.css`. Bypasses CDN cache.
@@ -146,6 +169,7 @@ prototype handoff (`{projekt}/work/docs/topics/partial-labels.md`).
 - When naming a context key → MAY use any name; the three render scopes (`TemplateRenderer`, `EmailService`, `StylesheetManager`) keep their locals behind the `z77Tpl` prefix so nothing is shadowed. When touching one of those scopes → MUST keep the prefix AND `EXTR_SKIP`: dropping the prefix silently swallows a same-named key, dropping `EXTR_SKIP` lets a key decide which file is included (resolved 2026-08-07, was MEM-003 + review-create-css B1)
 - When placing an action template or controller-owned partial → MUST nest it under `res/view/templates/{Group}/{Controller}/`, mirroring the controller namespace; MUST NOT place it flat by controller base name
 - When adding a controller-owned partial via `addPartials()` → MUST prefix the path with the group (`'Content/NavigationController'`); module-wide partials stay flat under `partials/`
+- When a screen shows the installation's logo / brand mark → MUST render `partials/brandMark` from the `Z77\Shared` namespace and pass the block class the area styles; MUST NOT hard-code a wordmark or an `<img>` in the template (that is what left `z77` sitting in three templates until 2026-08-11) and MUST NOT introduce a brand config value — a project overrides the one partial
 
 ## see also
 

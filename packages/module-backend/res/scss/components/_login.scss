@@ -18,10 +18,13 @@
     padding:       var(--space-10) var(--space-8);
 }
 
-// Logo mark — "z77" wordmark chip in accent color (width follows the content,
-// so the badge fits the three-glyph mark instead of a fixed square).
+// Logo mark — the shared `partials/brandMark` rendered with this class: a chip in
+// accent color, width following the content (so the badge fits the three-glyph
+// wordmark instead of a fixed square). On the login page the mark is a link to the
+// site root, on setup a <span> — both styled by this one block.
 .login__logo {
     width:            fit-content;
+    text-decoration:  none;
     height:           40px;
     padding:          0 .7rem;
     border-radius:    var(--radius-md);

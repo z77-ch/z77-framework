@@ -183,7 +183,7 @@ packages/module-backend/res/view/templates/
 - When building a radio/checkbox **selection** (select/choose one or many) → MUST use the shared `.be-choice` component (`__input` / `__label`, optional `--filled` for a tinted row); MUST NOT use `.be-switch` for that (the switch is on/off only)
 - The header band renders ALWAYS (both slots, even when empty) — it is a property of the shell, not of the screen (HEADER-BAND-ALWAYS-001). When a screen has no global action → MUST leave the slot empty rather than reintroduce a conditional band; MUST NOT invent an add button for a screen whose actions are all per row (use `.be-shell-status` for its state instead).
 - When a screen's health or queue state must be readable without reading the body (job runner, import plan, member queue) → MUST use `.be-shell-status` (`__dot` + `__text`, `--ok` / `--bad`) in hc2; MUST NOT use `.badge` for it — that component runs on the light-only `--color-*` set and is wrong in dark mode.
-- When filling a shell header slot (`{Group}/{Controller}/{action}.hc1|hc2|hc3.tpl.php`) → MUST keep it to a SINGLE line. `.be-shell-col__head` is a FIXED-height band (`height: 46px`, not `min-height`) so every column's head stays exactly equal (empty or filled) and the band lines up across columns. Content that needs more room MUST go into a dropdown or popup — MUST NOT make the band taller (would break the cross-column alignment). A view with SEVERAL add kinds MUST use the `.be-shell-add` hc1 picker (a «＋ add» button that opens a panel to choose the type, via the panel-toggle contract) rather than stacking multiple add buttons in the band (e.g. translation: Text / Slug). The band scales in fixed px, not `em`/`rem`: it is chrome and matches the font-capped buttons (see FONT-CAP-001) — the font slider scales content, not chrome. If a slot's text grows too large at high font scale, cap it with `.be-font-cap` rather than making the height relative.
+- When filling a shell header slot (`{Group}/{Controller}/{action}.hc1|hc2|hc3.tpl.php`) → MUST keep it to a SINGLE line. `.be-shell-band__slot` is a FIXED-height band (`height: 46px`, not `min-height`) so every slot stays exactly equal (empty or filled) and the band lines up across columns. Content that needs more room MUST go into a dropdown or popup — MUST NOT make the band taller (would break the cross-column alignment). An hc1 primary action MUST wrap its text in `<span class="be-btn__label">` — the mobile band collapses the button to its glyph, and a bare text node cannot be hidden by CSS (SHELL-BAND-ROW-001). A view with SEVERAL add kinds MUST use the `.be-shell-add` hc1 picker (a «＋ add» button that opens a panel to choose the type, via the panel-toggle contract) rather than stacking multiple add buttons in the band (e.g. translation: Text / Slug). The band scales in fixed px, not `em`/`rem`: it is chrome and matches the font-capped buttons (see FONT-CAP-001) — the font slider scales content, not chrome. If a slot's text grows too large at high font scale, cap it with `.be-font-cap` rather than making the height relative.
 
 ## see also
 
@@ -211,6 +211,52 @@ packages/module-backend/res/view/templates/
   v1 and gets renamed when v1 is deleted. **Piloted on `service/backup/list`**: its five fields
   (file / created / size / trigger / count) were one `·`-glued string and are five columns now, with
   the last two dropping on a narrow pane instead of being cut off. **Not verified live.**
+
+- **SHELL-BAND-ROW-001** — added 2026-08-09. **The header band is its own grid row now, not one
+  child per column.** Found live: `hc1` carries the PRIMARY action on all seven screens that use
+  it (add button, backup picker, upload) — and as a child of column 1 it went into the mobile
+  drawer with the column below 767px. The main action of the screen ended up behind the burger,
+  where one looks for navigation, not for "new". CSS could not fix it: column 1 carries a
+  `transform` there, and a transformed ancestor is the containing block even for
+  `position: fixed`, so no child can escape it. The shell grid is therefore
+  `topbar / band / columns` (`--shell-band: 46px`), the band spans both columns and mirrors the
+  split with the same `--shell-c1`. Consequences worth knowing: `.be-shell-col__head*` is gone,
+  the slots are `.be-shell-band__slot--1|--2`; the six dark-island palette overrides had to take
+  the hc1 slot along (it left column 1, so it no longer inherits those tokens); `sticky` is gone
+  (a row does not scroll); the drawer and its backdrop now start BELOW the band, so the primary
+  action stays usable while the drawer is open; and below 767px the band becomes
+  `auto | 1fr` with `:empty` collapsing slot 1, so screens without a primary action look
+  unchanged. The band already rendered unconditionally (HEADER-BAND-ALWAYS-001) — this is the
+  second half of the same insight: **it belongs to the shell, so it must not live inside a part
+  of the shell that can disappear.**
+  **Below 767px the primary action moves to the END of the band and drops to its glyph**
+  (added 2026-08-09, after seeing it live): keeping a full-width labelled button was still too
+  much on a phone. The band becomes a flex row and `order` moves the SAME element — the button
+  is never duplicated into a second slot, which would be two places to keep in sync. It then
+  sits with the icon actions hc2 already carries (the Drive's new-folder / trash buttons are the
+  model). This is what `.be-btn__label` is for: **a bare text node cannot be hidden by CSS**, so
+  every hc1 primary action wraps its word in that span — all seven were updated, and any new one
+  must follow. The add-picker panel anchors right with its own `min-width` there, since it can no
+  longer stretch to a ~34px trigger. The dark-island tokens still apply to the slot, so on a phone
+  it reads as a small dark cap at the right edge — deliberate, but the first thing to revisit if
+  it looks accidental. **Not verified live.**
+
+- **LIST-DROP-STAGES-001** — added 2026-08-09. **One drop stage does not reach a phone.** Found
+  live on the backup pilot: below ~495px the page pushed open instead of the list giving way.
+  The arithmetic — `--be-list-cols-sm` `minmax(10rem,1fr) 9rem 6rem` = 400px, the `⋮` slot
+  25.6px, `.be-list`'s 2rem side padding 64px — is a hard floor of ~490px, because `minmax`
+  and fixed tracks stop shrinking at their minimum. Three changes, all in the component:
+  (a) a **second stage at 28rem** dropping `data-priority="2"` with an optional
+  `--be-list-cols-xs` track list (stage 1 at 40rem now drops priority **3** — highest number
+  goes first, as the plan always specified; a list that declares no `-xs` simply keeps the
+  stage-1 tracks);
+  (b) `.be-list` padding drops to 1rem inside the 40rem query — 2rem per side is a quarter of a
+  phone's width;
+  (c) `overflow-x: auto` on `.be-list__frame` as the net UNDER the stages, so a list that
+  declares too many fixed tracks or forgets a stage scrolls itself instead of pushing the page
+  open. No vertical scrollbar comes with it — the frame has no height of its own.
+  Backup now floors at ~300px (name + date). **When migrating a screen in step 3: two stages,
+  and check the arithmetic against 320px, not against your monitor.** **Not verified live.**
 
 - **TOPBAR-SEARCH-001** — added 2026-08-09. Below 600px the topbar search collapses to its
   magnifier (`__search-text` + `__search-key` hidden, button 30×30). The topbar is one row shared
@@ -400,9 +446,12 @@ packages/module-backend/res/view/templates/
   Mechanism: an action registers a partial into a named body section via
   `LayoutManager::addPartials($file, $path, $ns, 'hc1'|'hc2')`; `HtmlView::renderPartials()` renders
   EVERY section with the same action context, so the partial gets the action's vars ($editLanguage …);
-  each section surfaces as `$hc1` / `$hc2`, which the skeleton renders in a sticky slot at the top of
-  its column (`.be-shell-col__head--sticky`). **Aligned band:** the skeleton renders BOTH slots
-  whenever EITHER is set (`$hasHead`), both use `.be-shell-col__head` (min-height 46px) → same height,
+  each section surfaces as `$hc1` / `$hc2`. (**Both details below are superseded** — the slots are no
+  longer sticky children of their column but one grid row of their own, `.be-shell-band__slot`, and the
+  band renders unconditionally: see SHELL-BAND-ROW-001 and HEADER-BAND-ALWAYS-001 above.)
+  As originally built: a sticky slot at the top of
+  its column (`.be-shell-col__head--sticky`). **Aligned band:** the skeleton rendered BOTH slots
+  whenever EITHER was set (`$hasHead`), both used `.be-shell-col__head` (min-height 46px) → same height,
   so the band lines up across the columns; per-column sticky bg (hc1 = `--be-nav` dark band, hc2 =
   `--be-bg`); the redundant `.backend-subnav__header` (section title) is hidden in the shell (the
   topbar module switcher shows it). As built for `content/content/list`: `hc1.tpl.php` = the add action

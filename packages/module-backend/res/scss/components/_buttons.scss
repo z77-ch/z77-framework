@@ -37,6 +37,13 @@
 .be-btn[disabled],
 .be-btn--disabled { opacity: .5; cursor: not-allowed; pointer-events: none; }
 
+// The button's TEXT, wrapped so a narrow context can drop it and leave the icon alone.
+// It carries no styling of its own and never will — a bare text node cannot be hidden by
+// CSS, and that is the entire reason this element exists. Convention: a `.be-btn` that
+// pairs an icon with a word puts the word in here. Currently required for every `hc1`
+// primary action, which collapses to its glyph in the mobile header band.
+.be-btn__label { }
+
 // Icon-only action button (row actions, headers).
 .be-icon-btn {
     display:       flex;

@@ -5,5 +5,5 @@
  *  `data-drive-scope` so drive.js treats this out-of-fragment slot as part of the Drive. */
 ?>
 <button type="button" class="be-btn be-btn--primary" data-drive-upload data-drive-scope>
-    <svg class="be-icon" width="14" height="14" aria-hidden="true"><use href="#icon-upload"/></svg> Hochladen
+    <svg class="be-icon" width="14" height="14" aria-hidden="true"><use href="#icon-upload"/></svg> <span class="be-btn__label">Hochladen</span>
 </button>

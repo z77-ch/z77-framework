@@ -30,9 +30,4 @@
         'checkUrl'  => $checkUrl,
         'csrfToken' => $csrfToken,
     ], 'Z77\\Module\\Frontend') ?>
-
-    <p class="me-card__aside">
-        Keine Bestätigungs-E-Mail erhalten?
-        <a href="/member/main/resend">Link erneut anfordern</a>
-    </p>
 </div>

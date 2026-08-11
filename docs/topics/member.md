@@ -126,6 +126,7 @@ login request ─▶ waiting record + mail (link, check digits, context) │
 - [`security.md`](security.md) — CSRF, throttling and the per-user second-factor roadmap for `BackendUser`
 - [`forms.md`](forms.md) — the public-form standard the register/login/resend pages are built on
 - [`mail.md`](mail.md) — `EmailMessage`, templates and the email settings the mails go out through
+- [`view-layer.md`](view-layer.md) — the brand mark above every member page comes from the shared `partials/brandMark`; a project changes its logo by overriding that one file, not the member templates
 - [`../02-decisions/adr-029-member-session-and-framework-acl.md`](../02-decisions/adr-029-member-session-and-framework-acl.md) — why the two auth worlds are separate and what has to be decided before they meet
 - [`../03-development/ideas/magic-link-passwordless-login.md`](../03-development/ideas/magic-link-passwordless-login.md) — the original idea this module realises
 - [`../03-development/member-login-security-review-2026-08-07.md`](../03-development/member-login-security-review-2026-08-07.md) — full read-through of the login for abuse; what holds and why, and the reasoning behind MEM-005…008

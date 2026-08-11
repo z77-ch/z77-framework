@@ -31,20 +31,29 @@
     <?= $noindexBanner ?? '' ?>
     <div class="be-shell" data-shell data-z77-split-root>
         <?= $shellTopbar ?? '' ?>
-        <?php /* Header-Slots hc1 (über Spalte 1) + hc2 (über Spalte 2): Controller/Action-Partials
-                 (Body-Sektionen `hc1`/`hc2`). Das Band ist eine Eigenschaft der SHELL, nicht des
-                 Bildschirms — es rendert IMMER, auch wenn beide Slots leer sind. Vorher hing es an
-                 `$hasHead = !empty($hc1) || !empty($hc2)`: die vier Bildschirme ohne Slots (backup,
-                 job, import, member-accounts) bekamen gar kein Band, ihr Inhalt begann also 46px
-                 höher als überall sonst — ein Sprung beim Wechseln zwischen Bildschirmen. Beide
-                 Slots teilen `.be-shell-col__head` (feste Höhe 46px), damit das Band über die
-                 Spalten hinweg auf einer Linie bleibt. */ ?>
+        <?php /* Header-Band mit den Slots hc1 (über Spalte 1) + hc2 (über Spalte 2):
+                 Controller/Action-Partials (Body-Sektionen `hc1`/`hc2`).
+
+                 Das Band ist eine EIGENE Gitterzeile über beide Spalten, nicht je ein Kind seiner
+                 Spalte. Es gehört zur Shell, nicht zum Bildschirm — und deshalb rendert es IMMER,
+                 auch wenn beide Slots leer sind. (Vorher hing es an `$hasHead`: die vier
+                 Bildschirme ohne Slots begannen 46px höher als alle anderen, ein Sprung beim
+                 Wechseln.)
+
+                 Warum eine eigene Zeile und nicht in den Spalten: hc1 trägt auf allen sieben
+                 Bildschirmen, die ihn nutzen, die PRIMÄRE Aktion. Als Kind von Spalte 1 verschwand
+                 die unter 767px mit der Spalte im Navigations-Drawer — hinter dem Burger, wo
+                 niemand «Neu anlegen» sucht. Per CSS war das nicht zu retten: die Spalte trägt dort
+                 ein `transform`, und ein transformierter Vorfahre ist auch für `position: fixed`
+                 der Bezugsrahmen. */ ?>
+        <div class="be-shell-band">
+            <div class="be-shell-band__slot be-shell-band__slot--1"><?= $hc1 ?? '' ?></div>
+            <div class="be-shell-band__slot be-shell-band__slot--2"><?= $hc2 ?? '' ?></div>
+        </div>
         <div class="be-shell-col be-shell-col--1" data-shell-col="l">
-            <div class="be-shell-col__head be-shell-col__head--sticky"><?= $hc1 ?? '' ?></div>
             <?= $subnav ?? '' ?>
         </div>
         <div class="be-shell-col be-shell-col--2">
-            <div class="be-shell-col__head be-shell-col__head--sticky"><?= $hc2 ?? '' ?></div>
             <?= $main ?? '' ?>
         </div>
         <div class="be-shell__resizer z77-split__handle" title="Breite ziehen"

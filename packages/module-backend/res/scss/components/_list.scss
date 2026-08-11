@@ -180,7 +180,11 @@
    horizontal overflow is the PANE's job (`.z77-split__pane` / `.be-shell-col` already scroll),
    and giving this element an `overflow-x` would turn it into a scrollport and break the
    sticky column header against the pane. */
-.be-list__frame { container-type: inline-size; }
+/* `overflow-x` is the safety net UNDER the drop stages: a list that declares too many fixed
+   tracks (or forgets a stage) then scrolls itself instead of pushing the whole page open. It
+   costs nothing while the tracks fit. No vertical scrollbar comes with it — the frame has no
+   height of its own, so `overflow-y: auto` never has anything to clip. */
+.be-list__frame { container-type: inline-size; overflow-x: auto; }
 
 .be-list__table {
     /* One definition of the track list, reused by the subgrid fallback below. The optional
@@ -334,13 +338,22 @@ a.be-list__col:hover { color: var(--be-text); }
 }
 .be-list__disclosure-input:checked ~ .be-list__detail { display: block; }
 
-/* ── Narrow container (opt-in) ──
- * Default when the pane gets narrow: the grid keeps its minimums and the PANE scrolls — never
- * a squashed, unreadable row. A list that would rather DROP a column instead adds
- * `--be-list-table--drop`, declares a second shorter track list as `--be-list-cols-sm`, and
- * marks the droppable cells `data-priority="2"`. Header and cell carry the SAME attribute, so
- * they cannot drift apart — the v1 failure mode was exactly a value with no reachable label. */
+/* ── Narrow container (opt-in), in two stages ──
+ * A list that would rather DROP columns than squash them adds `--be-list-table--drop` and
+ * declares one shorter track list per stage. Cells carry `data-priority="n"`, HIGHEST NUMBER
+ * GOES FIRST. Header and cell carry the SAME attribute, so they cannot drift apart — the v1
+ * failure mode was exactly a value with no reachable label.
+ *
+ *   stage 1  @40rem  `--be-list-cols-sm`  drops priority 3 and 2
+ *   stage 2  @28rem  `--be-list-cols-xs`  drops priority 2 as well, leaving the essentials
+ *
+ * Two stages and not one because one is not enough to reach a phone: with a name column at
+ * `minmax(10rem,…)` plus two fixed tracks, the shortest list still had a hard floor around
+ * 490px and pushed the page open below that. A list may skip stage 2 by not declaring
+ * `--be-list-cols-xs` — it then simply keeps the stage-1 track list. */
 @container (max-width: 40rem) {
+    .be-list { padding: 1rem; }   /* 2rem of side padding is a quarter of a phone's width */
+
     .be-list__table--drop {
         --be-list-tracks:
             var(--be-list-disclose,)
@@ -348,6 +361,20 @@ a.be-list__col:hover { color: var(--be-text); }
             var(--be-list-state,)
             var(--be-list-menu,)
             var(--be-list-cols-sm, var(--be-list-cols, minmax(0, 1fr)))
+            var(--be-list-actions,);
+    }
+    .be-list__table--drop .be-list__col[data-priority="3"],
+    .be-list__table--drop .be-list__cell[data-priority="3"] { display: none; }
+}
+
+@container (max-width: 28rem) {
+    .be-list__table--drop {
+        --be-list-tracks:
+            var(--be-list-disclose,)
+            var(--be-list-select,)
+            var(--be-list-state,)
+            var(--be-list-menu,)
+            var(--be-list-cols-xs, var(--be-list-cols-sm, var(--be-list-cols, minmax(0, 1fr))))
             var(--be-list-actions,);
     }
     .be-list__table--drop .be-list__col[data-priority="2"],

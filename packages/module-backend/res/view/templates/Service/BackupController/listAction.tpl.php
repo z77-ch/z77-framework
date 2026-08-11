@@ -6,9 +6,10 @@
  * PILOT for `.be-list` v2 (2026-08-08). The five fields this screen shows — file, created,
  * size, trigger, file count — used to be glued into ONE text slot with `·` separators and
  * truncated with no column header to reconstruct them from. They are five real columns now.
- * `--be-list-cols-sm` + `data-priority="2"` drop trigger and count when the pane gets narrow,
- * rather than silently cutting the string. Everything below is CSS: no JS, no controller
- * change. Sorting is deliberately NOT wired here — the component supports it, but the entries
+ * They drop in two stages rather than being silently cut: at 40rem trigger and count go
+ * (`--be-list-cols-sm`, `data-priority="3"`), at 28rem size follows (`--be-list-cols-xs`,
+ * `data-priority="2"`), leaving name and date — enough to find a backup on a phone.
+ * Everything below is CSS: no JS, no controller change. Sorting is deliberately NOT wired here — the component supports it, but the entries
  * come from a directory scan and would need a controller change first.
  *
  * The "run now" triggers are NOT here: all three moved into the shell header band
@@ -54,14 +55,15 @@ $fmtSize = function (int $bytes): string {
         <div class="be-list__frame">
             <div class="be-list__table be-list__table--menu be-list__table--drop"
                  style="--be-list-cols:    minmax(12rem, 1fr) 9rem 6rem 6rem 6rem;
-                        --be-list-cols-sm: minmax(10rem, 1fr) 9rem 6rem">
+                        --be-list-cols-sm: minmax(10rem, 1fr) 9rem 6rem;
+                        --be-list-cols-xs: minmax(6rem, 1fr) 9rem">
                 <div class="be-list__head">
                     <span class="be-list__col"></span>
                     <span class="be-list__col">Datei</span>
                     <span class="be-list__col">Erstellt</span>
-                    <span class="be-list__col be-list__col--num">Grösse</span>
-                    <span class="be-list__col" data-priority="2">Auslöser</span>
-                    <span class="be-list__col be-list__col--num" data-priority="2">Dateien</span>
+                    <span class="be-list__col be-list__col--num" data-priority="2">Grösse</span>
+                    <span class="be-list__col" data-priority="3">Auslöser</span>
+                    <span class="be-list__col be-list__col--num" data-priority="3">Dateien</span>
                 </div>
                 <?php foreach ($section['entries'] as $entry):
                     $files = $entry->getMeta()['files'] ?? null;
@@ -72,10 +74,10 @@ $fmtSize = function (int $bytes): string {
                                 data-fetch-get="/backend/service/backup/actions?type=<?= e($type) ?>&file=<?= e(rawurlencode($entry->getFileName())) ?>">⋮</button>
                         <span class="be-list__cell be-list__cell--mono" title="<?= e($entry->getFileName()) ?>"><?= e($entry->getFileName()) ?></span>
                         <span class="be-list__cell be-list__cell--muted"><?= e($entry->getCreatedAt()->format('d.m.Y H:i')) ?></span>
-                        <span class="be-list__cell be-list__cell--muted be-list__cell--num"><?= e($fmtSize($entry->getSizeBytes())) ?></span>
-                        <span class="be-list__cell be-list__cell--muted" data-priority="2"><?=
+                        <span class="be-list__cell be-list__cell--muted be-list__cell--num" data-priority="2"><?= e($fmtSize($entry->getSizeBytes())) ?></span>
+                        <span class="be-list__cell be-list__cell--muted" data-priority="3"><?=
                             $entry->getTrigger() === '' ? '—' : e($entry->getTrigger() === 'cron' ? 'Cron' : 'Manuell') ?></span>
-                        <span class="be-list__cell be-list__cell--muted be-list__cell--num" data-priority="2"><?=
+                        <span class="be-list__cell be-list__cell--muted be-list__cell--num" data-priority="3"><?=
                             $files === null ? '—' : e((string) (int) $files) ?></span>
                     </div>
                 </div>

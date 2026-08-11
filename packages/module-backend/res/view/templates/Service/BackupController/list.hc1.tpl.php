@@ -22,7 +22,7 @@ $kinds = [
 <div class="be-shell-add" data-panel-root>
     <button type="button" class="be-btn be-btn--primary" data-panel-trigger aria-haspopup="true" aria-expanded="false">
         <svg class="be-icon" width="14" height="14" aria-hidden="true"><use href="#icon-download"/></svg>
-        Sichern
+        <span class="be-btn__label">Sichern</span>
         <svg class="be-icon" width="10" height="10" aria-hidden="true"><use href="#icon-chevron-down"/></svg>
     </button>
     <div class="be-shell-add__panel" hidden data-panel role="menu" aria-label="Sicherung starten">
