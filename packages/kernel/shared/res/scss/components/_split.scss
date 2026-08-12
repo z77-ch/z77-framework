@@ -28,6 +28,15 @@
 // Widths are VALUES, not styling, so they sit as custom properties in the markup — the same
 // pattern the tree already uses for `--node-depth`.
 //
+// ── The root may be an ANCESTOR of `.z77-split` ──
+// `data-z77-split-root` marks where the width variable and the overlay attribute are written;
+// `.z77-split` marks where the panes are. Usually the same element, and the example above
+// keeps that. They may also be separated, and one host needs it: the member shell is ONE grid
+// whose header cells must be exactly as wide as the pane below them. Its handle therefore
+// writes the variable the GRID reads — which only works if the write lands on the body. That
+// is why the overlay rules below select the pane as a DESCENDANT of the attribute instead of
+// on the same element; a host that puts both on `.z77-split` matches that just as well.
+//
 // ── The narrow-screen contract, and why it is here and not in a module ──
 //
 // Every workspace has the same three roles: ORIENTATION (tree, folders, filters),
@@ -169,7 +178,7 @@
         box-shadow:  -8px 0 40px -8px rgba(0, 0, 0, .4);
         border-left: 1px solid var(--z77-split-line);
     }
-    .z77-split[data-z77-split-overlay="detail"] .z77-split__pane--detail { transform: none; }
+    [data-z77-split-overlay="detail"] .z77-split__pane--detail { transform: none; }
     .z77-split .z77-split__opener--detail { display: inline-flex; }
 
     // Declared here, inside the WIDER query, so it also applies to the narrower one below.
@@ -183,7 +192,7 @@
         pointer-events: none;
         transition:     opacity .2s;
     }
-    .z77-split[data-z77-split-overlay="detail"] .z77-split__backdrop { opacity: 1; pointer-events: auto; }
+    [data-z77-split-overlay="detail"] .z77-split__backdrop { opacity: 1; pointer-events: auto; }
 }
 
 // ── Narrower still: the ORIENTATION pane follows, and one surface is left ──
@@ -202,10 +211,10 @@
         box-shadow:   8px 0 40px -8px rgba(0, 0, 0, .4);
         border-right: 1px solid var(--z77-split-line);
     }
-    .z77-split[data-z77-split-overlay="nav"] .z77-split__pane--nav { transform: none; }
+    [data-z77-split-overlay="nav"] .z77-split__pane--nav { transform: none; }
     .z77-split .z77-split__opener--nav { display: inline-flex; }
 
-    .z77-split[data-z77-split-overlay="nav"] .z77-split__backdrop { opacity: 1; pointer-events: auto; }
+    [data-z77-split-overlay="nav"] .z77-split__backdrop { opacity: 1; pointer-events: auto; }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -1,3 +1,10 @@
+// The shared work-area primitive: n resizable panes, narrow-screen overlays.
+// `@use`d as a PARTIAL into this bundle, not loaded as a second stylesheet —
+// the primitive's own instruction (kernel/shared, ADR-018 rules 5–7). It ships
+// geometry only; the token binding at the end of this file gives it the
+// member look.
+@use '../../../kernel/shared/res/scss/components/split';
+
 // member.scss — the module's single stylesheet (compiled to res/assets/css/member.css).
 //
 // Deliberately neutral: system font stack, one centered card, the brand mark as
@@ -87,6 +94,924 @@ $fb-info-tint: $fb-bg;
     display: flex;
     justify-content: center;
     padding: 3rem 1rem;
+}
+
+// ── Shell — the signed-in surface (html-shell-skeleton) ────────────────────
+//
+// The door pages keep the card above (.me-header + .me-main). Everything
+// behind the login gets a room instead: header band with mark and navigation,
+// content, footer. Structure follows the backend shell, the values are this
+// module's tokens — a project paints it without touching this file.
+
+// ── The shell is ONE grid ─────────────────────────────────────────────────
+//
+// Three columns (rail · seam · content) and three rows. Everything else falls
+// out of that: the vertical seam runs from the header to the foot, the header
+// splits at the same edge as the panes, and the horizontal edges meet WITHOUT
+// anyone matching padding values — cells of one grid row are the same height
+// by construction. Drag the rail wider and the whole column moves with it.
+//
+// The width lives in `--rail-w` on the body, so the drag handle of the shared
+// primitive can write it (see the token binding at the end of this file).
+.me-body--shell {
+    display: grid;
+    grid-template-columns: var(--rail-w, 17rem) var(--rule, #{$fb-rule}) 1fr;
+    grid-template-rows: var(--row-h, 3.5rem) var(--row-h, 3.5rem) 1fr;
+    min-height: 100vh;
+}
+
+// ⚠️ The work area needs a DEFINITE height, not a minimum. With `min-height`
+// alone the `1fr` row resolves to max-content: the grid grows with the longest
+// list, the panes never have anything to scroll, and the whole page scrolls
+// instead — taking the header out of view (found by Peter on Oerlikonerstrasse,
+// 2026-08-12). The height belongs HERE and not on the panes: a scroll container
+// inside `.me-rail__inner` would fix the symptom while the grid still grew.
+.me-body--shell:not(.me-body--plain) {
+    height: 100vh;
+    overflow: hidden;
+}
+
+// A page WITHOUT a work area (login, register, profile card) keeps the old
+// single-column shape — the shell must carry both without a second skeleton.
+// It scrolls as a page, which is why the rule above excludes it.
+.me-body--shell.me-body--plain {
+    display: flex;
+    flex-direction: column;
+}
+
+.me-shell {
+    // The seam. ONE surface over all three rows — that is the point of the
+    // single grid: the line is one element, not three that have to be aligned.
+    //
+    // Positioned so it paints OVER the work cell of row 3, which spans all
+    // three columns. That is also why the panes below draw no border of their
+    // own: two lines at the same edge would be one pixel wider than the grid's
+    // seam column, and every horizontal edge would miss by that pixel. The drag
+    // handle keeps its own z-index above this, so the line stays grabbable.
+    &__seam {
+        grid-column: 2;
+        grid-row: 1 / -1;
+        position: relative;
+        z-index: 1;
+        background: var(--line, #{$fb-line});
+    }
+
+    // ── Row 1 — the header, split at the rail edge ──
+    &__head-l,
+    &__head-r {
+        grid-row: 1;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        border-bottom: var(--rule, #{$fb-rule}) solid var(--line, #{$fb-line});
+    }
+
+    &__head-l {
+        grid-column: 1;
+        padding: 0 0.5rem 0 1rem;
+        background: var(--rail-bg, #{$fb-surface});
+        color: var(--rail-text, #{$fb-text});
+        border-bottom-color: transparent;
+    }
+
+    &__head-r {
+        grid-column: 3;
+        padding: 0 1rem;
+        justify-content: flex-end;
+        background: var(--surface, #{$fb-surface});
+
+        // The mark is not part of the cluster — it is the signature at the end
+        // of it. One avatar width of air says that better than a gap of the
+        // same size as the one between the two controls (Peter, 2026-08-12).
+        .me-brand {
+            margin-left: 2.25rem;
+        }
+    }
+
+    // ── Row 2 — the area's action, and the breadcrumb on the content line ──
+    &__act,
+    &__toolbar {
+        grid-row: 2;
+        display: flex;
+        align-items: center;
+        border-bottom: var(--rule, #{$fb-rule}) solid var(--line, #{$fb-line});
+    }
+
+    &__act {
+        grid-column: 1;
+        padding: 0 0.75rem;
+        background: var(--rail-bg, #{$fb-surface});
+        border-bottom-color: transparent;
+
+        // The ground tells the quiet button what it is standing on — here the
+        // dark island, so its text is the island's.
+        --btn-quiet: var(--rail-text, #{$fb-text});
+    }
+
+    &__toolbar {
+        grid-column: 3;
+        padding: 0 1rem;
+        gap: 0.5rem;
+        background: var(--surface, #{$fb-surface});
+    }
+
+    // ── Row 3 — the work area, or a plain page ──
+    &__work {
+        grid-column: 1 / -1;
+        grid-row: 3;
+        min-height: 0;
+        // The split primitive draws its own panes; it only needs a box that
+        // does not grow with its content.
+        display: flex;
+    }
+
+    // A plain page (no rail) keeps the old measure and the old chrome.
+    &__header {
+        position: sticky;
+        top: 0;
+        z-index: 30;
+        background: var(--surface, #{$fb-surface});
+        border-bottom: var(--rule, #{$fb-rule}) solid var(--line, #{$fb-line});
+    }
+
+    &__bar {
+        display: flex;
+        align-items: center;
+        gap: 1.5rem;
+        width: 100%;
+        max-width: 64rem;
+        margin: 0 auto;
+        padding: 0.75rem 1rem;
+    }
+
+    &__main {
+        flex: 1 1 auto;
+        width: 100%;
+        max-width: 64rem;
+        margin: 0 auto;
+        padding: 2rem 1rem;
+    }
+
+    &__footer {
+        border-top: var(--rule, #{$fb-rule}) solid var(--line, #{$fb-line});
+        font-size: 0.8125rem;
+        color: var(--text-2, #{$fb-text-2});
+
+        .me-shell__bar {
+            padding-top: 1rem;
+            padding-bottom: 1rem;
+        }
+    }
+
+    // Right of everything: the account cluster in the header, the project line
+    // in the footer. Whichever comes first takes the gap.
+    &__note {
+        margin-left: auto;
+    }
+
+    // The account cluster is a GRID CELL in the work shape and a flex child in
+    // the plain one. Same partial, so the cell's own surface has to step back
+    // here — otherwise it draws a second line under a bar that already has one.
+    &__bar &__head-r {
+        margin-left: auto;
+        padding: 0;
+        border: 0;
+        background: none;
+    }
+}
+
+// ── account cluster — appearance switch + avatar menu ──────────────────────
+//
+// Sits at the right edge of the header bar. Both controls are icon-sized and
+// share one height, so the bar reads as one row and not as two decisions
+// stacked beside each other.
+
+.me-account {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-left: auto;
+}
+
+// The switch. Which of the two icon/label pairs is visible is decided by the
+// SAME cascade that paints the page — see the block after this one. Nothing
+// here knows the mode.
+.me-theme {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.25rem;
+    height: 2.25rem;
+    padding: 0;
+    background: none;
+    border: var(--rule, #{$fb-rule}) solid transparent;
+    border-radius: var(--radius, #{$fb-radius});
+    color: var(--text-2, #{$fb-text-2});
+    cursor: pointer;
+
+    &:hover {
+        color: var(--text, #{$fb-text});
+        border-color: var(--line, #{$fb-line});
+    }
+
+    &[disabled] {
+        opacity: 0.5;
+        cursor: default;
+    }
+
+    &__icon {
+        line-height: 0;
+    }
+
+    // Read by assistive tech, never seen: the label has to name the RESULT of
+    // the click, and the visible icon already carries it for everyone else.
+    // Geometry only — which of the two is in the document is decided below,
+    // with `display`, so hiding one hides it for the screen reader too.
+    &__label {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        margin: -1px;
+        padding: 0;
+        overflow: hidden;
+        clip: rect(0 0 0 0);
+        white-space: nowrap;
+        border: 0;
+    }
+}
+
+// Light ground — no decision, or an explicit light one: offer the moon.
+.me-theme__icon--dark,
+.me-theme__label--dark { display: block; }
+
+.me-theme__icon--light,
+.me-theme__label--light { display: none; }
+
+// Dark ground: offer the sun. Two selectors, because a dark screen has two
+// causes — the account decided, or the system did and nothing overruled it.
+// ⚠️ The media block must stay in sync with the explicit rule by hand; plain
+// CSS cannot share a declaration block across a media query (a project's theme
+// stylesheet carries the same duplication for the tokens themselves).
+[data-theme="dark"] {
+    .me-theme__icon--dark,
+    .me-theme__label--dark { display: none; }
+
+    .me-theme__icon--light,
+    .me-theme__label--light { display: block; }
+}
+
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+        .me-theme__icon--dark,
+        .me-theme__label--dark { display: none; }
+
+        .me-theme__icon--light,
+        .me-theme__label--light { display: block; }
+    }
+}
+
+.me-account {
+    &__wrap {
+        position: relative;
+    }
+
+    &__avatar {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 2.25rem;
+        height: 2.25rem;
+        padding: 0;
+        background: var(--accent, #{$fb-accent});
+        border: var(--rule, #{$fb-rule}) solid transparent;
+        border-radius: 50%;
+        color: var(--on-accent, #{$fb-on-accent});
+        font: inherit;
+        font-size: 0.8125rem;
+        font-weight: 600;
+        letter-spacing: 0.02em;
+        line-height: 1;
+        cursor: pointer;
+
+        &:hover {
+            background: var(--accent-hover, #{$fb-accent-hv});
+        }
+
+        // The one inside the panel names the identity, it does not act.
+        &--static {
+            cursor: default;
+            flex: 0 0 auto;
+        }
+    }
+
+    &__sr {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0 0 0 0);
+        white-space: nowrap;
+    }
+
+    // Anchored to the right edge: the panel is wider than its trigger, and a
+    // left anchor would push it off screen on a phone.
+    &__panel {
+        position: absolute;
+        top: calc(100% + 0.5rem);
+        right: 0;
+        z-index: 20;
+        min-width: 15rem;
+        background: var(--surface, #{$fb-surface});
+        border: var(--rule, #{$fb-rule}) solid var(--line, #{$fb-line});
+        border-radius: var(--radius, #{$fb-radius});
+        // No shadow token in the neutral module — the border carries the edge.
+        // A project that wants depth sets --shadow.
+        box-shadow: var(--shadow, none);
+        padding: 0.5rem 0;
+        font-size: 0.875rem;
+    }
+
+    &__identity {
+        display: flex;
+        align-items: center;
+        gap: 0.625rem;
+        padding: 0.5rem 0.875rem 0.75rem;
+    }
+
+    &__who {
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+    }
+
+    &__name {
+        font-weight: 600;
+    }
+
+    // The address can be longer than the panel and must not widen it — the
+    // panel is a menu, not a place to read an address in full.
+    &__mail {
+        color: var(--text-2, #{$fb-text-2});
+        font-size: 0.8125rem;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    &__divider {
+        height: var(--rule, #{$fb-rule});
+        margin: 0.25rem 0;
+        background: var(--line, #{$fb-line});
+    }
+
+    &__row {
+        display: block;
+        padding: 0.5rem 0.875rem;
+        color: var(--text, #{$fb-text});
+        text-decoration: none;
+
+        &:hover {
+            background: var(--surface-2, #{$fb-bg});
+        }
+
+        // Signing out is not dangerous, but it is the only entry that ends
+        // something — it reads quieter, not louder.
+        &--out {
+            color: var(--text-2, #{$fb-text-2});
+        }
+
+        // Where one already is. Marked with a left edge rather than a fill:
+        // the row stays clickable-looking (it IS a link), it just answers the
+        // question «where am I» before it is asked.
+        &--active {
+            box-shadow: inset 2px 0 0 var(--accent, #{$fb-accent});
+            font-weight: 500;
+        }
+    }
+
+    // The areas open the panel; the identity block below them belongs to the
+    // account half, so it carries the top gap instead of the areas carrying a
+    // bottom one.
+    &__areas {
+        padding-top: 0.25rem;
+    }
+}
+
+// In the shell the content area sets the measure — the card is a section of a
+// page here, not the page itself.
+.me-body--shell .me-card {
+    max-width: none;
+}
+
+// The name of the area one is standing in — a LABEL, not a switch. Switching
+// happens at the four-square button beside it (B10 v1.4.1, decision 5).
+.me-shell__area {
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+// ── The area switcher — four squares, flush with the rail edge ─────────────
+.me-switcher {
+    position: relative;
+    display: flex;
+    margin-left: auto;      // pushes it to the seam
+}
+
+.me-switcher__btn {
+    width: 2.25rem;
+    height: 2.25rem;
+    display: inline-grid;
+    place-content: center;
+    border: var(--rule, #{$fb-rule}) solid transparent;
+    border-radius: var(--radius, #{$fb-radius});
+    background: none;
+    color: currentColor;
+    opacity: 0.75;
+    cursor: pointer;
+
+    &:hover { opacity: 1; background: rgba(127, 127, 127, 0.14); }
+}
+
+.me-switcher__grid {
+    display: grid;
+    grid-template-columns: 6px 6px;
+    gap: 3px;
+
+    i { display: block; width: 6px; height: 6px; background: currentColor; }
+}
+
+// ── The list in the rail ──────────────────────────────────────────────────
+//
+// No separators between rows: a row shows itself by its SURFACE, on hover and
+// when chosen. Lines in the rail, lines under the header and lines in the
+// detail together read as a grid — that was the loudest thing on the screen.
+.me-rail {
+    background: var(--rail-bg, #{$fb-surface});
+    color: var(--rail-text, #{$fb-text});
+}
+
+.me-rail__inner { padding: 0.5rem 0.5rem 2rem; }
+
+.me-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    width: 100%;
+    min-height: var(--item-h, 2.5rem);
+    padding: 0 0.5rem;
+    border: 0;
+    border-radius: var(--radius, #{$fb-radius});
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    text-decoration: none;
+    cursor: pointer;
+
+    & + & { margin-top: 1px; }
+    &:hover { background: rgba(127, 127, 127, 0.14); }
+
+    &--active { background: rgba(127, 127, 127, 0.22); font-weight: 500; }
+
+    // Two lines — the areas on the dashboard, the sections in the profile.
+    // Top-aligned with the offset a centred single line has, so the first line
+    // of EVERY rail starts at the same height as the title on the right.
+    &--stacked {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0;
+        justify-content: flex-start;
+        min-height: 3.25rem;
+        padding-top: 0.5rem;
+    }
+
+    &__name { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    &__meta { font-size: 0.75rem; color: var(--rail-2, #{$fb-text-2}); }
+    &__dot {
+        flex: 0 0 auto;
+        width: 0.5rem;
+        height: 0.5rem;
+        border-radius: 999px;
+        background: var(--rail-accent, #{$fb-accent});
+
+        // Off is not a second colour — it is the same mark, quiet.
+        &--off { background: var(--rail-2, #{$fb-text-2}); opacity: 0.6; }
+    }
+
+    // The tree levels of the Objekte area.
+    &--l1 { padding-left: 1.5rem; }
+    &--l2 { padding-left: 2.75rem; }
+}
+
+// ── The breadcrumb ────────────────────────────────────────────────────────
+.me-crumb {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-width: 0;
+    flex-wrap: wrap;
+    font-size: 0.875rem;
+    color: var(--text-2, #{$fb-text-2});
+
+    &__sep { color: var(--text-3, #{$fb-text-2}); }
+    &__here { color: var(--text, #{$fb-text}); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    // A level that can be switched carries its switch here — where one stands,
+    // not in the list on the left.
+    &__level { display: inline-flex; align-items: center; gap: 0.5rem; }
+}
+
+// ── The detail side ───────────────────────────────────────────────────────
+.me-detail { padding: 0.5rem 1.5rem 2rem; max-width: 52rem; }
+
+// The title sits in a box of the SAME height as a list row and is centred in
+// it — that is what puts it on one line with the first entry on the left.
+// `--head-lift` takes back the few pixels the larger line box adds.
+.me-detail__head {
+    min-height: var(--item-h, 2.5rem);
+    display: flex;
+    align-items: center;
+    margin-top: var(--head-lift, -0.1875rem);
+}
+
+.me-detail__title { margin: 0; font-size: 1.375rem; line-height: 1.2; }
+.me-detail__sub { margin: 0.25rem 0 1.5rem; color: var(--text-2, #{$fb-text-2}); font-size: 0.875rem; }
+
+// The action at the head of the rail. Full width — it belongs to the column,
+// not to a corner of it.
+.me-btn {
+    display: inline-block;
+    width: 100%;
+    padding: 0.5rem 0.75rem;
+    border: 0;
+    border-radius: var(--radius, #{$fb-radius});
+    background: var(--accent, #{$fb-accent});
+    color: var(--on-accent, #{$fb-on-accent});
+    font: inherit;
+    font-weight: 500;
+    text-align: center;
+    text-decoration: none;
+    cursor: pointer;
+
+    &:hover { background: var(--accent-hover, #{$fb-accent-hv}); }
+
+    // The action that ENDS something — or simply leads away from one. Quiet,
+    // never the accent: the weight follows the meaning (B8 security review, and
+    // B10 v1.4.1).
+    //
+    // ⚠️ It appears on TWO grounds: in the action cell, which is part of the
+    // dark island, and in a dialog on the light surface. It therefore reads its
+    // colour from `--btn-quiet`, which the ground sets — hard-wiring
+    // `--rail-text` made «Abbrechen» in the dialog almost invisible (found by
+    // Peter, 2026-08-12). A button must not guess what it is standing on.
+    &--quiet {
+        background: transparent;
+        color: var(--btn-quiet, var(--text, #{$fb-text}));
+        border: var(--rule, #{$fb-rule}) solid;
+        border-color: color-mix(in oklab, var(--btn-quiet, var(--text, #{$fb-text})) 45%, transparent);
+
+        &:hover { background: rgba(127, 127, 127, 0.16); }
+    }
+}
+
+// Both panes scroll on their own. Row 3 is one grid cell of a fixed height, so
+// without this the whole page would scroll and the header would leave with it —
+// the list and the detail are two independent readings and each has to keep its
+// own place.
+.me-rail,
+.me-shell__work .z77-split__pane--detail {
+    min-height: 0;
+    overflow-y: auto;
+}
+
+.me-shell__work .z77-split__pane--detail {
+    background: var(--surface, #{$fb-surface});
+}
+
+// ── The scrollbars of the two panes ───────────────────────────────────────
+//
+// Thin and quiet, and deliberately NOT hidden: the bar is the only sign that
+// there is more below. What had to go are the stepper ARROWS — Windows draws
+// them on the classic bar, and two beige buttons in a dark column read as
+// controls of this surface, which they are not.
+//
+// Both syntaxes are needed and neither replaces the other: `scrollbar-width` /
+// `scrollbar-color` is the standard (Firefox, and Chromium honours it too, but
+// then ignores the pseudo-elements), the `::-webkit-*` block is what older
+// WebKit/Chromium builds read. A thumb with alpha instead of a token: it has to
+// sit on the light content AND on the dark island without a second declaration.
+.me-shell__work .z77-split__pane {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(127, 127, 127, 0.4) transparent;
+
+    &::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+    }
+
+    &::-webkit-scrollbar-track {
+        background: transparent;
+    }
+
+    &::-webkit-scrollbar-thumb {
+        border-radius: 999px;
+        background: rgba(127, 127, 127, 0.4);
+
+        &:hover { background: rgba(127, 127, 127, 0.6); }
+    }
+
+    // The arrows. `display: none` rather than a size of 0 — a zero-height
+    // button still reserves its border in some builds.
+    &::-webkit-scrollbar-button {
+        display: none;
+    }
+
+    &::-webkit-scrollbar-corner {
+        background: transparent;
+    }
+}
+
+// On the dark island the same grey would disappear into the ground.
+.me-shell__work .me-rail {
+    scrollbar-color: rgba(255, 255, 255, 0.3) transparent;
+
+    &::-webkit-scrollbar-thumb {
+        background: rgba(255, 255, 255, 0.3);
+
+        &:hover { background: rgba(255, 255, 255, 0.45); }
+    }
+}
+
+// The grid's seam column draws the line here — see `&__seam` above.
+.me-shell__work .z77-split__pane + .z77-split__pane,
+.me-shell__work .z77-split__handle + .z77-split__pane {
+    border-left: 0;
+}
+
+// Narrow container: the detail leaves the flow and becomes an overlay (the
+// primitive), so the rail has to take the whole width instead of keeping its
+// column and leaving the rest empty.
+@container (max-width: 60rem) {
+    .me-shell__work .me-rail { flex: 1 1 auto; }
+}
+
+// Narrow SCREEN: the grid keeps two columns, but the left one only as wide as
+// its content. The rail width belongs to the work area, which is now one
+// surface — forcing 17rem of header above it would push the breadcrumb off the
+// screen for a column that is no longer there.
+@media (max-width: 60rem) {
+    .me-body--shell { grid-template-columns: auto var(--rule, #{$fb-rule}) 1fr; }
+
+    .me-shell__act {
+        padding-right: 0.75rem;
+
+        .me-btn { width: auto; }
+    }
+}
+
+// ── The switch ────────────────────────────────────────────────────────────
+//
+// «on» carries the ACCENT, not green: switched-to-visible is a state, not a
+// success. Green stays reserved for «that worked» — otherwise «gespeichert»
+// loses its meaning.
+//
+// The pill is the one deliberate exception to the radius: a square rocker reads
+// as a checkbox, and a checkbox means something else.
+//
+// ⚠️ The visible part is `__track`, a sibling of the input — the input itself
+// is transparent and lies on top of it. A bare `<input type="checkbox">` renders
+// its state to nobody here (the same trap the backend's `be-switch` documents).
+// It lives in the MODULE and not in a project sheet because a framework partial
+// draws it: the breadcrumb carries the level switches.
+.me-switch {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    flex: 0 0 auto;
+
+    input {
+        position: absolute;
+        inset: 0;
+        margin: 0;
+        opacity: 0;
+        cursor: pointer;
+
+        &:disabled { cursor: not-allowed; }
+        &:focus-visible { outline: none; }
+    }
+
+    &__track {
+        position: relative;
+        width: 2.25rem;
+        height: 1.25rem;
+        border-radius: 999px;
+        background: var(--control, #{$fb-control});
+        transition: background 0.15s;
+
+        &::after {
+            content: '';
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            width: 1rem;
+            height: 1rem;
+            border-radius: 999px;
+            background: var(--on-accent, #{$fb-on-accent});
+            transition: transform 0.15s;
+        }
+    }
+
+    input:checked + &__track { background: var(--accent, #{$fb-accent}); }
+    input:checked + &__track::after { transform: translateX(1rem); }
+    input:disabled + &__track { opacity: 0.4; }
+
+    // The ring belongs on the visible track — the input is transparent and sits
+    // on top of it, so its own ring would only double the same geometry.
+    input:focus-visible + &__track {
+        outline: 2px solid var(--accent, #{$fb-accent});
+        outline-offset: 2px;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .me-switch__track,
+    .me-switch__track::after { transition: none; }
+}
+
+// ── Detail furniture ──────────────────────────────────────────────────────
+//
+// The few shapes every detail side is built from. They are here rather than in
+// a project sheet because the module's own profile draws all of them.
+
+// One sentence on the overall state, at the top. The colour follows the
+// SEVERITY and nothing else: warn belongs to a defect, info to something that
+// merely waits. Colour everything the same and the real alarm has no colour
+// left (ADR member-farben-und-zustaende).
+.me-band {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 1.5rem;
+    padding: 0.75rem 1rem;
+    border-radius: var(--radius, #{$fb-radius});
+    background: var(--ok-tint, #{$fb-ok-tint});
+
+    &__dot {
+        flex: 0 0 auto;
+        width: 0.625rem;
+        height: 0.625rem;
+        border-radius: 999px;
+        background: var(--ok, #{$fb-ok});
+    }
+
+    &__text { font-size: 0.9375rem; }
+
+    &--info {
+        background: var(--info-tint, #{$fb-info-tint});
+        .me-band__dot { background: var(--info, #{$fb-info}); }
+    }
+
+    &--warn {
+        background: var(--warn-tint, #{$fb-warn-tint});
+        .me-band__dot { background: var(--warn, #{$fb-warn}); }
+    }
+}
+
+// Label/value pairs — a `<dl>`, because that is what it is.
+.me-field {
+    display: grid;
+    grid-template-columns: 11rem 1fr;
+    gap: 0.5rem 1rem;
+    margin: 0 0 1.5rem;
+    font-size: 0.9375rem;
+
+    dt { color: var(--text-2, #{$fb-text-2}); }
+    dd { margin: 0; }
+}
+
+// A list of rows inside the detail: the units of a building, the devices of an
+// account. One frame, striped, no separator per row on top of it.
+.me-units {
+    border: var(--rule, #{$fb-rule}) solid var(--line, #{$fb-line});
+    border-radius: var(--radius, #{$fb-radius});
+    overflow: hidden;
+}
+
+.me-unit {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.625rem 0.75rem;
+
+    & + & { border-top: var(--rule, #{$fb-rule}) solid var(--line, #{$fb-line}); }
+    &:nth-child(even) { background: var(--surface-2, #{$fb-bg}); }
+
+    &__name { flex: 1 1 auto; }
+    &__status {
+        width: 7rem;
+        font-size: 0.8125rem;
+        color: var(--text-2, #{$fb-text-2});
+    }
+}
+
+// Secondary actions at the foot of a detail. Outlined, never the accent — the
+// one accent button of the screen sits at the head of the rail.
+.me-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 1.5rem;
+
+    button,
+    .me-actions__btn {
+        padding: 0.45rem 1rem;
+        border: var(--rule, #{$fb-rule}) solid var(--control, #{$fb-control});
+        border-radius: var(--radius, #{$fb-radius});
+        background: transparent;
+        color: var(--text, #{$fb-text});
+        font: inherit;
+        text-decoration: none;
+        cursor: pointer;
+
+        &:hover { border-color: var(--text, #{$fb-text}); }
+    }
+}
+
+.me-quiet,
+.me-hint {
+    font-size: 0.8125rem;
+    color: var(--text-2, #{$fb-text-2});
+}
+
+.me-hint { margin: 0.75rem 0 0; }
+
+.me-empty {
+    padding: 2rem 1rem;
+    text-align: center;
+    color: var(--text-2, #{$fb-text-2});
+}
+
+// The way back to the list — only ever visible while the detail is an overlay,
+// which is the one situation where the list is not on screen. The primitive's
+// own close control handles the backdrop; this is the one inside the content.
+.me-back {
+    display: none;
+    padding: 0 0 0.75rem;
+    border: 0;
+    background: none;
+    color: var(--accent, #{$fb-accent});
+    font: inherit;
+    cursor: pointer;
+}
+
+.z77-split[data-z77-split-overlay] .me-back { display: block; }
+
+// ── The dialog ────────────────────────────────────────────────────────────
+//
+// A native `<dialog>`, so backdrop, focus trap, Escape and the inertness of the
+// page behind it come from the browser. Only the surface is ours.
+.me-dialog {
+    width: min(30rem, calc(100vw - 2rem));
+    padding: 0;
+    border: var(--rule, #{$fb-rule}) solid var(--line, #{$fb-line});
+    border-radius: var(--radius, #{$fb-radius});
+    background: var(--surface, #{$fb-surface});
+    color: var(--text, #{$fb-text});
+
+    &::backdrop {
+        background: rgba(0, 0, 0, 0.34);
+    }
+
+    &__form { padding: 1.5rem; }
+
+    &__title {
+        margin: 0 0 1.25rem;
+        font-size: 1.125rem;
+    }
+
+    // The way out sits left of the way on: what confirms is the rightmost
+    // thing, which is where the hand ends up after reading the fields.
+    &__actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 0.5rem;
+        margin-top: 1.5rem;
+
+        .me-btn { width: auto; }
+    }
+}
+
+// ── Token binding for the shared primitive (ADR-018 rule 7) ───────────────
+// The primitive ships neutral defaults; inside the member area it follows the
+// member tokens. `.me .z77-split` is (0,2,0) — it wins over the primitive's
+// own single-class defaults without !important.
+.me .z77-split {
+    --z77-split-line: var(--line, #{$fb-line});
+    --z77-split-handle: transparent;
+    --z77-split-handle-active: var(--accent, #{$fb-accent});
+    --z77-split-backdrop: rgba(0, 0, 0, 0.34);
 }
 
 // The header already carries the top gap when it is present — without this the
@@ -234,6 +1159,31 @@ $fb-info-tint: $fb-bg;
     }
 }
 
+// ── the two ways out of the confirmation page (B8 stage D) ─────────────────
+//
+// Both buttons in one track: same width, one gap between them. Left to
+// themselves they size to their label — and here the LONGER label belongs to
+// the quieter choice, so the button one should think twice about looked the
+// bigger one. Emphasis is carried by colour (security review 2026-08-07);
+// geometry must not argue with it.
+.me-decision {
+    display: grid;
+    gap: 0.75rem;
+    margin-top: 1.5rem;
+
+    .fe-form__submit {
+        width: 100%;
+        // A long device name wraps — centred, so both lines sit under each
+        // other instead of trailing off to the left.
+        text-align: center;
+    }
+
+    // The gap belongs to the track; the button's own margin would double it.
+    .fe-form__submit--quiet {
+        margin-top: 0;
+    }
+}
+
 // ── profile ────────────────────────────────────────────────────────────────
 
 .me-profile {
@@ -318,9 +1268,26 @@ $fb-info-tint: $fb-bg;
 // which left «needs attention, but does not block» and «worth knowing» without
 // a place. Wording and trigger belong to the application, not here.
 
+// The flash band sticks too, and it sits BEFORE the header in the document —
+// so without a higher z-index the header would slide over it and swallow the
+// message. A refusal must outrank the chrome it was triggered from.
 .flash-messages {
     position: sticky;
     top: 0;
+    z-index: 40;
+}
+
+// ⚠️ In the work area the same container would be a GRID ITEM, and an empty one
+// at that — auto-placement then opens an implicit fourth row and the page ends
+// in a grey strip that holds a message only after something happened. So here
+// it leaves the flow entirely: a band over the header, which is also what a
+// refusal is. Sticky cannot do this — there is no flow left to stick to.
+.me-body--shell:not(.me-body--plain) .flash-messages {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 60;
 }
 
 .flash-msg {

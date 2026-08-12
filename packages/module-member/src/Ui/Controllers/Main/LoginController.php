@@ -27,7 +27,7 @@ class LoginController extends AbstractMemberController
     protected function indexAction(): HtmlResponse|RedirectResponse
     {
         if (MemberAuth::create()->current() !== null) {
-            return $this->redirect('/member/main/profile');
+            return $this->redirect(LoginFlow::landingUrl());
         }
 
         $this->layoutManager->addJs('public-form', 'Z77\\Module\\Frontend', 'footer', true);
@@ -89,7 +89,7 @@ class LoginController extends AbstractMemberController
         $outcome = $this->loginFlow()->poll();
 
         return new JsonResponse(match ($outcome) {
-            LoginFlow::SESSION       => ['state' => 'session', 'redirect' => '/member/main/profile'],
+            LoginFlow::SESSION       => ['state' => 'session', 'redirect' => LoginFlow::landingUrl()],
             LoginFlow::TOTP_REQUIRED => ['state' => 'session', 'redirect' => '/member/main/login/totp'],
             LoginFlow::WAITING       => ['state' => 'waiting'],
             default                  => ['state' => 'dead'],
@@ -127,7 +127,7 @@ class LoginController extends AbstractMemberController
             } else {
                 $outcome = $flow->redeem($token);
                 if ($outcome === LoginFlow::SESSION) {
-                    return $this->redirect('/member/main/profile');
+                    return $this->redirect(LoginFlow::landingUrl());
                 }
                 if ($outcome === LoginFlow::TOTP_REQUIRED) {
                     return $this->redirect('/member/main/login/totp');
@@ -150,8 +150,25 @@ class LoginController extends AbstractMemberController
         ]);
     }
 
+    /**
+     * A dead link — but not always a failure.
+     *
+     * When the browser asking is ALREADY signed in, the link is spent BECAUSE
+     * this browser spent it: a reload, the back button, a second click on the
+     * same mail. Answering that with «fordern Sie einen neuen an» is a false
+     * alarm on top of a working session, and it pushes a customer to request a
+     * link they do not need — against an address that is throttled. So that
+     * case just goes where the login would have gone anyway.
+     *
+     * The sentence stays for the situation it actually describes: no session,
+     * and a link that expired, was used elsewhere, or never existed.
+     */
     private function deadLink(): RedirectResponse
     {
+        if (MemberAuth::create()->current() !== null) {
+            return $this->redirect(LoginFlow::landingUrl());
+        }
+
         $this->messageService->pushFlashAfterRedirect(
             'error',
             'Dieser Anmelde-Link ist nicht mehr gültig — fordern Sie einen neuen an.'
@@ -178,7 +195,7 @@ class LoginController extends AbstractMemberController
             $outcome = $flow->confirmTotp((string)$request->getPostParameter('code'));
 
             if ($outcome === LoginFlow::SESSION) {
-                return $this->redirect('/member/main/profile');
+                return $this->redirect(LoginFlow::landingUrl());
             }
             if ($outcome === LoginFlow::DEAD) {
                 $this->messageService->pushFlashAfterRedirect(

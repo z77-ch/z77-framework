@@ -33,6 +33,12 @@ class MemberAccount
 
     public const STATES = [self::STATE_REGISTERED, self::STATE_CONFIRMED, self::STATE_ACTIVE];
 
+    public const THEME_LIGHT = 'light';
+    public const THEME_DARK  = 'dark';
+
+    /** The two explicit choices. Absent (null) = follow the system. */
+    public const THEMES = [self::THEME_LIGHT, self::THEME_DARK];
+
     /** Server-controlled — no setter; MemberAccounts assigns a random string id. */
     private ?string $id = null;
 
@@ -79,6 +85,20 @@ class MemberAccount
 
     #[Clean('nullable', 'text')]
     private ?string $totpActivatedAt = null;
+
+    /**
+     * Appearance: 'light', 'dark' — or null, which is not a third look but the
+     * absence of a decision, and then the system's `prefers-color-scheme`
+     * decides (the stylesheet is written that way round).
+     *
+     * It lives at the ACCOUNT, not in the browser: the same person meeting a
+     * dark tool at the desk and a light one on the phone would read that as two
+     * different products. The price is that the choice needs a session — a
+     * guest on the login card gets the system's answer, which is the honest
+     * default for someone the installation does not know yet.
+     */
+    #[Clean('nullable', 'ident')]
+    private ?string $theme = null;
 
     /**
      * B8 «angemeldet bleiben»: one entry per device that may resume a session
@@ -129,6 +149,19 @@ class MemberAccount
 
     public function setTotpSecret(?string $totpSecret): void { $this->totpSecret = $totpSecret; }
     public function setTotpActivatedAt(?string $totpActivatedAt): void { $this->totpActivatedAt = $totpActivatedAt; }
+
+    public function getTheme(): ?string { return $this->theme; }
+
+    /**
+     * Anything that is not one of the two choices means «no decision» — so a
+     * hand-edited store, an old value or a forged request all land on the
+     * system default instead of on an exception. There is nothing to protect
+     * here: the field decides a colour, and the guard keeps the caller simple.
+     */
+    public function setTheme(?string $theme): void
+    {
+        $this->theme = in_array($theme, self::THEMES, true) ? $theme : null;
+    }
 
     /** @return array<int,array<string,string>> */
     public function getDeviceKeys(): array { return $this->deviceKeys; }

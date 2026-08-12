@@ -33,6 +33,10 @@ All server–browser communication uses a standardized JSON envelope. Two respon
 
 Browser-side `core.js` reads a CSRF token from a `<meta>` tag once at init and attaches it as `X-CSRF-Token` on every POST. `AccessGuard` validates CSRF centrally for all Fetch requests.
 
+⚠️ **A hand-written `fetch()` must send that header too — a token in the body does NOT satisfy the guard** (FETCH-CSRF-001, found 2026-08-12 in AXO3's member area). `AccessGuard::enforce()` runs before any controller and reads the token from `X-CSRF-Token` ONLY (`Request::getCsrfToken()`); the answer to a missing header is an envelope carrying `CSRF token invalid` — as a **flash**, not a message, so a client that only reads `messages` shows nothing and the switch merely flickers back.
+
+The trap is that this is invisible to a script test: the mode comes from `Sec-Fetch-Mode` (`resolveRequestMode()`), which only a real browser sends. curl/PowerShell/Postman land in Page mode, walk past the guard, and prove nothing about the browser. **Verify anything fetch-driven in a browser, or send `Sec-Fetch-Mode: cors` explicitly.** Keep the body field as well when the action validates in-action (both AXO3 member switches do).
+
 - **One JS module**: shared `core.js` contains the fetch communicator, flash/message channels, popup wiring, field validation, envelope/command dispatch, and `data-fetch-*` document-wide wiring. Action-scoped scripts (e.g. `navigation/edit.js`) are lazy-loaded via the `load-script` command and register init functions in `_Z77.scriptInit`.
 - Fetch requests skip navigation lookup → use convention routing directly.
 - Inspired by `JsonCommunicator` / `AjaxCommunicator` pattern from the WDV framework.

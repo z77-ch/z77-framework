@@ -27,5 +27,14 @@ return [
             'flash' => 'partials/flashMessages',
         ],
     ],
-    'javascripts' => [],
+    // core.js on every member page — it is the framework's ONE browser-side
+    // transport (fetch + CSRF header + envelope/flash/command dispatch) plus
+    // the shared `data-*` wiring (copy, fetch-post, fetch-get). Leaving it out
+    // was a false economy: the member area then hand-rolled its own fetch,
+    // forgot the `X-CSRF-Token` header the guard insists on, and `data-copy`
+    // silently did nothing (FETCH-CSRF-001, 2026-08-12). The flash container
+    // it writes into (`#flash-messages`) is already part of this module.
+    'javascripts' => [
+        ['name' => 'core', 'nameSpace' => 'Z77\\Shared', 'defer' => true],
+    ],
 ];

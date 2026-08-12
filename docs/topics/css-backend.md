@@ -292,6 +292,15 @@ packages/module-backend/res/view/templates/
   CSS only acts on it inside its container query, so the threshold has exactly one owner.
   Replaces the old boolean `data-z77-split-detail`, and drops the unused selector value of
   `data-z77-split-open` (no markup ever used it). **Not verified live.**
+  Widened 2026-08-12: **`data-z77-split-root` may sit on an ANCESTOR of `.z77-split`.** The root
+  marks where the width variable and the overlay attribute are written, `.z77-split` marks where
+  the panes are; usually one element, and both existing hosts keep it that way. The member shell
+  needs them apart — it is ONE grid whose header cells must be exactly as wide as the pane below,
+  so its handle writes the variable the GRID reads, which only works if the write lands on the
+  body. The overlay rules therefore select the pane as a DESCENDANT of the attribute
+  (`[data-z77-split-overlay="detail"] .z77-split__pane--detail`) instead of on the same element;
+  a host that puts both on `.z77-split` matches that just as well. Verified live in the member
+  area 2026-08-12.
 
 - **SHELL-FILL-001** — added 2026-08-09. **A screen that fills the column says so itself; the shell
   does not decide it.** `.be-shell-col--2` is a flex column with a definite height and the action

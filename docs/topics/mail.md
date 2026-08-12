@@ -17,6 +17,7 @@ SOURCE=/packages/kernel/shared/src/Mail/MimeMessage.php
 SOURCE=/packages/kernel/shared/src/Mail/MailTransport.php
 SOURCE=/packages/kernel/shared/src/Mail/SmtpTransport.php
 SOURCE=/packages/kernel/shared/src/Mail/PhpMailTransport.php
+SOURCE=/packages/kernel/shared/src/Mail/FileTransport.php
 SOURCE=/packages/kernel/shared/src/Mail/Mailer.php
 SOURCE=/packages/kernel/shared/src/Mail/EmailService.php
 SOURCE=/packages/kernel/shared/src/Mail/EmailMessage.php
@@ -132,8 +133,32 @@ NOT `emailConfig`, and NOT per-form; the sender is one installation identity):
 | Key | Meaning |
 |---|---|
 | `fromAddress` / `fromName` | the From — MUST match the sending domain (SPF/DKIM/DMARC), set once per project. Empty → send fails with a clear error. `Mailer` fills it into any `Message` that has no own From |
-| `transport` | `'mail'` (PHP `mail()` over the local MTA — cyon) or `'smtp'` (then fill `host`/`port`/`encryption`/`username`/`password`) |
+| `transport` | `'mail'` (PHP `mail()` over the local MTA — cyon), `'smtp'` (then fill `host`/`port`/`encryption`/`username`/`password`), or `'file'` (development, see below) |
+| `outbox` | only for `transport = 'file'`: where the `.eml` files land. Default `data/framework/mail/outbox` |
 | `enabled` | `true` to send; `false` → `Mailer::send()` throws the "not configured" error |
+
+#### `transport = 'file'` — the dev box's inbox
+
+A development machine has no MTA, so every mail took the graceful failure path
+and anything hanging on a mail could only be walked through on a real host.
+That made a deploy the cheapest way to test a login — the wrong price for the
+wrong thing. `FileTransport` writes each mail as a complete `.eml` into
+`outbox` instead of delivering it.
+
+What lands there is the SAME RFC 5322 blob the other transports hand to their
+MTA, not a summary: subject line, headers, both bodies. That is what lets a
+member login be walked through locally end to end — and it is the only way to
+check the B8 rule that the check digits ride in the SUBJECT, since a transport
+rendering its own version could not prove it.
+
+⚠️ Development only. It never delivers, and it writes plain text — a magic-link
+token IS a credential until redeemed. `config/mail.inc.php` is machine-specific
+and gitignored, so the setting cannot travel to a server by accident; keep it
+that way rather than switching on a flag.
+
+A project can read the outbox however it likes (`.eml` opens in any mail
+client). AXO3 keeps a small printer that lists sender, decoded subject and the
+links: `php work/bin/mail-outbox.php`.
 
 ### B. per form mail — add a form key
 
@@ -171,7 +196,7 @@ NOT `emailConfig`, and NOT per-form; the sender is one installation identity):
 
 1. Set the **production recipient** in the backend (Service → E-Mail) — it overrides the config dev address.
 2. Check: no form still runs on origin «Config» with a dev address (visible in the settings list).
-3. Verify real delivery on the host (cyon; the local dev box has no MTA → always the graceful `false` path, so delivery is untestable locally).
+3. Verify real delivery on the host (cyon). Locally, `transport = 'file'` shows what WOULD be sent — real delivery (SPF/DKIM, the receiving side) still has to be checked on the host.
 
 ### E. operator, ongoing (no deploy)
 
@@ -226,8 +251,8 @@ address in config:
 - **Config `to` = a deliverable, developer-controlled address** (e.g.
   `webmaster@{project-domain}`). The developer is responsible that it exists
   (mailbox or forwarding) — otherwise pre-launch delivery tests on the staging
-  host (cyon; the local dev box has no MTA and always takes the graceful `false`
-  path) prove nothing. It must NOT be the client's production recipient — every
+  host (cyon; locally `transport = 'file'` shows the mail but never delivers it)
+  prove nothing. It must NOT be the client's production recipient — every
   dev/staging test would otherwise mail the client before launch, and a project
   that is never configured in the backend would silently send production mail to
   a stale config address.

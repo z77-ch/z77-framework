@@ -65,6 +65,17 @@ return [
     // testing needs more headroom.
     'loginRequestsPerHour' => 5,
 
+    // Where a member lands after a successful login — the redeemed link, the
+    // confirmed second factor, the waiting page's poll, and a visit to the
+    // login while already signed in all use this one value
+    // ({@see \Z77\Module\Member\Services\LoginFlow::landingUrl}). Own
+    // installation only: anything that is not a path starting with `/` falls
+    // back to the default, so a config edit can never redirect a fresh login
+    // off the site. The module default is the profile, because that is the
+    // only screen a bare member module has; a project with a management area
+    // points this at that area.
+    'afterLoginUrl' => '/member/main/profile',
+
     'viewArea'      => true,
     'viewAreaLabel' => 'Member',
     'public'        => true,
@@ -145,6 +156,8 @@ return [
                 'controllerRole' => AuthRole::CUSTOMER,
                 'actions'        => [
                     'indexAction'           => AuthRole::CUSTOMER,
+                    'themeAction'           => AuthRole::CUSTOMER,
+                    'kontoAction'           => AuthRole::CUSTOMER,
                     'totpAction'            => AuthRole::CUSTOMER,
                     'totpRemoveAction'      => AuthRole::CUSTOMER,
                     'deviceRemoveAction'    => AuthRole::CUSTOMER,

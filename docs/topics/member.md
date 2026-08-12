@@ -52,7 +52,15 @@ SOURCE=/packages/module-member/res/view/templates/emails/no-account.tpl.php
 SOURCE=/packages/module-member/res/view/templates/emails/existing-account.tpl.php
 SOURCE=/packages/module-member/res/view/templates/emails/confirmed-notify.tpl.php
 SOURCE=/packages/module-member/res/view/templates/Backend/AccountsController/listAction.tpl.php
+SOURCE=/packages/module-member/res/view/templates/html-shell-skeleton.tpl.php
+SOURCE=/packages/module-member/res/view/templates/partials/shell/headLeft.tpl.php
+SOURCE=/packages/module-member/res/view/templates/partials/shell/userMenu.tpl.php
+SOURCE=/packages/module-member/res/view/templates/partials/shell/rail.tpl.php
+SOURCE=/packages/module-member/res/view/templates/partials/shell/crumbs.tpl.php
+SOURCE=/packages/module-member/res/view/templates/partials/shell/action.tpl.php
+SOURCE=/packages/module-member/src/Ui/Config/Main/profileControllerConfig.inc.php
 SOURCE=/packages/module-member/res/assets/js/login-wait.js
+SOURCE=/packages/module-member/res/assets/js/shell.js
 SOURCE=/packages/module-member/res/scss/member.scss
 SOURCE=/packages/module-backend/src/Ui/Controllers/Service/MemberAccountsController.php
 SOURCE=/packages/module-backend/src/Ui/Config/Service/memberAccountsControllerConfig.inc.php
@@ -68,6 +76,7 @@ Customer accounts with a **passwordless** login, in their own view area — deli
 - **Login is a magic link with two redemption paths** (spec-driven, see `see also`): the link opens a confirmation page where the human decides whether the REQUESTING device (release the waiting record, the requester polls until it flips) or the READING device (sign in here) gets the session. Check digits plus a context line let the reader tell an own login from one a stranger started on the same address.
 - **Everything optional hangs off the session, not off the click:** the TOTP prompt and the «angemeldet bleiben» device key are always created for the device that receives the session.
 - **Device keys are revocable and capped.** The plaintext lives only in the device's cookie (`accountId.keyId.secret`), the account keeps its SHA-256; use rolls it forward 90 days. A deleted cookie leaves an entry nobody can recognise, so `DeviceKeys::MAX_KEYS` lets the longest-unused one give way.
+- **Two skeletons, and the signed-in one is a WORK AREA.** `html-default-skeleton` is the door (one centred card: login, register, confirm, waiting). `html-shell-skeleton` is the room behind it, and since 2026-08-12 it is ONE grid — three columns (list · seam · content) and three rows, with the shared `.z77-split` primitive inside row 3. A controller that passes `railItems` gets that shape; one that passes none keeps the old single-column page (`--plain`), so both live in one file. The header splits at the column edge: area name plus the four-square area switcher on the left, appearance switch, account panel and the mark on the right. Everything the shell shows is data the CONTROLLER hands in — `railItems`, `crumbs`, `shellAction`, `detailOpen` — and the areas themselves come from the `member-main` nav slot, derived once in `AbstractMemberController`.
 - **Anti-oracle is a design constraint, not a feature:** no page on register, resend or login differs by ACCOUNT STATE — known, unknown and never-confirmed all get the same answer, and only the mail differs. Login goes one step further and hides the throttle too (MEM-005): it always lands on the waiting page, which opens a record even when no link went out and then simply never turns green. Register and resend still surface a throttle as the form's send error — that says something about the visitor's own request rate, never about an account, and on those pages the honest "nothing was sent" is worth more than the symmetry.
 
 ## flow
@@ -88,13 +97,16 @@ login request ─▶ waiting record + mail (link, check digits, context) │
 
 - When building a page for signed-in customers → MUST guard it with `MemberAuth::create()->current()` and MUST declare the route `AuthRole::GUEST` in the module config; the framework ACL resolves the ADMIN login, not the member session.
 - When a project needs its own behaviour at activation → MUST set `memberConfig['activationHook']` by overriding that config file whole; MUST NOT teach this module a project domain.
+- When a project keeps a copy of an account field elsewhere (AXO3 builds the tenant name from `company`) → MUST carry the change through `memberConfig['profileHook']`, an invokable `__invoke(MemberAccount): void` run after `kontoAction` saved; MUST NOT let the two drift, and MUST NOT throw from the hook — the account is already stored when it runs, so a failure there would report one for something that succeeded.
 - When adding a mail or page to a login/registration path → MUST keep the visitor-facing answer identical for a known, an unknown and a never-confirmed address; the differences belong in the mail body only. On the LOGIN path the throttle MUST be invisible too — `LoginFlow::request()` returns true unconditionally for exactly that reason; on register/resend it may surface as the form's send error.
 - When building an absolute URL for a mail link → MUST take the origin from `Request::getBaseUrl()` (`absoluteUrl()` / `memberAbsoluteUrl()` already do); MUST NOT read `$_SERVER['HTTP_HOST']`, which the client chooses.
 - When storing anything derived from a token, a device key or a TOTP secret → MUST store a hash (tokens, device keys) or the vault ciphertext (TOTP); MUST NOT log or persist the plaintext.
 - When a state change from a mail GRANTS ACCESS (a session, a role, a device key) → MUST route it through a POST on a page; MUST NOT let a GET link do it, because mail scanners and safe-link services fetch every link automatically and would grant it unattended. A change that only RECORDS MAILBOX CONTROL may happen on the GET — the registration confirmation does, deliberately (MEM-007): an automated fetch proves exactly what the click proves, since the scanner sits in the recipient's own mail infrastructure, and the extra click would sit on the highest-friction step of registration.
 - When reading or writing device keys → MUST go through `DeviceKeys`; MUST NOT treat the `label` as an identity — it is derived from the User-Agent and two workplaces share it.
 - When comparing the ISO timestamps of device keys → MUST compare as timestamps (`strtotime`), MUST NOT compare as strings: the values carry their UTC offset and sort wrong across the daylight-saving change.
-- When a project deploys this module → MUST ship `res/assets/js/login-wait.js` to `public/`, otherwise the waiting page never advances.
+- When a project deploys this module → MUST ship `res/assets/js/login-wait.js` and `res/assets/js/shell.js` to `public/assets/member/js/`, otherwise the waiting page never advances and the shell's two header panels never open.
+- When building a signed-in screen with a list and a detail → MUST hand the shell `railItems` / `crumbs` / `shellAction` from the controller and MUST NOT build a second column layout in the page template; the geometry is the shared `.z77-split` primitive and the chrome is the skeleton's.
+- When a screen's rail selection is explicit (a key in the URL) → MUST pass `detailOpen: true` so the detail also opens on a narrow container; a screen whose selection is only a DEFAULT MUST NOT, or the list is unreachable on a phone.
 - When adding a route to this module → MUST add it to BOTH the module config and any project override of that file, since the override wins whole.
 
 ## known issues
@@ -118,7 +130,7 @@ login request ─▶ waiting record + mail (link, check digits, context) │
 - **Set `canonicalBaseUrl` per installation** — one line in `config/systemConfig.inc.php`; without it the member pages throw as soon as they build a link (ADR-030).
 - Second factor for the ADMIN login (`BackendUser.secondFactor`, `security.md` roadmap) is untouched by this module — the TOTP implementation here (`Totp`, `TotpVault`, `TotpGuard`) is reusable for it, but no seam exists yet.
 - Member session vs. framework ACL is an open architecture question — framed in ADR-029, to be decided when a role-based member application is built.
-- The member layout registers the `member-main` nav slot but does not render it (`navigation.md`); a project that wants member navigation overrides the layout.
+- ~~The member layout registers the `member-main` nav slot but does not render it~~ — resolved 2026-08-12: the shell renders it, as the AREAS in the header's four-square switcher. A project that wants none simply leaves the slot empty; the switcher then does not appear.
 
 ## see also
 

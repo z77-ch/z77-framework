@@ -51,6 +51,9 @@ final class LoginFlow
     public const TOTP_INVALID = 'invalid';
     public const TOTP_LOCKED  = 'locked';
 
+    /** Landing after a successful login when memberConfig names none. */
+    public const DEFAULT_LANDING = '/member/main/profile';
+
     /**
      * @param \Closure(EmailMessage): bool $sendMail
      * @param string $redeemUrl   absolute URL of the redeem action; token appended
@@ -112,6 +115,30 @@ final class LoginFlow
             ?->get('loginRequestsPerHour', MemberThrottle::MAX_PER_HOUR) ?? MemberThrottle::MAX_PER_HOUR);
 
         return $configured > 0 ? $configured : MemberThrottle::MAX_PER_HOUR;
+    }
+
+    /**
+     * Where a signed-in member lands — memberConfig `afterLoginUrl`, default
+     * the profile. Every arrival uses it: the redeemed link, the confirmed
+     * second factor, the waiting page's poll, and a visitor who calls the login
+     * while already signed in.
+     *
+     * A project with a management area points this at that area; the module's
+     * own default stays the profile, because that is the only screen a bare
+     * member module has.
+     */
+    public static function landingUrl(): string
+    {
+        $configured = trim((string) (DI::getModuleManager()
+            ->getModuleConfig('member')
+            ?->get('afterLoginUrl', self::DEFAULT_LANDING) ?? self::DEFAULT_LANDING));
+
+        // Own installation only: an absolute URL here would send the member off
+        // the site after a successful login — a redirect target from config is
+        // still a redirect target.
+        return str_starts_with($configured, '/') && !str_starts_with($configured, '//')
+            ? $configured
+            : self::DEFAULT_LANDING;
     }
 
     /**
