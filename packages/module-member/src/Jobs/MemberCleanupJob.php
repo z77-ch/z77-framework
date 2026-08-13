@@ -23,6 +23,11 @@ use Z77\Shared\Jobs\JobResult;
  * given the ids that SURVIVED, so the tokens of a just-deleted account are
  * recognised as orphaned in the same run.
  *
+ * ⚠️ Invitations (B7 v1.1.0) have no account by construction, and `purge()`
+ * knows it — the orphan test applies only to tokens that carry one. An OPEN
+ * invitation survives this run; an expired or withdrawn one disappears in it,
+ * which is the spec's «abgelaufene Einladungen verfallen im selben Lauf».
+ *
  * Runs in a single slice. The three sweeps are proportional to the number of
  * member records, which stays in the hundreds — there is nothing here worth
  * carrying a cursor for. Should an installation ever outgrow that, the natural

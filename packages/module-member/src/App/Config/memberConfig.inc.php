@@ -32,6 +32,17 @@ return [
     // this by overriding THIS FILE whole (override tree, first match wins).
     'activationHook' => null,
 
+    // FQCN of an invokable class `__invoke(string $ref): string` — turns a
+    // project reference into a readable name. The invitation mail and the
+    // backend account row need it; the module knows no tenants, so without a
+    // project hook they fall back to showing the bare reference.
+    'tenantLabelHook' => null,
+
+    // B7 v1.1.0: how many invitations one PROJECT REFERENCE may send per day.
+    // Per reference, not per address — an address counter would let a taken-
+    // over master account invite by the dozen, one each to a fresh recipient.
+    'invitesPerTenantPerDay' => 10,
+
     // Path the «Sie sind freigeschaltet» mail links to (absolute URL is built
     // from the request host at send time) — the B8 login page.
     'memberEntryPath' => '/member/main/login',

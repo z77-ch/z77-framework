@@ -36,11 +36,17 @@ final class MemberAuth
     }
 
     /**
-     * The signed-in account, or null (nobody, idle-expired, or meanwhile
-     * deleted). When the short session is gone, the «angemeldet bleiben»
-     * device key gets its say: a valid key resumes the session right here —
-     * that is the whole point of the key (B8 stage C), and it makes every
-     * page guard inherit the behaviour without knowing about it.
+     * The signed-in account, or null (nobody, idle-expired, paused, or
+     * meanwhile deleted). When the short session is gone, the «angemeldet
+     * bleiben» device key gets its say: a valid key resumes the session right
+     * here — that is the whole point of the key (B8 stage C), and it makes
+     * every page guard inherit the behaviour without knowing about it.
+     *
+     * ⚠️ This is also where PAUSING takes effect (B7 v1.1.0 / B8 v1.3.0), and
+     * it is the only place that has to: the page guards ask here, and so does
+     * the ACL projection (MemberAuthBridge) before AccessGuard resolves a
+     * role. A running session therefore ends at the next request — which is
+     * exactly what the spec promises the master.
      */
     public function current(?int $now = null): ?MemberAccount
     {
@@ -50,8 +56,8 @@ final class MemberAuth
         }
 
         $account = $this->accounts->findById($accountId);
-        if ($account === null) {
-            // Account rejected/cleaned up while the session lived — end it.
+        if ($account === null || $account->isSuspended()) {
+            // Rejected, cleaned up or paused while the session lived — end it.
             $this->session->end();
 
             return null;
@@ -69,7 +75,9 @@ final class MemberAuth
     private function resume(?int $now): ?MemberAccount
     {
         $account = $this->deviceKeys->restore($now);
-        if ($account === null) {
+        if ($account === null || $account->isSuspended()) {
+            // A paused account keeps its device keys (they come back with it
+            // when the master resumes access) — they simply do not resume.
             return null;
         }
 

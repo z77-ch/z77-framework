@@ -46,6 +46,29 @@ final class MemberAccounts
     }
 
     /**
+     * Every account hanging on one project reference (B7 v1.1.0) — the
+     * master's list, and the deletion path of a project that removes its
+     * accounts with it. Sorted master first, then by creation, so the list has
+     * an order that means something instead of the store's.
+     *
+     * @return MemberAccount[]
+     */
+    public function findByTenant(string $tenantRef): array
+    {
+        $accounts = array_values(array_filter(
+            $this->all(),
+            static fn(MemberAccount $a): bool => $tenantRef !== '' && (string)$a->getTenantRef() === $tenantRef
+        ));
+
+        usort($accounts, static function (MemberAccount $a, MemberAccount $b): int {
+            return [$a->isMaster() ? 0 : 1, (string)$a->getCreatedAt()]
+               <=> [$b->isMaster() ? 0 : 1, (string)$b->getCreatedAt()];
+        });
+
+        return $accounts;
+    }
+
+    /**
      * New account in state 'registered', or null when the e-mail already has
      * one (no second account, ever). Fields beyond the spec whitelist are the
      * caller's problem — this service takes exactly the four.
@@ -72,6 +95,67 @@ final class MemberAccounts
         $this->save($account);
 
         return $account;
+    }
+
+    /**
+     * The account behind a redeemed invitation (B7 v1.1.0): it skips a station.
+     * Whoever clicked the link in his own inbox has proved the address — the
+     * invitation IS the verification, so the account is born `confirmed`,
+     * carries its project reference from the start, and waits only for OUR
+     * activation (decision 2 is untouched; only «no new tenant» differs).
+     *
+     * `tenantRole = member` is written HERE, not by the activation hook
+     * (spec v1.1.1): between redemption and activation the account already
+     * shows up in the master's list, and without the role it would read as a
+     * second master for the length of our handgrip.
+     *
+     * Returns null when the address meanwhile got an account — the caller
+     * turns that into the invitation's «already taken» message.
+     */
+    public function registerFromInvite(
+        string $email,
+        ?string $firstName,
+        ?string $lastName,
+        string $tenantRef,
+        ?int $now = null
+    ): ?MemberAccount {
+        $now ??= time();
+
+        if ($this->findByEmail($email) !== null) {
+            return null;
+        }
+
+        $account = new MemberAccount();
+        $this->assignId($account);
+        $account->setEmail($email);
+        $account->setFirstName($firstName);
+        $account->setLastName($lastName);
+        $account->setTenantRef($tenantRef);
+        $account->setTenantRole(MemberAccount::ROLE_MEMBER);
+        $account->setCreatedAt(date(DATE_ATOM, $now));
+        $account->markConfirmed(date(DATE_ATOM, $now));
+
+        $this->save($account);
+
+        return $account;
+    }
+
+    /**
+     * Paused / resumed by the master (B7 v1.1.0). The account keeps everything
+     * it has — 2FA, devices, its state; only the access rests. The refusal
+     * itself lives where «wer ist angemeldet?» is answered, so no caller has
+     * to remember to ask.
+     */
+    public function suspend(MemberAccount $account, ?int $now = null): void
+    {
+        $account->setSuspendedAt(date(DATE_ATOM, $now ?? time()));
+        $this->save($account);
+    }
+
+    public function unsuspend(MemberAccount $account): void
+    {
+        $account->setSuspendedAt(null);
+        $this->save($account);
     }
 
     /** registered → confirmed (caller has checked isConfirmed() for the "already" case). */
