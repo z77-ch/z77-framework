@@ -173,6 +173,15 @@ return [
                     'totpRemoveAction'      => AuthRole::CUSTOMER,
                     'deviceRemoveAction'    => AuthRole::CUSTOMER,
                     'deviceRemoveAllAction' => AuthRole::CUSTOMER,
+                    // B7 v1.1.0 «Zugänge» — CUSTOMER like every profile route;
+                    // that only says «signed in». Whether this customer is the
+                    // MASTER is not a role question (there is no second role,
+                    // ADR `konto-einladung`), so the controller asks the flow
+                    // and answers 404 when the answer is no.
+                    'einladenAction'             => AuthRole::CUSTOMER,
+                    'einladungWiderrufenAction'  => AuthRole::CUSTOMER,
+                    'zugangPausierenAction'      => AuthRole::CUSTOMER,
+                    'zugangEntfernenAction'      => AuthRole::CUSTOMER,
                 ],
             ],
         ],

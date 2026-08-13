@@ -162,6 +162,61 @@
         }
     });
 
+    // ── Zugänge: pausieren, entfernen ──────────────────────────────────────
+    //
+    // Both belong to the profile's fourth section (B10 v1.6.0) and both are
+    // only ever rendered for the master — the server refuses either way, this
+    // is the display half.
+
+    /**
+     * The pause switch is an immediate switch: the display has already moved
+     * when the request goes out, and springs back if the server refuses.
+     *
+     * ⚠️ CHECKED means «access open», so the value sent is the INVERSE. The
+     * label says «Zugang offen», and a switch whose picture disagrees with its
+     * caption is worse than no switch.
+     */
+    document.addEventListener('change', function (event) {
+        var box = event.target;
+        if (!box.matches || !box.matches('[data-zugang-toggle]')) { return; }
+
+        var open = box.checked;
+        box.disabled = true;
+
+        _Z77.core.fetch.post('/member/main/profile/zugang-pausieren', {
+            id: box.dataset.id,
+            paused: !open
+        }).then(function (envelope) {
+            box.disabled = false;
+
+            if (!envelope || envelope.status === 'error') {
+                box.checked = !open;   // the server did not take it
+                if (!envelope) {
+                    _Z77.core.flash.show('error',
+                        'Änderung nicht gespeichert — bitte laden Sie die Seite neu.');
+                }
+            }
+        });
+    });
+
+    // Removing asks back: one dialog serves the whole list, and the button
+    // hands in which row it belongs to. A dialog per row would be the same
+    // markup as often as there are people.
+    document.addEventListener('click', function (event) {
+        var button = event.target.closest('[data-zugang-entfernen]');
+        if (!button) { return; }
+
+        var dialog = document.getElementById('me-zugang-dialog');
+        if (!dialog || typeof dialog.showModal !== 'function') { return; }
+
+        var field = dialog.querySelector('[data-zugang-konto]');
+        var label = dialog.querySelector('[data-zugang-label]');
+        if (field) { field.value = button.dataset.konto || ''; }
+        if (label) { label.textContent = button.dataset.label || ''; }
+
+        dialog.showModal();
+    });
+
     // Anywhere outside closes — a menu that survives the next click is a menu
     // in the way.
     document.addEventListener('click', function (event) {

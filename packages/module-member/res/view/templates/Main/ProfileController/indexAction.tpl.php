@@ -6,16 +6,27 @@
  * still sees «wartet auf Freischaltung» (B7 decision 4: sign-in works, access is
  * this page only); an active one is a full member.
  *
+ * The fourth section «Zugänge» (B10 v1.6.0) exists only for the master — and
+ * only as a section that is THERE, never as one that is greyed out: an invited
+ * account gets no rail entry and its routes answer 404.
+ *
  * @var string $pageTitle
- * @var string $section  'konto' | 'zweifa' | 'geraete'
+ * @var string $section  'konto' | 'zweifa' | 'geraete' | 'zugaenge'
  * @var \Z77\Module\Member\Entities\MemberAccount $account
  * @var array<int,array<string,mixed>> $devices device keys, newest use first
  * @var string $dialogId  id of the account dialog — the action cell opens it
+ * @var string $inviteDialog id of the invitation dialog
+ * @var ?array{accounts: list<array<string,mixed>>, invites: list<array<string,mixed>>} $zugaenge
  * @var string $csrfToken
  */
 $day  = static fn(string $iso): string => $iso === '' ? '' : date('d.m.Y', (int)strtotime($iso));
 $name = trim(($account->getFirstName() ?? '') . ' ' . ($account->getLastName() ?? ''));
-$title = ['konto' => 'Konto', 'zweifa' => 'Zwei-Faktor-Schutz', 'geraete' => 'Angemeldete Geräte'][$section];
+$title = [
+    'konto'    => 'Konto',
+    'zweifa'   => 'Zwei-Faktor-Schutz',
+    'geraete'  => 'Angemeldete Geräte',
+    'zugaenge' => 'Zugänge',
+][$section];
 ?>
 <div class="me-detail">
     <button type="button" class="me-back" data-z77-split-close>‹ Liste</button>
@@ -132,6 +143,120 @@ $title = ['konto' => 'Konto', 'zweifa' => 'Zwei-Faktor-Schutz', 'geraete' => 'An
         einzurichten dauert eine Minute.
     </p>
     <?php endif; ?>
+
+    <?php elseif ($section === 'zugaenge'): ?>
+    <?php $rows = $zugaenge['accounts'] ?? []; $offen = $zugaenge['invites'] ?? []; ?>
+    <p class="me-detail__sub">Wer für Ihre Verwaltung arbeiten darf</p>
+
+    <div class="me-units">
+        <?php foreach ($rows as $row): ?>
+        <div class="me-unit">
+            <span class="me-unit__name">
+                <?= e($row['email']) ?>
+                <?php if ($row['name'] !== ''): ?><span class="me-quiet">— <?= e($row['name']) ?></span><?php endif; ?>
+            </span>
+            <span class="me-unit__status">
+                <?php if ($row['master']): ?>Sie<?php
+                      elseif ($row['waiting']): ?>wartet auf Freischaltung<?php
+                      elseif ($row['suspended']): ?>pausiert<?php
+                      else: ?>aktiv<?php endif; ?>
+            </span>
+
+            <?php /* The master stands in the list WITHOUT both handgrips (spec):
+                     a tenant whose only account is gone would be reachable
+                     through us alone. */ ?>
+            <?php if ($row['master']): ?>
+            <span class="me-quiet">—</span>
+            <?php else: ?>
+            <span class="me-unit__vis">
+                <?php /* ⚠️ The visible part of a switch is the track; a bare
+                         checkbox shows its state to nobody. Checked = access
+                         open, so switching it OFF is what pauses. */ ?>
+                <label class="me-switch" title="Zugang offen">
+                    <input type="checkbox" data-zugang-toggle data-id="<?= e($row['id']) ?>"
+                           <?= $row['suspended'] ? '' : 'checked' ?>>
+                    <span class="me-switch__track"></span>
+                </label>
+                <button type="button" class="me-btn me-btn--quiet"
+                        data-zugang-entfernen
+                        data-konto="<?= e($row['id']) ?>"
+                        data-label="<?= e($row['email']) ?>">Entfernen</button>
+            </span>
+            <?php endif; ?>
+        </div>
+        <?php endforeach; ?>
+    </div>
+
+    <p class="me-hint">
+        Pausieren ist der leise Weg: Der Zugang ruht, das Konto behält seinen
+        Zwei-Faktor-Schutz und seine Geräte, und Sie können ihn jederzeit wieder
+        öffnen. Entfernen ist endgültig. Sie selbst stehen ohne beides in der
+        Liste — sonst stünde Ihre Verwaltung ohne Zugang da.
+    </p>
+
+    <?php if ($offen !== []): ?>
+    <h2 class="me-detail__title" style="font-size:1rem">Offene Einladungen</h2>
+    <div class="me-units">
+        <?php foreach ($offen as $einladung): ?>
+        <div class="me-unit">
+            <span class="me-unit__name"><?= e($einladung['email']) ?></span>
+            <span class="me-unit__status">gültig bis <?= e($day((string)$einladung['until'])) ?></span>
+            <form method="post" action="/member/main/profile/einladung-widerrufen" class="me-actions" style="margin:0">
+                <input type="hidden" name="csrf_token" value="<?= e($csrfToken) ?>">
+                <input type="hidden" name="einladung" value="<?= e((string)$einladung['id']) ?>">
+                <button type="submit">Zurückziehen</button>
+            </form>
+        </div>
+        <?php endforeach; ?>
+    </div>
+    <?php endif; ?>
+
+    <?php /* «Einladen» — one address, so a dialog on this page rather than a
+             route of its own (same reasoning as the account dialog). */ ?>
+    <dialog class="me-dialog" id="<?= e($inviteDialog) ?>" aria-labelledby="<?= e($inviteDialog) ?>-title">
+        <form method="post" action="/member/main/profile/einladen" class="me-dialog__form">
+            <input type="hidden" name="csrf_token" value="<?= e($csrfToken) ?>">
+            <h2 class="me-dialog__title" id="<?= e($inviteDialog) ?>-title">Jemanden einladen</h2>
+            <div class="fe-form__row">
+                <label for="einladen-email">E-Mail-Adresse</label>
+                <input id="einladen-email" type="email" name="email" maxlength="254" required
+                       autocomplete="email" placeholder="name@firma.ch">
+                <small class="me-quiet">
+                    Die eingeladene Person richtet ihren Zugang selbst ein; wir
+                    schalten ihn frei. Sie kann danach dasselbe wie Sie —
+                    einladen, pausieren und entfernen aber nur Sie.
+                </small>
+            </div>
+            <div class="me-dialog__actions">
+                <button type="button" class="me-btn me-btn--quiet" data-dialog-close>Abbrechen</button>
+                <button type="submit" class="me-btn">Einladung senden</button>
+            </div>
+        </form>
+    </dialog>
+
+    <?php /* Removal asks back — it deletes a person, not a state. One dialog for
+             the whole list; the button hands in which row it belongs to. */ ?>
+    <dialog class="me-dialog" id="me-zugang-dialog" aria-labelledby="me-zugang-dialog-title">
+        <form method="post" action="/member/main/profile/zugang-entfernen" class="me-dialog__form">
+            <input type="hidden" name="csrf_token" value="<?= e($csrfToken) ?>">
+            <input type="hidden" name="konto" value="" data-zugang-konto>
+            <h2 class="me-dialog__title" id="me-zugang-dialog-title">Zugang entfernen</h2>
+            <p>
+                Das Konto <strong data-zugang-label></strong> wird gelöscht —
+                mit seinem Zwei-Faktor-Schutz und seinen Geräten. Das lässt sich
+                nicht rückgängig machen. Ihr Bestand und die übrigen Zugänge
+                bleiben unberührt.
+            </p>
+            <p class="me-quiet">
+                Soll der Zugang nur ruhen, schliessen Sie hier und stellen den
+                Schalter der Zeile aus.
+            </p>
+            <div class="me-dialog__actions">
+                <button type="button" class="me-btn me-btn--quiet" data-dialog-close>Abbrechen</button>
+                <button type="submit" class="me-btn">Entfernen</button>
+            </div>
+        </form>
+    </dialog>
 
     <?php else: ?>
     <p class="me-detail__sub">

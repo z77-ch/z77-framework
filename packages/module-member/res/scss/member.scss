@@ -929,6 +929,16 @@ $fb-info-tint: $fb-bg;
         font-size: 0.8125rem;
         color: var(--text-2, #{$fb-text-2});
     }
+
+    // The cell that carries a row's OWN controls. The devices list gets by with
+    // a bare form (one button); a row with two — a switch and a quiet button —
+    // needs them held together, otherwise the flex row spaces them as if they
+    // were unrelated.
+    &__vis {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
 }
 
 // Secondary actions at the foot of a detail. Outlined, never the accent — the

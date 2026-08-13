@@ -119,6 +119,19 @@ final class InvitationFlow
         );
     }
 
+    /**
+     * May this account invite, pause and remove? The one question the surface
+     * asks — the section «Zugänge» exists for it, and the four routes answer
+     * 404 without it («not present, not forbidden», B10 v1.6.0).
+     *
+     * It is deliberately the same predicate every method below uses, so a
+     * surface that forgets to ask cannot grant anything the flow refuses.
+     */
+    public function mayManage(MemberAccount $account): bool
+    {
+        return $this->tenantRefOf($account) !== null;
+    }
+
     // ── the master's handgrips ─────────────────────────────────────────────
 
     /**
