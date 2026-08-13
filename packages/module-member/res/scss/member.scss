@@ -604,6 +604,21 @@ $fb-info-tint: $fb-bg;
     // The tree levels of the Objekte area.
     &--l1 { padding-left: 1.5rem; }
     &--l2 { padding-left: 2.75rem; }
+
+    // The name of a GROUP of rows, for a rail that holds two kinds of choice.
+    // Quiet and small: it is a label, not an entry — nothing here is clickable,
+    // and it must not compete with the rows it names.
+    &__head {
+        margin: 1rem 0 0.25rem;
+        padding: 0 0.5rem;
+        font-size: 0.6875rem;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--rail-2, #{$fb-text-2});
+
+        // The first group sits at the top of the column, where a row would.
+        &:first-child { margin-top: 0.25rem; }
+    }
 }
 
 // ── The breadcrumb ────────────────────────────────────────────────────────

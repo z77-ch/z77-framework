@@ -13,14 +13,23 @@
  * also means the narrow-screen overlay opens server-side — the skeleton sets
  * the attribute when something is selected.
  *
+ * A row carrying `heading` is not a row but a NAME for the rows below it. An
+ * area whose rail holds two kinds of choice (which view, then which level)
+ * would otherwise be one undifferentiated stack — and the alternative, a second
+ * control somewhere else on the page, is exactly what this column exists to
+ * avoid: one looks left to choose (Peter, 2026-08-13).
+ *
  * @var array<int,array{
- *     name:string, url:string, active?:bool, meta?:string,
- *     dot?:bool, level?:int, stacked?:bool
+ *     name?:string, url?:string, active?:bool, meta?:string,
+ *     dot?:bool, level?:int, stacked?:bool, heading?:string
  * }> $items
  */
 ?>
 <div class="me-rail__inner">
     <?php foreach ($items as $item): ?>
+    <?php if (!empty($item['heading'])): ?>
+    <p class="me-item__head"><?= e($item['heading']) ?></p>
+    <?php continue; endif; ?>
     <?php
         $class = 'me-item';
         if (!empty($item['active']))  { $class .= ' me-item--active'; }
