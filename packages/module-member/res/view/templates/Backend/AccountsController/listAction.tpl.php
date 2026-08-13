@@ -10,13 +10,23 @@
  *                 removes them after the grace period)
  *   aktiv       → green badge, tenant reference shown, no actions (B8/B10)
  *
+ * ⚠️ A waiting row MUST say which of the two activations it is (B10 v1.6.0):
+ * one CREATES a tenant (open registration), the other ATTACHES to an existing
+ * one (an invitation — `tenantRef` is already set). Without that sentence one
+ * activates blind, and the difference is exactly the one nobody can see
+ * afterwards.
+ *
  * @var list<\Z77\Module\Member\Entities\MemberAccount> $accounts
+ * @var array<string,array{name:string,master:string}>  $tenantLabels
  */
 $badge = static fn(string $state): array => match ($state) {
     'confirmed' => ['badge--warning', 'bestätigt — wartet'],
     'active'    => ['badge--success', 'aktiv'],
     default     => ['badge--muted', 'registriert'],
 };
+$tenantLabels = $tenantLabels ?? [];
+$tenantName   = static fn(string $ref): string => (string)($tenantLabels[$ref]['name'] ?? $ref);
+$tenantMaster = static fn(string $ref): string => (string)($tenantLabels[$ref]['master'] ?? '');
 ?>
 <div class="be-list">
     <div class="be-list__section">
@@ -47,8 +57,23 @@ $badge = static fn(string $state): array => match ($state) {
                         <?php if ($account->getConfirmedAt() !== null): ?>
                         · bestätigt <?= e(substr((string)$account->getConfirmedAt(), 0, 10)) ?>
                         <?php endif; ?>
-                        <?php if ($account->getTenantRef() !== null): ?>
-                        · Mandant <?= e($account->getTenantRef()) ?>
+                        <?php $ref = trim((string)$account->getTenantRef()); ?>
+                        <?php if ($ref !== ''): ?>
+                        · Mandant <?= e($tenantName($ref)) ?>
+                        <?php endif; ?>
+
+                        <?php /* The one sentence that keeps an activation from
+                                 being blind (B10 v1.6.0). Only on the waiting
+                                 row — once active, what happened is history. */ ?>
+                        <?php if ($account->isConfirmed()): ?>
+                            <?php if ($ref === ''): ?>
+                        <br><strong>Freischaltung erzeugt einen neuen Mandanten</strong>
+                            <?php else: ?>
+                        <br><strong>Freischaltung hängt an «<?= e($tenantName($ref)) ?>» an</strong>
+                                <?php if ($tenantMaster($ref) !== ''): ?>
+                        — eingeladen von <?= e($tenantMaster($ref)) ?>
+                                <?php endif; ?>
+                            <?php endif; ?>
                         <?php endif; ?>
                     </span>
 

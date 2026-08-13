@@ -52,7 +52,56 @@ trait AccountsControllerTrait
         usort($rows, static fn($a, $b) =>
             [$order[$a->getState()] ?? 9, $a->getCreatedAt()] <=> [$order[$b->getState()] ?? 9, $b->getCreatedAt()]);
 
-        return $this->html(['accounts' => $rows]);
+        return $this->html([
+            'accounts'     => $rows,
+            'tenantLabels' => $this->memberTenantLabels($rows),
+        ]);
+    }
+
+    /**
+     * Name and master of every project reference occurring in the list (B7
+     * v1.1.0). The row needs both, because a waiting activation either CREATES
+     * a reference (open registration) or ATTACHES to an existing one (an
+     * invitation) — and that is precisely the difference nobody can see any
+     * more once it has been decided wrongly.
+     *
+     * ⚠️ «Wer eingeladen hat» is DERIVED, not stored: only the master may
+     * invite, so the inviter of any invited account is the master of that
+     * reference. Storing it a second time would be a field that can disagree
+     * with the rule — and the invitation token, which does carry `invitedBy`,
+     * is deleted by the daily cleanup once it has been used.
+     *
+     * @param  list<\Z77\Module\Member\Entities\MemberAccount> $rows
+     * @return array<string,array{name:string,master:string}>
+     */
+    private function memberTenantLabels(array $rows): array
+    {
+        $hook   = (string)DI::getConfigManager()
+            ->getArrayConfig('App/Config/memberConfig', self::MEMBER_NS)
+            ->get('tenantLabelHook', '');
+        $labels = [];
+
+        foreach ($rows as $account) {
+            $ref = trim((string)$account->getTenantRef());
+            if ($ref === '' || isset($labels[$ref])) {
+                continue;
+            }
+
+            $master = null;
+            foreach ($this->memberAccounts()->findByTenant($ref) as $candidate) {
+                if ($candidate->isMaster()) {
+                    $master = $candidate;
+                    break;
+                }
+            }
+
+            $labels[$ref] = [
+                'name'   => $hook !== '' ? (string)(new $hook())($ref) : $ref,
+                'master' => $master?->getEmail() ?? '',
+            ];
+        }
+
+        return $labels;
     }
 
     /** Confirm modal for activation (entity-token guarded, like the reset modals). */
@@ -157,6 +206,9 @@ trait AccountsControllerTrait
         $response = $this->html([
             'account'    => $account,
             'entityCsrf' => DI::getCsrfService()->generateEntityToken('memberAccount', $id),
+            // The activation modal has to repeat the create-or-attach sentence:
+            // it is the last screen before the irreversible half of the decision.
+            'tenantLabels' => $this->memberTenantLabels([$account]),
         ]);
         $this->layoutManager->addPartials($template, 'Backend/AccountsController', self::MEMBER_NS);
 

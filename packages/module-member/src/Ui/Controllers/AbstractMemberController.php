@@ -5,6 +5,7 @@ namespace Z77\Module\Member\Ui\Controllers;
 use Z77\Core\Controller\AbstractBaseController;
 use Z77\Core\DI;
 use Z77\Core\Http\Response\HtmlResponse;
+use Z77\Module\Member\Services\InvitationFlow;
 use Z77\Module\Member\Services\MemberAuth;
 use Z77\Module\Member\Services\RegistrationFlow;
 
@@ -132,6 +133,16 @@ abstract class AbstractMemberController extends AbstractBaseController
     protected function flow(): RegistrationFlow
     {
         return RegistrationFlow::create($this->absoluteUrl('/member/main/confirm'));
+    }
+
+    /**
+     * The invitation story (B7 v1.1.0). Same shape as flow(): the absolute URL
+     * of the page the invitation mail links to — the register route, which
+     * recognises an invitation by its `invite` parameter.
+     */
+    protected function invites(): InvitationFlow
+    {
+        return InvitationFlow::create($this->absoluteUrl('/member/main/register'));
     }
 
     /**
