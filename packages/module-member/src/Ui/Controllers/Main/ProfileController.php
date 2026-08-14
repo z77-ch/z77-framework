@@ -236,11 +236,20 @@ class ProfileController extends AbstractMemberController
         // MESSAGE, not an error (B7 v1.1.0 / B10 v1.6.0): the master did
         // nothing wrong, and for US it is the signal that one human is to work
         // for a second tenant. Painting it red would file it as a mistake.
+        //
+        // ⚠️ But `info` was the wrong shelf: core.js AUTO-DISMISSES success and
+        // info after 5 s, so the one outcome that changes nothing and needs a
+        // decision was the one that vanished by itself — pale, at the top edge,
+        // gone before the eye came back from the form (Peter, 2026-08-14, on
+        // cyon: «fällt nicht auf»). `warning` is the shelf that STAYS until it
+        // is closed, and amber says «look at this» without saying «you did
+        // something wrong».
         [$type, $text] = match ($outcome) {
             InvitationFlow::SENT => ['success',
                 'Die Einladung ist unterwegs an ' . $email . '.'],
-            InvitationFlow::ALREADY_TAKEN => ['info',
-                'Diese Adresse ist bereits einem Mandanten zugeordnet — es entsteht kein zweites Konto. '
+            InvitationFlow::ALREADY_TAKEN => ['warning',
+                'Keine Einladung verschickt: ' . $email . ' ist bereits einem Mandanten zugeordnet — '
+                . 'es entsteht kein zweites Konto. '
                 . 'Melden Sie sich bei uns, wenn diese Person für Sie arbeiten soll.'],
             InvitationFlow::THROTTLED => ['error',
                 'Für heute sind genug Einladungen verschickt. Morgen geht es weiter.'],
