@@ -52,6 +52,14 @@ final class InvitationFlow
     /** Spec default; the module config may raise or lower it. */
     public const INVITES_PER_DAY = MemberThrottle::MAX_INVITES_PER_DAY;
 
+    /**
+     * emailConfig route of the operator notification: a project may give the
+     * redeemed INVITATION its own subject under `forms.memberConfirmed.routes`
+     * without a second form key. Undefined → the ordinary subject, and the mail
+     * still goes out (EmailService falls back to the default recipients).
+     */
+    public const NOTIFY_ROUTE_KEY = 'invite';
+
     // Outcomes — deliberately not booleans: «refused because the address is
     // known» is a MESSAGE the master reads, not an error, and the UI has to be
     // able to tell it apart from a throttle or a lost mail.
@@ -66,10 +74,13 @@ final class InvitationFlow
     public const DEAD     = 'dead';
 
     /**
-     * @param \Closure(EmailMessage): bool  $sendMail
-     * @param \Closure(MemberAccount): bool $notifyUs operator notification — the
-     *        redemption is a registration like any other, and someone has to
-     *        activate it (B7 decision 8)
+     * @param \Closure(EmailMessage): bool         $sendMail
+     * @param \Closure(MemberAccount, array): bool $notifyUs operator notification —
+     *        the redemption is a registration like any other, and someone has to
+     *        activate it (B7 decision 8). The second argument carries what makes
+     *        THIS case different: which reference the account attaches to, and
+     *        who invited. Without it the operator reads «Firma —» and cannot
+     *        tell an invitation from a fresh registration.
      * @param string $inviteUrl absolute URL of the redemption form; the token is appended
      * @param \Closure(string): string $tenantLabel resolves a project reference to
      *        a readable name for the mail. The module knows no tenants — the
@@ -103,10 +114,19 @@ final class InvitationFlow
                 rtrim(str_replace('\\', '/', ABS_BASE_PATH), '/') . '/data/framework/member/throttle'
             ),
             static fn(EmailMessage $mail): bool => DI::getEmailService()->send($mail),
-            static function (MemberAccount $account): bool {
+            static function (MemberAccount $account, array $invite): bool {
                 try {
-                    return DI::getEmailService()
-                        ->sendForm(RegistrationFlow::NOTIFY_FORM_KEY, ['account' => $account]);
+                    // Same form key as an ordinary registration — one place
+                    // configures who gets told that something waits. The
+                    // routeKey `invite` lets a project give this case its own
+                    // subject; a project that defines none keeps the ordinary
+                    // one, and the body says the rest.
+                    return DI::getEmailService()->sendForm(
+                        RegistrationFlow::NOTIFY_FORM_KEY,
+                        ['account' => $account, 'invite' => $invite],
+                        null,
+                        self::NOTIFY_ROUTE_KEY
+                    );
                 } catch (\Throwable) {
                     return false; // form key not configured — the notification is opt-in
                 }
@@ -297,7 +317,19 @@ final class InvitationFlow
         // Consume only now: a failure above must leave the link usable.
         $this->tokens->redeemToken((string)$plainToken, MemberToken::PURPOSE_INVITE, $now);
 
-        ($this->notifyUs)($account);
+        // Read the inviter off the TOKEN, before it is purged: it is the only
+        // place that records who sent this one. Falls back to nothing rather
+        // than to a guess — «der Master» would be a claim, not a record.
+        $inviter = $this->accounts->findById((string)$token->getInvitedBy());
+
+        ($this->notifyUs)($account, [
+            'tenantRef'  => $tenantRef,
+            'tenantName' => ($this->tenantLabel)($tenantRef),
+            'inviter'    => $inviter === null
+                ? ''
+                : (trim(($inviter->getFirstName() ?? '') . ' ' . ($inviter->getLastName() ?? ''))
+                    ?: (string)$inviter->getEmail()),
+        ]);
 
         return ['outcome' => self::REDEEMED, 'account' => $account];
     }
