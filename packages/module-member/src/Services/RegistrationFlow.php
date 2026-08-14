@@ -98,13 +98,20 @@ final class RegistrationFlow
      * (the form shows the generic send error); true otherwise — for a new
      * account AND for an existing one, so the page cannot be used to probe
      * which addresses have accounts.
+     *
+     * $origin records WHICH offer was clicked (the register link's `?via=`).
+     * It rides only on a NEW account: an address that already has one keeps
+     * the origin it was born with — the second click is not a second
+     * registration, and overwriting it would rewrite history to make the
+     * anti-oracle answer look real.
      */
     public function register(
         string $email,
         ?string $company,
         ?string $firstName,
         ?string $lastName,
-        ?int $now = null
+        ?int $now = null,
+        ?string $origin = null
     ): bool {
         $now ??= time();
         if (!$this->throttle->allow($email, $now)) {
@@ -118,7 +125,7 @@ final class RegistrationFlow
             return true;
         }
 
-        $account = $this->accounts->register($email, $company, $firstName, $lastName, $now);
+        $account = $this->accounts->register($email, $company, $firstName, $lastName, $now, $origin);
         if ($account === null) {
             // Raced: the address got its account between lookup and insert —
             // same answer as the existing-account branch above.

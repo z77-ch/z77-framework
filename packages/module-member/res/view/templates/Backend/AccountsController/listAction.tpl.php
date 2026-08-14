@@ -68,6 +68,13 @@ $tenantMaster = static fn(string $ref): string => (string)($tenantLabels[$ref]['
                         <?php if ($account->isConfirmed()): ?>
                             <?php if ($ref === ''): ?>
                         <br><strong>Freischaltung erzeugt einen neuen Mandanten</strong>
+                                <?php /* Über welchen Knopf die Registrierung
+                                         kam. Steht direkt beim Satz, der die
+                                         Freischaltung beschreibt: was danach
+                                         zu tun ist, hängt genau daran. */ ?>
+                                <?php if ($account->getOrigin() !== null): ?>
+                        — über «<?= e($account->getOrigin()) ?>»
+                                <?php endif; ?>
                             <?php else: ?>
                         <br><strong>Freischaltung hängt an «<?= e($tenantName($ref)) ?>» an</strong>
                                 <?php if ($tenantMaster($ref) !== ''): ?>

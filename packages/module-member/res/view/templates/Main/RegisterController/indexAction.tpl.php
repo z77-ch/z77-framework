@@ -19,6 +19,7 @@
  * @var string $formError
  * @var string $checkUrl
  * @var string $csrfToken
+ * @var ?string $originNote  Satz zum Angebot, über das jemand hergekommen ist
  */
 
 use Z77\Module\Member\Services\InvitationFlow;
@@ -82,6 +83,15 @@ $isDead   = $isInvite && ($invite['dead'] ?? false);
         Bestätigungslink — erst danach prüfen wir Ihre Registrierung und schalten
         Ihren Zugang frei.
     </p>
+
+    <?php /* Der Satz zum Angebot, über das jemand hergekommen ist
+             (memberConfig `originNotes`). Er steht ÜBER dem Formular: wer auf
+             «Demo-Konto anlegen» geklickt hat und hier «Registrieren» liest,
+             soll nicht erst raten, ob er richtig ist. Ohne passenden Eintrag
+             steht hier nichts. */ ?>
+    <?php if (trim((string)($originNote ?? '')) !== ''): ?>
+    <p class="me-card__aside"><?= e((string)$originNote) ?></p>
+    <?php endif; ?>
 
     <?= $this->partial('partials/publicForm', [
         'form'      => $form,

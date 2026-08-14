@@ -6,6 +6,7 @@ use Z77\Core\DI,
     Z77\Core\Http\Response\HtmlResponse,
     Z77\Core\Http\Response\JsonResponse,
     Z77\Core\Http\Response\RedirectResponse,
+    Z77\Module\Member\Entities\MemberAccount,
     Z77\Module\Member\Services\InvitationFlow,
     Z77\Module\Member\Ui\Controllers\AbstractMemberController,
     Z77\Module\Member\Ui\Form\InviteFormDefinition,
@@ -47,22 +48,41 @@ class RegisterController extends AbstractMemberController
     {
         $this->layoutManager->addJs('public-form', 'Z77\\Module\\Frontend', 'footer', true);
 
+        // WHICH offer was clicked. It survives the submit without a hidden
+        // field and without a session: the form carries no `action`, so the
+        // POST goes to the very URL that opened it, query string included.
+        // A hidden field would have to be whitelisted in the FormDefinition and
+        // would be no more trustworthy — this value is a hint for us, never a
+        // permission (MemberAccount::normalizeOrigin() takes the sharp edges
+        // off it).
+        $origin = MemberAccount::normalizeOrigin(
+            (string) DI::getRequest()->getGetParameter('via')
+        );
+
         $form = PublicFormHandler::create(new RegisterFormDefinition());
 
-        $onValid = function ($valid): bool {
+        $onValid = function ($valid) use ($origin): bool {
             return $this->flow()->register(
                 (string)$valid->get('email'),
                 (string)$valid->get('company') ?: null,
                 (string)$valid->get('first_name') ?: null,
                 (string)$valid->get('last_name') ?: null,
+                null,
+                $origin,
             );
         };
 
         if ($form->process($onValid)) {
-            return $this->redirect('/member/main/register/danke');
+            return $this->redirect('/member/main/register/danke'
+                . ($origin !== null ? '?via=' . $origin : ''));
         }
 
-        return $this->html(['pageTitle' => 'Registrieren', 'invite' => null] + $form->viewContext());
+        return $this->html([
+            'pageTitle'  => 'Registrieren',
+            'invite'     => null,
+            'origin'     => $origin,
+            'originNote' => $this->originNote($origin),
+        ] + $form->viewContext());
     }
 
     /**
@@ -118,6 +138,25 @@ class RegisterController extends AbstractMemberController
                 'outcome' => $outcome,
             ],
         ] + $form->viewContext());
+    }
+
+    /**
+     * The sentence a project wants on the page when its own button led here
+     * (memberConfig `originNotes`). The module knows no offers — an origin
+     * without an entry simply shows nothing, which is also what happens when
+     * somebody types a `?via=` of their own.
+     */
+    private function originNote(?string $origin): string
+    {
+        if ($origin === null) {
+            return '';
+        }
+
+        $notes = DI::getConfigManager()
+            ->getArrayConfig('App/Config/memberConfig', 'Z77\\Module\\Member')
+            ->get('originNotes', []);
+
+        return is_array($notes) ? (string)($notes[$origin] ?? '') : '';
     }
 
     /**

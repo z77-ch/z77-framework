@@ -54,6 +54,15 @@ $invite ??= null;
         <td>Firma / Verwaltung</td>
         <td><?= e($account->getCompany() ?? '—') ?></td>
     </tr>
+    <?php /* Über welchen Knopf sie kam. Nur wenn es einen gab — die
+             gewöhnliche Registrierung trägt keinen, und eine Zeile «—» wäre
+             eine Frage, die niemand gestellt hat. */ ?>
+    <?php if ($account->getOrigin() !== null): ?>
+    <tr data-str="new-line">
+        <td>Gekommen über</td>
+        <td><?= e($account->getOrigin()) ?></td>
+    </tr>
+    <?php endif; ?>
     <?php endif; ?>
     <tr data-str="new-line">
         <td>Name</td>

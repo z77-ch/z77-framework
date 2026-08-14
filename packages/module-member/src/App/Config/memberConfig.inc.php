@@ -38,6 +38,15 @@ return [
     // project hook they fall back to showing the bare reference.
     'tenantLabelHook' => null,
 
+    // Registrierungs-Herkunft: der Registrier-Link darf `?via=<slug>` tragen,
+    // und der Slug wird am Konto festgehalten (MemberAccount::$origin). Er
+    // aendert nichts am Weg — er sagt der Person, die freischaltet, WELCHES
+    // Angebot geklickt wurde, und danach richtet sich, was danach zu tun ist.
+    // Hier steht der Satz, den die Registrierseite dazu zeigt; ein Slug ohne
+    // Eintrag zeigt keinen. Das Modul kennt keine Angebote, also ist die Liste
+    // leer und das Projekt fuellt sie.
+    'originNotes' => [],
+
     // B7 v1.1.0: how many invitations one PROJECT REFERENCE may send per day.
     // Per reference, not per address — an address counter would let a taken-
     // over master account invite by the dozen, one each to a fresh recipient.

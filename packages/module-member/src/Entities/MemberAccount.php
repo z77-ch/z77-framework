@@ -50,6 +50,19 @@ class MemberAccount
     #[Clean('nullable', 'text')]
     private ?string $company = null;
 
+    /**
+     * WHERE this registration came from — the register link's `?via=` value,
+     * e.g. a project's demo button. It changes nothing about the account; it
+     * tells the person who activates WHICH offer was clicked, and that decides
+     * what happens next (AXO3: a demo account gets a demo source deposited).
+     *
+     * A slug, never free text: the value arrives from a URL, so it is
+     * normalized to [a-z0-9-] and capped — it ends up in our backend list and
+     * in a mail, and nobody gets to write prose into either.
+     */
+    #[Clean('nullable', 'ident')]
+    private ?string $origin = null;
+
     #[Clean('nullable', 'text')]
     private ?string $firstName = null;
 
@@ -162,9 +175,24 @@ class MemberAccount
         return mb_strtolower(trim($email));
     }
 
+    /**
+     * The `?via=` value, made harmless: lowercase, only letters, digits and
+     * hyphens, at most 24 characters. Anything left empty answers null — an
+     * unknown origin is «none», not a stored oddity. The caller does not
+     * whitelist: a value nobody knows shows up as itself in the list, which is
+     * more honest than dropping it silently, and it cannot carry markup.
+     */
+    public static function normalizeOrigin(?string $origin): ?string
+    {
+        $slug = mb_substr(preg_replace('/[^a-z0-9-]/', '', mb_strtolower(trim((string)$origin))) ?? '', 0, 24);
+
+        return $slug === '' ? null : $slug;
+    }
+
     public function getId(): ?string { return $this->id; }
     public function getEmail(): string { return $this->email; }
     public function getCompany(): ?string { return $this->company; }
+    public function getOrigin(): ?string { return $this->origin; }
     public function getFirstName(): ?string { return $this->firstName; }
     public function getLastName(): ?string { return $this->lastName; }
     public function getState(): string { return $this->state; }
@@ -227,6 +255,7 @@ class MemberAccount
 
     public function setEmail(string $email): void { $this->email = self::normalizeEmail($email); }
     public function setCompany(?string $company): void { $this->company = $company; }
+    public function setOrigin(?string $origin): void { $this->origin = self::normalizeOrigin($origin); }
     public function setFirstName(?string $firstName): void { $this->firstName = $firstName; }
     public function setLastName(?string $lastName): void { $this->lastName = $lastName; }
     /** @param string[] $roles */

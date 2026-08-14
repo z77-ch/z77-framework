@@ -78,7 +78,8 @@ final class MemberAccounts
         ?string $company,
         ?string $firstName,
         ?string $lastName,
-        ?int $now = null
+        ?int $now = null,
+        ?string $origin = null
     ): ?MemberAccount {
         if ($this->findByEmail($email) !== null) {
             return null;
@@ -90,6 +91,7 @@ final class MemberAccounts
         $account->setCompany($company);
         $account->setFirstName($firstName);
         $account->setLastName($lastName);
+        $account->setOrigin($origin);
         $account->setCreatedAt(date(DATE_ATOM, $now ?? time()));
 
         $this->save($account);
