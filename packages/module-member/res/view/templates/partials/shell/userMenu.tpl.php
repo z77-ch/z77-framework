@@ -21,12 +21,26 @@
  * switch still reads a truthful label without a line of JavaScript having run —
  * and that is also why this is a plain button and not `aria-pressed`.
  *
+ * ── Why the tenant name sits HERE and at the left edge (2026-08-14) ──
+ * The header said who is signed in but never WHOSE data is on screen. With one
+ * account per tenant that was implicit; with invited accounts and a demo tenant
+ * that can be switched to a real source, it is not. It sits at the left edge of
+ * this cell — the reading eye starts there, and the cluster on the right stays
+ * what it is: controls. Rendered as text, never as a switcher: the tenant comes
+ * from the ACCOUNT, never from the request, and something clickable would
+ * promise a choice that does not exist.
+ *
  * @var array{name:string,email:string,initials:string}|null $memberUser
- * @var string $memberTheme  display only — the switch reads the DOM
+ * @var string $memberTheme   display only — the switch reads the DOM
+ * @var string $memberTenant  readable name of the loaded tenant, '' when none
  */
 $name = trim($memberUser['name'] ?? '');
 ?>
 <div class="me-shell__head-r">
+    <?php if (trim($memberTenant ?? '') !== ''): ?>
+    <span class="me-shell__tenant" title="Angezeigter Bestand"><?= e($memberTenant) ?></span>
+    <?php endif; ?>
+
     <button type="button" class="me-theme" data-member-theme
             data-theme-url="/member/main/profile/theme">
         <span class="me-theme__icon me-theme__icon--dark" aria-hidden="true">

@@ -188,6 +188,23 @@ $fb-info-tint: $fb-bg;
         }
     }
 
+    // WHOSE data is on screen. `margin-right: auto` is what pushes it to the
+    // left edge while the cell keeps its `flex-end` for the controls — one
+    // property instead of a second alignment rule for the rest.
+    //
+    // ⚠️ It must be able to shrink: a long tenant name may not push the
+    // account cluster off the cell. `min-width: 0` plus ellipsis, because a
+    // flex item's default `min-width: auto` refuses to go below its content.
+    &__tenant {
+        margin-right: auto;
+        min-width: 0;
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+        font-weight: 500;
+        color: var(--text-2, #{$fb-text-2});
+    }
+
     // ── Row 2 — the area's action, and the breadcrumb on the content line ──
     &__act,
     &__toolbar {

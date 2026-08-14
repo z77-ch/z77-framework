@@ -52,8 +52,9 @@ $work  = !empty($railItems) || !empty($shellAction);
     <div class="me-shell__seam"></div>
 
     <?= $this->partial('partials/shell/userMenu', [
-        'memberUser'  => $memberUser ?? null,
-        'memberTheme' => $memberTheme ?? '',
+        'memberUser'   => $memberUser ?? null,
+        'memberTheme'  => $memberTheme ?? '',
+        'memberTenant' => $memberTenant ?? '',
     ]) ?>
 
     <div class="me-shell__act">

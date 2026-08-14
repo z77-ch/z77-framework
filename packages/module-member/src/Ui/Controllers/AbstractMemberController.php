@@ -5,6 +5,7 @@ namespace Z77\Module\Member\Ui\Controllers;
 use Z77\Core\Controller\AbstractBaseController;
 use Z77\Core\DI;
 use Z77\Core\Http\Response\HtmlResponse;
+use Z77\Module\Member\Entities\MemberAccount;
 use Z77\Module\Member\Services\InvitationFlow;
 use Z77\Module\Member\Services\MemberAuth;
 use Z77\Module\Member\Services\RegistrationFlow;
@@ -54,11 +55,53 @@ abstract class AbstractMemberController extends AbstractBaseController
             if (!array_key_exists('memberTheme', $context)) {
                 $context['memberTheme'] = $account?->getTheme() ?? '';
             }
+
+            if (!array_key_exists('memberTenant', $context)) {
+                $context['memberTenant'] = $this->tenantLabel($account);
+            }
         }
 
         $this->addAreas($context);
 
         return parent::html($context);
+    }
+
+    /**
+     * WHOSE data is on screen — the readable name of the account's project
+     * reference, for the header (Peter, 2026-08-14: one has to be able to see
+     * which tenant is loaded).
+     *
+     * The module knows no tenants, so it asks the project: the same
+     * `tenantLabelHook` the invitation mail and the backend account list use.
+     * No hook, no reference, no label — the header then simply carries nothing,
+     * which is right for a project whose accounts hang on nothing.
+     *
+     * ⚠️ Deliberately NOT the account's company field. That is what the person
+     * typed at registration; the tenant name is what the installation actually
+     * loaded, and when the two differ, the second one is the one worth seeing.
+     */
+    private function tenantLabel(?MemberAccount $account): string
+    {
+        $ref = trim((string)$account?->getTenantRef());
+        if ($ref === '') {
+            return '';
+        }
+
+        $fqcn = (string)DI::getConfigManager()
+            ->getArrayConfig('App/Config/memberConfig', self::NAMESPACE)
+            ->get('tenantLabelHook', '');
+
+        if ($fqcn === '' || !class_exists($fqcn)) {
+            return '';
+        }
+
+        try {
+            return trim((string)(new $fqcn())($ref));
+        } catch (\Throwable) {
+            // A label is chrome. A project hook that stumbles must not cost the
+            // page it decorates.
+            return '';
+        }
     }
 
     /**
