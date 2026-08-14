@@ -153,6 +153,41 @@ final class TokenService
     }
 
     /**
+     * Every invitation of one project reference is gone — open, revoked,
+     * expired or already used alike. This is the deletion side of a project
+     * reference disappearing (B7 v1.1.0): an invite token carries the invited
+     * ADDRESS, so leaving the dead ones behind would leave personal data in the
+     * token store of a customer who asked to be removed.
+     *
+     * The counterpart of {@see openInvitesFor()}, which counts only what is
+     * still open — a dialog names what a human would call an invitation, the
+     * deletion takes the remains with it.
+     *
+     * @return int number of deleted tokens
+     */
+    public function deleteInvitesFor(string $tenantRef): int
+    {
+        $tokens = $this->repository()->findBy([
+            'purpose'    => MemberToken::PURPOSE_INVITE,
+            'tenant_ref' => $tenantRef,
+        ]);
+
+        $deleted = 0;
+        foreach ($tokens as $token) {
+            if (!$token instanceof MemberToken) {
+                continue;
+            }
+            $this->uem->remove($token);
+            $deleted++;
+        }
+        if ($deleted > 0) {
+            $this->uem->flush();
+        }
+
+        return $deleted;
+    }
+
+    /**
      * Redeems a plaintext token: returns the account id, or null when the
      * token is unknown, wrong-purpose, already used, revoked or expired — the
      * caller shows the resend page in every null case (the spec's one answer
