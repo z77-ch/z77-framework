@@ -485,7 +485,10 @@ class ProfileController extends AbstractMemberController
             $this->messageService->pushFlashAfterRedirect('error', 'Dieses Gerät ist nicht (mehr) in der Liste.');
         }
 
-        return $this->redirect('/member/main/profile');
+        // Back to WHERE ONE STOOD (the rule from the widget find, 2026-08-15):
+        // without ?bereich the page falls back to Konto — the person was in
+        // the device list and expects to still be there.
+        return $this->redirect('/member/main/profile?bereich=geraete');
     }
 
     /**
@@ -510,7 +513,7 @@ class ProfileController extends AbstractMemberController
             );
         }
 
-        return $this->redirect('/member/main/profile');
+        return $this->redirect('/member/main/profile?bereich=geraete');
     }
 
     /**
@@ -526,7 +529,7 @@ class ProfileController extends AbstractMemberController
             return $this->redirect('/member/main/login');
         }
         if ($account->hasTotp()) {
-            return $this->redirect('/member/main/profile');
+            return $this->redirect('/member/main/profile?bereich=zweifa');
         }
 
         $setup   = TotpSetup::create();
@@ -542,7 +545,8 @@ class ProfileController extends AbstractMemberController
                     'Zwei-Faktor-Schutz ist aktiv — ab jetzt fragt die Anmeldung nach dem App-Code.'
                 );
 
-                return $this->redirect('/member/main/profile');
+                // Where one stood: the 2FA section, now showing the new state.
+                return $this->redirect('/member/main/profile?bereich=zweifa');
             }
             $error = 'Der Code ist ungültig — bitte scannen Sie den QR-Code und versuchen Sie es erneut.';
         }
@@ -579,6 +583,6 @@ class ProfileController extends AbstractMemberController
             );
         }
 
-        return $this->redirect('/member/main/profile');
+        return $this->redirect('/member/main/profile?bereich=zweifa');
     }
 }

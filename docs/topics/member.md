@@ -109,6 +109,7 @@ login request ─▶ waiting record + mail (link, check digits, context) │
 - When placing a button on a shell screen → MUST follow ADR-033: the DECISIVE action(s) (a form's save + cancel, the area's add) go into the action cell as `shellActions` (a save submits from outside via `'submit' => '<form id>'`); the page's TABS (`shellTabs`) or TOOLS (`shellTools` — per-target: Kopieren/Vorschau/Bearbeiten/Löschen) go into the toolbar, never both; the crumb line carries position and state only. Exceptions live in the ADR: dialogs carry their own buttons, selection-bound mass actions stay with their list.
 - When a screen's rail selection is explicit (a key in the URL) → MUST pass `detailOpen: true` so the detail also opens on a narrow container; a screen whose selection is only a DEFAULT MUST NOT, or the list is unreachable on a phone.
 - When adding a route to this module → MUST add it to BOTH the module config and any project override of that file, since the override wins whole.
+- When an action ends in a redirect → MUST land the user WHERE THEY STOOD before the action: the entry's `?key`, the section's `?bereich`, the list's filters — never the surface's default selection. A `#fragment` is not a selection (the server never sees it); the query parameter is. The one exception is deletion — what one stood on is gone, the list default is honest there. (Found 2026-08-15: saving widget entry three landed the rail on entry one; the profile's device/2FA actions dropped the person back on «Konto».)
 
 ## known issues
 
