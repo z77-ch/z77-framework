@@ -25,8 +25,8 @@ follows ONE rule:
 | Place | backend | member | Carries |
 |---|---|---|---|
 | **Action cell** | `hc1` | `me-shell__act` | the context's DECISIVE action(s) — max two VISIBLE buttons; weight follows meaning (accent = forward, quiet = ends/leaves) |
-| **Toolbar** | `hc2` | `me-shell__toolbar` | the page's TABS or its TOOLS (filters, per-target tools) — never both |
-| **Crumb line** | `hc3` (own slim row) | `me-shell__crumbs` (own slim row) | POSITION and its state (breadcrumb, a level's switch) — nothing else |
+| **Toolbar** | `hc2` | `me-shell__toolbar` | the page's TABS or its TOOLS — never both. Tools include the shown thing's STATE SWITCHES and a list's FILTERS (revised 2026-08-15) |
+| **Crumb line** | `hc3` (own slim row) | `me-shell__crumbs` (own slim row) | POSITION only — the breadcrumb, nothing else |
 | **Content** | column 2 | detail pane | only what is bound to an in-content selection, and dialog-internal buttons |
 
 Concretely:
@@ -44,9 +44,15 @@ Concretely:
   Kopieren · Vorschau · Bearbeiten · Löschen; Drive folder: edit · move ·
   delete · new folder · trash) — labelled buttons where space allows, the
   eye reads words faster than it guesses icons.
-- **The crumb line carries the crumb and its state switch only.** The
-  member's short-lived `crumbActions` slot (born 2026-08-15, never used) is
-  removed again — tools have ONE place, the toolbar.
+- **The crumb line carries the crumb, full stop** (revised the same day, on
+  the second look: the first version kept a level's switch in the crumb —
+  but a switch is an OPERATION, and operations live in the toolbar). A
+  state switch renders as a LABELLED tool («Liegenschaft sichtbar»), since
+  it no longer sits next to the name it toggles; a cascade lock travels
+  with it (child switch disabled while the parent is off). A list's filter
+  is a tool row too — the backend's navigation list has always done it
+  that way in hc2. The member's short-lived `crumbActions` slot (born
+  2026-08-15, never used) is removed — tools have ONE place, the toolbar.
 - **The backend gets the same slim crumb row the member has** (`hc3`, own
   grid row under the band). Screens without an own `hc3` template get a
   navigation-derived default crumb (section › page) so the row says where

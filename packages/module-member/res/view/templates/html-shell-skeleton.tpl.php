@@ -78,7 +78,11 @@ $work       = !empty($railItems) || $actionList !== [];
     </div>
 
     <?php /* Tabs OR tools, never both (ADR-033) — a page with tabs has its
-             tools inside the tabbed surface. */ ?>
+             tools inside the tabbed surface. `$shellToolbar` is the body
+             SECTION fallback (LayoutManager::addPartials(..., 'shellToolbar')):
+             a page whose tools are richer than a button list — a filter form,
+             say — hands in its own partial, the same way a backend screen
+             fills hc2. */ ?>
     <div class="me-shell__toolbar">
         <?php if (!empty($shellTabs)): ?>
         <?= $this->partial('partials/shell/tabs', ['tabs' => $shellTabs]) ?>
@@ -87,17 +91,17 @@ $work       = !empty($railItems) || $actionList !== [];
             'tools'     => $shellTools,
             'csrfToken' => $csrfToken ?? '',
         ]) ?>
+        <?php else: ?>
+        <?= $shellToolbar ?? '' ?>
         <?php endif; ?>
     </div>
 
-    <?php /* Row 3 — the crumb line: position and state, nothing else. Column 1
-             is a bare cell so the dark island runs through. */ ?>
+    <?php /* Row 3 — the crumb line: the position, nothing else (ADR-033
+             revision — switches are tools). Column 1 is a bare cell so the
+             dark island runs through. */ ?>
     <div class="me-shell__crumbgap"></div>
     <div class="me-shell__crumbs">
-        <?= $this->partial('partials/shell/crumbs', [
-            'crumbs'    => $crumbs ?? [],
-            'csrfToken' => $csrfToken ?? '',
-        ]) ?>
+        <?= $this->partial('partials/shell/crumbs', ['crumbs' => $crumbs ?? []]) ?>
     </div>
 
     <?php /* Row 3 — the shared primitive. The rail is pane 1 (fixed width,

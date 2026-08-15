@@ -730,6 +730,20 @@ $fb-info-tint: $fb-bg;
 
     &__form { display: inline-flex; }
 
+    // A state switch as a tool (ADR-033 revision): labelled, because it no
+    // longer sits next to the name it toggles. The extra right margin sets
+    // the switches apart from the button tools without a divider element.
+    &__switch {
+        gap: 0.4rem;
+        margin-right: 0.375rem;
+    }
+
+    &__switch-text {
+        font-size: 0.875rem;
+        color: var(--text, #{$fb-text});
+        white-space: nowrap;
+    }
+
     &__btn {
         appearance: none;
         display: inline-block;
