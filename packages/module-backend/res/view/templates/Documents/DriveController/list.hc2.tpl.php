@@ -1,36 +1,28 @@
 <?php
 /**
- * Drive list — hc2 (middle slot): the current folder PATH (breadcrumb PANE, live-refreshed in place
- * by drive.js) on the left + the remaining Drive actions (new folder, trash) as icons on the right —
- * styled like every other backend list header. Auto-loaded into the shell header band.
+ * Drive list — hc2 (middle slot): the Drive's TOOLS, and only tools (ADR-033:
+ * the toolbar operates, the crumb line — hc3 — says where one is). Folder
+ * edit/move/delete act on the folder currently open and used to sit inside the
+ * breadcrumb pane; they are static shell buttons now, reading their
+ * server-built URLs off the live-refreshed pane's data attributes — the same
+ * mechanism the upload button (hc1) has always used, so they stay current
+ * across pane swaps without any URL assembly in JS. drive.js hides the three
+ * while no folder is selected (an empty data URL = nothing to act on).
  *
- * The breadcrumb stays the DMS `_breadcrumb` partial (unchanged) so {@see DriveControllerTrait::panes}
- * can keep replacing `.dms-drive__breadcrumb` after every folder navigation; the `.dms` wrapper supplies
- * the `--dms-*` tokens it reads. `data-drive-scope` marks this out-of-fragment slot as part of the Drive
- * so drive.js handles the crumb links + the folder-add / trash buttons (which read their server-built
- * URLs off the breadcrumb pane). The action glyphs use the backend sprite / `.be-icon-btn`, matching the
- * other views. Rendered with the action view model, so all breadcrumb vars are in scope.
- *
- * @var string   $tplNs
- * @var string   $base
- * @var bool     $rootActive
- * @var string   $rootLabel
- * @var int|null $rootFolderId
- * @var array    $crumbs
- * @var int|null $selectedFolderId
- * @var array|null $selectedDoc
+ * Auto-loaded by BackendAbstractController::loadHeaderSlots().
  */
 ?>
-<div class="dms be-drive-head" data-drive-scope>
-    <?= $this->partial('Documents/DriveController/_breadcrumb', [
-        'rootActive'       => $rootActive,
-        'rootLabel'        => $rootLabel,
-        'rootFolderId'     => $rootFolderId,
-        'crumbs'           => $crumbs,
-        'selectedFolderId' => $selectedFolderId,
-        'selectedDoc'      => $selectedDoc,
-        'base'             => $base,
-    ], $tplNs) ?>
+<div class="be-drive-tools" data-drive-scope>
+    <button type="button" class="be-icon-btn" data-drive-folder-edit title="Ordner bearbeiten" hidden>
+        <svg class="be-icon" width="15" height="15" aria-hidden="true"><use href="#icon-edit"/></svg>
+    </button>
+    <button type="button" class="be-icon-btn" data-drive-folder-move title="Ordner verschieben" hidden>
+        <svg class="be-icon" width="15" height="15" aria-hidden="true"><use href="#icon-move"/></svg>
+    </button>
+    <button type="button" class="be-icon-btn" data-drive-folder-delete title="Ordner löschen" hidden>
+        <svg class="be-icon" width="15" height="15" aria-hidden="true"><use href="#icon-trash"/></svg>
+    </button>
+    <span class="be-drive-tools__gap" aria-hidden="true"></span>
     <button type="button" class="be-icon-btn" data-drive-folder-add title="Neuer Ordner">
         <svg class="be-icon" width="15" height="15" aria-hidden="true"><use href="#icon-folder-plus"/></svg>
     </button>

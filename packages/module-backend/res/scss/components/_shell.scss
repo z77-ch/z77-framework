@@ -8,9 +8,10 @@
 // list is the workspace's job (`.z77-split`), so there is one mechanism for it, not two.
 
 .be-shell {
-    --shell-c1:   248px;   // orientation column (drag-resizable, via the shared z77-split handle)
-    --shell-bar:  48px;    // topbar height
-    --shell-band: 46px;    // header band height (hc1 | hc2)
+    --shell-c1:    248px;  // orientation column (drag-resizable, via the shared z77-split handle)
+    --shell-bar:   48px;   // topbar height
+    --shell-band:  46px;   // header band height (hc1 | hc2)
+    --shell-crumb: 32px;   // crumb line height (hc3) — slimmer, it carries smaller type
 
     position:              relative;
     height:                100dvh;
@@ -19,10 +20,12 @@
     color:                 var(--be-text);
     display:               grid;
     grid-template-columns: var(--shell-c1) minmax(0, 1fr);
-    // Three rows: topbar, header band, columns. The band is its OWN row spanning both columns
-    // rather than a child of each — see the skeleton for why (hc1 carries the primary action
-    // and used to disappear into the mobile drawer with column 1).
-    grid-template-rows:    var(--shell-bar) var(--shell-band) minmax(0, 1fr);
+    // Four rows: topbar, header band, crumb line, columns (ADR-033). The band is its OWN row
+    // spanning both columns rather than a child of each — see the skeleton for why (hc1 carries
+    // the primary action and used to disappear into the mobile drawer with column 1). The crumb
+    // line follows the same construction and renders ALWAYS, for the same reason the band does:
+    // screens must not start at different heights.
+    grid-template-rows:    var(--shell-bar) var(--shell-band) var(--shell-crumb) minmax(0, 1fr);
 }
 
 // Shell body base — self-contained, replaces the legacy `body.backend` from
@@ -38,7 +41,7 @@ body.backend {
 
 // ── Columns ────────────────────────────────────────────────────────────────────
 .be-shell-col {
-    grid-row:  3;
+    grid-row:  4;
     min-width: 0;
     min-height: 0;
     overflow:  auto;
@@ -63,32 +66,38 @@ body.backend {
 // dark background (--be-surface fallback) and blends into the rest of the UI.
 .be:not([data-be-theme="dark"]) .be-shell-col--1,
 .be:not([data-be-theme="dark"]) .be-shell-band__slot--1,
+.be:not([data-be-theme="dark"]) .be-shell-crumb__slot--1,
 .be:not([data-be-theme="dark"]) .be-shell-topbar__mod {            // werkbank — indigo
     --be-nav:#211d45; --be-text:#eae9f7; --be-muted:#a4a1c6; --be-line:#3a3563;
     --be-surface:#2a2650; --be-surface2:#322d5a; --be-accent:#a5a3fb; --be-accent-soft:#363168; --be-on-accent:#211d45;
 }
 .be[data-be-palette="citrus"]:not([data-be-theme="dark"]) .be-shell-col--1,
 .be[data-be-palette="citrus"]:not([data-be-theme="dark"]) .be-shell-band__slot--1,
+.be[data-be-palette="citrus"]:not([data-be-theme="dark"]) .be-shell-crumb__slot--1,
 .be[data-be-palette="citrus"]:not([data-be-theme="dark"]) .be-shell-topbar__mod {   // grün
     --be-nav:#1f2f16; --be-text:#ebf4e3; --be-muted:#a9bd9e; --be-line:#364d2d; --be-surface:#293e22; --be-surface2:#324a2b; --be-accent:#a3e635; --be-accent-soft:#313f22; --be-on-accent:#1f2f16;
 }
 .be[data-be-palette="coral"]:not([data-be-theme="dark"]) .be-shell-col--1,
 .be[data-be-palette="coral"]:not([data-be-theme="dark"]) .be-shell-band__slot--1,
+.be[data-be-palette="coral"]:not([data-be-theme="dark"]) .be-shell-crumb__slot--1,
 .be[data-be-palette="coral"]:not([data-be-theme="dark"]) .be-shell-topbar__mod {    // koralle
     --be-nav:#37201a; --be-text:#f7e7e0; --be-muted:#c8a99e; --be-line:#573830; --be-surface:#452b23; --be-surface2:#52362c; --be-accent:#ff9070; --be-accent-soft:#4c2d22; --be-on-accent:#37201a;
 }
 .be[data-be-palette="lagune"]:not([data-be-theme="dark"]) .be-shell-col--1,
 .be[data-be-palette="lagune"]:not([data-be-theme="dark"]) .be-shell-band__slot--1,
+.be[data-be-palette="lagune"]:not([data-be-theme="dark"]) .be-shell-crumb__slot--1,
 .be[data-be-palette="lagune"]:not([data-be-theme="dark"]) .be-shell-topbar__mod {   // türkis
     --be-nav:#143038; --be-text:#ddeff2; --be-muted:#9ec0c6; --be-line:#2e5863; --be-surface:#1d3f49; --be-surface2:#244c57; --be-accent:#35d4e6; --be-accent-soft:#1c3f48; --be-on-accent:#143038;
 }
 .be[data-be-palette="beere"]:not([data-be-theme="dark"]) .be-shell-col--1,
 .be[data-be-palette="beere"]:not([data-be-theme="dark"]) .be-shell-band__slot--1,
+.be[data-be-palette="beere"]:not([data-be-theme="dark"]) .be-shell-crumb__slot--1,
 .be[data-be-palette="beere"]:not([data-be-theme="dark"]) .be-shell-topbar__mod {    // beere
     --be-nav:#371828; --be-text:#f6e1ea; --be-muted:#cca4b7; --be-line:#572c42; --be-surface:#452030; --be-surface2:#52273b; --be-accent:#f472a6; --be-accent-soft:#4a2234; --be-on-accent:#371828;
 }
 .be[data-be-palette="sonne"]:not([data-be-theme="dark"]) .be-shell-col--1,
 .be[data-be-palette="sonne"]:not([data-be-theme="dark"]) .be-shell-band__slot--1,
+.be[data-be-palette="sonne"]:not([data-be-theme="dark"]) .be-shell-crumb__slot--1,
 .be[data-be-palette="sonne"]:not([data-be-theme="dark"]) .be-shell-topbar__mod {    // sonne
     --be-nav:#302211; --be-text:#f6ecd7; --be-muted:#c7b492; --be-line:#504028; --be-surface:#3d301b; --be-surface2:#493a23; --be-accent:#f5b528; --be-accent-soft:#43331b; --be-on-accent:#302211;
 }
@@ -127,6 +136,52 @@ body.backend {
     border-right: 1px solid var(--be-line);
 }
 .be-shell-band__slot--2 { background: var(--be-bg); }
+
+// ── Crumb line (hc3) ───────────────────────────────────────────────────────────
+// Its own slim row under the band (ADR-033): POSITION and its state, nothing else.
+// Same construction as the band — an own grid row mirroring the column split; slot 1
+// is a bare cell capping the dark island so it runs through without a hole. A screen
+// without an own hc3 template gets the navigation-derived default crumb (skeleton).
+.be-shell-crumb {
+    grid-column:           1 / -1;
+    grid-row:              3;
+    display:               grid;
+    grid-template-columns: var(--shell-c1) minmax(0, 1fr);
+    border-bottom:         1px solid var(--be-line);
+    z-index:               2;
+}
+.be-shell-crumb__slot {
+    display:     flex;
+    align-items: center;
+    gap:         var(--space-2);
+    height:      var(--shell-crumb);
+    padding:     0 var(--space-3);
+    min-width:   0;
+    white-space: nowrap;
+}
+.be-shell-crumb__slot--1 {
+    background:   var(--be-nav, var(--be-surface));
+    border-right: 1px solid var(--be-line);
+    padding:      0;
+}
+.be-shell-crumb__slot--2 { background: var(--be-bg); }
+
+// The default crumb: section › page, muted, small — a position line, not a heading.
+.be-crumb {
+    display:     flex;
+    align-items: center;
+    gap:         var(--space-1);
+    min-width:   0;
+    font-size:   var(--font-size-sm);
+    color:       var(--be-muted);
+
+    a { color: var(--be-muted); text-decoration: none; }
+    a:hover { color: var(--be-text); }
+
+    &__sep  { color: var(--be-muted); opacity: 0.6; }
+    &__here { color: var(--be-text); font-weight: var(--font-weight-medium);
+              overflow: hidden; text-overflow: ellipsis; }
+}
 
 .be-shell-col__slot {
     flex:           1;
@@ -240,6 +295,11 @@ body.backend {
 // class on this wrapper supplies the `--dms-*` tokens the breadcrumb pane reads (the `--be-*`
 // tokens the `.be-icon-btn`s use inherit from the `.be` root regardless).
 .be-drive-head { display: flex; align-items: center; gap: var(--space-2); flex: 1; min-width: 0; }
+
+// Drive hc2 tools (ADR-033): folder edit/move/delete left (acting on the open
+// folder, hidden while none is), the gap pushes new-folder + trash to the right.
+.be-drive-tools { display: flex; align-items: center; gap: var(--space-1); flex: 1; min-width: 0; }
+.be-drive-tools__gap { flex: 1; }
 
 // Empty state of a pane that waits for a selection ("choose a document for the preview").
 // Was `.be-shell-preview__empty`, tied to the removed column 3; renamed because the workspace
@@ -450,7 +510,7 @@ body.backend {
 // look, the cursor and the drag behaviour (shared primitive). Keeping the look here too
 // would be a second source of truth for the same 4px of UI.
 .be-shell__resizer {
-    grid-row:     3;
+    grid-row:     4;
     grid-column:  2;
     justify-self: start;
     margin:       0 0 0 -5px;
@@ -500,12 +560,18 @@ body.backend {
         min-width: 12rem;
     }
 
-    // Drawer starts BELOW the band, so the primary action stays reachable while it is open.
+    // The crumb line follows the band's mobile shape: one flex row, the empty
+    // island cell disappears (there is no island on a phone).
+    .be-shell-crumb { display: flex; align-items: stretch; }
+    .be-shell-crumb__slot--2 { flex: 1; min-width: 0; }
+    .be-shell-crumb__slot--1 { display: none; }
+
+    // Drawer starts BELOW band + crumb line, so both stay reachable while it is open.
     .be-shell-col--1 {
         position:      absolute;
-        top:           calc(var(--shell-bar) + var(--shell-band));
+        top:           calc(var(--shell-bar) + var(--shell-band) + var(--shell-crumb));
         left:          0;
-        height:        calc(100% - var(--shell-bar) - var(--shell-band));
+        height:        calc(100% - var(--shell-bar) - var(--shell-band) - var(--shell-crumb));
         width:         min(300px, 84%);
         z-index:       20;
         transform:     translateX(-100%);

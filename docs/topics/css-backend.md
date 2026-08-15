@@ -241,6 +241,21 @@ packages/module-backend/res/view/templates/
   it reads as a small dark cap at the right edge — deliberate, but the first thing to revisit if
   it looks accidental. **Not verified live.**
 
+- **SHELL-CRUMB-ROW-001** — added 2026-08-15 (ADR-033). **The crumb line is the shell's fourth
+  row.** The shell grid is `topbar / band / crumb / columns` (`--shell-crumb: 32px`), the crumb
+  row mirrors the column split like the band does, its slots are `.be-shell-crumb__slot--1|--2`
+  (slot 1 is a bare cell capping the dark island — it joined the six palette selector groups the
+  way the band slot did). Slot 2 renders the screen's `hc3` template, or the navigation-derived
+  default crumb (`partials/shell/crumb`: section › page, from the same UI cursor the subnav
+  reads). It renders ALWAYS, for the same reason the band does (HEADER-BAND-ALWAYS-001) — screens
+  must not start at different heights. Division of the chrome per ADR-033: hc1 decides, hc2
+  operates (tabs or tools), hc3 says where one is. The Drive was the screen that mixed the two:
+  its breadcrumb pane moved from hc2 to hc3, its folder edit/move/delete buttons left the pane
+  and became static hc2 buttons reading their server-built URLs off the refreshed pane's data
+  attributes (`data-folder-edit-url` etc., the upload-button mechanism); drive.js mirrors URL
+  presence onto their `hidden`. Below 767px the crumb row is a flex row and the empty island
+  cell disappears; the mobile drawer starts below band + crumb. **Not verified live.**
+
 - **LIST-DROP-STAGES-001** — added 2026-08-09. **One drop stage does not reach a phone.** Found
   live on the backup pilot: below ~495px the page pushed open instead of the list giving way.
   The arithmetic — `--be-list-cols-sm` `minmax(10rem,1fr) 9rem 6rem` = 400px, the `⋮` slot

@@ -50,6 +50,18 @@
             <div class="be-shell-band__slot be-shell-band__slot--1"><?= $hc1 ?? '' ?></div>
             <div class="be-shell-band__slot be-shell-band__slot--2"><?= $hc2 ?? '' ?></div>
         </div>
+        <?php /* Crumb line (hc3, ADR-033): position and state, its own slim row —
+                 renders ALWAYS for the same reason the band does (no height jump
+                 between screens). A screen without an own hc3 template gets the
+                 navigation-derived default; slot 1 is a bare cell capping the dark
+                 island. */ ?>
+        <div class="be-shell-crumb">
+            <div class="be-shell-crumb__slot be-shell-crumb__slot--1"></div>
+            <div class="be-shell-crumb__slot be-shell-crumb__slot--2"><?= $hc3 ?? $this->partial('partials/shell/crumb', [
+                'navigationService' => $navigationService ?? null,
+                'navSlot'           => $navSlot ?? 'backend-main',
+            ]) ?></div>
+        </div>
         <div class="be-shell-col be-shell-col--1" data-shell-col="l">
             <?= $subnav ?? '' ?>
         </div>

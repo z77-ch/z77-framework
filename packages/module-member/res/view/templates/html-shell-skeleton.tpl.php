@@ -17,9 +17,10 @@
  * row are the same height by construction.
  *
  * The breadcrumb got its own, slimmer row in v1.7.0: it carries smaller type
- * and shared its line with nothing that belonged to it. The toolbar row now
- * carries the PAGE's tabs (`$shellTabs`, sections of one surface switched
- * client-side — shell.js); crumb-target actions sit on the crumb's row.
+ * and shared its line with nothing that belonged to it. The chrome follows
+ * ADR-033 (one rule for every shell): the ACTION CELL carries the context's
+ * decisive action(s), the TOOLBAR the page's tabs OR its tools, the CRUMB
+ * LINE position and state — nothing else.
  *
  * ── Two shapes, one skeleton ──
  * A page with a rail (`$railItems` present) gets the work area; a page without
@@ -28,13 +29,15 @@
  *
  * @var string $memberTheme  'light' | 'dark' | '' (no decision — follow the system)
  * @var ?array $railItems    rows of the left column; absent = plain page
- * @var ?array $shellAction  ['label','href','method','quiet'] — the area's one action
+ * @var ?array $shellActions the context's decisive action(s), max two (see partials/shell/action)
+ * @var ?array $shellAction  legacy single action — normalised into the list
  * @var ?array $shellTabs    the page's tabs [{id,label,active?}]; absent = none
+ * @var ?array $shellTools   the page's tools (see partials/shell/tools); ignored when tabs are present
  * @var ?array $crumbs       breadcrumb rows for the crumb line
- * @var ?string $crumbActions raw HTML acting on the crumb target, right of it
  */
-$theme = in_array($memberTheme ?? '', ['light', 'dark'], true) ? $memberTheme : '';
-$work  = !empty($railItems) || !empty($shellAction);
+$theme      = in_array($memberTheme ?? '', ['light', 'dark'], true) ? $memberTheme : '';
+$actionList = $shellActions ?? (!empty($shellAction) ? [$shellAction] : []);
+$work       = !empty($railItems) || $actionList !== [];
 ?>
 <html lang="<?= e($language ?? 'de') ?>" class="me"<?= $theme !== '' ? ' data-theme="' . e($theme) . '"' : '' ?>>
 <head>
@@ -66,32 +69,35 @@ $work  = !empty($railItems) || !empty($shellAction);
     ]) ?>
 
     <div class="me-shell__act">
-        <?php if (!empty($shellAction)): ?>
+        <?php if ($actionList !== []): ?>
         <?= $this->partial('partials/shell/action', [
-            'action'    => $shellAction,
+            'actions'   => $actionList,
             'csrfToken' => $csrfToken ?? '',
         ]) ?>
         <?php endif; ?>
     </div>
 
+    <?php /* Tabs OR tools, never both (ADR-033) — a page with tabs has its
+             tools inside the tabbed surface. */ ?>
     <div class="me-shell__toolbar">
         <?php if (!empty($shellTabs)): ?>
         <?= $this->partial('partials/shell/tabs', ['tabs' => $shellTabs]) ?>
+        <?php elseif (!empty($shellTools)): ?>
+        <?= $this->partial('partials/shell/tools', [
+            'tools'     => $shellTools,
+            'csrfToken' => $csrfToken ?? '',
+        ]) ?>
         <?php endif; ?>
     </div>
 
-    <?php /* Row 3 — the crumb line. Column 1 is a bare cell so the dark island
-             runs through; the actions on the right belong to the crumb TARGET
-             (the Drive pattern), never to the area — that one sits above. */ ?>
+    <?php /* Row 3 — the crumb line: position and state, nothing else. Column 1
+             is a bare cell so the dark island runs through. */ ?>
     <div class="me-shell__crumbgap"></div>
     <div class="me-shell__crumbs">
         <?= $this->partial('partials/shell/crumbs', [
             'crumbs'    => $crumbs ?? [],
             'csrfToken' => $csrfToken ?? '',
         ]) ?>
-        <?php if (!empty($crumbActions)): ?>
-        <div class="me-shell__crumb-actions"><?= $crumbActions ?></div>
-        <?php endif; ?>
     </div>
 
     <?php /* Row 3 — the shared primitive. The rail is pane 1 (fixed width,
