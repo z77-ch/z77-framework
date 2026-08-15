@@ -133,6 +133,29 @@
     wirePanel('[data-member-areas]', '[data-member-areas-trigger]', '[data-member-areas-panel]', null);
     wirePanel('[data-member-menu]', '[data-member-menu-trigger]', '[data-member-menu-panel]', 'me-account__wrap--open');
 
+    // ── the page's tabs ────────────────────────────────────────────────────
+    //
+    // Sections of ONE surface (B10 v1.7.0): the buttons live in the shell's
+    // toolbar row, the panels anywhere in the content. Switching only flips
+    // visibility — a form spanning the panels keeps every unsaved value, and
+    // one save carries all of it. Which panel starts open is the server's
+    // line (`is-active` / `hidden` in the markup); this only moves it.
+    document.addEventListener('click', function (event) {
+        var tab = event.target.closest('[data-shell-tab]');
+        if (!tab) { return; }
+
+        var id = tab.getAttribute('data-shell-tab');
+
+        document.querySelectorAll('[data-shell-tab]').forEach(function (button) {
+            var active = button === tab;
+            button.classList.toggle('is-active', active);
+            button.setAttribute('aria-selected', active ? 'true' : 'false');
+        });
+        document.querySelectorAll('[data-shell-panel]').forEach(function (panel) {
+            panel.hidden = panel.getAttribute('data-shell-panel') !== id;
+        });
+    });
+
     // ── dialogs ────────────────────────────────────────────────────────────
     //
     // A native `<dialog>`: the browser brings the backdrop, the focus trap, the

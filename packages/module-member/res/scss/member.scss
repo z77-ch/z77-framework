@@ -105,18 +105,20 @@ $fb-info-tint: $fb-bg;
 
 // ── The shell is ONE grid ─────────────────────────────────────────────────
 //
-// Three columns (rail · seam · content) and three rows. Everything else falls
-// out of that: the vertical seam runs from the header to the foot, the header
-// splits at the same edge as the panes, and the horizontal edges meet WITHOUT
-// anyone matching padding values — cells of one grid row are the same height
-// by construction. Drag the rail wider and the whole column moves with it.
+// Three columns (rail · seam · content) and FOUR rows (B10 v1.7.0 — the
+// breadcrumb left the toolbar for its own, slimmer line: it carries smaller
+// type, and the toolbar row now belongs to the page's tabs). Everything else
+// falls out of that: the vertical seam runs from the header to the foot, the
+// header splits at the same edge as the panes, and the horizontal edges meet
+// WITHOUT anyone matching padding values — cells of one grid row are the same
+// height by construction. Drag the rail wider and the whole column moves with it.
 //
 // The width lives in `--rail-w` on the body, so the drag handle of the shared
 // primitive can write it (see the token binding at the end of this file).
 .me-body--shell {
     display: grid;
     grid-template-columns: var(--rail-w, 17rem) var(--rule, #{$fb-rule}) 1fr;
-    grid-template-rows: var(--row-h, 3.5rem) var(--row-h, 3.5rem) 1fr;
+    grid-template-rows: var(--row-h, 3.5rem) var(--row-h, 3.5rem) var(--crumb-h, 2.375rem) 1fr;
     min-height: 100vh;
 }
 
@@ -205,7 +207,7 @@ $fb-info-tint: $fb-bg;
         color: var(--text-2, #{$fb-text-2});
     }
 
-    // ── Row 2 — the area's action, and the breadcrumb on the content line ──
+    // ── Row 2 — the area's action, and the page's tabs on the content line ──
     &__act,
     &__toolbar {
         grid-row: 2;
@@ -232,10 +234,45 @@ $fb-info-tint: $fb-bg;
         background: var(--surface, #{$fb-surface});
     }
 
-    // ── Row 3 — the work area, or a plain page ──
+    // ── Row 3 — the breadcrumb line (B10 v1.7.0) ──
+    //
+    // Its own, slimmer row: the crumb carries smaller type and shared its old
+    // line with nothing that belonged to it. On the right sit the actions on
+    // the crumb TARGET (the Drive pattern) — the area's action stays in row 2:
+    // it belongs to the list, not to what the crumb names.
+    //
+    // Column 1 is a bare cell painting the dark island through; no border, for
+    // the same reason `__act` hides its own — the island is ONE surface.
+    &__crumbgap {
+        grid-column: 1;
+        grid-row: 3;
+        background: var(--rail-bg, #{$fb-surface});
+    }
+
+    &__crumbs {
+        grid-column: 3;
+        grid-row: 3;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        min-width: 0;
+        padding: 0 1rem;
+        border-bottom: var(--rule, #{$fb-rule}) solid var(--line, #{$fb-line});
+        background: var(--surface, #{$fb-surface});
+    }
+
+    &__crumb-actions {
+        margin-left: auto;
+        display: flex;
+        align-items: center;
+        gap: 0.25rem;
+        flex: 0 0 auto;
+    }
+
+    // ── Row 4 — the work area, or a plain page ──
     &__work {
         grid-column: 1 / -1;
-        grid-row: 3;
+        grid-row: 4;
         min-height: 0;
         // The split primitive draws its own panes; it only needs a box that
         // does not grow with its content.
@@ -635,6 +672,41 @@ $fb-info-tint: $fb-bg;
 
         // The first group sits at the top of the column, where a row would.
         &:first-child { margin-top: 0.25rem; }
+    }
+}
+
+// ── The page's tabs — the toolbar row's content (B10 v1.7.0) ──────────────
+//
+// Sections of ONE surface, switched client-side (shell.js flips the panels'
+// `hidden`). They stretch to the row's full height so the active mark sits on
+// the row's own bottom border — an underline floating mid-air reads as a link,
+// not as a tab.
+.me-tabs {
+    display: flex;
+    align-items: stretch;
+    align-self: stretch;
+    gap: 0.25rem;
+
+    &__tab {
+        appearance: none;
+        border: 0;
+        background: none;
+        padding: 0 0.75rem;
+        font: inherit;
+        font-size: 0.875rem;
+        font-weight: 500;
+        color: var(--text-2, #{$fb-text-2});
+        cursor: pointer;
+        border-bottom: 2px solid transparent;
+
+        &:hover { color: var(--text, #{$fb-text}); }
+
+        // The mark is the ACCENT: an active tab is a position, not a success —
+        // the same rule that keeps the switches off green.
+        &.is-active {
+            color: var(--text, #{$fb-text});
+            border-bottom-color: var(--accent, #{$fb-accent});
+        }
     }
 }
 
