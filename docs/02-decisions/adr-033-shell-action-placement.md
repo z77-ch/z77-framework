@@ -24,7 +24,7 @@ follows ONE rule:
 
 | Place | backend | member | Carries |
 |---|---|---|---|
-| **Action cell** | `hc1` | `me-shell__act` | the context's DECISIVE action(s) — max two; weight follows meaning (accent = forward, quiet = ends/leaves) |
+| **Action cell** | `hc1` | `me-shell__act` | the context's DECISIVE action(s) — max two VISIBLE buttons; weight follows meaning (accent = forward, quiet = ends/leaves) |
 | **Toolbar** | `hc2` | `me-shell__toolbar` | the page's TABS or its TOOLS (filters, per-target tools) — never both |
 | **Crumb line** | `hc3` (own slim row) | `me-shell__crumbs` (own slim row) | POSITION and its state (breadcrumb, a level's switch) — nothing else |
 | **Content** | column 2 | detail pane | only what is bound to an in-content selection, and dialog-internal buttons |
@@ -33,7 +33,13 @@ Concretely:
 
 - **A form's submit belongs in the action cell**, not at the end of the
   body. Outside the `<form>` it submits through the HTML `form` attribute —
-  no script involved. Cancel sits beside it, quiet.
+  no script involved. Cancel sits beside it, quiet. **One word per button**
+  («Speichern», «Abbrechen») — the cell is narrow, and what is being saved
+  is what the page says.
+- **More than two choices collapse into ONE button with a panel** — the
+  backup screen's add-picker (`.be-shell-add__panel`, hc1) is the model: a
+  single primary button opens the small list of kinds. The cell never grows
+  a button row; a cell one has to scan is a menu, not a decision.
 - **Per-target tools belong in the toolbar** (member widget entry:
   Kopieren · Vorschau · Bearbeiten · Löschen; Drive folder: edit · move ·
   delete · new folder · trash) — labelled buttons where space allows, the
