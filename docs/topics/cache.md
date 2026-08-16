@@ -126,6 +126,42 @@ class BackendUser { ... }
 
 Marked today: `Navigation`, `Tag`, `MetaData`. Controllers MUST NOT call `cacheManager->clearAllApcu()` after a save — the entity manager owns that.
 
+## controller-declared freshness (CACHE-FIX-001)
+
+`HtmlResponse` owns the `Cache-Control` header: `sendHeaders()` writes it from
+its own `CacheMode`, and the Dispatcher's NewPage branch sets that mode to
+`NoStore` **after** the controller returned. Two consequences, both found the
+hard way on 2026-08-16 in the AXO3 widget:
+
+- A raw `header('Cache-Control: …')` inside a controller action is a **note to
+  nobody**. It is overwritten before the response goes out. The widget carried
+  `public, max-age=300` for months and delivered `no-store` the whole time,
+  while code comment and spec claimed a five-minute cache.
+- Some responses know their freshness better than the routing layer does. A
+  server-rendered fragment that depends on stored data wants `public, no-cache`
+  plus an ETag, so an unchanged state comes back as a 304 instead of 400 KB.
+
+Therefore `HtmlResponse::fixCacheMode(CacheMode)` — same as `setCacheMode()`,
+but it marks the mode as decided, and the Dispatcher then fills in nothing:
+
+```php
+return $response->fixCacheMode(CacheMode::ServerCached)->setEtag($stamp);
+```
+
+`HtmlResponse::notModified()` marks itself the same way. ⚠️ Without that the
+304 turns into an empty **200**, and the browser takes the empty body for the
+new content.
+
+The Dispatcher only fills in what nobody claimed:
+
+```php
+if ($response instanceof HtmlResponse && !$response->hasFixedCacheMode()) {
+    $response->setCacheMode(CacheMode::NoStore)->setCacheStatus(PageCacheStatus::Bypass);
+}
+```
+
+Nothing changes for a page that says nothing — that is every existing page.
+
 ## rules
 
 - When calling `DataCache::set()` → MUST NOT pass `null` as value (indistinguishable from miss)
@@ -134,6 +170,8 @@ Marked today: `Navigation`, `Tag`, `MetaData`. Controllers MUST NOT call `cacheM
 - When editing bootstrap config → `cachePersist` MUST be `false` (config changes must take effect without cache clear)
 - When an entity's writes must invalidate frontend caches → MUST set `invalidatesCache: true` on its `#[Entity]` attribute; MUST NOT call `cacheManager->clearAllApcu()` from controllers
 - When adding a new entity that is NOT rendered into frontend pages (logs, statistics, auth) → MUST leave `invalidatesCache` at its `false` default
+- When a controller wants a Cache-Control other than the default → MUST use `fixCacheMode()`, MUST NOT call `header('Cache-Control: …')` (CACHE-FIX-001: the raw header is overwritten by `HtmlResponse::sendHeaders()`)
+- When a response carries a session-granted view (an owner preview, a personalised fragment) → MUST stay `NoStore` and MUST NOT answer 304; a shared cache would hand it to the next caller
 - When rendering session-dependent content for roles < ADMIN on a cacheable page → MUST NOT: only role >= ADMIN sessions bypass the PageCache (CACHE-ADMIN-001); guest and member renders MUST stay byte-identical. If member-specific markup ever lands on a cacheable page, the bypass MUST be widened to every logged-in session first
 
 ## see also

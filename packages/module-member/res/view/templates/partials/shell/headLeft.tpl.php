@@ -27,7 +27,19 @@
         <button type="button" class="me-switcher__btn" data-member-areas-trigger
                 aria-haspopup="true" aria-expanded="false" aria-controls="me-area-panel"
                 title="Bereich wechseln">
-            <span class="me-switcher__grid" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+            <?php /* Dasselbe Zeichen wie im Backend (Lucide grid, ADR-033
+                     spricht von EINER Geste an beiden Orten): dort kommt es
+                     aus dem Icon-Sprite, hier steht die Geometrie inline —
+                     der Member-Bereich fuehrt kein Sprite, und ein
+                     `<use href>` auf eine Datei, die es nicht gibt, zeichnet
+                     nichts. Darstellung wie `.be-icon`: Kontur in der
+                     Textfarbe, gefuellt wird nichts. */ ?>
+            <svg class="me-icon" width="20" height="20" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <rect x="3" y="3" width="7" height="7" rx="1"/>
+                <rect x="14" y="3" width="7" height="7" rx="1"/>
+                <rect x="3" y="14" width="7" height="7" rx="1"/>
+                <rect x="14" y="14" width="7" height="7" rx="1"/>
+            </svg>
             <span class="me-account__sr">Bereich wechseln</span>
         </button>
 

@@ -583,8 +583,8 @@ $fb-info-tint: $fb-bg;
 }
 
 .me-switcher__btn {
-    width: 2.25rem;
-    height: 2.25rem;
+    width: 2.5rem;
+    height: 2.5rem;
     display: inline-grid;
     place-content: center;
     border: var(--rule, #{$fb-rule}) solid transparent;
@@ -597,12 +597,18 @@ $fb-info-tint: $fb-bg;
     &:hover { opacity: 1; background: rgba(127, 127, 127, 0.14); }
 }
 
-.me-switcher__grid {
-    display: grid;
-    grid-template-columns: 6px 6px;
-    gap: 3px;
-
-    i { display: block; width: 6px; height: 6px; background: currentColor; }
+// Die vier Quadrate sind der einzige Weg aus einem Bereich heraus — sie
+// duerfen nicht wie eine Verzierung aussehen. Es ist dasselbe Zeichen wie im
+// Backend (Lucide grid, 2026-08-16): Kontur statt Flaeche, abgerundete Ecken,
+// bei 20px statt der 15px der ersten Fassung. Praesentation wie `.be-icon` —
+// die Geometrie steht im Partial, die Erscheinung hier.
+.me-icon {
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    flex-shrink: 0;
 }
 
 // ── The list in the rail ──────────────────────────────────────────────────
@@ -1252,9 +1258,20 @@ $fb-info-tint: $fb-bg;
             color: var(--text-2, inherit);
         }
 
+        // Die Liste zaehlt die einzeiligen TEXT-Felder vollstaendig auf —
+        // ⚠️ ein fehlender Typ faellt nicht auf, er sieht nur nackt aus: das
+        // Feld behaelt die Browser-Vorgabe (schmal, fremder Rahmen) mitten in
+        // einem gestalteten Formular. So gefunden am 2026-08-16 mit
+        // `type="url"`, das hier fehlte. Wer einen Typ ergaenzt, ergaenzt ihn
+        // hier — nicht projektseitig.
         input[type="text"],
         input[type="email"],
         input[type="tel"],
+        input[type="url"],
+        input[type="search"],
+        input[type="password"],
+        input[type="number"],
+        input[type="date"],
         textarea {
             width: 100%;
             box-sizing: border-box;

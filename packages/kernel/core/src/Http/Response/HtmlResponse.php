@@ -32,6 +32,22 @@ class HtmlResponse implements ResponseInterface
     private ?int $etag = null;
     private bool $omitBody = false;
 
+    /**
+     * Hat der CONTROLLER den Modus selbst bestimmt?
+     *
+     * ⚠️ Der Dispatcher setzt fuer jede nicht seitengecachte Route
+     * `CacheMode::NoStore`, NACHDEM der Controller geantwortet hat — und
+     * ueberschreibt damit alles, was dieser gesetzt hat. Fuer eine gewoehnliche
+     * Seite ist das richtig. Es gibt aber Antworten, deren Frische der
+     * Controller besser kennt als die Routing-Schicht: das B3-Widget-Fragment
+     * etwa haengt an Bestand und Eintrag und will `public, no-cache` mit ETag,
+     * damit ein unveraenderter Stand als 304 zurueckkommt statt als 400 KB.
+     * `fixCacheMode()` sagt: Finger weg, hier ist entschieden.
+     * (Gefunden 2026-08-16: der raw `header('Cache-Control: …')` im Controller
+     * war wirkungslos, weil sendHeaders() die Kopfzeile selbst schreibt.)
+     */
+    private bool $cacheModeFixed = false;
+
     public function __construct(
         private ?LayoutManager $layoutManager = null,
         private array $context = []
@@ -59,7 +75,11 @@ class HtmlResponse implements ResponseInterface
         $r = new self();
         $r->html = '';
         $r->etag = $etag;
+        // ⚠️ FEST: sonst dreht der Dispatcher den Modus gleich wieder auf
+        // NoStore, und aus dem 304 wird eine leere 200 — der Browser haelt
+        // eine leere Antwort fuer den neuen Inhalt.
         $r->cacheMode = CacheMode::NotModified;
+        $r->cacheModeFixed = true;
         return $r;
     }
 
@@ -76,6 +96,22 @@ class HtmlResponse implements ResponseInterface
     {
         $this->cacheMode = $mode;
         return $this;
+    }
+
+    /**
+     * Wie setCacheMode(), aber der Dispatcher laesst den Modus danach in Ruhe.
+     * Fuer Antworten, deren Frische der Controller kennt (siehe $cacheModeFixed).
+     */
+    public function fixCacheMode(CacheMode $mode): self
+    {
+        $this->cacheMode      = $mode;
+        $this->cacheModeFixed = true;
+        return $this;
+    }
+
+    public function hasFixedCacheMode(): bool
+    {
+        return $this->cacheModeFixed;
     }
 
     public function setCacheStatus(PageCacheStatus $status): self
