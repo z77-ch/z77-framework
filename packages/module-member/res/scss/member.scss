@@ -623,6 +623,40 @@ $fb-info-tint: $fb-bg;
 
 .me-rail__inner { padding: 0.5rem 0.5rem 2rem; }
 
+// A segmented switch in the rail — mutually exclusive shape choices (tree vs
+// list). One bordered control, the active option filled INVERSE (ground and
+// text swap): plain rows made these switches read as two more data entries
+// instead of the control that changes the whole pane (Fund Peter,
+// 2026-08-18). Token-driven like everything on the rail; the fallbacks keep
+// the module's neutral look.
+.me-seg {
+    display: flex;
+    margin: 0.25rem 0 0.5rem;
+    border: 1px solid var(--rail-2, #{$fb-text-2});
+    border-radius: var(--radius, #{$fb-radius});
+    overflow: hidden;
+
+    &__opt {
+        flex: 1 1 0;
+        padding: 0.4rem 0.5rem;
+        text-align: center;
+        font-size: 0.85rem;
+        color: inherit;
+        text-decoration: none;
+
+        & + & { border-left: 1px solid var(--rail-2, #{$fb-text-2}); }
+        &:hover:not(.is-active) { background: rgba(127, 127, 127, 0.14); }
+
+        // Inverse fill: unmistakably "pressed" without a second colour —
+        // green stays success, the accent stays the active data mark.
+        &.is-active {
+            background: var(--rail-text, #{$fb-text});
+            color: var(--rail-bg, #{$fb-surface});
+            font-weight: 600;
+        }
+    }
+}
+
 .me-item {
     display: flex;
     align-items: center;

@@ -19,9 +19,16 @@
  * control somewhere else on the page, is exactly what this column exists to
  * avoid: one looks left to choose (Peter, 2026-08-13).
  *
+ * A row carrying `segment` is a SEGMENTED SWITCH: a small set of mutually
+ * exclusive shape choices (tree vs list) rendered as one bordered control
+ * with the active option filled. Plain rows made these switches invisible —
+ * they read as two more data entries, not as the control that changes the
+ * whole pane (Fund Peter, 2026-08-18). Options are links like every row.
+ *
  * @var array<int,array{
  *     name?:string, url?:string, active?:bool, meta?:string,
- *     dot?:bool, level?:int, stacked?:bool, heading?:string
+ *     dot?:bool, level?:int, stacked?:bool, heading?:string,
+ *     segment?:array<int,array{name:string, url:string, active?:bool}>
  * }> $items
  */
 ?>
@@ -29,6 +36,13 @@
     <?php foreach ($items as $item): ?>
     <?php if (!empty($item['heading'])): ?>
     <p class="me-item__head"><?= e($item['heading']) ?></p>
+    <?php continue; endif; ?>
+    <?php if (!empty($item['segment'])): ?>
+    <div class="me-seg" role="group">
+        <?php foreach ($item['segment'] as $opt): ?>
+        <a class="me-seg__opt<?= !empty($opt['active']) ? ' is-active' : '' ?>" href="<?= e($opt['url']) ?>"<?= !empty($opt['active']) ? ' aria-current="true"' : '' ?>><?= e($opt['name']) ?></a>
+        <?php endforeach; ?>
+    </div>
     <?php continue; endif; ?>
     <?php
         $class = 'me-item';
