@@ -256,6 +256,26 @@ packages/module-backend/res/view/templates/
   presence onto their `hidden`. Below 767px the crumb row is a flex row and the empty island
   cell disappears; the mobile drawer starts below band + crumb. **Not verified live.**
 
+- **MODAL-CLIP-001** — added 2026-08-18 (found by Peter on axo3's ~2900px snippet form; any
+  installation with a modal long enough to scroll is exposed). **`.be-modal` clips with `overflow: clip`, never `hidden`** — and
+  **`.be-switch` is `position: relative`**. With `hidden` the dialog IS a scroll container:
+  mouse scrolling is blocked, but programmatic scrolling is not, and a focus `scrollIntoView`
+  scrolls EVERY ancestor scroll container, the dialog included. Since it shows no scrollbar it
+  never comes back — the entire content sits above the box, clipped away: dark/white empty
+  modal, content fully in the DOM, no request, no console output. The trigger in the wild was
+  the switch itself: `.be-switch__input` is absolutely positioned, and with an unpositioned
+  `.be-switch` it anchored to the nearest positioned ancestor (`.be-modal__inner`), ~2500px
+  away from its visible track — clicking the label focused an input far outside the view and
+  the browser scrolled the dialog to it. `clip` cuts off identically but creates no scroll
+  container (the fix against ANY programmatic scroll source); `position: relative` on the
+  label anchors the input where its track is (the fix for the focus target). `.be-modal__body`
+  keeps its `overflow-y: auto` and scrolls unchanged. Deleting content in DevTools "bringing
+  the modal back" is the same mechanism: the browser clamps `scrollTop` when `scrollHeight`
+  shrinks. Verified live on axo3 (widget-edit form, the switch works and the modal survives
+  scrolling); guarded by axo3's b10 harness against the shipped `base.css`.
+  `.z77-popup__body` has `overflow: visible` today (no scroll container, not affected) — if it
+  ever gains an overflow value, it must be `clip` for the same reason.
+
 - **LIST-DROP-STAGES-001** — added 2026-08-09. **One drop stage does not reach a phone.** Found
   live on the backup pilot: below ~495px the page pushed open instead of the list giving way.
   The arithmetic — `--be-list-cols-sm` `minmax(10rem,1fr) 9rem 6rem` = 400px, the `⋮` slot

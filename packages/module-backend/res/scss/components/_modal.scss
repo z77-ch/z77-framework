@@ -6,7 +6,12 @@
     max-width:     760px;
     width:         95vw;
     max-height:    90vh;
-    overflow:      hidden;
+    // `clip`, NOT `hidden` (MODAL-CLIP-001): `hidden` makes the dialog a
+    // scroll container — any programmatic scroll (focus scrollIntoView on a
+    // control deep in a long form) scrolls the dialog itself, and with no
+    // scrollbar it never comes back: the box renders empty until reopened.
+    // `clip` cuts off identically but creates no scroll container.
+    overflow:      clip;
     background:    var(--be-surface);
     color:         var(--be-text);
     // Centre the modal both axes. The UA centres an open modal <dialog> via

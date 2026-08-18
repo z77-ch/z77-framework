@@ -21,6 +21,11 @@
     cursor:          pointer;
     user-select:     none;
     -webkit-tap-highlight-color: transparent;
+    // Anchor the absolutely positioned __input to the label (MODAL-CLIP-001):
+    // without this it anchors to the nearest positioned ancestor (e.g. the
+    // modal), sits far from the visible track, and clicking the switch makes
+    // the focus scroll jump ancestor scroll containers to a wrong target.
+    position:        relative;
 }
 
 .be-switch__input {
