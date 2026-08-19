@@ -61,6 +61,21 @@
 .be-tabs__tab--active  { background: var(--be-accent); color: var(--color-text-inverse); border-color: var(--be-accent); }
 .be-tabs__tab--add     { border-style: dashed; }
 
+/* Eine Leiste, die eine Fläche ERÖFFNET statt sie zu unterteilen: oben im
+ * Rumpf eines Dialogs, oben in einem Abschnitt. Die Vorgabe trennt nach oben
+ * ab (Rand + Polster), was richtig ist, wenn Inhalt darüber steht — direkt
+ * unter einem Dialog-Kopf ist derselbe Strich ein verirrter zweiter Rand. */
+.be-tabs--flush { margin-top: 0; padding-top: 0; border-top: none; }
+
+/* Verschachtelte Leisten (Reiter im Reiter) stehen enger: die äussere trennt
+ * Abschnitte, die innere gliedert innerhalb eines Abschnitts. */
+.be-tabs--sub {
+    margin-top:  .5rem;
+    padding-top: .5rem;
+    gap:         .2rem;
+}
+.be-tabs--sub .be-tabs__tab { padding: .2rem .6rem; font-size: .75rem; }
+
 /* ── List body ── */
 .be-list { padding: 1.5rem 2rem; }
 

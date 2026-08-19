@@ -201,3 +201,90 @@
     border-color: var(--be-accent);
     box-shadow:   0 0 0 2px color-mix(in srgb, var(--be-accent) 15%, transparent);
 }
+
+/* ── .be-input — the standalone control ─────────────────────────────────────
+ * A single field OUTSIDE a form layout: the filter in a header slot, a select
+ * in a rail, a search box in a toolbar. `.be-form__field input|select` styles
+ * a control by its POSITION in the modal grid; this one is a class you put on
+ * the control itself, wherever it stands.
+ *
+ * ⚠️ It was in use before it existed. `tree.hc2` wrote `class="be-input"` and
+ * got nothing — no border, no arrow, plain text on the band, because the
+ * normalize had stripped the control bare (NORMALIZE-CHOICE-001). A class name
+ * that matches no rule fails silently; there is no error to see.
+ *
+ * Usage:
+ *   <input class="be-input be-input--sm" type="search" placeholder="Suche …">
+ *   <select class="be-input">…</select>
+ */
+.be-input {
+    padding:       .45rem .65rem;
+    border:        1px solid var(--be-line);
+    border-radius: .375rem;
+    font-size:     .875rem;
+    line-height:   1.3;
+    background:    var(--be-surface);
+    color:         var(--be-text);
+    transition:    border-color .12s, box-shadow .12s;
+    max-width:     100%;
+}
+
+.be-input:focus,
+.be-input:focus-visible {
+    outline:      none;
+    border-color: var(--be-accent);
+    box-shadow:   0 0 0 2px color-mix(in srgb, var(--be-accent) 15%, transparent);
+}
+
+.be-input:disabled {
+    opacity: .55;
+    cursor:  default;
+}
+
+.be-input::placeholder { color: var(--be-muted); }
+
+/* Dense rows — a header band carries several controls side by side. */
+.be-input--sm {
+    padding:   .3rem .5rem;
+    font-size: .8125rem;
+}
+
+/* The select draws its OWN caret: `appearance: none` (from the normalize) plus
+ * a chevron painted as a background image, so it looks the same in every
+ * browser instead of inheriting the operating system's widget.
+ *
+ * ⚠️ The chevron is ONE mid grey, not a per-theme pair. A `background-image`
+ * data-URI cannot read `currentColor`, so a token-coloured caret would mean
+ * redefining it for every palette AND both themes — twelve values that drift
+ * apart at the first new palette. One grey with enough contrast on both the
+ * light and the dark ground is the honest trade; it is a caret, not a
+ * meaning-carrying mark. Override `--be-select-caret` to change it.
+ *
+ * The right padding leaves room for it — `padding-right` must stay larger than
+ * the caret's inset plus its width, or the longest option text runs underneath. */
+.be {
+    --be-select-caret: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%238b8fa3' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+
+select.be-input {
+    appearance:          none;
+    -webkit-appearance:  none;
+    padding-right:       1.85rem;
+    background-image:    var(--be-select-caret);
+    background-repeat:   no-repeat;
+    background-position: right .6rem center;
+    cursor:              pointer;
+}
+
+select.be-input--sm {
+    padding-right:       1.6rem;
+    background-position: right .45rem center;
+}
+
+/* ⚠️ The dropdown list itself is drawn by the operating system, not by us —
+ * only its ground and text can be set, and only where the browser honours it.
+ * Naming both keeps a dark theme from painting black text on a black list. */
+select.be-input option {
+    background: var(--be-surface);
+    color:      var(--be-text);
+}

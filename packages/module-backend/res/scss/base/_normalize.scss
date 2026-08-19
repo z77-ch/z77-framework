@@ -38,6 +38,64 @@ button, input, select, textarea {
     appearance: none;
 }
 
+/* ⚠️ NORMALIZE-CHOICE-001 — checkbox and radio keep their native appearance.
+ * `appearance: none` above strips a control down to a paintable box, which is
+ * what a text field, a button and a select want (they get their look from a
+ * component class). A checkbox has NO box of its own: stripped, it paints
+ * literally nothing, and a bare `<input type="checkbox">` in a list becomes an
+ * invisible control that nobody can find.
+ *
+ * That trap was worked around twice before it was fixed here — the DMS file
+ * select restores `appearance: auto` by hand and says why (_filelist.scss),
+ * and `.be-form__field select` does the same for selects. A control that
+ * disappears unless every author remembers a workaround is a broken default,
+ * not a strict one.
+ *
+ * Components that deliberately REBUILD the box (`.be-choice__input`) or hide
+ * the control entirely (`.be-switch__input`, `.be-list__disclosure-input`)
+ * carry class rules and outrank this element selector — they are unaffected.
+ *
+ * `accent-color` is the one line that colours a native checkbox without
+ * rebuilding it: the mark carries the backend accent instead of system blue,
+ * and it follows every palette and both themes for free. */
+input[type="checkbox"],
+input[type="radio"] {
+    appearance:   auto;
+    accent-color: var(--be-accent);
+    cursor:       pointer;
+}
+
+input[type="checkbox"]:disabled,
+input[type="radio"]:disabled {
+    cursor: default;
+}
+
+/* ⚠️ NORMALIZE-COLOR-001 — dieselbe Familie, ein Feld weiter: ein Farbwähler
+ * IST seine Fläche. Der Reset oben nimmt ihm `appearance`, `background`,
+ * `border` und `padding` — übrig bleibt ein Kasten, der nichts malt. Die
+ * gewählte Farbe war nicht zu sehen, nur zu erraten (Fund Peter, 2026-08-19,
+ * im Reiter «Darstellung» des Snippet-Formulars).
+ *
+ * Der Rahmen ist nicht Schmuck: ohne ihn verschwindet eine helle Wahl —
+ * Weiss auf `--be-surface` — restlos. Die Schatten-Teile tragen das Polster,
+ * damit die Fläche innerhalb des Rahmens sitzt statt ihn zu überdecken; sie
+ * heissen je Engine anders, darum beide. Masse wie im Member (2.75 × 2rem),
+ * damit dieselbe Wahl auf beiden Oberflächen gleich gross ist. */
+input[type="color"] {
+    appearance:    auto;
+    width:         2.75rem;
+    height:        2rem;
+    padding:       0;
+    border:        1px solid var(--be-line);
+    border-radius: .25rem;
+    background:    var(--be-surface);
+    cursor:        pointer;
+}
+
+input[type="color"]::-webkit-color-swatch-wrapper { padding: 2px; }
+input[type="color"]::-webkit-color-swatch { border: none; border-radius: .125rem; }
+input[type="color"]::-moz-color-swatch          { border: none; border-radius: .125rem; }
+
 :focus-visible {
     outline:        3px solid var(--color-border-focus);
     outline-offset: 2px;

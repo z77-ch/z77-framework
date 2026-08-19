@@ -276,6 +276,51 @@ packages/module-backend/res/view/templates/
   `.z77-popup__body` has `overflow: visible` today (no scroll container, not affected) — if it
   ever gains an overflow value, it must be `clip` for the same reason.
 
+- **NORMALIZE-CHOICE-001** — added 2026-08-19 (found by Peter on axo3's stock list: the
+  mark-a-row checkboxes were simply not there). **The normalize does not strip `appearance`
+  from checkbox and radio.** `button, input, select, textarea { appearance: none }` is right
+  for controls that get a box from a component class — a text field, a button, a select. A
+  checkbox has no box of its own: stripped, it paints **nothing at all**, and the control is
+  invisible while remaining fully clickable and fully in the DOM. Nothing errors, nothing
+  logs; the author sees an empty cell. The workaround had already been written twice before
+  the default was fixed — `.dms-file__select` restores `appearance: auto` by hand with a
+  comment naming this exact cause, and `.be-form__field select` does the same for selects.
+  A default that only works when every author remembers a workaround is broken, not strict.
+  Now: `input[type="checkbox"], input[type="radio"] { appearance: auto; accent-color: var(--be-accent) }`
+  — the native control, wearing the backend accent, following every palette and both themes
+  without a rebuild. Components that deliberately rebuild the box (`.be-choice__input`) or
+  hide the control (`.be-switch__input`, `.be-list__disclosure-input`) carry class rules and
+  outrank the element selector — unaffected. ⚠️ Consequence to expect: any bare checkbox that
+  was invisible **by accident** now shows (e.g. `.ce-field--bool` in the content editor). That
+  is the bug surfacing, not a regression. **Not verified live.**
+
+- **NORMALIZE-COLOR-001** — added 2026-08-19 (found by Peter in the snippet form's
+  «Darstellung» tab, same day as NORMALIZE-CHOICE-001 and the same family). **A colour picker
+  IS its swatch.** The reset takes `appearance`, `background`, `border` and `padding` from
+  every control — for a text field that is right, the component class puts them back. A
+  `<input type="color">` has nothing else: stripped, it is a box that paints nothing, and the
+  chosen colour can only be guessed. Now: `appearance: auto`, the member's measurements
+  (2.75 × 2rem) so the same choice is the same size on both surfaces, and the swatch shadow
+  parts carry the padding (`::-webkit-color-swatch-wrapper`, `::-webkit-color-swatch`,
+  `::-moz-color-swatch` — they are named differently per engine, so all of them). ⚠️ **The
+  border is not decoration**: without it a light choice — white on `--be-surface` — disappears
+  completely. **Not verified live.**
+
+- **BE-INPUT-001** — added 2026-08-19, same finding. **`.be-input` is the standalone control**
+  — a field that stands outside a form layout (a filter in a header slot, a select in a rail,
+  a search box in a toolbar). It did not exist: `.be-form__field input|select` styles a control
+  by its POSITION in the modal grid, and axo3's `tree.hc2` had been writing `class="be-input"`
+  for a week against no rule at all. ⚠️ **A class name that matches no rule fails silently** —
+  combined with NORMALIZE-CHOICE-001 the selects rendered as bare text on the band, with no
+  border and no caret, and nothing said so. `.be-input` now carries border, radius, padding,
+  focus ring, placeholder colour and a `--sm` modifier; `select.be-input` draws its own caret
+  as a background image so it looks the same in every browser. ⚠️ The caret is **one mid
+  grey**, not a per-theme pair: a `background-image` data-URI cannot read `currentColor`, so a
+  token-coloured caret would mean twelve definitions (six palettes × two themes) that drift
+  apart at the first new palette. Override `--be-select-caret` where a different one is
+  wanted. The option list itself is drawn by the operating system — only its ground and text
+  can be named, and only where the browser honours it. **Not verified live.**
+
 - **LIST-DROP-STAGES-001** — added 2026-08-09. **One drop stage does not reach a phone.** Found
   live on the backup pilot: below ~495px the page pushed open instead of the list giving way.
   The arithmetic — `--be-list-cols-sm` `minmax(10rem,1fr) 9rem 6rem` = 400px, the `⋮` slot
