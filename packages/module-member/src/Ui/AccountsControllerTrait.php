@@ -44,17 +44,62 @@ trait AccountsControllerTrait
         return DI::getRequest()->getBaseUrl() . $path;
     }
 
+    /**
+     * The set this mount shows. A host narrows it: AXO3 mounts one list per way
+     * in — open registration, invitation, rejected — so the operator never sorts
+     * one long list by eye to find what waits for HIM (B10 v1.17.0).
+     *
+     * @return list<\Z77\Module\Member\Entities\MemberAccount>
+     */
+    protected function memberListRows(): array
+    {
+        return $this->memberAccounts()->all();
+    }
+
+    /** Heading of the list — a narrowed mount says what it shows. */
+    protected function memberListTitle(): string
+    {
+        return 'Member-Konten';
+    }
+
+    /** The sentence for the empty list. Belongs to the mount, not to the trait. */
+    protected function memberListEmpty(): string
+    {
+        return 'Keine Registrierungen vorhanden.';
+    }
+
+    /**
+     * URL root of THIS mount — every row button and every modal form is built
+     * from it.
+     *
+     * ⚠️ It used to be hard-coded as '/backend/service/member-accounts' in four
+     * templates. With a second mount that is a silent trap: the deed lands (the
+     * action is the same code), but the `reload` afterwards refreshes the FIRST
+     * mount's list — the operator watches a page that never changes and clicks
+     * again.
+     */
+    protected function memberListBase(): string
+    {
+        return '/backend/service/member-accounts';
+    }
+
     protected function listAction(): HtmlResponse
     {
         // Waiting decisions first: confirmed accounts are the operator's queue.
         $order = ['confirmed' => 0, 'registered' => 1, 'active' => 2];
-        $rows  = $this->memberAccounts()->all();
+        $rows  = $this->memberListRows();
         usort($rows, static fn($a, $b) =>
             [$order[$a->getState()] ?? 9, $a->getCreatedAt()] <=> [$order[$b->getState()] ?? 9, $b->getCreatedAt()]);
 
         return $this->html([
             'accounts'     => $rows,
             'tenantLabels' => $this->memberTenantLabels($rows),
+            // ⚠️ Deliberately NOT named `title`/`path`: TemplateRenderer does
+            // extract(..., EXTR_SKIP), and a context key that collides with an
+            // existing variable is dropped WITHOUT a word.
+            'actionBase'   => $this->memberListBase(),
+            'listTitle'    => $this->memberListTitle(),
+            'listEmpty'    => $this->memberListEmpty(),
         ]);
     }
 
@@ -209,6 +254,7 @@ trait AccountsControllerTrait
             // The activation modal has to repeat the create-or-attach sentence:
             // it is the last screen before the irreversible half of the decision.
             'tenantLabels' => $this->memberTenantLabels([$account]),
+            'actionBase'   => $this->memberListBase(),
         ]);
         $this->layoutManager->addPartials($template, 'Backend/AccountsController', self::MEMBER_NS);
 

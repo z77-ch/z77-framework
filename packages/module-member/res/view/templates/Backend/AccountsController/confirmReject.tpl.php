@@ -7,7 +7,7 @@
  * @var string $entityCsrf
  */
 ?>
-<form data-fetch-post="/backend/service/member-accounts/reject">
+<form data-fetch-post="<?= e($actionBase ?? '/backend/service/member-accounts') ?>/reject">
     <input type="hidden" name="account_id"  value="<?= e((string)$account->getId()) ?>">
     <input type="hidden" name="entity_csrf" value="<?= e($entityCsrf) ?>">
     <div class="be-modal__header">

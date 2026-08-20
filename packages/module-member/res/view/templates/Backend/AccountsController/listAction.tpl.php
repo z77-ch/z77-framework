@@ -18,12 +18,19 @@
  *
  * @var list<\Z77\Module\Member\Entities\MemberAccount> $accounts
  * @var array<string,array{name:string,master:string}>  $tenantLabels
+ * @var string $actionBase  URL root of THIS mount — see memberListBase()
+ * @var string $listTitle
+ * @var string $listEmpty
  */
 $badge = static fn(string $state): array => match ($state) {
     'confirmed' => ['badge--warning', 'bestätigt — wartet'],
     'active'    => ['badge--success', 'aktiv'],
     default     => ['badge--muted', 'registriert'],
 };
+// Fallbacks keep an older mount that passes none of the three working.
+$actionBase   = $actionBase ?? '/backend/service/member-accounts';
+$listTitle    = $listTitle  ?? 'Member-Konten';
+$listEmpty    = $listEmpty  ?? 'Keine Registrierungen vorhanden.';
 $tenantLabels = $tenantLabels ?? [];
 $tenantName   = static fn(string $ref): string => (string)($tenantLabels[$ref]['name'] ?? $ref);
 $tenantMaster = static fn(string $ref): string => (string)($tenantLabels[$ref]['master'] ?? '');
@@ -31,12 +38,12 @@ $tenantMaster = static fn(string $ref): string => (string)($tenantLabels[$ref]['
 <div class="be-list">
     <div class="be-list__section">
         <div class="be-list__section-header">
-            <h2 class="be-list__section-title">Member-Konten</h2>
+            <h2 class="be-list__section-title"><?= e($listTitle) ?></h2>
             <span class="be-list__section-badge"><?= count($accounts) ?></span>
         </div>
         <div class="be-tree be-tree--hub">
             <?php if (empty($accounts)): ?>
-            <p style="font-size:.8rem;color:var(--be-muted,#94a3b8);padding:.5rem">Keine Registrierungen vorhanden.</p>
+            <p style="font-size:.8rem;color:var(--be-muted,#94a3b8);padding:.5rem"><?= e($listEmpty) ?></p>
             <?php endif; ?>
             <?php foreach ($accounts as $account): ?>
             <?php [$badgeClass, $badgeLabel] = $badge($account->getState()); ?>
@@ -89,17 +96,17 @@ $tenantMaster = static fn(string $ref): string => (string)($tenantLabels[$ref]['
                         <?php if ($account->isConfirmed()): ?>
                         <button type="button" class="be-btn be-btn--sm"
                                 title="Konto aktiv schalten — erzeugt die Projekt-Anbindung und sendet die Freischalt-Mail"
-                                data-fetch-get="/backend/service/member-accounts/confirm-activate?id=<?= e(rawurlencode((string)$account->getId())) ?>">Freischalten</button>
+                                data-fetch-get="<?= e($actionBase) ?>/confirm-activate?id=<?= e(rawurlencode((string)$account->getId())) ?>">Freischalten</button>
                         <?php endif; ?>
                         <?php if (!$account->isActive()): ?>
                         <button type="button" class="be-btn be-btn--ghost be-btn--sm"
                                 title="Konto löschen — ohne automatische Mail"
-                                data-fetch-get="/backend/service/member-accounts/confirm-reject?id=<?= e(rawurlencode((string)$account->getId())) ?>">Ablehnen</button>
+                                data-fetch-get="<?= e($actionBase) ?>/confirm-reject?id=<?= e(rawurlencode((string)$account->getId())) ?>">Ablehnen</button>
                         <?php endif; ?>
                         <?php if ($account->hasTotp()): ?>
                         <button type="button" class="be-btn be-btn--ghost be-btn--sm"
                                 title="Zwei-Faktor-Schutz entfernen — nur bei verlorenem Gerät"
-                                data-fetch-get="/backend/service/member-accounts/confirm-totp-reset?id=<?= e(rawurlencode((string)$account->getId())) ?>">2FA-Reset</button>
+                                data-fetch-get="<?= e($actionBase) ?>/confirm-totp-reset?id=<?= e(rawurlencode((string)$account->getId())) ?>">2FA-Reset</button>
                         <?php endif; ?>
                     </span>
                 </div>

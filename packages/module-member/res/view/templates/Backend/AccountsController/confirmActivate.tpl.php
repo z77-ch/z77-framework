@@ -17,7 +17,7 @@ $attaches = $ref !== '';
 $name     = (string)(($tenantLabels ?? [])[$ref]['name'] ?? $ref);
 $master   = (string)(($tenantLabels ?? [])[$ref]['master'] ?? '');
 ?>
-<form data-fetch-post="/backend/service/member-accounts/activate">
+<form data-fetch-post="<?= e($actionBase ?? '/backend/service/member-accounts') ?>/activate">
     <input type="hidden" name="account_id"  value="<?= e((string)$account->getId()) ?>">
     <input type="hidden" name="entity_csrf" value="<?= e($entityCsrf) ?>">
     <div class="be-modal__header">
