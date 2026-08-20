@@ -11,6 +11,17 @@ use Z77\Core\Controller\AbstractBaseController,
 
 abstract class BackendAbstractController extends AbstractBaseController
 {
+    /**
+     * Kanonischer Pfad des Navigations-Eintrags, unter dem die Bildschirme
+     * dieses Controllers stehen — fuer Seiten, die keinen eigenen Eintrag
+     * haben (NAV-CURSOR-001). Leer = der Bildschirm hat seinen eigenen, oder
+     * der Geschwister-Fallback reicht.
+     *
+     * Beispiel: `estate/tree` und `estate/widgets` sind Reiter EINES Mandanten,
+     * also steht ihr Platz bei `/backend/service/tenant/list`.
+     */
+    protected const NAV_CURSOR = '';
+
     use RouteInfoTrait;
 
     protected const NAMESPACE = 'Z77\\Module\\Backend';
@@ -105,13 +116,23 @@ abstract class BackendAbstractController extends AbstractBaseController
 
         $this->loadHeaderSlots();
 
+        // Wo dieser Bildschirm im Menue steht, wenn er keinen eigenen Eintrag
+        // hat (NAV-CURSOR-001). Leer = nichts zu tun; ein Bildschirm MIT
+        // eigenem Eintrag bleibt ohnehin unberuehrt.
+        if (static::NAV_CURSOR !== '') {
+            DI::getNavigationService()->setUiCursor(static::NAV_CURSOR);
+        }
+
         return parent::html($context);
     }
 
     /**
      * Shell rebuild Phase 2 — header-slot auto-loader. For the CURRENT controller/action this
-     * loads convention partials into the shell's aligned header band (body sections hc1/hc2/hc3)
-     * IF the files exist: `{Group}/{Controller}/{action}.hc1|hc2|hc3.tpl.php`. A view thus only
+     * loads convention partials into the shell's aligned header band (body sections
+     * hc1/hc2/hc3/tabs) IF the files exist:
+     * `{Group}/{Controller}/{action}.hc1|hc2|hc3|tabs.tpl.php`. `tabs` is the tab row (B10
+     * v1.17.0) — unlike the other three it renders only when the file exists, because tabs
+     * belong to the screen, not to the shell. A view thus only
      * DROPS IN the partial file(s) — no per-action `addPartials` boilerplate; every backend area
      * is wired identically. The partial is rendered with the full action context (HtmlView renders
      * every section with the same data), so it can read the action's view-model vars. A view with
@@ -133,7 +154,7 @@ abstract class BackendAbstractController extends AbstractBaseController
         $action = preg_replace('/Action$/', '', $handler->getCurrentActionMethod());
         $finder = DI::getFileFinder();
 
-        foreach (['hc1', 'hc2', 'hc3'] as $slot) {
+        foreach (['hc1', 'hc2', 'hc3', 'tabs'] as $slot) {
             $file = $action . '.' . $slot;   // e.g. "list.hc1"
             if ($finder->getFirstTplMatch($dir . '/' . $file . '.tpl.php', self::NAMESPACE, throwError: false) !== null) {
                 $this->layoutManager->addPartials($file, $dir, self::NAMESPACE, $slot);

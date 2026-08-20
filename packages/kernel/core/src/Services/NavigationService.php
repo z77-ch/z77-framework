@@ -116,6 +116,44 @@ class NavigationService
     }
 
     /**
+     * A page WITHOUT an entry of its own names where it belongs in the menu
+     * (NAV-CURSOR-001). The sibling fallback in {@see resolveCurrent()} only
+     * reaches pages whose controller is listed — as soon as a screen becomes a
+     * TAB of some object, its controller has no listed entry at all, and the
+     * left column would go empty (AXO3: `estate/tree` under the tenant tabs).
+     *
+     * Called from the controller, so it lands after resolveUiCurrent() and
+     * before anything renders. Both cursor fields are set: `uiCurrent` is what
+     * the subnav reads, `cursorFallback` what a later resolveUiCurrent() would
+     * start from.
+     *
+     * ⚠️ `$current` is NOT touched — it drives the SEO metadata and the
+     * canonical path. A page borrowing another entry's canonical URL would be
+     * a lie told to search engines, not a menu highlight. Same reason the
+     * sibling fallback keeps its hands off it.
+     *
+     * ⚠️ A page that HAS its own entry is left alone: its own position is
+     * always the better one, and a stray call must not move it.
+     */
+    public function setUiCursor(string $canonicalPath): void
+    {
+        if ($this->current !== null) {
+            return;
+        }
+
+        $entry = $this->findByPath($canonicalPath);
+        // Inactive entries are skipped for the same reason the sibling fallback
+        // skips them: `iterateTree()` never yields them, so a cursor sitting on
+        // one would find no section either — and the column stays empty.
+        if ($entry === null || !$entry->isActive()) {
+            return;
+        }
+
+        $this->cursorFallback = $entry;
+        $this->uiCurrent      = $entry;
+    }
+
+    /**
      * Resolves the routing target ($current) for the matched 4-tuple. Since Phase 4
      * (ADR-015) entries carry no `params` — matching is the bare 4-tuple, first hit.
      *

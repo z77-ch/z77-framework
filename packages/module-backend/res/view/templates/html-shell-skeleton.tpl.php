@@ -29,7 +29,12 @@
     <?= $iconSprite ?? '' ?>
     <?= $systemBanner ?? '' ?>
     <?= $noindexBanner ?? '' ?>
-    <div class="be-shell" data-shell data-z77-split-root>
+    <?php /* ⚠️ Die Klasse sagt, DASS es eine Reiter-Zeile gibt. Auf dem Telefon rechnet
+             sich der Navigations-Schub unter Band und Krume — mit Reitern eine Zeile
+             tiefer, und `calc()` kann eine Zeile, die es nur manchmal gibt, nicht blind
+             mitzaehlen. Derselbe Ausdruck wie unten, damit beide nie auseinanderlaufen. */ ?>
+    <?php $hasTabs = trim((string)($tabs ?? '')) !== ''; ?>
+    <div class="be-shell<?= $hasTabs ? ' be-shell--tabs' : '' ?>" data-shell data-z77-split-root>
         <?= $shellTopbar ?? '' ?>
         <?php /* Header-Band mit den Slots hc1 (über Spalte 1) + hc2 (über Spalte 2):
                  Controller/Action-Partials (Body-Sektionen `hc1`/`hc2`).
@@ -50,6 +55,23 @@
             <div class="be-shell-band__slot be-shell-band__slot--1"><?= $hc1 ?? '' ?></div>
             <div class="be-shell-band__slot be-shell-band__slot--2"><?= $hc2 ?? '' ?></div>
         </div>
+        <?php /* Reiter-Zeile (Slot `tabs`, B10 v1.17.0): WELCHE Ansicht eines Gegenstands man
+                 sieht — eine Ebene ueber hc2, das die Werkzeuge der gewaehlten Ansicht traegt.
+
+                 ⚠️ Anders als Band und Krumen-Zeile rendert diese Zeile NICHT immer. Sie gehoert
+                 zum Bildschirm, nicht zur Schale: ein Bildschirm ohne Reiter soll keinen Rahmen
+                 fuer eine Zeile bezahlen, die er nicht braucht. Ohne Zelle faellt die `auto`-Spur
+                 auf null zusammen; leer gerendert zoege ihr `border-bottom` einen Strich unter
+                 jeden Backend-Bildschirm. Alle anderen Zellen nennen ihre Gitterzeile selbst,
+                 darum verschiebt das nichts. */ ?>
+        <?php /* trim(): eine Reiter-Vorlage, die sich selbst abschaltet, liefert Leerraum —
+                 und Leerraum ist nicht empty(). Ungetrimmt entstuende eine leere Zeile mit Rahmen. */ ?>
+        <?php if ($hasTabs): ?>
+        <div class="be-shell-tabs">
+            <div class="be-shell-tabs__slot be-shell-tabs__slot--1"></div>
+            <div class="be-shell-tabs__slot be-shell-tabs__slot--2"><?= $tabs ?></div>
+        </div>
+        <?php endif; ?>
         <?php /* Crumb line (hc3, ADR-033): position and state, its own slim row —
                  renders ALWAYS for the same reason the band does (no height jump
                  between screens). A screen without an own hc3 template gets the

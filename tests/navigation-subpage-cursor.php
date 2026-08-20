@@ -166,6 +166,48 @@ $nav->resolveUiCurrent(null);
 check('an inactive sibling does not become the cursor — iterateTree() skips it, so the section would stay empty anyway',
     $nav->getUiCurrent() === null);
 
+echo "4. a page names its own place (NAV-CURSOR-001)\n";
+
+// The case the sibling fallback cannot reach: a screen becomes a TAB of some
+// object, so its controller has no listed entry at all any more. AXO3:
+// `estate/tree` under the tenant tabs, once «Bestand» left the menu.
+$nav = $service();
+$nav->resolveCurrent('backend', 'service', 'archiv', 'detail');   // only an INACTIVE entry exists
+$nav->resolveUiCurrent(null);
+check('without the hint such a page has no cursor at all',
+    $nav->getUiCurrent() === null);
+
+$nav->setUiCursor('/backend/service/estate/list');
+check('naming an entry gives it the cursor',
+    $nav->getUiCurrent()?->getId() === $list->getId());
+// ⚠️ The whole reason the sibling fallback keeps its hands off $current: SEO
+// metadata and the canonical path hang off it.
+check('and $current stays null — no page inherits another one\'s canonical URL',
+    $nav->getCurrent() === null);
+check('the section resolves again — that is what the subnav needs',
+    $nav->getActiveSectionBySlot('backend-main')?->getId() === $section->getId());
+
+// A page WITH its own entry keeps it: its own position is always the better
+// one, and a stray call must not move it.
+$nav = $service();
+$nav->resolveCurrent('backend', 'service', 'estate', 'widgets');
+$nav->resolveUiCurrent(null);
+$nav->setUiCursor('/backend/service/estate/list');
+check('a page that HAS its own entry is left alone',
+    $nav->getUiCurrent()?->getId() === $widgets->getId());
+
+// Nothing is guessed here either.
+$nav = $service();
+$nav->resolveCurrent('backend', 'service', 'archiv', 'detail');
+$nav->resolveUiCurrent(null);
+$nav->setUiCursor('/backend/service/gibtsnicht/list');
+check('an unknown path changes nothing',
+    $nav->getUiCurrent() === null);
+
+$nav->setUiCursor('/backend/service/archiv/list');   // exists, but inactive
+check('and an INACTIVE target is refused — iterateTree() skips it, so the column would stay empty',
+    $nav->getUiCurrent() === null);
+
 echo "\n{$pass} passed, {$fail} failed\n";
 
 if ($fail === 0) {

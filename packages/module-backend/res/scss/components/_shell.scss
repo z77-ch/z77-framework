@@ -12,6 +12,7 @@
     --shell-bar:   48px;   // topbar height
     --shell-band:  46px;   // header band height (hc1 | hc2)
     --shell-crumb: 32px;   // crumb line height (hc3) — slimmer, it carries smaller type
+    --shell-tabs:  38px;   // tab row — rendered ONLY by screens that carry tabs
 
     position:              relative;
     height:                100dvh;
@@ -20,12 +21,17 @@
     color:                 var(--be-text);
     display:               grid;
     grid-template-columns: var(--shell-c1) minmax(0, 1fr);
-    // Four rows: topbar, header band, crumb line, columns (ADR-033). The band is its OWN row
-    // spanning both columns rather than a child of each — see the skeleton for why (hc1 carries
-    // the primary action and used to disappear into the mobile drawer with column 1). The crumb
-    // line follows the same construction and renders ALWAYS, for the same reason the band does:
-    // screens must not start at different heights.
-    grid-template-rows:    var(--shell-bar) var(--shell-band) var(--shell-crumb) minmax(0, 1fr);
+    // Five rows: topbar, header band, TAB ROW, crumb line, columns (ADR-033). The band is its
+    // OWN row spanning both columns rather than a child of each — see the skeleton for why (hc1
+    // carries the primary action and used to disappear into the mobile drawer with column 1). The
+    // crumb line follows the same construction and renders ALWAYS, for the same reason the band
+    // does: screens must not start at different heights.
+    //
+    // The tab row is the ONE exception, and deliberately so: tabs belong to the SCREEN, not to the
+    // shell — they switch which view of one object you are looking at, a level above the tools in
+    // hc2. A screen without tabs renders no cell at all, and an `auto` track with no item in it is
+    // exactly 0 high. Every other cell names its row explicitly, so nothing shifts.
+    grid-template-rows:    var(--shell-bar) var(--shell-band) auto var(--shell-crumb) minmax(0, 1fr);
 }
 
 // Shell body base — self-contained, replaces the legacy `body.backend` from
@@ -41,7 +47,7 @@ body.backend {
 
 // ── Columns ────────────────────────────────────────────────────────────────────
 .be-shell-col {
-    grid-row:  4;
+    grid-row:  5;
     min-width: 0;
     min-height: 0;
     overflow:  auto;
@@ -67,6 +73,7 @@ body.backend {
 .be:not([data-be-theme="dark"]) .be-shell-col--1,
 .be:not([data-be-theme="dark"]) .be-shell-band__slot--1,
 .be:not([data-be-theme="dark"]) .be-shell-crumb__slot--1,
+.be:not([data-be-theme="dark"]) .be-shell-tabs__slot--1,
 .be:not([data-be-theme="dark"]) .be-shell-topbar__mod {            // werkbank — indigo
     --be-nav:#211d45; --be-text:#eae9f7; --be-muted:#a4a1c6; --be-line:#3a3563;
     --be-surface:#2a2650; --be-surface2:#322d5a; --be-accent:#a5a3fb; --be-accent-soft:#363168; --be-on-accent:#211d45;
@@ -74,30 +81,35 @@ body.backend {
 .be[data-be-palette="citrus"]:not([data-be-theme="dark"]) .be-shell-col--1,
 .be[data-be-palette="citrus"]:not([data-be-theme="dark"]) .be-shell-band__slot--1,
 .be[data-be-palette="citrus"]:not([data-be-theme="dark"]) .be-shell-crumb__slot--1,
+.be[data-be-palette="citrus"]:not([data-be-theme="dark"]) .be-shell-tabs__slot--1,
 .be[data-be-palette="citrus"]:not([data-be-theme="dark"]) .be-shell-topbar__mod {   // grün
     --be-nav:#1f2f16; --be-text:#ebf4e3; --be-muted:#a9bd9e; --be-line:#364d2d; --be-surface:#293e22; --be-surface2:#324a2b; --be-accent:#a3e635; --be-accent-soft:#313f22; --be-on-accent:#1f2f16;
 }
 .be[data-be-palette="coral"]:not([data-be-theme="dark"]) .be-shell-col--1,
 .be[data-be-palette="coral"]:not([data-be-theme="dark"]) .be-shell-band__slot--1,
 .be[data-be-palette="coral"]:not([data-be-theme="dark"]) .be-shell-crumb__slot--1,
+.be[data-be-palette="coral"]:not([data-be-theme="dark"]) .be-shell-tabs__slot--1,
 .be[data-be-palette="coral"]:not([data-be-theme="dark"]) .be-shell-topbar__mod {    // koralle
     --be-nav:#37201a; --be-text:#f7e7e0; --be-muted:#c8a99e; --be-line:#573830; --be-surface:#452b23; --be-surface2:#52362c; --be-accent:#ff9070; --be-accent-soft:#4c2d22; --be-on-accent:#37201a;
 }
 .be[data-be-palette="lagune"]:not([data-be-theme="dark"]) .be-shell-col--1,
 .be[data-be-palette="lagune"]:not([data-be-theme="dark"]) .be-shell-band__slot--1,
 .be[data-be-palette="lagune"]:not([data-be-theme="dark"]) .be-shell-crumb__slot--1,
+.be[data-be-palette="lagune"]:not([data-be-theme="dark"]) .be-shell-tabs__slot--1,
 .be[data-be-palette="lagune"]:not([data-be-theme="dark"]) .be-shell-topbar__mod {   // türkis
     --be-nav:#143038; --be-text:#ddeff2; --be-muted:#9ec0c6; --be-line:#2e5863; --be-surface:#1d3f49; --be-surface2:#244c57; --be-accent:#35d4e6; --be-accent-soft:#1c3f48; --be-on-accent:#143038;
 }
 .be[data-be-palette="beere"]:not([data-be-theme="dark"]) .be-shell-col--1,
 .be[data-be-palette="beere"]:not([data-be-theme="dark"]) .be-shell-band__slot--1,
 .be[data-be-palette="beere"]:not([data-be-theme="dark"]) .be-shell-crumb__slot--1,
+.be[data-be-palette="beere"]:not([data-be-theme="dark"]) .be-shell-tabs__slot--1,
 .be[data-be-palette="beere"]:not([data-be-theme="dark"]) .be-shell-topbar__mod {    // beere
     --be-nav:#371828; --be-text:#f6e1ea; --be-muted:#cca4b7; --be-line:#572c42; --be-surface:#452030; --be-surface2:#52273b; --be-accent:#f472a6; --be-accent-soft:#4a2234; --be-on-accent:#371828;
 }
 .be[data-be-palette="sonne"]:not([data-be-theme="dark"]) .be-shell-col--1,
 .be[data-be-palette="sonne"]:not([data-be-theme="dark"]) .be-shell-band__slot--1,
 .be[data-be-palette="sonne"]:not([data-be-theme="dark"]) .be-shell-crumb__slot--1,
+.be[data-be-palette="sonne"]:not([data-be-theme="dark"]) .be-shell-tabs__slot--1,
 .be[data-be-palette="sonne"]:not([data-be-theme="dark"]) .be-shell-topbar__mod {    // sonne
     --be-nav:#302211; --be-text:#f6ecd7; --be-muted:#c7b492; --be-line:#504028; --be-surface:#3d301b; --be-surface2:#493a23; --be-accent:#f5b528; --be-accent-soft:#43331b; --be-on-accent:#302211;
 }
@@ -137,6 +149,74 @@ body.backend {
 }
 .be-shell-band__slot--2 { background: var(--be-bg); }
 
+// ── Tab row (slot `tabs`, B10 v1.17.0) ─────────────────────────────────────
+// Which VIEW of one object you are looking at — a level above hc2, which carries the tools of
+// the view you picked. They are separated because they are separate: mixing them puts «Bestand»
+// next to «Liegenschaft sichtbar», and the eye can no longer tell the switch of context from the
+// switch of a value (ADR-033).
+//
+// ⚠️ Unlike the band and the crumb line this row does NOT render always. It belongs to the screen,
+// and a screen without tabs must not pay a border for a row it has no use for — the skeleton omits
+// the cell entirely, and the `auto` track collapses to zero. Were it rendered empty, its
+// `border-bottom` would draw a stray line under every backend screen there is.
+.be-shell-tabs {
+    grid-column:           1 / -1;
+    grid-row:              3;
+    display:               grid;
+    grid-template-columns: var(--shell-c1) minmax(0, 1fr);
+    border-bottom:         1px solid var(--be-line);
+    z-index:               2;
+}
+.be-shell-tabs__slot {
+    display:     flex;
+    align-items: stretch;
+    height:      var(--shell-tabs);
+    padding:     0 var(--space-3);
+    min-width:   0;
+    white-space: nowrap;
+}
+// Slot 1 caps the dark island, exactly like the band and the crumb line do.
+.be-shell-tabs__slot--1 {
+    background:   var(--be-nav, var(--be-surface));
+    border-right: 1px solid var(--be-line);
+    padding:      0;
+}
+.be-shell-tabs__slot--2 { background: var(--be-bg); }
+
+// The tabs themselves. Same build as the member area's `.me-tabs`: the active one is marked by a
+// line on the shared bottom edge, not by a filled box — a tab is a position, not a button.
+//
+// ⚠️ NOT `.be-tabs`. That name was taken long before this row existed — `_list.scss` uses it for
+// the PILL strip that groups a listing (navigation groups, metadata), and it ships later in
+// base.css. Same name, same specificity, later wins: the pill rule's `margin-top: 1rem` +
+// `padding-top: 1rem` pushed this row's tabs straight out of their 38px cell, and they were
+// invisible while the markup looked perfectly correct.
+.be-viewtabs {
+    display:     flex;
+    align-items: stretch;
+    align-self:  stretch;
+    gap:         var(--space-1);
+}
+.be-viewtabs__tab {
+    display:       inline-flex;
+    align-items:   center;
+    padding:       0 var(--space-3);
+    border:        0;
+    border-bottom: 2px solid transparent;
+    background:    none;
+    color:         var(--be-muted);
+    font:          inherit;
+    font-size:     var(--font-size-sm);
+    font-weight:   500;
+    text-decoration: none;
+    cursor:        pointer;
+}
+.be-viewtabs__tab:hover { color: var(--be-text); }
+.be-viewtabs__tab.is-active {
+    color:               var(--be-text);
+    border-bottom-color: var(--be-accent);
+}
+
 // ── Crumb line (hc3) ───────────────────────────────────────────────────────────
 // Its own slim row under the band (ADR-033): POSITION and its state, nothing else.
 // Same construction as the band — an own grid row mirroring the column split; slot 1
@@ -144,7 +224,7 @@ body.backend {
 // without an own hc3 template gets the navigation-derived default crumb (skeleton).
 .be-shell-crumb {
     grid-column:           1 / -1;
-    grid-row:              3;
+    grid-row:              4;
     display:               grid;
     grid-template-columns: var(--shell-c1) minmax(0, 1fr);
     border-bottom:         1px solid var(--be-line);
@@ -510,7 +590,9 @@ body.backend {
 // look, the cursor and the drag behaviour (shared primitive). Keeping the look here too
 // would be a second source of truth for the same 4px of UI.
 .be-shell__resizer {
-    grid-row:     4;
+    // ⚠️ Zieht die Spalte, gehoert also in die SPALTEN-Zeile. Blieb beim
+    // Einzug der Reiter-Zeile auf 4 zurueck und sass damit in der Krume.
+    grid-row:     5;
     grid-column:  2;
     justify-self: start;
     margin:       0 0 0 -5px;
@@ -566,7 +648,20 @@ body.backend {
     .be-shell-crumb__slot--2 { flex: 1; min-width: 0; }
     .be-shell-crumb__slot--1 { display: none; }
 
+    // The tab row does the same. It scrolls sideways rather than wrapping: four
+    // tabs do not fit a phone, and a second tab line would push the content down
+    // twice as far.
+    .be-shell-tabs { display: flex; align-items: stretch; }
+    .be-shell-tabs__slot--2 { flex: 1; min-width: 0; overflow-x: auto; }
+    .be-shell-tabs__slot--1 { display: none; }
+
     // Drawer starts BELOW band + crumb line, so both stay reachable while it is open.
+    // ⚠️ With a tab row it has to start lower still — and that row exists only on some
+    // screens, so `calc()` cannot simply count it in. The skeleton marks the shell.
+    .be-shell--tabs .be-shell-col--1 {
+        top:    calc(var(--shell-bar) + var(--shell-band) + var(--shell-tabs) + var(--shell-crumb));
+        height: calc(100% - var(--shell-bar) - var(--shell-band) - var(--shell-tabs) - var(--shell-crumb));
+    }
     .be-shell-col--1 {
         position:      absolute;
         top:           calc(var(--shell-bar) + var(--shell-band) + var(--shell-crumb));
