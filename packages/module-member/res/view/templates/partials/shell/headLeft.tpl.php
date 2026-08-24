@@ -10,10 +10,10 @@
  * The button sits flush with the rail edge — the cell ends where the seam
  * begins, so `margin-left: auto` puts it exactly on that line.
  *
- * ⚠️ On the dashboard the rail itself carries the areas, so the switcher is
- * redundant there and the controller omits `$areas`. That is the rule: in an
- * area the rail carries DATA and the switcher navigates; on the dashboard the
- * rail carries the NAVIGATION and the switcher is not needed.
+ * ⚠️ `$areas` empty means NO switcher, and that is for a page with no chrome
+ * at all (the widget preview). A page that merely repeats the areas elsewhere
+ * keeps it: the switcher is derived from the nav slot and can never miss an
+ * area, while any hand-written list drifts the moment a new area appears.
  *
  * @var string $areaName
  * @var array<int,array{name:string,url:string,active:bool}> $areas  empty = no switcher
@@ -34,7 +34,7 @@
                      `<use href>` auf eine Datei, die es nicht gibt, zeichnet
                      nichts. Darstellung wie `.be-icon`: Kontur in der
                      Textfarbe, gefuellt wird nichts. */ ?>
-            <svg class="me-icon" width="20" height="20" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <svg class="me-icon" width="24" height="24" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
                 <rect x="3" y="3" width="7" height="7" rx="1"/>
                 <rect x="14" y="3" width="7" height="7" rx="1"/>
                 <rect x="3" y="14" width="7" height="7" rx="1"/>

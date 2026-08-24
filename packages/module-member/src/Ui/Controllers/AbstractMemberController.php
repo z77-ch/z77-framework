@@ -114,18 +114,44 @@ abstract class AbstractMemberController extends AbstractBaseController
      * because the new skeleton splits the header into two cells and neither of
      * them should have to query a service.
      *
-     * Two deliberate opt-outs:
-     *   `areas => []`   the dashboard — its RAIL carries the areas, so a second
-     *                   way to reach them in the same header would be noise.
-     *   `areaName`      a detail page names itself; without it the routed nav
-     *                   entry answers, and failing that the page title (the
-     *                   profile carries no nav entry of its own).
+     * The same loop builds the AREA RAIL, for a page that wants the areas as
+     * its left column (the dashboard). A caller asks for it by handing in
+     * `railMeta` — the numbers it wants hung on the areas — and gets back a
+     * `railItems` list whose names, links and ORDER come from the navigation.
+     * A caller with its own `railItems` (a list of snippets, a property tree)
+     * keeps them untouched.
+     *
+     * ⚠️ `railMeta` is addressed by the entry's ROUTING identity,
+     * `controller/action` — the two fields the backend form actually offers,
+     * compared trimmed and case-insensitively. NOT by {@see Navigation::$key}:
+     * that one is server-controlled (ADR-032 import identity) and stays NULL
+     * on every entry a human creates in the backend, so a binding on it would
+     * be silently dead on exactly the installation that matters (Peter,
+     * 2026-08-24 — the key is readable everywhere and settable nowhere).
+     * A number for an entry that is not in the slot is simply not shown; an
+     * entry with no number renders as a plain row instead of a stacked one.
+     *
+     * Three deliberate opt-outs:
+     *   `areas => []`     a page with no chrome at all (the widget preview).
+     *                     NOT for a page that merely lists the areas elsewhere:
+     *                     this derivation cannot miss one, a hand-written rail
+     *                     can — and did (nav 44 on the dashboard).
+     *   `railItems`       set by the caller: its rail carries its own data.
+     *   `areaName`        a detail page names itself; without it the routed nav
+     *                     entry answers, and failing that the page title (the
+     *                     profile carries no nav entry of its own).
      */
     private function addAreas(array &$context): void
     {
         $navigation = DI::getInstance()->get('NavigationService');
         $current    = '';
         $areas      = [];
+        $rail       = [];
+
+        $meta = [];
+        foreach ((array)($context['railMeta'] ?? []) as $target => $text) {
+            $meta[strtolower(trim((string)$target))] = (string)$text;
+        }
 
         foreach ($navigation->getBySlot('member-main') as $entry) {
             $active  = $navigation->isActive($entry);
@@ -136,11 +162,35 @@ abstract class AbstractMemberController extends AbstractBaseController
             ];
             if ($active) {
                 $current = $entry->getName();
+                // The area one is standing IN is not a row to go to. The
+                // switcher still lists it (marked active) — that panel says
+                // where one is, the rail says where one can go.
+                continue;
             }
+
+            $target = strtolower(trim($entry->getController() . '/' . $entry->getAction()));
+            $text   = $meta[$target] ?? null;
+            $rail[] = [
+                'name'    => $entry->getName(),
+                'url'     => $navigation->urlFor($entry),
+                'meta'    => $text,
+                // Stacked only WITH a number: an empty second line would be a
+                // taller row saying nothing.
+                'stacked' => $text !== null,
+            ];
         }
 
         if (!array_key_exists('areas', $context)) {
             $context['areas'] = $areas;
+        }
+
+        if (array_key_exists('railMeta', $context)) {
+            if (!array_key_exists('railItems', $context)) {
+                $context['railItems'] = $rail;
+            }
+            // Consumed — it never reaches a template, so nobody reads the raw
+            // map where the built list is meant.
+            unset($context['railMeta']);
         }
 
         if (!array_key_exists('areaName', $context)) {
