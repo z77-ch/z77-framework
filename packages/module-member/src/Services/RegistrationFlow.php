@@ -83,7 +83,10 @@ final class RegistrationFlow
             static fn(EmailMessage $mail): bool => DI::getEmailService()->send($mail),
             static function (MemberAccount $account): bool {
                 try {
-                    return DI::getEmailService()->sendForm(self::NOTIFY_FORM_KEY, ['account' => $account]);
+                    return DI::getEmailService()->sendForm(self::NOTIFY_FORM_KEY, [
+                        'account'    => $account,
+                        'notifyRows' => self::projectNotifyRows($account),
+                    ]);
                 } catch (\Throwable) {
                     return false; // form key not configured — the notification is opt-in
                 }
@@ -91,6 +94,33 @@ final class RegistrationFlow
             $confirmUrl,
             $fqcn !== '' ? static fn(MemberAccount $a): ?string => (new $fqcn())($a) : null,
         );
+    }
+
+    /**
+     * The project's extra lines for the operator notification (memberConfig
+     * `notifyRowsHook`). The module knows an account, not what a project hangs
+     * on one — so it asks, and prints whatever comes back.
+     *
+     * ⚠️ Never lets the caller fail. This mail is a courtesy; a hook that
+     * throws must not be the reason a confirmation or a redemption breaks.
+     *
+     * @return array<string,string>
+     */
+    public static function projectNotifyRows(MemberAccount $account): array
+    {
+        try {
+            $fqcn = (string)DI::getConfigManager()
+                ->getArrayConfig('App/Config/memberConfig', 'Z77\\Module\\Member')
+                ->get('notifyRowsHook', '');
+            if ($fqcn === '' || !class_exists($fqcn)) {
+                return [];
+            }
+            $rows = (new $fqcn())($account);
+
+            return is_array($rows) ? $rows : [];
+        } catch (\Throwable) {
+            return [];
+        }
     }
 
     /**

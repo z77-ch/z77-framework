@@ -61,6 +61,20 @@ return [
     // accounts always wait for an operator.
     'cleanupAfterDays' => 30,
 
+    // Extra lines the PROJECT wants in the operator notification («eine
+    // Registrierung wartet auf die Freischaltung»). FQCN of an invokable
+    // class `__invoke(MemberAccount): array<string,string>` — label => value.
+    //
+    // The module has nothing to add there: it knows an account, not what a
+    // project attaches to one. AXO3 uses it to say that a submitted drawing
+    // came along, so the operator activates with the full picture instead of
+    // getting a second mail about it. Absent = no extra lines.
+    //
+    // ⚠️ The values are printed and escaped, never interpreted. A hook that
+    // throws is swallowed: an operator notification must never be the reason
+    // a confirmation fails.
+    'notifyRowsHook' => '',
+
     // Background jobs this module offers to the runner (ADR-031). The key is
     // what a queue entry stores — never a class name or a script path, so a
     // backend form can only ever pick from this list.

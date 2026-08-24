@@ -123,7 +123,15 @@ final class InvitationFlow
                     // one, and the body says the rest.
                     return DI::getEmailService()->sendForm(
                         RegistrationFlow::NOTIFY_FORM_KEY,
-                        ['account' => $account, 'invite' => $invite],
+                        [
+                            'account' => $account,
+                            'invite'  => $invite,
+                            // Same project seam as the ordinary registration —
+                            // an invited person can have brought something
+                            // along too, and two cases of one mail must not
+                            // drift apart.
+                            'notifyRows' => RegistrationFlow::projectNotifyRows($account),
+                        ],
                         null,
                         self::NOTIFY_ROUTE_KEY
                     );
