@@ -21,6 +21,10 @@
  * @var string $actionBase  URL root of THIS mount — see memberListBase()
  * @var string $listTitle
  * @var string $listEmpty
+ * @var array<string,string> $rowNotes  account id -> one short sentence the MOUNT
+ *      wants on that row (memberRowNotes()). Neutral seam: the module does not
+ *      know what a project has to say about an account, only that a waiting
+ *      decision is better made with it than without.
  */
 $badge = static fn(string $state): array => match ($state) {
     'confirmed' => ['badge--warning', 'bestätigt — wartet'],
@@ -32,6 +36,7 @@ $actionBase   = $actionBase ?? '/backend/service/member-accounts';
 $listTitle    = $listTitle  ?? 'Member-Konten';
 $listEmpty    = $listEmpty  ?? 'Keine Registrierungen vorhanden.';
 $tenantLabels = $tenantLabels ?? [];
+$rowNotes     = $rowNotes ?? [];
 $tenantName   = static fn(string $ref): string => (string)($tenantLabels[$ref]['name'] ?? $ref);
 $tenantMaster = static fn(string $ref): string => (string)($tenantLabels[$ref]['master'] ?? '');
 ?>
@@ -93,6 +98,10 @@ $tenantMaster = static fn(string $ref): string => (string)($tenantLabels[$ref]['
 
                     <span class="be-tree__route" data-field="state" style="display:inline-flex;gap:.5rem;align-items:center">
                         <span class="badge <?= e($badgeClass) ?>"><?= e($badgeLabel) ?></span>
+                        <?php $note = $rowNotes[(string) $account->getId()] ?? ''; ?>
+                        <?php if ($note !== ''): ?>
+                        <span class="badge badge--info" data-field="note"><?= e($note) ?></span>
+                        <?php endif; ?>
                         <?php if ($account->isConfirmed()): ?>
                         <button type="button" class="be-btn be-btn--sm"
                                 title="Konto aktiv schalten — erzeugt die Projekt-Anbindung und sendet die Freischalt-Mail"

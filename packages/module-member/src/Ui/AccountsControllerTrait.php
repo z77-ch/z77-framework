@@ -83,6 +83,25 @@ trait AccountsControllerTrait
         return '/backend/service/member-accounts';
     }
 
+    /**
+     * One short sentence per account that the MOUNT wants on the row, keyed by
+     * account id. Empty by default — the module has nothing to say about an
+     * account beyond its state.
+     *
+     * The seam exists because a waiting decision is better made with the
+     * project's knowledge than without it: AXO3 marks the registrations that
+     * brought a drawing along, so the operator activates knowing there is a
+     * package hanging on that account (B5 stage D4). The template renders the
+     * note as an intent badge and escapes it; nothing here interprets it.
+     *
+     * @param  list<\Z77\Module\Member\Entities\MemberAccount> $rows
+     * @return array<string,string>
+     */
+    protected function memberRowNotes(array $rows): array
+    {
+        return [];
+    }
+
     protected function listAction(): HtmlResponse
     {
         // Waiting decisions first: confirmed accounts are the operator's queue.
@@ -97,6 +116,7 @@ trait AccountsControllerTrait
             // ⚠️ Deliberately NOT named `title`/`path`: TemplateRenderer does
             // extract(..., EXTR_SKIP), and a context key that collides with an
             // existing variable is dropped WITHOUT a word.
+            'rowNotes'     => $this->memberRowNotes($rows),
             'actionBase'   => $this->memberListBase(),
             'listTitle'    => $this->memberListTitle(),
             'listEmpty'    => $this->memberListEmpty(),

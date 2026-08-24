@@ -16,3 +16,7 @@
 .badge--danger  { background: var(--color-danger-bg);  color: var(--color-danger); }
 .badge--warning { background: var(--color-warning-bg); color: var(--color-warning); }
 .badge--muted   { background: var(--color-bg-surface); color: var(--color-text-muted); }
+// A note, not a state: the row says something the list itself does not know
+// (e.g. «Zeichnung dabei»). Intent colour, never a defect colour — the two
+// flash/popup families already use --color-info for exactly this register.
+.badge--info    { background: var(--color-info-bg);    color: var(--color-info); }
