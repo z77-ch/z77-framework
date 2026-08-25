@@ -139,12 +139,9 @@ data/project/axo3/widget-throttle/   loeschen
 data/project/axo3/zeichnen-throttle/ loeschen
 ```
 
-✅ **Die Konfiguration ist erledigt** (Peter, 2026-08-25) — axo3 und zihlundsee.
-
-Die drei toten Ordner liegen in der lokalen axo3-Arbeitskopie noch; sie sind
-wirkungslos (niemand liest sie mehr) und faerben nur noch das Full-Archiv, bis
-sie weg sind. Kein Datenverlust beim Loeschen: die Zaehler beginnen bei null,
-wer gerade gesperrt ist, ist danach frei.
+✅ **Beides erledigt** (Peter, 2026-08-25) — axo3 und zihlundsee, Configs und
+Ordner, nachgesehen. Kein Datenverlust: die Zaehler haben bei null begonnen,
+wer gesperrt war, ist frei.
 
 **Nur axo3 traegt sie.** Am 2026-08-25 nachgesehen: zihlundsee, archsult,
 propbase und das Skeleton haben keinen einzigen dieser Ordner — dort meldet
