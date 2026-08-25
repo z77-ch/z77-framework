@@ -16,9 +16,12 @@ return [
 
     // Project-relative paths excluded from the `full` backup. vendor/ and
     // node_modules/ are regenerable from composer.lock / package-lock.json;
+    // lib/ is scratch space the installation rebuilds by itself (page cache,
+    // throttle counters) and may be deleted at any time — the whole tree is
+    // named, so anything added under it later is covered without an edit here;
     // the backup dir itself is always excluded (recursion guard), listing it
     // here just documents that.
-    'fullExcludes' => ['vendor', 'node_modules', 'backup', 'lib/cache'],
+    'fullExcludes' => ['vendor', 'node_modules', 'backup', 'lib'],
 
     // Database for the `db` backup type — null = no database (the default;
     // the framework itself is file-based). To enable:

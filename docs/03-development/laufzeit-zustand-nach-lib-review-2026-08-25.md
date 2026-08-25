@@ -3,6 +3,15 @@
 **Datum:** 2026-08-25 · **Gegenstand:** [`laufzeit-zustand-nach-lib-bauplan.md`](laufzeit-zustand-nach-lib-bauplan.md)
 **Frage:** Kann das so gebaut werden?
 
+> **Nachtrag 2026-08-25, gebaut.** Umzug und Backup-Ausschluss sind erledigt.
+> Befund 1 wurde bestaetigt und umgesetzt: `fullExcludes` nennt jetzt `lib`
+> (Konstante, Seed-Datei, Skeleton) UND wurde in den beiden bestehenden
+> Installationen von Hand nachgezogen — als BACKUP-LIB-001 in
+> [`../topics/backup.md`](../topics/backup.md) festgehalten. Befund 2 (der
+> ueberzogene dritte Grund) ist beruecksichtigt: er steht in keinem Commit als
+> Begruendung. Offen bleiben Befund 3 (drei Kategorien statt zwei) und Befund 4
+> (der Name `lib`) — beide gehoeren in ADR-034, die noch fehlt.
+
 **Antwort: ja, der Umzug traegt — aber nicht mit der Begruendung und nicht mit
 dem Deploy, die der Bauplan nennt.** Vier Befunde, zwei davon blockierend.
 

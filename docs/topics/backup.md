@@ -37,7 +37,15 @@ frontends: the backend screen `/backend/service/backup/list` (new group
 |---|---|---|
 | `data` | the whole `data/` tree | includes `backendUsers.json` — hence the SUPER_USER gate |
 | `db` | SQL dump (v1: `mysqldump` via {@see MysqlDumper}) | only when the `database` block in `config/backup.inc.php` is set; otherwise UI shows "not configured", CLI no-ops with exit 0 |
-| `full` | project root minus `fullExcludes` | `vendor/`/`node_modules/` are regenerable from the lock files; the backup root itself is ALWAYS excluded (recursion guard) |
+| `full` | project root minus `fullExcludes` | `vendor/`/`node_modules/` are regenerable from the lock files; `lib/` is scratch space the installation rebuilds by itself; the backup root itself is ALWAYS excluded (recursion guard) |
+
+`lib/` is excluded as a WHOLE TREE, not member by member. It is the
+installation's scratch space — the page cache (`lib/cache/pages`), the throttle
+counters (`lib/throttle/*`) — and the rule is «everything below `lib/` may be
+deleted at any moment without losing information». Naming the tree means a
+future `lib/something` is covered the day it appears; the list that named
+`lib/cache` alone did not cover `lib/throttle` and put every counter into the
+full archive (BACKUP-LIB-001).
 
 Storage: `{project}/backup/{type}/YYYY-MM-DD_HHMMSS_{type}.zip` + a
 `*.meta.json` sidecar (trigger manual|cron, duration, status, file count).
@@ -110,8 +118,11 @@ moving.
 - When exposing backup actions in the backend → MUST keep every action `AuthRole::SUPER_USER` (the archive IS the user store) and mutations Fetch-POST (global CSRF) + per-archive entity token
 - When adding another CLI task → MUST follow ADR-028 (own `bin/` script in the owning package, Composer `bin`, boot only what it needs)
 - When changing what a `data` or `full` archive contains → MUST keep `data/framework/jobs` excluded (`BackupService::DATA_EXCLUDES`, applied to both types and NOT configurable); it is transient runtime state and it changes while the archive is being written (BACKUP-JOBS-001)
+- When adding a directory of disposable runtime state → MUST put it under `lib/` (page cache, throttle counters live there) and MUST NOT add it to `fullExcludes`: the whole `lib` tree is already named, and a second entry would only start the maintained-list problem again (BACKUP-LIB-001). If it may NOT be deleted at any moment, it does not belong under `lib/` — decide the location, not the exclude.
 
 ## known issues
+
+- **BACKUP-LIB-001**: don't assume a changed default reaches an existing installation. `fullExcludes` used to name `lib/cache` instead of `lib`, so when the throttle counters moved to `lib/throttle` (2026-08-25) they were back inside every full archive. `config/backup.inc.php` is seed-once — the installer writes it once and NEVER overwrites it — so changing `DEFAULT_EXCLUDES` and `backup.default.inc.php` only fixes installations that do not exist yet. Every existing installation carries its own copy and needs the line edited by hand; axo3 and zihlundsee were done on 2026-08-25. This is the general shape, not a one-off: any seed-once default that changes needs a per-installation pass, and the change is silent until someone opens an archive and finds what should not be in it.
 
 - **BACKUP-JOBS-001**: don't assume a data backup may contain `data/framework/jobs` — it must not, for two independent reasons. It is transient runtime state, so a restore would resurrect a queue of work from whenever the archive was taken (same argument that keeps a running job out of systemConfig, [`bootstrap.md`](bootstrap.md)). And it MOVES mid-archive: `ZipArchive` reads file contents at `close()`, not at `addFile()`, so `queue.json` being rename-replaced by the very backup job that is running fails the whole archive with `ZipArchive::close(): Read error`. Found 2026-08-07 when the backup types became jobs; fixed via `DATA_EXCLUDES`, applied to `data` and appended unconditionally to `fullExcludes` (the configured list is the operator's, this entry is not).
 

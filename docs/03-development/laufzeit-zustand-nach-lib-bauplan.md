@@ -6,11 +6,12 @@
 > ich jederzeit loeschen. `lib/cache` bleibt Cache, **`lib/throttle` ist das
 > Ziel**, und der Backup-Dienst bekommt die Ausnahme.
 
-Status: **Umzug gebaut am 2026-08-25, Backup-Teil offen.** Die Drosseln liegen
+Status: **gebaut am 2026-08-25, nur ADR-034 fehlt noch.** Die Drosseln liegen
 unter `lib/throttle/` (Framework: `member/`, `totp-guard/`; AXO3: `widget/`,
-`zeichnen/`). Was NOCH aussteht: die Backup-Excludes (`lib/cache` → `lib`) und
-die ADR-034 selbst. Zur Kritik am Bauplan — namentlich die Seed-once-Falle bei
-`fullExcludes` und der ueberzogene dritte Grund — siehe
+`zeichnen/`), und `fullExcludes` nennt `lib` statt `lib/cache` — in der
+Konstante, der Seed-Datei, dem Skeleton und von Hand in den beiden bestehenden
+Installationen (seed-once, siehe BACKUP-LIB-001 in
+[`../topics/backup.md`](../topics/backup.md)). Zur Kritik am Bauplan siehe
 [`laufzeit-zustand-nach-lib-review-2026-08-25.md`](laufzeit-zustand-nach-lib-review-2026-08-25.md).
 
 ## Warum — drei Gruende, der dritte ist der harte

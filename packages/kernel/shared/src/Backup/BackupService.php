@@ -15,7 +15,19 @@ final class BackupService
 {
     private const DEFAULT_DIR       = 'backup';
     private const DEFAULT_RETENTION = ['data' => 10, 'db' => 10, 'full' => 5];
-    private const DEFAULT_EXCLUDES  = ['vendor', 'node_modules', 'backup', 'lib/cache'];
+
+    /**
+     * `lib` — the whole tree, not `lib/cache`. Everything below `lib/` is
+     * scratch space the installation rebuilds by itself: the page cache, the
+     * throttle counters. It may be deleted at any moment without losing
+     * information, which is exactly what an archive has no reason to carry.
+     *
+     * Naming the tree instead of listing its members is the point: a future
+     * `lib/something` is covered the day it appears. The list would need
+     * maintaining, and the one time it was not, the throttle counters ended up
+     * in every full archive.
+     */
+    private const DEFAULT_EXCLUDES  = ['vendor', 'node_modules', 'backup', 'lib'];
 
     /**
      * Never part of a data backup, relative to `data/`: the job runtime state
