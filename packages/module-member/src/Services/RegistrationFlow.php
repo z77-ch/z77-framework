@@ -134,6 +134,12 @@ final class RegistrationFlow
      * the origin it was born with — the second click is not a second
      * registration, and overwriting it would rewrite history to make the
      * anti-oracle answer look real.
+     *
+     * $termsVersion is the version of the terms the form had someone tick
+     * (MemberAccount::acceptTerms). ⚠️ Like the origin it rides on a NEW
+     * account only, and for the same reason: the existing-account branch
+     * must stay indistinguishable from the new one, and a write there would
+     * be a side effect an outsider could measure.
      */
     public function register(
         string $email,
@@ -141,7 +147,8 @@ final class RegistrationFlow
         ?string $firstName,
         ?string $lastName,
         ?int $now = null,
-        ?string $origin = null
+        ?string $origin = null,
+        ?string $termsVersion = null
     ): bool {
         $now ??= time();
         if (!$this->throttle->allow($email, $now)) {
@@ -155,7 +162,7 @@ final class RegistrationFlow
             return true;
         }
 
-        $account = $this->accounts->register($email, $company, $firstName, $lastName, $now, $origin);
+        $account = $this->accounts->register($email, $company, $firstName, $lastName, $now, $origin, $termsVersion);
         if ($account === null) {
             // Raced: the address got its account between lookup and insert —
             // same answer as the existing-account branch above.

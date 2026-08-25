@@ -118,6 +118,29 @@ class MemberAccount
     #[Clean('nullable', 'text')]
     private ?string $suspendedAt = null;
 
+    /**
+     * Which version of the terms this account agreed to, and when.
+     *
+     * A project that puts a «I accept the terms» box into its registration
+     * form (RegisterFormDefinition is the override point) gets the agreement
+     * recorded here. No box, no version configured — both stay null and
+     * nothing changes.
+     *
+     * ⚠️ TWO fields, not one, and not `createdAt` reused: terms change, and
+     * then a signed-in customer agrees again to a NEW version. From that
+     * moment the date of the agreement and the date of the account are two
+     * different things, and the one that matters legally is this one.
+     *
+     * The version is an opaque label decided by the project (AXO3 uses the
+     * date of the wording, «2026-08-25»). The module never interprets it — it
+     * only has to come back out unchanged.
+     */
+    #[Clean('nullable', 'ident')]
+    private ?string $termsVersion = null;
+
+    #[Clean('nullable', 'text')]
+    private ?string $termsAcceptedAt = null;
+
     #[Clean('nullable', 'text')]
     private ?string $createdAt = null;
 
@@ -193,6 +216,28 @@ class MemberAccount
     public function getEmail(): string { return $this->email; }
     public function getCompany(): ?string { return $this->company; }
     public function getOrigin(): ?string { return $this->origin; }
+
+    public function getTermsVersion(): ?string { return $this->termsVersion; }
+    public function getTermsAcceptedAt(): ?string { return $this->termsAcceptedAt; }
+
+    /**
+     * Record an agreement. ⚠️ ONE method rather than two setters: a version
+     * without a date, or a date without a version, is worth nothing as a
+     * record — and two setters make exactly that state reachable.
+     *
+     * An empty version records nothing; that is the «no box configured» case
+     * and not an error.
+     */
+    public function acceptTerms(?string $version, ?int $now = null): void
+    {
+        $version = trim((string)$version);
+        if ($version === '') {
+            return;
+        }
+
+        $this->termsVersion    = mb_substr($version, 0, 40);
+        $this->termsAcceptedAt = date(DATE_ATOM, $now ?? time());
+    }
     public function getFirstName(): ?string { return $this->firstName; }
     public function getLastName(): ?string { return $this->lastName; }
     public function getState(): string { return $this->state; }

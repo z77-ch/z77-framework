@@ -76,7 +76,16 @@ $showRequiredNote = $requiredCount > 1 && $requiredCount === count($fields);
                     <label>
                         <input type="checkbox" name="<?= e($name) ?>" value="1" data-validate<?= $required($spec) ?>
                             aria-describedby="<?= e($hintId) ?>"<?= $invalid($name) ?><?= $form->isChecked($name) ? ' checked' : '' ?>>
-                        <span><?= e($spec['label']) ?></span>
+                        <?php /* `labelHtml` statt `label`: ein Kaestchen, das auf
+                                 Rechtstexte zeigt, braucht Links in seinem Label, und
+                                 `label` ist escaped.
+                                 ⚠️ Der Wert kommt aus der FormDefinition, also aus
+                                 CODE — niemals aus Request-Daten. Wer hier je etwas
+                                 durchreicht, das ein Besucher beeinflussen kann, hat
+                                 eine XSS-Luecke gebaut. Darum auch keine Sanitize-
+                                 Illusion: die Regel ist die Herkunft, nicht ein
+                                 Filter. */ ?>
+                        <span><?= ($spec['labelHtml'] ?? '') !== '' ? $spec['labelHtml'] : e($spec['label']) ?></span>
                     </label>
                 </div>
 

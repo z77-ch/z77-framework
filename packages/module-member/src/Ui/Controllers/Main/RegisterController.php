@@ -69,6 +69,7 @@ class RegisterController extends AbstractMemberController
                 (string)$valid->get('last_name') ?: null,
                 null,
                 $origin,
+                $valid->get('terms') ? $this->termsVersion() : null,
             );
         };
 
@@ -146,6 +147,25 @@ class RegisterController extends AbstractMemberController
      * without an entry simply shows nothing, which is also what happens when
      * somebody types a `?via=` of their own.
      */
+    /**
+     * The version label of the terms currently in force, from
+     * `memberConfig.terms.version`. Empty (the default) means this project has
+     * no terms box, and nothing is recorded.
+     *
+     * ⚠️ It comes from the CONFIG, never from the form. A hidden field would
+     * be the visitor's own claim about which wording they agreed to — and the
+     * whole point of recording it is that we can say which one it was.
+     */
+    private function termsVersion(): ?string
+    {
+        $terms = DI::getConfigManager()
+            ->getArrayConfig('App/Config/memberConfig', 'Z77\Module\Member')
+            ->get('terms', []);
+        $version = is_array($terms) ? trim((string)($terms['version'] ?? '')) : '';
+
+        return $version !== '' ? $version : null;
+    }
+
     private function originNote(?string $origin): string
     {
         if ($origin === null) {

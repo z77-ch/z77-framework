@@ -16,6 +16,7 @@ use Z77\Core\DI;
  *
  *   'email' => [
  *       'label'        => 'form.field.email',            // required (key or literal)
+ *       'labelHtml'    => '<a href="/agb">AGB</a> …',      // optional, printed UNESCAPED (code only)
  *       'type'         => 'email',                       // default 'text'
  *       'options'      => ['a' => 'Label A', …],         // radio only
  *       'rules'        => ['required' => true, …],       // see RULES
@@ -119,6 +120,16 @@ abstract class FormDefinition
                 // key ('form.field.email') OR a literal ('E-Mail') — an unknown
                 // key comes back unchanged, which makes the literal work.
                 'label'        => $translator->t((string) ($spec['label'] ?? $name)),
+                // A label that has to carry MARKUP — a checkbox pointing at
+                // terms and a privacy statement is the case this exists for.
+                // The partial prints it unescaped and falls back to `label`
+                // when it is empty, so `label` stays mandatory: it is what a
+                // validation message and a screen reader quote.
+                // ⚠️ Only ever from a FormDefinition, i.e. from CODE. Anything
+                // a visitor can influence must not reach it — that would be an
+                // XSS hole, and no filter here would make it safe. The rule is
+                // the origin.
+                'labelHtml'    => (string) ($spec['labelHtml'] ?? ''),
                 'type'         => (string) ($spec['type'] ?? self::TYPE_TEXT),
                 'options'      => (array)  ($spec['options'] ?? []),
                 'rules'        => (array)  ($spec['rules'] ?? []),
