@@ -204,7 +204,8 @@ DMS-Namespaces referenziert in ~22 Dateien. Nicht-DMS/Host-Konsumenten (nur Name
 - `core/src/Http/Request.php` — nutzt **nur `UploadedFile`** (bleibt liegen → **keine** Änderung nötig).
 - `module-backend/…/DriveController.php`, `DocumentController.php` + Templates `Documents/*` — Namespace
   nachziehen (Phase A), Dateien selbst wandern erst in Phase B.
-- `skeleton/_seed_drive_demo.php` — Wegwerf-Seed; Namespace nachziehen oder entfernen.
+- ~~`skeleton/_seed_drive_demo.php` — Wegwerf-Seed; Namespace nachziehen oder entfernen.~~
+  **Entfernt 2026-08-25** — entschieden, nicht nachgezogen.
 - `module-dms/…/OutputController.php`, `VariantSpec` u. a. — intern, wandern mit.
 
 Verbindliche Liste beim Start via
