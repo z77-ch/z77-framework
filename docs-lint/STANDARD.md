@@ -57,6 +57,12 @@ Required-section order is enforced. Optional sections may sit between.
 - All listed paths must exist on disk (linter checks).
 - `SOURCE=` for source-controlled files.
 - `RUNTIME=` for files generated/written at runtime (installed configs, data files).
+- A `RUNTIME=` path under `skeleton/` is only checked when the skeleton is
+  INSTALLED (`skeleton/vendor` present). That tree is a local dev installation
+  and is not in the repository — checking it on a fresh clone would fail for
+  everyone and say nothing about the docs. Skipped paths are counted and named
+  in the run's closing note; `composer install` inside `skeleton/` re-arms the
+  check with no change to the linter. `SOURCE=` is never skipped.
 
 ### `## mental model`
 
@@ -134,7 +140,8 @@ Enforced by `npm run docs:check`:
 | All required sections present, lowercase | yes |
 | Required-section order correct | yes |
 | `## file map` contains ≥1 `SOURCE=/...` | yes |
-| Every `SOURCE=` / `RUNTIME=` path exists | yes |
+| Every `SOURCE=` path exists | yes |
+| Every `RUNTIME=` path exists | yes, unless it is under `skeleton/` and the skeleton is not installed — then skipped and counted |
 | `## rules` items contain `MUST` / `MUST NOT` | yes |
 | Code blocks use ` ```{lang} ` fence (no indented blocks) | yes |
 | `## see also` Markdown links resolve to existing files | yes |

@@ -6,6 +6,25 @@ const path = require("path");
 const ROOT = path.resolve(__dirname, "..");
 const TOPICS_DIR = path.join(ROOT, "docs", "topics");
 
+/**
+ * `RUNTIME=` paths point at files an INSTALLATION writes, and every one of them
+ * currently lives in `skeleton/` — a local dev installation that is not in the
+ * repository (only `composer.json`, `composer.lock` and `dev.bat` are). Without
+ * it, checking those paths would fail for everyone who just cloned, which turns
+ * a deterministic linter into noise on day one.
+ *
+ * So: when the skeleton is not installed, its RUNTIME paths are SKIPPED and
+ * counted, and the run says so. `SOURCE=` paths are always checked — they are
+ * repository files and their absence is a real defect.
+ *
+ * Installed is decided by `skeleton/vendor`, the thing `composer install`
+ * creates. Rebuild the tree with `composer install` inside `skeleton/` and the
+ * paths are checked again with no change here.
+ */
+const SKELETON_PREFIX = "skeleton/";
+const skeletonInstalled = fs.existsSync(path.join(ROOT, "skeleton", "vendor"));
+let skippedRuntimePaths = 0;
+
 const REQUIRED_SECTIONS = [
     "entry",
     "file map",
@@ -119,6 +138,10 @@ function checkFileMap(lines, seen, violations) {
         if (!m) continue;
         const kind = m[1];
         const rel = m[2].replace(/^\//, "");
+        if (kind === "RUNTIME" && !skeletonInstalled && rel.startsWith(SKELETON_PREFIX)) {
+            skippedRuntimePaths++;
+            continue;
+        }
         const abs = path.join(ROOT, rel);
         if (!fs.existsSync(abs)) {
             violations.push({
@@ -283,6 +306,9 @@ function main() {
     }
 
     console.log("");
+    if (skippedRuntimePaths > 0) {
+        console.log(`note: skeleton not installed — ${skippedRuntimePaths} RUNTIME path(s) skipped (composer install in skeleton/ to check them)`);
+    }
     console.log(`${cleanFiles}/${files.length} files clean, ${totalViolations} violations`);
 
     if (totalViolations > 0) process.exit(1);
