@@ -6,11 +6,11 @@
 > ich jederzeit loeschen. `lib/cache` bleibt Cache, **`lib/throttle` ist das
 > Ziel**, und der Backup-Dienst bekommt die Ausnahme.
 
-Status: **gebaut am 2026-08-25, nur ADR-034 fehlt noch.** Die Drosseln liegen
+Status: **erledigt, 2026-08-25.** Festgeschrieben in [ADR-034](../02-decisions/adr-034-disposable-runtime-state-under-lib.md). Die Drosseln liegen
 unter `lib/throttle/` (Framework: `member/`, `totp-guard/`; AXO3: `widget/`,
 `zeichnen/`), und `fullExcludes` nennt `lib` statt `lib/cache` — in der
 Konstante, der Seed-Datei, dem Skeleton und von Hand in den beiden bestehenden
-Installationen (seed-once, siehe BACKUP-LIB-001 in
+Installationen inklusive Server (seed-once, siehe BACKUP-LIB-001 in
 [`../topics/backup.md`](../topics/backup.md)). Zur Kritik am Bauplan siehe
 [`laufzeit-zustand-nach-lib-review-2026-08-25.md`](laufzeit-zustand-nach-lib-review-2026-08-25.md).
 
@@ -129,23 +129,29 @@ Anwendung. Kann mit, muss nicht.
 
 ## Deploy
 
-⚠️ **Ein Handgriff je Installation:** die alten Ordner nach dem Upload
-loeschen, sonst liegen sie doppelt und niemand sieht, welcher gilt.
+Zwei Handgriffe je Installation, beide seed-once-fest, beide ueberleben jeden
+Deploy:
 
 ```
+config/backup.inc.php                'lib/cache' -> 'lib'
 data/framework/member/throttle/      loeschen
-data/framework/member/totp-guard/    loeschen
 data/project/axo3/widget-throttle/   loeschen
 data/project/axo3/zeichnen-throttle/ loeschen
 ```
 
-Kein Datenverlust: die Zaehler beginnen bei null. Wer gerade drosselt-gesperrt
-ist, ist danach frei — das ist der Preis und er ist richtig herum.
+✅ **Die Konfiguration ist erledigt** (Peter, 2026-08-25) — axo3 und zihlundsee.
 
-**Nur axo3 ist betroffen.** Am 2026-08-25 nachgesehen: zihlundsee, archsult,
+Die drei toten Ordner liegen in der lokalen axo3-Arbeitskopie noch; sie sind
+wirkungslos (niemand liest sie mehr) und faerben nur noch das Full-Archiv, bis
+sie weg sind. Kein Datenverlust beim Loeschen: die Zaehler beginnen bei null,
+wer gerade gesperrt ist, ist danach frei.
+
+**Nur axo3 traegt sie.** Am 2026-08-25 nachgesehen: zihlundsee, archsult,
 propbase und das Skeleton haben keinen einzigen dieser Ordner — dort meldet
 sich noch niemand an. `lib/throttle/*` legt sich beim ersten Zugriff selbst an
 (`mkdir(..., recursive)` in jeder Drossel), kein Installer-Eingriff noetig.
+`totp-guard` gab es nirgends, es ist neu und entsteht erst mit dem ersten
+TOTP-Fehlversuch.
 
 ⚠️ **`totp-guard` stand nicht im Bauplan** und ist am 2026-08-25 dazugekommen:
 Fehlversuchszaehler plus Sperrfenster, dieselbe Klasse Datei — `TotpGuard::reset()`
