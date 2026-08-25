@@ -79,7 +79,7 @@ final class RegistrationFlow
         return new self(
             new MemberAccounts($uem),
             new TokenService($uem),
-            new MemberThrottle(rtrim(str_replace('\\', '/', ABS_BASE_PATH), '/') . '/data/framework/member/throttle'),
+            new MemberThrottle(MemberThrottle::defaultDir()),
             static fn(EmailMessage $mail): bool => DI::getEmailService()->send($mail),
             static function (MemberAccount $account): bool {
                 try {

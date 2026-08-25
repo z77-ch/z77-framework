@@ -34,6 +34,23 @@ final class MemberThrottle
     ) {
     }
 
+    /**
+     * Where the counters live: `lib/throttle/member`, not `data/`.
+     *
+     * `data/` is the data area — what a restore is supposed to bring back.
+     * A throttle counter is a time window and a number; deleting it starts the
+     * running window at zero and nothing else happens. Everything below `lib/`
+     * is disposable by definition: wiping `lib/` resets the installation's
+     * runtime state without touching a single record.
+     *
+     * One place, because three call sites (RegistrationFlow, LoginFlow,
+     * InvitationFlow) all need the same directory.
+     */
+    public static function defaultDir(): string
+    {
+        return rtrim(str_replace('\\', '/', ABS_BASE_PATH), '/') . '/lib/throttle/member';
+    }
+
     /** True while the address stays under the limit for the current window; counts the attempt. */
     public function allow(string $email, ?int $now = null): bool
     {

@@ -84,7 +84,7 @@ final class LoginFlow
             new MemberAccounts($uem),
             new TokenService($uem),
             new MemberThrottle(
-                rtrim(str_replace('\\', '/', ABS_BASE_PATH), '/') . '/data/framework/member/throttle',
+                MemberThrottle::defaultDir(),
                 self::requestsPerHour(),
             ),
             new MemberSession(DI::getSessionManager()),

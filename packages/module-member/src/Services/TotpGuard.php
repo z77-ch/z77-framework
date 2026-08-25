@@ -16,10 +16,15 @@ final class TotpGuard
     {
     }
 
+    /**
+     * Under `lib/throttle`, next to the address throttle — same class of file:
+     * a counter and a window, disposable. Deleting it frees whoever is locked
+     * out, which is exactly what {@see reset()} does on a valid code.
+     */
     public static function create(): self
     {
         return new self(
-            rtrim(str_replace('\\', '/', ABS_BASE_PATH), '/') . '/data/framework/member/totp-guard'
+            rtrim(str_replace('\\', '/', ABS_BASE_PATH), '/') . '/lib/throttle/totp-guard'
         );
     }
 

@@ -6,9 +6,12 @@
 > ich jederzeit loeschen. `lib/cache` bleibt Cache, **`lib/throttle` ist das
 > Ziel**, und der Backup-Dienst bekommt die Ausnahme.
 
-Status: **entschieden, nicht gebaut.** Diese Datei ist die Uebergabe an die
-Framework-Sitzung, die es baut. Gehoert als **ADR-034** festgeschrieben, weil
-es eine Ablage-Konvention ist, die jede Installation betrifft.
+Status: **Umzug gebaut am 2026-08-25, Backup-Teil offen.** Die Drosseln liegen
+unter `lib/throttle/` (Framework: `member/`, `totp-guard/`; AXO3: `widget/`,
+`zeichnen/`). Was NOCH aussteht: die Backup-Excludes (`lib/cache` → `lib`) und
+die ADR-034 selbst. Zur Kritik am Bauplan — namentlich die Seed-once-Falle bei
+`fullExcludes` und der ueberzogene dritte Grund — siehe
+[`laufzeit-zustand-nach-lib-review-2026-08-25.md`](laufzeit-zustand-nach-lib-review-2026-08-25.md).
 
 ## Warum — drei Gruende, der dritte ist der harte
 
@@ -129,7 +132,8 @@ Anwendung. Kann mit, muss nicht.
 loeschen, sonst liegen sie doppelt und niemand sieht, welcher gilt.
 
 ```
-data/framework/member/throttle/      loeschen (axo3 UND zihlundsee)
+data/framework/member/throttle/      loeschen
+data/framework/member/totp-guard/    loeschen
 data/project/axo3/widget-throttle/   loeschen
 data/project/axo3/zeichnen-throttle/ loeschen
 ```
@@ -137,5 +141,11 @@ data/project/axo3/zeichnen-throttle/ loeschen
 Kein Datenverlust: die Zaehler beginnen bei null. Wer gerade drosselt-gesperrt
 ist, ist danach frei — das ist der Preis und er ist richtig herum.
 
-⚠️ **zihlundsee ist mitbetroffen** (`MemberThrottle`), obwohl der Anlass in
-axo3 lag.
+**Nur axo3 ist betroffen.** Am 2026-08-25 nachgesehen: zihlundsee, archsult,
+propbase und das Skeleton haben keinen einzigen dieser Ordner — dort meldet
+sich noch niemand an. `lib/throttle/*` legt sich beim ersten Zugriff selbst an
+(`mkdir(..., recursive)` in jeder Drossel), kein Installer-Eingriff noetig.
+
+⚠️ **`totp-guard` stand nicht im Bauplan** und ist am 2026-08-25 dazugekommen:
+Fehlversuchszaehler plus Sperrfenster, dieselbe Klasse Datei — `TotpGuard::reset()`
+loescht sie bei einem gueltigen Code ohnehin selbst.
