@@ -2,6 +2,8 @@
 
 namespace Z77\Shared\Forms;
 
+use Z77\Shared\Mail\MailAddress;
+
 use Z77\Core\DI,
     Z77\Persistence\Validation\EntityValidator
 ;
@@ -85,11 +87,15 @@ final class PublicFormValidator extends EntityValidator
         }
     }
 
-    /** Same acceptance as EntityValidator::isEmail() — one notion of "valid e-mail". */
+    /**
+     * A public form exists to SEND something to this address, so the bar is
+     * deliverability, not just shape: an address in a reserved TLD is refused
+     * here (see MailAddress). It can never receive the mail it just asked
+     * for, and letting it through buys a bounce and a dead account.
+     */
     private static function isEmailAddress(string $value): bool
     {
-        return (bool) filter_var($value, FILTER_VALIDATE_EMAIL)
-            && (bool) preg_match('/^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$/', $value);
+        return MailAddress::isDeliverable($value);
     }
 
     /**

@@ -68,6 +68,53 @@ final class MemberThrottle
     }
 
     /**
+     * True while the ORIGIN stays under its hourly limit; counts the attempt.
+     *
+     * The address throttle above holds an attacker who hammers ONE address.
+     * This one holds the opposite move — a new invented address on every try,
+     * which walks straight past a per-address counter. Both are needed; either
+     * alone has an obvious way around it.
+     *
+     * ⚠️ IPv6 is cut to its /64 prefix before hashing. A per-address count
+     * would hand an attacker 2^64 fresh counters out of one ordinary home
+     * prefix, i.e. no limit at all. IPv4 counts whole. Same reasoning and same
+     * shape as the B5 submission gate.
+     *
+     * ⚠️ $ip must come from REMOTE_ADDR. A throttle keyed on a header the
+     * caller sets is a throttle the caller switches off.
+     */
+    public function allowIp(string $ip, int $limit, ?int $now = null): bool
+    {
+        $normalised = self::normalizeIp($ip);
+        if ($normalised === null) {
+            // No usable address (CLI, a malformed REMOTE_ADDR): the other
+            // gates still apply. Refusing here would lock out a caller for a
+            // fault that is not theirs.
+            return true;
+        }
+
+        return $this->count('ip:' . $normalised, $limit, $this->windowSeconds, $now);
+    }
+
+    /** IPv6 → its /64 prefix, IPv4 → itself, anything unparseable → null. */
+    public static function normalizeIp(string $ip): ?string
+    {
+        $packed = @inet_pton(trim($ip));
+        if ($packed === false) {
+            return null;
+        }
+
+        if (strlen($packed) === 16) {
+            // Keep the first 8 bytes, zero the rest — one counter per /64.
+            $packed = substr($packed, 0, 8) . str_repeat("\0", 8);
+        }
+
+        $back = @inet_ntop($packed);
+
+        return $back === false ? null : $back;
+    }
+
+    /**
      * One counter file per key and window. The key is namespaced before
      * hashing so the two buckets can never land on the same file — a project
      * reference that happens to look like an address would otherwise share the

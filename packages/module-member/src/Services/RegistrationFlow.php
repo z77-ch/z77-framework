@@ -39,6 +39,9 @@ final class RegistrationFlow
     public const CONFIRM_TTL_SECONDS = 7 * 86400; // spec default: 7 days
     public const NOTIFY_FORM_KEY     = 'memberConfirmed';
 
+    /** Registration attempts per origin (IPv4 address / IPv6 /64) and hour. */
+    public const DEFAULT_PER_IP = 10;
+
     public const CONFIRMED = 'confirmed';
     public const ALREADY   = 'already';
     public const DEAD      = 'dead';
@@ -97,30 +100,22 @@ final class RegistrationFlow
     }
 
     /**
-     * The project's extra lines for the operator notification (memberConfig
-     * `notifyRowsHook`). The module knows an account, not what a project hangs
-     * on one — so it asks, and prints whatever comes back.
+     * memberConfig `registrationsPerHourPerIp`, default
+     * {@see self::DEFAULT_PER_IP}.
      *
-     * ⚠️ Never lets the caller fail. This mail is a courtesy; a hook that
-     * throws must not be the reason a confirmation or a redemption breaks.
-     *
-     * @return array<string,string>
+     * ⚠️ Deliberately generous. One IPv4 address can be a whole office, a
+     * co-working space or a mobile carrier's NAT — a tight limit here does not
+     * stop a determined script (it rents another address for a franc) but it
+     * does lock out a real customer whose neighbour registered first. This
+     * catches floods, not people.
      */
-    public static function projectNotifyRows(MemberAccount $account): array
+    public static function registrationsPerHourPerIp(): int
     {
-        try {
-            $fqcn = (string)DI::getConfigManager()
-                ->getArrayConfig('App/Config/memberConfig', 'Z77\\Module\\Member')
-                ->get('notifyRowsHook', '');
-            if ($fqcn === '' || !class_exists($fqcn)) {
-                return [];
-            }
-            $rows = (new $fqcn())($account);
+        $configured = (int) (DI::getConfigManager()
+            ->getArrayConfig('App/Config/memberConfig', 'Z77\Module\Member')
+            ->get('registrationsPerHourPerIp', self::DEFAULT_PER_IP));
 
-            return is_array($rows) ? $rows : [];
-        } catch (\Throwable) {
-            return [];
-        }
+        return $configured > 0 ? $configured : self::DEFAULT_PER_IP;
     }
 
     /**
@@ -151,12 +146,30 @@ final class RegistrationFlow
         ?string $termsVersion = null
     ): bool {
         $now ??= time();
+
+        // TWO throttles, because either alone has an obvious way around it.
+        // The address counter holds someone hammering one address; the origin
+        // counter holds someone inventing a fresh address every try, which
+        // walks straight past a per-address count. ⚠️ The IP one runs FIRST:
+        // it is the cheaper question and it does not need the address, so a
+        // flood is stopped before it touches address-specific state.
+        $ip = trim((string)($_SERVER['REMOTE_ADDR'] ?? ''));
+
+        if ($ip !== '' && !$this->throttle->allowIp($ip, self::registrationsPerHourPerIp(), $now)) {
+            RegistrationLog::note('throttled-ip');
+
+            return false;
+        }
+
         if (!$this->throttle->allow($email, $now)) {
+            RegistrationLog::note('throttled');
+
             return false;
         }
 
         $existing = $this->accounts->findByEmail($email);
         if ($existing !== null) {
+            RegistrationLog::note('known');
             ($this->sendMail)($this->existingAccountMail($existing));
 
             return true;
@@ -168,11 +181,13 @@ final class RegistrationFlow
             // same answer as the existing-account branch above.
             $existing = $this->accounts->findByEmail($email);
             if ($existing !== null) {
+                RegistrationLog::note('known');
                 ($this->sendMail)($this->existingAccountMail($existing));
             }
 
             return true;
         }
+        RegistrationLog::note('new');
         ($this->sendMail)($this->confirmMail($account, $now));
 
         return true;

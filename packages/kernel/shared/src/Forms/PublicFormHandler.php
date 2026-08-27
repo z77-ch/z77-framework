@@ -66,6 +66,9 @@ final class PublicFormHandler
     private int  $rateLimitPerHour = 3;
     private bool $rateLimitSilent  = false;
 
+    /** @var \Closure(string, PublicForm):void|null */
+    private ?\Closure $observer = null;
+
     private function __construct(private FormDefinition $definition)
     {
         $this->guard = FormGuard::forKey($definition->guardKey());
@@ -114,6 +117,56 @@ final class PublicFormHandler
     }
 
     /**
+     * Tells an observer how each submit ended — the seam a project hangs a
+     * log on. One of {@see self::OUTCOME_*} plus the parsed form.
+     *
+     * It exists because the OUTCOME is knowable only in here: `process()`
+     * returns one bool for «real success» and «bot pretending to be one»
+     * (that indistinguishability is the point), so no caller can tell the two
+     * apart from the outside. An observer sees the difference SERVER-SIDE,
+     * where telling it changes nothing for the visitor.
+     *
+     * ⚠️ The observer must not change what the visitor gets: it is called
+     * after the decision, its return value is ignored, and anything it throws
+     * is swallowed. A broken log may never cost a registration.
+     *
+     * @param callable(string, PublicForm):void $observer
+     */
+    public function withObserver(callable $observer): self
+    {
+        $this->observer = \Closure::fromCallable($observer);
+
+        return $this;
+    }
+
+    /** The submit was accepted and the project's handler ran. */
+    public const OUTCOME_SENT = 'sent';
+    /** Honeypot filled or submitted faster than a human reads the form. */
+    public const OUTCOME_BOT = 'bot';
+    /** Over the per-session hourly limit — nothing was sent. */
+    public const OUTCOME_LIMITED = 'limited';
+    /** Field validation failed; the form is rendered again with errors. */
+    public const OUTCOME_INVALID = 'invalid';
+    /** Missing or stale CSRF token. */
+    public const OUTCOME_CSRF = 'csrf';
+    /** The project's handler was reached but reported failure. */
+    public const OUTCOME_FAILED = 'failed';
+
+    private function observe(string $outcome): void
+    {
+        if ($this->observer === null) {
+            return;
+        }
+
+        try {
+            ($this->observer)($outcome, $this->form);
+        } catch (\Throwable) {
+            // Deliberately silent: an observer is bookkeeping. Letting it
+            // break the form would turn a logging fault into an outage.
+        }
+    }
+
+    /**
      * Runs the flow for the current request.
      *
      * @param callable(PublicForm):bool|null $onValid Called with the validated
@@ -134,10 +187,12 @@ final class PublicFormHandler
 
             if (!DI::getCsrfService()->validate((string) $request->getPostParameter('csrf_token'))) {
                 $this->formError = $this->translate($this->csrfErrorKey);
+                $this->observe(self::OUTCOME_CSRF);
             } elseif ($this->form->isHoneypotTripped() || $this->guard->isTooFast()) {
                 // Bot: pretend success, send nothing. Indistinguishable from the
                 // real path below, which is the point.
                 $this->guard->disarmTimeTrap();
+                $this->observe(self::OUTCOME_BOT);
                 return true;
             } else {
                 $validator = new PublicFormValidator($this->form);
@@ -147,22 +202,27 @@ final class PublicFormHandler
                     // visible at the top without scrolling to the failed field.
                     $this->errors    = $validator->getFieldErrors();
                     $this->formError = $this->translate($this->validationErrorKey);
+                    $this->observe(self::OUTCOME_INVALID);
                 } elseif ($this->guard->isRateLimited($this->rateLimitPerHour)) {
                     if ($this->rateLimitSilent) {
                         // Same shape as the bot path above: send nothing, let
                         // the caller redirect. The page must not reveal that
                         // this submit was treated differently.
                         $this->guard->disarmTimeTrap();
+                        $this->observe(self::OUTCOME_LIMITED);
                         return true;
                     }
                     $this->formError = $this->translate($this->sendErrorKey);
+                    $this->observe(self::OUTCOME_LIMITED);
                 } elseif ($this->dispatch($onValid)) {
                     $this->guard->recordSend();
                     // Cycle closed: the next form render arms a new window.
                     $this->guard->disarmTimeTrap();
+                    $this->observe(self::OUTCOME_SENT);
                     return true;
                 } else {
                     $this->formError = $this->translate($this->sendErrorKey);
+                    $this->observe(self::OUTCOME_FAILED);
                 }
             }
         }

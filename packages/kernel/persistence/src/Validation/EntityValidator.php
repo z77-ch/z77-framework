@@ -130,8 +130,11 @@ abstract class EntityValidator
     protected function isEmail(): static
     {
         if (!isset($this->fieldErrors[$this->currentField])) {
-            $v = (string)$this->currentValue;
-            if (!filter_var($v, FILTER_VALIDATE_EMAIL) || !preg_match('/^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$/', $v)) {
+            // One notion of "valid e-mail" for the whole framework; the rule
+            // used to be copied here from PublicFormValidator, character for
+            // character. Deliverability (reserved TLDs) is checked too: a
+            // stored address that can never receive mail is not an address.
+            if (!\Z77\Shared\Mail\MailAddress::isDeliverable((string)$this->currentValue)) {
                 $this->fieldErrors[$this->currentField] = $this->currentLabel . ' hat ein ungültiges Format';
             }
         }

@@ -8,6 +8,7 @@ use Z77\Core\DI,
     Z77\Core\Http\Response\RedirectResponse,
     Z77\Module\Member\Entities\MemberAccount,
     Z77\Module\Member\Services\InvitationFlow,
+    Z77\Module\Member\Services\RegistrationLog,
     Z77\Module\Member\Ui\Controllers\AbstractMemberController,
     Z77\Module\Member\Ui\Form\InviteFormDefinition,
     Z77\Module\Member\Ui\Form\RegisterFormDefinition,
@@ -59,7 +60,19 @@ class RegisterController extends AbstractMemberController
             (string) DI::getRequest()->getGetParameter('via')
         );
 
-        $form = PublicFormHandler::create(new RegisterFormDefinition());
+        $form = PublicFormHandler::create(new RegisterFormDefinition())
+            // Every submit leaves a line, including the ones the visitor never
+            // notices (bot, limit, stale token). Those are exactly the ones an
+            // operator needs to see: a clean registration says little, a burst
+            // of refused ones says where something is coming from.
+            ->withObserver(static function (string $outcome, $submitted) use ($origin): void {
+                RegistrationLog::write(
+                    RegistrationLog::FORM_REGISTER,
+                    $outcome,
+                    (string)$submitted->get('email') ?: null,
+                    ['origin' => $origin],
+                );
+            });
 
         $onValid = function ($valid) use ($origin): bool {
             return $this->flow()->register(
