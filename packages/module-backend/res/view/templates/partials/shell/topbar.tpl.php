@@ -1,6 +1,7 @@
 <?php
 use Z77\Module\Backend\App\Config\ModuleIcons;
 use Z77\Module\Backend\App\Config\Palettes;
+use Z77\Shared\Build\BuildInfo;
 
 /** @var \Z77\Core\Services\NavigationService $navigationService */
 /** @var array{initials:string,name:string,role:string}|null $headerUser */
@@ -236,7 +237,35 @@ foreach ($sections as $item) {
                     </a>
                 </div>
 
-                <div class="backend-service-panel__footer"><span>z77 · Version 1.0.0</span></div>
+                <?php
+                // Provenance of the installed vendor/, not a release number: the
+                // packages ship as dev-main, so a fixed version here would be a
+                // claim nobody maintains (it read "1.0.0" for months). No stamp =
+                // development checkout — say that rather than a stale deploy date.
+                $build      = BuildInfo::current();
+                $buildLeft  = 'z77 · ' . ($build?->label(BuildInfo::FRAMEWORK) ?? 'Entwicklung');
+                $buildRight = '';
+                $buildTitle = 'Kein Deploy-Stempel — dieses vendor/ zeigt auf den Arbeitsbaum.';
+
+                if ($build !== null) {
+                    $stand      = $build->date(BuildInfo::FRAMEWORK);
+                    $buildRight = $stand !== '' ? 'Stand ' . $stand : '';
+                    $titleLines = [];
+                    foreach ($build->sources() as $source) {
+                        $titleLines[] = $source . ': ' . ($build->commit($source) ?? 'unbekannt')
+                            . ($build->branch($source) !== null ? ' (' . $build->branch($source) . ')' : '')
+                            . ($build->isDirty($source) ? ' — mit lokalen Aenderungen gebaut' : '');
+                    }
+                    if ($build->builtAt() !== null) {
+                        $titleLines[] = 'vendor/ gebaut am ' . date('d.m.Y H:i', $build->builtAt());
+                    }
+                    $buildTitle = implode("\n", $titleLines);
+                }
+                ?>
+                <div class="backend-service-panel__footer" title="<?= htmlspecialchars($buildTitle, ENT_QUOTES) ?>">
+                    <span><?= htmlspecialchars($buildLeft, ENT_QUOTES) ?></span>
+                    <?php if ($buildRight !== ''): ?><span><?= htmlspecialchars($buildRight, ENT_QUOTES) ?></span><?php endif; ?>
+                </div>
             </div>
         </div>
     </div>
