@@ -5,6 +5,7 @@ namespace Z77\Module\Member\Jobs;
 use Z77\Core\DI;
 use Z77\Module\Member\Services\MemberAccounts;
 use Z77\Module\Member\Services\PendingLogins;
+use Z77\Module\Member\Services\RegistrationLog;
 use Z77\Module\Member\Services\TokenService;
 use Z77\Shared\Jobs\Job;
 use Z77\Shared\Jobs\JobContext;
@@ -13,8 +14,9 @@ use Z77\Shared\Jobs\JobResult;
 /**
  * The B7 cleanup as a job (ADR-031). Deletes accounts that were never confirmed
  * within the grace period (memberConfig `cleanupAfterDays`, default 30), every
- * token that can no longer redeem (used, expired, orphaned) and every waiting
- * login past its window.
+ * token that can no longer redeem (used, expired, orphaned), every waiting
+ * login past its window, and every registration-log month past its own
+ * retention ({@see RegistrationLog::RETENTION_DAYS}).
  *
  * 'confirmed' accounts are NEVER touched — they wait for the operator's
  * activate/reject decision, however long that takes.
@@ -61,12 +63,22 @@ final class MemberCleanupJob implements Job
 
         $deletedPending = (new PendingLogins($uem))->purge();
 
+        // The registration log expires on its OWN clock (90 days), not on the
+        // grace period above: it is a different purpose with a different
+        // retention, and the privacy policy names the two separately. It rides
+        // in this job because this is the module's broom — a sweep that
+        // deletes belongs beside the other sweeps that delete, under the same
+        // operator-switched schedule.
+        $droppedLogs = RegistrationLog::sweep();
+
         return JobResult::done(sprintf(
-            '%d account(s) removed (never confirmed within %d days), %d dead token(s) purged, %d expired waiting login(s) dropped',
+            '%d account(s) removed (never confirmed within %d days), %d dead token(s) purged, '
+            . '%d expired waiting login(s) dropped, %d expired log file(s) deleted',
             $deletedAccounts,
             $days,
             $deletedTokens,
-            $deletedPending
+            $deletedPending,
+            $droppedLogs
         ));
     }
 

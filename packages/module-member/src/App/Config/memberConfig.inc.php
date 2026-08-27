@@ -79,15 +79,35 @@ return [
     // what a queue entry stores — never a class name or a script path, so a
     // backend form can only ever pick from this list.
     //
-    // No 'defaultSchedule' on purpose: this job DELETES. It runs when an
-    // operator switches a schedule on, or when someone queues it by hand —
-    // never merely because the module was installed.
+    // ⚠️ The two entries differ in exactly one field, and the reason is a
+    // rule: `member-cleanup` DELETES, so it ships no 'defaultSchedule' — an
+    // operator switches it on. `geoip-update` deletes nothing of the
+    // installation's, it replaces its own downloaded file, and doing so is a
+    // LICENCE OBLIGATION (GeoLite EULA: keep current, destroy the previous
+    // version within 30 days). A duty that only runs once somebody remembers
+    // to switch it on is not a duty being met — hence the schedule.
     'jobs' => [
         'member-cleanup' => [
             'class'       => \Z77\Module\Member\Jobs\MemberCleanupJob::class,
             'label'       => 'Member-Bereinigung',
             'runAs'       => AuthRole::CRON_JOB,
             'maxAttempts' => 3,
+        ],
+        // The class lives in the kernel, beside CountryLookup, because the
+        // country lookup is a kernel seam. It is REGISTERED here because
+        // module-member is what consumes country data today; a future consumer
+        // without this module registers the same class from its own config.
+        //
+        // Weekly, although the fetch only fires past `maxAgeDays` (30): the
+        // schedule is the knock on the door, the age is the answer. Weekly
+        // means a database that has just expired is renewed within days
+        // instead of within a month.
+        'geoip-update' => [
+            'class'           => \Z77\Shared\GeoIp\GeoIpUpdateJob::class,
+            'label'           => 'GeoIP-Datenbank erneuern',
+            'runAs'           => AuthRole::CRON_JOB,
+            'maxAttempts'     => 2,
+            'defaultSchedule' => 'weekly@mon,04:20',
         ],
     ],
 
@@ -98,6 +118,22 @@ return [
     // mailbox from being flooded through this form; raise it where support or
     // testing needs more headroom.
     'loginRequestsPerHour' => 5,
+
+    // Countries whose registrations are refused, as ISO 3166-1 alpha-2 codes
+    // (`['RU', 'CN']`). EMPTY means the rule is off, and empty is where it
+    // stays until an installation has a reason — a reason read off the
+    // registration log, not guessed. With an empty list nothing is even
+    // looked up.
+    //
+    // ⚠️ A BLOCKLIST, never a whitelist. A whitelist locks out the customer
+    // in a holiday WLAN, on a VPN, or behind a carrier that routes through
+    // another country. Too small a blocklist costs an attempt we would have
+    // had anyway; too small a whitelist costs a customer.
+    //
+    // ⚠️ An UNKNOWN country never blocks: no database, a private address or
+    // an unassigned range all read as null, and null means carry on. Anything
+    // else would turn a missing optional file into a registration outage.
+    'blockedCountries' => [],
 
     // Where a member lands after a successful login — the redeemed link, the
     // confirmed second factor, the waiting page's poll, and a visit to the

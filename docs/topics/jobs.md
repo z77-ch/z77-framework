@@ -27,6 +27,7 @@ SOURCE=/packages/kernel/core/src/Services/ModuleManager.php
 SOURCE=/packages/module-backend/src/Ui/Controllers/Service/JobController.php
 SOURCE=/packages/module-backend/res/view/templates/Service/JobController/listAction.tpl.php
 SOURCE=/packages/module-member/src/Jobs/MemberCleanupJob.php
+SOURCE=/packages/kernel/shared/src/GeoIp/GeoIpUpdateJob.php
 
 RUNTIME=/skeleton/data/framework/routing/navigation.json
 
@@ -101,7 +102,7 @@ Only `every:` consults the last run; the wall-clock forms do not. Deliberately n
 - When a job may run longer than the time budget → MUST check `JobContext::hasTimeLeft()` and return `JobResult::again($cursor)`; a job that never asks overruns the pass and only the job lock limits the damage
 - When a job needs to pause between batches → MUST express it as `JobResult::again($cursor, $notBefore)`; MUST NOT `sleep()` inside the job (it holds its lock and burns the pass)
 - When registering a job → MUST declare it under a module's `jobs` key with a unique key (duplicate = fail-fast); MUST NOT put a class name or script path into a queue entry
-- When a job deletes data → MUST NOT ship a `defaultSchedule`; the operator switches it on
+- When a job deletes data → MUST NOT ship a `defaultSchedule`; the operator switches it on. ⚠️ This is about the INSTALLATION's data, not a job's own downloaded artefact: `geoip-update` replaces the file it fetched itself and does ship a schedule, because keeping it current is a licence obligation. A duty that waits to be switched on is not a duty being met — a job that both deletes and must run is two jobs (the split `member-cleanup` / `geoip-update` is the worked example)
 - When guarding against a double start → MUST use the job lock (`JobLock`); MUST NOT rely on `JobRun::state`, which survives a crashed process
 - When storing anything about a run → MUST put it in the queue entry or a lock file under `data/framework/jobs`; MUST NOT put transient runtime state into `systemConfig` (a restore would resurrect it)
 - When the backend triggers a job → MUST enqueue and let the runner execute it; MUST NOT run a job inside the request
