@@ -16,6 +16,7 @@ SOURCE=/packages/kernel/shared/src/Backup/BackupType.php
 SOURCE=/packages/kernel/shared/src/Backup/BackupEntry.php
 SOURCE=/packages/kernel/shared/src/Backup/BackupHistory.php
 SOURCE=/packages/kernel/shared/src/Backup/ZipArchiver.php
+SOURCE=/packages/kernel/shared/src/Backup/RetentionPolicy.php
 SOURCE=/packages/kernel/shared/src/Backup/DbDumperInterface.php
 SOURCE=/packages/kernel/shared/src/Backup/MysqlDumper.php
 SOURCE=/packages/kernel/core/src/Config/backup.default.inc.php
@@ -26,6 +27,7 @@ SOURCE=/packages/module-backend/res/view/templates/Service/BackupController/list
 SOURCE=/packages/module-backend/res/view/templates/Service/BackupController/actions.tpl.php
 SOURCE=/packages/module-backend/res/view/templates/Service/BackupController/confirmDelete.tpl.php
 SOURCE=/tests/zip-archiver-symlinks.php
+SOURCE=/tests/backup-retention.php
 
 ## mental model
 
@@ -65,8 +67,21 @@ details from the sidecar. There is no central history file that could drift.
   a full backup archives what is behind them, under the link-side names. Two
   names for one tree pack it once, a cycle terminates, a dangling link is
   skipped. A flat installation has no links and behaves exactly as before.
-- Retention runs after every successful backup: keep the newest N per type
-  (config `retention`, defaults 10/10/5, `0` = unlimited).
+- Retention runs after every successful backup, decided by `RetentionPolicy`
+  (pure, harness-tested). Two forms per type: an INTEGER keeps the newest N
+  (`0` = unlimited; code default 10/10/5), an ARRAY is TIERED — e.g.
+  `['last' => 2, 'daily' => 7, 'weekly' => 4, 'monthly' => 12]`: all of the
+  last days, one per ISO week, one per month, thinning with age. The tiered
+  form exists for LATE DISCOVERY: change something today, notice it ten days
+  later — under «newest N» every kept archive already carries the mistake,
+  under tiers a clean weekly/monthly state survives. `last` protects the
+  manual backup taken right before a risky change from the same-day
+  scheduled run; a misspelled tier name THROWS (silently losing a tier of
+  history is the failure mode this topic avoids); timestamps come from the
+  archive NAME, never mtime (a copy resets mtime — the GEOIP-002 lesson).
+  The seeded default is tiered since 2026-08-28; existing installations
+  carry their integer config until edited (seed-once — the BACKUP-LIB-001
+  shape).
 - `BackupHistory::FILE_PATTERN` doubles as the traversal guard: download and
   delete resolve ONLY file names matching the archive contract, and the type
   token in the name must match the requested type.
@@ -126,6 +141,7 @@ moving.
 - When exposing backup actions in the backend → MUST keep every action `AuthRole::SUPER_USER` (the archive IS the user store) and mutations Fetch-POST (global CSRF) + per-archive entity token
 - When adding another CLI task → MUST follow ADR-028 (own `bin/` script in the owning package, Composer `bin`, boot only what it needs)
 - When changing what a `data` or `full` archive contains → MUST keep `data/framework/jobs` excluded (`BackupService::DATA_EXCLUDES`, applied to both types and NOT configurable); it is transient runtime state and it changes while the archive is being written (BACKUP-JOBS-001)
+- When changing what retention keeps → MUST go through `RetentionPolicy` (pure names-in/names-out, so `tests/backup-retention.php` can replay timelines) and MUST preserve the late-discovery property: some kept archive predates a mistake that is N days old; MUST NOT let any retention config delete the just-written archive (the newest name always survives — asserted in the harness)
 - When touching the archive walk → the descent MUST stay PATH-BASED (`scandir` + `is_dir`) and MUST keep the realpath visited set next to it — the pair in `ZipArchiver::addTree()`. MUST NOT swap it back to `RecursiveDirectoryIterator`: without `FOLLOW_SYMLINKS` a linked directory is a silent leaf, and WITH the flag a Windows junction still is (its directory entry reports type «unknown» — measured, BACKUP-SYMLINK-001). Following without the set recurses forever on a cycle; the set without following changes nothing
 - When adding a directory of disposable runtime state → MUST follow ADR-034: put it under `lib/` (page cache, throttle counters live there) and MUST NOT add it to `fullExcludes` — the whole `lib` tree is already named, and a second entry would only start the maintained-list problem again (BACKUP-LIB-001). The test is «may this be deleted while the installation is serving requests?»; if no, it does not belong under `lib/` and the decision is its location, not its exclude.
 

@@ -185,19 +185,26 @@ final class BackupService
         }
     }
 
-    /** Keeps the newest N archives per type (config `retention`, 0 = unlimited). */
+    /**
+     * Applies the type's retention (config `retention`): an integer keeps the
+     * newest N (0 = unlimited), an array is the tiered form — all of the last
+     * days, one per week, one per month … so a mistake discovered LATE still
+     * has a clean state to restore. The decision itself is
+     * {@see RetentionPolicy} (pure, harness-tested); this method only feeds
+     * it the names and deletes what it drops.
+     */
     private function applyRetention(BackupType $type): void
     {
         $retention = $this->config['retention'][$type->value]
             ?? self::DEFAULT_RETENTION[$type->value];
-        $keep = max(0, (int)$retention);
-        if ($keep === 0) {
-            return;
-        }
 
-        $entries = $this->history()->scan($type); // newest first
-        foreach (array_slice($entries, $keep) as $entry) {
-            $this->delete($type, $entry->getFileName());
+        $names = array_map(
+            static fn(BackupEntry $entry): string => $entry->getFileName(),
+            $this->history()->scan($type),
+        );
+
+        foreach (RetentionPolicy::drops($names, is_array($retention) ? $retention : (int) $retention) as $name) {
+            $this->delete($type, $name);
         }
     }
 

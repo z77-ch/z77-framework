@@ -7,11 +7,27 @@ return [
     // (htmlRoot) — archives contain data/framework/auth/backendUsers.json.
     'dir'          => 'backup',
 
-    // Kept archives per type after each run; 0 = unlimited (no cleanup).
+    // What each run keeps of the older archives. Two forms:
+    //
+    //   'data' => 10          keep the newest 10 (0 = unlimited, no cleanup)
+    //   'data' => [...]       tiered: all of the last days, one per week,
+    //                         one per month … so a mistake noticed LATE
+    //                         still has a clean state to restore — with
+    //                         «newest N» every kept archive would already
+    //                         carry it. Tiers: last / daily / weekly /
+    //                         monthly / yearly, count per tier, 0 = that
+    //                         tier unlimited. `last` protects the manual
+    //                         backup taken just before a risky change from
+    //                         the same-day scheduled run.
+    //
+    // A 'yearly' tier on the SAME server is belt without braces — the host
+    // that loses the disk loses the archive with it. Long-term states belong
+    // offsite (download an archive periodically); add 'yearly' here only
+    // knowing that.
     'retention'    => [
-        'data' => 10,
-        'db'   => 10,
-        'full' => 5,
+        'data' => ['last' => 2, 'daily' => 7, 'weekly' => 4, 'monthly' => 12],
+        'db'   => ['last' => 2, 'daily' => 7, 'weekly' => 4, 'monthly' => 12],
+        'full' => ['last' => 1, 'weekly' => 4, 'monthly' => 6],
     ],
 
     // Project-relative paths excluded from the `full` backup. vendor/ and
