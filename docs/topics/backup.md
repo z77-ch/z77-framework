@@ -25,6 +25,7 @@ SOURCE=/packages/module-backend/src/Ui/Controllers/Service/BackupController.php
 SOURCE=/packages/module-backend/res/view/templates/Service/BackupController/listAction.tpl.php
 SOURCE=/packages/module-backend/res/view/templates/Service/BackupController/actions.tpl.php
 SOURCE=/packages/module-backend/res/view/templates/Service/BackupController/confirmDelete.tpl.php
+SOURCE=/tests/zip-archiver-symlinks.php
 
 ## mental model
 
@@ -57,6 +58,13 @@ details from the sidecar. There is no central history file that could drift.
 
 - `ZipArchiver` writes to `*.zip.tmp` and renames on success — an aborted run
   never leaves a file the scan would list (the name pattern also filters it out).
+- Directory links are FOLLOWED, with a realpath visited set (since 2026-08-28,
+  BACKUP-SYMLINK-001): in the release layout
+  ([`release-structure.md`](../01-handbook/release-structure.md)) `data/`,
+  `config/` and `public/media` inside a release are links into `shared/`, and
+  a full backup archives what is behind them, under the link-side names. Two
+  names for one tree pack it once, a cycle terminates, a dangling link is
+  skipped. A flat installation has no links and behaves exactly as before.
 - Retention runs after every successful backup: keep the newest N per type
   (config `retention`, defaults 10/10/5, `0` = unlimited).
 - `BackupHistory::FILE_PATTERN` doubles as the traversal guard: download and
@@ -118,17 +126,18 @@ moving.
 - When exposing backup actions in the backend → MUST keep every action `AuthRole::SUPER_USER` (the archive IS the user store) and mutations Fetch-POST (global CSRF) + per-archive entity token
 - When adding another CLI task → MUST follow ADR-028 (own `bin/` script in the owning package, Composer `bin`, boot only what it needs)
 - When changing what a `data` or `full` archive contains → MUST keep `data/framework/jobs` excluded (`BackupService::DATA_EXCLUDES`, applied to both types and NOT configurable); it is transient runtime state and it changes while the archive is being written (BACKUP-JOBS-001)
+- When touching the archive walk → the descent MUST stay PATH-BASED (`scandir` + `is_dir`) and MUST keep the realpath visited set next to it — the pair in `ZipArchiver::addTree()`. MUST NOT swap it back to `RecursiveDirectoryIterator`: without `FOLLOW_SYMLINKS` a linked directory is a silent leaf, and WITH the flag a Windows junction still is (its directory entry reports type «unknown» — measured, BACKUP-SYMLINK-001). Following without the set recurses forever on a cycle; the set without following changes nothing
 - When adding a directory of disposable runtime state → MUST follow ADR-034: put it under `lib/` (page cache, throttle counters live there) and MUST NOT add it to `fullExcludes` — the whole `lib` tree is already named, and a second entry would only start the maintained-list problem again (BACKUP-LIB-001). The test is «may this be deleted while the installation is serving requests?»; if no, it does not belong under `lib/` and the decision is its location, not its exclude.
 
 ## known issues
 
 - **BACKUP-LIB-001**: don't assume a changed default reaches an existing installation. `fullExcludes` used to name `lib/cache` instead of `lib`, so when the throttle counters moved to `lib/throttle` (2026-08-25) they were back inside every full archive. `config/backup.inc.php` is seed-once — the installer writes it once and NEVER overwrites it — so changing `DEFAULT_EXCLUDES` and `backup.default.inc.php` only fixes installations that do not exist yet. Every existing installation carries its own copy and needs the line edited by hand; axo3 and zihlundsee are done — working copies AND servers, 2026-08-25, nothing open. This is the general shape, not a one-off: any seed-once default that changes needs a per-installation pass, and the change is silent until someone opens an archive and finds what should not be in it.
 
+- **BACKUP-SYMLINK-001** — resolved 2026-08-28. Don't assume a directory walk sees what `is_dir()` sees. The old `RecursiveDirectoryIterator` walk treated a linked directory as a silent leaf — `hasChildren()` answered from the LINK view (no descend), `isFile()` from the TARGET view (not a file) — so a full backup of a release layout archived the code and dropped everything behind `data/`, `config/`, `logs/`, `public/media` and `public/storage`: no error, no hint, `status: ok` in the sidecar. Found on cyon while measuring the release structure; the «Daten» type was never affected (there the link is the SOURCE argument, which path resolution follows on open). Fixed by replacing the iterator with the explicit path-based descent + realpath visited set (see rules). `FOLLOW_SYMLINKS` alone was tried first and is NOT enough: a Windows junction reports directory-entry type «unknown», and the flag consults exactly that. Verified: `tests/zip-archiver-symlinks.php`, 9 checks — flat tree and linked tree produce the identical name set, excludes apply behind links, a twice-linked tree packs once, a cycle terminates, a dangling link is skipped.
 - **BACKUP-JOBS-001**: don't assume a data backup may contain `data/framework/jobs` — it must not, for two independent reasons. It is transient runtime state, so a restore would resurrect a queue of work from whenever the archive was taken (same argument that keeps a running job out of systemConfig, [`bootstrap.md`](bootstrap.md)). And it MOVES mid-archive: `ZipArchive` reads file contents at `close()`, not at `addFile()`, so `queue.json` being rename-replaced by the very backup job that is running fails the whole archive with `ZipArchive::close(): Read error`. Found 2026-08-07 when the backup types became jobs; fixed via `DATA_EXCLUDES`, applied to `data` and appended unconditionally to `fullExcludes` (the configured list is the operator's, this entry is not).
 
 ## pending
 
-- **Decide what «Gesamtprojekt» does in the release layout** (found 2026-08-28 on cyon, see [`../01-handbook/release-structure.md`](../01-handbook/release-structure.md)): `ZipArchiver::zipDirectory()` iterates with `RecursiveDirectoryIterator($sourceDir, FilesystemIterator::SKIP_DOTS)` and no `FOLLOW_SYMLINKS` — a symlinked directory inside the tree answers `hasChildren() === false` and `isFile() === false`, so the iterator never descends and packs nothing. In the release structure, where `data/` inside a release is a symlink into `shared/`, a full backup therefore archives NO data — without an error, without a hint, which is the most dangerous kind of backup. «Daten» is unaffected (the symlink is the SOURCE argument and is followed on open); «Datenbank» is unaffected. Reproduced 2026-08-28 with the real `ZipArchiver` against a junction layout: the data backup packs through the link (source argument is followed on open, excludes apply), the full backup of the same tree adds ONE file — the code file — and silently drops the entire linked `data/` tree; in the release layout that loss also covers `config/`, `logs/`, `public/media` and `public/storage`. Options: add `FOLLOW_SYMLINKS` (the existing excludes keep applying — they match on the relative path — but decide the cycle/duplicate stance first), or declare «Gesamtprojekt» unsupported in that layout and say so on the surface. Until decided, release-layout installations schedule «Daten» + «Datenbank» only.
 - Existing (pre-1.1.0) projects do not get the «Service» navigation section automatically (navigation data is seed-once). The fix is BUILT (ADR-032): the backend data import proposes the missing shipped entries — see [`import.md`](import.md). Manual creation via the navigation UI remains the fallback on installations whose framework predates the import screen.
 
 ## see also

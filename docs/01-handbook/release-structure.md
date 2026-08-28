@@ -222,11 +222,13 @@ handgrip.
   that interprets its own location belongs in the release; `shared/` holds
   state. (The generated `fileFinder.inc.php` is the audited exception: since
   2026-08-28 it anchors on `ABS_BASE_PATH` and computes nothing from itself.)
-- **No backup type «Gesamtprojekt» in this layout.** `ZipArchiver` iterates
-  without `FOLLOW_SYMLINKS`; the linked `data/` inside a release yields an
-  archive without data — no error, no hint (see `topics/backup.md`,
-  pending). Schedule «Daten» + «Datenbank» instead; both work (the symlink is
-  followed when passed as the SOURCE).
+- **No backup type «Gesamtprojekt» on a framework OLDER than 2026-08-28.**
+  Before BACKUP-SYMLINK-001 the archive walk treated a linked directory as a
+  silent leaf: the full backup of a release contained the code and NOTHING
+  behind `data/`, `config/`, `public/media` — no error, no hint. Since the
+  fix the walk is path-based with a realpath visited set and all three types
+  work in this layout (see `topics/backup.md`). On an older framework,
+  schedule «Daten» + «Datenbank» only.
 - **No upload over the signposts.** The deploy artifact must exclude every
   linked name; one stray local `data/` folder in the upload replaces the link
   and forks the state.
@@ -252,8 +254,8 @@ throttle counters in        shared/lib/throttle/…
 
 - [`installer.md`](installer.md) — the generated `config/fileFinder.inc.php`
   and why it anchors on `ABS_BASE_PATH`
-- [`../topics/backup.md`](../topics/backup.md) — the «Gesamtprojekt» symlink
-  limitation (pending decision)
+- [`../topics/backup.md`](../topics/backup.md) — how the archive walk follows
+  the layout's links (BACKUP-SYMLINK-001), and why all three types work here
 - [`../topics/persistence-file.md`](../topics/persistence-file.md) — what
   lives under `data/` and why it must exist exactly once
 - ADR-034 — why everything under `lib/` may be deleted at any time (what
