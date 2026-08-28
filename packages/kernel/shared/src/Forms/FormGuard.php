@@ -79,6 +79,27 @@ final class FormGuard
         return count($this->recentSends()) >= $maxPerHour;
     }
 
+    /**
+     * How many sends THIS BROWSER got through on this form within the last
+     * hour.
+     *
+     * The point of exposing the number next to {@see self::isRateLimited()} is
+     * that the two carry different knowledge. The verdict is about the limit —
+     * on a silent form, saying anything about it would tell a stranger that
+     * this submit was treated differently from the last. The COUNT is about
+     * what this visitor just did, which the visitor already knows: it names no
+     * account, no address and no limit, so a page may act on it without
+     * becoming an oracle.
+     *
+     * ⚠️ It saturates at the limit — past it nothing is recorded any more
+     * ({@see PublicFormHandler} records only a successful send). Read it as
+     * «asked once» vs. «asked again», never as a total.
+     */
+    public function sendCount(): int
+    {
+        return count($this->recentSends());
+    }
+
     /** Registers a successful send for the rate-limit window. */
     public function recordSend(): void
     {

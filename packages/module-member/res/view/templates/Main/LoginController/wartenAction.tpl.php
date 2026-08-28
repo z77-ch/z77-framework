@@ -8,8 +8,14 @@
  * the confirmation, and say what a mismatch means. Nothing here may be
  * readable as «the number is only over there».
  *
+ * ⚠️ `$repeated` is the ONLY thing on this page that may differ between two
+ * visitors, and it says nothing about an account — only that THIS browser
+ * asked again (see LoginController::askedBefore()). The neutral lead above it
+ * is unchanged in both cases; what changes is the advice at the foot.
+ *
  * @var string $pageTitle
- * @var string $digits  four digits, or '' when nothing is waiting here
+ * @var string $digits    four digits, or '' when nothing is waiting here
+ * @var bool   $repeated  this browser has asked for a link before, this hour
  */
 ?>
 <div class="me-card" data-login-wait>
@@ -37,7 +43,17 @@
     <p class="me-card__note" data-login-wait-note>Warte auf die Bestätigung …</p>
     <?php endif; ?>
 
+    <?php if ($repeated): ?>
+    <p class="me-card__aside">
+        <strong>Sie haben in dieser Stunde schon einmal einen Link angefordert.</strong>
+        Sehen Sie im <strong>Spam-Ordner</strong> nach — dort landet die E-Mail
+        am häufigsten. Massgeblich ist die <strong>zuletzt geschickte E-Mail</strong>:
+        ihr Link gilt, frühere sind damit hinfällig. Fordern Sie keinen neuen an —
+        jede weitere Anforderung macht den vorherigen Link ungültig.
+    </p>
+    <?php else: ?>
     <p class="me-card__aside">
         Keine E-Mail erhalten? <a href="/member/main/login">Erneut anfordern</a>
     </p>
+    <?php endif; ?>
 </div>

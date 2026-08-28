@@ -52,6 +52,15 @@ field name, the form partial and the notification-mail body can both be generic.
   counter lives in the session and survives sign-out — `session_regenerate_id(true)`
   keeps the data, deliberately, so the limit cannot be reset by logging out. The member
   login runs it silently at 5/h (member.md MEM-010).
+- **A silent limit still leaves the page something honest to say — `FormGuard::sendCount()`.**
+  The VERDICT (`isRateLimited()`) must stay invisible on such a form: acting on it tells a
+  stranger that this submit was treated differently from the last. The COUNT is different
+  knowledge — it names no account, no address and no limit, only that THIS browser asked
+  again, which the visitor already knows. A page may therefore branch on it without
+  becoming an oracle. The member waiting page does exactly that (member.md MEM-012): from
+  the second request it drops «Erneut anfordern» and advises the spam folder instead. It
+  saturates at the limit (only a successful send is recorded), so read it as «asked once»
+  vs. «asked again», never as a total.
 - **Rules are an associative array**, not a string mini-language: `['required' => true,
   'min' => 2, 'max' => 80, 'email' => true, 'accepted' => true]`. A declared `options` map
   is the whitelist for that field's value. The set is deliberately small — new rules only

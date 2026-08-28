@@ -11,6 +11,7 @@ use Z77\Core\DI,
     Z77\Module\Member\Ui\Controllers\AbstractMemberController,
     Z77\Module\Member\Ui\Form\LoginFormDefinition,
     Z77\Shared\Controller\PublicFormCheckTrait,
+    Z77\Shared\Forms\FormGuard,
     Z77\Shared\Forms\PublicFormHandler
 ;
 
@@ -70,7 +71,34 @@ class LoginController extends AbstractMemberController
         return $this->html([
             'pageTitle' => 'Anmeldung angefordert',
             'digits'    => $pending?->getCheckDigits() ?? '',
+            'repeated'  => $this->askedBefore(),
         ]);
+    }
+
+    /**
+     * Has this browser already asked for a link in the last hour?
+     *
+     * ⚠️ The one thing this page may react to. The address throttle is SILENT
+     * by design (MEM-005): past the limit nothing is sent and the waiting page
+     * appears as always, because a visible difference would tell a stranger
+     * whether an address has an account. The cost was that the customer whose
+     * link went to the spam folder keeps asking, walks into the limit, and
+     * waits for a mail that will never arrive — with the page still inviting
+     * «Erneut anfordern».
+     *
+     * The session's own request count closes that gap without opening the
+     * oracle: it says what THIS visitor just did, never anything about an
+     * account. So the page can offer the advice that actually helps — look in
+     * the spam folder, the first link is still valid, stop asking — to exactly
+     * the person who needs it.
+     *
+     * A visitor using a fresh private window every time never sees it. That is
+     * accepted: it is not the person this helps, and the address throttle
+     * holds either way.
+     */
+    private function askedBefore(): bool
+    {
+        return FormGuard::forKey((new LoginFormDefinition())->guardKey())->sendCount() >= 2;
     }
 
     /** The old PRG target — kept so bookmarked/queued links do not 404. */
