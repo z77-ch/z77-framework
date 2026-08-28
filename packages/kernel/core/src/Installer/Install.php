@@ -856,6 +856,17 @@ class Install
         $content  = $this->header($name, self::NOTE_SEED_ONCE);
         $content .= "return [\n";
         foreach ($this->backupConfig as $key => $value) {
+            if ($key === 'retention') {
+                // The one key whose SEMANTICS the operator needs where they
+                // edit: the generated file carries no comments otherwise, and
+                // the tier form is not guessable from the values.
+                $content .= "    // Per type: integer = keep the newest N (0 = unlimited), or a tiered\n";
+                $content .= "    // map for LATE discovery (a mistake noticed days later still has a\n";
+                $content .= "    // clean state): tiers last/daily/weekly/monthly/yearly, count per\n";
+                $content .= "    // tier, 0 = that tier unlimited; `last` protects a manual pre-change\n";
+                $content .= "    // backup from the same-day scheduled run. A misspelled tier name\n";
+                $content .= "    // throws. Full story: docs/topics/backup.md.\n";
+            }
             $content .= "    '{$key}' => " . $this->exportPhpValue($value) . ",\n";
         }
         $content .= "];\n";
