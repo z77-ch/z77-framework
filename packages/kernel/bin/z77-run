@@ -11,7 +11,9 @@
  *   php /path/to/project/cron/run.php
  *
  * One cron line per installation; everything else is configured in the
- * application. A pass with nothing due boots and exits.
+ * application. A pass with nothing due boots and exits SILENTLY — cron
+ * mails every run that produces output, so only a pass that did something
+ * (or failed) says so.
  *
  *   php vendor/bin/z77-run [--project=/abs/path]
  *   php vendor/bin/z77-run --list                 registry + queue overview
@@ -20,7 +22,8 @@
  * Unlike z77-backup this DOES boot the framework's service layer
  * (Bootstrap::pullUpServices) — a generic runner cannot know what an arbitrary
  * job needs. It stops short of HTTP: no request, no router, no session.
- * Output is cron-mail friendly; exit 0 = pass completed, 1 = it could not run.
+ * Output is cron-mail friendly: silence when idle, a summary when work ran,
+ * STDERR on failure; exit 0 = pass completed, 1 = it could not run.
  */
 
 if (PHP_SAPI !== 'cli') {
@@ -143,19 +146,32 @@ try {
 
     $summary = JobRunner::fromBootedProject($projectRoot)->run();
 
-    foreach ($summary['lines'] as $line) {
-        echo '  ' . $line . "\n";
+    // An idle pass says NOTHING. Cron mails every run that produces output,
+    // and this runs once a minute — a summary of zeros would fill a mailbox
+    // with proof that nothing happened. Proof that the cron RUNS is the
+    // heartbeat (data/framework/jobs/last-pass.json → the job screen banner),
+    // not a mail; failures write to STDERR above and still get mailed.
+    $idle = $summary['executed'] === 0
+        && $summary['queued'] === 0
+        && $summary['reclaimed'] === 0
+        && $summary['pruned'] === 0
+        && $summary['lines'] === [];
+
+    if (!$idle) {
+        foreach ($summary['lines'] as $line) {
+            echo '  ' . $line . "\n";
+        }
+        printf(
+            "z77-run: %d executed (%d done, %d continued, %d failed), %d queued by schedule, %d reclaimed, %d pruned\n",
+            $summary['executed'],
+            $summary['done'],
+            $summary['again'],
+            $summary['failed'],
+            $summary['queued'],
+            $summary['reclaimed'],
+            $summary['pruned']
+        );
     }
-    printf(
-        "z77-run: %d executed (%d done, %d continued, %d failed), %d queued by schedule, %d reclaimed, %d pruned\n",
-        $summary['executed'],
-        $summary['done'],
-        $summary['again'],
-        $summary['failed'],
-        $summary['queued'],
-        $summary['reclaimed'],
-        $summary['pruned']
-    );
     exit(0);
 } catch (\Throwable $e) {
     fwrite(STDERR, 'z77-run: FAILED — ' . get_class($e) . ': ' . $e->getMessage() . "\n");
