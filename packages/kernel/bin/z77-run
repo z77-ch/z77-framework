@@ -5,6 +5,11 @@
  *
  *   * * * * * cd /path/to/project && php vendor/bin/z77-run
  *
+ * Where the host's cron panel takes one command and no `cd` (cyon), call the
+ * seeded starter instead — it chdir()s into the project and hands over here:
+ *
+ *   php /path/to/project/cron/run.php
+ *
  * One cron line per installation; everything else is configured in the
  * application. A pass with nothing due boots and exits.
  *

@@ -139,6 +139,7 @@ class Install
             }
 
             $this->createDirectories($config['directories'] ?? [], $firstInstall);
+            $this->seedCronEntry();
         }
 
         $this->writeBootstrapConfig();
@@ -1387,6 +1388,32 @@ class Install
         $this->systemConfig    = require $dir . self::SYSTEM_CONFIG . '.default.inc.php';
 
         return $config;
+    }
+
+    /**
+     * Seeds `cron/run.php` — the cron entry for hosts whose panel takes one
+     * command and no `cd` (the panel cron starts in the home directory, where
+     * z77-run's upward walk finds no project). Seed-ONCE like public/: the
+     * file is three lines of hand-over with no generated content, and an
+     * installation may have adapted it (a hoster-specific guard, a different
+     * PHP ini) — regenerating would overwrite that silently. Unlike public/
+     * it seeds even on an existing installation, as long as the file itself
+     * is absent — existing projects get the entry on their next install.
+     */
+    private function seedCronEntry(): void
+    {
+        $dir    = $this->trailingSlash($this->baseDir) . 'cron';
+        $target = $dir . '/run.php';
+        if (is_file($target)) {
+            return;
+        }
+
+        $this->io->write("Seed cron entry → {$target}");
+        $source = __DIR__ . '/../../cron/run.php';
+        if (!is_file($source)) {
+            throw new \RuntimeException("Cron entry template not found: {$source}");
+        }
+        $this->writeFile($dir, 'run.php', (string) file_get_contents($source));
     }
 
     private function writeFile(string $dir, string $fileName, string $content): void

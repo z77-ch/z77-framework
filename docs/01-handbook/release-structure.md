@@ -88,11 +88,33 @@ Why this is actually uninterrupted, and not just fast:
   `shared/lib/cache`), or visitors get the old release's HTML from the new
   one. Everything under `lib/` is disposable by contract (ADR-034), so this
   is always safe.
-- **Cron follows the switch on its own** — as long as the crontab points at
-  `current/vendor/bin/z77-run` and never at a release directory. The link is
-  resolved when the process starts: a job already running finishes on the old
-  code (fine — same guarantee as a web request), the next tick runs the new
-  one.
+- **Cron follows the switch on its own** — as long as the cron entry goes
+  THROUGH `current` and never names a release directory. The link is resolved
+  when the process starts: a job already running finishes on the old code
+  (fine — same guarantee as a web request), the next tick runs the new one.
+  Two call forms, depending on what the host allows:
+
+  ```sh
+  # a real crontab (shell available):
+  * * * * * cd <domain>/current && php vendor/bin/z77-run
+
+  # a panel that takes ONE command and no `cd` (cyon):
+  php84 <domain>/current/cron/run.php
+  ```
+
+  `cron/run.php` is seeded by the installer: `z77-run` finds the project by
+  walking UP from the working directory, and a panel cron starts in the home
+  directory, where that walk finds nothing. The starter sits physically in
+  the release, so `__DIR__` names the real project once PHP has resolved the
+  call path — it `chdir()`s and hands over.
+
+  ⚠️ **Never reach the project with `..` across the switch** — neither in the
+  cron path nor as `--project=<domain>/current/..`. POSIX resolves the link
+  component FIRST, so `current/..` names `releases/`, not the domain
+  directory: reads miss, and recursive `mkdir` (the job lock) fails with a
+  «File exists» that points nowhere near the cause. This is the same
+  symlink-resolved-realpath mechanic as everywhere else in this document —
+  here it works against the intuition instead of for it.
 - **Rollback is the same move in the other direction:**
   `ln -sfn releases/<previous> current`. Nothing is copied, nothing restored;
   the previous release never stopped being complete. Keep at least one old
@@ -143,7 +165,11 @@ REL=2026-08-28                         # today's release name
 mkdir -p $BASE/shared/{data,config,logs,lib,backup,media,storage}
 chmod 700 $BASE/shared/backup          # and every secret store, e.g. .propbase
 
-# 2. Upload the release (pure code: vendor/, override/, public/, …).
+# 2. Upload the release — pure code: vendor/, override/, public/, cron/,
+#    composer.json + composer.lock. The last two are not read by the web
+#    application, but z77-run and z77-backup recognise the project root by
+#    vendor/autoload.php AND composer.json side by side — an upload without
+#    them leaves both CLI tools unable to find home.
 #    ⚠️ The upload must NOT contain the linked names (data/, config/, logs/,
 #    lib/, backup/, public/media, public/storage) — a local directory of that
 #    name would overwrite the signpost with a real folder.
@@ -175,7 +201,10 @@ Then, in the hoster's panel:
 - document root of the production domain → `<domain>/current/public`
 - a test subdomain (e.g. `next.example.ch`) → `<domain>/next/public`, and give
   it `noindex` (it serves the same pages as production)
-- crontab → `current/vendor/bin/z77-run`, never a release path
+- cron → through `current`, never a release path: a real crontab uses
+  `cd <domain>/current && php vendor/bin/z77-run`, a panel without `cd` uses
+  `php <domain>/current/cron/run.php` (see the mechanism section — and never
+  a `..` across the switch)
 
 **Build every switch the same way.** Whether document roots point at
 `current/public` or `current` points at a `public` — pick ONE convention for

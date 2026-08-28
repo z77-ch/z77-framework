@@ -12,6 +12,7 @@
 
 SOURCE=/packages/kernel/core/src/Installer/Install.php
 SOURCE=/packages/kernel/core/res/CLAUDE.project.md
+SOURCE=/packages/kernel/core/cron/run.php
 SOURCE=/packages/kernel/core/src/Config/bootstrap.default.inc.php
 SOURCE=/packages/kernel/core/src/Config/moduleManager.default.inc.php
 SOURCE=/packages/kernel/core/src/Config/systemConfig.default.inc.php
@@ -45,21 +46,22 @@ Runs as a Composer post-install/post-update hook. Reads `extra` config from `com
 | 3 | `buildPaths()` | override paths first, vendor paths second (CE principle) |
 | 4 | `copyFiles()` | `public/` entry files → project web root — **first install only** (`public/` absent; ADR-024). On update (`public/` present) instead: `reportAssetDrift()` collects the read-only changed/new asset list; rendered at the end (ADR-025) |
 | 5 | `createDirectories()` | override dirs, moduleTree, logs (always) + publicAssetTree asset copy (**first install only**) |
-| 6 | `writeBootstrapConfig()` | → `config/bootstrap.inc.php` |
-| 7 | `writeModuleManagerConfig()` | → `config/moduleManager.inc.php` |
-| 8 | `writeAuthConfig()` | → `config/auth.inc.php` — **seed-once**: skipped if it already exists (INST-CONFIG-001) |
-| 9 | `writeI18nConfig()` | → `config/i18n.inc.php` — **seed-once**: skipped if it already exists (INST-CONFIG-001) |
-| 10 | `writeBackupConfig()` | → `config/backup.inc.php` — **seed-once**: backup policy (retention, excludes, database), see [`backup.md`](backup.md) |
-| 11 | `writeMailConfig()` | → `config/mail.inc.php` — **seed-once**: mail transport + sender identity (`enabled=true`, `transport='mail'`, empty `fromAddress` to fill per project), see [`mail.md`](mail.md) |
-| 12 | `writeSystemConfig()` | → `config/systemConfig.inc.php` — **seed-once**: installation identity (`canonicalBaseUrl`), the one config NOT fed from `composer.json` (ADR-030) |
-| 13 | `writeFileFinderConfig()` | → `config/fileFinder.inc.php` |
-| 14 | `writeDataFiles()` | seed `data/*.json` from EVERY installed framework package's data roots (skip if already exist; INST-SEED-001) |
-| 15 | `provisionAdmin()` | create admin (interactive) or write `SETUP_TOKEN` (non-interactive) — skip if `backendUsers.json` exists |
-| 16 | `writeDebugFlag()` | create/remove `data/framework/debug.flag` per `debug` |
-| 17 | `seedProjectClaudeMd()` | seed `CLAUDE.md` (project context for AI assistants) from the kernel template — **seed-once**, never overwritten |
-| 18 | `renderAssetDriftNotice()` | print the collected asset drift (step 4) as ONE coloured notice (ADR-025) |
-| 19 | `promptAssetDeploy()` | interactive-only, per-file, default-No deploy of drifted assets (ADR-026) |
-| 20 | `offerDocsInstall()` | opt-in `z77/docs` require-dev (interactive: ask, default **Yes**; non-interactive: print the manual command) — **last output of the run** |
+| 6 | `seedCronEntry()` | seed `cron/run.php` from the kernel template — **seed-once**: the cron entry for hosts whose panel takes one command and no `cd` (the starter `chdir()`s into the project and hands over to `vendor/bin/z77-run`), see [`jobs.md`](jobs.md) |
+| 7 | `writeBootstrapConfig()` | → `config/bootstrap.inc.php` |
+| 8 | `writeModuleManagerConfig()` | → `config/moduleManager.inc.php` |
+| 9 | `writeAuthConfig()` | → `config/auth.inc.php` — **seed-once**: skipped if it already exists (INST-CONFIG-001) |
+| 10 | `writeI18nConfig()` | → `config/i18n.inc.php` — **seed-once**: skipped if it already exists (INST-CONFIG-001) |
+| 11 | `writeBackupConfig()` | → `config/backup.inc.php` — **seed-once**: backup policy (retention, excludes, database), see [`backup.md`](backup.md) |
+| 12 | `writeMailConfig()` | → `config/mail.inc.php` — **seed-once**: mail transport + sender identity (`enabled=true`, `transport='mail'`, empty `fromAddress` to fill per project), see [`mail.md`](mail.md) |
+| 13 | `writeSystemConfig()` | → `config/systemConfig.inc.php` — **seed-once**: installation identity (`canonicalBaseUrl`), the one config NOT fed from `composer.json` (ADR-030) |
+| 14 | `writeFileFinderConfig()` | → `config/fileFinder.inc.php` |
+| 15 | `writeDataFiles()` | seed `data/*.json` from EVERY installed framework package's data roots (skip if already exist; INST-SEED-001) |
+| 16 | `provisionAdmin()` | create admin (interactive) or write `SETUP_TOKEN` (non-interactive) — skip if `backendUsers.json` exists |
+| 17 | `writeDebugFlag()` | create/remove `data/framework/debug.flag` per `debug` |
+| 18 | `seedProjectClaudeMd()` | seed `CLAUDE.md` (project context for AI assistants) from the kernel template — **seed-once**, never overwritten |
+| 19 | `renderAssetDriftNotice()` | print the collected asset drift (step 4) as ONE coloured notice (ADR-025) |
+| 20 | `promptAssetDeploy()` | interactive-only, per-file, default-No deploy of drifted assets (ADR-026) |
+| 21 | `offerDocsInstall()` | opt-in `z77/docs` require-dev (interactive: ask, default **Yes**; non-interactive: print the manual command) — **last output of the run** |
 
 ## frameworkPrefix filter
 

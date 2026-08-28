@@ -23,6 +23,7 @@ SOURCE=/packages/kernel/shared/src/Jobs/BackupJob.php
 SOURCE=/packages/kernel/shared/src/Entities/JobRun.php
 SOURCE=/packages/kernel/shared/src/Entities/JobSchedule.php
 SOURCE=/packages/kernel/bin/z77-run
+SOURCE=/packages/kernel/core/cron/run.php
 SOURCE=/packages/kernel/core/src/Services/ModuleManager.php
 SOURCE=/packages/module-backend/src/Ui/Controllers/Service/JobController.php
 SOURCE=/packages/module-backend/res/view/templates/Service/JobController/listAction.tpl.php
@@ -33,7 +34,7 @@ RUNTIME=/skeleton/data/framework/routing/navigation.json
 
 ## mental model
 
-Cron calls `vendor/bin/z77-run` once a minute — one line per installation, everything else configured in the application. A pass boots `Bootstrap::__construct()` + `pullUpServices()` (no request, no router, no session), turns due schedules into queue entries, works the queue until its time budget is spent, and exits. A job returns `JobResult::again($cursor, $notBefore)` to continue later; the same value covers throttling (delay in the future) and slicing (delay zero). Execution happens ONLY in the runner — the backend queues, it never runs.
+Cron calls `vendor/bin/z77-run` once a minute — one line per installation, everything else configured in the application. The runner finds the project by walking UP from the working directory; where the host's cron panel takes one command and no `cd` (cyon), the installer-seeded `cron/run.php` is the entry — it sits physically in the project, `chdir()`s into it and hands over (in the release layout it is called through the `current` switch, see [`release-structure.md`](../01-handbook/release-structure.md)). A pass boots `Bootstrap::__construct()` + `pullUpServices()` (no request, no router, no session), turns due schedules into queue entries, works the queue until its time budget is spent, and exits. A job returns `JobResult::again($cursor, $notBefore)` to continue later; the same value covers throttling (delay in the future) and slicing (delay zero). Execution happens ONLY in the runner — the backend queues, it never runs.
 
 - **One entry gets at most one slice per pass.** `again()` is the job stating it is finished for this pass; restarting it would spin hundreds of no-op slices.
 - **The cursor is opaque.** An offset, a last-seen id, a batch number — only the job knows. The runner stores it verbatim.
@@ -107,6 +108,7 @@ Only `every:` consults the last run; the wall-clock forms do not. Deliberately n
 - When storing anything about a run → MUST put it in the queue entry or a lock file under `data/framework/jobs`; MUST NOT put transient runtime state into `systemConfig` (a restore would resurrect it)
 - When the backend triggers a job → MUST enqueue and let the runner execute it; MUST NOT run a job inside the request
 - When a job needs more rights than the cron default → MUST raise `runAs` in the module config, MUST NOT bypass an ACL inside the job
+- When the host's cron panel cannot `cd` → MUST call the seeded `cron/run.php` (through `current` in the release layout); MUST NOT reach the project as `--project=…/current/..` — POSIX resolves the symlink component first, so that path names `releases/`, and the failure surfaces as a job-lock mkdir error far from the cause
 - When a data or full backup is taken → MUST keep `data/framework/jobs` excluded (`BackupService::DATA_EXCLUDES`); it moves while the archive is written (backup.md BACKUP-JOBS-001)
 
 ## see also
