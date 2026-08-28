@@ -83,6 +83,22 @@ abstract class FormDefinition
     }
 
     /**
+     * Field whose value the geo-guard log may record as `identity` — an
+     * explicit opt-in, one field, or nothing.
+     *
+     * ⚠️ Null is the DEFAULT and the point: the form log records technical
+     * facts (ip, country, outcome, user agent) for every guarded form, but an
+     * identifying value only where the definition says so. Data minimisation
+     * is the ground state — a questionnaire never names who answered, a
+     * registration form declares 'email' because a flood of attempts is only
+     * readable evidence when the addresses can be compared.
+     */
+    public function identityField(): ?string
+    {
+        return null;
+    }
+
+    /**
      * Endpoint for the per-field blur check. null = derive it from the current
      * request (`/{module}/{group}/{controller}/check`); set it explicitly when
      * the form is reached through an alias/reserved route.

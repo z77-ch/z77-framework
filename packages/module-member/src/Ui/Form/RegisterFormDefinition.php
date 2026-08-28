@@ -25,6 +25,16 @@ class RegisterFormDefinition extends FormDefinition
         return 'memberRegister';
     }
 
+    /**
+     * The form log records the typed address (geo-guard opt-in): a flood of
+     * registration attempts is only readable evidence when the addresses can
+     * be compared — one address hammered vs. a fresh one per try.
+     */
+    public function identityField(): ?string
+    {
+        return 'email';
+    }
+
     public function fields(): array
     {
         return [

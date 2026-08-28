@@ -40,7 +40,13 @@ class LoginController extends AbstractMemberController
         // «Versand fehlgeschlagen» for a limit a customer reaches
         // legitimately (link in spam, second device).
         $form = PublicFormHandler::create(new LoginFormDefinition())
-            ->withRateLimit(LoginFlow::requestsPerHour(), silent: true);
+            ->withRateLimit(LoginFlow::requestsPerHour(), silent: true)
+            // Same silence for the country rule: every submit lands on the
+            // waiting page, a barred origin included — the page must not
+            // reveal the rule (MEM-005). Closes the gap that a blocked
+            // country could still request login links (review F2). No
+            // identityField here: the log keeps technical facts only.
+            ->withGeoGuard(silent: true);
 
         $onValid = fn($valid): bool => $this->loginFlow()->request(
             (string)$valid->get('email'),

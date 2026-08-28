@@ -22,7 +22,6 @@ SOURCE=/packages/module-member/src/Services/LoginFlow.php
 SOURCE=/packages/module-member/src/Services/MemberAuth.php
 SOURCE=/packages/module-member/src/Services/MemberSession.php
 SOURCE=/packages/module-member/src/Services/MemberThrottle.php
-SOURCE=/packages/module-member/src/Services/RegistrationLog.php
 SOURCE=/packages/module-member/src/Services/PendingLogins.php
 SOURCE=/packages/module-member/src/Services/DeviceKeys.php
 SOURCE=/packages/module-member/src/Services/DeviceCookie.php
@@ -111,7 +110,7 @@ login request ─▶ waiting record + mail (link, check digits, context) │
 - When a rail carries a mutually exclusive SHAPE choice (tree vs list) → MUST render it as a `segment` row (`['segment' => [...]]`, one bordered control, active option filled inverse), never as plain `me-item` rows — plain rows read as more data entries, not as the control that changes the whole pane (Fund Peter, 2026-08-18). Options stay links.
 - When a screen's rail selection is explicit (a key in the URL) → MUST pass `detailOpen: true` so the detail also opens on a narrow container; a screen whose selection is only a DEFAULT MUST NOT, or the list is unreachable on a phone.
 - When adding a route to this module → MUST add it to BOTH the module config and any project override of that file, since the override wins whole. The same holds for a `jobs` entry and for any new SETTING: a whole-file override that omits one loses it silently, and nothing reports the loss (2026-08-24: the AXO3 override carried no `jobs` key at all, so `member-cleanup` did not exist on that installation).
-- When restricting registrations by origin country (`memberConfig['blockedCountries']`) → MUST be a blocklist, MUST default to empty, and MUST fail OPEN: an unknown country (no database, private range, unreadable config) never blocks. The refusal is VISIBLE — `register()` returns false and the form shows its send error — deliberately unlike the bot traps, which fake success: a honeypot only ever catches a script, whereas a country rule can hit a real customer, and a real customer must be able to notice and write to us. See [`geoip.md`](geoip.md).
+- When restricting member forms by origin country → the rule is NOT this module's: register and login opt into the kernel's `PublicFormHandler::withGeoGuard()` (register visible with `identityField 'email'` + the `origin` extra; login `silent: true`, MEM-005), and blocklist, log and backend surface live in the kernel (see [`forms.md`](forms.md)). MUST NOT read a `memberConfig['blockedCountries']` key — removed 2026-08-27, a leftover entry is silently ignored (GEOIP-003) — and MUST NOT re-introduce a gate in `RegistrationFlow`: the handler refuses before the flow runs.
 - When an action ends in a redirect → MUST land the user WHERE THEY STOOD before the action: the entry's `?key`, the section's `?bereich`, the list's filters — never the surface's default selection. A `#fragment` is not a selection (the server never sees it); the query parameter is. The one exception is deletion — what one stood on is gone, the list default is honest there. (Found 2026-08-15: saving widget entry three landed the rail on entry one; the profile's device/2FA actions dropped the person back on «Konto».)
 
 ## known issues

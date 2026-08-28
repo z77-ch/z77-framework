@@ -15,7 +15,17 @@ SOURCE=/packages/kernel/shared/src/Forms/PublicForm.php
 SOURCE=/packages/kernel/shared/src/Forms/PublicFormValidator.php
 SOURCE=/packages/kernel/shared/src/Forms/PublicFormHandler.php
 SOURCE=/packages/kernel/shared/src/Forms/FormGuard.php
+SOURCE=/packages/kernel/shared/src/Forms/FormLog.php
+SOURCE=/packages/kernel/shared/src/Forms/CountryBlocklist.php
+SOURCE=/packages/kernel/shared/src/Forms/FormLogSweepJob.php
+SOURCE=/packages/kernel/shared/src/Entities/BlockedCountry.php
 SOURCE=/packages/kernel/shared/src/Controller/PublicFormCheckTrait.php
+SOURCE=/packages/module-backend/src/Ui/Controllers/Service/FormLogController.php
+SOURCE=/packages/module-backend/res/view/templates/Service/FormLogController/listAction.tpl.php
+SOURCE=/packages/module-backend/res/view/templates/Service/FormLogController/confirmBlock.tpl.php
+SOURCE=/packages/module-backend/res/view/templates/Service/FormLogController/confirmUnblock.tpl.php
+SOURCE=/tests/form-geo-guard.php
+SOURCE=/tests/country-blocklist.php
 SOURCE=/packages/kernel/persistence/src/Validation/EntityValidator.php
 SOURCE=/packages/module-frontend/src/Ui/Form/ContactFormDefinition.php
 SOURCE=/packages/module-frontend/src/Ui/Controllers/Main/IndexController.php
@@ -29,6 +39,9 @@ SOURCE=/packages/kernel/shared/src/Config/emailConfig.inc.php
 SOURCE=/packages/kernel/core/data/framework/i18n/de.default.json
 SOURCE=/packages/kernel/core/data/framework/i18n/fr.default.json
 SOURCE=/docs/03-development/public-form-bauplan.md
+SOURCE=/docs/03-development/form-geo-guard-bauplan.md
+
+RUNTIME=/skeleton/data/framework/forms/blocked-countries.json
 
 ## mental model
 
@@ -61,6 +74,38 @@ field name, the form partial and the notification-mail body can both be generic.
   the second request it drops «Erneut anfordern» and advises the spam folder instead. It
   saturates at the limit (only a successful send is recorded), so read it as «asked once»
   vs. «asked again», never as a total.
+- **`withGeoGuard()` — country rule + form log in ONE switch.** A form that opts in
+  refuses submits whose origin country is on the installation's blocklist AND writes one
+  `FormLog` line per submit, every outcome (`logs/form-YYYY-MM.jsonl`, 90 days). One
+  switch, not two: a refusal needs its evidence, and the evidence (the log) is what a
+  block is later decided from — the list starts empty, so the guard starts as pure
+  observation. The gate sits after the bot trap and before validation, and it FAILS OPEN:
+  empty list, unknown country — no database, private range, broken store — never block.
+  Visible by default (send-error banner: a country rule can hit a real customer, and the
+  customer must notice); `withGeoGuard(silent: true)` behaves like the bot path for pages
+  that must stay indistinguishable (member login). The handler reads the IP ONCE
+  (`REMOTE_ADDR`, one lookup) and shares it between gate and line, so the log can never
+  show a different country than the one the gate decided on. The blocklist
+  (`Z77\Shared\Entities\BlockedCountry`, `data/framework/forms/blocked-countries.json`)
+  is installation DATA, edited on Backend → Service → Formular-Protokoll
+  (`FormLogController`) — the tally and the block button share a page, and the prefilled
+  reason names its counting window.
+- **The log is data-minimal by default.** A line carries technical facts — form key,
+  outcome, ip, country, user agent, the flow's `FormLog::note()` detail. An identifying
+  value appears ONLY where the definition declares `identityField()` (the register form
+  says `'email'`; a questionnaire says nothing), and `withGeoGuard(extra: [...])` pins
+  additional technical facts (e.g. the register form's `origin`) — never identifying
+  ones. ⚠️ Every guard opt-in widens what the installation stores about visitors: the
+  privacy policy needs a sentence for the log (IP, country, UA, declared identity;
+  90-day retention — swept by the `form-log-cleanup` job, operator-switched).
+- **⚠️ The country DATA never comes with the switch — it is per-installation handwork.**
+  `withGeoGuard()` without a GeoLite database is silently inert: every country reads as
+  unknown, unknown never blocks, and only the backend page says so («Kein
+  Länder-Datenbestand installiert»). The developer's checklist per installation: a
+  MaxMind account + licence key, the key in `config/geoip.inc.php` (machine-local,
+  gitignored, NOT deployed — it must be created on every server), and the `geoip-update`
+  job active (registered by `backendConfig`; it performs the initial download and keeps
+  the EULA's keep-current duty). Details and licence terms: [`geoip.md`](geoip.md).
 - **Rules are an associative array**, not a string mini-language: `['required' => true,
   'min' => 2, 'max' => 80, 'email' => true, 'accepted' => true]`. A declared `options` map
   is the whitelist for that field's value. The set is deliberately small — new rules only
@@ -111,6 +156,7 @@ POST /kontakt
   → process()
       CSRF invalid                → formError (friendly re-render)
       honeypot OR isTooFast()     → completeSubmit() → TRUE  (fake success, no mail)
+      country blocked (geo guard) → formError — or TRUE like the bot path when silent
       validation failed           → errors + formError banner (form.error.check), values kept
       isRateLimited()             → formError
       onValid($form) ?? sendForm(formKey, ['form'=>$form], replyTo, routeKey)
@@ -138,6 +184,11 @@ GET /kontakt/danke   ← the PRG target: a page of its own
 - When adding a form-level hint to the partial (required note, privacy line, …) → MUST gate it on the condition that makes it TRUE for the declaration at hand; MUST NOT print it unconditionally — the partial renders every form in the framework, from one field to a dozen (PUBLIC-FORM-005).
 - When a form field needs a rule that does not exist → MUST add it to `PublicFormValidator` plus a `form.error.{rule}` key in every shipped dictionary; MUST NOT smuggle validation into the template, the controller or the definition.
 - When installing this into an existing project → MUST add the `form.*` keys to `data/framework/i18n/{lang}.json` by hand — incl. `form.error.check` and `form.flash.sent` (the `*.default.json` are seed-once) — and MUST deploy `public-form.js` into `public/assets/{module}/js/`; MUST NOT assume `composer install` copies assets (it only reports the diff).
+- When a form should refuse or observe submits by origin country → MUST opt in via `withGeoGuard()` (silent where the page must stay indistinguishable); MUST NOT build a per-form gate in a flow, a controller or an observer — the handler owns gate AND log, and a second gate would produce a second, disagreeing read of the origin.
+- When switching the geo guard on → the country DATA is the developer's per-installation duty (MaxMind account, key in `config/geoip.inc.php`, `geoip-update` job — see the mental-model checklist); MUST NOT assume the switch alone does anything, and MUST add the log's sentence to the installation's privacy policy.
+- When the log should carry who submitted → MUST declare it as the definition's `identityField()` (one field, explicit); MUST NOT smuggle identifying values through `withGeoGuard(extra: ...)` — extras are technical facts on every line, the identity is the audited exception.
+- When restricting by country → MUST be a blocklist and MUST fail OPEN (empty list, unknown country never block); MUST NOT block on `??`/unknown and MUST NOT build a whitelist — the backend surface does not even offer either.
+- When reading which countries are blocked → MUST go through `CountryBlocklist::codes()`; MUST NOT read a config key — the list is installation data, written only on the backend surface (with a mandatory reason).
 
 ## known issues
 
@@ -234,10 +285,17 @@ GET /kontakt/danke   ← the PRG target: a page of its own
   on the dev box (currently only harness-rendered).
 - Consider a `phone`/`tel` format rule — the reference form only length-checks the number.
 - No `en.default.json` exists; add one when a project ships English.
+- `Request` has no client-ip accessor, so the handler reads `REMOTE_ADDR` itself — at ONE
+  place (`PublicFormHandler::origin()`), deliberately. A clean seam
+  (`Request::getClientIp()` incl. reverse-proxy/trusted-header handling) is its own
+  kernel change; when it exists, that one call site moves onto it.
 
 ## see also
 
 - [`mail.md`](mail.md) — `EmailService::sendForm()` is what the handler calls; recipients, subject and routing per form key live there (config + backend override)
 - [`security.md`](security.md) — `FormGuard` mechanics, the CSRF contract (`#[Csrf]` vs. in-action) and why the blur endpoint needs no in-action check
+- [`geoip.md`](geoip.md) — the country lookup the geo guard asks (database, licence duties, `geoip-update` job, per-installation setup)
+- [`backend.md`](backend.md) — `FormLogController` (Service → Formular-Protokoll): the surface that shows the form log and edits the country blocklist
+- [`jobs.md`](jobs.md) — `form-log-cleanup` (operator-switched, deletes) and `geoip-update` (scheduled, licence duty): the two jobs behind the guard
 - [`view-layer.md`](view-layer.md) — how the partial is resolved override-first, and the template helpers (`e()`, `t()`) the form templates rely on
 - [`translation.md`](translation.md) — `t()` with `{$placeholder}` params and where the dictionaries live (backend editor included)

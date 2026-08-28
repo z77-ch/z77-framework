@@ -8,7 +8,7 @@ use Z77\Module\Member\Entities\MemberAccount;
 use Z77\Module\Member\Entities\MemberToken;
 use Z77\Persistence\Resolver\DataSourceResolver;
 use Z77\Persistence\Resolver\UnifiedEntityManager;
-use Z77\Shared\GeoIp\CountryLookup;
+use Z77\Shared\Forms\FormLog;
 use Z77\Shared\Mail\EmailMessage;
 
 /**
@@ -120,77 +120,6 @@ final class RegistrationFlow
     }
 
     /**
-     * memberConfig `blockedCountries` — ISO 3166-1 alpha-2 codes whose
-     * registrations are refused. **Empty by default: the rule is off until an
-     * installation switches it on**, and it is switched on from what the
-     * registration log actually shows, never from a hunch.
-     *
-     * ⚠️ A BLOCKLIST, never a whitelist. A whitelist locks out the Swiss
-     * customer sitting in a holiday WLAN, the one on a VPN and the one whose
-     * carrier routes through Frankfurt — all of them real, none of them
-     * visible to us as «CH». A blocklist can only ever be too small, which
-     * costs an attempt we would have had anyway; a whitelist can be too small
-     * in a way that costs a customer.
-     *
-     * @return list<string> upper-case, two letters, duplicates removed
-     */
-    public static function blockedCountries(): array
-    {
-        try {
-            $configured = DI::getConfigManager()
-                ->getArrayConfig('App/Config/memberConfig', 'Z77\Module\Member')
-                ->get('blockedCountries', []);
-        } catch (\Throwable) {
-            // ⚠️ An unreadable config means the rule is OFF, not that everyone
-            // is barred. Same stance as projectNotifyRows() above and as the
-            // whole GeoIP layer: an optional extra must never be the reason a
-            // customer cannot sign up. Failing open is the deliberate choice —
-            // this rule limits abuse, it does not guard anything secret.
-            return [];
-        }
-
-        if (!is_array($configured)) {
-            return [];
-        }
-
-        $codes = [];
-        foreach ($configured as $code) {
-            $code = strtoupper(trim((string) $code));
-            if (preg_match('/^[A-Z]{2}$/', $code)) {
-                $codes[$code] = true;
-            }
-        }
-
-        return array_keys($codes);
-    }
-
-    /**
-     * True when this origin is barred by the country rule.
-     *
-     * ⚠️ An UNKNOWN country never blocks. No database installed, a private
-     * address, an unassigned range, a broken file — {@see CountryLookup} says
-     * null to all of them, and null must mean «carry on». Blocking on «we do
-     * not know» would turn a missing optional file into a total registration
-     * outage, which is exactly the failure mode the whole GeoIP layer was
-     * built to avoid.
-     */
-    private function blockedByCountry(string $ip): bool
-    {
-        if ($ip === '') {
-            return false;
-        }
-
-        $blocked = self::blockedCountries();
-        if ($blocked === []) {
-            return false;   // the ordinary case: the rule is off, nothing is looked up
-        }
-
-        $country = CountryLookup::of($ip);
-
-        return $country !== null && in_array($country, $blocked, true);
-    }
-
-    /**
      * The project's extra lines for the operator notification (memberConfig
      * `notifyRowsHook`). The module knows an account, not what a project hangs
      * on one — so it asks, and prints whatever comes back.
@@ -252,41 +181,27 @@ final class RegistrationFlow
         // walks straight past a per-address count. ⚠️ The IP one runs FIRST:
         // it is the cheaper question and it does not need the address, so a
         // flood is stopped before it touches address-specific state.
+        //
+        // The country rule that used to sit above them is the handler's now —
+        // PublicFormHandler::withGeoGuard() refuses a barred origin before
+        // the submit ever reaches this flow.
         $ip = trim((string)($_SERVER['REMOTE_ADDR'] ?? ''));
 
-        // The country rule sits ABOVE both throttles: it is a flat refusal
-        // rather than a rate, it needs neither the address nor a counter, and
-        // a barred origin should not consume a throttle slot on its way out.
-        // Off unless an installation configured it.
-        //
-        // ⚠️ The refusal is VISIBLE (false → the form's generic send error),
-        // not the silent fake-success the bot traps use. The difference is who
-        // is on the other end: a honeypot only ever catches a script, and a
-        // script deserves no signal — a country rule can hit a real customer,
-        // and a real customer must be able to notice that something failed and
-        // write to us. A silent drop would leave them waiting for a mail that
-        // is never coming.
-        if ($this->blockedByCountry($ip)) {
-            RegistrationLog::note('blocked-country');
-
-            return false;
-        }
-
         if ($ip !== '' && !$this->throttle->allowIp($ip, self::registrationsPerHourPerIp(), $now)) {
-            RegistrationLog::note('throttled-ip');
+            FormLog::note('throttled-ip');
 
             return false;
         }
 
         if (!$this->throttle->allow($email, $now)) {
-            RegistrationLog::note('throttled');
+            FormLog::note('throttled');
 
             return false;
         }
 
         $existing = $this->accounts->findByEmail($email);
         if ($existing !== null) {
-            RegistrationLog::note('known');
+            FormLog::note('known');
             ($this->sendMail)($this->existingAccountMail($existing));
 
             return true;
@@ -298,13 +213,13 @@ final class RegistrationFlow
             // same answer as the existing-account branch above.
             $existing = $this->accounts->findByEmail($email);
             if ($existing !== null) {
-                RegistrationLog::note('known');
+                FormLog::note('known');
                 ($this->sendMail)($this->existingAccountMail($existing));
             }
 
             return true;
         }
-        RegistrationLog::note('new');
+        FormLog::note('new');
         ($this->sendMail)($this->confirmMail($account, $now));
 
         return true;

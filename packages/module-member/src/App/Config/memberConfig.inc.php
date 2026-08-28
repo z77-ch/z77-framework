@@ -79,35 +79,21 @@ return [
     // what a queue entry stores — never a class name or a script path, so a
     // backend form can only ever pick from this list.
     //
-    // ⚠️ The two entries differ in exactly one field, and the reason is a
-    // rule: `member-cleanup` DELETES, so it ships no 'defaultSchedule' — an
-    // operator switches it on. `geoip-update` deletes nothing of the
-    // installation's, it replaces its own downloaded file, and doing so is a
-    // LICENCE OBLIGATION (GeoLite EULA: keep current, destroy the previous
-    // version within 30 days). A duty that only runs once somebody remembers
-    // to switch it on is not a duty being met — hence the schedule.
+    // No 'defaultSchedule': `member-cleanup` DELETES, so an operator switches
+    // it on (the delete-vs-schedule rule, see docs/topics/jobs.md).
+    //
+    // NOTE: `geoip-update` used to be registered here, when module-member was
+    // the only consumer of country data. The geo guard is a kernel capability
+    // of every public form now, so the job is registered by `backendConfig`
+    // (beside `form-log-cleanup`). ⚠️ A project override of THIS file that
+    // still carries the entry makes the job key a double declaration — the
+    // registry refuses that fail-fast; delete it from the override.
     'jobs' => [
         'member-cleanup' => [
             'class'       => \Z77\Module\Member\Jobs\MemberCleanupJob::class,
             'label'       => 'Member-Bereinigung',
             'runAs'       => AuthRole::CRON_JOB,
             'maxAttempts' => 3,
-        ],
-        // The class lives in the kernel, beside CountryLookup, because the
-        // country lookup is a kernel seam. It is REGISTERED here because
-        // module-member is what consumes country data today; a future consumer
-        // without this module registers the same class from its own config.
-        //
-        // Weekly, although the fetch only fires past `maxAgeDays` (30): the
-        // schedule is the knock on the door, the age is the answer. Weekly
-        // means a database that has just expired is renewed within days
-        // instead of within a month.
-        'geoip-update' => [
-            'class'           => \Z77\Shared\GeoIp\GeoIpUpdateJob::class,
-            'label'           => 'GeoIP-Datenbank erneuern',
-            'runAs'           => AuthRole::CRON_JOB,
-            'maxAttempts'     => 2,
-            'defaultSchedule' => 'weekly@mon,04:20',
         ],
     ],
 
@@ -119,21 +105,16 @@ return [
     // testing needs more headroom.
     'loginRequestsPerHour' => 5,
 
-    // Countries whose registrations are refused, as ISO 3166-1 alpha-2 codes
-    // (`['RU', 'CN']`). EMPTY means the rule is off, and empty is where it
-    // stays until an installation has a reason — a reason read off the
-    // registration log, not guessed. With an empty list nothing is even
-    // looked up.
-    //
-    // ⚠️ A BLOCKLIST, never a whitelist. A whitelist locks out the customer
-    // in a holiday WLAN, on a VPN, or behind a carrier that routes through
-    // another country. Too small a blocklist costs an attempt we would have
-    // had anyway; too small a whitelist costs a customer.
-    //
-    // ⚠️ An UNKNOWN country never blocks: no database, a private address or
-    // an unassigned range all read as null, and null means carry on. Anything
-    // else would turn a missing optional file into a registration outage.
-    'blockedCountries' => [],
+    // NOTE: the blocked countries used to sit here as `blockedCountries`.
+    // They are INSTALLATION DATA now — `data/framework/forms/blocked-countries.json`,
+    // written by the operator on Service → Formular-Protokoll
+    // ({@see \Z77\Shared\Forms\CountryBlocklist}) and applied by every form
+    // that opts into PublicFormHandler::withGeoGuard(), not just this
+    // module's. The reason: the list is only ever decided from what that
+    // installation's form log actually shows, so its config default was
+    // always empty and every real decision needed a deploy. A value like that
+    // is data, not configuration. A project that still sets `blockedCountries`
+    // here is IGNORED — nothing reads it any more.
 
     // Where a member lands after a successful login — the redeemed link, the
     // confirmed second factor, the waiting page's poll, and a visit to the

@@ -3,6 +3,7 @@
 namespace Z77\Shared\Forms;
 
 use Z77\Core\DI;
+use Z77\Shared\GeoIp\CountryLookup;
 
 /**
  * The submit flow of a public form — CSRF, bot checks, validation, rate limit,
@@ -22,6 +23,8 @@ use Z77\Core\DI;
  *                               reason for the in-action check instead of the
  *                               #[Csrf] attribute, see docs/topics/security.md)
  *   honeypot OR too fast      → pretend success (PRG), send nothing
+ *   country blocked           → generic error, or the bot shape when the geo
+ *                               guard runs silent ({@see self::withGeoGuard()})
  *   validation failed         → field errors + top banner, values kept
  *   rate limited              → generic error
  *   send ok                   → recordSend + PRG
@@ -43,8 +46,10 @@ use Z77\Core\DI;
  *       return $this->redirect(localizedUrl('/kontakt/danke'));
  *   }
  *
- * Its only cross-request effect is the FormGuard session state — bot defence,
- * not UI.
+ * Its cross-request effects are the FormGuard session state (bot defence, not
+ * UI) and — only where {@see self::withGeoGuard()} is on — one {@see FormLog}
+ * line per submit. The log never throws; a full disk costs a line, never a
+ * submit.
  *
  * Not a DI singleton — built per form like Mailer::create() / FormGuard::forKey().
  */
@@ -65,6 +70,15 @@ final class PublicFormHandler
 
     private int  $rateLimitPerHour = 3;
     private bool $rateLimitSilent  = false;
+
+    private bool $geoGuard  = false;
+    private bool $geoSilent = false;
+
+    /** @var array<string, scalar|null> facts pinned to every log line */
+    private array $geoExtra = [];
+
+    /** @var array{0: ?string, 1: ?string}|null memoized [ip, country] */
+    private ?array $origin = null;
 
     /** @var \Closure(string, PublicForm):void|null */
     private ?\Closure $observer = null;
@@ -117,6 +131,46 @@ final class PublicFormHandler
     }
 
     /**
+     * Switches the country rule AND the form log on — one switch, not two:
+     * a form that refuses by origin must leave the evidence that justifies
+     * the refusal, and a form that only wants the evidence gets the rule as
+     * its consequence (the list is empty until an operator fills it, so the
+     * rule starts as a no-op).
+     *
+     * The gate reads {@see CountryBlocklist} (installation data, edited on
+     * the backend's form-log page) and FAILS OPEN: an empty list, an unknown
+     * country — no database, private range, broken file — never blocks. The
+     * refused submit shows the generic send error, because a country rule
+     * can hit a real customer and the customer must be able to notice;
+     * `$silent: true` is for forms whose page must stay indistinguishable
+     * (the member login, MEM-005) — the hit then behaves like the bot path.
+     *
+     * ⚠️ THE COUNTRY DATA DOES NOT COME WITH THIS SWITCH. The GeoLite
+     * database is fetched per installation and by hand: a MaxMind account,
+     * the licence key in `config/geoip.inc.php` (machine-local, gitignored,
+     * NOT deployed — it must exist on every server), and the `geoip-update`
+     * job active, which also performs the initial download. Without that,
+     * this guard runs but every country reads as unknown — the rule is
+     * silently inert and only the backend page says so. Setup and licence
+     * duties: docs/topics/geoip.md.
+     *
+     * `$extra` pins named TECHNICAL facts to every log line of this handler
+     * (e.g. `['origin' => $via]` — which offer link led here). Never put an
+     * identifying value in it; that is what the definition's
+     * {@see FormDefinition::identityField()} opt-in exists for.
+     *
+     * @param array<string, scalar|null> $extra
+     */
+    public function withGeoGuard(bool $silent = false, array $extra = []): self
+    {
+        $this->geoGuard  = true;
+        $this->geoSilent = $silent;
+        $this->geoExtra  = $extra;
+
+        return $this;
+    }
+
+    /**
      * Tells an observer how each submit ended — the seam a project hangs a
      * log on. One of {@see self::OUTCOME_*} plus the parsed form.
      *
@@ -143,6 +197,8 @@ final class PublicFormHandler
     public const OUTCOME_SENT = 'sent';
     /** Honeypot filled or submitted faster than a human reads the form. */
     public const OUTCOME_BOT = 'bot';
+    /** Origin country is on the blocklist — nothing was sent. */
+    public const OUTCOME_GEO = 'geo';
     /** Over the per-session hourly limit — nothing was sent. */
     public const OUTCOME_LIMITED = 'limited';
     /** Field validation failed; the form is rendered again with errors. */
@@ -167,6 +223,99 @@ final class PublicFormHandler
     }
 
     /**
+     * Every outcome passes through here: the observer is told, and — when the
+     * geo guard is on — the {@see FormLog} line is written. The line comes
+     * AFTER the dispatch of the same submit, so a {@see FormLog::note()} set
+     * by the project's flow lands on the row it belongs to.
+     */
+    private function record(string $outcome): void
+    {
+        $this->observe($outcome);
+
+        if (!$this->geoGuard) {
+            return;
+        }
+
+        [$ip, $country] = $this->origin();
+
+        $identityField = $this->definition->identityField();
+        $identity      = $identityField !== null
+            ? (string) $this->form->get($identityField)
+            : null;
+
+        // FormLog::write() never throws — a full disk costs the line, not
+        // the submit.
+        FormLog::write(
+            $this->definition->guardKey(),
+            $outcome,
+            $ip,
+            $country,
+            $identity,
+            $this->geoExtra,
+        );
+    }
+
+    /**
+     * True when the geo guard is on and this origin's country is on the
+     * blocklist.
+     *
+     * ⚠️ Fails OPEN, always. An empty list means the rule is off (where every
+     * installation starts); an unknown country — no database installed, a
+     * private address, an unassigned range, a broken file — reads as null,
+     * and null never blocks. Blocking on «we do not know» would turn a
+     * missing optional file into a total outage of every guarded form, which
+     * is exactly the failure mode the whole GeoIP layer was built to avoid.
+     *
+     * The empty list short-circuits the COMPARISON only — the lookup itself
+     * still happens (lazily, in {@see self::origin()}) because the log line
+     * needs the country either way: the log is the evidence a block is later
+     * decided from, and the normal case starts with an empty list.
+     */
+    private function isGeoBlocked(): bool
+    {
+        if (!$this->geoGuard) {
+            return false;
+        }
+
+        $blocked = CountryBlocklist::codes();
+        if ($blocked === []) {
+            return false;
+        }
+
+        [, $country] = $this->origin();
+
+        return $country !== null && in_array($country, $blocked, true);
+    }
+
+    /**
+     * The client address and its country — read and resolved ONCE per
+     * submit, shared by the gate and the log line. The log is the evidence
+     * for the gate's decision; two independent reads could disagree, and a
+     * log that shows a different country than the one the gate blocked on
+     * is worse than none (review finding F4).
+     *
+     * ⚠️ REMOTE_ADDR, never X-Forwarded-For or Client-IP: those are set by
+     * whoever sends the request — a country derived from them is whatever
+     * the sender wants it to be. Behind a real reverse proxy the trusted-
+     * header handling belongs HERE, deliberately (single call site); a
+     * `Request` client-ip seam is a separate kernel change (forms.md
+     * pending).
+     *
+     * @return array{0: ?string, 1: ?string} [ip, country]
+     */
+    private function origin(): array
+    {
+        if ($this->origin !== null) {
+            return $this->origin;
+        }
+
+        $ip = trim((string) ($_SERVER['REMOTE_ADDR'] ?? ''));
+        $ip = $ip !== '' && @inet_pton($ip) !== false ? $ip : null;
+
+        return $this->origin = [$ip, $ip === null ? null : CountryLookup::of($ip)];
+    }
+
+    /**
      * Runs the flow for the current request.
      *
      * @param callable(PublicForm):bool|null $onValid Called with the validated
@@ -187,13 +336,29 @@ final class PublicFormHandler
 
             if (!DI::getCsrfService()->validate((string) $request->getPostParameter('csrf_token'))) {
                 $this->formError = $this->translate($this->csrfErrorKey);
-                $this->observe(self::OUTCOME_CSRF);
+                $this->record(self::OUTCOME_CSRF);
             } elseif ($this->form->isHoneypotTripped() || $this->guard->isTooFast()) {
                 // Bot: pretend success, send nothing. Indistinguishable from the
                 // real path below, which is the point.
                 $this->guard->disarmTimeTrap();
-                $this->observe(self::OUTCOME_BOT);
+                $this->record(self::OUTCOME_BOT);
                 return true;
+            } elseif ($this->isGeoBlocked()) {
+                // After the bot trap (which is free) and before validation and
+                // the throttle: a flat refusal that should consume no throttle
+                // slot on its way out.
+                if ($this->geoSilent) {
+                    // Same shape as the bot path above: the page must not
+                    // reveal that this submit was treated differently.
+                    $this->guard->disarmTimeTrap();
+                    $this->record(self::OUTCOME_GEO);
+                    return true;
+                }
+                // Visible by default: a country rule can hit a real customer,
+                // and a silent drop would leave them waiting for a mail that
+                // is never coming.
+                $this->formError = $this->translate($this->sendErrorKey);
+                $this->record(self::OUTCOME_GEO);
             } else {
                 $validator = new PublicFormValidator($this->form);
 
@@ -202,27 +367,27 @@ final class PublicFormHandler
                     // visible at the top without scrolling to the failed field.
                     $this->errors    = $validator->getFieldErrors();
                     $this->formError = $this->translate($this->validationErrorKey);
-                    $this->observe(self::OUTCOME_INVALID);
+                    $this->record(self::OUTCOME_INVALID);
                 } elseif ($this->guard->isRateLimited($this->rateLimitPerHour)) {
                     if ($this->rateLimitSilent) {
                         // Same shape as the bot path above: send nothing, let
                         // the caller redirect. The page must not reveal that
                         // this submit was treated differently.
                         $this->guard->disarmTimeTrap();
-                        $this->observe(self::OUTCOME_LIMITED);
+                        $this->record(self::OUTCOME_LIMITED);
                         return true;
                     }
                     $this->formError = $this->translate($this->sendErrorKey);
-                    $this->observe(self::OUTCOME_LIMITED);
+                    $this->record(self::OUTCOME_LIMITED);
                 } elseif ($this->dispatch($onValid)) {
                     $this->guard->recordSend();
                     // Cycle closed: the next form render arms a new window.
                     $this->guard->disarmTimeTrap();
-                    $this->observe(self::OUTCOME_SENT);
+                    $this->record(self::OUTCOME_SENT);
                     return true;
                 } else {
                     $this->formError = $this->translate($this->sendErrorKey);
-                    $this->observe(self::OUTCOME_FAILED);
+                    $this->record(self::OUTCOME_FAILED);
                 }
             }
         }

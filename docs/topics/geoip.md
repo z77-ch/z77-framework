@@ -13,12 +13,11 @@
 SOURCE=/packages/kernel/shared/src/GeoIp/CountryLookup.php
 SOURCE=/packages/kernel/shared/src/GeoIp/MmdbReader.php
 SOURCE=/packages/kernel/shared/src/GeoIp/GeoIpUpdateJob.php
-SOURCE=/packages/module-member/src/Services/RegistrationLog.php
-SOURCE=/packages/module-member/src/Services/RegistrationFlow.php
-SOURCE=/packages/module-member/src/App/Config/memberConfig.inc.php
+SOURCE=/packages/module-backend/src/App/Config/backendConfig.inc.php
+SOURCE=/tests/form-geo-guard.php
 
-RUNTIME=/data/framework/geoip/GeoLite2-Country.mmdb
-RUNTIME=/config/geoip.inc.php
+RUNTIME=/skeleton/data/framework/geoip/GeoLite2-Country.mmdb
+RUNTIME=/skeleton/config/geoip.inc.php
 
 ## mental model
 
@@ -44,10 +43,17 @@ an exception, an outage or a locked-out customer.
   is whatever the sender wants it to be. Behind a real reverse proxy, that
   proxy's own trusted-header handling belongs here deliberately — not a
   blanket trust.
-- **The lookup is a fact, the country RULE is a policy.** `CountryLookup`
-  answers; `RegistrationFlow::blockedCountries()` decides. They are separate
-  on purpose: the log records countries whether or not anything is blocked,
-  and a rule is switched on from what the log showed.
+- **The lookup is a fact, the country RULE is a policy — and the policy lives
+  with the forms.** `CountryLookup` answers; `PublicFormHandler::withGeoGuard()`
+  decides, `Z77\Shared\Forms\CountryBlocklist` holds the list
+  (`data/framework/forms/blocked-countries.json` — installation data, not
+  config), and Backend → Service → «Formular-Protokoll» is where the evidence
+  and the switch share a page. This topic keeps the database and the licence;
+  gate, log, blocklist and surface are documented in
+  [`forms.md`](forms.md). The list is deliberately NOT under
+  `data/framework/geoip/`: that directory holds licence-bound third-party
+  data (no redistribution, no backup ride-along), the blocklist is the
+  operator's own record.
 
 ## the three licence obligations (GeoLite EULA)
 
@@ -76,9 +82,12 @@ go further than what was declared at signup.
 ],
 ```
 
-The class lives in the kernel beside `CountryLookup`; it is REGISTERED by
-whichever module consumes country data (today `module-member`). Same shape as
-`BackupJob`, which lives in the kernel and is registered in `backendConfig`.
+The class lives in the kernel beside `CountryLookup`; it is REGISTERED in
+`backendConfig` (like `BackupJob` and `form-log-cleanup`) — the geo guard is a
+kernel capability of every public form, so no single module owns the consumer
+any more. Until 2026-08-28 the entry sat in `memberConfig`; a project override
+of that file that still carries it double-declares the job key, which the
+registry refuses fail-fast — delete it from the override.
 
 ⚠️ **It ships a `defaultSchedule`, and that is not a violation of the
 «a job that deletes data ships none» rule.** That rule is about the
@@ -127,13 +136,27 @@ installation without a key runs fine and simply answers no country.
 - When restricting by country → MUST be a blocklist; MUST NOT be a whitelist
   (a whitelist locks out the customer in a holiday WLAN, on a VPN, or behind
   a carrier routing through another country)
+- When reading which countries are blocked → MUST go through
+  `\Z77\Shared\Forms\CountryBlocklist::codes()`;
+  MUST NOT read a `blockedCountries` config key — nothing writes one any more
+- When writing a blocklist entry → MUST record a `reason`; the backend refuses
+  an empty one, and a code path that bypasses it leaves a verdict nobody can
+  review in a year
+- When shipping a blocklist → MUST NOT: it is per-installation evidence, so
+  `BlockedCountry` has no `*.default.json` and is deliberately absent
+  from `importEntities`. Carrying one project's list into another is exactly
+  the guess this design refuses
+- When the unknown country `??` appears in the backend tally → MUST NOT offer
+  to block it; it is localhost, a private range or a missing database, and
+  blocking it bars everyone the lookup cannot place
 - When displaying country results → MUST render `CountryLookup::ATTRIBUTION`
   on the same surface (licence term)
 - When shipping the database → MUST NOT: it belongs to the installation. A new
   server gets it from the job, not from an upload of someone else's copy
-- When the update job is absent from a project's `jobs` config → the database
-  ages and the licence obligation is unmet; a whole-file `memberConfig`
-  override MUST carry the entry (the standing trap of whole-file overrides)
+- When a project overrides `memberConfig` whole → its `jobs` key MUST NOT
+  carry a `geoip-update` entry any more (registered by `backendConfig` since
+  2026-08-28): a leftover double-declares the job key and the registry throws
+  fail-fast at bootstrap
 
 ## known issues
 
@@ -144,8 +167,30 @@ installation without a key runs fine and simply answers no country.
 - **GEOIP-002**: don't assume the file's mtime says how old the data is. A
   copy or a deploy resets it; `CountryLookup::databaseBuiltAt()` reads
   MaxMind's own build stamp, and that is what the job compares against.
+- **GEOIP-003**: don't assume a `blockedCountries` entry in a project's
+  `memberConfig` override still does anything. It is dead since 2026-08-27 and
+  reads as an empty rule — silently, because the config is a whole-file
+  override and nothing can tell an intentional key from a leftover. A project
+  carrying one has to re-enter its countries on Service → Formular-Protokoll;
+  the leftover key should then be deleted so the next reader is not misled.
+
+## pending
+
+- **Adopt the navigation entry per installation** — seed `id:30`
+  («Formular-Protokoll» under Service) reaches an existing project through
+  Service → Import. A project that already has its own menu point on
+  `form-log` should ASSIGN the imported record to it rather than accept it as
+  new; accepting it as new leaves the surface listed twice.
+- **Say it in the privacy policy** — the form log and the blocklist both hold
+  personal data (IP, country, user agent, declared identity) for a purpose
+  and a retention of their own. The text is per installation; the framework
+  only enforces the 90 days. (The month-filter question from the first review
+  is settled without a filter: the prefilled block reason NAMES its counting
+  window, so the number cannot be read as a total — review F3.)
 
 ## see also
 
 - [`jobs.md`](jobs.md) — the runner, and the delete-vs-schedule rule this job is the exception to
-- [`member.md`](member.md) — the registration log this feeds, and the gates around it
+- [`forms.md`](forms.md) — the geo guard that consumes the lookup: gate, form log, blocklist and the `identityField()` opt-in
+- [`backend.md`](backend.md) — `FormLogController` (Service → Formular-Protokoll): the surface that shows the log and edits the blocklist, navigation seed `id:30`
+- [`persistence-file.md`](persistence-file.md) — where `blocked-countries.json` lives and how the store assigns its ids
