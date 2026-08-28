@@ -21,7 +21,6 @@ SOURCE=/skeleton/composer.json
 SOURCE=/tools/build-stamp.php
 SOURCE=/packages/kernel/shared/src/Build/BuildInfo.php
 SOURCE=/packages/module-backend/res/view/templates/partials/shell/topbar.tpl.php
-SOURCE=/tests/build-info.php
 
 ## mental model
 
@@ -46,7 +45,7 @@ A deploy build copies WORKING TREES into `vendor/z77/*`. Nothing else records wh
 - **No stamp = development checkout.** There the junctions point at a tree that can differ between two requests, so there is nothing true to state: `BuildInfo::current()` returns `null` and the panel says «Entwicklung», never a stale deploy date. `vendor-dev.bat` deletes the file for exactly that reason.
 - Failure is loud but never fatal: no `git`, no repository, unwritable target → `commit: null`, the writer exits 0 with a warning, the panel says «unbekannt». A missing stamp must not block a deploy, and an empty string would read as a statement.
 - This is provenance, NOT a release number. Tags exist (`1.0.0` … `1.2.0`) but stopped in July; while packages ship as `dev-main` from `path` repos, the commit is the only truthful answer.
-- Verified: `tests/build-info.php` (37 checks — every broken-file shape, dirty vs clean, BOM, and the writer driven against a throwaway git repository).
+- Verified by a since-retired harness, `tests/build-info.php` (37 checks — every broken-file shape, dirty vs clean, BOM, and the writer driven against a throwaway git repository).
 
 ## split flow
 
