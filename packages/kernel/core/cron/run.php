@@ -23,7 +23,11 @@
  * first, so that path names `releases/`, not the project — the failures it
  * produces (job-lock mkdir errors far from the cause) do not mention this.
  *
- * Seeded once by the installer; owned by the project afterwards.
+ * Seeded once by the installer into `<project>/cron/run.php`; owned by the
+ * project afterwards. ⚠️ The copy inside the kernel package is only the
+ * TEMPLATE — never wire a cron to it there: `dirname(__DIR__)` would name the
+ * package (in monorepo development even the framework, through the path-repo
+ * link), not the project. The seeded copy in the project is the entry.
  */
 
 if (PHP_SAPI !== 'cli') {
