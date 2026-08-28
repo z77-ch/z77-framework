@@ -33,6 +33,7 @@ recipes — what a project follows when building).
 | [css-conventions.md](01-handbook/css-conventions.md) | CSS/SCSS standards: BEM, tokens, components |
 | [templates.md](01-handbook/templates.md) | Template layer: location, context injection, partials |
 | [installer.md](01-handbook/installer.md) | Composer installer: configuration, generated files, directory structure |
+| [release-structure.md](01-handbook/release-structure.md) | Zero-downtime deploys on shared hosting: shared/releases/current/next, SSH setup, switch mechanics |
 | [vision.md](01-handbook/vision.md) | Why this framework, goals, scope |
 
 **Cookbook — build recipes (for projects)**
