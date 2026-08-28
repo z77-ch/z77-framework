@@ -928,8 +928,14 @@ class Install
         $this->io->write("Write FileFinder config → {$dir}/{$name}");
 
         $content  = $this->header($name, self::NOTE_REGENERATE);
-        $content .= "\$vendorDir = dirname(__DIR__).'/{$this->vendorBaseName}/';\n";
-        $content .= "\$baseDir = dirname(__DIR__).'/';\n";
+        // Anchored on ABS_BASE_PATH, NOT dirname(__DIR__): __DIR__ is the
+        // symlink-RESOLVED real path, so a symlinked config/ would anchor
+        // these paths in the link target's tree instead of the project's.
+        // ABS_BASE_PATH comes from the entry point and is the same anchor
+        // FileFinder already uses to locate this very file — one anchor,
+        // and the file works regardless of where it physically lives.
+        $content .= "\$vendorDir = ABS_BASE_PATH.'/{$this->vendorBaseName}/';\n";
+        $content .= "\$baseDir = ABS_BASE_PATH.'/';\n";
         $content .= "return [\n";
         $content .= "    'resourceDir' => [\n";
         $content .= "        'sourceDir' => '" . self::SOURCE_DIR . "',\n";
