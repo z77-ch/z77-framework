@@ -77,6 +77,38 @@ Why this is actually uninterrupted, and not just fast:
   through the old release finishes on the old release's files even if the
   switch happens mid-request. Visitors never see half-new code; the switch
   only decides where NEW requests enter.
+- **…but OPcache freezes that resolution — `touch` the entry point on every
+  switch.** `__DIR__` is a COMPILE-time constant, and OPcache keys the
+  compiled `index.php` on the path Apache hands over — the UNRESOLVED
+  `<domain>/next/public/index.php`. Its timestamp check stats through the
+  link onto the new release's file, and since `index.php` is identical in
+  every release and tar preserves mtimes, it sees no change and keeps the
+  bytecode with the OLD real path baked in. Every request through that door
+  then runs `ABS_BASE_PATH` in the old release — while static files (served
+  by Apache, which follows the link on every access) already come from the
+  new one. Measured on cyon 2026-08-29: `X-Z77-PageCache: MISS`, fresh
+  render, old content; `md5_file()` of the controller identical to the new
+  release; after one `opcache_reset()` the same URL rendered the new state.
+  Only the entry point is affected: everything it includes goes through the
+  real path and is keyed per release. So the fix is one stat change:
+
+  ```sh
+  touch $BASE/releases/$REL/public/index.php && ln -sfn releases/$REL $BASE/next
+  ```
+
+  OPcache revalidates within `opcache.revalidate_freq` (2 s by default),
+  recompiles, and `__DIR__` points into the new release. Why not a reset
+  button in the backend: the button would run in the OLD release (the door
+  is still stuck there), so it only exists if the old release already ships
+  it — a condition that fails on the first switch and on every rollback to
+  an older state. Whoever bends the link has a shell anyway; the `touch`
+  costs nothing and has no such precondition. Two residues to know about:
+  PHP's per-process realpath cache keeps link resolutions for
+  `realpath_cache_ttl` (120 s) — up to two minutes of fuzz after a switch
+  are to be accepted, do not set the TTL to 0 for the account (every stat
+  gets dearer, all day, for two minutes per deploy). And a host with
+  `opcache.validate_timestamps=0` never re-stats: there the `touch` does
+  nothing and only a reset helps (see Prerequisites).
 - **The data cache cannot go stale across the switch.** `DataCache` (APCu)
   namespaces its pool with a hash of `ABS_BASE_PATH` — and since that is the
   real release path, every release automatically has its own pool. The
@@ -147,6 +179,15 @@ is in practice indistinguishable.
   in `shared/config/` serves every release.
 - **The web server follows symlinks.** Verified on cyon: Apache follows them
   in and below the document root, no 403 anywhere. Check once per new host.
+- **`opcache.validate_timestamps=1`** (the default). The `touch` on the entry
+  point relies on OPcache re-stating the file; confirm once per host via
+  phpinfo. A host that sets it to 0 for performance needs an explicit reset
+  after every switch instead: put a file with `<?php opcache_reset();` into
+  the release's `public/`, call it once over HTTP, **delete it immediately** —
+  a reset endpoint left behind is a cache flush for anyone. Note that on
+  shared hosting `current` and `next` share one FPM pool, so a reset (or the
+  backend «Cache leeren» on a framework that resets OPcache) hits production
+  too — harmless, one recompile, but not an isolated test.
 - **The panel lets you set the document root per (sub)domain** to an
   arbitrary path (`<domain>/current/public`).
 
@@ -223,19 +264,36 @@ mkdir -p $BASE/releases/$REL
 
 # 2. signposts (same block as in the initial setup, step 3)
 
-# 3. bend next, test on the subdomain — real server, real data
+# 3. bend next, test on the subdomain — real server, real data.
+#    The touch is not optional: without it OPcache keeps serving the OLD
+#    release's index.php through the new link (see the mechanism section).
+touch $BASE/releases/$REL/public/index.php
 ln -sfn releases/$REL $BASE/next
 
-# 4. bend current, clear the page cache
+# 4. bend current, clear the page cache — same touch, same reason
+touch $BASE/releases/$REL/public/index.php
 ln -sfn releases/$REL $BASE/current
 rm -rf $BASE/shared/lib/cache/*        # or backend «Cache leeren»
 
 # 5. prune old releases — keep at least the previous one (the rollback)
 ls -dt $BASE/releases/*/ | tail -n +3 | xargs rm -rf
 
-# Rollback, should step 4 turn out wrong:
+# Rollback, should step 4 turn out wrong — touch again, the old
+# release's index.php is just as unchanged as the new one was:
+touch $BASE/releases/2026-08-28/public/index.php
 ln -sfn releases/2026-08-28 $BASE/current
 ```
+
+**Verify with PHP, not with a static file.** After each switch, request a
+page that is demonstrably different in the new release — a changed template,
+a new route. A static file (image, CSS, a marker file) only proves that
+Apache follows the link, which it always does; the stuck entry point shows
+exclusively in rendered output. A `MISS` in `X-Z77-PageCache` with old
+content is the signature. Why the first migration did not show this: moving
+from `apps/z77-1.0.0` to this layout changed the document root in the
+panel — new path, new OPcache keys, fresh compilation. The problem appears
+on the SECOND release, exactly when the structure is supposed to prove its
+worth.
 
 One deliberate wrinkle: **generated config is runtime state here.** `config/`
 lives in `shared/` and is NOT part of the upload, so a `fileFinder.inc.php`
