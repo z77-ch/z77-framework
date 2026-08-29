@@ -169,9 +169,8 @@ Quelle (Vendor-Defaults | Inbox-Datei + Entity-Typ aus der Whitelist)
 
 ## pending
 
-- **Browser click-through by the developer** — built and verified via CLI smokes (16-check
-  planner run, 16-apply/0-fail E2E in the skeleton, wiring smoke, 302 route check), but the
-  screen itself has not been clicked through logged-in yet.
+- ~~**Browser click-through by the developer**~~ — done 2026-08-29: clicked through and
+  applied on a live installation, worked as designed.
 - **Upload form** — multipart upload into staging (`stageContent` exists); needs a dedicated
   fetch path like the DMS upload. Inbox covers the workflow until then.
 - **v2 — foreign sources (first real migration)**: `ImportMapping` contract (project-level
