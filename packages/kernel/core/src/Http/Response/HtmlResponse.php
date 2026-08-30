@@ -211,6 +211,19 @@ class HtmlResponse implements ResponseInterface
         if ($this->cacheStatus !== null) {
             header('X-Z77-PageCache: ' . $this->cacheStatus->value);
         }
+
+        // Which installation answered — the basename of the resolved root,
+        // under a release structure the release name (`2026-08-30-1500`).
+        // Static files come from wherever the web server's link points;
+        // this header comes from wherever PHP's compiled entry point points,
+        // and on a host whose OPcache validates against the resolved path
+        // the two drift apart after a switch (measured on cyon 2026-08-30:
+        // the door on release N served PHP from release N-1 for an hour).
+        // `.releases/switch.php` reads this header to prove the switch; a
+        // human reads it with `curl -I`. A date is all it discloses.
+        if (defined('ABS_BASE_PATH')) {
+            header('X-Z77-Release: ' . basename(ABS_BASE_PATH));
+        }
     }
 
     private function sendBody(): void

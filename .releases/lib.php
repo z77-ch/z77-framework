@@ -315,3 +315,30 @@ function releases_sshStdin(string $host, string $script, string $stdinFile): str
     }
     return $out . $err;
 }
+
+/**
+ * Status and response headers (lower-cased names) of a GET without
+ * following redirects. `[0, []]` when the host does not answer.
+ *
+ * @return array{0: int, 1: array<string, string>}
+ */
+function releases_httpHead(string $url): array
+{
+    $ctx = stream_context_create([
+        'http' => ['method' => 'GET', 'follow_location' => 0, 'ignore_errors' => true, 'timeout' => 20,
+                   'header' => "User-Agent: z77-releases-switch\r\nCache-Control: no-cache\r\n"],
+        'ssl'  => ['verify_peer' => true, 'verify_peer_name' => true],
+    ]);
+    $raw = @get_headers($url, false, $ctx);
+    if ($raw === false || !isset($raw[0]) || !preg_match('~HTTP/\S+\s+(\d{3})~', $raw[0], $m)) {
+        return [0, []];
+    }
+    $headers = [];
+    foreach ($raw as $line) {
+        if (str_contains($line, ':')) {
+            [$k, $v] = explode(':', $line, 2);
+            $headers[strtolower(trim($k))] = trim($v);
+        }
+    }
+    return [(int) $m[1], $headers];
+}

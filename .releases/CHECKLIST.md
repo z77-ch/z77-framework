@@ -37,25 +37,29 @@ them on every release; they are the same every time.
    ```
    Two things a hand-typed `ln` forgets, and the script cannot: the `/public`
    at the end of the link (per `target.link_target`; forgotten, the release
-   root with all its signposts is the document root) and the `touch` on the
-   entry point. OPcache keys the compiled `index.php` on the *unresolved*
-   path (`next/public/index.php`), and `index.php` carries the same mtime in
-   every release — bending the symlink changes nothing PHP can see, and the
-   old bytecode keeps running with the old release's paths baked in. Each
-   door has its own key, so each switch needs its own `touch`.
-   The script then reads the link back and **probes the door from outside**:
-   `/` must answer, `/composer.json`, `/vendor/z77/build.json` and every
-   top-level shared store must give 403 or 404. A failed probe prints the
-   rollback line. By hand, should the script be unavailable:
+   root with all its signposts is the document root) and the **OPcache
+   reset**. OPcache validates the compiled `index.php` against the RESOLVED
+   path it was compiled from — bending the symlink changes nothing it looks
+   at, and a `touch` on the new release's file is never seen either.
+   Measured on cyon 2026-08-30: the door on release N served PHP from
+   release N-1 for an hour, hits climbing, while Apache served N's static
+   files (a versioned CSS built by N-1 → 404 on N). The script drops a
+   one-shot reset file into the release, calls it once (it deletes itself),
+   then reads **`X-Z77-Release`** off `/` until it names the release — the
+   header every HtmlResponse carries since 2026-08-30, the proof a human
+   gets with `curl -I`. Then it **probes the door from outside**:
+   `/composer.json`, `/vendor/z77/build.json` and every top-level shared
+   store must give 403 or 404. A failed probe prints the rollback line.
+   By hand, should the script be unavailable:
    ```
-   curl -sI https://<host>/composer.json | head -1     # 403 or 404
-   curl -sI https://<host>/.propbase/     | head -1     # 403 or 404
+   curl -sI https://<host>/ | grep X-Z77-Release          # the release name
+   curl -sI https://<host>/composer.json | head -1        # 403 or 404
    ```
    *Symptom if skipped:* the worst kind — the site works. Static files come
    from the new release, every rendered page from the old one. On `next` it is
    worse still: the test door then certifies a release that never ran, and the
-   switch to `current` carries the untested code to production. Mechanism,
-   rollback caveat and the reset-file fallback: `release-structure.md`.
+   switch to `current` carries the untested code to production. Mechanism and
+   the rollback caveat: `release-structure.md`.
 
 4. **Clear the cache in the backend after the switch.** FileFinder and
    ConfigManager store the resolved vendor path per namespace with a very long

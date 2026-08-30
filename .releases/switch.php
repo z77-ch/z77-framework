@@ -8,9 +8,17 @@
  *     With `link_target: public` a link that stops at `releases/<name>`
  *     makes the release ROOT the document root — vendor/, composer.json and
  *     every signpost into shared/ (credentials, personal data) become URLs.
- *   - the `touch` on the entry point. OPcache keys index.php on the
- *     unresolved door path and sees no change in a bent symlink; without the
- *     touch the OLD release keeps running behind the new link.
+ *   - the OPcache reset after the switch. OPcache validates the compiled
+ *     entry point against the RESOLVED path it was compiled from, so a
+ *     bent symlink changes nothing it looks at — and a `touch` on the new
+ *     release's index.php is never seen either (measured on cyon 2026-08-30:
+ *     the door on release N served PHP from release N-1, hits climbing,
+ *     for an hour). Only opcache_reset() ends it. The script drops a
+ *     one-shot reset file into the release's public/, calls it once over
+ *     HTTPS (the file deletes itself), then reads `X-Z77-Release` off the
+ *     door until it names the release — up to ~2.5 min, the realpath cache
+ *     TTL, because a worker whose realpath cache still says N-1 recompiles
+ *     N-1 again after the reset.
  *
  * Runs locally, talks to the server over `ssh <target.host>` (the alias from
  * ~/.ssh/config — no password here, ever). Inside target.root only.
@@ -23,9 +31,11 @@
  *      a deny file there denies the images, measured 2026-08-30); from those
  *      it REMOVES a deny file, so every switch heals that mistake
  *   3. touch + ln -sfn, then reads the link back and compares
- *   4. probes the door's hostname (target.hosts.<door>) from outside: the
+ *   4. OPcache reset over a one-shot file, then `X-Z77-Release` on `/` must
+ *      name the release (retried across the realpath-cache TTL)
+ *   5. probes the door's hostname (target.hosts.<door>) from outside: the
  *      site must answer, composer.json and every top-level shared store must
- *      NOT. This is the only step that measures instead of assuming.
+ *      NOT. Steps 4 and 5 are the ones that measure instead of assuming.
  *
  * Usage: php .releases/switch.php <release> <next|current>
  *        php .releases/switch.php 2026-08-30 next
@@ -107,7 +117,54 @@ if ($hostname === '') {
     exit(0);
 }
 
-sleep(3); // opcache.revalidate_freq: give the entry point its recompile
+// --- OPcache reset, then proof ----------------------------------------------------
+// Shared hosting: current and next share one PHP pool, so the reset also
+// recompiles production once — harmless, and there is no isolated form.
+echo "\nOPcache reset + proof on https://$hostname\n";
+$proved = false;
+for ($round = 1; $round <= 10; $round++) {
+    $token = bin2hex(random_bytes(8));
+    $resetFile = "z77-opcache-reset-$token.php";
+    $resetPhp = "<?php\n"
+        . "// one-shot, written by .releases/switch.php — deletes itself on the first call\n"
+        . "header('Content-Type: text/plain');\n"
+        . "\$ok = function_exists('opcache_reset') && opcache_reset();\n"
+        . "clearstatcache(true);\n"
+        . "@unlink(__FILE__);\n"
+        . "echo \$ok ? 'reset ok' : 'reset unavailable', is_file(__FILE__) ? ' (file still there)' : '';\n";
+    $write = "set -eu\n"
+        . 'cd ' . $q("$root/releases/$release/public") . "\n"
+        . "cat > " . $q($resetFile) . " <<'Z77_RESET_EOF'\n$resetPhp\nZ77_RESET_EOF\n";
+    releases_ssh($host, $write);
+    [$code, $body] = [0, ''];
+    $ctx  = stream_context_create(['http' => ['ignore_errors' => true, 'timeout' => 20], 'ssl' => ['verify_peer' => true]]);
+    $body = (string) @file_get_contents("https://$hostname/$resetFile", false, $ctx);
+    $gone = releases_ssh($host, 'test -e ' . $q("$root/releases/$release/public/$resetFile") . ' && echo STILL_THERE || echo gone');
+    if (str_contains($gone, 'STILL_THERE')) {
+        fwrite(STDERR, "STOP: the reset file did not delete itself — remove it NOW by hand:\n  rm $root/releases/$release/public/$resetFile\n");
+        exit(1);
+    }
+    printf("  round %d: %s", $round, $body !== '' ? $body : 'reset file not reachable');
+    sleep(3); // opcache.revalidate_freq
+    [$status, $headers] = releases_httpHead("https://$hostname/?z77-switch=$token");
+    $answered = $headers['x-z77-release'] ?? '(no X-Z77-Release header)';
+    printf(" — / answers from %s\n", $answered);
+    if ($answered === $release) {
+        $proved = true;
+        break;
+    }
+    if (!isset($headers['x-z77-release']) && $round >= 2) {
+        fwrite(STDERR, "\nSTOP: no X-Z77-Release header — either an OLD release still answers (its framework predates the header) or this release's framework has no HtmlResponse header. Cannot prove the switch; check the backend panel's hover (Verzeichnis: ...).\n");
+        break;
+    }
+    sleep(15); // let the realpath cache (120 s TTL) forget the old target
+}
+if (!$proved) {
+    fwrite(STDERR, "\nSTOP: $door still does not answer from releases/$release. The link is bent; the PHP pool is not. Bend back or investigate before going further:\n  php .releases/switch.php <previous> $door\n");
+    exit(1);
+}
+echo "  proved: https://$hostname answers from releases/$release\n";
+
 echo "\nProbing https://$hostname\n";
 
 $failed = false;

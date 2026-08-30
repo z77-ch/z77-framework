@@ -45,9 +45,11 @@ Not a comment, not a commit message — an approval recorded here in this file.
    **A door is bent with `switch.php`, not with a hand-typed `ln`**: the hand
    forgets the `/public` (with `public` that makes the release root — vendor/,
    composer.json, every signpost into shared/ — the document root) and it
-   forgets the `touch` (then the old release keeps running behind the new
-   link). The project root carries `htaccess-deny` as `.htaccess` for the day
-   the hand wins anyway.
+   forgets the OPcache reset (then the old release keeps running behind the
+   new link — a `touch` does not help, OPcache validates against the resolved
+   old path; measured 2026-08-30). The script proves the switch by reading
+   `X-Z77-Release` off the door. The project root carries `htaccess-deny` as
+   `.htaccess` for the day the hand wins anyway.
 4. **`releases/<name>/` is the installation root.** It holds pure code —
    `vendor/`, `public/`, `override/`, `cron/`, `composer.json`,
    `composer.lock` — plus the symlinks into `shared/`. The name matches
