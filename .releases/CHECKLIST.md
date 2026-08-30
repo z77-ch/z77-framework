@@ -5,9 +5,10 @@ and each one fails in a way that does not look like its cause. Work through
 them on every release; they are the same every time.
 
 1. **A regenerated `config/` file goes up by hand.** `config/` lives in
-   `shared/` and is on the SFTP ignore list, so `composer install` can rewrite
-   `config/fileFinder.inc.php` — a new package adds a namespace there — and
-   the upload will not take it. Copy it into `shared/config/` yourself.
+   `shared/` and is excluded from every upload, so `composer install` can
+   rewrite `config/fileFinder.inc.php` — a new package adds a namespace
+   there — and the upload will not take it. `deploy.php` compares the two
+   and prints the `scp` line when they differ; the copy is still yours.
    *Symptom if skipped:* the site runs, the first call into the new package
    dies with «Namespace 'X\Y\' has no registered sourcePaths».
 
@@ -17,8 +18,12 @@ them on every release; they are the same every time.
    cannot do it *through* a dangling link — it gets «File exists» and stops.
    `mkdir -p shared/<name>` costs nothing when the directory is already there.
    The `.htaccess` inside each store (`Require all denied`) is written by
-   `switch.php` when missing; it is what stands between a door bent at the
-   wrong place and the credentials becoming URLs.
+   `deploy.php` and `switch.php` when missing; it is what stands between a
+   door bent at the wrong place and the credentials becoming URLs. **Never
+   into a store served through `public/`**: `public/media` IS
+   `shared/media` — the link is the directory — so a deny file there denies
+   every image, on every door at once, because `shared/` is common to all
+   releases. Measured 2026-08-30 on axo3.ch; both scripts now remove it.
    *Symptom if skipped:* a form reports success and stores nothing, or a
    credential file never appears — or, without the deny file, nothing at all
    until someone requests `/.propbase/tenant-3.json`.

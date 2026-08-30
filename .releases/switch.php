@@ -18,8 +18,10 @@
  * What it does, in order:
  *   1. refuses a name that does not match target.release_name, a door that is
  *      not next|current, a release without public/index.php
- *   2. writes .releases/htaccess-deny into every shared store that has none
- *      (idempotent — an existing file is never touched)
+ *   2. writes .releases/htaccess-deny into every shared store that has none —
+ *      except the stores served THROUGH public/ (public/media IS shared/media:
+ *      a deny file there denies the images, measured 2026-08-30); from those
+ *      it REMOVES a deny file, so every switch heals that mistake
  *   3. touch + ln -sfn, then reads the link back and compares
  *   4. probes the door's hostname (target.hosts.<door>) from outside: the
  *      site must answer, composer.json and every top-level shared store must
@@ -41,11 +43,17 @@ $target      = releases_target(__DIR__);
 $root       = rtrim((string) $target['root'], '/');
 $host       = (string) $target['host'];
 $linkTarget = $target['link_target'] === 'public' ? "releases/$release/public" : "releases/$release";
-$stores     = [];
+$stores     = []; // every store; the deny file goes only into $closed
+$closed     = []; // stores NOT reached through public/ — public/media IS shared/media, a deny file there denies the images
 foreach ((array) $target['shared'] as $entry) {
-    $stores[] = releases_sharedStoreName((string) $entry);
+    $store    = releases_sharedStoreName((string) $entry);
+    $stores[] = $store;
+    if (!str_starts_with(trim((string) $entry, '/'), 'public/')) {
+        $closed[] = $store;
+    }
 }
 $stores = array_values(array_unique($stores));
+$closed = array_values(array_unique($closed));
 
 $deny = file_get_contents(__DIR__ . '/htaccess-deny');
 if ($deny === false || !str_contains($deny, 'Require all denied')) {
@@ -69,9 +77,14 @@ $script = "set -eu\n"
     . 'test -f "releases/$REL/public/index.php" || { echo "STOP: releases/$REL/public/index.php not found"; exit 2; }' . "\n"
     . 'test -d shared || { echo "STOP: shared/ not found in $ROOT"; exit 2; }' . "\n"
     . "DENY=\$(cat <<'Z77_DENY_EOF'\n$deny\nZ77_DENY_EOF\n)\n"
-    . 'for d in ' . implode(' ', array_map($q, $stores)) . '; do' . "\n"
+    . 'for d in ' . implode(' ', array_map($q, $closed)) . '; do' . "\n"
     . '  if [ -d "shared/$d" ] && [ ! -f "shared/$d/.htaccess" ]; then' . "\n"
     . '    printf "%s\n" "$DENY" > "shared/$d/.htaccess" && echo "  wrote shared/$d/.htaccess"' . "\n"
+    . '  fi' . "\n"
+    . 'done' . "\n"
+    . 'for d in ' . implode(' ', array_map($q, array_values(array_diff($stores, $closed)))) . '; do' . "\n"
+    . '  if [ -f "shared/$d/.htaccess" ] && grep -q "Require all denied" "shared/$d/.htaccess"; then' . "\n"
+    . '    rm "shared/$d/.htaccess" && echo "  removed deny file from shared/$d (served through public/)"' . "\n"
     . '  fi' . "\n"
     . 'done' . "\n"
     . 'touch "releases/$REL/public/index.php"' . "\n"
@@ -110,12 +123,8 @@ $probe = static function (string $path, array $expect, string $why) use ($hostna
 $probe('/', [200, 301, 302, 303, 307, 308], 'the site itself does not answer');
 $probe('/composer.json', [403, 404], 'the release ROOT is being served');
 $probe('/vendor/z77/build.json', [403, 404], 'the release ROOT is being served');
-foreach ($stores as $store) {
-    // public/media and public/storage are served by design; every other
-    // store is a signpost in the release root and must be unreachable.
-    if (in_array("public/$store", (array) $target['shared'], true)) {
-        continue;
-    }
+foreach ($closed as $store) {
+    // every store that is a signpost in the release root must be unreachable
     $probe("/$store/", [403, 404], 'a shared store is reachable');
 }
 

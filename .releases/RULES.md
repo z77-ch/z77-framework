@@ -17,8 +17,9 @@ Not a comment, not a commit message — an approval recorded here in this file.
 | `target.example.json` | template for `target.json` |
 | `check.php` | verifies `target.json`, `.vscode/sftp.json` and the local `vendor/` state against the rules — warns, never uploads |
 | `sftp.example.json` | template for `.vscode/sftp.json` (gitignored; the developer copies and maintains it) |
+| `deploy.php` | uploads ONE release over ssh (tar stream, every shared name excluded), sets the signposts into `shared/`, compares `config/fileFinder.inc.php` — refuses an existing or running release |
 | `switch.php` | bends `next` or `current` at a release over ssh: link target per `target.link_target`, the `touch`, the deny files in `shared/`, then probes the door from outside |
-| `htaccess-deny` | `Require all denied` — copied to `<project>/.htaccess` (link_target `public`) and by `switch.php` into every shared store; the alarm for a door bent at the wrong place |
+| `htaccess-deny` | `Require all denied` — copied to `<project>/.htaccess` (link_target `public`) and by `deploy.php`/`switch.php` into every shared store NOT served through `public/`; the alarm for a door bent at the wrong place |
 | `vendor-deploy.php` / `.bat` | builds a deployable `vendor/`: real copies of every path-repo package (list read from `composer.json`), production autoload, build stamp |
 | `vendor-dev.php` / `.bat` | restores the development `vendor/` (links, dev deps, stamp removed) |
 | `lib.php` | helpers shared by the scripts |
@@ -81,13 +82,16 @@ Not a comment, not a commit message — an approval recorded here in this file.
   vendor that still holds links, lacks the stamp, or carries dev dependencies.
 - Deploy sequence, every time:
   1. `php .releases/vendor-deploy.php`
-  2. set `remotePath` in `.vscode/sftp.json` to the new release name
-  3. `php .releases/check.php` — must print `OK`
-  4. upload (SFTP: Sync Local → Remote)
+  2. `php .releases/deploy.php <name>` — upload + signposts; it prints whether
+     `shared/config/fileFinder.inc.php` differs from the local one (CHECKLIST 1)
+  3. `php .releases/switch.php <name> next` — test on the test door, «Cache leeren» there
+  4. `php .releases/switch.php <name> current` — «Cache leeren» in the backend
   5. `php .releases/vendor-dev.php`
-  6. on the server: the signposts into `shared/` (handbook `release-structure.md`)
-  7. `php .releases/switch.php <name> next` — test on the test door
-  8. `php .releases/switch.php <name> current` — then «Cache leeren» in the backend
+
+  The SFTP client is the fallback when ssh is not available: then
+  `remotePath` in `.vscode/sftp.json` names the new release,
+  `php .releases/check.php` must print `OK` before the upload, and the
+  signposts are set by hand (handbook `release-structure.md`).
 - **`CHECKLIST.md` covers what the sequence above does not move** — a
   regenerated `config/` file, the `shared/` stores, the `touch`, the backend
   cache clear. Read it on every release, not only on the first.

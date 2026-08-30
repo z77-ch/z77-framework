@@ -288,3 +288,30 @@ function releases_httpStatus(string $url): int
     }
     return (int) $m[1];
 }
+
+/**
+ * Like releases_ssh(), but the remote command is passed as an argument and
+ * stdin carries a FILE (the tar stream). `bash -c '<script>'` — the script
+ * is single-quoted for the remote shell, its values are bash literals.
+ */
+function releases_sshStdin(string $host, string $script, string $stdinFile): string
+{
+    $remote = "bash -c '" . str_replace("'", "'\''", $script) . "'";
+    $spec = [0 => ['file', $stdinFile, 'rb'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']];
+    $proc = proc_open(['ssh', '-T', $host, $remote], $spec, $pipes);
+    if (!is_resource($proc)) {
+        fwrite(STDERR, "cannot start ssh — is OpenSSH installed and '$host' in ~/.ssh/config?\n");
+        exit(1);
+    }
+    $out = stream_get_contents($pipes[1]);
+    $err = stream_get_contents($pipes[2]);
+    fclose($pipes[1]);
+    fclose($pipes[2]);
+    $code = proc_close($proc);
+    $err = implode("\n", array_filter(explode("\n", $err), static fn($l) => !str_starts_with($l, '** ')));
+    if ($code !== 0 && !str_contains($out, 'STOP:')) {
+        fwrite(STDERR, "ssh/bash exited with $code\n$out$err");
+        exit($code);
+    }
+    return $out . $err;
+}

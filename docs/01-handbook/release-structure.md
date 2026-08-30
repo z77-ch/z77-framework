@@ -284,11 +284,15 @@ grabs the wrong one; measured 2026-08-30 on axo3.ch, harmless direction
 BASE=~/public_html/example.ch
 REL=2026-09-04
 
-# 1. upload the new release (same exclusions as above)
-mkdir -p $BASE/releases/$REL
-# … upload …
-
-# 2. signposts (same block as in the initial setup, step 3)
+# 1 + 2. upload the new release and set its signposts — one command from
+#    the developer machine. It packs release_dirs + composer.* + .htaccess
+#    with every shared name excluded, streams the tar over ssh into
+#    releases/$REL (refusing an existing or running release), links every
+#    target.shared entry, and says whether shared/config/fileFinder.inc.php
+#    differs from the local one.
+php .releases/deploy.php $REL
+#    (by hand: mkdir -p $BASE/releases/$REL, upload, then the signpost block
+#     from the initial setup, step 3)
 
 # 3. bend next, test on the subdomain — real server, real data.
 #    From the developer machine, over ssh. The script does what the two
@@ -356,6 +360,12 @@ handgrip.
   `<project>/.htaccess` and the deny file in every store turn that into a
   403 — if `AllowOverride` is on. `switch.php` builds the link right and
   probes; the probe is the only one of the three that measures.
+- **No deny file in a store served through `public/`.** `public/media` is a
+  link to `shared/media`, the link IS the directory, so
+  `shared/media/.htaccess` is `public/media/.htaccess` — every image 403,
+  on every door at once. Measured 2026-08-30 on axo3.ch, eleven minutes of
+  broken images in production. `deploy.php`/`switch.php` write the deny
+  file only into stores that are signposts in the release root.
 
 ## Verified on cyon (2026-08-28)
 
