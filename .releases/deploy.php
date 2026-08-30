@@ -14,7 +14,7 @@
  *      without stamp or with dev deps (run vendor-deploy.php first); a
  *      missing root .htaccess with link_target=public
  *   2. packs target.release_dirs + composer.json/.lock + .htaccess into a tar
- *      (PharData, no external tool) — every target.shared entry excluded, so
+ *      (PharData, one pass, no external tool) — every target.shared entry excluded, so
  *      an upload can never carry a shared name (rule 6)
  *   3. streams the tar over `ssh <target.host>` into releases/<name>/ —
  *      refuses if that directory exists (a second upload into a RUNNING
@@ -104,16 +104,15 @@ $excluded = static function (string $rel) use ($shared): bool {
 
 $tarFile = sys_get_temp_dir() . '/z77-release-' . $release . '-' . getmypid() . '.tar';
 @unlink($tarFile);
-$tar   = new PharData($tarFile);
-$count = 0;
-$bytes = 0;
-$add   = static function (string $abs, string $rel) use ($tar, &$count, &$bytes): void {
-    $tar->addFile($abs, $rel);
-    $count++;
-    $bytes += (int) filesize($abs);
-};
 echo "Packing: " . implode(', ', $target['release_dirs']) . ", composer.json, composer.lock, .htaccess\n";
 echo "Excluding every shared name: " . implode(', ', $shared) . "\n";
+
+// Collect first, build once. PharData::addFile() rewrites the whole archive
+// on every call — quadratic in the file count, and a virus scanner on the
+// temp file turns 1167 files into minutes (measured 2026-08-30: two runs
+// aborted at 4 MB and 2.9 MB). buildFromIterator() is a single pass.
+$files = [];   // rel => abs
+$bytes = 0;
 foreach ($target['release_dirs'] as $dir) {
     $it = new RecursiveIteratorIterator(
         new RecursiveCallbackFilterIterator(
@@ -130,16 +129,23 @@ foreach ($target['release_dirs'] as $dir) {
         if (!$f->isFile()) {
             continue;
         }
-        $add($f->getPathname(), str_replace('\\', '/', substr($f->getPathname(), strlen($projectRoot) + 1)));
+        $rel = str_replace('\\', '/', substr($f->getPathname(), strlen($projectRoot) + 1));
+        $files[$rel] = $f->getPathname();
+        $bytes += (int) $f->getSize();
     }
 }
 foreach (['composer.json', 'composer.lock', '.htaccess'] as $file) {
     if (is_file("$projectRoot/$file")) {
-        $add("$projectRoot/$file", $file);
+        $files[$file] = "$projectRoot/$file";
+        $bytes += (int) filesize("$projectRoot/$file");
     }
 }
+printf("  %d files, %.1f MB — building tar ...", count($files), $bytes / 1048576);
+$t0  = microtime(true);
+$tar = new PharData($tarFile);
+$tar->buildFromIterator(new ArrayIterator($files));
 unset($tar);
-printf("  %d files, %.1f MB, tar %.1f MB\n", $count, $bytes / 1048576, filesize($tarFile) / 1048576);
+printf(" %.1f MB in %.0f s\n", filesize($tarFile) / 1048576, microtime(true) - $t0);
 
 // --- 3. upload ---------------------------------------------------------------------
 $q = static fn(string $s): string => "'" . str_replace("'", "'\\''", $s) . "'";
