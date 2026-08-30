@@ -1,0 +1,7 @@
+{
+    "host": "cyon-z77",
+    "root": "/home/<account>/public_html/example.ch",
+    "release_name": "^\\d{4}-\\d{2}-\\d{2}(-\\d+)?$",
+    "shared": ["data", "config", "logs", "lib", "backup", "public/media", "public/storage"],
+    "release_dirs": ["vendor", "public", "override", "cron"]
+}

@@ -1,0 +1,37 @@
+{
+    "name": "z77 SSH SFTP",
+    "host": "cyon-z77",
+    "protocol": "sftp",
+    "port": 22,
+
+    "remotePath": "/home/<account>/public_html/example.ch/releases/<name>",
+    "uploadOnSave": false,
+    "useTempFile": false,
+    "openSsh": false,
+    "connectTimeout": 30000,
+    "ignore": [
+        ".vscode/**",
+        ".git/**",
+        ".gitignore",
+        ".claude/**",
+        "CLAUDE.md",
+        ".releases/**",
+        "docs/**",
+        "tests/**",
+        "work/**",
+        "temp/**",
+        "node_modules/**",
+        "package.json",
+        "package-lock.json",
+        "*.bat",
+        "*.md",
+
+        "data/**",
+        "config/**",
+        "logs/**",
+        "lib/**",
+        "backup/**",
+        "public/media/**",
+        "public/storage/**"
+    ]
+}

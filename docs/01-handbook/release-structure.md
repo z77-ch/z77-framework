@@ -165,6 +165,19 @@ ln -sfn releases/2026-08-28 current.tmp && mv -T current.tmp current
 `mv -T` is a rename(2), which is atomic. For a shared host, plain `ln -sfn`
 is in practice indistinguishable.
 
+## The rules, per project: `.releases/`
+
+The layout above is binding for every project. Each project carries a
+`.releases/` directory (master copy in the framework root — copy it, fill
+`target.json`, commit): `RULES.md` states the rules (outer boundary =
+`target.root`, four root entries, upload only into `releases/<name>`, shared
+names never uploaded, `uploadOnSave: false`), `check.php` verifies
+`target.json` against the hand-maintained `.vscode/sftp.json` and exits
+non-zero on any violation. Run `php .releases/check.php` before every deploy.
+`HANDOFF.md` is the step list for setting a project up. Deviations only with
+the explicit approval of the framework owner, recorded in the project's
+`RULES.md`.
+
 ## Prerequisites
 
 - **Framework state of 2026-08-28 or later.** The installer must generate

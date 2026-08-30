@@ -99,6 +99,11 @@ before deviating.
 - **Do not remove debug output before the developer has seen it.** Show the finding,
   explain it, wait for confirmation — then clean up. Debug output is his verification step,
   not scaffolding to tidy away.
+- **Do not touch anything on a deploy server above the project root** named in the
+  project's `.releases/target.json` — not list, not copy, not write, not delete. Uploads go
+  into `releases/<name>` only, never over `current`, `next` or `shared/`. Run
+  `php .releases/check.php` before a deploy; it warns, it does not fix `sftp.json` — the
+  developer maintains that file. → [`.releases/RULES.md`](.releases/RULES.md).
 - **Do not copy old-framework (wdv-6.2.2) code directly** — read → analyze → review →
   decide → only then integrate (see Working Method).
 - **Do not deviate from an ADR unilaterally** — ADRs in `docs/02-decisions/` take
