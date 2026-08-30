@@ -246,8 +246,17 @@ foreach ($sections as $item) {
                 $buildLeft  = 'z77 · ' . ($build?->label(BuildInfo::FRAMEWORK) ?? 'Entwicklung');
                 $buildRight = '';
                 $buildTitle = 'Kein Deploy-Stempel — dieses vendor/ zeigt auf den Arbeitsbaum.';
+                // The installation root, resolved: PHP expands symlinks in
+                // __FILE__, so under a release structure this names
+                // releases/<name>, not current/ — the one line that proves
+                // WHICH release answers, without an ssh session. After a
+                // switch it is also the OPcache tell-tale: an old path here
+                // means the entry point was not touched (release-structure.md).
+                $buildDir   = defined('ABS_BASE_PATH') ? 'Verzeichnis: ' . ABS_BASE_PATH : '';
 
-                if ($build !== null) {
+                if ($build === null) {
+                    $buildTitle .= $buildDir !== '' ? "\n" . $buildDir : '';
+                } else {
                     $stand      = $build->date(BuildInfo::FRAMEWORK);
                     $buildRight = $stand !== '' ? 'Stand ' . $stand : '';
                     $titleLines = [];
@@ -258,6 +267,9 @@ foreach ($sections as $item) {
                     }
                     if ($build->builtAt() !== null) {
                         $titleLines[] = 'vendor/ gebaut am ' . date('d.m.Y H:i', $build->builtAt());
+                    }
+                    if ($buildDir !== '') {
+                        $titleLines[] = $buildDir;
                     }
                     $buildTitle = implode("\n", $titleLines);
                 }
