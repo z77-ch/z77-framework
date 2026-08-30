@@ -19,16 +19,22 @@ them on every release; they are the same every time.
    *Symptom if skipped:* a form reports success and stores nothing, or a
    credential file never appears.
 
-3. **`touch` the entry point on every switch.** OPcache keys the compiled
-   `index.php` on the *unresolved* path (`current/public/index.php`), and
-   `index.php` carries the same mtime in every release — so bending the
-   symlink changes nothing PHP can see, and the old bytecode keeps running
-   with the old release's paths baked in.
+3. **`touch` the entry point on every switch — `next` and `current` both.**
+   OPcache keys the compiled `index.php` on the *unresolved* path
+   (`next/public/index.php`, `current/public/index.php`), and `index.php`
+   carries the same mtime in every release — so bending the symlink changes
+   nothing PHP can see, and the old bytecode keeps running with the old
+   release's paths baked in. Each door has its own key, so each switch needs
+   its own `touch`, and so does a rollback.
    ```
+   touch releases/<name>/public/index.php && ln -sfn releases/<name> next
+   ... test ...
    touch releases/<name>/public/index.php && ln -sfn releases/<name> current
    ```
    *Symptom if skipped:* the worst kind — the site works. Static files come
-   from the new release, every rendered page from the old one. Mechanism,
+   from the new release, every rendered page from the old one. On `next` it is
+   worse still: the test door then certifies a release that never ran, and the
+   switch to `current` carries the untested code to production. Mechanism,
    rollback caveat and the reset-file fallback: `release-structure.md`.
 
 4. **Clear the cache in the backend after the switch.** FileFinder and
