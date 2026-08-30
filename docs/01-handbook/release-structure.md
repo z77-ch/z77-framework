@@ -32,9 +32,20 @@ lives once in `shared/`, and "which release is live" is a single symlink.**
   releases/
       2026-08-28/             pure code. One upload = one directory.
       2026-08-27/             the previous state — the way back
-  current -> releases/2026-08-28     production points here
-  next    -> releases/2026-08-28     the test subdomain points here
+  current -> releases/2026-08-28/public     production points here
+  next    -> releases/2026-08-28/public     the test subdomain points here
 ```
+
+Whether the doors point at `releases/<date>/public` (document root =
+`<domain>/current`) or at `releases/<date>` (document root =
+`<domain>/current/public`) is ONE convention per project, recorded in
+`.releases/target.json` as `link_target` — `public` above, cyon's layout.
+Never mixed: the door is bent with `php .releases/switch.php <date> <door>`,
+which builds the link from that key, does the `touch`, and probes the door
+from outside. The hand-typed `ln` that stops one level short turns the
+release root — vendor/, composer.json, every signpost below — into the
+document root; `<project>/.htaccess` (`Require all denied`) and the same file
+in every `shared/` store are the alarm for that day.
 
 Inside a release, the data locations are nothing but signposts:
 
@@ -262,8 +273,10 @@ Then, in the hoster's panel:
 
 **Build every switch the same way.** Whether document roots point at
 `current/public` or `current` points at a `public` — pick ONE convention for
-all domains and doors, or the person switching under pressure grabs the wrong
-one.
+all domains and doors, record it as `link_target` in `.releases/target.json`,
+and let `switch.php` build the link. The person switching under pressure
+grabs the wrong one; measured 2026-08-30 on axo3.ch, harmless direction
+(404). The other direction serves `shared/` as URLs.
 
 ## Deploying a release
 
@@ -278,23 +291,26 @@ mkdir -p $BASE/releases/$REL
 # 2. signposts (same block as in the initial setup, step 3)
 
 # 3. bend next, test on the subdomain — real server, real data.
-#    The touch is not optional: without it OPcache keeps serving the OLD
-#    release's index.php through the new link (see the mechanism section).
-touch $BASE/releases/$REL/public/index.php
-ln -sfn releases/$REL $BASE/next
+#    From the developer machine, over ssh. The script does what the two
+#    lines below it do by hand — link target per target.link_target, the
+#    touch (without it OPcache keeps serving the OLD release's index.php
+#    through the new link, see the mechanism section), the deny files in
+#    shared/ — and then probes the door from outside.
+php .releases/switch.php $REL next
+#    (= touch $BASE/releases/$REL/public/index.php && ln -sfn releases/$REL/public $BASE/next
+#       with link_target=public; ln -sfn releases/$REL with link_target=release)
 
-# 4. bend current, clear the page cache — same touch, same reason
-touch $BASE/releases/$REL/public/index.php
-ln -sfn releases/$REL $BASE/current
+# 4. bend current, clear the page cache — same script, same reason
+php .releases/switch.php $REL current
 rm -rf $BASE/shared/lib/cache/*        # or backend «Cache leeren»
 
 # 5. prune old releases — keep at least the previous one (the rollback)
 ls -dt $BASE/releases/*/ | tail -n +3 | xargs rm -rf
 
-# Rollback, should step 4 turn out wrong — touch again, the old
-# release's index.php is just as unchanged as the new one was:
-touch $BASE/releases/2026-08-28/public/index.php
-ln -sfn releases/2026-08-28 $BASE/current
+# Rollback, should step 4 turn out wrong — the same script, the old name.
+# It touches again: the old release's index.php is just as unchanged as the
+# new one was.
+php .releases/switch.php 2026-08-28 current
 ```
 
 **Verify with PHP, not with a static file.** After each switch, request a
@@ -334,6 +350,12 @@ handgrip.
   and forks the state.
 - **No crontab or document root on a `releases/<date>` path.** Anything wired
   past `current`/`next` keeps running the old code after a switch, silently.
+- **No door without `/public` when `link_target` is `public`.** The release
+  root is then the document root, and it holds the signposts into `shared/`:
+  `/.propbase/tenant-3.json`, `/data/…`, `/backup/…` answer as plain files.
+  `<project>/.htaccess` and the deny file in every store turn that into a
+  403 — if `AllowOverride` is on. `switch.php` builds the link right and
+  probes; the probe is the only one of the three that measures.
 
 ## Verified on cyon (2026-08-28)
 

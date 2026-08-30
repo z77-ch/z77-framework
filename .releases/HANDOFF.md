@@ -36,12 +36,23 @@ not delete them yourself.
 | `host` | the SSH alias from `~/.ssh/config` (e.g. `cyon-z77`) — never a password, never a raw hostname with credentials |
 | `root` | absolute server path of the project directory, the one that contains `current`, `next`, `releases/`, `shared/` |
 | `release_name` | keep the default unless the owner approved another scheme |
+| `link_target` | `public` when the hoster's document root is `<root>/current` (the door points at `releases/<name>/public`); `release` when the document root is `<root>/current/public`. Read it off the hoster's panel or off `ls -l <root>/current` — do not guess, rule 3 |
+| `hosts` | the hostname behind each door (`next.example.ch`, `example.ch`) — `switch.php` probes them from outside |
 | `shared` | the default list PLUS every project-specific runtime store (key directories such as `.propbase`, `.emonitor`, `data/<something>` that is not in git) |
 | `release_dirs` | keep the default; add only what the project really ships |
 
 Ask the developer for `root` and for the project-specific `shared` entries if
 they are not obvious from the code (`grep` for `.`-prefixed store names in
 `config/` and `override/`).
+
+## 2b. The deny file in the project root
+
+With `link_target: public` copy `htaccess-deny` to `<project>/.htaccess`
+(verbatim, committed). Apache never reads it in the correct layout; it is
+the 403 that answers the day a door is bent at `releases/<name>` instead of
+`releases/<name>/public`. With `link_target: release` do NOT — there the
+release root is inside Apache's directory walk and the file would close the
+whole site; `check.php` says so.
 
 ## 3. `.vscode/sftp.json` from the template
 
@@ -80,6 +91,9 @@ Report every violation to the developer, verbatim. **Do not edit
   `php .releases/vendor-deploy.php` before uploading, `vendor-dev.php`
   afterwards. Between deploys this finding is normal — the check is meant
   for the moment right before an upload.
+- `link_target must be ...` / `hosts.next missing` → an older `target.json`;
+  add the keys from `target.example.json`, values off the hoster's panel.
+- `<project>/.htaccess missing` → step 2b.
 
 ## 6. Mention it in the project's `CLAUDE.md`
 

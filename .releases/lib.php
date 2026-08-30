@@ -171,3 +171,120 @@ function releases_run(string $cmd, string $cwd): void
         exit($code);
     }
 }
+
+/**
+ * Loads and validates `target.json` from the `.releases/` directory. Exits
+ * with a message on anything a script cannot work with — the same checks
+ * check.php reports, but here they are fatal because a switch is about to
+ * happen on their basis.
+ *
+ * @return array{host: string, root: string, release_name: string, shared: string[],
+ *   release_dirs: string[], link_target: 'public'|'release', hosts: array<string,string>}
+ */
+function releases_target(string $releasesDir): array
+{
+    $file = $releasesDir . '/target.json';
+    $t = json_decode((string) @file_get_contents($file), true);
+    if (!is_array($t)) {
+        fwrite(STDERR, "target.json missing or not valid JSON: $file\n");
+        exit(1);
+    }
+    foreach (['host', 'root', 'release_name', 'shared', 'link_target'] as $key) {
+        if (empty($t[$key])) {
+            fwrite(STDERR, "target.json: key '$key' missing or empty\n");
+            exit(1);
+        }
+    }
+    $root = rtrim((string) $t['root'], '/');
+    if ($root === '' || $root[0] !== '/' || str_contains($root, '<')) {
+        fwrite(STDERR, "target.json: 'root' must be an absolute server path, got '$root'\n");
+        exit(1);
+    }
+    if (!in_array($t['link_target'], ['public', 'release'], true)) {
+        fwrite(STDERR, "target.json: 'link_target' must be 'public' or 'release', got '{$t['link_target']}'\n");
+        exit(1);
+    }
+    $t['root']         = $root;
+    $t['shared']       = array_map('strval', (array) $t['shared']);
+    $t['release_dirs'] = array_map('strval', (array) ($t['release_dirs'] ?? []));
+    $t['hosts']        = array_map('strval', (array) ($t['hosts'] ?? []));
+    return $t;
+}
+
+/**
+ * `<release> <next|current>` from argv, validated against target.json.
+ *
+ * @return array{0: string, 1: string}
+ */
+function releases_switchArgs(array $argv, array $target): array
+{
+    $release = (string) ($argv[1] ?? '');
+    $door    = (string) ($argv[2] ?? '');
+    if ($release === '' || $door === '') {
+        fwrite(STDERR, "Usage: php .releases/switch.php <release> <next|current>\n");
+        exit(1);
+    }
+    if (!in_array($door, ['next', 'current'], true)) {
+        fwrite(STDERR, "door must be 'next' or 'current', got '$door'\n");
+        exit(1);
+    }
+    if (!preg_match('~' . $target['release_name'] . '~', $release) || str_contains($release, '/') || str_contains($release, '..')) {
+        fwrite(STDERR, "release name '$release' does not match target.release_name '{$target['release_name']}'\n");
+        exit(1);
+    }
+    return [$release, $door];
+}
+
+/**
+ * The directory name under shared/ for a `target.shared` entry:
+ * `data` → `data`, `public/media` → `media`, `.propbase` → `.propbase`.
+ */
+function releases_sharedStoreName(string $entry): string
+{
+    return basename(trim($entry, '/'));
+}
+
+/**
+ * Runs a bash script on the server via `ssh -T <host> bash -s`, script on
+ * stdin. No quoting of our own — the script carries its values as
+ * single-quoted bash literals. Returns combined output; exits on failure.
+ */
+function releases_ssh(string $host, string $script): string
+{
+    $spec = [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']];
+    $proc = proc_open(['ssh', '-T', $host, 'bash', '-s'], $spec, $pipes);
+    if (!is_resource($proc)) {
+        fwrite(STDERR, "cannot start ssh — is OpenSSH installed and '$host' in ~/.ssh/config?\n");
+        exit(1);
+    }
+    fwrite($pipes[0], $script);
+    fclose($pipes[0]);
+    $out = stream_get_contents($pipes[1]);
+    $err = stream_get_contents($pipes[2]);
+    fclose($pipes[1]);
+    fclose($pipes[2]);
+    $code = proc_close($proc);
+    if ($code !== 0) {
+        fwrite(STDERR, "ssh/bash exited with $code\n$out$err");
+        exit($code);
+    }
+    return $out . $err;
+}
+
+/**
+ * HTTP status of a HEAD-like GET without following redirects; 0 when the
+ * host does not answer at all. No curl dependency — PHP streams.
+ */
+function releases_httpStatus(string $url): int
+{
+    $ctx = stream_context_create([
+        'http' => ['method' => 'GET', 'follow_location' => 0, 'ignore_errors' => true, 'timeout' => 15,
+                   'header' => "User-Agent: z77-releases-switch\r\n"],
+        'ssl'  => ['verify_peer' => true, 'verify_peer_name' => true],
+    ]);
+    $headers = @get_headers($url, false, $ctx);
+    if ($headers === false || !isset($headers[0]) || !preg_match('~HTTP/\S+\s+(\d{3})~', $headers[0], $m)) {
+        return 0;
+    }
+    return (int) $m[1];
+}

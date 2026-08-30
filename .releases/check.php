@@ -59,6 +59,25 @@ if ($pattern !== '' && @preg_match('~' . $pattern . '~', '') === false) {
 }
 $shared = array_map('strval', (array) ($target['shared'] ?? []));
 
+// --- rule 3: the link convention is recorded, and the root .htaccess fits it ---
+$linkTarget = $target['link_target'] ?? null;
+if (!in_array($linkTarget, ['public', 'release'], true)) {
+    $warn("target.json: 'link_target' must be 'public' (door -> releases/<name>/public) or 'release' (door -> releases/<name>) — rule 3");
+}
+foreach (['next', 'current'] as $door) {
+    if (empty($target['hosts'][$door])) {
+        $warn("target.json: 'hosts.$door' missing — switch.php cannot probe the $door door from outside");
+    }
+}
+$rootHtaccess = $projectRoot . '/.htaccess';
+$rootDenies   = is_file($rootHtaccess) && str_contains((string) file_get_contents($rootHtaccess), 'Require all denied');
+if ($linkTarget === 'public' && !$rootDenies) {
+    $warn("<project>/.htaccess missing or not the deny file — copy .releases/htaccess-deny there; with link_target=public a link that forgets /public would otherwise serve the release root");
+}
+if ($linkTarget === 'release' && $rootDenies) {
+    $warn("<project>/.htaccess denies everything, but link_target=release puts the release root INTO Apache's directory walk — the whole site would answer 403; remove the file or switch the convention");
+}
+
 if ($sftp === null) {
     report($errors);
 }
@@ -115,6 +134,9 @@ foreach ($shared as $name) {
 foreach ($ignore as $ig) {
     if (preg_match('~^/?vendor(/\*\*?)?$~', $ig)) {
         $warn("sftp.json: 'vendor/**' is ignored — the release would ship without code; run vendor-deploy.php and upload vendor/");
+    }
+    if (preg_match('~^/?\.htaccess$|^\*\*/\.htaccess$|^\.\*$~', $ig)) {
+        $warn("sftp.json: '$ig' keeps the .htaccess files out of the upload — the deny file in the release root and the rewrite rules in public/ would both be missing");
     }
 }
 

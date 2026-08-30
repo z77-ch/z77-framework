@@ -17,6 +17,8 @@ Not a comment, not a commit message — an approval recorded here in this file.
 | `target.example.json` | template for `target.json` |
 | `check.php` | verifies `target.json`, `.vscode/sftp.json` and the local `vendor/` state against the rules — warns, never uploads |
 | `sftp.example.json` | template for `.vscode/sftp.json` (gitignored; the developer copies and maintains it) |
+| `switch.php` | bends `next` or `current` at a release over ssh: link target per `target.link_target`, the `touch`, the deny files in `shared/`, then probes the door from outside |
+| `htaccess-deny` | `Require all denied` — copied to `<project>/.htaccess` (link_target `public`) and by `switch.php` into every shared store; the alarm for a door bent at the wrong place |
 | `vendor-deploy.php` / `.bat` | builds a deployable `vendor/`: real copies of every path-repo package (list read from `composer.json`), production autoload, build stamp |
 | `vendor-dev.php` / `.bat` | restores the development `vendor/` (links, dev deps, stamp removed) |
 | `lib.php` | helpers shared by the scripts |
@@ -32,9 +34,19 @@ Not a comment, not a commit message — an approval recorded here in this file.
    (`realpath`, existence check) needed to verify the boundary itself.
 2. **Exactly four entries at the root:** `current`, `next`, `releases/`,
    `shared/`. Nothing else is created there.
-3. **`current` and `next` are symlinks** and point at an entry of
-   `releases/` — never anywhere else. `current` is production, `next` the
-   test door.
+3. **`current` and `next` are symlinks into `releases/`** — never anywhere
+   else. `current` is production, `next` the test door. WHERE inside a
+   release they point is ONE convention per project, recorded in
+   `target.link_target`: `public` — the door points at
+   `releases/<name>/public` and the hoster's document root is `<root>/current`
+   (resp. `next`); `release` — the door points at `releases/<name>` and the
+   document root is `<root>/current/public`. Never mixed, never a third form.
+   **A door is bent with `switch.php`, not with a hand-typed `ln`**: the hand
+   forgets the `/public` (with `public` that makes the release root — vendor/,
+   composer.json, every signpost into shared/ — the document root) and it
+   forgets the `touch` (then the old release keeps running behind the new
+   link). The project root carries `htaccess-deny` as `.htaccess` for the day
+   the hand wins anyway.
 4. **`releases/<name>/` is the installation root.** It holds pure code —
    `vendor/`, `public/`, `override/`, `cron/`, `composer.json`,
    `composer.lock` — plus the symlinks into `shared/`. The name matches
@@ -73,8 +85,9 @@ Not a comment, not a commit message — an approval recorded here in this file.
   3. `php .releases/check.php` — must print `OK`
   4. upload (SFTP: Sync Local → Remote)
   5. `php .releases/vendor-dev.php`
-  6. on the server: symlinks, `touch`, bend `next`, test, bend `current`
-     (handbook `release-structure.md`)
+  6. on the server: the signposts into `shared/` (handbook `release-structure.md`)
+  7. `php .releases/switch.php <name> next` — test on the test door
+  8. `php .releases/switch.php <name> current` — then «Cache leeren» in the backend
 - **`CHECKLIST.md` covers what the sequence above does not move** — a
   regenerated `config/` file, the `shared/` stores, the `touch`, the backend
   cache clear. Read it on every release, not only on the first.
