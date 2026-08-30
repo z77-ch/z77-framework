@@ -20,6 +20,7 @@ Not a comment, not a commit message — an approval recorded here in this file.
 | `vendor-deploy.php` / `.bat` | builds a deployable `vendor/`: real copies of every path-repo package (list read from `composer.json`), production autoload, build stamp |
 | `vendor-dev.php` / `.bat` | restores the development `vendor/` (links, dev deps, stamp removed) |
 | `lib.php` | helpers shared by the scripts |
+| `CHECKLIST.md` | the five things an upload does not carry — worked through on every release |
 | `HANDOFF.md` | step list for setting a project up |
 
 ## The rules
@@ -74,6 +75,9 @@ Not a comment, not a commit message — an approval recorded here in this file.
   5. `php .releases/vendor-dev.php`
   6. on the server: symlinks, `touch`, bend `next`, test, bend `current`
      (handbook `release-structure.md`)
+- **`CHECKLIST.md` covers what the sequence above does not move** — a
+  regenerated `config/` file, the `shared/` stores, the `touch`, the backend
+  cache clear. Read it on every release, not only on the first.
 - Switch mechanics (`touch` + `ln -sfn`, page-cache clear, rollback) are in
   the framework handbook: `docs/01-handbook/release-structure.md`.
 
