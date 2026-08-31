@@ -18,7 +18,7 @@ Not a comment, not a commit message — an approval recorded here in this file.
 | `check.php` | verifies `target.json`, `.vscode/sftp.json` and the local `vendor/` state against the rules — warns, never uploads |
 | `sftp.example.json` | template for `.vscode/sftp.json` (gitignored; the developer copies and maintains it) |
 | `deploy.php` | uploads ONE release over ssh (tar stream, every shared name excluded), sets the signposts into `shared/`, compares `config/fileFinder.inc.php` — refuses an existing or running release |
-| `switch.php` | bends `next` or `current` at a release over ssh: link target per `target.link_target`, the `touch`, the deny files in `shared/`, then probes the door from outside |
+| `switch.php` | bends `next` or `current` at a release over ssh: link target per `target.link_target`, the OPcache reset, the deny files in `shared/`, then probes the door from outside |
 | `htaccess-deny` | `Require all denied` — copied to `<project>/.htaccess` (link_target `public`) and by `deploy.php`/`switch.php` into every shared store NOT served through `public/`; the alarm for a door bent at the wrong place |
 | `vendor-deploy.php` / `.bat` | builds a deployable `vendor/`: real copies of every path-repo package (list read from `composer.json`), production autoload, build stamp |
 | `vendor-dev.php` / `.bat` | restores the development `vendor/` (links, dev deps, stamp removed) |
@@ -100,9 +100,9 @@ Not a comment, not a commit message — an approval recorded here in this file.
   `php .releases/check.php` must print `OK` before the upload, and the
   signposts are set by hand (handbook `release-structure.md`).
 - **`CHECKLIST.md` covers what the sequence above does not move** — a
-  regenerated `config/` file, the `shared/` stores, the `touch`, the backend
+  regenerated `config/` file, the `shared/` stores, the backend
   cache clear. Read it on every release, not only on the first.
-- Switch mechanics (`touch` + `ln -sfn`, page-cache clear, rollback) are in
+- Switch mechanics (`ln -sfn` + OPcache reset, page-cache clear, rollback) are in
   the framework handbook: `docs/01-handbook/release-structure.md`.
 
 ## Approved deviations

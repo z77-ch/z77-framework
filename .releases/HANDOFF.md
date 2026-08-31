@@ -10,7 +10,7 @@ maintainer machines `Z:\z77\z77-ch-framework-1.0.0`).
 
 - `RULES.md` — the ten rules. They are not negotiable in this handoff.
 - `docs/01-handbook/release-structure.md` in the framework — the server
-  layout and the switch mechanics (`touch` + `ln -sfn`, cache clear,
+  layout and the switch mechanics (`ln -sfn` + OPcache reset, cache clear,
   rollback).
 
 ## 1. Copy the directory

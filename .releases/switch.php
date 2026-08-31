@@ -37,7 +37,8 @@
  *      except the stores served THROUGH public/ (public/media IS shared/media:
  *      a deny file there denies the images, measured 2026-08-30); from those
  *      it REMOVES a deny file, so every switch heals that mistake
- *   3. touch + ln -sfn, then reads the link back and compares
+ *   3. ln -sfn, then reads the link back and compares (no `touch` — proven
+ *      useless 2026-08-30, removed 2026-08-31)
  *   4. OPcache reset over a one-shot file, then `X-Z77-Release` on `/` must
  *      name the release (retried across the realpath-cache TTL)
  *   5. probes the door's hostname (target.hosts.<door>) from outside: the
@@ -104,7 +105,6 @@ $script = "set -eu\n"
     . '    rm "shared/$d/.htaccess" && echo "  removed deny file from shared/$d (served through public/)"' . "\n"
     . '  fi' . "\n"
     . 'done' . "\n"
-    . 'touch "releases/$REL/public/index.php"' . "\n"
     . 'ln -sfn "$LINK" "$DOOR"' . "\n"
     . 'echo "LINK_NOW=$(readlink "$DOOR")"' . "\n";
 
