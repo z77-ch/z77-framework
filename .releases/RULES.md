@@ -23,7 +23,7 @@ Not a comment, not a commit message — an approval recorded here in this file.
 | `vendor-deploy.php` / `.bat` | builds a deployable `vendor/`: real copies of every path-repo package (list read from `composer.json`), production autoload, build stamp |
 | `vendor-dev.php` / `.bat` | restores the development `vendor/` (links, dev deps, stamp removed) |
 | `lib.php` | helpers shared by the scripts |
-| `CHECKLIST.md` | the five things an upload does not carry — worked through on every release |
+| `CHECKLIST.md` | the run step by step (command → what you see → what you decide), plus the five things an upload does not carry — worked through on every release |
 | `HANDOFF.md` | step list for setting a project up |
 
 ## The rules

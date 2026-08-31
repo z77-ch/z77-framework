@@ -1,4 +1,49 @@
-# What an upload does not carry
+# Release checklist
+
+## The run, step by step
+
+Every step prints something; read it before typing the next command. The
+failure points behind these steps are explained in the second half of this
+file — read those on every release too.
+
+1. **Build the deployable `vendor/`** — `php .releases/vendor-deploy.php`
+   You see: every path-repo package turned into a real copy, the build stamp.
+   Nothing to decide — but from here until step 6, local framework edits do
+   not reach the working trees.
+
+2. **Upload the release** — `php .releases/deploy.php <name>`
+   You see: the tar streaming into `releases/<name>/`, the signposts and deny
+   files being set, and LAST a line about `config/fileFinder.inc.php`.
+   Decide: if it reports the file DIFFERS, copy it up (the printed `scp`
+   line) BEFORE any switch — a release without it dies on the first call
+   into a new namespace.
+
+3. **Bend the test door** — `php .releases/switch.php <name> next`
+   You see: the link read back and verified, the OPcache reset,
+   `X-Z77-Release` naming the release, the outside probes all `ok`.
+   Decide: on any STOP or FAIL, stop — the script prints the rollback line.
+
+4. **Test on `next.<domain>` — by hand, in the browser.**
+   Request pages that are demonstrably NEW in this release (a changed
+   template, a new route) — a static file proves nothing, Apache always
+   follows the link. If rendered output looks old, clear the page cache
+   there first («Cache leeren»).
+   Decide: only when the new behaviour shows on the test door, go live.
+
+5. **Bend production** — `php .releases/switch.php <name> current`
+   Then: backend «Cache leeren» on the production hostname (the page cache
+   spans releases), and read `X-Z77-Release` off the production domain once
+   yourself (`curl -sI https://<domain>/ | grep X-Z77-Release`).
+
+6. **Back to development** — `php .releases/vendor-dev.php`
+   You see: the copies turned back into links at the working trees.
+   Forgetting this fails silently: you edit a framework package and nothing
+   happens.
+
+Rollback, any time: `php .releases/switch.php <previous> current` — the same
+script with the old name, no upload involved.
+
+## What an upload does not carry
 
 The deploy sequence in `RULES.md` moves code. These five things it does not,
 and each one fails in a way that does not look like its cause. Work through
