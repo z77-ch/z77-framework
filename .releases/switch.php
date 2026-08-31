@@ -8,24 +8,22 @@
  *     With `link_target: public` a link that stops at `releases/<name>`
  *     makes the release ROOT the document root — vendor/, composer.json and
  *     every signpost into shared/ (credentials, personal data) become URLs.
- *   - the OPcache reset after the switch. OPcache binds the door path
+ *   - the proof after the switch. OPcache binds the door path
  *     (`next/index.php`, handed over unresolved by Apache) to ONE compiled
  *     copy and, with opcache.revalidate_path=0, never calls realpath()
- *     again on a cache hit — the binding has NO TTL. Bending the symlink is
- *     invisible to it, and a `touch` on the new release's index.php is
- *     never looked at (only the OLD bound file's mtime is checked).
- *     Measured on cyon 2026-08-30, mechanism proven 2026-08-31: the door on
- *     release N served PHP from release N-1, hits climbing, for an hour.
- *     Only opcache_reset() (or a pool restart) breaks the binding. The
- *     script drops a one-shot reset file into the release's public/, calls
- *     it once over HTTPS (the file deletes itself), then reads
- *     `X-Z77-Release` off the door until it names the release. The retry
- *     loop exists because ONE worker whose realpath cache (120 s TTL) still
- *     says N-1 can re-bind the door to N-1 for the whole pool right after
- *     the reset — so the reset is repeated per round. Since 2026-08-31
- *     index.php is a trampoline (runtime realpath(DOCUMENT_ROOT)) that
- *     self-heals a hand-bent door within ~2 min; the reset stays for the
- *     immediate, proven switch.
+ *     again on a cache hit — the binding has NO TTL, bending the symlink is
+ *     invisible to it (measured on cyon 2026-08-30, mechanism proven
+ *     2026-08-31: the door on release N served PHP from release N-1, hits
+ *     climbing, for an hour). Since 2026-08-31 index.php is a trampoline
+ *     (runtime realpath(DOCUMENT_ROOT)): even a stale bound copy boots the
+ *     release the door points at, within the realpath cache TTL (~120 s
+ *     per worker). The script therefore does NOT reset OPcache — the
+ *     account shares ONE cache across ALL its sites, a reset would flush
+ *     them all — it reads `X-Z77-Release` off the door until it names the
+ *     release, retrying across the TTL. If that never happens, the bound
+ *     index.php predates the trampoline: push the current public/index.php
+ *     into the RUNNING release once (the mtime change recompiles the
+ *     binding in ~2 s), or reset OPcache once by hand.
  *
  * Runs locally, talks to the server over `ssh <target.host>` (the alias from
  * ~/.ssh/config — no password here, ever). Inside target.root only.
@@ -39,8 +37,8 @@
  *      it REMOVES a deny file, so every switch heals that mistake
  *   3. ln -sfn, then reads the link back and compares (no `touch` — proven
  *      useless 2026-08-30, removed 2026-08-31)
- *   4. OPcache reset over a one-shot file, then `X-Z77-Release` on `/` must
- *      name the release (retried across the realpath-cache TTL)
+ *   4. `X-Z77-Release` on `/` must name the release (retried across the
+ *      realpath-cache TTL; no OPcache reset — trampoline, see above)
  *   5. probes the door's hostname (target.hosts.<door>) from outside: the
  *      site must answer, composer.json and every top-level shared store must
  *      NOT. Steps 4 and 5 are the ones that measure instead of assuming.
@@ -124,51 +122,38 @@ if ($hostname === '') {
     exit(0);
 }
 
-// --- OPcache reset, then proof ----------------------------------------------------
-// Shared hosting: ONE OPcache for every site of the account (measured
-// 2026-08-31), so the reset also recompiles production and the other
-// sites once — harmless, and there is no isolated form.
-echo "\nOPcache reset + proof on https://$hostname\n";
-$proved = false;
-for ($round = 1; $round <= 10; $round++) {
+// --- proof: the door must answer from the release --------------------------------
+// No OPcache reset: the account shares ONE OPcache across ALL its sites
+// (measured 2026-08-31), a reset would flush them all. The trampoline
+// index.php resolves the release at runtime, so the switch propagates via
+// the realpath cache — up to ~120 s per worker. The loop just watches.
+echo "\nProof on https://$hostname (no reset — realpath cache TTL, up to ~2 min)\n";
+$proved   = false;
+$deadline = time() + 150;
+for ($round = 1; ; $round++) {
     $token = bin2hex(random_bytes(8));
-    $resetFile = "z77-opcache-reset-$token.php";
-    $resetPhp = "<?php\n"
-        . "// one-shot, written by .releases/switch.php — deletes itself on the first call\n"
-        . "header('Content-Type: text/plain');\n"
-        . "\$ok = function_exists('opcache_reset') && opcache_reset();\n"
-        . "clearstatcache(true);\n"
-        . "@unlink(__FILE__);\n"
-        . "echo \$ok ? 'reset ok' : 'reset unavailable', is_file(__FILE__) ? ' (file still there)' : '';\n";
-    $write = "set -eu\n"
-        . 'cd ' . $q("$root/releases/$release/public") . "\n"
-        . "cat > " . $q($resetFile) . " <<'Z77_RESET_EOF'\n$resetPhp\nZ77_RESET_EOF\n";
-    releases_ssh($host, $write);
-    [$code, $body] = [0, ''];
-    $ctx  = stream_context_create(['http' => ['ignore_errors' => true, 'timeout' => 20], 'ssl' => ['verify_peer' => true]]);
-    $body = (string) @file_get_contents("https://$hostname/$resetFile", false, $ctx);
-    $gone = releases_ssh($host, 'test -e ' . $q("$root/releases/$release/public/$resetFile") . ' && echo STILL_THERE || echo gone');
-    if (str_contains($gone, 'STILL_THERE')) {
-        fwrite(STDERR, "STOP: the reset file did not delete itself — remove it NOW by hand:\n  rm $root/releases/$release/public/$resetFile\n");
-        exit(1);
-    }
-    printf("  round %d: %s", $round, $body !== '' ? $body : 'reset file not reachable');
-    sleep(3); // opcache.revalidate_freq
     [$status, $headers] = releases_httpHead("https://$hostname/?z77-switch=$token");
     $answered = $headers['x-z77-release'] ?? '(no X-Z77-Release header)';
-    printf(" — / answers from %s\n", $answered);
+    printf("  round %d: / answers from %s\n", $round, $answered);
     if ($answered === $release) {
         $proved = true;
         break;
     }
-    if (!isset($headers['x-z77-release']) && $round >= 2) {
+    if (!isset($headers['x-z77-release']) && $round >= 3) {
         fwrite(STDERR, "\nSTOP: no X-Z77-Release header — either an OLD release still answers (its framework predates the header) or this release's framework has no HtmlResponse header. Cannot prove the switch; check the backend panel's hover (Verzeichnis: ...).\n");
         break;
     }
-    sleep(15); // let the realpath cache (120 s TTL) forget the old target
+    if (time() >= $deadline) {
+        break;
+    }
+    sleep(10);
 }
 if (!$proved) {
-    fwrite(STDERR, "\nSTOP: $door still does not answer from releases/$release. The link is bent; the PHP pool is not. Bend back or investigate before going further:\n  php .releases/switch.php <previous> $door\n");
+    fwrite(STDERR, "\nSTOP: $door still does not answer from releases/$release after the realpath TTL.\n"
+        . "Most likely the bound index.php predates the trampoline (see the header of this\n"
+        . "script). Fix once — copy the trampoline into the release that is still answering:\n"
+        . "  scp public/index.php $host:$root/releases/<answering>/public/index.php\n"
+        . "then re-run, or bend back:  php .releases/switch.php <previous> $door\n");
     exit(1);
 }
 echo "  proved: https://$hostname answers from releases/$release\n";

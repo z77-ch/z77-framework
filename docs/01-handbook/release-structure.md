@@ -41,8 +41,8 @@ Whether the doors point at `releases/<date>/public` (document root =
 `<domain>/current/public`) is ONE convention per project, recorded in
 `.releases/target.json` as `link_target` — `public` above, cyon's layout.
 Never mixed: the door is bent with `php .releases/switch.php <date> <door>`,
-which builds the link from that key, resets OPcache, and probes the door
-from outside. The hand-typed `ln` that stops one level short turns the
+which builds the link from that key, proves the switch via `X-Z77-Release`,
+and probes the door from outside. The hand-typed `ln` that stops one level short turns the
 release root — vendor/, composer.json, every signpost below — into the
 document root; `<project>/.htaccess` (`Require all denied`) and the same file
 in every `shared/` store are the alarm for that day.
@@ -108,25 +108,25 @@ Why this is actually uninterrupted, and not just fast:
 
   **What ends it.** A `touch` on the new release's `index.php` does NOT
   (reasoned 2026-08-29, disproved 2026-08-30: the door on release N served
-  N-1 for an hour, hits climbing — the new file is never statted).
-  `opcache_reset()` does — and since 2026-08-31 `index.php` no longer bakes
-  the release in at all: it is a trampoline that resolves `ABS_BASE_PATH` at
-  runtime from `realpath($_SERVER['DOCUMENT_ROOT'])`, so even a stale bound
-  copy boots the CURRENT release within the realpath cache TTL (≤120 s).
-  The trampoline is a contract: `index.php` stays minimal and unchanging,
+  N-1 for an hour, hits climbing — the new file is never statted). Since
+  2026-08-31 `index.php` no longer bakes the release in at all: it is a
+  trampoline that resolves `ABS_BASE_PATH` at runtime from
+  `realpath($_SERVER['DOCUMENT_ROOT'])`, so even a stale bound copy boots
+  the CURRENT release within the realpath cache TTL (≤120 s). The
+  trampoline is a contract: `index.php` stays minimal and unchanging,
   because the cached copy may outlive the release it came from.
-  `.releases/switch.php` still resets — for the immediate, proven switch: a
-  one-shot file dropped into the release's `public/`, called once over
-  HTTPS, self-deleting; then it reads `X-Z77-Release` off `/` (every
-  HtmlResponse carries it since 2026-08-30 — basename of `ABS_BASE_PATH`,
-  i.e. the release name) and retries, because a worker whose realpath cache
-  still resolves the door to N-1 can re-bind the whole pool to N-1 right
-  after the reset. Why not a reset button in the backend: the button would
-  run in the OLD release (the door is still stuck there). On shared hosting
-  the account has ONE OPcache for ALL its sites (measured 2026-08-31), so
-  the reset recompiles them all once — harmless. The realpath cache: keep
-  `realpath_cache_ttl` at 120 s, do not set it to 0 for the account (every
-  stat gets dearer, all day, for two minutes per deploy).
+  Deliberately NO `opcache_reset()` on a switch: on shared hosting the
+  account has ONE OPcache for ALL its sites (measured 2026-08-31) — a
+  reset would flush every one of them. `.releases/switch.php` instead
+  reads `X-Z77-Release` off `/` (every HtmlResponse carries it since
+  2026-08-30 — basename of `ABS_BASE_PATH`, i.e. the release name) and
+  retries across the TTL until it names the release. One-time migration
+  per installation: a release deployed BEFORE the trampoline still has the
+  baked-in copy bound — copy the trampoline `index.php` into that RUNNING
+  release once (the mtime change recompiles the binding in ~2 s), or reset
+  OPcache once by hand. The realpath cache: keep `realpath_cache_ttl` at
+  120 s, do not set it to 0 for the account (every stat gets dearer, all
+  day, for two minutes per deploy).
 - **The data cache cannot go stale across the switch.** `DataCache` (APCu)
   namespaces its pool with a hash of `ABS_BASE_PATH` — and since that is the
   real release path, every release automatically has its own pool. The
@@ -210,13 +210,14 @@ the explicit approval of the framework owner, recorded in the project's
   in `shared/config/` serves every release.
 - **The web server follows symlinks.** Verified on cyon: Apache follows them
   in and below the document root, no 403 anywhere. Check once per new host.
-- **An OPcache reset after every switch** — regardless of
-  `opcache.validate_timestamps`. `switch.php` does it with a one-shot file
-  in the release's `public/`, called once over HTTP, self-deleting; a reset
-  endpoint left behind is a cache flush for anyone, so the script stops if
-  the file is still there. On shared hosting the account has ONE OPcache for
-  ALL its sites, so the reset hits production and every other site too —
-  harmless, one recompile each, but not an isolated test.
+- **No OPcache reset on a switch.** The account has ONE OPcache for ALL its
+  sites — a reset flushes strangers. The trampoline `index.php` makes the
+  reset unnecessary; `switch.php` only proves the switch via
+  `X-Z77-Release`. A hand reset (one-shot `<?php opcache_reset();
+  unlink(__FILE__);` in the running release's `public/`, called once)
+  remains the escape hatch for a release that predates the trampoline —
+  never leave such a file behind, a reset endpoint is a cache flush for
+  anyone.
 - **The panel lets you set the document root per (sub)domain** to an
   arbitrary path (`<domain>/current/public`).
 
@@ -301,14 +302,13 @@ php .releases/deploy.php $REL
 
 # 3. bend next, test on the subdomain — real server, real data.
 #    From the developer machine, over ssh: link target per
-#    target.link_target, the deny files in shared/, the OPcache reset
-#    (without it the OLD release's index.php keeps running behind the new
-#    link — a touch does not help, see the mechanism section), the proof
-#    via X-Z77-Release, then the probes from outside.
+#    target.link_target, the deny files in shared/, the proof via
+#    X-Z77-Release (the trampoline index.php propagates the switch within
+#    ~2 min — see the mechanism section; no OPcache reset, the account
+#    shares one cache across all its sites), then the probes from outside.
 php .releases/switch.php $REL next
 #    (by hand: ln -sfn releases/$REL/public $BASE/next  [link_target=public],
-#     then a one-shot <?php opcache_reset(); unlink(__FILE__); in public/,
-#     called once, then curl -sI https://next.../ | grep X-Z77-Release)
+#     then curl -sI https://next.../ | grep X-Z77-Release until it names $REL)
 
 # 4. bend current, clear the page cache — same script, same reason
 php .releases/switch.php $REL current
@@ -318,8 +318,7 @@ rm -rf $BASE/shared/lib/cache/*        # or backend «Cache leeren»
 ls -dt $BASE/releases/*/ | tail -n +3 | xargs rm -rf
 
 # Rollback, should step 4 turn out wrong — the same script, the old name.
-# It resets OPcache again: the binding sticks to whatever it last compiled,
-# in both directions.
+# The trampoline propagates it the same way, within ~2 min.
 php .releases/switch.php 2026-08-28 current
 ```
 

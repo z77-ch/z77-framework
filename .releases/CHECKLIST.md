@@ -19,9 +19,12 @@ file — read those on every release too.
    into a new namespace.
 
 3. **Bend the test door** — `php .releases/switch.php <name> next`
-   You see: the link read back and verified, the OPcache reset,
-   `X-Z77-Release` naming the release, the outside probes all `ok`.
-   Decide: on any STOP or FAIL, stop — the script prints the rollback line.
+   You see: the link read back and verified, then `X-Z77-Release` naming the
+   release — the trampoline needs up to ~2 min, the script waits — and the
+   outside probes all `ok`. No OPcache reset happens (the account shares one
+   cache across all its sites).
+   Decide: on any STOP or FAIL, stop — the script prints the fix or the
+   rollback line.
 
 4. **Test on `next.<domain>` — by hand, in the browser.**
    Request pages that are demonstrably NEW in this release (a changed
@@ -82,22 +85,22 @@ them on every release; they are the same every time.
    ```
    Two things a hand-typed `ln` forgets, and the script cannot: the `/public`
    at the end of the link (per `target.link_target`; forgotten, the release
-   root with all its signposts is the document root) and the **OPcache
-   reset**. OPcache binds the door path (`next/index.php`) to ONE compiled
-   copy and never re-resolves the symlink (`opcache.revalidate_path=0`, no
-   TTL) — bending the link changes nothing it looks at, and a `touch` on
-   the new release's file is never looked at either (only the OLD bound
-   file's mtime is checked). Measured on cyon 2026-08-30, mechanism proven
+   root with all its signposts is the document root) and the **proof**.
+   OPcache binds the door path (`next/index.php`) to ONE compiled copy and
+   never re-resolves the symlink (`opcache.revalidate_path=0`, no TTL) —
+   bending the link changes nothing it looks at, and a `touch` on the new
+   release's file is never looked at either (only the OLD bound file's
+   mtime is checked). Measured on cyon 2026-08-30, mechanism proven
    2026-08-31: the door on release N served PHP from release N-1 for an
    hour, hits climbing, while Apache served N's static files (a versioned
-   CSS built by N-1 → 404 on N). Since 2026-08-31 `index.php` is a
-   runtime-resolving trampoline that self-heals such a switch within
-   ~2 min; the reset makes it immediate and clears the account-wide OPcache
-   (all sites of the account — they recompile once, harmless). The script drops a
-   one-shot reset file into the release, calls it once (it deletes itself),
-   then reads **`X-Z77-Release`** off `/` until it names the release — the
-   header every HtmlResponse carries since 2026-08-30, the proof a human
-   gets with `curl -I`. Then it **probes the door from outside**:
+   CSS built by N-1 → 404 on N). What makes a switch take effect is the
+   trampoline `index.php` (runtime resolution, in every release since
+   2026-08-31) — within ~2 min, the realpath cache TTL. Deliberately NO
+   `opcache_reset()`: the account shares ONE OPcache across ALL its sites,
+   a reset would flush them all. The script reads **`X-Z77-Release`** off
+   `/` until it names the release — the header every HtmlResponse carries
+   since 2026-08-30, the proof a human gets with `curl -I`. Then it
+   **probes the door from outside**:
    `/composer.json`, `/vendor/z77/build.json` and every top-level shared
    store must give 403 or 404. A failed probe prints the rollback line.
    By hand, should the script be unavailable:

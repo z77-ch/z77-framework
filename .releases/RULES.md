@@ -18,7 +18,7 @@ Not a comment, not a commit message — an approval recorded here in this file.
 | `check.php` | verifies `target.json`, `.vscode/sftp.json` and the local `vendor/` state against the rules — warns, never uploads |
 | `sftp.example.json` | template for `.vscode/sftp.json` (gitignored; the developer copies and maintains it) |
 | `deploy.php` | uploads ONE release over ssh (tar stream, every shared name excluded), sets the signposts into `shared/`, compares `config/fileFinder.inc.php` — refuses an existing or running release |
-| `switch.php` | bends `next` or `current` at a release over ssh: link target per `target.link_target`, the OPcache reset, the deny files in `shared/`, then probes the door from outside |
+| `switch.php` | bends `next` or `current` at a release over ssh: link target per `target.link_target`, the deny files in `shared/`, the `X-Z77-Release` proof across the realpath TTL, then probes the door from outside |
 | `htaccess-deny` | `Require all denied` — copied to `<project>/.htaccess` (link_target `public`) and by `deploy.php`/`switch.php` into every shared store NOT served through `public/`; the alarm for a door bent at the wrong place |
 | `vendor-deploy.php` / `.bat` | builds a deployable `vendor/`: real copies of every path-repo package (list read from `composer.json`), production autoload, build stamp |
 | `vendor-dev.php` / `.bat` | restores the development `vendor/` (links, dev deps, stamp removed) |
@@ -45,14 +45,14 @@ Not a comment, not a commit message — an approval recorded here in this file.
    **A door is bent with `switch.php`, not with a hand-typed `ln`**: the hand
    forgets the `/public` (with `public` that makes the release root — vendor/,
    composer.json, every signpost into shared/ — the document root) and it
-   forgets the OPcache reset (OPcache binds the door path `next/index.php` to
-   ONE compiled copy and never re-resolves the symlink —
-   `opcache.revalidate_path=0`, no TTL; the old release keeps running and a
-   `touch` on the new file is never looked at; proven 2026-08-31). The
-   `index.php` trampoline (runtime `realpath(DOCUMENT_ROOT)`) self-heals such
-   a switch within ~2 minutes; the reset makes it immediate — and clears the
-   account-wide OPcache shared by ALL sites of the hosting account (they
-   recompile once, harmless). The script proves the switch by reading
+   skips the proof (OPcache binds the door path `next/index.php` to ONE
+   compiled copy and never re-resolves the symlink —
+   `opcache.revalidate_path=0`, no TTL; a `touch` on the new file is never
+   looked at; proven 2026-08-31. Only the `index.php` trampoline — runtime
+   `realpath(DOCUMENT_ROOT)`, in every release since 2026-08-31 — makes a
+   switch take effect, within ~2 minutes). Deliberately NO `opcache_reset()`:
+   the account shares ONE OPcache across ALL its sites, a reset would flush
+   them all. The script proves the switch by reading
    `X-Z77-Release` off the door. The project root carries `htaccess-deny` as
    `.htaccess` for the day the hand wins anyway.
 4. **`releases/<name>/` is the installation root.** It holds pure code —
@@ -102,7 +102,7 @@ Not a comment, not a commit message — an approval recorded here in this file.
 - **`CHECKLIST.md` covers what the sequence above does not move** — a
   regenerated `config/` file, the `shared/` stores, the backend
   cache clear. Read it on every release, not only on the first.
-- Switch mechanics (`ln -sfn` + OPcache reset, page-cache clear, rollback) are in
+- Switch mechanics (`ln -sfn` + trampoline `index.php`, page-cache clear, rollback) are in
   the framework handbook: `docs/01-handbook/release-structure.md`.
 
 ## Approved deviations
