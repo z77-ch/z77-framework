@@ -38,12 +38,17 @@ them on every release; they are the same every time.
    Two things a hand-typed `ln` forgets, and the script cannot: the `/public`
    at the end of the link (per `target.link_target`; forgotten, the release
    root with all its signposts is the document root) and the **OPcache
-   reset**. OPcache validates the compiled `index.php` against the RESOLVED
-   path it was compiled from — bending the symlink changes nothing it looks
-   at, and a `touch` on the new release's file is never seen either.
-   Measured on cyon 2026-08-30: the door on release N served PHP from
-   release N-1 for an hour, hits climbing, while Apache served N's static
-   files (a versioned CSS built by N-1 → 404 on N). The script drops a
+   reset**. OPcache binds the door path (`next/index.php`) to ONE compiled
+   copy and never re-resolves the symlink (`opcache.revalidate_path=0`, no
+   TTL) — bending the link changes nothing it looks at, and a `touch` on
+   the new release's file is never looked at either (only the OLD bound
+   file's mtime is checked). Measured on cyon 2026-08-30, mechanism proven
+   2026-08-31: the door on release N served PHP from release N-1 for an
+   hour, hits climbing, while Apache served N's static files (a versioned
+   CSS built by N-1 → 404 on N). Since 2026-08-31 `index.php` is a
+   runtime-resolving trampoline that self-heals such a switch within
+   ~2 min; the reset makes it immediate and clears the account-wide OPcache
+   (all sites of the account — they recompile once, harmless). The script drops a
    one-shot reset file into the release, calls it once (it deletes itself),
    then reads **`X-Z77-Release`** off `/` until it names the release — the
    header every HtmlResponse carries since 2026-08-30, the proof a human

@@ -41,7 +41,7 @@ Whether the doors point at `releases/<date>/public` (document root =
 `<domain>/current/public`) is ONE convention per project, recorded in
 `.releases/target.json` as `link_target` — `public` above, cyon's layout.
 Never mixed: the door is bent with `php .releases/switch.php <date> <door>`,
-which builds the link from that key, does the `touch`, and probes the door
+which builds the link from that key, resets OPcache, and probes the door
 from outside. The hand-typed `ln` that stops one level short turns the
 release root — vendor/, composer.json, every signpost below — into the
 document root; `<project>/.htaccess` (`Require all denied`) and the same file
@@ -88,37 +88,43 @@ Why this is actually uninterrupted, and not just fast:
   through the old release finishes on the old release's files even if the
   switch happens mid-request. Visitors never see half-new code; the switch
   only decides where NEW requests enter.
-- **…but OPcache freezes that resolution — `touch` the entry point on every
-  switch.** `__DIR__` is a COMPILE-time constant, and OPcache keys the
-  compiled `index.php` on the path Apache hands over — the UNRESOLVED
-  `<domain>/next/public/index.php`. Its timestamp check stats through the
-  link onto the new release's file, and since `index.php` is identical in
-  every release and tar preserves mtimes, it sees no change and keeps the
-  bytecode with the OLD real path baked in. Every request through that door
-  then runs `ABS_BASE_PATH` in the old release — while static files (served
-  by Apache, which follows the link on every access) already come from the
-  new one. Measured on cyon 2026-08-29: `X-Z77-PageCache: MISS`, fresh
-  render, old content; `md5_file()` of the controller identical to the new
-  release; after one `opcache_reset()` the same URL rendered the new state.
-  Only the entry point is affected: everything it includes goes through the
-  real path and is keyed per release.
+- **…but OPcache freezes that resolution.** `__DIR__` is a COMPILE-time
+  constant, and OPcache binds the UNRESOLVED path Apache hands over
+  (`<domain>/next/index.php`) to the one compiled copy it made on the first
+  request through that door. With `opcache.revalidate_path=0` (the default)
+  a hit on that binding never calls `realpath()` again — the binding has NO
+  TTL, and the timestamp check stats the file the copy was compiled FROM
+  (the OLD release's `index.php`, unchanged), not through the link. Bending
+  the door changes nothing OPcache looks at: every request through it runs
+  `ABS_BASE_PATH` in the old release — while static files (served by
+  Apache, which follows the link on every access) already come from the new
+  one. Measured on cyon 2026-08-29 (`X-Z77-PageCache: MISS`, fresh render,
+  old content; `md5_file()` of the controller identical to the new release);
+  mechanism proven 2026-08-31: the door bent to another release for minutes,
+  the worker's realpath cache long expired and resolving correctly, OPcache
+  still serving the bound copy — zero hits on the linked release. Only the
+  entry point is affected: everything it includes goes through the real path
+  and is keyed per release.
 
-  **The `touch` on the new release's `index.php` does NOT end it** — that
-  was reasoned on 2026-08-29 and disproved on 2026-08-30: with
-  `validate_timestamps=1`, `revalidate_freq=2`, the door on release N kept
-  serving N-1's `index.php` for an hour (`opcache_get_status`: the N-1 entry
-  with climbing hits, no N entry at all), because OPcache stats the RESOLVED
-  path it compiled from — N-1's file, unchanged — not the door path. What
-  ends it is `opcache_reset()`. `.releases/switch.php` does that with a
+  **What ends it.** A `touch` on the new release's `index.php` does NOT
+  (reasoned 2026-08-29, disproved 2026-08-30: the door on release N served
+  N-1 for an hour, hits climbing — the new file is never statted).
+  `opcache_reset()` does — and since 2026-08-31 `index.php` no longer bakes
+  the release in at all: it is a trampoline that resolves `ABS_BASE_PATH` at
+  runtime from `realpath($_SERVER['DOCUMENT_ROOT'])`, so even a stale bound
+  copy boots the CURRENT release within the realpath cache TTL (≤120 s).
+  The trampoline is a contract: `index.php` stays minimal and unchanging,
+  because the cached copy may outlive the release it came from.
+  `.releases/switch.php` still resets — for the immediate, proven switch: a
   one-shot file dropped into the release's `public/`, called once over
   HTTPS, self-deleting; then it reads `X-Z77-Release` off `/` (every
   HtmlResponse carries it since 2026-08-30 — basename of `ABS_BASE_PATH`,
-  i.e. the release name) and retries across the realpath-cache TTL, because
-  a worker whose realpath cache still resolves the door to N-1 recompiles
-  N-1 again right after the reset. Why not a reset button in the backend:
-  the button would run in the OLD release (the door is still stuck there).
-  On shared hosting `current` and `next` share one pool, so the reset also
-  recompiles production once — harmless. The realpath cache: keep
+  i.e. the release name) and retries, because a worker whose realpath cache
+  still resolves the door to N-1 can re-bind the whole pool to N-1 right
+  after the reset. Why not a reset button in the backend: the button would
+  run in the OLD release (the door is still stuck there). On shared hosting
+  the account has ONE OPcache for ALL its sites (measured 2026-08-31), so
+  the reset recompiles them all once — harmless. The realpath cache: keep
   `realpath_cache_ttl` at 120 s, do not set it to 0 for the account (every
   stat gets dearer, all day, for two minutes per deploy).
 - **The data cache cannot go stale across the switch.** `DataCache` (APCu)
@@ -208,9 +214,9 @@ the explicit approval of the framework owner, recorded in the project's
   `opcache.validate_timestamps`. `switch.php` does it with a one-shot file
   in the release's `public/`, called once over HTTP, self-deleting; a reset
   endpoint left behind is a cache flush for anyone, so the script stops if
-  the file is still there. On shared hosting `current` and `next` share one
-  pool, so the reset hits production too — harmless, one recompile, but not
-  an isolated test.
+  the file is still there. On shared hosting the account has ONE OPcache for
+  ALL its sites, so the reset hits production and every other site too —
+  harmless, one recompile each, but not an isolated test.
 - **The panel lets you set the document root per (sub)domain** to an
   arbitrary path (`<domain>/current/public`).
 
@@ -312,8 +318,8 @@ rm -rf $BASE/shared/lib/cache/*        # or backend «Cache leeren»
 ls -dt $BASE/releases/*/ | tail -n +3 | xargs rm -rf
 
 # Rollback, should step 4 turn out wrong — the same script, the old name.
-# It touches again: the old release's index.php is just as unchanged as the
-# new one was.
+# It resets OPcache again: the binding sticks to whatever it last compiled,
+# in both directions.
 php .releases/switch.php 2026-08-28 current
 ```
 

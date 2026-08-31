@@ -8,17 +8,24 @@
  *     With `link_target: public` a link that stops at `releases/<name>`
  *     makes the release ROOT the document root — vendor/, composer.json and
  *     every signpost into shared/ (credentials, personal data) become URLs.
- *   - the OPcache reset after the switch. OPcache validates the compiled
- *     entry point against the RESOLVED path it was compiled from, so a
- *     bent symlink changes nothing it looks at — and a `touch` on the new
- *     release's index.php is never seen either (measured on cyon 2026-08-30:
- *     the door on release N served PHP from release N-1, hits climbing,
- *     for an hour). Only opcache_reset() ends it. The script drops a
- *     one-shot reset file into the release's public/, calls it once over
- *     HTTPS (the file deletes itself), then reads `X-Z77-Release` off the
- *     door until it names the release — up to ~2.5 min, the realpath cache
- *     TTL, because a worker whose realpath cache still says N-1 recompiles
- *     N-1 again after the reset.
+ *   - the OPcache reset after the switch. OPcache binds the door path
+ *     (`next/index.php`, handed over unresolved by Apache) to ONE compiled
+ *     copy and, with opcache.revalidate_path=0, never calls realpath()
+ *     again on a cache hit — the binding has NO TTL. Bending the symlink is
+ *     invisible to it, and a `touch` on the new release's index.php is
+ *     never looked at (only the OLD bound file's mtime is checked).
+ *     Measured on cyon 2026-08-30, mechanism proven 2026-08-31: the door on
+ *     release N served PHP from release N-1, hits climbing, for an hour.
+ *     Only opcache_reset() (or a pool restart) breaks the binding. The
+ *     script drops a one-shot reset file into the release's public/, calls
+ *     it once over HTTPS (the file deletes itself), then reads
+ *     `X-Z77-Release` off the door until it names the release. The retry
+ *     loop exists because ONE worker whose realpath cache (120 s TTL) still
+ *     says N-1 can re-bind the door to N-1 for the whole pool right after
+ *     the reset — so the reset is repeated per round. Since 2026-08-31
+ *     index.php is a trampoline (runtime realpath(DOCUMENT_ROOT)) that
+ *     self-heals a hand-bent door within ~2 min; the reset stays for the
+ *     immediate, proven switch.
  *
  * Runs locally, talks to the server over `ssh <target.host>` (the alias from
  * ~/.ssh/config — no password here, ever). Inside target.root only.
@@ -118,8 +125,9 @@ if ($hostname === '') {
 }
 
 // --- OPcache reset, then proof ----------------------------------------------------
-// Shared hosting: current and next share one PHP pool, so the reset also
-// recompiles production once — harmless, and there is no isolated form.
+// Shared hosting: ONE OPcache for every site of the account (measured
+// 2026-08-31), so the reset also recompiles production and the other
+// sites once — harmless, and there is no isolated form.
 echo "\nOPcache reset + proof on https://$hostname\n";
 $proved = false;
 for ($round = 1; $round <= 10; $round++) {

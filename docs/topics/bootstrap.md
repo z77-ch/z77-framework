@@ -54,7 +54,7 @@ ModuleManager → ControllerHandler → Request
 
 | Constant | Source | Set by |
 |---|---|---|
-| `ABS_BASE_PATH` | filesystem root | before Bootstrap (index.php) |
+| `ABS_BASE_PATH` | filesystem root — resolved at RUNTIME via `realpath($_SERVER['DOCUMENT_ROOT'])`, fallback `__DIR__` (OPcache trampoline, see handbook `release-structure.md`) | before Bootstrap (index.php) |
 | `ABS_INDEX_PATH` | path to index.php | before Bootstrap |
 | `DEBUG` | `data/framework/debug.flag` (existence) | `__construct()` |
 | `SEO_NOINDEX` | `data/framework/seo/noindex.flag` (existence) | `__construct()` |
