@@ -1,6 +1,6 @@
 # bootstrap
 
-2026-05-17
+2026-09-01
 
 ## entry
 
@@ -56,8 +56,10 @@ ModuleManager → ControllerHandler → Request
 |---|---|---|
 | `ABS_BASE_PATH` | filesystem root — resolved at RUNTIME via `realpath($_SERVER['DOCUMENT_ROOT'])`, fallback `__DIR__` (OPcache trampoline, see handbook `release-structure.md`) | before Bootstrap (index.php) |
 | `ABS_INDEX_PATH` | path to index.php | before Bootstrap |
-| `DEBUG` | `data/framework/debug.flag` (existence) | `__construct()` |
-| `SEO_NOINDEX` | `data/framework/seo/noindex.flag` (existence) | `__construct()` |
+| `ABS_VAR_PATH` | `ABS_BASE_PATH . '/var'` — release-local runtime state (ADR-035) | `__construct()` |
+| `ABS_STATE_PATH` | `ABS_VAR_PATH . '/state'` | `__construct()` |
+| `DEBUG` | `var/state/debug.flag` (existence) | `__construct()` |
+| `SEO_NOINDEX` | `var/state/noindex.flag` (existence) | `__construct()` |
 | `CANONICAL_BASE_URL` | `config/systemConfig.inc.php` key `canonicalBaseUrl` (ADR-030) | `__construct()` |
 | `ABS_PUBLIC_PATH` | `ABS_BASE_PATH + htmlRoot` | `__construct()` |
 | `REL_INDEX_PATH` | relative path to index.php | `pullUp()` |
@@ -67,12 +69,12 @@ ModuleManager → ControllerHandler → Request
 `DEBUG` is NOT read from `bootstrap.inc.php` — it is derived from the existence of a flag file:
 
 ```php
-define('DEBUG', file_exists(ABS_BASE_PATH . '/data/framework/debug.flag'));
+define('DEBUG', file_exists(ABS_STATE_PATH . '/debug.flag'));
 ```
 
 | State | DEBUG |
 |---|---|
-| `data/framework/debug.flag` exists | `true` |
+| `var/state/debug.flag` exists | `true` |
 | File missing | `false` |
 
 Why: single source of truth for all subsystems (Doctrine, APCu, error_reporting). Toggleable via filesystem (touch/delete) AND via backend toggle button — no config edit needed.
@@ -88,19 +90,19 @@ The installer (`Install::writeDebugFlag()`) maintains the flag based on `compose
 Same flag-file pattern as `DEBUG`, for a site-wide search-engine crawl block (staging / pre-launch). Defined next to `DEBUG` in `__construct()`:
 
 ```php
-define('SEO_NOINDEX', file_exists(ABS_BASE_PATH . '/data/framework/seo/noindex.flag'));
+define('SEO_NOINDEX', file_exists(ABS_STATE_PATH . '/noindex.flag'));
 ```
 
 | State | `SEO_NOINDEX` |
 |---|---|
-| `data/framework/seo/noindex.flag` exists | `true` |
+| `var/state/noindex.flag` exists | `true` |
 | File missing | `false` |
 
 When `true`: the frontend head partial `head/meta.tpl.php` emits `<meta name="robots" content="noindex, nofollow">` and the backend shell shows a persistent, non-dismissible Störer. Toggled via the filesystem OR the backend service panel (`SystemController::toggleNoindexAction`). Distinct from per-page SEO (see [`metadata.md`](metadata.md) SEO-NOINDEX-001). Read the constant — MUST NOT re-derive via `file_exists` in templates.
 
 ## bootstrap config keys
 
-`debug` | `cacheDir` | `timezone` | `htmlRoot` | `cachePersist` (always `false`)
+`debug` | `timezone` | `htmlRoot` | `cachePersist` (always `false`) — `cacheDir` is GONE since ADR-035: the cache path is fixed to `var/cache`, a leftover key in an installed config is ignored
 
 ## system config keys (`config/systemConfig.inc.php`, ADR-030)
 

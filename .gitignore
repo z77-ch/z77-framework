@@ -17,6 +17,8 @@
 /data/
 /logs/
 /temp/
+# var/ = wegwerfbarer Laufzeitzustand (ADR-035): var/cache, var/state, var/lib
+/var/
 *.zip
 
 # --- Skeleton: installer-generierte / Runtime-Artefakte ---
@@ -27,6 +29,9 @@
 #   Jede Installation erzeugt ihre eigene Lock.
 /skeleton/config/
 /skeleton/data/
+# var/ = wegwerfbarer Laufzeitzustand (ADR-035); /skeleton/lib/ war der Pfad davor
+# und bleibt gelistet, solange Arbeitskopien den alten Ordner noch haben
+/skeleton/var/
 /skeleton/lib/
 # logs/ des Skeletons — das Root-/logs/ oben deckt nur die oberste Ebene ab
 /skeleton/logs/

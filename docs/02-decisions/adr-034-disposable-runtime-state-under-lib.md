@@ -1,6 +1,17 @@
 # ADR-034 — Disposable runtime state lives under `lib/`
 
-Date: 2026-08-25 · Status: accepted
+Date: 2026-08-25 · Status: accepted, **amended by
+[ADR-035](adr-035-release-local-runtime-state-under-var.md) (2026-09-01)**
+
+> **Read this first.** The decision below still holds — the hard test («may this
+> be deleted while the installation is serving requests?») and the three-category
+> table are unchanged and still binding. Two things about it are outdated:
+>
+> - **The directory is `var/`, not `lib/`.** ADR-035 overturned the rename
+>   rejected at the bottom of this file. Read every `lib/` below as `var/`.
+> - **The tree is now split by ownership.** `var/cache` and `var/state` belong
+>   to one release, `var/lib` is shared across releases. This document does not
+>   have that dimension — it predates the defect that forced it.
 
 ## Context
 
@@ -120,5 +131,5 @@ The list was correct when it was written and wrong the day after. Naming
 |---|---|
 | Keep the counters in `data/` and extend `DATA_EXCLUDES` | Grows the list that already signals a missing category, and does nothing for the `full` archive — that one reads the project root, not `data/`. Treats the symptom. |
 | Add `lib/throttle` to `fullExcludes` next to `lib/cache` | Correct on the day it is written, wrong when the next directory appears. The list has to be maintained by someone who remembers it exists. |
-| Name the directory `var/` (FHS, Symfony, Laravel `storage/`) | Semantically the better name — `lib` says «library, so code» in every other PHP project, and this framework is written to be handed to a successor. Rejected because `lib/cache` is the established path in `bootstrap.inc.php` of every installation, and renaming it buys a word at the price of touching every installed config. The name is a deliberate local redefinition, recorded here so the next reader does not take it for an oversight. |
+| Name the directory `var/` (FHS, Symfony, Laravel `storage/`) | Semantically the better name — `lib` says «library, so code» in every other PHP project, and this framework is written to be handed to a successor. Rejected because `lib/cache` is the established path in `bootstrap.inc.php` of every installation, and renaming it buys a word at the price of touching every installed config. The name is a deliberate local redefinition, recorded here so the next reader does not take it for an oversight. — **Overturned by ADR-035 on 2026-09-01:** the release-local split had to touch those paths anyway, so the rename came free, and the redefinition is retired. |
 | Move `framework/jobs` / `framework/import` / project locks to `lib/` as well | They fail the test. Deleting them mid-run loses queued work or breaks a running import — «disposable» would have to be softened to «usually disposable», and then the directory means nothing. They are the middle category. |

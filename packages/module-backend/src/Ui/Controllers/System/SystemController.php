@@ -42,10 +42,13 @@ class SystemController extends BackendAbstractController
     #[Fetch, HttpMethod('POST')]
     protected function toggleDebugAction(): FetchResponse
     {
-        $flag     = ABS_BASE_PATH . '/data/framework/debug.flag';
+        // Release-local (ADR-035): toggling debug on the staging door must not put
+        // production into debug mode. ABS_STATE_PATH is per release, `data/` is not.
+        $flag     = ABS_STATE_PATH . '/debug.flag';
         $newState = !file_exists($flag);
 
         if ($newState) {
+            @mkdir(dirname($flag), 0775, true);
             touch($flag);
         } else {
             unlink($flag);
@@ -117,7 +120,9 @@ class SystemController extends BackendAbstractController
     #[Fetch, HttpMethod('POST')]
     protected function toggleNoindexAction(): FetchResponse
     {
-        $flag     = ABS_BASE_PATH . '/data/framework/seo/noindex.flag';
+        // Release-local (ADR-035) — the staging door is the one that needs noindex,
+        // and it must be able to carry it without taking production out of the index.
+        $flag     = ABS_STATE_PATH . '/noindex.flag';
         $newState = !file_exists($flag);
 
         if ($newState) {

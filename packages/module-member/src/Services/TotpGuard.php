@@ -17,14 +17,16 @@ final class TotpGuard
     }
 
     /**
-     * Under `lib/throttle`, next to the address throttle — same class of file:
+     * Under `var/lib/throttle`, next to the address throttle — same class of file:
      * a counter and a window, disposable. Deleting it frees whoever is locked
-     * out, which is exactly what {@see reset()} does on a valid code.
+     * out, which is exactly what {@see reset()} does on a valid code. The shared
+     * branch of `var/`, so a release switch does not free a locked-out account
+     * (ADR-035).
      */
     public static function create(): self
     {
         return new self(
-            rtrim(str_replace('\\', '/', ABS_BASE_PATH), '/') . '/lib/throttle/totp-guard'
+            rtrim(str_replace('\\', '/', ABS_BASE_PATH), '/') . '/var/lib/throttle/totp-guard'
         );
     }
 

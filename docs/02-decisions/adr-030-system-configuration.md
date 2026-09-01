@@ -12,6 +12,12 @@ had no home. They accumulated wherever the first implementation happened to put 
 
 - `DEBUG` → a flag file, `data/framework/debug.flag`
 - `SEO_NOINDEX` → a flag file, `data/framework/seo/noindex.flag`
+
+> Both flag paths are historical as of 2026-09-01: they moved to the
+> release-local `var/state/` ([ADR-035](adr-035-release-local-runtime-state-under-var.md)),
+> because `data/` is shared across release doors and a flag there could not be
+> set on staging without setting production. The mechanism — a flag file, not a
+> config key — is unchanged and is what this ADR reasons about.
 - `canonicalBaseUrl` → introduced 2026-08-07 as a key in `bootstrap.inc.php`, fed from
   `composer.json` (`extra.core-bootstrap`)
 

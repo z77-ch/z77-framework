@@ -4,7 +4,7 @@
  * APCu cross-process invalidation harness (CLI) — CACHE-CLI-001.
  *
  * APCu is per process tree: a cron job's apcu_delete() never reaches the
- * FPM pool. The stamp file (lib/cache/apcu.stamp) is the only thing both
+ * FPM pool. The stamp file (var/cache/apcu.stamp) is the only thing both
  * sides see. This harness plays the real scenario, not a simulation: the
  * "web" is this process, the "cron" is a CHILD php process with its own
  * APCu pool that writes (clearAllApcu) and dies.

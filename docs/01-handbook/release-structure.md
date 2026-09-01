@@ -27,7 +27,7 @@ lives once in `shared/`, and "which release is live" is a single symlink.**
 ```
 <domain>/
   shared/                     everything that comes into being at RUNTIME — stays put
-      data/  config/  logs/  lib/  backup/  media/  storage/
+      data/  config/  logs/  backup/  media/  storage/  var/lib/
       (project-specific stores too, e.g. axo3's .propbase/)
   releases/
       2026-08-28/             pure code. One upload = one directory.
@@ -53,14 +53,34 @@ Inside a release, the data locations are nothing but signposts:
 releases/<date>/data           -> ../../shared/data
 releases/<date>/config         -> ../../shared/config
 releases/<date>/logs           -> ../../shared/logs
-releases/<date>/lib            -> ../../shared/lib
 releases/<date>/backup         -> ../../shared/backup
 releases/<date>/public/media   -> ../../../shared/media
 releases/<date>/public/storage -> ../../../shared/storage
+releases/<date>/var/lib        -> ../../../shared/var/lib
+```
+
+And what is NOT a signpost, deliberately — the release-local runtime state
+(ADR-035). These are real directories inside the release, created by
+`deploy.php` and by the framework on first write:
+
+```
+releases/<date>/var/cache      rendered pages, apcu.stamp
+releases/<date>/var/state      debug.flag, noindex.flag
 ```
 
 **The rule of thumb for `shared/`:** is it in git? Then it is code and lives
-in the release. Does it come into being on the server? Then `shared/`.
+in the release. Does it come into being on the server? Then `shared/` — unless
+it describes THIS release's code or THIS door's behaviour, which is the
+release-local `var/` above.
+
+Why the split is not optional: `PageCache` keys a file by
+*(language, module, group, controller, action)* and by nothing else. Behind a
+shared `var/cache` a page rendered on `next` is a cache HIT for `current` —
+production serves the release under test for up to the TTL (86 400 s by
+default), and the reverse makes every test on `next` read the previous
+release's HTML. The DEBUG and `noindex` flags had the same defect from the
+other side: in `data/` they could not be set on one door without setting the
+other. Full reasoning in ADR-035.
 
 Relative link targets (`../../shared/...`, `releases/<date>`), deliberately:
 the whole tree survives an account move or a path rename without touching a
@@ -132,12 +152,20 @@ Why this is actually uninterrupted, and not just fast:
   real release path, every release automatically has its own pool. The
   resolved `FileFinder` path map of release A is invisible to release B; no
   flush choreography needed.
-- **The file-based page cache DOES span releases.** It lives under
-  `shared/lib/cache/pages` and holds rendered markup — after bending
-  `current`, clear it (backend «Cache leeren», or `rm -rf` under
-  `shared/lib/cache`), or visitors get the old release's HTML from the new
-  one. Everything under `lib/` is disposable by contract (ADR-034), so this
-  is always safe.
+- **The file-based page cache does NOT span releases** — since ADR-035. It
+  lives at `releases/<date>/var/cache/pages`, a real directory inside the
+  release, so a new release starts with a cold cache and nothing has to be
+  cleared after a switch. Until 2026-09-01 it sat in `shared/lib/cache` and
+  DID span them, in both directions: a page rendered on `next` was served by
+  `current` for up to the TTL, and every test on `next` could read
+  production's HTML. If you are reading this on an installation that still
+  has `shared/lib/`, do the migration at the bottom of this document before
+  the next deploy. Everything under `var/` stays disposable by contract
+  (ADR-034), so wiping it is always safe.
+- **DEBUG and `noindex` are per door**, for the same reason: the flags live
+  in `releases/<date>/var/state/`. The staging door can run in debug mode or
+  carry `noindex` while production does neither. Before ADR-035 both flags
+  sat in the shared `data/framework/` and switching one door switched both.
 - **Cron follows the switch on its own** — as long as the cron entry goes
   THROUGH `current` and never names a release directory. The link is resolved
   when the process starts: a job already running finishes on the old code
@@ -233,8 +261,10 @@ REL=2026-08-28                         # today's release name
 #    and code that then tries mkdir() fails with «File exists» — the name is
 #    taken by the dangling link. (Bit axo3's CredentialStore, which creates
 #    its store on demand.)
-mkdir -p $BASE/shared/{data,config,logs,lib,backup,media,storage}
+mkdir -p $BASE/shared/{data,config,logs,backup,media,storage} $BASE/shared/var/lib
 chmod 700 $BASE/shared/backup          # and every secret store, e.g. .propbase
+#    NOTE: only var/lib is shared (throttle windows must survive a switch).
+#    var/cache and var/state belong to the release — step 3 makes them there.
 
 # 2. Upload the release — pure code: vendor/, override/, public/, cron/,
 #    composer.json + composer.lock. The last two are not read by the web
@@ -242,8 +272,10 @@ chmod 700 $BASE/shared/backup          # and every secret store, e.g. .propbase
 #    vendor/autoload.php AND composer.json side by side — an upload without
 #    them leaves both CLI tools unable to find home.
 #    ⚠️ The upload must NOT contain the linked names (data/, config/, logs/,
-#    lib/, backup/, public/media, public/storage) — a local directory of that
-#    name would overwrite the signpost with a real folder.
+#    backup/, public/media, public/storage, var/) — a local directory of that
+#    name would overwrite the signpost with a real folder. var/ is excluded as
+#    a whole: var/lib is a signpost, var/cache and var/state are runtime dirs
+#    that have no business travelling from a developer machine.
 mkdir -p $BASE/releases/$REL
 # … rsync/unzip the build into $BASE/releases/$REL …
 
@@ -252,10 +284,12 @@ cd $BASE/releases/$REL
 ln -s ../../shared/data    data
 ln -s ../../shared/config  config
 ln -s ../../shared/logs    logs
-ln -s ../../shared/lib     lib
 ln -s ../../shared/backup  backup
 ln -s ../../../shared/media   public/media
 ln -s ../../../shared/storage public/storage
+mkdir -p var                                     # the signpost needs a parent
+ln -s ../../../shared/var/lib var/lib
+mkdir -p var/cache var/state                     # release-local (ADR-035)
 
 # 4. Seed shared/ on the very first install: config from the build,
 #    data from the installer run (or the old installation, when migrating).
@@ -310,9 +344,9 @@ php .releases/switch.php $REL next
 #    (by hand: ln -sfn releases/$REL/public $BASE/next  [link_target=public],
 #     then curl -sI https://next.../ | grep X-Z77-Release until it names $REL)
 
-# 4. bend current, clear the page cache — same script, same reason
+# 4. bend current — same script, same reason. No cache to clear since
+#    ADR-035: var/cache belongs to the release and is cold anyway.
 php .releases/switch.php $REL current
-rm -rf $BASE/shared/lib/cache/*        # or backend «Cache leeren»
 
 # 5. prune old releases — keep at least the previous one (the rollback)
 ls -dt $BASE/releases/*/ | tail -n +3 | xargs rm -rf
@@ -383,9 +417,70 @@ front page                  200   X-Z77-PageCache: MISS → HIT
 /backend/system/login       200
 /anmeldung                  200
 widget fragment (CORS)      200
-page cache lands in         shared/lib/cache/pages/…
-throttle counters in        shared/lib/throttle/…
+page cache lands in         releases/<date>/var/cache/pages/…   (release-local since ADR-035)
+throttle counters in        shared/var/lib/throttle/…
 ```
+
+## Migrating an installation from `lib/` to `var/` (ADR-035)
+
+One-time, per installation and per server. An installation deployed before
+2026-09-01 has `shared/lib/` and both flags in `shared/data/framework/`.
+Nothing breaks if you skip it — the framework simply starts with empty
+caches and DEBUG off — but the old directories stay behind as a decoy, and
+the backup config keeps excluding a name that no longer exists.
+
+Order matters: do it while the release you are about to deploy is NOT yet
+live, or accept one cold cache.
+
+```sh
+BASE=~/public_html/example.ch
+
+# 1. the shared branch: throttle counters move, they must survive the switch
+mkdir -p $BASE/shared/var
+[ -d $BASE/shared/lib/throttle ] && mv $BASE/shared/lib/throttle $BASE/shared/var/lib
+
+# 2. the rest of shared/lib was the page cache — it belongs to no release now
+rm -rf $BASE/shared/lib
+
+# 3. the two switches, per DOOR. Read the old shared flags first, then set
+#    them in the release each door points at — that is the whole point of the
+#    move, so decide per door rather than copying blindly.
+ls -la $BASE/shared/data/framework/debug.flag 2>/dev/null
+ls -la $BASE/shared/data/framework/seo/noindex.flag 2>/dev/null
+
+#    ⚠️ Name the RELEASE, never reach through the door with `..`:
+#    `$BASE/next/..` resolves the link first and names releases/, not the
+#    release (the same trap the mechanism section describes). Ask the door
+#    which release it points at, then work on that path.
+NEXT=$(basename "$(dirname "$(readlink -f $BASE/next)")")   # link_target=public
+CURR=$(basename "$(dirname "$(readlink -f $BASE/current)")")
+#    (with link_target=release drop the inner dirname:
+#     NEXT=$(basename "$(readlink -f $BASE/next)") )
+echo "next -> $NEXT   current -> $CURR"
+
+#    e.g. staging in debug + noindex, production in neither:
+mkdir -p $BASE/releases/$NEXT/var/state $BASE/releases/$CURR/var/state
+touch $BASE/releases/$NEXT/var/state/debug.flag
+touch $BASE/releases/$NEXT/var/state/noindex.flag
+
+# 4. drop the old shared flags — they are read by nothing after this
+rm -f $BASE/shared/data/framework/debug.flag
+rm -f $BASE/shared/data/framework/seo/noindex.flag
+```
+
+Then, on the developer machine, in the project:
+
+- `.releases/target.json`: drop `"lib"` from `shared`, add `"var/lib"`
+- `.vscode/sftp.json`: drop `"lib/**"` from `ignore`, add `"var/**"`
+- `config/backup.inc.php` **and** `shared/config/backup.inc.php` on the
+  server: `fullExcludes` — replace `lib` with `var` (seed-once, so the new
+  default never reaches an existing installation on its own)
+- `config/bootstrap.inc.php` **and** the server copy: remove the `cacheDir`
+  key — it is ignored since ADR-035, and leaving it reads as the truth
+- `php .releases/check.php` — it warns about every one of the above
+
+The next `deploy.php` creates `var/cache`, `var/state` and the `var/lib`
+signpost by itself.
 
 ## See also
 
@@ -395,5 +490,8 @@ throttle counters in        shared/lib/throttle/…
   the layout's links (BACKUP-SYMLINK-001), and why all three types work here
 - [`../topics/persistence-file.md`](../topics/persistence-file.md) — what
   lives under `data/` and why it must exist exactly once
-- ADR-034 — why everything under `lib/` may be deleted at any time (what
-  makes the cache-clear step always safe)
+- [`../topics/cache.md`](../topics/cache.md) — CACHE-RELEASE-001, the defect
+  that forced the split, and what `PageIdentity` does and does not key on
+- ADR-034 — why everything under `var/` may be deleted at any time
+- [ADR-035](../02-decisions/adr-035-release-local-runtime-state-under-var.md) —
+  why `var/cache` and `var/state` are release-local and `var/lib` is not

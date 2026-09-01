@@ -205,6 +205,11 @@ $remote2 = "set -eu\n"
     . '    if [ -f "shared/$3/.htaccess" ] && grep -q "Require all denied" "shared/$3/.htaccess"; then rm "shared/$3/.htaccess"; echo "  removed deny file from shared/$3 (served through public/)"; fi' . "\n"
     . '  elif [ ! -f "shared/$3/.htaccess" ]; then printf "%s\n" "$DENY" > "shared/$3/.htaccess"; echo "  wrote shared/$3/.htaccess"; fi' . "\n"
     . '  p="releases/$REL/$1"' . "\n"
+    // The parent must exist before ln. For `public/media` it always did — public/
+    // arrives with the upload. `var/lib` (ADR-035) has no parent in the artifact:
+    // var/ is runtime state, so nothing uploads it and `ln -s` would fail with
+    // "No such file or directory".
+    . '  mkdir -p "$(dirname "$p")"' . "\n"
     . '  if [ -L "$p" ]; then rm "$p"' . "\n"
     . '  elif [ -d "$p" ]; then rmdir "$p" 2>/dev/null || { echo "STOP: $p is a real, non-empty directory — the upload carried a shared name (rule 6)"; exit 4; }' . "\n"
     . '  elif [ -e "$p" ]; then echo "STOP: $p exists and is not a directory"; exit 4; fi' . "\n"
@@ -212,6 +217,14 @@ $remote2 = "set -eu\n"
     . '  printf "  %-22s -> %s\n" "$1" "$(readlink "$p")"' . "\n"
     . '}' . "\n"
     . $links
+    // Release-local runtime dirs (ADR-035). They create themselves on first write,
+    // but making them here means the very first request does not have to — and, more
+    // to the point, it makes the layout visible on the server: `var/cache` and
+    // `var/state` are real directories inside the release, `var/lib` is a signpost.
+    // Anyone reading `ls -la releases/<name>/var` sees which is which.
+    . 'mkdir -p "releases/$REL/var/cache" "releases/$REL/var/state"' . "\n"
+    . 'printf "  %-22s -> %s\n" "var/cache" "(release-local)"' . "\n"
+    . 'printf "  %-22s -> %s\n" "var/state" "(release-local, DEBUG / noindex)"' . "\n"
     . 'echo' . "\n"
     . 'if [ -f shared/config/fileFinder.inc.php ]; then' . "\n"
     . '  if [ "$(md5sum < shared/config/fileFinder.inc.php | cut -d" " -f1)" = ' . $q($localFinder) . ' ]; then' . "\n"

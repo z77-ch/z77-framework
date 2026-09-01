@@ -1,6 +1,6 @@
 # cache
 
-2026-05-02
+2026-09-01
 
 ## entry
 
@@ -37,12 +37,12 @@ $cache->flush();                                    // writes APCu, called at re
 $cache->clear('ClassName');
 ```
 
-Key format: `Z77-apcu-pool-{hash}::{ClassName}::{k1}::{k2}` — `{hash}` = first 12 hex of `md5(ABS_BASE_PATH)`, one pool per installation
+Key format: `Z77-apcu-pool-{hash}::{ClassName}::{k1}::{k2}` — `{hash}` = first 12 hex of `md5(ABS_BASE_PATH)`, one pool per installation AND per release (`ABS_BASE_PATH` is the resolved `releases/<name>`)
 Layers: local array → APCu
 
 ### cross-process invalidation (the stamp)
 
-APCu is per process tree: PHP-FPM has one pool, every CLI run (cron, `z77-run`, installer, harness) has its own that dies with the process. `apcu_delete()` from the CLI never reaches the FPM pool. The bridge is a file both sides see: `lib/cache/apcu.stamp` (under `shared/lib` in the release structure).
+APCu is per process tree: PHP-FPM has one pool, every CLI run (cron, `z77-run`, installer, harness) has its own that dies with the process. `apcu_delete()` from the CLI never reaches the FPM pool. The bridge is a file both sides see: `var/cache/apcu.stamp` — **release-local** since ADR-035, and that is correct rather than a compromise: web and cron resolve the same `ABS_BASE_PATH` (both reach the release through a symlink, both end at `releases/<name>`), so they share the stamp that matters, while a cron on the staging release no longer wipes production's pool. It rests on the cron entry going through `current`, which `release-structure.md` makes binding for other reasons already.
 
 - `clearAllApcu()` wipes the caller's pool **and** touches the stamp — strictly monotonic (`max(now, mtime+1)`), because `filemtime` has one-second resolution.
 - `CacheManager::setCacheDir()` (boot) calls `DataCache::setStampPath()`, which compares the stamp's mtime with the mtime stored under `{pool}::__stamp`. Different → the pool is wiped and re-marked. One `filemtime()` per request.
@@ -56,7 +56,7 @@ APCu is per process tree: PHP-FPM has one pool, every CLI run (cron, `z77-run`, 
 |---|---|
 | Skip conditions | DEBUG, session role >= ADMIN (CACHE-ADMIN-001), non-GET/HEAD, query string, Fetch mode, module policy `enabled=false`, `ttl <= 0` |
 | ETag | `filemtime` of cache file |
-| Path | `cache/pages/{lang}/{module}/{controller}/{action}.html` |
+| Path | `var/cache/pages/{lang}/{module}/{group}/{controller}/{action}.html` — inside the release (ADR-035), never shared |
 | Failure | Dispatcher wraps `PageCache::set()` in try/catch — write failure must not kill request |
 | Diagnostic header | `X-Z77-PageCache: HIT \| MISS \| BYPASS` on every 200 response (304 omits — status code is the signal) |
 
@@ -180,6 +180,8 @@ Nothing changes for a page that says nothing — that is every existing page.
 - When editing bootstrap config → `cachePersist` MUST be `false` (config changes must take effect without cache clear)
 - When an entity's writes must invalidate frontend caches → MUST set `invalidatesCache: true` on its `#[Entity]` attribute; MUST NOT call `cacheManager->clearAllApcu()` from controllers
 - When invalidating APCu from anywhere → MUST go through `clearAllApcu()`; MUST NOT call `apcu_delete()`/`apcu_clear_cache()` directly — only `clearAllApcu()` advances the stamp that other process trees see (CACHE-CLI-001)
+- When deciding where cache-like state lives → `var/cache` and `var/state` MUST stay release-local; MUST NOT appear in `target.shared`, and MUST NOT be re-introduced as a config value (CACHE-RELEASE-001, ADR-035). `check.php` refuses all three
+- When adding a dimension the rendered output depends on (a user role, a release, a tenant) → it MUST be part of the cache key or of a bypass; a `PageIdentity` that does not name it serves one visitor's page to another (three occurrences: CACHE-ADMIN-001, CACHE-CLI-001, CACHE-RELEASE-001)
 - When adding a new entity that is NOT rendered into frontend pages (logs, statistics, auth) → MUST leave `invalidatesCache` at its `false` default
 - When a controller wants a Cache-Control other than the default → MUST use `fixCacheMode()`, MUST NOT call `header('Cache-Control: …')` (CACHE-FIX-001: the raw header is overwritten by `HtmlResponse::sendHeaders()`)
 - When a response carries a session-granted view (an owner preview, a personalised fragment) → MUST stay `NoStore` and MUST NOT answer 304; a shared cache would hand it to the next caller
@@ -198,10 +200,11 @@ Nothing changes for a page that says nothing — that is every existing page.
 - **CACHE-INV001** — resolved. Stale-content-after-write fixed via `#[Entity(..., invalidatesCache: true)]`. `FileEntityManager` auto-clears `DataCache` + `PageCache` on `flush()`/`remove()`/`reorder()`. Removed 5 duplicated `clearAllApcu()` calls from `NavigationController`. End-to-end verified 2026-05-16.
 - **CACHE-INV-002** — resolved 2026-06-29. `DataCache::clearAllApcu()` cleared only APCu (`apcu_clear_cache()`), not the in-process tiers (`$localCache`/`$toCache`). Since `clearAllApcu()` runs on every `invalidatesCache` entity write (`FileEntityManager`) and `$localCache` is read **before** APCu, a read-after-write in the **same** request returned the stale value (surfaced in the DMS R5 smoke: `grant` an ACE → `canRead()` still `false`). `clearAllApcu()` now also drops both in-process tiers. Cross-request flows (write in request A, read in request B) were never affected; within-request grant-then-read (e.g. the DMS management surface, R6) would have been. See [`documents.md`](documents.md) R5.
 - **CACHE-CLI-001** — resolved 2026-08-29. Found in production (zihlundsee.ch cron): CLI and Web never share an APCu pool, so `ImportApplyJob` (CLI, writes `Navigation`/`NavigationAlias`/`MetaData`) ran `clearAllApcu()` against its own empty pool while the FPM pool kept `NavigationService::all`, `aliases-all`, `meta` etc. for up to `defaultTTL` (1 year). `PageCache::clearAll()` is disk-based and did work — the page was re-rendered from the stale APCu index. Never surfaced before because every content write came from the backend, i.e. the Web pool itself. Fix: the stamp file, see "cross-process invalidation" above. Verified by `tests/apcu-stamp.php` (child-process cron, same-second write, sibling installation untouched).
+- **CACHE-RELEASE-001** — resolved 2026-09-01. `cacheDir` pointed at `lib/cache`, and `lib` was a `target.shared` entry, so `current` and `next` wrote into ONE page cache. `PageIdentity` keys on (language, module, group, controller, action) and has no release dimension: a page rendered on the staging door was a cache HIT for production for up to the TTL (86 400 s), and every test on `next` could read production's HTML instead of the release under test. The DEBUG bypass could not help — `debug.flag` sat in the shared `data/framework/`, so arming it on one door armed both (`display_errors` included); `SEO_NOINDEX` had the same defect. The admin bypass (CACHE-ADMIN-001) held, but only for the logged-in developer: any anonymous hit on the staging door (private window, crawler, preview link) filled the shared cache. Found by review before it produced an incident; `release-structure.md` had documented «clear the cache after bending current», which covers the switch but not the testing before it. Fix: `var/cache` + `var/state` are release-local and no longer configurable (ADR-035), `var/lib` (throttle) stays shared. Migration per installation — see [`../01-handbook/release-structure.md`](../01-handbook/release-structure.md).
 - **CACHE-CLI-002** — decided 2026-08-29, no change. `DataCache` guards APCu calls with `function_exists('apcu_*')` only; with the extension loaded but `apc.enable_cli=0` the functions exist and emit `E_WARNING: apcu_store(): APC is not enabled` on every CLI run. Deliberately kept: the warning is the signal that a CLI process is running with a cache config nobody decided on. Silencing it (an `apcu_enabled()` guard) would hide exactly the state that surfaced CACHE-CLI-001. Route the noise, not the signal — cron output belongs in a log, not in a mail per minute.
 - **CACHE-FILE-001** — resolved 2026-05-17. `DataCache::filePersistPath` removed. Was dead code (no call site used the JSON-file fallback). `DataCache` is now strictly two-tier (local → APCu). `set()` parameter `$filePersistPath`, `get()` parameter `$filePersistPath`, `setCacheDir()`, `$absCacheDir` and the file branch in `flush()` are all gone. `CacheManager::setCacheDir()` no longer propagates the path to `DataCache` (only to `PageCache`).
 
 ## pending
 
-- FEAT-MON001: `CacheMonitorService` — log APCu hits/misses, gated by `cacheDebug=true` in bootstrap, writes to `lib/cache/cache-debug.log` (v1.1)
+- FEAT-MON001: `CacheMonitorService` — log APCu hits/misses, gated by `cacheDebug=true` in bootstrap, writes to `var/cache/cache-debug.log` (v1.1)
 - FEAT-MON002: backend "Cache Monitor" view — show log + clear button (v1.1)

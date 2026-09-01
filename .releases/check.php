@@ -114,6 +114,10 @@ if ($remote === '') {
 }
 
 // --- rule 6: every shared name must be ignored ---------------------------------
+// A shared name may be covered by an ANCESTOR pattern: `var/**` covers `var/lib`.
+// That is the normal case since ADR-035 — the whole of `var/` stays out of the
+// upload (cache and state are release-local runtime dirs, lib is a signpost),
+// while only `var/lib` is listed as shared.
 $ignore = array_map('strval', (array) ($sftp['ignore'] ?? []));
 foreach ($shared as $name) {
     $name = trim($name, '/');
@@ -124,10 +128,40 @@ foreach ($shared as $name) {
             $ok = true;
             break;
         }
+        // ancestor with a recursive wildcard, e.g. 'var/**' for 'var/lib'
+        if (str_ends_with($ig, '/**') && str_starts_with($name . '/', substr($ig, 0, -2))) {
+            $ok = true;
+            break;
+        }
     }
     if (!$ok) {
         $warn("sftp.json: ignore list lacks '$name/**' — an upload would replace the symlink with a real directory (rule 6)");
     }
+}
+
+// --- ADR-035: the release-local runtime dirs must never be shared ---------------
+// This is the defect the layout was changed for: with `var/cache` behind a shared
+// signpost, a page rendered on the `next` door is served by `current` for the whole
+// TTL, and the DEBUG / SEO_NOINDEX switches in `var/state` apply to both doors at
+// once. `var/lib` is the one branch that IS shared (throttle windows must survive
+// a switch).
+foreach ($shared as $name) {
+    $name = trim($name, '/');
+    if ($name === 'var' || $name === 'var/cache' || $name === 'var/state') {
+        $warn("target.json: '$name' must NOT be shared — the page cache and the release switches are release-local (ADR-035); share 'var/lib' only");
+    }
+    if ($name === 'lib' || str_starts_with($name, 'lib/')) {
+        $warn("target.json: '$name' is the pre-ADR-035 layout — the throttle counters moved to 'var/lib'; see docs/01-handbook/release-structure.md for the migration");
+    }
+}
+if (!in_array('var/lib', array_map(static fn($n) => trim($n, '/'), $shared), true)) {
+    $warn("target.json: 'var/lib' is not shared — throttle and lock-out windows would reset on every release switch (ADR-035)");
+}
+
+// --- ADR-035: the installed bootstrap config must not steer the cache anymore ---
+$bootstrapInc = $projectRoot . '/config/bootstrap.inc.php';
+if (is_file($bootstrapInc) && str_contains((string) file_get_contents($bootstrapInc), "'cacheDir'")) {
+    $warn("config/bootstrap.inc.php still carries a 'cacheDir' key — it is ignored since ADR-035 (the path is fixed to var/cache); remove it so nobody reads it as the truth. Same file on the SERVER, under shared/config/.");
 }
 
 // --- vendor must reach the server, and as real copies -------------------------

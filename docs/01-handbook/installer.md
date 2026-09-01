@@ -53,18 +53,24 @@ Controls the fundamental paths and behaviour of the framework.
 | `cacheDebug` | `false` | Enable cache hit/miss logging |
 | `timeZone` | `Europe/Zurich` | PHP timezone for date formatting in generated files |
 | `htmlRoot` | `public` | Public web root directory name |
-| `cacheDir` | `lib/cache/` | Directory for file-based cache |
 | `overrideDir` | `override` | Root directory for CE override files |
 | `moduleDir` | `module` | Sub-directory name inside the override tree for modules |
 | `assetDir` | `assets` | Asset directory name inside the web root |
 | `tplDir` | `res/view/templates` | Template directory path relative to a module root |
+
+> **No `cacheDir` key since ADR-035.** The page cache, the APCu stamp and the
+> DEBUG / `noindex` flags live at fixed release-local paths (`var/cache`,
+> `var/state`, published as `ABS_VAR_PATH` / `ABS_STATE_PATH`). They are part of
+> the release-structure contract, not a project setting — a configurable path
+> could be pointed back into a shared store, which is exactly the defect ADR-035
+> removes. A leftover `cacheDir` in an installed `config/bootstrap.inc.php` is
+> ignored; `.releases/check.php` warns about it.
 
 **Example:**
 ```json
 "core-bootstrap": {
     "debug": true,
     "timeZone": "Europe/Zurich",
-    "cacheDir": "lib/cache",
     "htmlRoot": "public",
     "overrideDir": "override",
     "moduleDir": "module",
@@ -429,7 +435,6 @@ If a key is missing from `composer.json`, the framework default is used:
 | `cacheDebug` | `false` |
 | `timeZone` | `Europe/Zurich` |
 | `htmlRoot` | `public` |
-| `cacheDir` | `lib/cache/` |
 | `overrideDir` | `override` |
 | `moduleDir` | `module` |
 | `assetDir` | `assets` |

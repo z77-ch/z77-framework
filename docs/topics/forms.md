@@ -1,6 +1,6 @@
 # forms
 
-2026-07-20
+2026-09-01
 
 ## entry
 
@@ -289,6 +289,18 @@ GET /kontakt/danke   ← the PRG target: a page of its own
   place (`PublicFormHandler::origin()`), deliberately. A clean seam
   (`Request::getClientIp()` incl. reverse-proxy/trusted-header handling) is its own
   kernel change; when it exists, that one call site moves onto it.
+- **FORM-LOG-001 — `FormLog` writes records into `logs/`, which is a log directory.**
+  `FormLog::DIR = 'logs'` (`logs/form-YYYY-MM.jsonl`) holds submitted enquiries — they are
+  records: a restore must bring them back, and today they do, because `logs/` is in the
+  `full` archive. That is the only reason the misfiling has been harmless. It surfaced on
+  2026-09-01 while deciding ADR-035: `logs/` was to move under `var/`, a tree defined as
+  «may be deleted at any moment» and excluded from the archive as a whole — the enquiries
+  would have dropped out of every backup, silently. `logs/` therefore stayed a top-level
+  shared directory and the FHS-correct `var/log` was rejected for it.
+  The clean fix is to move `FormLog` under `data/framework/forms/` (a record belongs to
+  `data/`, ADR-034's first category) and migrate the existing `form-*.jsonl` in axo3 and
+  zihlundsee. Own change, own risk, deliberately not folded into ADR-035. Until then:
+  `logs/` MUST NOT be moved under `var/`, and this entry is the reason.
 
 ## see also
 

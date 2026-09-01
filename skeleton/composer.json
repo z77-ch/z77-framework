@@ -59,7 +59,6 @@
         "core-bootstrap": {
             "debug": true,
             "timeZone": "Europe/Zurich",
-            "cacheDir": "lib/cache",
             "htmlRoot": "public",
             "overrideDir": "override",
             "moduleDir": "module",

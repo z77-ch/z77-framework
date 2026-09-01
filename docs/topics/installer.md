@@ -1,6 +1,6 @@
 # installer
 
-2026-07-03
+2026-09-01
 
 ## entry
 
@@ -57,7 +57,7 @@ Runs as a Composer post-install/post-update hook. Reads `extra` config from `com
 | 14 | `writeFileFinderConfig()` | → `config/fileFinder.inc.php` |
 | 15 | `writeDataFiles()` | seed `data/*.json` from EVERY installed framework package's data roots (skip if already exist; INST-SEED-001) |
 | 16 | `provisionAdmin()` | create admin (interactive) or write `SETUP_TOKEN` (non-interactive) — skip if `backendUsers.json` exists |
-| 17 | `writeDebugFlag()` | create/remove `data/framework/debug.flag` per `debug` |
+| 17 | `writeDebugFlag()` | create/remove `var/state/debug.flag` per `debug` (release-local, ADR-035; creates `var/state/` if missing) |
 | 18 | `seedProjectClaudeMd()` | seed `CLAUDE.md` (project context for AI assistants) from the kernel template — **seed-once**, never overwritten |
 | 19 | `renderAssetDriftNotice()` | print the collected asset drift (step 4) as ONE coloured notice (ADR-025) |
 | 20 | `promptAssetDeploy()` | interactive-only, per-file, default-No deploy of drifted assets (ADR-026) |

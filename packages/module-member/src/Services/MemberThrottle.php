@@ -35,20 +35,24 @@ final class MemberThrottle
     }
 
     /**
-     * Where the counters live: `lib/throttle/member`, not `data/`.
+     * Where the counters live: `var/lib/throttle/member`, not `data/`.
      *
      * `data/` is the data area — what a restore is supposed to bring back.
      * A throttle counter is a time window and a number; deleting it starts the
-     * running window at zero and nothing else happens. Everything below `lib/`
-     * is disposable by definition: wiping `lib/` resets the installation's
-     * runtime state without touching a single record.
+     * running window at zero and nothing else happens. Everything below `var/`
+     * is disposable by definition: wiping `var/` resets the installation's
+     * runtime state without touching a single record (ADR-034, path per ADR-035).
+     *
+     * `var/lib` and not `var/cache`: in the release layout `var/lib` is the one
+     * SHARED branch of `var/` (a signpost into `shared/`), because a lock-out
+     * window must not restart just because a release was switched.
      *
      * One place, because three call sites (RegistrationFlow, LoginFlow,
      * InvitationFlow) all need the same directory.
      */
     public static function defaultDir(): string
     {
-        return rtrim(str_replace('\\', '/', ABS_BASE_PATH), '/') . '/lib/throttle/member';
+        return rtrim(str_replace('\\', '/', ABS_BASE_PATH), '/') . '/var/lib/throttle/member';
     }
 
     /** True while the address stays under the limit for the current window; counts the attempt. */

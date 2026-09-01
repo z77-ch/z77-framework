@@ -1,6 +1,6 @@
 # backend
 
-2026-06-03
+2026-09-01
 
 ## entry
 
@@ -99,8 +99,8 @@ Backend groups exist for UI organisation only — they are NOT business-domain b
 | Action | Method | Purpose |
 |---|---|---|
 | `clearCacheAction` | POST | Clears APCu (`CacheManager::clearAllApcu`), `PageCache::clearAll`, versioned assets (`AssetCleaner::clearAll` with 30s grace). Returns `FetchResponse` with deleted-asset count. |
-| `toggleDebugAction` | POST | Toggles DEBUG by creating/deleting `data/framework/debug.flag` (see [`bootstrap.md`](bootstrap.md)), then clears APCu + PageCache so stale entries from the previous DEBUG state cannot be served. |
-| `toggleNoindexAction` | POST | Toggles the site-wide crawl block by creating/deleting `data/framework/seo/noindex.flag` (constant `SEO_NOINDEX`, see [`bootstrap.md`](bootstrap.md) / [`metadata.md`](metadata.md) SEO-NOINDEX-001), then clears APCu + PageCache so cached frontend pages re-render with/without the `robots` meta. Returns `data.noindex`. |
+| `toggleDebugAction` | POST | Toggles DEBUG by creating/deleting `var/state/debug.flag` (release-local since ADR-035 — the staging door can be in debug mode while production is not) (see [`bootstrap.md`](bootstrap.md)), then clears APCu + PageCache so stale entries from the previous DEBUG state cannot be served. |
+| `toggleNoindexAction` | POST | Toggles the site-wide crawl block by creating/deleting `var/state/noindex.flag` (release-local since ADR-035 — `next` can carry `noindex` without taking production out of the index) (constant `SEO_NOINDEX`, see [`bootstrap.md`](bootstrap.md) / [`metadata.md`](metadata.md) SEO-NOINDEX-001), then clears APCu + PageCache so cached frontend pages re-render with/without the `robots` meta. Returns `data.noindex`. |
 | `toggleDebugAction` (min-check) | — | On switching debug OFF it additionally scans all module-level `layoutConfig` JS entries for missing `.min.js` variants and flashes the admin the list (JS-MIN-FALLBACK-001, see [`stylesheet.md`](stylesheet.md)). |
 | `savePreferencesAction` | POST | Persists the appearance fields into `UserPreferences` on the `BackendUser` JSON — starts from the stored preferences so fields owned elsewhere (e.g. `partial_labels`, PARTIAL-LABELS-002) survive. |
 

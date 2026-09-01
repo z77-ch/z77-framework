@@ -184,7 +184,7 @@ Leichen im Keller. Alles unten ist entweder nie aufgerufen, nie fertiggestellt, 
 
 ### Backend — Überwachung
 
-- [ ] **FEAT-MON001** — `CacheMonitorService`: APCu-Zugriffe loggen (was, wie oft hit/miss), aktiviert via `cacheDebug=true` in bootstrap.inc.php (unabhängig von `debug`). Schreibt in `lib/cache/cache-debug.log`. Eigener Service, nicht in DataCache/Dispatcher eingeflickt.
+- [ ] **FEAT-MON001** — `CacheMonitorService`: APCu-Zugriffe loggen (was, wie oft hit/miss), aktiviert via `cacheDebug=true` in bootstrap.inc.php (unabhängig von `debug`). Schreibt in `var/cache/cache-debug.log` (Pfad seit ADR-035). Eigener Service, nicht in DataCache/Dispatcher eingeflickt.
 - [ ] **FEAT-MON002** — Backend-Bereich "Cache Monitor": Logdatei anzeigen + "Clear Log"-Button. Gleicher Bereich wie Clear-Cache-Button (FEAT-BE001).
 
 ### Backend — Allgemein

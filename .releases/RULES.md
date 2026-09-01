@@ -60,14 +60,25 @@ Not a comment, not a commit message — an approval recorded here in this file.
    `composer.lock` — plus the symlinks into `shared/`. The name matches
    `target.release_name` (default: `YYYY-MM-DD`, optional `-N` for a second
    release on the same day).
-5. **`shared/` holds everything that comes into being at runtime** and is
-   never part of an upload: `data/`, `config/`, `logs/`, `lib/`, `backup/`,
-   `media/`, `storage/`, and every key/credential store (`.propbase/`,
-   `.emonitor/`, …). Listed in `target.shared`.
+5. **`shared/` holds everything that comes into being at runtime AND must
+   outlive a release** — never part of an upload: `data/`, `config/`,
+   `logs/`, `backup/`, `media/`, `storage/`, `var/lib/`, and every
+   key/credential store (`.propbase/`, `.emonitor/`, …). Listed in
+   `target.shared`.
+
+   **What is runtime but NOT shared:** `var/cache` (rendered pages, the APCu
+   stamp) and `var/state` (`debug.flag`, `noindex.flag`) are real directories
+   INSIDE the release and must never be listed — ADR-035. Shared, they made
+   the staging door and production one cache and one debug switch: a page
+   rendered on `next` was served by `current` for a whole TTL. `check.php`
+   refuses `var`, `var/cache` and `var/state` as shared entries and warns when
+   `var/lib` is missing.
 6. **An upload never contains a shared name.** A local `data/` or `config/`
    in the artifact would replace the symlink with a real directory and fork
    the state. The SFTP ignore list must exclude every entry of
-   `target.shared` (as `<name>/**`).
+   `target.shared` (as `<name>/**`); an ancestor pattern counts — `var/**`
+   covers `var/lib`, and it must be there anyway, because `var/cache` and
+   `var/state` have no business travelling from a developer machine.
 7. **An upload targets exactly one release directory** —
    `<root>/releases/<name>` — never `current`, `next`, `shared` or the root.
 8. **`uploadOnSave` is always `false`.** A save must never reach the server.

@@ -82,9 +82,22 @@ Report every violation to the developer, verbatim. **Do not edit
 - `remotePath` on the old flat layout (`apps/z77-…`) or on `current` → the
   project has not been migrated yet; migration is a manual one-time step
   (rule 10), not part of this handoff — say so and stop.
-- ignore list lacks `data/**`, `logs/**`, `lib/**`, `backup/**`,
-  `public/media/**`, `public/storage/**` → rule 6; list the exact entries to
-  add.
+- ignore list lacks `data/**`, `logs/**`, `backup/**`, `public/media/**`,
+  `public/storage/**`, `var/**` → rule 6; list the exact entries to add.
+- ignore list still has `lib/**`, or `target.shared` still has `lib` → the
+  project predates ADR-035. `lib` becomes `var/lib` in `shared`, `lib/**`
+  becomes `var/**` in the ignore list, and the SERVER needs the one-time
+  move (`shared/lib/throttle` → `shared/var/lib`, `shared/lib` gone, both
+  flags out of `shared/data/framework/` into each release's `var/state`).
+  Step list: `docs/01-handbook/release-structure.md` → «Migrating an
+  installation from `lib/` to `var/`». Do not do the server part yourself —
+  hand the steps to the developer.
+- `config/bootstrap.inc.php still carries a 'cacheDir' key` → same origin;
+  the key is ignored since ADR-035 and must go from the working copy AND
+  from `shared/config/` on the server.
+- `config/backup.inc.php` `fullExcludes` naming `lib` → seed-once, so the new
+  default never arrives on its own. Must become `var`, in the working copy
+  and on the server, or the next full archive carries all of `var/`.
 - `vendor/**` ignored → since this setup vendor is uploaded from real copies;
   the entry must go.
 - `vendor/z77/kernel is a link` / `build.json missing` → the developer runs

@@ -135,7 +135,7 @@ function rrm(string $dir): void
 //   rel/override/Code.php
 //   rel/data          -> shared/data
 //   rel/public/media  -> shared/media
-//   rel/lib/cache/x   (excluded via lib)
+//   rel/var/cache/x   (excluded via var)
 //   flat/…            same content, no links
 
 @mkdir($work . '/shared/data/framework/member', 0777, true);
@@ -143,12 +143,12 @@ function rrm(string $dir): void
 @mkdir($work . '/shared/media/img', 0777, true);
 @mkdir($work . '/rel/override', 0777, true);
 @mkdir($work . '/rel/public', 0777, true);
-@mkdir($work . '/rel/lib/cache', 0777, true);
+@mkdir($work . '/rel/var/cache', 0777, true);
 file_put_contents($work . '/shared/data/framework/member/accounts.json', '{"a":1}');
 file_put_contents($work . '/shared/data/framework/jobs/queue.json', '{}');
 file_put_contents($work . '/shared/media/img/logo.webp', 'RIFF');
 file_put_contents($work . '/rel/override/Code.php', '<?php');
-file_put_contents($work . '/rel/lib/cache/x', 'scratch');
+file_put_contents($work . '/rel/var/cache/x', 'scratch');
 
 if (!makeDirLink($work . '/shared/data', $work . '/rel/data')
     || !makeDirLink($work . '/shared/media', $work . '/rel/public/media')) {
@@ -156,7 +156,7 @@ if (!makeDirLink($work . '/shared/data', $work . '/rel/data')
     exit(0);
 }
 
-$fullExcludes = ['vendor', 'node_modules', 'backup', 'lib', 'data/framework/jobs'];
+$fullExcludes = ['vendor', 'node_modules', 'backup', 'var', 'data/framework/jobs'];
 $expected     = [
     'data/framework/member/accounts.json',
     'override/Code.php',
@@ -170,12 +170,12 @@ echo "1. a flat tree behaves as before (no links anywhere)\n";
 @mkdir($work . '/flat/data/framework/jobs', 0777, true);
 @mkdir($work . '/flat/public/media/img', 0777, true);
 @mkdir($work . '/flat/override', 0777, true);
-@mkdir($work . '/flat/lib/cache', 0777, true);
+@mkdir($work . '/flat/var/cache', 0777, true);
 file_put_contents($work . '/flat/data/framework/member/accounts.json', '{"a":1}');
 file_put_contents($work . '/flat/data/framework/jobs/queue.json', '{}');
 file_put_contents($work . '/flat/public/media/img/logo.webp', 'RIFF');
 file_put_contents($work . '/flat/override/Code.php', '<?php');
-file_put_contents($work . '/flat/lib/cache/x', 'scratch');
+file_put_contents($work . '/flat/var/cache/x', 'scratch');
 
 $n = $a->zipDirectory($work . '/flat', $work . '/flat.zip', $fullExcludes);
 check('three files packed',              $n === 3);

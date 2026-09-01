@@ -237,11 +237,20 @@ function releases_switchArgs(array $argv, array $target): array
 
 /**
  * The directory name under shared/ for a `target.shared` entry:
- * `data` → `data`, `public/media` → `media`, `.propbase` → `.propbase`.
+ * `data` → `data`, `public/media` → `media`, `.propbase` → `.propbase`,
+ * `var/lib` → `var/lib`.
+ *
+ * ONE level is stripped, and only `public/`: that prefix is a requirement of the
+ * web root, not a property of the store — the media directory is shared state that
+ * happens to have to be reachable under `public/`. Every other path is kept whole,
+ * so `var/lib` (ADR-035) lands in `shared/var/lib` and stays distinguishable from a
+ * store that merely ends in the same word.
  */
 function releases_sharedStoreName(string $entry): string
 {
-    return basename(trim($entry, '/'));
+    $entry = trim($entry, '/');
+
+    return str_starts_with($entry, 'public/') ? substr($entry, strlen('public/')) : $entry;
 }
 
 /**

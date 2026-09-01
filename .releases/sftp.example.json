@@ -29,9 +29,10 @@
         "data/**",
         "config/**",
         "logs/**",
-        "lib/**",
         "backup/**",
         "public/media/**",
-        "public/storage/**"
+        "public/storage/**",
+
+        "var/**"
     ]
 }

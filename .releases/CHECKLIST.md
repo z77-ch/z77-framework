@@ -30,13 +30,17 @@ file — read those on every release too.
    Request pages that are demonstrably NEW in this release (a changed
    template, a new route) — a static file proves nothing, Apache always
    follows the link. If rendered output looks old, clear the page cache
-   there first («Cache leeren»).
+   there first («Cache leeren»); since ADR-035 that cache is this release's
+   own (`var/cache`), so clearing it cannot touch production.
    Decide: only when the new behaviour shows on the test door, go live.
 
 5. **Bend production** — `php .releases/switch.php <name> current`
-   Then: backend «Cache leeren» on the production hostname (the page cache
-   spans releases), and read `X-Z77-Release` off the production domain once
-   yourself (`curl -sI https://<domain>/ | grep X-Z77-Release`).
+   Then read `X-Z77-Release` off the production domain once yourself
+   (`curl -sI https://<domain>/ | grep X-Z77-Release`).
+   No cache to clear since ADR-035: the new release starts with an empty
+   `var/cache`. On an installation not yet migrated off `shared/lib` this
+   step still exists — and so does the reason it was never enough; see
+   `release-structure.md` → migration.
 
 6. **Back to development** — `php .releases/vendor-dev.php`
    You see: the copies turned back into links at the working trees.
@@ -114,11 +118,14 @@ them on every release; they are the same every time.
    switch to `current` carries the untested code to production. Mechanism and
    the rollback caveat: `release-structure.md`.
 
-4. **Clear the cache in the backend after the switch.** FileFinder and
-   ConfigManager store the resolved vendor path per namespace with a very long
-   TTL. A new namespace and every newly shadowing override stay invisible
-   until that pool is dropped. Each hostname has its own pool — clear it on
-   each one you serve.
+4. **The APCu pool follows the release, the page cache does too.** Both are
+   keyed on the resolved release path (`md5(ABS_BASE_PATH)` for APCu,
+   `var/cache` on disk since ADR-035), so a switch cannot serve you the old
+   release's resolved paths or rendered pages. Nothing to clear.
+   *Where it still bites:* re-deploying INTO a running release (which
+   `deploy.php` refuses) — the pool then belongs to code that changed under
+   it. Clear it in the backend on each hostname you serve; each has its own
+   pool.
    *Symptom if skipped:* «class not found» for a class whose file is plainly
    there.
 
