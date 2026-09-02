@@ -13,10 +13,13 @@ file — read those on every release too.
 
 2. **Upload the release** — `php .releases/deploy.php <name>`
    You see: the tar streaming into `releases/<name>/`, the signposts and deny
-   files being set, and LAST a line about `config/fileFinder.inc.php`.
-   Decide: if it reports the file DIFFERS, copy it up (the printed `scp`
-   line) BEFORE any switch — a release without it dies on the first call
-   into a new namespace.
+   files being set — and, on the legacy whole-`config` layout only, LAST a
+   line per installer-generated config (`fileFinder`, `moduleManager`,
+   `bootstrap`). Decide: if one DIFFERS, copy it up (the printed `scp` line)
+   BEFORE any switch — without fileFinder the first call into a new namespace
+   dies, without moduleManager a new module is a silent 404 on every route.
+   Under the ADR-036 split (`config/vendor` rides with the release) this
+   whole point disappears.
 
 3. **Bend the test door** — `php .releases/switch.php <name> next`
    You see: the link read back and verified, then `X-Z77-Release` naming the
@@ -56,13 +59,16 @@ The deploy sequence in `RULES.md` moves code. These five things it does not,
 and each one fails in a way that does not look like its cause. Work through
 them on every release; they are the same every time.
 
-1. **A regenerated `config/` file goes up by hand.** `config/` lives in
-   `shared/` and is excluded from every upload, so `composer install` can
-   rewrite `config/fileFinder.inc.php` — a new package adds a namespace
-   there — and the upload will not take it. `deploy.php` compares the two
-   and prints the `scp` line when they differ; the copy is still yours.
+1. **A regenerated `config/` file goes up by hand** *(legacy whole-`config`
+   layout only — under the ADR-036 split, `config/vendor` travels with the
+   release and this point is gone).* `config/` lives in `shared/` and is
+   excluded from every upload, so `composer install` can rewrite the
+   generated configs — a new package adds a namespace, a new module adds a
+   register entry — and the upload will not take them. `deploy.php` compares
+   them and prints the `scp` lines when they differ; the copy is still yours.
    *Symptom if skipped:* the site runs, the first call into the new package
-   dies with «Namespace 'X\Y\' has no registered sourcePaths».
+   dies with «Namespace 'X\Y\' has no registered sourcePaths» — or, for a
+   missing module register entry, every route of the new module is a plain 404.
 
 2. **Every store named in `target.shared` must exist before the first write,
    and each one carries the deny file.** The release carries a symlink; the

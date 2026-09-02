@@ -17,7 +17,7 @@ Not a comment, not a commit message — an approval recorded here in this file.
 | `target.example.json` | template for `target.json` |
 | `check.php` | verifies `target.json`, `.vscode/sftp.json` and the local `vendor/` state against the rules — warns, never uploads |
 | `sftp.example.json` | template for `.vscode/sftp.json` (gitignored; the developer copies and maintains it) |
-| `deploy.php` | uploads ONE release over ssh (tar stream, every shared name excluded), sets the signposts into `shared/`, compares `config/fileFinder.inc.php` — refuses an existing or running release |
+| `deploy.php` | uploads ONE release over ssh (tar stream, every shared name excluded), sets the signposts into `shared/`, compares the installer-generated configs (legacy whole-`config` layout only — obsolete under the ADR-036 split) — refuses an existing or running release |
 | `switch.php` | bends `next` or `current` at a release over ssh: link target per `target.link_target`, the deny files in `shared/`, the `X-Z77-Release` proof across the realpath TTL, then probes the door from outside |
 | `htaccess-deny` | `Require all denied` — copied to `<project>/.htaccess` (link_target `public`) and by `deploy.php`/`switch.php` into every shared store NOT served through `public/`; the alarm for a door bent at the wrong place |
 | `vendor-deploy.php` / `.bat` | builds a deployable `vendor/`: real copies of every path-repo package (list read from `composer.json`), production autoload, build stamp |
@@ -61,10 +61,12 @@ Not a comment, not a commit message — an approval recorded here in this file.
    `target.release_name` (default: `YYYY-MM-DD`, optional `-N` for a second
    release on the same day).
 5. **`shared/` holds everything that comes into being at runtime AND must
-   outlive a release** — never part of an upload: `data/`, `config/`,
-   `logs/`, `backup/`, `media/`, `storage/`, `var/lib/`, and every
-   key/credential store (`.propbase/`, `.emonitor/`, …). Listed in
-   `target.shared`.
+   outlive a release** — never part of an upload: `data/`, `config/client/`
+   (ADR-036: the hand-maintained machine configs; `config/vendor/` is
+   installer-generated and rides WITH the release — legacy projects still
+   share `config/` as a whole until they flip their `target.json`), `logs/`,
+   `backup/`, `media/`, `storage/`, `var/lib/`, and every key/credential
+   store (`.propbase/`, `.emonitor/`, …). Listed in `target.shared`.
 
    **What is runtime but NOT shared:** `var/cache` (rendered pages, the APCu
    stamp) and `var/state` (`debug.flag`, `noindex.flag`) are real directories
@@ -100,8 +102,9 @@ Not a comment, not a commit message — an approval recorded here in this file.
   vendor that still holds links, lacks the stamp, or carries dev dependencies.
 - Deploy sequence, every time:
   1. `php .releases/vendor-deploy.php`
-  2. `php .releases/deploy.php <name>` — upload + signposts; it prints whether
-     `shared/config/fileFinder.inc.php` differs from the local one (CHECKLIST 1)
+  2. `php .releases/deploy.php <name>` — upload + signposts; on the legacy
+     whole-`config` layout it prints whether the shared installer-generated
+     configs differ from the local ones (CHECKLIST 1 — gone under ADR-036)
   3. `php .releases/switch.php <name> next` — test on the test door, «Cache leeren» there
   4. `php .releases/switch.php <name> current` — «Cache leeren» in the backend
   5. `php .releases/vendor-dev.php`

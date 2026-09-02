@@ -48,14 +48,15 @@ Runs as a Composer post-install/post-update hook. Reads `extra` config from `com
 | 4 | `copyFiles()` | `public/` entry files → project web root — **first install only** (`public/` absent; ADR-024). On update (`public/` present) instead: `reportAssetDrift()` collects the read-only changed/new asset list; rendered at the end (ADR-025) |
 | 5 | `createDirectories()` | override dirs, moduleTree, logs (always) + publicAssetTree asset copy (**first install only**) |
 | 6 | `seedCronEntry()` | seed `cron/run.php` from the kernel template — **seed-once**: the cron entry for hosts whose panel takes one command and no `cd` (the starter `chdir()`s into the project and hands over to `vendor/bin/z77-run`), see [`jobs.md`](jobs.md) |
-| 7 | `writeBootstrapConfig()` | → `config/bootstrap.inc.php` |
-| 8 | `writeModuleManagerConfig()` | → `config/moduleManager.inc.php` |
-| 9 | `writeAuthConfig()` | → `config/auth.inc.php` — **seed-once**: skipped if it already exists (INST-CONFIG-001) |
-| 10 | `writeI18nConfig()` | → `config/i18n.inc.php` — **seed-once**: skipped if it already exists (INST-CONFIG-001) |
-| 11 | `writeBackupConfig()` | → `config/backup.inc.php` — **seed-once**: backup policy (retention, excludes, database), see [`backup.md`](backup.md) |
-| 12 | `writeMailConfig()` | → `config/mail.inc.php` — **seed-once**: mail transport + sender identity (`enabled=true`, `transport='mail'`, empty `fromAddress` to fill per project), see [`mail.md`](mail.md) |
-| 13 | `writeSystemConfig()` | → `config/systemConfig.inc.php` — **seed-once**: installation identity (`canonicalBaseUrl`), the one config NOT fed from `composer.json` (ADR-030) |
-| 14 | `writeFileFinderConfig()` | → `config/fileFinder.inc.php` |
+| 6b | `migrateConfigSplit()` | one-time flat→split migration (ADR-036): flat generated files deleted (rewritten below), flat seed-once files RENAMED into `config/client/` so hand edits survive; no-op on a split layout |
+| 7 | `writeBootstrapConfig()` | → `config/vendor/bootstrap.inc.php` (ADR-036: generated tier) |
+| 8 | `writeModuleManagerConfig()` | → `config/vendor/moduleManager.inc.php` |
+| 9 | `writeAuthConfig()` | → `config/client/auth.inc.php` — **seed-once**: skipped if it already exists (INST-CONFIG-001) |
+| 10 | `writeI18nConfig()` | → `config/client/i18n.inc.php` — **seed-once**: skipped if it already exists (INST-CONFIG-001) |
+| 11 | `writeBackupConfig()` | → `config/client/backup.inc.php` — **seed-once**: backup policy (retention, excludes, database), see [`backup.md`](backup.md) |
+| 12 | `writeMailConfig()` | → `config/client/mail.inc.php` — **seed-once**: mail transport + sender identity (`enabled=true`, `transport='mail'`, empty `fromAddress` to fill per project), see [`mail.md`](mail.md) |
+| 13 | `writeSystemConfig()` | → `config/client/systemConfig.inc.php` — **seed-once**: installation identity (`canonicalBaseUrl`), the one config NOT fed from `composer.json` (ADR-030) |
+| 14 | `writeFileFinderConfig()` | → `config/vendor/fileFinder.inc.php` |
 | 15 | `writeDataFiles()` | seed `data/*.json` from EVERY installed framework package's data roots (skip if already exist; INST-SEED-001) |
 | 16 | `provisionAdmin()` | create admin (interactive) or write `SETUP_TOKEN` (non-interactive) — skip if `backendUsers.json` exists |
 | 17 | `writeDebugFlag()` | create/remove `var/state/debug.flag` per `debug` (release-local, ADR-035; creates `var/state/` if missing) |
@@ -101,8 +102,8 @@ All failures throw `\RuntimeException` — no silent errors:
 
 | Type | Path | Behaviour |
 |---|---|---|
-| Config (regenerate) | `config/bootstrap.inc.php`, `config/moduleManager.inc.php`, `config/fileFinder.inc.php` | regenerated on every install |
-| Config (seed-once) | `config/i18n.inc.php`, `config/auth.inc.php`, `config/backup.inc.php`, `config/mail.inc.php`, `config/systemConfig.inc.php` | user-adjustable (project languages / auth policy / backup policy / mail routes / installation identity) — written once, never overwritten (INST-CONFIG-001) |
+| Config (regenerate) | `config/vendor/bootstrap.inc.php`, `config/vendor/moduleManager.inc.php`, `config/vendor/fileFinder.inc.php` | regenerated on every install; RELEASE-owned (ADR-036) — a function of `composer.json` + `vendor/`, rides with the release upload |
+| Config (seed-once) | `config/client/i18n.inc.php`, `auth`, `backup`, `mail`, `systemConfig` (and hand-created `geoip`) | user-adjustable — written once, never overwritten (INST-CONFIG-001); INSTALLATION-owned (ADR-036) — in the release layout `config/client` is a symlink into `shared/` |
 | Data | `data/framework/**/*.json` | written once — never overwritten |
 
 > The blanket "config regenerated on every install" holds only for framework-controlled config (`bootstrap`, `moduleManager`, `fileFinder`) — those are fed from `composer.json`. Everything a developer or operator adjusts is seed-once. `systemConfig.inc.php` (ADR-030) is the strongest case: it holds what differs per INSTALLATION, so it is the one config file that is deliberately not fed from `composer.json` at all — that file is committed, and staging and production could then not differ.

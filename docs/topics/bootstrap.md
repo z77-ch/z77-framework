@@ -1,6 +1,6 @@
 # bootstrap
 
-2026-09-01
+2026-09-02
 
 ## entry
 
@@ -20,6 +20,8 @@ RUNTIME=/skeleton/config/bootstrap.inc.php
 ## mental model
 
 Bootstrap runs in two phases. `__construct()` sets up infrastructure, defines runtime constants, and initializes the DI container exactly once. `pullUp()` builds the request pipeline, wires services via DI, runs routing, then starts the session — invalid requests therefore never touch session state.
+
+**Stateless branch (since 2026-09-02):** after routing succeeded (`ControllerHandler::lock()`), `pullUp()` branches on `Request::isStateless()` — true when the matched reserved route declares `'stateless' => true` (e.g. `/api`). The stateless branch wires `ApiKeyGuard` + `Dispatcher(policy: null, stateless: true)` and returns; SessionManager, MessageService, CsrfService, AuthService, AccessGuard and PageCachePolicy stay UNREGISTERED — a stateless code path resolving them is a bug and fails fast. No session start, no cookie, no locale logic, no page cache, JSON errors (see the API envelope, `docs/03-development/api-envelope-v1-2026-09-02.md`).
 
 - Runtime config (`bootstrap.inc.php`) exists only after `composer install` — it is NOT a source artifact.
 - Source-of-truth: `bootstrap.default.inc.php`. Installer copies it to skeleton.
@@ -41,6 +43,7 @@ ModuleManager → ControllerHandler → Request
 → Router(NavigationService)
 → PageCachePolicy(ModuleManager, CacheManager::page(), DEBUG)
 [routing parsed + ControllerHandler locked here]
+[STATELESS BRANCH: Request::isStateless() → ApiKeyGuard + Dispatcher(CacheManager, null, ApiKeyGuard, stateless) + helpers, RETURN — nothing below is registered]
 → SessionManager
 → MessageService(SessionManager)
 → CsrfService(SessionManager)
@@ -100,6 +103,22 @@ define('SEO_NOINDEX', file_exists(ABS_STATE_PATH . '/noindex.flag'));
 
 When `true`: the frontend head partial `head/meta.tpl.php` emits `<meta name="robots" content="noindex, nofollow">` and the backend shell shows a persistent, non-dismissible Störer. Toggled via the filesystem OR the backend service panel (`SystemController::toggleNoindexAction`). Distinct from per-page SEO (see [`metadata.md`](metadata.md) SEO-NOINDEX-001). Read the constant — MUST NOT re-derive via `file_exists` in templates.
 
+## config layout (ADR-036 split)
+
+`config/` has two tiers with distinct owners; every reader resolves
+`config/X` as **`config/vendor/X` → `config/client/X` → `config/X`** (legacy
+flat fallback, central helper `ConfigLocator`):
+
+- `config/vendor/` — installer-GENERATED (`bootstrap`, `fileFinder`,
+  `moduleManager`): a function of `composer.json` + `vendor/`, owned by the
+  RELEASE (rides with the upload; makes module deploys testable on `next`).
+- `config/client/` — hand-maintained machine/project facts (`systemConfig`,
+  `mail`, `geoip`, `auth`, `backup`, `i18n`): owned by the INSTALLATION; in
+  the release layout `config/client` is a symlink into `shared/config`.
+
+The installer migrates a flat layout automatically (generated files
+regenerated into vendor/, seed-once files renamed into client/).
+
 ## bootstrap config keys
 
 `debug` | `timezone` | `htmlRoot` | `cachePersist` (always `false`) — `cacheDir` is GONE since ADR-035: the cache path is fixed to `var/cache`, a leftover key in an installed config is ignored
@@ -124,7 +143,8 @@ when something actually tries to build an absolute URL (SEC-005, [`security.md`]
 
 - When initializing the DI container → MUST do it in `Bootstrap::__construct` exactly once; subsequent calls MUST NOT re-init
 - When writing a controller that needs `DataSourceResolver` or `EntityManager` → MUST obtain via DI; controllers MUST NOT instantiate these directly
-- When ordering pipeline steps in `pullUp()` → session start MUST happen after routing
+- When ordering pipeline steps in `pullUp()` → session start MUST happen after routing — or never, for stateless reserved routes (`Request::isStateless()`); the stateless branch MUST NOT register any session-bound service
+- When writing code that can run on the stateless path → MUST NOT resolve SessionManager, MessageService, CsrfService, AuthService, AccessGuard, or PageCachePolicy (unregistered there — fail-fast by design)
 - When editing config → MUST edit `bootstrap.default.inc.php` (source) — runtime `bootstrap.inc.php` MUST NOT be hand-edited as source
 - When building an absolute URL that leaves the request (mail link, canonical, hreflang, anything rendered into a cached page) → MUST take the origin from `Request::getBaseUrl()`; MUST NOT read `$_SERVER['HTTP_HOST']`. The header is the client's to choose, and the page cache keys on path only, so one forged request would poison what every later visitor is served (SEC-005)
 - When adding an installation-level setting (something that differs per installation and must survive an update) → MUST add it to `systemConfig.default.inc.php`, NOT to `bootstrap.inc.php` (regenerated) and NOT to composer `extra` (committed, so environments cannot differ). MUST decide its empty-value policy per ADR-030 point 4: throw at the point of use when no default is meaningful, take the default when one obviously is; MUST NOT abort the boot either way

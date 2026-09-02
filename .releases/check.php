@@ -159,9 +159,15 @@ if (!in_array('var/lib', array_map(static fn($n) => trim($n, '/'), $shared), tru
 }
 
 // --- ADR-035: the installed bootstrap config must not steer the cache anymore ---
-$bootstrapInc = $projectRoot . '/config/bootstrap.inc.php';
-if (is_file($bootstrapInc) && str_contains((string) file_get_contents($bootstrapInc), "'cacheDir'")) {
-    $warn("config/bootstrap.inc.php still carries a 'cacheDir' key — it is ignored since ADR-035 (the path is fixed to var/cache); remove it so nobody reads it as the truth. Same file on the SERVER, under shared/config/.");
+// ADR-036 split location first, legacy flat fallback.
+foreach (['/config/vendor/bootstrap.inc.php', '/config/bootstrap.inc.php'] as $rel) {
+    $bootstrapInc = $projectRoot . $rel;
+    if (is_file($bootstrapInc)) {
+        if (str_contains((string) file_get_contents($bootstrapInc), "'cacheDir'")) {
+            $warn(ltrim($rel, '/') . " still carries a 'cacheDir' key — it is ignored since ADR-035 (the path is fixed to var/cache); remove it so nobody reads it as the truth. Same file on the SERVER, under shared/config/.");
+        }
+        break;
+    }
 }
 
 // --- vendor must reach the server, and as real copies -------------------------

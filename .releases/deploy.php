@@ -179,7 +179,27 @@ if (str_contains($out, 'STOP:')) {
 
 // --- 4. signposts + 5. config compare ---------------------------------------------
 $deny = (string) file_get_contents(__DIR__ . '/htaccess-deny');
-$localFinder = is_file("$projectRoot/config/fileFinder.inc.php") ? md5_file("$projectRoot/config/fileFinder.inc.php") : '';
+
+// LEGACY layout only (target.shared still carries `config` as a whole): the
+// installer-regenerated files live in shared and no upload carries them, so
+// they must be hand-compared — BOTH of them, not just fileFinder: moduleManager
+// is the module register, and a module deployed without its register entry is
+// a silent 404 on every route of that module. Under the ADR-036 split
+// (`config/client` shared, `config/vendor` rides with the release) this whole
+// compare is obsolete and skipped.
+$legacyConfigLayout = in_array('config', array_map(static fn($e) => trim((string) $e, '/'), $shared), true);
+$generatedConfigs   = [];
+if ($legacyConfigLayout) {
+    foreach (['fileFinder.inc.php', 'moduleManager.inc.php', 'bootstrap.inc.php'] as $cfg) {
+        // The local file may already live in the split location.
+        foreach (["config/vendor/$cfg", "config/$cfg"] as $localRel) {
+            if (is_file("$projectRoot/$localRel")) {
+                $generatedConfigs[$cfg] = ['md5' => md5_file("$projectRoot/$localRel"), 'localRel' => $localRel];
+                break;
+            }
+        }
+    }
+}
 
 $links = '';
 foreach ($shared as $entry) {
@@ -225,15 +245,17 @@ $remote2 = "set -eu\n"
     . 'mkdir -p "releases/$REL/var/cache" "releases/$REL/var/state"' . "\n"
     . 'printf "  %-22s -> %s\n" "var/cache" "(release-local)"' . "\n"
     . 'printf "  %-22s -> %s\n" "var/state" "(release-local, DEBUG / noindex)"' . "\n"
-    . 'echo' . "\n"
-    . 'if [ -f shared/config/fileFinder.inc.php ]; then' . "\n"
-    . '  if [ "$(md5sum < shared/config/fileFinder.inc.php | cut -d" " -f1)" = ' . $q($localFinder) . ' ]; then' . "\n"
-    . '    echo "  shared/config/fileFinder.inc.php: same as local"' . "\n"
-    . '  else' . "\n"
-    . '    echo "  ATTENTION shared/config/fileFinder.inc.php DIFFERS from local config/fileFinder.inc.php — composer install regenerated it; copy by hand (CHECKLIST 1):"' . "\n"
-    . '    echo "    scp config/fileFinder.inc.php ' . $host . ':' . $root . '/shared/config/fileFinder.inc.php"' . "\n"
-    . '  fi' . "\n"
-    . 'fi' . "\n";
+    . 'echo' . "\n";
+foreach ($generatedConfigs as $cfg => $info) {
+    $remote2 .= 'if [ -f shared/config/' . $cfg . ' ]; then' . "\n"
+        . '  if [ "$(md5sum < shared/config/' . $cfg . ' | cut -d" " -f1)" = ' . $q($info['md5']) . ' ]; then' . "\n"
+        . '    echo "  shared/config/' . $cfg . ': same as local"' . "\n"
+        . '  else' . "\n"
+        . '    echo "  ATTENTION shared/config/' . $cfg . ' DIFFERS from local ' . $info['localRel'] . ' — composer install regenerated it; copy by hand (CHECKLIST 1):"' . "\n"
+        . '    echo "    scp ' . $info['localRel'] . ' ' . $host . ':' . $root . '/shared/config/' . $cfg . '"' . "\n"
+        . '  fi' . "\n"
+        . 'fi' . "\n";
+}
 
 echo "Signposts:\n";
 $out = releases_ssh($host, $remote2);

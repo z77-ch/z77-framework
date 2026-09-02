@@ -250,6 +250,15 @@ function releases_sharedStoreName(string $entry): string
 {
     $entry = trim($entry, '/');
 
+    // ADR-036: the client config tier shares the EXISTING `config` store.
+    // The server needs no migration: legacy releases (whole-config symlink)
+    // keep reading the same directory — including the stale generated files
+    // they still need — while split releases resolve config/client through
+    // this link and shadow those stale files with their own config/vendor.
+    if ($entry === 'config/client') {
+        return 'config';
+    }
+
     return str_starts_with($entry, 'public/') ? substr($entry, strlen('public/')) : $entry;
 }
 
