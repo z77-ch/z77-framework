@@ -1,6 +1,6 @@
 # routing
 
-2026-06-23
+2026-09-02
 
 ## entry
 
@@ -20,6 +20,8 @@ SOURCE=/packages/kernel/core/src/Controller/ControllerHandler.php
 Routing runs once in `Bootstrap::pullUp()`. `Request::runParsing()` extracts the language prefix, then resolves the route with precedence **Reserved Routes → NavigationAlias → static navigation → convention** (ADR-015 + ADR-017 R3). Reserved routes are matched FIRST (before the localized-slug translation and before the Fetch short-circuit); the rest run after translation, Page mode only. On an alias or reserved hit the trailing path segments are captured as content slugs (`getSlugs()`). On hit: module/group/controller/action come from the matched route — no cascade. On miss or in Fetch mode: convention fallback maps URL segments positionally over 4 segments. `ControllerHandler` receives the resolved state and MUST be locked via `lock()` before `Dispatcher` runs.
 
 - **Reserved Routes (highest precedence, ADR-017 R3)** are structural, framework-owned URL prefixes declared per module (`reservedRoutes` config key) and aggregated by `ModuleManager::getReservedRoutes()`. A prefix maps straight to a routing target (4-tuple); the trailing path becomes content slugs. They are matched **mode-independently** — before the Fetch short-circuit — because a reserved URL like `/media` is reached via `<img src>` (`Sec-Fetch-Mode: no-cors` → Fetch mode), not only by browser navigation; routing them only in Page mode would 404 embedded media. They are matched on raw post-language segments (folder/file slugs are structural, never language-translated). Used for delivery URLs that must NOT depend on a navigation/alias seed. A prefix declared by two modules is a fail-fast config error.
+
+- **Stateless reserved routes (since 2026-09-02):** a reserved-route target MAY declare `'stateless' => true` (e.g. a future `/api`). `Request::isStateless()` then returns true and `Bootstrap::pullUp()` takes the stateless branch: no session, no locale/navigation logic, no page cache; `ApiKeyGuard` (bearer key → tenant via a declared `TenantKeyResolverInterface`) replaces `AccessGuard`, and the `ExceptionHandler` always answers the JSON API error envelope — never HTML. See [`bootstrap.md`](bootstrap.md) and `docs/03-development/api-envelope-v1-2026-09-02.md`. API actions are mode-agnostic: a server-to-server request carries no `Sec-Fetch-Mode` (→ Page mode), a browser fetch does (→ Fetch mode) — stateless actions MUST NOT carry `#[Fetch]`/`#[Page]` attributes.
 
 - URL schema is 4 segments: `/module/group/controller/action` (since 2026-05-19, see ADR-005).
 - Fetch mode always skips navigation lookup → uses convention routing directly.
@@ -181,7 +183,7 @@ Safe to call `get*` only after `lock()`. The `group` argument feeds `Naming::toC
 | `Page` | regular browser navigation (`Sec-Fetch-Mode: navigate` or absent) |
 | `Fetch` | AJAX/partial request (any other `Sec-Fetch-Mode` value) |
 
-`Fetch` mode skips navigation lookup → straight to convention routing. Accept-header fallback intentionally removed (z77 is not an API backend).
+`Fetch` mode skips navigation lookup → straight to convention routing. Accept-header fallback intentionally removed — the mode never decides API dispatch; API clients ride stateless reserved routes, where the mode is irrelevant.
 
 ## action constraints (attributes)
 
@@ -223,6 +225,7 @@ All caught in `Bootstrap::pullUp()` → forwarded to `ExceptionHandler::handle()
 - When declaring a group in module config → MUST list it in `groupDefaults` with its default controller (NotFoundException on convention URL otherwise)
 - When constructing a backend URL in templates or JS → MUST use the 4-segment form `/{module}/{group}/{controller}/{action}` (e.g. `/backend/system/login/login`); MUST NOT use the old 3-segment form
 - When registering a framework-owned structural delivery URL (e.g. `/media`) → MUST declare it as a reserved route (`reservedRoutes` in the module config, prefix → 4-tuple); MUST NOT seed a phantom navigation node + alias for it. The prefix MUST be unique across all modules (fail-fast otherwise)
+- When declaring a session-less API route → MUST set `'stateless' => true` on the reserved-route target; its actions MUST NOT carry `#[Fetch]`/`#[Page]` (mode-agnostic) and MUST NOT resolve session-bound services (unregistered on that path — see [`bootstrap.md`](bootstrap.md))
 - When handling a Fetch request → MUST skip navigation lookup; MUST use convention routing. Reserved routes are the exception — they are matched before the Fetch short-circuit (a reserved URL reached via `<img src>` is Fetch mode), so a reserved delivery URL MUST NOT rely on Page mode
 - When a path segment contains `.` → MUST throw `FileNotFoundException` (static file detection)
 - When an action accepts only a specific HTTP method or mode → SHOULD declare it via `#[Fetch]` / `#[Page]` / `#[HttpMethod(...)]`; MUST NOT duplicate the check with `if (!isPost())` inside the action

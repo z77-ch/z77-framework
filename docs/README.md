@@ -55,6 +55,8 @@ Structure is enforced by `npm run docs:check` ([docs-lint/STANDARD.md](../docs-l
 
 | You are working on / keywords | Read |
 |---|---|
+| alert, alarm, outage notification, operator mail/SMS, escalation, monitoring signal | [topics/alert.md](topics/alert.md) |
+| API, /api, module-api, bearer key, tenant key, stateless route, ApiKeyGuard, JSON endpoint, data broker | [topics/api.md](topics/api.md) |
 | backend, dashboard, service panel, user preferences, system pages | [topics/backend.md](topics/backend.md) |
 | backup, restore, z77-backup CLI | [topics/backup.md](topics/backup.md) |
 | content block types | [topics/block-types.md](topics/block-types.md) |

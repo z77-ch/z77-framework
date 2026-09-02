@@ -2,6 +2,8 @@
 
 namespace Z77\Module\Member\Services;
 
+use Z77\Shared\Throttle\FileThrottle;
+
 /**
  * Per-address throttle for registration and resend (B7 spec default:
  * 5 attempts per e-mail address and hour). File-based, one counter file per
@@ -9,6 +11,10 @@ namespace Z77\Module\Member\Services;
  * files themselves being tiny. Complements FormGuard, which throttles the
  * session: this one holds even when the attacker rotates sessions but hammers
  * one address.
+ *
+ * Since 2026-09-02 the counter mechanism lives in the shared
+ * {@see FileThrottle} (also used by the API rate limit); this class keeps the
+ * member-specific buckets, keys, and limits.
  *
  * Two buckets share the mechanism (B7 v1.1.0):
  *
@@ -27,11 +33,14 @@ final class MemberThrottle
     /** B7 v1.1.0 spec default: invitations per project reference and day. */
     public const MAX_INVITES_PER_DAY = 10;
 
+    private FileThrottle $counter;
+
     public function __construct(
-        private string $dir,
+        string $dir,
         private int $limit = self::MAX_PER_HOUR,
         private int $windowSeconds = 3600,
     ) {
+        $this->counter = new FileThrottle($dir);
     }
 
     /**
@@ -58,7 +67,7 @@ final class MemberThrottle
     /** True while the address stays under the limit for the current window; counts the attempt. */
     public function allow(string $email, ?int $now = null): bool
     {
-        return $this->count('addr:' . mb_strtolower(trim($email)), $this->limit, $this->windowSeconds, $now);
+        return $this->counter->allow('addr:' . mb_strtolower(trim($email)), $this->limit, $this->windowSeconds, $now);
     }
 
     /**
@@ -68,7 +77,7 @@ final class MemberThrottle
      */
     public function allowTenant(string $tenantRef, int $limit = self::MAX_INVITES_PER_DAY, ?int $now = null): bool
     {
-        return $this->count('tenant:' . $tenantRef, $limit, 86400, $now);
+        return $this->counter->allow('tenant:' . $tenantRef, $limit, 86400, $now);
     }
 
     /**
@@ -79,13 +88,8 @@ final class MemberThrottle
      * which walks straight past a per-address counter. Both are needed; either
      * alone has an obvious way around it.
      *
-     * ⚠️ IPv6 is cut to its /64 prefix before hashing. A per-address count
-     * would hand an attacker 2^64 fresh counters out of one ordinary home
-     * prefix, i.e. no limit at all. IPv4 counts whole. Same reasoning and same
-     * shape as the B5 submission gate.
-     *
-     * ⚠️ $ip must come from REMOTE_ADDR. A throttle keyed on a header the
-     * caller sets is a throttle the caller switches off.
+     * IPv6 /64 normalization and the REMOTE_ADDR caveat: see
+     * {@see FileThrottle::normalizeIp()}.
      */
     public function allowIp(string $ip, int $limit, ?int $now = null): bool
     {
@@ -97,53 +101,12 @@ final class MemberThrottle
             return true;
         }
 
-        return $this->count('ip:' . $normalised, $limit, $this->windowSeconds, $now);
+        return $this->counter->allow('ip:' . $normalised, $limit, $this->windowSeconds, $now);
     }
 
     /** IPv6 → its /64 prefix, IPv4 → itself, anything unparseable → null. */
     public static function normalizeIp(string $ip): ?string
     {
-        $packed = @inet_pton(trim($ip));
-        if ($packed === false) {
-            return null;
-        }
-
-        if (strlen($packed) === 16) {
-            // Keep the first 8 bytes, zero the rest — one counter per /64.
-            $packed = substr($packed, 0, 8) . str_repeat("\0", 8);
-        }
-
-        $back = @inet_ntop($packed);
-
-        return $back === false ? null : $back;
-    }
-
-    /**
-     * One counter file per key and window. The key is namespaced before
-     * hashing so the two buckets can never land on the same file — a project
-     * reference that happens to look like an address would otherwise share the
-     * registration counter.
-     */
-    private function count(string $key, int $limit, int $windowSeconds, ?int $now): bool
-    {
-        $now ??= time();
-        if (!is_dir($this->dir) && !mkdir($this->dir, 0755, true) && !is_dir($this->dir)) {
-            // Loud, not silent: behind a dangling var/lib symlink (release layout,
-            // shared/var/lib missing) mkdir fails and every counter write after it
-            // would be lost — the throttle would be off without anyone noticing.
-            throw new \RuntimeException("MemberThrottle: could not create counter directory {$this->dir}");
-        }
-
-        $window = intdiv($now, $windowSeconds);
-        $file   = $this->dir . '/' . hash('sha256', $key) . '-' . $window;
-
-        $count = is_file($file) ? (int)file_get_contents($file) : 0;
-        if ($count >= $limit) {
-            return false;
-        }
-
-        file_put_contents($file, (string)($count + 1), LOCK_EX);
-
-        return true;
+        return FileThrottle::normalizeIp($ip);
     }
 }
