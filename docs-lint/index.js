@@ -20,6 +20,14 @@ const TOPICS_DIR = path.join(ROOT, "docs", "topics");
  * Installed is decided by `skeleton/vendor`, the thing `composer install`
  * creates. Rebuild the tree with `composer install` inside `skeleton/` and the
  * paths are checked again with no change here.
+ *
+ * Even on an installed skeleton a missing RUNTIME path is ADVISORY, not a
+ * violation: some runtime files only come into being through an action beyond
+ * `composer install` — admin provisioning (`backendUsers.json`), the GeoIP
+ * download job (`GeoLite2-Country.mmdb`), hand-written feature config. Their
+ * existence depends on which features this machine has exercised, and a check
+ * that is red forever gets ignored. The linter reports them as notes and stays
+ * green; only SOURCE paths fail the run.
  */
 const SKELETON_PREFIX = "skeleton/";
 const skeletonInstalled = fs.existsSync(path.join(ROOT, "skeleton", "vendor"));
@@ -42,6 +50,7 @@ const ALLOWED_FENCE_LANGS = new Set([
 
 function lintFile(filePath) {
     const violations = [];
+    const advisories = [];
     const raw = fs.readFileSync(filePath, "utf-8");
     const lines = raw.split(/\r?\n/);
     const fileDir = path.dirname(filePath);
@@ -114,16 +123,16 @@ function lintFile(filePath) {
         }
     }
 
-    checkFileMap(lines, seen, violations);
+    checkFileMap(lines, seen, violations, advisories);
     checkRules(lines, seen, violations);
     checkSeeAlso(lines, headings, fileDir, violations);
     checkCodeFences(lines, violations);
     checkEmptySections(lines, headings, violations);
 
-    return violations;
+    return { violations, advisories };
 }
 
-function checkFileMap(lines, seen, violations) {
+function checkFileMap(lines, seen, violations, advisories) {
     if (seen["file map"] === null) return;
     const sectionLines = extractSection(lines, "file map");
     const sourceLines = sectionLines.filter(l => /^\s*(SOURCE|RUNTIME)\s*=\s*\S+/.test(l));
@@ -144,7 +153,10 @@ function checkFileMap(lines, seen, violations) {
         }
         const abs = path.join(ROOT, rel);
         if (!fs.existsSync(abs)) {
-            violations.push({
+            // RUNTIME files may legitimately be absent (created by a later
+            // action, not by `composer install`) — advisory. SOURCE files are
+            // repository content — their absence fails the run.
+            (kind === "RUNTIME" ? advisories : violations).push({
                 line: findLineInFile(lines, l),
                 msg: `${kind} path does not exist: \`${m[2]}\``
             });
@@ -288,10 +300,11 @@ function main() {
         .sort();
 
     let totalViolations = 0;
+    let totalAdvisories = 0;
     let cleanFiles = 0;
 
     for (const file of files) {
-        const violations = lintFile(file);
+        const { violations, advisories } = lintFile(file);
         if (violations.length === 0) {
             cleanFiles++;
             console.log(`OK  ${relPath(file)}`);
@@ -303,13 +316,18 @@ function main() {
                 console.log(`     ${relPath(file)}${loc}  ${v.msg}`);
             }
         }
+        totalAdvisories += advisories.length;
+        for (const a of advisories) {
+            const loc = a.line > 0 ? `:${a.line}` : "";
+            console.log(`     note ${relPath(file)}${loc}  ${a.msg} (advisory — created at runtime, not by composer install)`);
+        }
     }
 
     console.log("");
     if (skippedRuntimePaths > 0) {
         console.log(`note: skeleton not installed — ${skippedRuntimePaths} RUNTIME path(s) skipped (composer install in skeleton/ to check them)`);
     }
-    console.log(`${cleanFiles}/${files.length} files clean, ${totalViolations} violations`);
+    console.log(`${cleanFiles}/${files.length} files clean, ${totalViolations} violations, ${totalAdvisories} advisories`);
 
     if (totalViolations > 0) process.exit(1);
 }

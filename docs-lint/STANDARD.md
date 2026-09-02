@@ -54,15 +54,22 @@ Required-section order is enforced. Optional sections may sit between.
 
 - Each line: `SOURCE=/absolute/path` or `RUNTIME=/absolute/path`.
 - Path begins with `/`, rooted at repo root.
-- All listed paths must exist on disk (linter checks).
+- Every `SOURCE=` path must exist on disk (linter check, hard — repository
+  files, their absence is a real defect).
 - `SOURCE=` for source-controlled files.
 - `RUNTIME=` for files generated/written at runtime (installed configs, data files).
-- A `RUNTIME=` path under `skeleton/` is only checked when the skeleton is
-  INSTALLED (`skeleton/vendor` present). That tree is a local dev installation
-  and is not in the repository — checking it on a fresh clone would fail for
-  everyone and say nothing about the docs. Skipped paths are counted and named
-  in the run's closing note; `composer install` inside `skeleton/` re-arms the
-  check with no change to the linter. `SOURCE=` is never skipped.
+- A missing `RUNTIME=` path is ADVISORY: the linter prints a note and stays
+  green. Some runtime files only come into being through an action beyond
+  `composer install` — admin provisioning (`backendUsers.json`), the GeoIP
+  download job (`GeoLite2-Country.mmdb`), hand-written feature config — so
+  their existence depends on which features the local machine has exercised,
+  and a check that is red forever gets ignored.
+- A `RUNTIME=` path under `skeleton/` is only checked at all when the skeleton
+  is INSTALLED (`skeleton/vendor` present). That tree is a local dev
+  installation and is not in the repository — checking it on a fresh clone
+  would print a note for everyone and say nothing about the docs. Skipped
+  paths are counted in the run's closing note; `composer install` inside
+  `skeleton/` re-arms the check with no change to the linter.
 
 ### `## mental model`
 
@@ -141,7 +148,7 @@ Enforced by `npm run docs:check`:
 | Required-section order correct | yes |
 | `## file map` contains ≥1 `SOURCE=/...` | yes |
 | Every `SOURCE=` path exists | yes |
-| Every `RUNTIME=` path exists | yes, unless it is under `skeleton/` and the skeleton is not installed — then skipped and counted |
+| Every `RUNTIME=` path exists | advisory (note, run stays green); under `skeleton/` with the skeleton not installed it is skipped and counted instead |
 | `## rules` items contain `MUST` / `MUST NOT` | yes |
 | Code blocks use ` ```{lang} ` fence (no indented blocks) | yes |
 | `## see also` Markdown links resolve to existing files | yes |
