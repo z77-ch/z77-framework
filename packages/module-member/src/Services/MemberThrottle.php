@@ -127,8 +127,11 @@ final class MemberThrottle
     private function count(string $key, int $limit, int $windowSeconds, ?int $now): bool
     {
         $now ??= time();
-        if (!is_dir($this->dir)) {
-            mkdir($this->dir, 0755, true);
+        if (!is_dir($this->dir) && !mkdir($this->dir, 0755, true) && !is_dir($this->dir)) {
+            // Loud, not silent: behind a dangling var/lib symlink (release layout,
+            // shared/var/lib missing) mkdir fails and every counter write after it
+            // would be lost — the throttle would be off without anyone noticing.
+            throw new \RuntimeException("MemberThrottle: could not create counter directory {$this->dir}");
         }
 
         $window = intdiv($now, $windowSeconds);

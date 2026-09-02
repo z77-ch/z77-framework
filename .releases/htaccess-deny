@@ -7,7 +7,9 @@
 # mistake serves credentials and personal data as plain files.
 #
 # Master copy: .releases/htaccess-deny (framework). switch.php writes it into
-# every shared store that lacks one. Copied verbatim, never edited.
+# every shared store that lacks one. The kernel ships a twin
+# (core/res/htaccess-deny) that the installer seeds into data/, config/ and
+# logs/ — keep the functional block identical. Copied verbatim, never edited.
 <IfModule mod_authz_core.c>
     Require all denied
 </IfModule>

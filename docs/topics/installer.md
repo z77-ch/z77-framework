@@ -12,6 +12,7 @@
 
 SOURCE=/packages/kernel/core/src/Installer/Install.php
 SOURCE=/packages/kernel/core/res/CLAUDE.project.md
+SOURCE=/packages/kernel/core/res/htaccess-deny
 SOURCE=/packages/kernel/core/cron/run.php
 SOURCE=/packages/kernel/core/src/Config/bootstrap.default.inc.php
 SOURCE=/packages/kernel/core/src/Config/moduleManager.default.inc.php
@@ -58,10 +59,11 @@ Runs as a Composer post-install/post-update hook. Reads `extra` config from `com
 | 15 | `writeDataFiles()` | seed `data/*.json` from EVERY installed framework package's data roots (skip if already exist; INST-SEED-001) |
 | 16 | `provisionAdmin()` | create admin (interactive) or write `SETUP_TOKEN` (non-interactive) — skip if `backendUsers.json` exists |
 | 17 | `writeDebugFlag()` | create/remove `var/state/debug.flag` per `debug` (release-local, ADR-035; creates `var/state/` if missing) |
-| 18 | `seedProjectClaudeMd()` | seed `CLAUDE.md` (project context for AI assistants) from the kernel template — **seed-once**, never overwritten |
-| 19 | `renderAssetDriftNotice()` | print the collected asset drift (step 4) as ONE coloured notice (ADR-025) |
-| 20 | `promptAssetDeploy()` | interactive-only, per-file, default-No deploy of drifted assets (ADR-026) |
-| 21 | `offerDocsInstall()` | opt-in `z77/docs` require-dev (interactive: ask, default **Yes**; non-interactive: print the manual command) — **last output of the run** |
+| 18 | `seedDenyFiles()` | seed a deny `.htaccess` (`Require all denied`, from `core/res/htaccess-deny`) into `data/`, `config/`, `logs/` — **seed-once**, existing files never touched, missing dirs skipped (INST-DENY-001) |
+| 19 | `seedProjectClaudeMd()` | seed `CLAUDE.md` (project context for AI assistants) from the kernel template — **seed-once**, never overwritten |
+| 20 | `renderAssetDriftNotice()` | print the collected asset drift (step 4) as ONE coloured notice (ADR-025) |
+| 21 | `promptAssetDeploy()` | interactive-only, per-file, default-No deploy of drifted assets (ADR-026) |
+| 22 | `offerDocsInstall()` | opt-in `z77/docs` require-dev (interactive: ask, default **Yes**; non-interactive: print the manual command) — **last output of the run** |
 
 ## frameworkPrefix filter
 
@@ -195,6 +197,26 @@ ADR-024/025's "never write into `public/`".
 - No manifest, nothing stored — the two on-disk trees (`vendor/…/res/assets` vs `public/assets/{name}`)
   are the whole truth. Zero maintenance.
 
+## deny .htaccess seed (INST-DENY-001)
+
+`seedDenyFiles()` seeds `core/res/htaccess-deny` (`Require all denied`) as `.htaccess` into
+`data/`, `config/` and `logs/` — the stores that must never be web-reachable. In the correct
+layout (document root = `public/`) Apache never reads these files; the day a panel
+misconfiguration or a project unpacked straight into htdocs puts the project root into the
+web, they turn `data/framework/auth/SETUP_TOKEN` (admin takeover), the password hashes and
+the mail credentials from URLs into 403s. Same alarm-not-fault philosophy as
+`.releases/htaccess-deny` (the release-layout twin, written into `shared/` stores by
+`deploy.php`/`switch.php`) — keep the functional blocks of the two files identical.
+
+- **Seed-once** — an existing `.htaccess` in any of the three stores is never touched.
+- **Never into a store served through `public/`** — a deny file inside `public/media`
+  (= `shared/media` in the release layout) would 403 every image. The fixed `DENY_DIRS`
+  list contains no such store; keep it that way.
+- Only effective where `.htaccess` is honoured (Apache + `AllowOverride`); on nginx or
+  `AllowOverride None` the correct document root remains the only defence.
+- A missing directory is skipped (`logs/` is config-driven); a missing template is a
+  reported packaging defect, not a fatal error.
+
 ## AI docs + project CLAUDE.md
 
 Two pieces make a fresh project immediately workable with an AI coding assistant:
@@ -246,6 +268,7 @@ Installer creates the override dirs, registers the module in `moduleManager.inc.
 - When seeding auth data → MUST NOT ship a working credential in any `*.default.json`; the admin is provisioned by `provisionAdmin()` (interactive prompt) or deferred via `SETUP_TOKEN` (non-interactive). MUST write the token under `data/`, never `public/`.
 - When changing the project context template (`core/res/CLAUDE.project.md`) → MUST keep the seeded `CLAUDE.md` seed-once; existing projects are never overwritten (the file belongs to the developer).
 - When touching the docs offer (`offerDocsInstall()`) → MUST keep the nested `composer require` interactive-only (non-interactive prints the manual command), MUST keep a failure non-fatal, and MUST keep `z77/docs` a require-dev dependency (docs never reach a `--no-dev` production deploy).
+- When touching the deny seed (`seedDenyFiles()` / `DENY_DIRS`) → MUST keep it seed-once, MUST NOT add a store served through `public/` (a deny file in `public/media` 403s every image — the measured axo3 incident), and MUST keep `core/res/htaccess-deny` functionally identical to `.releases/htaccess-deny`.
 
 ## known issues
 

@@ -48,10 +48,9 @@ class SystemController extends BackendAbstractController
         $newState = !file_exists($flag);
 
         if ($newState) {
-            @mkdir(dirname($flag), 0775, true);
-            touch($flag);
+            $this->createFlag($flag);
         } else {
-            unlink($flag);
+            $this->removeFlag($flag);
         }
 
         DI::getCacheManager()->clearAllApcu();
@@ -126,10 +125,9 @@ class SystemController extends BackendAbstractController
         $newState = !file_exists($flag);
 
         if ($newState) {
-            @mkdir(dirname($flag), 0775, true);
-            touch($flag);
+            $this->createFlag($flag);
         } else {
-            unlink($flag);
+            $this->removeFlag($flag);
         }
 
         // Cached frontend pages bake the robots meta in — drop them so the new state serves.
@@ -140,5 +138,28 @@ class SystemController extends BackendAbstractController
         return $this->fetch()
             ->setStatus('success')
             ->setData(['noindex' => $newState]);
+    }
+
+    /**
+     * Creates a state flag, parent directory included — loud on failure: a
+     * swallowed mkdir/touch would flash "activated" while nothing on disk
+     * changed.
+     */
+    private function createFlag(string $flag): void
+    {
+        $dir = dirname($flag);
+        if (!is_dir($dir) && !mkdir($dir, 0775, true) && !is_dir($dir)) {
+            throw new \RuntimeException("Failed to create state directory: {$dir}");
+        }
+        if (!touch($flag)) {
+            throw new \RuntimeException("Failed to create flag: {$flag}");
+        }
+    }
+
+    private function removeFlag(string $flag): void
+    {
+        if (!unlink($flag)) {
+            throw new \RuntimeException("Failed to remove flag: {$flag}");
+        }
     }
 }

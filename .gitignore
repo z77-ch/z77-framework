@@ -44,3 +44,5 @@
 # runtime backup archives (BackupService test runs)
 /skeleton/backup/
 /skeleton/server.log
+# seeded by the installer from the kernel template (seed-once, see installer.md)
+/skeleton/cron/
