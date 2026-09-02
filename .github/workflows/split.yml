@@ -13,6 +13,14 @@ on:
     tags:
       - '*'
 
+# A branch push together with a tag push (git push --follow-tags) starts TWO
+# runs that race each other into the same split repos — measured 2026-09-02:
+# the tag run won, the branch run's docs push was rejected ("cannot lock ref").
+# Queue the runs instead; never cancel (each must complete its propagation).
+concurrency:
+  group: packages-split
+  cancel-in-progress: false
+
 jobs:
   packages_split:
     runs-on: ubuntu-latest
