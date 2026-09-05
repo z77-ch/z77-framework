@@ -55,7 +55,7 @@ APCu is per process tree: PHP-FPM has one pool, every CLI run (cron, `z77-run`, 
 | Aspect | Detail |
 |---|---|
 | Skip conditions | DEBUG, session role >= ADMIN (CACHE-ADMIN-001), non-GET/HEAD, query string, Fetch mode, module policy `enabled=false`, `ttl <= 0` |
-| ETag | `filemtime` of cache file |
+| ETag | `filemtime` of cache file (an `int` — so the response carries `Last-Modified` too) |
 | Path | `var/cache/pages/{lang}/{module}/{group}/{controller}/{action}.html` — inside the release (ADR-035), never shared |
 | Failure | Dispatcher wraps `PageCache::set()` in try/catch — write failure must not kill request |
 | Diagnostic header | `X-Z77-PageCache: HIT \| MISS \| BYPASS` on every 200 response (304 omits — status code is the signal) |
@@ -172,8 +172,42 @@ if ($response instanceof HtmlResponse && !$response->hasFixedCacheMode()) {
 
 Nothing changes for a page that says nothing — that is every existing page.
 
+### an ETag is a time OR a hash
+
+`$etag` is `int|string`, and the type says which it is:
+
+| | int | string |
+|---|---|---|
+| Where from | the page cache's entry mtime | a controller that knows what its answer depends on |
+| Sent | `ETag` **and** `Last-Modified` | `ETag` alone |
+
+The distinction is the TYPE, not a guess at the value: `"1788604483"` is a
+perfectly valid hash, and `gmdate()` over a hash puts `Last-Modified`
+somewhere in 1970 — a header caches and tools do arithmetic with. The page
+cache keys on mtime and keeps both validators; a fragment whose freshness
+follows stored data (the axo3 widget) stamps a content hash and gets the
+ETag alone.
+
+### reading `If-None-Match` — one place, four doors
+
+`Etag::matches()` (`Core\Http\Response`) is the ONE reading of the header:
+RFC 7232's comma-separated list, the `*` wildcard, the `W/` weak prefix, and
+quoting. `Etag::header()` writes the value; only strong tags are emitted.
+
+Four doors used to answer that question themselves, each differently
+incomplete — `PageCachePolicy` (list, `*`, weak, but numeric tags only),
+`ApiResponder` (weak + quoting, no list, no `*`), `FileResponse` (one exact
+quoted string), and the axo3 widget (quote stripping and nothing else). A
+client sending what the RFC allows therefore got a 304 from one door and the
+whole body from the next.
+
+⚠️ A tag is **opaque**: `"007"` and `"7"` are different tags. The removed
+`PageCachePolicy` version compared them as numbers and matched.
+
 ## rules
 
+- When comparing a client's `If-None-Match` → MUST go through `Etag::matches()`; MUST NOT read the header or strip quotes in a door of its own (four incomplete readings, ETAG-ONE-001)
+- When stamping a response with an ETag that is a content HASH → MUST pass it as a `string`; an `int` declares a point in time and yields a `Last-Modified` date
 - When calling `DataCache::set()` → MUST NOT pass `null` as value (indistinguishable from miss)
 - When implementing a controller that writes via `PageCache::set()` → MUST be wrapped in try/catch by Dispatcher; write failure MUST NOT kill the request
 - When configuring a backend module → MUST set `'cache' => ['enabled' => false]`

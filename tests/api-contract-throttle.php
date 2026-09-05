@@ -47,6 +47,8 @@ spl_autoload_register(static function (string $class): void {
 use Z77\Core\Http\Response\ApiResponder;
 use Z77\Core\Http\Response\JsonResponse;
 use Z77\Module\Member\Services\MemberThrottle;
+use Z77\Core\Http\Response\Etag;
+use Z77\Core\Http\Response\HtmlResponse;
 use Z77\Shared\Api\ApiRequest;
 use Z77\Shared\Api\ApiResult;
 use Z77\Shared\Throttle\FileThrottle;
@@ -201,6 +203,51 @@ $check('F3 member: case/space folding still counts as one address', $m->allow(' 
 $check('F4 member: IPv6 /64 folding', MemberThrottle::normalizeIp('2001:db8:1:2:aaaa::1')
     === MemberThrottle::normalizeIp('2001:db8:1:2:bbbb::2'));
 $check('F5 member: unparseable IP → allow', $m->allowIp('not-an-ip', 1, $now));
+
+// ── G. Etag: the ONE reading of If-None-Match ────────────────────────────────
+//
+// Before this class four doors answered the same question differently
+// (PageCachePolicy, ApiResponder, FileResponse, and the axo3 widget). These
+// cases are the union of what the four used to handle — a form any one of
+// them dropped is a 200 where a 304 belonged.
+
+$check('G1 null header never matches',        Etag::matches(null, 'h') === false);
+$check('G2 empty header never matches',       Etag::matches('   ', 'h') === false);
+$check('G3 quoted',                           Etag::matches('"h"', 'h'));
+$check('G4 unquoted',                         Etag::matches('h', 'h'));
+$check('G5 weak prefix',                      Etag::matches('W/"h"', 'h'));
+$check('G6 wildcard matches anything',        Etag::matches('*', 'h'));
+$check('G7 comma list, hit in the middle',    Etag::matches('"a", W/"h", "z"', 'h'));
+$check('G8 comma list, no hit',               Etag::matches('"a", "b"', 'h') === false);
+$check('G9 int tag (page-cache mtime)',       Etag::matches('"1788604483"', 1788604483));
+$check('G10 a tag is opaque: "007" is not 7', Etag::matches('"007"', 7) === false);
+$check('G11 header value is quoted, strong',  Etag::header('h') === '"h"' && Etag::header(7) === '"7"');
+$check('G12 int = a time, string = a hash',   Etag::isTime(7) && !Etag::isTime('7'));
+
+// ── H. HtmlResponse: a hash ETag must not become a Last-Modified date ────────
+//
+// The page cache stamps an entry mtime (int) and wants both validators; a
+// controller that knows what its answer depends on stamps a content hash
+// (string) and must get the ETag ALONE — `gmdate()` over a hash puts the
+// header somewhere in 1970 and caches do arithmetic with it.
+//
+// CLI sends no headers, so the assertion is on the SOURCE: `Last-Modified`
+// appears exactly once, and inside the `isTime()` branch. ⚠️ No literal line
+// break in the pattern — this repo checks out with either line ending.
+
+$responseSrc = (string) file_get_contents(__DIR__ . '/../packages/kernel/core/src/Http/Response/HtmlResponse.php');
+$check('H1 Last-Modified is written in exactly one place',
+    substr_count($responseSrc, "header('Last-Modified") === 1);
+$guardPos = strpos($responseSrc, 'if (Etag::isTime(');
+$datePos  = strpos($responseSrc, "header('Last-Modified");
+$check('H2 … and only under the isTime() guard',
+    $guardPos !== false && $datePos !== false && $guardPos < $datePos
+    && !str_contains(substr($responseSrc, $guardPos, $datePos - $guardPos), '}'));
+
+$hashed = HtmlResponse::notModified('a1b2c3');
+$check('H3 a string ETag is accepted and kept', $readPrivate($hashed, 'etag') === 'a1b2c3');
+$timed = HtmlResponse::notModified(1788604483);
+$check('H4 an int ETag stays an int', $readPrivate($timed, 'etag') === 1788604483);
 
 // ── cleanup + result ─────────────────────────────────────────────────────────
 
