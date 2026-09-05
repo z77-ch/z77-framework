@@ -103,6 +103,21 @@ $r304 = ApiResponder::respond($request('"hash-1"'), ApiResult::payload(['big' =>
 $check('B5 304 body is empty', $captureBody($r304) === '');
 $check('B6 304 keeps the ETag header', ($readPrivate($r304, 'headers')['ETag'] ?? '') === '"hash-1"');
 
+// ── B'. ApiResponder: service headers ride on 200 and 304 ───────────────────
+
+$hinted = ApiResult::payload(['big' => 'bundle'], 'hash-1', ['X-Axo3-Retry-After' => '30']);
+$r = ApiResponder::respond($request(), $hinted);
+$check('B7 service header on 200', ($readPrivate($r, 'headers')['X-Axo3-Retry-After'] ?? '') === '30');
+$r = ApiResponder::respond($request('"hash-1"'), $hinted);
+$check('B8 service header on 304 too', $readPrivate($r, 'status') === 304
+    && ($readPrivate($r, 'headers')['X-Axo3-Retry-After'] ?? '') === '30');
+$r = ApiResponder::respond($request(), ApiResult::payload(['x' => 1], 'h', ['Cache-Control' => 'public', 'ETag' => 'forged']));
+$check('B9 envelope headers win over a service clash',
+    ($readPrivate($r, 'headers')['Cache-Control'] ?? '') === 'no-store'
+    && ($readPrivate($r, 'headers')['ETag'] ?? '') === '"h"');
+$r = ApiResponder::respond($request(), ApiResult::payload(['x' => 1], 'h'));
+$check('B10 no service header unless set', count($readPrivate($r, 'headers')) === 2);
+
 // ── C. ApiResponder: errors ──────────────────────────────────────────────────
 
 $r = ApiResponder::respond($request(), ApiResult::error('unknown_dataset', 404, 'No such dataset.'));

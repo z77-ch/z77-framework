@@ -61,7 +61,12 @@ unchanged (throttle falls back to `tenant:{id}`).
 
 Conditional GET: a service returns its payload with the content hash as ETag;
 the responder answers 304 when the client's `If-None-Match` matches — services
-never compare. Contract details (status codes, error codes, key rotation,
+never compare. A service may hand the responder its own wire headers
+(`ApiResult::payload($data, $etag, $headers)`, 2026-09-05): they ride on 200
+AND 304 — a hint that only lived in the body would be blind exactly when the
+client is current — and the responder sets `Cache-Control`/`ETag` after them,
+so the envelope's two can never be overridden. The framework does not read
+them (AXO3: `X-Axo3-Retry-After` while another process rebuilds the stock). Contract details (status codes, error codes, key rotation,
 `.htaccess` pass-through): the envelope doc, frozen after the zihlundsee pilot.
 
 - Consumers keep the snapshot pattern: SSR from the local snapshot, TTL
@@ -95,7 +100,7 @@ a disk risk on shared hosting: the flood itself must stop reaching the disk.
 ## rules
 
 - When adding an API endpoint → MUST implement `ApiServiceInterface` in project code and declare it under `apiServices` in the project's apiConfig override; MUST NOT add endpoint knowledge to the gateway
-- When returning from an API service → MUST return `ApiResult` (payload+etag or typed error); MUST NOT touch `header()`, echo, or session-bound services (unregistered on the stateless path — fail-fast)
+- When returning from an API service → MUST return `ApiResult` (payload+etag or typed error); MUST NOT touch `header()`, echo, or session-bound services (unregistered on the stateless path — fail-fast). A service header goes into `ApiResult::payload(…, $headers)`, named `X-<Project>-*`; MUST NOT name `Cache-Control`, `ETag` or `Retry-After` (envelope-owned; the first two are overwritten, the third belongs to errors)
 - When mapping an ApiResult to a response → MUST go through `ApiResponder`; MUST NOT hand-build the error body or status mapping anywhere else
 - When declaring the `/api` route → MUST set `stateless: true` and `cache.enabled: false` (all of `/api/*` shares ONE 4-tuple; the tenant is a header — D2 collision, [`routing.md`](routing.md))
 - When writing an API action or service → MUST NOT carry `#[Fetch]`/`#[Page]` attributes (API requests are mode-agnostic)
