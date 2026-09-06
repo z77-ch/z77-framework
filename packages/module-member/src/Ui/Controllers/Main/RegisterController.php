@@ -7,6 +7,7 @@ use Z77\Core\DI,
     Z77\Core\Http\Response\JsonResponse,
     Z77\Core\Http\Response\RedirectResponse,
     Z77\Module\Member\Entities\MemberAccount,
+    Z77\Module\Member\Entities\MemberToken,
     Z77\Module\Member\Services\InvitationFlow,
     Z77\Module\Member\Ui\Controllers\AbstractMemberController,
     Z77\Module\Member\Ui\Form\InviteFormDefinition,
@@ -102,6 +103,12 @@ class RegisterController extends AbstractMemberController
      * that page points at the person who invited, NOT at a resend: only the
      * master may renew an invitation, otherwise the recipient keeps his own
      * access to the reference alive.
+     *
+     * Two shapes behind a live link (ADR-037), decided by whether the invited
+     * address already has an account: a NAME FORM for a new account, or a
+     * YES/NO for a grant on the existing one. The decision is made again at
+     * submit time by the flow, from the store — the page only chooses what to
+     * show.
      */
     private function redeemInvitation(string $plainToken): HtmlResponse|RedirectResponse
     {
@@ -113,6 +120,10 @@ class RegisterController extends AbstractMemberController
                 'pageTitle'  => 'Einladung',
                 'invite'     => ['dead' => true],
             ] + $this->emptyFormContext());
+        }
+
+        if ($invites->existingAccountFor($token) !== null) {
+            return $this->redeemAsGrant($plainToken, $token);
         }
 
         $this->layoutManager->addJs('public-form', 'Z77\\Module\\Frontend', 'footer', true);
@@ -128,24 +139,70 @@ class RegisterController extends AbstractMemberController
             );
             $outcome = $result['outcome'];
 
-            // Only a real redemption leaves the form; the two failure outcomes
+            // Only a real redemption leaves the form; the failure outcomes
             // re-render this page with their message, because a PRG to the
-            // thank-you page would claim an account that does not exist.
-            return $outcome === InvitationFlow::REDEEMED;
+            // thank-you page would claim an account that does not exist. A
+            // GRANTED here means the address got an account between the page
+            // and the submit — the grant is real, so it leaves too.
+            return $outcome === InvitationFlow::REDEEMED || $outcome === InvitationFlow::GRANTED;
         };
 
         if ($form->process($onValid)) {
-            return $this->redirect('/member/main/register/danke?einladung=1');
+            return $this->redirect('/member/main/register/danke?einladung=1'
+                . ($outcome === InvitationFlow::GRANTED ? '&mandant=1' : ''));
         }
 
         return $this->html([
             'pageTitle' => 'Einladung annehmen',
             'invite'    => [
                 'dead'    => false,
+                'grant'   => false,
                 'email'   => (string)$token->getEmail(),
                 'outcome' => $outcome,
             ],
         ] + $form->viewContext());
+    }
+
+    /**
+     * The grant shape: «add this reference to your account?» — a POST with a
+     * yes and a no, no fields. Plain CSRF instead of the public-form handler:
+     * there is nothing to validate, throttle or log here, the link itself was
+     * the admission ticket.
+     *
+     * Not MEM-007's case (the grant grants nothing before our activation) —
+     * the POST is here so the person SEES and DECIDES what happens to his
+     * account, and can refuse.
+     */
+    private function redeemAsGrant(string $plainToken, MemberToken $token): HtmlResponse|RedirectResponse
+    {
+        $invites = $this->invites();
+        $request = DI::getRequest();
+        $outcome = null;
+
+        if ($request->isPost() && DI::getCsrfService()->validate((string)$request->getPostParameter('csrf_token'))) {
+            if ((string)$request->getPostParameter('decision') === 'decline') {
+                $invites->decline($plainToken);
+
+                return $this->redirect('/member/main/register/danke?einladung=1&abgelehnt=1');
+            }
+
+            $outcome = $invites->redeem($plainToken, null, null)['outcome'];
+            if ($outcome === InvitationFlow::GRANTED || $outcome === InvitationFlow::REDEEMED) {
+                return $this->redirect('/member/main/register/danke?einladung=1'
+                    . ($outcome === InvitationFlow::GRANTED ? '&mandant=1' : ''));
+            }
+        }
+
+        return $this->html([
+            'pageTitle' => 'Einladung annehmen',
+            'invite'    => [
+                'dead'       => false,
+                'grant'      => true,
+                'email'      => (string)$token->getEmail(),
+                'tenantName' => $invites->tenantLabelFor((string)$token->getTenantRef()),
+                'outcome'    => $outcome,
+            ],
+        ] + $this->emptyFormContext());
     }
 
     /**
@@ -205,11 +262,18 @@ class RegisterController extends AbstractMemberController
     /** PRG target — the confirmation is a page, not a session flag. */
     protected function dankeAction(): HtmlResponse
     {
-        $fromInvite = trim((string) DI::getRequest()->getGetParameter('einladung')) !== '';
+        $request    = DI::getRequest();
+        $fromInvite = trim((string) $request->getGetParameter('einladung')) !== '';
+        $declined   = trim((string) $request->getGetParameter('abgelehnt')) !== '';
 
         return $this->html([
-            'pageTitle'  => $fromInvite ? 'Zugang beantragt' : 'Registrierung erhalten',
+            'pageTitle'  => $declined ? 'Einladung abgelehnt' : ($fromInvite ? 'Zugang beantragt' : 'Registrierung erhalten'),
             'fromInvite' => $fromInvite,
+            // A grant (ADR-037): the person HAS a login already, so the page
+            // says «wait for the mail, then choose the tenant» rather than
+            // «wait for the mail, then sign in».
+            'fromGrant'  => $fromInvite && trim((string) $request->getGetParameter('mandant')) !== '',
+            'declined'   => $declined,
         ]);
     }
 

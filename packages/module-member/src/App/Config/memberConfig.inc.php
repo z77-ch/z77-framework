@@ -222,6 +222,11 @@ return [
                     'einladungWiderrufenAction'  => AuthRole::CUSTOMER,
                     'zugangPausierenAction'      => AuthRole::CUSTOMER,
                     'zugangEntfernenAction'      => AuthRole::CUSTOMER,
+                    // ADR-037 — the tenant choice of a signed-in person with
+                    // more than one granted tenant (the header's switcher
+                    // posts here). ⚠️ A project's whole-file override MUST
+                    // carry it too, or the switcher silently stops working.
+                    'mandantAction'              => AuthRole::CUSTOMER,
                 ],
             ],
         ],

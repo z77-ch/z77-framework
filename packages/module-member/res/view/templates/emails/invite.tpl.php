@@ -8,11 +8,18 @@
  * this mail: an invitation without both reads like spam, and a link in a mail
  * that reads like spam is one nobody clicks.
  *
+ * The page behind the link has two shapes (ADR-037), and the mail says which
+ * one awaits: a NAME for a new account, or a YES for adding the tenant to the
+ * account this address already has. `$known` is told to the recipient only —
+ * it is his own account, and the inviting master never learns it.
+ *
  * @var string $tenantName readable name of the project reference
  * @var string $inviter    name (or address) of the inviting account
  * @var string $inviteUrl
  * @var int    $validDays
+ * @var bool   $known      the invited address already has an account
  */
+$known = (bool)($known ?? false);
 ?>
 <p>Guten Tag</p>
 
@@ -21,11 +28,19 @@
     <strong><?= e($tenantName) ?></strong> mitzuarbeiten.
 </p>
 
+<?php if ($known): ?>
+<p>
+    Zu Ihrer E-Mail-Adresse besteht bereits ein Konto. Über den folgenden Link
+    fügen Sie diese Verwaltung als weiteren Mandanten hinzu — Ihr Konto, Ihre
+    Anmeldung und Ihre Geräte bleiben, wie sie sind:
+</p>
+<?php else: ?>
 <p>
     Über den folgenden Link richten Sie Ihren Zugang ein — Sie geben nur noch
     Ihren Namen an, Ihre E-Mail-Adresse ist durch diese Einladung bereits
     bestätigt:
 </p>
+<?php endif; ?>
 
 <p>
     <a href="<?= e($inviteUrl) ?>"
@@ -48,5 +63,5 @@
 
 <p>
     Falls Sie diese Einladung nicht erwartet haben, ignorieren Sie diese
-    E-Mail — ohne den Link entsteht kein Konto.
+    E-Mail — ohne den Link <?= $known ? 'ändert sich an Ihrem Konto nichts' : 'entsteht kein Konto' ?>.
 </p>

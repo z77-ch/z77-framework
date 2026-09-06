@@ -8,6 +8,7 @@ use Z77\Core\Http\Response\HtmlResponse;
 use Z77\Module\Member\Entities\MemberAccount;
 use Z77\Module\Member\Services\InvitationFlow;
 use Z77\Module\Member\Services\MemberAuth;
+use Z77\Module\Member\Services\MemberGrants;
 use Z77\Module\Member\Services\RegistrationFlow;
 
 /**
@@ -38,7 +39,10 @@ abstract class AbstractMemberController extends AbstractBaseController
      */
     protected function html(array $context = []): HtmlResponse
     {
-        if (!array_key_exists('memberUser', $context) || !array_key_exists('memberTheme', $context)) {
+        $chrome  = ['memberUser', 'memberTheme', 'memberTenant', 'memberTenants'];
+        $missing = array_filter($chrome, static fn(string $key): bool => !array_key_exists($key, $context));
+
+        if ($missing !== []) {
             $account = MemberAuth::create()->current();
 
             // array_key_exists, not ??=: a caller that deliberately passes
@@ -56,9 +60,21 @@ abstract class AbstractMemberController extends AbstractBaseController
                 $context['memberTheme'] = $account?->getTheme() ?? '';
             }
 
-            if (!array_key_exists('memberTenant', $context)) {
-                $context['memberTenant'] = $this->tenantLabel($account);
+            if (!array_key_exists('memberTenant', $context) || !array_key_exists('memberTenants', $context)) {
+                [$label, $choices] = $this->tenantChoice($account);
+                if (!array_key_exists('memberTenant', $context)) {
+                    $context['memberTenant'] = $label;
+                }
+                if (!array_key_exists('memberTenants', $context)) {
+                    $context['memberTenants'] = $choices;
+                }
             }
+        }
+
+        // Where the switcher sends one back after a choice: THIS page. The
+        // controller hands it in because the partial must not ask a service.
+        if (!array_key_exists('memberTenantBack', $context)) {
+            $context['memberTenantBack'] = DI::getRequest()->getRawRequestUri();
         }
 
         $this->addAreas($context);
@@ -67,22 +83,63 @@ abstract class AbstractMemberController extends AbstractBaseController
     }
 
     /**
-     * WHOSE data is on screen — the readable name of the account's project
-     * reference, for the header (Peter, 2026-08-14: one has to be able to see
-     * which tenant is loaded).
+     * WHOSE data is on screen — the readable name of the tenant the account
+     * WORKS FOR, for the header (Peter, 2026-08-14: one has to be able to see
+     * which tenant is loaded) — and, since ADR-037, the list to choose from.
+     *
+     * Reads the SESSION'S CHOICE with the home as fallback
+     * (MemberGrants::activeTenantRef()), not the account's reference: an
+     * account may hold grants on further tenants, and the header names the
+     * one currently loaded. With exactly one granted tenant nothing changes —
+     * the label is a label, the list stays empty and no switcher renders.
+     * From two on, the list carries every granted tenant, active one marked.
      *
      * The module knows no tenants, so it asks the project: the same
      * `tenantLabelHook` the invitation mail and the backend account list use.
-     * No hook, no reference, no label — the header then simply carries nothing,
-     * which is right for a project whose accounts hang on nothing.
+     * No hook → no label for the single case (a project whose accounts hang on
+     * nothing shows nothing), but the switcher still has to name its entries,
+     * so there the bare reference stands in.
      *
      * ⚠️ Deliberately NOT the account's company field. That is what the person
      * typed at registration; the tenant name is what the installation actually
      * loaded, and when the two differ, the second one is the one worth seeing.
+     *
+     * @return array{0: string, 1: list<array{ref: string, label: string, active: bool}>}
      */
-    private function tenantLabel(?MemberAccount $account): string
+    private function tenantChoice(?MemberAccount $account): array
     {
-        $ref = trim((string)$account?->getTenantRef());
+        if ($account === null) {
+            return ['', []];
+        }
+
+        $grants  = MemberGrants::create();
+        $granted = $grants->grantedTenantRefs($account);
+        if ($granted === []) {
+            return ['', []];
+        }
+
+        $active = (string)$grants->activeTenantRef($account);
+        $label  = $this->tenantLabel($active);
+
+        if (count($granted) < 2) {
+            return [$label, []];
+        }
+
+        $choices = [];
+        foreach ($granted as $ref) {
+            $choices[] = [
+                'ref'    => $ref,
+                'label'  => $this->tenantLabel($ref) ?: $ref,
+                'active' => $ref === $active,
+            ];
+        }
+
+        return [$label ?: $active, $choices];
+    }
+
+    /** The project's readable name for a reference, '' without a hook or when it stumbles. */
+    private function tenantLabel(string $ref): string
+    {
         if ($ref === '') {
             return '';
         }

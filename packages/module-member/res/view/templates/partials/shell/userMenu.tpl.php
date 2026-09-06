@@ -26,18 +26,49 @@
  * account per tenant that was implicit; with invited accounts and a demo tenant
  * that can be switched to a real source, it is not. It sits at the left edge of
  * this cell — the reading eye starts there, and the cluster on the right stays
- * what it is: controls. Rendered as text, never as a switcher: the tenant comes
- * from the ACCOUNT, never from the request, and something clickable would
- * promise a choice that does not exist.
+ * what it is: controls.
+ *
+ * ── When it becomes a switcher (ADR-037) ──
+ * With ONE granted tenant it is text, as before: something clickable would
+ * promise a choice that does not exist. From two on it is a `<details>` whose
+ * summary is that same label, and whose panel holds one FORM per tenant — the
+ * choice is a POST (checked server-side against the granted set, then written
+ * to the session), never a link with a parameter, and it needs no script:
+ * `<details>` opens itself. The tenant still never comes from the request of a
+ * WORKING page; only this one write does, and it is the write that is checked.
  *
  * @var array{name:string,email:string,initials:string}|null $memberUser
  * @var string $memberTheme   display only — the switch reads the DOM
  * @var string $memberTenant  readable name of the loaded tenant, '' when none
+ * @var list<array{ref:string,label:string,active:bool}> $memberTenants  the
+ *      granted tenants — EMPTY unless there are at least two
+ * @var string $memberTenantBack  where the choice returns to (this page)
+ * @var string $csrfToken
  */
-$name = trim($memberUser['name'] ?? '');
+$name          = trim($memberUser['name'] ?? '');
+$memberTenants = $memberTenants ?? [];
 ?>
 <div class="me-shell__head-r">
-    <?php if (trim($memberTenant ?? '') !== ''): ?>
+    <?php if ($memberTenants !== []): ?>
+    <details class="me-tenant">
+        <summary class="me-shell__tenant me-tenant__summary" title="Verwaltung wechseln">
+            <span class="me-tenant__label"><?= e($memberTenant) ?></span>
+            <span class="me-tenant__caret" aria-hidden="true">▾</span>
+        </summary>
+        <div class="me-tenant__panel" aria-label="Verwaltung wählen">
+            <?php foreach ($memberTenants as $tenant): ?>
+            <form method="post" action="/member/main/profile/mandant" class="me-tenant__form">
+                <input type="hidden" name="csrf_token" value="<?= e($csrfToken ?? '') ?>">
+                <input type="hidden" name="mandant" value="<?= e($tenant['ref']) ?>">
+                <input type="hidden" name="back" value="<?= e($memberTenantBack ?? '') ?>">
+                <button type="submit"
+                        class="me-tenant__row<?= $tenant['active'] ? ' me-tenant__row--active' : '' ?>"
+                        <?= $tenant['active'] ? 'aria-current="true"' : '' ?>><?= e($tenant['label']) ?></button>
+            </form>
+            <?php endforeach; ?>
+        </div>
+    </details>
+    <?php elseif (trim($memberTenant ?? '') !== ''): ?>
     <span class="me-shell__tenant" title="Angezeigter Bestand"><?= e($memberTenant) ?></span>
     <?php endif; ?>
 

@@ -3,6 +3,7 @@
 namespace Z77\Module\Member\Services;
 
 use Z77\Module\Member\Entities\MemberAccount;
+use Z77\Module\Member\Entities\MemberGrant;
 use Z77\Persistence\Resolver\UnifiedEntityManager;
 
 /**
@@ -201,9 +202,24 @@ final class MemberAccounts
         $this->save($account);
     }
 
-    /** Reject / cleanup: the account disappears; mails are the caller's decision. */
+    /**
+     * Reject / cleanup / removal by the master: the account disappears; mails
+     * are the caller's decision.
+     *
+     * Its GRANTS go with it (ADR-037) — here, in the one method every deletion
+     * path ends in, so no path can forget: a grant without its account is a
+     * row that names nobody. The cleanup's orphan purge is the last instance
+     * behind this, not the first.
+     */
     public function delete(MemberAccount $account): void
     {
+        $id = (string)$account->getId();
+        if ($id !== '') {
+            foreach ($this->uem->getRepository(MemberGrant::class)->findBy(['account_id' => $id]) as $grant) {
+                $this->uem->remove($grant);
+            }
+        }
+
         $this->uem->remove($account);
         $this->uem->flush();
     }

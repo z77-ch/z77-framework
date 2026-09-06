@@ -25,6 +25,10 @@
  *      wants on that row (memberRowNotes()). Neutral seam: the module does not
  *      know what a project has to say about an account, only that a waiting
  *      decision is better made with it than without.
+ * @var list<array<string,mixed>> $grants  prepared grant rows (ADR-037,
+ *      memberGrantRowsPrepared()) — a SECOND section below the accounts, because
+ *      a grant is not a person: activating one attaches an EXISTING account of
+ *      another tenant, and the row must say both names. Empty = no section.
  */
 $badge = static fn(string $state): array => match ($state) {
     'confirmed' => ['badge--warning', 'bestätigt — wartet'],
@@ -37,6 +41,7 @@ $listTitle    = $listTitle  ?? 'Member-Konten';
 $listEmpty    = $listEmpty  ?? 'Keine Registrierungen vorhanden.';
 $tenantLabels = $tenantLabels ?? [];
 $rowNotes     = $rowNotes ?? [];
+$grants       = $grants ?? [];
 $tenantName   = static fn(string $ref): string => (string)($tenantLabels[$ref]['name'] ?? $ref);
 $tenantMaster = static fn(string $ref): string => (string)($tenantLabels[$ref]['master'] ?? '');
 ?>
@@ -123,4 +128,66 @@ $tenantMaster = static fn(string $ref): string => (string)($tenantLabels[$ref]['
             <?php endforeach; ?>
         </div>
     </div>
+
+    <?php if ($grants !== []): ?>
+    <?php /* Grants (ADR-037): an existing account of ONE tenant may work for
+             ANOTHER. Own section, own sentence — «hängt an X an» alone would
+             read like an invited account, and the difference is the decision:
+             here nothing is created and nobody is new, a person of customer A
+             gets a foot in customer B's door. Both names on the row. */ ?>
+    <div class="be-list__section">
+        <div class="be-list__section-header">
+            <h2 class="be-list__section-title">Zusätzliche Mandanten</h2>
+            <span class="be-list__section-badge"><?= count($grants) ?></span>
+        </div>
+        <div class="be-tree be-tree--hub">
+            <?php foreach ($grants as $grant): ?>
+            <div class="be-tree__node" style="--node-depth:0" data-grant-id="<?= e($grant['id']) ?>">
+                <div class="be-tree__row">
+                    <span class="be-tree__toggle" aria-hidden="true"></span>
+
+                    <span class="be-tree__name" data-field="email">
+                        <?= e($grant['email']) ?>
+                        <span style="font-size:.75rem;color:var(--be-muted,#94a3b8)"><?= e($grant['name']) ?></span>
+                    </span>
+
+                    <span class="be-tree__url" data-field="dates" style="font-size:.75rem;color:var(--be-muted,#94a3b8)">
+                        Konto bei <?= e($grant['homeName'] !== '' ? $grant['homeName'] : '—') ?>
+                        · angenommen <?= e(substr($grant['createdAt'], 0, 10)) ?>
+                        <?php if ($grant['activatedAt'] !== ''): ?>
+                        · freigeschaltet <?= e(substr($grant['activatedAt'], 0, 10)) ?>
+                        <?php endif; ?>
+                        <?php if ($grant['waiting']): ?>
+                        <br><strong>Freischaltung erlaubt diesem Konto zusätzlich «<?= e($grant['tenantName']) ?>»</strong>
+                            <?php if ($grant['inviter'] !== ''): ?>
+                        — eingeladen von <?= e($grant['inviter']) ?>
+                            <?php endif; ?>
+                        <?php else: ?>
+                        · zusätzlich «<?= e($grant['tenantName']) ?>»
+                        <?php endif; ?>
+                    </span>
+
+                    <span class="be-tree__route" data-field="state" style="display:inline-flex;gap:.5rem;align-items:center">
+                        <?php if ($grant['waiting']): ?>
+                        <span class="badge badge--warning">bestätigt — wartet</span>
+                        <?php elseif ($grant['suspended']): ?>
+                        <span class="badge badge--muted">pausiert</span>
+                        <?php else: ?>
+                        <span class="badge badge--success">aktiv</span>
+                        <?php endif; ?>
+                        <?php if ($grant['waiting']): ?>
+                        <button type="button" class="be-btn be-btn--sm"
+                                title="Zugang freischalten — kein neuer Mandant, kein neues Konto; sendet die Freischalt-Mail"
+                                data-fetch-get="<?= e($actionBase) ?>/confirm-grant-activate?id=<?= e(rawurlencode($grant['id'])) ?>">Freischalten</button>
+                        <?php endif; ?>
+                        <button type="button" class="be-btn be-btn--ghost be-btn--sm"
+                                title="Zugang entfernen — das Konto bleibt bestehen; ohne automatische Mail"
+                                data-fetch-get="<?= e($actionBase) ?>/confirm-grant-reject?id=<?= e(rawurlencode($grant['id'])) ?>"><?= $grant['waiting'] ? 'Ablehnen' : 'Entfernen' ?></button>
+                    </span>
+                </div>
+            </div>
+            <?php endforeach; ?>
+        </div>
+    </div>
+    <?php endif; ?>
 </div>

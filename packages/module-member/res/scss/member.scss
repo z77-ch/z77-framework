@@ -206,6 +206,99 @@ $fb-info-tint: $fb-bg;
         font-weight: 500;
         color: var(--text-2, #{$fb-text-2});
     }
+}
+
+// ── The tenant switcher (ADR-037) ──────────────────────────────────────────
+//
+// The label from above, as the summary of a <details>; the panel hangs under
+// it like the account panel does on the other edge, and holds one form per
+// granted tenant. No script: the element opens itself, the form posts. The
+// details takes over the label's `margin-right: auto`, because it is now the
+// thing that sits at the left edge of the cell.
+.me-tenant {
+    position: relative;
+    margin-right: auto;
+    min-width: 0;
+
+    &__summary {
+        display: flex;
+        align-items: center;
+        gap: 0.375rem;
+        margin-right: 0;      // the details carries the auto margin now
+        list-style: none;
+        cursor: pointer;
+
+        &::-webkit-details-marker {
+            display: none;
+        }
+
+        &:hover {
+            color: var(--text, #{$fb-text});
+        }
+    }
+
+    &__label {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    &__caret {
+        flex: 0 0 auto;
+        font-size: 0.75rem;
+        opacity: 0.7;
+    }
+
+    &[open] &__caret {
+        transform: rotate(180deg);
+    }
+
+    // Same box as .me-account__panel, anchored LEFT — it hangs under the label
+    // it belongs to and cannot leave the screen at the seam.
+    &__panel {
+        position: absolute;
+        top: calc(100% + 0.5rem);
+        left: 0;
+        z-index: 20;
+        min-width: 15rem;
+        padding: 0.5rem 0;
+        background: var(--surface, #{$fb-surface});
+        border: var(--rule, #{$fb-rule}) solid var(--line, #{$fb-line});
+        border-radius: var(--radius, #{$fb-radius});
+        box-shadow: var(--shadow, none);
+        font-size: 0.875rem;
+    }
+
+    &__form {
+        display: block;
+        margin: 0;
+    }
+
+    // A button that looks like the rows of the account panel: the choice is a
+    // POST, and a link would promise a GET that changes state.
+    &__row {
+        display: block;
+        width: 100%;
+        padding: 0.5rem 0.875rem;
+        border: 0;
+        background: none;
+        color: var(--text, #{$fb-text});
+        font: inherit;
+        text-align: left;
+        cursor: pointer;
+
+        &:hover {
+            background: var(--surface-2, #{$fb-bg});
+        }
+
+        &--active {
+            box-shadow: inset 2px 0 0 var(--accent, #{$fb-accent});
+            font-weight: 500;
+        }
+    }
+}
+
+.me-shell {
 
     // ── Row 2 — the area's action, and the page's tabs on the content line ──
     &__act,

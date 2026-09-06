@@ -4,6 +4,7 @@ namespace Z77\Module\Member\Jobs;
 
 use Z77\Core\DI;
 use Z77\Module\Member\Services\MemberAccounts;
+use Z77\Module\Member\Services\MemberGrants;
 use Z77\Module\Member\Services\PendingLogins;
 use Z77\Module\Member\Services\TokenService;
 use Z77\Shared\Jobs\Job;
@@ -18,11 +19,13 @@ use Z77\Shared\Jobs\JobResult;
  * as the `form-log-cleanup` job, not in this broom.)
  *
  * 'confirmed' accounts are NEVER touched — they wait for the operator's
- * activate/reject decision, however long that takes.
+ * activate/reject decision, however long that takes. The same holds for
+ * 'confirmed' GRANTS (ADR-037): the broom only takes a grant whose account
+ * no longer exists.
  *
- * Order matters: accounts go first, then tokens. `TokenService::purge()` is
- * given the ids that SURVIVED, so the tokens of a just-deleted account are
- * recognised as orphaned in the same run.
+ * Order matters: accounts go first, then tokens and grants. Both purges are
+ * given the ids that SURVIVED, so the tokens and grants of a just-deleted
+ * account are recognised as orphaned in the same run.
  *
  * ⚠️ Invitations (B7 v1.1.0) have no account by construction, and `purge()`
  * knows it — the orphan test applies only to tokens that carry one. An OPEN
@@ -60,14 +63,22 @@ final class MemberCleanupJob implements Job
         $survivingIds  = array_map(static fn($account) => (string) $account->getId(), $accounts->all());
         $deletedTokens = (new TokenService($uem))->purge($survivingIds);
 
+        // Grants (ADR-037), last instance: a grant whose account is gone.
+        // Deletion paths cascade already (MemberAccounts::delete()); this is
+        // the broom behind them. ⚠️ NO age test — a `confirmed` grant waits for
+        // the operator exactly like a `confirmed` account, and neither is a
+        // cron's to delete.
+        $deletedGrants = (new MemberGrants($uem))->purgeOrphans($survivingIds);
+
         $deletedPending = (new PendingLogins($uem))->purge();
 
         return JobResult::done(sprintf(
             '%d account(s) removed (never confirmed within %d days), %d dead token(s) purged, '
-            . '%d expired waiting login(s) dropped',
+            . '%d orphaned grant(s) dropped, %d expired waiting login(s) dropped',
             $deletedAccounts,
             $days,
             $deletedTokens,
+            $deletedGrants,
             $deletedPending
         ));
     }

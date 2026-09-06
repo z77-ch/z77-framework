@@ -28,6 +28,15 @@ final class MemberSession
     private const KEY_TOTP_REMEMBER = 'member.totpPendingRemember';
     private const KEY_PENDING_LOGIN = 'member.pendingLoginId';
 
+    /**
+     * ADR-037: the reference the signed-in account CHOSE to work for. Written
+     * only by MemberGrants::choose() after the check against the granted set;
+     * read only through MemberGrants::activeTenantRef(), which falls back to
+     * the home — this raw value may name a grant that has since been paused
+     * or removed, and the raw reader deliberately does not know.
+     */
+    private const KEY_ACTIVE_TENANT = 'member.activeTenantRef';
+
     public function __construct(private SessionManager $session)
     {
     }
@@ -41,11 +50,16 @@ final class MemberSession
      * harness too, where no DI container exists; `auth_user` is a plain
      * session key, and the rule is symmetric with MemberAuthBridge, which
      * clears THIS session when a backend login came last.
+     *
+     * The tenant choice is cleared here too: it belonged to whoever was signed
+     * in before, and a fresh sign-in (also the device-key resume) starts on
+     * the home. A choice must never survive an account switch.
      */
     public function start(string $accountId, ?int $now = null): void
     {
         $this->regenerate();
         $this->session->remove('auth_user');
+        $this->session->remove(self::KEY_ACTIVE_TENANT);
         $this->session->set(self::KEY_ACCOUNT, $accountId);
         $this->session->set(self::KEY_LAST_SEEN, $now ?? time());
     }
@@ -89,8 +103,29 @@ final class MemberSession
     {
         $this->session->remove(self::KEY_ACCOUNT);
         $this->session->remove(self::KEY_LAST_SEEN);
+        $this->session->remove(self::KEY_ACTIVE_TENANT);
         $this->clearTotpPending();
         $this->regenerate();
+    }
+
+    // ── the tenant choice (ADR-037) ────────────────────────────────────────
+
+    /** The raw choice, unvalidated — see the key's docblock; callers go through MemberGrants. */
+    public function activeTenantRef(): ?string
+    {
+        $ref = $this->session->get(self::KEY_ACTIVE_TENANT);
+
+        return is_string($ref) && $ref !== '' ? $ref : null;
+    }
+
+    public function setActiveTenantRef(?string $tenantRef): void
+    {
+        if ($tenantRef === null || $tenantRef === '') {
+            $this->session->remove(self::KEY_ACTIVE_TENANT);
+
+            return;
+        }
+        $this->session->set(self::KEY_ACTIVE_TENANT, $tenantRef);
     }
 
     // ── the TOTP interstitial (B8 stage B) ─────────────────────────────────

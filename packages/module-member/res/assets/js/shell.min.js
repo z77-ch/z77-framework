@@ -224,12 +224,14 @@
 
     // Removing asks back: one dialog serves the whole list, and the button
     // hands in which row it belongs to. A dialog per row would be the same
-    // markup as often as there are people.
+    // markup as often as there are people. A row may name ANOTHER dialog
+    // (`data-dialog`): a grant is removed with a different sentence than an
+    // account (ADR-037), and the sentence lives in the markup, not here.
     document.addEventListener('click', function (event) {
         var button = event.target.closest('[data-zugang-entfernen]');
         if (!button) { return; }
 
-        var dialog = document.getElementById('me-zugang-dialog');
+        var dialog = document.getElementById(button.dataset.dialog || 'me-zugang-dialog');
         if (!dialog || typeof dialog.showModal !== 'function') { return; }
 
         var field = dialog.querySelector('[data-zugang-konto]');

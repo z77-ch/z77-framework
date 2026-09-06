@@ -13,6 +13,7 @@ use Z77\Core\DI,
     Z77\Module\Member\Services\InvitationFlow,
     Z77\Module\Member\Services\MemberAccounts,
     Z77\Module\Member\Services\MemberAuth,
+    Z77\Module\Member\Services\MemberGrants,
     Z77\Module\Member\Services\Totp,
     Z77\Module\Member\Services\TotpSetup,
     Z77\Module\Member\Ui\Controllers\AbstractMemberController,
@@ -178,6 +179,23 @@ class ProfileController extends AbstractMemberController
                 // A confirmed account is one we have not activated yet — the
                 // master should see that the wait is OURS, not his.
                 'waiting'   => !$account->isActive(),
+                'grant'     => false,
+            ];
+        }
+
+        // The grants ON this tenant (ADR-037): people whose account lives at
+        // another tenant and who may work here too. Same row shape, same two
+        // handgrips — the id is the GRANT's, so pause/remove hit the
+        // permission and never the person.
+        foreach ($invites->grantsOf($master) as $row) {
+            $rows[] = [
+                'id'        => (string)$row['grant']->getId(),
+                'email'     => $row['account']->getEmail(),
+                'name'      => trim(($row['account']->getFirstName() ?? '') . ' ' . ($row['account']->getLastName() ?? '')),
+                'master'    => false,
+                'suspended' => $row['grant']->isSuspended(),
+                'waiting'   => !$row['grant']->isActive(),
+                'grant'     => true,
             ];
         }
 
@@ -328,7 +346,12 @@ class ProfileController extends AbstractMemberController
         );
     }
 
-    /** Removing an account deletes a person, not a state — POST with a confirmation. */
+    /**
+     * Removing an account deletes a person, not a state — POST with a
+     * confirmation. Removing a GRANT (same route, the id says which) deletes
+     * only the permission; the person keeps his account at his own tenant,
+     * and the flash has to say so — «das Konto ist entfernt» would be a lie.
+     */
     protected function zugangEntfernenAction(): RedirectResponse
     {
         $account = $this->master();
@@ -337,23 +360,69 @@ class ProfileController extends AbstractMemberController
         }
 
         $request = DI::getRequest();
+        $removed = null;
 
         if ($request->isPost()
             && DI::getCsrfService()->validate((string)$request->getPostParameter('csrf_token'))
-            && $this->invites()->remove($account, (string)$request->getPostParameter('konto'))
         ) {
-            $this->messageService->pushFlashAfterRedirect(
-                'success',
-                'Das Konto ist entfernt. Ihr Bestand und die übrigen Zugänge sind unberührt.'
-            );
-        } else {
-            $this->messageService->pushFlashAfterRedirect('error', 'Dieses Konto lässt sich hier nicht entfernen.');
+            $removed = $this->invites()->remove($account, (string)$request->getPostParameter('konto'));
         }
+
+        [$type, $text] = match ($removed) {
+            InvitationFlow::REMOVED_ACCOUNT => ['success',
+                'Das Konto ist entfernt. Ihr Bestand und die übrigen Zugänge sind unberührt.'],
+            InvitationFlow::REMOVED_GRANT => ['success',
+                'Der Zugang ist entfernt. Das Konto dieser Person bleibt bei ihrer eigenen Verwaltung bestehen.'],
+            default => ['error', 'Dieser Zugang lässt sich hier nicht entfernen.'],
+        };
+        $this->messageService->pushFlashAfterRedirect($type, $text);
 
         return $this->redirect(self::ZUGAENGE_URL);
     }
 
     private const ZUGAENGE_URL = '/member/main/profile?bereich=zugaenge';
+
+    /**
+     * The tenant choice (ADR-037): which of the granted tenants this session
+     * works for. A POST from the header's switcher, checked against the
+     * granted set by MemberGrants::choose() BEFORE it lands in the session —
+     * the working requests afterwards read only the session, never a
+     * parameter. It lives on the profile controller for the same reason the
+     * theme does: it is a setting of the signed-in person, and the header is
+     * only where one reaches it.
+     *
+     * Lands the person back where they stood (`back`, the page the switcher
+     * was on) — own paths only, so a forged form cannot send anyone off-site.
+     */
+    protected function mandantAction(): RedirectResponse
+    {
+        $account = MemberAuth::create()->current();
+        if ($account === null) {
+            return $this->redirect('/member/main/login');
+        }
+
+        $request = DI::getRequest();
+        $back    = (string)$request->getPostParameter('back');
+        if ($back === '' || $back[0] !== '/' || str_starts_with($back, '//')) {
+            $back = '/member/main/profile';
+        }
+
+        if (!$request->isPost() || !DI::getCsrfService()->validate((string)$request->getPostParameter('csrf_token'))) {
+            return $this->redirect($back);
+        }
+
+        $ref = trim((string)$request->getPostParameter('mandant'));
+        if (MemberGrants::create()->choose($account, $ref)) {
+            $this->messageService->pushFlashAfterRedirect(
+                'success',
+                'Sie arbeiten jetzt für «' . $this->invites()->tenantLabelFor($ref) . '».'
+            );
+        } else {
+            $this->messageService->pushFlashAfterRedirect('error', 'Diese Verwaltung steht Ihnen nicht zur Wahl.');
+        }
+
+        return $this->redirect($back);
+    }
 
     /**
      * Hell/dunkel — the one setting the shell's header can change without

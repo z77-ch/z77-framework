@@ -5,14 +5,18 @@
  * for the data-* contract the framework JS binds to) — member.css styles its
  * fe-* classes for this view-area.
  *
- * Three shapes in one file (B7 v1.1.0), because they are the same page with
- * different premises and a second template would drift from this one:
+ * Four shapes in one file, because they are the same page with different
+ * premises and a second template would drift from this one:
  *   $invite === null    the open registration
  *   $invite['dead']     a link that cannot be redeemed any more
- *   otherwise           redeeming an invitation
+ *   $invite['grant']    the invited address HAS an account — «add this tenant
+ *                       to it?», a yes/no POST (ADR-037)
+ *   otherwise           redeeming an invitation into a NEW account (name form)
  *
  * @var string $pageTitle
- * @var ?array $invite    null | ['dead'=>true] | ['dead'=>false,'email'=>…,'outcome'=>?string]
+ * @var ?array $invite    null | ['dead'=>true]
+ *                        | ['dead'=>false,'grant'=>false,'email'=>…,'outcome'=>?string]
+ *                        | ['dead'=>false,'grant'=>true,'email'=>…,'tenantName'=>…,'outcome'=>?string]
  * @var ?\Z77\Shared\Forms\PublicForm $form
  * @var array<string,array>  $fields
  * @var array<string,string> $errors
@@ -26,6 +30,8 @@ use Z77\Module\Member\Services\InvitationFlow;
 
 $isInvite = is_array($invite ?? null);
 $isDead   = $isInvite && ($invite['dead'] ?? false);
+$isGrant  = $isInvite && !$isDead && ($invite['grant'] ?? false);
+$taken    = $isInvite && (($invite['outcome'] ?? null) === InvitationFlow::ALREADY_TAKEN);
 ?>
 <div class="me-card">
 <?php if ($isDead): ?>
@@ -41,16 +47,41 @@ $isDead   = $isInvite && ($invite['dead'] ?? false);
         Ihnen eine neue Einladung schicken.
     </p>
 
-<?php elseif ($isInvite): ?>
+<?php elseif ($taken): ?>
     <h1 class="me-card__title">Einladung annehmen</h1>
-
-    <?php if (($invite['outcome'] ?? null) === InvitationFlow::ALREADY_TAKEN): ?>
+    <?php /* Home or grant, whatever state — the address is on this tenant
+             already. The link is consumed; nothing to do but sign in. */ ?>
     <p class="me-card__lead" role="alert">
-        Für diese E-Mail-Adresse besteht bereits ein Konto. Melden Sie sich mit
-        Ihrer Adresse an — diese Einladung wird nicht mehr gebraucht.
+        Ihre E-Mail-Adresse gehört bereits zu dieser Verwaltung. Melden Sie sich
+        einfach an — diese Einladung wird nicht mehr gebraucht.
     </p>
     <p class="me-card__aside"><a href="/member/main/login">Zur Anmeldung</a></p>
-    <?php else: ?>
+
+<?php elseif ($isGrant): ?>
+    <h1 class="me-card__title">Verwaltung hinzufügen?</h1>
+    <p class="me-card__lead">
+        Sie wurden eingeladen, für <strong><?= e((string)$invite['tenantName']) ?></strong>
+        mitzuarbeiten. Zu Ihrer Adresse <strong><?= e((string)$invite['email']) ?></strong>
+        besteht bereits ein Konto — es bleibt, wie es ist. Wenn Sie zustimmen,
+        kommt diese Verwaltung als weiterer Mandant hinzu, und Sie wählen nach
+        der Anmeldung, für wen Sie gerade arbeiten.
+    </p>
+    <p class="me-card__aside">
+        Wir prüfen den Zugang und schalten ihn frei; Sie erhalten dann eine
+        E-Mail. Sie können den Zugang jederzeit wieder ablegen — die Verwaltung,
+        die Sie eingeladen hat, kann ihn ebenso pausieren oder entfernen.
+    </p>
+
+    <?php /* One form, two buttons. `decision` decides; there is nothing else
+             to type. No JS — a POST with a name attribute is the whole of it. */ ?>
+    <form method="post" class="fe-form me-decision" novalidate>
+        <input type="hidden" name="csrf_token" value="<?= e($csrfToken) ?>">
+        <button class="fe-form__submit" type="submit" name="decision" value="add">Verwaltung hinzufügen</button>
+        <button class="fe-form__submit fe-form__submit--quiet" type="submit" name="decision" value="decline">Ablehnen</button>
+    </form>
+
+<?php elseif ($isInvite): ?>
+    <h1 class="me-card__title">Einladung annehmen</h1>
     <p class="me-card__lead">
         Sie wurden eingeladen, an einer bestehenden Verwaltung mitzuarbeiten.
         Geben Sie noch Ihren Namen an — Ihre E-Mail-Adresse ist durch die
@@ -74,7 +105,6 @@ $isDead   = $isInvite && ($invite['dead'] ?? false);
         'checkUrl'  => $checkUrl,
         'csrfToken' => $csrfToken,
     ], 'Z77\\Module\\Frontend') ?>
-    <?php endif; ?>
 
 <?php else: ?>
     <h1 class="me-card__title">Registrieren</h1>

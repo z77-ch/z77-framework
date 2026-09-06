@@ -150,10 +150,15 @@ $title = [
 
     <div class="me-units">
         <?php foreach ($rows as $row): ?>
+        <?php $isGrant = (bool)($row['grant'] ?? false); ?>
         <div class="me-unit">
             <span class="me-unit__name">
                 <?= e($row['email']) ?>
                 <?php if ($row['name'] !== ''): ?><span class="me-quiet">— <?= e($row['name']) ?></span><?php endif; ?>
+                <?php /* A grant (ADR-037): the person's account lives at another
+                         tenant; here only the permission is listed. Said in the
+                         row, because «Entfernen» means something else for it. */ ?>
+                <?php if ($isGrant): ?><span class="me-quiet">· Konto bei anderer Verwaltung</span><?php endif; ?>
             </span>
             <span class="me-unit__status">
                 <?php if ($row['master']): ?>Sie<?php
@@ -180,7 +185,8 @@ $title = [
                 <button type="button" class="me-btn me-btn--quiet"
                         data-zugang-entfernen
                         data-konto="<?= e($row['id']) ?>"
-                        data-label="<?= e($row['email']) ?>">Entfernen</button>
+                        data-label="<?= e($row['email']) ?>"
+                        data-dialog="<?= $isGrant ? 'me-grant-dialog' : 'me-zugang-dialog' ?>">Entfernen</button>
             </span>
             <?php endif; ?>
         </div>
@@ -191,7 +197,9 @@ $title = [
         Pausieren ist der leise Weg: Der Zugang ruht, das Konto behält seinen
         Zwei-Faktor-Schutz und seine Geräte, und Sie können ihn jederzeit wieder
         öffnen. Entfernen ist endgültig. Sie selbst stehen ohne beides in der
-        Liste — sonst stünde Ihre Verwaltung ohne Zugang da.
+        Liste — sonst stünde Ihre Verwaltung ohne Zugang da. Bei einer Person mit
+        Konto bei einer anderen Verwaltung betrifft beides nur den Zugang zu
+        Ihrer — ihr Konto bleibt, wo es ist.
     </p>
 
     <?php if ($offen !== []): ?>
@@ -246,6 +254,33 @@ $title = [
                 mit seinem Zwei-Faktor-Schutz und seinen Geräten. Das lässt sich
                 nicht rückgängig machen. Ihr Bestand und die übrigen Zugänge
                 bleiben unberührt.
+            </p>
+            <p class="me-quiet">
+                Soll der Zugang nur ruhen, schliessen Sie hier und stellen den
+                Schalter der Zeile aus.
+            </p>
+            <div class="me-dialog__actions">
+                <button type="button" class="me-btn me-btn--quiet" data-dialog-close>Abbrechen</button>
+                <button type="submit" class="me-btn">Entfernen</button>
+            </div>
+        </form>
+    </dialog>
+
+    <?php /* The same question for a GRANT (ADR-037), with the other answer: the
+             permission goes, the person's account does not — it lives at
+             another tenant. A second dialog rather than a sentence swapped by
+             script: the wording is the decision, and it must be right without
+             a line of JavaScript having run. */ ?>
+    <dialog class="me-dialog" id="me-grant-dialog" aria-labelledby="me-grant-dialog-title">
+        <form method="post" action="/member/main/profile/zugang-entfernen" class="me-dialog__form">
+            <input type="hidden" name="csrf_token" value="<?= e($csrfToken) ?>">
+            <input type="hidden" name="konto" value="" data-zugang-konto>
+            <h2 class="me-dialog__title" id="me-grant-dialog-title">Zugang entfernen</h2>
+            <p>
+                <strong data-zugang-label></strong> darf danach nicht mehr für
+                Ihre Verwaltung arbeiten. Das Konto dieser Person bleibt bei
+                ihrer eigenen Verwaltung bestehen — mit Zwei-Faktor-Schutz und
+                Geräten. Ihr Bestand und die übrigen Zugänge bleiben unberührt.
             </p>
             <p class="me-quiet">
                 Soll der Zugang nur ruhen, schliessen Sie hier und stellen den

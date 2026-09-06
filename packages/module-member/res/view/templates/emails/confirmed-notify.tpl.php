@@ -24,18 +24,26 @@
  * from being necessary: whatever a project has to say about this account says
  * it HERE, in the one mail that arrives when the operator can act.
  *
+ * A GRANT (ADR-037, `$invite['grant']`) is the third case: the address had an
+ * account already, nothing was created at all — an EXISTING account may
+ * additionally work for the tenant once we activate the grant.
+ *
  * @var \Z77\Module\Member\Entities\MemberAccount $account
- * @var array{tenantRef?:string, tenantName?:string, inviter?:string}|null $invite
+ * @var array{tenantRef?:string, tenantName?:string, inviter?:string, grant?:bool}|null $invite
  * @var array<string,string>|null $notifyRows  extra rows from the project
  */
 
 $invite ??= null;
 $notifyRows ??= [];
+$isGrant = $invite !== null && (bool)($invite['grant'] ?? false);
 ?>
-<?php if ($invite !== null): ?>
+<?php if ($isGrant): ?>
 <?php /* ⚠️ Beide Sätze bleiben je auf EINER Zeile: die Text-Fassung der Mail
          wird aus diesem Markup abgeleitet, und ein Zeilenumbruch mitten im Satz
          klebt dort die Wörter zusammen («Zugangwurde»). */ ?>
+<p><strong>Ein bestehendes Konto möchte zusätzlich für einen weiteren Mandanten arbeiten und wartet auf die Freischaltung.</strong></p>
+<p>Es entsteht weder ein Konto noch ein Mandant — der Zugang wird nur angehängt:</p>
+<?php elseif ($invite !== null): ?>
 <p><strong>Ein eingeladener Zugang wurde soeben angenommen und wartet auf die Freischaltung.</strong></p>
 <p>Es entsteht dabei kein neuer Mandant — das Konto hängt sich an einen bestehenden:</p>
 <?php else: ?>
@@ -75,10 +83,17 @@ $notifyRows ??= [];
         <td>Name</td>
         <td><?= e(trim(($account->getFirstName() ?? '') . ' ' . ($account->getLastName() ?? '')) ?: '—') ?></td>
     </tr>
+    <?php if (!$isGrant): ?>
     <tr data-str="new-line">
         <td>Bestätigt am</td>
         <td><?= e($account->getConfirmedAt() ?? '—') ?></td>
     </tr>
+    <?php else: ?>
+    <tr data-str="new-line">
+        <td>Heimat des Kontos</td>
+        <td><?= e((string)($invite['homeName'] ?? '') ?: '—') ?></td>
+    </tr>
+    <?php endif; ?>
     <?php /* Was das Projekt zu diesem Konto zu sagen hat — zuletzt, damit die
              Angaben des Moduls ihre feste Reihenfolge behalten. */ ?>
     <?php foreach ($notifyRows as $label => $value): ?>

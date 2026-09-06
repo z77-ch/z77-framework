@@ -4,7 +4,10 @@ namespace Z77\Module\Member\Ui;
 use Z77\Core\DI,
     Z77\Core\Http\Response\FetchResponse,
     Z77\Core\Http\Response\HtmlResponse,
+    Z77\Module\Member\Entities\MemberGrant,
+    Z77\Module\Member\Services\InvitationFlow,
     Z77\Module\Member\Services\MemberAccounts,
+    Z77\Module\Member\Services\MemberGrants,
     Z77\Module\Member\Services\RegistrationFlow,
     Z77\Persistence\Resolver\DataSourceResolver,
     Z77\Persistence\Resolver\UnifiedEntityManager,
@@ -36,6 +39,17 @@ trait AccountsControllerTrait
     private function memberFlow(): RegistrationFlow
     {
         return RegistrationFlow::create($this->memberAbsoluteUrl('/member/main/confirm'));
+    }
+
+    private function memberGrants(): MemberGrants
+    {
+        return new MemberGrants(new UnifiedEntityManager(new DataSourceResolver(['file' => 'File'])));
+    }
+
+    /** The invitation story — its grant handgrips (activate, reject) live there. */
+    private function memberInvites(): InvitationFlow
+    {
+        return InvitationFlow::create($this->memberAbsoluteUrl('/member/main/register'));
     }
 
     /** Mail links (activation, confirm) — origin from the configured canonical base URL, not the Host header. */
@@ -102,6 +116,19 @@ trait AccountsControllerTrait
         return [];
     }
 
+    /**
+     * The GRANTS this mount shows (ADR-037) — every one by default, waiting
+     * first. A narrowed mount decides for itself: a list of open registrations
+     * has no business showing grants and returns `[]`; a list of invitations
+     * shows exactly the waiting ones. Same reasoning as memberListRows().
+     *
+     * @return list<MemberGrant>
+     */
+    protected function memberGrantRows(): array
+    {
+        return $this->memberGrants()->all();
+    }
+
     protected function listAction(): HtmlResponse
     {
         // Waiting decisions first: confirmed accounts are the operator's queue.
@@ -117,10 +144,75 @@ trait AccountsControllerTrait
             // extract(..., EXTR_SKIP), and a context key that collides with an
             // existing variable is dropped WITHOUT a word.
             'rowNotes'     => $this->memberRowNotes($rows),
+            'grants'       => $this->memberGrantRowsPrepared($this->memberGrantRows()),
             'actionBase'   => $this->memberListBase(),
             'listTitle'    => $this->memberListTitle(),
             'listEmpty'    => $this->memberListEmpty(),
         ]);
+    }
+
+    /**
+     * Grant rows the template can print without knowing the store: the
+     * account behind the grant (a grant on a vanished account is skipped — the
+     * cleanup takes it), the tenant it attaches TO and the account's HOME by
+     * name, the state, and the id for the two handgrips. Waiting first.
+     *
+     * The home is named on purpose: the operator is about to let a person of
+     * one customer work for another, and that is the sentence he has to read
+     * before he does.
+     *
+     * @param  list<MemberGrant> $grants
+     * @return list<array{id:string, email:string, name:string, tenantName:string, homeName:string,
+     *               inviter:string, state:string, waiting:bool, suspended:bool, createdAt:string, activatedAt:string}>
+     */
+    private function memberGrantRowsPrepared(array $grants): array
+    {
+        $accounts = $this->memberAccounts();
+        $rows     = [];
+
+        foreach ($grants as $grant) {
+            $account = $accounts->findById($grant->getAccountId());
+            if ($account === null) {
+                continue;
+            }
+            $inviter = $accounts->findById((string)$grant->getInvitedBy());
+
+            $rows[] = [
+                'id'          => (string)$grant->getId(),
+                'email'       => $account->getEmail(),
+                'name'        => trim(($account->getFirstName() ?? '') . ' ' . ($account->getLastName() ?? '')),
+                'tenantName'  => $this->memberTenantName($grant->getTenantRef()),
+                'homeName'    => $this->memberTenantName(trim((string)$account->getTenantRef())),
+                'inviter'     => $inviter?->getEmail() ?? '',
+                'state'       => $grant->getState(),
+                'waiting'     => $grant->isConfirmed(),
+                'suspended'   => $grant->isSuspended(),
+                'createdAt'   => (string)$grant->getCreatedAt(),
+                'activatedAt' => (string)$grant->getActivatedAt(),
+            ];
+        }
+
+        usort($rows, static fn(array $a, array $b): int =>
+            [$a['waiting'] ? 0 : 1, $a['createdAt']] <=> [$b['waiting'] ? 0 : 1, $b['createdAt']]);
+
+        return $rows;
+    }
+
+    /** The project's readable name for a reference, or the bare reference. */
+    private function memberTenantName(string $ref): string
+    {
+        if ($ref === '') {
+            return '';
+        }
+        $hook = (string)DI::getConfigManager()
+            ->getArrayConfig('App/Config/memberConfig', self::MEMBER_NS)
+            ->get('tenantLabelHook', '');
+
+        try {
+            return $hook !== '' ? ((string)(new $hook())($ref) ?: $ref) : $ref;
+        } catch (\Throwable) {
+            return $ref;
+        }
     }
 
     /**
@@ -256,6 +348,101 @@ trait AccountsControllerTrait
         );
 
         return $this->fetch()->setStatus('success')->addCommand('close-modal')->addCommand('reload');
+    }
+
+    // ── grants (ADR-037) ───────────────────────────────────────────────────
+
+    /** Confirm modal for activating a grant — the last screen before a person of one customer may work for another. */
+    protected function confirmGrantActivateAction(): HtmlResponse|FetchResponse
+    {
+        return $this->memberGrantModal('confirmGrantActivate');
+    }
+
+    /** Confirm modal for rejecting a grant. */
+    protected function confirmGrantRejectAction(): HtmlResponse|FetchResponse
+    {
+        return $this->memberGrantModal('confirmGrantReject');
+    }
+
+    /**
+     * confirmed → active. ⚠️ NO activation hook — nothing is created, the
+     * account and the tenant both exist; the grant only ties them together.
+     * The person gets a mail (InvitationFlow::activateGrant()).
+     */
+    #[Fetch, HttpMethod('POST')]
+    protected function grantActivateAction(): FetchResponse
+    {
+        [$grant, $error] = $this->memberGrantFromPost();
+        if ($error !== null) {
+            return $error;
+        }
+        if (!$grant->isConfirmed()) {
+            return $this->fetchError('Nur wartende Zugänge können freigeschaltet werden');
+        }
+
+        $this->memberInvites()->activateGrant($grant, $this->memberAbsoluteUrl($this->memberEntryPath()));
+        $this->messageService->pushFlashAfterRedirect(
+            'success',
+            'Zugang zu «' . $this->memberTenantName($grant->getTenantRef()) . '» freigeschaltet — die Mail an den Kunden ist unterwegs.'
+        );
+
+        return $this->fetch()->setStatus('success')->addCommand('close-modal')->addCommand('reload');
+    }
+
+    /** The grant disappears; the account behind it stays where it lives. NO automatic mail. */
+    #[Fetch, HttpMethod('POST')]
+    protected function grantRejectAction(): FetchResponse
+    {
+        [$grant, $error] = $this->memberGrantFromPost();
+        if ($error !== null) {
+            return $error;
+        }
+
+        $this->memberInvites()->rejectGrant($grant);
+        $this->messageService->pushFlashAfterRedirect(
+            'success',
+            'Zugang zu «' . $this->memberTenantName($grant->getTenantRef()) . '» entfernt — das Konto bleibt bestehen, es wird keine automatische Mail versandt.'
+        );
+
+        return $this->fetch()->setStatus('success')->addCommand('close-modal')->addCommand('reload');
+    }
+
+    private function memberGrantModal(string $template): HtmlResponse|FetchResponse
+    {
+        $id    = trim((string)DI::getRequest()->getGetParameter('id'));
+        $grant = $id !== '' ? $this->memberGrants()->findById($id) : null;
+        $rows  = $grant === null ? [] : $this->memberGrantRowsPrepared([$grant]);
+        if ($rows === []) {
+            return $this->fetchError('Zugang nicht gefunden');
+        }
+
+        $response = $this->html([
+            'grant'      => $rows[0],
+            'entityCsrf' => DI::getCsrfService()->generateEntityToken('memberGrant', $id),
+            'actionBase' => $this->memberListBase(),
+        ]);
+        $this->layoutManager->addPartials($template, 'Backend/AccountsController', self::MEMBER_NS);
+
+        return $response;
+    }
+
+    /** @return array{0: ?MemberGrant, 1: ?FetchResponse} */
+    private function memberGrantFromPost(): array
+    {
+        $body = DI::getRequest()->getJsonBody();
+        $id   = trim((string)($body['grant_id'] ?? ''));
+        if ($id === '') {
+            return [null, $this->fetchError('Zugangs-Id fehlt')];
+        }
+        if (!DI::getCsrfService()->validateEntityToken(trim((string)($body['entity_csrf'] ?? '')), 'memberGrant', $id)) {
+            return [null, $this->fetchError('Invalid token')];
+        }
+        $grant = $this->memberGrants()->findById($id);
+        if ($grant === null) {
+            return [null, $this->fetchError('Zugang nicht gefunden')];
+        }
+
+        return [$grant, null];
     }
 
     // ── shared plumbing ────────────────────────────────────────────────────

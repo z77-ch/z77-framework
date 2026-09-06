@@ -63,9 +63,12 @@ $work       = !empty($railItems) || $actionList !== [];
     <div class="me-shell__seam"></div>
 
     <?= $this->partial('partials/shell/userMenu', [
-        'memberUser'   => $memberUser ?? null,
-        'memberTheme'  => $memberTheme ?? '',
-        'memberTenant' => $memberTenant ?? '',
+        'memberUser'       => $memberUser ?? null,
+        'memberTheme'      => $memberTheme ?? '',
+        'memberTenant'     => $memberTenant ?? '',
+        'memberTenants'    => $memberTenants ?? [],
+        'memberTenantBack' => $memberTenantBack ?? '',
+        'csrfToken'        => $csrfToken ?? '',
     ]) ?>
 
     <div class="me-shell__act">

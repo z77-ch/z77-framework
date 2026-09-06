@@ -1,6 +1,6 @@
 # member
 
-2026-09-01
+2026-09-06
 
 ## entry
 
@@ -15,12 +15,16 @@ SOURCE=/packages/module-member/src/Ui/Config/layoutConfig.inc.php
 SOURCE=/packages/module-member/src/Entities/MemberAccount.php
 SOURCE=/packages/module-member/src/Entities/MemberToken.php
 SOURCE=/packages/module-member/src/Entities/MemberPendingLogin.php
+SOURCE=/packages/module-member/src/Entities/MemberGrant.php
 SOURCE=/packages/module-member/src/Services/MemberAccounts.php
+SOURCE=/packages/module-member/src/Services/MemberGrants.php
 SOURCE=/packages/module-member/src/Services/TokenService.php
 SOURCE=/packages/module-member/src/Services/RegistrationFlow.php
+SOURCE=/packages/module-member/src/Services/InvitationFlow.php
 SOURCE=/packages/module-member/src/Services/LoginFlow.php
 SOURCE=/packages/module-member/src/Services/MemberAuth.php
 SOURCE=/packages/module-member/src/Services/MemberSession.php
+SOURCE=/packages/module-member/src/Jobs/MemberCleanupJob.php
 SOURCE=/packages/module-member/src/Services/MemberThrottle.php
 SOURCE=/packages/module-member/src/Services/PendingLogins.php
 SOURCE=/packages/module-member/src/Services/DeviceKeys.php
@@ -37,6 +41,7 @@ SOURCE=/packages/module-member/src/Ui/Controllers/Main/LoginController.php
 SOURCE=/packages/module-member/src/Ui/Controllers/Main/LogoutController.php
 SOURCE=/packages/module-member/src/Ui/Controllers/Main/ProfileController.php
 SOURCE=/packages/module-member/src/Ui/Form/RegisterFormDefinition.php
+SOURCE=/packages/module-member/src/Ui/Form/InviteFormDefinition.php
 SOURCE=/packages/module-member/src/Ui/Form/LoginFormDefinition.php
 SOURCE=/packages/module-member/src/Ui/Form/ResendFormDefinition.php
 SOURCE=/packages/module-member/src/Ui/AccountsControllerTrait.php
@@ -51,7 +56,16 @@ SOURCE=/packages/module-member/res/view/templates/emails/activated.tpl.php
 SOURCE=/packages/module-member/res/view/templates/emails/no-account.tpl.php
 SOURCE=/packages/module-member/res/view/templates/emails/existing-account.tpl.php
 SOURCE=/packages/module-member/res/view/templates/emails/confirmed-notify.tpl.php
+SOURCE=/packages/module-member/res/view/templates/emails/invite.tpl.php
+SOURCE=/packages/module-member/res/view/templates/emails/grant-activated.tpl.php
+SOURCE=/packages/module-member/res/view/templates/Main/RegisterController/indexAction.tpl.php
+SOURCE=/packages/module-member/res/view/templates/Main/RegisterController/dankeAction.tpl.php
 SOURCE=/packages/module-member/res/view/templates/Backend/AccountsController/listAction.tpl.php
+SOURCE=/packages/module-member/res/view/templates/Backend/AccountsController/confirmActivate.tpl.php
+SOURCE=/packages/module-member/res/view/templates/Backend/AccountsController/confirmGrantActivate.tpl.php
+SOURCE=/packages/module-member/res/view/templates/Backend/AccountsController/confirmGrantReject.tpl.php
+RUNTIME=/skeleton/data/framework/member/accounts.json
+RUNTIME=/skeleton/data/framework/member/grants.json
 SOURCE=/packages/module-member/res/view/templates/html-shell-skeleton.tpl.php
 SOURCE=/packages/module-member/res/view/templates/partials/shell/headLeft.tpl.php
 SOURCE=/packages/module-member/res/view/templates/partials/shell/userMenu.tpl.php
@@ -78,6 +92,8 @@ Customer accounts with a **passwordless** login, in their own view area — deli
 - **Device keys are revocable and capped.** The plaintext lives only in the device's cookie (`accountId.keyId.secret`), the account keeps its SHA-256; use rolls it forward 90 days. A deleted cookie leaves an entry nobody can recognise, so `DeviceKeys::MAX_KEYS` lets the longest-unused one give way.
 - **Two skeletons, and the signed-in one is a WORK AREA.** `html-default-skeleton` is the door (one centred card: login, register, confirm, waiting). `html-shell-skeleton` is the room behind it, and since 2026-08-12 it is ONE grid — three columns (list · seam · content) and three rows, with the shared `.z77-split` primitive inside row 3. A controller that passes `railItems` gets that shape; one that passes none keeps the old single-column page (`--plain`), so both live in one file. The header splits at the column edge: area name plus the four-square area switcher on the left, appearance switch, account panel and the mark on the right. Everything the shell shows is data the CONTROLLER hands in — `railItems`, `crumbs`, `shellAction`, `detailOpen` — and the areas themselves come from the `member-main` nav slot, derived once in `AbstractMemberController`.
 - **Anti-oracle is a design constraint, not a feature:** no page on register, resend or login differs by ACCOUNT STATE — known, unknown and never-confirmed all get the same answer, and only the mail differs. Login goes one step further and hides the throttle too (MEM-005): it always lands on the waiting page, which opens a record even when no link went out and then simply never turns green. Register and resend still surface a throttle as the form's send error — that says something about the visitor's own request rate, never about an account, and on those pages the honest "nothing was sent" is worth more than the symmetry.
+- **Several accounts on one project reference, always by invitation from the MASTER** (B7 v1.1.0, `InvitationFlow`): the first account of a reference — the registration we activated — is its master (`MemberAccount::$tenantRole`); it invites by address, pauses and removes. An invited account is born `confirmed` with the reference set (the click in the inbox was the verification), waits for our activation like any registration, and can do everything the master can EXCEPT invite. The section «Zugänge» in the profile exists only for the master — «not present, not forbidden».
+- **One account, several references — a HOME and GRANTS beside it (ADR-037, 2026-09-06).** `accounts.json` is untouched: an account keeps exactly one home (`tenantRef`). A `MemberGrant` (`grants.json`) says «this account may ADDITIONALLY work for that reference»; it is born `confirmed` when a KNOWN address redeems an invitation (the page asks «add this reference?», POST with decline), we activate it in the backend (NO activation hook — nothing is created), and `suspended_at` is the master's pause switch. `MemberGrants::grantedTenantRefs($account)` is the ONE source of the granted set (home first); `MemberGrants::choose()` checks a choice against it BEFORE writing `member.activeTenantRef`; `MemberGrants::activeTenantRef($account)` reads it back with the home as fallback — never «nothing». The header label becomes a `<details>` switcher from two references on (one form per entry, no script). **Ownership follows the home:** inviting, pausing, removing and the profile hook read `getTenantRef()`, never the choice — a grant confers no right to invite.
 
 ## flow
 
@@ -91,6 +107,13 @@ login request ─▶ waiting record + mail (link, check digits, context) │
                                                                                   ▼
                                                       [TOTP prompt if enabled] ─▶ session
                                                       (+ device key when ticked)
+
+master invites address ─▶ token + mail ─┬─ unknown address: name form ─▶ account `confirmed` (home = reference)
+                                        └─ known address: «add reference?» ─▶ grant `confirmed` (account untouched)
+                                                                                    │
+                                     operator activates (no hook) ─▶ grant `active` ─▶ header switcher (≥ 2 refs)
+                                                                                    │
+                                     session choice = member.activeTenantRef, checked by MemberGrants::choose()
 ```
 
 ## rules
@@ -112,6 +135,10 @@ login request ─▶ waiting record + mail (link, check digits, context) │
 - When adding a route to this module → MUST add it to BOTH the module config and any project override of that file, since the override wins whole. The same holds for a `jobs` entry and for any new SETTING: a whole-file override that omits one loses it silently, and nothing reports the loss (2026-08-24: the AXO3 override carried no `jobs` key at all, so `member-cleanup` did not exist on that installation).
 - When restricting member forms by origin country → the rule is NOT this module's: register and login opt into the kernel's `PublicFormHandler::withGeoGuard()` (register visible with `identityField 'email'` + the `origin` extra; login `silent: true`, MEM-005), and blocklist, log and backend surface live in the kernel (see [`forms.md`](forms.md)). MUST NOT read a `memberConfig['blockedCountries']` key — removed 2026-08-27, a leftover entry is silently ignored (GEOIP-003) — and MUST NOT re-introduce a gate in `RegistrationFlow`: the handler refuses before the flow runs.
 - When an action ends in a redirect → MUST land the user WHERE THEY STOOD before the action: the entry's `?key`, the section's `?bereich`, the list's filters — never the surface's default selection. A `#fragment` is not a selection (the server never sees it); the query parameter is. The one exception is deletion — what one stood on is gone, the list default is honest there. (Found 2026-08-15: saving widget entry three landed the rail on entry one; the profile's device/2FA actions dropped the person back on «Konto».)
+- When a project needs the reference an account is WORKING FOR (loading data, previews, writes) → MUST read `MemberGrants::create()->activeTenantRef($account)` (session choice, home fallback), MUST NOT read `getTenantRef()` for that — since ADR-037 the two differ for an account with grants. When a project needs the reference an account OWNS (inviting, renaming, «who is the master») → MUST read `getTenantRef()` and MUST NOT read the choice; a grant confers no ownership.
+- When a working request needs the acting reference → MUST take it from the session via `MemberGrants`, MUST NOT accept it as a request parameter; the only request that names a reference is the choice itself (`ProfileController::mandantAction`), and that one is checked against `grantedTenantRefs()` before it is written.
+- When a project deletes a project reference (AXO3: `TenantPurge`) → MUST call `MemberGrants::deleteForTenant($ref)` beside deleting the home accounts; the module cannot know a reference is gone, and the cleanup job only purges grants whose ACCOUNT is gone. MUST NOT expect the cleanup to age out `confirmed` grants — they wait for the operator like `confirmed` accounts.
+- When a project mounts a NARROWED backend list via `AccountsControllerTrait` → MUST decide `memberGrantRows()` for that mount (`[]` for a registrations list, the waiting ones for an invitations list); the default shows every grant, which is right only for the generic member-accounts mount.
 
 ## known issues
 
@@ -127,6 +154,10 @@ login request ─▶ waiting record + mail (link, check digits, context) │
 - **MEM-009:** don't assume a browser can hold both identities. One identity per browser (2026-08-07): `MemberSession::start()` drops `auth_user`, and `MemberAuthBridge` ends the member session (plus this browser's device key) when it finds a signed-in backend-realm `auth_user` — that combination can only mean the password door came last. Consequence to know: an admin signing in at the backend is logged out of the member area on this browser and loses «angemeldet bleiben» here; testing a customer account alongside an admin session needs a second browser profile. The reverse also holds — clicking a magic link ends the backend session.
 - **MEM-008:** don't assume a page view is read-only for a remembered device. `DeviceKeys::restore()` rolls the key and rewrites the whole `accounts.json` — but only where `MemberAuth::current()` finds NO session and resumes one, i.e. once per browser start or per 2-hour idle timeout, not per request. That is the same order of magnitude as a login, so it is a note, not a problem; it only matters if the idle window is ever shortened or the session cookie is dropped.
 - **MEM-012** — resolved 2026-08-27. The silence of MEM-005/MEM-010 had a victim nobody had named: the customer whose link went to the spam folder. He asks again, and again, walks into the limit at `loginRequestsPerHour` — and past it nothing is sent while the waiting page still reads «Keine E-Mail erhalten? Erneut anfordern». He waits for a mail that will never arrive, and the page that caused it invites him to cause it again. Fixed WITHOUT touching the silence: `LoginController::askedBefore()` reads `FormGuard::sendCount()` — how often THIS BROWSER asked this hour — and from the second request the waiting page replaces the «erneut anfordern» link with the advice that helps (spam folder · the NEWEST mail carries the valid link — `TokenService::issue()` devalues earlier ones · asking again only invalidates it once more). ⚠️ Why this is not an oracle: the count is about what the visitor just did and already knows; it names no account, no address and no limit. The throttle's VERDICT stays invisible, and the neutral lead of the page is byte-identical in both cases. Two accepted costs: a fresh private window every time never sees it (not the person this helps — and the address throttle holds anyway), and the count saturates at the limit, so it answers «asked again», never «how often». **No JavaScript** — the count is known at render time, which is why the earlier proposal of a 45-second fade-in was dropped: it guessed at the situation and needed a timer, while the counter reacts to the thing that actually happened.
+
+- **MEM-013:** don't assume the tenant choice survives a new session. `MemberSession::start()` clears `member.activeTenantRef` — deliberately, a choice must never survive an account switch — and the device-key resume (`MemberAuth::resume()`) goes through `start()` too, so a remembered device lands on the HOME after every browser start or idle timeout. Accepted (ADR-037): the switcher is one click, and a stale choice on a shared machine would be worse.
+- **MEM-014:** don't assume a grant's tenant still exists. The module knows no tenants; a project that deletes a reference without calling `MemberGrants::deleteForTenant()` leaves grants whose reference nobody answers for. `grantedTenantRefs()` then still lists the reference, the switcher shows the project's label for it (or the bare reference without a hook), and the project's own reader (AXO3 `TenantAccess::tenantFor()`) answers null. Not a framework fix — the deletion path is the project's (rule above).
+- **MEM-015:** don't assume the redemption page is anti-oracle. Behind a live invitation link it shows whether the invited address has an account (name form vs. yes/no) — to the holder of the link only, whose mailbox the link went to. The MASTER's outcome is `SENT` for a known and an unknown address alike; only «already on THIS reference» answers `ALREADY_TAKEN` (ADR-037).
 
 ## pending
 
@@ -145,6 +176,7 @@ login request ─▶ waiting record + mail (link, check digits, context) │
 - [`mail.md`](mail.md) — `EmailMessage`, templates and the email settings the mails go out through
 - [`view-layer.md`](view-layer.md) — the brand mark above every member page comes from the shared `partials/brandMark`; a project changes its logo by overriding that one file, not the member templates
 - [`../02-decisions/adr-029-member-session-and-framework-acl.md`](../02-decisions/adr-029-member-session-and-framework-acl.md) — why the two auth worlds are separate and what has to be decided before they meet
+- [`../02-decisions/adr-037-one-account-several-tenants-grants.md`](../02-decisions/adr-037-one-account-several-tenants-grants.md) — one account, several project references: grants beside the home, the checked session choice, and why ownership reads the home
 - [`../03-development/ideas/magic-link-passwordless-login.md`](../03-development/ideas/magic-link-passwordless-login.md) — the original idea this module realises
 - [`../03-development/member-login-security-review-2026-08-07.md`](../03-development/member-login-security-review-2026-08-07.md) — full read-through of the login for abuse; what holds and why, and the reasoning behind MEM-005…008
 - [`../03-development/member-mem-findings-bauplan.md`](../03-development/member-mem-findings-bauplan.md) — solution plan for MEM-001…008: what gets built, what stays a documented constraint, and in which order
