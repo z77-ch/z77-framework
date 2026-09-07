@@ -168,8 +168,9 @@ maintained in the Drive (edit modal → "Bildtexte", per language):
 ```
 
 To render a whole folder as a slider (all images of `front/slider/home/main`), list the folder's
-documents via the DMS API in the controller — `DocumentService::create()->listByFolder($id)` —
-and hand the slug paths to the template; the template stays on `mediaUrl`/`mediaImage`.
+documents via the DMS API in the controller — `DocumentService::create()->listByFolder($id)`, which
+returns them in the editor's order (`sortKey`, arranged by drag & drop in the Drive) — and hand the
+slug paths to the template AS IS (no re-sort by name); the template stays on `mediaUrl`/`mediaImage`.
 
 ### Do NOT
 

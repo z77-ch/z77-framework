@@ -155,8 +155,9 @@ purge is one directory removal. Images get **eager, config-profile-driven** deri
   rejected, see ADR-017; `FileResponse` has no `delivery`/`internalPath` parameters).
   Public serving is a **`deliveryMode`**, not a per-document flag (R5 removed `visibility`/
   `publicPath` + `publish`/`unpublish`): `OutputController` resolves the structural `/media`
-  path via `resolve()`, branches on `effectiveDeliveryMode()` — `public` served openly (also
-  materialized statically under `public/media/…`), `protected`/`sealed` gated by
+  path via `resolve()`, branches on `effectiveDeliveryMode()` — `public` served openly (and on a
+  static miss WRITTEN to `public/media/…` so the web server serves the next hit — lazy fill,
+  rev. 2026-09-07, DMS-MAT-001), `protected`/`sealed` gated by
   `AclService::canRead()` (effective READ + active chain) **before any byte**; any miss/denial
   → 404 (existence never leaked). Soft-deleted is never served.
 - **Two-phase save** (`SaveService`): the blob key is the document `id`, assigned only on
@@ -189,8 +190,9 @@ purge is one directory removal. Images get **eager, config-profile-driven** deri
   comes from a server-side `finfo` sniff, never the client content type.
 - Access is a `deliveryMode` + ACL model, not a location: all bytes live in `data/blobs`
   (outside `public/`); `protected`/`sealed` are always PHP-streamed through the service with an
-  `AclService` gate, `public` is additionally materialized statically under `public/media/…`
-  (regenerable copy, no own state). The structural `/media/<root-slug>/<folder-slug…>/<doc-slug>[.<variant>].<ext>`
+  `AclService` gate, `public` is additionally cached statically under `public/media/…` — a LAZILY
+  filled, regenerable copy (written by the `OutputController` on the first static miss, removed by
+  the mutations that stale it, no own state; rev. 2026-09-07). The structural `/media/<root-slug>/<folder-slug…>/<doc-slug>[.<variant>].<ext>`
   URL is resolved by `DocumentService::resolve()` — the first segment is simply the first
   folder-chain link (the partition root, ADR-020), not a `publicPath` lookup key or an area label.
 
@@ -202,6 +204,8 @@ purge is one directory removal. Images get **eager, config-profile-driven** deri
 - When moving or renaming a document or reparenting a folder → MUST change metadata only; MUST NOT move blob bytes (layout B — that is the whole point of id-addressing).
 - When saving or moving a document → MUST target a folder; a `null` `folderId` is rejected. Since ADR-020 the top-level folders ARE the partitions (real entities) — the old "non-entity area root" special case is gone; a document may live directly in a root folder. `SaveService::save` / `DocumentService::move` throw on a null folder; `resolve()` refuses a `/media/<file>` with no folder segment; `move` additionally requires `write` on the target folder.
 - When deleting → soft-delete MUST set `deletedAt` and MUST NOT remove bytes; a hard purge MUST respect `retentionUntil` and MUST call `BlobStorage::delete(id)` (which removes ALL variants at once). Implemented (2026-07-01): `DocumentService::delete` (soft) / `restore` (clear `deletedAt`, folder must exist) / `purge` (record + blob, retention-gated) / `listDeleted`; the Drive exposes them via the "Papierkorb" panel (`DriveController::trashAction`) — incl. «Papierkorb leeren» (`purgeAll` op, 2026-07-16: `<details>`-confirmed, loops the principal-scoped `listDeleted()` through the gated `purge()`, retention-blocked documents survive and are reported).
+- When a mutation changes a public document's PATH (folderId, slug), its BYTES (in-place replace) or its GATE (delete/restore, `active`, `deliveryMode` — on the document or on a folder) → MUST call `DocumentService::invalidateMaterialized($doc)` (document) / `invalidateMaterializedFolder($id)` (subtree) and MUST NOT rebuild `public/media`. The eager `rebuildMaterialization()` is GONE (rev. 2026-09-07, DMS-MAT-001): it re-copied EVERY public byte of the installation on EVERY mutation. Ordering: BEFORE a path/bytes change (the old location is derivable only then — `move`, folder `rename`/`move`, upload overwrite), AFTER the flush of a gate-only change (a lazy fill racing the write re-gates on the committed state — `delete`, `setActive`, `setDeliveryMode`, `setFolderActive`, `setFolderDeliveryMode`). The copy is refilled by `OutputController::serveAction` → `materialize($doc, $variant)` on the next static miss, exactly ONE variant per request; `materialize()` re-gates itself (not deleted + effectively `public` + active chain) and writes via temp file + rename. A NEW document/upload needs NO call (nothing is materialized yet); `restore` needs none either. MUST NOT add a warm-up/pre-fill job — the first visitor pays one PHP request per file, and that IS the design (ADR-017 rev. 2026-09-07). MUST NOT treat a file's presence under `public/media` as state: the whole tree may be wiped at any time and refills.
+- When listing the documents of a folder for ANY consumer (the Drive list, a slider, a gallery, a module) → MUST read them via `DocumentService::listByFolder($folderId)`, which returns the EDITOR'S order: `Document::$sortKey` ascending, id as the stable tie-breaker — never file/record order and never a re-sort by slug/name in the consumer (built 2026-09-07, DMS-SORT-001). `sortKey` is server-controlled (no `#[Clean]`): a new document is appended (`DocumentRepository::nextSortKey` — the single definition of "the end", used by `SaveService::save/saveFromUpload` and `DocumentService::move`), and it changes ONLY through `DocumentService::reorder($id, $newIndex)` (splice among the live siblings, dense renumber `0..n`, gated on `write` of the FOLDER — order is the folder's property and the renumber touches the siblings). Surface: the Drive list rows are server-rendered `draggable` and drive.js posts `{id, new_index, entity_csrf}` to `drive/sort` (`DriveControllerTrait::sortAction`, `#[Fetch]` + per-entity token, DMS-SEC-001 rule); `new_index` is the position among the OTHER rows, exactly like `BackendUserController::moveAction`. Rows persisted before the field existed read `0` and keep their id order — MUST NOT run a migration for that; a project that relied on a name order seeds it once (zihlundsee did, slider folders, 2026-09-07). MUST NOT expose `sortKey` in an edit form.
 - When adding image sizes → MUST define them as config-driven profiles consumed via `ImageProfileRegistry` (`module-dms` `Images`); MUST NOT hardcode a fixed variant set. When `showOriginal` (document) or `preserveOriginal` (profile) is set → MUST serve the original bytes untouched (only the 160px `admin.s` thumbnail is generated); MUST NOT reprocess through GD.
 - When a project needs image profiles (ADR-020 rev. 2026-07-13) → MUST define them in the project's DMS override config `override/z77/module/dms/src/App/Config/imageProfilesConfig.inc.php` (read via `ImageProfileRegistry::fromConfig()`; the framework ships none — a missing file = no project profiles), **two-level**: `partitionIdent => profileName => variantSpecs`, where the partition ident is the root folder's `key ?? slug`. The per-partition namespace is the collision safety (`front`'s `logo` ≠ `back`'s `logo`) — MUST NOT flatten it, MUST NOT name a profile `admin` (framework-fixed, built into `ImageProfileRegistry`), and MUST NOT resurrect the removed per-module `fromModules()` aggregation (a future module with programmatic saves defines its profiles under its partition key in this same file — module key = partition key).
 - When choosing WHICH profile an upload gets → the binding is the **folder assignment** `Folder::$profile` (inherited down the chain like `deliveryMode`), set ONLY via the gated `FolderService::setProfile()` (effective `manage`, validated against the partition's registry block, drive root refused; surface: the Drive's combined edit modal — the field renders only when the partition has profiles). The save path resolves AUTOMATICALLY when `SaveRequest.profile` is null (`SaveService::resolveProfile`): effective folder profile ?? the partition's reserved **`default`** profile ?? none (only `admin` variants) — deliberately LENIENT (a stale assignment falls back, never fails the upload); an EXPLICIT `SaveRequest.profile` stays strict (unknown → throw). The RESOLVED name is persisted on `Document.profile`. MUST NOT set `Folder::$profile` directly from a controller and MUST NOT expect new profile sizes to apply retroactively (variants are generated at save time only; reprocessing is a later phase).
@@ -274,6 +278,34 @@ purge is one directory removal. Images get **eager, config-profile-driven** deri
   [`../03-development/dms-upload-variants-review-2026-07-16.md`](../03-development/dms-upload-variants-review-2026-07-16.md).
   Affected zihlundsee docs 35/37/39 need delete + re-upload once fixed (variants are not retroactive).
 
+- **DMS-SORT-001 — built 2026-09-07 (zihlundsee: the slider sequence had to be encoded in filenames).** Don't
+  assume `listByFolder()` is unordered anymore — it IS the manual order (`sortKey`, see `## rules`), and a
+  consumer that re-sorts by slug silently discards what the editor arranged in the Drive. Mechanics mirror
+  the backend-user list (server-rendered `draggable` rows, `drive/sort` POST, DOM relocation on success, no
+  pane refresh). Known limits: HTML5 drag & drop is mouse/pointer only (no touch reorder — same as the
+  backend tree/user lists); `move()` appends at the end of the target folder and leaves a GAP in the old
+  group (dense renumbering happens on the next `reorder()` there — harmless, the sort is `[sortKey, id]`);
+  `reorder()` does not bump `updatedAt` (metadata order only — a consumer keying a cache on
+  `max(updatedAt)` must not depend on order, zihlundsee's slider CSS keys on the COUNT only). Verified:
+  CLI smoke (order, append, reorder renumbering under a SUPER_USER principal); the browser drag itself is
+  the developer's check.
+- **DMS-MAT-001 — resolved 2026-09-07 (zihlundsee: deleting 10 slider images took > 70 s).** Don't assume
+  a DMS mutation is cheap because it is metadata-only: until this fix EVERY public-relevant mutation
+  (delete/restore/purge/move/active/mode/upload/folder rename+move/`saveGenerated`) ended in
+  `rebuildMaterialization()` — wipe ALL partition dirs under `public/media`, then read every public
+  blob (original + all variants) into RAM and write it back. zihlundsee carries 824 files / 650 MB
+  there, and the bulk delete loops `delete()` per document → 10 × 650 MB of disk I/O for 10 images.
+  Fixed by turning `public/media` into a LAZILY filled cache: mutations only REMOVE the files they
+  stale (`invalidateMaterialized` / `invalidateMaterializedFolder`, a handful of unlinks), the
+  `OutputController` writes exactly the requested variant on a static miss (`materialize`, copy via
+  temp + rename, self-re-gated). `rebuildMaterialization()` / `writeMaterialized()` are removed;
+  see the `## rules` entry for the ordering (before a path change, after the flush of a gate change).
+  Deploy note: an existing `public/media` tree (a `shared/` dir in the release layout) stays a valid
+  cache — nothing to migrate, nothing to clear. Known residual: a public hit that reads a document
+  BEFORE a gate-change flush and writes AFTER the post-flush invalidation leaves a stale static file
+  (window = one JSON flush, milliseconds); the File driver has no locking to close it, and the next
+  mutation of that document or folder removes it. Also gone with the rebuild: the per-mutation
+  `driveRoot()` heal (ADR-021 stray adoption) — it still runs at `rootFolder`/`FolderService::add/move`.
 - **DMS-DIM-001** — resolved 2026-07-14. `mediaImage($path, $variant)` returned the ORIGINAL `width`/`height` regardless of the requested variant (`imageForPath()` read `$entry['width']`/`['height']` — the doc dims — and ignored `$variant`), so an `<img>` for a derivative got the original's dimensions (wrong aspect hint / CLS). Fixed: `imageForPath()` now takes the variant's own `w`/`h` from `variants[$variant]` (`ProcessedVariant::toMeta` `{w,h,bytes,ext}`) for a named derivative, and the document dims only for the original (`$variant === null`). `buildPublicUrl()` already returns `null` for an unknown variant, so the branch is safe. Verified: dimension-selection logic (null→original, `m`/`s`→variant dims); live check pending in the project.
 
 ## pending
@@ -294,8 +326,8 @@ purge is one directory removal. Images get **eager, config-profile-driven** deri
   `paneRefresh` success. v1 scope (user-approved): documents only, delete + move only; further ops
   dock onto the same bar later. Known limits: ids travel in the modal-GET query (very large
   selections → URL length; POST-modal flow is the escalation) and each loop iteration triggers the
-  usual per-mutation `rebuildMaterialization`/cache clear (acceptable backend-tool cost, revisit if
-  bulk sizes grow). **Nachtrag same day: „Papierkorb leeren“** — the trash panel gained a
+  usual per-mutation cache clear (the per-mutation FULL `rebuildMaterialization` that made a
+  10-image bulk delete take 70 s on zihlundsee is gone since 2026-09-07 — DMS-MAT-001). **Nachtrag same day: „Papierkorb leeren“** — the trash panel gained a
   JS-free `<details>`-confirmed `purgeAll` op (`trashAction`, now `#[Fetch]` — the op spans n
   documents, no per-entity token, DMS-SEC-001 rule; row ops keep their entity tokens): loops the
   principal-scoped `listDeleted()` through the existing gated `purge()` — retention-blocked
@@ -408,7 +440,7 @@ purge is one directory removal. Images get **eager, config-profile-driven** deri
   `?type=document|folder&id=` + `_acl` panel — list ACEs + revoke + grant form [subject role member/visitor
   or user id, rights read/write/manage]; self-refreshing: the POST returns the re-rendered panel as
   `text/html` so `popup.show` re-mounts it in place, no pane-refresh; reuses `grant`/`revoke`/`acesFor`,
-  admin bypass); **R6c core (setDeliveryMode + ACL) complete**; **public materialization done 2026-07-01**
+  admin bypass); **R6c core (setDeliveryMode + ACL) complete**; **public materialization done 2026-07-01** (eager rebuild — superseded 2026-09-07 by the lazy fill, DMS-MAT-001)
   (`DocumentService::rebuildMaterialization(area)` — idempotent full rebuild of `public/media/<area>` from
   blob+metadata for every live/active-chain/effectively-public doc at the `/media`-mirroring path;
   triggered after each public-relevant mutation; `isActiveChain` made public + `OutputController` public
@@ -614,7 +646,8 @@ purge is one directory removal. Images get **eager, config-profile-driven** deri
   `Principal::isSuperUser()` replaces `isAdmin()` (AclService bypass + `Authz::requireSuperUser`);
   installer/`SetupController`/skeleton dev user provision `roles: ['superUser']` (username stays
   `admin`); `Folder::DRIVE_KEY` + `FolderRepository::findDriveRoot()` + `DocumentService::driveRoot()`
-  (get-or-create + stray adoption, also run in `rebuildMaterialization`); partitions = root
+  (get-or-create + stray adoption; until 2026-09-07 also run on every mutation via
+  `rebuildMaterialization`, now only at its own callers — `rootFolder`, `FolderService::add/move`); partitions = root
   children (`findRoots`, `rootFolder` creates under the root, `rootIdOf`/`rootKeyOf` return the
   chain link BELOW the root); `resolve()`/`folderSlugPath()` skip the root segment (URLs
   unchanged); drive root locked (no docs — `SaveService::assertFolderTarget` + `move` guard;

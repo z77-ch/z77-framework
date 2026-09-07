@@ -3,6 +3,17 @@
 **Status:** `[APPROVED]` — supersedes ADR-016; scope model partly superseded by ADR-020
 **Date:** 2026-06-17 (revised 2026-06-20)
 
+> **Revision 2026-09-07 — materialization is a lazily filled cache, not an eager mirror.** The
+> `public/media` copy is still a regenerable projection of blob + metadata with no own state — but
+> it is no longer REBUILT on every mutation. The eager `rebuildMaterialization()` (wipe + re-copy
+> every public byte of the installation) made a 10-image bulk delete take > 70 s on a 650-MB
+> project (DMS-MAT-001). Now a mutation only REMOVES the files it makes stale
+> (`invalidateMaterialized` per document, `invalidateMaterializedFolder` per subtree), and the
+> `OutputController` WRITES the requested variant on the first static miss (`materialize`,
+> self-re-gated on public + active chain), so the next hit is static again. The first visitor after
+> an invalidation pays one PHP request per file — accepted, versus one full re-copy per mutation.
+> Everything below about the ladder, the static/PHP split and the projection property stands.
+
 > **Revision 2026-07-03 (see [ADR-021](adr-021-dms-drive-root-and-super-user-governance.md)).** The
 > **admin bypass becomes a SUPER_USER bypass**: the ACL shortcut ("admin → `manage` everywhere") now
 > applies only to `AuthRole::SUPER_USER` (level 100), not from `ADMIN` (80) upwards — an `admin` is a
@@ -225,7 +236,8 @@ policy.
 - **Materialization is a projection, not a second source.** Because the docroot copy is
   deterministically regenerable from blob + metadata and carries no own state, there is no sync
   conflict: a mode/`active` change adds or removes the materialization; an original change
-  re-writes it (live, not a snapshot).
+  re-writes it (live, not a snapshot). *Rev. 2026-09-07:* "adds" and "re-writes" happen lazily on
+  the next public hit; a mutation itself only removes.
 - **Structural `/media` + inheritance preserves ADR-016's core win.** Blobs stay id-addressed and
   move stays metadata-only; "folder public ⇒ children public" is just the public inheritance
   default. A denormalized `publicPath` would have reintroduced the N-write reparent problem ADR-016
@@ -245,7 +257,8 @@ policy.
   admin-bypass / ACE union over ancestors, subject `user|role`), the `deliveryMode` effective-mode
   + sealed-cap resolution, and the `active` gate — consulted only for protected/sealed delivery.
 - **New materialization job** in `shared`: idempotent publish/share/unpublish to `public/media/…`
-  and `public/share/<hash>/…`, regenerable from blob + metadata.
+  and `public/share/<hash>/…`, regenerable from blob + metadata. *Rev. 2026-09-07:* no job — lazy
+  fill on the first static miss + targeted invalidation on mutation.
 - **`DocumentService` is refactored:** drop `publish`/`unpublish`/visibility; add `setDeliveryMode`,
   ACL grant/revoke (user/role), ownership, `active` toggle, `share`/`unshare`, and a **structural
   `resolve(area, segments)`** (walk folder path → document, slug-based).
