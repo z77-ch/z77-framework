@@ -914,7 +914,13 @@ $fb-info-tint: $fb-bg;
 }
 
 // ── The detail side ───────────────────────────────────────────────────────
-.me-detail { padding: 0.5rem 1.5rem 2rem; max-width: 52rem; }
+// ⚠️ No max-width (removed 2026-09-11, decision of the framework owner). The
+// 52rem cap came with the work surface (2026-08-12), when a detail held short
+// field lists; it was never documented. A detail that lays out columns of its
+// own — a band navigator beside a form — was squeezed into 52rem with the rest
+// of the pane left empty. A view that wants a reading measure sets it on its
+// own content, not on the pane every area shares.
+.me-detail { padding: 0.5rem 1.5rem 2rem; }
 
 // The title sits in a box of the SAME height as a list row and is centred in
 // it — that is what puts it on one line with the first entry on the left.
