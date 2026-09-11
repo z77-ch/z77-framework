@@ -295,20 +295,29 @@ address in config:
 
 ## known issues
 
-- **MAIL-SPAM-001 — axo3 login mails flagged `[SPAM]` by cyon's gateway (2026-09-09).**
-  Cause chain: `PhpMailTransport` → local sendmail → `mail-gateway-shared01.cyon.net`
-  scores 6.7 (9.00 of it `RBL_AMI_NOIP` on cyon's OWN server IP) → prefixes `[SPAM]` to
-  the subject → the DKIM signature the same server just made (covers `Subject:`) is
-  broken → receiver: `dkim=fail`, `dmarc=fail (p=REJECT)`, phishing warning. cyon
-  confirmed (ticket open) and recommends SMTP submission instead of local injection.
-  **Header hygiene shipped 2026-09-11** (quoted-printable, `X-Mailer`, URL parity,
-  digits-first subject — 1.85 points, verified via ad-hoc harness: parity 2/2, QP
-  round-trip, 76-col). The token length (`KAM_LOTSOFHASH`, 0.25) stays at 64 hex —
-  not worth touching a reviewed security primitive. The hygiene lowers the score; it
-  does NOT address the RBL hit. Whether SMTP submission (`transport='smtp'`,
-  `mail.cyon.ch:465`) bypasses the gateway rewrite is an open MEASUREMENT — see
-  pending and the project handoff
-  `z77-axo3.ch/work/docs/handoff-axo3-smtp-2026-09-11.md`.
+- **MAIL-SPAM-001 — resolved 2026-09-11: on cyon, send via `transport='smtp'`, not `'mail'`.**
+  Cause chain (2026-09-09): `PhpMailTransport` → local sendmail → cyon's rspamd gateway
+  scores 6.7 (9.00 of it `RBL_AMI_NOIP` — a locally injected mail has no client IP) →
+  prefixes `[SPAM]` to the subject → the DKIM signature the server just made (covers
+  `Subject:`) is broken → receiver: `dkim=fail`, `dmarc=fail (p=REJECT)`, phishing
+  warning.
+  Fix, two parts shipped together: (1) SMTP submission (`mail.cyon.ch:465`, `ssl`,
+  authenticated as the From mailbox) — the gateway now sees `RCVD_VIA_SMTP_AUTH` and a
+  whitelisted last hop (`RWL_AMI_LASTHOP` −4.00) instead of `RBL_AMI_NOIP` +9.00;
+  (2) header hygiene in `MimeMessage` / `HtmlToText` / `LoginFlow` (quoted-printable,
+  `X-Mailer`, URL parity, digits-first subject — 1.85 points). Measured on a login mail
+  from axo3 release `2026-09-11-1150`: `X-Spam-Status: No, score=-5.0`, Gmail
+  `dkim=pass header.i=@axo3.ch`, `dmarc=pass`, no `[SPAM]` — and that across a
+  cyon-hosted forwarder (gateway passed twice). The two parts were not measured
+  separately; the SMTP swing (≈13 points) is what carries the margin, the hygiene alone
+  would have left ≈4.85. Remaining symbol: `KAM_LOTSOFHASH` (0.25, 64-hex token) — kept
+  deliberately, not worth touching a reviewed security primitive.
+  **Rule for every cyon project:** `transport='smtp'` with the From mailbox's
+  credentials. Project record: `z77-axo3.ch/work/docs/handoff-axo3-smtp-2026-09-11.md`.
+- **MAIL-TEXT-001 — `HtmlToText` swallows the space after an inline closing tag.** The
+  whitespace pass `(> )+` → `>` also eats the space in `</strong> Auf`, so the text part
+  reads «Vergleichen Sie zuerst:Auf» / «nicht?Dann» (seen in the 2026-09-11 login mail).
+  Inherited from the wdv-6.2.2 port; cosmetic, the HTML part is correct.
 - **MAIL-V2-001 — built 2026-07-18.** Backend-editable form-mail settings (see «form-mail
   settings v2» section): `EmailFormSetting` entity (incl. `active` flag) +
   `EmailSettingsController` (Service → E-Mail, navigation seed id 27) + entity-first
@@ -339,7 +348,7 @@ address in config:
   the file).
 - `PhpMailTransport` relies on the platform mailer honouring `Bcc:` in additional headers
   (sendmail `-t` on Linux does; PHP's win32 SMTP mailer does) — v1 consumers don't use Bcc.
-- Live SMTP delivery against a real relay was NOT exercised — there is no SMTP server in the dev env. The full stack (Message → MimeMessage → SmtpTransport conversation + dot-stuffing) IS verified e2e against a loopback fake-SMTP server (2026-06-15, all green), and the unconfigured path throws cleanly. Remaining manual check: configure a real relay and send.
+- Live SMTP delivery: proven 2026-09-11 against `mail.cyon.ch:465` (`ssl`, AUTH LOGIN) from axo3 — see MAIL-SPAM-001. Before that only e2e against a loopback fake-SMTP server (2026-06-15); the dev env still has no relay (use `transport='file'`).
 - `SmtpTransport` does no connection pooling / retry and `STARTTLS` uses default peer verification — fine for a transactional "send one document" flow; a bulk/queue sender is out of scope (not planned).
 - Long non-ASCII subjects are emitted as a single RFC 2047 encoded-word (no folding) — works with common MTAs; folding is not implemented.
 - `DocumentKind::mailable()` excludes `video`/`audio` only (size); everything else is attachable. There is no per-size byte cap on attachments yet — a very large attachable document would build a large message.
@@ -350,16 +359,11 @@ address in config:
   SPF + DKIM but the receiver reported `DMARC_NA` (no DMARC record). Not a blocker — the mail
   was delivered as ham — but a DMARC record hardens deliverability for the `noreply@zihlundsee.ch`
   From. Outside the app (DNS), tracked here as the go-live follow-up.
-- **MAIL-SPAM-001 measurement (axo3, owner):** switch the SERVER `shared/config/client/mail.inc.php`
-  to `transport='smtp'` (`mail.cyon.ch`, 465/`ssl`, `no-reply@axo3.ch` + mailbox password,
-  `heloHost='axo3.ch'`), send a login mail to Gmail + GMX (never to a mailbox on the same
-  cyon hosting), read «Original anzeigen»: pass = `dkim=pass header.i=@axo3.ch` +
-  `dmarc=pass` + no `[SPAM]`. Still `[SPAM]` → SMTP does not bypass the gateway → report
-  into the cyon ticket, plan B = external transactional service (Postmark/Brevo/SES: SPF
-  include + own DKIM selector + bounce subdomain; config change only, no code). Archive
-  the raw headers either way — they are the evidence for cyon. This also closes the
-  «live SMTP relay never exercised» item below.
-- Manual check: configure a real SMTP relay in `config/mail.inc.php` (`transport='smtp'`, `enabled = true`) and send a document from the backend `documents` UI.
+- **zihlundsee.ch: switch the server to `transport='smtp'`** — verified 2026-09-11: its
+  `shared/config/mail.inc.php` is still `'mail'` (From `noreply@zihlundsee.ch`), on the
+  same cyon account as axo3, so exposed to the same gateway scoring as MAIL-SPAM-001.
+  Needs a mailbox for the From address.
+- Manual check: send a document from the backend `documents` UI over `transport='smtp'` (the SMTP transport itself is proven live since 2026-09-11, the document attachment path is not).
 - Phase 7 (integration): a module example (Fakturen) that generates a PDF → `saveGenerated()` → `DocumentService::send()`.
 - **v3 Kundenstamm:** resolve `ref:{source}:{id}` recipient entries against the customer
   master (extend `EmailService::resolveRecipients()`, add the UI picker + lift the
