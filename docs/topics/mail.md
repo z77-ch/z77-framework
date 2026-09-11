@@ -312,8 +312,22 @@ address in config:
   separately; the SMTP swing (≈13 points) is what carries the margin, the hygiene alone
   would have left ≈4.85. Remaining symbol: `KAM_LOTSOFHASH` (0.25, 64-hex token) — kept
   deliberately, not worth touching a reviewed security primitive.
+  **Confirmed on a second project the same day** — zihlundsee.ch, contact form, release
+  `2026-09-11-1`, From `no-reply@zihlundsee.ch`: `esmtpa` hand-off,
+  `X-Authenticated-Sender: no-reply@zihlundsee.ch`, `RWL_AMI_LASTHOP` −4.00 and
+  `RCVD_VIA_SMTP_AUTH` present, no `RBL_AMI_NOIP`, `X-Spam-Status: No, score=-2.6`, Gmail
+  `dkim=pass header.i=@zihlundsee.ch`, no `[SPAM]` — again across a cyon forwarder. Two
+  symbols are worth knowing before someone hunts the difference to axo3's −5.0:
+  **`FREEMAIL_REPLYTO_NEQ_FROM` +2.00 is structural for a contact form** (Reply-To is the
+  visitor's address, and most visitors are on a freemail host — nothing to fix, the
+  Reply-To is the point of the form), and `NEURAL_SPAM` reported `[1.000]` while scoring
+  0.00 (cyon's classifier is not weighted into the total; ignore it, it is not a signal we
+  can act on). Both mails also carry the hygiene from part (2): `X-Mailer: z77`,
+  quoted-printable on both parts, no `URI_COUNT_ODD`.
   **Rule for every cyon project:** `transport='smtp'` with the From mailbox's
-  credentials. Project record: `z77-axo3.ch/work/docs/handoff-axo3-smtp-2026-09-11.md`.
+  credentials. Project records:
+  `z77-axo3.ch/work/docs/handoff-axo3-smtp-2026-09-11.md`,
+  `z77-1.0.0-zihlundsee.ch/work/docs/topics/email.md`.
 - **MAIL-TEXT-001 — `HtmlToText` swallows the space after an inline closing tag.** The
   whitespace pass `(> )+` → `>` also eats the space in `</strong> Auf`, so the text part
   reads «Vergleichen Sie zuerst:Auf» / «nicht?Dann» (seen in the 2026-09-11 login mail).
@@ -348,21 +362,20 @@ address in config:
   the file).
 - `PhpMailTransport` relies on the platform mailer honouring `Bcc:` in additional headers
   (sendmail `-t` on Linux does; PHP's win32 SMTP mailer does) — v1 consumers don't use Bcc.
-- Live SMTP delivery: proven 2026-09-11 against `mail.cyon.ch:465` (`ssl`, AUTH LOGIN) from axo3 — see MAIL-SPAM-001. Before that only e2e against a loopback fake-SMTP server (2026-06-15); the dev env still has no relay (use `transport='file'`).
+- Live SMTP delivery: proven 2026-09-11 against `mail.cyon.ch:465` (`ssl`, AUTH LOGIN) from axo3 and, the same day, from zihlundsee.ch — see MAIL-SPAM-001. Before that only e2e against a loopback fake-SMTP server (2026-06-15); the dev env still has no relay (use `transport='file'`).
 - `SmtpTransport` does no connection pooling / retry and `STARTTLS` uses default peer verification — fine for a transactional "send one document" flow; a bulk/queue sender is out of scope (not planned).
 - Long non-ASCII subjects are emitted as a single RFC 2047 encoded-word (no folding) — works with common MTAs; folding is not implemented.
 - `DocumentKind::mailable()` excludes `video`/`audio` only (size); everything else is attachable. There is no per-size byte cap on attachments yet — a very large attachable document would build a large message.
 
 ## pending
 
-- **DMARC record for zihlundsee.ch (operational/DNS):** the 2026-07-21 cyon delivery passed
-  SPF + DKIM but the receiver reported `DMARC_NA` (no DMARC record). Not a blocker — the mail
-  was delivered as ham — but a DMARC record hardens deliverability for the `noreply@zihlundsee.ch`
-  From. Outside the app (DNS), tracked here as the go-live follow-up.
-- **zihlundsee.ch: switch the server to `transport='smtp'`** — verified 2026-09-11: its
-  `shared/config/mail.inc.php` is still `'mail'` (From `noreply@zihlundsee.ch`), on the
-  same cyon account as axo3, so exposed to the same gateway scoring as MAIL-SPAM-001.
-  Needs a mailbox for the From address.
+- **DMARC record for zihlundsee.ch (operational/DNS):** still missing — the 2026-09-11
+  SMTP delivery reports `DMARC_NA` at the gateway and Gmail states no DMARC result, exactly
+  as the 2026-07-21 `mail()` delivery did. Not a blocker (SPF + DKIM pass, the mail is
+  delivered as ham and scores −2.6) but a DMARC record hardens deliverability for the
+  `no-reply@zihlundsee.ch` From — and it is what makes a broken DKIM signature *visible*
+  instead of silent, which is how MAIL-SPAM-001 stayed hidden on axo3 until `p=REJECT`
+  surfaced it. Outside the app (DNS), tracked here as the go-live follow-up.
 - Manual check: send a document from the backend `documents` UI over `transport='smtp'` (the SMTP transport itself is proven live since 2026-09-11, the document attachment path is not).
 - Phase 7 (integration): a module example (Fakturen) that generates a PDF → `saveGenerated()` → `DocumentService::send()`.
 - **v3 Kundenstamm:** resolve `ref:{source}:{id}` recipient entries against the customer
