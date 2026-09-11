@@ -484,7 +484,8 @@ final class LoginFlow
 
         return (new EmailMessage())
             ->to($account->getEmail())
-            ->subject('Anmeldung bestätigen — Prüfzahl ' . $record->getCheckDigits())
+            // Digits first: a subject ENDING in a number is a spam signal (KAM_NUMSUBJECT).
+            ->subject('Prüfzahl ' . $record->getCheckDigits() . ' — Anmeldung bestätigen')
             ->template('emails/login-link', 'Z77\\Module\\Member', [
                 'account'  => $account,
                 'loginUrl' => $link,
