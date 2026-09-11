@@ -324,6 +324,17 @@ address in config:
   0.00 (cyon's classifier is not weighted into the total; ignore it, it is not a signal we
   can act on). Both mails also carry the hygiene from part (2): `X-Mailer: z77`,
   quoted-printable on both parts, no `URI_COUNT_ODD`.
+  **Consequence once the domain publishes `p=reject`** (all three z77 domains do): the
+  failure mode of this bug changes shape. What cost a `[SPAM]` prefix and a scary banner
+  would now be an outright rejection at the receiver, because the mechanism is the same —
+  *something on the path edits the message and thereby breaks the DKIM signature.* SPF
+  cannot catch the fall on a forwarded mail: cyon's forwarder rewrites the envelope (SRS),
+  so SPF is no longer aligned with the From domain and DMARC rests on DKIM alone. Measured
+  2026-09-11 across exactly that forwarder: DKIM survived. Treat any future gateway that
+  appends a footer or tags a subject as a delivery outage, not a cosmetic issue — and keep
+  a server-side record of what a public form received (zihlundsee writes
+  `data/contact/leads.jsonl`), so a submission is still readable when its mail never
+  arrives.
   **Rule for every cyon project:** `transport='smtp'` with the From mailbox's
   credentials. Project records:
   `z77-axo3.ch/work/docs/handoff-axo3-smtp-2026-09-11.md`,
@@ -369,13 +380,12 @@ address in config:
 
 ## pending
 
-- **DMARC record for zihlundsee.ch (operational/DNS):** still missing — the 2026-09-11
-  SMTP delivery reports `DMARC_NA` at the gateway and Gmail states no DMARC result, exactly
-  as the 2026-07-21 `mail()` delivery did. Not a blocker (SPF + DKIM pass, the mail is
-  delivered as ham and scores −2.6) but a DMARC record hardens deliverability for the
-  `no-reply@zihlundsee.ch` From — and it is what makes a broken DKIM signature *visible*
-  instead of silent, which is how MAIL-SPAM-001 stayed hidden on axo3 until `p=REJECT`
-  surfaced it. Outside the app (DNS), tracked here as the go-live follow-up.
+- **DMARC for zihlundsee.ch — record published 2026-09-11** (`v=DMARC1; p=reject;
+  sp=reject; rua=mailto:dmarc@webdreams.ch`, verified on three resolvers, identical to
+  `z77.ch` and `axo3.ch`). What is left is the confirmation on a delivered mail: Gmail must
+  report `dmarc=pass` and the gateway symbol `DMARC_NA` must disappear. It will pass by
+  DKIM alignment — the 2026-09-11 mail was already `dkim=pass header.i=@zihlundsee.ch`,
+  aligned with the `no-reply@zihlundsee.ch` From — but predicted is not measured.
 - Manual check: send a document from the backend `documents` UI over `transport='smtp'` (the SMTP transport itself is proven live since 2026-09-11, the document attachment path is not).
 - Phase 7 (integration): a module example (Fakturen) that generates a PDF → `saveGenerated()` → `DocumentService::send()`.
 - **v3 Kundenstamm:** resolve `ref:{source}:{id}` recipient entries against the customer
