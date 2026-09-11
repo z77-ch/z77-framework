@@ -324,6 +324,16 @@ address in config:
   0.00 (cyon's classifier is not weighted into the total; ignore it, it is not a signal we
   can act on). Both mails also carry the hygiene from part (2): `X-Mailer: z77`,
   quoted-printable on both parts, no `URI_COUNT_ODD`.
+  **DMARC confirmed 2026-09-11 15:58** on a second contact-form mail, after the record was
+  published: Gmail reports `dmarc=pass (p=REJECT sp=REJECT dis=NONE)
+  header.from=zihlundsee.ch`. It passes on DKIM alignment alone — SPF is aligned to
+  `z77.ch` after the forwarder's SRS rewrite, not to the From domain. Note that cyon's own
+  gateway still stamped `DMARC_NA` on that same mail: its resolver had the `NXDOMAIN` for
+  `_dmarc.zihlundsee.ch` in negative cache (SOA minimum 3600 s) from the 15:06 lookup, and
+  15:58 is inside that hour. Cosmetic — the symbol scores 0.00 and the receiver's verdict
+  is the one that decides. **A publishing resolver can lag a fresh DMARC/SPF/DKIM record by
+  the zone's negative TTL; read the receiver's `Authentication-Results`, not the sending
+  gateway's symbol list.**
   **Consequence once the domain publishes `p=reject`** (all three z77 domains do): the
   failure mode of this bug changes shape. What cost a `[SPAM]` prefix and a scary banner
   would now be an outright rejection at the receiver, because the mechanism is the same —
@@ -380,12 +390,6 @@ address in config:
 
 ## pending
 
-- **DMARC for zihlundsee.ch — record published 2026-09-11** (`v=DMARC1; p=reject;
-  sp=reject; rua=mailto:dmarc@webdreams.ch`, verified on three resolvers, identical to
-  `z77.ch` and `axo3.ch`). What is left is the confirmation on a delivered mail: Gmail must
-  report `dmarc=pass` and the gateway symbol `DMARC_NA` must disappear. It will pass by
-  DKIM alignment — the 2026-09-11 mail was already `dkim=pass header.i=@zihlundsee.ch`,
-  aligned with the `no-reply@zihlundsee.ch` From — but predicted is not measured.
 - Manual check: send a document from the backend `documents` UI over `transport='smtp'` (the SMTP transport itself is proven live since 2026-09-11, the document attachment path is not).
 - Phase 7 (integration): a module example (Fakturen) that generates a PDF → `saveGenerated()` → `DocumentService::send()`.
 - **v3 Kundenstamm:** resolve `ref:{source}:{id}` recipient entries against the customer
