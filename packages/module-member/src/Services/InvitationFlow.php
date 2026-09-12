@@ -166,8 +166,9 @@ final class InvitationFlow
 
     /**
      * May this account invite, pause and remove? The one question the surface
-     * asks — the section «Zugänge» exists for it, and the routes answer 404
-     * without it («not present, not forbidden», B10 v1.6.0).
+     * asks — the writes of the «Zugänge» area refuse without it («not present,
+     * not forbidden», B10 v1.6.0). Whether the area is SHOWN asks one thing
+     * more, see managesHere().
      *
      * It is deliberately the same predicate every method below uses, so a
      * surface that forgets to ask cannot grant anything the flow refuses.
@@ -175,6 +176,29 @@ final class InvitationFlow
     public function mayManage(MemberAccount $account): bool
     {
         return $this->tenantRefOf($account) !== null;
+    }
+
+    /**
+     * May this account manage the accesses of the reference it is WORKING
+     * FOR right now? True only when the session's choice IS the home and the
+     * account is its master — the predicate the «Zugänge» AREA and the nav
+     * entry exist on (2026-09-12). A guest on a granted reference gets false
+     * although he is master somewhere else: what he sees on screen belongs
+     * to another reference, and the accesses he owns are not on it.
+     *
+     * The choice is handed in, not read here: this flow is wired without a
+     * session in the backend and in the harness, and a predicate that
+     * silently answered «home» there would be true for everyone. Callers
+     * read it once through `MemberGrants::activeTenantRef()`.
+     *
+     * ⚠️ Visibility only. The WRITES (invite, pause, remove) keep asking
+     * mayManage() and act on the home — see the area controller for why.
+     */
+    public function managesHere(MemberAccount $account, string $activeTenantRef): bool
+    {
+        $home = $this->tenantRefOf($account);
+
+        return $home !== null && trim($activeTenantRef) === $home;
     }
 
     /** The readable name of a reference — the project's label hook, or the bare reference. */

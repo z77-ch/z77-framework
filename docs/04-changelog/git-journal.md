@@ -14,6 +14,21 @@ not obvious from the message — a short why / follow-up. Keep it terse.
 
 ---
 
+## 2026-09-12
+
+### module-member: «Zugänge» becomes an area of the shell
+
+- «Zugänge» (invite, withdraw, pause, remove) moves out of the profile into its own
+  area `Main/ZugaengeController` — present only when the session's choice IS the home
+  and the account is master (`InvitationFlow::managesHere()`); `addAreas()` drops the
+  nav entry by the same predicate. The profile keeps Konto / 2FA / Geräte; its Konto
+  dialog names the home it renames. `shell.js` posts the pause switch to the new
+  route (hand copy per installation!). Why: with two references in the header the
+  profile section listed the home's accounts under another reference's name
+  (Peter, 2026-09-12, axo3). Handoff: `z77-axo3.ch/work/docs/handoff-framework-zugaenge-bereich-2026-09-12.md`.
+  ⚠️ An installation on this build without a `zugaenge` nav entry has NO way to
+  invite until the entry exists — it is data, added per machine.
+
 ## 2026-07-10
 
 ### Dev-environment docs for PC switch

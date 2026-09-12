@@ -8,9 +8,7 @@ use Z77\Core\DI,
     Z77\Core\Http\Response\FetchResponse,
     Z77\Core\Http\Response\HtmlResponse,
     Z77\Core\Http\Response\RedirectResponse,
-    Z77\Module\Member\Entities\MemberAccount,
     Z77\Module\Member\Services\DeviceKeys,
-    Z77\Module\Member\Services\InvitationFlow,
     Z77\Module\Member\Services\MemberAccounts,
     Z77\Module\Member\Services\MemberAuth,
     Z77\Module\Member\Services\MemberGrants,
@@ -65,20 +63,11 @@ class ProfileController extends AbstractMemberController
             ],
         ];
 
-        // The fourth section exists only for the master (B10 v1.6.0) — and «not
-        // present», not «forbidden»: an invited account finds no entry in the
-        // rail, and the four routes below answer 404. A greyed-out section
-        // would tell him about a power he is not meant to think about.
-        $zugaenge = null;
-        if ($this->invites()->mayManage($account)) {
-            $zugaenge = $this->zugaengeContext($account);
-            $sections['zugaenge'] = [
-                'name' => 'Zugänge',
-                'meta' => count($zugaenge['accounts']) === 1
-                    ? '1 Konto'
-                    : count($zugaenge['accounts']) . ' Konten',
-            ];
-        }
+        // ⚠️ No fourth section. «Zugänge» was one until 2026-09-12 and is an
+        // AREA now (ZugaengeController): the accesses belong to the
+        // REFERENCE, this page to the PERSON — with a switched session the
+        // section listed the home's accounts under a header naming another
+        // reference, and nothing on the page said so.
 
         $section = (string) $request->getGetParameter('bereich');
         if (!array_key_exists($section, $sections)) {
@@ -102,8 +91,13 @@ class ProfileController extends AbstractMemberController
             'devices'      => $devices,
             'section'      => $section,
             'dialogId'     => self::ACCOUNT_DIALOG_ID,
-            'inviteDialog' => self::INVITE_DIALOG_ID,
-            'zugaenge'     => $zugaenge,
+            // The Konto dialog's company field renames the HOME (profile
+            // hook) — named here, because since ADR-037 the header may show
+            // another reference, and «Ihrem Mandanten» would then be the
+            // wrong one to the reader's eye.
+            'homeName'     => $this->invites()->tenantLabelFor(trim((string)$account->getTenantRef())),
+            'homeChosen'   => trim((string)$account->getTenantRef()) === ''
+                || (string)MemberGrants::create()->activeTenantRef($account) === trim((string)$account->getTenantRef()),
             'railItems'    => $rail,
             'crumbs'       => [
                 ['label' => 'Profil'],
@@ -145,242 +139,8 @@ class ProfileController extends AbstractMemberController
             ];
         }
 
-        if ($section === 'zugaenge') {
-            // The main action of the section (B10 v1.6.0). A dialog like the
-            // account's: one field, already on the page — a route of its own
-            // would be a page for an address box.
-            return ['label' => 'Einladen', 'dialog' => self::INVITE_DIALOG_ID];
-        }
-
         return null;
     }
-
-    /** The id of the invitation dialog — named once, used by cell and template. */
-    private const INVITE_DIALOG_ID = 'me-einladen-dialog';
-
-    /**
-     * The two lists of «Zugänge»: who hangs on the tenant, and which
-     * invitations are still open.
-     *
-     * @return array{accounts: list<array<string,mixed>>, invites: list<array<string,mixed>>}
-     */
-    private function zugaengeContext(MemberAccount $master): array
-    {
-        $invites = $this->invites();
-        $rows    = [];
-
-        foreach ($invites->accountsOf($master) as $account) {
-            $rows[] = [
-                'id'        => (string)$account->getId(),
-                'email'     => $account->getEmail(),
-                'name'      => trim(($account->getFirstName() ?? '') . ' ' . ($account->getLastName() ?? '')),
-                'master'    => $account->isMaster(),
-                'suspended' => $account->isSuspended(),
-                // A confirmed account is one we have not activated yet — the
-                // master should see that the wait is OURS, not his.
-                'waiting'   => !$account->isActive(),
-                'grant'     => false,
-            ];
-        }
-
-        // The grants ON this tenant (ADR-037): people whose account lives at
-        // another tenant and who may work here too. Same row shape, same two
-        // handgrips — the id is the GRANT's, so pause/remove hit the
-        // permission and never the person.
-        foreach ($invites->grantsOf($master) as $row) {
-            $rows[] = [
-                'id'        => (string)$row['grant']->getId(),
-                'email'     => $row['account']->getEmail(),
-                'name'      => trim(($row['account']->getFirstName() ?? '') . ' ' . ($row['account']->getLastName() ?? '')),
-                'master'    => false,
-                'suspended' => $row['grant']->isSuspended(),
-                'waiting'   => !$row['grant']->isActive(),
-                'grant'     => true,
-            ];
-        }
-
-        $open = [];
-        foreach ($invites->openInvites($master) as $token) {
-            $open[] = [
-                'id'      => (int)$token->getId(),
-                'email'   => (string)$token->getEmail(),
-                'until'   => (string)$token->getValidUntil(),
-            ];
-        }
-
-        return ['accounts' => $rows, 'invites' => $open];
-    }
-
-    /**
-     * The master behind the request, or null when this account has no business
-     * here at all. The rule itself lives in InvitationFlow, so a forgotten
-     * guard in a controller cannot grant anything.
-     *
-     * ⚠️ The spec says «not present, not forbidden», and a 404 would say that
-     * best — but this framework has no controller-level 404: the Bootstrap
-     * catches FileNotFoundException around ROUTING only, so throwing one from
-     * an action produces a 500. So these routes do what the rest of this stack
-     * does when someone cannot be where he is (VerwaltungController's frozen
-     * redirect): they answer silently with the profile. Nothing is shown,
-     * nothing is said, and nothing about another account is revealed.
-     * A real controller 404 would be a FRAMEWORK seam with its own doc duty —
-     * not a side effect of this stage.
-     */
-    private function master(): ?MemberAccount
-    {
-        $account = MemberAuth::create()->current();
-
-        return $account !== null && $this->invites()->mayManage($account) ? $account : null;
-    }
-
-    /** POST + Redirect + Flash: the invitation talks to a mail server, so no fetch envelope. */
-    protected function einladenAction(): RedirectResponse
-    {
-        $account = $this->master();
-        if ($account === null) {
-            return $this->redirect('/member/main/profile');
-        }
-
-        $request = DI::getRequest();
-
-        if (!$request->isPost() || !DI::getCsrfService()->validate((string)$request->getPostParameter('csrf_token'))) {
-            return $this->redirect(self::ZUGAENGE_URL);
-        }
-
-        $email   = (string)$request->getPostParameter('email');
-        $outcome = $this->invites()->invite($account, $email);
-
-        // ⚠️ «Diese Adresse ist bereits einem Mandanten zugeordnet» is a
-        // MESSAGE, not an error (B7 v1.1.0 / B10 v1.6.0): the master did
-        // nothing wrong, and for US it is the signal that one human is to work
-        // for a second tenant. Painting it red would file it as a mistake.
-        //
-        // ⚠️ But `info` was the wrong shelf: core.js AUTO-DISMISSES success and
-        // info after 5 s, so the one outcome that changes nothing and needs a
-        // decision was the one that vanished by itself — pale, at the top edge,
-        // gone before the eye came back from the form (Peter, 2026-08-14, on
-        // cyon: «fällt nicht auf»). `warning` is the shelf that STAYS until it
-        // is closed, and amber says «look at this» without saying «you did
-        // something wrong».
-        [$type, $text] = match ($outcome) {
-            InvitationFlow::SENT => ['success',
-                'Die Einladung ist unterwegs an ' . $email . '.'],
-            InvitationFlow::ALREADY_TAKEN => ['warning',
-                'Keine Einladung verschickt: ' . $email . ' ist bereits einem Mandanten zugeordnet — '
-                . 'es entsteht kein zweites Konto. '
-                . 'Melden Sie sich bei uns, wenn diese Person für Sie arbeiten soll.'],
-            InvitationFlow::THROTTLED => ['error',
-                'Für heute sind genug Einladungen verschickt. Morgen geht es weiter.'],
-            default => ['error', 'Diese E-Mail-Adresse können wir nicht verwenden.'],
-        };
-
-        $this->messageService->pushFlashAfterRedirect($type, $text);
-
-        return $this->redirect(self::ZUGAENGE_URL);
-    }
-
-    /** The master withdraws an open invitation. */
-    protected function einladungWiderrufenAction(): RedirectResponse
-    {
-        $account = $this->master();
-        if ($account === null) {
-            return $this->redirect('/member/main/profile');
-        }
-
-        $request = DI::getRequest();
-
-        if ($request->isPost()
-            && DI::getCsrfService()->validate((string)$request->getPostParameter('csrf_token'))
-            && $this->invites()->revoke($account, (int)$request->getPostParameter('einladung'))
-        ) {
-            $this->messageService->pushFlashAfterRedirect(
-                'success',
-                'Die Einladung ist zurückgezogen — ihr Link wirkt nicht mehr.'
-            );
-        } else {
-            $this->messageService->pushFlashAfterRedirect('error', 'Diese Einladung ist nicht (mehr) offen.');
-        }
-
-        return $this->redirect(self::ZUGAENGE_URL);
-    }
-
-    /**
-     * Pausing is the immediate switch of this stack (spec 1.3.1): the display
-     * has already moved when the request goes out and springs back if the
-     * server refuses. Deleting a person stays POST + confirm — see below.
-     */
-    #[Fetch, HttpMethod('POST')]
-    protected function zugangPausierenAction(): FetchResponse
-    {
-        $response = new FetchResponse();
-        $account  = MemberAuth::create()->current();
-
-        // ⚠️ Two different refusals, and they must not share a sentence: nobody
-        // signed in means the session is over and saying so is the help the
-        // customer needs. A signed-in NON-master reaching this endpoint (his
-        // page never renders the switch) is told nothing about why — «your
-        // session expired» would simply be a lie, and the first draft of this
-        // action told it.
-        if ($account === null) {
-            return $response->setStatus('error')
-                ->addFlash('error', 'Ihre Sitzung ist abgelaufen — bitte melden Sie sich neu an.');
-        }
-        if (!$this->invites()->mayManage($account)) {
-            return $response->setStatus('error')
-                ->addFlash('error', 'Diese Änderung ist nicht möglich.');
-        }
-
-        $body   = DI::getRequest()->getJsonBody();
-        $paused = (bool)($body['paused'] ?? false);
-
-        if (!$this->invites()->pause($account, (string)($body['id'] ?? ''), $paused)) {
-            return $response->setStatus('error')
-                ->addFlash('error', 'Dieses Konto lässt sich hier nicht ändern.');
-        }
-
-        return $response->setData(['paused' => $paused])->addFlash(
-            'success',
-            $paused
-                ? 'Der Zugang ruht. Konto, Zwei-Faktor-Schutz und Geräte bleiben bestehen.'
-                : 'Der Zugang ist wieder offen.'
-        );
-    }
-
-    /**
-     * Removing an account deletes a person, not a state — POST with a
-     * confirmation. Removing a GRANT (same route, the id says which) deletes
-     * only the permission; the person keeps his account at his own tenant,
-     * and the flash has to say so — «das Konto ist entfernt» would be a lie.
-     */
-    protected function zugangEntfernenAction(): RedirectResponse
-    {
-        $account = $this->master();
-        if ($account === null) {
-            return $this->redirect('/member/main/profile');
-        }
-
-        $request = DI::getRequest();
-        $removed = null;
-
-        if ($request->isPost()
-            && DI::getCsrfService()->validate((string)$request->getPostParameter('csrf_token'))
-        ) {
-            $removed = $this->invites()->remove($account, (string)$request->getPostParameter('konto'));
-        }
-
-        [$type, $text] = match ($removed) {
-            InvitationFlow::REMOVED_ACCOUNT => ['success',
-                'Das Konto ist entfernt. Ihr Bestand und die übrigen Zugänge sind unberührt.'],
-            InvitationFlow::REMOVED_GRANT => ['success',
-                'Der Zugang ist entfernt. Das Konto dieser Person bleibt bei ihrer eigenen Verwaltung bestehen.'],
-            default => ['error', 'Dieser Zugang lässt sich hier nicht entfernen.'],
-        };
-        $this->messageService->pushFlashAfterRedirect($type, $text);
-
-        return $this->redirect(self::ZUGAENGE_URL);
-    }
-
-    private const ZUGAENGE_URL = '/member/main/profile?bereich=zugaenge';
 
     /**
      * The tenant choice (ADR-037): which of the granted tenants this session

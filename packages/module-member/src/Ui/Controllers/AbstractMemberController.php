@@ -10,6 +10,7 @@ use Z77\Module\Member\Services\InvitationFlow;
 use Z77\Module\Member\Services\MemberAuth;
 use Z77\Module\Member\Services\MemberGrants;
 use Z77\Module\Member\Services\RegistrationFlow;
+use Z77\Module\Member\Ui\Controllers\Main\ZugaengeController;
 
 /**
  * Base of the member view-area (B7). Centralises the three things every member
@@ -210,7 +211,27 @@ abstract class AbstractMemberController extends AbstractBaseController
             $meta[strtolower(trim((string)$target))] = (string)$text;
         }
 
+        // The one area that is not for everyone (2026-09-12): «Zugänge» exists
+        // exactly when the session's choice IS the home and the account is its
+        // master. A nav entry is data and cannot say that, so it is dropped
+        // here — from the switcher AND the rail — by the same predicate the
+        // controller answers with a silent redirect. Compared by routing
+        // identity, like `railMeta` above, never by `Navigation::$key`.
+        $account  = null;
+        $asked    = false;
+        $zugaenge = ZugaengeController::AREA;
+
         foreach ($navigation->getBySlot('member-main') as $entry) {
+            if (strtolower(trim($entry->getController() . '/' . $entry->getAction())) === $zugaenge) {
+                if (!$asked) {
+                    $account = MemberAuth::create()->current();
+                    $asked   = true;
+                }
+                if (!$this->managesHere($account)) {
+                    continue;
+                }
+            }
+
             $active  = $navigation->isActive($entry);
             $areas[] = [
                 'name'   => $entry->getName(),
@@ -293,6 +314,25 @@ abstract class AbstractMemberController extends AbstractBaseController
     protected function invites(): InvitationFlow
     {
         return InvitationFlow::create($this->absoluteUrl('/member/main/register'));
+    }
+
+    /**
+     * Does this account manage the accesses of the reference on screen — is
+     * the session's choice its home, and is it the master there? The one
+     * reading of the choice for that question; the rule lives in the flow
+     * ({@see InvitationFlow::managesHere()}), so the area's controller and
+     * the navigation cannot disagree.
+     */
+    protected function managesHere(?MemberAccount $account): bool
+    {
+        if ($account === null) {
+            return false;
+        }
+
+        return $this->invites()->managesHere(
+            $account,
+            (string)MemberGrants::create()->activeTenantRef($account)
+        );
     }
 
     /**

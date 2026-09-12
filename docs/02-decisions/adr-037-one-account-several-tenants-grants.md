@@ -70,6 +70,11 @@ that works reads the choice, everything that owns reads the home.**
    two granted references on — one form per entry, no script; the master's
    «Zugänge» lists grants on his reference with the same two handgrips; the
    backend list shows grants as their own rows naming BOTH references.
+   *Amended 2026-09-12:* «Zugänge» is an AREA of the shell, not a section of
+   the profile, and it is present only while the session's choice IS the
+   home (`InvitationFlow::managesHere()`). The accesses belong to the
+   reference; with the switcher on another reference the profile section
+   listed the home's accounts under the wrong name, and nothing said so.
 
 ## Reasoning
 

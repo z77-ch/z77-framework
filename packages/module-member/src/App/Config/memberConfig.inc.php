@@ -213,20 +213,31 @@ return [
                     'totpRemoveAction'      => AuthRole::CUSTOMER,
                     'deviceRemoveAction'    => AuthRole::CUSTOMER,
                     'deviceRemoveAllAction' => AuthRole::CUSTOMER,
-                    // B7 v1.1.0 «Zugänge» — CUSTOMER like every profile route;
-                    // that only says «signed in». Whether this customer is the
-                    // MASTER is not a role question (there is no second role,
-                    // ADR `konto-einladung`), so the controller asks the flow
-                    // and answers 404 when the answer is no.
-                    'einladenAction'             => AuthRole::CUSTOMER,
-                    'einladungWiderrufenAction'  => AuthRole::CUSTOMER,
-                    'zugangPausierenAction'      => AuthRole::CUSTOMER,
-                    'zugangEntfernenAction'      => AuthRole::CUSTOMER,
                     // ADR-037 — the tenant choice of a signed-in person with
                     // more than one granted tenant (the header's switcher
                     // posts here). ⚠️ A project's whole-file override MUST
                     // carry it too, or the switcher silently stops working.
-                    'mandantAction'              => AuthRole::CUSTOMER,
+                    'mandantAction'         => AuthRole::CUSTOMER,
+                ],
+            ],
+            // «Zugänge» (B7 v1.1.0) as an AREA since 2026-09-12 — until then
+            // the profile's fourth section. CUSTOMER like every signed-in
+            // route; that only says «signed in». Whether this customer is the
+            // MASTER — and standing on his home — is not a role question
+            // (there is no second role, ADR `konto-einladung`), so the
+            // controller asks the flow and answers silently when it is no.
+            // ⚠️ A project's whole-file override MUST carry this block, or
+            // the area is a 404 there; and the nav entry that makes it an
+            // area is DATA (`member-main` slot), added per installation.
+            'ZugaengeController' => [
+                'defaultAction'  => 'index',
+                'controllerRole' => AuthRole::CUSTOMER,
+                'actions'        => [
+                    'indexAction'               => AuthRole::CUSTOMER,
+                    'einladenAction'            => AuthRole::CUSTOMER,
+                    'einladungWiderrufenAction' => AuthRole::CUSTOMER,
+                    'zugangPausierenAction'     => AuthRole::CUSTOMER,
+                    'zugangEntfernenAction'     => AuthRole::CUSTOMER,
                 ],
             ],
         ],

@@ -187,9 +187,12 @@
 
     // ── Zugänge: pausieren, entfernen ──────────────────────────────────────
     //
-    // Both belong to the profile's fourth section (B10 v1.6.0) and both are
-    // only ever rendered for the master — the server refuses either way, this
-    // is the display half.
+    // Both belong to the «Zugänge» area (B10 v1.6.0; the profile's fourth
+    // section until 2026-09-12) and both are only ever rendered for the
+    // master — the server refuses either way, this is the display half.
+    //
+    // ⚠️ This file is a HAND COPY per installation (`public/assets/member/js/`,
+    // ADR-024): a route changed here reaches a server only with the copy.
 
     /**
      * The pause switch is an immediate switch: the display has already moved
@@ -206,7 +209,7 @@
         var open = box.checked;
         box.disabled = true;
 
-        _Z77.core.fetch.post('/member/main/profile/zugang-pausieren', {
+        _Z77.core.fetch.post('/member/main/zugaenge/zugang-pausieren', {
             id: box.dataset.id,
             paused: !open
         }).then(function (envelope) {
