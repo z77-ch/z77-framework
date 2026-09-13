@@ -16,6 +16,17 @@ not obvious from the message — a short why / follow-up. Keep it terse.
 
 ## 2026-09-13
 
+### ADR-038: the member module knows no project reference (decided, not built)
+
+- `company`, `tenantRef`, `tenantRole`, `suspendedAt`-as-master-pause and `grants.json`
+  will leave `module-member`; memberships `(account, role owner|agent, state)` live at
+  the PROJECT's tenant, the module asks for them through a hook in the pattern of
+  `tenantLabelHook`. The `Zugaenge` area built yesterday moves to the project with
+  the domain; token mechanics stay. Why: the account was profile and tenant in one
+  (Peter, 2026-09-13, axo3) — measured: 4 of 20 account fields belong to the tenant,
+  the profile hook renames a tenant, the purge deletes people. Project ADR
+  `konto-und-mandant` (axo3-core). Build order: project's open questions first.
+
 ### module-member: the flash band gets its close button
 
 - The member flash partial was the only one of the three without

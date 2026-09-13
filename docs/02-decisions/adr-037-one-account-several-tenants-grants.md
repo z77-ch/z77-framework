@@ -3,6 +3,12 @@
 **Status:** `[APPROVED]`
 **Date:** 2026-09-06
 
+> ⚠️ **Superseded in part by [ADR-038](adr-038-member-knows-no-project-reference.md)
+> (2026-09-13):** the session-choice rule stands; the data home (`tenantRef` +
+> `grants.json`, «ownership follows the home») is replaced by memberships kept
+> at the project's tenant. This ADR describes what is BUILT until that build
+> is accepted.
+
 ---
 
 ## Context
