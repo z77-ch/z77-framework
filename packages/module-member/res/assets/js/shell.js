@@ -187,9 +187,12 @@
 
     // ── Zugänge: pausieren, entfernen ──────────────────────────────────────
     //
-    // Both belong to the «Zugänge» area (B10 v1.6.0; the profile's fourth
-    // section until 2026-09-12) and both are only ever rendered for the
-    // master — the server refuses either way, this is the display half.
+    // Both belong to the PROJECT's «Zugänge» area (ADR-038 — memberships are
+    // the project's rows, so the area moved there on 2026-09-13; until then
+    // it was this module's). Rendered only for whoever may manage — the
+    // server refuses either way, this is the display half. The route is
+    // the markup's (`data-url` on the switch), never a string here: the
+    // module does not know where the project mounted its area.
     //
     // ⚠️ This file is a HAND COPY per installation (`public/assets/member/js/`,
     // ADR-024): a route changed here reaches a server only with the copy.
@@ -207,9 +210,10 @@
         if (!box.matches || !box.matches('[data-zugang-toggle]')) { return; }
 
         var open = box.checked;
+        var url  = box.dataset.url || '/member/main/zugaenge/zugang-pausieren';
         box.disabled = true;
 
-        _Z77.core.fetch.post('/member/main/zugaenge/zugang-pausieren', {
+        _Z77.core.fetch.post(url, {
             id: box.dataset.id,
             paused: !open
         }).then(function (envelope) {

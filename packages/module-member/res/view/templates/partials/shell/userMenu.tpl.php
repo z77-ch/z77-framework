@@ -113,8 +113,10 @@ $memberTenants = $memberTenants ?? [];
 
             <div class="me-account__divider"></div>
 
-            <?php /* Profil itself is an AREA and sits in the switcher — here
-                     only the shortcut into the part one comes for. */ ?>
+            <?php /* The profile is the PERSON's (ADR-038) and belongs to the
+                     avatar, not to the tenant's navigation — a project may
+                     still list it as an area, but this is its home. */ ?>
+            <a class="me-account__row" href="/member/main/profile">Profil</a>
             <a class="me-account__row" href="/member/main/profile?bereich=geraete">Geräte &amp; 2FA</a>
 
             <div class="me-account__divider"></div>

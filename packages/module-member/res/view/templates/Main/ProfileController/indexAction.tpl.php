@@ -16,8 +16,6 @@
  * @var \Z77\Module\Member\Entities\MemberAccount $account
  * @var array<int,array<string,mixed>> $devices device keys, newest use first
  * @var string $dialogId  id of the account dialog — the action cell opens it
- * @var string $homeName   readable name of the HOME reference ('' without a hook)
- * @var bool   $homeChosen whether the session's choice is the home right now
  * @var string $csrfToken
  */
 $day  = static fn(string $iso): string => $iso === '' ? '' : date('d.m.Y', (int)strtotime($iso));
@@ -27,7 +25,6 @@ $title = [
     'zweifa'   => 'Zwei-Faktor-Schutz',
     'geraete'  => 'Angemeldete Geräte',
 ][$section];
-$heimat = trim((string)($homeName ?? ''));
 ?>
 <div class="me-detail">
     <button type="button" class="me-back" data-z77-split-close>‹ Liste</button>
@@ -104,8 +101,8 @@ $heimat = trim((string)($homeName ?? ''));
                          may name another reference, so «Ihrem Mandanten» alone
                          pointed the reader at the wrong one (Peter, 2026-09-12). */ ?>
                 <small class="me-quiet">
-                    Dieser Name steht auch an Ihrer Verwaltung<?= $heimat !== '' ? ' «' . e($heimat) . '»' : '' ?> —
-                    er wird mit geändert.<?= empty($homeChosen) ? ' Unabhängig davon, welche Verwaltung oben gewählt ist.' : '' ?>
+                    Wo Sie arbeiten. Der Name Ihrer Verwaltung wird davon nicht berührt —
+                    ihn ändert, wer sie besitzt, im Bereich der Verwaltung.
                 </small>
             </div>
 

@@ -4,7 +4,6 @@ namespace Z77\Module\Member\Jobs;
 
 use Z77\Core\DI;
 use Z77\Module\Member\Services\MemberAccounts;
-use Z77\Module\Member\Services\MemberGrants;
 use Z77\Module\Member\Services\PendingLogins;
 use Z77\Module\Member\Services\TokenService;
 use Z77\Shared\Jobs\Job;
@@ -63,22 +62,14 @@ final class MemberCleanupJob implements Job
         $survivingIds  = array_map(static fn($account) => (string) $account->getId(), $accounts->all());
         $deletedTokens = (new TokenService($uem))->purge($survivingIds);
 
-        // Grants (ADR-037), last instance: a grant whose account is gone.
-        // Deletion paths cascade already (MemberAccounts::delete()); this is
-        // the broom behind them. ⚠️ NO age test — a `confirmed` grant waits for
-        // the operator exactly like a `confirmed` account, and neither is a
-        // cron's to delete.
-        $deletedGrants = (new MemberGrants($uem))->purgeOrphans($survivingIds);
-
         $deletedPending = (new PendingLogins($uem))->purge();
 
         return JobResult::done(sprintf(
             '%d account(s) removed (never confirmed within %d days), %d dead token(s) purged, '
-            . '%d orphaned grant(s) dropped, %d expired waiting login(s) dropped',
+            . '%d expired waiting login(s) dropped',
             $deletedAccounts,
             $days,
             $deletedTokens,
-            $deletedGrants,
             $deletedPending
         ));
     }

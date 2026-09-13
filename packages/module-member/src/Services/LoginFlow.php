@@ -162,20 +162,10 @@ final class LoginFlow
         // A PAUSED account gets no token and NO MAIL AT ALL, while the waiting
         // page appears unchanged (B8 spec v1.3.0, from B7 v1.1.0). B7 says
         // «every login attempt is refused»; HOW it is refused is this spec's
-        // question, and a visible refusal would tell a stranger that this
-        // address has a blocked account.
-        //
-        // ⚠️ Not by treating it as an unknown address: that branch sends «zu
-        // dieser Adresse besteht kein Konto» — to a real person whose account
-        // exists and whose master paused it. Silence is the answer, and the
-        // waiting page (which never turns green) is what the visitor sees,
-        // exactly as for a throttled request.
-        $suspended = $account !== null && $account->isSuspended();
-
         // Order matters: the token first (the waiting record binds to its
         // hash), then the record (the mail names its check digits), then the
         // mail. A login token exists only for confirmed/active accounts.
-        if ($account !== null && !$suspended && !$account->isRegistered()) {
+        if ($account !== null && !$account->isRegistered()) {
             $plain = $this->tokens->issue(
                 (string)$account->getId(),
                 MemberToken::PURPOSE_LOGIN,
@@ -194,7 +184,7 @@ final class LoginFlow
         );
         $this->session->setPendingLoginId((string)$record->getId());
 
-        if ($allowed && !$suspended) {
+        if ($allowed) {
             ($this->sendMail)(match (true) {
                 $plain !== null   => $this->loginMail($account, $plain, $record),
                 $account === null => $this->noAccountMail($email),
@@ -267,7 +257,7 @@ final class LoginFlow
         }
 
         $account = $this->accountOf($token);
-        if ($account === null || $account->isRegistered() || $account->isSuspended()) {
+        if ($account === null || $account->isRegistered()) {
             return self::DEAD;
         }
 
@@ -309,11 +299,9 @@ final class LoginFlow
         }
 
         $account = $this->accounts->findById((string)$record->getAccountRef());
-        if ($account === null || $account->isSuspended()) {
-            // Gone — or paused in the seconds between the release on the other
-            // device and this poll. Either way no session starts here; the
-            // waiting page reports a dead process rather than opening one that
-            // MemberAuth would close on the very next request.
+        if ($account === null) {
+            // Gone between the release on the other device and this poll: no
+            // session starts here; the waiting page reports a dead process.
             $this->session->clearPendingLogin();
             $this->pending->delete($record);
 
@@ -359,10 +347,9 @@ final class LoginFlow
         }
 
         $account = $this->accountOf($token);
-        if ($account === null || $account->isRegistered() || $account->isSuspended()) {
-            // Vanished, never confirmed (a login token should not exist for a
-            // registered account — defense in depth), or PAUSED between the
-            // mail going out and the click: no session.
+        if ($account === null || $account->isRegistered()) {
+            // Vanished, or never confirmed (a login token should not exist for
+            // a registered account — defense in depth): no session.
             return self::DEAD;
         }
 

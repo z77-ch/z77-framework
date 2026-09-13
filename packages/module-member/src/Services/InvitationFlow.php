@@ -4,52 +4,54 @@ namespace Z77\Module\Member\Services;
 
 use Z77\Core\DI;
 use Z77\Module\Member\Entities\MemberAccount;
-use Z77\Module\Member\Entities\MemberGrant;
 use Z77\Module\Member\Entities\MemberToken;
 use Z77\Persistence\Resolver\DataSourceResolver;
 use Z77\Persistence\Resolver\UnifiedEntityManager;
 use Z77\Shared\Mail\EmailMessage;
 
 /**
- * Several accounts on one project reference (B7 v1.1.0, ADR
- * `konto-einladung`): the way in is always an INVITATION, and it always comes
- * from the MASTER — the first account of the reference, the one from the
- * registration an operator activated.
+ * The invitation as the module's craft: a token bound to a project reference
+ * and an address, the mail that carries it, the page behind the link, and the
+ * account that is born when an UNKNOWN address redeems it. What the
+ * redemption ATTACHES — the membership — is the project's, through the
+ * `joinHook` (ADR-038).
  *
- * One method per station, so the controllers stay thin:
+ * Until 2026-09-13 this flow also decided WHO may invite (the master of the
+ * home reference), listed the accounts of a reference, paused and removed
+ * them, and kept «grants» for a second reference. None of that is a token's
+ * business, and all of it needed a reference ON the account — the four fields
+ * that made the account profile and tenant in one. The project answers those
+ * questions from its own membership list now; this class only ever sees a
+ * reference as an opaque string it writes into a token and reads back out.
  *
- *   invite()   the master types an address: throttle per reference and day,
- *              refuse an address that already hangs on THIS reference (see
- *              below), otherwise a token bound to reference AND address, and
- *              the mail.
- *   redeem()   the invited person confirms. TWO outcomes, decided by the store
- *              at that moment: an UNKNOWN address gets an account, born
- *              `confirmed` (the invitation WAS the verification) with the
- *              reference already set; a KNOWN address gets a GRANT instead —
- *              the existing account may additionally work for the reference
- *              (ADR-037). Both wait for our activation.
+ * One method per station:
+ *
+ *   invite()   the inviter names a reference and an address: refuse an address
+ *               that belongs to THAT reference already (asked of the project
+ *               through the membership hook — a paused membership counts, it
+ *               is resumed, not re-invited), throttle per reference and day,
+ *               then a token bound to reference AND address, and the mail.
+ *   redeem()   the invited person confirms. An UNKNOWN address gets an
+ *               account, born `confirmed` (the invitation WAS the
+ *               verification); a KNOWN address keeps the one it has. In both
+ *               cases the project's joinHook is told «this account joined
+ *               that reference, invited by X» — and then both wait for OUR
+ *               activation.
  *   decline()  the known address says no: the link dies, nothing is attached.
- *   revoke()   the master withdraws an open invitation.
- *   pause() / unpause() / remove()   the master manages who may work — the
- *              invited accounts of his reference AND the grants on it, through
- *              the same handgrips.
+ *   revoke()   the inviter withdraws an open invitation of the reference.
  *
- * ⚠️ **One e-mail = one account.** That rule stands, and it is what a grant
- * exists for: since 2026-09-06 a known address is no longer refused outright —
- * the refusal was the SIGNAL that one human works for two references, the
- * signal fired (2026-09-01), and the apparatus is this. What remains
- * forbidden is a second account to the same address, under whatever pretext.
- * `ALREADY_TAKEN` now means exactly what the master reads: «gehört schon
- * dazu» — the address hangs on HIS reference already, as its home or by a
- * grant. About any OTHER reference he learns nothing (the anti-oracle
- * exception of the ADR is narrower than before, not wider).
+ * ⚠️ **One e-mail = one account.** Unchanged since B7 v1.1.0: a known address
+ * is never given a second account. What it gets is a second MEMBERSHIP, and
+ * since ADR-038 that is the project's row, not this module's «grant».
+ * `ALREADY_TAKEN` means exactly what the inviter reads: «gehört schon dazu» —
+ * the address belongs to THIS reference already, in whatever state. About any
+ * OTHER reference the inviter learns nothing.
  *
- * ⚠️ **A grant confers no ownership.** Inviting, pausing and removing follow
- * the HOME (`tenantRefOf()` reads the account, never the session's choice) —
- * otherwise a guest fetches somebody the master cannot get rid of, and
- * ownership of the reference dilutes exactly where it counts. Every method
- * here therefore checks the master itself — a controller guard alone would be
- * one forgotten route away from nothing.
+ * ⚠️ **No rights are checked here.** Whether the inviter may invite for the
+ * reference is the project's question to its own list (owner, not agent);
+ * the project asks it BEFORE calling invite(), and its controller refuses
+ * without it. This flow takes the reference as given — the way TokenService
+ * always did.
  */
 final class InvitationFlow
 {
@@ -70,48 +72,51 @@ final class InvitationFlow
      */
     public const NOTIFY_ROUTE_KEY = 'invite';
 
-    // Outcomes — deliberately not booleans: «refused because the address
-    // already belongs here» is a MESSAGE the master reads, not an error, and
-    // the UI has to be able to tell it apart from a throttle or a lost mail.
+    // Outcomes of invite() — deliberately not booleans: «refused because the
+    // address already belongs here» is a MESSAGE the inviter reads, not an
+    // error, and the UI has to tell it apart from a throttle or a lost mail.
     public const SENT          = 'sent';
     public const ALREADY_TAKEN = 'already-taken';
     public const THROTTLED     = 'throttled';
     public const INVALID       = 'invalid';
-    public const DENIED        = 'denied';
 
-    // Outcomes of redeem(): an account was born, a grant was attached, or nothing.
+    // Outcomes of redeem(): an account was born, an existing one joined, or
+    // nothing happened.
     public const REDEEMED = 'redeemed';
-    public const GRANTED  = 'granted';
+    public const JOINED   = 'joined';
     public const DEAD     = 'dead';
-
-    // What remove() removed — the flash has to say which, because one deletes
-    // a person and the other only a permission.
-    public const REMOVED_ACCOUNT = 'account';
-    public const REMOVED_GRANT   = 'grant';
 
     /**
      * @param \Closure(EmailMessage): bool         $sendMail
      * @param \Closure(MemberAccount, array): bool $notifyUs operator notification —
      *        the redemption is a registration like any other, and someone has to
      *        activate it (B7 decision 8). The second argument carries what makes
-     *        THIS case different: which reference the account attaches to, who
-     *        invited, and (`grant`) whether it is a grant on an existing account
-     *        rather than a new one. Without it the operator reads «Firma —» and
-     *        cannot tell an invitation from a fresh registration.
+     *        THIS case different: which reference the account joins, who
+     *        invited, and (`existing`) whether the account was there already.
+     *        Without it the operator reads «Firma —» and cannot tell an
+     *        invitation from a fresh registration.
      * @param string $inviteUrl absolute URL of the redemption form; the token is appended
      * @param \Closure(string): string $tenantLabel resolves a project reference to
      *        a readable name for the mail. The module knows no tenants — the
      *        project hands this in (memberConfig `tenantLabelHook`).
+     * @param ?\Closure(MemberAccount, string): bool $holds does this account belong
+     *        to the reference already, in any state? (memberConfig
+     *        `membershipHook`, wrapped). Null = a project without memberships;
+     *        then nobody «already belongs» anywhere.
+     * @param ?\Closure(MemberAccount, string, ?string): void $joined the project side
+     *        of a redemption: «this account joined that reference, invited by X».
+     *        Null = nothing is attached (module standalone).
      */
     public function __construct(
         private MemberAccounts $accounts,
         private TokenService $tokens,
-        private MemberGrants $grants,
         private MemberThrottle $throttle,
         private \Closure $sendMail,
         private \Closure $notifyUs,
         private string $inviteUrl,
         private \Closure $tenantLabel,
+        private ?\Closure $holds = null,
+        private ?\Closure $joined = null,
         private int $invitesPerDay = self::INVITES_PER_DAY,
     ) {
     }
@@ -124,11 +129,12 @@ final class InvitationFlow
             ->getArrayConfig('App/Config/memberConfig', 'Z77\\Module\\Member');
 
         $labelFqcn = (string)$config->get('tenantLabelHook', '');
+        $joinFqcn  = (string)$config->get('joinHook', '');
+        $choice    = new TenantChoice(null, TenantChoice::hookFromConfig());
 
         return new self(
             new MemberAccounts($uem),
             new TokenService($uem),
-            new MemberGrants($uem),
             new MemberThrottle(MemberThrottle::defaultDir()),
             static fn(EmailMessage $mail): bool => DI::getEmailService()->send($mail),
             static function (MemberAccount $account, array $invite): bool {
@@ -160,45 +166,14 @@ final class InvitationFlow
             $labelFqcn !== ''
                 ? static fn(string $ref): string => (string)(new $labelFqcn())($ref)
                 : static fn(string $ref): string => $ref,
+            static fn(MemberAccount $account, string $ref): bool => $choice->holds($account, $ref),
+            $joinFqcn !== '' && class_exists($joinFqcn)
+                ? static function (MemberAccount $account, string $ref, ?string $invitedBy): void {
+                    (new $joinFqcn())($account, $ref, $invitedBy);
+                }
+                : null,
             (int)$config->get('invitesPerTenantPerDay', self::INVITES_PER_DAY),
         );
-    }
-
-    /**
-     * May this account invite, pause and remove? The one question the surface
-     * asks — the writes of the «Zugänge» area refuse without it («not present,
-     * not forbidden», B10 v1.6.0). Whether the area is SHOWN asks one thing
-     * more, see managesHere().
-     *
-     * It is deliberately the same predicate every method below uses, so a
-     * surface that forgets to ask cannot grant anything the flow refuses.
-     */
-    public function mayManage(MemberAccount $account): bool
-    {
-        return $this->tenantRefOf($account) !== null;
-    }
-
-    /**
-     * May this account manage the accesses of the reference it is WORKING
-     * FOR right now? True only when the session's choice IS the home and the
-     * account is its master — the predicate the «Zugänge» AREA and the nav
-     * entry exist on (2026-09-12). A guest on a granted reference gets false
-     * although he is master somewhere else: what he sees on screen belongs
-     * to another reference, and the accesses he owns are not on it.
-     *
-     * The choice is handed in, not read here: this flow is wired without a
-     * session in the backend and in the harness, and a predicate that
-     * silently answered «home» there would be true for everyone. Callers
-     * read it once through `MemberGrants::activeTenantRef()`.
-     *
-     * ⚠️ Visibility only. The WRITES (invite, pause, remove) keep asking
-     * mayManage() and act on the home — see the area controller for why.
-     */
-    public function managesHere(MemberAccount $account, string $activeTenantRef): bool
-    {
-        $home = $this->tenantRefOf($account);
-
-        return $home !== null && trim($activeTenantRef) === $home;
     }
 
     /** The readable name of a reference — the project's label hook, or the bare reference. */
@@ -207,18 +182,20 @@ final class InvitationFlow
         return ($this->tenantLabel)($tenantRef);
     }
 
-    // ── the master's handgrips ─────────────────────────────────────────────
+    // ── the inviter's handgrips ────────────────────────────────────────────
 
     /**
-     * @return self::SENT|self::ALREADY_TAKEN|self::THROTTLED|self::INVALID|self::DENIED
+     * @param MemberAccount $inviter who invites — named in the mail and kept on
+     *        the token; its RIGHT to invite for $tenantRef is the caller's to
+     *        check, not this flow's
+     * @return self::SENT|self::ALREADY_TAKEN|self::THROTTLED|self::INVALID
      */
-    public function invite(MemberAccount $master, string $email, ?int $now = null): string
+    public function invite(MemberAccount $inviter, string $tenantRef, string $email, ?int $now = null): string
     {
         $now       = $now ?? time();
-        $tenantRef = $this->tenantRefOf($master);
-
-        if ($tenantRef === null) {
-            return self::DENIED;
+        $tenantRef = trim($tenantRef);
+        if ($tenantRef === '') {
+            return self::INVALID;
         }
 
         $email = MemberAccount::normalizeEmail($email);
@@ -226,15 +203,15 @@ final class InvitationFlow
             return self::INVALID;
         }
 
-        // Refused only when the address hangs on THIS reference already —
-        // its home, or a grant in any state (a paused one is resumed, not
-        // re-invited). A known address elsewhere gets the token like an
-        // unknown one; what differs is the page behind the link, and that
-        // page only the mailbox owner sees. Checked BEFORE the throttle
-        // counts: a master who typed a colleague's address by mistake should
-        // not burn one of his daily invitations on the message.
+        // Refused only when the address belongs to THIS reference already, in
+        // any state (a paused membership is resumed, not re-invited). A known
+        // address elsewhere gets the token like an unknown one; what differs
+        // is the page behind the link, and that page only the mailbox owner
+        // sees. Checked BEFORE the throttle counts: an inviter who typed a
+        // colleague's address by mistake should not burn one of his daily
+        // invitations on the message.
         $existing = $this->accounts->findByEmail($email);
-        if ($existing !== null && $this->grants->hasTenant($existing, $tenantRef)) {
+        if ($existing !== null && $this->holds !== null && ($this->holds)($existing, $tenantRef)) {
             return self::ALREADY_TAKEN;
         }
 
@@ -245,119 +222,30 @@ final class InvitationFlow
         $plain = $this->tokens->issueInvite(
             $tenantRef,
             $email,
-            (string)$master->getId(),
+            (string)$inviter->getId(),
             self::INVITE_TTL_SECONDS,
             $now
         );
 
-        ($this->sendMail)($this->inviteMail($master, $tenantRef, $email, $plain, $existing !== null));
+        ($this->sendMail)($this->inviteMail($inviter, $tenantRef, $email, $plain, $existing !== null));
 
         return self::SENT;
     }
 
-    /** True when the open invitation belonged to this master's reference and is now withdrawn. */
-    public function revoke(MemberAccount $master, int $tokenId, ?int $now = null): bool
+    /** True when the open invitation belonged to the reference and is now withdrawn. */
+    public function revoke(string $tenantRef, int $tokenId, ?int $now = null): bool
     {
-        $tenantRef = $this->tenantRefOf($master);
+        $tenantRef = trim($tenantRef);
 
-        return $tenantRef !== null && $this->tokens->revokeInvite($tokenId, $tenantRef, $now);
+        return $tenantRef !== '' && $this->tokens->revokeInvite($tokenId, $tenantRef, $now);
     }
 
-    /**
-     * Pause / resume an invited account OR a grant on the master's reference —
-     * the id says which (the two id spaces are disjoint by construction,
-     * `m-…` and `g-…`). The master is deliberately NOT pausable — not even by
-     * himself: a reference without a usable account would only be reachable
-     * through us (B7 spec, and the ADR leaves the hand-over to the backend
-     * until it is a real case).
-     */
-    public function pause(MemberAccount $master, string $id, bool $paused, ?int $now = null): bool
+    /** @return MemberToken[] the open invitations of a reference */
+    public function openInvites(string $tenantRef, ?int $now = null): array
     {
-        $target = $this->manageable($master, $id);
-        if ($target === null) {
-            return false;
-        }
+        $tenantRef = trim($tenantRef);
 
-        if ($target instanceof MemberGrant) {
-            $paused ? $this->grants->suspend($target, $now) : $this->grants->unsuspend($target);
-        } else {
-            $paused ? $this->accounts->suspend($target, $now) : $this->accounts->unsuspend($target);
-        }
-
-        return true;
-    }
-
-    /**
-     * Delete an invited account, or remove a grant. Final — the quiet path is
-     * pause(). Returns WHAT was removed, or null when nothing was.
-     *
-     * ⚠️ A removed grant never deletes the account: the account belongs to
-     * another reference and stays there untouched. A removed ACCOUNT takes its
-     * own grants with it (MemberAccounts::delete()).
-     *
-     * @return self::REMOVED_ACCOUNT|self::REMOVED_GRANT|null
-     */
-    public function remove(MemberAccount $master, string $id): ?string
-    {
-        $target = $this->manageable($master, $id);
-        if ($target === null) {
-            return null;
-        }
-
-        if ($target instanceof MemberGrant) {
-            $this->grants->delete($target);
-
-            return self::REMOVED_GRANT;
-        }
-
-        $this->accounts->delete($target);
-
-        return self::REMOVED_ACCOUNT;
-    }
-
-    // ── what the section shows ─────────────────────────────────────────────
-
-    /** @return MemberAccount[] every account whose HOME is the master's reference, master first */
-    public function accountsOf(MemberAccount $master): array
-    {
-        $tenantRef = $this->tenantRefOf($master);
-
-        return $tenantRef === null ? [] : $this->accounts->findByTenant($tenantRef);
-    }
-
-    /**
-     * The grants ON the master's reference, each with the account behind it —
-     * the second half of «wer für meine Verwaltung arbeiten darf». Kept apart
-     * from accountsOf(): the two are different things (a person vs. a
-     * permission of a person who lives elsewhere), and a mixed list would make
-     * every consumer sort them out again.
-     *
-     * @return list<array{grant: MemberGrant, account: MemberAccount}>
-     */
-    public function grantsOf(MemberAccount $master): array
-    {
-        $tenantRef = $this->tenantRefOf($master);
-        if ($tenantRef === null) {
-            return [];
-        }
-
-        $rows = [];
-        foreach ($this->grants->findByTenant($tenantRef) as $grant) {
-            $account = $this->accounts->findById($grant->getAccountId());
-            if ($account !== null) {
-                $rows[] = ['grant' => $grant, 'account' => $account];
-            }
-        }
-
-        return $rows;
-    }
-
-    /** @return MemberToken[] the open invitations of the master's reference */
-    public function openInvites(MemberAccount $master, ?int $now = null): array
-    {
-        $tenantRef = $this->tenantRefOf($master);
-
-        return $tenantRef === null ? [] : $this->tokens->openInvitesFor($tenantRef, $now);
+        return $tenantRef === '' ? [] : $this->tokens->openInvitesFor($tenantRef, $now);
     }
 
     // ── the invited person's side ──────────────────────────────────────────
@@ -380,8 +268,8 @@ final class InvitationFlow
     /**
      * The account behind an invitation's address, if there is one — this is
      * what decides the SHAPE of the redemption page: a name form for a new
-     * account, a yes/no for a grant. Only the holder of the link ever sees the
-     * answer, and the link went to that very mailbox.
+     * account, a yes/no for joining with the existing one. Only the holder of
+     * the link ever sees the answer, and the link went to that very mailbox.
      */
     public function existingAccountFor(MemberToken $token): ?MemberAccount
     {
@@ -392,17 +280,17 @@ final class InvitationFlow
 
     /**
      * The redemption submit. Decided by the store at THIS moment, not by what
-     * the page showed: an unknown address gets an account, born `confirmed`
-     * with its reference already set; a known address gets a grant on its
-     * existing account. Both wait for OUR activation like every other
+     * the page showed: an unknown address gets an account, born `confirmed`; a
+     * known address keeps its own. Then the project is told that the account
+     * joined the reference — and both wait for OUR activation like every other
      * registration (decision 2 unchanged).
      *
      * ⚠️ The address is taken from the TOKEN, never from the form. The form
      * shows it fixed, but a fixed field is a display, not a guarantee; without
      * this the recipient redeems with any address he likes and the reference
-     * gets somebody other than the one the master meant.
+     * gets somebody other than the one the inviter meant.
      *
-     * @return array{outcome: string, account: ?MemberAccount, grant: ?MemberGrant}
+     * @return array{outcome: string, account: ?MemberAccount}
      */
     public function redeem(
         ?string $plainToken,
@@ -425,27 +313,32 @@ final class InvitationFlow
 
         $existing = $this->accounts->findByEmail($email);
         if ($existing !== null) {
-            return $this->redeemAsGrant($token, $existing, (string)$plainToken, $tenantRef, $now);
+            return $this->redeemAsJoin($token, $existing, (string)$plainToken, $tenantRef, $now);
         }
 
-        $account = $this->accounts->registerFromInvite($email, $firstName, $lastName, $tenantRef, $now);
+        $account = $this->accounts->registerFromInvite($email, $firstName, $lastName, $now);
         if ($account === null) {
             // Raced: the address got its account between lookup and insert.
-            // The link is NOT consumed — the next submit takes the grant path.
+            // The link is NOT consumed — the next submit takes the join path.
             return $this->outcome(self::ALREADY_TAKEN);
         }
 
         // Consume only now: a failure above must leave the link usable.
         $this->tokens->redeemToken((string)$plainToken, MemberToken::PURPOSE_INVITE, $now);
 
-        ($this->notifyUs)($account, $this->notifyContext($token, $tenantRef, null));
+        // The project attaches — AFTER the account exists, so the hook can
+        // reference it, and after the token is consumed, so a hook that throws
+        // cannot leave a redeemable link behind an account that is half there.
+        $this->tellJoined($account, $tenantRef, $token->getInvitedBy());
+
+        ($this->notifyUs)($account, $this->notifyContext($token, $tenantRef, false));
 
         return $this->outcome(self::REDEEMED, $account);
     }
 
     /**
      * The known address says NO. The link dies with it — nothing is attached,
-     * and the master sees the invitation leave his open list the same way an
+     * and the inviter sees the invitation leave his open list the same way an
      * expired one does. A decline by mistake is a new invitation, deliberately:
      * a link that survives its own refusal is a link somebody can sit on.
      */
@@ -459,128 +352,72 @@ final class InvitationFlow
         return $this->tokens->redeemToken((string)$plainToken, MemberToken::PURPOSE_INVITE, $now) !== null;
     }
 
-    // ── the operator's handgrips on a grant ────────────────────────────────
+    // ── what the project sends when it activates a join ────────────────────
 
     /**
-     * confirmed → active, and the person is told — the same sentence the
-     * account activation sends, because from the customer's chair it is the
-     * same event: «you may work there now». NO activation hook runs (nothing is
-     * created), which is exactly why this is not RegistrationFlow::activate().
+     * «Ihr Zugang zu X ist freigeschaltet» — the mail for an EXISTING account
+     * that may now work for an additional reference. The project activates the
+     * membership (its row, its decision) and calls this for the sentence; the
+     * module keeps the template because a mail is its craft. Same event from
+     * the customer's chair as «Sie sind freigeschaltet», with one difference
+     * worth a sentence: he signs in as always and CHOOSES the reference in the
+     * header. Rejection sends NO automatic mail, as with accounts.
      */
-    public function activateGrant(MemberGrant $grant, string $loginUrl, ?int $now = null): void
+    public function sendJoinActivated(MemberAccount $account, string $tenantRef, string $loginUrl): void
     {
-        $this->grants->activate($grant, $now);
-
-        $account = $this->accounts->findById($grant->getAccountId());
-        if ($account === null) {
-            return; // an orphan — the cleanup will take it; nobody to write to
-        }
-
         ($this->sendMail)(
             (new EmailMessage())
                 ->to($account->getEmail())
-                ->subject('Ihr Zugang zu «' . ($this->tenantLabel)($grant->getTenantRef()) . '» ist freigeschaltet')
-                ->template('emails/grant-activated', 'Z77\\Module\\Member', [
+                ->subject('Ihr Zugang zu «' . ($this->tenantLabel)($tenantRef) . '» ist freigeschaltet')
+                ->template('emails/join-activated', 'Z77\\Module\\Member', [
                     'account'    => $account,
-                    'tenantName' => ($this->tenantLabel)($grant->getTenantRef()),
+                    'tenantName' => ($this->tenantLabel)($tenantRef),
                     'loginUrl'   => $loginUrl,
                 ])
         );
     }
 
-    /** The operator's rejection: the grant disappears, NO automatic mail (B7 spec: what we write, we write ourselves). */
-    public function rejectGrant(MemberGrant $grant): void
-    {
-        $this->grants->delete($grant);
-    }
-
     // ── internals ──────────────────────────────────────────────────────────
 
     /**
-     * The reference a master may act on, or null when this account may not act
-     * at all. ⚠️ The HOME, never the session's choice (ADR-037): a grant
-     * confers no right to invite, pause or remove.
-     */
-    private function tenantRefOf(MemberAccount $master): ?string
-    {
-        $ref = trim((string)$master->getTenantRef());
-
-        return ($master->isMaster() && $master->isActive() && $ref !== '') ? $ref : null;
-    }
-
-    /**
-     * The target of pause/remove: an account whose HOME is the SAME reference
-     * and that is not the master, or a grant ON that reference. Everything
-     * else — a foreign reference, an unknown id, the master himself — answers
-     * null, and the caller turns that into a 404.
-     */
-    private function manageable(MemberAccount $master, string $id): MemberAccount|MemberGrant|null
-    {
-        $tenantRef = $this->tenantRefOf($master);
-        if ($tenantRef === null || $id === '' || $id === (string)$master->getId()) {
-            return null;
-        }
-
-        $account = $this->accounts->findById($id);
-        if ($account !== null) {
-            return ((string)$account->getTenantRef() === $tenantRef && !$account->isMaster()) ? $account : null;
-        }
-
-        $grant = $this->grants->findById($id);
-
-        return ($grant !== null && $grant->getTenantRef() === $tenantRef) ? $grant : null;
-    }
-
-    /**
-     * The known-address half of redeem(): a grant on the existing account.
-     * «Already here» — home or grant, whatever state — consumes the link and
-     * answers ALREADY_TAKEN, so a link cannot be sat on either.
+     * The known-address half of redeem(): the existing account joins. «Already
+     * here» — whatever state — consumes the link and answers ALREADY_TAKEN, so
+     * a link cannot be sat on either.
      *
-     * @return array{outcome: string, account: ?MemberAccount, grant: ?MemberGrant}
+     * @return array{outcome: string, account: ?MemberAccount}
      */
-    private function redeemAsGrant(
+    private function redeemAsJoin(
         MemberToken $token,
         MemberAccount $existing,
         string $plainToken,
         string $tenantRef,
         int $now
     ): array {
-        if ($this->grants->hasTenant($existing, $tenantRef)) {
-            $this->tokens->redeemToken($plainToken, MemberToken::PURPOSE_INVITE, $now);
-
-            return $this->outcome(self::ALREADY_TAKEN);
-        }
-
-        $grant = $this->grants->grant($existing, $tenantRef, $token->getInvitedBy(), $now);
-        if ($grant === null) {
+        if ($this->holds !== null && ($this->holds)($existing, $tenantRef)) {
             $this->tokens->redeemToken($plainToken, MemberToken::PURPOSE_INVITE, $now);
 
             return $this->outcome(self::ALREADY_TAKEN);
         }
 
         $this->tokens->redeemToken($plainToken, MemberToken::PURPOSE_INVITE, $now);
+        $this->tellJoined($existing, $tenantRef, $token->getInvitedBy());
 
-        ($this->notifyUs)($existing, $this->notifyContext($token, $tenantRef, $existing));
+        ($this->notifyUs)($existing, $this->notifyContext($token, $tenantRef, true));
 
-        return $this->outcome(self::GRANTED, $existing, $grant);
+        return $this->outcome(self::JOINED, $existing);
     }
 
-    /**
-     * What the operator notification needs beyond the account. Read the
-     * inviter off the TOKEN, before it is purged: it is the only place that
-     * records who sent this one. Falls back to nothing rather than to a guess
-     * — «der Master» would be a claim, not a record.
-     *
-     * For a grant ($existing given) the mail also names the account's HOME:
-     * the operator is about to let a person of one customer work for another,
-     * and that is the sentence he has to read before he does.
-     *
-     * @return array{tenantRef: string, tenantName: string, inviter: string, grant: bool, homeName: string}
-     */
-    private function notifyContext(MemberToken $token, string $tenantRef, ?MemberAccount $existing): array
+    private function tellJoined(MemberAccount $account, string $tenantRef, ?string $invitedBy): void
+    {
+        if ($this->joined !== null) {
+            ($this->joined)($account, $tenantRef, $invitedBy !== null && $invitedBy !== '' ? $invitedBy : null);
+        }
+    }
+
+    /** @return array{tenantRef:string, tenantName:string, inviter:string, existing:bool} */
+    private function notifyContext(MemberToken $token, string $tenantRef, bool $existing): array
     {
         $inviter = $this->accounts->findById((string)$token->getInvitedBy());
-        $home    = trim((string)$existing?->getTenantRef());
 
         return [
             'tenantRef'  => $tenantRef,
@@ -589,19 +426,18 @@ final class InvitationFlow
                 ? ''
                 : (trim(($inviter->getFirstName() ?? '') . ' ' . ($inviter->getLastName() ?? ''))
                     ?: (string)$inviter->getEmail()),
-            'grant'      => $existing !== null,
-            'homeName'   => $home !== '' ? ($this->tenantLabel)($home) : '',
+            'existing'   => $existing,
         ];
     }
 
-    /** @return array{outcome: string, account: ?MemberAccount, grant: ?MemberGrant} */
-    private function outcome(string $outcome, ?MemberAccount $account = null, ?MemberGrant $grant = null): array
+    /** @return array{outcome: string, account: ?MemberAccount} */
+    private function outcome(string $outcome, ?MemberAccount $account = null): array
     {
-        return ['outcome' => $outcome, 'account' => $account, 'grant' => $grant];
+        return ['outcome' => $outcome, 'account' => $account];
     }
 
     private function inviteMail(
-        MemberAccount $master,
+        MemberAccount $inviter,
         string $tenantRef,
         string $email,
         string $plain,
@@ -610,7 +446,7 @@ final class InvitationFlow
         $link = $this->inviteUrl . (str_contains($this->inviteUrl, '?') ? '&' : '?')
               . 'invite=' . urlencode($plain);
 
-        $inviter = trim(($master->getFirstName() ?? '') . ' ' . ($master->getLastName() ?? ''));
+        $name = trim(($inviter->getFirstName() ?? '') . ' ' . ($inviter->getLastName() ?? ''));
 
         return (new EmailMessage())
             ->to($email)
@@ -621,13 +457,13 @@ final class InvitationFlow
                 // spam, and a link in a mail that reads like spam is one
                 // nobody clicks.
                 'tenantName' => ($this->tenantLabel)($tenantRef),
-                'inviter'    => $inviter !== '' ? $inviter : $master->getEmail(),
+                'inviter'    => $name !== '' ? $name : $inviter->getEmail(),
                 'inviteUrl'  => $link,
                 'validDays'  => (int)round(self::INVITE_TTL_SECONDS / 86400),
                 // Whether the page behind the link will ask for a name (new
-                // account) or for a yes (grant on the existing one). Told to
-                // the RECIPIENT only — the master's outcome is the same either
-                // way, and the mailbox owner knows about his own account.
+                // account) or for a yes (joining with the existing one). Told
+                // to the RECIPIENT only — the inviter's outcome is the same
+                // either way, and the mailbox owner knows about his own account.
                 'known'      => $known,
             ]);
     }

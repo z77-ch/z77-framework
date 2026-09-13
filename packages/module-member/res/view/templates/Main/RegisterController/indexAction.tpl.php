@@ -9,14 +9,14 @@
  * premises and a second template would drift from this one:
  *   $invite === null    the open registration
  *   $invite['dead']     a link that cannot be redeemed any more
- *   $invite['grant']    the invited address HAS an account — «add this tenant
+ *   $invite['join']     the invited address HAS an account — «add this tenant
  *                       to it?», a yes/no POST (ADR-037)
  *   otherwise           redeeming an invitation into a NEW account (name form)
  *
  * @var string $pageTitle
  * @var ?array $invite    null | ['dead'=>true]
- *                        | ['dead'=>false,'grant'=>false,'email'=>…,'outcome'=>?string]
- *                        | ['dead'=>false,'grant'=>true,'email'=>…,'tenantName'=>…,'outcome'=>?string]
+ *                        | ['dead'=>false,'join'=>false,'email'=>…,'outcome'=>?string]
+ *                        | ['dead'=>false,'join'=>true,'email'=>…,'tenantName'=>…,'outcome'=>?string]
  * @var ?\Z77\Shared\Forms\PublicForm $form
  * @var array<string,array>  $fields
  * @var array<string,string> $errors
@@ -30,7 +30,7 @@ use Z77\Module\Member\Services\InvitationFlow;
 
 $isInvite = is_array($invite ?? null);
 $isDead   = $isInvite && ($invite['dead'] ?? false);
-$isGrant  = $isInvite && !$isDead && ($invite['grant'] ?? false);
+$isJoin   = $isInvite && !$isDead && ($invite['join'] ?? false);
 $taken    = $isInvite && (($invite['outcome'] ?? null) === InvitationFlow::ALREADY_TAKEN);
 ?>
 <div class="me-card">
@@ -49,7 +49,7 @@ $taken    = $isInvite && (($invite['outcome'] ?? null) === InvitationFlow::ALREA
 
 <?php elseif ($taken): ?>
     <h1 class="me-card__title">Einladung annehmen</h1>
-    <?php /* Home or grant, whatever state — the address is on this tenant
+    <?php /* Whatever state — the address is on this tenant
              already. The link is consumed; nothing to do but sign in. */ ?>
     <p class="me-card__lead" role="alert">
         Ihre E-Mail-Adresse gehört bereits zu dieser Verwaltung. Melden Sie sich
@@ -57,7 +57,7 @@ $taken    = $isInvite && (($invite['outcome'] ?? null) === InvitationFlow::ALREA
     </p>
     <p class="me-card__aside"><a href="/member/main/login">Zur Anmeldung</a></p>
 
-<?php elseif ($isGrant): ?>
+<?php elseif ($isJoin): ?>
     <h1 class="me-card__title">Verwaltung hinzufügen?</h1>
     <p class="me-card__lead">
         Sie wurden eingeladen, für <strong><?= e((string)$invite['tenantName']) ?></strong>

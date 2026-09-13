@@ -16,6 +16,22 @@ not obvious from the message — a short why / follow-up. Keep it terse.
 
 ## 2026-09-13
 
+### module-member: ADR-038 built — the member is the person, memberships are the project's
+
+- `MemberAccount` loses `tenantRef`, `tenantRole`, `suspendedAt`; `MemberGrant`,
+  `MemberGrants`, `grants.json` and yesterday's `ZugaengeController` are gone (the area
+  moves to the project with its templates). New `TenantChoice` + hooks `membershipHook`,
+  `joinHook`, `areaVisibilityHook`; `InvitationFlow` keeps only the token's craft
+  (`invite(inviter, ref, email)` checks no right, `redeem()` calls `joinHook`,
+  `sendJoinActivated()` for the project). Login no longer refuses a paused account —
+  pausing is a membership state at the project (MEM-016). Backend accounts list reads
+  «creates / attaches» from the hook. `shell.js` pause switch posts to `data-url`
+  (hand copy!). ⚠️ Ships ONLY together with the project side (axo3 S2): a framework
+  without `tenantRef` and a project still reading it must never meet. zihlundsee: no
+  hooks → no switcher, no invitations; its `accounts.json` drops the four keys on the
+  next save of each account. Measured by the axo3 suites (b7, b10) — the framework
+  carries no member tests of its own.
+
 ### ADR-038: the member module knows no project reference (decided, not built)
 
 - `company`, `tenantRef`, `tenantRole`, `suspendedAt`-as-master-pause and `grants.json`

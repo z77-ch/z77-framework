@@ -1,7 +1,8 @@
 <?php
 /**
- * Grant activation mail BODY (ADR-037): the operator activated a grant — an
- * EXISTING account may now work for an additional tenant. Same event from the
+ * Join activation mail BODY (ADR-037/038): the project activated a membership
+ * — an EXISTING account may now work for an additional tenant. Sent by the
+ * project through {@see \Z77\Module\Member\Services\InvitationFlow::sendJoinActivated()}. Same event from the
  * customer's chair as «Sie sind freigeschaltet», with one difference worth a
  * sentence: he signs in as always and CHOOSES the tenant in the header.
  * Rejection sends NO automatic mail, as with accounts.

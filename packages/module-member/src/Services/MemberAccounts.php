@@ -3,15 +3,15 @@
 namespace Z77\Module\Member\Services;
 
 use Z77\Module\Member\Entities\MemberAccount;
-use Z77\Module\Member\Entities\MemberGrant;
 use Z77\Persistence\Resolver\UnifiedEntityManager;
 
 /**
  * Account lifecycle of the member module (B7 spec). Registration creates the
  * account only — what a project attaches to activation (AXO3: creating the
- * tenant) runs through the activation hook passed to activate(): the handler
- * receives the account, returns the project reference (or null), and only
- * when it SUCCEEDS does the account become active. A failing handler leaves
+ * tenant and the owner membership) runs through the activation hook passed
+ * to activate(): the handler receives the account, and only when it SUCCEEDS
+ * does the account become active. Nothing it returns is stored — since
+ * ADR-038 the account carries no project reference. A failing handler leaves
  * the account 'confirmed' — no active account without its project side
  * (spec: "kein aktives Konto ohne Mandant").
  *
@@ -44,29 +44,6 @@ final class MemberAccounts
     public function all(): array
     {
         return $this->repository()->findAll();
-    }
-
-    /**
-     * Every account hanging on one project reference (B7 v1.1.0) — the
-     * master's list, and the deletion path of a project that removes its
-     * accounts with it. Sorted master first, then by creation, so the list has
-     * an order that means something instead of the store's.
-     *
-     * @return MemberAccount[]
-     */
-    public function findByTenant(string $tenantRef): array
-    {
-        $accounts = array_values(array_filter(
-            $this->all(),
-            static fn(MemberAccount $a): bool => $tenantRef !== '' && (string)$a->getTenantRef() === $tenantRef
-        ));
-
-        usort($accounts, static function (MemberAccount $a, MemberAccount $b): int {
-            return [$a->isMaster() ? 0 : 1, (string)$a->getCreatedAt()]
-               <=> [$b->isMaster() ? 0 : 1, (string)$b->getCreatedAt()];
-        });
-
-        return $accounts;
     }
 
     /**
@@ -105,14 +82,10 @@ final class MemberAccounts
     /**
      * The account behind a redeemed invitation (B7 v1.1.0): it skips a station.
      * Whoever clicked the link in his own inbox has proved the address — the
-     * invitation IS the verification, so the account is born `confirmed`,
-     * carries its project reference from the start, and waits only for OUR
-     * activation (decision 2 is untouched; only «no new tenant» differs).
-     *
-     * `tenantRole = member` is written HERE, not by the activation hook
-     * (spec v1.1.1): between redemption and activation the account already
-     * shows up in the master's list, and without the role it would read as a
-     * second master for the length of our handgrip.
+     * invitation IS the verification, so the account is born `confirmed` and
+     * waits only for OUR activation (decision 2 is untouched). WHICH reference
+     * it joined is the project's row, written by the joinHook right after
+     * this (ADR-038) — the account itself knows nothing of it.
      *
      * Returns null when the address meanwhile got an account — the caller
      * turns that into the invitation's «already taken» message.
@@ -121,7 +94,6 @@ final class MemberAccounts
         string $email,
         ?string $firstName,
         ?string $lastName,
-        string $tenantRef,
         ?int $now = null
     ): ?MemberAccount {
         $now ??= time();
@@ -135,32 +107,12 @@ final class MemberAccounts
         $account->setEmail($email);
         $account->setFirstName($firstName);
         $account->setLastName($lastName);
-        $account->setTenantRef($tenantRef);
-        $account->setTenantRole(MemberAccount::ROLE_MEMBER);
         $account->setCreatedAt(date(DATE_ATOM, $now));
         $account->markConfirmed(date(DATE_ATOM, $now));
 
         $this->save($account);
 
         return $account;
-    }
-
-    /**
-     * Paused / resumed by the master (B7 v1.1.0). The account keeps everything
-     * it has — 2FA, devices, its state; only the access rests. The refusal
-     * itself lives where «wer ist angemeldet?» is answered, so no caller has
-     * to remember to ask.
-     */
-    public function suspend(MemberAccount $account, ?int $now = null): void
-    {
-        $account->setSuspendedAt(date(DATE_ATOM, $now ?? time()));
-        $this->save($account);
-    }
-
-    public function unsuspend(MemberAccount $account): void
-    {
-        $account->setSuspendedAt(null);
-        $this->save($account);
     }
 
     /** registered → confirmed (caller has checked isConfirmed() for the "already" case). */
@@ -172,12 +124,14 @@ final class MemberAccounts
 
     /**
      * confirmed → active, wrapped around the project hook: $onActivated
-     * receives the account and returns the project reference (?string) that
-     * lands in tenantRef. If it throws, nothing is persisted — the account
-     * stays 'confirmed' and the caller reports the failure.
+     * receives the account and creates whatever the project attaches to it
+     * (AXO3: the tenant and the owner membership). Its return value is
+     * ignored (ADR-038 — nothing lands on the account). If it throws,
+     * nothing is persisted — the account stays 'confirmed' and the caller
+     * reports the failure.
      *
      * @param string[] $roles roles the account holds from now on
-     * @param ?callable(MemberAccount): ?string $onActivated
+     * @param ?callable(MemberAccount): mixed $onActivated
      */
     public function activate(
         MemberAccount $account,
@@ -189,7 +143,7 @@ final class MemberAccounts
 
         if ($onActivated !== null) {
             try {
-                $account->setTenantRef($onActivated($account));
+                $onActivated($account);
             } catch (\Throwable $e) {
                 // Roll the in-memory transition back — the entity was never saved.
                 $account->setState(MemberAccount::STATE_CONFIRMED);
@@ -203,23 +157,13 @@ final class MemberAccounts
     }
 
     /**
-     * Reject / cleanup / removal by the master: the account disappears; mails
-     * are the caller's decision.
-     *
-     * Its GRANTS go with it (ADR-037) — here, in the one method every deletion
-     * path ends in, so no path can forget: a grant without its account is a
-     * row that names nobody. The cleanup's orphan purge is the last instance
-     * behind this, not the first.
+     * Reject / cleanup / removal by the project: the account disappears; mails
+     * are the caller's decision. Its MEMBERSHIPS are the project's rows
+     * (ADR-038) — the project removes them where it decides to delete, this
+     * method never knew them.
      */
     public function delete(MemberAccount $account): void
     {
-        $id = (string)$account->getId();
-        if ($id !== '') {
-            foreach ($this->uem->getRepository(MemberGrant::class)->findBy(['account_id' => $id]) as $grant) {
-                $this->uem->remove($grant);
-            }
-        }
-
         $this->uem->remove($account);
         $this->uem->flush();
     }

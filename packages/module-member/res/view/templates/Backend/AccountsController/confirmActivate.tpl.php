@@ -10,12 +10,14 @@
  *
  * @var \Z77\Module\Member\Entities\MemberAccount $account
  * @var string $entityCsrf
- * @var array<string,array{name:string,master:string}> $tenantLabels
+ * @var list<array{ref:string,label:string,usable:bool,note:string}> $memberships
+ *      the project's memberships of this account (ADR-038) — a pending one
+ *      means the activation ATTACHES, none means it CREATES
  */
-$ref      = trim((string)$account->getTenantRef());
-$attaches = $ref !== '';
-$name     = (string)(($tenantLabels ?? [])[$ref]['name'] ?? $ref);
-$master   = (string)(($tenantLabels ?? [])[$ref]['master'] ?? '');
+$mine     = $memberships ?? [];
+$attaches = $mine !== [];
+$name     = implode(', ', array_map(static fn(array $m): string => (string)$m['label'], $mine));
+$note     = (string)($mine[0]['note'] ?? '');
 ?>
 <form data-fetch-post="<?= e($actionBase ?? '/backend/service/member-accounts') ?>/activate">
     <input type="hidden" name="account_id"  value="<?= e((string)$account->getId()) ?>">
@@ -28,7 +30,7 @@ $master   = (string)(($tenantLabels ?? [])[$ref]['master'] ?? '');
         <p>«<?= e($account->getEmail()) ?>» wird aktiv geschaltet und
            <strong>an den bestehenden Mandanten «<?= e($name) ?>» angehängt</strong>
            — es entsteht <strong>kein neuer Mandant</strong>.
-           <?= $master !== '' ? 'Eingeladen von ' . e($master) . '.' : '' ?>
+           <?= $note !== '' ? e($note) . '.' : '' ?>
            Der Kunde erhält die «Sie sind freigeschaltet»-Mail.</p>
         <?php else: ?>
         <p>«<?= e($account->getEmail()) ?>»

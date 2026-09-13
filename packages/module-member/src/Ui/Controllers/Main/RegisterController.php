@@ -104,9 +104,9 @@ class RegisterController extends AbstractMemberController
      * master may renew an invitation, otherwise the recipient keeps his own
      * access to the reference alive.
      *
-     * Two shapes behind a live link (ADR-037), decided by whether the invited
-     * address already has an account: a NAME FORM for a new account, or a
-     * YES/NO for a grant on the existing one. The decision is made again at
+     * Two shapes behind a live link (ADR-037/038), decided by whether the
+     * invited address already has an account: a NAME FORM for a new account,
+     * or a YES/NO for joining with the existing one. The decision is made again at
      * submit time by the flow, from the store — the page only chooses what to
      * show.
      */
@@ -123,7 +123,7 @@ class RegisterController extends AbstractMemberController
         }
 
         if ($invites->existingAccountFor($token) !== null) {
-            return $this->redeemAsGrant($plainToken, $token);
+            return $this->redeemAsJoin($plainToken, $token);
         }
 
         $this->layoutManager->addJs('public-form', 'Z77\\Module\\Frontend', 'footer', true);
@@ -142,21 +142,21 @@ class RegisterController extends AbstractMemberController
             // Only a real redemption leaves the form; the failure outcomes
             // re-render this page with their message, because a PRG to the
             // thank-you page would claim an account that does not exist. A
-            // GRANTED here means the address got an account between the page
-            // and the submit — the grant is real, so it leaves too.
-            return $outcome === InvitationFlow::REDEEMED || $outcome === InvitationFlow::GRANTED;
+            // JOINED here means the address got an account between the page
+            // and the submit — the join is real, so it leaves too.
+            return $outcome === InvitationFlow::REDEEMED || $outcome === InvitationFlow::JOINED;
         };
 
         if ($form->process($onValid)) {
             return $this->redirect('/member/main/register/danke?einladung=1'
-                . ($outcome === InvitationFlow::GRANTED ? '&mandant=1' : ''));
+                . ($outcome === InvitationFlow::JOINED ? '&mandant=1' : ''));
         }
 
         return $this->html([
             'pageTitle' => 'Einladung annehmen',
             'invite'    => [
                 'dead'    => false,
-                'grant'   => false,
+                'join'    => false,
                 'email'   => (string)$token->getEmail(),
                 'outcome' => $outcome,
             ],
@@ -164,16 +164,16 @@ class RegisterController extends AbstractMemberController
     }
 
     /**
-     * The grant shape: «add this reference to your account?» — a POST with a
+     * The join shape: «add this reference to your account?» — a POST with a
      * yes and a no, no fields. Plain CSRF instead of the public-form handler:
      * there is nothing to validate, throttle or log here, the link itself was
      * the admission ticket.
      *
-     * Not MEM-007's case (the grant grants nothing before our activation) —
+     * Not MEM-007's case (the join grants nothing before our activation) —
      * the POST is here so the person SEES and DECIDES what happens to his
      * account, and can refuse.
      */
-    private function redeemAsGrant(string $plainToken, MemberToken $token): HtmlResponse|RedirectResponse
+    private function redeemAsJoin(string $plainToken, MemberToken $token): HtmlResponse|RedirectResponse
     {
         $invites = $this->invites();
         $request = DI::getRequest();
@@ -187,9 +187,9 @@ class RegisterController extends AbstractMemberController
             }
 
             $outcome = $invites->redeem($plainToken, null, null)['outcome'];
-            if ($outcome === InvitationFlow::GRANTED || $outcome === InvitationFlow::REDEEMED) {
+            if ($outcome === InvitationFlow::JOINED || $outcome === InvitationFlow::REDEEMED) {
                 return $this->redirect('/member/main/register/danke?einladung=1'
-                    . ($outcome === InvitationFlow::GRANTED ? '&mandant=1' : ''));
+                    . ($outcome === InvitationFlow::JOINED ? '&mandant=1' : ''));
             }
         }
 
@@ -197,7 +197,7 @@ class RegisterController extends AbstractMemberController
             'pageTitle' => 'Einladung annehmen',
             'invite'    => [
                 'dead'       => false,
-                'grant'      => true,
+                'join'       => true,
                 'email'      => (string)$token->getEmail(),
                 'tenantName' => $invites->tenantLabelFor((string)$token->getTenantRef()),
                 'outcome'    => $outcome,
@@ -269,10 +269,10 @@ class RegisterController extends AbstractMemberController
         return $this->html([
             'pageTitle'  => $declined ? 'Einladung abgelehnt' : ($fromInvite ? 'Zugang beantragt' : 'Registrierung erhalten'),
             'fromInvite' => $fromInvite,
-            // A grant (ADR-037): the person HAS a login already, so the page
-            // says «wait for the mail, then choose the tenant» rather than
-            // «wait for the mail, then sign in».
-            'fromGrant'  => $fromInvite && trim((string) $request->getGetParameter('mandant')) !== '',
+            // A join (ADR-037/038): the person HAS a login already, so the
+            // page says «wait for the mail, then choose the tenant» rather
+            // than «wait for the mail, then sign in».
+            'fromJoin'   => $fromInvite && trim((string) $request->getGetParameter('mandant')) !== '',
             'declined'   => $declined,
         ]);
     }

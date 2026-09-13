@@ -16,11 +16,11 @@
  *
  * @var string $pageTitle
  * @var bool   $fromInvite
- * @var bool   $fromGrant
+ * @var bool   $fromJoin
  * @var bool   $declined
  */
 $fromInvite = (bool)($fromInvite ?? false);
-$fromGrant  = (bool)($fromGrant ?? false);
+$fromJoin   = (bool)($fromJoin ?? false);
 $declined   = (bool)($declined ?? false);
 ?>
 <div class="me-card">
@@ -31,7 +31,7 @@ $declined   = (bool)($declined ?? false);
         der Einladung wirkt nicht mehr. Falls Sie es sich anders überlegen,
         kann die Verwaltung Sie erneut einladen.
     </p>
-<?php elseif ($fromGrant): ?>
+<?php elseif ($fromJoin): ?>
     <h1 class="me-card__title">Vielen Dank</h1>
     <p class="me-card__lead">
         Die Verwaltung ist Ihrem Konto hinzugefügt und wartet auf die

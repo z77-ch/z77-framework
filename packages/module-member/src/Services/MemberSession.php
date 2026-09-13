@@ -30,8 +30,8 @@ final class MemberSession
 
     /**
      * ADR-037: the reference the signed-in account CHOSE to work for. Written
-     * only by MemberGrants::choose() after the check against the granted set;
-     * read only through MemberGrants::activeTenantRef(), which falls back to
+     * only by TenantChoice::choose() after the check against the available set;
+     * read only through TenantChoice::activeRef(), which falls back to
      * the home — this raw value may name a grant that has since been paused
      * or removed, and the raw reader deliberately does not know.
      */
@@ -110,7 +110,7 @@ final class MemberSession
 
     // ── the tenant choice (ADR-037) ────────────────────────────────────────
 
-    /** The raw choice, unvalidated — see the key's docblock; callers go through MemberGrants. */
+    /** The raw choice, unvalidated — see the key's docblock; callers go through TenantChoice. */
     public function activeTenantRef(): ?string
     {
         $ref = $this->session->get(self::KEY_ACTIVE_TENANT);

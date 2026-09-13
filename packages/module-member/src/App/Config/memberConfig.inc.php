@@ -26,10 +26,12 @@ return [
     ],
     'defaultAction' => 'index',
 
-    // FQCN of an invokable class `__invoke(MemberAccount): ?string` — the
-    // project side of activation (AXO3: creates the tenant, returns its ref).
-    // Null = accounts activate without a project attachment. A project sets
-    // this by overriding THIS FILE whole (override tree, first match wins).
+    // FQCN of an invokable class `__invoke(MemberAccount): void` — the
+    // project side of activation (AXO3: creates the tenant and the OWNER
+    // membership, or activates a pending one). Nothing it returns is stored:
+    // since ADR-038 the account carries no project reference. Null =
+    // accounts activate without a project attachment. A project sets this
+    // by overriding THIS FILE whole (override tree, first match wins).
     'activationHook' => null,
 
     // FQCN of an invokable class `__invoke(string $ref): string` — turns a
@@ -37,6 +39,39 @@ return [
     // backend account row need it; the module knows no tenants, so without a
     // project hook they fall back to showing the bare reference.
     'tenantLabelHook' => null,
+
+    // ADR-038 (2026-09-13): the module knows no project reference. WHICH
+    // references an account may work for — and which one it is working for
+    // right now — is the PROJECT's list, kept at its tenant. This hook is how
+    // the module asks: FQCN of an invokable class
+    //   `__invoke(MemberAccount): list<array{ref:string, label:string, usable:bool, note?:string}>`
+    // — every membership of the account in the project's order, `usable`
+    // false for a paused or not-yet-activated one, `note` an optional short
+    // sentence for the backend list («eingeladen von …»). The FIRST usable
+    // entry is the fallback choice. Null = no memberships anywhere: no
+    // switcher, no choice, no invitations (an installation without tenants).
+    // Read through {@see \Z77\Module\Member\Services\TenantChoice}.
+    'membershipHook' => null,
+
+    // The other direction of the same seam: when an invitation is redeemed,
+    // the module has created the account (if the address was new) and
+    // consumed the token — and then tells the project WHO joined WHAT.
+    // FQCN of an invokable class
+    //   `__invoke(MemberAccount $account, string $ref, ?string $invitedBy): void`
+    // ($invitedBy = the inviting account's id). The project writes the
+    // membership (pending, like a `confirmed` account) and activates it
+    // later on its own list. Null = nothing is attached.
+    'joinHook' => null,
+
+    // An AREA of the shell that is not for everyone — the module derives the
+    // areas from the nav slot `member-main`, and a nav entry is data that
+    // cannot say «only for the owner». FQCN of an invokable class
+    //   `__invoke(MemberAccount $account, string $target): bool`
+    // ($target = `controller/action`, lower-case); false drops the entry
+    // from switcher AND rail («not present, not forbidden»). The area's
+    // own controller still answers a direct URL on its own — this is the
+    // display half. Null = every entry in the slot is shown to everyone.
+    'areaVisibilityHook' => null,
 
     // Registrierungs-Herkunft: der Registrier-Link darf `?via=<slug>` tragen,
     // und der Slug wird am Konto festgehalten (MemberAccount::$origin). Er
@@ -214,32 +249,18 @@ return [
                     'deviceRemoveAction'    => AuthRole::CUSTOMER,
                     'deviceRemoveAllAction' => AuthRole::CUSTOMER,
                     // ADR-037 — the tenant choice of a signed-in person with
-                    // more than one granted tenant (the header's switcher
-                    // posts here). ⚠️ A project's whole-file override MUST
-                    // carry it too, or the switcher silently stops working.
+                    // more than one available reference (the header's switcher
+                    // posts here; the set comes from `membershipHook`). ⚠️ A
+                    // project's whole-file override MUST carry it too, or the
+                    // switcher silently stops working.
                     'mandantAction'         => AuthRole::CUSTOMER,
                 ],
             ],
-            // «Zugänge» (B7 v1.1.0) as an AREA since 2026-09-12 — until then
-            // the profile's fourth section. CUSTOMER like every signed-in
-            // route; that only says «signed in». Whether this customer is the
-            // MASTER — and standing on his home — is not a role question
-            // (there is no second role, ADR `konto-einladung`), so the
-            // controller asks the flow and answers silently when it is no.
-            // ⚠️ A project's whole-file override MUST carry this block, or
-            // the area is a 404 there; and the nav entry that makes it an
-            // area is DATA (`member-main` slot), added per installation.
-            'ZugaengeController' => [
-                'defaultAction'  => 'index',
-                'controllerRole' => AuthRole::CUSTOMER,
-                'actions'        => [
-                    'indexAction'               => AuthRole::CUSTOMER,
-                    'einladenAction'            => AuthRole::CUSTOMER,
-                    'einladungWiderrufenAction' => AuthRole::CUSTOMER,
-                    'zugangPausierenAction'     => AuthRole::CUSTOMER,
-                    'zugangEntfernenAction'     => AuthRole::CUSTOMER,
-                ],
-            ],
+            // NOTE: `ZugaengeController` sat here from 2026-09-12 to 2026-09-13.
+            // Inviting, pausing and removing act on MEMBERSHIPS, and those are
+            // the project's rows (ADR-038) — the area moved to the project
+            // that has tenants, together with its templates. The token
+            // mechanics stayed here (`InvitationFlow`).
         ],
     ],
 ];

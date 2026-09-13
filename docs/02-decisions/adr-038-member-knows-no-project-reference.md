@@ -1,6 +1,6 @@
 # ADR-038 — The member module knows no project reference: the person here, her rights at the project
 
-**Status:** `[APPROVED]` — decided, not yet built
+**Status:** `[APPROVED]` — built 2026-09-13 (framework side; the project side follows in the same release)
 **Date:** 2026-09-13 (revised the same day: `company` stays, see Decision 1)
 
 ---
@@ -131,6 +131,30 @@ initial name; the tenant's runtime status leaves `tenants.json` so that file
 is written by people only and the membership list lives in it; an account
 whose LAST membership goes is deleted (no new mechanism — «remove» already
 deletes a person); owner handover is an operator handgrip, no customer path.
+
+## What was built (2026-09-13)
+
+- `MemberAccount`: `tenantRef`, `tenantRole`, `suspendedAt` and their
+  getters, setters, `isMaster()`, `isSuspended()`, `ROLE_*` gone.
+- `MemberGrant`, `MemberGrants`, `grants.json` gone; `ZugaengeController`
+  and its template gone (moved to the project; history in `e274550`).
+- New `TenantChoice` (memberships via hook, available set, session choice)
+  and three config hooks: `membershipHook`, `joinHook`,
+  `areaVisibilityHook`. `activationHook` returns nothing that is stored.
+- `InvitationFlow` reduced to the token's craft: `invite(inviter, ref,
+  email)` checks no right, `redeem()` creates the account if new and calls
+  `joinHook`, `sendJoinActivated()` is the mail a project sends when it
+  activates a join. Outcomes `JOINED` instead of `GRANTED`.
+- `MemberAuth` and `LoginFlow` no longer refuse a paused account — there
+  is no such flag; pausing is the project's membership state (MEM-016).
+- Backend accounts list and activation dialog read the project's
+  memberships (`membershipHook`) for «creates / attaches»; the grant
+  section and its two modals are gone (the project's backend lists
+  pending joins).
+- `shell.js`: the pause switch posts to `data-url` (hand copy per
+  installation, ADR-024).
+- Not built, by decision: an OPERATOR block on the account. Nothing
+  needed it; the field can come when something does.
 
 ## Rejected Alternatives
 

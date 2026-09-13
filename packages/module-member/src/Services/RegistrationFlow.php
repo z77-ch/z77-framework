@@ -51,10 +51,10 @@ final class RegistrationFlow
      * @param \Closure(EmailMessage): bool      $sendMail mail to the registrant
      * @param \Closure(MemberAccount): bool     $notifyUs operator notification (config-keyed)
      * @param string $confirmUrl absolute URL of the confirm action; the token is appended
-     * @param ?\Closure(MemberAccount): ?string $activationHook the project side of
+     * @param ?\Closure(MemberAccount): void $activationHook the project side of
      *     activate() — creates whatever the project attaches to an account (AXO3:
-     *     the tenant) and returns the reference for tenantRef. Null = no project
-     *     attachment (module standalone).
+     *     the tenant and the owner membership). Nothing it returns is stored
+     *     (ADR-038). Null = no project attachment (module standalone).
      */
     public function __construct(
         private MemberAccounts $accounts,
@@ -70,7 +70,7 @@ final class RegistrationFlow
     /**
      * Production wiring: file persistence, EmailService transports, activation
      * hook from the member App config (`activationHook` — FQCN of an invokable
-     * class `__invoke(MemberAccount): ?string`; a project sets it by overriding
+     * class `__invoke(MemberAccount): void`; a project sets it by overriding
      * the config file whole).
      */
     public static function create(string $confirmUrl): self
@@ -96,7 +96,7 @@ final class RegistrationFlow
                 }
             },
             $confirmUrl,
-            $fqcn !== '' ? static fn(MemberAccount $a): ?string => (new $fqcn())($a) : null,
+            $fqcn !== '' ? static function (MemberAccount $a): void { (new $fqcn())($a); } : null,
         );
     }
 

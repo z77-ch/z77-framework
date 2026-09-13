@@ -11,7 +11,7 @@ use Z77\Core\DI,
     Z77\Module\Member\Services\DeviceKeys,
     Z77\Module\Member\Services\MemberAccounts,
     Z77\Module\Member\Services\MemberAuth,
-    Z77\Module\Member\Services\MemberGrants,
+    Z77\Module\Member\Services\TenantChoice,
     Z77\Module\Member\Services\Totp,
     Z77\Module\Member\Services\TotpSetup,
     Z77\Module\Member\Ui\Controllers\AbstractMemberController,
@@ -91,13 +91,6 @@ class ProfileController extends AbstractMemberController
             'devices'      => $devices,
             'section'      => $section,
             'dialogId'     => self::ACCOUNT_DIALOG_ID,
-            // The Konto dialog's company field renames the HOME (profile
-            // hook) — named here, because since ADR-037 the header may show
-            // another reference, and «Ihrem Mandanten» would then be the
-            // wrong one to the reader's eye.
-            'homeName'     => $this->invites()->tenantLabelFor(trim((string)$account->getTenantRef())),
-            'homeChosen'   => trim((string)$account->getTenantRef()) === ''
-                || (string)MemberGrants::create()->activeTenantRef($account) === trim((string)$account->getTenantRef()),
             'railItems'    => $rail,
             'crumbs'       => [
                 ['label' => 'Profil'],
@@ -145,7 +138,7 @@ class ProfileController extends AbstractMemberController
     /**
      * The tenant choice (ADR-037): which of the granted tenants this session
      * works for. A POST from the header's switcher, checked against the
-     * granted set by MemberGrants::choose() BEFORE it lands in the session —
+     * available set by TenantChoice::choose() BEFORE it lands in the session —
      * the working requests afterwards read only the session, never a
      * parameter. It lives on the profile controller for the same reason the
      * theme does: it is a setting of the signed-in person, and the header is
@@ -172,10 +165,11 @@ class ProfileController extends AbstractMemberController
         }
 
         $ref = trim((string)$request->getPostParameter('mandant'));
-        if (MemberGrants::create()->choose($account, $ref)) {
+        $choice = TenantChoice::create();
+        if ($choice->choose($account, $ref)) {
             $this->messageService->pushFlashAfterRedirect(
                 'success',
-                'Sie arbeiten jetzt für «' . $this->invites()->tenantLabelFor($ref) . '».'
+                'Sie arbeiten jetzt für «' . $choice->labelFor($account, $ref) . '».'
             );
         } else {
             $this->messageService->pushFlashAfterRedirect('error', 'Diese Verwaltung steht Ihnen nicht zur Wahl.');
@@ -234,11 +228,12 @@ class ProfileController extends AbstractMemberController
      * typo locks the account out —, so moving it needs a confirmation through
      * the NEW address, which is B7's path and not a text field.
      *
-     * The company is here since 2026-08-12 (Peter). It formed the tenant's name
-     * at activation, so the two would drift the moment one of them changes
-     * alone; the `profileHook` lets the project carry the change through
-     * (AXO3 renames the tenant). A project that sets no hook simply stores the
-     * company at the account, which is what this module means by it.
+     * The company is here since 2026-08-12 (Peter) — and since ADR-038 it is
+     * the PERSON's: where she works, hers to edit, copied ONCE into the
+     * tenant's name at activation and independent of it afterwards. The
+     * `profileHook` still lets a project react to a profile change; a
+     * project that renamed its tenant from here re-created the very
+     * conflation this ADR removed, and stopped.
      */
     protected function kontoAction(): RedirectResponse
     {
@@ -275,8 +270,7 @@ class ProfileController extends AbstractMemberController
     /**
      * The project side of a profile change — same seam shape as
      * `activationHook`: the config names an invokable class, the module never
-     * learns what a project does with it. AXO3 renames the tenant so its name
-     * and the account's company cannot drift apart.
+     * learns what a project does with it.
      */
     private function profileHook(): ?object
     {

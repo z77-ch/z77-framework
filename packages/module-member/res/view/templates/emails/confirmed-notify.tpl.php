@@ -24,20 +24,20 @@
  * from being necessary: whatever a project has to say about this account says
  * it HERE, in the one mail that arrives when the operator can act.
  *
- * A GRANT (ADR-037, `$invite['grant']`) is the third case: the address had an
- * account already, nothing was created at all — an EXISTING account may
- * additionally work for the tenant once we activate the grant.
+ * A JOIN (ADR-037/038, `$invite['existing']`) is the third case: the address
+ * had an account already, nothing was created at all — an EXISTING account
+ * may additionally work for the tenant once we activate its membership.
  *
  * @var \Z77\Module\Member\Entities\MemberAccount $account
- * @var array{tenantRef?:string, tenantName?:string, inviter?:string, grant?:bool}|null $invite
+ * @var array{tenantRef?:string, tenantName?:string, inviter?:string, existing?:bool}|null $invite
  * @var array<string,string>|null $notifyRows  extra rows from the project
  */
 
 $invite ??= null;
 $notifyRows ??= [];
-$isGrant = $invite !== null && (bool)($invite['grant'] ?? false);
+$isJoin = $invite !== null && (bool)($invite['existing'] ?? false);
 ?>
-<?php if ($isGrant): ?>
+<?php if ($isJoin): ?>
 <?php /* ⚠️ Beide Sätze bleiben je auf EINER Zeile: die Text-Fassung der Mail
          wird aus diesem Markup abgeleitet, und ein Zeilenumbruch mitten im Satz
          klebt dort die Wörter zusammen («Zugangwurde»). */ ?>
@@ -83,15 +83,15 @@ $isGrant = $invite !== null && (bool)($invite['grant'] ?? false);
         <td>Name</td>
         <td><?= e(trim(($account->getFirstName() ?? '') . ' ' . ($account->getLastName() ?? '')) ?: '—') ?></td>
     </tr>
-    <?php if (!$isGrant): ?>
+    <?php if (!$isJoin): ?>
     <tr data-str="new-line">
         <td>Bestätigt am</td>
         <td><?= e($account->getConfirmedAt() ?? '—') ?></td>
     </tr>
     <?php else: ?>
     <tr data-str="new-line">
-        <td>Heimat des Kontos</td>
-        <td><?= e((string)($invite['homeName'] ?? '') ?: '—') ?></td>
+        <td>Konto besteht seit</td>
+        <td><?= e(substr((string)$account->getCreatedAt(), 0, 10) ?: '—') ?></td>
     </tr>
     <?php endif; ?>
     <?php /* Was das Projekt zu diesem Konto zu sagen hat — zuletzt, damit die

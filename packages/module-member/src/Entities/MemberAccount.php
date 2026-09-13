@@ -25,6 +25,20 @@ use Z77\Shared\Traits\ArrayMappable;
 #[Entity('file', 'framework/member/accounts.json')]
 class MemberAccount
 {
+    /*
+     * ⚠️ ADR-038 (2026-09-13): this entity is the PERSON and nothing else.
+     * Until then it carried a project reference (`tenantRef`, the HOME), a
+     * role on that reference (`tenantRole`, master|member) and a pause flag
+     * the master set (`suspendedAt`) — four fields for the tenant, sixteen
+     * for the person, and the tenant's ones were what made a profile save
+     * rename a firm. All of that is the PROJECT's now, as memberships kept
+     * at its tenant; the module asks through `membershipHook`
+     * ({@see \Z77\Module\Member\Services\TenantChoice}) and never leads.
+     * `company` stays: it is where the person works, hers to edit, and the
+     * module never interprets it. Old rows still carrying the four keys
+     * lose them on their next save (ArrayMappable maps declared properties
+     * only) — the project's migration reads them out BEFORE that.
+     */
     use ArrayMappable;
 
     public const STATE_REGISTERED = 'registered';
@@ -74,49 +88,6 @@ class MemberAccount
 
     /** Roles granted at activation (AuthRole values). @var string[] */
     private array $roles = [];
-
-    /**
-     * Project reference (AXO3: tenant id). Written back by the activation hook
-     * for a self-registration; set ALREADY AT REGISTRATION when the account
-     * came from an invitation — then we have known the reference since the
-     * invitation was sent (B7 v1.1.0).
-     */
-    #[Clean('nullable', 'text')]
-    private ?string $tenantRef = null;
-
-    /**
-     * B7 v1.1.0 (ADR `konto-einladung`): several accounts may share one project
-     * reference, and exactly one of them owns it — the MASTER, the account from
-     * the registration we activated. Only it may invite, pause and remove;
-     * professionally both levels can do exactly the same.
-     *
-     * ⚠️ The default is `master`, and that is deliberate: every account that
-     * exists today IS the registrar of its reference, so introducing the field
-     * needs no data migration. `member` is written at exactly one place — the
-     * redemption of an invitation (B7 v1.1.1; v1.1.0 left it to the activation
-     * hook, which is one step too late: between redemption and activation the
-     * account already appears in the master's list).
-     */
-    public const ROLE_MASTER = 'master';
-    public const ROLE_MEMBER = 'member';
-
-    public const TENANT_ROLES = [self::ROLE_MASTER, self::ROLE_MEMBER];
-
-    #[Clean('ident')]
-    private string $tenantRole = self::ROLE_MASTER;
-
-    /**
-     * B7 v1.1.0: paused by the master — the quiet path between «leave it» and
-     * «delete a person». Access rests, the account keeps its 2FA and its
-     * devices; unpausing restores it.
-     *
-     * Deliberately NOT a fourth `state` value: `state` describes the
-     * REGISTRATION path (registered → confirmed → active) and would lose that
-     * meaning if a reversible access flag joined it — and an account can be
-     * paused in any of the three.
-     */
-    #[Clean('nullable', 'text')]
-    private ?string $suspendedAt = null;
 
     /**
      * Which version of the terms this account agreed to, and when.
@@ -243,7 +214,6 @@ class MemberAccount
     public function getState(): string { return $this->state; }
     /** @return string[] */
     public function getRoles(): array { return $this->roles; }
-    public function getTenantRef(): ?string { return $this->tenantRef; }
     public function getCreatedAt(): ?string { return $this->createdAt; }
     public function getConfirmedAt(): ?string { return $this->confirmedAt; }
     public function getActivatedAt(): ?string { return $this->activatedAt; }
@@ -251,24 +221,6 @@ class MemberAccount
     public function isRegistered(): bool { return $this->state === self::STATE_REGISTERED; }
     public function isConfirmed(): bool { return $this->state === self::STATE_CONFIRMED; }
     public function isActive(): bool { return $this->state === self::STATE_ACTIVE; }
-
-    public function getTenantRole(): string { return $this->tenantRole; }
-    public function isMaster(): bool { return $this->tenantRole === self::ROLE_MASTER; }
-    public function getSuspendedAt(): ?string { return $this->suspendedAt; }
-    public function isSuspended(): bool { return $this->suspendedAt !== null; }
-
-    public function setSuspendedAt(?string $suspendedAt): void { $this->suspendedAt = $suspendedAt; }
-
-    /** Hydration/setter with a guard — an unknown value would silently grant or remove ownership. */
-    public function setTenantRole(string $tenantRole): void
-    {
-        if (!in_array($tenantRole, self::TENANT_ROLES, true)) {
-            throw new \InvalidArgumentException(
-                "Invalid tenant role '{$tenantRole}' — allowed: " . implode(', ', self::TENANT_ROLES)
-            );
-        }
-        $this->tenantRole = $tenantRole;
-    }
 
     public function getTotpSecret(): ?string { return $this->totpSecret; }
     public function getTotpActivatedAt(): ?string { return $this->totpActivatedAt; }
@@ -305,7 +257,6 @@ class MemberAccount
     public function setLastName(?string $lastName): void { $this->lastName = $lastName; }
     /** @param string[] $roles */
     public function setRoles(array $roles): void { $this->roles = array_values($roles); }
-    public function setTenantRef(?string $tenantRef): void { $this->tenantRef = $tenantRef; }
     public function setCreatedAt(?string $createdAt): void { $this->createdAt = $createdAt; }
     public function setConfirmedAt(?string $confirmedAt): void { $this->confirmedAt = $confirmedAt; }
     public function setActivatedAt(?string $activatedAt): void { $this->activatedAt = $activatedAt; }

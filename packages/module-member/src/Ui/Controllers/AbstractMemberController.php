@@ -8,9 +8,8 @@ use Z77\Core\Http\Response\HtmlResponse;
 use Z77\Module\Member\Entities\MemberAccount;
 use Z77\Module\Member\Services\InvitationFlow;
 use Z77\Module\Member\Services\MemberAuth;
-use Z77\Module\Member\Services\MemberGrants;
 use Z77\Module\Member\Services\RegistrationFlow;
-use Z77\Module\Member\Ui\Controllers\Main\ZugaengeController;
+use Z77\Module\Member\Services\TenantChoice;
 
 /**
  * Base of the member view-area (B7). Centralises the three things every member
@@ -88,18 +87,13 @@ abstract class AbstractMemberController extends AbstractBaseController
      * WORKS FOR, for the header (Peter, 2026-08-14: one has to be able to see
      * which tenant is loaded) — and, since ADR-037, the list to choose from.
      *
-     * Reads the SESSION'S CHOICE with the home as fallback
-     * (MemberGrants::activeTenantRef()), not the account's reference: an
-     * account may hold grants on further tenants, and the header names the
-     * one currently loaded. With exactly one granted tenant nothing changes —
-     * the label is a label, the list stays empty and no switcher renders.
-     * From two on, the list carries every granted tenant, active one marked.
-     *
-     * The module knows no tenants, so it asks the project: the same
-     * `tenantLabelHook` the invitation mail and the backend account list use.
-     * No hook → no label for the single case (a project whose accounts hang on
-     * nothing shows nothing), but the switcher still has to name its entries,
-     * so there the bare reference stands in.
+     * Reads the SESSION'S CHOICE with the project's first membership as
+     * fallback (TenantChoice::activeRef()): the account carries no reference
+     * of its own (ADR-038), the project reports the set through
+     * `membershipHook`, labels included. With exactly one available
+     * reference nothing changes — the label is a label, the list stays empty
+     * and no switcher renders. From two on, the list carries every available
+     * reference, active one marked. No hook → no label, no switcher.
      *
      * ⚠️ Deliberately NOT the account's company field. That is what the person
      * typed at registration; the tenant name is what the installation actually
@@ -113,53 +107,29 @@ abstract class AbstractMemberController extends AbstractBaseController
             return ['', []];
         }
 
-        $grants  = MemberGrants::create();
-        $granted = $grants->grantedTenantRefs($account);
-        if ($granted === []) {
+        $choice    = TenantChoice::create();
+        $available = $choice->available($account);
+        if ($available === []) {
             return ['', []];
         }
 
-        $active = (string)$grants->activeTenantRef($account);
-        $label  = $this->tenantLabel($active);
+        $active = (string)$choice->activeRef($account);
+        $label  = $choice->labelFor($account, $active);
 
-        if (count($granted) < 2) {
+        if (count($available) < 2) {
             return [$label, []];
         }
 
         $choices = [];
-        foreach ($granted as $ref) {
+        foreach ($available as $ref) {
             $choices[] = [
                 'ref'    => $ref,
-                'label'  => $this->tenantLabel($ref) ?: $ref,
+                'label'  => $choice->labelFor($account, $ref),
                 'active' => $ref === $active,
             ];
         }
 
-        return [$label ?: $active, $choices];
-    }
-
-    /** The project's readable name for a reference, '' without a hook or when it stumbles. */
-    private function tenantLabel(string $ref): string
-    {
-        if ($ref === '') {
-            return '';
-        }
-
-        $fqcn = (string)DI::getConfigManager()
-            ->getArrayConfig('App/Config/memberConfig', self::NAMESPACE)
-            ->get('tenantLabelHook', '');
-
-        if ($fqcn === '' || !class_exists($fqcn)) {
-            return '';
-        }
-
-        try {
-            return trim((string)(new $fqcn())($ref));
-        } catch (\Throwable) {
-            // A label is chrome. A project hook that stumbles must not cost the
-            // page it decorates.
-            return '';
-        }
+        return [$label, $choices];
     }
 
     /**
@@ -211,25 +181,21 @@ abstract class AbstractMemberController extends AbstractBaseController
             $meta[strtolower(trim((string)$target))] = (string)$text;
         }
 
-        // The one area that is not for everyone (2026-09-12): «Zugänge» exists
-        // exactly when the session's choice IS the home and the account is its
-        // master. A nav entry is data and cannot say that, so it is dropped
-        // here — from the switcher AND the rail — by the same predicate the
-        // controller answers with a silent redirect. Compared by routing
-        // identity, like `railMeta` above, never by `Navigation::$key`.
-        $account  = null;
-        $asked    = false;
-        $zugaenge = ZugaengeController::AREA;
+        // An area that is not for everyone: a nav entry is data and cannot
+        // say «only for the owner», so the PROJECT says it, through
+        // `areaVisibilityHook` (ADR-038). A refused entry is dropped here —
+        // from the switcher AND the rail («not present, not forbidden»); the
+        // area's own controller answers a direct URL on its own. Compared by
+        // routing identity, like `railMeta` above, never by `Navigation::$key`.
+        // Until 2026-09-13 this loop knew ONE such area by name («Zugänge»)
+        // and asked the invitation flow — the module knew a master then.
+        $visible = self::areaVisibilityHook();
+        $account = $visible === null ? null : MemberAuth::create()->current();
 
         foreach ($navigation->getBySlot('member-main') as $entry) {
-            if (strtolower(trim($entry->getController() . '/' . $entry->getAction())) === $zugaenge) {
-                if (!$asked) {
-                    $account = MemberAuth::create()->current();
-                    $asked   = true;
-                }
-                if (!$this->managesHere($account)) {
-                    continue;
-                }
+            $target = strtolower(trim($entry->getController() . '/' . $entry->getAction()));
+            if ($visible !== null && ($account === null || !$visible($account, $target))) {
+                continue;
             }
 
             $active  = $navigation->isActive($entry);
@@ -246,7 +212,6 @@ abstract class AbstractMemberController extends AbstractBaseController
                 continue;
             }
 
-            $target = strtolower(trim($entry->getController() . '/' . $entry->getAction()));
             $text   = $meta[$target] ?? null;
             $rail[] = [
                 'name'    => $entry->getName(),
@@ -317,22 +282,30 @@ abstract class AbstractMemberController extends AbstractBaseController
     }
 
     /**
-     * Does this account manage the accesses of the reference on screen — is
-     * the session's choice its home, and is it the master there? The one
-     * reading of the choice for that question; the rule lives in the flow
-     * ({@see InvitationFlow::managesHere()}), so the area's controller and
-     * the navigation cannot disagree.
+     * The project's answer to «may this account see that area?», or null
+     * when the project has no such rule (memberConfig `areaVisibilityHook`).
+     * A hook that throws hides nothing: an area is chrome, and a stumbling
+     * hook must not empty the navigation.
+     *
+     * @return ?\Closure(MemberAccount, string): bool
      */
-    protected function managesHere(?MemberAccount $account): bool
+    private static function areaVisibilityHook(): ?\Closure
     {
-        if ($account === null) {
-            return false;
+        $fqcn = (string)DI::getConfigManager()
+            ->getArrayConfig('App/Config/memberConfig', self::NAMESPACE)
+            ->get('areaVisibilityHook', '');
+
+        if ($fqcn === '' || !class_exists($fqcn)) {
+            return null;
         }
 
-        return $this->invites()->managesHere(
-            $account,
-            (string)MemberGrants::create()->activeTenantRef($account)
-        );
+        return static function (MemberAccount $account, string $target) use ($fqcn): bool {
+            try {
+                return (bool)(new $fqcn())($account, $target);
+            } catch (\Throwable) {
+                return true;
+            }
+        };
     }
 
     /**
