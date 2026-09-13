@@ -1608,7 +1608,9 @@ $fb-info-tint: $fb-bg;
 }
 
 .flash-msg {
-    padding: 0.75rem 1rem;
+    position: relative;
+    // Room on BOTH sides for the closer, so the sentence stays optically centred.
+    padding: 0.75rem 2.75rem;
     text-align: center;
 
     &--success {
@@ -1630,4 +1632,28 @@ $fb-info-tint: $fb-bg;
         background: var(--info-tint, #{$fb-info-tint});
         color: var(--info, #{$fb-info});
     }
+}
+
+// The band is a REFUSAL over the chrome it was triggered from — fixed at the
+// top, it covers the action cell with «Speichern». An error never auto-dismisses
+// (core.js, by design), so without this button the message stays on top of the
+// control the reader needs next. Backend and frontend always had it; the member
+// partial did not (found in the B4 acceptance, 2026-09-12).
+// Not a flex sibling: that would push the centred text off centre.
+.flash-msg__close {
+    position: absolute;
+    top: 50%;
+    right: 0.9rem;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    color: inherit;
+    line-height: 1;
+    font-size: 1.25rem;
+    opacity: 0.7;
+
+    &:hover,
+    &:focus-visible { opacity: 1; }
 }

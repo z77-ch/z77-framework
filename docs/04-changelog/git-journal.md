@@ -14,6 +14,21 @@ not obvious from the message — a short why / follow-up. Keep it terse.
 
 ---
 
+## 2026-09-13
+
+### module-member: the flash band gets its close button
+
+- The member flash partial was the only one of the three without
+  `flash-msg__close` (backend and frontend always had it); `member.scss` had no
+  style for it either. core.js wires any button that is there and auto-dismisses
+  only success/info — an error is meant to stay. In the shell the band is
+  `position: fixed` at the top, so a refusal sat permanently on top of the action
+  cell with «Speichern». Found in the axo3 B4 acceptance on a duplicate slug
+  (Peter, 2026-09-12). Closer is absolutely positioned right, with padding on both
+  sides so the centred sentence stays centred — a flex sibling would push it off.
+  ⚠️ `member.css` is a hand copy per installation (ADR-024): rebuild with
+  `npm run build:member` and copy to `public/assets/member/css/`.
+
 ## 2026-09-12
 
 ### module-member: «Zugänge» becomes an area of the shell

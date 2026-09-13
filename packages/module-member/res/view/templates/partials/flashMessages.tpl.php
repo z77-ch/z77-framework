@@ -20,6 +20,7 @@ foreach ($_flashes as $f) {
     <?php foreach ($_flashes as $f): ?>
     <div class="flash-msg flash-msg--<?= e($f['type']) ?>">
         <span class="flash-msg__text"><?= e($f['text']) ?></span>
+        <button type="button" class="flash-msg__close" aria-label="<?= e(t('common.close')) ?>">&times;</button>
     </div>
     <?php endforeach; ?>
 </div>
