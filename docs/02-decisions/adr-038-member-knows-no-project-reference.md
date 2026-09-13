@@ -1,7 +1,7 @@
 # ADR-038 — The member module knows no project reference: the person here, her rights at the project
 
 **Status:** `[APPROVED]` — decided, not yet built
-**Date:** 2026-09-13
+**Date:** 2026-09-13 (revised the same day: `company` stays, see Decision 1)
 
 ---
 
@@ -45,10 +45,15 @@ its people and their rights.**
    confirms the e-mail, runs login (magic link), 2FA, remembered devices,
    profile and theme. It decides «may enter»: the framework ACL role
    (`roles`, e.g. `customer`) and the registration state
-   (`registered → confirmed → active`). **`company`, `tenantRef` and
-   `tenantRole` leave `MemberAccount`; `grants.json` and `MemberGrant` go.**
-   `origin` stays — it records which register link was clicked, a fact about
-   the registration, not about a tenant.
+   (`registered → confirmed → active`). **`tenantRef` and `tenantRole`
+   leave `MemberAccount`; `grants.json` and `MemberGrant` go.** `origin`
+   stays — it records which register link was clicked. **`company` stays
+   too** (revised 2026-09-13): it is an attribute of the PERSON — where she
+   works — like her name, edited by her in the profile. The module never
+   interprets it; the project's activation hook may copy it once as the
+   tenant's initial name, after which the two fields are independent. What
+   must go with that is any hook that writes the profile's `company` INTO a
+   tenant on every save — that coupling is the conflation itself.
 
 2. **Memberships live at the project's tenant, not here.** The project keeps
    `(account_id, role, state, invited_by, since)` per tenant and reads every
@@ -120,11 +125,12 @@ that read `getTenantRef()` for ownership are retired with the build.
 project ADR → its open questions → specs → this ADR built → project built →
 migration → acceptance. Not before, not in parallel.
 
-**Open before the build** (decided on the project side, listed here so the
-framework part does not start without them): when the tenant is created
-(registration vs. activation — decides whether `company` needs any interim
-home), where the membership list lives, what happens to an account with no
-membership left, and how an owner is handed over.
+**Decided on the project side the same day** (project ADR `konto-und-mandant`
+v1.1.0): the tenant is created at ACTIVATION and takes `company` as its
+initial name; the tenant's runtime status leaves `tenants.json` so that file
+is written by people only and the membership list lives in it; an account
+whose LAST membership goes is deleted (no new mechanism — «remove» already
+deletes a person); owner handover is an operator handgrip, no customer path.
 
 ## Rejected Alternatives
 
