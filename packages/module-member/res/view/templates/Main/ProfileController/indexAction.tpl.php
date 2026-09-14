@@ -172,9 +172,12 @@ $title = [
         <?= e($notice) ?>
         <?php endforeach; ?>
     </p>
-    <p>
-        <button type="button" class="me-btn me-btn--quiet" data-dialog-open="<?= e($deleteDialogId) ?>">Konto löschen …</button>
-    </p>
+    <?php /* `.me-actions`, not `.me-btn`: the button class is full-width by
+             design (the action cell), an inline action sits left and takes
+             its own width (Peter, 2026-09-14). */ ?>
+    <div class="me-actions">
+        <button type="button" data-dialog-open="<?= e($deleteDialogId) ?>">Konto löschen …</button>
+    </div>
 
     <dialog class="me-dialog" id="<?= e($deleteDialogId) ?>" aria-labelledby="<?= e($deleteDialogId) ?>-title">
         <form method="post" action="/member/main/profile/loeschen" class="me-dialog__form">
