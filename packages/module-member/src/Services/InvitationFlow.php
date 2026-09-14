@@ -167,8 +167,11 @@ final class InvitationFlow
                 ? static fn(string $ref): string => (string)(new $labelFqcn())($ref)
                 : static fn(string $ref): string => $ref,
             static fn(MemberAccount $account, string $ref): bool => $choice->holds($account, $ref),
+            // ⚠️ `use ($joinFqcn)`: a static closure sees no outer variable —
+            // the same defect as RegistrationFlow::create() had on 2026-09-14
+            // (an arrow fn captures by itself, a `function` does not).
             $joinFqcn !== '' && class_exists($joinFqcn)
-                ? static function (MemberAccount $account, string $ref, ?string $invitedBy): void {
+                ? static function (MemberAccount $account, string $ref, ?string $invitedBy) use ($joinFqcn): void {
                     (new $joinFqcn())($account, $ref, $invitedBy);
                 }
                 : null,

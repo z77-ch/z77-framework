@@ -96,7 +96,13 @@ final class RegistrationFlow
                 }
             },
             $confirmUrl,
-            $fqcn !== '' ? static function (MemberAccount $a): void { (new $fqcn())($a); } : null,
+            // ⚠️ `use ($fqcn)` is not optional: a static closure sees nothing
+            // of the enclosing scope. Without it `new $fqcn` met an undefined
+            // variable — «Class name must be a valid object or a string» on
+            // every activation, measured live 2026-09-14 (axo3, first
+            // activation after ADR-038). The harnesses build this flow by
+            // hand and never ran create(); the b7 fence now reads this line.
+            $fqcn !== '' ? static function (MemberAccount $a) use ($fqcn): void { (new $fqcn())($a); } : null,
         );
     }
 
