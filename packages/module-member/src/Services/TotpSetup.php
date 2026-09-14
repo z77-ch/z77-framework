@@ -64,6 +64,7 @@ final class TotpSetup
 
         $account->setTotpActivatedAt(date(DATE_ATOM, $now ?? time()));
         $this->accounts->save($account);
+        MemberLog::write('totp.on', (string)$account->getId());
 
         return true;
     }
@@ -91,8 +92,14 @@ final class TotpSetup
 
     private function clear(MemberAccount $account): void
     {
+        $had = $account->hasTotp();
         $account->setTotpSecret(null);
         $account->setTotpActivatedAt(null);
         $this->accounts->save($account);
+        if ($had) {
+            // Who cleared it comes from the request's actor: the person with
+            // her code (`self`), or the backend without one (`operator`).
+            MemberLog::write('totp.off', (string)$account->getId());
+        }
     }
 }

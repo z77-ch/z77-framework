@@ -64,13 +64,18 @@ final class MemberCleanupJob implements Job
 
         $deletedPending = (new PendingLogins($uem))->purge();
 
+        // The account log expires by month (MemberLog::RETENTION_DAYS) — the
+        // retention the privacy text promises, kept by the same job.
+        $sweptLogs = \Z77\Module\Member\Services\MemberLog::sweep();
+
         return JobResult::done(sprintf(
             '%d account(s) removed (never confirmed within %d days), %d dead token(s) purged, '
-            . '%d expired waiting login(s) dropped',
+            . '%d expired waiting login(s) dropped, %d expired account-log month(s) removed',
             $deletedAccounts,
             $days,
             $deletedTokens,
-            $deletedPending
+            $deletedPending,
+            $sweptLogs
         ));
     }
 

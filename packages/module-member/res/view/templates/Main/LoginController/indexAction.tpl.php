@@ -13,6 +13,12 @@
 ?>
 <div class="me-card">
     <h1 class="me-card__title">Anmelden</h1>
+    <?php if (!empty($deleted)): ?>
+    <div class="me-band me-band--info">
+        <span class="me-band__dot" aria-hidden="true"></span>
+        <span class="me-band__text">Ihr Konto ist gelöscht. Danke, dass Sie dabei waren.</span>
+    </div>
+    <?php endif; ?>
     <p class="me-card__lead">
         Geben Sie Ihre E-Mail-Adresse ein — wir senden Ihnen einen
         Anmelde-Link. Ein Passwort gibt es nicht.

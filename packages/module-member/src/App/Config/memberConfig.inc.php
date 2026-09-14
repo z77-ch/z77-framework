@@ -73,6 +73,20 @@ return [
     // display half. Null = every entry in the slot is shown to everyone.
     'areaVisibilityHook' => null,
 
+    // The person deletes her own account (2026-09-14; Art. 32 revDSG). The
+    // module removes account, devices, 2FA and tokens; the PROJECT is asked
+    // FIRST — FQCN of an invokable class
+    //   `__invoke(MemberAccount): ?string`  detach the person at the project
+    //                                       (memberships, a tenant left
+    //                                       without owner); return one short
+    //                                       fact for the account log; THROW
+    //                                       to refuse — nothing is deleted
+    //   `notice(MemberAccount): list<string>` optional — sentences the dialog
+    //                                       shows before the person confirms
+    // Read through {@see \Z77\Module\Member\Services\AccountDeletion}. Null =
+    // nothing to detach; the account still dies.
+    'accountDeletionHook' => null,
+
     // Registrierungs-Herkunft: der Registrier-Link darf `?via=<slug>` tragen,
     // und der Slug wird am Konto festgehalten (MemberAccount::$origin). Er
     // aendert nichts am Weg — er sagt der Person, die freischaltet, WELCHES

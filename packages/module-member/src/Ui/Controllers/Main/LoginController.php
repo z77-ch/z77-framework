@@ -57,7 +57,12 @@ class LoginController extends AbstractMemberController
             return $this->redirect('/member/main/login/warten');
         }
 
-        return $this->html(['pageTitle' => 'Anmelden'] + $form->viewContext());
+        return $this->html([
+            'pageTitle' => 'Anmelden',
+            // «Konto gelöscht» is said ONCE, through the query: the session
+            // that would have carried a flash ended with the account.
+            'deleted'   => (string)DI::getRequest()->getGetParameter('konto') === 'geloescht',
+        ] + $form->viewContext());
     }
 
     /**

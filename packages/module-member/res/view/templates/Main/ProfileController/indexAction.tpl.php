@@ -158,6 +158,60 @@ $title = [
         </form>
     </dialog>
 
+    <?php /* «Konto löschen» (2026-09-14): the person's own handgrip, Art. 32
+             revDSG. Two confirmations inside the dialog — the address typed
+             again and a checkbox — because there is no password to ask for.
+             What it means at the project's tenants is the PROJECT's sentence
+             (`deletionNotices`), printed here and in the dialog. */ ?>
+    <?php $deleteDialogId = $deleteDialogId ?? 'me-konto-loeschen'; $deletionNotices = $deletionNotices ?? []; ?>
+    <h2 class="me-detail__sub" style="margin-top:2.5rem">Konto löschen</h2>
+    <p class="me-quiet">
+        Sie können Ihr Konto selbst löschen — sofort und endgültig. Anmeldung,
+        angemeldete Geräte und Zwei-Faktor-Schutz enden damit.
+        <?php foreach ($deletionNotices as $notice): ?>
+        <?= e($notice) ?>
+        <?php endforeach; ?>
+    </p>
+    <p>
+        <button type="button" class="me-btn me-btn--quiet" data-dialog-open="<?= e($deleteDialogId) ?>">Konto löschen …</button>
+    </p>
+
+    <dialog class="me-dialog" id="<?= e($deleteDialogId) ?>" aria-labelledby="<?= e($deleteDialogId) ?>-title">
+        <form method="post" action="/member/main/profile/loeschen" class="me-dialog__form">
+            <input type="hidden" name="csrf_token" value="<?= e($csrfToken) ?>">
+
+            <h2 class="me-dialog__title" id="<?= e($deleteDialogId) ?>-title">Konto endgültig löschen</h2>
+
+            <p>
+                Gelöscht werden Ihr Konto, Ihre angemeldeten Geräte und Ihr
+                Zwei-Faktor-Schutz. Das lässt sich nicht rückgängig machen.
+            </p>
+            <?php foreach ($deletionNotices as $notice): ?>
+            <p><?= e($notice) ?></p>
+            <?php endforeach; ?>
+
+            <div class="fe-form__row">
+                <?php /* Not `name="email"`: that name is the address field the
+                         profile deliberately does not have — this one only
+                         proves the person knows whose account she is deleting. */ ?>
+                <label for="loeschen-email">Zur Bestätigung Ihre E-Mail-Adresse</label>
+                <input id="loeschen-email" type="text" name="loeschen_bestaetigung" required autocomplete="off"
+                       inputmode="email" placeholder="<?= e($account->getEmail()) ?>">
+            </div>
+            <div class="fe-form__row">
+                <label>
+                    <input type="checkbox" name="bestaetigt" value="1" required>
+                    Ich weiss, dass das nicht rückgängig zu machen ist.
+                </label>
+            </div>
+
+            <div class="me-dialog__actions">
+                <button type="button" class="me-btn me-btn--quiet" data-dialog-close>Abbrechen</button>
+                <button type="submit" class="me-btn">Konto endgültig löschen</button>
+            </div>
+        </form>
+    </dialog>
+
     <?php elseif ($section === 'zweifa'): ?>
     <p class="me-detail__sub"><?= $account->hasTotp() ? 'Aktiv' : 'Nicht aktiv' ?></p>
 

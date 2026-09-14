@@ -319,6 +319,7 @@ final class LoginFlow
         }
 
         $this->session->start((string)$account->getId(), $now);
+        MemberLog::write('login', (string)$account->getId(), ['detail' => 'device']);
         if ($remember) {
             $this->deviceKeys->issueFor($account, null, $now);
         }
@@ -430,8 +431,12 @@ final class LoginFlow
         // it is derived per request by MemberAuthBridge, and the logout
         // response is a redirect — the next request's bridge run finds no
         // member session and clears it before AccessGuard reads it.
+        $who = $this->session->currentAccountId($now);
         $this->deviceKeys->forgetCurrent($now);
         $this->session->end();
+        if ($who !== null && $who !== '') {
+            MemberLog::write('logout', $who);
+        }
     }
 
     /**
@@ -442,6 +447,7 @@ final class LoginFlow
     public function logoutAllDevices(MemberAccount $account): void
     {
         $this->deviceKeys->revokeAll($account);
+        MemberLog::write('logout.all', (string)$account->getId());
     }
 
     /**

@@ -160,6 +160,9 @@ final class DeviceKeys
         if ($found && $this->isCurrent($account, $keyId)) {
             $this->cookie->clear();
         }
+        if ($found) {
+            MemberLog::write('device.remove', (string)$account->getId());
+        }
 
         return $found;
     }

@@ -8,9 +8,12 @@ use Z77\Core\DI,
     Z77\Core\Http\Response\FetchResponse,
     Z77\Core\Http\Response\HtmlResponse,
     Z77\Core\Http\Response\RedirectResponse,
+    Z77\Module\Member\Services\AccountDeletion,
     Z77\Module\Member\Services\DeviceKeys,
     Z77\Module\Member\Services\MemberAccounts,
     Z77\Module\Member\Services\MemberAuth,
+    Z77\Module\Member\Services\MemberLog,
+    Z77\Module\Member\Services\MemberSession,
     Z77\Module\Member\Services\TenantChoice,
     Z77\Module\Member\Services\Totp,
     Z77\Module\Member\Services\TotpSetup,
@@ -97,6 +100,11 @@ class ProfileController extends AbstractMemberController
             'memberships'  => \Z77\Module\Member\Services\TenantChoice::create()->memberships($account),
             'section'      => $section,
             'dialogId'     => self::ACCOUNT_DIALOG_ID,
+            // «Konto löschen» — the dialog's id and what the PROJECT wants
+            // the person to read before confirming (a tenant left without
+            // its owner, an access that ends).
+            'deleteDialogId'  => self::DELETE_DIALOG_ID,
+            'deletionNotices' => AccountDeletion::noticesFor($account),
             'railItems'    => $rail,
             'crumbs'       => [
                 ['label' => 'Profil'],
@@ -225,6 +233,8 @@ class ProfileController extends AbstractMemberController
      * opening the day one of them is renamed.
      */
     private const ACCOUNT_DIALOG_ID = 'me-konto-dialog';
+    /** The id of the deletion dialog («Konto löschen»). */
+    private const DELETE_DIALOG_ID = 'me-konto-loeschen';
 
     /**
      * The two fields of the account a customer may change himself: the NAME,
@@ -261,6 +271,7 @@ class ProfileController extends AbstractMemberController
             return $value === '' ? null : mb_substr($value, 0, 120);
         };
 
+        $before = [$account->getFirstName(), $account->getLastName(), $account->getCompany()];
         $account->setFirstName($clean($request->getPostParameter('first_name')));
         $account->setLastName($clean($request->getPostParameter('last_name')));
         $account->setCompany($clean($request->getPostParameter('company')));
@@ -268,9 +279,66 @@ class ProfileController extends AbstractMemberController
         $this->accounts()->save($account);
         $this->profileHook()?->__invoke($account);
 
+        // WHICH fields changed, never the values — the log says a name was
+        // changed on that day, not what it was.
+        $changed = array_keys(array_filter(
+            ['first_name' => $before[0] !== $account->getFirstName(), 'last_name' => $before[1] !== $account->getLastName(), 'company' => $before[2] !== $account->getCompany()]
+        ));
+        if ($changed !== []) {
+            MemberLog::write('profile.update', (string)$account->getId(), ['detail' => implode(',', $changed)]);
+        }
+
         $this->messageService->pushFlashAfterRedirect('success', 'Ihre Angaben sind gespeichert.');
 
         return $this->redirect('/member/main/profile?bereich=konto');
+    }
+
+    /**
+     * The person deletes her own account (2026-09-14). Two confirmations
+     * inside the dialog — the address typed again and a checkbox — because
+     * there is no password to ask for. The project is asked first
+     * ({@see AccountDeletion}); when it refuses, nothing has changed and the
+     * page says so. Afterwards the session ends and the login page reports
+     * the deletion ONCE, through the query — the flash would die with the
+     * session that carried it.
+     */
+    protected function loeschenAction(): RedirectResponse
+    {
+        $account = MemberAuth::create()->current();
+        if ($account === null) {
+            return $this->redirect('/member/main/login');
+        }
+
+        $request = DI::getRequest();
+        if (!$request->isPost() || !DI::getCsrfService()->validate((string)$request->getPostParameter('csrf_token'))) {
+            return $this->redirect('/member/main/profile?bereich=konto');
+        }
+
+        $typed     = mb_strtolower(trim((string)$request->getPostParameter('loeschen_bestaetigung')));
+        $confirmed = (string)$request->getPostParameter('bestaetigt') === '1';
+        if ($typed === '' || $typed !== mb_strtolower(trim((string)$account->getEmail())) || !$confirmed) {
+            $this->messageService->pushFlashAfterRedirect(
+                'error',
+                'Nichts gelöscht: zum Bestätigen tippen Sie Ihre E-Mail-Adresse genau so, wie sie oben steht, und setzen den Haken.'
+            );
+
+            return $this->redirect('/member/main/profile?bereich=konto');
+        }
+
+        try {
+            AccountDeletion::create()->delete($account);
+        } catch (\Throwable $e) {
+            $this->messageService->pushFlashAfterRedirect(
+                'error',
+                'Löschen nicht möglich — nichts wurde entfernt: ' . $e->getMessage()
+            );
+
+            return $this->redirect('/member/main/profile?bereich=konto');
+        }
+
+        (new MemberSession(DI::getSessionManager()))->end();
+
+        return $this->redirect('/member/main/login?konto=geloescht');
     }
 
     /**

@@ -190,6 +190,7 @@ trait AccountsControllerTrait
             return $this->fetchError('Für dieses Konto ist kein Zwei-Faktor-Schutz eingerichtet');
         }
 
+        \Z77\Module\Member\Services\MemberLog::actor('operator');
         \Z77\Module\Member\Services\TotpSetup::create()->resetByOperator($account);
         $this->messageService->pushFlashAfterRedirect(
             'success',
