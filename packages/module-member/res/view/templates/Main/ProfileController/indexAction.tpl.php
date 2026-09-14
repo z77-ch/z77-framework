@@ -15,6 +15,8 @@
  * @var string $section  'konto' | 'zweifa' | 'geraete'
  * @var \Z77\Module\Member\Entities\MemberAccount $account
  * @var array<int,array<string,mixed>> $devices device keys, newest use first
+ * @var list<array{ref:string,label:string,usable:bool,note:string}> $memberships
+ *      what the project's membershipHook reports — closed ones are named
  * @var string $dialogId  id of the account dialog — the action cell opens it
  * @var string $csrfToken
  */
@@ -46,6 +48,22 @@ $title = [
     </div>
     <?php endif; ?>
 
+    <?php /* The memberships that are NOT open — paused by the owner, or a join
+             still waiting for the operator. The project wrote the sentence
+             (`note`: what and whom to ask); the module only prints it. An
+             active account whose every access is closed lands HERE with no
+             areas, so this band is the one thing telling it why. */ ?>
+    <?php $closed = array_values(array_filter($memberships ?? [], static fn(array $m): bool => empty($m['usable']))); ?>
+    <?php $open   = array_filter($memberships ?? [], static fn(array $m): bool => !empty($m['usable'])); ?>
+    <?php foreach ($closed as $m): ?>
+    <div class="me-band me-band--info">
+        <span class="me-band__dot" aria-hidden="true"></span>
+        <span class="me-band__text">
+            Ihr Zugang zu «<?= e((string)$m['label']) ?>» ist zurzeit nicht offen<?= trim((string)($m['note'] ?? '')) !== '' ? ': ' . e(trim((string)$m['note'])) . '.' : '.' ?>
+        </span>
+    </div>
+    <?php endforeach; ?>
+
     <dl class="me-field">
         <?php if ($name !== ''): ?>
         <dt>Name</dt>
@@ -58,7 +76,14 @@ $title = [
         <dd><?= e($account->getCompany()) ?></dd>
         <?php endif; ?>
         <dt>Status</dt>
-        <dd><?= e($account->isActive() ? 'aktiv' : 'wartet auf Freischaltung') ?></dd>
+        <dd>
+            <?= e($account->isActive() ? 'aktiv' : 'wartet auf Freischaltung') ?>
+            <?php /* «aktiv» is the ACCOUNT. When no access is open it must not
+                     read as «all is well» — the closed ones are named above. */ ?>
+            <?php if ($account->isActive() && $closed !== [] && $open === []): ?>
+            <span class="me-quiet">— zurzeit ohne offenen Zugang</span>
+            <?php endif; ?>
+        </dd>
     </dl>
 
     <?php /* Why the address is not a field: it IS the access — a typo locks the

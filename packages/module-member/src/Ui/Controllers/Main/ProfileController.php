@@ -89,6 +89,12 @@ class ProfileController extends AbstractMemberController
             'pageTitle'    => 'Profil',
             'account'      => $account,
             'devices'      => $devices,
+            // Every membership the project reports, usable or not — the
+            // template names the ones that are NOT open («ruht», «wartet»)
+            // with the project's own sentence, so a paused person reads WHY
+            // the areas are gone and whom to ask (2026-09-14). The account's
+            // own state stays what it is: the pause is the tenant's.
+            'memberships'  => \Z77\Module\Member\Services\TenantChoice::create()->memberships($account),
             'section'      => $section,
             'dialogId'     => self::ACCOUNT_DIALOG_ID,
             'railItems'    => $rail,
