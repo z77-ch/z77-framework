@@ -89,7 +89,8 @@ final class TenantChoice
      * A hook that throws answers «none» — a switcher is chrome, and a project
      * hook that stumbles must not cost the page it decorates.
      *
-     * @return list<array{ref:string,label:string,usable:bool,note:string}>
+     * @return list<array{ref:string,label:string,usable:bool,state:string,note:string}>
+     *         state: active | paused | waiting
      */
     public function memberships(MemberAccount $account): array
     {
@@ -106,10 +107,21 @@ final class TenantChoice
                     if ($ref === '') {
                         continue;
                     }
+                    $usable = (bool)($raw['usable'] ?? true);
+                    // WHY a row is closed, when the project says: `paused`
+                    // (the owner's pause) or `waiting` (for the operator).
+                    // The profile words the person's status from it — a
+                    // paused person must read «pausiert», not «aktiv»
+                    // (Peter, 2026-09-14). Unknown → derived from `usable`.
+                    $state = strtolower(trim((string)($raw['state'] ?? '')));
+                    if (!in_array($state, ['active', 'paused', 'waiting'], true)) {
+                        $state = $usable ? 'active' : 'waiting';
+                    }
                     $rows[] = [
                         'ref'    => $ref,
                         'label'  => trim((string)($raw['label'] ?? '')) ?: $ref,
-                        'usable' => (bool)($raw['usable'] ?? true),
+                        'usable' => $usable,
+                        'state'  => $state,
                         'note'   => trim((string)($raw['note'] ?? '')),
                     ];
                 }

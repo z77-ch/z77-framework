@@ -15,8 +15,9 @@
  * @var string $section  'konto' | 'zweifa' | 'geraete'
  * @var \Z77\Module\Member\Entities\MemberAccount $account
  * @var array<int,array<string,mixed>> $devices device keys, newest use first
- * @var list<array{ref:string,label:string,usable:bool,note:string}> $memberships
- *      what the project's membershipHook reports — closed ones are named
+ * @var list<array{ref:string,label:string,usable:bool,state:string,note:string}> $memberships
+ *      what the project's membershipHook reports — closed ones are named,
+ *      `state` (active|paused|waiting) words the person's status
  * @var string $dialogId  id of the account dialog — the action cell opens it
  * @var string $csrfToken
  */
@@ -76,12 +77,31 @@ $title = [
         <dd><?= e($account->getCompany()) ?></dd>
         <?php endif; ?>
         <dt>Status</dt>
+        <?php /* The status the PERSON experiences, not the record's field: an
+                 active account whose every access is paused reads «pausiert»
+                 — «aktiv» there was true of the login and false of everything
+                 the person came for (Peter, 2026-09-14). The band above says
+                 which access and whom to ask. */ ?>
+        <?php
+        $paused = array_filter($closed, static fn(array $m): bool => ($m['state'] ?? '') === 'paused');
+        if (!$account->isActive()) {
+            $statusText = 'wartet auf Freischaltung';
+            $statusNote = '';
+        } elseif ($closed !== [] && $open === [] && $paused !== []) {
+            $statusText = 'pausiert';
+            $statusNote = 'Konto und Anmeldung bleiben bestehen';
+        } elseif ($closed !== [] && $open === []) {
+            $statusText = 'wartet auf Freischaltung';
+            $statusNote = '';
+        } else {
+            $statusText = 'aktiv';
+            $statusNote = '';
+        }
+        ?>
         <dd>
-            <?= e($account->isActive() ? 'aktiv' : 'wartet auf Freischaltung') ?>
-            <?php /* «aktiv» is the ACCOUNT. When no access is open it must not
-                     read as «all is well» — the closed ones are named above. */ ?>
-            <?php if ($account->isActive() && $closed !== [] && $open === []): ?>
-            <span class="me-quiet">— zurzeit ohne offenen Zugang</span>
+            <?= e($statusText) ?>
+            <?php if ($statusNote !== ''): ?>
+            <span class="me-quiet">— <?= e($statusNote) ?></span>
             <?php endif; ?>
         </dd>
     </dl>
