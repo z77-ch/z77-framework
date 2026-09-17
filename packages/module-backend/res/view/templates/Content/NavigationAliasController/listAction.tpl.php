@@ -27,6 +27,7 @@
                     <span class="be-tree__url">→ <?= e($navLabel) ?></span>
                     <span class="be-tree__route">
                         <?php if ($alias->isCanonical()): ?><span class="be-tree__ref-label">canonical</span><?php endif; ?>
+                        <?php if ($alias->acceptsSlugs()): ?><span class="be-tree__ref-label">/…</span><?php endif; ?>
                     </span>
                 </div>
             </div>

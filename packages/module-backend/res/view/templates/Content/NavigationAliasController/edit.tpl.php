@@ -66,6 +66,15 @@ $fieldError = function (string $name) use ($validator): string {
                 <?= raw($fieldError('is_canonical')) ?>
             </div>
 
+            <div class="be-form__field" data-z77-field-wrapper>
+                <label class="be-switch">
+                    <input type="checkbox" class="be-switch__input" name="accepts_slugs" value="1"<?= $alias->acceptsSlugs() ? ' checked' : '' ?>>
+                    <span class="be-switch__track"><span class="be-switch__thumb"></span></span>
+                    <span class="be-switch__label">Nimmt einen Rest an <small>(<code>/pfad/…</code> geht als Slugs an die Action — sonst gilt nur der exakte Pfad)</small></span>
+                </label>
+                <?= raw($fieldError('accepts_slugs')) ?>
+            </div>
+
         </div>
     </div>
     <div class="be-modal__footer">

@@ -1,6 +1,6 @@
 # routing
 
-2026-09-02
+2026-09-17
 
 ## entry
 
@@ -11,13 +11,17 @@
 ## file map
 
 SOURCE=/packages/kernel/core/src/Routing/Router.php
+SOURCE=/packages/kernel/core/src/Routing/AliasPathResolver.php
+SOURCE=/packages/kernel/core/src/Routing/PageCachePolicy.php
+SOURCE=/packages/kernel/core/src/Services/NavigationUrlResolver.php
+SOURCE=/packages/kernel/shared/src/Libraries/Cleaner/StringCleaner.php
 SOURCE=/packages/kernel/core/src/Http/Request.php
 SOURCE=/packages/kernel/core/src/Http/RequestMode.php
 SOURCE=/packages/kernel/core/src/Controller/ControllerHandler.php
 
 ## mental model
 
-Routing runs once in `Bootstrap::pullUp()`. `Request::runParsing()` extracts the language prefix, then resolves the route with precedence **Reserved Routes → NavigationAlias → static navigation → convention** (ADR-015 + ADR-017 R3). Reserved routes are matched FIRST (before the localized-slug translation and before the Fetch short-circuit); the rest run after translation, Page mode only. On an alias or reserved hit the trailing path segments are captured as content slugs (`getSlugs()`). On hit: module/group/controller/action come from the matched route — no cascade. On miss or in Fetch mode: convention fallback maps URL segments positionally over 4 segments. `ControllerHandler` receives the resolved state and MUST be locked via `lock()` before `Dispatcher` runs.
+Routing runs once in `Bootstrap::pullUp()`. `Request::runParsing()` extracts the language prefix, then resolves the route with precedence **Reserved Routes → NavigationAlias → static navigation → convention** (ADR-015 + ADR-017 R3). Reserved routes are matched FIRST, before the Fetch short-circuit. **Since 2026-09-17 the alias question is asked before anything is translated** (amendment to ADR-014/ADR-015): `AliasPathResolver::resolve()` translates the segments only to look an alias up; a MISS resolves static navigation → convention on the segments **as requested**, untranslated, and without a 301 — there is no such thing as a localized technical URL any more. On an alias or reserved hit the trailing path segments are captured as content slugs (`getSlugs()`), and an alias only yields a remainder when it is flagged `accepts_slugs`. On hit: module/group/controller/action come from the matched route — no cascade. On miss or in Fetch mode: convention fallback maps URL segments positionally over 4 segments. `ControllerHandler` receives the resolved state and MUST be locked via `lock()` before `Dispatcher` runs.
 
 - **Reserved Routes (highest precedence, ADR-017 R3)** are structural, framework-owned URL prefixes declared per module (`reservedRoutes` config key) and aggregated by `ModuleManager::getReservedRoutes()`. A prefix maps straight to a routing target (4-tuple); the trailing path becomes content slugs. They are matched **mode-independently** — before the Fetch short-circuit — because a reserved URL like `/media` is reached via `<img src>` (`Sec-Fetch-Mode: no-cors` → Fetch mode), not only by browser navigation; routing them only in Page mode would 404 embedded media. They are matched on raw post-language segments (folder/file slugs are structural, never language-translated). Used for delivery URLs that must NOT depend on a navigation/alias seed. A prefix declared by two modules is a fail-fast config error.
 
@@ -29,7 +33,9 @@ Routing runs once in `Bootstrap::pullUp()`. `Request::runParsing()` extracts the
 - Per-group `defaultController` (since 2026-05-19): each group declares its default controller in `groupDefaults`.
 - `ControllerHandler::has*()` methods both validate AND set state (CQS trade-off by design).
 - Old 3-segment URLs throw `NotFoundException` — strict, no redirect layer (see ADR-005).
-- **NavigationAlias is the public URL layer (ADR-015).** A `NavigationAlias.path` maps a clean URL to a navigation; the path remainder after the matched alias is captured as **content slugs** and passed to the action via `Request::getSlugs()`. The old per-entry `params`/friendly-`url` mechanism was removed (Phase 4). See [`navigation.md`](navigation.md#navigationalias--content-slugs-since-2026-06-08-adr-015).
+- **NavigationAlias is the public URL layer (ADR-015).** A `NavigationAlias.path` maps a clean URL to a navigation; the path remainder after the matched alias is captured as **content slugs** and passed to the action via `Request::getSlugs()` — but only for an alias with `accepts_slugs` (since 2026-09-17; without it the alias matches its exact path and a remainder is a MISS → 404). The old per-entry `params`/friendly-`url` mechanism was removed (Phase 4). See [`navigation.md`](navigation.md#navigationalias--content-slugs-since-2026-06-08-adr-015).
+
+- **A request that carries content slugs is never page-cached** (`PageCachePolicy`): `PageIdentity` has no slug dimension, so `/referenzen/a` and `/referenzen/b` would share one entry (ADR-015 D2, key-by-URL, still deferred).
 
 ## flow
 
@@ -39,28 +45,41 @@ Bootstrap::pullUp()
       1. extractLanguage()             strip /de/ or /fr/ prefix; throw InvalidRouteException if 2-char invalid lang
       2. matchReserved(segments)       longest-prefix reserved route (ModuleManager::getReservedRoutes)
               HIT  → assign 4-tuple from the reserved target; remainder → content slugs; RETURN
-              (runs before translation AND before the Fetch short-circuit — mode-independent)
-      3. translateSlugsToCanonical()   localized → canonical segments (non-default language only)
-      4a. Fetch mode                   → parsePathSegments() directly (no nav lookup)
-      4b. Page mode + segments         → Router::matchAlias(segments)   (longest-prefix NavigationAlias)
-              HIT  → assign 4-tuple from alias's navigation; remainder → content slugs
-              MISS → Router::match(path) → NavigationService::findByPath()  (static nav, canonical 4-tuple)
+              (runs before the alias question AND before the Fetch short-circuit —
+               mode-independent; reserved segments are never translated)
+      3a. Fetch mode                   → parsePathSegments() directly (no nav lookup, NO translation)
+      3b. Page mode + segments         → AliasPathResolver::resolve(segments, language)
+              "is this an alias?" — non-default language: translate the segments, look the
+              alias up by the translated path, then by the raw one; exact match, or prefix
+              when the alias has accepts_slugs (remainder = content slugs, RAW)
+              HIT  → enforceLocalizedForm()  301 to the single localized form of the ALIAS
+                     PART if spelled differently (read methods, non-default language)
+                     assign 4-tuple from the alias's navigation; remainder → content slugs
+              MISS → segments stay AS REQUESTED (no translation, no 301)
+                     Router::match(path) → NavigationService::findByPath()  (static nav, 4-tuple)
                        HIT  → assign 4-tuple from entry
                        MISS → parsePathSegments() (convention fallback)
-      4c. Page mode + no segments      → parsePathSegments() (convention fallback → default module)
+      3c. Page mode + no segments      → parsePathSegments() (convention fallback → default module)
   → ControllerHandler::lock()          freeze resolved state
 ```
 
 (Language-session reconciliation runs later, in `Dispatcher::execute()` — see [`i18n.md`](i18n.md).)
+
+There is no blanket translation step any more: the former step 3
+(`translateSlugsToCanonical()`, "localized → canonical for every segment before anything is
+matched") was removed on 2026-09-17. Translation now happens INSIDE the alias question and
+nowhere else — see [`translation.md`](translation.md) TRANS-ALIAS-001.
 
 ## routing strategies
 
 | Strategy | Source | When |
 |---|---|---|
 | Reserved Route | `reservedRoutes` module config (`path prefix` → 4-tuple, longest-prefix; remainder = content slugs), aggregated by `ModuleManager::getReservedRoutes()` | structural framework-owned delivery URLs, mode-independent (`/media/{area}/…`); resolved before everything else |
-| NavigationAlias | `navigation_aliases.json` (`path` → navigation, longest-prefix; remainder = content slugs) | friendly/clean URLs (`/home`, `/login`), dynamic detail URLs (`/schweiz/stadt/basel`) |
-| Static navigation | `navigation.json` (canonical 4-tuple path) | direct canonical hit (`/frontend/main/index/home`) |
+| NavigationAlias | `navigation_aliases.json` (`path` → navigation; EXACT path by default, longest-prefix only with `accepts_slugs`, remainder = content slugs) | friendly/clean URLs (`/home`, `/login`), dynamic detail URLs (`/schweiz/stadt/basel` — alias `/schweiz/stadt`, `accepts_slugs` on) |
+| Static navigation | `navigation.json` (canonical 4-tuple path) | direct canonical hit (`/frontend/main/index/home`) — matched on the segments as requested |
 | Convention fallback | URL segments positional (4 segments) | alias + nav miss, Fetch mode, default routes |
+
+Only the NavigationAlias row sees the slug table (and only in a non-default language, to ask the alias question). The other three resolve the segments as they arrive — a localized technical URL does not exist.
 
 Nav-Hits use `assignModule` + `assignGroup` + `assignController` + `setAction` — no cascade. All four values come from the matched navigation. The canonical path is built on-the-fly in `Navigation::getCanonicalPath()`; the public URL is `NavigationService::urlFor()` (alias-aware).
 
@@ -228,6 +247,9 @@ All caught in `Bootstrap::pullUp()` → forwarded to `ExceptionHandler::handle()
 - When declaring a session-less API route → MUST set `'stateless' => true` on the reserved-route target; its actions MUST NOT carry `#[Fetch]`/`#[Page]` (mode-agnostic) and MUST NOT resolve session-bound services (unregistered on that path — see [`bootstrap.md`](bootstrap.md))
 - When handling a Fetch request → MUST skip navigation lookup; MUST use convention routing. Reserved routes are the exception — they are matched before the Fetch short-circuit (a reserved URL reached via `<img src>` is Fetch mode), so a reserved delivery URL MUST NOT rely on Page mode
 - When a path segment contains `.` → MUST throw `FileNotFoundException` (static file detection)
+- When a page needs a localized URL → MUST give it a `NavigationAlias` and localize the ALIAS path via the slug table; MUST NOT expect a technical path (`/{module}/{group}/{controller}/{action}`) to localize — since 2026-09-17 technical paths resolve as written in every language, and `/fr/frontend/main/index/situation` is a 404
+- When an alias must serve a path remainder (a detail page) → MUST set `accepts_slugs` on it, and the action MUST answer an unknown slug or a wrong slug count with `NotFoundException`; MUST NOT rely on the old unconditional prefix match (`/kontakt/foo` is a 404 now) and MUST NOT translate the remainder — it arrives raw
+- When building an internal URL in PHP or a template → MUST pass the canonical path through `localizedUrl()` (which asks `AliasPathResolver` whether it is an alias); MUST NOT prepend `/{lang}` by hand and MUST NOT translate single segments with `SlugTranslator` outside that resolver
 - When an action accepts only a specific HTTP method or mode → SHOULD declare it via `#[Fetch]` / `#[Page]` / `#[HttpMethod(...)]`; MUST NOT duplicate the check with `if (!isPost())` inside the action
 
 ## see also
@@ -245,11 +267,17 @@ All caught in `Bootstrap::pullUp()` → forwarded to `ExceptionHandler::handle()
 - **ROUTE-RESERVED-001** — resolved 2026-06-23 (ADR-017 R3). Added the **Reserved-Route tier** as the highest routing precedence (`Request::matchReserved`, longest-prefix over `ModuleManager::getReservedRoutes()`), matched before NavigationAlias / static nav / convention AND before the Fetch short-circuit. `/media` moved from a phantom navigation node (id 26) + NavigationAlias (id 8) to a `reservedRoutes` entry; node 26 + alias 8 removed from the seeds (`packages/kernel/core/data/framework/routing/navigation*.default.json`) and the live skeleton. Since R4c the route is declared in `module-dms` (`dmsConfig`, `/media` → `dms/media/output/serve`) and served by `OutputController` (it was briefly `frontend/media/media/serve` + `MediaController` in R3, both now removed). The mode-independence is the point: an `<img src="/media/…">` request is Fetch mode, which previously skipped alias/nav lookup and 404'd via convention. Verified via throwaway CLI smoke (14 checks: `/media/foo/bar.pdf` resolves identically in Page + Fetch mode with slugs `[foo, bar.pdf]`, bare `/media` resolves with empty slugs, non-reserved `/nope/x` falls through to a `NotFoundException`, aggregated map exposes `/media`). **After deploying this change the APCu/page cache must be cleared** (the nav/alias JSON was edited directly, not through the entity manager, so auto-invalidation does not fire).
 - **ROUTE-ALIAS-001** — resolved 2026-06-08 (ADR-015). Inbound routing gained **NavigationAlias precedence** (`Router::matchAlias`, longest-prefix) before static-navigation `findByPath` and convention fallback. The matched alias supplies the 4-tuple; trailing segments are captured as content slugs (`Request::getSlugs()`). Verified: `/home/alpha/beta` → home action with slugs `[alpha,beta]` (was 404 via convention). See `navigation.md` NAV-ALIAS-001. _(Since 2026-06-09 the longest-prefix matcher lives in `NavigationUrlResolver`; `Router::matchAlias` resolves its `navigationId` to a `Navigation` — see `navigation.md` NAV-RESOLVER-001.)_
 
+- **ROUTE-ALIAS-002** — resolved 2026-09-17 (amendment to ADR-014 + ADR-015, build plan `docs/03-development/plan-alias-first-routing.md`). Inbound routing is **alias-first**: the blanket translation step (`Request::translateSlugsToCanonical()`) is gone, `Routing/AliasPathResolver` translates only to ask "is this an alias?", and a MISS resolves static navigation → convention on the segments as requested. Two defects were behind it: (1) a localized VALUE equal to a technical identifier — with `kontakt → contact` the fr endpoints `/fr/frontend/main/contact/get-form` and `/fr/frontend/main/contact/danke` were rewritten to `…/kontakt/…` and 404'd; (2) an alias matched as a prefix ALWAYS, so one page served unlimited URLs (`/kontakt/foo`) whose page-cache identity had no slug dimension. New: `NavigationAlias.accepts_slugs` (exact match by default), `enforceLocalizedForm()` (301 on the alias part only, `rawurlencode`d, query carried over) replacing `enforceLocalizedSlug()`, slug requests bypass the page cache, and the navigation/alias/router/resolver services moved into `Bootstrap::pullUpServices()` so `localizedUrl()` also works in a job or a mail. Deliberate behaviour changes: `/fr/frontend/main/index/lage` 200 without a 301 (was 301 → `…/situation`), `/fr/frontend/main/index/situation` 404 (was 200), `/kontakt/foo` 404 (was the contact page), a remainder is no longer translated. Verified: `php tests/routing-alias-first.php` (59 checks) + an end-to-end run of the request matrix against a real installation.
+
+- **ROUTE-CONV-001** — open, existing behaviour (not introduced by ROUTE-ALIAS-002). Don't assume a convention URL is rejected when it carries more than 4 segments: `parsePathSegments()` branches at `count >= 4`, assigns segments 0–3 positionally and **silently ignores the surplus**, so `/frontend/main/index/home/whatever/else` answers 200 with the same page as `/frontend/main/index/home` — unlimited URLs for one cacheable page, and the page-cache identity is the same 4-tuple for all of them. Reserved routes and slug-accepting aliases hand a remainder to the action on purpose; the convention path has no such contract and should 404 instead. Not changed with the alias-first rework (deliberately out of scope).
+
+- **ROUTE-CLEAN-001** — open, existing behaviour. Don't read "resolved as written" strictly on the convention path: the segment cleaners **rewrite instead of reject**. `Request::cleanAndTranslate()` runs `StringCleaner::cleanAlpha()` (module/group, strips everything but `a-z-_/`) or `cleanAlphaNum()` (controller/action) over each segment, so `/frontend2/main9/index/home` is cleaned to `frontend` / `main` / `index` / `home` and answers 200 — a second URL for the same page, again sharing its cache identity. The alias layer is unaffected (an alias path is compared literally); only module/group/controller/action segments pass a cleaner.
+
 ## pending
 
-- **ROUTE-DYN-001** — dynamic friendly detail routes (`/schweiz/stadt/basel` → one action that resolves the entity). **Design + core implemented via ADR-015 (NavigationAlias + content slugs), NOT the earlier `UrlAlias` sketch** (that direction was rejected — see ADR-015 Rejected Alternatives). The matcher (`matchAlias`, longest-prefix), content-slug capture (`getSlugs`), and outbound (`urlFor`) shipped in Phases 1–4 (navigation.md NAV-ALIAS-001). The remaining pieces below are **decided** (forks D2–D4, recorded in ADR-015 §D2–D4) but **deferred until the first real detail-page controller exists** (decision 2026-06-09 — no cache/metadata infrastructure on spec without a consumer). They will be built ad-hoc alongside that controller, on the decided designs:
+- **ROUTE-DYN-001** — dynamic friendly detail routes (`/schweiz/stadt/basel` → one action that resolves the entity). **Design + core implemented via ADR-015 (NavigationAlias + content slugs), NOT the earlier `UrlAlias` sketch** (that direction was rejected — see ADR-015 Rejected Alternatives). The matcher (`matchAlias`, longest-prefix — opt-in per alias via `accepts_slugs` since 2026-09-17, ROUTE-ALIAS-002), content-slug capture (`getSlugs`), and outbound (`urlFor`) shipped in Phases 1–4 (navigation.md NAV-ALIAS-001). The remaining pieces below are **decided** (forks D2–D4, recorded in ADR-015 §D2–D4) but **deferred until the first real detail-page controller exists** (decision 2026-06-09 — no cache/metadata infrastructure on spec without a consumer). They will be built ad-hoc alongside that controller, on the decided designs:
   - **PageCache collision (D2):** `PageIdentity` keys HTML by the 4-tuple, not the URL → detail URLs sharing one action collide. Decided: cache key becomes `(language, localized URL path)`; invalidation per-URL + `clearAll()` on deploy.
-  - **Entity-slug translation scaling (D3):** `bale↔basel` must come from an **indexed** store (fed by entities), not flat `route-slugs.{lang}.json`; the `SlugTranslator` normalizes all segments to canonical, the action stays language-agnostic.
+  - **Entity-slug translation scaling (D3):** `bale↔basel` must come from an **indexed** store (fed by entities), not flat `route-slugs.{lang}.json`. _(Amended 2026-09-17: the second half of this line — "the `SlugTranslator` normalizes all segments to canonical, the action stays language-agnostic" — is superseded. Content slugs reach the action raw; whatever store is built, it is the action's lookup, not a rewrite of the URL on the way in.)_
   - **Metadata from entity (D4):** detail pages set title/description at runtime from the entity (override hook), not navId.
 
   (The **NavigationUrlResolver extraction** — Phase 5, point 4 — is done; see `navigation.md` NAV-RESOLVER-001.)

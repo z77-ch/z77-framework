@@ -1,6 +1,6 @@
 # navigation
 
-2026-07-02
+2026-09-17
 
 ## entry
 
@@ -16,6 +16,10 @@ SOURCE=/packages/kernel/core/src/Services/NavigationService.php
 SOURCE=/packages/kernel/core/src/Services/NavigationUrlResolver.php
 SOURCE=/packages/kernel/core/src/Services/ModuleManager.php
 SOURCE=/packages/kernel/core/src/Routing/Router.php
+SOURCE=/packages/kernel/core/src/Routing/AliasPathResolver.php
+SOURCE=/packages/kernel/core/src/Routing/PageCachePolicy.php
+SOURCE=/packages/kernel/core/src/Controller/AbstractBaseController.php
+SOURCE=/packages/module-backend/res/view/templates/Content/NavigationAliasController/edit.tpl.php
 SOURCE=/packages/kernel/shared/src/Entities/Navigation.php
 SOURCE=/packages/kernel/shared/src/Entities/NavigationAlias.php
 SOURCE=/packages/kernel/shared/src/Entities/MetaData.php
@@ -97,10 +101,12 @@ Owns the NavigationAlias layer (ADR-015). Constructor deps: `NavigationAliasRepo
 urlFor(Navigation $entry): string                      // public canonical URL: canonical alias path, else 4-tuple fallback ('' = container)
 getCanonicalAlias(int $navigationId): ?NavigationAlias // the entry's canonical (public) alias, or null
 findByAliasPath(string $path): ?NavigationAlias        // exact active-alias lookup by path
-matchAlias(array $segments): ?array                    // longest-prefix match → {navigationId, slugs[]}; trailing segments = content slugs
+matchAlias(array $segments, ?array $alternative = null): ?array  // → {navigationId, path, length}; see below
 ```
 
-`matchAlias` returns the matched `navigationId` (not the entity) — `Router::matchAlias` resolves it to a `Navigation` via `NavigationService::findById` and returns `{navigation, slugs}` to `Request::runParsing`. A dangling alias (id resolves to no entry) yields `null`.
+`matchAlias` returns the matched `navigationId` (not the entity) — `Router::matchAlias` resolves it to a `Navigation` via `NavigationService::findById` and returns `{navigation, path, length}`. A dangling alias (id resolves to no entry) yields `null` on BOTH directions, which is what keeps an emitted URL resolvable.
+
+Matching rule (amended 2026-09-17): the full path is tried first, then each shorter prefix. An alias found at the FULL length matches unconditionally (exact); an alias found at a shorter prefix matches only if it has `acceptsSlugs` — an exact-only alias there is skipped and the search continues (so `/referenzen/archiv/x` still reaches a slug-accepting `/referenzen` past an exact-only `/referenzen/archiv`). `length` is how many segments the alias path covers; the caller slices the remainder off the RAW segments. `$alternative` is a second spelling of the same request (the raw segments beside the translated ones, same length): per prefix length the primary spelling is tried first, then the alternative — that keeps an alias reachable whose own path happens to be a localized word (alias `/contact` with a table entry `kontakt → contact`). The translation itself is not done here: `Routing/AliasPathResolver` owns it (see [`translation.md`](translation.md)).
 
 ## template context (injected by `AbstractBaseController::html()`)
 
@@ -140,10 +146,17 @@ Navigation has **no own URL** — the public, canonical entry URL of an entry is
 slugs** (the path remainder after the matched alias), resolved at runtime by the action.
 
 **Inbound (`Request::runParsing`, precedence NavigationAlias → static navigation → convention):**
-1. `matchAlias(segments)` — longest-prefix match over alias paths. The longest alias that
-   prefixes the (canonical) path wins; everything after it is content slugs (positional, unbounded).
+1. `AliasPathResolver::resolve(segments, language)` — the FIRST question of page-mode routing
+   (amended 2026-09-17). An alias matches its **exact** path; only an alias with
+   `accepts_slugs` also matches as a prefix, and only then is there a remainder. In a
+   non-default language the segments are translated to look the alias up (raw spelling tried
+   afterwards); a MISS leaves the segments as requested and falls through untranslated.
 2. The matched alias → `navigationId` → `Navigation` → its 4-tuple sets the routing target.
 3. Content slugs are stored on the request; the action reads them via `Request::getSlugs()`.
+   They are the RAW remainder — never run through the slug table.
+4. `Request::enforceLocalizedForm()` 301s to the single localized form of the ALIAS PART when
+   the request spelled it differently (read methods, non-default language only); the slugs
+   are carried over as requested.
 
 ```text
 /schweiz/stadt/basel
@@ -157,8 +170,24 @@ localize via `localizedUrl()`. For canonical/hreflang + language-switch the cont
 NOT the as-requested path — a non-canonical alias still emits the canonical one.
 
 **Action contract:** `{ navigation: NavigationService::getCurrent(), slugs: Request::getSlugs() }`.
-The action is language-agnostic — slugs arrive in canonical form (the SlugTranslator normalizes
-all segments inbound, see [`translation.md`](translation.md)).
+_(Amended 2026-09-17: slugs arrive **as requested**, not normalized — the slug table translates
+the alias part only, see [`translation.md`](translation.md). An action that resolves an entity by
+slug therefore owns the language side of that lookup.)_ The contract has a second half now: an
+alias with `accepts_slugs` accepts ANY remainder, so the action **MUST** throw
+`NotFoundException` for an unknown slug or a wrong slug count — otherwise the page serves
+unlimited URLs. Routing only guarantees that the remainder reaches the action.
+
+**Page cache:** a request that carries content slugs is never cached (`PageCachePolicy` →
+`newPage()`): `PageIdentity` has no slug dimension, so `/referenzen/a` and `/referenzen/b` would
+share one entry (ADR-015 D2, key-by-URL, still deferred).
+
+**Meta / canonical per entity is NOT possible yet:** `AbstractBaseController::html()` sets
+`$context['seo']` and `$context['metaData']` unconditionally, after the action's own context —
+`metaData` comes from the navigation id, `seo` from `currentCanonicalPath()` (canonical alias
+path + slugs). An action that passes its own `metaData`/`seo` for the entity it just resolved has
+them overwritten. All slug pages of one alias therefore share the navigation entry's title and
+description; only the canonical/hreflang URL differs. ADR-015 D4 (metadata override hook) is the
+decided fix and is still unbuilt.
 
 The old `params` map and friendly `url` field were removed (Phase 4): dynamic discrimination is a
 content slug; the "same action, statically different pages" case belongs in the content layer
@@ -175,6 +204,7 @@ Stored in `navigation_aliases.json`. A plain URL→navigation mapping — NOT a 
 | `path` | `string` | canonical (default-language) entry path, e.g. `/home`, `/schweiz/stadt`. Normalized to one leading slash, no trailing. `#[Clean('slug')]` |
 | `isCanonical` | `bool` | the single public entry URL of a navigation is its canonical alias; further non-canonical aliases may exist |
 | `active` | `bool` | inactive aliases are skipped by lookups |
+| `acceptsSlugs` | `bool` | persisted as `accepts_slugs`, default `false` (2026-09-17). `false` = the alias matches its exact path only. `true` = it also matches as a prefix and the remainder reaches the action as content slugs. Edited as a switch in the alias modal ("Nimmt einen Rest an"); the list marks such an alias with a `/…` label |
 
 `NavigationAliasRepository`: `findByPath(string): ?NavigationAlias`, `findByNavigationId(int): NavigationAlias[]`.
 
@@ -182,8 +212,20 @@ Stored in `navigation_aliases.json`. A plain URL→navigation mapping — NOT a 
 `/backend/content/navigation-alias/{action}`, default `list`): list/add/edit/confirmDelete/remove,
 entity-CSRF scope `navigationAlias`. `NavigationAliasValidator` enforces: `navigationId` required +
 existing, `path` non-empty + URL-clean + **unique across all aliases** (this is the uniqueness
-invariant that replaced NAV-DUP-001), at most one canonical alias per navigation. The navigation
-list view links to the alias screen ("URL-Aliase" button); the edit popup no longer has url/params inputs.
+invariant that replaced NAV-DUP-001), at most one canonical alias per navigation, plus two rules
+added 2026-09-17:
+
+- **The first path segment must not be a module key** (`/frontend/…`, `/backend/…`). That is the
+  technical address space, and the alias question is asked first — a slug-accepting alias there
+  would swallow technical URLs.
+- **`accepts_slugs` must be identical on all aliases of one navigation.** The canonical URL of a
+  slug page is built from the CANONICAL alias plus the slugs (`currentCanonicalPath()`), so a
+  slug-accepting side alias beside an exact-only canonical alias would emit a canonical link that
+  answers 404.
+
+The navigation list view links to the alias screen ("URL-Aliase" button); the edit popup no
+longer has url/params inputs — it carries the canonical / active / "Nimmt einen Rest an"
+switches.
 
 ## moveAction endpoint (since 2026-05-21)
 
@@ -312,6 +354,11 @@ the 4-tuple). Seeded from the former friendly `url` values.
 
 (The runtime `navigation_aliases.json` may differ from this seed.)
 
+No seeded alias carries `accepts_slugs` — the key is absent from both JSON files and a record
+without it hydrates to `false` (`mapFromArray` only calls setters for keys present, the property
+default wins), so every shipped alias matches its exact path. The key appears in a record the
+first time that alias is saved through the backend (`mapToArray` writes every property).
+
 ## rules
 
 - When rendering `href` in a template → MUST use `NavigationService::urlFor($entry)` (alias-aware) for regular entries, wrapped in `localizedUrl()`; for ref entries MUST resolve `urlFor(target) . '?via=' . refEntry.getId()`. MUST NOT emit `$entry->getUrl()` raw (that is the 4-tuple path, not the public URL)
@@ -328,7 +375,9 @@ the 4-tuple). Seeded from the former friendly `url` values.
 - When rendering a ref entry's href (target URL + `?via=<refId>`) → MUST use `NavigationService::urlForVia($target, $refId)`, never a manual `. '?via=' .` concat: a target carrying a `param` already has a `?`, so hand-concat would emit a double `?`. `urlForVia` joins with `?`/`&` correctly.
 - In the backend subnav, ANY entry with children renders as an opener (`<details>`), regardless of whether it can produce a link of its own (render-level rule, distinct from the data-level "container" notion). The opener summary is a toggle, not a link — to keep an opener's own page reachable, add a ref-to-self child. Every rendered node MUST resolve its href the same way (ref → `urlFor(target).'?via='.refId`, else `urlFor(node)`); a node that resolves to an empty URL MUST render inert (`<span>`, never `<a href="">`). There is deliberately NO validation for dead links or childless openers.
 - An entry MUST have at most one parent — guaranteed by construction via the single `parentId` FK (the old double-parent case is structurally impossible, no validator needed). `parentId` MUST stay server-controlled: set by `addAction` (from the `?parent` target) and `moveAction` (with cycle / ref-parent / cross-slot guards), and forced server-side in the edit POST path so a crafted body cannot reparent
-- The **alias `path`** MUST be unique across all aliases — `NavigationAliasValidator` rejects duplicates (this replaced NAV-DUP-001's 4-tuple-uniqueness). Multiple navigation entries MAY share one 4-tuple; `NavigationValidator::validateModule()` only enforces the all-or-nothing routing-field structure. At most one canonical alias per navigation.
+- The **alias `path`** MUST be unique across all aliases — `NavigationAliasValidator` rejects duplicates (this replaced NAV-DUP-001's 4-tuple-uniqueness). Multiple navigation entries MAY share one 4-tuple; `NavigationValidator::validateModule()` only enforces the all-or-nothing routing-field structure. At most one canonical alias per navigation. The path MUST NOT start with a module key (`/frontend/…`), and `accepts_slugs` MUST be the same on every alias of one navigation — both enforced by the validator (2026-09-17).
+- When an alias serves detail pages (a path remainder) → MUST set `accepts_slugs`, and its action MUST throw `NotFoundException` for an unknown slug or a wrong slug count; MUST NOT assume routing limits the remainder (it is unbounded and positional) and MUST NOT translate it (it arrives raw). Without the flag the alias matches its exact path only — `/kontakt/foo` is a 404.
+- When a slug page needs its own title/description/canonical → MUST NOT set `metaData`/`seo` in the action's `html()` context: `AbstractBaseController::html()` overwrites both after the action (navId-keyed metadata, canonical from `currentCanonicalPath()`). The per-entity override is ADR-015 D4 and is not built yet.
 - `Navigation::key` MUST stay server-controlled: never accepted from a request body (the edit POST forces the stored value, new backend entries get `null`), never editable in the form (display-only). It is set by shipped defaults or adopted by an import assignment (ADR-032). MUST be unique among non-null keys (`NavigationValidator::validateKey`).
 - `active: false` MUST NOT render the entry (or its subtree) in any UI iterator. NavigationService filters at the source (`iterateSections`, `iterateTree`, `getBySlot`, `resolveFirstNavigable`) — inactive entries do not enter the DOM. Routing (`findByPath`, `resolveCurrent`) ignores `active` — direct URL hits still resolve. The backend list view is the one exception: it calls `repo->findAll()` directly and renders inactive entries with the `.be-nav-node--inactive` modifier so they remain editable.
 - Sibling order MUST be read from `sortKey` (id as tie-breaker), never from file/record order — `getBySlot()` and `getChildren()` enforce this. New entries get the next free `sortKey` at the end of their group (`NavigationController::nextSortKey`); `moveAction` renumbers affected groups densely. `sortKey` is server-controlled — no edit-form field maps to it.
@@ -404,6 +453,10 @@ the 4-tuple). Seeded from the former friendly `url` values.
 - **NAV-KEY-001** — resolved 2026-08-08 (ADR-032 phase 1). `Navigation` gained the server-controlled `?string $key` field — the stable import identity, `Folder::key` pattern (ADR-020). `null` for human-created entries; `navigation.default.json` seeds 16 keys (containers, auth, backend children — frontend starter pages deliberately keyless, their identity is the 4-tuple). `NavigationValidator::validateKey` enforces uniqueness among non-null keys; the edit POST path forces the stored value alongside `parentId`/`sortKey` (BodyCleaner passes attribute-less fields through, so the server-side force is the actual protection); the edit form shows the key display-only. Legacy runtime files without the field hydrate to `null` (forward-compatible). Verified: `php -l` on all touched files, 11-check CLI smoke (hydration round-trip, blank→null normalization, duplicate rejected, self/null accepted, default-file key uniqueness, UTF-8 umlauts intact, legacy hydration).
 
 - **NAV-LIST-VM-001** — resolved 2026-07-07. `listAction.tpl.php` baute den Baum selbst rekursiv auf: ein `$renderNode`-Closure rief `navigationService->getChildren()` + `findById()` (Service-Zugriff + Ref-Auflösung im Template) und komponierte die URL-/Route-Zelle inline — Logik im Partial (Konventionsverstoss). Dieselbe URL-/Route-/Ref-Darstellung existierte ein zweites Mal im Controller (`edit`-Fetch-Update, eigener `htmlspecialchars`-Closure) → Duplikat mit Drift-Risiko. Fix: ein einziger Node-Display-Builder im Controller — `nodeDisplay(Navigation): array` (name/urlDisplay/route/isRef/active; `urlDisplay` intern escaped) + `nodeTree(Navigation, all): array` (rekursiv, `children`/`hasChildren` über `TreeService::children`). `listAction` liefert fertige verschachtelte Arrays; das Template ist reiner Renderer (kein Service-Call, keine Escaping-Entscheidung: `urlDisplay` = `raw()` (vor-escaped), Rest `e()`). Der `edit`-Fetch nutzt denselben `nodeDisplay` → eine Quelle für die Node-Darstellung. Verhaltensgleich: `TreeService::children` (parentId≠null → scope-irrelevant, sortiert) entspricht `getChildren`; Ref-Auflösung via `repo()->find()` wie im alten edit-Pfad. Verifiziert: `php -l` (Controller + Template) grün.
+
+- **NAV-ALIAS-002** — resolved 2026-09-17 (amendment to ADR-015 + ADR-014, build plan `../03-development/plan-alias-first-routing.md`). Don't assume an alias matches as a prefix: it matches its EXACT path unless the new `NavigationAlias.accepts_slugs` (`accepts_slugs`, bool, default `false`) says otherwise. Two defects were behind the change: an alias swallowed any remainder, so one page served unlimited URLs (`/kontakt/foo` rendered the contact page) whose page-cache identity has no slug dimension; and the inbound slug translation ran over EVERY segment before anything was matched, so a localized value equal to a technical identifier (`kontakt → contact` vs. `ContactController`) 404'd the technical URLs of a live contact form. Now `Routing/AliasPathResolver` owns both directions, `matchAlias()` takes an alternative spelling, `NavigationAliasValidator` rejects a path starting with a module key and mixed `accepts_slugs` within one navigation, slug requests bypass the page cache, and `NavigationUrlResolver`/`NavigationService`/`Router`/`AliasPathResolver` moved into `Bootstrap::pullUpServices()` so `localizedUrl()` also resolves in a job or a mail. The backend alias screen got the switch ("Nimmt einen Rest an") and a `/…` marker in the list. Verified: `php tests/routing-alias-first.php` (59 checks) + the request matrix end to end against a real installation.
+
+- **NAV-META-SLUG-001** — open. Don't assume a slug page can carry its own SEO: `AbstractBaseController::html()` writes `$context['metaData']` (navId-keyed) and `$context['seo']` (canonical/hreflang from `currentCanonicalPath()`) unconditionally, AFTER the action's context — an action that resolved an entity cannot hand in title/description for it. Every slug page of one alias therefore shares the navigation entry's metadata; only the canonical URL differs (alias path + slugs). ADR-015 D4 (metadata override hook) is the decided fix, still unbuilt; the same gap is why a page without a navigation entry (e.g. a convention-routed thank-you page) cannot be given `noindex`.
 
 ## pending
 

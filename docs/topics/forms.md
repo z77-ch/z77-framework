@@ -166,7 +166,10 @@ POST /kontakt
   TRUE is the handler's last word. The controller decides what happens next —
   where to redirect, and whether to push a flash there.
 
-GET /kontakt/danke   ← the PRG target: a page of its own
+GET /frontend/main/contact/danke   ← the PRG target: a page of its own
+                                   (or an alias of its own — `/kontakt/danke` is NOT
+                                    one: an alias matches its exact path since
+                                    2026-09-17, see routing.md ROUTE-ALIAS-002)
   → dankeAction()    plain render, no handler, no form state
 ```
 

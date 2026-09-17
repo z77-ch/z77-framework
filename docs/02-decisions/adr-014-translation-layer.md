@@ -35,20 +35,53 @@ stays slim (no per-language field); the action is the stable canonical key.
 
 ### URL slugs — `SlugTranslator` + `localizedUrl()`
 
+> ⚠️ **Amendment 2026-09-17 — alias-first, translation on the alias part only.**
+> The inbound rule below ("each path segment localized → canonical, so the
+> router and the whole resolution chain only ever see canonical segments") and its
+> outbound mirror ("each segment" canonical → localized) are **superseded**. Slug
+> translation now applies to the **alias part** of a URL and to nothing else:
+> inbound it runs only to look an alias up (never in Fetch mode, never on a technical
+> `module/group/controller/action` path, never on the content-slug remainder behind a
+> slug-accepting alias); outbound `localizedUrl()` localizes only what resolves to an
+> alias and gives every other path the language prefix alone. Both directions go
+> through one class, `Z77\Core\Routing\AliasPathResolver`.
+>
+> **Why:** a localized VALUE equal to a technical identifier. With the entry
+> `kontakt → contact` the blanket inbound translation rewrote
+> `/fr/frontend/main/contact/get-form` and `/fr/frontend/main/contact/danke` to
+> `…/kontakt/…` → 404 — a live contact form's blur-check endpoint and its PRG target.
+> The "Table invariants" below knew only the KEY side of that collision (a localized
+> value shadowing a different canonical KEY) and claimed the rest "still round-trips
+> and routes (no 404)". That claim was wrong for the value side.
+>
+> **Stands unchanged:** canonical = the default language; the table shape
+> (`route-slugs.{lang}.json`, canonical → localized, non-default languages only);
+> `SlugTranslator` as pure segment ↔ segment mapping; the two existing table
+> invariants (now joined by a third, see below); the 301 to the single indexed
+> localized form — narrowed to alias URLs; the whole UI-string half of this ADR
+> (`Translator` / `t()`), which this amendment does not touch.
+>
+> See ADR-015 §"Amendment 2026-09-17", [`../topics/translation.md`](../topics/translation.md),
+> and the build plan [`../03-development/plan-alias-first-routing.md`](../03-development/plan-alias-first-routing.md)
+> (request matrix, deliberate behaviour changes).
+
 **Canonical = the default language.** What is stored in navigation/code is the
 canonical form; only non-default languages carry a table
 (`route-slugs.{lang}.json`, canonical → localized). `SlugTranslator` does pure
 segment ↔ segment mapping (`toCanonical` / `toLocalized`); the default language has
 no table (identity).
 
-- **Inbound** (`Request::translateSlugsToCanonical()`, after `extractLanguage()`,
-  before routing): each path segment localized → canonical, so the router and the
+- **Inbound** _(superseded 2026-09-17 — see the amendment above; `translateSlugsToCanonical()`
+  no longer exists, the work moved into `AliasPathResolver::resolve()`, which translates only
+  to look an alias up)_: "each path segment localized → canonical, so the router and the
   whole resolution chain only ever see canonical segments. A non-translatable segment
-  stays unchanged — already-canonical resolves; genuine garbage 404s (no controller).
+  stays unchanged — already-canonical resolves; genuine garbage 404s (no controller)."
 - **Outbound** (`localizedUrl()` helper): a canonical URL → localized + language
   prefix, for rendering nav/footer/switch links. The default language keeps canonical,
   prefix-less URLs. Path+prefix logic lives in the helper; `SlugTranslator` stays
-  segment-only.
+  segment-only. _(Amended 2026-09-17: "each segment" is superseded — only an alias path
+  is localized, a technical path and the slug remainder are emitted as they resolve; the
+  helper also carries `?query` / `#fragment` through unchanged.)_
 
 ### Canonical stays valid in any prefix (Option a)
 
@@ -56,6 +89,13 @@ no table (identity).
 canonical form is valid everywhere. So a page is reachable under both its canonical
 and its localized URL in a non-default language. This is an accepted duplicate-URL
 trade-off; an optional 301 canonical→localized for SEO is a later add-on, not core.
+
+_(Superseded twice: by SEO-301 on 2026-06-07 — the 301 was built, so in a non-default
+language the localized form is the single indexed URL — and narrowed on 2026-09-17 to
+ALIAS URLs. A technical path (`/fr/frontend/main/index/lage`) has no localized form at
+all now: it resolves as written, 200, without a 301, and the aliased duplicate is
+consolidated by `rel=canonical`. The reverse, `/fr/frontend/main/index/situation`, is a
+404 — it is not a URL this framework ever emits.)_
 
 ### Table invariants (validated, debug fail-fast)
 
@@ -66,8 +106,14 @@ trade-off; an optional 301 canonical→localized for SEO is a later add-on, not 
    `/lang/<localized>` would never reach the canonical page of that name). An identity
    mapping (`contact` → `contact`, same word in both languages) is allowed — it reaches
    its own page.
+3. **No module key** _(added 2026-09-17)_ — no localized value equals a module key
+   (`frontend`, `backend`, …). Since the alias question is asked first and the segments
+   are translated to ask it, such a value would make `/{lang}/{module}/…` read as an
+   alias path. Validated in `DEBUG` on load and by the backend translation tool.
 
-With these two invariants the translation is deterministic and collision-free.
+With these invariants the translation is deterministic and collision-free.
+_(Amended 2026-09-17: two invariants were not enough — they cover the key side of the
+collision only. See the amendment block above.)_
 
 ### The wdv two-table model collapses to one in z77
 
@@ -86,6 +132,10 @@ languages need a table. The default language never needs translation entries.
 The router, navigation matching, page-cache identity, and convention resolution all
 stay untouched — they only ever see canonical segments. One translation seam in
 `Request`, zero changes downstream.
+_(Amended 2026-09-17: the seam stayed single, but it moved INTO the alias question
+(`AliasPathResolver`). Downstream still never sees a translated segment — because
+nothing outside an alias path is translated at all. The price of the old blanket form
+was that a localized word could collide with a controller name and 404 it.)_
 
 **Why two invariants and not a full canonical registry check?**
 The realistic collision (a localized slug shadowing a canonical page) is caught

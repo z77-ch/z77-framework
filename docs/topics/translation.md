@@ -1,11 +1,11 @@
 # translation
 
-2026-07-12
+2026-09-17
 
 ## entry
 
 1. `packages/kernel/core/src/Services/Translator.php` — UI-string translation: `t(key)` against per-language dictionaries
-2. `packages/kernel/core/src/Services/SlugTranslator.php` — URL path segment ↔ canonical mapping (routing)
+2. `packages/kernel/core/src/Routing/AliasPathResolver.php` — the ONE place where slug translation meets the alias layer, both directions (inbound `resolve()`, outbound `toLocalized()`)
 3. `packages/kernel/core/src/autoload/prod/php/Helper.php` — the `t()` and `localizedUrl()` template helpers
 4. `packages/kernel/core/src/Services/TranslationCatalog.php` — read/write access to both i18n families for the backend editor (TRANS-TOOL-001)
 5. `packages/module-backend/src/Ui/Controllers/Content/TranslationController.php` — the backend translation editor (`/backend/content/translation/*`)
@@ -14,6 +14,9 @@
 
 SOURCE=/packages/kernel/core/src/Services/Translator.php
 SOURCE=/packages/kernel/core/src/Services/SlugTranslator.php
+SOURCE=/packages/kernel/core/src/Routing/AliasPathResolver.php
+SOURCE=/packages/kernel/core/src/Routing/Router.php
+SOURCE=/packages/kernel/core/src/Services/NavigationUrlResolver.php
 SOURCE=/packages/kernel/core/src/Services/TranslationCatalog.php
 SOURCE=/packages/kernel/core/src/Services/HtmlView.php
 SOURCE=/packages/kernel/core/src/autoload/prod/php/Helper.php
@@ -39,8 +42,12 @@ RUNTIME=/skeleton/data/framework/i18n/route-slugs.fr.json
 
 Two independent translation mechanisms, both reading per-language data under
 `data/framework/i18n/` and both DI services reached via `DI::getTranslator()` /
-`DI::getSlugTranslator()` (registered in `Bootstrap::pullUp()`). UI strings translate
-*text*; slugs translate *URL segments*. Canonical = the default language (ADR-014).
+`DI::getSlugTranslator()` (registered in `Bootstrap::pullUpServices()`). UI strings
+translate *text*; slugs translate *URL segments*. Canonical = the default language
+(ADR-014). Since 2026-09-17 `NavigationUrlResolver`, `NavigationService`, `Router` and
+`AliasPathResolver` are registered there too — `localizedUrl()` must answer in a job or a
+mail template, where there is no request; only the language argument has to be passed
+explicitly then (it defaults to the current request's).
 
 - **UI strings** — `t(key, params, lang)` reads `{lang}.json` (flat `key → value`):
   current language → `defaultLanguage` → the key itself. Keys are namespaced
@@ -49,20 +56,33 @@ Two independent translation mechanisms, both reading per-language data under
   `t('nav.' . $entry->getAction())` so the entry stays slim (no per-language field).
 - **URL slugs** — `SlugTranslator` maps single segments both ways. Only non-default
   languages have a table (`route-slugs.{lang}.json`, canonical → localized); the
-  default has none (identity).
-  - Inbound: `Request::translateSlugsToCanonical()` runs after `extractLanguage()`,
-    before routing — localized → canonical, so the router/cache/convention chain only
-    sees canonical segments. Non-translatable → unchanged (canonical resolves, garbage
-    404s).
-  - Outbound: the `localizedUrl(canonicalUrl, lang)` helper maps each segment
-    canonical → localized and prepends the language prefix (default = no prefix). Used
-    by nav/footer links and the `$languageSwitch` builder in `AbstractBaseController`.
-  - Inbound 301 (SEO single-form): after a route matches, `Request::enforceLocalizedSlug()`
-    re-localizes the matched canonical segments and compares them to what was requested;
-    if they differ it throws `LocalizedRedirectException`, caught in `Bootstrap::pullUp()`
-    → `RedirectResponse(301)`. Safe by construction — the target is built from segments
-    that just matched, and the table is a validated 1:1 round-trip, so the 301 never lands
-    on a 404. Read methods + non-default language only.
+  default has none (identity). **The table translates the ALIAS PART of a URL and
+  nothing else** (amendment 2026-09-17 to ADR-014 + ADR-015): its keys are alias path
+  segments. Its only caller is `AliasPathResolver`, which owns both directions.
+  - Inbound: `Request::runParsing()` asks FIRST "is this an alias?" —
+    `AliasPathResolver::resolve(segments, language)`. In a non-default language the
+    segments are translated to canonical, the alias is looked up by that path (the raw
+    spelling is tried after the translated one), and only a HIT adopts the translated
+    form. A MISS resolves static navigation → convention **on the segments as
+    requested**, untranslated. Fetch mode and reserved routes never reach the
+    translator at all.
+  - Outbound: `localizedUrl(canonicalUrl, lang)` → `AliasPathResolver::toLocalized()`.
+    Only a path that resolves to an alias is localized; a technical path
+    (`/frontend/main/x/y`) and the slug remainder behind an alias get the language
+    prefix and nothing else. `?query` / `#fragment` are split off first and carried
+    over verbatim. Used by nav/footer links and the `$languageSwitch` builder in
+    `AbstractBaseController`.
+  - Inbound 301 (SEO single-form): on an alias HIT, `Request::enforceLocalizedForm()`
+    compares the requested spelling with the single localized form the resolver
+    returned and throws `LocalizedRedirectException` when they differ; caught in
+    `Bootstrap::pullUp()` → `RedirectResponse(301)`. Only the ALIAS PART is localized —
+    the slugs are carried over as requested (each segment `rawurlencode`d, original
+    query string appended). Safe by construction: the target comes from the same class
+    that just matched, so the 301 never lands on a 404. Read methods + non-default
+    language only. A technical path has NO localized form and is never redirected.
+  - Content slugs are never translated: the structural table is not a content store,
+    and an entity slug that happens to equal a table value (`/fr/references/contact`)
+    would otherwise be rewritten. The action owns the entity lookup, language included.
   - Head SEO links: `AbstractBaseController::buildSeoLinks()` provides `$seo` to the head —
     a self-referencing `<link rel="canonical">` (current language's localized URL) plus
     `<link rel="alternate" hreflang>` for each offered language and an `x-default`
@@ -83,14 +103,20 @@ Two independent translation mechanisms, both reading per-language data under
   JS never breaks if the island is absent. The inlined block is, by construction, the
   exact list of what the client needs; grep `js\.` to discover the JS-only keys.
 - **One indexed form per page** (SEO-301): in a non-default language the localized
-  slug is the single canonical URL. Reaching a page via its canonical (or any non-
-  localized) slug `301`s to the localized form — `/fr/privacy` → `/fr/confidentialite`
-  (see "inbound 301" below). The default language is itself canonical (no redirect).
-- **Table invariants** (validated in `DEBUG`, throws): localized values are 1:1
-  unique; no localized value shadows a *different* canonical key (an identity mapping
-  like `contact` → `contact` is allowed). NOT validated: a key colliding with a routing
-  identifier (`module`/`group`/`controller`/`action`) — segment translation is global, so
-  such a key leaks into 4-tuple paths; it is a naming convention (see rules).
+  ALIAS path is the single indexed URL. Reaching an aliased page via its canonical (or
+  any non-localized) spelling `301`s to the localized form — `/fr/privacy` →
+  `/fr/confidentialite` (see "inbound 301" above). The default language is itself
+  canonical (no redirect). Since 2026-09-17 this holds for alias URLs only: the
+  technical URL of the same page (`/fr/frontend/main/index/lage`) answers 200 as
+  written and is consolidated by `rel=canonical`, not by a redirect.
+- **Table invariants** (validated in `DEBUG` on load, and mirrored by the backend
+  translation tool before a write): (1) localized values are 1:1 unique; (2) no
+  localized value shadows a *different* canonical key (an identity mapping like
+  `contact` → `contact` is allowed); (3) **no localized value equals a module key**
+  (`frontend`, `backend`, …) — the alias lookup translates before it asks, so such a
+  value would make `/{lang}/{module}/…` read as an alias path. The old "a KEY colliding
+  with a routing identifier leaks into 4-tuple paths" worry is gone with the amendment:
+  technical paths are not translated any more, in either direction.
 - The `skeleton/data/framework/i18n/*.json` files are RUNTIME (installer-seeded from
   the `*.default.json` SOURCE); do not hand-edit.
 
@@ -137,7 +163,9 @@ discriminator.
 - When displaying a LANGUAGE NAME (not its bare code) → MUST use `t('lang.' . $code)` for the name in the current UI language, or `t('lang.' . $code, [], $code)` for the ENDONYM (each language in its own name — the standard for a language switcher, forced by the target-language 3rd arg); MUST add `lang.<code>` to each dictionary (the frontend switch uses this — `partials/header.tpl.php`, both the topbar and the mobile overlay). MUST NOT hard-wire the names in a template and MUST NOT inject a parallel `$langLabels` map (it duplicates `t()` and needs plumbing). A bare `strtoupper($code)` is acceptable ONLY for a deliberately compact code-only switcher.
 - When rendering an internal link to a navigation entry → MUST take the canonical URL from `NavigationService::urlFor($entry)` (alias-aware, ADR-015) and pass it through `localizedUrl()` for the current language; MUST NOT emit `$entry->getUrl()` raw (that is the 4-tuple path, not the public URL). For the page's own canonical/hreflang use `AbstractBaseController::currentCanonicalPath()`.
 - When adding a localized URL for a page → MUST add a `canonical → localized` entry in `route-slugs.{lang}.json`; the table MUST stay 1:1 and no localized value may shadow a *different* canonical key — identity (`contact`→`contact`) is fine (debug throws otherwise).
-- When choosing a `route-slugs` key → MUST NOT reuse a segment name that also appears as a `module` / `group` / `controller` / `action` identifier of a routable entry. Slug translation is segment-level and global (`localizedUrl()` / `translateSlugsToCanonical()` map every segment by name, position-independent), so a colliding key leaks into the canonical 4-tuple path of an entry that has no friendly `url`: `/frontend/index/main/about` would localize to `/frontend/index/main/a-propos`. It still round-trips and routes (no 404), but yields a semantically wrong URL + 301. The DEBUG validator does NOT catch this cross-collision — it is a naming convention. The safe pattern: give a page a friendly `url` so its public address is a single localizable slug, not the 4-tuple.
+- When choosing a `route-slugs` KEY → MUST use a segment of a `NavigationAlias` path (that is the only thing the table translates since the 2026-09-17 amendment). An entry for a technical segment (`module` / `group` / `controller` / `action`) is dead weight — technical paths are never translated, in either direction — and MUST NOT be added. A page that wants a localized URL MUST have an alias; without one its address is the 4-tuple and stays as written in every language.
+- When choosing a localized VALUE → MUST NOT use a word that equals a module key (`frontend`, `backend`, …): the alias lookup translates the segments before it asks, so `/{lang}/{module}/…` would be read as an alias path. `SlugTranslator::validate()` throws on this in `DEBUG` and the backend translation tool refuses the write. MUST also keep the older two invariants (1:1, no shadowing of a different canonical key).
+- When a localized value happens to equal the path of ANOTHER alias that has no table entry of its own → MUST check that alias first: the translated lookup wins, so the other alias is shadowed in that language. Not machine-validated (it is a data-level collision across two files).
 - When resolving the request language in `SlugTranslator`/`Translator` consumers → MUST treat the default language as canonical (no table, no prefix); MUST NOT create a `route-slugs.{default}.json`.
 - When adding a new public page → MUST add its `nav.<action>` dict keys (all languages); a localized URL additionally needs a `route-slugs` entry — without it the canonical URL still works.
 - When a string is rendered by `core.js` (client-built markup) → MUST add it under the `js.*` namespace in every language dictionary and read it via `_Z77.core.i18n.t('js.<key>', '<fallback>')`; MUST NOT hard-wire the literal in JS. If the string is also rendered server-side (shared vocabulary) → reuse the existing key (e.g. `common.close`) and add it to `Translator::SHARED_CLIENT_KEYS` so it travels to the client. MUST NOT duplicate a shared string under a separate `js.*` key.
@@ -145,6 +173,44 @@ discriminator.
 - When editing translation values / slugs at runtime → SHOULD use the backend translation tool (`/backend/content/translation`), which validates slug invariants and clears the page cache; hand-editing the runtime JSON works but skips both. All writes MUST go to the RUNTIME files, never the `*.default.json` seeds (installer-owned, regenerated on reinstall). New keys still originate in code via a `t('key')` call — the tool fills values, it does not discover usage.
 
 ## known issues
+
+- **TRANS-ALIAS-001** — resolved 2026-09-17 (amendment to ADR-014 + ADR-015; build plan
+  `docs/03-development/plan-alias-first-routing.md`). Don't assume slug translation is
+  global any more: it applies to the ALIAS PART of a URL and to nothing else. Before,
+  `Request::translateSlugsToCanonical()` rewrote EVERY segment before anything was
+  matched, so a localized VALUE equal to a technical identifier broke technical URLs —
+  with `kontakt → contact` (fr) the live endpoints `/fr/frontend/main/contact/get-form`
+  (the public-form blur check) and `/fr/frontend/main/contact/danke` (the PRG target)
+  became `…/kontakt/…` and 404'd. The old text in this file knew only the KEY side of the
+  collision and claimed "no 404". Fixed by asking the alias question FIRST
+  (`Routing/AliasPathResolver`, one class for both directions): translate → look the alias
+  up (raw spelling tried after the translated one) → a HIT adopts the translated form and
+  301s to the single localized form; a MISS resolves static navigation → convention on the
+  segments as requested. `translateSlugsToCanonical()` and `enforceLocalizedSlug()` are
+  gone (the latter replaced by `enforceLocalizedForm()`); a third table invariant
+  (localized value ≠ module key) closes the hole in the validator. Deliberate behaviour
+  changes: `/fr/frontend/main/index/lage` = 200 without a 301 (was a 301 to
+  `…/situation`), `/fr/frontend/main/index/situation` = 404 (was 200), a content-slug
+  remainder is no longer rewritten by the table. Verified: `php tests/routing-alias-first.php`
+  (59 checks) plus an end-to-end run against a real installation with `kontakt → contact`.
+
+- **TRANS-CHECK-URL-001** — open. Don't assume a public form's blur check answers in the
+  page's language: `PublicFormHandler::checkUrl()` builds the endpoint as
+  `/{module}/{group}/{controller}/check` from the current `Request` getters, with NO
+  language prefix. On `/fr/contact` the check request therefore arrives prefix-less, the
+  default language is rendered (a prefix-less URL always renders `defaultLanguage`,
+  I18N-LANG-STABLE-001), and the field message comes back German on a French page. Fix is
+  a `localizedUrl()` around the assembled path — untouched here because it is a behaviour
+  change on every project that ships a public form.
+
+- **TRANS-SLUG-PATTERN-001** — open. Don't assume every live `route-slugs` table can be
+  edited in the backend tool: `TranslationCatalog::SLUG_PATTERN`
+  (`/^[a-z0-9]+(-[a-z0-9]+)*$/`) allows lowercase, digits and dashes only, while real
+  tables carry underscores — zihlundsee's `route-slugs.fr.json` has
+  `"gut_zu_wissen": "bon_a_savoir"`. Such a row reads and translates fine (the runtime
+  reads the JSON directly), but saving it through `/backend/content/translation` is
+  rejected as an invalid slug. Either the pattern admits `_` or the aliases are renamed to
+  dashes — a decision, not a bug fix.
 
 - **JS-I18N-001** — resolved 2026-06-06. JS-rendered strings in `core.js` (close-button
   aria-label on dynamically created flash/popup messages, connection-error, script-load-error)

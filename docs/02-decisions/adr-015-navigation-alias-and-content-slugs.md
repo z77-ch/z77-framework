@@ -54,6 +54,50 @@ Cache            → keyed by the localized, as-requested URL; lazy self-populat
 Resolver         → orchestrates inbound (URL → navigation + slugs) and outbound.
 ```
 
+> ⚠️ **Amendment 2026-09-17 — alias-first, translation on the alias part only.**
+> Two lines of the model above are **superseded**:
+>
+> - `SlugTranslator → normalizes EVERY path segment localized ↔ canonical` and, with it,
+>   **D3** ("normalizes **every** path segment … structural **and** content"). The table
+>   translates the **alias part** of a URL and nothing else. A technical path
+>   (`module/group/controller/action`), a Fetch URL and the content-slug remainder behind
+>   an alias are never translated — inbound or outbound.
+> - The **unconditional prefix match** of D1 ("inbound matching is longest-prefix over
+>   alias paths; the remainder is content slugs"). An alias now matches its **exact** path
+>   by default; only an alias with the new flag `accepts_slugs` also matches as a prefix
+>   and hands the remainder to the action. `/kontakt/foo` is a 404, not the contact page.
+>
+> **Why:** the resolution order was "translate everything, then ask what it is". A
+> localized VALUE that equals a technical identifier then breaks technical URLs — with
+> `kontakt → contact` (fr) the live endpoints `/fr/frontend/main/contact/get-form` and
+> `/fr/frontend/main/contact/danke` were rewritten to `…/kontakt/…` and 404'd. The order
+> is reversed: **first** ask "is this an alias?" (in a non-default language: translate the
+> segments, look the alias up, try the raw spelling too), and only an alias hit adopts a
+> translated form. A miss resolves static navigation → convention **on the segments as
+> requested**, with no translation and no 301. Second reason, independent: an alias that
+> matched any remainder gave one page unlimited URLs, and `PageIdentity` has no slug
+> dimension — two remainders shared one page-cache entry.
+>
+> **Consequences of the amendment:** a request that carries content slugs is never
+> page-cached (`PageCachePolicy`) — D2 (key-by-URL) stays deferred, this is the interim
+> guard. A technical URL of an aliased page is consolidated by `rel=canonical`, no longer
+> by a 301. `accepts_slugs` must be identical on all aliases of one navigation, and an
+> alias path must not start with a module key (`NavigationAliasValidator`).
+>
+> **Stands unchanged:** Navigation purely structural; the alias as the public entry URL
+> bound by `navigationId`; identity = the canonical default-language path; content slugs
+> as the runtime remainder passed to the action (D1's model, only its matching rule is
+> narrowed); the action contract; D2 and D4 as deferred decisions; the language-stability
+> addendum below.
+>
+> Both directions live in one class, `Z77\Core\Routing\AliasPathResolver`
+> (`resolve()` inbound, `toLocalized()` outbound), so every URL emitted resolves back to
+> the same page. See ADR-014 §"Amendment 2026-09-17",
+> [`../topics/navigation.md`](../topics/navigation.md), [`../topics/routing.md`](../topics/routing.md),
+> [`../topics/translation.md`](../topics/translation.md) and the build plan
+> [`../03-development/plan-alias-first-routing.md`](../03-development/plan-alias-first-routing.md)
+> (request matrix, deliberate behaviour changes).
+
 The naming is deliberate: ROUTE-DYN-001 argued the mapping is *not* a navigation node and
 must not be called `aliasNavigation`. This decision goes the other way — the alias **is** a
 property of a navigation ("this entry URL leads to this navigation"), bound by a
@@ -69,6 +113,11 @@ property of a navigation ("this entry URL leads to this navigation"), bound by a
   content slugs, not nodes.)
 - Inbound matching is **longest-prefix** over alias paths; the remainder is content slugs
   (unbounded, positional). The action resolves the entity itself.
+  _(Amended 2026-09-17: the prefix match is now opt-in per alias — `accepts_slugs`. An
+  alias without it matches its exact path only; with it, the longest-prefix rule above
+  applies unchanged and the remainder passes through RAW, untranslated. The action must
+  answer an unknown slug or a wrong slug count with `NotFoundException`, otherwise the
+  page still serves unlimited URLs.)_
 - The **uniqueness invariant moves from the 4-tuple to the alias `path`**. Multiple
   Navigation nodes may share a 4-tuple (e.g. `city/show` once per country). This supersedes
   NAV-DUP-001.
@@ -95,9 +144,18 @@ property of a navigation ("this entry URL leads to this navigation"), bound by a
 
 ### D3 — SlugTranslator normalizes ALL segments; split backing
 
+> ⚠️ **Superseded in part 2026-09-17** (see the amendment under "## Decision"): the
+> translator no longer normalizes every segment. It is called only from
+> `AliasPathResolver`, only for the ALIAS PART of a URL. Content slugs reach the action
+> **as requested** (raw), so an action that resolves an entity by slug must handle the
+> language itself — the "indexed store" idea below is untouched as a future design, but it
+> is no longer a translation of the URL on the way in. The rest of D3 (structural segments
+> from the flat `route-slugs.{lang}.json`, cold-path-only resolution) stands.
+
 - `SlugTranslator` normalizes **every** path segment localized → canonical, uniformly —
   structural **and** content. After translation the path is fully canonical and the action
-  sees **only canonical** slugs (it is language-agnostic).
+  sees **only canonical** slugs (it is language-agnostic). _(Superseded 2026-09-17 — see
+  the note above.)_
 - The backing is **split by scale**: structural segments from the small flat
   `route-slugs.{lang}.json` (load + invert is fine at finite size); content/entity slug
   translations from an **indexed store** that scales (fed by entities on save). The store
@@ -134,6 +192,10 @@ URL makes a hit a single file lookup with zero translation. Identity ≠ cache k
 keeps the action language-agnostic (always canonical), centralizes all language handling in
 one seam, and matches ADR-014's principle "translate inbound to canonical; downstream sees
 only canonical".
+_(Superseded 2026-09-17: the structural table is not a content store, and translating a
+remainder through it rewrote entity slugs that happened to match a table value
+(`/fr/references/contact` → `kontakt`). Content slugs now arrive raw; the action owns the
+entity lookup, language included.)_
 
 **Why metadata from the entity for detail pages?** navId is 1:N to detail pages;
 title / description / canonical are per-entity, so the action is the only place that knows
