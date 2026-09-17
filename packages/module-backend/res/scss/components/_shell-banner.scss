@@ -10,6 +10,7 @@
 
 .be-shell-banner {
     display: flex;
+    flex: 0 0 auto; // item of the `body.backend` column — keeps its height, the shell yields
     align-items: center;
     gap: var(--space-4);
     box-sizing: border-box;

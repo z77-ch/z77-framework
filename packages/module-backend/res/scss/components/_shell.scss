@@ -15,7 +15,12 @@
     --shell-tabs:  38px;   // tab row — rendered ONLY by screens that carry tabs
 
     position:              relative;
-    height:                100dvh;
+    // NOT `height: 100dvh`: the Störer bands (`.be-shell-banner`) sit in normal flow above the
+    // shell. A shell that claims the whole viewport for itself is pushed down by their height,
+    // and `body { overflow: hidden }` clips exactly that much off the bottom of every scroll
+    // region. The body owns the viewport height; the shell takes what the bands leave over.
+    flex:                  1 1 auto;
+    min-height:            0;
     overflow:              hidden;
     background:            var(--be-bg);
     color:                 var(--be-text);
@@ -35,14 +40,20 @@
 }
 
 // Shell body base — self-contained, replaces the legacy `body.backend` from
-// layout/_desktop.scss. The shell (.be-shell) owns its viewport height (100dvh) + all
-// internal scroll regions, so the body only carries the ground colour/font and clips
-// stray overflow. In base.css → applies at every breakpoint.
+// layout/_desktop.scss. The body owns the viewport height (100dvh) as a flex column: Störer
+// bands on top at their own height, the shell (.be-shell) fills the rest and owns all
+// internal scroll regions. The body itself clips stray overflow. `min-height: 0` cancels the
+// generic `body { min-height: 100vh }` (base/_elements.scss), which on a phone is TALLER than
+// 100dvh and would win over `height`. In base.css → applies at every breakpoint.
 body.backend {
-    background:  var(--be-bg);
-    color:       var(--be-text);
-    font-family: var(--font-family-ui);
-    overflow:    hidden;
+    display:        flex;
+    flex-direction: column;
+    height:         100dvh;
+    min-height:     0;
+    background:     var(--be-bg);
+    color:          var(--be-text);
+    font-family:    var(--font-family-ui);
+    overflow:       hidden;
 }
 
 // ── Columns ────────────────────────────────────────────────────────────────────
