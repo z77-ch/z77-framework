@@ -20,7 +20,9 @@ use Z77\Shared\Mail\EmailMessage;
  *              hint with the registration link (unknown). The page answer
  *              is identical in every case (anti-oracle), and a waiting
  *              record is opened for EVERY request (stage D).
- *   redeem()   the link click, «here»: session on the READING device.
+ *   redeem()   the link click, «here»: session on the READING device. Runs
+ *              without a question when the reading browser IS the
+ *              requesting one ({@see isRequestingBrowser()}).
  *   approve()  the link click, «confirm»: releases the waiting record so the
  *              REQUESTING device can sign in (spec 1.1.0, decision 5).
  *   poll()     what the requesting device asks every few seconds until its
@@ -159,9 +161,6 @@ final class LoginFlow
         $account = $allowed ? $this->accounts->findByEmail($email) : null;
         $plain   = null;
 
-        // A PAUSED account gets no token and NO MAIL AT ALL, while the waiting
-        // page appears unchanged (B8 spec v1.3.0, from B7 v1.1.0). B7 says
-        // «every login attempt is refused»; HOW it is refused is this spec's
         // Order matters: the token first (the waiting record binds to its
         // hash), then the record (the mail names its check digits), then the
         // mail. A login token exists only for confirmed/active accounts.
@@ -239,7 +238,20 @@ final class LoginFlow
     }
 
     /**
-     * «Anmeldung auf Gerät xy bestätigen» — consumes the link and releases the
+     * Is the browser opening the link the one that asked for it? True only
+     * when this session holds exactly the waiting record behind the link —
+     * the proof is the session cookie, which a mail scanner, a link preview
+     * or a stranger never carries. False says «not provably this browser»,
+     * never «another device»: an in-app mail browser, a different default
+     * browser or an expired session on the same phone all land here too.
+     */
+    public function isRequestingBrowser(?MemberPendingLogin $pending): bool
+    {
+        return $pending !== null && (string)$pending->getId() === $this->session->pendingLoginId();
+    }
+
+    /**
+     * «Anmeldung auf dem anderen Gerät zulassen» — consumes the link and releases the
      * waiting record. NO session is created here: the reading device stays
      * signed out, the requesting one picks it up in poll().
      */
@@ -282,6 +294,17 @@ final class LoginFlow
     public function poll(?int $now = null): string
     {
         $now = $now ?? time();
+
+        // The link was opened in THIS browser, in another tab: redeem() has
+        // already signed this session in (or parked it at the code prompt)
+        // and deleted the record. The waiting tab only has to follow —
+        // without this it would report a dead request next to a live session.
+        if ($this->session->currentAccountId($now) !== null) {
+            return self::SESSION;
+        }
+        if ($this->session->totpPendingAccountId($now) !== null) {
+            return self::TOTP_REQUIRED;
+        }
 
         $id = $this->session->pendingLoginId();
         if ($id === null) {
@@ -370,6 +393,7 @@ final class LoginFlow
         }
 
         $this->session->start((string)$account->getId(), $now);
+        MemberLog::write('login', (string)$account->getId(), ['detail' => 'redeem']);
         if ($token->wantsRemember()) {
             $this->deviceKeys->issueFor($account, null, $now);
         }
@@ -414,6 +438,7 @@ final class LoginFlow
         $this->totpGuard->reset($accountId);
         $this->session->clearTotpPending();
         $this->session->start($accountId, $now);
+        MemberLog::write('login', $accountId, ['detail' => 'totp']);
         if ($remember) {
             $this->deviceKeys->issueFor($account, null, $now);
         }

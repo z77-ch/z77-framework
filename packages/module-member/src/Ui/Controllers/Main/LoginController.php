@@ -136,14 +136,23 @@ class LoginController extends AbstractMemberController
     }
 
     /**
-     * The link click — the confirmation page (spec 1.1.0, decision 5). GET
-     * shows what was requested (time, device, check digits) and two buttons;
-     * POST decides WHICH device gets the session:
+     * The link click. Opened in the browser that ASKED for it, it signs in
+     * right away — no question, nothing to compare. Anywhere else it is the
+     * confirmation page (spec 1.1.0, decision 5): GET shows what was
+     * requested (time, device, check digits) and two buttons; POST decides
+     * WHICH device gets the session:
      *
+     *   here    → this device signs in (the primary button)
      *   confirm → releases the waiting record, the requesting device signs in
-     *   here    → this device signs in (the plain magic-link behaviour)
      *
      * A link whose waiting record is gone still offers «hier anmelden».
+     *
+     * ⚠️ The same-browser path grants a session on a GET — the one exception
+     * to «access only through a POST» (topics/member.md). It holds because the
+     * GET alone is not enough: the session must carry the waiting record
+     * behind this very link, and a mail scanner or link preview never carries
+     * that cookie. They all land on the confirmation page, which changes
+     * nothing until a button is pressed.
      */
     protected function redeemAction(): HtmlResponse|RedirectResponse
     {
@@ -163,22 +172,20 @@ class LoginController extends AbstractMemberController
                         'token'     => '',
                     ]);
                 }
-            } else {
-                $outcome = $flow->redeem($token);
-                if ($outcome === LoginFlow::SESSION) {
-                    return $this->redirect(LoginFlow::landingUrl());
-                }
-                if ($outcome === LoginFlow::TOTP_REQUIRED) {
-                    return $this->redirect('/member/main/login/totp');
-                }
+
+                return $this->deadLink();
             }
 
-            return $this->deadLink();
+            return $this->signedIn($flow->redeem($token));
         }
 
         $context = $flow->linkContext($token);
         if ($context === null) {
             return $this->deadLink();
+        }
+
+        if ($flow->isRequestingBrowser($context['pending'])) {
+            return $this->signedIn($flow->redeem($token));
         }
 
         return $this->html([
@@ -187,6 +194,16 @@ class LoginController extends AbstractMemberController
             'pending'   => $context['pending'],
             'token'     => $token,
         ]);
+    }
+
+    /** Where a redeemed link leads: the landing, the code prompt, or the dead-link hint. */
+    private function signedIn(string $outcome): RedirectResponse
+    {
+        return match ($outcome) {
+            LoginFlow::SESSION       => $this->redirect(LoginFlow::landingUrl()),
+            LoginFlow::TOTP_REQUIRED => $this->redirect('/member/main/login/totp'),
+            default                  => $this->deadLink(),
+        };
     }
 
     /**

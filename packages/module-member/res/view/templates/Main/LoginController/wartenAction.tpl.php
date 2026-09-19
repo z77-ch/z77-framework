@@ -32,9 +32,10 @@
     </p>
     <p class="me-card__note">
         Diese Zahl steht auch in der E-Mail — im Betreff und im Text.
-        Stimmen die beiden Zahlen überein, ist es Ihre Anmeldung: Bestätigen
-        Sie sie in der E-Mail, und dieses Gerät hier meldet sich automatisch an.
-        Lassen Sie diese Seite so lange offen.
+        Öffnen Sie den Link in diesem Browser, sind Sie sofort angemeldet.
+        Öffnen Sie ihn auf einem anderen Gerät, lassen Sie dort die Anmeldung
+        für dieses Gerät zu — es meldet sich dann automatisch an. Lassen Sie
+        diese Seite so lange offen.
     </p>
     <p class="me-card__note">
         Zeigt die E-Mail eine <strong>andere</strong> Zahl, gehört sie zu einer

@@ -40,9 +40,10 @@ $name = trim(($account->getFirstName() ?? '') . ' ' . ($account->getLastName() ?
 </p>
 
 <p>
-    Auf der Seite, die sich dann öffnet, wählen Sie, welches Gerät angemeldet
-    wird: dasjenige, an dem Sie die Anmeldung angefordert haben, oder das
-    Gerät, auf dem Sie diese E-Mail gerade lesen.
+    Öffnet sich der Link im selben Browser, in dem Sie die Anmeldung
+    angefordert haben, sind Sie sofort angemeldet. Öffnet er sich anderswo
+    (etwa auf dem Handy), melden Sie sich dort an — oder lassen die Anmeldung
+    auf dem anderen Gerät zu.
 </p>
 
 <p>

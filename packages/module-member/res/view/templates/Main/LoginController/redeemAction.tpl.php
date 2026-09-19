@@ -1,8 +1,10 @@
 <?php
 /**
- * Confirmation page (B8 stage D, spec 1.1.0 decision 5): the link does not
- * sign anybody in by itself — the human decides WHICH device gets the
- * session. Time, device and check digits are the only thing that tells an
+ * Confirmation page (B8 stage D, spec 1.1.0 decision 5): shown only when the
+ * link is opened OUTSIDE the browser that asked for it — the requesting
+ * browser is signed in without this page (LoginController::redeemAction).
+ * Here the human decides WHICH device gets the session; «hier» is the
+ * default. Time, device and check digits are the only thing that tells an
  * own request apart from one a stranger started on this address; they are
  * shown, never typed.
  *
@@ -27,8 +29,8 @@
 
     <?php if ($pending !== null): ?>
     <p class="me-card__lead">
-        Diese Anmeldung wurde an einem anderen Bildschirm angefordert. Dort
-        steht dieselbe Prüfzahl:
+        Diese Anmeldung wurde in einem anderen Browser oder auf einem anderen
+        Gerät angefordert:
     </p>
     <dl class="me-profile">
         <dt>Prüfzahl</dt>
@@ -39,10 +41,9 @@
         <dd><?= e($pending->getLabel()) ?></dd>
     </dl>
     <p class="me-card__note">
-        Stimmen die Zahlen überein, bestätigen Sie hier — dann wird das andere
-        Gerät angemeldet, dieses nicht. Stimmen sie <strong>nicht</strong>
-        überein, hat jemand anderes die Anmeldung gestartet: Schliessen Sie
-        diese Seite, ohne etwas anzuklicken.
+        Das andere Gerät lassen Sie nur zu, wenn dort dieselbe Prüfzahl steht.
+        Steht dort <strong>keine</strong> oder eine andere, hat jemand anderes
+        die Anmeldung gestartet: Lassen Sie sie nicht zu.
     </p>
 
     <?php else: ?>
@@ -53,37 +54,29 @@
     </p>
     <?php endif; ?>
 
-    <?php /* The two ways out stand in one track: same width, one gap between
-             them. Two buttons whose width follows their label read as «the
-             main one and an afterthought» — and here the longer label belongs
-             to the QUIETER choice, so the wrong one looked bigger. Weight is
-             carried by colour alone, which is the decision from the security
-             review; geometry must not argue with it. */ ?>
+    <?php /* The harmless way out comes first and is the button; the other one
+             is a small, quiet line below it (decision Peter, 2026-09-19).
+             Pressing «zulassen» hands the session to another device — the
+             only action on this page that can help a stranger — so an
+             inattentive reader must reach for the big one by default. */ ?>
     <div class="me-decision">
+        <form method="post" action="/member/main/login/redeem" class="fe-form" novalidate>
+            <input type="hidden" name="csrf_token" value="<?= e($csrfToken) ?>">
+            <input type="hidden" name="token" value="<?= e($token) ?>">
+            <input type="hidden" name="decision" value="here">
+            <button class="fe-form__submit" type="submit">Jetzt hier anmelden</button>
+        </form>
+
         <?php if ($pending !== null): ?>
         <form method="post" action="/member/main/login/redeem" class="fe-form" novalidate>
             <input type="hidden" name="csrf_token" value="<?= e($csrfToken) ?>">
             <input type="hidden" name="token" value="<?= e($token) ?>">
             <input type="hidden" name="decision" value="confirm">
-            <?php /* Deliberately the QUIET button (security review 2026-08-07,
-                    decision Peter): pressing it hands the session to another
-                    device — the only action on this page that can help a
-                    stranger. Signing in here is the harmless one and carries the
-                    visual weight. */ ?>
-            <button class="fe-form__submit fe-form__submit--quiet" type="submit">
-                Anmeldung auf «<?= e($pending->getLabel()) ?>» bestätigen
+            <button class="me-decision__other" type="submit">
+                Anmeldung auf dem anderen Gerät zulassen (<?= e($pending->getLabel()) ?>)
             </button>
         </form>
         <?php endif; ?>
-
-        <form method="post" action="/member/main/login/redeem" class="fe-form" novalidate>
-            <input type="hidden" name="csrf_token" value="<?= e($csrfToken) ?>">
-            <input type="hidden" name="token" value="<?= e($token) ?>">
-            <input type="hidden" name="decision" value="here">
-            <button class="fe-form__submit" type="submit">
-                <?= $pending !== null ? 'Stattdessen auf diesem Gerät anmelden' : 'Auf diesem Gerät anmelden' ?>
-            </button>
-        </form>
     </div>
 <?php endif; ?>
 </div>
