@@ -13,12 +13,26 @@
  * asked again (see LoginController::askedBefore()). The neutral lead above it
  * is unchanged in both cases; what changes is the advice at the foot.
  *
+ * Three states, three whole cards in one: `pending` (everything the page
+ * shows while the request waits), `done` (the link signed this browser
+ * in, in ANOTHER tab — poll state `elsewhere`) and `dead` (the request is
+ * gone, or its 15-minute window passed). login-wait.js only flips `hidden`
+ * between them and sets the one href it learns from the poll; every word
+ * stands here. A heading that keeps saying «Anmeldung angefordert» next to a
+ * small line saying the opposite reads as a hung page (Fund Peter, axo3.ch,
+ * 2026-09-19) — so the whole card changes, never a line.
+ *
+ * ⚠️ `hidden` sits ONLY on the three bare containers. Any author rule that
+ * sets `display` beats the `[hidden]` UA rule by origin, however specific it
+ * is — the styled elements (`me-card__*`, `me-btn`) stay one level inside.
+ *
  * @var string $pageTitle
  * @var string $digits    four digits, or '' when nothing is waiting here
  * @var bool   $repeated  this browser has asked for a link before, this hour
  */
 ?>
 <div class="me-card" data-login-wait>
+    <div data-login-wait-pending>
     <h1 class="me-card__title">Anmeldung angefordert</h1>
     <p class="me-card__lead">
         Falls zu dieser Adresse ein Konto besteht, ist eine E-Mail unterwegs.
@@ -41,15 +55,7 @@
         Zeigt die E-Mail eine <strong>andere</strong> Zahl, gehört sie zu einer
         anderen Anmeldung — bestätigen Sie sie dann nicht.
     </p>
-    <p class="me-card__note" data-login-wait-note>Warte auf die Bestätigung …</p>
-    <?php /* Revealed by login-wait.js when the link was opened in ANOTHER TAB
-             of this browser: the login lives on there, this tab steps aside.
-             The link is the fallback for a closed tab — its target comes from
-             the poll answer (landing, or the code prompt when 2FA is on). */ ?>
-    <p class="me-card__note" data-login-wait-elsewhere hidden>
-        Sie sind in einem anderen Tab angemeldet — diesen hier können Sie
-        schliessen. <a href="/member/main/login" data-login-wait-elsewhere-link>Weiter</a>
-    </p>
+    <p class="me-card__note">Warte auf die Bestätigung …</p>
     <?php endif; ?>
 
     <?php if ($repeated): ?>
@@ -64,5 +70,32 @@
     <p class="me-card__aside">
         Keine E-Mail erhalten? <a href="/member/main/login">Erneut anfordern</a>
     </p>
+    <?php endif; ?>
+    </div>
+
+    <?php if ($digits !== ''): ?>
+    <?php /* The link was opened in ANOTHER TAB of this browser: the login
+             lives on there, this tab steps aside. «Weiter» is the fallback
+             for a closed tab — login-wait.js sets its href from the poll
+             answer (landing, or the code prompt when 2FA is on). */ ?>
+    <div data-login-wait-done hidden>
+        <h1 class="me-card__title">Sie sind angemeldet</h1>
+        <p class="me-card__lead">
+            Die Anmeldung ist in einem anderen Tab dieses Browsers erfolgt.
+            Diesen Tab können Sie schliessen.
+        </p>
+        <a class="me-btn" href="/member/main/login" data-login-wait-done-link>Weiter</a>
+    </div>
+
+    <?php /* The request is gone: its window passed (poll 'dead', or the
+             script's own 15-minute limit), or the link was used elsewhere. */ ?>
+    <div data-login-wait-dead hidden>
+        <h1 class="me-card__title">Anfrage abgelaufen</h1>
+        <p class="me-card__lead">
+            Diese Anmeldung gilt nicht mehr — sie ist abgelaufen oder wurde
+            bereits anderswo beantwortet.
+        </p>
+        <a class="me-btn" href="/member/main/login">Neuen Link anfordern</a>
+    </div>
     <?php endif; ?>
 </div>

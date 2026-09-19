@@ -6,10 +6,14 @@
  *
  * 'session' → follow the redirect the server names (profile, or the TOTP
  * prompt when 2FA is on). 'elsewhere' → the link was opened in another tab
- * of THIS browser, which is signed in now; stop, say so, and offer the way
- * on only as a link (the other tab already shows the landing — opening it
- * twice is noise). 'dead' → the window closed or the link was used on the
- * other device; stop asking and say so.
+ * of THIS browser, which is signed in now; stop and show the «done» card,
+ * whose «Weiter» takes its href from the answer (the other tab already shows
+ * the landing — opening it twice is noise). 'dead', or the link's own
+ * 15-minute window passed → stop and show the «dead» card.
+ *
+ * The script writes no text: every word stands in wartenAction.tpl.php, and
+ * a state change swaps the WHOLE card (`hidden` on three bare containers),
+ * never a line inside the waiting one.
  */
 (function () {
     'use strict';
@@ -24,18 +28,24 @@
     var waited   = 0;
     var timer    = null;
 
-    function stop(message) {
+    /** Stops asking and shows the card of the given state ('done' | 'dead'). */
+    function show(state) {
         window.clearInterval(timer);
-        var note = box.querySelector('[data-login-wait-note]');
-        if (note) {
-            note.textContent = message;
+        var pending = box.querySelector('[data-login-wait-pending]');
+        var card    = box.querySelector('[data-login-wait-' + state + ']');
+        if (!card) {
+            return; // an old template without the card: keep the waiting one
         }
+        if (pending) {
+            pending.hidden = true;
+        }
+        card.hidden = false;
     }
 
     function ask() {
         waited += INTERVAL / 1000;
         if (waited > LIMIT) {
-            stop('Die Anfrage ist abgelaufen. Bitte fordern Sie einen neuen Anmelde-Link an.');
+            show('dead');
             return;
         }
 
@@ -52,21 +62,13 @@
                 window.clearInterval(timer);
                 window.location.href = data.redirect;
             } else if (data.state === 'elsewhere') {
-                window.clearInterval(timer);
-                var note = box.querySelector('[data-login-wait-note]');
-                var aside = box.querySelector('[data-login-wait-elsewhere]');
-                var link = box.querySelector('[data-login-wait-elsewhere-link]');
-                if (note) {
-                    note.hidden = true;
-                }
+                var link = box.querySelector('[data-login-wait-done-link]');
                 if (link && data.link) {
                     link.href = data.link;
                 }
-                if (aside) {
-                    aside.hidden = false;
-                }
+                show('done');
             } else if (data.state === 'dead') {
-                stop('Diese Anfrage gilt nicht mehr. Bitte fordern Sie einen neuen Anmelde-Link an.');
+                show('dead');
             }
         }).catch(function () {
             // Offline or blocked: stay quiet and try again on the next tick.
