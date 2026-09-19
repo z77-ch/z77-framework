@@ -71,8 +71,14 @@ class LoginController extends AbstractMemberController
      * page polls the status; a visitor who lands here without a waiting
      * record (bookmark, reload after the window) just sees the neutral text.
      */
-    protected function wartenAction(): HtmlResponse
+    protected function wartenAction(): HtmlResponse|RedirectResponse
     {
+        // A reload of the waiting tab after the link signed this browser in
+        // (another tab): nothing to wait for any more, go where the login went.
+        if (MemberAuth::create()->current() !== null) {
+            return $this->redirect(LoginFlow::landingUrl());
+        }
+
         $pending = $this->loginFlow()->currentPending();
 
         if ($pending !== null) {
@@ -131,6 +137,11 @@ class LoginController extends AbstractMemberController
             LoginFlow::SESSION       => ['state' => 'session', 'redirect' => LoginFlow::landingUrl()],
             LoginFlow::TOTP_REQUIRED => ['state' => 'session', 'redirect' => '/member/main/login/totp'],
             LoginFlow::WAITING       => ['state' => 'waiting'],
+            // Signed in (or at the code prompt) in the tab the link opened —
+            // this tab stops and offers the way on only as a fallback link.
+            LoginFlow::ELSEWHERE     => ['state' => 'elsewhere', 'link' => $this->hasTotpPending()
+                ? '/member/main/login/totp'
+                : LoginFlow::landingUrl()],
             default                  => ['state' => 'dead'],
         });
     }

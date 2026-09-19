@@ -5,8 +5,11 @@
  * there is nothing to pass along here — and nothing to leak.
  *
  * 'session' → follow the redirect the server names (profile, or the TOTP
- * prompt when 2FA is on). 'dead' → the window closed or the link was used on
- * the other device; stop asking and say so.
+ * prompt when 2FA is on). 'elsewhere' → the link was opened in another tab
+ * of THIS browser, which is signed in now; stop, say so, and offer the way
+ * on only as a link (the other tab already shows the landing — opening it
+ * twice is noise). 'dead' → the window closed or the link was used on the
+ * other device; stop asking and say so.
  */
 (function () {
     'use strict';
@@ -48,6 +51,20 @@
             if (data.state === 'session' && data.redirect) {
                 window.clearInterval(timer);
                 window.location.href = data.redirect;
+            } else if (data.state === 'elsewhere') {
+                window.clearInterval(timer);
+                var note = box.querySelector('[data-login-wait-note]');
+                var aside = box.querySelector('[data-login-wait-elsewhere]');
+                var link = box.querySelector('[data-login-wait-elsewhere-link]');
+                if (note) {
+                    note.hidden = true;
+                }
+                if (link && data.link) {
+                    link.href = data.link;
+                }
+                if (aside) {
+                    aside.hidden = false;
+                }
             } else if (data.state === 'dead') {
                 stop('Diese Anfrage gilt nicht mehr. Bitte fordern Sie einen neuen Anmelde-Link an.');
             }

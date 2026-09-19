@@ -49,6 +49,8 @@ final class LoginFlow
     public const WAITING  = 'waiting';
     /** approve(): released — the requesting device takes it from here. */
     public const APPROVED = 'approved';
+    /** poll(): the link was opened in THIS browser, another tab signed in — this one only steps aside. */
+    public const ELSEWHERE = 'elsewhere';
 
     public const TOTP_INVALID = 'invalid';
     public const TOTP_LOCKED  = 'locked';
@@ -297,13 +299,12 @@ final class LoginFlow
 
         // The link was opened in THIS browser, in another tab: redeem() has
         // already signed this session in (or parked it at the code prompt)
-        // and deleted the record. The waiting tab only has to follow —
-        // without this it would report a dead request next to a live session.
-        if ($this->session->currentAccountId($now) !== null) {
-            return self::SESSION;
-        }
-        if ($this->session->totpPendingAccountId($now) !== null) {
-            return self::TOTP_REQUIRED;
+        // and deleted the record. The login lives on in that tab; this one
+        // steps aside instead of showing the same landing a second time —
+        // and instead of reporting a dead request next to a live session.
+        if ($this->session->currentAccountId($now) !== null
+            || $this->session->totpPendingAccountId($now) !== null) {
+            return self::ELSEWHERE;
         }
 
         $id = $this->session->pendingLoginId();

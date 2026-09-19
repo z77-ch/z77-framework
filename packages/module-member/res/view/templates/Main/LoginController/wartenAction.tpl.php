@@ -42,6 +42,14 @@
         anderen Anmeldung — bestätigen Sie sie dann nicht.
     </p>
     <p class="me-card__note" data-login-wait-note>Warte auf die Bestätigung …</p>
+    <?php /* Revealed by login-wait.js when the link was opened in ANOTHER TAB
+             of this browser: the login lives on there, this tab steps aside.
+             The link is the fallback for a closed tab — its target comes from
+             the poll answer (landing, or the code prompt when 2FA is on). */ ?>
+    <p class="me-card__note" data-login-wait-elsewhere hidden>
+        Sie sind in einem anderen Tab angemeldet — diesen hier können Sie
+        schliessen. <a href="/member/main/login" data-login-wait-elsewhere-link>Weiter</a>
+    </p>
     <?php endif; ?>
 
     <?php if ($repeated): ?>
