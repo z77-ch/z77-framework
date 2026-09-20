@@ -2,7 +2,7 @@
 
 **Status:** `[CONCEPT]` — before external review. Nothing built.
 **Date:** 2026-09-18, updated 2026-09-20 (article model A1–A7 decided, Q7 answered, module cut and
-build phases final, all open questions answered, scope narrowed to order / financial / debtor / article)
+build phases final, all open questions answered, external review worked in)
 **Basis:** [`order-financial-review-2026-09-18.md`](order-financial-review-2026-09-18.md) — findings
 in wdv-6.2.2 and decisions D1–D8 (§7 there). This plan does not repeat the wdv analysis.
 **ADRs:** to be written in phase P0 (§10).
@@ -22,13 +22,25 @@ out of this public repository** — the measurements live in the maintainer's lo
 What is left before building:
 
 **All open questions are answered** as of 2026-09-20 — Q5 (order status as data, no cancelled state),
-Q6 (no foreign currency; the ledger is base-currency only) and Q8 (MariaDB 10.6, one charset). Two
-steps remain:
+Q6 (no foreign currency; the ledger is base-currency only) and Q8 (MariaDB 10.6, one charset); Q10
+(stock value in the books) is deliberately parked and blocks nothing.
 
-1. The **external review of this plan with Fable** (agreed 2026-09-18). The prepared brief, with the
-   five decisions most expensive to reverse, is in
-   [`order-bauplan-review-request-2026-09-20.md`](order-bauplan-review-request-2026-09-20.md).
-2. The **five ADRs** (§10) — phase P0. Then P1 starts.
+The **external review** has been held (brief:
+[`order-bauplan-review-request-2026-09-20.md`](order-bauplan-review-request-2026-09-20.md)) and its
+findings are worked in: payment state is no longer an order status but asked through a port (§7);
+the invoice line gets type and parent line in P3 (§6.2); every product has at least one variant
+(A3); attributes move to the shop concept because nothing here consumes them (§4b); `NumberRange`
+and the open-work check live once in `persistence-doctrine` (§2); the two rounding accounts are named
+apart (§5.1, §6.1); statuses are installation data in `data/`, not code under `override/` (§7); the
+import is named as the one sanctioned second write path (§8, ADR 1); the developer's own migration
+moves forward to P5b and stock behind order to P7b (§9); stock lives in its own tables (§4b).
+
+One thing remains open before the ADRs:
+
+1. **How a stock movement is derived from a status change** (§4b, the marked box). The flag-difference
+   approach does not survive an edited flag, a backward step or the "done without stock effect"
+   status, and it would force article to know `OrderStatus`.
+2. Then the **five ADRs** (§10) — phase P0. Then P1 starts.
 
 Background analyses of wdv (order domain, order↔financial/VAT coupling, article catalog/shop) are
 condensed in the review document and in §4b; nothing else needs to be re-read.
@@ -55,7 +67,7 @@ Guiding rule: **build it right once, nothing twice, nothing in stock.**
 | — | Money | Integer minor units (Rappen) everywhere in PHP. Never `float`. |
 | — | VAT scope | European model from day one; only country pack `CH` is built. |
 | — | One write path (2026-09-20) | **Every stock quantity has exactly one service allowed to change it, and every change is journalled.** For the ledger that service is `LedgerService::post()` (§5.4), for stock the service in `module-article` (§4b). Neither knows its callers; a trigger arrives as an opaque reference. A quantity that many places may write is a quantity nobody can explain. |
-| — | Correction principle (2026-09-20) | **Nothing is corrected by deletion or by a special state — always by a counterpart of the same shape.** A reversal against a journal entry, a credit note against an invoice, an order with negative quantities against an order. This is why there is no cancelled order status (§7) and why generated entries are immutable (below): the counterpart records *what happened*, a deleted row or a `cancelled` flag records only that something did not. |
+| — | Correction principle (2026-09-20) | **Nothing that has been posted or consumed is corrected by deletion or by a special state — always by a counterpart of the same shape.** (Sharpened after the review: stated absolutely the rule was decorative, because it already had three carve-outs — manual entries until the close, `reinvoice` while in `invoicing`, and stock correction with a reason. Bounded to *posted or consumed*, it holds.) A reversal against a journal entry, a credit note against an invoice, an order with negative quantities against an order. This is why there is no cancelled order status (§7) and why generated entries are immutable (below): the counterpart records *what happened*, a deleted row or a `cancelled` flag records only that something did not. |
 
 ---
 
@@ -65,6 +77,12 @@ Guiding rule: **build it right once, nothing twice, nothing in stock.**
 |---|---|---|
 | `z77/kernel` (existing) | `Z77\Core`, `Z77\Shared`, `Z77\Persistence` | — (no Composer deps, stays so) |
 | `z77/persistence-doctrine` (new) | `Z77\Persistence\Doctrine` | kernel, doctrine/orm 3, doctrine/dbal 4, doctrine/migrations |
+
+Two building blocks live **once** in `persistence-doctrine` rather than three times in the modules
+(Rule 8, review 2026-09-20): **`NumberRange`** — gapless numbering needs a row lock, and financial,
+debtor and order all need it — and an **"open work check"** registry, the mechanism behind both the
+period-close check (§5.3) and the stocktake block (§4b): a module registers a check, the caller asks
+"anything open?", each finding is blocking or a warning.
 | `z77/module-vat` (new) | `Z77\Module\Vat` | kernel |
 | `z77/module-contact` (new) | `Z77\Module\Contact` | kernel, persistence-doctrine |
 | `z77/module-article` (new, decided §4b) | `Z77\Module\Article` | kernel, persistence-doctrine, module-vat |
@@ -240,23 +258,29 @@ because wdv has no text position type**. None of this is visible from the shop c
 |---|---|
 | **A1** | **One product-group tree of free depth, exactly one placement per article.** It carries revenue account, VAT default, discount group and turnover statistics — it is the accounting classification, not the customer navigation. **No attributes in the tree:** country, region, grape and colour become attributes, promotions become curated lists, customer-specific tariffs belong to the price/discount axis. Free depth, because the depth legitimately differs per installation: one level where a single product kind is sold, two or three where business areas have to be reported separately. |
 | **A2** | **Article number free or from a number range, carried by the variant, never derived from the tree path.** The number is printed on ten-year-old invoices; if it hangs on the placement, nothing can ever be reclassified. This also ends the suffix patching. |
-| **A3** | **Two-stage article: product + variant.** Product = the marketing unit (one page, one URL, text, images, producer, attributes). Variant (SKU) = the stock, price and invoicing unit (own article number, own purchase and sales price, own stock). Vintage and size are variants. **A variant-less article is the normal case** — in the service and membership installations no article has a variant at all — so with no variant the UI shows no second stage. An invoice line always references the variant. |
+| **A3** | **Two-stage article: product + variant.** Product = the marketing unit (one page, one URL, text, images, producer). Variant (SKU) = the stock, price and invoicing unit (own article number, own purchase and sales price, own stock). Vintage and size are variants. **Every product has at least one variant** — a default variant is created implicitly and the second stage stays hidden in the UI while it is the only one (review 2026-09-20). So article number, price, stock and every document reference always sit on the variant: "no second stage" is a UI fact, never a schema fact. Without this rule a line would have to reference product *or* variant, and that nullable dual reference is exactly the cost this decision is accused of. |
 | **A4** | **Price per variant with "valid from" and history**, net/gross declared per price. An offer price stays a regular feature (it is in use, but in wdv it is a client extension that core code nonetheless calls). The wdv future-price mechanism is dropped — it is effectively unused. |
 | **A-Pos** | **Position types belong in the model:** `service` / `lump sum` / `text` (and `subtotal` later), and the position text is editable from the start. Otherwise the text-only pseudo-articles come back. This requirement is invisible in the shop case and shows up only in the service case. |
 
-Consequences for the model:
+What this plan builds from A1–A4: the **product group tree** (one placement, carrying revenue
+account, VAT default and turnover statistics), **product + variant**, **prices with history**, the
+**article number on the variant**, and stock (§4b below). That is what an order line needs.
 
-- **Attributes are declared per product group and typed** (wine has grape and vintage, oil has
-  pressing) — **no EAV**, no runtime meta-model; values in one narrow indexed table. Magento's EAV
-  is the warning, not the example.
-- **Attribute values are controlled**, not free text, or a filter offers the same grape three
-  times. Multi-valued where reality is multi-valued (cuvée).
-- **The producer is a `Contact` in a supplier role** (§4a) — not a new entity, not a tree level.
-  Then the winemaker is the same record you purchase from. Named neutrally (manufacturer /
-  supplier), because the module stays industry-neutral (D1).
-- **Facets belong to the shop, not to the article.** The article carries attribute values; which of
-  them appear as filters, and in which order, is a shop setting. Otherwise every order-only
-  installation drags the facet logic along.
+**What A1 implies but this plan deliberately does not build** — the review of 2026-09-20 pointed out
+that none of it has a consumer here, and a shop is out of scope (§13), so building it now would be
+exactly the "in stock" the guiding rule forbids. It belongs to the shop module's concept:
+
+- **Typed attributes per product group** (grape and vintage for wine, pressing for oil) with
+  **controlled values** and multi-valued where reality is multi-valued (a cuvée has several grapes).
+  When it is built: **no EAV**, no runtime meta-model, values in one narrow indexed table — Magento's
+  EAV is the warning, not the example. Adding this later is a new table, not a change to an existing
+  one.
+- **Facets** — which attributes appear as filters and in which order is a shop setting, never an
+  article property; otherwise every order-only installation drags the logic along.
+- **The producer as a `Contact` in a supplier role** (§4a) rather than free text — right, but nothing
+  in order, debtor or financial reads it.
+- **Flat, stable product URLs** and the redirect list for the existing ones — a shop concern, and the
+  migration of the value lists rides along with it.
 - **Product URL flat and stable** — without vintage, region, producer or size, kebab-case (Rule 6):
   `/<group>/<product>`. A list URL may still *read* hierarchically, `/<group>/<attr>/<attr>`, while
   being a filter expression rather than a tree node — which is why `/<group>/<other-attr>` then works
@@ -292,17 +316,34 @@ came about. Both are fixed by the same two rules.
 
 **One service owns the balance, and nothing else may write it.** No controller, no repository, no
 import, no backend form and no subscription run touches balance or reservation directly. The service
-lives in `module-article`, because that is where the balance is; it knows no caller, and the trigger
-reaches it as an **opaque reference** — exactly the pattern `LedgerService::post()` uses in financial
-(§5.4). One quantity, one write path, no exceptions.
+lives in `module-article` for now — nothing is built on stock, so nothing earns its own package yet —
+it knows no caller, and the trigger reaches it as an **opaque reference**, exactly the pattern
+`LedgerService::post()` uses in financial (§5.4). One quantity, one write path, no exceptions.
+
+**Balance, reservation and journal live in their own tables, keyed by variant id** — not as columns on
+the variant (review 2026-09-20). Then extracting a `module-stock` later is a namespace move inside the
+same database and the same monorepo, in either direction, and it costs one small table set instead of
+two columns. That day will come with Q10: if the stock value goes into the books, stock needs to talk
+to financial's gateway, and `module-article` should not grow a financial dependency for it.
 
 **The order status is the control table.** A stock movement is triggered by a status change and by
-nothing else, and what it books follows from the **difference of the flags** between the old and the
-new status (`reservesStock`, `consumesStock`) — never from a special case per status name. From
-"ordered" (reserves) to "delivered" (consumes) means: release the reservation, book the balance down.
-That calculation exists **once**. Status change and stock movement commit in **one transaction**, or
-the balance drifts away from the status; and the same change applied twice must not book twice — the
-same idempotency discipline as posting to the ledger.
+nothing else, and what it books follows from the status flags (`reservesStock`, `consumesStock`) —
+never from a special case per status name. From "ordered" (reserves) to "delivered" (consumes) means:
+release the reservation, book the balance down. That calculation exists **once**. Status change and
+stock movement commit in **one transaction**, or the balance drifts away from the status; and the same
+change applied twice must not book twice — the same idempotency discipline as posting to the ledger.
+
+> **Open, being revised (review 2026-09-20):** *how* the movement is derived is not settled. An
+> earlier version had the service compute the difference between the old and the new status' flags.
+> That breaks in three ways: editing a flag on a status that live orders sit in makes the next
+> transition compute against a rewritten past and the journal is wrong for good; a permitted backward
+> step un-consumes stock, which the correction principle (§1) forbids; and a move from "delivered" to
+> "done without stock effect" is forward-legal yet books stock back. It also forces
+> `module-article` to know `OrderStatus`, against the dependency direction in §2. The alternative on
+> the table: the service holds reservation and consumption state **per order line in the journal** and
+> offers `reserve` / `consume` / `release`; order asks it to bring a line to the target status' flags,
+> and the service books only the delta against what the journal says. Idempotency is then structural
+> and a flag edit cannot corrupt history. To be decided before ADR 5.
 
 **Every movement is journalled**: variant, quantity, direction, trigger (order plus status change
 from → to, or a correction reason), timestamp, who. The sum of the movements **is** the balance, the
@@ -344,7 +385,7 @@ called from outside (§7).
 | `EntryChange` (change log of manual entries) | Doctrine | traceability, see §5.3 |
 | `NumberRange` | Doctrine | atomic numbers need a row lock |
 | `VatReturn` (period, method, totals per form field, state) | Doctrine | references the period and its entries |
-| Settings (VAT method, rounding account, VAT payable/settlement accounts, retained earnings) | file config | single values, one place (Rule 2) |
+| Settings (VAT method, **VAT-return rounding account**, VAT payable/settlement accounts, retained earnings) | file config | single values, one place (Rule 2) |
 
 Default chart: Swiss SME chart of accounts (KMU-Kontenrahmen) as first-install seed.
 
@@ -417,7 +458,7 @@ aggregates over `JournalLine` — never hydrated entities.
 Σ `taxBase` and Σ `taxAmount` of the period's lines per tax code (+ rate) → country pack `CH` →
 ESTV form fields. Mixed rates within a period come out automatically. Saving the return posts the
 settlement entry (VAT payable / input tax → settlement account) through `LedgerService` and sets the
-period `vat-settled`. Rounding difference between return and ledger: posted to the rounding account,
+period `vat-settled`. Rounding difference between return and ledger: posted to the VAT-return rounding account,
 shown, never silently absorbed.
 
 ### 5.7 Year-end
@@ -443,15 +484,21 @@ income statement result to retained earnings. Blocked while a period of the year
 | `PaymentTerms` (due days, discount %, text per language) | file | few rows, master data |
 | `PaymentTarget` (IBAN / QR-IBAN, bank account number in the ledger) | file | few rows |
 | `DunningLevel` (days, fee, text) | file | few rows |
-| Account settings (receivables collective account, discount, loss, rounding, fees) | file config | single values |
+| Account settings (receivables collective account, discount, loss, **invoice-rounding account** for the 0.05 line, fees) | file config | single values |
 
 ### 6.2 Invoicing
 
 `InvoicingService` — the **single entry for every source** (order, manual invoice, later
 contracts/subscriptions, fees).
 
-- Draft: contact + invoice address, invoice date, service date(s), currency (+ FX rate if ≠ CHF), price mode, lines
-  (text, qty, unit, unit price, discount, tax code, **revenue account**, `sourceType`/`sourceRef`).
+- Draft: contact + invoice address, invoice date, service date(s), currency (+ FX rate if ≠ CHF), price
+  mode, lines (text, qty, unit, unit price, discount, tax code, **revenue account**,
+  `sourceType`/`sourceRef`).
+- **The invoice line carries `type` and `parentLine`** (review 2026-09-20): type `service` / `lump sum`
+  / `text` / later `subtotal` as in A-Pos (§4b), and a priced line may carry further lines beneath it,
+  which is how a package prints with its contents at 0.00 (§13). This has to exist **in P3**, not in
+  P7: it prints on the document, and after P3 every issued invoice is immutable data — adding it later
+  is a migration on issued documents.
 
 **Invoice states (decided 2026-09-18 — the wdv `if` state is kept, it is proven in practice):**
 
@@ -521,11 +568,20 @@ is financial's; the adapter is the only debtor class that knows financial.
   like tax codes and payment terms): `code`, multilingual `label`, `level` as a progress number, and
   the flags the code actually reacts to — `reservesStock`, `consumesStock`, `invoiceable`,
   `invoiceInProgress`, `final`. Code never asks "is the status `if`", it asks "does this status
-  consume stock". Seeded with the set proven in wdv (offer, reserved, ordered, delivered, to be
-  invoiced, **in invoicing**, invoiced, part-paid, paid, done, done without stock effect); a project
-  adds its own rows under `override/` without touching the framework (Rule 1). Measured: the set is
-  almost identical across all installations, yet none uses all of it and each adds rows of its own —
-  which is exactly why a hard enum is wrong here.
+  consume stock". Seeded with the set proven in wdv, reduced to what the order itself controls:
+  offer, reserved, ordered, delivered, to be invoiced, **in invoicing**, done, done without stock
+  effect. The rows are **installation-owned master data in `data/`** (seed-once, ADR-024,
+  `persistence-file.md`) — not code under `override/`; a project maintains them in the backend.
+  Measured: the set is almost identical across all installations, yet none uses all of it and each
+  adds rows of its own — which is exactly why a hard enum is wrong here.
+- **Payment state is not an order status** (review 2026-09-20, confirmed by the developer). wdv has
+  `invoiced`, `part-paid` and `paid` as order statuses, and they are set by the receivables side —
+  which would make debtor write into order (against §2) and create two truths about one amount: the
+  open item and the order status, free to drift apart. Instead order **asks** debtor for the payment
+  state through a port, the mirror image of the `AccountingGateway` debtor uses for posting (§6.6).
+  The open item stays the single truth; the order screen and its filters show the state exactly as
+  before, so nothing changes in daily use. Partial payment, a remainder written off as a loss and
+  dunning all happen in debtor (§6.3, §6.4) — as they do today.
 - **Transitions: no matrix, two rules.** Forward along `level` is free. Backward is barred once an
   invoice is `final` — the bar comes from the invoice, not from the status model, so there is only one
   truth about when something is committed. Every change is logged (who, when, from → to), and the
@@ -542,7 +598,10 @@ is financial's; the adapter is the only debtor class that knows financial.
 - **The status change is the only trigger of a stock movement**, and it calls the stock service in
   `module-article` inside the same transaction (§4b, "Stock: one write path"). order never writes a
   balance itself.
-- Lines from articles (snapshot: code, text, unit, price, tax code, revenue account) or free lines.
+- Lines from articles (snapshot: code, text, unit, price, tax code, revenue account) **or free lines**
+  — so the variant reference is **nullable**; the snapshot is what the document shows either way
+  (contradiction found in review 2026-09-20: an earlier version demanded both free lines and a
+  mandatory variant reference).
   The snapshot is **editable from the start** and the line has a **type** — `service` / `lump sum` /
   `text` (`subtotal` later). Both come from the measured service case (§4b, A-Pos): every position
   references one of a few dozen articles yet carries its own title, and a whole group of positions
@@ -561,8 +620,16 @@ is financial's; the adapter is the only debtor class that knows financial.
 
 ## 8. Migration from wdv (per installation, the developer's books first)
 
+- **Run in two stages** (§9): the developer's own books in **P5b**, right after the ledger and the
+  VAT return exist, as the proof that the model is right; the remaining installations in **P8**.
 - Reader on the wdv SQL dump / DB, mapping as code (ADR-032: source-agnostic reader seam, import
   identity, snapshot staging).
+- **The import is the one sanctioned second write path** (ADR 1): it writes `Invoice`, `OpenItem`,
+  `Payment` and `Allocation` directly and posts nothing, because the journal entries come across
+  separately and have to reconcile *as booked*. Going through `InvoicingService::finalize()` would
+  post everything a second time. Bounded to staging-based import with `origin = wdv`; stock opening
+  balances likewise go through the stock correction path with reason `opening balance`, so the
+  one-write-path rule (§1) holds there without an exception.
 - Order of import: chart of accounts → fiscal years → journal entries (all years, `origin = wdv`,
   kind `generated`) → debtors → invoices with **the original PDFs** as binding documents → open
   items and payments → orders.
@@ -579,23 +646,35 @@ is financial's; the adapter is the only debtor class that knows financial.
 
 | Phase | Content | Exit |
 |---|---|---|
-| P0 | ADRs (§10); answers to Q5, Q6, Q8 (§11) | ADRs approved |
-| P1 | `Money` in kernel; `persistence-doctrine` (lazy EM, Money type, migrations in CLI); `module-vat` with backend + CH seed; `module-contact` (§4a) | Tests green; EM boots only on demand; a contact with n typed addresses exists |
+| P0 | ADRs (§10) | ADRs approved |
+| P1 | `Money` in kernel; `persistence-doctrine` (lazy EM, Money type, migrations in CLI, `NumberRange`, open-work check); `module-vat` with backend + CH seed; `module-contact` (§4a) | Tests green; EM boots only on demand; a contact with n typed addresses exists |
 | P2 | financial: accounts, fiscal years/periods, manual entries with change log, `LedgerService`, reports | Manual bookkeeping usable |
-| P3 | debtor: master, `InvoicingService`, manual invoice, credit note, PDF + QR-bill, gateway | Invoice → journal round trip without order |
+| P3 | debtor: master, `InvoicingService`, manual invoice, credit note, line types and parent lines, PDF + QR-bill, gateway | Invoice → journal round trip without order |
 | P4 | debtor: payments, discount/loss with VAT, CAMT.054, dunning | Subledger = collective account to the Rappen |
 | P5 | financial: VAT return CH, close states, year-end | ESTV form from posted codes |
-| P6 | article: product group tree, product + variant, typed attributes, prices with history; stock with one write path, movement journal, correction and stocktake (§4b) | An article resolves to a variant with price, tax code and revenue account; the sum of the movements equals the balance |
-| P7 | order: quote, order, positions with types, collective invoice → `InvoicingService`; **creatable from outside** with an idempotency key (§13) | Order → invoice → journal, and a second identical call creates nothing |
-| P8 | wdv migration, developer's installation first, then the clients | Acceptance per §8 |
+| **P5b** | **Migrate the developer's own ledger and invoice history** — accounts, fiscal years, journal entries, invoices with their original PDFs, open items, payments (§8, through the sanctioned import path in ADR 1) | **Every year and every account reconciles with wdv to the Rappen, VAT returns per quarter match.** The ledger and VAT model are proven before anything is built on them |
+| P6 | article, thin: product group tree with revenue account and VAT default, product + (default) variant, price with history, `stockRelevant` flag, article number (§4b) | An order line resolves to a variant with price, tax code and revenue account |
+| P7 | order: quote, order, positions with types and negative quantities, status as data, collective invoice → `InvoicingService`; **creatable from outside** with an idempotency key (§13) | Order → invoice → journal, and a second identical call creates nothing |
+| **P7b** | stock: movement journal, reservation and consumption, correction with reason, stocktake with its block (§4b) — built **after** order, because the status change is its only trigger | The sum of the movements equals the balance; a stocktake reconciles with a counted difference |
+| P8 | Migration of the remaining installations | Acceptance per §8 |
 
 Each phase leaves the framework runnable. Tests as plain PHP scripts in `tests/`, like the existing
 ones.
 
-Sequence rationale: contact rides along in P1 because debtor needs it in P3 and it is small
-master data; bookkeeping comes before invoicing so an invoice has somewhere to post; article comes
-before order because an order line resolves to a variant. Subscriptions, shipping and a shop are not
-phases here — see §2 and §13.
+Sequence rationale: contact rides along in P1 because debtor needs it in P3 and it is small master
+data; bookkeeping comes before invoicing so an invoice has somewhere to post; article comes before
+order because an order line resolves to a variant. Subscriptions, shipping and a shop are not phases
+here — see §2 and §13.
+
+Two changes from the review of 2026-09-20, both about finding mistakes earlier:
+
+- **P5b pulls the developer's own migration forward** out of P8. Reconciling a real set of books to
+  the Rappen is the only honest test of the ledger and VAT model, and a flaw found there before
+  article and order are built on top is a table change rather than a rebuild. ADR-032 already supports
+  migrating in several runs, and §8's import order is separable, so this costs sequencing only.
+- **Stock moves behind order into P7b.** Its only trigger is the status change, which does not exist
+  until P7 — building the journal, the corrections and the stocktake before that means building them
+  against nothing. P6 keeps only what an order line actually needs.
 
 ---
 
@@ -603,7 +682,12 @@ phases here — see §2 and §13.
 
 1. **Business module cut** — order / debtor / financial / vat, dependency direction, invoicing in
    debtor, order posts nothing, financial open to any posting source, opaque origin + idempotency,
-   one transaction, accounting port.
+   one transaction, accounting port, payment state asked through a port and never pushed (§7).
+   Must also name **the one sanctioned second write path**: the wdv import writes `Invoice`,
+   `OpenItem`, `Payment` and `Allocation` directly and posts nothing, because the journal entries are
+   imported separately to reconcile as booked — going through `InvoicingService::finalize()` would
+   post everything a second time. Bounded to staging-based import (ADR-032) with `origin = wdv`.
+   Unnamed, this is discovered in the migration phase and looks like a violation (review 2026-09-20).
 2. **Doctrine persistence package** — own package, lazy (ADR-001), Doctrine only where needed,
    business modules bind to Doctrine directly (deviation from the unified-repository promise in
    `persistence-architecture.md`), migrations only.
@@ -613,10 +697,24 @@ phases here — see §2 and §13.
    money, `DECIMAL` ↔ minor-units mapping, **base currency only** (§5.2), and the correction principle
    (§1) as the rule that ties reversal, credit note and negative order together.
 5. **Order status and stock movements** — status with behaviour flags instead of a PHP enum, the two
-   transition rules, no cancelled state, returns as negative quantities, project-specific statuses
-   under `override/` (§7, Q5); and the stock side hanging off it: one write path, movement journal,
-   flag difference as the only rule, one transaction, idempotency, correction without an order, and
-   the stocktake block (§4b). One ADR, because the status *is* the stock control.
+   transition rules, no cancelled state, returns as negative quantities, installation-owned statuses
+   in `data/` (§7, Q5); and the stock side hanging off it: one write path, movement journal, one
+   transaction, idempotency, correction without an order, and the stocktake block (§4b). One ADR,
+   because the status *is* the stock control. It must additionally fix (review 2026-09-20):
+   - **Invariants per status**: `final ⇒ ¬invoiceable ∧ ¬invoiceInProgress`;
+     `consumesStock ⇒ ¬reservesStock`; flags that code selects a status by must be unique per
+     installation; a status referenced by any order has **frozen flags** and cannot be deleted, only
+     deactivated — otherwise editing a flag silently corrupts the movement journal.
+   - **Per transition**: `consumesStock` may only go false → true. The way back is a negative order,
+     never a status change — else the correction principle (§1) is broken by the status model itself.
+   - **Status is per order, consumption is per line**, so partial delivery cannot be expressed: lines
+     move together and a partial delivery is an **order split**. Moving status to line level later is
+     a schema change on the movement journal.
+   - The **reference rule for file-based master data** held by Doctrine rows (`OrderStatus`,
+     `PaymentTerms`, `DunningLevel`, `PaymentTarget`, `TaxCode`, `AddressType`): referenced by `code`,
+     snapshotted at use, rows deactivated and never deleted. There is no foreign key across the two
+     drivers and a database restore is not paired with a `data/` restore, so the rule has to be
+     explicit.
 
 ---
 
