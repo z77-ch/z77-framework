@@ -25,7 +25,9 @@ What is left before building:
 Q6 (no foreign currency; the ledger is base-currency only) and Q8 (MariaDB 10.6, one charset). Two
 steps remain:
 
-1. The **external review of this plan with Fable** (agreed 2026-09-18).
+1. The **external review of this plan with Fable** (agreed 2026-09-18). The prepared brief, with the
+   five decisions most expensive to reverse, is in
+   [`order-bauplan-review-request-2026-09-20.md`](order-bauplan-review-request-2026-09-20.md).
 2. The **five ADRs** (§10) — phase P0. Then P1 starts.
 
 Background analyses of wdv (order domain, order↔financial/VAT coupling, article catalog/shop) are
