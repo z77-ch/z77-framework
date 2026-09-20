@@ -25,9 +25,11 @@ What is left before building:
 Q6 (no foreign currency; the ledger is base-currency only), Q8 (MariaDB 10.6, one charset) and Q10
 (stock valuation is judgement: a dated inventory list, posted by hand — no valuation method in code).
 
-The **external review** has been held (brief:
-[`order-bauplan-review-request-2026-09-20.md`](order-bauplan-review-request-2026-09-20.md)) and its
-findings are worked in: payment state is no longer an order status but asked through a port (§7);
+The **external review** has been held — brief:
+[`order-bauplan-review-request-2026-09-20.md`](order-bauplan-review-request-2026-09-20.md), result and
+what was accepted, narrowed or rejected:
+[`order-bauplan-review-result-2026-09-20.md`](order-bauplan-review-result-2026-09-20.md). Its findings
+are worked in: payment state is no longer an order status but asked through a port (§7);
 the invoice line gets type and parent line in P3 (§6.2); every product has at least one variant
 (A3); attributes move to the shop concept because nothing here consumes them (§4b); `NumberRange`
 and the open-work check live once in `persistence-doctrine` (§2); the two rounding accounts are named
