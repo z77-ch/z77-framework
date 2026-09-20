@@ -2,7 +2,7 @@
 
 **Status:** `[CONCEPT]` — before external review. Nothing built.
 **Date:** 2026-09-18, updated 2026-09-20 (article model A1–A7 decided, Q7 answered, module cut and
-build phases final, scope narrowed to order / financial / debtor / article)
+build phases final, Q6 + Q8 measured, scope narrowed to order / financial / debtor / article)
 **Basis:** [`order-financial-review-2026-09-18.md`](order-financial-review-2026-09-18.md) — findings
 in wdv-6.2.2 and decisions D1–D8 (§7 there). This plan does not repeat the wdv analysis.
 **ADRs:** to be written in phase P0 (§10).
@@ -21,8 +21,9 @@ out of this public repository** — the measurements live in the maintainer's lo
 
 What is left before building:
 
-1. The remaining open questions **Q5, Q6, Q8** (§11) — order states from practice, foreign currency,
-   database engine. All three are small and none blocks P1.
+1. **Q5** (§11) — the order states and transitions from practice. The only open question that needs
+   the developer; it lands in P7. Q6 (no foreign currency) and Q8 (MariaDB 10.6, one charset) were
+   measured and answered on 2026-09-20.
 2. The **external review of this plan with Fable** (agreed 2026-09-18).
 3. The **ADRs** (§10), which is phase P0.
 
@@ -546,9 +547,9 @@ phases here — see §2 and §13.
 | Q3 | After the VAT return: freeze only tax-carrying lines, or the whole period? | **Decided 2026-09-18:** filed = closed; the return and all tax-carrying lines of the period are frozen; the rest stays editable until the accounting close. |
 | Q4 | Change log + number gaps for editable manual entries acceptable? | **Decided 2026-09-18:** yes — every change is traceable. |
 | Q5 | The exact order states and transitions from practice | The developer's list; the plan's set is a placeholder. |
-| Q6 | Foreign currencies (EUR invoices) needed at start? | Only if one of the 5 installations invoices in foreign currency today. |
+| Q6 | Foreign currencies (EUR invoices) needed at start? | **Decided 2026-09-20: no.** Measured across all installations: a currency field exists only on the payment target (the bank account), and every one of them is CHF. Foreign currencies appear solely in a seeded master table of rates that nothing references. So **no foreign-currency invoicing is built** in P3 and no exchange-difference posting in P2. The model still carries currency and an FX rate on the document (§6.2) so that adding it later needs no schema change to issued documents — but nothing is built for it, and no rate source is wired up. |
 | Q7 | Recurring invoices (contracts/subscriptions) at start? | **Decided 2026-09-20: not in this plan — but the seam is.** Subscriptions are in real use today, and for the framework every variant of them comes down to one requirement: **an order must be creatable from outside**, through a service with an idempotency key, not only by a human at a screen. That seam is in §7. Everything on top of it — turnus, cycle counter, customer preferences, pause windows, delivery zones, how a delivery is composed — is the **application**, becomes its own module (`module-subscription`, §2) and is designed when it is built, not now. What was measured about it sits in the maintainer's local notes so the knowledge is there on that day. |
-| Q8 | Database engine at the hoster (MySQL / MariaDB version) | Check per installation; minimum defined in the Doctrine ADR. |
+| Q8 | Database engine at the hoster (MySQL / MariaDB version) | **Decided 2026-09-20: MariaDB 10.6, InnoDB.** Measured: every installation runs MariaDB 10.6.x on the same managed host. The Doctrine ADR sets **MariaDB 10.6 as the minimum** and has to state that DBAL 4 / ORM 3 are verified against it before P1 starts. **Watch the charset:** the existing databases mix `utf8mb3` and `utf8mb4`, and their collations differ per table (`*_general_ci` next to `*_unicode_ci`). New schemas use **utf8mb4 with one collation throughout**, fixed in the ADR — a join across two different collations fails outright, which makes this a migration task (§8), not a detail. |
 | Q9 | Newsletter tool (not in z77 yet) as a consumer of contacts? | Yes as a consumer, but subscriptions (e-mail, list, double opt-in consent, unsubscribe) stay in the newsletter module — a subscriber is often not a contact at all. Optional link subscription → contact; contacts can be an audience source. `Contact` carries no newsletter fields. |
 
 ---
