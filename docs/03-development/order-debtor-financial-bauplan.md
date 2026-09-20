@@ -2,7 +2,7 @@
 
 **Status:** `[CONCEPT]` — before external review. Nothing built.
 **Date:** 2026-09-18, updated 2026-09-20 (article model A1–A7 decided, Q7 answered, module cut and
-build phases final, Q6 + Q8 measured, scope narrowed to order / financial / debtor / article)
+build phases final, all open questions answered, scope narrowed to order / financial / debtor / article)
 **Basis:** [`order-financial-review-2026-09-18.md`](order-financial-review-2026-09-18.md) — findings
 in wdv-6.2.2 and decisions D1–D8 (§7 there). This plan does not repeat the wdv analysis.
 **ADRs:** to be written in phase P0 (§10).
@@ -21,11 +21,12 @@ out of this public repository** — the measurements live in the maintainer's lo
 
 What is left before building:
 
-1. **Q5** (§11) — the order states and transitions from practice. The only open question that needs
-   the developer; it lands in P7. Q6 (no foreign currency) and Q8 (MariaDB 10.6, one charset) were
-   measured and answered on 2026-09-20.
-2. The **external review of this plan with Fable** (agreed 2026-09-18).
-3. The **ADRs** (§10), which is phase P0.
+**All open questions are answered** as of 2026-09-20 — Q5 (order status as data, no cancelled state),
+Q6 (no foreign currency; the ledger is base-currency only) and Q8 (MariaDB 10.6, one charset). Two
+steps remain:
+
+1. The **external review of this plan with Fable** (agreed 2026-09-18).
+2. The **five ADRs** (§10) — phase P0. Then P1 starts.
 
 Background analyses of wdv (order domain, order↔financial/VAT coupling, article catalog/shop) are
 condensed in the review document and in §4b; nothing else needs to be re-read.
@@ -51,6 +52,7 @@ Guiding rule: **build it right once, nothing twice, nothing in stock.**
 | — | Entry mutability | *Generated* entries (posted by a module) are never editable/deletable — correction by reversal. *Manual* entries in financial are editable/deletable **until the accounting close** of their period. |
 | — | Money | Integer minor units (Rappen) everywhere in PHP. Never `float`. |
 | — | VAT scope | European model from day one; only country pack `CH` is built. |
+| — | Correction principle (2026-09-20) | **Nothing is corrected by deletion or by a special state — always by a counterpart of the same shape.** A reversal against a journal entry, a credit note against an invoice, an order with negative quantities against an order. This is why there is no cancelled order status (§7) and why generated entries are immutable (below): the counterpart records *what happened*, a deleted row or a `cancelled` flag records only that something did not. |
 
 ---
 
@@ -307,7 +309,13 @@ Default chart: Swiss SME chart of accounts (KMU-Kontenrahmen) as first-install s
   `origin` (`sourceType` + `sourceRef`, opaque strings), `idempotencyKey` (unique, generated only),
   `reversalOf?`, created/changed by/at.
 - Lines (n ≥ 2): `account`, `debit`, `credit` (Money, exactly one > 0), `taxCode?`, `taxBase?`,
-  `taxAmount?`, `currency`, `amountFx?`, `fxRate?`, `text?`.
+  `taxAmount?`, `text?`.
+- **The ledger posts in the base currency only** (developer, 2026-09-20, as in wdv-6.2.2): a journal
+  line carries no currency, no foreign amount and no rate. A document may be issued in a foreign
+  currency — the foreign amount and the rate belong to **that document** (§6.2) — but it is posted
+  converted, and an exchange difference on payment is an ordinary posting to an exchange-difference
+  account, in base currency like everything else. This keeps the ledger single-currency: no parallel
+  valuation, no revaluation run, no currency dimension in any report.
 - Invariant: Σ debit = Σ credit, checked in the domain before persist.
 - **Generated** entries: never editable or deletable. Correction = reversal (`reverse()`), posted by
   the source module.
@@ -464,8 +472,28 @@ is financial's; the adapter is the only debtor class that knows financial.
 | `NumberRange` (quote, order) | Doctrine |
 | Articles | from `module-article` (§4b) |
 
-- States as a PHP enum with guarded transitions (e.g. `draft → quoted → confirmed → invoiceable →
-  invoiced → closed`, `cancelled`) — exact set from the developer's practice → Q5.
+- **Status is data, not an enum** (decided 2026-09-20, Q5). `OrderStatus` is file-based (a dozen rows,
+  like tax codes and payment terms): `code`, multilingual `label`, `level` as a progress number, and
+  the flags the code actually reacts to — `reservesStock`, `consumesStock`, `invoiceable`,
+  `invoiceInProgress`, `final`. Code never asks "is the status `if`", it asks "does this status
+  consume stock". Seeded with the set proven in wdv (offer, reserved, ordered, delivered, to be
+  invoiced, **in invoicing**, invoiced, part-paid, paid, done, done without stock effect); a project
+  adds its own rows under `override/` without touching the framework (Rule 1). Measured: the set is
+  almost identical across all installations, yet none uses all of it and each adds rows of its own —
+  which is exactly why a hard enum is wrong here.
+- **Transitions: no matrix, two rules.** Forward along `level` is free. Backward is barred once an
+  invoice is `final` — the bar comes from the invoice, not from the status model, so there is only one
+  truth about when something is committed. Every change is logged (who, when, from → to), and the
+  timestamps for offer, confirmation, delivery and invoicing derive from that log instead of being
+  kept in parallel columns as wdv does.
+- **There is no cancelled status** (developer, 2026-09-20 — wdv's was never used in practice and has
+  no purpose). Cancelling is answered by *when*: **before invoicing** the order goes to "done without stock
+  effect" and that is all; **after invoicing** a credit note is issued and the two are cleared against
+  each other in receivables. A cancelled state would be a third, redundant answer that hides which of
+  the two actually happened.
+- **A return is an order with negative quantities**, not a special case — created from the original at
+  one click, which books the stock back correctly without any dedicated logic, because the quantity
+  carries the sign. Positions must therefore allow negative quantities.
 - Lines from articles (snapshot: code, text, unit, price, tax code, revenue account) or free lines.
   The snapshot is **editable from the start** and the line has a **type** — `service` / `lump sum` /
   `text` (`subtotal` later). Both come from the measured service case (§4b, A-Pos): every position
@@ -534,7 +562,12 @@ phases here — see §2 and §13.
 3. **VAT model** — tax codes with dated rates as managed data, country packs, computed once on the
    invoice and carried, net posting method, discount/loss correction from the snapshot.
 4. **Ledger and money** — generated vs. manual entries, close states, change log, numbering, integer
-   money, `DECIMAL` ↔ minor-units mapping.
+   money, `DECIMAL` ↔ minor-units mapping, **base currency only** (§5.2), and the correction principle
+   (§1) as the rule that ties reversal, credit note and negative order together.
+5. **Order status as data** — status with behaviour flags instead of a PHP enum, the two transition
+   rules, no cancelled state, returns as negative quantities, project-specific statuses under
+   `override/` (§7, Q5). Small, but it is the one place where a project extends a core domain by
+   configuration, so the contract needs writing down.
 
 ---
 
@@ -546,8 +579,8 @@ phases here — see §2 and §13.
 | Q2 | Articles: minimal article master in order now, or a separate catalog module? | **Decided 2026-09-20:** own `module-article`, built in P6. A1–A7 and A-Pos are decided in §4b against the live data of the installations; A8 (shop checkout) was dropped, because a shop is not part of this plan. |
 | Q3 | After the VAT return: freeze only tax-carrying lines, or the whole period? | **Decided 2026-09-18:** filed = closed; the return and all tax-carrying lines of the period are frozen; the rest stays editable until the accounting close. |
 | Q4 | Change log + number gaps for editable manual entries acceptable? | **Decided 2026-09-18:** yes — every change is traceable. |
-| Q5 | The exact order states and transitions from practice | The developer's list; the plan's set is a placeholder. |
-| Q6 | Foreign currencies (EUR invoices) needed at start? | **Decided 2026-09-20: no.** Measured across all installations: a currency field exists only on the payment target (the bank account), and every one of them is CHF. Foreign currencies appear solely in a seeded master table of rates that nothing references. So **no foreign-currency invoicing is built** in P3 and no exchange-difference posting in P2. The model still carries currency and an FX rate on the document (§6.2) so that adding it later needs no schema change to issued documents — but nothing is built for it, and no rate source is wired up. |
+| Q5 | The exact order states and transitions from practice | **Decided 2026-09-20** — derived from `shop_status` across all installations and confirmed by the developer: **status is data with behaviour flags, not a PHP enum** (§7), transitions are governed by two rules rather than a matrix, and **there is no cancelled status**. Cancelling before invoicing sets the order to "done without stock effect"; after invoicing it is a credit note cleared against the invoice in receivables. A return is an order with negative quantities. |
+| Q6 | Foreign currencies (EUR invoices) needed at start? | **Decided 2026-09-20: no.** Measured across all installations: a currency field exists only on the payment target (the bank account), and every one of them is CHF. Foreign currencies appear solely in a seeded master table of rates that nothing references. So **no foreign-currency invoicing is built** in P3. The document keeps currency and rate fields (§6.2) so that adding it later needs no schema change to issued documents — but nothing is built for it and no rate source is wired up. **Independently of that, the ledger is single-currency for good** (§5.2): bookkeeping records the base currency only, as wdv does today. A foreign-currency document is posted converted; an exchange difference is an ordinary posting. That is a property of the ledger, not a deferred feature. |
 | Q7 | Recurring invoices (contracts/subscriptions) at start? | **Decided 2026-09-20: not in this plan — but the seam is.** Subscriptions are in real use today, and for the framework every variant of them comes down to one requirement: **an order must be creatable from outside**, through a service with an idempotency key, not only by a human at a screen. That seam is in §7. Everything on top of it — turnus, cycle counter, customer preferences, pause windows, delivery zones, how a delivery is composed — is the **application**, becomes its own module (`module-subscription`, §2) and is designed when it is built, not now. What was measured about it sits in the maintainer's local notes so the knowledge is there on that day. |
 | Q8 | Database engine at the hoster (MySQL / MariaDB version) | **Decided 2026-09-20: MariaDB 10.6, InnoDB.** Measured: every installation runs MariaDB 10.6.x on the same managed host. The Doctrine ADR sets **MariaDB 10.6 as the minimum** and has to state that DBAL 4 / ORM 3 are verified against it before P1 starts. **Watch the charset:** the existing databases mix `utf8mb3` and `utf8mb4`, and their collations differ per table (`*_general_ci` next to `*_unicode_ci`). New schemas use **utf8mb4 with one collation throughout**, fixed in the ADR — a join across two different collations fails outright, which makes this a migration task (§8), not a detail. |
 | Q9 | Newsletter tool (not in z77 yet) as a consumer of contacts? | Yes as a consumer, but subscriptions (e-mail, list, double opt-in consent, unsubscribe) stay in the newsletter module — a subscriber is often not a contact at all. Optional link subscription → contact; contacts can be an audience source. `Contact` carries no newsletter fields. |
