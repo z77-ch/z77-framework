@@ -22,8 +22,8 @@ out of this public repository** — the measurements live in the maintainer's lo
 What is left before building:
 
 **All open questions are answered** as of 2026-09-20 — Q5 (order status as data, no cancelled state),
-Q6 (no foreign currency; the ledger is base-currency only) and Q8 (MariaDB 10.6, one charset); Q10
-(stock value in the books) is deliberately parked and blocks nothing.
+Q6 (no foreign currency; the ledger is base-currency only), Q8 (MariaDB 10.6, one charset) and Q10
+(stock valuation is judgement: a dated inventory list, posted by hand — no valuation method in code).
 
 The **external review** has been held (brief:
 [`order-bauplan-review-request-2026-09-20.md`](order-bauplan-review-request-2026-09-20.md)) and its
@@ -323,8 +323,13 @@ it knows no caller, and the trigger reaches it as an **opaque reference**, exact
 **Balance, reservation and journal live in their own tables, keyed by variant id** — not as columns on
 the variant (review 2026-09-20). Then extracting a `module-stock` later is a namespace move inside the
 same database and the same monorepo, in either direction, and it costs one small table set instead of
-two columns. That day will come with Q10: if the stock value goes into the books, stock needs to talk
-to financial's gateway, and `module-article` should not grow a financial dependency for it.
+two columns.
+
+**Stock never posts** (Q10): the valuation of inventory is a matter of judgement and is entered as a
+manual journal entry by whoever keeps the books. Stock therefore needs **no dependency on financial**
+and no gateway of its own — it owes the books one report instead: **the balance per variant for a
+given date**, which the movement journal answers by definition. This also settles the review's
+assumption that Q10 would eventually force stock to talk to financial; it does not.
 
 **The order status is the control table.** A stock movement is triggered by a status change and by
 nothing else, and what it books follows from the status flags (`reservesStock`, `consumesStock`) —
@@ -730,7 +735,7 @@ Two changes from the review of 2026-09-20, both about finding mistakes earlier:
 | Q6 | Foreign currencies (EUR invoices) needed at start? | **Decided 2026-09-20: no.** Measured across all installations: a currency field exists only on the payment target (the bank account), and every one of them is CHF. Foreign currencies appear solely in a seeded master table of rates that nothing references. So **no foreign-currency invoicing is built** in P3. The document keeps currency and rate fields (§6.2) so that adding it later needs no schema change to issued documents — but nothing is built for it and no rate source is wired up. **Independently of that, the ledger is single-currency for good** (§5.2): bookkeeping records the base currency only, as wdv does today. A foreign-currency document is posted converted; an exchange difference is an ordinary posting. That is a property of the ledger, not a deferred feature. |
 | Q7 | Recurring invoices (contracts/subscriptions) at start? | **Decided 2026-09-20: not in this plan — but the seam is.** Subscriptions are in real use today, and for the framework every variant of them comes down to one requirement: **an order must be creatable from outside**, through a service with an idempotency key, not only by a human at a screen. That seam is in §7. Everything on top of it — turnus, cycle counter, customer preferences, pause windows, delivery zones, how a delivery is composed — is the **application**, becomes its own module (`module-subscription`, §2) and is designed when it is built, not now. What was measured about it sits in the maintainer's local notes so the knowledge is there on that day. |
 | Q8 | Database engine at the hoster (MySQL / MariaDB version) | **Decided 2026-09-20: MariaDB 10.6, InnoDB.** Measured: every installation runs MariaDB 10.6.x on the same managed host. The Doctrine ADR sets **MariaDB 10.6 as the minimum** and has to state that DBAL 4 / ORM 3 are verified against it before P1 starts. **Watch the charset:** the existing databases mix `utf8mb3` and `utf8mb4`, and their collations differ per table (`*_general_ci` next to `*_unicode_ci`). New schemas use **utf8mb4 with one collation throughout**, fixed in the ADR — a join across two different collations fails outright, which makes this a migration task (§8), not a detail. |
-| Q10 | Does the stock **value** go into the bookkeeping? | **Open, deliberately not decided here.** If stock sits on the balance sheet, a stocktake difference has to be posted as well, and that needs a valuation method (average cost, FIFO, lower of cost or market). A topic with its own weight: it does not belong in A7 and blocks nothing in P1–P8, but it needs an answer before the stock of a trading installation is reported. |
+| Q10 | Does the stock **value** go into the bookkeeping? | **Decided 2026-09-20: not automatically — valuation is a matter of judgement.** The system prints an **inventory list for a given date** (quantity per variant with its purchase price) and stops there; the accounting valuation rules are applied by whoever keeps the books, and the result is entered as a **manual journal entry** (§5.2). So no valuation method in code — no average cost, no FIFO, no lower-of-cost-or-market logic — and no automatic posting of a stocktake difference in value terms. Under Swiss law this is genuinely discretionary, and an algorithm would only pretend to decide it. What it does require from stock is exactly one thing: **the balance must be reconstructable for any date**, which the movement journal delivers by definition (the sum of the movements up to that date). The list is a report (§5.5, DBAL SQL), not a posting. |
 | Q9 | Newsletter tool (not in z77 yet) as a consumer of contacts? | Yes as a consumer, but subscriptions (e-mail, list, double opt-in consent, unsubscribe) stay in the newsletter module — a subscriber is often not a contact at all. Optional link subscription → contact; contacts can be an audience source. `Contact` carries no newsletter fields. |
 
 ---
