@@ -52,6 +52,7 @@ Guiding rule: **build it right once, nothing twice, nothing in stock.**
 | — | Entry mutability | *Generated* entries (posted by a module) are never editable/deletable — correction by reversal. *Manual* entries in financial are editable/deletable **until the accounting close** of their period. |
 | — | Money | Integer minor units (Rappen) everywhere in PHP. Never `float`. |
 | — | VAT scope | European model from day one; only country pack `CH` is built. |
+| — | One write path (2026-09-20) | **Every stock quantity has exactly one service allowed to change it, and every change is journalled.** For the ledger that service is `LedgerService::post()` (§5.4), for stock the service in `module-article` (§4b). Neither knows its callers; a trigger arrives as an opaque reference. A quantity that many places may write is a quantity nobody can explain. |
 | — | Correction principle (2026-09-20) | **Nothing is corrected by deletion or by a special state — always by a counterpart of the same shape.** A reversal against a journal entry, a credit note against an invoice, an order with negative quantities against an order. This is why there is no cancelled order status (§7) and why generated entries are immutable (below): the counterpart records *what happened*, a deleted row or a `cancelled` flag records only that something did not. |
 
 ---
@@ -274,13 +275,55 @@ automatically, and only the outliers land in a remainder list.
 |---|---|
 | **A5** images | **Several per product through `module-dms`**, optionally one per variant. No installation uses more than one image today — but that is a wdv limit, not a measured lack of need, and dms already exists, so the reuse is cheap (Rule 8). |
 | **A6** discount groups | **Not an axis of their own.** Measured: where the axis exists at all, nearly every article sits in the same group and a mere handful anywhere else; elsewhere the table does not exist. A customer discount belongs to the price side (customer price / contract), and if a group-wide rule is ever needed it derives from the product group (A1). |
-| **A7** stock | **Yes, now, minimal:** balance and reservation on the variant, plus the flag whether an article is stock-relevant at all. Nothing more — no storage locations, no batches. Retail uses stock, services switch it off — hence the flag. |
+| **A7** stock | **Yes, now:** balance and reservation on the variant, plus the flag whether an article is stock-relevant at all. No storage locations, no batches. Retail uses stock, services switch it off — hence the flag. **One write path and a movement journal** — see below; that is the part which decides whether balances stay trustworthy. |
 | **A7** part lists | **Later.** A set of variants **with quantity** (wdv has no quantity, which is why its part lists are unusable). Barely used anywhere today — the model must allow it, nothing gets built. |
 
 Two smaller ones fall out with them: **free-text tags** become attributes (A1) or a curated list,
 they do not survive as free text; and an **hourly and a quarter-hourly tariff are one tariff at two
 resolutions** — one article with a fractional quantity, since fractional quantities are already in
 daily use.
+
+### Stock: one write path (A7)
+
+Stock balances go wrong in wdv because many places may change them and nothing records how a balance
+came about. Both are fixed by the same two rules.
+
+**One service owns the balance, and nothing else may write it.** No controller, no repository, no
+import, no backend form and no subscription run touches balance or reservation directly. The service
+lives in `module-article`, because that is where the balance is; it knows no caller, and the trigger
+reaches it as an **opaque reference** — exactly the pattern `LedgerService::post()` uses in financial
+(§5.4). One quantity, one write path, no exceptions.
+
+**The order status is the control table.** A stock movement is triggered by a status change and by
+nothing else, and what it books follows from the **difference of the flags** between the old and the
+new status (`reservesStock`, `consumesStock`) — never from a special case per status name. From
+"ordered" (reserves) to "delivered" (consumes) means: release the reservation, book the balance down.
+That calculation exists **once**. Status change and stock movement commit in **one transaction**, or
+the balance drifts away from the status; and the same change applied twice must not book twice — the
+same idempotency discipline as posting to the ledger.
+
+**Every movement is journalled**: variant, quantity, direction, trigger (order plus status change
+from → to, or a correction reason), timestamp, who. The sum of the movements **is** the balance, the
+way the journal yields the balance sheet. Without it a wrong balance can only be corrected, never
+explained — which is exactly the situation today.
+
+**Correction without an order** is the one exception, and it is required (developer, 2026-09-20):
+the yearly stocktake corrects. It goes through the same service, with a mandatory reason (stocktake,
+shrinkage, breakage, correction) and a free text, so it stands in the journal marked as a correction
+instead of disguised as a movement.
+
+**Stocktaking is a process, not a field:** produce the count list (target balances held with a
+timestamp) → count → enter → show differences → release → book the movements. It is **blocked while
+stock-relevant orders are unbooked** — the same mechanism as the `PeriodCloseCheck` in §5.3, with
+blocking and warning findings, and it shows the counter that list before counting starts.
+
+On the timing problem — the counter counts in the morning, the office books at noon — the movement
+journal solves one half outright: the count slip carries the **count time**, and the service computes
+`expected at count time = current balance − all movements after the count time`. The difference shown
+is then real, not an artefact of when someone pressed the button. The other half — goods that
+physically left before anyone booked them — no software can know. But the stocktake block turns
+"three are missing somewhere" into "these two orders are not booked yet", and whatever remains lands
+as a named difference with a reason instead of silently in the balance.
 
 **A8 (shop checkout) is dropped from this plan.** A shop is not part of order processing,
 bookkeeping, receivables and article management — it is a later module, and it decides for itself
@@ -494,6 +537,9 @@ is financial's; the adapter is the only debtor class that knows financial.
 - **A return is an order with negative quantities**, not a special case — created from the original at
   one click, which books the stock back correctly without any dedicated logic, because the quantity
   carries the sign. Positions must therefore allow negative quantities.
+- **The status change is the only trigger of a stock movement**, and it calls the stock service in
+  `module-article` inside the same transaction (§4b, "Stock: one write path"). order never writes a
+  balance itself.
 - Lines from articles (snapshot: code, text, unit, price, tax code, revenue account) or free lines.
   The snapshot is **editable from the start** and the line has a **type** — `service` / `lump sum` /
   `text` (`subtotal` later). Both come from the measured service case (§4b, A-Pos): every position
@@ -537,7 +583,7 @@ is financial's; the adapter is the only debtor class that knows financial.
 | P3 | debtor: master, `InvoicingService`, manual invoice, credit note, PDF + QR-bill, gateway | Invoice → journal round trip without order |
 | P4 | debtor: payments, discount/loss with VAT, CAMT.054, dunning | Subledger = collective account to the Rappen |
 | P5 | financial: VAT return CH, close states, year-end | ESTV form from posted codes |
-| P6 | article: product group tree, product + variant, typed attributes, prices with history, stock balance and reservation (§4b) | An article resolves to a variant with price, tax code and revenue account |
+| P6 | article: product group tree, product + variant, typed attributes, prices with history; stock with one write path, movement journal, correction and stocktake (§4b) | An article resolves to a variant with price, tax code and revenue account; the sum of the movements equals the balance |
 | P7 | order: quote, order, positions with types, collective invoice → `InvoicingService`; **creatable from outside** with an idempotency key (§13) | Order → invoice → journal, and a second identical call creates nothing |
 | P8 | wdv migration, developer's installation first, then the clients | Acceptance per §8 |
 
@@ -564,10 +610,11 @@ phases here — see §2 and §13.
 4. **Ledger and money** — generated vs. manual entries, close states, change log, numbering, integer
    money, `DECIMAL` ↔ minor-units mapping, **base currency only** (§5.2), and the correction principle
    (§1) as the rule that ties reversal, credit note and negative order together.
-5. **Order status as data** — status with behaviour flags instead of a PHP enum, the two transition
-   rules, no cancelled state, returns as negative quantities, project-specific statuses under
-   `override/` (§7, Q5). Small, but it is the one place where a project extends a core domain by
-   configuration, so the contract needs writing down.
+5. **Order status and stock movements** — status with behaviour flags instead of a PHP enum, the two
+   transition rules, no cancelled state, returns as negative quantities, project-specific statuses
+   under `override/` (§7, Q5); and the stock side hanging off it: one write path, movement journal,
+   flag difference as the only rule, one transaction, idempotency, correction without an order, and
+   the stocktake block (§4b). One ADR, because the status *is* the stock control.
 
 ---
 
@@ -583,6 +630,7 @@ phases here — see §2 and §13.
 | Q6 | Foreign currencies (EUR invoices) needed at start? | **Decided 2026-09-20: no.** Measured across all installations: a currency field exists only on the payment target (the bank account), and every one of them is CHF. Foreign currencies appear solely in a seeded master table of rates that nothing references. So **no foreign-currency invoicing is built** in P3. The document keeps currency and rate fields (§6.2) so that adding it later needs no schema change to issued documents — but nothing is built for it and no rate source is wired up. **Independently of that, the ledger is single-currency for good** (§5.2): bookkeeping records the base currency only, as wdv does today. A foreign-currency document is posted converted; an exchange difference is an ordinary posting. That is a property of the ledger, not a deferred feature. |
 | Q7 | Recurring invoices (contracts/subscriptions) at start? | **Decided 2026-09-20: not in this plan — but the seam is.** Subscriptions are in real use today, and for the framework every variant of them comes down to one requirement: **an order must be creatable from outside**, through a service with an idempotency key, not only by a human at a screen. That seam is in §7. Everything on top of it — turnus, cycle counter, customer preferences, pause windows, delivery zones, how a delivery is composed — is the **application**, becomes its own module (`module-subscription`, §2) and is designed when it is built, not now. What was measured about it sits in the maintainer's local notes so the knowledge is there on that day. |
 | Q8 | Database engine at the hoster (MySQL / MariaDB version) | **Decided 2026-09-20: MariaDB 10.6, InnoDB.** Measured: every installation runs MariaDB 10.6.x on the same managed host. The Doctrine ADR sets **MariaDB 10.6 as the minimum** and has to state that DBAL 4 / ORM 3 are verified against it before P1 starts. **Watch the charset:** the existing databases mix `utf8mb3` and `utf8mb4`, and their collations differ per table (`*_general_ci` next to `*_unicode_ci`). New schemas use **utf8mb4 with one collation throughout**, fixed in the ADR — a join across two different collations fails outright, which makes this a migration task (§8), not a detail. |
+| Q10 | Does the stock **value** go into the bookkeeping? | **Open, deliberately not decided here.** If stock sits on the balance sheet, a stocktake difference has to be posted as well, and that needs a valuation method (average cost, FIFO, lower of cost or market). A topic with its own weight: it does not belong in A7 and blocks nothing in P1–P8, but it needs an answer before the stock of a trading installation is reported. |
 | Q9 | Newsletter tool (not in z77 yet) as a consumer of contacts? | Yes as a consumer, but subscriptions (e-mail, list, double opt-in consent, unsubscribe) stay in the newsletter module — a subscriber is often not a contact at all. Optional link subscription → contact; contacts can be an audience source. `Contact` carries no newsletter fields. |
 
 ---
