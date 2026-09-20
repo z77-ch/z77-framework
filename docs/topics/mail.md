@@ -33,6 +33,7 @@ SOURCE=/packages/kernel/shared/res/view/templates/emails/layout.tpl.php
 SOURCE=/packages/kernel/core/src/Config/mail.default.inc.php
 SOURCE=/packages/module-dms/src/Images/DocumentKind.php
 SOURCE=/packages/module-dms/src/Services/DocumentService.php
+SOURCE=/tests/mail-html-to-text.php
 
 ## mental model
 
@@ -288,6 +289,7 @@ address in config:
 - When setting a sender → MUST leave From to the installation identity (`config/mail.inc.php`, SPF/DKIM/DMARC-bound); the per-mail "sender" is Reply-To. `EmailMessage::from()` stays the exception for verified same-domain identities (a From control system is planned — see pending).
 - When passing user input into a mail → MUST hand it to the template context (templates escape via `e()`); the only user-controlled header is Reply-To (validated, silently dropped when invalid); MUST NOT feed user input into subjects, recipients, or template paths.
 - When a mail carries a link back into the installation → MUST build its origin from `Request::getBaseUrl()` / `CANONICAL_BASE_URL` (`config/systemConfig.inc.php`, ADR-030); MUST NOT derive it from the request's `Host` header, which the client chooses — a forged Host turns a genuine mail into an attacker-owned link (SEC-005, see [`security.md`](security.md)). On an installation where the value is unset this THROWS by design, so a cron aborts instead of mailing links that point nowhere.
+- When changing the plain-text half (`HtmlToText`) → MUST keep the URL COUNT of both halves equal, a linked image included, because the receiver's filter compares them (`URI_COUNT_ODD`, MAIL-SPAM-001); MUST NOT re-introduce a whitespace pass that runs BEFORE the line breaks exist and cannot tell indentation from a space inside a sentence (MAIL-TEXT-001); and MUST re-run `php tests/mail-html-to-text.php` (18 checks, no bootstrap) — the two rules above look alike in a diff and neither shows up in the HTML half anyone reads while testing.
 - When a form mail fails → MUST treat `sendForm() === false` as the normal failure path (generic user message; cause is in `getLastErrors()` + `logs/php-error.log`); MUST NOT let a transport/config problem escalate to a 500 on a public form.
 - When routing a form mail by a user choice → MUST pass a server-validated option value as `sendForm()`'s `routeKey` (it selects an entry of the server-defined `routes` map); MUST NOT derive recipients or subject text from user input directly.
 - When reading form-mail settings anywhere → MUST go through `EmailService::sendForm()` (entity-first resolution); MUST NOT read `emailConfig` `forms` directly in app code — a backend override would be silently ignored. (The `EmailSettingsController` list is the one legitimate direct reader — it displays both tiers.)
@@ -349,10 +351,22 @@ address in config:
   credentials. Project records:
   `z77-axo3.ch/work/docs/handoff-axo3-smtp-2026-09-11.md`,
   `z77-1.0.0-zihlundsee.ch/work/docs/topics/email.md`.
-- **MAIL-TEXT-001 — `HtmlToText` swallows the space after an inline closing tag.** The
-  whitespace pass `(> )+` → `>` also eats the space in `</strong> Auf`, so the text part
-  reads «Vergleichen Sie zuerst:Auf» / «nicht?Dann» (seen in the 2026-09-11 login mail).
-  Inherited from the wdv-6.2.2 port; cosmetic, the HTML part is correct.
+- **MAIL-TEXT-001 — resolved 2026-09-20, with the fix from wdv-6.3.0.** `HtmlToText`
+  swallowed the space after an inline closing tag: the whitespace pass `(> )+` → `>` also
+  ate the space in `</strong> Auf`, so the text part read «Vergleichen Sie zuerst:Auf»
+  (2026-09-11 login mail). The pass is gone — the line above it (`(> <)+` → `><`) already
+  closes the tag-to-tag case, so everything that pass still caught was a space a sentence
+  needed. The markup's indentation is taken out at the END instead
+  (`preg_replace('/^[ \t]+/m', '', …)`), once the line breaks exist: only the POSITION
+  tells the two kinds of whitespace apart, and at the start of the conversion the position
+  does not exist yet. The fix comes from the wdv-6.3.0 project (agostinis-weine.ch,
+  master `7ee568d`), which hit the same bug in the same ported code.
+  Three sharpenings of the link rule came with it (see rules): the label is compared
+  without its markup and without a trailing slash, and a bare `#fragment` keeps no
+  address. ⚠️ One thing we deliberately did NOT copy: their callback drops the address
+  when the label is EMPTY, which loses the URL of a linked image and re-opens
+  `URI_COUNT_ODD` — ours keeps it (reported back; our mail templates carry no `<img>`
+  today, so this is prevention).
 - **MAIL-V2-001 — built 2026-07-18.** Backend-editable form-mail settings (see «form-mail
   settings v2» section): `EmailFormSetting` entity (incl. `active` flag) +
   `EmailSettingsController` (Service → E-Mail, navigation seed id 27) + entity-first
