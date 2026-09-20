@@ -2,7 +2,7 @@
 
 **Status:** `[CONCEPT]` — before external review. Nothing built.
 **Date:** 2026-09-18, updated 2026-09-20 (article model A1–A7 decided, Q7 answered, module cut and
-build phases final, all open questions answered, external review worked in)
+build phases final, all questions answered, external review worked in 2014 ready for P0)
 **Basis:** [`order-financial-review-2026-09-18.md`](order-financial-review-2026-09-18.md) — findings
 in wdv-6.2.2 and decisions D1–D8 (§7 there). This plan does not repeat the wdv analysis.
 **ADRs:** to be written in phase P0 (§10).
@@ -35,12 +35,11 @@ apart (§5.1, §6.1); statuses are installation data in `data/`, not code under 
 import is named as the one sanctioned second write path (§8, ADR 1); the developer's own migration
 moves forward to P5b and stock behind order to P7b (§9); stock lives in its own tables (§4b).
 
-One thing remains open before the ADRs:
+The last open point from the review — how a stock movement is derived from a status change — is
+decided as well (§4b): against the movement journal rather than the previous status, so flags stay
+editable, a repeated call does nothing, and a reversal always carries a reason.
 
-1. **How a stock movement is derived from a status change** (§4b, the marked box). The flag-difference
-   approach does not survive an edited flag, a backward step or the "done without stock effect"
-   status, and it would force article to know `OrderStatus`.
-2. Then the **five ADRs** (§10) — phase P0. Then P1 starts.
+**Next: the five ADRs** (§10), which is phase P0. Then P1 starts.
 
 Background analyses of wdv (order domain, order↔financial/VAT coupling, article catalog/shop) are
 condensed in the review document and in §4b; nothing else needs to be re-read.
@@ -338,17 +337,36 @@ release the reservation, book the balance down. That calculation exists **once**
 stock movement commit in **one transaction**, or the balance drifts away from the status; and the same
 change applied twice must not book twice — the same idempotency discipline as posting to the ledger.
 
-> **Open, being revised (review 2026-09-20):** *how* the movement is derived is not settled. An
-> earlier version had the service compute the difference between the old and the new status' flags.
-> That breaks in three ways: editing a flag on a status that live orders sit in makes the next
-> transition compute against a rewritten past and the journal is wrong for good; a permitted backward
-> step un-consumes stock, which the correction principle (§1) forbids; and a move from "delivered" to
-> "done without stock effect" is forward-legal yet books stock back. It also forces
-> `module-article` to know `OrderStatus`, against the dependency direction in §2. The alternative on
-> the table: the service holds reservation and consumption state **per order line in the journal** and
-> offers `reserve` / `consume` / `release`; order asks it to bring a line to the target status' flags,
-> and the service books only the delta against what the journal says. Idempotency is then structural
-> and a flag edit cannot corrupt history. To be decided before ADR 5.
+**The movement is derived against the journal, never against the previous status** (decided
+2026-09-20 after the review). The journal holds, per **order line**, how much is currently reserved
+and how much is consumed. A status change works like this:
+
+1. order reads the target status' flags and turns them into target quantities for the line —
+   `reservesStock` means "reserved = line quantity", `consumesStock` means "consumed = line
+   quantity", neither means zero. A negative line quantity therefore yields an inflow, which is how
+   a return works (§7).
+2. order calls the stock service: *bring this line to reserved = x, consumed = y.* It passes
+   **quantities, not a status** — which is why `module-article` never needs to know `OrderStatus` and
+   the dependency direction of §2 holds.
+3. the service compares with what the journal says and books only the difference.
+
+This is what makes the mechanism hold up in practice:
+
+- **Flags stay editable.** Change `reservesStock` on a status that live orders sit in, and the next
+  transition still releases their reservations correctly — the journal knows what was actually
+  reserved, and no setting can rewrite that. An earlier version compared the target with the *old
+  status' flags*, which meant an edited flag silently corrupted the journal for good. New statuses
+  and new flag combinations can therefore be introduced at any time, which is the whole point of
+  status being data (§7).
+- **A repeated call does nothing.** Clicking "delivered" twice, or reloading the page, produces the
+  same target — no difference, no movement. Idempotency is structural rather than a guard someone has
+  to remember.
+- **A booking is never reversed silently.** If a status change would bring consumed stock back into
+  the balance — a mistaken click on "delivered", or a move to "done without stock effect" on an order
+  that has already been delivered — the service **demands a reason and a confirmation**, and the
+  journal then shows both movements with that reason. This is §1 applied literally: not a deletion,
+  but a counterpart, and afterwards one can see what happened. A physical return remains what the
+  developer does today, an order with negative quantities (§7).
 
 **Every movement is journalled**: variant, quantity, direction, trigger (order plus status change
 from → to, or a correction reason), timestamp, who. The sum of the movements **is** the balance, the
@@ -600,9 +618,10 @@ is financial's; the adapter is the only debtor class that knows financial.
 - **A return is an order with negative quantities**, not a special case — created from the original at
   one click, which books the stock back correctly without any dedicated logic, because the quantity
   carries the sign. Positions must therefore allow negative quantities.
-- **The status change is the only trigger of a stock movement**, and it calls the stock service in
-  `module-article` inside the same transaction (§4b, "Stock: one write path"). order never writes a
-  balance itself.
+- **The status change is the only trigger of a stock movement.** order turns the target status' flags
+  into target quantities for the line and asks the stock service in `module-article` to bring the line
+  to them, inside the same transaction (§4b, "Stock: one write path"). It passes quantities, never a
+  status, so article stays ignorant of `OrderStatus`; and order never writes a balance itself.
 - Lines from articles (snapshot: code, text, unit, price, tax code, revenue account) **or free lines**
   — so the variant reference is **nullable**; the snapshot is what the document shows either way
   (contradiction found in review 2026-09-20: an earlier version demanded both free lines and a
@@ -708,10 +727,14 @@ Two changes from the review of 2026-09-20, both about finding mistakes earlier:
    because the status *is* the stock control. It must additionally fix (review 2026-09-20):
    - **Invariants per status**: `final ⇒ ¬invoiceable ∧ ¬invoiceInProgress`;
      `consumesStock ⇒ ¬reservesStock`; flags that code selects a status by must be unique per
-     installation; a status referenced by any order has **frozen flags** and cannot be deleted, only
-     deactivated — otherwise editing a flag silently corrupts the movement journal.
-   - **Per transition**: `consumesStock` may only go false → true. The way back is a negative order,
-     never a status change — else the correction principle (§1) is broken by the status model itself.
+     installation; a status referenced by any order is deactivated, never deleted. **Flags remain
+     editable** — the movement journal, not the old status, is what a movement is computed against
+     (§4b), so introducing a status or changing a flag cannot corrupt history. That freedom is the
+     reason status is data at all.
+   - **Per transition**: a change that would bring consumed stock back into the balance requires a
+     **reason and a confirmation**, and both movements stand in the journal (§4b). It is not
+     forbidden — a mistaken click has to be correctable — but it never happens silently. A physical
+     return stays an order with negative quantities.
    - **Status is per order, consumption is per line**, so partial delivery cannot be expressed: lines
      move together and a partial delivery is an **order split**. Moving status to line level later is
      a schema change on the movement journal.
