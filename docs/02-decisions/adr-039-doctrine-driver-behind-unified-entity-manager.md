@@ -1,8 +1,6 @@
 # ADR-039 — The Doctrine driver: own package, reached through `UnifiedEntityManager`
 
-**Status:** `[PROPOSED]` — draft 2026-09-21, independent review worked in the same day; awaiting the
-owner's approval (P0 of
-[`order-debtor-financial-bauplan.md`](../03-development/order-debtor-financial-bauplan.md), ADR 2 in §10)
+**Status:** `[APPROVED]` — approved by the owner 2026-09-21 (P0 of [`order-debtor-financial-bauplan.md`](../03-development/order-debtor-financial-bauplan.md))
 **Date:** 2026-09-21
 
 ---
