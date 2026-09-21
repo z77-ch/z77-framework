@@ -1,8 +1,9 @@
 # Bauplan — order, debtor, financial, vat, contact, article
 
-**Status:** `[CONCEPT]` — before external review. Nothing built.
-**Date:** 2026-09-18, updated 2026-09-20 (article model A1–A7 decided, Q7 answered, module cut and
-build phases final, all questions answered, external review worked in 2014 ready for P0)
+**Status:** `[CONCEPT]` — external review held and worked in. Nothing built. Ready for P0.
+**Date:** 2026-09-18, updated 2026-09-21 (article model A1–A7 decided, Q7 answered, module cut and
+build phases final, all questions answered, external review worked in; the persistence-access
+question reopened ADR 2 on 2026-09-20 and was settled on 2026-09-21)
 **Basis:** [`order-financial-review-2026-09-18.md`](order-financial-review-2026-09-18.md) — findings
 in wdv-6.2.2 and decisions D1–D8 (§7 there). This plan does not repeat the wdv analysis.
 **ADRs:** to be written in phase P0 (§10).
@@ -41,7 +42,77 @@ The last open point from the review — how a stock movement is derived from a s
 decided as well (§4b): against the movement journal rather than the previous status, so flags stay
 editable, a repeated call does nothing, and a reversal always carries a reason.
 
+The persistence-access question is settled as well (below): unified API, two drivers, minimal
+transaction port.
+
 **Next: the five ADRs** (§10), which is phase P0. Then P1 starts.
+
+### Settled before P0 — how the business modules reach persistence
+
+Raised 2026-09-20 in the evening, deliberately **not** decided that day. Decided on 2026-09-21.
+
+ADR 2 as drafted in §10 deviates from
+[`persistence-architecture.md`](../topics/persistence-architecture.md), which promises **one**
+consumer API — `UnifiedEntityManager::getRepository()` returning a `RepositoryInterface` — for every
+backend. The developer's position (2026-09-20): that document is correct and was well considered, so
+the plan bends to it rather than the other way round. **Not confirmed yet.**
+
+The question splits in two, and this plan had conflated them:
+
+- **Where the driver lives** — kernel `persistence/src/Doctrine/` (as the driver contract in the
+  topic doc spells out) or the own package `z77/persistence-doctrine` (§2). **No real conflict
+  here:** §2 already keeps the namespace `Z77\Persistence\Doctrine` so that `bootManager()`'s
+  convention holds, and the topic doc names a *path*, not a semantic. The reason for the separate
+  package has nothing to do with persistence — it is ADR-001: the kernel carries no Composer
+  dependencies, and Doctrine brings about fifteen.
+- **How a module reads and writes** — through `UnifiedEntityManager`, or bound to Doctrine's
+  EntityManager directly. **This is the actual decision.**
+
+What the discussion established, so it is not re-derived tomorrow:
+
+- The DBAL SQL reports of §5.5 are **not** an argument against the unified API. The topic doc's
+  rules already cover them: a complex query needing DQL or QueryBuilder is implemented as a
+  driver-specific method *outside* the interface, with the deviation documented.
+- For the unified API: **the mixed case is the normal case here.** `module-debtor` holds
+  `Invoice`, `OpenItem` and `Payment` in Doctrine and `PaymentTerms`, `DunningLevel` and
+  `PaymentTarget` as files — same module, often the same service. One access path keeps that code
+  uniform and keeps the backend a property of `#[Entity]` instead of a property of the calling
+  code. Convention discovery (`\Entities\X` → `\Repositories\XRepository`) and the Memory driver
+  (tests without a database) stay available with it.
+- Against it, and the point the decision actually turns on: **transactions.** ARCH-A003 in the
+  topic doc states that they cannot be abstracted through `RepositoryInterface`, and that is
+  correct. This plan needs them in four places — §5.4 (`LedgerService` never commits, the caller
+  owns the transaction), §6.2 (`invoice()` and `finalize()`, one transaction each) and §4b (status
+  change and stock movement in one). Keeping the unified API therefore requires a **transaction
+  port** that only the Doctrine driver fulfils and the File driver honestly refuses. That is an
+  *extension* of the architecture, not a contradiction of it — but it has to be designed, and
+  ARCH-A003 then needs rewording: not "no transactions", but "no transaction in the shared
+  interface".
+- Two smaller ones ride along: the row lock for `NumberRange` (`SELECT … FOR UPDATE`) is a second
+  driver-specific spot and falls under the same deviation rule; and ARCH-A002 ("z77 does not
+  implement an Identity Map") stops being true the moment the Doctrine branch is alive.
+
+**Decided 2026-09-21:**
+
+- **Unified API confirmed.** Business modules read and write through
+  `UnifiedEntityManager::getRepository()`; a simple order query looks the same on every backend.
+- **Two drivers, not three.** A separate SQL connection for the ledger reports (balance sheet,
+  income statement) was considered and **rejected**: Doctrine ORM already runs on DBAL, so the report
+  SQL goes through `$em->getConnection()` of the same Doctrine driver. A second connection would
+  duplicate the credentials (Rule 2) and would not see uncommitted writes of the first one. Report
+  methods live in the repository, outside `RepositoryInterface`, documented as Doctrine-specific.
+- **wdv `EntityManager::transactional($persister)` is not a model.** It was never called in wdv; its
+  retry loop (`sleep(1)`, five attempts) treated a symptom — a batch that was triggered twice. The fix
+  for a double trigger is idempotency (§4b), not a retry.
+
+- **Transaction port: minimal.** Doctrine's `flush()` already writes in one transaction; an explicit
+  transaction is needed only where DBAL SQL and ORM writes must be atomic together — concretely the
+  `NumberRange` row lock (`SELECT … FOR UPDATE` holds only inside an open transaction). Only the
+  Doctrine driver fulfils the port; the File driver refuses it. No retry loop, no persister class.
+
+Consequences: ADR 2 changes its statement, §2 and
+§5.4/§6.2 are pulled along, and `persistence-architecture.md` is **extended** by the transaction
+port rather than corrected.
 
 Background analyses of wdv (order domain, order↔financial/VAT coupling, article catalog/shop) are
 condensed in the review document and in §4b; nothing else needs to be re-read.
@@ -715,8 +786,10 @@ Two changes from the review of 2026-09-20, both about finding mistakes earlier:
    post everything a second time. Bounded to staging-based import (ADR-032) with `origin = wdv`.
    Unnamed, this is discovered in the migration phase and looks like a violation (review 2026-09-20).
 2. **Doctrine persistence package** — own package, lazy (ADR-001), Doctrine only where needed,
-   business modules bind to Doctrine directly (deviation from the unified-repository promise in
-   `persistence-architecture.md`), migrations only.
+   migrations only. Business modules reach it through `UnifiedEntityManager` as
+   `persistence-architecture.md` promises; ledger reports use DBAL of the same driver, no second
+   connection; a minimal transaction port (Doctrine only) covers what `RepositoryInterface` cannot
+   carry, concretely the `NumberRange` row lock (see «Settled before P0» at the top, 2026-09-21).
 3. **VAT model** — tax codes with dated rates as managed data, country packs, computed once on the
    invoice and carried, net posting method, discount/loss correction from the snapshot.
 4. **Ledger and money** — generated vs. manual entries, close states, change log, numbering, integer
