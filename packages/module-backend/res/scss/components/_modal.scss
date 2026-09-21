@@ -85,7 +85,10 @@
     display:         flex;
     align-items:     center;
     justify-content: space-between;
-    padding:         1rem 1.25rem;
+    // Right padding clears the absolutely placed .be-modal__fullscreen button
+    // (right .6rem + 1.9rem wide) — header content on the right (language tag,
+    // close button) otherwise slides under it.
+    padding:         1rem 2.9rem 1rem 1.25rem;
     border-bottom:   1px solid var(--be-line);
     flex-shrink:     0;
 }
