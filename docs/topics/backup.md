@@ -1,13 +1,13 @@
 # backup
 
-2026-09-01
+2026-09-21
 
 ## entry
 
 1. `packages/kernel/shared/src/Backup/BackupService.php` — orchestration: run one backup, write the meta sidecar, apply retention
 2. `packages/module-backend/src/Ui/Controllers/Service/BackupController.php` — backend surface (group `service`), thin glue over the service
 3. `packages/kernel/bin/z77-backup` — CLI/cron entry (ADR-028), same service underneath
-4. `packages/kernel/core/src/Config/backup.default.inc.php` — seed-once policy defaults (retention, excludes, database block)
+4. `packages/kernel/core/src/Config/backup.default.inc.php` — seed-once policy defaults (retention, excludes, `dump` block); the database connection itself is `database.default.inc.php` (ADR-039)
 
 ## file map
 
@@ -20,6 +20,7 @@ SOURCE=/packages/kernel/shared/src/Backup/RetentionPolicy.php
 SOURCE=/packages/kernel/shared/src/Backup/DbDumperInterface.php
 SOURCE=/packages/kernel/shared/src/Backup/MysqlDumper.php
 SOURCE=/packages/kernel/core/src/Config/backup.default.inc.php
+SOURCE=/packages/kernel/core/src/Config/database.default.inc.php
 SOURCE=/packages/kernel/bin/z77-backup
 SOURCE=/packages/kernel/shared/src/Jobs/BackupJob.php
 SOURCE=/packages/module-backend/src/Ui/Controllers/Service/BackupController.php
@@ -39,7 +40,7 @@ frontends: the backend screen `/backend/service/backup/list` (new group
 | Type | Source | Notes |
 |---|---|---|
 | `data` | the whole `data/` tree | includes `backendUsers.json` — hence the SUPER_USER gate |
-| `db` | SQL dump (v1: `mysqldump` via {@see MysqlDumper}) | only when the `database` block in `config/backup.inc.php` is set; otherwise UI shows "not configured", CLI no-ops with exit 0 |
+| `db` | SQL dump (v1: `mysqldump` via {@see MysqlDumper}) | only when `config/client/database.inc.php` names a database — the ONE connection config, shared with the Doctrine driver (ADR-039 decision 4); otherwise UI shows "not configured", CLI no-ops with exit 0. `backup.inc.php` → `dump` holds only the `mysqldump` binary and an optional read-only backup user (`user` / `password`, null = the application user) |
 | `full` | project root minus `fullExcludes` | `vendor/`/`node_modules/` are regenerable from the lock files; `var/` is scratch space the installation rebuilds by itself; the backup root itself is ALWAYS excluded (recursion guard). `logs/` stays IN — it carries the form log, which is a record |
 
 `lib/` is excluded as a WHOLE TREE, not member by member. It is the
@@ -138,6 +139,7 @@ moving.
 - When resolving a submitted archive name (download/delete) → MUST go through `BackupHistory::resolvePath()` (pattern + type check); MUST NOT concatenate request input into a path
 - When touching the run flow → MUST keep every failure a thrown `\RuntimeException` (installer error-model) and MUST keep the `.tmp`-then-rename write so aborted runs leave no listable archive
 - When adding a database engine → MUST implement `DbDumperInterface`; credentials MUST NOT appear on the command line (process list) — use a defaults file or environment, like `MysqlDumper`
+- When the dump needs the connection → MUST take it from `config/client/database.inc.php` (`BackupService::fromProjectRoot()` reads it through `ConfigLocator` with the project root passed explicitly, next to the backup config); MUST NOT add host, database name or credentials to `backup.inc.php` — the `dump` block records only the binary and a deviating backup user (Rule 2, ADR-039 decision 4)
 - When exposing backup actions in the backend → MUST keep every action `AuthRole::SUPER_USER` (the archive IS the user store) and mutations Fetch-POST (global CSRF) + per-archive entity token
 - When adding another CLI task → MUST follow ADR-028 (own `bin/` script in the owning package, Composer `bin`, boot only what it needs)
 - When changing what a `data` or `full` archive contains → MUST keep `data/framework/jobs` excluded (`BackupService::DATA_EXCLUDES`, applied to both types and NOT configurable); it is transient runtime state and it changes while the archive is being written (BACKUP-JOBS-001)
@@ -151,6 +153,7 @@ moving.
 - **BACKUP-LIB-001**: don't assume a changed default reaches an existing installation. `fullExcludes` used to name `lib/cache` instead of `lib`, so when the throttle counters moved to `lib/throttle` (2026-08-25) they were back inside every full archive. `config/backup.inc.php` is seed-once — the installer writes it once and NEVER overwrites it — so changing `DEFAULT_EXCLUDES` and `backup.default.inc.php` only fixes installations that do not exist yet. Every existing installation carries its own copy and needs the line edited by hand; axo3 and zihlundsee are done — working copies AND servers, 2026-08-25, nothing open. This is the general shape, not a one-off: any seed-once default that changes needs a per-installation pass, and the change is silent until someone opens an archive and finds what should not be in it. **It happened again on 2026-09-01 (ADR-035):** the tree was renamed `lib` → `var`, so every installation whose seed-once `config/backup.inc.php` still says `lib` now excludes a directory that does not exist and archives all of `var/` instead. Same manual pass, working copies AND servers; `.releases/check.php` warns about it since. Two occurrences make the shape clear: a seed-once default is a copy, and a copy does not follow.
 
 - **BACKUP-SYMLINK-001** — resolved 2026-08-28. Don't assume a directory walk sees what `is_dir()` sees. The old `RecursiveDirectoryIterator` walk treated a linked directory as a silent leaf — `hasChildren()` answered from the LINK view (no descend), `isFile()` from the TARGET view (not a file) — so a full backup of a release layout archived the code and dropped everything behind `data/`, `config/`, `logs/`, `public/media` and `public/storage`: no error, no hint, `status: ok` in the sidecar. Found on cyon while measuring the release structure; the «Daten» type was never affected (there the link is the SOURCE argument, which path resolution follows on open). Fixed by replacing the iterator with the explicit path-based descent + realpath visited set (see rules). `FOLLOW_SYMLINKS` alone was tried first and is NOT enough: a Windows junction reports directory-entry type «unknown», and the flag consults exactly that. Verified: `tests/zip-archiver-symlinks.php`, 9 checks — flat tree and linked tree produce the identical name set, excludes apply behind links, a twice-linked tree packs once, a cycle terminates, a dangling link is skipped.
+- **BACKUP-DB-001** (2026-09-21, ADR-039): don't assume the `db` type reads a `database` block from `config/backup.inc.php` any more — the connection moved to `config/client/database.inc.php`, one file for the Doctrine driver and the dump. A leftover `database` array in the backup config makes the `db` type throw (naming the move) rather than dump a database nobody maintains there — `data` and `full` run regardless; `'database' => null`, the seeded default, is ignored. No installation had a `db` backup configured at the move; a future one is migrated by hand — the same seed-once shape as BACKUP-LIB-001.
 - **BACKUP-JOBS-001**: don't assume a data backup may contain `data/framework/jobs` — it must not, for two independent reasons. It is transient runtime state, so a restore would resurrect a queue of work from whenever the archive was taken (same argument that keeps a running job out of systemConfig, [`bootstrap.md`](bootstrap.md)). And it MOVES mid-archive: `ZipArchive` reads file contents at `close()`, not at `addFile()`, so `queue.json` being rename-replaced by the very backup job that is running fails the whole archive with `ZipArchive::close(): Read error`. Found 2026-08-07 when the backup types became jobs; fixed via `DATA_EXCLUDES`, applied to `data` and appended unconditionally to `fullExcludes` (the configured list is the operator's, this entry is not).
 
 ## pending

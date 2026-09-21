@@ -109,10 +109,14 @@ Ports & Adapters). An entity declares its backend with an attribute —
 driver, boots it lazily, and returns a `RepositoryInterface`. Consumers never see a
 driver-specific type; switching a backend means changing only the `#[Entity]` attribute.
 
-The **File driver** (one JSON file per record) is implemented and is the default — zero
-infrastructure, ideal for one-pagers and small sites. `Doctrine` (full SQL) and `Memory`
-(tests) are designed-for but not yet built. The full flow, driver contract, and the known
-abstraction limits (no Unit of Work, no Identity Map, `findBy` is O(n) on File) live in
+The **File driver** (one JSON file per record) is in the kernel and is the default — zero
+infrastructure, ideal for one-pagers and small sites. The **Doctrine driver** (MariaDB, full
+SQL) is the separate, optional package `z77/persistence-doctrine`
+([ADR-039](../02-decisions/adr-039-doctrine-driver-behind-unified-entity-manager.md)): the
+kernel names it in its driver map, the first Doctrine entity boots it, and an installation
+without the package runs as before. The full flow, driver contract, and the known
+abstraction limits (Identity Map, flush scope and `remove()` timing differ per driver;
+`findBy` is O(n) on File) live in
 [`../topics/persistence-architecture.md`](../topics/persistence-architecture.md); file-per-record
 rationale in [ADR-010](../02-decisions/adr-010-file-per-record-storage.md).
 

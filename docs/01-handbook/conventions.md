@@ -347,9 +347,31 @@ layer, the `#[Entity]` contract, and the driver's known limits — lives in
 [persistence-architecture.md](../topics/persistence-architecture.md); the file-per-record
 rationale is [ADR-010](../02-decisions/adr-010-file-per-record-storage.md).
 
-SQL/Doctrine conventions (schema, migrations, query patterns) will be added here **when the
-Doctrine driver is built** — it is designed-for behind the same Repository API but not yet
-implemented. Until then there are no database-specific conventions to follow.
+A module that needs a relational database uses the **Doctrine driver**
+(`z77/persistence-doctrine`, [ADR-039](../02-decisions/adr-039-doctrine-driver-behind-unified-entity-manager.md))
+behind the same Repository API. What holds there:
+
+- **One connection config**: `config/client/database.inc.php`. Host, database name and
+  credentials live nowhere else — not in a module config, not in the backup config.
+- **Engine and encoding**: MariaDB 10.6+, InnoDB; `utf8mb4` / `utf8mb4_unicode_ci` for every
+  table and every string column. The driver sets it on the connection and as the table
+  default; a migration never names another collation.
+- **Entities announce themselves**: `#[Entity('doctrine')]` plus Doctrine's mapping
+  attributes, and the class listed under `doctrineEntities` in the module config — a
+  project's own entity in `override/z77/module/{module}/src/App/Config/doctrineEntitiesConfig.inc.php`
+  (a plain list, additive; never a copy of the module config). Nothing scans a directory.
+- **Money is `DECIMAL(15,2)`** through `MoneyType` (`#[ORM\Column(type: MoneyType::NAME)]` on
+  a `Money` property) — a decimal string in both directions, never a float, read in the
+  installation's base currency ([ADR-042](../02-decisions/adr-042-ledger-and-money.md)).
+- **Table and column names** are `snake_case` (JSON persistence keys follow the same rule —
+  the name is a key, see File Names); the PHP property stays `camelCase`.
+- **Schema only through migrations**, run from the CLI, expand/contract so `current` and
+  `next` share one database (ADR-039 decisions 12–14; the migrate command is part 3 of the
+  package). Query and migration conventions grow here as the business modules land.
+
+Driver-specific behaviour a consumer must not depend on (flush scope, `remove()` timing,
+Identity Map, `reorder()`) is listed as known issues in
+[persistence-architecture.md](../topics/persistence-architecture.md).
 
 ---
 

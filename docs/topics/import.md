@@ -56,6 +56,9 @@ they are in-file link addresses, rewritten through a per-run id map at apply.
 - **Registration is module config**: `'importEntities' => [Class::class, …]`, aggregated by
   `ModuleManager::getImportEntities()`. A fixed menu — the screen never accepts an entity class
   from a request. v1: `Navigation`, `NavigationAlias`, `MetaData` (declared by module-backend).
+  A project adds a class of its own through `override/z77/module/{module}/src/App/Config/importEntitiesConfig.inc.php`
+  (a plain list, unioned with the module config — same code path as `doctrineEntities`, see
+  [persistence-doctrine.md](persistence-doctrine.md)); it never copies the module config for that.
 - **Five outcomes**: `skipped` (identical) · `changed` (field diff, per-record opt-in, default No)
   · `new` (bulk-acceptable) · `unclear` (assign a match / force-new — a human decides) · `blocked`
   (a referenced record is unclear/declined; transitive, only insertions block).

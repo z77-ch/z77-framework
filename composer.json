@@ -1,6 +1,6 @@
 {
     "name": "z77-ch/z77-framework",
-    "description": "Z77 – PHP MVC framework monorepo. Develops the four z77 Composer packages (kernel, module-frontend, module-backend, module-dms) in one place; each is split into its own read-only consume repo on push.",
+    "description": "Z77 – PHP MVC framework monorepo. Develops the z77 Composer packages (kernel, module-frontend, module-backend, module-dms, persistence-doctrine, …) in one place; the published ones are split into their own read-only consume repos on push.",
     "type": "project",
     "keywords": ["php", "framework", "mvc", "flat-file", "monorepo", "z77"],
     "license": "MIT",
@@ -21,11 +21,12 @@
         }
     ],
     "require": {
-        "php": ">=8.2",
+        "php": ">=8.4",
         "z77/kernel": "^1.0",
         "z77/module-frontend": "^1.0",
         "z77/module-backend": "^1.0",
-        "z77/module-dms": "^1.0"
+        "z77/module-dms": "^1.0",
+        "z77/persistence-doctrine": "^1.0"
     },
     "minimum-stability": "dev",
     "prefer-stable": true,

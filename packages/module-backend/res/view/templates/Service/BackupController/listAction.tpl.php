@@ -24,7 +24,7 @@
 
 $labels = [
     'data' => ['Daten',        'Sichert das komplette data/-Verzeichnis (Inhalte, Navigation, Benutzer).'],
-    'db'   => ['Datenbank',    'SQL-Dump der konfigurierten Datenbank (config/backup.inc.php).'],
+    'db'   => ['Datenbank',    'SQL-Dump der konfigurierten Datenbank (config/client/database.inc.php).'],
     'full' => ['Gesamtprojekt', 'Sichert das Projekt ohne regenerierbare Verzeichnisse (vendor/, node_modules/, Cache, Backups).'],
 ];
 
@@ -49,7 +49,7 @@ $fmtSize = function (int $bytes): string {
 
         <?php if (empty($section['entries'])): ?>
         <p class="be-list__empty"><?= $dbBlocked
-            ? 'Keine Datenbank konfiguriert — siehe config/backup.inc.php.'
+            ? 'Keine Datenbank konfiguriert — siehe config/client/database.inc.php.'
             : 'Noch keine Backups vorhanden.' ?></p>
         <?php else: ?>
         <div class="be-list__frame">

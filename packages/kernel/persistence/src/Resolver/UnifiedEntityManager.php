@@ -66,6 +66,17 @@ final class UnifiedEntityManager
             ['Z77', 'Persistence', $driver]
         ).'Bootstrap';
 
+        // A driver named in the map need not be installed (ADR-039 decision 2):
+        // the Doctrine driver is its own package. Fail here, at the first entity
+        // of that driver, with the package named — not with a bare "class not
+        // found" from somewhere inside the resolver.
+        if (!class_exists($bootstrapClass)) {
+            throw new \RuntimeException(
+                "Persistence driver '{$driver}' is not installed: {$bootstrapClass} not found — "
+                . "require the package that provides it (z77/persistence-doctrine for the Doctrine driver)."
+            );
+        }
+
         return (new $bootstrapClass())->getEntityManager();
     }
 }

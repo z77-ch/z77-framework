@@ -45,13 +45,15 @@ editable, a repeated call does nothing, and a reversal always carries a reason.
 The persistence-access question is settled as well (below): unified API, two drivers, minimal
 transaction port.
 
-**P1 in progress (as of 2026-09-21, end of session).** Done: `Money` in the kernel (`shared/src/Money`,
+**P1 in progress (as of 2026-09-21).** Done: `Money` in the kernel (`shared/src/Money`,
 `tests/money.php`, topic `money.md`); local MariaDB 10.6.28 for the driver tests (maintainer runbook).
-**Next: `z77/persistence-doctrine`**, built in three parts, each with its own commit and tests against
-MariaDB — (1) package skeleton, `Bootstrap`, `DoctrineEntityManager`, `DoctrineRepository`, driver
-map, `config/client/database.inc.php`, `doctrineEntities`; (2) transaction port and `NumberRange`;
-(3) caches (DEBUG, «Cache leeren», OPcache) and migrations. Binding: ADR-039 (all 18 decisions).
-Then `module-vat`, `module-contact`.
+`z77/persistence-doctrine` is built in three parts, each with its own commit and tests against
+MariaDB. **Part (1) done** — package, `Bootstrap`, `DoctrineEntityManager`, `DoctrineRepository`,
+`MoneyType` (base currency from `systemConfig → baseCurrency`, owner-confirmed), driver map,
+`config/client/database.inc.php`, `doctrineEntities` plus the additive override file
+`doctrineEntitiesConfig.inc.php`; topic [`persistence-doctrine.md`](../topics/persistence-doctrine.md).
+**Next: part (2)** transaction port and `NumberRange`; then (3) caches (DEBUG, «Cache leeren»,
+OPcache) and migrations. Binding: ADR-039 (all 18 decisions). Then `module-vat`, `module-contact`.
 
 ### Settled before P0 — how the business modules reach persistence
 

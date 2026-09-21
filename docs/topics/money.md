@@ -12,6 +12,7 @@
 SOURCE=/packages/kernel/shared/src/Money/Money.php
 SOURCE=/tests/money.php
 SOURCE=/docs/02-decisions/adr-042-ledger-and-money.md
+SOURCE=/packages/persistence-doctrine/src/Type/MoneyType.php
 
 ## mental model
 
@@ -31,6 +32,7 @@ SOURCE=/docs/02-decisions/adr-042-ledger-and-money.md
 - When splitting an amount into parts (discount per tax code, instalments) → MUST use `allocate()`; MUST NOT divide and let the last part absorb the difference.
 - When reading an amount from a `DECIMAL` column or a form → MUST go through `fromDecimal()`; MUST NOT cast the string to float.
 - When storing an amount in a file-based entity → MUST store `minor` as integer plus the currency code.
+- When storing an amount in a Doctrine entity → MUST map the `Money` property with `MoneyType` (`DECIMAL(15,2)`, see `persistence-doctrine.md`); MUST NOT map it as float or as a bare decimal string.
 
 ## known issues
 
@@ -38,8 +40,8 @@ SOURCE=/docs/02-decisions/adr-042-ledger-and-money.md
 
 ## pending
 
-- Doctrine custom type `DECIMAL` ↔ `Money` in `persistence-doctrine` (ADR-042 decision 3, P1).
+- None documented.
 
 ## see also
 
-- [`persistence-architecture.md`](persistence-architecture.md) — where the Doctrine mapping of `Money` will live
+- [`persistence-doctrine.md`](persistence-doctrine.md) — `MoneyType`: the Doctrine mapping `Money` ↔ `DECIMAL(15,2)`, read in the installation's base currency

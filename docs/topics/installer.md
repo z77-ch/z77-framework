@@ -1,6 +1,6 @@
 # installer
 
-2026-09-01
+2026-09-21
 
 ## entry
 
@@ -17,6 +17,7 @@ SOURCE=/packages/kernel/core/cron/run.php
 SOURCE=/packages/kernel/core/src/Config/bootstrap.default.inc.php
 SOURCE=/packages/kernel/core/src/Config/moduleManager.default.inc.php
 SOURCE=/packages/kernel/core/src/Config/systemConfig.default.inc.php
+SOURCE=/packages/kernel/core/src/Config/database.default.inc.php
 SOURCE=/packages/kernel/core/data/framework/routing/navigation.default.json
 SOURCE=/packages/kernel/core/data/framework/seo/metadata.default.json
 SOURCE=/skeleton/composer.json
@@ -53,9 +54,10 @@ Runs as a Composer post-install/post-update hook. Reads `extra` config from `com
 | 8 | `writeModuleManagerConfig()` | → `config/vendor/moduleManager.inc.php` |
 | 9 | `writeAuthConfig()` | → `config/client/auth.inc.php` — **seed-once**: skipped if it already exists (INST-CONFIG-001) |
 | 10 | `writeI18nConfig()` | → `config/client/i18n.inc.php` — **seed-once**: skipped if it already exists (INST-CONFIG-001) |
-| 11 | `writeBackupConfig()` | → `config/client/backup.inc.php` — **seed-once**: backup policy (retention, excludes, database), see [`backup.md`](backup.md) |
+| 11 | `writeBackupConfig()` | → `config/client/backup.inc.php` — **seed-once**: backup policy (retention, excludes, dump settings), see [`backup.md`](backup.md) |
 | 12 | `writeMailConfig()` | → `config/client/mail.inc.php` — **seed-once**: mail transport + sender identity (`enabled=true`, `transport='mail'`, empty `fromAddress` to fill per project), see [`mail.md`](mail.md) |
-| 13 | `writeSystemConfig()` | → `config/client/systemConfig.inc.php` — **seed-once**: installation identity (`canonicalBaseUrl`), the one config NOT fed from `composer.json` (ADR-030) |
+| 13 | `writeSystemConfig()` | → `config/client/systemConfig.inc.php` — **seed-once**: installation identity (`canonicalBaseUrl`, `baseCurrency`), NOT fed from `composer.json` (ADR-030) |
+| 13b | `writeDatabaseConfig()` | → `config/client/database.inc.php` — **seed-once**: the ONE database connection (host, port, name, user, password; empty `name` = no database), read by the Doctrine driver and the `db` backup; like systemConfig NOT fed from `composer.json` (ADR-039 decision 4), see [`persistence-doctrine.md`](persistence-doctrine.md) |
 | 14 | `writeFileFinderConfig()` | → `config/vendor/fileFinder.inc.php` |
 | 15 | `writeDataFiles()` | seed `data/*.json` from EVERY installed framework package's data roots (skip if already exist; INST-SEED-001) |
 | 16 | `provisionAdmin()` | create admin (interactive) or write `SETUP_TOKEN` (non-interactive) — skip if `backendUsers.json` exists |
@@ -103,7 +105,7 @@ All failures throw `\RuntimeException` — no silent errors:
 | Type | Path | Behaviour |
 |---|---|---|
 | Config (regenerate) | `config/vendor/bootstrap.inc.php`, `config/vendor/moduleManager.inc.php`, `config/vendor/fileFinder.inc.php` | regenerated on every install; RELEASE-owned (ADR-036) — a function of `composer.json` + `vendor/`, rides with the release upload |
-| Config (seed-once) | `config/client/i18n.inc.php`, `auth`, `backup`, `mail`, `systemConfig` (and hand-created `geoip`) | user-adjustable — written once, never overwritten (INST-CONFIG-001); INSTALLATION-owned (ADR-036) — in the release layout `config/client` is a symlink into `shared/` |
+| Config (seed-once) | `config/client/i18n.inc.php`, `auth`, `backup`, `mail`, `systemConfig`, `database` (and hand-created `geoip`) | user-adjustable — written once, never overwritten (INST-CONFIG-001); INSTALLATION-owned (ADR-036) — in the release layout `config/client` is a symlink into `shared/` |
 | Data | `data/framework/**/*.json` | written once — never overwritten |
 
 > The blanket "config regenerated on every install" holds only for framework-controlled config (`bootstrap`, `moduleManager`, `fileFinder`) — those are fed from `composer.json`. Everything a developer or operator adjusts is seed-once. `systemConfig.inc.php` (ADR-030) is the strongest case: it holds what differs per INSTALLATION, so it is the one config file that is deliberately not fed from `composer.json` at all — that file is committed, and staging and production could then not differ.
@@ -261,7 +263,7 @@ Installer creates the override dirs, registers the module in `moduleManager.inc.
 
 ## rules
 
-- When editing a runtime config in `config/*.inc.php` → MUST NOT edit manually (regenerated on every `composer install`) — EXCEPT `config/i18n.inc.php`, `config/auth.inc.php` and `config/backup.inc.php`, which are seed-once and MAY be edited by the developer (the installer never overwrites them once they exist)
+- When editing a runtime config in `config/*.inc.php` → MUST NOT edit manually (regenerated on every `composer install`) — EXCEPT the seed-once files in `config/client/` (`i18n`, `auth`, `backup`, `mail`, `systemConfig`, `database`), which MAY be edited by the developer (the installer never overwrites them once they exist)
 - When changing a data file in `data/framework/**/*.json` → MUST be aware that the installer NEVER overwrites it after first install
 - When touching public asset / entry-file deployment → MUST keep `public/` seed-once (first install only, `public/` absent — ADR-024); MUST NOT add a `debug`-driven overwrite or an unattended / "yes-to-all" force command that writes into an existing `public/`. The ONE allowed write into an existing `public/` is the interactive, per-file, default-No deploy prompt (ADR-026, `promptAssetDeploy()`), which MUST stay interactive-only (`io->isInteractive()`) — non-interactive runs MUST remain read-only.
 - When adding error handling in installer code → MUST throw `\RuntimeException`; MUST NOT silently swallow failures

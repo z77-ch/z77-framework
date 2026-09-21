@@ -58,6 +58,9 @@ How the code works today, and what this ADR builds on: `RepositoryInterface` car
 5. **Modules announce their Doctrine entities** under a module config key `doctrineEntities`, a list of
    classes, collected by `ModuleManager` exactly like `importEntities` (a non-existent class fails
    loudly). The list feeds Doctrine's metadata driver and the migrations; no directory scanning.
+   *Note (P1, 2026-09-21):* a project adds an entity of its own without copying the module config
+   through `override/…/App/Config/doctrineEntitiesConfig.inc.php`, an additive list — see
+   [`persistence-doctrine.md`](../topics/persistence-doctrine.md).
 
 ### Access
 

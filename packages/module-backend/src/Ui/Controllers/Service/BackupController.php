@@ -68,7 +68,7 @@ class BackupController extends BackendAbstractController
 
         $service = $this->service();
         if ($type === BackupType::Db && !$service->isDatabaseConfigured()) {
-            return $this->fetchError('Keine Datenbank konfiguriert (config/backup.inc.php)');
+            return $this->fetchError('Keine Datenbank konfiguriert (config/client/database.inc.php)');
         }
 
         set_time_limit(0);

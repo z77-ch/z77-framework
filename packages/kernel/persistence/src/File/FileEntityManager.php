@@ -10,7 +10,8 @@ use Z77\Core\Libraries\CacheManager,
     Z77\Persistence\File\Storage\CollectionStore,
     Z77\Persistence\File\Storage\DocumentStore,
     Z77\Persistence\File\Storage\FileStorage,
-    Z77\Persistence\File\Storage\RecordStore
+    Z77\Persistence\File\Storage\RecordStore,
+    Z77\Persistence\Resolver\RepositoryConvention
 ;
 
 class FileEntityManager implements EntityManagerInterface
@@ -113,19 +114,8 @@ class FileEntityManager implements EntityManagerInterface
 
     private function resolveSpecific(string $entityClass, RecordStore $store): ?RepositoryInterface
     {
-        $pos = strrpos($entityClass, '\\Entities\\');
-        if ($pos === false) {
-            return null;
-        }
+        $repoClass = RepositoryConvention::specificRepository($entityClass);
 
-        $ns        = substr($entityClass, 0, $pos);
-        $name      = basename(str_replace('\\', '/', $entityClass));
-        $repoClass = $ns . '\\Repositories\\' . $name . 'Repository';
-
-        if (class_exists($repoClass)) {
-            return new $repoClass($entityClass, $store);
-        }
-
-        return null;
+        return $repoClass === null ? null : new $repoClass($entityClass, $store);
     }
 }

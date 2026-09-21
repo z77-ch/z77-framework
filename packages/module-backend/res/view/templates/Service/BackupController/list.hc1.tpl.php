@@ -32,7 +32,7 @@ $kinds = [
         <form data-fetch-post="/backend/service/backup/run">
             <input type="hidden" name="type" value="<?= e($type) ?>">
             <button type="submit" class="be-shell-add__item" role="menuitem"
-                    <?= $blocked ? 'disabled title="Keine Datenbank konfiguriert (config/backup.inc.php)"' : '' ?>>
+                    <?= $blocked ? 'disabled title="Keine Datenbank konfiguriert (config/client/database.inc.php)"' : '' ?>>
                 <svg class="be-icon" width="13" height="13" aria-hidden="true"><use href="#<?= e($icon) ?>"/></svg>
                 <?= e($label) ?>
             </button>

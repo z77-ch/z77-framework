@@ -46,3 +46,9 @@
 /skeleton/server.log
 # seeded by the installer from the kernel template (seed-once, see installer.md)
 /skeleton/cron/
+
+# root composer.lock: the monorepo install (`composer install` at the root, for the
+# harnesses that need a third-party library — tests/persistence-doctrine.php) is a
+# path-repo install against the moving packages; a committed lock would age with
+# every framework change, same reasoning as /skeleton/composer.lock
+/composer.lock
