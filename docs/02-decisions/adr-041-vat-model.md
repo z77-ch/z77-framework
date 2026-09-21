@@ -28,7 +28,7 @@ the European model from day one, with only the country pack `CH` built.
    change is a **new row**; old rows stay. Categories: standard, reduced, special, zero, exempt,
    reverse-charge, input-material, input-other.
 3. **Rates are integers in hundredths of a percent** (8.1 % = `810`); amounts are `Money` (integer
-   minor units, ADR 4). No float anywhere in the calculation.
+   minor units, ADR-042). No float anywhere in the calculation.
 4. **The rate is resolved by the service date** — legally correct, and what wdv already does.
 5. **`VatCalculator` computes once per document.** Input: lines (net or gross amount, tax code),
    service date, price mode. Output: the resolved rate per line and a **tax summary per code**
@@ -72,7 +72,7 @@ the European model from day one, with only the country pack `CH` built.
 - VAT is computed in exactly one class. order shows VAT on quotes and orders by calling it, for
   display only.
 - Documents and journal lines reference a tax code by `code`, snapshotted at use; a code is deactivated,
-  never deleted (the reference rule for file-based master data: ADR 5, plan §10).
+  never deleted (the reference rule for file-based master data: ADR-043, decision 19).
 - The wdv float bugs — strict float compares, unrounded VAT, rounding smeared onto the last rate —
   become test cases (plan §3).
 - A rounding difference between the VAT return and the ledger is posted to the VAT-return rounding
