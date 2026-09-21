@@ -9,7 +9,10 @@ namespace Z77\Shared\Content;
  *
  *   ['key' => 'copy', 'kind' => 'textarea',
  *    'inline' => ['bold', 'link', 'break'],
- *    'links'  => ['targets' => ['page', 'action'], 'localize' => true]]
+ *    'links'  => ['targets' => ['page', 'action'], 'localize' => true, 'newTab' => false]]
+ *
+ * `newTab` opens EXTERNAL links (http/https) in a new tab (target="_blank"
+ * rel="noopener"); page, media, mailto and tel links never.
  *
  * A descriptor without `inline` yields the plain-text profile: everything is
  * escaped, nothing is formatted. Only the schema-aware read path
@@ -19,10 +22,10 @@ namespace Z77\Shared\Content;
 final class InlineProfile
 {
     public const FEATURES = ['bold', 'italic', 'link', 'break'];
-    public const TARGETS  = ['page', 'media', 'external', 'mailto', 'action'];
+    public const TARGETS  = ['page', 'media', 'external', 'mailto', 'tel', 'action'];
 
     /** Link targets allowed when a field enables `link` without narrowing them. */
-    private const DEFAULT_TARGETS = ['page', 'media', 'external', 'mailto'];
+    private const DEFAULT_TARGETS = ['page', 'media', 'external', 'mailto', 'tel'];
 
     /**
      * @param list<string> $features  subset of FEATURES
@@ -31,13 +34,15 @@ final class InlineProfile
      *        project actions (name ⇒ fallback href + attributes), from `contentActions`
      * @param (\Closure(string):string)|null $localizer  maps a canonical page path to the
      *        document language's URL (localizedUrl); used only when $localize is true
+     * @param bool $newTab  external links open in a new tab
      */
     public function __construct(
         private array $features = [],
         private array $targets = self::DEFAULT_TARGETS,
         private bool $localize = false,
         private array $actions = [],
-        private ?\Closure $localizer = null
+        private ?\Closure $localizer = null,
+        private bool $newTab = false
     ) {
         $this->features = array_values(array_intersect($features, self::FEATURES));
         $this->targets  = array_values(array_intersect($targets, self::TARGETS));
@@ -59,7 +64,7 @@ final class InlineProfile
         $links    = is_array($descriptor['links'] ?? null) ? $descriptor['links'] : [];
         $targets  = is_array($links['targets'] ?? null) ? $links['targets'] : self::DEFAULT_TARGETS;
 
-        return new self($features, $targets, (bool)($links['localize'] ?? false), $actions, $localizer);
+        return new self($features, $targets, (bool)($links['localize'] ?? false), $actions, $localizer, (bool)($links['newTab'] ?? false));
     }
 
     public function allows(string $feature): bool
@@ -81,6 +86,11 @@ final class InlineProfile
     public function localize(): bool
     {
         return $this->localize;
+    }
+
+    public function newTab(): bool
+    {
+        return $this->newTab;
     }
 
     /** @return array{href?:string, attributes?:array<string,string>}|null */

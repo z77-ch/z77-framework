@@ -6,7 +6,8 @@ namespace Z77\Shared\Content;
  * Minimal, safe inline formatter for block text.
  *
  * Whitelist only: **bold** → <strong>, *italic* → <em>, [label](url) → <a>, and —
- * with a profile that allows it — a newline → <br>.
+ * with a profile that allows it — a newline → <br> (exactly `<br>`; the newline
+ * itself is dropped).
  * Strategy: escape the whole string FIRST (so any HTML the author typed is inert),
  * THEN introduce our own whitelisted tags. The only HTML in the output is what this
  * class emits — there is no path for raw author HTML to reach the page.
@@ -51,7 +52,7 @@ final class InlineMarkdown
             $html = preg_replace('/(?<!\*)\*([^*]+)\*(?!\*)/', '<em>$1</em>', $html);
         }
         if ($profile !== null && $profile->allows('break')) {
-            $html = preg_replace('/\r\n|\r|\n/', "<br>\n", $html);
+            $html = preg_replace('/\r\n|\r|\n/', '<br>', $html);
         }
 
         return $html;
@@ -97,7 +98,8 @@ final class InlineMarkdown
             $url = $this->attr($profile->localizePath(html_entity_decode($url, ENT_QUOTES, 'UTF-8')));
         }
 
-        return '<a href="' . $url . '">' . $m[1] . '</a>';
+        $tab = ($target === 'external' && $profile->newTab()) ? ' target="_blank" rel="noopener"' : '';
+        return '<a href="' . $url . '"' . $tab . '>' . $m[1] . '</a>';
     }
 
     /** Classifies a link target; null = not allowed in any profile. */
@@ -112,6 +114,7 @@ final class InlineMarkdown
             str_starts_with($lower, '/media/')   => 'media',
             $url[0] === '/' || $url[0] === '#'   => 'page',
             str_starts_with($lower, 'mailto:')   => 'mailto',
+            str_starts_with($lower, 'tel:')      => 'tel',
             str_starts_with($lower, 'http://'),
             str_starts_with($lower, 'https://')  => 'external',
             default                              => null,

@@ -60,7 +60,11 @@ echo "InlineMarkdown — profiles\n";
 $out = $md->toHtml('**fett** [Seite](/wohnen)', InlineProfile::plain());
 check('plain profile: all literal', $out === '**fett** [Seite](/wohnen)', $out);
 $out = $md->toHtml("**fett** *k*\nneu", new InlineProfile(['bold', 'break']));
-check('bold + break only', $out === "<strong>fett</strong> *k*<br>\nneu", $out);
+check('bold + break only, break is exactly <br>', $out === "<strong>fett</strong> *k*<br>neu", $out);
+$tabs = new InlineProfile(['link'], ['external', 'tel', 'mailto'], false, [], null, true);
+$out = $md->toHtml('[W](https://x.ch) [T](tel:+41445212191) [M](mailto:a@b.ch)', $tabs);
+check('newTab only on external; tel links work',
+    $out === '<a href="https://x.ch" target="_blank" rel="noopener">W</a> <a href="tel:+41445212191">T</a> <a href="mailto:a@b.ch">M</a>', $out);
 
 $links = new InlineProfile(['link'], ['page', 'media'], true, $actions, $fr);
 $out = $md->toHtml('[K](/kontakt) [P](/media/front/a.pdf) [A](#top)', $links);

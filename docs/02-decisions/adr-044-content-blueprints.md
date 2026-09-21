@@ -3,6 +3,11 @@
 **Status:** `[APPROVED]`
 **Date:** 2026-09-21
 
+> **Note 2026-09-21 — first consumer (zihlundsee.ch, all pages).** Link target `tel`
+> added (default targets now page, media, external, mailto, tel); `links.newTab`
+> opens external links in a new tab (`target="_blank" rel="noopener"`); `break`
+> emits exactly `<br>` (the newline is dropped) so converted copy renders byte-equal.
+
 ---
 
 ## Context
