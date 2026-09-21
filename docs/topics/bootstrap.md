@@ -1,6 +1,6 @@
 # bootstrap
 
-2026-09-02
+2026-09-21
 
 ## entry
 
@@ -14,6 +14,9 @@ SOURCE=/packages/kernel/core/src/Bootstrap.php
 SOURCE=/packages/kernel/core/src/DI.php
 SOURCE=/packages/kernel/core/src/Config/bootstrap.default.inc.php
 SOURCE=/packages/kernel/core/src/Config/systemConfig.default.inc.php
+SOURCE=/packages/kernel/core/src/Libraries/ConfigManager.php
+SOURCE=/packages/kernel/core/src/Libraries/FileFinder.php
+SOURCE=/packages/kernel/core/src/Services/ModuleManager.php
 
 RUNTIME=/skeleton/config/bootstrap.inc.php
 
@@ -119,6 +122,20 @@ flat fallback, central helper `ConfigLocator`):
 The installer migrates a flat layout automatically (generated files
 regenerated into vendor/, seed-once files renamed into client/).
 
+## module config override
+
+A module config (`{module}Config.inc.php`, e.g. `contactConfig`, `frontendConfig`) is read by
+`ModuleManager::getModuleConfig()` → `ConfigManager::getArrayConfig()` → `FileFinder::getFirstSourceMatch()`:
+the FIRST file found wins — `override/z77/module/{module}/src/App/Config/…` before the package in
+`vendor/` — and there is no merge. A project override therefore REPLACES the package config as a
+whole (BOOT-CONFIG-001).
+
+The existing exception is additive: `ModuleManager::getConfigExtensions($moduleKey, $configKey)`
+collects every `App/Config/{$configKey}Config.inc.php` under ANY of the module's source paths
+(override and package), so a project adds to a registry key without copying the module config —
+`doctrineEntitiesConfig`, `importEntitiesConfig`, `openWorkChecksConfig`
+([`persistence-doctrine.md`](persistence-doctrine.md)).
+
 ## bootstrap config keys
 
 `debug` | `timezone` | `htmlRoot` | `cachePersist` (always `false`) — `cacheDir` is GONE since ADR-035: the cache path is fixed to `var/cache`, a leftover key in an installed config is ignored
@@ -155,11 +172,13 @@ when something actually tries to build an absolute URL (SEC-005, [`security.md`]
 - [`backend.md`](backend.md) — Debug-Toggle button is wired in `SystemController::toggleDebugAction()`
 - [`cache.md`](cache.md) — DEBUG=true forces every page response to BYPASS (`PageCachePolicy::decide()` short-circuits before any cache lookup)
 - [`installer.md`](installer.md) — `Install::writeDebugFlag()` maintains the flag based on `composer.json`
+- [`persistence-doctrine.md`](persistence-doctrine.md) — the additive extension files (`doctrineEntitiesConfig`, `openWorkChecksConfig`) that work around BOOT-CONFIG-001 for registry keys
+- [`contact.md`](contact.md) — `contactListLimit`, the one-key override that currently needs a full `contactConfig` copy (BOOT-CONFIG-001)
 
 ## known issues
 
-_(none)_
+- **BOOT-CONFIG-001** — don't assume a module config override records only its deviation: `ConfigManager::getArrayConfig()` takes the first source match, so an override REPLACES the package config. A project changing one key (e.g. `contactListLimit` in `contactConfig`) must copy the ENTIRE config and from then on misses every key a package update adds or changes — against Rule 2 (a scope records only its deviation). Full `frontendConfig` copies exist in installations today (e.g. `override/z77/module/frontend/src/App/Config/frontendConfig.inc.php`). Only registry keys with an extension file (`getConfigExtensions()`) are additive.
 
 ## pending
 
-_(none)_
+- **BOOT-CONFIG-001 — module config override as deviation only** (recorded 2026-09-21, owner; not implemented): proposed direction — the override MERGES into the package config (the override file carries only the keys it changes) instead of replacing it. Open before building: the merge semantics (recursive per key vs. top-level keys; how a list is replaced vs. extended; how a key is removed), the relation to the additive extension files (`getConfigExtensions()` — keep, or subsume), cache-key impact in `ConfigManager`, and the migration of the existing full copies in installations (a full copy stays correct under a merge, but should be trimmed to its deviation). Affects every module config read through `getModuleConfig()`.

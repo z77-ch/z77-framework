@@ -359,7 +359,7 @@ $master->removeRate($future, $today);
 check('…and is gone', $rates->findByCodeAndValidFrom('UN', '2030-01-01') === null && $vat->resolve('UN', day('2030-01-01'))->rate === 810);
 check('addRate refuses a row that already has an id (rates are never edited)', throws(fn() => $master->addRate($inForce, $today), \LogicException::class));
 
-echo "5c. Backdating (owner 2026-09-21): refused, except as backfill before the earliest row\n";
+echo "5c. Backdating (owner 2026-09-21): refused, except as backfill before the earliest row or as the first rate of a code without rows\n";
 $refused = fn(array $row, string $day) => throws(fn() => $master->addRate(new TaxRate($row), day($day)), InvalidRateException::class);
 check('validFrom yesterday refused', $refused(['code' => 'UN', 'valid_from' => '2024-05-31', 'rate' => 900], '2024-06-01'));
 check('validFrom between two existing rows refused', $refused(['code' => 'UN', 'valid_from' => '2020-01-01', 'rate' => 900], '2024-06-01'));
@@ -368,8 +368,18 @@ check('…the field error sits on valid_from and names the earliest row', (funct
     catch (InvalidRateException $e) { return $e->validator->hasFieldError('valid_from') && str_contains($e->validator->getFieldError('valid_from'), '2018-01-01'); }
     return false;
 })());
-check('a brand-new code without rows: backdated first rate refused', $refused(['code' => 'BZ', 'valid_from' => '2024-01-01', 'rate' => 810], '2024-06-01'));
-check('…nothing was written in any of these', $rates->findByCode('BZ') === [] && $rates->findByCodeAndValidFrom('UN', '2020-01-01') === null);
+check('…nothing was written in any of these', $rates->findByCodeAndValidFrom('UN', '2020-01-01') === null && $rates->findByCodeAndValidFrom('UN', '2024-05-31') === null);
+
+// VAT-RATE-002 (owner 2026-09-21): no existing row, no range to reach into.
+check('a brand-new code has no rate yet', $rates->findByCode('BZ') === []);
+$firstBz = new TaxRate(['code' => 'BZ', 'valid_from' => '2019-01-01', 'rate' => 770]);
+$master->addRate($firstBz, $today);
+check('the backdated FIRST rate of a code without rows is accepted', $firstBz->getId() !== null && $vat->resolve('BZ', day('2019-01-01'))->rate === 770 && $vat->resolve('BZ', $today)->rate === 770);
+check('…a stored only row re-validated is not a «first rate» (the rule counts every row, itself included)', !(new TaxRateValidator($rates->findByCodeAndValidFrom('BZ', '2019-01-01'), $codes, $rates, $today))->isValid());
+check('…the next backdated rate after the earliest is refused again', $refused(['code' => 'BZ', 'valid_from' => '2024-01-01', 'rate' => 810], '2024-06-01'));
+$bzBackfill = new TaxRate(['code' => 'BZ', 'valid_from' => '2011-01-01', 'rate' => 800]);
+$master->addRate($bzBackfill, $today);
+check('…and one before the earliest is backfill, accepted', $bzBackfill->getId() !== null && $vat->resolve('BZ', day('2018-12-31'))->rate === 800 && $vat->resolve('BZ', day('2019-01-01'))->rate === 770);
 $backfill = new TaxRate(['code' => 'UN', 'valid_from' => '2011-01-01', 'rate' => 800]);
 $master->addRate($backfill, $today);
 check('backfill before the earliest row (2011 rate for migration) accepted', $backfill->getId() !== null && $vat->resolve('UN', day('2017-12-31'))->rate === 800);

@@ -23,9 +23,13 @@ use Z77\Persistence\Validation\EntityValidator;
  * today is refused — a rate that reaches into issued documents' service dates
  * would change what they should have computed — EXCEPT when it lies before
  * the code's earliest existing row: that is pure backfill of history (pre-2018
- * rates for a migration), which touches no day a current row covers. Without
- * `$today` (seed check, tests) the rule is not applied. Without repositories
- * only the format is checked.
+ * rates for a migration), which touches no day a current row covers. The
+ * FIRST rate of a code that has no row at all may start at any valid date
+ * (owner, 2026-09-21): there is no existing range it could reach into, and
+ * an installation creating a code for older documents needs it to cover
+ * them. An edit of a code's only row is not a first rate — the row exists,
+ * so the backfill rule applies. Without `$today` (seed check, tests) the
+ * rule is not applied. Without repositories only the format is checked.
  */
 class TaxRateValidator extends EntityValidator
 {
@@ -66,8 +70,9 @@ class TaxRateValidator extends EntityValidator
         }
 
         $code   = $this->entity->getCode();
+        $all    = $this->rates->findByCode($code);
         $others = array_values(array_filter(
-            $this->rates->findByCode($code),
+            $all,
             fn(TaxRate $r) => $r->getId() !== $this->entity->getId()
         ));
 
@@ -78,7 +83,9 @@ class TaxRateValidator extends EntityValidator
             }
         }
 
-        if ($this->today === null || $validFrom >= $this->today->format('Y-m-d')) {
+        // Not backdated, or the first rate of a code without any row (`$all`,
+        // not `$others`: the only row being edited is not a first rate).
+        if ($this->today === null || $validFrom >= $this->today->format('Y-m-d') || $all === []) {
             return;
         }
 

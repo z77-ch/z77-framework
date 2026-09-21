@@ -62,8 +62,13 @@ and `migrate`; migrations CLI `vendor/bin/z77-db` (`migrate`, `status`, `diff`, 
 `persistence-doctrine` is complete. **`module-vat` done** (file-based tax codes with dated rates,
 `VatRates` lookup, `VatCalculator` on `Money`, backend `/backend/finance/tax-code`, CH seed from 2018;
 ESTV mapping deferred to P5, snapshot serialisation to P3 — topic [`vat.md`](../topics/vat.md)).
-**Next: `module-contact`** (§4a) — the first module with migrations adds `z77-db migrate` on `next`
-to the `release-structure.md` checklist. Binding: ADR-039 (all 18 decisions). Then `module-vat`, `module-contact`.
+**`module-contact` done** (Doctrine contact with n typed addresses, file-based `AddressType`, first
+module migration, backend `/backend/contact/…`; `z77-db migrate` on `next` is in the deploy
+checklist — topic [`contact.md`](../topics/contact.md)). **P1 is complete** (exit criteria met).
+**Next: P2** — `module-financial`: accounts, fiscal years/periods (opening a year creates its
+`NumberRange` via `create()`), manual entries with change log, `LedgerService`, reports (§5, ADR-042).
+Framework-wide pending found on the way: module config override replaces instead of merging
+(BOOT-CONFIG-001 in `bootstrap.md`). Binding: ADR-039 (all 18 decisions). Then `module-vat`, `module-contact`.
 
 ### Settled before P0 — how the business modules reach persistence
 
@@ -256,7 +261,7 @@ module, not part of debtor. There is no "order customer" or "debtor customer": t
 
 | Entity | Storage | Fields (sketch) |
 |---|---|---|
-| `Contact` | Doctrine | person or company, name parts, language, e-mail/phone, optional `memberAccountId`, active |
+| `Contact` | Doctrine | person or company, name parts, language, e-mail/phone, active (`memberAccountId` removed 2026-09-21, owner — added back with the first consumer, customer portal/shop) |
 | `Address` | Doctrine | salutation, title, first name, name, address row, street, house no, zip, city, country |
 | `ContactAddress` | Doctrine | contact ↔ address with **type** and title — n addresses per contact (wdv `Addressing`) |
 | `AddressType` | file | main, invoice, delivery, regional, … — managed data, like wdv `AddressType` |

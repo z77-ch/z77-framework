@@ -82,7 +82,16 @@ class DoctrineRepository implements RepositoryInterface
         $this->holder->transaction()->markRollbackOnly();
     }
 
-    private function em(): EntityManager
+    /**
+     * Doctrine's EntityManager for a DQL query in a subclass — the second
+     * driver-specific seam next to {@see connection()}, for a read that
+     * must HYDRATE entities SQL cannot deliver: a fetch-join that loads a
+     * list with its associations in one query instead of a lazy proxy per
+     * row (the N+1 of a list screen). Reads only, marked Doctrine-only in
+     * the method's docblock, never handed further up (ADR-039 decision 6):
+     * a service or controller still sees the unified API only.
+     */
+    protected function em(): EntityManager
     {
         return $this->holder->current();
     }

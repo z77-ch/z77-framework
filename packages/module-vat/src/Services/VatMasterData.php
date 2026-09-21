@@ -15,8 +15,9 @@ use Z77\Persistence\Resolver\UnifiedEntityManager;
  *   - a tax code is never deleted, only deactivated: there is no method for it;
  *   - the `code` of an existing row is immutable — documents reference it;
  *   - a rate is added, never edited; a backdated `validFrom` is refused unless
- *     it backfills history before the code's earliest row (the validator holds
- *     that rule, {@see TaxRateValidator});
+ *     it backfills history before the code's earliest row or is the first
+ *     rate of a code without any row (the validator holds that rule,
+ *     {@see TaxRateValidator});
  *   - a rate in effect is never removed — except a row entered TODAY for
  *     today, the same-day typo; a future row may go.
  *

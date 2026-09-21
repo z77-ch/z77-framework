@@ -1,0 +1,37 @@
+{
+    "name": "z77/module-contact",
+    "description": "Z77 Contact Module | one contact (person or organisation) with n typed addresses, shared by order, debtor and later modules (ADR-040, plan §4a).",
+    "type": "library",
+    "keywords": ["php", "framework", "contact", "address", "crm", "z77"],
+    "homepage": "https://github.com/z77-ch/z77-framework",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Peter Ruepp",
+            "email": "peter.ruepp@z77.ch"
+        }
+    ],
+    "autoload": {
+        "psr-4": {
+            "Z77\\Module\\Contact\\": "src/"
+        }
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true,
+    "extra": {
+        "branch-alias": {
+            "dev-main": "1.0.x-dev"
+        }
+    },
+    "require": {
+        "php": ">=8.4",
+        "z77/kernel": "^1.0",
+        "z77/persistence-doctrine": "^1.0"
+    },
+    "support": {
+        "issues": "https://github.com/z77-ch/z77-framework/issues",
+        "source": "https://github.com/z77-ch/module-contact",
+        "docs": "https://github.com/z77-ch/z77-framework/tree/main/docs"
+    },
+    "readme": "README.md"
+}

@@ -29,6 +29,23 @@ file — read those on every release too.
    Decide: on any STOP or FAIL, stop — the script prints the fix or the
    rollback line.
 
+3b. **Run pending schema migrations on the NEW release** — only when the
+   release carries a module with Doctrine tables (`module-contact` is the
+   first; `status` tells you): over ssh,
+   `cd <base>/releases/<name> && php vendor/bin/z77-db status`, then
+   `php vendor/bin/z77-db migrate`.
+   You see: the project root and the database named BEFORE anything runs —
+   read them; then the executed versions. Decide: a root that is not
+   `releases/<name>` is the wrong directory — stop.
+   Why here: `current` and `next` share ONE database (ADR-035), and every
+   migration is expand/contract (ADR-039 decision 14) — the running release
+   keeps working on the migrated schema, and testing `next` in step 4 is what
+   proves it. Never migrate from `current`. With
+   `opcache.validate_timestamps = 0` on the host, «Cache leeren» in the
+   backend afterwards (persistence-doctrine.md DOCTRINE-CACHE-001).
+   *Symptom if skipped:* the first screen touching the new tables dies with a
+   «table … doesn't exist» error on `next` — and, after step 5, in production.
+
 4. **Test on `next.<domain>` — by hand, in the browser.**
    Request pages that are demonstrably NEW in this release (a changed
    template, a new route) — a static file proves nothing, Apache always

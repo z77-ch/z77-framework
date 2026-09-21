@@ -60,8 +60,9 @@ Structure is enforced by `npm run docs:check` ([docs-lint/STANDARD.md](../docs-l
 | backend, dashboard, service panel, user preferences, system pages | [topics/backend.md](topics/backend.md) |
 | backup, restore, z77-backup CLI | [topics/backup.md](topics/backup.md) |
 | content block types | [topics/block-types.md](topics/block-types.md) |
-| bootstrap, DI container, debug flag, systemConfig, canonical base URL / site address, installation identity, absolute URLs in mails | [topics/bootstrap.md](topics/bootstrap.md) |
+| bootstrap, DI container, debug flag, systemConfig, module config override / config merge, canonical base URL / site address, installation identity, absolute URLs in mails | [topics/bootstrap.md](topics/bootstrap.md) |
 | cache, DataCache, APCu, page cache | [topics/cache.md](topics/cache.md) |
+| contact / Kontakt, address / Adresse, address type / Adresstyp, ContactAddress, typed addresses, invoice address / delivery address, person / organisation, module-contact | [topics/contact.md](topics/contact.md) |
 | content, structured content, content files | [topics/content.md](topics/content.md) |
 | CSS/SCSS backend, werkbank | [topics/css-backend.md](topics/css-backend.md) |
 | CSS/SCSS dms | [topics/css-dms.md](topics/css-dms.md) |

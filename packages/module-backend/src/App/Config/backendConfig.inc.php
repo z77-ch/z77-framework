@@ -14,6 +14,9 @@ return [
         // tax codes (module-vat) now, accounts and invoices later. The mounts
         // resolve only in projects that install the owning module.
         'finance'   => 'tax-code',
+        // Contacts with typed addresses (module-contact, plan §4a) — the
+        // party debtor and order share. Same mount pattern as `finance`.
+        'contact'   => 'contact',
     ],
     // View area: this module owns a layout and is a top-level UI environment.
     // The environment identity is the module key; its display label + navigation

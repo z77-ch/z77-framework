@@ -344,6 +344,22 @@ php .releases/switch.php $REL next
 #    (by hand: ln -sfn releases/$REL/public $BASE/next  [link_target=public],
 #     then curl -sI https://next.../ | grep X-Z77-Release until it names $REL)
 
+# 3b. pending schema migrations (a module with Doctrine tables — module-contact
+#    is the first): AFTER next is bent (3), BEFORE testing on it (3c) and
+#    before current is bent (4). Run in the new release's directory — the
+#    command prints the project root and the database first, read them;
+#    `status` shows what is pending. One database for both releases
+#    (ADR-035), so this runs exactly once; expand/contract (ADR-039
+#    decision 14) is what keeps `current` working on the migrated schema.
+cd $BASE/releases/$REL && php vendor/bin/z77-db status
+cd $BASE/releases/$REL && php vendor/bin/z77-db migrate
+#    (with `opcache.validate_timestamps = 0` on the host, «Cache leeren» in the
+#     backend afterwards — persistence-doctrine.md DOCTRINE-CACHE-001)
+
+# 3c. test on the subdomain — real server, real data, the migrated schema:
+#    the pages of the new release AND a page of the old one on production,
+#    which is the proof that the migration left `current` working.
+
 # 4. bend current — same script, same reason. No cache to clear since
 #    ADR-035: var/cache belongs to the release and is cold anyway.
 php .releases/switch.php $REL current
