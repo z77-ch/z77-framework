@@ -39,7 +39,7 @@ Erster Konsument: zihlundsee.ch, Seite «Gut zu wissen» (Handoff
    durch `localizedUrl($url, <Dokumentsprache>)`; `/media/…`, extern, mailto nie.
    `action:<name>` → `<a href="<localized fallback>" <attributes>>`; unbekannte Action oder
    nicht erlaubtes Ziel → Literaltext.
-4. **Slot-Durchsetzung serverseitig** (`Blueprints::enforce()`): gespeichert wird genau ein
+4. **Slot-Durchsetzung serverseitig** (`Blueprint::enforce()`): gespeichert wird genau ein
    Block pro Slot in Slot-Reihenfolge, `type` + `key` vom Slot erzwungen, Werte aus dem POST;
    Blöcke ohne passenden Slot kommen aus dem GESPEICHERTEN Dokument (nicht aus dem POST) und
    bleiben erhalten.
@@ -54,7 +54,7 @@ Erster Konsument: zihlundsee.ch, Seite «Gut zu wissen» (Handoff
 ## Schritte
 
 1. Reine Klassen + Harness `tests/content-blueprints.php`: `InlineProfile`, `InlineMarkdown`
-   (Profil + `//`-Fix), `BlockSchemaValidator`, `Blueprints` (apply/enforce), `BlockView`
+   (Profil + `//`-Fix), `BlockSchemaValidator`, `Blueprint` (arrange/enforce), `BlockView`
    (Schema), `Content::keyed()`.
 2. `ContentExtensions`, `ContentView`, `ContentService::view()`.
 3. Backend: `ContentController` (Blueprint, Sperre, Feldvalidierung), `edit.tpl.php`,
