@@ -24,7 +24,9 @@ rules for money and for what may change after posting must hold from the first e
    (ISO 4217), immutable. `add`, `subtract`, `multiply(int|string)`, `allocate(ratios)` (split without
    losing a Rappen), `roundTo(int $step)` (1 = 0.01, 5 = 0.05), comparison. **No float in the API** — a
    float argument is a `TypeError`.
-2. **Percentages as integers** in hundredths of a percent; rounding half-up in integer arithmetic.
+2. **Percentages as integers** in hundredths of a percent; rounding half away from zero in integer
+   arithmetic (commercial rounding; a negative tie −0.005 → −0.01, so a credit note mirrors its
+   invoice — clarified 2026-09-21, owner; the earlier wording said «half-up»).
 3. **Storage.** In the database, amounts are `DECIMAL(15,2)` — readable, and `SUM()` in SQL is exact.
    A Doctrine custom type in `persistence-doctrine` maps the decimal **string** to minor units, never
    through float. File-based entities store minor units as integers.

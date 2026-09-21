@@ -91,6 +91,7 @@ Structure is enforced by `npm run docs:check` ([docs-lint/STANDARD.md](../docs-l
 | stylesheet, asset pipeline, AssetCleaner | [topics/stylesheet.md](topics/stylesheet.md) |
 | translation, Translator | [topics/translation.md](topics/translation.md) |
 | tree, hierarchy | [topics/tree.md](topics/tree.md) |
+| VAT, MWST, Mehrwertsteuer, tax code / Steuercode, TaxCode, TaxRate, rate valid from / gültig ab, VatCalculator, tax summary, price mode net / gross, country pack, ESTV, module-vat | [topics/vat.md](topics/vat.md) |
 | view layer, partials, HtmlView | [topics/view-layer.md](topics/view-layer.md) |
 | templates (create/change) | [01-handbook/templates.md](01-handbook/templates.md) |
 

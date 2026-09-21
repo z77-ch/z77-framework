@@ -45,3 +45,4 @@ SOURCE=/packages/persistence-doctrine/src/Type/MoneyType.php
 ## see also
 
 - [`persistence-doctrine.md`](persistence-doctrine.md) — `MoneyType`: the Doctrine mapping `Money` ↔ `DECIMAL(15,2)`, read in the installation's base currency
+- [`vat.md`](vat.md) — `VatCalculator`: the first consumer of `multiplyByRatio()`; tax on the sum per code, rounded once

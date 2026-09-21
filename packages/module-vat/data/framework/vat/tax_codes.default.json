@@ -1,0 +1,58 @@
+[
+    {
+        "id": 1,
+        "code": "UN",
+        "country": "CH",
+        "category": "standard",
+        "label": "Umsatz Normalsatz",
+        "active": true
+    },
+    {
+        "id": 2,
+        "code": "UR",
+        "country": "CH",
+        "category": "reduced",
+        "label": "Umsatz reduzierter Satz",
+        "active": true
+    },
+    {
+        "id": 3,
+        "code": "US",
+        "country": "CH",
+        "category": "special",
+        "label": "Umsatz Sondersatz Beherbergung",
+        "active": true
+    },
+    {
+        "id": 4,
+        "code": "UE",
+        "country": "CH",
+        "category": "zero",
+        "label": "Umsatz befreit (Export, Art. 23 MWSTG)",
+        "active": true
+    },
+    {
+        "id": 5,
+        "code": "UA",
+        "country": "CH",
+        "category": "exempt",
+        "label": "Umsatz ausgenommen (Art. 21 MWSTG)",
+        "active": true
+    },
+    {
+        "id": 6,
+        "code": "VM",
+        "country": "CH",
+        "category": "input-material",
+        "label": "Vorsteuer Material und Dienstleistungen",
+        "active": true
+    },
+    {
+        "id": 7,
+        "code": "VI",
+        "country": "CH",
+        "category": "input-other",
+        "label": "Vorsteuer Investitionen und übriger Betriebsaufwand",
+        "active": true
+    }
+]

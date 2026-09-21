@@ -32,7 +32,9 @@ the European model from day one, with only the country pack `CH` built.
 5. **`VatCalculator` computes once per document.** Input: lines (net or gross amount, tax code),
    service date, price mode. Output: the resolved rate per line and a **tax summary per code**
    (base, rate, tax).
-   - Tax is computed on the **sum per code**, rounded half-up to 0.01 — not per line and summed.
+   - Tax is computed on the **sum per code**, rounded half away from zero to 0.01 (commercial
+     rounding; a negative tie −0.005 → −0.01, so a credit note mirrors its invoice — clarified
+     2026-09-21, owner; the earlier wording said «half-up») — not per line and summed.
    - Gross mode: tax = gross × rate / (10000 + rate).
    - Rounding the document total to 0.05 is **not** a VAT concern; debtor adds it as a separate
      rounding line (plan §6.2).

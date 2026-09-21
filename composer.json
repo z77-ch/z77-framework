@@ -26,6 +26,7 @@
         "z77/module-frontend": "^1.0",
         "z77/module-backend": "^1.0",
         "z77/module-dms": "^1.0",
+        "z77/module-vat": "^1.0",
         "z77/persistence-doctrine": "^1.0"
     },
     "minimum-stability": "dev",

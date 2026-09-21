@@ -59,8 +59,11 @@ ranges created ahead via `create()` — P2 calls it at fiscal-year opening) and 
 release-local `var/cache/doctrine/` (in-memory in DEBUG), cleared by «Cache leeren», the DEBUG toggle
 and `migrate`; migrations CLI `vendor/bin/z77-db` (`migrate`, `status`, `diff`, `generate`), table
 `schema_migration`, timestamp order across modules; first package migration `number_range`.
-`persistence-doctrine` is complete. **Next: `module-vat`**, then `module-contact` — the first module
-with migrations adds `z77-db migrate` on `next` to the `release-structure.md` checklist. Binding: ADR-039 (all 18 decisions). Then `module-vat`, `module-contact`.
+`persistence-doctrine` is complete. **`module-vat` done** (file-based tax codes with dated rates,
+`VatRates` lookup, `VatCalculator` on `Money`, backend `/backend/finance/tax-code`, CH seed from 2018;
+ESTV mapping deferred to P5, snapshot serialisation to P3 — topic [`vat.md`](../topics/vat.md)).
+**Next: `module-contact`** (§4a) — the first module with migrations adds `z77-db migrate` on `next`
+to the `release-structure.md` checklist. Binding: ADR-039 (all 18 decisions). Then `module-vat`, `module-contact`.
 
 ### Settled before P0 — how the business modules reach persistence
 

@@ -10,6 +10,10 @@ return [
         'content'   => 'navigation',
         'documents' => 'drive',
         'service'   => 'backup',
+        // Business master data of the order/debtor/financial plan (ADR-040):
+        // tax codes (module-vat) now, accounts and invoices later. The mounts
+        // resolve only in projects that install the owning module.
+        'finance'   => 'tax-code',
     ],
     // View area: this module owns a layout and is a top-level UI environment.
     // The environment identity is the module key; its display label + navigation
