@@ -10,6 +10,7 @@ use Doctrine\DBAL\DriverManager,
     Doctrine\Persistence\Mapping\Driver\ClassNames,
     Psr\Cache\CacheItemPoolInterface,
     Symfony\Component\Cache\Adapter\ArrayAdapter,
+    Symfony\Component\Cache\Adapter\PhpFilesAdapter,
     Z77\Persistence\Doctrine\Type\MoneyType
 ;
 
@@ -49,8 +50,9 @@ final class EntityManagerFactory
     /**
      * The package's OWN entities (ADR-039 decision 15): mapped on every
      * EntityManager in front of the modules' lists, so their tables exist
-     * wherever the driver runs. The migrations command (part 3) reads this
-     * constant too — the package's first migration is `number_range`.
+     * wherever the driver runs. The migrations CLI (`bin/z77-db`) diffs against
+     * the same EntityManager, so this list is what its `diff` knows too — the
+     * package's first migration is `number_range` (`res/migrations/`).
      *
      * @var list<class-string>
      */
@@ -60,11 +62,15 @@ final class EntityManagerFactory
      * @param array              $connection    host, port, name, user, password — `config/client/database.inc.php`
      * @param list<class-string> $entityClasses the modules' `doctrineEntities`; PACKAGE_ENTITIES are added here
      * @param string             $baseCurrency  ISO 4217 code every `Money` column is read in
+     * @param string|null        $cacheDir      where metadata and query cache are compiled to as PHP files
+     *                                          (`var/cache/doctrine`, production); null = in memory, rebuilt
+     *                                          on every request (DEBUG, and the test harnesses)
      */
     public static function create(
         #[\SensitiveParameter] array $connection,
         array $entityClasses,
-        string $baseCurrency
+        string $baseCurrency,
+        ?string $cacheDir = null
     ): EntityManager {
         self::registerTypes($baseCurrency);
 
@@ -74,7 +80,7 @@ final class EntityManagerFactory
         $config->setMetadataDriverImpl(new AttributeDriver(new ClassNames($classes)));
         $config->enableNativeLazyObjects(true);
 
-        $cache = self::createCache();
+        $cache = self::createCache($cacheDir);
         $config->setMetadataCache($cache);
         $config->setQueryCache($cache);
 
@@ -85,15 +91,32 @@ final class EntityManagerFactory
     }
 
     /**
-     * Metadata and query cache. Part (1) of the package: an in-memory pool,
-     * rebuilt per request. The production setup of ADR-039 decision 11 —
-     * `PhpFilesAdapter` under `var/cache/doctrine/`, the DEBUG switch, «Cache
-     * leeren» with OPcache invalidation — replaces this method's body and
-     * nothing else.
+     * Metadata and query cache (ADR-039 decision 11).
+     *
+     * Production: `PhpFilesAdapter` — every entry is a PHP file that OPcache
+     * keeps compiled, so a warm request reads no mapping attributes at all.
+     * Files rather than APCu because web and CLI do not share an APCu pool
+     * (CACHE-CLI-001): a migration run from the CLI would leave stale
+     * metadata in the web pool. The directory is release-local (ADR-035) and
+     * handed in by the caller from the kernel's `GeneratedPhpCache`, the
+     * pool «Cache leeren» clears WITH `opcache_invalidate()` per file — an
+     * include()d file would otherwise outlive its deletion.
+     *
+     * DEBUG (and the harnesses): an in-memory pool, rebuilt on every request,
+     * so an entity change is visible without a manual step.
+     *
+     * No result, hydration or second-level cache — the last is experimental.
      */
-    private static function createCache(): CacheItemPoolInterface
+    private static function createCache(?string $cacheDir): CacheItemPoolInterface
     {
-        return new ArrayAdapter();
+        if ($cacheDir === null) {
+            return new ArrayAdapter();
+        }
+
+        // No namespace: the directory IS the namespace (one per release), and
+        // no lifetime: an entry is valid until «Cache leeren» or a migration
+        // deletes the directory.
+        return new PhpFilesAdapter(namespace: '', defaultLifetime: 0, directory: $cacheDir);
     }
 
     /** @param array $connection host, port, name, user, password */

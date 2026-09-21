@@ -13,6 +13,7 @@
 SOURCE=/packages/kernel/core/src/Libraries/CacheManager.php
 SOURCE=/packages/kernel/core/src/Libraries/Cache/DataCache.php
 SOURCE=/packages/kernel/core/src/Libraries/Cache/PageCache.php
+SOURCE=/packages/kernel/core/src/Libraries/Cache/GeneratedPhpCache.php
 SOURCE=/packages/kernel/core/src/Routing/PageCachePolicy.php
 SOURCE=/packages/kernel/core/src/Routing/PageCacheDecision.php
 SOURCE=/packages/kernel/core/src/Routing/PageCachePolicyMode.php
@@ -21,9 +22,10 @@ SOURCE=/packages/kernel/core/src/Http/Response/PageCacheStatus.php
 
 ## mental model
 
-Two independent subsystems behind one facade. `DataCache` is an APCu-backed key-value store for application data; `PageCache` is full-page HTML on disk. `CacheManager` exposes both via `data()` and `page()`.
+Three independent pools behind one facade. `DataCache` is an APCu-backed key-value store for application data; `PageCache` is full-page HTML on disk; `GeneratedPhpCache` owns the directories of compiled PHP files other packages `include()` (Doctrine's metadata cache under `var/cache/doctrine/`, ADR-039 decision 11). `CacheManager` exposes them via `data()`, `page()` and `generatedPhp()`.
 
 - `DataCache` batches writes into a local array and flushes to APCu once at request end via `flush()`.
+- `GeneratedPhpCache` writes nothing itself: a package asks `dir($name)` for its directory (`$name` listed in `GeneratedPhpCache::DIRS`, today `doctrine`) and compiles into it; `clearAll()` calls `opcache_invalidate($file, true)` for every file FIRST — while the file still exists at that path; OPcache resolves the path through `realpath()`, and invalidating after `unlink()` leaves the compiled copy in place (verified with `opcache.validate_timestamps = 0`, harness B10–B12) — then moves the directory aside with one atomic `rename()` and deletes the moved tree, so a web request compiling metadata at the same moment writes into a fresh tree and a file that vanished meanwhile is not an error. A registered directory that is a symlink is refused (never delete outside `var/cache`); a directory that does not exist is a no-op, so «Cache leeren» works on an installation without the Doctrine package. Never `opcache_reset()` (shared hosting). Invalidation reaches the calling process tree's OPcache only — from the backend the one that matters, from the CLI usually none (persistence-doctrine.md DOCTRINE-CACHE-001). Release-local like the rest of `var/cache`.
 - `PageCache` is auto-skipped in DEBUG, for admin sessions (role >= ADMIN), for non-GET/HEAD, for query strings, and in Fetch mode.
 - Storing `null` in `DataCache` is forbidden — indistinguishable from a miss.
 - `cachePersist` is always `false` in bootstrap config.
@@ -214,6 +216,8 @@ whole body from the next.
 - When editing bootstrap config → `cachePersist` MUST be `false` (config changes must take effect without cache clear)
 - When an entity's writes must invalidate frontend caches → MUST set `invalidatesCache: true` on its `#[Entity]` attribute; MUST NOT call `cacheManager->clearAllApcu()` from controllers
 - When invalidating APCu from anywhere → MUST go through `clearAllApcu()`; MUST NOT call `apcu_delete()`/`apcu_clear_cache()` directly — only `clearAllApcu()` advances the stamp that other process trees see (CACHE-CLI-001)
+- When a package compiles PHP files it will `include()` (Doctrine metadata, generated code) → MUST take the directory from `CacheManager::generatedPhp()->dir($name)` with `$name` in `GeneratedPhpCache::DIRS`; MUST NOT compose a `var/cache/...` path of its own and MUST NOT delete such files without `opcache_invalidate()` — `clearAll()` is the one place that does both (ADR-039 decision 11)
+- When «Cache leeren» or the DEBUG toggle grows a new step → MUST stay plain kernel PHP that works when the package owning the files is absent; MUST NOT make `module-backend` depend on Doctrine
 - When deciding where cache-like state lives → `var/cache` and `var/state` MUST stay release-local; MUST NOT appear in `target.shared`, and MUST NOT be re-introduced as a config value (CACHE-RELEASE-001, ADR-035). `check.php` refuses all three
 - When adding a dimension the rendered output depends on (a user role, a release, a tenant) → it MUST be part of the cache key or of a bypass; a `PageIdentity` that does not name it serves one visitor's page to another (three occurrences: CACHE-ADMIN-001, CACHE-CLI-001, CACHE-RELEASE-001)
 - When adding a new entity that is NOT rendered into frontend pages (logs, statistics, auth) → MUST leave `invalidatesCache` at its `false` default
@@ -224,7 +228,8 @@ whole body from the next.
 ## see also
 
 - [`bootstrap.md`](bootstrap.md) — DEBUG flag mechanism (toggling DEBUG flips every page to BYPASS or back)
-- [`backend.md`](backend.md) — `SystemController::clearCacheAction()` + `toggleDebugAction()` (both clear APCu + PageCache)
+- [`backend.md`](backend.md) — `SystemController::clearCacheAction()` + `toggleDebugAction()` (both clear APCu + PageCache + the generated PHP directories)
+- [`persistence-doctrine.md`](persistence-doctrine.md) — the one writer into `generatedPhp()->dir('doctrine')` today, and `z77-db migrate` as the third caller of `clearAll()`; DOCTRINE-CACHE-001 on why a CLI clear does not reach the web OPcache
 - [`persistence-file.md`](persistence-file.md) — `FileEntityManager` triggers auto-invalidation via `invalidatesCache`
 - [`documents.md`](documents.md) — the DMS media-url resolve index (`DocumentService::folderSlugIndex`/`publicPathIndex`, template helper `mediaUrl()`) is a `DataCache` consumer dropped by the DMS `invalidatesCache` writes — no own invalidation
 

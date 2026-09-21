@@ -15,9 +15,16 @@ class SystemController extends BackendAbstractController
     {
         DI::getCacheManager()->clearAllApcu();
         DI::getCacheManager()->page()->clearAll();
-        $assetCount = (new AssetCleaner())->clearAll();
+        // Compiled PHP caches (Doctrine metadata under var/cache/doctrine/):
+        // deleted AND invalidated in OPcache per file, or the include()d copy
+        // outlives the file (ADR-039 decision 11). A no-op without the package.
+        $generatedCount = count(DI::getCacheManager()->generatedPhp()->clearAll());
+        $assetCount     = (new AssetCleaner())->clearAll();
 
-        $this->messageService->pushFlash('success', "Cache geleert (APCu + PageCache + {$assetCount} versionierte Assets)");
+        $this->messageService->pushFlash(
+            'success',
+            "Cache geleert (APCu + PageCache + {$generatedCount} generierte PHP-Dateien + {$assetCount} versionierte Assets)"
+        );
         return $this->fetch()->setStatus('success');
     }
 
@@ -55,6 +62,10 @@ class SystemController extends BackendAbstractController
 
         DI::getCacheManager()->clearAllApcu();
         DI::getCacheManager()->page()->clearAll();
+        // The next request builds Doctrine's metadata for the new mode (files
+        // in production, memory in DEBUG) — the old files must not survive in
+        // OPcache either (ADR-039 decision 11).
+        DI::getCacheManager()->generatedPhp()->clearAll();
 
         $this->messageService->pushFlash('success', $newState ? 'Entwickler-Modus aktiviert' : 'Entwickler-Modus deaktiviert');
 

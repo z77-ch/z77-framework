@@ -365,9 +365,23 @@ behind the same Repository API. What holds there:
   installation's base currency ([ADR-042](../02-decisions/adr-042-ledger-and-money.md)).
 - **Table and column names** are `snake_case` (JSON persistence keys follow the same rule —
   the name is a key, see File Names); the PHP property stays `camelCase`.
-- **Schema only through migrations**, run from the CLI, expand/contract so `current` and
-  `next` share one database (ADR-039 decisions 12–14; the migrate command is part 3 of the
-  package). Query and migration conventions grow here as the business modules land.
+- **Schema only through migrations**, run from the CLI (ADR-039 decisions 12–14):
+  `php vendor/bin/z77-db migrate | status | diff | generate`. Never `SchemaTool`, never DDL
+  from a web request or a job.
+- **A module owns its migrations**: `res/migrations/` next to `src/`, namespace
+  `{Module}\Migrations`, class `Version{YmdHis}` — `z77-db diff --namespace="Z77\Module\X\Migrations"`
+  writes the draft, `generate` an empty one; `--namespace` is always required, and the
+  directory must exist before the first `diff`. Migrations run in timestamp order across all
+  modules. Review the generated `up()`: a table no entity maps is proposed for `DROP`.
+- **Every migration is expand/contract**: `current` and `next` are two releases on one database.
+  Add first (a column, a table, a nullable field), switch the release, remove in a LATER release.
+  Never rename or drop what the running release still reads; never combine a data migration
+  with a `DROP` in one file. `down()` is for development only.
+- **Collation in migrations**: `DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci` on every
+  `CREATE TABLE` (the generated draft carries it); never another one, never omitted.
+- **Deploy order**: run `z77-db migrate` on the NEW release (`next`) before switching `current`
+  to it. Then «Cache leeren» in the backend if the host runs `opcache.validate_timestamps = 0`
+  (see `persistence-doctrine.md` DOCTRINE-CACHE-001).
 
 Driver-specific behaviour a consumer must not depend on (flush scope, `remove()` timing,
 Identity Map, `reorder()`) is listed as known issues in

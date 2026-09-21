@@ -269,8 +269,13 @@ namespace {
         return $mm;
     };
 
-    /** The DI wiring Bootstrap::__construct() + pullUpServices() do, reduced to what the driver reads. */
-    $wireDi = function () use ($moduleManagerWith): UnifiedEntityManager {
+    /**
+     * The DI wiring Bootstrap::__construct() + pullUpServices() do, reduced to
+     * what the driver reads — including the release-local cache directory, so
+     * the driver compiles its metadata to `var/cache/doctrine/` as in
+     * production (DEBUG is false here; ADR-039 decision 11).
+     */
+    $wireDi = function (string $installationBase) use ($moduleManagerWith): UnifiedEntityManager {
         DI::getInstance(true)
             ->set('CacheManager', CacheManager::class, true)
             ->set('FileFinder', fn($c) => new FileFinder($c->get('CacheManager')), true)
@@ -281,6 +286,7 @@ namespace {
             ->set('DataSourceResolver', fn() => new DataSourceResolver(['file' => 'File', 'doctrine' => 'Doctrine']), true)
             ->set('UnifiedEntityManager', fn($c) => new UnifiedEntityManager($c->get('DataSourceResolver')), true)
         ;
+        DI::getCacheManager()->setCacheDir($installationBase . '/var/cache');
         return DI::getUnifiedEntityManager();
     };
 
@@ -318,7 +324,7 @@ namespace {
         define('ABS_BASE_PATH', $workerBase);
         define('DEBUG', false);
 
-        $uem   = $wireDi();
+        $uem   = $wireDi($workerBase);
         $tx    = $uem->getTransaction(Invoice::class);
         $repo  = $uem->getRepository(NumberRange::class);
         $kept  = [];
@@ -395,7 +401,7 @@ namespace {
     (new SchemaTool($schemaEm))->createSchema($schemaEm->getMetadataFactory()->getAllMetadata());
     $db = $schemaEm->getConnection();   // a SECOND connection: what it sees is committed
 
-    $uem      = $wireDi();
+    $uem      = $wireDi($base);
     $invoices = $uem->getRepository(Invoice::class);
     $rows     = fn(string $label) => (int) $db->fetchOne('SELECT COUNT(*) FROM probe_invoice WHERE label = ?', [$label]);
     $lastNumber = fn(string $range) => $db->fetchOne('SELECT last_number FROM number_range WHERE name = ?', [$range]);

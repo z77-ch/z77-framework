@@ -16,6 +16,9 @@
             "Z77\\Persistence\\Doctrine\\": "src/"
         }
     },
+    "bin": [
+        "bin/z77-db"
+    ],
     "minimum-stability": "dev",
     "prefer-stable": true,
     "extra": {
@@ -30,7 +33,8 @@
         "doctrine/orm": "^3.7",
         "doctrine/dbal": "^4.4",
         "doctrine/migrations": "^3.9",
-        "symfony/cache": "^8.1"
+        "symfony/cache": "^8.1",
+        "symfony/console": "^8.1"
     },
     "support": {
         "issues": "https://github.com/z77-ch/z77-framework/issues",

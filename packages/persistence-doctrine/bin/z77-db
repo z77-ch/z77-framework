@@ -1,0 +1,96 @@
+#!/usr/bin/env php
+<?php
+/**
+ * z77 database CLI — schema migrations for the Doctrine driver (ADR-039
+ * decisions 12–14). The ONLY way the schema changes: from the command line,
+ * on the release that is about to go live, never from a web request.
+ *
+ *   cd /path/to/project && php vendor/bin/z77-db migrate
+ *
+ *   php vendor/bin/z77-db migrate  [--dry-run] [--project=/abs/path]   apply pending migrations, then clear var/cache/doctrine
+ *   php vendor/bin/z77-db status                                       applied / pending, and where the migrations are
+ *   php vendor/bin/z77-db diff     --namespace="Z77\Module\X\Migrations"    write a migration from mapping ≠ database
+ *   php vendor/bin/z77-db generate --namespace="Z77\Module\X\Migrations"    write an empty migration to fill in by hand
+ *
+ * Lives in this package, not in the kernel: the kernel carries no Composer
+ * dependency (ADR-001) and `doctrine/migrations` is one; the binary exists
+ * exactly where the driver does. It is not `z77-run` either — that is the
+ * cron entry, silent when idle, and a migration is never a scheduled job.
+ * A new `bin` entry reaches `vendor/bin` through `composer update` only
+ * (packaging.md PKG-005); `php vendor/z77/persistence-doctrine/bin/z77-db`
+ * works regardless.
+ *
+ * Boots the framework's service layer like z77-run (Bootstrap +
+ * pullUpServices — modules, config, the entity announcements), stops short
+ * of HTTP, then hands over to Doctrine's own migration commands configured
+ * by `MigrationsApplication`. Exit code: Symfony Console's (0 = ok).
+ */
+
+if (PHP_SAPI !== 'cli') {
+    fwrite(STDERR, "z77-db: CLI only.\n");
+    exit(1);
+}
+
+$projectArg = null;
+$consoleArgv = [];
+foreach ($argv as $i => $arg) {
+    if ($i > 0 && str_starts_with($arg, '--project=')) {
+        $projectArg = substr($arg, strlen('--project='));
+        continue;
+    }
+    $consoleArgv[] = $arg;
+}
+
+/**
+ * Project root resolution — identical to z77-run: an explicit --project
+ * wins, otherwise walk up from the working directory. The script's own
+ * location is deliberately NOT used; in monorepo development vendor/z77/*
+ * is a link that would resolve to the framework instead of the project.
+ */
+$findRoot = static function (?string $explicit): ?string {
+    if ($explicit !== null) {
+        $explicit = rtrim(str_replace('\\', '/', $explicit), '/');
+        return is_file($explicit . '/vendor/autoload.php') ? $explicit : null;
+    }
+    $dir = str_replace('\\', '/', (string) getcwd());
+    while ($dir !== '' && $dir !== dirname($dir)) {
+        if (is_file($dir . '/vendor/autoload.php') && is_file($dir . '/composer.json')) {
+            return $dir;
+        }
+        $dir = dirname($dir);
+    }
+    return null;
+};
+
+$projectRoot = $findRoot($projectArg);
+if ($projectRoot === null) {
+    fwrite(STDERR, "z77-db: project root not found — run from the project directory or pass --project=/abs/path\n");
+    exit(1);
+}
+
+define('ABS_BASE_PATH', $projectRoot);
+require_once $projectRoot . '/vendor/autoload.php';
+
+use Symfony\Component\Console\Input\ArgvInput;
+use Z77\Core\Bootstrap;
+use Z77\Core\DI;
+use Z77\Persistence\Doctrine\Bootstrap as DoctrineBootstrap;
+use Z77\Persistence\Doctrine\Console\MigrationDirectories;
+use Z77\Persistence\Doctrine\Console\MigrationsApplication;
+
+try {
+    $boot = new Bootstrap();
+    $boot->pullUpServices();
+
+    $app = MigrationsApplication::create(
+        DoctrineBootstrap::buildEntityManager(),
+        MigrationDirectories::collect(DI::getModuleManager(), DI::getFileFinder()),
+        DI::getCacheManager()->generatedPhp(),
+        MigrationDirectories::missing(DI::getModuleManager(), DI::getFileFinder())
+    );
+} catch (\Throwable $e) {
+    fwrite(STDERR, 'z77-db: boot failed — ' . $e->getMessage() . "\n");
+    exit(1);
+}
+
+exit($app->run(new ArgvInput($consoleArgv)));

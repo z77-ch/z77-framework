@@ -12,8 +12,9 @@ use Doctrine\ORM\Mapping as ORM,
  * decision 15, ADR-042 decision 9).
  *
  * The mapping IS the table definition (`number_range`): `SchemaTool` builds
- * it for the test harness, and the package's first migration (part 3) is
- * derived from it — the class is announced through
+ * it for the test harness, and the package's first migration
+ * (`res/migrations/Version20260921000000.php`) creates the identical table
+ * in production — the class is announced through
  * `EntityManagerFactory::PACKAGE_ENTITIES`, not through a module config.
  *
  * Key model: ONE string, chosen by the calling module, e.g. `invoice`,

@@ -2,7 +2,8 @@
 
 namespace Z77\Persistence\Doctrine;
 
-use Z77\Core\DI,
+use Doctrine\ORM\EntityManager,
+    Z77\Core\DI,
     Z77\Persistence\Interface\EntityManagerInterface
 ;
 
@@ -24,13 +25,35 @@ use Z77\Core\DI,
  *     (decision 5) via `ModuleManager::getDoctrineEntities()`;
  *   - the base currency for `Money` columns from `systemConfig.inc.php`
  *     (`baseCurrency`, ADR-042 decision 4: the database carries amounts in
- *     the base currency only).
+ *     the base currency only);
+ *   - the cache directory from the kernel's `GeneratedPhpCache` (decision 11)
+ *     — in production; in DEBUG the caches live in memory.
+ *
+ * `buildEntityManager()` is the one code path for all of that: the driver
+ * uses it here, the migrations CLI (`bin/z77-db`) uses it to reach the same
+ * database with the same metadata — never a second reading of the config.
  */
 class Bootstrap
 {
     private DoctrineEntityManager $entityManager;
 
     public function __construct()
+    {
+        $this->entityManager = new DoctrineEntityManager(self::buildEntityManager());
+    }
+
+    public function getEntityManager(): EntityManagerInterface
+    {
+        return $this->entityManager;
+    }
+
+    /**
+     * Doctrine's EntityManager as the installation configures it. Shared with
+     * the migrations CLI; never handed to a consumer (decision 6).
+     *
+     * @internal package use only
+     */
+    public static function buildEntityManager(): EntityManager
     {
         $configManager = DI::getConfigManager();
 
@@ -50,13 +73,19 @@ class Bootstrap
             ->get('baseCurrency', 'CHF')
         ;
 
-        $this->entityManager = new DoctrineEntityManager(
-            EntityManagerFactory::create($connection, DI::getModuleManager()->getDoctrineEntities(), $baseCurrency)
-        );
-    }
+        // DEBUG (var/state/debug.flag): metadata in memory, rebuilt per request,
+        // so an entity change shows without «Cache leeren». Otherwise compiled
+        // PHP files under var/cache/doctrine — the directory the kernel's pool
+        // owns and clears (decision 11).
+        $cacheDir = (defined('DEBUG') && DEBUG)
+            ? null
+            : DI::getCacheManager()->generatedPhp()->dir('doctrine');
 
-    public function getEntityManager(): EntityManagerInterface
-    {
-        return $this->entityManager;
+        return EntityManagerFactory::create(
+            $connection,
+            DI::getModuleManager()->getDoctrineEntities(),
+            $baseCurrency,
+            $cacheDir
+        );
     }
 }

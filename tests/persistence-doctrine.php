@@ -292,8 +292,13 @@ namespace {
         return $mm;
     };
 
-    /** The DI wiring Bootstrap::__construct() + pullUpServices() do, reduced to what the driver reads. */
-    $wireDi = function () use ($moduleManagerWith): UnifiedEntityManager {
+    /**
+     * The DI wiring Bootstrap::__construct() + pullUpServices() do, reduced to
+     * what the driver reads — including the release-local cache directory
+     * (ADR-035): DEBUG is false here, so the driver compiles its metadata to
+     * `var/cache/doctrine/` exactly as in production (ADR-039 decision 11).
+     */
+    $wireDi = function () use ($moduleManagerWith, $base): UnifiedEntityManager {
         DI::getInstance(true)
             ->set('CacheManager', CacheManager::class, true)
             ->set('FileFinder', fn($c) => new FileFinder($c->get('CacheManager')), true)
@@ -304,6 +309,7 @@ namespace {
             ->set('DataSourceResolver', fn() => new DataSourceResolver(['file' => 'File', 'doctrine' => 'Doctrine']), true)
             ->set('UnifiedEntityManager', fn($c) => new UnifiedEntityManager($c->get('DataSourceResolver')), true)
         ;
+        DI::getCacheManager()->setCacheDir($base . '/var/cache');
         return DI::getUnifiedEntityManager();
     };
     $uem = $wireDi();

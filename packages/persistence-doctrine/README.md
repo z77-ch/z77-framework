@@ -11,7 +11,7 @@ Why a separate package: the kernel carries no Composer dependency (ADR-001); Doc
 about fifteen. An installation without this package runs exactly as before — the kernel's driver
 map names `doctrine`, and only the first Doctrine entity boots the driver.
 
-## Current scope (parts 1 and 2 of 3)
+## Scope
 
 - **`Bootstrap`** — found by the kernel's `Z77\Persistence\{Driver}\Bootstrap` convention; boots on
   the first Doctrine entity of a request, never on a file-only request.
@@ -38,7 +38,16 @@ map names `doctrine`, and only the first Doctrine entity boots the driver.
 - **`Type\MoneyType`** — `Money` ↔ `DECIMAL(15,2)` as a decimal string, never through float
   (ADR-042). Read in the installation's base currency.
 - **`EntityManagerFactory`** — connection (`utf8mb4` / `utf8mb4_unicode_ci` throughout), attribute
-  metadata over the modules' explicit `doctrineEntities` lists, native lazy objects, caches.
+  metadata over the modules' explicit `doctrineEntities` lists, native lazy objects, caches:
+  metadata and query cache compiled to PHP files under the release-local `var/cache/doctrine/`
+  (in memory when DEBUG is on). «Cache leeren» and the DEBUG toggle in the backend delete the
+  directory and invalidate every file in OPcache — through the kernel's `GeneratedPhpCache`, so
+  the backend needs no Doctrine.
+- **`bin/z77-db`** — the migrations CLI (`doctrine/migrations`): `migrate`, `status`, `diff`,
+  `generate`. Migrations are collected from this package (`res/migrations`, first one:
+  `number_range`) and from every module that declares `doctrineEntities` (`res/migrations/`,
+  namespace `{Module}\Migrations`); a successful `migrate` clears the compiled cache. The schema
+  changes here and nowhere else — never from a web request.
 
 Connection: `config/client/database.inc.php` — the one place, shared with the `db` backup.
 Entities: a module lists them under `doctrineEntities` in its config, exactly like `importEntities`.
@@ -53,10 +62,12 @@ class JournalLine
 }
 ```
 
-## Planned (part 3)
-
-- Production caches under `var/cache/doctrine/` (DEBUG switch, «Cache leeren», OPcache), the
-  migrations command.
+```text
+cd /path/to/project
+php vendor/bin/z77-db status
+php vendor/bin/z77-db diff --namespace="Z77\Module\Financial\Migrations"   # developer: write the migration
+php vendor/bin/z77-db migrate                                              # on the release about to go live
+```
 
 ## Getting started
 

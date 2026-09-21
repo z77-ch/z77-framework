@@ -55,8 +55,12 @@ MariaDB. **Part (1) done** — package, `Bootstrap`, `DoctrineEntityManager`, `D
 **Part (2) done** — transaction port (`UnifiedEntityManager::getTransaction()`, nesting joins without
 savepoints, rollback-only, connection reset after a failed rollback), `NumberRange` (bare integer,
 ranges created ahead via `create()` — P2 calls it at fiscal-year opening) and the open-work registry
-(`openWorkChecks`, additive override file). **Next: part (3)** caches (DEBUG, «Cache leeren»,
-OPcache) and migrations (first package migration: `number_range`). Binding: ADR-039 (all 18 decisions). Then `module-vat`, `module-contact`.
+(`openWorkChecks`, additive override file). **Part (3) done** — Doctrine caches under the
+release-local `var/cache/doctrine/` (in-memory in DEBUG), cleared by «Cache leeren», the DEBUG toggle
+and `migrate`; migrations CLI `vendor/bin/z77-db` (`migrate`, `status`, `diff`, `generate`), table
+`schema_migration`, timestamp order across modules; first package migration `number_range`.
+`persistence-doctrine` is complete. **Next: `module-vat`**, then `module-contact` — the first module
+with migrations adds `z77-db migrate` on `next` to the `release-structure.md` checklist. Binding: ADR-039 (all 18 decisions). Then `module-vat`, `module-contact`.
 
 ### Settled before P0 — how the business modules reach persistence
 
