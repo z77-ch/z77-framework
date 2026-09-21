@@ -6,9 +6,11 @@ use Z77\Core\DI,
     Z77\Core\Http\Response\FetchResponse,
     Z77\Module\Backend\Ui\Controllers\BackendAbstractController,
     Z77\Persistence\Cleaning\BodyCleaner,
+    Z77\Persistence\Concurrency\EntityStateHash,
     Z77\Shared\Attributes\Fetch,
     Z77\Shared\Attributes\HttpMethod,
     Z77\Shared\Content\BlockRegistry,
+    Z77\Shared\Content\ContentExtensions,
     Z77\Shared\Entities\Content,
     Z77\Shared\Repositories\ContentRepository,
     Z77\Shared\Validators\ContentValidator
@@ -17,8 +19,10 @@ use Z77\Core\DI,
 /**
  * Backend editor for {@see Content} documents (slug-addressed, document storage).
  * Identity is (slug, language) — there is no int id, so edit/delete/CSRF key on
- * "<slug>.<language>". v1 scaffold: metadata (title, active) + a JSON blocks
- * textarea; the per-type visual block editor is the next step.
+ * "<slug>.<language>". Metadata (title, active) + the visual block editor built
+ * from each BlockRenderer::schema(). A slug with a blueprint (ADR-044) is edited
+ * in blueprint mode: fixed slots, no block add/remove/reorder, enforced on save.
+ * Saves are guarded by an optimistic lock (entity_hash).
  * URL: /backend/content/content/{action}.
  */
 class ContentController extends BackendAbstractController
@@ -90,10 +94,18 @@ class ContentController extends BackendAbstractController
 
     private function edit(Content $content, bool $isNew): HtmlResponse|FetchResponse
     {
-        $registry   = BlockRegistry::assemble();
-        $knownTypes = $registry->types();
-        $origKey    = $this->csrfKey($content); // identity captured before hydration
-        $rawBlocks  = '';
+        $registry     = BlockRegistry::assemble();
+        $knownTypes   = $registry->types();
+        $schemas      = $registry->schemas();
+        $extensions   = ContentExtensions::assemble();
+        $origKey      = $this->csrfKey($content); // identity captured before hydration
+        $storedBlocks = $content->getBlocks();     // orphans are always taken from here
+        $rawBlocks    = '';
+        $validator    = null;
+        // The hash of the state the form was rendered from. GET: the loaded
+        // document; after a failed POST the SUBMITTED hash is re-issued unchanged
+        // (pattern NavigationController) — a conflict stays a conflict until reload.
+        $entityHash   = '';
 
         if (DI::getRequest()->isPost()) {
             $body      = DI::getRequest()->getJsonBody();
@@ -104,6 +116,14 @@ class ContentController extends BackendAbstractController
                 if (!DI::getCsrfService()->validateEntityToken($csrf, 'content', $origKey)) {
                     return $this->fetchError('Invalid token');
                 }
+            }
+
+            // Built BEFORE mapFromArray: the lock compares the submitted hash with the
+            // STORED state, which $content still carries at this point.
+            $validator = new ContentValidator($content, $knownTypes, $this->repo(), $isNew, $rawBlocks, $schemas);
+            if (!$isNew) {
+                $entityHash = trim($body['entity_hash'] ?? '');
+                $validator->guardStoredState($entityHash);
             }
 
             $content->mapFromArray(BodyCleaner::cleanFor(Content::class, $body));
@@ -120,9 +140,17 @@ class ContentController extends BackendAbstractController
                 // form field — a crafted body cannot place it under another language.
                 $content->setLanguage($this->contentEditLanguage());
             }
+
+            // Blueprint document: save exactly its slots, whatever the body says.
+            $blueprint = $extensions->blueprint($content->getSlug());
+            if ($blueprint !== null) {
+                $content->setBlocks($blueprint->enforce($content->getBlocks(), $storedBlocks, $schemas));
+            }
+            $validator->useBlueprint($blueprint);
         }
 
-        $validator = new ContentValidator($content, $knownTypes, $this->repo(), $isNew, $rawBlocks);
+        $validator ??= new ContentValidator($content, $knownTypes, $this->repo(), $isNew, $rawBlocks, $schemas);
+        $blueprint   = $extensions->blueprint($content->getSlug());
 
         if (DI::getRequest()->isPost() && $validator->isValid()) {
             $this->em()->persist($content);
@@ -141,13 +169,19 @@ class ContentController extends BackendAbstractController
         }
 
         $entityCsrf = !$isNew ? DI::getCsrfService()->generateEntityToken('content', $origKey) : '';
+        if (!$isNew && !DI::getRequest()->isPost()) {
+            $entityHash = EntityStateHash::of($content);
+        }
 
         $response = $this->html([
             'content'    => $content,
             'isNew'      => $isNew,
             'knownTypes' => $knownTypes,
-            'schemas'    => $registry->schemas(),
+            'schemas'    => $schemas,
+            'blueprint'  => $blueprint,
+            'actions'    => $extensions->actions(),
             'entityCsrf' => $entityCsrf,
+            'entityHash' => $entityHash,
             'validator'  => $validator,
             'rawBlocks'  => $rawBlocks,
         ]);

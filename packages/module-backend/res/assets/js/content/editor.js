@@ -6,9 +6,10 @@
  * Contract (markup built server-side from each BlockRenderer::schema()):
  *   [data-ce-editor]                 editor root
  *   [data-ce-blocks]                 live block list (DOM order = block order)
- *   [data-ce-block] [data-type]      one block card
+ *   [data-ce-block] [data-type]      one block card; [data-key] = its slot key (ADR-044), written back
  *   [data-bf] [data-bk]              a top-level field (kind in data-bk)
- *   [data-bk="list"] [data-litem]    a list field (scalar | object items)
+ *   [data-bk="list"] [data-litem]    a list field (scalar | object items); [data-min]/[data-max]
+ *                                    hide "+" at max and "×" at min (the server checks too)
  *     [data-ce-rows] > [data-ce-row] live rows; [data-bv] scalar / [data-bf-sub] object sub-field
  *     [data-ce-row-tpl]              <template> for a fresh row
  *   [data-ce-raw]                    unknown-type block → emit its JSON verbatim
@@ -18,6 +19,9 @@
  * Block field inputs carry NO `name` — the shared form collector ignores them;
  * only the hidden `blocks` field is posted, as the same JSON the server already
  * validates (ContentValidator). Single source: the visual editor.
+ *
+ * Blueprint mode (.ce--locked) needs no JS of its own: the server renders no
+ * move/remove/add controls, and it re-imposes the slots on save anyway.
  */
 (function () {
     'use strict';
@@ -61,6 +65,8 @@
                 try { return JSON.parse(raw); } catch (e) { return null; }
             }
             var block = { type: blockEl.getAttribute('data-type') };
+            var key = blockEl.getAttribute('data-key');
+            if (key) block.key = key;
             blockEl.querySelectorAll('[data-bf]').forEach(function (f) {
                 var key  = f.getAttribute('data-bf');
                 var kind = f.getAttribute('data-bk');
@@ -86,6 +92,24 @@
             if (preview) preview.textContent = JSON.stringify(out, null, 2);
         }
 
+        // min/max per list: a row count outside the bounds cannot be reached by clicking.
+        function updateLimits(listEl) {
+            var rows = listEl.querySelector('[data-ce-rows]');
+            if (!rows) return;
+            var count = rows.querySelectorAll(':scope > [data-ce-row]').length;
+            var min = parseInt(listEl.getAttribute('data-min') || '0', 10);
+            var max = parseInt(listEl.getAttribute('data-max') || '0', 10);
+            var add = listEl.querySelector(':scope > [data-ce-row-add]');
+            if (add) add.hidden = max > 0 && count >= max;
+            rows.querySelectorAll(':scope > [data-ce-row] > [data-ce-row-remove]').forEach(function (btn) {
+                btn.hidden = min > 0 && count <= min;
+            });
+        }
+
+        function updateAllLimits() {
+            editor.querySelectorAll('.ce-list').forEach(updateLimits);
+        }
+
         function updateEmpty() {
             if (!empty) return;
             var has = blocks.querySelector('[data-ce-block]') !== null;
@@ -103,6 +127,7 @@
             if (!tpl) return;
             blocks.appendChild(cloneTemplate(tpl));
             updateEmpty();
+            updateAllLimits();
             sync();
         }
 
@@ -111,6 +136,7 @@
             var rows = listEl.querySelector('[data-ce-rows]');
             if (!tpl || !rows) return;
             rows.appendChild(cloneTemplate(tpl));
+            updateLimits(listEl);
             sync();
         }
 
@@ -127,7 +153,8 @@
             }
             if (t.closest('[data-ce-row-remove]')) {
                 var row = t.closest('[data-ce-row]');
-                if (row) { row.remove(); sync(); }
+                var list = t.closest('.ce-list');
+                if (row) { row.remove(); if (list) updateLimits(list); sync(); }
                 return;
             }
             if (t.closest('[data-ce-up]') && block) {
@@ -153,6 +180,7 @@
         });
 
         updateEmpty();
+        updateAllLimits();
         sync();
     };
 }());
