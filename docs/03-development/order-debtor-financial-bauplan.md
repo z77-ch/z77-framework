@@ -709,7 +709,7 @@ is financial's; the adapter is the only debtor class that knows financial.
 - Quote and order confirmation as PDF from the order.
 - VAT on quote/order **for display only** via `module-vat`.
 - "Invoice": builds an `InvoiceDraft` from one or several orders (collective invoice), calls
-  `InvoicingService::issue()`, records the invoice number per line. Payment state is **asked** from
+  `InvoicingService::invoice()`, records the invoice number per line. Payment state is **asked** from
   debtor, never pushed back.
 - order posts nothing.
 
