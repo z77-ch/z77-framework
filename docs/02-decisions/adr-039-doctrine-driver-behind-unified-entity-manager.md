@@ -192,8 +192,8 @@ How the code works today, and what this ADR builds on: `RepositoryInterface` car
   runs 8.5 since 2026-09-21.
 - Entity classes of the business modules carry Doctrine mapping attributes (`#[ORM\Entity]`,
   `#[ORM\Column]`) next to z77's `#[Entity('doctrine')]`; these modules depend on the package.
-- Money columns and the `DECIMAL` ↔ minor-units mapping are decided in [ADR-042](adr-042-ledger-and-money.md) (
-  decision 3), not here. `conventions.md` → «Database» gets the SQL conventions in P1.
+- Money columns and the `DECIMAL` ↔ minor-units mapping are decided in [ADR-042](adr-042-ledger-and-money.md)
+  (decision 3), not here. `conventions.md` → «Database» gets the SQL conventions in P1.
 
 ## Rejected Alternatives
 

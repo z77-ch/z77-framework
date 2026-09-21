@@ -777,6 +777,13 @@ Two changes from the review of 2026-09-20, both about finding mistakes earlier:
 
 ## 10. ADRs to write (P0)
 
+**Written 2026-09-21:** 1 → [ADR-040](../02-decisions/adr-040-business-module-cut.md),
+2 → [ADR-039](../02-decisions/adr-039-doctrine-driver-behind-unified-entity-manager.md) (both approved),
+3 → [ADR-041](../02-decisions/adr-041-vat-model.md),
+4 → [ADR-042](../02-decisions/adr-042-ledger-and-money.md),
+5 → [ADR-043](../02-decisions/adr-043-order-status-and-stock-movements.md) (proposed). The ADRs are
+binding; where this list and an ADR differ, the ADR wins.
+
 1. **Business module cut** — order / debtor / financial / vat, dependency direction, invoicing in
    debtor, order posts nothing, financial open to any posting source, opaque origin + idempotency,
    one transaction, accounting port, payment state asked through a port and never pushed (§7).
