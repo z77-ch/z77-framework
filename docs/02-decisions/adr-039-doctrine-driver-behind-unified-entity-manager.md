@@ -153,6 +153,16 @@ How the code works today, and what this ADR builds on: `RepositoryInterface` car
     The Memory driver named in the topic doc does not exist in code; it is not a prerequisite and is
     not promised here.
 
+### Database engine (added 2026-09-21, plan Q8)
+
+17. **MariaDB 10.6 is the minimum**, InnoDB, as on every installation's host. DBAL 4.4 and ORM 3.7
+    are verified against it in P1 — the maintainer machine runs MariaDB 10.6.28 for that.
+18. **One charset and one collation throughout: `utf8mb4` / `utf8mb4_unicode_ci`** (owner decision
+    2026-09-21, the collation the existing databases are set up with). Every table and every string
+    column of every module uses it; the connection sets it, and migrations never name another. A
+    join across two collations fails outright, so a table with a different collation found during
+    the wdv migration is converted, not joined as it is (plan §8).
+
 ## Reasoning
 
 - **One API keeps the mixed module simple.** A debtor service reads payment terms from a file and

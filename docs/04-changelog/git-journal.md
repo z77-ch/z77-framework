@@ -24,6 +24,16 @@ not obvious from the message — a short why / follow-up. Keep it terse.
   `ArrayMappable::mapToArray()` — fired on every entity serialisation — and from the debug
   helper `getAllPropertiesRecursive()`. Safe on the kernel's `php >=8.2`.
 
+### P0 closed, P1 started; MariaDB on the maintainer machine
+
+- ADR-039 to ADR-043 written and approved (P0 of the order/debtor/financial plan). ADR-039 got
+  an independent review (Fable) before approval, and on the same day decisions 17/18: MariaDB
+  10.6 minimum, `utf8mb4` / `utf8mb4_unicode_ci` throughout (plan Q8 had asked for it).
+- P1: `Money` in the kernel (`shared/src/Money`, `tests/money.php`, topic `money.md`).
+- Infra, no commit: MariaDB 10.6.28 installed locally for the Doctrine driver's tests
+  (localhost only, scoped test user `z77test`), `pdo_mysql` enabled. Setup in
+  `docs/_local/maintainer-machine-runbook.md`.
+
 ### Persistence access for the business modules decided (order/debtor/financial plan)
 
 - Unified API via `UnifiedEntityManager`, two drivers (File, Doctrine), ledger reports on DBAL
