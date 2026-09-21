@@ -1,6 +1,6 @@
 # content-blueprints-bauplan.md — Feste, benannte Block-Struktur pro Content-Dokument
 
-**Status:** IN ARBEIT (2026-09-21) — Branch `feat/content-blueprints` (Worktree
+**Status:** GEBAUT auf dem Branch, Schritte 1–4 (2026-09-21); offen: Merge + Pilot — Branch `feat/content-blueprints` (Worktree
 `../z77-ch-framework-content-blueprints`, parallel zur laufenden VAT-Arbeit auf `main`).
 Entscheid: [`../02-decisions/adr-044-content-blueprints.md`](../02-decisions/adr-044-content-blueprints.md).
 Topic-Doc: [`../topics/content.md`](../topics/content.md).
@@ -61,6 +61,11 @@ Erster Konsument: zihlundsee.ch, Seite «Gut zu wissen» (Handoff
    `editor.js`, `editor.css`, `ContentValidator`.
 4. Doku: `topics/content.md`, `topics/block-types.md`, Idea-Doc-Notiz, `npm run docs:check`.
 5. Merge in `main`, sobald die VAT-Arbeit dort committet ist; dann Pilot im Projekt.
+
+Stand 2026-09-21: 1–4 erledigt (Commits `content-blueprints: Teil 1/2/3`), Harnesses
+`tests/content-blueprints.php` (31) + `tests/content-editor-template.php` (14) grün,
+`docs:check` ohne neue Verstösse. Noch nicht im echten Backend geklickt — das geschieht
+mit dem Pilot.
 
 ## Offen
 

@@ -26,7 +26,7 @@ A block type is **one `BlockRenderer` class** (`type()` + `schema()` + `render()
 
 - Core types (`heading`, `text`, `list`, `image`) live in `Z77\Shared\Content\Renderer` and are seeded by `DefaultBlockRegistry::create()`. Design-specific types live in a module (e.g. `Z77\Module\Frontend\Content\Renderer`) and are added via that module's `contentBlocks`.
 - Renderers are **stateless** (no constructor) — `InlineMarkdown` is passed into `render()` per call, so `assemble()` can `new` them with no args.
-- `schema()` is the authoring contract (one descriptor per field: `key`, `kind`, `label`, optional `options`/`item`/`default`); see [`../02-decisions/adr-011-block-field-schema.md`](../02-decisions/adr-011-block-field-schema.md).
+- `schema()` is the authoring contract (one descriptor per field: `key`, `kind`, `label`, optional `options`/`item`/`default`); see [`../02-decisions/adr-011-block-field-schema.md`](../02-decisions/adr-011-block-field-schema.md). ADR-044 adds optional `required`, `maxLength`, `min`/`max` (lists), `inline` (`bold|italic|link|break`) and `links` (`targets`, `localize`) — checked on save, and applied when a template reads through `ContentView` ([`../02-decisions/adr-044-content-blueprints.md`](../02-decisions/adr-044-content-blueprints.md)). A list with `item: 'textarea'` is edited as paragraphs.
 - The block **storage** shape is just `{type, ...fields}` in the document's `blocks` array — a new type needs **no** change to `Content`.
 - Deploy: PHP (renderer + config) is symlinked → effective immediately. New SCSS classes need `npm run build:frontend` + `composer install -d skeleton` (copies compiled CSS to `public`).
 
