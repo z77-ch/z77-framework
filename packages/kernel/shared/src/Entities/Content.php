@@ -89,6 +89,21 @@ class Content
         return $out;
     }
 
+    /**
+     * The block with $key as a {@see BlockView} (legacy formatting), or an empty
+     * null-object. Blueprint slots bind blocks by key (ADR-044); a template that
+     * wants the per-field formatting gate reads through ContentView::keyed().
+     */
+    public function keyed(string $key): BlockView
+    {
+        foreach ($this->blocks as $block) {
+            if (is_array($block) && (string)($block['key'] ?? '') === $key) {
+                return new BlockView($block);
+            }
+        }
+        return BlockView::empty();
+    }
+
     /** True if at least one block of $type exists (gate a wrapper in the template). */
     public function has(string $type): bool
     {
