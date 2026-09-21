@@ -1,6 +1,7 @@
 # ADR-039 — The Doctrine driver: own package, reached through `UnifiedEntityManager`
 
-**Status:** `[PROPOSED]` — draft 2026-09-21, awaiting the owner's approval (P0 of
+**Status:** `[PROPOSED]` — draft 2026-09-21, independent review worked in the same day; awaiting the
+owner's approval (P0 of
 [`order-debtor-financial-bauplan.md`](../03-development/order-debtor-financial-bauplan.md), ADR 2 in §10)
 **Date:** 2026-09-21
 
@@ -33,96 +34,168 @@ Two facts shaped the decision:
 The kernel carries no Composer dependency (ADR-001). Doctrine ORM, DBAL, migrations and a PSR-6 cache
 bring about fifteen.
 
+How the code works today, and what this ADR builds on: `RepositoryInterface` carries **reads only**
+(`find`, `findAll`, `findBy`, `findOneBy`); writes go through `UnifiedEntityManager::persist()`,
+`flush()`, `remove()` and `reorder()`, and `flush()` flushes **every booted driver in turn**
+(`Resolver/UnifiedEntityManager.php`).
+
 ## Decision
 
+### Package and boot
+
 1. **Own package `z77/persistence-doctrine`, namespace `Z77\Persistence\Doctrine`.** The namespace
-   keeps `UnifiedEntityManager::bootManager()`'s convention (`Z77\Persistence\{Driver}\Bootstrap`), so
-   the kernel needs no knowledge of the package. The kernel stub `persistence/src/Doctrine/` is
-   removed. The package requires `php >=8.4`; the kernel stays at `>=8.2`. Dependencies:
-   `doctrine/orm ^3.7`, `doctrine/dbal ^4.4`, `doctrine/migrations ^3.9`, `symfony/cache ^8.1`.
-2. **Lazy.** The EntityManager boots on the first `getRepository()` of a Doctrine entity, never on a
-   request that touches only files (ADR-001). An installation without the package runs as today.
-3. **One consumer API.** Business modules obtain every repository through
-   `UnifiedEntityManager::getRepository()`, File or Doctrine alike. Entity-specific repositories live
-   at `{Module}\Repositories\{Entity}Repository` and extend `DoctrineRepository`, as file repositories
-   extend `FileRepository`. No consumer holds a Doctrine `EntityManager`.
-4. **Reports on DBAL of the same driver.** Complex reads — balance sheet, income statement, VAT
-   return, aged receivables — are SQL on the **DBAL connection of the same EntityManager**, exposed to
-   the entity-specific repository only (a protected accessor on `DoctrineRepository`), never to a
-   service or controller. They are driver-specific methods outside `RepositoryInterface`, marked as
-   such, which is what the topic doc's deviation rule already provides for. **No second connection**:
-   it would duplicate the credentials (Rule 2) and would not see the uncommitted writes of the first.
-5. **A minimal transaction port**, outside `RepositoryInterface`:
-   - Obtained like a repository — through `UnifiedEntityManager`, resolved from an entity class — so
-     the backend stays a property of `#[Entity]` here as well.
-   - One operation: run a unit of work atomically; commit on return, roll back and rethrow on any
-     exception.
-   - Fulfilled by the Doctrine driver only. The File driver **refuses** it with an exception instead
-     of pretending — the honesty ARCH-A003 asks for.
-   - **No retry, no sleep, no persister class.** A double trigger (a batch started twice) is solved by
-     idempotency — a repeated call finds its work done and does nothing (plan §4b, §7) — not by
-     repeating the transaction.
-   - It is needed only where DBAL SQL and ORM writes must be atomic together, or where one use case
-     flushes more than once. A single `flush()` is already one transaction in Doctrine and needs no
-     port.
-6. **Generated files and caches are disposable runtime state** (ADR-034/035):
-   - **Native lazy objects** (PHP 8.4, `enableNativeLazyObjects(true)`): no proxy classes, no proxy
-     directory. ORM 4 makes this the only way.
-   - **Metadata and query cache** in production: `PhpFilesAdapter` under the release-local
-     `var/cache/doctrine/`. Files, not APCu, because web and CLI (cron, migrations) do not share an
-     APCu pool (CACHE-CLI-001).
-   - In **DEBUG** (`var/state/debug.flag`): an in-memory pool, rebuilt on every request, so an entity
-     change is visible without a manual step.
-   - **«Cache leeren»** (`SystemController::clearCacheAction()`) and toggling DEBUG remove
-     `var/cache/doctrine/`. The backend deletes a directory and needs no dependency on Doctrine.
-   - Result cache, hydration cache and second-level cache are **not used** (the latter is marked
-     experimental by Doctrine).
-7. **Schema only through migrations**, run from the CLI. No schema update from a web request, no
-   `orm:schema-tool:update` against a live installation.
-8. **Shared building blocks live once in this package** (Rule 8, plan §2): `NumberRange` (gapless,
-   row-locked, uses the transaction port) and the open-work check registry.
+   keeps `UnifiedEntityManager::bootManager()`'s convention (`Z77\Persistence\{Driver}\Bootstrap`). The
+   kernel stub `persistence/src/Doctrine/` is removed. The package requires `php >=8.4`; the kernel
+   stays at `>=8.2`. Dependencies: `doctrine/orm ^3.7`, `doctrine/dbal ^4.4`,
+   `doctrine/migrations ^3.9`, `symfony/cache ^8.1`.
+2. **The kernel's driver map names `doctrine` from the start** (`core/src/Bootstrap.php`, today
+   `['file' => 'File']`). A name in a map is no dependency: without the package, the first Doctrine
+   entity fails at boot with a clear message; with it, nothing has to register itself.
+3. **Lazy.** The EntityManager boots on the first access to a Doctrine entity, never on a request that
+   touches only files (ADR-001). An installation without the package runs as today.
+4. **One connection config, `config/client/database.inc.php`** (owner decision 2026-09-21). Doctrine
+   and the `db` backup (`BackupService`, today `backup.inc.php` → `database`) both read it; the backup
+   config keeps only what is its own (the `mysqldump` binary) and may record a separate, read-only
+   backup user as a deviation — never a second copy of host and database name (Rule 2).
+5. **Modules announce their Doctrine entities** under a module config key `doctrineEntities`, a list of
+   classes, collected by `ModuleManager` exactly like `importEntities` (a non-existent class fails
+   loudly). The list feeds Doctrine's metadata driver and the migrations; no directory scanning.
+
+### Access
+
+6. **One consumer API.** Services and controllers obtain every repository through
+   `UnifiedEntityManager::getRepository()` and write through its `persist()` / `flush()` /
+   `remove()`, File or Doctrine alike. No consumer holds a Doctrine `EntityManager`. Entity-specific
+   repositories live at `{Module}\Repositories\{Entity}Repository` and extend `DoctrineRepository`, as
+   file repositories extend `FileRepository`.
+7. **What «switching backend» honestly means.** For an entity with the generic repository, switching is
+   a change to `#[Entity]`. For an entity with a specific repository, it is `#[Entity]` **plus** the
+   repository's parent class — that was already true for the File driver. A repository with report
+   methods (below) is Doctrine-only by design.
+8. **Reports on DBAL of the same driver.** Complex reads — balance sheet, income statement, VAT
+   return, aged receivables — are SQL on the **DBAL connection of the same EntityManager**, reachable
+   only inside the entity-specific repository (a protected accessor on `DoctrineRepository`), never
+   from a service or controller. They are driver-specific methods outside `RepositoryInterface`,
+   marked as such — the topic doc's deviation rule. **No second connection**: it would duplicate the
+   credentials (Rule 2) and would not see the uncommitted writes of the first.
+
+### Behaviour the two drivers do not share
+
+9. These differences are real and the consumer code MUST NOT depend on either side of them:
+   - **Flush scope.** Doctrine writes every *managed* entity that changed, even one never passed to
+     `persist()`; File writes only what was `persist()`ed. Rule: call `persist()` for everything that is
+     meant to be written, and never mutate a loaded entity that is not.
+   - **`remove()` timing.** File deletes at once; Doctrine at the next `flush()`.
+   - **Identity Map.** Doctrine returns the same object for the same row within a request; File does
+     not.
+   - **`reorder()`** is File-only (sort order in a JSON file); the Doctrine driver refuses it.
+   - **One `flush()` across drivers is not atomic.** It writes the File driver and then the Doctrine
+     transaction (or the other way round, by boot order). A use case that must be atomic writes to one
+     driver only; file-based master data is read, not written, inside such a use case.
+
+### Transactions
+
+10. **A minimal transaction port**, outside `RepositoryInterface`:
+    - Obtained through `UnifiedEntityManager`, resolved from an entity class, so the backend stays a
+      property of `#[Entity]`. The File driver **refuses** it with an exception instead of pretending
+      (ARCH-A003).
+    - One operation: run a unit of work atomically — commit on return, roll back and rethrow on any
+      exception.
+    - **Nesting joins.** A port call inside an open transaction runs in it; there is no inner commit,
+      and an exception anywhere rolls back the whole. Whether DBAL 4.4 uses savepoints for this is
+      verified in P1 before anything relies on it.
+    - The port answers **whether a transaction is open**, so a service like `LedgerService::post()`
+      can assert that its caller owns one (plan §5.4) instead of relying on a convention.
+    - **After a rollback the driver replaces the closed EntityManager**, so the same request can still
+      read (error page, flash message). Entities loaded before the rollback are detached and MUST NOT
+      be written again.
+    - **No retry, no sleep, no persister class.** A double trigger is solved by idempotency (plan §4b,
+      §7). A deadlock surfaces as an error; the fix is lock order — `NumberRange` is always locked
+      first.
+    - Inside the unit of work, only Doctrine writes are atomic. A File write in it happens at once and
+      is **not** rolled back (see 9).
+    - A single `flush()` is one Doctrine transaction and needs no port. The port is for DBAL SQL and
+      ORM writes that must be atomic together (`NumberRange`), and for a use case that flushes more than
+      once.
+
+### Caches and generated files
+
+11. Disposable runtime state under the release-local `var/cache` (ADR-034/035):
+    - **Native lazy objects** (PHP 8.4, `enableNativeLazyObjects(true)`): no proxy classes, no proxy
+      directory. ORM 4 makes this the only way.
+    - **Metadata and query cache** in production: `PhpFilesAdapter` under `var/cache/doctrine/`. Files,
+      not APCu, because web and CLI do not share an APCu pool (CACHE-CLI-001).
+    - In **DEBUG** (`var/state/debug.flag`): an in-memory pool, rebuilt on every request, so an entity
+      change is visible without a manual step.
+    - **«Cache leeren»** (`SystemController::clearCacheAction()`) and toggling DEBUG delete
+      `var/cache/doctrine/` and call `opcache_invalidate($file, true)` for every deleted file — the
+      cache files are `include`d and would otherwise stay in OPcache when `validate_timestamps` is off.
+      Plain PHP; the backend needs no dependency on Doctrine. No `opcache_reset()` (shared hosting).
+    - After `migrations:migrate` on the CLI, the same deletion runs — as part of the migrate command,
+      not as a step someone must remember.
+    - Result cache, hydration cache and second-level cache are **not used** (the latter is marked
+      experimental by Doctrine).
+
+### Schema
+
+12. **Schema only through migrations, run from the CLI.** No schema update from a web request, no
+    `orm:schema-tool:update` against a live installation.
+13. **Each module owns its migrations** (`res/migrations/`, namespace `{Module}\Migrations`); the
+    migrate command collects them from the modules that declare `doctrineEntities`.
+14. **Every migration is expand/contract.** `current` and `next` are two releases on **one** database
+    (ADR-035): a migration run for `next` must leave `current` working. Add first, switch, remove in a
+    later release — never rename or drop a column the running release still reads.
+15. **Shared building blocks live once in this package** (Rule 8, plan §2): `NumberRange` (gapless,
+    row-locked, uses the transaction port) and the open-work check registry.
+
+### Tests
+
+16. Driver behaviour that needs MariaDB — the row lock, the transaction port, nesting, rollback — is
+    tested against a **real database** in the `tests/*.php` harness, with a throwaway schema per run.
+    The Memory driver named in the topic doc does not exist in code; it is not a prerequisite and is
+    not promised here.
 
 ## Reasoning
 
 - **One API keeps the mixed module simple.** A debtor service reads payment terms from a file and
-  writes an open item to the database with the same two calls. Moving an entity between backends stays
-  a change to `#[Entity]`, and the Memory driver (tests without a database) stays possible.
+  writes an open item to the database through the same entry point.
 - **The deviation rule already existed.** The topic doc never claimed every query fits the interface;
-  it says a complex query becomes a documented driver-specific method. Reports are exactly that case,
-  so they are no argument for binding to Doctrine everywhere.
+  a complex query becomes a documented driver-specific method. Reports are exactly that case.
 - **The transaction port extends the architecture instead of contradicting it.** ARCH-A003 forbids a
   transaction in the *shared* interface because the File driver cannot honour it. A separate port that
-  only the Doctrine driver fulfils keeps that honesty and still gives the plan its atomic writes.
+  only the Doctrine driver fulfils keeps that honesty.
+- **Naming the differences is cheaper than discovering them.** Flush scope, remove timing and
+  cross-driver flush would each surface as data written on one driver and not the other — in
+  production, not in a test.
 - **The retry loop of wdv is not a model.** wdv-6.2.2's `EntityManager::transactional($persister)`
   retried five times with `sleep(1)` on deadlocks and unique-key violations. It was written against a
-  batch that fired twice — a unique-key violation there was the symptom of doing the work twice, and
-  retrying hid it. It is not called anywhere in wdv today.
-- **Caches follow the existing runtime-state model.** `var/cache` is release-local and may be deleted at
-  any moment; DEBUG already bypasses every other cache. Doctrine's caches get no special treatment —
-  which is what the developer had to do by hand in wdv (`setup.php` deleted them).
-- **Own package for ADR-001, not for persistence.** The separation is about dependencies only; the
-  driver itself follows the driver contract in the topic doc.
+  batch that fired twice — the violation was the symptom of doing the work twice, and retrying hid it.
+  It is not called anywhere in wdv today.
+- **Caches follow the existing runtime-state model.** `var/cache` is release-local and may be deleted
+  at any moment; DEBUG already bypasses every other cache. In wdv the developer deleted Doctrine's
+  files by hand (`setup.php`); here the framework does it.
+- **Deciding the driver map, the connection file and the entity announcement now** costs a line each;
+  deferring them invites a second copy of the credentials and a directory scan nobody chose.
 
 ## Consequences
 
-- `persistence-architecture.md` is **extended**, not corrected: the Doctrine branch in the flow, the
-  transaction port, the DBAL accessor, the rule where report SQL may live. ARCH-A003 is reworded to
-  «no transaction in the *shared* interface». ARCH-A002 gains «the Doctrine driver has an Identity Map;
-  the File driver still has none — code MUST NOT rely on either behaviour». The «NOT implemented» line
-  of the mental model is updated accordingly.
-- `conventions.md` → «Database» gets its SQL conventions (schema, migrations, money columns) in P1,
-  as the section announces.
-- `DataSourceResolver`'s driver map gains `doctrine` without the kernel requiring the package; how the
-  package registers itself is settled in P1.
-- Doctrine needs the paths of all entity directories; how installed modules announce theirs is settled
-  in P1 (convention over configuration).
-- The connection's credentials live in exactly one place of the project's config (Rule 2); the exact
-  key is settled in P1.
-- `SystemController::clearCacheAction()` and `toggleDebugAction()` delete `var/cache/doctrine/`.
+- `persistence-architecture.md` is **extended**, not corrected — and three existing statements are
+  fixed on the way: line 32 still lists `persist`/`flush`/`delete` on `RepositoryInterface`; the rule
+  «only change `#[Entity]`» contradicts the rule that specific repositories extend a driver base class
+  (decision 7); the rule «domain methods MUST NOT call driver-specific APIs» gets «except as a
+  documented deviation». ARCH-A003 becomes «no transaction in the *shared* interface», ARCH-A002 names
+  both behaviours, and the driver differences of decision 9 become known issues.
+- `backup.inc.php` loses its `database` block to `config/client/database.inc.php`; existing
+  installations with a `db` backup are migrated by hand (none known today).
+- `ModuleManager` gains `getDoctrineEntities()` next to `getImportEntities()`.
+- `SystemController::clearCacheAction()` and `toggleDebugAction()` delete `var/cache/doctrine/` with
+  `opcache_invalidate()`.
 - Every machine and server running the package needs PHP 8.4+ and `pdo_mysql`. The maintainer machine
   runs 8.5 since 2026-09-21.
 - Entity classes of the business modules carry Doctrine mapping attributes (`#[ORM\Entity]`,
   `#[ORM\Column]`) next to z77's `#[Entity('doctrine')]`; these modules depend on the package.
+- Money columns and the `DECIMAL` ↔ minor-units mapping are decided in the ledger ADR (plan §10,
+  ADR 4), not here. `conventions.md` → «Database» gets the SQL conventions in P1.
 
 ## Rejected Alternatives
 
@@ -135,3 +208,6 @@ bring about fifteen.
 | Retry loop in the transaction (wdv `transactional()`) | Hides double work instead of preventing it; idempotency is the fix |
 | APCu for Doctrine's caches | Web and CLI do not share an APCu pool (CACHE-CLI-001); a migration from the CLI would leave stale metadata in the web pool |
 | Generated proxy classes | Not needed on PHP 8.4 with native lazy objects; deprecated since ORM 3.5, removed in ORM 4 |
+| Connection config inside the Doctrine package or a second key next to `backup.inc.php` → `database` | Two copies of the credentials (Rule 2) |
+| Entity directories scanned by convention | Picks up whatever lies in the directory; the `importEntities` precedent is explicit and fails loudly |
+| Deleting only the cache directory, without OPcache invalidation | Stale metadata served until OPcache revalidates — never, with `validate_timestamps = 0` |
