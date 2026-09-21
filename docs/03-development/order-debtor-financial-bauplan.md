@@ -1,6 +1,6 @@
 # Bauplan — order, debtor, financial, vat, contact, article
 
-**Status:** `[CONCEPT]` → P0 closed 2026-09-21 (ADR-039 to ADR-043 approved). P1 in progress.
+**Status:** `[CONCEPT]` → P0 closed 2026-09-21 (ADR-039 to ADR-043 approved). P1 closed 2026-09-21. P2 next.
 **Date:** 2026-09-18, updated 2026-09-21 (article model A1–A7 decided, Q7 answered, module cut and
 build phases final, all questions answered, external review worked in; the persistence-access
 question reopened ADR 2 on 2026-09-20 and was settled on 2026-09-21)
@@ -45,7 +45,7 @@ editable, a repeated call does nothing, and a reversal always carries a reason.
 The persistence-access question is settled as well (below): unified API, two drivers, minimal
 transaction port.
 
-**P1 in progress (as of 2026-09-21).** Done: `Money` in the kernel (`shared/src/Money`,
+**P1 closed (2026-09-21, end of session).** Done: `Money` in the kernel (`shared/src/Money`,
 `tests/money.php`, topic `money.md`); local MariaDB 10.6.28 for the driver tests (maintainer runbook).
 `z77/persistence-doctrine` is built in three parts, each with its own commit and tests against
 MariaDB. **Part (1) done** — package, `Bootstrap`, `DoctrineEntityManager`, `DoctrineRepository`,
@@ -68,7 +68,12 @@ checklist — topic [`contact.md`](../topics/contact.md)). **P1 is complete** (e
 **Next: P2** — `module-financial`: accounts, fiscal years/periods (opening a year creates its
 `NumberRange` via `create()`), manual entries with change log, `LedgerService`, reports (§5, ADR-042).
 Framework-wide pending found on the way: module config override replaces instead of merging
-(BOOT-CONFIG-001 in `bootstrap.md`). Binding: ADR-039 (all 18 decisions). Then `module-vat`, `module-contact`.
+(BOOT-CONFIG-001 in `bootstrap.md`).
+
+Open for the owner: `persistence-doctrine`, `module-vat` and `module-contact` are not split targets
+yet (`.github/workflows/split.yml`, Packagist). Working method that carried P1: each building block
+built by one agent, reviewed independently by a second against the ADRs (with probes against
+MariaDB), findings fixed before the commit; owner decisions recorded in the topic docs.
 
 ### Settled before P0 — how the business modules reach persistence
 
