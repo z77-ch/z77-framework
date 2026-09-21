@@ -1,7 +1,6 @@
 # ADR-042 — Ledger and money: integer money, generated vs. manual entries, close states
 
-**Status:** `[PROPOSED]` — draft 2026-09-21, awaiting the owner's approval (P0 of
-[`order-debtor-financial-bauplan.md`](../03-development/order-debtor-financial-bauplan.md), ADR 4 in §10)
+**Status:** `[APPROVED]` — approved by the owner 2026-09-21 (P0 of [`order-debtor-financial-bauplan.md`](../03-development/order-debtor-financial-bauplan.md))
 **Date:** 2026-09-21
 
 ---

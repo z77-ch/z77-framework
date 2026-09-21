@@ -1,12 +1,12 @@
 # Bauplan — order, debtor, financial, vat, contact, article
 
-**Status:** `[CONCEPT]` — external review held and worked in. Nothing built. Ready for P0.
+**Status:** `[CONCEPT]` → P0 closed 2026-09-21 (ADR-039 to ADR-043 approved). P1 in progress.
 **Date:** 2026-09-18, updated 2026-09-21 (article model A1–A7 decided, Q7 answered, module cut and
 build phases final, all questions answered, external review worked in; the persistence-access
 question reopened ADR 2 on 2026-09-20 and was settled on 2026-09-21)
 **Basis:** [`order-financial-review-2026-09-18.md`](order-financial-review-2026-09-18.md) — findings
 in wdv-6.2.2 and decisions D1–D8 (§7 there). This plan does not repeat the wdv analysis.
-**ADRs:** to be written in phase P0 (§10).
+**ADRs:** ADR-039 to ADR-043, approved 2026-09-21 (§10).
 
 ## Where we continue (as of 2026-09-20, end of day)
 
@@ -45,7 +45,7 @@ editable, a repeated call does nothing, and a reversal always carries a reason.
 The persistence-access question is settled as well (below): unified API, two drivers, minimal
 transaction port.
 
-**Next: the five ADRs** (§10), which is phase P0. Then P1 starts.
+**Next: P1** (§9) — `Money` in the kernel first, then `persistence-doctrine`, `module-vat`, `module-contact`.
 
 ### Settled before P0 — how the business modules reach persistence
 
@@ -778,10 +778,10 @@ Two changes from the review of 2026-09-20, both about finding mistakes earlier:
 ## 10. ADRs to write (P0)
 
 **Written 2026-09-21:** 1 → [ADR-040](../02-decisions/adr-040-business-module-cut.md),
-2 → [ADR-039](../02-decisions/adr-039-doctrine-driver-behind-unified-entity-manager.md) (both approved),
+2 → [ADR-039](../02-decisions/adr-039-doctrine-driver-behind-unified-entity-manager.md),
 3 → [ADR-041](../02-decisions/adr-041-vat-model.md),
 4 → [ADR-042](../02-decisions/adr-042-ledger-and-money.md),
-5 → [ADR-043](../02-decisions/adr-043-order-status-and-stock-movements.md) (proposed). The ADRs are
+5 → [ADR-043](../02-decisions/adr-043-order-status-and-stock-movements.md); all five approved 2026-09-21, P0 closed. The ADRs are
 binding; where this list and an ADR differ, the ADR wins.
 
 1. **Business module cut** — order / debtor / financial / vat, dependency direction, invoicing in

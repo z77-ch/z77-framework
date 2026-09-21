@@ -1,7 +1,6 @@
 # ADR-043 — Order status as data, and the stock movements it controls
 
-**Status:** `[PROPOSED]` — draft 2026-09-21, awaiting the owner's approval (P0 of
-[`order-debtor-financial-bauplan.md`](../03-development/order-debtor-financial-bauplan.md), ADR 5 in §10)
+**Status:** `[APPROVED]` — approved by the owner 2026-09-21 (P0 of [`order-debtor-financial-bauplan.md`](../03-development/order-debtor-financial-bauplan.md))
 **Date:** 2026-09-21
 
 ---
