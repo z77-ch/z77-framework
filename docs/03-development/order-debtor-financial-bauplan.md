@@ -790,6 +790,12 @@ Two changes from the review of 2026-09-20, both about finding mistakes earlier:
    `persistence-architecture.md` promises; ledger reports use DBAL of the same driver, no second
    connection; a minimal transaction port (Doctrine only) covers what `RepositoryInterface` cannot
    carry, concretely the `NumberRange` row lock (see «Settled before P0» at the top, 2026-09-21).
+   **Generated files and caches (owner requirement, 2026-09-21):** Doctrine's metadata/query caches
+   and any generated proxy files are disposable runtime state under the release-local `var/cache`
+   (ADR-034/035). In **DEBUG** they are regenerated on every request, so an entity change is visible
+   without a manual step; **«Cache leeren»** in the backend (`clearCacheAction()`) and toggling
+   DEBUG remove them as well. In wdv this was done by hand (`setup.php` deleted them) — here it is
+   the framework's job.
 3. **VAT model** — tax codes with dated rates as managed data, country packs, computed once on the
    invoice and carried, net posting method, discount/loss correction from the snapshot.
 4. **Ledger and money** — generated vs. manual entries, close states, change log, numbering, integer
