@@ -22,6 +22,8 @@ SOURCE=/packages/kernel/persistence/src/File/Storage/FileStorage.php
 SOURCE=/packages/persistence-doctrine/src/Bootstrap.php
 SOURCE=/packages/persistence-doctrine/src/DoctrineEntityManager.php
 SOURCE=/packages/persistence-doctrine/src/Repository/DoctrineRepository.php
+SOURCE=/packages/kernel/persistence/src/Interface/TransactionInterface.php
+SOURCE=/packages/kernel/persistence/src/Exception/TransactionRolledBackException.php
 SOURCE=/packages/kernel/shared/src/Attributes/Entity.php
 SOURCE=/packages/kernel/shared/src/Traits/ArrayMappable.php
 SOURCE=/packages/kernel/shared/src/Libraries/Convention/Naming.php
@@ -35,6 +37,7 @@ A **driver-abstracted persistence layer with Repository Pattern and Port/Adapter
 
 - Pattern classification: Data Mapper + Repository Pattern + Ports & Adapters (Hexagonal). Closest reference: Spring Data (Java).
 - NOT in the shared interface, deliberately: Unit of Work semantics, Identity Map, Lazy Loading, Transactions. Each driver has its own behaviour there (Doctrine has all four, File none) and unifying them would lie to the consumer — see the known issues and ADR-039 decision 9.
+- **The transaction port** (ADR-039 decision 10) sits NEXT to the shared interface, not in it: `UnifiedEntityManager::getTransaction(Entity::class)` returns the kernel's `TransactionInterface` — `run(callable): mixed` (atomic unit of work: commit on return, rollback and rethrow on exception, nesting joins) and `isOpen(): bool`. Resolved from an entity class like a repository, so the backend stays a property of `#[Entity]`; the Doctrine driver fulfils it, the File driver throws a `LogicException`. Consumers type against the kernel interface, never against Doctrine. Details and driver behaviour: [`persistence-doctrine.md`](persistence-doctrine.md).
 - `RepositoryInterface` is intentionally minimal and **read-only**: `find`, `findAll`, `findBy`, `findOneBy`. Writes go through `UnifiedEntityManager::persist()` (stage), `flush()` (write every booted driver in turn), `remove()`, and the File-only `reorder()`.
 - Entity-specific repositories are discovered by convention (`RepositoryConvention`: `…\Entities\X` → `…\Repositories\XRepository`) and **extend the driver's base repository** (`FileRepository` or `DoctrineRepository`). They add domain methods on top of the four reads.
 - Switching a backend honestly means (ADR-039 decision 7): for an entity with the generic repository, a change to `#[Entity]`; for an entity with a specific repository, `#[Entity]` **plus** the repository's parent class. A repository with report SQL is Doctrine-only by design.
@@ -214,20 +217,21 @@ or, when it brings Composer dependencies, in its own package with the same names
 - When creating an entity-specific repository → MUST place it in `{RootNamespace}\Repositories\{EntityName}Repository` (the convention `RepositoryConvention` resolves for every driver); MUST extend the driver's base repository class (`FileRepository` / `DoctrineRepository`) — NOT compose it via constructor injection
 - When declaring an entity for a non-file backend → MUST omit or leave empty `Entity::$path` (defaults to `''`); `$path` is only meaningful for the File driver and MUST NOT be used by other drivers
 - When a use case must be atomic → MUST write to ONE driver inside it; file-based master data is read, not written, there (ARCH-A007)
+- When a use case needs a transaction (several flushes, a gapless number plus a document, SQL and ORM writes together) → MUST obtain the port through `UnifiedEntityManager::getTransaction(Entity::class)` with a class of the driver it writes to and run the work inside `run()`; MUST NOT add `beginTransaction()` / `commit()` to `RepositoryInterface` or `EntityManagerInterface`'s shared semantics, and MUST NOT catch the File driver's refusal to «fall back» to non-atomic writes (ARCH-A003)
 
 ## known issues
 
 - **ARCH-A001** — don't assume `findBy` is performant across all backends. File backend loads all records and filters in PHP; Doctrine generates SQL WHERE. Same interface, different complexity. Acceptable for small datasets (< ~5k records); becomes a problem at scale.
 - **ARCH-A002** — don't assume either Identity Map behaviour. On the File driver `find(1)` called twice returns two distinct PHP objects and in-process state can diverge; on the Doctrine driver the same row is the same object within a request. Code that runs on both must not rely on either.
-- **ARCH-A003** — don't attempt to abstract transactions through `RepositoryInterface` — no transaction in the *shared* interface. File storage has no rollback; `beginTransaction()` on the interface would be semantically dishonest for File. A separate transaction port that only the Doctrine driver fulfils is ADR-039 decision 10 (part 2 of the package, pending).
-- **ARCH-A004** — don't assume flush scope. Doctrine writes every *managed* entity that changed, even one never passed to `persist()`; File writes only what was `persist()`ed (ADR-039 decision 9).
+- **ARCH-A003** — don't attempt to abstract transactions through `RepositoryInterface` — no transaction in the *shared* interface. File storage has no rollback; `beginTransaction()` on the interface would be semantically dishonest for File. What exists instead is the separate transaction port of ADR-039 decision 10: `UnifiedEntityManager::getTransaction(Entity::class)` → `TransactionInterface`, fulfilled by the Doctrine driver only and refused by the File driver with a `LogicException`. Nesting joins (no savepoint semantics through the port), an exception anywhere rolls back the whole, and the Doctrine EntityManager is replaced after a rollback — see [`persistence-doctrine.md`](persistence-doctrine.md) DOCTRINE-TX-001…004.
+- **ARCH-A004** — don't assume flush scope. Doctrine writes every *managed* entity that changed, even one never passed to `persist()`; File writes only what was `persist()`ed (ADR-039 decision 9). The transaction port's `run()` flushes the Doctrine EntityManager before its outermost commit — so it writes everything managed, including an entity loaded and mutated BEFORE `run()` — while a File entity persisted inside `run()` still needs an explicit `flush()` and is never rolled back (DOCTRINE-TX-007, ARCH-A007).
 - **ARCH-A005** — don't assume `remove()` timing. File deletes at once; Doctrine at the next `flush()` (decision 9).
 - **ARCH-A006** — don't call `reorder()` on a Doctrine entity: it is File-only (sort order in a JSON collection) and the Doctrine driver refuses it with a `LogicException` (decision 9).
 - **ARCH-A007** — don't assume one `flush()` across drivers is atomic. It writes the File driver and the Doctrine transaction one after the other, in boot order; a failure in the second leaves the first written (decision 9).
 
 ## pending
 
-- Transaction port (ADR-039 decision 10) — part 2 of `z77/persistence-doctrine`; reword the port's place here when it lands.
+- None documented.
 
 ## see also
 

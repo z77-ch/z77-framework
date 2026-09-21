@@ -468,11 +468,11 @@ class ModuleManager
      * Two sources per module, both additive:
      *   1. the `$configKey` entry of the module config (first source match — an
      *      override config replaces the package config as a whole, as always);
-     *   2. every `App/Config/{$configKey}Config.inc.php` found under ANY of the
-     *      module's source paths (override and package), each returning a plain
-     *      list of classes. This is how a project announces a class of its own
-     *      without copying the module config: the extension file records only
-     *      the addition (Rule 2). Still an explicit list — nothing is scanned.
+     *   2. every extension file `App/Config/{$configKey}Config.inc.php` of the
+     *      module (see getConfigExtensions()), each returning a plain list of
+     *      classes. This is how a project announces a class of its own without
+     *      copying the module config (Rule 2). Still an explicit list — nothing
+     *      is scanned.
      *
      * @return list<class-string>
      */
@@ -485,18 +485,11 @@ class ModuleManager
                 ? ["{$configKey} of module '{$moduleKey}'" => $declared]
                 : [];
 
-            $extensionFiles = DI::getFileFinder()->getAllSourceMatches(
-                fileName: "App/Config/{$configKey}Config.inc.php",
-                nameSpace: $this->getNamespacePrefix($moduleKey)
-            );
-            foreach ($extensionFiles as $file) {
-                $listed = require $file;
-                if (!is_array($listed) || !array_is_list($listed)) {
-                    throw new \RuntimeException(
-                        "❌ {$configKey} extension of module '{$moduleKey}' must return a list of classes: {$file}"
-                    );
+            foreach ($this->getConfigExtensions($moduleKey, $configKey) as $origin => $listed) {
+                if (!array_is_list($listed)) {
+                    throw new \RuntimeException("❌ {$origin} must return a list of classes.");
                 }
-                $sources["{$configKey} extension of module '{$moduleKey}' ({$file})"] = $listed;
+                $sources[$origin] = $listed;
             }
 
             foreach ($sources as $origin => $list) {
@@ -512,6 +505,39 @@ class ModuleManager
         }
 
         return array_keys($classes);
+    }
+
+    /**
+     * The additive extension files of one module for $configKey: every
+     * `App/Config/{$configKey}Config.inc.php` under ANY of the module's source
+     * paths (override and package), in lookup order. This is how a project adds
+     * to a registry key WITHOUT copying the module config (Rule 2) — the file
+     * records only the addition. Each file must return an array; the shape
+     * inside is the caller's to check (a list for `doctrineEntities`, scope =>
+     * list for `openWorkChecks`).
+     *
+     * Keyed by an origin label naming key, module and file, ready for the
+     * caller's error messages. Not memoized: callers memoize their result.
+     *
+     * @return array<string, array> origin label => the array the file returned
+     */
+    public function getConfigExtensions(string $moduleKey, string $configKey): array
+    {
+        $extensions = [];
+        $files      = DI::getFileFinder()->getAllSourceMatches(
+            fileName: "App/Config/{$configKey}Config.inc.php",
+            nameSpace: $this->getNamespacePrefix($moduleKey)
+        );
+        foreach ($files as $file) {
+            $origin   = "{$configKey} extension of module '{$moduleKey}' ({$file})";
+            $returned = require $file;
+            if (!is_array($returned)) {
+                throw new \RuntimeException("❌ {$origin} must return an array, got " . get_debug_type($returned) . '.');
+            }
+            $extensions[$origin] = $returned;
+        }
+
+        return $extensions;
     }
 
     public function getModuleParameter(string $moduleKey, string $parameter): string | array

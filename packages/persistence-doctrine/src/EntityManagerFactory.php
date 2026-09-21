@@ -47,8 +47,18 @@ final class EntityManagerFactory
     public const SQL_MODE = 'STRICT_TRANS_TABLES,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION';
 
     /**
+     * The package's OWN entities (ADR-039 decision 15): mapped on every
+     * EntityManager in front of the modules' lists, so their tables exist
+     * wherever the driver runs. The migrations command (part 3) reads this
+     * constant too — the package's first migration is `number_range`.
+     *
+     * @var list<class-string>
+     */
+    public const PACKAGE_ENTITIES = [Entities\NumberRange::class];
+
+    /**
      * @param array              $connection    host, port, name, user, password — `config/client/database.inc.php`
-     * @param list<class-string> $entityClasses the modules' `doctrineEntities`
+     * @param list<class-string> $entityClasses the modules' `doctrineEntities`; PACKAGE_ENTITIES are added here
      * @param string             $baseCurrency  ISO 4217 code every `Money` column is read in
      */
     public static function create(
@@ -58,8 +68,10 @@ final class EntityManagerFactory
     ): EntityManager {
         self::registerTypes($baseCurrency);
 
+        $classes = array_values(array_unique([...self::PACKAGE_ENTITIES, ...$entityClasses]));
+
         $config = new Configuration();
-        $config->setMetadataDriverImpl(new AttributeDriver(new ClassNames($entityClasses)));
+        $config->setMetadataDriverImpl(new AttributeDriver(new ClassNames($classes)));
         $config->enableNativeLazyObjects(true);
 
         $cache = self::createCache();

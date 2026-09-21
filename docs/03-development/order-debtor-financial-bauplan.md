@@ -52,8 +52,11 @@ MariaDB. **Part (1) done** — package, `Bootstrap`, `DoctrineEntityManager`, `D
 `MoneyType` (base currency from `systemConfig → baseCurrency`, owner-confirmed), driver map,
 `config/client/database.inc.php`, `doctrineEntities` plus the additive override file
 `doctrineEntitiesConfig.inc.php`; topic [`persistence-doctrine.md`](../topics/persistence-doctrine.md).
-**Next: part (2)** transaction port and `NumberRange`; then (3) caches (DEBUG, «Cache leeren»,
-OPcache) and migrations. Binding: ADR-039 (all 18 decisions). Then `module-vat`, `module-contact`.
+**Part (2) done** — transaction port (`UnifiedEntityManager::getTransaction()`, nesting joins without
+savepoints, rollback-only, connection reset after a failed rollback), `NumberRange` (bare integer,
+ranges created ahead via `create()` — P2 calls it at fiscal-year opening) and the open-work registry
+(`openWorkChecks`, additive override file). **Next: part (3)** caches (DEBUG, «Cache leeren»,
+OPcache) and migrations (first package migration: `number_range`). Binding: ADR-039 (all 18 decisions). Then `module-vat`, `module-contact`.
 
 ### Settled before P0 — how the business modules reach persistence
 

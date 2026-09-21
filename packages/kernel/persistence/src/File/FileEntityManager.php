@@ -6,6 +6,7 @@ use Z77\Core\Libraries\CacheManager,
     Z77\Shared\Attributes\Entity as EntityAttr,
     Z77\Persistence\Interface\EntityManagerInterface,
     Z77\Persistence\Interface\RepositoryInterface,
+    Z77\Persistence\Interface\TransactionInterface,
     Z77\Persistence\File\Repository\FileRepository,
     Z77\Persistence\File\Storage\CollectionStore,
     Z77\Persistence\File\Storage\DocumentStore,
@@ -94,6 +95,19 @@ class FileEntityManager implements EntityManagerInterface
         if ($attr->invalidatesCache) {
             $this->invalidateCache();
         }
+    }
+
+    /**
+     * Refused, honestly (ARCH-A003, ADR-039 decision 10): a JSON file has no
+     * rollback, and a port that pretended otherwise would lie to the caller.
+     */
+    public function getTransaction(): TransactionInterface
+    {
+        throw new \LogicException(
+            'The File driver has no transaction — a JSON file cannot roll back (ARCH-A003). '
+            . 'A use case that must be atomic writes to Doctrine entities only and obtains the port '
+            . 'through UnifiedEntityManager::getTransaction() with one of THEIR classes (ADR-039 decision 10).'
+        );
     }
 
     private function resolveStore(EntityAttr $attr): RecordStore

@@ -85,7 +85,7 @@ Structure is enforced by `npm run docs:check` ([docs-lint/STANDARD.md](../docs-l
 | packaging, monorepo split, Packagist, release/tagging | [topics/packaging.md](topics/packaging.md) |
 | persistence design, repositories, drivers | [topics/persistence-architecture.md](topics/persistence-architecture.md) |
 | file driver, JSON storage | [topics/persistence-file.md](topics/persistence-file.md) |
-| doctrine driver, MariaDB, database.inc.php, doctrineEntities, doctrineEntitiesConfig, project entity, DECIMAL / money column, charset / collation, z77/persistence-doctrine | [topics/persistence-doctrine.md](topics/persistence-doctrine.md) |
+| doctrine driver, MariaDB, database.inc.php, doctrineEntities, doctrineEntitiesConfig, project entity, DECIMAL / money column, charset / collation, z77/persistence-doctrine, transaction / getTransaction / run(), rollback, TransactionRolledBackException, NumberRange / gapless numbering / next(), openWorkChecks / openWorkChecksConfig / open-work check / period-close / stocktake block, NumberRange create() | [topics/persistence-doctrine.md](topics/persistence-doctrine.md) |
 | routing, router, Request, ControllerHandler | [topics/routing.md](topics/routing.md) |
 | security, hardening, setup token, password policy | [topics/security.md](topics/security.md) |
 | stylesheet, asset pipeline, AssetCleaner | [topics/stylesheet.md](topics/stylesheet.md) |

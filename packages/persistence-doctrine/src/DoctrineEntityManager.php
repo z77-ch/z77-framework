@@ -2,10 +2,11 @@
 
 namespace Z77\Persistence\Doctrine;
 
-use Doctrine\ORM\EntityManagerInterface as DoctrineEntityManagerInterface,
+use Doctrine\ORM\EntityManager,
     Z77\Persistence\Doctrine\Repository\DoctrineRepository,
     Z77\Persistence\Interface\EntityManagerInterface,
     Z77\Persistence\Interface\RepositoryInterface,
+    Z77\Persistence\Interface\TransactionInterface,
     Z77\Persistence\Resolver\RepositoryConvention,
     Z77\Shared\Attributes\Entity as EntityAttr
 ;
@@ -15,7 +16,7 @@ use Doctrine\ORM\EntityManagerInterface as DoctrineEntityManagerInterface,
  * EntityManagerInterface over Doctrine's EntityManager. Consumers never see
  * the Doctrine object (ADR-039 decision 6); what they get back from
  * `getRepository()` is a `DoctrineRepository` or the entity's convention
- * repository extending it.
+ * repository extending it, and from `getTransaction()` the driver's port.
  *
  * Where this driver behaves differently from the File driver, and consumer
  * code MUST NOT depend on either side (decision 9):
@@ -24,21 +25,33 @@ use Doctrine\ORM\EntityManagerInterface as DoctrineEntityManagerInterface,
  *   - `remove()` deletes at the next `flush()`, not at once;
  *   - the same row is the same object within a request (Identity Map);
  *   - `reorder()` is File-only and refused here.
+ *
+ * The Doctrine EntityManager is held through `EntityManagerHolder` because a
+ * rollback replaces it (decision 10): everything here asks the holder at
+ * every use, and a repository handed out before the rollback keeps working.
  */
 class DoctrineEntityManager implements EntityManagerInterface
 {
     /** @var array<class-string, RepositoryInterface> */
     private array $repositories = [];
 
-    /** @var array<class-string, true> the announced entities, for the guard below */
+    /** @var array<class-string, true> the mapped entities, for the guard below */
     private array $announced;
 
-    /** @param list<class-string> $entityClasses the modules' `doctrineEntities` */
-    public function __construct(
-        private DoctrineEntityManagerInterface $em,
-        array $entityClasses
-    ) {
-        $this->announced = array_fill_keys($entityClasses, true);
+    private EntityManagerHolder $holder;
+
+    /**
+     * The announced entities are read from the metadata driver — the same
+     * explicit list `EntityManagerFactory` built it from (the modules'
+     * `doctrineEntities` plus the package's own), never a second copy.
+     */
+    public function __construct(EntityManager $em)
+    {
+        $this->holder    = new EntityManagerHolder($em);
+        $this->announced = array_fill_keys(
+            $em->getConfiguration()->getMetadataDriverImpl()->getAllClassNames(),
+            true
+        );
     }
 
     public function getRepository(string $entityClass, EntityAttr $attr): RepositoryInterface
@@ -50,25 +63,41 @@ class DoctrineEntityManager implements EntityManagerInterface
 
         $repoClass = RepositoryConvention::specificRepository($entityClass) ?? DoctrineRepository::class;
 
-        return $this->repositories[$entityClass] = new $repoClass($entityClass, $this->em);
+        return $this->repositories[$entityClass] = new $repoClass($entityClass, $this->holder);
     }
 
     public function persist(object $entity, EntityAttr $attr): void
     {
         $this->requireAnnounced($entity::class);
-        $this->em->persist($entity);
+        $this->holder->current()->persist($entity);
     }
 
-    /** One `flush()` is one Doctrine transaction. */
+    /**
+     * One `flush()` is one Doctrine transaction (a savepoint inside an open
+     * unit of work). When it fails, Doctrine has rolled back and closed the
+     * EntityManager; the port decides what follows — see
+     * `DoctrineTransaction::onFailedFlush()`.
+     */
     public function flush(): void
     {
-        $this->em->flush();
+        try {
+            $this->holder->current()->flush();
+        } catch (\Throwable $e) {
+            $this->holder->transaction()->onFailedFlush();
+            throw $e;
+        }
     }
 
     public function remove(object $entity, EntityAttr $attr): void
     {
         $this->requireAnnounced($entity::class);
-        $this->em->remove($entity);
+        $this->holder->current()->remove($entity);
+    }
+
+    /** The transaction port (ADR-039 decision 10), one per driver. */
+    public function getTransaction(): TransactionInterface
+    {
+        return $this->holder->transaction();
     }
 
     /**

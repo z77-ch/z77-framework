@@ -17,40 +17,26 @@
  *     a file that returns something other than a list fails the same way;
  *   - a project that copied the whole module config into override/ keeps
  *     working (the first-match rule for the module config is unchanged);
- *   - `importEntities` takes the same path (`importEntitiesConfig.inc.php`).
+ *   - `importEntities` takes the same path (`importEntitiesConfig.inc.php`);
+ *   - so does the open-work registry (`OpenWorkChecks::fromModules()`), through
+ *     `openWorkChecksConfig.inc.php` returning scope => list of check classes:
+ *     unioned with the module config's `openWorkChecks`, deduplicated per
+ *     scope; a bad shape or a bad class fails naming module and file.
  *
  * Run: php tests/entity-announcement.php
  * Needs nothing but PHP: no database, no vendor/. The throwaway base directory
  * in the system temp is removed at the end.
  */
 
-namespace Z77Test\Announce {
-    class PackageEntity {}
-    class ProjectEntity {}
-    class CopiedEntity {}
-    class ImportableEntity {}
-}
-
 namespace {
-
-    use Z77\Core\DI;
-    use Z77\Core\Libraries\CacheManager;
-    use Z77\Core\Libraries\ConfigManager;
-    use Z77\Core\Libraries\FileFinder;
-    use Z77\Core\Services\ModuleManager;
-    use Z77Test\Announce\CopiedEntity;
-    use Z77Test\Announce\ImportableEntity;
-    use Z77Test\Announce\PackageEntity;
-    use Z77Test\Announce\ProjectEntity;
-
-    $base = str_replace('\\', '/', sys_get_temp_dir()) . '/z77-entity-announcement-' . getmypid();
-    define('ABS_BASE_PATH', $base);
-    define('DEBUG', false);
-
+    // Registered before the fixtures: the check classes below implement an
+    // interface that has to be autoloaded when they are declared.
     spl_autoload_register(static function (string $class): void {
         $map = [
             'Z77\\Core\\'   => __DIR__ . '/../packages/kernel/core/src/',
             'Z77\\Shared\\' => __DIR__ . '/../packages/kernel/shared/src/',
+            // only the open-work registry is loaded from this package — it needs no Doctrine
+            'Z77\\Persistence\\Doctrine\\OpenWork\\' => __DIR__ . '/../packages/persistence-doctrine/src/OpenWork/',
         ];
         foreach ($map as $prefix => $dir) {
             if (str_starts_with($class, $prefix)) {
@@ -62,6 +48,47 @@ namespace {
             }
         }
     });
+}
+
+namespace Z77Test\Announce {
+    use Z77\Persistence\Doctrine\OpenWork\Finding;
+    use Z77\Persistence\Doctrine\OpenWork\OpenWorkCheckInterface;
+
+    class PackageEntity {}
+    class ProjectEntity {}
+    class CopiedEntity {}
+    class ImportableEntity {}
+
+    class PackageCheck implements OpenWorkCheckInterface
+    {
+        public function check(string $scope, array $parameters): iterable { yield Finding::blocking('package'); }
+    }
+    class ProjectCheck implements OpenWorkCheckInterface
+    {
+        public function check(string $scope, array $parameters): iterable { yield Finding::warning('project'); }
+    }
+    class NotACheck {}
+}
+
+namespace {
+
+    use Z77\Core\DI;
+    use Z77\Core\Libraries\CacheManager;
+    use Z77\Core\Libraries\ConfigManager;
+    use Z77\Core\Libraries\FileFinder;
+    use Z77\Core\Services\ModuleManager;
+    use Z77\Persistence\Doctrine\OpenWork\OpenWorkChecks;
+    use Z77Test\Announce\CopiedEntity;
+    use Z77Test\Announce\ImportableEntity;
+    use Z77Test\Announce\NotACheck;
+    use Z77Test\Announce\PackageCheck;
+    use Z77Test\Announce\PackageEntity;
+    use Z77Test\Announce\ProjectCheck;
+    use Z77Test\Announce\ProjectEntity;
+
+    $base = str_replace('\\', '/', sys_get_temp_dir()) . '/z77-entity-announcement-' . getmypid();
+    define('ABS_BASE_PATH', $base);
+    define('DEBUG', false);
 
     $pass = 0;
     $fail = 0;
@@ -205,6 +232,60 @@ namespace {
     $mm = $boot();
     check('F1 importEntities extension read', $mm->getImportEntities() === [ImportableEntity::class]);
     check('F2 … and not mixed into doctrineEntities', !in_array(ImportableEntity::class, $mm->getDoctrineEntities(), true));
+
+    // ── G. openWorkChecks: the same extension mechanism, scope => list ───────
+
+    echo "G. openWorkChecks extension\n";
+    $ledgerConfig = fn(array $openWork): string => $moduleConfig([
+        'doctrineEntities' => [PackageEntity::class],
+        'importEntities'   => [],
+        'openWorkChecks'   => $openWork,
+    ]);
+    $write('vendor/z77/module-ledger/src/App/Config/ledgerConfig.inc.php', $ledgerConfig(['period-close' => [PackageCheck::class]]));
+    $closing = OpenWorkChecks::fromModules($boot())->ask('period-close');
+    check('G1 module config only: the package check answers', count($closing->blocking()) === 1 && $closing->warnings() === []);
+
+    $owFile = 'override/z77/module/ledger/src/App/Config/openWorkChecksConfig.inc.php';
+    $write($owFile, $moduleConfig([
+        'period-close' => [ProjectCheck::class, PackageCheck::class],   // PackageCheck repeated on purpose: deduplicated per scope
+        'stocktake'    => [ProjectCheck::class],
+    ]));
+    $mm       = $boot();
+    $registry = OpenWorkChecks::fromModules($mm);
+    $closing  = $registry->ask('period-close');
+    check('G2 union per scope, the repeated check asked once', count($closing->blocking()) === 1 && count($closing->warnings()) === 1);
+    check('G3 module config first, then the extension', $closing->blocking()[0]->message === 'package' && $closing->warnings()[0]->message === 'project');
+    check('G4 a scope only the extension names', count($registry->ask('stocktake')->warnings()) === 1);
+    check('G5 the module config itself is untouched (no copy needed)', $mm->getModuleConfig('ledger')->get('openWorkChecks') === ['period-close' => [PackageCheck::class]]);
+    check('G6 the openWorkChecks extension does not leak into doctrineEntities', !in_array(ProjectCheck::class, $mm->getDoctrineEntities(), true));
+
+    $write('vendor/z77/module-shop/src/App/Config/openWorkChecksConfig.inc.php', $moduleConfig(['stocktake' => [PackageCheck::class]]));
+    check('G7 a package extension file of another module is read too', OpenWorkChecks::fromModules($boot())->ask('stocktake')->isBlocked());
+    @unlink($base . '/vendor/z77/module-shop/src/App/Config/openWorkChecksConfig.inc.php');
+
+    echo "G. … a bad extension fails loudly, naming module and file\n";
+    $write($owFile, $moduleConfig(['period-close' => ['No\\Such\\Check']]));
+    $msg = (string) thrown(fn() => OpenWorkChecks::fromModules($boot()), \RuntimeException::class);
+    check('G8 non-existent class: names key, module, file and scope', str_contains($msg, "openWorkChecks extension of module 'ledger'")
+        && str_contains($msg, $owFile) && str_contains($msg, "scope 'period-close'"));
+    $write($owFile, $moduleConfig(['period-close' => [NotACheck::class]]));
+    $msg = (string) thrown(fn() => OpenWorkChecks::fromModules($boot()), \RuntimeException::class);
+    check('G9 a class that is not a check, naming the file', str_contains($msg, 'does not implement') && str_contains($msg, $owFile));
+    $write($owFile, $moduleConfig([ProjectCheck::class]));
+    $msg = (string) thrown(fn() => OpenWorkChecks::fromModules($boot()), \RuntimeException::class);
+    check('G10 a flat list instead of scope => classes, naming the file', str_contains($msg, 'scope => [check classes]') && str_contains($msg, $owFile));
+    $write($owFile, $moduleConfig(['period-close' => ProjectCheck::class]));
+    $msg = (string) thrown(fn() => OpenWorkChecks::fromModules($boot()), \RuntimeException::class);
+    check('G11 a class instead of a list, naming the file', str_contains($msg, 'list of check classes') && str_contains($msg, $owFile));
+    $write($owFile, '<?php return null;');
+    $msg = (string) thrown(fn() => OpenWorkChecks::fromModules($boot()), \RuntimeException::class);
+    check('G12 a file returning no array, naming the file', str_contains($msg, 'must return an array') && str_contains($msg, $owFile));
+    @unlink($base . '/' . $owFile);
+
+    $write('vendor/z77/module-ledger/src/App/Config/ledgerConfig.inc.php', $ledgerConfig(['period-close' => [NotACheck::class]]));
+    $msg = (string) thrown(fn() => OpenWorkChecks::fromModules($boot()), \RuntimeException::class);
+    check('G13 a bad module-config entry still names the module config, not a file', str_contains($msg, "openWorkChecks of module 'ledger'")
+        && !str_contains($msg, 'extension'));
 
     echo "\n" . ($fail === 0 ? "PASS — {$pass} checks" : "FAIL — {$fail} of " . ($pass + $fail) . " checks") . "\n";
     exit($fail === 0 ? 0 : 1);

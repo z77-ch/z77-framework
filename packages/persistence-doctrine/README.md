@@ -11,12 +11,27 @@ Why a separate package: the kernel carries no Composer dependency (ADR-001); Doc
 about fifteen. An installation without this package runs exactly as before — the kernel's driver
 map names `doctrine`, and only the first Doctrine entity boots the driver.
 
-## Current scope (part 1 of 3)
+## Current scope (parts 1 and 2 of 3)
 
 - **`Bootstrap`** — found by the kernel's `Z77\Persistence\{Driver}\Bootstrap` convention; boots on
   the first Doctrine entity of a request, never on a file-only request.
 - **`DoctrineEntityManager`** — the kernel's `EntityManagerInterface` over Doctrine's EntityManager.
-  `reorder()` is refused: it is a File-driver concept.
+  `reorder()` is refused: it is a File-driver concept. After a rollback the Doctrine EntityManager is
+  replaced (`EntityManagerHolder`), so the request can still read; entities loaded before are detached.
+- **`Transaction\DoctrineTransaction`** — the kernel's `TransactionInterface`
+  (`UnifiedEntityManager::getTransaction(Entity::class)`): `run(callable)` commits on return, rolls
+  back and rethrows on exception; nesting joins, an exception anywhere rolls back the whole (a
+  swallowed inner failure ends in `TransactionRolledBackException`); `isOpen()`. The File driver
+  refuses the port.
+- **`Entities\NumberRange` / `Repositories\NumberRangeRepository`** — gapless numbering:
+  `getRepository(NumberRange::class)->next('invoice')` under `SELECT … FOR UPDATE`, inside the caller's
+  transaction only, one bare integer sequence per name; a rolled-back unit of work consumes no number.
+  `create('journal-entry.2027')` creates a range ahead of concurrent use without consuming a number.
+- **`OpenWork\OpenWorkChecks`** — the open-work check registry: modules declare checks under
+  `openWorkChecks` → `{scope}` in their config, a caller asks `ask($scope, $parameters)` and gets
+  blocking and warning findings (period close, stocktake block). A project adds its own checks in
+  `override/z77/module/{module}/src/App/Config/openWorkChecksConfig.inc.php` (same shape), without
+  copying the module config.
 - **`Repository\DoctrineRepository`** — `find` / `findAll` / `findBy` / `findOneBy`. An entity-specific
   repository `{Module}\Repositories\{Entity}Repository` extends it and may run report SQL on the
   protected DBAL `connection()` of the same EntityManager (a documented, driver-specific deviation).
@@ -38,9 +53,8 @@ class JournalLine
 }
 ```
 
-## Planned (parts 2 and 3)
+## Planned (part 3)
 
-- Transaction port, `NumberRange` (gapless numbering under a row lock), open-work check registry.
 - Production caches under `var/cache/doctrine/` (DEBUG switch, «Cache leeren», OPcache), the
   migrations command.
 

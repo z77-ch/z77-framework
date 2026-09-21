@@ -50,11 +50,8 @@ class Bootstrap
             ->get('baseCurrency', 'CHF')
         ;
 
-        $entityClasses = DI::getModuleManager()->getDoctrineEntities();
-
         $this->entityManager = new DoctrineEntityManager(
-            EntityManagerFactory::create($connection, $entityClasses, $baseCurrency),
-            $entityClasses
+            EntityManagerFactory::create($connection, DI::getModuleManager()->getDoctrineEntities(), $baseCurrency)
         );
     }
 
