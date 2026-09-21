@@ -55,7 +55,7 @@ ADR 2 as drafted in §10 deviates from
 [`persistence-architecture.md`](../topics/persistence-architecture.md), which promises **one**
 consumer API — `UnifiedEntityManager::getRepository()` returning a `RepositoryInterface` — for every
 backend. The developer's position (2026-09-20): that document is correct and was well considered, so
-the plan bends to it rather than the other way round. **Not confirmed yet.**
+the plan bends to it rather than the other way round. **Confirmed 2026-09-21.**
 
 The question splits in two, and this plan had conflated them:
 
