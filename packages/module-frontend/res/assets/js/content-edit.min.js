@@ -27,6 +27,19 @@
  *   Messages are accepted only from this page's own origin AND from the open
  *   iframe's window.
  *
+ * Stacking (2026-09-22): the pencils sit in TWO fixed layers, both below the
+ * admin overlay (z-index 2147483000 — its panel covers them):
+ *   - .z77-ce-layer         pencils of elements in the page flow. z-index
+ *                           `var(--z77-ce-z, 2147482999)`: a site sets
+ *                           --z77-ce-z on :root to slot them into its own
+ *                           layer order (below its menu, header and popups).
+ *                           The framework cannot know those values.
+ *   - .z77-ce-layer--fixed  pencils of elements that are position:fixed
+ *                           themselves (a badge): always just below the admin
+ *                           overlay, so a fixed element never hides its own
+ *                           pencil. The hover outline lives here too.
+ *   The edit dialog (.z77-ce-modal) stays above everything.
+ *
  * Styles are injected here (class prefix z77-ce-, reset with `all: unset`): the
  * project loads none of the framework's stylesheets, and a site's own button or
  * link rules must not reach these controls.
@@ -38,7 +51,8 @@
     var MSG_CLOSE = 'z77:content-edit-close';
 
     var CSS = ''
-        + '.z77-ce-layer{position:fixed;top:0;left:0;width:0;height:0;z-index:2147483000}'
+        + '.z77-ce-layer{position:fixed;top:0;left:0;width:0;height:0;z-index:var(--z77-ce-z,2147482999)}'
+        + '.z77-ce-layer--fixed{z-index:2147482999}'
         + '.z77-ce-btn{all:unset;box-sizing:border-box;position:fixed;display:inline-flex;align-items:center;'
         + 'justify-content:center;width:26px;height:26px;border-radius:999px;background:#1f2937;color:#fff;'
         + 'box-shadow:0 1px 4px rgba(0,0,0,.3);cursor:pointer;opacity:.7}'
@@ -66,7 +80,8 @@
     var PENCIL = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">'
         + '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
 
-    var layer = null;
+    var layer = null;        // pencils of elements in the page flow
+    var fixedLayer = null;   // pencils of position:fixed elements + the outline
     var frame = null;
     var items = [];          // {el, btn}
     var modal = null;        // {root, iframe, opener, overflow}
@@ -230,10 +245,12 @@
         injectStyle();
         layer = document.createElement('div');
         layer.className = 'z77-ce-layer';
+        fixedLayer = document.createElement('div');
+        fixedLayer.className = 'z77-ce-layer z77-ce-layer--fixed';
         frame = document.createElement('div');
         frame.className = 'z77-ce-frame';
         frame.hidden = true;
-        layer.appendChild(frame);
+        fixedLayer.appendChild(frame);
 
         Array.prototype.forEach.call(marked, function (el) {
             var url   = el.getAttribute('data-content-edit');
@@ -252,11 +269,13 @@
             btn.addEventListener('mouseleave', hideFrame);
             btn.addEventListener('blur', hideFrame);
 
-            layer.appendChild(btn);
+            var fixed = window.getComputedStyle(el).position === 'fixed';
+            (fixed ? fixedLayer : layer).appendChild(btn);
             items.push({ el: el, btn: btn });
         });
 
         document.body.appendChild(layer);
+        document.body.appendChild(fixedLayer);
         placeAll();
 
         window.addEventListener('scroll', schedule, { passive: true });
