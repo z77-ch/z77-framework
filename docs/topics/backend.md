@@ -197,14 +197,36 @@ no per-panel JS.
 
 ## frontend admin overlay
 
-Admins (role >= admin) get the environment switcher + routing info + logout on
-every full frontend page, via a right-edge hover overlay.
+Editors and admins (role >= editor since ADR-045, admin before) get the way
+from the site to the backend and out on every full frontend page, via a
+right-edge hover overlay.
 
 - `AbstractFrontendController` (frontend base controller) injects it in `html()`
-  ONLY when `AuthUser::hasAtLeast(AuthRole::ADMIN)` AND the request is `Page` mode:
-  adds the `admin-overlay` CSS + the `partials/adminOverlay` partial into the body
-  slot `adminOverlay` (rendered by the frontend `html-default-skeleton`). Guests get
-  no markup, no CSS, no data.
+  ONLY when `PageEditing::available()` — role >= editor AND the request is `Page`
+  mode: adds the `admin-overlay` CSS + the `partials/adminOverlay` partial into the
+  body slot `adminOverlay` (rendered by the frontend `html-default-skeleton`). Guests
+  and members get no markup, no CSS, no data.
+- What it offers follows the access rules, decided in the controller (view-models
+  `overlayUser`, `viewAreas`, `overlayForm`, `overlayEdit`, `overlayInfo`,
+  `overlayDev`; the partial makes no role check):
+
+  | Section | Who |
+  |---|---|
+  | identity (initials, name, role; rail «admin» / «redaktion») | editor and up |
+  | «Umgebung»: each view area linked to the first page the user may open; an area without one is left out | editor and up, filtered like the backend menu: `getViewAreas()` with `NavigationService::entryAllowedIn()` over `AuthService::canReach()` (MENU-ACCESS-001); an editor's «Backend» leads to the content list |
+  | «Inhalt»: switch «Seite bearbeiten» (page editor, see [`content.md`](content.md) «Editing on the page») | editor and up |
+  | «Info»: routing info | admin and up |
+  | «Entwicklung»: partial labels, only under DEBUG | admin and up |
+  | «Abmelden» | editor and up |
+- The switches are plain form POSTs (hidden CSRF + return path) to
+  `AdminPanelController` (module-frontend), 303 back to the same page:
+  `toggleContentEditAction` role EDITOR, `togglePartialLabelsAction` role ADMIN
+  (`frontendConfig`: the controller is ADMIN, the one action is lowered). A project
+  that overrides the whole `frontendConfig` MUST repeat this entry — without it the
+  group wildcard decides (zihlundsee had both toggles on GUEST until 2026-09-22).
+- The backend shell's environment switcher is the other half: `BackendMenu::viewAreas()`
+  lists «Frontend» for an editor too (its first page is GUEST), so the way back to
+  the site exists from both sides.
 - Reveal is pure CSS (`:hover` / `:focus-within`), no JS. The CSS
   (`admin-overlay.scss` → standalone `admin-overlay.css`) is **isolated**: it
   defines its own tokens + font on `.z77-admin-overlay` and does NOT `@use` the
@@ -297,7 +319,7 @@ design. Owned by [`security.md`](security.md) — see it for the gating rules.
 - When a topbar/panel needs a click-dropdown or a collapsible → MUST use the `panel-toggle.js` data-attribute contract (`data-panel-root` / `data-panel-trigger` / `data-panel`, or `data-collapse-trigger` / `data-collapse`); MUST NOT hand-write per-panel toggle JS
 - When a panel element starts `hidden` but a class sets its `display` → MUST add `&[hidden]{display:none}` so the attribute wins (the UA `[hidden]` rule is overridden by any class `display` declaration)
 - For popup modals (`be-modal`): the `.be-modal__body` is the ONLY scroll region — the flex chain (dialog → `.be-modal__inner` → `.z77-popup__body` → the injected panel root, whatever element it is → `.be-modal__body{flex:1;min-height:0;overflow-y:auto}`) MUST stay intact, every link a `min-height:0` flex column, or the body overflows the dialog's `overflow:hidden` (clipped, no scroll). A generic `[data-popup-fullscreen]` button in the skeleton dialog toggles `[data-fullscreen]` on the popup root (handled in the shared popup channel beside `[data-popup-close]`); applies to ALL popups. MUST NOT set an inline `max-width` on the `<dialog>` — CSS owns sizing so the `[data-fullscreen]` variant can override it.
-- When a frontend controller renders pages → MUST extend `AbstractFrontendController` (not `AbstractBaseController`) so admins get the admin overlay; the overlay MUST stay gated by `AuthUser::hasAtLeast(AuthRole::ADMIN)` + `Page` mode
+- When a frontend controller renders pages → MUST extend `AbstractFrontendController` (not `AbstractBaseController`) so editors and admins get the admin overlay; the overlay MUST stay gated by `PageEditing::available()` (role >= editor + `Page` mode), its sections by the access rules (view areas via `entryAllowedIn()`/`canReach()`, routing info and dev tools ADMIN), decided in the controller, never in the partial
 - When module chrome needs the current routing context (module/controller/action/template) → MUST `use Z77\Shared\Controller\RouteInfoTrait`; MUST NOT add it to the core `AbstractBaseController`
 - When adding or changing a framework JS/CSS asset → MUST get it into `skeleton/public/assets/{ns}` before it resolves (the `FileFinder` reads `public/assets`, not `res/assets`). `public/` is **seed-once** (ADR-024): a plain `composer install` only seeds when `public/` is absent, so it will NOT update an already-deployed file — delete the file (or `skeleton/public`) and `composer install -d skeleton` to re-seed, or copy `res/assets/...` → `public/assets/{ns}/...` by hand
 
@@ -332,6 +354,7 @@ design. Owned by [`security.md`](security.md) — see it for the gating rules.
 
 - **LAYOUT-B001** — resolved 2026-07-04. login + setup (both GUEST, full-page) now render through a dedicated chrome-less skeleton instead of the authenticated shell. New `res/view/templates/html-guest-skeleton.tpl.php` (only `$main` + flash/messages, no topbar/subnav/preview/footer/header-slots); the self-contained `.be-guest` wrapper (`components/_guest.scss`) fills the viewport and centers the `.login`/setup card, independent of the media-gated `layout/*.scss`. Selected per controller via `documentTpl` override in `src/Ui/Config/System/loginControllerConfig.inc.php` + `setupControllerConfig.inc.php` (applied on top of the module `layoutConfig`, last `documentTpl` wins). Revert = delete the two config files. **Restpunkt (bewusst offen):** the module `layoutConfig` still registers the chrome partials for every backend controller (`applyLayoutConfig` is append-only — a controller config cannot *unset* a section), so for a GUEST the shell topbar/subnav still render (to empty output — topbar self-skips on absent `headerUser`) and are simply not echoed by the guest skeleton. Therefore the `if (empty($headerUser)) return;` guard in `partials/shell/topbar.tpl.php` **stays** — the target of removing it entirely would need `removeSection()` (decided against) or a bigger config-loader change. Also fixed in the same pass: the login/setup form-control overrides in `_login.scss` had been dead since the `.form`→`.be-form` / `.btn`→`.be-btn` migration (CSS-LIST-CONSOLIDATION-001) — they targeted `.form__control` / `.btn--primary`, so the inputs blended into the card (same `--be-surface`). Renamed to `.be-form__control` / dropped the now-redundant button + focus-ring overrides (base is palette/theme-aware). See [`css-backend.md`](css-backend.md) GUEST-SKELETON-001.
 
+- **FE-OVERLAY-EDITOR-001** — built 2026-09-22 (ADR-045 §4 addendum, `feat/editor-panel`). Reported by Peter on `next` as «Redaktor»: an editor had no overlay (it was ADMIN-gated) and so no way from the site to the backend or to log out, and the «Bearbeiten» text buttons sat on every page as soon as he was logged in. Now: overlay from EDITOR with access-filtered view areas (the access half of the menu rule moved from `BackendMenu::allowsIn()` to `NavigationService::entryAllowedIn()` so the frontend module can use it without depending on module-backend; `allowsIn()` delegates), a switch «Seite bearbeiten» (off by default) and pencil icons instead of text buttons. Routing info and dev tools stay ADMIN. Verified in zihlundsee (curl + headless Edge, test users editor/admin). The switch classes were renamed from `__dev-toggle`/`__dev-switch`/`__dev-thumb`/`__dev-form` to `__toggle`/`__switch`/`__thumb`/`__form` (both switches use them).
 - **MENU-ACCESS-001** — built 2026-09-22 (ADR-045 §2). Before, the backend menu was not filtered by role: a user below a target's role saw the link and got the login redirect on click. Now `BackendMenu` filters topbar, module switcher, subnav, crumb, environment switcher, dashboard cards and the service-panel switches through `AuthService::canReach()`. Not exercised in a browser at build time (no runnable skeleton in the worktree) — verified by `tests/backend-access.php` (resolution + tree rule) and `php -l`.
 - **AUTH-B003** — resolved 2026-07-16. `backendConfig.inc.php` `controllers` map slimmed to **deviation-only**: entries exist solely for GUEST (`LoginController`, `SetupController`), SUPER_USER (`BackupController`), and defaultAction deviations (`DashboardController` → `overview`, `DocumentController` → `preview`). Everything else inherits `moduleRole: ADMIN` (fallback chain `actionRole → controllerRole → moduleRole` in `AuthService::resolveRoleForCurrentController`) and the new module-level `defaultAction: 'list'` convention (consumed by `getDefaultActionForController`'s existing module fallback — zero code change). A forgotten controller/action defaults to ADMIN, never to open; `/backend/system/system` still 404s (convention resolves `list`, the method does not exist → `setAction()` throws). A commented full-schema example stays in the config for developers. **Trigger was a real CE incident:** a project had to copy the whole `backendConfig` into `override/` to add one controller — the copy then shadowed the framework's `service`-group addition (file overrides REPLACE, they do not merge) and needed a manual re-sync. With deviation-only there is no reason to override the file for a plain ADMIN controller at all. Role matrix verified in the skeleton (guest 302, admin blocked from backup with 302, superUser full access, convention-list URLs 200). Config-tier merging itself was raised and deliberately NOT pursued (owner decision 2026-07-16: overrides are the developer's domain, the framework never reaches into them).
 

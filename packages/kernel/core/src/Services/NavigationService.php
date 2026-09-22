@@ -356,14 +356,40 @@ class NavigationService
     // view area the module of the current routing entry.
 
     /**
+     * May a user open the page this entry leads to? The access half of the menu
+     * rule (ADR-045 §2), pure — the lookups come in as callables, so the backend
+     * menu, the frontend admin overlay and tests/backend-access.php ask the same
+     * question: a ref asks for its target entry (a ref to a ref is not followed —
+     * the subnav does not either), an entry without a target leads nowhere.
+     *
+     * @param callable(int): ?Navigation                    $findById
+     * @param callable(string, string, string, string): bool $reachable
+     *        (module, group, controller, action) as the entry stores them —
+     *        typically AuthService::canReach() for one user
+     */
+    public static function entryAllowedIn(Navigation $entry, callable $findById, callable $reachable): bool
+    {
+        if ($entry->getRef() !== null) {
+            $target = $findById($entry->getRef());
+            return $target !== null && $target->getRef() === null
+                && self::entryAllowedIn($target, $findById, $reachable);
+        }
+        if ($entry->getModule() === '') {
+            return false;
+        }
+        return $reachable($entry->getModule(), $entry->getGroup(), $entry->getController(), $entry->getAction());
+    }
+
+    /**
      * View areas for a switcher: every view-area module (ModuleManager) that has at
      * least one reachable navigable entry (a module with no reachable page would be a
      * dead switch and is skipped). Ordered by module registration.
      *
      * Visibility is reachability-based. Role-based only when the caller passes
      * $allows (asked for every navigable candidate, see resolveFirstNavigable()):
-     * the backend menu does (ADR-045), so an editor's «Backend» entry leads to a
-     * page he may open. The frontend admin overlay passes nothing — admins only.
+     * the backend menu and the frontend admin overlay do (ADR-045, both via
+     * {@see entryAllowedIn()}), so an editor's «Backend» entry leads to a page
+     * he may open.
      *
      * @param (callable(Navigation): bool)|null $allows
      * @return list<array{key: string, label: string, url: string, active: bool}>

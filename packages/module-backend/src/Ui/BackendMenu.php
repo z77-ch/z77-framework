@@ -149,23 +149,16 @@ final class BackendMenu
 
     /**
      * The access half of the rule, pure like {@see visibleIn()}: a ref asks for
-     * its target entry, an entry without a target leads nowhere.
+     * its target entry, an entry without a target leads nowhere. Lives in
+     * {@see NavigationService::entryAllowedIn()} — the frontend admin overlay
+     * asks the same question and cannot depend on this module.
      *
      * @param callable(int): ?Navigation                    $findById
      * @param callable(string, string, string, string): bool $reachable
      */
     public static function allowsIn(Navigation $entry, callable $findById, callable $reachable): bool
     {
-        if ($entry->getRef() !== null) {
-            $target = $findById($entry->getRef());
-            // A ref to a ref is not followed — the subnav does not either.
-            return $target !== null && $target->getRef() === null
-                && self::allowsIn($target, $findById, $reachable);
-        }
-        if ($entry->getModule() === '') {
-            return false;
-        }
-        return $reachable($entry->getModule(), $entry->getGroup(), $entry->getController(), $entry->getAction());
+        return NavigationService::entryAllowedIn($entry, $findById, $reachable);
     }
 
     /**

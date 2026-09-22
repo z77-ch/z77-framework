@@ -1,14 +1,18 @@
 /* z77 page editor — the website side (ADR-045 §4)
  *
- * Loaded ONLY for a user with at least `editor` on a full page
- * (AbstractFrontendController::html()). Visitors never get this file.
+ * Loaded ONLY when PageEditing::active() is true — a user with at least
+ * `editor`, a full page, and the switch «Seite bearbeiten» on in the admin
+ * overlay (AbstractFrontendController::html()). The same decision prints the
+ * markers (PageContent). Visitors never get this file; neither does an editor
+ * with the switch off.
  *
  * Contract (markup from the page templates):
  *   [data-content-edit="<slot editor URL>"]   root element of one blueprint slot,
  *   [data-content-edit-label="<slot label>"]  printed by ContentView::editAttribute()
  *
  * What it does:
- *   - one «Bearbeiten» button per marked element, over its top-right corner. The
+ *   - one small pencil button per marked element, over its top-right corner
+ *     (accessible name «<label> bearbeiten» via aria-label and title). The
  *     buttons live in their own fixed layer, NOT inside the marked element: the
  *     page's layout, its positioning contexts and :first-child rules stay as the
  *     visitor gets them. They follow the element on scroll/resize; an element
@@ -35,10 +39,11 @@
 
     var CSS = ''
         + '.z77-ce-layer{position:fixed;top:0;left:0;width:0;height:0;z-index:2147483000}'
-        + '.z77-ce-btn{all:unset;box-sizing:border-box;position:fixed;display:inline-flex;align-items:center;gap:.35em;'
-        + 'padding:.3em .7em;border-radius:999px;background:#1f2937;color:#fff;'
-        + 'font:600 13px/1.2 system-ui,-apple-system,"Segoe UI",sans-serif;letter-spacing:0;'
-        + 'box-shadow:0 2px 8px rgba(0,0,0,.3);cursor:pointer;white-space:nowrap;opacity:.88}'
+        + '.z77-ce-btn{all:unset;box-sizing:border-box;position:fixed;display:inline-flex;align-items:center;'
+        + 'justify-content:center;width:26px;height:26px;border-radius:999px;background:#1f2937;color:#fff;'
+        + 'box-shadow:0 1px 4px rgba(0,0,0,.3);cursor:pointer;opacity:.7}'
+        + '.z77-ce-btn svg{display:block;width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2;'
+        + 'stroke-linecap:round;stroke-linejoin:round;pointer-events:none}'
         + '.z77-ce-btn:hover,.z77-ce-btn:focus-visible{opacity:1;background:#4f46e5}'
         + '.z77-ce-btn:focus-visible{outline:2px solid #fff;outline-offset:2px}'
         + '.z77-ce-btn[hidden]{display:none}'
@@ -56,6 +61,10 @@
         + 'font:400 22px/1 system-ui,sans-serif;color:#111827;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,.3)}'
         + '.z77-ce-close:hover,.z77-ce-close:focus-visible{background:#e5e7eb}'
         + '.z77-ce-close:focus-visible{outline:2px solid #4f46e5;outline-offset:2px}';
+
+    // Pencil (feather-style outline), decorative: the button carries the name.
+    var PENCIL = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">'
+        + '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
 
     var layer = null;
     var frame = null;
@@ -87,7 +96,7 @@
         if (!visible) return null;
 
         var box = { width: item.btn.offsetWidth, height: item.btn.offsetHeight };
-        var right = Math.min(r.right, document.documentElement.clientWidth) - 8;
+        var right = Math.min(r.right, rightEdge()) - 8;
         box.top  = Math.min(Math.max(r.top, 0) + 8, r.bottom - box.height - 8);
         box.left = Math.max(r.left + 8, right - box.width);
 
@@ -104,6 +113,17 @@
         item.btn.style.top  = Math.round(box.top) + 'px';
         item.btn.style.left = Math.round(box.left) + 'px';
         return box;
+    }
+
+    /* Right limit for a button: the viewport, or the admin overlay's rail
+     * (partials/adminOverlay, always present when this script is) — a slot
+     * reaching the right edge would otherwise put its pencil under the rail. */
+    function rightEdge() {
+        var width = document.documentElement.clientWidth;
+        var rail = document.querySelector('.z77-admin-overlay__rail');
+        if (!rail) return width;
+        var r = rail.getBoundingClientRect();
+        return r.width > 0 ? Math.min(width, r.left) : width;
     }
 
     function placeAll() {
@@ -142,14 +162,14 @@
         root.className = 'z77-ce-modal';
         root.setAttribute('role', 'dialog');
         root.setAttribute('aria-modal', 'true');
-        root.setAttribute('aria-label', 'Bearbeiten: ' + label);
+        root.setAttribute('aria-label', name(label));
 
         var panel = document.createElement('div');
         panel.className = 'z77-ce-panel';
 
         var iframe = document.createElement('iframe');
         iframe.className = 'z77-ce-iframe';
-        iframe.title = 'Bearbeiten: ' + label;
+        iframe.title = name(label);
         iframe.src = url;
 
         var close = document.createElement('button');
@@ -198,6 +218,11 @@
         }
     }
 
+    /* «<label> bearbeiten» — the accessible name of a pencil and its dialog. */
+    function name(label) {
+        return (label || 'Abschnitt') + ' bearbeiten';
+    }
+
     function init() {
         var marked = document.querySelectorAll('[data-content-edit]');
         if (!marked.length) return;
@@ -218,9 +243,9 @@
             var btn = document.createElement('button');
             btn.type = 'button';
             btn.className = 'z77-ce-btn';
-            btn.textContent = 'Bearbeiten';
-            btn.setAttribute('aria-label', 'Bearbeiten: ' + label);
-            btn.title = 'Bearbeiten: ' + label;
+            btn.innerHTML = PENCIL;
+            btn.setAttribute('aria-label', name(label));
+            btn.title = name(label);
             btn.addEventListener('click', function () { open(url, label, btn); });
             btn.addEventListener('mouseenter', function () { showFrame(el); });
             btn.addEventListener('focus', function () { showFrame(el); });

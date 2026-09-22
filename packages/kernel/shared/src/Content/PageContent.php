@@ -2,9 +2,7 @@
 
 namespace Z77\Shared\Content;
 
-use Z77\Core\Config\AuthRole;
 use Z77\Core\DI;
-use Z77\Core\Http\RequestMode;
 use Z77\Shared\Services\ContentService;
 
 /**
@@ -21,11 +19,11 @@ use Z77\Shared\Services\ContentService;
  *     designed page without its text is a deploy error (the documents go to
  *     the shared data/content/ BEFORE the release), and an exception says so
  *     where an empty page would hide it;
- *   - the page editor (ADR-045 §4): for a user with at least `editor` on a
- *     full page (not a fetch fragment) the view marks its slots —
- *     ContentView::editAttribute() then returns the marker, for everyone
- *     else ''. Decided here, per request, from the logged-in user; nothing is
- *     remembered.
+ *   - the page editor (ADR-045 §4): when PageEditing::active() says so (a
+ *     user with at least `editor`, a full page, the switch «Seite bearbeiten»
+ *     on) the view marks its slots — ContentView::editAttribute() then returns
+ *     the marker, otherwise ''. The same decision adds content-edit.js
+ *     (AbstractFrontendController).
  *
  * ContentService stays request-free; this class is where the request is read.
  * Each call builds its own ContentService (ADR-012: consumer-built, not DI).
@@ -47,19 +45,8 @@ final class PageContent
             throw new \RuntimeException("Content document '{$slug}' ({$language}) is missing or inactive in data/content/.");
         }
 
-        return self::editorOnPage()
+        return PageEditing::active()
             ? $view->forEditor(ContentExtensions::assemble()->blueprint($slug), $preview)
             : $view;
-    }
-
-    /** A full-page request of a user with at least `editor` (ADR-045 §4). */
-    private static function editorOnPage(): bool
-    {
-        if (DI::getRequest()->getMode() !== RequestMode::Page) {
-            return false;
-        }
-        $user = DI::getAuthService()->getCurrentUser();
-
-        return $user !== null && $user->hasAtLeast(AuthRole::EDITOR);
     }
 }
