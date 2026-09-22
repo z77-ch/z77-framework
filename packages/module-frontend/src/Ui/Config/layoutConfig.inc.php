@@ -37,5 +37,9 @@ return [
     ],
     'javascripts' => [
         ['name' => 'core', 'nameSpace' => 'Z77\\Shared', 'defer' => true],
+        // Lottie (partials/lottie + <lottie-figure>) is opt-in — the player weighs ~300 KB.
+        // A project that uses it lists both here (docs/topics/lottie.md):
+        //   ['name' => 'lottie',        'nameSpace' => 'Z77\\Module\\Frontend', 'defer' => true],
+        //   ['name' => 'lottie-figure', 'nameSpace' => 'Z77\\Module\\Frontend', 'defer' => true],
     ],
 ];
