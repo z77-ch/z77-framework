@@ -1,15 +1,16 @@
 # z77/module-financial
 
 Double-entry bookkeeping for z77 business modules (ADR-040, ADR-042, plan §5). It knows no
-other module: every posting source will reach the journal through one door,
+other module: every posting source reaches the journal through one door,
 `LedgerService::post()`, with an opaque origin and an idempotency key.
 Depends on `z77/kernel`, `z77/persistence-doctrine` (ADR-039) and `z77/module-vat`.
 Developed in the [z77-ch/z77-framework](https://github.com/z77-ch/z77-framework) monorepo
 (`packages/module-financial`); not yet a split target or on Packagist — projects consume it
 through a `path` repository until it is.
 
-State: **P2 part 1** — the chart of accounts and the fiscal years with their periods. The
-journal, manual entries and `LedgerService` (part 2) and the reports (part 3) follow.
+State: **P2 part 2** — chart of accounts, fiscal years with periods, the journal, `LedgerService`
+and manual entries with a change log. The reports (part 3), the VAT return, the period
+transitions and the year-end (P5) follow.
 
 Model:
 
@@ -20,27 +21,47 @@ Model:
   contiguous with the previous year) and one `Period` per calendar month, clipped to the year.
   Opening a year creates its journal-entry number range `journal-entry.{code}` in the same
   unit of work. Periods start `open` (`open` → `vat-settled` → `closed`, ADR-042).
+- `JournalEntry` + `JournalLine` — one entry stored once: number (gapless per year), date, text,
+  kind (`generated` | `manual`), opaque origin, idempotency key, `reversalOf` (at most once, in
+  the schema), created/changed by/at; n ≥ 2 lines with account, debit OR credit, and — on the
+  net line — tax code, rate snapshot, signed tax base and amount. Base currency only.
+- `EntryChange` — the change log of manual entries: who, when, before/after snapshot; survives
+  the entry's deletion and documents the number gap.
 - The Swiss SME chart (KMU-Kontenrahmen, Sterchi structure) ships as `res/charts/kmu.json`
   and is adopted by a button — only into an EMPTY chart.
 
 Pieces:
 
-- `Services/AccountService` — `save()`, `update($account, $values)` (validated on a draft),
-  `setActive()`, `adoptKmuChart()`.
-- `Services/FiscalYearService` — `proposeNext()`, `proposeCode()`, `open()`.
-- `Validators/*` — the rules every writer is bound to.
-- `Ui/AccountControllerTrait` + `Ui/FiscalYearControllerTrait` — the backend screens as
-  fragments; `module-backend` mounts them at `/backend/finance/account/list` and
-  `/backend/finance/fiscal-year/list`.
+- `Services/LedgerService` — `post(PostingRequest): EntryRef` and
+  `reverse(EntryRef, date, reason): EntryRef`, both INSIDE the caller's unit of work (never
+  commits). Refuses: no fiscal year / period, `closed`, a tax line into `vat-settled`, an
+  unknown / non-postable / inactive account, an unknown tax code, a repeated key with other
+  content. Draws the number as the FIRST write, after validation.
+- `Services/ManualEntryService` — `create()`, `update($entry, $newRequest)`, `delete()` of manual
+  entries, each with an `EntryChange`; generated entries are refused in the domain.
+- `Ledger/PostingRequest`, `Ledger/PostingLine`, `Ledger/EntryRef` — the immutable DTOs other
+  modules see.
+- `Services/AccountService`, `Services/FiscalYearService`, `Validators/*` — part 1.
+- `Ui/*ControllerTrait` — the backend screens as fragments; `module-backend` mounts them at
+  `/backend/finance/account/list`, `/backend/finance/fiscal-year/list` and
+  `/backend/finance/journal/list`.
 
 ```php
-$em = DI::getUnifiedEntityManager();
+$em     = DI::getUnifiedEntityManager();
+$ledger = new LedgerService($em);   // author = the logged-in backend user (or pass a name)
 
-(new AccountService($em))->adoptKmuChart();            // empty chart only
-
-$years = new FiscalYearService($em);
-$year  = new FiscalYear('2026-27', new DateTimeImmutable('2026-07-01'), new DateTimeImmutable('2027-06-30'));
-$years->open($year);   // twelve periods July … June, range journal-entry.2026-27 at 0
+$em->getTransaction(JournalEntry::class)->run(function () use ($ledger): void {
+    // … the module's own writes (an invoice, an open item) …
+    $ref = $ledger->post(PostingRequest::generated(
+        new DateTimeImmutable('2026-08-15'), 'Rechnung 2026-0042', 'invoice', '2026-0042', 'invoice:42:final',
+        [
+            PostingLine::debit('1100', Money::fromDecimal('108.10', 'CHF')),
+            PostingLine::credit('3200', Money::fromDecimal('100.00', 'CHF'), 'Handelserlös', 'UN', 810,
+                Money::fromDecimal('100.00', 'CHF'), Money::fromDecimal('8.10', 'CHF')),
+            PostingLine::credit('2200', Money::fromDecimal('8.10', 'CHF')),
+        ]
+    ));   // EntryRef('2026', 12) — the same call again returns the same ref
+});
 ```
 
 Docs: `docs/topics/financial.md` in the framework repository.

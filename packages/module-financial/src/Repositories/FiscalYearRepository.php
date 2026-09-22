@@ -31,6 +31,24 @@ class FiscalYearRepository extends DoctrineRepository
             ->getResult();
     }
 
+    /**
+     * The year a date falls into, or null when no year covers it — the
+     * ledger's first question for every posting (`PostingRules::yearFor()`).
+     * Years are contiguous and never overlap (`FiscalYearValidator`), so at
+     * most one row matches. Doctrine-only (DQL).
+     */
+    public function findByDate(\DateTimeImmutable $date): ?FiscalYear
+    {
+        return $this->em()->createQueryBuilder()
+            ->select('y')
+            ->from(FiscalYear::class, 'y')
+            ->where('y.startDate <= :day AND y.endDate >= :day')
+            ->setParameter('day', $date->format('Y-m-d'))
+            ->setMaxResults(1)
+            ->getQuery()
+            ->getOneOrNullResult();
+    }
+
     /** The year that ends last — the one a new year must follow — or null for an empty table. Doctrine-only (DQL). */
     public function latest(): ?FiscalYear
     {

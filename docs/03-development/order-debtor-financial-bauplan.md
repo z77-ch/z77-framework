@@ -1,6 +1,6 @@
 # Bauplan — order, debtor, financial, vat, contact, article
 
-**Status:** `[CONCEPT]` → P0 closed 2026-09-21 (ADR-039 to ADR-043 approved). P1 closed 2026-09-21. P2 next.
+**Status:** `[CONCEPT]` → P0 closed 2026-09-21 (ADR-039 to ADR-043 approved). P1 closed 2026-09-21. P2 parts 1 and 2 done 2026-09-22; part 3 (reports) next.
 **Date:** 2026-09-18, updated 2026-09-21 (article model A1–A7 decided, Q7 answered, module cut and
 build phases final, all questions answered, external review worked in; the persistence-access
 question reopened ADR 2 on 2026-09-20 and was settled on 2026-09-21)
@@ -78,8 +78,33 @@ contiguous). Follow-on decision (orchestrator): a fiscal year carries a **`code`
 `2026-27`, proposed from the dates, immutable) and its range is `journal-entry.{code}` — two years
 can start in the same calendar year, so the start year cannot name the range. Opening a year creates
 that range at 0 through `NumberRange::create()` in the same unit of work (DOCTRINE-NR-003 resolved).
-**Next: P2 part 2** — journal (`JournalEntry` / `JournalLine`), manual entries with change log,
-`LedgerService`; then part 3, the reports (§5, ADR-042).
+**P2 part 2 done (2026-09-22)** — the journal (`JournalEntry` / `JournalLine`, migration
+`Version20260922091711`), `LedgerService::post()` / `reverse()` as the one write path (§1, §5.4),
+manual entries with change log (`EntryChange`, `ManualEntryService`), the `Ledger/` DTOs other
+modules see (`PostingRequest`, `PostingLine`, `EntryRef`), backend `/backend/finance/journal`
+(list per fiscal year, detail with reversal link and change log, manual entry form without
+JavaScript, edit/delete with confirmation). Harness: `tests/module-financial.php`, 180 checks,
+including three parallel posters with rollbacks staying gapless. Decisions taken on the way, all
+recorded in [`financial.md`](../topics/financial.md): a repeated idempotency key with DIFFERENT
+content is refused loudly (`IdempotencyConflictException`), content = date, text, origin, lines;
+the reversal's reason is the reversal entry's TEXT, its origin is inherited from the reversed
+entry, its tax base/amount are negated; `taxRate` is snapshotted on the line next to ADR-041's
+three fields (§5.6 groups by code + rate — an ADDITION to ADR-041 decision 7, not a contradiction;
+the label is not snapshotted); tax codes are validated for EXISTENCE at posting (a deactivated code
+still posts from a snapshotted document), the manual form offers active codes only; the author is
+the `AuthUser` name (backend user or `cron:{job}`), a CLI caller names the actor explicitly;
+`accountExists()` of §5.4 is NOT built (no production caller yet — arrives with debtor's account
+settings in P3). Independent review worked in the same day: **optimistic locking** on manual
+entries (`journal_entry.version`, `#[ORM\Version]`; the services take id + version, re-read under
+a row lock, refuse a stale write with `EntryConflictException` — two parallel edits, a stale delete
+and a stale edit after a delete are harness cases); `reverse()` may post to a now-inactive account
+and a manual edit may keep an unchanged line on one (ADR-043/19 applied to accounts); the race
+contract of `post()`/`reverse()` (unique-index failure at commit, no number consumed, no retry
+inside the unit of work) is a rule binding the P3 debtor adapter; a reversal may be dated in the
+next fiscal year. Two owner questions stay open: locking `type` / `postable` once postings exist
+(FIN-TYPE-001) and deleting a wrongly opened fiscal year (FIN-FY-002).
+**Next: P2 part 3** — the reports (§5.5, ADR-042): trial balance, balance sheet, income statement,
+account statement, journal export as DBAL SQL over `journal_line`.
 Framework-wide pending found on the way: module config override replaces instead of merging
 (BOOT-CONFIG-001 in `bootstrap.md`).
 

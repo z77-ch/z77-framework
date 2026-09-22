@@ -98,6 +98,33 @@ class FiscalYear
         return self::JOURNAL_ENTRY_RANGE_PREFIX . $this->code;
     }
 
+    /** True when $date lies inside this year (both bounds inclusive). */
+    public function covers(\DateTimeImmutable $date): bool
+    {
+        $day = $date->format('Y-m-d');
+
+        return $this->startDate !== null && $this->endDate !== null
+            && $day >= $this->startDate->format('Y-m-d') && $day <= $this->endDate->format('Y-m-d');
+    }
+
+    /**
+     * The period a date falls into — what the ledger's period rules are
+     * checked against (`PostingRules`). The periods cover the year without a
+     * gap, so null means the date is outside the year (or the year is not
+     * opened yet). A dozen rows: walked in PHP, no query.
+     */
+    public function periodOn(\DateTimeImmutable $date): ?Period
+    {
+        $day = $date->format('Y-m-d');
+        foreach ($this->periods as $period) {
+            if ($day >= $period->getStartDate()->format('Y-m-d') && $day <= $period->getEndDate()->format('Y-m-d')) {
+                return $period;
+            }
+        }
+
+        return null;
+    }
+
     /**
      * Only for a year not yet opened — `FiscalYearService::open()` adds the
      * derived periods after validation; nothing adds a period later.

@@ -77,7 +77,7 @@ Backend groups exist for UI organisation only — they are NOT business-domain b
 | `content` | `navigation` | Content management: navigation CRUD, content documents, SEO metadata (see [`metadata.md`](metadata.md)), future stylesheet editor |
 | `users` | `user` | User management — placeholder; controller not yet built (navigation entry `id:7` 404s on purpose) |
 | `service` | `backup` | Installation service tools (topbar section «Service»): backups (SUPER_USER, see [`backup.md`](backup.md)) + form-mail settings (ADMIN, see [`mail.md`](mail.md)) |
-| `finance` | `tax-code` | Business master data of the order/debtor/financial plan (ADR-040): tax codes (fragment of `module-vat`, see [`vat.md`](vat.md)), chart of accounts and fiscal years (`account`, `fiscal-year` — fragments of `module-financial`, see [`financial.md`](financial.md)); invoices later. Resolves only in projects that install the owning module |
+| `finance` | `tax-code` | Business master data and bookkeeping of the order/debtor/financial plan (ADR-040): tax codes (fragment of `module-vat`, see [`vat.md`](vat.md)), chart of accounts, fiscal years and the journal (`account`, `fiscal-year`, `journal` — fragments of `module-financial`, see [`financial.md`](financial.md); the journal's add/edit are PAGE form posts guarded by `#[Csrf]`, not modals); invoices later. Resolves only in projects that install the owning module |
 | `contact` | `contact` | Contacts with typed addresses and the address types (fragments of `module-contact`, see [`contact.md`](contact.md)). Proposed group, not owner-confirmed yet |
 
 ## controllers
