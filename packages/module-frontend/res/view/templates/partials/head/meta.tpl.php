@@ -7,7 +7,14 @@
 <meta name="robots" content="noindex, nofollow">
 <?php endif; ?>
 
-<?php /** @var \Z77\Shared\Entities\MetaData|null $metaData */ ?>
+<?php
+/**
+ * @var \Z77\Shared\Entities\MetaData|null $metaData
+ * @var \Z77\Core\Libraries\Seo\SiteIdentity $site   module config `site` (author: 'site.author')
+ */
+?>
 <!-- Author & Theme Color -->
-<meta name="author" content="Max Mustermann">
+<?php if ($site->author !== ''): ?>
+<meta name="author" content="<?= e($site->author) ?>">
+<?php endif; ?>
 <meta name="theme-color" content="<?= e($metaData?->getThemeColor() ?: '#ffffff') ?>">
