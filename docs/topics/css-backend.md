@@ -1,6 +1,6 @@
 # css-backend
 
-2026-09-22
+2026-09-23
 
 ## entry
 
@@ -93,6 +93,24 @@ and the browser keeps showing the old CSS. When a session starts on backend SCSS
 whether to start `npm run watch:backend` and run it in the background if confirmed,
 rather than leaving it to be remembered every time.
 
+### and then it still has to reach the project
+
+Compiling writes `packages/module-backend/res/assets/css/base.css` — the PACKAGE. A project
+serves its own published copy, `public/assets/backend/css/base.css`
+([`installer.md`](installer.md)). With `path` repositories / dev junctions the package file is
+live in `vendor/` immediately, which is exactly what makes this invisible: the CSS is «there»
+and the page still renders with the old classes, no error anywhere (measured on z77.ch,
+INST-ASSET-DIFF-001).
+
+```bash
+npm run build:backend                 # framework root: SCSS → package
+cd <project> && composer install      # project: package → public/assets/backend/css
+```
+
+Since 2026-09-23 that second step needs no answer: an untouched published copy is refreshed
+without a prompt and the run says which files it rewrote. A `base.css` the project compiled
+itself into `public/` is NOT touched — that file belongs to the project.
+
 ## what goes where
 
 | Change | File |
@@ -168,6 +186,7 @@ packages/module-backend/res/view/templates/
 
 ## rules
 
+- When a backend SCSS change must be visible in a PROJECT → MUST run `npm run build:backend` (framework) AND `composer install` (project); the browser serves `public/assets/backend/css/base.css`, not the package file. MUST NOT conclude from a fresh `vendor/` that the project is current — with path repos/junctions `vendor/` is always current and `public/` is not (INST-ASSET-DIFF-001).
 - When styling colors, spacing, or effects → MUST use `--be-*` token variables; values MUST NOT be hardcoded
 - When declaring tokens (`--be-*`, `--color-*`, `--space-*`, …) → MUST place the default block on the `.be` wrapper selector (the four `tokens/_*.scss` files), keeping the `[data-be-palette]` / `[data-be-theme]` override blocks after it; MUST NOT declare design tokens on `:root` (ADR-018; only `@font-face` in `tokens/_fonts.scss` stays global)
 - When adding component styles → MUST live in `components/_*.scss`; MUST NOT be added to layout files

@@ -1,6 +1,11 @@
 # ADR-025 — Report framework-asset drift on update (read-only, developer decides)
 
-**Status:** `[APPROVED]` — deploy step amended by [ADR-026](adr-026-opt-in-interactive-asset-deploy.md) (2026-07-15)
+**Status:** `[APPROVED]` — deploy step amended by [ADR-026](adr-026-opt-in-interactive-asset-deploy.md) (2026-07-15);
+"nothing is stored" superseded 2026-09-24 by the publication record
+([ADR-046](adr-046-publication-record-for-public-files.md), `[PROPOSED]`; INST-ASSET-DIFF-001 in
+[`../topics/installer.md`](../topics/installer.md)): a published copy that is still byte-identical
+to what the installer wrote is refreshed WITHOUT a prompt, in every run mode. The read-only
+treatment stays for every file the project touched or the record does not know.
 **Date:** 2026-07-14
 
 ---

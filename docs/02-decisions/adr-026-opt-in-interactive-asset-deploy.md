@@ -1,6 +1,10 @@
 # ADR-026 — Opt-in interactive asset deploy on update (amends ADR-024 §3 / ADR-025)
 
-**Status:** `[APPROVED]`
+**Status:** `[APPROVED]` — decision 1 ("non-interactive writes nothing") narrowed 2026-09-24 by
+[ADR-046](adr-046-publication-record-for-public-files.md) (`[PROPOSED]`): a file identical to the
+publication record, and a file `public/` never had, are written in a non-interactive run too, and
+every run must NAME what it kept — once. Decisions 2–5 (default No, the warning before an
+overwrite, no blanket force) stand.
 **Date:** 2026-07-15
 **Amends:** ADR-024 §3 ("No overwrite, no force command"), ADR-025 (read-only report)
 

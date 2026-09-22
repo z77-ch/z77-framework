@@ -1,6 +1,9 @@
 # ADR-024 — Public is developer-owned: seed once on first install, never overwrite
 
-**Status:** `[APPROVED]`
+**Status:** `[APPROVED]` — §3 ("never overwrite") narrowed by
+[ADR-046](adr-046-publication-record-for-public-files.md) (2026-09-24, `[PROPOSED]`): the
+installer may rewrite a file that is byte-identical to its own publication record, and may
+publish a file `public/` never had. Everything the project touched stays protected.
 **Date:** 2026-07-14
 
 ---

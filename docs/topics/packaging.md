@@ -1,6 +1,6 @@
 # packaging
 
-2026-08-26
+2026-09-23
 
 Public since 2026-07-15: the monorepo and all split repos are public on GitHub and every package (`z77/kernel`, the three modules, `z77/skeleton`, `z77/docs`) is registered on Packagist with release tags (`1.0.x`). `z77-ch/kernel` + `module-frontend/backend/dms` are the active split targets; the obsolete `z77-ch/core`, `/shared`, `/persistence` repos are archived (read-only), superseded by kernel.
 
@@ -62,6 +62,26 @@ composer require z77/module-frontend:^1.0         # add a package to an existing
 
 Everything resolves from Packagist; `composer require z77/module-frontend:^1.0` pulls the whole graph (`module-frontend` → `z77/kernel`).
 
+### a package's public assets need an install to reach the project
+
+A package ships its CSS/JS/images under `res/assets/`; the project SERVES them from
+`public/{assetDir}/{module}`, a copy the installer publishes ([`installer.md`](installer.md)).
+Changing the package alone changes nothing a browser sees.
+
+- **In the monorepo (and any setup with `path` repositories / dev junctions)** this is the trap:
+  `packages/*` is symlinked into `vendor/`, so a rebuilt `base.css` is live in `vendor/` the second
+  `npm run build:backend` finishes — while `public/assets/backend/css/base.css` is still the copy
+  from the last install. Nothing errors; the browser keeps serving the old file. **Run
+  `composer install` in the project after changing a package's CSS or JS.**
+- **Since 2026-09-23 that install republishes without asking**, as long as the deployed copy is
+  still byte-identical to the one the installer wrote (publication record,
+  [`installer.md`](installer.md) INST-ASSET-DIFF-001). It works in a non-interactive run too, and
+  the run names what it refreshed.
+- **A file the project changed itself** (a hand edit, or CSS compiled from `override/…/scss` into
+  `public/`) is still never overwritten silently — it is offered per file interactively, and named
+  as kept stale otherwise. That is deliberate (ADR-024/026); a project that compiles its own CSS
+  into `public/` keeps owning that file and republishes it itself.
+
 ## rules
 
 - When creating a new `z77-ch/<pkg>` target repo → MUST push an initial commit to `main` before the first split; an empty target repo breaks the split action (`git push` of a commit-less branch fails with `src refspec main does not match any`).
@@ -76,6 +96,7 @@ Everything resolves from Packagist; `composer require z77/module-frontend:^1.0` 
 - When restoring dev junctions → MUST delete `vendor/z77/build.json` (`vendor-dev.bat` does), or the local backend reports the last deploy's date for a working tree that has moved on.
 - When displaying the stamp → MUST show the `dirty` marker with the commit and MUST NOT render an empty string for an unknown commit; `BuildInfo::label()` returns `unbekannt` for that case.
 - When adding a CLI binary to a package's `bin` list → MUST run `composer update z77/<pkg>` in every consuming project; `composer install` and `vendor-deploy.bat` do NOT create the new `vendor/bin` entry (PKG-005).
+- When changing a package's `res/assets/` (CSS, JS, images) → MUST run `composer install` in every consuming project afterwards; the served copy lives in `public/{assetDir}/{module}` and a `path`-repo/junction setup makes `vendor/` look current while `public/` is stale. A hand copy from `vendor/` (what the installer itself suggests for a file it kept) is fine — the next install sees both sides in sync and adopts it into the publication record (INST-ASSET-DIFF-001).
 
 ## known issues
 
