@@ -36,7 +36,7 @@ surface it has borrows another module's view-area.
 
 There is no registry to edit. A module is **any PSR-4 namespace `Z77\Module\{Name}\`**.
 On `composer install`/`update`, the installer scans the autoload map, finds every
-`Z77\Module\*` root, and regenerates `config/moduleManager.inc.php` (do not edit that file
+`Z77\Module\*` root, and regenerates `config/vendor/moduleManager.inc.php` (do not edit that file
 by hand — it is overwritten). The module key is the lower-cased `{Name}` (`Z77\Module\Shop`
 → `shop`), and its URLs live under `/{key}/…`.
 
@@ -82,7 +82,7 @@ Project module — add to the project `composer.json` autoload:
 "Z77\\Module\\Shop\\": ["override/z77/module/shop/src/"]
 ```
 
-Run `composer install` — `config/moduleManager.inc.php` now lists the new key.
+Run `composer install` — `config/vendor/moduleManager.inc.php` now lists the new key.
 
 ### 2. Write the App config (mandatory)
 
@@ -217,7 +217,7 @@ Provide the skeleton and partials the layout config references
 
 ## Verification
 
-- `composer install` → `config/moduleManager.inc.php` lists the new module key.
+- `composer install` → `config/vendor/moduleManager.inc.php` lists the new module key.
 - **View-area:** `npm run build` compiles the module's CSS; hitting `/{key}/` resolves to
   its default group → controller → action and renders through its own layout skeleton.
 - **Headless:** hitting the module's route (e.g. its reserved route) returns the expected

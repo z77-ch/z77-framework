@@ -11,7 +11,7 @@
  *
  * @var \Z77\Shared\Entities\MetaData|null $metaData
  * @var \Z77\Core\Libraries\Seo\SiteIdentity $site
- * @var array{canonical: string, alternates: list<array{hreflang: string, url: string}>} $seo
+ * @var \Z77\Core\Libraries\Seo\SeoLinks $seo  canonical/hreflang, built on first read (reads as an array)
  */
 $ogTitle       = $metaData?->getTitle() ?: $site->name;
 $ogDescription = $metaData?->getDescription() ?: '';

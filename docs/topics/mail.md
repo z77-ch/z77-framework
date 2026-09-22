@@ -58,7 +58,7 @@ line breaks), maps everything onto `Message` and sends via `Mailer::create()`.
 override-first `emailConfig`; the resolver is the single attachment point for the planned
 v2 backend-editable settings entity.
 
-- **Config-driven, fail-loud-when-absent.** `Mailer::create()` reads `config/mail.inc.php`
+- **Config-driven, fail-loud-when-absent.** `Mailer::create()` reads `config/client/mail.inc.php`
   (`getBaseConfig('config/mail', throwError: false)`; installer-seeded seed-once with
   `enabled=true`, `transport='mail'`, empty `fromAddress` to fill per project). Missing file
   or `enabled = false` → the mailer is *unconfigured* and `send()` throws a clear
@@ -136,7 +136,7 @@ topic that owns the detail. Deep architecture is in «mental model» / «flow».
 
 ### A. once per project — sender identity + transport
 
-`config/mail.inc.php` (base config, installer-seeded seed-once, hand-editable —
+`config/client/mail.inc.php` (base config, installer-seeded seed-once, hand-editable —
 NOT `emailConfig`, and NOT per-form; the sender is one installation identity):
 
 | Key | Meaning |
@@ -161,7 +161,7 @@ check the B8 rule that the check digits ride in the SUBJECT, since a transport
 rendering its own version could not prove it.
 
 ⚠️ Development only. It never delivers, and it writes plain text — a magic-link
-token IS a credential until redeemed. `config/mail.inc.php` is machine-specific
+token IS a credential until redeemed. `config/client/mail.inc.php` is machine-specific
 and gitignored, so the setting cannot travel to a server by accident; keep it
 that way rather than switching on a flag.
 
@@ -287,13 +287,13 @@ address in config:
 - When sending mail → MUST build a `Message` and pass it to `Mailer::send()` (`Mailer::create()`); MUST NOT hand-assemble MIME or open an SMTP socket outside `SmtpTransport`.
 - When putting any user/data-derived text into a header (subject, display name, attachment filename) → MUST route it through `Message`/`Attachment` (which reject CR/LF and sanitise); MUST NOT concatenate raw input into a header line.
 - When mailing a document → MUST go through `DocumentService::send()` (it enforces the `DocumentKind::mailable()` policy + reads bytes via `BlobStorage`); MUST NOT read the blob and build the attachment in a controller.
-- When mail might be unconfigured → MUST treat `Mailer::send()` throwing `RuntimeException` as expected (surface it as a flash); MUST NOT assume `config/mail.inc.php` exists or `enabled = true`.
+- When mail might be unconfigured → MUST treat `Mailer::send()` throwing `RuntimeException` as expected (surface it as a flash); MUST NOT assume `config/client/mail.inc.php` exists or `enabled = true`.
 - When adding a transport → MUST implement `MailTransport::send(string $sender, array $recipients, string $data)` and assert reply codes; MUST NOT trust the visible `To:`/`From:` headers for the envelope (use the `MimeMessage::build()` envelope).
 - When a public form should send its mail → MUST declare it as a `FormDefinition` and let `PublicFormHandler::process()` call `sendForm()` ([`forms.md`](forms.md)); MUST NOT call `sendForm()` from a hand-written form cascade in the controller.
 - When sending a form/notification mail from app code → MUST go through `DI::getEmailService()`. Recipient ownership (owner decision 2026-07-18, review-email-service-usage.md §2): **static, operator-defined recipients** (contact-form class) → `sendForm()` + emailConfig form key (backend-editable in v2); **dynamic, data-driven recipients** (mail to a user, an entity owner) → `send(EmailMessage)` with `->to()` in the controller. MUST NOT hardcode a static operator recipient in a controller.
-- When setting a sender → MUST leave From to the installation identity (`config/mail.inc.php`, SPF/DKIM/DMARC-bound); the per-mail "sender" is Reply-To. `EmailMessage::from()` stays the exception for verified same-domain identities (a From control system is planned — see pending).
+- When setting a sender → MUST leave From to the installation identity (`config/client/mail.inc.php`, SPF/DKIM/DMARC-bound); the per-mail "sender" is Reply-To. `EmailMessage::from()` stays the exception for verified same-domain identities (a From control system is planned — see pending).
 - When passing user input into a mail → MUST hand it to the template context (templates escape via `e()`); the only user-controlled header is Reply-To (validated, silently dropped when invalid); MUST NOT feed user input into subjects, recipients, or template paths.
-- When a mail carries a link back into the installation → MUST build its origin from `Request::getBaseUrl()` / `CANONICAL_BASE_URL` (`config/systemConfig.inc.php`, ADR-030); MUST NOT derive it from the request's `Host` header, which the client chooses — a forged Host turns a genuine mail into an attacker-owned link (SEC-005, see [`security.md`](security.md)). On an installation where the value is unset this THROWS by design, so a cron aborts instead of mailing links that point nowhere.
+- When a mail carries a link back into the installation → MUST build its origin from `Request::getBaseUrl()` / `CANONICAL_BASE_URL` (`config/client/systemConfig.inc.php`, ADR-030); MUST NOT derive it from the request's `Host` header, which the client chooses — a forged Host turns a genuine mail into an attacker-owned link (SEC-005, see [`security.md`](security.md)). On an installation where the value is unset this THROWS by design, so a cron aborts instead of mailing links that point nowhere.
 - When changing the plain-text half (`HtmlToText`) → MUST keep the URL COUNT of both halves equal, a linked image included, because the receiver's filter compares them (`URI_COUNT_ODD`, MAIL-SPAM-001); MUST NOT re-introduce a whitespace pass that runs BEFORE the line breaks exist and cannot tell indentation from a space inside a sentence (MAIL-TEXT-001); and MUST re-run `php tests/mail-html-to-text.php` (18 checks, no bootstrap) — the two rules above look alike in a diff and neither shows up in the HTML half anyone reads while testing.
 - When a form mail fails → MUST treat `sendForm() === false` as the normal failure path (generic user message; cause is in `getLastErrors()` + `logs/php-error.log`); MUST NOT let a transport/config problem escalate to a 500 on a public form.
 - When routing a form mail by a user choice → MUST pass a server-validated option value as `sendForm()`'s `routeKey` (it selects an entry of the server-defined `routes` map); MUST NOT derive recipients or subject text from user input directly.
@@ -422,7 +422,7 @@ address in config:
   pre-launch client mail a real risk. See the «seed-address convention» section.
 - From control system (owner note 2026-07-18): a later mechanism guarantees any
   `EmailMessage::from()` is domain-conform (SPF/DKIM/DMARC) — until then From stays the
-  `config/mail.inc.php` installation identity.
+  `config/client/mail.inc.php` installation identity.
 - Re-add `RUNTIME=/skeleton/config/mail.inc.php` to the file map after the next clean-install
   regenerates `skeleton/` (installer seeds it now).
 

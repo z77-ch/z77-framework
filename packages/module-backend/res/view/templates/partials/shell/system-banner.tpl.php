@@ -19,7 +19,7 @@ if (defined('CANONICAL_BASE_URL') && CANONICAL_BASE_URL !== '') return;
     <div class="be-shell-banner__text">
         <strong class="be-shell-banner__title">Adresse dieser Installation fehlt</strong>
         <span class="be-shell-banner__sub">
-            In <code>config/systemConfig.inc.php</code> ist <code>canonicalBaseUrl</code> leer.
+            In <code>config/client/systemConfig.inc.php</code> ist <code>canonicalBaseUrl</code> leer.
             Anmelde-Mails und die SEO-Canonical lassen sich nicht erzeugen, solange dort nicht
             die Adresse steht, unter der diese Installation läuft (z.&nbsp;B. <code>https://kunde.ch</code>).
         </span>

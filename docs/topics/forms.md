@@ -102,7 +102,7 @@ field name, the form partial and the notification-mail body can both be generic.
   `withGeoGuard()` without a GeoLite database is silently inert: every country reads as
   unknown, unknown never blocks, and only the backend page says so («Kein
   Länder-Datenbestand installiert»). The developer's checklist per installation: a
-  MaxMind account + licence key, the key in `config/geoip.inc.php` (machine-local,
+  MaxMind account + licence key, the key in `config/client/geoip.inc.php` (machine-local,
   gitignored, NOT deployed — it must be created on every server), and the `geoip-update`
   job active (registered by `backendConfig`; it performs the initial download and keeps
   the EULA's keep-current duty). Details and licence terms: [`geoip.md`](geoip.md).
@@ -188,7 +188,7 @@ GET /frontend/main/contact/danke   ← the PRG target: a page of its own
 - When a form field needs a rule that does not exist → MUST add it to `PublicFormValidator` plus a `form.error.{rule}` key in every shipped dictionary; MUST NOT smuggle validation into the template, the controller or the definition.
 - When installing this into an existing project → MUST add the `form.*` keys to `data/framework/i18n/{lang}.json` by hand — incl. `form.error.check` and `form.flash.sent` (the `*.default.json` are seed-once) — and MUST deploy `public-form.js` into `public/assets/{module}/js/`; MUST NOT assume `composer install` copies assets (it only reports the diff).
 - When a form should refuse or observe submits by origin country → MUST opt in via `withGeoGuard()` (silent where the page must stay indistinguishable); MUST NOT build a per-form gate in a flow, a controller or an observer — the handler owns gate AND log, and a second gate would produce a second, disagreeing read of the origin.
-- When switching the geo guard on → the country DATA is the developer's per-installation duty (MaxMind account, key in `config/geoip.inc.php`, `geoip-update` job — see the mental-model checklist); MUST NOT assume the switch alone does anything, and MUST add the log's sentence to the installation's privacy policy.
+- When switching the geo guard on → the country DATA is the developer's per-installation duty (MaxMind account, key in `config/client/geoip.inc.php`, `geoip-update` job — see the mental-model checklist); MUST NOT assume the switch alone does anything, and MUST add the log's sentence to the installation's privacy policy.
 - When the log should carry who submitted → MUST declare it as the definition's `identityField()` (one field, explicit); MUST NOT smuggle identifying values through `withGeoGuard(extra: ...)` — extras are technical facts on every line, the identity is the audited exception.
 - When restricting by country → MUST be a blocklist and MUST fail OPEN (empty list, unknown country never block); MUST NOT block on `??`/unknown and MUST NOT build a whitelist — the backend surface does not even offer either.
 - When reading which countries are blocked → MUST go through `CountryBlocklist::codes()`; MUST NOT read a config key — the list is installation data, written only on the backend surface (with a mandatory reason).

@@ -1,6 +1,6 @@
 # bootstrap
 
-2026-09-21
+2026-09-22
 
 ## entry
 
@@ -17,6 +17,11 @@ SOURCE=/packages/kernel/core/src/Config/systemConfig.default.inc.php
 SOURCE=/packages/kernel/core/src/Libraries/ConfigManager.php
 SOURCE=/packages/kernel/core/src/Libraries/FileFinder.php
 SOURCE=/packages/kernel/core/src/Services/ModuleManager.php
+SOURCE=/packages/kernel/core/src/Exception/ExceptionHandler.php
+SOURCE=/packages/kernel/core/src/autoload/debug/php/Functions.php
+SOURCE=/packages/kernel/core/src/Libraries/Seo/SeoLinks.php
+SOURCE=/tests/uncaught-error-status.php
+SOURCE=/tests/fresh-install-setup.php
 
 RUNTIME=/skeleton/config/bootstrap.inc.php
 
@@ -66,7 +71,7 @@ ModuleManager → ControllerHandler → Request
 | `ABS_STATE_PATH` | `ABS_VAR_PATH . '/state'` | `__construct()` |
 | `DEBUG` | `var/state/debug.flag` (existence) | `__construct()` |
 | `SEO_NOINDEX` | `var/state/noindex.flag` (existence) | `__construct()` |
-| `CANONICAL_BASE_URL` | `config/systemConfig.inc.php` key `canonicalBaseUrl` (ADR-030) | `__construct()` |
+| `CANONICAL_BASE_URL` | `config/client/systemConfig.inc.php` key `canonicalBaseUrl` (ADR-030) | `__construct()` |
 | `ABS_PUBLIC_PATH` | `ABS_BASE_PATH + htmlRoot` | `__construct()` |
 | `REL_INDEX_PATH` | relative path to index.php | `pullUp()` |
 
@@ -140,7 +145,7 @@ collects every `App/Config/{$configKey}Config.inc.php` under ANY of the module's
 
 `debug` | `timezone` | `htmlRoot` | `cachePersist` (always `false`) — `cacheDir` is GONE since ADR-035: the cache path is fixed to `var/cache`, a leftover key in an installed config is ignored
 
-## system config keys (`config/systemConfig.inc.php`, ADR-030)
+## system config keys (`config/client/systemConfig.inc.php`, ADR-030)
 
 Settings that describe THIS installation — seed-once, so a value set on the server survives
 `composer install`, and deliberately NOT fed from `composer.json` (that file is committed, so
@@ -156,6 +161,28 @@ Empty does **not** abort the boot — a fatal there would take the backend down,
 surface needed to fix it. Instead the shell shows a Störer and `Request::getBaseUrl()` throws
 when something actually tries to build an absolute URL (SEC-005, [`security.md`](security.md)).
 
+The page context's canonical/hreflang set (`$seo`) is therefore a `SeoLinks` object, built on
+its first READ (since 2026-09-22, BOOT-SETUP-001): only the frontend head partials print it,
+so the backend and the first-run setup render without the origin, while a frontend page still
+fails loudly (500, message names `config/client/systemConfig.inc.php`) — never with a guessed
+or empty canonical. `buildSiteIdentity()` stays eager: it only asks for the origin when the
+module has a `site` block, which the backend has not.
+
+## uncaught errors (since 2026-09-22, BOOT-ERR-001)
+
+An error nobody caught answers **HTTP 500**. `Bootstrap::__construct()` registers, as its
+first step (web SAPIs only — a CLI binary keeps PHP's own report and exit code 255):
+
+| Handler | Does |
+|---|---|
+| `ExceptionHandler::handleUncaught()` (exception handler) | `markFailed()` → 500; logs; stateless route → JSON envelope (`handle()`); `display_errors` off → drops the half-rendered output, generic `500` body without internals; on → message + trace |
+| `ExceptionHandler::handleShutdown()` (shutdown function) | a real fatal (E_ERROR, parse/compile) → `markFailed()`, best effort; `display_errors` off and headers still open → drops the half-rendered output, same generic `500` body as the exception path |
+| DEBUG `setOwnExceptionHandler()` (replaces the exception handler after routing) | `markFailed()` first, then its box — except on a stateless route (/api), where it delegates to `handleUncaught()`: the JSON envelope does not change with DEBUG |
+
+`TemplateRenderer` remembers `ob_get_level()` before its `ob_start()` and, when a template
+throws, closes every buffer down to that level — its own and any the template opened — so
+nested partials no longer leave half a page in open buffers.
+
 ## rules
 
 - When initializing the DI container → MUST do it in `Bootstrap::__construct` exactly once; subsequent calls MUST NOT re-init
@@ -165,6 +192,9 @@ when something actually tries to build an absolute URL (SEC-005, [`security.md`]
 - When editing config → MUST edit `bootstrap.default.inc.php` (source) — runtime `bootstrap.inc.php` MUST NOT be hand-edited as source
 - When building an absolute URL that leaves the request (mail link, canonical, hreflang, anything rendered into a cached page) → MUST take the origin from `Request::getBaseUrl()`; MUST NOT read `$_SERVER['HTTP_HOST']`. The header is the client's to choose, and the page cache keys on path only, so one forged request would poison what every later visitor is served (SEC-005)
 - When adding an installation-level setting (something that differs per installation and must survive an update) → MUST add it to `systemConfig.default.inc.php`, NOT to `bootstrap.inc.php` (regenerated) and NOT to composer `extra` (committed, so environments cannot differ). MUST decide its empty-value policy per ADR-030 point 4: throw at the point of use when no default is meaningful, take the default when one obviously is; MUST NOT abort the boot either way
+- When adding or replacing an exception / shutdown handler (a project override, a debug tool) → MUST call `ExceptionHandler::markFailed()` before printing anything; MUST NOT print an error page without it — a user handler takes the error away from PHP, and with `display_errors` on PHP itself answers 200 (BOOT-ERR-001)
+- When a value in the shared page context (`AbstractBaseController::html()`) needs `Request::getBaseUrl()` → MUST defer it to the first read (like `SeoLinks`) unless every layout prints it; MUST NOT build it eagerly (takes down the backend and the setup on an installation without `canonicalBaseUrl`) and MUST NOT catch the throw into an empty or Host-derived value (SEC-005)
+- When a message, comment or living doc names a config file → MUST name its split location (`config/client/…` or `config/vendor/…`, ADR-036); `tests/fresh-install-setup.php` fails on a bare `config/X.inc.php` in `packages/` and `docs/` — ADRs (`docs/02-decisions/`) are excluded as historical records, and a dated plan/review that must keep the flat path MUST be added to the harness allowlist WITH its reason
 - When a setting is per USER → MUST put it on `BackendUser` (ADR-022), not in `systemConfig`; when it is transient runtime state (a lock held while a job runs) → MUST NOT put it in `systemConfig` at all, or a restore resurrects it on a machine where nothing is running
 
 ## see also
@@ -177,6 +207,8 @@ when something actually tries to build an absolute URL (SEC-005, [`security.md`]
 
 ## known issues
 
+- **BOOT-ERR-001** — resolved 2026-09-22 (P2 exit check, finding S1). Don't assume PHP answers an uncaught error with 500: it does so only while `display_errors` is off AND no user handler took the error. In DEBUG both were the other way round — `setOwnExceptionHandler()` printed its box and never set a status, and `display_errors` is on — so a fatal went out as **HTTP 200** (the first setup page of a fresh install). Output buffering was not the cause (nothing had been sent when `html()` threw), but open template buffers carried half a page ahead of the error; `TemplateRenderer` now closes them. Fix: `ExceptionHandler::handleUncaught()` / `handleShutdown()` registered first thing in `Bootstrap::__construct()`, `markFailed()` in the DEBUG handler. Verified: `php tests/uncaught-error-status.php` — 15 checks in PHP's built-in server (including the control case that reproduces the 200, DEBUG on a stateless route, and a real fatal with `display_errors` on and off) plus 3 CLI checks of the `TemplateRenderer` buffers. Status codes also verified live against the z77.ch installation (review 2026-09-22). Residual, not changed: a DEBUG warning printed before the response (headers then already sent) still leaves the status at whatever was sent — `markFailed()` cannot change sent headers.
+- **BOOT-SETUP-001** — resolved 2026-09-22 (P2 exit check, finding S1). Don't assume «empty `canonicalBaseUrl` does not abort the boot» meant the backend was reachable: `AbstractBaseController::html()` built the SEO set eagerly for EVERY page, so the backend and `/backend/system/setup/setup` died with the SEC-005 exception on every fresh install — the Störer that should explain it could never render. Fix: `SeoLinks` (built on first read). SEC-005 is unchanged: no fallback, a frontend page still throws. Its message names `config/client/systemConfig.inc.php` only where `display_errors` is on (DEBUG); otherwise the client gets the generic 500 and the message goes to the log. The backend Störer naming the file shows only AFTER login — the setup page and `/login` carry none; the installer prints the same hint at the end of its run (INST-FRESH-001). Verified: `php tests/fresh-install-setup.php`. The message also named the flat pre-split path (`config/` without `client/`, S2) — all messages and comments in `packages/` now name `config/client/…` / `config/vendor/…`.
 - **BOOT-CONFIG-001** — don't assume a module config override records only its deviation: `ConfigManager::getArrayConfig()` takes the first source match, so an override REPLACES the package config. A project changing one key (e.g. `contactListLimit` in `contactConfig`) must copy the ENTIRE config and from then on misses every key a package update adds or changes — against Rule 2 (a scope records only its deviation). Full `frontendConfig` copies exist in installations today (e.g. `override/z77/module/frontend/src/App/Config/frontendConfig.inc.php`). Only registry keys with an extension file (`getConfigExtensions()`) are additive.
 
 ## pending

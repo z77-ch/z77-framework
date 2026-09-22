@@ -1,6 +1,6 @@
 # installer
 
-2026-09-21
+2026-09-22
 
 ## entry
 
@@ -21,6 +21,7 @@ SOURCE=/packages/kernel/core/src/Config/database.default.inc.php
 SOURCE=/packages/kernel/core/data/framework/routing/navigation.default.json
 SOURCE=/packages/kernel/core/data/framework/seo/metadata.default.json
 SOURCE=/skeleton/composer.json
+SOURCE=/tests/fresh-install-setup.php
 
 ## mental model
 
@@ -56,8 +57,8 @@ Runs as a Composer post-install/post-update hook. Reads `extra` config from `com
 | 10 | `writeI18nConfig()` | → `config/client/i18n.inc.php` — **seed-once**: skipped if it already exists (INST-CONFIG-001) |
 | 11 | `writeBackupConfig()` | → `config/client/backup.inc.php` — **seed-once**: backup policy (retention, excludes, dump settings), see [`backup.md`](backup.md) |
 | 12 | `writeMailConfig()` | → `config/client/mail.inc.php` — **seed-once**: mail transport + sender identity (`enabled=true`, `transport='mail'`, empty `fromAddress` to fill per project), see [`mail.md`](mail.md) |
-| 13 | `writeSystemConfig()` | → `config/client/systemConfig.inc.php` — **seed-once**: installation identity (`canonicalBaseUrl`, `baseCurrency`), NOT fed from `composer.json` (ADR-030) |
-| 13b | `writeDatabaseConfig()` | → `config/client/database.inc.php` — **seed-once**: the ONE database connection (host, port, name, user, password; empty `name` = no database), read by the Doctrine driver and the `db` backup; like systemConfig NOT fed from `composer.json` (ADR-039 decision 4), see [`persistence-doctrine.md`](persistence-doctrine.md) |
+| 13 | `writeSystemConfig()` | → `config/client/systemConfig.inc.php` — **seed-once**: installation identity (`canonicalBaseUrl`, `baseCurrency`), NOT fed from `composer.json` (ADR-030). `canonicalBaseUrl` is seeded EMPTY (no default is possible): the setup and the backend work without it, frontend pages and mail links answer 500 until it is set (INST-FRESH-001) |
+| 13b | `writeDatabaseConfig()` | → `config/client/database.inc.php` — **seed-once**: the ONE database connection (host, port, name, user, password; empty `name` = no database), read by the Doctrine driver and the `db` backup; like systemConfig NOT fed from `composer.json` (ADR-039 decision 4), see [`persistence-doctrine.md`](persistence-doctrine.md). Seeded `host` = `localhost` (Unix socket on Linux; on Windows set `127.0.0.1` by hand — DOCTRINE-HOST-001) |
 | 14 | `writeFileFinderConfig()` | → `config/vendor/fileFinder.inc.php` |
 | 15 | `writeDataFiles()` | seed `data/*.json` from EVERY installed framework package's data roots (skip if already exist; INST-SEED-001) |
 | 16 | `provisionAdmin()` | create admin (interactive) or write `SETUP_TOKEN` (non-interactive) — skip if `backendUsers.json` exists |
@@ -275,6 +276,7 @@ Installer creates the override dirs, registers the module in `moduleManager.inc.
 
 ## known issues
 
+- **INST-FRESH-001** — resolved 2026-09-22 (P2 exit check, findings S1–S3). Don't assume a fresh install needs no hand edit before it is fully usable: two seed-once values are deliberately left for the installation. (1) `canonicalBaseUrl` is empty — until 2026-09-22 that took down even `/backend/system/setup/setup`, and with status 200 (fixed in the framework: [`bootstrap.md`](bootstrap.md) BOOT-SETUP-001, BOOT-ERR-001). Now the setup and the backend run; frontend pages and mail links answer 500 until it is set. Where it is named: the installer prints one line naming `config/client/systemConfig.inc.php` and `canonicalBaseUrl` at the end of every run while the value is empty (`reportMissingCanonicalBaseUrl()`, seed-once file only read; checked by `tests/fresh-install-setup.php` through the static `canonicalBaseUrlNotice()`), and the backend Störer names it — but only AFTER login: the setup page and `/login` show no banner. (2) The database `host` is `localhost` — right on Linux (socket), ~2 s per request on Windows against a MariaDB bound to `127.0.0.1` ([`persistence-doctrine.md`](persistence-doctrine.md) DOCTRINE-HOST-001). Both files are seed-once: any change to a seed reaches only NEW installations; an existing installation keeps its file.
 - `Install.php` is a single large class (ARCH-C) — planned split for v1.1 (low priority).
 - **INST-ASSET-001** — resolved 2026-05-17. Asset installation no longer module-only: `createPublicAssets()` now installs `res/assets/` from every framework package (modules + shared + any future non-module package). Previously the `Z77\Module\` filter silently dropped shared assets, so e.g. `packages/kernel/shared/res/assets/js/core.js` never reached `public/assets/shared/js/` via Composer install.
 - **INST-ASSET-002** — resolved 2026-07-14 (ADR-024). `composer install` clobbered
@@ -298,8 +300,8 @@ Installer creates the override dirs, registers the module in `moduleManager.inc.
 
 - ARCH-C: split into separate classes (v1.1, low priority)
 - **INST-CONFIG-001** (partially resolved 2026-07-11): reassess the installer's overwrite policy before Packagist publication. Audit **every file the installer writes** (all `writeXxxConfig()` steps, `writeDataFiles()`, public asset copy, `copyFiles()`) and decide per file whether an install/update may overwrite it. Classify each target as: regenerate-always vs. seed-once (like data files) vs. merge. Blocks publication.
-  - DONE: `config/i18n.inc.php` → seed-once (`writeI18nConfig()` skips if it exists). Defines the project's languages, which the developer adapts after install; an update must not clobber that.
-  - DONE: `config/auth.inc.php` → seed-once (`writeAuthConfig()` skips if it exists). Holds installation-wide auth policy (e.g. `passwordTier`) the developer adapts after install.
+  - DONE: `config/client/i18n.inc.php` → seed-once (`writeI18nConfig()` skips if it exists). Defines the project's languages, which the developer adapts after install; an update must not clobber that.
+  - DONE: `config/client/auth.inc.php` → seed-once (`writeAuthConfig()` skips if it exists). Holds installation-wide auth policy (e.g. `passwordTier`) the developer adapts after install.
   - DONE: `copyFiles()` (public entry files) + public asset copy → seed-once on first install only (ADR-024, INST-ASSET-002). `public/` is developer-owned; the installer never overwrites it.
   - TODO: classify the remaining framework-derived config targets — `bootstrap.inc.php`, `moduleManager.inc.php`, `fileFinder.inc.php` (regenerate-always is likely correct, but confirm each carries no developer-adjusted value before publication).
   - DECIDED 2026-08-08: `writeDataFiles()` stays **seed-once at file level** — the installer never merges records into an existing runtime file. The `merge` class is served by a separate, manual data import in the backend (ADR-032). Consistent with ADR-024/025: the installer reports, the developer decides.

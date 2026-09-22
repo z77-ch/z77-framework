@@ -28,7 +28,7 @@ clicks the button once to flush stale HTML from the cache.
 
 ### 3. Debug toggle (backend UI)
 
-A button in the backend toggles `DEBUG` in `config/bootstrap.inc.php` between `true`
+A button in the backend toggles `DEBUG` in `config/vendor/bootstrap.inc.php` between `true`
 and `false`, then calls `pageCache->clearAll()`.
 
 Why clearAll() here: switching DEBUG off (false → production mode) activates the cache.

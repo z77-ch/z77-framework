@@ -1,6 +1,6 @@
 <?php
 /** @var \Z77\Shared\Entities\MetaData|null $metaData */
-/** @var array{canonical: string, alternates: list<array{hreflang: string, url: string}>} $seo */
+/** @var \Z77\Core\Libraries\Seo\SeoLinks $seo  canonical/hreflang, built on first read (reads as an array) */
 /** @var \Z77\Core\Libraries\Seo\SiteIdentity $site */
 // Title: the page's SEO title, else the site name (module config `site.name`).
 // No framework name as fallback — it used to show "Z77 Framework" in the tab of

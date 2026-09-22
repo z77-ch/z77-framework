@@ -65,7 +65,7 @@ abstract class BackendAbstractController extends AbstractBaseController
     }
 
     /**
-     * Installation-wide password strength tier from `config/auth.inc.php`
+     * Installation-wide password strength tier from `config/client/auth.inc.php`
      * (defaults to {@see PasswordTier::Strong} when the config is absent/unknown).
      * Resolved here so the password-setting controllers (user admin, setup) share
      * one source. See docs/topics/security.md (PWD-POLICY-001).

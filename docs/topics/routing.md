@@ -1,6 +1,6 @@
 # routing
 
-2026-09-17
+2026-09-22
 
 ## entry
 
@@ -236,6 +236,8 @@ Enforcement point: `Dispatcher::enforceActionConstraints()`. Error rendering: `E
 | `InvalidRouteException` | 2-char segment that is not a valid language code |
 
 All caught in `Bootstrap::pullUp()` → forwarded to `ExceptionHandler::handle()`.
+
+Anything thrown later and caught nowhere (an action, a template, the dispatcher) reaches `ExceptionHandler::handleUncaught()` and answers **500** — also in DEBUG, where it used to go out as 200 (since 2026-09-22, [`bootstrap.md`](bootstrap.md) BOOT-ERR-001).
 
 ## rules
 

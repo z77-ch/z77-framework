@@ -63,7 +63,7 @@ Controls the fundamental paths and behaviour of the framework.
 > `var/state`, published as `ABS_VAR_PATH` / `ABS_STATE_PATH`). They are part of
 > the release-structure contract, not a project setting — a configurable path
 > could be pointed back into a shared store, which is exactly the defect ADR-035
-> removes. A leftover `cacheDir` in an installed `config/bootstrap.inc.php` is
+> removes. A leftover `cacheDir` in an installed `config/vendor/bootstrap.inc.php` is
 > ignored; `.releases/check.php` warns about it.
 
 **Example:**
@@ -218,7 +218,7 @@ Overwrite behaviour depends on the `debug` flag:
 
 Five PHP files are generated in the project's `config/` directory (`bootstrap`, `moduleManager`, `auth`, `i18n`, `fileFinder`). They are not meant to be edited manually — they are regenerated on every `composer install`.
 
-#### `config/bootstrap.inc.php`
+#### `config/vendor/bootstrap.inc.php`
 
 The merged result of the defaults and the project's `core-bootstrap` config. Read by `Bootstrap` at startup.
 
@@ -234,7 +234,7 @@ return [
 ];
 ```
 
-#### `config/moduleManager.inc.php`
+#### `config/vendor/moduleManager.inc.php`
 
 The merged result of the defaults and the project's `core-module-manager` config, plus the auto-detected module list. Read by `ModuleManager` at startup.
 
@@ -252,7 +252,7 @@ return [
 
 The `modules` array is populated automatically from the module namespaces found in `autoload.psr-4`. No manual registration is required.
 
-#### `config/auth.inc.php`
+#### `config/client/auth.inc.php`
 
 The merged result of the defaults and the project's `core-auth` config. Holds the installation-wide `passwordTier` (bound to the `Z77\Shared\Auth\PasswordTier` enum). See [`docs/topics/security.md`](../topics/security.md).
 
@@ -264,7 +264,7 @@ return [
 ];
 ```
 
-#### `config/i18n.inc.php`
+#### `config/client/i18n.inc.php`
 
 The merged result of the defaults and the project's `core-i18n` config — the system language policy (ADR-013).
 
@@ -292,7 +292,7 @@ JSON files are written on first install only. If the file already exists it is n
 
 ---
 
-#### `config/fileFinder.inc.php`
+#### `config/vendor/fileFinder.inc.php`
 
 The path map used by `FileFinder` to locate files at runtime. Contains the override paths first, then the vendor paths — this is what implements the CE (Customer Extension) principle.
 
@@ -385,9 +385,9 @@ composer install
                     │       ├── Public asset tree (per module from directories.publicAssetTree)
                     │       └── Logs dir
                     │
-                    ├── 7. Write config/bootstrap.inc.php
-                    ├── 8. Write config/moduleManager.inc.php
-                    ├── 9. Write config/fileFinder.inc.php
+                    ├── 7. Write config/vendor/bootstrap.inc.php
+                    ├── 8. Write config/vendor/moduleManager.inc.php
+                    ├── 9. Write config/vendor/fileFinder.inc.php
                     └── 10. Seed data files (skip if already exist)
                             ├── data/framework/routing/navigation.json
                             ├── data/framework/auth/backendUsers.json
@@ -418,8 +418,8 @@ The installer automatically:
 - Creates the `override/z77/module/blog/src/` directory
 - Creates the full `moduleTree` structure for `blog`
 - Creates the `publicAssetTree` directories for `blog`
-- Registers `blog` in `config/moduleManager.inc.php`
-- Adds `blog` paths to `config/fileFinder.inc.php`
+- Registers `blog` in `config/vendor/moduleManager.inc.php`
+- Adds `blog` paths to `config/vendor/fileFinder.inc.php`
 
 No other changes are required.
 

@@ -1,6 +1,6 @@
 # contact
 
-2026-09-21
+2026-09-22
 
 ## entry
 
@@ -113,7 +113,7 @@ SOURCE=/docs/03-development/order-debtor-financial-bauplan.md
 - **CONTACT-TYPE-001** — resolved 2026-09-21 (owner decision): switching an existing link TO a deactivated type is refused by `saveAddress()` (the target of a type CHANGE must be active); keeping the link's current, deactivated type on edit stays allowed. Don't assume «exists» is enough for a changed code.
 - **CONTACT-ORPHAN-001** — don't assume `removeAddress()` never leaves an address row behind: two requests removing the two last links of one shared address at the same moment can both count «still referenced» (the count runs before the delete, outside a lock) and neither removes the row. Harmless — an unreferenced `address` row is dead data, no screen reaches it; no lock was added for it.
 - **CONTACT-SEED-001** — don't assume an existing installation receives the type seed or a later seed change: the installer walk is seed-once per FILE (`data/framework/contact/address_types.json` present → untouched). The record-level import (ADR-032) is not wired for `AddressType` (see pending); a new type goes in through the backend.
-- **CONTACT-NAV-001** — don't expect «Kontakte» / «Adresstypen» entries in the navigation after install: the kernel seed carries none (a host entry that fatals without `module-contact` would be wrong on every fresh install). The project adds them under a section of its choice.
+- **CONTACT-NAV-001** — don't expect «Kontakte» / «Adresstypen» entries in the navigation after install: the kernel seed carries none (a host entry that fatals without `module-contact` would be wrong on every fresh install). The project adds them under a section of its choice. Checked 2026-09-22 (P2 exit check S4): no «Finanzen» section is seeded either; a project that keeps contacts with its bookkeeping adds them to the «Finanzen» section it creates itself (`financial.md` FIN-NAV-001).
 - **CONTACT-MEMBER-001** — resolved 2026-09-21 by removal: don't look for a link from a contact to a member account. `memberAccountId` removed (owner, 2026-09-21) — added back with the first consumer (customer portal/shop). It had no caller and no named purpose (plan «nothing in stock»); column, unique index, validator rule, repository lookup, race mapping and form field went with it, and the first migration was adjusted in place before it was ever committed.
 - **CONTACT-LIST-001** — don't assume the list shows every contact: it stops at `contactListLimit` rows (contactConfig, default 200 — configurable since 2026-09-21, owner decision) and says «n von m angezeigt»; the search narrows. No pagination yet — a screen for thousands of contacts is a later step.
 - **CONTACT-FK-001** — don't assume the foreign keys of `contact_address` carry readable names: Doctrine names them by hash (`FK_97614E00E7A1254A`, `IDX_…`), and the migration keeps those names so `diff` stays clean. Renaming them by hand would be reported as a change.

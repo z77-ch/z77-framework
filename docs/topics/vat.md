@@ -1,6 +1,6 @@
 # vat
 
-2026-09-21
+2026-09-22
 
 ## entry
 
@@ -101,7 +101,7 @@ SOURCE=/docs/03-development/order-debtor-financial-bauplan.md
 - **VAT-RATE-001** — resolved 2026-09-21 (owner decision): a same-day typo is repairable in the backend — a row entered today for today can be removed today (`createdOn`); every other row in effect stays, and a wrong rate that applied is corrected by a new row from today plus credit notes. Don't assume a backdated correction is possible: `validFrom` before today is refused unless it backfills before the code's earliest row (or is the first rate of a code without rows, VAT-RATE-002).
 - **VAT-RATE-002** — resolved (owner, 2026-09-21): the FIRST rate of a code that has no rate yet accepts any valid `validFrom`, past included — there is no existing range it could reach into, and an installation creating a code for documents with older service dates needs it to cover them. Don't assume this extends to the second rate: once a row exists, a backdated `validFrom` is backfill before the earliest row or refused. The check counts every row of the code (`TaxRateValidator`, `$all`), so a stored only row re-validated is not a «first rate».
 - **VAT-SEED-001** — don't assume an existing installation receives the CH seed or a later seed change: the installer walk is seed-once per FILE (`data/framework/vat/*.json` present → untouched). The record-level import (ADR-032) is not wired for `TaxCode` / `TaxRate` yet (see pending); until then a new code goes in through the backend.
-- **VAT-NAV-001** — don't expect a «MWST-Codes» entry in the navigation after install: the kernel seed carries none (a host entry that fatals without `module-vat` would be wrong on every fresh install). The project adds it in the backend under a section of its choice.
+- **VAT-NAV-001** — don't expect a «MWST-Codes» entry in the navigation after install: the kernel seed carries none (a host entry that fatals without `module-vat` would be wrong on every fresh install). The project adds it in the backend under a section of its choice. Checked 2026-09-22 (P2 exit check S4): the seed has no «Finanzen» section either — a project with module-financial creates one itself and puts «MWST-Codes» there next to the ledger screens (`financial.md` FIN-NAV-001).
 - **VAT-CAT-001** — don't assume `TaxCode::getCategory()` is one of the eight: it is the stored string, so a hand-edited file may carry an unknown value; `category()` returns null for it, the list shows the raw string, and the validator refuses it on the next save.
 
 ## pending

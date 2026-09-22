@@ -227,7 +227,7 @@ the explicit approval of the framework owner, recorded in the project's
 ## Prerequisites
 
 - **Framework state of 2026-08-28 or later.** The installer must generate
-  `config/fileFinder.inc.php` anchored on `ABS_BASE_PATH` (not
+  `config/vendor/fileFinder.inc.php` anchored on `ABS_BASE_PATH` (not
   `dirname(__DIR__)`). This is the ONE generated file that used to compute
   paths from its own physical location — behind the `config` symlink that
   location is `shared/`, and the map pointed at a `shared/vendor/` that does
@@ -488,10 +488,10 @@ Then, on the developer machine, in the project:
 
 - `.releases/target.json`: drop `"lib"` from `shared`, add `"var/lib"`
 - `.vscode/sftp.json`: drop `"lib/**"` from `ignore`, add `"var/**"`
-- `config/backup.inc.php` **and** `shared/config/backup.inc.php` on the
+- `config/client/backup.inc.php` **and** `shared/config/backup.inc.php` on the
   server: `fullExcludes` — replace `lib` with `var` (seed-once, so the new
   default never reaches an existing installation on its own)
-- `config/bootstrap.inc.php` **and** the server copy: remove the `cacheDir`
+- `config/vendor/bootstrap.inc.php` **and** the server copy: remove the `cacheDir`
   key — it is ignored since ADR-035, and leaving it reads as the truth
 - `php .releases/check.php` — it warns about every one of the above
 
@@ -500,7 +500,7 @@ signpost by itself.
 
 ## See also
 
-- [`installer.md`](installer.md) — the generated `config/fileFinder.inc.php`
+- [`installer.md`](installer.md) — the generated `config/vendor/fileFinder.inc.php`
   and why it anchors on `ABS_BASE_PATH`
 - [`../topics/backup.md`](../topics/backup.md) — how the archive walk follows
   the layout's links (BACKUP-SYMLINK-001), and why all three types work here

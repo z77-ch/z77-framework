@@ -97,7 +97,7 @@ remember it is not a duty being met. A job that both deletes and must run is
 two jobs; `member-cleanup` (deletes, no schedule) and `geoip-update` (must
 run, scheduled) are the worked example.
 
-**What a run does, in order:** read `config/geoip.inc.php` → no key, say so
+**What a run does, in order:** read `config/client/geoip.inc.php` → no key, say so
 and stop → database younger than `maxAgeDays`, say so and stop → not enough
 time left in this pass, return `again()` → download the `tar.gz` → walk the
 tar and take the single `.mmdb` → **open it with `MmdbReader`** → rename it
@@ -118,7 +118,7 @@ over the target → delete every other `*.mmdb`.
   disabled on shared hosting, and extracting to a directory would spill the
   archive's licence texts into the folder `CountryLookup` globs.
 
-## config — `config/geoip.inc.php` (machine-local, gitignored, not deployed)
+## config — `config/client/geoip.inc.php` (machine-local, gitignored, not deployed)
 
 `licenseKey` (or MaxMind's ready-made `GeoIP.conf` in the database directory —
 the config wins) | `edition` (`GeoLite2-Country`) | `maxAgeDays` (30)
