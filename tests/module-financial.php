@@ -35,6 +35,9 @@
  * no-float source guard; then 20'000 SQL-inserted lines for timing, EXPLAIN
  * and the page boundary at the production page size (P), and a chart cycle
  * written past the validator that must not hide a line (C).
+ * FIN-FY-002 (Y): deleting a wrongly opened fiscal year — only the latest,
+ * only while nothing was ever posted in it; year, periods and range in one
+ * unit of work, re-openable with the same code.
  *
  * Run: php tests/module-financial.php
  * Needs what tests/module-contact.php needs (vendor/ with Doctrine, a
@@ -153,6 +156,7 @@ use Z77\Module\Financial\Services\AccountService;
 use Z77\Module\Financial\Services\ChartNotEmptyException;
 use Z77\Module\Financial\Services\EntryConflictException;
 use Z77\Module\Financial\Services\EntryNotEditableException;
+use Z77\Module\Financial\Services\FiscalYearNotDeletableException;
 use Z77\Module\Financial\Services\FiscalYearService;
 use Z77\Module\Financial\Services\IdempotencyConflictException;
 use Z77\Module\Financial\Services\InvalidAccountException;
@@ -164,6 +168,7 @@ use Z77\Module\Financial\Services\ReversalRefusedException;
 use Z77\Module\Financial\Ui\AccountControllerTrait;
 use Z77\Module\Financial\Ui\FiscalYearControllerTrait;
 use Z77\Module\Financial\Ui\JournalControllerTrait;
+use Z77\Module\Financial\Ui\RaceFailure;
 use Z77\Module\Financial\Validators\AccountValidator;
 use Z77\Module\Financial\Validators\FiscalYearValidator;
 use Z77\Module\Vat\Entities\TaxCode;
@@ -641,20 +646,22 @@ check('D31 open() refuses an existing year; addPeriod() refuses an opened year; 
     && throws(fn() => $opened->addPeriod(new Period($opened, day('2026-01-01'), day('2026-01-31'))), \LogicException::class)
     && throws(fn() => new Period($opened, day('2026-02-01'), day('2026-01-31')), \LogicException::class));
 
-// ── E. no delete, no edit of a year, no transition ───────────────────────
+// ── E. accounts never deleted; no year edit, no period transition ────────
 
-echo "E. Deactivate / never delete; no year edit, no period transition (part 1)\n";
+echo "E. Accounts: deactivate, never delete; no year edit (a year is deleted only through the guarded path, Y); no period transition\n";
 $methodsOf = fn(string $class) => array_map(fn(\ReflectionMethod $m) => $m->getName(), (new \ReflectionClass($class))->getMethods());
 $hasAny    = fn(array $methods, array $words) => array_filter($methods, fn($m) => array_filter($words, fn($w) => stripos($m, $w) !== false) !== []) !== [];
-check('E1 AccountService has no delete; FiscalYearService has no delete, update or close', !$hasAny($methodsOf(AccountService::class), ['delete', 'remove'])
-    && !$hasAny($methodsOf(FiscalYearService::class), ['delete', 'remove', 'update', 'close', 'settle']));
+check('E1 AccountService has no delete; FiscalYearService has no update or close — its one delete is the guarded one (FIN-FY-002, section Y)', !$hasAny($methodsOf(AccountService::class), ['delete', 'remove'])
+    && !$hasAny($methodsOf(FiscalYearService::class), ['remove', 'update', 'close', 'settle']) && in_array('delete', $methodsOf(FiscalYearService::class), true));
 check('E2 Period has no state setter (P5 moves states); FiscalYear has no public setter — code and dates come with the constructor', !$hasAny($methodsOf(Period::class), ['setState', 'close', 'settle'])
     && array_filter((new \ReflectionClass(FiscalYear::class))->getMethods(\ReflectionMethod::IS_PUBLIC), fn(\ReflectionMethod $m) => str_starts_with($m->getName(), 'set')) === []);
 $accountActions = $methodsOf(AccountControllerTrait::class);
 check('E3 the account trait: no delete action; toggle and the KMU adoption exist', !$hasAny($accountActions, ['delete', 'remove']) && in_array('toggleActiveAction', $accountActions, true)
     && in_array('adoptKmuChartAction', $accountActions, true) && in_array('confirmAdoptKmuChartAction', $accountActions, true));
 $yearActions = $methodsOf(FiscalYearControllerTrait::class);
-check('E4 the fiscal-year trait: list and open only', array_values(array_filter($yearActions, fn($m) => str_ends_with($m, 'Action'))) === ['listAction', 'openAction']);
+$yearActions = array_values(array_filter($yearActions, fn($m) => str_ends_with($m, 'Action')));
+sort($yearActions);
+check('E4 the fiscal-year trait: list, open, confirm-delete and delete — no edit', $yearActions === ['confirmDeleteAction', 'deleteAction', 'listAction', 'openAction']);
 $traitSource = file_get_contents($package . '/src/Ui/AccountControllerTrait.php');
 check('E5 the account trait maps a body only onto the NEW account of «add» (source guard, ADR-039 decision 9)', preg_match_all('/->mapFromArray\(/', $traitSource) === 1 && str_contains($traitSource, '$account->mapFromArray($values);')
     && strpos($traitSource, '$account->mapFromArray($values);') < strpos($traitSource, 'function editAction'));
@@ -1475,6 +1482,124 @@ check('C1 the unreached account is appended flat (depth 0, 77.00) and named in `
 check('C2 Σ of the depth-0 rows equals the block total (77.00 included) — nothing is hidden', $top !== null && $top->equals($cycled->expense->total) && $cycled->expense->total->toDecimal() === '77.00');
 $useGet(['year' => '2031-32']);
 check('C3 the income statement page shows the note naming the account', str_contains($page('incomeStatement', ['year' => '2031-32'])[1], 'Nicht im Kontenbaum erreichbar'));
+
+// ── Y. deleting a wrongly opened fiscal year (FIN-FY-002) ────────────────
+
+echo "Y. Deleting a fiscal year: only the latest, only while nothing was ever posted (owner 2026-09-22)\n";
+// State: 2031-32 is the latest year and carries the volume entries.
+$yearSnapshot = fn(string $code) => array_map(fn($v) => $v === false ? false : (string) $v, [
+    $db->fetchOne('SELECT COUNT(*) FROM fiscal_year WHERE code = ?', [$code]),
+    $db->fetchOne('SELECT COUNT(*) FROM fiscal_period p JOIN fiscal_year y ON y.id = p.fiscal_year_id WHERE y.code = ?', [$code]),
+    $db->fetchOne('SELECT last_number FROM number_range WHERE name = ?', ['journal-entry.' . $code]),
+]);
+$yearId  = fn(string $code) => (int) $db->fetchOne('SELECT id FROM fiscal_year WHERE code = ?', [$code]);
+$refusal = function (string $code) use ($wireDi, $yearId): ?string {
+    $e = caught(fn() => (new FiscalYearService($wireDi()))->delete($yearId($code)), FiscalYearNotDeletableException::class);
+    return $e?->reason;
+};
+$before = $yearSnapshot('2031-32');
+check('Y1 the latest year with entries is refused (has-entries), nothing touched', $refusal('2031-32') === FiscalYearNotDeletableException::HAS_ENTRIES && $yearSnapshot('2031-32') === $before);
+
+$em = $wireDi();
+(new FiscalYearService($em))->open(new FiscalYear('2032-33', day('2032-07-01'), day('2033-06-30')));
+$fresh = $yearSnapshot('2032-33');
+check('Y2 a year that is not the latest is refused (not-latest) — deleting it would break contiguity', $refusal('2031-32') === FiscalYearNotDeletableException::NOT_LATEST
+    && $refusal('2030-31') === FiscalYearNotDeletableException::NOT_LATEST && $yearSnapshot('2031-32') === $before);
+$em      = $wireDi();
+$service = new FiscalYearService($em);
+$years   = $em->getRepository(FiscalYear::class);
+check('Y3 deletionRefusal(): null for the new empty latest year, not-latest for the one before', $service->deletionRefusal($years->findOneBy(['code' => '2032-33'])) === null
+    && $service->deletionRefusal($years->findOneBy(['code' => '2031-32'])) === FiscalYearNotDeletableException::NOT_LATEST);
+$yearListHtml = fn() => $renderer->partial('Backend/FiscalYearController/listAction', $listHost('fiscal-year')->context);
+$html = $yearListHtml();
+check('Y4 the list shows «Löschen …» for that year only', substr_count($html, '/confirm-delete?id=') === 1 && str_contains($html, '/backend/finance/fiscal-year/confirm-delete?id=' . $yearId('2032-33')));
+
+$nested = null;
+$outer  = function () use ($service, $yearId, &$nested) {
+    $nested = caught(fn() => $service->delete($yearId('2032-33')), \LogicException::class);
+    throw new \RuntimeException('outer aborts');
+};
+caught(fn() => $em->getTransaction(FiscalYear::class)->run($outer), \RuntimeException::class);
+check('Y5 delete() inside an open unit of work is refused (LogicException), nothing deleted, the port closed', $nested !== null && str_contains($nested->getMessage(), 'owns its unit of work')
+    && $yearSnapshot('2032-33') === $fresh && !$wireDi()->getTransaction(FiscalYear::class)->isOpen());
+
+// A failure at the flush, AFTER the range row was dropped and the periods removed: a trigger refuses the year's DELETE.
+$db->executeStatement("CREATE TRIGGER fy_no_delete BEFORE DELETE ON fiscal_year FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'harness refuses'");
+$failed = caught(fn() => (new FiscalYearService($wireDi()))->delete($yearId('2032-33')), \Throwable::class);
+$db->executeStatement('DROP TRIGGER fy_no_delete');
+check('Y6 a rollback at the flush leaves everything intact: year, 12 periods, range at 0; the port closed', $failed !== null && !$failed instanceof FiscalYearNotDeletableException
+    && $yearSnapshot('2032-33') === $fresh && $fresh === ['1', '12', '0'] && !$wireDi()->getTransaction(FiscalYear::class)->isOpen());
+
+$em = $wireDi();
+(new FiscalYearService($em))->delete($yearId('2032-33'));
+check('Y7 the latest empty year is deleted: year, periods and range gone', $yearSnapshot('2032-33') === ['0', '0', false]);
+$em = $wireDi();
+check('Y8 … the latest is 2031-32 again, and the list offers no delete (it has entries)', $em->getRepository(FiscalYear::class)->latest()->getCode() === '2031-32' && !str_contains($yearListHtml(), '/confirm-delete?id='));
+(new FiscalYearService($em))->open(new FiscalYear('2032-33', day('2032-07-01'), day('2033-06-30')));
+check('Y9 … and it re-opens with the same code: 12 periods, its range new at 0', $yearSnapshot('2032-33') === ['1', '12', '0']);
+
+// An entry written past the ledger (range still at 0): the range row is dropped first, then the
+// entry is found — the rollback must bring the row back.
+$db->executeStatement("INSERT INTO journal_entry (number, entry_date, text, kind, created_by, created_at, fiscal_year_id) VALUES (1, '2032-07-01', 'past the ledger', 'manual', 'sql', NOW(), ?)", [$yearId('2032-33')]);
+check('Y10 an entry refuses the delete (has-entries), and the range row dropped before the check is back at 0', $refusal('2032-33') === FiscalYearNotDeletableException::HAS_ENTRIES
+    && $yearSnapshot('2032-33') === ['1', '12', '0']);
+$db->executeStatement("DELETE FROM journal_entry WHERE text = 'past the ledger'");
+
+$em  = $wireDi();
+$ref = (new ManualEntryService($em, 'buchhalter'))->create($transferRequest('2032-07-15', 'Falsches Jahr'));
+check('Y11 a manual entry through the ledger refuses the delete (has-entries)', $ref->fiscalYear === '2032-33' && $refusal('2032-33') === FiscalYearNotDeletableException::HAS_ENTRIES
+    && $yearSnapshot('2032-33') === ['1', '12', '1']);
+$em    = $wireDi();
+$entry = $em->getRepository(JournalEntry::class)->findByRef($ref);
+(new ManualEntryService($em, 'buchhalter'))->delete($entry->getId(), $entry->getVersion());
+check('Y12 … deleted again, the year is still refused (had-entries): the change row documents the consumed number', (int) $db->fetchOne('SELECT COUNT(*) FROM journal_entry WHERE fiscal_year_id = ?', [$yearId('2032-33')]) === 0
+    && $refusal('2032-33') === FiscalYearNotDeletableException::HAD_ENTRIES && $yearSnapshot('2032-33') === ['1', '12', '1']
+    && (new FiscalYearService($wireDi()))->deletionRefusal(DI::getUnifiedEntityManager()->getRepository(FiscalYear::class)->findOneBy(['code' => '2032-33'])) === FiscalYearNotDeletableException::HAD_ENTRIES);
+
+$em = $wireDi();
+(new FiscalYearService($em))->open(new FiscalYear('2033-34', day('2033-07-01'), day('2034-06-30')));
+$em = $wireDi();
+$em->getTransaction(FiscalYear::class)->run(fn() => $em->getRepository(NumberRange::class)->next('journal-entry.2033-34'));
+check('Y13 a range that has drawn a number refuses the delete (range-used) — no entry, no change row; everything kept', $refusal('2033-34') === FiscalYearNotDeletableException::RANGE_USED
+    && $yearSnapshot('2033-34') === ['1', '12', '1']);
+check('Y14 … and the year before it is no longer the latest (not-latest)', $refusal('2032-33') === FiscalYearNotDeletableException::NOT_LATEST);
+
+$em   = $wireDi();
+$y    = $em->getRepository(FiscalYear::class)->findOneBy(['code' => '2033-34']);
+$form = $renderer->partial('Backend/FiscalYearController/confirmDelete', ['year' => $y, 'refusal' => null, 'entityCsrf' => 'tok', 'actionBase' => '/backend/finance/fiscal-year']);
+$no   = $renderer->partial('Backend/FiscalYearController/confirmDelete', ['year' => $y, 'refusal' => 'Nein.', 'entityCsrf' => 'tok', 'actionBase' => '/backend/finance/fiscal-year']);
+check('Y15 the modal posts id + entity token to /delete (Fetch, no script); a refusal shows the reason and no form', str_contains($form, 'data-fetch-post="/backend/finance/fiscal-year/delete"')
+    && str_contains($form, 'name="entity_csrf" value="tok"') && str_contains($form, 'name="id"          value="' . $y->getId() . '"') && !str_contains($form, '<script')
+    && str_contains($no, 'Löschen nicht möglich') && str_contains($no, 'Nein.') && !str_contains($no, '<form'));
+$yearSource = file_get_contents($package . '/src/Ui/FiscalYearControllerTrait.php');
+check('Y16 the delete action is a Fetch POST checking the entity token «fiscalYear» and going through the service', str_contains($yearSource, "#[Fetch, HttpMethod('POST')]")
+    && str_contains($yearSource, "'fiscalYear', \$id)") && str_contains($yearSource, '->delete($id)') && !str_contains($yearSource, '->remove('));
+
+echo "Y. … races answered with a sentence, not a 500 (review M1/L2)\n";
+$driverError = fn(string $m) => \Doctrine\DBAL\Driver\PDO\Exception::new(new \PDOException($m));
+$deadlock    = new \Doctrine\DBAL\Exception\DeadlockException($driverError('Deadlock found when trying to get lock'), null);
+check('Y17 RaceFailure::isDeadlock() finds the deadlock down the getPrevious() chain (DOCTRINE-TX-005 shape); a plain error is no deadlock', RaceFailure::isDeadlock(new \RuntimeException('SAVEPOINT DOCTRINE_2 does not exist', 0, $deadlock))
+    && RaceFailure::isDeadlock($deadlock) && !RaceFailure::isDeadlock(new \RuntimeException('other')) && !RaceFailure::isFiscalYearGone($deadlock));
+
+// The year vanishes between the ledger's checks and the commit: a trigger points the insert at a year id that does not exist.
+$db->executeStatement('CREATE TRIGGER je_year_gone BEFORE INSERT ON journal_entry FOR EACH ROW SET NEW.fiscal_year_id = 0');
+$em   = $wireDi();
+$gone = caught(fn() => (new ManualEntryService($em, 'buchhalter'))->create($transferRequest('2032-07-20', 'Jahr weg')), \Throwable::class);
+$db->executeStatement('DROP TRIGGER je_year_gone');
+check('Y18 a manual create whose year is gone at the commit fails on journal_entry.fiscal_year_id and is recognised by that key; no number consumed, nothing written', $gone !== null && RaceFailure::isFiscalYearGone($gone)
+    && $yearSnapshot('2032-33') === ['1', '12', '1'] && (int) $db->fetchOne("SELECT COUNT(*) FROM journal_entry WHERE text = 'Jahr weg'") === 0);
+$db->executeStatement('CREATE TRIGGER je_other_fk BEFORE INSERT ON journal_entry FOR EACH ROW SET NEW.reversal_of_id = 999999999');
+$em    = $wireDi();
+$other = caught(fn() => (new ManualEntryService($em, 'buchhalter'))->create($transferRequest('2032-07-20', 'Anderer FK')), \Throwable::class);
+$db->executeStatement('DROP TRIGGER je_other_fk');
+check('Y19 … any OTHER foreign-key violation is not taken for a deleted year (stays loud)', $other !== null && !RaceFailure::isFiscalYearGone($other)
+    && $other instanceof \Doctrine\DBAL\Exception\ForeignKeyConstraintViolationException);
+check('Y20 the migration names the key exactly as JournalEntry::FK_FISCAL_YEAR', str_contains(file_get_contents($package . '/res/migrations/Version20260922091711.php'),
+    'CONSTRAINT ' . JournalEntry::FK_FISCAL_YEAR . ' FOREIGN KEY (fiscal_year_id) REFERENCES fiscal_year (id)'));
+$journalSource = file_get_contents($package . '/src/Ui/JournalControllerTrait.php');
+check('Y21 the screens answer both races and rethrow everything else (source guard): add → «Geschäftsjahr … gelöscht», open → «gleichzeitig eröffnet»',
+    str_contains($journalSource, 'if (!RaceFailure::isFiscalYearGone($e)) {') && str_contains($journalSource, 'Das Geschäftsjahr wurde inzwischen gelöscht')
+    && str_contains($yearSource, 'if (!RaceFailure::isDeadlock($e)) {') && str_contains($yearSource, 'Ein anderes Geschäftsjahr wurde gleichzeitig eröffnet — Liste neu laden'));
 
 echo "\n" . ($fail === 0 ? "PASS — {$pass} checks" : "FAIL — {$fail} of " . ($pass + $fail) . " checks") . "\n";
 exit($fail === 0 ? 0 : 1);

@@ -49,7 +49,9 @@ use Z77\Persistence\Doctrine\Entities\NumberRange,
  * unit of work is marked rollback-only. An existing row never deadlocks
  * here. Hence a range is CREATED ahead of concurrent use with `create()` —
  * for the ledger at the opening of a fiscal year (P2, module-financial) —
- * which inserts the row without consuming a number.
+ * which inserts the row without consuming a number. Its counterpart
+ * `dropUnused()` removes a range that never handed out a number (the ledger:
+ * a wrongly opened, still empty fiscal year is deleted).
  *
  * Any failure of one of the statements — a deadlock, a lock wait timeout —
  * marks the open unit of work rollback-only before the exception leaves:
@@ -149,6 +151,57 @@ class NumberRangeRepository extends DoctrineRepository
         }
 
         return (int) $affected === 1;
+    }
+
+    /**
+     * Removes the range, but only while it has never handed out a number
+     * (`last_number = 0`) — the counterpart of {@see create()} for a range
+     * that became valid by mistake. Called by the module that OWNS the range
+     * (the ledger: deleting a wrongly opened, still empty fiscal year), never
+     * to reset a sequence: a range that has drawn a number is left untouched,
+     * because every number it handed out is referenced or documented as a gap.
+     *
+     * Refused outside an open transaction, like {@see next()}: the row is
+     * read with `SELECT … FOR UPDATE` and deleted under that lock, and the
+     * lock must hold until the caller's commit — a `next()` waiting on it then
+     * sees either the untouched row (the caller rolled back) or no row. Take
+     * it FIRST in the unit of work (lock order: `NumberRange` first).
+     *
+     * Doctrine-only (ADR-039 decision 8): SQL on the driver's connection.
+     *
+     * @return bool true = the range does not exist any more (deleted now, or
+     *              there was no row); false = it has drawn a number and was kept
+     * @throws \InvalidArgumentException for an empty, padded or over-long name
+     * @throws \LogicException           outside an open transaction
+     */
+    public function dropUnused(string $range): bool
+    {
+        $this->assertName($range);
+
+        $connection = $this->connection();
+        if (!$connection->isTransactionActive()) {
+            throw new \LogicException(
+                "NumberRange '{$range}': a range can only be dropped inside an open transaction — the row lock "
+                . 'must hold until commit. Run the unit of work through UnifiedEntityManager::getTransaction().'
+            );
+        }
+
+        $table = NumberRange::TABLE;
+        try {
+            $last = $connection->fetchOne("SELECT last_number FROM {$table} WHERE name = ? FOR UPDATE", [$range]);
+            if ($last === false) {
+                return true;
+            }
+            if ((int) $last !== 0) {
+                return false;
+            }
+            $connection->executeStatement("DELETE FROM {$table} WHERE name = ? AND last_number = 0", [$range]);
+        } catch (\Throwable $e) {
+            $this->markTransactionRollbackOnly();
+            throw $e;
+        }
+
+        return true;
     }
 
     private function assertName(string $range): void

@@ -5,8 +5,9 @@
  * extended year is allowed, at most 24 months, contiguous with the previous
  * one. The code stays empty to take the proposal from the dates (no
  * JavaScript: the server proposes it on submit). Opening derives the monthly
- * periods and the journal-entry number range; a year is not edited or
- * deleted afterwards.
+ * periods and the journal-entry number range; a year is not edited
+ * afterwards, and deleted only while it is the latest and still empty
+ * (FIN-FY-002).
  *
  * @var \Z77\Module\Financial\Entities\FiscalYear $entry
  * @var string $proposed  the code proposed for the proposed dates

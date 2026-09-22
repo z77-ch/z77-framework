@@ -21,6 +21,8 @@
  *     a number, refused outside a transaction, ranges independent, and
  *     gapless under REAL concurrency — parallel PHP processes draw from one
  *     range, some of them rolling back, and the union is exactly 1..n;
+ *     `create()` inserts at 0 and says whether the row was new;
+ *     `dropUnused()` removes a range at 0 only, inside a unit of work;
  *   - the open-work registry: blocking vs warning, no checks = nothing open,
  *     a bad registration fails loudly naming scope and module.
  *
@@ -626,6 +628,19 @@ namespace {
     check('J18 … and rolled back with it (it had answered true inside)', $rolledBackCreate === true && $lastNumber('journal-entry.2029') === false);
     check('J19 create() refuses a bad name before SQL', thrown(fn() => $ranges->create(' padded'), \InvalidArgumentException::class) !== null && $lastNumber(' padded') === false);
     check('J19b create() after the rollback answers true again — the row is new once more', $ranges->create('journal-entry.2029') === true && $ranges->create('journal-entry.2029') === false);
+
+    echo "J. … dropping an unused range (FIN-FY-002)\n";
+    $ranges->create('drop.unused');
+    check('J20 dropUnused() outside a transaction is refused, the row stays', thrown(fn() => $ranges->dropUnused('drop.unused'), \LogicException::class) !== null && (int) $lastNumber('drop.unused') === 0);
+    thrown(fn() => $tx->run(function () use ($ranges) {
+        $ranges->dropUnused('drop.unused');
+        throw new \RuntimeException('deletion refused');
+    }), \RuntimeException::class);
+    check('J21 a range at 0 dropped inside a unit of work that rolls back is back at 0', (int) $lastNumber('drop.unused') === 0);
+    check('J22 … committed: answers true, the row is gone; a missing row answers true as well', $tx->run(fn() => $ranges->dropUnused('drop.unused')) === true && $lastNumber('drop.unused') === false
+        && $tx->run(fn() => $ranges->dropUnused('drop.unused')) === true);
+    check('J23 a range that has drawn a number is kept: answers false, last_number untouched', $tx->run(fn() => $ranges->dropUnused('credit-note')) === false && (int) $lastNumber('credit-note') === 2);
+    check('J24 dropUnused() refuses a bad name before SQL', thrown(fn() => $tx->run(fn() => $ranges->dropUnused(' padded')), \InvalidArgumentException::class) !== null);
 
     // ── K. NumberRange under REAL concurrency: parallel processes ────────────
 

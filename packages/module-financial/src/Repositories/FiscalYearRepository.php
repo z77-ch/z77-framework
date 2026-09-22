@@ -59,6 +59,25 @@ class FiscalYearRepository extends DoctrineRepository
         return $this->findByDate(new \DateTimeImmutable('today')) ?? $this->latest();
     }
 
+    /**
+     * Locks EVERY fiscal-year row (`SELECT … FOR UPDATE`, a handful of rows)
+     * until the caller's commit — what serialises opening and deleting a
+     * year: `FiscalYearService::open()` re-checks contiguity and `delete()`
+     * re-checks «latest» under this lock, so a year cannot be opened after a
+     * year that is being deleted, nor deleted while its successor is being
+     * opened. Take it AFTER the `NumberRange` lock (lock order,
+     * DOCTRINE-NR-002). Refused outside a unit of work. Doctrine-only (SQL).
+     *
+     * @throws \LogicException outside an open transaction
+     */
+    public function lockAll(): void
+    {
+        if (!$this->connection()->isTransactionActive()) {
+            throw new \LogicException('lockAll() needs an open unit of work — the row locks hold until commit');
+        }
+        $this->connection()->fetchFirstColumn('SELECT id FROM fiscal_year FOR UPDATE');
+    }
+
     /** The year that ends last — the one a new year must follow — or null for an empty table. Doctrine-only (DQL). */
     public function latest(): ?FiscalYear
     {

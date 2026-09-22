@@ -283,6 +283,15 @@ trait JournalControllerTrait
                         return $this->redirect($this->journalListBase() . '/detail?id=' . (int) $entry?->getId(), 303);
                     } catch (PostingRefusedException $e) {
                         $form->addGeneralError($this->journalRefusalMessage($e));
+                    } catch (\Throwable $e) {
+                        // The year was deleted (FIN-FY-002) between the ledger's checks and
+                        // the commit: only THIS foreign key is answered, everything else stays loud.
+                        if (!RaceFailure::isFiscalYearGone($e)) {
+                            throw $e;
+                        }
+                        $this->messageService->pushFlashAfterRedirect('error', 'Das Geschäftsjahr wurde inzwischen gelöscht — die Buchung wurde nicht erfasst.');
+
+                        return $this->redirect('/backend/finance/fiscal-year/list', 303);
                     }
                 }
             }

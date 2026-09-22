@@ -21,7 +21,8 @@ Model:
 - `FiscalYear` — code (`2026`, `2026-27`), free start and end dates (at most 24 months,
   contiguous with the previous year) and one `Period` per calendar month, clipped to the year.
   Opening a year creates its journal-entry number range `journal-entry.{code}` in the same
-  unit of work. Periods start `open` (`open` → `vat-settled` → `closed`, ADR-042).
+  unit of work; deleting one removes all three again — only the latest year, only while
+  nothing was ever posted in it. Periods start `open` (`open` → `vat-settled` → `closed`, ADR-042).
 - `JournalEntry` + `JournalLine` — one entry stored once: number (gapless per year), date, text,
   kind (`generated` | `manual`), opaque origin, idempotency key, `reversalOf` (at most once, in
   the schema), created/changed by/at; n ≥ 2 lines with account, debit OR credit, and — on the

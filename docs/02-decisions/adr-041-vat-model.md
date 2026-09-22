@@ -1,7 +1,7 @@
 # ADR-041 — VAT model: tax codes with dated rates, computed once, carried
 
-**Status:** `[APPROVED]` — approved by the owner 2026-09-21 (P0 of [`order-debtor-financial-bauplan.md`](../03-development/order-debtor-financial-bauplan.md))
-**Date:** 2026-09-21
+**Status:** `[APPROVED]` — approved by the owner 2026-09-21 (P0 of [`order-debtor-financial-bauplan.md`](../03-development/order-debtor-financial-bauplan.md)); addendum to decision 7 approved by the owner 2026-09-22
+**Date:** 2026-09-21 · addendum 2026-09-22 (rate snapshot on the journal line)
 
 ---
 
@@ -93,3 +93,17 @@ the European model from day one, with only the country pack `CH` built.
 | Gross posting with period-end separation | The VAT return could no longer be read line by line from the ledger |
 | Build net tax rate and received consideration now | No installation uses them today; the model carries them, building them is waste until one does |
 | Rate resolution by invoice date | Legally wrong for a service rendered before a rate change |
+
+## Addendum 2026-09-22 — the journal line carries the rate (approved by the owner)
+
+Decision 7 names `taxCode`, `taxBase` and `taxAmount` on a journal line. The line carries a
+**`taxRate` snapshot** as well (hundredths of a percent, like decision 3): the VAT return groups by
+code **and rate** (plan §5.6), and around a rate change (CH 2023/2024) two rates of one code meet in
+one period — code, base and amount alone could not tell them apart, and resolving the rate again from
+the table at return time is exactly the recomputation decision 6 rules out. An addition to decision 7,
+not a contradiction: the rate comes from the document's snapshot like the other three fields.
+
+The **label is not snapshotted on a journal line**: label snapshots belong to documents (an invoice
+prints the label as it read then), a ledger line reports by code + rate. Consistent with the
+reference rule in [`vat.md`](../topics/vat.md) for a Doctrine reference to a tax code. Built in
+`module-financial` P2 part 2 (`journal_line.tax_rate`, [`financial.md`](../topics/financial.md)).

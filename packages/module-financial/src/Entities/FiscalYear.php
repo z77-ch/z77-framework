@@ -27,7 +27,8 @@ use Doctrine\Common\Collections\ArrayCollection,
  *     1.7.2026–30.6.2027) — and it names the year's journal-entry number
  *     range: `journal-entry.{code}` ({@see journalEntryRange()}). Lower-case
  *     kebab (`2026`, `2026-27`), proposed from the dates, and IMMUTABLE: the
- *     range carries it. Part 1 has no edit and no delete of a year at all.
+ *     range carries it. No edit of a year; a delete only of the latest,
+ *     still empty year (`FiscalYearService::delete()`, FIN-FY-002).
  *
  * Table `fiscal_year`; `code` and `start_date` are unique — the second is
  * the guard against two openings of the same next year racing past the

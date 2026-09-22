@@ -63,6 +63,15 @@ class JournalEntry
     public const UNIQUE_IDEMPOTENCY = 'uniq_journal_entry_idempotency';
     public const UNIQUE_REVERSAL_OF = 'uniq_journal_entry_reversal_of';
 
+    /**
+     * The foreign key `journal_entry.fiscal_year_id` → `fiscal_year`, as
+     * Doctrine names it (a hash of table and column, deterministic) and as
+     * migration `Version20260922091711` created it. The journal screen
+     * recognises a year deleted under a posting by it (`Ui/RaceFailure`);
+     * the harness proves the migration carries this name.
+     */
+    public const FK_FISCAL_YEAR = 'FK_C8FAAE5A63F9139E';
+
     /** Server-controlled — no setter; the database assigns it. */
     #[ORM\Id, ORM\Column, ORM\GeneratedValue]
     private ?int $id = null;

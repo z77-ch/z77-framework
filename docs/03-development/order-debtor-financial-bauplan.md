@@ -123,6 +123,7 @@ the existing indexes — no new migration. Harness: `tests/module-financial.php`
 **P2 parts 1–3 are built. Next: the P2 exit check «manual bookkeeping usable»** (a live pass in
 a project installation: open a year, post, edit, delete, read and print every report — see
 `financial.md` pending), **then P3 debtor**.
+**FIN-FY-002 resolved (owner, 2026-09-22):** a wrongly opened fiscal year is deleted in the backend while it is the latest and nothing was ever posted in it — year, periods and range in one unit of work (`FiscalYearService::delete()`, `NumberRangeRepository::dropUnused()`); FIN-TYPE-001 stays open.
 Framework-wide pending found on the way: module config override replaces instead of merging
 (BOOT-CONFIG-001 in `bootstrap.md`).
 
