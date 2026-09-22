@@ -15,7 +15,9 @@
  *     formatting is shown per field;
  *   - an orphan block is shown read-only (no remove button);
  *   - the optimistic-lock hash is in the form;
- *   - without a blueprint the free editor is unchanged (add bar present).
+ *   - without a blueprint the free editor is unchanged (add bar present);
+ *   - slot mode (the page editor, ADR-045 §4): one slot card only, no metadata
+ *     fields, posts to the slot URL, cancel talks to the parent window.
  *
  * Run: php tests/content-editor-template.php
  */
@@ -119,6 +121,21 @@ $html = renderEditor($base + ['blueprint' => null]);
 check('add bar present', str_contains($html, 'data-ce-add-type'));
 check('move + remove present', str_contains($html, 'data-ce-up') && str_contains($html, 'data-ce-remove'));
 check('keys still written to cards', str_contains($html, 'data-key="intro"'));
+
+echo "slot mode (page editor, ADR-045 §4)\n";
+$slotUrl = '/backend/content/content/slot?slug=faq&language=de&variant=&slot=cta';
+$html = renderEditor($base + ['blueprint' => $bp, 'slot' => $bp->slot('cta'), 'slotUrl' => $slotUrl, 'slotTarget' => '']);
+check('only the one slot card', substr_count($html, 'data-ce-block ') === 1 && str_contains($html, 'data-key="cta"'));
+check('no orphan, no other slot', !str_contains($html, 'nicht in der Struktur') && !str_contains($html, 'data-key="intro"'));
+check('no title / active / slug fields',
+    !str_contains($html, 'name="title"') && !str_contains($html, 'name="active"') && !str_contains($html, 'name="slug"'));
+check('form posts to the slot URL', str_contains($html, 'class="ce-slot" data-fetch-post="' . htmlspecialchars($slotUrl) . '"'));
+check('header names the slot', str_contains($html, 'Bearbeiten: Aufruf'));
+check('cancel asks the parent, not the shell popup', str_contains($html, 'data-ce-slot-close') && !str_contains($html, 'data-popup-close'));
+check('lock hash + entity token in the form',
+    str_contains($html, 'name="entity_hash" value="h4sh"') && str_contains($html, 'name="entity_csrf" value="tok"'));
+$html = renderEditor($base + ['blueprint' => $bp, 'slot' => $bp->slot('cta'), 'slotUrl' => $slotUrl, 'slotTarget' => 'herbst-a7f3k2']);
+check('a save into a preview set says so', str_contains($html, 'speichert in Variante herbst-a7f3k2'));
 
 echo "\n{$pass} passed, {$fail} failed\n";
 exit($fail === 0 ? 0 : 1);

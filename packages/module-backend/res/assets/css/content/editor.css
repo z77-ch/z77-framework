@@ -191,3 +191,27 @@
     color: var(--be-text, #0f172a);
     resize: vertical;
 }
+
+/* ── bare page: the page editor in an iframe (ADR-045 §4) ─────────────────── */
+/* html-bare-skeleton (ContentController::slotAction). The page IS the editor
+   panel: header on top, the slot's fields scrolling, the save bar at the
+   bottom — the modal's three parts over the whole iframe. Lives here, not in
+   base.css, because the slot editor is its only user (and base.css is a sass
+   build). */
+.be-bare {
+    height: 100vh;
+    margin: 0;
+    background: var(--be-surface, #fff);
+    color: var(--be-text, #0f172a);
+    font-family: var(--font-family-ui, system-ui, sans-serif);
+}
+.be-bare__main,
+.be-bare__body,
+.be-bare__body > .ce-slot {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+}
+.ce-slot .be-modal__header { padding-right: 1.25rem; }
+.ce-slot .be-modal__body   { flex: 1 1 auto; overflow-y: auto; }

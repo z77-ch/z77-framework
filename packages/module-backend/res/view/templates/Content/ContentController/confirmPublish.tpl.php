@@ -21,8 +21,8 @@
             <li><?= e($doc->getSlug()) ?> (<?= e($doc->getLanguage()) ?>)<?= $doc->isActive() ? '' : ' — inaktiv' ?></li>
             <?php endforeach; ?>
         </ul>
-        <p>Die bisherigen Live-Fassungen werden als eigener Satz «alt-…» archiviert; wer zurück will, veröffentlicht diesen Satz. Die Dokumente von «<?= e($setKey) ?>» verschwinden danach aus der Liste.</p>
-        <p>Ein Dokument, das bisher keine Live-Fassung hatte, wird neu angelegt und bei einer Rücknahme nicht entfernt.</p>
+        <p>Jede bisherige Live-Fassung wird als Version «v-…» gesichert; wer zurück will, stellt beim betreffenden Dokument diese Version wieder her. Die Dokumente von «<?= e($setKey) ?>» verschwinden danach aus der Liste.</p>
+        <p>Ein Dokument, das bisher keine Live-Fassung hatte, wird neu angelegt; dafür gibt es keine Version, bei einer Rücknahme bleibt es bestehen.</p>
     </div>
     <div class="be-modal__footer">
         <button type="button" class="be-btn be-btn--ghost" data-popup-close>Abbrechen</button>

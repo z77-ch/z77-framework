@@ -32,6 +32,10 @@ SOURCE=/packages/module-backend/res/view/templates/Content/MetaDataController/ed
 SOURCE=/packages/module-backend/res/view/templates/Content/MetaDataController/confirmDelete.tpl.php
 SOURCE=/packages/module-backend/res/view/templates/System/DashboardController/overviewAction.tpl.php
 SOURCE=/packages/module-backend/res/view/templates/partials/subnav.tpl.php
+SOURCE=/packages/module-backend/res/view/templates/partials/shell/topbar.tpl.php
+SOURCE=/packages/module-backend/res/view/templates/partials/shell/crumb.tpl.php
+SOURCE=/packages/module-backend/src/Ui/BackendMenu.php
+SOURCE=/tests/backend-access.php
 SOURCE=/packages/module-backend/res/view/templates/html-shell-skeleton.tpl.php
 SOURCE=/packages/kernel/shared/res/assets/js/core.js
 SOURCE=/packages/kernel/shared/res/assets/js/panel-toggle.js
@@ -65,6 +69,7 @@ The backend is the admin UI. URL schema is 4 segments — `/backend/{group}/{con
 - `appearance.js` updates the same `<html>` data-attributes on user clicks (instant CSS switch via selectors), then POSTs to `/backend/system/system/save-preferences` for persistence (fire-and-forget). No JS-side token mirror — `_colors.scss` is single source of truth.
 - Backend JS: shared `core.js` (fetch + flash/message + popup + field validation + envelope dispatch — see [`fetch.md`](fetch.md)) + shared `panel-toggle.js` (generic, data-attribute dropdown/collapse toggle — drives the topbar environment switcher, the avatar service panel, and the avatar "Info"/"Aussehen" collapsibles) + `appearance.js` + `system/cache.js`. `partials/footer.tpl.php` holds the remaining inline bits (hamburger overlay).
 - Action-specific CSS/JS is registered in the controller via `addCss()`/`addJs()` (called after `$this->html()`). No inline `<style>` or `<script>` blocks in templates.
+- **The menu follows the access config (ADR-045 §2).** `BackendAbstractController::html()` builds `backendMenu` (`BackendMenu::forCurrentUser()`) for a logged-in user; topbar, subnav and crumb render only what it returns. An entry is shown when `AuthService::canReach()` — the same resolution AccessGuard applies — lets the user open its target; see «menu follows access» below. Dashboard cards and the service-panel switches (`shellTools`: debug / noindex / clear-cache) use the same check.
 - **`activeSection`** — HTML-rendering controllers pass `'activeSection' => '<tag-slug>'` in the template context. `header.tpl.php` uses it to highlight the active topbar tab; `subnav.tpl.php` uses it to call `getByTag($activeSection)` and render the sidebar tree. Omitting it leaves both inactive.
 
 ## groups
@@ -84,7 +89,7 @@ Backend groups exist for UI organisation only — they are NOT business-domain b
 
 | Controller | Group | Default action | Notes |
 |---|---|---|---|
-| `DashboardController` | `system` | `overview` | Entry page after login. 6 module cards in grid. Must put `userPreferences` in template context. URL: `/backend/system/dashboard/overview`. |
+| `DashboardController` | `system` | `overview` | Entry page after login, role EDITOR (every backend user lands here, ADR-045). Module cards declared in `DashboardController::CARDS` with their target route; a card is passed to the template only when `canReach()` allows its target. Must put `userPreferences` in template context. URL: `/backend/system/dashboard/overview`. |
 | `LoginController` | `system` | `login` | Extends `AbstractBaseController` (NOT a security controller); see [`login.md`](login.md). URL: `/backend/system/login/login`, alias `/login`. |
 | `SystemController` | `system` | n/a (POST-only) | Fetch endpoints only (no HTML render). No config entry — the `list` convention resolves `/backend/system/system` to a `listAction` that does not exist → 404 by design (ADR-005 §SystemController Default Action; mechanism updated by AUTH-B003). |
 | `NavigationController` | `content` | `list` | Navigation ELEMENT CRUD: list (the shared navigation screen, grouped by config render-slots) / add / edit / confirmDelete / remove + `moveAction` (DnD tree mutation via `parentId` + `sortKey`) + `checkFieldAction` for blur-based field validation (see [`fetch.md`](fetch.md), [`entity-data-handling.md`](entity-data-handling.md)). URL: `/backend/content/navigation/list`. Render-slots + view areas are config (ADR-022) — there is no group controller. |
@@ -95,6 +100,24 @@ Backend groups exist for UI organisation only — they are NOT business-domain b
 | `FormLogController` | `service` | `list` | The geo-guard surface: every submit of every geo-guarded public form (country, outcome, identity, origin) with two tallies and a `?form=` filter, and EDITS the country blocklist from them: `confirm-block` / `block` / `confirm-unblock` / `unblock`, entity-CSRF guarded, reason prefilled from the tally (window named). Logic + templates live HERE (like `BackupController` — log and blocklist are kernel data, no ADR-018 mount). An unreadable blocklist renders as a visible failure state («Regel ist AUS»), never a 500 — the write side still throws. Role ADMIN (module default — the page shows IPs and, where a form opted in, addresses). URL: `/backend/service/form-log/{action}`. Navigation seed `id:30` («Formular-Protokoll» under Service) — existing projects adopt the entry via the import. See [`forms.md`](forms.md) / [`geoip.md`](geoip.md). |
 
 `NavigationController` extends **`AbstractTreeEntityController`** (which extends `BackendAbstractController`): it provides the generic `moveAction` (resolve → cycle-guard → `TreeService::reorderInto` → renumber old group → persist) once; the subclass supplies `treeRepo()`, `treeService()`, and the entity-specific `applyMovePolicy()` (cross-slot + ref-parent guards). `NavigationGroupController` was removed with `NavigationGroup` (ADR-022); the base is kept as the reuse seam for future tree-entity controllers. Mechanics vs. policy — see [`tree.md`](tree.md) / ADR-009.
+
+## menu follows access
+
+ADR-045 §2: one source of truth for «who sees what» — the module access config.
+`BackendMenu` (module-backend, `Ui/BackendMenu.php`) wraps `NavigationService` for
+one user and one slot (`backend-main`):
+
+| Entry | Shown when |
+|---|---|
+| leaf with a target (module/group/controller/action) | `AuthService::canReach()` allows the target; empty action = the controller's default action |
+| ref entry | its target entry is shown (a ref to a ref or to a missing entry: hidden) |
+| entry with children (section, opener) | at least one child is shown — its own target is not asked (the subnav never links an opener) |
+| leaf without target and without ref | never (it leads nowhere; was an inert span before) |
+
+- The section URL (topbar, module switcher) is the first page in it the user may open (`NavigationService::resolveFirstNavigable($entry, $allows)`), the environment switcher's backend URL likewise (`getViewAreas($allows)`). Both predicate parameters are optional; without one the service behaves as before (frontend admin overlay).
+- The pure halves `BackendMenu::allowsIn()` + `visibleIn()` take the lookups as callables — `tests/backend-access.php` checks them over the real `backendConfig` without DI.
+- Visibility is not security. AccessGuard still refuses every route the menu hides; a hand-typed URL of a hidden screen redirects to `/login` as before.
+- A project that overrides `topbar`, `subnav` or `crumb` with a copy that still walks `$navigationService` shows the unfiltered menu — the templates now read `$backendMenu`.
 
 ## SystemController endpoints
 
@@ -192,10 +215,10 @@ every full frontend page, via a right-edge hover overlay.
   `AdminPanelController::togglePartialLabelsAction` (module-frontend, role ADMIN
   via frontendConfig), 303 back to the same page. See [`view-layer.md`](view-layer.md)
   partial labels (PARTIAL-LABELS-002).
-- Cache safety: admin sessions never participate in the shared PageCache
-  (`PageCachePolicy` returns `NewPage` for role >= ADMIN) — the overlay can
-  neither be stored into visitor pages nor be missing on a cached hit. See
-  [`cache.md`](cache.md) CACHE-ADMIN-001.
+- Cache safety: editor and admin sessions never participate in the shared
+  PageCache (`PageCachePolicy` returns `NewPage` for role >= EDITOR since
+  ADR-045, >= ADMIN before) — the overlay can neither be stored into visitor
+  pages nor be missing on a cached hit. See [`cache.md`](cache.md) CACHE-ADMIN-001.
 
 ## user management (BackendUserController)
 
@@ -268,6 +291,8 @@ design. Owned by [`security.md`](security.md) — see it for the gating rules.
 - When adding action-specific CSS or JS → MUST register via `$this->layoutManager->addCss()` / `addJs()` in the controller action after calling `$this->html()`; MUST NOT use inline `<style>` or `<script>` blocks in templates
 - When adding a backend Fetch endpoint → MUST return a `FetchResponse` envelope via `$this->fetch()` (see [`fetch.md`](fetch.md), [`messages.md`](messages.md))
 - When defining a backend role-protected controller → MUST register in `backendConfig.inc.php` with the correct minimum role
+- When rendering backend navigation (topbar, subnav, crumb, a new menu partial) → MUST read `$backendMenu` (`sections()`, `activeSection()`, `children()`, `href()`); MUST NOT walk `$navigationService` directly or check a role in the template — the menu would show links the access config refuses (ADR-045, HEADER-AUTH-001)
+- When a backend screen shows a button/card/link to another backend route → MUST decide its visibility in the controller with `AuthService::canReach()` and hand the template a boolean or a filtered list; MUST NOT hard-code a role (the content list's «Löschen» is `canDelete`, the dashboard cards are filtered in `DashboardController`)
 - When adding interactive UI logic → MUST stay hand-written vanilla JS (MUST NOT introduce a JS build pipeline); reusable cross-page behaviour goes in a shared/module JS file (e.g. `panel-toggle.js`) loaded via `layoutConfig` `javascripts`, page-specific snippets stay inline in `partials/footer.tpl.php`
 - When a topbar/panel needs a click-dropdown or a collapsible → MUST use the `panel-toggle.js` data-attribute contract (`data-panel-root` / `data-panel-trigger` / `data-panel`, or `data-collapse-trigger` / `data-collapse`); MUST NOT hand-write per-panel toggle JS
 - When a panel element starts `hidden` but a class sets its `display` → MUST add `&[hidden]{display:none}` so the attribute wins (the UA `[hidden]` rule is overridden by any class `display` declaration)
@@ -307,6 +332,7 @@ design. Owned by [`security.md`](security.md) — see it for the gating rules.
 
 - **LAYOUT-B001** — resolved 2026-07-04. login + setup (both GUEST, full-page) now render through a dedicated chrome-less skeleton instead of the authenticated shell. New `res/view/templates/html-guest-skeleton.tpl.php` (only `$main` + flash/messages, no topbar/subnav/preview/footer/header-slots); the self-contained `.be-guest` wrapper (`components/_guest.scss`) fills the viewport and centers the `.login`/setup card, independent of the media-gated `layout/*.scss`. Selected per controller via `documentTpl` override in `src/Ui/Config/System/loginControllerConfig.inc.php` + `setupControllerConfig.inc.php` (applied on top of the module `layoutConfig`, last `documentTpl` wins). Revert = delete the two config files. **Restpunkt (bewusst offen):** the module `layoutConfig` still registers the chrome partials for every backend controller (`applyLayoutConfig` is append-only — a controller config cannot *unset* a section), so for a GUEST the shell topbar/subnav still render (to empty output — topbar self-skips on absent `headerUser`) and are simply not echoed by the guest skeleton. Therefore the `if (empty($headerUser)) return;` guard in `partials/shell/topbar.tpl.php` **stays** — the target of removing it entirely would need `removeSection()` (decided against) or a bigger config-loader change. Also fixed in the same pass: the login/setup form-control overrides in `_login.scss` had been dead since the `.form`→`.be-form` / `.btn`→`.be-btn` migration (CSS-LIST-CONSOLIDATION-001) — they targeted `.form__control` / `.btn--primary`, so the inputs blended into the card (same `--be-surface`). Renamed to `.be-form__control` / dropped the now-redundant button + focus-ring overrides (base is palette/theme-aware). See [`css-backend.md`](css-backend.md) GUEST-SKELETON-001.
 
+- **MENU-ACCESS-001** — built 2026-09-22 (ADR-045 §2). Before, the backend menu was not filtered by role: a user below a target's role saw the link and got the login redirect on click. Now `BackendMenu` filters topbar, module switcher, subnav, crumb, environment switcher, dashboard cards and the service-panel switches through `AuthService::canReach()`. Not exercised in a browser at build time (no runnable skeleton in the worktree) — verified by `tests/backend-access.php` (resolution + tree rule) and `php -l`.
 - **AUTH-B003** — resolved 2026-07-16. `backendConfig.inc.php` `controllers` map slimmed to **deviation-only**: entries exist solely for GUEST (`LoginController`, `SetupController`), SUPER_USER (`BackupController`), and defaultAction deviations (`DashboardController` → `overview`, `DocumentController` → `preview`). Everything else inherits `moduleRole: ADMIN` (fallback chain `actionRole → controllerRole → moduleRole` in `AuthService::resolveRoleForCurrentController`) and the new module-level `defaultAction: 'list'` convention (consumed by `getDefaultActionForController`'s existing module fallback — zero code change). A forgotten controller/action defaults to ADMIN, never to open; `/backend/system/system` still 404s (convention resolves `list`, the method does not exist → `setAction()` throws). A commented full-schema example stays in the config for developers. **Trigger was a real CE incident:** a project had to copy the whole `backendConfig` into `override/` to add one controller — the copy then shadowed the framework's `service`-group addition (file overrides REPLACE, they do not merge) and needed a manual re-sync. With deviation-only there is no reason to override the file for a plain ADMIN controller at all. Role matrix verified in the skeleton (guest 302, admin blocked from backup with 302, superUser full access, convention-list URLs 200). Config-tier merging itself was raised and deliberately NOT pursued (owner decision 2026-07-16: overrides are the developer's domain, the framework never reaches into them).
 
 ## pending

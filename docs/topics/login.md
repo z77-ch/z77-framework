@@ -1,6 +1,6 @@
 # login
 
-2026-07-03
+2026-09-22
 
 ## entry
 
@@ -39,10 +39,19 @@ File-based authentication. Users are stored in `data/framework/auth/backendUsers
 ## role system
 
 ```text
-AuthRole constants: GUEST=0, VISITOR=10, MEMBER=20, CRON_JOB=30, ADMIN=80, SUPER_USER=100
+AuthRole constants: GUEST=0, VISITOR=10, CUSTOMER=15, MEMBER=20, CRON_JOB=30, EDITOR=50, ADMIN=80, SUPER_USER=100
 ```
 
-Resolution order (`AuthService::resolveRoleForCurrentController`):
+`EDITOR` («Redaktor», ADR-045) writes website text and nothing else of the backend.
+What that means is NOT coded into the role: the backend config lowers single
+controllers/actions to `editor` (framework default: the content editor, the
+dashboard, `system/save-preferences`; deleting content stays ADMIN). A project
+widens or narrows it in its own module config. The backend menu follows the same
+config (see [`backend.md`](backend.md) «menu follows access»).
+
+Resolution order (`AuthService::requiredRole()`, pure — called by
+`resolveRoleForCurrentController()` for the dispatch gate and by `canReach()` for
+the backend menu and the per-button checks, so both always agree):
 
 ```text
 Action role > Controller role > Module role > GUEST default
@@ -147,7 +156,10 @@ login(): void                                        // writes auth_user to sess
 logout(): void                                       // removes auth_user from session
 getCurrentUser(): AuthUser                           // loads from session, caches per request; returns guest if not logged in
 hasSufficientRole(AuthUser, string $requiredRole): bool   // static
-resolveRoleForCurrentController(): string                 // reads module config
+resolveRoleForCurrentController(): string                 // the current route → resolveRoleFor()
+resolveRoleFor(module, group, ControllerBaseName, actionMethod): ?string   // any route; null = module not installed
+static requiredRole(?moduleRole, controllers, group, ControllerBaseName, actionMethod): string   // the rule, pure
+canReach(AuthUser, module, group, controller, action): bool   // URL segments as a navigation entry stores them; '' action = default action
 ```
 
 ## BackendUser entity (persistence)
@@ -196,6 +208,8 @@ guard never sends a customer to the admin login. Details: `member.md`
 - When defining a controller for the login page → MUST extend `AbstractBaseController`, NOT a security controller (login page must be accessible without auth)
 - When a UI needs the set of selectable roles (e.g. the user-edit form) → MUST derive the role set + order from `AuthRole::getRoleHierarchy()` (SSOT); MUST NOT re-declare which roles exist in the module. German display labels live in the module as a presentation-only map keyed by role, looked up per *existing* role (see backend.md ROLE-DEF-001).
 - When configuring a role for a controller in module config → MUST use the short class name as the key (e.g. `'LoginController'`), NOT the FQCN
+- When code needs to know whether a user may call some OTHER route (menu entry, button, card) → MUST ask `AuthService::canReach()` (or `resolveRoleFor()`); MUST NOT re-implement the action > controller > module lookup or hard-code a role next to the config — the menu and the gate would drift apart (ADR-045)
+- When giving editors access to a screen → MUST lower that controller/action to `AuthRole::EDITOR` in the module config (deviation-only, AUTH-B003); MUST NOT gate on `hasAtLeast(EDITOR)` inside the controller instead — the menu reads the config, not the controller
 - When setting the current user → MUST use guest identity (`id=0`, `isLoggedIn()=false`); MUST NOT store `null`
 - When access-controlling a module's controllers → MUST set `moduleRole` as the restrictive baseline and add a `controllers` entry ONLY for a deviation (looser: GUEST login/setup; stricter: SUPER_USER backup; or a non-`list` defaultAction); MUST NOT restate the baseline per controller/action — an unlisted controller/action inherits the fallback chain `actionRole → controllerRole → moduleRole` and is never open (AUTH-B003, see backend.md)
 - When configuring `loginUrl` in `backendConfig.inc.php` → MUST use the alias `/login`, NOT the canonical 4-segment URL — the alias is resistant to future URL restructuring
@@ -214,6 +228,7 @@ guard never sends a customer to the admin login. Details: `member.md`
 ## known issues
 
 - BUG-P001 — resolved. `Naming::toCamelCase` no longer destroys camelCase input; `passwordHash` round-trip works.
+- **EDITOR-ROLE-001** — built 2026-09-22 (ADR-045 §1). New role `editor` (50) with label «Redaktor»; the role resolution was factored out of `resolveRoleForCurrentController()` into the pure `requiredRole()` + `resolveRoleFor()` + `canReach()` so the backend menu uses the identical rule. Harness: `tests/backend-access.php`. Don't assume an editor sees the frontend admin overlay or partial labels — those stay ADMIN on purpose.
 - **ROLE-LEVEL-SSOT-001** — resolved 2026-07-07. The "highest role level ≥ threshold" calc was copied three times (`AuthUser::hasAtLeast`, `AuthService::hasSufficientRole`, `BackendUserController::isAdminCapable`). Consolidated the permissive form into one pure helper `AuthRole::rolesSatisfy(array $roles, string $minRole)` (unknown role → level 0); `hasAtLeast` + `isAdminCapable` now route through it. **`AuthService::hasSufficientRole` was deliberately left as-is** — it uses the fail-secure form (unknown REQUIRED role → `PHP_INT_MAX` → deny everyone), the security-critical dispatch gate, which must NOT be unified onto the 0-fallback semantics.
 - **LOGIN-UX-001** — resolved 2026-06-03. Show-password toggle added via `password-toggle.js` (backend asset). One accessible eye button (`aria-pressed` / `aria-label`, focusable), binds to `input[type="password"]` within scope — no template marker, no inline JS. Login + setup load it statically (`addJs`, self-inits on DOM ready); user-edit loads it lazily (`load-script`, popup-scoped) alongside the meter. `LoginController` form renders funnel through a single `renderForm()` so the toggle is registered on the initial GET and on every POST error re-render.
 

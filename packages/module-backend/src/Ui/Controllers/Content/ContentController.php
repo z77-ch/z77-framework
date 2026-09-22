@@ -2,6 +2,8 @@
 namespace Z77\Module\Backend\Ui\Controllers\Content;
 
 use Z77\Core\DI,
+    Z77\Core\Exception\NotFoundException,
+    Z77\Core\Http\RequestMode,
     Z77\Core\Http\Response\HtmlResponse,
     Z77\Core\Http\Response\FetchResponse,
     Z77\Module\Backend\Ui\Controllers\BackendAbstractController,
@@ -12,6 +14,7 @@ use Z77\Core\DI,
     Z77\Shared\Content\BlockRegistry,
     Z77\Shared\Content\ContentExtensions,
     Z77\Shared\Content\ContentPreview,
+    Z77\Shared\Content\ContentView,
     Z77\Shared\Entities\Content,
     Z77\Shared\Repositories\ContentRepository,
     Z77\Shared\Services\ContentVariantService,
@@ -24,7 +27,13 @@ use Z77\Core\DI,
  * key on "<slug>.<language>" for the live copy and "<slug>.<language>.<variant>"
  * for a variant (ADR-044 addendum; every request carries `variant`, '' = live).
  * Variants are created from a live row, previewed on the website with ?preview=
- * and published per set through {@see ContentVariantService}. Metadata (title, active) + the visual block editor built
+ * and published per set through {@see ContentVariantService}. Every live write
+ * (save, add, active switch, publish, restore) goes through that service, which
+ * keeps the previous live copy as a version `v-…` and stamps changedBy/changedAt
+ * (ADR-045); a version is not edited, only restored or (ADMIN) deleted.
+ * Access (backendConfig): EDITOR for all actions, ADMIN for confirmDelete/remove.
+ * slotAction is the page editor (ADR-045 §4): one slot, in an iframe on the website.
+ * Metadata (title, active) + the visual block editor built
  * from each BlockRenderer::schema(). A slug with a blueprint (ADR-044) is edited
  * in blueprint mode: fixed slots, no block add/remove/reorder, enforced on save.
  * Saves are guarded by an optimistic lock (entity_hash).
@@ -42,6 +51,20 @@ class ContentController extends BackendAbstractController
         $key = $content->getSlug() . '.' . $content->getLanguage();
 
         return $content->isLive() ? $key : $key . '.' . $content->getVariant();
+    }
+
+    /** Username stamped on a live write (ADR-045). */
+    private function username(): string
+    {
+        return DI::getAuthService()->getCurrentUser()->getUserName();
+    }
+
+    /** May the current user delete (a document, variant, version)? Same rule as the access config. */
+    private function canDelete(): bool
+    {
+        $auth = DI::getAuthService();
+
+        return $auth->canReach($auth->getCurrentUser(), 'backend', 'content', 'content', 'confirm-delete');
     }
 
     /** The document named by the GET parameters slug, language, variant ('' = live). */
@@ -69,9 +92,18 @@ class ContentController extends BackendAbstractController
             $this->repo()->findAll(),
             fn(Content $c) => $c->getLanguage() === $language
         ));
-        // By slug; per slug the live copy first, then its variants by key.
-        usort($contents, fn(Content $a, Content $b) =>
-            [$a->getSlug(), !$a->isLive(), $a->getVariant()] <=> [$b->getSlug(), !$b->isLive(), $b->getVariant()]);
+        // By slug; per slug the live copy first, then its variants by key, then
+        // its versions newest first (the key carries the archiving time).
+        $rank = fn(Content $c): int => $c->isLive() ? 0 : ($c->isVersion() ? 2 : 1);
+        usort($contents, function (Content $a, Content $b) use ($rank): int {
+            $order = [$a->getSlug(), $rank($a)] <=> [$b->getSlug(), $rank($b)];
+            if ($order !== 0) {
+                return $order;
+            }
+            return $a->isVersion()
+                ? strcmp($b->getVariant(), $a->getVariant())
+                : strcmp($a->getVariant(), $b->getVariant());
+        });
 
         $response = $this->html([
             'contents'      => $contents,
@@ -106,6 +138,10 @@ class ContentController extends BackendAbstractController
         if ($content === null) {
             return $this->fetchError('Inhalt nicht gefunden');
         }
+        // A version is history: it is restored, not changed.
+        if ($content->isVersion()) {
+            return $this->fetchError('Eine Version wird nicht bearbeitet — erst wiederherstellen.');
+        }
 
         return $this->edit($content, false);
     }
@@ -120,6 +156,8 @@ class ContentController extends BackendAbstractController
         $origSlug     = $content->getSlug();
         $origLang     = $content->getLanguage();
         $origVariant  = $content->getVariant();
+        $origChangedBy = $content->getChangedBy();
+        $origChangedAt = $content->getChangedAt();
         $storedBlocks = $content->getBlocks();     // orphans are always taken from here
         $rawBlocks    = '';
         $validator    = null;
@@ -154,6 +192,10 @@ class ContentController extends BackendAbstractController
             // through like any other field, so all three are forced back from the
             // loaded record: a crafted body can neither rename a document nor move
             // it into another set.
+            // changedBy/changedAt pass BodyCleaner too; they are the server's
+            // (ADR-045) — back to the stored values, a live save stamps anew.
+            $content->setChangedBy($origChangedBy);
+            $content->setChangedAt($origChangedAt);
             if (!$isNew) {
                 $content->setSlug($origSlug);
                 $content->setLanguage($origLang);
@@ -178,8 +220,14 @@ class ContentController extends BackendAbstractController
         $blueprint   = $extensions->blueprint($content->getSlug());
 
         if (DI::getRequest()->isPost() && $validator->isValid()) {
-            $this->em()->persist($content);
-            $this->em()->flush();
+            if ($content->isLive()) {
+                // Archives the stored live copy as a version, stamps this one.
+                ContentVariantService::create()->saveLive($content, $this->username());
+            } else {
+                // A variant save: no version, no stamp (ADR-045).
+                $this->em()->persist($content);
+                $this->em()->flush();
+            }
 
             $this->messageService->pushFlashAfterRedirect(
                 'success',
@@ -219,6 +267,184 @@ class ContentController extends BackendAbstractController
         return $response;
     }
 
+    /**
+     * The page editor (ADR-045 §4): ONE blueprint slot of one document, opened
+     * from a «Bearbeiten» button on the website in an iframe.
+     *
+     * GET  (page mode) — a bare backend page (html-bare-skeleton: backend CSS,
+     *      no topbar/menu) with the blueprint editor for that slot only.
+     * POST (fetch)     — merges the posted slot into the STORED blocks
+     *      (Blueprint::enforceSlot(): every other slot and every orphan from the
+     *      store, whatever the body carries), then the same validator,
+     *      optimistic lock and save rule as the backend editor. Success answers
+     *      with the command `post-message` {type: 'z77:content-saved'}: core.js
+     *      hands it to the parent window (same origin), whose content-edit.js
+     *      reloads the page. A failed save re-renders the form in place.
+     *
+     * Query: slug, language, variant (the document the page SHOWED, '' = live),
+     * slot, preview (the page's ?preview= key, optional). Where a save goes:
+     *   - variant given            → that variant (no version, no stamp);
+     *   - live + preview key       → the preview set: the set's copy of the
+     *                                document if it has one by now, otherwise a
+     *                                new variant = the stored live copy + this slot;
+     *   - live, no preview         → live, through saveLive() (version rule).
+     * Versions (a `v-…` variant or preview key) are refused: history is restored,
+     * not edited. Access: EDITOR, like the rest of the editor (backendConfig).
+     */
+    protected function slotAction(): HtmlResponse|FetchResponse
+    {
+        $request = DI::getRequest();
+        $slug    = (string)$request->getGetParameter('slug');
+        $lang    = (string)$request->getGetParameter('language');
+        $variant = ContentPreview::normalize((string)$request->getGetParameter('variant'));
+        $slotKey = (string)$request->getGetParameter('slot');
+        $preview = ContentPreview::normalize((string)$request->getGetParameter('preview'));
+
+        $extensions = ContentExtensions::assemble();
+        $blueprint  = $slug !== '' ? $extensions->blueprint($slug) : null;
+        $slot       = $blueprint?->slot($slotKey);
+        if ($slot === null) {
+            return $this->slotError('Dieser Abschnitt ist nicht bearbeitbar.');
+        }
+        if (ContentPreview::isVersionKey($variant) || ContentPreview::isVersionKey($preview)) {
+            return $this->slotError('Eine Version wird nicht bearbeitet — erst wiederherstellen.');
+        }
+
+        // The document the form edits. A live copy shown in a preview goes into
+        // the set: if the set holds this document by now (an earlier save from
+        // the same page), that copy is edited instead of creating a second one.
+        $content = null;
+        if ($variant !== '') {
+            $content = $lang !== '' ? $this->repo()->findBySlug($slug, $lang, $variant) : null;
+        } elseif ($preview !== '') {
+            $content = $lang !== '' ? $this->repo()->findBySlug($slug, $lang, $preview) : null;
+        }
+        $intoSet = $content === null && $variant === '' && $preview !== '';
+        $content ??= $lang !== '' ? $this->repo()->findBySlug($slug, $lang) : null;
+        if ($content === null) {
+            return $this->slotError('Inhalt nicht gefunden');
+        }
+
+        $registry   = BlockRegistry::assemble();
+        $schemas    = $registry->schemas();
+        $origKey    = $this->csrfKey($content);
+        $validator  = null;
+        $entityHash = '';
+        $rawBlocks  = '';
+        $slotUrl    = ContentView::slotEditorUrl($slug, $lang, $variant, $slotKey, $preview);
+
+        if ($request->isPost()) {
+            $body      = $request->getJsonBody();
+            $rawBlocks = is_string($body['blocks'] ?? null) ? $body['blocks'] : '';
+
+            $csrf = trim($body['entity_csrf'] ?? '');
+            if (!DI::getCsrfService()->validateEntityToken($csrf, 'content', $origKey)) {
+                return $this->fetchError('Invalid token');
+            }
+
+            // Lock against the STORED state the form was rendered from (the
+            // live copy when the save creates the set's copy).
+            $validator  = new ContentValidator($content, $registry->types(), $this->repo(), false, $rawBlocks, $schemas);
+            $entityHash = trim($body['entity_hash'] ?? '');
+            $validator->guardStoredState($entityHash);
+
+            // Only the blocks change — never title, active, identity or stamps.
+            $posted = json_decode($rawBlocks, true);
+            $content->setBlocks($blueprint->enforceSlot(
+                $slotKey,
+                is_array($posted) ? $posted : [],
+                $content->getBlocks(),
+                $schemas
+            ));
+            $validator->useBlueprint($blueprint);
+
+            if ($validator->isValid()) {
+                $service = ContentVariantService::create();
+                if ($intoSet) {
+                    // $content is the loaded live copy with the edited blocks in
+                    // memory; the live FILE is not written — the copy goes into the set.
+                    try {
+                        $service->createVariant($content, $preview);
+                    } catch (\DomainException $e) {
+                        return $this->fetchError($e->getMessage());
+                    }
+                } elseif ($content->isLive()) {
+                    $service->saveLive($content, $this->username());
+                } else {
+                    $this->em()->persist($content);
+                    $this->em()->flush();
+                }
+
+                return $this->fetch()
+                    ->setStatus('success')
+                    ->addCommand('post-message', ['message' => [
+                        'type' => 'z77:content-saved',
+                        'slug' => $slug,
+                        'slot' => $slotKey,
+                    ]]);
+            }
+        }
+
+        $validator ??= new ContentValidator($content, $registry->types(), $this->repo(), false, $rawBlocks, $schemas);
+        if (!$request->isPost()) {
+            $entityHash = EntityStateHash::of($content);
+        }
+
+        // The editor partial goes into `main` BEFORE html(): initialize() adds
+        // the action template only when `main` is empty — this action has none,
+        // the form is the backend editor's own edit.tpl.php in slot mode.
+        $this->layoutManager->addPartials('edit', 'Content/ContentController', self::NAMESPACE);
+        $response = $this->html([
+            'content'    => $content,
+            'isNew'      => false,
+            'knownTypes' => $registry->types(),
+            'schemas'    => $schemas,
+            'blueprint'  => $blueprint,
+            'actions'    => $extensions->actions(),
+            'entityCsrf' => DI::getCsrfService()->generateEntityToken('content', $origKey),
+            'entityHash' => $entityHash,
+            'validator'  => $validator,
+            'rawBlocks'  => $rawBlocks,
+            'slot'       => $slot,
+            'slotUrl'    => $slotUrl,
+            'slotTarget' => $intoSet ? $preview : '',
+        ]);
+
+        if ($request->getMode() === RequestMode::Fetch) {
+            // A failed save: the form is re-rendered into [data-z77-popup-body],
+            // which on the bare page is the page body itself (html-bare-skeleton).
+            $response->addCommand('load-script', [
+                'src'   => $this->layoutManager->resolveJsPath('content/editor', self::NAMESPACE),
+                'init'  => 'content-editor',
+                'scope' => '[data-z77-popup-body]',
+            ]);
+            return $response;
+        }
+
+        // Full page inside the iframe: no shell chrome, no shell scripts. The
+        // module layoutConfig registered them for every backend page; they are
+        // taken off here, explicitly, for this one page.
+        $this->layoutManager->setSkeletonTemplate('html-bare-skeleton', self::NAMESPACE);
+        foreach (['shellTopbar', 'subnav', 'noindexBanner', 'systemBanner'] as $section) {
+            $this->layoutManager->removeSection($section);
+        }
+        $this->layoutManager->removeJs(['panel-toggle', 'split', 'appearance', 'system/cache', 'shell']);
+        $this->layoutManager->addCss('content/editor', self::NAMESPACE);
+        $this->layoutManager->addJs('content/editor', self::NAMESPACE);
+        $this->layoutManager->addJs('content/slot', self::NAMESPACE);
+
+        return $response;
+    }
+
+    /** An error of the slot editor: a flash on a fetch, a 404 on the page. */
+    private function slotError(string $text): FetchResponse
+    {
+        if (DI::getRequest()->getMode() !== RequestMode::Fetch) {
+            throw new NotFoundException($text);
+        }
+        return $this->fetchError($text);
+    }
+
     protected function confirmDeleteAction(): HtmlResponse|FetchResponse
     {
         $content = $this->fromQuery();
@@ -252,7 +478,11 @@ class ContentController extends BackendAbstractController
             ? ''
             : ContentPreview::carry(localizedUrl('/', $content->getLanguage()), $content->getVariant());
 
-        $response = $this->html(['entry' => $content, 'previewUrl' => $previewUrl]);
+        $response = $this->html([
+            'entry'      => $content,
+            'previewUrl' => $previewUrl,
+            'canDelete'  => $this->canDelete(),
+        ]);
         $this->layoutManager->addPartials('actions', 'Content/ContentController', self::NAMESPACE);
         return $response;
     }
@@ -288,7 +518,11 @@ class ContentController extends BackendAbstractController
             ->addCommand('reload');
     }
 
-    /** Inline active toggle from the list view (global CSRF, no entity token — non-destructive). */
+    /**
+     * Inline active toggle from the list view (global CSRF, no entity token —
+     * non-destructive). On a live copy it is a live write like any save, so it
+     * leaves a version (ADR-045: every live save); a version itself is not switched.
+     */
     #[Fetch, HttpMethod('POST')]
     protected function toggleActiveAction(): FetchResponse
     {
@@ -296,10 +530,17 @@ class ContentController extends BackendAbstractController
         if ($content === null) {
             return $this->fetchError('Inhalt nicht gefunden');
         }
+        if ($content->isVersion()) {
+            return $this->fetchError('Eine Version wird nicht geändert — erst wiederherstellen.');
+        }
 
         $content->setActive(!$content->isActive());
-        $this->em()->persist($content);
-        $this->em()->flush();
+        if ($content->isLive()) {
+            ContentVariantService::create()->saveLive($content, $this->username());
+        } else {
+            $this->em()->persist($content);
+            $this->em()->flush();
+        }
 
         return $this->fetch()
             ->setStatus('success')
@@ -394,8 +635,8 @@ class ContentController extends BackendAbstractController
 
     /**
      * Publishes a set — destructive (the live copies are replaced), so the entity
-     * token is bound to the set key. The previous live copies become the archive
-     * set «alt-…»; see ContentVariantService::publish().
+     * token is bound to the set key. The previous live copies become versions
+     * `v-…` (one key per run); see ContentVariantService::publish().
      */
     #[Fetch, HttpMethod('POST')]
     protected function publishAction(): FetchResponse
@@ -412,7 +653,7 @@ class ContentController extends BackendAbstractController
         }
 
         try {
-            $report = ContentVariantService::create()->publish($key);
+            $report = ContentVariantService::create()->publish($key, $this->username());
         } catch (\DomainException $e) {
             return $this->fetchError($e->getMessage());
         }
@@ -420,7 +661,64 @@ class ContentController extends BackendAbstractController
         $count = count($report['published']);
         $text  = 'Satz «' . $key . '» veröffentlicht (' . $count . ' Dokument' . ($count === 1 ? '' : 'e') . ')';
         if ($report['archive'] !== '') {
-            $text .= ' — bisherige Fassungen im Satz «' . $report['archive'] . '»';
+            $text .= ' — bisherige Fassungen als Version «' . $report['archive'] . '» gesichert';
+        }
+        $this->messageService->pushFlashAfterRedirect('success', $text);
+
+        return $this->fetch()
+            ->setStatus('success')
+            ->addCommand('close-modal')
+            ->addCommand('reload');
+    }
+
+    /** «Wiederherstellen» (version rows only): confirm modal. */
+    protected function confirmRestoreAction(): HtmlResponse|FetchResponse
+    {
+        $version = $this->fromQuery();
+        if ($version === null || !$version->isVersion()) {
+            return $this->fetchError('Version nicht gefunden');
+        }
+
+        $response = $this->html([
+            'version'    => $version,
+            'live'       => $this->repo()->findBySlug($version->getSlug(), $version->getLanguage()),
+            'entityCsrf' => DI::getCsrfService()->generateEntityToken('content', $this->csrfKey($version)),
+        ]);
+        $this->layoutManager->addPartials('confirmRestore', 'Content/ContentController', self::NAMESPACE);
+        return $response;
+    }
+
+    /**
+     * Makes a version the live copy again (EDITOR, like any live save). The
+     * current live copy becomes a version first; see ContentVariantService::restore().
+     */
+    #[Fetch, HttpMethod('POST')]
+    protected function restoreAction(): FetchResponse
+    {
+        $body    = DI::getRequest()->getJsonBody();
+        $slug    = (string)($body['slug'] ?? '');
+        $lang    = (string)($body['language'] ?? '');
+        $variant = ContentPreview::normalize((string)($body['variant'] ?? ''));
+
+        $version = ($slug !== '' && $lang !== '') ? $this->repo()->findBySlug($slug, $lang, $variant) : null;
+        if ($version === null || !$version->isVersion()) {
+            return $this->fetchError('Version nicht gefunden');
+        }
+
+        $csrf = trim($body['entity_csrf'] ?? '');
+        if (!DI::getCsrfService()->validateEntityToken($csrf, 'content', $this->csrfKey($version))) {
+            return $this->fetchError('Invalid token');
+        }
+
+        try {
+            $archive = ContentVariantService::create()->restore($version, $this->username());
+        } catch (\DomainException $e) {
+            return $this->fetchError($e->getMessage());
+        }
+
+        $text = 'Version von «' . $version->getSlug() . '» wiederhergestellt';
+        if ($archive !== '') {
+            $text .= ' — bisherige Fassung als Version «' . $archive . '» gesichert';
         }
         $this->messageService->pushFlashAfterRedirect('success', $text);
 

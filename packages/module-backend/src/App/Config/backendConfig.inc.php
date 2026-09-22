@@ -83,13 +83,37 @@ return [
                 'defaultAction'  => 'setup',
                 'controllerRole' => AuthRole::GUEST,
             ],
-            // Entry page after login — deviates from the `list` convention only.
+            // Entry page after login — deviates from the `list` convention, and
+            // every backend user lands here, the editor included (ADR-045).
             'DashboardController' => [
-                'defaultAction' => 'overview',
+                'defaultAction'  => 'overview',
+                'controllerRole' => AuthRole::EDITOR,
             ],
-            // SystemController (POST-only fetch endpoints) deliberately has NO
-            // entry: the `list` convention resolves /backend/system/system to a
-            // listAction that does not exist → 404 by design (ADR-005).
+            // POST-only fetch endpoints; NO defaultAction on purpose: the `list`
+            // convention resolves /backend/system/system to a listAction that does
+            // not exist → 404 by design (ADR-005). The shell calls
+            // save-preferences on every page (appearance panel), so it follows the
+            // lowest backend role; cache/debug/noindex stay ADMIN (ADR-045).
+            'SystemController' => [
+                'actions' => [
+                    'savePreferencesAction' => AuthRole::EDITOR,
+                ],
+            ],
+        ],
+        'content' => [
+            // The content editor is the editor's workplace (ADR-045): list, edit,
+            // add, variants, publish and restoring a version — editors may write
+            // live, every live save keeps the previous state as a version.
+            // Deleting (a document, a variant, a version) stays ADMIN: only the
+            // admin removes that safety net. slotAction (the page editor on the
+            // website, ADR-045 §4) is EDITOR through the controllerRole below.
+            'ContentController' => [
+                'controllerRole' => AuthRole::EDITOR,
+                'actions'        => [
+                    'confirmDeleteAction' => AuthRole::ADMIN,
+                    'removeAction'        => AuthRole::ADMIN,
+                ],
+            ],
         ],
         'finance' => [
             // The ledger reports (module-financial, plan §5.5) have no list —

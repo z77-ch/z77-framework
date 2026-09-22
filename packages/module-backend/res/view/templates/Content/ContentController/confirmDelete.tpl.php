@@ -1,7 +1,7 @@
 <?php
 /** @var \Z77\Shared\Entities\Content $content */
 /** @var string $entityCsrf */
-$ident = $content->getSlug() . '.' . $content->getLanguage() . ($content->isLive() ? '' : ' · Variante ' . $content->getVariant());
+$ident = $content->getSlug() . '.' . $content->getLanguage() . ($content->isLive() ? '' : ($content->isVersion() ? ' · Version ' : ' · Variante ') . $content->getVariant());
 ?>
 <form data-fetch-post="/backend/content/content/remove">
     <input type="hidden" name="slug"        value="<?= e($content->getSlug()) ?>">

@@ -9,6 +9,15 @@
 /** @var string $entityHash  optimistic lock: hash of the state this form was rendered from */
 /** @var \Z77\Persistence\Validation\EntityValidator $validator */
 /** @var string $rawBlocks */
+/** @var array{key:string, type:string, label:string}|null $slot  slot mode (ADR-045 §4, ContentController::slotAction): only this slot, no metadata */
+/** @var string $slotUrl     slot mode: where the form posts */
+/** @var string $slotTarget  slot mode: the preview set a save creates the document in ('' = the document shown) */
+
+// Slot mode is the page editor in an iframe: one slot card, no title/active/slug
+// fields (they are not the page's text), cancel tells the parent window.
+$slot       = $slot ?? null;
+$slotUrl    = $slotUrl ?? '';
+$slotTarget = $slotTarget ?? '';
 
 $fieldError = function (string $name) use ($validator): string {
     return $validator->hasFieldError($name)
@@ -192,16 +201,33 @@ $ceUnknownBlock = function (array $block, bool $orphan = false): string {
         . '</div>';
 };
 ?>
-<form data-fetch-post>
+<form <?= $slot !== null ? 'class="ce-slot" data-fetch-post="' . e($slotUrl) . '"' : 'data-fetch-post' ?>>
     <?php if (!$isNew): ?>
     <input type="hidden" name="entity_csrf" value="<?= e($entityCsrf) ?>">
     <input type="hidden" name="entity_hash" value="<?= e($entityHash) ?>">
     <?php endif; ?>
     <div class="be-modal__header">
+        <?php if ($slot !== null): ?>
+        <h2 class="be-modal__title">Bearbeiten: <?= e($slot['label']) ?></h2>
+        <?php else: ?>
         <h2 class="be-modal__title"><?= $isNew ? 'Neuer Inhalt' : 'Inhalt bearbeiten' ?></h2>
+        <?php endif; ?>
         <span class="be-lang-tag" title="Bearbeitungssprache"><?= e(strtoupper($content->getLanguage())) ?></span>
-        <?php if (!$content->isLive()): ?>
+        <?php if ($slotTarget !== ''): ?>
+        <span class="be-lang-tag" title="Die Live-Fassung bleibt unverändert — die Änderung erscheint erst nach «Satz veröffentlichen» live">speichert in Variante <?= e($slotTarget) ?></span>
+        <?php elseif (!$content->isLive()): ?>
         <span class="be-lang-tag" title="Variante — erscheint erst nach «Satz veröffentlichen» live">Variante <?= e($content->getVariant()) ?></span>
+        <?php endif; ?>
+        <?php
+        // The live copy's last save (ADR-045); saving keeps it as a version.
+        $savedAt = '';
+        try {
+            $savedAt = ($content->isLive() && $slotTarget === '' && $content->getChangedAt() !== '') ? (new DateTimeImmutable($content->getChangedAt()))->format('d.m.Y H:i') : '';
+        } catch (Exception) {
+        }
+        ?>
+        <?php if ($savedAt !== ''): ?>
+        <small class="be-form__hint" title="Beim Speichern wird dieser Stand als Version gesichert">zuletzt gespeichert <?= e($savedAt) ?><?= $content->getChangedBy() !== '' ? ' von ' . e($content->getChangedBy()) : '' ?></small>
         <?php endif; ?>
     </div>
     <div class="be-modal__body">
@@ -211,14 +237,19 @@ $ceUnknownBlock = function (array $block, bool $orphan = false): string {
                 <?php foreach ($validator->getErrors() as $error): ?>
                 <div><?= e($error) ?></div>
                 <?php endforeach; ?>
+                <?php if ($slot !== null): ?>
+                <a class="be-btn be-btn--ghost be-btn--sm" style="margin-top:.5rem" href="<?= e($slotUrl) ?>">Neu laden</a>
+                <?php else: ?>
                 <button type="button" class="be-btn be-btn--ghost be-btn--sm" style="margin-top:.5rem"
                         data-fetch-get="/backend/content/content/edit?slug=<?= e(urlencode($content->getSlug())) ?>&amp;language=<?= e(urlencode($content->getLanguage())) ?>&amp;variant=<?= e(urlencode($content->getVariant())) ?>">Neu laden</button>
+                <?php endif; ?>
             <?php else: ?>
                 Bitte überprüfe die markierten Eingaben.
             <?php endif; ?>
         </div>
         <?php endif; ?>
 
+        <?php if ($slot === null): ?>
         <div class="be-modal__switches">
             <label class="be-switch">
                 <input type="checkbox" class="be-switch__input" name="active" value="1"<?= $content->isActive() ? ' checked' : '' ?>>
@@ -250,14 +281,17 @@ $ceUnknownBlock = function (array $block, bool $orphan = false): string {
                    aria-invalid="<?= $validator->hasFieldError('title') ? 'true' : 'false' ?>">
             <?= raw($fieldError('title')) ?>
         </div>
+        <?php endif; ?>
 
         <div class="be-form__field" data-z77-field-wrapper>
+            <?php if ($slot === null): ?>
             <label>Blöcke</label>
+            <?php endif; ?>
             <?php if ($validator->hasFieldError('blocks')): ?>
                 <?= raw($fieldError('blocks')) ?>
             <?php endif; ?>
 
-            <?php if ($blueprint !== null): ?>
+            <?php if ($blueprint !== null && $slot === null): ?>
             <small class="be-form__hint">Feste Struktur: Abschnitte können hier nicht hinzugefügt, entfernt oder verschoben werden.</small>
             <?php endif; ?>
             <div class="ce<?= $blueprint !== null ? ' ce--locked' : '' ?>" data-ce-editor>
@@ -266,6 +300,8 @@ $ceUnknownBlock = function (array $block, bool $orphan = false): string {
                 <div class="ce__blocks" data-ce-blocks>
                     <?php if ($blueprint !== null):
                         foreach ($blueprint->arrange($content->getBlocks(), $schemas) as $row):
+                            // Slot mode: only that slot's card (orphans are not the page's text).
+                            if ($slot !== null && ($row['slot']['key'] ?? null) !== $slot['key']) { continue; }
                             $type = (string)($row['block']['type'] ?? '');
                             if ($row['slot'] !== null && isset($schemas[$type])):
                                 echo $ceBlock($type, $schemas[$type], $row['block'], $row['slot']);
@@ -318,7 +354,11 @@ $ceUnknownBlock = function (array $block, bool $orphan = false): string {
         </div>
     </div>
     <div class="be-modal__footer">
+        <?php if ($slot !== null): ?>
+        <button type="button" class="be-btn be-btn--ghost" data-ce-slot-close>Abbrechen</button>
+        <?php else: ?>
         <button type="button" class="be-btn be-btn--ghost" data-popup-close>Abbrechen</button>
+        <?php endif; ?>
         <button type="submit" class="be-btn be-btn--primary">Speichern</button>
     </div>
 </form>
