@@ -167,3 +167,14 @@ still the right tool for a non-form endpoint that needs the same protections.
   (see [`member.md`](member.md), [`../02-decisions/adr-029-member-session-and-framework-acl.md`](../02-decisions/adr-029-member-session-and-framework-acl.md)).
   Those services are reusable for the admin login when this roadmap item is taken up; the
   `secondFactor` field, the enum and the `AuthService` branch are still missing.
+  **Owner decisions 2026-09-22 (raised by the z77.ch P2 exit check — the developer was locked out
+  of his own backend, and there is no recovery path):**
+  - **Self-service recovery is required.** A customer who cannot get into the backend must not
+    have to ask the developer.
+  - **Both ways, selectable per user.** Either a password with a «Passwort vergessen» link (a
+    one-time, short-lived link to the account's e-mail sets a new password), or passwordless
+    sign-in by magic link. Both reuse the `module-member` link mechanism.
+  - **2FA (TOTP) must be possible** on top of either way. The recovery link does not bypass the
+    second factor.
+  - **Timing:** after P3 (module-debtor) of the order/debtor/financial Bauplan. Until then, a
+    lost admin password is reset by hand on the server.
