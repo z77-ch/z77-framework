@@ -25,7 +25,9 @@ use Z77\Persistence\Resolver\UnifiedEntityManager;
  *   - whether that period accepts the posting: `closed` never,
  *     `vat-settled` only without a tax line, `open` always;
  *   - that every account exists, is POSTABLE (a group carries no line) and
- *     ACTIVE (deactivated = no new postings; existing lines keep resolving);
+ *     ACTIVE (deactivated = no new postings; existing lines keep resolving)
+ *     — lock-free first, then again under a shared row lock after the
+ *     number ({@see lockAccounts()}, FIN-TYPE-001);
  *   - that every tax code EXISTS in module-vat (ADR-043 decision 19: by
  *     code, no foreign key). Active or deactivated is NOT asked here: a
  *     posting carries the code its document snapshotted, and that document
@@ -117,17 +119,63 @@ final class PostingRules
             if ($account === null) {
                 throw new PostingRefusedException(PostingRefusedException::ACCOUNT_UNKNOWN, "Account {$line->account} does not exist");
             }
-            if (!$account->isPostable()) {
-                throw new PostingRefusedException(PostingRefusedException::ACCOUNT_NOT_POSTABLE, 'Account «' . $account->label() . '» is a group — it carries no journal line');
-            }
-            $mustBeActive = is_bool($requireActive) ? $requireActive : ($requireActive[$i] ?? true);
-            if ($mustBeActive && !$account->isActive()) {
-                throw new PostingRefusedException(PostingRefusedException::ACCOUNT_INACTIVE, 'Account «' . $account->label() . '» is deactivated — no new postings');
-            }
+            self::assertUsable($account, $account->isPostable(), $account->isActive(), self::mustBeActive($requireActive, $i));
             $resolved[$line->account] = $account;
         }
 
         return $resolved;
+    }
+
+    /**
+     * The same account checks AGAIN, on a LOCKING read
+     * ({@see AccountRepository::lockForPosting()}) — FIN-TYPE-001. The rows
+     * of the accounts stay share-locked until the caller's commit, and
+     * postable / active are the latest committed values, not the
+     * transaction's snapshot or a stale object in the Identity Map: an
+     * account turned into a group (or deactivated) while this posting was
+     * being validated is seen here and refused, and a change that comes
+     * later waits for this commit and then finds the line.
+     *
+     * Call it AFTER the number is drawn — lock order `NumberRange` first
+     * (ADR-039 decision 10) — and let a refusal propagate: it comes after
+     * the draw, so a caller that caught it and committed would consume the
+     * number without an entry. The manual edit draws no number and calls it
+     * right after {@see resolveAccounts()}.
+     *
+     * @param list<PostingLine> $lines
+     * @param array<string, Account> $accounts what {@see resolveAccounts()} returned
+     * @param bool|list<bool> $requireActive as in {@see resolveAccounts()}
+     * @throws PostingRefusedException ACCOUNT_UNKNOWN | ACCOUNT_NOT_POSTABLE | ACCOUNT_INACTIVE
+     */
+    public function lockAccounts(array $lines, array $accounts, bool|array $requireActive = true): void
+    {
+        /** @var AccountRepository $repository */
+        $repository = $this->em->getRepository(Account::class);
+        $flags      = $repository->lockForPosting(array_map(static fn(PostingLine $l) => $l->account, $lines));
+        foreach ($lines as $i => $line) {
+            $flag = $flags[$line->account] ?? null;
+            if ($flag === null) {
+                throw new PostingRefusedException(PostingRefusedException::ACCOUNT_UNKNOWN, "Account {$line->account} does not exist");
+            }
+            self::assertUsable($accounts[$line->account], $flag['postable'], $flag['active'], self::mustBeActive($requireActive, $i));
+        }
+    }
+
+    /** @param bool|list<bool> $requireActive */
+    private static function mustBeActive(bool|array $requireActive, int $line): bool
+    {
+        return is_bool($requireActive) ? $requireActive : ($requireActive[$line] ?? true);
+    }
+
+    /** @throws PostingRefusedException ACCOUNT_NOT_POSTABLE | ACCOUNT_INACTIVE */
+    private static function assertUsable(Account $account, bool $postable, bool $active, bool $mustBeActive): void
+    {
+        if (!$postable) {
+            throw new PostingRefusedException(PostingRefusedException::ACCOUNT_NOT_POSTABLE, 'Account «' . $account->label() . '» is a group — it carries no journal line');
+        }
+        if ($mustBeActive && !$active) {
+            throw new PostingRefusedException(PostingRefusedException::ACCOUNT_INACTIVE, 'Account «' . $account->label() . '» is deactivated — no new postings');
+        }
     }
 
     /**

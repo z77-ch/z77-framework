@@ -124,6 +124,7 @@ the existing indexes — no new migration. Harness: `tests/module-financial.php`
 a project installation: open a year, post, edit, delete, read and print every report — see
 `financial.md` pending), **then P3 debtor**.
 **FIN-FY-002 resolved (owner, 2026-09-22):** a wrongly opened fiscal year is deleted in the backend while it is the latest and nothing was ever posted in it — year, periods and range in one unit of work (`FiscalYearService::delete()`, `NumberRangeRepository::dropUnused()`); FIN-TYPE-001 stays open.
+**FIN-TYPE-001 resolved (owner, 2026-09-22):** an account's type is locked once a line of it lies in a `closed` period (correction: new account + manual transfer), «becomes a group» once it carries any line; checked lock-free and again under the account's row lock, and `post()` re-checks its accounts share-locked after the number — both races proven by two-process probes (`financial.md`).
 Framework-wide pending found on the way: module config override replaces instead of merging
 (BOOT-CONFIG-001 in `bootstrap.md`).
 

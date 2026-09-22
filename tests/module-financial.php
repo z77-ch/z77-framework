@@ -38,6 +38,11 @@
  * FIN-FY-002 (Y): deleting a wrongly opened fiscal year — only the latest,
  * only while nothing was ever posted in it; year, periods and range in one
  * unit of work, re-openable with the same code.
+ * FIN-TYPE-001 (T): an account's type is locked once a line of it lies in a
+ * closed period, «becomes a group» once it carries any line; name and
+ * active stay free; the edit form disables what is locked; two forced
+ * two-process races (posting in flight vs. «becomes a group», and the
+ * reverse) and the cost of the checks at the volume of P.
  *
  * Run: php tests/module-financial.php
  * Needs what tests/module-contact.php needs (vendor/ with Doctrine, a
@@ -64,7 +69,7 @@ if (($argv[1] ?? '') === '--worker') {
     $workerMode = $argv[3];
     define('ABS_BASE_PATH', $workerBase);
     define('DEBUG', false);
-    $workerName = $argv[$workerMode === 'post' ? 7 : 6] ?? 'w';
+    $workerName = $argv[$workerMode === 'post' ? 7 : 6] ?? 'w';   // holdpost / post1: {account} {date} {name}
     \Z77\Core\DI::getInstance(true)
         ->set('CacheManager', \Z77\Core\Libraries\CacheManager::class, true)
         ->set('FileFinder', fn($c) => new \Z77\Core\Libraries\FileFinder($c->get('CacheManager')), true)
@@ -88,6 +93,46 @@ if (($argv[1] ?? '') === '--worker') {
             echo 'ok';
         } catch (\Z77\Module\Financial\Services\EntryConflictException) {
             echo 'conflict';
+        } catch (\Throwable $e) {
+            echo get_class($e) . ': ' . $e->getMessage();
+        }
+        exit(0);
+    }
+
+    if ($workerMode === 'holdpost' || $workerMode === 'post1') {
+        // FIN-TYPE-001 races (section T). One manual posting on account $argv[4] dated $argv[5].
+        // `holdpost` keeps its unit of work open after post() — the account rows share-locked,
+        // the line not yet flushed — writes `{base}/holdpost.ready`, and commits only once
+        // another session is seen RUNNING the account lock of AccountService::update() (the
+        // statement is still executing = it waits; PROCESSLIST shows the same user's sessions
+        // without the PROCESS privilege), or after 20 s: prints `ok waited` / `ok alone`.
+        // `post1` just posts: prints `ok` or the refusal reason.
+        $ledger  = new \Z77\Module\Financial\Services\LedgerService($wem, 'worker-' . $workerName);
+        $request = \Z77\Module\Financial\Ledger\PostingRequest::manual(new \DateTimeImmutable($argv[5]), "race {$workerName}", [
+            \Z77\Module\Financial\Ledger\PostingLine::debit($argv[4], $chf('5.00')),
+            \Z77\Module\Financial\Ledger\PostingLine::credit('1020', $chf('5.00')),
+        ]);
+        $cfg     = require $workerBase . '/config/client/database.inc.php';
+        $watcher = \Doctrine\DBAL\DriverManager::getConnection(['driver' => 'pdo_mysql', 'host' => $cfg['host'], 'dbname' => $cfg['name'], 'user' => $cfg['user'], 'password' => $cfg['password']]);
+        try {
+            $waited = $wem->getTransaction(\Z77\Module\Financial\Entities\JournalEntry::class)->run(function () use ($ledger, $request, $workerMode, $workerBase, $watcher): bool {
+                $ledger->post($request);
+                if ($workerMode === 'post1') {
+                    return false;
+                }
+                file_put_contents($workerBase . '/holdpost.ready', '1');
+                for ($t = 0; $t < 200; $t++) {
+                    if ((int) $watcher->fetchOne("SELECT COUNT(*) FROM information_schema.PROCESSLIST WHERE ID <> CONNECTION_ID() AND INFO LIKE '%FROM account WHERE id =%FOR UPDATE%'") > 0) {
+                        usleep(200000);   // let the waiter settle in its wait, then commit
+                        return true;
+                    }
+                    usleep(100000);
+                }
+                return false;
+            });
+            echo $workerMode === 'post1' ? 'ok' : ($waited ? 'ok waited' : 'ok alone');
+        } catch (\Z77\Module\Financial\Services\PostingRefusedException $e) {
+            echo $e->reason;
         } catch (\Throwable $e) {
             echo get_class($e) . ': ' . $e->getMessage();
         }
@@ -1600,6 +1645,148 @@ $journalSource = file_get_contents($package . '/src/Ui/JournalControllerTrait.ph
 check('Y21 the screens answer both races and rethrow everything else (source guard): add → «Geschäftsjahr … gelöscht», open → «gleichzeitig eröffnet»',
     str_contains($journalSource, 'if (!RaceFailure::isFiscalYearGone($e)) {') && str_contains($journalSource, 'Das Geschäftsjahr wurde inzwischen gelöscht')
     && str_contains($yearSource, 'if (!RaceFailure::isDeadlock($e)) {') && str_contains($yearSource, 'Ein anderes Geschäftsjahr wurde gleichzeitig eröffnet — Liste neu laden'));
+
+// ── T. the journal locks an account's type and postable (FIN-TYPE-001) ────
+
+echo "T. Type and postable locked by the journal (owner 2026-09-22)\n";
+// State: 2032-33 is open (Y). Own accounts under group 100, own entries in 2032-33;
+// period states are set directly (no transition before P5) and reset at the end.
+$em      = $wireDi();
+$service = new AccountService($em);
+$group   = $em->getRepository(Account::class)->findOneBy(['number' => '100']);
+foreach (['1095' => 'Typ gesperrt', '1096' => 'Buchung offen', '1097' => 'Ohne Buchung', '1098' => 'Wettlauf A', '1099' => 'Wettlauf B'] as $n => $name) {
+    $service->save(new Account(['number' => $n, 'name' => $name, 'type' => 'asset', 'postable' => true, 'parent' => $group]));
+}
+$tManual = new ManualEntryService($em, 'buchhalter');
+$tPost   = fn(string $account, string $date) => $tManual->create(PostingRequest::manual(day($date), 'FIN-TYPE-001 ' . $account, [PostingLine::debit($account, chf('10.00')), PostingLine::credit('1020', chf('10.00'))]));
+$tPost('1095', '2032-08-10');
+$tPost('1095', '2032-09-10');
+$tPost('1096', '2032-10-10');
+$setState('2032-33', '2032-09-10', PeriodState::VatSettled->value);
+$tType   = fn(string $n) => $db->fetchOne('SELECT type FROM account WHERE number = ?', [$n]);
+$tFlag   = fn(string $n) => (int) $db->fetchOne('SELECT postable FROM account WHERE number = ?', [$n]);
+$tFresh  = function () use (&$em, &$service, $wireDi): void { $em = $wireDi(); $service = new AccountService($em); };
+$tAcc    = function (string $n) use (&$em): ?Account { return $em->getRepository(Account::class)->findOneBy(['number' => $n]); };   // by reference: $tFresh() swaps $em
+
+$tFresh();
+$service->update($tAcc('1095'), ['type' => 'liability']);
+check('T1 type change ALLOWED while the lines lie only in open and vat-settled periods (08 open, 09 vat-settled)', $tType('1095') === 'liability');
+$service->update($tAcc('1095'), ['type' => 'asset']);
+
+$setState('2032-33', '2032-08-10', PeriodState::Closed->value);
+$tFresh();
+$a1095 = $tAcc('1095');
+$e = caught(fn() => $service->update($a1095, ['type' => 'expense']), InvalidAccountException::class);
+check('T2 type change REFUSED once one line lies in a closed period — field «type», German, naming the correction (new account + manual transfer)', $e !== null && $e->validator->hasFieldError('type')
+    && str_contains($e->validator->getFieldError('type'), 'abgeschlossenen Periode') && str_contains($e->validator->getFieldError('type'), 'neues Konto') && str_contains($e->validator->getFieldError('type'), 'Umbuchung')
+    && $e->draft->getType() === 'expense' && $tType('1095') === 'asset');
+check('T3 … the managed entity is unmodified (validated on the draft, before any mutation)', $a1095->getType() === 'asset');
+$service->update($tAcc('1097'), ['name' => 'Ohne Buchung (neu)']);   // an unrelated, valid write in the SAME EntityManager
+check('T4 … and a later flush of something else writes none of the refused change', $tType('1095') === 'asset' && $db->fetchOne("SELECT name FROM account WHERE number = '1097'") === 'Ohne Buchung (neu)');
+$service->update($a1095, ['name' => 'Typ gesperrt (umbenannt)']);
+$service->setActive($a1095, false);
+$service->setActive($a1095, true);
+check('T5 name and active stay free on a type-locked account', $db->fetchOne("SELECT name FROM account WHERE number = '1095'") === 'Typ gesperrt (umbenannt)' && (int) $db->fetchOne("SELECT active FROM account WHERE number = '1095'") === 1);
+$service->update($a1095, ['type' => 'asset', 'name' => 'Typ gesperrt']);
+check('T6 passing the UNCHANGED type is no change (the form without a disabled select posts it)', $db->fetchOne("SELECT name FROM account WHERE number = '1095'") === 'Typ gesperrt');
+
+$tFresh();
+$e1 = caught(fn() => $service->update($tAcc('1096'), ['postable' => false]), InvalidAccountException::class);
+$e2 = caught(fn() => $service->update($tAcc('1095'), ['postable' => false]), InvalidAccountException::class);
+check('T7 postable → group REFUSED with any line: an open period (1096) and a closed one (1095) — field «postable», German', $e1 !== null && $e1->validator->hasFieldError('postable') && str_contains($e1->validator->getFieldError('postable'), 'keine Gruppe')
+    && $e2 !== null && $e2->validator->hasFieldError('postable') && $tFlag('1096') === 1 && $tFlag('1095') === 1);
+$service->update($tAcc('1096'), ['type' => 'liability']);
+check('T8 … while 1096 (open period only) may still change its type', $tType('1096') === 'liability');
+
+$service->update($tAcc('1097'), ['type' => 'expense']);
+$service->update($tAcc('1097'), ['postable' => false]);
+check('T9 no lines: type change and postable → group ALLOWED', $tType('1097') === 'expense' && $tFlag('1097') === 0);
+$service->update($tAcc('1097'), ['postable' => true, 'type' => 'asset']);
+
+$tFresh();
+$nested = caught(fn() => $em->getTransaction(Account::class)->run(fn() => $service->update($tAcc('1097'), ['type' => 'revenue'])), \LogicException::class);
+check('T10 the guarded path refuses to run inside an open unit of work (its re-check must read after the lock); nothing written', $nested !== null && str_contains($nested->getMessage(), 'owns its unit of work') && $tType('1097') === 'asset');
+
+$tFresh();
+check('T11 postingLocks() — what the form disables: 1095 type + postable, 1096 postable only, 1097 nothing', $service->postingLocks($tAcc('1095')) === ['type' => true, 'postable' => true]
+    && $service->postingLocks($tAcc('1096')) === ['type' => false, 'postable' => true] && $service->postingLocks($tAcc('1097')) === ['type' => false, 'postable' => false]);
+$tForm = fn(Account $a, array $locks, ?string $storedType = null) => $renderer->partial('Backend/AccountController/edit', ['entry' => $a, 'entityCsrf' => 'tok', 'validator' => new AccountValidator($a),
+    'typeLabels' => ['asset' => 'Aktiven', 'liability' => 'Fremdkapital', 'equity' => 'Eigenkapital', 'expense' => 'Aufwand', 'revenue' => 'Ertrag'], 'groups' => [], 'locks' => $locks, 'storedType' => $storedType ?? $a->getType(), 'actionBase' => '/backend/finance/account']);
+$locked = $tForm($tAcc('1095'), $service->postingLocks($tAcc('1095')));
+$free   = $tForm($tAcc('1097'), $service->postingLocks($tAcc('1097')));
+check('T12 the edit form: type and «Bebuchbar» DISABLED with the reasons, «Nein — Gruppe» not offered; a free account keeps both; no script', str_contains($locked, '<select name="type" required disabled')
+    && str_contains($locked, '<select name="postable" disabled') && !str_contains($locked, 'Nein — Gruppe') && str_contains($locked, 'neues Konto anlegen') && str_contains($locked, 'es kann keine Gruppe werden')
+    && str_contains($free, '<select name="type" required aria-invalid') && str_contains($free, 'Nein — Gruppe') && !str_contains($free, ' disabled') && !str_contains($locked . $free, '<script'));
+$refusedDraft = clone $tAcc('1095');
+$refusedDraft->setType('expense');
+$afterRefusal = $tForm($refusedDraft, ['type' => true, 'postable' => true], 'asset');
+check('T12b after a refusal the DISABLED type select shows the STORED type (asset), not the refused draft\'s (expense)', str_contains($afterRefusal, '<option value="asset" selected>') && !str_contains($afterRefusal, '<option value="expense" selected>'));
+$accountSource = file_get_contents($package . '/src/Ui/AccountControllerTrait.php');
+check('T13 the trait asks the service for the locks (one source for the rule)', str_contains($accountSource, '->postingLocks('));
+
+echo "T. … races between a posting and «becomes a group» (two processes, forced order)\n";
+// Race 1: a posting on 1098 is IN FLIGHT (number drawn, rows share-locked, not committed) when the
+// account is turned into a group. The lock-free check sees no line; the update's row lock must
+// wait for the posting's commit, and the re-check under the lock must then see its line.
+@unlink($base . '/holdpost.ready');
+$hold = proc_open([PHP_BINARY, __FILE__, '--worker', $base, 'holdpost', '1098', '2032-11-10', 'th'], [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $holdPipes);
+for ($t = 0; $t < 300 && !is_file($base . '/holdpost.ready'); $t++) { usleep(100000); }
+$tFresh();
+$t0    = microtime(true);
+$race1 = caught(fn() => $service->update($tAcc('1098'), ['postable' => false]), InvalidAccountException::class);
+$waitedFor = microtime(true) - $t0;
+$holdOut = trim(stream_get_contents($holdPipes[1])) . trim(stream_get_contents($holdPipes[2]));
+fclose($holdPipes[1]); fclose($holdPipes[2]); proc_close($hold);
+check(sprintf('T14 the update WAITED for the in-flight posting (%.2fs; worker: %s) and was refused under the lock — the posting committed, the account stays postable', $waitedFor, $holdOut),
+    $holdOut === 'ok waited' && $race1 !== null && $race1->validator->hasFieldError('postable') && $tFlag('1098') === 1
+    && (int) $db->fetchOne("SELECT COUNT(*) FROM journal_line l JOIN account a ON a.id = l.account_id WHERE a.number = '1098'") === 1);
+check('T15 … after the refusal under the lock the EntityManager was replaced; a fresh read serves the next request', (function () use ($tFresh, &$service, $tAcc) {
+    $tFresh();
+    return $service->postingLocks($tAcc('1098')) === ['type' => false, 'postable' => true];
+})());
+
+// Race 2: the account row is already locked by a type/postable change (here: raw SQL holding
+// FOR UPDATE and postable = 0, uncommitted) when a posting starts. Its lock-free validation still
+// sees the account postable (the change is not committed); it draws its number, then its share
+// lock (after the range lock) must wait, read the account as the group it became and refuse —
+// and the rollback gives the number back.
+$rangeNow    = fn() => (string) $db->fetchOne('SELECT last_number FROM number_range WHERE name = ?', ['journal-entry.2032-33']);   // $range was re-bound in part 3
+$rangeBefore = $rangeNow();
+$db->beginTransaction();
+$sawWait = false;
+try {
+    $db->fetchOne("SELECT id FROM account WHERE number = '1099' FOR UPDATE");
+    $db->executeStatement("UPDATE account SET postable = 0 WHERE number = '1099'");
+    $poster = proc_open([PHP_BINARY, __FILE__, '--worker', $base, 'post1', '1099', '2032-11-11', 'tp'], [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $posterPipes);
+    for ($t = 0; $t < 200 && !$sawWait; $t++) {
+        usleep(100000);
+        // The poster's share lock still EXECUTING = waiting on our row lock (same-user sessions are visible).
+        $sawWait = (int) $admin->fetchOne("SELECT COUNT(*) FROM information_schema.PROCESSLIST WHERE ID <> CONNECTION_ID() AND INFO LIKE '%FROM account WHERE number IN%LOCK IN SHARE MODE%'") > 0;
+    }
+    usleep(200000);
+} finally {
+    $db->commit();
+}
+$posterOut = trim(stream_get_contents($posterPipes[1])) . trim(stream_get_contents($posterPipes[2]));
+fclose($posterPipes[1]); fclose($posterPipes[2]); proc_close($poster);
+check("T16 the posting WAITED for the account lock and was then refused as a group (worker: {$posterOut}); no line on the group, the drawn number went back ({$rangeBefore})", $sawWait && $posterOut === PostingRefusedException::ACCOUNT_NOT_POSTABLE
+    && (int) $db->fetchOne("SELECT COUNT(*) FROM journal_line l JOIN account a ON a.id = l.account_id WHERE a.number = '1099'") === 0 && $rangeNow() === $rangeBefore);
+
+echo "T. … cost of the checks at the volume of P\n";
+$db->executeStatement("UPDATE fiscal_period SET state = 'open'");   // earlier sections left states behind
+$lines = $wireDi()->getRepository(JournalLine::class);
+$lines->accountHasLines($acc('1000'));   // warm-up: the first statement of a fresh wiring builds the EntityManager
+[$missNone, $tNone]   = $timed(fn() => $lines->accountHasLinesInClosedPeriod($acc('1000')));     // no period closed at all: the journal is not touched
+$db->executeStatement("UPDATE fiscal_period p JOIN fiscal_year y ON y.id = p.fiscal_year_id SET p.state = 'closed' WHERE y.code = '2031-32'");
+[$hitClosed, $tHit]   = $timed(fn() => $lines->accountHasLinesInClosedPeriod($acc('1020')));     // 3'334 lines, all in the closed year
+[$missClosed, $tMiss] = $timed(fn() => $lines->accountHasLinesInClosedPeriod($acc('6000')));     // a few lines, all in other years
+[$any, $tAny]         = $timed(fn() => $lines->accountHasLines($acc('1020')));
+$db->executeStatement("UPDATE fiscal_period SET state = 'open'");
+$db->executeStatement("UPDATE fiscal_period p JOIN fiscal_year y ON y.id = p.fiscal_year_id SET p.state = 'closed' WHERE y.code = '2032-33'");
+[$missMany, $tMany]   = $timed(fn() => $lines->accountHasLinesInClosedPeriod($acc('1000')));     // 3'333 lines, none in the closed year: every one is looked at
+printf("       closed-period check: none closed %.4fs · hit %.4fs · miss (few lines) %.4fs · miss (3'333 lines, small closed year) %.4fs · any line %.4fs\n", $tNone, $tHit, $tMiss, $tMany, $tAny);
+check(sprintf('T17 the checks are exact and cheap at this volume (max %.3fs)', max($tNone, $tHit, $tMiss, $tMany, $tAny)), !$missNone && $hitClosed && !$missClosed && !$missMany && $any && max($tNone, $tHit, $tMiss, $tMany, $tAny) < 0.5);
+$db->executeStatement("UPDATE fiscal_period SET state = 'open'");
 
 echo "\n" . ($fail === 0 ? "PASS — {$pass} checks" : "FAIL — {$fail} of " . ($pass + $fail) . " checks") . "\n";
 exit($fail === 0 ? 0 : 1);

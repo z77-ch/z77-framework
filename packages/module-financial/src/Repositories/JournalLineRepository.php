@@ -5,6 +5,7 @@ namespace Z77\Module\Financial\Repositories;
 use Doctrine\DBAL\ArrayParameterType;
 use Doctrine\DBAL\ParameterType;
 use Z77\Module\Financial\Entities\JournalLine;
+use Z77\Module\Financial\Entities\PeriodState;
 use Z77\Persistence\Doctrine\Repository\DoctrineRepository;
 
 /**
@@ -22,6 +23,11 @@ use Z77\Persistence\Doctrine\Repository\DoctrineRepository;
  *
  * A report is a READ: a failing statement propagates, and nothing here
  * writes (DOCTRINE-TX-006 does not apply).
+ *
+ * Two existence checks serve the chart instead of a report (FIN-TYPE-001,
+ * owner 2026-09-22): {@see accountHasLines()} and
+ * {@see accountHasLinesInClosedPeriod()} — `AccountService` refuses a
+ * type or postable change by them, the edit form disables the fields.
  */
 class JournalLineRepository extends DoctrineRepository
 {
@@ -147,5 +153,73 @@ class JournalLineRepository extends DoctrineRepository
         }
 
         return $result;
+    }
+
+    /**
+     * Whether ANY journal line references the account, in any period state —
+     * such an account must not become a group (FIN-TYPE-001). One index
+     * probe on the FK index of `account_id`, `LIMIT 1`, cheap at any volume.
+     * Doctrine-only (SQL).
+     */
+    public function accountHasLines(int $accountId): bool
+    {
+        return $this->connection()->fetchOne('SELECT 1 FROM journal_line WHERE account_id = ? LIMIT 1', [$accountId]) !== false;
+    }
+
+    /**
+     * Whether a journal line of the account lies in a CLOSED period — then
+     * its type is locked (FIN-TYPE-001: the reports read the type at
+     * runtime, and a change would move closed years between the balance
+     * sheet and the income statement). The period is not stored on the
+     * entry; it is the period of the entry's year whose dates contain the
+     * entry date (`FiscalYear::periodOn()` in SQL). `vat-settled` does not
+     * count.
+     *
+     * Two steps, for the cost at volume (measured ad hoc at 200'000 lines):
+     * first the closed periods themselves (a few dozen rows at most), merged
+     * into one date range per run of adjacent closed periods of a year —
+     * none closed (every installation before its first close) answers
+     * without touching the journal. Then per range, NEWEST first, the
+     * account-statement shape (`l.account_id = ? AND e.fiscal_year_id = ?
+     * AND e.entry_date BETWEEN`) with `LIMIT 1` — the latest closed year is
+     * where an account in use has lines, so the common case stops at the
+     * first range. A range that holds none of a busy account's lines costs
+     * ≈ 0.5 s per closed 100'000-entry year (the optimizer walks the entry
+     * side), so a miss grows with the number of closed years; one join over
+     * all closed periods at once was worse (it walked every line of the
+     * account). The structural fix is the `type_locked` marker of P5
+     * (financial.md, pending). Doctrine-only (SQL).
+     */
+    public function accountHasLinesInClosedPeriod(int $accountId): bool
+    {
+        $periods = $this->connection()->fetchAllAssociative(
+            'SELECT fiscal_year_id, start_date, end_date FROM fiscal_period WHERE state = ? ORDER BY start_date',
+            [PeriodState::Closed->value]
+        );
+        $ranges = [];
+        foreach ($periods as $p) {
+            $last = array_key_last($ranges);
+            $next = $last === null ? null : (new \DateTimeImmutable($ranges[$last][2]))->modify('+1 day')->format('Y-m-d');
+            if ($last !== null && $ranges[$last][0] === (int) $p['fiscal_year_id'] && $next === $p['start_date']) {
+                $ranges[$last][2] = $p['end_date'];
+                continue;
+            }
+            $ranges[] = [(int) $p['fiscal_year_id'], $p['start_date'], $p['end_date']];
+        }
+        foreach (array_reverse($ranges) as [$yearId, $from, $to]) {   // newest first
+            $hit = $this->connection()->fetchOne(
+                'SELECT 1
+                   FROM journal_line l
+                   JOIN journal_entry e ON e.id = l.entry_id
+                  WHERE l.account_id = ? AND e.fiscal_year_id = ? AND e.entry_date BETWEEN ? AND ?
+                  LIMIT 1',
+                [$accountId, $yearId, $from, $to]
+            );
+            if ($hit !== false) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

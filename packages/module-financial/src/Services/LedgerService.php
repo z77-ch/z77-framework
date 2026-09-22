@@ -33,6 +33,11 @@ use Z77\Persistence\Resolver\UnifiedEntityManager;
  *   3. the number — the FIRST write, drawn from `journal-entry.{code}`
  *      (`NumberRangeRepository::next()`, lock order `NumberRange` first);
  *      never before validation, so a refused posting never holds the lock;
+ *      right after it the accounts are re-checked on a locking read that
+ *      holds their rows SHARED until commit (`PostingRules::lockAccounts()`,
+ *      FIN-TYPE-001: an account cannot become a group while a posting on
+ *      it is in flight — refused here only in that race, and the refusal
+ *      must propagate so the number goes back with the rollback);
  *   4. the entry with its lines, `persist()`ed — written by the caller's
  *      flush at commit.
  *
@@ -234,6 +239,8 @@ final class LedgerService
         /** @var NumberRangeRepository $ranges */
         $ranges = $this->em->getRepository(NumberRange::class);
         $number = $ranges->next($year->journalEntryRange());
+        // 3b. The accounts again, share-locked until commit (FIN-TYPE-001) — after the range lock.
+        $this->rules->lockAccounts($request->lines, $accounts, $requireActiveAccounts);
 
         // 4. The entry, written by the caller's flush at commit.
         $entry = new JournalEntry(

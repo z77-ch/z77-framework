@@ -4,7 +4,9 @@ namespace Z77\Module\Financial\Services;
 
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Z77\Module\Financial\Entities\Account;
+use Z77\Module\Financial\Entities\JournalLine;
 use Z77\Module\Financial\Repositories\AccountRepository;
+use Z77\Module\Financial\Repositories\JournalLineRepository;
 use Z77\Module\Financial\Validators\AccountValidator;
 use Z77\Persistence\Resolver\UnifiedEntityManager;
 
@@ -15,6 +17,9 @@ use Z77\Persistence\Resolver\UnifiedEntityManager;
  *   - an account is never deleted, only deactivated: there is no method for
  *     it — journal lines reference it (P2 part 2);
  *   - its number is fixed once it exists ({@see AccountNumberChangedException});
+ *   - its type is fixed once a journal line of it lies in a `closed` period,
+ *     and it cannot become a group once any journal line references it
+ *     (FIN-TYPE-001, owner 2026-09-22 — {@see update()});
  *   - every write runs {@see AccountValidator}, so an import is bound to the
  *     same rules as the backend;
  *   - the KMU chart is adopted only into an EMPTY chart
@@ -59,6 +64,24 @@ final class AccountService
      * onto a detached draft first; only a valid draft is applied to the
      * managed entity and flushed. `number` may be passed only unchanged.
      *
+     * The journal locks (FIN-TYPE-001): a change of `type`, or `postable`
+     * true → false, is validated twice. First lock-free against the managed
+     * entity's state — the common refusal, nothing is touched. Then, in a
+     * unit of work of its own, under the account's row lock taken as the
+     * FIRST statement ({@see AccountRepository::lockForUpdate()}), against
+     * the row's current state: a posting on this account that committed in
+     * between is seen now; one in flight either holds the row shared
+     * already (`PostingRules::lockAccounts()`, right after its number) and
+     * this lock waits for its commit, or it reaches that lock later and
+     * reads the account as the group it became. Only then is
+     * the managed entity mutated; the unit of work's commit flushes it. A
+     * refusal under the lock rolls that unit of work back, which replaces
+     * the EntityManager (DOCTRINE-TX-004) — the account handed in is
+     * detached then and serves the form only. The guarded path refuses to
+     * run inside an open unit of work (`LogicException`): its re-check must
+     * read AFTER the lock, not from a caller's older snapshot. Any other
+     * change (name, active, group) takes the plain path.
+     *
      * @param array<string, mixed> $values
      * @throws InvalidAccountException carries the validator and the draft (for re-rendering the form)
      * @throws AccountNumberChangedException $values carry a different number
@@ -71,13 +94,50 @@ final class AccountService
         if (array_key_exists('number', $values) && trim((string) $values['number']) !== $account->getNumber()) {
             throw new AccountNumberChangedException($account->getNumber(), trim((string) $values['number']));
         }
-        $draft = clone $account;
+        $stored = ['type' => $account->getType(), 'postable' => $account->isPostable()];
+        $draft  = clone $account;
         $draft->mapFromArray($values);
-        $this->assertValid($draft);
+        $this->assertValid($draft, $stored);
 
-        $account->mapFromArray($values);
-        $this->em->persist($account);
-        $this->flushOrRefuse($account);
+        if ($draft->getType() === $stored['type'] && ($draft->isPostable() || !$stored['postable'])) {
+            $account->mapFromArray($values);
+            $this->em->persist($account);
+            $this->flushOrRefuse($account);
+            return;
+        }
+
+        $transaction = $this->em->getTransaction(Account::class);
+        if ($transaction->isOpen()) {
+            throw new \LogicException('update() of type or postable owns its unit of work — call it outside getTransaction()->run(), so the re-check reads after the account lock');
+        }
+        $transaction->run(function () use ($account, $draft, $values): void {
+            $current = $this->accounts()->lockForUpdate((int) $account->getId());   // FIRST: the row lock
+            if ($current === null) {
+                throw new \LogicException('Account #' . $account->getId() . ' does not exist — accounts are never deleted');
+            }
+            $this->assertValid($draft, $current);
+
+            $account->mapFromArray($values);
+            $this->em->persist($account);
+        });
+    }
+
+    /**
+     * What the edit form must not offer (FIN-TYPE-001): `type` = the type is
+     * locked (a line in a `closed` period), `postable` = the account is
+     * postable and carries lines, so «Gruppe» is not an option. Lock-free
+     * reads; {@see update()} decides on its own, under the row lock.
+     *
+     * @return array{type: bool, postable: bool}
+     */
+    public function postingLocks(Account $account): array
+    {
+        $id = $account->getId();
+        if ($id === null || !$this->lines()->accountHasLines($id)) {
+            return ['type' => false, 'postable' => false];
+        }
+
+        return ['type' => $this->lines()->accountHasLinesInClosedPeriod($id), 'postable' => $account->isPostable()];
     }
 
     public function setActive(Account $account, bool $active): void
@@ -163,10 +223,18 @@ final class AccountService
         return $this->em->getRepository(Account::class);
     }
 
-    /** @throws InvalidAccountException */
-    private function assertValid(Account $account): void
+    private function lines(): JournalLineRepository
     {
-        $validator = new AccountValidator($account, $this->accounts());
+        return $this->em->getRepository(JournalLine::class);
+    }
+
+    /**
+     * @param array{type: string, postable: bool}|null $stored the stored state an update is checked against (journal locks)
+     * @throws InvalidAccountException
+     */
+    private function assertValid(Account $account, ?array $stored = null): void
+    {
+        $validator = new AccountValidator($account, $this->accounts(), $stored === null ? null : $this->lines(), $stored);
         if (!$validator->isValid()) {
             throw new InvalidAccountException($validator, $account);
         }

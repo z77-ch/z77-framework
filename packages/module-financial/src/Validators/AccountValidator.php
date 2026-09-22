@@ -5,6 +5,7 @@ namespace Z77\Module\Financial\Validators;
 use Z77\Module\Financial\Entities\Account;
 use Z77\Module\Financial\Entities\AccountType;
 use Z77\Module\Financial\Repositories\AccountRepository;
+use Z77\Module\Financial\Repositories\JournalLineRepository;
 use Z77\Persistence\Validation\EntityValidator;
 
 /**
@@ -18,7 +19,15 @@ use Z77\Persistence\Validation\EntityValidator;
  *     its children's; never the account itself or one of its descendants
  *     (no cycle — the reports walk the chain upwards);
  *   - postable: a group that HAS children cannot become postable, for the
- *     same reason from the other side.
+ *     same reason from the other side;
+ *   - the journal locks (FIN-TYPE-001, owner 2026-09-22), checked against
+ *     the STORED state the service hands in: the type cannot change once a
+ *     journal line of the account lies in a `closed` period (the reports
+ *     read the type at runtime — a change would move closed years between
+ *     balance sheet and income statement; the correction is a new account
+ *     and a manual transfer), and a postable account cannot become a group
+ *     once ANY journal line references it (a group never carries lines).
+ *     Name and active stay free.
  *
  * No rule ties the number to the parent's number or the type to the
  * parent's type: the KMU chart mixes types inside one class (class 2
@@ -26,12 +35,29 @@ use Z77\Persistence\Validation\EntityValidator;
  * that numbers differently is still a chart.
  *
  * Without a repository only what the account itself shows is checked
- * (format, parent chain); uniqueness and «has children» need the database.
+ * (format, parent chain); uniqueness and «has children» need the database,
+ * the journal locks need the line repository AND the stored state.
  */
 class AccountValidator extends EntityValidator
 {
-    public function __construct(Account $account, private ?AccountRepository $accounts = null)
-    {
+    /** German refusal of a type change (FIN-TYPE-001) — the validator's message and the edit form's hint. */
+    public const TYPE_LOCKED = 'Die Kontoart ist gesperrt: auf dem Konto liegen Buchungen in einer abgeschlossenen Periode. '
+        . 'Für eine andere Kontoart ein neues Konto anlegen und den Saldo mit einer manuellen Umbuchung übertragen.';
+
+    /** German refusal of «becomes a group» (FIN-TYPE-001). */
+    public const POSTABLE_LOCKED = 'Das Konto hat Buchungen — es kann keine Gruppe werden. Eine Gruppe trägt nie Buchungen.';
+
+    /**
+     * @param array{type: string, postable: bool}|null $stored the account's STORED type and
+     *        postable — the managed entity before the change, or the row read under
+     *        `AccountRepository::lockForUpdate()`; with $lines it enables the journal locks
+     */
+    public function __construct(
+        Account $account,
+        private ?AccountRepository $accounts = null,
+        private ?JournalLineRepository $lines = null,
+        private ?array $stored = null,
+    ) {
         parent::__construct($account);
     }
 
@@ -73,6 +99,13 @@ class AccountValidator extends EntityValidator
 
         if (!$this->hasFieldError('type') && AccountType::tryFrom($type) === null) {
             $this->addFieldError('type', 'Unbekannte Kontoart: ' . $type);
+            return;
+        }
+
+        $id = $this->entity->getId();
+        if ($id !== null && $this->lines !== null && $this->stored !== null && $type !== $this->stored['type']
+            && $this->lines->accountHasLinesInClosedPeriod($id)) {
+            $this->addFieldError('type', self::TYPE_LOCKED);
         }
     }
 
@@ -105,7 +138,16 @@ class AccountValidator extends EntityValidator
     public function validatePostable(bool $postable): void
     {
         $id = $this->entity->getId();
-        if (!$postable || $id === null || $this->accounts === null) {
+        if ($id === null) {
+            return;
+        }
+        if (!$postable) {
+            if ($this->lines !== null && ($this->stored['postable'] ?? false) && $this->lines->accountHasLines($id)) {
+                $this->addFieldError('postable', self::POSTABLE_LOCKED);
+            }
+            return;
+        }
+        if ($this->accounts === null) {
             return;
         }
         if ($this->accounts->findOneBy(['parent' => $id]) !== null) {

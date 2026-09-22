@@ -28,7 +28,10 @@ use Z77\Core\DI,
  *
  *   - list the chart in number order, indented by its groups;
  *   - add an account or a group; edit name, type, group and «bebuchbar» —
- *     the NUMBER is fixed once the account exists;
+ *     the NUMBER is fixed once the account exists; the TYPE once a line of
+ *     it lies in a closed period, and «bebuchbar» cannot be switched off
+ *     once it carries lines (FIN-TYPE-001 — the form disables the select
+ *     and says why; the service refuses regardless);
  *   - activate / deactivate (inline switch). There is NO delete: journal
  *     lines reference an account;
  *   - «KMU-Kontenrahmen übernehmen» — offered ONLY while the chart is empty
@@ -227,20 +230,30 @@ trait AccountControllerTrait
         return $this->renderAccountForm($shown, $validator, $account);
     }
 
-    /** @param Account|null $stored the managed account on edit — excluded from the group select */
+    /**
+     * @param Account|null $stored the account on edit — excluded from the group select. Compared
+     *        BY ID: after a refusal under the account lock the unit of work rolled back and the
+     *        EntityManager was replaced, so the objects of the first read are detached.
+     */
     private function renderAccountForm(Account $shown, ?AccountValidator $validator, ?Account $stored): HtmlResponse
     {
-        $isNew  = $shown->getId() === null;
-        $groups = [];
+        $isNew    = $shown->getId() === null;
+        $storedId = $stored?->getId();
+        $parentId = $shown->getParent()?->getId();
+        $groups   = [];
         foreach ($this->accounts()->allInOrder() as $candidate) {
-            if ($candidate->isPostable() || $candidate === $stored) {
+            if ($candidate->isPostable() || ($storedId !== null && $candidate->getId() === $storedId)) {
                 continue;
             }
             // Active groups are offered; an inactive one only when it is the current group.
-            if ($candidate->isActive() || $candidate === $shown->getParent()) {
+            if ($candidate->isActive() || $candidate->getId() === $parentId) {
                 $groups[] = $candidate;
             }
         }
+        // FIN-TYPE-001: what the journal locks, read from the STORED account (not the draft) —
+        // re-read by id, the object handed in may be detached after a refusal under the lock.
+        $current = $storedId === null ? null : ($this->accounts()->find($storedId) ?? $stored);
+        $locks   = $current === null ? ['type' => false, 'postable' => false] : $this->accountService()->postingLocks($current);
 
         $response = $this->html([
             'entry'      => $shown,
@@ -248,6 +261,8 @@ trait AccountControllerTrait
             'validator'  => $validator ?? new AccountValidator($shown),
             'typeLabels' => $this->accountTypeLabels(),
             'groups'     => $groups,
+            'locks'      => $locks,
+            'storedType' => $current?->getType(),
             'actionBase' => $this->accountListBase(),
         ]);
         $this->layoutManager->addPartials('edit', 'Backend/AccountController', self::ACCOUNT_NS);

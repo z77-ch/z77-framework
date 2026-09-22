@@ -5,16 +5,25 @@
  * read-only on edit and the controller never passes it on. There is no
  * delete: an account is deactivated on the list row.
  *
+ * FIN-TYPE-001: a locked type (a line in a closed period) and «Bebuchbar»
+ * of an account with lines are shown DISABLED with the reason — a disabled
+ * select is not submitted, so the stored value stays. The server refuses
+ * the change regardless; this only spares the round trip.
+ *
  * @var \Z77\Module\Financial\Entities\Account $entry
  * @var string $entityCsrf
  * @var \Z77\Persistence\Validation\EntityValidator $validator
  * @var array<string,string> $typeLabels
  * @var list<\Z77\Module\Financial\Entities\Account> $groups  the groups a parent may be chosen from
+ * @var array{type: bool, postable: bool} $locks  what the journal locks (`AccountService::postingLocks()`)
+ * @var string|null $storedType  the STORED type — a locked (disabled) select shows it, not a refused draft's
  * @var string $actionBase
  */
 $isNew      = $entry->getId() === null;
 $actionBase = $actionBase ?? '/backend/finance/account';
 $parentId   = $entry->getParent()?->getId();
+$locks      = $locks ?? ['type' => false, 'postable' => false];
+$shownType  = $locks['type'] ? ($storedType ?? $entry->getType()) : $entry->getType();
 
 $fieldError = function (string $name) use ($validator): string {
     return $validator->hasFieldError($name)
@@ -57,19 +66,27 @@ $fieldError = function (string $name) use ($validator): string {
         <div class="be-form__grid">
             <div class="be-form__field" data-z77-field-wrapper>
                 <label>Kontoart <small>(Bilanz: Aktiven, Fremdkapital, Eigenkapital — Erfolgsrechnung: Aufwand, Ertrag)</small></label>
-                <select name="type" required aria-invalid="<?= $validator->hasFieldError('type') ? 'true' : 'false' ?>">
+                <select name="type" required<?= $locks['type'] ? ' disabled' : '' ?> aria-invalid="<?= $validator->hasFieldError('type') ? 'true' : 'false' ?>">
                     <?php foreach ($typeLabels as $value => $label): ?>
-                    <option value="<?= e($value) ?>"<?= $entry->getType() === $value ? ' selected' : '' ?>><?= e($label) ?></option>
+                    <option value="<?= e($value) ?>"<?= $shownType === $value ? ' selected' : '' ?>><?= e($label) ?></option>
                     <?php endforeach; ?>
                 </select>
+                <?php if ($locks['type'] && !$validator->hasFieldError('type')): ?>
+                <small><?= e(\Z77\Module\Financial\Validators\AccountValidator::TYPE_LOCKED) ?></small>
+                <?php endif; ?>
                 <?= raw($fieldError('type')) ?>
             </div>
             <div class="be-form__field" data-z77-field-wrapper>
                 <label>Bebuchbar <small>(eine Gruppe sammelt Konten und trägt keine Buchungen)</small></label>
-                <select name="postable" aria-invalid="<?= $validator->hasFieldError('postable') ? 'true' : 'false' ?>">
+                <select name="postable"<?= $locks['postable'] ? ' disabled' : '' ?> aria-invalid="<?= $validator->hasFieldError('postable') ? 'true' : 'false' ?>">
                     <option value="1"<?= $entry->isPostable() ? ' selected' : '' ?>>Ja — Konto</option>
+                    <?php if (!$locks['postable']): ?>
                     <option value="0"<?= $entry->isPostable() ? '' : ' selected' ?>>Nein — Gruppe</option>
+                    <?php endif; ?>
                 </select>
+                <?php if ($locks['postable'] && !$validator->hasFieldError('postable')): ?>
+                <small><?= e(\Z77\Module\Financial\Validators\AccountValidator::POSTABLE_LOCKED) ?></small>
+                <?php endif; ?>
                 <?= raw($fieldError('postable')) ?>
             </div>
         </div>

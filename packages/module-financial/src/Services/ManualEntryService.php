@@ -123,6 +123,7 @@ final class ManualEntryService
             $this->assertPeriodAllows($this->rules->periodFor($year, $new->date), $withTax, $entry);
             $accounts = $this->rules->resolveAccounts($new->lines, self::requireActiveFor($entry, $new));
             $this->rules->assertTaxCodesExist($new->lines);
+            $this->rules->lockAccounts($new->lines, $accounts, self::requireActiveFor($entry, $new));   // FIN-TYPE-001, last — as in post() (no number drawn here)
 
             // Everything passed on the fresh entity — only now is it touched.
             $now    = new \DateTimeImmutable();
