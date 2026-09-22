@@ -10,6 +10,8 @@ use Z77\Core\DI,
     Z77\Module\Financial\Entities\FiscalYear,
     Z77\Module\Financial\Entities\JournalEntry,
     Z77\Module\Financial\Entities\PeriodState,
+    Z77\Module\Financial\Ledger\EntryRef,
+    Z77\Module\Financial\Ledger\PostingRequest,
     Z77\Module\Financial\Repositories\EntryChangeRepository,
     Z77\Module\Financial\Repositories\FiscalYearRepository,
     Z77\Module\Financial\Repositories\JournalEntryRepository,
@@ -41,19 +43,26 @@ use Z77\Core\DI,
  *   - show an entry with its lines, its reversal link (both directions)
  *     and its change log;
  *   - post a MANUAL entry, edit and delete it — with confirmation, each
- *     change logged by `ManualEntryService`. Generated entries are shown
- *     only; there is NO reverse button: the module that posted an entry
- *     reverses it (ADR-042 decision 7).
+ *     change logged by `ManualEntryService`. The default capture form is
+ *     the ONE-LINE entry (`add`, {@see OneLineEntryForm}: Soll, Datum,
+ *     Bu-Nr, Text, Haben, gross Betrag, optional MwSt row — owner
+ *     2026-09-22); real splits go to the multi-line «Sammelbuchung»
+ *     (`add-compound`, {@see ManualEntryForm}). An entry of the one-line
+ *     shape is edited one-line, every other in the Sammelbuchung form.
+ *     Generated entries are shown only; there is NO reverse button: the
+ *     module that posted an entry reverses it (ADR-042 decision 7).
  *
  * Every write goes through {@see ManualEntryService}; the trait maps the
  * request and renders. A managed entry is never mutated here: the new
  * version is a validated `PostingRequest` the service applies after ITS
  * checks (ADR-039 decision 9).
  *
- * No JavaScript of its own (Rule 7): list, detail and the entry form are
- * PAGES — the form is a plain `<form method="post">` with `#[Csrf]`
- * (`csrf_token` field), «Weitere Zeilen» is a second submit button the
- * server answers with more rows, the balance is shown after every submit.
+ * No JavaScript of its own (Rule 7): list, detail and the entry forms are
+ * PAGES — plain `<form method="post">` with `#[Csrf]` (`csrf_token`
+ * field); the one-line form's MwSt row is revealed by a checkbox through
+ * CSS (`.be-reveal`); in the Sammelbuchung «Weitere Zeilen» is a second
+ * submit button the server answers with more rows, the balance is shown
+ * after every submit.
  * Only the delete confirmation is a modal (`data-fetch-get` /
  * `data-fetch-post` with the entity token, like the sibling screens), and
  * its success redirects to the journal.
@@ -78,6 +87,9 @@ trait JournalControllerTrait
         'update' => 'geändert',
         'delete' => 'gelöscht',
     ];
+    /** How many of the year's latest entries the one-line form lists below itself (capture flow, owner 2026-09-22). */
+    private const JOURNAL_RECENT_ON_FORM = 10;
+
     private const JOURNAL_PERIOD_STATE_LABELS = [
         'open'        => 'offen',
         'vat-settled' => 'MWST abgerechnet',
@@ -117,6 +129,17 @@ trait JournalControllerTrait
             $this->em()->getRepository(Account::class),
             $this->em()->getRepository(TaxCode::class),
             VatRates::from($this->em())
+        );
+    }
+
+    private function oneLineEntryForm(): OneLineEntryForm
+    {
+        return new OneLineEntryForm(
+            $this->journalCurrency(),
+            $this->em()->getRepository(Account::class),
+            $this->em()->getRepository(TaxCode::class),
+            VatRates::from($this->em()),
+            new LedgerService($this->em())
         );
     }
 
@@ -251,9 +274,13 @@ trait JournalControllerTrait
     // ── add ──────────────────────────────────────────────────────────────
 
     /**
-     * «Buchung erfassen» for the year in `?year=`. GET shows the blank form
-     * (date = today when it lies in the year, else the year's first day);
-     * POST with `op=more` adds rows, `op=save` posts through the service.
+     * «Buchung erfassen» — the ONE-LINE entry for the year in `?year=`, the
+     * default capture form. GET shows a blank row dated `?date=` when it lies
+     * in the year (the date kept after a save), else today when it does, else
+     * the year's first day. POST posts through the service; on success the
+     * blank row comes back with the same date and a flash naming the new
+     * number, so the next voucher is typed straight away. Below the form the
+     * year's latest entries, numbered, each linked to its detail.
      */
     #[Csrf]
     protected function addAction(): HtmlResponse|RedirectResponse
@@ -261,9 +288,47 @@ trait JournalControllerTrait
         $request = DI::getRequest();
         $year    = $this->journalYear($request->getGetParameter('year'));
         if ($year === null) {
-            $this->messageService->pushFlashAfterRedirect('error', 'Ohne Geschäftsjahr kann nichts gebucht werden — zuerst eines eröffnen.');
+            return $this->journalNoYear();
+        }
+        $form = $this->oneLineEntryForm();
 
-            return $this->redirect('/backend/finance/fiscal-year/list', 303);
+        if ($request->isPost()) {
+            $posting = $form->fromPost($request->getPostParameters())->toRequest();
+            if ($posting !== null) {
+                $ref = $this->journalCreate($posting, $form);
+                if ($ref instanceof RedirectResponse) {
+                    return $ref;
+                }
+                if ($ref !== null) {
+                    $this->messageService->pushFlashAfterRedirect('success', 'Buchung ' . $ref->fiscalYear . '/' . $ref->number . ' erfasst');
+
+                    return $this->redirect($this->journalListBase() . '/add?year=' . rawurlencode($year->getCode()) . '&date=' . $posting->date->format('Y-m-d'), 303);
+                }
+            }
+        } else {
+            $form->startBlank($this->journalFormDate($year, $request->getGetParameter('date')));
+        }
+
+        return $this->journalPage('oneLine', [
+            'form'   => $form,
+            'year'   => $year,
+            'entry'  => null,
+            'recent' => $this->journalEntries()->latestForYear($year, self::JOURNAL_RECENT_ON_FORM),
+        ]);
+    }
+
+    /**
+     * «Sammelbuchung erfassen» (`add-compound?year=`) — the multi-line form
+     * for real splits. POST with `op=more` adds rows, `op=save` posts through
+     * the service and shows the new entry.
+     */
+    #[Csrf]
+    protected function addCompoundAction(): HtmlResponse|RedirectResponse
+    {
+        $request = DI::getRequest();
+        $year    = $this->journalYear($request->getGetParameter('year'));
+        if ($year === null) {
+            return $this->journalNoYear();
         }
         $form = $this->manualEntryForm();
 
@@ -275,32 +340,68 @@ trait JournalControllerTrait
             } else {
                 $posting = $form->toRequest();
                 if ($posting !== null) {
-                    try {
-                        $ref   = $this->manualEntryService()->create($posting);
+                    $ref = $this->journalCreate($posting, $form);
+                    if ($ref instanceof RedirectResponse) {
+                        return $ref;
+                    }
+                    if ($ref !== null) {
                         $entry = $this->journalEntries()->findByRef($ref);
                         $this->messageService->pushFlashAfterRedirect('success', 'Buchung ' . $ref->fiscalYear . '/' . $ref->number . ' erfasst');
 
                         return $this->redirect($this->journalListBase() . '/detail?id=' . (int) $entry?->getId(), 303);
-                    } catch (PostingRefusedException $e) {
-                        $form->addGeneralError($this->journalRefusalMessage($e));
-                    } catch (\Throwable $e) {
-                        // The year was deleted (FIN-FY-002) between the ledger's checks and
-                        // the commit: only THIS foreign key is answered, everything else stays loud.
-                        if (!RaceFailure::isFiscalYearGone($e)) {
-                            throw $e;
-                        }
-                        $this->messageService->pushFlashAfterRedirect('error', 'Das Geschäftsjahr wurde inzwischen gelöscht — die Buchung wurde nicht erfasst.');
-
-                        return $this->redirect('/backend/finance/fiscal-year/list', 303);
                     }
                 }
             }
         } else {
-            $today = new \DateTimeImmutable('today');
-            $form->startBlank($year->covers($today) ? $today : $year->getStartDate());
+            $form->startBlank($this->journalFormDate($year, $request->getGetParameter('date')));
         }
 
         return $this->journalPage('form', ['form' => $form, 'year' => $year, 'entry' => null]);
+    }
+
+    /** No fiscal year at all: nothing can be posted — to the fiscal years. */
+    private function journalNoYear(): RedirectResponse
+    {
+        $this->messageService->pushFlashAfterRedirect('error', 'Ohne Geschäftsjahr kann nichts gebucht werden — zuerst eines eröffnen.');
+
+        return $this->redirect('/backend/finance/fiscal-year/list', 303);
+    }
+
+    /** The date a blank form starts with: `?date=` inside the year, else today inside it, else its first day. */
+    private function journalFormDate(FiscalYear $year, mixed $requested): \DateTimeImmutable
+    {
+        $date = is_string($requested) ? ManualEntryForm::parseDate($requested) : null;
+        if ($date !== null && $year->covers($date)) {
+            return $date;
+        }
+        $today = new \DateTimeImmutable('today');
+
+        return $year->covers($today) ? $today : $year->getStartDate();
+    }
+
+    /**
+     * Posts a new manual entry through the service. The ref when it went
+     * through; null when the ledger refused (the form then carries the
+     * German message); a redirect when the year was deleted in the meantime.
+     */
+    private function journalCreate(PostingRequest $posting, ManualEntryForm|OneLineEntryForm $form): EntryRef|RedirectResponse|null
+    {
+        try {
+            return $this->manualEntryService()->create($posting);
+        } catch (PostingRefusedException $e) {
+            $form->addGeneralError($this->journalRefusalMessage($e));
+
+            return null;
+        } catch (\Throwable $e) {
+            // The year was deleted (FIN-FY-002) between the ledger's checks and
+            // the commit: only THIS foreign key is answered, everything else stays loud.
+            if (!RaceFailure::isFiscalYearGone($e)) {
+                throw $e;
+            }
+            $this->messageService->pushFlashAfterRedirect('error', 'Das Geschäftsjahr wurde inzwischen gelöscht — die Buchung wurde nicht erfasst.');
+
+            return $this->redirect('/backend/finance/fiscal-year/list', 303);
+        }
     }
 
     // ── edit ─────────────────────────────────────────────────────────────
@@ -308,9 +409,13 @@ trait JournalControllerTrait
     /**
      * «Buchung bearbeiten» (`?id=`), manual entries in a period that is not
      * closed — any other entry gets the same refusal the detail view shows
-     * and goes back there. The managed entry is NOT mutated here — the new
-     * version goes to `ManualEntryService::update()` as a validated request,
-     * with the entry's id and the VERSION the form was rendered from.
+     * and goes back there. An entry of the one-line shape
+     * ({@see OneLineEntryForm::startFrom()}) is edited in the one-line form
+     * unless `?form=compound` asks for the Sammelbuchung; every other entry
+     * in the Sammelbuchung form. A posted form names itself (`form` field).
+     * The managed entry is NOT mutated here — the new version goes to
+     * `ManualEntryService::update()` as a validated request, with the entry's
+     * id and the VERSION the form was rendered from.
      */
     #[Csrf]
     protected function editAction(): HtmlResponse|RedirectResponse
@@ -328,9 +433,8 @@ trait JournalControllerTrait
 
             return $this->redirect($this->journalListBase() . '/detail?id=' . $id, 303);
         }
-        $form    = $this->manualEntryForm()->keepFrom($entry);
         $version = $entry->getVersion();
-
+        $post    = null;
         if ($request->isPost()) {
             $post = $request->getPostParameters();
             if (!DI::getCsrfService()->validateEntityToken(trim((string) ($post['entity_csrf'] ?? '')), 'journalEntry', $id)) {
@@ -339,45 +443,64 @@ trait JournalControllerTrait
                 return $this->redirect($this->journalListBase() . '/edit?id=' . $id, 303);
             }
             $version = (int) ($post['version'] ?? 0);   // what THIS form was rendered from, not what is stored now
-            $form->fromPost($post);
-            if (($post['op'] ?? '') === 'more') {
-                $form->addRows(ManualEntryForm::MORE_ROWS);
-            } else {
-                $posting = $form->toRequest();
-                if ($posting !== null) {
-                    $label = $entry->getFiscalYear()->getCode() . '/' . $entry->getNumber();
-                    try {
-                        $this->manualEntryService()->update($id, $version, $posting);
-                        $this->messageService->pushFlashAfterRedirect('success', 'Buchung ' . $label . ' gespeichert (Änderung protokolliert)');
-
-                        return $this->redirect($this->journalListBase() . '/detail?id=' . $id, 303);
-                    } catch (EntryConflictException) {
-                        $this->messageService->pushFlashAfterRedirect('error', self::JOURNAL_CONFLICT_MESSAGE);
-
-                        return $this->redirect($this->journalListBase() . '/detail?id=' . $id, 303);
-                    } catch (PostingRefusedException | EntryNotEditableException $e) {
-                        $form->addGeneralError($this->journalRefusalMessage($e));
-                        // The refused unit of work rolled back and replaced the EntityManager; the
-                        // entry shown next to the form is re-read (DOCTRINE-TX-004), display only.
-                        $entry = $this->journalEntries()->withLines($id);
-                        if ($entry === null) {
-                            $this->messageService->pushFlashAfterRedirect('error', self::JOURNAL_CONFLICT_MESSAGE);
-
-                            return $this->redirect($this->journalListBase() . '/list', 303);
-                        }
-                    }
-                }
-            }
-        } else {
-            $form->startFrom($entry);
         }
 
-        return $this->journalPage('form', [
-            'form'       => $form,
-            'year'       => $entry->getFiscalYear(),
-            'entry'      => $entry,
-            'version'    => $version,
-            'entityCsrf' => DI::getCsrfService()->generateEntityToken('journalEntry', $id),
+        $oneLine    = $this->oneLineEntryForm();
+        $fits       = $oneLine->startFrom($entry);   // also keeps the entry's own tax code selectable
+        $useOneLine = $post !== null ? ($post['form'] ?? '') === 'one-line' : $fits && $request->getGetParameter('form') !== 'compound';
+        $posting    = null;
+        if ($useOneLine) {
+            $form = $oneLine;
+            if ($post !== null) {
+                $posting = $form->fromPost($post)->toRequest();
+            }
+        } else {
+            $form = $this->manualEntryForm()->keepFrom($entry);
+            if ($post === null) {
+                $form->startFrom($entry);
+            } elseif (($post['op'] ?? '') === 'more') {
+                $form->fromPost($post)->addRows(ManualEntryForm::MORE_ROWS);
+            } else {
+                $posting = $form->fromPost($post)->toRequest();
+            }
+        }
+
+        if ($posting !== null) {
+            $label = $entry->getFiscalYear()->getCode() . '/' . $entry->getNumber();
+            try {
+                if ($this->manualEntryService()->update($id, $version, $posting)) {
+                    $this->messageService->pushFlashAfterRedirect('success', 'Buchung ' . $label . ' gespeichert (Änderung protokolliert)');
+                } else {
+                    // Nothing changed: the service wrote no change row and kept the version (the log records changes, not saves).
+                    $this->messageService->pushFlashAfterRedirect('info', 'Keine Änderung — Buchung ' . $label . ' bleibt wie sie war');
+                }
+
+                return $this->redirect($this->journalListBase() . '/detail?id=' . $id, 303);
+            } catch (EntryConflictException) {
+                $this->messageService->pushFlashAfterRedirect('error', self::JOURNAL_CONFLICT_MESSAGE);
+
+                return $this->redirect($this->journalListBase() . '/detail?id=' . $id, 303);
+            } catch (PostingRefusedException | EntryNotEditableException $e) {
+                $form->addGeneralError($this->journalRefusalMessage($e));
+                // The refused unit of work rolled back and replaced the EntityManager; the
+                // entry shown next to the form is re-read (DOCTRINE-TX-004), display only.
+                $entry = $this->journalEntries()->withLines($id);
+                if ($entry === null) {
+                    $this->messageService->pushFlashAfterRedirect('error', self::JOURNAL_CONFLICT_MESSAGE);
+
+                    return $this->redirect($this->journalListBase() . '/list', 303);
+                }
+            }
+        }
+
+        return $this->journalPage($useOneLine ? 'oneLine' : 'form', [
+            'form'        => $form,
+            'year'        => $entry->getFiscalYear(),
+            'entry'       => $entry,
+            'version'     => $version,
+            'entityCsrf'  => DI::getCsrfService()->generateEntityToken('journalEntry', $id),
+            'oneLineFits' => $fits,
+            'recent'      => [],
         ]);
     }
 

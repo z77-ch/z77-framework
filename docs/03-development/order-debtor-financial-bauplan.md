@@ -93,8 +93,8 @@ three fields (§5.6 groups by code + rate — an ADDITION to ADR-041 decision 7,
 the label is not snapshotted); tax codes are validated for EXISTENCE at posting (a deactivated code
 still posts from a snapshotted document), the manual form offers active codes only; the author is
 the `AuthUser` name (backend user or `cron:{job}`), a CLI caller names the actor explicitly;
-`accountExists()` of §5.4 is NOT built (no production caller yet — arrives with debtor's account
-settings in P3). Independent review worked in the same day: **optimistic locking** on manual
+`accountExists()` of §5.4 was not built in part 2 (no production caller then) — it arrived with the
+one-line entry, which validates the configured tax account (see below). Independent review worked in the same day: **optimistic locking** on manual
 entries (`journal_entry.version`, `#[ORM\Version]`; the services take id + version, re-read under
 a row lock, refuse a stale write with `EntryConflictException` — two parallel edits, a stale delete
 and a stale edit after a delete are harness cases); `reverse()` may post to a now-inactive account
@@ -125,6 +125,7 @@ a project installation: open a year, post, edit, delete, read and print every re
 `financial.md` pending), **then P3 debtor**.
 **FIN-FY-002 resolved (owner, 2026-09-22):** a wrongly opened fiscal year is deleted in the backend while it is the latest and nothing was ever posted in it — year, periods and range in one unit of work (`FiscalYearService::delete()`, `NumberRangeRepository::dropUnused()`); FIN-TYPE-001 stays open.
 **FIN-TYPE-001 resolved (owner, 2026-09-22):** an account's type is locked once a line of it lies in a `closed` period (correction: new account + manual transfer), «becomes a group» once it carries any line; checked lock-free and again under the account's row lock, and `post()` re-checks its accounts share-locked after the number — both races proven by two-process probes (`financial.md`).
+**One-line manual entry built (owner, 2026-09-22 — P2 exit check 3a/3b):** `Soll | Datum | Bu-Nr | Text | Haben | Betrag` (gross) is the default form, an optional MwSt row (CSS reveal, no JS) splits the tax out with `VatCalculator`'s gross mode and the system writes the tax line to the account `financialConfig → vatAccounts` names (validated by `LedgerService::accountExists()`, §5.4 — now built); the multi-line form stays as «Sammelbuchung»; to be re-tested live (`financial.md`).
 Framework-wide pending found on the way: module config override replaces instead of merging
 (BOOT-CONFIG-001 in `bootstrap.md`).
 

@@ -168,6 +168,107 @@
     background:    color-mix(in srgb, var(--be-accent) 12%, var(--be-surface));
 }
 
+/* ── Form row: fields side by side in declared columns ──────────────────────
+ * One line of labelled fields (`.be-form__field` children) with the tracks
+ * declared once on the row — the way a v2 list declares `--be-list-cols`:
+ *   <div class="be-form__row" style="--be-form-cols: 7rem 9.5rem 4.5rem minmax(10rem, 1fr) 7rem 8rem">
+ * Below 48rem the row wraps into as many 9rem columns as fit. First user: the
+ * journal's one-line entry (Soll | Datum | Bu-Nr | Text | Haben | Betrag).
+ */
+.be-form__row {
+    display:               grid;
+    grid-template-columns: var(--be-form-cols, repeat(auto-fit, minmax(9rem, 1fr)));
+    gap:                   .5rem .75rem;
+    align-items:           start;
+}
+@media (max-width: 48rem) {
+    .be-form__row { grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); }
+}
+
+/* A value SHOWN in a field's place, not entered (a number the system assigns):
+ * the height and padding of an input, no border, muted. */
+.be-form__static {
+    padding:     .45rem 0;
+    font-size:   .875rem;
+    line-height: 1.3;
+    color:       var(--be-muted);
+}
+
+/* A field's second line: what the value resolves to («Bankguthaben» under 1020). */
+.be-form__resolved {
+    font-size:     .75rem;
+    color:         var(--be-muted);
+    overflow:      hidden;
+    text-overflow: ellipsis;
+    white-space:   nowrap;
+}
+
+/* ── Reveal: a checkbox shows an optional part of a form — no JavaScript ────
+ * Rule 7: the `:checked` sibling selector does what a toggle script would. The
+ * checkbox is a real, SUBMITTED form field (the server reads whether the part
+ * was on) and stays keyboard-focusable (visually hidden, not `hidden`); its
+ * `<label>` draws the box. The toggle, the element holding the label and the
+ * panel must be SIBLINGS, the toggle first:
+ *   <div class="be-reveal">
+ *     <input class="be-reveal__toggle" type="checkbox" id="x-vat" name="vat" value="1">
+ *     <div class="be-form__row">… <label class="be-reveal__label" for="x-vat">MwSt</label> …</div>
+ *     <div class="be-reveal__panel">…the optional fields…</div>
+ *   </div>
+ * The label may also be a direct sibling. The server renders the toggle
+ * `checked` when the part was on, so a re-rendered form keeps it open.
+ * First user: the journal's one-line entry (its «MwSt» row).
+ */
+.be-reveal__toggle {
+    position: absolute;
+    width:    1px;
+    height:   1px;
+    opacity:  0;
+}
+.be-reveal__label {
+    display:     inline-flex;
+    align-items: center;
+    gap:         .45rem;
+    font-size:   .875rem;
+    color:       var(--be-text);
+    cursor:      pointer;
+    user-select: none;
+}
+.be-reveal__label::before {
+    content:       "";
+    flex:          0 0 auto;
+    width:         1.05rem;
+    height:        1.05rem;
+    display:       grid;
+    place-content: center;
+    border:        1.5px solid var(--be-line);
+    border-radius: .25rem;
+    background:    var(--be-surface);
+    font-size:     .75rem;
+    font-weight:   700;
+    line-height:   1;
+    color:         var(--be-on-accent);
+    transition:    background .12s, border-color .12s;
+}
+.be-reveal__label:hover::before { border-color: var(--be-accent); }
+/* Inside a field (under its input) the label reads as a control, not as a field caption. */
+.be-form__field .be-reveal__label {
+    margin-top: .2rem;
+    font-size:  .875rem;
+    color:      var(--be-text);
+}
+.be-reveal__toggle:checked ~ .be-reveal__label::before,
+.be-reveal__toggle:checked ~ * .be-reveal__label::before {
+    content:      "\2713";
+    background:   var(--be-accent);
+    border-color: var(--be-accent);
+}
+.be-reveal__toggle:focus-visible ~ .be-reveal__label::before,
+.be-reveal__toggle:focus-visible ~ * .be-reveal__label::before {
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--be-accent) 25%, transparent);
+}
+.be-reveal__panel { display: none; }
+.be-reveal__toggle:checked ~ .be-reveal__panel { display: block; }
+
 /* ── Tag picker layout (wraps .be-choice options) ───────────────────────── */
 .be-form__tag-grid { display: flex; flex-wrap: wrap; gap: .35rem 1rem; }
 

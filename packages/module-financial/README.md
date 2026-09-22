@@ -38,8 +38,10 @@ Pieces:
   `reverse(EntryRef, date, reason): EntryRef`, both INSIDE the caller's unit of work (never
   commits). Refuses: no fiscal year / period, `closed`, a tax line into `vat-settled`, an
   unknown / non-postable / inactive account, an unknown tax code, a repeated key with other
-  content. Draws the number as the FIRST write, after validation.
-- `Services/ManualEntryService` — `create()`, `update($entry, $newRequest)`, `delete()` of manual
+  content. Draws the number as the FIRST write, after validation. `accountExists($number)`
+  validates a configured account (exists, postable, active); `vatAccountFor($category)` reads
+  the tax account of a tax-code category from `financialConfig → vatAccounts`.
+- `Services/ManualEntryService` — `create()`, `update($entryId, $expectedVersion, $newRequest): bool` (false = unchanged, nothing written), `delete($entryId, $expectedVersion)` of manual
   entries, each with an `EntryChange`; generated entries are refused in the domain.
 - `Ledger/PostingRequest`, `Ledger/PostingLine`, `Ledger/EntryRef` — the immutable DTOs other
   modules see.
@@ -52,6 +54,9 @@ Pieces:
 - `Ui/*ControllerTrait` — the backend screens as fragments; `module-backend` mounts them at
   `/backend/finance/account/list`, `/backend/finance/fiscal-year/list`,
   `/backend/finance/journal/list` and `/backend/finance/report` (printable from the browser).
+  A manual entry is captured ONE-LINE by default (`Ui/OneLineEntryForm`: Soll, Datum, Bu-Nr,
+  Text, Haben, gross Betrag, optional MwSt row — the system splits the tax out and writes the
+  tax line); real splits use the multi-line «Sammelbuchung» (`Ui/ManualEntryForm`).
 
 ```php
 $em     = DI::getUnifiedEntityManager();

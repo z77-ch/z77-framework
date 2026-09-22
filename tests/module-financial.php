@@ -44,6 +44,14 @@
  * two-process races (posting in flight vs. «becomes a group», and the
  * reverse) and the cost of the checks at the volume of P.
  *
+ * The one-line entry (O, P2 exit check 3a/3b): the gross split with the tax
+ * from VatCalculator's gross mode (input and output codes, 2023 vs 2024
+ * rates, the wdv 28.60 case), the voucher correction within 1.00, zero /
+ * exempt codes without a tax line, the `vatAccounts` configuration refused
+ * when missing, a group or malformed, editing an entry of the one-line shape,
+ * and the add / add-compound / edit pages rendered through the trait (CSS
+ * reveal, no script, no placeholder, the date kept after a save).
+ *
  * Run: php tests/module-financial.php
  * Needs what tests/module-contact.php needs (vendor/ with Doctrine, a
  * reachable MariaDB, credentials in `%USERPROFILE%\.z77\mariadb.txt` or
@@ -1136,12 +1144,13 @@ check('K5 allowed: the reversal takes the next number of the year it is DATED in
 echo "L. Journal trait (reflection)\n";
 $journalActions = array_values(array_filter($methodsOf(JournalControllerTrait::class), fn($m) => str_ends_with($m, 'Action')));
 sort($journalActions);
-check('L1 the journal trait: list, detail, add, edit, confirm-delete, delete — no reverse action (the source module reverses)', $journalActions === ['addAction', 'confirmDeleteAction', 'deleteAction', 'detailAction', 'editAction', 'listAction']);
+check('L1 the journal trait: list, detail, add (one-line), add-compound (Sammelbuchung), edit, confirm-delete, delete — no reverse action (the source module reverses)', $journalActions === ['addAction', 'addCompoundAction', 'confirmDeleteAction', 'deleteAction', 'detailAction', 'editAction', 'listAction']);
 $journalSource = file_get_contents($package . '/src/Ui/JournalControllerTrait.php');
 check('L2 the trait never persists or mutates an entry itself — every write goes through ManualEntryService with id + version (source guard)', !str_contains($journalSource, '->persist(') && !str_contains($journalSource, '->amend(') && !str_contains($journalSource, '->remove(')
     && str_contains($journalSource, '->update($id, $version, $posting)') && str_contains($journalSource, '->delete($id, $version)') && str_contains($journalSource, 'EntryConflictException'));
-check('L3 add and edit are page-mode form posts guarded by #[Csrf]; delete is a Fetch POST', preg_match_all('/^\s+#\[Csrf\]\s*$/m', $journalSource) === 2 && str_contains($journalSource, "#[Fetch, HttpMethod('POST')]"));
-check('L4 LedgerService has post, reverse and listLimit — and no accountExists yet (no production caller; see financial.md pending)', !in_array('accountExists', $methodsOf(LedgerService::class), true) && in_array('post', $methodsOf(LedgerService::class), true) && in_array('reverse', $methodsOf(LedgerService::class), true));
+check('L3 add, add-compound and edit are page-mode form posts guarded by #[Csrf]; delete is a Fetch POST', preg_match_all('/^\s+#\[Csrf\]\s*$/m', $journalSource) === 3 && str_contains($journalSource, "#[Fetch, HttpMethod('POST')]"));
+check('L4 LedgerService has post, reverse, listLimit and accountExists — whose production caller is the one-line entry (the configured tax account)', in_array('accountExists', $methodsOf(LedgerService::class), true)
+    && str_contains(file_get_contents($package . '/src/Ui/OneLineEntryForm.php'), '->accountExists(') && in_array('post', $methodsOf(LedgerService::class), true) && in_array('reverse', $methodsOf(LedgerService::class), true));
 check('L5 JournalEntry has no public setter; JournalLine and EntryChange none at all', array_filter((new \ReflectionClass(JournalEntry::class))->getMethods(\ReflectionMethod::IS_PUBLIC), fn(\ReflectionMethod $m) => str_starts_with($m->getName(), 'set')) === []
     && !$hasAny($methodsOf(JournalLine::class), ['set']) && !$hasAny($methodsOf(EntryChange::class), ['set']));
 
@@ -1787,6 +1796,357 @@ $db->executeStatement("UPDATE fiscal_period p JOIN fiscal_year y ON y.id = p.fis
 printf("       closed-period check: none closed %.4fs · hit %.4fs · miss (few lines) %.4fs · miss (3'333 lines, small closed year) %.4fs · any line %.4fs\n", $tNone, $tHit, $tMiss, $tMany, $tAny);
 check(sprintf('T17 the checks are exact and cheap at this volume (max %.3fs)', max($tNone, $tHit, $tMiss, $tMany, $tAny)), !$missNone && $hitClosed && !$missClosed && !$missMany && $any && max($tNone, $tHit, $tMiss, $tMany, $tAny) < 0.5);
 $db->executeStatement("UPDATE fiscal_period SET state = 'open'");
+
+// ── O. the one-line entry (P2 exit check 3a/3b, owner 2026-09-22) ─────────
+
+echo "O. One-line entry: Soll | Datum | Bu-Nr | Text | Haben | Betrag (gross), optional MwSt row\n";
+// State: 2032-33 (1.7.2032–30.6.2033) is open, every period `open` (T reset them).
+$em       = $wireDi();
+$entries  = $em->getRepository(JournalEntry::class);
+$oneLine  = fn() => new \Z77\Module\Financial\Ui\OneLineEntryForm('CHF', DI::getUnifiedEntityManager()->getRepository(Account::class), DI::getUnifiedEntityManager()->getRepository(TaxCode::class),
+    \Z77\Module\Vat\Services\VatRates::from(DI::getUnifiedEntityManager()), new LedgerService(DI::getUnifiedEntityManager()));
+$rangeOf  = fn(string $name) => (string) $db->fetchOne('SELECT last_number FROM number_range WHERE name = ?', [$name]);   // $range was re-bound in part 3
+/** The POST body of the one-line form. */
+$row = fn(string $debit, string $credit, string $amount, string $date = '2032-11-15', string $code = '', string $tax = '', string $text = 'Beleg') => ['debit' => $debit, 'date' => $date, 'text' => $text, 'credit' => $credit, 'amount' => $amount]
+    + ($code !== '' ? ['vat' => '1', 'tax_code' => $code, 'tax_amount' => $tax] : ['tax_code' => '', 'tax_amount' => '']);
+/** A request's lines as «account D|C amount [code rate base tax]» — the shape to compare against. */
+$shape = fn(?PostingRequest $r) => $r === null ? null : array_map(fn(PostingLine $l) => $l->account . ' ' . ($l->debit->isPositive() ? 'D ' . $l->debit->toDecimal() : 'C ' . $l->credit->toDecimal())
+    . ($l->hasTax() ? " {$l->taxCode} {$l->taxRate} {$l->taxBase->toDecimal()} {$l->taxAmount->toDecimal()}" : ''), $r->lines);
+$manual = new ManualEntryService($em, 'buchhalter');
+
+$plain = $oneLine()->fromPost($row('6500', '1020', "1'250.50"))->toRequest();
+check('O1 without VAT: two lines, Soll receives, Haben gives, the amount as typed («1\'250.50»)', $shape($plain) === ['6500 D 1250.50', '1020 C 1250.50'] && $plain->kind === EntryKind::Manual);
+$plainRef = $manual->create($plain);
+check('O1b … posted through ManualEntryService like every manual entry: a manual entry with two lines', count($lineRows((int) $entryRow('2032-33', $plainRef->number)['id'])) === 2 && $entryRow('2032-33', $plainRef->number)['kind'] === 'manual');
+
+// 400.00 gross at 8.1 %: 400 × 810 / 10810 = 29.9722… → 29.97 (commercial rounding), net 370.03.
+$input = $oneLine()->fromPost($row('6500', '1020', '400.00', '2032-11-15', 'VM'))->toRequest();
+check('O2 input code VM 8.1 %: tax 29.97 out of 400.00 (400 × 810 / 10810 = 29.972…), net 370.03 on the Soll account with the tax data, 1170 in Soll, 1020 = gross in Haben',
+    $shape($input) === ['6500 D 370.03 VM 810 370.03 29.97', '1170 D 29.97', '1020 C 400.00']);
+check('O2b … the tax is VatCalculator\'s gross mode, not a second formula', \Z77\Module\Vat\Calculation\VatCalculator::taxIn(chf('400.00'), 810)->toDecimal() === '29.97');
+$inputRef = $manual->create($input);
+$inputRows = $lineRows((int) $entryRow('2032-33', $inputRef->number)['id']);
+check('O2c … posted balanced: Σ Soll = Σ Haben = 400.00; tax base/amount/rate stored on the net line only', count($inputRows) === 3
+    && $inputRows[0]['tax_code'] === 'VM' && (int) $inputRows[0]['tax_rate'] === 810 && $inputRows[0]['tax_base'] === '370.03' && $inputRows[0]['tax_amount'] === '29.97'
+    && $inputRows[1]['tax_code'] === null && $inputRows[2]['tax_code'] === null
+    && chf($inputRows[0]['debit'])->add(chf($inputRows[1]['debit']))->equals(chf($inputRows[2]['credit'])) && $inputRows[2]['credit'] === '400.00');
+
+$wdv = $oneLine()->fromPost($row('6100', '1020', '400.00', '2023-06-30', 'VM'))->toRequest();
+check('O3 the wdv case: 400.00 at 7.7 % (2023) → tax 28.60 CONTAINED in the gross, not 30.80 (7.7 % on top)', $shape($wdv) === ['6100 D 371.40 VM 770 371.40 28.60', '1170 D 28.60', '1020 C 400.00']);
+$dec31 = $oneLine()->fromPost($row('6500', '1020', '400.00', '2023-12-31', 'VM'))->toRequest();
+$jan1  = $oneLine()->fromPost($row('6500', '1020', '400.00', '2024-01-01', 'VM'))->toRequest();
+check('O4 the rate by ENTRY date across the change: 31.12.2023 → 7.7 % / 28.60, 1.1.2024 → 8.1 % / 29.97', $shape($dec31)[0] === '6500 D 371.40 VM 770 371.40 28.60' && $shape($jan1)[0] === '6500 D 370.03 VM 810 370.03 29.97');
+
+$output = $oneLine()->fromPost($row('1020', '3200', '400.00', '2032-11-16', 'UN'))->toRequest();
+check('O5 output code UN: the Haben account gets net 370.03 with the tax data, 2200 gets 29.97 in Haben, the Soll account the gross', $shape($output) === ['1020 D 400.00', '3200 C 370.03 UN 810 370.03 29.97', '2200 C 29.97']);
+$outputRef = $manual->create($output);
+check('O5b … posted: three lines, the VAT line on 2200 without tax data', array_column($lineRows((int) $entryRow('2032-33', $outputRef->number)['id']), 'account_number') === ['1020', '3200', '2200']);
+
+$voucher = $oneLine()->fromPost($row('6500', '1020', '400.00', '2032-11-15', 'VM', '30.00'))->toRequest();
+check('O6 an entered tax (30.00, 0.03 off the computed 29.97) is the voucher value, taken as is: net 370.00', $shape($voucher) === ['6500 D 370.00 VM 810 370.00 30.00', '1170 D 30.00', '1020 C 400.00']);
+$edge = $oneLine()->fromPost($row('6500', '1020', '400.00', '2032-11-15', 'VM', '28.97'))->toRequest();
+check('O6b exactly the maximum ' . \Z77\Module\Financial\Ui\OneLineEntryForm::TAX_CORRECTION_MAX . ' below the computed 29.97 is still accepted (28.97; 10 % would be 3.00)', ($shape($edge)[1] ?? null) === '1170 D 28.97');
+$tooFar = $oneLine()->fromPost($row('6500', '1020', '400.00', '2032-11-15', 'VM', '31.00'));
+check('O6c 31.00 (1.03 off) is refused with a German message naming the computed value and the limit', $tooFar->toRequest() === null
+    && str_contains($tooFar->error('tax_amount'), 'berechneten 29.97') && str_contains($tooFar->error('tax_amount'), 'höchstens 1.00'));
+
+$zero = $oneLine()->fromPost($row('1100', '3200', '400.00', '2032-11-17', 'UE'))->toRequest();
+check('O7 a zero-rated code (UE, 0 %): the code on the revenue line with base = gross, tax 0.00 — and NO tax line', $shape($zero) === ['1100 D 400.00', '3200 C 400.00 UE 0 400.00 0.00']);
+$exempt = $oneLine()->fromPost($row('1100', '3200', '400.00', '2032-11-17', 'UA', '0.50'));
+check('O7b an exempt code (UA) with a tax amount is refused — steuerfrei, kein Steuerbetrag', $exempt->toRequest() === null && str_contains($exempt->error('tax_amount'), 'steuerfrei'));
+$zeroRef = $manual->create($zero);
+
+/**
+ * A fresh DI whose financialConfig is the package config with `vatAccounts` replaced
+ * by $vatAccounts, or removed for null — a project override copy (BOOT-CONFIG-001).
+ */
+$withFinancialConfig = function (?array $vatAccounts) use ($base): void {
+    // $wireDi() with the ModuleManager swapped — DI::set() never replaces a registered service.
+    DI::getInstance(true)
+        ->set('CacheManager', CacheManager::class, true)
+        ->set('FileFinder', fn($c) => new FileFinder($c->get('CacheManager')), true)
+        ->set('ConfigManager', fn($c) => new ConfigManager($c->get('FileFinder'), $c->get('CacheManager')), true)
+        ->set('ModuleManager', function ($c) use ($vatAccounts) {
+            $mm = new class($c->get('ConfigManager')) extends ModuleManager {
+                public ?array $vatAccounts = null;
+                public function getModuleConfig(string $moduleKey): ?\Z77\Core\Config\Config
+                {
+                    $config = parent::getModuleConfig($moduleKey);
+                    if ($moduleKey !== 'financial' || $config === null) {
+                        return $config;
+                    }
+                    $data = $config->getAll();
+                    unset($data['vatAccounts']);
+                    return new \Z77\Core\Config\Config($this->vatAccounts === null ? $data : $data + ['vatAccounts' => $this->vatAccounts]);
+                }
+            };
+            $mm->vatAccounts = $vatAccounts;
+            return $mm;
+        }, true)
+        ->set('DataSourceResolver', fn() => new DataSourceResolver(['file' => 'File', 'doctrine' => 'Doctrine']), true)
+        ->set('UnifiedEntityManager', fn($c) => new UnifiedEntityManager($c->get('DataSourceResolver')), true)
+    ;
+    DI::getCacheManager()->setCacheDir($base . '/var/cache');
+};
+$withFinancialConfig(null);   // an override copy made before `vatAccounts` existed
+$missing = $oneLine()->fromPost($row('6500', '1020', '400.00', '2032-11-15', 'VM'));
+check('O8 no tax account configured for the category → refused, the message names financialConfig → vatAccounts', $missing->toRequest() === null
+    && array_filter($missing->generalErrors(), fn($m) => str_contains($m, 'vatAccounts') && str_contains($m, 'input-material')) !== []);
+check('O8b … a line WITHOUT VAT still posts on that config (the key is needed only for a tax line)', $oneLine()->fromPost($row('6500', '1020', '10.00'))->toRequest() !== null);
+$withFinancialConfig(['input-material' => '100']);   // a group
+$group = $oneLine()->fromPost($row('6500', '1020', '400.00', '2032-11-15', 'VM'));
+check('O8c the configured account is a group → refused through accountExists(), naming account and key', $group->toRequest() === null
+    && array_filter($group->generalErrors(), fn($m) => str_contains($m, 'Steuerkonto 100') && str_contains($m, 'vatAccounts')) !== []
+    && !(new LedgerService(DI::getUnifiedEntityManager()))->accountExists('100') && !(new LedgerService(DI::getUnifiedEntityManager()))->accountExists('4711')
+    && (new LedgerService(DI::getUnifiedEntityManager()))->accountExists('1170') && !(new LedgerService(DI::getUnifiedEntityManager()))->accountExists('6570'));   // 6570 was deactivated in M
+$withFinancialConfig(['input-material' => 1170]);
+$e = caught(fn() => LedgerService::vatAccountFor('input-material'), \UnexpectedValueException::class);
+check('O8d a malformed mapping (an int instead of the number string) fails loudly, naming the key', $e !== null && str_contains($e->getMessage(), "vatAccounts['input-material']"));
+$em      = $wireDi();   // the package config again
+$entries = $em->getRepository(JournalEntry::class);
+$manual  = new ManualEntryService($em, 'buchhalter');
+check('O8e the package default maps input-material → 1170, input-other → 1171, output → 2200 (verified against res/charts/kmu.json); no mapping for zero / exempt',
+    LedgerService::vatAccountFor('input-material') === '1170' && LedgerService::vatAccountFor('input-other') === '1171'
+    && LedgerService::vatAccountFor('standard') === '2200' && LedgerService::vatAccountFor('reduced') === '2200' && LedgerService::vatAccountFor('special') === '2200'
+    && LedgerService::vatAccountFor('zero') === null && LedgerService::vatAccountFor('exempt') === null
+    && (function () use ($package) {
+        $chart = array_column(json_decode(file_get_contents($package . '/res/charts/kmu.json'), true), null, 'number');
+        return ($chart['1170']['postable'] ?? false) && str_contains($chart['1170']['name'], 'Vorsteuer') && ($chart['1171']['postable'] ?? false) && str_contains($chart['1171']['name'], 'Investitionen')
+            && ($chart['2200']['postable'] ?? false) && str_contains($chart['2200']['name'], 'Geschuldete MWST');
+    })());
+
+$bad = $oneLine()->fromPost(['debit' => '1020', 'date' => '2032-11-15', 'text' => '', 'credit' => '1020 Bankguthaben', 'amount' => '-5', 'vat' => '1', 'tax_code' => '', 'tax_amount' => '']);
+check('O9 field errors: text, the same account on both sides («1020 Bankguthaben» is read as 1020), a negative amount; the MwSt row on without a code', $bad->toRequest() === null
+    && $bad->error('text') !== '' && str_contains($bad->error('credit'), 'dasselbe Konto') && str_contains($bad->error('amount'), 'grösser als 0') && str_contains($bad->error('tax_code'), 'MWST-Code wählen'));
+check('O9b a group or an unknown account is refused on its field', (function () use ($oneLine, $row) {
+    $f = $oneLine()->fromPost($row('100', '9999', '5.00'));
+    return $f->toRequest() === null && str_contains($f->error('debit'), 'Gruppe') && str_contains($f->error('credit'), 'gibt es nicht');
+})());
+check('O9c a code without a rate on the date is a field error, never 0 %', (function () use ($oneLine, $row) {
+    $f = $oneLine()->fromPost($row('6500', '1020', '400.00', '2017-06-30', 'VM'));
+    return $f->toRequest() === null && str_contains($f->error('tax_code'), 'kein Satz');
+})());
+
+echo "O. … editing an entry of the one-line shape\n";
+$form = $oneLine();
+$posted = $entries->findByRef($inputRef);
+check('O10 the 3-line VM entry has the one-line shape: Soll 6500, Haben 1020, Betrag 400.00, MwSt on, VM — the tax field EMPTY (the stored 29.97 is the computed value), the stored value in the hint', $form->startFrom($posted)
+    && [$form->debit(), $form->credit(), $form->amount(), $form->vat(), $form->taxCode(), $form->taxAmount()] === ['6500', '1020', '400.00', true, 'VM', ''] && str_contains($form->vatHint(), 'Gespeichert') && str_contains($form->vatHint(), '29.97'));
+check('O10b … and so do the plain 2-line entry and the zero-rated one; the output split too', $oneLine()->startFrom($entries->findByRef($plainRef)) && $oneLine()->startFrom($entries->findByRef($zeroRef)) && $oneLine()->startFrom($entries->findByRef($outputRef)));
+$compoundRef = $manual->create($expenseRequest('2032-11-18', 'Sammelbuchung mit Zeilentext'));
+check('O10c an entry with a line text (here the harness\'s expense) is NOT one-line — it is edited in the Sammelbuchung form', !$oneLine()->startFrom($entries->findByRef($compoundRef)));
+check('O10d the unchanged form rebuilds exactly the stored lines (a save without a change changes nothing)', $shape($form->toRequest()) === ['6500 D 370.03 VM 810 370.03 29.97', '1170 D 29.97', '1020 C 400.00']);
+[$editId, $editVersion] = [(int) $posted->getId(), $posted->getVersion()];
+$manual->update($editId, $editVersion, $form->fromPost(['form' => 'one-line', 'version' => (string) $editVersion] + $row('6500', '1020', '500.00', '2032-11-15', 'VM'))->toRequest());
+$editedRows = $lineRows($editId);
+check('O11 edited one-line to 500.00 (tax recomputed: 37.47, net 462.53) through ManualEntryService::update(): three lines, version bumped, one change row',
+    array_map(fn($r) => $r['account_number'] . ' ' . $r['debit'] . '/' . $r['credit'] . ' ' . $r['tax_amount'], $editedRows) === ['6500 462.53/0.00 37.47', '1170 37.47/0.00 ', '1020 0.00/500.00 ']
+    && (int) $entryRow('2032-33', $inputRef->number)['version'] === $editVersion + 1 && count($em->getRepository(EntryChange::class)->forEntry($editId)) === 1);
+
+echo "O. … the screen: trait + templates, rendered without a web server\n";
+/**
+ * A request double with GET and POST. DI::set() never replaces a registered service, so the
+ * double is registered once per wiring and reads the superglobals the call sets.
+ */
+$useRequest = function (array $get, ?array $post = null): void {
+    $_GET  = $get;
+    $_POST = $post ?? [];
+    $GLOBALS['z77TestIsPost'] = $post !== null;
+    DI::getInstance()->set('Request', fn() => new class {
+        public function getGetParameter(string $p): mixed { return $_GET[$p] ?? null; }
+        public function isPost(): bool { return $GLOBALS['z77TestIsPost']; }
+        public function getPostParameters(): array { return $_POST; }
+    }, true);
+};
+$em = $wireDi();   // a fresh wiring: the report section registered a GET-only Request double
+/** A host double of the journal trait for the add pages: captures context, sections, flashes and the redirect. */
+$journalHost = function () {
+    $host = new class {
+        use JournalControllerTrait { addAction as public; addCompoundAction as public; editAction as public; }
+        public array $context = [];
+        public object $layoutManager;
+        public object $messageService;
+        public ?string $redirectedTo = null;
+        public function __construct()
+        {
+            $this->layoutManager = new class {
+                public array $sections = [];
+                public function removeSection(string $s): void { unset($this->sections[$s]); }
+                public function addPartials(string $name, string $path, string $ns, string $section = 'main'): void { $this->sections[$section][] = $path . '/' . $name; }
+            };
+            $this->messageService = new class {
+                public array $flashes = [];
+                public function pushFlashAfterRedirect(string $type, string $message): void { $this->flashes[] = [$type, $message]; }
+            };
+        }
+        protected function em() { return DI::getUnifiedEntityManager(); }
+        protected function html(array $context = []): \Z77\Core\Http\Response\HtmlResponse { $this->context = $context; return new \Z77\Core\Http\Response\HtmlResponse(null, $context); }
+        protected function redirect(string $url, int $status = 302): \Z77\Core\Http\Response\RedirectResponse { $this->redirectedTo = $url; return new \Z77\Core\Http\Response\RedirectResponse($url, $status); }
+        // The session actor is not wired in the harness — name it, as a CLI caller must.
+        private function manualEntryService(): ManualEntryService { return new ManualEntryService($this->em(), 'buchhalter'); }
+    };
+    return $host;
+};
+$render = fn($host) => implode('', array_map(fn($p) => $renderer->partial($p, $host->context), $host->layoutManager->sections['main'] ?? []));
+
+$useRequest(['year' => '2032-33', 'date' => '2032-11-20']);
+$host = $journalHost();
+$host->addAction();
+$html = $render($host);
+check('O12 GET add: the one-line template, the date from ?date= kept, Bu-Nr «neu», the fields in the wdv order', $host->layoutManager->sections['main'] === ['Backend/JournalController/oneLine'] && $host->context['form']->date() === '2032-11-20'
+    && str_contains($html, '>neu<') && preg_match('/name="debit".*name="date".*Bu-Nr.*name="text".*name="credit".*name="amount"/s', $html) === 1);
+check('O12b the MwSt row is a CSS reveal: a submitted checkbox (be-reveal__toggle) BEFORE the row and the panel, siblings; no <script>, no placeholder, no inline handler',
+    preg_match('/<div class="be-reveal">\s*<input class="be-reveal__toggle" type="checkbox" id="journal-vat" name="vat" value="1">\s*<div class="be-form__row"/', $html) === 1
+    && str_contains($html, '<label class="be-reveal__label" for="journal-vat">MwSt</label>') && str_contains($html, '<label for="journal-number">Bu-Nr</label>') && !str_contains($html, '&nbsp;') && str_contains($html, '<div class="be-reveal__panel">')
+    && stripos($html, '<script') === false && !str_contains($html, 'placeholder=') && preg_match('/\son[a-z]+=/i', $html) === 0);
+check('O12c below the form: the latest entries of the year (at most 10), numbered, each linked to its detail', count($host->context['recent']) <= 10 && count($host->context['recent']) >= 5
+    && str_contains($html, 'Letzte Buchungen') && str_contains($html, '/backend/finance/journal/detail?id=' . $entryRow('2032-33', $outputRef->number)['id'])
+    && str_contains($html, '/backend/finance/journal/add-compound?year=2032-33&amp;date=2032-11-20'));
+$scss = file_get_contents(__DIR__ . '/../packages/module-backend/res/scss/components/_forms.scss');
+$css  = file_get_contents(__DIR__ . '/../packages/module-backend/res/assets/css/base.css');
+check('O12d the reveal is CSS — the :checked sibling rule in the backend SCSS source AND in the compiled base.css', str_contains($scss, '.be-reveal__toggle:checked ~ .be-reveal__panel { display: block; }')
+    && str_contains($css, '.be-reveal__toggle:checked~.be-reveal__panel{display:block}'));
+
+$before = (int) $rangeOf('journal-entry.2032-33');
+$useRequest(['year' => '2032-33'], $row('6500', '1020', '108.10', '2032-11-20', 'VM', '', 'Papeterie'));
+$host = $journalHost();
+$host->addAction();
+$new = (int) $rangeOf('journal-entry.2032-33');
+check("O13 POST add with MwSt: posted as 2032-33/{$new}, the flash names the number, back to the EMPTY form with the same date",
+    $new === $before + 1 && $host->messageService->flashes === [['success', "Buchung 2032-33/{$new} erfasst"]]
+    && $host->redirectedTo === '/backend/finance/journal/add?year=2032-33&date=2032-11-20'
+    && array_map(fn($r) => $r['account_number'] . ' ' . $r['debit'] . '/' . $r['credit'], $lineRows((int) $entryRow('2032-33', $new)['id'])) === ['6500 100.00/0.00', '1170 8.10/0.00', '1020 0.00/108.10']);
+$useRequest(['year' => '2032-33'], $row('6500', '1020', '400.00', '2032-11-20', 'VM', '31.00', 'zu viel Steuer'));
+$host = $journalHost();
+$host->addAction();
+$html = $render($host);
+check('O14 POST with a refused tax amount: no posting, the form again with the error, the MwSt row still open (checked) and the values kept', $host->redirectedTo === null && (int) $rangeOf('journal-entry.2032-33') === $new
+    && str_contains($html, 'höchstens 1.00') && str_contains($html, 'name="vat" value="1" checked') && str_contains($html, 'value="31.00"') && str_contains($html, '<option value="VM" selected>'));
+$useRequest(['year' => '2032-33']);
+$host = $journalHost();
+$host->addCompoundAction();
+$html = $render($host);
+check('O15 GET add-compound: the Sammelbuchung (the former multi-line form) — no «1020» / «0.00» placeholder, the line principle in one sentence, no «ausgeglichen» at 0.00 / 0.00, a link back to the one-line form',
+    $host->layoutManager->sections['main'] === ['Backend/JournalController/form'] && str_contains($html, 'Sammelbuchung erfassen') && !str_contains($html, 'placeholder="1020"') && !str_contains($html, 'placeholder="0.00"')
+    && str_contains($html, 'Eine Zeile pro Konto') && !str_contains($html, 'ausgeglichen') && str_contains($html, '/backend/finance/journal/add?year=2032-33') && stripos($html, '<script') === false);
+// The edit page checks the entity token: a CSRF double (register once per wiring, like the request).
+DI::getInstance()->set('CsrfService', fn() => new class {
+    public function generateEntityToken(string $context, int $id): string { return "tok-{$context}-{$id}"; }
+    public function validateEntityToken(string $token, string $context, int $id): bool { return $token === "tok-{$context}-{$id}"; }
+}, true);
+$editId = (int) $entryRow('2032-33', $inputRef->number)['id'];
+$useRequest(['id' => (string) $editId]);
+$host = $journalHost();
+$host->editAction();
+$html = $render($host);
+check('O17 GET edit of the one-line VM entry: the one-line form, filled (500.00, VM, 37.47), its number instead of «neu», the version, a way to the Sammelbuchung', $host->layoutManager->sections['main'] === ['Backend/JournalController/oneLine']
+    && str_contains($html, 'name="form" value="one-line"') && str_contains($html, 'value="500.00"') && str_contains($html, 'name="tax_amount" value=""') && str_contains($html, 'Gespeichert: MWST VM 8.1 % in 500.00: 37.47') && str_contains($html, 'name="vat" value="1" checked')
+    && str_contains($html, '>' . $inputRef->number . '<') && str_contains($html, 'name="version" value="' . $entryRow('2032-33', $inputRef->number)['version'] . '"')
+    && str_contains($html, 'edit?id=' . $editId . '&amp;form=compound') && !str_contains($html, 'Letzte Buchungen'));
+$useRequest(['id' => (string) $editId, 'form' => 'compound']);
+$host = $journalHost();
+$host->editAction();
+$html = $render($host);
+$compoundId = (int) $entryRow('2032-33', $compoundRef->number)['id'];
+check('O17b ?form=compound: the same entry in the Sammelbuchung form, with a link back to the one-line form', $host->layoutManager->sections['main'] === ['Backend/JournalController/form']
+    && str_contains($html, 'Einzeilig bearbeiten') && count($host->context['form']->rows()) === 4);
+$useRequest(['id' => (string) $compoundId]);
+$host = $journalHost();
+$host->editAction();
+check('O17c an entry that is not of the one-line shape opens in the Sammelbuchung form, without the one-line link', $host->layoutManager->sections['main'] === ['Backend/JournalController/form']
+    && !str_contains($render($host), 'Einzeilig bearbeiten'));
+$version = (int) $entryRow('2032-33', $inputRef->number)['version'];
+$useRequest(['id' => (string) $editId], ['form' => 'one-line', 'version' => (string) $version, 'entity_csrf' => "tok-journalEntry-{$editId}"] + $row('6500', '1020', '450.00', '2032-11-15', 'VM', '', 'Beleg korrigiert'));
+$host = $journalHost();
+$host->editAction();
+check('O18 POST edit one-line (450.00): saved through ManualEntryService::update() — to the detail, the change logged, the tax recomputed (33.72)', $host->redirectedTo === '/backend/finance/journal/detail?id=' . $editId
+    && (int) $entryRow('2032-33', $inputRef->number)['version'] === $version + 1 && $entryRow('2032-33', $inputRef->number)['text'] === 'Beleg korrigiert'
+    && array_column($lineRows($editId), 'tax_amount')[0] === '33.72' && count($em->getRepository(EntryChange::class)->forEntry($editId)) === 2);
+$useRequest(['id' => (string) $editId], ['form' => 'one-line', 'version' => (string) $version, 'entity_csrf' => "tok-journalEntry-{$editId}"] + $row('6500', '1020', '460.00'));
+$host = $journalHost();
+$host->editAction();
+check('O18b a STALE one-line edit (the version seen before O18) → the conflict message and a redirect, nothing written', $host->redirectedTo === '/backend/finance/journal/detail?id=' . $editId
+    && str_contains($host->messageService->flashes[0][1] ?? '', 'inzwischen geändert') && array_column($lineRows($editId), 'credit')[2] === '450.00');
+
+echo "O. … the net side by account type (owner, 2026-09-22): credit notes, refunds, fixed assets\n";
+/** The Sammelbuchung's request for the same lines — the one-line form must write the tax data it writes (sign convention). */
+$compoundOf = fn(array $rows) => (new \Z77\Module\Financial\Ui\ManualEntryForm('CHF', DI::getUnifiedEntityManager()->getRepository(Account::class), DI::getUnifiedEntityManager()->getRepository(TaxCode::class), \Z77\Module\Vat\Services\VatRates::from(DI::getUnifiedEntityManager())))
+    ->fromPost(['date' => '2032-11-21', 'text' => 'x', 'account' => array_column($rows, 0), 'debit' => array_column($rows, 1), 'credit' => array_column($rows, 2), 'tax_code' => array_column($rows, 3), 'line_text' => array_fill(0, count($rows), '')])->toRequest();
+$creditNote = $oneLine()->fromPost($row('3200', '1100', '108.10', '2032-11-21', 'UN'))->toRequest();
+check('O19 a customer credit note 3200/1100 with UN, 108.10 gross: the revenue line is net (Soll, base and tax NEGATIVE), 8.10 output VAT in Soll on 2200, the debtor gross in Haben',
+    $shape($creditNote) === ['3200 D 100.00 UN 810 -100.00 -8.10', '2200 D 8.10', '1100 C 108.10']);
+check('O19b … the same tax data the Sammelbuchung writes for that line (ManualEntryForm::taxFor sign convention)', $shape($creditNote) === $shape($compoundOf([['3200', '100.00', '', 'UN'], ['2200', '8.10', '', ''], ['1100', '', '108.10', '']])));
+$creditNoteRef = $manual->create($creditNote);
+$cnForm = $oneLine();
+check('O19c … posted, and it round-trips: it opens one-line (3200 / 1100 / 108.10 / UN, tax field empty) and rebuilds exactly the stored lines', $cnForm->startFrom($entries->findByRef($creditNoteRef))
+    && [$cnForm->debit(), $cnForm->credit(), $cnForm->amount(), $cnForm->taxCode(), $cnForm->taxAmount()] === ['3200', '1100', '108.10', 'UN', ''] && $shape($cnForm->toRequest()) === $shape($creditNote));
+$refund = $oneLine()->fromPost($row('1020', '4200', '108.10', '2032-11-21', 'VM'))->toRequest();
+check('O20 a supplier refund 1020/4200 with VM: the expense line is net in Haben (negative base and tax), 8.10 input tax in Haben on 1170, the bank gross in Soll — as the Sammelbuchung writes it',
+    $shape($refund) === ['1020 D 108.10', '4200 C 100.00 VM 810 -100.00 -8.10', '1170 C 8.10'] && $shape($refund) === $shape($compoundOf([['1020', '108.10', '', ''], ['4200', '', '100.00', 'VM'], ['1170', '', '8.10', '']])));
+$refundRef = $manual->create($refund);
+check('O20b … posted and round-trips one-line', $oneLine()->startFrom($entries->findByRef($refundRef)));
+$asset = $oneLine()->fromPost($row('1500', '1020', '1081.00', '2032-11-21', 'VI'))->toRequest();
+check('O21 a fixed asset 1500/1020 with VI (neither side P&L): the category decides — net 1000.00 on 1500 in Soll, 81.00 on 1171', $shape($asset) === ['1500 D 1000.00 VI 810 1000.00 81.00', '1171 D 81.00', '1020 C 1081.00']);
+$bothPl = $oneLine()->fromPost($row('6500', '3200', '100.00', '2032-11-21', 'VM'));
+check('O22 both sides P&L accounts (6500/3200) with MwSt → refused, pointing to the Sammelbuchung; without MwSt it posts', $bothPl->toRequest() === null
+    && array_filter($bothPl->generalErrors(), fn($m) => str_contains($m, 'Sammelbuchung')) !== [] && $oneLine()->fromPost($row('6500', '3200', '100.00'))->toRequest() !== null);
+
+echo "O. … the tolerance min(1.00, max(0.05, 10 % of the computed tax)), review 2026-09-22\n";
+// 10.00 gross VM: computed 0.75 (10 × 810 / 10810 = 0.749…), limit max(0.05, 0.075 → 0.08) = 0.08.
+$small = fn(string $tax) => $oneLine()->fromPost($row('6500', '1020', '10.00', '2032-11-21', 'VM', $tax));
+check('O23 10.00 with VM: 0.00 refused (only when the computed tax is 0.00), 0.83 accepted (0.08 off), 0.84 refused (0.09 off, limit 0.08)',
+    ($z = $small('0.00'))->toRequest() === null && str_contains($z->error('tax_amount'), '0.00 geht nur')
+    && ($shape($small('0.83')->toRequest())[1] ?? null) === '1170 D 0.83'
+    && ($f = $small('0.84'))->toRequest() === null && str_contains($f->error('tax_amount'), 'höchstens 0.08'));
+check('O23b a tiny amount whose computed tax is 0.00 (0.05 with VM): the code on the net line with tax 0.00, NO tax line, and the hint says «keine Steuerzeile»', (function () use ($oneLine, $row, $shape) {
+    $f = $oneLine()->fromPost($row('6500', '1020', '0.05', '2032-11-21', 'VM'));
+    return $shape($f->toRequest()) === ['6500 D 0.05 VM 810 0.05 0.00', '1020 C 0.05'] && str_contains($f->vatHint(), 'keine Steuerzeile');
+})());
+$huge = $oneLine()->fromPost($row('6500', '1020', '99999999999999.00'));
+$hugeCompound = (new \Z77\Module\Financial\Ui\ManualEntryForm('CHF', $em->getRepository(Account::class), $em->getRepository(TaxCode::class), \Z77\Module\Vat\Services\VatRates::from($em)))
+    ->fromPost(['date' => '2032-11-21', 'text' => 'x', 'account' => ['6500', '1020'], 'debit' => ['99999999999999.00', ''], 'credit' => ['', '99999999999999.00'], 'tax_code' => ['', ''], 'line_text' => ['', '']]);
+check('O24 an amount beyond DECIMAL(15,2) (14 digits) is a field error in BOTH forms, not a database error; 13 digits still parse', $huge->toRequest() === null && str_contains($huge->error('amount'), '13 Stellen')
+    && $hugeCompound->toRequest() === null && str_contains($hugeCompound->rowError(0, 'debit'), '13 Stellen') && $oneLine()->fromPost($row('6500', '1020', '9999999999999.99'))->toRequest() !== null);
+
+echo "O. … canonical order, no-op saves, the rendered edit form\n";
+$unordered = $manual->create(PostingRequest::manual(day('2032-11-22'), 'Beleg', [PostingLine::credit('1020', chf('400.00')), PostingLine::debit('6500', chf('370.03'), null, 'VM', 810, chf('370.03'), chf('29.97')), PostingLine::debit('1170', chf('29.97'))]));
+check('O25 the same content in another line order is NOT one-line (it would be re-sorted) — it opens as Sammelbuchung', !$oneLine()->startFrom($entries->findByRef($unordered)));
+$sameRef = $manual->create($oneLine()->fromPost($row('6500', '1020', '400.00', '2032-11-22', 'VM'))->toRequest());
+$same    = $entries->findByRef($sameRef);
+[$sameId, $sameVersion] = [(int) $same->getId(), $same->getVersion()];
+$sameForm = $oneLine();
+$sameForm->startFrom($same);
+$changes = $em->getRepository(EntryChange::class);
+check('O26 saving an UNCHANGED one-line entry is a no-op: update() answers false, no change row, the version stays', $manual->update($sameId, $sameVersion, $sameForm->toRequest()) === false
+    && count($changes->forEntry($sameId)) === 0 && (int) $entryRow('2032-33', $sameRef->number)['version'] === $sameVersion);
+$cmpEntry = $entries->findByRef($compoundRef);
+$cmpForm  = (new \Z77\Module\Financial\Ui\ManualEntryForm('CHF', $em->getRepository(Account::class), $em->getRepository(TaxCode::class), \Z77\Module\Vat\Services\VatRates::from($em)))->keepFrom($cmpEntry)->startFrom($cmpEntry);
+check('O26b … the same for the Sammelbuchung: its unchanged form saves nothing', $manual->update((int) $cmpEntry->getId(), $cmpEntry->getVersion(), $cmpForm->toRequest()) === false
+    && count($changes->forEntry((int) $cmpEntry->getId())) === 0);
+check('O26c a stale unchanged save is still a conflict (the version is checked first)', throws(fn() => $manual->update($sameId, $sameVersion + 5, $sameForm->toRequest()), EntryConflictException::class));
+$useRequest(['id' => (string) $sameId]);
+$host = $journalHost();
+$host->editAction();
+$rendered = $host->context['form'];
+$asPosted = fn(string $amount) => ['form' => 'one-line', 'version' => (string) $sameVersion, 'entity_csrf' => "tok-journalEntry-{$sameId}", 'debit' => $rendered->debit(), 'date' => $rendered->date(), 'text' => $rendered->text(),
+    'credit' => $rendered->credit(), 'amount' => $amount, 'vat' => $rendered->vat() ? '1' : '', 'tax_code' => $rendered->taxCode(), 'tax_amount' => $rendered->taxAmount()];
+$useRequest(['id' => (string) $sameId], $asPosted('400.00'));
+$host = $journalHost();
+$host->editAction();
+check('O27 POST edit of the form AS RENDERED, unchanged: «Keine Änderung», back to the detail, nothing written', $host->redirectedTo === '/backend/finance/journal/detail?id=' . $sameId
+    && str_contains($host->messageService->flashes[0][1] ?? '', 'Keine Änderung') && count($changes->forEntry($sameId)) === 0);
+$useRequest(['id' => (string) $sameId], $asPosted('500.00'));
+$host = $journalHost();
+$host->editAction();
+check('O28 POST edit of the form as rendered with only the amount changed (400 → 500): it SAVES — the empty tax field recomputes 37.47', $host->redirectedTo === '/backend/finance/journal/detail?id=' . $sameId
+    && str_contains($host->messageService->flashes[0][1] ?? '', 'gespeichert') && array_column($lineRows($sameId), 'tax_amount')[0] === '37.47' && count($changes->forEntry($sameId)) === 1);
+$voucherRef = $manual->create($oneLine()->fromPost($row('6500', '1020', '400.00', '2032-11-22', 'VM', '30.00'))->toRequest());
+$vForm = $oneLine();
+check('O28b a stored VOUCHER value (30.00 ≠ computed 29.97) is pre-filled on edit — it is a real voucher value', $vForm->startFrom($entries->findByRef($voucherRef)) && $vForm->taxAmount() === '30.00');
+
+$source = file_get_contents($package . '/src/Ui/OneLineEntryForm.php');
+check('O16 the one-line form has no write path of its own: it builds a PostingRequest::manual() and never touches the ledger or an entity', str_contains($source, 'PostingRequest::manual(')
+    && !preg_match('/->(post|reverse|persist|flush|remove|amend|create|update)\(/', $source));
 
 echo "\n" . ($fail === 0 ? "PASS — {$pass} checks" : "FAIL — {$fail} of " . ($pass + $fail) . " checks") . "\n";
 exit($fail === 0 ? 0 : 1);

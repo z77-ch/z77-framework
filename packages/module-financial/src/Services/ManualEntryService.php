@@ -91,23 +91,36 @@ final class ManualEntryService
     /**
      * Replace date, text and lines of the MANUAL entry $entryId — as the
      * caller saw it at $expectedVersion — with $new, logging before and
-     * after. The number stays.
+     * after. The number stays. A save WITHOUT a change is a no-op (review
+     * 2026-09-22): when the new version's content — date, text, lines in
+     * order (`PostingRequest::fingerprint()`) — equals the stored entry's,
+     * nothing is written: no `EntryChange`, no version bump. The change log
+     * records changes, not saves. The version is still checked first, so a
+     * stale unchanged save is a conflict like any other.
+     *
+     * @return bool true when the entry changed, false when there was nothing to change
      *
      * @throws \LogicException              $new is not manual, or a unit of work is open
      * @throws EntryConflictException       the entry is gone or was changed in the meantime
      * @throws EntryNotEditableException    generated, closed, VAT-settled with a tax line, other fiscal year
      * @throws PostingRefusedException      an account or tax code of the new version is refused
      */
-    public function update(int $entryId, int $expectedVersion, PostingRequest $new): void
+    public function update(int $entryId, int $expectedVersion, PostingRequest $new): bool
     {
         if ($new->kind !== EntryKind::Manual) {
             throw new \LogicException('update() takes a manual PostingRequest as the new version');
         }
         $transaction = $this->ownUnitOfWork('update()');
 
-        $this->runGuarded($transaction, $entryId, $expectedVersion, function () use ($entryId, $expectedVersion, $new): void {
+        $changed = true;
+        $this->runGuarded($transaction, $entryId, $expectedVersion, function () use ($entryId, $expectedVersion, $new, &$changed): void {
             $entry = $this->freshEntry($entryId, $expectedVersion);
             $this->assertManual($entry, 'edited');
+            if (PostingRequest::fingerprintOf($entry->snapshot()) === $new->fingerprint()) {
+                $changed = false;
+
+                return;
+            }
 
             $year    = $entry->getFiscalYear();
             $newYear = $this->rules->yearFor($new->date);
@@ -133,6 +146,8 @@ final class ManualEntryService
             $this->em->persist(new EntryChange($entry, ChangeAction::Update, $actor, $now, $before, $entry->snapshot()));
             $this->em->persist($entry);
         });
+
+        return $changed;
     }
 
     /**

@@ -16,7 +16,9 @@ use Z77\Module\Vat\Services\VatRates;
 use Z77\Shared\Money\Money;
 
 /**
- * The manual-entry form (owner, 2026-09-22): a date, a text and n lines —
+ * The multi-line manual-entry form, «Sammelbuchung» (owner, 2026-09-22 —
+ * for real splits; the default capture form is {@see OneLineEntryForm}): a
+ * date, a text and n lines —
  * account NUMBER, debit or credit, an optional tax code, a line text —
  * turned into a manual {@see PostingRequest}, with the field errors the
  * screen shows. Done WITHOUT JavaScript (Rule 7): a fixed number of blank
@@ -317,16 +319,16 @@ final class ManualEntryForm
         $debit  = self::parseAmount($row['debit'], $this->currency);
         $credit = self::parseAmount($row['credit'], $this->currency);
         if ($row['debit'] !== '' && $debit === null) {
-            $this->rowErrors[$i]['debit'] = 'Kein Betrag (z.B. 100.50).';
+            $this->rowErrors[$i]['debit'] = 'Kein Betrag (z.B. 100.50, höchstens ' . self::AMOUNT_INTEGER_DIGITS . ' Stellen vor dem Punkt).';
         }
         if ($row['credit'] !== '' && $credit === null) {
-            $this->rowErrors[$i]['credit'] = 'Kein Betrag (z.B. 100.50).';
+            $this->rowErrors[$i]['credit'] = 'Kein Betrag (z.B. 100.50, höchstens ' . self::AMOUNT_INTEGER_DIGITS . ' Stellen vor dem Punkt).';
         }
         $hasDebit  = $debit !== null && $debit->isPositive();
         $hasCredit = $credit !== null && $credit->isPositive();
         if (($debit !== null && $debit->isNegative()) || ($credit !== null && $credit->isNegative())) {
             $this->rowErrors[$i][$debit !== null && $debit->isNegative() ? 'debit' : 'credit'] = 'Kein negativer Betrag — die andere Seite buchen.';
-        } elseif ($hasDebit === $hasCredit && !isset($this->rowErrors[$i]['debit'], $this->rowErrors[$i]['credit'])) {
+        } elseif ($hasDebit === $hasCredit && !isset($this->rowErrors[$i]['debit']) && !isset($this->rowErrors[$i]['credit'])) {
             $this->rowErrors[$i][$hasDebit ? 'credit' : 'debit'] = $hasDebit ? 'Soll ODER Haben — nicht beides.' : 'Soll oder Haben fehlt.';
         }
         if (mb_strlen($row['text']) > JournalLine::TEXT_LENGTH) {
@@ -398,11 +400,21 @@ final class ManualEntryForm
         return true;
     }
 
-    /** A form amount: `100`, `100.5`, `100,50`, `1'000.00` — into Money; null when it is not one. */
-    private static function parseAmount(string $value, string $currency): ?Money
+    /**
+     * Digits an amount may have before the decimal point: `journal_line`
+     * stores DECIMAL(15,2), so 13. A longer amount is a field error here,
+     * not a database error at the flush.
+     */
+    public const AMOUNT_INTEGER_DIGITS = 13;
+
+    /** A form amount: `100`, `100.5`, `100,50`, `1'000.00` — into Money; null when it is not one or exceeds {@see AMOUNT_INTEGER_DIGITS}. Shared with {@see OneLineEntryForm}. */
+    public static function parseAmount(string $value, string $currency): ?Money
     {
         $value = str_replace(["'", ' ', ','], ['', '', '.'], trim($value));
         if ($value === '') {
+            return null;
+        }
+        if (preg_match('/^[+-]?0*([0-9]*)/', $value, $m) && strlen($m[1]) > self::AMOUNT_INTEGER_DIGITS) {
             return null;
         }
         try {

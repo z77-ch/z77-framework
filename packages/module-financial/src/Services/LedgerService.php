@@ -3,6 +3,7 @@
 namespace Z77\Module\Financial\Services;
 
 use Z77\Core\DI;
+use Z77\Module\Financial\Entities\Account;
 use Z77\Module\Financial\Entities\EntryKind;
 use Z77\Module\Financial\Entities\JournalEntry;
 use Z77\Module\Financial\Ledger\EntryRef;
@@ -58,10 +59,11 @@ use Z77\Persistence\Resolver\UnifiedEntityManager;
  * unit of work (ADR-039 decision 10: no retry loop) — a retry is a new unit
  * of work, and with the same key it then returns the existing entry.
  *
- * `accountExists()` of plan §5.4 is NOT here yet: nothing in this change
- * validates a configuration by account number (the first caller is debtor's
- * account settings, P3), and a method without a production caller is not
- * built (CLAUDE.md). It arrives with that caller.
+ * `accountExists()` of plan §5.4 validates a configuration that names an
+ * account by number; its first production caller is the one-line manual
+ * entry, which checks the tax account configured in `vatAccounts` (debtor's
+ * account settings follow in P3). The module's config readers live here as
+ * well: `baseCurrency()`, `listLimit()`, `vatAccountFor()`.
  */
 final class LedgerService
 {
@@ -209,6 +211,52 @@ final class LedgerService
         }
 
         return $configured;
+    }
+
+    /**
+     * Whether a configuration may name this account (plan §5.4, «for
+     * configuration validation»): it exists AND can take a new posting —
+     * postable (not a group) and active. A configured account that fails
+     * this would be refused by {@see post()} anyway; asking first lets the
+     * caller name the configuration key in its message instead of a bare
+     * «account unknown». A plain read, no lock — `post()` checks again under
+     * its own rules.
+     */
+    public function accountExists(string $number): bool
+    {
+        $account = $this->em->getRepository(Account::class)->findOneBy(['number' => $number]);
+
+        return $account !== null && $account->isPostable() && $account->isActive();
+    }
+
+    /**
+     * The account number the VAT of a tax-code category is posted to —
+     * financialConfig `vatAccounts` (category → number; defaults 1170 / 1171
+     * for input tax, 2200 for output VAT, the KMU chart). The ONE reader of
+     * that key (Rule 2). Null when the category has no entry: a category
+     * without a tax line (zero, exempt), or a project config that lacks the
+     * key (BOOT-CONFIG-001 — an override replaces the package config); the
+     * caller refuses with a message. Fails loudly on a malformed value, like
+     * {@see listLimit()}: a typo in a config file is reported, not skipped.
+     *
+     * @throws \UnexpectedValueException `vatAccounts` is not a map of category => account number (digits string)
+     */
+    public static function vatAccountFor(string $category): ?string
+    {
+        $config     = DI::getModuleManager()->getModuleConfig('financial');
+        $configured = $config?->has('vatAccounts') ? $config->get('vatAccounts') : [];
+        if (!is_array($configured)) {
+            throw new \UnexpectedValueException('financialConfig: vatAccounts must be an array of tax category => account number, got ' . get_debug_type($configured) . '.');
+        }
+        if (!array_key_exists($category, $configured)) {
+            return null;
+        }
+        $number = $configured[$category];
+        if (!is_string($number) || !preg_match('/^[0-9]{1,' . Account::NUMBER_LENGTH . '}$/', $number)) {
+            throw new \UnexpectedValueException("financialConfig: vatAccounts['{$category}'] must be an account number (digits, as a string), got " . var_export($number, true) . '.');
+        }
+
+        return $number;
     }
 
     /** The posting proper — `post()` and `reverse()` both end here. */

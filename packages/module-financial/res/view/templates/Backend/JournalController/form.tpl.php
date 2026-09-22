@@ -1,7 +1,9 @@
 <?php
 /**
- * Post or edit a MANUAL entry (owner, 2026-09-22) — a PAGE with a plain
- * form, no JavaScript (Rule 7): a fixed number of rows, «Weitere Zeilen»
+ * «Sammelbuchung» — post or edit a MANUAL entry of n lines (owner,
+ * 2026-09-22; the default capture form is the one-line entry, `oneLine`,
+ * and this one is for real splits) — a PAGE with a plain form, no
+ * JavaScript (Rule 7): a fixed number of rows, «Weitere Zeilen»
  * submits to the server and comes back with more rows, the balance (Soll,
  * Haben, Differenz) and the computed VAT per line are shown after every
  * submit. `csrf_token` is the page-mode CSRF field (`#[Csrf]` on the
@@ -11,13 +13,17 @@
  * active accounts (one list for every row — a `<select>` per row with 150
  * accounts would be the heavier page). A tax code goes on the NET line
  * only; the tax-account line is entered like any other, and the hint under
- * the row says which amount it has to be.
+ * the row says which amount it has to be. No placeholders in the fields
+ * (P2 exit check 3a: a grey «1020» read as a prefilled value); the line
+ * principle stands in one sentence above the rows; «ausgeglichen» is shown
+ * only for a balance that has amounts.
  *
  * @var \Z77\Module\Financial\Ui\ManualEntryForm $form
  * @var \Z77\Module\Financial\Entities\FiscalYear $year
  * @var \Z77\Module\Financial\Entities\JournalEntry|null $entry  null = new
  * @var int $version  edit only — the entry's version this form was rendered from (optimistic lock)
  * @var string $entityCsrf  edit only
+ * @var bool $oneLineFits  edit only — the entry has the one-line shape (a link back to that form)
  * @var string $csrfToken  provided by html()
  * @var callable $fmt
  * @var string $actionBase
@@ -25,8 +31,11 @@
 $actionBase = $actionBase ?? '/backend/finance/journal';
 $isNew      = $entry === null;
 $action     = $isNew
-    ? $actionBase . '/add?year=' . rawurlencode($year->getCode())
+    ? $actionBase . '/add-compound?year=' . rawurlencode($year->getCode())
     : $actionBase . '/edit?id=' . (int) $entry->getId();
+$oneLine    = $isNew
+    ? $actionBase . '/add?year=' . rawurlencode($year->getCode()) . ($form->date() !== '' ? '&date=' . rawurlencode($form->date()) : '')
+    : (($oneLineFits ?? false) ? $actionBase . '/edit?id=' . (int) $entry->getId() : null);
 [$debit, $credit] = $form->sums();
 $difference = $debit->subtract($credit);
 $accounts   = $form->postableAccounts();
@@ -46,7 +55,7 @@ $fieldError = static fn(string $message): string => $message === ''
 
         <div class="be-list__section-header">
             <h2 class="be-list__section-title">
-                <?= $isNew ? 'Buchung erfassen' : 'Buchung <code>' . e($year->getCode() . '/' . $entry->getNumber()) . '</code> bearbeiten' ?>
+                <?= $isNew ? 'Sammelbuchung erfassen' : 'Buchung <code>' . e($year->getCode() . '/' . $entry->getNumber()) . '</code> bearbeiten' ?>
                 <small class="be-list__cell--muted">· Geschäftsjahr <?= e($year->getCode()) ?> (<?= e($year->getStartDate()->format('d.m.Y')) ?> – <?= e($year->getEndDate()->format('d.m.Y')) ?>)</small>
             </h2>
         </div>
@@ -75,7 +84,8 @@ $fieldError = static fn(string $message): string => $message === ''
             </div>
         </div>
 
-        <div class="be-form__section">Zeilen <small>(Kontonummer, Soll ODER Haben; MWST-Code nur auf der Netto-Zeile — die Steuerzeile selbst erfassen)</small></div>
+        <div class="be-form__section">Zeilen</div>
+        <p class="be-form__hint">Eine Zeile pro Konto, der Betrag im Soll ODER im Haben — Total Soll muss Total Haben ergeben. Ein MWST-Code gehört auf die Netto-Zeile; die Steuerzeile (Vorsteuer / geschuldete MWST) wird hier selbst erfasst.</p>
         <datalist id="journal-accounts">
             <?php foreach ($accounts as $account): ?>
             <option value="<?= e($account->getNumber()) ?>"><?= e($account->label()) ?></option>
@@ -93,10 +103,10 @@ $fieldError = static fn(string $message): string => $message === ''
                 <?php foreach ($form->rows() as $i => $row): ?>
                 <div class="be-list__item">
                     <div class="be-list__row">
-                        <span class="be-list__cell"><input class="be-input be-input--sm" type="text" name="account[]" list="journal-accounts" value="<?= e($row['account']) ?>" inputmode="numeric" placeholder="1020" aria-label="Konto Zeile <?= $i + 1 ?>" aria-invalid="<?= $form->rowError($i, 'account') !== '' ? 'true' : 'false' ?>"></span>
+                        <span class="be-list__cell"><input class="be-input be-input--sm" type="text" name="account[]" list="journal-accounts" value="<?= e($row['account']) ?>" inputmode="numeric" aria-label="Konto Zeile <?= $i + 1 ?>" aria-invalid="<?= $form->rowError($i, 'account') !== '' ? 'true' : 'false' ?>"></span>
                         <span class="be-list__cell"><input class="be-input be-input--sm" type="text" name="line_text[]" value="<?= e($row['text']) ?>" maxlength="255" aria-label="Text Zeile <?= $i + 1 ?>"></span>
-                        <span class="be-list__cell be-list__cell--num"><input class="be-input be-input--sm" type="text" name="debit[]" value="<?= e($row['debit']) ?>" inputmode="decimal" placeholder="0.00" aria-label="Soll Zeile <?= $i + 1 ?>" aria-invalid="<?= $form->rowError($i, 'debit') !== '' ? 'true' : 'false' ?>"></span>
-                        <span class="be-list__cell be-list__cell--num"><input class="be-input be-input--sm" type="text" name="credit[]" value="<?= e($row['credit']) ?>" inputmode="decimal" placeholder="0.00" aria-label="Haben Zeile <?= $i + 1 ?>" aria-invalid="<?= $form->rowError($i, 'credit') !== '' ? 'true' : 'false' ?>"></span>
+                        <span class="be-list__cell be-list__cell--num"><input class="be-input be-input--sm" type="text" name="debit[]" value="<?= e($row['debit']) ?>" inputmode="decimal" aria-label="Soll Zeile <?= $i + 1 ?>" aria-invalid="<?= $form->rowError($i, 'debit') !== '' ? 'true' : 'false' ?>"></span>
+                        <span class="be-list__cell be-list__cell--num"><input class="be-input be-input--sm" type="text" name="credit[]" value="<?= e($row['credit']) ?>" inputmode="decimal" aria-label="Haben Zeile <?= $i + 1 ?>" aria-invalid="<?= $form->rowError($i, 'credit') !== '' ? 'true' : 'false' ?>"></span>
                         <span class="be-list__cell">
                             <select class="be-input be-input--sm" name="tax_code[]" aria-label="MWST-Code Zeile <?= $i + 1 ?>" aria-invalid="<?= $form->rowError($i, 'tax_code') !== '' ? 'true' : 'false' ?>">
                                 <option value=""<?= $row['tax_code'] === '' ? ' selected' : '' ?>>–</option>
@@ -129,7 +139,7 @@ $fieldError = static fn(string $message): string => $message === ''
                 <div class="be-list__item">
                     <div class="be-list__row">
                         <span class="be-list__cell"></span>
-                        <span class="be-list__cell"><strong>Total</strong> <small class="be-list__cell--muted"><?= $difference->isZero() ? '· ausgeglichen' : '· Differenz ' . e($fmt($difference)) ?></small></span>
+                        <span class="be-list__cell"><strong>Total</strong> <small class="be-list__cell--muted"><?= $debit->isZero() && $credit->isZero() ? '' : ($difference->isZero() ? '· ausgeglichen' : '· Differenz ' . e($fmt($difference))) ?></small></span>
                         <span class="be-list__cell be-list__cell--num"><strong><?= e($fmt($debit)) ?></strong></span>
                         <span class="be-list__cell be-list__cell--num"><strong><?= e($fmt($credit)) ?></strong></span>
                         <span class="be-list__cell"></span>
@@ -141,6 +151,9 @@ $fieldError = static fn(string $message): string => $message === ''
         <p class="be-form__hint">
             <button type="submit" class="be-btn be-btn--ghost be-btn--sm" name="op" value="more">Weitere Zeilen</button>
             <button type="submit" class="be-btn be-btn--primary be-btn--sm" name="op" value="save"><?= $isNew ? 'Buchen' : 'Speichern (Änderung wird protokolliert)' ?></button>
+            <?php if ($oneLine !== null): ?>
+            <a class="be-btn be-btn--ghost be-btn--sm" href="<?= e($oneLine) ?>"><?= $isNew ? 'Einzeilige Buchung …' : 'Einzeilig bearbeiten …' ?></a>
+            <?php endif; ?>
             <a class="be-btn be-btn--ghost be-btn--sm" href="<?= e($isNew ? $actionBase . '/list?year=' . rawurlencode($year->getCode()) : $actionBase . '/detail?id=' . (int) $entry->getId()) ?>">Abbrechen</a>
         </p>
         <?php if (!$isNew): ?>

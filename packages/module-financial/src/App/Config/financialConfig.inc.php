@@ -35,6 +35,16 @@ use Z77\Module\Financial\Entities\Period;
  * `LedgerService::listLimit()`): how many entries the journal screen shows
  * per fiscal year. Not set here on purpose: a project records only its
  * deviation (Rule 2).
+ *
+ * `vatAccounts` (tax-code CATEGORY → account NUMBER, read only through
+ * `LedgerService::vatAccountFor()`): where the one-line manual entry writes
+ * the tax line it splits off a gross amount — input tax to 1170 / 1171,
+ * output VAT to 2200 (the KMU chart, `res/charts/kmu.json`). The ONE place
+ * a tax account is named (Rule 2); P3 debtor reads the same key. Categories
+ * without a tax line (zero, exempt) and reverse-charge are deliberately
+ * absent. A project with another chart overrides the key; an account that is
+ * missing, a group or inactive is refused by the form with a message naming
+ * this key (`LedgerService::accountExists()`).
  */
 return [
     'viewArea'   => false,
@@ -47,6 +57,14 @@ return [
         JournalEntry::class,
         JournalLine::class,
         EntryChange::class,
+    ],
+
+    'vatAccounts' => [
+        'input-material' => '1170',   // Vorsteuer MWST Material, Waren, Dienstleistungen, Energie
+        'input-other'    => '1171',   // Vorsteuer MWST Investitionen, übriger Betriebsaufwand
+        'standard'       => '2200',   // Geschuldete MWST (Umsatzsteuer)
+        'reduced'        => '2200',
+        'special'        => '2200',
     ],
 
     // Nothing here renders a page; the host's cache policy applies to the mount.
