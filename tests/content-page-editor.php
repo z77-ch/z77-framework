@@ -13,7 +13,11 @@
  *     after language fallback and preview) plus the slot and the preview key;
  *     the value is escaped for an attribute and parses back to exactly those
  *     query parameters (what ContentController::slotAction reads);
- *   - forEditor() returns a copy: the view it was called on stays unmarked.
+ *   - forEditor() returns a copy: the view it was called on stays unmarked;
+ *   - PageEditing (the ONE decision PageContent and AbstractFrontendController
+ *     both read): markers only for editor-and-up on a full page WITH the switch
+ *     «Seite bearbeiten» on for that view area — off is the default, also for
+ *     an admin; the preference round-trips through UserPreferences.
  *
  * Run: php tests/content-page-editor.php
  * No DI: the classes are required through a PSR-4 map of this checkout.
@@ -36,8 +40,12 @@ spl_autoload_register(static function (string $class): void {
     }
 });
 
+use Z77\Core\Config\AuthRole;
+use Z77\Shared\Auth\AuthUser;
 use Z77\Shared\Content\Blueprint;
 use Z77\Shared\Content\ContentView;
+use Z77\Shared\Content\PageEditing;
+use Z77\Shared\ValueObjects\UserPreferences;
 use Z77\Shared\Entities\Content;
 
 $pass = 0;
@@ -117,6 +125,36 @@ echo "slotEditorUrl\n";
 $url = ContentView::slotEditorUrl('a b', 'de', '', 'x&y', null);
 parse_str((string)parse_url($url, PHP_URL_QUERY), $q);
 check('special characters survive the round trip', $q['slug'] === 'a b' && $q['slot'] === 'x&y' && !isset($q['preview']), $url);
+
+echo "PageEditing — the switch «Seite bearbeiten»\n";
+$editor = new AuthUser(['id' => 2, 'user_name' => 'anna', 'roles' => [AuthRole::EDITOR]]);
+$admin  = new AuthUser(['id' => 1, 'user_name' => 'admin', 'roles' => [AuthRole::ADMIN]]);
+$member = new AuthUser(['id' => 3, 'user_name' => 'm', 'roles' => [AuthRole::MEMBER]]);
+$guest  = new AuthUser();
+$off    = new UserPreferences();
+$on     = new UserPreferences(['content_edit' => ['frontend' => true]]);
+
+check('editor, preference off (default) → no markers', !PageEditing::activeFor(true, $editor, $off, 'frontend'));
+check('editor, preference on → markers', PageEditing::activeFor(true, $editor, $on, 'frontend'));
+check('admin without preference → no markers', !PageEditing::activeFor(true, $admin, $off, 'frontend'));
+check('admin, preference on → markers', PageEditing::activeFor(true, $admin, $on, 'frontend'));
+check('preference is per view area', !PageEditing::activeFor(true, $editor, $on, 'shop'));
+check('fetch fragment (not Page) → no markers even when on', !PageEditing::activeFor(false, $editor, $on, 'frontend'));
+check('member with a stray preference → no markers', !PageEditing::activeFor(true, $member, $on, 'frontend'));
+check('guest → no markers', !PageEditing::activeFor(true, $guest, $on, 'frontend') && !PageEditing::activeFor(true, null, $on, 'frontend'));
+check('available: editor on a page, not a member, not a fragment',
+    PageEditing::availableFor(true, $editor) && !PageEditing::availableFor(true, $member) && !PageEditing::availableFor(false, $admin));
+
+$prefs = new UserPreferences(['partial_labels' => ['frontend' => true]]);
+check('preference off by default', !$prefs->isContentEditEnabled('frontend'));
+$prefs->setContentEditEnabled('frontend', true);
+$stored = $prefs->toArray();
+check('switched on → stored as content_edit, partial labels kept',
+    ($stored['content_edit'] ?? null) === ['frontend' => true] && ($stored['partial_labels'] ?? null) === ['frontend' => true],
+    json_encode($stored));
+check('round trip', (new UserPreferences($stored))->isContentEditEnabled('frontend'));
+$prefs->setContentEditEnabled('frontend', false);
+check('switched off → key absent (deviation-only storage)', !array_key_exists('content_edit', $prefs->toArray()), json_encode($prefs->toArray()));
 
 echo "\n{$pass} passed, {$fail} failed\n";
 exit($fail === 0 ? 0 : 1);

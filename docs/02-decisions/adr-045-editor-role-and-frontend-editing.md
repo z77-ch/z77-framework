@@ -55,8 +55,9 @@ copy first). Only ADMIN may delete versions. Nothing expires on its own.
 
 ### 4. Editing on the page
 
-For a user with at least `editor`, a frontend page renders one «Bearbeiten»
-button per blueprint **slot** (intro, FAQ table, …):
+For a user with at least `editor` who switched it on, a frontend page renders
+one edit button per blueprint **slot** (intro, FAQ table, …); see «Addendum»
+below:
 
 - **Markers:** a template marks a slot's root element with the attribute
   `ContentView::editAttribute($slot)` returns — `data-content-edit="…"` for an
@@ -74,6 +75,31 @@ button per blueprint **slot** (intro, FAQ table, …):
 - **No page cache for editors:** `PageCachePolicy` bypasses the cache for
   `editor` and up (today: admin and up), or an editor would get the cached
   visitor page without buttons.
+
+### Addendum (2026-09-22, same day): overlay for editors, the switch, the pencil
+
+Peter's test on `next` as «Redaktor» showed two gaps:
+
+- **No way back.** The admin overlay (backend link, logout) was ADMIN-only; an
+  editor on the site could neither reach the backend nor log out. → The overlay
+  shows from `editor`. What it offers follows §2: the view areas are filtered
+  with the same access rule as the backend menu (`NavigationService::entryAllowedIn()`
+  over `AuthService::canReach()`); routing info and the dev tools (partial
+  labels) stay ADMIN.
+- **Buttons everywhere.** The «Bearbeiten» text buttons sat on every page as
+  soon as an editor was logged in. → (a) a small pencil icon instead of text
+  (accessible name «<Slot> bearbeiten»); (b) a switch «Seite bearbeiten» in the
+  overlay, **off by default for everyone**, stored per user and view area in
+  `UserPreferences` (`content_edit`), toggled by a form POST
+  (`AdminPanelController::toggleContentEditAction`, role EDITOR). Off = no
+  markers and no `content-edit.js`: the page is what a visitor gets, plus the
+  overlay.
+
+One decision for both halves: `PageEditing::active()` (full page + role >=
+editor + switch on). `PageContent` marks the slots from it,
+`AbstractFrontendController` adds the script from it. Not tied to DEBUG: it is
+an editing tool, not a development tool. The switch is a visible user
+preference, not hidden state: it is shown where it acts and says what it does.
 
 ## Reasoning
 
@@ -116,3 +142,5 @@ button per blueprint **slot** (intro, FAQ table, …):
 ## Build status
 
 2026-09-22, `feat/frontend-editing`: §1 built (role, label, access config) · §2 built (`BackendMenu`, shared `AuthService::requiredRole()`/`canReach()`) · §3 built (`ContentVariantService::saveLive()`/`restore()`, one `v-…` rule also for publish) · §4 built: markers (`ContentView::editAttribute()`, set by `PageContent` for EDITOR+ on full pages via `forEditor()`), slot editor (`ContentController::slotAction` on `html-bare-skeleton`, `edit.tpl.php` in slot mode, `Blueprint::enforceSlot()`; a live copy shown in a preview is saved into the preview set), iframe + buttons (`content-edit.js`, loaded by `AbstractFrontendController` for EDITOR+), parent message via the new core command `post-message`, page-cache bypass (`PageCachePolicy` from EDITOR). First consumer: zihlundsee.ch (all pages and shared blocks marked). Open: not tried in a browser by a person yet (headless Edge only); framing headers must allow same origin once security headers come (security.md pending). Details: [`../topics/content.md`](../topics/content.md) «Editing on the page».
+
+2026-09-22, `feat/editor-panel` (addendum): overlay from EDITOR with access-filtered view areas (`NavigationService::entryAllowedIn()`, `BackendMenu::allowsIn()` delegates), switch «Seite bearbeiten» (`UserPreferences` `content_edit`, `AdminPanelController::toggleContentEditAction`, `frontendConfig` EDITOR), one decision `PageEditing::active()` for markers and script, pencil icons in `content-edit.js`. Harnesses: `tests/content-page-editor.php` (switch cases), `tests/backend-access.php` (overlay endpoint roles). Verified in zihlundsee with curl and headless Edge (editor + admin test users; guest pages byte-identical before/after). Details: [`../topics/backend.md`](../topics/backend.md) «frontend admin overlay», FE-OVERLAY-EDITOR-001.

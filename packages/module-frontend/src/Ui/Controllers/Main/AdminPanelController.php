@@ -11,7 +11,9 @@ use Z77\Core\DI,
 
 /**
  * Endpoint of the frontend admin overlay (adminOverlay partial). Role gate is
- * config-only: frontendConfig maps this controller to AuthRole::ADMIN.
+ * config-only: frontendConfig maps this controller to AuthRole::ADMIN and
+ * lowers toggleContentEditAction to AuthRole::EDITOR (the overlay's only
+ * switch an editor gets).
  *
  * No listAction/homeAction on purpose — the convention URL stays 404; the
  * controller exists solely for the overlay's form posts.
@@ -35,6 +37,27 @@ class AdminPanelController extends AbstractFrontendController
         $prefs    = $service->getPreferences();
 
         $prefs->setPartialLabelsEnabled($viewArea, !$prefs->isPartialLabelsEnabled($viewArea));
+        $service->savePreferences($prefs);
+
+        return $this->redirect($this->safeReturnPath($request->getPostParameter('return')), 303);
+    }
+
+    /**
+     * Toggles the page editor switch «Seite bearbeiten» (ADR-045 §4) for the
+     * current user in the CURRENT view area and redirects back. Off (the
+     * default) = no slot markers and no content-edit.js on the page
+     * (PageEditing::active()). Same form pattern as togglePartialLabelsAction.
+     */
+    #[Page, HttpMethod('POST'), Csrf]
+    protected function toggleContentEditAction(): RedirectResponse
+    {
+        $request = DI::getRequest();
+
+        $viewArea = $request->getModule();
+        $service  = DI::getCurrentUserService();
+        $prefs    = $service->getPreferences();
+
+        $prefs->setContentEditEnabled($viewArea, !$prefs->isContentEditEnabled($viewArea));
         $service->savePreferences($prefs);
 
         return $this->redirect($this->safeReturnPath($request->getPostParameter('return')), 303);

@@ -84,9 +84,13 @@ return [
     'controllers' => [
         'main' => [
             // Overlay endpoint (adminOverlay form posts). The specific entry
-            // replaces the '*' wildcard entirely → every action requires ADMIN.
+            // replaces the '*' wildcard entirely → every action requires ADMIN,
+            // except the page editor switch, which an editor needs (ADR-045 §4).
             'AdminPanelController' => [
                 'controllerRole' => AuthRole::ADMIN,
+                'actions' => [
+                    'toggleContentEditAction' => AuthRole::EDITOR,
+                ],
             ],
             '*' => [
                 'controllerRole' => AuthRole::MEMBER,

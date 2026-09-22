@@ -10,6 +10,8 @@
  *     backend menu share — over the REAL backendConfig array: the content
  *     editor, the dashboard and save-preferences are EDITOR, deleting content
  *     and every other backend screen stays ADMIN (or stricter), login GUEST;
+ *   - the frontend admin overlay endpoint: the page editor switch is EDITOR,
+ *     the other overlay toggles ADMIN (frontendConfig);
  *   - BackendMenu::allowsIn() / visibleIn(): a leaf is shown when its target is
  *     reachable, a ref follows its target, a section or opener is shown only
  *     with a visible child, a leaf without target is hidden.
@@ -99,6 +101,24 @@ $expect = [
 foreach ($expect as [$group, $controller, $action, $want]) {
     $got = $role($group, $controller, $action);
     check("{$group}/{$controller}/{$action} → {$want}", $got === $want, $got);
+}
+
+// The frontend admin overlay endpoint (framework frontendConfig): the page
+// editor switch is EDITOR, every other overlay toggle stays ADMIN.
+echo "AuthService::requiredRole (frontendConfig, admin overlay)\n";
+$fe     = require __DIR__ . '/../packages/module-frontend/src/App/Config/frontendConfig.inc.php';
+$feRole = fn(string $controller, string $action): string => AuthService::requiredRole(
+    $fe['moduleRole'], $fe['controllers'], 'main',
+    Naming::toCamelCase($controller) . 'Controller', Naming::toActionMethod($action)
+);
+foreach ([
+    ['admin-panel', 'toggle-content-edit',   AuthRole::EDITOR],
+    ['admin-panel', 'toggle-partial-labels', AuthRole::ADMIN],
+    ['admin-panel', 'list',                  AuthRole::ADMIN],
+    ['index',       'home',                  AuthRole::GUEST],
+] as [$controller, $action, $want]) {
+    $got = $feRole($controller, $action);
+    check("frontend main/{$controller}/{$action} → {$want}", $got === $want, $got);
 }
 
 // Pure-rule details independent of the shipped config.

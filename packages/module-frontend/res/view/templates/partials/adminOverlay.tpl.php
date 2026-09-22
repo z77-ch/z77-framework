@@ -1,25 +1,30 @@
 <?php
-/** @var array{initials:string,name:string,role:string}|null $overlayUser */
+/** @var array{initials:string,name:string,role:string,rail:string}|null $overlayUser */
 /** @var array<int, array{key: string, label: string, url: string, active: bool}> $viewAreas */
-/** @var array{module:string,controller:string,action:string,template:string}|null $routeInfo */
-/** @var array{partialLabels:bool,returnPath:string,csrfToken:string}|null $overlayDev */
+/** @var array{returnPath:string,csrfToken:string}|null $overlayForm */
+/** @var array{on:bool}|null $overlayEdit */
+/** @var array{module:string,controller:string,action:string,template:string}|null $overlayInfo */
+/** @var array{partialLabels:bool}|null $overlayDev */
 
 // Data-presence guard only (NOT a security decision — the controller owns the auth
-// gate and only injects overlayUser for admins on full-page loads; see
-// AbstractFrontendController). No AuthUser object reaches the template.
+// gate and only injects overlayUser for editors and up on full-page loads, and
+// overlayInfo/overlayDev for admins; see AbstractFrontendController). No AuthUser
+// object reaches the template.
 if (empty($overlayUser)) {
     return;
 }
 
 $areas = $viewAreas ?? [];
-$ri    = $routeInfo ?? null;
-$dev   = $overlayDev ?? null;   // set only under DEBUG (controller-gated)
+$form  = $overlayForm ?? null;
+$edit  = $overlayEdit ?? null;
+$ri    = $overlayInfo ?? null;   // admins only (controller-gated)
+$dev   = $overlayDev ?? null;    // admins, only under DEBUG (controller-gated)
 ?>
-<aside class="z77-admin-overlay" aria-label="Admin">
+<aside class="z77-admin-overlay" aria-label="Werkzeuge">
     <div class="z77-admin-overlay__rail" aria-hidden="true">
-        <span class="z77-admin-overlay__rail-dot"></span>admin
+        <span class="z77-admin-overlay__rail-dot"></span><?= e($overlayUser['rail']) ?>
     </div>
-    <div class="z77-admin-overlay__panel" role="region" aria-label="Admin-Werkzeuge">
+    <div class="z77-admin-overlay__panel" role="region" aria-label="Werkzeuge">
 
         <div class="z77-admin-overlay__identity">
             <span class="z77-admin-overlay__avatar"><?= e($overlayUser['initials']) ?></span>
@@ -41,6 +46,21 @@ $dev   = $overlayDev ?? null;   // set only under DEBUG (controller-gated)
         </div>
         <?php endif; ?>
 
+        <?php if ($edit && $form): ?>
+        <div class="z77-admin-overlay__section">
+            <div class="z77-admin-overlay__label">Inhalt</div>
+            <form method="post" action="/frontend/main/admin-panel/toggle-content-edit" class="z77-admin-overlay__form">
+                <input type="hidden" name="csrf_token" value="<?= e($form['csrfToken']) ?>">
+                <input type="hidden" name="return" value="<?= e($form['returnPath']) ?>">
+                <button type="submit" class="z77-admin-overlay__toggle<?= $edit['on'] ? ' is-on' : '' ?>"
+                        role="switch" aria-checked="<?= $edit['on'] ? 'true' : 'false' ?>">
+                    Seite bearbeiten
+                    <span class="z77-admin-overlay__switch" aria-hidden="true"><span class="z77-admin-overlay__thumb"></span></span>
+                </button>
+            </form>
+        </div>
+        <?php endif; ?>
+
         <?php if ($ri): ?>
         <div class="z77-admin-overlay__section">
             <div class="z77-admin-overlay__label">Info</div>
@@ -53,16 +73,16 @@ $dev   = $overlayDev ?? null;   // set only under DEBUG (controller-gated)
         </div>
         <?php endif; ?>
 
-        <?php if ($dev): ?>
+        <?php if ($dev && $form): ?>
         <div class="z77-admin-overlay__section">
             <div class="z77-admin-overlay__label">Entwicklung</div>
-            <form method="post" action="/frontend/main/admin-panel/toggle-partial-labels" class="z77-admin-overlay__dev-form">
-                <input type="hidden" name="csrf_token" value="<?= e($dev['csrfToken']) ?>">
-                <input type="hidden" name="return" value="<?= e($dev['returnPath']) ?>">
-                <button type="submit" class="z77-admin-overlay__dev-toggle<?= $dev['partialLabels'] ? ' is-on' : '' ?>"
+            <form method="post" action="/frontend/main/admin-panel/toggle-partial-labels" class="z77-admin-overlay__form">
+                <input type="hidden" name="csrf_token" value="<?= e($form['csrfToken']) ?>">
+                <input type="hidden" name="return" value="<?= e($form['returnPath']) ?>">
+                <button type="submit" class="z77-admin-overlay__toggle<?= $dev['partialLabels'] ? ' is-on' : '' ?>"
                         role="switch" aria-checked="<?= $dev['partialLabels'] ? 'true' : 'false' ?>">
                     Partial-Labels
-                    <span class="z77-admin-overlay__dev-switch" aria-hidden="true"><span class="z77-admin-overlay__dev-thumb"></span></span>
+                    <span class="z77-admin-overlay__switch" aria-hidden="true"><span class="z77-admin-overlay__thumb"></span></span>
                 </button>
             </form>
         </div>

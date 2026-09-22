@@ -3,7 +3,7 @@
 // Deliberately defines its OWN design tokens and font on the root and does NOT
 // @use the frontend tokens, so it fully overrides the frontend's colours/fonts
 // and looks identical on any site. Compiles standalone to admin-overlay.css and
-// is loaded (only for admins) via AbstractFrontendController::html().
+// is loaded (only for editors and up) via AbstractFrontendController::html().
 //
 // Reveal: a single fixed element peeks ~30px (the rail) at the right edge and
 // slides fully in on hover/focus — one element, no hover-bridge gap.
@@ -107,11 +107,12 @@
     &__info dt { color: var(--ao-muted); }
     &__info dd { margin: 0; color: var(--ao-text); word-break: break-all; }
 
-    // Dev section — partial-label toggle (plain form POST, page reloads).
-    // Switch look mirrors the backend service panel, built from the overlay's
-    // own tokens (isolated styling — no backend CSS available here).
-    &__dev-form { margin: 0; }
-    &__dev-toggle {
+    // Switches — «Seite bearbeiten» and, for admins under DEBUG, the
+    // partial-label toggle (plain form POSTs, the page reloads). Switch look
+    // mirrors the backend service panel, built from the overlay's own tokens
+    // (isolated styling — no backend CSS available here).
+    &__form { margin: 0; }
+    &__toggle {
         display:         flex;
         align-items:     center;
         justify-content: space-between;
@@ -126,9 +127,9 @@
         text-align:      left;
         cursor:          pointer;
     }
-    &__dev-toggle:hover { background: var(--ao-surface); }
-    &__dev-toggle.is-on { color: var(--ao-accent); font-weight: 600; }
-    &__dev-switch {
+    &__toggle:hover { background: var(--ao-surface); }
+    &__toggle.is-on { color: var(--ao-accent); font-weight: 600; }
+    &__switch {
         flex-shrink:   0;
         width:         30px;
         height:        17px;
@@ -137,7 +138,7 @@
         background:    var(--ao-line);
         transition:    background 0.15s ease;
     }
-    &__dev-thumb {
+    &__thumb {
         display:       block;
         width:         13px;
         height:        13px;
@@ -145,8 +146,8 @@
         background:    var(--ao-muted);
         transition:    transform 0.15s ease, background 0.15s ease;
     }
-    &__dev-toggle.is-on &__dev-switch { background: var(--ao-accent); }
-    &__dev-toggle.is-on &__dev-thumb  { transform: translateX(13px); background: var(--ao-bg); }
+    &__toggle.is-on &__switch { background: var(--ao-accent); }
+    &__toggle.is-on &__thumb  { transform: translateX(13px); background: var(--ao-bg); }
 
     &__logout {
         display:       block;
