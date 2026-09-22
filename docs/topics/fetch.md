@@ -204,6 +204,7 @@ Commands are server-issued instructions dispatched by the shared `core.js` to wh
 | `reload`         | — | — | Full page reload (escape hatch) |
 | `close-modal`    | — | — | Calls `_Z77.core.popup.close()` — closes the page's `[data-z77-popup]` `<dialog>` |
 | `update-fields`  | `target`, `fields` | — | Update multiple `[data-field]` children from `env.data`; `fields` = `{key: "text"\|"html"}` |
+| `post-message`   | `message` | — | Page shown in an iframe: `window.parent.postMessage(message, location.origin)` — same origin only; nothing when not framed. The receiver checks `event.origin`, `event.source` and `message.type`. First user: the page editor (`z77:content-saved`, [`content.md`](content.md) «Editing on the page») |
 | `load-script`    | `src` | `init`, `scope` | Lazy-loads JS once per `src`; on load and on subsequent calls runs `_Z77.scriptInit[init](scopeEl)` — see "lazy-loaded action scripts" below |
 
 `target` is a CSS selector string (e.g. `[data-nav-id="202"]`, `#js-nav-modal`).

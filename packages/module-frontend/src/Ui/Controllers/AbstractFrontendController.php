@@ -15,6 +15,11 @@ use Z77\Core\Controller\AbstractBaseController,
  * ONLY for logged-in users with role >= admin, and only on full-page (Page mode)
  * loads. The overlay ships its own isolated, compiled CSS (`admin-overlay`) that
  * overrides the frontend's fonts/colours, so it looks the same on any site.
+ *
+ * The page editor (ADR-045 §4): for a user with at least `editor` on a full
+ * page it adds `content-edit.js`, which puts a «Bearbeiten» button on every
+ * slot the templates marked (ContentView::editAttribute() — the markers come
+ * from the same role rule in PageContent). Visitors get neither.
  */
 abstract class AbstractFrontendController extends AbstractBaseController
 {
@@ -25,7 +30,8 @@ abstract class AbstractFrontendController extends AbstractBaseController
     protected function html(array $context = []): HtmlResponse
     {
         $user    = DI::getAuthService()->getCurrentUser();
-        $isAdmin = $user !== null && $user->hasAtLeast(AuthRole::ADMIN);
+        $isAdmin  = $user !== null && $user->hasAtLeast(AuthRole::ADMIN);
+        $isEditor = $user !== null && $user->hasAtLeast(AuthRole::EDITOR);
         $isPage  = DI::getRequest()->getMode() === RequestMode::Page;
 
         if ($isAdmin && $isPage) {
@@ -64,6 +70,9 @@ abstract class AbstractFrontendController extends AbstractBaseController
         if ($isAdmin && $isPage) {
             $this->layoutManager->addCss('admin-overlay', self::NAMESPACE);
             $this->layoutManager->addPartials('adminOverlay', 'partials', self::NAMESPACE, 'adminOverlay');
+        }
+        if ($isEditor && $isPage) {
+            $this->layoutManager->addJs('content-edit', self::NAMESPACE);
         }
 
         return $response;

@@ -17,7 +17,8 @@
  *     action stays literal text;
  *   - Blueprint::enforce() saves exactly one block per slot in slot order, takes
  *     type/key from the slot, and takes orphans from the STORED blocks only — a
- *     crafted body can neither add nor remove a block.
+ *     crafted body can neither add nor remove a block; enforceSlot() takes only
+ *     the ONE edited slot from the post (the page editor, ADR-045 §4).
  *
  * Run: php tests/content-blueprints.php
  * No DI, no composer install: the classes are pure and required directly.
@@ -160,6 +161,43 @@ try {
     check('duplicate slot key throws', false);
 } catch (InvalidArgumentException) {
     check('duplicate slot key throws', true);
+}
+
+echo "Blueprint::enforceSlot (page editor, ADR-045 §4)\n";
+$bp3 = new Blueprint('faq', [
+    ['key' => 'intro', 'type' => 'intro'],
+    ['key' => 'rows',  'type' => 'faqTable'],
+    ['key' => 'cta',   'type' => 'cta'],
+]);
+$stored3 = [
+    ['type' => 'intro', 'key' => 'intro', 'title' => 'Alt'],
+    ['type' => 'faqTable', 'key' => 'rows', 'rows' => ['a']],
+    ['type' => 'cta', 'key' => 'cta', 'label' => 'Stored'],
+    ['type' => 'text', 'content' => 'orphan'],
+];
+// A crafted body: the edited slot plus changed OTHER slots, an extra block and
+// a changed orphan — only the edited slot may reach the saved blocks.
+$posted3 = [
+    ['type' => 'cta', 'key' => 'cta', 'label' => 'HACK'],
+    ['type' => 'faqTable', 'key' => 'rows', 'rows' => ['HACK']],
+    ['type' => 'script', 'key' => 'intro', 'title' => 'Neu'],
+    ['type' => 'script', 'key' => 'evil'],
+    ['type' => 'text', 'content' => 'orphan changed'],
+];
+$saved3 = $bp3->enforceSlot('intro', $posted3, $stored3, []);
+check('enforceSlot: the edited slot from the post, type from the slot',
+    $saved3[0] === ['type' => 'intro', 'key' => 'intro', 'title' => 'Neu'], json_encode($saved3[0]));
+check('enforceSlot: other slots from the store, whatever the post says',
+    $saved3[1] === $stored3[1] && $saved3[2] === $stored3[2]);
+check('enforceSlot: orphans from the store, no extra block',
+    count($saved3) === 4 && $saved3[3] === $stored3[3]);
+$saved3 = $bp3->enforceSlot('cta', [], $stored3, []);
+check('enforceSlot: slot missing in the post keeps the stored block', $saved3 === $stored3);
+try {
+    $bp3->enforceSlot('nope', $posted3, $stored3, []);
+    check('enforceSlot: unknown slot throws', false);
+} catch (InvalidArgumentException) {
+    check('enforceSlot: unknown slot throws', true);
 }
 
 echo "\n{$pass} passed, {$fail} failed\n";

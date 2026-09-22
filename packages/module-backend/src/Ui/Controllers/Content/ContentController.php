@@ -2,6 +2,8 @@
 namespace Z77\Module\Backend\Ui\Controllers\Content;
 
 use Z77\Core\DI,
+    Z77\Core\Exception\NotFoundException,
+    Z77\Core\Http\RequestMode,
     Z77\Core\Http\Response\HtmlResponse,
     Z77\Core\Http\Response\FetchResponse,
     Z77\Module\Backend\Ui\Controllers\BackendAbstractController,
@@ -12,6 +14,7 @@ use Z77\Core\DI,
     Z77\Shared\Content\BlockRegistry,
     Z77\Shared\Content\ContentExtensions,
     Z77\Shared\Content\ContentPreview,
+    Z77\Shared\Content\ContentView,
     Z77\Shared\Entities\Content,
     Z77\Shared\Repositories\ContentRepository,
     Z77\Shared\Services\ContentVariantService,
@@ -29,6 +32,7 @@ use Z77\Core\DI,
  * keeps the previous live copy as a version `v-…` and stamps changedBy/changedAt
  * (ADR-045); a version is not edited, only restored or (ADMIN) deleted.
  * Access (backendConfig): EDITOR for all actions, ADMIN for confirmDelete/remove.
+ * slotAction is the page editor (ADR-045 §4): one slot, in an iframe on the website.
  * Metadata (title, active) + the visual block editor built
  * from each BlockRenderer::schema(). A slug with a blueprint (ADR-044) is edited
  * in blueprint mode: fixed slots, no block add/remove/reorder, enforced on save.
@@ -261,6 +265,184 @@ class ContentController extends BackendAbstractController
             'scope' => '[data-z77-popup-body]',
         ]);
         return $response;
+    }
+
+    /**
+     * The page editor (ADR-045 §4): ONE blueprint slot of one document, opened
+     * from a «Bearbeiten» button on the website in an iframe.
+     *
+     * GET  (page mode) — a bare backend page (html-bare-skeleton: backend CSS,
+     *      no topbar/menu) with the blueprint editor for that slot only.
+     * POST (fetch)     — merges the posted slot into the STORED blocks
+     *      (Blueprint::enforceSlot(): every other slot and every orphan from the
+     *      store, whatever the body carries), then the same validator,
+     *      optimistic lock and save rule as the backend editor. Success answers
+     *      with the command `post-message` {type: 'z77:content-saved'}: core.js
+     *      hands it to the parent window (same origin), whose content-edit.js
+     *      reloads the page. A failed save re-renders the form in place.
+     *
+     * Query: slug, language, variant (the document the page SHOWED, '' = live),
+     * slot, preview (the page's ?preview= key, optional). Where a save goes:
+     *   - variant given            → that variant (no version, no stamp);
+     *   - live + preview key       → the preview set: the set's copy of the
+     *                                document if it has one by now, otherwise a
+     *                                new variant = the stored live copy + this slot;
+     *   - live, no preview         → live, through saveLive() (version rule).
+     * Versions (a `v-…` variant or preview key) are refused: history is restored,
+     * not edited. Access: EDITOR, like the rest of the editor (backendConfig).
+     */
+    protected function slotAction(): HtmlResponse|FetchResponse
+    {
+        $request = DI::getRequest();
+        $slug    = (string)$request->getGetParameter('slug');
+        $lang    = (string)$request->getGetParameter('language');
+        $variant = ContentPreview::normalize((string)$request->getGetParameter('variant'));
+        $slotKey = (string)$request->getGetParameter('slot');
+        $preview = ContentPreview::normalize((string)$request->getGetParameter('preview'));
+
+        $extensions = ContentExtensions::assemble();
+        $blueprint  = $slug !== '' ? $extensions->blueprint($slug) : null;
+        $slot       = $blueprint?->slot($slotKey);
+        if ($slot === null) {
+            return $this->slotError('Dieser Abschnitt ist nicht bearbeitbar.');
+        }
+        if (ContentPreview::isVersionKey($variant) || ContentPreview::isVersionKey($preview)) {
+            return $this->slotError('Eine Version wird nicht bearbeitet — erst wiederherstellen.');
+        }
+
+        // The document the form edits. A live copy shown in a preview goes into
+        // the set: if the set holds this document by now (an earlier save from
+        // the same page), that copy is edited instead of creating a second one.
+        $content = null;
+        if ($variant !== '') {
+            $content = $lang !== '' ? $this->repo()->findBySlug($slug, $lang, $variant) : null;
+        } elseif ($preview !== '') {
+            $content = $lang !== '' ? $this->repo()->findBySlug($slug, $lang, $preview) : null;
+        }
+        $intoSet = $content === null && $variant === '' && $preview !== '';
+        $content ??= $lang !== '' ? $this->repo()->findBySlug($slug, $lang) : null;
+        if ($content === null) {
+            return $this->slotError('Inhalt nicht gefunden');
+        }
+
+        $registry   = BlockRegistry::assemble();
+        $schemas    = $registry->schemas();
+        $origKey    = $this->csrfKey($content);
+        $validator  = null;
+        $entityHash = '';
+        $rawBlocks  = '';
+        $slotUrl    = ContentView::slotEditorUrl($slug, $lang, $variant, $slotKey, $preview);
+
+        if ($request->isPost()) {
+            $body      = $request->getJsonBody();
+            $rawBlocks = is_string($body['blocks'] ?? null) ? $body['blocks'] : '';
+
+            $csrf = trim($body['entity_csrf'] ?? '');
+            if (!DI::getCsrfService()->validateEntityToken($csrf, 'content', $origKey)) {
+                return $this->fetchError('Invalid token');
+            }
+
+            // Lock against the STORED state the form was rendered from (the
+            // live copy when the save creates the set's copy).
+            $validator  = new ContentValidator($content, $registry->types(), $this->repo(), false, $rawBlocks, $schemas);
+            $entityHash = trim($body['entity_hash'] ?? '');
+            $validator->guardStoredState($entityHash);
+
+            // Only the blocks change — never title, active, identity or stamps.
+            $posted = json_decode($rawBlocks, true);
+            $content->setBlocks($blueprint->enforceSlot(
+                $slotKey,
+                is_array($posted) ? $posted : [],
+                $content->getBlocks(),
+                $schemas
+            ));
+            $validator->useBlueprint($blueprint);
+
+            if ($validator->isValid()) {
+                $service = ContentVariantService::create();
+                if ($intoSet) {
+                    // $content is the loaded live copy with the edited blocks in
+                    // memory; the live FILE is not written — the copy goes into the set.
+                    try {
+                        $service->createVariant($content, $preview);
+                    } catch (\DomainException $e) {
+                        return $this->fetchError($e->getMessage());
+                    }
+                } elseif ($content->isLive()) {
+                    $service->saveLive($content, $this->username());
+                } else {
+                    $this->em()->persist($content);
+                    $this->em()->flush();
+                }
+
+                return $this->fetch()
+                    ->setStatus('success')
+                    ->addCommand('post-message', ['message' => [
+                        'type' => 'z77:content-saved',
+                        'slug' => $slug,
+                        'slot' => $slotKey,
+                    ]]);
+            }
+        }
+
+        $validator ??= new ContentValidator($content, $registry->types(), $this->repo(), false, $rawBlocks, $schemas);
+        if (!$request->isPost()) {
+            $entityHash = EntityStateHash::of($content);
+        }
+
+        // The editor partial goes into `main` BEFORE html(): initialize() adds
+        // the action template only when `main` is empty — this action has none,
+        // the form is the backend editor's own edit.tpl.php in slot mode.
+        $this->layoutManager->addPartials('edit', 'Content/ContentController', self::NAMESPACE);
+        $response = $this->html([
+            'content'    => $content,
+            'isNew'      => false,
+            'knownTypes' => $registry->types(),
+            'schemas'    => $schemas,
+            'blueprint'  => $blueprint,
+            'actions'    => $extensions->actions(),
+            'entityCsrf' => DI::getCsrfService()->generateEntityToken('content', $origKey),
+            'entityHash' => $entityHash,
+            'validator'  => $validator,
+            'rawBlocks'  => $rawBlocks,
+            'slot'       => $slot,
+            'slotUrl'    => $slotUrl,
+            'slotTarget' => $intoSet ? $preview : '',
+        ]);
+
+        if ($request->getMode() === RequestMode::Fetch) {
+            // A failed save: the form is re-rendered into [data-z77-popup-body],
+            // which on the bare page is the page body itself (html-bare-skeleton).
+            $response->addCommand('load-script', [
+                'src'   => $this->layoutManager->resolveJsPath('content/editor', self::NAMESPACE),
+                'init'  => 'content-editor',
+                'scope' => '[data-z77-popup-body]',
+            ]);
+            return $response;
+        }
+
+        // Full page inside the iframe: no shell chrome, no shell scripts. The
+        // module layoutConfig registered them for every backend page; they are
+        // taken off here, explicitly, for this one page.
+        $this->layoutManager->setSkeletonTemplate('html-bare-skeleton', self::NAMESPACE);
+        foreach (['shellTopbar', 'subnav', 'noindexBanner', 'systemBanner'] as $section) {
+            $this->layoutManager->removeSection($section);
+        }
+        $this->layoutManager->removeJs(['panel-toggle', 'split', 'appearance', 'system/cache', 'shell']);
+        $this->layoutManager->addCss('content/editor', self::NAMESPACE);
+        $this->layoutManager->addJs('content/editor', self::NAMESPACE);
+        $this->layoutManager->addJs('content/slot', self::NAMESPACE);
+
+        return $response;
+    }
+
+    /** An error of the slot editor: a flash on a fetch, a 404 on the page. */
+    private function slotError(string $text): FetchResponse
+    {
+        if (DI::getRequest()->getMode() !== RequestMode::Fetch) {
+            throw new NotFoundException($text);
+        }
+        return $this->fetchError($text);
     }
 
     protected function confirmDeleteAction(): HtmlResponse|FetchResponse

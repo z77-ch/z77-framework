@@ -105,7 +105,8 @@ return [
             // add, variants, publish and restoring a version — editors may write
             // live, every live save keeps the previous state as a version.
             // Deleting (a document, a variant, a version) stays ADMIN: only the
-            // admin removes that safety net.
+            // admin removes that safety net. slotAction (the page editor on the
+            // website, ADR-045 §4) is EDITOR through the controllerRole below.
             'ContentController' => [
                 'controllerRole' => AuthRole::EDITOR,
                 'actions'        => [
