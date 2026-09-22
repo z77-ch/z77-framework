@@ -4,6 +4,8 @@
 **Date:** 2026-04-05
 **Context:** Originated from FAQ module (studio-vonaarburg.ch) — Jodit WYSIWYG gives clients too much freedom
 
+> **Note 2026-09-21 — superseded by [ADR-044](../../02-decisions/adr-044-content-blueprints.md).** Same goal ("prescribe structure, don't permit it"), reached through blueprints + the existing block schema (ADR-011) instead of HTML templates with placeholders stored as data.
+
 ---
 
 ## Problem

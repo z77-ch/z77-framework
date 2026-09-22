@@ -13,6 +13,8 @@
     <?= $footer ?? '' ?>
     <?= $flash ?? '' ?>
     <?= $messages ?? '' ?>
+    <?php /* Content preview notice (ADR-044 addendum) — a project maps a partial to body level 'preview'. */ ?>
+    <?= $preview ?? '' ?>
     <?= $adminOverlay ?? '' ?>
     <?= $jsFooter ?? '' ?>
 </body>

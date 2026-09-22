@@ -9,6 +9,7 @@ use Z77\Module\Frontend\Ui\Controllers\AbstractFrontendController,
     Z77\Core\Http\Response\RedirectResponse,
     Z77\Shared\Controller\PublicFormCheckTrait,
     Z77\Shared\Forms\PublicFormHandler,
+    Z77\Shared\Content\ContentPreview,
     Z77\Shared\Services\ContentService
 ;
 
@@ -19,7 +20,7 @@ class IndexController extends AbstractFrontendController
     protected function homeAction(): HtmlResponse
     {
         $language    = DI::getRequest()->getLanguage();
-        $contentHtml = ContentService::create()->render('home', $language);
+        $contentHtml = ContentService::create()->render('home', $language, ContentPreview::key());
 
         return $this->html(['pageTitle' => 'Home', 'contentHtml' => $contentHtml]);
     }
@@ -29,7 +30,7 @@ class IndexController extends AbstractFrontendController
         // Bespoke mode: pass the Content ENTITY (gated via find()); the template
         // owns the markup and reads blocks via BlockView. Contrast homeAction,
         // which uses the stream renderer (render() → one HTML string).
-        $content = ContentService::create()->find('about', DI::getRequest()->getLanguage());
+        $content = ContentService::create()->find('about', DI::getRequest()->getLanguage(), ContentPreview::key());
 
         return $this->html(['pageTitle' => 'About', 'content' => $content]);
     }
