@@ -1,4 +1,5 @@
-/* Entry point for frontend feedback (flash + popup messages).
+/* Entry point for frontend feedback (flash + popup messages, content preview notice).
    Loaded by frontend layoutConfig as standalone stylesheet (`messages` asset). */
 @use 'components/flash-messages';
 @use 'components/popup-messages';
+@use 'components/preview-bar';

@@ -1,0 +1,18 @@
+// <lottie-figure> pre-upgrade layout (framework default; a project with its own stylesheets
+// carries the same two rules). Until lottie-figure.js defines the custom element it
+// is an unknown inline element with no box of its own — these rules make it a block and let
+// its light-DOM poster <img> (width/height attributes = the aspect ratio) reserve the final
+// space at HTML PARSE time, before any JS runs. No layout jump when the script arrives; the
+// poster is visible even with JS off. After upgrade the component pins the img to its frame
+// via inline styles (which beat the height:auto here) and cross-fades the animation over it.
+
+lottie-figure {
+    display: block;
+    width: 100%;
+}
+
+lottie-figure > img {
+    display: block;
+    width: 100%;
+    height: auto;
+}

@@ -179,6 +179,11 @@ links: `php work/bin/mail-outbox.php`.
    `res/view/templates/partials/emails/{key}.tpl.php` when the mail must look
    different (escape with `e()`; use `<tr data-str="new-line">` rows / closing
    block tags so the plain-text alternative derives cleanly, see «mental model»).
+   **Language line (2026-09-22):** pass `language` (the request language code) in
+   the `sendForm()` context and the generic body opens with «Sprache: Deutsch» /
+   «Langue: Français» — label `form.field.language`, name `lang.<code>`, both in the
+   request language like every other label. Built for zihlundsee.ch, which had kept
+   a copy of this template only for that one row.
 3. **Declare the key** in the project's `emailConfig.inc.php` override `forms`:
    `template` (required), `to` (developer test inbox — see «seed-address
    convention»), `subject`, optional `cc` / `routes`.

@@ -65,6 +65,32 @@ final class ContentPreview
     }
 
     /**
+     * $url without the preview parameter — the same page as visitors see it
+     * ("Live ansehen" in the preview bar). Other query parameters and a
+     * #fragment are kept; a query left empty is dropped with its '?'.
+     */
+    public static function withoutPreview(string $url): string
+    {
+        $hashAt   = strpos($url, '#');
+        $fragment = $hashAt === false ? '' : substr($url, $hashAt);
+        $base     = $hashAt === false ? $url : substr($url, 0, $hashAt);
+
+        $queryAt = strpos($base, '?');
+        if ($queryAt === false) {
+            return $url;
+        }
+
+        $path  = substr($base, 0, $queryAt);
+        $pairs = array_filter(
+            explode('&', substr($base, $queryAt + 1)),
+            static fn(string $pair): bool => $pair !== ''
+                && rawurldecode(explode('=', $pair, 2)[0]) !== self::PARAM
+        );
+
+        return ($path !== '' ? $path : '/') . ($pairs !== [] ? '?' . implode('&', $pairs) : '') . $fragment;
+    }
+
+    /**
      * $url with `preview=<key>` added to its query string — before a #fragment,
      * and not twice. $key null returns the URL unchanged.
      */
