@@ -117,13 +117,16 @@ trait AccountControllerTrait
     protected function listAction(): HtmlResponse
     {
         $accounts = $this->accounts()->allInOrder();
-
-        return $this->html([
+        $response = $this->html([
             'accounts'   => $accounts,
             'depths'     => self::accountDepths($accounts),
             'typeLabels' => $this->accountTypeLabels(),
             'actionBase' => $this->accountListBase(),
         ]);
+        // The fragment owns its header slot (financial.md, «fragment slots»).
+        $this->layoutManager->addPartials('addButton', 'Backend/AccountController', self::ACCOUNT_NS, 'hc1');
+
+        return $response;
     }
 
     /**

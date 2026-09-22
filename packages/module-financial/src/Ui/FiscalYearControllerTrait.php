@@ -84,11 +84,15 @@ trait FiscalYearControllerTrait
 
     protected function listAction(): HtmlResponse
     {
-        return $this->html([
+        $response = $this->html([
             'years'       => $this->fiscalYears()->allWithPeriods(),
             'stateLabels' => $this->periodStateLabels(),
             'actionBase'  => $this->fiscalYearListBase(),
         ]);
+        // The fragment owns its header slot (financial.md, «fragment slots»).
+        $this->layoutManager->addPartials('openButton', 'Backend/FiscalYearController', self::FISCAL_YEAR_NS, 'hc1');
+
+        return $response;
     }
 
     // ── open ─────────────────────────────────────────────────────────────

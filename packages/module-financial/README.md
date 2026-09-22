@@ -8,9 +8,10 @@ Developed in the [z77-ch/z77-framework](https://github.com/z77-ch/z77-framework)
 (`packages/module-financial`); not yet a split target or on Packagist — projects consume it
 through a `path` repository until it is.
 
-State: **P2 part 2** — chart of accounts, fiscal years with periods, the journal, `LedgerService`
-and manual entries with a change log. The reports (part 3), the VAT return, the period
-transitions and the year-end (P5) follow.
+State: **P2 part 3** — chart of accounts, fiscal years with periods, the journal, `LedgerService`,
+manual entries with a change log, and the reports (trial balance, balance sheet, income
+statement, account statement, journal). The VAT return, the period transitions and the
+year-end with the opening entry (P5) follow.
 
 Model:
 
@@ -42,9 +43,14 @@ Pieces:
 - `Ledger/PostingRequest`, `Ledger/PostingLine`, `Ledger/EntryRef` — the immutable DTOs other
   modules see.
 - `Services/AccountService`, `Services/FiscalYearService`, `Validators/*` — part 1.
+- `Services/LedgerReports` — the reports, read-only: SQL aggregates over `journal_line`
+  (`Repositories/JournalLineRepository`, Doctrine-only), sums turned into `Money` from their
+  decimal strings, one fiscal year and a date range per report (`Reports/ReportRange`);
+  balances positive on the account's natural side. No opening entry before P5 — a later
+  year starts at zero.
 - `Ui/*ControllerTrait` — the backend screens as fragments; `module-backend` mounts them at
-  `/backend/finance/account/list`, `/backend/finance/fiscal-year/list` and
-  `/backend/finance/journal/list`.
+  `/backend/finance/account/list`, `/backend/finance/fiscal-year/list`,
+  `/backend/finance/journal/list` and `/backend/finance/report` (printable from the browser).
 
 ```php
 $em     = DI::getUnifiedEntityManager();

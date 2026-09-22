@@ -2,7 +2,10 @@
 /**
  * Journal list — hc2 (middle slot): the fiscal-year switcher, one link per
  * year (the `.be-lang-switch` anatomy of the metadata list — a row of links,
- * no JavaScript). Auto-loaded by BackendAbstractController::loadHeaderSlots().
+ * no JavaScript).
+ * Part of the fragment: the trait's `listAction()` adds it to the shell slot
+ * with `addPartials()` — the fragment owns its header slots, so they come
+ * along wherever it is mounted (ADR-018, Rule 8; financial.md).
  *
  * @var list<\Z77\Module\Financial\Entities\FiscalYear> $years  newest first
  * @var \Z77\Module\Financial\Entities\FiscalYear|null $year

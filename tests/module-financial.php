@@ -26,6 +26,16 @@
  *     rolled-back opening leaves nothing behind — neither year, periods nor
  *     range; a race on the start date becomes a field error.
  *
+ * Part 2 (G–L): the journal, LedgerService, manual entries with change log.
+ * Part 3 (R, P): the reports — a known data set in its own year (a
+ * reversal, an edited and a deleted manual entry) with every figure checked
+ * by hand: trial balance, balance sheet = income statement result, account
+ * statement across a page boundary, the journal report, the date edges, the
+ * screens rendered through the trait, the fragments' own header slots, a
+ * no-float source guard; then 20'000 SQL-inserted lines for timing, EXPLAIN
+ * and the page boundary at the production page size (P), and a chart cycle
+ * written past the validator that must not hide a line (C).
+ *
  * Run: php tests/module-financial.php
  * Needs what tests/module-contact.php needs (vendor/ with Doctrine, a
  * reachable MariaDB, credentials in `%USERPROFILE%\.z77\mariadb.txt` or
@@ -133,6 +143,11 @@ use Z77\Module\Financial\Repositories\AccountRepository;
 use Z77\Module\Financial\Repositories\EntryChangeRepository;
 use Z77\Module\Financial\Repositories\FiscalYearRepository;
 use Z77\Module\Financial\Repositories\JournalEntryRepository;
+use Z77\Module\Financial\Reports\Paging;
+use Z77\Module\Financial\Reports\ReportRange;
+use Z77\Module\Financial\Services\LedgerReports;
+use Z77\Module\Financial\Ui\ReportControllerTrait;
+use Z77\Module\Financial\Ui\ReportLayout;
 use Z77\Module\Financial\Services\AccountNumberChangedException;
 use Z77\Module\Financial\Services\AccountService;
 use Z77\Module\Financial\Services\ChartNotEmptyException;
@@ -1077,6 +1092,389 @@ check('L3 add and edit are page-mode form posts guarded by #[Csrf]; delete is a 
 check('L4 LedgerService has post, reverse and listLimit — and no accountExists yet (no production caller; see financial.md pending)', !in_array('accountExists', $methodsOf(LedgerService::class), true) && in_array('post', $methodsOf(LedgerService::class), true) && in_array('reverse', $methodsOf(LedgerService::class), true));
 check('L5 JournalEntry has no public setter; JournalLine and EntryChange none at all', array_filter((new \ReflectionClass(JournalEntry::class))->getMethods(\ReflectionMethod::IS_PUBLIC), fn(\ReflectionMethod $m) => str_starts_with($m->getName(), 'set')) === []
     && !$hasAny($methodsOf(JournalLine::class), ['set']) && !$hasAny($methodsOf(EntryChange::class), ['set']));
+
+// ═════════════════════════════════════════════════════════════════════════
+// Part 3 — the ledger reports (plan §5.5)
+// ═════════════════════════════════════════════════════════════════════════
+//
+// A KNOWN data set in a year of its own (2030-31, 1.7.2030–30.6.2031, the
+// next contiguous year), so every expected figure below can be added up by
+// hand: entries across accounts and months, a generated sale and its
+// REVERSAL, a manual entry EDITED (1'500 → 1'600) and one DELETED.
+//
+//   1  01.07.2030  manual     1020 / 2800   10'000.00  Kapitaleinlage (first day)
+//   2  15.07.2030  generated  1100 / 3200 1'000.00 (UN) + 2200 81.00
+//   3  10.08.2030  manual     6500 200.00 (VM) + 1170 16.20 / 1020 216.20
+//   4  31.08.2030  generated  1020 / 1100    1'081.00  Zahlung
+//   5  05.09.2030  generated  1100 / 3200 500.00 (UN) + 2200 40.50
+//   6  30.09.2030  reversal of 5
+//   7  01.10.2030  manual     6000 / 1020    1'500.00 → edited to 1'600.00
+//   8  15.10.2030  manual     6940 / 1020       20.00 → DELETED (gap)
+//   9  20.10.2030  manual     1020 / 6950        5.00  Zins (revenue in class 6)
+//  10  30.06.2031  manual     1000 / 1020      300.00  (last day)
+//
+// Balances: 1000 300.00, 1020 8'969.80, 1100 0.00 (moved), 1170 16.20 —
+// Aktiven 9'286.00; 2200 81.00, 2800 10'000.00; revenue 3200 1'000.00 +
+// 6950 5.00, expense 6000 1'600.00 + 6500 200.00 → result −795.00;
+// Passiven 81.00 + 10'000.00 − 795.00 = 9'286.00.
+
+echo "R. Reports — the known data set in 2030-31\n";
+$em = $wireDi();
+(new FiscalYearService($em))->open(new FiscalYear('2030-31', day('2030-07-01'), day('2031-06-30')));
+$em     = $wireDi();
+$manual = new ManualEntryService($em, 'buchhalter');
+$r1 = $manual->create(PostingRequest::manual(day('2030-07-01'), 'Kapitaleinlage', [PostingLine::debit('1020', chf('10000.00')), PostingLine::credit('2800', chf('10000.00'))]));
+$r2 = $post($em, PostingRequest::generated(day('2030-07-15'), 'Rechnung R-1', 'invoice', 'R-1', 'report:invoice:1', [
+    PostingLine::debit('1100', chf('1081.00')), PostingLine::credit('3200', chf('1000.00'), null, 'UN', 810, chf('1000.00'), chf('81.00')), PostingLine::credit('2200', chf('81.00')),
+]));
+$r3 = $manual->create(PostingRequest::manual(day('2030-08-10'), 'Büromaterial', [
+    PostingLine::debit('6500', chf('200.00'), null, 'VM', 810, chf('200.00'), chf('16.20')), PostingLine::debit('1170', chf('16.20')), PostingLine::credit('1020', chf('216.20')),
+]));
+$r4 = $post($em, PostingRequest::generated(day('2030-08-31'), 'Zahlung R-1', 'payment', 'P-1', 'report:payment:1', [PostingLine::debit('1020', chf('1081.00')), PostingLine::credit('1100', chf('1081.00'))]));
+$r5 = $post($em, PostingRequest::generated(day('2030-09-05'), 'Rechnung R-2', 'invoice', 'R-2', 'report:invoice:2', [
+    PostingLine::debit('1100', chf('540.50')), PostingLine::credit('3200', chf('500.00'), null, 'UN', 810, chf('500.00'), chf('40.50')), PostingLine::credit('2200', chf('40.50')),
+]));
+$r6 = $em->getTransaction(JournalEntry::class)->run(fn() => (new LedgerService($em, 'buchhalter'))->reverse($r5, day('2030-09-30'), 'Rechnung R-2 storniert'));
+$r7 = $manual->create(PostingRequest::manual(day('2030-10-01'), 'Miete Oktober', [PostingLine::debit('6000', chf('1500.00')), PostingLine::credit('1020', chf('1500.00'))]));
+$r8 = $manual->create(PostingRequest::manual(day('2030-10-15'), 'Bankspesen', [PostingLine::debit('6940', chf('20.00')), PostingLine::credit('1020', chf('20.00'))]));
+$r9 = $manual->create(PostingRequest::manual(day('2030-10-20'), 'Zins', [PostingLine::debit('1020', chf('5.00')), PostingLine::credit('6950', chf('5.00'))]));
+$r10 = $manual->create(PostingRequest::manual(day('2031-06-30'), 'Bargeldbezug', [PostingLine::debit('1000', chf('300.00')), PostingLine::credit('1020', chf('300.00'))]));
+$entries = $em->getRepository(JournalEntry::class);
+$rent    = $entries->findByRef($r7);
+$manual->update((int) $rent->getId(), $rent->getVersion(), PostingRequest::manual(day('2030-10-01'), 'Miete Oktober (korrigiert)', [PostingLine::debit('6000', chf('1600.00')), PostingLine::credit('1020', chf('1600.00'))]));
+$fee = $entries->findByRef($r8);
+$manual->delete((int) $fee->getId(), $fee->getVersion());
+check('R0 the data set: numbers 1–10 in 2030-31, 8 deleted, 6 reverses 5, 7 edited', [$r1->number, $r10->number, $r6->number] === [1, 10, 6] && $entryRow('2030-31', 8) === false
+    && (int) $entryRow('2030-31', 6)['reversal_of_id'] === (int) $entryRow('2030-31', 5)['id'] && (int) $entryRow('2030-31', 7)['version'] === 2);
+
+$em      = $wireDi();
+$reports = new LedgerReports($em);
+$fy      = $em->getRepository(FiscalYear::class)->findOneBy(['code' => '2030-31']);
+$year    = ReportRange::wholeYear($fy);
+$range   = fn(string $from, string $to) => new ReportRange($fy, day($from), day($to));
+$dec     = fn(Money $m) => $m->toDecimal();
+$byNo    = fn(array $rows) => array_combine(array_map(fn($r) => 'n' . $r->number, $rows), $rows);   // prefixed: a numeric-string key would turn into an int
+
+echo "R. … trial balance\n";
+$tb   = $reports->trialBalance($year);
+$rows = $byNo($tb->rows);
+check('R1 one row per account WITH lines, in chart order — the deleted entry\'s 6940 is absent', array_keys($rows) === ['n1000', 'n1020', 'n1100', 'n1170', 'n2200', 'n2800', 'n3200', 'n6000', 'n6500', 'n6950']);
+check('R2 Σ Soll = Σ Haben = 15\'364.20 (nine entries), and the report says so', $dec($tb->totalDebit) === '15364.20' && $dec($tb->totalCredit) === '15364.20' && $tb->isBalanced());
+check('R3 Σ Saldo Soll = Σ Saldo Haben = 11\'086.00', $dec($tb->totalDebitBalance) === '11086.00' && $dec($tb->totalCreditBalance) === '11086.00');
+check('R4 1020: Soll 11\'086.00, Haben 2\'116.20 (the EDITED 1\'600, not 1\'500; the deleted 20 absent) → Saldo Soll 8\'969.80', $dec($rows['n1020']->debit) === '11086.00' && $dec($rows['n1020']->credit) === '2116.20'
+    && $dec($rows['n1020']->debitBalance()) === '8969.80' && $rows['n1020']->creditBalance()->isZero());
+check('R5 the reversal pair: 3200 Soll 500 / Haben 1\'500 → Saldo Haben 1\'000; 2200 81; 1100 moved but balances to zero (both saldo columns empty)', $dec($rows['n3200']->debit) === '500.00' && $dec($rows['n3200']->creditBalance()) === '1000.00'
+    && $dec($rows['n2200']->creditBalance()) === '81.00' && $dec($rows['n1100']->debit) === '1621.50' && $rows['n1100']->debitBalance()->isZero() && $rows['n1100']->creditBalance()->isZero());
+check('R6 natural side: 1020 +8\'969.80 (asset), 2200 +81.00 (liability), 3200 +1\'000.00 (revenue), 6000 +1\'600.00 (expense)', $dec($rows['n1020']->balance()) === '8969.80' && $dec($rows['n2200']->balance()) === '81.00'
+    && $dec($rows['n3200']->balance()) === '1000.00' && $dec($rows['n6000']->balance()) === '1600.00');
+
+echo "R. … date-range edges (both ends inclusive)\n";
+check('R7 1.7.–1.7.: only the entry ON the first day (10\'000.00)', $dec($reports->trialBalance($range('2030-07-01', '2030-07-01'))->totalDebit) === '10000.00');
+check('R8 2.7.2030–29.6.2031: without the first and the last day (15\'364.20 − 10\'000.00 − 300.00)', $dec($reports->trialBalance($range('2030-07-02', '2031-06-29'))->totalDebit) === '5064.20');
+check('R9 30.6.2031–30.6.2031: only the entry ON the last day (300.00)', $dec($reports->trialBalance($range('2031-06-30', '2031-06-30'))->totalDebit) === '300.00');
+check('R10 the reversal month alone (1.9.–30.9.): sale and reversal cancel on every account', (function () use ($reports, $range) {
+    $tb = $reports->trialBalance($range('2030-09-01', '2030-09-30'));
+    return $tb->totalDebit->toDecimal() === '1081.00' && array_filter($tb->rows, fn($r) => !$r->balance()->isZero()) === [];
+})());
+check('R11 a range reaches neither into another year nor backwards (ReportRange refuses)', throws(fn() => new ReportRange($fy, day('2030-06-30'), day('2030-07-31')), \InvalidArgumentException::class)
+    && throws(fn() => new ReportRange($fy, day('2030-07-01'), day('2031-07-01')), \InvalidArgumentException::class) && throws(fn() => $range('2030-08-01', '2030-07-31'), \InvalidArgumentException::class));
+
+echo "R. … balance sheet and income statement\n";
+$bs = $reports->balanceSheet($year);
+$is = $reports->incomeStatement($year);
+check('R12 Aktiven 9\'286.00 = Passiven 9\'286.00 (Fremdkapital 81.00 + Eigenkapital 10\'000.00 + result −795.00)', $dec($bs->assets->total) === '9286.00' && $dec($bs->liabilities->total) === '81.00' && $dec($bs->equity->total) === '10000.00'
+    && $dec($bs->result) === '-795.00' && $dec($bs->totalLiabilitiesAndEquity()) === '9286.00' && $bs->isBalanced() && $bs->difference()->isZero());
+check('R13 the income statement result equals the balance sheet\'s result line (−795.00): Ertrag 1\'005.00, Aufwand 1\'800.00', $is->result()->equals($bs->result) && $dec($is->revenue->total) === '1005.00' && $dec($is->expense->total) === '1800.00');
+$assets = array_map(fn($l) => [$l->number, $l->depth, $l->isGroup, $l->amount->toDecimal()], $bs->assets->lines);
+check('R14 Aktiven: the group chain top-down with subtotals, accounts under their groups — 1 > 10 > 100 (9\'269.80) > 1000, 1020', $assets[0] === ['1', 0, true, '9286.00'] && $assets[1] === ['10', 1, true, '9286.00']
+    && $assets[2] === ['100', 2, true, '9269.80'] && $assets[3] === ['1000', 3, false, '300.00'] && $assets[4] === ['1020', 3, false, '8969.80']);
+$assetNumbers = array_column($assets, 0);
+check('R15 an account that moved but balances to zero (1100) is shown; groups without a booked account (14 Anlagevermögen) are not', in_array('1100', $assetNumbers, true) && !in_array('14', $assetNumbers, true)
+    && array_filter($bs->assets->lines, fn($l) => $l->number === '1100' && $l->amount->isZero()) !== []);
+$revenue = array_column(array_map(fn($l) => [$l->number, $l->amount->toDecimal()], $is->revenue->lines), 1, 0);
+$expense = array_column(array_map(fn($l) => [$l->number, $l->amount->toDecimal()], $is->expense->lines), 1, 0);
+check('R16 the TYPE decides the side: 6950 Finanzertrag stands under Ertrag in its groups 6 > 69 (5.00), and NOT under Aufwand', ($revenue['6950'] ?? null) === '5.00' && ($revenue['69'] ?? null) === '5.00' && ($revenue['6'] ?? null) === '5.00'
+    && !isset($expense['6950']) && ($expense['6'] ?? null) === '1800.00' && !isset($expense['69']) && ($revenue['3'] ?? null) === '1000.00');
+check('R17 equity is its own block (2800 under 28), liabilities another (2200)', in_array('28', array_map(fn($l) => $l->number, $bs->equity->lines), true) && in_array('2800', array_map(fn($l) => $l->number, $bs->equity->lines), true)
+    && in_array('2200', array_map(fn($l) => $l->number, $bs->liabilities->lines), true) && !in_array('2800', array_map(fn($l) => $l->number, $bs->liabilities->lines), true));
+$october = $reports->incomeStatement($range('2030-10-01', '2030-10-31'));
+check('R18 an income statement over October: Ertrag 5.00, Aufwand 1\'600.00 → −1\'595.00', $dec($october->result()) === '-1595.00');
+$bsMid = $reports->balanceSheet($range('2030-10-01', '2030-10-31'));
+check('R19 the balance sheet ignores «from» — at 31.10.2030 it reads 1.7.–31.10. (still balanced; the 30.6. cash withdrawal not yet in)', $bsMid->range->fromDay() === '2030-07-01' && $bsMid->isBalanced()
+    && $dec($bsMid->assets->total) === '9286.00' && !in_array('1000', array_map(fn($l) => $l->number, $bsMid->assets->lines), true));
+$emptyYear = $em->getRepository(FiscalYear::class)->findOneBy(['code' => '2029-30b']);
+check('R20 a year without entries: empty trial balance (balanced at zero), empty statements, result 0', (function () use ($reports, $emptyYear) {
+    $tb = $reports->trialBalance(ReportRange::wholeYear($emptyYear));
+    $bs = $reports->balanceSheet(ReportRange::wholeYear($emptyYear));
+    return $tb->rows === [] && $tb->isBalanced() && $tb->totalDebit->isZero() && $bs->assets->lines === [] && $bs->result->isZero() && $bs->isBalanced();
+})());
+
+echo "R. … account statement (the page boundary is proven at volume, section P)\n";
+$bank  = $em->getRepository(Account::class)->findOneBy(['number' => '1020']);
+$page1 = $reports->accountStatement($bank, $year, 1);
+$bal   = fn($s) => array_map(fn($l) => $l->balance->toDecimal(), $s->lines);
+check('R21 1020 whole year: 6 lines (the deleted entry\'s line gone), one page at the production page size', $page1->paging->total === 6 && $page1->paging->pageCount === 1 && count($page1->lines) === 6
+    && $page1->paging->pageSize === LedgerReports::ACCOUNT_STATEMENT_PAGE_SIZE);
+check('R22 opening = carry = 0.00; lines 1, 3, 4, 7, 9, 10 in date order; running 10\'000.00 / 9\'783.80 / 10\'864.80 / 9\'264.80 / 9\'269.80 / 8\'969.80', $page1->opening->isZero() && $page1->carry->isZero()
+    && array_map(fn($l) => $l->entryNumber, $page1->lines) === [1, 3, 4, 7, 9, 10] && $bal($page1) === ['10000.00', '9783.80', '10864.80', '9264.80', '9269.80', '8969.80']);
+check('R23 totals and closing cover the range: Soll 11\'086.00, Haben 2\'116.20, closing 8\'969.80 = the last running balance', $dec($page1->totalDebit) === '11086.00' && $dec($page1->totalCredit) === '2116.20'
+    && $dec($page1->closing) === '8969.80');
+check('R24 counter accounts: 1 → 2800 (one other account), 3 → «div.» (6500 and 1170), 4 → 1100, 7 → 6000', !$page1->lines[0]->hasSeveralCounterAccounts() && $page1->lines[0]->counterNumber === '2800'
+    && $page1->lines[1]->hasSeveralCounterAccounts() && $page1->lines[2]->counterNumber === '1100' && $page1->lines[3]->counterNumber === '6000' && $page1->lines[3]->counterCount === 1);
+check('R25 the lines carry the entry id for the link to the detail page, and the entry\'s text (edited text shown)', $page1->lines[3]->entryId === (int) $entryRow('2030-31', 7)['id'] && $page1->lines[3]->text === 'Miete Oktober (korrigiert)');
+$mid = $reports->accountStatement($bank, $range('2030-08-11', '2030-10-20'), 1);
+check('R26 from 11.8.: opening 9\'783.80 (entries 1 and 3 before «from»), lines 4, 7, 9, closing 9\'269.80', $dec($mid->opening) === '9783.80' && array_map(fn($l) => $l->entryNumber, $mid->lines) === [4, 7, 9] && $dec($mid->closing) === '9269.80');
+check('R27 the edges are inclusive: from 10.8. takes entry 3 (dated 10.8.) into the lines, not into the opening', (function () use ($reports, $bank, $range) {
+    $s = $reports->accountStatement($bank, $range('2030-08-10', '2030-10-20'), 1);
+    return $s->opening->toDecimal() === '10000.00' && $s->lines[0]->entryNumber === 3;
+})());
+$vat = $reports->accountStatement($em->getRepository(Account::class)->findOneBy(['number' => '2200']), $year, 1);
+check('R28 a liability on its natural side (credit positive): 2200 81.00 → 121.50 → 81.00 (the reversal takes it back)', $bal($vat) === ['81.00', '121.50', '81.00'] && $dec($vat->closing) === '81.00' && $vat->lines[2]->entryNumber === 6);
+check('R29 a page beyond the last shows the last and reports it (isBeyondLast); an account without lines has one empty page and closing = opening', (function () use ($reports, $bank, $year, $em) {
+    $beyond = $reports->accountStatement($bank, $year, 99)->paging;
+    $s      = $reports->accountStatement($em->getRepository(Account::class)->findOneBy(['number' => '1021']), $year, 1);
+    return $beyond->page === 1 && $beyond->isBeyondLast() && !$reports->accountStatement($bank, $year, 1)->paging->isBeyondLast()
+        && $s->lines === [] && $s->paging->pageCount === 1 && $s->closing->isZero();
+})());
+check('R30 Paging arithmetic: 0 rows → 1 page; 6 rows of 4 → 2 pages, page 2 starts at 4; page 0 → 1 (not «beyond»); page 3 of 2 → beyond', (new Paging(1, 4, 0))->pageCount === 1 && (new Paging(2, 4, 6))->offset() === 4 && (new Paging(0, 4, 6))->page === 1
+    && !(new Paging(0, 4, 6))->isBeyondLast() && (new Paging(3, 4, 6))->isBeyondLast() && throws(fn() => new Paging(1, 0, 6), \InvalidArgumentException::class));
+
+echo "R. … journal report\n";
+$journal = $reports->journal($year, 1);
+check('R31 the year: 9 entries (8 deleted), date order 1 2 3 4 5 6 7 9 10, lines loaded', $journal->paging->total === 9 && array_map(fn($e) => $e->getNumber(), $journal->entries) === [1, 2, 3, 4, 5, 6, 7, 9, 10]
+    && count($journal->entries[1]->getLines()) === 3);
+check('R32 Σ Soll and Σ Haben are each their OWN sum (15\'364.20 both); the reversal is in with its link', $dec($journal->totalDebit) === '15364.20' && $dec($journal->totalCredit) === '15364.20'
+    && $journal->entries[5]->isReversal() && $journal->entries[5]->getReversalOf()->getNumber() === 5);
+check('R32b rangeSummary() sums credit from the credit column — on a real imbalance (a SQL-written orphan line) the two totals differ', (function () use ($db, $em, $fy) {
+    $entryId = (int) $db->fetchOne("SELECT e.id FROM journal_entry e JOIN fiscal_year y ON y.id = e.fiscal_year_id WHERE y.code = '2030-31' AND e.number = 1");
+    $db->executeStatement('INSERT INTO journal_line (position, debit, credit, entry_id, account_id) VALUES (9, 0.00, 0.01, ?, (SELECT id FROM account WHERE number = ?))', [$entryId, '1000']);
+    $sum = $em->getRepository(JournalEntry::class)->rangeSummary($fy, '2030-07-01', '2031-06-30');
+    $db->executeStatement('DELETE FROM journal_line WHERE entry_id = ? AND position = 9', [$entryId]);
+    return $sum['debit'] === '15364.20' && $sum['credit'] === '15364.21';
+})());
+check('R33 October: 7 and 9 (the deleted 8 absent)', array_map(fn($e) => $e->getNumber(), $reports->journal($range('2030-10-01', '2030-10-31'), 1)->entries) === [7, 9]);
+check('R34 the part-2 list keeps its order (newest number first) after the hydrate change', array_map(fn($e) => $e->getNumber(), $em->getRepository(JournalEntry::class)->latestForYear($fy, 3)) === [10, 9, 7]);
+check('R34b a reversal dated in a LATER year (K5: 2028-29 reverses 2027-28/2): the reversed entry\'s year comes fetch-joined, no lazy proxy', (function () use ($wireDi) {
+    $em   = $wireDi();
+    $y    = $em->getRepository(FiscalYear::class)->findOneBy(['code' => '2028-29']);
+    $rev  = array_values(array_filter((new LedgerReports($em))->journal(new ReportRange($y, day('2028-07-15'), day('2028-07-15')), 1)->entries, fn($e) => $e->isReversal()));
+    $year = $rev[0]->getReversalOf()->getFiscalYear();
+    $lazy = $year instanceof \Doctrine\Persistence\Proxy ? !$year->__isInitialized() : (new \ReflectionClass($year))->isUninitializedLazyObject($year);
+    return count($rev) === 1 && $year->getCode() === '2027-28' && !$lazy;
+})());
+
+echo "R. … the report screens (trait + templates, rendered without a web server)\n";
+/** A request double for DI: the trait reads GET parameters only. */
+$useGet = function (array $get): void {
+    $_GET = $get;
+    DI::getInstance()->set('Request', fn() => new class { public function getGetParameter(string $p): mixed { return $_GET[$p] ?? null; } }, true);
+};
+/** A host double for the trait: captures the context and the partials the page adds. */
+$reportHost = function () {
+    return new class {
+        use ReportControllerTrait { trialBalanceAction as public; balanceSheetAction as public; incomeStatementAction as public; accountStatementAction as public; journalAction as public; }
+        public array $context = [];
+        public object $layoutManager;
+        public function __construct()
+        {
+            $this->layoutManager = new class {
+                public array $sections = [];
+                public function removeSection(string $s): void { unset($this->sections[$s]); }
+                public function addPartials(string $name, string $path, string $ns, string $section = 'main'): void { $this->sections[$section][] = $path . '/' . $name; }
+            };
+        }
+        protected function em() { return DI::getUnifiedEntityManager(); }
+        protected function html(array $context = []): \Z77\Core\Http\Response\HtmlResponse { $this->context = $context; return new \Z77\Core\Http\Response\HtmlResponse(null, $context); }
+    };
+};
+/** Renders a module-financial template with a partial() that resolves in the same tree. */
+$renderer = new class($package . '/res/view/templates/') {
+    public function __construct(private string $dir) {}
+    public function partial(string $path, array $context = [], ?string $ns = null): string
+    {
+        // Same scope rules as TemplateRenderer::renderIsolated(): prefixed locals, EXTR_SKIP.
+        return (function (string $z77TplPath, array $z77TplContext) { extract($z77TplContext, EXTR_SKIP); ob_start(); require $z77TplPath; return ob_get_clean(); })->call($this, $this->dir . $path . '.tpl.php', $context);
+    }
+};
+require_once __DIR__ . '/../packages/kernel/core/src/autoload/prod/php/Helper.php';
+$page = function (string $action, array $get) use ($useGet, $reportHost, $renderer): array {
+    $useGet($get);
+    $host = $reportHost();
+    $host->{$action . 'Action'}();
+    $html = '';
+    foreach (['tabs', 'hc2', 'main'] as $section) {
+        foreach ($host->layoutManager->sections[$section] ?? [] as $partial) {
+            $html .= $renderer->partial($partial, $host->context);
+        }
+    }
+    return [$host->context, $html, $host->layoutManager->sections];
+};
+$em = $wireDi();
+[$ctx, $html, $sections] = $page('trialBalance', ['year' => '2030-31']);
+check('R35 trial balance page: the report\'s own template in main, the tab row, the year switch in hc2', $sections['main'] === ['Backend/ReportController/trialBalance'] && $sections['tabs'] === ['Backend/ReportController/tabs'] && $sections['hc2'] === ['Backend/ReportController/yearSwitch']);
+check('R36 … renders the totals the Swiss way (15\'364.20), «Soll = Haben», a link to the account statement with the range', str_contains($html, "15&apos;364.20") && str_contains($html, 'Soll = Haben')
+    && str_contains($html, '/backend/finance/report/account-statement?account=1020&amp;year=2030-31&amp;from=2030-07-01&amp;to=2031-06-30'));
+[$ctx, $html] = $page('trialBalance', []);
+check('R37 no parameters: the year containing today, else the latest (currentOrLatest()), whole year, no notice', $ctx['range']->year->getCode() === $em->getRepository(FiscalYear::class)->currentOrLatest()->getCode()
+    && $ctx['range']->fromDay() === $ctx['range']->year->getStartDate()->format('Y-m-d') && $ctx['range']->toDay() === $ctx['range']->year->getEndDate()->format('Y-m-d') && $ctx['notices'] === []);
+[$ctx] = $page('trialBalance', ['year' => '2030-31', 'from' => '2029-01-01', 'to' => 'gestern']);
+check('R38 a date outside the year or not a date falls back to the year\'s bound and SAYS so (two notices); an unknown year too', $ctx['range']->fromDay() === '2030-07-01' && $ctx['range']->toDay() === '2031-06-30' && count($ctx['notices']) === 2
+    && count($page('trialBalance', ['year' => 'nope'])[0]['notices']) === 1 && $page('trialBalance', ['from' => ['x']])[0]['notices'] === []);
+[$ctx] = $page('trialBalance', ['year' => '2030-31', 'from' => '2030-10-01', 'to' => '2030-09-01']);
+check('R39 «from» after «to» → the whole year, with a notice', $ctx['range']->fromDay() === '2030-07-01' && $ctx['range']->toDay() === '2031-06-30' && count($ctx['notices']) === 1);
+[$ctx, $html] = $page('balanceSheet', ['year' => '2030-31']);
+check('R40 balance sheet page: Aktiven = Passiven, the result line «Verlust laufendes Jahr» −795.00, «Stichtag» instead of from/to, and the missing-opening note (not the first year)', str_contains($html, 'Aktiven = Passiven')
+    && str_contains($html, 'Verlust laufendes Jahr') && str_contains($html, '−795.00') && str_contains($html, 'Stichtag') && !str_contains($html, 'name="from"') && str_contains($html, 'Ohne Eröffnungsbuchung'));
+[$ctx, $html] = $page('incomeStatement', ['year' => '2030-31']);
+check('R41 income statement page: Ertrag 1\'005.00, Aufwand 1\'800.00, Verlust −795.00', str_contains($html, "1&apos;005.00") && str_contains($html, "1&apos;800.00") && str_contains($html, 'Verlust (Ertrag − Aufwand)'));
+[$ctx, $html] = $page('accountStatement', ['year' => '2030-31']);
+check('R42 account statement without an account: the form with the postable accounts, no report', $ctx['report'] === null && str_contains($html, 'Konto wählen') && str_contains($html, '<option value="1020"'));
+[$ctx, $html] = $page('accountStatement', ['year' => '2030-31', 'account' => '1020']);
+check('R43 … with 1020: «Anfangssaldo», «div.», the closing 8\'969.80, and the entry number linking to the journal detail', str_contains($html, 'Anfangssaldo') && str_contains($html, 'div.') && str_contains($html, "8&apos;969.80")
+    && str_contains($html, '/backend/finance/journal/detail?id=' . $entryRow('2030-31', 7)['id']));
+check('R44 … the year switch keeps the account and drops the dates; an unknown account says so', str_contains($html, '/backend/finance/report/account-statement?year=2030-31&amp;account=1020"')
+    && str_contains($page('accountStatement', ['year' => '2030-31', 'account' => '4711'])[1], 'gibt es nicht'));
+[$ctx, $html] = $page('journal', ['year' => '2030-31', 'from' => '2030-09-01', 'to' => '2030-09-30']);
+check('R45 journal page: September — the sale and its reversal with «Storno von 2030-31/5», the total line', str_contains($html, 'Rechnung R-2') && str_contains($html, 'Storno von 2030-31/5') && str_contains($html, 'Total Zeitraum (2 Buchungen)'));
+[$ctx, $html] = $page('accountStatement', ['year' => '2030-31', 'account' => '1020', 'page' => '5']);
+check('R45b ?page=5 of 1: the last page is shown AND a notice says so (like the date fallbacks)', $ctx['report']->paging->page === 1 && count($ctx['notices']) === 1
+    && str_contains($ctx['notices'][0], 'Seite 5 gibt es nicht') && str_contains($html, 'Seite 5 gibt es nicht'));
+check('R45c the journal page shows Σ Haben from its own sum next to Σ Soll', $page('journal', ['year' => '2030-31'])[0]['report']->totalCredit->toDecimal() === '15364.20');
+
+echo "R. … fragment slots: every financial screen adds its own header slots (review L5)\n";
+/** Host doubles for the part-1/2 traits — the same layout double as the reports. */
+$listHost = function (string $trait) {
+    $layout = new class {
+        public array $sections = [];
+        public function removeSection(string $s): void { unset($this->sections[$s]); }
+        public function addPartials(string $name, string $path, string $ns, string $section = 'main'): void { $this->sections[$section][] = $path . '/' . $name; }
+    };
+    $host = match ($trait) {
+        'journal' => new class { use JournalControllerTrait { listAction as public; } public array $context = []; public object $layoutManager;
+            protected function em() { return DI::getUnifiedEntityManager(); }
+            protected function html(array $context = []): \Z77\Core\Http\Response\HtmlResponse { $this->context = $context; return new \Z77\Core\Http\Response\HtmlResponse(null, $context); } },
+        'account' => new class { use AccountControllerTrait { listAction as public; } public array $context = []; public object $layoutManager;
+            protected function em() { return DI::getUnifiedEntityManager(); }
+            protected function html(array $context = []): \Z77\Core\Http\Response\HtmlResponse { $this->context = $context; return new \Z77\Core\Http\Response\HtmlResponse(null, $context); } },
+        'fiscal-year' => new class { use FiscalYearControllerTrait { listAction as public; } public array $context = []; public object $layoutManager;
+            protected function em() { return DI::getUnifiedEntityManager(); }
+            protected function html(array $context = []): \Z77\Core\Http\Response\HtmlResponse { $this->context = $context; return new \Z77\Core\Http\Response\HtmlResponse(null, $context); } },
+    };
+    $host->layoutManager = $layout;
+    $host->listAction();
+    return $host;
+};
+$slotHtml = fn($host, string $slot) => implode('', array_map(fn($p) => $renderer->partial($p, $host->context), $host->layoutManager->sections[$slot] ?? []));
+$useGet(['year' => '2030-31']);
+$journalHost = $listHost('journal');
+check('R51 journal list: hc1 = the fragment\'s «Buchung erfassen» (add?year=2030-31), hc2 = its fiscal-year switch — both from module-financial', $journalHost->layoutManager->sections['hc1'] === ['Backend/JournalController/addButton']
+    && $journalHost->layoutManager->sections['hc2'] === ['Backend/JournalController/yearSwitch']
+    && str_contains($slotHtml($journalHost, 'hc1'), '/backend/finance/journal/add?year=2030-31') && str_contains($slotHtml($journalHost, 'hc2'), '/backend/finance/journal/list?year=2030-31'));
+$accountHost = $listHost('account');
+$yearHost    = $listHost('fiscal-year');
+check('R52 account list and fiscal-year list: hc1 from the fragment (add / open)', $accountHost->layoutManager->sections['hc1'] === ['Backend/AccountController/addButton'] && str_contains($slotHtml($accountHost, 'hc1'), '/backend/finance/account/add')
+    && $yearHost->layoutManager->sections['hc1'] === ['Backend/FiscalYearController/openButton'] && str_contains($slotHtml($yearHost, 'hc1'), '/backend/finance/fiscal-year/open'));
+check('R53 the host carries no slot template for a financial screen any more (module-backend Finance/{Account,FiscalYear,Journal,Report}Controller)',
+    glob(__DIR__ . '/../packages/module-backend/res/view/templates/Finance/{Account,FiscalYear,Journal,Report}Controller/*', GLOB_BRACE) === []);
+$useGet([]);
+check('R54 one default-year rule: with no ?year the journal list and the reports open on currentOrLatest() — the year containing today, else the latest', (function () use ($listHost, $page, $em) {
+    $expected = $em->getRepository(FiscalYear::class)->currentOrLatest()?->getCode();
+    $today    = $em->getRepository(FiscalYear::class)->findByDate(new \DateTimeImmutable('today'))?->getCode();
+    return $expected !== null && ($today === null || $today === $expected)
+        && $listHost('journal')->context['year']->getCode() === $expected && $page('trialBalance', [])[0]['range']->year->getCode() === $expected;
+})());
+
+echo "R. … guards\n";
+$reportSources = array_merge(glob($package . '/src/Reports/*.php'), [$package . '/src/Services/LedgerReports.php', $package . '/src/Repositories/JournalLineRepository.php', $package . '/src/Ui/ReportControllerTrait.php'], glob($package . '/res/view/templates/Backend/ReportController/*.php'));
+$floaty = array_filter($reportSources, fn($f) => preg_match('/\(float\)|floatval\(|[?:(,]\s*float\b|\bfloat\s+\$|number_format\(|\bround\(|\/\s*100\b/',file_get_contents($f)) === 1);
+check('R46 no float anywhere in the report path — no (float), floatval, float type, number_format, round(), «/ 100» (source guard over ' . count($reportSources) . ' files)' . ($floaty ? ' — found in ' . implode(', ', array_map('basename', $floaty)) : ''), $floaty === [] && count($reportSources) >= 20);
+$sqlSource = file_get_contents($package . '/src/Repositories/JournalLineRepository.php');
+check('R47 the report SQL binds every value — no interpolation or concatenation into a statement', !str_contains($sqlSource, '{$') && preg_match("/'\s*\.\s*\\$/", $sqlSource) === 0
+    && !str_contains(file_get_contents($package . '/src/Repositories/JournalEntryRepository.php'), "BETWEEN ? AND ? ORDER BY entry_date, number LIMIT ' ."));
+check('R48 the aggregates are SQL over journal_line: LedgerReports never hydrates a JournalLine (no findBy/findAll/getLines)', !preg_match('/->(findBy|findAll|getLines)\(/', file_get_contents($package . '/src/Services/LedgerReports.php')));
+$reportActions = array_values(array_filter($methodsOf(ReportControllerTrait::class), fn($m) => str_ends_with($m, 'Action')));
+sort($reportActions);
+$traitSource = file_get_contents($package . '/src/Ui/ReportControllerTrait.php');
+check('R49 the report trait: five read-only pages — no POST, no CSRF, no write, no JavaScript', $reportActions === ['accountStatementAction', 'balanceSheetAction', 'incomeStatementAction', 'journalAction', 'trialBalanceAction']
+    && !preg_match('/#\[(Csrf|Fetch|HttpMethod)/', $traitSource) && !preg_match('/->(persist|remove|flush|run)\(/', $traitSource)
+    && array_filter(glob($package . '/res/view/templates/Backend/ReportController/*.php'), fn($f) => preg_match('/<script|data-fetch|onclick/i', file_get_contents($f)) === 1) === []);
+$backendConfig = require __DIR__ . '/../packages/module-backend/src/App/Config/backendConfig.inc.php';
+check('R50 the host: backend Finance/ReportController uses the trait, its layout delegates to ReportLayout, default action trial-balance', in_array(ReportControllerTrait::class, class_uses(\Z77\Module\Backend\Ui\Controllers\Finance\ReportController::class), true)
+    && (require __DIR__ . '/../packages/module-backend/src/Ui/Config/Finance/reportControllerConfig.inc.php') === ReportLayout::config()
+    && ($backendConfig['controllers']['finance']['ReportController']['defaultAction'] ?? null) === 'trial-balance');
+
+// ── P. volume: 20'000 lines ──────────────────────────────────────────────
+
+echo "P. Volume (10'000 entries / 20'000 lines, SQL-inserted into 2031-32)\n";
+$em = $wireDi();
+(new FiscalYearService($em))->open(new FiscalYear('2031-32', day('2031-07-01'), day('2032-06-30')));
+$fyId = (int) $db->fetchOne("SELECT id FROM fiscal_year WHERE code = '2031-32'");
+$acc  = fn(string $n) => (int) $db->fetchOne('SELECT id FROM account WHERE number = ?', [$n]);
+$t0   = microtime(true);
+// Synthetic, straight into the tables (not through the ledger — that is not what is measured):
+// entries 1…10'000 over the year, each debit one of three asset accounts, credit one of two revenue accounts.
+$db->executeStatement("INSERT INTO journal_entry (number, entry_date, text, kind, created_by, created_at, fiscal_year_id)
+    SELECT seq, DATE_ADD('2031-07-01', INTERVAL (seq % 366) DAY), CONCAT('Volumen ', seq), 'generated', 'volume', NOW(), ? FROM seq_1_to_10000", [$fyId]);
+$db->executeStatement('INSERT INTO journal_line (position, debit, credit, entry_id, account_id)
+    SELECT 1, 10.00 + (e.number % 100), 0.00, e.id, CASE e.number % 3 WHEN 0 THEN ? WHEN 1 THEN ? ELSE ? END FROM journal_entry e WHERE e.fiscal_year_id = ?', [$acc('1020'), $acc('1000'), $acc('1100'), $fyId]);
+$db->executeStatement('INSERT INTO journal_line (position, debit, credit, entry_id, account_id)
+    SELECT 2, 0.00, 10.00 + (e.number % 100), e.id, CASE e.number % 2 WHEN 0 THEN ? ELSE ? END FROM journal_entry e WHERE e.fiscal_year_id = ?', [$acc('3200'), $acc('3400'), $fyId]);
+$db->fetchAllAssociative('ANALYZE TABLE journal_entry, journal_line');   // returns a result set — fetched, not executed
+$insertSeconds = microtime(true) - $t0;
+$em      = $wireDi();
+$reports = new LedgerReports($em);
+$big     = ReportRange::wholeYear($em->getRepository(FiscalYear::class)->findOneBy(['code' => '2031-32']));
+$timed   = function (callable $fn) { $t = microtime(true); $r = $fn(); return [$r, microtime(true) - $t]; };
+[$tb, $tTb]   = $timed(fn() => $reports->trialBalance($big));
+[$bs, $tBs]   = $timed(fn() => $reports->balanceSheet($big));
+$bankBig      = $em->getRepository(Account::class)->findOneBy(['number' => '1020']);
+[$as1, $tAs1] = $timed(fn() => $reports->accountStatement($bankBig, $big, 1));
+[$asN, $tAsN] = $timed(fn() => $reports->accountStatement($bankBig, $big, 7));
+[$jr, $tJr]   = $timed(fn() => $reports->journal($big, 50));
+printf("       insert %.2fs · trial balance %.3fs · balance sheet %.3fs · account statement p1 %.3fs, p7 %.3fs · journal p50 %.3fs\n", $insertSeconds, $tTb, $tBs, $tAs1, $tAsN, $tJr);
+check('P1 20\'000 lines: trial balance balanced (Σ Soll = Σ Haben), balance sheet balanced', (int) $db->fetchOne('SELECT COUNT(*) FROM journal_line l JOIN journal_entry e ON e.id = l.entry_id WHERE e.fiscal_year_id = ?', [$fyId]) === 20000
+    && $tb->isBalanced() && $bs->isBalanced() && count($tb->rows) === 5);
+check('P2 1020 carries 3\'333 lines → 7 pages of 500; the LAST page\'s last running balance is the closing, its carry the page-6 end', $as1->paging->total === 3333 && $asN->paging->pageCount === 7 && $asN->paging->page === 7
+    && $asN->lines[count($asN->lines) - 1]->balance->equals($asN->closing) && $asN->carry->add($asN->lines[0]->debit)->subtract($asN->lines[0]->credit)->equals($asN->lines[0]->balance));
+check('P3 the journal pages through 10\'000 entries (page 50 of 50 at 200 each)', $jr->paging->pageCount === 50 && count($jr->entries) === 200 && $jr->entries[199]->getDate()->format('Y-m-d') >= $jr->entries[0]->getDate()->format('Y-m-d'));
+check(sprintf('P4 every report under 2 s at this volume (max %.3fs)', max($tTb, $tBs, $tAs1, $tAsN, $tJr)), max($tTb, $tBs, $tAs1, $tAsN, $tJr) < 2.0);
+$explain = fn(string $sql, array $params) => $db->fetchAllAssociative('EXPLAIN ' . $sql, $params);
+$planTb  = $explain('SELECT a.id, SUM(l.debit), SUM(l.credit) FROM journal_entry e JOIN journal_line l ON l.entry_id = e.id JOIN account a ON a.id = l.account_id WHERE e.fiscal_year_id = ? AND e.entry_date BETWEEN ? AND ? GROUP BY a.id', [$fyId, '2031-07-01', '2032-06-30']);
+$planAs  = $explain('SELECT l.id FROM journal_line l JOIN journal_entry e ON e.id = l.entry_id WHERE l.account_id = ? AND e.fiscal_year_id = ? AND e.entry_date BETWEEN ? AND ?', [$acc('1020'), $fyId, '2031-07-01', '2032-06-30']);
+$keyOf   = fn(array $plan, string $table) => array_values(array_filter($plan, fn($r) => $r['table'] === $table))[0]['key'] ?? null;
+echo '       EXPLAIN trial balance: ' . implode(' · ', array_map(fn($r) => $r['table'] . '=' . ($r['key'] ?? 'ALL') . '/' . $r['rows'], $planTb)) . "\n";
+echo '       EXPLAIN account statement: ' . implode(' · ', array_map(fn($r) => $r['table'] . '=' . ($r['key'] ?? 'ALL') . '/' . $r['rows'], $planAs)) . "\n";
+check('P5 EXPLAIN: the lines are reached through an index in both plans (entry_id / account_id FK), the entries by the primary key or (fiscal_year_id, entry_date) — no full scan of journal_line', $keyOf($planTb, 'l') !== null && $keyOf($planAs, 'l') !== null && $keyOf($planTb, 'e') !== null && $keyOf($planAs, 'e') !== null);
+
+$as2 = $reports->accountStatement($bankBig, $big, 2);
+check('P2b the page boundary at the production page size: page 2\'s «Übertrag» = page 1\'s last running balance; running balances chain across it', $as2->carry->equals($as1->lines[count($as1->lines) - 1]->balance)
+    && $as2->carry->add($as2->lines[0]->debit)->subtract($as2->lines[0]->credit)->equals($as2->lines[0]->balance) && count($as1->lines) === 500 && $as2->opening->equals($as1->opening));
+$useGet(['year' => '2031-32', 'account' => '1020', 'page' => '2']);
+[$ctx, $html] = $page('accountStatement', ['year' => '2031-32', 'account' => '1020', 'page' => '2']);
+check('P2c page 2 renders «Übertrag von Seite 1» without a date (not the range\'s «from»), and the pager', str_contains($html, 'Übertrag von Seite 1') && !str_contains($html, '<span class="be-list__cell">01.07.2031</span>')
+    && str_contains($html, 'be-pagination') && str_contains($html, 'Seite 2 von 7'));
+
+// ── C. a cycle in the chart must not hide a line (review L1) ─────────────
+
+echo "C. Statement blocks never hide an account the tree does not reach (cycle written past the validator)\n";
+// Two groups pointing at each other and a postable expense account under them —
+// what a database edit or an import could leave; the validator refuses it.
+$db->executeStatement("INSERT INTO account (number, name, type, postable, active, parent_id) VALUES ('9900', 'Zyklus A', 'expense', 0, 1, NULL), ('9901', 'Zyklus B', 'expense', 0, 1, NULL)");
+$db->executeStatement("UPDATE account SET parent_id = (SELECT id FROM (SELECT id FROM account WHERE number = '9901') t) WHERE number = '9900'");
+$db->executeStatement("UPDATE account SET parent_id = (SELECT id FROM (SELECT id FROM account WHERE number = '9900') t) WHERE number = '9901'");
+$db->executeStatement("INSERT INTO account (number, name, type, postable, active, parent_id) VALUES ('9902', 'Unter dem Zyklus', 'expense', 1, 1, (SELECT id FROM (SELECT id FROM account WHERE number = '9900') t))");
+$db->executeStatement("UPDATE number_range SET last_number = 10000 WHERE name = 'journal-entry.2031-32'");   // the volume entries were SQL-inserted with numbers 1…10'000
+$em = $wireDi();
+(new ManualEntryService($em, 'buchhalter'))->create(PostingRequest::manual(day('2031-08-01'), 'Aufwand im Zyklus', [PostingLine::debit('9902', chf('77.00')), PostingLine::credit('1020', chf('77.00'))]));
+$em     = $wireDi();
+$cycled = (new LedgerReports($em))->incomeStatement(ReportRange::wholeYear($em->getRepository(FiscalYear::class)->findOneBy(['code' => '2031-32'])));
+$flat   = array_values(array_filter($cycled->expense->lines, fn($l) => $l->number === '9902'));
+$top    = array_reduce(array_filter($cycled->expense->lines, fn($l) => $l->depth === 0), fn(?Money $s, $l) => $s === null ? $l->amount : $s->add($l->amount));
+check('C1 the unreached account is appended flat (depth 0, 77.00) and named in `unplaced`; the cycle groups are not shown', $cycled->expense->unplaced === ['9902'] && count($flat) === 1 && $flat[0]->depth === 0 && $flat[0]->amount->toDecimal() === '77.00'
+    && array_filter($cycled->expense->lines, fn($l) => in_array($l->number, ['9900', '9901'], true)) === []);
+check('C2 Σ of the depth-0 rows equals the block total (77.00 included) — nothing is hidden', $top !== null && $top->equals($cycled->expense->total) && $cycled->expense->total->toDecimal() === '77.00');
+$useGet(['year' => '2031-32']);
+check('C3 the income statement page shows the note naming the account', str_contains($page('incomeStatement', ['year' => '2031-32'])[1], 'Nicht im Kontenbaum erreichbar'));
 
 echo "\n" . ($fail === 0 ? "PASS — {$pass} checks" : "FAIL — {$fail} of " . ($pass + $fail) . " checks") . "\n";
 exit($fail === 0 ? 0 : 1);

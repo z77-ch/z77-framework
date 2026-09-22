@@ -863,3 +863,36 @@ body.backend {
 .backend-topbar__avatar--open {
     box-shadow: 0 0 0 2px var(--be-surface), 0 0 0 4px var(--be-accent);
 }
+
+// ── Print ──────────────────────────────────────────────────────────────────────
+// The financial reports (trial balance, balance sheet, income statement, account statement,
+// journal — financial.md) are printed from the browser, without JavaScript. On screen the shell
+// owns the viewport and scrolls INSIDE column 2: printed as it is, every sheet shows the chrome
+// and only the slice of the column that fits the viewport — a multi-page report cannot be
+// printed at all. For print the chrome goes and the shell becomes plain flow, so the content
+// runs over as many pages as it needs. `.be-noprint` hides what only works on screen (a report's
+// parameter form, its pager). Chrome only, no colours: every screen benefits, none changes.
+@media print {
+    body.backend {
+        display:  block;
+        height:   auto;
+        overflow: visible;
+    }
+    .be-shell,
+    .be-shell-col--2 {
+        display:  block;
+        overflow: visible;
+    }
+    .be-shell-topbar,
+    .be-shell-band,
+    .be-shell-tabs,
+    .be-shell-crumb,
+    .be-shell-col--1,
+    .be-shell__resizer,
+    .be-shell__backdrop,
+    .be-shell-banner,
+    .flash-messages,
+    .be-noprint {
+        display: none !important;
+    }
+}

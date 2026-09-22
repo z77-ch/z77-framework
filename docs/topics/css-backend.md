@@ -1,6 +1,6 @@
 # css-backend
 
-2026-07-03
+2026-09-22
 
 ## entry
 
@@ -54,7 +54,7 @@ packages/module-backend/res/scss/
 │   ├── _pagination.scss
 │   ├── _login.scss         Login box (Werkbank design)
 │   ├── _guest.scss         .be-guest — chrome-less full-page GUEST wrapper (login/setup)
-│   ├── _shell.scss         .be-shell* 3-column shell + .be-shell-add picker + topbar right cluster (.backend-topbar__env/__bell/__avatar) + body.backend base + own @media responsive
+│   ├── _shell.scss         .be-shell* 3-column shell + .be-shell-add picker + topbar right cluster (.backend-topbar__env/__bell/__avatar) + body.backend base + own @media responsive + @media print (chrome hidden, shell as plain flow, .be-noprint)
 │   ├── _shell-banner.scss  .be-shell-banner — shared Störer band at the top of the shell; users: crawl block (SEO-NOINDEX-001) + missing installation identity (ADR-030)
 │   ├── _subnav.scss        .backend-subnav + .backend-tree-*
 │   ├── _service-panel.scss .backend-service-panel (avatar dropdown)
@@ -175,6 +175,7 @@ packages/module-backend/res/view/templates/
 - When a v2 column may be dropped on a narrow pane → MUST add `.be-list__table--drop`, a second track list `--be-list-cols-sm`, and the SAME `data-priority` on both the `__col` and its `__cell`; without the modifier the pane scrolls instead, which is the safe default
 - When a v2 row needs an expandable detail (diff, subform, error list) → MUST use the `__disclosure-input` checkbox + `__detail` sibling; MUST NOT use `<details>/<summary>` (a `<summary>` swallows clicks on the switches and submit buttons inside the row) and MUST NOT add JS for it
 - When sorting or paging a v2 list → MUST use server-side links (`?sort=` / `?dir=` / `?page=`) with `.be-list__col[data-sort]` / `.be-pagination`; MUST NOT sort or page in JavaScript
+- When a backend screen must print over several pages (the financial reports) → MUST rely on the shell's `@media print` block in `components/_shell.scss` (chrome hidden, shell and column 2 as plain flow — on screen column 2 scrolls INSIDE the viewport, so an unchanged print shows one viewport slice) and mark screen-only parts (parameter form, pager) with `.be-noprint`; MUST NOT add a print stylesheet or a print button with JavaScript — the browser's print is the trigger (Rule 7)
 - When adding backend interactivity → MUST remain inline vanilla IIFE in `partials/footer.tpl.php`; MUST NOT introduce a JS build pipeline
 - When a surface needs resizable side-by-side panes (workspace, list + detail, tree + list + preview) → MUST use the shared `.z77-split` primitive (`kernel/shared`) with the handle contract `data-z77-split-root` / `data-z77-split="--var"` / `-min` / `-max`; MUST NOT write a second drag implementation and MUST NOT rename its classes to `be-*` (it renders in frontend and member hosts too — ADR-018 R5–R7)
 - When a `.z77-split` handle is NOT a DOM sibling of the pane it resizes (e.g. a grid overlay like the shell's) → MUST state `data-z77-split-dir="1|-1"`; sibling handles infer the direction and MUST NOT carry it

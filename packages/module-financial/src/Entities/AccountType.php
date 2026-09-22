@@ -19,4 +19,17 @@ enum AccountType: string
     case Equity    = 'equity';
     case Expense   = 'expense';
     case Revenue   = 'revenue';
+
+    /**
+     * The account's NATURAL side (the reports' sign convention, P2 part 3):
+     * an asset or an expense grows on the debit side, a liability, equity or
+     * revenue on the credit side. A report shows a balance POSITIVE on its
+     * natural side — debit − credit for a debit-normal type, credit − debit
+     * for the others — and negative when it stands on the opposite side (an
+     * overdrawn bank account, a revenue reduction larger than the revenue).
+     */
+    public function isDebitNormal(): bool
+    {
+        return $this === self::Asset || $this === self::Expense;
+    }
 }

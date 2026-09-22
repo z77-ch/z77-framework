@@ -49,6 +49,16 @@ class FiscalYearRepository extends DoctrineRepository
             ->getOneOrNullResult();
     }
 
+    /**
+     * The year a screen opens on when none is asked for: the year containing
+     * today, else the latest one; null without any year. The ONE rule the
+     * journal screen and the reports share.
+     */
+    public function currentOrLatest(): ?FiscalYear
+    {
+        return $this->findByDate(new \DateTimeImmutable('today')) ?? $this->latest();
+    }
+
     /** The year that ends last — the one a new year must follow — or null for an empty table. Doctrine-only (DQL). */
     public function latest(): ?FiscalYear
     {

@@ -1,6 +1,6 @@
 # Bauplan — order, debtor, financial, vat, contact, article
 
-**Status:** `[CONCEPT]` → P0 closed 2026-09-21 (ADR-039 to ADR-043 approved). P1 closed 2026-09-21. P2 parts 1 and 2 done 2026-09-22; part 3 (reports) next.
+**Status:** `[CONCEPT]` → P0 closed 2026-09-21 (ADR-039 to ADR-043 approved). P1 closed 2026-09-21. P2 parts 1–3 built 2026-09-22 (part 3, the reports, awaiting commit after review); next the P2 exit check, then P3 debtor.
 **Date:** 2026-09-18, updated 2026-09-21 (article model A1–A7 decided, Q7 answered, module cut and
 build phases final, all questions answered, external review worked in; the persistence-access
 question reopened ADR 2 on 2026-09-20 and was settled on 2026-09-21)
@@ -103,8 +103,26 @@ contract of `post()`/`reverse()` (unique-index failure at commit, no number cons
 inside the unit of work) is a rule binding the P3 debtor adapter; a reversal may be dated in the
 next fiscal year. Two owner questions stay open: locking `type` / `postable` once postings exist
 (FIN-TYPE-001) and deleting a wrongly opened fiscal year (FIN-FY-002).
-**Next: P2 part 3** — the reports (§5.5, ADR-042): trial balance, balance sheet, income statement,
-account statement, journal export as DBAL SQL over `journal_line`.
+**P2 part 3 built (2026-09-22, not yet reviewed / committed)** — the reports (§5.5): trial
+balance, balance sheet, income statement, account statement (Kontoblatt) and journal, as SQL
+aggregates over `journal_line` on the EntityManager's own connection
+(`JournalLineRepository`, Doctrine-only, every value bound), turned into `Money` from the
+decimal strings (`LedgerReports`), one fiscal year and a from–to range inside it per report;
+backend `/backend/finance/report/…` (one page each, tab row, GET parameters, month shortcuts,
+paging, printable from the browser through a new `@media print` block of the shell — no
+JavaScript). Decisions taken on the way, recorded in [`financial.md`](../topics/financial.md):
+balances positive on the account's natural side (the trial balance splits Saldo Soll / Haben
+instead); the balance sheet is a statement AT «to» from the year's first day, with the current
+result as a line in equity; the type decides the block, the parent chain the grouping (a mixed
+KMU group appears on both sides); account statement 500 lines and journal 200 entries per page,
+the running balance as a window function over the whole range. **No opening entry before P5**:
+every report reads one fiscal year, so a later year shows no carried-forward balances
+(FIN-REPORT-001 — owner: derived from the previous year, re-derivable until the close; no
+cross-year workaround). No export (CSV/PDF) yet. At 20'000 lines every report takes ≈ 0.1 s with
+the existing indexes — no new migration. Harness: `tests/module-financial.php`, 265 checks (review findings of the same day worked in).
+**P2 parts 1–3 are built. Next: the P2 exit check «manual bookkeeping usable»** (a live pass in
+a project installation: open a year, post, edit, delete, read and print every report — see
+`financial.md` pending), **then P3 debtor**.
 Framework-wide pending found on the way: module config override replaces instead of merging
 (BOOT-CONFIG-001 in `bootstrap.md`).
 

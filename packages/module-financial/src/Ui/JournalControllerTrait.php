@@ -120,12 +120,10 @@ trait JournalControllerTrait
         );
     }
 
-    /** The installation's base currency — what every amount of the ledger is in (ADR-042 decision 4). */
+    /** The installation's base currency — what every amount of the ledger is in (ADR-042 decision 4; read in `LedgerService::baseCurrency()`). */
     private function journalCurrency(): string
     {
-        return (string) DI::getConfigManager()
-            ->getBaseConfig(configName: 'config/systemConfig', throwError: false)
-            ->get('baseCurrency', 'CHF');
+        return LedgerService::baseCurrency();
     }
 
     /**
@@ -142,7 +140,7 @@ trait JournalControllerTrait
             }
         }
 
-        return $this->journalYears()->findByDate(new \DateTimeImmutable('today')) ?? $this->journalYears()->latest();
+        return $this->journalYears()->currentOrLatest();
     }
 
     /**
@@ -207,7 +205,7 @@ trait JournalControllerTrait
         $year  = $this->journalYear(DI::getRequest()->getGetParameter('year'));
         $limit = LedgerService::listLimit();
 
-        return $this->html([
+        $response = $this->html([
             'years'      => $years,
             'year'       => $year,
             'entries'    => $year === null ? [] : $this->journalEntries()->latestForYear($year, $limit),
@@ -218,6 +216,11 @@ trait JournalControllerTrait
             'fmt'        => static fn(?Money $m) => AmountFormat::of($m),
             'actionBase' => $this->journalListBase(),
         ]);
+        // The fragment owns its header slots (financial.md, «fragment slots»).
+        $this->layoutManager->addPartials('addButton', 'Backend/JournalController', self::JOURNAL_NS, 'hc1');
+        $this->layoutManager->addPartials('yearSwitch', 'Backend/JournalController', self::JOURNAL_NS, 'hc2');
+
+        return $response;
     }
 
     // ── detail ───────────────────────────────────────────────────────────

@@ -3,9 +3,9 @@
  * Journal list — hc1 (dark left slot): post a manual entry into the shown
  * fiscal year. A plain link to the entry PAGE (the form has n lines and a
  * server-side «Weitere Zeilen» — a page, not a modal; no JavaScript).
- * Auto-loaded by BackendAbstractController::loadHeaderSlots(); lives in
- * module-backend because the slot loader resolves against the backend
- * namespace for the mounting controller.
+ * Part of the fragment: the trait's `listAction()` adds it to the shell slot
+ * with `addPartials()` — the fragment owns its header slots, so they come
+ * along wherever it is mounted (ADR-018, Rule 8; financial.md).
  *
  * @var \Z77\Module\Financial\Entities\FiscalYear|null $year
  * @var string $actionBase

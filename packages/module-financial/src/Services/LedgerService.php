@@ -168,6 +168,21 @@ final class LedgerService
     }
 
     /**
+     * The installation's base currency — what every amount of the ledger is
+     * in (ADR-042 decision 4): `systemConfig → baseCurrency`, the same key
+     * the Doctrine bootstrap hands `MoneyType` (which exposes no getter, and
+     * asking it would tie the caller to the driver having booted first). The
+     * ONE place this module reads it: the manual-entry form parses amounts in
+     * it, the reports turn SQL sums into `Money` in it.
+     */
+    public static function baseCurrency(): string
+    {
+        return (string) DI::getConfigManager()
+            ->getBaseConfig(configName: 'config/systemConfig', throwError: false)
+            ->get('baseCurrency', 'CHF');
+    }
+
+    /**
      * How many entries the journal screen shows per fiscal year at most —
      * financialConfig `journalListLimit`, default {@see DEFAULT_LIST_LIMIT}
      * (the `ContactService::listLimit()` model). Fails loudly instead of

@@ -91,6 +91,13 @@ return [
             // entry: the `list` convention resolves /backend/system/system to a
             // listAction that does not exist → 404 by design (ADR-005).
         ],
+        'finance' => [
+            // The ledger reports (module-financial, plan §5.5) have no list —
+            // the trial balance is their first page.
+            'ReportController' => [
+                'defaultAction' => 'trial-balance',
+            ],
+        ],
         'documents' => [
             // Byte delivery only (Drive preview/thumbnail + download) — deviates
             // from the `list` convention only.
