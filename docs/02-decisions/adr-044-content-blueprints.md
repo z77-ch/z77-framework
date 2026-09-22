@@ -1,7 +1,7 @@
 # ADR-044 — Content blueprints: a fixed, keyed block structure per document
 
 **Status:** `[APPROVED]`
-**Date:** 2026-09-21
+**Date:** 2026-09-21 · addendum 2026-09-22 (variants and preview)
 
 > **Note 2026-09-21 — first consumer (zihlundsee.ch, all pages).** Link target `tel`
 > added (default targets now page, media, external, mailto, tel); `links.newTab`
@@ -178,6 +178,50 @@ changed document yields "neu laden", not an overwrite.
 3. **Blueprint per slug.** No slug patterns: two matching patterns need a
    precedence rule nobody sees. Several slugs sharing one structure reference
    the same definition in code — explicit, one line per slug.
+
+## Addendum 2026-09-22 — Variants and preview (text release)
+
+**Problem.** A save in the editor is live at once; `active` only hides a whole
+document. A writer delivery touches every page and must not stand half live, and
+the client wants to see it before it goes out.
+
+**Decision (Peter, zihlundsee session 2026-09-22).** No separate release
+mechanism, no config file: the variant is part of the document's name.
+
+- **Identity** is (slug, language, variant). `variant` is an optional key
+  (`#[Entity(optionalKeys: ['variant'])]`): the live copy keeps its file
+  `<slug>.<lang>.json`, a variant is `<slug>.<lang>.<key>.json`. Existing files
+  are not renamed.
+- **A set** is every document with the same key (`herbst-a7f3k2` = a readable
+  name + 6 random hex, `ContentPreview::newKey()`). A set only holds the documents
+  it changes.
+- **Preview** is the URL parameter `?preview=<key>`: each document is read in the
+  variant where one exists, live otherwise (lookup: variant → live in the
+  request language, then the same in the default language). Callers pass the
+  key explicitly (`ContentService::view($slug, $lang, ContentPreview::key())`);
+  the service never reads the request.
+- **Carried by `localizedUrl()`.** Every URL it builds gets the request's
+  `preview` parameter, so a preview stays a preview from page to page. The state
+  is in the URL only — no cookie, no session (the "no hidden cross-request
+  state" rule). A form posted from a preview is a real submit.
+- **Never cached, never indexed.** `PageCachePolicy` returns NewPage for any
+  preview request (stated explicitly, not left to the query-string rule), and the
+  frontend head emits `noindex, nofollow`. The frontend skeleton has a body slot
+  `preview` for a project's notice ("this is not the live text").
+- **Publish** a set in the backend: each live copy is archived as a variant of
+  one archive set `alt-YYYYMMDD-HHMM`, the variant becomes the live copy, the
+  variant file is removed. Rollback = publish the archive set. Not atomic across
+  files (each file write is); a document that had no live copy before is not
+  removed by a rollback.
+- **Cleanup is the user's.** The editor lists every variant and archive; nothing
+  expires on its own.
+
+**Rejected:** *a content-set release with a working copy of all documents* (heavier;
+copies documents that do not change) · *door-based switch* (`next` reads a
+different file than `current`) — both doors read the same `shared/data`, and the
+hostname would couple a code release to a text preview; on zihlundsee `zihl.z77.ch`
+even answers from `next` · *a cookie that remembers the preview* — hidden
+cross-request state.
 
 ## Rejected Alternatives
 

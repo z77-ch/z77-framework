@@ -200,6 +200,9 @@ $ceUnknownBlock = function (array $block, bool $orphan = false): string {
     <div class="be-modal__header">
         <h2 class="be-modal__title"><?= $isNew ? 'Neuer Inhalt' : 'Inhalt bearbeiten' ?></h2>
         <span class="be-lang-tag" title="Bearbeitungssprache"><?= e(strtoupper($content->getLanguage())) ?></span>
+        <?php if (!$content->isLive()): ?>
+        <span class="be-lang-tag" title="Variante — erscheint erst nach «Satz veröffentlichen» live">Variante <?= e($content->getVariant()) ?></span>
+        <?php endif; ?>
     </div>
     <div class="be-modal__body">
         <?php if ($validator->hasErrors()): ?>
@@ -209,7 +212,7 @@ $ceUnknownBlock = function (array $block, bool $orphan = false): string {
                 <div><?= e($error) ?></div>
                 <?php endforeach; ?>
                 <button type="button" class="be-btn be-btn--ghost be-btn--sm" style="margin-top:.5rem"
-                        data-fetch-get="/backend/content/content/edit?slug=<?= e(urlencode($content->getSlug())) ?>&amp;language=<?= e(urlencode($content->getLanguage())) ?>">Neu laden</button>
+                        data-fetch-get="/backend/content/content/edit?slug=<?= e(urlencode($content->getSlug())) ?>&amp;language=<?= e(urlencode($content->getLanguage())) ?>&amp;variant=<?= e(urlencode($content->getVariant())) ?>">Neu laden</button>
             <?php else: ?>
                 Bitte überprüfe die markierten Eingaben.
             <?php endif; ?>

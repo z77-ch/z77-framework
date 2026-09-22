@@ -10,13 +10,15 @@ use Z77\Shared\Traits\ArrayMappable;
 /**
  * A slug-addressed, self-contained content document.
  *
- * Identity is (slug, language) — stored as one file per record in document mode
- * (data/content/<slug>.<language>.json). The body is an ordered array of
+ * Identity is (slug, language, variant) — stored as one file per record in
+ * document mode: data/content/<slug>.<language>.json for the live copy (variant
+ * ''), data/content/<slug>.<language>.<variant>.json for a variant (see
+ * {@see \Z77\Shared\Content\ContentPreview}). The body is an ordered array of
  * heterogeneous blocks ([{type, ...fields}, ...]); rendering is server-controlled
  * via the BlockRegistry (see Z77\Shared\Content). Not page-bound — a controller
  * composes a page by loading one or more documents by slug.
  */
-#[Entity('file', 'content', invalidatesCache: true, perRecord: true, keyBy: ['slug', 'language'])]
+#[Entity('file', 'content', invalidatesCache: true, perRecord: true, keyBy: ['slug', 'language', 'variant'], optionalKeys: ['variant'])]
 class Content
 {
     use ArrayMappable;
@@ -33,6 +35,13 @@ class Content
 
     #[Clean('ident')]
     private string $language = '';
+
+    /**
+     * '' = the live copy. Otherwise the key of the variant set this document
+     * belongs to; normalized by {@see \Z77\Shared\Content\ContentPreview::normalize()}
+     * so the key in the file and the key in the filename never differ.
+     */
+    private string $variant = '';
 
     #[Clean('text')]
     private string $title = '';
@@ -55,6 +64,8 @@ class Content
 
     public function getSlug(): string { return $this->slug; }
     public function getLanguage(): string { return $this->language; }
+    public function getVariant(): string { return $this->variant; }
+    public function isLive(): bool { return $this->variant === ''; }
     public function getTitle(): string { return $this->title; }
     public function isActive(): bool { return $this->active; }
     public function getBlocks(): array { return $this->blocks; }
@@ -117,6 +128,7 @@ class Content
 
     public function setSlug(string $slug): void { $this->slug = $slug; }
     public function setLanguage(string $language): void { $this->language = $language; }
+    public function setVariant(string $variant): void { $this->variant = \Z77\Shared\Content\ContentPreview::normalize($variant); }
     public function setTitle(string $title): void { $this->title = $title; }
     public function setActive(bool $active): void { $this->active = $active; }
 

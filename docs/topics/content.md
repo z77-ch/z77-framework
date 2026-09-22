@@ -1,6 +1,6 @@
 # content
 
-2026-09-21
+2026-09-22
 
 ## entry
 
@@ -24,6 +24,8 @@ SOURCE=/packages/kernel/shared/src/Content/BlockSchemaValidator.php
 SOURCE=/packages/kernel/shared/src/Content/Blueprint.php
 SOURCE=/packages/kernel/shared/src/Content/ContentExtensions.php
 SOURCE=/packages/kernel/shared/src/Content/ContentView.php
+SOURCE=/packages/kernel/shared/src/Content/ContentPreview.php
+SOURCE=/packages/kernel/shared/src/Services/ContentVariantService.php
 SOURCE=/packages/kernel/shared/src/Content/Renderer/HeadingRenderer.php
 SOURCE=/packages/kernel/shared/src/Content/Renderer/TextRenderer.php
 SOURCE=/packages/kernel/shared/src/Content/Renderer/ListRenderer.php
@@ -66,6 +68,12 @@ Content is a **slug-addressed, self-contained document**, not page-bound. Identi
     - Descriptors gain `required`, `maxLength` (scalars), `min`/`max` (lists), `inline` (`bold|italic|link|break`) and `links` (`targets` `page|media|external|mailto|tel|action`, `localize`, `newTab` — external links only). `ContentValidator` checks values against the schema via `BlockSchemaValidator`.
     - Read path: `ContentService::view($slug, $lang)` → `ContentView` (document + schemas + actions); `keyed($key)` returns a schema-aware `BlockView` whose `html()` / `listHtml()` apply only the field's profile (no `inline` = plain text). `localize` runs page links through `localizedUrl()` in the DOCUMENT's language; `/media/…`, external, mailto never. `[Text](action:<name>)` renders the declared fallback href + attributes; an unknown action stays literal. `Content::keyed()` is the raw (legacy-formatting) counterpart.
     - Backend: a slug with a blueprint opens in blueprint mode (slot cards labelled, no block add/move/remove, list `+`/`×` bounded by `min`/`max`, a hint per field naming the allowed formatting, orphans read-only).
+- **Variants and preview (ADR-044 addendum 2026-09-22)** — a text release without a release mechanism:
+    - Identity is `(slug, language, variant)`; `variant` is an optional key (`#[Entity(optionalKeys: ['variant'])]`, [`persistence-file.md`](persistence-file.md)), so the live copy stays `<slug>.<lang>.json` and a variant is `<slug>.<lang>.<key>.json`. Every document with the same key is one **set** (a writer delivery); a set holds only the documents it changes. Keys: `ContentPreview::newKey('herbst')` → `herbst-a7f3k2`.
+    - **Preview** = `?preview=<key>` on any frontend URL. `ContentService::find/view/render($slug, $lang, $variant)` reads variant → live in the request language, then variant → live in the default language. The caller passes `ContentPreview::key()` explicitly — the service does not read the request.
+    - `localizedUrl()` carries the request's `preview` parameter into every URL it builds (`ContentPreview::carry()`), so navigation stays in the preview. URL only: no cookie, no session. A hardcoded `href="/"` drops out of the preview — build it with `localizedUrl()`.
+    - A preview request is never page-cached (`PageCachePolicy`, explicit) and gets `noindex, nofollow` (frontend `partials/head/meta`). The frontend skeleton has a body slot `preview` for a "this is not live" notice.
+    - **Publish** (backend, `ContentVariantService::publish($key)`): each live copy is archived into one archive set `alt-YYYYMMDD-HHMM`, the variant becomes live, the variant file is removed. Rollback = publish the archive set. Not atomic across files. Variants and archives stay until the user deletes them.
 - Unknown block types render to an empty string (safe default).
 - **The registry is assembled on demand via `BlockRegistry::assemble()`** (NOT a DI service — see [`../02-decisions/adr-012-content-services-not-in-di.md`](../02-decisions/adr-012-content-services-not-in-di.md)) from `DefaultBlockRegistry::create()` (the four core types) **plus every module's `contentBlocks` config** (renderer FQCNs, instantiated no-arg; walked via the DI `ModuleManager`). This is the extension point: a module ships design-specific block types without touching core. The frontend ships `hero` / `features` / `prose-section` (the `fe-*` markup) — declared in `frontendConfig.inc.php`. `BlockRegistry::types()` lists all known types (for the backend editor). A consumer assembles once and holds it locally — not per block/slug.
 - **Two presentation modes over the same blocks** (one storage, one editor — only the page template differs):
@@ -132,6 +140,9 @@ template: <?= $contentHtml ?>   // already-safe HTML, no re-escape
 - When a field needs inline formatting on the schema-aware path → MUST declare it in the descriptor's `inline` (and `links`); the default is plain text. MUST read such fields through `ContentView::keyed()` — `Content::block()` / `keyed()` keep the legacy formatting
 - When a link leads to an action (popup etc.) → MUST use `[Text](action:<name>)` with the action declared in `contentActions`; MUST NOT reinterpret an ordinary URL as an action
 - When saving a content document in the backend → MUST guard with `entity_hash` + `guardStoredState()` before `mapFromArray()`
+- When a frontend page reads content → MUST pass `ContentPreview::key()` as the variant (`view($slug, $lang, ContentPreview::key())`), or the page ignores previews; MUST NOT read `?preview=` anywhere else or remember it in a cookie/session (the URL is the only carrier)
+- When building an internal link on a page that can be previewed → MUST go through `localizedUrl()` (it carries the preview); a literal `href="/…"` leaves the preview
+- When addressing a content document in the backend → the identity is `(slug, language, variant)`; `variant` MUST be forced back from the loaded record on save like slug and language (a crafted body must not move a document into another set)
 
 ## see also
 

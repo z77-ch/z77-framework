@@ -1,5 +1,5 @@
 <?php
-/** @var \Z77\Shared\Entities\Content[] $contents */
+/** @var \Z77\Shared\Entities\Content[] $contents   sorted: slug, live first, then variants by key */
 /** @var string $editLanguage   the active content-editing language (session-sticky) */
 /** @var array<int,string> $editLanguages   all servable languages (config/i18n) */
 ?>
@@ -14,19 +14,21 @@
 
             <?php foreach ($contents as $c):
                 $blockCount = count($c->getBlocks());
-                $meta = $c->getLanguage() . ' · ' . $blockCount . ' Block' . ($blockCount === 1 ? '' : 'e') . ($c->isActive() ? '' : ' · inaktiv');
+                $meta = ($c->isLive() ? '' : 'Variante ' . $c->getVariant() . ' · ')
+                      . $c->getLanguage() . ' · ' . $blockCount . ' Block' . ($blockCount === 1 ? '' : 'e') . ($c->isActive() ? '' : ' · inaktiv');
+                $qs   = 'slug=' . rawurlencode($c->getSlug()) . '&language=' . rawurlencode($c->getLanguage()) . '&variant=' . rawurlencode($c->getVariant());
             ?>
-            <div class="be-tree__node<?= $c->isActive() ? '' : ' be-tree__node--inactive' ?>" style="--node-depth:0"
-                 data-content-slug="<?= e($c->getSlug()) ?>" data-content-lang="<?= e($c->getLanguage()) ?>">
+            <div class="be-tree__node<?= $c->isActive() ? '' : ' be-tree__node--inactive' ?>" style="--node-depth:<?= $c->isLive() ? 0 : 1 ?>"
+                 data-content-slug="<?= e($c->getSlug()) ?>" data-content-lang="<?= e($c->getLanguage()) ?>" data-content-variant="<?= e($c->getVariant()) ?>">
                 <div class="be-tree__row">
                     <span class="be-tree__toggle" aria-hidden="true"></span>
                     <label class="be-switch be-switch--sm be-tree__switch" title="Aktiv schalten">
                         <input type="checkbox" class="be-switch__input"
-                               data-fetch-toggle="/backend/content/content/toggle-active?slug=<?= e(rawurlencode($c->getSlug())) ?>&language=<?= e(rawurlencode($c->getLanguage())) ?>"<?= $c->isActive() ? ' checked' : '' ?>>
+                               data-fetch-toggle="/backend/content/content/toggle-active?<?= e($qs) ?>"<?= $c->isActive() ? ' checked' : '' ?>>
                         <span class="be-switch__track"><span class="be-switch__thumb"></span></span>
                     </label>
                     <button type="button" class="be-tree__menu" title="Aktionen"
-                            data-fetch-get="/backend/content/content/actions?slug=<?= e(rawurlencode($c->getSlug())) ?>&language=<?= e(rawurlencode($c->getLanguage())) ?>">⋮</button>
+                            data-fetch-get="/backend/content/content/actions?<?= e($qs) ?>">⋮</button>
                     <span class="be-tree__name"><?= e($c->getTitle() !== '' ? $c->getTitle() : $c->getSlug()) ?></span>
                     <span class="be-tree__url"><?= e($c->getSlug()) ?></span>
                     <span class="be-tree__route"><?= e($meta) ?></span>
