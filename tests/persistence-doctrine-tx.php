@@ -608,21 +608,24 @@ namespace {
     check('J12 a 64-byte name passes', $tx->run(fn() => $ranges->next(str_repeat('n', 64))) === 1);
 
     echo "J. … explicit creation (DOCTRINE-NR-003)\n";
-    $ranges->create('journal-entry.2027');
-    check('J13 create() outside a transaction: row committed at 0, no number consumed', $lastNumber('journal-entry.2027') !== false && (int) $lastNumber('journal-entry.2027') === 0);
+    $created = $ranges->create('journal-entry.2027');
+    check('J13 create() outside a transaction: row committed at 0, no number consumed, answers true (new)', $created === true && $lastNumber('journal-entry.2027') !== false && (int) $lastNumber('journal-entry.2027') === 0);
     check('J14 … the first draw still returns 1', $tx->run(fn() => $ranges->next('journal-entry.2027')) === 1);
-    $ranges->create('journal-entry.2027');
-    $ranges->create('credit-note');
-    check('J15 create() on an existing range is idempotent: nothing reset, nothing consumed', (int) $lastNumber('journal-entry.2027') === 1 && (int) $lastNumber('credit-note') === 1);
+    $again  = $ranges->create('journal-entry.2027');
+    $again2 = $ranges->create('credit-note');
+    check('J15 create() on an existing range is idempotent: nothing reset, nothing consumed, answers false (existed)', $again === false && $again2 === false && (int) $lastNumber('journal-entry.2027') === 1 && (int) $lastNumber('credit-note') === 1);
     check('J16 … the sequence goes on', $tx->run(fn() => $ranges->next('credit-note')) === 2);
-    $tx->run(fn() => $ranges->create('journal-entry.2028'));
-    check('J17 create() inside run() is committed with the unit of work', (int) $lastNumber('journal-entry.2028') === 0);
-    thrown(fn() => $tx->run(function () use ($ranges) {
-        $ranges->create('journal-entry.2029');
+    $inRun = $tx->run(fn() => $ranges->create('journal-entry.2028'));
+    check('J17 create() inside run() is committed with the unit of work, answers true', $inRun === true && (int) $lastNumber('journal-entry.2028') === 0);
+    $rolledBackCreate = null;
+    $doomedOpening = function () use ($ranges, &$rolledBackCreate) {
+        $rolledBackCreate = $ranges->create('journal-entry.2029');
         throw new \RuntimeException('opening failed');
-    }), \RuntimeException::class);
-    check('J18 … and rolled back with it', $lastNumber('journal-entry.2029') === false);
+    };
+    thrown(fn() => $tx->run($doomedOpening), \RuntimeException::class);
+    check('J18 … and rolled back with it (it had answered true inside)', $rolledBackCreate === true && $lastNumber('journal-entry.2029') === false);
     check('J19 create() refuses a bad name before SQL', thrown(fn() => $ranges->create(' padded'), \InvalidArgumentException::class) !== null && $lastNumber(' padded') === false);
+    check('J19b create() after the rollback answers true again — the row is new once more', $ranges->create('journal-entry.2029') === true && $ranges->create('journal-entry.2029') === false);
 
     // ── K. NumberRange under REAL concurrency: parallel processes ────────────
 

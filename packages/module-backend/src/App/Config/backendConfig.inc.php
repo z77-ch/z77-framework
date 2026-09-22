@@ -11,8 +11,9 @@ return [
         'documents' => 'drive',
         'service'   => 'backup',
         // Business master data of the order/debtor/financial plan (ADR-040):
-        // tax codes (module-vat) now, accounts and invoices later. The mounts
-        // resolve only in projects that install the owning module.
+        // tax codes (module-vat), chart of accounts and fiscal years
+        // (module-financial); invoices later. The mounts resolve only in
+        // projects that install the owning module.
         'finance'   => 'tax-code',
         // Contacts with typed addresses (module-contact, plan §4a) — the
         // party debtor and order share. Same mount pattern as `finance`.

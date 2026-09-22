@@ -120,17 +120,26 @@ class NumberRangeRepository extends DoctrineRepository
      * lock, so a later `next()` in the same unit of work does not have to
      * upgrade a shared one.
      *
+     * Answers whether the row was NEW: `true` = inserted at 0, `false` = the
+     * range already existed (left untouched, its `last_number` unchanged). A
+     * caller for whom an existing range means a conflict — the ledger opening
+     * a fiscal year whose range is left over — refuses on `false` instead of
+     * silently continuing an old sequence. Read from the affected rows of the
+     * statement: MariaDB reports 1 for an insert and 0 for a duplicate whose
+     * update changed nothing (the connection does not set `FOUND_ROWS`).
+     *
      * Doctrine-only (ADR-039 decision 8): SQL on the driver's connection.
      *
+     * @return bool true = the range was created now, false = it existed already
      * @throws \InvalidArgumentException for an empty, padded or over-long name
      */
-    public function create(string $range): void
+    public function create(string $range): bool
     {
         $this->assertName($range);
 
         $table = NumberRange::TABLE;
         try {
-            $this->connection()->executeStatement(
+            $affected = $this->connection()->executeStatement(
                 "INSERT INTO {$table} (name, last_number) VALUES (?, 0) ON DUPLICATE KEY UPDATE last_number = last_number",
                 [$range]
             );
@@ -138,6 +147,8 @@ class NumberRangeRepository extends DoctrineRepository
             $this->markTransactionRollbackOnly();
             throw $e;
         }
+
+        return (int) $affected === 1;
     }
 
     private function assertName(string $range): void

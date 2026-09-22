@@ -8,7 +8,7 @@ question reopened ADR 2 on 2026-09-20 and was settled on 2026-09-21)
 in wdv-6.2.2 and decisions D1–D8 (§7 there). This plan does not repeat the wdv analysis.
 **ADRs:** ADR-039 to ADR-043, approved 2026-09-21 (§10).
 
-## Where we continue (as of 2026-09-21, end of session)
+## Where we continue (as of 2026-09-22)
 
 **What this plan builds:** order processing open to many sources, financial bookkeeping, receivables
 management, article management. Nothing else. Subscriptions, shipping and a shop are applications on
@@ -65,8 +65,21 @@ ESTV mapping deferred to P5, snapshot serialisation to P3 — topic [`vat.md`](.
 **`module-contact` done** (Doctrine contact with n typed addresses, file-based `AddressType`, first
 module migration, backend `/backend/contact/…`; `z77-db migrate` on `next` is in the deploy
 checklist — topic [`contact.md`](../topics/contact.md)). **P1 is complete** (exit criteria met).
-**Next: P2** — `module-financial`: accounts, fiscal years/periods (opening a year creates its
-`NumberRange` via `create()`), manual entries with change log, `LedgerService`, reports (§5, ADR-042).
+**P2 part 1 done (2026-09-22)** — `module-financial` package with the chart of accounts and the
+fiscal years/periods (topic [`financial.md`](../topics/financial.md), `tests/module-financial.php`,
+the module's first migration `Version20260922071232`, backend `/backend/finance/account` and
+`/backend/finance/fiscal-year`). Owner decisions of 2026-09-22: (1) **periods are calendar months**,
+derived when a year is opened and clipped to its bounds; (2) the **KMU chart comes by button** —
+«KMU-Kontenrahmen übernehmen» only while the chart is empty, not as installer seed or migration,
+so a migrated wdv chart (P5b) never gets it forced on it; (3) **five account types** — `equity`
+separate from `liability`, so the balance sheet splits equity by type without a number rule;
+(4) **free fiscal-year dates** (deviating, shortened, extended years; at most 24 months,
+contiguous). Follow-on decision (orchestrator): a fiscal year carries a **`code`** (`2026`,
+`2026-27`, proposed from the dates, immutable) and its range is `journal-entry.{code}` — two years
+can start in the same calendar year, so the start year cannot name the range. Opening a year creates
+that range at 0 through `NumberRange::create()` in the same unit of work (DOCTRINE-NR-003 resolved).
+**Next: P2 part 2** — journal (`JournalEntry` / `JournalLine`), manual entries with change log,
+`LedgerService`; then part 3, the reports (§5, ADR-042).
 Framework-wide pending found on the way: module config override replaces instead of merging
 (BOOT-CONFIG-001 in `bootstrap.md`).
 
@@ -503,7 +516,7 @@ called from outside (§7).
 
 | Entity | Storage | Why |
 |---|---|---|
-| `Account` (number, name, type asset/liability/expense/revenue, parent for grouping, active) | Doctrine | referenced by every line; reports join by type/group |
+| `Account` (number, name, type asset/liability/equity/expense/revenue — five, owner 2026-09-22 — parent group, postable, active) | Doctrine | referenced by every line; reports join by type/group |
 | `FiscalYear`, `Period` (with close state) | Doctrine | locks are checked inside the posting transaction |
 | `JournalEntry` (header) + `JournalLine` | Doctrine | volume, transactions, SQL reports |
 | `EntryChange` (change log of manual entries) | Doctrine | traceability, see §5.3 |
@@ -511,7 +524,9 @@ called from outside (§7).
 | `VatReturn` (period, method, totals per form field, state) | Doctrine | references the period and its entries |
 | Settings (VAT method, **VAT-return rounding account**, VAT payable/settlement accounts, retained earnings) | file config | single values, one place (Rule 2) |
 
-Default chart: Swiss SME chart of accounts (KMU-Kontenrahmen) as first-install seed.
+Default chart: Swiss SME chart of accounts (KMU-Kontenrahmen), shipped as a resource file and
+adopted by a button **only into an empty chart** — not a first-install seed (owner, 2026-09-22: a
+migrated chart must not get it forced on it).
 
 ### 5.2 Journal entry
 

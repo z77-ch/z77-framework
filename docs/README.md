@@ -71,6 +71,7 @@ Structure is enforced by `npm run docs:check` ([docs-lint/STANDARD.md](../docs-l
 | documents, DMS, drive, upload, delivery | [topics/documents.md](topics/documents.md) |
 | entities, hydration, entity data handling | [topics/entity-data-handling.md](topics/entity-data-handling.md) |
 | fetch, AJAX, CSRF, form validation | [topics/fetch.md](topics/fetch.md) |
+| financial / Finanzbuchhaltung, bookkeeping / ledger, account / Konto, chart of accounts / Kontenplan, KMU-Kontenrahmen, account type, fiscal year / Geschäftsjahr, period / Periode, period state, journal-entry range, module-financial | [topics/financial.md](topics/financial.md) |
 | forms, public form / formular, contact form fields, form validation rules, honeypot, blur check | [topics/forms.md](topics/forms.md) |
 | i18n, languages, locale switching | [topics/i18n.md](topics/i18n.md) |
 | import, data adoption, seed records into existing installation, wdv migration, ImportIdentity | [topics/import.md](topics/import.md) |
