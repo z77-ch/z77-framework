@@ -122,6 +122,19 @@ check('carry after bare ?', $c === '/wohnen?preview=k', $c);
 check('carry null key → unchanged', ContentPreview::carry('/wohnen', null) === '/wohnen');
 check('carry empty key → unchanged', ContentPreview::carry('/wohnen', '') === '/wohnen');
 
+$w = ContentPreview::withoutPreview('/wohnen?preview=k');
+check('withoutPreview drops the only param and the ?', $w === '/wohnen', $w);
+$w = ContentPreview::withoutPreview('/wohnen?a=1&preview=k&b=2#top');
+check('withoutPreview keeps other params + fragment', $w === '/wohnen?a=1&b=2#top', $w);
+$w = ContentPreview::withoutPreview('/?preview=k');
+check('withoutPreview on the root', $w === '/', $w);
+$w = ContentPreview::withoutPreview('/fr/habiter');
+check('withoutPreview without query → unchanged', $w === '/fr/habiter', $w);
+$w = ContentPreview::withoutPreview('/x?previewed=1');
+check('withoutPreview matches the name exactly', $w === '/x?previewed=1', $w);
+$w = ContentPreview::withoutPreview(ContentPreview::carry('/wohnen?a=1#t', 'k'));
+check('withoutPreview reverses carry', $w === '/wohnen?a=1#t', $w);
+
 $_GET = ['preview' => ' Herbst-A7 '];
 check('key() reads + normalizes ?preview=', ContentPreview::key() === 'herbst-a7');
 $_GET = ['preview' => ['x']];

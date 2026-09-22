@@ -31,6 +31,8 @@ return [
             'footer'   => 'partials/footer',
             'flash'    => 'partials/flashMessages',
             'messages' => 'partials/popupMessages',
+            // Content preview notice — renders nothing without ?preview=<key> (ADR-044 addendum).
+            'preview'  => 'partials/previewBar',
         ],
     ],
     'javascripts' => [

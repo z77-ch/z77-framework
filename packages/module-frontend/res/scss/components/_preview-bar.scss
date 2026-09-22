@@ -1,0 +1,26 @@
+/* Content preview notice (partials/previewBar) — shown only on ?preview=<key>.
+   Fixed bottom-left, above the page, so it is on every screenshot a reviewer
+   takes: a preview that looks like the live site is how variant text gets
+   mistaken for live text. Class names are the framework's, the look is the
+   project's to override (like the flash messages). */
+.preview-bar {
+    position:      fixed;
+    left:          1rem;
+    bottom:        1rem;
+    z-index:       1100;
+    display:       flex;
+    align-items:   center;
+    gap:           .75rem;
+    padding:       .5rem 1rem;
+    border-radius: 999px;
+    background:    #111;
+    color:         #ffd84d;
+    font-size:     .875rem;
+    line-height:   1.2;
+    box-shadow:    0 2px 8px rgba(0, 0, 0, .2);
+}
+
+.preview-bar__live {
+    color:           #fff;
+    text-decoration: underline;
+}
