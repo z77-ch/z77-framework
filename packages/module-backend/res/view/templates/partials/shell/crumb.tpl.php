@@ -11,21 +11,22 @@ use Z77\Shared\Entities\Navigation;
  * included), so the two always agree about where one stands. No cursor, no
  * crumb — an empty line is honest, an invented one is not.
  *
- * @var \Z77\Core\Services\NavigationService|null $navigationService
- * @var string $navSlot
+ * Walks the menu as the user may see it (BackendMenu, ADR-045): an entry the
+ * user may not open is not linked, a hidden section yields no crumb.
+ *
+ * @var \Z77\Module\Backend\Ui\BackendMenu|null $backendMenu
  */
-$nav  = $navigationService ?? null;
-$slot = $navSlot ?? 'backend-main';
+$nav = $backendMenu ?? null;
 if ($nav === null) { return; }
 
-$section = $nav->getActiveSectionBySlot($slot);
+$section = $nav->activeSection();
 if ($section === null) { return; }
 
 // True when the entry or any descendant carries the UI cursor (refs are leaves).
 $subtreeActive = function (Navigation $entry) use (&$subtreeActive, $nav): bool {
     if ($nav->isActive($entry)) { return true; }
     if ($entry->getRef() !== null) { return false; }
-    foreach ($nav->getChildren($entry) as $child) {
+    foreach ($nav->children($entry) as $child) {
         if ($subtreeActive($child)) { return true; }
     }
     return false;
@@ -36,7 +37,7 @@ $trail = [$section];
 $node  = $section;
 for ($depth = 0; $depth < 20; $depth++) {
     $next = null;
-    foreach ($nav->getChildren($node) as $child) {
+    foreach ($nav->children($node) as $child) {
         if ($subtreeActive($child)) { $next = $child; break; }
     }
     if ($next === null) { break; }
@@ -52,7 +53,7 @@ $last = count($trail) - 1;
     <?php if ($i > 0): ?><span class="be-crumb__sep" aria-hidden="true">›</span><?php endif; ?>
     <?php if ($i === $last): ?>
     <span class="be-crumb__here"><?= e($entry->getName()) ?></span>
-    <?php elseif ($i > 0 && ($url = $nav->urlFor($entry)) !== ''): ?>
+    <?php elseif ($i > 0 && ($url = $nav->href($entry)) !== ''): ?>
     <a href="<?= e($url) ?>"><?= e($entry->getName()) ?></a>
     <?php else: ?>
     <span><?= e($entry->getName()) ?></span>

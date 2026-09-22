@@ -3,39 +3,29 @@ use Z77\Module\Backend\App\Config\ModuleIcons;
 use Z77\Module\Backend\App\Config\Palettes;
 use Z77\Shared\Build\BuildInfo;
 
-/** @var \Z77\Core\Services\NavigationService $navigationService */
+/** @var \Z77\Module\Backend\Ui\BackendMenu|null $backendMenu  the menu as this user may see it (ADR-045) */
 /** @var array{initials:string,name:string,role:string}|null $headerUser */
+/** @var array{debug:bool,noindex:bool,clearCache:bool}|null $shellTools  which service switches this user may use */
 /** @var \Z77\Shared\ValueObjects\UserPreferences|null $userPreferences */
 /** @var string $navSlot */
 // Data-presence check only — no chrome without an authenticated user (mirrors the old header).
-if (empty($headerUser)) return;
+if (empty($headerUser) || empty($backendMenu)) return;
 
 $palettes = Palettes::all();
 $initials = $headerUser['initials'];
 $role     = $headerUser['role'];
 $devMode  = DEBUG;
 $noindex  = SEO_NOINDEX;
+$tools    = $shellTools ?? ['debug' => false, 'noindex' => false, 'clearCache' => false];
 
-// Resolve a section's first reachable URL (same logic as the legacy module tabs).
-$sectionUrl = function (array $item) use ($navigationService): string {
-    $first = $navigationService->resolveFirstNavigable($item['section']);
-    if ($first === null) {
-        return '';
-    }
-    if ($first->getRef() !== null) {
-        $target = $navigationService->findById($first->getRef());
-        return $target ? $navigationService->urlForVia($target, $first->getId()) : '';
-    }
-    return $navigationService->urlFor($first);
-};
-
-$sections    = iterator_to_array($navigationService->iterateSections($navSlot));
+// Visible sections only, each with the URL of its first page this user may open.
+$sections    = $backendMenu->sections();
 $activeLabel = 'Menü';
 $activeUrl   = '';
 foreach ($sections as $item) {
     if ($item['active']) {
         $activeLabel = $item['section']->getName();
-        $activeUrl   = $sectionUrl($item);
+        $activeUrl   = $item['url'];
         break;
     }
 }
@@ -56,7 +46,7 @@ foreach ($sections as $item) {
             <div class="be-shell-mod__panel" hidden data-panel role="menu" aria-label="Bereich wechseln">
                 <div class="be-shell-mod__grid">
                     <?php foreach ($sections as $item):
-                        $url  = $sectionUrl($item);
+                        $url  = $item['url'];
                         $name = $item['section']->getName();
                         $icon = ModuleIcons::forSection($name);
                         $cls  = 'be-shell-mod__tile' . ($item['active'] ? ' be-shell-mod__tile--active' : '');
@@ -95,8 +85,8 @@ foreach ($sections as $item) {
     <!-- Right cluster — always visible -->
     <div class="be-shell-topbar__right">
         <?php
-        $viewAreas    = $navigationService->getViewAreas();
-        $currentArea  = $navigationService->getCurrentViewAreaName();
+        $viewAreas    = $backendMenu->viewAreas();
+        $currentArea  = $backendMenu->currentViewAreaName();
         $currentLabel = '';
         foreach ($viewAreas as $va) {
             if ($va['active']) { $currentLabel = $va['label']; break; }
@@ -156,8 +146,10 @@ foreach ($sections as $item) {
                 <div class="backend-service-panel__divider"></div>
                 <?php endif; ?>
 
+                <?php if ($tools['debug'] || $tools['noindex'] || $tools['clearCache']): ?>
                 <div class="backend-service-panel__section">
                     <div class="backend-service-panel__section-label">Schnell-Einstellungen</div>
+                    <?php if ($tools['debug']): ?>
                     <button type="button" id="js-debug-toggle" data-url="/backend/system/system/toggle-debug" class="backend-service-panel__row">
                         <span class="backend-service-panel__row-icon"><svg class="be-icon" width="14" height="14" aria-hidden="true"><use href="#icon-edit"/></svg></span>
                         <span class="backend-service-panel__row-body">
@@ -166,6 +158,8 @@ foreach ($sections as $item) {
                         </span>
                         <span id="js-debug-indicator" class="backend-service-panel__toggle<?= $devMode ? ' backend-service-panel__toggle--on' : '' ?>" aria-hidden="true"><span class="backend-service-panel__toggle-thumb"></span></span>
                     </button>
+                    <?php endif; ?>
+                    <?php if ($tools['noindex']): ?>
                     <button type="button" id="js-noindex-toggle" data-url="/backend/system/system/toggle-noindex" class="backend-service-panel__row">
                         <span class="backend-service-panel__row-icon"><svg class="be-icon" width="14" height="14" aria-hidden="true"><use href="#icon-search"/></svg></span>
                         <span class="backend-service-panel__row-body">
@@ -174,6 +168,8 @@ foreach ($sections as $item) {
                         </span>
                         <span id="js-noindex-indicator" class="backend-service-panel__toggle<?= $noindex ? ' backend-service-panel__toggle--on' : '' ?>" aria-hidden="true"><span class="backend-service-panel__toggle-thumb"></span></span>
                     </button>
+                    <?php endif; ?>
+                    <?php if ($tools['clearCache']): ?>
                     <button type="button" id="js-clear-cache" data-url="/backend/system/system/clear-cache" class="backend-service-panel__row">
                         <span class="backend-service-panel__row-icon"><svg class="be-icon" width="14" height="14" aria-hidden="true"><use href="#icon-trash"/></svg></span>
                         <span class="backend-service-panel__row-body">
@@ -182,9 +178,11 @@ foreach ($sections as $item) {
                         </span>
                         <span class="backend-service-panel__row-badge">Jetzt</span>
                     </button>
+                    <?php endif; ?>
                 </div>
 
                 <div class="backend-service-panel__divider"></div>
+                <?php endif; ?>
 
                 <div class="backend-service-panel__section">
                     <button type="button" id="js-appearance-toggle" class="backend-service-panel__section-toggle" aria-expanded="false" aria-controls="js-appearance-body">

@@ -24,7 +24,12 @@ use Z77\Core\DI,
  * key on "<slug>.<language>" for the live copy and "<slug>.<language>.<variant>"
  * for a variant (ADR-044 addendum; every request carries `variant`, '' = live).
  * Variants are created from a live row, previewed on the website with ?preview=
- * and published per set through {@see ContentVariantService}. Metadata (title, active) + the visual block editor built
+ * and published per set through {@see ContentVariantService}. Every live write
+ * (save, add, active switch, publish, restore) goes through that service, which
+ * keeps the previous live copy as a version `v-…` and stamps changedBy/changedAt
+ * (ADR-045); a version is not edited, only restored or (ADMIN) deleted.
+ * Access (backendConfig): EDITOR for all actions, ADMIN for confirmDelete/remove.
+ * Metadata (title, active) + the visual block editor built
  * from each BlockRenderer::schema(). A slug with a blueprint (ADR-044) is edited
  * in blueprint mode: fixed slots, no block add/remove/reorder, enforced on save.
  * Saves are guarded by an optimistic lock (entity_hash).
@@ -42,6 +47,20 @@ class ContentController extends BackendAbstractController
         $key = $content->getSlug() . '.' . $content->getLanguage();
 
         return $content->isLive() ? $key : $key . '.' . $content->getVariant();
+    }
+
+    /** Username stamped on a live write (ADR-045). */
+    private function username(): string
+    {
+        return DI::getAuthService()->getCurrentUser()->getUserName();
+    }
+
+    /** May the current user delete (a document, variant, version)? Same rule as the access config. */
+    private function canDelete(): bool
+    {
+        $auth = DI::getAuthService();
+
+        return $auth->canReach($auth->getCurrentUser(), 'backend', 'content', 'content', 'confirm-delete');
     }
 
     /** The document named by the GET parameters slug, language, variant ('' = live). */
@@ -69,9 +88,18 @@ class ContentController extends BackendAbstractController
             $this->repo()->findAll(),
             fn(Content $c) => $c->getLanguage() === $language
         ));
-        // By slug; per slug the live copy first, then its variants by key.
-        usort($contents, fn(Content $a, Content $b) =>
-            [$a->getSlug(), !$a->isLive(), $a->getVariant()] <=> [$b->getSlug(), !$b->isLive(), $b->getVariant()]);
+        // By slug; per slug the live copy first, then its variants by key, then
+        // its versions newest first (the key carries the archiving time).
+        $rank = fn(Content $c): int => $c->isLive() ? 0 : ($c->isVersion() ? 2 : 1);
+        usort($contents, function (Content $a, Content $b) use ($rank): int {
+            $order = [$a->getSlug(), $rank($a)] <=> [$b->getSlug(), $rank($b)];
+            if ($order !== 0) {
+                return $order;
+            }
+            return $a->isVersion()
+                ? strcmp($b->getVariant(), $a->getVariant())
+                : strcmp($a->getVariant(), $b->getVariant());
+        });
 
         $response = $this->html([
             'contents'      => $contents,
@@ -106,6 +134,10 @@ class ContentController extends BackendAbstractController
         if ($content === null) {
             return $this->fetchError('Inhalt nicht gefunden');
         }
+        // A version is history: it is restored, not changed.
+        if ($content->isVersion()) {
+            return $this->fetchError('Eine Version wird nicht bearbeitet — erst wiederherstellen.');
+        }
 
         return $this->edit($content, false);
     }
@@ -120,6 +152,8 @@ class ContentController extends BackendAbstractController
         $origSlug     = $content->getSlug();
         $origLang     = $content->getLanguage();
         $origVariant  = $content->getVariant();
+        $origChangedBy = $content->getChangedBy();
+        $origChangedAt = $content->getChangedAt();
         $storedBlocks = $content->getBlocks();     // orphans are always taken from here
         $rawBlocks    = '';
         $validator    = null;
@@ -154,6 +188,10 @@ class ContentController extends BackendAbstractController
             // through like any other field, so all three are forced back from the
             // loaded record: a crafted body can neither rename a document nor move
             // it into another set.
+            // changedBy/changedAt pass BodyCleaner too; they are the server's
+            // (ADR-045) — back to the stored values, a live save stamps anew.
+            $content->setChangedBy($origChangedBy);
+            $content->setChangedAt($origChangedAt);
             if (!$isNew) {
                 $content->setSlug($origSlug);
                 $content->setLanguage($origLang);
@@ -178,8 +216,14 @@ class ContentController extends BackendAbstractController
         $blueprint   = $extensions->blueprint($content->getSlug());
 
         if (DI::getRequest()->isPost() && $validator->isValid()) {
-            $this->em()->persist($content);
-            $this->em()->flush();
+            if ($content->isLive()) {
+                // Archives the stored live copy as a version, stamps this one.
+                ContentVariantService::create()->saveLive($content, $this->username());
+            } else {
+                // A variant save: no version, no stamp (ADR-045).
+                $this->em()->persist($content);
+                $this->em()->flush();
+            }
 
             $this->messageService->pushFlashAfterRedirect(
                 'success',
@@ -252,7 +296,11 @@ class ContentController extends BackendAbstractController
             ? ''
             : ContentPreview::carry(localizedUrl('/', $content->getLanguage()), $content->getVariant());
 
-        $response = $this->html(['entry' => $content, 'previewUrl' => $previewUrl]);
+        $response = $this->html([
+            'entry'      => $content,
+            'previewUrl' => $previewUrl,
+            'canDelete'  => $this->canDelete(),
+        ]);
         $this->layoutManager->addPartials('actions', 'Content/ContentController', self::NAMESPACE);
         return $response;
     }
@@ -288,7 +336,11 @@ class ContentController extends BackendAbstractController
             ->addCommand('reload');
     }
 
-    /** Inline active toggle from the list view (global CSRF, no entity token — non-destructive). */
+    /**
+     * Inline active toggle from the list view (global CSRF, no entity token —
+     * non-destructive). On a live copy it is a live write like any save, so it
+     * leaves a version (ADR-045: every live save); a version itself is not switched.
+     */
     #[Fetch, HttpMethod('POST')]
     protected function toggleActiveAction(): FetchResponse
     {
@@ -296,10 +348,17 @@ class ContentController extends BackendAbstractController
         if ($content === null) {
             return $this->fetchError('Inhalt nicht gefunden');
         }
+        if ($content->isVersion()) {
+            return $this->fetchError('Eine Version wird nicht geändert — erst wiederherstellen.');
+        }
 
         $content->setActive(!$content->isActive());
-        $this->em()->persist($content);
-        $this->em()->flush();
+        if ($content->isLive()) {
+            ContentVariantService::create()->saveLive($content, $this->username());
+        } else {
+            $this->em()->persist($content);
+            $this->em()->flush();
+        }
 
         return $this->fetch()
             ->setStatus('success')
@@ -394,8 +453,8 @@ class ContentController extends BackendAbstractController
 
     /**
      * Publishes a set — destructive (the live copies are replaced), so the entity
-     * token is bound to the set key. The previous live copies become the archive
-     * set «alt-…»; see ContentVariantService::publish().
+     * token is bound to the set key. The previous live copies become versions
+     * `v-…` (one key per run); see ContentVariantService::publish().
      */
     #[Fetch, HttpMethod('POST')]
     protected function publishAction(): FetchResponse
@@ -412,7 +471,7 @@ class ContentController extends BackendAbstractController
         }
 
         try {
-            $report = ContentVariantService::create()->publish($key);
+            $report = ContentVariantService::create()->publish($key, $this->username());
         } catch (\DomainException $e) {
             return $this->fetchError($e->getMessage());
         }
@@ -420,7 +479,64 @@ class ContentController extends BackendAbstractController
         $count = count($report['published']);
         $text  = 'Satz «' . $key . '» veröffentlicht (' . $count . ' Dokument' . ($count === 1 ? '' : 'e') . ')';
         if ($report['archive'] !== '') {
-            $text .= ' — bisherige Fassungen im Satz «' . $report['archive'] . '»';
+            $text .= ' — bisherige Fassungen als Version «' . $report['archive'] . '» gesichert';
+        }
+        $this->messageService->pushFlashAfterRedirect('success', $text);
+
+        return $this->fetch()
+            ->setStatus('success')
+            ->addCommand('close-modal')
+            ->addCommand('reload');
+    }
+
+    /** «Wiederherstellen» (version rows only): confirm modal. */
+    protected function confirmRestoreAction(): HtmlResponse|FetchResponse
+    {
+        $version = $this->fromQuery();
+        if ($version === null || !$version->isVersion()) {
+            return $this->fetchError('Version nicht gefunden');
+        }
+
+        $response = $this->html([
+            'version'    => $version,
+            'live'       => $this->repo()->findBySlug($version->getSlug(), $version->getLanguage()),
+            'entityCsrf' => DI::getCsrfService()->generateEntityToken('content', $this->csrfKey($version)),
+        ]);
+        $this->layoutManager->addPartials('confirmRestore', 'Content/ContentController', self::NAMESPACE);
+        return $response;
+    }
+
+    /**
+     * Makes a version the live copy again (EDITOR, like any live save). The
+     * current live copy becomes a version first; see ContentVariantService::restore().
+     */
+    #[Fetch, HttpMethod('POST')]
+    protected function restoreAction(): FetchResponse
+    {
+        $body    = DI::getRequest()->getJsonBody();
+        $slug    = (string)($body['slug'] ?? '');
+        $lang    = (string)($body['language'] ?? '');
+        $variant = ContentPreview::normalize((string)($body['variant'] ?? ''));
+
+        $version = ($slug !== '' && $lang !== '') ? $this->repo()->findBySlug($slug, $lang, $variant) : null;
+        if ($version === null || !$version->isVersion()) {
+            return $this->fetchError('Version nicht gefunden');
+        }
+
+        $csrf = trim($body['entity_csrf'] ?? '');
+        if (!DI::getCsrfService()->validateEntityToken($csrf, 'content', $this->csrfKey($version))) {
+            return $this->fetchError('Invalid token');
+        }
+
+        try {
+            $archive = ContentVariantService::create()->restore($version, $this->username());
+        } catch (\DomainException $e) {
+            return $this->fetchError($e->getMessage());
+        }
+
+        $text = 'Version von «' . $version->getSlug() . '» wiederhergestellt';
+        if ($archive !== '') {
+            $text .= ' — bisherige Fassung als Version «' . $archive . '» gesichert';
         }
         $this->messageService->pushFlashAfterRedirect('success', $text);
 

@@ -5,6 +5,7 @@ use Z77\Core\Controller\AbstractBaseController,
     Z77\Core\DI,
     Z77\Core\Http\Response\HtmlResponse,
     Z77\Core\Http\Response\FetchResponse,
+    Z77\Module\Backend\Ui\BackendMenu,
     Z77\Shared\Auth\PasswordTier,
     Z77\Shared\Controller\RouteInfoTrait
 ;
@@ -111,6 +112,20 @@ abstract class BackendAbstractController extends AbstractBaseController
                 'initials' => $initials,
                 'name'     => $user->getUserName(),
                 'role'     => $user->getHighestRole(),
+            ];
+
+            // The menu as this user may see it — entries follow the access
+            // config (ADR-045), decided here, not in the shell templates.
+            $context['backendMenu'] ??= BackendMenu::forCurrentUser($context['navSlot']);
+
+            // The service panel's switches call SystemController actions; show
+            // each only when its endpoint would accept this user (same rule as
+            // the menu — an editor gets no debug/noindex/cache switches).
+            $auth = DI::getAuthService();
+            $context['shellTools'] ??= [
+                'debug'      => $auth->canReach($user, 'backend', 'system', 'system', 'toggle-debug'),
+                'noindex'    => $auth->canReach($user, 'backend', 'system', 'system', 'toggle-noindex'),
+                'clearCache' => $auth->canReach($user, 'backend', 'system', 'system', 'clear-cache'),
             ];
         }
 

@@ -11,11 +11,16 @@
  *   - ContentPreview: one canonical key form, a random tail on new keys, and
  *     carry() adds `preview=` once, before a #fragment, never for a null key;
  *   - ContentVariantService (real ContentRepository over an in-memory store):
- *     createVariant() copies a live document and refuses a second copy in the
- *     same set and a copy of a variant; publish() writes the variant as live,
- *     archives every previous live copy under ONE `alt-YYYYMMDD-HHMM` key
- *     (`-2` if taken), deletes the variant documents, and publishing the archive
- *     set restores the previous text.
+ *     createVariant() copies a live document (without stamps) and refuses a
+ *     second copy in the same set and a copy of a variant; publish() writes the
+ *     variant as live, archives every previous live copy as a version under ONE
+ *     `v-YYYYMMDD-HHMMSS` key for the run (`-2` if a document already has it),
+ *     deletes the variant documents;
+ *   - the version rule (ADR-045): saveLive() archives the stored live copy with
+ *     ITS changedBy/changedAt and stamps the new one; a same-second second save
+ *     gets `-2`; a first save archives nothing; restore() of a version makes it
+ *     live again (archiving the current live copy first) and removes it;
+ *     saving a variant writes no version; versions are recognised by key only.
  *
  * Run: php tests/content-variants.php
  * No DI: the classes are required through a PSR-4 map of this checkout.
@@ -103,7 +108,7 @@ check('normalize empty stays empty', ContentPreview::normalize('äöü') === '')
 $k = ContentPreview::newKey('Herbst Lieferung');
 check('newKey = <name>-<6 hex>', (bool)preg_match('/^herbstlieferung-[0-9a-f]{6}$/', $k), $k);
 check('newKey is already normalized', ContentPreview::normalize($k) === $k, $k);
-check('newKey empty name → v-<6 hex>', (bool)preg_match('/^v-[0-9a-f]{6}$/', ContentPreview::newKey('')));
+check('newKey empty name → satz-<6 hex>', (bool)preg_match('/^satz-[0-9a-f]{6}$/', ContentPreview::newKey('')));
 check('newKey differs between calls', ContentPreview::newKey('a') !== ContentPreview::newKey('a'));
 check('newKey name part max 40', strlen(ContentPreview::newKey(str_repeat('b', 80))) === 47);
 
@@ -219,41 +224,119 @@ check('findByVariant spans languages', count($repo->findByVariant('herbst-a7')) 
 // Edit the variants, then publish.
 $hv = $repo->findBySlug('home', 'de', 'herbst-a7'); $hv->setTitle('Home neu'); $store->persistAll([$hv]);
 $fv = $repo->findBySlug('home', 'fr', 'herbst-a7'); $fv->setTitle('Accueil neu'); $store->persistAll([$fv]);
+check('variant save writes no version and no stamp', array_filter($repo->variantKeys(), [ContentPreview::class, 'isVersionKey']) === []
+    && $repo->findBySlug('home', 'de', 'herbst-a7')->getChangedBy() === '');
 
-// Pre-existing set with the archive key of that minute → the run must take -2.
+// The live copies carry a stamp from an earlier save (whose text they are).
+$hl = $repo->findBySlug('home', 'de'); $hl->setChangedBy('anna'); $hl->setChangedAt('2026-09-20T10:00:00+02:00'); $store->persistAll([$hl]);
+
+// home.de already holds a version with the key of that second → the run must take -2.
 $now = new DateTimeImmutable('2026-09-22 14:30:00');
-$store->persistAll([doc('faq', 'de', 'alt-20260922-1430', 'FAQ älter')]);
+$store->persistAll([doc('home', 'de', 'v-20260922-143000', 'Home noch älter')]);
 
-$report = $svc->publish('herbst-a7', $now);
-check('publish: archive key with -2', $report['archive'] === 'alt-20260922-1430-2', $report['archive']);
+$report = $svc->publish('herbst-a7', 'bruno', $now);
+check('publish: one version key for the run, -2 on collision', $report['archive'] === 'v-20260922-143000-2', $report['archive']);
 check('publish: report lists 3 documents', count($report['published']) === 3);
 check('publish: report flags the doc without live copy',
     array_column($report['published'], 'archived', 'slug')['neu'] === false);
 check('publish: live has the variant text', $repo->findBySlug('home', 'de')->getTitle() === 'Home neu'
     && $repo->findBySlug('home', 'fr')->getTitle() === 'Accueil neu');
+check('publish: live stamped with publisher + time', $repo->findBySlug('home', 'de')->getChangedBy() === 'bruno'
+    && $repo->findBySlug('home', 'de')->getChangedAt() === '2026-09-22T14:30:00' . $now->format('P'));
 check('publish: new live document, active flag from the variant',
     ($n = $repo->findBySlug('neu', 'de')) !== null && $n->isLive() && !$n->isActive());
 check('publish: variant documents gone', $repo->findByVariant('herbst-a7') === []);
-check('publish: previous live copies archived as one set',
-    $repo->findBySlug('home', 'de', 'alt-20260922-1430-2')?->getTitle() === 'Home alt'
-    && $repo->findBySlug('home', 'fr', 'alt-20260922-1430-2')?->getTitle() === 'Accueil alt'
-    && count($repo->findByVariant('alt-20260922-1430-2')) === 2);
+check('publish: previous live copies are versions of one run',
+    $repo->findBySlug('home', 'de', 'v-20260922-143000-2')?->getTitle() === 'Home alt'
+    && $repo->findBySlug('home', 'fr', 'v-20260922-143000-2')?->getTitle() === 'Accueil alt'
+    && count($repo->findByVariant('v-20260922-143000-2')) === 2);
+check('publish: a version keeps ITS stamp, not the publisher\'s',
+    $repo->findBySlug('home', 'de', 'v-20260922-143000-2')->getChangedBy() === 'anna'
+    && $repo->findBySlug('home', 'de', 'v-20260922-143000-2')->getChangedAt() === '2026-09-20T10:00:00+02:00');
+check('publish: no alt- archive set any more', array_filter($repo->variantKeys(), fn($k) => str_starts_with($k, 'alt-')) === []);
 check('publish: untouched document stays', $repo->findBySlug('faq', 'de')->getTitle() === 'FAQ');
 check('publish: live file names unchanged', isset($store->files['content/home.de.json'], $store->files['content/home.fr.json']));
 
-// Rollback = publish the archive set (same minute → yet another key).
-$back = $svc->publish('alt-20260922-1430-2', $now);
-check('rollback restores the previous text', $repo->findBySlug('home', 'de')->getTitle() === 'Home alt'
-    && $repo->findBySlug('home', 'fr')->getTitle() === 'Accueil alt');
-check('rollback archives under a fresh key', $back['archive'] === 'alt-20260922-1430-3', $back['archive']);
-check('rollback leaves the doc that had no live copy (documented)', $repo->findBySlug('neu', 'de') !== null);
-
 $threw = '';
-try { $svc->publish('gibtsnicht', $now); } catch (\DomainException $e) { $threw = $e->getMessage(); }
+try { $svc->publish('gibtsnicht', 'x', $now); } catch (\DomainException $e) { $threw = $e->getMessage(); }
 check('publish refuses an unknown set', $threw !== '', $threw);
 $threw = '';
-try { $svc->publish('', $now); } catch (\DomainException $e) { $threw = $e->getMessage(); }
+try { $svc->publish('', 'x', $now); } catch (\DomainException $e) { $threw = $e->getMessage(); }
 check('publish refuses the empty key (live)', $threw !== '', $threw);
+
+// ── versions (ADR-045) ──────────────────────────────────────────────────────
+echo "Versions\n";
+check('isVersionKey: plain', ContentPreview::isVersionKey('v-20260922-153000'));
+check('isVersionKey: collision suffix', ContentPreview::isVersionKey('v-20260922-153000-2'));
+check('isVersionKey: newKey never matches', !ContentPreview::isVersionKey(ContentPreview::newKey(''))
+    && !ContentPreview::isVersionKey('v-20260922-153000-123456') && !ContentPreview::isVersionKey('herbst-a7'));
+check('versionKey format', ContentPreview::versionKey(new DateTimeImmutable('2026-09-22 15:30:05')) === 'v-20260922-153005'
+    && ContentPreview::versionKey(new DateTimeImmutable('2026-09-22 15:30:05'), 3) === 'v-20260922-153005-3');
+check('Content::isVersion', doc('x', 'de', 'v-20260922-153000', 'x')->isVersion() && !doc('x', 'de', 'herbst-a7', 'x')->isVersion()
+    && !doc('x', 'de', '', 'x')->isVersion());
+
+// First save of a document that has no live copy: nothing to archive.
+$t1  = new DateTimeImmutable('2026-09-23 09:00:00');
+$new = doc('kontakt', 'de', '', 'Kontakt 1');
+$new->setChangedBy('crafted'); // a caller's value never survives: the service stamps
+check('saveLive: first save archives nothing', $svc->saveLive($new, 'anna', $t1) === '');
+$live = $repo->findBySlug('kontakt', 'de');
+check('saveLive: stamps user + ISO time', $live->getChangedBy() === 'anna' && $live->getChangedAt() === $t1->format(DATE_ATOM));
+
+// Second save (the loaded document, changed — as the backend editor does).
+$t2   = new DateTimeImmutable('2026-09-23 09:15:00');
+$live = $repo->findBySlug('kontakt', 'de'); $live->setTitle('Kontakt 2');
+$k2   = $svc->saveLive($live, 'bruno', $t2);
+check('saveLive: archives the stored copy as v-<time>', $k2 === 'v-20260923-091500', $k2);
+$v = $repo->findBySlug('kontakt', 'de', $k2);
+check('saveLive: version holds the OLD text + ITS stamp', $v?->getTitle() === 'Kontakt 1'
+    && $v->getChangedBy() === 'anna' && $v->getChangedAt() === $t1->format(DATE_ATOM));
+check('saveLive: live holds the new text + new stamp', $repo->findBySlug('kontakt', 'de')->getTitle() === 'Kontakt 2'
+    && $repo->findBySlug('kontakt', 'de')->getChangedBy() === 'bruno');
+
+// Third save in the same second → -2.
+$live = $repo->findBySlug('kontakt', 'de'); $live->setTitle('Kontakt 3');
+$k3   = $svc->saveLive($live, 'bruno', $t2);
+check('saveLive: same second → -2', $k3 === 'v-20260923-091500-2', $k3);
+check('saveLive: -2 holds the second state', $repo->findBySlug('kontakt', 'de', $k3)?->getTitle() === 'Kontakt 2');
+check('saveLive: the other language is untouched', $repo->findBySlug('kontakt', 'fr') === null);
+
+$threw = '';
+try { $svc->saveLive(doc('kontakt', 'de', 'herbst-a7', 'x'), 'anna', $t2); } catch (\LogicException $e) { $threw = $e->getMessage(); }
+check('saveLive refuses a variant', $threw !== '', $threw);
+
+// Restore = the version becomes live, the current live copy becomes a version.
+$t3      = new DateTimeImmutable('2026-09-23 10:00:00');
+$version = $repo->findBySlug('kontakt', 'de', 'v-20260923-091500');
+$back    = $svc->restore($version, 'carla', $t3);
+check('restore: live has the version text', $repo->findBySlug('kontakt', 'de')->getTitle() === 'Kontakt 1');
+check('restore: stamped by the restorer', $repo->findBySlug('kontakt', 'de')->getChangedBy() === 'carla');
+check('restore: the replaced live copy is a new version', $back === 'v-20260923-100000'
+    && $repo->findBySlug('kontakt', 'de', $back)?->getTitle() === 'Kontakt 3'
+    && $repo->findBySlug('kontakt', 'de', $back)->getChangedBy() === 'bruno', $back);
+check('restore: the restored version is gone', $repo->findBySlug('kontakt', 'de', 'v-20260923-091500') === null);
+check('restore: other versions stay', $repo->findBySlug('kontakt', 'de', 'v-20260923-091500-2') !== null);
+
+// Restoring in the very second the version was made → the new version takes -2.
+$store->persistAll([doc('agb', 'de', '', 'AGB jetzt')]);
+$store->persistAll([doc('agb', 'de', 'v-20260923-110000', 'AGB früher')]);
+$k = $svc->restore($repo->findBySlug('agb', 'de', 'v-20260923-110000'), 'carla', new DateTimeImmutable('2026-09-23 11:00:00'));
+check('restore: collision with the restored key → -2', $k === 'v-20260923-110000-2'
+    && $repo->findBySlug('agb', 'de')->getTitle() === 'AGB früher'
+    && $repo->findBySlug('agb', 'de', 'v-20260923-110000-2')?->getTitle() === 'AGB jetzt', $k);
+
+$threw = '';
+try { $svc->restore($repo->findBySlug('faq', 'de'), 'x', $t3); } catch (\DomainException $e) { $threw = $e->getMessage(); }
+check('restore refuses the live copy', $threw !== '', $threw);
+$store->persistAll([doc('faq', 'de', 'herbst-b1', 'FAQ Herbst')]);
+$threw = '';
+try { $svc->restore($repo->findBySlug('faq', 'de', 'herbst-b1'), 'x', $t3); } catch (\DomainException $e) { $threw = $e->getMessage(); }
+check('restore refuses an ordinary variant', $threw !== '', $threw);
+
+// Publishing a version key as a set works too (a version is an ordinary variant).
+$pub = $svc->publish('v-20260922-143000-2', 'dora', new DateTimeImmutable('2026-09-23 12:00:00'));
+check('publish of a version run restores all its documents', $repo->findBySlug('home', 'de')->getTitle() === 'Home alt'
+    && $repo->findBySlug('home', 'fr')->getTitle() === 'Accueil alt' && $pub['archive'] === 'v-20260923-120000', $pub['archive']);
 
 echo "\n{$pass} passed, {$fail} failed\n";
 exit($fail === 0 ? 0 : 1);

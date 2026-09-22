@@ -1,34 +1,30 @@
 <?php
 use Z77\Shared\Entities\Navigation;
 
-/** @var \Z77\Core\Services\NavigationService $navigationService */
+/** @var \Z77\Module\Backend\Ui\BackendMenu|null $backendMenu  the menu as this user may see it (ADR-045) */
 /** @var \Z77\Shared\Entities\Navigation|null $navigation */
-/** @var string $navSlot */
 
-$activeSectionEntry = $navigationService->getActiveSectionBySlot($navSlot);
-$items = $activeSectionEntry ? $navigationService->getChildren($activeSectionEntry) : [];
+// Only visible entries reach this template: BackendMenu hides what the user may
+// not open and sections/openers left empty by that (the decision is PHP's).
+if (empty($backendMenu)) return;
+
+$activeSectionEntry = $backendMenu->activeSection();
+$items = $activeSectionEntry ? $backendMenu->children($activeSectionEntry) : [];
 
 if (empty($items)) return;
 
 $sectionLabel = $activeSectionEntry->getName();
 
-// Resolve an entry's href: ref → target URL + ?via=<refId>, otherwise its own
-// URL (built from module/group/controller/action or the friendly url). Empty
-// string when nothing is reachable — the caller renders such a node inert.
-$hrefOf = function (Navigation $entry) use ($navigationService): string {
-    if ($entry->getRef() !== null) {
-        $target = $navigationService->findById($entry->getRef());
-        return $target ? $navigationService->urlForVia($target, $entry->getId()) : '';
-    }
-    return $navigationService->urlFor($entry);
-};
+// An entry's href: ref → target URL + ?via=<refId>, otherwise its own URL.
+// Empty string when nothing is reachable — the caller renders such a node inert.
+$hrefOf = fn(Navigation $entry): string => $backendMenu->href($entry);
 
 // True when the entry or any descendant is the current UI cursor — drives the
 // open/trail state of opener nodes. Refs are leaves (never expanded).
-$subtreeActive = function (Navigation $entry) use (&$subtreeActive, $navigationService): bool {
-    if ($navigationService->isActive($entry)) return true;
+$subtreeActive = function (Navigation $entry) use (&$subtreeActive, $backendMenu): bool {
+    if ($backendMenu->isActive($entry)) return true;
     if ($entry->getRef() !== null) return false;
-    foreach ($navigationService->getChildren($entry) as $child) {
+    foreach ($backendMenu->children($entry) as $child) {
         if ($subtreeActive($child)) return true;
     }
     return false;
@@ -38,11 +34,11 @@ $subtreeActive = function (Navigation $entry) use (&$subtreeActive, $navigationS
 // (<details>), regardless of whether it can produce a link of its own — to keep
 // such a node's own page reachable, add a ref-to-self child. Leaves render as a
 // link when they resolve to a URL, inert otherwise (no href="" → page reload).
-$renderNode = function (Navigation $entry, int $depth) use (&$renderNode, $navigationService, $hrefOf, $subtreeActive): void {
+$renderNode = function (Navigation $entry, int $depth) use (&$renderNode, $backendMenu, $hrefOf, $subtreeActive): void {
     if ($depth > 20) return; // defensive guard against hand-edited parent cycles
 
     $isRef    = $entry->getRef() !== null;
-    $children = $isRef ? [] : $navigationService->getChildren($entry);
+    $children = $backendMenu->children($entry);
     $name     = $entry->getName();
 
     if (!empty($children)) {
@@ -66,7 +62,7 @@ $renderNode = function (Navigation $entry, int $depth) use (&$renderNode, $navig
 
     $url = $hrefOf($entry);
     $cls = 'backend-tree-node'
-        . ($navigationService->isActive($entry) ? ' backend-tree-node--active' : '')
+        . ($backendMenu->isActive($entry) ? ' backend-tree-node--active' : '')
         . ($isRef ? ' backend-tree-node--ref' : '');
 
     if ($url === ''):

@@ -80,8 +80,7 @@
         <div class="be-shell-crumb">
             <div class="be-shell-crumb__slot be-shell-crumb__slot--1"></div>
             <div class="be-shell-crumb__slot be-shell-crumb__slot--2"><?= $hc3 ?? $this->partial('partials/shell/crumb', [
-                'navigationService' => $navigationService ?? null,
-                'navSlot'           => $navSlot ?? 'backend-main',
+                'backendMenu' => $backendMenu ?? null,
             ]) ?></div>
         </div>
         <div class="be-shell-col be-shell-col--1" data-shell-col="l">

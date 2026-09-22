@@ -1,10 +1,6 @@
 <?php
 /** @var \Z77\Shared\Auth\AuthUser $authUser */
-
-$modules = [
-    ['id' => 'frontend', 'code' => '01', 'label' => 'Frontend',   'sub' => 'Webinhalte', 'url' => '/backend/content/content/list'],
-    ['id' => 'master',   'code' => '02', 'label' => 'Stammdaten', 'sub' => 'Navigation · Benutzer', 'url' => '/backend/content/navigation/list'],
-];
+/** @var list<array{id:string,code:string,label:string,sub:string,url:string}> $cards  only the cards this user may open (DashboardController) */
 ?>
 <div class="be-overview">
 
@@ -14,7 +10,7 @@ $modules = [
     </div>
 
     <div class="be-overview__modules">
-        <?php foreach ($modules as $m): ?>
+        <?php foreach ($cards as $m): ?>
         <a href="<?= e($m['url']) ?>" class="be-module-card">
             <span class="be-module-card__code"><?= e($m['code']) ?></span>
             <span class="be-module-card__label"><?= e($m['label']) ?></span>

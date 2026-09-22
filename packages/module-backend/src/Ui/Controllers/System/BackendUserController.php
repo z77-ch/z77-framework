@@ -35,6 +35,7 @@ class BackendUserController extends BackendAbstractController
     private const ROLE_LABELS = [
         AuthRole::SUPER_USER => 'Super-User',
         AuthRole::ADMIN      => 'Admin',
+        AuthRole::EDITOR     => 'Redaktor',
         AuthRole::CRON_JOB   => 'Cron-Job',
         AuthRole::MEMBER     => 'Mitglied',
         AuthRole::VISITOR    => 'Besucher',

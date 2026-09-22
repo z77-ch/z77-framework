@@ -203,6 +203,17 @@ $ceUnknownBlock = function (array $block, bool $orphan = false): string {
         <?php if (!$content->isLive()): ?>
         <span class="be-lang-tag" title="Variante — erscheint erst nach «Satz veröffentlichen» live">Variante <?= e($content->getVariant()) ?></span>
         <?php endif; ?>
+        <?php
+        // The live copy's last save (ADR-045); saving keeps it as a version.
+        $savedAt = '';
+        try {
+            $savedAt = ($content->isLive() && $content->getChangedAt() !== '') ? (new DateTimeImmutable($content->getChangedAt()))->format('d.m.Y H:i') : '';
+        } catch (Exception) {
+        }
+        ?>
+        <?php if ($savedAt !== ''): ?>
+        <small class="be-form__hint" title="Beim Speichern wird dieser Stand als Version gesichert">zuletzt gespeichert <?= e($savedAt) ?><?= $content->getChangedBy() !== '' ? ' von ' . e($content->getChangedBy()) : '' ?></small>
+        <?php endif; ?>
     </div>
     <div class="be-modal__body">
         <?php if ($validator->hasErrors()): ?>
