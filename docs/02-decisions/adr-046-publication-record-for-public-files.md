@@ -1,7 +1,7 @@
 # ADR-046 — Publication record: the installer may refresh what it wrote itself
 
-**Status:** `[PROPOSED]` — for the owner to approve
-**Date:** 2026-09-24
+**Status:** `[APPROVED]` — approved by the owner 2026-09-23
+**Date:** 2026-09-23
 **Amends:** [ADR-024](adr-024-asset-ownership-and-first-install-seed.md) §3,
 [ADR-025](adr-025-asset-drift-report-on-update.md) ("nothing is stored"),
 [ADR-026](adr-026-opt-in-interactive-asset-deploy.md) decision 1 ("non-interactive writes nothing")
