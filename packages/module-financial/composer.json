@@ -27,7 +27,8 @@
         "php": ">=8.4",
         "z77/kernel": "^1.0",
         "z77/persistence-doctrine": "^1.0",
-        "z77/module-vat": "^1.0"
+        "z77/module-vat": "^1.0",
+        "z77/module-mandator": "^1.0"
     },
     "support": {
         "issues": "https://github.com/z77-ch/z77-framework/issues",

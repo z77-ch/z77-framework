@@ -23,9 +23,11 @@ use Z77\Shared\Traits\ArrayMappable;
  * the code is immutable once created.
  *
  * QR-IBAN vs. IBAN ({@see Iban}): a QR-IBAN's institution identification
- * lies in 30000–31999 and it carries a QR reference (QRR); a normal IBAN
- * carries a creditor reference (SCOR) or none. Part 2 needs the difference
- * to print the right reference — this entity only records and shows it.
+ * lies in 30000–31999 and it ALWAYS carries a QR reference (QRR); a normal
+ * IBAN carries NO reference (NON) — the only two reference types z77 prints
+ * (owner, 2026-09-23). P3 part 3 needs the difference to print the right
+ * bill — this entity only records and shows it. Part 3 also adds the second
+ * IBAN field and the creditor block (`debtor.md`, pending).
  */
 #[Entity('file', 'framework/debtor/payment_targets.json')]
 class PaymentTarget
@@ -49,10 +51,10 @@ class PaymentTarget
 
     /**
      * The ledger account number this bank account is booked on (`1020` in
-     * the KMU chart). A NUMBER, not an id — the same reference shape
-     * `financialConfig → vatAccounts` and `debtorConfig → debtorAccounts`
-     * use. Checked against module-financial when that module is installed
-     * ({@see \Z77\Module\Debtor\Services\LedgerAccountCheck}); financial is
+     * the KMU chart). A NUMBER, not an id — the same reference shape the
+     * mandator's account settings use. Checked against module-financial when
+     * that module is installed
+     * ({@see \Z77\Module\Mandator\Services\LedgerAccountCheck}); financial is
      * only `suggest`ed, so the check is soft by construction.
      */
     #[Clean('text')]

@@ -36,15 +36,18 @@ use Z77\Module\Financial\Entities\Period;
  * per fiscal year. Not set here on purpose: a project records only its
  * deviation (Rule 2).
  *
- * `vatAccounts` (tax-code CATEGORY → account NUMBER, read only through
- * `LedgerService::vatAccountFor()`): where the one-line manual entry writes
- * the tax line it splits off a gross amount — input tax to 1170 / 1171,
- * output VAT to 2200 (the KMU chart, `res/charts/kmu.json`). The ONE place
- * a tax account is named (Rule 2); P3 debtor reads the same key. Categories
- * without a tax line (zero, exempt) and reverse-charge are deliberately
- * absent. A project with another chart overrides the key; an account that is
- * missing, a group or inactive is refused by the form with a message naming
- * this key (`LedgerService::accountExists()`).
+ * NO `vatAccounts` any more (owner decision E2, 2026-09-23): the accounts
+ * the VAT of a tax-code category is posted to — input tax 1170 / 1171,
+ * output VAT 2200 in the KMU chart — live on the MANDATOR record
+ * (`z77/module-mandator`, backend `/backend/finance/mandator`), edited there
+ * and checked against the chart on save. The reader is unchanged:
+ * `LedgerService::vatAccountFor()` maps the category onto the record's
+ * `vat-input-material` / `vat-input-other` / `vat-owed` and answers null
+ * for a category without a tax line (zero, exempt, reverse-charge) or
+ * without a number set; the caller refuses with a message naming the
+ * mandator. A `vatAccounts` key that is still present here — a project
+ * override copied before the move (BOOT-CONFIG-001) — is REFUSED loudly by
+ * `vatAccountFor()`, never read as a second source (Rule 2).
  */
 return [
     'viewArea'   => false,
@@ -57,14 +60,6 @@ return [
         JournalEntry::class,
         JournalLine::class,
         EntryChange::class,
-    ],
-
-    'vatAccounts' => [
-        'input-material' => '1170',   // Vorsteuer MWST Material, Waren, Dienstleistungen, Energie
-        'input-other'    => '1171',   // Vorsteuer MWST Investitionen, übriger Betriebsaufwand
-        'standard'       => '2200',   // Geschuldete MWST (Umsatzsteuer)
-        'reduced'        => '2200',
-        'special'        => '2200',
     ],
 
     // Nothing here renders a page; the host's cache policy applies to the mount.

@@ -40,7 +40,9 @@ Pieces:
   unknown / non-postable / inactive account, an unknown tax code, a repeated key with other
   content. Draws the number as the FIRST write, after validation. `accountExists($number)`
   validates a configured account (exists, postable, active); `vatAccountFor($category)` reads
-  the tax account of a tax-code category from `financialConfig → vatAccounts`.
+  the tax account of a tax-code category from the MANDATOR record (`z77/module-mandator`, owner
+  decision E2 of 2026-09-23 — before that `financialConfig → vatAccounts`, a key that is removed
+  and refused loudly when a project override still carries it).
 - `Services/ManualEntryService` — `create()`, `update($entryId, $expectedVersion, $newRequest): bool` (false = unchanged, nothing written), `delete($entryId, $expectedVersion)` of manual
   entries, each with an `EntryChange`; generated entries are refused in the domain.
 - `Ledger/PostingRequest`, `Ledger/PostingLine`, `Ledger/EntryRef` — the immutable DTOs other

@@ -37,28 +37,20 @@ use Z77\Module\Debtor\Entities\InvoiceTax;
  * targets carry NO seed on purpose: an IBAN cannot be guessed, and a seeded
  * placeholder would end up printed on a QR-bill.
  *
- * `debtorAccounts` (key → account NUMBER, read only through
- * {@see \Z77\Module\Debtor\Services\DebtorAccounts}): where the receivables
- * side posts. The ONE place these accounts are named (Rule 2) — the mirror
- * of financial's `vatAccounts`. Defaults per the KMU chart, verified
- * against `packages/module-financial/res/charts/kmu.json`:
- *
- *   - `receivable` → 1100 «Forderungen aus Lieferungen und Leistungen (Debitoren)»
- *   - `discount`   → 3800 «Erlösminderungen» (Skonto is one)
- *   - `loss`       → 3805 «Verluste aus Forderungen, Veränderung Delkredere»
- *   - `rounding`   → 3809 «Rundungsdifferenzen» — the invoice's 0.05 line.
- *     Its OWN account in group 38 (owner, 2026-09-22): rounding and discount
- *     must stay separable in the reports, so the KMU chart gained the row
- *     rather than the two keys sharing 3800. NOT financial's VAT-return
- *     rounding account, which is its own setting (plan §5.1, §6.1).
- *   - `dunningFee` → 6950 «Finanzertrag» (owner, 2026-09-22): a dunning fee
- *     is DAMAGES FOR THE DELAY, not a service — so it carries no VAT
- *     (plan §6.5) and it is not turnover, which is why it stays out of the
- *     revenue classes 3 the VAT return reads by code.
- *
- * A missing key, or an account the bookkeeping will not take a posting on,
- * is refused AT THE POINT OF USE with a German message naming the key —
- * never at boot (`DebtorAccounts::postableNumber()`).
+ * NO `debtorAccounts` any more (owner decision E2, 2026-09-23): the accounts
+ * the receivables side posts to — receivable 1100, discount 3800, loss
+ * 3805, rounding 3809 (its OWN account, owner 2026-09-22: rounding and
+ * discount must stay separable in the reports), dunning fee 6950 (damages
+ * for the delay, no VAT, not turnover — owner 2026-09-22) in the KMU chart
+ * — live on the MANDATOR record (`z77/module-mandator`, backend
+ * `/backend/finance/mandator`), edited there and checked against the chart
+ * on save. The reader is unchanged: {@see \Z77\Module\Debtor\Services\DebtorAccounts}
+ * stays the ONE access point (Rule 2) and refuses AT THE POINT OF USE, in
+ * German, naming the key and the mandator, when a number is missing or the
+ * bookkeeping will not take a posting on it — never at boot. A
+ * `debtorAccounts` key still present here (a project override copied before
+ * the move, BOOT-CONFIG-001) is REFUSED loudly by `DebtorAccounts`, never
+ * read as a second source.
  *
  * ⚠️ Today a project override of this file REPLACES it (first source match)
  * — it must carry the FULL config, not just the key it changes. Known
@@ -79,14 +71,6 @@ return [
     // `LedgerAccountingGateway` books into module-financial and refuses to run without it;
     // an installation that keeps its books elsewhere names `NullAccountingGateway` here.
     'accountingGateway' => LedgerAccountingGateway::class,
-
-    'debtorAccounts' => [
-        'receivable' => '1100',
-        'discount'   => '3800',
-        'loss'       => '3805',
-        'rounding'   => '3809',
-        'dunningFee' => '6950',
-    ],
 
     // Nothing here renders a page; the host's cache policy applies to the mount.
     'cache' => [

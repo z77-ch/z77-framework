@@ -35,9 +35,13 @@
  *     decision 19): a NEW reference needs an active row, an existing one
  *     keeps a deactivated row, the code is immutable, and no delete method
  *     exists on the write side or the screens;
- *   - (H) the `debtorAccounts` config accessor: the KMU defaults, a missing
- *     key, a malformed value and an account that is a group / inactive /
- *     unknown — each refused with a German message naming the key;
+ *   - (H) the `DebtorAccounts` accessor — since owner decision E2
+ *     (2026-09-23) reading the MANDATOR record (`z77/module-mandator`), no
+ *     longer `debtorConfig → debtorAccounts`: the KMU start values, a
+ *     leftover config key refused loudly, no mandator / an empty field, and
+ *     an account that became a group / inactive / unknown after it was saved
+ *     — each refused at the point of use with a German message naming the
+ *     key and the mandator;
  *   - (I) the four backend fragments render through their traits with their
  *     own header slots, and carry no JavaScript of their own (Rule 7).
  *
@@ -64,7 +68,8 @@
  *     document immutable in `final`, the credit note as the only correction
  *     with its mirrored posting, a tax code with lines of MIXED signs, a
  *     zero document posting nothing;
- *   - (M) source guards: exactly two classes name module-financial, the
+ *   - (M) source guards: exactly ONE class names module-financial (the soft
+ *     account check moved to module-mandator with E2), the
  *     document has no setters, no float, the migration count.
  *
  * Run: php tests/module-debtor.php
@@ -131,7 +136,6 @@ use Z77\Module\Debtor\Services\DebtorProfileService;
 use Z77\Module\Debtor\Services\Iban;
 use Z77\Module\Debtor\Services\InvalidDebtorProfileException;
 use Z77\Module\Debtor\Services\InvalidMasterDataException;
-use Z77\Module\Debtor\Services\LedgerAccountCheck;
 use Z77\Module\Debtor\Services\MasterDataCodeChangedException;
 use Z77\Module\Debtor\Ui\DebtorControllerTrait;
 use Z77\Module\Debtor\Ui\DebtorLayout;
@@ -150,6 +154,10 @@ use Z77\Module\Financial\Entities\Account;
 use Z77\Module\Financial\Entities\FiscalYear;
 use Z77\Module\Financial\Services\AccountService;
 use Z77\Module\Financial\Services\FiscalYearService;
+use Z77\Module\Mandator\Entities\Mandator;
+use Z77\Module\Mandator\Services\LedgerAccountCheck;
+use Z77\Module\Mandator\Services\MandatorAccounts;
+use Z77\Module\Mandator\Services\MandatorService;
 use Z77\Module\Vat\Calculation\PriceMode;
 use Z77\Module\Vat\Entities\TaxCode;
 use Z77\Module\Vat\Services\VatMasterData;
@@ -244,11 +252,13 @@ register_shutdown_function(static function () use ($admin, $dbName, $rm, $base):
 
 // The REAL packages are the modules' source paths: their configs announce
 // the entities, their res/migrations hold the migrations, their data/ the
-// seeds. debtor needs contact (the party) and, for the SOFT account check,
-// financial — which a project may leave out, and section H proves that too.
+// seeds. debtor needs contact (the party), mandator (the account settings
+// since E2) and, for the SOFT account check, financial — which a project
+// may leave out, and section H proves that too.
 $packages = [
     'Vat'       => str_replace('\\', '/', realpath(__DIR__ . '/../packages/module-vat')),
     'Contact'   => str_replace('\\', '/', realpath(__DIR__ . '/../packages/module-contact')),
+    'Mandator'  => str_replace('\\', '/', realpath(__DIR__ . '/../packages/module-mandator')),
     'Financial' => str_replace('\\', '/', realpath(__DIR__ . '/../packages/module-financial')),
     'Debtor'    => str_replace('\\', '/', realpath(__DIR__ . '/../packages/module-debtor')),
 ];
@@ -263,7 +273,7 @@ foreach ($packages as $name => $path) {
 }
 $write('config/vendor/fileFinder.inc.php', "<?php return ['resourceDir' => ['sourceDir' => 'src', 'tplDir' => 'res/view/templates'], 'namespaces' => [\n{$namespaces}]];");
 $writeModules = function (bool $withFinancial) use ($write): void {
-    $modules = $withFinancial ? "'vat' => [], 'contact' => [], 'financial' => [], 'debtor' => []" : "'vat' => [], 'contact' => [], 'debtor' => []";
+    $modules = $withFinancial ? "'vat' => [], 'contact' => [], 'mandator' => [], 'financial' => [], 'debtor' => []" : "'vat' => [], 'contact' => [], 'mandator' => [], 'debtor' => []";
     $write('config/vendor/moduleManager.inc.php', "<?php return ['modulePrefix' => 'Module', 'frameworkPrefix' => 'Z77', 'defaultModule' => 'debtor', 'modules' => [{$modules}]];");
 };
 $writeModules(true);
@@ -344,11 +354,11 @@ check('A2 the database is empty', $tables() === []);
 [$code, $out] = $run(['command' => 'migrate']);
 check('A3 migrate exits 0' . ($code !== 0 ? " — got {$code}: " . trim($out) : ''), $code === 0);
 $executed = $db->fetchFirstColumn('SELECT version FROM schema_migration');
-check('A4 … both debtor migrations ran; the run ends at the newest one (timestamp order across the modules)',
-    str_contains($out, 'Migrating up to Z77\\Module\\Debtor\\Migrations\\Version20260923043935')
+check('A4 … both debtor migrations ran in ONE run across the modules (timestamp order; the newest is the mandator\'s)',
+    str_contains($out, 'Migrating up to Z77\\Module\\')
     && in_array('Z77\\Module\\Debtor\\Migrations\\Version20260922173918', $executed, true) && in_array('Z77\\Module\\Debtor\\Migrations\\Version20260923043935', $executed, true));
-check('A5 debtor_profile, invoice, invoice_line and invoice_tax exist next to contact\'s and financial\'s tables',
-    array_diff(['debtor_profile', 'invoice', 'invoice_line', 'invoice_tax'], $tables()) === []);
+check('A5 debtor_profile, invoice, invoice_line and invoice_tax exist next to contact\'s, mandator\'s and financial\'s tables',
+    array_diff(['debtor_profile', 'invoice', 'invoice_line', 'invoice_tax', 'mandator'], $tables()) === []);
 $rangeOf = fn(string $name) => $db->fetchOne('SELECT last_number FROM number_range WHERE name = ?', [$name]);
 check('A5b the ranges invoice and credit-note exist at 0 — created by the migration ahead of the first draw (DOCTRINE-NR-003), nothing consumed',
     (string) $rangeOf('invoice') === '0' && (string) $rangeOf('credit-note') === '0');
@@ -529,6 +539,12 @@ $badTarget  = fn(callable $fn): ?PaymentTargetValidator => ($e = caught($fn, Inv
 // The chart a payment target's account is checked against (financial is installed here).
 $accounts = new AccountService($em4);
 $accounts->adoptKmuChart();
+// The mandator (E2): the account settings debtor posts with live on it — created ONCE here
+// with the KMU start values, the way the backend screen's first save does.
+$mandator = MandatorAccounts::prefilled();
+$mandator->mapFromArray(['name' => 'Harness AG', 'country' => 'CH', 'zip' => '8000', 'city' => 'Zürich']);
+(new MandatorService($em4))->save($mandator);
+$em4 = $wireDi();
 $em4 = $wireDi();
 $masterData = new DebtorMasterData($em4);
 $badTarget  = fn(callable $fn): ?PaymentTargetValidator => ($e = caught($fn, InvalidMasterDataException::class)) instanceof InvalidMasterDataException ? $e->validator : null;
@@ -844,10 +860,11 @@ check('G16 setActive still refuses a row whose stored code differs — the ONE r
 
 // ── H. the account settings ──────────────────────────────────────────────
 
-echo "H. debtorAccounts (the config accessor and its refusals)\n";
-$em23 = $wireDi();
-$configured = array_combine(DebtorAccounts::KEYS, array_map(DebtorAccounts::number(...), DebtorAccounts::KEYS));
-check('H1 the KMU defaults are what the package config names — rounding has its OWN account (owner, 2026-09-22)', $configured === [
+echo "H. DebtorAccounts — the accessor reads the MANDATOR record (E2) and refuses at the point of use\n";
+$em23     = $wireDi();
+$settings = new DebtorAccounts($em23);
+$configured = array_combine(DebtorAccounts::KEYS, array_map(fn($k) => $settings->number($k), DebtorAccounts::KEYS));
+check('H1 the KMU start values are what the mandator carries — rounding has its OWN account (owner, 2026-09-22)', $configured === [
     'receivable' => '1100', 'discount' => '3800', 'loss' => '3805', 'rounding' => '3809', 'dunningFee' => '6950',
 ]);
 $chart = $em23->getRepository(Account::class);
@@ -861,12 +878,14 @@ check('H3 1100 is «Forderungen aus Lieferungen und Leistungen (Debitoren)», 38
     $chart->findOneBy(['number' => '1100'])?->getName() === 'Forderungen aus Lieferungen und Leistungen (Debitoren)'
     && str_starts_with($chart->findOneBy(['number' => '3805'])?->getName() ?? '', 'Verluste aus Forderungen')
     && $chart->findOneBy(['number' => '6950'])?->getName() === 'Finanzertrag');
-$settings = new DebtorAccounts($em23);
 check('H4 postableNumber() answers for every key while the chart is sound', array_reduce(DebtorAccounts::KEYS, fn($ok, $k) => $ok && $settings->postableNumber($k) !== '', true));
 check('H5 status() reports no error for any key', array_reduce($settings->status(), fn($ok, $row) => $ok && $row['error'] === null, true));
-check('H6 an unknown key is a programming error, not a configuration one', throws(fn() => DebtorAccounts::number('nope'), \InvalidArgumentException::class));
+check('H6 an unknown key is a programming error, not a configuration one', throws(fn() => $settings->number('nope'), \InvalidArgumentException::class));
+check('H6b the package config carries NO debtorAccounts any more — the record is the one place (Rule 2)',
+    DI::getModuleManager()->getModuleConfig('debtor')?->has(DebtorAccounts::LEGACY_CONFIG_KEY) === false
+    && !str_contains(file_get_contents($package . '/src/App/Config/debtorConfig.inc.php'), "'debtorAccounts' =>"));
 
-// A project override that dropped a key (BOOT-CONFIG-001) and a malformed value.
+// A project override that STILL carries the pre-E2 key (BOOT-CONFIG-001: a full copy made before the move).
 // FileFinder memoizes the resolved path, so the cache goes with the file.
 $writeOverride = function (?string $php) use ($write, $wireDi, $base, $rm): UnifiedEntityManager {
     $file = $base . '/override/module/debtor/src/App/Config/debtorConfig.inc.php';
@@ -876,43 +895,64 @@ $writeOverride = function (?string $php) use ($write, $wireDi, $base, $rm): Unif
     return $wireDi();
 };
 $emOverride = $writeOverride("<?php return ['viewArea' => false, 'doctrineEntities' => [\\Z77\\Module\\Debtor\\Entities\\DebtorProfile::class], 'debtorAccounts' => ['receivable' => '1100']];");
-$overrideActive = throws(fn() => DebtorAccounts::number('loss'), AccountNotConfiguredException::class);
+$overrideActive = DI::getModuleManager()->getModuleConfig('debtor')?->has('debtorAccounts') === true;
 if ($overrideActive) {
-    $e = caught(fn() => DebtorAccounts::number('loss'), AccountNotConfiguredException::class);
-    check('H7 a key a project override dropped is refused AT THE POINT OF USE, naming the key (BOOT-CONFIG-001)',
-        $e instanceof AccountNotConfiguredException && $e->key === 'loss' && str_contains($e->getMessage(), "debtorAccounts['loss']") && str_contains($e->getMessage(), 'Debitorenverlust'));
-    check('H8 … status() reports it while the key that is there still answers', (new DebtorAccounts($emOverride))->status()['loss']['error'] !== null
-        && DebtorAccounts::number('receivable') === '1100');
-
-    $emOverride = $writeOverride("<?php return ['viewArea' => false, 'debtorAccounts' => ['receivable' => 1100]];");
-    check('H9 a non-string account number fails loudly — a typo in a config file is reported, not skipped', throws(fn() => DebtorAccounts::number('receivable'), \UnexpectedValueException::class));
-
-    $emOverride = $writeOverride("<?php return ['viewArea' => false, 'debtorAccounts' => 'nope'];");
-    check('H10 a `debtorAccounts` that is not a map fails loudly as well', throws(fn() => DebtorAccounts::number('receivable'), \UnexpectedValueException::class));
-
-    $emOverride = $writeOverride("<?php return ['viewArea' => false, 'doctrineEntities' => [\\Z77\\Module\\Debtor\\Entities\\DebtorProfile::class], 'debtorAccounts' => ['receivable' => '100', 'discount' => '9999999', 'loss' => '1000', 'rounding' => '3800', 'dunningFee' => '6950']];");
-    $emOverride = $wireDi();
-    (new AccountService($emOverride))->setActive($emOverride->getRepository(Account::class)->findOneBy(['number' => '1000']), false);
-    $emOverride = $wireDi();
-    $settings   = new DebtorAccounts($emOverride);
-    $e = caught(fn() => $settings->postableNumber('receivable'), AccountNotConfiguredException::class);
-    check('H11 a GROUP account is refused at the point of use, in German, naming the key',
-        $e instanceof AccountNotConfiguredException && str_contains($e->getMessage(), 'Gruppe') && str_contains($e->getMessage(), "debtorAccounts['receivable']"));
-    check('H12 an unknown and an inactive account are refused the same way',
-        throws(fn() => $settings->postableNumber('discount'), AccountNotConfiguredException::class)
-        && throws(fn() => $settings->postableNumber('loss'), AccountNotConfiguredException::class));
-    check('H13 the two sound keys still answer', $settings->postableNumber('rounding') === '3800' && $settings->postableNumber('dunningFee') === '6950');
-    $status = $settings->status();
-    check('H14 status() marks exactly the three broken keys and keeps their configured numbers visible',
-        $status['receivable']['error'] !== null && $status['discount']['error'] !== null && $status['loss']['error'] !== null
-        && $status['rounding']['error'] === null && $status['dunningFee']['error'] === null
-        && $status['receivable']['number'] === '100');
-    (new AccountService($emOverride))->setActive($emOverride->getRepository(Account::class)->findOneBy(['number' => '1000']), true);
+    $e = caught(fn() => (new DebtorAccounts($emOverride))->number('receivable'), \UnexpectedValueException::class);
+    check('H7 a leftover `debtorAccounts` in a project override is REFUSED loudly with a GERMAN sentence naming the move — never read as a second source',
+        $e !== null && str_contains($e->getMessage(), 'debtorAccounts') && str_contains($e->getMessage(), 'Mandant'));
+    check('H8 … status() carries that refusal on every row and notice() hands it to the screens as ONE band instead of a 500', array_reduce((new DebtorAccounts($emOverride))->status(), fn($ok, $row) => $ok && $row['error'] !== null && $row['number'] === '', true)
+        && str_contains((string) (new DebtorAccounts($emOverride))->notice(), 'debtorAccounts'));
 } else {
     check('H7 a project override replaces the package config (BOOT-CONFIG-001) — skipped, the override did not take effect', false);
 }
 $em24 = $writeOverride(null);
-check('H15 without the override the package defaults are back', DebtorAccounts::number('loss') === '3805' && DebtorAccounts::number('rounding') === '3809');
+check('H9 without the override the mandator answers again, and there is no band', (new DebtorAccounts($em24))->number('loss') === '3805' && (new DebtorAccounts($em24))->number('rounding') === '3809' && (new DebtorAccounts($em24))->notice() === null);
+
+// An EMPTY field on the mandator — refused at the point of use, naming the key and where it is set.
+$mandatorRow = $em24->getRepository(Mandator::class)->theOne();
+(new MandatorService($em24))->update($mandatorRow, ['account_loss' => '']);
+$em24 = $wireDi();
+$e = caught(fn() => (new DebtorAccounts($em24))->number('loss'), AccountNotConfiguredException::class);
+check('H10 an account left EMPTY on the mandator is refused AT THE POINT OF USE, in German, naming the key, its label and the mandator',
+    $e instanceof AccountNotConfiguredException && $e->key === 'loss' && str_contains($e->getMessage(), 'Debitorenverlust') && str_contains($e->getMessage(), 'Mandant'));
+check('H10b … status() reports it while the other keys still answer', (new DebtorAccounts($em24))->status()['loss']['error'] !== null
+    && (new DebtorAccounts($em24))->status()['receivable']['error'] === null && (new DebtorAccounts($em24))->number('receivable') === '1100');
+(new MandatorService($em24))->update($em24->getRepository(Mandator::class)->theOne(), ['account_loss' => '3805']);
+
+// Accounts that became a GROUP / unknown / inactive AFTER they were saved: the validator would refuse
+// them on a save, so they are written past it in SQL — the chart moved under the record, and the
+// reader must still refuse at the point of use (E2: never a silent substitute).
+$db->executeStatement("UPDATE mandator SET account_receivable = '100', account_discount = '9999999', account_loss = '1000'");
+$emH = $wireDi();
+(new AccountService($emH))->setActive($emH->getRepository(Account::class)->findOneBy(['number' => '1000']), false);
+$emH      = $wireDi();
+$settings = new DebtorAccounts($emH);
+$e = caught(fn() => $settings->postableNumber('receivable'), AccountNotConfiguredException::class);
+check('H11 a GROUP account is refused at the point of use, in German, naming the key and the mandator',
+    $e instanceof AccountNotConfiguredException && str_contains($e->getMessage(), 'Gruppe') && str_contains($e->getMessage(), 'Debitoren-Sammelkonto') && str_contains($e->getMessage(), 'Mandant'));
+check('H12 an unknown and an inactive account are refused the same way',
+    throws(fn() => $settings->postableNumber('discount'), AccountNotConfiguredException::class)
+    && throws(fn() => $settings->postableNumber('loss'), AccountNotConfiguredException::class));
+check('H13 the two sound keys still answer', $settings->postableNumber('rounding') === '3809' && $settings->postableNumber('dunningFee') === '6950');
+$status = $settings->status();
+check('H14 status() marks exactly the three broken keys and keeps their stored numbers visible',
+    $status['receivable']['error'] !== null && $status['discount']['error'] !== null && $status['loss']['error'] !== null
+    && $status['rounding']['error'] === null && $status['dunningFee']['error'] === null
+    && $status['receivable']['number'] === '100');
+(new AccountService($emH))->setActive($emH->getRepository(Account::class)->findOneBy(['number' => '1000']), true);
+$db->executeStatement("UPDATE mandator SET account_receivable = '1100', account_discount = '3800', account_loss = '3805'");
+$em24 = $wireDi();
+check('H15 restored: the KMU values answer again', (new DebtorAccounts($em24))->number('loss') === '3805' && (new DebtorAccounts($em24))->postableNumber('receivable') === '1100');
+
+// No mandator at all — the record removed in SQL (nothing in the framework deletes it).
+$mandatorBackup = $db->fetchAssociative('SELECT * FROM mandator');
+$db->executeStatement('DELETE FROM mandator');
+$emNoMandator = $wireDi();
+$e = caught(fn() => (new DebtorAccounts($emNoMandator))->number('receivable'), AccountNotConfiguredException::class);
+check('H15b WITHOUT a mandator every key is refused at the point of use, naming the missing mandator — never a fatal',
+    $e instanceof AccountNotConfiguredException && str_contains($e->getMessage(), 'kein Mandant') && $e->key === 'receivable'
+    && array_reduce((new DebtorAccounts($emNoMandator))->status(), fn($ok, $row) => $ok && $row['error'] !== null && $row['number'] === '', true));
+$db->insert('mandator', $mandatorBackup);
 $writeModules(false);
 $rm($base . '/var/cache');
 $emNoLedger = $wireDi();
@@ -1001,8 +1041,8 @@ check('I15 no module-debtor class touches $_POST / $_GET / $_SERVER (Rule 4)',
     array_reduce($sources, fn($ok, $f) => $ok && !preg_match('/\$_(POST|GET|SERVER|REQUEST)\b/', file_get_contents($f)), true));
 $namingFinancial = array_map('basename', array_filter($sources, fn($f) => str_contains(file_get_contents($f), 'Module\\\\Financial') || str_contains(file_get_contents($f), 'Module\\Financial')));
 sort($namingFinancial);
-check('I16 exactly TWO classes name module-financial — the soft check and the port adapter (ADR-040 decision 5)',
-    $namingFinancial === ['LedgerAccountCheck.php', 'LedgerAccountingGateway.php']);
+check('I16 exactly ONE class names module-financial — the port adapter (ADR-040 decision 5); the soft account check lives in module-mandator since E2',
+    $namingFinancial === ['LedgerAccountingGateway.php'] && !is_file($package . '/src/Services/LedgerAccountCheck.php'));
 
 
 // ═════════════════════════════════════════════════════════════════════════
@@ -1335,8 +1375,7 @@ check('L13 with financial UNREGISTERED the default gateway refuses to run (Accou
     && throws(fn() => new LedgerAccountingGateway($emNoFin, 'tester'), AccountingUnavailableException::class));
 $writeModules(true);
 $rm($base . '/var/cache');
-$fullConfig = fn(string $gateway) => "<?php return ['viewArea' => false, 'doctrineEntities' => [\\Z77\\Module\\Debtor\\Entities\\DebtorProfile::class, \\Z77\\Module\\Debtor\\Entities\\Invoice::class, \\Z77\\Module\\Debtor\\Entities\\InvoiceLine::class, \\Z77\\Module\\Debtor\\Entities\\InvoiceTax::class], "
-    . "'debtorAccounts' => ['receivable' => '1100', 'discount' => '3800', 'loss' => '3805', 'rounding' => '3809', 'dunningFee' => '6950'], {$gateway}];";
+$fullConfig = fn(string $gateway) => "<?php return ['viewArea' => false, 'doctrineEntities' => [\\Z77\\Module\\Debtor\\Entities\\DebtorProfile::class, \\Z77\\Module\\Debtor\\Entities\\Invoice::class, \\Z77\\Module\\Debtor\\Entities\\InvoiceLine::class, \\Z77\\Module\\Debtor\\Entities\\InvoiceTax::class], {$gateway}];";
 $emOv = $writeOverride($fullConfig("'accountingGateway' => \\Z77\\Module\\Debtor\\Accounting\\NullAccountingGateway::class"));
 check('L14 a project override naming NullAccountingGateway selects it', AccountingGateways::fromConfig($emOv, 'tester') instanceof NullAccountingGateway);
 $emOv = $writeOverride($fullConfig("'x' => 1"));

@@ -12,6 +12,7 @@
  * @var string $currency
  * @var list<string> $languages
  * @var array{number: string, error: string|null} $feeAccount
+ * @var string|null $accountsNotice  the red band while the account settings cannot be read at all (leftover config key, mandator unavailable)
  * @var string $actionBase
  */
 $actionBase = $actionBase ?? '/backend/finance/dunning-level';
@@ -22,7 +23,9 @@ $actionBase = $actionBase ?? '/backend/finance/dunning-level';
             <h2 class="be-list__section-title">Mahnstufen</h2>
             <span class="be-list__section-badge"><?= count($levels) ?></span>
         </div>
-        <?php if ($feeAccount['error'] !== null): ?>
+        <?php if (!empty($accountsNotice)): ?>
+        <div class="be-modal__alert be-modal__alert--error"><?= e($accountsNotice) ?></div>
+        <?php elseif ($feeAccount['error'] !== null): ?>
         <div class="be-modal__alert be-modal__alert--error"><?= e($feeAccount['error']) ?></div>
         <?php else: ?>
         <p class="be-form__hint">Mahngebühren werden auf Konto <?= e($feeAccount['number']) ?> gebucht — ohne MWST (Plan §6.5).</p>

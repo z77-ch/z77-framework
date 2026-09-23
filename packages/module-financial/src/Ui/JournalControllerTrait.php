@@ -174,12 +174,25 @@ trait JournalControllerTrait
      */
     private function journalPage(string $template, array $context): HtmlResponse
     {
-        $context += ['actionBase' => $this->journalListBase(), 'fmt' => static fn(?Money $m) => AmountFormat::of($m)];
+        $context += ['actionBase' => $this->journalListBase(), 'fmt' => static fn(?Money $m) => AmountFormat::of($m), 'configNotice' => $this->journalConfigNotice()];
         $response = $this->html($context);
         $this->layoutManager->removeSection('main');
         $this->layoutManager->addPartials($template, 'Backend/JournalController', self::JOURNAL_NS);
 
         return $response;
+    }
+
+    /**
+     * The red band every journal page shows while NO VAT account can be
+     * resolved — a leftover `vatAccounts` in a project override, the
+     * mandator module not registered, its table missing
+     * (`LedgerService::vatAccountNotice()`). A German sentence naming the
+     * next step; null in the normal state. Review 2026-09-23 (P5/P6): these
+     * states used to surface as a 500 when a taxed entry was opened.
+     */
+    private function journalConfigNotice(): ?string
+    {
+        return (new LedgerService($this->em()))->vatAccountNotice();
     }
 
     /** Whether the bookkeeper may still edit / delete an entry — the service decides for real; this drives the buttons and the edit page's guard. */
@@ -238,6 +251,7 @@ trait JournalControllerTrait
             'kindLabels' => self::KIND_LABELS,
             'fmt'        => static fn(?Money $m) => AmountFormat::of($m),
             'actionBase' => $this->journalListBase(),
+            'configNotice' => $this->journalConfigNotice(),
         ]);
         // The fragment owns its header slots (financial.md, «fragment slots»).
         $this->layoutManager->addPartials('addButton', 'Backend/JournalController', self::JOURNAL_NS, 'hc1');

@@ -26,6 +26,7 @@
  * @var bool $oneLineFits  edit only — the entry has the one-line shape (a link back to that form)
  * @var string $csrfToken  provided by html()
  * @var callable $fmt
+ * @var string|null $configNotice  the red band while no VAT account can be resolved (leftover config key, mandator unavailable) — null normally
  * @var string $actionBase
  */
 $actionBase = $actionBase ?? '/backend/finance/journal';
@@ -46,6 +47,9 @@ $fieldError = static fn(string $message): string => $message === ''
     : '<small class="be-form__field-error" data-z77-field-error>' . e($message) . '</small>';
 ?>
 <div class="be-list">
+    <?php if (!empty($configNotice)): ?>
+    <div class="be-modal__alert be-modal__alert--error"><?= e($configNotice) ?></div>
+    <?php endif; ?>
     <form method="post" action="<?= e($action) ?>" class="be-list__section" autocomplete="off">
         <input type="hidden" name="csrf_token" value="<?= e($csrfToken ?? '') ?>">
         <?php if (!$isNew): ?>

@@ -10,7 +10,7 @@ namespace Z77\Module\Debtor\Entities;
  *   - `lump-sum`: one price without a quantity, otherwise like a service;
  *   - `text`: prints only — no amount, no tax code, no account;
  *   - `rounding`: the ONE system line of a document, the 0.05 rounding of the
- *     gross total (plan §6.2, its own account `debtorAccounts → rounding`).
+ *     gross total (plan §6.2, its own account — the mandator's `rounding`, read through `DebtorAccounts`).
  *     Never part of a draft — `InvoicingService` adds it and refuses it in
  *     input. No tax code: a rounding difference is not a supply.
  *

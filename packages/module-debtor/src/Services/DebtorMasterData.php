@@ -8,6 +8,7 @@ use Z77\Module\Debtor\Entities\PaymentTerms;
 use Z77\Module\Debtor\Validators\DunningLevelValidator;
 use Z77\Module\Debtor\Validators\PaymentTargetValidator;
 use Z77\Module\Debtor\Validators\PaymentTermsValidator;
+use Z77\Module\Mandator\Services\LedgerAccountCheck;
 use Z77\Persistence\Resolver\UnifiedEntityManager;
 use Z77\Persistence\Validation\EntityValidator;
 

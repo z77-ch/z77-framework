@@ -5,7 +5,7 @@ namespace Z77\Module\Debtor\Validators;
 use Z77\Module\Debtor\Entities\PaymentTarget;
 use Z77\Module\Debtor\Repositories\PaymentTargetRepository;
 use Z77\Module\Debtor\Services\Iban;
-use Z77\Module\Debtor\Services\LedgerAccountCheck;
+use Z77\Module\Mandator\Services\LedgerAccountCheck;
 use Z77\Persistence\File\Repository\FileRepository;
 use Z77\Persistence\Validation\EntityValidator;
 
@@ -20,8 +20,8 @@ use Z77\Persistence\Validation\EntityValidator;
  * Liechtenstein creditor account, nothing else. The IBAN is unique across
  * the rows as well: two targets on one account would make a payment
  * ambiguous (P4). A QR-IBAN (IID 30000–31999) is accepted like any other and
- * only SHOWN as such; which reference it forces (QRR vs. SCOR) is part 2's
- * business.
+ * only SHOWN as such; that it forces a QR reference (QRR) while a plain IBAN
+ * carries none (NON) is part 3's business.
  *
  * Ledger account: digits, at most 10 — the shape financial's `Account`
  * stores. Whether it exists and may be posted to is asked of financial when

@@ -18,10 +18,11 @@ namespace Z77\Module\Debtor\Services;
  *     ~70 digits and would overflow `int` on any platform;
  *   - {@see isQrIban()} — a Swiss QR-IBAN, recognised by its institution
  *     identification (IID, positions 5–9) lying in **30000–31999**, the
- *     range SIX reserved for QR-IBANs. A QR-IBAN carries a QR reference
- *     (QRR); a normal IBAN carries a creditor reference (SCOR) or none —
+ *     range SIX reserved for QR-IBANs. A QR-IBAN ALWAYS carries a QR
+ *     reference (QRR); a normal IBAN carries NONE (reference type NON) —
+ *     the only two reference types z77 prints (owner, 2026-09-23),
  *     which is why the two must be told apart before a QR-bill is printed
- *     (P3 part 2).
+ *     (P3 part 3).
  *
  * The QR-bill is issued in Switzerland: a payment target's IBAN must be a
  * CH or LI one ({@see isSwissArea()}), and the validator says so.

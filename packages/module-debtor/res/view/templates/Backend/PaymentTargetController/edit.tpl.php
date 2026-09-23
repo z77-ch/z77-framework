@@ -55,7 +55,7 @@ $fieldError = function (string $name) use ($validator): string {
                        aria-invalid="<?= $validator->hasFieldError('iban') ? 'true' : 'false' ?>">
                 <?= raw($fieldError('iban')) ?>
                 <?php if ($entry->getIban() !== '' && !$validator->hasFieldError('iban')): ?>
-                <small class="be-form__hint"><?= $entry->isQrIban() ? 'QR-IBAN — der Beleg trägt eine QR-Referenz.' : 'Normale IBAN — der Beleg trägt eine Creditor Reference oder keine.' ?></small>
+                <small class="be-form__hint"><?= $entry->isQrIban() ? 'QR-IBAN — der Beleg trägt eine QR-Referenz.' : 'Normale IBAN — der Beleg trägt keine Referenz (NON).' ?></small>
                 <?php endif; ?>
             </div>
             <div class="be-form__field" data-z77-field-wrapper>

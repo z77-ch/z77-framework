@@ -22,8 +22,8 @@ use Z77\Shared\Traits\ArrayMappable;
  *
  * **No VAT on a dunning fee** (plan §6.5): the fee compensates the effort of
  * chasing a debt, it is not a supply — so this entity carries NO tax code
- * and never will, and the fee is posted to `debtorConfig → debtorAccounts
- * → dunningFee` without a tax line.
+ * and never will, and the fee is posted to the mandator's dunning-fee
+ * account (`DebtorAccounts::number('dunningFee')`) without a tax line.
  *
  * The fee is stored as INTEGER MINOR UNITS (Rappen), the way every
  * file-based entity stores money (plan §3) — `Money` itself is not

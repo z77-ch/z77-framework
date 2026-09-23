@@ -13,9 +13,10 @@
  * an active row, here an active party. An existing profile on a contact
  * deactivated since stays editable.
  *
- * Above the list stand the account settings (`debtorConfig →
- * debtorAccounts`) with the refusal each would raise, so a wrong account is
- * found here and not when part 2 posts an invoice.
+ * Above the list stand the account settings (the mandator's debtor
+ * accounts, `DebtorAccounts::status()`) with the refusal each would raise,
+ * so a wrong account is found here and not when an invoice is posted. They
+ * are edited on the mandator screen — the panel only shows them.
  *
  * Styling: the shared backend list/tree classes only.
  *
@@ -27,6 +28,7 @@
  * @var string $query
  * @var array<string,array{number: string, error: string|null}> $accounts
  * @var array<string,string> $accountLabels
+ * @var string|null $accountsNotice  the red band while the account settings cannot be read at all (leftover config key, mandator unavailable)
  * @var string $actionBase
  */
 $actionBase = $actionBase ?? '/backend/finance/debtor';
@@ -38,6 +40,9 @@ $shown      = count($contacts);
             <h2 class="be-list__section-title">Konteneinstellungen</h2>
             <span class="be-list__section-badge"><?= count($accounts) ?></span>
         </div>
+        <?php if (!empty($accountsNotice)): ?>
+        <div class="be-modal__alert be-modal__alert--error"><?= e($accountsNotice) ?></div>
+        <?php endif; ?>
         <div class="be-tree be-tree--hub">
             <?php foreach ($accounts as $key => $row): ?>
             <div class="be-tree__node" style="--node-depth:0" data-debtor-account="<?= e($key) ?>">

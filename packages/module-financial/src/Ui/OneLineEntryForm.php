@@ -9,6 +9,7 @@ use Z77\Module\Financial\Ledger\PostingLine;
 use Z77\Module\Financial\Ledger\PostingRequest;
 use Z77\Module\Financial\Repositories\AccountRepository;
 use Z77\Module\Financial\Services\LedgerService;
+use Z77\Module\Financial\Services\VatAccountUnavailableException;
 use Z77\Module\Vat\Calculation\PriceMode;
 use Z77\Module\Vat\Calculation\VatCalculator;
 use Z77\Module\Vat\Calculation\VatLine;
@@ -39,7 +40,7 @@ use Z77\Shared\Money\Money;
  *     match the voucher's rounding, not to post arbitrary tax;
  *   - the NET line is the side whose account is an EXPENSE or REVENUE account
  *     (owner, 2026-09-22) — Soll or Haben. It carries the tax data; the tax
- *     line (the account `vatAccounts` names) goes on the SAME side; the other
+ *     line (the mandator's VAT account of the category) goes on the SAME side; the other
  *     side takes the gross. So a purchase 6500/1020 puts the net on 6500, a
  *     customer credit note 3200/1100 puts the net on 3200 in Soll and the
  *     output VAT on 2200 in Soll, a supplier refund 1020/4200 the net on 4200
@@ -62,10 +63,11 @@ use Z77\Shared\Money\Money;
  * code, credit for every other), negative on the opposite side — a credit
  * note negates them, and the VAT return (P5) sums them per code + rate.
  *
- * The tax account comes from financialConfig `vatAccounts` by the code's
- * category ({@see LedgerService::vatAccountFor()}); a missing mapping or an
+ * The tax account comes from the MANDATOR record by the code's category
+ * ({@see LedgerService::vatAccountFor()} — owner decision E2, 2026-09-23;
+ * before that `financialConfig → vatAccounts`); a missing number or an
  * account that is not a posting target ({@see LedgerService::accountExists()})
- * is refused with a message naming the key.
+ * is refused with a message naming the mandator screen.
  *
  * The form only builds a manual {@see PostingRequest}; the write path is
  * `ManualEntryService` like every manual entry (no new write path, no
@@ -144,7 +146,7 @@ final class OneLineEntryForm
      * writes: the fields are read from the lines in the canonical order the
      * form writes them, and the form must rebuild the stored lines 1:1 (same
      * order, sides, amounts, tax data, no line text, active accounts, the
-     * current `vatAccounts`). Anything else → false, and the caller shows
+     * current VAT accounts of the mandator). Anything else → false, and the caller shows
      * the Sammelbuchung — the one-line form never silently re-sorts or
      * rewrites an entry.
      *
@@ -380,14 +382,21 @@ final class OneLineEntryForm
 
         $account = null;
         if (!$untaxed) {
-            $account = LedgerService::vatAccountFor($category->value);
+            try {
+                $account = $this->ledger->vatAccountFor($category->value);
+            } catch (VatAccountUnavailableException $e) {
+                // A leftover config key or an unreadable mandator: the sentence says what to do (review 2026-09-23, P5/P6).
+                $this->generalErrors[] = $e->getMessage();
+
+                return null;
+            }
             if ($account === null) {
-                $this->generalErrors[] = 'Für MWST-Kategorie «' . $category->value . '» (Code ' . $code->getCode() . ') ist kein Steuerkonto konfiguriert — financialConfig → vatAccounts ergänzen.';
+                $this->generalErrors[] = 'Für MWST-Kategorie «' . $category->value . '» (Code ' . $code->getCode() . ') ist kein Steuerkonto hinterlegt — ' . LedgerService::MANDATOR_HINT . '.';
 
                 return null;
             }
             if (!$this->ledger->accountExists($account)) {
-                $this->generalErrors[] = 'Das Steuerkonto ' . $account . ' (financialConfig → vatAccounts → ' . $category->value . ') gibt es nicht, oder es ist eine Gruppe oder inaktiv.';
+                $this->generalErrors[] = 'Das Steuerkonto ' . $account . ' (Mandant, Kategorie ' . $category->value . ') gibt es nicht, oder es ist eine Gruppe oder inaktiv — ' . LedgerService::MANDATOR_HINT . '.';
 
                 return null;
             }

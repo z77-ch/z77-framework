@@ -13,7 +13,7 @@ use Z77\Shared\Money\Money;
  * Two ways to name the account:
  *
  *   - by NUMBER (`account`) — the receivable, a revenue account, the
- *     rounding account: debtor knows these (`debtorAccounts`, the line's
+ *     rounding account: debtor knows these (`DebtorAccounts`, the line's
  *     `revenueAccount`);
  *   - by TAX CATEGORY (`vatCategory`) — the VAT line: which account the VAT
  *     of a category goes to is the bookkeeping's setting (financial's

@@ -19,12 +19,16 @@
  * @var int $limit
  * @var array<string,string> $kindLabels
  * @var callable $fmt  Money → «1'234.50»
+ * @var string|null $configNotice  the red band while no VAT account can be resolved (leftover config key, mandator unavailable) — null normally
  * @var string $actionBase
  */
 $actionBase = $actionBase ?? '/backend/finance/journal';
 $shown      = count($entries);
 ?>
 <div class="be-list">
+    <?php if (!empty($configNotice)): ?>
+    <div class="be-modal__alert be-modal__alert--error"><?= e($configNotice) ?></div>
+    <?php endif; ?>
     <?php if ($year === null): ?>
     <div class="be-list__section">
         <div class="be-list__section-header">

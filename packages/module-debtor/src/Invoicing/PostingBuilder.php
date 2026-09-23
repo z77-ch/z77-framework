@@ -51,7 +51,7 @@ use Z77\Shared\Money\Money;
 final class PostingBuilder
 {
     /**
-     * @param string $receivableAccount `debtorAccounts → receivable`, resolved by the caller
+     * @param string $receivableAccount `DebtorAccounts::postableNumber('receivable')`, resolved by the caller
      */
     public static function build(Invoice $invoice, string $receivableAccount): ?PostingRequest
     {

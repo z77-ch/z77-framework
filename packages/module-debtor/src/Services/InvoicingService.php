@@ -24,6 +24,7 @@ use Z77\Module\Debtor\Invoicing\PostingBuilder;
 use Z77\Module\Debtor\Invoicing\TaxShares;
 use Z77\Module\Debtor\Repositories\DebtorProfileRepository;
 use Z77\Module\Debtor\Repositories\InvoiceRepository;
+use Z77\Module\Mandator\Services\LedgerAccountCheck;
 use Z77\Module\Vat\Calculation\PriceMode;
 use Z77\Module\Vat\Calculation\TaxSummaryEntry;
 use Z77\Module\Vat\Calculation\VatCalculator;

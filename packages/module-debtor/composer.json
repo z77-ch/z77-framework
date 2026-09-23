@@ -28,7 +28,8 @@
         "z77/kernel": "^1.0",
         "z77/persistence-doctrine": "^1.0",
         "z77/module-vat": "^1.0",
-        "z77/module-contact": "^1.0"
+        "z77/module-contact": "^1.0",
+        "z77/module-mandator": "^1.0"
     },
     "suggest": {
         "z77/module-financial": "Books the receivables of this module; without it debtor runs against an external bookkeeping and its account settings are not checked."

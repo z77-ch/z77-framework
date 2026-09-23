@@ -46,9 +46,10 @@ use Z77\Core\DI,
  *     profile on a contact deactivated SINCE keeps working and stays
  *     editable (the reference rule, ADR-043 decision 19);
  *   - activate / deactivate a profile (inline switch). There is NO delete;
- *   - show the account settings (`debtorConfig → debtorAccounts`) with the
- *     refusal each one would raise — so a wrong account is found here and
- *     not when part 2 posts an invoice ({@see DebtorAccounts::status()}).
+ *   - show the account settings (the mandator's debtor accounts, read
+ *     through {@see DebtorAccounts::status()}) with the refusal each one
+ *     would raise — so a wrong account is found here and not when an
+ *     invoice is posted; they are EDITED on the mandator screen.
  *
  * Every write goes through {@see DebtorProfileService}; a MANAGED profile is
  * never mutated here before validation (ADR-039 decision 9) — the cleaned
@@ -105,6 +106,7 @@ trait DebtorControllerTrait
             'limit'             => $limit,
             'query'             => $query,
             'accounts'          => (new DebtorAccounts($this->em()))->status(),
+            'accountsNotice'    => (new DebtorAccounts($this->em()))->notice(),
             'accountLabels'     => DebtorAccounts::LABELS,
             'actionBase'        => $this->debtorListBase(),
         ]);

@@ -121,6 +121,11 @@ return [
             'ReportController' => [
                 'defaultAction' => 'trial-balance',
             ],
+            // The mandator (module-mandator, owner E1) is ONE record — its
+            // page is the edit form, there is no list.
+            'MandatorController' => [
+                'defaultAction' => 'edit',
+            ],
         ],
         'documents' => [
             // Byte delivery only (Drive preview/thumbnail + download) — deviates

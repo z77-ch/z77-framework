@@ -10,6 +10,9 @@ use Z77\Module\Financial\Ledger\EntryRef;
 use Z77\Module\Financial\Ledger\PostingLine;
 use Z77\Module\Financial\Ledger\PostingRequest;
 use Z77\Module\Financial\Repositories\JournalEntryRepository;
+use Z77\Module\Mandator\Services\CurrentMandator;
+use Z77\Module\Mandator\Services\MandatorUnavailableException;
+use Z77\Module\Vat\Entities\TaxCategory;
 use Z77\Persistence\Doctrine\Entities\NumberRange;
 use Z77\Persistence\Doctrine\Repositories\NumberRangeRepository;
 use Z77\Persistence\Resolver\UnifiedEntityManager;
@@ -60,10 +63,11 @@ use Z77\Persistence\Resolver\UnifiedEntityManager;
  * of work, and with the same key it then returns the existing entry.
  *
  * `accountExists()` of plan §5.4 validates a configuration that names an
- * account by number; its first production caller is the one-line manual
- * entry, which checks the tax account configured in `vatAccounts` (debtor's
- * account settings follow in P3). The module's config readers live here as
- * well: `baseCurrency()`, `listLimit()`, `vatAccountFor()`.
+ * account by number; its callers are the one-line manual entry (the VAT
+ * account of the mandator record), debtor's account settings and the
+ * mandator screen itself. The module's setting readers live here as well:
+ * `baseCurrency()`, `listLimit()`, `vatAccountFor()` — the last one reads
+ * the MANDATOR record since E2 (2026-09-23), not a config key.
  */
 final class LedgerService
 {
@@ -230,33 +234,85 @@ final class LedgerService
     }
 
     /**
-     * The account number the VAT of a tax-code category is posted to —
-     * financialConfig `vatAccounts` (category → number; defaults 1170 / 1171
-     * for input tax, 2200 for output VAT, the KMU chart). The ONE reader of
-     * that key (Rule 2). Null when the category has no entry: a category
-     * without a tax line (zero, exempt), or a project config that lacks the
-     * key (BOOT-CONFIG-001 — an override replaces the package config); the
-     * caller refuses with a message. Fails loudly on a malformed value, like
-     * {@see listLimit()}: a typo in a config file is reported, not skipped.
+     * The account number the VAT of a tax-code category is posted to — read
+     * from the MANDATOR record since owner decision E2 (2026-09-23; before
+     * that `financialConfig → vatAccounts`): `input-material` → the
+     * record's `vat-input-material`, `input-other` → `vat-input-other`,
+     * `standard` / `reduced` / `special` → `vat-owed` (KMU 1170 / 1171 /
+     * 2200 as start values). The ONE reader of those fields in this module
+     * (Rule 2) — no caller asks the mandator for an account directly.
      *
-     * @throws \UnexpectedValueException `vatAccounts` is not a map of category => account number (digits string)
+     * Null when there is no account to post to: a category without a tax
+     * line (zero, exempt, reverse-charge), no mandator saved yet, or the
+     * field left empty on it. The caller refuses with a message naming the
+     * mandator ({@see MANDATOR_HINT}) — never a 500, never a fallback.
+     *
+     * A `vatAccounts` key still present in financialConfig (a project
+     * override copied before the move, BOOT-CONFIG-001) is refused loudly:
+     * a second source that is silently ignored would be worse than a typo
+     * ({@see listLimit()}'s stance). So is a mandator that cannot be read
+     * at all (module not registered, table missing). Both come out as
+     * {@see VatAccountUnavailableException} with a GERMAN sentence naming
+     * the next step, which the callers show as a band or a refusal — never
+     * a 500 (owner decision, review 2026-09-23).
+     *
+     * @throws VatAccountUnavailableException financialConfig still carries `vatAccounts`, or the mandator record cannot be read
      */
-    public static function vatAccountFor(string $category): ?string
+    public function vatAccountFor(string $category): ?string
     {
-        $config     = DI::getModuleManager()->getModuleConfig('financial');
-        $configured = $config?->has('vatAccounts') ? $config->get('vatAccounts') : [];
-        if (!is_array($configured)) {
-            throw new \UnexpectedValueException('financialConfig: vatAccounts must be an array of tax category => account number, got ' . get_debug_type($configured) . '.');
-        }
-        if (!array_key_exists($category, $configured)) {
+        self::refuseLegacyVatAccounts();
+
+        $key = match (TaxCategory::tryFrom($category)) {
+            TaxCategory::InputMaterial => 'vat-input-material',
+            TaxCategory::InputOther    => 'vat-input-other',
+            TaxCategory::Standard, TaxCategory::Reduced, TaxCategory::Special => 'vat-owed',
+            default                    => null,
+        };
+        if ($key === null) {
             return null;
         }
-        $number = $configured[$category];
-        if (!is_string($number) || !preg_match('/^[0-9]{1,' . Account::NUMBER_LENGTH . '}$/', $number)) {
-            throw new \UnexpectedValueException("financialConfig: vatAccounts['{$category}'] must be an account number (digits, as a string), got " . var_export($number, true) . '.');
+
+        try {
+            $number = (new CurrentMandator($this->em))->find()?->account($key) ?? '';
+        } catch (MandatorUnavailableException $e) {
+            throw new VatAccountUnavailableException(VatAccountUnavailableException::MANDATOR_UNAVAILABLE, $e->getMessage(), $e);
         }
 
-        return $number;
+        return $number === '' ? null : $number;
+    }
+
+    /**
+     * The German sentence to show as a band when NO VAT account can be
+     * resolved at all — a leftover `vatAccounts`, an unregistered mandator
+     * module, a missing table ({@see VatAccountUnavailableException}) —
+     * or null when the resolution works (whether or not a number is set).
+     * The journal screens ask it once per page (review 2026-09-23: the
+     * state must show, not 500).
+     */
+    public function vatAccountNotice(): ?string
+    {
+        try {
+            $this->vatAccountFor(TaxCategory::Standard->value);
+        } catch (VatAccountUnavailableException $e) {
+            return $e->getMessage();
+        }
+
+        return null;
+    }
+
+    /** Where a missing VAT account is set — the sentence every refusal of {@see vatAccountFor()}'s callers ends with. */
+    public const MANDATOR_HINT = 'im Mandanten hinterlegen (Finanzen → Mandant, Konten)';
+
+    /** @throws VatAccountUnavailableException the key of the pre-E2 model is still in the config (German, for the screen) */
+    private static function refuseLegacyVatAccounts(): void
+    {
+        if (DI::getModuleManager()->getModuleConfig('financial')?->has('vatAccounts')) {
+            throw new VatAccountUnavailableException(
+                VatAccountUnavailableException::LEGACY_CONFIG,
+                'financialConfig enthält noch den Schlüssel «vatAccounts» — die MWST-Konten liegen seit dem 23.09.2026 im Mandanten (Finanzen → Mandant, Konten). '
+                . 'Den Schlüssel aus dem Projekt-Override (override/z77/module/financial/…/financialConfig.inc.php) entfernen; bis dahin wird keine MWST-Zeile gebucht.'
+            );
+        }
     }
 
     /** The posting proper — `post()` and `reverse()` both end here. */

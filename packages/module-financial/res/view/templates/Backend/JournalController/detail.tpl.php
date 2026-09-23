@@ -19,6 +19,7 @@
  * @var array<string,string> $kindLabels
  * @var array<string,string> $changeLabels
  * @var callable $fmt
+ * @var string|null $configNotice  the red band while no VAT account can be resolved (leftover config key, mandator unavailable) — null normally
  * @var string $actionBase
  */
 $actionBase = $actionBase ?? '/backend/finance/journal';
@@ -42,6 +43,9 @@ $snapshotLines = function (array $snapshot) use ($fmt, $lineCols): string {
 };
 ?>
 <div class="be-list">
+    <?php if (!empty($configNotice)): ?>
+    <div class="be-modal__alert be-modal__alert--error"><?= e($configNotice) ?></div>
+    <?php endif; ?>
     <div class="be-list__section">
         <div class="be-list__section-header">
             <h2 class="be-list__section-title">

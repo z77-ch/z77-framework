@@ -36,8 +36,9 @@ use Z77\Core\DI,
  * (plan §3) — parsed through `Money::fromDecimal()` in the installation's
  * base currency, so the same string rules as everywhere else apply and no
  * float touches it. It carries **no VAT** (plan §6.5) and therefore no tax
- * code; the account it is posted to is `debtorConfig → debtorAccounts →
- * dunningFee`, shown here so the ladder and its account are read together.
+ * code; the account it is posted to is the mandator's dunning-fee account
+ * (`DebtorAccounts`, key `dunningFee`), shown here so the ladder and its
+ * account are read together.
  *
  * No JavaScript of its own. The using class MUST provide (via its host
  * base): `html()`, `fetch()`, `fetchError()`, `em()`, `$layoutManager`,
@@ -87,6 +88,7 @@ trait DunningLevelControllerTrait
             'currency'   => $this->dunningCurrency(),
             'languages'  => $this->dunningLanguages(),
             'feeAccount' => $feeRow,
+            'accountsNotice' => $accounts->notice(),
             'actionBase' => $this->dunningLevelListBase(),
         ]);
         // The fragment owns its header slot (financial.md, «fragment slots»).

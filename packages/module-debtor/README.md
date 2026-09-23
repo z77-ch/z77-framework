@@ -65,15 +65,16 @@ Pieces:
   decision 9); the unique contact index becomes a field error under a race. No delete.
 - `Services/DebtorMasterData` — the one write path of the three file entities: validates, refuses
   a changed code, deactivates instead of deleting.
-- `Services/DebtorAccounts` — the ONE reader of `debtorConfig → debtorAccounts`
-  (`receivable` 1100, `discount` 3800, `loss` 3805, `rounding` 3809, `dunningFee` 6950 — from the
-  KMU chart, which gained `3809 «Rundungsdifferenzen»` for this).
-  `postableNumber()` refuses a missing or non-postable account with a German message naming the
-  key, at the point of use.
-- `Services/LedgerAccountCheck` — asks module-financial whether an account may be posted to, and
-  answers `null` when that module is not usable here (the class must autoload AND `financial` must
-  be a registered module). The read half of the `AccountingGateway` boundary; with the ledger
-  adapter one of the two classes in debtor that know financial's name.
+- `Services/DebtorAccounts` — the ONE reader of the five debtor accounts, which live on the
+  MANDATOR record since owner decision E2 (2026-09-23; `z77/module-mandator`, edited under
+  `/backend/finance/mandator` — `receivable` 1100, `discount` 3800, `loss` 3805, `rounding` 3809,
+  `dunningFee` 6950 as KMU start values; the chart gained `3809 «Rundungsdifferenzen»` for this).
+  `number()` / `postableNumber()` refuse a missing mandator, an empty field or a non-postable
+  account with a German message naming the key and the mandator, at the point of use; a leftover
+  `debtorConfig → debtorAccounts` in a project override is refused loudly.
+- The soft account check `LedgerAccountCheck` (three-valued, `null` = module-financial not usable
+  here) moved to `module-mandator` with the account settings; debtor imports it. The ledger adapter
+  `LedgerAccountingGateway` is now the ONE class in debtor that knows financial's name.
 - `Services/Iban` — normalize, format, shape, MOD-97-10 check digits, CH / LI origin, IID and
   QR-IBAN detection.
 - `Ui/*ControllerTrait` + `Ui/*Layout` — four backend fragments (ADR-018), mounted by

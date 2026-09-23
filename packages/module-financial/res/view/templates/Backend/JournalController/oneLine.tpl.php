@@ -28,6 +28,7 @@
  * @var string $entityCsrf  edit only
  * @var string $csrfToken  provided by html()
  * @var callable $fmt
+ * @var string|null $configNotice  the red band while no VAT account can be resolved (leftover config key, mandator unavailable) — null normally
  * @var string $actionBase
  */
 $actionBase = $actionBase ?? '/backend/finance/journal';
@@ -55,6 +56,9 @@ $side = static function (\Z77\Module\Financial\Entities\JournalEntry $e, bool $d
 };
 ?>
 <div class="be-list">
+    <?php if (!empty($configNotice)): ?>
+    <div class="be-modal__alert be-modal__alert--error"><?= e($configNotice) ?></div>
+    <?php endif; ?>
     <form method="post" action="<?= e($action) ?>" class="be-list__section" autocomplete="off">
         <input type="hidden" name="csrf_token" value="<?= e($csrfToken ?? '') ?>">
         <input type="hidden" name="form" value="one-line">

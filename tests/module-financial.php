@@ -47,7 +47,7 @@
  * The one-line entry (O, P2 exit check 3a/3b): the gross split with the tax
  * from VatCalculator's gross mode (input and output codes, 2023 vs 2024
  * rates, the wdv 28.60 case), the voucher correction within 1.00, zero /
- * exempt codes without a tax line, the `vatAccounts` configuration refused
+ * exempt codes without a tax line, the mandator's VAT account refused (E2)
  * when missing, a group or malformed, editing an entry of the one-line shape,
  * and the add / add-compound / edit pages rendered through the trait (CSS
  * reveal, no script, no placeholder, the date kept after a save).
@@ -317,11 +317,15 @@ register_shutdown_function(static function () use ($admin, $dbName, $rm, $base):
 
 // The REAL package is the module's source path: its config announces the
 // entities, its res/migrations holds the migration, its res/charts the chart.
-$package = str_replace('\\', '/', realpath(__DIR__ . '/../packages/module-financial'));
+$package  = str_replace('\\', '/', realpath(__DIR__ . '/../packages/module-financial'));
+// module-mandator carries the VAT accounts since E2 (2026-09-23) — `LedgerService::vatAccountFor()`
+// reads its record, so the module is registered next to financial and its migration runs with ours.
+$mandatorPackage = str_replace('\\', '/', realpath(__DIR__ . '/../packages/module-mandator'));
 $write('config/vendor/fileFinder.inc.php', "<?php return ['resourceDir' => ['sourceDir' => 'src', 'tplDir' => 'res/view/templates'], 'namespaces' => [\n"
     . "'Z77\\\\Module\\\\Financial\\\\' => ['sourcePaths' => ['{$package}']],\n"
+    . "'Z77\\\\Module\\\\Mandator\\\\' => ['sourcePaths' => ['{$mandatorPackage}']],\n"
     . "]];");
-$write('config/vendor/moduleManager.inc.php', "<?php return ['modulePrefix' => 'Module', 'frameworkPrefix' => 'Z77', 'defaultModule' => 'financial', 'modules' => ['financial' => []]];");
+$write('config/vendor/moduleManager.inc.php', "<?php return ['modulePrefix' => 'Module', 'frameworkPrefix' => 'Z77', 'defaultModule' => 'financial', 'modules' => ['mandator' => [], 'financial' => []]];");
 $write('config/client/systemConfig.inc.php', "<?php return ['canonicalBaseUrl' => '', 'baseCurrency' => 'CHF'];");
 $write('config/client/database.inc.php', '<?php return ' . var_export([
     'host' => $credentials['host'], 'port' => null, 'name' => $dbName,
@@ -394,9 +398,12 @@ check('A1 the module\'s res/migrations is collected under Z77\\Module\\Financial
 check('A2 the database is empty', $tables() === []);
 [$code, $out] = $run(['command' => 'migrate']);
 check('A3 migrate exits 0' . ($code !== 0 ? " — got {$code}: " . trim($out) : ''), $code === 0);
-check('A4 … migrated up to the module\'s part-2 migration (the package one runs first, by timestamp)', str_contains($out, 'Z77\\Module\\Financial\\Migrations\\Version20260922091711'));
-check('A5 account, fiscal_period, fiscal_year, journal_entry, journal_entry_change, journal_line exist (plus number_range and the metadata table)',
-    $tables() === ['account', 'fiscal_period', 'fiscal_year', 'journal_entry', 'journal_entry_change', 'journal_line', 'number_range', MigrationsApplication::STORAGE_TABLE]);
+$executed = $db->fetchFirstColumn('SELECT version FROM schema_migration');
+check('A4 … both financial migrations ran; the run ends at the newest of all modules (timestamp order — the mandator\'s)',
+    str_contains($out, 'Migrating up to Z77\\Module\\Mandator\\Migrations\\')
+    && in_array('Z77\\Module\\Financial\\Migrations\\Version20260922071232', $executed, true) && in_array('Z77\\Module\\Financial\\Migrations\\Version20260922091711', $executed, true));
+check('A5 account, fiscal_period, fiscal_year, journal_entry, journal_entry_change, journal_line exist (plus mandator, number_range and the metadata table)',
+    $tables() === ['account', 'fiscal_period', 'fiscal_year', 'journal_entry', 'journal_entry_change', 'journal_line', 'mandator', 'number_range', MigrationsApplication::STORAGE_TABLE]);
 $allUnicode = true;
 foreach (['account', 'fiscal_year', 'fiscal_period', 'journal_entry', 'journal_line', 'journal_entry_change'] as $table) {
     $info = $tableInfo($table);
@@ -416,7 +423,7 @@ check('A9 a second migrate is a no-op', $code === 0 && str_contains($out, 'Alrea
 [$code, $out] = $run(['command' => 'diff', '--namespace' => 'Z77\\Module\\Financial\\Migrations']);
 check('A10 diff after migrate reports NO change — mapping and migration agree (money and text snapshot columns included)', $code !== 0 && str_contains($out, 'No changes detected') && count(glob($package . '/res/migrations/Version*.php')) === 2);
 [$code, $out] = $run(['command' => 'status']);
-check('A11 status lists the module namespace and three executed migrations', $code === 0 && str_contains($out, 'Z77\\Module\\Financial\\Migrations') && preg_match('/\| Executed\s+\|\s+3\s+\|/', $out) === 1);
+check('A11 status lists the module namespace and four executed migrations (package, two of financial, one of mandator)', $code === 0 && str_contains($out, 'Z77\\Module\\Financial\\Migrations') && preg_match('/\| Executed\s+\|\s+4\s+\|/', $out) === 1);
 
 // ── B. the KMU chart: a button on an EMPTY chart ─────────────────────────
 
@@ -440,7 +447,7 @@ $sorted  = $numbers;
 sort($sorted, SORT_STRING);
 check('B3 allInOrder() returns the chart in string order (1, 10, 100, 1000, 1020, …)', array_slice($numbers, 0, 5) === ['1', '10', '100', '1000', '1020'] && $numbers === $sorted);
 // The accounts other modules' configuration names by number (Rule 2): the
-// VAT accounts of `vatAccounts` and, since 2026-09-22, debtor's own set —
+// VAT accounts and debtor's account settings (on the MANDATOR record since E2) —
 // `3809 Rundungsdifferenzen` was added to the chart for it (owner: rounding
 // and discount must stay separable in the reports).
 $namedByConfig = ['1170', '1171', '2200', '1100', '3800', '3805', '3809', '6950'];
@@ -1812,6 +1819,12 @@ $db->executeStatement("UPDATE fiscal_period SET state = 'open'");
 echo "O. One-line entry: Soll | Datum | Bu-Nr | Text | Haben | Betrag (gross), optional MwSt row\n";
 // State: 2032-33 (1.7.2032–30.6.2033) is open, every period `open` (T reset them).
 $em       = $wireDi();
+// The MANDATOR record the tax accounts are read from (E2, 2026-09-23) — created once, the way the
+// backend screen's first save does it: the KMU start values on the account fields.
+$mandator = \Z77\Module\Mandator\Services\MandatorAccounts::prefilled();
+$mandator->mapFromArray(['name' => 'Harness AG', 'country' => 'CH']);
+(new \Z77\Module\Mandator\Services\MandatorService($em))->save($mandator);
+$em       = $wireDi();
 $entries  = $em->getRepository(JournalEntry::class);
 $oneLine  = fn() => new \Z77\Module\Financial\Ui\OneLineEntryForm('CHF', DI::getUnifiedEntityManager()->getRepository(Account::class), DI::getUnifiedEntityManager()->getRepository(TaxCode::class),
     \Z77\Module\Vat\Services\VatRates::from(DI::getUnifiedEntityManager()), new LedgerService(DI::getUnifiedEntityManager()));
@@ -1873,11 +1886,38 @@ $exempt = $oneLine()->fromPost($row('1100', '3200', '400.00', '2032-11-17', 'UA'
 check('O7b an exempt code (UA) with a tax amount is refused — steuerfrei, kein Steuerbetrag', $exempt->toRequest() === null && str_contains($exempt->error('tax_amount'), 'steuerfrei'));
 $zeroRef = $manual->create($zero);
 
+// The tax accounts live on the MANDATOR record since E2 (2026-09-23) — read through
+// `LedgerService::vatAccountFor()`, the same access point as before. The record was
+// created above with the KMU start values; its fields are changed here through the
+// service (an empty field) and past the validator in SQL (an account that BECAME a
+// group after it was saved) — both must refuse at the point of use, naming the mandator.
+$mandatorRow = fn() => DI::getUnifiedEntityManager()->getRepository(\Z77\Module\Mandator\Entities\Mandator::class)->theOne();
+(new \Z77\Module\Mandator\Services\MandatorService(DI::getUnifiedEntityManager()))->update($mandatorRow(), ['account_vat_input_material' => '']);
+$em = $wireDi();
+$missing = $oneLine()->fromPost($row('6500', '1020', '400.00', '2032-11-15', 'VM'));
+check('O8 no tax account set for the category on the mandator → refused, the message names the mandator', $missing->toRequest() === null
+    && array_filter($missing->generalErrors(), fn($m) => str_contains($m, 'Mandant') && str_contains($m, 'input-material')) !== []
+    && (new LedgerService($em))->vatAccountFor('input-material') === null);
+check('O8b … a line WITHOUT VAT still posts on that record (the account is needed only for a tax line)', $oneLine()->fromPost($row('6500', '1020', '10.00'))->toRequest() !== null);
+$db->executeStatement("UPDATE mandator SET account_vat_input_material = '100'");   // a group — past the validator, as a chart change after the save would leave it
+$em = $wireDi();
+$group = $oneLine()->fromPost($row('6500', '1020', '400.00', '2032-11-15', 'VM'));
+check('O8c the stored account is a group → refused through accountExists(), naming account and mandator', $group->toRequest() === null
+    && array_filter($group->generalErrors(), fn($m) => str_contains($m, 'Steuerkonto 100') && str_contains($m, 'Mandant')) !== []
+    && !(new LedgerService(DI::getUnifiedEntityManager()))->accountExists('100') && !(new LedgerService(DI::getUnifiedEntityManager()))->accountExists('4711')
+    && (new LedgerService(DI::getUnifiedEntityManager()))->accountExists('1170') && !(new LedgerService(DI::getUnifiedEntityManager()))->accountExists('6570'));   // 6570 was deactivated in M
+$db->executeStatement("UPDATE mandator SET account_vat_input_material = '1170'");
+$em = $wireDi();
+$e = caught(fn() => (new \Z77\Module\Mandator\Services\MandatorService($em))->update($mandatorRow(), ['account_vat_input_material' => '100']), \Z77\Module\Mandator\Services\InvalidMandatorException::class);
+check('O8c2 … and the SCREEN could not have stored the group: the mandator validator refuses it on save, naming the field', $e !== null
+    && $e->validator->hasFieldError('account_vat_input_material') && str_contains($e->validator->getFieldError('account_vat_input_material'), 'Gruppe')
+    && $mandatorRow()->account('vat-input-material') === '1170');
+
 /**
- * A fresh DI whose financialConfig is the package config with `vatAccounts` replaced
- * by $vatAccounts, or removed for null — a project override copy (BOOT-CONFIG-001).
+ * A fresh DI whose financialConfig STILL carries `vatAccounts` — a project override copied
+ * before the move (BOOT-CONFIG-001). Refused loudly: a second source is never read.
  */
-$withFinancialConfig = function (?array $vatAccounts) use ($base): void {
+$withLegacyVatAccounts = function (?array $vatAccounts) use ($base): void {
     // $wireDi() with the ModuleManager swapped — DI::set() never replaces a registered service.
     DI::getInstance(true)
         ->set('CacheManager', CacheManager::class, true)
@@ -1889,12 +1929,10 @@ $withFinancialConfig = function (?array $vatAccounts) use ($base): void {
                 public function getModuleConfig(string $moduleKey): ?\Z77\Core\Config\Config
                 {
                     $config = parent::getModuleConfig($moduleKey);
-                    if ($moduleKey !== 'financial' || $config === null) {
+                    if ($moduleKey !== 'financial' || $config === null || $this->vatAccounts === null) {
                         return $config;
                     }
-                    $data = $config->getAll();
-                    unset($data['vatAccounts']);
-                    return new \Z77\Core\Config\Config($this->vatAccounts === null ? $data : $data + ['vatAccounts' => $this->vatAccounts]);
+                    return new \Z77\Core\Config\Config($config->getAll() + ['vatAccounts' => $this->vatAccounts]);
                 }
             };
             $mm->vatAccounts = $vatAccounts;
@@ -1905,33 +1943,31 @@ $withFinancialConfig = function (?array $vatAccounts) use ($base): void {
     ;
     DI::getCacheManager()->setCacheDir($base . '/var/cache');
 };
-$withFinancialConfig(null);   // an override copy made before `vatAccounts` existed
-$missing = $oneLine()->fromPost($row('6500', '1020', '400.00', '2032-11-15', 'VM'));
-check('O8 no tax account configured for the category → refused, the message names financialConfig → vatAccounts', $missing->toRequest() === null
-    && array_filter($missing->generalErrors(), fn($m) => str_contains($m, 'vatAccounts') && str_contains($m, 'input-material')) !== []);
-check('O8b … a line WITHOUT VAT still posts on that config (the key is needed only for a tax line)', $oneLine()->fromPost($row('6500', '1020', '10.00'))->toRequest() !== null);
-$withFinancialConfig(['input-material' => '100']);   // a group
-$group = $oneLine()->fromPost($row('6500', '1020', '400.00', '2032-11-15', 'VM'));
-check('O8c the configured account is a group → refused through accountExists(), naming account and key', $group->toRequest() === null
-    && array_filter($group->generalErrors(), fn($m) => str_contains($m, 'Steuerkonto 100') && str_contains($m, 'vatAccounts')) !== []
-    && !(new LedgerService(DI::getUnifiedEntityManager()))->accountExists('100') && !(new LedgerService(DI::getUnifiedEntityManager()))->accountExists('4711')
-    && (new LedgerService(DI::getUnifiedEntityManager()))->accountExists('1170') && !(new LedgerService(DI::getUnifiedEntityManager()))->accountExists('6570'));   // 6570 was deactivated in M
-$withFinancialConfig(['input-material' => 1170]);
-$e = caught(fn() => LedgerService::vatAccountFor('input-material'), \UnexpectedValueException::class);
-check('O8d a malformed mapping (an int instead of the number string) fails loudly, naming the key', $e !== null && str_contains($e->getMessage(), "vatAccounts['input-material']"));
+$withLegacyVatAccounts(['input-material' => '1170']);
+$e = caught(fn() => (new LedgerService(DI::getUnifiedEntityManager()))->vatAccountFor('input-material'), \Z77\Module\Financial\Services\VatAccountUnavailableException::class);
+check('O8d a leftover `vatAccounts` in financialConfig is refused with a GERMAN sentence naming the move to the mandator (E2) — never read as a second source', $e !== null && $e instanceof \UnexpectedValueException
+    && str_contains($e->getMessage(), 'vatAccounts') && str_contains($e->getMessage(), 'Mandant') && $e->reason === 'legacy-config');
+$legacy = $oneLine()->fromPost($row('6500', '1020', '400.00', '2032-11-15', 'VM'));
+check('O8d2 … the one-line form REFUSES the MwSt row with that sentence (no exception, no silent posting on the old key), and the journal pages carry it as a band',
+    $legacy->toRequest() === null && array_filter($legacy->generalErrors(), fn($m) => str_contains($m, 'vatAccounts')) !== []
+    && (new LedgerService(DI::getUnifiedEntityManager()))->vatAccountNotice() !== null && str_contains((new LedgerService(DI::getUnifiedEntityManager()))->vatAccountNotice(), 'vatAccounts'));
+check('O8d3 … a line WITHOUT VAT still posts under the leftover key, and startFrom() on a taxed one-line entry falls back to the Sammelbuchung (false) instead of throwing (P5c)',
+    $oneLine()->fromPost($row('6500', '1020', '10.00'))->toRequest() !== null
+    && $oneLine()->startFrom(DI::getUnifiedEntityManager()->getRepository(JournalEntry::class)->find((int) $entryRow('2032-33', $inputRef->number)['id'])) === false);
 $em      = $wireDi();   // the package config again
 $entries = $em->getRepository(JournalEntry::class);
 $manual  = new ManualEntryService($em, 'buchhalter');
-check('O8e the package default maps input-material → 1170, input-other → 1171, output → 2200 (verified against res/charts/kmu.json); no mapping for zero / exempt',
-    LedgerService::vatAccountFor('input-material') === '1170' && LedgerService::vatAccountFor('input-other') === '1171'
-    && LedgerService::vatAccountFor('standard') === '2200' && LedgerService::vatAccountFor('reduced') === '2200' && LedgerService::vatAccountFor('special') === '2200'
-    && LedgerService::vatAccountFor('zero') === null && LedgerService::vatAccountFor('exempt') === null
+$ledger  = new LedgerService($em);
+check('O8e the mandator\'s start values map input-material → 1170, input-other → 1171, output → 2200 (verified against res/charts/kmu.json); no account for zero / exempt / reverse-charge',
+    $ledger->vatAccountFor('input-material') === '1170' && $ledger->vatAccountFor('input-other') === '1171'
+    && $ledger->vatAccountFor('standard') === '2200' && $ledger->vatAccountFor('reduced') === '2200' && $ledger->vatAccountFor('special') === '2200'
+    && $ledger->vatAccountFor('zero') === null && $ledger->vatAccountFor('exempt') === null && $ledger->vatAccountFor('reverse-charge') === null
+    && !str_contains(file_get_contents($package . '/src/App/Config/financialConfig.inc.php'), "'vatAccounts' =>")
     && (function () use ($package) {
         $chart = array_column(json_decode(file_get_contents($package . '/res/charts/kmu.json'), true), null, 'number');
         return ($chart['1170']['postable'] ?? false) && str_contains($chart['1170']['name'], 'Vorsteuer') && ($chart['1171']['postable'] ?? false) && str_contains($chart['1171']['name'], 'Investitionen')
             && ($chart['2200']['postable'] ?? false) && str_contains($chart['2200']['name'], 'Geschuldete MWST');
     })());
-
 $bad = $oneLine()->fromPost(['debit' => '1020', 'date' => '2032-11-15', 'text' => '', 'credit' => '1020 Bankguthaben', 'amount' => '-5', 'vat' => '1', 'tax_code' => '', 'tax_amount' => '']);
 check('O9 field errors: text, the same account on both sides («1020 Bankguthaben» is read as 1020), a negative amount; the MwSt row on without a code', $bad->toRequest() === null
     && $bad->error('text') !== '' && str_contains($bad->error('credit'), 'dasselbe Konto') && str_contains($bad->error('amount'), 'grösser als 0') && str_contains($bad->error('tax_code'), 'MWST-Code wählen'));

@@ -1,6 +1,6 @@
 # Bauplan — order, debtor, financial, vat, contact, article
 
-**Status:** `[CONCEPT]` → P0 closed 2026-09-21 (ADR-039 to ADR-043 approved). P1 closed 2026-09-21. P2 parts 1–3 built 2026-09-22. P3 part 1 (debtor master data) built 2026-09-22. **P3 part 2 (`InvoicingService`, the accounting port) built 2026-09-23**; next P3 part 3 (PDF / QR-bill, document screens).
+**Status:** `[CONCEPT]` → P0 closed 2026-09-21 (ADR-039 to ADR-043 approved). P1 closed 2026-09-21. P2 parts 1–3 built 2026-09-22. P3 part 1 (debtor master data) built 2026-09-22. P3 part 2 (`InvoicingService`, the accounting port) built 2026-09-23. **The mandator (`module-mandator`, owner decisions E1 / E2) built 2026-09-23, awaiting review**; next P3 part 3 (PDF / QR-bill, document screens).
 **Date:** 2026-09-18, updated 2026-09-21 (article model A1–A7 decided, Q7 answered, module cut and
 build phases final, all questions answered, external review worked in; the persistence-access
 question reopened ADR 2 on 2026-09-20 and was settled on 2026-09-21)
@@ -202,9 +202,36 @@ without a production caller removed, `currency` / `exchange_rate` kept with the 
 column. Orchestrator decisions: the 0.05 step stays a constant until a second base currency,
 over-crediting stays allowed (open amount may go negative), `Actor` stays duplicated until a third
 module needs it. Harness `tests/module-debtor.php`, 272 checks. Everything recorded in
-[`debtor.md`](../topics/debtor.md). **Next: P3 part 3 — PDF with QR-bill and the document screens**
+[`debtor.md`](../topics/debtor.md).
+**The mandator built (2026-09-23, awaiting the independent review) — `z77/module-mandator`, topic
+[`mandator.md`](../topics/mandator.md).** The installation's OWN company was missing entirely; two
+things hang on it — the letterhead of the printed reports and letters, and the account settings the
+business modules post with. Owner decisions of 2026-09-23: **E1 — ONE mandator**, read fixed
+(`CurrentMandator::find()`, never created on access; the table has an id, but nothing filters by
+mandator and no other table carries a `mandator_id` — several mandators are a build of their own,
+column plus filter in EVERY query); **E2 — the account settings move from the configs into the
+record**: `financialConfig → vatAccounts` and `debtorConfig → debtorAccounts` are REMOVED, the
+numbers are fields of the record edited under `/backend/finance/mandator` (pre-filled with the KMU
+start values on the first save, checked softly against the chart), and the two access points that
+existed stay the ONLY readers — `LedgerService::vatAccountFor()` (an instance method now) and
+debtor's `DebtorAccounts`; a leftover key in a project override is refused loudly (BOOT-CONFIG-001).
+**The mandator is the letterhead, the payment target is the payee** (owner): no IBAN, no bank, no
+currency and no creditor block on the mandator — the account holder as registered with the bank
+often differs from the company name; the mandator's address is only the field-by-field FALLBACK the
+payment target's creditor block takes (built in P3 part 3, recorded as a pending in `debtor.md`
+together with the two IBAN fields and the reference rule from wdv-630). Package of its own (kernel
+carries no Doctrine, contact is the model of OTHER parties): mandator → kernel, persistence-doctrine,
+vat; financial and debtor → mandator; `LedgerAccountCheck` moved from debtor to mandator (Rule 8).
+Taken from wdv-6.2.2's `Mandator` by reading, not copying: letterhead, UID (with the eCH-0097
+check digit), VAT liability (a flag only — what it switches off is an open owner decision), default
+tax code, the eight accounts that have readers. NOT taken: `lastInvoiceNo` / `invoiceNoPrefix`
+(`NumberRange`), `currentFy` / `firstDayOffFy` (`FiscalYear`), the creditor and closing accounts (no
+reader; the class-9 accounts are not in the chart before P5), `public`, `emailInvoicing`,
+`deliveryAddress`. §5.1's and §6.1's «file config» rows for these settings are superseded by the
+record. Harness `tests/module-mandator.php`, 96 checks; `module-financial` (368) and
+`module-debtor` (275) adapted and green. **Next: P3 part 3 — PDF with QR-bill and the document screens**
 (list, draft editor with active codes and accounts, re-issue and finalize with versions, the credit-note
-form), then P4.
+form; the payment target's creditor block and second IBAN field per the pending in `debtor.md`), then P4.
 
 Open for the owner: `persistence-doctrine`, `module-vat` and `module-contact` are not split targets
 yet (`.github/workflows/split.yml`, Packagist). Working method that carried P1: each building block
@@ -645,7 +672,7 @@ called from outside (§7).
 | `EntryChange` (change log of manual entries) | Doctrine | traceability, see §5.3 |
 | `NumberRange` | Doctrine | atomic numbers need a row lock |
 | `VatReturn` (period, method, totals per form field, state) | Doctrine | references the period and its entries |
-| Settings (VAT method, **VAT-return rounding account**, VAT payable/settlement accounts, retained earnings) | file config | single values, one place (Rule 2) |
+| Settings (VAT method, **VAT-return rounding account**, VAT payable/settlement accounts, retained earnings) | file config — **the VAT accounts (input tax material / other, owed VAT) moved to the mandator record 2026-09-23 (owner E2, `mandator.md`); the rest arrives with P5 and follows the same path when it has a reader** | single values, one place (Rule 2) |
 
 Default chart: Swiss SME chart of accounts (KMU-Kontenrahmen), shipped as a resource file and
 adopted by a button **only into an empty chart** — not a first-install seed (owner, 2026-09-22: a
@@ -746,7 +773,7 @@ income statement result to retained earnings. Blocked while a period of the year
 | `PaymentTerms` (due days, discount %, text per language) | file | few rows, master data |
 | `PaymentTarget` (IBAN / QR-IBAN, bank account number in the ledger) | file | few rows |
 | `DunningLevel` (days, fee, text) | file | few rows |
-| Account settings (receivables collective account, discount, loss, **invoice-rounding account** for the 0.05 line, fees) | file config | single values |
+| Account settings (receivables collective account, discount, loss, **invoice-rounding account** for the 0.05 line, fees) | **the mandator record** (Doctrine, `module-mandator`) since 2026-09-23 (owner E2) — was file config until then; read only through `DebtorAccounts` | single values, edited in the backend, checked against the chart |
 
 ### 6.2 Invoicing
 
@@ -772,7 +799,7 @@ contracts/subscriptions, fees).
 - `invoice(draft)` (one transaction): VAT via `module-vat` → total rounded to 0.05 as **separate
   rounding line** → number from `NumberRange` (only the first time) → `Invoice` in state
   `invoicing` with full snapshot (addresses, lines, rates, tax summary, FX rate) → PDF with QR-bill
-  (QRR/SCOR reference; bacon-qr-code is already vendored in the kernel).
+  (reference QRR with a QR-IBAN, NON with a plain IBAN — owner 2026-09-23: no SCOR; bacon-qr-code is already vendored in the kernel).
 - `reinvoice(invoice, draft)`: only in state `invoicing`; same number, new snapshot and PDF.
   Nothing to reverse — nothing was posted.
 - `finalize(invoices)` (batch, one transaction): state `final` → `OpenItem` → posting via
@@ -796,7 +823,7 @@ contracts/subscriptions, fees).
 
 ### 6.4 CAMT.054 import
 
-Upload → dedup by message id and transaction reference → match by QR reference / SCOR → state per
+Upload → dedup by message id and transaction reference → match by QR reference (QRR) or, for a NON payment, by the identification in the unstructured message → state per
 transaction (unmatched, matched, booked, ignored) → booking posts payments in one transaction.
 Several payments for the same invoice in one file must be detected (wdv misses this). ESR/V11 is
 not built (ESR discontinued 2022). camt.053 later, when needed.
