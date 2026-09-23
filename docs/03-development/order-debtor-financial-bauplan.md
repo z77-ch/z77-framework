@@ -1,6 +1,6 @@
 # Bauplan — order, debtor, financial, vat, contact, article
 
-**Status:** `[CONCEPT]` → P0 closed 2026-09-21 (ADR-039 to ADR-043 approved). P1 closed 2026-09-21. P2 parts 1–3 built 2026-09-22 (part 3, the reports, awaiting commit after review); next the P2 exit check, then P3 debtor.
+**Status:** `[CONCEPT]` → P0 closed 2026-09-21 (ADR-039 to ADR-043 approved). P1 closed 2026-09-21. P2 parts 1–3 built 2026-09-22. **P3 part 1 (debtor master data) built 2026-09-22**; next P3 part 2 (`InvoicingService`).
 **Date:** 2026-09-18, updated 2026-09-21 (article model A1–A7 decided, Q7 answered, module cut and
 build phases final, all questions answered, external review worked in; the persistence-access
 question reopened ADR 2 on 2026-09-20 and was settled on 2026-09-21)
@@ -128,6 +128,49 @@ a project installation: open a year, post, edit, delete, read and print every re
 **One-line manual entry built (owner, 2026-09-22 — P2 exit check 3a/3b):** `Soll | Datum | Bu-Nr | Text | Haben | Betrag` (gross) is the default form, an optional MwSt row (CSS reveal, no JS) splits the tax out with `VatCalculator`'s gross mode and the system writes the tax line to the account `financialConfig → vatAccounts` names (validated by `LedgerService::accountExists()`, §5.4 — now built); the multi-line form stays as «Sammelbuchung»; to be re-tested live (`financial.md`).
 Framework-wide pending found on the way: module config override replaces instead of merging
 (BOOT-CONFIG-001 in `bootstrap.md`).
+
+**P3 part 1 done (2026-09-22) — `module-debtor`, master data only.** New package `z77/module-debtor`
+(namespace `Z77\Module\Debtor`, PHP 8.4, requires kernel, persistence-doctrine, module-vat and
+module-contact, `suggest`s module-financial — §2), required in the monorepo ROOT `composer.json` only.
+Built: `DebtorProfile` (Doctrine, one per contact, `uniq_debtor_profile_contact`, migration
+`Version20260922173918`), the three file-based master-data types `PaymentTerms`, `PaymentTarget` and
+`DunningLevel` with the `TaxCode` pattern (seed-once, referenced by code, code immutable,
+deactivate-never-delete — ADR-043/19), the account settings `debtorConfig → debtorAccounts` behind
+one accessor (`DebtorAccounts`, the `vatAccountFor()` model), the soft check against financial
+(`LedgerAccountCheck`, three-valued — `null` = financial absent, the read half of the P3 part 2
+gateway), `Services/Iban` (MOD-97-10 check digits, QR-IBAN IID 30000–31999) and four backend
+fragments in the `finance` group. Harness `tests/module-debtor.php`, 173 checks. Independent review worked in the same day (2026-09-23). Decisions taken on
+the way, all recorded in [`debtor.md`](../topics/debtor.md): the profile carries **no language**
+(`Contact::$language` is the one truth, Rule 2) and **no currency** (Q6 decided against
+foreign-currency invoicing, and §6.2 puts currency and rate on the DOCUMENT — on the party it would
+be an unread column, so part 2 adds it to the invoice); payment terms on a profile are **required**,
+because there is no global default to fall back on; `label` stays German for the backend while the
+**document text is kept per language** (`i18n.md` whitelist, default language required as soon as any
+other is filled) and the fallback RESOLVER waits for the document in part 2; **no number ranges in
+part 1** — `invoice` and `credit-note` are created in part 2, where the first number is drawn; the
+debtor profile is **its own screen** (`/backend/finance/debtor`), not a fragment on the contact
+screen, because mounting there would make module-contact know a module (§2), so the list is
+contact-oriented instead and nothing in module-contact was touched. **Owner decisions of 2026-09-22 on the two open questions:** the invoice rounding gets its OWN
+account — `3809 «Rundungsdifferenzen»` was added to the KMU chart in group 38 and
+`debtorAccounts → rounding` points at it, because rounding and Skonto must stay separable in the
+reports (the chart is now 197 rows; §5.1); the dunning fee stays on `6950 Finanzertrag`, because it
+is **damages for the delay, not a service** — no MWST (§6.5) and no turnover.
+**Review findings worked in (2026-09-23):** `set*Active()` on the file master data is a PURE state
+change (the `VatMasterData` model) — a row that has BECOME invalid, a payment target whose ledger
+account was deactivated or a text in a language the installation dropped, is exactly the row that
+must still be switchable off; the full validator runs on a form save, and the three switches answer
+a refusal with a `fetchError` instead of a 500. `LedgerAccountCheck::available()` additionally
+requires that `financial` is a REGISTERED module, not merely autoloadable — a package in `vendor/`
+without a module config has no announced entities and would fatal every debtor list. A NEW debtor
+profile requires an ACTIVE contact (the reference rule applied to the party); an existing one keeps
+working and stays editable. A discount tier is refused at `dueDays = 0` as well. The seeds ship
+without a `document_text`, so an installation in any language starts with rows that save
+(DEBTOR-TEXT-DROP-001 is the one new pending: an edit silently drops a text in a dropped language).
+Everything without a production caller was removed, and the shared shapes
+(`HasDocumentText`, `ValidatesMasterDataRow`) now exist once (Rule 8).
+**Next: P3 part 2 — `InvoicingService`** (§6.2: the draft with typed lines and parent lines, the
+`invoicing` / `final` states, the 0.05 rounding line, the number ranges, the document snapshot),
+then part 3 (PDF with QR-bill and the `AccountingGateway` port, §6.6).
 
 Open for the owner: `persistence-doctrine`, `module-vat` and `module-contact` are not split targets
 yet (`.github/workflows/split.yml`, Packagist). Working method that carried P1: each building block

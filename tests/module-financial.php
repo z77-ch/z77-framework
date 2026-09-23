@@ -439,6 +439,16 @@ $numbers = array_map(fn(Account $a) => $a->getNumber(), $chart);
 $sorted  = $numbers;
 sort($sorted, SORT_STRING);
 check('B3 allInOrder() returns the chart in string order (1, 10, 100, 1000, 1020, …)', array_slice($numbers, 0, 5) === ['1', '10', '100', '1000', '1020'] && $numbers === $sorted);
+// The accounts other modules' configuration names by number (Rule 2): the
+// VAT accounts of `vatAccounts` and, since 2026-09-22, debtor's own set —
+// `3809 Rundungsdifferenzen` was added to the chart for it (owner: rounding
+// and discount must stay separable in the reports).
+$namedByConfig = ['1170', '1171', '2200', '1100', '3800', '3805', '3809', '6950'];
+check('B2b every account another module names by number is in the chart, postable and under a group',
+    array_reduce($namedByConfig, fn($ok, $n) => $ok && isset($byNumber[$n]) && $byNumber[$n]->isPostable() && $byNumber[$n]->getParent() !== null, true));
+check('B2c 3809 «Rundungsdifferenzen» sits in group 38 next to 3800 and 3805, and is a DIFFERENT account than the discount one',
+    ($byNumber['3809'] ?? null)?->getName() === 'Rundungsdifferenzen' && $byNumber['3809']->getParent()?->getNumber() === '38'
+    && $byNumber['3809']->getType() === 'revenue');
 $roots = array_values(array_filter($chart, fn(Account $a) => $a->getParent() === null));
 check('B4 the roots are exactly the classes 1–9, all groups', array_map(fn(Account $a) => $a->getNumber(), $roots) === ['1', '2', '3', '4', '5', '6', '7', '8', '9'] && array_filter($roots, fn(Account $a) => $a->isPostable()) === []);
 $chainOk = true;

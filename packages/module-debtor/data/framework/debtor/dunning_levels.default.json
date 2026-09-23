@@ -1,0 +1,29 @@
+[
+    {
+        "id": 1,
+        "code": "reminder",
+        "label": "Zahlungserinnerung",
+        "level": 1,
+        "days_after_due": 10,
+        "fee": 0,
+        "active": true
+    },
+    {
+        "id": 2,
+        "code": "dunning-1",
+        "label": "1. Mahnung",
+        "level": 2,
+        "days_after_due": 30,
+        "fee": 2000,
+        "active": true
+    },
+    {
+        "id": 3,
+        "code": "dunning-2",
+        "label": "2. Mahnung",
+        "level": 3,
+        "days_after_due": 50,
+        "fee": 4000,
+        "active": true
+    }
+]

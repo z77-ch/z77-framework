@@ -111,6 +111,7 @@
     {"number":"38","name":"Erlösminderungen","type":"revenue","postable":false,"parent":"3"},
     {"number":"3800","name":"Erlösminderungen","type":"revenue","postable":true,"parent":"38"},
     {"number":"3805","name":"Verluste aus Forderungen, Veränderung Delkredere","type":"revenue","postable":true,"parent":"38"},
+    {"number":"3809","name":"Rundungsdifferenzen","type":"revenue","postable":true,"parent":"38"},
     {"number":"39","name":"Bestandesänderungen unfertige und fertige Erzeugnisse, nicht fakturierte Dienstleistungen","type":"revenue","postable":false,"parent":"3"},
     {"number":"3900","name":"Bestandesänderungen unfertige Erzeugnisse","type":"revenue","postable":true,"parent":"39"},
     {"number":"3901","name":"Bestandesänderungen fertige Erzeugnisse","type":"revenue","postable":true,"parent":"39"},

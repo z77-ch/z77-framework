@@ -68,6 +68,7 @@ Structure is enforced by `npm run docs:check` ([docs-lint/STANDARD.md](../docs-l
 | CSS/SCSS dms | [topics/css-dms.md](topics/css-dms.md) |
 | CSS/SCSS frontend, public design | [topics/css-frontend.md](topics/css-frontend.md) |
 | CSS watch, `npm run watch` / `build` | [topics/css-watch.md](topics/css-watch.md) |
+| debtor / Debitor, receivables / Debitorenbuchhaltung, debtor profile / `DebtorProfile`, payment terms / Zahlungskonditionen / `PaymentTerms`, discount / Skonto, payment target / Zahlungsziel / `PaymentTarget`, IBAN, QR-IBAN, QRR / SCOR reference, dunning / Mahnung / Mahnstufe / `DunningLevel`, Mahngebühr, Mahnsperre, `debtorAccounts`, Debitoren-Sammelkonto, Rundungsdifferenz Rechnung, `LedgerAccountCheck`, invoice / Rechnung (P3 parts 2–3), module-debtor | [topics/debtor.md](topics/debtor.md) |
 | documents, DMS, drive, upload, delivery | [topics/documents.md](topics/documents.md) |
 | entities, hydration, entity data handling | [topics/entity-data-handling.md](topics/entity-data-handling.md) |
 | fetch, AJAX, CSRF, form validation | [topics/fetch.md](topics/fetch.md) |

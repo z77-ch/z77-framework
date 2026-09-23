@@ -1,0 +1,42 @@
+{
+    "name": "z77/module-debtor",
+    "description": "Z77 Debtor Module | receivables master data: debtor profile per contact, payment terms, payment targets and dunning levels (ADR-040, plan §6).",
+    "type": "library",
+    "keywords": ["php", "framework", "debtor", "receivables", "invoicing", "qr-bill", "z77"],
+    "homepage": "https://github.com/z77-ch/z77-framework",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Peter Ruepp",
+            "email": "peter.ruepp@z77.ch"
+        }
+    ],
+    "autoload": {
+        "psr-4": {
+            "Z77\\Module\\Debtor\\": "src/"
+        }
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true,
+    "extra": {
+        "branch-alias": {
+            "dev-main": "1.0.x-dev"
+        }
+    },
+    "require": {
+        "php": ">=8.4",
+        "z77/kernel": "^1.0",
+        "z77/persistence-doctrine": "^1.0",
+        "z77/module-vat": "^1.0",
+        "z77/module-contact": "^1.0"
+    },
+    "suggest": {
+        "z77/module-financial": "Books the receivables of this module; without it debtor runs against an external bookkeeping and its account settings are not checked."
+    },
+    "support": {
+        "issues": "https://github.com/z77-ch/z77-framework/issues",
+        "source": "https://github.com/z77-ch/module-debtor",
+        "docs": "https://github.com/z77-ch/z77-framework/tree/main/docs"
+    },
+    "readme": "README.md"
+}

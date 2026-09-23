@@ -1,0 +1,23 @@
+[
+    {
+        "id": 1,
+        "code": "net-30",
+        "label": "30 Tage netto",
+        "due_days": 30,
+        "discounts": [],
+        "active": true
+    },
+    {
+        "id": 2,
+        "code": "disc-2-10",
+        "label": "10 Tage 2 %, 30 Tage netto",
+        "due_days": 30,
+        "discounts": [
+            {
+                "days": 10,
+                "percent": 200
+            }
+        ],
+        "active": true
+    }
+]
