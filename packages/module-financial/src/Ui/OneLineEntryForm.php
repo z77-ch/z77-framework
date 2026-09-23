@@ -80,10 +80,19 @@ final class OneLineEntryForm
      * currency. It is for VOUCHER ROUNDING only — a few Rappen against the
      * rate-exact value; a flat franc would let 0.00 pass on a 10.00 purchase.
      * More than that is a different tax, which belongs in a Sammelbuchung.
+     *
+     * PERCENT went from 10 to 1 on 2026-09-23 (owner decision, P2 exit check
+     * case 7 in z77.ch). At 10 % the percentage only ever tightened a tax
+     * BELOW 10.00 — above it the flat MAX of 1.00 won, so `400.00 VM` allowed
+     * a full franc and accepted the wdv value 30.80 (400 × 7.7 % on top, the
+     * old rate) against the correct 29.97: 0.83 off, waved through in silence.
+     * That is the very error this form was built to end. At 1 % the limit
+     * there is 0.30 — still generous for the Rappen a per-line voucher
+     * rounding produces, and closed against a different rate or a tax on top.
      */
     public const TAX_CORRECTION_MAX     = '1.00';
     public const TAX_CORRECTION_MIN     = '0.05';
-    public const TAX_CORRECTION_PERCENT = 10;
+    public const TAX_CORRECTION_PERCENT = 1;
 
     /** Categories whose natural side is Soll (debit): input tax. Every other taxed category is Haben. */
     private const INPUT_CATEGORIES = [TaxCategory::InputMaterial, TaxCategory::InputOther];

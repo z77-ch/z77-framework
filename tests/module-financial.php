@@ -1854,11 +1854,18 @@ check('O5b … posted: three lines, the VAT line on 2200 without tax data', arra
 
 $voucher = $oneLine()->fromPost($row('6500', '1020', '400.00', '2032-11-15', 'VM', '30.00'))->toRequest();
 check('O6 an entered tax (30.00, 0.03 off the computed 29.97) is the voucher value, taken as is: net 370.00', $shape($voucher) === ['6500 D 370.00 VM 810 370.00 30.00', '1170 D 30.00', '1020 C 400.00']);
-$edge = $oneLine()->fromPost($row('6500', '1020', '400.00', '2032-11-15', 'VM', '28.97'))->toRequest();
-check('O6b exactly the maximum ' . \Z77\Module\Financial\Ui\OneLineEntryForm::TAX_CORRECTION_MAX . ' below the computed 29.97 is still accepted (28.97; 10 % would be 3.00)', ($shape($edge)[1] ?? null) === '1170 D 28.97');
+// 400.00 VM: computed 29.97, limit min(1.00, max(0.05, 1 % of 29.97 → 0.30)) = 0.30.
+$edge = $oneLine()->fromPost($row('6500', '1020', '400.00', '2032-11-15', 'VM', '29.67'))->toRequest();
+check('O6b exactly the limit 0.30 below the computed 29.97 is still accepted (29.67)', ($shape($edge)[1] ?? null) === '1170 D 29.67');
 $tooFar = $oneLine()->fromPost($row('6500', '1020', '400.00', '2032-11-15', 'VM', '31.00'));
 check('O6c 31.00 (1.03 off) is refused with a German message naming the computed value and the limit', $tooFar->toRequest() === null
-    && str_contains($tooFar->error('tax_amount'), 'berechneten 29.97') && str_contains($tooFar->error('tax_amount'), 'höchstens 1.00'));
+    && str_contains($tooFar->error('tax_amount'), 'berechneten 29.97') && str_contains($tooFar->error('tax_amount'), 'höchstens 0.30'));
+// The case the tolerance was narrowed for (owner decision 2026-09-23, P2 exit check 7 in z77.ch):
+// 30.80 is 400 × 7.7 % ON TOP at the pre-2024 rate — not a rounding difference. At the old 10 %
+// the limit here was the flat 1.00 and 0.83 off passed in silence.
+$wdvValue = $oneLine()->fromPost($row('6500', '1020', '400.00', '2032-11-15', 'VM', '30.80'));
+check('O6d the wdv value 30.80 (0.83 off the computed 29.97) is REFUSED — a different rate is not voucher rounding', $wdvValue->toRequest() === null
+    && str_contains($wdvValue->error('tax_amount'), 'berechneten 29.97') && str_contains($wdvValue->error('tax_amount'), 'höchstens 0.30'));
 
 $zero = $oneLine()->fromPost($row('1100', '3200', '400.00', '2032-11-17', 'UE'))->toRequest();
 check('O7 a zero-rated code (UE, 0 %): the code on the revenue line with base = gross, tax 0.00 — and NO tax line', $shape($zero) === ['1100 D 400.00', '3200 C 400.00 UE 0 400.00 0.00']);
@@ -2101,13 +2108,18 @@ $bothPl = $oneLine()->fromPost($row('6500', '3200', '100.00', '2032-11-21', 'VM'
 check('O22 both sides P&L accounts (6500/3200) with MwSt → refused, pointing to the Sammelbuchung; without MwSt it posts', $bothPl->toRequest() === null
     && array_filter($bothPl->generalErrors(), fn($m) => str_contains($m, 'Sammelbuchung')) !== [] && $oneLine()->fromPost($row('6500', '3200', '100.00'))->toRequest() !== null);
 
-echo "O. … the tolerance min(1.00, max(0.05, 10 % of the computed tax)), review 2026-09-22\n";
-// 10.00 gross VM: computed 0.75 (10 × 810 / 10810 = 0.749…), limit max(0.05, 0.075 → 0.08) = 0.08.
+echo "O. … the tolerance min(1.00, max(0.05, 1 % of the computed tax)), review 2026-09-22, narrowed 2026-09-23\n";
+// 10.00 gross VM: computed 0.75 (10 × 810 / 10810 = 0.749…); 1 % of it is below the floor, so the
+// limit is MIN = 0.05. The floor is what keeps a small purchase workable at all.
 $small = fn(string $tax) => $oneLine()->fromPost($row('6500', '1020', '10.00', '2032-11-21', 'VM', $tax));
-check('O23 10.00 with VM: 0.00 refused (only when the computed tax is 0.00), 0.83 accepted (0.08 off), 0.84 refused (0.09 off, limit 0.08)',
+check('O23 10.00 with VM: 0.00 refused (only when the computed tax is 0.00), 0.80 accepted (0.05 off, the floor), 0.81 refused (0.06 off)',
     ($z = $small('0.00'))->toRequest() === null && str_contains($z->error('tax_amount'), '0.00 geht nur')
-    && ($shape($small('0.83')->toRequest())[1] ?? null) === '1170 D 0.83'
-    && ($f = $small('0.84'))->toRequest() === null && str_contains($f->error('tax_amount'), 'höchstens 0.08'));
+    && ($shape($small('0.80')->toRequest())[1] ?? null) === '1170 D 0.80'
+    && ($f = $small('0.81'))->toRequest() === null && str_contains($f->error('tax_amount'), 'höchstens 0.05'));
+// The MAX still binds, but only far above: 1 % of a four-figure tax exceeds a franc.
+$big = $oneLine()->fromPost($row('6500', '1020', '25000.00', '2032-11-21', 'VM', '1872.00'));
+check('O23c a large voucher keeps the flat ceiling: computed 1873.27, 1 % would be 18.73, allowed is MAX 1.00 → 1872.00 (1.27 off) refused',
+    $big->toRequest() === null && str_contains($big->error('tax_amount'), 'höchstens 1.00'));
 check('O23b a tiny amount whose computed tax is 0.00 (0.05 with VM): the code on the net line with tax 0.00, NO tax line, and the hint says «keine Steuerzeile»', (function () use ($oneLine, $row, $shape) {
     $f = $oneLine()->fromPost($row('6500', '1020', '0.05', '2032-11-21', 'VM'));
     return $shape($f->toRequest()) === ['6500 D 0.05 VM 810 0.05 0.00', '1020 C 0.05'] && str_contains($f->vatHint(), 'keine Steuerzeile');
