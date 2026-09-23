@@ -1,8 +1,81 @@
 # web-stats-bauplan.md — Site statistics without a third party
 
-**Status:** PLANNED (2026-09-23), nothing built. Trigger: the client of zihlundsee.ch
-asked what we can offer as a statistical evaluation of site traffic; the same request
-will come from other projects, so it is framework work, not project work.
+**Status:** STEP 1.1 + 1.2 BUILT AND REVIEWED (2026-09-23, review findings worked in, not yet
+committed) — recording, the event endpoint, the project-declared event list, the `stats-rollup`
+job and the generic privacy paragraph. Steps 1.3 (report page), 1.4 (token link), 2 (mail) and
+3 (zihlundsee text) are NOT built. Single source of truth from here:
+[`../topics/stats.md`](../topics/stats.md). Trigger: the client of zihlundsee.ch asked what we
+can offer as a statistical evaluation of site traffic; the same request will come from other
+projects, so it is framework work, not project work.
+
+**Review 2026-09-23 (independent) — result: no privacy blocker.** On no path does an IP, a
+full user agent, a full referrer URL or a non-whitelisted query key reach a file. Findings
+worked in the same day; the four open questions were decided by the OWNER — binding, not to
+be reopened by a successor:
+
+- **E1 — `stats-rollup` ships `daily@04:40`.** Reason: here the deletion IS the privacy
+  promise («Rohdaten werden nach 7 Tagen gelöscht»); without a schedule the raw lines — one
+  daily visitor key per line — accumulate until someone remembers the switch, and that is the
+  worse risk. A deliberate exception to «a deleting job ships no schedule», of the same kind
+  as `geoip-update` (a duty, not a convenience); recorded as JOBS-SCHED-001 in `topics/jobs.md`
+  and in ADR-031's addendum of 2026-09-23. The operator can still switch it off.
+- **E2 — the raw lines stay out of the backup.** They moved to `logs/stats/` (own directory),
+  excluded in `BackupService::FIXED_EXCLUDES` — in CODE, unconditionally, never through the
+  seed-once backup config (BACKUP-LIB-001). `logs/` itself stays in the archive (the form log
+  is a record). Files written before the move lie in `logs/` and are read, folded and swept by
+  the rollup for a transition of RAW_RETENTION_DAYS + 1 (STATS-008).
+- **E3 — the visitor key keeps the user agent** (an office behind one NAT address must not be
+  one visitor), although that makes the key client-influenced and the per-key caps blind to an
+  agent-rotating client. Counterweights: the beacon endpoint is throttled per ADDRESS
+  (`FileThrottle`, `var/lib/throttle/stats`, 300/hour, IPv6 per /64, answer still 204, fails
+  open), and the rollup keeps at most `MAX_KEYS_PER_DAY` (20 000) keys per day in memory —
+  beyond that a line with a new key is dropped, tallied under `capped`, and the job note warns
+  loudly. Page-view floods cost real requests and get no extra brake.
+- **E4 — the event PATH is evaluated, not dropped.** The aggregate gains `event_pages`
+  (event → path → count, capped like `referrers`): «on which page was the floor plan opened».
+  For that the event path is put on the page view's route (percent-decoding once, UTF-8
+  allowed — `/über-uns` used to drop the whole event —, language prefix stripped, alias
+  canonicalised through `AliasPathResolver`; what is no path becomes `/`), and the beacon
+  snippet encodes once: `encodeURIComponent(decodeURIComponent(location.pathname))`.
+
+Also fixed from the review: the rollup fails loudly instead of losing data (a corrupt month
+file blocks its month and is left for a hand fix; an unreadable day file is never marked done
+or swept — B5); the endpoint type-checks its parameters (B6); the runtime-created directory
+gets the deny `.htaccess` (B7); an `@` in a utm value becomes `unknown` and «never a recipient
+id in utm_*» is a project rule (B8); the referring host is validated as a hostname (B9); the
+just-in-case helpers are gone (B10); the privacy paragraph names every stored field, the
+status, the key, visits/entries/browsers, the country clause as optional, the backup exclusion,
+the schedule and the retention as «24 months, the running one included» (B11 — the code now
+keeps exactly 24 month files). Harness: 131 → 160 checks, each finding with a case that failed
+before the fix.
+
+**Built 2026-09-23 (step 1), with the decisions taken while building:**
+
+- Hook: `Dispatcher::execute()` after `$response->send()` (`index.php` is a frozen trampoline);
+  a page-cache HIT and a 304 pass through the same `send()` → counted (acceptance 1).
+- Events: the PROJECT declares them (owner 2026-09-23) in `App/Config/statsEventsConfig.inc.php`
+  under `override/` (additive extension file, not a module-config copy — BOOT-CONFIG-001);
+  map name → German label; the framework ships none. Endpoint is **GET**
+  `/frontend/main/stats/event?event=…&path=…` (a beacon POST dies at the global CSRF check).
+- Aggregate at `data/framework/stats/YYYY-MM.json` (not `data/stats/` — the framework's data
+  directories live under `data/framework/`). Referring hosts kept by NAME per month, top 50 +
+  `other` (orchestrator 2026-09-23; English data key, the report labels it); source classes
+  apart, `internal` (navigation within the site) kept as its own class.
+- Visits and entry pages derived in the ROLLUP from the raw lines (orchestrator 2026-09-23,
+  owner request «which page does a visit start on»): a gap of more than 30 minutes
+  (`StatsRollup::VISIT_GAP_SECONDS`) starts a new visit, the first page view is the entry; a
+  beacon never starts a visit, a line without a key counts neither; a visit across midnight
+  counts twice (day files are the unit). No new event, no change to the raw line.
+- Two abuse caps in the rollup: `PAGE_VIEW_DAY_CAP` = 100 page views per visitor and day,
+  `EVENT_DAY_CAP` = 20 beacon events per visitor, day and event name (a claim is bounded
+  tighter than an observation). Raw retention 7 days, aggregates 24 months (owner default).
+- GeoIP per page view costs ~5 ms on the Windows dev box (open + tree walk); **measuring it on
+  cyon is the gate before step 1.3** — no optimisation now.
+- Not counted, deliberately: 404 (routing 404s never reach the Dispatcher; the rest are probes).
+- Job `stats-rollup` registered in `backendConfig` — first without a schedule (it deletes),
+  since the review of the same day WITH `daily@04:40` (owner decision E1 above).
+- Verified: `php tests/web-stats.php` (incl. a real SAPI run); per-request cost measured
+  (see stats.md).
 
 **Decision taken with the owner (2026-09-23):** counted server-side in the framework —
 not through the axo3 API (that is the property-data broker, a different domain) and not
@@ -34,7 +107,7 @@ One line per counted request, no IP stored:
 |---|---|---|
 | `at` | server clock | ISO-8601 |
 | `path` | request | canonical path, without query except whitelisted campaign keys |
-| `status` | response | only 2xx/3xx/404 are interesting |
+| `status` | response | 2xx/3xx as sent; **404 is deliberately NOT counted** (decided while building, 2026-09-23 — a routing 404 never reaches the Dispatcher, the rest are probes; see `topics/stats.md`) |
 | `lang` | request | de / fr |
 | `visitor` | `sha256(ip + ua + daily salt)`, 16 hex | the salt rotates daily in `var/lib/stats/salt`, the IP is never written — yesterday's visitors cannot be re-identified |
 | `source` | Referer | classified: direct / search / social / referral (+ host), campaign from `utm_*` |
@@ -66,7 +139,8 @@ releases and closed by `.htaccess`).
 
 **1.2 Aggregation** — job `stats-rollup`, daily: raw day files → `data/stats/YYYY-MM.json`
 (totals per day, per page, per source, per device, per country, per language, per event,
-plus visitors per day and per month as distinct `visitor` values). Raw files are deleted
+plus visitors per day and per month as distinct `visitor` values; built as
+`data/framework/stats/`, with visits and entry pages added, see the status block). Raw files are deleted
 after **7 days**, the aggregates carry no personal data and stay (default 24 months).
 `data/` is shared, so a deploy or rollback does not lose history.
 
@@ -120,13 +194,14 @@ project can copy it.
 
 ## Acceptance
 
-1. A page view on a **cached** page is counted (the trap in 1.1).
+1. A page view on a **cached** page is counted (the trap in 1.1). — **verified** (harness, SAPI)
 2. Two requests from one visitor on one day count as one visitor; the same visitor the
-   next day cannot be matched to the day before (salt rotation).
-3. Backend, assets, bots and a logged-in editor produce no lines.
+   next day cannot be matched to the day before (salt rotation). — **verified**
+3. Backend, assets, bots and a logged-in editor produce no lines. — **verified**
 4. A form submission, a floor-plan PDF and an application click each show up as their
-   own event.
-5. `stats-rollup` deletes raw files older than 7 days and leaves the aggregate.
+   own event. — **verified** for declared names (undeclared names are dropped)
+5. `stats-rollup` deletes raw files older than 7 days and leaves the aggregate. — **verified**,
+   incl. the abuse cap
 6. The mailed link opens the report without a login, prints cleanly, and answers 410
    after 10 days.
 7. Deleting `config/client/stats.inc.php` (no key) disables the tokenized page and the

@@ -192,5 +192,6 @@ installation without a key runs fine and simply answers no country.
 
 - [`jobs.md`](jobs.md) — the runner, and the delete-vs-schedule rule this job is the exception to
 - [`forms.md`](forms.md) — the geo guard that consumes the lookup: gate, form log, blocklist and the `identityField()` opt-in
+- [`stats.md`](stats.md) — the second consumer: the web statistics resolve the country per PAGE VIEW (not per submit), so the reader's open-and-walk cost is paid on every public request — measured there
 - [`backend.md`](backend.md) — `FormLogController` (Service → Formular-Protokoll): the surface that shows the log and edits the blocklist, navigation seed `id:30`
 - [`persistence-file.md`](persistence-file.md) — where `blocked-countries.json` lives and how the store assigns its ids

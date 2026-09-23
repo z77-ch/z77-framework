@@ -231,6 +231,7 @@ whole body from the next.
 - [`backend.md`](backend.md) — `SystemController::clearCacheAction()` + `toggleDebugAction()` (both clear APCu + PageCache + the generated PHP directories)
 - [`persistence-doctrine.md`](persistence-doctrine.md) — the one writer into `generatedPhp()->dir('doctrine')` today, and `z77-db migrate` as the third caller of `clearAll()`; DOCTRINE-CACHE-001 on why a CLI clear does not reach the web OPcache
 - [`persistence-file.md`](persistence-file.md) — `FileEntityManager` triggers auto-invalidation via `invalidatesCache`
+- [`stats.md`](stats.md) — the web statistics hook sits in `Dispatcher::execute()` BEHIND `send()`, so a page-cache HIT and a 304 are counted like a fresh render; never inside `resolveResponse()`
 - [`documents.md`](documents.md) — the DMS media-url resolve index (`DocumentService::folderSlugIndex`/`publicPathIndex`, template helper `mediaUrl()`) is a `DataCache` consumer dropped by the DMS `invalidatesCache` writes — no own invalidation
 
 ## known issues

@@ -68,7 +68,7 @@ Structure is enforced by `npm run docs:check` ([docs-lint/STANDARD.md](../docs-l
 | CSS/SCSS dms | [topics/css-dms.md](topics/css-dms.md) |
 | CSS/SCSS frontend, public design | [topics/css-frontend.md](topics/css-frontend.md) |
 | CSS watch, `npm run watch` / `build` | [topics/css-watch.md](topics/css-watch.md) |
-| debtor / Debitor, receivables / Debitorenbuchhaltung, debtor profile / `DebtorProfile`, payment terms / Zahlungskonditionen / `PaymentTerms`, discount / Skonto, payment target / Zahlungsziel / `PaymentTarget`, IBAN, QR-IBAN, QRR / SCOR reference, dunning / Mahnung / Mahnstufe / `DunningLevel`, Mahngebühr, Mahnsperre, `debtorAccounts`, Debitoren-Sammelkonto, Rundungsdifferenz Rechnung, `LedgerAccountCheck`, invoice / Rechnung (P3 parts 2–3), module-debtor | [topics/debtor.md](topics/debtor.md) |
+| debtor / Debitor, receivables / Debitorenbuchhaltung, debtor profile / `DebtorProfile`, payment terms / Zahlungskonditionen / `PaymentTerms`, discount / Skonto, payment target / Zahlungsziel / `PaymentTarget`, IBAN, QR-IBAN, QRR / SCOR reference, dunning / Mahnung / Mahnstufe / `DunningLevel`, Mahngebühr, Mahnsperre, `debtorAccounts`, Debitoren-Sammelkonto, Rundungsdifferenz Rechnung, `LedgerAccountCheck`, invoice / Rechnung, credit note / Gutschrift, `InvoicingService`, `InvoiceDraft`, `invoicing` / `final`, reinvoice / neu fakturieren, finalize / Fakturierung abschliessen, rounding line / Rundungszeile, address snapshot / `AddressSnapshot`, `AccountingGateway` / accounting port, `NullAccountingGateway`, open amount / offener Betrag, module-debtor | [topics/debtor.md](topics/debtor.md) |
 | documents, DMS, drive, upload, delivery | [topics/documents.md](topics/documents.md) |
 | entities, hydration, entity data handling | [topics/entity-data-handling.md](topics/entity-data-handling.md) |
 | fetch, AJAX, CSRF, form validation | [topics/fetch.md](topics/fetch.md) |
@@ -92,6 +92,7 @@ Structure is enforced by `npm run docs:check` ([docs-lint/STANDARD.md](../docs-l
 | doctrine driver, MariaDB, database.inc.php, doctrineEntities, doctrineEntitiesConfig, project entity, DECIMAL / money column, charset / collation, z77/persistence-doctrine, transaction / getTransaction / run(), rollback, TransactionRolledBackException, NumberRange / gapless numbering / next(), openWorkChecks / openWorkChecksConfig / open-work check / period-close / stocktake block, NumberRange create() | [topics/persistence-doctrine.md](topics/persistence-doctrine.md) |
 | routing, router, Request, ControllerHandler | [topics/routing.md](topics/routing.md) |
 | security, hardening, setup token, password policy | [topics/security.md](topics/security.md) |
+| web statistics / Statistik / Besucherzahlen, page views / Seitenaufrufe, visitor key / daily salt, `StatsRecorder`, `stats-rollup`, beacon / event endpoint / `statsEvents`, referrer / Herkunft, `data-stats="off"`, privacy text / Datenschutztext Statistik | [topics/stats.md](topics/stats.md) |
 | stylesheet, asset pipeline, AssetCleaner | [topics/stylesheet.md](topics/stylesheet.md) |
 | translation, Translator | [topics/translation.md](topics/translation.md) |
 | tree, hierarchy | [topics/tree.md](topics/tree.md) |

@@ -1,6 +1,6 @@
 # backup
 
-2026-09-21
+2026-09-23
 
 ## entry
 
@@ -41,7 +41,7 @@ frontends: the backend screen `/backend/service/backup/list` (new group
 |---|---|---|
 | `data` | the whole `data/` tree | includes `backendUsers.json` — hence the SUPER_USER gate |
 | `db` | SQL dump (v1: `mysqldump` via {@see MysqlDumper}) | only when `config/client/database.inc.php` names a database — the ONE connection config, shared with the Doctrine driver (ADR-039 decision 4); otherwise UI shows "not configured", CLI no-ops with exit 0. `backup.inc.php` → `dump` holds only the `mysqldump` binary and an optional read-only backup user (`user` / `password`, null = the application user) |
-| `full` | project root minus `fullExcludes` | `vendor/`/`node_modules/` are regenerable from the lock files; `var/` is scratch space the installation rebuilds by itself; the backup root itself is ALWAYS excluded (recursion guard). `logs/` stays IN — it carries the form log, which is a record |
+| `full` | project root minus `fullExcludes` | `vendor/`/`node_modules/` are regenerable from the lock files; `var/` is scratch space the installation rebuilds by itself; the backup root itself is ALWAYS excluded (recursion guard). `logs/` stays IN — it carries the form log, which is a record — except `logs/stats/`, the raw statistics lines (`BackupService::FIXED_EXCLUDES`, in code, not configurable): they carry a daily visitor key and are deleted after seven days by `stats-rollup`, and an archive that kept them for months would break that promise ([`stats.md`](stats.md), owner decision E2 2026-09-23) |
 
 `lib/` is excluded as a WHOLE TREE, not member by member. It is the
 installation's scratch space — the page cache (`var/cache/pages`), the throttle
@@ -143,6 +143,7 @@ moving.
 - When exposing backup actions in the backend → MUST keep every action `AuthRole::SUPER_USER` (the archive IS the user store) and mutations Fetch-POST (global CSRF) + per-archive entity token
 - When adding another CLI task → MUST follow ADR-028 (own `bin/` script in the owning package, Composer `bin`, boot only what it needs)
 - When changing what a `data` or `full` archive contains → MUST keep `data/framework/jobs` excluded (`BackupService::DATA_EXCLUDES`, applied to both types and NOT configurable); it is transient runtime state and it changes while the archive is being written (BACKUP-JOBS-001)
+- When a directory must stay out of every full archive for a reason that is not the operator's to weigh (personal data with a retention promise — `logs/stats`) → MUST add it to `BackupService::FIXED_EXCLUDES` (appended in code, unconditionally); MUST NOT put it into `DEFAULT_EXCLUDES` / `backup.default.inc.php` alone — that is a seed-once copy and never reaches an existing installation (BACKUP-LIB-001, twice)
 - When changing what retention keeps → MUST go through `RetentionPolicy` (pure names-in/names-out, so `tests/backup-retention.php` can replay timelines) and MUST preserve the late-discovery property: some kept archive predates a mistake that is N days old; MUST NOT let any retention config delete the just-written archive (the newest name always survives — asserted in the harness)
 - When touching the archive walk → the descent MUST stay PATH-BASED (`scandir` + `is_dir`) and MUST keep the realpath visited set next to it — the pair in `ZipArchiver::addTree()`. MUST NOT swap it back to `RecursiveDirectoryIterator`: without `FOLLOW_SYMLINKS` a linked directory is a silent leaf, and WITH the flag a Windows junction still is (its directory entry reports type «unknown» — measured, BACKUP-SYMLINK-001). Following without the set recurses forever on a cycle; the set without following changes nothing
 - When adding a directory of disposable runtime state → MUST follow ADR-034: put it under `var/` (page cache, release switches, throttle counters live there) and MUST NOT add it to `fullExcludes` — the whole `var` tree is already named, and a second entry would only start the maintained-list problem again (BACKUP-LIB-001). The test is «may this be deleted while the installation is serving requests?»; if no, it does not belong under `var/` and the decision is its location, not its exclude.
@@ -166,6 +167,7 @@ moving.
 - [`../02-decisions/adr-031-job-queue-and-cron-runner.md`](../02-decisions/adr-031-job-queue-and-cron-runner.md) — the job queue the three backup types are scheduled through
 - [`../02-decisions/adr-034-disposable-runtime-state-under-lib.md`](../02-decisions/adr-034-disposable-runtime-state-under-lib.md) — why the tree is excluded as a whole, and the three-category test that decides what may live there (the directory itself is `var/` since ADR-035)
 - [`../02-decisions/adr-035-release-local-runtime-state-under-var.md`](../02-decisions/adr-035-release-local-runtime-state-under-var.md) — the `lib/` → `var/` rename and the release-local split; the seed-once problem below applies to it a second time
+- [`stats.md`](stats.md) — `logs/stats`, the one fixed exclude below `logs/`: raw statistics lines with a seven-day retention promise, and the transition of files written before 2026-09-23 (STATS-008)
 - [`security.md`](security.md) — role gate + storage placement of the archives
 - [`installer.md`](installer.md) — `writeBackupConfig()` seed-once config
 - [`backend.md`](backend.md) — group/controller conventions the backup surface follows

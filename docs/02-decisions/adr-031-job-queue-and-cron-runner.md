@@ -1,7 +1,7 @@
 # ADR-031 — Job Queue: One CLI Runner, Cooperative Slicing, Cron Actor
 
-**Status:** `[APPROVED]`
-**Date:** 2026-08-07
+**Status:** `[APPROVED]` — addendum to decision 4 approved by the owner 2026-09-23
+**Date:** 2026-08-07 · addendum 2026-09-23 (a deleting job that ships a schedule)
 
 ---
 
@@ -140,3 +140,27 @@ controller guarded by an `AuthRole::CRON_JOB` gate.
 | Long-running daemon / worker process | No process supervision on shared hosting; a crashed daemon stays dead until someone notices |
 | Cron syntax for schedules | A parser is a few hundred lines with its own edge cases, and its mistakes are silent — `15 3 * * 7` looks right and fires on the wrong day. Four named forms cover what an installation actually schedules and map onto a backend select box; a cron form can be added later as a fifth case |
 | Re-applying `defaultSchedule` on every boot | Would switch a schedule back on that an operator deliberately turned off, and silently undo a changed time. Seeding is one-way |
+
+## Addendum 2026-09-23 — a deleting job ships a schedule when the deletion is a duty (approved by the owner)
+
+Decision 4 says «a job that deletes data ships no default at all». Two jobs ship one, and
+this addendum names the test that lets them: **the deletion fulfils a duty** — one the
+installation owes by law or has promised its visitors — and **the seeded schedule belongs to
+the operator** (decision 4's one-way seed: switching it off survives every update).
+
+- `geoip-update` (2026-08, `backendConfig`): replaces the GeoLite database it downloaded
+  itself and destroys the previous copy — a licence obligation. Not the installation's
+  records, so arguably not even the rule's subject; recorded here for the pattern.
+- `stats-rollup` (2026-09-23, owner decision E1 of the web-statistics review): folds the raw
+  statistics lines and DELETES them after seven days, aggregates after 24 months. This IS the
+  installation's data, and the rule would forbid the schedule — but the site's privacy text
+  promises exactly this deletion («Rohdaten werden nach 7 Tagen gelöscht»), and every raw
+  line carries a daily visitor key. A promise that waits for an operator to remember a switch
+  is not being kept; raw lines piling up for months is the worse risk. Ships `daily@04:40`.
+
+An addition to decision 4, not a contradiction: the rule protects the installation's RECORDS
+from a schedule nobody asked for (`member-cleanup`, `form-log-cleanup` stay operator-switched,
+and so does every backup job). What it never meant to protect is data the installation must
+not keep. Any further exception names its duty in the config comment, in the job's topic and
+here — «the operator would forget» is not a duty. Rule and reasoning: [`jobs.md`](../topics/jobs.md)
+JOBS-SCHED-001; the job: [`stats.md`](../topics/stats.md).

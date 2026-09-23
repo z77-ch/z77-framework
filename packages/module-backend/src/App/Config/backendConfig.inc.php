@@ -210,6 +210,25 @@ return [
             'runAs'       => AuthRole::CRON_JOB,
             'maxAttempts' => 2,
         ],
+        // Web statistics (docs/topics/stats.md): folds the raw day files into
+        // the month's aggregate and DELETES raw files after 7 days and
+        // aggregates after 24 months. ⚠️ SHIPS a schedule although it deletes
+        // the installation's data (owner decision E1, 2026-09-23 — jobs.md
+        // JOBS-SCHED-001): here the deletion IS the privacy promise the site
+        // makes («Rohdaten werden nach 7 Tagen gelöscht»). Without a schedule
+        // the raw lines — one visitor key per line — pile up for months until
+        // someone remembers the switch; that is the worse risk. The same kind
+        // of exception as geoip-update below (a duty, not a convenience), and
+        // the seeded record belongs to the operator afterwards: switching it
+        // off in Service → Jobs survives every update (ADR-031 decision 4).
+        // 04:40 — after the day's last visitor, before the report mail (step 2).
+        'stats-rollup' => [
+            'class'           => \Z77\Shared\Stats\StatsRollupJob::class,
+            'label'           => 'Statistik-Verdichtung',
+            'runAs'           => AuthRole::CRON_JOB,
+            'maxAttempts'     => 2,
+            'defaultSchedule' => 'daily@04:40',
+        ],
         // ⚠️ SHIPS a schedule, and that is not a violation of the rule above:
         // this job replaces a file it downloaded itself, and doing so is a
         // LICENCE OBLIGATION (GeoLite EULA: keep current, destroy the

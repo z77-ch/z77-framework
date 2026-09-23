@@ -1,6 +1,6 @@
 # jobs
 
-2026-08-07
+2026-09-23
 
 ## entry
 
@@ -29,6 +29,7 @@ SOURCE=/packages/module-backend/src/Ui/Controllers/Service/JobController.php
 SOURCE=/packages/module-backend/res/view/templates/Service/JobController/listAction.tpl.php
 SOURCE=/packages/module-member/src/Jobs/MemberCleanupJob.php
 SOURCE=/packages/kernel/shared/src/GeoIp/GeoIpUpdateJob.php
+SOURCE=/packages/kernel/shared/src/Stats/StatsRollupJob.php
 
 RUNTIME=/skeleton/data/framework/routing/navigation.json
 
@@ -77,7 +78,7 @@ php vendor/bin/z77-run
         'runAs'           => AuthRole::CRON_JOB,
         'maxAttempts'     => 3,
         'payload'         => [],          // merged UNDER the entry's payload
-        'defaultSchedule' => 'daily@03:15',  // omit for anything that deletes
+        'defaultSchedule' => 'daily@03:15',  // omit for anything that deletes (two exceptions: JOBS-SCHED-001)
     ],
 ],
 ```
@@ -103,7 +104,7 @@ Only `every:` consults the last run; the wall-clock forms do not. Deliberately n
 - When a job may run longer than the time budget → MUST check `JobContext::hasTimeLeft()` and return `JobResult::again($cursor)`; a job that never asks overruns the pass and only the job lock limits the damage
 - When a job needs to pause between batches → MUST express it as `JobResult::again($cursor, $notBefore)`; MUST NOT `sleep()` inside the job (it holds its lock and burns the pass)
 - When registering a job → MUST declare it under a module's `jobs` key with a unique key (duplicate = fail-fast); MUST NOT put a class name or script path into a queue entry
-- When a job deletes data → MUST NOT ship a `defaultSchedule`; the operator switches it on. ⚠️ This is about the INSTALLATION's data, not a job's own downloaded artefact: `geoip-update` replaces the file it fetched itself and does ship a schedule, because keeping it current is a licence obligation. A duty that waits to be switched on is not a duty being met — a job that both deletes and must run is two jobs (the split `member-cleanup` / `geoip-update` is the worked example)
+- When a job deletes data → MUST NOT ship a `defaultSchedule`; the operator switches it on. ⚠️ This is about the INSTALLATION's data, not a job's own downloaded artefact: `geoip-update` replaces the file it fetched itself and does ship a schedule, because keeping it current is a licence obligation. A duty that waits to be switched on is not a duty being met — a job that both deletes and must run is two jobs (the split `member-cleanup` / `geoip-update` is the worked example). ⚠️ Second exception, same kind (JOBS-SCHED-001): `stats-rollup` deletes the installation's raw statistics lines AND ships `daily@04:40`, because that deletion is the privacy promise the site makes — a duty again, not a convenience. Any further exception MUST name its duty in the config comment, in the job's topic and in ADR-031's addendum; MUST NOT be argued from convenience («the operator will forget»)
 - When guarding against a double start → MUST use the job lock (`JobLock`); MUST NOT rely on `JobRun::state`, which survives a crashed process
 - When storing anything about a run → MUST put it in the queue entry or a lock file under `data/framework/jobs`; MUST NOT put transient runtime state into `systemConfig` (a restore would resurrect it)
 - When the backend triggers a job → MUST enqueue and let the runner execute it; MUST NOT run a job inside the request
@@ -118,6 +119,7 @@ Only `every:` consults the last run; the wall-clock forms do not. Deliberately n
 - [`bootstrap.md`](bootstrap.md) — `pullUpServices()`, the HTTP-free half the runner boots
 - [`backup.md`](backup.md) — the three backup jobs and why the job directory is excluded from archives
 - [`member.md`](member.md) — `member-cleanup`, the first ported job
+- [`stats.md`](stats.md) — `stats-rollup`: folds the raw statistics into monthly aggregates and deletes (raw after 7 days, aggregates after 24 months) — ships `daily@04:40` although it deletes, the JOBS-SCHED-001 exception
 - [`packaging.md`](packaging.md) — PKG-005: a new binary needs `composer update` in the project, not just a deploy
 
 ## known issues
@@ -125,6 +127,7 @@ Only `every:` consults the last run; the wall-clock forms do not. Deliberately n
 - **JOBS-001**: don't assume the runner can stop a job at its deadline — it cannot. `pcntl` is absent on shared hosting, so the budget is cooperative. A job ignoring `hasTimeLeft()` runs to completion and delays the next pass for its own key only.
 - **JOBS-002**: don't assume `JobRun::state = running` means a process is alive. It survives a fatal, a kill and a reboot. The job lock is the evidence; `JobQueue::abandoned()` requires both an old `startedAt` AND no held lock.
 - **JOBS-003**: don't assume a backend click runs a job. It queues one. On an installation without the cron line nothing is ever picked up — which is what the heartbeat banner on the job screen exists to reveal.
+- **JOBS-SCHED-001** (owner decision 2026-09-23): don't assume «a job that deletes ships no schedule» has one exception. It has two, and both are DUTIES, not conveniences. `geoip-update` (licence obligation: keep the database current, destroy the old copy) and `stats-rollup` (the site's privacy text promises «Rohdaten werden nach 7 Tagen gelöscht» — a promise nobody switched on is a promise broken, and raw lines carrying a daily visitor key piling up for months is the worse risk than a scheduled delete). The rule itself stands: it protects the installation's records (`member-cleanup`, `form-log-cleanup` stay operator-switched). What makes an exception is a duty that the deletion FULFILS — legal or promised to the visitor — and the operator's power to switch the seeded schedule off (ADR-031 decision 4: the record belongs to the operator after the seed, so an update never switches it back on). Recorded in the config comment of each job, in [`stats.md`](stats.md) STATS-007 / [`geoip.md`](geoip.md), and in ADR-031's addendum of 2026-09-23.
 - **JOBS-004** — resolved 2026-08-08. The job list's action controls (queue / set schedule / toggle) overlapped: they sat in a `.be-tree__row` of a `.be-tree--hub` container, which is an explicit 6-column grid (`1rem 2.4rem 1.6rem …`), so each form auto-placed into a narrow icon column. Action rows are plain flex divs now; the `remove`/`retry` forms that DO belong into a row carry `grid-column: 6`. Same defect and same fix as the import screen ([`import.md`](import.md) IMP-005). Verified by a DOM audit over both templates (no `form`/`select` under a `.be-tree__row` without an explicit column).
 
 ## pending
