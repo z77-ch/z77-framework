@@ -1,6 +1,6 @@
 # Bauplan — order, debtor, financial, vat, contact, article
 
-**Status:** `[CONCEPT]` → P0 closed 2026-09-21 (ADR-039 to ADR-043 approved). P1 closed 2026-09-21. P2 parts 1–3 built 2026-09-22. **P3 part 1 (debtor master data) built 2026-09-22**; next P3 part 2 (`InvoicingService`).
+**Status:** `[CONCEPT]` → P0 closed 2026-09-21 (ADR-039 to ADR-043 approved). P1 closed 2026-09-21. P2 parts 1–3 built 2026-09-22. P3 part 1 (debtor master data) built 2026-09-22. **P3 part 2 (`InvoicingService`, the accounting port) built 2026-09-23**; next P3 part 3 (PDF / QR-bill, document screens).
 **Date:** 2026-09-18, updated 2026-09-21 (article model A1–A7 decided, Q7 answered, module cut and
 build phases final, all questions answered, external review worked in; the persistence-access
 question reopened ADR 2 on 2026-09-20 and was settled on 2026-09-21)
@@ -103,7 +103,7 @@ contract of `post()`/`reverse()` (unique-index failure at commit, no number cons
 inside the unit of work) is a rule binding the P3 debtor adapter; a reversal may be dated in the
 next fiscal year. Two owner questions stay open: locking `type` / `postable` once postings exist
 (FIN-TYPE-001) and deleting a wrongly opened fiscal year (FIN-FY-002).
-**P2 part 3 built (2026-09-22, not yet reviewed / committed)** — the reports (§5.5): trial
+**P2 part 3 built, reviewed and committed (2026-09-22, `bea1fdc`)** — the reports (§5.5): trial
 balance, balance sheet, income statement, account statement (Kontoblatt) and journal, as SQL
 aggregates over `journal_line` on the EntityManager's own connection
 (`JournalLineRepository`, Doctrine-only, every value bound), turned into `Money` from the
@@ -168,9 +168,43 @@ without a `document_text`, so an installation in any language starts with rows t
 (DEBTOR-TEXT-DROP-001 is the one new pending: an edit silently drops a text in a dropped language).
 Everything without a production caller was removed, and the shared shapes
 (`HasDocumentText`, `ValidatesMasterDataRow`) now exist once (Rule 8).
-**Next: P3 part 2 — `InvoicingService`** (§6.2: the draft with typed lines and parent lines, the
-`invoicing` / `final` states, the 0.05 rounding line, the number ranges, the document snapshot),
-then part 3 (PDF with QR-bill and the `AccountingGateway` port, §6.6).
+**P3 part 2 built, reviewed and committed (2026-09-23, `b8147b0`) — `InvoicingService` and the
+accounting port** (§6.2, §6.6). `Invoice` (ONE entity for invoice and credit note, `kind` + `number` per range,
+states `invoicing` / `final`, the address as an embeddable `AddressSnapshot` in ten flat `addr_*`
+columns — closes `contact.md`'s snapshot shape —, `language`, service date or period, `currency` +
+`exchange_rate` carried per Q6 without logic, the terms AS APPLIED with due date, tiers and the
+printed sentence, the totals, the opaque origin, `ledger_entry_ref` as ONE string `{year}/{number}`,
+`version`), `InvoiceLine` (type, one level of parent line, editable text, `DECIMAL(12,3)` quantity,
+discount, stored amount, tax code + rate + label, revenue account) and `InvoiceTax` (the summary per
+code stored, with the category the adapter resolves the VAT account from); migration
+`Version20260923043935`, which also CREATES the ranges `invoice` and `credit-note` at 0 (DOCTRINE-NR-003).
+`InvoicingService::invoice()` (validate before the unit of work, number as the first write, nothing
+posted), `reinvoice($id, $version, $draft)` (same number, snapshot replaced whole, optimistic lock),
+`finalize(ids)` (batch, one unit of work, every row locked in id order BEFORE any journal number is
+drawn, posted through the port, refused when already final), `openAmount()` DERIVED — **no `OpenItem`
+table**: nothing reads one, the `final` invoice row is the open item, P4 decides. The port:
+`Accounting\AccountingGateway { post(PostingRequest): ?string }` with **debtor's OWN `PostingRequest`**
+(a deviation from §6.6's wording — the interface must not name financial's class, or an installation
+without financial fatals at `finalize()`), lines by account number or by VAT CATEGORY (financial's
+`vatAccounts` stays the one place), `LedgerAccountingGateway` (the default, `PostingRefusedException` →
+`AccountingRefusedException` with the same reason, no retry, refuses to run without a registered
+financial) and `NullAccountingGateway`, selected by `debtorConfig → accountingGateway` (the member hook
+pattern). The posting shape: receivable = gross, revenue per line with the net-method tax data (the
+code's tax distributed over its lines with `Money::allocate()`, mixed signs as two groups), VAT per
+code, the 0.05 rounding on 3809. **Independent review worked in the same day** (money and VAT
+arithmetic verified against a bcmath reference over 51 random documents, the mirror property and the
+races hold): a credit note now resolves its rates by the INVOICE's service date (a reduction of
+consideration follows the original supply, ADR-041 decision 4 — an own date yielding another rate
+is refused, `credit-note-rate`); in gross mode a tax share that would zero a Rappen line moves to
+the largest line of the code and a code whose lines cannot carry the tax refuses the draft at issue
+(`line-tax-share`); `finalize()` takes `{id, version}` pairs (DEBTOR-FINAL-001 closed); methods
+without a production caller removed, `currency` / `exchange_rate` kept with the reason at the
+column. Orchestrator decisions: the 0.05 step stays a constant until a second base currency,
+over-crediting stays allowed (open amount may go negative), `Actor` stays duplicated until a third
+module needs it. Harness `tests/module-debtor.php`, 272 checks. Everything recorded in
+[`debtor.md`](../topics/debtor.md). **Next: P3 part 3 — PDF with QR-bill and the document screens**
+(list, draft editor with active codes and accounts, re-issue and finalize with versions, the credit-note
+form), then P4.
 
 Open for the owner: `persistence-doctrine`, `module-vat` and `module-contact` are not split targets
 yet (`.github/workflows/split.yml`, Packagist). Working method that carried P1: each building block
