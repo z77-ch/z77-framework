@@ -134,6 +134,11 @@ check('empty user agent is a bot', StatsClassifier::isBot(null) && StatsClassifi
 check('Googlebot is a bot', StatsClassifier::isBot('Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)'));
 check('curl is a bot', StatsClassifier::isBot('curl/8.4.0'));
 check('an uptime monitor is a bot', StatsClassifier::isBot('UptimeRobot/2.0'));
+// Measured in production 2026-09-23: the deploy probe hit `/` twice per switch
+// and counted as two visits — a fifth of that day's raw lines (zihlundsee).
+check('our own tooling is not a visitor: the deploy probe of .releases/switch.php', StatsClassifier::isBot('z77-releases-switch'));
+check('… and the token generalises to any z77 tool, without catching a browser',
+    StatsClassifier::isBot('z77-something-else/1.0') && !StatsClassifier::isBot(UA_CHROME));
 check('a browser is not a bot', !StatsClassifier::isBot(UA_CHROME) && !StatsClassifier::isBot(UA_IPHONE) && !StatsClassifier::isBot(UA_SAFARI));
 
 $device = fn(string $ua): string => StatsClassifier::device($ua);
