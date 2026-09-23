@@ -68,6 +68,7 @@ Each `watch:<module>` is a single `sass --watch <src>:<out>` invocation; `build:
 - [`css-backend.md`](css-backend.md) — backend SCSS layout (tokens, base, components, layout) and what goes where
 - [`css-frontend.md`](css-frontend.md) — frontend SCSS layout and per-breakpoint entry files
 - [`stylesheet.md`](stylesheet.md) — runtime asset pipeline: how compiled CSS is loaded into pages, FileFinder lookup, versioning, AssetCleaner
+- [`js-build.md`](js-build.md) — the JavaScript half of the same idea: `npm run build:js` writes the `.min.js` that production serves, same source/output convention
 
 ## known issues
 

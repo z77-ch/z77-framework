@@ -79,6 +79,7 @@ Structure is enforced by `npm run docs:check` ([docs-lint/STANDARD.md](../docs-l
 | money, amounts, Rappen, minor units, rounding 0.05, allocate, percentage | [topics/money.md](topics/money.md) |
 | installer, `composer install`, project setup | [topics/installer.md](topics/installer.md) |
 | jobs, cron, queue, scheduling, background work, z77-run CLI, throttling, long-running tasks | [topics/jobs.md](topics/jobs.md) |
+| JavaScript build, minify / minifizieren, `.min.js`, terser, `npm run build:js` / `check:js`, vendor marker `@z77-js` | [topics/js-build.md](topics/js-build.md) |
 | login, auth, session, AccessGuard | [topics/login.md](topics/login.md) |
 | lottie, animation, `<lottie-figure>`, poster | [topics/lottie.md](topics/lottie.md) |
 | mail, email, e-mail versand / configure email sending, SMTP, contact form / kontaktformular, form mail, emailConfig, sender / from address, EmailService, backend mail settings | [topics/mail.md](topics/mail.md) |

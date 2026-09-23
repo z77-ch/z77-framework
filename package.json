@@ -12,6 +12,8 @@
         "build:dms": "sass packages/module-dms/res/scss:packages/module-dms/res/assets/css --style=compressed --no-source-map",
         "build:member": "sass packages/module-member/res/scss:packages/module-member/res/assets/css --style=compressed --no-source-map",
         "build": "sass packages/module-backend/res/scss:packages/module-backend/res/assets/css packages/module-frontend/res/scss:packages/module-frontend/res/assets/css packages/module-dms/res/scss:packages/module-dms/res/assets/css packages/module-member/res/scss:packages/module-member/res/assets/css --style=compressed --no-source-map",
+        "build:js": "node scripts/build-js.mjs",
+        "check:js": "node scripts/build-js.mjs --check",
         "docs:check": "node docs-lint/index.js"
     },
     "devDependencies": {
