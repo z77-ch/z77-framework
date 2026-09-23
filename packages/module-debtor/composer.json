@@ -1,6 +1,6 @@
 {
     "name": "z77/module-debtor",
-    "description": "Z77 Debtor Module | receivables master data: debtor profile per contact, payment terms, payment targets and dunning levels (ADR-040, plan §6).",
+    "description": "Z77 Debtor Module | receivables: debtor profile per contact, payment terms, payment targets, dunning levels, invoices and credit notes through InvoicingService, the accounting port (ADR-040, plan §6).",
     "type": "library",
     "keywords": ["php", "framework", "debtor", "receivables", "invoicing", "qr-bill", "z77"],
     "homepage": "https://github.com/z77-ch/z77-framework",

@@ -41,6 +41,32 @@
  *   - (I) the four backend fragments render through their traits with their
  *     own header slots, and carry no JavaScript of their own (Rule 7).
  *
+ * P3 part 2 — `InvoicingService`, the documents and the accounting port
+ * (plan §6.2, §6.6), on top of the state the sections above leave:
+ *
+ *   - (J) `invoice()`: a draft becomes a document in state `invoicing` —
+ *     the number drawn ONCE from `invoice`, the full snapshot (address,
+ *     language, terms as applied, lines with rate and label, the tax
+ *     summary per code, totals), the 0.05 rounding as a separate line —
+ *     also when it is 0.00 (no line) —, line types, a parent with children
+ *     at 0.00, a negative quantity, a text line, gross price mode, the rate
+ *     by SERVICE date across the 2024 rate change, and NOTHING posted;
+ *     every refusal a draft can earn, without a number consumed;
+ *   - (K) `reinvoice()`: the same number, a new snapshot, the version
+ *     bumped, a stale version refused, the kind immutable, still nothing
+ *     posted;
+ *   - (L) `finalize()`: posted ONCE through `LedgerAccountingGateway`, the
+ *     posting shape (receivable = gross, revenue per line with the tax data
+ *     of the net method, VAT per code, rounding; Σ debit = Σ credit), the
+ *     open amount, a second finalize refused, a batch where one document
+ *     fails rolled back whole (no state, no number, no entry), the
+ *     `NullAccountingGateway`, the gateway selection by config, the
+ *     document immutable in `final`, the credit note as the only correction
+ *     with its mirrored posting, a tax code with lines of MIXED signs, a
+ *     zero document posting nothing;
+ *   - (M) source guards: exactly two classes name module-financial, the
+ *     document has no setters, no float, the migration count.
+ *
  * Run: php tests/module-debtor.php
  * Needs what tests/module-contact.php needs (vendor/ with Doctrine, a
  * reachable MariaDB, credentials in `%USERPROFILE%\.z77\mariadb.txt` or
@@ -68,11 +94,32 @@ use Z77\Module\Contact\Entities\Address;
 use Z77\Module\Contact\Entities\Contact;
 use Z77\Module\Contact\Entities\ContactAddress;
 use Z77\Module\Contact\Services\ContactService;
+use Z77\Module\Debtor\Accounting\AccountingGateways;
+use Z77\Module\Debtor\Accounting\AccountingRefusedException;
+use Z77\Module\Debtor\Accounting\AccountingUnavailableException;
+use Z77\Module\Debtor\Accounting\LedgerAccountingGateway;
+use Z77\Module\Debtor\Accounting\NullAccountingGateway;
+use Z77\Module\Debtor\Accounting\PostingLine as DebtorPostingLine;
+use Z77\Module\Debtor\Accounting\PostingRequest as DebtorPostingRequest;
+use Z77\Module\Debtor\Entities\AddressSnapshot;
 use Z77\Module\Debtor\Entities\DebtorProfile;
 use Z77\Module\Debtor\Entities\DunningLevel;
+use Z77\Module\Debtor\Entities\Invoice;
+use Z77\Module\Debtor\Entities\InvoiceKind;
+use Z77\Module\Debtor\Entities\InvoiceLine;
+use Z77\Module\Debtor\Entities\InvoiceState;
+use Z77\Module\Debtor\Entities\InvoiceTax;
+use Z77\Module\Debtor\Entities\LineType;
 use Z77\Module\Debtor\Entities\PaymentTarget;
 use Z77\Module\Debtor\Entities\PaymentTerms;
+use Z77\Module\Debtor\Invoicing\InvoiceDraft;
+use Z77\Module\Debtor\Invoicing\LineDraft;
+use Z77\Module\Debtor\Invoicing\PostingBuilder;
 use Z77\Module\Debtor\Repositories\DebtorProfileRepository;
+use Z77\Module\Debtor\Repositories\InvoiceRepository;
+use Z77\Module\Debtor\Services\InvoiceConflictException;
+use Z77\Module\Debtor\Services\InvoiceRefusedException;
+use Z77\Module\Debtor\Services\InvoicingService;
 use Z77\Module\Debtor\Repositories\DunningLevelRepository;
 use Z77\Module\Debtor\Repositories\PaymentTargetRepository;
 use Z77\Module\Debtor\Repositories\PaymentTermsRepository;
@@ -100,7 +147,12 @@ use Z77\Module\Debtor\Validators\DunningLevelValidator;
 use Z77\Module\Debtor\Validators\PaymentTargetValidator;
 use Z77\Module\Debtor\Validators\PaymentTermsValidator;
 use Z77\Module\Financial\Entities\Account;
+use Z77\Module\Financial\Entities\FiscalYear;
 use Z77\Module\Financial\Services\AccountService;
+use Z77\Module\Financial\Services\FiscalYearService;
+use Z77\Module\Vat\Calculation\PriceMode;
+use Z77\Module\Vat\Entities\TaxCode;
+use Z77\Module\Vat\Services\VatMasterData;
 use Z77\Persistence\Doctrine\Bootstrap as DoctrineBootstrap;
 use Z77\Persistence\Doctrine\Console\MigrationDirectories;
 use Z77\Persistence\Doctrine\Console\MigrationsApplication;
@@ -128,6 +180,16 @@ function caught(callable $fn, string $class): ?\Throwable
 function throws(callable $fn, string $class): bool
 {
     return caught($fn, $class) !== null;
+}
+
+function day(string $ymd): \DateTimeImmutable
+{
+    return new \DateTimeImmutable($ymd);
+}
+
+function chf(string $decimal): Money
+{
+    return Money::fromDecimal($decimal, 'CHF');
 }
 
 // ── credentials: never in the repository ─────────────────────────────────
@@ -185,6 +247,7 @@ register_shutdown_function(static function () use ($admin, $dbName, $rm, $base):
 // seeds. debtor needs contact (the party) and, for the SOFT account check,
 // financial — which a project may leave out, and section H proves that too.
 $packages = [
+    'Vat'       => str_replace('\\', '/', realpath(__DIR__ . '/../packages/module-vat')),
     'Contact'   => str_replace('\\', '/', realpath(__DIR__ . '/../packages/module-contact')),
     'Financial' => str_replace('\\', '/', realpath(__DIR__ . '/../packages/module-financial')),
     'Debtor'    => str_replace('\\', '/', realpath(__DIR__ . '/../packages/module-debtor')),
@@ -200,7 +263,7 @@ foreach ($packages as $name => $path) {
 }
 $write('config/vendor/fileFinder.inc.php', "<?php return ['resourceDir' => ['sourceDir' => 'src', 'tplDir' => 'res/view/templates'], 'namespaces' => [\n{$namespaces}]];");
 $writeModules = function (bool $withFinancial) use ($write): void {
-    $modules = $withFinancial ? "'contact' => [], 'financial' => [], 'debtor' => []" : "'contact' => [], 'debtor' => []";
+    $modules = $withFinancial ? "'vat' => [], 'contact' => [], 'financial' => [], 'debtor' => []" : "'vat' => [], 'contact' => [], 'debtor' => []";
     $write('config/vendor/moduleManager.inc.php', "<?php return ['modulePrefix' => 'Module', 'frameworkPrefix' => 'Z77', 'defaultModule' => 'debtor', 'modules' => [{$modules}]];");
 };
 $writeModules(true);
@@ -216,6 +279,11 @@ copy($packages['Contact'] . '/data/framework/contact/address_types.default.json'
 @mkdir($base . '/data/framework/debtor', 0777, true);
 foreach (glob($package . '/data/framework/debtor/*.default.json') as $seed) {
     copy($seed, $base . '/data/framework/debtor/' . str_replace('.default.json', '.json', basename($seed)));
+}
+// The tax codes an invoice line references (module-vat, file-based): the CH seed since 2018.
+@mkdir($base . '/data/framework/vat', 0777, true);
+foreach (['tax_codes', 'tax_rates'] as $name) {
+    copy($packages['Vat'] . '/data/framework/vat/' . $name . '.default.json', $base . '/data/framework/vat/' . $name . '.json');
 }
 
 /**
@@ -268,14 +336,30 @@ $run = static function (array $input): array {
 
 echo "A. Migration (z77-db migrate on an empty database)\n";
 $config = DI::getModuleManager()->getModuleConfig('debtor');
-check('A0 the module config announces exactly the ONE Doctrine entity — the other three are file-based', $config?->get('doctrineEntities') === [DebtorProfile::class]);
+check('A0 the module config announces exactly the FOUR Doctrine entities — the three master-data types are file-based',
+    $config?->get('doctrineEntities') === [DebtorProfile::class, Invoice::class, InvoiceLine::class, InvoiceTax::class]);
 $dirs = MigrationDirectories::collect(DI::getModuleManager(), DI::getFileFinder());
 check('A1 the module\'s res/migrations is collected under Z77\\Module\\Debtor\\Migrations', ($dirs['Z77\\Module\\Debtor\\Migrations'] ?? '') === $package . '/res/migrations');
 check('A2 the database is empty', $tables() === []);
 [$code, $out] = $run(['command' => 'migrate']);
 check('A3 migrate exits 0' . ($code !== 0 ? " — got {$code}: " . trim($out) : ''), $code === 0);
-check('A4 … the debtor migration ran (timestamp order across the modules)', str_contains($out, 'Z77\\Module\\Debtor\\Migrations\\Version20260922173918'));
-check('A5 debtor_profile exists next to contact\'s and financial\'s tables', in_array('debtor_profile', $tables(), true));
+$executed = $db->fetchFirstColumn('SELECT version FROM schema_migration');
+check('A4 … both debtor migrations ran; the run ends at the newest one (timestamp order across the modules)',
+    str_contains($out, 'Migrating up to Z77\\Module\\Debtor\\Migrations\\Version20260923043935')
+    && in_array('Z77\\Module\\Debtor\\Migrations\\Version20260922173918', $executed, true) && in_array('Z77\\Module\\Debtor\\Migrations\\Version20260923043935', $executed, true));
+check('A5 debtor_profile, invoice, invoice_line and invoice_tax exist next to contact\'s and financial\'s tables',
+    array_diff(['debtor_profile', 'invoice', 'invoice_line', 'invoice_tax'], $tables()) === []);
+$rangeOf = fn(string $name) => $db->fetchOne('SELECT last_number FROM number_range WHERE name = ?', [$name]);
+check('A5b the ranges invoice and credit-note exist at 0 — created by the migration ahead of the first draw (DOCTRINE-NR-003), nothing consumed',
+    (string) $rangeOf('invoice') === '0' && (string) $rangeOf('credit-note') === '0');
+$invoiceFks = $db->fetchFirstColumn('SELECT DISTINCT REFERENCED_TABLE_NAME FROM information_schema.KEY_COLUMN_USAGE WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND REFERENCED_TABLE_NAME IS NOT NULL ORDER BY 1', [$dbName, 'invoice']);
+check('A5c invoice references contact (the party) and itself (credit note → invoice) — no address, no terms, no tax code (they are snapshots / by code)', $invoiceFks === ['contact', 'invoice']);
+$addrColumns = $db->fetchFirstColumn('SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME LIKE ? ORDER BY ORDINAL_POSITION', [$dbName, 'invoice', 'addr\_%']);
+check('A5d the address snapshot is ten flat addr_* columns (the embeddable, contact.md «snapshot shape»)', count($addrColumns) === 10 && in_array('addr_zip', $addrColumns, true) && in_array('addr_country', $addrColumns, true));
+foreach (['invoice', 'invoice_line', 'invoice_tax'] as $t) {
+    $i = $tableInfo($t);
+    check("A5e {$t} is utf8mb4_unicode_ci and InnoDB", ($i['TABLE_COLLATION'] ?? '') === 'utf8mb4_unicode_ci' && ($i['ENGINE'] ?? '') === 'InnoDB');
+}
 $info = $tableInfo('debtor_profile');
 check('A6 debtor_profile is utf8mb4_unicode_ci and InnoDB although the database default is general_ci',
     ($info['TABLE_COLLATION'] ?? '') === 'utf8mb4_unicode_ci' && ($info['ENGINE'] ?? '') === 'InnoDB');
@@ -288,9 +372,11 @@ check('A9 the unique contact index and the payment-terms index carry our names',
 [$code, $out] = $run(['command' => 'migrate']);
 check('A10 a second migrate is a no-op', $code === 0 && str_contains($out, 'Already at the latest version'));
 [$code, $out] = $run(['command' => 'diff', '--namespace' => 'Z77\\Module\\Debtor\\Migrations']);
-check('A11 diff after migrate reports NO change — mapping and migration agree', $code !== 0 && str_contains($out, 'No changes detected') && count(glob($package . '/res/migrations/Version*.php')) === 1);
-$migrationSource = file_get_contents(glob($package . '/res/migrations/Version*.php')[0]);
-check('A12 the migration is expand-only: no DROP outside down()', substr_count(substr($migrationSource, 0, strpos($migrationSource, 'function down')), 'DROP') === 0);
+check('A11 diff after migrate reports NO change — mapping and migration agree (embedded address, money and decimal columns included)', $code !== 0 && str_contains($out, 'No changes detected') && count(glob($package . '/res/migrations/Version*.php')) === 2);
+check('A12 both migrations are expand-only: no DROP outside down()', array_reduce(glob($package . '/res/migrations/Version*.php'), function ($ok, $f) {
+    $s = file_get_contents($f);
+    return $ok && substr_count(substr($s, 0, strpos($s, 'function down')), 'DROP') === 0;
+}, true));
 
 
 // ── B. the seeds ─────────────────────────────────────────────────────────
@@ -913,8 +999,545 @@ check('I14 no float anywhere in the module: no (float) cast, no floatval, no num
     array_reduce($sources, fn($ok, $f) => $ok && !preg_match('/\(float\)|\(double\)|floatval\(|number_format\(/', file_get_contents($f)), true));
 check('I15 no module-debtor class touches $_POST / $_GET / $_SERVER (Rule 4)',
     array_reduce($sources, fn($ok, $f) => $ok && !preg_match('/\$_(POST|GET|SERVER|REQUEST)\b/', file_get_contents($f)), true));
-check('I16 only ONE class names module-financial — the soft boundary (ADR-040 decision 5)',
-    count(array_filter($sources, fn($f) => str_contains(file_get_contents($f), 'Module\\\\Financial') || str_contains(file_get_contents($f), 'Module\\Financial'))) === 1);
+$namingFinancial = array_map('basename', array_filter($sources, fn($f) => str_contains(file_get_contents($f), 'Module\\\\Financial') || str_contains(file_get_contents($f), 'Module\\Financial')));
+sort($namingFinancial);
+check('I16 exactly TWO classes name module-financial — the soft check and the port adapter (ADR-040 decision 5)',
+    $namingFinancial === ['LedgerAccountCheck.php', 'LedgerAccountingGateway.php']);
+
+
+// ═════════════════════════════════════════════════════════════════════════
+// P3 part 2 — InvoicingService, the documents, the accounting port
+// ═════════════════════════════════════════════════════════════════════════
+//
+// State inherited: the KMU chart (every account active again), Müller
+// (active, an `invoice` address, profile net-30), Anna (fr, profile
+// disc-2-10, no address yet), Rita (profile disc-2-10, no address), the
+// retired contact (inactive, no profile), financial REGISTERED, the vat seed.
+
+$journalCount = fn() => $count('journal_entry');
+$invoiceRow   = fn(int $id) => $db->fetchAssociative('SELECT * FROM invoice WHERE id = ?', [$id]);
+$lineRows     = fn(int $id) => $db->fetchAllAssociative('SELECT * FROM invoice_line WHERE invoice_id = ? ORDER BY position', [$id]);
+$taxRows      = fn(int $id) => $db->fetchAllAssociative('SELECT * FROM invoice_tax WHERE invoice_id = ? ORDER BY position', [$id]);
+$entryRow     = fn(string $ref) => $db->fetchAssociative("SELECT e.* FROM journal_entry e JOIN fiscal_year y ON y.id = e.fiscal_year_id WHERE CONCAT(y.code, '/', e.number) = ?", [$ref]);
+$entryLines   = fn(string $ref) => $db->fetchAllAssociative("SELECT l.*, a.number AS account_number FROM journal_line l JOIN journal_entry e ON e.id = l.entry_id JOIN fiscal_year y ON y.id = e.fiscal_year_id JOIN account a ON a.id = l.account_id WHERE CONCAT(y.code, '/', e.number) = ? ORDER BY l.position", [$ref]);
+$sumOf        = fn(array $rows, string $col) => array_reduce($rows, fn(Money $s, array $r) => $s->add(Money::fromDecimal((string) $r[$col], 'CHF')), chf('0.00'));
+$service      = fn(UnifiedEntityManager $em) => new InvoicingService($em, 'tester');
+$refusal      = fn(callable $fn): ?string => caught($fn, InvoiceRefusedException::class)?->reason;
+$readInvoice  = fn(int $id): Invoice => $wireDi()->getRepository(Invoice::class)->withLines($id);
+$stateOf      = fn(int $id): string => (string) $db->fetchOne('SELECT state FROM invoice WHERE id = ?', [$id]);
+/** The `{id, version}` pair finalize() takes, with the version the row carries NOW (what a screen would have shown). */
+$at           = fn(int $id): array => ['id' => $id, 'version' => (int) $db->fetchOne('SELECT version FROM invoice WHERE id = ?', [$id])];
+$mid          = $mueller->getId();
+/** The standard draft: two services (UN), a text line, a lump sum (UR) — 310.00 net, 23.46 tax, 333.46 → 333.45. */
+$standardDraft = fn(string $invoiceDate = '2026-03-10', string $serviceFrom = '2026-03-01', ?string $terms = null) => InvoiceDraft::invoice($mid, day($invoiceDate), day($serviceFrom), 'CHF', [
+    LineDraft::service("Beratung\nvor Ort", '2.000', 'Std.', chf('50.00'), 'UN', '3200', sourceType: 'order', sourceRef: 'A-17'),
+    LineDraft::service('Programmierung', '1.500', 'h', chf('120.00'), 'UN', '3400'),
+    LineDraft::text('Danke für den Auftrag.'),
+    LineDraft::lumpSum('Fachbuch', chf('30.00'), 'UR', '3200'),
+], paymentTermsCode: $terms, sourceType: 'order', sourceRef: 'A-17');
+$oneLine = fn(int $contactId, string $date, string $quantity, string $price, string $code = 'UN', string $account = '3400') => InvoiceDraft::invoice($contactId, day($date), day($date), 'CHF', [
+    LineDraft::service('Stunden', $quantity, 'h', chf($price), $code, $account),
+]);
+
+// ── J. invoice() ─────────────────────────────────────────────────────────
+
+echo "J. invoice(): a draft becomes a document in `invoicing` — number once, snapshot, VAT by service date, rounding line, nothing posted\n";
+$emJ = $wireDi();
+(new FiscalYearService($emJ))->open(new FiscalYear('2026', day('2026-01-01'), day('2026-12-31')));
+// Müller's profile was deactivated in F16 — a NEW document needs an active debtor.
+(new DebtorProfileService($emJ))->setActive($emJ->getRepository(DebtorProfile::class)->findByContact($mid), true);
+$emJ  = $wireDi();
+check('J0 an inactive DEBTOR (profile) refuses a new document → debtor-inactive; reactivated, it invoices', (function () use ($wireDi, $service, $oneLine, $anna, $refusal): bool {
+    $em = $wireDi();
+    (new DebtorProfileService($em))->setActive($em->getRepository(DebtorProfile::class)->findByContact($anna->getId()), false);
+    $refused = $refusal(fn() => $service($wireDi())->invoice($oneLine($anna->getId(), '2026-03-10', '1.000', '10.00'))) === InvoiceRefusedException::DEBTOR_INACTIVE;
+    $em = $wireDi();
+    (new DebtorProfileService($em))->setActive($em->getRepository(DebtorProfile::class)->findByContact($anna->getId()), true);
+    return $refused;
+})());
+$inv1 = $service($emJ)->invoice($standardDraft());
+check('J1 the document exists: number 1 from the `invoice` range (credit-note untouched), state invoicing, NOTHING posted',
+    $inv1->getId() !== null && $inv1->getNumber() === 1 && $stateOf($inv1->getId()) === InvoiceState::Invoicing->value && !$inv1->isFinal()
+    && (string) $rangeOf('invoice') === '1' && (string) $rangeOf('credit-note') === '0' && $journalCount() === 0);
+check('J2 totals: net 310.00, tax 23.46 (UN 22.68 + UR 0.78), 333.46 rounded to 333.45 — rounding −0.01 at the DOCUMENT level',
+    $inv1->getNetTotal()->toDecimal() === '310.00' && $inv1->getTaxTotal()->toDecimal() === '23.46'
+    && $inv1->getRounding()->toDecimal() === '-0.01' && $inv1->getGrossTotal()->toDecimal() === '333.45');
+$read  = $readInvoice($inv1->getId());
+$lines = $read->getLines();
+check('J3 five lines in order — service, service, text, lump-sum — and the rounding line LAST on 3809 without a tax code',
+    array_map(fn(InvoiceLine $l) => $l->type()->value, $lines) === ['service', 'service', 'text', 'lump-sum', 'rounding']
+    && $lines[4]->getRevenueAccount() === '3809' && $lines[4]->getTaxCode() === null && $lines[4]->getAmount()->toDecimal() === '-0.01' && $lines[4]->getText() === 'Rundung');
+check('J4 a service line: quantity 2.000, unit, unit price 50.00, amount 100.00, UN 810 with the LABEL snapshotted, account 3200, opaque origin, multi-line text kept',
+    $lines[0]->getQuantity() === '2.000' && $lines[0]->getUnit() === 'Std.' && $lines[0]->getUnitPrice()?->toDecimal() === '50.00' && $lines[0]->getAmount()->toDecimal() === '100.00'
+    && $lines[0]->getTaxCode() === 'UN' && $lines[0]->getTaxRate() === 810 && ($lines[0]->getTaxLabel() ?? '') !== '' && $lines[0]->getRevenueAccount() === '3200'
+    && $lines[0]->getSourceType() === 'order' && $lines[0]->getSourceRef() === 'A-17' && str_contains($lines[0]->getText(), "\n"));
+check('J5 1.5 h × 120.00 = 180.00; the lump sum carries no quantity; the text line no amount, code or account',
+    $lines[1]->getAmount()->toDecimal() === '180.00' && $lines[3]->getQuantity() === null && $lines[3]->getAmount()->toDecimal() === '30.00'
+    && $lines[2]->getAmount()->isZero() && $lines[2]->getTaxCode() === null && $lines[2]->getRevenueAccount() === null && $lines[2]->getUnitPrice() === null);
+$taxes = $read->getTaxes();
+check('J6 the tax summary per code, rounded ONCE: UN 810 on 280.00 = 22.68 (standard), UR 260 on 30.00 = 0.78 (reduced) — category and label snapshotted',
+    count($taxes) === 2 && $taxes[0]->getTaxCode() === 'UN' && $taxes[0]->getTaxRate() === 810 && $taxes[0]->getBase()->toDecimal() === '280.00' && $taxes[0]->getTax()->toDecimal() === '22.68'
+    && $taxes[0]->getTaxCategory() === 'standard' && $taxes[0]->getTaxLabel() !== ''
+    && $taxes[1]->getTaxCode() === 'UR' && $taxes[1]->getTaxRate() === 260 && $taxes[1]->getBase()->toDecimal() === '30.00' && $taxes[1]->getTax()->toDecimal() === '0.78' && $taxes[1]->getTaxCategory() === 'reduced');
+check('J7 the address snapshot is Müller\'s invoice address, the language the contact\'s, the party by id, the origin opaque',
+    $read->getAddress()->getName() === 'Müller & Söhne AG' && $read->getAddress()->getStreet() === 'Bahnhofstrasse' && $read->getAddress()->getZip() === '8001' && $read->getAddress()->getCity() === 'Zürich'
+    && $read->getAddress()->getCountry() === 'CH' && $read->getLanguage() === 'de' && $read->getContact()->getId() === $mid && $read->getSourceType() === 'order' && $read->getSourceRef() === 'A-17');
+check('J8 the terms AS APPLIED: net-30 → due 2026-04-09, no tiers, no text; CHF, no exchange rate, price mode net, service date kept',
+    $read->getPaymentTermsCode() === 'net-30' && $read->getDueDate()->format('Y-m-d') === '2026-04-09' && $read->getDiscountTiers() === [] && $read->getTermsText() === null
+    && $read->getCurrency() === 'CHF' && $read->getPriceMode() === 'net' && $read->getServiceFrom()->format('Y-m-d') === '2026-03-01' && $read->getServiceTo() === null);
+check('J9 created by the named actor, not changed, no ledger reference, version 1, not a credit note',
+    $read->getCreatedBy() === 'tester' && $read->getChangedBy() === null && $read->getLedgerEntryRef() === null && $read->getVersion() === 1 && $read->getCreditNoteOf() === null && !$read->isCreditNote());
+$row = $invoiceRow($inv1->getId());
+check('J10 the row: DECIMAL totals, the address in flat addr_* columns, the tiers as JSON, kind and state as strings',
+    $row['gross_total'] === '333.45' && $row['rounding'] === '-0.01' && $row['addr_zip'] === '8001' && $row['addr_name'] === 'Müller & Söhne AG'
+    && $row['discount_tiers'] === '[]' && $row['kind'] === 'invoice' && $row['state'] === 'invoicing' && $row['exchange_rate'] === null && $row['ledger_entry_ref'] === null);
+check('J10b the line rows: quantity DECIMAL(12,3), the rounding line\'s account, positions 1–5, the text line without price',
+    count($lineRows($inv1->getId())) === 5 && $lineRows($inv1->getId())[0]['quantity'] === '2.000' && $lineRows($inv1->getId())[4]['revenue_account'] === '3809'
+    && $lineRows($inv1->getId())[2]['unit_price'] === null && array_map('intval', array_column($lineRows($inv1->getId()), 'position')) === [1, 2, 3, 4, 5]);
+
+$inv2 = $service($emJ)->invoice($oneLine($mid, '2026-03-11', '1.000', '100.00'));
+check('J11 the next document takes number 2; 100.00 + 8.10 = 108.10 needs no rounding: NO rounding line, rounding 0.00',
+    $inv2->getNumber() === 2 && count($inv2->getLines()) === 1 && $inv2->getRounding()->isZero() && $inv2->getGrossTotal()->toDecimal() === '108.10'
+    && count($lineRows($inv2->getId())) === 1 && (string) $rangeOf('invoice') === '2');
+
+echo "J. … line types, parent lines, negative quantities, discount, gross mode\n";
+$emJ2 = $wireDi();
+$inv3 = $service($emJ2)->invoice(InvoiceDraft::invoice($mid, day('2026-03-12'), day('2026-03-12'), 'CHF', [
+    LineDraft::lumpSum('Paket Basis', chf('200.00'), 'UN', '3200')->beneath(
+        LineDraft::service('Handbuch', '1.000', 'Stk.', chf('0.00'), 'UN', '3200'),
+        LineDraft::text('Support während 12 Monaten inbegriffen'),
+    ),
+    LineDraft::service('Treuerabatt', '-1.000', null, chf('20.00'), 'UN', '3200'),
+]));
+$ls = $readInvoice($inv3->getId())->getLines();
+check('J12 a priced line carries children at 0.00 (A-Pos, §13): positions 1–3, both children point at the parent, the parent and the rest at the top level',
+    count($ls) === 5 && $ls[1]->getParentLine()?->getId() === $ls[0]->getId() && $ls[2]->getParentLine()?->getId() === $ls[0]->getId() && $ls[0]->getParentLine() === null
+    && $ls[1]->getAmount()->isZero() && $ls[1]->getTaxCode() === 'UN' && $ls[1]->getTaxRate() === 810 && $ls[2]->type() === LineType::Text && $ls[3]->getParentLine() === null
+    && (int) $lineRows($inv3->getId())[1]['parent_line_id'] === $ls[0]->getId());
+check('J13 a negative quantity is a deduction: −1.000 × 20.00 = −20.00; net 180.00, tax 14.58, 194.58 → 194.60 (rounding +0.02, a rounding line)',
+    $ls[3]->getQuantity() === '-1.000' && $ls[3]->getAmount()->toDecimal() === '-20.00' && $inv3->getNetTotal()->toDecimal() === '180.00' && $inv3->getTaxTotal()->toDecimal() === '14.58'
+    && $inv3->getRounding()->toDecimal() === '0.02' && $inv3->getGrossTotal()->toDecimal() === '194.60' && $ls[4]->type() === LineType::Rounding && $ls[4]->getAmount()->toDecimal() === '0.02');
+
+$inv4 = $service($emJ2)->invoice(InvoiceDraft::invoice($mid, day('2026-03-13'), day('2026-03-13'), 'CHF', [
+    LineDraft::service('Lizenz', '3.000', 'Stk.', chf('100.00'), 'UN', '3200', discountPercent: 1000),
+]));
+check('J14 a 10 % discount (1000 hundredths): 3 × 100.00 − 30.00 = 270.00, tax 21.87, 291.87 → 291.85',
+    $inv4->getLines()[0]->getDiscountPercent() === 1000 && $inv4->getLines()[0]->getAmount()->toDecimal() === '270.00' && $inv4->getTaxTotal()->toDecimal() === '21.87'
+    && $inv4->getGrossTotal()->toDecimal() === '291.85' && $inv4->getRounding()->toDecimal() === '-0.02');
+
+$inv5 = $service($emJ2)->invoice(InvoiceDraft::invoice($mid, day('2026-03-14'), day('2026-03-14'), 'CHF', [
+    LineDraft::lumpSum('Pauschale inkl. MWST', chf('108.10'), 'UN', '3200'),
+], priceMode: PriceMode::Gross));
+check('J15 gross price mode: the line prints 108.10, the summary holds base 100.00 and tax 8.10, gross 108.10, mode stored',
+    $inv5->getLines()[0]->getAmount()->toDecimal() === '108.10' && $inv5->getNetTotal()->toDecimal() === '100.00' && $inv5->getTaxTotal()->toDecimal() === '8.10'
+    && $inv5->getGrossTotal()->toDecimal() === '108.10' && $inv5->getPriceMode() === 'gross' && $inv5->getTaxes()[0]->getBase()->toDecimal() === '100.00');
+
+echo "J. … the rate by SERVICE date (ADR-041 decision 4)\n";
+$inv6 = $service($emJ2)->invoice($standardDraft('2026-03-15', '2023-06-01'));
+check('J16 a 2023 service invoiced in 2026 resolves the 2023 rates: UN 770 (280.00 → 21.56), UR 250 (30.00 → 0.75); 332.31 → 332.30',
+    $inv6->getTaxes()[0]->getTaxRate() === 770 && $inv6->getTaxes()[0]->getTax()->toDecimal() === '21.56' && $inv6->getTaxes()[1]->getTaxRate() === 250 && $inv6->getTaxes()[1]->getTax()->toDecimal() === '0.75'
+    && $inv6->getLines()[0]->getTaxRate() === 770 && $inv6->getTaxTotal()->toDecimal() === '22.31' && $inv6->getGrossTotal()->toDecimal() === '332.30'
+    && $inv6->getServiceFrom()->format('Y-m-d') === '2023-06-01' && $inv6->getInvoiceDate()->format('Y-m-d') === '2026-03-15');
+$inv6b = $service($emJ2)->invoice(InvoiceDraft::invoice($mid, day('2026-03-15'), day('2023-12-01'), 'CHF', [LineDraft::service('Abo', '1.000', 'Mt.', chf('100.00'), 'UN', '3400')], serviceTo: day('2024-02-29')));
+check('J16b a service PERIOD is stored from–to; the rate resolves by its start (2023-12 → 7.7 %) — a period across a rate change is split into two documents by the source',
+    $inv6b->getServiceTo()?->format('Y-m-d') === '2024-02-29' && $inv6b->getTaxes()[0]->getTaxRate() === 770);
+
+echo "J. … the terms snapshot: tiers with their dates, the printed sentence in the document's language\n";
+$emJ3 = $wireDi();
+$disc = $emJ3->getRepository(PaymentTerms::class)->findByCode('disc-2-10');
+$disc->setDocumentText(['de' => 'Zahlbar innert 30 Tagen, 2 % Skonto innert 10 Tagen.', 'fr' => 'Payable à 30 jours, 2 % d\'escompte à 10 jours.']);
+(new DebtorMasterData($emJ3))->saveTerms($disc);
+$emJ3 = $wireDi();
+$inv7 = $service($emJ3)->invoice($standardDraft('2026-03-10', '2026-03-01', 'disc-2-10'));
+check('J17 explicit terms disc-2-10: due 2026-04-09, ONE tier 10 days 2 % until 2026-03-20, the German sentence snapshotted',
+    $inv7->getPaymentTermsCode() === 'disc-2-10' && $inv7->getDueDate()->format('Y-m-d') === '2026-04-09'
+    && $inv7->getDiscountTiers() === [['days' => 10, 'percent' => 200, 'until' => '2026-03-20']]
+    && $inv7->getTermsText() === 'Zahlbar innert 30 Tagen, 2 % Skonto innert 10 Tagen.');
+$annaManaged = $emJ3->getRepository(Contact::class)->find($anna->getId());
+(new ContactService($emJ3))->addAddress(new ContactAddress($annaManaged, 'main', new Address(['salutation' => 'Madame', 'first_name' => 'Anna', 'name' => 'Ébauche', 'street' => 'Rue du Lac', 'house_no' => '3', 'zip' => '1200', 'city' => 'Genève'])));
+$emJ3 = $wireDi();
+$inv8 = $service($emJ3)->invoice($oneLine($anna->getId(), '2026-03-16', '2.000', '60.00'));
+check('J18 a French contact: the profile\'s terms (disc-2-10) apply, the sentence is the French one, the `main` address serves when there is no `invoice` one, the salutation is kept',
+    $inv8->getLanguage() === 'fr' && $inv8->getPaymentTermsCode() === 'disc-2-10' && $inv8->getTermsText() === 'Payable à 30 jours, 2 % d\'escompte à 10 jours.'
+    && $inv8->getAddress()->getCity() === 'Genève' && $inv8->getAddress()->getSalutation() === 'Madame' && $inv8->getAddress()->getFirstName() === 'Anna' && $inv8->getAddress()->getName() === 'Ébauche');
+$itContact = new Contact(['kind' => 'organisation', 'company' => 'Ticino SA', 'language' => 'it']);
+$itContact->addAddress(new ContactAddress($itContact, 'invoice', new Address(['name' => 'Ticino SA', 'street' => 'Via Nassa', 'house_no' => '1', 'zip' => '6900', 'city' => 'Lugano'])));
+(new ContactService($emJ3))->save($itContact);
+$itProfile = new DebtorProfile(['payment_terms_code' => 'disc-2-10']);
+$itProfile->setContact($itContact);
+(new DebtorProfileService($emJ3))->save($itProfile);
+$emJ3 = $wireDi();
+$inv9 = $service($emJ3)->invoice($oneLine($itContact->getId(), '2026-03-16', '1.000', '10.00'));
+check('J19 a language without a text falls back to the DEFAULT language (it → de) — the resolver part 1 left out', $inv9->getLanguage() === 'it' && $inv9->getTermsText() === 'Zahlbar innert 30 Tagen, 2 % Skonto innert 10 Tagen.');
+
+echo "J. … the snapshot is unaffected by later master-data changes\n";
+$emJ4 = $wireDi();
+$muellerLink = $emJ4->getRepository(ContactAddress::class)->findByContact($emJ4->getRepository(Contact::class)->find($mid))[0];
+(new ContactService($emJ4))->saveAddress($muellerLink, ['type_code' => 'invoice'], ['name' => 'Müller & Söhne AG', 'street' => 'Seestrasse', 'house_no' => '99', 'zip' => '8002', 'city' => 'Zürich', 'country' => 'CH']);
+$net30 = $emJ4->getRepository(PaymentTerms::class)->findByCode('net-30');
+$net30->setDueDays(20);
+(new DebtorMasterData($emJ4))->saveTerms($net30);
+$again = $readInvoice($inv1->getId());
+check('J20 the contact moved and net-30 became 20 days — the issued document still shows Bahnhofstrasse 1, 8001 and is due on 2026-04-09',
+    $again->getAddress()->getStreet() === 'Bahnhofstrasse' && $again->getAddress()->getZip() === '8001' && $again->getDueDate()->format('Y-m-d') === '2026-04-09'
+    && $emJ4->getRepository(Contact::class)->find($mid)->getAddresses()[0]->getAddress()->getZip() === '8002');
+$emJ5 = $wireDi();
+$inv10 = $service($emJ5)->invoice($oneLine($mid, '2026-03-17', '1.000', '10.00'));
+check('J21 … while a NEW document takes the changed data: Seestrasse 99, due in 20 days', $inv10->getAddress()->getStreet() === 'Seestrasse' && $inv10->getDueDate()->format('Y-m-d') === '2026-04-06');
+
+echo "J. … refusals — no number consumed, nothing written\n";
+$emJ6    = $wireDi();
+$before  = (string) $rangeOf('invoice');
+$svc     = $service($emJ6);
+$lonely  = new Contact(['kind' => 'person', 'first_name' => 'Ohne', 'last_name' => 'Profil', 'language' => 'de']);
+(new ContactService($emJ6))->save($lonely);
+check('J22 an unknown contact → contact-unknown; an inactive one → contact-inactive; one without a profile → no-debtor-profile; one without an address → no-address',
+    $refusal(fn() => $svc->invoice($oneLine(999999, '2026-03-18', '1.000', '10.00'))) === InvoiceRefusedException::CONTACT_UNKNOWN
+    && $refusal(fn() => $svc->invoice($oneLine($retired->getId(), '2026-03-18', '1.000', '10.00'))) === InvoiceRefusedException::CONTACT_INACTIVE
+    && $refusal(fn() => $svc->invoice($oneLine($lonely->getId(), '2026-03-18', '1.000', '10.00'))) === InvoiceRefusedException::NO_DEBTOR_PROFILE
+    && $refusal(fn() => $svc->invoice($oneLine($thirdContact->getId(), '2026-03-18', '1.000', '10.00'))) === InvoiceRefusedException::NO_ADDRESS);
+check('J23 EUR → currency (Q6: base currency only); a period ending before it starts → dates; no lines → no-lines',
+    $refusal(fn() => $svc->invoice(InvoiceDraft::invoice($mid, day('2026-03-18'), day('2026-03-18'), 'EUR', [LineDraft::text('x')]))) === InvoiceRefusedException::CURRENCY
+    && $refusal(fn() => $svc->invoice(InvoiceDraft::invoice($mid, day('2026-03-18'), day('2026-03-18'), 'CHF', [LineDraft::text('x')], serviceTo: day('2026-03-17')))) === InvoiceRefusedException::DATES
+    && $refusal(fn() => $svc->invoice(InvoiceDraft::invoice($mid, day('2026-03-18'), day('2026-03-18'), 'CHF', []))) === InvoiceRefusedException::NO_LINES);
+$draftWith = fn(LineDraft ...$lines) => InvoiceDraft::invoice($mid, day('2026-03-18'), day('2026-03-18'), 'CHF', $lines);
+check('J24 line rules → line: a priced line without tax code / without account / with a bad quantity, a lump sum with a quantity, a text line with a price, a drafted rounding line, a child with children, children under a text line, a 101 % discount',
+    $refusal(fn() => $svc->invoice($draftWith(LineDraft::service('x', '1.000', null, chf('1.00'), '', '3200')))) === InvoiceRefusedException::LINE
+    && $refusal(fn() => $svc->invoice($draftWith(LineDraft::service('x', '1.000', null, chf('1.00'), 'UN', 'bank')))) === InvoiceRefusedException::LINE
+    && $refusal(fn() => $svc->invoice($draftWith(LineDraft::service('x', '1.5555', null, chf('1.00'), 'UN', '3200')))) === InvoiceRefusedException::LINE
+    && $refusal(fn() => $svc->invoice($draftWith(new LineDraft(LineType::LumpSum, 'x', '2.000', null, chf('1.00'), 0, 'UN', '3200')))) === InvoiceRefusedException::LINE
+    && $refusal(fn() => $svc->invoice($draftWith(new LineDraft(LineType::Text, 'x', null, null, chf('1.00'))))) === InvoiceRefusedException::LINE
+    && $refusal(fn() => $svc->invoice($draftWith(new LineDraft(LineType::Rounding, 'Rundung')))) === InvoiceRefusedException::LINE
+    && $refusal(fn() => $svc->invoice($draftWith(LineDraft::lumpSum('a', chf('1.00'), 'UN', '3200')->beneath(LineDraft::text('b')->beneath(LineDraft::text('c')))))) === InvoiceRefusedException::LINE
+    && $refusal(fn() => $svc->invoice($draftWith(LineDraft::text('a')->beneath(LineDraft::text('b'))))) === InvoiceRefusedException::LINE
+    && $refusal(fn() => $svc->invoice($draftWith(LineDraft::lumpSum('a', chf('1.00'), 'UN', '3200', discountPercent: 10100)))) === InvoiceRefusedException::LINE);
+check('J25 an unknown tax code → tax-code-unknown; a service date before the seed (2017) → no-tax-rate — never a silent 0 %',
+    $refusal(fn() => $svc->invoice($draftWith(LineDraft::lumpSum('a', chf('1.00'), 'XX', '3200')))) === InvoiceRefusedException::TAX_CODE_UNKNOWN
+    && $refusal(fn() => $svc->invoice(InvoiceDraft::invoice($mid, day('2026-03-18'), day('2017-06-01'), 'CHF', [LineDraft::lumpSum('a', chf('1.00'), 'UN', '3200')]))) === InvoiceRefusedException::NO_TAX_RATE);
+check('J26 a GROUP account (32) and an unknown account → account-not-postable (the soft check against financial)',
+    $refusal(fn() => $svc->invoice($draftWith(LineDraft::lumpSum('a', chf('1.00'), 'UN', '32')))) === InvoiceRefusedException::ACCOUNT_NOT_POSTABLE
+    && $refusal(fn() => $svc->invoice($draftWith(LineDraft::lumpSum('a', chf('1.00'), 'UN', '9999999')))) === InvoiceRefusedException::ACCOUNT_NOT_POSTABLE);
+check('J27 an invoice whose total is negative → negative-total (that is a credit note)',
+    $refusal(fn() => $svc->invoice($draftWith(LineDraft::service('Rückvergütung', '-1.000', null, chf('100.00'), 'UN', '3200')))) === InvoiceRefusedException::NEGATIVE_TOTAL);
+check('J28 a credit note against a document still `invoicing` → credit-note-target (it is re-invoiced, not credited); against an unknown one, or an invoice naming a target → the same',
+    $refusal(fn() => $svc->invoice(InvoiceDraft::creditNote($inv2->getId(), $mid, day('2026-03-18'), 'CHF', [LineDraft::lumpSum('a', chf('1.00'), 'UN', '3200')]))) === InvoiceRefusedException::CREDIT_NOTE_TARGET
+    && $refusal(fn() => $svc->invoice(InvoiceDraft::creditNote(999999, $mid, day('2026-03-18'), 'CHF', [LineDraft::lumpSum('a', chf('1.00'), 'UN', '3200')]))) === InvoiceRefusedException::CREDIT_NOTE_TARGET
+    && $refusal(fn() => $svc->invoice(new InvoiceDraft(InvoiceKind::Invoice, $mid, day('2026-03-18'), day('2026-03-18'), null, 'CHF', PriceMode::Net, null, null, [LineDraft::text('x')], null, null, $inv2->getId()))) === InvoiceRefusedException::CREDIT_NOTE_TARGET);
+check('J28b an INVOICE without a service date → dates (the rate resolves by it); a credit note may leave it out (it takes the invoice\'s — L17c)',
+    $refusal(fn() => $svc->invoice(new InvoiceDraft(InvoiceKind::Invoice, $mid, day('2026-03-18'), null, null, 'CHF', PriceMode::Net, null, null, [LineDraft::text('x')]))) === InvoiceRefusedException::DATES);
+(new VatMasterData($emJ6))->setActive($emJ6->getRepository(TaxCode::class)->findByCode('US'), false);
+(new DebtorMasterData($emJ6))->setTermsActive($emJ6->getRepository(PaymentTerms::class)->findByCode('net-30'), false);
+$emJ7 = $wireDi();
+$svc7 = $service($emJ7);
+check('J29 the reference rule for a NEW document: a deactivated tax code → tax-code-inactive',
+    $refusal(fn() => $svc7->invoice(InvoiceDraft::invoice($mid, day('2026-03-18'), day('2026-03-18'), 'CHF', [LineDraft::lumpSum('Übernachtung', chf('1.00'), 'US', '3200')], paymentTermsCode: 'disc-2-10'))) === InvoiceRefusedException::TAX_CODE_INACTIVE);
+check('J29b … the profile\'s deactivated terms → terms-inactive (the debtor is corrected first); unknown terms → terms-unknown',
+    $refusal(fn() => $svc7->invoice($oneLine($mid, '2026-03-18', '1.000', '10.00'))) === InvoiceRefusedException::TERMS_INACTIVE
+    && $refusal(fn() => $svc7->invoice($standardDraft('2026-03-18', '2026-03-18', 'ghost'))) === InvoiceRefusedException::TERMS_UNKNOWN);
+(new VatMasterData($emJ7))->setActive($emJ7->getRepository(TaxCode::class)->findByCode('US'), true);
+(new DebtorMasterData($emJ7))->setTermsActive($emJ7->getRepository(PaymentTerms::class)->findByCode('net-30'), true);
+check('J30 after every refusal: the range stands where it stood, no document and no journal entry was written',
+    (string) $rangeOf('invoice') === $before && $count('invoice') === 11 && $journalCount() === 0 && !$wireDi()->getTransaction(Invoice::class)->isOpen());
+
+
+// ── K. reinvoice() ───────────────────────────────────────────────────────
+
+echo "K. reinvoice(): the same number, a new snapshot, the version bumped — still nothing posted\n";
+$emK = $wireDi();
+$re  = $service($emK)->reinvoice($inv1->getId(), 1, InvoiceDraft::invoice($mid, day('2026-03-15'), day('2026-03-01'), 'CHF', [
+    LineDraft::service('Beratung, korrigiert', '3.000', 'Std.', chf('50.00'), 'UN', '3200'),
+]));
+check('K1 number 1 kept; new date, ONE line, 150.00 + 12.15 = 162.15 (no rounding), version 2, changed by tester; nothing posted, no number drawn',
+    $re->getNumber() === 1 && $re->getId() === $inv1->getId() && $re->getInvoiceDate()->format('Y-m-d') === '2026-03-15' && count($re->getLines()) === 1
+    && $re->getGrossTotal()->toDecimal() === '162.15' && $re->getRounding()->isZero() && $re->getVersion() === 2 && $re->getChangedBy() === 'tester'
+    && $journalCount() === 0 && (string) $rangeOf('invoice') === $before);
+check('K2 the old lines and tax rows are GONE (orphan removal), the new ones there', count($lineRows($inv1->getId())) === 1 && count($taxRows($inv1->getId())) === 1 && $taxRows($inv1->getId())[0]['tax_amount'] === '12.15');
+check('K3 the snapshot moved with it: the address is the CURRENT one now (Seestrasse), the due date follows the new invoice date',
+    $readInvoice($inv1->getId())->getAddress()->getStreet() === 'Seestrasse' && $readInvoice($inv1->getId())->getDueDate()->format('Y-m-d') === '2026-04-04');
+$emK2 = $wireDi();
+check('K4 a STALE version (1) is refused — another writer was first (InvoiceConflictException); an unknown id the same way',
+    caught(fn() => $service($emK2)->reinvoice($inv1->getId(), 1, $oneLine($mid, '2026-03-15', '1.000', '10.00')), InvoiceConflictException::class)?->expectedVersion === 1
+    && throws(fn() => $service($wireDi())->reinvoice(999999, 1, $oneLine($mid, '2026-03-15', '1.000', '10.00')), InvoiceConflictException::class));
+check('K5 the kind is immutable: re-issuing an invoice as a credit note → kind-changed',
+    $refusal(fn() => $service($wireDi())->reinvoice($inv1->getId(), 2, InvoiceDraft::creditNote($inv2->getId(), $mid, day('2026-03-15'), 'CHF', [LineDraft::lumpSum('a', chf('1.00'), 'UN', '3200')]))) === InvoiceRefusedException::KIND_CHANGED);
+check('K6 a refused re-issue leaves the document as it was (version 2, one line)', $readInvoice($inv1->getId())->getVersion() === 2 && count($lineRows($inv1->getId())) === 1);
+
+
+// ── L. finalize() and the accounting port ────────────────────────────────
+
+echo "L. finalize(): posted once through the port, state final, the posting shape, the open amount\n";
+$emL = $wireDi();
+$svc = $service($emL);
+check('L0 an `invoicing` document has NO open amount yet (plan §6.2)', $svc->openAmount($emL->getRepository(Invoice::class)->find($inv1->getId()))->isZero());
+$staleBefore = $journalCount();
+check('L0b finalize() with a STALE version (1 — the document is at 2 since K1) → InvoiceConflictException, nothing posted, still invoicing',
+    caught(fn() => $service($wireDi())->finalize([['id' => $inv1->getId(), 'version' => 1]]), InvoiceConflictException::class)?->expectedVersion === 1
+    && $journalCount() === $staleBefore && $stateOf($inv1->getId()) === 'invoicing');
+check('L0c finalize() refuses a bare id — it takes {id, version} pairs (DEBTOR-FINAL-001)', throws(fn() => $service($wireDi())->finalize([$inv1->getId()]), \InvalidArgumentException::class));
+$done = $svc->finalize([$at($inv1->getId())]);
+$f1   = $done[0];
+check('L1 final: state, ledger reference 2026/1, ONE journal entry, the actor stamped, version bumped',
+    count($done) === 1 && $f1->isFinal() && $stateOf($inv1->getId()) === InvoiceState::Final->value && $f1->getLedgerEntryRef() === '2026/1' && $journalCount() === 1 && $f1->getChangedBy() === 'tester' && $f1->getVersion() === 3);
+$jl = $entryLines('2026/1');
+check('L2 the posting shape: 1100 DEBIT 162.15 | 3200 CREDIT 150.00 with UN 810, base 150.00, tax 12.15 (the net line) | 2200 CREDIT 12.15 (VAT by category); Σ debit = Σ credit',
+    count($jl) === 3
+    && $jl[0]['account_number'] === '1100' && $jl[0]['debit'] === '162.15' && $jl[0]['tax_code'] === null
+    && $jl[1]['account_number'] === '3200' && $jl[1]['credit'] === '150.00' && $jl[1]['tax_code'] === 'UN' && (int) $jl[1]['tax_rate'] === 810 && $jl[1]['tax_base'] === '150.00' && $jl[1]['tax_amount'] === '12.15' && $jl[1]['text'] === 'Beratung, korrigiert'
+    && $jl[2]['account_number'] === '2200' && $jl[2]['credit'] === '12.15' && $jl[2]['tax_code'] === null
+    && $sumOf($jl, 'debit')->equals($sumOf($jl, 'credit')) && $sumOf($jl, 'debit')->toDecimal() === '162.15');
+$e1 = $entryRow('2026/1');
+check('L3 the entry is GENERATED, dated the invoice date, origin invoice / 1 (opaque), key invoice:{id}:final, text names document and party, author tester',
+    $e1['kind'] === 'generated' && $e1['entry_date'] === '2026-03-15' && $e1['source_type'] === 'invoice' && $e1['source_ref'] === '1'
+    && $e1['idempotency_key'] === 'invoice:' . $inv1->getId() . ':final' && $e1['text'] === 'Rechnung 1 · Müller & Söhne AG' && $e1['created_by'] === 'tester');
+check('L4 the open amount of the final invoice is its gross', $svc->openAmount($f1)->toDecimal() === '162.15');
+$emL2 = $wireDi();
+check('L5 finalize TWICE is refused (not-invoicing), not silently accepted — and nothing was posted again',
+    $refusal(fn() => $service($emL2)->finalize([$at($inv1->getId())])) === InvoiceRefusedException::NOT_INVOICING && $journalCount() === 1);
+check('L6 a final document is immutable: reinvoice → not-invoicing, the row unchanged (version 3, one line)',
+    $refusal(fn() => $service($wireDi())->reinvoice($inv1->getId(), 3, $oneLine($mid, '2026-03-15', '1.000', '10.00'))) === InvoiceRefusedException::NOT_INVOICING
+    && $readInvoice($inv1->getId())->getVersion() === 3 && count($lineRows($inv1->getId())) === 1);
+$finalEntity   = $readInvoice($inv1->getId());
+$blankSnapshot = (new \ReflectionClass(\Z77\Module\Debtor\Invoicing\DocumentSnapshot::class))->newInstanceWithoutConstructor();
+check('L7 the ENTITY refuses as well, not only the service: finalize() and reissue() on a final document throw',
+    throws(fn() => $finalEntity->finalize(null, 'x', new \DateTimeImmutable()), \LogicException::class)
+    && throws(fn() => $finalEntity->reissue($blankSnapshot, [], [], 'x', new \DateTimeImmutable()), \LogicException::class));
+check('L8 a batch naming an unknown id → not-found; an empty batch does nothing; a credit note at 0.00 against the final invoice → negative-total (it must be positive)',
+    $refusal(fn() => $service($wireDi())->finalize([['id' => 999999, 'version' => 1]])) === InvoiceRefusedException::NOT_FOUND && $service($wireDi())->finalize([]) === []
+    && $refusal(fn() => $service($wireDi())->invoice(InvoiceDraft::creditNote($inv1->getId(), $mid, day('2026-03-18'), 'CHF', [LineDraft::text('nichts')]))) === InvoiceRefusedException::NEGATIVE_TOTAL);
+
+echo "L. … a batch where one document fails rolls back WHOLE — no state, no number, no entry\n";
+$emL3  = $wireDi();
+$inv11 = $service($emL3)->invoice($oneLine($mid, '2027-03-01', '1.000', '10.00'));   // no fiscal year covers 2027
+$emL4  = $wireDi();
+$rangeBefore = (string) $rangeOf('journal-entry.2026');
+$e = caught(fn() => $service($emL4)->finalize([$at($inv2->getId()), $at($inv11->getId())]), AccountingRefusedException::class);
+check('L9 the ledger refuses the second document (no-fiscal-year) through the port — AccountingRefusedException with financial\'s reason and exception behind it',
+    $e instanceof AccountingRefusedException && $e->reason === 'no-fiscal-year' && $e->getPrevious() !== null && str_contains($e->getMessage(), '2027'));
+check('L10 … and the FIRST document of the batch is still invoicing, the journal range untouched, no entry written, no unit of work open',
+    $stateOf($inv2->getId()) === 'invoicing' && $readInvoice($inv2->getId())->getLedgerEntryRef() === null
+    && (string) $rangeOf('journal-entry.2026') === $rangeBefore && $journalCount() === 1 && !$wireDi()->getTransaction(Invoice::class)->isOpen());
+
+echo "L. … NullAccountingGateway and the gateway selection by config\n";
+$emL5 = $wireDi();
+$null = new InvoicingService($emL5, 'tester', new NullAccountingGateway($emL5, 'tester'));
+$null->finalize([$at($inv2->getId())]);
+check('L11 with the Null gateway finalize() works and posts NOTHING: final, ledger reference null, no entry, open amount = gross',
+    $readInvoice($inv2->getId())->isFinal() && $readInvoice($inv2->getId())->getLedgerEntryRef() === null && $journalCount() === 1
+    && $null->openAmount($readInvoice($inv2->getId()))->toDecimal() === '108.10');
+check('L12 the package config names the ledger gateway, and fromConfig() builds it while financial is registered',
+    DI::getModuleManager()->getModuleConfig('debtor')?->get('accountingGateway') === LedgerAccountingGateway::class
+    && AccountingGateways::fromConfig($emL5, 'tester') instanceof LedgerAccountingGateway);
+$writeModules(false);
+$rm($base . '/var/cache');
+$emNoFin = $wireDi();
+check('L13 with financial UNREGISTERED the default gateway refuses to run (AccountingUnavailableException) — never a silent «books nothing»',
+    throws(fn() => AccountingGateways::fromConfig($emNoFin, 'tester'), AccountingUnavailableException::class)
+    && throws(fn() => new LedgerAccountingGateway($emNoFin, 'tester'), AccountingUnavailableException::class));
+$writeModules(true);
+$rm($base . '/var/cache');
+$fullConfig = fn(string $gateway) => "<?php return ['viewArea' => false, 'doctrineEntities' => [\\Z77\\Module\\Debtor\\Entities\\DebtorProfile::class, \\Z77\\Module\\Debtor\\Entities\\Invoice::class, \\Z77\\Module\\Debtor\\Entities\\InvoiceLine::class, \\Z77\\Module\\Debtor\\Entities\\InvoiceTax::class], "
+    . "'debtorAccounts' => ['receivable' => '1100', 'discount' => '3800', 'loss' => '3805', 'rounding' => '3809', 'dunningFee' => '6950'], {$gateway}];";
+$emOv = $writeOverride($fullConfig("'accountingGateway' => \\Z77\\Module\\Debtor\\Accounting\\NullAccountingGateway::class"));
+check('L14 a project override naming NullAccountingGateway selects it', AccountingGateways::fromConfig($emOv, 'tester') instanceof NullAccountingGateway);
+$emOv = $writeOverride($fullConfig("'x' => 1"));
+check('L15 a missing key fails loudly (UnexpectedValueException — BOOT-CONFIG-001: an override carries the full config)', throws(fn() => AccountingGateways::fromConfig($emOv, 'tester'), \UnexpectedValueException::class));
+$emOv = $writeOverride($fullConfig("'accountingGateway' => 'Nope\\\\Gateway'"));
+$unknownClass = throws(fn() => AccountingGateways::fromConfig($emOv, 'tester'), AccountingUnavailableException::class);
+$emOv = $writeOverride($fullConfig("'accountingGateway' => \\Z77\\Module\\Debtor\\Services\\DebtorAccounts::class"));
+check('L16 an unknown class, or one that is no gateway → AccountingUnavailableException',
+    $unknownClass && throws(fn() => AccountingGateways::fromConfig($emOv, 'tester'), AccountingUnavailableException::class));
+$emL6 = $writeOverride(null);
+
+echo "L. … the credit note: the only correction of a final document, the mirrored posting, the open amount\n";
+$svcC = $service($emL6);
+$cn   = $svcC->invoice(InvoiceDraft::creditNote($inv1->getId(), $mid, day('2026-03-20'), 'CHF', [
+    LineDraft::service('Beratung — 1 Std. zu viel verrechnet', '1.000', 'Std.', chf('50.00'), 'UN', '3200'),
+]));
+check('L17 a credit note against the FINAL invoice: number 1 of the credit-note range, lines AS PRINTED (50.00 + 4.05 = 54.05), state invoicing, references the invoice',
+    $cn->isCreditNote() && $cn->kind() === InvoiceKind::CreditNote && $cn->getNumber() === 1 && $cn->getCreditNoteOf()?->getId() === $inv1->getId() && !$cn->isFinal()
+    && $cn->getGrossTotal()->toDecimal() === '54.05' && $cn->getLines()[0]->getAmount()->toDecimal() === '50.00' && (string) $rangeOf('credit-note') === '1' && $cn->documentName() === 'Gutschrift 1');
+check('L17b … its service dates are the INVOICE\'s (2026-03-01, none) — not the credit note\'s own date', $cn->getServiceFrom()->format('Y-m-d') === '2026-03-01' && $cn->getServiceTo() === null);
+check('L18 … while it is invoicing the invoice\'s open amount is unchanged', $svcC->openAmount($emL6->getRepository(Invoice::class)->find($inv1->getId()))->toDecimal() === '162.15');
+$svcC->finalize([$at($cn->getId())]);
+
+echo "L. … the credit note follows the rate of the ORIGINAL supply (review 2026-09-23, ADR-041 decision 4)\n";
+$emL6b = $wireDi();
+$service($emL6b)->finalize([$at($inv6->getId())]);   // the 2023 service (UN 7.7 %, UR 2.5 %) invoiced in 2026
+$emL6c = $wireDi();
+$cn2023 = $service($emL6c)->invoice(InvoiceDraft::creditNote($inv6->getId(), $mid, day('2026-04-10'), 'CHF', [
+    LineDraft::service('Beratung 2023, Teilgutschrift', '1.000', 'Std.', chf('50.00'), 'UN', '3200'),
+]));
+check('L17c a credit note issued in 2026 against the 2023 invoice takes the invoice\'s service date and resolves 7.7 %: tax 3.85, not 4.05',
+    $cn2023->getServiceFrom()->format('Y-m-d') === '2023-06-01' && $cn2023->getTaxes()[0]->getTaxRate() === 770 && $cn2023->getTaxes()[0]->getTax()->toDecimal() === '3.85'
+    && $cn2023->getLines()[0]->getTaxRate() === 770);
+check('L17d … a credit note that names its OWN service date in 2026 (8.1 % against the invoice\'s 7.7 %) → credit-note-rate, the message names both rates',
+    (function () use ($service, $wireDi, $inv6, $mid): bool {
+        $e = caught(fn() => $service($wireDi())->invoice(InvoiceDraft::creditNote($inv6->getId(), $mid, day('2026-04-10'), 'CHF',
+            [LineDraft::service('x', '1.000', 'Std.', chf('50.00'), 'UN', '3200')], serviceFrom: day('2026-04-10'))), InvoiceRefusedException::class);
+        return $e?->reason === InvoiceRefusedException::CREDIT_NOTE_RATE && str_contains($e->getMessage(), '8.1 %') && str_contains($e->getMessage(), '7.7 %');
+    })());
+$ownDate = $service($wireDi())->invoice(InvoiceDraft::creditNote($inv6->getId(), $mid, day('2026-04-10'), 'CHF',
+    [LineDraft::service('x', '1.000', 'Std.', chf('10.00'), 'UN', '3200'), LineDraft::lumpSum('Export', chf('5.00'), 'UE', '3200')], serviceFrom: day('2023-09-01')));
+$ownRates = [];
+foreach ($ownDate->getTaxes() as $t) { $ownRates[$t->getTaxCode()] = $t->getTaxRate(); }
+check('L17e … an own service date INSIDE the old rate\'s validity (2023-09-01) passes: same rate as the invoice; a code the invoice never carried (UE) resolves freely',
+    $ownDate->getServiceFrom()->format('Y-m-d') === '2023-09-01' && $ownRates === ['UE' => 0, 'UN' => 770]);
+$service($wireDi())->finalize([$at($cn2023->getId())]);
+$c23 = $entryLines((string) $readInvoice($cn2023->getId())->getLedgerEntryRef());
+check('L17f … its posting carries UN 770 with base −50.00 / tax −3.85 and a 2200 debit of 3.85 — the VAT return sees the reduction under the rate of the supply',
+    count(array_filter($c23, fn($r) => $r['account_number'] === '3200' && (int) $r['tax_rate'] === 770 && $r['tax_amount'] === '-3.85')) === 1
+    && count(array_filter($c23, fn($r) => $r['account_number'] === '2200' && $r['debit'] === '3.85')) === 1);
+$cl = $entryLines('2026/2');
+check('L19 the MIRRORED posting: 1100 CREDIT 54.05 | 3200 DEBIT 50.00 with base −50.00 and tax −4.05 | 2200 DEBIT 4.05 — the same shape, every side swapped, tax data negated',
+    count($cl) === 3
+    && $cl[0]['account_number'] === '1100' && $cl[0]['credit'] === '54.05'
+    && $cl[1]['account_number'] === '3200' && $cl[1]['debit'] === '50.00' && $cl[1]['tax_code'] === 'UN' && $cl[1]['tax_base'] === '-50.00' && $cl[1]['tax_amount'] === '-4.05'
+    && $cl[2]['account_number'] === '2200' && $cl[2]['debit'] === '4.05' && $sumOf($cl, 'debit')->equals($sumOf($cl, 'credit')));
+$e2 = $entryRow('2026/2');
+check('L20 its entry: origin credit-note / 1, key credit-note:{id}:final, text «Gutschrift 1 · …», ledger reference 2026/2 on the document',
+    $e2['source_type'] === 'credit-note' && $e2['source_ref'] === '1' && $e2['idempotency_key'] === 'credit-note:' . $cn->getId() . ':final'
+    && str_starts_with($e2['text'], 'Gutschrift 1 · Müller') && $readInvoice($cn->getId())->getLedgerEntryRef() === '2026/2');
+$emL7 = $wireDi();
+check('L21 the invoice\'s open amount drops by the credit note: 162.15 − 54.05 = 108.10 (derived, not stored); the credit note itself has none',
+    $service($emL7)->openAmount($emL7->getRepository(Invoice::class)->find($inv1->getId()))->toDecimal() === '108.10'
+    && $service($emL7)->openAmount($emL7->getRepository(Invoice::class)->find($cn->getId()))->isZero());
+$creditRow = $invoiceRow($cn->getId());
+check('L22 the credit note row: kind credit-note, credit_note_of_id → the invoice, positive gross', $creditRow['kind'] === 'credit-note' && (int) $creditRow['credit_note_of_id'] === $inv1->getId() && $creditRow['gross_total'] === '54.05');
+
+echo "L. … the tax share per line: allocate(), mixed signs, a code deactivated after issue, a zero document, a batch of two\n";
+$emL8 = $wireDi();
+$mixed = $service($emL8)->invoice(InvoiceDraft::invoice($mid, day('2026-04-01'), day('2026-04-01'), 'CHF', [
+    LineDraft::service('Ware', '1.000', 'Stk.', chf('100.00'), 'UN', '3200'),
+    LineDraft::service('Retoure', '-1.000', 'Stk.', chf('30.00'), 'UN', '3400'),
+]));
+check('L23 one code with MIXED signs: base 70.00, tax 5.67 (once), 75.67 → 75.65', $mixed->getTaxes()[0]->getBase()->toDecimal() === '70.00' && $mixed->getTaxes()[0]->getTax()->toDecimal() === '5.67' && $mixed->getGrossTotal()->toDecimal() === '75.65' && $mixed->getRounding()->toDecimal() === '-0.02');
+$service($emL8)->finalize([$at($mixed->getId())]);
+$ml = $entryLines((string) $readInvoice($mixed->getId())->getLedgerEntryRef());
+$byAccount = [];
+foreach ($ml as $r) { $byAccount[$r['account_number']][] = $r; }
+check('L24 its posting: 1100 debit 75.65 | 3200 credit 100.00 (base 100.00, tax 8.10) | 3400 DEBIT 30.00 (base −30.00, tax −2.43) | 2200 credit 5.67 | 3809 DEBIT 0.02 (rounded down); Σ tax_amount = the tax row; balanced',
+    $byAccount['1100'][0]['debit'] === '75.65' && $byAccount['3200'][0]['credit'] === '100.00' && $byAccount['3200'][0]['tax_amount'] === '8.10'
+    && $byAccount['3400'][0]['debit'] === '30.00' && $byAccount['3400'][0]['tax_base'] === '-30.00' && $byAccount['3400'][0]['tax_amount'] === '-2.43'
+    && $byAccount['2200'][0]['credit'] === '5.67' && $byAccount['3809'][0]['debit'] === '0.02' && $byAccount['3809'][0]['tax_code'] === null
+    && $sumOf(array_filter($ml, fn($r) => $r['tax_code'] !== null), 'tax_amount')->toDecimal() === '5.67' && $sumOf($ml, 'debit')->equals($sumOf($ml, 'credit')));
+$emL9  = $wireDi();
+$third = $service($emL9)->invoice(InvoiceDraft::invoice($mid, day('2026-04-02'), day('2026-04-02'), 'CHF', [
+    LineDraft::lumpSum('Teil 1', chf('33.33'), 'UN', '3200'),
+    LineDraft::lumpSum('Teil 2', chf('33.33'), 'UN', '3200'),
+    LineDraft::lumpSum('Teil 3', chf('33.34'), 'UN', '3200'),
+    LineDraft::lumpSum('Buch', chf('30.00'), 'UR', '3200'),
+]));
+$service($emL9)->finalize([$at($third->getId())]);
+$tl = array_values(array_filter($entryLines((string) $readInvoice($third->getId())->getLedgerEntryRef()), fn($r) => $r['tax_code'] === 'UN'));
+check('L25 three lines of one code share its tax 8.10 by allocate(): 2.70 / 2.70 / 2.70 — Σ exactly the tax row, no Rappen smeared, nothing lost',
+    count($tl) === 3 && array_column($tl, 'tax_amount') === ['2.70', '2.70', '2.70'] && $sumOf($tl, 'tax_amount')->toDecimal() === '8.10');
+$vatLinesOfThird = array_values(array_filter($entryLines((string) $readInvoice($third->getId())->getLedgerEntryRef()), fn($r) => $r['account_number'] === '2200'));
+check('L26 VAT per CODE: two 2200 lines (UN 8.10, UR 0.78), both without tax data — the tax data sits on the net lines only (ADR-041 decision 7)',
+    count($vatLinesOfThird) === 2 && array_column($vatLinesOfThird, 'credit') === ['8.10', '0.78'] && array_column($vatLinesOfThird, 'tax_code') === [null, null]);
+
+$emL10 = $wireDi();
+(new VatMasterData($emL10))->setActive($emL10->getRepository(TaxCode::class)->findByCode('UR'), false);
+$emL11 = $wireDi();
+$service($emL11)->finalize([$at($inv7->getId())]);   // issued with UR while it was active
+check('L27 a tax code deactivated AFTER issue still posts on finalize — the document carries its snapshot, the ledger asks for existence only (ADR-043/19)',
+    $readInvoice($inv7->getId())->isFinal() && $readInvoice($inv7->getId())->getLedgerEntryRef() !== null
+    && $refusal(fn() => $service($wireDi())->invoice($draftWith(LineDraft::lumpSum('Buch', chf('1.00'), 'UR', '3200')))) === InvoiceRefusedException::TAX_CODE_INACTIVE);
+$emR = $wireDi();
+(new VatMasterData($emR))->setActive($emR->getRepository(TaxCode::class)->findByCode('UR'), true);
+
+$emL12 = $wireDi();
+$zero  = $service($emL12)->invoice(InvoiceDraft::invoice($mid, day('2026-04-03'), day('2026-04-03'), 'CHF', [LineDraft::text('Nur ein Hinweis, kein Betrag.')]));
+$countBefore = $journalCount();
+$service($emL12)->finalize([$at($zero->getId())]);
+check('L28 a document without an amount (text only) finalizes and posts NOTHING: final, ledger reference null, no entry, PostingBuilder yields null',
+    $zero->getGrossTotal()->isZero() && count($zero->getLines()) === 1 && $readInvoice($zero->getId())->isFinal() && $readInvoice($zero->getId())->getLedgerEntryRef() === null
+    && $journalCount() === $countBefore && PostingBuilder::build($readInvoice($zero->getId()), '1100') === null);
+
+$emL13 = $wireDi();
+$countBefore = $journalCount();
+$pair  = $service($emL13)->finalize([$at($inv4->getId()), $at($inv3->getId())]);
+check('L29 a batch of two in ONE unit of work: both final, two consecutive journal numbers, in the order given',
+    count($pair) === 2 && $pair[0]->getId() === $inv4->getId() && $pair[0]->isFinal() && $pair[1]->isFinal() && $journalCount() === $countBefore + 2
+    && (int) explode('/', (string) $pair[0]->getLedgerEntryRef())[1] + 1 === (int) explode('/', (string) $pair[1]->getLedgerEntryRef())[1]);
+$rl = $entryLines((string) $pair[1]->getLedgerEntryRef());
+check('L30 the rounding line posts to 3809 without tax: rounded UP by 0.02 → 3809 CREDIT 0.02 (inv3); the children at 0.00 post nothing',
+    count(array_filter($rl, fn($r) => $r['account_number'] === '3809' && $r['credit'] === '0.02' && $r['tax_code'] === null)) === 1
+    && count(array_filter($rl, fn($r) => $r['account_number'] === '3200')) === 2);   // Paket 200.00 credit, Treuerabatt 20.00 debit — the 0.00 child is absent
+check('L31 the gross-mode document posts net 100.00 with tax 8.10 on the revenue line and 108.10 on the receivable',
+    (function () use ($service, $wireDi, $inv5, $entryLines, $readInvoice, $at): bool {
+        $service($wireDi())->finalize([$at($inv5->getId())]);
+        $rows = $entryLines((string) $readInvoice($inv5->getId())->getLedgerEntryRef());
+        $rev  = array_values(array_filter($rows, fn($r) => $r['account_number'] === '3200'))[0];
+        $rec  = array_values(array_filter($rows, fn($r) => $r['account_number'] === '1100'))[0];
+        return $rev['credit'] === '100.00' && $rev['tax_base'] === '100.00' && $rev['tax_amount'] === '8.10' && $rec['debit'] === '108.10';
+    })());
+
+
+echo "L. … gross mode, Rappen lines (review 2026-09-23): the share must leave every line a positive net\n";
+$emL14  = $wireDi();
+$rappen = fn(int $n, string ...$more) => InvoiceDraft::invoice($mid, day('2026-04-05'), day('2026-04-05'), 'CHF', array_merge(
+    array_map(fn($i) => LineDraft::lumpSum("Rappen {$i}", chf('0.01'), 'UN', '3200'), range(1, $n)),
+    array_map(fn($a) => LineDraft::lumpSum('Grösser', chf($a), 'UN', '3200'), $more),
+), priceMode: PriceMode::Gross);
+$countInvoicesBefore = $count('invoice');
+$e = caught(fn() => $service($emL14)->invoice($rappen(100)), InvoiceRefusedException::class);
+check('L32 100 × 0.01 gross (tax 0.07 on 1.00): no line can carry a share and keep a positive net → REFUSED at issue (line-tax-share), no number drawn',
+    $e?->reason === InvoiceRefusedException::LINE_TAX_SHARE && str_contains($e->getMessage(), '0.07') && $e->getPrevious() instanceof \Z77\Module\Debtor\Invoicing\NoTaxShareException
+    && $count('invoice') === $countInvoicesBefore);
+$small = $service($emL14)->invoice($rappen(20, '0.30'));
+check('L33 20 × 0.01 + 0.30 gross (0.50, tax 0.04) issues: the shares the Rappen lines cannot carry move to the largest line',
+    $small->getGrossTotal()->toDecimal() === '0.50' && $small->getTaxTotal()->toDecimal() === '0.04' && count($small->getLines()) === 21);
+$service($wireDi())->finalize([$at($small->getId())]);
+$sl  = $entryLines((string) $readInvoice($small->getId())->getLedgerEntryRef());
+$net = array_values(array_filter($sl, fn($r) => $r['account_number'] === '3200'));
+check('L34 … its posting: all 21 revenue lines present with net > 0, Σ tax_amount of the net lines = 0.04 = the VAT line, balanced',
+    count($net) === 21 && array_reduce($net, fn($ok, $r) => $ok && Money::fromDecimal($r['credit'], 'CHF')->isPositive(), true)
+    && $sumOf($net, 'tax_amount')->toDecimal() === '0.04' && array_values(array_filter($sl, fn($r) => $r['account_number'] === '2200'))[0]['credit'] === '0.04'
+    && $sumOf($sl, 'debit')->equals($sumOf($sl, 'credit')) && $sumOf($net, 'credit')->add($sumOf($net, 'tax_amount'))->toDecimal() === '0.50');
+check('L35 TaxShares::distribute() directly: [0.01 × 7, 0.20] gross at 8.1 % (tax on 0.27 = 0.02) → the small lines keep 0, the largest takes 0.02; in NET mode nothing moves',
+    (function (): bool {
+        $amounts = array_merge(array_fill(0, 7, chf('0.01')), [chf('0.20')]);
+        $gross   = \Z77\Module\Debtor\Invoicing\TaxShares::distribute($amounts, chf('0.02'), 810, PriceMode::Gross);
+        $netMode = \Z77\Module\Debtor\Invoicing\TaxShares::distribute([chf('0.01'), chf('0.01')], chf('0.02'), 810, PriceMode::Net);
+        return count($gross) === 8 && $gross[7]->toDecimal() === '0.02' && array_reduce(array_slice($gross, 0, 7), fn($ok, Money $s) => $ok && $s->isZero(), true)
+            && $netMode[0]->toDecimal() === '0.01' && $netMode[1]->toDecimal() === '0.01';
+    })());
+
+
+// ── M. source guards ─────────────────────────────────────────────────────
+
+echo "M. Source guards for part 2\n";
+check('M1 Invoice has NO setter — the header is written whole by issue() / reissue(), the state by finalize()',
+    array_filter(get_class_methods(Invoice::class), fn($m) => str_starts_with($m, 'set')) === []
+    && array_filter(get_class_methods(InvoiceLine::class), fn($m) => str_starts_with($m, 'set')) === []
+    && array_filter(get_class_methods(InvoiceTax::class), fn($m) => str_starts_with($m, 'set')) === []);
+check('M2 InvoicingService has no delete, cancel, void or remove — a posted document is corrected by a credit note (plan §1)',
+    array_filter(get_class_methods(InvoicingService::class), fn($m) => preg_match('/delete|cancel|void|remove|storno|reverse/i', $m)) === []);
+check('M3 the debtor posting DTO is validated on construction: unbalanced → refused; a line naming neither account nor category → refused; both → refused',
+    throws(fn() => new DebtorPostingRequest(day('2026-01-01'), 'x', 'invoice', '1', 'k', [DebtorPostingLine::debit('1100', chf('1.00')), DebtorPostingLine::credit('3200', chf('0.99'))]), \InvalidArgumentException::class)
+    && throws(fn() => new DebtorPostingLine(null, null, chf('1.00'), chf('0.00')), \InvalidArgumentException::class)
+    && throws(fn() => new DebtorPostingLine('1100', 'standard', chf('1.00'), chf('0.00')), \InvalidArgumentException::class)
+    && (new DebtorPostingRequest(day('2026-01-01'), 'x', 'invoice', '1', 'k', [DebtorPostingLine::debit('1100', chf('1.00')), DebtorPostingLine::vatCredit('standard', chf('1.00'))]))->currency() === 'CHF');
+check('M3b nothing in stock (review 2026-09-23): no toArray/lines on the snapshot, no findByNumber, no hasTax/total on the DTOs, no state()/getExchangeRate() on Invoice — exchange_rate stays a COLUMN',
+    !method_exists(AddressSnapshot::class, 'toArray') && !method_exists(AddressSnapshot::class, 'lines') && !method_exists(InvoiceRepository::class, 'findByNumber')
+    && !method_exists(DebtorPostingLine::class, 'hasTax') && !method_exists(DebtorPostingRequest::class, 'total') && !method_exists(Invoice::class, 'state') && !method_exists(Invoice::class, 'getExchangeRate')
+    && array_key_exists('exchange_rate', $invoiceRow($inv1->getId())) && $invoiceRow($inv1->getId())['currency'] === 'CHF');
+check('M4 no Accounting or Invoicing class but the adapter names financial; the interface signature is the plan\'s (§6.6)',
+    !str_contains(file_get_contents($package . '/src/Accounting/AccountingGateway.php'), 'Financial')
+    && !str_contains(file_get_contents($package . '/src/Services/InvoicingService.php'), 'Financial')
+    && !str_contains(file_get_contents($package . '/src/Invoicing/PostingBuilder.php'), 'Financial')
+    && str_contains(file_get_contents($package . '/src/Accounting/AccountingGateway.php'), 'public function post(PostingRequest $request): ?string;'));
+check('M5 the AddressSnapshot is an embeddable with no reference to address or contact_address (§4a: copied, never referenced)',
+    str_contains(file_get_contents($package . '/src/Entities/AddressSnapshot.php'), '#[ORM\\Embeddable]')
+    && !str_contains(file_get_contents($package . '/src/Entities/Invoice.php'), 'ContactAddress') && !str_contains(file_get_contents($package . '/src/Entities/Invoice.php'), 'targetEntity: Address::class'));
+check('M6 the migration seeds the two ranges with the statement create() runs and drops them only at 0', (function () use ($package): bool {
+    $s = file_get_contents($package . '/res/migrations/Version20260923043935.php');
+    return str_contains($s, "VALUES ('invoice', 0), ('credit-note', 0) ON DUPLICATE KEY UPDATE last_number = last_number") && str_contains($s, 'AND last_number = 0');
+})());
+check('M7 InvoicingService::finalize() locks every row BEFORE any number is drawn (id order) — the source keeps that order',
+    strpos(file_get_contents($package . '/src/Services/InvoicingService.php'), 'lockForUpdate($id)') < strpos(file_get_contents($package . '/src/Services/InvoicingService.php'), '$gateway->post($request)'));
+check('M8 the migration says what a development rollback does to a drawn range (leaves the row; up() is idempotent)',
+    str_contains(file_get_contents($package . '/res/migrations/Version20260923043935.php'), 'idempotent'));
 
 
 // ── result ───────────────────────────────────────────────────────────────

@@ -8,9 +8,11 @@ Developed in the [z77-ch/z77-framework](https://github.com/z77-ch/z77-framework)
 (`packages/module-debtor`); not yet a split target or on Packagist — projects consume it through
 a `path` repository until it is.
 
-State: **P3 part 1 — master data only.** `InvoicingService`, invoices, credit notes, PDF with
-QR-bill and the accounting gateway are parts 2 and 3; payments, discount and loss, CAMT.054 and
-the dunning runs are P4. Nothing here is built without a caller in this state.
+State: **P3 part 2 — master data and the documents.** Part 1 built the master data; part 2 adds
+`InvoicingService` (invoices and credit notes, the states `invoicing` / `final`, the 0.05 rounding
+line, the number ranges, the document snapshot) and the accounting port. PDF with QR-bill and the
+document screens are part 3; payments, discount and loss, CAMT.054 and the dunning runs are P4.
+Nothing here is built without a caller in this state.
 
 Model:
 
@@ -32,7 +34,31 @@ Model:
 All three file entities follow the reference rule (ADR-043 decision 19): referenced by `code`,
 code immutable, deactivated and never deleted, no foreign key across the two drivers.
 
+Documents (part 2):
+
+- `Invoice` (Doctrine, table `invoice`) — ONE entity for invoices and credit notes (`kind`), the
+  bare number of its range (`invoice` / `credit-note`), the state (`invoicing` → `final`), the
+  contact by id with the address as a snapshot (`AddressSnapshot`, ten flat `addr_*` columns), the
+  language, invoice and service dates, currency and rate fields (base currency only, Q6), the
+  payment terms as applied (due date, tiers, printed sentence), the totals, the opaque origin and
+  the ledger reference `{year}/{number}` once posted. No setters; immutable when `final`.
+- `InvoiceLine` (`invoice_line`) — `service` / `lump-sum` / `text` / the one system `rounding` line,
+  one level of parent line (a package with its contents at 0.00), quantity as `DECIMAL(12,3)`,
+  discount in hundredths, the stored amount, tax code with rate and label, revenue account by number.
+- `InvoiceTax` (`invoice_tax`) — the tax summary per code, stored: category, label, rate, base, tax.
+
 Pieces:
+
+- `Services/InvoicingService` — the single entry for every source: `invoice($draft)` (number once,
+  nothing posted), `reinvoice($id, $version, $draft)` (same number, new snapshot, only while
+  `invoicing`), `finalize([['id' => …, 'version' => …], …])` (batch, one unit of work, posted
+  through the port, a stale version or an already final document refuses the batch),
+  `openAmount()` (derived: gross − final credit notes). Correction of a final document = a credit
+  note, which follows the VAT rate of the original supply.
+- `Accounting/AccountingGateway` — the port (`post(PostingRequest): ?string`) with debtor's own
+  `PostingRequest` / `PostingLine` (a line names an account number or a VAT category);
+  `LedgerAccountingGateway` (default → module-financial's `LedgerService`) and `NullAccountingGateway`
+  (books kept elsewhere), selected by `debtorConfig → accountingGateway`.
 
 - `Services/DebtorProfileService` — `save()`, `update($profile, $values)`, `setActive()`,
   `forContact()`. Validates a detached clone before touching a managed entity (ADR-039
@@ -46,14 +72,15 @@ Pieces:
   key, at the point of use.
 - `Services/LedgerAccountCheck` — asks module-financial whether an account may be posted to, and
   answers `null` when that module is not usable here (the class must autoload AND `financial` must
-  be a registered module). The read half of the `AccountingGateway`
-  boundary (part 2) and the only class in debtor that knows financial's name.
+  be a registered module). The read half of the `AccountingGateway` boundary; with the ledger
+  adapter one of the two classes in debtor that know financial's name.
 - `Services/Iban` — normalize, format, shape, MOD-97-10 check digits, CH / LI origin, IID and
   QR-IBAN detection.
 - `Ui/*ControllerTrait` + `Ui/*Layout` — four backend fragments (ADR-018), mounted by
   `module-backend` under `/backend/finance/payment-terms`, `/payment-target`, `/dunning-level`
   and `/debtor`. German labels, no JavaScript.
 
-Migration: `res/migrations`, applied with `vendor/bin/z77-db migrate`.
-Harness: `tests/module-debtor.php` (MariaDB, throwaway schema, 173 checks).
+Migrations: `res/migrations`, applied with `vendor/bin/z77-db migrate` (the second one also
+creates the number ranges `invoice` and `credit-note`).
+Harness: `tests/module-debtor.php` (MariaDB, throwaway schema, 272 checks).
 Topic doc: [`docs/topics/debtor.md`](https://github.com/z77-ch/z77-framework/blob/main/docs/topics/debtor.md).
