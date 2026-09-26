@@ -91,6 +91,7 @@ php vendor/bin/z77-run
 | `hourly@:20` | every hour at minute 20 |
 | `daily@03:15` | every day at 03:15 |
 | `weekly@mon,03:15` | every Monday at 03:15 |
+| `monthly@1,06:00` | on the 1st of every month at 06:00 — day 1–28 only, so every month has it (added 2026-09-26 for `stats-report-mail`) |
 
 Only `every:` consults the last run; the wall-clock forms do not. Deliberately not cron syntax — see ADR-031 for the reasoning.
 

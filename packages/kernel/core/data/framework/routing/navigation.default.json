@@ -373,5 +373,20 @@
         "param": "",
         "sort_key": 4,
         "parent_id": 25
+    },
+    {
+        "id": 31,
+        "key": "stats",
+        "name": "Statistik",
+        "module": "backend",
+        "group": "service",
+        "controller": "stats",
+        "action": "list",
+        "slot": "",
+        "ref": null,
+        "active": true,
+        "param": "",
+        "sort_key": 5,
+        "parent_id": 25
     }
 ]

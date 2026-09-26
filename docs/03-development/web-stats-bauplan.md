@@ -1,6 +1,6 @@
 # web-stats-bauplan.md — Site statistics without a third party
 
-**Status:** STEP 1.1 + 1.2 BUILT AND REVIEWED (2026-09-23, review findings worked in, not yet
+**Status (2026-09-26):** steps 1.3 (report page), 1.4 (token link) and 2 (monthly mail) BUILT on `feat/stats-report` — see [`../topics/stats.md`](../topics/stats.md) «report»; the mail job ships without a schedule (`monthly@1,06:00` is set per installation). Earlier status: STEP 1.1 + 1.2 BUILT AND REVIEWED (2026-09-23, review findings worked in, not yet
 committed) — recording, the event endpoint, the project-declared event list, the `stats-rollup`
 job and the generic privacy paragraph. Steps 1.3 (report page), 1.4 (token link), 2 (mail) and
 3 (zihlundsee text) are NOT built. Single source of truth from here:
