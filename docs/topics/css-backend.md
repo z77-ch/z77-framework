@@ -361,17 +361,17 @@ packages/module-backend/res/view/templates/
   Backup now floors at ~300px (name + date). **When migrating a screen in step 3: two stages,
   and check the arithmetic against 320px, not against your monitor.** **Not verified live.**
 
-- **TOPBAR-SEARCH-001** — added 2026-08-09. Below 600px the topbar search collapses to its
-  magnifier (`__search-text` + `__search-key` hidden, button 30×30). The topbar is one row shared
-  by burger, search and the right cluster, and the search is the only element whose content is
-  expendable — the icon and `aria-label` still carry it. A `@media`, not a container query: the
-  topbar spans the viewport and sits in no resizable pane.
-  **Two open points found while doing this, neither fixed:**
-  (a) The button is **not wired to anything** — no handler in `shell.js` or `core.js`, no command
-  palette exists. It is a placeholder that looks like a control.
-  (b) The `⌘K` badge shows the **macOS** command glyph on a Windows installation, and promises a
-  shortcut nothing implements. Either drop the badge until the palette exists, or make it
-  platform-aware — which needs JS and therefore a written reason (conventions rule 7).
+- **TOPBAR-SEARCH-001** — resolved 2026-09-24 by REMOVAL. The topbar search was a button wired to
+  nothing: no handler in `shell.js` or `core.js`, no command palette, and a `⌘K` badge showing the
+  macOS glyph on Windows for a shortcut nothing implements — both recorded here on 2026-08-09 and
+  neither fixable without building the palette. It held the most prominent place in the shell and
+  promised a control. Its place now carries the INSTALLATION NAME (`.be-shell-topbar__install`,
+  `installationName` from systemConfig, else the host of `canonicalBaseUrl` —
+  [`bootstrap.md`](bootstrap.md)), which answers the question that place should answer: which
+  project this backend belongs to. When the palette is built, it returns as an icon in the right
+  cluster, next to the environment switcher — not as a field that fills the row. The collapse rule
+  below 600px went with it; the name truncates instead of disappearing, being the one thing in the
+  row that says WHERE you are.
 
 - **SPLIT-NARROW-001** — added 2026-08-09. **The narrow-screen behaviour of a workspace is a
   contract of the primitive, not a per-screen decision.** Every workspace has the same three

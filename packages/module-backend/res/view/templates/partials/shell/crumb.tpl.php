@@ -1,50 +1,24 @@
 <?php
-use Z77\Shared\Entities\Navigation;
-
 /**
  * The default crumb line (hc3, ADR-033): WHERE one is, derived from the
  * navigation — section › … › page. Renders on every screen so the crumb row
  * says something everywhere; a screen with its own `<action>.hc3.tpl.php`
  * (e.g. the Drive with its live breadcrumb pane) replaces it entirely.
  *
- * Uses the same UI cursor the subnav uses (NAV-SUBPAGE-001 sibling fallback
- * included), so the two always agree about where one stands. No cursor, no
- * crumb — an empty line is honest, an invented one is not.
+ * The trail comes from `BackendMenu::activeTrail()` — the same walk the
+ * `<title>` uses, so tab and crumb always name the same screen. It uses the
+ * UI cursor the subnav uses (NAV-SUBPAGE-001 sibling fallback included), so
+ * those two agree as well. No cursor, no crumb — an empty line is honest, an
+ * invented one is not.
  *
  * Walks the menu as the user may see it (BackendMenu, ADR-045): an entry the
  * user may not open is not linked, a hidden section yields no crumb.
  *
  * @var \Z77\Module\Backend\Ui\BackendMenu|null $backendMenu
  */
-$nav = $backendMenu ?? null;
-if ($nav === null) { return; }
-
-$section = $nav->activeSection();
-if ($section === null) { return; }
-
-// True when the entry or any descendant carries the UI cursor (refs are leaves).
-$subtreeActive = function (Navigation $entry) use (&$subtreeActive, $nav): bool {
-    if ($nav->isActive($entry)) { return true; }
-    if ($entry->getRef() !== null) { return false; }
-    foreach ($nav->children($entry) as $child) {
-        if ($subtreeActive($child)) { return true; }
-    }
-    return false;
-};
-
-// The trail: from the section down along the active branch to the cursor.
-$trail = [$section];
-$node  = $section;
-for ($depth = 0; $depth < 20; $depth++) {
-    $next = null;
-    foreach ($nav->children($node) as $child) {
-        if ($subtreeActive($child)) { $next = $child; break; }
-    }
-    if ($next === null) { break; }
-    $trail[] = $next;
-    $node    = $next;
-    if ($nav->isActive($next) || $next->getRef() !== null) { break; }
-}
+$nav   = $backendMenu ?? null;
+$trail = $nav?->activeTrail() ?? [];
+if ($trail === []) { return; }
 
 $last = count($trail) - 1;
 ?>

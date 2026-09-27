@@ -30,6 +30,9 @@ use Z77\Core\DI,
  */
 final class BackendMenu
 {
+    /** A malformed tree must not hang the shell; no real menu is this deep. */
+    private const TRAIL_MAX_DEPTH = 20;
+
     /** @var array<int, bool> entry id => visible */
     private array $memo = [];
 
@@ -85,6 +88,66 @@ final class BackendMenu
         $section = $this->nav->getActiveSectionBySlot($this->slot);
 
         return ($section !== null && $this->isVisible($section)) ? $section : null;
+    }
+
+    /**
+     * Where one stands: the visible path from the active section down the
+     * active branch to the entry under the UI cursor. Empty when no section is
+     * active — a screen outside the menu, the login, the first-run setup.
+     *
+     * Two readers, and that is why it lives here rather than in the crumb
+     * template it came from: the crumb line renders the whole trail, the
+     * `<title>` takes its last entry. One walk, so the browser tab and the
+     * crumb can never name the screen differently.
+     *
+     * @return list<Navigation>
+     */
+    public function activeTrail(): array
+    {
+        $section = $this->activeSection();
+        if ($section === null) {
+            return [];
+        }
+
+        $trail = [$section];
+        $node  = $section;
+        for ($depth = 0; $depth < self::TRAIL_MAX_DEPTH; $depth++) {
+            $next = null;
+            foreach ($this->children($node) as $child) {
+                if ($this->subtreeActive($child)) {
+                    $next = $child;
+                    break;
+                }
+            }
+            if ($next === null) {
+                break;
+            }
+            $trail[] = $next;
+            $node    = $next;
+            if ($this->isActive($next) || $next->getRef() !== null) {
+                break;
+            }
+        }
+
+        return $trail;
+    }
+
+    /** True when the entry or any descendant carries the UI cursor (refs are leaves). */
+    private function subtreeActive(Navigation $entry): bool
+    {
+        if ($this->isActive($entry)) {
+            return true;
+        }
+        if ($entry->getRef() !== null) {
+            return false;
+        }
+        foreach ($this->children($entry) as $child) {
+            if ($this->subtreeActive($child)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /** @return Navigation[] the visible children, in menu order */

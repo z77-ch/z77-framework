@@ -548,49 +548,25 @@ body.backend {
     cursor:        pointer;
 }
 
-// Search
+// Which installation this is — the name from systemConfig, else the host of
+// canonicalBaseUrl. Text, not a control: it answers «which project am I in»
+// when several backends are open, and there is nothing to click.
 .be-shell-topbar__mid { flex: 1; min-width: 0; display: flex; align-items: center; padding-left: var(--space-3); }
-.be-shell-topbar__search {
-    display:       flex;
-    align-items:   center;
-    gap:           var(--space-2);
-    height:        30px;
-    padding:       0 var(--space-2);
-    width:         min(380px, 100%);
-    background:    var(--be-surface2);
-    border:        1px solid var(--be-line);
-    border-radius: var(--radius-md);
-    color:         var(--be-muted);
+.be-shell-topbar__install {
+    min-width:     0;
+    overflow:      hidden;
+    text-overflow: ellipsis;
+    white-space:   nowrap;
     font-size:     var(--font-size-sm);
-    cursor:        text;
-    transition:    border-color var(--transition-fast);
-}
-.be-shell-topbar__search:hover { border-color: var(--be-accent); }
-.be-shell-topbar__search-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
-.be-shell-topbar__search-key {
-    font-family:   var(--font-family-mono);
-    font-size:     var(--font-size-xs);
-    padding:       2px 5px;
-    background:    var(--be-line);
-    border-radius: 3px;
-    flex-shrink:   0;
+    font-weight:   var(--font-weight-medium);
+    color:         var(--be-text);
 }
 
-// Narrow: the search collapses to its magnifier. The topbar is one row shared by the burger,
-// the search and the right cluster (environment, bell, avatar) — and the search is the only
-// one of the three whose content is expendable: the icon still says what it is, `aria-label`
-// still names it, and the click does the same thing at every width. A `@media` and not a
-// container query, deliberately: the topbar spans the viewport and is not inside any resizable
-// pane, so viewport width IS the thing that matters here.
+// Narrow: the name keeps its place and truncates. It is the one thing in this
+// row that says WHERE you are, so it is not the part that gives way — the
+// right cluster (environment, bell, avatar) keeps its width, the name shrinks.
 @media (max-width: 600px) {
-    .be-shell-topbar__mid { flex: none; padding-left: var(--space-2); }
-    .be-shell-topbar__search {
-        width:           30px;
-        justify-content: center;
-        padding:         0;
-    }
-    .be-shell-topbar__search-text,
-    .be-shell-topbar__search-key { display: none; }
+    .be-shell-topbar__mid { padding-left: var(--space-2); }
 }
 
 // Right cluster — always visible (env + bell + avatar reuse the legacy component styles)

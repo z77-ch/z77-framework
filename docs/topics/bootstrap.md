@@ -168,6 +168,19 @@ fails loudly (500, message names `config/client/systemConfig.inc.php`) — never
 or empty canonical. `buildSiteIdentity()` stays eager: it only asks for the origin when the
 module has a `site` block, which the backend has not.
 
+`installationName` — what this installation calls itself in the backend topbar (added
+2026-09-24). Chrome, not identity: a backend tab looks the same in every project, and with
+several open — parallel dev servers, a client's test and live door — nothing on the screen says
+which one you are editing (the P2 exit check lost time to exactly that, finding S5). Free text.
+
+Empty is the seed and the normal case: the shell then shows the HOST of `canonicalBaseUrl`
+(`localhost:8077`, `kunde.ch`), which already differs per installation — a shipped default would
+be the same string everywhere and would leave the confusion in place. A name is set only where it
+reads better than the host. Deliberately NOT published as a constant like `CANONICAL_BASE_URL`:
+only the backend shell reads it (`BackendAbstractController::installationLabel()`), and a cron
+entry has no chrome. Neither value set → the topbar shows nothing there, and the missing
+`canonicalBaseUrl` has its own Störer.
+
 ## uncaught errors (since 2026-09-22, BOOT-ERR-001)
 
 An error nobody caught answers **HTTP 500**. `Bootstrap::__construct()` registers, as its

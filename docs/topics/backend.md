@@ -175,6 +175,38 @@ POST /backend/system/system/clear-cache
 
 Without cache-clear, a `PageCache` hit on a page that uses unchanged assets won't re-render → won't pick up new asset versions → old URL served. Functionally correct, but appears stale. Accepted by design.
 
+## installation name (topbar)
+
+Between the module switcher and the right cluster the topbar names the installation —
+`installationName` from systemConfig, or, unset (the seed), the host of `canonicalBaseUrl`
+(`localhost:8077`, `kunde.ch`); both empty renders nothing. See
+[`bootstrap.md`](bootstrap.md) for the key and why it is not a constant. The value is read in
+`BackendAbstractController::installationLabel()` and reaches the shell as `installationName`,
+beside `headerUser` and `shellTools`.
+
+It replaced the search / command field on 2026-09-24, which was wired to nothing and promised
+a `⌘K` palette that does not exist (TOPBAR-SEARCH-001 in [`css-backend.md`](css-backend.md)).
+A backend tab looks identical in every project; with several open, nothing said which one was
+being edited. When the command palette is built it returns as an ICON in the right cluster, not
+as a field holding the widest place in the shell.
+
+## browser tab title
+
+`partials/head/seo.tpl.php` builds `<title>` as **`{installation} · {screen}`** — e.g.
+`localhost:8077 · Journal`, `Kunde AG (Test) · Backup`. Until 2026-09-24 every backend page
+said «Backend», which is useless with several tabs open and was finding 8 of the P2 exit check
+(FIN-PRINT-001 in [`financial.md`](financial.md), where it also hit the printed reports).
+
+- **The installation comes first** because a browser truncates a tab title from the RIGHT: the
+  part that must survive the cut is which project this is.
+- **The screen** is the `MetaData` title when a screen set one, otherwise the last entry of
+  `BackendMenu::activeTrail()` — the same walk the crumb renders, so tab and crumb can never
+  name the screen differently. Neither: «Backend» (login, first-run setup, a screen outside
+  the menu).
+- The installation part is absent before login: the shell context is built for a logged-in
+  user only, so `/login` and the setup stay «Backend» and a client's name is not shown to an
+  unauthenticated visitor.
+
 ## service panels (topbar)
 
 The topbar's environment switcher and the avatar service panel are click-toggle
@@ -316,6 +348,8 @@ design. Owned by [`security.md`](security.md) — see it for the gating rules.
 - When rendering backend navigation (topbar, subnav, crumb, a new menu partial) → MUST read `$backendMenu` (`sections()`, `activeSection()`, `children()`, `href()`); MUST NOT walk `$navigationService` directly or check a role in the template — the menu would show links the access config refuses (ADR-045, HEADER-AUTH-001)
 - When a backend screen shows a button/card/link to another backend route → MUST decide its visibility in the controller with `AuthService::canReach()` and hand the template a boolean or a filtered list; MUST NOT hard-code a role (the content list's «Löschen» is `canDelete`, the dashboard cards are filtered in `DashboardController`)
 - When adding interactive UI logic → MUST stay hand-written vanilla JS (MUST NOT introduce a JS build pipeline); reusable cross-page behaviour goes in a shared/module JS file (e.g. `panel-toggle.js`) loaded via `layoutConfig` `javascripts`, page-specific snippets stay inline in `partials/footer.tpl.php`
+- When the shell shows a control that nothing implements (a palette, a filter, a switch «for later») → MUST leave it out until its handler exists; MUST NOT ship a button, a shortcut badge or a field as a placeholder — chrome that looks like a control and does nothing costs every user one attempt and every reader one search for the handler (TOPBAR-SEARCH-001)
+- When a screen or a partial needs to name WHERE one stands (a crumb, a title, a heading) → MUST take it from `BackendMenu::activeTrail()`; MUST NOT walk the navigation a second time — two walks drift apart and the tab ends up naming another screen than the crumb
 - When a topbar/panel needs a click-dropdown or a collapsible → MUST use the `panel-toggle.js` data-attribute contract (`data-panel-root` / `data-panel-trigger` / `data-panel`, or `data-collapse-trigger` / `data-collapse`); MUST NOT hand-write per-panel toggle JS
 - When a panel element starts `hidden` but a class sets its `display` → MUST add `&[hidden]{display:none}` so the attribute wins (the UA `[hidden]` rule is overridden by any class `display` declaration)
 - For popup modals (`be-modal`): the `.be-modal__body` is the ONLY scroll region — the flex chain (dialog → `.be-modal__inner` → `.z77-popup__body` → the injected panel root, whatever element it is → `.be-modal__body{flex:1;min-height:0;overflow-y:auto}`) MUST stay intact, every link a `min-height:0` flex column, or the body overflows the dialog's `overflow:hidden` (clipped, no scroll). A generic `[data-popup-fullscreen]` button in the skeleton dialog toggles `[data-fullscreen]` on the popup root (handled in the shared popup channel beside `[data-popup-close]`); applies to ALL popups. MUST NOT set an inline `max-width` on the `<dialog>` — CSS owns sizing so the `[data-fullscreen]` variant can override it.

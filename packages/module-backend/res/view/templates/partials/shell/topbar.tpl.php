@@ -8,6 +8,7 @@ use Z77\Shared\Build\BuildInfo;
 /** @var array{debug:bool,noindex:bool,clearCache:bool}|null $shellTools  which service switches this user may use */
 /** @var \Z77\Shared\ValueObjects\UserPreferences|null $userPreferences */
 /** @var string $navSlot */
+/** @var string|null $installationName  what this installation calls itself — systemConfig, else the host */
 // Data-presence check only — no chrome without an authenticated user (mirrors the old header).
 if (empty($headerUser) || empty($backendMenu)) return;
 
@@ -17,6 +18,7 @@ $role     = $headerUser['role'];
 $devMode  = DEBUG;
 $noindex  = SEO_NOINDEX;
 $tools    = $shellTools ?? ['debug' => false, 'noindex' => false, 'clearCache' => false];
+$installation = trim((string)($installationName ?? ''));
 
 // Visible sections only, each with the URL of its first page this user may open.
 $sections    = $backendMenu->sections();
@@ -73,13 +75,11 @@ foreach ($sections as $item) {
         <svg class="be-icon" width="18" height="18" aria-hidden="true"><use href="#icon-menu"/></svg>
     </button>
 
-    <!-- Search / command (left-aligned at the content column) -->
+    <!-- Which installation this is (left-aligned at the content column) -->
     <div class="be-shell-topbar__mid">
-        <button type="button" class="be-shell-topbar__search" role="search" aria-label="Suche / Befehle">
-            <svg class="be-icon" width="14" height="14" aria-hidden="true"><use href="#icon-search"/></svg>
-            <span class="be-shell-topbar__search-text">Suchen oder Befehl …</span>
-            <span class="be-shell-topbar__search-key">⌘K</span>
-        </button>
+        <?php if ($installation !== ''): ?>
+        <span class="be-shell-topbar__install" title="Diese Installation"><?= e($installation) ?></span>
+        <?php endif; ?>
     </div>
 
     <!-- Right cluster — always visible -->
