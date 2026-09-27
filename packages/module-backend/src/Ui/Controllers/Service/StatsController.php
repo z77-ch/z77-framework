@@ -7,12 +7,11 @@ use Z77\Core\DI,
     Z77\Module\Backend\Ui\Controllers\BackendAbstractController,
     Z77\Shared\Attributes\Fetch,
     Z77\Shared\Attributes\HttpMethod,
-    Z77\Shared\Jobs\JobQueue,
     Z77\Shared\Jobs\JobSchedules,
     Z77\Shared\Stats\ReportToken,
     Z77\Shared\Stats\StatsEvents,
     Z77\Shared\Stats\StatsReport,
-    Z77\Shared\Stats\StatsReportMailJob
+    Z77\Shared\Stats\StatsReportMailer
 ;
 
 /**
@@ -22,6 +21,7 @@ use Z77\Core\DI,
  *   /backend/service/stats              the backend page (ADMIN by the module
  *                                       baseline), month by month, with the
  *                                       link of the month and «jetzt senden»
+ *                                       (sent in the request, not queued)
  *   /stats/report/{token}               the link page for the client — a
  *                                       reserved route (backendConfig), GUEST,
  *                                       no shell, one month, read-only, 410
@@ -66,25 +66,36 @@ class StatsController extends BackendAbstractController
 
         $schedule = (new JobSchedules(DI::getInstance()->get('UnifiedEntityManager')))->findByJobKey(self::MAIL_JOB);
 
+        // Who a send reaches — resolved like the send itself (backend record
+        // first), so the page cannot promise one address and mail another.
+        $recipients = null;
+        try {
+            $recipients = DI::getEmailService()->formRecipients(StatsReportMailer::FORM_KEY);
+        } catch (\Throwable $e) {
+            $recipients = ['to' => [], 'cc' => [], 'error' => $e->getMessage()];
+        }
+
         return $this->html([
-            'title'     => 'Statistik',
-            'months'    => $months,
-            'month'     => $month,
-            'report'    => $report,
-            'error'     => $error,
-            'link'      => $link,
-            'linkError' => $linkError,
-            'schedule'  => $schedule,
-            'mailJob'   => self::MAIL_JOB,
-            'formKey'   => StatsReportMailJob::FORM_KEY,
+            'title'      => 'Statistik',
+            'months'     => $months,
+            'month'      => $month,
+            'report'     => $report,
+            'error'      => $error,
+            'link'       => $link,
+            'linkError'  => $linkError,
+            'schedule'   => $schedule,
+            'mailJob'    => self::MAIL_JOB,
+            'formKey'    => StatsReportMailer::FORM_KEY,
+            'recipients' => $recipients,
         ]);
     }
 
     /**
-     * Queues the report mail for the month on screen. The job does the work
-     * (key, recipients, send); this only puts it in the queue, like «Jetzt
-     * einreihen» on the job screen — a mail send belongs to the runner, not
-     * to an HTTP request.
+     * «jetzt senden»: sends the month on screen NOW, in this request, and says
+     * how it went (owner decision 2026-09-27 — the queued version depended on
+     * the cron and reported elsewhere; one mail is well under a second). The
+     * monthly schedule stays the job's (`stats-report-mail`). Both go through
+     * StatsReportMailer, so a hand send and a scheduled one are the same mail.
      */
     #[Fetch, HttpMethod('POST')]
     protected function sendAction(): FetchResponse
@@ -94,17 +105,17 @@ class StatsController extends BackendAbstractController
             return $this->fetchError('Für diesen Monat gibt es keine Zahlen');
         }
 
-        $queue = new JobQueue(DI::getInstance()->get('UnifiedEntityManager'));
-        if ($queue->hasOpenEntry(self::MAIL_JOB)) {
-            return $this->fetchError('Ein Versand wartet bereits oder läuft gerade');
+        $result = (new StatsReportMailer())->send($month);
+        if ($result['status'] !== 'sent') {
+            return $this->fetchError('Nicht gesendet: ' . $result['note']);
         }
 
-        $user = DI::getAuthService()->getCurrentUser();
-        $queue->enqueue(self::MAIL_JOB, ['month' => $month], $user?->getUserName() ?? 'backend');
-
+        $to = DI::getEmailService()->formRecipients(StatsReportMailer::FORM_KEY);
         $this->messageService->pushFlashAfterRedirect(
             'success',
-            'Bericht ' . StatsReport::monthLabel($month) . ' eingereiht — er geht beim nächsten Job-Durchlauf hinaus'
+            'Bericht ' . StatsReport::monthLabel($month) . ' gesendet an ' . implode(', ', $to['to'])
+            . ($to['cc'] !== [] ? ' (Kopie ' . implode(', ', $to['cc']) . ')' : '')
+            . ' — Link gültig bis ' . date('j.n.Y', (int) $result['expiresAt'])
         );
 
         return $this->fetch()->setStatus('success')->addCommand('reload');

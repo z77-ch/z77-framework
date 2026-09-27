@@ -60,6 +60,7 @@ use Z77\Shared\Jobs\ScheduleExpression;
 use Z77\Shared\Stats\ReportToken;
 use Z77\Shared\Stats\StatsReport;
 use Z77\Shared\Stats\StatsReportMailJob;
+use Z77\Shared\Stats\StatsReportMailer;
 use Z77\Shared\Stats\StatsRollup;
 
 $pass = 0;
@@ -261,6 +262,17 @@ check('no canonicalBaseUrl → fails, nothing sent', $r->hasFailed() && str_cont
 define('CANONICAL_BASE_URL', 'https://example.ch');
 $r = $job->run($ctx(['month' => '2026-08']));
 check('a month without an aggregate → done, no mail', $r->isDone() && !$r->hasFailed() && str_contains($r->getNote(), 'no mail'), $r->getNote());
+
+$m = (new StatsReportMailer())->send('2026-08');
+check('mailer: a month without data → status nothing, no mail', $m['status'] === 'nothing' && $m['expiresAt'] === null, $m['note']);
+$m = (new StatsReportMailer())->send('09-2026');
+check('mailer: a malformed month → status failed', $m['status'] === 'failed', $m['note']);
+$src = (string) file_get_contents($root . '/packages/module-backend/src/Ui/Controllers/Service/StatsController.php');
+$sendAction = substr($src, (int) strpos($src, 'function sendAction'), 1200);
+check('«jetzt senden» sends in the request through StatsReportMailer', str_contains($sendAction, '(new StatsReportMailer())->send($month)'));
+check('«jetzt senden» queues nothing (no JobQueue in the controller)', !str_contains($src, 'JobQueue'));
+$job = (string) file_get_contents($root . '/packages/kernel/shared/src/Stats/StatsReportMailJob.php');
+check('the job delegates to the mailer (one send path)', str_contains($job, '(new StatsReportMailer())->send($month)'));
 
 // ── registration ───────────────────────────────────────────────────────────
 echo "registration\n";

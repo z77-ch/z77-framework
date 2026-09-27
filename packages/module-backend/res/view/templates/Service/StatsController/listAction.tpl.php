@@ -16,6 +16,7 @@
  * @var ?\Z77\Shared\Entities\JobSchedule $schedule the mail job's schedule, if any
  * @var string       $mailJob    job key of the monthly mail
  * @var string       $formKey    mail settings key (Service → E-Mail)
+ * @var ?array       $recipients ['to' => list, 'cc' => list, 'error'?] as a send resolves them
  */
 use Z77\Shared\Stats\StatsReport;
 
@@ -62,21 +63,28 @@ $muted = 'font-size:.8rem;color:var(--be-muted,#94a3b8)';
                 <div>
                     <strong>Monatsmail</strong>
                     <div style="<?= $muted ?>">
-                        Job <code><?= e($mailJob) ?></code>:
+                        <?php if (!empty($recipients['error'])): ?>
+                            ⚠️ Empfänger nicht lesbar: <?= e((string) $recipients['error']) ?><br>
+                        <?php elseif (($recipients['to'] ?? []) === []): ?>
+                            ⚠️ Kein Empfänger eingetragen — eine Mail würde nicht versendet.<br>
+                        <?php else: ?>
+                            Geht an <strong><?= e(implode(', ', $recipients['to'])) ?></strong><?php if ($recipients['cc'] !== []): ?>, Kopie <?= e(implode(', ', $recipients['cc'])) ?><?php endif; ?>
+                            (E-Mail-Schlüssel <code><?= e($formKey) ?></code>, ändern unter <a href="/backend/service/email-settings/list">E-Mail</a>).<br>
+                        <?php endif; ?>
+                        Automatisch: Job <code><?= e($mailJob) ?></code>
                         <?php if ($schedule === null): ?>
-                            kein Zeitplan — im Menü <a href="/backend/service/job/list">Jobs</a> setzen, empfohlen <code>monthly@1,06:00</code>.
+                            ohne Zeitplan — unter <a href="/backend/service/job/list">Jobs</a> setzen, empfohlen <code>monthly@1,06:00</code> (nach der Verdichtung um 04:40).
                         <?php else: ?>
                             <code><?= e($schedule->getExpression()) ?></code>, <?= $schedule->isEnabled() ? 'eingeschaltet' : 'ausgeschaltet' ?>
-                            (<a href="/backend/service/job/list">Jobs</a>).
+                            (<a href="/backend/service/job/list">Jobs</a>) — sendet den Vormonat.
                         <?php endif; ?>
-                        Empfänger: E-Mail-Schlüssel <code><?= e($formKey) ?></code> — die Projekt-Config,
-                        ein Eintrag unter <a href="/backend/service/email-settings/list">E-Mail</a> geht vor.
-                        Die Mail trägt einen eigenen, frischen Link.
+                        Jede Mail trägt einen eigenen, frischen Link.
                     </div>
                     <?php if ($link !== null && $report !== null): ?>
                         <form data-fetch-post="/backend/service/stats/send" style="margin:.4rem 0 0">
                             <input type="hidden" name="month" value="<?= e((string) $month) ?>">
                             <button type="submit" class="be-btn">Bericht <?= e(StatsReport::monthLabel((string) $month)) ?> jetzt senden</button>
+                            <span style="<?= $muted ?>">geht sofort hinaus, an die Empfänger oben</span>
                         </form>
                     <?php endif; ?>
                 </div>
