@@ -848,6 +848,49 @@ body.backend {
 // printed at all. For print the chrome goes and the shell becomes plain flow, so the content
 // runs over as many pages as it needs. `.be-noprint` hides what only works on screen (a report's
 // parameter form, its pager). Chrome only, no colours: every screen benefits, none changes.
+// ── Printed documents ────────────────────────────────────────────────────────────
+// A shared block, not a report's own (Rule 8): the financial reports print it today,
+// the invoice PDF of P3 part 3 prints the same letterhead. `.be-printonly` is the
+// counterpart of `.be-noprint` — absent from the screen, present on paper.
+//
+// Why a document needs its own header at all: the browser's print header names the
+// page title, can be switched off by the viewer and looks different in every browser
+// (FIN-PRINT-001, measured on real PDFs in the P2 exit check).
+.be-printonly { display: none; }
+
+@media print {
+    .be-printonly { display: block; }
+
+    .be-printhead {
+        display:         flex;
+        justify-content: space-between;
+        align-items:     flex-start;
+        gap:             2rem;
+        margin:          0 0 1rem;
+        padding:         0 0 .6rem;
+        border-bottom:   1px solid #000;
+    }
+    .be-printhead__doc {
+        display:     flex;
+        flex-direction: column;
+        text-align:  right;
+        font-size:   .8rem;
+    }
+    .be-printhead__title { font-size: 1.1rem; font-weight: 600; }
+
+    // The letterhead of module-mandator: one line per element, no invention.
+    .be-letterhead { font-style: normal; font-size: .8rem; }
+    .be-letterhead__line { display: block; }
+    .be-letterhead__line--name { font-weight: 600; }
+
+    .be-printfoot {
+        margin-top:  1rem;
+        padding-top: .4rem;
+        border-top:  1px solid #999;
+        font-size:   .7rem;
+    }
+}
+
 @media print {
     body.backend {
         display:  block;

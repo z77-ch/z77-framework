@@ -502,6 +502,42 @@ a.be-list__col:hover { color: var(--be-text); }
     letter-spacing: .04em;
 }
 
+/* ── Print ──
+ * On paper the list stops being a grid and becomes a real TABLE. Only a table has a
+ * header group, and only a header group repeats on every sheet: the account statement
+ * of a single account ran to 15 A4 pages in the P2 exit check and was unlabelled from
+ * page 2 on (FIN-PRINT-001, financial.md). The documented fix there — `thead {
+ * display: table-header-group }` — assumed markup this component does not have; these
+ * are div rows in a CSS grid, so the display types are re-declared here instead.
+ *
+ * Three consequences, all of them wanted on paper:
+ *   - padding and the row rule move from the row to the CELLS, because a `table-row`
+ *     paints neither;
+ *   - `--be-list-cols` is gone with the grid, so a column takes the width its content
+ *     needs — which is what ends the truncated account names (nothing can be hovered
+ *     on paper, FIN-PRINT-001 point 3);
+ *   - a row is kept on one sheet (`break-inside: avoid`).
+ * Nothing on screen changes.
+ */
+@media print {
+    .be-list__frame { overflow: visible; container-type: normal; }
+    .be-list__table { display: table; width: 100%; border-collapse: collapse; }
+    .be-list__head  { display: table-header-group; position: static; background: none; }
+    .be-list__item  { display: table-row-group; }
+    .be-list__row   { display: table-row; padding: 0; border: 0; break-inside: avoid; }
+    .be-list__col,
+    .be-list__cell {
+        display:        table-cell;
+        overflow:       visible;
+        text-overflow:  clip;
+        white-space:    normal;
+        vertical-align: top;
+        padding:        .18rem .4rem;
+        border-bottom:  1px solid var(--be-line);
+    }
+    .be-list__col { border-bottom-width: 2px; }
+}
+
 /* ── Inactive marker ── */
 /* Dim the labels only — controls (actions + active toggle) stay fully usable.
  * (Row-level opacity would cascade onto the always-visible controls and cannot

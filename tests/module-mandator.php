@@ -690,9 +690,17 @@ check('H3 the two pre-E2 config keys are gone from the package configs; the read
     && !str_contains(file_get_contents($packages['Debtor'] . '/src/App/Config/debtorConfig.inc.php'), "'debtorAccounts' =>")
     && str_contains(file_get_contents($packages['Financial'] . '/src/Services/LedgerService.php'), 'refuseLegacyVatAccounts')
     && str_contains(file_get_contents($packages['Debtor'] . '/src/Services/DebtorAccounts.php'), 'refuseLegacyConfig'));
-$reachingMandator = array_map('basename', array_filter(array_merge(glob($packages['Financial'] . '/src/*/*.php'), glob($packages['Debtor'] . '/src/*/*.php')), fn($f) => str_contains(file_get_contents($f), 'CurrentMandator')));
+$mandatorFiles    = array_filter(array_merge(glob($packages['Financial'] . '/src/*/*.php'), glob($packages['Debtor'] . '/src/*/*.php')), fn($f) => str_contains(file_get_contents($f), 'CurrentMandator'));
+$reachingMandator = array_map('basename', $mandatorFiles);
+// Reading the RECORD is allowed anywhere (rule: through CurrentMandator, never
+// the repository). Reading an ACCOUNT off it is not — that stays with the two
+// access points, so a wrong number is refused in ONE place with ONE message.
+$readingAccounts  = array_map('basename', array_filter($mandatorFiles, fn($f) => str_contains(file_get_contents($f), '->account(')));
 sort($reachingMandator);
-check('H4 no caller asks the record for an account directly: in financial and debtor only the two access points reach CurrentMandator', $reachingMandator === ['DebtorAccounts.php', 'LedgerService.php']);
+sort($readingAccounts);
+check('H4 only the two access points read an ACCOUNT off the record; another caller may read the RECORD itself — the report header prints the letterhead (2026-09-24)',
+    $readingAccounts === ['DebtorAccounts.php', 'LedgerService.php']
+    && $reachingMandator === ['DebtorAccounts.php', 'LedgerService.php', 'ReportControllerTrait.php']);
 check('H5 the mandator carries NO bank fields and NO currency — the payment target is the payee, systemConfig the currency (owner, 2026-09-23)',
     !method_exists(Mandator::class, 'getIban') && !method_exists(Mandator::class, 'getBankName') && !method_exists(Mandator::class, 'getCurrency')
     && !str_contains(strtolower(file_get_contents($package . '/src/Entities/Mandator.php')), 'private string $iban'));

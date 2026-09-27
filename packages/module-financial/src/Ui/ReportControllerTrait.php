@@ -9,6 +9,9 @@ use Z77\Core\DI,
     Z77\Module\Financial\Repositories\AccountRepository,
     Z77\Module\Financial\Repositories\FiscalYearRepository,
     Z77\Module\Financial\Services\LedgerReports,
+    Z77\Module\Mandator\Entities\Mandator,
+    Z77\Module\Mandator\Services\CurrentMandator,
+    Z77\Module\Mandator\Services\MandatorUnavailableException,
     Z77\Shared\Money\Money
 ;
 
@@ -75,6 +78,22 @@ trait ReportControllerTrait
         return $this->em()->getRepository(FiscalYear::class);
     }
 
+    /**
+     * The mandator for the printed letterhead, or null. A report never fails
+     * over it: `CurrentMandator` answers three-valued, and «cannot be read»
+     * means the module is not registered or its table is missing — an upgrade
+     * half done, which must not take a read-only report down. The letterhead
+     * then prints empty, which is visible and fixable.
+     */
+    private function reportMandator(): ?Mandator
+    {
+        try {
+            return (new CurrentMandator($this->em()))->find();
+        } catch (MandatorUnavailableException) {
+            return null;
+        }
+    }
+
     private function reportAccounts(): AccountRepository
     {
         return $this->em()->getRepository(Account::class);
@@ -94,6 +113,7 @@ trait ReportControllerTrait
     {
         return $this->reportPage('balanceSheet', 'balance-sheet', fn(ReportRange $range) => [
             'report' => $this->ledgerReports()->balanceSheet($range),
+            'atDay'  => true,
         ]);
     }
 
@@ -119,6 +139,11 @@ trait ReportControllerTrait
                 'accountNumber' => $number,
                 'accountMissing' => $number !== '' && $account === null,
                 'report'        => $account === null ? null : $this->ledgerReports()->accountStatement($account, $range, $page),
+                // The printed header names the account — «Kontoblatt» alone
+                // does not identify the sheet once it is off the screen.
+                'reportLabel'   => $account === null
+                    ? self::REPORT_TABS['account-statement']
+                    : self::REPORT_TABS['account-statement'] . ' ' . $account->getNumber() . ' ' . $account->getName(),
             ];
         });
     }
@@ -227,6 +252,13 @@ trait ReportControllerTrait
             'reportBase'  => $base,
             'journalBase' => $this->reportJournalBase(),
             'fmt'         => static fn(?Money $m) => AmountFormat::of($m),
+            // The printed header and footer (FIN-PRINT-001). `$own` wins, so a
+            // report that knows more says so — the account statement names its
+            // account, the balance sheet is a statement AT a day.
+            'mandator'    => $this->reportMandator(),
+            'reportLabel' => self::REPORT_TABS[$tab] ?? 'Bericht',
+            'atDay'       => false,
+            'printedAt'   => (new \DateTimeImmutable())->format('d.m.Y H:i'),
         ]);
         $this->layoutManager->removeSection('main');
         if ($range === null) {
@@ -234,7 +266,11 @@ trait ReportControllerTrait
 
             return $response;
         }
+        // Before and after the report, in document order — the shell's header
+        // slots are hidden on paper, so a printed header has to live in `main`.
+        $this->layoutManager->addPartials('printHead', 'Backend/ReportController', ReportLayout::NS);
         $this->layoutManager->addPartials($template, 'Backend/ReportController', ReportLayout::NS);
+        $this->layoutManager->addPartials('printFoot', 'Backend/ReportController', ReportLayout::NS);
         $this->layoutManager->addPartials('tabs', 'Backend/ReportController', ReportLayout::NS, 'tabs');
         $this->layoutManager->addPartials('yearSwitch', 'Backend/ReportController', ReportLayout::NS, 'hc2');
 

@@ -1365,13 +1365,19 @@ $reportHost = function () {
         protected function html(array $context = []): \Z77\Core\Http\Response\HtmlResponse { $this->context = $context; return new \Z77\Core\Http\Response\HtmlResponse(null, $context); }
     };
 };
-/** Renders a module-financial template with a partial() that resolves in the same tree. */
-$renderer = new class($package . '/res/view/templates/') {
-    public function __construct(private string $dir) {}
+/**
+ * Renders a module-financial template with a partial() that resolves in the same
+ * tree — and, for a partial of ANOTHER module (the mandator letterhead inside the
+ * printed report header), in that module's tree. `TemplateRenderer::partial()` does
+ * the same through the FileFinder; here the namespace maps to a directory.
+ */
+$renderer = new class($package . '/res/view/templates/', dirname($package) . '/module-mandator/res/view/templates/') {
+    public function __construct(private string $dir, private string $mandatorDir) {}
     public function partial(string $path, array $context = [], ?string $ns = null): string
     {
         // Same scope rules as TemplateRenderer::renderIsolated(): prefixed locals, EXTR_SKIP.
-        return (function (string $z77TplPath, array $z77TplContext) { extract($z77TplContext, EXTR_SKIP); ob_start(); require $z77TplPath; return ob_get_clean(); })->call($this, $this->dir . $path . '.tpl.php', $context);
+        $dir = $ns === 'Z77\\Module\\Mandator' ? $this->mandatorDir : $this->dir;
+        return (function (string $z77TplPath, array $z77TplContext) { extract($z77TplContext, EXTR_SKIP); ob_start(); require $z77TplPath; return ob_get_clean(); })->call($this, $dir . $path . '.tpl.php', $context);
     }
 };
 require_once __DIR__ . '/../packages/kernel/core/src/autoload/prod/php/Helper.php';
@@ -1389,7 +1395,7 @@ $page = function (string $action, array $get) use ($useGet, $reportHost, $render
 };
 $em = $wireDi();
 [$ctx, $html, $sections] = $page('trialBalance', ['year' => '2030-31']);
-check('R35 trial balance page: the report\'s own template in main, the tab row, the year switch in hc2', $sections['main'] === ['Backend/ReportController/trialBalance'] && $sections['tabs'] === ['Backend/ReportController/tabs'] && $sections['hc2'] === ['Backend/ReportController/yearSwitch']);
+check('R35 trial balance page: the printed header, the report\'s own template and the printed footer in main, the tab row, the year switch in hc2', $sections['main'] === ['Backend/ReportController/printHead', 'Backend/ReportController/trialBalance', 'Backend/ReportController/printFoot'] && $sections['tabs'] === ['Backend/ReportController/tabs'] && $sections['hc2'] === ['Backend/ReportController/yearSwitch']);
 check('R36 … renders the totals the Swiss way (15\'364.20), «Soll = Haben», a link to the account statement with the range', str_contains($html, "15&apos;364.20") && str_contains($html, 'Soll = Haben')
     && str_contains($html, '/backend/finance/report/account-statement?account=1020&amp;year=2030-31&amp;from=2030-07-01&amp;to=2031-06-30'));
 [$ctx, $html] = $page('trialBalance', []);
