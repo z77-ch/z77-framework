@@ -22,7 +22,7 @@
  * carries the context's action(s) — `$shellActions`, the default place. The
  * TOOLBAR carries the page's tabs or tools on the left and, where a screen
  * decides so, actions on the SHOWN thing after them, left-aligned —
- * `$shellWorkActions` (owner, case by case: «left chooses, right works»).
+ * `$shellWorkActions` — an action stands where the thing it acts on is shown.
  * The CRUMB LINE says where one is — nothing else.
  *
  * ── On a narrow screen the left side is a drawer (Schublade) ──
@@ -103,7 +103,7 @@ $work       = !empty($railItems) || $actionList !== [] || $workList !== [];
              fills hc2. Actions a screen puts on the WORK side
              (`$shellWorkActions`) follow them, left-aligned like everything
              in the toolbar, beside tabs as well
-             as beside tools (ADR-033, 2026-09-28 — case by case). */ ?>
+             as beside tools (ADR-033, revised 2026-09-28). */ ?>
     <div class="me-shell__toolbar">
         <?php if (!empty($shellTabs)): ?>
         <?= $this->partial('partials/shell/tabs', ['tabs' => $shellTabs]) ?>
