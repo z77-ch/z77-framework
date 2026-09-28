@@ -18,12 +18,12 @@
  *
  * The breadcrumb got its own, slimmer row in v1.7.0: it carries smaller type
  * and shared its line with nothing that belonged to it. The chrome follows
- * ADR-033 (one rule for every shell, revised 2026-09-28): LEFT = choose,
- * RIGHT = work. The ACTION CELL carries what belongs to the choice (a new
- * entry of the list — `$shellSelectActions`), the TOOLBAR everything that acts
- * on the shown thing: its tabs or tools on the left, its actions (edit, save,
- * cancel — `$shellActions`) at the right end. The CRUMB LINE says where one
- * is — nothing else.
+ * ADR-033 (one rule for every shell, revised 2026-09-28): the ACTION CELL
+ * carries the context's action(s) — `$shellActions`, the default place. The
+ * TOOLBAR carries the page's tabs or tools on the left and, where a screen
+ * decides so, actions on the SHOWN thing at its right end —
+ * `$shellWorkActions` (owner, case by case: «left chooses, right works»).
+ * The CRUMB LINE says where one is — nothing else.
  *
  * ── On a narrow screen the left side is a drawer (Schublade) ──
  * Area switcher, action cell and rail slide in together from the menu icon,
@@ -40,9 +40,9 @@
  *
  * @var string $memberTheme  'light' | 'dark' | '' (no decision — follow the system)
  * @var ?array $railItems    rows of the left column; absent = plain page
- * @var ?array $shellActions the actions on the SHOWN thing (edit, save, cancel) — right end of the toolbar (see partials/shell/action)
+ * @var ?array $shellActions the context's action(s), max two — the action cell (see partials/shell/action)
  * @var ?array $shellAction  legacy single action — normalised into the list
- * @var ?array $shellSelectActions actions of the CHOICE (a new entry, refresh the list) — the action cell, max two
+ * @var ?array $shellWorkActions actions on the SHOWN thing a screen places on the work side — right end of the toolbar
  * @var ?bool  $detailOpen   something is selected: the narrow drawer starts closed (else open)
  * @var ?array $shellTabs    the page's tabs [{id,label,active?}]; absent = none
  * @var ?array $shellTools   the page's tools (see partials/shell/tools); ignored when tabs are present
@@ -50,8 +50,8 @@
  */
 $theme      = in_array($memberTheme ?? '', ['light', 'dark'], true) ? $memberTheme : '';
 $actionList = $shellActions ?? (!empty($shellAction) ? [$shellAction] : []);
-$selectList = $shellSelectActions ?? [];
-$work       = !empty($railItems) || $actionList !== [] || $selectList !== [];
+$workList   = $shellWorkActions ?? [];
+$work       = !empty($railItems) || $actionList !== [] || $workList !== [];
 ?>
 <html lang="<?= e($language ?? 'de') ?>" class="me"<?= $theme !== '' ? ' data-theme="' . e($theme) . '"' : '' ?>>
 <head>
@@ -86,24 +86,23 @@ $work       = !empty($railItems) || $actionList !== [] || $selectList !== [];
         'csrfToken'        => $csrfToken ?? '',
     ]) ?>
 
-    <?php /* LEFT = choose: only what belongs to the choice (ADR-033, 2026-09-28). */ ?>
     <div class="me-shell__act">
-        <?php if ($selectList !== []): ?>
+        <?php if ($actionList !== []): ?>
         <?= $this->partial('partials/shell/action', [
-            'actions'   => $selectList,
+            'actions'   => $actionList,
             'csrfToken' => $csrfToken ?? '',
         ]) ?>
         <?php endif; ?>
     </div>
 
-    <?php /* RIGHT = work. Tabs OR tools on the left — a page with tabs has its
+    <?php /* Tabs OR tools on the left — a page with tabs has its
              tools inside the tabbed surface. `$shellToolbar` is the body
              SECTION fallback (LayoutManager::addPartials(..., 'shellToolbar')):
              a page whose tools are richer than a button list — a filter form,
              say — hands in its own partial, the same way a backend screen
-             fills hc2. The actions on the shown thing sit at the right end,
-             beside tabs as well as beside tools: a tabbed form still has ONE
-             save (ADR-033, 2026-09-28). */ ?>
+             fills hc2. Actions a screen puts on the WORK side
+             (`$shellWorkActions`) sit at the right end, beside tabs as well
+             as beside tools (ADR-033, 2026-09-28 — case by case). */ ?>
     <div class="me-shell__toolbar">
         <?php if (!empty($shellTabs)): ?>
         <?= $this->partial('partials/shell/tabs', ['tabs' => $shellTabs]) ?>
@@ -115,10 +114,10 @@ $work       = !empty($railItems) || $actionList !== [] || $selectList !== [];
         <?php else: ?>
         <?= $shellToolbar ?? '' ?>
         <?php endif; ?>
-        <?php if ($actionList !== []): ?>
+        <?php if ($workList !== []): ?>
         <div class="me-shell__actions">
             <?= $this->partial('partials/shell/action', [
-                'actions'   => $actionList,
+                'actions'   => $workList,
                 'csrfToken' => $csrfToken ?? '',
             ]) ?>
         </div>
