@@ -286,6 +286,7 @@ SOURCE=/docs/03-development/order-debtor-financial-bauplan.md
 
 ## pending
 
+- **Journal: open questions after FIN-JOURNAL-CAPTURE-001** (2026-09-28, end of day) — (1) the owner wrote «ein Klick auf Text sollte ein fetch auslösen»: built as the fetch region for sort / page / search (the Text column title sorts); still to ask whether he ALSO meant the entry text in a row — it opens the detail as a full page today; a popup (`data-fetch-get`) would keep the journal on screen. (2) Confirm the decisions taken on his behalf (see the known issue): the list follows the capture date's year, no year switcher, the two toggles, the state «VAT settled». (3) Test live in a browser: the fetch region (focus kept in the search field, address bar follows), Enter posting from both capture forms, the drawer on a phone.
 - **Pager partial to module-backend** — `Backend/partials/pager` serves the reports AND the journal list (since 2026-09-28), both inside module-financial; it moves to module-backend as a shared partial when a screen of ANOTHER module pages.
 - **Fragment slots in module-vat and module-contact** — the tax codes (`Finance/TaxCodeController/list.toolbar`) and the contacts (`Contact/…/list.toolbar|hc2`) still ship their header slots as host files in module-backend; align them with the fragment-slot pattern (below, `backend.md`) when those modules are next touched.
 - The VAT return (P5) sums the signed `tax_base` / `tax_amount` per code and rate — a further aggregate in `JournalLineRepository`, same rules as the reports.
