@@ -6,8 +6,7 @@
  * the skeleton; this partial supplies its inner content. Rendered with the action context
  * (same `$this->context` as `main`), so `$editLanguage` / `$editLanguages` are available.
  *
- * Layout per the shell prototype: LEFT = context (editing-language switcher). The primary add
- * action lives in the LEFT slot (hc1); shortcut icons would go on the right here as needed.
+ * Layout: the editing-language switcher, then the add action. Toolbar (ADR-033 rev. 2026-09-28): the action acts on the list in the work area, so it stands there — not in the action cell over the rail.
  *
  * @var string            $editLanguage
  * @var array<int,string> $editLanguages
@@ -27,3 +26,6 @@
     </div>
 </div>
 <?php endif; ?>
+<button type="button" class="be-btn be-btn--primary" data-fetch-get="/backend/content/content/add">
+    <svg class="be-icon" width="14" height="14" aria-hidden="true"><use href="#icon-plus"/></svg> <span class="be-btn__label">Inhalt</span>
+</button>

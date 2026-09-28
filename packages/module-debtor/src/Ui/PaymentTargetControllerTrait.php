@@ -78,8 +78,9 @@ trait PaymentTargetControllerTrait
             'ledgerKnown'  => $check->available(),
             'actionBase'   => $this->paymentTargetListBase(),
         ]);
-        // The fragment owns its header slot (financial.md, «fragment slots»).
-        $this->layoutManager->addPartials('addButton', 'Backend/PaymentTargetController', self::PAYMENT_TARGET_NS, 'hc1');
+        // The fragment owns its header slot (financial.md, «fragment slots»). The add action acts
+        // on the list in the work area, so it goes into the toolbar (ADR-033 rev. 2026-09-28).
+        $this->layoutManager->addPartials('addButton', 'Backend/PaymentTargetController', self::PAYMENT_TARGET_NS, 'hc2');
 
         return $response;
     }

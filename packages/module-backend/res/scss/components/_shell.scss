@@ -291,33 +291,42 @@ body.backend {
     justify-content: center;
 }
 
-// hc1 add-PICKER: a full-width primary «＋ add» button that opens a small panel to choose
-// the entry TYPE — used where a view has several add kinds (e.g. translation: Text / Slug).
-// Built on the shared panel-toggle contract (data-panel-root / -trigger / -panel).
-.be-shell-add {
-    position: relative;
-    width:    100%;
-}
+// Add-PICKER: a primary «＋ add» button that opens a small panel to choose the entry TYPE —
+// used where a view has several add kinds (e.g. translation: Text / Slug, backup: three
+// kinds). Built on the shared panel-toggle contract (data-panel-root / -trigger / -panel).
+// Since 2026-09-28 it lives in the toolbar (hc2, ADR-033 revision): natural width, the panel
+// hangs under the button with a width of its own. In the action cell (hc1) it keeps the old
+// shape: full slot width, panel as wide as the slot, lifted off the dark band.
+.be-shell-add { position: relative; }
 .be-shell-add__panel {
     position:       absolute;
     top:            calc(100% + var(--space-1));
     left:           0;
-    right:          0;
+    min-width:      12rem;
     z-index:        var(--z-dropdown);
     display:        flex;
     flex-direction: column;
     gap:            2px;
     padding:        var(--space-1);
-    // Elevation: lift the panel OFF the dark orientation band instead of blending
-    // into it. In the dark band the local --be-surface is nearly the band colour, so
-    // we build a lighter, palette-tinted surface (surface2 mixed toward the light text
-    // colour) — "higher = lighter". Palette- and mode-correct, no hardcoded colours.
-    background:     color-mix(in srgb, var(--be-surface2) 80%, var(--be-text));
-    border:         1px solid color-mix(in srgb, var(--be-surface2) 55%, var(--be-text));
+    background:     var(--be-surface2);
+    border:         1px solid var(--be-line);
     border-radius:  var(--radius-md);
     box-shadow:     var(--shadow-lg);
 
     &[hidden] { display: none; }   // attribute wins over the class `display:flex`
+}
+.be-shell-band__slot--1 {
+    .be-shell-add { width: 100%; }
+    .be-shell-add__panel {
+        right:      0;
+        min-width:  0;
+        // Elevation: lift the panel OFF the dark orientation band instead of blending into it.
+        // In the dark band the local --be-surface is nearly the band colour, so a lighter,
+        // palette-tinted surface (surface2 mixed toward the light text colour) — "higher =
+        // lighter". Palette- and mode-correct, no hardcoded colours.
+        background: color-mix(in srgb, var(--be-surface2) 80%, var(--be-text));
+        border:     1px solid color-mix(in srgb, var(--be-surface2) 55%, var(--be-text));
+    }
 }
 .be-shell-add__item {
     display:       flex;

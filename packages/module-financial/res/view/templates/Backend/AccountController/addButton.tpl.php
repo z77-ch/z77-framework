@@ -1,6 +1,6 @@
 <?php
 /**
- * Kontenplan list — hc1 (dark left slot): the primary add action.
+ * Kontenplan list — toolbar (hc2; the action cell until 2026-09-28, ADR-033 revision): the primary add action.
  * Part of the fragment: the trait's `listAction()` adds it to the shell slot
  * with `addPartials()` — the fragment owns its header slots, so they come
  * along wherever it is mounted (ADR-018, Rule 8; financial.md).

@@ -254,8 +254,10 @@ trait JournalControllerTrait
             'configNotice' => $this->journalConfigNotice(),
         ]);
         // The fragment owns its header slots (financial.md, «fragment slots»).
-        $this->layoutManager->addPartials('addButton', 'Backend/JournalController', self::JOURNAL_NS, 'hc1');
+        // Both into the toolbar (ADR-033 rev. 2026-09-28): the year switch first, then the add
+        // action — everything in the toolbar is left-aligned, the action follows the tools.
         $this->layoutManager->addPartials('yearSwitch', 'Backend/JournalController', self::JOURNAL_NS, 'hc2');
+        $this->layoutManager->addPartials('addButton', 'Backend/JournalController', self::JOURNAL_NS, 'hc2');
 
         return $response;
     }

@@ -1,6 +1,8 @@
 <?php
 /**
- * Steuercodes list — hc1 (dark left slot): the primary add action. Auto-loaded
+ * Toolbar (ADR-033 rev. 2026-09-28): the action acts on the list in the work area, so it stands there — not in the action cell over the rail.
+ *
+ * Steuercodes list — toolbar (hc1 until 2026-09-28): the primary add action. Auto-loaded
  * into the shell header band by BackendAbstractController::loadHeaderSlots().
  * Lives in module-backend (not module-vat) because the slot loader resolves
  * header partials against the backend namespace for the mounting controller —

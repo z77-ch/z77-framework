@@ -1,6 +1,8 @@
 <?php
 /**
- * Backup list — hc1 (dark left slot): the primary action as a PICKER, because backup has
+ * Toolbar (ADR-033 rev. 2026-09-28): the action acts on the list in the work area, so it stands there — not in the action cell over the rail.
+ *
+ * Backup list — toolbar (hc1 until 2026-09-28): the primary action as a PICKER, because backup has
  * three kinds (Daten / Datenbank / Gesamtprojekt) and css-backend.md requires a
  * `.be-shell-add` picker rather than several buttons stacked in the band.
  *

@@ -1,6 +1,6 @@
 <?php
 /**
- * Payment terms — hc1 (dark left slot): the primary add action. Added by
+ * Payment terms — toolbar (hc2; the action cell until 2026-09-28, ADR-033 revision): the primary add action. Added by
  * the fragment's `listAction()` (financial.md, «fragment slots»), so the
  * button lives with the screen it belongs to rather than in the host.
  *

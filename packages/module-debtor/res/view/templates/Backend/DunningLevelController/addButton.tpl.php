@@ -1,6 +1,6 @@
 <?php
 /**
- * Dunning levels — hc1 (dark left slot): the primary add action. Added by
+ * Dunning levels — toolbar (hc2; the action cell until 2026-09-28, ADR-033 revision): the primary add action. Added by
  * the fragment's `listAction()` (financial.md, «fragment slots»).
  *
  * @var string $actionBase

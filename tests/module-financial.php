@@ -1451,13 +1451,13 @@ $listHost = function (string $trait) {
 $slotHtml = fn($host, string $slot) => implode('', array_map(fn($p) => $renderer->partial($p, $host->context), $host->layoutManager->sections[$slot] ?? []));
 $useGet(['year' => '2030-31']);
 $journalHost = $listHost('journal');
-check('R51 journal list: hc1 = the fragment\'s «Buchung erfassen» (add?year=2030-31), hc2 = its fiscal-year switch — both from module-financial', $journalHost->layoutManager->sections['hc1'] === ['Backend/JournalController/addButton']
-    && $journalHost->layoutManager->sections['hc2'] === ['Backend/JournalController/yearSwitch']
-    && str_contains($slotHtml($journalHost, 'hc1'), '/backend/finance/journal/add?year=2030-31') && str_contains($slotHtml($journalHost, 'hc2'), '/backend/finance/journal/list?year=2030-31'));
+check('R51 journal list: the toolbar (hc2) = the fiscal-year switch, then «Buchung erfassen» (add?year=2030-31) — both from module-financial; the action cell stays empty (ADR-033 rev. 2026-09-28)', empty($journalHost->layoutManager->sections['hc1'])
+    && $journalHost->layoutManager->sections['hc2'] === ['Backend/JournalController/yearSwitch', 'Backend/JournalController/addButton']
+    && str_contains($slotHtml($journalHost, 'hc2'), '/backend/finance/journal/add?year=2030-31') && str_contains($slotHtml($journalHost, 'hc2'), '/backend/finance/journal/list?year=2030-31'));
 $accountHost = $listHost('account');
 $yearHost    = $listHost('fiscal-year');
-check('R52 account list and fiscal-year list: hc1 from the fragment (add / open)', $accountHost->layoutManager->sections['hc1'] === ['Backend/AccountController/addButton'] && str_contains($slotHtml($accountHost, 'hc1'), '/backend/finance/account/add')
-    && $yearHost->layoutManager->sections['hc1'] === ['Backend/FiscalYearController/openButton'] && str_contains($slotHtml($yearHost, 'hc1'), '/backend/finance/fiscal-year/open'));
+check('R52 account list and fiscal-year list: the toolbar (hc2) from the fragment (add / open)', $accountHost->layoutManager->sections['hc2'] === ['Backend/AccountController/addButton'] && str_contains($slotHtml($accountHost, 'hc2'), '/backend/finance/account/add')
+    && $yearHost->layoutManager->sections['hc2'] === ['Backend/FiscalYearController/openButton'] && str_contains($slotHtml($yearHost, 'hc2'), '/backend/finance/fiscal-year/open'));
 check('R53 the host carries no slot template for a financial screen any more (module-backend Finance/{Account,FiscalYear,Journal,Report}Controller)',
     glob(__DIR__ . '/../packages/module-backend/res/view/templates/Finance/{Account,FiscalYear,Journal,Report}Controller/*', GLOB_BRACE) === []);
 $useGet([]);

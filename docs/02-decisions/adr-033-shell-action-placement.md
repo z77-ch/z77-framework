@@ -1,6 +1,6 @@
 # ADR-033 — Shell action placement: one rule for every shell
 
-Date: 2026-08-15 · Status: accepted · Revised: 2026-09-28 (actions on the shown thing may go to the toolbar, case by case; the phone drawer — see «Revision 2026-09-28» below)
+Date: 2026-08-15 · Status: accepted · Revised: 2026-09-28 (an action stands where the thing it acts on is shown; the phone drawer — see «Revision 2026-09-28» below)
 
 ## Context
 
@@ -27,8 +27,8 @@ added 2026-09-28. The header slots also load as `{action}.act|toolbar|crumb.tpl.
 
 | Place | backend | member | Carries |
 |---|---|---|---|
-| **Action cell** | `hc1` / `{action}.act` | `me-shell__act` (`shellActions`) | the context's DECISIVE action(s) — max two VISIBLE buttons; weight follows meaning (accent = forward, quiet = ends/leaves). The default place for an action |
-| **Toolbar** | `hc2` / `{action}.toolbar` | `me-shell__toolbar` (`shellTabs` / `shellTools`; `shellWorkActions`) | the page's TABS or its TOOLS on the left — never both. Tools include the shown thing's STATE SWITCHES and a list's FILTERS (revised 2026-08-15). After them, LEFT-aligned like everything in the toolbar: actions on the SHOWN thing where the owner decided so for that screen (revised 2026-09-28, case by case — see below) |
+| **Action cell** | `hc1` / `{action}.act` | `me-shell__act` (`shellActions`) | the DECISIVE action(s) on what the RAIL shows (the list there) — max two VISIBLE buttons; weight follows meaning (accent = forward, quiet = ends/leaves) (revised 2026-09-28) |
+| **Toolbar** | `hc2` / `{action}.toolbar` | `me-shell__toolbar` (`shellTabs` / `shellTools`; `shellWorkActions`) | the page's TABS or its TOOLS on the left — never both. Tools include the shown thing's STATE SWITCHES and a list's FILTERS (revised 2026-08-15). After them, LEFT-aligned like everything in the toolbar: the actions on what the WORK AREA shows (revised 2026-09-28 — see below) |
 | **Crumb line** | `hc3` (own slim row) | `me-shell__crumbs` (own slim row) | POSITION only — the breadcrumb, nothing else |
 | **Content** | column 2 | detail pane | only what is bound to an in-content selection, and dialog-internal buttons |
 
@@ -83,32 +83,38 @@ Concretely:
 - Projects stop building their own action rows in content templates — the
   override shrinks to handing the shell its data.
 
-## Revision 2026-09-28 — actions on the shown thing, case by case; the phone drawer
+## Revision 2026-09-28 — an action stands where the thing it acts on is shown; the phone drawer
 
 Owner decision, found on the axo3 member «Mandant › Stammdaten» screen:
 «Bearbeiten» sat in the action cell on the LEFT, over the list of sections,
 while it edits the Stammdaten shown on the RIGHT. The button stood next to
 the thing one chooses from, not next to the thing it changes.
 
-**The guide is «left chooses, right works» — but the placement is decided
-screen by screen, not by a blanket rule** (owner: «von Fall zu Fall
-entscheiden»). A first build moved every action-cell action to the toolbar;
-the owner reverted that the same day: on most screens the action cell was
-already right.
+**The rule (confirmed by the owner the same day, after two rounds): an action
+stands on the side where the thing it acts on is SHOWN.** It is what the
+owner's case-by-case decisions had in common:
 
-- **The action cell stays the default place** (`hc1`, `shellActions`): the
-  area's new entry («Neues Snippet», «Neue Seite», «Liegenschaft erfassen»),
-  refreshing the list («Bestand aktualisieren»), a form's Speichern +
-  Abbrechen, the Bestand's «Bearbeiten».
-- **The toolbar** takes an action on the SHOWN thing where
-  the owner decided so for that screen (`hc2`, member `shellWorkActions`).
-  Decided so far: axo3 «Mandant» — «Bearbeiten» (Stammdaten) and «Einladen»
-  (Zugänge); the journal — «Buchen» + «MwSt» in the toolbar, «Einzel |
-  Sammel» in the action cell (FIN-JOURNAL-CAPTURE-001). **Tabs and such
-  actions share the row** — the actions follow the tabs; everything in the
-  toolbar is LEFT-aligned (owner, 2026-09-28).
-- A new screen asks the question explicitly: does this action belong to the
-  choice or to the shown thing? When unsure, the action cell.
+- **Member «Widget» / «Onepager»**: the rail IS the list of snippets / pages.
+  «Neues Snippet», «Neue Seite» add to the LEFT side → action cell. Likewise
+  «Bestand aktualisieren» (refreshes the list) and the Bestand's «… erfassen».
+- **Member «Mandant»**: the rail only lists the sections; «Bearbeiten»
+  (Stammdaten) and «Einladen» (Zugänge) change what the RIGHT side shows →
+  toolbar (`shellWorkActions`).
+- **Backend**: the rail is the area's NAVIGATION (subnav — Navigation, Nav
+  Alias, Benutzer …); every list lives in the work area. So every backend add
+  action («+ Eintrag», «+ Kontakt», «Hochladen», «Sichern», «Konto», «Buchung
+  erfassen» …) acts on the right side → **toolbar (hc2)**. All sixteen moved
+  on 2026-09-28; the backend action cell is empty on every framework screen
+  now, and stays the place for an action that works on the rail itself.
+- **Journal** (FIN-JOURNAL-CAPTURE-001): «Einzel | Sammel», «MwSt» and
+  «Buchen» all act on the capture form on the right → toolbar.
+
+In the toolbar everything is LEFT-aligned: tabs or tools first, the actions
+after them (owner, 2026-09-28). Where a screen's tools push a group to the
+right edge (the Drive), its action comes first instead. Tabs and actions share
+the row. A form's Speichern + Abbrechen stays in the action cell where the
+rail is the list being edited (member forms); where it is not, it follows the
+rule like every other action.
 
 **On a phone the whole left side is a drawer (Schublade).** Area switcher,
 action cell and rail slide in together from a menu icon — the first thing in

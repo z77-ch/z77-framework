@@ -1,6 +1,6 @@
 <?php
 /**
- * Journal list — hc1 (dark left slot): post a manual entry into the shown
+ * Journal list — toolbar (hc2; the action cell until 2026-09-28, ADR-033 revision): post a manual entry into the shown
  * fiscal year. A plain link to the entry PAGE — the one-line form (a page,
  * not a modal; no JavaScript), which links on to the Sammelbuchung.
  * Part of the fragment: the trait's `listAction()` adds it to the shell slot

@@ -1,5 +1,7 @@
 <?php
-/** Navigation-alias list — hc1 (dark left slot): the primary add action (add URL alias).
+/**
+ * Toolbar (ADR-033 rev. 2026-09-28): the action acts on the list in the work area, so it stands there — not in the action cell over the rail.
+ * Navigation-alias list — toolbar (hc1 until 2026-09-28): the primary add action (add URL alias).
  *  Auto-loaded into the shell header band by BackendAbstractController::loadHeaderSlots(). */
 ?>
 <button type="button" class="be-btn be-btn--primary" data-fetch-get="/backend/content/navigation-alias/add">

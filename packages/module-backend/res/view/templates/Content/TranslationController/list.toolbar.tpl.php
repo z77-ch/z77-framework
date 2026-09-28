@@ -1,5 +1,7 @@
 <?php
-/** Translation list — hc1 (dark left slot): a primary «＋ Eintrag» button that opens a small
+/**
+ * Toolbar (ADR-033 rev. 2026-09-28): the action acts on the list in the work area, so it stands there — not in the action cell over the rail.
+ * Translation list — toolbar (hc1 until 2026-09-28): a primary «＋ Eintrag» button that opens a small
  *  picker panel to choose the entry TYPE (Text / Slug), because translation has two add kinds.
  *  Uses the shared panel-toggle contract (data-panel-root / -trigger / -panel — panel-toggle.js
  *  is loaded globally, binds automatically). hc2 is deliberately left free for other controls

@@ -1,7 +1,7 @@
 <?php
 /**
  * The fiscal years, newest first, each with its monthly periods and their
- * close state (ADR-042 decision 10). A year is opened through the hc1
+ * close state (ADR-042 decision 10). A year is opened through the toolbar
  * button and never edited; the LATEST year carries «Löschen …» while nothing
  * was ever posted in it (`$deletableId`, FIN-FY-002 — the modal and the
  * service decide again). The period states move with the VAT return and the
