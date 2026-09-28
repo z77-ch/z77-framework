@@ -273,6 +273,20 @@ SOURCE=/docs/03-development/order-debtor-financial-bauplan.md
 
 ## pending
 
+- **FIN-JOURNAL-CAPTURE-001 — journal list becomes capture + list on ONE page** (owner request 2026-09-28; draft, NOT ready to build). **Blocked on the phone layout** — how the capture row, the band and the list with per-column search behave below 767px must be clarified first (owner, 2026-09-28). Goal: post immediately with as few clicks as possible, find any entry, see the latest entries. Replaces the split into `list` and `add`; resolves FIN-UI-002 (no paging, no search) for the journal screen.
+  - **Agreed so far:**
+    - `finance/journal/list` has two parts: (1) **capture area**, open at once, focus in the first field, the one-line entry as today WITHOUT the explanatory paragraph («Das Soll-Konto erhält …»), MwSt reveals the tax row as today, Enter posts, the empty row returns with the same date, the new entry appears at the top of the list; the Sammelbuchung is the same area in its multi-line shape. (2) **list area**, latest entries first, pageable.
+    - Columns: status icon · Nr. · Datum · Text · Soll · Haben · Betrag; a row opens the detail as today.
+    - **Status icon** at the row start: editable (manual, period open) · auto entry, blocked (generated) · closed, locked (period closed). Proposed: an entry with a tax code in a `vat-settled` period also shows «locked».
+    - **Sorting**: click on a column title (second click reverses), server-side, keeps an active search.
+    - **Search**: a magnifier per column opens the search field exactly there (CSS reveal, no JS); Enter runs a DATABASE query (not a filter of the shown page); several columns combine (AND). Proposed: text «contains», Nr./account/amount exact, date as day or month («09.2026»).
+    - **Crumb line**: Finanzen › Journal › fiscal year › month of the last entered date — position only.
+  - **Proposed, not decided:**
+    - Action cell = **Buchen** (ADR-033: a form's submit belongs in the action cell); toolbar = **Einzel | Sammel** as tabs + **MwSt**. Owner's original: action cell = Einzel/Sammel switch, toolbar = Buchen + MwSt — if kept, record the deviation in ADR-033.
+    - **No fiscal-year switcher**: the year follows the entered DATE (the ledger already resolves the year from the date; only the form clamps the date to `?year=`). Rejected places: the crumb gap (a bare cell, disappears below 767px) and the action cell (not a decision).
+    - List-area header carries two checkboxes: **«alle Geschäftsjahre»** (search scope; unchecked = current year) and **«gelöschte zeigen»** (the deleted numbers appear IN the list at their number, greyed, own icon, who + when — replaces the separate «Gelöschte Buchungen» section). Not in the crumb line: a scope switch is an operation (ADR-033).
+  - **Open:** paging by server links (`?page=`, like the reports) or loaded by fetch (keeps a half-typed entry while paging, but needs a Rule-7 justification and contradicts the css-backend list rule); whether the list shows the crumb's year by itself or only via the date search; the phone layout (blocker).
+
 - **Export (CSV / PDF) of the reports** — deliberately NOT built in part 3 (no caller yet; the browser print covers the page on screen, FIN-REPORT-003). Arrives when a consumer names the format (the fiduciary, the P5b reconciliation against wdv).
 - **Opening entry and multi-year balances** (FIN-REPORT-001) — with the year-end in P5: the carry-forward is posted as an opening entry of the new year; the reports need no change for it.
 - **Keyset pagination for the account statement** (FIN-REPORT-005) — replace OFFSET paging by a cursor on (date, number, position, line id) and compute the page's carry with an aggregate up to the cursor (Σ debit − credit of the lines before it), so a page reads only its own rows instead of sorting the range. Built only when the P5b migration shows real account volumes that need it; the composite index was measured and is not the fix.
