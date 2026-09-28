@@ -1451,9 +1451,14 @@ $listHost = function (string $trait) {
 $slotHtml = fn($host, string $slot) => implode('', array_map(fn($p) => $renderer->partial($p, $host->context), $host->layoutManager->sections[$slot] ?? []));
 $useGet(['year' => '2030-31']);
 $journalHost = $listHost('journal');
-check('R51 journal list: the toolbar (hc2) = the fiscal-year switch, then «Buchung erfassen» (add?year=2030-31) — both from module-financial; the action cell stays empty (ADR-033 rev. 2026-09-28)', empty($journalHost->layoutManager->sections['hc1'])
-    && $journalHost->layoutManager->sections['hc2'] === ['Backend/JournalController/yearSwitch', 'Backend/JournalController/addButton']
-    && str_contains($slotHtml($journalHost, 'hc2'), '/backend/finance/journal/add?year=2030-31') && str_contains($slotHtml($journalHost, 'hc2'), '/backend/finance/journal/list?year=2030-31'));
+check('R51 journal page (FIN-JOURNAL-CAPTURE-001): main = the capture form + the list, the toolbar (hc2) = Einzel|Sammel, MwSt, Buchen, the crumb line (hc3) = the year of ?year=2030-31 — all from module-financial; the action cell stays empty (ADR-033 rev. 2026-09-28)',
+    empty($journalHost->layoutManager->sections['hc1'])
+    && $journalHost->layoutManager->sections['main'] === ['Backend/JournalController/oneLine', 'Backend/JournalController/listAction']
+    && $journalHost->layoutManager->sections['hc2'] === ['Backend/JournalController/captureTools']
+    && $journalHost->layoutManager->sections['hc3'] === ['Backend/JournalController/crumb']
+    && $journalHost->context['year']->getCode() === '2030-31'
+    && str_contains($slotHtml($journalHost, 'hc2'), 'form="journal-capture"') && str_contains($slotHtml($journalHost, 'hc2'), 'for="journal-vat"') && str_contains($slotHtml($journalHost, 'hc2'), 'mode=sammel')
+    && str_contains($slotHtml($journalHost, 'hc3'), '2030-31') && !str_contains($slotHtml($journalHost, 'hc2'), 'add?year='));
 $accountHost = $listHost('account');
 $yearHost    = $listHost('fiscal-year');
 check('R52 account list and fiscal-year list: the toolbar (hc2) from the fragment (add / open)', $accountHost->layoutManager->sections['hc2'] === ['Backend/AccountController/addButton'] && str_contains($slotHtml($accountHost, 'hc2'), '/backend/finance/account/add')
@@ -2015,13 +2020,14 @@ $useRequest = function (array $get, ?array $post = null): void {
         public function getGetParameter(string $p): mixed { return $_GET[$p] ?? null; }
         public function isPost(): bool { return $GLOBALS['z77TestIsPost']; }
         public function getPostParameters(): array { return $_POST; }
+        public function getMode(): \Z77\Core\Http\RequestMode { return !empty($GLOBALS['z77TestFetch']) ? \Z77\Core\Http\RequestMode::Fetch : \Z77\Core\Http\RequestMode::Page; }
     }, true);
 };
 $em = $wireDi();   // a fresh wiring: the report section registered a GET-only Request double
 /** A host double of the journal trait for the add pages: captures context, sections, flashes and the redirect. */
 $journalHost = function () {
     $host = new class {
-        use JournalControllerTrait { addAction as public; addCompoundAction as public; editAction as public; }
+        use JournalControllerTrait { listAction as public; addAction as public; addCompoundAction as public; editAction as public; }
         public array $context = [];
         public object $layoutManager;
         public object $messageService;
@@ -2048,22 +2054,32 @@ $journalHost = function () {
 };
 $render = fn($host) => implode('', array_map(fn($p) => $renderer->partial($p, $host->context), $host->layoutManager->sections['main'] ?? []));
 
-$useRequest(['year' => '2032-33', 'date' => '2032-11-20']);
+$useRequest(['date' => '2032-11-20']);
 $host = $journalHost();
 $host->addAction();
+check('O12 GET add lands on the journal page — the capture form lives there now (FIN-JOURNAL-CAPTURE-001)', $host->redirectedTo === '/backend/finance/journal/list?date=2032-11-20');
+$host = $journalHost();
+$host->listAction();
 $html = $render($host);
-check('O12 GET add: the one-line template, the date from ?date= kept, Bu-Nr «neu», the fields in the wdv order', $host->layoutManager->sections['main'] === ['Backend/JournalController/oneLine'] && $host->context['form']->date() === '2032-11-20'
-    && str_contains($html, '>neu<') && preg_match('/name="debit".*name="date".*Bu-Nr.*name="text".*name="credit".*name="amount"/s', $html) === 1);
-check('O12b the MwSt row is a CSS reveal: a submitted checkbox (be-reveal__toggle) BEFORE the row and the panel, siblings; no <script>, no placeholder, no inline handler',
+$tools = implode('', array_map(fn($p) => $renderer->partial($p, $host->context), $host->layoutManager->sections['hc2'] ?? []));
+check('O12a the journal page: the one-line capture form ABOVE the list, the date from ?date= kept (its year is the list\'s), Bu-Nr «neu», the fields in the wdv order, the first field focused',
+    $host->layoutManager->sections['main'] === ['Backend/JournalController/oneLine', 'Backend/JournalController/listAction'] && $host->context['form']->date() === '2032-11-20' && $host->context['year']->getCode() === '2032-33'
+    && str_contains($html, '>neu<') && preg_match('/name="debit".*name="date".*Bu-Nr.*name="text".*name="credit".*name="amount"/s', $html) === 1
+    && str_contains($html, 'id="journal-capture"') && preg_match('/name="debit"[^>]*autofocus/', $html) === 1 && strpos($html, 'id="journal-capture"') < strpos($html, 'id="journal-find"'));
+check('O12b the MwSt row is a CSS reveal: a submitted checkbox (be-reveal__toggle) BEFORE the row and the panel, siblings; its trigger is a label in the TOOLBAR; no <script>, no placeholder in the form, no inline handler',
     preg_match('/<div class="be-reveal">\s*<input class="be-reveal__toggle" type="checkbox" id="journal-vat" name="vat" value="1">\s*<div class="be-form__row"/', $html) === 1
-    && str_contains($html, '<label class="be-reveal__label" for="journal-vat">MwSt</label>') && str_contains($html, '<label for="journal-number">Bu-Nr</label>') && !str_contains($html, '&nbsp;') && str_contains($html, '<div class="be-reveal__panel">')
-    && stripos($html, '<script') === false && !str_contains($html, 'placeholder=') && preg_match('/\son[a-z]+=/i', $html) === 0);
-check('O12c below the form: the latest entries of the year (at most 10), numbered, each linked to its detail', count($host->context['recent']) <= 10 && count($host->context['recent']) >= 5
-    && str_contains($html, 'Letzte Buchungen') && str_contains($html, '/backend/finance/journal/detail?id=' . $entryRow('2032-33', $outputRef->number)['id'])
-    && str_contains($html, '/backend/finance/journal/add-compound?year=2032-33&amp;date=2032-11-20'));
+    && str_contains($tools, 'for="journal-vat">MwSt</label>') && str_contains($html, '<label for="journal-number">Bu-Nr</label>') && str_contains($html, '<div class="be-reveal__panel">')
+    && stripos($html . $tools, '<script') === false && preg_match('/\son[a-z]+=/i', $html . $tools) === 0
+    && !str_contains(substr($html, 0, strpos($html, 'id="journal-find"')), 'placeholder='));
+check('O12c no explanatory paragraph, no buttons in the capture form — «Buchen» sits in the toolbar and submits the form from outside (form="journal-capture")',
+    !str_contains($html, 'Das Soll-Konto erhält') && !str_contains($html, 'Letzte Buchungen') && !str_contains(substr($html, 0, strpos($html, 'id="journal-find"')), 'type="submit"')
+    && preg_match('/<button type="submit" form="journal-capture"[^>]*>\s*<span class="be-btn__label">Buchen<\/span>/', $tools) === 1);
+check('O12d below: the year\'s latest entries, newest first, each with its state icon and linked to its detail',
+    count($host->context['rows']) >= 5 && $host->context['rows'][0]['number'] > $host->context['rows'][1]['number']
+    && str_contains($html, '/backend/finance/journal/detail?id=' . $entryRow('2032-33', $outputRef->number)['id']) && str_contains($html, 'be-list__state--editable'));
 $scss = file_get_contents(__DIR__ . '/../packages/module-backend/res/scss/components/_forms.scss');
 $css  = file_get_contents(__DIR__ . '/../packages/module-backend/res/assets/css/base.css');
-check('O12d the reveal is CSS — the :checked sibling rule in the backend SCSS source AND in the compiled base.css', str_contains($scss, '.be-reveal__toggle:checked ~ .be-reveal__panel { display: block; }')
+check('O12e the reveal is CSS — the :checked sibling rule in the backend SCSS source AND in the compiled base.css', str_contains($scss, '.be-reveal__toggle:checked ~ .be-reveal__panel { display: block; }')
     && str_contains($css, '.be-reveal__toggle:checked~.be-reveal__panel{display:block}'));
 
 $before = (int) $rangeOf('journal-entry.2032-33');
@@ -2071,23 +2087,112 @@ $useRequest(['year' => '2032-33'], $row('6500', '1020', '108.10', '2032-11-20', 
 $host = $journalHost();
 $host->addAction();
 $new = (int) $rangeOf('journal-entry.2032-33');
-check("O13 POST add with MwSt: posted as 2032-33/{$new}, the flash names the number, back to the EMPTY form with the same date",
+check("O13 POST add with MwSt: posted as 2032-33/{$new}, the flash names the number, back to the journal page with the same date",
     $new === $before + 1 && $host->messageService->flashes === [['success', "Buchung 2032-33/{$new} erfasst"]]
-    && $host->redirectedTo === '/backend/finance/journal/add?year=2032-33&date=2032-11-20'
+    && $host->redirectedTo === '/backend/finance/journal/list?date=2032-11-20'
     && array_map(fn($r) => $r['account_number'] . ' ' . $r['debit'] . '/' . $r['credit'], $lineRows((int) $entryRow('2032-33', $new)['id'])) === ['6500 100.00/0.00', '1170 8.10/0.00', '1020 0.00/108.10']);
 $useRequest(['year' => '2032-33'], $row('6500', '1020', '400.00', '2032-11-20', 'VM', '31.00', 'zu viel Steuer'));
 $host = $journalHost();
 $host->addAction();
 $html = $render($host);
-check('O14 POST with a refused tax amount: no posting, the form again with the error, the MwSt row still open (checked) and the values kept', $host->redirectedTo === null && (int) $rangeOf('journal-entry.2032-33') === $new
+check('O14 POST with a refused tax amount: no posting, the journal page again with the form, its error, the MwSt row still open (checked) and the values kept', $host->redirectedTo === null && (int) $rangeOf('journal-entry.2032-33') === $new
+    && $host->layoutManager->sections['main'] === ['Backend/JournalController/oneLine', 'Backend/JournalController/listAction']
     && str_contains($html, 'höchstens 1.00') && str_contains($html, 'name="vat" value="1" checked') && str_contains($html, 'value="31.00"') && str_contains($html, '<option value="VM" selected>'));
 $useRequest(['year' => '2032-33']);
 $host = $journalHost();
 $host->addCompoundAction();
+check('O15 GET add-compound lands on the journal page in the Sammelbuchung mode', str_starts_with((string) $host->redirectedTo, '/backend/finance/journal/list?mode=sammel&date=2032-'));
+$useRequest(['mode' => 'sammel', 'date' => '2032-11-20']);
+$host = $journalHost();
+$host->listAction();
 $html = $render($host);
-check('O15 GET add-compound: the Sammelbuchung (the former multi-line form) — no «1020» / «0.00» placeholder, the line principle in one sentence, no «ausgeglichen» at 0.00 / 0.00, a link back to the one-line form',
-    $host->layoutManager->sections['main'] === ['Backend/JournalController/form'] && str_contains($html, 'Sammelbuchung erfassen') && !str_contains($html, 'placeholder="1020"') && !str_contains($html, 'placeholder="0.00"')
-    && str_contains($html, 'Eine Zeile pro Konto') && !str_contains($html, 'ausgeglichen') && str_contains($html, '/backend/finance/journal/add?year=2032-33') && stripos($html, '<script') === false);
+$tools = implode('', array_map(fn($p) => $renderer->partial($p, $host->context), $host->layoutManager->sections['hc2'] ?? []));
+check('O15b ?mode=sammel: the Sammelbuchung as the capture form — no «1020» / «0.00» placeholder, no explanatory paragraph, no «ausgeglichen» at 0.00 / 0.00, «Weitere Zeilen» in the form, «Buchen» (op=save) in the toolbar, no MwSt trigger there',
+    $host->layoutManager->sections['main'] === ['Backend/JournalController/form', 'Backend/JournalController/listAction'] && str_contains($html, 'id="journal-capture"') && !str_contains($html, 'placeholder="1020"') && !str_contains($html, 'placeholder="0.00"')
+    && !str_contains($html, 'Eine Zeile pro Konto') && !str_contains($html, 'ausgeglichen') && str_contains($html, 'value="more">Weitere Zeilen')
+    && str_contains($tools, 'name="op" value="save"') && !str_contains($tools, 'journal-vat') && preg_match('/be-lang-switch__option--active"\s+href="\/backend\/finance\/journal\/list\?mode=sammel/', $tools) === 1 && stripos($html, '<script') === false);
+
+echo "S. the journal list: search in the database, sort, pages, state, gaps (FIN-JOURNAL-CAPTURE-001)\n";
+$listOf = function (array $get) use ($useRequest, $journalHost, $render) {
+    $useRequest($get);
+    $host = $journalHost();
+    $host->listAction();
+    return [$host, $render($host)];
+};
+$numbersOf = fn($host) => array_map(fn($r) => $r['number'], $host->context['rows']);
+[$h, $html] = $listOf(['date' => '2032-11-20', 'f_text' => 'Papeterie']);
+check('S1 the text magnifier finds «Papeterie» (contains), and only entries that carry it — a database query, the badge counts the matches',
+    $h->context['rows'] !== [] && array_filter($h->context['rows'], fn($r) => !str_contains($r['entry']->getText(), 'Papeterie')) === [] && $h->context['paging']->total === count($h->context['rows'])
+    && str_contains($html, 'value="Papeterie"') && str_contains($html, 'be-list__find--active'));
+[$h] = $listOf(['date' => '2032-11-20', 'f_debit' => '6500 Büromaterial']);
+check('S2 «Soll 6500» (a leading number is enough) finds only entries with 6500 on the DEBIT side', $h->context['rows'] !== [] && array_filter($h->context['rows'], function ($r) {
+    foreach ($r['entry']->getLines() as $l) { if ($l->getAccount()->getNumber() === '6500' && $l->getDebit()->isPositive()) { return false; } }
+    return true;
+}) === []);
+[$h] = $listOf(['date' => '2032-11-20', 'f_credit' => '6500']);
+check('S2b … and «Haben 6500» does not find them', array_filter($h->context['rows'], function ($r) {
+    foreach ($r['entry']->getLines() as $l) { if ($l->getAccount()->getNumber() === '6500' && $l->getCredit()->isPositive()) { return false; } }
+    return true;
+}) === []);
+[$h] = $listOf(['date' => '2032-11-20', 'f_amount' => '108,10']);
+check('S3 the amount magnifier: «108,10» finds the entries whose total is 108.10', $h->context['rows'] !== [] && array_filter($h->context['rows'], fn($r) => $r['entry']->total()->toDecimal() !== '108.10') === []);
+[$h] = $listOf(['date' => '2032-11-20', 'f_date' => '20.11.2032']);
+[$hm] = $listOf(['date' => '2032-11-20', 'f_date' => '11.2032']);
+check('S4 the date magnifier: a day, and a month (11.2032) that holds at least that day\'s entries', $h->context['rows'] !== [] && array_filter($h->context['rows'], fn($r) => $r['entry']->getDate()->format('Y-m-d') !== '2032-11-20') === []
+    && count($hm->context['rows']) >= count($h->context['rows']) && array_filter($hm->context['rows'], fn($r) => $r['entry']->getDate()->format('Y-m') !== '2032-11') === []);
+[$h, $html] = $listOf(['date' => '2032-11-20', 'f_date' => '31.02.2032']);
+[$hAll] = $listOf(['date' => '2032-11-20']);
+check('S5 an unreadable date is marked invalid and does NOT narrow — a typo must not look like «nothing found»', $h->context['filter']->isInvalid('f_date') && str_contains($html, 'aria-invalid="true"') && count($h->context['rows']) === count($hAll->context['rows']));
+$nr = $hAll->context['rows'][2]['number'];
+[$h] = $listOf(['date' => '2032-11-20', 'f_nr' => (string) $nr]);
+check('S6 the number magnifier: exactly that number', $numbersOf($h) === [$nr]);
+[$h, $html] = $listOf(['date' => '2032-11-20', 'f_text' => 'Umbuchung', 'all' => '1']);
+check('S7 «alle Geschäftsjahre»: the search reaches the other years (Umbuchung is posted in 2027-28), the number shows its year', array_filter($h->context['rows'], fn($r) => $r['entry']->getFiscalYear()->getCode() === '2027-28') !== []
+    && str_contains($html, '2027-28/') && str_contains($html, 'be-list__toggle be-list__toggle--on'));
+[$h, $html] = $listOf(['date' => '2032-11-20', 'sort' => 'amount', 'dir' => 'asc']);
+$totals = array_map(fn($r) => $r['entry']->total()->toDecimal() * 100, $h->context['rows']);
+$sorted = $totals; sort($sorted);
+check('S8 sort by amount, ascending — on the server; the header marks the column (data-sort="asc") and its link flips to descending (the default, so no dir= in the URL)', $totals === $sorted && str_contains($html, 'sort=amount" data-sort="asc"'));
+$entriesRepo = DI::getUnifiedEntityManager()->getRepository(JournalEntry::class);
+$y3233 = DI::getUnifiedEntityManager()->getRepository(FiscalYear::class)->findOneBy(['code' => '2032-33']);
+$all3233 = $entriesRepo->countSearch(new \Z77\Module\Financial\Reports\JournalSearch((int) $y3233->getId()));
+$page2 = $entriesRepo->search(new \Z77\Module\Financial\Reports\JournalSearch((int) $y3233->getId()), 2, 2);
+check('S9 paging in SQL: a page is LIMIT/OFFSET over the same order — page 2 of size 2 holds the 3rd and 4th newest', $all3233 === count($hAll->context['rows']) && array_map(fn($e) => $e->getNumber(), $page2) === array_slice($numbersOf($hAll), 2, 2));
+check('S9b the date parser: day, ISO day, month, year; a wrong day or month is null', \Z77\Module\Financial\Ui\JournalFilter::dateRange('5.2.2032') === ['2032-02-05', '2032-02-05']
+    && \Z77\Module\Financial\Ui\JournalFilter::dateRange('02.2032') === ['2032-02-01', '2032-02-29'] && \Z77\Module\Financial\Ui\JournalFilter::dateRange('2032') === ['2032-01-01', '2032-12-31']
+    && \Z77\Module\Financial\Ui\JournalFilter::dateRange('13.2032') === null && \Z77\Module\Financial\Ui\JournalFilter::dateRange('30.02.2032') === null);
+[$h, $html] = $listOf(['date' => '2027-12-01', 'deleted' => '1']);
+check('S10 «gelöschte zeigen»: the deleted number 4 of 2027-28 stands IN the list at its place, greyed, with its old text',
+    in_array(4, $numbersOf($h), true) && (function ($n) { $d = $n; rsort($d); return $n === $d; })($numbersOf($h))
+    && str_contains($html, 'be-list__state--deleted') && str_contains($html, 'gelöscht: «Umbuchung A»'));
+[$h, $html] = $listOf(['date' => '2027-12-01', 'deleted' => '1', 'f_text' => 'Umbuchung']);
+check('S10b … not while a search narrows the list (a gap between matches means nothing) — the page says so', !in_array(4, $numbersOf($h), true) && str_contains($html, 'Gelöschte Nummern erscheinen'));
+check('S11 generated entries carry the «generated» state, a closed period «closed» — the service rules, mirrored for the icon', (function () use ($listOf) {
+    [$h] = $listOf(['date' => '2032-11-20', 'all' => '1']);
+    $states = array_unique(array_map(fn($r) => $r['state'] ?? 'deleted', $h->context['rows']));
+    return in_array('editable', $states, true) && array_diff($states, ['editable', 'generated', 'closed', 'vat-settled']) === [];
+})());
+[$h, $html] = $listOf(['date' => '2032-11-20', 'f_text' => 'Papeterie', 'sort' => 'date']);
+check('S12 every link keeps the state: the page link, the toggles and the sort links carry the search and the capture date; «Suche zurücksetzen» drops only the search',
+    str_contains($html, 'date=2032-11-20&amp;f_text=Papeterie&amp;all=1') && str_contains($html, 'Suche zurücksetzen')
+    && preg_match('/href="\/backend\/finance\/journal\/list\?date=2032-11-20&amp;sort=date"[^>]*>Suche zurücksetzen/', $html) === 1);
+
+$GLOBALS['z77TestFetch'] = true;
+[$h, $html] = $listOf(['date' => '2032-11-20', 'f_text' => 'Papeterie']);
+$GLOBALS['z77TestFetch'] = false;
+check('S13 a FETCH of the journal (core.js «fetch regions»: sort, page, search) answers the list ALONE — no capture form, no header slots; the region, its links and its search form are marked',
+    $h->layoutManager->sections['main'] === ['Backend/JournalController/listAction'] && empty($h->layoutManager->sections['hc2']) && empty($h->layoutManager->sections['hc3'])
+    && str_contains($html, 'data-fetch-region="journal-list"') && str_contains($html, 'data-fetch-region-form') && str_contains($html, 'class="be-list__sort" data-fetch-region-link')
+    && !str_contains($html, 'id="journal-capture"'));
+[$h, $html] = $listOf(['date' => '2032-11-20']);
+$first = $h->context['rows'][0]['entry'];
+check('S14 the state icon is a link: an editable entry opens its edit page', $h->context['rows'][0]['state'] === 'editable'
+    && str_contains($html, 'class="be-list__cell be-list__state be-list__state--editable" href="/backend/finance/journal/edit?id=' . $first->getId() . '"'));
+$coreJs = file_get_contents(__DIR__ . '/../packages/kernel/shared/res/assets/js/core.js');
+check('S15 the fetch region is the shared core.js contract (module-agnostic): links and GET forms inside [data-fetch-region] reload it, the address follows',
+    str_contains($coreJs, "a[data-fetch-region-link]") && str_contains($coreJs, "form[data-fetch-region-form]") && str_contains($coreJs, 'history.replaceState')
+    && str_contains(file_get_contents(__DIR__ . '/../packages/kernel/shared/res/assets/js/core.min.js'), 'data-fetch-region'));
+
 // The edit page checks the entity token: a CSRF double (register once per wiring, like the request).
 DI::getInstance()->set('CsrfService', fn() => new class {
     public function generateEntityToken(string $context, int $id): string { return "tok-{$context}-{$id}"; }

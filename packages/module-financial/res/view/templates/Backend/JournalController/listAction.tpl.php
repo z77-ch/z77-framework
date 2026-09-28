@@ -1,35 +1,73 @@
 <?php
 /**
- * The journal of one fiscal year (plan §5.2), newest first: number, date,
- * text, kind, amount (Σ debit), origin. The number links to the entry
- * page. Bounded by `journalListLimit`; a second section lists the numbers
- * that are GAPS — deleted manual entries, each with who and when, from the
- * change log (ADR-042 decision 9).
+ * The journal list — the lower half of the journal page (FIN-JOURNAL-CAPTURE-001,
+ * owner 2026-09-28; the capture form above it is `oneLine` / `form`). Newest
+ * first, paged by server links, searchable per column in the database:
  *
- * Styling: the shared backend list v2 classes only (`.be-list__frame`,
- * `.be-list__table` with `--be-list-cols`, `.be-list__head`, `.be-list__row`,
- * `.be-list__cell--num` for the amount, badges) — no CSS and no JavaScript
- * of its own.
+ *   - every header cell of a searchable column is a `.be-list__find`: the title
+ *     sorts (a link, `?sort=` / `?dir=`), the magnifier beside it opens the
+ *     search field right there (a `<label for>` that focuses a collapsed input
+ *     — no JavaScript). All fields belong to the GET form `#journal-find`;
+ *     Enter searches, over one fiscal year or — «alle Geschäftsjahre» — all;
+ *   - a state icon starts every row: editable · generated · closed · VAT
+ *     settled (`$states`), and a deleted number when «gelöschte zeigen» is on
+ *     — inline at its number (one year, number order, no search);
+ *   - the toggles are LINKS: the state is the address;
+ *   - the whole list is a FETCH REGION (`data-fetch-region="journal-list"`,
+ *     core.js): sort / page / toggle links and the search form reload only
+ *     this part, the capture form above keeps what is typed (owner
+ *     2026-09-28). Without the script they are plain page loads;
+ *   - the state icon is a link: an editable entry opens its edit page, any
+ *     other its detail.
  *
- * @var list<\Z77\Module\Financial\Entities\FiscalYear> $years
- * @var \Z77\Module\Financial\Entities\FiscalYear|null $year
- * @var list<\Z77\Module\Financial\Entities\JournalEntry> $entries  newest first, lines loaded
- * @var int $total
- * @var list<\Z77\Module\Financial\Entities\EntryChange> $deletions
- * @var int $limit
- * @var array<string,string> $kindLabels
+ * Styling: the shared backend list v2 classes plus `.be-list__find`,
+ * `.be-list__state`, `.be-list__toggle` (module-backend `_list.scss`) — no CSS
+ * and no JavaScript of its own.
+ *
+ * @var \Z77\Module\Financial\Entities\FiscalYear|null $year  the year of the capture date — null without any year
+ * @var list<array{entry?: \Z77\Module\Financial\Entities\JournalEntry, state?: string, deleted?: \Z77\Module\Financial\Entities\EntryChange, number: int}> $rows
+ * @var \Z77\Module\Financial\Ui\JournalFilter $filter
+ * @var \Z77\Module\Financial\Reports\Paging $paging
+ * @var bool $gapsApply  the deleted numbers are merged into this page
+ * @var array<string, string> $keep    the capture state (`mode`, `date`) every link carries
+ * @var array<string, string> $states  state key → German title
  * @var callable $fmt  Money → «1'234.50»
- * @var string|null $configNotice  the red band while no VAT account can be resolved (leftover config key, mandator unavailable) — null normally
+ * @var string|null $configNotice
  * @var string $actionBase
  */
+use Z77\Module\Financial\Ui\JournalFilter;
+
 $actionBase = $actionBase ?? '/backend/finance/journal';
-$shown      = count($entries);
+$ns         = 'Z77\\Module\\Financial';
+$link       = static fn(array $changes = []): string => $actionBase . '/list?'
+    . ltrim(http_build_query($keep) . '&' . $filter->query($changes), '&');
+$icons      = ['editable' => 'edit', 'generated' => 'zap', 'closed' => 'lock', 'vat-settled' => 'lock'];
+/** The account numbers on one side of an entry — «div.» beyond two. */
+$side = static function (\Z77\Module\Financial\Entities\JournalEntry $e, bool $debit): string {
+    $numbers = [];
+    foreach ($e->getLines() as $line) {
+        if (($debit ? $line->getDebit() : $line->getCredit())->isPositive()) {
+            $numbers[$line->getAccount()->getNumber()] = true;
+        }
+    }
+    return count($numbers) > 2 ? 'div.' : implode(', ', array_keys($numbers));
+};
+/** The sort link of a column: the current column flips its direction; a new one starts newest / largest first, the text A–Z. */
+$sortLink = static function (string $sort) use ($filter, $link): string {
+    $descending = $filter->sort === $sort ? !$filter->descending : $sort !== 'text';
+
+    return $link(['sort' => $sort, 'dir' => $descending ? 'desc' : 'asc']);
+};
+$cols    = '2rem 4.5rem 6.5rem minmax(10rem, 2fr) 6rem 6rem 8rem';
+$colsSm  = '2rem 4rem minmax(7rem, 2fr) 5rem 5rem 6rem';   // fits ~470px — checked at phone width, 2026-09-28
+$colsXs  = '2rem 4rem minmax(8rem, 2fr) 7rem';
+$priority = ['f_date' => '3', 'f_debit' => '2', 'f_credit' => '2'];
 ?>
-<div class="be-list">
+<div class="be-list" data-fetch-region="journal-list">
+    <?php if ($year === null): ?>
     <?php if (!empty($configNotice)): ?>
     <div class="be-modal__alert be-modal__alert--error"><?= e($configNotice) ?></div>
     <?php endif; ?>
-    <?php if ($year === null): ?>
     <div class="be-list__section">
         <div class="be-list__section-header">
             <h2 class="be-list__section-title">Journal</h2>
@@ -42,69 +80,96 @@ $shown      = count($entries);
     <div class="be-list__section" data-fiscal-year-id="<?= e((string) $year->getId()) ?>">
         <div class="be-list__section-header">
             <h2 class="be-list__section-title">
-                Journal <code><?= e($year->getCode()) ?></code>
-                <small class="be-list__cell--muted">· <?= e($year->getStartDate()->format('d.m.Y')) ?> – <?= e($year->getEndDate()->format('d.m.Y')) ?></small>
+                Buchungen
+                <small class="be-list__cell--muted">· <?= $filter->allYears ? 'alle Geschäftsjahre' : 'Geschäftsjahr ' . e($year->getCode()) ?></small>
             </h2>
-            <span class="be-list__section-badge" title="Buchungen"><?= $total ?></span>
+            <nav class="be-list__toggles" aria-label="Umfang">
+                <a class="be-list__toggle<?= $filter->allYears ? ' be-list__toggle--on' : '' ?>" data-fetch-region-link role="switch" aria-checked="<?= $filter->allYears ? 'true' : 'false' ?>"
+                   href="<?= e($link(['all' => !$filter->allYears])) ?>">alle Geschäftsjahre</a>
+                <a class="be-list__toggle<?= $filter->showDeleted ? ' be-list__toggle--on' : '' ?>" data-fetch-region-link role="switch" aria-checked="<?= $filter->showDeleted ? 'true' : 'false' ?>"
+                   href="<?= e($link(['deleted' => !$filter->showDeleted])) ?>">gelöschte zeigen</a>
+                <?php if ($filter->isActive()): ?>
+                <a data-fetch-region-link href="<?= e($link(array_fill_keys(array_keys(JournalFilter::FIELDS), null))) ?>">Suche zurücksetzen</a>
+                <?php endif; ?>
+            </nav>
+            <span class="be-list__section-badge" title="Buchungen"><?= $paging->total ?></span>
         </div>
-        <?php if ($entries === []): ?>
-        <p class="be-list__empty">Noch keine Buchung in diesem Geschäftsjahr.</p>
-        <?php else: ?>
+
+        <form id="journal-find" method="get" action="<?= e($actionBase) ?>/list" role="search" data-fetch-region-form>
+            <?php foreach ($keep + $filter->hiddenState() as $name => $value): ?>
+            <input type="hidden" name="<?= e($name) ?>" value="<?= e($value) ?>">
+            <?php endforeach; ?>
+            <button type="submit" class="be-list__find-submit" tabindex="-1">Suchen</button>
+        </form>
+
+        <?php if ($filter->showDeleted && !$gapsApply): ?>
+        <p class="be-list__section-hint">Gelöschte Nummern erscheinen im Journal EINES Geschäftsjahres, nach Nummer sortiert und ohne Suche.</p>
+        <?php endif; ?>
+
         <div class="be-list__frame">
-            <div class="be-list__table be-list__table--drop" style="--be-list-cols: 4rem 6rem minmax(12rem, 2fr) 6rem 8rem minmax(6rem, 1fr); --be-list-cols-sm: 4rem 6rem minmax(10rem, 2fr) 8rem; --be-list-cols-xs: 4rem minmax(8rem, 2fr) 7rem">
+            <div class="be-list__table be-list__table--drop" style="--be-list-cols: <?= $cols ?>; --be-list-cols-sm: <?= $colsSm ?>; --be-list-cols-xs: <?= $colsXs ?>">
                 <div class="be-list__head">
-                    <span class="be-list__col be-list__col--num">Nr.</span>
-                    <span class="be-list__col" data-priority="2">Datum</span>
-                    <span class="be-list__col">Text</span>
-                    <span class="be-list__col" data-priority="3">Art</span>
-                    <span class="be-list__col be-list__col--num">Betrag</span>
-                    <span class="be-list__col" data-priority="3">Herkunft</span>
+                    <span class="be-list__col" aria-label="Status"></span>
+                    <?php foreach (JournalFilter::FIELDS as $key => $label): ?>
+                    <?php
+                    $sort    = JournalFilter::SORT_OF[$key] ?? null;
+                    $numeric = in_array($key, ['f_nr', 'f_amount'], true);
+                    $class   = 'be-list__col be-list__find' . ($numeric ? ' be-list__col--num' : '') . ($filter->value($key) !== '' ? ' be-list__find--active' : '');
+                    ?>
+                    <span class="<?= $class ?>"<?= isset($priority[$key]) ? ' data-priority="' . $priority[$key] . '"' : '' ?>>
+                        <?php if ($sort !== null): ?>
+                        <a class="be-list__sort" data-fetch-region-link href="<?= e($sortLink($sort)) ?>"<?= $filter->sort === $sort ? ' data-sort="' . ($filter->descending ? 'desc' : 'asc') . '"' : ' data-sort' ?>><?= e($label) ?></a>
+                        <?php else: ?>
+                        <span class="be-list__find-label"><?= e($label) ?></span>
+                        <?php endif; ?>
+                        <label class="be-list__find-icon" for="journal-find-<?= e($key) ?>" title="<?= e($label) ?> suchen">
+                            <svg class="be-icon" width="12" height="12" aria-hidden="true"><use href="#icon-search"/></svg>
+                        </label>
+                        <input class="be-list__find-input" type="search" id="journal-find-<?= e($key) ?>" name="<?= e($key) ?>" form="journal-find"
+                               value="<?= e($filter->value($key)) ?>" placeholder=" " autocomplete="off" aria-label="<?= e($label) ?> suchen"
+                               aria-invalid="<?= $filter->isInvalid($key) ? 'true' : 'false' ?>"<?= $key === 'f_debit' || $key === 'f_credit' ? ' inputmode="numeric"' : '' ?>>
+                    </span>
+                    <?php endforeach; ?>
                 </div>
-                <?php foreach ($entries as $entry): ?>
-                <div class="be-list__item" data-entry-id="<?= e((string) $entry->getId()) ?>">
-                    <div class="be-list__row">
-                        <span class="be-list__cell be-list__cell--num be-list__cell--mono"><a href="<?= e($actionBase) ?>/detail?id=<?= e((string) $entry->getId()) ?>"><?= $entry->getNumber() ?></a></span>
-                        <span class="be-list__cell" data-priority="2"><?= e($entry->getDate()->format('d.m.Y')) ?></span>
-                        <span class="be-list__cell"><a href="<?= e($actionBase) ?>/detail?id=<?= e((string) $entry->getId()) ?>"><?= e($entry->getText()) ?></a><?= $entry->isReversal() ? ' <span class="badge badge--warning">Storno von ' . $entry->getReversalOf()->getNumber() . '</span>' : '' ?></span>
-                        <span class="be-list__cell" data-priority="3"><span class="badge <?= $entry->isManual() ? 'badge--info' : 'badge--muted' ?>"><?= e($kindLabels[$entry->getKind()] ?? $entry->getKind()) ?></span></span>
-                        <span class="be-list__cell be-list__cell--num"><?= e($fmt($entry->total())) ?></span>
-                        <span class="be-list__cell be-list__cell--muted" data-priority="3"><?= $entry->getSourceType() === null ? '–' : e($entry->getSourceType() . ' ' . $entry->getSourceRef()) ?></span>
+                <?php foreach ($rows as $row): ?>
+                <?php if (isset($row['deleted'])): $change = $row['deleted']; ?>
+                <div class="be-list__item">
+                    <div class="be-list__row be-list__row--inactive">
+                        <span class="be-list__cell be-list__state be-list__state--deleted" role="img" aria-label="gelöscht" title="gelöscht"><svg class="be-icon" width="14" height="14" aria-hidden="true"><use href="#icon-trash"/></svg></span>
+                        <span class="be-list__cell be-list__cell--num be-list__cell--mono"><?= $change->getEntryNumber() ?></span>
+                        <span class="be-list__cell" data-priority="3"><?= e($change->getChangedAt()->format('d.m.Y')) ?></span>
+                        <span class="be-list__cell">gelöscht: «<?= e((string) ($change->before()['text'] ?? '')) ?>» <small class="be-list__cell--muted">· <?= e($change->getChangedBy()) ?>, <?= e($change->getChangedAt()->format('d.m.Y H:i')) ?></small></span>
+                        <span class="be-list__cell" data-priority="2"></span>
+                        <span class="be-list__cell" data-priority="2"></span>
+                        <span class="be-list__cell"></span>
                     </div>
                 </div>
+                <?php else: $entry = $row['entry']; $detail = $actionBase . '/detail?id=' . $entry->getId(); ?>
+                <div class="be-list__item" data-entry-id="<?= e((string) $entry->getId()) ?>">
+                    <div class="be-list__row">
+                        <?php $stateUrl = $row['state'] === 'editable' ? $actionBase . '/edit?id=' . $entry->getId() : $detail; ?>
+                        <a class="be-list__cell be-list__state be-list__state--<?= e($row['state']) ?>" href="<?= e($stateUrl) ?>" aria-label="<?= e($states[$row['state']]) ?>" title="<?= e($states[$row['state']]) ?>"><svg class="be-icon" width="14" height="14" aria-hidden="true"><use href="#icon-<?= e($icons[$row['state']]) ?>"/></svg></a>
+                        <span class="be-list__cell be-list__cell--num be-list__cell--mono"><a href="<?= e($detail) ?>"><?= $filter->allYears ? e($entry->getFiscalYear()->getCode()) . '/' : '' ?><?= $entry->getNumber() ?></a></span>
+                        <span class="be-list__cell" data-priority="3"><?= e($entry->getDate()->format('d.m.Y')) ?></span>
+                        <span class="be-list__cell"><a href="<?= e($detail) ?>"><?= e($entry->getText()) ?></a><?= $entry->isReversal() ? ' <span class="badge badge--warning">Storno von ' . e($entry->getReversalOf()->getFiscalYear()->getCode() . '/' . $entry->getReversalOf()->getNumber()) . '</span>' : '' ?></span>
+                        <span class="be-list__cell be-list__cell--mono" data-priority="2"><?= e($side($entry, true)) ?></span>
+                        <span class="be-list__cell be-list__cell--mono" data-priority="2"><?= e($side($entry, false)) ?></span>
+                        <span class="be-list__cell be-list__cell--num"><?= e($fmt($entry->total())) ?></span>
+                    </div>
+                </div>
+                <?php endif; ?>
                 <?php endforeach; ?>
             </div>
         </div>
-        <?php if ($total > $shown): ?>
-        <p class="be-form__hint"><?= $shown ?> von <?= $total ?> Buchungen angezeigt (die neuesten).</p>
+        <?php if ($rows === []): ?>
+        <p class="be-list__empty"><?= $filter->isActive() ? 'Keine Buchung gefunden.' : ($filter->allYears ? 'Noch keine Buchung.' : 'Noch keine Buchung in diesem Geschäftsjahr.') ?></p>
         <?php endif; ?>
-        <?php endif; ?>
+        <?= $this->partial('Backend/partials/pager', [
+            'paging'   => $paging,
+            'pageLink' => static fn(int $p): string => $link(['page' => $p]),
+            'unit'     => 'Buchungen',
+            'regionLinks' => true,
+        ], $ns) ?>
     </div>
-
-    <?php if ($deletions !== []): ?>
-    <div class="be-list__section">
-        <div class="be-list__section-header">
-            <h2 class="be-list__section-title">Gelöschte Buchungen <small class="be-list__cell--muted">· Lücken in der Nummerierung, aus dem Änderungsprotokoll</small></h2>
-            <span class="be-list__section-badge"><?= count($deletions) ?></span>
-        </div>
-        <div class="be-list__table" style="--be-list-cols: 4rem minmax(12rem, 2fr) 10rem 12rem">
-            <div class="be-list__head">
-                <span class="be-list__col be-list__col--num">Nr.</span>
-                <span class="be-list__col">Text (vor dem Löschen)</span>
-                <span class="be-list__col">Gelöscht von</span>
-                <span class="be-list__col">Am</span>
-            </div>
-            <?php foreach ($deletions as $change): ?>
-            <div class="be-list__item">
-                <div class="be-list__row be-list__row--inactive">
-                    <span class="be-list__cell be-list__cell--num be-list__cell--mono"><?= $change->getEntryNumber() ?></span>
-                    <span class="be-list__cell"><?= e((string) ($change->before()['text'] ?? '')) ?></span>
-                    <span class="be-list__cell be-list__cell--actions"><?= e($change->getChangedBy()) ?></span>
-                    <span class="be-list__cell be-list__cell--actions"><?= e($change->getChangedAt()->format('d.m.Y H:i')) ?></span>
-                </div>
-            </div>
-            <?php endforeach; ?>
-        </div>
-    </div>
-    <?php endif; ?>
     <?php endif; ?>
 </div>

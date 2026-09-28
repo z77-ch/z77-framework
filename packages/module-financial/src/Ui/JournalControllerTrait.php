@@ -2,6 +2,7 @@
 namespace Z77\Module\Financial\Ui;
 
 use Z77\Core\DI,
+    Z77\Core\Http\RequestMode,
     Z77\Core\Http\Response\FetchResponse,
     Z77\Core\Http\Response\HtmlResponse,
     Z77\Core\Http\Response\RedirectResponse,
@@ -12,6 +13,7 @@ use Z77\Core\DI,
     Z77\Module\Financial\Entities\PeriodState,
     Z77\Module\Financial\Ledger\EntryRef,
     Z77\Module\Financial\Ledger\PostingRequest,
+    Z77\Module\Financial\Reports\Paging,
     Z77\Module\Financial\Repositories\EntryChangeRepository,
     Z77\Module\Financial\Repositories\FiscalYearRepository,
     Z77\Module\Financial\Repositories\JournalEntryRepository,
@@ -37,14 +39,17 @@ use Z77\Core\DI,
  *
  * What the screen can do, and deliberately cannot:
  *
- *   - list the journal of ONE fiscal year (`?year=`; the year containing
- *     today by default), newest first, bounded by `journalListLimit`, with
- *     the deleted numbers (gaps) explained from the change log;
+ *   - capture AND list on ONE page (`list`, FIN-JOURNAL-CAPTURE-001, owner
+ *     2026-09-28): the capture form open at once (one-line or Sammelbuchung,
+ *     `?mode=`), below it the journal of the fiscal year the form's date
+ *     falls in, newest first, paged by `journalListLimit`, searchable per
+ *     column in the database (one year or all), sortable, each row with a
+ *     state icon, the deleted numbers (gaps) inline on request;
  *   - show an entry with its lines, its reversal link (both directions)
  *     and its change log;
  *   - post a MANUAL entry, edit and delete it — with confirmation, each
  *     change logged by `ManualEntryService`. The default capture form is
- *     the ONE-LINE entry (`add`, {@see OneLineEntryForm}: Soll, Datum,
+ *     the ONE-LINE entry (posted to `add`, {@see OneLineEntryForm}: Soll, Datum,
  *     Bu-Nr, Text, Haben, gross Betrag, optional MwSt row — owner
  *     2026-09-22); real splits go to the multi-line «Sammelbuchung»
  *     (`add-compound`, {@see ManualEntryForm}). An entry of the one-line
@@ -87,8 +92,17 @@ trait JournalControllerTrait
         'update' => 'geändert',
         'delete' => 'gelöscht',
     ];
-    /** How many of the year's latest entries the one-line form lists below itself (capture flow, owner 2026-09-22). */
-    private const JOURNAL_RECENT_ON_FORM = 10;
+    /**
+     * The state icon at the start of a list row (owner 2026-09-28): whether
+     * the entry can still be edited — German title per state. The service
+     * decides for real; {@see journalEntryState()} mirrors its rules.
+     */
+    private const JOURNAL_STATE_LABELS = [
+        'editable'    => 'bearbeitbar',
+        'generated'   => 'automatisch gebucht — das Modul, das sie gebucht hat, storniert sie',
+        'closed'      => 'Periode abgeschlossen — gesperrt',
+        'vat-settled' => 'MWST der Periode abgerechnet — die Buchung trägt einen MWST-Code und ist gesperrt',
+    ];
 
     private const JOURNAL_PERIOD_STATE_LABELS = [
         'open'        => 'offen',
@@ -202,6 +216,33 @@ trait JournalControllerTrait
             && $entry->getFiscalYear()->periodOn($entry->getDate())?->getState() !== PeriodState::Closed->value;
     }
 
+    /**
+     * The list's state of an entry — a key of {@see JOURNAL_STATE_LABELS}:
+     * generated (only its module reverses it), closed (its period is closed),
+     * vat-settled (the period's VAT is settled and the entry carries a VAT
+     * code — those lines are frozen, EntryNotEditableException::PERIOD_VAT_SETTLED),
+     * else editable.
+     */
+    private function journalEntryState(JournalEntry $entry): string
+    {
+        if (!$entry->isManual()) {
+            return 'generated';
+        }
+        $state = $entry->getFiscalYear()->periodOn($entry->getDate())?->getState();
+        if ($state === PeriodState::Closed->value) {
+            return 'closed';
+        }
+        if ($state === PeriodState::VatSettled->value) {
+            foreach ($entry->getLines() as $line) {
+                if ($line->getTaxCode() !== null) {
+                    return 'vat-settled';
+                }
+            }
+        }
+
+        return 'editable';
+    }
+
     /** Why an entry cannot be edited or deleted — the sentence the detail view, the edit page and the delete modal share. */
     private function journalNotEditableMessage(JournalEntry $entry): string
     {
@@ -235,31 +276,173 @@ trait JournalControllerTrait
 
     // ── list ─────────────────────────────────────────────────────────────
 
+    /**
+     * The journal — capture AND list on one page (FIN-JOURNAL-CAPTURE-001,
+     * owner 2026-09-28): post at once with as few clicks as possible, find
+     * any entry, see the latest ones.
+     *
+     *   - `?mode=einzel|sammel` — the capture form: the one-line entry
+     *     (default) or the Sammelbuchung, open at once;
+     *   - `?date=` — the date the empty form starts with (kept after a save);
+     *     its FISCAL YEAR is the year the list shows. There is no year
+     *     switcher: the year follows the date, the ledger decides it anyway;
+     *   - the column search `f_*`, `all`, `deleted`, `sort` / `dir`, `page` —
+     *     {@see JournalFilter}; a search runs in the database.
+     */
     protected function listAction(): HtmlResponse
     {
-        $years = $this->journalYears()->allWithPeriods();
-        $year  = $this->journalYear(DI::getRequest()->getGetParameter('year'));
-        $limit = LedgerService::listLimit();
+        $mode = DI::getRequest()->getGetParameter('mode') === 'sammel' ? 'sammel' : 'einzel';
+        $date = $this->journalCaptureDate(DI::getRequest()->getGetParameter('date'), DI::getRequest()->getGetParameter('year'));
+        if ($mode === 'sammel') {
+            $form = $this->manualEntryForm();
+            $form->startBlank($date);
+        } else {
+            $form = $this->oneLineEntryForm();
+            $form->startBlank($date);
+        }
 
+        return $this->journalListPage($form, $mode);
+    }
+
+    /**
+     * Renders the journal page around a capture form — blank, or posted with
+     * its errors. The list below follows the form's date: that date's fiscal
+     * year, else `?year=`, else the year containing today, else the latest.
+     */
+    private function journalListPage(OneLineEntryForm|ManualEntryForm $form, string $mode): HtmlResponse
+    {
+        $request = DI::getRequest();
+        $date    = ManualEntryForm::parseDate($form->date());
+        $year    = ($date === null ? null : $this->journalYears()->findByDate($date))
+            ?? $this->journalYear($request->getGetParameter('year'));
+        $query   = [];
+        foreach (array_merge(array_keys(JournalFilter::FIELDS), ['all', 'deleted', 'sort', 'dir', 'page']) as $key) {
+            $query[$key] = $request->getGetParameter($key);
+        }
+        $filter  = JournalFilter::fromQuery($query, $this->journalCurrency());
+        $search  = $filter->search($year?->getId());
+        $total   = $year === null ? 0 : $this->journalEntries()->countSearch($search);
+        $paging  = new Paging($filter->page, LedgerService::listLimit(), $total);
+        $entries = $total === 0 ? [] : $this->journalEntries()->search($search, $paging->offset(), $paging->pageSize);
+        // The deleted numbers inline — only where «between two numbers» means
+        // something: one year, number order, no column search.
+        $gapsApply = $filter->showDeleted && $year !== null && !$filter->allYears && $search->sort === 'number' && !$search->narrows();
+        $rows      = $this->journalRows($entries, $gapsApply ? $this->entryChanges()->deletionsForYear($year) : [], $search->descending, $paging);
+
+        $keep = array_filter(['mode' => $mode === 'sammel' ? 'sammel' : '', 'date' => $form->date()]);
         $response = $this->html([
-            'years'      => $years,
-            'year'       => $year,
-            'entries'    => $year === null ? [] : $this->journalEntries()->latestForYear($year, $limit),
-            'total'      => $year === null ? 0 : $this->journalEntries()->countForYear($year),
-            'deletions'  => $year === null ? [] : $this->entryChanges()->deletionsForYear($year),
-            'limit'      => $limit,
-            'kindLabels' => self::KIND_LABELS,
-            'fmt'        => static fn(?Money $m) => AmountFormat::of($m),
-            'actionBase' => $this->journalListBase(),
+            'form'        => $form,
+            'mode'        => $mode,
+            'year'        => $year,
+            'entry'       => null,
+            'capture'     => true,
+            'rows'        => $rows,
+            'filter'      => $filter,
+            'paging'      => $paging,
+            'gapsApply'   => $gapsApply,
+            'keep'        => $keep,
+            'states'      => self::JOURNAL_STATE_LABELS,
+            'kindLabels'  => self::KIND_LABELS,
+            'fmt'         => static fn(?Money $m) => AmountFormat::of($m),
+            'actionBase'  => $this->journalListBase(),
             'configNotice' => $this->journalConfigNotice(),
         ]);
-        // The fragment owns its header slots (financial.md, «fragment slots»).
-        // Both into the toolbar (ADR-033 rev. 2026-09-28): the year switch first, then the add
-        // action — everything in the toolbar is left-aligned, the action follows the tools.
-        $this->layoutManager->addPartials('yearSwitch', 'Backend/JournalController', self::JOURNAL_NS, 'hc2');
-        $this->layoutManager->addPartials('addButton', 'Backend/JournalController', self::JOURNAL_NS, 'hc2');
+        // The page is capture + list: the pinned body section is rebuilt. A FETCH of the page
+        // (sort, page, search, toggle — core.js «fetch regions») wants the list alone: the
+        // capture form above it keeps what is typed into it.
+        $this->layoutManager->removeSection('main');
+        if ($this->journalIsFetch()) {
+            $this->layoutManager->addPartials('listAction', 'Backend/JournalController', self::JOURNAL_NS);
+
+            return $response;
+        }
+        if ($year !== null) {
+            $this->layoutManager->addPartials($mode === 'sammel' ? 'form' : 'oneLine', 'Backend/JournalController', self::JOURNAL_NS);
+            // The fragment owns its header slots (financial.md, «fragment slots»): the capture
+            // tools and «Buchen» in the toolbar — they act on the form on the right (ADR-033
+            // rev. 2026-09-28) — and the crumb line with the year and month of the date.
+            $this->layoutManager->addPartials('captureTools', 'Backend/JournalController', self::JOURNAL_NS, 'hc2');
+            $this->layoutManager->addPartials('crumb', 'Backend/JournalController', self::JOURNAL_NS, 'hc3');
+        }
+        $this->layoutManager->addPartials('listAction', 'Backend/JournalController', self::JOURNAL_NS);
 
         return $response;
+    }
+
+    /**
+     * The rows of one list page: the entries, and — when asked for — the
+     * deleted numbers that fall between them, each at its number. A page
+     * owns the numbers from its last entry up to its first; the first page
+     * also everything above it, the last page everything below.
+     *
+     * @param list<JournalEntry> $entries
+     * @param list<EntryChange>  $deletions
+     * @return list<array{entry?: JournalEntry, state?: string, deleted?: EntryChange, number: int}>
+     */
+    private function journalRows(array $entries, array $deletions, bool $descending, Paging $paging): array
+    {
+        $rows = array_map(fn(JournalEntry $e) => ['entry' => $e, 'state' => $this->journalEntryState($e), 'number' => $e->getNumber()], $entries);
+        if ($deletions === []) {
+            return $rows;
+        }
+        $numbers = array_column($rows, 'number');
+        $low  = $numbers === [] ? PHP_INT_MIN : min($numbers);
+        $high = $numbers === [] ? PHP_INT_MAX : max($numbers);
+        $first = $paging->page === 1;
+        $last  = $paging->page === $paging->pageCount;
+        // In descending order the first page holds the HIGH end.
+        [$openHigh, $openLow] = $descending ? [$first, $last] : [$last, $first];
+        foreach ($deletions as $change) {
+            $n = $change->getEntryNumber();
+            if (($n > $low || $openLow) && ($n < $high || $openHigh)) {
+                $rows[] = ['deleted' => $change, 'number' => $n];
+            }
+        }
+        usort($rows, static fn($a, $b) => $descending ? $b['number'] <=> $a['number'] : $a['number'] <=> $b['number']);
+
+        return $rows;
+    }
+
+    /**
+     * The date a blank capture form starts with: `?date=` when a fiscal year
+     * covers it; else, for a link that names a year (`?year=`, the reports and
+     * the fiscal-year list link that way), today when it lies in that year,
+     * else its first day; else today when a year covers it, else the
+     * current-or-latest year's first day, else today.
+     */
+    private function journalCaptureDate(mixed $requested, mixed $yearCode = null): \DateTimeImmutable
+    {
+        $date = is_string($requested) ? ManualEntryForm::parseDate($requested) : null;
+        if ($date !== null && $this->journalYears()->findByDate($date) !== null) {
+            return $date;
+        }
+        $today = new \DateTimeImmutable('today');
+        $named = is_string($yearCode) && trim($yearCode) !== '' ? $this->journalYears()->findOneBy(['code' => trim($yearCode)]) : null;
+        if ($named !== null) {
+            return $named->covers($today) ? $today : $named->getStartDate();
+        }
+        if ($this->journalYears()->findByDate($today) !== null) {
+            return $today;
+        }
+
+        return $this->journalYears()->currentOrLatest()?->getStartDate() ?? $today;
+    }
+
+    /** Whether this request is a fetch (the list reloading alone) — the Request decides by `Sec-Fetch-Mode`. */
+    private function journalIsFetch(): bool
+    {
+        $request = DI::getRequest();
+
+        return method_exists($request, 'getMode') && $request->getMode() === RequestMode::Fetch;
+    }
+
+    /** Back to the journal after a save: the same mode, the date kept for the next voucher. */
+    private function journalBackToCapture(string $mode, \DateTimeImmutable $date): RedirectResponse
+    {
+        return $this->redirect($this->journalListBase() . '/list?' . http_build_query(array_filter([
+            'mode' => $mode === 'sammel' ? 'sammel' : '',
+            'date' => $date->format('Y-m-d'),
+        ])), 303);
     }
 
     // ── detail ───────────────────────────────────────────────────────────
@@ -290,26 +473,63 @@ trait JournalControllerTrait
     // ── add ──────────────────────────────────────────────────────────────
 
     /**
-     * «Buchung erfassen» — the ONE-LINE entry for the year in `?year=`, the
-     * default capture form. GET shows a blank row dated `?date=` when it lies
-     * in the year (the date kept after a save), else today when it does, else
-     * the year's first day. POST posts through the service; on success the
-     * blank row comes back with the same date and a flash naming the new
-     * number, so the next voucher is typed straight away. Below the form the
-     * year's latest entries, numbered, each linked to its detail.
+     * Posts the ONE-LINE entry of the journal page (FIN-JOURNAL-CAPTURE-001).
+     * A GET lands on the journal page itself — the capture form lives there
+     * now; the address stays valid for old links and bookmarks. POST posts
+     * through the service; on success back to the journal with the SAME date
+     * and a flash naming the new number, so the next voucher is typed straight
+     * away; on a refusal the journal page again, with the form and its errors.
      */
     #[Csrf]
     protected function addAction(): HtmlResponse|RedirectResponse
     {
         $request = DI::getRequest();
-        $year    = $this->journalYear($request->getGetParameter('year'));
-        if ($year === null) {
+        if ($this->journalYears()->currentOrLatest() === null) {
             return $this->journalNoYear();
         }
-        $form = $this->oneLineEntryForm();
+        if (!$request->isPost()) {
+            return $this->journalBackToCapture('einzel', $this->journalCaptureDate($request->getGetParameter('date'), $request->getGetParameter('year')));
+        }
+        $form    = $this->oneLineEntryForm();
+        $posting = $form->fromPost($request->getPostParameters())->toRequest();
+        if ($posting !== null) {
+            $ref = $this->journalCreate($posting, $form);
+            if ($ref instanceof RedirectResponse) {
+                return $ref;
+            }
+            if ($ref !== null) {
+                $this->messageService->pushFlashAfterRedirect('success', 'Buchung ' . $ref->fiscalYear . '/' . $ref->number . ' erfasst');
 
-        if ($request->isPost()) {
-            $posting = $form->fromPost($request->getPostParameters())->toRequest();
+                return $this->journalBackToCapture('einzel', $posting->date);
+            }
+        }
+
+        return $this->journalListPage($form, 'einzel');
+    }
+
+    /**
+     * Posts the SAMMELBUCHUNG of the journal page (`mode=sammel`). A GET lands
+     * on the journal page in that mode. POST with `op=more` comes back with
+     * more rows, `op=save` posts through the service and returns to the
+     * journal in the same mode, the date kept.
+     */
+    #[Csrf]
+    protected function addCompoundAction(): HtmlResponse|RedirectResponse
+    {
+        $request = DI::getRequest();
+        if ($this->journalYears()->currentOrLatest() === null) {
+            return $this->journalNoYear();
+        }
+        if (!$request->isPost()) {
+            return $this->journalBackToCapture('sammel', $this->journalCaptureDate($request->getGetParameter('date'), $request->getGetParameter('year')));
+        }
+        $form = $this->manualEntryForm();
+        $post = $request->getPostParameters();
+        $form->fromPost($post);
+        if (($post['op'] ?? '') === 'more') {
+            $form->addRows(ManualEntryForm::MORE_ROWS);
+        } else {
+            $posting = $form->toRequest();
             if ($posting !== null) {
                 $ref = $this->journalCreate($posting, $form);
                 if ($ref instanceof RedirectResponse) {
@@ -318,61 +538,12 @@ trait JournalControllerTrait
                 if ($ref !== null) {
                     $this->messageService->pushFlashAfterRedirect('success', 'Buchung ' . $ref->fiscalYear . '/' . $ref->number . ' erfasst');
 
-                    return $this->redirect($this->journalListBase() . '/add?year=' . rawurlencode($year->getCode()) . '&date=' . $posting->date->format('Y-m-d'), 303);
+                    return $this->journalBackToCapture('sammel', $posting->date);
                 }
             }
-        } else {
-            $form->startBlank($this->journalFormDate($year, $request->getGetParameter('date')));
         }
 
-        return $this->journalPage('oneLine', [
-            'form'   => $form,
-            'year'   => $year,
-            'entry'  => null,
-            'recent' => $this->journalEntries()->latestForYear($year, self::JOURNAL_RECENT_ON_FORM),
-        ]);
-    }
-
-    /**
-     * «Sammelbuchung erfassen» (`add-compound?year=`) — the multi-line form
-     * for real splits. POST with `op=more` adds rows, `op=save` posts through
-     * the service and shows the new entry.
-     */
-    #[Csrf]
-    protected function addCompoundAction(): HtmlResponse|RedirectResponse
-    {
-        $request = DI::getRequest();
-        $year    = $this->journalYear($request->getGetParameter('year'));
-        if ($year === null) {
-            return $this->journalNoYear();
-        }
-        $form = $this->manualEntryForm();
-
-        if ($request->isPost()) {
-            $post = $request->getPostParameters();
-            $form->fromPost($post);
-            if (($post['op'] ?? '') === 'more') {
-                $form->addRows(ManualEntryForm::MORE_ROWS);
-            } else {
-                $posting = $form->toRequest();
-                if ($posting !== null) {
-                    $ref = $this->journalCreate($posting, $form);
-                    if ($ref instanceof RedirectResponse) {
-                        return $ref;
-                    }
-                    if ($ref !== null) {
-                        $entry = $this->journalEntries()->findByRef($ref);
-                        $this->messageService->pushFlashAfterRedirect('success', 'Buchung ' . $ref->fiscalYear . '/' . $ref->number . ' erfasst');
-
-                        return $this->redirect($this->journalListBase() . '/detail?id=' . (int) $entry?->getId(), 303);
-                    }
-                }
-            }
-        } else {
-            $form->startBlank($this->journalFormDate($year, $request->getGetParameter('date')));
-        }
-
-        return $this->journalPage('form', ['form' => $form, 'year' => $year, 'entry' => null]);
+        return $this->journalListPage($form, 'sammel');
     }
 
     /** No fiscal year at all: nothing can be posted — to the fiscal years. */
@@ -381,18 +552,6 @@ trait JournalControllerTrait
         $this->messageService->pushFlashAfterRedirect('error', 'Ohne Geschäftsjahr kann nichts gebucht werden — zuerst eines eröffnen.');
 
         return $this->redirect('/backend/finance/fiscal-year/list', 303);
-    }
-
-    /** The date a blank form starts with: `?date=` inside the year, else today inside it, else its first day. */
-    private function journalFormDate(FiscalYear $year, mixed $requested): \DateTimeImmutable
-    {
-        $date = is_string($requested) ? ManualEntryForm::parseDate($requested) : null;
-        if ($date !== null && $year->covers($date)) {
-            return $date;
-        }
-        $today = new \DateTimeImmutable('today');
-
-        return $year->covers($today) ? $today : $year->getStartDate();
     }
 
     /**

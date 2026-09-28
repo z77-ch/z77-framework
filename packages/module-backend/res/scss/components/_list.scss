@@ -275,6 +275,129 @@ a.be-list__col:hover { color: var(--be-text); }
 .be-list__col[data-sort="asc"]::after  { content: " ↑"; opacity: 1; color: var(--be-accent); }
 .be-list__col[data-sort="desc"]::after { content: " ↓"; opacity: 1; color: var(--be-accent); }
 
+/* ── Column search (`.be-list__find`, FIN-JOURNAL-CAPTURE-001) ──
+ * A header cell that sorts AND searches: the title is the sort link
+ * (`.be-list__sort`, same `data-sort` contract as above), the magnifier beside it opens a
+ * search field exactly in that column (the wdv way). No JavaScript: the magnifier is a
+ * `<label for>` of the input, so a click FOCUSES it — and the input is collapsed until it is
+ * focused or holds a value (`:placeholder-shown` with a placeholder of one space). While it
+ * is open the title steps aside. The inputs belong to one GET form through `form="…"`, so
+ * Enter searches — on the server, over the whole data set.
+ *
+ *   <span class="be-list__col be-list__find">
+ *     <a class="be-list__sort" data-sort="desc" href="?sort=date&dir=asc">Datum</a>
+ *     <label class="be-list__find-icon" for="find-date"><svg class="be-icon">…search…</svg></label>
+ *     <input class="be-list__find-input" id="find-date" name="f_date" form="list-find" placeholder=" ">
+ *   </span>
+ */
+.be-list__find {
+    display:     flex;
+    align-items: center;
+    gap:         var(--space-1);
+}
+.be-list__find.be-list__col--num { justify-content: flex-end; }
+.be-list__sort { color: inherit; text-decoration: none; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.be-list__sort:hover { color: var(--be-text); }
+.be-list__sort[data-sort]::after         { content: " ↕"; opacity: .4; font-size: .9em; }
+.be-list__sort[data-sort="asc"]::after  { content: " ↑"; opacity: 1; color: var(--be-accent); }
+.be-list__sort[data-sort="desc"]::after { content: " ↓"; opacity: 1; color: var(--be-accent); }
+.be-list__find-icon {
+    display:     inline-flex;
+    flex:        none;
+    cursor:      pointer;
+    color:       var(--be-muted);
+    opacity:     .6;
+}
+.be-list__find-icon:hover,
+.be-list__find--active .be-list__find-icon { opacity: 1; color: var(--be-accent); }
+.be-list__find .be-list__find-input {
+    flex:          0 0 0;
+    width:         0;
+    min-width:     0;
+    padding:       0;
+    border:        0;
+    opacity:       0;
+    font:          inherit;
+    font-size:     var(--font-size-sm);
+    text-transform: none;
+    letter-spacing: normal;
+    color:         var(--be-text);
+    background:    var(--be-surface2);
+}
+.be-list__find .be-list__find-input:focus,
+.be-list__find .be-list__find-input:not(:placeholder-shown) {
+    flex:          1 1 auto;
+    width:         auto;
+    padding:       .15rem .35rem;
+    border:        1px solid var(--be-line);
+    border-radius: var(--radius-sm);
+    opacity:       1;
+    outline:       none;
+}
+.be-list__find .be-list__find-input:focus { border-color: var(--be-accent); }
+.be-list__find .be-list__find-input[aria-invalid="true"] { border-color: var(--be-danger); }
+.be-list__find:has(.be-list__find-input:focus, .be-list__find-input:not(:placeholder-shown)) .be-list__sort,
+.be-list__find:has(.be-list__find-input:focus, .be-list__find-input:not(:placeholder-shown)) .be-list__find-label { display: none; }
+/* The search form's default button: Enter needs one; nobody needs to see it. */
+.be-list__find-submit {
+    position: absolute;
+    width:    1px;
+    height:   1px;
+    overflow: hidden;
+    clip:     rect(0 0 0 0);
+    border:   0;
+    padding:  0;
+}
+
+/* ── Row state icon (`.be-list__state`) ──
+ * One glyph at the start of a row saying what may still be done with it (the journal:
+ * editable · generated · closed · VAT settled · deleted). The title carries the words. */
+.be-list__state {
+    display:         flex;
+    align-items:     center;
+    justify-content: center;
+    color:           var(--be-muted);
+}
+a.be-list__state { text-decoration: none; border-radius: var(--radius-sm); }
+a.be-list__state:hover { background: var(--be-accent-soft); }
+.be-list__state--editable    { color: var(--be-good); }
+.be-list__state--generated   { color: var(--be-accent); }
+.be-list__state--closed,
+.be-list__state--vat-settled { color: var(--be-warn); }
+
+/* ── Section toggles (`.be-list__toggle`) ──
+ * A switch of the list's scope as a LINK — the state is the address, one click, no form, no
+ * script. The box is drawn by CSS; `--on` fills it. */
+.be-list__toggles {
+    display:     flex;
+    flex-wrap:   wrap;
+    align-items: center;
+    gap:         var(--space-3);
+    margin-left: auto;
+    font-size:   var(--font-size-sm);
+}
+.be-list__toggle {
+    display:         inline-flex;
+    align-items:     center;
+    gap:             .4em;
+    color:           var(--be-muted);
+    text-decoration: none;
+}
+.be-list__toggle::before {
+    content:       "";
+    width:         .85em;
+    height:        .85em;
+    border:        1px solid currentColor;
+    border-radius: 3px;
+}
+.be-list__toggle:hover { color: var(--be-text); }
+.be-list__toggle--on { color: var(--be-text); }
+.be-list__toggle--on::before {
+    border-color: var(--be-accent);
+    background:   var(--be-accent);
+    box-shadow:   inset 0 0 0 2px var(--be-bg);
+}
+
 /* ── Row ──
  * A separator per row, not zebra striping: with quiet rules the eye already tracks across the
  * columns, and alternating fills make a dense surface restless. v1 had neither — it had no

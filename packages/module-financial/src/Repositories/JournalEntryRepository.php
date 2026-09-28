@@ -7,6 +7,7 @@ use Doctrine\DBAL\ParameterType;
 use Z77\Module\Financial\Entities\FiscalYear;
 use Z77\Module\Financial\Entities\JournalEntry;
 use Z77\Module\Financial\Ledger\EntryRef;
+use Z77\Module\Financial\Reports\JournalSearch;
 use Z77\Persistence\Doctrine\Repository\DoctrineRepository;
 
 /**
@@ -20,6 +21,9 @@ use Z77\Persistence\Doctrine\Repository\DoctrineRepository;
  *     collection would cut lines, not entries);
  *   - the detail screen loads one entry the same way.
  *
+ *   - the journal LIST searches (FIN-JOURNAL-CAPTURE-001): ids by SQL with
+ *     every criterion bound and the order from a fixed map, then the same
+ *     fetch-join — one page, over one year or all of them;
  *   - the journal REPORT (part 3) reads one page of a date range the same
  *     way, oldest first — ids by SQL (bound LIMIT/OFFSET), then the same
  *     fetch-join; the page is bounded, never a whole year.
@@ -104,6 +108,88 @@ class JournalEntryRepository extends DoctrineRepository
     public function countForYear(FiscalYear $year): int
     {
         return (int) $this->connection()->fetchOne('SELECT COUNT(*) FROM journal_entry WHERE fiscal_year_id = ?', [(int) $year->getId()]);
+    }
+
+    /**
+     * One page of the journal LIST (FIN-JOURNAL-CAPTURE-001): the entries that
+     * match every criterion of $search, in its order, with lines and accounts
+     * loaded. The search runs in the database over the whole journal (one
+     * year, or all of them) — never a filter of the rows on screen. Every
+     * value is bound; the ORDER BY comes from a fixed map, never from input.
+     * Doctrine-only (SQL + DQL).
+     *
+     * @return list<JournalEntry>
+     */
+    public function search(JournalSearch $search, int $offset, int $limit): array
+    {
+        [$where, $params, $types] = $this->searchWhere($search);
+        $dir   = $search->descending ? 'DESC' : 'ASC';
+        $order = match ($search->sort) {
+            'date'   => "e.entry_date {$dir}, y.start_date {$dir}, e.number {$dir}",
+            'text'   => "e.text {$dir}, y.start_date {$dir}, e.number {$dir}",
+            'amount' => "(SELECT SUM(ls.debit) FROM journal_line ls WHERE ls.entry_id = e.id) {$dir}, y.start_date {$dir}, e.number {$dir}",
+            default  => "y.start_date {$dir}, e.number {$dir}",
+        };
+        $ids = $this->connection()->fetchFirstColumn(
+            "SELECT e.id FROM journal_entry e JOIN fiscal_year y ON y.id = e.fiscal_year_id{$where} ORDER BY {$order} LIMIT ? OFFSET ?",
+            array_merge($params, [max(1, $limit), max(0, $offset)]),
+            array_merge($types, [ParameterType::INTEGER, ParameterType::INTEGER])
+        );
+
+        return $this->hydrate(array_map('intval', $ids));
+    }
+
+    /** How many entries match $search — the list's pager and badge. Doctrine-only (SQL). */
+    public function countSearch(JournalSearch $search): int
+    {
+        [$where, $params, $types] = $this->searchWhere($search);
+
+        return (int) $this->connection()->fetchOne("SELECT COUNT(*) FROM journal_entry e{$where}", $params, $types);
+    }
+
+    /**
+     * The WHERE clause of {@see search()} / {@see countSearch()}: fragments
+     * AND-ed, one bound value each. The account criteria ask for a line of
+     * THAT side (an entry with 6500 in credit is not found by «Soll 6500»);
+     * the amount is the entry total, Σ debit — what the list shows.
+     *
+     * @return array{0: string, 1: list<mixed>, 2: list<ParameterType>}
+     */
+    private function searchWhere(JournalSearch $search): array
+    {
+        $where = [];
+        $params = [];
+        $types = [];
+        $add = static function (string $sql, mixed $value, ParameterType $type = ParameterType::STRING) use (&$where, &$params, &$types): void {
+            $where[] = $sql;
+            $params[] = $value;
+            $types[] = $type;
+        };
+        if ($search->fiscalYearId !== null) {
+            $add('e.fiscal_year_id = ?', $search->fiscalYearId, ParameterType::INTEGER);
+        }
+        if ($search->number !== null) {
+            $add('e.number = ?', $search->number, ParameterType::INTEGER);
+        }
+        if ($search->dateFrom !== null) {
+            $add('e.entry_date >= ?', $search->dateFrom);
+        }
+        if ($search->dateTo !== null) {
+            $add('e.entry_date <= ?', $search->dateTo);
+        }
+        if ($search->text !== null) {
+            $add("e.text LIKE ? ESCAPE '!'", '%' . addcslashes($search->text, '!%_') . '%');
+        }
+        foreach (['debit' => $search->debitAccount, 'credit' => $search->creditAccount] as $side => $number) {
+            if ($number !== null) {
+                $add("EXISTS (SELECT 1 FROM journal_line l JOIN account a ON a.id = l.account_id WHERE l.entry_id = e.id AND a.number = ? AND l.{$side} > 0)", $number);
+            }
+        }
+        if ($search->amount !== null) {
+            $add('(SELECT SUM(lt.debit) FROM journal_line lt WHERE lt.entry_id = e.id) = ?', $search->amount);
+        }
+
+        return [$where === [] ? '' : ' WHERE ' . implode(' AND ', $where), $params, $types];
     }
 
     /**

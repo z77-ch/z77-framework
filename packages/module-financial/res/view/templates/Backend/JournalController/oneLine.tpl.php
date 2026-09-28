@@ -16,14 +16,17 @@
  *   - NO placeholders in the fields (P2 exit check 3a: a grey «1020» read as
  *     a prefilled value).
  *
- * New entry: below the form the year's latest entries, numbered, each linked
- * to its detail. Edit: the entity token, the version and a link to the
- * Sammelbuchung form of the same entry.
+ * New entry = the CAPTURE area of the journal page (FIN-JOURNAL-CAPTURE-001,
+ * owner 2026-09-28): no title, no explanatory paragraph («jeder, der bucht,
+ * weiss, was da rein kommt»), no buttons of its own — «Buchen» and «MwSt» sit
+ * in the toolbar (`captureTools`, ADR-033 rev. 2026-09-28) and reach this form
+ * through `form="journal-capture"` / `for="journal-vat"`. The date is free: the
+ * fiscal year follows it. The list below is `listAction`. Edit: the entity
+ * token, the version and a link to the Sammelbuchung form of the same entry.
  *
  * @var \Z77\Module\Financial\Ui\OneLineEntryForm $form
  * @var \Z77\Module\Financial\Entities\FiscalYear $year
  * @var \Z77\Module\Financial\Entities\JournalEntry|null $entry  null = new
- * @var list<\Z77\Module\Financial\Entities\JournalEntry> $recent  new only — latest first, lines loaded
  * @var int $version  edit only — the entry's version this form was rendered from (optimistic lock)
  * @var string $entityCsrf  edit only
  * @var string $csrfToken  provided by html()
@@ -33,33 +36,19 @@
  */
 $actionBase = $actionBase ?? '/backend/finance/journal';
 $isNew      = $entry === null;
-$recent     = $recent ?? [];
-$yearParam  = rawurlencode($year->getCode());
-$action     = $isNew ? $actionBase . '/add?year=' . $yearParam : $actionBase . '/edit?id=' . (int) $entry->getId();
-$compound   = $isNew
-    ? $actionBase . '/add-compound?year=' . $yearParam . ($form->date() !== '' ? '&date=' . rawurlencode($form->date()) : '')
-    : $actionBase . '/edit?id=' . (int) $entry->getId() . '&form=compound';
+$action     = $isNew ? $actionBase . '/add' : $actionBase . '/edit?id=' . (int) $entry->getId();
+$compound   = $isNew ? '' : $actionBase . '/edit?id=' . (int) $entry->getId() . '&form=compound';
 
 $fieldError = static fn(string $message): string => $message === ''
     ? ''
     : '<small class="be-form__field-error" data-z77-field-error>' . e($message) . '</small>';
 $invalid    = static fn(string $field): string => $form->error($field) !== '' ? 'true' : 'false';
-/** The account numbers on one side of an entry — «div.» beyond two. */
-$side = static function (\Z77\Module\Financial\Entities\JournalEntry $e, bool $debit): string {
-    $numbers = [];
-    foreach ($e->getLines() as $line) {
-        if (($debit ? $line->getDebit() : $line->getCredit())->isPositive()) {
-            $numbers[$line->getAccount()->getNumber()] = true;
-        }
-    }
-    return count($numbers) > 2 ? 'div.' : implode(', ', array_keys($numbers));
-};
 ?>
 <div class="be-list">
     <?php if (!empty($configNotice)): ?>
     <div class="be-modal__alert be-modal__alert--error"><?= e($configNotice) ?></div>
     <?php endif; ?>
-    <form method="post" action="<?= e($action) ?>" class="be-list__section" autocomplete="off">
+    <form method="post" action="<?= e($action) ?>" class="be-list__section"<?= $isNew ? ' id="journal-capture"' : '' ?> autocomplete="off">
         <input type="hidden" name="csrf_token" value="<?= e($csrfToken ?? '') ?>">
         <input type="hidden" name="form" value="one-line">
         <?php if (!$isNew): ?>
@@ -67,12 +56,14 @@ $side = static function (\Z77\Module\Financial\Entities\JournalEntry $e, bool $d
         <input type="hidden" name="version" value="<?= (int) ($version ?? $entry->getVersion()) ?>">
         <?php endif; ?>
 
+        <?php if (!$isNew): ?>
         <div class="be-list__section-header">
             <h2 class="be-list__section-title">
-                <?= $isNew ? 'Buchung erfassen' : 'Buchung <code>' . e($year->getCode() . '/' . $entry->getNumber()) . '</code> bearbeiten' ?>
+                Buchung <code><?= e($year->getCode() . '/' . $entry->getNumber()) ?></code> bearbeiten
                 <small class="be-list__cell--muted">· Geschäftsjahr <?= e($year->getCode()) ?> (<?= e($year->getStartDate()->format('d.m.Y')) ?> – <?= e($year->getEndDate()->format('d.m.Y')) ?>)</small>
             </h2>
         </div>
+        <?php endif; ?>
 
         <?php if ($form->generalErrors() !== []): ?>
         <div class="be-modal__alert be-modal__alert--error">
@@ -81,8 +72,6 @@ $side = static function (\Z77\Module\Financial\Entities\JournalEntry $e, bool $d
             <?php endforeach; ?>
         </div>
         <?php endif; ?>
-
-        <p class="be-form__hint">Das Soll-Konto erhält den Betrag, das Haben-Konto gibt ihn ab. Betrag = Bruttobetrag laut Beleg oder Bank; mit «MwSt» rechnet das System die Steuer heraus und bucht die Steuerzeile selbst.</p>
 
         <datalist id="journal-accounts">
             <?php foreach ($form->postableAccounts() as $account): ?>
@@ -95,14 +84,15 @@ $side = static function (\Z77\Module\Financial\Entities\JournalEntry $e, bool $d
             <div class="be-form__row" style="--be-form-cols: 8rem 9.5rem 4.5rem minmax(10rem, 1fr) 8rem 8rem">
                 <div class="be-form__field" data-z77-field-wrapper>
                     <label for="journal-debit">Soll</label>
-                    <input type="text" id="journal-debit" name="debit" list="journal-accounts" value="<?= e($form->debit()) ?>" inputmode="numeric" required aria-invalid="<?= $invalid('debit') ?>">
+                    <input type="text" id="journal-debit" name="debit" list="journal-accounts" value="<?= e($form->debit()) ?>" inputmode="numeric" required<?= $isNew ? ' autofocus' : '' ?> aria-invalid="<?= $invalid('debit') ?>">
                     <?php if ($form->accountName($form->debit()) !== ''): ?><small class="be-form__resolved"><?= e($form->accountName($form->debit())) ?></small><?php endif; ?>
                     <?= raw($fieldError($form->error('debit'))) ?>
                 </div>
                 <div class="be-form__field" data-z77-field-wrapper>
                     <label for="journal-date">Datum</label>
+                    <?php /* New: any date — the fiscal year follows it. Edit: the number belongs to the year, so the date stays in it. */ ?>
                     <input type="date" id="journal-date" name="date" value="<?= e($form->date()) ?>" required
-                           min="<?= e($year->getStartDate()->format('Y-m-d')) ?>" max="<?= e($year->getEndDate()->format('Y-m-d')) ?>" aria-invalid="<?= $invalid('date') ?>">
+                           <?php if (!$isNew): ?>min="<?= e($year->getStartDate()->format('Y-m-d')) ?>" max="<?= e($year->getEndDate()->format('Y-m-d')) ?>" <?php endif; ?>aria-invalid="<?= $invalid('date') ?>">
                     <?= raw($fieldError($form->error('date'))) ?>
                 </div>
                 <div class="be-form__field">
@@ -124,7 +114,7 @@ $side = static function (\Z77\Module\Financial\Entities\JournalEntry $e, bool $d
                     <label for="journal-amount">Betrag</label>
                     <input type="text" id="journal-amount" name="amount" value="<?= e($form->amount()) ?>" inputmode="decimal" required aria-invalid="<?= $invalid('amount') ?>">
                     <?= raw($fieldError($form->error('amount'))) ?>
-                    <label class="be-reveal__label" for="journal-vat">MwSt</label>
+                    <?php if (!$isNew): ?><label class="be-reveal__label" for="journal-vat">MwSt</label><?php endif; ?>
                 </div>
             </div>
 
@@ -153,50 +143,14 @@ $side = static function (\Z77\Module\Financial\Entities\JournalEntry $e, bool $d
             </div>
         </div>
 
-        <p class="be-form__hint">
-            <button type="submit" class="be-btn be-btn--primary be-btn--sm"><?= $isNew ? 'Buchen' : 'Speichern (Änderung wird protokolliert)' ?></button>
-            <a class="be-btn be-btn--ghost be-btn--sm" href="<?= e($compound) ?>"><?= $isNew ? 'Sammelbuchung erfassen …' : 'Als Sammelbuchung bearbeiten …' ?></a>
-            <a class="be-btn be-btn--ghost be-btn--sm" href="<?= e($isNew ? $actionBase . '/list?year=' . $yearParam : $actionBase . '/detail?id=' . (int) $entry->getId()) ?>"><?= $isNew ? 'Zum Journal' : 'Abbrechen' ?></a>
-        </p>
         <?php if (!$isNew): ?>
+        <p class="be-form__hint">
+            <button type="submit" class="be-btn be-btn--primary be-btn--sm">Speichern (Änderung wird protokolliert)</button>
+            <a class="be-btn be-btn--ghost be-btn--sm" href="<?= e($compound) ?>">Als Sammelbuchung bearbeiten …</a>
+            <a class="be-btn be-btn--ghost be-btn--sm" href="<?= e($actionBase . '/detail?id=' . (int) $entry->getId()) ?>">Abbrechen</a>
+        </p>
         <p class="be-form__hint">Die Nummer <?= e($year->getCode() . '/' . $entry->getNumber()) ?> bleibt; das Datum muss im selben Geschäftsjahr liegen. Für ein anderes Jahr: löschen und dort neu erfassen.</p>
         <?php endif; ?>
     </form>
 
-    <?php if ($isNew): ?>
-    <div class="be-list__section">
-        <div class="be-list__section-header">
-            <h2 class="be-list__section-title">Letzte Buchungen <small class="be-list__cell--muted">· Geschäftsjahr <?= e($year->getCode()) ?></small></h2>
-            <span class="be-list__section-badge"><?= count($recent) ?></span>
-        </div>
-        <?php if ($recent === []): ?>
-        <p class="be-list__empty">Noch keine Buchung in diesem Geschäftsjahr.</p>
-        <?php else: ?>
-        <div class="be-list__frame">
-            <div class="be-list__table be-list__table--drop" style="--be-list-cols: 4rem 6rem minmax(10rem, 2fr) 7rem 7rem 8rem; --be-list-cols-sm: 4rem minmax(8rem, 2fr) 7rem 7rem 8rem; --be-list-cols-xs: 4rem minmax(8rem, 2fr) 7rem">
-                <div class="be-list__head">
-                    <span class="be-list__col be-list__col--num">Nr.</span>
-                    <span class="be-list__col" data-priority="3">Datum</span>
-                    <span class="be-list__col">Text</span>
-                    <span class="be-list__col" data-priority="2">Soll</span>
-                    <span class="be-list__col" data-priority="2">Haben</span>
-                    <span class="be-list__col be-list__col--num">Betrag</span>
-                </div>
-                <?php foreach ($recent as $item): ?>
-                <div class="be-list__item" data-entry-id="<?= e((string) $item->getId()) ?>">
-                    <div class="be-list__row">
-                        <span class="be-list__cell be-list__cell--num be-list__cell--mono"><a href="<?= e($actionBase) ?>/detail?id=<?= e((string) $item->getId()) ?>"><?= $item->getNumber() ?></a></span>
-                        <span class="be-list__cell" data-priority="3"><?= e($item->getDate()->format('d.m.Y')) ?></span>
-                        <span class="be-list__cell"><a href="<?= e($actionBase) ?>/detail?id=<?= e((string) $item->getId()) ?>"><?= e($item->getText()) ?></a></span>
-                        <span class="be-list__cell be-list__cell--mono" data-priority="2"><?= e($side($item, true)) ?></span>
-                        <span class="be-list__cell be-list__cell--mono" data-priority="2"><?= e($side($item, false)) ?></span>
-                        <span class="be-list__cell be-list__cell--num"><?= e($fmt($item->total())) ?></span>
-                    </div>
-                </div>
-                <?php endforeach; ?>
-            </div>
-        </div>
-        <?php endif; ?>
-    </div>
-    <?php endif; ?>
 </div>

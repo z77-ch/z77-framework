@@ -12,6 +12,8 @@
  *   [data-fetch-post]             generic POST submit
  *   [data-check-url]              attribute on a form → blur-validates each input
  *   [data-copy="<selector>"]      any clickable → copies the named element's text
+ *   [data-fetch-region="<name>"]  a part of the page that reloads alone —
+ *     a[data-fetch-region-link] / form[data-fetch-region-form] inside it (see «fetch regions»)
  *
  * Native semantics carry validity state:
  *   input/select … aria-invalid="true|false"
@@ -650,8 +652,80 @@ _Z77.core.fetch = (function () {
     };
 })();
 
+/* ── fetch regions ──────────────────────────────────────────────────────────
+ * A part of a page that reloads ALONE, the rest untouched — first user: the
+ * journal list below its capture form (FIN-JOURNAL-CAPTURE-001, owner
+ * 2026-09-28): sorting, paging, searching must not throw away a half-typed
+ * entry or its focus. Rule 7 justification: that is state in the rest of the
+ * page, which a full reload cannot keep; CSS cannot fetch.
+ *
+ * Contract (progressive: without this script every link and form works as a
+ * plain page load — the server renders the same markup either way):
+ *   [data-fetch-region="<name>"]    the part that is replaced
+ *   a[data-fetch-region-link]       inside it: a GET link that reloads only the region
+ *   form[data-fetch-region-form]    inside it: a GET form, same (Enter searches)
+ * The request goes to the link's / form's own URL in fetch mode; the server
+ * answers the page's `main` (fetch skeleton), in which the region with the
+ * same name is looked up and swapped in. The address bar follows
+ * (history.replaceState), so a reload or a bookmark shows the same state.
+ * Focus returns to the element with the same id when there is one. When the
+ * answer carries no such region, the browser simply navigates there.
+ */
+_Z77.core.region = (function () {
+    function _load(region, url) {
+        var name = region.getAttribute('data-fetch-region');
+        var focusId = document.activeElement && region.contains(document.activeElement) ? document.activeElement.id : '';
+        region.setAttribute('aria-busy', 'true');
+        return fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+            .then(function (r) { return r.text(); })
+            .then(function (html) {
+                var doc = new DOMParser().parseFromString(html, 'text/html');
+                var fresh = doc.querySelector('[data-fetch-region="' + name + '"]');
+                if (!fresh) { window.location.href = url; return; }
+                region.replaceWith(fresh);
+                history.replaceState(history.state, '', url);
+                if (focusId) {
+                    var el = document.getElementById(focusId);
+                    if (el) {
+                        el.focus();
+                        if (typeof el.setSelectionRange === 'function' && typeof el.value === 'string') {
+                            try { el.setSelectionRange(el.value.length, el.value.length); } catch (e) { /* not a text field */ }
+                        }
+                    }
+                }
+            })
+            .catch(function () { window.location.href = url; });
+    }
+
+    function bind() {
+        document.addEventListener('click', function (e) {
+            var link = e.target.closest('a[data-fetch-region-link]');
+            if (!link || e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+            var region = link.closest('[data-fetch-region]');
+            if (!region) return;
+            e.preventDefault();
+            _load(region, link.href);
+        });
+        document.addEventListener('submit', function (e) {
+            var form = e.target.closest('form[data-fetch-region-form]');
+            if (!form || e.defaultPrevented || (form.method || 'get').toLowerCase() !== 'get') return;
+            var region = form.closest('[data-fetch-region]');
+            if (!region) return;
+            e.preventDefault();
+            var url = new URL(form.action, window.location.href);
+            var params = new URLSearchParams();
+            new FormData(form).forEach(function (value, key) { if (value !== '') params.append(key, value); });   // empty fields stay out of the address
+            url.search = params.toString();
+            _load(region, url.toString());
+        });
+    }
+
+    return { bind: bind, load: _load };
+})();
+
 /* ── boot ───────────────────────────────────────────────────────────────── */
 document.addEventListener('DOMContentLoaded', function () {
+    _Z77.core.region.bind();
     _Z77.core.i18n.load();
     _Z77.core.wire(document);
     _bindCheckUrl(document);

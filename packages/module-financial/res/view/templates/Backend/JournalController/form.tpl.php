@@ -31,12 +31,8 @@
  */
 $actionBase = $actionBase ?? '/backend/finance/journal';
 $isNew      = $entry === null;
-$action     = $isNew
-    ? $actionBase . '/add-compound?year=' . rawurlencode($year->getCode())
-    : $actionBase . '/edit?id=' . (int) $entry->getId();
-$oneLine    = $isNew
-    ? $actionBase . '/add?year=' . rawurlencode($year->getCode()) . ($form->date() !== '' ? '&date=' . rawurlencode($form->date()) : '')
-    : (($oneLineFits ?? false) ? $actionBase . '/edit?id=' . (int) $entry->getId() : null);
+$action     = $isNew ? $actionBase . '/add-compound' : $actionBase . '/edit?id=' . (int) $entry->getId();
+$oneLine    = !$isNew && ($oneLineFits ?? false) ? $actionBase . '/edit?id=' . (int) $entry->getId() : null;
 [$debit, $credit] = $form->sums();
 $difference = $debit->subtract($credit);
 $accounts   = $form->postableAccounts();
@@ -50,19 +46,21 @@ $fieldError = static fn(string $message): string => $message === ''
     <?php if (!empty($configNotice)): ?>
     <div class="be-modal__alert be-modal__alert--error"><?= e($configNotice) ?></div>
     <?php endif; ?>
-    <form method="post" action="<?= e($action) ?>" class="be-list__section" autocomplete="off">
+    <form method="post" action="<?= e($action) ?>" class="be-list__section"<?= $isNew ? ' id="journal-capture"' : '' ?> autocomplete="off">
         <input type="hidden" name="csrf_token" value="<?= e($csrfToken ?? '') ?>">
         <?php if (!$isNew): ?>
         <input type="hidden" name="entity_csrf" value="<?= e($entityCsrf ?? '') ?>">
         <input type="hidden" name="version" value="<?= (int) ($version ?? $entry->getVersion()) ?>">
         <?php endif; ?>
 
+        <?php if (!$isNew): ?>
         <div class="be-list__section-header">
             <h2 class="be-list__section-title">
-                <?= $isNew ? 'Sammelbuchung erfassen' : 'Buchung <code>' . e($year->getCode() . '/' . $entry->getNumber()) . '</code> bearbeiten' ?>
+                Buchung <code><?= e($year->getCode() . '/' . $entry->getNumber()) ?></code> bearbeiten
                 <small class="be-list__cell--muted">· Geschäftsjahr <?= e($year->getCode()) ?> (<?= e($year->getStartDate()->format('d.m.Y')) ?> – <?= e($year->getEndDate()->format('d.m.Y')) ?>)</small>
             </h2>
         </div>
+        <?php endif; ?>
 
         <?php if ($form->generalErrors() !== []): ?>
         <div class="be-modal__alert be-modal__alert--error">
@@ -74,9 +72,10 @@ $fieldError = static fn(string $message): string => $message === ''
 
         <div class="be-form__grid">
             <div class="be-form__field" data-z77-field-wrapper>
-                <label>Datum <small>(im Geschäftsjahr — die Periode entscheidet, ob gebucht werden darf)</small></label>
-                <input type="date" name="date" value="<?= e($form->date()) ?>" required
-                       min="<?= e($year->getStartDate()->format('Y-m-d')) ?>" max="<?= e($year->getEndDate()->format('Y-m-d')) ?>"
+                <label>Datum</label>
+                <?php /* New: any date — the fiscal year follows it. Edit: the date stays in the entry's year. */ ?>
+                <input type="date" name="date" value="<?= e($form->date()) ?>" required<?= $isNew ? ' autofocus' : '' ?>
+                       <?php if (!$isNew): ?>min="<?= e($year->getStartDate()->format('Y-m-d')) ?>" max="<?= e($year->getEndDate()->format('Y-m-d')) ?>"<?php endif; ?>
                        aria-invalid="<?= $form->error('date') !== '' ? 'true' : 'false' ?>">
                 <?= raw($fieldError($form->error('date'))) ?>
             </div>
@@ -89,7 +88,6 @@ $fieldError = static fn(string $message): string => $message === ''
         </div>
 
         <div class="be-form__section">Zeilen</div>
-        <p class="be-form__hint">Eine Zeile pro Konto, der Betrag im Soll ODER im Haben — Total Soll muss Total Haben ergeben. Ein MWST-Code gehört auf die Netto-Zeile; die Steuerzeile (Vorsteuer / geschuldete MWST) wird hier selbst erfasst.</p>
         <datalist id="journal-accounts">
             <?php foreach ($accounts as $account): ?>
             <option value="<?= e($account->getNumber()) ?>"><?= e($account->label()) ?></option>
@@ -152,13 +150,17 @@ $fieldError = static fn(string $message): string => $message === ''
             </div>
         </div>
 
+        <?php /* New: «Buchen» is in the toolbar (form="journal-capture", op=save) — and comes
+                 first in the document, so Enter posts instead of adding rows. */ ?>
         <p class="be-form__hint">
             <button type="submit" class="be-btn be-btn--ghost be-btn--sm" name="op" value="more">Weitere Zeilen</button>
-            <button type="submit" class="be-btn be-btn--primary be-btn--sm" name="op" value="save"><?= $isNew ? 'Buchen' : 'Speichern (Änderung wird protokolliert)' ?></button>
+            <?php if (!$isNew): ?>
+            <button type="submit" class="be-btn be-btn--primary be-btn--sm" name="op" value="save">Speichern (Änderung wird protokolliert)</button>
             <?php if ($oneLine !== null): ?>
-            <a class="be-btn be-btn--ghost be-btn--sm" href="<?= e($oneLine) ?>"><?= $isNew ? 'Einzeilige Buchung …' : 'Einzeilig bearbeiten …' ?></a>
+            <a class="be-btn be-btn--ghost be-btn--sm" href="<?= e($oneLine) ?>">Einzeilig bearbeiten …</a>
             <?php endif; ?>
-            <a class="be-btn be-btn--ghost be-btn--sm" href="<?= e($isNew ? $actionBase . '/list?year=' . rawurlencode($year->getCode()) : $actionBase . '/detail?id=' . (int) $entry->getId()) ?>">Abbrechen</a>
+            <a class="be-btn be-btn--ghost be-btn--sm" href="<?= e($actionBase . '/detail?id=' . (int) $entry->getId()) ?>">Abbrechen</a>
+            <?php endif; ?>
         </p>
         <?php if (!$isNew): ?>
         <p class="be-form__hint">Die Nummer <?= e($year->getCode() . '/' . $entry->getNumber()) ?> bleibt; das Datum muss im selben Geschäftsjahr liegen. Für ein anderes Jahr: löschen und dort neu erfassen.</p>

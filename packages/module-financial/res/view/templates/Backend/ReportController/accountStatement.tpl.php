@@ -102,7 +102,7 @@ $cols = '--be-list-cols: 6rem 4rem minmax(12rem, 2fr) minmax(8rem, 1fr) 8rem 8re
             </div>
         </div>
         <p class="be-form__hint">Anfangssaldo <?= e($fmt($report->opening)) ?> (Buchungen dieses Geschäftsjahres vor dem <?= e($range->from->format('d.m.Y')) ?>) · Saldo positiv auf der natürlichen Seite des Kontos (<?= \Z77\Module\Financial\Entities\AccountType::from($account->getType())->isDebitNormal() ? 'Soll' : 'Haben' ?>).</p>
-        <?= $this->partial('Backend/ReportController/pager', [
+        <?= $this->partial('Backend/partials/pager', [
             'paging'   => $paging,
             'unit'     => 'Zeilen',
             'pageLink' => fn(int $p) => $link('account-statement', ['account' => $account->getNumber(), 'page' => $p]),
