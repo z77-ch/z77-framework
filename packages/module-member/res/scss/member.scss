@@ -343,14 +343,13 @@ $fb-info-tint: $fb-bg;
         background: var(--surface, #{$fb-surface});
     }
 
-    // The actions on the shown thing (edit, save, cancel) at the right END of
-    // the toolbar — beside tabs as well as beside tools (ADR-033, 2026-09-28:
-    // left = choose, right = work).
+    // The actions on the shown thing a screen puts into the toolbar
+    // (`shellWorkActions`, ADR-033 rev. 2026-09-28) — LEFT-aligned like
+    // everything in the toolbar, after the tabs or tools (Peter, 2026-09-28).
     &__actions {
         display: flex;
         align-items: center;
         gap: 0.5rem;
-        margin-left: auto;
         flex: none;
 
         .me-btn { width: auto; }

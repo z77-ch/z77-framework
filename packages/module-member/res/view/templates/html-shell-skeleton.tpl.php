@@ -21,7 +21,7 @@
  * ADR-033 (one rule for every shell, revised 2026-09-28): the ACTION CELL
  * carries the context's action(s) — `$shellActions`, the default place. The
  * TOOLBAR carries the page's tabs or tools on the left and, where a screen
- * decides so, actions on the SHOWN thing at its right end —
+ * decides so, actions on the SHOWN thing after them, left-aligned —
  * `$shellWorkActions` (owner, case by case: «left chooses, right works»).
  * The CRUMB LINE says where one is — nothing else.
  *
@@ -42,7 +42,7 @@
  * @var ?array $railItems    rows of the left column; absent = plain page
  * @var ?array $shellActions the context's action(s), max two — the action cell (see partials/shell/action)
  * @var ?array $shellAction  legacy single action — normalised into the list
- * @var ?array $shellWorkActions actions on the SHOWN thing a screen places on the work side — right end of the toolbar
+ * @var ?array $shellWorkActions actions on the SHOWN thing a screen places in the toolbar — after tabs or tools, left-aligned
  * @var ?bool  $detailOpen   something is selected: the narrow drawer starts closed (else open)
  * @var ?array $shellTabs    the page's tabs [{id,label,active?}]; absent = none
  * @var ?array $shellTools   the page's tools (see partials/shell/tools); ignored when tabs are present
@@ -101,7 +101,8 @@ $work       = !empty($railItems) || $actionList !== [] || $workList !== [];
              a page whose tools are richer than a button list — a filter form,
              say — hands in its own partial, the same way a backend screen
              fills hc2. Actions a screen puts on the WORK side
-             (`$shellWorkActions`) sit at the right end, beside tabs as well
+             (`$shellWorkActions`) follow them, left-aligned like everything
+             in the toolbar, beside tabs as well
              as beside tools (ADR-033, 2026-09-28 — case by case). */ ?>
     <div class="me-shell__toolbar">
         <?php if (!empty($shellTabs)): ?>

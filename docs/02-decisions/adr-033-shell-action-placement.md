@@ -28,7 +28,7 @@ added 2026-09-28. The header slots also load as `{action}.act|toolbar|crumb.tpl.
 | Place | backend | member | Carries |
 |---|---|---|---|
 | **Action cell** | `hc1` / `{action}.act` | `me-shell__act` (`shellActions`) | the context's DECISIVE action(s) — max two VISIBLE buttons; weight follows meaning (accent = forward, quiet = ends/leaves). The default place for an action |
-| **Toolbar** | `hc2` / `{action}.toolbar` | `me-shell__toolbar` (`shellTabs` / `shellTools`; `shellWorkActions`) | the page's TABS or its TOOLS on the left — never both. Tools include the shown thing's STATE SWITCHES and a list's FILTERS (revised 2026-08-15). At its right end: actions on the SHOWN thing where the owner decided so for that screen (revised 2026-09-28, case by case — see below) |
+| **Toolbar** | `hc2` / `{action}.toolbar` | `me-shell__toolbar` (`shellTabs` / `shellTools`; `shellWorkActions`) | the page's TABS or its TOOLS on the left — never both. Tools include the shown thing's STATE SWITCHES and a list's FILTERS (revised 2026-08-15). After them, LEFT-aligned like everything in the toolbar: actions on the SHOWN thing where the owner decided so for that screen (revised 2026-09-28, case by case — see below) |
 | **Crumb line** | `hc3` (own slim row) | `me-shell__crumbs` (own slim row) | POSITION only — the breadcrumb, nothing else |
 | **Content** | column 2 | detail pane | only what is bound to an in-content selection, and dialog-internal buttons |
 
@@ -100,12 +100,13 @@ already right.
   area's new entry («Neues Snippet», «Neue Seite», «Liegenschaft erfassen»),
   refreshing the list («Bestand aktualisieren»), a form's Speichern +
   Abbrechen, the Bestand's «Bearbeiten».
-- **The right end of the toolbar** takes an action on the SHOWN thing where
+- **The toolbar** takes an action on the SHOWN thing where
   the owner decided so for that screen (`hc2`, member `shellWorkActions`).
   Decided so far: axo3 «Mandant» — «Bearbeiten» (Stammdaten) and «Einladen»
   (Zugänge); the journal — «Buchen» + «MwSt» in the toolbar, «Einzel |
   Sammel» in the action cell (FIN-JOURNAL-CAPTURE-001). **Tabs and such
-  actions share the row** — tabs on the left, actions at the right end.
+  actions share the row** — the actions follow the tabs; everything in the
+  toolbar is LEFT-aligned (owner, 2026-09-28).
 - A new screen asks the question explicitly: does this action belong to the
   choice or to the shown thing? When unsure, the action cell.
 
