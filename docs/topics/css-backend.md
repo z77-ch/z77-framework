@@ -1,6 +1,6 @@
 # css-backend
 
-2026-09-23
+2026-09-28
 
 ## entry
 
@@ -139,6 +139,39 @@ itself into `public/` is NOT touched — that file belongs to the project.
 | Resizable panes, pane scrolling, drag handle, narrow-screen detail overlay | `kernel/shared/res/scss/components/_split.scss` (`.z77-split`) — SHARED, host-neutral; edit only for geometry |
 | Make `.z77-split` follow the backend palette | `components/_split-host.scss` (4 tokens) |
 
+## shell regions (glossary)
+
+ONE region vocabulary for the backend shell and the member shell (decided 2026-09-28,
+SHELL-GLOSSARY-001). The English name is the job name used in new classes and template
+suffixes; the German column is the word used when talking about the screen (it matches
+[`arbeitsflaeche-bauplan.md`](../03-development/arbeitsflaeche-bauplan.md)). The existing
+classes are NOT renamed — this table is their translation. Member is the reference shell.
+Where each ACTION goes between these regions is [ADR-033](../02-decisions/adr-033-shell-action-placement.md).
+
+| Region | Backend | Member | German |
+|---|---|---|---|
+| Shell (grid root) | `.be-shell` | `.me-body--shell` | Schale |
+| Top bar | `.be-shell-topbar` (`--shell-bar`, `--be-topbar`) | `.me-shell__head-l` / `__head-r` | Kopfleiste |
+| Area switcher (top left, over the rail) | `.be-shell-topbar__mod`, `.be-shell-mod*` | `.me-shell__area`, `.me-switcher` | Bereichswähler |
+| Action cell (the decisive action) | `.be-shell-band__slot--1`, template `{action}.act` (old: `.hc1`) | `.me-shell__act` | Aktionszelle |
+| Toolbar (tools OR tabs) | `.be-shell-band__slot--2`, template `{action}.toolbar` (old: `.hc2`) | `.me-shell__toolbar` | Werkzeugzeile |
+| Tab row (backend only, optional) | `.be-shell-tabs`, `.be-viewtabs`, template `{action}.tabs` | tabs live inside `__toolbar` (`.me-tabs`) | Reiterzeile |
+| Crumb line (position only) | `.be-shell-crumb__slot--2`, `.be-crumb`, template `{action}.crumb` (old: `.hc3`) | `.me-shell__crumbs`, `.me-crumb` | Krumenzeile |
+| Crumb gap (bare island cell left of the crumb line) | `.be-shell-crumb__slot--1` | `.me-shell__crumbgap` | Krumenlücke |
+| Rail (left orientation column) | `.be-shell-col--1` (`--shell-c1`), content `.backend-subnav` | `.me-rail` (`--rail-w`) | Schiene |
+| Work area (content column) | `.be-shell-col--2` | `.me-shell__work` | Arbeitsfläche |
+| Seam (divider between rail and work area) | no class of its own; the handle is `.be-shell__resizer` | `.me-shell__seam` | Naht |
+| Banner (shell-level, non-dismissible) | `.be-shell-banner` | — | Störer |
+| State (dot + text) | `.be-shell-status` | `.me-band` | Zustand |
+
+- **Band** is not a region of its own: it is the backend's name for the ROW that holds action
+  cell + toolbar (`.be-shell-band`, `--shell-band`). The member has no such row name.
+- **Slot numbers are positions, not names.** `hc1|hc2|hc3` and `__slot--1|--2` say where a
+  thing sits, not what it is — `hc3` meant column 3 before it meant the crumb line
+  (SHELL-COL3-REMOVED-001), which is exactly the confusion a job name prevents.
+- **«Kopfzeile» is not a region name** — it was used for the top bar, the band and the crumb
+  line. Say Kopfleiste, Aktionszelle/Werkzeugzeile or Krumenzeile.
+
 ## backend theme tokens (--be-*)
 
 Defined in `tokens/_colors.scss`, declared on the `.be` wrapper (`<html class="be">`), not `:root` (ADR-018) — default `werkbank`, light. Override with `[data-be-palette="citrus|coral|lagune|beere|sonne"]` and/or `[data-be-theme="dark"]` on the same `<html>` element (kept after the `.be` block in source → wins at equal specificity).
@@ -150,8 +183,8 @@ Active palette + theme are written by `BackendAbstractController::html()` as `da
 | `--be-bg` | page background |
 | `--be-surface` | card / panel surface |
 | `--be-surface2` | slightly darker surface (panel headers, table header) |
-| `--be-rail` | topbar background |
-| `--be-rail-text` | topbar text color |
+| `--be-topbar` | top bar background (was `--be-rail` until 2026-09-28 — SHELL-GLOSSARY-001) |
+| `--be-topbar-text` | top bar text color (was `--be-rail-text`) |
 | `--be-text` | primary text |
 | `--be-muted` | secondary / helper text |
 | `--be-line` | borders and dividers |
@@ -207,6 +240,9 @@ packages/module-backend/res/view/templates/
 - The header band renders ALWAYS (both slots, even when empty) — it is a property of the shell, not of the screen (HEADER-BAND-ALWAYS-001). When a screen has no global action → MUST leave the slot empty rather than reintroduce a conditional band; MUST NOT invent an add button for a screen whose actions are all per row (use `.be-shell-status` for its state instead).
 - When a screen's health or queue state must be readable without reading the body (job runner, import plan, member queue) → MUST use `.be-shell-status` (`__dot` + `__text`, `--ok` / `--bad`) in hc2; MUST NOT use `.badge` for it — that component runs on the light-only `--color-*` set and is wrong in dark mode.
 - When filling a shell header slot (`{Group}/{Controller}/{action}.hc1|hc2|hc3.tpl.php`) → MUST keep it to a SINGLE line. `.be-shell-band__slot` is a FIXED-height band (`height: 46px`, not `min-height`) so every slot stays exactly equal (empty or filled) and the band lines up across columns. Content that needs more room MUST go into a dropdown or popup — MUST NOT make the band taller (would break the cross-column alignment). An hc1 primary action MUST wrap its text in `<span class="be-btn__label">` — the mobile band collapses the button to its glyph, and a bare text node cannot be hidden by CSS (SHELL-BAND-ROW-001). A view with SEVERAL add kinds MUST use the `.be-shell-add` hc1 picker (a «＋ add» button that opens a panel to choose the type, via the panel-toggle contract) rather than stacking multiple add buttons in the band (e.g. translation: Text / Slug). The band scales in fixed px, not `em`/`rem`: it is chrome and matches the font-capped buttons (see FONT-CAP-001) — the font slider scales content, not chrome. If a slot's text grows too large at high font scale, cap it with `.be-font-cap` rather than making the height relative.
+- When naming a NEW shell region, a region-level class, or a new header-slot template in any shell → MUST use the glossary job name (`topbar` / `area` / `act` / `toolbar` / `crumbs` / `rail` / `work` / `seam` — see [shell regions](#shell-regions-glossary)); new slot templates MUST be `{action}.act|toolbar|crumb.tpl.php`. MUST NOT name a class after a slot number or file suffix (`hc1`, `hc2`, `hc3`) — axo3's `.be-stock__hcfilter|hccount|hctools|…` is the counterexample. Existing `hc*` templates and `__slot--N` classes stay valid; do not rename them in passing.
+- `rail` / Schiene MUST mean the LEFT orientation column in every shell; the top bar is `topbar` (`--be-topbar`). `band` MUST mean the backend row holding action cell + toolbar only; a state sentence is `status` / Zustand (`.be-shell-status`), a shell-level notice is `banner` / Störer (`.be-shell-banner`). MUST NOT introduce a new `*-rail*` or `*-band*` name for anything else.
+- When a screen needs something a region already provides → MUST reuse that region's component (`.be-viewtabs` for tabs, `.be-shell-status` for state, `.be-shell-add` for several add kinds); a screen-local component MUST NOT redefine a region (no second rail, no own tab strip) — zihlundsee's `.pba-tabs` and axo3's `.be-stock__nav` are the counterexamples.
 
 ## see also
 
@@ -215,6 +251,25 @@ packages/module-backend/res/view/templates/
 - [`../01-handbook/css-conventions.md`](../01-handbook/css-conventions.md) — BEM, tokens, component patterns
 
 ## known issues
+
+- **SHELL-GLOSSARY-001** — added 2026-09-28 (owner decision; survey over framework, axo3.ch,
+  zihlundsee.ch and z77.ch). **The two shells had no shared names for their regions.** ADR-033
+  named four places; the shells have about twelve regions, and two words collided: `rail` was
+  the TOP bar in the backend (`--be-rail`) and the LEFT column in the member (`--rail-w`);
+  `band` was the backend's hc1|hc2 row, the member's state sentence (`.me-band`) and a Lottie
+  band in the frontend. Projects then named what they built after slot numbers — axo3 grew
+  `.be-stock__hcfilter|hccount|hctools|hcswitch|hciso|hcstate`. Now: the glossary in
+  [shell regions](#shell-regions-glossary) plus three rules. Exactly ONE rename:
+  `--be-rail` → `--be-topbar`, `--be-rail-text` → `--be-topbar-text` (all twelve palette ×
+  theme blocks and the one reader in `_shell.scss`), because `rail` is needed for the left
+  column. ⚠️ **A project override that reads `var(--be-rail)` silently falls back to nothing**
+  — none existed at the time of the rename (only published copies of `base.css`, refreshed by
+  `composer install`). No class was renamed: `.be-shell-band__slot--1|--2` etc. stay, the
+  glossary translates them. The header-slot loader additionally accepts
+  `{action}.act|toolbar|crumb.tpl.php` for `hc1|hc2|hc3` (the speaking name wins when both
+  exist, only one loads); nothing was migrated. `.me-band` keeps its name although the rule
+  now calls that job `status` — member is the reference and is not rebuilt. **Not verified
+  live.**
 
 - **LIST-V2-001** — added 2026-08-08. `.be-list` v2 exists alongside `.be-tree--hub`; **new screens
   use v2, v1 is migration-only** (LIST-ANATOMY-001 has the inventory that motivated it). Two

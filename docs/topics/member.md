@@ -184,6 +184,7 @@ master invites address ─▶ token + mail ─┬─ unknown address: name form 
 - [`login.md`](login.md) — the ADMIN login this module deliberately does not touch (`AuthUser`, `AccessGuard`, role resolution)
 - [`security.md`](security.md) — CSRF, throttling and the per-user second-factor roadmap for `BackendUser`
 - [`forms.md`](forms.md) — the public-form standard the register/login/resend pages are built on
+- [`css-backend.md`](css-backend.md) — the shell-region glossary (rail, seam, act, toolbar, …) that the member shell shares with the backend; member is its reference
 - [`mail.md`](mail.md) — `EmailMessage`, templates and the email settings the mails go out through
 - [`view-layer.md`](view-layer.md) — the brand mark above every member page comes from the shared `partials/brandMark`; a project changes its logo by overriding that one file, not the member templates
 - [`../02-decisions/adr-029-member-session-and-framework-acl.md`](../02-decisions/adr-029-member-session-and-framework-acl.md) — why the two auth worlds are separate and what has to be decided before they meet

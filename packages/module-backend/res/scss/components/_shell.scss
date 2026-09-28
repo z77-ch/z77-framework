@@ -428,8 +428,8 @@ body.backend {
     align-items:   center;
     gap:           var(--space-2);
     padding-right: var(--space-3);
-    background:    var(--be-rail);
-    color:         var(--be-rail-text);
+    background:    var(--be-topbar);
+    color:         var(--be-topbar-text);
     border-bottom: 1px solid var(--be-line);
     z-index:       var(--z-topbar);
 }

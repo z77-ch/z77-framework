@@ -20,7 +20,10 @@ does not build a habit.
 ## Decision
 
 Every shell offers the same four places, and what a screen puts where
-follows ONE rule:
+follows ONE rule. (The names of ALL shell regions — top bar, rail, seam, work
+area and the rest, with their backend / member classes and German words — are
+in the glossary in [`css-backend.md` → shell regions](../topics/css-backend.md#shell-regions-glossary),
+added 2026-09-28. The header slots also load as `{action}.act|toolbar|crumb.tpl.php`.)
 
 | Place | backend | member | Carries |
 |---|---|---|---|
