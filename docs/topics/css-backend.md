@@ -148,6 +148,8 @@ suffixes; the German column is the word used when talking about the screen (it m
 classes are NOT renamed — this table is their translation. Member is the reference shell.
 Where each ACTION goes between these regions is [ADR-033](../02-decisions/adr-033-shell-action-placement.md).
 
+![Shell regions — backend and member side by side, same colour = same region](../01-handbook/shell-regions.svg)
+
 | Region | Backend | Member | German |
 |---|---|---|---|
 | Shell (grid root) | `.be-shell` | `.me-body--shell` | Schale |
@@ -159,7 +161,7 @@ Where each ACTION goes between these regions is [ADR-033](../02-decisions/adr-03
 | Crumb line (position only) | `.be-shell-crumb__slot--2`, `.be-crumb`, template `{action}.crumb` (old: `.hc3`) | `.me-shell__crumbs`, `.me-crumb` | Krumenzeile |
 | Crumb gap (bare island cell left of the crumb line) | `.be-shell-crumb__slot--1` | `.me-shell__crumbgap` | Krumenlücke |
 | Rail (left orientation column) | `.be-shell-col--1` (`--shell-c1`), content `.backend-subnav` | `.me-rail` (`--rail-w`) | Schiene |
-| Work area (content column) | `.be-shell-col--2` | `.me-shell__work` | Arbeitsfläche |
+| Work area (content column) | `.be-shell-col--2` | the detail pane `.z77-split__pane--detail` inside `.me-shell__work` (which is the whole row: rail + detail) | Arbeitsfläche |
 | Seam (divider between rail and work area) | no class of its own; the handle is `.be-shell__resizer` | `.me-shell__seam` | Naht |
 | Banner (shell-level, non-dismissible) | `.be-shell-banner` | — | Störer |
 | State (dot + text) | `.be-shell-status` | `.me-band` | Zustand |

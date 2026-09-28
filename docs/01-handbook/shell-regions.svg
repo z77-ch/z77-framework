@@ -1,0 +1,155 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1240" height="660" viewBox="0 0 1240 660" font-family="system-ui, 'Segoe UI', Arial, sans-serif">
+  <title>Shell regions — backend and member (glossary, SHELL-GLOSSARY-001)</title>
+  <style>
+    .t  { font-size: 17px; font-weight: 700; fill: #263238; }
+    .tm { font-size: 12px; font-family: Consolas, ui-monospace, monospace; fill: #546e7a; }
+    .h  { font-size: 13px; font-weight: 700; fill: #212121; }
+    .m  { font-size: 11px; font-family: Consolas, ui-monospace, monospace; fill: #37474f; }
+    .n  { font-size: 12px; fill: #546e7a; font-style: italic; }
+    .f  { font-size: 12px; fill: #37474f; }
+    .r  { stroke-width: 1.5; }
+    .topbar   { fill: #e8eaf6; stroke: #5c6bc0; }
+    .area     { fill: #d1c4e9; stroke: #7e57c2; }
+    .act      { fill: #ffe0b2; stroke: #ef6c00; }
+    .toolbar  { fill: #c8e6c9; stroke: #2e7d32; }
+    .tabs     { fill: #f0f4c3; stroke: #9e9d24; }
+    .crumbs   { fill: #b3e5fc; stroke: #0277bd; }
+    .crumbgap { fill: #eceff1; stroke: #90a4ae; }
+    .rail     { fill: #f8bbd0; stroke: #c2185b; }
+    .work     { fill: #fff9c4; stroke: #f9a825; }
+    .state    { fill: #b2dfdb; stroke: #00796b; }
+    .banner   { fill: #ffcdd2; stroke: #c62828; }
+    .seam     { fill: #6d4c41; }
+    .opt      { stroke-dasharray: 5 4; }
+    .shell    { fill: none; stroke: #263238; stroke-width: 2; }
+    .lead     { stroke: #6d4c41; stroke-width: 1.2; fill: none; }
+  </style>
+  <rect width="1240" height="660" fill="#ffffff"/>
+
+  <!-- ═════════════ BACKEND ═════════════ -->
+  <text class="t" x="20" y="34">Backend-Shell</text>
+  <text class="tm" x="140" y="34">Schale · .be-shell</text>
+
+  <!-- Banner (above the shell grid, only when set) -->
+  <rect class="r banner opt" x="20" y="52" width="560" height="34" rx="3"/>
+  <text class="h" x="30" y="74">Störer</text>
+  <text class="m" x="80" y="74">banner · .be-shell-banner  (nur wenn gesetzt, über der Schale)</text>
+
+  <!-- Row 1: top bar with the area switcher -->
+  <rect class="r topbar" x="20" y="96" width="560" height="50"/>
+  <rect class="r area" x="26" y="102" width="188" height="38" rx="3"/>
+  <text class="h" x="34" y="118">Bereichswähler</text>
+  <text class="m" x="34" y="133">area · .be-shell-topbar__mod</text>
+  <text class="h" x="236" y="118">Kopfleiste</text>
+  <text class="m" x="236" y="133">topbar · .be-shell-topbar · --be-topbar</text>
+
+  <!-- Row 2: band = action cell + toolbar -->
+  <rect class="r act" x="20" y="152" width="200" height="56"/>
+  <text class="h" x="30" y="175">Aktionszelle</text>
+  <text class="m" x="30" y="192">act · hc1 · band__slot--1</text>
+  <rect class="r toolbar" x="226" y="152" width="354" height="56"/>
+  <text class="h" x="236" y="175">Werkzeugzeile</text>
+  <text class="m" x="236" y="192">toolbar · hc2 · band__slot--2</text>
+  <rect class="r state" x="450" y="159" width="124" height="42" rx="3"/>
+  <text class="h" x="458" y="176">● Zustand</text>
+  <text class="m" x="458" y="192">.be-shell-status</text>
+
+  <!-- Row 3 (optional): tab row -->
+  <rect class="r crumbgap opt" x="20" y="214" width="200" height="34"/>
+  <rect class="r tabs opt" x="226" y="214" width="354" height="34"/>
+  <text class="h" x="236" y="236">Reiterzeile</text>
+  <text class="m" x="320" y="236">tabs · .be-viewtabs  (optional)</text>
+
+  <!-- Row 4: crumb gap + crumb line -->
+  <rect class="r crumbgap" x="20" y="254" width="200" height="34"/>
+  <text class="h" x="30" y="276">Krumenlücke</text>
+  <text class="m" x="120" y="276">crumb__slot--1</text>
+  <rect class="r crumbs" x="226" y="254" width="354" height="34"/>
+  <text class="h" x="236" y="276">Krumenzeile</text>
+  <text class="m" x="326" y="276">crumbs · hc3 · .be-crumb</text>
+
+  <!-- Row 5: rail | seam | work -->
+  <rect class="r rail" x="20" y="294" width="200" height="210"/>
+  <text class="h" x="30" y="318">Schiene</text>
+  <text class="m" x="30" y="335">rail · .be-shell-col--1</text>
+  <text class="m" x="30" y="350">--shell-c1 · .backend-subnav</text>
+  <rect class="seam" x="220" y="294" width="6" height="210"/>
+  <rect class="r work" x="226" y="294" width="354" height="210"/>
+  <text class="h" x="236" y="318">Arbeitsfläche</text>
+  <text class="m" x="236" y="335">work · .be-shell-col--2</text>
+
+  <rect class="shell" x="20" y="96" width="560" height="408"/>
+
+  <!-- band bracket -->
+  <path class="lead" d="M586 152 h6 v56 h-6"/>
+  <text class="n" x="598" y="184">band</text>
+
+  <!-- seam callout -->
+  <path class="lead" d="M223 504 v26 h14"/>
+  <text class="h" x="242" y="534">Naht</text>
+  <text class="m" x="280" y="534">seam · Griff .be-shell__resizer</text>
+
+  <!-- ═════════════ MEMBER ═════════════ -->
+  <text class="t" x="660" y="34">Member-Shell</text>
+  <text class="tm" x="782" y="34">Schale · .me-body--shell</text>
+  <text class="n" x="660" y="74">kein Störer · keine Reiterzeile (Reiter liegen in der Werkzeugzeile)</text>
+
+  <!-- Row 1: head-l (with area switcher) | seam | head-r -->
+  <rect class="r topbar" x="660" y="96" width="200" height="50"/>
+  <rect class="r area" x="666" y="102" width="188" height="38" rx="3"/>
+  <text class="h" x="674" y="118">Bereichswähler</text>
+  <text class="m" x="674" y="133">area · .me-shell__area</text>
+  <rect class="r topbar" x="866" y="96" width="354" height="50"/>
+  <text class="h" x="876" y="118">Kopfleiste</text>
+  <text class="m" x="876" y="133">topbar · __head-l + __head-r</text>
+
+  <!-- Row 2: act | toolbar (tabs live here) -->
+  <rect class="r act" x="660" y="152" width="200" height="56"/>
+  <text class="h" x="670" y="175">Aktionszelle</text>
+  <text class="m" x="670" y="192">act · .me-shell__act</text>
+  <rect class="r toolbar" x="866" y="152" width="354" height="56"/>
+  <text class="h" x="876" y="175">Werkzeugzeile</text>
+  <text class="m" x="876" y="192">toolbar · .me-shell__toolbar</text>
+  <rect class="r tabs" x="1100" y="159" width="114" height="42" rx="3"/>
+  <text class="h" x="1108" y="176">Reiter</text>
+  <text class="m" x="1108" y="192">.me-tabs</text>
+
+  <!-- Row 3: crumb gap | crumb line (aligned with the backend crumb row) -->
+  <rect class="r crumbgap" x="660" y="214" width="200" height="74"/>
+  <text class="h" x="670" y="246">Krumenlücke</text>
+  <text class="m" x="670" y="262">.me-shell__crumbgap</text>
+  <rect class="r crumbs" x="866" y="214" width="354" height="74"/>
+  <text class="h" x="876" y="246">Krumenzeile</text>
+  <text class="m" x="876" y="262">crumbs · .me-shell__crumbs · .me-crumb</text>
+
+  <!-- Row 4: .me-shell__work holds the split: rail pane | detail pane -->
+  <rect class="r rail" x="660" y="294" width="200" height="210"/>
+  <text class="h" x="670" y="318">Schiene</text>
+  <text class="m" x="670" y="335">rail · .me-rail</text>
+  <text class="m" x="670" y="350">--rail-w</text>
+  <rect class="r work" x="866" y="294" width="354" height="210"/>
+  <rect class="r state" x="876" y="302" width="180" height="42" rx="3"/>
+  <text class="h" x="884" y="319">● Zustand</text>
+  <text class="m" x="884" y="335">status · .me-band</text>
+  <text class="h" x="876" y="372">Arbeitsfläche</text>
+  <text class="m" x="876" y="389">work · Detail-Pane</text>
+  <text class="m" x="876" y="404">.z77-split__pane--detail</text>
+  <text class="n" x="876" y="490">.me-shell__work = ganze Zeile (Schiene + Detail)</text>
+
+  <!-- seam spans all rows in the member grid -->
+  <rect class="seam" x="860" y="96" width="6" height="408"/>
+
+  <rect class="shell" x="660" y="96" width="560" height="408"/>
+
+  <!-- seam callout -->
+  <path class="lead" d="M863 504 v26 h14"/>
+  <text class="h" x="882" y="534">Naht</text>
+  <text class="m" x="920" y="534">seam · .me-shell__seam (alle Zeilen)</text>
+
+  <!-- ═════════════ FOOTER ═════════════ -->
+  <line x1="20" y1="566" x2="1220" y2="566" stroke="#cfd8dc"/>
+  <text class="f" x="20" y="590">Gleiche Farbe = gleiche Region. Fett = deutsches Wort, darunter Jobname · Klasse. Gestrichelt = optional.</text>
+  <text class="f" x="20" y="610">Slotnummern (hc1–hc3, __slot--N) sind Positionen, keine Namen — neue Klassen und Templates tragen den Jobname ({action}.act|toolbar|crumb.tpl.php).</text>
+  <text class="f" x="20" y="630">«rail» = immer die linke Spalte. «band» = nur die Backend-Zeile aus Aktionszelle + Werkzeugzeile. «Kopfzeile» ist kein Regionsname.</text>
+  <text class="f" x="20" y="650">Glossar + Regeln: docs/topics/css-backend.md → shell regions · Wohin eine Aktion gehört: ADR-033</text>
+</svg>

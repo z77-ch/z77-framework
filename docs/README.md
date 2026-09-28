@@ -31,6 +31,7 @@ recipes — what a project follows when building).
 | [architecture.md](01-handbook/architecture.md) | How the framework is structured |
 | [conventions.md](01-handbook/conventions.md) | Coding standards, namespaces, file names |
 | [css-conventions.md](01-handbook/css-conventions.md) | CSS/SCSS standards: BEM, tokens, components |
+| [shell-regions.svg](01-handbook/shell-regions.svg) | Shell-region glossary as a picture: backend and member side by side, German word + job name + class per region (text version: [css-backend.md → shell regions](topics/css-backend.md#shell-regions-glossary)) |
 | [templates.md](01-handbook/templates.md) | Template layer: location, context injection, partials |
 | [installer.md](01-handbook/installer.md) | Composer installer: configuration, generated files, directory structure |
 | [release-structure.md](01-handbook/release-structure.md) | Zero-downtime deploys on shared hosting: shared/releases/current/next, SSH setup, switch mechanics |
