@@ -18,9 +18,20 @@
  *
  * The breadcrumb got its own, slimmer row in v1.7.0: it carries smaller type
  * and shared its line with nothing that belonged to it. The chrome follows
- * ADR-033 (one rule for every shell): the ACTION CELL carries the context's
- * decisive action(s), the TOOLBAR the page's tabs OR its tools, the CRUMB
- * LINE position and state — nothing else.
+ * ADR-033 (one rule for every shell, revised 2026-09-28): LEFT = choose,
+ * RIGHT = work. The ACTION CELL carries what belongs to the choice (a new
+ * entry of the list — `$shellSelectActions`), the TOOLBAR everything that acts
+ * on the shown thing: its tabs or tools on the left, its actions (edit, save,
+ * cancel — `$shellActions`) at the right end. The CRUMB LINE says where one
+ * is — nothing else.
+ *
+ * ── On a narrow screen the left side is a drawer (Schublade) ──
+ * Area switcher, action cell and rail slide in together from the menu icon,
+ * the first thing in the header; the crumb gap is dropped. No JavaScript: the
+ * state is the checkbox `#me-drawer` (first in the body, so every part is a
+ * later sibling for `:checked ~`), the icon and the backdrop are its labels.
+ * The server opens it when nothing is selected (`$detailOpen` empty) — then
+ * the list is what one came for, and the work side would be empty.
  *
  * ── Two shapes, one skeleton ──
  * A page with a rail (`$railItems` present) gets the work area; a page without
@@ -29,15 +40,18 @@
  *
  * @var string $memberTheme  'light' | 'dark' | '' (no decision — follow the system)
  * @var ?array $railItems    rows of the left column; absent = plain page
- * @var ?array $shellActions the context's decisive action(s), max two (see partials/shell/action)
+ * @var ?array $shellActions the actions on the SHOWN thing (edit, save, cancel) — right end of the toolbar (see partials/shell/action)
  * @var ?array $shellAction  legacy single action — normalised into the list
+ * @var ?array $shellSelectActions actions of the CHOICE (a new entry, refresh the list) — the action cell, max two
+ * @var ?bool  $detailOpen   something is selected: the narrow drawer starts closed (else open)
  * @var ?array $shellTabs    the page's tabs [{id,label,active?}]; absent = none
  * @var ?array $shellTools   the page's tools (see partials/shell/tools); ignored when tabs are present
  * @var ?array $crumbs       breadcrumb rows for the crumb line
  */
 $theme      = in_array($memberTheme ?? '', ['light', 'dark'], true) ? $memberTheme : '';
 $actionList = $shellActions ?? (!empty($shellAction) ? [$shellAction] : []);
-$work       = !empty($railItems) || $actionList !== [];
+$selectList = $shellSelectActions ?? [];
+$work       = !empty($railItems) || $actionList !== [] || $selectList !== [];
 ?>
 <html lang="<?= e($language ?? 'de') ?>" class="me"<?= $theme !== '' ? ' data-theme="' . e($theme) . '"' : '' ?>>
 <head>
@@ -53,6 +67,7 @@ $work       = !empty($railItems) || $actionList !== [];
          whole left side, not just the pane (spec v1.4.1). The primitive allows
          the split — see its markup contract. */ ?>
 <body class="me-body me-body--shell" data-z77-split-root<?= !empty($detailOpen) ? ' data-z77-split-overlay="detail"' : '' ?>>
+    <input type="checkbox" id="me-drawer" class="me-drawer" aria-label="Auswahl ein- und ausblenden"<?= empty($detailOpen) ? ' checked' : '' ?>>
     <?= $flash ?? '' ?>
 
     <?= $this->partial('partials/shell/headLeft', [
@@ -71,21 +86,24 @@ $work       = !empty($railItems) || $actionList !== [];
         'csrfToken'        => $csrfToken ?? '',
     ]) ?>
 
+    <?php /* LEFT = choose: only what belongs to the choice (ADR-033, 2026-09-28). */ ?>
     <div class="me-shell__act">
-        <?php if ($actionList !== []): ?>
+        <?php if ($selectList !== []): ?>
         <?= $this->partial('partials/shell/action', [
-            'actions'   => $actionList,
+            'actions'   => $selectList,
             'csrfToken' => $csrfToken ?? '',
         ]) ?>
         <?php endif; ?>
     </div>
 
-    <?php /* Tabs OR tools, never both (ADR-033) — a page with tabs has its
+    <?php /* RIGHT = work. Tabs OR tools on the left — a page with tabs has its
              tools inside the tabbed surface. `$shellToolbar` is the body
              SECTION fallback (LayoutManager::addPartials(..., 'shellToolbar')):
              a page whose tools are richer than a button list — a filter form,
              say — hands in its own partial, the same way a backend screen
-             fills hc2. */ ?>
+             fills hc2. The actions on the shown thing sit at the right end,
+             beside tabs as well as beside tools: a tabbed form still has ONE
+             save (ADR-033, 2026-09-28). */ ?>
     <div class="me-shell__toolbar">
         <?php if (!empty($shellTabs)): ?>
         <?= $this->partial('partials/shell/tabs', ['tabs' => $shellTabs]) ?>
@@ -97,6 +115,14 @@ $work       = !empty($railItems) || $actionList !== [];
         <?php else: ?>
         <?= $shellToolbar ?? '' ?>
         <?php endif; ?>
+        <?php if ($actionList !== []): ?>
+        <div class="me-shell__actions">
+            <?= $this->partial('partials/shell/action', [
+                'actions'   => $actionList,
+                'csrfToken' => $csrfToken ?? '',
+            ]) ?>
+        </div>
+        <?php endif; ?>
     </div>
 
     <?php /* Row 3 — the crumb line: the position, nothing else (ADR-033
@@ -107,11 +133,11 @@ $work       = !empty($railItems) || $actionList !== [];
         <?= $this->partial('partials/shell/crumbs', ['crumbs' => $crumbs ?? []]) ?>
     </div>
 
-    <?php /* Row 3 — the shared primitive. The rail is pane 1 (fixed width,
-             drag-resizable), the detail takes the rest AND becomes an overlay
-             on a narrow container. The overlay opens server-side: when
-             something is selected, the body carries the attribute; the
-             backdrop and the `‹ Liste` button close it client-side. */ ?>
+    <?php /* Row 4 — the shared primitive. The rail is pane 1 (fixed width,
+             drag-resizable), the detail takes the rest. On a narrow screen the
+             rail becomes part of the drawer and the detail keeps the width
+             (member.scss, narrow block) — the primitive's detail overlay and
+             the `‹ Liste` button are switched off there. */ ?>
     <div class="me-shell__work">
         <div class="z77-split" style="--z77-split-1: var(--rail-w, 17rem)">
             <div class="z77-split__pane me-rail">
@@ -132,6 +158,9 @@ $work       = !empty($railItems) || $actionList !== [];
             <div class="z77-split__backdrop" data-z77-split-close></div>
         </div>
     </div>
+
+    <?php /* Narrow only: dims the work side while the drawer is open; a tap closes it. */ ?>
+    <label class="me-shell__backdrop" for="me-drawer" aria-hidden="true"></label>
 
     <?= $jsFooter ?? '' ?>
 </body>

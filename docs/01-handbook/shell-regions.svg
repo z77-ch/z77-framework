@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1240" height="660" viewBox="0 0 1240 660" font-family="system-ui, 'Segoe UI', Arial, sans-serif">
+<svg xmlns="http://www.w3.org/2000/svg" width="1240" height="700" viewBox="0 0 1240 700" font-family="system-ui, 'Segoe UI', Arial, sans-serif">
   <title>Shell regions — backend and member (glossary, SHELL-GLOSSARY-001)</title>
   <style>
     .t  { font-size: 17px; font-weight: 700; fill: #263238; }
@@ -24,7 +24,7 @@
     .shell    { fill: none; stroke: #263238; stroke-width: 2; }
     .lead     { stroke: #6d4c41; stroke-width: 1.2; fill: none; }
   </style>
-  <rect width="1240" height="660" fill="#ffffff"/>
+  <rect width="1240" height="700" fill="#ffffff"/>
 
   <!-- ═════════════ BACKEND ═════════════ -->
   <text class="t" x="20" y="34">Backend-Shell</text>
@@ -151,5 +151,7 @@
   <text class="f" x="20" y="590">Gleiche Farbe = gleiche Region. Fett = deutsches Wort, darunter Jobname · Klasse. Gestrichelt = optional.</text>
   <text class="f" x="20" y="610">Slotnummern (hc1–hc3, __slot--N) sind Positionen, keine Namen — neue Klassen und Templates tragen den Jobname ({action}.act|toolbar|crumb.tpl.php).</text>
   <text class="f" x="20" y="630">«rail» = immer die linke Spalte. «band» = nur die Backend-Zeile aus Aktionszelle + Werkzeugzeile. «Kopfzeile» ist kein Regionsname.</text>
-  <text class="f" x="20" y="650">Glossar + Regeln: docs/topics/css-backend.md → shell regions · Wohin eine Aktion gehört: ADR-033</text>
+  <text class="f" x="20" y="650">Links = auswählen (Aktionszelle: Neu, Einzel|Sammel), rechts = arbeiten (Werkzeugzeile: Reiter/Werkzeuge, am Ende Bearbeiten/Speichern/Buchen).</text>
+  <text class="f" x="20" y="670">Handy: die ganze linke Seite (Bereichswähler, Aktionszelle, Schiene) ist die Schublade — sie fährt über das Menü-Icon ein; die Krumenlücke entfällt.</text>
+  <text class="f" x="20" y="690">Glossar + Regeln: docs/topics/css-backend.md → shell regions · Wohin eine Aktion gehört: ADR-033</text>
 </svg>

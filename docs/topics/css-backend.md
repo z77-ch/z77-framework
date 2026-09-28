@@ -155,14 +155,15 @@ Where each ACTION goes between these regions is [ADR-033](../02-decisions/adr-03
 | Shell (grid root) | `.be-shell` | `.me-body--shell` | Schale |
 | Top bar | `.be-shell-topbar` (`--shell-bar`, `--be-topbar`) | `.me-shell__head-l` / `__head-r` | Kopfleiste |
 | Area switcher (top left, over the rail) | `.be-shell-topbar__mod`, `.be-shell-mod*` | `.me-shell__area`, `.me-switcher` | Bereichswähler |
-| Action cell (the decisive action) | `.be-shell-band__slot--1`, template `{action}.act` (old: `.hc1`) | `.me-shell__act` | Aktionszelle |
-| Toolbar (tools OR tabs) | `.be-shell-band__slot--2`, template `{action}.toolbar` (old: `.hc2`) | `.me-shell__toolbar` | Werkzeugzeile |
+| Action cell (LEFT = choose: new entry, capture mode — ADR-033 rev. 2026-09-28) | `.be-shell-band__slot--1`, template `{action}.act` (old: `.hc1`) | `.me-shell__act` | Aktionszelle |
+| Toolbar (RIGHT = work: tabs or tools, the actions on the shown thing at the right end) | `.be-shell-band__slot--2`, template `{action}.toolbar` (old: `.hc2`) | `.me-shell__toolbar` | Werkzeugzeile |
 | Tab row (backend only, optional) | `.be-shell-tabs`, `.be-viewtabs`, template `{action}.tabs` | tabs live inside `__toolbar` (`.me-tabs`) | Reiterzeile |
 | Crumb line (position only) | `.be-shell-crumb__slot--2`, `.be-crumb`, template `{action}.crumb` (old: `.hc3`) | `.me-shell__crumbs`, `.me-crumb` | Krumenzeile |
 | Crumb gap (bare island cell left of the crumb line) | `.be-shell-crumb__slot--1` | `.me-shell__crumbgap` | Krumenlücke |
 | Rail (left orientation column) | `.be-shell-col--1` (`--shell-c1`), content `.backend-subnav` | `.me-rail` (`--rail-w`) | Schiene |
 | Work area (content column) | `.be-shell-col--2` | the detail pane `.z77-split__pane--detail` inside `.me-shell__work` (which is the whole row: rail + detail) | Arbeitsfläche |
 | Seam (divider between rail and work area) | no class of its own; the handle is `.be-shell__resizer` | `.me-shell__seam` | Naht |
+| Drawer (phone: area switcher + action cell + rail slide in together from the menu icon; the crumb gap is dropped) | `.be-shell.is-drawer-l`, icon `.be-shell-topbar__burger` (`shell.js`), below 767px | `#me-drawer` checkbox, icon `.me-shell__burger`, `.me-shell__backdrop` (CSS only), below 60rem | Schublade |
 | Banner (shell-level, non-dismissible) | `.be-shell-banner` | — | Störer |
 | State (dot + text) | `.be-shell-status` | `.me-band` | Zustand |
 
@@ -240,8 +241,9 @@ packages/module-backend/res/view/templates/
 - When running build commands → MUST run from framework root (`npm run watch:backend` / `npm run build:backend`)
 - When building a radio/checkbox **selection** (select/choose one or many) → MUST use the shared `.be-choice` component (`__input` / `__label`, optional `--filled` for a tinted row); MUST NOT use `.be-switch` for that (the switch is on/off only)
 - The header band renders ALWAYS (both slots, even when empty) — it is a property of the shell, not of the screen (HEADER-BAND-ALWAYS-001). When a screen has no global action → MUST leave the slot empty rather than reintroduce a conditional band; MUST NOT invent an add button for a screen whose actions are all per row (use `.be-shell-status` for its state instead).
+- On a phone the left side is the drawer (ADR-033 rev. 2026-09-28, SHELL-DRAWER-001): area switcher, action cell and rail slide in together. When a screen's hc1 must stay reachable WITHOUT the drawer → MUST mark an element in its hc1 template with `data-shell-act-inline` (the action then sits at the end of the band as a glyph); MUST NOT add a second copy of the action to hc2. When putting an action into hc1 → MUST check it belongs to the CHOICE (a new entry, the capture mode); an action on the shown thing (edit, save, post, an actions picker for the open record) MUST go to hc2.
 - When a screen's health or queue state must be readable without reading the body (job runner, import plan, member queue) → MUST use `.be-shell-status` (`__dot` + `__text`, `--ok` / `--bad`) in hc2; MUST NOT use `.badge` for it — that component runs on the light-only `--color-*` set and is wrong in dark mode.
-- When filling a shell header slot (`{Group}/{Controller}/{action}.hc1|hc2|hc3.tpl.php`) → MUST keep it to a SINGLE line. `.be-shell-band__slot` is a FIXED-height band (`height: 46px`, not `min-height`) so every slot stays exactly equal (empty or filled) and the band lines up across columns. Content that needs more room MUST go into a dropdown or popup — MUST NOT make the band taller (would break the cross-column alignment). An hc1 primary action MUST wrap its text in `<span class="be-btn__label">` — the mobile band collapses the button to its glyph, and a bare text node cannot be hidden by CSS (SHELL-BAND-ROW-001). A view with SEVERAL add kinds MUST use the `.be-shell-add` hc1 picker (a «＋ add» button that opens a panel to choose the type, via the panel-toggle contract) rather than stacking multiple add buttons in the band (e.g. translation: Text / Slug). The band scales in fixed px, not `em`/`rem`: it is chrome and matches the font-capped buttons (see FONT-CAP-001) — the font slider scales content, not chrome. If a slot's text grows too large at high font scale, cap it with `.be-font-cap` rather than making the height relative.
+- When filling a shell header slot (`{Group}/{Controller}/{action}.hc1|hc2|hc3.tpl.php`) → MUST keep it to a SINGLE line. `.be-shell-band__slot` is a FIXED-height band (`height: 46px`, not `min-height`) so every slot stays exactly equal (empty or filled) and the band lines up across columns. Content that needs more room MUST go into a dropdown or popup — MUST NOT make the band taller (would break the cross-column alignment). An hc1 primary action MUST wrap its text in `<span class="be-btn__label">` — with `data-shell-act-inline` the mobile band collapses the button to its glyph, and a bare text node cannot be hidden by CSS (SHELL-BAND-ROW-001). A view with SEVERAL add kinds MUST use the `.be-shell-add` hc1 picker (a «＋ add» button that opens a panel to choose the type, via the panel-toggle contract) rather than stacking multiple add buttons in the band (e.g. translation: Text / Slug). The band scales in fixed px, not `em`/`rem`: it is chrome and matches the font-capped buttons (see FONT-CAP-001) — the font slider scales content, not chrome. If a slot's text grows too large at high font scale, cap it with `.be-font-cap` rather than making the height relative.
 - When naming a NEW shell region, a region-level class, or a new header-slot template in any shell → MUST use the glossary job name (`topbar` / `area` / `act` / `toolbar` / `crumbs` / `rail` / `work` / `seam` — see [shell regions](#shell-regions-glossary)); new slot templates MUST be `{action}.act|toolbar|crumb.tpl.php`. MUST NOT name a class after a slot number or file suffix (`hc1`, `hc2`, `hc3`) — axo3's `.be-stock__hcfilter|hccount|hctools|…` is the counterexample. Existing `hc*` templates and `__slot--N` classes stay valid; do not rename them in passing.
 - `rail` / Schiene MUST mean the LEFT orientation column in every shell; the top bar is `topbar` (`--be-topbar`). `band` MUST mean the backend row holding action cell + toolbar only; a state sentence is `status` / Zustand (`.be-shell-status`), a shell-level notice is `banner` / Störer (`.be-shell-banner`). MUST NOT introduce a new `*-rail*` or `*-band*` name for anything else.
 - When a screen needs something a region already provides → MUST reuse that region's component (`.be-viewtabs` for tabs, `.be-shell-status` for state, `.be-shell-add` for several add kinds); a screen-local component MUST NOT redefine a region (no second rail, no own tab strip) — zihlundsee's `.pba-tabs` and axo3's `.be-stock__nav` are the counterexamples.
@@ -253,6 +255,28 @@ packages/module-backend/res/view/templates/
 - [`../01-handbook/css-conventions.md`](../01-handbook/css-conventions.md) — BEM, tokens, component patterns
 
 ## known issues
+
+- **SHELL-DRAWER-001** — added 2026-09-28 (owner decision, ADR-033 revision). **On a phone the whole
+  left side is ONE drawer**: below 767px the area switcher (`.be-shell-topbar__mod`, was simply
+  `display: none` — the area could not be changed on a phone at all), the action cell
+  (`.be-shell-band__slot--1`, was moved to the end of the band) and column 1 slide in together
+  from the menu icon, which is now the first thing in the top bar; the crumb gap stays hidden.
+  The three parts live in different rows (two of them inside the topbar and the band), so the
+  drawer is not one element: each is taken out of the flow and stacked by the row tokens
+  (`--shell-bar`, then `--shell-band` twice), all moved by `is-drawer-l`. No element is
+  duplicated. Traps met on the way, each commented in `_shell.scss`: (a) an absolutely
+  positioned GRID CHILD takes its grid AREA as containing block — column 1 keeps
+  `grid-row: 5`, so it needs `grid-area: auto` or `top` counts from the columns row (the old
+  drawer had the same latent bug); (b) the action cell stays inside the band's stacking
+  context (`z-index: 3`), so the backdrop leaves the drawer's width free instead of covering
+  the row; (c) the drawer's shadow is drawn only while open — closed, it bled in at the left
+  edge. An empty hc1 leaves no strip: the rail moves up (`:has(… :empty)`). The tab-row
+  special case of the old drawer (`.be-shell--tabs`) is gone with it — the drawer hangs on
+  topbar + band, not on the rows below. **Per screen** the action cell can stay on the work
+  side: `data-shell-act-inline` on any element of the screen's hc1 restores the
+  SHELL-BAND-ROW-001 shape for that screen. The member got the same drawer (CSS only, see
+  `member.md`). Verified in a static mock at phone width (Edge headless, closed / open); **not
+  verified live**.
 
 - **SHELL-GLOSSARY-001** — added 2026-09-28 (owner decision; survey over framework, axo3.ch,
   zihlundsee.ch and z77.ch). **The two shells had no shared names for their regions.** ADR-033

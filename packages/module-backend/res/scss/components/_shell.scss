@@ -588,84 +588,98 @@ body.backend {
 // ── Backdrop (mobile drawers) ────────────────────────────────────────────────────
 .be-shell__backdrop { display: none; }
 
-// ── Mobile: column 1 = sandwich drawer ───────────────────────────────────────────
+// ── Mobile: the whole left side = the drawer (Schublade) ─────────────────────────
+// ADR-033 (revised 2026-09-28): left = choose, right = work. On a phone the LEFT column
+// disappears and slides in from the menu icon as ONE drawer: area switcher, action cell
+// and rail stacked, the crumb gap dropped (it is an empty cell). The work side keeps the
+// full width. The four parts live in different grid rows, so the drawer is not one element:
+// each part is taken out of the flow, stacked by the known row heights and moved by the
+// same `is-drawer-l` class. No element is duplicated.
+//
+// Per screen the action cell can stay on the work side instead: a screen whose hc1 must be
+// reachable without the drawer puts `data-shell-act-inline` on an element in its hc1
+// template — the old shape (end of the band, glyph only) comes back for that screen alone.
 @media (max-width: 767px) {
-    .be-shell { grid-template-columns: 1fr; }
-    .be-shell-topbar__mod { display: none; }
+    .be-shell {
+        --shell-drawer: min(300px, 84%);
+        grid-template-columns: 1fr;
+    }
     .be-shell-topbar__burger { display: grid; }
     .be-shell__resizer { display: none; }
 
     .be-shell-col--2 { grid-column: 1; border-right: 0; }
 
-    // The band STAYS — that is what this whole row exists for. But the primary action does not
-    // keep a full-width slot of its own on a phone: it moves to the END of the band and drops
-    // to its glyph, joining the row of icon actions hc2 already carries (the Drive's new-folder
-    // and trash buttons are the model). Flex + `order`, so the SAME element moves — the button
-    // is never duplicated into a second slot, which would mean two places to keep in sync.
-    .be-shell-band {
-        display:     flex;
-        align-items: stretch;
+    // Drawer part 1 — the area switcher, first under the top bar. Out of the topbar's flow,
+    // so the menu icon becomes the first thing in the top bar.
+    .be-shell-topbar__mod {
+        position:   absolute;
+        top:        var(--shell-bar);
+        left:       0;
+        width:      var(--shell-drawer);
+        height:     var(--shell-band);
+        box-shadow: none;
+        transform:  translateX(-100%);
+        transition: transform .28s ease;
     }
-    .be-shell-band__slot--2 { order: 1; flex: 1; min-width: 0; }
+
+    // Drawer part 2 — the action cell, under the area switcher. The band keeps only the
+    // toolbar. The slot stays inside the band's stacking context (z-index 3); that is why
+    // the backdrop below leaves the drawer's width free instead of covering the whole row.
+    .be-shell-band { grid-template-columns: minmax(0, 1fr); }
+    .be-shell-band__slot--2 { grid-column: 1; }
     .be-shell-band__slot--1 {
-        order:        2;
-        flex:         none;
-        padding:      var(--space-2);
+        position:     absolute;
+        top:          calc(var(--shell-bar) + var(--shell-band));
+        left:         0;
+        width:        var(--shell-drawer);
+        z-index:      21;
         border-right: 0;
-        border-left:  1px solid var(--be-line);
+        transform:    translateX(-100%);
+        transition:   transform .28s ease;
     }
-    // An empty hc1 must not leave a stub of the dark band hanging at the edge.
+    // An empty hc1 leaves no dark strip in the drawer — the rail moves up (see part 3).
     .be-shell-band__slot--1:empty { display: none; }
 
-    // Glyph only: no full width, no label. `.be-btn__label` exists for exactly this.
-    .be-shell-band__slot--1 .be-btn--primary { width: auto; padding: 0 var(--space-2); }
-    .be-shell-band__slot--1 .be-btn__label   { display: none; }
-
-    // The picker panel hangs off a ~34px button at the right edge now, so it can no longer
-    // stretch to its trigger's width — it anchors right and brings its own.
-    .be-shell-band__slot--1 .be-shell-add__panel {
-        left:      auto;
-        right:     0;
-        min-width: 12rem;
-    }
-
-    // The crumb line follows the band's mobile shape: one flex row, the empty
-    // island cell disappears (there is no island on a phone).
+    // The crumb line and the tab row lose their island cell: one flex row each.
     .be-shell-crumb { display: flex; align-items: stretch; }
     .be-shell-crumb__slot--2 { flex: 1; min-width: 0; }
     .be-shell-crumb__slot--1 { display: none; }
 
-    // The tab row does the same. It scrolls sideways rather than wrapping: four
-    // tabs do not fit a phone, and a second tab line would push the content down
-    // twice as far.
+    // The tab row scrolls sideways rather than wrapping: four tabs do not fit a phone, and
+    // a second tab line would push the content down twice as far.
     .be-shell-tabs { display: flex; align-items: stretch; }
     .be-shell-tabs__slot--2 { flex: 1; min-width: 0; overflow-x: auto; }
     .be-shell-tabs__slot--1 { display: none; }
 
-    // Drawer starts BELOW band + crumb line, so both stay reachable while it is open.
-    // ⚠️ With a tab row it has to start lower still — and that row exists only on some
-    // screens, so `calc()` cannot simply count it in. The skeleton marks the shell.
-    .be-shell--tabs .be-shell-col--1 {
-        top:    calc(var(--shell-bar) + var(--shell-band) + var(--shell-tabs) + var(--shell-crumb));
-        height: calc(100% - var(--shell-bar) - var(--shell-band) - var(--shell-tabs) - var(--shell-crumb));
-    }
+    // Drawer part 3 — the rail, under the action cell, down to the bottom.
+    // ⚠️ `grid-area: auto`: an absolutely positioned GRID CHILD takes its grid area as
+    // containing block — with `grid-row: 5` kept, `top` would count from the columns row.
     .be-shell-col--1 {
-        position:      absolute;
-        top:           calc(var(--shell-bar) + var(--shell-band) + var(--shell-crumb));
-        left:          0;
-        height:        calc(100% - var(--shell-bar) - var(--shell-band) - var(--shell-crumb));
-        width:         min(300px, 84%);
-        z-index:       20;
-        transform:     translateX(-100%);
-        transition:    transform .28s ease;
-        box-shadow:    8px 0 40px -8px rgba(0,0,0,.4);
+        grid-area:  auto;
+        position:   absolute;
+        top:        calc(var(--shell-bar) + 2 * var(--shell-band));
+        left:       0;
+        bottom:     0;
+        width:      var(--shell-drawer);
+        z-index:    20;
+        border-right: 0;
+        transform:  translateX(-100%);
+        transition: transform .28s ease;
     }
-    .be-shell.is-drawer-l .be-shell-col--1 { transform: none; }
+    .be-shell:has(.be-shell-band__slot--1:empty) .be-shell-col--1 { top: calc(var(--shell-bar) + var(--shell-band)); }
 
+    .be-shell.is-drawer-l .be-shell-topbar__mod,
+    .be-shell.is-drawer-l .be-shell-band__slot--1,
+    .be-shell.is-drawer-l .be-shell-col--1 { transform: none; }
+    // The shadow only while open — closed, it would bleed in at the left edge.
+    .be-shell.is-drawer-l .be-shell-col--1 { box-shadow: 8px 0 40px -8px rgba(0,0,0,.4); }
+
+    // Dims the work side only: the drawer's width stays free, so the action cell (inside the
+    // band's lower stacking context) is not covered. A tap on it closes the drawer.
     .be-shell__backdrop {
         display:        block;
         position:       absolute;
-        inset:          calc(var(--shell-bar) + var(--shell-band)) 0 0 0;
+        inset:          var(--shell-bar) 0 0 var(--shell-drawer);
         background:     rgba(0,0,0,.34);
         z-index:        15;
         opacity:        0;
@@ -673,6 +687,30 @@ body.backend {
         transition:     opacity .2s;
     }
     .be-shell.is-drawer-l .be-shell__backdrop { opacity: 1; pointer-events: auto; }
+
+    // ── Per-screen switch: the action cell stays on the work side ──
+    // The pre-2026-09-28 shape: the hc1 action moves to the END of the band and drops to its
+    // glyph, next to the icon actions hc2 carries. Flex + `order`, so the SAME element moves.
+    .be-shell:has([data-shell-act-inline]) {
+        .be-shell-band { display: flex; align-items: stretch; }
+        .be-shell-band__slot--2 { order: 1; flex: 1; min-width: 0; }
+        .be-shell-band__slot--1 {
+            position:    static;
+            order:       2;
+            flex:        none;
+            width:       auto;
+            padding:     var(--space-2);
+            border-left: 1px solid var(--be-line);
+            transform:   none;
+            transition:  none;
+        }
+        // Glyph only: `.be-btn__label` exists for exactly this.
+        .be-shell-band__slot--1 .be-btn--primary { width: auto; padding: 0 var(--space-2); }
+        .be-shell-band__slot--1 .be-btn__label   { display: none; }
+        // The picker panel hangs off a ~34px button at the right edge — it anchors right.
+        .be-shell-band__slot--1 .be-shell-add__panel { left: auto; right: 0; min-width: 12rem; }
+        .be-shell-col--1 { top: calc(var(--shell-bar) + var(--shell-band)); }
+    }
 
     // Topbar right cluster on mobile: hide the env pill + bell (avatar + burger stay).
     // Relocated from the retired layout/_nav-mobile.scss.

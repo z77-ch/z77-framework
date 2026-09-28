@@ -49,6 +49,14 @@ $name          = trim($memberUser['name'] ?? '');
 $memberTenants = $memberTenants ?? [];
 ?>
 <div class="me-shell__head-r">
+    <?php /* Narrow only (member.scss): the menu icon, FIRST in the header, opens the
+             drawer — a label of the skeleton's `#me-drawer` checkbox, no script. */ ?>
+    <label class="me-shell__burger" for="me-drawer" title="Auswahl">
+        <svg class="me-icon" width="20" height="20" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M4 6h16M4 12h16M4 18h16"/>
+        </svg>
+        <span class="me-account__sr">Auswahl ein- und ausblenden</span>
+    </label>
     <?php if ($memberTenants !== []): ?>
     <details class="me-tenant">
         <summary class="me-shell__tenant me-tenant__summary" title="Verwaltung wechseln">

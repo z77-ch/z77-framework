@@ -343,6 +343,23 @@ $fb-info-tint: $fb-bg;
         background: var(--surface, #{$fb-surface});
     }
 
+    // The actions on the shown thing (edit, save, cancel) at the right END of
+    // the toolbar — beside tabs as well as beside tools (ADR-033, 2026-09-28:
+    // left = choose, right = work).
+    &__actions {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin-left: auto;
+        flex: none;
+
+        .me-btn { width: auto; }
+    }
+
+    // The drawer's parts exist only on a narrow screen (see the narrow block).
+    &__burger,
+    &__backdrop { display: none; }
+
     // ── Row 3 — the breadcrumb line (B10 v1.7.0) ──
     //
     // Its own, slimmer row: the crumb carries smaller type and shared its old
@@ -1053,18 +1070,143 @@ $fb-info-tint: $fb-bg;
     .me-shell__work .me-rail { flex: 1 1 auto; }
 }
 
-// Narrow SCREEN: the grid keeps two columns, but the left one only as wide as
-// its content. The rail width belongs to the work area, which is now one
-// surface — forcing 17rem of header above it would push the breadcrumb off the
-// screen for a column that is no longer there.
+// The drawer's state: a checkbox, visually hidden but focusable, so the menu
+// icon works from the keyboard too (its ring is drawn on the icon).
+.me-drawer {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    opacity: 0;
+}
+
+// ── Narrow SCREEN: the left side is a drawer (ADR-033, 2026-09-28) ─────────
+//
+// Left = choose, right = work. The work side takes the whole width; area
+// switcher, action cell and rail slide in together from the menu icon (the
+// first thing in the header). The crumb gap is an empty cell and is dropped.
+//
+// The drawer is not one element: its parts live in different grid rows (and
+// the rail inside the split), so each is taken out of the flow and stacked by
+// the known row heights — header row, then area switcher, action cell, rail.
+// The action cell stays even when empty: the rail sits inside `.z77-split`,
+// which clips (`overflow: hidden`), so it cannot move up into the row above.
+//
+// ⚠️ The backdrop leaves the drawer's width free instead of covering the row:
+// the rail lives in the split's own stacking context (container queries imply
+// layout containment), which a backdrop over it would always paint above.
 @media (max-width: 60rem) {
-    .me-body--shell { grid-template-columns: auto var(--rule, #{$fb-rule}) 1fr; }
-
-    .me-shell__act {
-        padding-right: 0.75rem;
-
-        .me-btn { width: auto; }
+    .me-body--shell:not(.me-body--plain) {
+        --drawer-w: min(18rem, 84vw);
+        position: relative;
+        grid-template-columns: minmax(0, 1fr);
     }
+
+    .me-shell__seam,
+    .me-shell__crumbgap { display: none; }
+
+    .me-shell__head-r,
+    .me-shell__toolbar,
+    .me-shell__crumbs { grid-column: 1; }
+
+    .me-shell__burger {
+        display: grid;
+        place-items: center;
+        width: 2.25rem;
+        height: 2.25rem;
+        margin-right: 0.25rem;
+        flex: none;
+        cursor: pointer;
+        color: var(--text, #{$fb-text});
+    }
+    .me-drawer:focus-visible ~ .me-shell__head-r .me-shell__burger {
+        outline: 2px solid var(--accent, #{$fb-accent});
+        outline-offset: 2px;
+    }
+
+    // The toolbar scrolls sideways rather than wrapping — four tabs and a save
+    // do not fit a phone, and a second line would push the work down.
+    .me-shell__toolbar {
+        padding: 0 0.75rem;
+        overflow-x: auto;
+    }
+
+    // Drawer parts 1 and 2 — area switcher and action cell, under the header.
+    // ⚠️ `grid-area: auto`: an absolutely positioned GRID CHILD takes its grid
+    // area as containing block — with its row kept, `top` would count from row 2.
+    .me-shell__head-l,
+    .me-shell__act {
+        grid-area: auto;
+        position: absolute;
+        left: 0;
+        width: var(--drawer-w);
+        height: var(--row-h, 3.5rem);
+        z-index: 21;
+        transform: translateX(-100%);
+        transition: transform .28s ease;
+    }
+    .me-shell__head-l { top: var(--row-h, 3.5rem); }
+    .me-shell__act    { top: calc(2 * var(--row-h, 3.5rem)); }
+
+    // Drawer part 3 — the rail, inside the split, from under the action cell
+    // (row-h − crumb-h below the split's own top) down to the bottom.
+    .me-shell__work .me-rail {
+        position: absolute;
+        top: calc(var(--row-h, 3.5rem) - var(--crumb-h, 2.375rem));
+        left: 0;
+        bottom: 0;
+        width: var(--drawer-w);
+        z-index: 20;
+        transform: translateX(-100%);
+        transition: transform .28s ease;
+    }
+
+    .me-drawer:checked ~ .me-shell__head-l,
+    .me-drawer:checked ~ .me-shell__act,
+    .me-drawer:checked ~ .me-shell__work .me-rail { transform: none; }
+    // The shadow only while open — closed, it would bleed in at the left edge.
+    .me-drawer:checked ~ .me-shell__work .me-rail { box-shadow: 8px 0 40px -8px rgba(0, 0, 0, .4); }
+
+    .me-shell__backdrop {
+        display: block;
+        position: absolute;
+        top: var(--row-h, 3.5rem);
+        left: var(--drawer-w);
+        right: 0;
+        bottom: 0;
+        z-index: 15;
+        background: rgba(0, 0, 0, .34);
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity .2s;
+    }
+    .me-drawer:checked ~ .me-shell__backdrop { opacity: 1; pointer-events: auto; }
+
+    // The work side IS the detail here: the primitive's detail overlay, its
+    // backdrop and the `‹ Liste` button are switched off — the menu icon is the
+    // way back to the list.
+    // ⚠️ `z-index: auto` too: the primitive gives the overlay `z-index: 20`, and a
+    // FLEX ITEM with a z-index paints in that layer even when static — later in
+    // the DOM than the rail, it would cover the open drawer.
+    .me-shell__work .z77-split__pane--detail {
+        position: static;
+        z-index: auto;
+        width: auto;
+        transform: none;
+        box-shadow: none;
+        border-left: 0;
+    }
+    .me-shell__work .z77-split__backdrop,
+    .me-body--shell .me-shell__work .z77-split .me-back { display: none; }
+}
+
+@media (max-width: 60rem) and (prefers-reduced-motion: reduce) {
+    .me-shell__head-l,
+    .me-shell__act,
+    .me-shell__work .me-rail,
+    .me-shell__backdrop { transition: none; }
 }
 
 // ── The switch ────────────────────────────────────────────────────────────

@@ -29,12 +29,12 @@
     <?= $iconSprite ?? '' ?>
     <?= $systemBanner ?? '' ?>
     <?= $noindexBanner ?? '' ?>
-    <?php /* ⚠️ Die Klasse sagt, DASS es eine Reiter-Zeile gibt. Auf dem Telefon rechnet
-             sich der Navigations-Schub unter Band und Krume — mit Reitern eine Zeile
-             tiefer, und `calc()` kann eine Zeile, die es nur manchmal gibt, nicht blind
-             mitzaehlen. Derselbe Ausdruck wie unten, damit beide nie auseinanderlaufen. */ ?>
     <?php $hasTabs = trim((string)($tabs ?? '')) !== ''; ?>
-    <div class="be-shell<?= $hasTabs ? ' be-shell--tabs' : '' ?>" data-shell data-z77-split-root>
+    <?php /* Auf dem Telefon ist die ganze linke Seite eine Schublade (ADR-033, 2026-09-28):
+             Bereichswaehler, Aktionszelle und Spalte 1 fahren gemeinsam ueber das Menue-Icon
+             ein — _shell.scss, Mobile-Block. Die Schublade haengt an Kopfleiste + Band, nicht
+             an der Reiter-Zeile; darum braucht die Schale keine Reiter-Markierung mehr. */ ?>
+    <div class="be-shell" data-shell data-z77-split-root>
         <?= $shellTopbar ?? '' ?>
         <?php /* Header-Band mit den Slots hc1 (über Spalte 1) + hc2 (über Spalte 2):
                  Controller/Action-Partials (Body-Sektionen `hc1`/`hc2`).
