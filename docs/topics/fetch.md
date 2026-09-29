@@ -12,6 +12,9 @@
 ## file map
 
 SOURCE=/packages/kernel/core/src/Http/Response/FetchResponse.php
+SOURCE=/packages/kernel/core/src/Http/WindowOrigin.php
+SOURCE=/packages/kernel/shared/res/scss/components/_windows.scss
+SOURCE=/packages/module-backend/res/scss/components/_windows-host.scss
 SOURCE=/packages/kernel/core/src/Http/Response/HtmlResponse.php
 SOURCE=/packages/kernel/core/src/Http/Response/EnvelopeFields.php
 SOURCE=/packages/kernel/core/src/Http/Security/CsrfService.php
@@ -220,6 +223,11 @@ Commands are executed in array order.
 | `data-fetch-get="/url"` | any clickable | GET on click |
 | `data-fetch-post="/url"` | `<form>` | POST on submit with collected form data (multi-value-aware) |
 | `data-fetch-toggle="/url"` | `<input type=checkbox>` | POST `{value: checked}` on change; reverts the checkbox if the response status is not `success` |
+| `data-window-open="/url"` | any clickable (keep an `href` on a link) | opens a controller-led WINDOW (ADR-047, WIN-001): GET in fetch mode with `_origin`, the answer's root declares `data-window` (mask) + `data-window-entity` (`<type>:<id>`) + `data-window-title`; mask + entity open once; an editable field in two open masks of one entity is refused with a message |
+| `data-window-link` | `<a>` inside a window | loads its href into THAT window (read view ↔ edit form), the origin kept |
+| `data-window-close` / `data-popup-close` | any clickable inside a window | closes the window and the windows opened from it (× and Esc too) |
+| `data-window-confirm-close="…"` | a window's content | the controller wants a question before closing |
+| `<form method="post">` | inside a window | sent by fetch as FormData (`$_POST` on the server) with the submitter; HTML answer with `data-window` → the window's new content, any other HTML → popup, an envelope → its commands with the window as context |
 | `data-fetch-region="<name>"` | any container | a part of the page that reloads ALONE (FETCH-REGION-001): its `a[data-fetch-region-link]` and GET `form[data-fetch-region-form]` fetch their own URL, the region with the same name is taken from the answer's `main` and swapped in, the address bar follows (`history.replaceState`), focus returns to the same id. Delegated on `document` — nothing to re-wire after a swap. Without the script the links and forms are plain page loads |
 | `data-fetch-post=""` (empty) | `<form>` | POST on submit; URL falls back to source URL of last GET that delivered the popup HTML |
 | `data-popup-close` | any clickable | closes the popup (the only way to close — see POPUP-CLOSE-001) |
@@ -470,6 +478,8 @@ User submits
 - [`view-layer.md`](view-layer.md) — `html-fetch-skeleton` for Fetch-mode rendering
 
 ## known issues
+
+- **WIN-001** — built 2026-09-29 (ADR-047, approved the same day). **Controller-led windows**: a click opens a record in a window, a save answers with instructions, nothing else reloads. `core.js` → `_Z77.core.windows` (contract in the table above); geometry in `kernel/shared/res/scss/components/_windows.scss` (host-neutral), the backend's surface in `components/_windows-host.scss`. The fetch channel carries a CONTEXT now (`{window: id}`) from `wire()` through `get` / `post` / the new `postForm` into every envelope and command handler — existing handlers ignore the extra argument. The generic DOM commands take an optional `origin` (`page` / `region:<name>` / `window:<id>`) and resolve their target inside it; new commands `close-window`, `open-window` (`replace: true` = into the window the save came from), `refresh-region`; `close-modal` from a window closes that window. Server side: `Z77\Core\Http\WindowOrigin::of($request)` reads `_origin` (POST before GET, three shapes, else `page`). Rules the controller keeps: render the content with the window attributes on its root, write `_origin` into the form, answer a save with commands for that origin. **Placement is CSS only** — side by side on a wide screen, on top of each other below 767px; nothing in the contract depends on it. The page behind is `inert` (the message and flash channels are not). First user: the journal (`financial.md` FIN-JOURNAL-CAPTURE-001). Verified: `tests/module-financial.php` W1–W6, and in Edge headless against a static test page (two windows side by side, a second click brings the open one to the front, a mask that shares an editable field is refused with the message above the windows, phone: the newest on top). **Not verified live in a backend.**
 
 - **FETCH-REGION-001** — added 2026-09-28 (owner request on the journal page, FIN-JOURNAL-CAPTURE-001). **A fetch region reloads one part of a page and leaves the rest alone.** First user: the journal list below its capture form — sorting, paging, searching and the scope toggles must not throw away a half-typed entry or its focus, which a page load cannot keep (the Rule 7 justification; CSS cannot fetch). Contract in `core.js` → `_Z77.core.region`, table above. The server needs nothing special: a fetch arrives in fetch mode (`Sec-Fetch-Mode`, `Request::getMode()`), the answer is the fetch skeleton = `main` only; the action decides what `main` holds (the journal puts only its list there in fetch mode). The client looks the region up BY NAME in the answer, so an answer without it (an error page, a redirect to the login) makes the browser navigate to the URL instead of swapping in something wrong. Progressive: the markup is the same with and without the script. `aria-busy` marks the region while it loads. **Not verified live.**
 

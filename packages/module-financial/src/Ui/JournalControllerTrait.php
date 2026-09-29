@@ -3,6 +3,7 @@ namespace Z77\Module\Financial\Ui;
 
 use Z77\Core\DI,
     Z77\Core\Http\RequestMode,
+    Z77\Core\Http\WindowOrigin,
     Z77\Core\Http\Response\FetchResponse,
     Z77\Core\Http\Response\HtmlResponse,
     Z77\Core\Http\Response\RedirectResponse,
@@ -428,6 +429,23 @@ trait JournalControllerTrait
         return $this->journalYears()->currentOrLatest()?->getStartDate() ?? $today;
     }
 
+    /**
+     * The answer to a save made in a WINDOW (ADR-047): the controller says what happens —
+     * the window shows the entry's read view again, and when it was opened from the journal
+     * list, that list reloads (numbers, text, amount may have changed). Other origins get
+     * the window only; a screen that opens this window elsewhere adds its branch here.
+     */
+    private function journalWindowSaved(int $id, string $origin): FetchResponse
+    {
+        $response = $this->fetch()->setStatus('success')
+            ->addCommand('open-window', ['url' => $this->journalListBase() . '/detail?id=' . $id, 'replace' => true]);
+        if ($origin === 'region:journal-list') {
+            $response->addCommand('refresh-region', ['name' => 'journal-list']);
+        }
+
+        return $response;
+    }
+
     /** Whether this request is a fetch (the list reloading alone) — the Request decides by `Sec-Fetch-Mode`. */
     private function journalIsFetch(): bool
     {
@@ -458,7 +476,11 @@ trait JournalControllerTrait
         }
         $period = $entry->getFiscalYear()->periodOn($entry->getDate());
 
+        // Fetched (a click on an entry in the list, ADR-047): the same page as a WINDOW —
+        // the template marks its root, «Bearbeiten» loads into the window.
         return $this->journalPage('detail', [
+            'window'         => $this->journalIsFetch(),
+            'origin'         => WindowOrigin::of(DI::getRequest()),
             'entry'          => $entry,
             'reversedBy'     => $this->journalEntries()->findReversalOf($entry),
             'changes'        => $this->entryChanges()->forEntry((int) $entry->getId()),
@@ -593,7 +615,7 @@ trait JournalControllerTrait
      * id and the VERSION the form was rendered from.
      */
     #[Csrf]
-    protected function editAction(): HtmlResponse|RedirectResponse
+    protected function editAction(): HtmlResponse|RedirectResponse|FetchResponse
     {
         $request = DI::getRequest();
         $id      = (int) $request->getGetParameter('id');
@@ -643,12 +665,17 @@ trait JournalControllerTrait
         if ($posting !== null) {
             $label = $entry->getFiscalYear()->getCode() . '/' . $entry->getNumber();
             try {
-                if ($this->manualEntryService()->update($id, $version, $posting)) {
-                    $this->messageService->pushFlashAfterRedirect('success', 'Buchung ' . $label . ' gespeichert (Änderung protokolliert)');
-                } else {
-                    // Nothing changed: the service wrote no change row and kept the version (the log records changes, not saves).
-                    $this->messageService->pushFlashAfterRedirect('info', 'Keine Änderung — Buchung ' . $label . ' bleibt wie sie war');
+                $changed = $this->manualEntryService()->update($id, $version, $posting);
+                // Nothing changed: the service wrote no change row and kept the version (the log records changes, not saves).
+                [$type, $text] = $changed
+                    ? ['success', 'Buchung ' . $label . ' gespeichert (Änderung protokolliert)']
+                    : ['info', 'Keine Änderung — Buchung ' . $label . ' bleibt wie sie war'];
+                if ($this->journalIsFetch()) {
+                    $this->messageService->pushFlash($type, $text);
+
+                    return $this->journalWindowSaved($id, WindowOrigin::of($request));
                 }
+                $this->messageService->pushFlashAfterRedirect($type, $text);
 
                 return $this->redirect($this->journalListBase() . '/detail?id=' . $id, 303);
             } catch (EntryConflictException) {
@@ -669,6 +696,8 @@ trait JournalControllerTrait
         }
 
         return $this->journalPage($useOneLine ? 'oneLine' : 'form', [
+            'window'      => $this->journalIsFetch(),
+            'origin'      => WindowOrigin::of($request),
             'form'        => $form,
             'year'        => $entry->getFiscalYear(),
             'entry'       => $entry,

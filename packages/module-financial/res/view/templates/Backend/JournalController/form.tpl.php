@@ -28,7 +28,14 @@
  * @var callable $fmt
  * @var string|null $configNotice  the red band while no VAT account can be resolved (leftover config key, mandator unavailable) — null normally
  * @var string $actionBase
+ * @var bool   $window  edit only — fetched as a window (ADR-047): the root declares mask + entity, the form carries `_origin` back, the links stay in the window
+ * @var string $origin  edit only — where the window came from (WindowOrigin)
  */
+$window  = !empty($window) && $entry !== null;
+$winAttr = $window
+    ? ' data-window="journal-entry-edit" data-window-entity="journal-entry:' . (int) $entry->getId() . '" data-window-title="' . e('Buchung ' . $year->getCode() . '/' . $entry->getNumber() . ' bearbeiten') . '"'
+    : '';
+$winLink = $window ? ' data-window-link' : '';
 $actionBase = $actionBase ?? '/backend/finance/journal';
 $isNew      = $entry === null;
 $action     = $isNew ? $actionBase . '/add-compound' : $actionBase . '/edit?id=' . (int) $entry->getId();
@@ -42,7 +49,7 @@ $fieldError = static fn(string $message): string => $message === ''
     ? ''
     : '<small class="be-form__field-error" data-z77-field-error>' . e($message) . '</small>';
 ?>
-<div class="be-list">
+<div class="be-list"<?= $winAttr ?>>
     <?php if (!empty($configNotice)): ?>
     <div class="be-modal__alert be-modal__alert--error"><?= e($configNotice) ?></div>
     <?php endif; ?>
@@ -50,6 +57,7 @@ $fieldError = static fn(string $message): string => $message === ''
         <input type="hidden" name="csrf_token" value="<?= e($csrfToken ?? '') ?>">
         <?php if (!$isNew): ?>
         <input type="hidden" name="entity_csrf" value="<?= e($entityCsrf ?? '') ?>">
+        <?php if ($window): ?><input type="hidden" name="_origin" value="<?= e($origin ?? 'page') ?>"><?php endif; ?>
         <input type="hidden" name="version" value="<?= (int) ($version ?? $entry->getVersion()) ?>">
         <?php endif; ?>
 
@@ -157,9 +165,9 @@ $fieldError = static fn(string $message): string => $message === ''
             <?php if (!$isNew): ?>
             <button type="submit" class="be-btn be-btn--primary be-btn--sm" name="op" value="save">Speichern (Änderung wird protokolliert)</button>
             <?php if ($oneLine !== null): ?>
-            <a class="be-btn be-btn--ghost be-btn--sm" href="<?= e($oneLine) ?>">Einzeilig bearbeiten …</a>
+            <a class="be-btn be-btn--ghost be-btn--sm" href="<?= e($oneLine) ?>"<?= $winLink ?>>Einzeilig bearbeiten …</a>
             <?php endif; ?>
-            <a class="be-btn be-btn--ghost be-btn--sm" href="<?= e($actionBase . '/detail?id=' . (int) $entry->getId()) ?>">Abbrechen</a>
+            <a class="be-btn be-btn--ghost be-btn--sm" href="<?= e($actionBase . '/detail?id=' . (int) $entry->getId()) ?>"<?= $winLink ?>>Abbrechen</a>
             <?php endif; ?>
         </p>
         <?php if (!$isNew): ?>

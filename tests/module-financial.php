@@ -2042,9 +2042,11 @@ $journalHost = function () {
             $this->messageService = new class {
                 public array $flashes = [];
                 public function pushFlashAfterRedirect(string $type, string $message): void { $this->flashes[] = [$type, $message]; }
+                public function pushFlash(string $type, string $message): void { $this->flashes[] = [$type, $message, 'in-place']; }
             };
         }
         protected function em() { return DI::getUnifiedEntityManager(); }
+        protected function fetch(): \Z77\Core\Http\Response\FetchResponse { return new \Z77\Core\Http\Response\FetchResponse(); }
         protected function html(array $context = []): \Z77\Core\Http\Response\HtmlResponse { $this->context = $context; return new \Z77\Core\Http\Response\HtmlResponse(null, $context); }
         protected function redirect(string $url, int $status = 302): \Z77\Core\Http\Response\RedirectResponse { $this->redirectedTo = $url; return new \Z77\Core\Http\Response\RedirectResponse($url, $status); }
         // The session actor is not wired in the harness — name it, as a CLI caller must.
@@ -2214,6 +2216,55 @@ $html = $render($host);
 $compoundId = (int) $entryRow('2032-33', $compoundRef->number)['id'];
 check('O17b ?form=compound: the same entry in the Sammelbuchung form, with a link back to the one-line form', $host->layoutManager->sections['main'] === ['Backend/JournalController/form']
     && str_contains($html, 'Einzeilig bearbeiten') && count($host->context['form']->rows()) === 4);
+
+echo "W. controller-led windows (ADR-047): the journal entry as a window\n";
+$req = fn(array $get, array $post = []) => new class($get, $post) {
+    public function __construct(private array $g, private array $p) {}
+    public function getGetParameter(string $k): mixed { return $this->g[$k] ?? null; }
+    public function getPostParameters(): array { return $this->p; }
+};
+check('W1 WindowOrigin: the three shapes pass, POST before GET, anything else is «page»', \Z77\Core\Http\WindowOrigin::of($req(['_origin' => 'region:journal-list'])) === 'region:journal-list'
+    && \Z77\Core\Http\WindowOrigin::of($req(['_origin' => 'region:x'], ['_origin' => 'window:3'])) === 'window:3' && \Z77\Core\Http\WindowOrigin::of($req(['_origin' => 'page'])) === 'page'
+    && \Z77\Core\Http\WindowOrigin::of($req(['_origin' => '"><script>'])) === 'page' && \Z77\Core\Http\WindowOrigin::of($req([])) === 'page' && \Z77\Core\Http\WindowOrigin::of($req(['_origin' => 'region:Journal List'])) === 'page');
+$GLOBALS['z77TestFetch'] = true;
+$useRequest(['id' => (string) $editId, '_origin' => 'region:journal-list']);
+$host = $journalHost();
+(fn() => $this->detailAction())->call($host);
+$html = $render($host);
+check('W2 the detail FETCHED is a window: the root declares mask + entity + title, «Bearbeiten» loads into the window, no way «back to the journal» (it is still there)',
+    str_contains($html, 'data-window="journal-entry-detail" data-window-entity="journal-entry:' . $editId . '"') && str_contains($html, 'data-window-title="Buchung 2032-33/')
+    && preg_match('/edit\?id=' . $editId . '"\s*data-window-link>Bearbeiten/', $html) === 1 && !str_contains($html, 'Zurück zum Journal'));
+$host = $journalHost();
+$host->editAction();
+$html = $render($host);
+check('W3 the edit form fetched as a window: its own mask on the same entity, the origin written into the form, «Abbrechen» stays in the window',
+    str_contains($html, 'data-window="journal-entry-edit" data-window-entity="journal-entry:' . $editId . '"') && str_contains($html, 'name="_origin" value="region:journal-list"')
+    && preg_match('/detail\?id=' . $editId . '"\s*data-window-link>Abbrechen/', $html) === 1);
+// W4 saves on ANOTHER entry (the plain one-line one) — the O-series counts the change rows of $editId.
+$wId = (int) $entryRow('2032-33', $plainRef->number)['id'];
+$vW  = (int) $entryRow('2032-33', $plainRef->number)['version'];
+$wDate = $entryRow('2032-33', $plainRef->number)['entry_date'];
+$useRequest(['id' => (string) $wId], ['form' => 'one-line', 'version' => (string) $vW, 'entity_csrf' => 'tok-journalEntry-' . $wId, '_origin' => 'region:journal-list'] + $row('6500', '1020', "1'250.60", $wDate));
+$host = $journalHost();
+$answer = $host->editAction();
+$commands = $answer instanceof \Z77\Core\Http\Response\FetchResponse ? (fn() => $this->commands)->call($answer) : [];
+check('W4 a save in the window answers with INSTRUCTIONS for its origin: the read view back into the window, the journal list reloads — and a flash in place, no redirect',
+    $answer instanceof \Z77\Core\Http\Response\FetchResponse && $host->redirectedTo === null
+    && $commands === [['action' => 'open-window', 'url' => '/backend/finance/journal/detail?id=' . $wId, 'replace' => true], ['action' => 'refresh-region', 'name' => 'journal-list']]
+    && ($host->messageService->flashes[0][2] ?? '') === 'in-place' && (int) $entryRow('2032-33', $plainRef->number)['version'] === $vW + 1);
+$useRequest(['id' => (string) $wId], ['form' => 'one-line', 'version' => (string) ($vW + 1), 'entity_csrf' => 'tok-journalEntry-' . $wId, '_origin' => 'page'] + $row('6500', '1020', "1'250.50", $wDate));
+$host = $journalHost();
+$answer = $host->editAction();
+$commands = $answer instanceof \Z77\Core\Http\Response\FetchResponse ? (fn() => $this->commands)->call($answer) : [];
+check('W4b … from another origin the same action answers only for the window — the controller decides per origin', count($commands) === 1 && $commands[0]['action'] === 'open-window');
+$GLOBALS['z77TestFetch'] = false;
+[$h, $html] = $listOf(['date' => '2032-11-20']);
+check('W5 in the list a click on the entry TEXT opens the window; the href stays (ctrl-click, no script)', preg_match('/<a href="\/backend\/finance\/journal\/detail\?id=(\d+)" data-window-open="\/backend\/finance\/journal\/detail\?id=\1">/', $html) === 1);
+$coreJs = file_get_contents(__DIR__ . '/../packages/kernel/shared/res/assets/js/core.js');
+check('W6 the window manager is the shared core.js contract: identity = mask + entity, the editable-field overlap check, the origin sent as _origin, forms as FormData, the commands close-window / open-window / refresh-region; the minified copy carries it',
+    str_contains($coreJs, "mask + '|' + entity") && str_contains($coreJs, 'function _conflict') && str_contains($coreJs, "searchParams.set('_origin'") && str_contains($coreJs, 'new FormData(form')
+    && str_contains($coreJs, "registerCommand('close-window'") && str_contains($coreJs, "registerCommand('open-window'") && str_contains($coreJs, "registerCommand('refresh-region'")
+    && str_contains(file_get_contents(__DIR__ . '/../packages/kernel/shared/res/assets/js/core.min.js'), 'data-window-open'));
 $useRequest(['id' => (string) $compoundId]);
 $host = $journalHost();
 $host->editAction();

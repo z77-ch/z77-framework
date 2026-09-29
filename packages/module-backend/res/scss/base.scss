@@ -30,4 +30,6 @@
 // stylesheet.
 @use '../../../kernel/shared/res/scss/components/split';
 @use 'components/split-host';
+@use '../../../kernel/shared/res/scss/components/windows';
+@use 'components/windows-host';
 @use 'components/dms-host';

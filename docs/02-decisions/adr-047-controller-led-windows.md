@@ -119,7 +119,7 @@ computes, `core.js` writes them.
 - Existing popups keep working: a `data-fetch-get` without `data-window` is a window without an
   identity (no uniqueness check), the single-popup behaviour is the special case of one window.
 - First users: the journal entry detail as a window (FIN-JOURNAL-CAPTURE-001, owner
-  2026-09-29); then order processing.
+  2026-09-29) — built the same day (`fetch.md` WIN-001); then order processing.
 - Tests: the identity and overlap rule, origin round trip, close-with-children — in the shared
   JS harness and per module in PHP (the controller's answer for an origin).
 

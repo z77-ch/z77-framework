@@ -1,0 +1,38 @@
+// Host binding: backend → the shared `z77-windows` primitive (ADR-047, ADR-018 rule 7).
+//
+// The primitive owns the geometry; the backend gives it its surface — palette tokens,
+// radius, shadow, the title bar. Two classes (`.be .z77-…`) beat the primitive's one.
+
+.be .z77-windows {
+    --z77-windows-backdrop: rgba(0, 0, 0, .34);
+    --z77-window-bg:        var(--be-bg);
+    --z77-window-line:      var(--be-line);
+}
+.be .z77-window {
+    border-radius: var(--radius-lg);
+    box-shadow:    var(--shadow-lg);
+    color:         var(--be-text);
+}
+.be .z77-window.is-front { box-shadow: var(--shadow-lg), 0 0 0 2px var(--be-accent-soft); }
+.be .z77-window__head {
+    padding:       var(--space-2) var(--space-3);
+    border-bottom: 1px solid var(--be-line);
+    background:    var(--be-surface2);
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    font-weight:   var(--font-weight-semibold);
+    font-size:     var(--font-size-sm);
+}
+.be .z77-window__close {
+    width:         28px;
+    height:        28px;
+    border-radius: var(--radius-md);
+    color:         var(--be-muted);
+    font-size:     1.25rem;
+    line-height:   1;
+}
+.be .z77-window__close:hover { background: var(--be-accent-soft); color: var(--be-text); }
+
+@media (max-width: 767px) {
+    .be .z77-window,
+    .be .z77-window__head { border-radius: 0; }
+}

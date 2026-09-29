@@ -21,7 +21,13 @@
  * @var callable $fmt
  * @var string|null $configNotice  the red band while no VAT account can be resolved (leftover config key, mandator unavailable) — null normally
  * @var string $actionBase
+ * @var bool   $window  fetched as a window (ADR-047): the root declares mask + entity, «Bearbeiten» loads into the window, no way back to the journal (it is still there)
+ * @var string $origin  where the window came from (WindowOrigin) — travels on into the edit form
  */
+$window = $window ?? false;
+$winAttr = $window
+    ? ' data-window="journal-entry-detail" data-window-entity="journal-entry:' . (int) $entry->getId() . '" data-window-title="' . e('Buchung ' . $entry->getFiscalYear()->getCode() . '/' . $entry->getNumber()) . '"'
+    : '';
 $actionBase = $actionBase ?? '/backend/finance/journal';
 $year       = $entry->getFiscalYear();
 $label      = $year->getCode() . '/' . $entry->getNumber();
@@ -42,7 +48,7 @@ $snapshotLines = function (array $snapshot) use ($fmt, $lineCols): string {
     return $html . '</div>';
 };
 ?>
-<div class="be-list">
+<div class="be-list"<?= $winAttr ?>>
     <?php if (!empty($configNotice)): ?>
     <div class="be-modal__alert be-modal__alert--error"><?= e($configNotice) ?></div>
     <?php endif; ?>
@@ -115,9 +121,11 @@ $snapshotLines = function (array $snapshot) use ($fmt, $lineCols): string {
             </div>
         </div>
         <p class="be-form__hint">
+            <?php if (!$window): ?>
             <a class="be-btn be-btn--ghost be-btn--sm" href="<?= e($actionBase) ?>/list?year=<?= e(rawurlencode($year->getCode())) ?>">Zurück zum Journal</a>
+            <?php endif; ?>
             <?php if ($editable): ?>
-            <a class="be-btn be-btn--ghost be-btn--sm" href="<?= e($actionBase) ?>/edit?id=<?= e((string) $entry->getId()) ?>">Bearbeiten</a>
+            <a class="be-btn be-btn--ghost be-btn--sm" href="<?= e($actionBase) ?>/edit?id=<?= e((string) $entry->getId()) ?>"<?= $window ? ' data-window-link' : '' ?>>Bearbeiten</a>
             <button type="button" class="be-btn be-btn--danger be-btn--sm" data-fetch-get="<?= e($actionBase) ?>/confirm-delete?id=<?= e((string) $entry->getId()) ?>">Löschen …</button>
             <?php else: ?>
             <span class="be-list__cell--muted"><?= e($notEditableWhy) ?></span>

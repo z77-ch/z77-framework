@@ -18,7 +18,10 @@
  *     this part, the capture form above keeps what is typed (owner
  *     2026-09-28). Without the script they are plain page loads;
  *   - the state icon is a link: an editable entry opens its edit page, any
- *     other its detail.
+ *     other its detail;
+ *   - a click on an entry's TEXT opens it as a window (ADR-047,
+ *     `data-window-open`) — the journal stays; the href remains for a
+ *     ctrl-click and for a browser without the script.
  *
  * Styling: the shared backend list v2 classes plus `.be-list__find`,
  * `.be-list__state`, `.be-list__toggle` (module-backend `_list.scss`) — no CSS
@@ -151,7 +154,7 @@ $priority = ['f_date' => '3', 'f_debit' => '2', 'f_credit' => '2'];
                         <a class="be-list__cell be-list__state be-list__state--<?= e($row['state']) ?>" href="<?= e($stateUrl) ?>" aria-label="<?= e($states[$row['state']]) ?>" title="<?= e($states[$row['state']]) ?>"><svg class="be-icon" width="14" height="14" aria-hidden="true"><use href="#icon-<?= e($icons[$row['state']]) ?>"/></svg></a>
                         <span class="be-list__cell be-list__cell--num be-list__cell--mono"><a href="<?= e($detail) ?>"><?= $filter->allYears ? e($entry->getFiscalYear()->getCode()) . '/' : '' ?><?= $entry->getNumber() ?></a></span>
                         <span class="be-list__cell" data-priority="3"><?= e($entry->getDate()->format('d.m.Y')) ?></span>
-                        <span class="be-list__cell"><a href="<?= e($detail) ?>"><?= e($entry->getText()) ?></a><?= $entry->isReversal() ? ' <span class="badge badge--warning">Storno von ' . e($entry->getReversalOf()->getFiscalYear()->getCode() . '/' . $entry->getReversalOf()->getNumber()) . '</span>' : '' ?></span>
+                        <span class="be-list__cell"><a href="<?= e($detail) ?>" data-window-open="<?= e($detail) ?>"><?= e($entry->getText()) ?></a><?= $entry->isReversal() ? ' <span class="badge badge--warning">Storno von ' . e($entry->getReversalOf()->getFiscalYear()->getCode() . '/' . $entry->getReversalOf()->getNumber()) . '</span>' : '' ?></span>
                         <span class="be-list__cell be-list__cell--mono" data-priority="2"><?= e($side($entry, true)) ?></span>
                         <span class="be-list__cell be-list__cell--mono" data-priority="2"><?= e($side($entry, false)) ?></span>
                         <span class="be-list__cell be-list__cell--num"><?= e($fmt($entry->total())) ?></span>
