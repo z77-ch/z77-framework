@@ -94,7 +94,7 @@ trait FiscalYearControllerTrait
     {
         return match ($reason) {
             FiscalYearNotDeletableException::NOT_FOUND   => 'Das Geschäftsjahr gibt es nicht mehr — bitte die Liste neu laden.',
-            FiscalYearNotDeletableException::NOT_LATEST  => 'Nur das letzte Geschäftsjahr lässt sich löschen — sonst entstünde eine Lücke zwischen den Jahren.',
+            FiscalYearNotDeletableException::NOT_LATEST  => 'Nur das erste oder das letzte Geschäftsjahr lässt sich löschen — sonst entstünde eine Lücke zwischen den Jahren.',
             FiscalYearNotDeletableException::HAS_ENTRIES => 'Im Geschäftsjahr gibt es Buchungen — es lässt sich nicht mehr löschen.',
             FiscalYearNotDeletableException::HAD_ENTRIES => 'Im Geschäftsjahr wurde schon gebucht (gelöschte Buchungen sind im Änderungsprotokoll dokumentiert) — es lässt sich nicht mehr löschen.',
             FiscalYearNotDeletableException::RANGE_USED  => 'Aus dem Nummernkreis des Geschäftsjahrs wurde schon eine Nummer bezogen — es lässt sich nicht mehr löschen.',
@@ -106,14 +106,18 @@ trait FiscalYearControllerTrait
 
     protected function listAction(): HtmlResponse
     {
-        // Only the latest year can be deletable; the button shows for it alone.
-        $latest    = $this->fiscalYears()->latest();
-        $deletable = $latest !== null && $this->fiscalYearService()->deletionRefusal($latest) === null ? $latest->getId() : null;
+        // Only the years at either end can be deletable (the latest, the earliest); the button shows for them alone.
+        $deletable = [];
+        foreach ([$this->fiscalYears()->latest(), $this->fiscalYears()->earliest()] as $end) {
+            if ($end !== null && $this->fiscalYearService()->deletionRefusal($end) === null) {
+                $deletable[] = $end->getId();
+            }
+        }
 
         $response = $this->html([
             'years'       => $this->fiscalYears()->allWithPeriods(),
             'stateLabels' => $this->periodStateLabels(),
-            'deletableId' => $deletable,
+            'deletableIds' => array_values(array_unique($deletable)),
             'actionBase'  => $this->fiscalYearListBase(),
         ]);
         // The fragment owns its header slot (financial.md, «fragment slots»). The add action acts
@@ -125,10 +129,15 @@ trait FiscalYearControllerTrait
 
     // ── open ─────────────────────────────────────────────────────────────
 
-    /** «Geschäftsjahr eröffnen»: GET shows the proposal, POST opens through the service. */
+    /**
+     * «Geschäftsjahr eröffnen»: GET shows the proposal — the next year, or with `?prior=1` the
+     * year before the earliest (owner 2026-09-29) — POST opens through the service, which
+     * accepts either (the validator checks contiguity at both ends).
+     */
     protected function openAction(): HtmlResponse|FetchResponse
     {
-        $year      = $this->fiscalYearService()->proposeNext();
+        $prior     = DI::getRequest()->getGetParameter('prior') === '1' && $this->fiscalYears()->earliest() !== null;
+        $year      = $prior ? $this->fiscalYearService()->proposePrior() : $this->fiscalYearService()->proposeNext();
         $proposed  = $year->getCode();
         $validator = null;
 
@@ -167,6 +176,8 @@ trait FiscalYearControllerTrait
 
         $response = $this->html([
             'entry'      => $year,
+            'prior'      => $prior,
+            'hasYears'   => $this->fiscalYears()->earliest() !== null,
             'proposed'   => $proposed,
             'validator'  => $validator ?? new FiscalYearValidator($year),
             'actionBase' => $this->fiscalYearListBase(),

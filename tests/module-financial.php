@@ -1599,7 +1599,8 @@ check('Y3 deletionRefusal(): null for the new empty latest year, not-latest for 
     && $service->deletionRefusal($years->findOneBy(['code' => '2031-32'])) === FiscalYearNotDeletableException::NOT_LATEST);
 $yearListHtml = fn() => $renderer->partial('Backend/FiscalYearController/listAction', $listHost('fiscal-year')->context);
 $html = $yearListHtml();
-check('Y4 the list shows «Löschen …» for that year only', substr_count($html, '/confirm-delete?id=') === 1 && str_contains($html, '/backend/finance/fiscal-year/confirm-delete?id=' . $yearId('2032-33')));
+check('Y4 the list shows «Löschen …» for that year — never for one in the middle (the earliest may carry one too, since the prior years)', str_contains($html, '/backend/finance/fiscal-year/confirm-delete?id=' . $yearId('2032-33'))
+    && !str_contains($html, '/confirm-delete?id=' . $yearId('2031-32') . '"') && !str_contains($html, '/confirm-delete?id=' . $yearId('2030-31') . '"'));
 
 $nested = null;
 $outer  = function () use ($service, $yearId, &$nested) {
@@ -1621,7 +1622,7 @@ $em = $wireDi();
 (new FiscalYearService($em))->delete($yearId('2032-33'));
 check('Y7 the latest empty year is deleted: year, periods and range gone', $yearSnapshot('2032-33') === ['0', '0', false]);
 $em = $wireDi();
-check('Y8 … the latest is 2031-32 again, and the list offers no delete (it has entries)', $em->getRepository(FiscalYear::class)->latest()->getCode() === '2031-32' && !str_contains($yearListHtml(), '/confirm-delete?id='));
+check('Y8 … the latest is 2031-32 again, and the list offers no delete (it has entries)', $em->getRepository(FiscalYear::class)->latest()->getCode() === '2031-32' && !str_contains($yearListHtml(), '/confirm-delete?id=' . $yearId('2031-32') . '"'));
 (new FiscalYearService($em))->open(new FiscalYear('2032-33', day('2032-07-01'), day('2033-06-30')));
 check('Y9 … and it re-opens with the same code: 12 periods, its range new at 0', $yearSnapshot('2032-33') === ['1', '12', '0']);
 
@@ -1661,6 +1662,37 @@ check('Y15 the modal posts id + entity token to /delete (Fetch, no script); a re
 $yearSource = file_get_contents($package . '/src/Ui/FiscalYearControllerTrait.php');
 check('Y16 the delete action is a Fetch POST checking the entity token «fiscalYear» and going through the service', str_contains($yearSource, "#[Fetch, HttpMethod('POST')]")
     && str_contains($yearSource, "'fiscalYear', \$id)") && str_contains($yearSource, '->delete($id)') && !str_contains($yearSource, '->remove('));
+
+echo "PY. A PRIOR year: the year before the earliest (owner 2026-09-29)\n";
+$em       = $wireDi();
+$service  = new FiscalYearService($em);
+$years    = $em->getRepository(FiscalYear::class);
+$earliest = $years->earliest();
+$firstDay = $earliest->getStartDate();
+$prior    = $service->proposePrior();
+check('PY1 proposePrior(): twelve months ending the day before the earliest year starts, code from the dates',
+    $prior->getEndDate()->format('Y-m-d') === $firstDay->modify('-1 day')->format('Y-m-d')
+    && $prior->getStartDate()->format('Y-m-d') === $firstDay->modify('-1 year')->format('Y-m-d') && $prior->getCode() === FiscalYearService::proposeCode($prior->getStartDate(), $prior->getEndDate()));
+$gap = new FiscalYearValidator(new FiscalYear('py-gap', $firstDay->modify('-1 year'), $firstDay->modify('-2 days')), $years);
+check('PY2 a prior year that leaves a gap is refused — the message names both ways (after the latest, before the earliest)',
+    !$gap->isValid() && str_contains($gap->getFieldError('start_date'), 'Vorjahr') && str_contains($gap->getFieldError('start_date'), $firstDay->modify('-1 day')->format('d.m.Y')));
+$service->open($prior);
+$priorCode = $prior->getCode();
+$em    = $wireDi();
+$years = $em->getRepository(FiscalYear::class);
+check('PY3 open() takes the prior year: the earliest now, its monthly periods, its number range at 0',
+    $years->earliest()->getCode() === $priorCode && count($years->earliest()->getPeriods()) >= 12 && (string) $db->fetchOne('SELECT last_number FROM number_range WHERE name = ?', ['journal-entry.' . $priorCode]) === '0');
+check('PY4 the next year is still offered after the latest (both ends stay open)', (new FiscalYearService($em))->proposeNext()->getStartDate()->format('Y-m-d') === $years->latest()->getEndDate()->modify('+1 day')->format('Y-m-d'));
+$html = $yearListHtml();
+check('PY5 the empty prior year carries «Löschen …» (the earliest — a prior year opened by mistake), the year after it does not',
+    str_contains($html, '/confirm-delete?id=' . $yearId($priorCode)) && $refusal($earliest->getCode()) === FiscalYearNotDeletableException::NOT_LATEST);
+(new FiscalYearService($wireDi()))->delete($yearId($priorCode));
+check('PY6 … and it is deleted: year, periods and range gone; the earliest is the old one again', $yearSnapshot($priorCode) === ['0', '0', false]
+    && $wireDi()->getRepository(FiscalYear::class)->earliest()->getCode() === $earliest->getCode());
+$openPrior = $renderer->partial('Backend/FiscalYearController/open', ['entry' => $prior, 'prior' => true, 'hasYears' => true, 'proposed' => $priorCode, 'validator' => new FiscalYearValidator($prior), 'actionBase' => '/backend/finance/fiscal-year']);
+check('PY7 the opening modal switches «Nächstes Jahr | Vorjahr» by a fetched GET on BUTTONS (a link would load /open as a page — seen live 2026-09-29; the server proposes the dates), and says the prior year\'s balances need an opening entry by hand until P5',
+    str_contains($openPrior, 'data-fetch-get="/backend/finance/fiscal-year/open?prior=1"') && str_contains($openPrior, 'be-lang-switch__option be-lang-switch__option--active" data-fetch-get="/backend/finance/fiscal-year/open?prior=1" aria-pressed="true"') && !str_contains($openPrior, '<a ')
+    && str_contains($openPrior, 'Eröffnungsbuchung'));
 
 echo "Y. … races answered with a sentence, not a 500 (review M1/L2)\n";
 $driverError = fn(string $m) => \Doctrine\DBAL\Driver\PDO\Exception::new(new \PDOException($m));

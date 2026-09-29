@@ -12,7 +12,7 @@ final class FiscalYearNotDeletableException extends FinancialException
 {
     /** The year is gone (deleted in the meantime) — the screen reloads. */
     public const NOT_FOUND   = 'not-found';
-    /** A later year follows — deleting this one would break contiguity. */
+    /** Neither the latest nor the earliest year — deleting one in the middle would break contiguity. */
     public const NOT_LATEST  = 'not-latest';
     /** A journal entry references the year. */
     public const HAS_ENTRIES = 'has-entries';

@@ -89,4 +89,16 @@ class FiscalYearRepository extends DoctrineRepository
             ->getQuery()
             ->getOneOrNullResult();
     }
+
+    /** The year that starts first — the one a PRIOR year must precede (owner 2026-09-29) — or null for an empty table. Doctrine-only (DQL). */
+    public function earliest(): ?FiscalYear
+    {
+        return $this->em()->createQueryBuilder()
+            ->select('y')
+            ->from(FiscalYear::class, 'y')
+            ->orderBy('y.startDate', 'ASC')
+            ->setMaxResults(1)
+            ->getQuery()
+            ->getOneOrNullResult();
+    }
 }

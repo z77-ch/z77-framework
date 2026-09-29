@@ -2,7 +2,7 @@
 /**
  * Confirm deleting a wrongly opened fiscal year (owner decision 2026-09-22,
  * FIN-FY-002): the year, its periods and its number range go together. Only
- * the latest year, only while nothing was ever posted in it — refused here
+ * the latest or the earliest year, only while nothing was ever posted in it — refused here
  * with the reason, and decided again on POST under lock.
  *
  * @var \Z77\Module\Financial\Entities\FiscalYear $year

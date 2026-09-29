@@ -2,9 +2,9 @@
 /**
  * The fiscal years, newest first, each with its monthly periods and their
  * close state (ADR-042 decision 10). A year is opened through the toolbar
- * button and never edited; the LATEST year carries «Löschen …» while nothing
- * was ever posted in it (`$deletableId`, FIN-FY-002 — the modal and the
- * service decide again). The period states move with the VAT return and the
+ * button and never edited; the LATEST and the EARLIEST year carry «Löschen …»
+ * while nothing was ever posted in them (`$deletableIds`, FIN-FY-002 — the
+ * modal and the service decide again). The period states move with the VAT return and the
  * close (P5).
  *
  * Styling: the shared backend list classes only (`.be-list__section`,
@@ -13,11 +13,11 @@
  *
  * @var list<\Z77\Module\Financial\Entities\FiscalYear> $years  newest first, periods loaded
  * @var array<string,string> $stateLabels
- * @var ?int $deletableId  the one year that may be deleted, or null
+ * @var list<int> $deletableIds  the years that may be deleted (at most the latest and the earliest)
  * @var string $actionBase
  */
 $actionBase  = $actionBase ?? '/backend/finance/fiscal-year';
-$deletableId = $deletableId ?? null;
+$deletableIds = $deletableIds ?? [];
 $badge = [
     'open'        => 'badge--success',
     'vat-settled' => 'badge--warning',
@@ -42,7 +42,7 @@ $badge = [
                 Geschäftsjahr <code><?= e($year->getCode()) ?></code>
                 <small class="be-list__cell--muted">· <?= e($year->getStartDate()->format('d.m.Y')) ?> – <?= e($year->getEndDate()->format('d.m.Y')) ?> · Nummernkreis <code><?= e($year->journalEntryRange()) ?></code></small>
             </h2>
-            <?php if ($deletableId !== null && $year->getId() === $deletableId): ?>
+            <?php if (in_array($year->getId(), $deletableIds, true)): ?>
             <button type="button" class="be-btn be-btn--danger be-btn--sm" data-fetch-get="<?= e($actionBase) ?>/confirm-delete?id=<?= e((string) $year->getId()) ?>">Löschen …</button>
             <?php endif; ?>
             <span class="be-list__section-badge" title="Perioden"><?= count($periods) ?></span>

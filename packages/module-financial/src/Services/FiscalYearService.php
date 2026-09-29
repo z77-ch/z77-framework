@@ -68,6 +68,23 @@ final class FiscalYearService
     }
 
     /**
+     * The PRIOR year the opening form proposes (owner 2026-09-29): twelve months ending the day
+     * before the earliest year starts, code proposed from the dates. Without any year: the
+     * next one ({@see proposeNext()}). Not persisted.
+     */
+    public function proposePrior(): FiscalYear
+    {
+        $earliest = $this->years()->earliest();
+        if ($earliest === null) {
+            return $this->proposeNext();
+        }
+        $end   = $earliest->getStartDate()->modify('-1 day');
+        $start = $end->modify('+1 day')->modify('-1 year');
+
+        return new FiscalYear(self::proposeCode($start, $end), $start, $end);
+    }
+
+    /**
      * Open a NEW fiscal year: validate, derive one period per calendar month
      * clipped to the year's bounds, then in one unit of work create the range
      * `journal-entry.{code}` at 0 and persist the year with its periods.
@@ -150,14 +167,15 @@ final class FiscalYearService
      */
     public function deletionRefusal(FiscalYear $year): ?string
     {
-        return $this->refusalOf($year, $this->years()->latest());
+        return $this->refusalOf($year, $this->years()->latest(), $this->years()->earliest());
     }
 
     /**
      * Delete a wrongly opened fiscal year (owner decision 2026-09-22,
      * FIN-FY-002): the year, its periods and its range `journal-entry.{code}`
-     * in ONE unit of work. Allowed only for the LATEST year (a middle one
-     * would break contiguity) and only while nothing was ever posted in it:
+     * in ONE unit of work. Allowed only for the LATEST or the EARLIEST year
+     * (a middle one would break contiguity; the earliest since the prior years,
+     * owner 2026-09-29) and only while nothing was ever posted in it:
      * no journal entry, no change row of a deleted manual entry (that number
      * was consumed, and its gap history must not be orphaned), and the range
      * still at `last_number = 0`.
@@ -204,7 +222,7 @@ final class FiscalYearService
             if ($year === null) {
                 throw new FiscalYearNotDeletableException(FiscalYearNotDeletableException::NOT_FOUND, "Fiscal year #{$yearId} was deleted in the meantime");
             }
-            $refusal = $this->refusalOf($year, $this->years()->latest());
+            $refusal = $this->refusalOf($year, $this->years()->latest(), $this->years()->earliest());
             if ($refusal === null && !$unused) {
                 $refusal = FiscalYearNotDeletableException::RANGE_USED;
             }
@@ -220,9 +238,11 @@ final class FiscalYearService
     }
 
     /** The first reason that forbids deleting $year, or null; $latest = the year that ends last. */
-    private function refusalOf(FiscalYear $year, ?FiscalYear $latest): ?string
+    private function refusalOf(FiscalYear $year, ?FiscalYear $latest, ?FiscalYear $earliest): ?string
     {
-        if ($latest === null || $latest->getId() !== $year->getId()) {
+        // At either END of the chain — the latest, or the earliest (a prior year opened by
+        // mistake, owner 2026-09-29): a year in the middle would leave a gap.
+        if ($latest?->getId() !== $year->getId() && $earliest?->getId() !== $year->getId()) {
             return FiscalYearNotDeletableException::NOT_LATEST;
         }
         /** @var JournalEntryRepository $entries */

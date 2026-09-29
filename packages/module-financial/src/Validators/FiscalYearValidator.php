@@ -72,11 +72,22 @@ class FiscalYearValidator extends EntityValidator
         if ($latest === null) {
             return;
         }
+        // Contiguous at either end: the NEXT year starts the day after the latest ends, a PRIOR
+        // year (owner 2026-09-29 — earlier books entered afterwards) ends the day before the
+        // earliest starts. A gap or an overlap is neither.
         $expected = $latest->getEndDate()->modify('+1 day');
-        if ($start->format('Y-m-d') !== $expected->format('Y-m-d')) {
-            $this->addFieldError('start_date', 'Ein neues Geschäftsjahr beginnt am Tag nach dem Ende von «' . $latest->getCode()
-                . '» — am ' . $expected->format('d.m.Y') . '.');
+        if ($start->format('Y-m-d') === $expected->format('Y-m-d')) {
+            return;
         }
+        $earliest = $this->years->earliest();
+        $end      = $this->entity->getEndDate();
+        $priorEnd = $earliest->getStartDate()->modify('-1 day');
+        if ($end !== null && $end->format('Y-m-d') === $priorEnd->format('Y-m-d') && $start < $earliest->getStartDate()) {
+            return;
+        }
+        $this->addFieldError('start_date', 'Ein neues Geschäftsjahr beginnt am Tag nach dem Ende von «' . $latest->getCode()
+            . '» (am ' . $expected->format('d.m.Y') . ') — oder, als Vorjahr, endet es am Tag vor dem Beginn von «'
+            . $earliest->getCode() . '» (am ' . $priorEnd->format('d.m.Y') . ').');
     }
 
     public function validateEndDate(?\DateTimeImmutable $end): void

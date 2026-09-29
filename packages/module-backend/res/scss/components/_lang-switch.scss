@@ -50,6 +50,8 @@
     border:         1px solid var(--be-line);
     border-radius:  var(--radius-md);
     text-decoration:none;
+    font-family:    inherit;
+    cursor:         pointer;
     transition:     background var(--transition-fast),
                     color      var(--transition-fast),
                     border-color var(--transition-fast);
