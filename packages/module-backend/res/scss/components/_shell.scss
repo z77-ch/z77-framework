@@ -222,6 +222,11 @@ body.backend {
     text-decoration: none;
     cursor:        pointer;
 }
+// The same tabs in the TOOLBAR (hc2) — a screen whose toolbar carries its tabs and no tools
+// (ADR-033: tabs OR tools), first user: the finance reports (owner 2026-09-29). The row cancels
+// the band slot's vertical padding, so the tabs span the full band height and the active line
+// sits on the band's bottom edge, as it does in the tab row.
+.be-shell-band__slot .be-viewtabs { margin-block: calc(-1 * var(--space-2)); }
 .be-viewtabs__tab:hover { color: var(--be-text); }
 .be-viewtabs__tab.is-active {
     color:               var(--be-text);
@@ -356,6 +361,26 @@ body.backend {
 // Kept visible on purpose: hiding it would silently shrink the menu and leave the user
 // wondering where the entry went; `title` carries the reason.
 .be-shell-add__item:disabled { opacity: .45; cursor: not-allowed; }
+
+// SELECT variant — a CSS-only picker for a SELECTION the screen is scoped to (first user: the
+// fiscal year of the finance screens in the action cell, owner 2026-09-29). Same anatomy, but the
+// root is a `<details>` and its `<summary>` the trigger: the browser opens and closes it, no
+// panel-toggle script (Rule 7). The items are links; the chosen one carries `aria-current`.
+details.be-shell-add--select > summary {
+    list-style:      none;
+    cursor:          pointer;
+    width:           100%;
+    justify-content: space-between;
+    &::-webkit-details-marker { display: none; }
+    &:hover { background: var(--be-surface2); }
+}
+.be-shell-add--select[open] .be-shell-add__chevron { transform: rotate(180deg); }
+.be-shell-add--select .be-shell-add__item { text-decoration: none; }
+.be-shell-add--select .be-shell-add__item[aria-current] {
+    background:  var(--be-accent-soft);
+    color:       var(--be-accent);
+    font-weight: var(--font-weight-medium);
+}
 
 // Compact state indicator for a header slot: a coloured dot + ONE line. For screens whose
 // health must be readable without reading the body (job-runner heartbeat, import plan state).

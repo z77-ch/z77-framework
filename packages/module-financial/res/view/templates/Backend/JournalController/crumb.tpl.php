@@ -2,7 +2,9 @@
 /**
  * Journal — the crumb line (hc3): Finanzen › Journal › fiscal year › month of
  * the date being captured (owner 2026-09-28, FIN-JOURNAL-CAPTURE-001). Position
- * only (ADR-033) — the year is not a switch: it follows the date.
+ * only (ADR-033) — the year is SELECTED in the action cell (owner 2026-09-29);
+ * the month only while the form's date lies in that year (a refused form keeps
+ * its own date).
  *
  * Part of the fragment: added by the trait (financial.md, «fragment slots»).
  *
@@ -13,6 +15,7 @@
 $actionBase = $actionBase ?? '/backend/finance/journal';
 $months = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'];
 $date   = \Z77\Module\Financial\Ui\ManualEntryForm::parseDate($form->date());
+$date   = $date !== null && $year->covers($date) ? $date : null;
 ?>
 <nav class="be-crumb" aria-label="Pfad">
     <span>Finanzen</span>

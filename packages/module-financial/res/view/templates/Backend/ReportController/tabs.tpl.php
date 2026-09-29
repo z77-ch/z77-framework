@@ -1,6 +1,6 @@
 <?php
 /**
- * The report pages as a tab row (shell slot `tabs`, `.be-viewtabs`): five
+ * The report pages as tabs in the TOOLBAR (hc2, owner 2026-09-29 — was the shell's `tabs` row; `.be-viewtabs`): five
  * views of one ledger. Each link carries the current fiscal year and range,
  * so switching the report keeps what is being looked at. No JavaScript.
  *

@@ -28,7 +28,7 @@
  * `.be-list__state`, `.be-list__toggle` (module-backend `_list.scss`) — no CSS
  * and no JavaScript of its own.
  *
- * @var \Z77\Module\Financial\Entities\FiscalYear|null $year  the year of the capture date — null without any year
+ * @var \Z77\Module\Financial\Entities\FiscalYear|null $year  the SELECTED year (FiscalYearSelection, owner 2026-09-29) — null without any year
  * @var list<array{entry?: \Z77\Module\Financial\Entities\JournalEntry, state?: string, deleted?: \Z77\Module\Financial\Entities\EntryChange, number: int}> $rows
  * @var \Z77\Module\Financial\Ui\JournalFilter $filter
  * @var \Z77\Module\Financial\Reports\Paging $paging

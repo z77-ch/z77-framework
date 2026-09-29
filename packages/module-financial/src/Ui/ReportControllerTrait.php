@@ -22,7 +22,7 @@ use Z77\Core\DI,
  * {@see ReportLayout::config()}, and the controller's `defaultAction`
  * `trial-balance` in the host module's config.
  *
- * One PAGE per report, switched by the tab row: trial balance, balance
+ * One PAGE per report, switched by the tabs in the toolbar (hc2): trial balance, balance
  * sheet, income statement, account statement, journal. Read-only — nothing
  * here writes, so there is no form post, no CSRF token and no JavaScript
  * (Rule 7): the parameters are a GET form (fiscal year, from, to; the
@@ -31,9 +31,11 @@ use Z77\Core\DI,
  * shell's print rules drop the chrome, `.be-noprint` drops the form and the
  * pager.
  *
- * Parameters: `?year=` a fiscal-year code (default: the year containing
- * today, else the latest — `FiscalYearRepository::currentOrLatest()`, the
- * journal's rule),
+ * Parameters: `?year=` a fiscal-year code — the SELECTION the journal shares
+ * ({@see FiscalYearSelection}, owner 2026-09-29): an explicit year is
+ * remembered for the session, without `?year=` the remembered year applies,
+ * else the year containing today, else the latest. The year is picked in the
+ * action cell (hc1, `Backend/partials/fiscalYearSelect`),
  * `?from=` / `?to=` `YYYY-MM-DD` inside that year (default: its first and
  * last day). A value that is not a date, or lies outside the year, falls
  * back to the default and says so above the report — never a 500, never a
@@ -45,7 +47,7 @@ use Z77\Core\DI,
  */
 trait ReportControllerTrait
 {
-    /** The tab row: URL action → German label, in reading order. */
+    /** The report tabs (hc2): URL action → German label, in reading order. */
     private const REPORT_TABS = [
         'trial-balance'     => 'Saldobilanz',
         'balance-sheet'     => 'Bilanz',
@@ -76,6 +78,11 @@ trait ReportControllerTrait
     private function reportYears(): FiscalYearRepository
     {
         return $this->em()->getRepository(FiscalYear::class);
+    }
+
+    private function reportYearSelection(): FiscalYearSelection
+    {
+        return FiscalYearSelection::of($this->reportYears());
     }
 
     /**
@@ -178,11 +185,10 @@ trait ReportControllerTrait
     private function reportRange(array &$notices): ?ReportRange
     {
         $code = $this->reportParameter('year');
-        $year = $code === '' ? null : $this->reportYears()->findOneBy(['code' => $code]);
-        if ($code !== '' && $year === null) {
-            $notices[] = "Geschäftsjahr «{$code}» gibt es nicht — das aktuelle wird gezeigt.";
+        $year = $this->reportYearSelection()->resolve($code);
+        if ($code !== '' && $year?->getCode() !== $code) {
+            $notices[] = "Geschäftsjahr «{$code}» gibt es nicht — das gewählte wird gezeigt.";
         }
-        $year ??= $this->reportYears()->currentOrLatest();
         if ($year === null) {
             return null;
         }
@@ -213,7 +219,7 @@ trait ReportControllerTrait
     }
 
     /**
-     * One report page: the parameters, the tab row, the report's template in
+     * One report page: the parameters, the tabs (hc2), the report's template in
      * the body. $build turns the range into the report's own context; it is
      * not called without a fiscal year.
      *
@@ -233,6 +239,15 @@ trait ReportControllerTrait
         };
 
         $own = $range === null ? [] : $build($range);
+        // The year dropdown (hc1): a link carries the YEAR only — from and to fall back to the
+        // new year's bounds — plus what the page keeps (the account of the account statement).
+        $keep  = $own['keep'] ?? [];
+        $years = $this->reportYearSelection()->all();
+        $fySelection = $range === null ? null : [
+            'years'   => $years,
+            'current' => $range->year,
+            'href'    => static fn(string $code): string => $link($tab, ['year' => $code, 'from' => null, 'to' => null] + $keep),
+        ];
         // A page past the last shows the last — and says so, like the date fallbacks.
         $paging = isset($own['report']) && property_exists($own['report'], 'paging') ? $own['report']->paging : null;
         if ($paging !== null && $paging->isBeyondLast()) {
@@ -241,9 +256,10 @@ trait ReportControllerTrait
 
         // The report's own context first: it may override a default (`keep`).
         $response = $this->html($own + [
-            'years'       => $this->reportYears()->allWithPeriods(),
+            'years'       => $years,
             'keep'        => [],
             'range'       => $range,
+            'fySelection' => $fySelection,
             'notices'     => $notices,
             'tab'         => $tab,
             'reportTabs'  => self::REPORT_TABS,
@@ -271,8 +287,10 @@ trait ReportControllerTrait
         $this->layoutManager->addPartials('printHead', 'Backend/ReportController', ReportLayout::NS);
         $this->layoutManager->addPartials($template, 'Backend/ReportController', ReportLayout::NS);
         $this->layoutManager->addPartials('printFoot', 'Backend/ReportController', ReportLayout::NS);
-        $this->layoutManager->addPartials('tabs', 'Backend/ReportController', ReportLayout::NS, 'tabs');
-        $this->layoutManager->addPartials('yearSwitch', 'Backend/ReportController', ReportLayout::NS, 'hc2');
+        // The report tabs stand in the toolbar (hc2, owner 2026-09-29) — the tab row stays empty.
+        $this->layoutManager->addPartials('tabs', 'Backend/ReportController', ReportLayout::NS, 'hc2');
+        // The year is a selection: the action cell (owner 2026-09-29), the dropdown the journal shares.
+        $this->layoutManager->addPartials('fiscalYearSelect', 'Backend/partials', ReportLayout::NS, 'hc1');
 
         return $response;
     }

@@ -42,8 +42,9 @@ use Z77\Core\DI,
  *
  *   - capture AND list on ONE page (`list`, FIN-JOURNAL-CAPTURE-001, owner
  *     2026-09-28): the capture form open at once (one-line or Sammelbuchung,
- *     `?mode=`), below it the journal of the fiscal year the form's date
- *     falls in, newest first, paged by `journalListLimit`, searchable per
+ *     `?mode=`), below it the journal of the SELECTED fiscal year
+ *     ({@see FiscalYearSelection}: `?year=`, remembered per session, default
+ *     the current year — owner 2026-09-29; picked in the action cell), newest first, paged by `journalListLimit`, searchable per
  *     column in the database (one year or all), sortable, each row with a
  *     state icon, the deleted numbers (gaps) inline on request;
  *   - show an entry with its lines, its reversal link (both directions)
@@ -164,21 +165,20 @@ trait JournalControllerTrait
         return LedgerService::baseCurrency();
     }
 
+    private function journalYearSelection(): FiscalYearSelection
+    {
+        return FiscalYearSelection::of($this->journalYears());
+    }
+
     /**
-     * The year the screen works on: `?year=` when given and known, else the
+     * The year the screen works on — the selection the reports share
+     * ({@see FiscalYearSelection}, owner 2026-09-29): `?year=` when given and
+     * known (remembered for the session), else the remembered year, else the
      * year containing today, else the latest one; null without any year.
      */
-    private function journalYear(?string $code): ?FiscalYear
+    private function journalSelectedYear(): ?FiscalYear
     {
-        $code = trim((string) $code);
-        if ($code !== '') {
-            $year = $this->journalYears()->findOneBy(['code' => $code]);
-            if ($year !== null) {
-                return $year;
-            }
-        }
-
-        return $this->journalYears()->currentOrLatest();
+        return $this->journalYearSelection()->resolve(DI::getRequest()->getGetParameter('year'));
     }
 
     /**
@@ -284,16 +284,19 @@ trait JournalControllerTrait
      *
      *   - `?mode=einzel|sammel` — the capture form: the one-line entry
      *     (default) or the Sammelbuchung, open at once;
-     *   - `?date=` — the date the empty form starts with (kept after a save);
-     *     its FISCAL YEAR is the year the list shows. There is no year
-     *     switcher: the year follows the date, the ledger decides it anyway;
+     *   - `?year=` — the fiscal year the page shows ({@see FiscalYearSelection}:
+     *     remembered per session, default the current year; the dropdown in the
+     *     action cell sets it — owner 2026-09-29);
+     *   - `?date=` — the date the empty form starts with (kept after a save),
+     *     when it lies in the shown year; else today clamped into that year;
      *   - the column search `f_*`, `all`, `deleted`, `sort` / `dir`, `page` —
      *     {@see JournalFilter}; a search runs in the database.
      */
     protected function listAction(): HtmlResponse
     {
         $mode = DI::getRequest()->getGetParameter('mode') === 'sammel' ? 'sammel' : 'einzel';
-        $date = $this->journalCaptureDate(DI::getRequest()->getGetParameter('date'), DI::getRequest()->getGetParameter('year'));
+        $year = $this->journalSelectedYear();
+        $date = $this->journalCaptureDate(DI::getRequest()->getGetParameter('date'), $year);
         if ($mode === 'sammel') {
             $form = $this->manualEntryForm();
             $form->startBlank($date);
@@ -302,20 +305,18 @@ trait JournalControllerTrait
             $form->startBlank($date);
         }
 
-        return $this->journalListPage($form, $mode);
+        return $this->journalListPage($form, $mode, $year);
     }
 
     /**
      * Renders the journal page around a capture form — blank, or posted with
-     * its errors. The list below follows the form's date: that date's fiscal
-     * year, else `?year=`, else the year containing today, else the latest.
+     * its errors. The list below shows the SELECTED year (owner 2026-09-29) —
+     * a refused form keeps its own date, whatever year that falls in.
      */
-    private function journalListPage(OneLineEntryForm|ManualEntryForm $form, string $mode): HtmlResponse
+    private function journalListPage(OneLineEntryForm|ManualEntryForm $form, string $mode, ?FiscalYear $year = null): HtmlResponse
     {
         $request = DI::getRequest();
-        $date    = ManualEntryForm::parseDate($form->date());
-        $year    = ($date === null ? null : $this->journalYears()->findByDate($date))
-            ?? $this->journalYear($request->getGetParameter('year'));
+        $year  ??= $this->journalSelectedYear();
         $query   = [];
         foreach (array_merge(array_keys(JournalFilter::FIELDS), ['all', 'deleted', 'sort', 'dir', 'page']) as $key) {
             $query[$key] = $request->getGetParameter($key);
@@ -331,6 +332,14 @@ trait JournalControllerTrait
         $rows      = $this->journalRows($entries, $gapsApply ? $this->entryChanges()->deletionsForYear($year) : [], $search->descending, $paging);
 
         $keep = array_filter(['mode' => $mode === 'sammel' ? 'sammel' : '', 'date' => $form->date()]);
+        $base = $this->journalListBase();
+        // The year dropdown (hc1): a year link keeps the capture mode, drops the date (it
+        // belongs to the old year) and the search (a fresh list of the new year).
+        $fySelection = $year === null ? null : [
+            'years'   => $this->journalYearSelection()->all(),
+            'current' => $year,
+            'href'    => static fn(string $code): string => $base . '/list?' . http_build_query(array_filter(['mode' => $mode === 'sammel' ? 'sammel' : '', 'year' => $code])),
+        ];
         if ($year !== null && !$this->journalIsFetch()) {
             $this->journalAttachHelp($form, $year, null);
         }
@@ -345,6 +354,7 @@ trait JournalControllerTrait
             'paging'      => $paging,
             'gapsApply'   => $gapsApply,
             'keep'        => $keep,
+            'fySelection' => $fySelection,
             'states'      => self::JOURNAL_STATE_LABELS,
             'kindLabels'  => self::KIND_LABELS,
             'fmt'         => static fn(?Money $m) => AmountFormat::of($m),
@@ -362,9 +372,11 @@ trait JournalControllerTrait
         }
         if ($year !== null) {
             $this->layoutManager->addPartials($mode === 'sammel' ? 'form' : 'oneLine', 'Backend/JournalController', self::JOURNAL_NS);
-            // The fragment owns its header slots (financial.md, «fragment slots»): the capture
+            // The fragment owns its header slots (financial.md, «fragment slots»): the year
+            // selection in the action cell (owner 2026-09-29, shared with the reports), the capture
             // tools and «Buchen» in the toolbar — they act on the form on the right (ADR-033
             // rev. 2026-09-28) — and the crumb line with the year and month of the date.
+            $this->layoutManager->addPartials('fiscalYearSelect', 'Backend/partials', self::JOURNAL_NS, 'hc1');
             $this->layoutManager->addPartials('captureTools', 'Backend/JournalController', self::JOURNAL_NS, 'hc2');
             $this->layoutManager->addPartials('crumb', 'Backend/JournalController', self::JOURNAL_NS, 'hc3');
         }
@@ -408,28 +420,40 @@ trait JournalControllerTrait
     }
 
     /**
-     * The date a blank capture form starts with: `?date=` when a fiscal year
-     * covers it; else, for a link that names a year (`?year=`, the reports and
-     * the fiscal-year list link that way), today when it lies in that year,
-     * else its first day; else today when a year covers it, else the
-     * current-or-latest year's first day, else today.
+     * The date a blank capture form starts with (owner 2026-09-29): `?date=`
+     * when it lies in the shown year; else today clamped into that year —
+     * before its start its first day, after its end its last day. Without any
+     * year: today.
      */
-    private function journalCaptureDate(mixed $requested, mixed $yearCode = null): \DateTimeImmutable
+    private function journalCaptureDate(mixed $requested, ?FiscalYear $year): \DateTimeImmutable
     {
-        $date = is_string($requested) ? ManualEntryForm::parseDate($requested) : null;
-        if ($date !== null && $this->journalYears()->findByDate($date) !== null) {
-            return $date;
-        }
         $today = new \DateTimeImmutable('today');
-        $named = is_string($yearCode) && trim($yearCode) !== '' ? $this->journalYears()->findOneBy(['code' => trim($yearCode)]) : null;
-        if ($named !== null) {
-            return $named->covers($today) ? $today : $named->getStartDate();
-        }
-        if ($this->journalYears()->findByDate($today) !== null) {
+        if ($year === null) {
             return $today;
         }
+        $date = is_string($requested) ? ManualEntryForm::parseDate($requested) : null;
+        if ($date !== null && $year->covers($date)) {
+            return $date;
+        }
 
-        return $this->journalYears()->currentOrLatest()?->getStartDate() ?? $today;
+        return match (true) {
+            $today < $year->getStartDate() => $year->getStartDate(),
+            $today > $year->getEndDate()   => $year->getEndDate(),
+            default                        => $today,
+        };
+    }
+
+    /**
+     * After a posting the journal shows the year it went into: that year
+     * becomes the selection (owner 2026-09-29) — remembered when it is not the
+     * default, the choice cleared when it is.
+     */
+    private function journalSelectPostedYear(EntryRef $ref): void
+    {
+        $year = $this->journalYears()->findOneBy(['code' => $ref->fiscalYear]);
+        if ($year !== null) {
+            $this->journalYearSelection()->remember($year);
+        }
     }
 
     /**
@@ -473,7 +497,7 @@ trait JournalControllerTrait
         return method_exists($request, 'getMode') && $request->getMode() === RequestMode::Fetch;
     }
 
-    /** Back to the journal after a save: the same mode, the date kept for the next voucher. */
+    /** Back to the journal after a save: the same mode, the date kept for the next voucher (its year is the selection — {@see journalSelectPostedYear()}). */
     private function journalBackToCapture(string $mode, \DateTimeImmutable $date): RedirectResponse
     {
         return $this->redirect($this->journalListBase() . '/list?' . http_build_query(array_filter([
@@ -530,7 +554,7 @@ trait JournalControllerTrait
             return $this->journalNoYear();
         }
         if (!$request->isPost()) {
-            return $this->journalBackToCapture('einzel', $this->journalCaptureDate($request->getGetParameter('date'), $request->getGetParameter('year')));
+            return $this->journalBackToCapture('einzel', $this->journalCaptureDate($request->getGetParameter('date'), $this->journalSelectedYear()));
         }
         $form    = $this->oneLineEntryForm();
         $posting = $form->fromPost($request->getPostParameters())->toRequest();
@@ -541,6 +565,7 @@ trait JournalControllerTrait
             }
             if ($ref !== null) {
                 $this->messageService->pushFlashAfterRedirect('success', 'Buchung ' . $ref->fiscalYear . '/' . $ref->number . ' erfasst');
+                $this->journalSelectPostedYear($ref);
 
                 return $this->journalBackToCapture('einzel', $posting->date);
             }
@@ -563,7 +588,7 @@ trait JournalControllerTrait
             return $this->journalNoYear();
         }
         if (!$request->isPost()) {
-            return $this->journalBackToCapture('sammel', $this->journalCaptureDate($request->getGetParameter('date'), $request->getGetParameter('year')));
+            return $this->journalBackToCapture('sammel', $this->journalCaptureDate($request->getGetParameter('date'), $this->journalSelectedYear()));
         }
         $form = $this->manualEntryForm();
         $post = $request->getPostParameters();
@@ -579,6 +604,7 @@ trait JournalControllerTrait
                 }
                 if ($ref !== null) {
                     $this->messageService->pushFlashAfterRedirect('success', 'Buchung ' . $ref->fiscalYear . '/' . $ref->number . ' erfasst');
+                    $this->journalSelectPostedYear($ref);
 
                     return $this->journalBackToCapture('sammel', $posting->date);
                 }

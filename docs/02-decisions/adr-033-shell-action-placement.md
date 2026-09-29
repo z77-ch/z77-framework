@@ -106,6 +106,12 @@ owner's case-by-case decisions had in common:
   erfassen» …) acts on the right side → **toolbar (hc2)**. All sixteen moved
   on 2026-09-28; the backend action cell is empty on every framework screen
   now, and stays the place for an action that works on the rail itself.
+- **A selection is a choosing activity → action cell** (owner 2026-09-29):
+  what the whole screen works on is picked on the left. First user: the
+  fiscal-year selection of the journal and the reports (`financial.md`,
+  `FiscalYearSelection` — default the current year, a deviation remembered per
+  session). The report tabs, which switch the view on the right, went to the
+  toolbar the same day.
 - **Journal** (FIN-JOURNAL-CAPTURE-001): «Einzel | Sammel», «MwSt» and
   «Buchen» all act on the capture form on the right → toolbar.
 
