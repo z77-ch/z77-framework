@@ -1,6 +1,6 @@
 # ADR-047 — Controller-led windows: open a record, save it, update what shows it — without a page load
 
-**Status:** `[PROPOSED]` — drafted 2026-09-29 from the owner's specification; waits for approval
+**Status:** `[APPROVED]` — approved by the owner 2026-09-29 («flexibility is asked for, the controller steers it»)
 **Date:** 2026-09-29
 **Builds on:** [ADR-003](adr-003-controller-response-objects.md) (typed responses),
 `fetch.md` (envelope, commands, POPUP-CLOSE-001, FETCH-REGION-001)
@@ -123,11 +123,18 @@ computes, `core.js` writes them.
 - Tests: the identity and overlap rule, origin round trip, close-with-children — in the shared
   JS harness and per module in PHP (the controller's answer for an origin).
 
-## Open points (for the owner)
+## Decided with the owner (2026-09-29) — no rule, the controller steers
 
-- Whether a window's content may be a full edit form directly (edit in the window) or opens as a
-  read view with «Bearbeiten» — per screen, or one rule?
-- Unsaved changes when a window is closed: ask, or discard silently?
+- **Read first or edit at once** — there is no rule; it depends on the situation, and the
+  controller decides per window: it renders a read view with «Bearbeiten» (a further GET into
+  the same window) or the edit form directly.
+- **Closing with unsaved changes** — also the controller's call, per window: it may mark the
+  window so that closing asks first (`data-window-confirm-close="<question>"`); without the mark
+  the window closes. What no controller can reach: a closed browser tab — then everything is
+  gone, by the nature of the web, and no `beforeunload` trick is attempted.
+- The motto for the whole standard: **flexibility — the controller steers, and we program the
+  controller.** The framework offers the mechanics; which of them a screen uses is decided in
+  its controller, not fixed in `core.js`.
 
 ## Rejected Alternatives
 
