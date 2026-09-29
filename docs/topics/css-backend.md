@@ -257,6 +257,8 @@ packages/module-backend/res/view/templates/
 
 ## known issues
 
+- **FORM-ACTIONS-001** — built 2026-09-29 (ADR-049, approved the same day). **A form's action bar**: `.z77-form-actions` (geometry `kernel/shared/res/scss/components/_form-actions.scss`, the backend's surface `components/_form-actions-host.scss`, member bound in `member.scss`) — `position: sticky` at the top of the form's scroll area (a window's body, the page), `--end` at the bottom; first in the document so Enter saves. «N Fehler»: `Z77\Shared` `partials/formErrorsLink` (count + the id of the first invalid field, a `<label for>`). On a page with a toolbar «Speichern» stays in the toolbar (`form="<id>"`, ADR-033). First user: the journal's edit forms. Other forms move over as needed (owner 2026-09-29). Verified: `tests/module-financial.php` AB1–AB4. **Not verified live.**
+
 - **SHELL-DRAWER-001** — added 2026-09-28 (owner decision, ADR-033 revision). **On a phone the whole
   left side is ONE drawer**: below 767px the area switcher (`.be-shell-topbar__mod`, was simply
   `display: none` — the area could not be changed on a phone at all), the action cell

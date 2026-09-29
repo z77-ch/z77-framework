@@ -67,6 +67,24 @@ $invalid    = static fn(string $field): string => $form->error($field) !== '' ? 
         <?php endif; ?>
 
         <?php if (!$isNew): ?>
+        <?php /* The action bar (ADR-049): sticky at the top of the form — change a field, save,
+                 without scrolling; first in the document, so Enter saves. «N Fehler» leads to the
+                 first invalid field. A new entry has none: «Buchen» is in the toolbar. */ ?>
+        <?php
+        $invalidIds = [];
+        foreach (['debit' => 'journal-debit', 'date' => 'journal-date', 'text' => 'journal-text', 'credit' => 'journal-credit', 'amount' => 'journal-amount', 'tax_code' => 'journal-tax-code', 'tax_amount' => 'journal-tax-amount'] as $field => $id) {
+            if ($form->error($field) !== '') { $invalidIds[] = $id; }
+        }
+        ?>
+        <div class="z77-form-actions">
+            <button type="submit" class="be-btn be-btn--primary be-btn--sm">Speichern (Änderung wird protokolliert)</button>
+            <a class="be-btn be-btn--ghost be-btn--sm" href="<?= e($compound) ?>"<?= $winLink ?>>Als Sammelbuchung bearbeiten …</a>
+            <a class="be-btn be-btn--ghost be-btn--sm" href="<?= e($actionBase . '/detail?id=' . (int) $entry->getId()) ?>"<?= $winLink ?>>Abbrechen</a>
+            <?= $this->partial('partials/formErrorsLink', ['count' => count($invalidIds), 'target' => $invalidIds[0] ?? ''], 'Z77\\Shared') ?>
+        </div>
+        <?php endif; ?>
+
+        <?php if (!$isNew && !$window): ?>
         <div class="be-list__section-header">
             <h2 class="be-list__section-title">
                 Buchung <code><?= e($year->getCode() . '/' . $entry->getNumber()) ?></code> bearbeiten
@@ -151,13 +169,6 @@ $invalid    = static fn(string $field): string => $form->error($field) !== '' ? 
             </div>
         </div>
 
-        <?php if (!$isNew): ?>
-        <p class="be-form__hint">
-            <button type="submit" class="be-btn be-btn--primary be-btn--sm">Speichern (Änderung wird protokolliert)</button>
-            <a class="be-btn be-btn--ghost be-btn--sm" href="<?= e($compound) ?>"<?= $winLink ?>>Als Sammelbuchung bearbeiten …</a>
-            <a class="be-btn be-btn--ghost be-btn--sm" href="<?= e($actionBase . '/detail?id=' . (int) $entry->getId()) ?>"<?= $winLink ?>>Abbrechen</a>
-        </p>
-        <?php endif; ?>
     </form>
 
 </div>

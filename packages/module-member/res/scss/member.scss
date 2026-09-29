@@ -7,6 +7,7 @@
 // The shared help window (ADR-048) — geometry only, same rule; its member look is
 // bound below, beside the split's.
 @use '../../../kernel/shared/res/scss/components/help';
+@use '../../../kernel/shared/res/scss/components/form-actions';
 
 // member.scss — the module's single stylesheet (compiled to res/assets/css/member.css).
 //
@@ -1467,6 +1468,10 @@ $fb-info-tint: $fb-bg;
 // The help window (ADR-048) and the «i» that opens it (crumb line; a window's
 // title bar). Neutral like the rest: the accent draws the «i», the card's edge
 // draws the window.
+.me .z77-form-actions {
+    --z77-form-actions-bg:   var(--surface, #{$fb-surface});
+    --z77-form-actions-line: var(--line, #{$fb-line});
+}
 .me .z77-help {
     --z77-help-bg: var(--surface, #{$fb-surface});
     --z77-help-line: var(--line, #{$fb-line});

@@ -1,0 +1,13 @@
+// Host binding: backend → the shared form action bar (ADR-049). Two classes beat the primitive's one.
+
+.be .z77-form-actions {
+    --z77-form-actions-bg:   var(--be-bg);
+    --z77-form-actions-line: var(--be-line);
+    margin-bottom: var(--space-3);
+}
+.be .z77-form-actions--end { margin: var(--space-3) 0 0; }
+.be .z77-form-actions__errors {
+    color:           var(--be-danger);
+    font-size:       var(--font-size-sm);
+    text-decoration: underline;
+}

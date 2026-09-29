@@ -65,6 +65,31 @@ $fieldError = static fn(string $message): string => $message === ''
         <?php endif; ?>
 
         <?php if (!$isNew): ?>
+        <?php /* The action bar (ADR-049): sticky at the top of the form — change a field, save,
+                 without scrolling; first in the document, so Enter saves. «N Fehler» leads to the
+                 first invalid field. A new entry has none: «Buchen» is in the toolbar. */ ?>
+        <?php
+        $invalidIds = [];
+        foreach (['date' => 'journal-c-date', 'text' => 'journal-c-text'] as $field => $id) {
+            if ($form->error($field) !== '') { $invalidIds[] = $id; }
+        }
+        foreach (array_keys($form->rows()) as $i) {
+            foreach (['account', 'text', 'debit', 'credit', 'tax_code'] as $field) {
+                if ($form->rowError($i, $field) !== '') { $invalidIds[] = 'journal-row-' . $i . '-' . $field; }
+            }
+        }
+        ?>
+        <div class="z77-form-actions">
+            <button type="submit" class="be-btn be-btn--primary be-btn--sm" name="op" value="save">Speichern (Änderung wird protokolliert)</button>
+            <?php if ($oneLine !== null): ?>
+            <a class="be-btn be-btn--ghost be-btn--sm" href="<?= e($oneLine) ?>"<?= $winLink ?>>Einzeilig bearbeiten …</a>
+            <?php endif; ?>
+            <a class="be-btn be-btn--ghost be-btn--sm" href="<?= e($actionBase . '/detail?id=' . (int) $entry->getId()) ?>"<?= $winLink ?>>Abbrechen</a>
+            <?= $this->partial('partials/formErrorsLink', ['count' => count($invalidIds), 'target' => $invalidIds[0] ?? ''], 'Z77\\Shared') ?>
+        </div>
+        <?php endif; ?>
+
+        <?php if (!$isNew && !$window): ?>
         <div class="be-list__section-header">
             <h2 class="be-list__section-title">
                 Buchung <code><?= e($year->getCode() . '/' . $entry->getNumber()) ?></code> bearbeiten
@@ -83,16 +108,16 @@ $fieldError = static fn(string $message): string => $message === ''
 
         <div class="be-form__grid">
             <div class="be-form__field" data-z77-field-wrapper>
-                <label>Datum</label>
+                <label for="journal-c-date">Datum</label>
                 <?php /* New: any date — the fiscal year follows it. Edit: the date stays in the entry's year. */ ?>
-                <input type="date" name="date" value="<?= e($form->date()) ?>" required<?= $isNew ? ' autofocus' : '' ?>
+                <input type="date" id="journal-c-date" name="date" value="<?= e($form->date()) ?>" required<?= $isNew ? ' autofocus' : '' ?>
                        <?php if (!$isNew): ?>min="<?= e($year->getStartDate()->format('Y-m-d')) ?>" max="<?= e($year->getEndDate()->format('Y-m-d')) ?>"<?php endif; ?>
                        aria-invalid="<?= $form->error('date') !== '' ? 'true' : 'false' ?>">
                 <?= raw($fieldError($form->error('date'))) ?>
             </div>
             <div class="be-form__field" data-z77-field-wrapper>
-                <label>Buchungstext</label>
-                <input type="text" name="text" value="<?= e($form->text()) ?>" maxlength="255" required placeholder="z.B. Büromaterial Papeterie Muster"
+                <label for="journal-c-text">Buchungstext</label>
+                <input type="text" id="journal-c-text" name="text" value="<?= e($form->text()) ?>" maxlength="255" required placeholder="z.B. Büromaterial Papeterie Muster"
                        aria-invalid="<?= $form->error('text') !== '' ? 'true' : 'false' ?>">
                 <?= raw($fieldError($form->error('text'))) ?>
             </div>
@@ -116,12 +141,12 @@ $fieldError = static fn(string $message): string => $message === ''
                 <?php foreach ($form->rows() as $i => $row): ?>
                 <div class="be-list__item">
                     <div class="be-list__row">
-                        <span class="be-list__cell"><input class="be-input be-input--sm" type="text" name="account[]" list="journal-accounts" value="<?= e($row['account']) ?>" inputmode="numeric" aria-label="Konto Zeile <?= $i + 1 ?>" aria-invalid="<?= $form->rowError($i, 'account') !== '' ? 'true' : 'false' ?>"></span>
-                        <span class="be-list__cell"><input class="be-input be-input--sm" type="text" name="line_text[]" value="<?= e($row['text']) ?>" maxlength="255" aria-label="Text Zeile <?= $i + 1 ?>"></span>
-                        <span class="be-list__cell be-list__cell--num"><input class="be-input be-input--sm" type="text" name="debit[]" value="<?= e($row['debit']) ?>" inputmode="decimal" aria-label="Soll Zeile <?= $i + 1 ?>" aria-invalid="<?= $form->rowError($i, 'debit') !== '' ? 'true' : 'false' ?>"></span>
-                        <span class="be-list__cell be-list__cell--num"><input class="be-input be-input--sm" type="text" name="credit[]" value="<?= e($row['credit']) ?>" inputmode="decimal" aria-label="Haben Zeile <?= $i + 1 ?>" aria-invalid="<?= $form->rowError($i, 'credit') !== '' ? 'true' : 'false' ?>"></span>
+                        <span class="be-list__cell"><input class="be-input be-input--sm" type="text" id="journal-row-<?= $i ?>-account" name="account[]" list="journal-accounts" value="<?= e($row['account']) ?>" inputmode="numeric" aria-label="Konto Zeile <?= $i + 1 ?>" aria-invalid="<?= $form->rowError($i, 'account') !== '' ? 'true' : 'false' ?>"></span>
+                        <span class="be-list__cell"><input class="be-input be-input--sm" type="text" id="journal-row-<?= $i ?>-text" name="line_text[]" value="<?= e($row['text']) ?>" maxlength="255" aria-label="Text Zeile <?= $i + 1 ?>"></span>
+                        <span class="be-list__cell be-list__cell--num"><input class="be-input be-input--sm" type="text" id="journal-row-<?= $i ?>-debit" name="debit[]" value="<?= e($row['debit']) ?>" inputmode="decimal" aria-label="Soll Zeile <?= $i + 1 ?>" aria-invalid="<?= $form->rowError($i, 'debit') !== '' ? 'true' : 'false' ?>"></span>
+                        <span class="be-list__cell be-list__cell--num"><input class="be-input be-input--sm" type="text" id="journal-row-<?= $i ?>-credit" name="credit[]" value="<?= e($row['credit']) ?>" inputmode="decimal" aria-label="Haben Zeile <?= $i + 1 ?>" aria-invalid="<?= $form->rowError($i, 'credit') !== '' ? 'true' : 'false' ?>"></span>
                         <span class="be-list__cell">
-                            <select class="be-input be-input--sm" name="tax_code[]" aria-label="MWST-Code Zeile <?= $i + 1 ?>" aria-invalid="<?= $form->rowError($i, 'tax_code') !== '' ? 'true' : 'false' ?>">
+                            <select class="be-input be-input--sm" id="journal-row-<?= $i ?>-tax_code" name="tax_code[]" aria-label="MWST-Code Zeile <?= $i + 1 ?>" aria-invalid="<?= $form->rowError($i, 'tax_code') !== '' ? 'true' : 'false' ?>">
                                 <option value=""<?= $row['tax_code'] === '' ? ' selected' : '' ?>>–</option>
                                 <?php foreach ($codes as $code): ?>
                                 <option value="<?= e($code->getCode()) ?>"<?= $row['tax_code'] === $code->getCode() ? ' selected' : '' ?>><?= e($code->getCode()) ?><?= $code->isActive() ? '' : ' (inaktiv)' ?></option>
@@ -158,17 +183,11 @@ $fieldError = static fn(string $message): string => $message === ''
             </div>
         </div>
 
-        <?php /* New: «Buchen» is in the toolbar (form="journal-capture", op=save) — and comes
+        <?php /* «Weitere Zeilen» acts on the rows — it stands under them (ADR-033). «Buchen» (new:
+                 the toolbar, form="journal-capture") and «Speichern» (edit: the action bar) come
                  first in the document, so Enter posts instead of adding rows. */ ?>
         <p class="be-form__hint">
             <button type="submit" class="be-btn be-btn--ghost be-btn--sm" name="op" value="more">Weitere Zeilen</button>
-            <?php if (!$isNew): ?>
-            <button type="submit" class="be-btn be-btn--primary be-btn--sm" name="op" value="save">Speichern (Änderung wird protokolliert)</button>
-            <?php if ($oneLine !== null): ?>
-            <a class="be-btn be-btn--ghost be-btn--sm" href="<?= e($oneLine) ?>"<?= $winLink ?>>Einzeilig bearbeiten …</a>
-            <?php endif; ?>
-            <a class="be-btn be-btn--ghost be-btn--sm" href="<?= e($actionBase . '/detail?id=' . (int) $entry->getId()) ?>"<?= $winLink ?>>Abbrechen</a>
-            <?php endif; ?>
         </p>
     </form>
 </div>

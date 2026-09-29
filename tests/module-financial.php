@@ -1376,7 +1376,11 @@ $renderer = new class($package . '/res/view/templates/', dirname($package) . '/m
     public function partial(string $path, array $context = [], ?string $ns = null): string
     {
         // Same scope rules as TemplateRenderer::renderIsolated(): prefixed locals, EXTR_SKIP.
-        $dir = $ns === 'Z77\\Module\\Mandator' ? $this->mandatorDir : $this->dir;
+        $dir = match ($ns) {
+            'Z77\\Module\\Mandator' => $this->mandatorDir,
+            'Z77\\Shared'           => dirname($this->dir, 4) . '/kernel/shared/res/view/templates/',
+            default                 => $this->dir,
+        };
         return (function (string $z77TplPath, array $z77TplContext) { extract($z77TplContext, EXTR_SKIP); ob_start(); require $z77TplPath; return ob_get_clean(); })->call($this, $dir . $path . '.tpl.php', $context);
     }
 };
@@ -2308,8 +2312,37 @@ check('HP7 the kernel closes `main` with the help (HtmlView — survives an acti
     $viewHtml === '<main><template data-help>x</template></main>'
     && str_contains($beSkel, "partial('partials/helpOpen'") && str_contains($meSkel, "partial('partials/helpOpen'")
     && str_contains(file_get_contents(__DIR__ . '/../packages/kernel/shared/res/view/templates/partials/helpOpen.tpl.php'), 'data-help-open'));
+echo "AB. the form's action bar (ADR-049): «Speichern» within reach\n";
+$GLOBALS['z77TestFetch'] = true;
+$useRequest(['id' => (string) $editId, '_origin' => 'region:journal-list']);
+$host = $journalHost();
+$host->editAction();
+$html = $render($host);
+check('AB1 the one-line edit: the action bar comes FIRST in the form (sticky, Enter saves) with Speichern · Sammelbuchung · Abbrechen, nothing at the end; in a window no repeated heading',
+    preg_match('/<form [^>]*>.*?<div class="z77-form-actions">\s*<button type="submit" class="be-btn be-btn--primary be-btn--sm">Speichern.*?Als Sammelbuchung bearbeiten.*?Abbrechen<\/a>\s*<\/div>/s', $html) === 1
+    && strpos($html, 'z77-form-actions') < strpos($html, 'name="debit"') && !str_contains($html, 'be-list__section-title') && !str_contains($html, 'Fehler</label>'));
+$vAB = (int) $entryRow('2032-33', $inputRef->number)['version'];
+$useRequest(['id' => (string) $editId], ['form' => 'one-line', 'version' => (string) $vAB, 'entity_csrf' => 'tok-journalEntry-' . $editId, '_origin' => 'region:journal-list'] + $row('9999', '1020', 'x', '2032-11-15', ''));
+$host = $journalHost();
+$host->editAction();
+$html = $render($host);
+check('AB2 a refused save: «N Fehler» in the bar is the label of the FIRST invalid field (a click focuses it — no script), nothing written',
+    preg_match('/<label class="z77-form-actions__errors" for="journal-debit">(\d+) Fehler<\/label>/', $html, $mAB) === 1 && (int) $mAB[1] >= 2
+    && (int) $entryRow('2032-33', $inputRef->number)['version'] === $vAB);
+$useRequest(['id' => (string) $editId, 'form' => 'compound']);
+$host = $journalHost();
+$host->editAction();
+$html = $render($host);
+check('AB3 the compound edit: Speichern in the bar before «Weitere Zeilen» (Enter saves), «Weitere Zeilen» under the rows it acts on; every row field has an id the error link can reach',
+    strpos($html, 'value="save">Speichern') < strpos($html, 'value="more">Weitere Zeilen') && preg_match('/<div class="z77-form-actions">.*?value="save">Speichern/s', $html) === 1
+    && str_contains($html, 'id="journal-row-0-account"') && str_contains($html, 'id="journal-row-0-tax_code"') && str_contains($html, 'id="journal-c-date"'));
+$GLOBALS['z77TestFetch'] = false;
+$scssFa = file_get_contents(__DIR__ . '/../packages/kernel/shared/res/scss/components/_form-actions.scss');
+check('AB4 the bar is a shared primitive: sticky, top by default, --end at the bottom — CSS only; the backend and the member CSS carry it',
+    str_contains($scssFa, 'position:    sticky') && str_contains($scssFa, '.z77-form-actions--end') && str_contains(file_get_contents(__DIR__ . '/../packages/module-backend/res/assets/css/base.css'), '.z77-form-actions--end')
+    && str_contains(file_get_contents(__DIR__ . '/../packages/module-member/res/assets/css/member.css'), '.z77-form-actions'));
 $coreJs = file_get_contents(__DIR__ . '/../packages/kernel/shared/res/assets/js/core.js');
-check('HP8 the help window is the shared core.js contract: its own module, never inert, bound at boot, the «i» in a window head, the width from data-window-width; the minified copy carries it',
+check('HP8the help window is the shared core.js contract: its own module, never inert, bound at boot, the «i» in a window head, the width from data-window-width; the minified copy carries it',
     str_contains($coreJs, '_Z77.core.help = (function') && str_contains($coreJs, "c.hasAttribute('data-z77-help')") && str_contains($coreJs, '_Z77.core.help.bind()')
     && str_contains($coreJs, 'template[data-help]') && str_contains($coreJs, "getAttribute('data-window-width')")
     && str_contains(file_get_contents(__DIR__ . '/../packages/kernel/shared/res/assets/js/core.min.js'), 'data-z77-help'));
