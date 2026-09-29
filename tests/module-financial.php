@@ -1435,6 +1435,7 @@ $listHost = function (string $trait) {
     };
     $host = match ($trait) {
         'journal' => new class { use JournalControllerTrait { listAction as public; } public array $context = []; public object $layoutManager;
+            public object $help; public function __construct() { $this->help = new \Z77\Core\Services\HelpService(); }
             protected function em() { return DI::getUnifiedEntityManager(); }
             protected function html(array $context = []): \Z77\Core\Http\Response\HtmlResponse { $this->context = $context; return new \Z77\Core\Http\Response\HtmlResponse(null, $context); } },
         'account' => new class { use AccountControllerTrait { listAction as public; } public array $context = []; public object $layoutManager;
@@ -2031,9 +2032,11 @@ $journalHost = function () {
         public array $context = [];
         public object $layoutManager;
         public object $messageService;
+        public object $help;
         public ?string $redirectedTo = null;
         public function __construct()
         {
+            $this->help = new \Z77\Core\Services\HelpService();
             $this->layoutManager = new class {
                 public array $sections = [];
                 public function removeSection(string $s): void { unset($this->sections[$s]); }
@@ -2076,9 +2079,9 @@ check('O12b the MwSt row is a CSS reveal: a submitted checkbox (be-reveal__toggl
 check('O12c no explanatory paragraph, no buttons in the capture form — «Buchen» sits in the toolbar and submits the form from outside (form="journal-capture")',
     !str_contains($html, 'Das Soll-Konto erhält') && !str_contains($html, 'Letzte Buchungen') && !str_contains(substr($html, 0, strpos($html, 'id="journal-find"')), 'type="submit"')
     && preg_match('/<button type="submit" form="journal-capture"[^>]*>\s*<span class="be-btn__label">Buchen<\/span>/', $tools) === 1);
-check('O12d below: the year\'s latest entries, newest first, each with its state icon and linked to its detail',
+check('O12d below: the year\'s latest entries, newest first, each with its state icon, which opens it (edit or detail)',
     count($host->context['rows']) >= 5 && $host->context['rows'][0]['number'] > $host->context['rows'][1]['number']
-    && str_contains($html, '/backend/finance/journal/detail?id=' . $entryRow('2032-33', $outputRef->number)['id']) && str_contains($html, 'be-list__state--editable'));
+    && preg_match('#/backend/finance/journal/(edit|detail)\?id=' . $entryRow('2032-33', $outputRef->number)['id'] . '"#', $html) === 1 && str_contains($html, 'be-list__state--editable'));
 $scss = file_get_contents(__DIR__ . '/../packages/module-backend/res/scss/components/_forms.scss');
 $css  = file_get_contents(__DIR__ . '/../packages/module-backend/res/assets/css/base.css');
 check('O12e the reveal is CSS — the :checked sibling rule in the backend SCSS source AND in the compiled base.css', str_contains($scss, '.be-reveal__toggle:checked ~ .be-reveal__panel { display: block; }')
@@ -2099,7 +2102,7 @@ $host->addAction();
 $html = $render($host);
 check('O14 POST with a refused tax amount: no posting, the journal page again with the form, its error, the MwSt row still open (checked) and the values kept', $host->redirectedTo === null && (int) $rangeOf('journal-entry.2032-33') === $new
     && $host->layoutManager->sections['main'] === ['Backend/JournalController/oneLine', 'Backend/JournalController/listAction']
-    && str_contains($html, 'höchstens 1.00') && str_contains($html, 'name="vat" value="1" checked') && str_contains($html, 'value="31.00"') && str_contains($html, '<option value="VM" selected>'));
+    && str_contains($html, 'erlaubt sind höchstens') && str_contains($html, 'name="vat" value="1" checked') && str_contains($html, 'value="31.00"') && str_contains($html, '<option value="VM" selected>'));
 $useRequest(['year' => '2032-33']);
 $host = $journalHost();
 $host->addCompoundAction();
@@ -2189,7 +2192,7 @@ check('S13 a FETCH of the journal (core.js «fetch regions»: sort, page, search
 [$h, $html] = $listOf(['date' => '2032-11-20']);
 $first = $h->context['rows'][0]['entry'];
 check('S14 the state icon is a link: an editable entry opens its edit page', $h->context['rows'][0]['state'] === 'editable'
-    && str_contains($html, 'class="be-list__cell be-list__state be-list__state--editable" href="/backend/finance/journal/edit?id=' . $first->getId() . '"'));
+    && str_contains($html, 'class="be-list__cell be-list__state be-list__state--editable" href="/backend/finance/journal/edit?id=' . $first->getId() . '" data-window-open="/backend/finance/journal/edit?id=' . $first->getId() . '"'));
 $coreJs = file_get_contents(__DIR__ . '/../packages/kernel/shared/res/assets/js/core.js');
 check('S15 the fetch region is the shared core.js contract (module-agnostic): links and GET forms inside [data-fetch-region] reload it, the address follows',
     str_contains($coreJs, "a[data-fetch-region-link]") && str_contains($coreJs, "form[data-fetch-region-form]") && str_contains($coreJs, 'history.replaceState')
@@ -2206,7 +2209,7 @@ $host = $journalHost();
 $host->editAction();
 $html = $render($host);
 check('O17 GET edit of the one-line VM entry: the one-line form, filled (500.00, VM, 37.47), its number instead of «neu», the version, a way to the Sammelbuchung', $host->layoutManager->sections['main'] === ['Backend/JournalController/oneLine']
-    && str_contains($html, 'name="form" value="one-line"') && str_contains($html, 'value="500.00"') && str_contains($html, 'name="tax_amount" value=""') && str_contains($html, 'Gespeichert: MWST VM 8.1 % in 500.00: 37.47') && str_contains($html, 'name="vat" value="1" checked')
+    && str_contains($html, 'name="form" value="one-line"') && str_contains($html, 'value="500.00"') && str_contains($html, 'name="tax_amount" value=""') && str_contains($host->help->render(), 'Gespeichert: MWST VM 8.1 % in 500.00: 37.47') && str_contains($html, 'name="vat" value="1" checked')
     && str_contains($html, '>' . $inputRef->number . '<') && str_contains($html, 'name="version" value="' . $entryRow('2032-33', $inputRef->number)['version'] . '"')
     && str_contains($html, 'edit?id=' . $editId . '&amp;form=compound') && !str_contains($html, 'Letzte Buchungen'));
 $useRequest(['id' => (string) $editId, 'form' => 'compound']);
@@ -2259,12 +2262,57 @@ $commands = $answer instanceof \Z77\Core\Http\Response\FetchResponse ? (fn() => 
 check('W4b … from another origin the same action answers only for the window — the controller decides per origin', count($commands) === 1 && $commands[0]['action'] === 'open-window');
 $GLOBALS['z77TestFetch'] = false;
 [$h, $html] = $listOf(['date' => '2032-11-20']);
-check('W5 in the list a click on the entry TEXT opens the window; the href stays (ctrl-click, no script)', preg_match('/<a href="\/backend\/finance\/journal\/detail\?id=(\d+)" data-window-open="\/backend\/finance\/journal\/detail\?id=\1">/', $html) === 1);
+check('W5 only the STATE ICON opens an entry, as a window (the href stays for ctrl-click / no script); every other cell is the label of its column\'s search field (owner 2026-09-29)',
+    preg_match('/class="be-list__cell be-list__state [^"]+" href="\/backend\/finance\/journal\/(edit|detail)\?id=(\d+)" data-window-open="\/backend\/finance\/journal\/\1\?id=\2"/', $html) === 1
+    && preg_match_all('/<a [^>]*href="\/backend\/finance\/journal\/(edit|detail)\?id=/', $html) === preg_match_all('/class="be-list__cell be-list__state /', $html)
+    && str_contains($html, '<label class="be-list__cell" for="journal-find-f_text">') && str_contains($html, 'for="journal-find-f_nr"') && str_contains($html, 'for="journal-find-f_date"')
+    && str_contains($html, 'for="journal-find-f_debit"') && str_contains($html, 'for="journal-find-f_credit"') && str_contains($html, 'for="journal-find-f_amount"'));
 $coreJs = file_get_contents(__DIR__ . '/../packages/kernel/shared/res/assets/js/core.js');
 check('W6 the window manager is the shared core.js contract: identity = mask + entity, the editable-field overlap check, the origin sent as _origin, forms as FormData, the commands close-window / open-window / refresh-region; the minified copy carries it',
     str_contains($coreJs, "mask + '|' + entity") && str_contains($coreJs, 'function _conflict') && str_contains($coreJs, "searchParams.set('_origin'") && str_contains($coreJs, 'new FormData(form')
     && str_contains($coreJs, "registerCommand('close-window'") && str_contains($coreJs, "registerCommand('open-window'") && str_contains($coreJs, "registerCommand('refresh-region'")
     && str_contains(file_get_contents(__DIR__ . '/../packages/kernel/shared/res/assets/js/core.min.js'), 'data-window-open'));
+
+echo "H. help as a framework service (ADR-048): no text in the form, the help beside it\n";
+$GLOBALS['z77TestFetch'] = true;
+$useRequest(['id' => (string) $editId, '_origin' => 'region:journal-list']);
+$host = $journalHost();
+$host->editAction();
+$html = $render($host);
+$help = $host->help->render();
+check('HP1 the edit form carries NO explanation any more (owner 2026-09-29) — the tolerance rule, the computed VAT line and the number note are gone from it',
+    !str_contains($html, 'Leer = aus dem Betrag') && !str_contains($html, 'Die Nummer 2032-33/') && !str_contains($html, 'Gespeichert: MWST') && !str_contains($html, 'be-form__hint">MWST'));
+check('HP2 … they are the entry\'s HELP: the controller attached `oneLine.help` with the live values, delivered as <template data-help> with its title',
+    $host->help->has() && str_starts_with($help, '<template data-help data-help-title="Hilfe: Einzelbuchung">') && str_ends_with($help, '</template>')
+    && str_contains($help, 'Steuerbetrag leer') && str_contains($help, '0.05') && str_contains($help, 'Die Nummer 2032-33/'));
+check('HP3 the window width is the controller\'s: the one-line edit window asks for 64rem (a six-field row must not scroll sideways)', str_contains($html, 'data-window-width="64rem"'));
+$useRequest(['id' => (string) $editId, 'form' => 'compound']);
+$host = $journalHost();
+$host->editAction();
+check('HP4 the compound edit gets the compound help (the controller picks it — one action, two forms)', str_contains($host->help->render(), 'data-help-title="Hilfe: Sammelbuchung"'));
+$host = $journalHost();
+$host->listAction();
+check('HP5 a FETCH of the list (sort, page, search) carries no help — the capture form it belongs to is not in the answer', !$host->help->has());
+$GLOBALS['z77TestFetch'] = false;
+$useRequest(['date' => '2032-11-20']);
+$host = $journalHost();
+$host->listAction();
+check('HP6 the journal PAGE attaches the capture help (its «i» stands in the crumb line)', str_contains($host->help->render(), 'data-help-title="Hilfe: Einzelbuchung"') && !str_contains($host->help->render(), 'Die Nummer 2032'));
+$skel = sys_get_temp_dir() . '/z77-help-skel-' . getmypid() . '.tpl.php';
+file_put_contents($skel, '<main><?= $main ?? \'\' ?></main>');
+$viewHtml = (new \Z77\Core\Services\HtmlView($skel, [], [], [], 'Z77\\Shared'))->assign(['helpBlock' => '<template data-help>x</template>'])->render();
+@unlink($skel);
+$beSkel = file_get_contents(__DIR__ . '/../packages/module-backend/res/view/templates/html-shell-skeleton.tpl.php');
+$meSkel = file_get_contents(__DIR__ . '/../packages/module-member/res/view/templates/html-shell-skeleton.tpl.php');
+check('HP7 the kernel closes `main` with the help (HtmlView — survives an action that rebuilds its main), and the backend and member skeletons put the «i» into the crumb line',
+    $viewHtml === '<main><template data-help>x</template></main>'
+    && str_contains($beSkel, "partial('partials/helpOpen'") && str_contains($meSkel, "partial('partials/helpOpen'")
+    && str_contains(file_get_contents(__DIR__ . '/../packages/kernel/shared/res/view/templates/partials/helpOpen.tpl.php'), 'data-help-open'));
+$coreJs = file_get_contents(__DIR__ . '/../packages/kernel/shared/res/assets/js/core.js');
+check('HP8 the help window is the shared core.js contract: its own module, never inert, bound at boot, the «i» in a window head, the width from data-window-width; the minified copy carries it',
+    str_contains($coreJs, '_Z77.core.help = (function') && str_contains($coreJs, "c.hasAttribute('data-z77-help')") && str_contains($coreJs, '_Z77.core.help.bind()')
+    && str_contains($coreJs, 'template[data-help]') && str_contains($coreJs, "getAttribute('data-window-width')")
+    && str_contains(file_get_contents(__DIR__ . '/../packages/kernel/shared/res/assets/js/core.min.js'), 'data-z77-help'));
 $useRequest(['id' => (string) $compoundId]);
 $host = $journalHost();
 $host->editAction();

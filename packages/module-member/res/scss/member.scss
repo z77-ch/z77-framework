@@ -4,6 +4,9 @@
 // geometry only; the token binding at the end of this file gives it the
 // member look.
 @use '../../../kernel/shared/res/scss/components/split';
+// The shared help window (ADR-048) — geometry only, same rule; its member look is
+// bound below, beside the split's.
+@use '../../../kernel/shared/res/scss/components/help';
 
 // member.scss — the module's single stylesheet (compiled to res/assets/css/member.css).
 //
@@ -1459,6 +1462,61 @@ $fb-info-tint: $fb-bg;
     --z77-split-handle: transparent;
     --z77-split-handle-active: var(--accent, #{$fb-accent});
     --z77-split-backdrop: rgba(0, 0, 0, 0.34);
+}
+
+// The help window (ADR-048) and the «i» that opens it (crumb line; a window's
+// title bar). Neutral like the rest: the accent draws the «i», the card's edge
+// draws the window.
+.me .z77-help {
+    --z77-help-bg: var(--surface, #{$fb-surface});
+    --z77-help-line: var(--line, #{$fb-line});
+    color: var(--text, #{$fb-text});
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.18);
+}
+.me .z77-help.is-floating { border-radius: var(--radius, #{$fb-radius}); }
+.me .z77-help__head {
+    padding: 0.5rem 0.75rem;
+    border-bottom: var(--rule, #{$fb-rule}) solid var(--line, #{$fb-line});
+    font-weight: 600;
+    font-size: 0.875rem;
+}
+.me .z77-help__body {
+    padding: 0.75rem 1rem;
+    font-size: 0.875rem;
+
+    > :first-child { margin-top: 0; }
+    > :last-child { margin-bottom: 0; }
+}
+.me .z77-help__full,
+.me .z77-help__close {
+    width: 28px;
+    height: 28px;
+    color: var(--text-2, #{$fb-text-2});
+    font-size: 1.25rem;
+    line-height: 1;
+}
+.me .z77-help__full { font-size: 1rem; }
+.me .z77-help__full:hover,
+.me .z77-help__close:hover,
+.me .z77-help__full[aria-pressed="true"] { color: var(--text, #{$fb-text}); }
+
+.me .z77-help-open {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: var(--accent, #{$fb-accent});
+    color: var(--on-accent, #{$fb-on-accent});
+    font: italic 600 12px/1 Georgia, "Times New Roman", serif;
+    cursor: pointer;
+
+    &:hover { background: var(--accent-hover, #{$fb-accent-hv}); }
+    &:focus-visible { outline: 2px solid var(--accent, #{$fb-accent}); outline-offset: 2px; }
 }
 
 // The header already carries the top gap when it is present — without this the

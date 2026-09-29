@@ -81,7 +81,7 @@
             <div class="be-shell-crumb__slot be-shell-crumb__slot--1"></div>
             <div class="be-shell-crumb__slot be-shell-crumb__slot--2"><?= $hc3 ?? $this->partial('partials/shell/crumb', [
                 'backendMenu' => $backendMenu ?? null,
-            ]) ?></div>
+            ]) ?><?= !empty($helpBlock) ? $this->partial('partials/helpOpen', [], 'Z77\Shared') : '' ?></div>
         </div>
         <div class="be-shell-col be-shell-col--1" data-shell-col="l">
             <?= $subnav ?? '' ?>

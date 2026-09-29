@@ -12,8 +12,9 @@
  * Accounts are typed by NUMBER with a shared `<datalist>` of the postable,
  * active accounts (one list for every row — a `<select>` per row with 150
  * accounts would be the heavier page). A tax code goes on the NET line
- * only; the tax-account line is entered like any other, and the hint under
- * the row says which amount it has to be. No placeholders in the fields
+ * only; the tax-account line is entered like any other — which amount it has
+ * to be is in the help (`form.help`, ADR-048; no text in the form, owner
+ * 2026-09-29). No placeholders in the fields
  * (P2 exit check 3a: a grey «1020» read as a prefilled value); the line
  * principle stands in one sentence above the rows; «ausgeglichen» is shown
  * only for a balance that has amounts.
@@ -30,10 +31,12 @@
  * @var string $actionBase
  * @var bool   $window  edit only — fetched as a window (ADR-047): the root declares mask + entity, the form carries `_origin` back, the links stay in the window
  * @var string $origin  edit only — where the window came from (WindowOrigin)
+ * @var string $windowWidth  edit only — the window's width, the controller's call
  */
 $window  = !empty($window) && $entry !== null;
 $winAttr = $window
     ? ' data-window="journal-entry-edit" data-window-entity="journal-entry:' . (int) $entry->getId() . '" data-window-title="' . e('Buchung ' . $year->getCode() . '/' . $entry->getNumber() . ' bearbeiten') . '"'
+        . (!empty($windowWidth) ? ' data-window-width="' . e($windowWidth) . '"' : '')
     : '';
 $winLink = $window ? ' data-window-link' : '';
 $actionBase = $actionBase ?? '/backend/finance/journal';
@@ -131,16 +134,13 @@ $fieldError = static fn(string $message): string => $message === ''
                     </div>
                     <?php
                     $rowMessages = array_filter([$form->rowError($i, 'account'), $form->rowError($i, 'text'), $form->rowError($i, 'debit'), $form->rowError($i, 'credit'), $form->rowError($i, 'tax_code')]);
-                    if ($rowMessages !== [] || $form->taxHint($i) !== ''): ?>
+                    if ($rowMessages !== []): ?>
                     <div class="be-list__row">
                         <span class="be-list__cell"></span>
                         <span class="be-list__cell be-list__cell--wrap" style="grid-column: 2 / -1">
                             <?php foreach ($rowMessages as $message): ?>
                             <small class="be-form__field-error"><?= e($message) ?></small>
                             <?php endforeach; ?>
-                            <?php if ($form->taxHint($i) !== ''): ?>
-                            <small class="be-form__hint"><?= e($form->taxHint($i)) ?> — die Steuerzeile (Vorsteuer / geschuldete MWST) separat erfassen.</small>
-                            <?php endif; ?>
                         </span>
                     </div>
                     <?php endif; ?>
@@ -170,8 +170,5 @@ $fieldError = static fn(string $message): string => $message === ''
             <a class="be-btn be-btn--ghost be-btn--sm" href="<?= e($actionBase . '/detail?id=' . (int) $entry->getId()) ?>"<?= $winLink ?>>Abbrechen</a>
             <?php endif; ?>
         </p>
-        <?php if (!$isNew): ?>
-        <p class="be-form__hint">Die Nummer <?= e($year->getCode() . '/' . $entry->getNumber()) ?> bleibt; das Datum muss im selben Geschäftsjahr liegen. Für ein anderes Jahr: löschen und dort neu erfassen.</p>
-        <?php endif; ?>
     </form>
 </div>

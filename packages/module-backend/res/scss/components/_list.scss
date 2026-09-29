@@ -360,6 +360,8 @@ a.be-list__col:hover { color: var(--be-text); }
 }
 a.be-list__state { text-decoration: none; border-radius: var(--radius-sm); }
 a.be-list__state:hover { background: var(--be-accent-soft); }
+// A cell that is the label of its column's search field (the journal): a click opens that search.
+label.be-list__cell { cursor: pointer; }
 .be-list__state--editable    { color: var(--be-good); }
 .be-list__state--generated   { color: var(--be-accent); }
 .be-list__state--closed,

@@ -1,0 +1,66 @@
+// Host binding: backend → the shared `z77-help` primitive (ADR-048, ADR-018 rule 7).
+//
+// The primitive owns the geometry; the backend gives the help window its surface and draws
+// the «i» that opens it — in the crumb line (skeleton) and in a window's title bar (core.js).
+
+.be .z77-help {
+    --z77-help-bg:   var(--be-bg);
+    --z77-help-line: var(--be-line);
+
+    box-shadow: var(--shadow-lg);
+    color:      var(--be-text);
+}
+.be .z77-help.is-floating { border-radius: var(--radius-lg); }
+.be .z77-help__head {
+    padding:       var(--space-2) var(--space-3);
+    border-bottom: 1px solid var(--be-line);
+    background:    var(--be-surface2);
+    font-weight:   var(--font-weight-semibold);
+    font-size:     var(--font-size-sm);
+}
+.be .z77-help.is-floating .z77-help__head { border-radius: var(--radius-lg) var(--radius-lg) 0 0; }
+.be .z77-help__body {
+    padding:     var(--space-3);
+    font-size:   var(--font-size-sm);
+    line-height: 1.55;
+
+    > :first-child { margin-top: 0; }
+    > :last-child  { margin-bottom: 0; }
+}
+.be .z77-help__full,
+.be .z77-help__close {
+    width:         28px;
+    height:        28px;
+    border-radius: var(--radius-md);
+    color:         var(--be-muted);
+    font-size:     1.25rem;
+    line-height:   1;
+}
+.be .z77-help__full { font-size: 1rem; }
+.be .z77-help__full:hover,
+.be .z77-help__close:hover,
+.be .z77-help__full[aria-pressed="true"] { background: var(--be-accent-soft); color: var(--be-text); }
+
+// The «i»: a small round badge in the accent colour, inline beside the crumb or the title.
+.be .z77-help-open {
+    flex:            none;
+    display:         inline-flex;
+    align-items:     center;
+    justify-content: center;
+    width:           18px;
+    height:          18px;
+    padding:         0;
+    border:          0;
+    border-radius:   50%;
+    background:      var(--be-accent);
+    color:           var(--be-on-accent);
+    font:            italic var(--font-weight-semibold) 12px/1 Georgia, "Times New Roman", serif;
+    cursor:          pointer;
+}
+.be .z77-help-open:hover { filter: brightness(1.1); }
+.be .z77-help-open:focus-visible { outline: 2px solid var(--be-accent); outline-offset: 2px; }
+
+@media (max-width: 767px) {
+    .be .z77-help,
+    .be .z77-help__head { border-radius: 0; }
+}

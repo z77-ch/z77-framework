@@ -35,10 +35,12 @@
  * @var string $actionBase
  * @var bool   $window  edit only — fetched as a window (ADR-047): the root declares mask + entity, the form carries `_origin` back, the links stay in the window
  * @var string $origin  edit only — where the window came from (WindowOrigin)
+ * @var string $windowWidth  edit only — the window's width, the controller's call
  */
 $window  = !empty($window) && $entry !== null;
 $winAttr = $window
     ? ' data-window="journal-entry-edit" data-window-entity="journal-entry:' . (int) $entry->getId() . '" data-window-title="' . e('Buchung ' . $year->getCode() . '/' . $entry->getNumber() . ' bearbeiten') . '"'
+        . (!empty($windowWidth) ? ' data-window-width="' . e($windowWidth) . '"' : '')
     : '';
 $winLink = $window ? ' data-window-link' : '';
 $actionBase = $actionBase ?? '/backend/finance/journal';
@@ -127,7 +129,7 @@ $invalid    = static fn(string $field): string => $form->error($field) !== '' ? 
             </div>
 
             <div class="be-reveal__panel">
-                <div class="be-form__row" style="--be-form-cols: minmax(12rem, 20rem) 9rem minmax(10rem, 1fr)">
+                <div class="be-form__row" style="--be-form-cols: minmax(12rem, 20rem) 9rem">
                     <div class="be-form__field" data-z77-field-wrapper>
                         <label for="journal-tax-code">MWST-Code</label>
                         <select id="journal-tax-code" name="tax_code" aria-invalid="<?= $invalid('tax_code') ?>">
@@ -143,10 +145,8 @@ $invalid    = static fn(string $field): string => $form->error($field) !== '' ? 
                         <input type="text" id="journal-tax-amount" name="tax_amount" value="<?= e($form->taxAmount()) ?>" inputmode="decimal" aria-invalid="<?= $invalid('tax_amount') ?>">
                         <?= raw($fieldError($form->error('tax_amount'))) ?>
                     </div>
-                    <div class="be-form__field">
-                        <small class="be-form__hint">Leer = aus dem Betrag berechnet (Satz am Buchungsdatum). Ein Wert laut Beleg darf um <?= (int) \Z77\Module\Financial\Ui\OneLineEntryForm::TAX_CORRECTION_PERCENT ?> % der berechneten Steuer daneben liegen — mindestens <?= e(\Z77\Module\Financial\Ui\OneLineEntryForm::TAX_CORRECTION_MIN) ?>, höchstens <?= e(\Z77\Module\Financial\Ui\OneLineEntryForm::TAX_CORRECTION_MAX) ?> (Rundung laut Beleg).</small>
-                        <?php if ($form->vatHint() !== ''): ?><small class="be-form__hint"><?= e($form->vatHint()) ?></small><?php endif; ?>
-                    </div>
+                    <?php /* The explanations (tolerance rule, the computed VAT line) are in the help
+                             (`oneLine.help`, ADR-048) — owner 2026-09-29: no text in the form. */ ?>
                 </div>
             </div>
         </div>
@@ -157,7 +157,6 @@ $invalid    = static fn(string $field): string => $form->error($field) !== '' ? 
             <a class="be-btn be-btn--ghost be-btn--sm" href="<?= e($compound) ?>"<?= $winLink ?>>Als Sammelbuchung bearbeiten …</a>
             <a class="be-btn be-btn--ghost be-btn--sm" href="<?= e($actionBase . '/detail?id=' . (int) $entry->getId()) ?>"<?= $winLink ?>>Abbrechen</a>
         </p>
-        <p class="be-form__hint">Die Nummer <?= e($year->getCode() . '/' . $entry->getNumber()) ?> bleibt; das Datum muss im selben Geschäftsjahr liegen. Für ein anderes Jahr: löschen und dort neu erfassen.</p>
         <?php endif; ?>
     </form>
 

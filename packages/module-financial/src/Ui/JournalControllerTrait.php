@@ -331,6 +331,9 @@ trait JournalControllerTrait
         $rows      = $this->journalRows($entries, $gapsApply ? $this->entryChanges()->deletionsForYear($year) : [], $search->descending, $paging);
 
         $keep = array_filter(['mode' => $mode === 'sammel' ? 'sammel' : '', 'date' => $form->date()]);
+        if ($year !== null && !$this->journalIsFetch()) {
+            $this->journalAttachHelp($form, $year, null);
+        }
         $response = $this->html([
             'form'        => $form,
             'mode'        => $mode,
@@ -430,6 +433,22 @@ trait JournalControllerTrait
     }
 
     /**
+     * The help for a capture or edit form (ADR-048): the rules the form no longer spells out
+     * (owner 2026-09-29, «no text in the form») and — edit — the entry's computed VAT. Opened
+     * with the «i» in the crumb line (page) or the window's title bar.
+     */
+    private function journalAttachHelp(OneLineEntryForm|ManualEntryForm $form, FiscalYear $year, ?JournalEntry $entry): void
+    {
+        $oneLine = $form instanceof OneLineEntryForm;
+        $this->help->attach(
+            'Backend/JournalController/' . ($oneLine ? 'oneLine' : 'form') . '.help',
+            self::JOURNAL_NS,
+            ['form' => $form, 'year' => $year, 'entry' => $entry],
+            $oneLine ? 'Hilfe: Einzelbuchung' : 'Hilfe: Sammelbuchung',
+        );
+    }
+
+    /**
      * The answer to a save made in a WINDOW (ADR-047): the controller says what happens —
      * the window shows the entry's read view again, and when it was opened from the journal
      * list, that list reloads (numbers, text, amount may have changed). Other origins get
@@ -480,6 +499,7 @@ trait JournalControllerTrait
         // the template marks its root, «Bearbeiten» loads into the window.
         return $this->journalPage('detail', [
             'window'         => $this->journalIsFetch(),
+            'windowWidth'    => '52rem',
             'origin'         => WindowOrigin::of(DI::getRequest()),
             'entry'          => $entry,
             'reversedBy'     => $this->journalEntries()->findReversalOf($entry),
@@ -695,8 +715,12 @@ trait JournalControllerTrait
             }
         }
 
+        $this->journalAttachHelp($form, $entry->getFiscalYear(), $entry);
+
         return $this->journalPage($useOneLine ? 'oneLine' : 'form', [
             'window'      => $this->journalIsFetch(),
+            // Wide enough for the one-line row (six fields side by side) — the window must not scroll sideways.
+            'windowWidth' => $useOneLine ? '64rem' : '60rem',
             'origin'      => WindowOrigin::of($request),
             'form'        => $form,
             'year'        => $entry->getFiscalYear(),

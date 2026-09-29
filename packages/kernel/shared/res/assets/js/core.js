@@ -801,6 +801,8 @@ _Z77.core.region = (function () {
  *   [data-window="<mask>"]              the mask (form) this window is
  *   [data-window-entity="<type>:<id>"]  the record it shows
  *   [data-window-title="…"]             the title bar text
+ *   [data-window-width="<length>"]      (optional) the width the controller wants for this content
+ *                                       (e.g. `62rem`; rem/ch/px/%/vw) — a phone ignores it
  *   [data-window-confirm-close="…"]     ask this question before closing (the controller's call)
  *   Inside a window:
  *   a[data-window-link]         loads its href into THIS window (read view ↔ edit form)
@@ -841,7 +843,8 @@ _Z77.core.windows = (function () {
         Array.prototype.forEach.call(document.body.children, function (c) {
             // The message and flash channels stay live: a message about a window (a field
             // conflict, «gespeichert») must be readable and closable above the windows.
-            if (c === _layer || c.tagName === 'SCRIPT' || c.tagName === 'DIALOG' || c.id === 'messages' || c.id === 'flash-messages') return;
+            // The help window (ADR-048) is read beside the form: it stays live as well.
+            if (c === _layer || c.tagName === 'SCRIPT' || c.tagName === 'DIALOG' || c.id === 'messages' || c.id === 'flash-messages' || c.hasAttribute('data-z77-help')) return;
             if (on) c.setAttribute('inert', ''); else c.removeAttribute('inert');
         });
     }
@@ -905,6 +908,27 @@ _Z77.core.windows = (function () {
         return win;
     }
 
+    /* The «i» in the title bar (ADR-048): there while the content carries a help template, gone
+     * when new content (read view ↔ edit form) has none. */
+    function _helpButton(win, body) {
+        var head = win.querySelector('.z77-window__head');
+        var btn  = head.querySelector('[data-help-open]');
+        var has  = !!body.querySelector('template[data-help]');
+        if (has && !btn) {
+            var label = _Z77.core.i18n.t('common.help', 'Hilfe');
+            btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'z77-help-open';
+            btn.setAttribute('data-help-open', '');
+            btn.setAttribute('aria-label', label);
+            btn.title = label;
+            btn.textContent = 'i';
+            head.insertBefore(btn, head.querySelector('.z77-window__close'));
+        } else if (!has && btn) {
+            btn.parentNode.removeChild(btn);
+        }
+    }
+
     /* New content for a window: the controller's answer (HTML, fetch skeleton = `main`). */
     function fill(win, html, sourceUrl) {
         var extracted = _Z77.core.fetch.extractEnvelope(html);
@@ -915,6 +939,11 @@ _Z77.core.windows = (function () {
         win._z77Identity = _identity(root);
         win._z77Fields   = root ? _editable(root) : [];
         win.querySelector('.z77-window__title').textContent = root ? (root.getAttribute('data-window-title') || '') : '';
+        // The controller knows how wide its content must be (a form row must not scroll sideways).
+        var width = root ? root.getAttribute('data-window-width') : null;
+        if (width && /^\d{1,3}(\.\d{1,2})?(rem|ch|px|%|vw)$/.test(width)) win.style.setProperty('--z77-window-width', width);
+        else win.style.removeProperty('--z77-window-width');
+        _helpButton(win, body);
         var ctx = { window: win.getAttribute('data-z77-window') };
         _Z77.core.wire(body, sourceUrl, ctx);
         _bindCheckUrl(body);
@@ -1037,9 +1066,139 @@ _Z77.core.windows = (function () {
     return { open: open, load: load, fill: fill, close: close, front: front, byId: byId, of: of, scope: scope, all: all, bind: bind };
 })();
 
+/* ── help (ADR-048) ────────────────────────────────────────────────────────
+ * The help window: the text a controller attached to its answer, opened by an «i» and read
+ * BESIDE the form. Not modal — the page and the windows stay usable; it stays open until it
+ * is closed or the page changes (closing a form's window does not close it; Esc does not
+ * either — Esc belongs to the front window).
+ *
+ * Markup contract (data attributes only — module-agnostic, Rule 8):
+ *   <template data-help data-help-title="…">…</template>
+ *                               the help, rendered by HelpService at the end of `main` (page and
+ *                               fetch mode — so a window's body carries it too). Inert until opened.
+ *   [data-help-open]            the «i»: opens the help that belongs to where it stands — inside a
+ *                               window that window's template, else the first template of the page
+ *                               that is not inside a window. No template → nothing happens.
+ *                               The skeleton renders it in the crumb line; `windows.fill()` adds it
+ *                               to a window's title bar.
+ *   Inside the help window (built here):
+ *   [data-help-full]            toggles full screen (`is-full`, aria-pressed follows)
+ *   [data-help-close]           closes the help window
+ *
+ * ONE help window: a second «i» replaces its content and title. Placement: docked to the right,
+ * full height (`is-docked`); dragging the title bar makes it float (`is-floating`). Resizing is
+ * CSS (`resize`), the geometry lives in kernel/shared `_help.scss`, the look in the host.
+ */
+_Z77.core.help = (function () {
+    var _win = null;
+
+    function _build() {
+        var t = _Z77.core.i18n.t;
+        _win = document.createElement('aside');
+        _win.className = 'z77-help is-docked';
+        _win.setAttribute('data-z77-help', '');
+        _win.setAttribute('role', 'complementary');
+        _win.setAttribute('aria-labelledby', 'z77-help-title');
+        _win.innerHTML = '<header class="z77-help__head"><span class="z77-help__title" id="z77-help-title"></span>'
+            + '<button type="button" class="z77-help__full" data-help-full aria-pressed="false" aria-label="'
+            + t('common.fullscreen', 'Vollbild') + '" title="' + t('common.fullscreen', 'Vollbild') + '">⤢</button>'
+            + '<button type="button" class="z77-help__close" data-help-close aria-label="'
+            + t('common.close', 'Schliessen') + '" title="' + t('common.close', 'Schliessen') + '">×</button></header>'
+            + '<div class="z77-help__body"></div>';
+        document.body.appendChild(_win);
+        _drag(_win.querySelector('.z77-help__head'));
+        return _win;
+    }
+
+    /* The help that belongs to where the «i» stands. */
+    function _templateFor(el) {
+        var win = _Z77.core.windows.of(el);
+        if (win) return win.querySelector('.z77-window__body template[data-help]');
+        var all = document.querySelectorAll('template[data-help]');
+        for (var i = 0; i < all.length; i++) {
+            if (!_Z77.core.windows.of(all[i])) return all[i];
+        }
+        return null;
+    }
+
+    /* Shows <template>'s content in the help window (opens it, or replaces what it shows). */
+    function open(tpl) {
+        if (!tpl || !tpl.content) return null;
+        var win = _win || _build();
+        win.querySelector('.z77-help__title').textContent = tpl.getAttribute('data-help-title') || _Z77.core.i18n.t('common.help', 'Hilfe');
+        var body = win.querySelector('.z77-help__body');
+        body.textContent = '';
+        body.appendChild(tpl.content.cloneNode(true));
+        body.scrollTop = 0;
+        return win;
+    }
+
+    /* Removes the help window; the next «i» builds a fresh one, docked again. */
+    function close() {
+        if (_win && _win.parentNode) _win.parentNode.removeChild(_win);
+        _win = null;
+    }
+
+    function _full(on) {
+        _win.classList.toggle('is-full', on);
+        _win.querySelector('[data-help-full]').setAttribute('aria-pressed', on ? 'true' : 'false');
+    }
+
+    /* Dragging the title bar. JavaScript because CSS cannot move an element by pointer
+     * (rule 7) — it only sets left/top; size stays CSS `resize`, the rest stays in the SCSS. */
+    function _drag(head) {
+        var dx = 0, dy = 0, active = false;
+        head.addEventListener('pointerdown', function (e) {
+            if (e.button !== 0 || e.target.closest('button') || _win.classList.contains('is-full')) return;
+            var r = _win.getBoundingClientRect();
+            dx = e.clientX - r.left;
+            dy = e.clientY - r.top;
+            active = true;
+            head.setPointerCapture(e.pointerId);
+            e.preventDefault();   // no text selection while dragging
+        });
+        head.addEventListener('pointermove', function (e) {
+            if (!active) return;
+            var vw = document.documentElement.clientWidth, vh = document.documentElement.clientHeight;
+            if (_win.classList.contains('is-docked')) {
+                // Leaving the dock: keep the width, give up the full height.
+                var r = _win.getBoundingClientRect();
+                _win.style.width  = r.width + 'px';
+                _win.style.height = Math.min(r.height, Math.round(vh * 0.7)) + 'px';
+                _win.classList.remove('is-docked');
+                _win.classList.add('is-floating');
+            }
+            var w = _win.offsetWidth, h = _win.offsetHeight;
+            _win.style.left = Math.max(0, Math.min(e.clientX - dx, vw - w)) + 'px';
+            _win.style.top  = Math.max(0, Math.min(e.clientY - dy, vh - h)) + 'px';
+        });
+        function stop(e) {
+            if (!active) return;
+            active = false;
+            if (head.hasPointerCapture(e.pointerId)) head.releasePointerCapture(e.pointerId);
+        }
+        head.addEventListener('pointerup', stop);
+        head.addEventListener('pointercancel', stop);
+    }
+
+    function bind() {
+        document.addEventListener('click', function (e) {
+            if (e.button !== 0) return;
+            var opener = e.target.closest('[data-help-open]');
+            if (opener) { e.preventDefault(); open(_templateFor(opener)); return; }
+            if (!_win || !_win.contains(e.target)) return;
+            if (e.target.closest('[data-help-close]')) { close(); return; }
+            if (e.target.closest('[data-help-full]')) _full(!_win.classList.contains('is-full'));
+        });
+    }
+
+    return { open: open, close: close, bind: bind };
+})();
+
 /* ── boot ───────────────────────────────────────────────────────────────── */
 document.addEventListener('DOMContentLoaded', function () {
     _Z77.core.windows.bind();
+    _Z77.core.help.bind();
     _Z77.core.region.bind();
     _Z77.core.i18n.load();
     _Z77.core.wire(document);

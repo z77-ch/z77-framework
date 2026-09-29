@@ -120,6 +120,9 @@ computes, `core.js` writes them.
   identity (no uniqueness check), the single-popup behaviour is the special case of one window.
 - First users: the journal entry detail as a window (FIN-JOURNAL-CAPTURE-001, owner
   2026-09-29) — built the same day (`fetch.md` WIN-001); then order processing.
+- Addition 2026-09-29 ([ADR-048](adr-048-help-service.md) part 5): the WIDTH is the
+  controller's — `data-window-width` on the content root (the owner: «der Controller weiss,
+  wie gross das Fenster sein soll»).
 - Tests: the identity and overlap rule, origin round trip, close-with-children — in the shared
   JS harness and per module in PHP (the controller's answer for an origin).
 

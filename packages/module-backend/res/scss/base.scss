@@ -32,4 +32,6 @@
 @use 'components/split-host';
 @use '../../../kernel/shared/res/scss/components/windows';
 @use 'components/windows-host';
+@use '../../../kernel/shared/res/scss/components/help';
+@use 'components/help-host';
 @use 'components/dms-host';

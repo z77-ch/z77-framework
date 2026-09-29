@@ -17,11 +17,12 @@
  *     core.js): sort / page / toggle links and the search form reload only
  *     this part, the capture form above keeps what is typed (owner
  *     2026-09-28). Without the script they are plain page loads;
- *   - the state icon is a link: an editable entry opens its edit page, any
- *     other its detail;
- *   - a click on an entry's TEXT opens it as a window (ADR-047,
- *     `data-window-open`) — the journal stays; the href remains for a
- *     ctrl-click and for a browser without the script.
+ *   - the state icon is the ONLY way into an entry (owner 2026-09-29): it
+ *     opens a window (ADR-047, `data-window-open`) — an editable entry its
+ *     edit form, any other its detail; the journal stays, the href remains
+ *     for a ctrl-click and for a browser without the script;
+ *   - every other cell of an entry is a `<label for>` of its column's search
+ *     field: a click opens that search (owner 2026-09-29) — no JavaScript.
  *
  * Styling: the shared backend list v2 classes plus `.be-list__find`,
  * `.be-list__state`, `.be-list__toggle` (module-backend `_list.scss`) — no CSS
@@ -147,17 +148,17 @@ $priority = ['f_date' => '3', 'f_debit' => '2', 'f_credit' => '2'];
                         <span class="be-list__cell"></span>
                     </div>
                 </div>
-                <?php else: $entry = $row['entry']; $detail = $actionBase . '/detail?id=' . $entry->getId(); ?>
+                <?php else: $entry = $row['entry']; ?>
                 <div class="be-list__item" data-entry-id="<?= e((string) $entry->getId()) ?>">
                     <div class="be-list__row">
-                        <?php $stateUrl = $row['state'] === 'editable' ? $actionBase . '/edit?id=' . $entry->getId() : $detail; ?>
-                        <a class="be-list__cell be-list__state be-list__state--<?= e($row['state']) ?>" href="<?= e($stateUrl) ?>" aria-label="<?= e($states[$row['state']]) ?>" title="<?= e($states[$row['state']]) ?>"><svg class="be-icon" width="14" height="14" aria-hidden="true"><use href="#icon-<?= e($icons[$row['state']]) ?>"/></svg></a>
-                        <span class="be-list__cell be-list__cell--num be-list__cell--mono"><a href="<?= e($detail) ?>"><?= $filter->allYears ? e($entry->getFiscalYear()->getCode()) . '/' : '' ?><?= $entry->getNumber() ?></a></span>
-                        <span class="be-list__cell" data-priority="3"><?= e($entry->getDate()->format('d.m.Y')) ?></span>
-                        <span class="be-list__cell"><a href="<?= e($detail) ?>" data-window-open="<?= e($detail) ?>"><?= e($entry->getText()) ?></a><?= $entry->isReversal() ? ' <span class="badge badge--warning">Storno von ' . e($entry->getReversalOf()->getFiscalYear()->getCode() . '/' . $entry->getReversalOf()->getNumber()) . '</span>' : '' ?></span>
-                        <span class="be-list__cell be-list__cell--mono" data-priority="2"><?= e($side($entry, true)) ?></span>
-                        <span class="be-list__cell be-list__cell--mono" data-priority="2"><?= e($side($entry, false)) ?></span>
-                        <span class="be-list__cell be-list__cell--num"><?= e($fmt($entry->total())) ?></span>
+                        <?php $stateUrl = $actionBase . ($row['state'] === 'editable' ? '/edit' : '/detail') . '?id=' . $entry->getId(); ?>
+                        <a class="be-list__cell be-list__state be-list__state--<?= e($row['state']) ?>" href="<?= e($stateUrl) ?>" data-window-open="<?= e($stateUrl) ?>" aria-label="<?= e($states[$row['state']]) ?>" title="<?= e($states[$row['state']]) ?>"><svg class="be-icon" width="14" height="14" aria-hidden="true"><use href="#icon-<?= e($icons[$row['state']]) ?>"/></svg></a>
+                        <label class="be-list__cell be-list__cell--num be-list__cell--mono" for="journal-find-f_nr"><?= $filter->allYears ? e($entry->getFiscalYear()->getCode()) . '/' : '' ?><?= $entry->getNumber() ?></label>
+                        <label class="be-list__cell" for="journal-find-f_date" data-priority="3"><?= e($entry->getDate()->format('d.m.Y')) ?></label>
+                        <label class="be-list__cell" for="journal-find-f_text"><?= e($entry->getText()) ?><?= $entry->isReversal() ? ' <span class="badge badge--warning">Storno von ' . e($entry->getReversalOf()->getFiscalYear()->getCode() . '/' . $entry->getReversalOf()->getNumber()) . '</span>' : '' ?></label>
+                        <label class="be-list__cell be-list__cell--mono" for="journal-find-f_debit" data-priority="2"><?= e($side($entry, true)) ?></label>
+                        <label class="be-list__cell be-list__cell--mono" for="journal-find-f_credit" data-priority="2"><?= e($side($entry, false)) ?></label>
+                        <label class="be-list__cell be-list__cell--num" for="journal-find-f_amount"><?= e($fmt($entry->total())) ?></label>
                     </div>
                 </div>
                 <?php endif; ?>

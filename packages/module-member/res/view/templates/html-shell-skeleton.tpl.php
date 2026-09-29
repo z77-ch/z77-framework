@@ -131,6 +131,7 @@ $work       = !empty($railItems) || $actionList !== [] || $workList !== [];
     <div class="me-shell__crumbgap"></div>
     <div class="me-shell__crumbs">
         <?= $this->partial('partials/shell/crumbs', ['crumbs' => $crumbs ?? []]) ?>
+        <?= !empty($helpBlock) ? $this->partial('partials/helpOpen', [], 'Z77\Shared') : '' ?>
     </div>
 
     <?php /* Row 4 — the shared primitive. The rail is pane 1 (fixed width,

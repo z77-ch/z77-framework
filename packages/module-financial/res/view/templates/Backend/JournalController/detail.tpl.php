@@ -23,10 +23,12 @@
  * @var string $actionBase
  * @var bool   $window  fetched as a window (ADR-047): the root declares mask + entity, «Bearbeiten» loads into the window, no way back to the journal (it is still there)
  * @var string $origin  where the window came from (WindowOrigin) — travels on into the edit form
+ * @var string $windowWidth  the window's width, the controller's call
  */
 $window = $window ?? false;
 $winAttr = $window
     ? ' data-window="journal-entry-detail" data-window-entity="journal-entry:' . (int) $entry->getId() . '" data-window-title="' . e('Buchung ' . $entry->getFiscalYear()->getCode() . '/' . $entry->getNumber()) . '"'
+        . (!empty($windowWidth) ? ' data-window-width="' . e($windowWidth) . '"' : '')
     : '';
 $actionBase = $actionBase ?? '/backend/finance/journal';
 $year       = $entry->getFiscalYear();
