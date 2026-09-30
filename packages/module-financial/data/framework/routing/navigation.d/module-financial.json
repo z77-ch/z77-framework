@@ -1,0 +1,80 @@
+[
+    {
+        "key": "finanzen",
+        "name": "Finanzen",
+        "module": "",
+        "group": "",
+        "controller": "",
+        "action": "",
+        "slot": "backend-main",
+        "active": true,
+        "param": "",
+        "sort_key": 1,
+        "parent_key": null
+    },
+    {
+        "key": "journal",
+        "name": "Journal",
+        "module": "backend",
+        "group": "finance",
+        "controller": "journal",
+        "action": "list",
+        "slot": "",
+        "active": true,
+        "param": "",
+        "sort_key": 0,
+        "parent_key": "finanzen"
+    },
+    {
+        "key": "auswertungen",
+        "name": "Auswertungen",
+        "module": "backend",
+        "group": "finance",
+        "controller": "report",
+        "action": "trial-balance",
+        "slot": "",
+        "active": true,
+        "param": "",
+        "sort_key": 1,
+        "parent_key": "finanzen"
+    },
+    {
+        "key": "stammdaten-finanzen",
+        "name": "Finanzen",
+        "module": "",
+        "group": "",
+        "controller": "",
+        "action": "",
+        "slot": "",
+        "active": true,
+        "param": "",
+        "sort_key": 1,
+        "parent_key": "stammdaten"
+    },
+    {
+        "key": "geschaeftsjahre",
+        "name": "Geschäftsjahre",
+        "module": "backend",
+        "group": "finance",
+        "controller": "fiscal-year",
+        "action": "list",
+        "slot": "",
+        "active": true,
+        "param": "",
+        "sort_key": 0,
+        "parent_key": "stammdaten-finanzen"
+    },
+    {
+        "key": "kontenplan",
+        "name": "Kontenplan",
+        "module": "backend",
+        "group": "finance",
+        "controller": "account",
+        "action": "list",
+        "slot": "",
+        "active": true,
+        "param": "",
+        "sort_key": 1,
+        "parent_key": "stammdaten-finanzen"
+    }
+]

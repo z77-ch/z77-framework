@@ -1,6 +1,6 @@
 # installer
 
-2026-09-24
+2026-09-29
 
 ## entry
 
@@ -19,6 +19,9 @@ SOURCE=/packages/kernel/core/src/Config/moduleManager.default.inc.php
 SOURCE=/packages/kernel/core/src/Config/systemConfig.default.inc.php
 SOURCE=/packages/kernel/core/src/Config/database.default.inc.php
 SOURCE=/packages/kernel/core/data/framework/routing/navigation.default.json
+SOURCE=/packages/kernel/core/data/framework/routing/navigation.d/kernel.json
+SOURCE=/packages/kernel/shared/src/Import/NavigationSeeds.php
+SOURCE=/tests/navigation-seeds.php
 SOURCE=/packages/kernel/core/data/framework/seo/metadata.default.json
 SOURCE=/skeleton/composer.json
 SOURCE=/tests/fresh-install-setup.php
@@ -66,6 +69,7 @@ Runs as a Composer post-install/post-update hook. Reads `extra` config from `com
 | 13b | `writeDatabaseConfig()` | → `config/client/database.inc.php` — **seed-once**: the ONE database connection (host, port, name, user, password; empty `name` = no database), read by the Doctrine driver and the `db` backup; like systemConfig NOT fed from `composer.json` (ADR-039 decision 4), see [`persistence-doctrine.md`](persistence-doctrine.md). Seeded `host` = `localhost` (Unix socket on Linux; on Windows set `127.0.0.1` by hand — DOCTRINE-HOST-001) |
 | 14 | `writeFileFinderConfig()` | → `config/vendor/fileFinder.inc.php` |
 | 15 | `writeDataFiles()` | seed `data/*.json` from EVERY installed framework package's data roots (skip if already exist; INST-SEED-001) |
+| 15b | `seedNavigation()` | **navigation seeds** (ADR-050): collect every package's `data/framework/routing/navigation.d/*.json` (project override tier first, then `frameworkDataRoots()`; one file per name) and ADD to `data/framework/routing/navigation.json` each entry the installation does not hold — recognised by the import's identity (key → route → parent + ref, bijective; `NavigationSeeds::merge()` runs the `ImportPlanner`), parent by `parent_key`, appended after its siblings, next free id. Never changes, moves or removes an existing entry. Parent package missing, or ambiguous → `Skipped navigation entry «…» (file): reason`. Creates the file when absent; a corrupt file throws and is not touched. Same lock file + atomic replace as `FileStorage` |
 | 16 | `provisionAdmin()` | create admin (interactive) or write `SETUP_TOKEN` (non-interactive) — skip if `backendUsers.json` exists |
 | 17 | `writeDebugFlag()` | create/remove `var/state/debug.flag` per `debug` (release-local, ADR-035; creates `var/state/` if missing) |
 | 18 | `seedDenyFiles()` | seed a deny `.htaccess` (`Require all denied`, from `core/res/htaccess-deny`) into `data/`, `config/`, `logs/` — **seed-once**, existing files never touched, missing dirs skipped (INST-DENY-001) |
@@ -115,6 +119,7 @@ All failures throw `\RuntimeException` — no silent errors:
 | Config (regenerate) | `config/vendor/bootstrap.inc.php`, `config/vendor/moduleManager.inc.php`, `config/vendor/fileFinder.inc.php` | regenerated on every install; RELEASE-owned (ADR-036) — a function of `composer.json` + `vendor/`, rides with the release upload |
 | Config (seed-once) | `config/client/i18n.inc.php`, `auth`, `backup`, `mail`, `systemConfig`, `database` (and hand-created `geoip`) | user-adjustable — written once, never overwritten (INST-CONFIG-001); INSTALLATION-owned (ADR-036) — in the release layout `config/client` is a symlink into `shared/` |
 | Data | `data/framework/**/*.json` | written once — never overwritten |
+| Data (navigation) | `data/framework/routing/navigation.json` | seeded once from `navigation.default.json`, then MERGED add-only by record from the packages' `navigation.d` seeds on every run (ADR-050) |
 
 > The blanket "config regenerated on every install" holds only for framework-controlled config (`bootstrap`, `moduleManager`, `fileFinder`) — those are fed from `composer.json`. Everything a developer or operator adjusts is seed-once. `systemConfig.inc.php` (ADR-030) is the strongest case: it holds what differs per INSTALLATION, so it is the one config file that is deliberately not fed from `composer.json` at all — that file is committed, and staging and production could then not differ.
 
@@ -412,6 +417,7 @@ Installer creates the override dirs, registers the module in `moduleManager.inc.
   - DONE: `copyFiles()` (public entry files) + public asset copy → seed-once on first install only (ADR-024, INST-ASSET-002). `public/` is developer-owned; the installer never overwrites it.
   - TODO: classify the remaining framework-derived config targets — `bootstrap.inc.php`, `moduleManager.inc.php`, `fileFinder.inc.php` (regenerate-always is likely correct, but confirm each carries no developer-adjusted value before publication).
   - DECIDED 2026-08-08: `writeDataFiles()` stays **seed-once at file level** — the installer never merges records into an existing runtime file. The `merge` class is served by a separate, manual data import in the backend (ADR-032). Consistent with ADR-024/025: the installer reports, the developer decides.
+  - SUPERSEDED for the navigation 2026-09-29 by [ADR-050](../02-decisions/adr-050-module-navigation-seeds.md) (owner: «jedes Modul stellt seine Navigationspunkte bei der Installation zur Verfügung — dann nie mehr überschrieben»): step 15b merges `navigation.json` ADD-ONLY by record identity. Every other data file stays file-level seed-once.
 
 - **INST-SEED-001** — resolved 2026-08-08. `writeDataFiles()` now walks **every installed framework package**: data roots are derived from each package's framework psr-4 paths via the same `stripSrc` logic `buildPaths()` uses (`core/src` → `{install}/core/data`, `src` → `{install}/data`; new helper `frameworkDataRoots()`, install paths from Composer's `InstallationManager`, deduped, metapackages skipped). Previously only the kernel's own `core/data` was scanned, so module seeds never reached a project — concretely `packages/module-dms/data/documents/folders.default.json` (the DMS Drive root). On a rel-path collision across packages the first wins; seed-once protects existing runtime data either way. Verified in the skeleton: removed `data/documents/folders.json` → `composer install` seeds it from module-dms (Drive root, `key: "drive"`, `system: true`); re-install skips everything (0 writes).
 

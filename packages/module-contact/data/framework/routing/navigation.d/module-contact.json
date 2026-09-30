@@ -1,0 +1,54 @@
+[
+    {
+        "key": "kontakte",
+        "name": "Kontakte",
+        "module": "",
+        "group": "",
+        "controller": "",
+        "action": "",
+        "slot": "backend-main",
+        "active": true,
+        "param": "",
+        "sort_key": 3,
+        "parent_key": null
+    },
+    {
+        "key": "kontakte-liste",
+        "name": "Kontakte",
+        "module": "backend",
+        "group": "contact",
+        "controller": "contact",
+        "action": "list",
+        "slot": "",
+        "active": true,
+        "param": "",
+        "sort_key": 0,
+        "parent_key": "kontakte"
+    },
+    {
+        "key": "stammdaten-kontakte",
+        "name": "Kontakte",
+        "module": "",
+        "group": "",
+        "controller": "",
+        "action": "",
+        "slot": "",
+        "active": true,
+        "param": "",
+        "sort_key": 3,
+        "parent_key": "stammdaten"
+    },
+    {
+        "key": "adresstypen",
+        "name": "Adresstypen",
+        "module": "backend",
+        "group": "contact",
+        "controller": "address-type",
+        "action": "list",
+        "slot": "",
+        "active": true,
+        "param": "",
+        "sort_key": 0,
+        "parent_key": "stammdaten-kontakte"
+    }
+]

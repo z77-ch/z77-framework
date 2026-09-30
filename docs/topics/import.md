@@ -1,6 +1,6 @@
 # import
 
-2026-08-08
+2026-09-29
 
 ## entry
 
@@ -28,6 +28,9 @@ SOURCE=/packages/kernel/shared/src/Import/ImportSource.php
 SOURCE=/packages/kernel/shared/src/Import/ImportSourceException.php
 SOURCE=/packages/kernel/shared/src/Import/ImportStaleException.php
 SOURCE=/packages/kernel/shared/src/Import/Source/JsonEntitySource.php
+SOURCE=/packages/kernel/shared/src/Import/Source/NavigationSeedSource.php
+SOURCE=/packages/kernel/shared/src/Import/NavigationSeeds.php
+SOURCE=/tests/navigation-seeds.php
 SOURCE=/packages/kernel/shared/src/Jobs/ImportApplyJob.php
 SOURCE=/packages/kernel/shared/src/Entities/Navigation.php
 SOURCE=/packages/kernel/shared/src/Entities/NavigationAlias.php
@@ -92,6 +95,15 @@ they are in-file link addresses, rewritten through a per-run id map at apply.
 - **Vendor discovery** is the runtime twin of the installer's package walk: the entity's
   `#[Entity]` path names the default file, the FileFinder namespaces name the data roots —
   override tier first, so a project can override a seed (CE).
+- **The Navigation vendor set is a UNION** (ADR-050): the kernel's `navigation.default.json`
+  (frontend starter pages, login/logout — its ids stay, the alias and metadata defaults reference
+  them) PLUS every package's `navigation.d/<package>.json` (`discoverNavigationSeeds()`, one file
+  per name, override tier first). `NavigationSeedSource` converts the seeds
+  (`NavigationSeeds::toRecords()`): in-source ids after the default file's highest, `parent_key` /
+  `ref_key` turned into in-source refs. The planner then resolves them against the TARGET through
+  its identity matches — a module entry under a kernel group plans as `new` under the right
+  parent. The seed files ride in the spec as `navigation_seeds` (path → sha1), stale-checked like
+  the other source files. `vendorSourceSpec()` builds the whole vendor spec.
 
 ## flow
 
@@ -119,6 +131,9 @@ Quelle (Vendor-Defaults | Inbox-Datei + Entity-Typ aus der Whitelist)
 - When adding a shipped record to a `*.default.json` that framework code relies on → MUST give it
   a stable `key` (Navigation) or natural identity; a keyless shipped container is `unclear` on
   every installed base.
+- When a package ships menu entries → MUST put them in its `navigation.d/<package>.json` with a
+  `key` on every area/group and a `parent_key` (never `id` / `parent_id` / `ref` — ids are local
+  to one installation; `NavigationSeeds::read()` refuses them). See [`navigation.md`](navigation.md).
 - When applying → writes MUST go through the entity's validator (registered in
   `ImportServiceFactory::fromDi()`); an importable entity without a validator factory is applied
   unvalidated — add the factory when registering the entity.
@@ -140,7 +155,7 @@ Quelle (Vendor-Defaults | Inbox-Datei + Entity-Typ aus der Whitelist)
 - [`../03-development/review-import-adr-032.md`](../03-development/review-import-adr-032.md) — the two-round pre-build review (IMP-R001…R021) with the live-project evidence
 - [`../03-development/import-service-bauplan.md`](../03-development/import-service-bauplan.md) — build plan + phase log (Entstehungsgeschichte)
 - [`navigation.md`](navigation.md) — `Navigation::key` (NAV-KEY-001), the identity the navigation import stands on
-- [`installer.md`](installer.md) — seeding is file-level seed-once (INST-SEED-001 package walk); the import is the record-level answer
+- [`installer.md`](installer.md) — seeding is file-level seed-once (INST-SEED-001 package walk); the import is the record-level answer — except the navigation, which the installer merges add-only with the SAME identity rules (`NavigationSeeds::merge()` runs this planner, ADR-050)
 - [`jobs.md`](jobs.md) — the `import-apply` job runs on the ADR-031 queue
 - [`backup.md`](backup.md) — why `framework/import` is excluded from data archives
 - [`translation.md`](translation.md) — i18n catalogs are deliberately NOT this mechanism (TRANS-SEED-001)
@@ -169,6 +184,10 @@ Quelle (Vendor-Defaults | Inbox-Datei + Entity-Typ aus der Whitelist)
   buttons auto-place into the narrow icon columns and overlap. Detail/action rows are plain flex
   divs; a control that belongs INTO the row needs `grid-column: 6`. (The same misuse exists in
   `Service/JobController/listAction.tpl.php` — its action buttons overlap for the same reason.)
+- **IMP-006**: don't expect the plan to list a navigation seed whose parent package is missing
+  (e.g. «MWST-Codes» with module-vat but without module-financial's `stammdaten-finanzen`): it is
+  left out of the source (`NavigationSeeds::toRecords()` orphans) — the plan has no outcome for
+  «cannot be placed at all». The installer names it on every run (`Skipped navigation entry …`).
 
 ## pending
 
@@ -181,6 +200,3 @@ Quelle (Vendor-Defaults | Inbox-Datei + Entity-Typ aus der Whitelist)
   `ImportRef` `resolveBy: 'identity'` is declared but the planner throws on it until then.
 - **Plan size**: the planner is in-memory — fine for v1 targets (≤ hundreds). Before a wdv bulk
   migration, decide streaming/chunking at the `ImportSource` seam (review IMP-R019).
-- **NAV-SEED-001** (tracked in [`navigation.md`](navigation.md)) — module-owned navigation
-  entries still ship in the kernel default; per-package seeds would let the import plan scope
-  per module.

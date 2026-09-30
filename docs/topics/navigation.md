@@ -1,6 +1,6 @@
 # navigation
 
-2026-09-17
+2026-09-29
 
 ## entry
 
@@ -33,6 +33,14 @@ SOURCE=/packages/kernel/shared/src/Validators/NavigationAliasValidator.php
 SOURCE=/packages/module-frontend/src/App/Config/frontendConfig.inc.php
 SOURCE=/packages/module-backend/src/App/Config/backendConfig.inc.php
 SOURCE=/packages/kernel/core/data/framework/routing/navigation.default.json
+SOURCE=/packages/kernel/core/data/framework/routing/navigation.d/kernel.json
+SOURCE=/packages/module-financial/data/framework/routing/navigation.d/module-financial.json
+SOURCE=/packages/module-vat/data/framework/routing/navigation.d/module-vat.json
+SOURCE=/packages/module-contact/data/framework/routing/navigation.d/module-contact.json
+SOURCE=/packages/module-dms/data/framework/routing/navigation.d/module-dms.json
+SOURCE=/packages/module-mandator/data/framework/routing/navigation.d/module-mandator.json
+SOURCE=/packages/module-debtor/data/framework/routing/navigation.d/module-debtor.json
+SOURCE=/packages/kernel/shared/src/Import/NavigationSeeds.php
 SOURCE=/packages/kernel/core/data/framework/routing/navigation_aliases.default.json
 SOURCE=/packages/kernel/core/data/framework/seo/metadata.default.json
 
@@ -310,32 +318,56 @@ Display labels of navigation entries come from `Navigation::getName()`; render-s
 
 Project-specific tags are free. Tags stored in `tags.default.json` / `tags.json` are the "known" tags with labels.
 
-## default navigation entries (`navigation.default.json`)
+## shipped navigation entries (seeds, ADR-050)
 
-Entries carry **no `url` / `params`** (removed Phase 4). Every entry carries `sort_key: int`
-(order within its sibling group). Public URLs live in `navigation_aliases.default.json` (see below).
+Every package ships its menu entries itself, in
+`<package>/data/framework/routing/navigation.d/<package-dir>.json` (`kernel.json`,
+`module-financial.json`, …) — a JSON list shaped like `navigation.json` records WITHOUT `id`,
+`parent_id` and `ref`: an entry names its parent by **`parent_key`** (the `key` of an entry in
+ANY package's seed; `null` for a root area, which carries `slot`), a ref entry names its target
+by **`ref_key`**, order among siblings is `sort_key`. The installer adds every entry an
+installation does not hold yet, on every run, and never changes an existing one
+(`installer.md` step 15b); the backend import reads the same union (`import.md`). Recognition is
+the import's identity: `key` → route (4-tuple) → parent + ref — an entry the project built by
+hand without a key is recognised by its route.
 
-Since 2026-08-08 (NAV-KEY-001) the framework-owned entries carry a **`key`** — the stable import
-identity: containers (`webseiten`, `stammdaten`, `drive`, `service`), auth (`login`, `logout`) and
-all backend children (`navigation`, `benutzer`, `inhalte`, `metadaten`, `nav-alias`,
-`uebersetzungen`, `dokumente`, `backup`, `email`, `jobs`). The frontend starter pages
-(Home/About/…) and the ref entry (id 18) deliberately carry `key: null` — starter content belongs
-to the customer; their fallback identity is the 4-tuple (or parent+ref).
+| Package | Entries (key) | Parent |
+|---|---|---|
+| kernel | Webseiten (`webseiten`) — Inhalte (`inhalte`) · Metadaten (`metadaten`) · Übersetzungen (`uebersetzungen`) · Navigation (`navigation`, opener: ref-to-self child via `ref_key`, Nav Alias `nav-alias`) | root 0 |
+| kernel | Stammdaten (`stammdaten`) | root 5 |
+| kernel | System (`stammdaten-system`) — Benutzer (`benutzer`) | `stammdaten` (4) |
+| kernel | Service (`service`) — Backup · E-Mail · Jobs · Import · Formular-Protokoll (`backup`, `email`, `jobs`, `import`, `form-log`) | root 6 |
+| module-financial | Finanzen (`finanzen`) — Journal (`journal`) · Auswertungen (`auswertungen`) | root 1 |
+| module-financial | Finanzen (`stammdaten-finanzen`) — Geschäftsjahre (`geschaeftsjahre`) · Kontenplan (`kontenplan`) | `stammdaten` |
+| module-vat | MWST-Codes (`mwst-codes`) | `stammdaten-finanzen` |
+| module-contact | Kontakte (`kontakte`) — Kontakte (`kontakte-liste`) | root 3 |
+| module-contact | Kontakte (`stammdaten-kontakte`) — Adresstypen (`adresstypen`) | `stammdaten` |
+| module-dms | Drive (`drive`) — Dokumente (`dokumente`) | root 4 |
+| module-mandator | Firma (`stammdaten-firma`) — Mandant (`mandant`) | `stammdaten` |
+| module-debtor | Aufträge (`auftraege`) — Debitoren (`debitoren`); later module-order's screens | root 2 |
+| module-debtor | Aufträge (`stammdaten-auftraege`) — Zahlungskonditionen · Zahlungsziele · Mahnstufen (`zahlungskonditionen`, `zahlungsziele`, `mahnstufen`) | `stammdaten` (2) |
 
-| id | name | module | group | controller | action | tag | parent |
-|---|---|---|---|---|---|---|---|
-| 1 | Webseiten | — | — | — | — | `backend` | — |
-| 2 | Stammdaten | — | — | — | — | `backend` | — |
-| 3 | Home | `frontend` | `main` | `index` | `home` | `frontend` | — |
-| 4 | About | `frontend` | `main` | `index` | `about` | `frontend` | — |
-| 5 | Services | `frontend` | `main` | `index` | `services` | `frontend` | — |
-| 6 | Navigation | `backend` | `content` | `navigation` | `list` | _(null)_ | 2 |
-| 7 | Benutzer | `backend` | `users` | `user` | `list` | _(null)_ | 2 |
-| 8 | Login | `backend` | `system` | `login` | `login` | `backend-auth` | — |
-| 9 | Logout | `backend` | `system` | `login` | `logout` | `backend-auth` | — |
-| 10 | Contact | `frontend` | `main` | `index` | `contact` | `frontend` | — |
-| 11 | Legal | `frontend` | `main` | `index` | `legal` | `frontend-meta` | — |
-| 12 | Privacy | `frontend` | `main` | `index` | `privacy` | `frontend-meta` | — |
+Root order: Webseiten 0, Finanzen 1, Aufträge 2, Kontakte 3, Drive 4, Stammdaten 5, Service 6. Group order under Stammdaten: Firma 0, Finanzen 1, Aufträge 2, Kontakte 3, System 4 (the `sort_key` of each
+package's group). A package whose parent lives in a package it does not require waits: module-vat
+does not require module-financial, module-debtor neither — without it, MWST-Codes and the debtor
+entries are skipped (the installer names them).
+
+**`navigation.default.json`** (kernel, whole-file seed-once — `writeDataFiles()`) keeps only the
+entries OTHER seeds reference by id: the frontend starter pages (ids 3, 4, 5, 10, 11, 12 —
+`navigation_aliases.default.json`, `metadata.default.json`) and Login/Logout (8, 9 — the `/login`
+alias). The starter pages are the customer's content (keyless, identity = 4-tuple); they are NOT
+in a `navigation.d` seed, so an update never brings back a page the project deleted.
+
+| id | name | module | group | controller | action | slot |
+|---|---|---|---|---|---|---|
+| 3 | Home | `frontend` | `main` | `index` | `home` | `frontend-main` |
+| 4 | About | `frontend` | `main` | `index` | `about` | `frontend-main` |
+| 5 | Services | `frontend` | `main` | `index` | `services` | `frontend-main` |
+| 8 | Login | `backend` | `system` | `login` | `login` | `backend-auth` |
+| 9 | Logout | `backend` | `system` | `login` | `logout` | `backend-auth` |
+| 10 | Contact | `frontend` | `main` | `index` | `contact` | `frontend-main` |
+| 11 | Legal | `frontend` | `main` | `index` | `legal` | `frontend-meta` |
+| 12 | Privacy | `frontend` | `main` | `index` | `privacy` | `frontend-meta` |
 
 ## default aliases (`navigation_aliases.default.json`)
 
@@ -361,6 +393,7 @@ first time that alias is saved through the backend (`mapToArray` writes every pr
 
 ## rules
 
+- When a package brings backend screens → MUST ship their menu entries in its own `navigation.d/<package-dir>.json`: a `key` on every area and group (and on leaves), the parent by `parent_key`, a ref by `ref_key` — NEVER `id` / `parent_id` / `ref` (ids are local to one installation; `NavigationSeeds::read()` refuses them) and NEVER an entry in another package's seed or in `navigation.default.json`. A key, once shipped, MUST NOT be renamed — it is the identity every installation recognises the entry by (a renamed key is a NEW entry). ADR-050.
 - When rendering `href` in a template → MUST use `NavigationService::urlFor($entry)` (alias-aware) for regular entries, wrapped in `localizedUrl()`; for ref entries MUST resolve `urlFor(target) . '?via=' . refEntry.getId()`. MUST NOT emit `$entry->getUrl()` raw (that is the 4-tuple path, not the public URL)
 - When a cache lookup returns `null` (no match) → MUST NOT cache the `null` (indistinguishable from miss)
 - When resolving an entry's children → MUST use `NavigationService::getChildren($entry)` (filters `parentId === entry.id`, sorted by `sortKey`). The entity has no `children` accessor; the tree link lives on the child as `parentId`
@@ -450,6 +483,7 @@ first time that alias is saved through the backend (`mapToArray` writes every pr
 
 - **NAV-SLOTS-CONFIG-001** — resolved 2026-07-05 (ADR-022). View areas + render-slots moved out of the `NavigationGroup` entity into **module config** (`viewAreaLabel` + `navSlots` in `<module>Config.inc.php`, read via `ModuleManager::getViewAreaLabel`/`getNavSlots`/`getAllNavSlots`/`isKnownSlot`). `Navigation.navigationGroupId` (int FK) → **`slot`** (slug string, `#[Clean('ident')]`); `TreeService` scopeOf now `getSlot`. `NavigationService`: `getByGroupSlug`/`getByGroupId` → **`getBySlot`** (validates against the config registry, throws `UnknownNavigationSlotException` on an unknown slug — fail-fast for a template typo); `getActiveSectionByGroupSlug` → `getActiveSectionBySlot`; `getViewAreas` returns `{key,label,url,active}` from ModuleManager; the group methods + `groups-all`/`group-entity` caches are gone; ctor dep `NavigationGroupRepository` → `ModuleManager`. `NavigationValidator::validateSlot` inlines XOR + orphan + registry-membership (the shared `ElementAnchorRules`/`AnchorViolation` were **deleted** — Navigation was their only consumer). `MetaDataController` moved off `getTopLevelGroups` onto `getPublicViewAreaKeys` + `getViewAreaLabel`. **Removed:** `NavigationGroup` entity/repository/validator/`NavigationGroupController` + 5 templates + `navigation-group/list.js` + `navigation_groups*.json` + the backend ACL block. Data migrated (`navigation_group_id` → `slot`) + sandbox cleanup (orphan id 14/15/16 → non-existent parent 13; id 17 → deleted controller). Verified: `php -l` all green, JSON valid, dev-server `/`/`/home`/`/login` 200 + backend 302, CLI boot `getViewAreas`/`getBySlot`/`iterateSections`/fail-fast all correct. Build plan: [`../03-development/navigation-slots-config-bauplan.md`](../03-development/navigation-slots-config-bauplan.md). **Restpunkt:** the `AbstractTreeEntityController` base is kept (one consumer, `NavigationController`) as the reuse seam for future tree-entity controllers (ADR-008/009).
 
+- **NAV-SEED-001** — resolved 2026-09-29 ([ADR-050](../02-decisions/adr-050-module-navigation-seeds.md)). Don't look for module entries in the kernel's `navigation.default.json` any more: every package ships its own `navigation.d/<package>.json` (see «shipped navigation entries»), the installer merges them add-only by identity on every run (step 15b), the import reads their union. Drive/Dokumente moved to module-dms; «Jobs» stays in the kernel (the job queue is kernel code). The kernel's backend structure moved from the default file into `navigation.d/kernel.json`, restructured to the target (Navigation under Webseiten, Benutzer under Stammdaten › System). An installation seeded from the OLD default keeps its old places (Navigation and Benutzer directly under Stammdaten — recognised by key, never moved) and receives the missing groups, among them an EMPTY «System» group; moving Benutzer there is the project's call. Verified: `tests/navigation-seeds.php` (44 checks) and a dry run of the step against a copy of z77.ch's `navigation.json` — nothing added.
 - **NAV-KEY-001** — resolved 2026-08-08 (ADR-032 phase 1). `Navigation` gained the server-controlled `?string $key` field — the stable import identity, `Folder::key` pattern (ADR-020). `null` for human-created entries; `navigation.default.json` seeds 16 keys (containers, auth, backend children — frontend starter pages deliberately keyless, their identity is the 4-tuple). `NavigationValidator::validateKey` enforces uniqueness among non-null keys; the edit POST path forces the stored value alongside `parentId`/`sortKey` (BodyCleaner passes attribute-less fields through, so the server-side force is the actual protection); the edit form shows the key display-only. Legacy runtime files without the field hydrate to `null` (forward-compatible). Verified: `php -l` on all touched files, 11-check CLI smoke (hydration round-trip, blank→null normalization, duplicate rejected, self/null accepted, default-file key uniqueness, UTF-8 umlauts intact, legacy hydration).
 
 - **NAV-LIST-VM-001** — resolved 2026-07-07. `listAction.tpl.php` baute den Baum selbst rekursiv auf: ein `$renderNode`-Closure rief `navigationService->getChildren()` + `findById()` (Service-Zugriff + Ref-Auflösung im Template) und komponierte die URL-/Route-Zelle inline — Logik im Partial (Konventionsverstoss). Dieselbe URL-/Route-/Ref-Darstellung existierte ein zweites Mal im Controller (`edit`-Fetch-Update, eigener `htmlspecialchars`-Closure) → Duplikat mit Drift-Risiko. Fix: ein einziger Node-Display-Builder im Controller — `nodeDisplay(Navigation): array` (name/urlDisplay/route/isRef/active; `urlDisplay` intern escaped) + `nodeTree(Navigation, all): array` (rekursiv, `children`/`hasChildren` über `TreeService::children`). `listAction` liefert fertige verschachtelte Arrays; das Template ist reiner Renderer (kein Service-Call, keine Escaping-Entscheidung: `urlDisplay` = `raw()` (vor-escaped), Rest `e()`). Der `edit`-Fetch nutzt denselben `nodeDisplay` → eine Quelle für die Node-Darstellung. Verhaltensgleich: `TreeService::children` (parentId≠null → scope-irrelevant, sortiert) entspricht `getChildren`; Ref-Auflösung via `repo()->find()` wie im alten edit-Pfad. Verifiziert: `php -l` (Controller + Template) grün.
@@ -460,15 +494,9 @@ first time that alias is saved through the backend (`mapToArray` writes every pr
 
 ## pending
 
+
 - **ADR-015 addendum for `Navigation::param` (NAV-PARAM-002)** — write a short `docs/02-decisions` ADR recording that navigation MAY carry an OUTBOUND UI-state query param (switch trigger, like `?via=`), while routing stays param-free (the ADR-015 core). Until then the decision lives in NAV-PARAM-002 above.
 
 - **Umgebungs-Switcher — Rollen-Gate (offen)** — `getViewAreas()` filtert heute nur auf Erreichbarkeit (mind. ein navigierbarer Eintrag), nicht auf Rolle; der Backend-Topbar ist ohnehin auth-gated, daher aufgeschoben. (Der frühere Env-Delete-Schutz ist mit ADR-022 gegenstandslos — Umgebungen sind Config, es gibt keinen Delete-Pfad mehr.)
-
-- **NAV-SEED-001 — module-owned entries live in kernel data (ADR-032)** — «Drive»/«Dokumente»
-  (ids 23/24) and «Jobs» (id 28) sit in `packages/kernel/core/data/framework/routing/navigation.default.json`,
-  although they belong to `module-dms` / the job module. Each package should ship its own navigation
-  seeds and the installer collect them across packages. Blocks nothing today (a project installs the
-  full kernel default), but a project without the DMS module gets a dead «Drive» section, and the
-  import plan cannot be scoped per module while the records are kernel-owned.
 
 - **Subnav — Folgepunkte aus NAV-SUBNAV-001** — drei bewusst offen gelassene Punkte aus der Subnav-Refaktorierung (2026-06-02): (1) **inert-Styling** — der Modifier `backend-tree-node--inert` (Leaf ohne erreichbare URL) ist gesetzt, aber im SCSS noch ungestylt; rendert wie ein normaler Knoten. (2) **inaktive Einträge** — die Subnav nutzt `getChildren()` (ungefiltert), inaktive Einträge (`active: false`) werden weiterhin gerendert — Abweichung von der `active`-Regel (kein öffentliches active-gefiltertes `getChildren`; `getActiveChildren` ist privat im NavigationService). (3) **Opener-Summary klickbar** — ein Opener-Knoten mit eigenem Link ist aktuell nur Toggle, nicht klickbar (Erreichbarkeit via Ref-auf-sich-selbst-Kind, id-18-Muster); offen, ob Summary zusätzlich Link sein soll.

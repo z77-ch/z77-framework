@@ -7,6 +7,7 @@ use Z77\Core\DI,
     Z77\Module\Backend\Ui\Controllers\BackendAbstractController,
     Z77\Shared\Attributes\Fetch,
     Z77\Shared\Attributes\HttpMethod,
+    Z77\Shared\Entities\Navigation,
     Z77\Shared\Import\ImportOutcome,
     Z77\Shared\Import\ImportPlan,
     Z77\Shared\Import\ImportPlanEntry,
@@ -126,7 +127,11 @@ class ImportController extends BackendAbstractController
         $staging = $service->getStaging();
         $state   = $service->getPlanStore()->load();
 
-        $vendorFiles = ImportServiceFactory::discoverVendorDefaults();
+        // The Navigation set also comes from the packages' navigation seeds (ADR-050).
+        $vendorClasses = array_keys(ImportServiceFactory::discoverVendorDefaults());
+        if (ImportServiceFactory::discoverNavigationSeeds() !== [] && !in_array(Navigation::class, $vendorClasses, true)) {
+            $vendorClasses[] = Navigation::class;
+        }
 
         $planView   = null;
         $staleError = null;
@@ -145,7 +150,7 @@ class ImportController extends BackendAbstractController
             'state'         => $state,
             'staleError'    => $staleError,
             'lastResult'    => $state['last_result'] ?? null,
-            'vendorClasses' => array_map([$this, 'shortName'], array_keys($vendorFiles)),
+            'vendorClasses' => array_map([$this, 'shortName'], $vendorClasses),
             'inbox'         => $staging->listInbox(),
             'entityOptions' => $this->entityOptions(),
             'jobThreshold'  => self::JOB_THRESHOLD,
@@ -156,16 +161,16 @@ class ImportController extends BackendAbstractController
     // Start a plan
     // -------------------------------------------------------------------------
 
-    /** Plans the shipped vendor defaults (all importable entities that have one). */
+    /** Plans the shipped vendor defaults (all importable entities that have one, plus the navigation seeds). */
     #[Fetch, HttpMethod('POST')]
     protected function startVendorAction(): FetchResponse
     {
-        $files = ImportServiceFactory::discoverVendorDefaults();
-        if ($files === []) {
+        $spec = ImportServiceFactory::vendorSourceSpec();
+        if ($spec === null) {
             return $this->fetchError('Keine Vendor-Defaults gefunden');
         }
 
-        return $this->startPlan(ImportServiceFactory::sourceSpec('vendor', 'Vendor-Defaults', $files));
+        return $this->startPlan($spec);
     }
 
     /** Stages an inbox file and plans it against ONE chosen entity type. */

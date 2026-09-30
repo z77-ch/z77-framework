@@ -1,0 +1,28 @@
+[
+    {
+        "key": "stammdaten-firma",
+        "name": "Firma",
+        "module": "",
+        "group": "",
+        "controller": "",
+        "action": "",
+        "slot": "",
+        "active": true,
+        "param": "",
+        "sort_key": 0,
+        "parent_key": "stammdaten"
+    },
+    {
+        "key": "mandant",
+        "name": "Mandant",
+        "module": "backend",
+        "group": "finance",
+        "controller": "mandator",
+        "action": "edit",
+        "slot": "",
+        "active": true,
+        "param": "",
+        "sort_key": 0,
+        "parent_key": "stammdaten-firma"
+    }
+]

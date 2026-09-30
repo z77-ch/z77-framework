@@ -1,0 +1,80 @@
+[
+    {
+        "key": "auftraege",
+        "name": "Aufträge",
+        "module": "",
+        "group": "",
+        "controller": "",
+        "action": "",
+        "slot": "backend-main",
+        "active": true,
+        "param": "",
+        "sort_key": 2,
+        "parent_key": null
+    },
+    {
+        "key": "debitoren",
+        "name": "Debitoren",
+        "module": "backend",
+        "group": "finance",
+        "controller": "debtor",
+        "action": "list",
+        "slot": "",
+        "active": true,
+        "param": "",
+        "sort_key": 0,
+        "parent_key": "auftraege"
+    },
+    {
+        "key": "stammdaten-auftraege",
+        "name": "Aufträge",
+        "module": "",
+        "group": "",
+        "controller": "",
+        "action": "",
+        "slot": "",
+        "active": true,
+        "param": "",
+        "sort_key": 2,
+        "parent_key": "stammdaten"
+    },
+    {
+        "key": "zahlungskonditionen",
+        "name": "Zahlungskonditionen",
+        "module": "backend",
+        "group": "finance",
+        "controller": "payment-terms",
+        "action": "list",
+        "slot": "",
+        "active": true,
+        "param": "",
+        "sort_key": 0,
+        "parent_key": "stammdaten-auftraege"
+    },
+    {
+        "key": "zahlungsziele",
+        "name": "Zahlungsziele",
+        "module": "backend",
+        "group": "finance",
+        "controller": "payment-target",
+        "action": "list",
+        "slot": "",
+        "active": true,
+        "param": "",
+        "sort_key": 1,
+        "parent_key": "stammdaten-auftraege"
+    },
+    {
+        "key": "mahnstufen",
+        "name": "Mahnstufen",
+        "module": "backend",
+        "group": "finance",
+        "controller": "dunning-level",
+        "action": "list",
+        "slot": "",
+        "active": true,
+        "param": "",
+        "sort_key": 2,
+        "parent_key": "stammdaten-auftraege"
+    }
+]
