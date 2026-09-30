@@ -127,6 +127,27 @@ class FiscalYear
     }
 
     /**
+     * A year is CLOSED when every one of its periods is `closed` (owner
+     * 2026-09-30: only the whole year is closed — there is no year state,
+     * the periods carry it). A year without periods (not opened) is not
+     * closed. Reads the loaded periods; the close service decides on rows
+     * it re-read under lock.
+     */
+    public function isClosed(): bool
+    {
+        if ($this->periods->isEmpty()) {
+            return false;
+        }
+        foreach ($this->periods as $period) {
+            if ($period->getState() !== PeriodState::Closed->value) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
      * Only for a year not yet opened — `FiscalYearService::open()` adds the
      * derived periods after validation; nothing adds a period later.
      */

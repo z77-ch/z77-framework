@@ -3,6 +3,7 @@
 namespace Z77\Module\Debtor\Repositories;
 
 use Doctrine\DBAL\LockMode;
+use Doctrine\DBAL\ParameterType;
 use Z77\Module\Debtor\Entities\Invoice;
 use Z77\Module\Debtor\Entities\InvoiceKind;
 use Z77\Module\Debtor\Entities\InvoiceState;
@@ -69,5 +70,29 @@ class InvoiceRepository extends DoctrineRepository
         );
 
         return (string) $sum;
+    }
+
+    /**
+     * The documents still in `invoicing` (not final) dated from $from to
+     * $to, both inclusive — what the year close is blocked by
+     * (`InvoicingInProgressCheck`, plan §5.3): their posting would land in a
+     * closed year. The count of all of them and the first $limit rows
+     * (`id`, `kind`, `number`, `invoice_date`) in date order — by the index
+     * `idx_invoice_state_date`. Doctrine-only (SQL).
+     *
+     * @return array{count: int, rows: list<array{id: int|string, kind: string, number: int|string, invoice_date: string}>}
+     */
+    public function invoicingBetween(\DateTimeImmutable $from, \DateTimeImmutable $to, int $limit): array
+    {
+        $params = [InvoiceState::Invoicing->value, $from->format('Y-m-d'), $to->format('Y-m-d')];
+        $where  = 'FROM invoice WHERE state = ? AND invoice_date BETWEEN ? AND ?';
+        $count  = (int) $this->connection()->fetchOne('SELECT COUNT(*) ' . $where, $params);
+        $rows   = $count === 0 ? [] : $this->connection()->fetchAllAssociative(
+            'SELECT id, kind, number, invoice_date ' . $where . ' ORDER BY invoice_date, id LIMIT ?',
+            [...$params, max(1, $limit)],
+            [ParameterType::STRING, ParameterType::STRING, ParameterType::STRING, ParameterType::INTEGER]
+        );
+
+        return ['count' => $count, 'rows' => $rows];
     }
 }

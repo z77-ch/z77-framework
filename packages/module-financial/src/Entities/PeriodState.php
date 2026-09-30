@@ -3,8 +3,10 @@
 namespace Z77\Module\Financial\Entities;
 
 /**
- * Close state of a {@see Period} (ADR-042 decision 10). A period moves one
- * way: `open` → `vat-settled` → `closed`.
+ * Close state of a {@see Period} (ADR-042 decision 10). A period moves
+ * `open` → `vat-settled` → `closed`; since the owner decisions of 2026-09-30
+ * (ADR-042 addendum) an ADMIN may reopen a closed YEAR with a protocol
+ * entry — `closed` → `open` — through `FiscalYearCloseService`.
  *
  *   - `open`: generated entries post; manual entries can be created, edited
  *     and deleted.
@@ -12,10 +14,9 @@ namespace Z77\Module\Financial\Entities;
  *     tax code in the period is frozen.
  *   - `closed`: nothing changes; a correction is a reversal in an open period.
  *
- * P2 part 1 creates every period `open` and has no transition — the moves
- * arrive with the VAT return and the close (P5). The column exists now
- * because the posting service (part 2) refuses by it. Domain only, no
- * labels.
+ * Every period is created `open`. P5 part 1 moves whole years between
+ * `open` and `closed` (`Period::transitionTo()`); `vat-settled` arrives
+ * with the VAT return (P5 part 2). Domain only, no labels.
  */
 enum PeriodState: string
 {

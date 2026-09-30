@@ -102,7 +102,7 @@ trait JournalControllerTrait
     private const JOURNAL_STATE_LABELS = [
         'editable'    => 'bearbeitbar',
         'generated'   => 'automatisch gebucht — das Modul, das sie gebucht hat, storniert sie',
-        'closed'      => 'Periode abgeschlossen — gesperrt',
+        'closed'      => 'Geschäftsjahr abgeschlossen — gesperrt',
         'vat-settled' => 'MWST der Periode abgerechnet — die Buchung trägt einen MWST-Code und ist gesperrt',
     ];
 
@@ -248,7 +248,7 @@ trait JournalControllerTrait
     private function journalNotEditableMessage(JournalEntry $entry): string
     {
         return $entry->isManual()
-            ? 'Die Periode ist abgeschlossen — keine Änderung mehr möglich.'
+            ? 'Das Geschäftsjahr ist abgeschlossen — keine Änderung mehr möglich.'
             : 'Eine generierte Buchung wird nie geändert oder gelöscht — das Modul, das sie gebucht hat, storniert sie.';
     }
 
@@ -262,7 +262,7 @@ trait JournalControllerTrait
             PostingRefusedException::NO_FISCAL_YEAR       => 'Für dieses Datum ist kein Geschäftsjahr eröffnet.',
             PostingRefusedException::NO_PERIOD            => 'Für dieses Datum gibt es keine Periode.',
             PostingRefusedException::PERIOD_CLOSED,
-            EntryNotEditableException::PERIOD_CLOSED      => 'Die Periode ist abgeschlossen — nichts wird mehr gebucht oder geändert; eine Korrektur ist eine Buchung in einer offenen Periode.',
+            EntryNotEditableException::PERIOD_CLOSED      => 'Das Geschäftsjahr ist abgeschlossen — darin wird nichts mehr gebucht oder geändert; eine Korrektur ist eine Buchung in einem offenen Jahr (ein Admin kann das Jahr mit Begründung wieder öffnen).',
             PostingRefusedException::PERIOD_VAT_SETTLED,
             EntryNotEditableException::PERIOD_VAT_SETTLED => 'Die MWST dieser Periode ist abgerechnet — Zeilen mit MWST-Code sind dort eingefroren; nur Buchungen ohne MWST-Code sind noch möglich.',
             PostingRefusedException::ACCOUNT_UNKNOWN      => 'Ein Konto gibt es nicht.',

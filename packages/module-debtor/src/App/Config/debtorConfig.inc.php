@@ -3,6 +3,7 @@ namespace Z77\Module\Debtor\App;
 
 use Z77\Core\Config\AuthRole;
 use Z77\Module\Debtor\Accounting\LedgerAccountingGateway;
+use Z77\Module\Debtor\Close\InvoicingInProgressCheck;
 use Z77\Module\Debtor\Entities\DebtorProfile;
 use Z77\Module\Debtor\Entities\Invoice;
 use Z77\Module\Debtor\Entities\InvoiceLine;
@@ -71,6 +72,13 @@ return [
     // `LedgerAccountingGateway` books into module-financial and refuses to run without it;
     // an installation that keeps its books elsewhere names `NullAccountingGateway` here.
     'accountingGateway' => LedgerAccountingGateway::class,
+
+    // financial's year close asks every module «anything open?» (open-work registry of
+    // persistence-doctrine, scope `period-close`, plan §5.3): a document still in `invoicing`
+    // dated in the year blocks the close. Payments / CAMT (P4) will add their check here.
+    'openWorkChecks' => [
+        'period-close' => [InvoicingInProgressCheck::class],
+    ],
 
     // Nothing here renders a page; the host's cache policy applies to the mount.
     'cache' => [

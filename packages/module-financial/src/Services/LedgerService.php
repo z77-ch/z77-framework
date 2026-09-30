@@ -345,6 +345,9 @@ final class LedgerService
         $number = $ranges->next($year->journalEntryRange());
         // 3b. The accounts again, share-locked until commit (FIN-TYPE-001) — after the range lock.
         $this->rules->lockAccounts($request->lines, $accounts, $requireActiveAccounts);
+        // 3c. The period again, share-locked until commit (P5 part 1): a year close committed
+        //     since the check above refuses here — the number goes back with the rollback.
+        $this->rules->assertPeriodAccepts($period, $request->hasTaxLine(), $this->rules->lockedPeriodState($period));
 
         // 4. The entry, written by the caller's flush at commit.
         $entry = new JournalEntry(

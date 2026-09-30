@@ -18,6 +18,8 @@ final class FiscalYearNotDeletableException extends FinancialException
     public const HAS_ENTRIES = 'has-entries';
     /** A manual entry of the year was deleted: its change row documents a consumed number. */
     public const HAD_ENTRIES = 'had-entries';
+    /** The year is closed (P5 part 1) — a closed year is never deleted; an admin reopens it first. */
+    public const CLOSED      = 'closed';
     /** The year's range has drawn a number. */
     public const RANGE_USED  = 'range-used';
 

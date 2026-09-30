@@ -131,12 +131,20 @@ final class ManualEntryService
                     . 'the number belongs to its year; delete the entry and post it anew there'
                 );
             }
-            $withTax = $entry->hasTaxLine() || $new->hasTaxLine();
-            $this->assertPeriodAllows($this->rules->periodFor($year, $entry->getDate()), $withTax, $entry);
-            $this->assertPeriodAllows($this->rules->periodFor($year, $new->date), $withTax, $entry);
+            $withTax   = $entry->hasTaxLine() || $new->hasTaxLine();
+            $oldPeriod = $this->rules->periodFor($year, $entry->getDate());
+            $newPeriod = $this->rules->periodFor($year, $new->date);
+            // Lock-free first (the loaded state): the common refusal before any account is touched.
+            $this->assertPeriodAllows($oldPeriod, $withTax, $entry, $oldPeriod->getState());
+            $this->assertPeriodAllows($newPeriod, $withTax, $entry, $newPeriod->getState());
             $accounts = $this->rules->resolveAccounts($new->lines, self::requireActiveFor($entry, $new));
             $this->rules->assertTaxCodesExist($new->lines);
-            $this->rules->lockAccounts($new->lines, $accounts, self::requireActiveFor($entry, $new));   // FIN-TYPE-001, last — as in post() (no number drawn here)
+            // Lock order as in post(): accounts (S) BEFORE year / period (S) — a type change takes
+            // account (X) → years / periods (S); the other order here could deadlock with it (review 2026-09-30).
+            $this->rules->lockAccounts($new->lines, $accounts, self::requireActiveFor($entry, $new));   // FIN-TYPE-001
+            // The committed states, share-locked until commit (P5 part 1): a year close waits for this edit, or this edit sees it.
+            $this->assertPeriodAllows($oldPeriod, $withTax, $entry, $this->rules->lockedPeriodState($oldPeriod));
+            $this->assertPeriodAllows($newPeriod, $withTax, $entry, $this->rules->lockedPeriodState($newPeriod));
 
             // Everything passed on the fresh entity — only now is it touched.
             $now    = new \DateTimeImmutable();
@@ -166,7 +174,9 @@ final class ManualEntryService
         $this->runGuarded($transaction, $entryId, $expectedVersion, function () use ($entryId, $expectedVersion): void {
             $entry = $this->freshEntry($entryId, $expectedVersion);
             $this->assertManual($entry, 'deleted');
-            $this->assertPeriodAllows($this->rules->periodFor($entry->getFiscalYear(), $entry->getDate()), $entry->hasTaxLine(), $entry);
+            // A delete touches no account: entry (X) → year (S) → period (S), committed and share-locked (P5 part 1).
+            $period = $this->rules->periodFor($entry->getFiscalYear(), $entry->getDate());
+            $this->assertPeriodAllows($period, $entry->hasTaxLine(), $entry, $this->rules->lockedPeriodState($period));
 
             $this->em->persist(new EntryChange($entry, ChangeAction::Delete, $this->actorName(), new \DateTimeImmutable(), $entry->snapshot(), null));
             $this->em->remove($entry);
@@ -254,15 +264,18 @@ final class ManualEntryService
         }
     }
 
-    /** @throws EntryNotEditableException PERIOD_CLOSED | PERIOD_VAT_SETTLED */
-    private function assertPeriodAllows(Period $period, bool $withTaxLine, JournalEntry $entry): void
+    /**
+     * @param string $state the state to judge by — the loaded one (lock-free first check) or the committed one ({@see PostingRules::lockedPeriodState()})
+     * @throws EntryNotEditableException PERIOD_CLOSED | PERIOD_VAT_SETTLED
+     */
+    private function assertPeriodAllows(Period $period, bool $withTaxLine, JournalEntry $entry, string $state): void
     {
         $span = $period->getStartDate()->format('d.m.Y') . '–' . $period->getEndDate()->format('d.m.Y');
         $ref  = $entry->getFiscalYear()->getCode() . '/' . $entry->getNumber();
-        if ($period->getState() === PeriodState::Closed->value) {
+        if ($state === PeriodState::Closed->value) {
             throw new EntryNotEditableException(EntryNotEditableException::PERIOD_CLOSED, "Journal entry {$ref}: period {$span} is closed — nothing changes after the close");
         }
-        if ($period->getState() === PeriodState::VatSettled->value && $withTaxLine) {
+        if ($state === PeriodState::VatSettled->value && $withTaxLine) {
             throw new EntryNotEditableException(EntryNotEditableException::PERIOD_VAT_SETTLED, "Journal entry {$ref}: period {$span} is VAT-settled — an entry with a tax line is frozen there");
         }
     }

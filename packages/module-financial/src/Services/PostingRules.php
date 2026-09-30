@@ -74,19 +74,52 @@ final class PostingRules
     /**
      * Whether a period takes a posting (ADR-042 decision 10): `closed` takes
      * nothing; `vat-settled` takes an entry WITHOUT a tax line (the return is
-     * filed — the lines it summed cannot change).
+     * filed — the lines it summed cannot change). $state = the state to judge
+     * by — the committed one from {@see lockedPeriodState()} on the re-check
+     * under lock; null = the loaded entity's (the lock-free first check).
      *
      * @throws PostingRefusedException PERIOD_CLOSED | PERIOD_VAT_SETTLED
      */
-    public function assertPeriodAccepts(Period $period, bool $withTaxLine): void
+    public function assertPeriodAccepts(Period $period, bool $withTaxLine, ?string $state = null): void
     {
-        $span = $period->getStartDate()->format('d.m.Y') . '–' . $period->getEndDate()->format('d.m.Y');
-        if ($period->getState() === PeriodState::Closed->value) {
+        $span  = $period->getStartDate()->format('d.m.Y') . '–' . $period->getEndDate()->format('d.m.Y');
+        $state ??= $period->getState();
+        if ($state === PeriodState::Closed->value) {
             throw new PostingRefusedException(PostingRefusedException::PERIOD_CLOSED, "Period {$span} is closed — nothing posts into it; correct by a reversal in an open period");
         }
-        if ($period->getState() === PeriodState::VatSettled->value && $withTaxLine) {
+        if ($state === PeriodState::VatSettled->value && $withTaxLine) {
             throw new PostingRefusedException(PostingRefusedException::PERIOD_VAT_SETTLED, "Period {$span} is VAT-settled — a line with a tax code cannot be posted into it any more");
         }
+    }
+
+    /**
+     * The period's state as COMMITTED, read under a SHARED row lock
+     * (`SELECT state … LOCK IN SHARE MODE`, held until the caller's commit) —
+     * the re-check a write into the journal makes after its first lock
+     * (`post()` after the number, a manual edit / delete after the entry
+     * lock). Why (P5 part 1, the year close): the lock-free check reads the
+     * state before any lock, and a close committing in between would let the
+     * posting land in a closed period. With this lock a close
+     * (`FiscalYearRepository::lockPeriodsOf()`, exclusive) waits for every
+     * posting in flight in the year, and a posting that waited for a close
+     * reads `closed` and is refused — its rollback gives the number back.
+     * The period's fiscal-year row is share-locked FIRST (see
+     * `FiscalYearRepository::lockedPeriodState()`): the `journal_entry` insert
+     * share-locks that row at the flush anyway (foreign key), and taking it
+     * late would deadlock with a close. Lock order: `NumberRange` → accounts
+     * (S) → year (S) → period (S) in a posting; entry (X) → accounts (S) →
+     * year (S) → period (S) in a manual edit / delete; account (X) → years
+     * (S) → periods (S) in a type change; fiscal-year rows (X) → periods (X)
+     * in a close / reopen, which takes no account and no range. Doctrine-only (SQL).
+     *
+     * @throws \LogicException outside an open unit of work, or the period row is gone
+     */
+    public function lockedPeriodState(Period $period): string
+    {
+        /** @var FiscalYearRepository $years */
+        $years = $this->em->getRepository(FiscalYear::class);
+
+        return $years->lockedPeriodState((int) $period->getFiscalYear()->getId(), (int) $period->getId());
     }
 
     /**

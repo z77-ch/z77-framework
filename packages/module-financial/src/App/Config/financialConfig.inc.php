@@ -5,6 +5,7 @@ use Z77\Core\Config\AuthRole;
 use Z77\Module\Financial\Entities\Account;
 use Z77\Module\Financial\Entities\EntryChange;
 use Z77\Module\Financial\Entities\FiscalYear;
+use Z77\Module\Financial\Entities\FiscalYearCloseLog;
 use Z77\Module\Financial\Entities\JournalEntry;
 use Z77\Module\Financial\Entities\JournalLine;
 use Z77\Module\Financial\Entities\Period;
@@ -15,7 +16,11 @@ use Z77\Module\Financial\Entities\Period;
  * periods. Part 2: the journal (`JournalEntry` / `JournalLine`), the change
  * log of manual entries (`EntryChange`) and `LedgerService` — the one door
  * every posting source uses. Part 3: the reports (`LedgerReports`, SQL
- * aggregates over `journal_line` — no entity of their own).
+ * aggregates over `journal_line` — no entity of their own). P5 part 1:
+ * closing and reopening a fiscal year (`FiscalYearCloseService`) with its
+ * protocol (`FiscalYearCloseLog`); the close check asks the open-work
+ * registry under the scope `period-close` — financial declares no
+ * `openWorkChecks` of its own, the modules that have open work do.
  *
  * This module has NO routes and no view area of its own: its backend screens
  * are fragments ({@see \Z77\Module\Financial\Ui\AccountControllerTrait},
@@ -60,6 +65,7 @@ return [
         JournalEntry::class,
         JournalLine::class,
         EntryChange::class,
+        FiscalYearCloseLog::class,
     ],
 
     // Nothing here renders a page; the host's cache policy applies to the mount.

@@ -31,7 +31,8 @@ use Z77\Persistence\Resolver\UnifiedEntityManager;
  * A year is never edited. It is DELETED only while it is the latest year
  * and nothing was ever posted in it ({@see delete()}, owner decision
  * 2026-09-22, FIN-FY-002) — the correction of a year opened with wrong
- * dates. The periods' state moves in P5; here they are created `open`.
+ * dates. Periods are created `open` here; closing and reopening a year is
+ * `FiscalYearCloseService` (P5 part 1).
  */
 final class FiscalYearService
 {
@@ -244,6 +245,9 @@ final class FiscalYearService
         // mistake, owner 2026-09-29): a year in the middle would leave a gap.
         if ($latest?->getId() !== $year->getId() && $earliest?->getId() !== $year->getId()) {
             return FiscalYearNotDeletableException::NOT_LATEST;
+        }
+        if ($year->isClosed()) {   // P5 part 1: an empty year may have been closed; it is reopened (with a protocol entry) before it can go
+            return FiscalYearNotDeletableException::CLOSED;
         }
         /** @var JournalEntryRepository $entries */
         $entries = $this->em->getRepository(JournalEntry::class);

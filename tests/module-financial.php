@@ -52,6 +52,13 @@
  * and the add / add-compound / edit pages rendered through the trait (CSS
  * reveal, no script, no placeholder, the date kept after a save).
  *
+ * Closing a fiscal year (YC, P5 part 1, owner 2026-09-30): only the whole
+ * year, in order, the close check through the open-work registry (blocking
+ * refuses, warnings need the confirmation), every ledger refusal in a
+ * closed year, the share-locked re-check of the period after the number,
+ * the admin reopen with a reason in reverse order, the protocol, the access
+ * config, the list / modals / POSTs through a host double, the journal.
+ *
  * Run: php tests/module-financial.php
  * Needs what tests/module-contact.php needs (vendor/ with Doctrine, a
  * reachable MariaDB, credentials in `%USERPROFILE%\.z77\mariadb.txt` or
@@ -107,7 +114,43 @@ if (($argv[1] ?? '') === '--worker') {
         exit(0);
     }
 
-    if ($workerMode === 'holdpost' || $workerMode === 'post1') {
+    if ($workerMode === 'holdclose') {
+        // P5 part 1 race (section YC): the REAL FiscalYearCloseService closes year $argv[4]; its close
+        // check (asked after every lock is held) writes `{base}/holdclose.ready` and returns only once
+        // another session is seen WAITING on a fiscal-year share lock (a posting's re-check), or after
+        // 20 s — so the close holds its locks while a posting runs into them. Prints `ok waited` /
+        // `ok alone`, the refusal reason, or the exception.
+        $GLOBALS['workerBase'] = $workerBase;
+        $cfg = require $workerBase . '/config/client/database.inc.php';
+        $GLOBALS['workerWatcher'] = \Doctrine\DBAL\DriverManager::getConnection(['driver' => 'pdo_mysql', 'host' => $cfg['host'], 'dbname' => $cfg['name'], 'user' => $cfg['user'], 'password' => $cfg['password']]);
+        $GLOBALS['workerWaited']  = false;
+        eval('final class WorkerPauseCheck implements \\Z77\\Persistence\\Doctrine\\OpenWork\\OpenWorkCheckInterface {
+            public function check(string $scope, array $parameters): iterable {
+                file_put_contents($GLOBALS["workerBase"] . "/holdclose.ready", "1");
+                for ($t = 0; $t < 200; $t++) {
+                    if ((int) $GLOBALS["workerWatcher"]->fetchOne("SELECT COUNT(*) FROM information_schema.PROCESSLIST WHERE ID <> CONNECTION_ID() AND INFO LIKE \'%FROM fiscal_year WHERE id =%LOCK IN SHARE MODE%\'") > 0) {
+                        usleep(200000);
+                        $GLOBALS["workerWaited"] = true;
+                        break;
+                    }
+                    usleep(100000);
+                }
+                return [];
+            }
+        }');
+        $closer = new \Z77\Module\Financial\Services\FiscalYearCloseService($wem, 'worker-' . $workerName, new \Z77\Persistence\Doctrine\OpenWork\OpenWorkChecks(['period-close' => ['WorkerPauseCheck']]));
+        try {
+            $closer->close((int) $argv[4]);
+            echo $GLOBALS['workerWaited'] ? 'ok waited' : 'ok alone';
+        } catch (\Z77\Module\Financial\Services\FiscalYearCloseRefusedException $e) {
+            echo $e->reason;
+        } catch (\Throwable $e) {
+            echo get_class($e) . ': ' . $e->getMessage();
+        }
+        exit(0);
+    }
+
+    if ($workerMode === 'holdpost' || $workerMode === 'post1' || $workerMode === 'holdpostc') {
         // FIN-TYPE-001 races (section T). One manual posting on account $argv[4] dated $argv[5].
         // `holdpost` keeps its unit of work open after post() — the account rows share-locked,
         // the line not yet flushed — writes `{base}/holdpost.ready`, and commits only once
@@ -129,8 +172,13 @@ if (($argv[1] ?? '') === '--worker') {
                     return false;
                 }
                 file_put_contents($workerBase . '/holdpost.ready', '1');
+                // `holdpostc` (P5 part 1): wait for a year CLOSE running into this posting's locks — its
+                // lockAll() on the fiscal-year rows or its lockPeriodsOf() on the periods.
+                $pattern = $workerMode === 'holdpostc'
+                    ? "(INFO LIKE '%FROM fiscal_year ORDER BY start_date FOR UPDATE%' OR INFO LIKE '%FROM fiscal_period%FOR UPDATE%')"
+                    : "INFO LIKE '%FROM account WHERE id =%FOR UPDATE%'";
                 for ($t = 0; $t < 200; $t++) {
-                    if ((int) $watcher->fetchOne("SELECT COUNT(*) FROM information_schema.PROCESSLIST WHERE ID <> CONNECTION_ID() AND INFO LIKE '%FROM account WHERE id =%FOR UPDATE%'") > 0) {
+                    if ((int) $watcher->fetchOne("SELECT COUNT(*) FROM information_schema.PROCESSLIST WHERE ID <> CONNECTION_ID() AND {$pattern}") > 0) {
                         usleep(200000);   // let the waiter settle in its wait, then commit
                         return true;
                     }
@@ -188,6 +236,7 @@ use Z77\Module\Financial\Entities\ChangeAction;
 use Z77\Module\Financial\Entities\EntryChange;
 use Z77\Module\Financial\Entities\EntryKind;
 use Z77\Module\Financial\Entities\FiscalYear;
+use Z77\Module\Financial\Entities\FiscalYearCloseLog;
 use Z77\Module\Financial\Entities\JournalEntry;
 use Z77\Module\Financial\Entities\JournalLine;
 use Z77\Module\Financial\Entities\Period;
@@ -209,6 +258,8 @@ use Z77\Module\Financial\Services\AccountService;
 use Z77\Module\Financial\Services\ChartNotEmptyException;
 use Z77\Module\Financial\Services\EntryConflictException;
 use Z77\Module\Financial\Services\EntryNotEditableException;
+use Z77\Module\Financial\Services\FiscalYearCloseRefusedException;
+use Z77\Module\Financial\Services\FiscalYearCloseService;
 use Z77\Module\Financial\Services\FiscalYearNotDeletableException;
 use Z77\Module\Financial\Services\FiscalYearService;
 use Z77\Module\Financial\Services\IdempotencyConflictException;
@@ -230,6 +281,8 @@ use Z77\Persistence\Doctrine\Bootstrap as DoctrineBootstrap;
 use Z77\Persistence\Doctrine\Console\MigrationDirectories;
 use Z77\Persistence\Doctrine\Console\MigrationsApplication;
 use Z77\Persistence\Doctrine\Entities\NumberRange;
+use Z77\Persistence\Doctrine\OpenWork\Finding;
+use Z77\Persistence\Doctrine\OpenWork\OpenWorkChecks;
 use Z77\Persistence\Resolver\DataSourceResolver;
 use Z77\Persistence\Resolver\UnifiedEntityManager;
 
@@ -396,20 +449,21 @@ $run = static function (array $input): array {
 
 echo "A. Migration (z77-db migrate on an empty database)\n";
 $config = DI::getModuleManager()->getModuleConfig('financial');
-check('A0 the module config announces exactly the six Doctrine entities', $config?->get('doctrineEntities') === [Account::class, FiscalYear::class, Period::class, JournalEntry::class, JournalLine::class, EntryChange::class]);
+check('A0 the module config announces exactly the seven Doctrine entities (the close protocol since P5 part 1)', $config?->get('doctrineEntities') === [Account::class, FiscalYear::class, Period::class, JournalEntry::class, JournalLine::class, EntryChange::class, FiscalYearCloseLog::class]);
 $dirs = MigrationDirectories::collect(DI::getModuleManager(), DI::getFileFinder());
 check('A1 the module\'s res/migrations is collected under Z77\\Module\\Financial\\Migrations', ($dirs['Z77\\Module\\Financial\\Migrations'] ?? '') === $package . '/res/migrations');
 check('A2 the database is empty', $tables() === []);
 [$code, $out] = $run(['command' => 'migrate']);
 check('A3 migrate exits 0' . ($code !== 0 ? " — got {$code}: " . trim($out) : ''), $code === 0);
 $executed = $db->fetchFirstColumn('SELECT version FROM schema_migration');
-check('A4 … both financial migrations ran; the run ends at the newest of all modules (timestamp order — the mandator\'s)',
-    str_contains($out, 'Migrating up to Z77\\Module\\Mandator\\Migrations\\')
-    && in_array('Z77\\Module\\Financial\\Migrations\\Version20260922071232', $executed, true) && in_array('Z77\\Module\\Financial\\Migrations\\Version20260922091711', $executed, true));
-check('A5 account, fiscal_period, fiscal_year, journal_entry, journal_entry_change, journal_line exist (plus mandator, number_range and the metadata table)',
-    $tables() === ['account', 'fiscal_period', 'fiscal_year', 'journal_entry', 'journal_entry_change', 'journal_line', 'mandator', 'number_range', MigrationsApplication::STORAGE_TABLE]);
+check('A4 … the three financial migrations ran; the run ends at the newest of all modules (timestamp order — financial\'s close protocol of P5 part 1)',
+    str_contains($out, 'Migrating up to Z77\\Module\\Financial\\Migrations\\Version20260930120000')
+    && in_array('Z77\\Module\\Financial\\Migrations\\Version20260922071232', $executed, true) && in_array('Z77\\Module\\Financial\\Migrations\\Version20260922091711', $executed, true)
+    && in_array('Z77\\Module\\Financial\\Migrations\\Version20260930120000', $executed, true));
+check('A5 account, fiscal_period, fiscal_year, fiscal_year_close_log, journal_entry, journal_entry_change, journal_line exist (plus mandator, number_range and the metadata table)',
+    $tables() === ['account', 'fiscal_period', 'fiscal_year', 'fiscal_year_close_log', 'journal_entry', 'journal_entry_change', 'journal_line', 'mandator', 'number_range', MigrationsApplication::STORAGE_TABLE]);
 $allUnicode = true;
-foreach (['account', 'fiscal_year', 'fiscal_period', 'journal_entry', 'journal_line', 'journal_entry_change'] as $table) {
+foreach (['account', 'fiscal_year', 'fiscal_period', 'fiscal_year_close_log', 'journal_entry', 'journal_line', 'journal_entry_change'] as $table) {
     $info = $tableInfo($table);
     $allUnicode = $allUnicode && ($info['TABLE_COLLATION'] ?? '') === 'utf8mb4_unicode_ci' && ($info['ENGINE'] ?? '') === 'InnoDB';
 }
@@ -419,15 +473,15 @@ check('A7 … and so is every string column of account', $columns !== [] && coun
 $fk = fn(string $table) => $db->fetchFirstColumn('SELECT REFERENCED_TABLE_NAME FROM information_schema.KEY_COLUMN_USAGE WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND REFERENCED_TABLE_NAME IS NOT NULL ORDER BY 1', [$dbName, $table]);
 check('A8 foreign keys: account → account (parent), fiscal_period → fiscal_year, journal_entry → fiscal_year + journal_entry (reversal), journal_line → account + journal_entry; the change log has NONE',
     $fk('account') === ['account'] && $fk('fiscal_period') === ['fiscal_year'] && $fk('fiscal_year') === []
-    && $fk('journal_entry') === ['fiscal_year', 'journal_entry'] && $fk('journal_line') === ['account', 'journal_entry'] && $fk('journal_entry_change') === []);
+    && $fk('journal_entry') === ['fiscal_year', 'journal_entry'] && $fk('journal_line') === ['account', 'journal_entry'] && $fk('journal_entry_change') === [] && $fk('fiscal_year_close_log') === []);
 $uniques = $db->fetchFirstColumn('SELECT INDEX_NAME FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND NON_UNIQUE = 0 AND INDEX_NAME <> ? GROUP BY INDEX_NAME ORDER BY 1', [$dbName, 'journal_entry', 'PRIMARY']);
 check('A8b journal_entry: unique number per year, unique idempotency key, unique reversal_of (reversed at most once — in the schema)', $uniques === ['uniq_journal_entry_idempotency', 'uniq_journal_entry_number', 'uniq_journal_entry_reversal_of']);
 [$code, $out] = $run(['command' => 'migrate']);
 check('A9 a second migrate is a no-op', $code === 0 && str_contains($out, 'Already at the latest version'));
 [$code, $out] = $run(['command' => 'diff', '--namespace' => 'Z77\\Module\\Financial\\Migrations']);
-check('A10 diff after migrate reports NO change — mapping and migration agree (money and text snapshot columns included)', $code !== 0 && str_contains($out, 'No changes detected') && count(glob($package . '/res/migrations/Version*.php')) === 2);
+check('A10 diff after migrate reports NO change — mapping and migration agree (money and text snapshot columns included)', $code !== 0 && str_contains($out, 'No changes detected') && count(glob($package . '/res/migrations/Version*.php')) === 3);
 [$code, $out] = $run(['command' => 'status']);
-check('A11 status lists the module namespace and four executed migrations (package, two of financial, one of mandator)', $code === 0 && str_contains($out, 'Z77\\Module\\Financial\\Migrations') && preg_match('/\| Executed\s+\|\s+4\s+\|/', $out) === 1);
+check('A11 status lists the module namespace and five executed migrations (package, three of financial, one of mandator)', $code === 0 && str_contains($out, 'Z77\\Module\\Financial\\Migrations') && preg_match('/\| Executed\s+\|\s+5\s+\|/', $out) === 1);
 
 // ── B. the KMU chart: a button on an EMPTY chart ─────────────────────────
 
@@ -727,7 +781,15 @@ $methodsOf = fn(string $class) => array_map(fn(\ReflectionMethod $m) => $m->getN
 $hasAny    = fn(array $methods, array $words) => array_filter($methods, fn($m) => array_filter($words, fn($w) => stripos($m, $w) !== false) !== []) !== [];
 check('E1 AccountService has no delete; FiscalYearService has no update or close — its one delete is the guarded one (FIN-FY-002, section Y)', !$hasAny($methodsOf(AccountService::class), ['delete', 'remove'])
     && !$hasAny($methodsOf(FiscalYearService::class), ['remove', 'update', 'close', 'settle']) && in_array('delete', $methodsOf(FiscalYearService::class), true));
-check('E2 Period has no state setter (P5 moves states); FiscalYear has no public setter — code and dates come with the constructor', !$hasAny($methodsOf(Period::class), ['setState', 'close', 'settle'])
+check('E2 Period has no state setter — its ONE state change is transitionTo(), called only by FiscalYearCloseService (P5 part 1, source guard over src/); FiscalYear has no public setter — code and dates come with the constructor', !$hasAny($methodsOf(Period::class), ['setState', 'close', 'settle'])
+    && in_array('transitionTo', $methodsOf(Period::class), true)
+    && (function () use ($package): bool {
+        $callers = [];
+        foreach (new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($package . '/src', \FilesystemIterator::SKIP_DOTS)) as $file) {
+            if (str_contains((string) file_get_contents((string) $file), '->transitionTo(')) { $callers[] = basename((string) $file); }
+        }
+        return $callers === ['FiscalYearCloseService.php'];
+    })()
     && array_filter((new \ReflectionClass(FiscalYear::class))->getMethods(\ReflectionMethod::IS_PUBLIC), fn(\ReflectionMethod $m) => str_starts_with($m->getName(), 'set')) === []);
 $accountActions = $methodsOf(AccountControllerTrait::class);
 check('E3 the account trait: no delete action; toggle and the KMU adoption exist', !$hasAny($accountActions, ['delete', 'remove']) && in_array('toggleActiveAction', $accountActions, true)
@@ -735,7 +797,7 @@ check('E3 the account trait: no delete action; toggle and the KMU adoption exist
 $yearActions = $methodsOf(FiscalYearControllerTrait::class);
 $yearActions = array_values(array_filter($yearActions, fn($m) => str_ends_with($m, 'Action')));
 sort($yearActions);
-check('E4 the fiscal-year trait: list, open, confirm-delete and delete — no edit', $yearActions === ['confirmDeleteAction', 'deleteAction', 'listAction', 'openAction']);
+check('E4 the fiscal-year trait: list, open, confirm-delete and delete, confirm-close / close and confirm-reopen / reopen (P5 part 1) — no edit', $yearActions === ['closeAction', 'confirmCloseAction', 'confirmDeleteAction', 'confirmReopenAction', 'deleteAction', 'listAction', 'openAction', 'reopenAction']);
 $traitSource = file_get_contents($package . '/src/Ui/AccountControllerTrait.php');
 check('E5 the account trait maps a body only onto the NEW account of «add» (source guard, ADR-039 decision 9)', preg_match_all('/->mapFromArray\(/', $traitSource) === 1 && str_contains($traitSource, '$account->mapFromArray($values);')
     && strpos($traitSource, '$account->mapFromArray($values);') < strpos($traitSource, 'function editAction'));
@@ -1456,6 +1518,7 @@ $listHost = function (string $trait) {
             protected function em() { return DI::getUnifiedEntityManager(); }
             protected function html(array $context = []): \Z77\Core\Http\Response\HtmlResponse { $this->context = $context; return new \Z77\Core\Http\Response\HtmlResponse(null, $context); } },
         'fiscal-year' => new class { use FiscalYearControllerTrait { listAction as public; } public array $context = []; public object $layoutManager;
+            protected function fiscalYearCanReach(string $action): bool { return true; }
             protected function em() { return DI::getUnifiedEntityManager(); }
             protected function html(array $context = []): \Z77\Core\Http\Response\HtmlResponse { $this->context = $context; return new \Z77\Core\Http\Response\HtmlResponse(null, $context); } },
     };
@@ -2580,6 +2643,385 @@ $_SESSION = [];
 $source = file_get_contents($package . '/src/Ui/OneLineEntryForm.php');
 check('O16the one-line form has no write path of its own: it builds a PostingRequest::manual() and never touches the ledger or an entity', str_contains($source, 'PostingRequest::manual(')
     && !preg_match('/->(post|reverse|persist|flush|remove|amend|create|update)\(/', $source));
+
+// ── YC. closing and reopening a fiscal year (P5 part 1, owner 2026-09-30) ──
+
+echo "YC. Closing a fiscal year: the whole year, in order, the close check, admin reopen with a reason, the protocol (owner 2026-09-30)\n";
+
+/** A close check the harness controls — what a module registers under `period-close` (the debtor check is proven in tests/module-debtor.php). */
+class YcCloseCheck implements \Z77\Persistence\Doctrine\OpenWork\OpenWorkCheckInterface
+{
+    /** @var list<\Z77\Persistence\Doctrine\OpenWork\Finding> */
+    public static array $findings = [];
+    /** @var list<array{0: string, 1: array}> */
+    public static array $calls = [];
+
+    public function check(string $scope, array $parameters): iterable
+    {
+        self::$calls[] = [$scope, $parameters];
+        yield from self::$findings;
+    }
+}
+
+$db->executeStatement("UPDATE fiscal_period SET state = 'open'");   // earlier sections set states in SQL
+$em = $wireDi();
+(new FiscalYearService($em))->open((new FiscalYearService($em))->proposePrior());
+$em      = $wireDi();
+$ycYears = $em->getRepository(FiscalYear::class);
+$pYear   = $ycYears->earliest();
+$pCode   = $pYear->getCode();
+$nCode   = $ycYears->successorOf($pYear)->getCode();
+$lCode   = $ycYears->latest()->getCode();
+$pDay    = $pYear->getStartDate()->modify('+1 month')->format('Y-m-d');
+$nDay    = $ycYears->successorOf($pYear)->getStartDate()->modify('+10 days')->format('Y-m-d');
+$ycChecks   = new OpenWorkChecks(['period-close' => [YcCloseCheck::class]]);
+$ycService  = fn(string $actor = 'buchhalter') => new FiscalYearCloseService($wireDi(), $actor, $ycChecks);
+/** $confirm: confirm the warnings the close check shows NOW (their fingerprint, what the modal hands back). */
+$ycClose    = function (string $code, bool $confirm = false) use ($ycService, $yearId, $wireDi): ?string {
+    $seen = $confirm ? FiscalYearCloseService::warningsFingerprint($ycService()->closeCheck($wireDi()->getRepository(FiscalYear::class)->findOneBy(['code' => $code]))) : null;
+    $e = caught(fn() => $ycService()->close($yearId($code), $seen), FiscalYearCloseRefusedException::class);
+    return $e?->reason;
+};
+$ycReopen   = function (string $code, string $reason) use ($ycService, $yearId): ?string {
+    $e = caught(fn() => $ycService('admin')->reopen($yearId($code), $reason), FiscalYearCloseRefusedException::class);
+    return $e?->reason;
+};
+$ycStates   = fn(string $code) => $db->fetchFirstColumn('SELECT DISTINCT p.state FROM fiscal_period p JOIN fiscal_year y ON y.id = p.fiscal_year_id WHERE y.code = ? ORDER BY 1', [$code]);
+$ycLog      = fn(string $code) => $db->fetchAllAssociative('SELECT * FROM fiscal_year_close_log WHERE fiscal_year_code = ? ORDER BY id', [$code]);
+$ycRange    = fn(string $name) => $db->fetchOne('SELECT last_number FROM number_range WHERE name = ?', [$name]);
+$ycFresh    = fn(string $code) => $wireDi()->getRepository(FiscalYear::class)->findOneBy(['code' => $code]);
+
+// The prior year (it ended in the past) gets a manual and a generated entry while it is open.
+$ycManual = (new ManualEntryService($wireDi(), 'buchhalter'))->create($transferRequest($pDay, 'YC manuell'));
+$ycGen    = $post($wireDi(), $saleRequest($pDay, 'YC Rechnung', 'yc:invoice:1', 'YC-1'));
+$ycManualRow = $entryRow($pCode, $ycManual->number);
+
+/** The lock-free refusal the screen asks, on a FRESH wiring each time (an old identity map would hold stale period states). */
+$ycRefusal = function (string $which, string $code) use ($wireDi, $ycChecks): ?string {
+    $em   = $wireDi();
+    $s    = new FiscalYearCloseService($em, 'buchhalter', $ycChecks);
+    $year = $em->getRepository(FiscalYear::class)->findOneBy(['code' => $code]);
+    return $which === 'close' ? $s->closeRefusal($year) : $s->reopenRefusal($year);
+};
+check('YC1 in order (lock-free, what the screen asks): the EARLIEST open year may be closed; the year after it and the latest are refused (predecessor-open)',
+    $ycRefusal('close', $pCode) === null
+    && $ycRefusal('close', $nCode) === FiscalYearCloseRefusedException::PREDECESSOR_OPEN && $ycRefusal('close', $lCode) === FiscalYearCloseRefusedException::PREDECESSOR_OPEN);
+check('YC2 close() out of order is refused (predecessor-open): no period moves, no protocol row', $ycClose($nCode) === FiscalYearCloseRefusedException::PREDECESSOR_OPEN
+    && $ycStates($nCode) === ['open'] && $ycLog($nCode) === []);
+$nested = null;
+$ycEm = $wireDi();
+$ycOuter = function () use ($ycEm, $ycChecks, $yearId, $pCode, &$nested) {
+    $nested = caught(fn() => (new FiscalYearCloseService($ycEm, 'buchhalter', $ycChecks))->close($yearId($pCode)), \LogicException::class);
+    throw new \RuntimeException('outer aborts');
+};
+caught(fn() => $ycEm->getTransaction(FiscalYear::class)->run($ycOuter), \RuntimeException::class);
+check('YC3 close() inside an open unit of work is refused (LogicException — it owns its unit of work), nothing closed', $nested !== null && str_contains($nested->getMessage(), 'owns its unit of work') && $ycStates($pCode) === ['open']);
+
+YcCloseCheck::$findings = [Finding::blocking('Rechnung 7 vom 15.04.2024 ist noch in Fakturierung', 'invoice:7')];
+YcCloseCheck::$calls    = [];
+$e = caught(fn() => $ycService()->close($yearId($pCode), 'any'), FiscalYearCloseRefusedException::class);
+[$scope, $params] = YcCloseCheck::$calls[0] ?? ['', []];
+check('YC4 a BLOCKING finding refuses the close — also with the warnings confirmed; the exception carries the findings; nothing moved, no protocol row',
+    $e?->reason === FiscalYearCloseRefusedException::BLOCKED && count($e->openWork?->blocking() ?? []) === 1 && $ycStates($pCode) === ['open'] && $ycLog($pCode) === []);
+check('YC5 the close check is asked through the open-work registry: scope `period-close`, parameters fiscalYear (code), from and to (the year\'s bounds, DateTimeImmutable)',
+    $scope === FiscalYearCloseService::SCOPE && $scope === 'period-close' && ($params['fiscalYear'] ?? null) === $pCode
+    && ($params['from'] ?? null) instanceof \DateTimeImmutable && $params['from']->format('Y-m-d') === $pYear->getStartDate()->format('Y-m-d')
+    && ($params['to'] ?? null) instanceof \DateTimeImmutable && $params['to']->format('Y-m-d') === $pYear->getEndDate()->format('Y-m-d'));
+YcCloseCheck::$findings = [Finding::warning('Auftrag 4711 mit Leistung im Jahr ist nicht fakturiert', 'order:4711')];
+check('YC6 a WARNING needs the explicit confirmation: without it refused (warnings-unconfirmed), nothing moved', $ycClose($pCode) === FiscalYearCloseRefusedException::WARNINGS_UNCONFIRMED
+    && $ycStates($pCode) === ['open'] && $ycLog($pCode) === []);
+$seenBefore = FiscalYearCloseService::warningsFingerprint($ycService()->closeCheck($ycFresh($pCode)));
+YcCloseCheck::$findings = [Finding::warning('Auftrag 4712 mit Leistung im Jahr ist nicht fakturiert', 'order:4712')];
+check('YC6b the confirmation names WHICH warnings: the fingerprint of the ones seen before, other warnings now → refused (warnings-changed), nothing moved',
+    caught(fn() => $ycService()->close($yearId($pCode), $seenBefore), FiscalYearCloseRefusedException::class)?->reason === FiscalYearCloseRefusedException::WARNINGS_CHANGED
+    && $ycStates($pCode) === ['open'] && $ycLog($pCode) === []);
+YcCloseCheck::$findings = [Finding::warning('Auftrag 4711 mit Leistung im Jahr ist nicht fakturiert', 'order:4711')];
+$db->executeStatement("INSERT INTO fiscal_year (code, start_date, end_date) VALUES ('yc-empty', '2199-01-01', '2199-12-31')");   // past the validator: no periods
+check('YC6c a year WITHOUT periods is refused (no-periods) instead of closing nothing', $ycClose('yc-empty', true) === FiscalYearCloseRefusedException::NO_PERIODS && $ycLog('yc-empty') === []);
+$db->executeStatement("DELETE FROM fiscal_year WHERE code = 'yc-empty'");
+$rangeBefore = (string) $ycRange('journal-entry.' . $pCode);
+check('YC7 … confirmed: the year closes — EVERY period `closed`, isClosed() on a fresh read', $ycClose($pCode, true) === null && $ycStates($pCode) === ['closed'] && $ycFresh($pCode)->isClosed()
+    && count($ycFresh($pCode)->getPeriods()) >= 12);
+$log = $ycLog($pCode);
+check('YC8 one protocol row: close, the year id AND code (no foreign key), the actor, the time, no reason, the confirmed warning', count($log) === 1 && $log[0]['action'] === 'close'
+    && (int) $log[0]['fiscal_year_id'] === $yearId($pCode) && $log[0]['actor'] === 'buchhalter' && $log[0]['reason'] === null && $log[0]['acted_at'] !== null
+    && $log[0]['confirmed_warnings'] === 'Auftrag 4711 mit Leistung im Jahr ist nicht fakturiert');
+YcCloseCheck::$findings = [];
+check('YC9 closing again is refused (already-closed) — one protocol row still; the next year may be closed now (its predecessor is closed)', $ycClose($pCode, true) === FiscalYearCloseRefusedException::ALREADY_CLOSED
+    && count($ycLog($pCode)) === 1 && $ycRefusal('close', $nCode) === null && $ycRefusal('close', $lCode) === FiscalYearCloseRefusedException::PREDECESSOR_OPEN);
+
+// The ledger stays the last line of defence.
+check('YC10 a closed year refuses a MANUAL posting (period-closed), nothing consumed', $refused($wireDi(), $transferRequest($pDay, 'YC nach Abschluss')) === PostingRefusedException::PERIOD_CLOSED
+    && caught(fn() => (new ManualEntryService($wireDi(), 'buchhalter'))->create($transferRequest($pDay, 'YC nach Abschluss')), PostingRefusedException::class)?->reason === PostingRefusedException::PERIOD_CLOSED
+    && (string) $ycRange('journal-entry.' . $pCode) === $rangeBefore);
+check('YC11 … and a GENERATED posting (period-closed), nothing consumed', $refused($wireDi(), $saleRequest($pDay, 'YC Rechnung 2', 'yc:invoice:2', 'YC-2')) === PostingRefusedException::PERIOD_CLOSED
+    && (string) $ycRange('journal-entry.' . $pCode) === $rangeBefore);
+$ycEdit = caught(fn() => (new ManualEntryService($wireDi(), 'buchhalter'))->update((int) $ycManualRow['id'], (int) $ycManualRow['version'], $transferRequest($pDay, 'YC geändert')), EntryNotEditableException::class);
+$ycDel  = caught(fn() => (new ManualEntryService($wireDi(), 'buchhalter'))->delete((int) $ycManualRow['id'], (int) $ycManualRow['version']), EntryNotEditableException::class);
+check('YC12 … an EDIT and a DELETE of a manual entry in it (period-closed); the entry unchanged', $ycEdit?->reason === EntryNotEditableException::PERIOD_CLOSED && $ycDel?->reason === EntryNotEditableException::PERIOD_CLOSED
+    && $entryRow($pCode, $ycManual->number)['text'] === 'YC manuell' && (int) $entryRow($pCode, $ycManual->number)['version'] === (int) $ycManualRow['version']);
+check('YC13 a closed year is never deleted (closed) — also when it is the earliest; the list offers no «Löschen …» for it', (new FiscalYearService($wireDi()))->deletionRefusal($ycFresh($pCode)) === FiscalYearNotDeletableException::CLOSED
+    && $refusal($pCode) === FiscalYearNotDeletableException::CLOSED);
+
+echo "YC. … the re-check under the period lock: a close committed after the lock-free check (a stale identity map stands in for the race)\n";
+$ycNext = (new ManualEntryService($wireDi(), 'buchhalter'))->create($transferRequest($nDay, 'YC Folgejahr'));
+$ycNextRow = $entryRow($nCode, $ycNext->number);
+$stale = $wireDi();
+$stale->getRepository(FiscalYear::class)->allWithPeriods();                   // periods loaded: `open` in this EntityManager
+$db->executeStatement("UPDATE fiscal_period p JOIN fiscal_year y ON y.id = p.fiscal_year_id SET p.state = 'closed' WHERE y.code = ?", [$nCode]);   // «another process closed the year»
+$nRange = (string) $ycRange('journal-entry.' . $nCode);
+$raced  = caught(fn() => $post($stale, $transferRequest($nDay, 'YC Race')), PostingRefusedException::class);
+check('YC14 post(): the lock-free check read the stale `open` and passed; the share-locked re-check after the number reads `closed` → period-closed, the rollback gives the number back',
+    $raced?->reason === PostingRefusedException::PERIOD_CLOSED && (string) $ycRange('journal-entry.' . $nCode) === $nRange && (int) $db->fetchOne("SELECT COUNT(*) FROM journal_entry WHERE text = 'YC Race'") === 0);
+$db->executeStatement("UPDATE fiscal_period p JOIN fiscal_year y ON y.id = p.fiscal_year_id SET p.state = 'open' WHERE y.code = ?", [$nCode]);
+$stale2 = $wireDi();
+$stale2->getRepository(FiscalYear::class)->allWithPeriods();                 // loaded `open` …
+$db->executeStatement("UPDATE fiscal_period p JOIN fiscal_year y ON y.id = p.fiscal_year_id SET p.state = 'closed' WHERE y.code = ?", [$nCode]);   // … closed since
+$racedEdit = caught(fn() => (new ManualEntryService($stale2, 'buchhalter'))->update((int) $ycNextRow['id'], (int) $ycNextRow['version'], $transferRequest($nDay, 'YC Race Edit')), EntryNotEditableException::class);
+check('YC15 a manual edit decides on the COMMITTED state as well (share-locked), not on what the request loaded before', $racedEdit?->reason === EntryNotEditableException::PERIOD_CLOSED
+    && $entryRow($nCode, $ycNext->number)['text'] === 'YC Folgejahr');
+$db->executeStatement("UPDATE fiscal_period p JOIN fiscal_year y ON y.id = p.fiscal_year_id SET p.state = 'open' WHERE y.code = ?", [$nCode]);
+$ledgerSource = file_get_contents($package . '/src/Services/LedgerService.php');
+$lineRepo     = file_get_contents($package . '/src/Repositories/JournalLineRepository.php');
+check('YC16 source guards: post() re-checks the period AFTER the number and the accounts; the type lock reads the closed periods share-locked inside a unit of work',
+    strpos($ledgerSource, '$ranges->next(') < strpos($ledgerSource, 'lockedPeriodState($period)') && strpos($ledgerSource, 'lockAccounts(') < strpos($ledgerSource, 'lockedPeriodState($period)')
+    && str_contains($lineRepo, 'ORDER BY start_date LOCK IN SHARE MODE'));
+
+echo "YC. … reopen: admin, with a reason, the latest closed year only (reverse order)\n";
+check('YC17 reopen with an empty reason is refused (no-reason) — the year stays closed', $ycReopen($pCode, '   ') === FiscalYearCloseRefusedException::NO_REASON && $ycStates($pCode) === ['closed']);
+check('YC18 reopen of an OPEN year is refused (not-closed); an unknown id (not-found)', $ycReopen($nCode, 'Test') === FiscalYearCloseRefusedException::NOT_CLOSED
+    && caught(fn() => $ycService('admin')->reopen(999999, 'Test'), FiscalYearCloseRefusedException::class)?->reason === FiscalYearCloseRefusedException::NOT_FOUND);
+check('YC19 order: close the next year too; now the EARLIER closed year cannot be reopened (successor-closed) — only the latest closed one', $ycClose($nCode, true) === null && $ycStates($nCode) === ['closed']
+    && $ycRefusal('reopen', $pCode) === FiscalYearCloseRefusedException::SUCCESSOR_CLOSED && $ycRefusal('reopen', $nCode) === null
+    && $ycReopen($pCode, 'Nachbuchung') === FiscalYearCloseRefusedException::SUCCESSOR_CLOSED && $ycStates($pCode) === ['closed']);
+check('YC20 reopen the latest closed year with a reason: every period `open` again, a protocol row with actor and reason', $ycReopen($nCode, 'Beleg 17 fehlte') === null && $ycStates($nCode) === ['open']
+    && ($r = $ycLog($nCode)) !== [] && count($r) === 2 && $r[1]['action'] === 'reopen' && $r[1]['actor'] === 'admin' && $r[1]['reason'] === 'Beleg 17 fehlte' && $r[1]['confirmed_warnings'] === null);
+check('YC21 … then the earlier one; the closed year takes postings again after the reopen', $ycReopen($pCode, 'Nachbuchung Beleg 18') === null && $ycStates($pCode) === ['open'] && count($ycLog($pCode)) === 2
+    && $refused($wireDi(), $transferRequest($pDay, 'YC nach Öffnen')) === null);
+$closer = new FiscalYearCloseService($wireDi(), 'buchhalter', new OpenWorkChecks([]));
+$future = $closer->closeCheck($ycFresh($lCode));
+check('YC22 financial\'s own finding: a year that has not ended yet is a WARNING («endet erst am …»); a past year without registered checks has none',
+    count($future->warnings()) === 1 && str_contains($future->warnings()[0]->message, 'endet erst am') && !$future->isBlocked() && $closer->closeCheck($ycFresh($pCode))->isEmpty());
+check('YC23 the protocol entity refuses a reopen without a reason and a close with one (domain guard)', throws(fn() => new FiscalYearCloseLog($ycFresh($pCode), \Z77\Module\Financial\Entities\CloseAction::Reopen, 'x', new \DateTimeImmutable(), ' '), \LogicException::class)
+    && throws(fn() => new FiscalYearCloseLog($ycFresh($pCode), \Z77\Module\Financial\Entities\CloseAction::Close, 'x', new \DateTimeImmutable(), 'Grund'), \LogicException::class));
+$ycPeriod = $ycFresh($nCode)->getPeriods()[0];
+check('YC24 Period::transitionTo(): close from any state, reopen only from closed, vat-settled not yet (P5 part 2)', throws(fn() => $ycPeriod->transitionTo(PeriodState::Open), \LogicException::class)
+    && throws(fn() => $ycPeriod->transitionTo(PeriodState::VatSettled), \LogicException::class));
+
+echo "YC. … access: reopen is ADMIN (the backend's module role), the button follows canReach\n";
+$backendConfig = require __DIR__ . '/../packages/module-backend/src/App/Config/backendConfig.inc.php';
+$roleOf = fn(string $action) => \Z77\Shared\Services\AuthService::requiredRole($backendConfig['moduleRole'] ?? null, $backendConfig['controllers'] ?? [], 'finance', 'FiscalYearController', $action);
+check('YC25 reopen / confirm-reopen / close require ADMIN; reopen is PINNED to ADMIN in backendConfig (owner 2026-09-30, a deliberate AUTH-B003 exception — a lower controller role for a bookkeeper must not hand it out); an editor does not reach them, an admin does',
+    preg_match("/'FiscalYearController'\s*=>\s*\[\s*'actions'\s*=>\s*\[\s*'confirmReopenAction'\s*=>\s*AuthRole::ADMIN,\s*'reopenAction'\s*=>\s*AuthRole::ADMIN/", (string) file_get_contents(__DIR__ . '/../packages/module-backend/src/App/Config/backendConfig.inc.php')) === 1
+    && $roleOf('reopenAction') === \Z77\Core\Config\AuthRole::ADMIN && $roleOf('confirmReopenAction') === \Z77\Core\Config\AuthRole::ADMIN && $roleOf('closeAction') === \Z77\Core\Config\AuthRole::ADMIN
+    && !\Z77\Core\Config\AuthRole::rolesSatisfy([\Z77\Core\Config\AuthRole::EDITOR], $roleOf('reopenAction')) && \Z77\Core\Config\AuthRole::rolesSatisfy([\Z77\Core\Config\AuthRole::ADMIN], $roleOf('reopenAction')));
+
+echo "YC. … the screen: list, modals, POSTs (trait + templates, rendered without a web server)\n";
+$GLOBALS['ycCanReach'] = true;
+$GLOBALS['ycChecks']   = $ycChecks;
+$GLOBALS['ycBody']     = [];
+DI::getInstance()->set('Request', fn() => new class {
+    public function getGetParameter(string $p): mixed { return $_GET[$p] ?? null; }
+    public function isPost(): bool { return false; }
+    public function getJsonBody(): array { return $GLOBALS['ycBody']; }
+}, true);
+DI::getInstance()->set('CsrfService', fn() => new class {
+    public function generateEntityToken(string $context, int $id): string { return "tok-{$context}-{$id}"; }
+    public function validateEntityToken(string $token, string $context, int $id): bool { return $token === "tok-{$context}-{$id}"; }
+}, true);
+$ycHost = function () {
+    $host = new class {
+        use FiscalYearControllerTrait { listAction as public; confirmCloseAction as public; closeAction as public; confirmReopenAction as public; reopenAction as public; }
+        public array $context = [];
+        public object $layoutManager;
+        public object $messageService;
+        public function __construct()
+        {
+            $this->layoutManager = new class {
+                public array $sections = [];
+                public function removeSection(string $s): void { unset($this->sections[$s]); }
+                public function addPartials(string $name, string $path, string $ns, string $section = 'main'): void { $this->sections[$section][] = $path . '/' . $name; }
+            };
+            $this->messageService = new class {
+                public array $flashes = [];
+                public function pushFlashAfterRedirect(string $type, string $message): void { $this->flashes[] = [$type, $message]; }
+                public function pushFlash(string $type, string $message): void { $this->flashes[] = [$type, $message, 'in-place']; }
+            };
+        }
+        protected function em() { return DI::getUnifiedEntityManager(); }
+        protected function fetch(): \Z77\Core\Http\Response\FetchResponse { return new \Z77\Core\Http\Response\FetchResponse(); }
+        protected function fetchError(string $text): \Z77\Core\Http\Response\FetchResponse { $this->messageService->pushFlash('error', $text); return $this->fetch()->setStatus('error'); }
+        protected function html(array $context = []): \Z77\Core\Http\Response\HtmlResponse { $this->context = $context; return new \Z77\Core\Http\Response\HtmlResponse(null, $context); }
+        protected function fiscalYearCanReach(string $action): bool { return $GLOBALS['ycCanReach']; }
+        // No session actor in the harness, and the registry the harness controls.
+        private function fiscalYearCloseService(): FiscalYearCloseService { return new FiscalYearCloseService($this->em(), 'admin', $GLOBALS['ycChecks']); }
+    };
+    return $host;
+};
+$envelope = fn(\Z77\Core\Http\Response\FetchResponse $r) => (fn() => $this->build())->call($r);
+$ycRender = fn($host) => implode('', array_map(fn($p) => $renderer->partial($p, $host->context), $host->layoutManager->sections['main'] ?? []));
+$ycList   = function () use ($ycHost, $renderer) { $_GET = []; $h = $ycHost(); $h->listAction(); return $renderer->partial('Backend/FiscalYearController/listAction', $h->context); };
+
+$wireDiKeep = function () use ($wireDi) {   // a fresh wiring drops the doubles — register them again
+    $em = $wireDi();
+    DI::getInstance()->set('Request', fn() => new class {
+        public function getGetParameter(string $p): mixed { return $_GET[$p] ?? null; }
+        public function isPost(): bool { return false; }
+        public function getJsonBody(): array { return $GLOBALS['ycBody']; }
+    }, true);
+    DI::getInstance()->set('CsrfService', fn() => new class {
+        public function generateEntityToken(string $context, int $id): string { return "tok-{$context}-{$id}"; }
+        public function validateEntityToken(string $token, string $context, int $id): bool { return $token === "tok-{$context}-{$id}"; }
+    }, true);
+    return $em;
+};
+$wireDiKeep();
+$html = $ycList();
+check('YC26 the list, all years open: each year a state badge «offen»; «Jahr abschliessen …» on the EARLIEST year only (in order), no «Wieder öffnen …»',
+    substr_count($html, 'data-fiscal-year-state="open"') === (int) $db->fetchOne('SELECT COUNT(*) FROM fiscal_year') && !str_contains($html, 'data-fiscal-year-state="closed"')
+    && str_contains($html, '/backend/finance/fiscal-year/confirm-close?id=' . $yearId($pCode) . '"') && substr_count($html, '/confirm-close?id=') === 1 && !str_contains($html, '/confirm-reopen?id='));
+check('YC27 … and the protocol of the prior year in the list, newest first, small and muted: «wieder geöffnet … von admin — Grund: Nachbuchung Beleg 18», «abgeschlossen … (1 Warnung bestätigt)»',
+    str_contains($html, 'data-fiscal-year-log><small>wieder geöffnet ') && str_contains($html, 'von admin — Grund: Nachbuchung Beleg 18')
+    && str_contains($html, 'von buchhalter (1 Warnung bestätigt)') && strpos($html, 'Nachbuchung Beleg 18') < strpos($html, '(1 Warnung bestätigt)'));
+
+// The close modal and the POST through the trait.
+YcCloseCheck::$findings = [Finding::blocking('Rechnung 7 vom 15.04.2024 ist noch in Fakturierung', 'invoice:7')];
+$wireDiKeep();
+$_GET = ['id' => (string) $yearId($pCode)];
+$h = $ycHost();
+$h->confirmCloseAction();
+$modal = $ycRender($h);
+check('YC28 confirm-close with a BLOCKING finding: «Abschliessen nicht möglich», the finding listed, no form to submit', str_contains($modal, 'Abschliessen nicht möglich')
+    && str_contains($modal, 'Rechnung 7 vom 15.04.2024 ist noch in Fakturierung') && !str_contains($modal, 'data-fetch-post'));
+$GLOBALS['ycBody'] = ['id' => $yearId($pCode), 'entity_csrf' => 'tok-fiscalYear.close-' . $yearId($pCode), 'confirm_warnings' => true, 'warnings_hash' => $h->context['warningsHash']];
+$h = $ycHost();
+$env = $envelope($h->closeAction());
+check('YC29 … and its POST is refused by the service with the finding named in the error, nothing closed', ($env['status'] ?? '') === 'error'
+    && str_contains($h->messageService->flashes[0][1] ?? '', 'Es ist noch etwas offen') && str_contains($h->messageService->flashes[0][1] ?? '', 'Rechnung 7') && $ycStates($pCode) === ['open']);
+YcCloseCheck::$findings = [Finding::warning('Auftrag 4711 mit Leistung im Jahr ist nicht fakturiert', 'order:4711')];
+$wireDiKeep();
+$h = $ycHost();
+$h->confirmCloseAction();
+$modal = $ycRender($h);
+$shownHash = $h->context['warningsHash'];
+check('YC30 confirm-close with a WARNING: the form (the close-scoped entity token, id, the fingerprint of the warnings SHOWN), the warning listed, the confirmation checkbox `confirm_warnings` required',
+    str_contains($modal, 'data-fetch-post="/backend/finance/fiscal-year/close"') && str_contains($modal, 'value="tok-fiscalYear.close-' . $yearId($pCode) . '"')
+    && strlen($shownHash) === 64 && str_contains($modal, 'name="warnings_hash" value="' . $shownHash . '"')
+    && str_contains($modal, 'Auftrag 4711') && preg_match('/name="confirm_warnings"[^>]*required/', $modal) === 1);
+$GLOBALS['ycBody'] = ['id' => $yearId($pCode), 'entity_csrf' => 'tok-fiscalYear.close-' . $yearId($pCode), 'confirm_warnings' => false, 'warnings_hash' => $shownHash];
+$h   = $ycHost();
+$env = $envelope($h->closeAction());
+check('YC31 POST close without the confirmation: refused with «Warnungen … bestätigen», nothing closed', ($env['status'] ?? '') === 'error' && str_contains($h->messageService->flashes[0][1] ?? '', 'bestätigen') && $ycStates($pCode) === ['open']);
+$GLOBALS['ycBody']['entity_csrf'] = 'forged';
+$h   = $ycHost();
+$env = $envelope($h->closeAction());
+check('YC32 POST close with a wrong entity token: «Invalid token», nothing closed', ($env['status'] ?? '') === 'error' && ($h->messageService->flashes[0][1] ?? '') === 'Invalid token' && $ycStates($pCode) === ['open']);
+YcCloseCheck::$findings = [Finding::warning('Auftrag 4713 kam eben dazu', 'order:4713')];
+$GLOBALS['ycBody'] = ['id' => $yearId($pCode), 'entity_csrf' => 'tok-fiscalYear.close-' . $yearId($pCode), 'confirm_warnings' => true, 'warnings_hash' => $shownHash];
+$h   = $ycHost();
+$env = $envelope($h->closeAction());
+check('YC32b POST close confirmed, but the warnings changed since the modal: «Die Hinweise haben sich geändert — bitte erneut prüfen», nothing closed',
+    ($env['status'] ?? '') === 'error' && ($h->messageService->flashes[0][1] ?? '') === 'Die Hinweise haben sich geändert — bitte erneut prüfen.' && $ycStates($pCode) === ['open']);
+YcCloseCheck::$findings = [Finding::warning('Auftrag 4711 mit Leistung im Jahr ist nicht fakturiert', 'order:4711')];
+$GLOBALS['ycBody']['entity_csrf'] = 'tok-fiscalYear.reopen-' . $yearId($pCode);
+$h   = $ycHost();
+$env = $envelope($h->closeAction());
+check('YC32c the entity token is scoped per action: a REOPEN token does not close (and the delete keeps `fiscalYear`)', ($env['status'] ?? '') === 'error' && ($h->messageService->flashes[0][1] ?? '') === 'Invalid token'
+    && $ycStates($pCode) === ['open'] && str_contains($yearSource, "generateEntityToken('fiscalYear', \$id)"));
+$GLOBALS['ycBody'] = ['id' => $yearId($pCode), 'entity_csrf' => 'tok-fiscalYear.close-' . $yearId($pCode), 'confirm_warnings' => true, 'warnings_hash' => $shownHash];
+$h   = $ycHost();
+$env = $envelope($h->closeAction());
+check('YC33 POST close confirmed: success — flash after redirect, close the modal and reload; the year is closed',
+    ($env['status'] ?? '') === 'success' && str_contains(json_encode($env), 'close-modal') && str_contains(json_encode($env), 'reload')
+    && str_contains($h->messageService->flashes[0][1] ?? '', 'abgeschlossen') && $ycStates($pCode) === ['closed']);
+YcCloseCheck::$findings = [];
+$wireDiKeep();
+$html = $ycList();
+check('YC34 the list after the close: «abgeschlossen» on the prior year, «Wieder öffnen …» on it (latest closed, canReach yes), «Jahr abschliessen …» moved on to the next year',
+    str_contains($html, 'data-fiscal-year-state="closed"') && str_contains($html, '/confirm-reopen?id=' . $yearId($pCode) . '"')
+    && str_contains($html, '/confirm-close?id=' . $yearId($nCode) . '"') && !str_contains($html, '/confirm-close?id=' . $yearId($pCode) . '"')
+    && !str_contains($html, '/confirm-delete?id=' . $yearId($pCode) . '"'));
+$GLOBALS['ycCanReach'] = false;
+check('YC35 … for a user the access config refuses (canReach no): no «Wieder öffnen …»', !str_contains($ycList(), '/confirm-reopen?id='));
+$GLOBALS['ycCanReach'] = true;
+$_GET = ['id' => (string) $yearId($pCode)];
+$h = $ycHost();
+$h->confirmReopenAction();
+$modal = $ycRender($h);
+check('YC36 confirm-reopen: the form posts to reopen with the entity token and a REQUIRED reason field (maxlength = the column)', str_contains($modal, 'data-fetch-post="/backend/finance/fiscal-year/reopen"')
+    && preg_match('/<textarea[^>]*name="reason"[^>]*maxlength="' . FiscalYearCloseLog::REASON_LENGTH . '"[^>]*required/', $modal) === 1);
+$GLOBALS['ycBody'] = ['id' => $yearId($pCode), 'entity_csrf' => 'tok-fiscalYear.reopen-' . $yearId($pCode), 'reason' => ''];
+$h   = $ycHost();
+$env = $envelope($h->reopenAction());
+check('YC37 POST reopen without a reason: «Bitte einen Grund angeben» — also as a field error on `reason`; still closed', ($env['status'] ?? '') === 'error' && str_contains($h->messageService->flashes[0][1] ?? '', 'Grund')
+    && str_contains(json_encode($env, JSON_UNESCAPED_UNICODE), '"reason"') && $ycStates($pCode) === ['closed']);
+$GLOBALS['ycBody']['reason'] = str_repeat('x', FiscalYearCloseLog::REASON_LENGTH + 1);
+$h   = $ycHost();
+$env = $envelope($h->reopenAction());
+check('YC37b a reason longer than the protocol keeps is REFUSED (field error «zu lang»), never cut; still closed, no reopen row', ($env['status'] ?? '') === 'error' && str_contains($h->messageService->flashes[0][1] ?? '', 'zu lang')
+    && str_contains(json_encode($env, JSON_UNESCAPED_UNICODE), '"reason"') && $ycStates($pCode) === ['closed']
+    && throws(fn() => new FiscalYearCloseLog(DI::getUnifiedEntityManager()->getRepository(FiscalYear::class)->findOneBy(["code" => $pCode]), \Z77\Module\Financial\Entities\CloseAction::Reopen, 'x', new \DateTimeImmutable(), str_repeat('x', FiscalYearCloseLog::REASON_LENGTH + 1)), \LogicException::class));
+$GLOBALS['ycBody']['entity_csrf'] = 'tok-fiscalYear.close-' . $yearId($pCode);
+$GLOBALS['ycBody']['reason'] = 'Korrektur Abgrenzung';
+$h   = $ycHost();
+$env = $envelope($h->reopenAction());
+check('YC37c a CLOSE token does not reopen (Invalid token)', ($env['status'] ?? '') === 'error' && ($h->messageService->flashes[0][1] ?? '') === 'Invalid token' && $ycStates($pCode) === ['closed']);
+$GLOBALS['ycBody']['entity_csrf'] = 'tok-fiscalYear.reopen-' . $yearId($pCode);
+$GLOBALS['ycBody']['reason'] = 'Korrektur Abgrenzung';
+$h   = $ycHost();
+$env = $envelope($h->reopenAction());
+check('YC38 POST reopen with a reason: success, reload; the year is open, the protocol names admin and the reason', ($env['status'] ?? '') === 'success' && str_contains(json_encode($env), 'reload')
+    && $ycStates($pCode) === ['open'] && array_column($ycLog($pCode), 'reason') !== [] && array_reverse(array_column($ycLog($pCode), 'reason'))[0] === 'Korrektur Abgrenzung');
+$_GET = ['id' => (string) $yearId($pCode)];
+$h = $ycHost();
+$h->confirmReopenAction();
+check('YC39 confirm-reopen on an open year says why not (no form)', str_contains($ycRender($h), 'Öffnen nicht möglich') && !str_contains($ycRender($h), 'data-fetch-post'));
+
+echo "YC. … the journal: a closed year's entries show the state «closed», the capture form says why it refuses\n";
+$ycClose($pCode, true);
+$useRequest(['year' => $pCode]);
+$jh = $listHost('journal');
+$states = [];
+foreach ($jh->context['rows'] as $r) { if (isset($r['entry'])) { $states[$r['entry']->getText()] = $r['state']; } }
+check('YC40 the journal list of the closed year: the manual entry carries the state `closed` (the generated one stays `generated`)', ($states['YC manuell'] ?? null) === 'closed' && ($states['YC Rechnung'] ?? null) === 'generated');
+$useRequest([], $row('1000', '1020', '10.00', $pDay, '', '', 'YC Erfassung'));
+$jHost = $journalHost();
+$jHost->addAction();
+check('YC41 the capture form refuses a posting into the closed year with a clear sentence (the year is closed, a correction goes into an open year, an admin can reopen)',
+    str_contains(implode(' ', $jHost->context['form']->generalErrors()), 'Das Geschäftsjahr ist abgeschlossen') && str_contains(implode(' ', $jHost->context['form']->generalErrors()), 'wieder öffnen')
+    && (int) $db->fetchOne("SELECT COUNT(*) FROM journal_entry WHERE text = 'YC Erfassung'") === 0);
+
+echo "YC. … a close and a posting in flight (two processes, forced order — review 2026-09-30: no deadlock)\n";
+$ycReopen($pCode, 'Race-Probe');
+// Race A: a posting into the prior year is IN FLIGHT (number drawn, accounts, year and period share-locked,
+// not committed) when the close starts. The close must WAIT at the fiscal-year rows and then close —
+// the posting committed into the still open year. Before the fix the close took the years at once, waited
+// for the period, and the posting's flush (journal_entry's foreign key share-locks the year) deadlocked.
+@unlink($base . '/holdpost.ready');
+$hold = proc_open([PHP_BINARY, __FILE__, '--worker', $base, 'holdpostc', '1000', $pDay, 'yc'], [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $holdPipes);
+for ($t = 0; $t < 300 && !is_file($base . '/holdpost.ready'); $t++) { usleep(100000); }
+$t0     = microtime(true);
+$raceA  = caught(fn() => $ycService()->close($yearId($pCode)), \Throwable::class);
+$waited = microtime(true) - $t0;
+$holdOut = trim(stream_get_contents($holdPipes[1])) . trim(stream_get_contents($holdPipes[2]));
+fclose($holdPipes[1]); fclose($holdPipes[2]); proc_close($hold);
+check(sprintf('YC42 posting in flight, then the close: the close WAITED (%.2fs) and closed after the posting committed (worker: %s) — no deadlock, the entry is in the year, the year closed', $waited, $holdOut . ($raceA ? ' / close: ' . get_class($raceA) . ' ' . $raceA->getMessage() : '')),
+    $holdOut === 'ok waited' && $raceA === null && $ycStates($pCode) === ['closed']
+    && (int) $db->fetchOne("SELECT COUNT(*) FROM journal_entry WHERE text = 'race yc'") === 1);
+// Race B: the close is IN FLIGHT (the real service, paused in its close check with every lock held) when a
+// posting starts. The posting must WAIT at the year's share lock and then be refused (period-closed) —
+// the number goes back.
+$ycReopen($pCode, 'Race-Probe 2');
+@unlink($base . '/holdclose.ready');
+$closer = proc_open([PHP_BINARY, __FILE__, '--worker', $base, 'holdclose', (string) $yearId($pCode), 'ycc'], [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $closerPipes);
+for ($t = 0; $t < 300 && !is_file($base . '/holdclose.ready'); $t++) { usleep(100000); }
+$rangeB = (string) $ycRange('journal-entry.' . $pCode);
+$raceB  = caught(fn() => $post($wireDi(), $transferRequest($pDay, 'YC Race B')), \Throwable::class);
+$closerOut = trim(stream_get_contents($closerPipes[1])) . trim(stream_get_contents($closerPipes[2]));
+fclose($closerPipes[1]); fclose($closerPipes[2]); proc_close($closer);
+check('YC43 close in flight, then a posting: the posting WAITED and was refused period-closed (worker: ' . $closerOut . '; posting: ' . ($raceB ? get_class($raceB) . ' ' . ($raceB instanceof PostingRefusedException ? $raceB->reason : $raceB->getMessage()) : 'posted') . ') — no deadlock, nothing written, the number went back',
+    $closerOut === 'ok waited' && $raceB instanceof PostingRefusedException && $raceB->reason === PostingRefusedException::PERIOD_CLOSED
+    && $ycStates($pCode) === ['closed'] && (string) $ycRange('journal-entry.' . $pCode) === $rangeB && (int) $db->fetchOne("SELECT COUNT(*) FROM journal_entry WHERE text = 'YC Race B'") === 0);
 
 echo "\n" . ($fail === 0 ? "PASS — {$pass} checks" : "FAIL — {$fail} of " . ($pass + $fail) . " checks") . "\n";
 exit($fail === 0 ? 0 : 1);

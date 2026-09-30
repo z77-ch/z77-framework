@@ -126,6 +126,16 @@ return [
             'MandatorController' => [
                 'defaultAction' => 'edit',
             ],
+            // Reopening a closed fiscal year is ADMIN — the owner's decision (2026-09-30),
+            // pinned here on purpose although it equals the module role today: a project
+            // that opens the finance screens to a bookkeeper (a lower controllerRole) must
+            // not hand out «Wieder öffnen» with it. A deliberate exception to AUTH-B003.
+            'FiscalYearController' => [
+                'actions' => [
+                    'confirmReopenAction' => AuthRole::ADMIN,
+                    'reopenAction'        => AuthRole::ADMIN,
+                ],
+            ],
         ],
         'documents' => [
             // Byte delivery only (Drive preview/thumbnail + download) — deviates

@@ -8,9 +8,10 @@ Developed in the [z77-ch/z77-framework](https://github.com/z77-ch/z77-framework)
 (`packages/module-financial`); not yet a split target or on Packagist — projects consume it
 through a `path` repository until it is.
 
-State: **P2 part 3** — chart of accounts, fiscal years with periods, the journal, `LedgerService`,
-manual entries with a change log, and the reports (trial balance, balance sheet, income
-statement, account statement, journal). The VAT return, the period transitions and the
+State: **P5 part 1** — chart of accounts, fiscal years with periods, the journal, `LedgerService`,
+manual entries with a change log, the reports (trial balance, balance sheet, income
+statement, account statement, journal), and closing a whole fiscal year (in order, a close
+check other modules answer, an admin reopen with a reason, a protocol). The VAT return and the
 year-end with the opening entry (P5) follow.
 
 Model:
@@ -22,7 +23,8 @@ Model:
   contiguous with the previous year) and one `Period` per calendar month, clipped to the year.
   Opening a year creates its journal-entry number range `journal-entry.{code}` in the same
   unit of work; deleting one removes all three again — only the latest year, only while
-  nothing was ever posted in it. Periods start `open` (`open` → `vat-settled` → `closed`, ADR-042).
+  nothing was ever posted in it. Periods start `open` (`open` → `vat-settled` → `closed`, ADR-042);
+  `FiscalYearCloseService` closes a whole year and an admin reopens it (`FiscalYearCloseLog`).
 - `JournalEntry` + `JournalLine` — one entry stored once: number (gapless per year), date, text,
   kind (`generated` | `manual`), opaque origin, idempotency key, `reversalOf` (at most once, in
   the schema), created/changed by/at; n ≥ 2 lines with account, debit OR credit, and — on the

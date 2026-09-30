@@ -1,6 +1,6 @@
 # debtor
 
-2026-09-23
+2026-09-30
 
 ## entry
 
@@ -40,6 +40,7 @@ SOURCE=/packages/module-debtor/src/Accounting/AccountingGateways.php
 SOURCE=/packages/module-debtor/src/Accounting/AccountingRefusedException.php
 SOURCE=/packages/module-debtor/src/Accounting/AccountingUnavailableException.php
 SOURCE=/packages/module-debtor/src/Repositories/InvoiceRepository.php
+SOURCE=/packages/module-debtor/src/Close/InvoicingInProgressCheck.php
 SOURCE=/packages/module-debtor/src/Services/InvoicingService.php
 SOURCE=/packages/module-debtor/src/Services/InvoiceRefusedException.php
 SOURCE=/packages/module-debtor/src/Services/InvoiceConflictException.php
@@ -206,6 +207,13 @@ Two texts, two audiences (decided 2026-09-22): `label` is the German name the BA
 - **Selection by config** (`debtorConfig → accountingGateway`, a class name — the `memberConfig` hook pattern, ADR-038; read by `Accounting\AccountingGateways::fromConfig()` at the point of use): the package config names `LedgerAccountingGateway`; a project without z77 bookkeeping writes `NullAccountingGateway::class` into its override — which, BOOT-CONFIG-001, must carry the FULL config. A missing key is `UnexpectedValueException`, an unknown class or one that is no gateway `AccountingUnavailableException`. Every gateway takes `(UnifiedEntityManager $em, string $actor)`. `InvoicingService` accepts a gateway in its constructor (the harness injects the Null one) and builds the configured one otherwise.
 - **Idempotency**: the key `{kind}:{id}:final` is stable across retries and the content deterministic, so a `finalize()` retried after a failed commit returns the existing entry from the ledger — and is then refused by debtor anyway, because the document is `final` only when that commit went through.
 
+### The year-close check (P5 part 1, 2026-09-30)
+
+- **`Close\InvoicingInProgressCheck`** — debtor's answer when financial closes a fiscal year (plan §5.3, ADR-042 decision 11; [`financial.md`](financial.md) «P5 part 1»). Registered in `debtorConfig → openWorkChecks → period-close` (the open-work registry of persistence-doctrine — financial knows no module, debtor does not call financial). Parameters are financial's: `from` / `to` (`DateTimeImmutable`, the year's first and last day; anything else is an `InvalidArgumentException`) and `fiscalYear` (the code, unused here).
+- **BLOCKING**: every document (invoice or credit note) still in `invoicing` whose `invoice_date` lies in the range — `finalize()` posts on that date, and after the close the ledger would refuse it (`period-closed`) while the closed year lacks the turnover. One finding per document for the first ten by date («Rechnung 12 vom 15.03.2026 ist noch in Fakturierung, also nicht verbucht — erst definitiv stellen (verbuchen).», reference `invoice:{id}`), then one finding counting the rest. SQL on `idx_invoice_state_date` (`InvoiceRepository::invoicingBetween()`: a count and the first rows).
+- Not checked yet: payments and CAMT transactions not yet booked (plan §5.3) — they arrive with P4, and their check registers under the same scope.
+- Verified: `tests/module-debtor.php` N1–N5 (the real registry of the registered modules; a final document does not count; the list limit; financial's `FiscalYearCloseService` refusing to close 2026 on debtor's findings).
+
 ### Number ranges
 
 **`invoice` and `credit-note`**, one per kind, gapless each (`uniq_invoice_kind_number`), drawn in `InvoicingService::invoice()` as the FIRST write of its unit of work; a re-issue draws nothing. **Created by the migration** `Version20260923043935` at 0 with the statement `NumberRangeRepository::create()` runs (decided 2026-09-23): DOCTRINE-NR-003 wants a range created and committed ahead of concurrent use, and the documents have no «opening» event like the ledger's fiscal year — the install is theirs. `down()` deletes the rows only while `last_number = 0` (the `dropUnused()` rule). The number is the bare integer; the document prints `Rechnung 12` / `Gutschrift 3` (`Invoice::documentName()`) — no prefix, no year segment (`persistence-doctrine.md`).
@@ -225,6 +233,7 @@ Four fragments in the `finance` group (ADR-018 pattern, next to the tax codes, t
 
 ## rules
 
+- When debtor has work that must be done before financial closes a fiscal year (a document in `invoicing` today, unbooked payments / CAMT in P4) → MUST answer through an `OpenWorkCheckInterface` registered under `debtorConfig → openWorkChecks → period-close`, reading `from` / `to` from the parameters, BLOCKING for what the closed year would lack; MUST NOT call financial or ask the period state itself.
 - When storing a percentage in this module (a discount tier) → MUST store an INTEGER IN HUNDREDTHS OF A PERCENT (2 % = `200`), as `TaxRate::$rate` does; MUST NOT store a float or a decimal string.
 - When storing an amount on a FILE-based entity (the dunning fee) → MUST store integer minor units and build `Money` with the currency the caller passes (`DunningLevel::fee($currency)`); MUST NOT let the entity read `systemConfig` itself and MUST NOT store a decimal string.
 - When a module-debtor class needs the base currency → MUST read it through `Services/DebtorCurrency::base()`; MUST NOT call `LedgerService::baseCurrency()` (module-financial is only `suggest`ed and may be absent) and MUST NOT hardcode `CHF`.
@@ -297,16 +306,16 @@ Four fragments in the `finance` group (ADR-018 pattern, next to the tax codes, t
   - **Two wdv errors NOT taken over** (both proven in `order/src/Libraries/Manager/InvoiceManager.php::createQrCodeData` and `PrepaymentQrCode.php`): (1) five creditor fields come from the payment target but the COUNTRY from the mandator (`$this->mandator->getCountryCode()`) — an account held abroad prints the wrong country; the country belongs to the holder, so to the target (with the same fallback as the other fields). (2) The reference type is hard-wired to `'QRR'` and the IBAN unconditionally read as `getQrIban()` — whoever has no QR-IBAN gets an invalid bill.
   - **Not taken over:** `esrMemberNo` / `esrBankAccount` (orange payment slip, discontinued 2022). `camtAble` (whether the bank delivers camt files) belongs to P4, not here.
   - **Warning from the analysis:** in wdv-622 the plain `iban` of the payment target is read by NO code path (the QR code always takes the QR-IBAN); wdv-630 added the prepayment path that reads it. When z77 builds the second field, the path «invoice without a reference» must be built with it — otherwise it is dead weight again.
-- **The period-close check** (plan §5.3, ADR-042 decision 11): debtor registers an `OpenWorkCheckInterface` under `openWorkChecks → period-close` that BLOCKS while a document `invoicing` is dated in the period (and, P4, while a payment is unbooked). Built with financial's period transition in P5 — the asking side does not exist yet (nothing in stock); `idx_invoice_state_date` already serves the query.
+- **The period-close check** — built 2026-09-30 with financial's year close (P5 part 1, «The year-close check» above). Open: the P4 half — unbooked payments / CAMT transactions block as well (plan §5.3); and whether `invoice()` / `reinvoice()` should refuse a date in a CLOSED year up front (today the document is issued and only its `finalize()` is refused by the ledger — financial.md FIN-CLOSE-001).
 - **`OpenItem` / P4**: whether P4 introduces an `open_item` row (fed from `finalize()`, referenced by allocations, also for a dunning fee without an invoice) or lets allocations reference `invoice` directly — decided with the payments; `openAmount()` is the seam either way.
 - **Foreign-currency documents** (Q6 reopened one day): `invoice.currency` and `exchange_rate` exist; the `Money` columns are base currency (`MoneyType`). A foreign document needs its foreign amounts mapped (`persistence-doctrine.md` pending) and the conversion at posting — not designed.
 - The package is not a split target yet (`.github/workflows/split.yml`, Packagist) — like `persistence-doctrine`, `module-vat`, `module-contact` and `module-financial`.
-- The navigation entries are NOT in the kernel seed (a host entry that fatals without the module would be wrong on a fresh install): a project adds «Debitoren» → `/backend/finance/debtor/list`, «Zahlungskonditionen» → `/backend/finance/payment-terms/list`, «Zahlungsziele» → `/backend/finance/payment-target/list` and «Mahnstufen» → `/backend/finance/dunning-level/list` in the backend, like the tax codes and contacts.
+- The navigation entries ship with the module ([ADR-050](../02-decisions/adr-050-module-navigation-seeds.md)): «Debitoren», «Zahlungskonditionen», «Zahlungsziele», «Mahnstufen» (`debitoren`, `zahlungskonditionen`, `zahlungsziele`, `mahnstufen`) in `data/framework/routing/navigation.d/module-debtor.json`. **Order processing is apart from the books** (owner 2026-09-30: «Fibu und Order/Debitoren sind getrennt» — orders create invoices, invoices get paid): module-debtor ships its own area «Aufträge» (`auftraege`) with «Debitoren», and the group Stammdaten › «Aufträge» (`stammdaten-auftraege`) with Zahlungskonditionen · Zahlungsziele · Mahnstufen. module-order (P7) adds its screens under `auftraege`. No parent in module-financial — the entries do not wait for it.
 
 ## see also
 
 - [`contact.md`](contact.md) — the party this module is keyed by; `Contact::$language` is the document language, the `invoice` / `main` address types are what the snapshot is taken from, and `AddressType` is the reference-rule precedent this module follows
-- [`financial.md`](financial.md) — what `LedgerAccountingGateway` posts into: `LedgerService::post()` and its race contract, `PostingRequest` / `EntryRef` (mirrored here), `vatAccountFor()` the adapter resolves VAT accounts through, `accountExists()` behind `LedgerAccountCheck`
+- [`financial.md`](financial.md) — what `LedgerAccountingGateway` posts into: `LedgerService::post()` and its race contract, `PostingRequest` / `EntryRef` (mirrored here), `vatAccountFor()` the adapter resolves VAT accounts through, `accountExists()` behind `LedgerAccountCheck`; the fiscal-year close (scope `period-close`) `InvoicingInProgressCheck` answers
 - [`vat.md`](vat.md) — `VatCalculator` (sum per code, rounded once, by service date, gross mode) the invoice computes with; `ResolvedRate` / `TaxSummary` are what `invoice_line` / `invoice_tax` store; the `TaxCode` master-data pattern the three file entities follow
 - [`money.md`](money.md) — integer minor units, `multiply()` with a decimal quantity, `allocate()` for the per-line tax share, `roundTo(5)` for the document total, and why no float comes near an amount
 - [`persistence-file.md`](persistence-file.md) — the file driver behind the three master-data types, seed-once and DATA-JSON-001 (UTF-8 without BOM)

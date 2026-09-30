@@ -1,6 +1,6 @@
 # Bauplan — order, debtor, financial, vat, contact, article
 
-**Status:** `[CONCEPT]` → P0 closed 2026-09-21 (ADR-039 to ADR-043 approved). P1 closed 2026-09-21. P2 parts 1–3 built 2026-09-22. P3 part 1 (debtor master data) built 2026-09-22. P3 part 2 (`InvoicingService`, the accounting port) built 2026-09-23. **The mandator (`module-mandator`, owner decisions E1 / E2) built 2026-09-23, awaiting review**. **P2 exit check passed 2026-09-24 — P2 closed**; next P3 part 3 (PDF / QR-bill, document screens).
+**Status:** `[CONCEPT]` → P0 closed 2026-09-21 (ADR-039 to ADR-043 approved). P1 closed 2026-09-21. P2 parts 1–3 built 2026-09-22. P3 part 1 (debtor master data) built 2026-09-22. P3 part 2 (`InvoicingService`, the accounting port) built 2026-09-23. **The mandator (`module-mandator`, owner decisions E1 / E2) built 2026-09-23, awaiting review**. **P2 exit check passed 2026-09-24 — P2 closed**; next P3 part 3 (PDF / QR-bill, document screens). **P5 part 1 (closing a fiscal year) built 2026-09-30**, not verified live.
 **Date:** 2026-09-18, updated 2026-09-21 (article model A1–A7 decided, Q7 answered, module cut and
 build phases final, all questions answered, external review worked in; the persistence-access
 question reopened ADR 2 on 2026-09-20 and was settled on 2026-09-21)
@@ -233,6 +233,22 @@ record. Harness `tests/module-mandator.php`, 96 checks; `module-financial` (368)
 `module-debtor` (275) adapted and green. **Next: P3 part 3 — PDF with QR-bill and the document screens**
 (list, draft editor with active codes and accounts, re-issue and finalize with versions, the credit-note
 form; the payment target's creditor block and second IBAN field per the pending in `debtor.md`), then P4.
+
+**P5 part 1 built (2026-09-30, owner decisions of the same day) — closing a fiscal year.** Only the
+whole YEAR is closed (every period `closed`), in order (after the year before it; reopening in
+reverse), an ADMIN reopens with a mandatory reason, and every close and reopen writes a protocol row
+(`fiscal_year_close_log`, migration `Version20260930120000`). `FiscalYearCloseService` owns its unit
+of work, locks the fiscal-year rows and the periods and re-checks order and the close check under the
+lock; the close check is the open-work registry (scope `period-close`) — debtor's
+`InvoicingInProgressCheck` blocks on documents still in `invoicing` dated in the year (payments /
+CAMT follow with P4). Every write into the journal now re-reads its period's state share-locked, so a
+close cannot slip past a posting in flight. Screen: Finanzen › Geschäftsjahre (state badge, «Jahr
+abschliessen …» with the findings and the warning confirmation, «Wieder öffnen …» for admins, the
+protocol under each year). Recorded for P5 part 2: the owner's decision that postings into VAT-filed
+periods stay allowed and the last return of the year balances them (§5.3, §5.6). Harness:
+`tests/module-financial.php` YC1–YC43, `tests/module-debtor.php` N1–N5; topic
+[`financial.md`](../topics/financial.md) («P5 part 1», FIN-CLOSE-001). **Next in P5:** part 2, the VAT
+return; then the year-end carry-forward (§5.7).
 
 Open for the owner: `persistence-doctrine`, `module-vat` and `module-contact` are not split targets
 yet (`.github/workflows/split.yml`, Packagist). Working method that carried P1: each building block
@@ -707,12 +723,18 @@ open ──(VAT return filed)──→ vat-settled ──(accounting close)─�
 - `vat-settled`: the VAT return for the period is posted and filed with the ESTV. **Decided
   (Q3):** filing closes the return — the return itself and every line carrying a tax code in that
   period can no longer change (it is filed). Manual entries without tax code stay editable until
-  the accounting close.
+  the accounting close. **Changed by the owner 2026-09-30 (for P5 part 2):** postings into periods
+  already covered by a filed VAT return stay ALLOWED — lines with a tax code included — and are
+  balanced by the LAST VAT return of the year, which computes the adjustment. The filed return
+  itself stays unchanged; `vat-settled` no longer freezes tax lines (ADR-042 addendum 2026-09-30).
 - `closed`: nothing changes. Only a reversal in an open period can correct.
 - **Close check (decided 2026-09-18).** Before the VAT return and before the accounting close,
   financial asks every registered `PeriodCloseCheck` (an interface in financial; modules register
   an implementation by config hook — financial knows none of them): "anything open for this
-  period?". Each finding is `blocking` or `warning`.
+  period?". Each finding is `blocking` or `warning`. **Built 2026-09-30 as the open-work registry
+  of persistence-doctrine** (§2 — `OpenWorkCheckInterface`, config key `openWorkChecks`, scope
+  `period-close`, parameters `fiscalYear`, `from`, `to`): the registry IS the «interface plus config
+  hook» this bullet asks for; no second interface in financial.
   - debtor, **blocking**: invoices in state `invoicing` dated in the period; payments/CAMT
     transactions not yet booked.
   - order, **warning** (proposal): invoiceable orders with service date in the period — under agreed
@@ -721,6 +743,14 @@ open ──(VAT return filed)──→ vat-settled ──(accounting close)─�
     of defence regardless of the check.
 - **Change log** for manual entries (decided, Q4): every edit/delete writes an `EntryChange` (who,
   when, before/after). Keeps "editable until close" traceable in the sense of the GeBüV.
+- **The accounting close — owner decisions 2026-09-30 (P5 part 1, built):** only the whole YEAR is
+  closed (all its periods `closed`, no month-by-month close in the UI); IN ORDER — a year closes only
+  after the year before it, reopening goes in reverse (only the latest closed year); an ADMIN can
+  REOPEN a closed year with a mandatory reason; every close and reopen is written to a protocol
+  (`fiscal_year_close_log`: who, when, why / the confirmed warnings — GeBüV). This amends «a period
+  moves one way» (ADR-042 decision 10, addendum 2026-09-30). The ledger's refusal stays the last line
+  of defence and now re-reads the period state under a share lock, so a close and a posting in
+  flight serialise (`financial.md`, «P5 part 1»).
 - Numbering: entry numbers per fiscal year from `NumberRange`. A deleted manual entry leaves a gap,
   documented by its change log entry.
 
@@ -750,6 +780,13 @@ ESTV form fields. Mixed rates within a period come out automatically. Saving the
 settlement entry (VAT payable / input tax → settlement account) through `LedgerService` and sets the
 period `vat-settled`. Rounding difference between return and ledger: posted to the VAT-return rounding account,
 shown, never silently absorbed.
+
+**Owner decision 2026-09-30 (to build in P5 part 2):** a posting into a period whose return is already
+filed is allowed (also with a tax code); the LAST VAT return of the fiscal year computes the
+adjustment — the difference between what the year's lines now sum to per code and rate and what the
+earlier returns of the year declared. How the adjustment is reported to the ESTV is part 2's design.
+This replaces the freeze of Q3 (§5.3). Part 2 also decides what the admin reopen of a closed
+year (P5 part 1) restores for a `vat-settled` period.
 
 ### 5.7 Year-end
 

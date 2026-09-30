@@ -192,8 +192,21 @@ class JournalLineRepository extends DoctrineRepository
      */
     public function accountHasLinesInClosedPeriod(int $accountId): bool
     {
+        // Inside a unit of work (the guarded type change of `AccountService::update()`, under the
+        // account's row lock) the periods are read SHARE-LOCKED: `state` has no index, so InnoDB locks
+        // every period row it scans (a few dozen) — a year close (`lockPeriodsOf()`, exclusive) and
+        // this re-check serialise, and a close committing in between cannot slip past the type lock
+        // (P5 part 1). Lock order: account → years → periods here; a close takes no account lock. Lock-free
+        // outside a unit of work (the screen's `postingLocks()`).
+        if ($this->connection()->isTransactionActive()) {
+            // The years first (review 2026-09-30): a close holds them X before it locks the
+            // periods X — the same order here, so a type change and a close cannot deadlock.
+            $this->connection()->fetchFirstColumn('SELECT id FROM fiscal_year LOCK IN SHARE MODE');
+        }
         $periods = $this->connection()->fetchAllAssociative(
-            'SELECT fiscal_year_id, start_date, end_date FROM fiscal_period WHERE state = ? ORDER BY start_date',
+            $this->connection()->isTransactionActive()
+                ? 'SELECT fiscal_year_id, start_date, end_date FROM fiscal_period WHERE state = ? ORDER BY start_date LOCK IN SHARE MODE'
+                : 'SELECT fiscal_year_id, start_date, end_date FROM fiscal_period WHERE state = ? ORDER BY start_date',
             [PeriodState::Closed->value]
         );
         $ranges = [];

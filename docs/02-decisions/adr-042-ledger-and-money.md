@@ -1,6 +1,6 @@
 # ADR-042 — Ledger and money: integer money, generated vs. manual entries, close states
 
-**Status:** `[APPROVED]` — approved by the owner 2026-09-21 (P0 of [`order-debtor-financial-bauplan.md`](../03-development/order-debtor-financial-bauplan.md))
+**Status:** `[APPROVED]` — approved by the owner 2026-09-21 (P0 of [`order-debtor-financial-bauplan.md`](../03-development/order-debtor-financial-bauplan.md)); addendum 2026-09-30 (owner decisions on the close, below)
 **Date:** 2026-09-21
 
 ---
@@ -112,3 +112,25 @@ rules for money and for what may change after posting must hold from the first e
 | Delete and re-post on correction (wdv) | Loses what happened; the correction principle demands a counterpart |
 | Header and lines stored twice (wdv) | Two truths about one entry |
 | Year-end blocked by order state (wdv) | Couples the ledger to a module it must not know |
+
+## Addendum 2026-09-30 — closing a fiscal year, the admin reopen, VAT-filed periods (owner decisions)
+
+Three owner decisions of 2026-09-30 amend the close states (decisions 10–11):
+
+1. **Only the whole year is closed**, in order. Closing a fiscal year sets every period of it
+   `closed` (no month-by-month close); a year closes only after the year before it. Decision 12
+   (the year-end) is unchanged — the carry-forward still follows.
+2. **An admin can reopen a closed year**, with a mandatory reason, in reverse order (only the latest
+   closed year). Every close and every reopen is written to a protocol (who, when, why — the
+   warnings the closer confirmed). This amends «a period moves one way» of decision 10: `closed` →
+   `open` exists, for the whole year, by an admin, traceable. Built in P5 part 1
+   (`FiscalYearCloseService`, [`financial.md`](../topics/financial.md)).
+3. **VAT-filed periods stay open for postings** (for P5 part 2, not built): a posting into a period
+   whose VAT return is filed is allowed — also a line with a tax code — and the LAST VAT return of the
+   year computes the adjustment. This replaces the freeze of tax lines at `vat-settled` in decision
+   10 and in the consequence «A manual entry changed after the VAT return that carries a tax code is
+   refused». Until part 2 is built, the ledger keeps refusing tax lines in a `vat-settled` period —
+   no period reaches that state before the return exists.
+
+Decision 11 (the close check) is built as the open-work registry of ADR-039 decision 15 (scope
+`period-close`); the «`PeriodCloseCheck`» of its wording is that registry's check interface.

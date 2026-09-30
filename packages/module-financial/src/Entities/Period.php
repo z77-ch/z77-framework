@@ -12,10 +12,12 @@ use Doctrine\DBAL\Types\Types,
  * year's bounds (owner, 2026-09-22) — with its close state
  * ({@see PeriodState}, ADR-042 decision 10).
  *
- * Created only by `FiscalYearService::open()`, always `open`. P2 part 1 has
- * no transition: the VAT return and the close (P5) move the state, and the
- * posting service (part 2) refuses by it. There is therefore no setter for
- * the state yet (CLAUDE.md «no just-in-case»).
+ * Created only by `FiscalYearService::open()`, always `open`. The state
+ * moves through {@see transitionTo()}, called by the year close
+ * (`FiscalYearCloseService`, P5 part 1 — owner decisions 2026-09-30: the
+ * whole YEAR is closed, an admin may reopen it) and nothing else; the
+ * posting service refuses by it. The VAT return (P5 part 2) will add
+ * `vat-settled`.
  *
  * Table `fiscal_period`, unique on (fiscal year, start date) — not
  * `period`, which MariaDB knows as a keyword (`PERIOD FOR` of its
@@ -60,4 +62,28 @@ class Period
     public function getStartDate(): \DateTimeImmutable { return $this->startDate; }
     public function getEndDate(): \DateTimeImmutable { return $this->endDate; }
     public function getState(): string { return $this->state; }
+
+    /**
+     * The one state change. Only `FiscalYearCloseService` calls it — on rows
+     * it re-read under `SELECT … FOR UPDATE` —, which owns the rules (order
+     * of the years, the close check, the protocol). What this method guards
+     * is the transition itself: close = any state → `closed`, reopen =
+     * `closed` → `open` (owner 2026-09-30; `vat-settled` does not exist in
+     * the running system before P5 part 2, which decides what a reopen
+     * restores then).
+     *
+     * @internal financial's own — call FiscalYearCloseService::close() / reopen()
+     */
+    public function transitionTo(PeriodState $state): void
+    {
+        $allowed = match ($state) {
+            PeriodState::Closed     => true,
+            PeriodState::Open       => $this->state === PeriodState::Closed->value,
+            PeriodState::VatSettled => false,   // P5 part 2 (the VAT return) adds this transition
+        };
+        if (!$allowed) {
+            throw new \LogicException("A period does not move from {$this->state} to {$state->value}");
+        }
+        $this->state = $state->value;
+    }
 }

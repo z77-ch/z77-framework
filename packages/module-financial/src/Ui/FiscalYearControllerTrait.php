@@ -5,8 +5,12 @@ use Z77\Core\DI,
     Z77\Core\Http\Response\FetchResponse,
     Z77\Core\Http\Response\HtmlResponse,
     Z77\Module\Financial\Entities\FiscalYear,
+    Z77\Module\Financial\Entities\FiscalYearCloseLog,
     Z77\Module\Financial\Entities\PeriodState,
+    Z77\Module\Financial\Repositories\FiscalYearCloseLogRepository,
     Z77\Module\Financial\Repositories\FiscalYearRepository,
+    Z77\Module\Financial\Services\FiscalYearCloseRefusedException,
+    Z77\Module\Financial\Services\FiscalYearCloseService,
     Z77\Module\Financial\Services\FiscalYearNotDeletableException,
     Z77\Module\Financial\Services\FiscalYearService,
     Z77\Module\Financial\Services\InvalidFiscalYearException,
@@ -32,7 +36,17 @@ use Z77\Core\DI,
  *     (owner decision 2026-09-22, FIN-FY-002): a confirmation modal
  *     (`data-fetch-get`) and a Fetch POST with the entity token
  *     `fiscalYear`; `FiscalYearService::delete()` decides again under lock;
- *   - there is NO edit of a year, and no state change of a period (P5).
+ *   - «Jahr abschliessen …» on the year that may be closed next (P5 part 1,
+ *     owner decisions 2026-09-30 — only the whole year, in order): a modal
+ *     (`confirm-close`, `data-fetch-get`) lists the close check's findings
+ *     — blocking ones refuse, warnings need the checkbox — and POSTs
+ *     `close` (Fetch, entity token `fiscalYear`);
+ *   - «Wieder öffnen …» on a closed year whose successor is not closed —
+ *     ADMIN only (the host's access config; the button is shown when
+ *     {@see fiscalYearCanReach()} says so), with a mandatory reason
+ *     (`confirm-reopen` / `reopen`);
+ *   - the protocol of both, per year, the latest rows under its header;
+ *   - there is NO edit of a year, and no state change of a single period.
  *
  * No JavaScript of its own: the code proposal for changed dates is made on
  * the server when the field is left empty. The using class MUST provide
@@ -89,6 +103,73 @@ trait FiscalYearControllerTrait
         return $date !== false && $date->format('Y-m-d') === $value ? $date : null;
     }
 
+    /**
+     * Entity-token scopes per action (review 2026-09-30): a token issued for
+     * the close modal does not authorise a reopen, and neither authorises the
+     * delete (which keeps `fiscalYear`).
+     */
+    private const FISCAL_YEAR_CLOSE_TOKEN  = 'fiscalYear.close';
+    private const FISCAL_YEAR_REOPEN_TOKEN = 'fiscalYear.reopen';
+
+    /** How many protocol rows the list shows per year (newest first). */
+    private const FISCAL_YEAR_LOG_ROWS = 3;
+
+    private function fiscalYearCloseService(): FiscalYearCloseService
+    {
+        return new FiscalYearCloseService($this->em());
+    }
+
+    /**
+     * May the current user reach $action of THIS mount? The mount's URL root
+     * ({@see fiscalYearListBase()}, `/backend/{group}/{controller}`) names
+     * module, group and controller; `AuthService::canReach()` answers from
+     * the host's access config (backend.md: a button's visibility is decided
+     * with canReach, never with a hard-coded role). A mount of another shape
+     * overrides this method. Presentation only — the dispatcher enforces the
+     * access config on the action itself.
+     */
+    protected function fiscalYearCanReach(string $action): bool
+    {
+        $segments = explode('/', trim($this->fiscalYearListBase(), '/'));
+        if (count($segments) !== 3) {
+            return false;
+        }
+        $auth = DI::getAuthService();
+
+        return $auth->canReach($auth->getCurrentUser(), $segments[0], $segments[1], $segments[2], $action);
+    }
+
+    /** Why a year cannot be closed or reopened, in German — the modals and the refused POSTs share it. */
+    private function fiscalYearCloseMessage(string $reason): string
+    {
+        return match ($reason) {
+            FiscalYearCloseRefusedException::NOT_FOUND            => 'Das Geschäftsjahr gibt es nicht mehr — bitte die Liste neu laden.',
+            FiscalYearCloseRefusedException::NO_PERIODS           => 'Das Geschäftsjahr hat keine Perioden — es gibt nichts abzuschliessen.',
+            FiscalYearCloseRefusedException::ALREADY_CLOSED       => 'Das Geschäftsjahr ist bereits abgeschlossen.',
+            FiscalYearCloseRefusedException::PREDECESSOR_OPEN     => 'Zuerst das vorangehende Geschäftsjahr abschliessen — die Jahre werden der Reihe nach abgeschlossen.',
+            FiscalYearCloseRefusedException::BLOCKED              => 'Es ist noch etwas offen, das den Abschluss verhindert — siehe die Liste.',
+            FiscalYearCloseRefusedException::WARNINGS_UNCONFIRMED => 'Es gibt Warnungen — zum Abschliessen bitte bestätigen.',
+            FiscalYearCloseRefusedException::WARNINGS_CHANGED     => 'Die Hinweise haben sich geändert — bitte erneut prüfen.',
+            FiscalYearCloseRefusedException::NOT_CLOSED           => 'Das Geschäftsjahr ist nicht abgeschlossen.',
+            FiscalYearCloseRefusedException::SUCCESSOR_CLOSED     => 'Zuerst das folgende Geschäftsjahr wieder öffnen — geöffnet wird in umgekehrter Reihenfolge, das letzte abgeschlossene Jahr zuerst.',
+            FiscalYearCloseRefusedException::NO_REASON            => 'Bitte einen Grund angeben — er steht im Protokoll.',
+            FiscalYearCloseRefusedException::REASON_TOO_LONG      => 'Der Grund ist zu lang — höchstens ' . FiscalYearCloseLog::REASON_LENGTH . ' Zeichen.',
+            default                                               => 'Das Geschäftsjahr lässt sich nicht abschliessen oder öffnen.',
+        };
+    }
+
+    /** One protocol row as a short German line, e.g. «abgeschlossen 30.09.2026 14:05 von peter». */
+    private static function fiscalYearLogLine(FiscalYearCloseLog $row): string
+    {
+        $when = $row->getActedAt()->format('d.m.Y H:i') . ' von ' . $row->getActor();
+        if ($row->getAction() === 'reopen') {
+            return 'wieder geöffnet ' . $when . ' — Grund: ' . $row->getReason();
+        }
+        $warnings = count($row->getConfirmedWarnings());
+
+        return 'abgeschlossen ' . $when . ($warnings > 0 ? ' (' . $warnings . ($warnings === 1 ? ' Warnung' : ' Warnungen') . ' bestätigt)' : '');
+    }
+
     /** Why a year cannot be deleted, in German — the modal and the refused POST share it. */
     private function fiscalYearRefusalMessage(string $reason): string
     {
@@ -98,6 +179,7 @@ trait FiscalYearControllerTrait
             FiscalYearNotDeletableException::HAS_ENTRIES => 'Im Geschäftsjahr gibt es Buchungen — es lässt sich nicht mehr löschen.',
             FiscalYearNotDeletableException::HAD_ENTRIES => 'Im Geschäftsjahr wurde schon gebucht (gelöschte Buchungen sind im Änderungsprotokoll dokumentiert) — es lässt sich nicht mehr löschen.',
             FiscalYearNotDeletableException::RANGE_USED  => 'Aus dem Nummernkreis des Geschäftsjahrs wurde schon eine Nummer bezogen — es lässt sich nicht mehr löschen.',
+            FiscalYearNotDeletableException::CLOSED      => 'Das Geschäftsjahr ist abgeschlossen — ein abgeschlossenes Jahr wird nicht gelöscht.',
             default                                      => 'Das Geschäftsjahr lässt sich nicht löschen.',
         };
     }
@@ -114,11 +196,41 @@ trait FiscalYearControllerTrait
             }
         }
 
+        // Close / reopen (P5 part 1): the lock-free order rules per year; the reopen button only
+        // for who may reach the action (ADMIN in the backend's access config).
+        $years      = $this->fiscalYears()->allWithPeriods();
+        $closer     = $this->fiscalYearCloseService();
+        $mayReopen  = $this->fiscalYearCanReach('reopen');
+        $closable   = [];
+        $reopenable = [];
+        $closed     = [];
+        foreach ($years as $year) {
+            if ($year->isClosed()) {
+                $closed[] = $year->getId();
+            }
+            if ($closer->closeRefusal($year) === null) {
+                $closable[] = $year->getId();
+            }
+            if ($mayReopen && $closer->reopenRefusal($year) === null) {
+                $reopenable[] = $year->getId();
+            }
+        }
+        /** @var FiscalYearCloseLogRepository $logs */
+        $logs     = $this->em()->getRepository(FiscalYearCloseLog::class);
+        $logLines = [];
+        foreach ($logs->byYear(array_map(fn(FiscalYear $y) => (int) $y->getId(), $years)) as $yearId => $rows) {
+            $logLines[$yearId] = array_map(self::fiscalYearLogLine(...), array_slice($rows, 0, self::FISCAL_YEAR_LOG_ROWS));
+        }
+
         $response = $this->html([
-            'years'       => $this->fiscalYears()->allWithPeriods(),
-            'stateLabels' => $this->periodStateLabels(),
+            'years'        => $years,
+            'stateLabels'  => $this->periodStateLabels(),
             'deletableIds' => array_values(array_unique($deletable)),
-            'actionBase'  => $this->fiscalYearListBase(),
+            'closedIds'    => $closed,
+            'closableIds'  => $closable,
+            'reopenableIds' => $reopenable,
+            'logLines'     => $logLines,
+            'actionBase'   => $this->fiscalYearListBase(),
         ]);
         // The fragment owns its header slot (financial.md, «fragment slots»). The add action acts
         // on the list in the work area, so it goes into the toolbar (ADR-033 rev. 2026-09-28).
@@ -234,5 +346,122 @@ trait FiscalYearControllerTrait
             ->setStatus('success')
             ->addCommand('close-modal')
             ->setRedirect($this->fiscalYearListBase() . '/list');
+    }
+
+    // ── close / reopen (P5 part 1, owner decisions 2026-09-30) ─────────────
+
+    /**
+     * The close modal (`data-fetch-get`): the order refusal, or the close
+     * check's findings — blocking ones say why it cannot be closed, warnings
+     * come with a checkbox the POST must carry.
+     */
+    protected function confirmCloseAction(): HtmlResponse|FetchResponse
+    {
+        $id   = (int) DI::getRequest()->getGetParameter('id');
+        $year = $id > 0 ? $this->fiscalYears()->find($id) : null;
+        if ($year === null) {
+            return $this->fetchError($this->fiscalYearCloseMessage(FiscalYearCloseRefusedException::NOT_FOUND));
+        }
+        $refusal = $this->fiscalYearCloseService()->closeRefusal($year);
+        $open    = $refusal === null ? $this->fiscalYearCloseService()->closeCheck($year) : null;
+
+        $response = $this->html([
+            'year'       => $year,
+            'refusal'    => $refusal === null ? null : $this->fiscalYearCloseMessage($refusal),
+            'blocking'   => $open?->blocking() ?? [],
+            'warnings'   => $open?->warnings() ?? [],
+            'warningsHash' => $open === null ? '' : FiscalYearCloseService::warningsFingerprint($open),
+            'entityCsrf' => DI::getCsrfService()->generateEntityToken(self::FISCAL_YEAR_CLOSE_TOKEN, $id),
+            'actionBase' => $this->fiscalYearListBase(),
+        ]);
+        $this->layoutManager->addPartials('confirmClose', 'Backend/FiscalYearController', self::FISCAL_YEAR_NS);
+
+        return $response;
+    }
+
+    #[Fetch, HttpMethod('POST')]
+    protected function closeAction(): FetchResponse
+    {
+        $body = DI::getRequest()->getJsonBody();
+        $id   = (int) ($body['id'] ?? 0);
+        if ($id <= 0) {
+            return $this->fetchError('Missing id');
+        }
+        if (!DI::getCsrfService()->validateEntityToken(trim((string) ($body['entity_csrf'] ?? '')), self::FISCAL_YEAR_CLOSE_TOKEN, $id)) {
+            return $this->fetchError('Invalid token');
+        }
+        $code = $this->fiscalYears()->find($id)?->getCode() ?? (string) $id;
+        // What the closer confirmed: the fingerprint of the warnings the modal SHOWED — only with the checkbox ticked.
+        $confirmed = ($body['confirm_warnings'] ?? false) === true && is_string($body['warnings_hash'] ?? null) ? $body['warnings_hash'] : null;
+
+        try {
+            $this->fiscalYearCloseService()->close($id, $confirmed);
+        } catch (FiscalYearCloseRefusedException $e) {
+            $message = $this->fiscalYearCloseMessage($e->reason);
+            if ($e->reason === FiscalYearCloseRefusedException::BLOCKED && $e->openWork !== null) {
+                $message .= ' ' . implode(' ', array_map(fn($f) => $f->message, $e->openWork->blocking()));
+            }
+
+            return $this->fetchError($message);
+        }
+        $this->messageService->pushFlashAfterRedirect('success', 'Geschäftsjahr «' . $code . '» abgeschlossen — darin wird nichts mehr gebucht oder geändert.');
+
+        return $this->fetch()
+            ->setStatus('success')
+            ->addCommand('close-modal')
+            ->addCommand('reload');
+    }
+
+    /** The reopen modal (`data-fetch-get`): the order refusal, or the form with the mandatory reason. */
+    protected function confirmReopenAction(): HtmlResponse|FetchResponse
+    {
+        $id   = (int) DI::getRequest()->getGetParameter('id');
+        $year = $id > 0 ? $this->fiscalYears()->find($id) : null;
+        if ($year === null) {
+            return $this->fetchError($this->fiscalYearCloseMessage(FiscalYearCloseRefusedException::NOT_FOUND));
+        }
+        $refusal = $this->fiscalYearCloseService()->reopenRefusal($year);
+
+        $response = $this->html([
+            'year'         => $year,
+            'refusal'      => $refusal === null ? null : $this->fiscalYearCloseMessage($refusal),
+            'reasonLength' => FiscalYearCloseLog::REASON_LENGTH,
+            'entityCsrf'   => DI::getCsrfService()->generateEntityToken(self::FISCAL_YEAR_REOPEN_TOKEN, $id),
+            'actionBase'   => $this->fiscalYearListBase(),
+        ]);
+        $this->layoutManager->addPartials('confirmReopen', 'Backend/FiscalYearController', self::FISCAL_YEAR_NS);
+
+        return $response;
+    }
+
+    #[Fetch, HttpMethod('POST')]
+    protected function reopenAction(): FetchResponse
+    {
+        $body = DI::getRequest()->getJsonBody();
+        $id   = (int) ($body['id'] ?? 0);
+        if ($id <= 0) {
+            return $this->fetchError('Missing id');
+        }
+        if (!DI::getCsrfService()->validateEntityToken(trim((string) ($body['entity_csrf'] ?? '')), self::FISCAL_YEAR_REOPEN_TOKEN, $id)) {
+            return $this->fetchError('Invalid token');
+        }
+        $code = $this->fiscalYears()->find($id)?->getCode() ?? (string) $id;
+
+        try {
+            $this->fiscalYearCloseService()->reopen($id, is_string($body['reason'] ?? null) ? $body['reason'] : '');
+        } catch (FiscalYearCloseRefusedException $e) {
+            $message  = $this->fiscalYearCloseMessage($e->reason);
+            $response = $this->fetchError($message);
+            // The reason's own refusals mark the field (a field error, not only a flash).
+            return in_array($e->reason, [FiscalYearCloseRefusedException::NO_REASON, FiscalYearCloseRefusedException::REASON_TOO_LONG], true)
+                ? $response->setField('reason', false, $message)
+                : $response;
+        }
+        $this->messageService->pushFlashAfterRedirect('success', 'Geschäftsjahr «' . $code . '» wieder geöffnet — der Grund steht im Protokoll.');
+
+        return $this->fetch()
+            ->setStatus('success')
+            ->addCommand('close-modal')
+            ->addCommand('reload');
     }
 }

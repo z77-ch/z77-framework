@@ -1579,6 +1579,42 @@ check('M8 the migration says what a development rollback does to a drawn range (
     str_contains(file_get_contents($package . '/res/migrations/Version20260923043935.php'), 'idempotent'));
 
 
+// ── N. the year close asks debtor (P5 part 1) ───────────────────────────
+
+echo "N. The fiscal-year close asks debtor through the open-work registry (scope period-close): a document in `invoicing` dated in the year BLOCKS\n";
+$wireDi();
+$ycAsk = fn(string $from, string $to) => \Z77\Persistence\Doctrine\OpenWork\OpenWorkChecks::fromModules(DI::getModuleManager())
+    ->ask('period-close', ['fiscalYear' => '2026', 'from' => day($from), 'to' => day($to)]);
+$inInvoicing = (int) $db->fetchOne("SELECT COUNT(*) FROM invoice WHERE state = 'invoicing' AND invoice_date BETWEEN '2026-01-01' AND '2026-12-31'");
+$open2026    = $ycAsk('2026-01-01', '2026-12-31');
+check('N1 debtorConfig registers InvoicingInProgressCheck under `period-close`; for 2026 every document still in invoicing is a BLOCKING finding (named, dated, referenced invoice:{id}) — no warnings',
+    (DI::getModuleManager()->getModuleConfig('debtor')?->get('openWorkChecks') ?? []) === ['period-close' => [\Z77\Module\Debtor\Close\InvoicingInProgressCheck::class]]
+    && $inInvoicing > 0 && $inInvoicing <= \Z77\Module\Debtor\Close\InvoicingInProgressCheck::LIST_LIMIT
+    && $open2026->isBlocked() && count($open2026->blocking()) === $inInvoicing && $open2026->warnings() === []
+    && str_contains($open2026->blocking()[0]->message, 'in Fakturierung') && str_starts_with($open2026->blocking()[0]->reference, 'invoice:')
+    && preg_match('/^(Rechnung|Gutschrift) \d+ vom \d\d\.\d\d\.2026 /', $open2026->blocking()[0]->message) === 1);
+$inv1Day = (string) $db->fetchOne('SELECT invoice_date FROM invoice WHERE id = ?', [$inv1->getId()]);
+check('N2 a FINAL document does not count (inv1, final since L1: its day yields only the documents still in invoicing); a range without open documents is «nothing open»',
+    $stateOf($inv1->getId()) === 'final'
+    && count($ycAsk($inv1Day, $inv1Day)->blocking()) === (int) $db->fetchOne("SELECT COUNT(*) FROM invoice WHERE state = 'invoicing' AND invoice_date = ?", [$inv1Day])
+    && !in_array('invoice:' . $inv1->getId(), array_map(fn($f) => $f->reference, $ycAsk($inv1Day, $inv1Day)->blocking()), true)
+    && $ycAsk('2025-01-01', '2025-12-31')->isEmpty());
+check('N3 the check refuses parameters that are not the scope\'s (from / to as DateTimeImmutable)', throws(fn() => iterator_to_array((new \Z77\Module\Debtor\Close\InvoicingInProgressCheck())->check('period-close', ['from' => '2026-01-01'])), \InvalidArgumentException::class));
+$yearId2026 = (int) $db->fetchOne("SELECT id FROM fiscal_year WHERE code = '2026'");
+$refusedClose = caught(fn() => (new \Z77\Module\Financial\Services\FiscalYearCloseService($wireDi(), 'tester'))->close($yearId2026), \Z77\Module\Financial\Services\FiscalYearCloseRefusedException::class);
+check('N4 financial\'s FiscalYearCloseService (the registry of the registered modules) refuses to close 2026 — blocked by debtor\'s findings; no period closed, no protocol row',
+    $refusedClose?->reason === 'blocked' && count($refusedClose->openWork?->blocking() ?? []) >= $inInvoicing
+    && $db->fetchFirstColumn("SELECT DISTINCT p.state FROM fiscal_period p JOIN fiscal_year y ON y.id = p.fiscal_year_id WHERE y.code = '2026'") === ['open']
+    && (int) $db->fetchOne('SELECT COUNT(*) FROM fiscal_year_close_log') === 0);
+$manyBefore = (int) $db->fetchOne("SELECT COUNT(*) FROM invoice WHERE state = 'invoicing' AND invoice_date BETWEEN '2026-11-20' AND '2026-11-30'");
+for ($i = 0; $i < 12; $i++) {
+    $service($wireDi())->invoice($oneLine($mid, '2026-11-2' . min($i, 8), '1.000', '10.00'));
+}
+$many = $ycAsk('2026-11-20', '2026-11-30');
+check('N5 many open documents: the first ' . \Z77\Module\Debtor\Close\InvoicingInProgressCheck::LIST_LIMIT . ' by date are named one by one, the rest counted in one more finding',
+    count($many->blocking()) === \Z77\Module\Debtor\Close\InvoicingInProgressCheck::LIST_LIMIT + 1 && str_contains(array_reverse($many->blocking())[0]->message, 'und ' . ($manyBefore + 12 - \Z77\Module\Debtor\Close\InvoicingInProgressCheck::LIST_LIMIT) . ' weitere'));
+
+
 // ── result ───────────────────────────────────────────────────────────────
 
 echo "\n{$pass} passed, {$fail} failed\n";
