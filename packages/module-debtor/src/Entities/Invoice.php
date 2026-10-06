@@ -54,6 +54,11 @@ use Doctrine\Common\Collections\ArrayCollection,
  *     rounding, what is payable) — stored, never recomputed;
  *   - `sourceType` / `sourceRef`: the OPAQUE origin of the document (an
  *     order, a contract, a manual entry); debtor does not interpret it;
+ *   - `payment` (`pay_*`, P3 part 3): the PAYMENT PART as printed — the
+ *     payment target by code, the account, the reference type and the
+ *     reference, the message and the creditor block as it resolved
+ *     ({@see PaymentSnapshot}); empty on a credit note. The QR-bill is
+ *     rendered from it (`Invoicing\QrBill::of()`), never from the target;
  *   - `ledgerEntryRef`: what the accounting port answered on `finalize()` —
  *     `{fiscal-year}/{number}` as ONE string (the port's return value, the
  *     `EntryRef` shape of financial written as it reads on a document),
@@ -114,6 +119,10 @@ class Invoice
 
     #[ORM\Embedded(class: AddressSnapshot::class, columnPrefix: 'addr_')]
     private AddressSnapshot $address;
+
+    /** The payment part as printed (P3 part 3) — set whole by issue() / reissue(). */
+    #[ORM\Embedded(class: PaymentSnapshot::class, columnPrefix: 'pay_')]
+    private PaymentSnapshot $payment;
 
     #[ORM\Column(length: self::LANGUAGE_LENGTH)]
     private string $language = '';
@@ -249,6 +258,7 @@ class Invoice
     public function getContact(): Contact { return $this->contact; }
     public function getCreditNoteOf(): ?Invoice { return $this->creditNoteOf; }
     public function getAddress(): AddressSnapshot { return $this->address; }
+    public function getPayment(): PaymentSnapshot { return $this->payment; }
     public function getLanguage(): string { return $this->language; }
     public function getInvoiceDate(): \DateTimeImmutable { return $this->invoiceDate; }
     public function getServiceFrom(): \DateTimeImmutable { return $this->serviceFrom; }
@@ -320,12 +330,12 @@ class Invoice
      * @param list<InvoiceLine> $lines in position order, the rounding line last when there is one
      * @param list<InvoiceTax>  $taxes one per tax code
      */
-    public function issue(DocumentSnapshot $snapshot, array $lines, array $taxes): void
+    public function issue(DocumentSnapshot $snapshot, array $lines, array $taxes, PaymentSnapshot $payment): void
     {
         if ($this->id !== null || !$this->lines->isEmpty()) {
             throw new \LogicException('issue() writes the first content of a new document — an existing one is re-issued through reissue()');
         }
-        $this->replaceContent($snapshot, $lines, $taxes);
+        $this->replaceContent($snapshot, $lines, $taxes, $payment);
     }
 
     /**
@@ -338,10 +348,10 @@ class Invoice
      * @param list<InvoiceLine> $lines
      * @param list<InvoiceTax>  $taxes
      */
-    public function reissue(DocumentSnapshot $snapshot, array $lines, array $taxes, string $changedBy, \DateTimeImmutable $changedAt): void
+    public function reissue(DocumentSnapshot $snapshot, array $lines, array $taxes, PaymentSnapshot $payment, string $changedBy, \DateTimeImmutable $changedAt): void
     {
         $this->assertInvoicing('re-issued');
-        $this->replaceContent($snapshot, $lines, $taxes);
+        $this->replaceContent($snapshot, $lines, $taxes, $payment);
         $this->changedBy = $changedBy;
         $this->changedAt = $changedAt;
     }
@@ -366,8 +376,12 @@ class Invoice
     }
 
     /** @param list<InvoiceLine> $lines @param list<InvoiceTax> $taxes */
-    private function replaceContent(DocumentSnapshot $snapshot, array $lines, array $taxes): void
+    private function replaceContent(DocumentSnapshot $snapshot, array $lines, array $taxes, PaymentSnapshot $payment): void
     {
+        if ($this->isCreditNote() && $payment->hasPaymentPart()) {
+            throw new \LogicException('A credit note has no payment part');
+        }
+        $this->payment          = $payment;
         if (mb_strlen($snapshot->language) > self::LANGUAGE_LENGTH || strlen($snapshot->currency) !== self::CURRENCY_LENGTH) {
             throw new \LogicException('Document snapshot: language up to ' . self::LANGUAGE_LENGTH . ' characters, currency exactly ' . self::CURRENCY_LENGTH);
         }

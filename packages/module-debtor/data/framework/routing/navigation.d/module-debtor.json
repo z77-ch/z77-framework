@@ -26,6 +26,19 @@
         "parent_key": "auftraege"
     },
     {
+        "key": "rechnungen",
+        "name": "Rechnungen",
+        "module": "backend",
+        "group": "finance",
+        "controller": "invoice",
+        "action": "list",
+        "slot": "",
+        "active": true,
+        "param": "",
+        "sort_key": 1,
+        "parent_key": "auftraege"
+    },
+    {
         "key": "stammdaten-auftraege",
         "name": "Aufträge",
         "module": "",

@@ -64,6 +64,28 @@ class DebtorProfileRepository extends DoctrineRepository
         return $byContact;
     }
 
+    /**
+     * The debtors a NEW document may be written to — active profile, active
+     * contact (the reference rule on the party, ADR-043 decision 19) — with
+     * the contact fetch-joined, by name: the party picker of the invoice
+     * editor (P3 part 3). Doctrine-only (fetch-join).
+     *
+     * @return list<DebtorProfile>
+     */
+    public function activeWithContacts(): array
+    {
+        return $this->em()->createQueryBuilder()
+            ->select('p', 'c')
+            ->from(DebtorProfile::class, 'p')
+            ->join('p.contact', 'c')
+            ->where('p.active = true AND c.active = true')
+            ->orderBy('c.company', 'ASC')
+            ->addOrderBy('c.lastName', 'ASC')
+            ->addOrderBy('c.firstName', 'ASC')
+            ->getQuery()
+            ->getResult();
+    }
+
     /** How many profiles reference these payment terms — what the terms list shows before a deactivation. */
     public function countByPaymentTermsCode(string $code): int
     {

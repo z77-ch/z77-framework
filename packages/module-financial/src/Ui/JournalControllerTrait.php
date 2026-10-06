@@ -1,6 +1,8 @@
 <?php
 namespace Z77\Module\Financial\Ui;
 
+use Z77\Shared\Money\AmountFormat;
+
 use Z77\Core\DI,
     Z77\Core\Http\RequestMode,
     Z77\Core\Http\WindowOrigin,
@@ -14,7 +16,6 @@ use Z77\Core\DI,
     Z77\Module\Financial\Entities\PeriodState,
     Z77\Module\Financial\Ledger\EntryRef,
     Z77\Module\Financial\Ledger\PostingRequest,
-    Z77\Module\Financial\Reports\Paging,
     Z77\Module\Financial\Repositories\EntryChangeRepository,
     Z77\Module\Financial\Repositories\FiscalYearRepository,
     Z77\Module\Financial\Repositories\JournalEntryRepository,
@@ -28,6 +29,7 @@ use Z77\Core\DI,
     Z77\Shared\Attributes\Csrf,
     Z77\Shared\Attributes\Fetch,
     Z77\Shared\Attributes\HttpMethod,
+    Z77\Shared\Paging\Paging,
     Z77\Shared\Money\Money
 ;
 
@@ -510,7 +512,14 @@ trait JournalControllerTrait
 
     protected function detailAction(): HtmlResponse|RedirectResponse
     {
-        $id    = (int) DI::getRequest()->getGetParameter('id');
+        $id = (int) DI::getRequest()->getGetParameter('id');
+        if ($id === 0) {
+            // `?ref={fiscal-year}/{number}` — how a posting module stores the entry it posted
+            // (EntryRef as one string, e.g. debtor's `invoice.ledger_entry_ref`, P3 part 3): the
+            // module links the journal without knowing an id.
+            $ref = self::journalParseRef(DI::getRequest()->getGetParameter('ref'));
+            $id  = $ref === null ? 0 : (int) $this->journalEntries()->findByRef($ref)?->getId();
+        }
         $entry = $id ? $this->journalEntries()->withLines($id) : null;
         if ($entry === null) {
             $this->messageService->pushFlashAfterRedirect('error', 'Buchung nicht gefunden');
@@ -534,6 +543,16 @@ trait JournalControllerTrait
             'kindLabels'     => self::KIND_LABELS,
             'changeLabels'   => self::CHANGE_LABELS,
         ]);
+    }
+
+    /** `2026/12`, `2030-31/7` → the EntryRef; null for anything else (the year code may carry a dash, the number follows the LAST slash). */
+    private static function journalParseRef(mixed $value): ?EntryRef
+    {
+        if (!is_string($value) || !preg_match('#^([0-9A-Za-z-]{1,16})/([1-9]\d{0,8})$#', $value, $m)) {
+            return null;
+        }
+
+        return new EntryRef($m[1], (int) $m[2]);
     }
 
     // ── add ──────────────────────────────────────────────────────────────

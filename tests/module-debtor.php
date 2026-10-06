@@ -120,6 +120,10 @@ use Z77\Module\Debtor\Entities\PaymentTerms;
 use Z77\Module\Debtor\Invoicing\InvoiceDraft;
 use Z77\Module\Debtor\Invoicing\LineDraft;
 use Z77\Module\Debtor\Invoicing\PostingBuilder;
+use Z77\Module\Debtor\Invoicing\QrBill;
+use Z77\Module\Debtor\Entities\PaymentSnapshot;
+use Z77\Module\Debtor\Invoicing\QrReference;
+use Z77\Module\Debtor\Services\Creditor;
 use Z77\Module\Debtor\Repositories\DebtorProfileRepository;
 use Z77\Module\Debtor\Repositories\InvoiceRepository;
 use Z77\Module\Debtor\Services\InvoiceConflictException;
@@ -382,8 +386,8 @@ check('A9 the unique contact index and the payment-terms index carry our names',
 [$code, $out] = $run(['command' => 'migrate']);
 check('A10 a second migrate is a no-op', $code === 0 && str_contains($out, 'Already at the latest version'));
 [$code, $out] = $run(['command' => 'diff', '--namespace' => 'Z77\\Module\\Debtor\\Migrations']);
-check('A11 diff after migrate reports NO change — mapping and migration agree (embedded address, money and decimal columns included)', $code !== 0 && str_contains($out, 'No changes detected') && count(glob($package . '/res/migrations/Version*.php')) === 2);
-check('A12 both migrations are expand-only: no DROP outside down()', array_reduce(glob($package . '/res/migrations/Version*.php'), function ($ok, $f) {
+check('A11 diff after migrate reports NO change — mapping and migration agree (embedded address and payment part, money and decimal columns included)' . (str_contains($out, 'No changes detected') ? '' : ' — ' . trim($out)), $code !== 0 && str_contains($out, 'No changes detected') && count(glob($package . '/res/migrations/Version*.php')) === 3);
+check('A12 all three migrations are expand-only: no DROP outside down()', array_reduce(glob($package . '/res/migrations/Version*.php'), function ($ok, $f) {
     $s = file_get_contents($f);
     return $ok && substr_count(substr($s, 0, strpos($s, 'function down')), 'DROP') === 0;
 }, true));
@@ -553,9 +557,9 @@ $bank = new PaymentTarget(['code' => 'bank', 'label' => 'Bank', 'iban' => 'CH93 
 $masterData->saveTarget($bank);
 check('D15 a target saves; the IBAN is stored normalized', $bank->getId() !== null && $bank->getIban() === 'CH9300762011623852957');
 check('D16 … and the collection file now exists', is_file($base . '/data/framework/debtor/payment_targets.json'));
-$qr = new PaymentTarget(['code' => 'qr', 'label' => 'QR-Konto', 'iban' => $lower, 'account_number' => '1020']);
+$qr = new PaymentTarget(['code' => 'qr', 'label' => 'QR-Konto', 'qr_iban' => $lower, 'account_number' => '1020']);
 $masterData->saveTarget($qr);
-check('D17 a QR-IBAN target says so on the entity', $qr->isQrIban() && !$bank->isQrIban());
+check('D17 a QR-IBAN target says so on the entity (the second IBAN field, P3 part 3)', $qr->hasQrIban() && !$bank->hasQrIban() && $qr->getIban() === '' && $qr->getQrIban() === $lower);
 
 $v = $badTarget(fn() => $masterData->saveTarget(new PaymentTarget(['code' => 'bad', 'label' => 'x', 'iban' => 'CH9300762011623852975', 'account_number' => '1020'])));
 check('D18 a wrong check digit is refused with the check-digit message', $v?->hasFieldError('iban') === true && str_contains($v->getFieldError('iban'), 'Prüfziffern'));
@@ -565,9 +569,9 @@ $v = $badTarget(fn() => $masterData->saveTarget(new PaymentTarget(['code' => 'du
 check('D20 the same IBAN twice is refused — a payment would be ambiguous', $v?->hasFieldError('iban') === true);
 $v = $badTarget(fn() => $masterData->saveTarget(new PaymentTarget(['code' => 'letters', 'label' => 'x', 'iban' => 'CH9300762011623852957', 'account_number' => '10A0'])));
 check('D21 a non-numeric ledger account is refused', $v?->hasFieldError('account_number') === true);
-$v = $badTarget(fn() => $masterData->saveTarget(new PaymentTarget(['code' => 'group', 'label' => 'x', 'iban' => $upper, 'account_number' => '100'])));
+$v = $badTarget(fn() => $masterData->saveTarget(new PaymentTarget(['code' => 'group', 'label' => 'x', 'qr_iban' => $upper, 'account_number' => '100'])));
 check('D22 a GROUP account (100) is refused — soft check against module-financial', $v?->hasFieldError('account_number') === true);
-$v = $badTarget(fn() => $masterData->saveTarget(new PaymentTarget(['code' => 'ghost', 'label' => 'x', 'iban' => $upper, 'account_number' => '9999999'])));
+$v = $badTarget(fn() => $masterData->saveTarget(new PaymentTarget(['code' => 'ghost', 'label' => 'x', 'qr_iban' => $upper, 'account_number' => '9999999'])));
 check('D23 an unknown account is refused', $v?->hasFieldError('account_number') === true);
 
 $kasse = $em4->getRepository(Account::class)->findOneBy(['number' => '1000']);
@@ -575,7 +579,7 @@ $kasse = $em4->getRepository(Account::class)->findOneBy(['number' => '1000']);
 $em4 = $wireDi();
 $masterData = new DebtorMasterData($em4);
 $badTarget  = fn(callable $fn): ?PaymentTargetValidator => ($e = caught($fn, InvalidMasterDataException::class)) instanceof InvalidMasterDataException ? $e->validator : null;
-$v = $badTarget(fn() => $masterData->saveTarget(new PaymentTarget(['code' => 'inactive', 'label' => 'x', 'iban' => $upper, 'account_number' => '1000'])));
+$v = $badTarget(fn() => $masterData->saveTarget(new PaymentTarget(['code' => 'inactive', 'label' => 'x', 'qr_iban' => $upper, 'account_number' => '1000'])));
 check('D24 a DEACTIVATED account is refused as a new payment target', $v?->hasFieldError('account_number') === true);
 (new AccountService($em4))->setActive($em4->getRepository(Account::class)->findOneBy(['number' => '1000']), true);
 
@@ -593,7 +597,7 @@ check('D27 the class still autoloads with financial UNREGISTERED — so class_ex
 $absent = new LedgerAccountCheck($emUnregistered);
 check('D27b … and the check then cannot tell — null, never false, never a fatal',
     !$absent->available() && $absent->isPostable('1020') === null && $absent->isPostable('9999999') === null);
-$unregisteredTarget = new PaymentTarget(['code' => 'unreg', 'label' => 'Ohne Buchhaltung', 'iban' => $upper, 'account_number' => '9999999']);
+$unregisteredTarget = new PaymentTarget(['code' => 'unreg', 'label' => 'Ohne Buchhaltung', 'qr_iban' => $upper, 'account_number' => '9999999']);
 (new DebtorMasterData($emUnregistered))->saveTarget($unregisteredTarget);
 check('D27c … and an unverifiable account number SAVES instead of being refused (financial is only suggested)', $unregisteredTarget->getId() !== null);
 $writeModules(true);
@@ -1005,7 +1009,7 @@ check('I5 the three master-data fragments carry an add action and an active swit
 
 $templateDir = $package . '/res/view/templates/Backend';
 $templates   = glob($templateDir . '/*/*.tpl.php');
-check('I6 every screen has its list template, its edit template and its header slot', count($templates) === 12);
+check('I6 every master-data screen has its list template, its edit template and its header slot; the document screens (P3 part 3) add six', count($templates) === 18);
 check('I7 no template carries a <script> tag or an inline handler (Rule 7)',
     array_reduce($templates, fn($ok, $f) => $ok && !preg_match('/<script|\son[a-z]+\s*=/i', file_get_contents($f)), true));
 check('I8 the package ships no JavaScript at all', glob($package . '/res/**/*.js') === [] && glob($package . '/res/*.js') === []);
@@ -1340,7 +1344,7 @@ $finalEntity   = $readInvoice($inv1->getId());
 $blankSnapshot = (new \ReflectionClass(\Z77\Module\Debtor\Invoicing\DocumentSnapshot::class))->newInstanceWithoutConstructor();
 check('L7 the ENTITY refuses as well, not only the service: finalize() and reissue() on a final document throw',
     throws(fn() => $finalEntity->finalize(null, 'x', new \DateTimeImmutable()), \LogicException::class)
-    && throws(fn() => $finalEntity->reissue($blankSnapshot, [], [], 'x', new \DateTimeImmutable()), \LogicException::class));
+    && throws(fn() => $finalEntity->reissue($blankSnapshot, [], [], \Z77\Module\Debtor\Entities\PaymentSnapshot::none(), 'x', new \DateTimeImmutable()), \LogicException::class));
 check('L8 a batch naming an unknown id → not-found; an empty batch does nothing; a credit note at 0.00 against the final invoice → negative-total (it must be positive)',
     $refusal(fn() => $service($wireDi())->finalize([['id' => 999999, 'version' => 1]])) === InvoiceRefusedException::NOT_FOUND && $service($wireDi())->finalize([]) === []
     && $refusal(fn() => $service($wireDi())->invoice(InvoiceDraft::creditNote($inv1->getId(), $mid, day('2026-03-18'), 'CHF', [LineDraft::text('nichts')]))) === InvoiceRefusedException::NEGATIVE_TOTAL);
@@ -1557,8 +1561,8 @@ check('M3 the debtor posting DTO is validated on construction: unbalanced → re
     && throws(fn() => new DebtorPostingLine(null, null, chf('1.00'), chf('0.00')), \InvalidArgumentException::class)
     && throws(fn() => new DebtorPostingLine('1100', 'standard', chf('1.00'), chf('0.00')), \InvalidArgumentException::class)
     && (new DebtorPostingRequest(day('2026-01-01'), 'x', 'invoice', '1', 'k', [DebtorPostingLine::debit('1100', chf('1.00')), DebtorPostingLine::vatCredit('standard', chf('1.00'))]))->currency() === 'CHF');
-check('M3b nothing in stock (review 2026-09-23): no toArray/lines on the snapshot, no findByNumber, no hasTax/total on the DTOs, no state()/getExchangeRate() on Invoice — exchange_rate stays a COLUMN',
-    !method_exists(AddressSnapshot::class, 'toArray') && !method_exists(AddressSnapshot::class, 'lines') && !method_exists(InvoiceRepository::class, 'findByNumber')
+check('M3b nothing in stock (review 2026-09-23): no toArray on the snapshot, no hasTax/total on the DTOs, no state()/getExchangeRate() on Invoice — exchange_rate stays a COLUMN (lines() and findByNumber came back with their callers in P3 part 3)',
+    !method_exists(AddressSnapshot::class, 'toArray')
     && !method_exists(DebtorPostingLine::class, 'hasTax') && !method_exists(DebtorPostingRequest::class, 'total') && !method_exists(Invoice::class, 'state') && !method_exists(Invoice::class, 'getExchangeRate')
     && array_key_exists('exchange_rate', $invoiceRow($inv1->getId())) && $invoiceRow($inv1->getId())['currency'] === 'CHF');
 check('M4 no Accounting or Invoicing class but the adapter names financial; the interface signature is the plan\'s (§6.6)',
@@ -1614,6 +1618,570 @@ $many = $ycAsk('2026-11-20', '2026-11-30');
 check('N5 many open documents: the first ' . \Z77\Module\Debtor\Close\InvoicingInProgressCheck::LIST_LIMIT . ' by date are named one by one, the rest counted in one more finding',
     count($many->blocking()) === \Z77\Module\Debtor\Close\InvoicingInProgressCheck::LIST_LIMIT + 1 && str_contains(array_reverse($many->blocking())[0]->message, 'und ' . ($manyBefore + 12 - \Z77\Module\Debtor\Close\InvoicingInProgressCheck::LIST_LIMIT) . ' weitere'));
 
+
+// ═════════════════════════════════════════════════════════════════════════
+// P3 part 3 — the payment part (QR-bill data), the document screens
+// ═════════════════════════════════════════════════════════════════════════
+//
+// State inherited: payment targets `bank` (plain IBAN CH93…), `qr` (QR-IBAN,
+// IID 30000) and `unreg` (QR-IBAN, IID 31999), all active; the mandator
+// «Harness AG», 8000 Zürich, CH, no street; Müller (active, profile), the
+// fiscal year 2026 open, financial registered, the ledger gateway.
+
+echo "P3C. The QR reference, the character set, the payment target's two IBAN fields and creditor block\n";
+
+/** The QR-bill data structure checked INDEPENDENTLY of QrBill (SIX Implementation Guidelines v2.x): order, fixed values, lengths. */
+$specErrors = static function (string $payload): array {
+    $errors = [];
+    if (str_ends_with($payload, "\n") || str_contains($payload, "\r")) { $errors[] = 'separator'; }
+    $e = explode("\n", $payload);
+    if (count($e) !== 31) { return ['count ' . count($e)]; }
+    if ([$e[0], $e[1], $e[2]] !== ['SPC', '0200', '1']) { $errors[] = 'header'; }
+    if (!preg_match('/^(CH|LI)\d{19}$/', $e[3])) { $errors[] = 'iban'; }
+    $address = static function (array $f, bool $optional) use (&$errors): void {
+        if ($optional && implode('', $f) === '') { return; }
+        if ($f[0] !== 'S') { $errors[] = 'adrtp'; }
+        foreach ([1 => 70, 2 => 70, 3 => 16, 4 => 16, 5 => 35] as $i => $max) { if (mb_strlen($f[$i]) > $max) { $errors[] = "len {$i}"; } }
+        if ($f[1] === '' || $f[4] === '' || $f[5] === '' || !preg_match('/^[A-Z]{2}$/', $f[6])) { $errors[] = 'address required'; }
+    };
+    $address(array_slice($e, 4, 7), false);
+    if (implode('', array_slice($e, 11, 7)) !== '') { $errors[] = 'ultimate creditor not empty'; }
+    if (!preg_match('/^\d{1,9}\.\d{2}$/', $e[18]) || strlen($e[18]) > 12) { $errors[] = 'amount'; }
+    if (!in_array($e[19], ['CHF', 'EUR'], true)) { $errors[] = 'currency'; }
+    $address(array_slice($e, 20, 7), true);
+    if ($e[27] === 'QRR') {
+        if (!preg_match('/^\d{27}$/', $e[28])) { $errors[] = 'qrr shape'; }
+        $carry = 0; foreach (str_split(substr($e[28], 0, 26)) as $d) { $carry = [0, 9, 4, 6, 8, 2, 7, 1, 3, 5][($carry + (int) $d) % 10]; }
+        if ((10 - $carry) % 10 !== (int) substr($e[28], -1)) { $errors[] = 'qrr check digit'; }
+        if (!in_array((int) substr($e[3], 4, 5), range(30000, 31999), true)) { $errors[] = 'qrr without qr-iban'; }
+    } elseif ($e[27] === 'NON') {
+        if ($e[28] !== '') { $errors[] = 'non with reference'; }
+        if (in_array((int) substr($e[3], 4, 5), range(30000, 31999), true)) { $errors[] = 'qr-iban with non'; }
+    } else { $errors[] = 'reference type'; }
+    if (mb_strlen($e[29]) > 140) { $errors[] = 'message'; }
+    if ($e[30] !== 'EPD') { $errors[] = 'trailer'; }
+    if (mb_strlen($payload) > 997) { $errors[] = 'payload length'; }
+    return $errors;
+};
+
+check('P3C1 the QR reference check digit is modulo 10 recursive — the SIX example 21 00000 00003 13947 14300 0901|7',
+    QrReference::checkDigit('21000000000313947143000901') === 7 && QrReference::isValid('210000000003139471430009017')
+    && !QrReference::isValid('210000000003139471430009018') && !QrReference::isValid('21000000000313947143000901') && !QrReference::isValid(str_repeat('0', 27)));
+check('P3C2 forNumber(): the document number right-aligned in 26 digits plus its check digit; printed in blocks of five from the right',
+    QrReference::forNumber(12) === '00000000000000000000000012' . QrReference::checkDigit('00000000000000000000000012') && strlen(QrReference::forNumber(12)) === 27
+    && QrReference::isValid(QrReference::forNumber(987654)) && QrReference::format('210000000003139471430009017') === '21 00000 00003 13947 14300 09017'
+    && throws(fn() => QrReference::forNumber(0), \InvalidArgumentException::class));
+check('P3C3 the character set (v2.3 extended Latin): umlauts, ß, Ș and € pass; a line break, a tab and CJK do not',
+    QrBill::isAllowedText('Müller & Söhne AG, Straße 1') && QrBill::isAllowedText('Ștefan €') && !QrBill::isAllowedText("a\nb") && !QrBill::isAllowedText("a\tb") && !QrBill::isAllowedText('日本'));
+
+$emP = $wireDi();
+$mdP = new DebtorMasterData($emP);
+$tv  = fn(callable $fn): ?PaymentTargetValidator => ($e = caught($fn, InvalidMasterDataException::class)) instanceof InvalidMasterDataException ? $e->validator : null;
+$v1 = $tv(fn() => $mdP->saveTarget(new PaymentTarget(['code' => 'swap1', 'label' => 'x', 'iban' => $withIid('30500'), 'qr_iban' => '', 'account_number' => '1020'])));   // both keys, as a form posts them
+$v2 = $tv(fn() => $mdP->saveTarget(new PaymentTarget(['code' => 'swap2', 'label' => 'x', 'qr_iban' => $withIid('00500'), 'account_number' => '1020'])));
+$v3 = $tv(fn() => $mdP->saveTarget(new PaymentTarget(['code' => 'none', 'label' => 'x', 'account_number' => '1020'])));
+$v4 = $tv(fn() => $mdP->saveTarget(new PaymentTarget(['code' => 'dupq', 'label' => 'x', 'qr_iban' => $lower, 'account_number' => '1020'])));
+check('P3C4 two IBAN fields (owner 2026-09-23): a QR-IBAN in the IBAN field and a plain IBAN in the QR-IBAN field are refused by KIND; neither → «mindestens eine»; a QR-IBAN already on another target → refused',
+    str_contains((string) $v1?->getFieldError('iban'), 'QR-IBAN') && str_contains((string) $v2?->getFieldError('qr_iban'), 'keine QR-IBAN')
+    && str_contains((string) $v3?->getFieldError('iban'), 'Mindestens eine') && str_contains((string) $v4?->getFieldError('qr_iban'), '«qr»'));
+$v5 = $tv(fn() => $mdP->saveTarget(new PaymentTarget(['code' => 'long', 'label' => 'x', 'qr_iban' => $withIid('30600'), 'account_number' => '1020', 'holder_name' => str_repeat('A', 71), 'holder_city' => "Zü\nrich", 'holder_country' => 'CHE'])));
+check('P3C5 the creditor block keeps the QR lengths and characters: a name of 71, a city with a line break and a three-letter country are refused',
+    $v5?->hasFieldError('holder_name') === true && $v5->hasFieldError('holder_city') && $v5->hasFieldError('holder_country'));
+$both = new PaymentTarget(['code' => 'both', 'label' => 'Beide', 'iban' => $withIid('00762'), 'qr_iban' => $withIid('30001'), 'account_number' => '1020',
+    'holder_name' => 'Peter u/o Regina Ruepp', 'holder_country' => 'li']);
+$mdP->saveTarget($both);
+$mandatorP = Creditor::mandator($emP);
+$cQr   = Creditor::of($emP->getRepository(PaymentTarget::class)->findByCode('qr'), $mandatorP);
+$cBoth = Creditor::of($both, $mandatorP);
+check('P3C6 the creditor block falls back FIELD BY FIELD to the mandator: `qr` (no holder fields) is the mandator; `both` keeps its own name and country (LI), zip and city from the mandator',
+    $cQr->name === 'Harness AG' && $cQr->zip === '8000' && $cQr->city === 'Zürich' && $cQr->country === 'CH' && in_array('name', $cQr->fromMandator, true)
+    && $cBoth->name === 'Peter u/o Regina Ruepp' && $cBoth->country === 'LI' && $cBoth->city === 'Zürich' && !in_array('name', $cBoth->fromMandator, true) && in_array('city', $cBoth->fromMandator, true));
+check('P3C7 without a readable mandator the block has only the target\'s own fields — no fatal', Creditor::of($both, null)->city === '' && Creditor::of($both, null)->name === 'Peter u/o Regina Ruepp');
+
+echo "P3C. The payment part on the document: QRR with a QR-IBAN, NON with a plain IBAN, none on a credit note — the QR payload from the snapshot\n";
+$emP = $wireDi();
+// `bank` was switched off in G (a row that became invalid) — the documents here need it active.
+(new DebtorMasterData($emP))->setTargetActive($emP->getRepository(PaymentTarget::class)->findByCode('bank'), true);
+$emP = $wireDi();
+$withTarget = fn(string $target, string $date = '2026-06-10') => InvoiceDraft::invoice($mid, day($date), day($date), 'CHF', [
+    LineDraft::service('Beratung', '2.000', 'h', chf('150.00'), 'UN', '3400'),
+], paymentTargetCode: $target);
+$qrInv = $service($emP)->invoice($withTarget('qr'));
+$qrRow = $invoiceRow($qrInv->getId());
+check('P3C8 target with a QR-IBAN → the columns: pay_target_code qr, the QR-IBAN, QRR, the reference from the NUMBER, the message «Rechnung n», the creditor as resolved',
+    $qrRow['pay_target_code'] === 'qr' && $qrRow['pay_account'] === $lower && $qrRow['pay_reference_type'] === 'QRR'
+    && $qrRow['pay_reference'] === QrReference::forNumber($qrInv->getNumber()) && $qrRow['pay_message'] === 'Rechnung ' . $qrInv->getNumber()
+    && $qrRow['pay_creditor_name'] === 'Harness AG' && $qrRow['pay_creditor_zip'] === '8000' && $qrRow['pay_creditor_country'] === 'CH');
+$qrBill  = QrBill::of($readInvoice($qrInv->getId()));
+$payload = $qrBill->isPrintable() ? $qrBill->payload() : '';
+$el      = explode("\n", $payload);
+check('P3C9 the QR payload follows the guidelines (independent check: 31 elements, SPC/0200/1, S addresses, empty ultimate creditor, amount, CHF, QRR + valid check digit, EPD, ≤ 997)' . ($payload === '' ? ' — ' . implode(' ', $qrBill->problems()) : ($specErrors($payload) === [] ? '' : ' — ' . implode(', ', $specErrors($payload)))),
+    $payload !== '' && $specErrors($payload) === [] && $el[3] === $lower && $el[5] === 'Harness AG' && $el[18] === $qrInv->getGrossTotal()->toDecimal() && $el[19] === 'CHF'
+    && $el[21] === $qrInv->getAddress()->getName() && $el[22] === $qrInv->getAddress()->getStreet() && $el[24] === $qrInv->getAddress()->getZip() && $el[27] === 'QRR' && $el[28] === $qrRow['pay_reference']);
+check('P3C10 … and it encodes as a QR code (the kernel facade, level M)', str_contains(\Z77\Shared\Qr\QrCode::svg($payload), '<svg'));
+$nonInv = $service($wireDi())->invoice($withTarget('bank'));
+$nonRow = $invoiceRow($nonInv->getId());
+$nonEl  = explode("\n", QrBill::of($readInvoice($nonInv->getId()))->payload());
+check('P3C11 target with only a plain IBAN → NON: the IBAN, NO reference, the document named in the message (the payment can still be assigned)',
+    $nonRow['pay_reference_type'] === 'NON' && $nonRow['pay_reference'] === '' && $nonRow['pay_account'] === 'CH9300762011623852957'
+    && $nonEl[27] === 'NON' && $nonEl[28] === '' && $nonEl[29] === 'Rechnung ' . $nonInv->getNumber() && $specErrors(implode("\n", $nonEl)) === []);
+$bothInv = $service($wireDi())->invoice($withTarget('both'));
+check('P3C12 a target with BOTH numbers: an invoice has a reference → the QR-IBAN + QRR (never the QR-IBAN with NON); the holder\'s own name and country on the bill',
+    $invoiceRow($bothInv->getId())['pay_reference_type'] === 'QRR' && $invoiceRow($bothInv->getId())['pay_account'] === $withIid('30001')
+    && explode("\n", QrBill::of($readInvoice($bothInv->getId()))->payload())[5] === 'Peter u/o Regina Ruepp' && explode("\n", QrBill::of($readInvoice($bothInv->getId()))->payload())[10] === 'LI');
+$plainInv = $service($wireDi())->invoice($withTarget(''));
+$plainBill = QrBill::of($readInvoice($plainInv->getId()));
+check('P3C13 no target → no payment part (every pay_* column empty); the bill says why instead of throwing', $invoiceRow($plainInv->getId())['pay_reference_type'] === '' && !$plainBill->isPrintable()
+    && str_contains($plainBill->problems()[0], 'Zahlungsziel') && throws(fn() => $plainBill->payload(), \LogicException::class));
+check('P3C14 refusals: an unknown target (target-unknown); a credit-note draft naming a target (no-payment-part)',
+    $refusal(fn() => $service($wireDi())->invoice($withTarget('ghost-target'))) === InvoiceRefusedException::TARGET_UNKNOWN
+    && $refusal(fn() => $service($wireDi())->invoice(new InvoiceDraft(InvoiceKind::CreditNote, $mid, day('2026-06-10'), null, null, 'CHF', PriceMode::Net, null, null, [LineDraft::lumpSum('x', chf('1.00'), 'UN', '3400')], creditNoteOfId: $inv1->getId(), paymentTargetCode: 'qr'))) === InvoiceRefusedException::NO_PAYMENT_PART);
+
+// Snapshot only: change the target, the mandator and the contact's address AFTER issue.
+$payloadBefore = $payload;
+$emS = $wireDi();
+$qrTarget = $emS->getRepository(PaymentTarget::class)->findByCode('qr');
+$qrTarget->setHolderName('Neuer Inhaber GmbH');
+(new DebtorMasterData($emS))->saveTarget($qrTarget);
+$db->executeStatement("UPDATE mandator SET name = 'Umbenannt AG', city = 'Bern'");
+$db->executeStatement("UPDATE address a JOIN contact_address ca ON ca.address_id = a.id SET a.name = 'Müller Neu AG', a.street = 'Neugasse' WHERE ca.contact_id = ?", [$mid]);
+$payloadAfter = QrBill::of($readInvoice($qrInv->getId()))->payload();
+check('P3C15 SNAPSHOT ONLY: after the target\'s holder, the mandator and the contact\'s address changed, the issued document renders the SAME payload (creditor, debtor, reference)',
+    $payloadAfter === $payloadBefore && str_contains($payloadAfter, 'Harness AG') && str_contains($payloadAfter, $qrInv->getAddress()->getName()) && !str_contains($payloadAfter, 'Neuer Inhaber'));
+$reissued = $service($wireDi())->reinvoice($qrInv->getId(), (int) $invoiceRow($qrInv->getId())['version'], $withTarget('qr'));
+$reEl = explode("\n", QrBill::of($readInvoice($qrInv->getId()))->payload());
+check('P3C16 a RE-ISSUE takes the payment part as it reads NOW (the snapshot moves with it): the new holder, the renamed contact — the SAME number, so the SAME reference',
+    $reEl[5] === 'Neuer Inhaber GmbH' && $reEl[21] === 'Müller Neu AG' && $reEl[28] === $qrRow['pay_reference'] && $reissued->getNumber() === $qrInv->getNumber());
+$emS = $wireDi();
+(new DebtorMasterData($emS))->setTargetActive($emS->getRepository(PaymentTarget::class)->findByCode('bank'), false);
+check('P3C17 the reference rule: a DEACTIVATED target is refused on a new document (target-inactive) — a re-issue of a document that carries it keeps it',
+    $refusal(fn() => $service($wireDi())->invoice($withTarget('bank'))) === InvoiceRefusedException::TARGET_INACTIVE
+    && $service($wireDi())->reinvoice($nonInv->getId(), (int) $invoiceRow($nonInv->getId())['version'], $withTarget('bank'))->getPayment()->getTargetCode() === 'bank');
+$emS = $wireDi();
+(new DebtorMasterData($emS))->setTargetActive($emS->getRepository(PaymentTarget::class)->findByCode('bank'), true);
+// A creditor field that does not fit the specification: the mandator's city (70 in the letterhead) longer than 35.
+$db->executeStatement("UPDATE mandator SET city = ?", [str_repeat('Ort', 12)]);
+$longInv  = $service($wireDi())->invoice($withTarget('qr'));
+$longBill = QrBill::of($readInvoice($longInv->getId()));
+$db->executeStatement("UPDATE mandator SET name = 'Harness AG', city = 'Zürich'");
+check('P3C18 «degrade quietly»: a creditor city of 36 (from the mandator) is NOT cut — the document is issued, its bill reports the problem and prints no payment part',
+    $longInv->getId() !== null && $invoiceRow($longInv->getId())['pay_creditor_city'] === str_repeat('Ort', 12) && !$longBill->isPrintable()
+    && str_contains(implode(' ', $longBill->problems()), 'Ort hat mehr als 35'));
+check('P3C19 the printed address block: salutation, title + names, the address row, street + number, zip + city; the country only when foreign',
+    (new AddressSnapshot('Herr', 'Dr.', 'Peter', 'Muster', 'c/o Firma', 'Weg', '5', '3000', 'Bern', 'CH'))->lines() === ['Herr', 'Dr. Peter Muster', 'c/o Firma', 'Weg 5', '3000 Bern']
+    && (new AddressSnapshot('', '', '', 'Muster AG', '', '', '', '9490', 'Vaduz', 'LI'))->lines() === ['Muster AG', '9490 Vaduz', 'LI']);
+
+echo "P3C. The credit note: no payment part, its bill says so\n";
+$finalQr = $service($wireDi())->finalize([$at($qrInv->getId())])[0];
+$cn      = $service($wireDi())->invoice(InvoiceDraft::creditNote($qrInv->getId(), $mid, day('2026-06-20'), 'CHF', [LineDraft::lumpSum('Gutschrift', chf('50.00'), 'UN', '3400')]));
+$cnBill  = QrBill::of($readInvoice($cn->getId()));
+check('P3C20 a credit note carries NO payment part (every pay_* empty) and its bill is «not printable: Gutschrift»',
+    $finalQr->isFinal() && $invoiceRow($cn->getId())['pay_reference_type'] === '' && $invoiceRow($cn->getId())['pay_account'] === ''
+    && !$cnBill->isPrintable() && str_contains($cnBill->problems()[0], 'Gutschrift'));
+
+echo "P3C. The document screens (trait + templates through host doubles)\n";
+require_once __DIR__ . '/../packages/kernel/core/src/autoload/prod/php/Helper.php';
+$pkgRoot = dirname($package);
+$renderer = new class($package . '/res/view/templates/', $pkgRoot) {
+    public function __construct(private string $dir, private string $root) {}
+    public function partial(string $path, array $context = [], ?string $ns = null): string
+    {
+        $dir = match ($ns) {
+            'Z77\\Module\\Mandator' => $this->root . '/module-mandator/res/view/templates/',
+            'Z77\\Module\\Vat'      => $this->root . '/module-vat/res/view/templates/',
+            'Z77\\Shared'           => $this->root . '/kernel/shared/res/view/templates/',
+            default                 => $this->dir,
+        };
+        return (function (string $z77TplPath, array $z77TplContext) { extract($z77TplContext, EXTR_SKIP); ob_start(); require $z77TplPath; return ob_get_clean(); })->call($this, $dir . $path . '.tpl.php', $context);
+    }
+};
+/** A fresh wiring with the request and CSRF doubles (DI::set() never replaces — once per wiring). */
+$useRequest = function (array $get, ?array $post = null) use ($wireDi): UnifiedEntityManager {
+    $em = $wireDi();
+    $_GET = $get; $_POST = $post ?? [];
+    $GLOBALS['z77TestIsPost'] = $post !== null;
+    DI::getInstance()->set('Request', fn() => new class {
+        public function getGetParameter(string $p): mixed { return $_GET[$p] ?? null; }
+        public function isPost(): bool { return $GLOBALS['z77TestIsPost']; }
+        public function getPostParameters(): array { return $_POST; }
+        public function getMode(): \Z77\Core\Http\RequestMode { return !empty($GLOBALS['z77TestFetch']) ? \Z77\Core\Http\RequestMode::Fetch : \Z77\Core\Http\RequestMode::Page; }
+    }, true);
+    DI::getInstance()->set('CsrfService', fn() => new class {
+        public function generateEntityToken(string $context, int $id): string { return "tok-{$context}-{$id}"; }
+        public function validateEntityToken(string $token, string $context, int $id): bool { return $token === "tok-{$context}-{$id}"; }
+    }, true);
+    return $em;
+};
+$invoiceHost = function () {
+    return new class {
+        use \Z77\Module\Debtor\Ui\InvoiceControllerTrait { listAction as public; detailAction as public; addAction as public; editAction as public; creditNoteAction as public; confirmFinalizeAction as public; finalizeAction as public; }
+        public array $context = [];
+        public object $layoutManager;
+        public object $messageService;
+        public object $help;
+        public ?string $redirectedTo = null;
+        public function __construct()
+        {
+            $this->help = new \Z77\Core\Services\HelpService();
+            $this->layoutManager = new class {
+                public array $sections = [];
+                public function removeSection(string $s): void { unset($this->sections[$s]); }
+                public function addPartials(string $name, string $path, string $ns, string $section = 'main'): void { $this->sections[$section][] = $path . '/' . $name; }
+            };
+            $this->messageService = new class {
+                public array $flashes = [];
+                public function pushFlashAfterRedirect(string $type, string $message): void { $this->flashes[] = [$type, $message]; }
+            };
+        }
+        protected function em() { return DI::getUnifiedEntityManager(); }
+        protected function html(array $context = []): \Z77\Core\Http\Response\HtmlResponse { $this->context = $context; return new \Z77\Core\Http\Response\HtmlResponse(null, $context); }
+        protected function redirect(string $url, int $status = 302): \Z77\Core\Http\Response\RedirectResponse { $this->redirectedTo = $url; return new \Z77\Core\Http\Response\RedirectResponse($url, $status); }
+        // The session actor is not wired in the harness — name it, as a CLI caller must.
+        private function invoicingService(): InvoicingService { return new InvoicingService($this->em(), 'sachbearbeiter'); }
+    };
+};
+$renderMain = fn($host) => implode('', array_map(fn($p) => $renderer->partial($p, $host->context), $host->layoutManager->sections['main'] ?? []));
+/** The list's body: the layout config pins it (InvoiceLayout), the trait adds only the toolbar. */
+$renderList = fn($host) => $renderer->partial('Backend/InvoiceController/listAction', $host->context);
+$renderSlot = fn($host, string $slot) => implode('', array_map(fn($p) => $renderer->partial($p, $host->context), $host->layoutManager->sections[$slot] ?? []));
+
+$layoutI = \Z77\Module\Debtor\Ui\InvoiceLayout::config();
+check('P3C21 the layout pins the body to the fragment\'s listAction; the host is mounted under finance; the seed puts «Rechnungen» into the area «Aufträge» (ADR-050)',
+    ($layoutI['levelElements']['body']['main'][0]['path'] ?? '') === 'Backend/InvoiceController' && ($layoutI['levelElements']['body']['main'][0]['nameSpace'] ?? '') === 'Z77\\Module\\Debtor'
+    && is_file($pkgRoot . '/module-backend/src/Ui/Controllers/Finance/InvoiceController.php') && is_file($pkgRoot . '/module-backend/src/Ui/Config/Finance/invoiceControllerConfig.inc.php')
+    && (function () use ($package): bool {
+        foreach (json_decode(file_get_contents($package . '/data/framework/routing/navigation.d/module-debtor.json'), true) as $row) {
+            if (($row['key'] ?? '') === 'rechnungen') { return $row['parent_key'] === 'auftraege' && $row['controller'] === 'invoice' && $row['group'] === 'finance' && $row['action'] === 'list'; }
+        }
+        return false;
+    })());
+
+// The list per view, searchable and paged.
+$useRequest([]);
+$host = $invoiceHost();
+$host->listAction();
+$listHtml = $renderList($host) . $renderSlot($host, 'hc2');
+$invoicingIds = array_map(fn($d) => $d->getId(), $host->context['documents']);
+check('P3C22 list, default view «In Fakturierung»: only invoices in invoicing, newest first, each row with its {id}:{version} checkbox; the toolbar with the view tabs (counts), «Rechnung erstellen», «Definitiv stellen …»',
+    $host->context['filter']->view === 'invoicing' && $invoicingIds !== [] && array_filter($host->context['documents'], fn($d) => $d->isFinal() || $d->isCreditNote()) === []
+    && str_contains($listHtml, 'data-fetch-region="invoice-list"') && str_contains($listHtml, 'value="' . $nonInv->getId() . ':' . $invoiceRow($nonInv->getId())['version'] . '"')
+    && str_contains($listHtml, 'form="invoice-finalize"') && str_contains($listHtml, 'Rechnung erstellen') && str_contains($listHtml, 'be-viewtabs')
+    && $host->context['counts']['invoicing'] === $host->context['paging']->total);
+$numbers = array_map(fn($d) => $d->getNumber(), $host->context['documents']);
+$sorted  = $numbers; rsort($sorted);
+check('P3C22b … sorted by number, newest first', $numbers === $sorted);
+$useRequest(['view' => 'final']);
+$host = $invoiceHost();
+$host->listAction();
+check('P3C23 view «Definitiv»: only final invoices, no selection checkbox', $host->context['documents'] !== [] && array_filter($host->context['documents'], fn($d) => !$d->isFinal() || $d->isCreditNote()) === []
+    && !str_contains($renderList($host), 'name="doc[]"') && $host->layoutManager->sections === ['hc2' => ['Backend/InvoiceController/toolbar']]);
+$useRequest(['view' => 'credit']);
+$host = $invoiceHost();
+$host->listAction();
+check('P3C24 view «Gutschriften»: credit notes only (any state), each naming its invoice', $host->context['documents'] !== [] && array_filter($host->context['documents'], fn($d) => !$d->isCreditNote()) === []
+    && str_contains($renderList($host), 'zu Rechnung'));
+$useRequest(['f_nr' => (string) $nonInv->getNumber()]);
+$host = $invoiceHost();
+$host->listAction();
+$useRequest(['f_name' => 'Müller Neu', 'f_date' => '06.2026']);
+$hostName = $invoiceHost();
+$hostName->listAction();
+$useRequest(['f_nr' => 'abc', 'f_amount' => '1\'234.5']);
+$hostBad = $invoiceHost();
+$hostBad->listAction();
+check('P3C25 the column search runs in the database: number exact; name + month; an unreadable number is marked invalid and ignored, an amount with an apostrophe is read',
+    array_map(fn($d) => $d->getId(), $host->context['documents']) === [$nonInv->getId()]
+    && $hostName->context['documents'] !== [] && array_filter($hostName->context['documents'], fn($d) => $d->getAddress()->getName() !== 'Müller Neu AG' || $d->getInvoiceDate()->format('m.Y') !== '06.2026') === []
+    && $hostBad->context['filter']->isInvalid('f_nr') && !$hostBad->context['filter']->isInvalid('f_amount') && $hostBad->context['filter']->search()->amount === '1234.50' && $hostBad->context['filter']->search()->number === null);
+check('P3C26 paging: the shared kernel Paging (moved from module-financial, Rule 8) and the shared pager partial', $host->context['paging'] instanceof \Z77\Shared\Paging\Paging
+    && !class_exists('Z77\\Module\\Financial\\Reports\\Paging') && is_file($pkgRoot . '/kernel/shared/res/view/templates/partials/pager.tpl.php'));
+
+// Detail: from the snapshot, the ledger reference linked as a window.
+$useRequest(['id' => (string) $qrInv->getId()]);
+$host = $invoiceHost();
+$host->detailAction();
+$detail = $renderMain($host);
+$ledgerRef = $invoiceRow($qrInv->getId())['ledger_entry_ref'];
+check('P3C27 detail of a final invoice: the address block from the snapshot, the lines, the QR data (QR-IBAN, the reference in blocks of five), the ledger reference as a journal WINDOW (?ref=), the credit note, «Gutschrift erstellen …»',
+    $ledgerRef !== null && str_contains($detail, 'data-window-open="/backend/finance/journal/detail?ref=' . rawurlencode($ledgerRef) . '"')
+    && str_contains($detail, 'Müller Neu AG') && str_contains($detail, QrReference::format($qrRow['pay_reference'])) && str_contains($detail, 'data-qr-bill="printable"')
+    && str_contains($detail, 'Gutschrift ' . $cn->getNumber()) && str_contains($detail, '/credit-note?of=' . $qrInv->getId()) && !str_contains($detail, '/edit?id='));
+$useRequest(['id' => (string) $plainInv->getId()]);
+$host = $invoiceHost();
+$host->detailAction();
+$plainDetail = $renderMain($host);
+check('P3C28 detail of a document without payment part: «Kein Zahlteil» with the reason; «Neu fakturieren …» while invoicing', str_contains($plainDetail, 'data-qr-bill="missing"') && str_contains($plainDetail, 'Kein Zahlteil') && str_contains($plainDetail, '/edit?id=' . $plainInv->getId()));
+
+// The journal detail answers ?ref= (financial).
+$journalTraitSource = file_get_contents($pkgRoot . '/module-financial/src/Ui/JournalControllerTrait.php');
+check('P3C29 financial\'s journal detail opens by ?ref={year}/{number} (findByRef) — the link a posting module stores', str_contains($journalTraitSource, "getGetParameter('ref')") && str_contains($journalTraitSource, 'findByRef('));
+
+// The editor: new invoice → invoice().
+$useRequest(['contact' => (string) $mid]);
+$host = $invoiceHost();
+$host->addAction();
+$formHtml = $renderMain($host);
+check('P3C30 GET add: the editor with the action bar first (ADR-049), the debtor preselected, the first active target preselected, empty rows; pickers: ACTIVE tax codes only (the shared module-vat list) and the account datalist (module-mandator); help attached (ADR-048)',
+    $host->layoutManager->sections['main'] === ['Backend/InvoiceController/form'] && strpos($formHtml, 'z77-form-actions') < strpos($formHtml, 'name="invoice_date"')
+    && str_contains($formHtml, 'value="' . $mid . '" selected') && str_contains($formHtml, 'value="bank" selected')
+    && count($host->context['form']->rows()) === \Z77\Module\Debtor\Ui\InvoiceForm::ROWS_NEW
+    && array_filter($host->context['taxCodes'], fn($c) => !$c->isActive()) === [] && str_contains($formHtml, '<datalist id="invoice-accounts">') && str_contains($formHtml, 'list="invoice-accounts"')
+    && $host->help->has() && !preg_match('/<script|\son[a-z]+\s*=/i', $formHtml));
+$post = [
+    'contact' => (string) $mid, 'invoice_date' => '2026-07-01', 'service_from' => '2026-06-30', 'service_to' => '', 'price_mode' => 'net', 'terms' => '', 'target' => 'qr', 'op' => 'save',
+    'rows' => [
+        ['type' => 'service', 'text' => 'Paket Web', 'quantity' => '1', 'unit' => 'Stk', 'price' => '1\'000.00', 'discount' => '10', 'tax_code' => 'UN', 'account' => '3400'],
+        ['type' => 'lump-sum', 'child' => '1', 'text' => 'davon Hosting', 'price' => '0.00', 'tax_code' => 'UN', 'account' => '3400'],
+        ['type' => 'text', 'text' => 'Danke.'],
+        ['type' => 'service', 'text' => '', 'quantity' => '', 'price' => ''],
+    ],
+];
+$before = (int) $db->fetchOne("SELECT last_number FROM number_range WHERE name = 'invoice'");
+$useRequest([], $post);
+$host = $invoiceHost();
+$host->addAction();
+$newId  = (int) $db->fetchOne('SELECT MAX(id) FROM invoice');
+$newDoc = $readInvoice($newId);
+check('P3C31 POST add → invoice(): a new document in invoicing (number drawn once), the lines with the discount (10 % → 1000), the child beneath its parent, the empty row ignored, the target qr → QRR; redirect to its detail',
+    (int) $db->fetchOne("SELECT last_number FROM number_range WHERE name = 'invoice'") === $before + 1 && $host->redirectedTo === '/backend/finance/invoice/detail?id=' . $newId
+    && $newDoc->getLines()[0]->getDiscountPercent() === 1000 && $newDoc->getLines()[0]->getAmount()->toDecimal() === '900.00' && $newDoc->getLines()[1]->getParentLine() === $newDoc->getLines()[0]
+    && count(array_filter($newDoc->getLines(), fn($l) => $l->type() !== LineType::Rounding)) === 3 && $newDoc->getPayment()->getReferenceType() === 'QRR' && !$newDoc->isFinal()
+    && $host->messageService->flashes[0][0] === 'success');
+$useRequest([], ['op' => 'more'] + $post);
+$host = $invoiceHost();
+$host->addAction();
+check('P3C32 «Weitere Zeilen» is a submit: the same form back with more rows, nothing written', count($host->context['form']->rows()) === 4 + \Z77\Module\Debtor\Ui\InvoiceForm::MORE_ROWS && (int) $db->fetchOne('SELECT MAX(id) FROM invoice') === $newId);
+$bad = $post;
+$bad['rows'][0]['quantity'] = '1.2345';
+$bad['rows'][0]['tax_code'] = '';
+$bad['rows'][2] = ['type' => 'text', 'text' => 'x', 'price' => '5.00'];
+$useRequest([], $bad);
+$host = $invoiceHost();
+$host->addAction();
+$badHtml = $renderMain($host);
+check('P3C33 unreadable fields come back as ROW errors (quantity, tax code, a text row with a price) with «N Fehler» in the action bar — nothing written',
+    $host->context['form']->rowError(0, 'quantity') !== '' && $host->context['form']->rowError(0, 'tax_code') !== '' && $host->context['form']->rowError(2, 'price') !== ''
+    && str_contains($badHtml, 'z77-form-actions__errors') && str_contains($badHtml, 'for="invoice-row-0-quantity"') && (int) $db->fetchOne('SELECT MAX(id) FROM invoice') === $newId);
+$refusedPost = $post;
+$refusedPost['rows'][0]['account'] = '100';   // a group — the service's soft account check refuses
+$useRequest([], $refusedPost);
+$host = $invoiceHost();
+$host->addAction();
+check('P3C34 a refusal of the SERVICE comes back as the German general error on the form (account-not-postable), nothing written',
+    str_contains(implode(' ', $host->context['form']->generalErrors()), 'Konto 100') && (int) $db->fetchOne('SELECT MAX(id) FROM invoice') === $newId);
+
+// Edit → reinvoice() with the hidden version.
+$useRequest(['id' => (string) $newId]);
+$host = $invoiceHost();
+$host->editAction();
+$editHtml = $renderMain($host);
+$v0 = (int) $invoiceRow($newId)['version'];
+check('P3C35 GET edit: the form filled from the snapshot (the parent/child rows, 10 %, the target), the hidden VERSION and the entity token; the party fixed',
+    str_contains($editHtml, 'name="version" value="' . $v0 . '"') && str_contains($editHtml, 'value="tok-invoice-' . $newId . '"')
+    && $host->context['form']->rows()[1]['child'] === '1' && $host->context['form']->rows()[0]['discount'] === '10' && $host->context['form']->header('target') === 'qr'
+    && str_contains($editHtml, 'type="hidden" name="contact"') && !str_contains($editHtml, '<select id="invoice-contact"'));
+$editPost = ['entity_csrf' => "tok-invoice-{$newId}", 'version' => (string) $v0] + $post;
+$editPost['rows'][0]['price'] = '1200.00';
+$useRequest(['id' => (string) $newId], $editPost);
+$host = $invoiceHost();
+$host->editAction();
+check('P3C36 POST edit → reinvoice(): the same number, the new price, the version bumped, redirect to the detail',
+    $readInvoice($newId)->getLines()[0]->getAmount()->toDecimal() === '1080.00' && (int) $invoiceRow($newId)['version'] === $v0 + 1 && $readInvoice($newId)->getNumber() === $newDoc->getNumber()
+    && $host->redirectedTo === '/backend/finance/invoice/detail?id=' . $newId);
+$useRequest(['id' => (string) $newId], $editPost);   // the SAME (now stale) version again
+$host = $invoiceHost();
+$host->editAction();
+check('P3C37 a stale version (the form of before the re-issue) is refused: flash, back to the detail, nothing changed', $host->messageService->flashes[0][0] === 'error'
+    && str_contains($host->messageService->flashes[0][1], 'inzwischen geändert') && (int) $invoiceRow($newId)['version'] === $v0 + 1);
+
+// Finalize batch with versions.
+$second = $service($wireDi())->invoice($withTarget('qr', '2026-07-02'));
+$pairA  = $newId . ':' . $invoiceRow($newId)['version'];
+$pairB  = $second->getId() . ':' . $invoiceRow($second->getId())['version'];
+$useRequest(['doc' => [$pairA, $pairB]]);
+$host = $invoiceHost();
+$host->confirmFinalizeAction();
+$confirm = $renderMain($host);
+check('P3C38 confirm-finalize lists the selection with its versions and one button that posts the same pairs', count($host->context['documents']) === 2 && $host->context['stale'] === []
+    && str_contains($confirm, 'value="' . $pairA . '"') && str_contains($confirm, 'value="' . $pairB . '"') && str_contains($confirm, 'action="/backend/finance/invoice/finalize"'));
+// B is re-issued between the look and the click: the whole batch is refused, nothing posted.
+$service($wireDi())->reinvoice($second->getId(), (int) $invoiceRow($second->getId())['version'], $withTarget('qr', '2026-07-03'));
+$journalBefore = $journalCount();
+$useRequest([], ['doc' => [$pairA, $pairB]]);
+$host = $invoiceHost();
+$host->finalizeAction();
+check('P3C39 finalize with a STALE version (B re-issued since): refused whole — A and B stay in invoicing, no journal entry, the flash says why',
+    $stateOf($newId) === 'invoicing' && $stateOf($second->getId()) === 'invoicing' && $journalCount() === $journalBefore
+    && $host->messageService->flashes[0][0] === 'error' && str_contains($host->messageService->flashes[0][1], 'nichts wurde verbucht'));
+$useRequest(['doc' => [$pairA, $pairB]]);
+$host = $invoiceHost();
+$host->confirmFinalizeAction();
+check('P3C40 … and the confirmation, asked again with the old selection, names B as stale and leaves it out', $host->context['stale'] === [$second->getId()] && count($host->context['documents']) === 1);
+$pairB2 = $second->getId() . ':' . $invoiceRow($second->getId())['version'];
+$useRequest([], ['doc' => [$pairA, $pairB2, 'garbage', '1:x']]);
+$host = $invoiceHost();
+$host->finalizeAction();
+check('P3C41 finalize with the CURRENT versions: both final and posted (two journal entries) in one unit of work, to the «Definitiv» view; junk values dropped',
+    $stateOf($newId) === 'final' && $stateOf($second->getId()) === 'final' && $journalCount() === $journalBefore + 2
+    && $host->redirectedTo === '/backend/finance/invoice/list?view=final' && $host->messageService->flashes[0][0] === 'success');
+$useRequest(['id' => (string) $newId]);
+$host = $invoiceHost();
+$host->editAction();
+check('P3C42 a final document is never edited: edit refuses with the credit-note sentence', $host->messageService->flashes[0][0] === 'error' && str_contains($host->messageService->flashes[0][1], 'Gutschrift')
+    && $host->redirectedTo === '/backend/finance/invoice/detail?id=' . $newId);
+
+// The credit-note form: prefilled from the invoice.
+$useRequest(['of' => (string) $newId]);
+$host = $invoiceHost();
+$host->creditNoteAction();
+$cnForm = $host->context['form'];
+$cnHtml = $renderMain($host);
+check('P3C43 GET credit-note: service dates PREFILLED from the invoice, the lines prefilled (rounding left out), no payment target field, the party fixed',
+    $cnForm->header('service_from') === '2026-06-30' && $cnForm->header('service_to') === '' && $cnForm->rows()[0]['text'] === 'Paket Web' && $cnForm->rows()[0]['price'] === '1200.00'
+    && !str_contains($cnHtml, 'name="target"') && str_contains($cnHtml, 'Gutschrift zu Rechnung ' . $newDoc->getNumber()) && str_contains($cnHtml, 'type="hidden" name="contact"'));
+$cnPost = ['contact' => '999999', 'invoice_date' => '2026-07-10', 'service_from' => '2026-06-30', 'service_to' => '', 'price_mode' => 'net', 'terms' => '', 'target' => 'qr',
+    'rows' => [['type' => 'lump-sum', 'text' => 'Gutschrift Paket', 'price' => '100.00', 'tax_code' => 'UN', 'account' => '3400']]];
+$useRequest(['of' => (string) $newId], $cnPost);
+$host = $invoiceHost();
+$host->creditNoteAction();
+$cnId = (int) $db->fetchOne('SELECT MAX(id) FROM invoice');
+$cnDoc = $readInvoice($cnId);
+check('P3C44 POST credit-note with the dates unchanged → invoice(credit note): of THIS invoice, the party from the invoice (a posted contact id is ignored), the service date the invoice\'s, no payment part',
+    $cnDoc->isCreditNote() && $cnDoc->getCreditNoteOf()?->getId() === $newId && $cnDoc->getContact()->getId() === $mid
+    && $cnDoc->getServiceFrom()->format('Y-m-d') === '2026-06-30' && !$cnDoc->getPayment()->hasPaymentPart() && $host->redirectedTo === '/backend/finance/invoice/detail?id=' . $cnId);
+$partial = $cnPost;
+$partial['service_from'] = '2026-07-01';
+$partial['service_to']   = '2026-07-31';
+$useRequest(['of' => (string) $newId], $partial);
+$host = $invoiceHost();
+$host->creditNoteAction();
+$cn2 = $readInvoice((int) $db->fetchOne('SELECT MAX(id) FROM invoice'));
+check('P3C45 … a PARTIAL period typed in: the credit note carries its own dates (same rate — accepted)', $cn2->isCreditNote() && $cn2->getId() !== $cnId
+    && $cn2->getServiceFrom()->format('Y-m-d') === '2026-07-01' && $cn2->getServiceTo()?->format('Y-m-d') === '2026-07-31');
+$useRequest(['of' => (string) $plainInv->getId()]);
+$host = $invoiceHost();
+$host->creditNoteAction();
+check('P3C46 a credit note against an invoice still in invoicing is refused on the screen (it is re-invoiced, not credited)', $host->messageService->flashes[0][0] === 'error' && str_contains($host->messageService->flashes[0][1], 'neu fakturiert'));
+
+// Payment target screen: the effective creditor block.
+$useRequest([]);
+$ptHost = new class {
+    use PaymentTargetControllerTrait { listAction as public; }
+    public array $context = [];
+    public object $layoutManager;
+    public function __construct() { $this->layoutManager = new class { public array $sections = []; public function addPartials(string $n, string $p, string $ns, string $s = 'main'): void { $this->sections[$s][] = $p . '/' . $n; } }; }
+    protected function em() { return DI::getUnifiedEntityManager(); }
+    protected function html(array $context = []): \Z77\Core\Http\Response\HtmlResponse { $this->context = $context; return new \Z77\Core\Http\Response\HtmlResponse(null, $context); }
+};
+$ptHost->listAction();
+$ptHtml = $renderer->partial('Backend/PaymentTargetController/listAction', $ptHost->context);
+check('P3C47 the payment-target list shows the EFFECTIVE creditor per target — the holder\'s own name, the mandator\'s where empty, marked — and both IBAN kinds',
+    str_contains($ptHtml, 'Empfänger: Peter u/o Regina Ruepp') && str_contains($ptHtml, 'teils vom Mandanten') && str_contains($ptHtml, 'Empfänger: Neuer Inhaber GmbH')
+    && str_contains($ptHtml, 'QR-IBAN') && str_contains($ptHtml, 'CH93 0076 2011 6238 5295 7'));
+
+echo "P3C. Source guards for part 3\n";
+$p3Templates = glob($package . '/res/view/templates/Backend/InvoiceController/*.tpl.php');
+check('P3C48 the document screens ship no JavaScript and no inline handler (Rule 7); no module-financial class in debtor but the adapter (the journal is linked by URL)',
+    count($p3Templates) === 6 && array_reduce($p3Templates, fn($ok, $f) => $ok && !preg_match('/<script|\son[a-z]+\s*=/i', file_get_contents($f)), true)
+    && !str_contains(file_get_contents($package . '/src/Ui/InvoiceControllerTrait.php'), 'Module\\Financial'));
+check('P3C49 no PDF library was added (owner decision pending): no composer requirement for one, no PDF writer class in the module',
+    !preg_match('/tcpdf|fpdf|dompdf|mpdf|swiss-qr-bill/i', (string) file_get_contents($package . '/composer.json')) && glob($package . '/src/*/*Pdf*.php') === []);
+check('P3C50 the shared pickers exist once: module-vat\'s taxCodeSelect + TaxCodeRepository::selectable() (the journal forms read the same list), module-mandator\'s accountDatalist (the mandator screen uses it too)',
+    is_file($pkgRoot . '/module-vat/res/view/templates/partials/taxCodeSelect.tpl.php') && method_exists(\Z77\Module\Vat\Repositories\TaxCodeRepository::class, 'selectable')
+    && str_contains(file_get_contents($pkgRoot . '/module-financial/src/Ui/ManualEntryForm.php'), '->selectable(')
+    && str_contains(file_get_contents($pkgRoot . '/module-mandator/res/view/templates/Backend/MandatorController/edit.tpl.php'), "partials/accountDatalist"));
+
+echo "P3C. Review 2026-09-30: the legacy QR-IBAN row, the amount search, QrBill's refusals, the double submit, the journal window by ref\n";
+// A payment target written BEFORE the second IBAN field: a QR-IBAN in `iban`, no `qr_iban` key at all.
+$targetsFile = $base . '/data/framework/debtor/payment_targets.json';
+$rows        = json_decode(file_get_contents($targetsFile), true);
+$legacyIban  = $withIid('30700');
+$rows[]      = ['id' => max(array_column($rows, 'id')) + 1, 'code' => 'legacy', 'label' => 'Altes QR-Konto', 'iban' => $legacyIban, 'account_number' => '1020', 'active' => true];
+file_put_contents($targetsFile, json_encode($rows, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+$emL    = $wireDi();
+$legacy = $emL->getRepository(PaymentTarget::class)->findByCode('legacy');
+$legInv = $service($emL)->invoice($withTarget('legacy', '2026-08-01'));
+check('P3C51 a LEGACY row (QR-IBAN in `iban`, no `qr_iban` key) is read as a QR-IBAN target: the document snapshots QRR with it, not NON',
+    $legacy->getQrIban() === $legacyIban && $legacy->getIban() === '' && $invoiceRow($legInv->getId())['pay_reference_type'] === 'QRR'
+    && $invoiceRow($legInv->getId())['pay_account'] === $legacyIban && QrBill::of($readInvoice($legInv->getId()))->isPrintable());
+(new DebtorMasterData($emL))->saveTarget($legacy);
+$savedRow = array_values(array_filter(json_decode(file_get_contents($targetsFile), true), fn($r) => $r['code'] === 'legacy'))[0];
+check('P3C52 … and it re-saves without a hand edit, now in the new shape (qr_iban set, iban empty); a FORM post (both keys) with a QR-IBAN in the IBAN field is still refused',
+    $savedRow['qr_iban'] === $legacyIban && $savedRow['iban'] === ''
+    && str_contains((string) $tv(fn() => (new DebtorMasterData($wireDi()))->saveTarget(new PaymentTarget(['code' => 'swap3', 'label' => 'x', 'iban' => $withIid('30800'), 'qr_iban' => '', 'account_number' => '1020'])))?->getFieldError('iban'), 'QR-IBAN'));
+
+$huge = \Z77\Module\Debtor\Ui\InvoiceFilter::fromQuery(['f_amount' => '99999999999999999999', 'f_name' => str_repeat('x', 200)], 'CHF');
+check('P3C53 the amount search refuses a number Money cannot hold (invalid, no 500); the name search is bounded to the 80 characters kept',
+    $huge->isInvalid('f_amount') && $huge->search()->amount === null && mb_strlen((string) $huge->search()->name) === 80 && mb_strlen($huge->value('f_name')) === 80);
+
+/** The document with a HAND-BUILT payment part — reflection, never persisted: QrBill's refusals one by one. */
+$withPayment = function (Invoice $document, array $values): Invoice {
+    $payment = clone $document->getPayment();
+    foreach ($values as $property => $value) {
+        (new \ReflectionProperty(PaymentSnapshot::class, $property))->setValue($payment, $value);
+    }
+    (new \ReflectionProperty(Invoice::class, 'payment'))->setValue($document, $payment);
+    return $document;
+};
+$problemsOf = fn(array $values, ?int $id = null) => implode(' ', QrBill::of($withPayment($readInvoice($id ?? $qrInv->getId()), $values))->problems());
+check('P3C54 QrBill refuses what the specification forbids: QRR with a plain IBAN; a QR-IBAN with NON; an invalid IBAN; a QRR with a wrong check digit; a message over 140',
+    str_contains($problemsOf(['account' => 'CH9300762011623852957']), 'verlangt eine QR-IBAN')
+    && str_contains($problemsOf(['referenceType' => 'NON', 'reference' => '']), 'nie ohne Referenz')
+    && str_contains($problemsOf(['account' => 'CH9300762011623852975']), 'keine gültige')
+    && str_contains($problemsOf(['reference' => substr($qrRow['pay_reference'], 0, 26) . ((int) substr($qrRow['pay_reference'], -1) + 1) % 10]), 'QR-Referenz ist ungültig')
+    && str_contains($problemsOf(['message' => str_repeat('m', 141)]), 'Mitteilung'));
+$maxBill = QrBill::of($withPayment($readInvoice($qrInv->getId()), [
+    'message' => str_repeat('m', 140), 'creditorName' => str_repeat('N', 70), 'creditorStreet' => str_repeat('S', 70), 'creditorHouseNo' => str_repeat('1', 16),
+    'creditorZip' => str_repeat('2', 16), 'creditorCity' => str_repeat('C', 35),
+]));
+check('P3C55 the 997 limit is a guard: a bill with every field at its maximum stays printable and under 997 (the per-field limits keep it there)',
+    $maxBill->isPrintable() && mb_strlen($maxBill->payload()) <= QrBill::MAX_PAYLOAD && $specErrors($maxBill->payload()) === []);
+check('P3C56 a FINAL document without a payment part is not told to «neu fakturieren» — the way out is a credit note and a new invoice',
+    str_contains($problemsOf(['referenceType' => '', 'reference' => '', 'account' => '', 'targetCode' => '']), 'Gutschrift und neue Rechnung')
+    && str_contains(implode(' ', QrBill::of($readInvoice($plainInv->getId()))->problems()), 'neu fakturieren'));
+
+$journalBefore = $journalCount();
+$useRequest([], ['doc' => [$pairA, $pairB2]]);   // the batch of P3C41 submitted a second time
+$host = $invoiceHost();
+$host->finalizeAction();
+check('P3C57 a DOUBLE submit of a finalize batch: «bereits definitiv» (not «nichts wurde verbucht»), nothing posted twice, to the «Definitiv» view',
+    $journalCount() === $journalBefore && $host->messageService->flashes[0][0] === 'error' && str_contains($host->messageService->flashes[0][1], 'Bereits definitiv')
+    && $host->redirectedTo === '/backend/finance/invoice/list?view=final');
+
+$journalHost = function () {
+    return new class {
+        use \Z77\Module\Financial\Ui\JournalControllerTrait { detailAction as public; }
+        public array $context = [];
+        public object $layoutManager;
+        public object $messageService;
+        public ?string $redirectedTo = null;
+        public function __construct()
+        {
+            $this->layoutManager = new class { public array $sections = []; public function removeSection(string $s): void { unset($this->sections[$s]); } public function addPartials(string $n, string $p, string $ns, string $s = 'main'): void { $this->sections[$s][] = $p . '/' . $n; } };
+            $this->messageService = new class { public array $flashes = []; public function pushFlashAfterRedirect(string $t, string $m): void { $this->flashes[] = [$t, $m]; } };
+        }
+        protected function em() { return DI::getUnifiedEntityManager(); }
+        protected function html(array $context = []): \Z77\Core\Http\Response\HtmlResponse { $this->context = $context; return new \Z77\Core\Http\Response\HtmlResponse(null, $context); }
+        protected function redirect(string $url, int $status = 302): \Z77\Core\Http\Response\RedirectResponse { $this->redirectedTo = $url; return new \Z77\Core\Http\Response\RedirectResponse($url, $status); }
+    };
+};
+$financialDetail = function (array $get) use ($useRequest, $journalHost, $pkgRoot): array {
+    $GLOBALS['z77TestFetch'] = true;
+    $useRequest($get);
+    $host = $journalHost();
+    $host->detailAction();
+    $GLOBALS['z77TestFetch'] = false;
+    $html = $host->redirectedTo !== null ? '' : (function (string $z77TplPath, array $z77TplContext) { extract($z77TplContext, EXTR_SKIP); ob_start(); require $z77TplPath; return ob_get_clean(); })
+        ->call($host, $pkgRoot . '/module-financial/res/view/templates/Backend/JournalController/detail.tpl.php', $host->context);
+    preg_match('/data-window="[^"]*" data-window-entity="[^"]*"/', $html, $m);
+    return [$host, $m[0] ?? ''];
+};
+[$byRef, $refIdentity] = $financialDetail(['ref' => $ledgerRef]);
+[$byId, $idIdentity]   = $financialDetail(['id' => (string) $byRef->context['entry']->getId()]);
+[$bad]                 = $financialDetail(['ref' => '2026/0']);
+check('P3C58 the journal window opened by ?ref= has the SAME identity as one opened by id (mask journal-entry-detail, entity journal-entry:<id>); a malformed ref is «not found»',
+    $refIdentity !== '' && $refIdentity === $idIdentity && str_contains($refIdentity, 'journal-entry:' . $byRef->context['entry']->getId())
+    && $byRef->context['window'] === true && $bad->redirectedTo === '/backend/finance/journal/list');
 
 // ── result ───────────────────────────────────────────────────────────────
 

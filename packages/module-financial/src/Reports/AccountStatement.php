@@ -2,6 +2,8 @@
 
 namespace Z77\Module\Financial\Reports;
 
+use Z77\Shared\Paging\Paging;
+
 use Z77\Module\Financial\Entities\Account;
 use Z77\Shared\Money\Money;
 

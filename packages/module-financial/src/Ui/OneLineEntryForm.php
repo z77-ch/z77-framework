@@ -1,6 +1,8 @@
 <?php
 namespace Z77\Module\Financial\Ui;
 
+use Z77\Shared\Money\AmountFormat;
+
 use Z77\Module\Financial\Entities\Account;
 use Z77\Module\Financial\Entities\AccountType;
 use Z77\Module\Financial\Entities\JournalEntry;
@@ -555,7 +557,6 @@ final class OneLineEntryForm
      */
     public function selectableCodes(): array
     {
-        return array_values(array_filter($this->codes->allSorted(), fn(TaxCode $code) => ($code->isActive() || isset($this->keptCodes[$code->getCode()]))
-            && $code->category() !== TaxCategory::ReverseCharge));
+        return array_values(array_filter($this->codes->selectable(array_keys($this->keptCodes)), fn(TaxCode $code) => $code->category() !== TaxCategory::ReverseCharge));
     }
 }

@@ -248,7 +248,7 @@ use Z77\Module\Financial\Repositories\AccountRepository;
 use Z77\Module\Financial\Repositories\EntryChangeRepository;
 use Z77\Module\Financial\Repositories\FiscalYearRepository;
 use Z77\Module\Financial\Repositories\JournalEntryRepository;
-use Z77\Module\Financial\Reports\Paging;
+use Z77\Shared\Paging\Paging;
 use Z77\Module\Financial\Reports\ReportRange;
 use Z77\Module\Financial\Services\LedgerReports;
 use Z77\Module\Financial\Ui\ReportControllerTrait;

@@ -1,6 +1,8 @@
 <?php
 namespace Z77\Module\Financial\Ui;
 
+use Z77\Shared\Money\AmountFormat;
+
 use Z77\Module\Financial\Entities\Account;
 use Z77\Module\Financial\Entities\JournalEntry;
 use Z77\Module\Financial\Entities\JournalLine;
@@ -300,7 +302,7 @@ final class ManualEntryForm
      */
     public function selectableCodes(): array
     {
-        return array_values(array_filter($this->codes->allSorted(), fn(TaxCode $code) => $code->isActive() || isset($this->keptCodes[$code->getCode()])));
+        return $this->codes->selectable(array_keys($this->keptCodes));   // the shared picker list (module-vat)
     }
 
     /** One posted row → a PostingLine, or null with the row's errors set. */

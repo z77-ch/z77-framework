@@ -83,11 +83,11 @@ $cols   = '--be-list-cols: 6rem 4rem 5rem minmax(10rem, 2fr) minmax(8rem, 1fr) 8
                 <?php endif; ?>
             </div>
         </div>
-        <?= $this->partial('Backend/partials/pager', [
+        <?= $this->partial('partials/pager', [
             'paging'   => $paging,
             'unit'     => 'Buchungen',
             'pageLink' => fn(int $p) => $link('journal', ['page' => $p]),
-        ], $ns) ?>
+        ], 'Z77\\Shared') ?>
         <?php endif; ?>
     </div>
 </div>

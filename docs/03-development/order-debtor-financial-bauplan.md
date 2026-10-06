@@ -8,7 +8,7 @@ question reopened ADR 2 on 2026-09-20 and was settled on 2026-09-21)
 in wdv-6.2.2 and decisions D1–D8 (§7 there). This plan does not repeat the wdv analysis.
 **ADRs:** ADR-039 to ADR-043, approved 2026-09-21 (§10).
 
-## Where we continue (as of 2026-09-22)
+## Where we continue (as of 2026-09-30)
 
 **What this plan builds:** order processing open to many sources, financial bookkeeping, receivables
 management, article management. Nothing else. Subscriptions, shipping and a shop are applications on
@@ -249,6 +249,28 @@ periods stay allowed and the last return of the year balances them (§5.3, §5.6
 `tests/module-financial.php` YC1–YC43, `tests/module-debtor.php` N1–N5; topic
 [`financial.md`](../topics/financial.md) («P5 part 1», FIN-CLOSE-001). **Next in P5:** part 2, the VAT
 return; then the year-end carry-forward (§5.7).
+
+**P3 part 3 built (2026-09-30, owner go of the same day) — the payment part and the document screens;
+the PDF stopped at the library question.** The payment target got its two IBAN fields (QR-IBAN →
+QRR, plain IBAN → NON) and the creditor block of the account holder with the mandator's address as
+the field-by-field fallback, shown EFFECTIVE on the screen. The payment part became a SNAPSHOT on the
+document (`PaymentSnapshot`, eleven `pay_*` columns, migration `Version20260930150000`): target by
+code, account, reference type, the QR reference from the number (modulo 10 recursive), message and
+creditor as resolved — a credit note has none. `QrBill` builds the payload of the SIX guidelines
+v2.x (`0200`, 31 elements, ≤ 997, extended Latin) from the snapshot only, and reports German
+problems instead of failing («degrade quietly»). The document screens under «Aufträge» ›
+«Rechnungen» (`/backend/finance/invoice`): the list per view (in Fakturierung / definitiv /
+Gutschriften) with the journal list's search, sort and paging; the detail from the snapshot with
+the payment part and the ledger reference as a journal window (financial's journal detail answers
+`?ref=`); the editor (new, re-issue with `version`, credit note prefilled from the invoice) with the
+shared pickers (module-vat `taxCodeSelect` + `selectable()`, module-mandator `accountDatalist`); the
+finalize batch carrying `{id}:{version}` per row through a confirmation. `Paging`, the pager and
+`AmountFormat` moved to the kernel `shared` (Rule 8). **Not built: the PDF** — the framework has no
+PDF library; the options (own minimal writer, FPDF, TCPDF, dompdf, sprain/swiss-qr-bill) and the
+agreed later storage (module-dms `Kunden/<Kunde>/`, P7 per order, never replace a final PDF — GeBüV,
+needed by P5b) are in [`debtor.md`](../topics/debtor.md) `## pending`, with the decisions taken on
+the owner's behalf to confirm. Harness `tests/module-debtor.php` 339 checks (`P3C1`–`P3C58`, incl. the fixes of the independent review the same day — no blocker). **Next:**
+the owner's PDF decision (then the PDF in its own step), P4 (payments, CAMT.054, dunning), P5 part 2.
 
 Open for the owner: `persistence-doctrine`, `module-vat` and `module-contact` are not split targets
 yet (`.github/workflows/split.yml`, Packagist). Working method that carried P1: each building block

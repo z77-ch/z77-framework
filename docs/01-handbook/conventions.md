@@ -155,23 +155,35 @@ through modules and their dependency DAG, not through groups.
 
 ## JavaScript
 
-### Grundsatz — JS nur, wenn CSS oder Server es nicht abdecken
+### Grundsatz — JS dort, wo es Sinn macht; nie eine Angriffsfläche
 
-z77 verfolgt das Prinzip **so wenig JavaScript wie möglich**. Reihenfolge der bevorzugten Lösungen:
+Entscheid Owner 2026-09-29; ersetzt das frühere Prinzip «so wenig JavaScript wie möglich», das bei Client-Anwendungen (Kamera, Offline, PWA) zu stark einschränkte.
 
-1. **CSS** — wenn der Effekt mit modernen CSS-Mechanismen (`:checked`, `:has()`, `:focus-within`, `:target`, container queries, view transitions, scroll-driven animations) erreichbar ist → kein JS.
-2. **Serverseitig generiertes CSS zur Laufzeit** — für dynamische Werte aus Entities (z.B. CSS-only Slider, datengetriebene Layouts): via `LayoutManager::createCss()` ein versioniertes CSS-File rendern, das aus dem Cache geliefert wird, sofern verfügbar. Siehe [`docs/topics/stylesheet.md`](../topics/stylesheet.md#generated-css-data-driven).
-3. **JavaScript** — nur dann, wenn weder (1) noch (2) reichen: echte Interaktion mit State, der nicht durch Form-Controls oder Page-Reload abbildbar ist (z.B. Fetch-Envelope, Live-Validierung, Map-Controls).
+**Aufgabenteilung:**
 
-Beispiele für **bewusst CSS-only** in z77:
+- **Server** — Logik, Prüfung, Berechtigung, Geschäftsregeln. Der Server ist die einzige Instanz, die entscheidet; er prüft jeden Wert, den der Client schickt, erneut.
+- **JavaScript** — Verbesserung des Nutzererlebnisses, Vereinfachung der Bedienung, Steuerung des Clients (Kamera, Bildaufbereitung, Offline-Zwischenspeicher, Fetch, Live-Hinweise, Fokus, Zustand der Oberfläche).
+- **CSS** — Darstellung. Was CSS sauber löst (`:checked`, `:has()`, Media Queries, …), bleibt CSS; das ist Einfachheit, nicht Verbot.
+
+**Nie eine Angriffsfläche** — JS darf nie zur Tür für Eindringlinge werden:
+
+- **Server entscheidet.** Keine Prüfung, Berechtigung oder Geschäftsregel, die nur im Client existiert. Ein Angreifer schaltet JS ab oder schickt Requests direkt; Client-Validierung ist nur ein Hinweis.
+- **Keine Geheimnisse im Script-Bereich.** Kein Key, Token oder Rollen-Flag, dem der Server vertraut, in `localStorage`, IndexedDB oder einem nicht-HttpOnly-Cookie. Authentifizierung über HttpOnly-Cookies (Session, Geräte-Cookie) oder nicht exportierbare Schlüssel.
+- **Kein XSS.** Daten nie als HTML einfügen (`innerHTML`, `insertAdjacentHTML`, `document.write`), kein `eval` / `new Function`, keine Inline-Event-Handler mit Daten. Text über `textContent`; HTML kommt nur escaped vom Server.
+- **Keine fremden Scripts.** Kein CDN, kein Tracker, kein Script einer Fremd-Domain; Assets werden selbst ausgeliefert.
+- **Keine Abhängigkeiten auf Vorrat.** Jede JS-Library ist fremder Code mit vollen Rechten in der Seite — nur mit Begründung, versioniert im Repo.
+- **Content Security Policy.** Der Server erlaubt Scripts nur vom eigenen Origin (`script-src 'self'`, kein `unsafe-inline` / `unsafe-eval`), damit eingeschleuster Code selbst bei einem Fehler nicht läuft. Stand 2026-09-29: das Framework setzt noch keine CSP — Pendenz.
+
+Beispiele für **JS sinnvoll**:
+- `_Z77.core.fetch` Envelope-Dispatch (Server-Antworten lokal anwenden)
+- `_Z77.core.fields` Live-Validierung beim Blur (Hinweis; der Server prüft beim Submit erneut)
+- Kamera, Bildverkleinerung vor dem Upload, Offline-Warteschlange einer PWA
+
+Beispiele für **CSS genügt**:
 - Mobile Navigation Overlay → hidden `<input type="checkbox">` + `:has()` (kein `nav.js`)
 - Sichtbarkeitsumschaltung von Topbar-Elementen per Breakpoint → Media Queries
 
-Beispiele für **JS-berechtigt**:
-- `_Z77.core.fetch` Envelope-Dispatch (Server-Antworten lokal anwenden)
-- `_Z77.core.fields` Live-Validierung beim Blur (Server-Call ohne Page-Reload)
-
-Bevor du eine JS-Datei anlegst, beantworte schriftlich (im PR / Commit-Message): _Warum geht das nicht mit CSS oder serverseitig generiertem CSS?_ Wenn die Antwort schwammig ist → kein JS.
+Bestehende Stellen, die «Rule 7» als Begründung für «kein JS» nennen, bleiben gültig — sie waren auch ohne die alte Regel die einfachere Lösung.
 
 ### Namespace Convention
 

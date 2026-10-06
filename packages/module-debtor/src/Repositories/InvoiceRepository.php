@@ -12,7 +12,9 @@ use Z77\Persistence\Doctrine\Repository\DoctrineRepository;
 /**
  * Convention repository for {@see Invoice}. Doctrine-only seams (ADR-039
  * decision 8), each documented: the fetch-joined read of one document with
- * its lines, the locking re-read a write path needs, and one SQL aggregate.
+ * its lines, the locking re-read a write path needs, the SQL aggregates, and
+ * — since P3 part 3 — the lookups of the document screens (by number, the
+ * list per view with its search, the credit notes of an invoice).
  */
 class InvoiceRepository extends DoctrineRepository
 {
@@ -70,6 +72,128 @@ class InvoiceRepository extends DoctrineRepository
         );
 
         return (string) $sum;
+    }
+
+    /** A document by kind and number — the number is unique per kind (`uniq_invoice_kind_number`). */
+    public function findByNumber(InvoiceKind $kind, int $number): ?Invoice
+    {
+        return $this->findOneBy(['kind' => $kind->value, 'number' => $number]);
+    }
+
+    /**
+     * One page of the document list (P3 part 3): the documents of the view
+     * matching every criterion of $search, in its order. The search runs in
+     * the database — never a filter of the rows on screen. Every value is
+     * bound; the ORDER BY comes from a fixed map, never from input.
+     * Doctrine-only (SQL + DQL).
+     *
+     * @return list<Invoice>
+     */
+    public function search(InvoiceSearch $search, int $offset, int $limit): array
+    {
+        [$where, $params, $types] = $this->searchWhere($search);
+        $dir   = $search->descending ? 'DESC' : 'ASC';
+        $order = match ($search->sort) {
+            'date'   => "invoice_date {$dir}, number {$dir}",
+            'name'   => "addr_name {$dir}, addr_first_name {$dir}, number {$dir}",
+            'amount' => "gross_total {$dir}, number {$dir}",
+            default  => "number {$dir}",
+        };
+        $ids = $this->connection()->fetchFirstColumn(
+            "SELECT id FROM invoice{$where} ORDER BY {$order} LIMIT ? OFFSET ?",
+            array_merge($params, [max(1, $limit), max(0, $offset)]),
+            array_merge($types, [ParameterType::INTEGER, ParameterType::INTEGER])
+        );
+        if ($ids === []) {
+            return [];
+        }
+        $byId = [];
+        foreach ($this->em()->createQueryBuilder()->select('i')->from(Invoice::class, 'i')->where('i.id IN (:ids)')->setParameter('ids', array_map('intval', $ids))->getQuery()->getResult() as $invoice) {
+            $byId[$invoice->getId()] = $invoice;
+        }
+
+        return array_values(array_filter(array_map(static fn($id) => $byId[(int) $id] ?? null, $ids)));
+    }
+
+    /** How many documents match $search — the list's pager and badge. Doctrine-only (SQL). */
+    public function countSearch(InvoiceSearch $search): int
+    {
+        [$where, $params, $types] = $this->searchWhere($search);
+
+        return (int) $this->connection()->fetchOne("SELECT COUNT(*) FROM invoice{$where}", $params, $types);
+    }
+
+    /**
+     * The documents per view without any criterion — the badges of the view
+     * tabs. Doctrine-only (SQL, one query).
+     *
+     * @return array<string, int> view → count
+     */
+    public function countPerView(): array
+    {
+        $row = $this->connection()->fetchAssociative(
+            'SELECT SUM(kind = ? AND state = ?) AS invoicing, SUM(kind = ? AND state = ?) AS final, SUM(kind = ?) AS credit FROM invoice',
+            [InvoiceKind::Invoice->value, InvoiceState::Invoicing->value, InvoiceKind::Invoice->value, InvoiceState::Final->value, InvoiceKind::CreditNote->value]
+        ) ?: [];
+
+        return array_map(static fn($n) => (int) $n, array_merge(array_fill_keys(InvoiceSearch::VIEWS, 0), array_filter($row, static fn($n) => $n !== null)));
+    }
+
+    /**
+     * The credit notes issued against $invoice, oldest first — the detail
+     * view lists them. Doctrine-only (DQL).
+     *
+     * @return list<Invoice>
+     */
+    public function creditNotesOf(Invoice $invoice): array
+    {
+        return $this->em()->createQueryBuilder()
+            ->select('i')
+            ->from(Invoice::class, 'i')
+            ->where('i.creditNoteOf = :invoice')
+            ->setParameter('invoice', $invoice)
+            ->orderBy('i.number', 'ASC')
+            ->getQuery()
+            ->getResult();
+    }
+
+    /** @return array{0: string, 1: list<mixed>, 2: list<ParameterType>} */
+    private function searchWhere(InvoiceSearch $search): array
+    {
+        $where  = [];
+        $params = [];
+        $types  = [];
+        $add = static function (string $sql, mixed $value, ParameterType $type = ParameterType::STRING) use (&$where, &$params, &$types): void {
+            $where[]  = $sql;
+            $params[] = $value;
+            $types[]  = $type;
+        };
+        if ($search->view === InvoiceSearch::VIEW_CREDIT) {
+            $add('kind = ?', InvoiceKind::CreditNote->value);
+        } else {
+            $add('kind = ?', InvoiceKind::Invoice->value);
+            $add('state = ?', $search->view === InvoiceSearch::VIEW_FINAL ? InvoiceState::Final->value : InvoiceState::Invoicing->value);
+        }
+        if ($search->number !== null) {
+            $add('number = ?', $search->number, ParameterType::INTEGER);
+        }
+        if ($search->dateFrom !== null) {
+            $add('invoice_date >= ?', $search->dateFrom);
+        }
+        if ($search->dateTo !== null) {
+            $add('invoice_date <= ?', $search->dateTo);
+        }
+        if ($search->name !== null) {
+            $like = '%' . addcslashes($search->name, '\\%_') . '%';
+            $where[]  = "(addr_name LIKE ? OR addr_first_name LIKE ? OR CONCAT(addr_first_name, ' ', addr_name) LIKE ?)";
+            array_push($params, $like, $like, $like);
+            array_push($types, ParameterType::STRING, ParameterType::STRING, ParameterType::STRING);
+        }
+        if ($search->amount !== null) {
+            $add('gross_total = ?', $search->amount);
+        }
+
+        return [' WHERE ' . implode(' AND ', $where), $params, $types];
     }
 
     /**

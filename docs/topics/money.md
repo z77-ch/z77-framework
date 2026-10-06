@@ -10,6 +10,7 @@
 ## file map
 
 SOURCE=/packages/kernel/shared/src/Money/Money.php
+SOURCE=/packages/kernel/shared/src/Money/AmountFormat.php
 SOURCE=/tests/money.php
 SOURCE=/docs/02-decisions/adr-042-ledger-and-money.md
 SOURCE=/packages/persistence-doctrine/src/Type/MoneyType.php
@@ -24,6 +25,8 @@ SOURCE=/packages/persistence-doctrine/src/Type/MoneyType.php
 - `fromDecimal()` / `toDecimal()` are the bridge to `DECIMAL(15,2)` columns and forms; more than two decimals is refused, not rounded.
 - Integer overflow raises `OverflowException` instead of turning the result into a float.
 - Operations across currencies throw; `equals()` is simply false.
+
+- **How a screen writes an amount**: `Z77\Shared\Money\AmountFormat::of()` — Swiss grouping with an apostrophe, two decimals, a leading minus, no currency; string work on `toDecimal()`. Moved here from module-financial in P3 part 3, when debtor's document screens showed amounts too (Rule 8).
 
 ## rules
 

@@ -68,8 +68,12 @@ before deviating.
 6. **File-name casing follows the layer.** URL/browser-reachable = kebab-case lowercase;
    PHP = PascalCase/camelCase; JSON persistence keys = snake_case. The name is a key, not
    cosmetics. → [`conventions.md` → File Names](docs/01-handbook/conventions.md).
-7. **As little JavaScript as possible.** Reach for CSS, then server-generated CSS, and only
-   then JS — and justify the JS in the commit/PR. → [`conventions.md` → JavaScript](docs/01-handbook/conventions.md).
+7. **JavaScript where it makes sense — never an attack surface.** Logic, validation and
+   authorization live on the server; the server re-checks everything the client sends. JS
+   improves the user experience, simplifies handling and steers the client. JS must never
+   open a door: no data inserted as HTML, no secrets in script-readable storage, no foreign
+   scripts, no dependencies on stock; a CSP restricts scripts to the own origin. (Replaces
+   «as little JavaScript as possible», owner decision 2026-09-29.) → [`conventions.md` → JavaScript](docs/01-handbook/conventions.md).
 8. **Build module-agnostic.** A recurring pattern becomes a shared, opt-in building block
    (component, partial, trait, convention loader), never hard-wired into one view. →
    [`conventions.md` → Reusability](docs/01-handbook/conventions.md).
@@ -84,8 +88,10 @@ before deviating.
 - **Do not instantiate a response directly** — always go through the helper (Rule 3).
 - **Do not duplicate a config value** or park a setting in an unrelated config just because
   that file is global (Rule 2).
-- **Do not add a JS file without a written reason** why CSS / server-generated CSS cannot
-  do it (Rule 7).
+- **Do not let JavaScript become an attack surface** (Rule 7) — no validation, authorization
+  or business rule that exists only in the client; no secret the server trusts (key, token,
+  role flag) in storage a script can read; no `innerHTML`/`eval` with data; no script from a
+  foreign origin or library added without need.
 - **Do not store anything in assistant memory.** Not pendenzen, not bugs, not status, not
   setup notes, not behavioural feedback — nothing. Pendenzen and bugs belong in the topic
   doc's `## known issues` / `## pending` sections, binding decisions in an ADR, working

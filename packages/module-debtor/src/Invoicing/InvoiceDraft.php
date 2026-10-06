@@ -25,6 +25,11 @@ use Z77\Module\Vat\Calculation\PriceMode;
  * the credit note corrects (review 2026-09-23). A credit note may still name
  * its own dates (a partial period), but its rates must equal the invoice's.
  *
+ * `paymentTargetCode` (P3 part 3): the payment target whose account the
+ * payment part prints (`PaymentTarget::$code`); null = the document is issued
+ * WITHOUT a payment part (a credit note never has one). There is no implicit
+ * default target: the screen preselects one, a source names it.
+ *
  * Plain data, no rules: `InvoicingService` validates and refuses with a
  * reason ({@see \Z77\Module\Debtor\Services\InvoiceRefusedException}).
  */
@@ -45,6 +50,7 @@ final class InvoiceDraft
         public readonly ?string $sourceType = null,
         public readonly ?string $sourceRef = null,
         public readonly ?int $creditNoteOfId = null,
+        public readonly ?string $paymentTargetCode = null,
     ) {}
 
     /** @param list<LineDraft> $lines */
@@ -60,8 +66,9 @@ final class InvoiceDraft
         ?AddressSnapshot $address = null,
         ?string $sourceType = null,
         ?string $sourceRef = null,
+        ?string $paymentTargetCode = null,
     ): self {
-        return new self(InvoiceKind::Invoice, $contactId, $invoiceDate, $serviceFrom, $serviceTo, $currency, $priceMode, $paymentTermsCode, $address, array_values($lines), $sourceType, $sourceRef, null);
+        return new self(InvoiceKind::Invoice, $contactId, $invoiceDate, $serviceFrom, $serviceTo, $currency, $priceMode, $paymentTermsCode, $address, array_values($lines), $sourceType, $sourceRef, null, $paymentTargetCode);
     }
 
     /**

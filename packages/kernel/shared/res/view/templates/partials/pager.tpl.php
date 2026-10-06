@@ -1,16 +1,19 @@
 <?php
 /**
- * Pager of a long list — the reports and the journal list, both in this
- * module (`.be-pagination`, server links `?page=`): previous, the pages,
- * next, and «n Zeilen, Seite x von y». The reports use it without any
- * script; the journal list sets `regionLinks`, and core.js then reloads only
- * the list (a fetch region) — the links stay plain links underneath.
+ * Pager of a long list — financial's reports and journal list, debtor's
+ * invoice list (`.be-pagination`, server links `?page=`): previous, the
+ * pages, next, and «n Zeilen, Seite x von y». A shared partial of the kernel
+ * (`$this->partial('partials/pager', […], 'Z77\\Shared')`) since P3 part 3 —
+ * it moved out of module-financial when a second module paged (Rule 8). The
+ * reports use it without any script; a list inside a fetch region sets
+ * `regionLinks`, and core.js then reloads only that region — the links stay
+ * plain links underneath.
  * Screen only (`.be-noprint`) — every printed page is the page on screen.
  *
- * @var \Z77\Module\Financial\Reports\Paging $paging
+ * @var \Z77\Shared\Paging\Paging $paging
  * @var callable $pageLink  page number → URL
- * @var string $unit         «Zeilen» / «Buchungen»
- * @var bool   $regionLinks  the links reload only the surrounding fetch region (core.js) — the journal list
+ * @var string $unit         «Zeilen» / «Buchungen» / «Dokumente»
+ * @var bool   $regionLinks  the links reload only the surrounding fetch region (core.js)
  */
 $region = !empty($regionLinks) ? ' data-fetch-region-link' : '';
 if ($paging->pageCount < 2) { return; }

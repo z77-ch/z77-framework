@@ -15,6 +15,8 @@ use Z77\Module\Debtor\Entities\InvoiceKind;
 use Z77\Module\Debtor\Entities\InvoiceLine;
 use Z77\Module\Debtor\Entities\InvoiceTax;
 use Z77\Module\Debtor\Entities\LineType;
+use Z77\Module\Debtor\Entities\PaymentSnapshot;
+use Z77\Module\Debtor\Entities\PaymentTarget;
 use Z77\Module\Debtor\Entities\PaymentTerms;
 use Z77\Module\Debtor\Invoicing\DocumentSnapshot;
 use Z77\Module\Debtor\Invoicing\InvoiceDraft;
@@ -113,7 +115,7 @@ final class InvoicingService
             $number  = $ranges->next($draft->kind->numberRange());   // the FIRST write (lock order)
             $invoice = new Invoice($draft->kind, $number, $composed['contact'], $composed['creditNoteOf'], $this->actor, $now);
             [$lines, $taxes] = $this->materialize($invoice, $composed);
-            $invoice->issue($composed['snapshot'], $lines, $taxes);
+            $invoice->issue($composed['snapshot'], $lines, $taxes, $this->paymentPart($invoice, $composed));
             $this->em->persist($invoice);
 
             return $invoice;
@@ -153,7 +155,7 @@ final class InvoicingService
                 throw new InvoiceRefusedException(InvoiceRefusedException::CREDIT_NOTE_TARGET, $invoice->documentName() . ' gehört zu einer anderen Partei oder Rechnung — dafür ein neues Dokument erstellen.');
             }
             [$lines, $taxes] = $this->materialize($invoice, $composed);
-            $invoice->reissue($composed['snapshot'], $lines, $taxes, $this->actor, $now);
+            $invoice->reissue($composed['snapshot'], $lines, $taxes, $this->paymentPart($invoice, $composed), $this->actor, $now);
             $this->em->persist($invoice);
 
             return $invoice;
@@ -284,7 +286,7 @@ final class InvoicingService
      *
      * @param Invoice|null $existing the document being re-issued — relaxes the «new reference needs an
      *                               active row» rule for what the document already carries (ADR-043 decision 19)
-     * @return array{contact: Contact, creditNoteOf: ?Invoice, snapshot: DocumentSnapshot, lines: list<array<string, mixed>>, taxes: list<array<string, mixed>>}
+     * @return array{contact: Contact, creditNoteOf: ?Invoice, snapshot: DocumentSnapshot, lines: list<array<string, mixed>>, taxes: list<array<string, mixed>>, target: ?PaymentTarget, creditor: ?Creditor}
      * @throws InvoiceRefusedException
      */
     private function compose(InvoiceDraft $draft, ?Invoice $existing): array
@@ -335,6 +337,10 @@ final class InvoicingService
         }
         $i18n     = DI::getI18n();
         $language = $contact->getLanguage() !== '' ? $contact->getLanguage() : $i18n->getDefaultLanguage();
+
+        // The payment target whose account the payment part prints — resolved now, snapshotted
+        // with the number inside the unit of work (paymentPart()).
+        $target = $this->paymentTargetOf($draft, $existing);
 
         // A credit note names the FINAL invoice it corrects.
         $creditNoteOf = null;
@@ -458,7 +464,51 @@ final class InvoicingService
             self::opaque($draft->sourceRef, Invoice::SOURCE_REF_LENGTH),
         );
 
-        return ['contact' => $contact, 'creditNoteOf' => $creditNoteOf, 'snapshot' => $snapshot, 'lines' => $lines, 'taxes' => $taxes];
+        return [
+            'contact' => $contact, 'creditNoteOf' => $creditNoteOf, 'snapshot' => $snapshot, 'lines' => $lines, 'taxes' => $taxes,
+            'target' => $target, 'creditor' => $target === null ? null : Creditor::of($target, Creditor::mandator($this->em)),
+        ];
+    }
+
+    /**
+     * The draft's payment target (P3 part 3): none when the draft names none;
+     * a credit note never carries one (it has no payment part). The reference
+     * rule (ADR-043 decision 19): a NEW reference needs an ACTIVE target; a
+     * re-issue keeps the target the document already carries even when it was
+     * deactivated since.
+     *
+     * @throws InvoiceRefusedException TARGET_UNKNOWN | TARGET_INACTIVE | NO_PAYMENT_PART
+     */
+    private function paymentTargetOf(InvoiceDraft $draft, ?Invoice $existing): ?PaymentTarget
+    {
+        $code = PaymentTarget::normalizeCode((string) $draft->paymentTargetCode);
+        if ($code === '') {
+            return null;
+        }
+        if ($draft->kind === InvoiceKind::CreditNote) {
+            throw new InvoiceRefusedException(InvoiceRefusedException::NO_PAYMENT_PART, 'Eine Gutschrift hat keinen Zahlteil — ohne Zahlungsziel erstellen.');
+        }
+        $target = $this->em->getRepository(PaymentTarget::class)->findByCode($code);
+        if ($target === null) {
+            throw new InvoiceRefusedException(InvoiceRefusedException::TARGET_UNKNOWN, 'Zahlungsziel «' . $code . '» gibt es nicht.');
+        }
+        if (!$target->isActive() && ($existing === null || $existing->getPayment()->getTargetCode() !== $code)) {
+            throw new InvoiceRefusedException(InvoiceRefusedException::TARGET_INACTIVE, 'Zahlungsziel «' . $target->getLabel() . '» ist inaktiv — ein anderes wählen.');
+        }
+
+        return $target;
+    }
+
+    /**
+     * The payment part of $invoice — built inside the unit of work, where the
+     * number is known: the reference is derived from it (QRR), the message
+     * names the document.
+     *
+     * @param array{target: ?PaymentTarget, creditor: ?Creditor} $composed
+     */
+    private function paymentPart(Invoice $invoice, array $composed): PaymentSnapshot
+    {
+        return PaymentSnapshot::forDocument($invoice->kind(), $invoice->getNumber(), $invoice->documentName(), $composed['target'], $composed['creditor']);
     }
 
     /**

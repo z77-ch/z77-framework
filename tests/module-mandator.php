@@ -257,8 +257,8 @@ check('A2 the database is empty', $tables() === []);
 [$code, $out] = $run(['command' => 'migrate']);
 check('A3 migrate exits 0' . ($code !== 0 ? " — got {$code}: " . trim($out) : ''), $code === 0);
 $executed = $db->fetchFirstColumn('SELECT version FROM schema_migration');
-check('A4 the mandator migration ran, in timestamp order among the modules (since P5 part 1 financial\'s close protocol Version20260930120000 is the newest)',
-    str_contains($out, 'Migrating up to Z77\\Module\\Financial\\Migrations\\Version20260930120000') && in_array('Z77\\Module\\Mandator\\Migrations\\Version20260923160948', $executed, true));
+check('A4 the mandator migration ran, in timestamp order among the modules (since P3 part 3 debtor\'s payment part Version20260930150000 is the newest)',
+    str_contains($out, 'Migrating up to Z77\\Module\\Debtor\\Migrations\\Version20260930150000') && in_array('Z77\\Module\\Mandator\\Migrations\\Version20260923160948', $executed, true));
 check('A5 mandator exists next to the other modules\' tables', in_array('mandator', $tables(), true) && in_array('account', $tables(), true) && in_array('invoice', $tables(), true));
 $info = $tableInfo('mandator');
 check('A6 mandator is utf8mb4_unicode_ci and InnoDB although the database default is general_ci',
@@ -698,9 +698,9 @@ $reachingMandator = array_map('basename', $mandatorFiles);
 $readingAccounts  = array_map('basename', array_filter($mandatorFiles, fn($f) => str_contains(file_get_contents($f), '->account(')));
 sort($reachingMandator);
 sort($readingAccounts);
-check('H4 only the two access points read an ACCOUNT off the record; another caller may read the RECORD itself — the report header prints the letterhead (2026-09-24)',
+check('H4 only the two access points read an ACCOUNT off the record; another caller may read the RECORD itself — the report header prints the letterhead (2026-09-24), debtor\'s creditor block falls back to its address (P3 part 3)',
     $readingAccounts === ['DebtorAccounts.php', 'LedgerService.php']
-    && $reachingMandator === ['DebtorAccounts.php', 'LedgerService.php', 'ReportControllerTrait.php']);
+    && $reachingMandator === ['Creditor.php', 'DebtorAccounts.php', 'LedgerService.php', 'ReportControllerTrait.php']);
 check('H5 the mandator carries NO bank fields and NO currency — the payment target is the payee, systemConfig the currency (owner, 2026-09-23)',
     !method_exists(Mandator::class, 'getIban') && !method_exists(Mandator::class, 'getBankName') && !method_exists(Mandator::class, 'getCurrency')
     && !str_contains(strtolower(file_get_contents($package . '/src/Entities/Mandator.php')), 'private string $iban'));

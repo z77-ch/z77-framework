@@ -1,6 +1,6 @@
 # mandator
 
-2026-09-29
+2026-09-30
 
 ## entry
 
@@ -28,6 +28,8 @@ SOURCE=/packages/module-mandator/src/Ui/MandatorControllerTrait.php
 SOURCE=/packages/module-mandator/src/Ui/MandatorLayout.php
 SOURCE=/packages/module-mandator/res/view/templates/Backend/MandatorController/edit.tpl.php
 SOURCE=/packages/module-mandator/res/view/templates/partials/letterhead.tpl.php
+SOURCE=/packages/module-mandator/res/view/templates/partials/accountDatalist.tpl.php
+SOURCE=/packages/module-debtor/src/Services/Creditor.php
 SOURCE=/packages/module-mandator/res/migrations/Version20260923160948.php
 SOURCE=/packages/module-backend/src/Ui/Controllers/Finance/MandatorController.php
 SOURCE=/packages/module-backend/src/Ui/Config/Finance/mandatorControllerConfig.inc.php
@@ -55,7 +57,7 @@ SOURCE=/docs/03-development/order-debtor-financial-bauplan.md
 
 `z77/module-mandator` holds the installation's OWN company — the **Mandant** (owner decisions E1 / E2 of 2026-09-23, reviewed the same day). It is the **letterhead** of the printed reports and letters (name, address, contact data, logo), the UID and the VAT liability, and — since E2 — the **ledger accounts the business modules post with**, which until then were `financialConfig → vatAccounts` and `debtorConfig → debtorAccounts`. ONE record with the FIXED id 1, read through `CurrentMandator`, written through `MandatorService`, edited on one backend page; the two access points that existed before (`LedgerService::vatAccountFor()`, debtor's `DebtorAccounts`) stay the only readers of the account fields. The package depends on kernel and `persistence-doctrine` (ADR-039) only, and `suggest`s `module-financial` — an installation without bookkeeping still has a letterhead, and its account fields are then stored unverified. `module-financial` and `module-debtor` REQUIRE this package.
 
-- **Rule of thumb, both directions (owner, 2026-09-23): the mandator is the letterhead, the payment target is the payee — the two may carry different names, and that is not an error.** IBAN, bank name, bank place and the creditor block of the QR-bill belong to debtor's `PaymentTarget` (`debtor.md`): the account holder as registered with the bank («Peter u/o Regina Ruepp») often differs from the company name, and a QR-bill naming another creditor than the account holder is faulty. The mandator's address is the FALLBACK that creditor block takes field by field when it is left empty (wdv's `picDepositor*()` model, to be built in P3 part 3 — the pending in `debtor.md`), never the source that «serves» the QR-bill. The currency is not here either: `systemConfig → baseCurrency` is the one source (Rule 2).
+- **Rule of thumb, both directions (owner, 2026-09-23): the mandator is the letterhead, the payment target is the payee — the two may carry different names, and that is not an error.** IBAN, bank name, bank place and the creditor block of the QR-bill belong to debtor's `PaymentTarget` (`debtor.md`): the account holder as registered with the bank («Peter u/o Regina Ruepp») often differs from the company name, and a QR-bill naming another creditor than the account holder is faulty. The mandator's address is the FALLBACK that creditor block takes field by field when it is left empty (wdv's `picDepositor*()` model, BUILT in P3 part 3 — debtor's `Services/Creditor`, the one place in debtor that reads the record, through `CurrentMandator`), never the source that «serves» the QR-bill. The currency is not here either: `systemConfig → baseCurrency` is the one source (Rule 2).
 - **Package choice** (decided 2026-09-23): a package of its own rather than `kernel/shared` (the kernel carries no Doctrine and no Composer dependency, ADR-001 / ADR-039 decision 1) or `module-contact` (the contact is the model of OTHER parties; the mandator is not one, and account fields on it would drag a soft financial boundary into a module that must know no module). Dependency direction: mandator → kernel, persistence-doctrine; financial → mandator; debtor → mandator. financial still knows no posting source (ADR-040 decision 2) — the mandator is master data, not a source. **No `module-vat`** (owner, review 2026-09-23): the default tax code went (below), and with it the only reason a letterhead module dragged the VAT package along — a plain website with a company header must not need it.
 - **Doctrine, not file-based** (owner E1: «the table gets an id»): D3 would put a single record into a file; the owner decided a table. Recorded as a deviation from D3 in the known issues, not hidden.
 - **`Mandator`** (table `mandator`, no foreign key anywhere): `id` FIXED at `Mandator::ID` = 1 (below), `name` (required), `address_suffix_one` / `_two`, `street`, `house_no`, `zip` (four digits for CH, the `AddressValidator` rule), `city`, `country` (ISO 3166-1 alpha-2, default `CH`), `email` (deliverable when set), `phone`, `website`, `logo_path` (relative to the project root, forward slashes, no `..` — resolved by whatever prints it, the PDF of P3 part 3); `uid` (canonical `CHE-123.456.789`, empty allowed); `liable_to_vat` (a FLAG only — see pending); the eight account columns `account_{key}` (below). Field lengths: name / suffixes / street 120, house no 16, zip 16, city 70, e-mail and website 190, phone 40, logo 255 — letterhead lengths, NOT the QR-bill's (those live on the payment target). Setters for every field (the form posts snake_case through `mapFromArray()`); the accounts are READ through `account($key)` only — the eight typed getters were removed with the review (no production reader).
@@ -88,6 +90,8 @@ SOURCE=/docs/03-development/order-debtor-financial-bauplan.md
 | creditor*, openingBalance, balanceGainLoss, foreignCurrencyGainLoss accounts | NOT taken (decided 2026-09-23) | no reader exists — no creditor module is in the plan (§2: «these eight are the plan»), the class-9 closing accounts are not even in the chart before P5, Q6 decided against foreign currency; a column is added with its reader (an expand migration) |
 | public, emailInvoicing, deliveryAddress, debtorPaymentCondition, debtorPaymentTarget | NOT taken | wdv switches without a reader here: `public` had none even in wdv; `emailInvoicing` was copied onto every order — a document/party preference, not a company fact (a P4 / order question); `deliveryAddress` served the purchase module (no creditor module here); a global payment condition / target is what debtor's profile and P3 part 3 decide per party and document |
 
+- **The account picker** is a shared partial since P3 part 3: `partials/accountDatalist` (the postable, active accounts from `LedgerAccountCheck::postableAccounts()`, nothing without financial) — this screen's account fields and debtor's invoice editor render it (Rule 8).
+
 ## rules
 
 - When any code needs the mandator → MUST read it through `CurrentMandator::find()` / `exists()`, treat `null` as «none yet» (an empty letterhead, a refusal with a message) and let `MandatorUnavailableException` (module not registered, table missing) reach the user as ITS German sentence — a band, a refusal, a field error; MUST NOT `find(1)` on the repository from outside the module, MUST NOT create a record on access and MUST NOT let a missing or unreadable mandator end in a 500
@@ -116,6 +120,7 @@ SOURCE=/docs/03-development/order-debtor-financial-bauplan.md
 - **MANDATOR-NAV-001** — resolved 2026-09-29 ([ADR-050](../02-decisions/adr-050-module-navigation-seeds.md)): the module ships the group «Firma» under Stammdaten (`stammdaten-firma`) with «Mandant» (`mandant` → `/backend/finance/mandator/edit`) in `data/framework/routing/navigation.d/module-mandator.json` — the group comes with the module, so an installation without it has no empty «Firma».
 - **MANDATOR-STALE-001** — don't assume a saved account number stays valid: the chart can deactivate or group it afterwards. The record KEEPS the number (an unchanged field is not re-checked on save — the address must stay editable), the screen flags it («prüfen»), the reader refuses at the point of use — the same three places as before E2, only the number now lives in the record instead of a config. Retyping the field is a change and must name a postable account.
 - **MANDATOR-UID-001** — don't assume the UID validator knows the register's number range: it checks shape and check digit and refuses the all-zero number only. A syntactically valid UID that was never assigned passes; the range is deliberately not narrowed (a wrong assumption would refuse real numbers).
+
 
 ## pending
 

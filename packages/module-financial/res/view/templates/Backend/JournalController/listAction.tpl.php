@@ -31,7 +31,7 @@
  * @var \Z77\Module\Financial\Entities\FiscalYear|null $year  the SELECTED year (FiscalYearSelection, owner 2026-09-29) — null without any year
  * @var list<array{entry?: \Z77\Module\Financial\Entities\JournalEntry, state?: string, deleted?: \Z77\Module\Financial\Entities\EntryChange, number: int}> $rows
  * @var \Z77\Module\Financial\Ui\JournalFilter $filter
- * @var \Z77\Module\Financial\Reports\Paging $paging
+ * @var \Z77\Shared\Paging\Paging $paging
  * @var bool $gapsApply  the deleted numbers are merged into this page
  * @var array<string, string> $keep    the capture state (`mode`, `date`) every link carries
  * @var array<string, string> $states  state key → German title
@@ -168,12 +168,12 @@ $priority = ['f_date' => '3', 'f_debit' => '2', 'f_credit' => '2'];
         <?php if ($rows === []): ?>
         <p class="be-list__empty"><?= $filter->isActive() ? 'Keine Buchung gefunden.' : ($filter->allYears ? 'Noch keine Buchung.' : 'Noch keine Buchung in diesem Geschäftsjahr.') ?></p>
         <?php endif; ?>
-        <?= $this->partial('Backend/partials/pager', [
+        <?= $this->partial('partials/pager', [
             'paging'   => $paging,
             'pageLink' => static fn(int $p): string => $link(['page' => $p]),
             'unit'     => 'Buchungen',
             'regionLinks' => true,
-        ], $ns) ?>
+        ], 'Z77\\Shared') ?>
     </div>
     <?php endif; ?>
 </div>

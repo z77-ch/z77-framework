@@ -1,6 +1,8 @@
 <?php
 namespace Z77\Module\Financial\Ui;
 
+use Z77\Shared\Money\AmountFormat;
+
 use Z77\Core\DI,
     Z77\Core\Http\Response\HtmlResponse,
     Z77\Module\Financial\Entities\Account,

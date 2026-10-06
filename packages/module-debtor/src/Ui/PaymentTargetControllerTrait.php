@@ -6,6 +6,7 @@ use Z77\Core\DI,
     Z77\Core\Http\Response\HtmlResponse,
     Z77\Module\Debtor\Entities\PaymentTarget,
     Z77\Module\Debtor\Repositories\PaymentTargetRepository,
+    Z77\Module\Debtor\Services\Creditor,
     Z77\Module\Debtor\Services\DebtorException,
     Z77\Module\Debtor\Services\DebtorMasterData,
     Z77\Module\Debtor\Services\InvalidMasterDataException,
@@ -25,11 +26,13 @@ use Z77\Core\DI,
  *
  * What the screen can do, and deliberately cannot:
  *
- *   - list every target with its IBAN grouped in fours, a «QR-IBAN» badge
- *     where the IID says so, and the ledger account it is booked on —
- *     flagged when the bookkeeping will not take a posting on it;
- *   - add a target; edit label, IBAN and account — the CODE is immutable
- *     once created (payments carry it, ADR-043 decision 19);
+ *   - list every target with its QR-IBAN and / or IBAN grouped in fours,
+ *     the ledger account it is booked on — flagged when the bookkeeping
+ *     will not take a posting on it — and the EFFECTIVE creditor block
+ *     ({@see Creditor}: the holder fields, the mandator's where empty);
+ *   - add a target; edit label, the two IBAN fields, the holder and the
+ *     account — the CODE is immutable once created (payments carry it,
+ *     ADR-043 decision 19);
  *   - activate / deactivate (inline switch). There is NO delete.
  *
  * Nothing is seeded here: an IBAN cannot be guessed, and a placeholder
@@ -67,14 +70,18 @@ trait PaymentTargetControllerTrait
         $targets = $this->paymentTargets()->allInOrder();
         $check   = new LedgerAccountCheck($this->em());
 
+        $mandator     = Creditor::mandator($this->em());
         $accountState = [];
+        $creditors    = [];
         foreach ($targets as $target) {
             $accountState[$target->getCode()] = $check->isPostable($target->getAccountNumber());
+            $creditors[$target->getCode()]    = Creditor::of($target, $mandator);
         }
 
         $response = $this->html([
             'targets'      => $targets,
             'accountState' => $accountState,
+            'creditors'    => $creditors,
             'ledgerKnown'  => $check->available(),
             'actionBase'   => $this->paymentTargetListBase(),
         ]);
@@ -147,6 +154,7 @@ trait PaymentTargetControllerTrait
 
         $response = $this->html([
             'entry'       => $target,
+            'mandator'    => Creditor::mandator($this->em()),
             'ledgerKnown' => (new LedgerAccountCheck($this->em()))->available(),
             'entityCsrf'  => $isNew ? '' : DI::getCsrfService()->generateEntityToken('paymentTarget', $target->getId()),
             'validator'   => $validator ?? new PaymentTargetValidator($target),

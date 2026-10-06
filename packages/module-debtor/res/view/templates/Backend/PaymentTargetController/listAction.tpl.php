@@ -2,20 +2,27 @@
 /**
  * Payment targets (plan §6.1, master data) — the company's bank accounts a
  * customer pays into. The inline switch is `active` (deactivate, never
- * delete — payments reference the code, ADR-043 decision 19). The IBAN is
- * shown grouped in fours; a QR-IBAN (IID 30000–31999) says so, because it
- * decides which reference a QR-bill carries (part 2). The ledger account is
- * flagged when the bookkeeping will not take a posting on it — and marked
- * «ungeprüft» when module-financial is not installed at all.
+ * delete — payments reference the code, ADR-043 decision 19). The QR-IBAN
+ * and the plain IBAN are shown grouped in fours, each with its badge — the
+ * QR-IBAN decides that an invoice carries a QR reference (P3 part 3). The
+ * EFFECTIVE creditor block stands under each row (the holder fields, the
+ * mandator's where empty — marked), so the name that lands on the bill is
+ * visible before printing. The ledger account is flagged when the
+ * bookkeeping will not take a posting on it — and marked «ungeprüft» when
+ * module-financial is not installed at all.
  *
  * Styling: the shared backend list/tree classes only.
  *
  * @var list<\Z77\Module\Debtor\Entities\PaymentTarget> $targets  in file order
  * @var array<string,bool|null> $accountState  code → postable? (null = financial absent)
+ * @var array<string,\Z77\Module\Debtor\Services\Creditor> $creditors  code → the effective creditor block
  * @var bool $ledgerKnown
  * @var string $actionBase
  */
+use Z77\Module\Debtor\Services\Iban;
+
 $actionBase = $actionBase ?? '/backend/finance/payment-target';
+$creditors  = $creditors ?? [];
 ?>
 <div class="be-list">
     <div class="be-list__section">
@@ -52,12 +59,15 @@ $actionBase = $actionBase ?? '/backend/finance/payment-target';
                     </span>
 
                     <span class="be-tree__url" data-field="iban">
-                        <?= e($target->formattedIban()) ?>
+                        <?php if ($target->hasQrIban()): ?><?= e(Iban::format($target->getQrIban())) ?> <span class="badge badge--success">QR-IBAN</span><?php endif; ?>
+                        <?php if ($target->getIban() !== ''): ?><?= e(Iban::format($target->getIban())) ?> <span class="badge badge--muted">IBAN</span><?php endif; ?>
                         <small class="be-list__cell--muted">· Konto <?= e($target->getAccountNumber()) ?></small>
+                        <?php $creditor = $creditors[$target->getCode()] ?? null; if ($creditor !== null): ?>
+                        <br><small class="be-list__cell--muted" data-field="creditor">Empfänger: <?= e(implode(', ', array_filter([$creditor->name, trim($creditor->street . ' ' . $creditor->houseNo), trim($creditor->country . ' ' . $creditor->zip . ' ' . $creditor->city)]))) ?><?= $creditor->fromMandator !== [] ? ' (' . ($creditor->fromMandator === ['name', 'street', 'house_no', 'zip', 'city', 'country'] ? 'vom Mandanten' : 'teils vom Mandanten') . ')' : '' ?></small>
+                        <?php endif; ?>
                     </span>
 
                     <span class="be-tree__route" data-field="state">
-                        <span class="badge <?= $target->isQrIban() ? 'badge--success' : 'badge--muted' ?>"><?= $target->isQrIban() ? 'QR-IBAN' : 'IBAN' ?></span>
                         <?php if ($postable === false): ?>
                         <span class="badge badge--warning" title="Konto fehlt in der Buchhaltung, ist eine Gruppe oder inaktiv">Konto prüfen</span>
                         <?php elseif ($postable === null): ?>

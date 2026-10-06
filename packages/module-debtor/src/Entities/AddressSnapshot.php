@@ -22,8 +22,7 @@ use Z77\Module\Contact\Entities\Address;
  * contact is referenced by id on the document, the address is copied.
  *
  * Value object: built from an `Address` or from its fields, read only. The
- * printed address block (line order, country prefix) arrives with the PDF
- * in part 3 — nothing prints before that.
+ * printed address block is {@see lines()} (P3 part 3).
  */
 #[ORM\Embeddable]
 final class AddressSnapshot
@@ -109,6 +108,31 @@ final class AddressSnapshot
     public function getZip(): string { return $this->zip; }
     public function getCity(): string { return $this->city; }
     public function getCountry(): string { return $this->country; }
+
+    /**
+     * The PRINTED address block, line by line (P3 part 3 — the part-2 note
+     * «arrives with the PDF»): the salutation on its own line, title + first
+     * name + name, the address row (c/o, department), street + house number,
+     * zip + city, and the country — as its ISO code on a line of its own —
+     * only when it is not $homeCountry (Swiss Post: the country is written
+     * for a foreign address only). Empty parts leave no empty line. The
+     * detail view shows it; the PDF prints it in the window.
+     *
+     * @return list<string>
+     */
+    public function lines(string $homeCountry = 'CH'): array
+    {
+        $lines = [
+            $this->salutation,
+            trim($this->title . ' ' . $this->firstName . ' ' . $this->name),
+            $this->addressRow,
+            trim($this->street . ' ' . $this->houseNo),
+            trim($this->zip . ' ' . $this->city),
+            $this->country !== '' && $this->country !== mb_strtoupper($homeCountry) ? $this->country : '',
+        ];
+
+        return array_values(array_filter(array_map(static fn(string $l) => preg_replace('/\s+/', ' ', $l), $lines), static fn(string $l) => $l !== ''));
+    }
 
     /** A document needs at least a name and a place; the rest is optional. */
     public function isComplete(): bool

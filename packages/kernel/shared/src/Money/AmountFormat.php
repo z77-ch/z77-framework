@@ -1,13 +1,15 @@
 <?php
-namespace Z77\Module\Financial\Ui;
-
-use Z77\Shared\Money\Money;
+namespace Z77\Shared\Money;
 
 /**
- * How an amount is written on the financial screens — the ONE place (Rule 8):
+ * How an amount is written on a backend screen — the ONE place (Rule 8):
  * Swiss grouping with an apostrophe, two decimals, a leading minus, no
  * currency (every column is the base currency). String work on
  * `Money::toDecimal()` — no float anywhere near an amount.
+ *
+ * Lived in module-financial (`Ui\AmountFormat`) until a second module
+ * showed amounts (module-debtor's document screens, P3 part 3) — moved here
+ * next to `Money`, so neither module requires the other for it.
  */
 final class AmountFormat
 {

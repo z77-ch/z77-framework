@@ -114,13 +114,7 @@ $text = function (string $field, string $label, string $value, int $maxlength, s
 
         <h3 class="be-form__section">Konten</h3>
         <p class="be-form__hint">Die Konten, auf die Debitoren und MWST buchen. Leer = nicht hinterlegt; eine Buchung, die das Konto braucht, wird dann mit Hinweis abgelehnt.<?php if (!$ledgerKnown): ?> Ohne z77/module-financial werden die Nummern nicht gegen die Buchhaltung geprüft.<?php endif; ?></p>
-        <?php if ($accounts !== []): ?>
-        <datalist id="mandator-accounts">
-            <?php foreach ($accounts as $account): ?>
-            <option value="<?= e($account['number']) ?>"><?= e($account['label']) ?></option>
-            <?php endforeach; ?>
-        </datalist>
-        <?php endif; ?>
+        <?= $this->partial('partials/accountDatalist', ['id' => 'mandator-accounts', 'accounts' => $accounts], 'Z77\\Module\\Mandator') ?>
         <div class="be-form__grid">
             <?php foreach ($accountKeys as $key): ?>
             <?php $field = \Z77\Module\Mandator\Entities\Mandator::accountField($key); $status = $accountStatus[$key] ?? ['number' => '', 'error' => null]; ?>

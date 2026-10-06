@@ -1,6 +1,6 @@
 # navigation
 
-2026-09-29
+2026-09-30
 
 ## entry
 
@@ -344,7 +344,7 @@ hand without a key is recognised by its route.
 | module-contact | Kontakte (`stammdaten-kontakte`) — Adresstypen (`adresstypen`) | `stammdaten` |
 | module-dms | Drive (`drive`) — Dokumente (`dokumente`) | root 4 |
 | module-mandator | Firma (`stammdaten-firma`) — Mandant (`mandant`) | `stammdaten` |
-| module-debtor | Aufträge (`auftraege`) — Debitoren (`debitoren`); later module-order's screens | root 2 |
+| module-debtor | Aufträge (`auftraege`) — Debitoren (`debitoren`) · Rechnungen (`rechnungen`, P3 part 3); later module-order's screens | root 2 |
 | module-debtor | Aufträge (`stammdaten-auftraege`) — Zahlungskonditionen · Zahlungsziele · Mahnstufen (`zahlungskonditionen`, `zahlungsziele`, `mahnstufen`) | `stammdaten` (2) |
 
 Root order: Webseiten 0, Finanzen 1, Aufträge 2, Kontakte 3, Drive 4, Stammdaten 5, Service 6. Group order under Stammdaten: Firma 0, Finanzen 1, Aufträge 2, Kontakte 3, System 4 (the `sort_key` of each

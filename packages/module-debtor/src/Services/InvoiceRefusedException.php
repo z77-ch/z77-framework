@@ -19,6 +19,9 @@ final class InvoiceRefusedException extends DebtorException
     public const TERMS_INACTIVE      = 'terms-inactive';
     public const NO_ADDRESS          = 'no-address';
     public const ADDRESS_INCOMPLETE  = 'address-incomplete';
+    public const TARGET_UNKNOWN      = 'target-unknown';
+    public const TARGET_INACTIVE     = 'target-inactive';
+    public const NO_PAYMENT_PART     = 'no-payment-part';
     // the document
     public const CURRENCY            = 'currency';
     public const DATES               = 'dates';

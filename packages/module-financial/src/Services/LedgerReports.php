@@ -12,7 +12,7 @@ use Z77\Module\Financial\Reports\AccountStatementLine;
 use Z77\Module\Financial\Reports\BalanceSheet;
 use Z77\Module\Financial\Reports\IncomeStatement;
 use Z77\Module\Financial\Reports\JournalReport;
-use Z77\Module\Financial\Reports\Paging;
+use Z77\Shared\Paging\Paging;
 use Z77\Module\Financial\Reports\ReportRange;
 use Z77\Module\Financial\Reports\StatementLine;
 use Z77\Module\Financial\Reports\StatementSection;
