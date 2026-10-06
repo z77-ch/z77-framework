@@ -465,7 +465,7 @@ final class InvoicingService
         );
 
         return [
-            'contact' => $contact, 'creditNoteOf' => $creditNoteOf, 'snapshot' => $snapshot, 'lines' => $lines, 'taxes' => $taxes,
+            'contact' => $contact, 'profile' => $profile, 'creditNoteOf' => $creditNoteOf, 'snapshot' => $snapshot, 'lines' => $lines, 'taxes' => $taxes,
             'target' => $target, 'creditor' => $target === null ? null : Creditor::of($target, Creditor::mandator($this->em)),
         ];
     }
@@ -508,7 +508,7 @@ final class InvoicingService
      */
     private function paymentPart(Invoice $invoice, array $composed): PaymentSnapshot
     {
-        return PaymentSnapshot::forDocument($invoice->kind(), $invoice->getNumber(), $invoice->documentName(), $composed['target'], $composed['creditor']);
+        return PaymentSnapshot::forDocument($invoice->kind(), $composed['profile']->getCustomerNumber(), $invoice->getNumber(), $invoice->documentName(), $composed['target'], $composed['creditor']);
     }
 
     /**

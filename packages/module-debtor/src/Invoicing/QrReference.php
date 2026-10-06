@@ -12,30 +12,49 @@ namespace Z77\Module\Debtor\Invoicing;
  * MODULO 10 RECURSIVE over them (the algorithm of the former ESR reference,
  * table 0 9 4 6 8 2 7 1 3 5). A reference of zeros only is not valid.
  *
- * The payload z77 puts in: the document NUMBER, right-aligned and padded with
- * zeros (`forNumber()`). The number is unique per kind and only an invoice
- * carries a payment part, so the reference identifies the invoice — which is
- * what the CAMT.054 matching of P4 reads back (plan §6.4). No customer or
- * bank prefix: a bank that requires one (a «BESR-ID» in front of the
- * reference) is not served yet — `debtor.md` known issues.
+ * The payload is the layout of wdv-630 (`InvoiceManager::getReferenceNo()`,
+ * owner 2026-10-06 «genau gleich»), three fixed fields:
+ *
+ *     positions  1–10   ten zeros — the place a bank's customer
+ *                       identification (BESR-ID) takes when a bank requires
+ *                       one at the start of the reference; wdv filled its
+ *                       `esrBankAccount` here, z77 has no such field (the
+ *                       orange slip is gone, owner 2026-10-06) and prints
+ *                       zeros — debtor.md DEBTOR-QRR-PREFIX-001
+ *     positions 11–16   the CUSTOMER NUMBER of the debtor
+ *                       (`DebtorProfile::$customerNumber`), six digits
+ *     positions 17–26   the DOCUMENT NUMBER, ten digits
+ *     position  27      the check digit
+ *
+ * So the reference identifies the debtor AND the invoice — which is what the
+ * CAMT.054 matching of P4 reads back (plan §6.4; wdv read the customer at
+ * 11–16 and the invoice at 17–26 the same way). Both numbers are the bare
+ * integers of their ranges; the padding happens here, never in
+ * `number_range` (`persistence-doctrine.md`).
  */
 final class QrReference
 {
     public const LENGTH = 27;
 
+    /** The three payload fields, in digits — 10 + 6 + 10 = 26. */
+    public const BANK_DIGITS     = 10;
+    public const CUSTOMER_DIGITS = 6;
+    public const DOCUMENT_DIGITS = 10;
+
     /** The recursive modulo-10 table (SIX / former ESR). */
     private const TABLE = [0, 9, 4, 6, 8, 2, 7, 1, 3, 5];
 
-    /** The 27-digit reference of document number $number. */
-    public static function forNumber(int $number): string
+    /**
+     * The 27-digit reference of document $documentNumber to the debtor with
+     * $customerNumber.
+     *
+     * @throws \InvalidArgumentException a number below 1, or one that does not fit its field
+     */
+    public static function forDocument(int $customerNumber, int $documentNumber): string
     {
-        if ($number < 1) {
-            throw new \InvalidArgumentException('A QR reference is built from a document number from 1');
-        }
-        $payload = str_pad((string) $number, self::LENGTH - 1, '0', STR_PAD_LEFT);
-        if (strlen($payload) !== self::LENGTH - 1) {
-            throw new \InvalidArgumentException('Document number too long for a QR reference');
-        }
+        $payload = str_repeat('0', self::BANK_DIGITS)
+            . self::field($customerNumber, self::CUSTOMER_DIGITS, 'customer number')
+            . self::field($documentNumber, self::DOCUMENT_DIGITS, 'document number');
 
         return $payload . self::checkDigit($payload);
     }
@@ -71,5 +90,19 @@ final class QrReference
         $out  = $head > 0 ? [substr($reference, 0, $head)] : [];
 
         return implode(' ', array_merge($out, str_split(substr($reference, $head), 5)));
+    }
+
+    /** One payload field: the number left-padded with zeros to $digits. */
+    private static function field(int $number, int $digits, string $what): string
+    {
+        if ($number < 1) {
+            throw new \InvalidArgumentException("A QR reference is built from a {$what} from 1");
+        }
+        $field = (string) $number;
+        if (strlen($field) > $digits) {
+            throw new \InvalidArgumentException(ucfirst($what) . " {$number} does not fit the {$digits} digits of the QR reference");
+        }
+
+        return str_pad($field, $digits, '0', STR_PAD_LEFT);
     }
 }

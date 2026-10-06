@@ -90,12 +90,13 @@ final class PaymentSnapshot
     }
 
     /**
-     * The payment part of document $number, from the target and the creditor
-     * block as they read NOW. A credit note gets {@see none()}. The creditor
-     * fields are copied as they resolved, never cut; `QrBill` compares them
-     * with the specification and reports a value that does not fit.
+     * The payment part of document $number to the debtor with
+     * $customerNumber, from the target and the creditor block as they read
+     * NOW. A credit note gets {@see none()}. The creditor fields are copied
+     * as they resolved, never cut; `QrBill` compares them with the
+     * specification and reports a value that does not fit.
      */
-    public static function forDocument(InvoiceKind $kind, int $number, string $message, ?PaymentTarget $target, ?Creditor $creditor): self
+    public static function forDocument(InvoiceKind $kind, int $customerNumber, int $number, string $message, ?PaymentTarget $target, ?Creditor $creditor): self
     {
         $snapshot = new self();
         if ($kind === InvoiceKind::CreditNote || $target === null) {
@@ -105,7 +106,7 @@ final class PaymentSnapshot
         if ($target->hasQrIban()) {
             $snapshot->account       = $target->getQrIban();
             $snapshot->referenceType = self::REFERENCE_QRR;
-            $snapshot->reference     = QrReference::forNumber($number);
+            $snapshot->reference     = QrReference::forDocument($customerNumber, $number);
         } else {
             $snapshot->account       = $target->getIban();
             $snapshot->referenceType = self::REFERENCE_NON;

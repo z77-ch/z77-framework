@@ -360,12 +360,13 @@ check('A3 migrate exits 0' . ($code !== 0 ? " — got {$code}: " . trim($out) : 
 $executed = $db->fetchFirstColumn('SELECT version FROM schema_migration');
 check('A4 … both debtor migrations ran in ONE run across the modules (timestamp order; the newest is the mandator\'s)',
     str_contains($out, 'Migrating up to Z77\\Module\\')
-    && in_array('Z77\\Module\\Debtor\\Migrations\\Version20260922173918', $executed, true) && in_array('Z77\\Module\\Debtor\\Migrations\\Version20260923043935', $executed, true));
+    && in_array('Z77\\Module\\Debtor\\Migrations\\Version20260922173918', $executed, true) && in_array('Z77\\Module\\Debtor\\Migrations\\Version20260923043935', $executed, true)
+    && in_array('Z77\\Module\\Debtor\\Migrations\\Version20261006100000', $executed, true));
 check('A5 debtor_profile, invoice, invoice_line and invoice_tax exist next to contact\'s, mandator\'s and financial\'s tables',
     array_diff(['debtor_profile', 'invoice', 'invoice_line', 'invoice_tax', 'mandator'], $tables()) === []);
 $rangeOf = fn(string $name) => $db->fetchOne('SELECT last_number FROM number_range WHERE name = ?', [$name]);
-check('A5b the ranges invoice and credit-note exist at 0 — created by the migration ahead of the first draw (DOCTRINE-NR-003), nothing consumed',
-    (string) $rangeOf('invoice') === '0' && (string) $rangeOf('credit-note') === '0');
+check('A5b the ranges invoice and credit-note exist at 0, customer at 999 (the first customer number is 1000, owner 2026-10-06) — created by the migrations ahead of the first draw (DOCTRINE-NR-003), nothing consumed',
+    (string) $rangeOf('invoice') === '0' && (string) $rangeOf('credit-note') === '0' && (string) $rangeOf('customer') === '999');
 $invoiceFks = $db->fetchFirstColumn('SELECT DISTINCT REFERENCED_TABLE_NAME FROM information_schema.KEY_COLUMN_USAGE WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND REFERENCED_TABLE_NAME IS NOT NULL ORDER BY 1', [$dbName, 'invoice']);
 check('A5c invoice references contact (the party) and itself (credit note → invoice) — no address, no terms, no tax code (they are snapshots / by code)', $invoiceFks === ['contact', 'invoice']);
 $addrColumns = $db->fetchFirstColumn('SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME LIKE ? ORDER BY ORDINAL_POSITION', [$dbName, 'invoice', 'addr\_%']);
@@ -382,12 +383,13 @@ check('A7 … and so is every string column of it', $columns !== [] && count(arr
 $fks = $db->fetchFirstColumn('SELECT REFERENCED_TABLE_NAME FROM information_schema.KEY_COLUMN_USAGE WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND REFERENCED_TABLE_NAME IS NOT NULL ORDER BY 1', [$dbName, 'debtor_profile']);
 check('A8 debtor_profile\'s only foreign key goes to contact — none to the file-based master data (ADR-043/19)', $fks === ['contact']);
 $indexes = $db->fetchFirstColumn('SELECT DISTINCT INDEX_NAME FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? ORDER BY 1', [$dbName, 'debtor_profile']);
-check('A9 the unique contact index and the payment-terms index carry our names', in_array('uniq_debtor_profile_contact', $indexes, true) && in_array('idx_debtor_profile_terms', $indexes, true));
+check('A9 the unique contact index, the unique customer-number index and the payment-terms index carry our names',
+    in_array('uniq_debtor_profile_contact', $indexes, true) && in_array('uniq_debtor_profile_number', $indexes, true) && in_array('idx_debtor_profile_terms', $indexes, true));
 [$code, $out] = $run(['command' => 'migrate']);
 check('A10 a second migrate is a no-op', $code === 0 && str_contains($out, 'Already at the latest version'));
 [$code, $out] = $run(['command' => 'diff', '--namespace' => 'Z77\\Module\\Debtor\\Migrations']);
-check('A11 diff after migrate reports NO change — mapping and migration agree (embedded address and payment part, money and decimal columns included)' . (str_contains($out, 'No changes detected') ? '' : ' — ' . trim($out)), $code !== 0 && str_contains($out, 'No changes detected') && count(glob($package . '/res/migrations/Version*.php')) === 3);
-check('A12 all three migrations are expand-only: no DROP outside down()', array_reduce(glob($package . '/res/migrations/Version*.php'), function ($ok, $f) {
+check('A11 diff after migrate reports NO change — mapping and migration agree (embedded address and payment part, money and decimal columns included)' . (str_contains($out, 'No changes detected') ? '' : ' — ' . trim($out)), $code !== 0 && str_contains($out, 'No changes detected') && count(glob($package . '/res/migrations/Version*.php')) === 4);
+check('A12 all four migrations are expand-only: no DROP outside down()', array_reduce(glob($package . '/res/migrations/Version*.php'), function ($ok, $f) {
     $s = file_get_contents($f);
     return $ok && substr_count(substr($s, 0, strpos($s, 'function down')), 'DROP') === 0;
 }, true));
@@ -676,7 +678,8 @@ $profiles = new DebtorProfileService($em8);
 $profile  = new DebtorProfile(['payment_terms_code' => 'disc-2-10']);
 $profile->setContact($mueller);
 $profiles->save($profile);
-check('F2 a profile saves for a contact', $profile->getId() !== null && $count('debtor_profile') === 1);
+check('F2 a profile saves for a contact — and draws customer number 1000 (the first) from the range `customer` in the same unit of work',
+    $profile->getId() !== null && $count('debtor_profile') === 1 && $profile->getCustomerNumber() === 1000 && (string) $rangeOf('customer') === '1000');
 $em9  = $wireDi();
 $read = $em9->getRepository(DebtorProfile::class)->findByContact($mueller->getId());
 check('F3 it reads back through a fresh EntityManager, keyed by contact id', $read?->getContact()?->getId() === $mueller->getId() && $read->getPaymentTermsCode() === 'disc-2-10' && !$read->hasDunningBlock() && $read->isActive());
@@ -696,11 +699,23 @@ check('F8 a SECOND profile for the same contact is refused by the validator', $e
 check('F9 … and nothing was written', $count('debtor_profile') === 1);
 
 $em10 = $wireDi();
-$raced = $db->executeStatement('INSERT INTO debtor_profile (payment_terms_code, dunning_block, active, contact_id) VALUES (?, 0, 1, ?)', ['net-30', $anna->getId()]);
+// The raw rows carry numbers far above the range so no later draw collides with them.
+$raced = $db->executeStatement('INSERT INTO debtor_profile (customer_number, payment_terms_code, dunning_block, active, contact_id) VALUES (999001, ?, 0, 1, ?)', ['net-30', $anna->getId()]);
 check('F10 a profile for another contact is fine (the unique index is per contact, not global)', $raced === 1 && $count('debtor_profile') === 2);
-$e = caught(fn() => $db->executeStatement('INSERT INTO debtor_profile (payment_terms_code, dunning_block, active, contact_id) VALUES (?, 0, 1, ?)', ['net-30', $anna->getId()]),
+$e = caught(fn() => $db->executeStatement('INSERT INTO debtor_profile (customer_number, payment_terms_code, dunning_block, active, contact_id) VALUES (999002, ?, 0, 1, ?)', ['net-30', $anna->getId()]),
     \Doctrine\DBAL\Exception\UniqueConstraintViolationException::class);
-check('F11 the unique index decides under a race — a second row for one contact is impossible in the schema', $e !== null && $count('debtor_profile') === 2);
+check('F11 the unique index decides under a race — a second row for one contact is impossible in the schema', $e !== null && str_contains($e->getMessage(), 'uniq_debtor_profile_contact') && $count('debtor_profile') === 2);
+$third = new Contact(['kind' => 'person', 'first_name' => 'Nora', 'last_name' => 'Dritte', 'language' => 'de']);
+$contacts->save($third);
+$e = caught(fn() => $db->executeStatement('INSERT INTO debtor_profile (customer_number, payment_terms_code, dunning_block, active, contact_id) VALUES (999001, ?, 0, 1, ?)', ['net-30', $third->getId()]),
+    \Doctrine\DBAL\Exception\UniqueConstraintViolationException::class);
+check('F11b … and so is a second row with one customer number (uniq_debtor_profile_number)', $e !== null && str_contains($e->getMessage(), 'uniq_debtor_profile_number') && $count('debtor_profile') === 2);
+$twice = new DebtorProfile(['payment_terms_code' => 'net-30', 'customer_number' => 77]);
+check('F11c the customer number is server-controlled: no setter, a body key `customer_number` is ignored by mapFromArray(), assignCustomerNumber() takes one number once and refuses 0',
+    !method_exists(DebtorProfile::class, 'setCustomerNumber') && $twice->getCustomerNumber() === 0
+    && throws(fn() => $twice->assignCustomerNumber(0), \InvalidArgumentException::class)
+    && (function () use ($twice): bool { $twice->assignCustomerNumber(5); return $twice->getCustomerNumber() === 5; })()
+    && throws(fn() => $twice->assignCustomerNumber(6), \LogicException::class) && $twice->getCustomerNumber() === 5);
 
 $em11    = $wireDi();
 $profiles = new DebtorProfileService($em11);
@@ -1581,6 +1596,14 @@ check('M7 InvoicingService::finalize() locks every row BEFORE any number is draw
     strpos(file_get_contents($package . '/src/Services/InvoicingService.php'), 'lockForUpdate($id)') < strpos(file_get_contents($package . '/src/Services/InvoicingService.php'), '$gateway->post($request)'));
 check('M8 the migration says what a development rollback does to a drawn range (leaves the row; up() is idempotent)',
     str_contains(file_get_contents($package . '/res/migrations/Version20260923043935.php'), 'idempotent'));
+check('M9 the customer-number migration numbers EXISTING profiles in id order before the unique index, seeds the range `customer` with the create() statement, raises it with GREATEST and drops it only at 0', (function () use ($package): bool {
+    $s = file_get_contents($package . '/res/migrations/Version20261006100000.php');
+    return strpos($s, 'ROW_NUMBER() OVER (ORDER BY id)') < strpos($s, 'CREATE UNIQUE INDEX uniq_debtor_profile_number')
+        && str_contains($s, "VALUES ('customer', 0) ON DUPLICATE KEY UPDATE last_number = last_number")
+        && str_contains($s, 'GREATEST(last_number, (SELECT COALESCE(MAX(customer_number), " . (self::FIRST_NUMBER - 1) . ") FROM debtor_profile))')
+        && str_contains($s, 'FIRST_NUMBER = 1000')
+        && str_contains($s, "WHERE name = 'customer' AND last_number = 0");
+})());
 
 
 // ── N. the year close asks debtor (P5 part 1) ───────────────────────────
@@ -1667,10 +1690,12 @@ $specErrors = static function (string $payload): array {
 check('P3C1 the QR reference check digit is modulo 10 recursive — the SIX example 21 00000 00003 13947 14300 0901|7',
     QrReference::checkDigit('21000000000313947143000901') === 7 && QrReference::isValid('210000000003139471430009017')
     && !QrReference::isValid('210000000003139471430009018') && !QrReference::isValid('21000000000313947143000901') && !QrReference::isValid(str_repeat('0', 27)));
-check('P3C2 forNumber(): the document number right-aligned in 26 digits plus its check digit; printed in blocks of five from the right',
-    QrReference::forNumber(12) === '00000000000000000000000012' . QrReference::checkDigit('00000000000000000000000012') && strlen(QrReference::forNumber(12)) === 27
-    && QrReference::isValid(QrReference::forNumber(987654)) && QrReference::format('210000000003139471430009017') === '21 00000 00003 13947 14300 09017'
-    && throws(fn() => QrReference::forNumber(0), \InvalidArgumentException::class));
+check('P3C2 forDocument(): the wdv-630 layout — ten zeros (the bank\'s place), the customer number in 6, the document number in 10, the check digit; printed in blocks of five from the right',
+    QrReference::forDocument(1001, 12) === '0000000000' . '001001' . '0000000012' . QrReference::checkDigit('00000000000010010000000012') && strlen(QrReference::forDocument(1001, 12)) === 27
+    && QrReference::isValid(QrReference::forDocument(999999, 9999999999)) && QrReference::format('210000000003139471430009017') === '21 00000 00003 13947 14300 09017'
+    && QrReference::format(QrReference::forDocument(1001, 12)) === '00 00000 00000 10010 00000 0012' . QrReference::checkDigit('00000000000010010000000012')
+    && throws(fn() => QrReference::forDocument(0, 12), \InvalidArgumentException::class) && throws(fn() => QrReference::forDocument(1, 0), \InvalidArgumentException::class)
+    && throws(fn() => QrReference::forDocument(1000000, 12), \InvalidArgumentException::class) && throws(fn() => QrReference::forDocument(1, 10000000000), \InvalidArgumentException::class));
 check('P3C3 the character set (v2.3 extended Latin): umlauts, ß, Ș and € pass; a line break, a tab and CJK do not',
     QrBill::isAllowedText('Müller & Söhne AG, Straße 1') && QrBill::isAllowedText('Ștefan €') && !QrBill::isAllowedText("a\nb") && !QrBill::isAllowedText("a\tb") && !QrBill::isAllowedText('日本'));
 
@@ -1710,7 +1735,9 @@ $qrInv = $service($emP)->invoice($withTarget('qr'));
 $qrRow = $invoiceRow($qrInv->getId());
 check('P3C8 target with a QR-IBAN → the columns: pay_target_code qr, the QR-IBAN, QRR, the reference from the NUMBER, the message «Rechnung n», the creditor as resolved',
     $qrRow['pay_target_code'] === 'qr' && $qrRow['pay_account'] === $lower && $qrRow['pay_reference_type'] === 'QRR'
-    && $qrRow['pay_reference'] === QrReference::forNumber($qrInv->getNumber()) && $qrRow['pay_message'] === 'Rechnung ' . $qrInv->getNumber()
+    && $qrRow['pay_reference'] === QrReference::forDocument($emP->getRepository(DebtorProfile::class)->findByContact($mid)->getCustomerNumber(), $qrInv->getNumber())
+    && substr($qrRow['pay_reference'], 10, 6) === str_pad((string) $emP->getRepository(DebtorProfile::class)->findByContact($mid)->getCustomerNumber(), 6, '0', STR_PAD_LEFT)
+    && $qrRow['pay_message'] === 'Rechnung ' . $qrInv->getNumber()
     && $qrRow['pay_creditor_name'] === 'Harness AG' && $qrRow['pay_creditor_zip'] === '8000' && $qrRow['pay_creditor_country'] === 'CH');
 $qrBill  = QrBill::of($readInvoice($qrInv->getId()));
 $payload = $qrBill->isPrintable() ? $qrBill->payload() : '';

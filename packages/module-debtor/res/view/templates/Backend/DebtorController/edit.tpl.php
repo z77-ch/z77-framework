@@ -45,6 +45,11 @@ $fieldError = function (string $name) use ($validator): string {
                 <?= raw($fieldError('contact_id')) ?>
                 <small class="be-form__hint">Sprache des Belegs: <?= e(mb_strtoupper($contact->getLanguage())) ?> — sie steht am Kontakt, nicht am Debitor.</small>
             </div>
+            <div class="be-form__field">
+                <label>Kundennummer</label>
+                <input type="text" value="<?= $isNew ? '' : e((string) $entry->getCustomerNumber()) ?>" placeholder="<?= $isNew ? 'wird beim Speichern vergeben' : '' ?>" readonly>
+                <small class="be-form__hint">Fortlaufend aus dem Nummernkreis, nie geändert — sie steht auf der QR-Referenz jeder Rechnung.</small>
+            </div>
             <div class="be-form__field" data-z77-field-wrapper>
                 <label>Zahlungskonditionen</label>
                 <select name="payment_terms_code" required aria-invalid="<?= $validator->hasFieldError('payment_terms_code') ? 'true' : 'false' ?>">

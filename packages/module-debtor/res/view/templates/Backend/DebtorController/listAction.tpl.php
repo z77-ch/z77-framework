@@ -108,6 +108,9 @@ $shown      = count($contacts);
                     <?php endif; ?>
 
                     <span class="be-tree__name" data-field="name">
+                        <?php if ($profile !== null): ?>
+                        <small class="be-list__cell--muted" data-field="customer-number" title="Kundennummer — vergeben beim Anlegen, steht auf der QR-Referenz"><?= e((string) $profile->getCustomerNumber()) ?> ·</small>
+                        <?php endif; ?>
                         <?= e($contact->displayName()) ?>
                         <small class="be-list__cell--muted">· <?= e(mb_strtoupper($contact->getLanguage())) ?></small>
                     </span>

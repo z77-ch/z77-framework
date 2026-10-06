@@ -8,6 +8,8 @@ use Z77\Module\Debtor\Entities\PaymentTerms;
 use Z77\Module\Debtor\Repositories\DebtorProfileRepository;
 use Z77\Module\Debtor\Repositories\PaymentTermsRepository;
 use Z77\Module\Debtor\Validators\DebtorProfileValidator;
+use Z77\Persistence\Doctrine\Entities\NumberRange;
+use Z77\Persistence\Doctrine\Repositories\NumberRangeRepository;
 use Z77\Persistence\Resolver\UnifiedEntityManager;
 
 /**
@@ -35,16 +37,25 @@ use Z77\Persistence\Resolver\UnifiedEntityManager;
  * profile is not managed until `persist()`, so {@see save()} validates it as
  * it is.
  *
- * One `flush()` per operation is one Doctrine transaction (ADR-039
- * decision 10); nothing here needs the transaction port.
+ * One `flush()` per update is one Doctrine transaction (ADR-039
+ * decision 10). Only {@see save()} runs through the transaction port: it
+ * draws the CUSTOMER NUMBER from the range `customer` and inserts the row in
+ * ONE unit of work, so the number is consumed exactly when the profile
+ * exists (gapless, the document model).
  */
 final class DebtorProfileService
 {
     public function __construct(private readonly UnifiedEntityManager $em) {}
 
     /**
-     * Persist a NEW profile. Nothing here is managed before `persist()`, so
-     * a refusal leaves no trace in the EntityManager.
+     * Persist a NEW profile — and give it its CUSTOMER NUMBER: the next of
+     * the gapless range `customer`, drawn as the FIRST write of a unit of
+     * work (lock order, `NumberRange` first — the `InvoicingService::invoice()`
+     * model), the row inserted in the same unit of work, so a refused insert
+     * (the unique-contact race) rolls the draw back and consumes nothing.
+     * Validation runs BEFORE the unit of work: a refused profile never takes
+     * the range lock. Nothing here is managed before `persist()`, so a
+     * refusal leaves no trace in the EntityManager.
      *
      * @throws InvalidDebtorProfileException carries the validator and the profile
      * @throws \LogicException the profile already exists — use {@see update()}
@@ -56,8 +67,14 @@ final class DebtorProfileService
         }
         $this->assertValid($profile, requireActiveTerms: true);
 
-        $this->em->persist($profile);
-        $this->flushOrRefuse($profile);
+        $this->refuseOnRace($profile, function () use ($profile): void {
+            $this->em->getTransaction(DebtorProfile::class)->run(function () use ($profile): void {
+                /** @var NumberRangeRepository $ranges */
+                $ranges = $this->em->getRepository(NumberRange::class);
+                $profile->assignCustomerNumber($ranges->next(DebtorProfile::CUSTOMER_NUMBER_RANGE));   // the FIRST write
+                $this->em->persist($profile);
+            });
+        });
     }
 
     /**
@@ -84,7 +101,7 @@ final class DebtorProfileService
 
         $profile->mapFromArray($values);
         $this->em->persist($profile);
-        $this->flushOrRefuse($profile);
+        $this->refuseOnRace($profile, fn() => $this->em->flush());
     }
 
     public function setActive(DebtorProfile $profile, bool $active): void
@@ -112,18 +129,19 @@ final class DebtorProfileService
     }
 
     /**
-     * The flush, with the unique contact turned into the field error the
-     * validator would have given: two requests can pass the validator for
-     * the same contact, and only the database sees the race. After a failed
-     * flush the EntityManager has been replaced (DOCTRINE-TX-004); the
-     * profile handed in is detached and serves the form only.
+     * Runs the write, with the unique contact turned into the field error
+     * the validator would have given: two requests can pass the validator
+     * for the same contact, and only the database sees the race. After a
+     * failed flush the EntityManager has been replaced (DOCTRINE-TX-004) —
+     * by the driver outside a unit of work, by the port's rollback inside
+     * one; the profile handed in is detached and serves the form only.
      *
      * @throws InvalidDebtorProfileException
      */
-    private function flushOrRefuse(DebtorProfile $profile): void
+    private function refuseOnRace(DebtorProfile $profile, callable $write): void
     {
         try {
-            $this->em->flush();
+            $write();
         } catch (UniqueConstraintViolationException $e) {
             if (!str_contains($e->getMessage(), DebtorProfile::UNIQUE_CONTACT)) {
                 throw $e;

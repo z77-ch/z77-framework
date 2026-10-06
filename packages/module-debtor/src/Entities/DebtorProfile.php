@@ -20,8 +20,20 @@ use Doctrine\ORM\Mapping as ORM,
  * validator asks first so the screen gets a field error; the index is what
  * decides under a race.
  *
- * What is on it in P3 part 1, and what deliberately is not:
+ * What is on it, and what deliberately is not:
  *
+ *   - `customerNumber` — the debtor's OWN number (owner 2026-10-06: not the
+ *     record id — offices identify a customer by a number of their own, and
+ *     the number is what the QR reference carries, `Invoicing\QrReference`).
+ *     Drawn from the gapless range `customer` by `DebtorProfileService::save()`
+ *     as the FIRST write of its unit of work, exactly as a document draws
+ *     its number; never typed, never changed — there is no setter, so no
+ *     form body reaches it, and `assignCustomerNumber()` refuses a second
+ *     assignment. Unique (`uniq_debtor_profile_number`). The wdv-630 model
+ *     (`client_no` of `range_of_numbers`, set once when the customer is
+ *     created). Numbers start at 1000 (the migration seeds the range at
+ *     999, owner 2026-10-06); the numbers of an existing business arrive
+ *     with the wdv import, which assigns them and raises the range.
  *   - `paymentTermsCode` — the default payment terms of this debtor,
  *     referenced BY CODE (ADR-043 decision 19) into the file-based
  *     {@see PaymentTerms}. No foreign key: the row lives in `data/`, not in
@@ -48,6 +60,7 @@ use Doctrine\ORM\Mapping as ORM,
 #[Entity('doctrine')]
 #[ORM\Entity, ORM\Table(name: 'debtor_profile')]
 #[ORM\UniqueConstraint(name: DebtorProfile::UNIQUE_CONTACT, columns: ['contact_id'])]
+#[ORM\UniqueConstraint(name: DebtorProfile::UNIQUE_NUMBER, columns: ['customer_number'])]
 #[ORM\Index(name: 'idx_debtor_profile_terms', columns: ['payment_terms_code'])]
 class DebtorProfile
 {
@@ -55,6 +68,12 @@ class DebtorProfile
 
     /** The unique index on `contact_id` — `DebtorProfileService` recognises its violation by this name. */
     public const UNIQUE_CONTACT = 'uniq_debtor_profile_contact';
+
+    /** The unique index on `customer_number` — the schema's word that one number is handed out once. */
+    public const UNIQUE_NUMBER = 'uniq_debtor_profile_number';
+
+    /** The `number_range` the customer numbers are drawn from — created by the migration that ships the column. */
+    public const CUSTOMER_NUMBER_RANGE = 'customer';
 
     /** Longest payment-terms code the column holds — the validator refuses longer ones. */
     public const CODE_LENGTH = 16;
@@ -67,6 +86,14 @@ class DebtorProfile
     #[ORM\ManyToOne(targetEntity: Contact::class)]
     #[ORM\JoinColumn(name: 'contact_id', nullable: false)]
     private ?Contact $contact = null;
+
+    /**
+     * Server-controlled: drawn from the range `customer` on the first save
+     * (0 = not assigned yet, only on a NEW, unsaved profile). No setter —
+     * see {@see assignCustomerNumber()}.
+     */
+    #[ORM\Column(name: 'customer_number')]
+    private int $customerNumber = 0;
 
     /** {@see PaymentTerms::$code} — by code, no foreign key (ADR-043 decision 19). */
     #[ORM\Column(name: 'payment_terms_code', length: self::CODE_LENGTH)]
@@ -92,6 +119,8 @@ class DebtorProfile
 
     public function getId(): ?int { return $this->id; }
     public function getContact(): ?Contact { return $this->contact; }
+    /** 0 while the profile was never saved. */
+    public function getCustomerNumber(): int { return $this->customerNumber; }
     public function getPaymentTermsCode(): string { return $this->paymentTermsCode; }
     public function hasDunningBlock(): bool { return $this->dunningBlock; }
     public function isActive(): bool { return $this->active; }
@@ -100,4 +129,24 @@ class DebtorProfile
     public function setPaymentTermsCode(string $code): void { $this->paymentTermsCode = PaymentTerms::normalizeCode($code); }
     public function setDunningBlock(bool $block): void { $this->dunningBlock = $block; }
     public function setActive(bool $active): void { $this->active = $active; }
+
+    /**
+     * The one write of the customer number — by `DebtorProfileService::save()`
+     * with the number it drew, inside the unit of work. Not a setter on
+     * purpose: `mapFromArray()` looks for `set…`, so no form body or import
+     * array can put a number here.
+     *
+     * @throws \LogicException the profile already carries a number
+     * @throws \InvalidArgumentException a number below 1
+     */
+    public function assignCustomerNumber(int $number): void
+    {
+        if ($this->customerNumber !== 0) {
+            throw new \LogicException("Debtor profile already carries customer number {$this->customerNumber} — it is assigned once and never changed");
+        }
+        if ($number < 1) {
+            throw new \InvalidArgumentException('A customer number starts at 1');
+        }
+        $this->customerNumber = $number;
+    }
 }
