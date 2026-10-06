@@ -8,7 +8,7 @@ question reopened ADR 2 on 2026-09-20 and was settled on 2026-09-21)
 in wdv-6.2.2 and decisions D1–D8 (§7 there). This plan does not repeat the wdv analysis.
 **ADRs:** ADR-039 to ADR-043, approved 2026-09-21 (§10).
 
-## Where we continue (as of 2026-09-30)
+## Where we continue (as of 2026-10-06)
 
 **What this plan builds:** order processing open to many sources, financial bookkeeping, receivables
 management, article management. Nothing else. Subscriptions, shipping and a shop are applications on
@@ -271,6 +271,40 @@ agreed later storage (module-dms `Kunden/<Kunde>/`, P7 per order, never replace 
 needed by P5b) are in [`debtor.md`](../topics/debtor.md) `## pending`, with the decisions taken on
 the owner's behalf to confirm. Harness `tests/module-debtor.php` 339 checks (`P3C1`–`P3C58`, incl. the fixes of the independent review the same day — no blocker). **Next:**
 the owner's PDF decision (then the PDF in its own step), P4 (payments, CAMT.054, dunning), P5 part 2.
+
+**P3 part 3 completed (2026-10-06, owner decisions of the same day) — the customer number, the
+wdv-630 reference layout, the PDF.** The debtor profile carries an OWN customer number (range
+`customer`, drawn in `DebtorProfileService::save()` as the first write, starts at 1000, the real
+numbers come with the wdv import — not the record id: offices identify customers by a number). The
+QR reference is built exactly like wdv-630 `InvoiceManager::getReferenceNo()`: ten zeros (the
+bank's place, no BESR-ID field — the orange slip is gone), the customer number (6), the document
+number (10), the check digit. The PDF library is **FPDF**, vendored into the kernel like bacon,
+behind the facade `Z77\Shared\Pdf\PdfDocument`, the LAYOUTS as partials (`pdf/invoice`, `pdf/qrBill`,
+the shared `pdf/table` / `pdf/addressWindow`, module-mandator's `pdf/letterhead`) — the owner's
+condition for a central PDF tool («schöne Layouts über Partials»; data sheets will follow).
+`BytesResponse` / `$this->bytes()` serves it inline, nothing is stored. Harness: `tests/pdf.php`
+(19), `tests/module-debtor.php` 352. Decisions (a)–(d) of 2026-09-30 confirmed. Commits `6c400b7`,
+`c36ed73`, `908da2c`. [`pdf.md`](../topics/pdf.md), [`debtor.md`](../topics/debtor.md). **Live test
+in z77.ch handed over the same day** (the project's `docs/handoff-2026-10-06-debtor-live-test.md`):
+the first real QR-bill goes to the SIX validation portal. **Next:** P4 (payments, CAMT.054, dunning),
+P5 part 2.
+
+**P4 part 1 built (2026-10-06, owner go of the same day) — payments, discount and loss (§6.3).**
+`Payment` (one settlement event: value date, the money that moved on a payment target, or a
+write-off) with its `PaymentAllocation`s on ONE final invoice — `payment` / `discount` / `loss`,
+each posted through the accounting port in the same unit of work, one journal entry per
+allocation (the receivable cleared; Skonto and Verlust reduce turnover AND VAT per tax code of
+the document with the credit note's sign convention, `Money::allocate` to the Rappen). The open
+amount stays DERIVED (gross − final credit notes − allocations); the plan's `OpenItem` question is
+answered with NO table, and the plan's allocation kind `fee` does not exist: a dunning fee is a
+DOCUMENT of its own kind (owner decision 2026-10-06, built in part 3). One write path
+`PaymentService::record(PaymentDraft)` with stable refusal reasons, the invoice row locked before
+any journal number, a ledger refusal rolling the settlement back whole; the screen «Zahlung
+erfassen» on the detail of a final invoice, the settlements listed there. Tables `payment` /
+`payment_allocation`, migration `Version20261006150000`. Harness `tests/module-debtor.php`
+`Q1`–`Q17` (369 checks). **Next:** P4 part 2 (CAMT.054, the counter allocation, overpayment /
+unmatched remainder, the open-work check for unbooked transactions), P4 part 3 (dunning, the fee
+as a document kind), P5 part 2.
 
 Open for the owner: `persistence-doctrine`, `module-vat` and `module-contact` are not split targets
 yet (`.github/workflows/split.yml`, Packagist). Working method that carried P1: each building block

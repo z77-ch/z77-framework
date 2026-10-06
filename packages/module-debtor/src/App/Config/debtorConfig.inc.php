@@ -8,6 +8,8 @@ use Z77\Module\Debtor\Entities\DebtorProfile;
 use Z77\Module\Debtor\Entities\Invoice;
 use Z77\Module\Debtor\Entities\InvoiceLine;
 use Z77\Module\Debtor\Entities\InvoiceTax;
+use Z77\Module\Debtor\Entities\Payment;
+use Z77\Module\Debtor\Entities\PaymentAllocation;
 
 /**
  * Debtor module (ADR-040, plan §6) — receivables. P3 part 1: the MASTER
@@ -66,6 +68,8 @@ return [
         Invoice::class,
         InvoiceLine::class,
         InvoiceTax::class,
+        Payment::class,
+        PaymentAllocation::class,
     ],
 
     // The accounting port (plan §6.6): the class `InvoicingService::finalize()` posts through.

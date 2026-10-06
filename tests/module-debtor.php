@@ -353,8 +353,8 @@ $run = static function (array $input): array {
 
 echo "A. Migration (z77-db migrate on an empty database)\n";
 $config = DI::getModuleManager()->getModuleConfig('debtor');
-check('A0 the module config announces exactly the FOUR Doctrine entities — the three master-data types are file-based',
-    $config?->get('doctrineEntities') === [DebtorProfile::class, Invoice::class, InvoiceLine::class, InvoiceTax::class]);
+check('A0 the module config announces exactly the SIX Doctrine entities (profile, the document and its lines and taxes, the payment and its allocations) — the three master-data types are file-based',
+    $config?->get('doctrineEntities') === [DebtorProfile::class, Invoice::class, InvoiceLine::class, InvoiceTax::class, \Z77\Module\Debtor\Entities\Payment::class, \Z77\Module\Debtor\Entities\PaymentAllocation::class]);
 $dirs = MigrationDirectories::collect(DI::getModuleManager(), DI::getFileFinder());
 check('A1 the module\'s res/migrations is collected under Z77\\Module\\Debtor\\Migrations', ($dirs['Z77\\Module\\Debtor\\Migrations'] ?? '') === $package . '/res/migrations');
 check('A2 the database is empty', $tables() === []);
@@ -391,8 +391,8 @@ check('A9 the unique contact index, the unique customer-number index and the pay
 [$code, $out] = $run(['command' => 'migrate']);
 check('A10 a second migrate is a no-op', $code === 0 && str_contains($out, 'Already at the latest version'));
 [$code, $out] = $run(['command' => 'diff', '--namespace' => 'Z77\\Module\\Debtor\\Migrations']);
-check('A11 diff after migrate reports NO change — mapping and migration agree (embedded address and payment part, money and decimal columns included)' . (str_contains($out, 'No changes detected') ? '' : ' — ' . trim($out)), $code !== 0 && str_contains($out, 'No changes detected') && count(glob($package . '/res/migrations/Version*.php')) === 4);
-check('A12 all four migrations are expand-only: no DROP outside down()', array_reduce(glob($package . '/res/migrations/Version*.php'), function ($ok, $f) {
+check('A11 diff after migrate reports NO change — mapping and migration agree (embedded address and payment part, money and decimal columns included)' . (str_contains($out, 'No changes detected') ? '' : ' — ' . trim($out)), $code !== 0 && str_contains($out, 'No changes detected') && count(glob($package . '/res/migrations/Version*.php')) === 5);
+check('A12 all five migrations are expand-only: no DROP outside down()', array_reduce(glob($package . '/res/migrations/Version*.php'), function ($ok, $f) {
     $s = file_get_contents($f);
     return $ok && substr_count(substr($s, 0, strpos($s, 'function down')), 'DROP') === 0;
 }, true));
@@ -1027,7 +1027,7 @@ check('I5 the three master-data fragments carry an add action and an active swit
 
 $templateDir = $package . '/res/view/templates/Backend';
 $templates   = glob($templateDir . '/*/*.tpl.php');
-check('I6 every master-data screen has its list template, its edit template and its header slot; the document screens (P3 part 3) add six', count($templates) === 18);
+check('I6 every master-data screen has its list template, its edit template and its header slot; the document screens (P3 part 3) add six, the payment form (P4 part 1) one', count($templates) === 19);
 check('I7 no template carries a <script> tag or an inline handler (Rule 7)',
     array_reduce($templates, fn($ok, $f) => $ok && !preg_match('/<script|\son[a-z]+\s*=/i', file_get_contents($f)), true));
 check('I8 the package ships no JavaScript at all', glob($package . '/res/**/*.js') === [] && glob($package . '/res/*.js') === []);
@@ -1844,7 +1844,7 @@ $useRequest = function (array $get, ?array $post = null) use ($wireDi): UnifiedE
 };
 $invoiceHost = function () {
     return new class {
-        use \Z77\Module\Debtor\Ui\InvoiceControllerTrait { listAction as public; detailAction as public; pdfAction as public; addAction as public; editAction as public; creditNoteAction as public; confirmFinalizeAction as public; finalizeAction as public; }
+        use \Z77\Module\Debtor\Ui\InvoiceControllerTrait { listAction as public; detailAction as public; pdfAction as public; paymentAction as public; addAction as public; editAction as public; creditNoteAction as public; confirmFinalizeAction as public; finalizeAction as public; }
         public array $context = [];
         public object $layoutManager;
         public object $messageService;
@@ -1870,6 +1870,7 @@ $invoiceHost = function () {
         protected function bytes(string $content, string $filename, string $mimeType, bool $inline = true): \Z77\Core\Http\Response\BytesResponse { $this->bytes = ['content' => $content, 'filename' => $filename, 'mime' => $mimeType, 'inline' => $inline]; return new \Z77\Core\Http\Response\BytesResponse($content, $filename, $mimeType, $inline); }
         // The session actor is not wired in the harness — name it, as a CLI caller must.
         private function invoicingService(): InvoicingService { return new InvoicingService($this->em(), 'sachbearbeiter'); }
+        private function paymentService(): \Z77\Module\Debtor\Services\PaymentService { return new \Z77\Module\Debtor\Services\PaymentService($this->em(), 'sachbearbeiter'); }
     };
 };
 $renderMain = fn($host) => implode('', array_map(fn($p) => $renderer->partial($p, $host->context), $host->layoutManager->sections['main'] ?? []));
@@ -2169,10 +2170,161 @@ $host = $invoiceHost();
 $host->detailAction();
 check('P3D10 the detail offers «PDF» (a new tab) next to the other actions', str_contains($renderMain($host), '/pdf?id=' . $qrInv->getId()) && str_contains($renderMain($host), 'target="_blank"'));
 
+// ── Q. P4 part 1: payments, discount and loss (plan §6.3, owner go 2026-10-06) ──
+
+echo "Q. PaymentService::record(): a settlement on a FINAL invoice — allocations posted at once, the open amount derived\n";
+use Z77\Module\Debtor\Payments\PaymentDraft;
+use Z77\Module\Debtor\Services\PaymentService;
+use Z77\Module\Debtor\Services\PaymentRefusedException;
+$pay       = fn(UnifiedEntityManager $em) => new PaymentService($em, 'kassier');
+$payRefusal = fn(callable $fn): ?string => caught($fn, PaymentRefusedException::class)?->reason;
+$draftOn   = fn(int $invoiceId, string $date, string $payment, string $discount = '0.00', string $loss = '0.00', string $target = 'qr', ?string $note = null)
+    => new PaymentDraft($invoiceId, day($date), chf($payment), chf($discount), chf($loss), $target, $note);
+$mandatorAccounts = $db->fetchAssociative('SELECT account_receivable, account_discount, account_loss FROM mandator');
+$paymentCount     = fn() => $count('payment');
+$allocationCount  = fn() => $count('payment_allocation');
+$journalBefore    = $journalCount();
+
+// inv1: final, gross 162.15, a final credit note of 54.05 → open 108.10 (section L).
+$emQ  = $wireDi();
+$openBefore = $service($emQ)->openAmount($readInvoice($inv1->getId()));
+$p1   = $pay($emQ)->record($draftOn($inv1->getId(), '2026-04-02', '100.00', '8.10', '0.00', 'qr', 'Bank-Eingang 2.4.'));
+$a1   = $p1->getAllocations();
+check('Q1 a payment of 100.00 plus 8.10 Skonto on the invoice open at 108.10: one payment row, two allocations (payment, discount), both posted, the open amount is 0.00',
+    $openBefore->toDecimal() === '108.10' && $p1->getId() !== null && $paymentCount() === 1 && $allocationCount() === 2
+    && count($a1) === 2 && $a1[0]->kind()->value === 'payment' && $a1[1]->kind()->value === 'discount'
+    && $a1[0]->getLedgerEntryRef() !== null && $a1[1]->getLedgerEntryRef() !== null && $a1[0]->getLedgerEntryRef() !== $a1[1]->getLedgerEntryRef()
+    && $service($wireDi())->openAmount($readInvoice($inv1->getId()))->isZero() && $journalCount() === $journalBefore + 2
+    && $p1->getPaymentTargetCode() === 'qr' && $p1->getNote() === 'Bank-Eingang 2.4.' && $p1->getCreatedBy() === 'kassier' && $p1->getSourceType() === 'manual');
+$pl = $entryLines((string) $a1[0]->getLedgerEntryRef());
+check('Q2 the payment posting: the target\'s bank account 1020 DEBIT 100.00 | receivable CREDIT 100.00, no tax data, text «Zahlung Rechnung n · name», source payment/{id}',
+    count($pl) === 2 && $pl[0]['account_number'] === '1020' && $pl[0]['debit'] === '100.00' && $pl[0]['tax_code'] === null
+    && $pl[1]['account_number'] === $mandatorAccounts['account_receivable'] && $pl[1]['credit'] === '100.00'
+    && (function () use ($db, $a1, $p1, $inv1, $readInvoice): bool {
+        $e = $db->fetchAssociative('SELECT e.text, e.source_type, e.source_ref, e.idempotency_key FROM journal_entry e JOIN fiscal_year y ON y.id = e.fiscal_year_id WHERE CONCAT(y.code, \'/\', e.number) = ?', [$a1[0]->getLedgerEntryRef()]);
+        return str_starts_with($e['text'], 'Zahlung ' . $readInvoice($inv1->getId())->documentName() . ' · ') && $e['source_type'] === 'payment' && $e['source_ref'] === (string) $p1->getId() && $e['idempotency_key'] === 'allocation:' . $a1[0]->getId();
+    })());
+$dl = $entryLines((string) $a1[1]->getLedgerEntryRef());
+$discountLine = array_values(array_filter($dl, fn($r) => $r['account_number'] === $mandatorAccounts['account_discount']));
+$vatLine      = array_values(array_filter($dl, fn($r) => $r['account_number'] === '2200'));
+$recvLine     = array_values(array_filter($dl, fn($r) => $r['account_number'] === $mandatorAccounts['account_receivable']));
+check('Q3 the Skonto posting (one code UN 8.1 %): discount account DEBIT 7.49 with UN 810, base −7.49, tax −0.61 | 2200 DEBIT 0.61 | receivable CREDIT 8.10 — turnover and VAT reduced proportionally, Σ debit = Σ credit',
+    count($dl) === 3 && count($discountLine) === 1 && $discountLine[0]['debit'] === '7.49' && $discountLine[0]['tax_code'] === 'UN' && (int) $discountLine[0]['tax_rate'] === 810
+    && $discountLine[0]['tax_base'] === '-7.49' && $discountLine[0]['tax_amount'] === '-0.61'
+    && count($vatLine) === 1 && $vatLine[0]['debit'] === '0.61' && count($recvLine) === 1 && $recvLine[0]['credit'] === '8.10');
+check('Q4 the detail reads the allocations back with their payments, oldest first', (function () use ($pay, $wireDi, $readInvoice, $inv1): bool {
+    $rows = $pay($em = $wireDi())->allocationsOf($readInvoice($inv1->getId()));
+    return count($rows) === 2 && $rows[0]->getPayment()->getNote() === 'Bank-Eingang 2.4.' && $rows[0]->getAmount()->toDecimal() === '100.00' && $rows[1]->getAmount()->toDecimal() === '8.10';
+})());
+
+echo "Q. … refusals — nothing written, nothing posted\n";
+$before = [$paymentCount(), $allocationCount(), $journalCount()];
+$inv2Open = $service($wireDi())->openAmount($readInvoice($inv2->getId()));
+check('Q5 an invoice already settled takes nothing more (over-allocation); more than the open amount is refused too',
+    $payRefusal(fn() => $pay($wireDi())->record($draftOn($inv1->getId(), '2026-04-03', '0.01'))) === PaymentRefusedException::OVER_ALLOCATION
+    && $payRefusal(fn() => $pay($wireDi())->record($draftOn($inv2->getId(), '2026-04-03', $inv2Open->add(chf('0.01'))->toDecimal()))) === PaymentRefusedException::OVER_ALLOCATION);
+$stillInvoicing = $service($wireDi())->invoice($oneLine($mid, '2026-07-01', '1.000', '10.00'));
+check('Q6 a credit note is not paid (credit-note); a document in invoicing is not settleable (not-final); an unknown document (not-found)',
+    $payRefusal(fn() => $pay($wireDi())->record($draftOn($cn->getId(), '2026-07-01', '1.00'))) === PaymentRefusedException::CREDIT_NOTE
+    && $payRefusal(fn() => $pay($wireDi())->record($draftOn($stillInvoicing->getId(), '2026-07-01', '1.00'))) === PaymentRefusedException::NOT_FINAL
+    && $payRefusal(fn() => $pay($wireDi())->record($draftOn(999999, '2026-07-01', '1.00'))) === PaymentRefusedException::NOT_FOUND);
+check('Q7 all three at 0.00 (nothing); a negative amount (amount); a payment without a target (target-required); an unknown, an inactive target, a target without a postable account (target-…); a value date before the invoice date (date)',
+    $payRefusal(fn() => $pay($wireDi())->record($draftOn($inv2->getId(), '2026-04-03', '0.00'))) === PaymentRefusedException::NOTHING
+    && $payRefusal(fn() => $pay($wireDi())->record($draftOn($inv2->getId(), '2026-04-03', '-1.00'))) === PaymentRefusedException::AMOUNT
+    && $payRefusal(fn() => $pay($wireDi())->record($draftOn($inv2->getId(), '2026-04-03', '1.00', '0.00', '0.00', ''))) === PaymentRefusedException::TARGET_REQUIRED
+    && $payRefusal(fn() => $pay($wireDi())->record($draftOn($inv2->getId(), '2026-04-03', '1.00', '0.00', '0.00', 'nope'))) === PaymentRefusedException::TARGET_UNKNOWN
+    && $payRefusal(fn() => $pay($wireDi())->record($draftOn($inv2->getId(), '2020-01-01', '1.00'))) === PaymentRefusedException::DATE
+    && (function () use ($wireDi, $pay, $draftOn, $inv2, $payRefusal, $base, $withIid): bool {
+        $em = $wireDi();
+        $md = new DebtorMasterData($em);
+        // Its own QR-IBAN — an IBAN is unique across the targets.
+        $sleeping = new PaymentTarget(['code' => 'sleeping', 'label' => 'Inaktiv', 'qr_iban' => $withIid('31000'), 'account_number' => '1020']);
+        $md->saveTarget($sleeping);
+        $md->setTargetActive($sleeping, false);
+        // Rows the validator would refuse (no account, an account the chart lacks) — written raw, as an old file or a hand edit could leave them.
+        $file = $base . '/data/framework/debtor/payment_targets.json';
+        $rows = json_decode(file_get_contents($file), true);
+        $rows[] = ['code' => 'noacct', 'label' => 'Ohne Konto', 'iban' => 'CH9300762011623852957', 'qr_iban' => '', 'account_number' => '', 'active' => true];
+        $rows[] = ['code' => 'badacct', 'label' => 'Falsches Konto', 'iban' => 'CH9300762011623852957', 'qr_iban' => '', 'account_number' => '9999', 'active' => true];
+        file_put_contents($file, json_encode($rows, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+        return $payRefusal(fn() => $pay($wireDi())->record($draftOn($inv2->getId(), '2026-04-03', '1.00', '0.00', '0.00', 'noacct'))) === PaymentRefusedException::TARGET_ACCOUNT
+            && $payRefusal(fn() => $pay($wireDi())->record($draftOn($inv2->getId(), '2026-04-03', '1.00', '0.00', '0.00', 'badacct'))) === PaymentRefusedException::TARGET_ACCOUNT
+            && $payRefusal(fn() => $pay($wireDi())->record($draftOn($inv2->getId(), '2026-04-03', '1.00', '0.00', '0.00', 'sleeping'))) === PaymentRefusedException::TARGET_INACTIVE;
+    })());
+check('Q8 … and none of them wrote a row or posted an entry', [$paymentCount(), $allocationCount(), $journalCount()] === $before);
+
+echo "Q. … a write-off, and the ledger's refusal rolls the settlement back WHOLE\n";
+$emQ2 = $wireDi();
+$p2   = $pay($emQ2)->record(new PaymentDraft($inv2->getId(), day('2026-05-01'), chf('0.00'), chf('0.00'), $inv2Open, '', 'uneinbringlich'));
+$ll   = $entryLines((string) $p2->getAllocations()[0]->getLedgerEntryRef());
+$sumD = array_sum(array_map(fn($r) => (int) str_replace('.', '', $r['debit']), $ll));
+$sumC = array_sum(array_map(fn($r) => (int) str_replace('.', '', $r['credit']), $ll));
+check('Q9 a pure write-off (loss = the open amount, no money, no target): one allocation of kind loss on the loss account with the tax split, Σ debit = Σ credit = the amount, the invoice is settled',
+    $p2->getAmount()->isZero() && $p2->getPaymentTargetCode() === '' && count($p2->getAllocations()) === 1 && $p2->getAllocations()[0]->kind()->value === 'loss'
+    && $sumD === $sumC && $sumD === (int) str_replace('.', '', $inv2Open->toDecimal())
+    && count(array_filter($ll, fn($r) => $r['account_number'] === $mandatorAccounts['account_loss'])) >= 1
+    && count(array_filter($ll, fn($r) => $r['account_number'] === $mandatorAccounts['account_receivable'] && $r['credit'] === $inv2Open->toDecimal())) === 1
+    && $service($wireDi())->openAmount($readInvoice($inv2->getId()))->isZero());
+$emQ3 = $wireDi();
+$inv3 = $service($emQ3)->invoice($oneLine($mid, '2026-06-01', '1.000', '50.00'));
+$service($emQ3)->finalize([$at($inv3->getId())]);
+$before = [$paymentCount(), $allocationCount(), $journalCount()];
+$ledgerRefusal = caught(fn() => $pay($wireDi())->record($draftOn($inv3->getId(), '2027-01-05', '20.00')), \Z77\Module\Debtor\Accounting\AccountingRefusedException::class);
+check('Q10 a payment dated in a year the ledger has not opened (2027): the ledger refuses inside the unit of work — the payment and its allocation are rolled back, no entry, the open amount unchanged',
+    $ledgerRefusal !== null && [$paymentCount(), $allocationCount(), $journalCount()] === $before && $service($wireDi())->openAmount($readInvoice($inv3->getId()))->toDecimal() === '54.05');
+check('Q11 a partial payment leaves the rest open; a second one settles it', (function () use ($pay, $wireDi, $draftOn, $inv3, $service, $readInvoice): bool {
+    $pay($wireDi())->record($draftOn($inv3->getId(), '2026-06-10', '20.00'));
+    $afterFirst = $service($wireDi())->openAmount($readInvoice($inv3->getId()))->toDecimal();
+    $pay($wireDi())->record($draftOn($inv3->getId(), '2026-06-20', '34.05'));
+    return $afterFirst === '34.05' && $service($wireDi())->openAmount($readInvoice($inv3->getId()))->isZero();
+})());
+check('Q12 the entities are immutable: no setter on Payment / PaymentAllocation, an allocation of 0.00 is refused, a negative payment amount is refused, a second markPosted() throws',
+    array_filter(get_class_methods(\Z77\Module\Debtor\Entities\Payment::class), fn($m) => str_starts_with($m, 'set')) === []
+    && array_filter(get_class_methods(\Z77\Module\Debtor\Entities\PaymentAllocation::class), fn($m) => str_starts_with($m, 'set')) === []
+    && throws(fn() => (new \Z77\Module\Debtor\Entities\Payment(day('2026-01-01'), chf('1.00'), 'qr', null, 'x', new \DateTimeImmutable()))->allocate($readInvoice($inv3->getId()), \Z77\Module\Debtor\Entities\AllocationKind::Payment, chf('0.00')), \InvalidArgumentException::class)
+    && throws(fn() => new \Z77\Module\Debtor\Entities\Payment(day('2026-01-01'), chf('-1.00'), 'qr', null, 'x', new \DateTimeImmutable()), \InvalidArgumentException::class)
+    && (function () use ($readInvoice, $inv3): bool { $a = (new \Z77\Module\Debtor\Entities\Payment(day('2026-01-01'), chf('1.00'), 'qr', null, 'x', new \DateTimeImmutable()))->allocate($readInvoice($inv3->getId()), \Z77\Module\Debtor\Entities\AllocationKind::Payment, chf('1.00')); $a->markPosted('2026/9'); return throws(fn() => $a->markPosted(null), \LogicException::class); })());
+
+echo "Q. … the screen: «Zahlung erfassen» as a page form, the detail shows the settlements\n";
+$emQ4 = $wireDi();
+$inv4 = $service($emQ4)->invoice($oneLine($mid, '2026-06-02', '2.000', '50.00'));
+$service($emQ4)->finalize([$at($inv4->getId())]);
+$useRequest(['id' => $inv4->getId()]);
+$host = $invoiceHost();
+$host->paymentAction();
+$formHtml = $renderMain($host);
+check('Q13 GET: the form with the value date (today), the three amounts, the active targets (the document\'s own target preselected when it has one), the open amount in the title',
+    ($host->layoutManager->sections['main'] ?? []) === ['Backend/InvoiceController/payment'] && str_contains($formHtml, 'name="payment"') && str_contains($formHtml, 'name="discount"') && str_contains($formHtml, 'name="loss"')
+    && str_contains($formHtml, 'name="target"') && str_contains($formHtml, 'value="qr"') && !str_contains($formHtml, 'value="sleeping"') && str_contains($formHtml, 'offen ' . '108.10') && str_contains($formHtml, 'value="' . date('Y-m-d') . '"'));
+$useRequest(['id' => $inv4->getId()], ['date' => '2026-06-15', 'payment' => 'abc', 'discount' => '', 'loss' => '', 'target' => 'qr', 'note' => '']);
+$host = $invoiceHost();
+$host->paymentAction();
+check('Q14 POST with an unreadable amount: the form comes back with the field error, nothing recorded', $host->redirectedTo === null && str_contains($renderMain($host), 'höchstens zwei Dezimalen') && $paymentCount() === 4);
+$useRequest(['id' => $inv4->getId()], ['date' => '2026-06-15', 'payment' => '100.00', 'discount' => '8.10', 'loss' => '', 'target' => 'qr', 'note' => 'Eingang']);
+$host = $invoiceHost();
+$host->paymentAction();
+check('Q15 POST with 100.00 + 8.10 Skonto: recorded and posted, flash, redirect to the detail', $host->redirectedTo === '/backend/finance/invoice/detail?id=' . $inv4->getId() && ($host->messageService->flashes[0][0] ?? '') === 'success'
+    && str_contains($host->messageService->flashes[0][1], '108.10') && $paymentCount() === 5 && $service($wireDi())->openAmount($readInvoice($inv4->getId()))->isZero());
+$useRequest(['id' => $inv4->getId()]);
+$host = $invoiceHost();
+$host->detailAction();
+$detailHtml = $renderMain($host);
+check('Q16 the detail: the «Zahlungen» row with both allocations and their journal references, «Offen» shows «bezahlt», no «Zahlung erfassen» button any more',
+    str_contains($detailHtml, 'Zahlung 100.00') && str_contains($detailHtml, 'Skonto 8.10') && str_contains($detailHtml, 'Buchung 2026/') && str_contains($detailHtml, '>bezahlt<') && !str_contains($detailHtml, '/payment?id='));
+$useRequest(['id' => $stillInvoicing->getId()], ['date' => '2026-06-15', 'payment' => '1.00', 'discount' => '', 'loss' => '', 'target' => 'qr', 'note' => '']);
+$host = $invoiceHost();
+$host->paymentAction();
+check('Q17 a document in invoicing: no form, back to the detail with the refusal; the detail of an OPEN final invoice offers the button', $host->redirectedTo === '/backend/finance/invoice/detail?id=' . $stillInvoicing->getId() && ($host->messageService->flashes[0][0] ?? '') === 'error'
+    && (function () use ($useRequest, $invoiceHost, $renderMain, $service, $wireDi, $oneLine, $mid, $at): bool {
+        $em = $wireDi(); $inv = $service($em)->invoice($oneLine($mid, '2026-06-03', '1.000', '10.00')); $service($em)->finalize([$at($inv->getId())]);
+        $useRequest(['id' => $inv->getId()]); $h = $invoiceHost(); $h->detailAction();
+        return str_contains($renderMain($h), '/payment?id=' . $inv->getId());
+    })());
+
 echo "P3C. Source guards for part 3\n";
 $p3Templates = glob($package . '/res/view/templates/Backend/InvoiceController/*.tpl.php');
 check('P3C48 the document screens ship no JavaScript and no inline handler (Rule 7); no module-financial class in debtor but the adapter (the journal is linked by URL)',
-    count($p3Templates) === 6 && array_reduce($p3Templates, fn($ok, $f) => $ok && !preg_match('/<script|\son[a-z]+\s*=/i', file_get_contents($f)), true)
+    count($p3Templates) === 7 && array_reduce($p3Templates, fn($ok, $f) => $ok && !preg_match('/<script|\son[a-z]+\s*=/i', file_get_contents($f)), true)
     && !str_contains(file_get_contents($package . '/src/Ui/InvoiceControllerTrait.php'), 'Module\\Financial'));
 check('P3C49 the module brings no PDF library of its own (owner 2026-10-06: ONE writer, vendored in the kernel behind the facade): no composer requirement, no \\FPDF / PdfWriter use in its sources or templates — the facade only',
     !preg_match('/tcpdf|fpdf|dompdf|mpdf|swiss-qr-bill/i', (string) file_get_contents($package . '/composer.json'))

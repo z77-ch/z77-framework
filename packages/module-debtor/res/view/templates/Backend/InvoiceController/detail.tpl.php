@@ -16,7 +16,8 @@
  * @var \Z77\Module\Debtor\Entities\Invoice $document  lines loaded
  * @var \Z77\Module\Debtor\Invoicing\QrBill $bill
  * @var list<\Z77\Module\Debtor\Entities\Invoice> $creditNotes
- * @var \Z77\Shared\Money\Money|null $openAmount  final invoices only
+ * @var \Z77\Shared\Money\Money|null $openAmount  final invoices only — after credit notes, payments, discount and loss
+ * @var list<\Z77\Module\Debtor\Entities\PaymentAllocation> $allocations  final invoices only (P4 part 1)
  * @var bool $ledgerKnown
  * @var array<string, string> $states
  * @var callable $fmt
@@ -50,6 +51,9 @@ $period     = $document->getServiceFrom()->format('d.m.Y') . ($document->getServ
 
         <nav class="be-list__toggles" aria-label="Aktionen">
             <a class="be-btn be-btn--ghost be-btn--sm" href="<?= e($actionBase . '/pdf?id=' . (int) $document->getId()) ?>" target="_blank" rel="noopener" title="Als PDF öffnen (neuer Tab)">PDF</a>
+            <?php if ($document->isFinal() && !$document->isCreditNote() && $openAmount !== null && !$openAmount->isZero()): ?>
+            <a class="be-btn be-btn--ghost be-btn--sm" href="<?= e($actionBase . '/payment?id=' . (int) $document->getId()) ?>">Zahlung erfassen …</a>
+            <?php endif; ?>
             <?php if (!$document->isFinal()): ?>
             <a class="be-btn be-btn--ghost be-btn--sm" href="<?= e($actionBase . '/edit?id=' . (int) $document->getId()) ?>">Neu fakturieren …</a>
             <?php elseif (!$document->isCreditNote()): ?>
@@ -72,8 +76,17 @@ $period     = $document->getServiceFrom()->format('d.m.Y') . ($document->getServ
             <?php elseif ($document->isFinal()): ?>
             <?= raw($row('Buchung', 'keine (Buchhaltung ausserhalb oder nichts zu buchen)')) ?>
             <?php endif; ?>
+            <?php if ($allocations !== []): ?>
+            <?= raw($row('Zahlungen', implode('<br>', array_map(static function ($a) use ($fmt): string {
+                $p = $a->getPayment();
+                return e($p->getDate()->format('d.m.Y') . ' · ' . $a->kind()->label() . ' ' . $fmt($a->getAmount()))
+                    . ($a->kind()->value === 'payment' && $p->getPaymentTargetCode() !== '' ? ' <small class="be-list__cell--muted">· ' . e($p->getPaymentTargetCode()) . '</small>' : '')
+                    . ($a->getLedgerEntryRef() !== null ? ' <small class="be-list__cell--muted">· Buchung ' . e($a->getLedgerEntryRef()) . '</small>' : '')
+                    . ($p->getNote() !== null ? ' <small class="be-list__cell--muted">· ' . e($p->getNote()) . '</small>' : '');
+            }, $allocations)))) ?>
+            <?php endif; ?>
             <?php if ($openAmount !== null): ?>
-            <?= raw($row('Offen', e($fmt($openAmount)) . ' <small class="be-list__cell--muted">(vor Zahlungen)</small>')) ?>
+            <?= raw($row('Offen', $openAmount->isZero() ? '<span class="badge badge--success">bezahlt</span>' : e($fmt($openAmount)))) ?>
             <?php endif; ?>
             <?php if ($creditNotes !== []): ?>
             <?= raw($row('Gutschriften', implode(', ', array_map(fn($n) => '<a href="' . e($actionBase . '/detail?id=' . (int) $n->getId()) . '">' . e($n->documentName()) . '</a> ' . e($fmt($n->getGrossTotal())) . ($n->isFinal() ? '' : ' (in Fakturierung)'), $creditNotes)))) ?>

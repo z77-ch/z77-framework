@@ -20,6 +20,7 @@ use Z77\Core\DI,
     Z77\Module\Debtor\Services\InvoiceConflictException,
     Z77\Module\Debtor\Services\InvoiceRefusedException,
     Z77\Module\Debtor\Services\InvoicingService,
+    Z77\Module\Debtor\Services\PaymentService,
     Z77\Module\Mandator\Services\LedgerAccountCheck,
     Z77\Module\Vat\Entities\TaxCode,
     Z77\Shared\Attributes\Csrf,
@@ -193,6 +194,7 @@ trait InvoiceControllerTrait
             'bill'         => QrBill::of($document),
             'creditNotes'  => $isInvoice ? $this->invoices()->creditNotesOf($document) : [],
             'openAmount'   => $isInvoice && $document->isFinal() ? $this->invoicingService()->openAmount($document) : null,
+            'allocations'  => $isInvoice && $document->isFinal() ? $this->paymentService()->allocationsOf($document) : [],
             'ledgerKnown'  => (new LedgerAccountCheck($this->em()))->available(),
             'states'       => self::INVOICE_STATE_LABELS,
         ]);
@@ -213,6 +215,67 @@ trait InvoiceControllerTrait
         }
 
         return $this->bytes(InvoicePdf::of($document, $this->em())->output(), InvoicePdf::fileName($document), 'application/pdf');
+    }
+
+    // ── payment (P4 part 1) ──────────────────────────────────────────────
+
+    /** The one write path for settlements; the session actor. A harness host overrides it with a named actor. */
+    private function paymentService(): PaymentService
+    {
+        return new PaymentService($this->em());
+    }
+
+    /**
+     * «Zahlung erfassen» on a FINAL invoice (`?id=`): a page form for the
+     * value date, the three amounts and the payment target; the POST goes
+     * to `PaymentService::record()` — posted at once, all or nothing — and
+     * back to the detail. A document that is not settleable goes back to
+     * its detail with the refusal.
+     */
+    #[Csrf]
+    protected function paymentAction(): HtmlResponse|RedirectResponse
+    {
+        $request  = DI::getRequest();
+        $id       = (int) $request->getGetParameter('id');
+        $document = $id ? $this->invoices()->withLines($id) : null;
+        if ($document === null) {
+            return $this->invoiceNotFound();
+        }
+        if (!$document->isFinal() || $document->isCreditNote()) {
+            $this->messageService->pushFlashAfterRedirect('error', $document->isCreditNote() ? 'Eine Gutschrift wird nicht bezahlt — sie reduziert eine Rechnung.' : $document->documentName() . ' ist noch in Fakturierung — erst definitiv stellen.');
+
+            return $this->redirect($this->invoiceListBase() . '/detail?id=' . $document->getId(), 303);
+        }
+        $form = new PaymentForm($document->getCurrency());
+        if (!$request->isPost()) {
+            $form->startBlank(new \DateTimeImmutable('today'), $document->getPayment()->getTargetCode() !== '' ? $document->getPayment()->getTargetCode() : $this->invoiceDefaultTarget());
+
+            return $this->invoicePaymentPage($form, $document);
+        }
+        $form->fromPost($request->getPostParameters());
+        $draft = $form->toDraft((int) $document->getId());
+        if ($draft !== null) {
+            try {
+                $payment = $this->paymentService()->record($draft);
+                $this->messageService->pushFlashAfterRedirect('success', 'Zahlung erfasst und verbucht: ' . AmountFormat::of($payment->allocated()) . ' auf ' . $document->documentName());
+
+                return $this->redirect($this->invoiceListBase() . '/detail?id=' . $document->getId(), 303);
+            } catch (DebtorException | \Z77\Module\Debtor\Accounting\AccountingRefusedException $e) {
+                $form->addGeneralError($e->getMessage());
+            }
+        }
+
+        return $this->invoicePaymentPage($form, $document);
+    }
+
+    private function invoicePaymentPage(PaymentForm $form, Invoice $document): HtmlResponse
+    {
+        return $this->invoicePage('payment', [
+            'form'       => $form,
+            'document'   => $document,
+            'openAmount' => $this->invoicingService()->openAmount($document),
+            'targets'    => array_values(array_filter($this->em()->getRepository(PaymentTarget::class)->allInOrder(), static fn(PaymentTarget $t) => $t->isActive())),
+        ]);
     }
 
     // ── add / edit / credit note ─────────────────────────────────────────

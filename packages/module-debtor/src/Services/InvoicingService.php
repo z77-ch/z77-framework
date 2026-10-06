@@ -15,6 +15,7 @@ use Z77\Module\Debtor\Entities\InvoiceKind;
 use Z77\Module\Debtor\Entities\InvoiceLine;
 use Z77\Module\Debtor\Entities\InvoiceTax;
 use Z77\Module\Debtor\Entities\LineType;
+use Z77\Module\Debtor\Entities\PaymentAllocation;
 use Z77\Module\Debtor\Entities\PaymentSnapshot;
 use Z77\Module\Debtor\Entities\PaymentTarget;
 use Z77\Module\Debtor\Entities\PaymentTerms;
@@ -26,6 +27,7 @@ use Z77\Module\Debtor\Invoicing\PostingBuilder;
 use Z77\Module\Debtor\Invoicing\TaxShares;
 use Z77\Module\Debtor\Repositories\DebtorProfileRepository;
 use Z77\Module\Debtor\Repositories\InvoiceRepository;
+use Z77\Module\Debtor\Repositories\PaymentAllocationRepository;
 use Z77\Module\Mandator\Services\LedgerAccountCheck;
 use Z77\Module\Vat\Calculation\PriceMode;
 use Z77\Module\Vat\Calculation\TaxSummaryEntry;
@@ -239,9 +241,10 @@ final class InvoicingService
 
     /**
      * What is still owed on a FINAL invoice: gross − Σ gross of its final
-     * credit notes (P4 subtracts payments, discount and loss). Zero while
-     * `invoicing` (plan §6.2: no open item yet) and for a credit note (it
-     * is not a receivable, it reduces one). Negative = more was credited
+     * credit notes − Σ of its allocations (payments, discount, loss — P4
+     * part 1, `PaymentAllocation`). DERIVED, never stored (plan §6.3). Zero
+     * while `invoicing` (plan §6.2: no open item yet) and for a credit note
+     * (it is not a receivable, it reduces one). Negative = more was credited
      * than invoiced (a refund is owed).
      */
     public function openAmount(Invoice $invoice): Money
@@ -249,10 +252,12 @@ final class InvoicingService
         if (!$invoice->isFinal() || $invoice->isCreditNote()) {
             return Money::zero($invoice->getCurrency());
         }
+        /** @var PaymentAllocationRepository $allocations */
+        $allocations = $this->em->getRepository(PaymentAllocation::class);
 
-        return $invoice->getGrossTotal()->subtract(
-            Money::fromDecimal($this->invoices()->sumOfFinalCreditNotes($invoice), $invoice->getCurrency())
-        );
+        return $invoice->getGrossTotal()
+            ->subtract(Money::fromDecimal($this->invoices()->sumOfFinalCreditNotes($invoice), $invoice->getCurrency()))
+            ->subtract(Money::fromDecimal($allocations->sumAllocated($invoice), $invoice->getCurrency()));
     }
 
     private function gateway(): AccountingGateway
