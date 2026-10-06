@@ -77,12 +77,13 @@ $period     = $document->getServiceFrom()->format('d.m.Y') . ($document->getServ
             <?= raw($row('Buchung', 'keine (Buchhaltung ausserhalb oder nichts zu buchen)')) ?>
             <?php endif; ?>
             <?php if ($allocations !== []): ?>
-            <?= raw($row('Zahlungen', implode('<br>', array_map(static function ($a) use ($fmt): string {
+            <?= raw($row('Zahlungen', implode('<br>', array_map(static function ($a) use ($fmt, $actionBase, $document): string {
                 $p = $a->getPayment();
                 return e($p->getDate()->format('d.m.Y') . ' · ' . $a->kind()->label() . ' ' . $fmt($a->getAmount()))
-                    . ($a->kind()->value === 'payment' && $p->getPaymentTargetCode() !== '' ? ' <small class="be-list__cell--muted">· ' . e($p->getPaymentTargetCode()) . '</small>' : '')
+                    . ($a->kind()->value === 'payment' && $p->getAccountNumber() !== '' ? ' <small class="be-list__cell--muted">· Konto ' . e($p->getAccountNumber()) . '</small>' : '')
                     . ($a->getLedgerEntryRef() !== null ? ' <small class="be-list__cell--muted">· Buchung ' . e($a->getLedgerEntryRef()) . '</small>' : '')
-                    . ($p->getNote() !== null ? ' <small class="be-list__cell--muted">· ' . e($p->getNote()) . '</small>' : '');
+                    . ($p->getNote() !== null ? ' <small class="be-list__cell--muted">· ' . e($p->getNote()) . '</small>' : '')
+                    . ' <a class="be-list__cell--muted" href="' . e($actionBase . '/payment?id=' . (int) $document->getId() . '&payment=' . (int) $p->getId()) . '" title="Zahlung ändern oder löschen">ändern</a>';
             }, $allocations)))) ?>
             <?php endif; ?>
             <?php if ($openAmount !== null): ?>

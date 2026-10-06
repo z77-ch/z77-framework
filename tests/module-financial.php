@@ -1028,7 +1028,8 @@ $mId = (int) $m->getId();
 $e   = caught(fn() => $manual->update((int) $gen->getId(), $gen->getVersion(), $transferRequest('2027-08-16', 'x')), EntryNotEditableException::class);
 check('I4 update() of a GENERATED entry → generated (in the domain); delete() the same', $e?->reason === EntryNotEditableException::GENERATED && caught(fn() => $manual->delete((int) $gen->getId(), $gen->getVersion()), EntryNotEditableException::class)?->reason === EntryNotEditableException::GENERATED);
 $gen = $entries->findByRef(new EntryRef('2027-28', 2));   // re-read: the refused units of work above rolled back and replaced the EntityManager
-check('I4b … and the entity refuses amend() itself', throws(fn() => $gen->amend(day('2027-08-16'), 'x', $gen->getLines(), 'x', new \DateTimeImmutable()), \LogicException::class));
+check('I4b … the entity itself no longer refuses amend() for a generated entry (ADR-042 addendum 2026-10-06: the SOURCE amends it through LedgerService::amend(), K2) — the refusal for the bookkeeper lives in ManualEntryService (I4)',
+    !str_contains(file_get_contents($package . '/src/Entities/JournalEntry.php'), 'A generated journal entry is never edited') && str_contains(file_get_contents($package . '/src/Services/ManualEntryService.php'), 'assertManual($entry, \'edited\')'));
 $e = caught(fn() => $manual->update($mId, 1, $transferRequest('2028-07-01', 'ins nächste Jahr')), EntryNotEditableException::class);
 check('I5 a date in ANOTHER fiscal year (1.7.2028 = 2028-29) → fiscal-year-changed; nothing touched', $e?->reason === EntryNotEditableException::FISCAL_YEAR_CHANGED && $entryRow('2027-28', 9)['text'] === 'Büromaterial Oktober' && $count('journal_entry_change') === 0);
 check('I6 a date with no fiscal year at all → the posting refusal no-fiscal-year', caught(fn() => $manual->update($mId, 1, $transferRequest('2040-01-01', 'x')), PostingRefusedException::class)?->reason === PostingRefusedException::NO_FISCAL_YEAR);
@@ -1221,6 +1222,72 @@ $em   = $wireDi();
 $next = $em->getTransaction(JournalEntry::class)->run(fn() => (new LedgerService($em, 'buchhalter'))->reverse(new EntryRef('2027-28', 2), day('2028-07-15'), 'Storno im Folgejahr'));
 check('K5 allowed: the reversal takes the next number of the year it is DATED in (2028-29/' . ($expected + 1) . '), links back across years', $next->fiscalYear === '2028-29' && $next->number === $expected + 1
     && (int) $entryRow('2028-29', $next->number)['reversal_of_id'] === (int) $entryRow('2027-28', 2)['id'] && $em->getRepository(JournalEntry::class)->findReversalOf($em->getRepository(JournalEntry::class)->findByRef(new EntryRef('2027-28', 2)))?->getFiscalYear()->getCode() === '2028-29');
+
+// ── K2. the source changes or removes ITS generated entry in place (ADR-042 addendum 2026-10-06) ──
+
+echo "K2. LedgerService::amend() / retract(): a generated entry changed or removed by its source, logged like a manual edit\n";
+$em   = $wireDi();
+$aRef = $post($em, $saleRequest('2027-11-02', 'Zahlung Rechnung 7 · Muster', 'amend:a', 'PAY-1'));
+$aId  = (int) $entryRow('2027-28', $aRef->number)['id'];
+$entriesBefore = $count('journal_entry');
+$amendedVersion = PostingRequest::generated(day('2027-11-03'), 'Zahlung Rechnung 7 · Muster (korrigiert)', 'invoice', 'PAY-1', 'amend:a', [
+    PostingLine::debit('1020', chf('54.05')),
+    PostingLine::credit('3200', chf('50.00'), 'Handelserlös', 'UN', 810, chf('50.00'), chf('4.05')),
+    PostingLine::credit('2200', chf('4.05')),
+]);
+$em   = $wireDi();
+$ref2 = $em->getTransaction(JournalEntry::class)->run(fn() => (new LedgerService($em, 'kassier'))->amend('amend:a', $amendedVersion));
+$rowA = $entryRow('2027-28', $aRef->number);
+$lnA  = $lineRows($aId);
+$logA = $em->getRepository(EntryChange::class)->forEntry($aId);
+check('K2-1 amend(): the same number and id, the new date, text and lines (54.05 / 50.00 / 4.05), changed_by stamped, version bumped, ONE change row update with before and after, no new entry',
+    $ref2->fiscalYear === '2027-28' && $ref2->number === $aRef->number && (int) $rowA['id'] === $aId && $rowA['entry_date'] === '2027-11-03' && str_ends_with($rowA['text'], '(korrigiert)')
+    && count($lnA) === 3 && $lnA[0]['debit'] === '54.05' && $lnA[1]['credit'] === '50.00' && $lnA[1]['tax_amount'] === '4.05' && $lnA[2]['credit'] === '4.05'
+    && $rowA['changed_by'] === 'kassier' && (int) $rowA['version'] === 2 && $rowA['kind'] === 'generated' && $rowA['idempotency_key'] === 'amend:a'
+    && count($logA) === 1 && $logA[0]->getAction() === ChangeAction::Update->value && $logA[0]->before()['text'] === 'Zahlung Rechnung 7 · Muster' && str_ends_with($logA[0]->after()['text'], '(korrigiert)')
+    && $count('journal_entry') === $entriesBefore);
+$em = $wireDi();
+$em->getTransaction(JournalEntry::class)->run(fn() => (new LedgerService($em, 'kassier'))->amend('amend:a', $amendedVersion));
+check('K2-2 an amend with the same content is a no-op: no second change row, the version unchanged',
+    count($em->getRepository(EntryChange::class)->forEntry($aId)) === 1 && (int) $entryRow('2027-28', $aRef->number)['version'] === 2);
+$amendReason = function (string $key, PostingRequest $new) use ($wireDi): ?string {
+    $em = $wireDi();
+    return caught(fn() => $em->getTransaction(JournalEntry::class)->run(fn() => (new LedgerService($em, 'kassier'))->amend($key, $new)), EntryNotEditableException::class)?->reason;
+};
+$otherSource = PostingRequest::generated(day('2027-11-03'), 'x', 'payment', '9', 'amend:a', $amendedVersion->lines);
+$otherYear   = PostingRequest::generated(day('2028-08-01'), 'x', 'invoice', 'PAY-1', 'amend:a', $amendedVersion->lines);
+check('K2-3 refusals: outside a unit of work (LogicException), a manual request (LogicException), an unknown key (not-found), another source (source-mismatch), a date in another fiscal year (fiscal-year-changed) — the entry untouched',
+    throws(fn() => (new LedgerService($wireDi(), 'kassier'))->amend('amend:a', $amendedVersion), \LogicException::class)
+    && throws(fn() => ($e = $wireDi())->getTransaction(JournalEntry::class)->run(fn() => (new LedgerService($e, 'kassier'))->amend('amend:a', PostingRequest::manual(day('2027-11-03'), 'x', $amendedVersion->lines))), \LogicException::class)
+    && $amendReason('amend:nope', $amendedVersion) === EntryNotEditableException::NOT_FOUND
+    && $amendReason('amend:a', $otherSource) === EntryNotEditableException::SOURCE_MISMATCH
+    && $amendReason('amend:a', $otherYear) === EntryNotEditableException::FISCAL_YEAR_CHANGED
+    && (int) $entryRow('2027-28', $aRef->number)['version'] === 2 && count($em->getRepository(EntryChange::class)->forEntry($aId)) === 1);
+$em   = $wireDi();
+$rRef = $post($em, $saleRequest('2027-11-04', 'wird storniert', 'amend:r', 'PAY-2'));
+$em   = $wireDi();
+$em->getTransaction(JournalEntry::class)->run(fn() => (new LedgerService($em, 'buchhalter'))->reverse($rRef, day('2027-11-05'), 'Storno'));
+$retractReason = function (string $key, string $source = 'invoice') use ($wireDi): ?string {
+    $em = $wireDi();
+    return caught(fn() => $em->getTransaction(JournalEntry::class)->run(fn() => (new LedgerService($em, 'kassier'))->retract($key, $source)), EntryNotEditableException::class)?->reason;
+};
+check('K2-4 a reversed entry and its reversal are frozen for amend and retract (reversed)',
+    $amendReason('amend:r', $saleRequest('2027-11-04', 'y', 'amend:r', 'PAY-2')) === EntryNotEditableException::REVERSED
+    && $retractReason('amend:r') === EntryNotEditableException::REVERSED
+    && $retractReason('reversal:2027-28/' . $rRef->number) === EntryNotEditableException::REVERSED);
+$em  = $wireDi();
+$entriesBefore = $count('journal_entry');
+$gone = $em->getTransaction(JournalEntry::class)->run(fn() => (new LedgerService($em, 'kassier'))->retract('amend:a', 'invoice'));
+$logA = $em->getRepository(EntryChange::class)->forEntry($aId);
+check('K2-5 retract(): answers the ref; the entry and its lines are gone, its number a gap; a change row delete with the full snapshot (after = null) survives it',
+    $gone !== null && $gone->number === $aRef->number && $count('journal_entry') === $entriesBefore - 1 && $entryRow('2027-28', $aRef->number) === false
+    && $db->fetchOne('SELECT COUNT(*) FROM journal_line WHERE entry_id = ?', [$aId]) == 0
+    && count($logA) === 2 && $logA[1]->getAction() === ChangeAction::Delete->value && $logA[1]->after() === null && (int) $logA[1]->before()['number'] === $aRef->number);
+$em = $wireDi();
+check('K2-6 retract() of a key nobody carries answers null (nothing to retract); of another source → source-mismatch; outside a unit of work → LogicException',
+    $em->getTransaction(JournalEntry::class)->run(fn() => (new LedgerService($em, 'kassier'))->retract('amend:a', 'invoice')) === null
+    && (function () use ($wireDi, $post, $saleRequest, $retractReason): bool { $e = $wireDi(); $post($e, $saleRequest('2027-11-06', 'bleibt', 'amend:keep', 'PAY-3')); return $retractReason('amend:keep', 'payment') === EntryNotEditableException::SOURCE_MISMATCH; })()
+    && throws(fn() => (new LedgerService($wireDi(), 'kassier'))->retract('amend:keep', 'invoice'), \LogicException::class));
 
 // ── L. the journal screen: reflection guards ─────────────────────────────
 
@@ -2784,7 +2851,8 @@ $db->executeStatement("UPDATE fiscal_period p JOIN fiscal_year y ON y.id = p.fis
 $ledgerSource = file_get_contents($package . '/src/Services/LedgerService.php');
 $lineRepo     = file_get_contents($package . '/src/Repositories/JournalLineRepository.php');
 check('YC16 source guards: post() re-checks the period AFTER the number and the accounts; the type lock reads the closed periods share-locked inside a unit of work',
-    strpos($ledgerSource, '$ranges->next(') < strpos($ledgerSource, 'lockedPeriodState($period)') && strpos($ledgerSource, 'lockAccounts(') < strpos($ledgerSource, 'lockedPeriodState($period)')
+    ($postAt = strpos($ledgerSource, 'function postInternal')) !== false
+    && strpos($ledgerSource, '$ranges->next(', $postAt) < strpos($ledgerSource, 'lockedPeriodState($period)', $postAt) && strpos($ledgerSource, 'lockAccounts(', $postAt) < strpos($ledgerSource, 'lockedPeriodState($period)', $postAt)
     && str_contains($lineRepo, 'ORDER BY start_date LOCK IN SHARE MODE'));
 
 echo "YC. … reopen: admin, with a reason, the latest closed year only (reverse order)\n";

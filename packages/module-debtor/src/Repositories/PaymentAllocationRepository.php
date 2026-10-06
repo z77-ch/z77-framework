@@ -31,6 +31,17 @@ class PaymentAllocationRepository extends DoctrineRepository
         return (string) $sum;
     }
 
+    /** Σ of the allocations of ONE payment — what a correction of that payment gives back to the open amount before it is re-applied. */
+    public function sumAllocatedBy(int $paymentId): string
+    {
+        $sum = $this->connection()->fetchOne(
+            'SELECT COALESCE(SUM(amount), 0.00) FROM payment_allocation WHERE payment_id = ?',
+            [$paymentId]
+        );
+
+        return (string) $sum;
+    }
+
     /**
      * The allocations on $invoice with their payments, oldest first — the
      * document detail's «Zahlungen» rows.

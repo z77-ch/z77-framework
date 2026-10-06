@@ -5,6 +5,7 @@ namespace Z77\Module\Debtor\Accounting;
 use Z77\Module\Financial\Ledger\PostingLine as LedgerLine;
 use Z77\Module\Financial\Ledger\PostingRequest as LedgerRequest;
 use Z77\Module\Financial\Services\LedgerService;
+use Z77\Module\Financial\Services\EntryNotEditableException;
 use Z77\Module\Financial\Services\PostingRefusedException;
 use Z77\Module\Financial\Services\VatAccountUnavailableException;
 use Z77\Module\Mandator\Services\LedgerAccountCheck;
@@ -65,6 +66,40 @@ final class LedgerAccountingGateway implements AccountingGateway
 
     public function post(PostingRequest $request): ?string
     {
+        try {
+            $ref = $this->ledger->post($this->translate($request));
+        } catch (PostingRefusedException $e) {
+            throw new AccountingRefusedException($e->reason, $e->getMessage(), $e);
+        }
+
+        return $ref->fiscalYear . '/' . $ref->number;
+    }
+
+    /** `LedgerService::amend()` — the ledger's editing refusals come back as {@see AccountingRefusedException} with the same `reason`. */
+    public function amend(PostingRequest $request): ?string
+    {
+        try {
+            $ref = $this->ledger->amend($request->idempotencyKey, $this->translate($request));
+        } catch (PostingRefusedException | EntryNotEditableException $e) {
+            throw new AccountingRefusedException($e->reason, $e->getMessage(), $e);
+        }
+
+        return $ref->fiscalYear . '/' . $ref->number;
+    }
+
+    /** `LedgerService::retract()` — nothing under the key is not an error (the ledger answers null). */
+    public function retract(string $idempotencyKey, string $sourceType): void
+    {
+        try {
+            $this->ledger->retract($idempotencyKey, $sourceType);
+        } catch (EntryNotEditableException $e) {
+            throw new AccountingRefusedException($e->reason, $e->getMessage(), $e);
+        }
+    }
+
+    /** Debtor's request 1:1 as financial's — a line named by VAT category gets its account here. */
+    private function translate(PostingRequest $request): LedgerRequest
+    {
         $lines = [];
         foreach ($request->lines as $line) {
             $account = $line->account ?? $this->vatAccount($line->vatCategory);
@@ -79,7 +114,8 @@ final class LedgerAccountingGateway implements AccountingGateway
                 $line->text,
             );
         }
-        $ledgerRequest = LedgerRequest::generated(
+
+        return LedgerRequest::generated(
             $request->date,
             $request->text,
             $request->sourceType,
@@ -87,14 +123,6 @@ final class LedgerAccountingGateway implements AccountingGateway
             $request->idempotencyKey,
             $lines,
         );
-
-        try {
-            $ref = $this->ledger->post($ledgerRequest);
-        } catch (PostingRefusedException $e) {
-            throw new AccountingRefusedException($e->reason, $e->getMessage(), $e);
-        }
-
-        return $ref->fiscalYear . '/' . $ref->number;
     }
 
     /** @throws AccountingRefusedException the category has no usable VAT account on the mandator record */

@@ -4,6 +4,8 @@ namespace Z77\Module\Financial\Services;
 
 use Z77\Core\DI;
 use Z77\Module\Financial\Entities\Account;
+use Z77\Module\Financial\Entities\ChangeAction;
+use Z77\Module\Financial\Entities\EntryChange;
 use Z77\Module\Financial\Entities\EntryKind;
 use Z77\Module\Financial\Entities\JournalEntry;
 use Z77\Module\Financial\Ledger\EntryRef;
@@ -176,6 +178,141 @@ final class LedgerService
         );
 
         return $this->postInternal($request, $entry, requireActiveAccounts: false);
+    }
+
+    /**
+     * CHANGE a GENERATED entry in place — by the module that posted it, inside
+     * its unit of work (ADR-042 addendum 2026-10-06, owner: «eine aus dem
+     * Debitorenprogramm generierte Buchung kann nur über das
+     * Debitorenprogramm geändert werden — die Fibu-Buchung wird damit
+     * geändert; im Journal ist sie gesperrt»). The entry is found by its
+     * idempotency KEY — the source names what it posted, never a number —
+     * and $new is the posting as it should read now, from the same source
+     * (`sourceType` must match; `sourceRef` and the key are taken from $new
+     * for the stored entry). The number stays; the date may move within the
+     * fiscal year; a date in another year is refused (retract and post anew
+     * there). Every change writes an {@see EntryChange} (who, when,
+     * before / after), exactly as a manual edit does — the bookkeeper sees
+     * it in the journal's change log, can never edit it there. The same
+     * period rules as a manual edit: `closed` refuses, `vat-settled` refuses
+     * with a tax line involved (`PostingRules::assertPeriodAllowsChange()`).
+     * An entry that was reversed, or is itself a reversal, is frozen.
+     * A $new whose content equals the stored entry is a no-op (no change
+     * row, no version bump).
+     *
+     * Lock order (the manual edit's): entry (X) → accounts (S) → year (S) →
+     * period (S).
+     *
+     * @return EntryRef where the entry is (unchanged by an amend)
+     * @throws \LogicException              no unit of work is open, or $new is not generated
+     * @throws EntryNotEditableException    NOT_FOUND | MANUAL | SOURCE_MISMATCH | REVERSED | PERIOD_CLOSED | PERIOD_VAT_SETTLED | FISCAL_YEAR_CHANGED
+     * @throws PostingRefusedException      an account or tax code of the new version is refused
+     */
+    public function amend(string $idempotencyKey, PostingRequest $new): EntryRef
+    {
+        $this->assertUnitOfWork('amend()');
+        if ($new->kind !== EntryKind::Generated) {
+            throw new \LogicException('amend() takes a generated PostingRequest — the source\'s posting as it should read now');
+        }
+        $entry = $this->ownedGeneratedEntry($idempotencyKey, $new->sourceType, 'amended');
+        $ref   = new EntryRef($entry->getFiscalYear()->getCode(), $entry->getNumber());
+        if (PostingRequest::fingerprintOf($entry->snapshot()) === $new->fingerprint()) {
+            return $ref;
+        }
+
+        $year    = $entry->getFiscalYear();
+        $newYear = $this->rules->yearFor($new->date);
+        if ($newYear->getId() !== $year->getId()) {
+            throw new EntryNotEditableException(
+                EntryNotEditableException::FISCAL_YEAR_CHANGED,
+                "Journal entry {$year->getCode()}/{$entry->getNumber()}: the new date lies in fiscal year {$newYear->getCode()} — "
+                . 'the number belongs to its year; retract the entry and post it anew there'
+            );
+        }
+        $withTax   = $entry->hasTaxLine() || $new->hasTaxLine();
+        $oldPeriod = $this->rules->periodFor($year, $entry->getDate());
+        $newPeriod = $this->rules->periodFor($year, $new->date);
+        $this->rules->assertPeriodAllowsChange($oldPeriod, $withTax, $entry, $oldPeriod->getState());
+        $this->rules->assertPeriodAllowsChange($newPeriod, $withTax, $entry, $newPeriod->getState());
+        // A changed posting needs postable accounts; an active one is not required (the counterpart of what exists, M5).
+        $accounts = $this->rules->resolveAccounts($new->lines, false);
+        $this->rules->assertTaxCodesExist($new->lines);
+        $actor = $this->actorName();
+        $this->rules->lockAccounts($new->lines, $accounts, false);
+        $this->rules->assertPeriodAllowsChange($oldPeriod, $withTax, $entry, $this->rules->lockedPeriodState($oldPeriod));
+        $this->rules->assertPeriodAllowsChange($newPeriod, $withTax, $entry, $this->rules->lockedPeriodState($newPeriod));
+
+        $now    = new \DateTimeImmutable();
+        $before = $entry->snapshot();
+        $entry->amend($new->date, $new->text, $this->rules->buildLines($entry, $new, $accounts), $actor, $now);
+        $this->em->persist(new EntryChange($entry, ChangeAction::Update, $actor, $now, $before, $entry->snapshot()));
+        $this->em->persist($entry);
+
+        return $ref;
+    }
+
+    /**
+     * REMOVE a GENERATED entry — by the module that posted it, inside its
+     * unit of work (the counterpart of {@see amend()}, the manual delete's
+     * rules): the entry and its lines go, its number stays consumed, and the
+     * change row with the full snapshot explains the gap (ADR-042
+     * decision 9). The same period rules; a reversed entry or a reversal is
+     * frozen. Answers null when no entry carries the key (nothing to retract
+     * — a source that posted through the Null gateway, or retracted
+     * already), so a caller can retract blindly.
+     *
+     * @throws \LogicException              no unit of work is open
+     * @throws EntryNotEditableException    MANUAL | SOURCE_MISMATCH | REVERSED | PERIOD_CLOSED | PERIOD_VAT_SETTLED
+     */
+    public function retract(string $idempotencyKey, string $sourceType): ?EntryRef
+    {
+        $this->assertUnitOfWork('retract()');
+        try {
+            $entry = $this->ownedGeneratedEntry($idempotencyKey, $sourceType, 'retracted');
+        } catch (EntryNotEditableException $e) {
+            if ($e->reason === EntryNotEditableException::NOT_FOUND) {
+                return null;
+            }
+            throw $e;
+        }
+        $ref    = new EntryRef($entry->getFiscalYear()->getCode(), $entry->getNumber());
+        $period = $this->rules->periodFor($entry->getFiscalYear(), $entry->getDate());
+        $this->rules->assertPeriodAllowsChange($period, $entry->hasTaxLine(), $entry, $this->rules->lockedPeriodState($period));
+
+        $this->em->persist(new EntryChange($entry, ChangeAction::Delete, $this->actorName(), new \DateTimeImmutable(), $entry->snapshot(), null));
+        $this->em->remove($entry);
+
+        return $ref;
+    }
+
+    /**
+     * The generated entry under $idempotencyKey, LOCKED (`lockForUpdate`,
+     * lines loaded), owned by $sourceType, not reversed and not a reversal.
+     *
+     * @throws EntryNotEditableException NOT_FOUND | MANUAL | SOURCE_MISMATCH | REVERSED
+     */
+    private function ownedGeneratedEntry(string $idempotencyKey, ?string $sourceType, string $verb): JournalEntry
+    {
+        $found = $this->entries()->findOneBy(['idempotencyKey' => $idempotencyKey]);
+        if ($found === null) {
+            throw new EntryNotEditableException(EntryNotEditableException::NOT_FOUND, "No journal entry carries the idempotency key '{$idempotencyKey}' — nothing to be {$verb}");
+        }
+        $entry = $this->entries()->lockForUpdate((int) $found->getId());
+        if ($entry === null) {
+            throw new EntryNotEditableException(EntryNotEditableException::NOT_FOUND, "Journal entry under key '{$idempotencyKey}' vanished before it could be {$verb}");
+        }
+        $ref = $entry->getFiscalYear()->getCode() . '/' . $entry->getNumber();
+        if ($entry->isManual()) {
+            throw new EntryNotEditableException(EntryNotEditableException::MANUAL, "Journal entry {$ref} is manual — it is edited by the bookkeeper, not by a module");
+        }
+        if ($sourceType === null || $entry->getSourceType() !== $sourceType) {
+            throw new EntryNotEditableException(EntryNotEditableException::SOURCE_MISMATCH, "Journal entry {$ref} belongs to source '{$entry->getSourceType()}' — only that source may have it {$verb}");
+        }
+        if ($entry->isReversal() || $this->entries()->findReversalOf($entry) !== null) {
+            throw new EntryNotEditableException(EntryNotEditableException::REVERSED, "Journal entry {$ref} is part of a reversal pair — a reversed entry and its reversal are frozen");
+        }
+
+        return $entry;
     }
 
     /**

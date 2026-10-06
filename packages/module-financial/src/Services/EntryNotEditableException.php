@@ -15,6 +15,11 @@ final class EntryNotEditableException extends FinancialException
     public const PERIOD_CLOSED       = 'period-closed';
     public const PERIOD_VAT_SETTLED  = 'period-vat-settled';
     public const FISCAL_YEAR_CHANGED = 'fiscal-year-changed';
+    // The source's amend / retract of ITS generated entry (ADR-042 addendum 2026-10-06)
+    public const NOT_FOUND           = 'not-found';
+    public const MANUAL              = 'manual';
+    public const SOURCE_MISMATCH     = 'source-mismatch';
+    public const REVERSED            = 'reversed';
 
     public function __construct(public readonly string $reason, string $message)
     {

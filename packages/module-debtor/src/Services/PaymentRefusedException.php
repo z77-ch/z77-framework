@@ -21,6 +21,7 @@ final class PaymentRefusedException extends DebtorException
     public const TARGET_INACTIVE  = 'target-inactive';
     public const TARGET_ACCOUNT   = 'target-account';
     public const DATE             = 'date';
+    public const CONFLICT         = 'conflict';
 
     public function __construct(public readonly string $reason, string $message, ?\Throwable $previous = null)
     {

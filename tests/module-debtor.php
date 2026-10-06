@@ -1027,7 +1027,7 @@ check('I5 the three master-data fragments carry an add action and an active swit
 
 $templateDir = $package . '/res/view/templates/Backend';
 $templates   = glob($templateDir . '/*/*.tpl.php');
-check('I6 every master-data screen has its list template, its edit template and its header slot; the document screens (P3 part 3) add six, the payment form (P4 part 1) one', count($templates) === 19);
+check('I6 every master-data screen has its list template, its edit template and its header slot; the document screens (P3 part 3) add six, the payment form and the delete confirmation (P4 part 1) two', count($templates) === 20);
 check('I7 no template carries a <script> tag or an inline handler (Rule 7)',
     array_reduce($templates, fn($ok, $f) => $ok && !preg_match('/<script|\son[a-z]+\s*=/i', file_get_contents($f)), true));
 check('I8 the package ships no JavaScript at all', glob($package . '/res/**/*.js') === [] && glob($package . '/res/*.js') === []);
@@ -1844,7 +1844,7 @@ $useRequest = function (array $get, ?array $post = null) use ($wireDi): UnifiedE
 };
 $invoiceHost = function () {
     return new class {
-        use \Z77\Module\Debtor\Ui\InvoiceControllerTrait { listAction as public; detailAction as public; pdfAction as public; paymentAction as public; addAction as public; editAction as public; creditNoteAction as public; confirmFinalizeAction as public; finalizeAction as public; }
+        use \Z77\Module\Debtor\Ui\InvoiceControllerTrait { listAction as public; detailAction as public; pdfAction as public; paymentAction as public; confirmPaymentDeleteAction as public; paymentDeleteAction as public; addAction as public; editAction as public; creditNoteAction as public; confirmFinalizeAction as public; finalizeAction as public; }
         public array $context = [];
         public object $layoutManager;
         public object $messageService;
@@ -2281,9 +2281,9 @@ check('Q11 a partial payment leaves the rest open; a second one settles it', (fu
 check('Q12 the entities are immutable: no setter on Payment / PaymentAllocation, an allocation of 0.00 is refused, a negative payment amount is refused, a second markPosted() throws',
     array_filter(get_class_methods(\Z77\Module\Debtor\Entities\Payment::class), fn($m) => str_starts_with($m, 'set')) === []
     && array_filter(get_class_methods(\Z77\Module\Debtor\Entities\PaymentAllocation::class), fn($m) => str_starts_with($m, 'set')) === []
-    && throws(fn() => (new \Z77\Module\Debtor\Entities\Payment(day('2026-01-01'), chf('1.00'), 'qr', null, 'x', new \DateTimeImmutable()))->allocate($readInvoice($inv3->getId()), \Z77\Module\Debtor\Entities\AllocationKind::Payment, chf('0.00')), \InvalidArgumentException::class)
-    && throws(fn() => new \Z77\Module\Debtor\Entities\Payment(day('2026-01-01'), chf('-1.00'), 'qr', null, 'x', new \DateTimeImmutable()), \InvalidArgumentException::class)
-    && (function () use ($readInvoice, $inv3): bool { $a = (new \Z77\Module\Debtor\Entities\Payment(day('2026-01-01'), chf('1.00'), 'qr', null, 'x', new \DateTimeImmutable()))->allocate($readInvoice($inv3->getId()), \Z77\Module\Debtor\Entities\AllocationKind::Payment, chf('1.00')); $a->markPosted('2026/9'); return throws(fn() => $a->markPosted(null), \LogicException::class); })());
+    && throws(fn() => (new \Z77\Module\Debtor\Entities\Payment(day('2026-01-01'), chf('1.00'), 'qr', '1020', null, 'x', new \DateTimeImmutable()))->allocate($readInvoice($inv3->getId()), \Z77\Module\Debtor\Entities\AllocationKind::Payment, chf('0.00')), \InvalidArgumentException::class)
+    && throws(fn() => new \Z77\Module\Debtor\Entities\Payment(day('2026-01-01'), chf('-1.00'), 'qr', '1020', null, 'x', new \DateTimeImmutable()), \InvalidArgumentException::class)
+    && (function () use ($readInvoice, $inv3): bool { $a = (new \Z77\Module\Debtor\Entities\Payment(day('2026-01-01'), chf('1.00'), 'qr', '1020', null, 'x', new \DateTimeImmutable()))->allocate($readInvoice($inv3->getId()), \Z77\Module\Debtor\Entities\AllocationKind::Payment, chf('1.00')); $a->markPosted('2026/9'); return throws(fn() => $a->markPosted(null), \LogicException::class); })());
 
 echo "Q. … the screen: «Zahlung erfassen» as a page form, the detail shows the settlements\n";
 $emQ4 = $wireDi();
@@ -2293,14 +2293,15 @@ $useRequest(['id' => $inv4->getId()]);
 $host = $invoiceHost();
 $host->paymentAction();
 $formHtml = $renderMain($host);
-check('Q13 GET: the form with the value date (today), the three amounts, the active targets (the document\'s own target preselected when it has one), the open amount in the title',
+check('Q13 GET: the form with the value date (today), the three amounts, the ACCOUNT with the postable accounts as datalist (the document\'s target account proposed), «Rest als Verlust», the open amount in the title',
     ($host->layoutManager->sections['main'] ?? []) === ['Backend/InvoiceController/payment'] && str_contains($formHtml, 'name="payment"') && str_contains($formHtml, 'name="discount"') && str_contains($formHtml, 'name="loss"')
-    && str_contains($formHtml, 'name="target"') && str_contains($formHtml, 'value="qr"') && !str_contains($formHtml, 'value="sleeping"') && str_contains($formHtml, 'offen ' . '108.10') && str_contains($formHtml, 'value="' . date('Y-m-d') . '"'));
-$useRequest(['id' => $inv4->getId()], ['date' => '2026-06-15', 'payment' => 'abc', 'discount' => '', 'loss' => '', 'target' => 'qr', 'note' => '']);
+    && str_contains($formHtml, 'name="account"') && str_contains($formHtml, 'list="payment-accounts"') && str_contains($formHtml, 'name="rest_loss"') && !str_contains($formHtml, 'name="target"')
+    && str_contains($formHtml, 'offen ' . '108.10') && str_contains($formHtml, 'value="' . date('Y-m-d') . '"'));
+$useRequest(['id' => $inv4->getId()], ['date' => '2026-06-15', 'payment' => 'abc', 'discount' => '', 'loss' => '', 'account' => '1020', 'note' => '']);
 $host = $invoiceHost();
 $host->paymentAction();
 check('Q14 POST with an unreadable amount: the form comes back with the field error, nothing recorded', $host->redirectedTo === null && str_contains($renderMain($host), 'höchstens zwei Dezimalen') && $paymentCount() === 4);
-$useRequest(['id' => $inv4->getId()], ['date' => '2026-06-15', 'payment' => '100.00', 'discount' => '8.10', 'loss' => '', 'target' => 'qr', 'note' => 'Eingang']);
+$useRequest(['id' => $inv4->getId()], ['date' => '2026-06-15', 'payment' => '100.00', 'discount' => '8.10', 'loss' => '', 'account' => '1020', 'note' => 'Eingang']);
 $host = $invoiceHost();
 $host->paymentAction();
 check('Q15 POST with 100.00 + 8.10 Skonto: recorded and posted, flash, redirect to the detail', $host->redirectedTo === '/backend/finance/invoice/detail?id=' . $inv4->getId() && ($host->messageService->flashes[0][0] ?? '') === 'success'
@@ -2310,8 +2311,9 @@ $host = $invoiceHost();
 $host->detailAction();
 $detailHtml = $renderMain($host);
 check('Q16 the detail: the «Zahlungen» row with both allocations and their journal references, «Offen» shows «bezahlt», no «Zahlung erfassen» button any more',
-    str_contains($detailHtml, 'Zahlung 100.00') && str_contains($detailHtml, 'Skonto 8.10') && str_contains($detailHtml, 'Buchung 2026/') && str_contains($detailHtml, '>bezahlt<') && !str_contains($detailHtml, '/payment?id='));
-$useRequest(['id' => $stillInvoicing->getId()], ['date' => '2026-06-15', 'payment' => '1.00', 'discount' => '', 'loss' => '', 'target' => 'qr', 'note' => '']);
+    str_contains($detailHtml, 'Zahlung 100.00') && str_contains($detailHtml, 'Konto 1020') && str_contains($detailHtml, 'Skonto 8.10') && str_contains($detailHtml, 'Buchung 2026/') && str_contains($detailHtml, '>bezahlt<')
+    && str_contains($detailHtml, '&amp;payment=') && !str_contains($detailHtml, '/payment?id=' . $inv4->getId() . '"'));
+$useRequest(['id' => $stillInvoicing->getId()], ['date' => '2026-06-15', 'payment' => '1.00', 'discount' => '', 'loss' => '', 'account' => '1020', 'note' => '']);
 $host = $invoiceHost();
 $host->paymentAction();
 check('Q17 a document in invoicing: no form, back to the detail with the refusal; the detail of an OPEN final invoice offers the button', $host->redirectedTo === '/backend/finance/invoice/detail?id=' . $stillInvoicing->getId() && ($host->messageService->flashes[0][0] ?? '') === 'error'
@@ -2321,10 +2323,94 @@ check('Q17 a document in invoicing: no form, back to the detail with the refusal
         return str_contains($renderMain($h), '/payment?id=' . $inv->getId());
     })());
 
+echo "Q. … correcting and removing a settlement while the year is open (owner 2026-10-06): the postings change with it, logged in the journal\n";
+$changeRows = fn(int $entryId) => $db->fetchAllAssociative('SELECT action, changed_by FROM journal_entry_change WHERE entry_id = ? ORDER BY id', [$entryId]);
+$entryIdOf  = fn(string $ref) => (int) $db->fetchOne('SELECT e.id FROM journal_entry e JOIN fiscal_year y ON y.id = e.fiscal_year_id WHERE CONCAT(y.code, \'/\', e.number) = ?', [$ref]);
+$emU   = $wireDi();
+$p4    = $pay($emU)->allocationsOf($readInvoice($inv4->getId()))[0]->getPayment();
+$p4Id  = (int) $p4->getId();
+$refsBefore = array_map(fn($a) => $a->getLedgerEntryRef(), $p4->getAllocations());
+$journalBefore = $journalCount();
+$updated = $pay($wireDi())->update($p4Id, 1, new PaymentDraft($inv4->getId(), day('2026-06-16'), chf('90.00'), chf('18.10'), chf('0.00'), '', 'per Kasse', '1000'));
+$refsAfter = array_map(fn($a) => $a->getLedgerEntryRef(), $updated->getAllocations());
+$pl = $entryLines((string) $refsAfter[0]);
+$dl = $entryLines((string) $refsAfter[1]);
+check('Q18 update() with the same kinds: the header revised (date, account 1000 = Kasse, note), version 2, the SAME journal numbers amended in place — 1000 DEBIT 90.00 | receivable CREDIT 90.00; the Skonto entry now 18.10 —, one change row update per entry, no new entry',
+    $updated->getVersion() === 2 && $updated->getDate()->format('Y-m-d') === '2026-06-16' && $updated->getAccountNumber() === '1000' && $updated->getNote() === 'per Kasse' && $updated->getChangedBy() === 'kassier'
+    && $refsAfter === $refsBefore && $journalCount() === $journalBefore
+    && $pl[0]['account_number'] === '1000' && $pl[0]['debit'] === '90.00' && $pl[1]['credit'] === '90.00'
+    && count(array_filter($dl, fn($r) => $r['account_number'] === $mandatorAccounts['account_receivable'] && $r['credit'] === '18.10')) === 1
+    && array_column($changeRows($entryIdOf((string) $refsAfter[0])), 'action') === ['update'] && array_column($changeRows($entryIdOf((string) $refsAfter[1])), 'action') === ['update']
+    && $service($wireDi())->openAmount($readInvoice($inv4->getId()))->isZero());
+$discountEntryId = $entryIdOf((string) $refsAfter[1]);
+$updated2 = $pay($wireDi())->update($p4Id, 2, new PaymentDraft($inv4->getId(), day('2026-06-16'), chf('90.00'), chf('0.00'), chf('18.10'), '', 'per Kasse', '1000'));
+$kinds2   = array_map(fn($a) => $a->kind()->value, $updated2->getAllocations());
+check('Q19 update() that drops the Skonto and adds a Verlust: the Skonto allocation withdrawn and its entry RETRACTED (gone, change row delete, number a gap), a loss allocation posted anew (a new number), the payment entry untouched',
+    $kinds2 === ['payment', 'loss'] && $updated2->getVersion() === 3 && $db->fetchOne('SELECT COUNT(*) FROM journal_entry WHERE id = ?', [$discountEntryId]) == 0
+    && array_column($changeRows($discountEntryId), 'action') === ['update', 'delete'] && $updated2->getAllocations()[0]->getLedgerEntryRef() === $refsAfter[0]
+    && $updated2->getAllocations()[1]->getLedgerEntryRef() !== null && $updated2->getAllocations()[1]->getLedgerEntryRef() !== $refsAfter[1]
+    && count(array_filter($entryLines((string) $updated2->getAllocations()[1]->getLedgerEntryRef()), fn($r) => $r['account_number'] === $mandatorAccounts['account_loss'])) >= 1
+    && $service($wireDi())->openAmount($readInvoice($inv4->getId()))->isZero());
+check('Q20 refusals of update(): a stale version (conflict), more than invoice + own allocations allow (over-allocation), an unknown payment (not-found), a draft for another invoice (not-found) — nothing changed',
+    $payRefusal(fn() => $pay($wireDi())->update($p4Id, 1, new PaymentDraft($inv4->getId(), day('2026-06-16'), chf('90.00'), chf('0.00'), chf('18.10'), '', null, '1000'))) === PaymentRefusedException::CONFLICT
+    && $payRefusal(fn() => $pay($wireDi())->update($p4Id, 3, new PaymentDraft($inv4->getId(), day('2026-06-16'), chf('200.00'), chf('0.00'), chf('0.00'), '', null, '1000'))) === PaymentRefusedException::OVER_ALLOCATION
+    && $payRefusal(fn() => $pay($wireDi())->update(999999, 1, new PaymentDraft($inv4->getId(), day('2026-06-16'), chf('1.00'), chf('0.00'), chf('0.00'), '', null, '1000'))) === PaymentRefusedException::NOT_FOUND
+    && $payRefusal(fn() => $pay($wireDi())->update($p4Id, 3, new PaymentDraft($inv3->getId(), day('2026-06-16'), chf('1.00'), chf('0.00'), chf('0.00'), '', null, '1000'))) === PaymentRefusedException::NOT_FOUND
+    && $pay($wireDi())->find($p4Id)->getVersion() === 3);
+$paymentEntryId = $entryIdOf((string) $refsAfter[0]);
+$lossEntryId    = $entryIdOf((string) $updated2->getAllocations()[1]->getLedgerEntryRef());
+$before = [$paymentCount(), $allocationCount(), $journalCount()];
+$pay($wireDi())->delete($p4Id, 3);
+check('Q21 delete(): both entries retracted (gone, change rows delete), the payment and its allocations gone, the invoice open again at 108.10; a stale delete → conflict, a second delete → not-found',
+    [$paymentCount(), $allocationCount(), $journalCount()] === [$before[0] - 1, $before[1] - 2, $before[2] - 2]
+    && $db->fetchOne('SELECT COUNT(*) FROM journal_entry WHERE id IN (?, ?)', [$paymentEntryId, $lossEntryId]) == 0
+    && array_slice($changeRows($paymentEntryId), -1)[0]['action'] === 'delete' && array_slice($changeRows($lossEntryId), -1)[0]['action'] === 'delete'
+    && $service($wireDi())->openAmount($readInvoice($inv4->getId()))->toDecimal() === '108.10'
+    && $payRefusal(fn() => $pay($wireDi())->delete($p4Id, 3)) === PaymentRefusedException::NOT_FOUND);
+// The screen: «Rest als Verlust», the account chosen freely, edit and delete through the pages.
+$useRequest(['id' => $inv4->getId()], ['date' => '2026-06-20', 'payment' => '100.00', 'discount' => '', 'loss' => '', 'rest_loss' => '1', 'account' => '1020', 'note' => 'Rest ausgebucht']);
+$host = $invoiceHost();
+$host->paymentAction();
+$restPayment = $pay($wireDi())->allocationsOf($readInvoice($inv4->getId()))[0]->getPayment();
+check('Q22 «Rest als Verlust ausbuchen»: 100.00 paid, the remaining 8.10 goes to the loss account by itself — recorded, posted, the invoice settled',
+    $host->redirectedTo === '/backend/finance/invoice/detail?id=' . $inv4->getId() && array_map(fn($a) => $a->kind()->value . ':' . $a->getAmount()->toDecimal(), $restPayment->getAllocations()) === ['payment:100.00', 'loss:8.10']
+    && $service($wireDi())->openAmount($readInvoice($inv4->getId()))->isZero());
+$useRequest(['id' => $inv4->getId(), 'payment' => $restPayment->getId()]);
+$host = $invoiceHost();
+$host->paymentAction();
+$editHtml = $renderMain($host);
+check('Q23 GET the edit form (?payment=): prefilled with the payment\'s values, the entity token and the version, «Löschen …» offered',
+    str_contains($editHtml, 'value="100.00"') && str_contains($editHtml, 'value="8.10"') && str_contains($editHtml, 'value="1020"') && str_contains($editHtml, 'value="Rest ausgebucht"')
+    && str_contains($editHtml, 'name="version" value="' . $restPayment->getVersion() . '"') && str_contains($editHtml, 'tok-payment-' . $restPayment->getId()) && str_contains($editHtml, 'confirm-payment-delete?id='));
+$useRequest(['id' => $inv4->getId(), 'payment' => $restPayment->getId()], ['entity_csrf' => 'tok-payment-' . $restPayment->getId(), 'version' => $restPayment->getVersion(), 'date' => '2026-06-20', 'payment' => '58.10', 'discount' => '', 'loss' => '50.00', 'account' => '1000', 'note' => 'Kasse']);
+$host = $invoiceHost();
+$host->paymentAction();
+$edited = $pay($wireDi())->find((int) $restPayment->getId());
+check('Q24 POST the edit: amended — 58.10 per Kasse (1000) and 50.00 loss, the same journal numbers, flash, redirect; a POST with a wrong entity token is sent back with the conflict flash',
+    $host->redirectedTo === '/backend/finance/invoice/detail?id=' . $inv4->getId() && ($host->messageService->flashes[0][0] ?? '') === 'success' && str_contains($host->messageService->flashes[0][1], 'geändert')
+    && $edited->getAccountNumber() === '1000' && array_map(fn($a) => $a->getAmount()->toDecimal(), $edited->getAllocations()) === ['58.10', '50.00']
+    && array_map(fn($a) => $a->getLedgerEntryRef(), $edited->getAllocations()) === array_map(fn($a) => $a->getLedgerEntryRef(), $restPayment->getAllocations())
+    && (function () use ($useRequest, $invoiceHost, $inv4, $edited): bool {
+        $useRequest(['id' => $inv4->getId(), 'payment' => $edited->getId()], ['entity_csrf' => 'wrong', 'version' => $edited->getVersion(), 'date' => '2026-06-20', 'payment' => '1.00', 'discount' => '', 'loss' => '', 'account' => '1000', 'note' => '']);
+        $h = $invoiceHost(); $h->paymentAction();
+        return $h->redirectedTo !== null && ($h->messageService->flashes[0][0] ?? '') === 'error';
+    })());
+$useRequest(['id' => $inv4->getId(), 'payment' => $edited->getId()]);
+$host = $invoiceHost();
+$host->confirmPaymentDeleteAction();
+$confirmHtml = $renderMain($host);
+$useRequest(['id' => $inv4->getId(), 'payment' => $edited->getId()], ['entity_csrf' => 'tok-payment-' . $edited->getId(), 'version' => $edited->getVersion()]);
+$host = $invoiceHost();
+$host->paymentDeleteAction();
+check('Q25 the confirmation page names the postings that go; the POST deletes — flash, redirect, the invoice open again at 108.10, the payment gone',
+    str_contains($confirmHtml, 'Zahlung löschen') && str_contains($confirmHtml, 'wird gelöscht') && str_contains($confirmHtml, 'name="version"')
+    && $host->redirectedTo === '/backend/finance/invoice/detail?id=' . $inv4->getId() && ($host->messageService->flashes[0][0] ?? '') === 'success'
+    && $pay($wireDi())->find((int) $edited->getId()) === null && $service($wireDi())->openAmount($readInvoice($inv4->getId()))->toDecimal() === '108.10');
+
 echo "P3C. Source guards for part 3\n";
 $p3Templates = glob($package . '/res/view/templates/Backend/InvoiceController/*.tpl.php');
 check('P3C48 the document screens ship no JavaScript and no inline handler (Rule 7); no module-financial class in debtor but the adapter (the journal is linked by URL)',
-    count($p3Templates) === 7 && array_reduce($p3Templates, fn($ok, $f) => $ok && !preg_match('/<script|\son[a-z]+\s*=/i', file_get_contents($f)), true)
+    count($p3Templates) === 8 && array_reduce($p3Templates, fn($ok, $f) => $ok && !preg_match('/<script|\son[a-z]+\s*=/i', file_get_contents($f)), true)
     && !str_contains(file_get_contents($package . '/src/Ui/InvoiceControllerTrait.php'), 'Module\\Financial'));
 check('P3C49 the module brings no PDF library of its own (owner 2026-10-06: ONE writer, vendored in the kernel behind the facade): no composer requirement, no \\FPDF / PdfWriter use in its sources or templates — the facade only',
     !preg_match('/tcpdf|fpdf|dompdf|mpdf|swiss-qr-bill/i', (string) file_get_contents($package . '/composer.json'))

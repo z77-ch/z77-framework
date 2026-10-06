@@ -134,3 +134,30 @@ Three owner decisions of 2026-09-30 amend the close states (decisions 10–11):
 
 Decision 11 (the close check) is built as the open-work registry of ADR-039 decision 15 (scope
 `period-close`); the «`PeriodCloseCheck`» of its wording is that registry's check interface.
+
+## Addendum 2026-10-06 — a generated entry is corrected by its source, in place (owner decision)
+
+Decision 7 said a generated entry is never edited or deleted, only reversed. The owner changed
+that when the first settlements were recorded («manuelle Buchungen sind tippfehleranfällig —
+der Sachbearbeiter muss korrigieren können, ohne komplizierte Stornobuchungen»):
+
+1. **A generated entry is changed or removed ONLY by the module that posted it**, through
+   `LedgerService::amend($idempotencyKey, $new)` and `LedgerService::retract($idempotencyKey,
+   $sourceType)`, inside that module's unit of work. The source names what it posted by the
+   idempotency key, never by a number; a request from another `sourceType` is refused.
+2. **The journal screen never edits a generated entry** — it stays shown-only there, as before.
+   The bookkeeper corrects a manual entry; a settlement is corrected in the debtor module, which
+   changes the Fibu posting with it.
+3. **Every amend and retract writes an `EntryChange`** (who, when, before / after), exactly like
+   a manual edit or delete — the change log is the traceability the GeBüV asks for. A retracted
+   entry leaves its number as a documented gap (decision 9 unchanged).
+4. **The same period rules as a manual edit**: `closed` refuses, `vat-settled` refuses when a
+   tax line is involved, a date in another fiscal year is refused (retract and post anew). An
+   entry that was reversed, or is a reversal, is frozen — the reversal pair stays the correction
+   of record for anything a source no longer owns the shape of.
+5. **`reverse()` stays** for the cases a module chooses it (a correction after the period
+   closed, a counterpart the books should show). Decision 8 (the correction principle) holds
+   for documents and orders; for a SETTLEMENT the owner prefers the corrected posting over a
+   storno pair.
+
+First consumer: module-debtor's `PaymentService::update()` / `delete()` (P4 part 1).

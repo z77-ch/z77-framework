@@ -19,9 +19,14 @@ use Doctrine\Common\Collections\ArrayCollection,
  * auf Rechnung 12 plus 8.10 Skonto» is ONE payment with two allocations;
  * one bank receipt covering three invoices is one payment with three.
  *
- * Immutable once recorded: a wrong payment is not edited — it is reversed
- * by a counter payment (negative allocation, P4 part 2) — and a payment is
- * never deleted (its allocations are posted). There are no setters.
+ * CORRECTABLE while the fiscal year is open (owner 2026-10-06: «manuelle
+ * Buchungen sind tippfehleranfällig — der Sachbearbeiter korrigiert, ohne
+ * Stornobuchungen»): `PaymentService::update()` revises the header and
+ * reshapes the allocations, `delete()` removes the whole settlement — and
+ * both change or remove the POSTINGS with it, through the accounting
+ * port's `amend()` / `retract()`, logged by the bookkeeping like a manual
+ * edit. No setters: the service is the one writer, with the version the
+ * caller saw (`#[ORM\Version]`).
  *
  * `amount` is the MONEY that moved (0.00 for a pure write-off); the
  * allocations of kind `payment` sum to it exactly — the service refuses
@@ -40,6 +45,7 @@ use Doctrine\Common\Collections\ArrayCollection,
 class Payment
 {
     public const TARGET_CODE_LENGTH = 16;
+    public const ACCOUNT_LENGTH     = 10;
     public const NOTE_LENGTH        = 140;
     public const SOURCE_TYPE_LENGTH = 64;
     public const SOURCE_REF_LENGTH  = 128;
@@ -59,9 +65,18 @@ class Payment
     #[ORM\Column(type: MoneyType::NAME)]
     private Money $amount;
 
-    /** {@see PaymentTarget::$code} — the bank account; '' when no money moved. */
+    /** {@see PaymentTarget::$code} — the payment target the money came through, when it did; '' for a write-off or an account chosen freely. */
     #[ORM\Column(name: 'payment_target_code', length: self::TARGET_CODE_LENGTH)]
     private string $paymentTargetCode = '';
+
+    /**
+     * The LEDGER ACCOUNT the money went to — the bank, the cash register, a
+     * clearing account (owner 2026-10-06: «Bank, Kasse oder
+     * Ausbuchungskonto», chosen on the form; the target's account is the
+     * proposal). '' for a pure write-off. A NUMBER, not an id.
+     */
+    #[ORM\Column(name: 'account_number', length: self::ACCOUNT_LENGTH)]
+    private string $accountNumber = '';
 
     #[ORM\Column(length: self::NOTE_LENGTH, nullable: true)]
     private ?string $note = null;
@@ -78,25 +93,68 @@ class Payment
     #[ORM\Column(name: 'created_at', type: Types::DATETIME_IMMUTABLE)]
     private \DateTimeImmutable $createdAt;
 
+    #[ORM\Column(name: 'changed_by', length: self::ACTOR_LENGTH, nullable: true)]
+    private ?string $changedBy = null;
+
+    #[ORM\Column(name: 'changed_at', type: Types::DATETIME_IMMUTABLE, nullable: true)]
+    private ?\DateTimeImmutable $changedAt = null;
+
+    /** Optimistic lock: an edit or a delete names the version it saw (`PaymentService::update()` / `delete()`). */
+    #[ORM\Version]
+    #[ORM\Column(type: Types::INTEGER)]
+    private int $version = 1;
+
     /** @var Collection<int, PaymentAllocation> in position order */
     #[ORM\OneToMany(targetEntity: PaymentAllocation::class, mappedBy: 'payment', cascade: ['persist'])]
     #[ORM\OrderBy(['position' => 'ASC'])]
     private Collection $allocations;
 
-    public function __construct(\DateTimeImmutable $date, Money $amount, string $paymentTargetCode, ?string $note, string $createdBy, \DateTimeImmutable $createdAt, string $sourceType = self::SOURCE_MANUAL, ?string $sourceRef = null)
+    public function __construct(\DateTimeImmutable $date, Money $amount, string $paymentTargetCode, string $accountNumber, ?string $note, string $createdBy, \DateTimeImmutable $createdAt, string $sourceType = self::SOURCE_MANUAL, ?string $sourceRef = null)
     {
         if ($amount->isNegative()) {
-            throw new \InvalidArgumentException('A payment amount is not negative — a reversal is a counter allocation');
+            throw new \InvalidArgumentException('A payment amount is not negative — a wrong payment is corrected or removed, never countered');
         }
         $this->date              = $date;
         $this->amount            = $amount;
         $this->paymentTargetCode = PaymentTarget::normalizeCode($paymentTargetCode);
-        $this->note              = $note === null || trim($note) === '' ? null : mb_substr(trim($note), 0, self::NOTE_LENGTH);
+        $this->accountNumber     = trim($accountNumber);
+        $this->note              = self::cleanNote($note);
         $this->createdBy         = $createdBy;
         $this->createdAt         = $createdAt;
         $this->sourceType        = $sourceType;
         $this->sourceRef         = $sourceRef;
         $this->allocations       = new ArrayCollection();
+    }
+
+    /**
+     * The header as the office corrected it (owner 2026-10-06: a settlement
+     * is changed in the debtor module while the fiscal year is open, its
+     * postings with it) — by `PaymentService::update()` only, which also
+     * reshapes the allocations and amends their postings.
+     */
+    public function revise(\DateTimeImmutable $date, Money $amount, string $paymentTargetCode, string $accountNumber, ?string $note, string $changedBy, \DateTimeImmutable $changedAt): void
+    {
+        if ($amount->isNegative()) {
+            throw new \InvalidArgumentException('A payment amount is not negative');
+        }
+        $this->date              = $date;
+        $this->amount            = $amount;
+        $this->paymentTargetCode = PaymentTarget::normalizeCode($paymentTargetCode);
+        $this->accountNumber     = trim($accountNumber);
+        $this->note              = self::cleanNote($note);
+        $this->changedBy         = $changedBy;
+        $this->changedAt         = $changedAt;
+    }
+
+    /** Takes an allocation out of this payment — the service removes the row and retracts its posting. */
+    public function withdraw(PaymentAllocation $allocation): void
+    {
+        $this->allocations->removeElement($allocation);
+    }
+
+    private static function cleanNote(?string $note): ?string
+    {
+        return $note === null || trim($note) === '' ? null : mb_substr(trim($note), 0, self::NOTE_LENGTH);
     }
 
     /** Adds an allocation — by the service, before the payment is persisted. */
@@ -112,7 +170,11 @@ class Payment
     public function getDate(): \DateTimeImmutable { return $this->date; }
     public function getAmount(): Money { return $this->amount; }
     public function getPaymentTargetCode(): string { return $this->paymentTargetCode; }
+    public function getAccountNumber(): string { return $this->accountNumber; }
     public function getNote(): ?string { return $this->note; }
+    public function getChangedBy(): ?string { return $this->changedBy; }
+    public function getChangedAt(): ?\DateTimeImmutable { return $this->changedAt; }
+    public function getVersion(): int { return $this->version; }
     public function getSourceType(): string { return $this->sourceType; }
     public function getSourceRef(): ?string { return $this->sourceRef; }
     public function getCreatedBy(): string { return $this->createdBy; }
@@ -121,7 +183,8 @@ class Payment
     /** @return list<PaymentAllocation> */
     public function getAllocations(): array
     {
-        return $this->allocations->toArray();
+        // A list — after a withdraw() the collection keeps its gaps.
+        return array_values($this->allocations->toArray());
     }
 
     /** Σ of the allocations of $kind (all kinds when null). */

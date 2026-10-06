@@ -41,4 +41,26 @@ interface AccountingGateway
      * @throws AccountingRefusedException the bookkeeping refused — the unit of work must end
      */
     public function post(PostingRequest $request): ?string;
+
+    /**
+     * CHANGE a posting of this source in place — the entry under the
+     * request's idempotency key becomes what $request says now (ADR-042
+     * addendum 2026-10-06: a generated entry is changed only by its
+     * source, logged by the bookkeeping, frozen in the journal screen).
+     * Same contract as {@see post()}: joins the unit of work, a refusal ends
+     * it. The bookkeeping decides whether the period still allows it.
+     *
+     * @return string|null where the entry is (unchanged by an amend); null without bookkeeping
+     * @throws AccountingRefusedException the bookkeeping refused — period closed, entry frozen, account unknown
+     */
+    public function amend(PostingRequest $request): ?string;
+
+    /**
+     * REMOVE a posting of this source — the entry under $idempotencyKey of
+     * source $sourceType goes, its number stays a documented gap. Nothing
+     * under the key (no bookkeeping, already gone) is not an error.
+     *
+     * @throws AccountingRefusedException the bookkeeping refused — period closed, entry frozen
+     */
+    public function retract(string $idempotencyKey, string $sourceType): void;
 }

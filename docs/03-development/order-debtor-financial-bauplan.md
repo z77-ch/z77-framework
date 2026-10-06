@@ -301,10 +301,17 @@ DOCUMENT of its own kind (owner decision 2026-10-06, built in part 3). One write
 `PaymentService::record(PaymentDraft)` with stable refusal reasons, the invoice row locked before
 any journal number, a ledger refusal rolling the settlement back whole; the screen «Zahlung
 erfassen» on the detail of a final invoice, the settlements listed there. Tables `payment` /
-`payment_allocation`, migration `Version20261006150000`. Harness `tests/module-debtor.php`
-`Q1`–`Q17` (369 checks). **Next:** P4 part 2 (CAMT.054, the counter allocation, overpayment /
-unmatched remainder, the open-work check for unbooked transactions), P4 part 3 (dunning, the fee
-as a document kind), P5 part 2.
+`payment_allocation`, migration `Version20261006150000`. **Owner decisions the same evening,
+built on top:** (1) a wrong payment is corrected or deleted, never countered; (2) a settlement is
+changed or removed in the DEBTOR module while the year is open, and its Fibu postings with it —
+in place, same journal number, logged like a manual edit; the journal screen never edits a
+generated entry (ADR-042 addendum 2026-10-06: `LedgerService::amend()` / `retract()`, the
+accounting port grew by `amend()` / `retract()`); (3) the account the money went to is chosen on
+the form (bank, cash register, a clearing account — the target's account is the proposal);
+(4) «Rest als Verlust ausbuchen»: the amount typed, the difference to the open amount to the loss
+account. Harness `tests/module-debtor.php` `Q1`–`Q25`, `tests/module-financial.php` K2.
+**Next:** P4 part 2 (CAMT.054, overpayment / unmatched remainder, the open-work check for
+unbooked transactions), P4 part 3 (dunning, the fee as a document kind), P5 part 2.
 
 Open for the owner: `persistence-doctrine`, `module-vat` and `module-contact` are not split targets
 yet (`.github/workflows/split.yml`, Packagist). Working method that carried P1: each building block

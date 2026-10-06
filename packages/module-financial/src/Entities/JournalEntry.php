@@ -244,21 +244,20 @@ class JournalEntry
     }
 
     /**
-     * The one mutation, for a MANUAL entry only: new date, text and lines,
-     * stamped with who changed it and when. The old lines leave the
-     * collection (orphan removal deletes them at flush), the new ones come
-     * in. The number stays — it belongs to the fiscal year, which is why the
-     * caller (`ManualEntryService`) refuses a date in another year before
-     * calling this. A generated entry refuses here as well, so the rule does
-     * not depend on the service alone (ADR-042 decision 7).
+     * The one mutation: new date, text and lines, stamped with who changed
+     * it and when. The old lines leave the collection (orphan removal
+     * deletes them at flush), the new ones come in. The number stays — it
+     * belongs to the fiscal year, which is why the callers refuse a date in
+     * another year before calling this. WHO may call it is the services'
+     * rule (ADR-042 decision 7 and its addendum of 2026-10-06): a manual
+     * entry through `ManualEntryService` (the bookkeeper), a generated entry
+     * ONLY through `LedgerService::amend()` by the module that posted it —
+     * the journal screen never edits a generated entry.
      *
      * @param list<JournalLine> $lines built for THIS entry, in position order
      */
     public function amend(\DateTimeImmutable $date, string $text, array $lines, string $changedBy, \DateTimeImmutable $changedAt): void
     {
-        if (!$this->isManual()) {
-            throw new \LogicException('A generated journal entry is never edited — correction is a reversal (ADR-042 decision 7)');
-        }
         if (count($lines) < 2) {
             throw new \LogicException('A journal entry has at least two lines');
         }

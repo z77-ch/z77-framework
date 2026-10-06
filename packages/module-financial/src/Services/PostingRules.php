@@ -93,6 +93,27 @@ final class PostingRules
     }
 
     /**
+     * The same two rules for a CHANGE of an existing entry (a manual edit or
+     * delete, a source's amend or retract of its generated entry): `closed`
+     * refuses, `vat-settled` refuses when a tax line is involved. The
+     * exception is the editing one, naming the entry.
+     *
+     * @param string $state the state to judge by — the loaded one (lock-free first check) or the committed one ({@see lockedPeriodState()})
+     * @throws EntryNotEditableException PERIOD_CLOSED | PERIOD_VAT_SETTLED
+     */
+    public function assertPeriodAllowsChange(Period $period, bool $withTaxLine, JournalEntry $entry, string $state): void
+    {
+        $span = $period->getStartDate()->format('d.m.Y') . '–' . $period->getEndDate()->format('d.m.Y');
+        $ref  = $entry->getFiscalYear()->getCode() . '/' . $entry->getNumber();
+        if ($state === PeriodState::Closed->value) {
+            throw new EntryNotEditableException(EntryNotEditableException::PERIOD_CLOSED, "Journal entry {$ref}: period {$span} is closed — nothing changes after the close");
+        }
+        if ($state === PeriodState::VatSettled->value && $withTaxLine) {
+            throw new EntryNotEditableException(EntryNotEditableException::PERIOD_VAT_SETTLED, "Journal entry {$ref}: period {$span} is VAT-settled — an entry with a tax line is frozen there");
+        }
+    }
+
+    /**
      * The period's state as COMMITTED, read under a SHARED row lock
      * (`SELECT state … LOCK IN SHARE MODE`, held until the caller's commit) —
      * the re-check a write into the journal makes after its first lock

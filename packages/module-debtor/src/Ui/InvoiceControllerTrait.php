@@ -9,6 +9,7 @@ use Z77\Core\DI,
     Z77\Module\Debtor\Entities\DebtorProfile,
     Z77\Module\Debtor\Entities\Invoice,
     Z77\Module\Debtor\Entities\InvoiceKind,
+    Z77\Module\Debtor\Entities\Payment,
     Z77\Module\Debtor\Entities\PaymentTarget,
     Z77\Module\Debtor\Entities\PaymentTerms,
     Z77\Module\Debtor\Invoicing\QrBill,
@@ -226,17 +227,119 @@ trait InvoiceControllerTrait
     }
 
     /**
-     * «Zahlung erfassen» on a FINAL invoice (`?id=`): a page form for the
-     * value date, the three amounts and the payment target; the POST goes
-     * to `PaymentService::record()` — posted at once, all or nothing — and
-     * back to the detail. A document that is not settleable goes back to
-     * its detail with the refusal.
+     * «Zahlung erfassen» (`?id=`) and «Zahlung ändern» (`?id=&payment=`) on
+     * a FINAL invoice: a page form for the value date, the money and the
+     * ledger account it went to, Skonto, Verlust («Rest als Verlust»), a
+     * note. The POST goes to `PaymentService::record()` or — with the
+     * entity token and the VERSION the form was rendered from —
+     * `update()`: posted or amended at once, all or nothing — and back to
+     * the detail. A document that is not settleable, or a payment that is
+     * not the document's, goes back to the detail with the refusal.
      */
     #[Csrf]
     protected function paymentAction(): HtmlResponse|RedirectResponse
     {
         $request  = DI::getRequest();
-        $id       = (int) $request->getGetParameter('id');
+        $document = $this->settleableDocument();
+        if (!$document instanceof Invoice) {
+            return $document;
+        }
+        $payment = $this->paymentOf($document);
+        if ($payment === false) {
+            return $this->invoiceNotFound();
+        }
+        $form = new PaymentForm($document->getCurrency());
+        $open = $this->invoicingService()->openAmount($document);
+        if ($payment !== null) {
+            $open = $open->add($payment->allocated());
+        }
+        if (!$request->isPost()) {
+            $payment === null
+                ? $form->startBlank(new \DateTimeImmutable('today'), $this->invoiceDefaultAccount($document))
+                : $form->startFrom($payment);
+
+            return $this->invoicePaymentPage($form, $document, $payment, $open);
+        }
+        $post = $request->getPostParameters();
+        if ($payment !== null && !DI::getCsrfService()->validateEntityToken(trim((string) ($post['entity_csrf'] ?? '')), 'payment', (int) $payment->getId())) {
+            $this->messageService->pushFlashAfterRedirect('error', self::INVOICE_CONFLICT_MESSAGE);
+
+            return $this->redirect($this->invoiceListBase() . '/detail?id=' . $document->getId(), 303);
+        }
+        $form->fromPost($post);
+        $draft = $form->toDraft((int) $document->getId(), $open, $document->getPayment()->getTargetCode());
+        if ($draft !== null) {
+            try {
+                if ($payment === null) {
+                    $recorded = $this->paymentService()->record($draft);
+                    $this->messageService->pushFlashAfterRedirect('success', 'Zahlung erfasst und verbucht: ' . AmountFormat::of($recorded->allocated()) . ' auf ' . $document->documentName());
+                } else {
+                    $recorded = $this->paymentService()->update((int) $payment->getId(), (int) ($post['version'] ?? 0), $draft);
+                    $this->messageService->pushFlashAfterRedirect('success', 'Zahlung geändert und umgebucht: ' . AmountFormat::of($recorded->allocated()) . ' auf ' . $document->documentName());
+                }
+
+                return $this->redirect($this->invoiceListBase() . '/detail?id=' . $document->getId(), 303);
+            } catch (DebtorException | \Z77\Module\Debtor\Accounting\AccountingRefusedException $e) {
+                $form->addGeneralError($e->getMessage());
+            }
+        }
+
+        return $this->invoicePaymentPage($form, $document, $payment, $open);
+    }
+
+    /** «Zahlung löschen …» (`?id=&payment=`): the confirmation page naming the postings that go. */
+    protected function confirmPaymentDeleteAction(): HtmlResponse|RedirectResponse
+    {
+        $document = $this->settleableDocument();
+        if (!$document instanceof Invoice) {
+            return $document;
+        }
+        $payment = $this->paymentOf($document);
+        if ($payment === null || $payment === false) {
+            return $this->invoiceNotFound();
+        }
+
+        return $this->invoicePage('confirmPaymentDelete', [
+            'document'   => $document,
+            'payment'    => $payment,
+            'entityCsrf' => DI::getCsrfService()->generateEntityToken('payment', (int) $payment->getId()),
+        ]);
+    }
+
+    /** The delete itself (POST, `#[Csrf]`, entity token + version): `PaymentService::delete()`, then back to the detail. */
+    #[Csrf]
+    protected function paymentDeleteAction(): RedirectResponse
+    {
+        $request  = DI::getRequest();
+        $document = $this->settleableDocument();
+        if (!$document instanceof Invoice) {
+            return $document;
+        }
+        $payment = $this->paymentOf($document);
+        if ($payment === null || $payment === false) {
+            return $this->invoiceNotFound();
+        }
+        $post = $request->getPostParameters();
+        if (!$request->isPost() || !DI::getCsrfService()->validateEntityToken(trim((string) ($post['entity_csrf'] ?? '')), 'payment', (int) $payment->getId())) {
+            $this->messageService->pushFlashAfterRedirect('error', self::INVOICE_CONFLICT_MESSAGE);
+
+            return $this->redirect($this->invoiceListBase() . '/detail?id=' . $document->getId(), 303);
+        }
+        try {
+            $amount = $payment->allocated();
+            $this->paymentService()->delete((int) $payment->getId(), (int) ($post['version'] ?? 0));
+            $this->messageService->pushFlashAfterRedirect('success', 'Zahlung gelöscht, Buchungen entfernt: ' . AmountFormat::of($amount) . ' wieder offen auf ' . $document->documentName());
+        } catch (DebtorException | \Z77\Module\Debtor\Accounting\AccountingRefusedException $e) {
+            $this->messageService->pushFlashAfterRedirect('error', $e->getMessage());
+        }
+
+        return $this->redirect($this->invoiceListBase() . '/detail?id=' . $document->getId(), 303);
+    }
+
+    /** The document of `?id=` when it can be settled — else the redirect to send. */
+    private function settleableDocument(): Invoice|RedirectResponse
+    {
+        $id       = (int) DI::getRequest()->getGetParameter('id');
         $document = $id ? $this->invoices()->withLines($id) : null;
         if ($document === null) {
             return $this->invoiceNotFound();
@@ -246,35 +349,43 @@ trait InvoiceControllerTrait
 
             return $this->redirect($this->invoiceListBase() . '/detail?id=' . $document->getId(), 303);
         }
-        $form = new PaymentForm($document->getCurrency());
-        if (!$request->isPost()) {
-            $form->startBlank(new \DateTimeImmutable('today'), $document->getPayment()->getTargetCode() !== '' ? $document->getPayment()->getTargetCode() : $this->invoiceDefaultTarget());
 
-            return $this->invoicePaymentPage($form, $document);
-        }
-        $form->fromPost($request->getPostParameters());
-        $draft = $form->toDraft((int) $document->getId());
-        if ($draft !== null) {
-            try {
-                $payment = $this->paymentService()->record($draft);
-                $this->messageService->pushFlashAfterRedirect('success', 'Zahlung erfasst und verbucht: ' . AmountFormat::of($payment->allocated()) . ' auf ' . $document->documentName());
-
-                return $this->redirect($this->invoiceListBase() . '/detail?id=' . $document->getId(), 303);
-            } catch (DebtorException | \Z77\Module\Debtor\Accounting\AccountingRefusedException $e) {
-                $form->addGeneralError($e->getMessage());
-            }
-        }
-
-        return $this->invoicePaymentPage($form, $document);
+        return $document;
     }
 
-    private function invoicePaymentPage(PaymentForm $form, Invoice $document): HtmlResponse
+    /** The payment of `?payment=` on $document: null without the parameter, false when unknown or another document's. */
+    private function paymentOf(Invoice $document): Payment|null|false
+    {
+        $paymentId = (int) DI::getRequest()->getGetParameter('payment');
+        if ($paymentId <= 0) {
+            return null;
+        }
+        $payment = $this->paymentService()->find($paymentId);
+        if ($payment === null || $payment->getAllocations() === [] || $payment->getAllocations()[0]->getInvoice()->getId() !== $document->getId()) {
+            return false;
+        }
+
+        return $payment;
+    }
+
+    /** The account a new payment proposes: the document's payment target's, else the first active target's. */
+    private function invoiceDefaultAccount(Invoice $document): string
+    {
+        $code = $document->getPayment()->getTargetCode() !== '' ? $document->getPayment()->getTargetCode() : $this->invoiceDefaultTarget();
+        $target = $code !== '' ? $this->em()->getRepository(PaymentTarget::class)->findByCode($code) : null;
+
+        return $target !== null ? trim($target->getAccountNumber()) : '';
+    }
+
+    private function invoicePaymentPage(PaymentForm $form, Invoice $document, ?Payment $payment, Money $open): HtmlResponse
     {
         return $this->invoicePage('payment', [
             'form'       => $form,
             'document'   => $document,
-            'openAmount' => $this->invoicingService()->openAmount($document),
-            'targets'    => array_values(array_filter($this->em()->getRepository(PaymentTarget::class)->allInOrder(), static fn(PaymentTarget $t) => $t->isActive())),
+            'payment'    => $payment,
+            'openAmount' => $open,
+            'accounts'   => (new LedgerAccountCheck($this->em()))->postableAccounts(),
+            'entityCsrf' => $payment === null ? '' : DI::getCsrfService()->generateEntityToken('payment', (int) $payment->getId()),
         ]);
     }
 

@@ -18,8 +18,9 @@ use Doctrine\ORM\Mapping as ORM,
  * Each allocation is posted ONCE through the accounting port inside the
  * unit of work that records it ({@see \Z77\Module\Debtor\Payments\PaymentPostingBuilder}),
  * and keeps the journal reference like a document does; `null` with the
- * Null gateway (bookkeeping elsewhere). Immutable — no setters; a wrong
- * allocation is reversed by a counter allocation (P4 part 2), never edited.
+ * Null gateway (bookkeeping elsewhere). Corrected only through
+ * `PaymentService::update()` (owner 2026-10-06), which amends the posting
+ * in place ({@see reallocate()}) or retracts it; no setters.
  *
  * Table `payment_allocation`; the mapping is the table definition
  * (`Version20261006150000`).
@@ -81,6 +82,19 @@ class PaymentAllocation
         }
         $this->posted         = true;
         $this->ledgerEntryRef = $ledgerEntryRef;
+    }
+
+    /**
+     * A corrected amount (owner 2026-10-06, `PaymentService::update()`): the
+     * row keeps its id — and with it the idempotency key of its posting,
+     * which the service AMENDS in place, so the journal number stays.
+     */
+    public function reallocate(Money $amount): void
+    {
+        if ($amount->isZero()) {
+            throw new \InvalidArgumentException('An allocation of 0.00 clears nothing — withdraw it instead');
+        }
+        $this->amount = $amount;
     }
 
     public function getId(): ?int { return $this->id; }

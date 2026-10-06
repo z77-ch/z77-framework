@@ -25,4 +25,13 @@ final class NullAccountingGateway implements AccountingGateway
     {
         return null;
     }
+
+    public function amend(PostingRequest $request): ?string
+    {
+        return null;
+    }
+
+    public function retract(string $idempotencyKey, string $sourceType): void
+    {
+    }
 }

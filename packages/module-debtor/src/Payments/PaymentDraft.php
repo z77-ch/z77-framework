@@ -17,6 +17,11 @@ use Z77\Shared\Money\Money;
  */
 final class PaymentDraft
 {
+    /**
+     * @param string $paymentTargetCode the target the money came through ('' = none); its ledger account is the default for $account
+     * @param string $account           the LEDGER ACCOUNT the money went to — bank, cash register, a clearing account
+     *                                  (owner 2026-10-06); '' = the target's account
+     */
     public function __construct(
         public readonly int $invoiceId,
         public readonly \DateTimeImmutable $date,
@@ -25,6 +30,7 @@ final class PaymentDraft
         public readonly Money $loss,
         public readonly string $paymentTargetCode = '',
         public readonly ?string $note = null,
+        public readonly string $account = '',
         public readonly string $sourceType = 'manual',
         public readonly ?string $sourceRef = null,
     ) {}

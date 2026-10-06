@@ -270,14 +270,8 @@ final class ManualEntryService
      */
     private function assertPeriodAllows(Period $period, bool $withTaxLine, JournalEntry $entry, string $state): void
     {
-        $span = $period->getStartDate()->format('d.m.Y') . '–' . $period->getEndDate()->format('d.m.Y');
-        $ref  = $entry->getFiscalYear()->getCode() . '/' . $entry->getNumber();
-        if ($state === PeriodState::Closed->value) {
-            throw new EntryNotEditableException(EntryNotEditableException::PERIOD_CLOSED, "Journal entry {$ref}: period {$span} is closed — nothing changes after the close");
-        }
-        if ($state === PeriodState::VatSettled->value && $withTaxLine) {
-            throw new EntryNotEditableException(EntryNotEditableException::PERIOD_VAT_SETTLED, "Journal entry {$ref}: period {$span} is VAT-settled — an entry with a tax line is frozen there");
-        }
+        // The one rule set for a change, shared with the source's amend / retract of a generated entry (ADR-042 addendum 2026-10-06).
+        $this->rules->assertPeriodAllowsChange($period, $withTaxLine, $entry, $state);
     }
 
     /** @throws \LogicException a unit of work is already open */

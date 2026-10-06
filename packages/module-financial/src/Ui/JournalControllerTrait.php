@@ -103,7 +103,7 @@ trait JournalControllerTrait
      */
     private const JOURNAL_STATE_LABELS = [
         'editable'    => 'bearbeitbar',
-        'generated'   => 'automatisch gebucht — das Modul, das sie gebucht hat, storniert sie',
+        'generated'   => 'automatisch gebucht — nur das Modul, das sie gebucht hat, ändert, löscht oder storniert sie',
         'closed'      => 'Geschäftsjahr abgeschlossen — gesperrt',
         'vat-settled' => 'MWST der Periode abgerechnet — die Buchung trägt einen MWST-Code und ist gesperrt',
     ];
