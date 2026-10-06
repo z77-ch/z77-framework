@@ -9,9 +9,9 @@
  * reference linked to the journal entry as a WINDOW (ADR-047) when the
  * bookkeeping is here, the credit notes and the open amount.
  *
- * Offers «Neu fakturieren» while `invoicing`, «Gutschrift erstellen …» on a
- * final invoice — nothing on a final credit note. No PDF yet (`debtor.md`
- * pending: the PDF library is the owner's decision).
+ * Offers «PDF» (the document rendered on request, `pdf` action, a new tab),
+ * «Neu fakturieren» while `invoicing`, «Gutschrift erstellen …» on a final
+ * invoice — nothing else on a final credit note.
  *
  * @var \Z77\Module\Debtor\Entities\Invoice $document  lines loaded
  * @var \Z77\Module\Debtor\Invoicing\QrBill $bill
@@ -49,6 +49,7 @@ $period     = $document->getServiceFrom()->format('d.m.Y') . ($document->getServ
         </div>
 
         <nav class="be-list__toggles" aria-label="Aktionen">
+            <a class="be-btn be-btn--ghost be-btn--sm" href="<?= e($actionBase . '/pdf?id=' . (int) $document->getId()) ?>" target="_blank" rel="noopener" title="Als PDF öffnen (neuer Tab)">PDF</a>
             <?php if (!$document->isFinal()): ?>
             <a class="be-btn be-btn--ghost be-btn--sm" href="<?= e($actionBase . '/edit?id=' . (int) $document->getId()) ?>">Neu fakturieren …</a>
             <?php elseif (!$document->isCreditNote()): ?>

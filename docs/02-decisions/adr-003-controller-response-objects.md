@@ -38,6 +38,7 @@ Located in `packages/kernel/core/src/Http/Response/`.
 | `HtmlResponse` | HTML page — full or partial. `LayoutManager` decides based on `IS_AJAX_HTTP_REQUEST` |
 | `JsonResponse` | JSON data with HTTP status code |
 | `FileResponse` | File download with headers (`Content-Disposition`, `Content-Type`) |
+| `BytesResponse` | Bytes that exist in memory only (a rendered PDF, an assembled CSV), inline or as a download — `$this->bytes()`; added 2026-10-06 with the kernel's PDF facade (`topics/pdf.md`) |
 | `RedirectResponse` | HTTP redirect, default 302 |
 | `VoidResponse` | No output, clean termination (background jobs, fire-and-forget actions) |
 | `NoContentResponse` | HTTP 204 — success without content (fetch endpoints signalling "up to date / nothing to deliver"; added 2026-07-15) |

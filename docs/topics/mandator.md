@@ -28,6 +28,7 @@ SOURCE=/packages/module-mandator/src/Ui/MandatorControllerTrait.php
 SOURCE=/packages/module-mandator/src/Ui/MandatorLayout.php
 SOURCE=/packages/module-mandator/res/view/templates/Backend/MandatorController/edit.tpl.php
 SOURCE=/packages/module-mandator/res/view/templates/partials/letterhead.tpl.php
+SOURCE=/packages/module-mandator/res/view/templates/pdf/letterhead.tpl.php
 SOURCE=/packages/module-mandator/res/view/templates/partials/accountDatalist.tpl.php
 SOURCE=/packages/module-debtor/src/Services/Creditor.php
 SOURCE=/packages/module-mandator/res/migrations/Version20260923160948.php

@@ -101,6 +101,7 @@ Structure is enforced by `npm run docs:check` ([docs-lint/STANDARD.md](../docs-l
 | tree, hierarchy | [topics/tree.md](topics/tree.md) |
 | VAT, MWST, Mehrwertsteuer, tax code / Steuercode, TaxCode, TaxRate, rate valid from / gültig ab, VatCalculator, tax summary, price mode net / gross, country pack, ESTV, module-vat | [topics/vat.md](topics/vat.md) |
 | view layer, partials, HtmlView | [topics/view-layer.md](topics/view-layer.md) |
+| PDF, FPDF, PdfDocument, PDF partials, QR-bill payment part, BytesResponse | [topics/pdf.md](topics/pdf.md) |
 | templates (create/change) | [01-handbook/templates.md](01-handbook/templates.md) |
 
 ### [02-decisions/](02-decisions/) — Architecture Decision Records (ADRs)

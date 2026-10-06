@@ -10,6 +10,7 @@ use Z77\Core\Services\LayoutManager,
     Z77\Core\Http\Response\JsonResponse,
     Z77\Core\Http\Response\FetchResponse,
     Z77\Core\Http\Response\FileResponse,
+    Z77\Core\Http\Response\BytesResponse,
     Z77\Core\Http\Response\RedirectResponse,
     Z77\Core\Http\Response\VoidResponse,
     Z77\Core\Http\Response\NoContentResponse,
@@ -295,6 +296,16 @@ abstract class AbstractBaseController
     protected function file(string $path, string $filename, ?string $mimeType = null): FileResponse
     {
         return new FileResponse($path, $filename, $mimeType);
+    }
+
+    /**
+     * Returns bytes that exist in memory only (a rendered PDF, an assembled
+     * CSV) as a file — inline in the browser by default, $inline false = a
+     * download. A file on disk goes through {@see file()}.
+     */
+    protected function bytes(string $content, string $filename, string $mimeType, bool $inline = true): BytesResponse
+    {
+        return new BytesResponse($content, $filename, $mimeType, $inline);
     }
 
     /**

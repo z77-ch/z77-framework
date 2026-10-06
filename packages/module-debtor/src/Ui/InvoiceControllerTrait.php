@@ -3,6 +3,7 @@ namespace Z77\Module\Debtor\Ui;
 
 use Z77\Core\DI,
     Z77\Core\Http\RequestMode,
+    Z77\Core\Http\Response\BytesResponse,
     Z77\Core\Http\Response\HtmlResponse,
     Z77\Core\Http\Response\RedirectResponse,
     Z77\Module\Debtor\Entities\DebtorProfile,
@@ -11,6 +12,7 @@ use Z77\Core\DI,
     Z77\Module\Debtor\Entities\PaymentTarget,
     Z77\Module\Debtor\Entities\PaymentTerms,
     Z77\Module\Debtor\Invoicing\QrBill,
+    Z77\Module\Debtor\Pdf\InvoicePdf,
     Z77\Module\Debtor\Repositories\InvoiceRepository,
     Z77\Module\Debtor\Repositories\InvoiceSearch,
     Z77\Module\Debtor\Services\DebtorCurrency,
@@ -194,6 +196,23 @@ trait InvoiceControllerTrait
             'ledgerKnown'  => (new LedgerAccountCheck($this->em()))->available(),
             'states'       => self::INVOICE_STATE_LABELS,
         ]);
+    }
+
+    /**
+     * The document as PDF, inline — rendered on request from the snapshot
+     * through {@see InvoicePdf} (the layout `pdf/invoice`), never stored.
+     * The same document yields the same file; a document still in
+     * `invoicing` prints as it stands now and changes with a re-issue.
+     */
+    protected function pdfAction(): BytesResponse|RedirectResponse
+    {
+        $id       = (int) DI::getRequest()->getGetParameter('id');
+        $document = $id ? $this->invoices()->withLines($id) : null;
+        if ($document === null) {
+            return $this->invoiceNotFound();
+        }
+
+        return $this->bytes(InvoicePdf::of($document, $this->em())->output(), InvoicePdf::fileName($document), 'application/pdf');
     }
 
     // ── add / edit / credit note ─────────────────────────────────────────

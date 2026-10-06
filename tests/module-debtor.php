@@ -275,6 +275,9 @@ foreach ($packages as $name => $path) {
     $sources     = $name === 'Debtor' ? "'{$overrideRoot}', '{$path}'" : "'{$path}'";
     $namespaces .= "'Z77\\\\Module\\\\{$name}\\\\' => ['sourcePaths' => [{$sources}]],\n";
 }
+// The kernel's shared namespace: the PDF partials `pdf/table` / `pdf/addressWindow` the invoice layout draws with (P3D).
+$kernelShared = str_replace('\\', '/', realpath(__DIR__ . '/../packages/kernel/shared'));
+$namespaces  .= "'Z77\\\\Shared\\\\' => ['sourcePaths' => ['{$kernelShared}']],\n";
 $write('config/vendor/fileFinder.inc.php', "<?php return ['resourceDir' => ['sourceDir' => 'src', 'tplDir' => 'res/view/templates'], 'namespaces' => [\n{$namespaces}]];");
 $writeModules = function (bool $withFinancial) use ($write): void {
     $modules = $withFinancial ? "'vat' => [], 'contact' => [], 'mandator' => [], 'financial' => [], 'debtor' => []" : "'vat' => [], 'contact' => [], 'mandator' => [], 'debtor' => []";
@@ -1841,7 +1844,7 @@ $useRequest = function (array $get, ?array $post = null) use ($wireDi): UnifiedE
 };
 $invoiceHost = function () {
     return new class {
-        use \Z77\Module\Debtor\Ui\InvoiceControllerTrait { listAction as public; detailAction as public; addAction as public; editAction as public; creditNoteAction as public; confirmFinalizeAction as public; finalizeAction as public; }
+        use \Z77\Module\Debtor\Ui\InvoiceControllerTrait { listAction as public; detailAction as public; pdfAction as public; addAction as public; editAction as public; creditNoteAction as public; confirmFinalizeAction as public; finalizeAction as public; }
         public array $context = [];
         public object $layoutManager;
         public object $messageService;
@@ -1863,6 +1866,8 @@ $invoiceHost = function () {
         protected function em() { return DI::getUnifiedEntityManager(); }
         protected function html(array $context = []): \Z77\Core\Http\Response\HtmlResponse { $this->context = $context; return new \Z77\Core\Http\Response\HtmlResponse(null, $context); }
         protected function redirect(string $url, int $status = 302): \Z77\Core\Http\Response\RedirectResponse { $this->redirectedTo = $url; return new \Z77\Core\Http\Response\RedirectResponse($url, $status); }
+        public array $bytes = [];
+        protected function bytes(string $content, string $filename, string $mimeType, bool $inline = true): \Z77\Core\Http\Response\BytesResponse { $this->bytes = ['content' => $content, 'filename' => $filename, 'mime' => $mimeType, 'inline' => $inline]; return new \Z77\Core\Http\Response\BytesResponse($content, $filename, $mimeType, $inline); }
         // The session actor is not wired in the harness — name it, as a CLI caller must.
         private function invoicingService(): InvoicingService { return new InvoicingService($this->em(), 'sachbearbeiter'); }
     };
@@ -2106,13 +2111,73 @@ check('P3C47 the payment-target list shows the EFFECTIVE creditor per target —
     str_contains($ptHtml, 'Empfänger: Peter u/o Regina Ruepp') && str_contains($ptHtml, 'teils vom Mandanten') && str_contains($ptHtml, 'Empfänger: Neuer Inhaber GmbH')
     && str_contains($ptHtml, 'QR-IBAN') && str_contains($ptHtml, 'CH93 0076 2011 6238 5295 7'));
 
+// ── P3D. the PDF (owner 2026-10-06: FPDF through the kernel facade, the layouts as partials) ──
+
+echo "P3D. The document as PDF: the layout pdf/invoice, the payment part at the foot, rendered on request\n";
+$emD    = $wireDi();
+$qrDoc  = $readInvoice($qrInv->getId());
+$pdfDoc = \Z77\Module\Debtor\Pdf\InvoicePdf::of($qrDoc, $emD)->withoutCompression();
+$pdfBin = $pdfDoc->output();
+$custNo = $emD->getRepository(DebtorProfile::class)->findByContact($mid)->getCustomerNumber();
+check('P3D1 a QR invoice renders: a PDF, the title is the document name, the letterhead (mandator) and the customer number are on it',
+    str_starts_with($pdfBin, '%PDF-') && str_contains($pdfBin, '(' . $qrDoc->documentName() . ')') && str_contains($pdfBin, 'Harness AG') && str_contains($pdfBin, '(Kundennummer)') && str_contains($pdfBin, '(' . $custNo . ')'));
+check('P3D2 … the payment part is there: receipt and payment-part titles, the account and the reference as printed, the amount grouped with a space, the Swiss cross fills',
+    str_contains($pdfBin, '(Empfangsschein)') && str_contains($pdfBin, '(Zahlteil)') && str_contains($pdfBin, '(' . $pdfDoc->enc(QrBill::of($qrDoc)->formattedAccount()) . ')')
+    && str_contains($pdfBin, '(' . QrBill::of($qrDoc)->formattedReference() . ')') && str_contains($pdfBin, '(Vor der Einzahlung abzutrennen)') && substr_count($pdfBin, ' re f') > 100);
+check('P3D3 … no footer on the page with the payment part (the 105 mm zone stays clean), one page', str_contains($pdfBin, '/Count 1') && !str_contains($pdfBin, 'Seite 1 von'));
+$withoutStamp = fn(string $pdf): string => preg_replace('~/CreationDate \([^)]*\)~', '', $pdf);
+check('P3D4 the same document yields the same bytes up to the creation timestamp of the metadata (rendered from the snapshot, deterministic)',
+    $withoutStamp(\Z77\Module\Debtor\Pdf\InvoicePdf::of($readInvoice($qrInv->getId()), $wireDi())->withoutCompression()->output()) === $withoutStamp($pdfBin));
+check('P3D5 the file name is the document name in kebab-case lower', \Z77\Module\Debtor\Pdf\InvoicePdf::fileName($qrDoc) === 'rechnung-' . $qrDoc->getNumber() . '.pdf');
+
+$cnDoc = $readInvoice($cn->getId());
+$cnBin = \Z77\Module\Debtor\Pdf\InvoicePdf::of($cnDoc, $wireDi())->withoutCompression()->output();
+check('P3D6 a credit note prints without a payment part and names the invoice it corrects', str_contains($cnBin, '(Gutschrift zu)') && !str_contains($cnBin, '(Zahlteil)') && str_contains($cnBin, '(' . $cnDoc->documentName() . ')'));
+
+// A long invoice: the lines flow over pages, the running header on page 2, the payment part on the LAST page.
+$emL   = $wireDi();
+$longLines = [];
+for ($i = 1; $i <= 45; $i++) {
+    $longLines[] = LineDraft::service("Position {$i} — eine Leistung mit einem Text, der in der ersten Spalte umbricht, damit die Tabelle Platz braucht", '1.000', 'Stk', chf('10.00'), 'UN', '3400');
+}
+$longInv = $service($emL)->invoice(InvoiceDraft::invoice($mid, day('2026-06-12'), day('2026-06-12'), 'CHF', $longLines, paymentTargetCode: 'qr'));
+$longDoc = $readInvoice($longInv->getId());
+$longPdf = \Z77\Module\Debtor\Pdf\InvoicePdf::of($longDoc, $wireDi())->withoutCompression();
+$longBin = $longPdf->output();
+check('P3D7 45 lines: more than one page, the running header «Seite 2 von N» on the later pages, the table header repeated, the payment part once',
+    $longPdf->pageNo() >= 2 && str_contains($longBin, 'Seite 2 von ' . $longPdf->pageNo()) && substr_count($longBin, '(Bezeichnung)') === $longPdf->pageNo() && substr_count($longBin, '(Zahlteil)') === 1);
+// For the eye: Z77_PDF_SAMPLE_DIR=<dir> keeps the three documents as files (the harness database is gone at exit).
+if (($sampleDir = getenv('Z77_PDF_SAMPLE_DIR')) !== false && is_dir($sampleDir)) {
+    file_put_contents($sampleDir . '/rechnung-qr.pdf', \Z77\Module\Debtor\Pdf\InvoicePdf::of($qrDoc, $wireDi())->output());
+    file_put_contents($sampleDir . '/rechnung-lang.pdf', \Z77\Module\Debtor\Pdf\InvoicePdf::of($longDoc, $wireDi())->output());
+    file_put_contents($sampleDir . '/gutschrift.pdf', \Z77\Module\Debtor\Pdf\InvoicePdf::of($cnDoc, $wireDi())->output());
+    echo "       samples written to {$sampleDir}\n";
+}
+
+// The action through the host: inline PDF, the file name, a missing id redirects.
+$useRequest(['id' => $qrInv->getId()]);
+$host = $invoiceHost();
+$host->pdfAction();
+check('P3D8 pdfAction(): application/pdf inline, named rechnung-N.pdf, the bytes of the document', $host->bytes['mime'] === 'application/pdf' && $host->bytes['inline'] === true
+    && $host->bytes['filename'] === 'rechnung-' . $qrInv->getNumber() . '.pdf' && str_starts_with($host->bytes['content'], '%PDF-'));
+$useRequest(['id' => 999999]);
+$host = $invoiceHost();
+$host->pdfAction();
+check('P3D9 … an unknown id → flash + redirect to the list', $host->redirectedTo !== null && $host->messageService->flashes !== []);
+$useRequest(['id' => $qrInv->getId()]);
+$host = $invoiceHost();
+$host->detailAction();
+check('P3D10 the detail offers «PDF» (a new tab) next to the other actions', str_contains($renderMain($host), '/pdf?id=' . $qrInv->getId()) && str_contains($renderMain($host), 'target="_blank"'));
+
 echo "P3C. Source guards for part 3\n";
 $p3Templates = glob($package . '/res/view/templates/Backend/InvoiceController/*.tpl.php');
 check('P3C48 the document screens ship no JavaScript and no inline handler (Rule 7); no module-financial class in debtor but the adapter (the journal is linked by URL)',
     count($p3Templates) === 6 && array_reduce($p3Templates, fn($ok, $f) => $ok && !preg_match('/<script|\son[a-z]+\s*=/i', file_get_contents($f)), true)
     && !str_contains(file_get_contents($package . '/src/Ui/InvoiceControllerTrait.php'), 'Module\\Financial'));
-check('P3C49 no PDF library was added (owner decision pending): no composer requirement for one, no PDF writer class in the module',
-    !preg_match('/tcpdf|fpdf|dompdf|mpdf|swiss-qr-bill/i', (string) file_get_contents($package . '/composer.json')) && glob($package . '/src/*/*Pdf*.php') === []);
+check('P3C49 the module brings no PDF library of its own (owner 2026-10-06: ONE writer, vendored in the kernel behind the facade): no composer requirement, no \\FPDF / PdfWriter use in its sources or templates — the facade only',
+    !preg_match('/tcpdf|fpdf|dompdf|mpdf|swiss-qr-bill/i', (string) file_get_contents($package . '/composer.json'))
+    && array_reduce(array_merge(glob($package . '/src/*/*.php'), glob($package . '/res/view/templates/pdf/*.tpl.php')), fn($ok, $f) => $ok && !preg_match('/\\\\FPDF\\b|PdfWriter|new FPDF/', file_get_contents($f)), true)
+    && str_contains(file_get_contents($package . '/src/Pdf/InvoicePdf.php'), 'PdfDocument::create('));
 check('P3C50 the shared pickers exist once: module-vat\'s taxCodeSelect + TaxCodeRepository::selectable() (the journal forms read the same list), module-mandator\'s accountDatalist (the mandator screen uses it too)',
     is_file($pkgRoot . '/module-vat/res/view/templates/partials/taxCodeSelect.tpl.php') && method_exists(\Z77\Module\Vat\Repositories\TaxCodeRepository::class, 'selectable')
     && str_contains(file_get_contents($pkgRoot . '/module-financial/src/Ui/ManualEntryForm.php'), '->selectable(')

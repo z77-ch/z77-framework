@@ -59,7 +59,7 @@ before deviating.
    place whose name announces what it is about. A scope records only its deviation from a
    global default, never a copy. → [`conventions.md` → Configuration](docs/01-handbook/conventions.md).
 3. **Every action returns a typed `Response` via a helper** (`$this->html()`, `->fetch()`,
-   `->json()`, `->redirect()`, `->file()`, `->noContent()`, `->void()`) — never a directly
+   `->json()`, `->redirect()`, `->file()`, `->bytes()`, `->noContent()`, `->void()`) — never a directly
    instantiated response. → [ADR-003](docs/02-decisions/adr-003-controller-response-objects.md).
 4. **HTTP input only through `Request`.** Use `DI::getRequest()` — never touch `$_SERVER`,
    `$_POST`, or `$_GET` in a controller. → [`conventions.md` → HTTP Input](docs/01-handbook/conventions.md).

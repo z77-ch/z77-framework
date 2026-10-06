@@ -15,7 +15,7 @@ use Z77\Module\Backend\Ui\Controllers\BackendAbstractController,
  *
  * Reachable only in projects that install z77/module-debtor.
  *
- * URL: /backend/finance/invoice/list (detail, add, edit, credit-note, confirm-finalize, finalize).
+ * URL: /backend/finance/invoice/list (detail, pdf, add, edit, credit-note, confirm-finalize, finalize).
  */
 class InvoiceController extends BackendAbstractController
 {
