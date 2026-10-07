@@ -39,6 +39,19 @@
         "parent_key": "auftraege"
     },
     {
+        "key": "zahlungseingaenge",
+        "name": "Zahlungseingänge",
+        "module": "backend",
+        "group": "finance",
+        "controller": "bank-import",
+        "action": "list",
+        "slot": "",
+        "active": true,
+        "param": "",
+        "sort_key": 2,
+        "parent_key": "auftraege"
+    },
+    {
         "key": "stammdaten-auftraege",
         "name": "Aufträge",
         "module": "",

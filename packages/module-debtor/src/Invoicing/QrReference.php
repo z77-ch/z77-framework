@@ -15,12 +15,12 @@ namespace Z77\Module\Debtor\Invoicing;
  * The payload is the layout of wdv-630 (`InvoiceManager::getReferenceNo()`,
  * owner 2026-10-06 «genau gleich»), three fixed fields:
  *
- *     positions  1–10   ten zeros — the place a bank's customer
- *                       identification (BESR-ID) takes when a bank requires
- *                       one at the start of the reference; wdv filled its
- *                       `esrBankAccount` here, z77 has no such field (the
- *                       orange slip is gone, owner 2026-10-06) and prints
- *                       zeros — debtor.md DEBTOR-QRR-PREFIX-001
+ *     positions  1–10   ten zeros — where wdv put its `esrBankAccount`
+ *                       (the BESR-ID of the orange ESR slip); obsolete
+ *                       since the QR-bill (owner 2026-10-06): the bank's
+ *                       customer identification travels in the QR-IBAN,
+ *                       the 26 payload digits are the biller's — debtor.md
+ *                       DEBTOR-QRR-PREFIX-001 (closed)
  *     positions 11–16   the CUSTOMER NUMBER of the debtor
  *                       (`DebtorProfile::$customerNumber`), six digits
  *     positions 17–26   the DOCUMENT NUMBER, ten digits

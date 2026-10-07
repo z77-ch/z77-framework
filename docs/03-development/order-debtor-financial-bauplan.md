@@ -313,6 +313,24 @@ account. Harness `tests/module-debtor.php` `Q1`–`Q25`, `tests/module-financial
 **Next:** P4 part 2 (CAMT.054, overpayment / unmatched remainder, the open-work check for
 unbooked transactions), P4 part 3 (dunning, the fee as a document kind), P5 part 2.
 
+**P4 part 2 built (2026-10-07) — the CAMT.054 import (§6.4).** `BankMessage` (the bank's
+notification, `MsgId` unique — the dedup across imports — with the IBAN and the payment target it
+resolved to) and `BankTransaction` (one credit with its reference, dates, amount, remittance and
+debtor as sent, unique per message by the bank's transaction reference; the receivables side's
+state `unmatched` / `matched` / `booked` / `ignored`, the matched invoice, the payment that booked
+it, the remainder, a note). `CamtReader` reads camt.054.001.04 / .08 into data; `BankImportService`
+imports (every entry stored, classified — a QRR names customer number and document number, the
+wdv-630 layout read back; a NON by the «Rechnung n» in the message, a proposal), lets the office
+assign and ignore, and books every matched transaction of a message in ONE unit of work through
+`PaymentService::record()`: several credits for one invoice in one file placed one after the other
+(what wdv missed), a credit above the open amount books the open amount and keeps the remainder,
+a settled invoice books nothing. `UnbookedTransactionsCheck` blocks the year close for received,
+unbooked credits (§5.3, the P4 half of the period-close pending — done). Screens under «Aufträge»
+› «Zahlungseingänge» (`/backend/finance/bank-import`): list with the upload, the message detail
+with the actions. Tables `bank_message` / `bank_transaction`, migration `Version20261007100000`.
+Harness `tests/module-debtor.php` `R1`–`R19`. **Next:** P4 part 3 (dunning, the fee as a document
+kind), P5 part 2; the first real camt.054 of the owner's bank is the live test (DEBTOR-CAMT-001).
+
 Open for the owner: `persistence-doctrine`, `module-vat` and `module-contact` are not split targets
 yet (`.github/workflows/split.yml`, Packagist). Working method that carried P1: each building block
 built by one agent, reviewed independently by a second against the ADRs (with probes against

@@ -4,6 +4,9 @@ namespace Z77\Module\Debtor\App;
 use Z77\Core\Config\AuthRole;
 use Z77\Module\Debtor\Accounting\LedgerAccountingGateway;
 use Z77\Module\Debtor\Close\InvoicingInProgressCheck;
+use Z77\Module\Debtor\Close\UnbookedTransactionsCheck;
+use Z77\Module\Debtor\Entities\BankMessage;
+use Z77\Module\Debtor\Entities\BankTransaction;
 use Z77\Module\Debtor\Entities\DebtorProfile;
 use Z77\Module\Debtor\Entities\Invoice;
 use Z77\Module\Debtor\Entities\InvoiceLine;
@@ -70,6 +73,8 @@ return [
         InvoiceTax::class,
         Payment::class,
         PaymentAllocation::class,
+        BankMessage::class,
+        BankTransaction::class,
     ],
 
     // The accounting port (plan §6.6): the class `InvoicingService::finalize()` posts through.
@@ -81,7 +86,7 @@ return [
     // persistence-doctrine, scope `period-close`, plan §5.3): a document still in `invoicing`
     // dated in the year blocks the close. Payments / CAMT (P4) will add their check here.
     'openWorkChecks' => [
-        'period-close' => [InvoicingInProgressCheck::class],
+        'period-close' => [InvoicingInProgressCheck::class, UnbookedTransactionsCheck::class],
     ],
 
     // Nothing here renders a page; the host's cache policy applies to the mount.

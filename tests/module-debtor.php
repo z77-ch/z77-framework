@@ -353,8 +353,8 @@ $run = static function (array $input): array {
 
 echo "A. Migration (z77-db migrate on an empty database)\n";
 $config = DI::getModuleManager()->getModuleConfig('debtor');
-check('A0 the module config announces exactly the SIX Doctrine entities (profile, the document and its lines and taxes, the payment and its allocations) — the three master-data types are file-based',
-    $config?->get('doctrineEntities') === [DebtorProfile::class, Invoice::class, InvoiceLine::class, InvoiceTax::class, \Z77\Module\Debtor\Entities\Payment::class, \Z77\Module\Debtor\Entities\PaymentAllocation::class]);
+check('A0 the module config announces exactly the EIGHT Doctrine entities (profile, the document and its lines and taxes, the payment and its allocations, the bank message and its transactions) — the three master-data types are file-based',
+    $config?->get('doctrineEntities') === [DebtorProfile::class, Invoice::class, InvoiceLine::class, InvoiceTax::class, \Z77\Module\Debtor\Entities\Payment::class, \Z77\Module\Debtor\Entities\PaymentAllocation::class, \Z77\Module\Debtor\Entities\BankMessage::class, \Z77\Module\Debtor\Entities\BankTransaction::class]);
 $dirs = MigrationDirectories::collect(DI::getModuleManager(), DI::getFileFinder());
 check('A1 the module\'s res/migrations is collected under Z77\\Module\\Debtor\\Migrations', ($dirs['Z77\\Module\\Debtor\\Migrations'] ?? '') === $package . '/res/migrations');
 check('A2 the database is empty', $tables() === []);
@@ -391,8 +391,8 @@ check('A9 the unique contact index, the unique customer-number index and the pay
 [$code, $out] = $run(['command' => 'migrate']);
 check('A10 a second migrate is a no-op', $code === 0 && str_contains($out, 'Already at the latest version'));
 [$code, $out] = $run(['command' => 'diff', '--namespace' => 'Z77\\Module\\Debtor\\Migrations']);
-check('A11 diff after migrate reports NO change — mapping and migration agree (embedded address and payment part, money and decimal columns included)' . (str_contains($out, 'No changes detected') ? '' : ' — ' . trim($out)), $code !== 0 && str_contains($out, 'No changes detected') && count(glob($package . '/res/migrations/Version*.php')) === 5);
-check('A12 all five migrations are expand-only: no DROP outside down()', array_reduce(glob($package . '/res/migrations/Version*.php'), function ($ok, $f) {
+check('A11 diff after migrate reports NO change — mapping and migration agree (embedded address and payment part, money and decimal columns included)' . (str_contains($out, 'No changes detected') ? '' : ' — ' . trim($out)), $code !== 0 && str_contains($out, 'No changes detected') && count(glob($package . '/res/migrations/Version*.php')) === 6);
+check('A12 all six migrations are expand-only: no DROP outside down()', array_reduce(glob($package . '/res/migrations/Version*.php'), function ($ok, $f) {
     $s = file_get_contents($f);
     return $ok && substr_count(substr($s, 0, strpos($s, 'function down')), 'DROP') === 0;
 }, true));
@@ -1027,7 +1027,7 @@ check('I5 the three master-data fragments carry an add action and an active swit
 
 $templateDir = $package . '/res/view/templates/Backend';
 $templates   = glob($templateDir . '/*/*.tpl.php');
-check('I6 every master-data screen has its list template, its edit template and its header slot; the document screens (P3 part 3) add six, the payment form and the delete confirmation (P4 part 1) two', count($templates) === 20);
+check('I6 every master-data screen has its list template, its edit template and its header slot; the document screens (P3 part 3) add six, the payment form and the delete confirmation (P4 part 1) two, the bank import list and detail (P4 part 2) two', count($templates) === 22);
 check('I7 no template carries a <script> tag or an inline handler (Rule 7)',
     array_reduce($templates, fn($ok, $f) => $ok && !preg_match('/<script|\son[a-z]+\s*=/i', file_get_contents($f)), true));
 check('I8 the package ships no JavaScript at all', glob($package . '/res/**/*.js') === [] && glob($package . '/res/*.js') === []);
@@ -1618,7 +1618,7 @@ $ycAsk = fn(string $from, string $to) => \Z77\Persistence\Doctrine\OpenWork\Open
 $inInvoicing = (int) $db->fetchOne("SELECT COUNT(*) FROM invoice WHERE state = 'invoicing' AND invoice_date BETWEEN '2026-01-01' AND '2026-12-31'");
 $open2026    = $ycAsk('2026-01-01', '2026-12-31');
 check('N1 debtorConfig registers InvoicingInProgressCheck under `period-close`; for 2026 every document still in invoicing is a BLOCKING finding (named, dated, referenced invoice:{id}) — no warnings',
-    (DI::getModuleManager()->getModuleConfig('debtor')?->get('openWorkChecks') ?? []) === ['period-close' => [\Z77\Module\Debtor\Close\InvoicingInProgressCheck::class]]
+    (DI::getModuleManager()->getModuleConfig('debtor')?->get('openWorkChecks') ?? []) === ['period-close' => [\Z77\Module\Debtor\Close\InvoicingInProgressCheck::class, \Z77\Module\Debtor\Close\UnbookedTransactionsCheck::class]]
     && $inInvoicing > 0 && $inInvoicing <= \Z77\Module\Debtor\Close\InvoicingInProgressCheck::LIST_LIMIT
     && $open2026->isBlocked() && count($open2026->blocking()) === $inInvoicing && $open2026->warnings() === []
     && str_contains($open2026->blocking()[0]->message, 'in Fakturierung') && str_starts_with($open2026->blocking()[0]->reference, 'invoice:')
@@ -1834,6 +1834,7 @@ $useRequest = function (array $get, ?array $post = null) use ($wireDi): UnifiedE
         public function getGetParameter(string $p): mixed { return $_GET[$p] ?? null; }
         public function isPost(): bool { return $GLOBALS['z77TestIsPost']; }
         public function getPostParameters(): array { return $_POST; }
+        public function getUploadedFile(string $field): ?\Z77\Shared\ValueObjects\UploadedFile { return $GLOBALS['z77TestUpload'][$field] ?? null; }
         public function getMode(): \Z77\Core\Http\RequestMode { return !empty($GLOBALS['z77TestFetch']) ? \Z77\Core\Http\RequestMode::Fetch : \Z77\Core\Http\RequestMode::Page; }
     }, true);
     DI::getInstance()->set('CsrfService', fn() => new class {
@@ -2244,8 +2245,8 @@ check('Q7 all three at 0.00 (nothing); a negative amount (amount); a payment wit
         // Rows the validator would refuse (no account, an account the chart lacks) — written raw, as an old file or a hand edit could leave them.
         $file = $base . '/data/framework/debtor/payment_targets.json';
         $rows = json_decode(file_get_contents($file), true);
-        $rows[] = ['code' => 'noacct', 'label' => 'Ohne Konto', 'iban' => 'CH9300762011623852957', 'qr_iban' => '', 'account_number' => '', 'active' => true];
-        $rows[] = ['code' => 'badacct', 'label' => 'Falsches Konto', 'iban' => 'CH9300762011623852957', 'qr_iban' => '', 'account_number' => '9999', 'active' => true];
+        $rows[] = ['id' => 901, 'code' => 'noacct', 'label' => 'Ohne Konto', 'iban' => 'CH9300762011623852957', 'qr_iban' => '', 'account_number' => '', 'active' => true];
+        $rows[] = ['id' => 902, 'code' => 'badacct', 'label' => 'Falsches Konto', 'iban' => 'CH9300762011623852957', 'qr_iban' => '', 'account_number' => '9999', 'active' => true];
         file_put_contents($file, json_encode($rows, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
         return $payRefusal(fn() => $pay($wireDi())->record($draftOn($inv2->getId(), '2026-04-03', '1.00', '0.00', '0.00', 'noacct'))) === PaymentRefusedException::TARGET_ACCOUNT
             && $payRefusal(fn() => $pay($wireDi())->record($draftOn($inv2->getId(), '2026-04-03', '1.00', '0.00', '0.00', 'badacct'))) === PaymentRefusedException::TARGET_ACCOUNT
@@ -2406,6 +2407,228 @@ check('Q25 the confirmation page names the postings that go; the POST deletes �
     str_contains($confirmHtml, 'Zahlung löschen') && str_contains($confirmHtml, 'wird gelöscht') && str_contains($confirmHtml, 'name="version"')
     && $host->redirectedTo === '/backend/finance/invoice/detail?id=' . $inv4->getId() && ($host->messageService->flashes[0][0] ?? '') === 'success'
     && $pay($wireDi())->find((int) $edited->getId()) === null && $service($wireDi())->openAmount($readInvoice($inv4->getId()))->toDecimal() === '108.10');
+
+// ── R. P4 part 2: the CAMT.054 import (plan §6.4) ──────────────────────
+
+echo "R. CamtReader: a camt.054 file becomes data — header, IBAN, every entry flagged\n";
+use Z77\Module\Debtor\Payments\CamtReader;
+use Z77\Module\Debtor\Services\BankImportService;
+use Z77\Module\Debtor\Services\BankImportRefusedException;
+use Z77\Module\Debtor\Entities\BankMessage;
+use Z77\Module\Debtor\Entities\BankTransaction;
+/** A camt.054.001.08 file as a Swiss bank sends it, reduced to what the reader reads. */
+$camtXml = function (string $msgId, array $txs, string $iban = '') use ($lower): string {
+    $iban = $iban !== '' ? $iban : $lower;
+    $entries = '';
+    foreach ($txs as $i => $t) {
+        $amount = $t['amount'];
+        $ccy    = $t['ccy'] ?? 'CHF';
+        $rmt    = '';
+        if (!empty($t['ref'])) {
+            $rmt = '<RmtInf><Strd><CdtrRefInf><Tp><CdOrPrtry><Prtry>' . ($t['type'] ?? 'QRR') . '</Prtry></CdOrPrtry></Tp><Ref>' . $t['ref'] . '</Ref></CdtrRefInf></Strd></RmtInf>';
+        } elseif (!empty($t['ustrd'])) {
+            $rmt = '<RmtInf><Ustrd>' . htmlspecialchars($t['ustrd'], ENT_XML1) . '</Ustrd></RmtInf>';
+        }
+        $entries .= '<Ntry><Amt Ccy="' . $ccy . '">' . $amount . '</Amt><CdtDbtInd>' . (($t['debit'] ?? false) ? 'DBIT' : 'CRDT') . '</CdtDbtInd>'
+            . (!empty($t['reversal']) ? '<RvslInd>true</RvslInd>' : '')
+            . '<Sts>BOOK</Sts><BookgDt><Dt>' . $t['date'] . '</Dt></BookgDt><ValDt><Dt>' . $t['date'] . '</Dt></ValDt><AcctSvcrRef>' . ($t['txid'] ?? ('TX' . ($i + 1))) . '</AcctSvcrRef>'
+            . '<NtryDtls><TxDtls><Refs><AcctSvcrRef>' . ($t['txid'] ?? ('TX' . ($i + 1))) . '</AcctSvcrRef><EndToEndId>NOTPROVIDED</EndToEndId></Refs><Amt Ccy="' . $ccy . '">' . $amount . '</Amt>'
+            . '<RltdPties><Dbtr><Nm>' . htmlspecialchars($t['name'] ?? 'Muster GmbH', ENT_XML1) . '</Nm><PstlAdr><TwnNm>' . htmlspecialchars($t['city'] ?? 'Bern', ENT_XML1) . '</TwnNm></PstlAdr></Dbtr></RltdPties>'
+            . $rmt . '</TxDtls></NtryDtls></Ntry>';
+    }
+    return '<?xml version="1.0" encoding="UTF-8"?><Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.054.001.08"><BkToCstmrDbtCdtNtfctn><GrpHdr><MsgId>' . $msgId . '</MsgId><CreDtTm>2026-07-02T06:15:00</CreDtTm></GrpHdr>'
+        . '<Ntfctn><Id>' . $msgId . '-N</Id><CreDtTm>2026-07-02T06:15:00</CreDtTm><Acct><Id><IBAN>' . $iban . '</IBAN></Id></Acct>' . $entries . '</Ntfctn></BkToCstmrDbtCdtNtfctn></Document>';
+};
+$emR  = $wireDi();
+$invA = $service($emR)->invoice($oneLine($mid, '2026-06-05', '1.000', '100.00'));
+$invB = $service($emR)->invoice($oneLine($mid, '2026-06-06', '1.000', '50.00'));
+$invC = $service($emR)->invoice($oneLine($mid, '2026-06-07', '1.000', '100.00'));
+$service($emR)->finalize([$at($invA->getId()), $at($invB->getId()), $at($invC->getId())]);
+$qrrOf = fn(int $customer, int $number) => QrReference::forDocument($customer, $number);
+$fileR = CamtReader::read($camtXml('MSG-R1', [
+    ['amount' => '108.10', 'date' => '2026-07-01', 'ref' => $qrrOf(1000, $invA->getNumber()), 'txid' => 'A1'],
+    ['amount' => '54.05', 'date' => '2026-07-01', 'ustrd' => 'Zahlung Rechnung ' . $invB->getNumber() . ' Danke', 'txid' => 'B1'],
+    ['amount' => '20.00', 'date' => '2026-07-01', 'ref' => $qrrOf(1000, 999999), 'txid' => 'C1'],
+    ['amount' => '20.00', 'date' => '2026-07-01', 'ref' => substr($qrrOf(1000, $invA->getNumber()), 0, 26) . (((int) substr($qrrOf(1000, $invA->getNumber()), -1) + 1) % 10), 'txid' => 'D1'],
+    ['amount' => '20.00', 'date' => '2026-07-01', 'ref' => $qrrOf(999999, $invA->getNumber()), 'txid' => 'E1'],
+    ['amount' => '12.00', 'date' => '2026-07-01', 'debit' => true, 'txid' => 'F1', 'ustrd' => 'Gebühren'],
+    ['amount' => '7.00', 'date' => '2026-07-01', 'ustrd' => 'ohne Angabe', 'txid' => 'G1'],
+]));
+check('R1 the reader: message id, creation date, the IBAN normalized, seven entries in order with tx ref, amount, currency, the reference type (QRR / NON), the reference, the message, the debtor; the debit flagged',
+    $fileR->messageId === 'MSG-R1' && $fileR->createdOn->format('Y-m-d') === '2026-07-02' && $fileR->iban === $lower && count($fileR->entries) === 7
+    && $fileR->entries[0]->txRef === 'A1' && $fileR->entries[0]->amount === '108.10' && $fileR->entries[0]->currency === 'CHF' && $fileR->entries[0]->referenceType === 'QRR' && $fileR->entries[0]->reference === $qrrOf(1000, $invA->getNumber()) && $fileR->entries[0]->isCredit
+    && $fileR->entries[1]->referenceType === 'NON' && str_contains($fileR->entries[1]->remittance, 'Rechnung ' . $invB->getNumber()) && $fileR->entries[1]->debtorName === 'Muster GmbH' && $fileR->entries[1]->debtorCity === 'Bern'
+    && !$fileR->entries[5]->isCredit && $fileR->entries[0]->valueDate->format('Y-m-d') === '2026-07-01');
+check('R2 the reader refuses what is not XML (not-xml) and XML that is no camt.054 (not-camt054)',
+    caught(fn() => CamtReader::read('nope'), BankImportRefusedException::class)?->reason === BankImportRefusedException::NOT_XML
+    && caught(fn() => CamtReader::read('<?xml version="1.0"?><Document><Other/></Document>'), BankImportRefusedException::class)?->reason === BankImportRefusedException::NOT_CAMT054);
+
+echo "R. … import: stored once, every credit matched or set aside with the reason\n";
+$bank   = fn(UnifiedEntityManager $em) => new BankImportService($em, 'bankimport');
+$msgR1  = $bank($wireDi())->import($camtXml('MSG-R1', [
+    ['amount' => '108.10', 'date' => '2026-07-01', 'ref' => $qrrOf(1000, $invA->getNumber()), 'txid' => 'A1'],
+    ['amount' => '54.05', 'date' => '2026-07-01', 'ustrd' => 'Zahlung Rechnung ' . $invB->getNumber() . ' Danke', 'txid' => 'B1'],
+    ['amount' => '20.00', 'date' => '2026-07-01', 'ref' => $qrrOf(1000, 999999), 'txid' => 'C1'],
+    ['amount' => '20.00', 'date' => '2026-07-01', 'ref' => substr($qrrOf(1000, $invA->getNumber()), 0, 26) . (((int) substr($qrrOf(1000, $invA->getNumber()), -1) + 1) % 10), 'txid' => 'D1'],
+    ['amount' => '20.00', 'date' => '2026-07-01', 'ref' => $qrrOf(999999, $invA->getNumber()), 'txid' => 'E1'],
+    ['amount' => '12.00', 'date' => '2026-07-01', 'debit' => true, 'txid' => 'F1', 'ustrd' => 'Gebühren'],
+    ['amount' => '7.00', 'date' => '2026-07-01', 'ustrd' => 'ohne Angabe', 'txid' => 'G1'],
+]), 'camt054-r1.xml');
+$txR1   = $msgR1->getTransactions();
+$stateR = fn(int $i) => $txR1[$i]->state()->value;
+check('R3 the message row: id, IBAN, the payment target the IBAN resolved to (qr), file and importer; seven transactions stored with their positions',
+    $msgR1->getId() !== null && $msgR1->getMessageId() === 'MSG-R1' && $msgR1->getIban() === $lower && $msgR1->getPaymentTargetCode() === 'qr' && $msgR1->getFileName() === 'camt054-r1.xml' && $msgR1->getImportedBy() === 'bankimport'
+    && $count('bank_message') === 1 && $count('bank_transaction') === 7 && array_map(fn($t) => $t->getPosition(), $txR1) === [1, 2, 3, 4, 5, 6, 7]);
+check('R4 matching: a valid QRR (customer 1000 + the document number) → matched to that invoice; a NON naming «Rechnung n» → matched with a note; an unknown document, a wrong check digit, another customer → unmatched with the reason; a debit → ignored; no reference and no number → unmatched',
+    $stateR(0) === 'matched' && $txR1[0]->getInvoice()?->getId() === $invA->getId() && $txR1[0]->getNote() === null
+    && $stateR(1) === 'matched' && $txR1[1]->getInvoice()?->getId() === $invB->getId() && str_contains((string) $txR1[1]->getNote(), 'Mitteilung')
+    && $stateR(2) === 'unmatched' && str_contains((string) $txR1[2]->getNote(), 'nicht gibt')
+    && $stateR(3) === 'unmatched' && str_contains((string) $txR1[3]->getNote(), 'ungültig')
+    && $stateR(4) === 'unmatched' && str_contains((string) $txR1[4]->getNote(), 'Kundennummer 999999')
+    && $stateR(5) === 'ignored' && str_contains((string) $txR1[5]->getNote(), 'Belastung')
+    && $stateR(6) === 'unmatched' && $msgR1->countPerState() === ['unmatched' => 4, 'matched' => 2, 'booked' => 0, 'ignored' => 1]);
+$before = [$count('bank_message'), $count('bank_transaction')];
+// An IBAN of no target at all — the raw rows of Q7 carry CH93…, so a fresh QR-IBAN with an IID nobody uses.
+check('R5 the same message again → duplicate-message (naming the earlier import); an IBAN that is no active payment target → target-unknown; nothing written',
+    caught(fn() => $bank($wireDi())->import($camtXml('MSG-R1', [['amount' => '1.00', 'date' => '2026-07-01', 'ustrd' => 'x']]), 'again.xml'), BankImportRefusedException::class)?->reason === BankImportRefusedException::DUPLICATE_MESSAGE
+    && caught(fn() => $bank($wireDi())->import($camtXml('MSG-R2', [['amount' => '1.00', 'date' => '2026-07-01', 'ustrd' => 'x']], $withIid('30500')), 'other.xml'), BankImportRefusedException::class)?->reason === BankImportRefusedException::TARGET_UNKNOWN
+    && [$count('bank_message'), $count('bank_transaction')] === $before);
+
+echo "R. … book: a payment per matched transaction, in one unit of work; two credits on one invoice; the overpayment remainder; already settled\n";
+$journalBefore = $journalCount();
+$bookedR1 = $bank($wireDi())->book((int) $msgR1->getId());
+$txB      = $bookedR1->getTransactions();
+$payRow   = fn(int $id) => $db->fetchAssociative('SELECT * FROM payment WHERE id = ?', [$id]);
+check('R6 book(): the two matched transactions are booked — a payment each (source camt, ref camt:{msg}:{tx}, the value date, the target\'s account 1020), two journal entries, both invoices settled; the unmatched and ignored ones untouched',
+    $txB[0]->state()->value === 'booked' && $txB[1]->state()->value === 'booked' && $txB[0]->getPayment() !== null && $txB[1]->getPayment() !== null
+    && $payRow((int) $txB[0]->getPayment()->getId())['source_type'] === 'camt' && $payRow((int) $txB[0]->getPayment()->getId())['source_ref'] === 'camt:MSG-R1:A1'
+    && $payRow((int) $txB[0]->getPayment()->getId())['payment_date'] === '2026-07-01' && $payRow((int) $txB[0]->getPayment()->getId())['account_number'] === '1020' && $payRow((int) $txB[0]->getPayment()->getId())['payment_target_code'] === 'qr'
+    && $journalCount() === $journalBefore + 2 && $service($wireDi())->openAmount($readInvoice($invA->getId()))->isZero() && $service($wireDi())->openAmount($readInvoice($invB->getId()))->isZero()
+    && $txB[0]->getRemainder()->isZero() && $txB[2]->state()->value === 'unmatched' && $txB[5]->state()->value === 'ignored'
+    && $bookedR1->countPerState() === ['unmatched' => 4, 'matched' => 0, 'booked' => 2, 'ignored' => 1]);
+$msgR3 = $bank($wireDi())->import($camtXml('MSG-R3', [
+    ['amount' => '50.00', 'date' => '2026-07-03', 'ref' => $qrrOf(1000, $invC->getNumber()), 'txid' => 'C-first'],
+    ['amount' => '70.00', 'date' => '2026-07-03', 'ref' => $qrrOf(1000, $invC->getNumber()), 'txid' => 'C-second'],
+    ['amount' => '30.00', 'date' => '2026-07-03', 'ref' => $qrrOf(1000, $invA->getNumber()), 'txid' => 'A-again'],
+]), 'camt054-r3.xml');
+$bookedR3 = $bank($wireDi())->book((int) $msgR3->getId());
+$txC      = $bookedR3->getTransactions();
+check('R7 two credits for ONE invoice in one file (108.10 open): the first books 50.00, the second sees 58.10 open and books that — 11.90 stay as its REMAINDER (overpayment, noted); the invoice is settled, not overpaid',
+    $txC[0]->state()->value === 'booked' && $txC[0]->getPayment()?->getAmount()->toDecimal() === '50.00' && $txC[0]->getRemainder()->isZero()
+    && $txC[1]->state()->value === 'booked' && $txC[1]->getPayment()?->getAmount()->toDecimal() === '58.10' && $txC[1]->getRemainder()->toDecimal() === '11.90' && str_contains((string) $txC[1]->getNote(), 'Überzahlung')
+    && $service($wireDi())->openAmount($readInvoice($invC->getId()))->isZero());
+check('R8 a credit for an invoice already settled books NOTHING: the transaction goes back to unmatched with the reason, nothing posted for it',
+    $txC[2]->state()->value === 'unmatched' && $txC[2]->getPayment() === null && str_contains((string) $txC[2]->getNote(), 'bereits beglichen')
+    && $bookedR3->countPerState()['booked'] === 2);
+check('R9 book() with nothing matched → nothing-to-book; an unknown message → not-found',
+    caught(fn() => $bank($wireDi())->book((int) $msgR3->getId()), BankImportRefusedException::class)?->reason === BankImportRefusedException::NOTHING_TO_BOOK
+    && caught(fn() => $bank($wireDi())->book(999999), BankImportRefusedException::class)?->reason === BankImportRefusedException::NOT_FOUND);
+
+echo "R. … assign and ignore: the office steers what the file could not say\n";
+$invD = $service($wireDi())->invoice($oneLine($mid, '2026-06-08', '1.000', '10.00'));
+$service($wireDi())->finalize([$at($invD->getId())]);
+$txG  = $txB[6];   // 7.00 «ohne Angabe», unmatched
+$assigned = $bank($wireDi())->assign((int) $txG->getId(), $invD->getNumber());
+check('R10 assign(): an unmatched credit named to a final invoice by document number → matched («Manuell zugeordnet»); an unknown number → invoice-unknown; a document in invoicing → invoice-not-final; a booked transaction → state',
+    $assigned->state()->value === 'matched' && $assigned->getInvoice()?->getId() === $invD->getId() && $assigned->getNote() === 'Manuell zugeordnet.'
+    && caught(fn() => $bank($wireDi())->assign((int) $txB[2]->getId(), 999999), BankImportRefusedException::class)?->reason === BankImportRefusedException::INVOICE_UNKNOWN
+    && caught(fn() => $bank($wireDi())->assign((int) $txB[2]->getId(), $stillInvoicing->getNumber()), BankImportRefusedException::class)?->reason === BankImportRefusedException::INVOICE_NOT_FINAL
+    && caught(fn() => $bank($wireDi())->assign((int) $txB[0]->getId(), $invD->getNumber()), BankImportRefusedException::class)?->reason === BankImportRefusedException::STATE);
+$ignored = $bank($wireDi())->ignore((int) $txB[2]->getId(), true);
+$back    = $bank($wireDi())->ignore((int) $txB[2]->getId(), false, 'doch prüfen');
+check('R11 ignore() sets a credit aside and takes it back; the booked assignment then books 7.00 on the 10.80 invoice (3.80 stays open)',
+    $ignored->state()->value === 'ignored' && $back->state()->value === 'unmatched' && $back->getNote() === 'doch prüfen'
+    && $bank($wireDi())->book((int) $msgR1->getId())->countPerState()['booked'] === 3 && $service($wireDi())->openAmount($readInvoice($invD->getId()))->toDecimal() === '3.80');
+
+echo "R. … the close check: an unbooked credit dated in the year BLOCKS\n";
+$unbooked2026 = (int) $db->fetchOne("SELECT COUNT(*) FROM bank_transaction WHERE state IN ('unmatched', 'matched') AND value_date BETWEEN '2026-01-01' AND '2026-12-31'");
+$ask2026      = $ycAsk('2026-01-01', '2026-12-31');
+$bankFindings = array_values(array_filter($ask2026->blocking(), fn($f) => str_starts_with($f->reference, 'bank-transaction:')));
+check('R12 UnbookedTransactionsCheck: one BLOCKING finding per unbooked transaction of 2026 (bank-transaction:{id}, the message named), none for 2025; a booked or ignored one does not count',
+    $unbooked2026 > 0 && count($bankFindings) === $unbooked2026 && str_contains($bankFindings[0]->message, 'MSG-R') && str_contains($bankFindings[0]->message, 'nicht verbucht')
+    && array_filter($ycAsk('2025-01-01', '2025-12-31')->blocking(), fn($f) => str_starts_with($f->reference, 'bank-transaction:')) === []);
+
+echo "R. … the screens: list with the upload, the message detail, the actions through the host\n";
+$bankHost = function () {
+    return new class {
+        use \Z77\Module\Debtor\Ui\BankImportControllerTrait { listAction as public; uploadAction as public; detailAction as public; bookAction as public; assignAction as public; ignoreAction as public; }
+        public array $context = [];
+        public object $layoutManager;
+        public object $messageService;
+        public ?string $redirectedTo = null;
+        public function __construct()
+        {
+            $this->layoutManager = new class {
+                public array $sections = [];
+                public function removeSection(string $s): void { unset($this->sections[$s]); }
+                public function addPartials(string $name, string $path, string $ns, string $section = 'main'): void { $this->sections[$section][] = $path . '/' . $name; }
+            };
+            $this->messageService = new class {
+                public array $flashes = [];
+                public function pushFlashAfterRedirect(string $type, string $message): void { $this->flashes[] = [$type, $message]; }
+            };
+        }
+        protected function em() { return DI::getUnifiedEntityManager(); }
+        protected function html(array $context = []): \Z77\Core\Http\Response\HtmlResponse { $this->context = $context; return new \Z77\Core\Http\Response\HtmlResponse(null, $context); }
+        protected function redirect(string $url, int $status = 302): \Z77\Core\Http\Response\RedirectResponse { $this->redirectedTo = $url; return new \Z77\Core\Http\Response\RedirectResponse($url, $status); }
+        private function bankImportService(): BankImportService { return new BankImportService($this->em(), 'bankimport'); }
+        private function bankInvoicingService(): InvoicingService { return new InvoicingService($this->em(), 'bankimport'); }
+    };
+};
+$useRequest([]);
+$host = $bankHost();
+$host->listAction();
+$listHtml = $renderer->partial('Backend/BankImportController/listAction', $host->context);
+check('R13 the list: the upload form (file, csrf) and the imported messages with their counts, newest first',
+    str_contains($listHtml, 'name="file"') && str_contains($listHtml, 'enctype="multipart/form-data"') && str_contains($listHtml, 'MSG-R3') && str_contains($listHtml, 'MSG-R1')
+    && strpos($listHtml, 'MSG-R3') < strpos($listHtml, 'MSG-R1') && count($host->context['messages']) === 2);
+$useRequest(['id' => $msgR1->getId()]);
+$host = $bankHost();
+$host->detailAction();
+$detailHtml = implode('', array_map(fn($p) => $renderer->partial($p, $host->context), $host->layoutManager->sections['main'] ?? []));
+check('R14 the detail: every transaction with its state badge, the matched invoice linked with its open amount, the remainder badge where there is one, the assign / ignore forms on the ones not booked, no «Verbuchen» without a matched one',
+    substr_count($detailHtml, 'data-bank-transaction=') === 7 && str_contains($detailHtml, 'data-state="booked"') && str_contains($detailHtml, 'data-state="unmatched"')
+    && str_contains($detailHtml, '/backend/finance/invoice/detail?id=' . $invA->getId()) && str_contains($detailHtml, 'name="number"') && str_contains($detailHtml, 'Ignorieren')
+    && !str_contains($detailHtml, 'Verbuchen ('));
+$tmpXml = $base . '/upload-r4.xml';
+file_put_contents($tmpXml, $camtXml('MSG-R4', [['amount' => '3.80', 'date' => '2026-07-05', 'ref' => $qrrOf(1000, $invD->getNumber()), 'txid' => 'D-rest']]));
+$GLOBALS['z77TestUpload'] = ['file' => new \Z77\Shared\ValueObjects\UploadedFile('camt054-r4.xml', $tmpXml, filesize($tmpXml), 'text/xml')];
+$useRequest([], []);
+$host = $bankHost();
+$host->uploadAction();
+$msgR4 = $bank($wireDi())->recent(1)[0];
+check('R15 upload (POST with a file): imported, flash with the counts, redirect to the new message\'s detail', $msgR4->getMessageId() === 'MSG-R4' && $host->redirectedTo === '/backend/finance/bank-import/detail?id=' . $msgR4->getId()
+    && ($host->messageService->flashes[0][0] ?? '') === 'success' && str_contains($host->messageService->flashes[0][1], '1 zugeordnet'));
+$GLOBALS['z77TestUpload'] = [];
+$useRequest([], []);
+$host = $bankHost();
+$host->uploadAction();
+check('R16 upload without a file → error flash, back to the list', $host->redirectedTo === '/backend/finance/bank-import/list' && ($host->messageService->flashes[0][0] ?? '') === 'error');
+$useRequest(['id' => $msgR4->getId()], []);
+$host = $bankHost();
+$host->bookAction();
+check('R17 «Verbuchen» through the host: the 3.80 lands on the 3.80 open invoice — settled; flash, redirect to the detail',
+    $host->redirectedTo === '/backend/finance/bank-import/detail?id=' . $msgR4->getId() && ($host->messageService->flashes[0][0] ?? '') === 'success'
+    && $service($wireDi())->openAmount($readInvoice($invD->getId()))->isZero());
+$useRequest(['id' => $msgR1->getId()], ['transaction' => $txB[4]->getId(), 'value' => '1']);
+$host = $bankHost();
+$host->ignoreAction();
+$useRequest(['id' => $msgR1->getId()], ['transaction' => $txB[3]->getId(), 'number' => (string) $invB->getNumber()]);
+$host2 = $bankHost();
+$host2->assignAction();
+check('R18 ignore and assign through the host: flashes and redirects, the states changed',
+    ($host->messageService->flashes[0][0] ?? '') === 'success' && $db->fetchOne('SELECT state FROM bank_transaction WHERE id = ?', [$txB[4]->getId()]) === 'ignored'
+    && ($host2->messageService->flashes[0][0] ?? '') === 'success' && $db->fetchOne('SELECT state FROM bank_transaction WHERE id = ?', [$txB[3]->getId()]) === 'matched');
+check('R19 source guards: the trait never persists itself, every write goes through BankImportService; the templates carry no script; the host and its config exist; the seed puts «Zahlungseingänge» under «Aufträge»',
+    !str_contains(file_get_contents($package . '/src/Ui/BankImportControllerTrait.php'), '->persist(')
+    && array_reduce(glob($package . '/res/view/templates/Backend/BankImportController/*.tpl.php'), fn($ok, $f) => $ok && !preg_match('/<script|\son[a-z]+\s*=/i', file_get_contents($f)), true)
+    && is_file($pkgRoot . '/module-backend/src/Ui/Controllers/Finance/BankImportController.php') && is_file($pkgRoot . '/module-backend/src/Ui/Config/Finance/bankImportControllerConfig.inc.php')
+    && (function () use ($package): bool {
+        foreach (json_decode(file_get_contents($package . '/data/framework/routing/navigation.d/module-debtor.json'), true) as $row) {
+            if (($row['key'] ?? '') === 'zahlungseingaenge') { return $row['parent_key'] === 'auftraege' && $row['controller'] === 'bank-import' && $row['action'] === 'list'; }
+        }
+        return false;
+    })());
 
 echo "P3C. Source guards for part 3\n";
 $p3Templates = glob($package . '/res/view/templates/Backend/InvoiceController/*.tpl.php');
