@@ -77,6 +77,8 @@ final class PostingBuilder
             if ($net->isZero()) {
                 continue;
             }
+            // A line without a tax code (a fee, plan §6.5) posts its net without tax data — all-or-none on a posting line.
+            $taxed = $line->getTaxCode() !== null;
             self::add(
                 $lines,
                 (string) $line->getRevenueAccount(),
@@ -84,10 +86,10 @@ final class PostingBuilder
                 $net->multiply($sign),
                 natural: 'credit',
                 text: self::lineText($line->getText()),
-                taxCode: $line->getTaxCode(),
-                taxRate: $line->getTaxRate(),
-                taxBase: $net->multiply($sign),
-                taxAmount: $share->multiply($sign),
+                taxCode: $taxed ? $line->getTaxCode() : null,
+                taxRate: $taxed ? $line->getTaxRate() : null,
+                taxBase: $taxed ? $net->multiply($sign) : null,
+                taxAmount: $taxed ? $share->multiply($sign) : null,
             );
         }
 

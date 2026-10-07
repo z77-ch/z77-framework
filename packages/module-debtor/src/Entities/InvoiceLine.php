@@ -154,8 +154,10 @@ class InvoiceLine
             throw new \LogicException('Tax data on an invoice line is all-or-none: code, rate and label');
         }
         if ($type->isPriced()) {
-            if (!$withTax || $revenueAccount === null || $unitPrice === null) {
-                throw new \LogicException("A {$type->value} line carries a unit price, a tax code and a revenue account");
+            // A priced line carries a price and an account; the tax code too — except on a FEE document
+            // (P4 part 3, plan §6.5: no VAT on a dunning fee), which the service enforces by kind.
+            if ($revenueAccount === null || $unitPrice === null) {
+                throw new \LogicException("A {$type->value} line carries a unit price and a revenue account");
             }
             if (($type === LineType::Service) !== ($quantity !== null)) {
                 throw new \LogicException('A service line carries a quantity, a lump sum does not');

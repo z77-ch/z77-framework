@@ -8,6 +8,8 @@ use Z77\Module\Debtor\Close\UnbookedTransactionsCheck;
 use Z77\Module\Debtor\Entities\BankMessage;
 use Z77\Module\Debtor\Entities\BankTransaction;
 use Z77\Module\Debtor\Entities\DebtorProfile;
+use Z77\Module\Debtor\Entities\DunningNotice;
+use Z77\Module\Debtor\Entities\DunningRun;
 use Z77\Module\Debtor\Entities\Invoice;
 use Z77\Module\Debtor\Entities\InvoiceLine;
 use Z77\Module\Debtor\Entities\InvoiceTax;
@@ -75,6 +77,8 @@ return [
         PaymentAllocation::class,
         BankMessage::class,
         BankTransaction::class,
+        DunningRun::class,
+        DunningNotice::class,
     ],
 
     // The accounting port (plan §6.6): the class `InvoicingService::finalize()` posts through.

@@ -376,13 +376,14 @@ final class InvoicingService
             throw new InvoiceRefusedException(InvoiceRefusedException::DATES, 'Das Ende der Leistungsperiode liegt vor ihrem Beginn.');
         }
 
-        // The lines: flattened (children after their parent), amounts computed.
-        $lines = $this->composeLines($draft->lines, $currency);
+        // The lines: flattened (children after their parent), amounts computed. A fee's line carries no tax code (plan §6.5).
+        $isFee = $draft->kind === InvoiceKind::Fee;
+        $lines = $this->composeLines($draft->lines, $currency, taxFree: $isFee);
 
-        // VAT once, by the service date, on the priced lines.
-        $vat        = $this->calculateVat($lines, $currency, $serviceFrom, $draft->priceMode, $isNew ? null : $existing);
+        // VAT once, by the service date, on the priced lines — none for a fee: no rates, no tax rows, net = the lines.
+        $vat        = $isFee ? null : $this->calculateVat($lines, $currency, $serviceFrom, $draft->priceMode, $isNew ? null : $existing);
         $rateByCode = [];
-        foreach ($vat->lines as $resolvedLine) {
+        foreach ($vat?->lines ?? [] as $resolvedLine) {
             $rateByCode[$resolvedLine->rate->code] = $resolvedLine->rate;
             $lines[(int) $resolvedLine->line->ref]['tax_rate']  = $resolvedLine->rate->rate;
             $lines[(int) $resolvedLine->line->ref]['tax_label'] = $resolvedLine->rate->label;
@@ -407,7 +408,7 @@ final class InvoicingService
         }
 
         // Gross mode: every posted line must keep a positive net after its tax share (review 2026-09-23).
-        if ($draft->priceMode === PriceMode::Gross) {
+        if ($vat !== null && $draft->priceMode === PriceMode::Gross) {
             $this->assertTaxSharesFit($lines, $vat->summary->entries());
         }
 
@@ -415,14 +416,17 @@ final class InvoicingService
         $this->assertRevenueAccounts($lines);
 
         // Totals and the rounding line.
-        $net      = $vat->net();
-        $tax      = $vat->tax();
+        $net      = $vat?->net() ?? array_reduce($lines, static fn(Money $sum, array $l) => $sum->add($l['amount']), Money::zero($currency));
+        $tax      = $vat?->tax() ?? Money::zero($currency);
         $exact    = $net->add($tax);
         $step     = self::ROUNDING_STEPS[$currency] ?? 1;
         $gross    = $exact->roundTo($step);
         $rounding = $gross->subtract($exact);
         if ($draft->kind === InvoiceKind::Invoice && $gross->isNegative()) {
             throw new InvoiceRefusedException(InvoiceRefusedException::NEGATIVE_TOTAL, 'Der Rechnungsbetrag ist negativ — das ist eine Gutschrift, keine Rechnung.');
+        }
+        if ($isFee && !$gross->isPositive()) {
+            throw new InvoiceRefusedException(InvoiceRefusedException::NEGATIVE_TOTAL, 'Eine Gebühr muss positiv sein.');
         }
         if ($draft->kind === InvoiceKind::CreditNote && !$gross->isPositive()) {
             throw new InvoiceRefusedException(InvoiceRefusedException::NEGATIVE_TOTAL, 'Der Gutschriftsbetrag muss positiv sein — die Positionen werden wie gedruckt erfasst, das Vorzeichen gibt die Gutschrift.');
@@ -437,7 +441,7 @@ final class InvoicingService
 
         // The tax summary, one row per code.
         $taxes = [];
-        foreach ($vat->summary->entries() as $entry) {
+        foreach ($vat?->summary->entries() ?? [] as $entry) {
             $rate    = $rateByCode[$entry->code];
             $taxes[] = ['code' => $entry->code, 'category' => $rate->category, 'label' => $rate->label, 'rate' => $entry->rate, 'base' => $entry->base, 'tax' => $entry->tax];
         }
@@ -525,10 +529,10 @@ final class InvoicingService
      * @return list<array<string, mixed>>
      * @throws InvoiceRefusedException LINE
      */
-    private function composeLines(array $drafts, string $currency): array
+    private function composeLines(array $drafts, string $currency, bool $taxFree = false): array
     {
         $lines = [];
-        $walk  = function (LineDraft $draft, ?int $parent, int $position) use (&$lines, &$walk, $currency): void {
+        $walk  = function (LineDraft $draft, ?int $parent, int $position) use (&$lines, &$walk, $currency, $taxFree): void {
             if (!$draft instanceof LineDraft) {
                 throw new InvoiceRefusedException(InvoiceRefusedException::LINE, "Position {$position}: keine Position.");
             }
@@ -555,7 +559,13 @@ final class InvoicingService
                     throw new InvoiceRefusedException(InvoiceRefusedException::LINE, "Position {$position}: ein Preis in {$currency} fehlt.");
                 }
                 $taxCode = TaxCode::normalizeCode((string) $draft->taxCode);
-                if ($taxCode === '') {
+                if ($taxFree) {
+                    // A fee (plan §6.5): damages for the delay, never a supply — no tax code on its line.
+                    if ($taxCode !== '') {
+                        throw new InvoiceRefusedException(InvoiceRefusedException::LINE, "Position {$position}: eine Gebühr trägt keinen MWST-Code.");
+                    }
+                    $taxCode = null;
+                } elseif ($taxCode === '') {
                     throw new InvoiceRefusedException(InvoiceRefusedException::LINE, "Position {$position}: der MWST-Code fehlt.");
                 }
                 $account = trim((string) $draft->revenueAccount);

@@ -138,7 +138,7 @@ final class BankImportService
      */
     public function assign(int $transactionId, int $documentNumber): BankTransaction
     {
-        $invoice = $this->invoices()->findByNumber(InvoiceKind::Invoice, $documentNumber);
+        $invoice = $this->invoices()->findPayableByNumber($documentNumber);
         if ($invoice === null) {
             throw new BankImportRefusedException(BankImportRefusedException::INVOICE_UNKNOWN, "Rechnung {$documentNumber} gibt es nicht.");
         }
@@ -222,11 +222,42 @@ final class BankImportService
                     'camt',
                     'camt:' . $message->getMessageId() . ':' . $transaction->getTxRef(),
                 ));
-                $transaction->booked(
-                    $payment,
-                    $remainder,
-                    $remainder->isPositive() ? 'Überzahlung: ' . $remainder->toDecimal() . ' über dem offenen Betrag — manuell behandeln (Rückzahlung oder andere Rechnung).' : null
-                );
+                // What exceeds the invoice goes to the debtor's open FEE documents first (a dunning fee paid with the
+                // invoice under the invoice's reference, P4 part 3) — this invoice's own fees before any other, each
+                // group oldest first; what is left after that is the remainder.
+                $ownRef = $invoice->getNumber() . ':';
+                $fees   = $this->invoices()->finalOfKindFor((int) $invoice->getContact()->getId(), InvoiceKind::Fee);
+                usort($fees, static fn(Invoice $a, Invoice $b) => [!str_starts_with((string) $a->getSourceRef(), $ownRef), $a->getNumber()] <=> [!str_starts_with((string) $b->getSourceRef(), $ownRef), $b->getNumber()]);
+                $onFees = [];
+                foreach ($fees as $fee) {
+                    if (!$remainder->isPositive()) {
+                        break;
+                    }
+                    $feeOpen = $invoicing->openAmount($this->invoices()->lockForUpdate((int) $fee->getId()));
+                    if (!$feeOpen->isPositive() || $transaction->getValueDate() < $fee->getInvoiceDate()) {
+                        continue;
+                    }
+                    $onFee = $remainder->greaterThan($feeOpen) ? $feeOpen : $remainder;
+                    $payments->record(new PaymentDraft(
+                        (int) $fee->getId(),
+                        $transaction->getValueDate(),
+                        $onFee,
+                        Money::zero($credit->currency),
+                        Money::zero($credit->currency),
+                        $message->getPaymentTargetCode(),
+                        mb_substr('CAMT ' . $message->getMessageId() . ' · mit ' . $invoice->documentName(), 0, 140),
+                        '',
+                        'camt',
+                        'camt:' . $message->getMessageId() . ':' . $transaction->getTxRef() . ':' . $fee->getNumber(),
+                    ));
+                    $onFees[]  = $fee->documentName() . ' ' . $onFee->toDecimal();
+                    $remainder = $remainder->subtract($onFee);
+                }
+                $note = $onFees !== [] ? 'Mit der Rechnung bezahlt: ' . implode(', ', $onFees) . '.' : '';
+                if ($remainder->isPositive()) {
+                    $note .= ($note !== '' ? ' ' : '') . 'Überzahlung: ' . $remainder->toDecimal() . ' über dem offenen Betrag — manuell behandeln (Rückzahlung oder andere Rechnung).';
+                }
+                $transaction->booked($payment, $remainder, $note !== '' ? $note : null);
                 $this->em->persist($transaction);
             }
 
@@ -288,7 +319,7 @@ final class BankImportService
         }
         $customer = (int) substr($reference, QrReference::BANK_DIGITS, QrReference::CUSTOMER_DIGITS);
         $number   = (int) substr($reference, QrReference::BANK_DIGITS + QrReference::CUSTOMER_DIGITS, QrReference::DOCUMENT_DIGITS);
-        $invoice  = $this->invoices()->findByNumber(InvoiceKind::Invoice, $number);
+        $invoice  = $this->invoices()->findPayableByNumber($number);
         if ($invoice === null) {
             $transaction->unmatch("QR-Referenz nennt Rechnung {$number}, die es nicht gibt — manuell zuordnen.");
 
@@ -318,7 +349,7 @@ final class BankImportService
             return;
         }
         $number  = (int) $m[1];
-        $invoice = $this->invoices()->findByNumber(InvoiceKind::Invoice, $number);
+        $invoice = $this->invoices()->findPayableByNumber($number);
         if ($invoice === null) {
             $transaction->unmatch("Die Mitteilung nennt Rechnung {$number}, die es nicht gibt — manuell zuordnen.");
 

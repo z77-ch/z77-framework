@@ -18,6 +18,7 @@
  * @var list<\Z77\Module\Debtor\Entities\Invoice> $creditNotes
  * @var \Z77\Shared\Money\Money|null $openAmount  final invoices only — after credit notes, payments, discount and loss
  * @var list<\Z77\Module\Debtor\Entities\PaymentAllocation> $allocations  final invoices only (P4 part 1)
+ * @var list<\Z77\Module\Debtor\Entities\DunningNotice> $notices  the dunning history of an invoice (P4 part 3)
  * @var bool $ledgerKnown
  * @var array<string, string> $states
  * @var callable $fmt
@@ -88,6 +89,17 @@ $period     = $document->getServiceFrom()->format('d.m.Y') . ($document->getServ
             <?php endif; ?>
             <?php if ($openAmount !== null): ?>
             <?= raw($row('Offen', $openAmount->isZero() ? '<span class="badge badge--success">bezahlt</span>' : e($fmt($openAmount)))) ?>
+            <?php endif; ?>
+            <?php if ($notices !== []): ?>
+            <?= raw($row('Mahnungen', implode('<br>', array_map(static function ($n) use ($fmt, $actionBase): string {
+                $fee = $n->getFeeInvoice();
+                return e($n->getRun()->getRunDate()->format('d.m.Y') . ' · ' . $n->getLevelCode() . ' · offen damals ' . $fmt($n->getOpenAmount()))
+                    . ($fee !== null ? ' <small class="be-list__cell--muted">· <a href="' . e($actionBase . '/detail?id=' . (int) $fee->getId()) . '">' . e($fee->documentName()) . '</a> ' . e($fmt($fee->getGrossTotal())) . '</small>' : '')
+                    . ' <a class="be-list__cell--muted" href="/backend/finance/dunning/notice-pdf?id=' . (int) $n->getId() . '" target="_blank" rel="noopener">PDF</a>';
+            }, $notices)))) ?>
+            <?php endif; ?>
+            <?php if ($document->getSourceType() === 'dunning'): [$feeOfNumber, $feeLevel] = array_pad(explode(':', (string) $document->getSourceRef(), 2), 2, ''); ?>
+            <?= raw($row('Mahngebühr zu', 'Rechnung ' . e($feeOfNumber) . ' <small class="be-list__cell--muted">· Stufe ' . e($feeLevel) . '</small>')) ?>
             <?php endif; ?>
             <?php if ($creditNotes !== []): ?>
             <?= raw($row('Gutschriften', implode(', ', array_map(fn($n) => '<a href="' . e($actionBase . '/detail?id=' . (int) $n->getId()) . '">' . e($n->documentName()) . '</a> ' . e($fmt($n->getGrossTotal())) . ($n->isFinal() ? '' : ' (in Fakturierung)'), $creditNotes)))) ?>

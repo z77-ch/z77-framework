@@ -19,12 +19,15 @@
  * @var \Z77\Module\Debtor\Invoicing\QrBill $bill  printable
  * @var \Z77\Module\Debtor\Entities\Invoice $document
  * @var float $top  the y of the zone's upper edge (page height − 105)
+ * @var \Z77\Shared\Money\Money|null $amount  what is billed — the document's gross when absent (a dunning notice passes open + fee)
  */
 use Z77\Shared\Money\AmountFormat;
 
 $top      = $top ?? ($pdf->pageHeight() - 105);
 $payment  = $document->getPayment();
-$amount   = str_replace("'", ' ', AmountFormat::of($document->getGrossTotal()));   // «1 234.50» — the guidelines group with a space
+// The amount billed: the document's gross, or what the caller hands in (a dunning notice bills open + fee, P4 part 3).
+$billed   = $amount ?? $document->getGrossTotal();
+$amount   = str_replace("'", ' ', AmountFormat::of($billed));   // «1 234.50» — the guidelines group with a space
 $currency = $document->getCurrency();
 $blockOf  = static fn(array $b): array => array_values(array_filter([
     $b['name'] ?? '',

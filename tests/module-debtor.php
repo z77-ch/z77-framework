@@ -353,8 +353,8 @@ $run = static function (array $input): array {
 
 echo "A. Migration (z77-db migrate on an empty database)\n";
 $config = DI::getModuleManager()->getModuleConfig('debtor');
-check('A0 the module config announces exactly the EIGHT Doctrine entities (profile, the document and its lines and taxes, the payment and its allocations, the bank message and its transactions) — the three master-data types are file-based',
-    $config?->get('doctrineEntities') === [DebtorProfile::class, Invoice::class, InvoiceLine::class, InvoiceTax::class, \Z77\Module\Debtor\Entities\Payment::class, \Z77\Module\Debtor\Entities\PaymentAllocation::class, \Z77\Module\Debtor\Entities\BankMessage::class, \Z77\Module\Debtor\Entities\BankTransaction::class]);
+check('A0 the module config announces exactly the TEN Doctrine entities (profile, the document and its lines and taxes, the payment and its allocations, the bank message and its transactions, the dunning run and its notices) — the three master-data types are file-based',
+    $config?->get('doctrineEntities') === [DebtorProfile::class, Invoice::class, InvoiceLine::class, InvoiceTax::class, \Z77\Module\Debtor\Entities\Payment::class, \Z77\Module\Debtor\Entities\PaymentAllocation::class, \Z77\Module\Debtor\Entities\BankMessage::class, \Z77\Module\Debtor\Entities\BankTransaction::class, \Z77\Module\Debtor\Entities\DunningRun::class, \Z77\Module\Debtor\Entities\DunningNotice::class]);
 $dirs = MigrationDirectories::collect(DI::getModuleManager(), DI::getFileFinder());
 check('A1 the module\'s res/migrations is collected under Z77\\Module\\Debtor\\Migrations', ($dirs['Z77\\Module\\Debtor\\Migrations'] ?? '') === $package . '/res/migrations');
 check('A2 the database is empty', $tables() === []);
@@ -391,8 +391,8 @@ check('A9 the unique contact index, the unique customer-number index and the pay
 [$code, $out] = $run(['command' => 'migrate']);
 check('A10 a second migrate is a no-op', $code === 0 && str_contains($out, 'Already at the latest version'));
 [$code, $out] = $run(['command' => 'diff', '--namespace' => 'Z77\\Module\\Debtor\\Migrations']);
-check('A11 diff after migrate reports NO change — mapping and migration agree (embedded address and payment part, money and decimal columns included)' . (str_contains($out, 'No changes detected') ? '' : ' — ' . trim($out)), $code !== 0 && str_contains($out, 'No changes detected') && count(glob($package . '/res/migrations/Version*.php')) === 6);
-check('A12 all six migrations are expand-only: no DROP outside down()', array_reduce(glob($package . '/res/migrations/Version*.php'), function ($ok, $f) {
+check('A11 diff after migrate reports NO change — mapping and migration agree (embedded address and payment part, money and decimal columns included)' . (str_contains($out, 'No changes detected') ? '' : ' — ' . trim($out)), $code !== 0 && str_contains($out, 'No changes detected') && count(glob($package . '/res/migrations/Version*.php')) === 7);
+check('A12 all seven migrations are expand-only: no DROP outside down()', array_reduce(glob($package . '/res/migrations/Version*.php'), function ($ok, $f) {
     $s = file_get_contents($f);
     return $ok && substr_count(substr($s, 0, strpos($s, 'function down')), 'DROP') === 0;
 }, true));
@@ -1027,7 +1027,7 @@ check('I5 the three master-data fragments carry an add action and an active swit
 
 $templateDir = $package . '/res/view/templates/Backend';
 $templates   = glob($templateDir . '/*/*.tpl.php');
-check('I6 every master-data screen has its list template, its edit template and its header slot; the document screens (P3 part 3) add six, the payment form and the delete confirmation (P4 part 1) two, the bank import list and detail (P4 part 2) two', count($templates) === 22);
+check('I6 every master-data screen has its list template, its edit template and its header slot; the document screens (P3 part 3) add six, the payment form and the delete confirmation (P4 part 1) two, the bank import list and detail (P4 part 2) two, the dunning list (P4 part 3) one', count($templates) === 23);
 check('I7 no template carries a <script> tag or an inline handler (Rule 7)',
     array_reduce($templates, fn($ok, $f) => $ok && !preg_match('/<script|\son[a-z]+\s*=/i', file_get_contents($f)), true));
 check('I8 the package ships no JavaScript at all', glob($package . '/res/**/*.js') === [] && glob($package . '/res/*.js') === []);
@@ -1872,6 +1872,7 @@ $invoiceHost = function () {
         // The session actor is not wired in the harness — name it, as a CLI caller must.
         private function invoicingService(): InvoicingService { return new InvoicingService($this->em(), 'sachbearbeiter'); }
         private function paymentService(): \Z77\Module\Debtor\Services\PaymentService { return new \Z77\Module\Debtor\Services\PaymentService($this->em(), 'sachbearbeiter'); }
+        private function invoiceDunningService(): \Z77\Module\Debtor\Services\DunningService { return new \Z77\Module\Debtor\Services\DunningService($this->em(), 'sachbearbeiter'); }
     };
 };
 $renderMain = fn($host) => implode('', array_map(fn($p) => $renderer->partial($p, $host->context), $host->layoutManager->sections['main'] ?? []));
@@ -2629,6 +2630,153 @@ check('R19 source guards: the trait never persists itself, every write goes thro
         }
         return false;
     })());
+
+// ── T. P4 part 3: dunning, the fee as a document kind (plan §6.5, owner 2026-10-06) ──
+
+echo "T. The fee as a document kind: InvoiceKind::Fee, the invoice range, no VAT, posted on the dunning-fee account\n";
+use Z77\Module\Debtor\Services\DunningService;
+use Z77\Module\Debtor\Services\DunningRefusedException;
+use Z77\Module\Debtor\Pdf\DunningPdf;
+$feeAccount = (string) $db->fetchOne('SELECT account_dunning_fee FROM mandator');
+check('T1 InvoiceKind::Fee: label «Gebühr», draws from the INVOICE range (one number space for everything payable), payable; a credit note is not payable',
+    InvoiceKind::Fee->label() === 'Gebühr' && InvoiceKind::Fee->numberRange() === 'invoice' && InvoiceKind::Fee->isPayable() && !InvoiceKind::CreditNote->isPayable() && InvoiceKind::Invoice->isPayable());
+$emT = $wireDi();
+$rangeBefore = (int) $rangeOf('invoice');
+$feeDoc = $service($emT)->invoice(InvoiceDraft::fee($mid, day('2026-07-15'), 'CHF', chf('20.00'), 'Mahngebühr Test', $feeAccount, 'qr', 'dunning', '0:test'));
+check('T2 InvoiceDraft::fee() → a document of kind fee: the next INVOICE number, one lump-sum line without tax code, no tax rows, net = gross = 20.00, a QRR payment part under its own number, source dunning',
+    $feeDoc->kind() === InvoiceKind::Fee && $feeDoc->getNumber() === $rangeBefore + 1 && (string) $rangeOf('invoice') === (string) ($rangeBefore + 1) && $feeDoc->documentName() === 'Gebühr ' . $feeDoc->getNumber()
+    && count($feeDoc->getLines()) === 1 && $feeDoc->getLines()[0]->getTaxCode() === null && $feeDoc->getLines()[0]->getRevenueAccount() === $feeAccount && $feeDoc->getTaxes() === []
+    && $feeDoc->getNetTotal()->toDecimal() === '20.00' && $feeDoc->getGrossTotal()->toDecimal() === '20.00' && $feeDoc->getTaxTotal()->isZero()
+    && $feeDoc->getPayment()->getReferenceType() === 'QRR' && $feeDoc->getPayment()->getReference() === QrReference::forDocument(1000, $feeDoc->getNumber()) && $feeDoc->getSourceType() === 'dunning');
+$journalBefore = $journalCount();
+$service($wireDi())->finalize([$at($feeDoc->getId())]);
+$feeRef = $readInvoice($feeDoc->getId())->getLedgerEntryRef();
+$fl     = $entryLines((string) $feeRef);
+check('T3 finalize() of a fee: receivable DEBIT 20.00 | dunning-fee account CREDIT 20.00, no tax data, no VAT line; the fee is a payable document (open 20.00) and the CAMT lookup by number finds it',
+    $journalCount() === $journalBefore + 1 && count($fl) === 2 && $fl[0]['account_number'] === $mandatorAccounts['account_receivable'] && $fl[0]['debit'] === '20.00'
+    && $fl[1]['account_number'] === $feeAccount && $fl[1]['credit'] === '20.00' && $fl[1]['tax_code'] === null
+    && $service($wireDi())->openAmount($readInvoice($feeDoc->getId()))->toDecimal() === '20.00'
+    && $wireDi()->getRepository(Invoice::class)->findPayableByNumber($feeDoc->getNumber())?->getId() === $feeDoc->getId());
+check('T4 a fee line with a tax code is refused; a fee at 0.00 is refused',
+    $refusal(fn() => $service($wireDi())->invoice(new InvoiceDraft(InvoiceKind::Fee, $mid, day('2026-07-15'), day('2026-07-15'), null, 'CHF', \Z77\Module\Vat\Calculation\PriceMode::Net, null, null, [LineDraft::lumpSum('x', chf('1.00'), 'UN', $feeAccount)], 'dunning', 'x'))) === InvoiceRefusedException::LINE
+    && $refusal(fn() => $service($wireDi())->invoice(InvoiceDraft::fee($mid, day('2026-07-15'), 'CHF', chf('0.00'), 'x', $feeAccount, 'qr', 'dunning', 'x'))) === InvoiceRefusedException::NEGATIVE_TOTAL);
+
+echo "T. … the due list and the run: levels from the ladder, the fee document with the notice\n";
+$dun  = fn(UnifiedEntityManager $em) => new DunningService($em, 'mahner');
+// disc-2-10: due after 20 days → 2026-06-30; with a payment target — the fee document takes the invoice's.
+$invE = $service($wireDi())->invoice(InvoiceDraft::invoice($mid, day('2026-06-10'), day('2026-06-10'), 'CHF', [LineDraft::service('Stunden', '1.000', 'h', chf('100.00'), 'UN', '3400')], paymentTargetCode: 'qr'));
+$service($wireDi())->finalize([$at($invE->getId())]);
+$dueIds = fn(array $list) => array_map(fn($i) => $i['invoice']->getId(), $list);
+check('T5 dueList(): nothing on the due date + 9 days; on due + 10 the invoice is due for «Zahlungserinnerung» (level 1, no fee) with its open 108.10; a settled invoice never appears',
+    !in_array($invE->getId(), $dueIds($dun($wireDi())->dueList(day('2026-07-09'))), true)
+    && (function () use ($dun, $wireDi, $invE, $dueIds): bool {
+        $list = $dun($wireDi())->dueList(day('2026-07-10'));
+        $item = array_values(array_filter($list, fn($i) => $i['invoice']->getId() === $invE->getId()))[0] ?? null;
+        return $item !== null && $item['open']->toDecimal() === '108.10' && $item['current'] === null && $item['next']->getCode() === 'reminder' && $item['dueSince']->format('Y-m-d') === '2026-07-10';
+    })()
+    && !in_array($invA->getId(), $dueIds($dun($wireDi())->dueList(day('2026-12-31'))), true));
+$run1 = $dun($wireDi())->run(day('2026-07-20'), [$invE->getId()]);
+$n1   = $run1->getNotices()[0];
+check('T6 run() at level 1: one notice (reminder, open 108.10, no fee document), the run dated and stamped; the invoice\'s history shows it; the same day again → not-due (the next level needs due + 30)',
+    count($run1->getNotices()) === 1 && $n1->getLevelCode() === 'reminder' && $n1->getLevelNumber() === 1 && $n1->getOpenAmount()->toDecimal() === '108.10' && $n1->getFeeInvoice() === null
+    && $run1->getRunDate()->format('Y-m-d') === '2026-07-20' && $run1->getCreatedBy() === 'mahner'
+    && count($dun($wireDi())->noticesOf($readInvoice($invE->getId()))) === 1
+    && caught(fn() => $dun($wireDi())->run(day('2026-07-20'), [$invE->getId()]), DunningRefusedException::class)?->reason === DunningRefusedException::NOT_DUE);
+$journalBefore = $journalCount();
+$rangeBefore   = (int) $rangeOf('invoice');
+$run2 = $dun($wireDi())->run(day('2026-08-10'), [$invE->getId()]);
+$n2   = $run2->getNotices()[0];
+$fee2 = $n2->getFeeInvoice();
+check('T7 run() at level 2 («1. Mahnung», fee 20.00): the notice carries a FEE DOCUMENT — kind fee, the next invoice number, final, posted (one entry), source dunning «{invoice}:{level}», the invoice\'s payment target; open on the fee 20.00, on the invoice still 108.10',
+    $n2->getLevelCode() === 'dunning-1' && $fee2 !== null && $fee2->kind() === InvoiceKind::Fee && $fee2->getNumber() === $rangeBefore + 1 && $fee2->isFinal() && $fee2->getLedgerEntryRef() !== null
+    && $journalCount() === $journalBefore + 1 && $fee2->getSourceRef() === $invE->getNumber() . ':dunning-1' && $fee2->getPayment()->getTargetCode() === 'qr' && $fee2->getGrossTotal()->toDecimal() === '20.00'
+    && str_contains($fee2->getLines()[0]->getText(), '1. Mahnung') && $service($wireDi())->openAmount($readInvoice($fee2->getId()))->toDecimal() === '20.00' && $service($wireDi())->openAmount($readInvoice($invE->getId()))->toDecimal() === '108.10');
+check('T8 refusals: no selection (nothing), a date in the future (date), an unknown id (not-found) — and a debtor with a dunning block is not on the due list',
+    caught(fn() => $dun($wireDi())->run(day('2026-08-10'), []), DunningRefusedException::class)?->reason === DunningRefusedException::NOTHING
+    && caught(fn() => $dun($wireDi())->run((new \DateTimeImmutable('today'))->modify('+1 day'), [$invE->getId()]), DunningRefusedException::class)?->reason === DunningRefusedException::DATE
+    && caught(fn() => $dun($wireDi())->run(day('2026-08-10'), [999999]), DunningRefusedException::class)?->reason === DunningRefusedException::NOT_FOUND
+    && (function () use ($wireDi, $dun, $mid, $invE, $dueIds): bool {
+        $em = $wireDi(); $p = $em->getRepository(DebtorProfile::class)->findByContact($mid);
+        (new DebtorProfileService($em))->update($p, ['dunning_block' => true]);
+        $blocked = !in_array($invE->getId(), $dueIds($dun($wireDi())->dueList(day('2026-12-31'))), true);
+        $em2 = $wireDi(); (new DebtorProfileService($em2))->update($em2->getRepository(DebtorProfile::class)->findByContact($mid), ['dunning_block' => false]);
+        return $blocked;
+    })());
+
+echo "T. … the notice as PDF, and the CAMT booking that places the fee's share on the fee document\n";
+$emT2   = $wireDi();
+$level2 = $dun($emT2)->levelOf($dun($emT2)->notice((int) $n2->getId()));
+$pdfBin = DunningPdf::of($dun($emT2)->notice((int) $n2->getId()), $level2, $emT2)->withoutCompression()->output();
+check('T9 the notice PDF: the level\'s title, the invoice named, the fee line, the total 128.10 and a payment part over 128.10 under the INVOICE\'s reference',
+    str_starts_with($pdfBin, '%PDF-') && str_contains($pdfBin, '(1. Mahnung)') && str_contains($pdfBin, 'Rechnung ' . $invE->getNumber()) && str_contains($pdfBin, '(128.10)')
+    && str_contains($pdfBin, '(Zahlteil)') && str_contains($pdfBin, '(' . QrReference::format($readInvoice($invE->getId())->getPayment()->getReference()) . ')')
+    && DunningPdf::fileName($n2, $level2) === 'mahnung-rechnung-' . $invE->getNumber() . '.pdf' || str_contains(DunningPdf::fileName($n2, $level2), 'rechnung-' . $invE->getNumber()));
+$msgT = $bank($wireDi())->import($camtXml('MSG-T1', [['amount' => '128.10', 'date' => '2026-08-20', 'ref' => $qrrOf(1000, $invE->getNumber()), 'txid' => 'E-full']]), 'camt054-t1.xml');
+$bookedT = $bank($wireDi())->book((int) $msgT->getId());
+$txT = $bookedT->getTransactions()[0];
+check('T10 a credit of 128.10 under the invoice\'s reference: 108.10 settle the invoice, the 20.00 above go to the debtor\'s open FEE document — both settled, no remainder, the note says so',
+    $txT->state()->value === 'booked' && $txT->getRemainder()->isZero() && str_contains((string) $txT->getNote(), 'Mit der Rechnung bezahlt') && str_contains((string) $txT->getNote(), $fee2->documentName())
+    && $service($wireDi())->openAmount($readInvoice($invE->getId()))->isZero() && $service($wireDi())->openAmount($readInvoice($fee2->getId()))->isZero()
+    && $service($wireDi())->openAmount($readInvoice($feeDoc->getId()))->toDecimal() === '20.00');
+
+echo "T. … the screens: the due list with the run, the notice PDF, the history on the invoice detail\n";
+$dunHost = function () {
+    return new class {
+        use \Z77\Module\Debtor\Ui\DunningControllerTrait { listAction as public; runAction as public; noticePdfAction as public; }
+        public array $context = [];
+        public object $messageService;
+        public ?string $redirectedTo = null;
+        public array $bytes = [];
+        public function __construct()
+        {
+            $this->messageService = new class {
+                public array $flashes = [];
+                public function pushFlashAfterRedirect(string $type, string $message): void { $this->flashes[] = [$type, $message]; }
+            };
+        }
+        protected function em() { return DI::getUnifiedEntityManager(); }
+        protected function html(array $context = []): \Z77\Core\Http\Response\HtmlResponse { $this->context = $context; return new \Z77\Core\Http\Response\HtmlResponse(null, $context); }
+        protected function redirect(string $url, int $status = 302): \Z77\Core\Http\Response\RedirectResponse { $this->redirectedTo = $url; return new \Z77\Core\Http\Response\RedirectResponse($url, $status); }
+        protected function bytes(string $content, string $filename, string $mimeType, bool $inline = true): \Z77\Core\Http\Response\BytesResponse { $this->bytes = ['content' => $content, 'filename' => $filename, 'mime' => $mimeType]; return new \Z77\Core\Http\Response\BytesResponse($content, $filename, $mimeType, $inline); }
+        private function dunningService(): DunningService { return new DunningService($this->em(), 'mahner'); }
+    };
+};
+$invF = $service($wireDi())->invoice($oneLine($mid, '2026-06-11', '1.000', '30.00'));
+$service($wireDi())->finalize([$at($invF->getId())]);
+$useRequest(['as_of' => '2026-07-25']);
+$host = $dunHost();
+$host->listAction();
+$listHtml = $renderer->partial('Backend/DunningController/listAction', $host->context);
+check('T11 the list as of 25.7.: the due invoice with its checkbox, open amount and next level; the runs so far with their notices and the PDF link',
+    in_array($invF->getId(), $dueIds($host->context['due']), true) && str_contains($listHtml, 'name="doc[]" value="' . $invF->getId() . '"') && str_contains($listHtml, 'Zahlungserinnerung')
+    && str_contains($listHtml, 'Mahnlauf starten') && str_contains($listHtml, 'notice-pdf?id=' . $n2->getId()) && str_contains($listHtml, 'data-dunning-notice='));
+$useRequest([], ['as_of' => '2026-07-25', 'doc' => [(string) $invF->getId()]]);
+$host = $dunHost();
+$host->runAction();
+check('T12 «Mahnlauf starten» through the host: the run, the flash with the counts, the redirect to the list as of the day', $host->redirectedTo === '/backend/finance/dunning/list?as_of=2026-07-25' && ($host->messageService->flashes[0][0] ?? '') === 'success'
+    && str_contains($host->messageService->flashes[0][1], '1 Mahnungen') && count($dun($wireDi())->noticesOf($readInvoice($invF->getId()))) === 1);
+$useRequest(['id' => $n2->getId()]);
+$host = $dunHost();
+$host->noticePdfAction();
+check('T13 the notice PDF through the host: application/pdf, named after level and invoice', ($host->bytes['mime'] ?? '') === 'application/pdf' && str_starts_with($host->bytes['content'], '%PDF-') && str_ends_with($host->bytes['filename'], '.pdf'));
+$useRequest(['id' => $invE->getId()]);
+$host = $invoiceHost();
+$host->detailAction();
+$detailE = $renderMain($host);
+check('T14 the invoice detail lists its dunning history with the fee document and a PDF link; the fee document\'s detail names the invoice it belongs to',
+    str_contains($detailE, 'Mahnungen') && str_contains($detailE, 'dunning-1') && str_contains($detailE, $fee2->documentName()) && str_contains($detailE, 'notice-pdf?id=')
+    && (function () use ($useRequest, $invoiceHost, $renderMain, $fee2, $invE): bool { $useRequest(['id' => $fee2->getId()]); $h = $invoiceHost(); $h->detailAction(); $html = $renderMain($h); return str_contains($html, 'Mahngebühr zu') && str_contains($html, 'Rechnung ' . $invE->getNumber()); })());
+check('T15 source guards: the dunning trait never persists itself; the templates carry no script; host and config exist; the seed puts «Mahnungen» under «Aufträge»; the invoice views count fees with invoices',
+    !str_contains(file_get_contents($package . '/src/Ui/DunningControllerTrait.php'), '->persist(')
+    && !preg_match('/<script|\son[a-z]+\s*=/i', file_get_contents($package . '/res/view/templates/Backend/DunningController/listAction.tpl.php'))
+    && is_file($pkgRoot . '/module-backend/src/Ui/Controllers/Finance/DunningController.php') && is_file($pkgRoot . '/module-backend/src/Ui/Config/Finance/dunningControllerConfig.inc.php')
+    && (function () use ($package): bool {
+        foreach (json_decode(file_get_contents($package . '/data/framework/routing/navigation.d/module-debtor.json'), true) as $row) {
+            if (($row['key'] ?? '') === 'mahnungen') { return $row['parent_key'] === 'auftraege' && $row['controller'] === 'dunning' && $row['action'] === 'list'; }
+        }
+        return false;
+    })()
+    && $wireDi()->getRepository(Invoice::class)->countPerView()['final'] === (int) $db->fetchOne("SELECT COUNT(*) FROM invoice WHERE kind IN ('invoice', 'fee') AND state = 'final'"));
 
 echo "P3C. Source guards for part 3\n";
 $p3Templates = glob($package . '/res/view/templates/Backend/InvoiceController/*.tpl.php');

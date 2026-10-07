@@ -81,6 +81,67 @@ class InvoiceRepository extends DoctrineRepository
     }
 
     /**
+     * The PAYABLE document with $number — an invoice or a fee; they share
+     * the `invoice` number range, so there is at most one. What a QR
+     * reference (positions 17–26) and a message's «Rechnung n» name.
+     */
+    public function findPayableByNumber(int $number): ?Invoice
+    {
+        return $this->em()->createQueryBuilder()
+            ->select('i')
+            ->from(Invoice::class, 'i')
+            ->where('i.kind <> :credit AND i.number = :number')
+            ->setParameter('credit', InvoiceKind::CreditNote->value)
+            ->setParameter('number', $number)
+            ->getQuery()
+            ->getOneOrNullResult();
+    }
+
+    /**
+     * The open amount of EVERY final invoice (kind invoice) that still has
+     * one, in ONE query: invoice id → decimal string (gross − final credit
+     * notes − allocations). The due list of the dunning (P4 part 3) reads
+     * this, never `openAmount()` per row (DEBTOR-OPEN-001). Doctrine-only
+     * (SQL).
+     *
+     * @return array<int, string>
+     */
+    public function openAmountsOfFinalInvoices(): array
+    {
+        $rows = $this->connection()->fetchAllKeyValue(
+            'SELECT i.id, i.gross_total'
+            . ' - COALESCE((SELECT SUM(c.gross_total) FROM invoice c WHERE c.credit_note_of_id = i.id AND c.kind = ? AND c.state = ?), 0)'
+            . ' - COALESCE((SELECT SUM(a.amount) FROM payment_allocation a WHERE a.invoice_id = i.id), 0) AS open_amount'
+            . ' FROM invoice i WHERE i.kind = ? AND i.state = ?'
+            . ' HAVING open_amount > 0',
+            [InvoiceKind::CreditNote->value, InvoiceState::Final->value, InvoiceKind::Invoice->value, InvoiceState::Final->value]
+        );
+
+        return array_map(static fn($v) => (string) $v, $rows);
+    }
+
+    /**
+     * The FINAL documents of $kind of one party, oldest first — the fees
+     * an overpayment is placed on (P4 part 2/3), the invoices a due list
+     * walks. Doctrine-only (DQL).
+     *
+     * @return list<Invoice>
+     */
+    public function finalOfKindFor(int $contactId, InvoiceKind $kind): array
+    {
+        return $this->em()->createQueryBuilder()
+            ->select('i')
+            ->from(Invoice::class, 'i')
+            ->where('i.contact = :contact AND i.kind = :kind AND i.state = :final')
+            ->setParameter('contact', $contactId)
+            ->setParameter('kind', $kind->value)
+            ->setParameter('final', InvoiceState::Final->value)
+            ->orderBy('i.number', 'ASC')
+            ->getQuery()
+            ->getResult();
+    }
+
+    /**
      * One page of the document list (P3 part 3): the documents of the view
      * matching every criterion of $search, in its order. The search runs in
      * the database — never a filter of the rows on screen. Every value is
@@ -132,8 +193,8 @@ class InvoiceRepository extends DoctrineRepository
     public function countPerView(): array
     {
         $row = $this->connection()->fetchAssociative(
-            'SELECT SUM(kind = ? AND state = ?) AS invoicing, SUM(kind = ? AND state = ?) AS final, SUM(kind = ?) AS credit FROM invoice',
-            [InvoiceKind::Invoice->value, InvoiceState::Invoicing->value, InvoiceKind::Invoice->value, InvoiceState::Final->value, InvoiceKind::CreditNote->value]
+            'SELECT SUM(kind IN (?, ?) AND state = ?) AS invoicing, SUM(kind IN (?, ?) AND state = ?) AS final, SUM(kind = ?) AS credit FROM invoice',
+            [InvoiceKind::Invoice->value, InvoiceKind::Fee->value, InvoiceState::Invoicing->value, InvoiceKind::Invoice->value, InvoiceKind::Fee->value, InvoiceState::Final->value, InvoiceKind::CreditNote->value]
         ) ?: [];
 
         return array_map(static fn($n) => (int) $n, array_merge(array_fill_keys(InvoiceSearch::VIEWS, 0), array_filter($row, static fn($n) => $n !== null)));
@@ -171,7 +232,8 @@ class InvoiceRepository extends DoctrineRepository
         if ($search->view === InvoiceSearch::VIEW_CREDIT) {
             $add('kind = ?', InvoiceKind::CreditNote->value);
         } else {
-            $add('kind = ?', InvoiceKind::Invoice->value);
+            // The payable kinds — invoices and fees (P4 part 3) — share the two views.
+            $add('kind <> ?', InvoiceKind::CreditNote->value);
             $add('state = ?', $search->view === InvoiceSearch::VIEW_FINAL ? InvoiceState::Final->value : InvoiceState::Invoicing->value);
         }
         if ($search->number !== null) {

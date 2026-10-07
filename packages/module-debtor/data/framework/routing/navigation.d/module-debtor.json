@@ -52,6 +52,19 @@
         "parent_key": "auftraege"
     },
     {
+        "key": "mahnungen",
+        "name": "Mahnungen",
+        "module": "backend",
+        "group": "finance",
+        "controller": "dunning",
+        "action": "list",
+        "slot": "",
+        "active": true,
+        "param": "",
+        "sort_key": 3,
+        "parent_key": "auftraege"
+    },
+    {
         "key": "stammdaten-auftraege",
         "name": "Aufträge",
         "module": "",

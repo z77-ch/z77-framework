@@ -104,8 +104,12 @@ final class QrBill
         return true;
     }
 
-    /** The bill of $document, from its snapshot. */
-    public static function of(Invoice $document): self
+    /**
+     * The bill of $document, from its snapshot — over its gross total, or
+     * over $amount when given (the dunning notice bills the OPEN balance
+     * plus the fee, under the invoice's own reference, P4 part 3).
+     */
+    public static function of(Invoice $document, ?Money $amount = null): self
     {
         $payment = $document->getPayment();
         $bill    = new self(
@@ -113,7 +117,7 @@ final class QrBill
             $payment->getReferenceType(),
             $payment->getReference(),
             $payment->getMessage(),
-            $document->getGrossTotal(),
+            $amount ?? $document->getGrossTotal(),
             $document->getCurrency(),
             [
                 'name'     => $payment->getCreditorName(),

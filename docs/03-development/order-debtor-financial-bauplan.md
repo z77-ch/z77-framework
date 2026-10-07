@@ -331,6 +331,22 @@ with the actions. Tables `bank_message` / `bank_transaction`, migration `Version
 Harness `tests/module-debtor.php` `R1`–`R19`. **Next:** P4 part 3 (dunning, the fee as a document
 kind), P5 part 2; the first real camt.054 of the owner's bank is the live test (DEBTOR-CAMT-001).
 
+**P4 part 3 built (2026-10-07) — dunning, the fee as a document kind (§6.5). P4 is complete.**
+`InvoiceKind::Fee` («Gebühr»): a document on the `invoice` table — one lump-sum line without VAT on
+the mandator's dunning-fee account, the debtor's terms, the invoice's payment target, its own QRR
+— drawing from the INVOICE number range (one number space for everything payable: the QR reference
+carries only the number). `DunningRun` / `DunningNotice` (the invoice, the level by code and number
+as it was, the open amount then, the fee document issued with it). `DunningService`: the due list as
+of a day (open invoices of active, unblocked debtors whose next level of the active ladder is due,
+one query for the open amounts), the run in one unit of work (each invoice judged again under the
+lock, the notice at the next level, the fee document issued and finalized — posted — with it). The
+notice PDF (`pdf/dunningNotice`) bills open + fee under the invoice's reference; the CAMT booking
+places what exceeds the invoice on the debtor's open fee documents first. Screens under «Aufträge»
+› «Mahnungen» (`/backend/finance/dunning`): the due list with «Mahnlauf starten», the runs with
+their notices and PDFs; the invoice detail shows the history. Tables `dunning_run` /
+`dunning_notice`, migration `Version20261007150000`. Harness `tests/module-debtor.php` `T1`–`T15`.
+**Next:** P5 part 2 (the VAT return), P5b (the owner's migration); the live test of P3/P4 in z77.ch.
+
 Open for the owner: `persistence-doctrine`, `module-vat` and `module-contact` are not split targets
 yet (`.github/workflows/split.yml`, Packagist). Working method that carried P1: each building block
 built by one agent, reviewed independently by a second against the ADRs (with probes against

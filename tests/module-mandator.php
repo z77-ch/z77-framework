@@ -257,8 +257,8 @@ check('A2 the database is empty', $tables() === []);
 [$code, $out] = $run(['command' => 'migrate']);
 check('A3 migrate exits 0' . ($code !== 0 ? " — got {$code}: " . trim($out) : ''), $code === 0);
 $executed = $db->fetchFirstColumn('SELECT version FROM schema_migration');
-check('A4 the mandator migration ran, in timestamp order among the modules (since 2026-10-07 debtor\'s bank import Version20261007100000 is the newest)',
-    str_contains($out, 'Migrating up to Z77\\Module\\Debtor\\Migrations\\Version20261007100000') && in_array('Z77\\Module\\Mandator\\Migrations\\Version20260923160948', $executed, true));
+check('A4 the mandator migration ran, in timestamp order among the modules (since 2026-10-07 debtor\'s dunning Version20261007150000 is the newest)',
+    str_contains($out, 'Migrating up to Z77\\Module\\Debtor\\Migrations\\Version20261007150000') && in_array('Z77\\Module\\Mandator\\Migrations\\Version20260923160948', $executed, true));
 check('A5 mandator exists next to the other modules\' tables', in_array('mandator', $tables(), true) && in_array('account', $tables(), true) && in_array('invoice', $tables(), true));
 $info = $tableInfo('mandator');
 check('A6 mandator is utf8mb4_unicode_ci and InnoDB although the database default is general_ci',

@@ -5,6 +5,7 @@ namespace Z77\Module\Debtor\Invoicing;
 use Z77\Module\Debtor\Entities\AddressSnapshot;
 use Z77\Module\Debtor\Entities\InvoiceKind;
 use Z77\Module\Vat\Calculation\PriceMode;
+use Z77\Shared\Money\Money;
 
 /**
  * What a SOURCE hands `InvoicingService` (plan §6.2, ADR-040 decision 3):
@@ -79,6 +80,27 @@ final class InvoiceDraft
      *
      * @param list<LineDraft> $lines
      */
+    /**
+     * A dunning FEE (P4 part 3, owner 2026-10-06 «eigene Belegart»): one
+     * lump-sum line without VAT on $feeAccount (the mandator's dunning-fee
+     * account), dated $date, the service date = the date (no supply, the
+     * field is formal), the debtor's terms, the invoice's payment target.
+     * `sourceType` / `sourceRef` name the dunning notice it belongs to.
+     */
+    public static function fee(
+        int $contactId,
+        \DateTimeImmutable $date,
+        string $currency,
+        Money $amount,
+        string $text,
+        string $feeAccount,
+        ?string $paymentTargetCode,
+        string $sourceType,
+        string $sourceRef,
+    ): self {
+        return new self(InvoiceKind::Fee, $contactId, $date, $date, null, $currency, PriceMode::Net, null, null, [LineDraft::lumpSum($text, $amount, '', $feeAccount)], $sourceType, $sourceRef, null, $paymentTargetCode);
+    }
+
     public static function creditNote(
         int $creditNoteOfId,
         int $contactId,

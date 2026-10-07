@@ -18,6 +18,7 @@ use Z77\Core\DI,
     Z77\Module\Debtor\Repositories\InvoiceSearch,
     Z77\Module\Debtor\Services\DebtorCurrency,
     Z77\Module\Debtor\Services\DebtorException,
+    Z77\Module\Debtor\Services\DunningService,
     Z77\Module\Debtor\Services\InvoiceConflictException,
     Z77\Module\Debtor\Services\InvoiceRefusedException,
     Z77\Module\Debtor\Services\InvoicingService,
@@ -196,6 +197,7 @@ trait InvoiceControllerTrait
             'creditNotes'  => $isInvoice ? $this->invoices()->creditNotesOf($document) : [],
             'openAmount'   => $isInvoice && $document->isFinal() ? $this->invoicingService()->openAmount($document) : null,
             'allocations'  => $isInvoice && $document->isFinal() ? $this->paymentService()->allocationsOf($document) : [],
+            'notices'      => $isInvoice && $document->isFinal() ? $this->invoiceDunningService()->noticesOf($document) : [],
             'ledgerKnown'  => (new LedgerAccountCheck($this->em()))->available(),
             'states'       => self::INVOICE_STATE_LABELS,
         ]);
@@ -224,6 +226,12 @@ trait InvoiceControllerTrait
     private function paymentService(): PaymentService
     {
         return new PaymentService($this->em());
+    }
+
+    /** The dunning history the detail shows; the session actor. A harness host overrides it with a named actor. */
+    private function invoiceDunningService(): DunningService
+    {
+        return new DunningService($this->em());
     }
 
     /**
