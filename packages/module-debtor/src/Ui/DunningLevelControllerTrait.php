@@ -91,9 +91,9 @@ trait DunningLevelControllerTrait
             'accountsNotice' => $accounts->notice(),
             'actionBase' => $this->dunningLevelListBase(),
         ]);
-        // The fragment owns its header slot (financial.md, «fragment slots»). The add action acts
-        // on the list in the work area, so it goes into the toolbar (ADR-033 rev. 2026-09-28).
-        $this->layoutManager->addPartials('addButton', 'Backend/DunningLevelController', self::DUNNING_LEVEL_NS, 'hc2');
+        // The fragment owns its header slot (financial.md, «fragment slots»): the add action is the
+        // entry's most frequent action → the action cell (ADR-033 rev. 2026-10-08).
+        $this->layoutManager->addPartials('act', 'Backend/DunningLevelController', self::DUNNING_LEVEL_NS, 'hc1');
 
         return $response;
     }

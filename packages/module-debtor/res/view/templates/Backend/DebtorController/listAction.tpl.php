@@ -7,7 +7,9 @@
  * no CSS and no JavaScript of its own:
  *
  *   - the header carries the open total and its overdue part (wdv «OP-Total»)
- *     over ALL open documents, whatever the view or the search;
+ *     over ALL open documents, whatever the view or the search — plain
+ *     figures beside the title, NOT inside `be-list__toggles` (that container
+ *     holds scope links; 2026-10-08, ADR-033 rev. 2026-10-08 migration);
  *   - the state icon starts every row and opens the document detail as a
  *     WINDOW (ADR-047, `data-window-open`), the href stays for a ctrl-click;
  *   - every searchable cell is a `<label for>` of its column's search field;
@@ -43,13 +45,13 @@ $view         = $state->extra('view');
     <div class="be-list__section">
         <div class="be-list__section-header">
             <h2 class="be-list__section-title"><?= e($views[$view] ?? '') ?></h2>
-            <nav class="be-list__toggles" aria-label="Offene Posten">
-                <span data-field="open-total" title="<?= (int) $openCount ?> offene Belege">OP-Total <strong><?= e($fmt($openTotal)) ?></strong></span>
-                <span data-field="overdue-total" title="<?= (int) $overdueCount ?> überfällige Belege">davon überfällig <strong><?= e($fmt($overdueTotal)) ?></strong></span>
-                <?php if ($state->isActive()): ?>
+            <span data-field="open-total" title="<?= (int) $openCount ?> offene Belege">OP-Total <strong><?= e($fmt($openTotal)) ?></strong></span>
+            <span data-field="overdue-total" title="<?= (int) $overdueCount ?> überfällige Belege">davon überfällig <strong><?= e($fmt($overdueTotal)) ?></strong></span>
+            <?php if ($state->isActive()): ?>
+            <nav class="be-list__toggles" aria-label="Suche">
                 <a data-fetch-region-link href="<?= e($listUrl . '?' . $state->resetQuery()) ?>">Suche zurücksetzen</a>
-                <?php endif; ?>
             </nav>
+            <?php endif; ?>
             <span class="be-list__section-badge" title="Belege"><?= $paging->total ?></span>
         </div>
 

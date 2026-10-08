@@ -126,9 +126,9 @@ trait AccountControllerTrait
             'typeLabels' => $this->accountTypeLabels(),
             'actionBase' => $this->accountListBase(),
         ]);
-        // The fragment owns its header slot (financial.md, «fragment slots»). The add action acts
-        // on the list in the work area, so it goes into the toolbar (ADR-033 rev. 2026-09-28).
-        $this->layoutManager->addPartials('addButton', 'Backend/AccountController', self::ACCOUNT_NS, 'hc2');
+        // The fragment owns its header slot (financial.md, «fragment slots»). The add action is the
+        // entry's most frequent action, so it goes into the action cell (ADR-033 rev. 2026-10-08).
+        $this->layoutManager->addPartials('addButton', 'Backend/AccountController', self::ACCOUNT_NS, 'hc1');
 
         return $response;
     }

@@ -34,21 +34,6 @@ $actionBase = $actionBase ?? '/backend/finance/journal';
 $year       = $entry->getFiscalYear();
 $label      = $year->getCode() . '/' . $entry->getNumber();
 $lineCols   = '--be-list-cols: 4rem minmax(10rem, 2fr) minmax(8rem, 1fr) 7rem 7rem minmax(8rem, 1fr)';
-/** A snapshot's lines as a small read-only table (the change log's before / after). */
-$snapshotLines = function (array $snapshot) use ($fmt, $lineCols): string {
-    $html = '<div class="be-list__table" style="' . $lineCols . '">';
-    foreach ($snapshot['lines'] ?? [] as $line) {
-        $html .= '<div class="be-list__item"><div class="be-list__row">'
-            . '<span class="be-list__cell be-list__cell--mono">' . e((string) ($line['account'] ?? '')) . '</span>'
-            . '<span class="be-list__cell">' . e((string) ($line['account_name'] ?? '')) . '</span>'
-            . '<span class="be-list__cell be-list__cell--muted">' . e((string) ($line['text'] ?? '')) . '</span>'
-            . '<span class="be-list__cell be-list__cell--num">' . (($line['debit'] ?? '0.00') !== '0.00' ? e((string) $line['debit']) : '') . '</span>'
-            . '<span class="be-list__cell be-list__cell--num">' . (($line['credit'] ?? '0.00') !== '0.00' ? e((string) $line['credit']) : '') . '</span>'
-            . '<span class="be-list__cell be-list__cell--muted">' . (($line['tax_code'] ?? null) !== null ? e($line['tax_code'] . ' · ' . $line['tax_base'] . ' / ' . $line['tax_amount']) : '') . '</span>'
-            . '</div></div>';
-    }
-    return $html . '</div>';
-};
 ?>
 <div class="be-list"<?= $winAttr ?>>
     <?php if (!empty($configNotice)): ?>
@@ -156,10 +141,10 @@ $snapshotLines = function (array $snapshot) use ($fmt, $lineCols): string {
                 </div>
                 <div class="be-list__detail">
                     <div class="be-form__section">Vorher — <?= e((string) ($change->before()['date'] ?? '')) ?> · <?= e((string) ($change->before()['text'] ?? '')) ?></div>
-                    <?= raw($snapshotLines($change->before())) ?>
+                    <?= $this->partial('Backend/partials/entrySnapshot', ['snapshot' => $change->before()], 'Z77\\Module\\Financial') ?>
                     <?php if ($change->after() !== null): ?>
                     <div class="be-form__section">Nachher — <?= e((string) ($change->after()['date'] ?? '')) ?> · <?= e((string) ($change->after()['text'] ?? '')) ?></div>
-                    <?= raw($snapshotLines($change->after())) ?>
+                    <?= $this->partial('Backend/partials/entrySnapshot', ['snapshot' => $change->after()], 'Z77\\Module\\Financial') ?>
                     <?php endif; ?>
                 </div>
             </div>

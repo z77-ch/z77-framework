@@ -4,7 +4,9 @@
  * matched invoice (a link to its detail) and what is still open on it,
  * the remainder of an overpayment, the note — and the actions: «Zuordnen»
  * (a document number) and «Ignorieren» / «Zurücknehmen» per transaction
- * that is not booked, «Verbuchen» for every matched one. Page forms, no
+ * that is not booked, «Verbuchen» for every matched one — at the TOP, with
+ * the notice «n zugeordnet · noch nicht verbucht» and as the green confirm
+ * (`.be-btn--confirm`, it writes; 2026-10-08). Page forms, no
  * JavaScript (Rule 7); every POST carries `csrf_token` (`#[Csrf]`).
  *
  * @var \Z77\Module\Debtor\Entities\BankMessage $message
@@ -26,23 +28,30 @@ $badge      = static fn(string $state): string => match ($state) {
 };
 ?>
 <div class="be-list">
+    <?php if ($counts['matched'] > 0): ?>
+    <?php /* The step the office missed in the live test (2026-10-08): matching is not booking. The bar
+             stands at the TOP and stays there while the transactions scroll (`.z77-form-actions` is
+             sticky); «Verbuchen» WRITES payments and journal entries → the green confirm. */ ?>
+    <div class="z77-form-actions" data-bank-unbooked="<?= (int) $counts['matched'] ?>">
+        <strong><?= (int) $counts['matched'] ?> zugeordnet · noch nicht verbucht</strong>
+        <form method="post" action="<?= e($actionBase) ?>/book?id=<?= (int) $message->getId() ?>" style="display: inline">
+            <input type="hidden" name="csrf_token" value="<?= e($csrfToken ?? '') ?>">
+            <button type="submit" class="be-btn be-btn--confirm be-btn--sm">
+                <svg class="be-icon" width="14" height="14" aria-hidden="true"><use href="#icon-check"/></svg>
+                <span class="be-btn__label">Verbuchen</span>
+            </button>
+        </form>
+        <small class="be-list__cell--muted">erst damit entstehen die Zahlungen auf den Rechnungen</small>
+    </div>
+    <?php endif; ?>
     <div class="be-list__section">
         <div class="be-list__section-header">
             <h2 class="be-list__section-title">
                 Meldung <?= e($message->getMessageId()) ?>
                 <small class="be-list__cell--muted">· <?= e($message->getFileName()) ?> · vom <?= e($message->getCreatedOn()->format('d.m.Y')) ?> · Konto <?= e($message->getPaymentTargetCode()) ?> (<?= e($message->getIban()) ?>) · importiert <?= e($message->getImportedAt()->format('d.m.Y H:i')) ?> von <?= e($message->getImportedBy()) ?></small>
             </h2>
-        </div>
-
-        <nav class="be-list__toggles" aria-label="Aktionen">
             <a class="be-btn be-btn--ghost be-btn--sm" href="<?= e($actionBase) ?>/list">Zurück zur Liste</a>
-            <?php if ($counts['matched'] > 0): ?>
-            <form method="post" action="<?= e($actionBase) ?>/book?id=<?= (int) $message->getId() ?>" style="display: inline">
-                <input type="hidden" name="csrf_token" value="<?= e($csrfToken ?? '') ?>">
-                <button type="submit" class="be-btn be-btn--primary be-btn--sm">Verbuchen (<?= (int) $counts['matched'] ?> zugeordnete)</button>
-            </form>
-            <?php endif; ?>
-        </nav>
+        </div>
 
         <div class="be-list__table" style="--be-list-cols: 2.5rem 6rem 7rem minmax(12rem, 2fr) minmax(10rem, 2fr) 7rem minmax(12rem, 3fr)">
             <div class="be-list__head">

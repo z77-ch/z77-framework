@@ -67,7 +67,7 @@ $fieldError = static fn(string $message): string => $message === ''
         <?php if (!$isNew): ?>
         <?php /* The action bar (ADR-049): sticky at the top of the form — change a field, save,
                  without scrolling; first in the document, so Enter saves. «N Fehler» leads to the
-                 first invalid field. A new entry has none: «Buchen» is in the toolbar. */ ?>
+                 first invalid field. A new entry has none: «Buchen» is in the action cell. */ ?>
         <?php
         $invalidIds = [];
         foreach (['date' => 'journal-c-date', 'text' => 'journal-c-text'] as $field => $id) {
@@ -184,7 +184,7 @@ $fieldError = static fn(string $message): string => $message === ''
         </div>
 
         <?php /* «Weitere Zeilen» acts on the rows — it stands under them (ADR-033). «Buchen» (new:
-                 the toolbar, form="journal-capture") and «Speichern» (edit: the action bar) come
+                 the action cell, form="journal-capture") and «Speichern» (edit: the action bar) come
                  first in the document, so Enter posts instead of adding rows. */ ?>
         <p class="be-form__hint">
             <button type="submit" class="be-btn be-btn--ghost be-btn--sm" name="op" value="more">Weitere Zeilen</button>

@@ -116,11 +116,18 @@ class JobController extends BackendAbstractController
         return $this->fetch()->setStatus('success')->addCommand('reload');
     }
 
-    /** Switches a schedule on or off. No record yet → nothing to switch. */
+    /**
+     * Switches a schedule on or off. No record yet → nothing to switch. Called by the row's
+     * `.be-switch` through the core `data-fetch-toggle` contract (job key in `?job=`, the new
+     * state in the body's `value` — set, not flipped, so a stale page cannot invert it); a body
+     * `job` without `value` (plain form post) still flips.
+     */
     #[Fetch, HttpMethod('POST')]
     protected function toggleAction(): FetchResponse
     {
-        $jobKey   = trim((string) (DI::getRequest()->getJsonBody()['job'] ?? ''));
+        $request  = DI::getRequest();
+        $body     = $request->getJsonBody();
+        $jobKey   = trim((string) ($body['job'] ?? $request->getGetParameter('job') ?? ''));
         $schedules = $this->schedules();
         $schedule  = $schedules->findByJobKey($jobKey);
 
@@ -128,7 +135,7 @@ class JobController extends BackendAbstractController
             return $this->fetchError('Für diesen Job ist kein Zeitplan hinterlegt');
         }
 
-        $schedule->setEnabled(!$schedule->isEnabled());
+        $schedule->setEnabled(isset($body['value']) ? (bool) $body['value'] : !$schedule->isEnabled());
         if ($schedule->isEnabled()) {
             $schedule->setNextRunAt(date(
                 DATE_ATOM,

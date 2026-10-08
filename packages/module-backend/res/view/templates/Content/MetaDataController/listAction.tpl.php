@@ -15,19 +15,9 @@ foreach ($groups as $g) {
     }
 }
 ?>
-<?php /* Language switcher moved to the shell header band (list.hc2.tpl.php, auto-loaded); the
-         breadcrumb/title were dropped (module switcher shows the section). The environment filter
-         (tabs) stays in the body — it filters the list below. */ ?>
-<?php if (count($environments) > 1): ?>
-<div class="be-tabs" style="padding:14px 32px 0">
-    <a class="be-tabs__tab<?= $envFilter === '' ? ' be-tabs__tab--active' : '' ?>" href="<?= e($base) ?>">Alle</a>
-    <?php foreach ($environments as $env): ?>
-    <a class="be-tabs__tab<?= $envFilter === $env['key'] ? ' be-tabs__tab--active' : '' ?>"
-       href="<?= e($base . '?env=' . rawurlencode($env['key'])) ?>"><?= e($env['label']) ?></a>
-    <?php endforeach; ?>
-</div>
-<?php endif; ?>
-
+<?php /* Language switcher AND environment filter live in the shell toolbar (list.hc2.tpl.php,
+         auto-loaded): tabs, ADR-033 rev. 2026-10-08. The breadcrumb/title were dropped (module
+         switcher shows the section). */ ?>
 <div class="be-list">
     <?php if (empty($groups)): ?>
     <p style="font-size:.8rem;color:var(--be-muted,#94a3b8);padding:.5rem">Keine public Umgebung mit routbaren Seiten vorhanden.</p>

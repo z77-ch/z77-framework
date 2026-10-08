@@ -6,12 +6,13 @@
  * module it must not (plan §2). Search and limit are the contact list's
  * (`?q=`, contactConfig `contactListLimit`).
  *
- * An ACTIVE contact without a profile shows «Debitor anlegen»; one with a
- * profile shows its payment terms, the dunning block and the active switch
- * — there is no delete (ADR-043 decision 19 / plan §6.1: deactivate). An
- * INACTIVE contact without a profile gets no button: a new reference needs
- * an active row, here an active party. An existing profile on a contact
- * deactivated since stays editable.
+ * A contact with a profile shows its payment terms, the dunning block and
+ * the active switch — there is no delete (ADR-043 decision 19 / plan §6.1:
+ * deactivate). A contact without one shows «kein Debitor» and no button:
+ * a profile is opened with «+ Debitor» in the action cell (`act.tpl.php`,
+ * 2026-10-08), whose dialog offers only ACTIVE contacts without a profile —
+ * a new reference needs an active row, here an active party. An existing
+ * profile on a contact deactivated since stays editable.
  *
  * Above the list stand the account settings (the mandator's debtor
  * accounts, `DebtorAccounts::status()`) with the refusal each would raise,
@@ -97,12 +98,10 @@ $shown      = count($contacts);
                     </label>
                     <button type="button" class="be-tree__menu" title="Debitor bearbeiten"
                             data-fetch-get="<?= e($actionBase) ?>/edit?id=<?= e((string) $profile->getId()) ?>">⋮</button>
-                    <?php elseif ($contact->isActive()): ?>
-                    <span class="be-tree__switch" aria-hidden="true"></span>
-                    <button type="button" class="be-tree__menu" title="Debitor anlegen"
-                            data-fetch-get="<?= e($actionBase) ?>/add?contact=<?= e((string) $contact->getId()) ?>">＋</button>
                     <?php else: ?>
-                    <?php /* An inactive contact gets no debtor (ADR-043/19 on the party) — no button, and the server refuses a hand-built URL. */ ?>
+                    <?php /* No profile yet: «+ Debitor» in the action cell offers the active contacts without one
+                             (2026-10-08) — the row carries no button of its own. An inactive contact gets no
+                             debtor (ADR-043/19 on the party); the server refuses a hand-built URL. */ ?>
                     <span class="be-tree__switch" aria-hidden="true"></span>
                     <span class="be-tree__menu" aria-hidden="true"></span>
                     <?php endif; ?>

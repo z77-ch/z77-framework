@@ -33,7 +33,10 @@ use Z77\Core\DI,
  * the postable accounts when module-financial is registered
  * ({@see LedgerAccountCheck::postableAccounts()}); each shows its status
  * (ok / prüfen / ungeprüft) so a wrong account is found here and not when
- * a posting refuses it. No JavaScript of its own (Rule 7).
+ * a posting refuses it. No JavaScript of its own (Rule 7). The three sections
+ * are radio tabs (owner 2026-10-08): ONE form, the panels switched by CSS,
+ * the tab labels in the toolbar (`editToolbar`, hc2); a refused save opens
+ * the tab of the first field error ({@see MandatorLayout::openTab()}).
  *
  * When the record CANNOT be read — table missing, module not registered
  * ({@see CurrentMandator::unavailableReason()}) — the page shows the German
@@ -111,16 +114,21 @@ trait MandatorControllerTrait
             }
         }
 
-        $shown ??= MandatorAccounts::prefilled();
-        $check   = new LedgerAccountCheck($this->em());
+        $shown   ??= MandatorAccounts::prefilled();
+        $check     = new LedgerAccountCheck($this->em());
+        // Field errors only after a refused POST; on GET an un-run validator (no errors). What BECAME
+        // invalid since the save is flagged by `accountStatus` («prüfen»), not by a field error.
+        $validator ??= $this->mandatorService()->validator($shown);
 
-        return $this->html([
+        $response = $this->html([
             'unavailable'   => null,
             'entry'         => $shown,
             'isNew'         => $current === null,
-            // Field errors only after a refused POST; on GET an un-run validator (no errors). What BECAME
-            // invalid since the save is flagged by `accountStatus` («prüfen»), not by a field error.
-            'validator'     => $validator ?? $this->mandatorService()->validator($shown),
+            'validator'     => $validator,
+            // The sections are radio tabs (owner 2026-10-08); a refused save opens the tab with the
+            // first field error, otherwise the first tab.
+            'mandatorTabs'  => MandatorLayout::TABS,
+            'openTab'       => MandatorLayout::openTab($validator),
             'entityCsrf'    => $current === null ? '' : DI::getCsrfService()->generateEntityToken('mandator', $current->getId()),
             'accountKeys'   => array_keys(Mandator::ACCOUNT_KEYS),
             'accountLabels' => MandatorAccounts::LABELS,
@@ -129,5 +137,12 @@ trait MandatorControllerTrait
             'ledgerKnown'   => $check->available(),
             'actionBase'    => $this->mandatorBase(),
         ]);
+        // The fragment owns its header slot: «Speichern» in the action cell, the entry's most
+        // frequent action (ADR-033 rev. 2026-10-08) — it submits the form via `form="mandator-edit"`.
+        $this->layoutManager->addPartials('editAct', 'Backend/MandatorController', MandatorLayout::NS, 'hc1');
+        // … and the section tabs in the toolbar: `<label for>` of the radios in the form (pure CSS).
+        $this->layoutManager->addPartials('editToolbar', 'Backend/MandatorController', MandatorLayout::NS, 'hc2');
+
+        return $response;
     }
 }

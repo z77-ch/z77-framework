@@ -92,6 +92,8 @@ class EntryChange
     }
 
     public function getId(): ?int { return $this->id; }
+    /** The entry's id — it may be gone (a delete); the change log screen links it while it exists. */
+    public function getEntryId(): int { return $this->entryId; }
     public function getEntryNumber(): int { return $this->entryNumber; }
     public function getAction(): string { return $this->action; }
     public function getChangedBy(): string { return $this->changedBy; }

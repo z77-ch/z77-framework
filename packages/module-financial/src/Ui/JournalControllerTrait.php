@@ -46,9 +46,10 @@ use Z77\Core\DI,
  *     2026-09-28): the capture form open at once (one-line or Sammelbuchung,
  *     `?mode=`), below it the journal of the SELECTED fiscal year
  *     ({@see FiscalYearSelection}: `?year=`, remembered per session, default
- *     the current year — owner 2026-09-29; picked in the action cell), newest first, paged by `journalListLimit`, searchable per
+ *     the current year — owner 2026-09-29; picked at the top of the rail), newest first, paged by `journalListLimit`, searchable per
  *     column in the database (one year or all), sortable, each row with a
- *     state icon, the deleted numbers (gaps) inline on request;
+ *     state icon (the deleted numbers and every change are the change log,
+ *     a screen of its own — {@see ChangeLogControllerTrait}, owner 2026-10-08);
  *   - show an entry with its lines, its reversal link (both directions)
  *     and its change log;
  *   - post a MANUAL entry, edit and delete it — with confirmation, each
@@ -287,11 +288,11 @@ trait JournalControllerTrait
      *   - `?mode=einzel|sammel` — the capture form: the one-line entry
      *     (default) or the Sammelbuchung, open at once;
      *   - `?year=` — the fiscal year the page shows ({@see FiscalYearSelection}:
-     *     remembered per session, default the current year; the dropdown in the
-     *     action cell sets it — owner 2026-09-29);
+     *     remembered per session, default the current year; the dropdown at the
+     *     top of the rail sets it — owner 2026-09-29 / 2026-10-08);
      *   - `?date=` — the date the empty form starts with (kept after a save),
      *     when it lies in the shown year; else today clamped into that year;
-     *   - the column search `f_*`, `all`, `deleted`, `sort` / `dir`, `page` —
+     *   - the column search `f_*`, `all`, `sort` / `dir`, `page` —
      *     {@see JournalFilter}; a search runs in the database.
      */
     protected function listAction(): HtmlResponse
@@ -320,7 +321,7 @@ trait JournalControllerTrait
         $request = DI::getRequest();
         $year  ??= $this->journalSelectedYear();
         $query   = [];
-        foreach (array_merge(array_keys(JournalFilter::FIELDS), ['all', 'deleted', 'sort', 'dir', 'page']) as $key) {
+        foreach (array_merge(array_keys(JournalFilter::FIELDS), ['all', 'sort', 'dir', 'page']) as $key) {
             $query[$key] = $request->getGetParameter($key);
         }
         $filter  = JournalFilter::fromQuery($query, $this->journalCurrency());
@@ -328,19 +329,20 @@ trait JournalControllerTrait
         $total   = $year === null ? 0 : $this->journalEntries()->countSearch($search);
         $paging  = new Paging($filter->page, LedgerService::listLimit(), $total);
         $entries = $total === 0 ? [] : $this->journalEntries()->search($search, $paging->offset(), $paging->pageSize);
-        // The deleted numbers inline — only where «between two numbers» means
-        // something: one year, number order, no column search.
-        $gapsApply = $filter->showDeleted && $year !== null && !$filter->allYears && $search->sort === 'number' && !$search->narrows();
-        $rows      = $this->journalRows($entries, $gapsApply ? $this->entryChanges()->deletionsForYear($year) : [], $search->descending, $paging);
+        $rows    = array_map(fn(JournalEntry $e) => ['entry' => $e, 'state' => $this->journalEntryState($e), 'number' => $e->getNumber()], $entries);
 
         $keep = array_filter(['mode' => $mode === 'sammel' ? 'sammel' : '', 'date' => $form->date()]);
         $base = $this->journalListBase();
-        // The year dropdown (hc1): a year link keeps the capture mode, drops the date (it
-        // belongs to the old year) and the search (a fresh list of the new year).
+        // The year dropdown (top of the rail): a year link keeps the capture mode, drops the date (it
+        // belongs to the old year) and the search (a fresh list of the new year). Its last entry
+        // «Alle Jahre» is the list's `all=1` state (owner 2026-10-08 — was the «alle Geschäftsjahre»
+        // toggle in the list header); the selected year stays remembered, the capture form keeps it.
         $fySelection = $year === null ? null : [
             'years'   => $this->journalYearSelection()->all(),
             'current' => $year,
             'href'    => static fn(string $code): string => $base . '/list?' . http_build_query(array_filter(['mode' => $mode === 'sammel' ? 'sammel' : '', 'year' => $code])),
+            'allHref' => $base . '/list?' . http_build_query(array_filter(['mode' => $mode === 'sammel' ? 'sammel' : '', 'all' => '1'])),
+            'allOn'   => $filter->allYears,
         ];
         if ($year !== null && !$this->journalIsFetch()) {
             $this->journalAttachHelp($form, $year, null);
@@ -354,7 +356,6 @@ trait JournalControllerTrait
             'rows'        => $rows,
             'filter'      => $filter,
             'paging'      => $paging,
-            'gapsApply'   => $gapsApply,
             'keep'        => $keep,
             'fySelection' => $fySelection,
             'states'      => self::JOURNAL_STATE_LABELS,
@@ -364,7 +365,7 @@ trait JournalControllerTrait
             'configNotice' => $this->journalConfigNotice(),
         ]);
         // The page is capture + list: the pinned body section is rebuilt. A FETCH of the page
-        // (sort, page, search, toggle — core.js «fetch regions») wants the list alone: the
+        // (sort, page, search — core.js «fetch regions») wants the list alone: the
         // capture form above it keeps what is typed into it.
         $this->layoutManager->removeSection('main');
         if ($this->journalIsFetch()) {
@@ -375,50 +376,18 @@ trait JournalControllerTrait
         if ($year !== null) {
             $this->layoutManager->addPartials($mode === 'sammel' ? 'form' : 'oneLine', 'Backend/JournalController', self::JOURNAL_NS);
             // The fragment owns its header slots (financial.md, «fragment slots»): the year
-            // selection in the action cell (owner 2026-09-29, shared with the reports), the capture
-            // tools and «Buchen» in the toolbar — they act on the form on the right (ADR-033
-            // rev. 2026-09-28) — and the crumb line with the year and month of the date.
-            $this->layoutManager->addPartials('fiscalYearSelect', 'Backend/partials', self::JOURNAL_NS, 'hc1');
+            // selection at the top of the rail (section `railSelect`, owner 2026-10-08, ADR-033 rev.; shared with the reports),
+            // «Buchen» in the action cell (the entry's most frequent action, ADR-033 rev. 2026-10-08), the
+            // capture tools (Einzel | Sammel, MwSt) in the toolbar — they act on the form on the right —
+            // and the crumb line with the year and month of the date.
+            $this->layoutManager->addPartials('fiscalYearSelect', 'Backend/partials', self::JOURNAL_NS, 'railSelect');
+            $this->layoutManager->addPartials('captureAct', 'Backend/JournalController', self::JOURNAL_NS, 'hc1');
             $this->layoutManager->addPartials('captureTools', 'Backend/JournalController', self::JOURNAL_NS, 'hc2');
             $this->layoutManager->addPartials('crumb', 'Backend/JournalController', self::JOURNAL_NS, 'hc3');
         }
         $this->layoutManager->addPartials('listAction', 'Backend/JournalController', self::JOURNAL_NS);
 
         return $response;
-    }
-
-    /**
-     * The rows of one list page: the entries, and — when asked for — the
-     * deleted numbers that fall between them, each at its number. A page
-     * owns the numbers from its last entry up to its first; the first page
-     * also everything above it, the last page everything below.
-     *
-     * @param list<JournalEntry> $entries
-     * @param list<EntryChange>  $deletions
-     * @return list<array{entry?: JournalEntry, state?: string, deleted?: EntryChange, number: int}>
-     */
-    private function journalRows(array $entries, array $deletions, bool $descending, Paging $paging): array
-    {
-        $rows = array_map(fn(JournalEntry $e) => ['entry' => $e, 'state' => $this->journalEntryState($e), 'number' => $e->getNumber()], $entries);
-        if ($deletions === []) {
-            return $rows;
-        }
-        $numbers = array_column($rows, 'number');
-        $low  = $numbers === [] ? PHP_INT_MIN : min($numbers);
-        $high = $numbers === [] ? PHP_INT_MAX : max($numbers);
-        $first = $paging->page === 1;
-        $last  = $paging->page === $paging->pageCount;
-        // In descending order the first page holds the HIGH end.
-        [$openHigh, $openLow] = $descending ? [$first, $last] : [$last, $first];
-        foreach ($deletions as $change) {
-            $n = $change->getEntryNumber();
-            if (($n > $low || $openLow) && ($n < $high || $openHigh)) {
-                $rows[] = ['deleted' => $change, 'number' => $n];
-            }
-        }
-        usort($rows, static fn($a, $b) => $descending ? $b['number'] <=> $a['number'] : $a['number'] <=> $b['number']);
-
-        return $rows;
     }
 
     /**
@@ -461,7 +430,8 @@ trait JournalControllerTrait
     /**
      * The help for a capture or edit form (ADR-048): the rules the form no longer spells out
      * (owner 2026-09-29, «no text in the form») and — edit — the entry's computed VAT. Opened
-     * with the «i» in the crumb line (page) or the window's title bar.
+     * with «? Hilfe» in the top bar (page), the «i» in the window's title bar, or F1 in a field —
+     * at the field's `data-help-field` section (ADR-048 addendum 2026-10-08).
      */
     private function journalAttachHelp(OneLineEntryForm|ManualEntryForm $form, FiscalYear $year, ?JournalEntry $entry): void
     {

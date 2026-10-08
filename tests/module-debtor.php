@@ -1030,16 +1030,35 @@ check('I5m the three master-data fragments carry an add action and an active swi
 
 $templateDir = $package . '/res/view/templates/Backend';
 $templates   = glob($templateDir . '/*/*.tpl.php');
-check('I6 every master-data screen has its list template, its edit template and its header slot; the document screens (P3 part 3) add six, the payment form and the delete confirmation (P4 part 1) two, the bank import list and detail (P4 part 2) two, the dunning list (P4 part 3) one, the open-item list and its toolbar (2026-10-07) two', count($templates) === 25);
+check('I6 every master-data screen has its list template, its edit template and its header slot; the document screens (P3 part 3) add six, the payment form and the delete confirmation (P4 part 1) two, the bank import list and detail (P4 part 2) two, the dunning list (P4 part 3) one, the open-item list and its toolbar (2026-10-07) two, the action cells of the invoice list, the bank import and the debtor master data (ADR-033 rev. 2026-10-08) three', count($templates) === 28);
 check('I7 no template carries a <script> tag or an inline handler (Rule 7)',
     array_reduce($templates, fn($ok, $f) => $ok && !preg_match('/<script|\son[a-z]+\s*=/i', file_get_contents($f)), true));
 check('I8 the package ships no JavaScript at all', glob($package . '/res/**/*.js') === [] && glob($package . '/res/*.js') === []);
-check('I9 the header slots are partials OF THE FRAGMENT (financial.md, «fragment slots»)',
-    is_file($templateDir . '/PaymentTermsController/addButton.tpl.php')
-    && is_file($templateDir . '/PaymentTargetController/addButton.tpl.php')
-    && is_file($templateDir . '/DunningLevelController/addButton.tpl.php')
+check('I9 the header slots are partials OF THE FRAGMENT (financial.md, «fragment slots»); the add actions are the action cell (`act`, hc1 — ADR-033 rev. 2026-10-08), each ONE flush-ready button with its glyph and its word in `be-btn__label`',
+    is_file($templateDir . '/PaymentTermsController/act.tpl.php')
+    && is_file($templateDir . '/PaymentTargetController/act.tpl.php')
+    && is_file($templateDir . '/DunningLevelController/act.tpl.php')
+    && is_file($templateDir . '/DebtorProfileController/act.tpl.php')
+    && is_file($templateDir . '/InvoiceController/act.tpl.php')
+    && is_file($templateDir . '/BankImportController/act.tpl.php')
     && is_file($templateDir . '/DebtorProfileController/search.tpl.php')
-    && is_file($templateDir . '/DebtorController/toolbar.tpl.php'));
+    && is_file($templateDir . '/DebtorController/toolbar.tpl.php')
+    && glob($templateDir . '/*/addButton.tpl.php') === []
+    && array_reduce(glob($templateDir . '/*/act.tpl.php'), fn($ok, $f) => $ok && substr_count(file_get_contents($f), 'class="be-btn be-btn--primary"') === 1
+        && str_contains(file_get_contents($f), '#icon-plus') && str_contains(file_get_contents($f), 'be-btn__label'), true)
+    && array_reduce([PaymentTermsControllerTrait::class, PaymentTargetControllerTrait::class, DunningLevelControllerTrait::class, DebtorProfileControllerTrait::class],
+        fn($ok, $t) => $ok && preg_match("/addPartials\\('act', '[^']+', [^,]+, 'hc1'\\)/", file_get_contents((new \ReflectionClass($t))->getFileName())) === 1, true));
+check('I9b «+ Debitor» opens the add dialog WITHOUT a contact: the dialog offers the active contacts without a profile; the rows carry no add button of their own',
+    str_contains(file_get_contents($templateDir . '/DebtorProfileController/act.tpl.php'), "/backend/finance/debtor-profile') . '/add'")
+    && !str_contains(file_get_contents($templateDir . '/DebtorProfileController/listAction.tpl.php'), 'add?contact=')
+    && str_contains(file_get_contents($templateDir . '/DebtorProfileController/edit.tpl.php'), 'name="contact_id"')
+    && (function () use ($em25): bool {
+        $profiles = $em25->getRepository(\Z77\Module\Debtor\Entities\DebtorProfile::class);
+        foreach ($profiles->contactsWithoutProfile() as $c) {
+            if (!$c->isActive() || $profiles->findByContact($c) !== null) { return false; }
+        }
+        return true;
+    })());
 $backend = str_replace('\\', '/', realpath(__DIR__ . '/../packages/module-backend'));
 check('I10 module-backend mounts all five under the finance group (the debtor master data and the open items apart)',
     is_file($backend . '/src/Ui/Controllers/Finance/PaymentTermsController.php')
@@ -1902,11 +1921,17 @@ $useRequest([]);
 $host = $invoiceHost();
 $host->listAction();
 $listHtml = $renderList($host) . $renderSlot($host, 'hc2');
+$actHtml  = $renderSlot($host, 'hc1');
+$toolHtml = $renderSlot($host, 'hc2');
 $invoicingIds = array_map(fn($d) => $d->getId(), $host->context['documents']);
-check('P3C22 list, default view «In Fakturierung»: only invoices in invoicing, newest first, each row with its {id}:{version} checkbox; the toolbar with the view tabs (counts), «Rechnung erstellen», «Definitiv stellen …»',
+check('P3C22 list, default view «In Fakturierung»: only invoices in invoicing, newest first, each row with its {id}:{version} checkbox; «+ Rechnung» in the action cell, the toolbar with the view tabs (counts) only, «Definitiv stellen …» a green confirm in the selection bar ABOVE the rows (ADR-033 rev. 2026-10-08)',
     $host->context['state']->extra('view') === 'invoicing' && $invoicingIds !== [] && array_filter($host->context['documents'], fn($d) => $d->isFinal() || $d->isCreditNote()) === []
     && str_contains($listHtml, 'data-fetch-region="invoice-find-list"') && str_contains($listHtml, 'value="' . $nonInv->getId() . ':' . $invoiceRow($nonInv->getId())['version'] . '"')
-    && str_contains($listHtml, 'form="invoice-finalize"') && str_contains($listHtml, 'Rechnung erstellen') && str_contains($listHtml, 'be-viewtabs')
+    && str_contains($listHtml, 'form="invoice-finalize"') && str_contains($listHtml, 'be-viewtabs')
+    && str_contains($actHtml, 'href="/backend/finance/invoice/add"') && str_contains($actHtml, 'be-btn--primary')
+    && !str_contains($toolHtml, 'be-btn') && !str_contains($toolHtml, 'invoice-finalize')
+    && preg_match('/data-selection-bar="invoice-finalize".*?be-btn--confirm.*?Definitiv stellen/s', $renderList($host)) === 1
+    && strpos($renderList($host), 'data-selection-bar=') < strpos($renderList($host), 'data-invoice-id=')
     && $host->context['counts']['invoicing'] === $host->context['paging']->total);
 $numbers = array_map(fn($d) => $d->getNumber(), $host->context['documents']);
 $sorted  = $numbers; rsort($sorted);
@@ -1915,7 +1940,8 @@ $useRequest(['view' => 'final']);
 $host = $invoiceHost();
 $host->listAction();
 check('P3C23 view «Definitiv»: only final invoices, no selection checkbox', $host->context['documents'] !== [] && array_filter($host->context['documents'], fn($d) => !$d->isFinal() || $d->isCreditNote()) === []
-    && !str_contains($renderList($host), 'name="doc[]"') && $host->layoutManager->sections === ['hc2' => ['Backend/InvoiceController/toolbar']]);
+    && !str_contains($renderList($host), 'name="doc[]"') && !str_contains($renderList($host), 'data-selection-bar=')
+    && $host->layoutManager->sections === ['hc1' => ['Backend/InvoiceController/act'], 'hc2' => ['Backend/InvoiceController/toolbar']]);
 $useRequest(['view' => 'credit']);
 $host = $invoiceHost();
 $host->listAction();
@@ -2588,7 +2614,9 @@ $host->listAction();
 $listHtml = $renderer->partial('Backend/BankImportController/listAction', $host->context);
 check('R13 the list: the upload form (file, csrf) and the imported messages with their counts, newest first',
     str_contains($listHtml, 'name="file"') && str_contains($listHtml, 'enctype="multipart/form-data"') && str_contains($listHtml, 'MSG-R3') && str_contains($listHtml, 'MSG-R1')
-    && strpos($listHtml, 'MSG-R3') < strpos($listHtml, 'MSG-R1') && count($host->context['messages']) === 2);
+    && strpos($listHtml, 'MSG-R3') < strpos($listHtml, 'MSG-R1') && count($host->context['messages']) === 2
+    && str_contains($listHtml, 'id="bank-upload"') && ($host->layoutManager->sections['hc1'] ?? []) === ['Backend/BankImportController/act']
+    && str_contains($renderer->partial('Backend/BankImportController/act', $host->context), 'href="/backend/finance/bank-import/list#bank-upload"'));
 $useRequest(['id' => $msgR1->getId()]);
 $host = $bankHost();
 $host->detailAction();
@@ -2596,7 +2624,7 @@ $detailHtml = implode('', array_map(fn($p) => $renderer->partial($p, $host->cont
 check('R14 the detail: every transaction with its state badge, the matched invoice linked with its open amount, the remainder badge where there is one, the assign / ignore forms on the ones not booked, no «Verbuchen» without a matched one',
     substr_count($detailHtml, 'data-bank-transaction=') === 7 && str_contains($detailHtml, 'data-state="booked"') && str_contains($detailHtml, 'data-state="unmatched"')
     && str_contains($detailHtml, '/backend/finance/invoice/detail?id=' . $invA->getId()) && str_contains($detailHtml, 'name="number"') && str_contains($detailHtml, 'Ignorieren')
-    && !str_contains($detailHtml, 'Verbuchen ('));
+    && !str_contains($detailHtml, 'data-bank-unbooked=') && !str_contains($detailHtml, '/book?id='));
 $tmpXml = $base . '/upload-r4.xml';
 file_put_contents($tmpXml, $camtXml('MSG-R4', [['amount' => '3.80', 'date' => '2026-07-05', 'ref' => $qrrOf(1000, $invD->getNumber()), 'txid' => 'D-rest']]));
 $GLOBALS['z77TestUpload'] = ['file' => new \Z77\Shared\ValueObjects\UploadedFile('camt054-r4.xml', $tmpXml, filesize($tmpXml), 'text/xml')];
@@ -2611,6 +2639,14 @@ $useRequest([], []);
 $host = $bankHost();
 $host->uploadAction();
 check('R16 upload without a file → error flash, back to the list', $host->redirectedTo === '/backend/finance/bank-import/list' && ($host->messageService->flashes[0][0] ?? '') === 'error');
+$useRequest(['id' => $msgR4->getId()]);
+$host = $bankHost();
+$host->detailAction();
+$detailR4 = implode('', array_map(fn($p) => $renderer->partial($p, $host->context), $host->layoutManager->sections['main'] ?? []));
+check('R16b matched but not booked: the detail opens with the notice «1 zugeordnet · noch nicht verbucht» and «Verbuchen» as the green confirm, above the transactions',
+    str_contains($detailR4, 'data-bank-unbooked="1"') && str_contains($detailR4, '1 zugeordnet · noch nicht verbucht')
+    && preg_match('/data-bank-unbooked.*?\/book\?id=' . $msgR4->getId() . '.*?be-btn--confirm.*?Verbuchen/s', $detailR4) === 1
+    && strpos($detailR4, 'data-bank-unbooked=') < strpos($detailR4, 'data-bank-transaction='));
 $useRequest(['id' => $msgR4->getId()], []);
 $host = $bankHost();
 $host->bookAction();
@@ -2755,7 +2791,9 @@ $host->listAction();
 $listHtml = $renderer->partial('Backend/DunningController/listAction', $host->context);
 check('T11 the list as of 25.7.: the due invoice with its checkbox, open amount and next level; the runs so far with their notices and the PDF link',
     in_array($invF->getId(), $dueIds($host->context['due']), true) && str_contains($listHtml, 'name="doc[]" value="' . $invF->getId() . '"') && str_contains($listHtml, 'Zahlungserinnerung')
-    && str_contains($listHtml, 'Mahnlauf starten') && str_contains($listHtml, 'notice-pdf?id=' . $n2->getId()) && str_contains($listHtml, 'data-dunning-notice='));
+    && str_contains($listHtml, 'Mahnlauf starten') && str_contains($listHtml, 'notice-pdf?id=' . $n2->getId()) && str_contains($listHtml, 'data-dunning-notice=')
+    && preg_match('/data-selection-bar="dunning-run".*?be-btn--confirm.*?Mahnlauf starten/s', $listHtml) === 1
+    && strpos($listHtml, 'Mahnlauf starten</span>') < strpos($listHtml, 'data-due-invoice=') && !str_contains(file_get_contents($package . '/src/Ui/DunningControllerTrait.php'), "'hc1'"));
 $useRequest([], ['as_of' => '2026-07-25', 'doc' => [(string) $invF->getId()]]);
 $host = $dunHost();
 $host->runAction();
@@ -2859,7 +2897,8 @@ check('U7 the screen: OP-Total and overdue in the header, the kernel\'s head and
     && str_contains($opHtml, 'data-window-open="/backend/finance/invoice/detail?id=' . $feeDoc->getId() . '"')
     && str_contains($opHtml, 'href="/backend/finance/invoice/payment?id=' . $feeDoc->getId() . '"')
     && str_contains($opHtml, '>fakturiert<') && str_contains($opHtml, '>offen<') && str_contains($opHtml, '>Fällig<') && str_contains($opHtml, '>KD-Nr.<')
-    && ($host->layoutManager->sections['hc2'] ?? []) === ['Backend/DebtorController/toolbar']
+    && ($host->layoutManager->sections['hc2'] ?? []) === ['Backend/DebtorController/toolbar'] && !isset($host->layoutManager->sections['hc1'])
+    && !preg_match('/be-list__toggles[^>]*>\s*<span data-field="open-total"/', $opHtml) && strpos($opHtml, 'data-field="open-total"') < strpos($opHtml, 'be-list__section-badge')
     && str_contains($opHtml, 'data-fetch-region="debtor-find-list"') && str_contains($opHtml, '<form id="debtor-find" method="get"') && substr_count($opHtml, 'form="debtor-find"') === 7
     && str_contains($opHtml, 'id="debtor-find-f_nr"') && str_contains($opHtml, 'for="debtor-find-f_open"') && str_contains($opHtml, 'data-sort="asc">Fällig</a>')
     && str_contains($barHtml, '?view=overdue') && str_contains($barHtml, '?view=all') && !str_contains($barHtml, 'name="q"'));
@@ -2881,8 +2920,8 @@ check('U9 the master data moved: «Debitoren» under Aufträge is the open-item 
 
 echo "P3C. Source guards for part 3\n";
 $p3Templates = glob($package . '/res/view/templates/Backend/InvoiceController/*.tpl.php');
-check('P3C48 the document screens ship no JavaScript and no inline handler (Rule 7); no module-financial class in debtor but the adapter (the journal is linked by URL)',
-    count($p3Templates) === 8 && array_reduce($p3Templates, fn($ok, $f) => $ok && !preg_match('/<script|\son[a-z]+\s*=/i', file_get_contents($f)), true)
+check('P3C48 the document screens ship no JavaScript and no inline handler (Rule 7) — nine templates since the action cell `act` (2026-10-08); no module-financial class in debtor but the adapter (the journal is linked by URL)',
+    count($p3Templates) === 9 && array_reduce($p3Templates, fn($ok, $f) => $ok && !preg_match('/<script|\son[a-z]+\s*=/i', file_get_contents($f)), true)
     && !str_contains(file_get_contents($package . '/src/Ui/InvoiceControllerTrait.php'), 'Module\\Financial'));
 check('P3C49 the module brings no PDF library of its own (owner 2026-10-06: ONE writer, vendored in the kernel behind the facade): no composer requirement, no \\FPDF / PdfWriter use in its sources or templates — the facade only',
     !preg_match('/tcpdf|fpdf|dompdf|mpdf|swiss-qr-bill/i', (string) file_get_contents($package . '/composer.json'))

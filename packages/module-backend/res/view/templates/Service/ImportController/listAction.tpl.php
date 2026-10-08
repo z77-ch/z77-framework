@@ -85,11 +85,8 @@ $fmt = static function (?string $iso): string {
                         <?= e(implode(', ', $vendorClasses)) ?> — was das installierte Framework
                         mitliefert, verglichen mit deiner Installation
                     </span>
-                    <?php // grid-column:6 — the hub row is an explicit grid; without it the
-                          // form auto-places into the 2.4rem icon column. ?>
-                    <form data-fetch-post="/backend/service/import/start-vendor" style="margin:0;grid-column:6">
-                        <button type="submit" class="be-btn be-btn--primary">Plan berechnen</button>
-                    </form>
+                    <?php // Its «Plan berechnen» is the action cell (`list.act.tpl.php`, ADR-033
+                          // rev. 2026-10-08) — the most frequent source, so no second button here. ?>
                 </div>
             </div>
 

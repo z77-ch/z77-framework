@@ -2,8 +2,9 @@
 /**
  * Zahlungseingänge (P4 part 2, plan §6.4) — the imported CAMT.054 messages,
  * newest first, each with its counts per state, and the upload form for
- * the next file. A page form, no JavaScript (Rule 7); `csrf_token` is the
- * page-mode field (`#[Csrf]`).
+ * the next file (`#bank-upload` — the target of the action cell's
+ * «+ camt.054 einlesen», `act.tpl.php`). A page form, no JavaScript
+ * (Rule 7); `csrf_token` is the page-mode field (`#[Csrf]`).
  *
  * Styling: the shared backend list classes only.
  *
@@ -15,7 +16,7 @@
 $actionBase = $actionBase ?? '/backend/finance/bank-import';
 ?>
 <div class="be-list">
-    <form method="post" action="<?= e($actionBase) ?>/upload" enctype="multipart/form-data" class="be-list__section">
+    <form method="post" action="<?= e($actionBase) ?>/upload" enctype="multipart/form-data" class="be-list__section" id="bank-upload">
         <input type="hidden" name="csrf_token" value="<?= e($csrfToken ?? '') ?>">
         <div class="be-list__section-header">
             <h2 class="be-list__section-title">camt.054 einlesen</h2>

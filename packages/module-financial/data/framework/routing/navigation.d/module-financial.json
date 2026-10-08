@@ -39,6 +39,19 @@
         "parent_key": "finanzen"
     },
     {
+        "key": "aenderungsprotokoll",
+        "name": "Änderungsprotokoll",
+        "module": "backend",
+        "group": "finance",
+        "controller": "change-log",
+        "action": "list",
+        "slot": "",
+        "active": true,
+        "param": "",
+        "sort_key": 2,
+        "parent_key": "finanzen"
+    },
+    {
         "key": "stammdaten-finanzen",
         "name": "Finanzen",
         "module": "",

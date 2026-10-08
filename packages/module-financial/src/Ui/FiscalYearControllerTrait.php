@@ -232,9 +232,9 @@ trait FiscalYearControllerTrait
             'logLines'     => $logLines,
             'actionBase'   => $this->fiscalYearListBase(),
         ]);
-        // The fragment owns its header slot (financial.md, «fragment slots»). The add action acts
-        // on the list in the work area, so it goes into the toolbar (ADR-033 rev. 2026-09-28).
-        $this->layoutManager->addPartials('openButton', 'Backend/FiscalYearController', self::FISCAL_YEAR_NS, 'hc2');
+        // The fragment owns its header slot (financial.md, «fragment slots»). The add action is the
+        // entry's most frequent action, so it goes into the action cell (ADR-033 rev. 2026-10-08).
+        $this->layoutManager->addPartials('openButton', 'Backend/FiscalYearController', self::FISCAL_YEAR_NS, 'hc1');
 
         return $response;
     }

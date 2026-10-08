@@ -26,6 +26,7 @@ use Z77\Module\Financial\Entities\Period;
  * are fragments ({@see \Z77\Module\Financial\Ui\AccountControllerTrait},
  * {@see \Z77\Module\Financial\Ui\FiscalYearControllerTrait},
  * {@see \Z77\Module\Financial\Ui\JournalControllerTrait},
+ * {@see \Z77\Module\Financial\Ui\ChangeLogControllerTrait},
  * {@see \Z77\Module\Financial\Ui\ReportControllerTrait}) mounted by host
  * controllers in module-backend under `/backend/finance/…` next to the tax
  * codes (ADR-018 pattern). `defaultGroup` and `groupDefaults` are therefore

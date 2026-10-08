@@ -86,6 +86,27 @@ class DebtorProfileRepository extends DoctrineRepository
             ->getResult();
     }
 
+    /**
+     * The contacts a NEW profile may be opened for — ACTIVE (the reference rule on the party,
+     * ADR-043 decision 19) and without a profile yet — by name: the contact choice of «+ Debitor»
+     * in the action cell (2026-10-08). Doctrine-only (NOT EXISTS over the association).
+     *
+     * @return list<Contact>
+     */
+    public function contactsWithoutProfile(): array
+    {
+        return $this->em()->createQueryBuilder()
+            ->select('c')
+            ->from(Contact::class, 'c')
+            ->where('c.active = true')
+            ->andWhere('NOT EXISTS (SELECT p.id FROM ' . DebtorProfile::class . ' p WHERE p.contact = c)')
+            ->orderBy('c.company', 'ASC')
+            ->addOrderBy('c.lastName', 'ASC')
+            ->addOrderBy('c.firstName', 'ASC')
+            ->getQuery()
+            ->getResult();
+    }
+
     /** How many profiles reference these payment terms — what the terms list shows before a deactivation. */
     public function countByPaymentTermsCode(string $code): int
     {

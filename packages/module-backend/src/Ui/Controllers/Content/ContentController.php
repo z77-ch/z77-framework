@@ -114,8 +114,8 @@ class ContentController extends BackendAbstractController
         // on the full page that opens it (a fetch-loaded modal cannot pull its own
         // stylesheet). List/tree + button styles now live in base.css (always loaded).
         $this->layoutManager->addCss('content/editor', self::NAMESPACE);
-        // Header band (hc1 = add action, hc2 = language switcher) is auto-loaded by convention from
-        // list.hc1.tpl.php / list.hc2.tpl.php — see BackendAbstractController::loadHeaderSlots().
+        // Header band (act = «+ Inhalt», ADR-033 rev. 2026-10-08; hc2 = language tabs) is auto-loaded by
+        // convention from list.act.tpl.php / list.hc2.tpl.php — see BackendAbstractController::loadHeaderSlots().
         return $response;
     }
 

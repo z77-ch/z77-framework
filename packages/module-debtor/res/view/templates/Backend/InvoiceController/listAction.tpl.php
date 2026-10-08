@@ -14,6 +14,12 @@
  *     `#invoice-finalize` (GET to `confirm-finalize`) with the value
  *     `{id}:{version}` — the version THIS row shows, so a document re-issued
  *     before the batch runs is refused instead of finalized unseen;
+ *   - «Definitiv stellen …» is bound to that selection, so it stands in the
+ *     SELECTION BAR above the list (ADR-033 exception 2, rev. 2026-10-08),
+ *     a green confirm (`.be-btn--confirm`) submitting `#invoice-finalize`
+ *     through the `form` attribute. Without script the bar cannot count the
+ *     ticked rows («n ausgewählt»), so it always shows in the invoicing view
+ *     and names the count on the confirmation page instead;
  *   - the whole list is a FETCH REGION: sort / page / search reload only
  *     this part.
  *
@@ -48,6 +54,13 @@ $icons      = ['invoicing' => 'edit', 'final' => 'lock'];
         <?= $this->partial('partials/listFind', ['definition' => $definition, 'state' => $state, 'action' => $listUrl], 'Z77\\Shared') ?>
         <?php if ($selectable): ?>
         <form id="invoice-finalize" method="get" action="<?= e($actionBase) ?>/confirm-finalize"></form>
+        <div class="z77-form-actions" data-selection-bar="invoice-finalize">
+            <button type="submit" form="invoice-finalize" class="be-btn be-btn--confirm be-btn--sm">
+                <svg class="be-icon" width="14" height="14" aria-hidden="true"><use href="#icon-check"/></svg>
+                <span class="be-btn__label">Definitiv stellen …</span>
+            </button>
+            <small class="be-list__cell--muted">die angekreuzten Rechnungen — die Bestätigung nennt Anzahl und Total</small>
+        </div>
         <?php endif; ?>
 
         <div class="be-list__frame">

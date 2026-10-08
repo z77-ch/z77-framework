@@ -45,11 +45,4 @@ final class JournalSearch
             throw new \InvalidArgumentException("Unknown journal sort '{$sort}'");
         }
     }
-
-    /** Whether any column criterion is set — the year scope and the order are not «a search». */
-    public function narrows(): bool
-    {
-        return $this->number !== null || $this->dateFrom !== null || $this->text !== null
-            || $this->debitAccount !== null || $this->creditAccount !== null || $this->amount !== null;
-    }
 }

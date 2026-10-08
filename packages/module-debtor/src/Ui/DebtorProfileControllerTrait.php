@@ -42,7 +42,8 @@ use Z77\Core\DI,
  *     list searches (`?q=`, a plain GET form, bounded by contactConfig
  *     `contactListLimit` — contact's setting, read once through
  *     `ContactService::listLimit()`);
- *   - «Debitor anlegen» on an ACTIVE contact that has none, edit the one it
+ *   - «+ Debitor» (action cell, 2026-10-08): the add dialog offers the
+ *     ACTIVE contacts that have none to choose from; edit the one a contact
  *     has: payment terms and dunning block. The CONTACT of a profile never
  *     changes — a different party is a different profile. An existing
  *     profile on a contact deactivated SINCE keeps working and stays
@@ -112,7 +113,9 @@ trait DebtorProfileControllerTrait
             'accountLabels'     => DebtorAccounts::LABELS,
             'actionBase'        => $this->debtorListBase(),
         ]);
-        // The fragment owns its header slot (financial.md, «fragment slots»).
+        // The fragment owns its header slots (financial.md, «fragment slots»): «+ Debitor» is the
+        // entry's most frequent action → action cell (ADR-033 rev. 2026-10-08); the search → toolbar.
+        $this->layoutManager->addPartials('act', 'Backend/DebtorProfileController', self::DEBTOR_NS, 'hc1');
         $this->layoutManager->addPartials('search', 'Backend/DebtorProfileController', self::DEBTOR_NS, 'hc2');
 
         return $response;
@@ -120,11 +123,27 @@ trait DebtorProfileControllerTrait
 
     // ── add / edit ───────────────────────────────────────────────────────
 
-    /** «Debitor anlegen» for the contact in `?contact=` — a profile is always opened FOR a contact. */
+    /**
+     * «+ Debitor» (action cell) — a profile is always opened FOR a contact. Without `?contact=`
+     * the dialog first offers the CHOICE: a select of the active contacts without a profile
+     * ({@see DebtorProfileRepository::contactsWithoutProfile()}); its save posts the chosen
+     * `contact_id` with the rest. Once a contact is known — `?contact=`, or the re-rendered
+     * dialog after a refused save — it is fixed and travels in the URL.
+     */
     protected function addAction(): HtmlResponse|FetchResponse
     {
-        $contactId = (int) DI::getRequest()->getGetParameter('contact');
-        $contact   = $contactId ? $this->debtorContacts()->find($contactId) : null;
+        $request   = DI::getRequest();
+        $contactId = (int) $request->getGetParameter('contact');
+        if ($contactId === 0) {
+            if (!$request->isPost()) {
+                return $this->debtorContactChoice();
+            }
+            $contactId = (int) ($request->getJsonBody()['contact_id'] ?? 0);
+            if ($contactId === 0) {
+                return $this->fetchError('Bitte einen Kontakt wählen.');
+            }
+        }
+        $contact = $this->debtorContacts()->find($contactId);
         if ($contact === null) {
             return $this->fetchError('Kontakt nicht gefunden');
         }
@@ -170,9 +189,10 @@ trait DebtorProfileControllerTrait
                 }
             }
 
-            // The contact travels in the URL, never in the body; `active` has its own switch.
+            // The contact is resolved by addAction() (URL, or the choice's `contact_id`) and never
+            // mapped from the body; `active` has its own switch.
             $values = BodyCleaner::cleanFor(DebtorProfile::class, $body);
-            unset($values['id'], $values['contact'], $values['active']);
+            unset($values['id'], $values['contact'], $values['contact_id'], $values['active']);
 
             try {
                 if ($isNew) {
@@ -206,6 +226,24 @@ trait DebtorProfileControllerTrait
             'terms'      => $this->selectableTerms($draft->getPaymentTermsCode()),
             'entityCsrf' => $isNew ? '' : DI::getCsrfService()->generateEntityToken('debtorProfile', $profile->getId()),
             'validator'  => $validator ?? new DebtorProfileValidator($draft),
+            'actionBase' => $this->debtorListBase(),
+        ]);
+        $this->layoutManager->addPartials('edit', 'Backend/DebtorProfileController', self::DEBTOR_NS);
+
+        return $response;
+    }
+
+    /** The «+ Debitor» dialog before a contact is chosen: the same form, the contact a select. */
+    private function debtorContactChoice(): HtmlResponse
+    {
+        $draft    = new DebtorProfile();
+        $response = $this->html([
+            'entry'      => $draft,
+            'contact'    => null,
+            'candidates' => $this->profiles()->contactsWithoutProfile(),
+            'terms'      => $this->selectableTerms($draft->getPaymentTermsCode()),
+            'entityCsrf' => '',
+            'validator'  => new DebtorProfileValidator($draft),
             'actionBase' => $this->debtorListBase(),
         ]);
         $this->layoutManager->addPartials('edit', 'Backend/DebtorProfileController', self::DEBTOR_NS);

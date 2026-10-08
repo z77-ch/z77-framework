@@ -36,8 +36,8 @@ use Z77\Core\DI,
  * Parameters: `?year=` a fiscal-year code — the SELECTION the journal shares
  * ({@see FiscalYearSelection}, owner 2026-09-29): an explicit year is
  * remembered for the session, without `?year=` the remembered year applies,
- * else the year containing today, else the latest. The year is picked in the
- * action cell (hc1, `Backend/partials/fiscalYearSelect`),
+ * else the year containing today, else the latest. The year is picked at the
+ * top of the rail (section `railSelect`, owner 2026-10-08; `Backend/partials/fiscalYearSelect`),
  * `?from=` / `?to=` `YYYY-MM-DD` inside that year (default: its first and
  * last day). A value that is not a date, or lies outside the year, falls
  * back to the default and says so above the report — never a 500, never a
@@ -291,8 +291,8 @@ trait ReportControllerTrait
         $this->layoutManager->addPartials('printFoot', 'Backend/ReportController', ReportLayout::NS);
         // The report tabs stand in the toolbar (hc2, owner 2026-09-29) — the tab row stays empty.
         $this->layoutManager->addPartials('tabs', 'Backend/ReportController', ReportLayout::NS, 'hc2');
-        // The year is a selection: the action cell (owner 2026-09-29), the dropdown the journal shares.
-        $this->layoutManager->addPartials('fiscalYearSelect', 'Backend/partials', ReportLayout::NS, 'hc1');
+        // The year holds for the whole area: the top of the rail (owner 2026-10-08, ADR-033 rev.), the dropdown the journal shares.
+        $this->layoutManager->addPartials('fiscalYearSelect', 'Backend/partials', ReportLayout::NS, 'railSelect');
 
         return $response;
     }

@@ -13,7 +13,7 @@
  * come from a directory scan and would need a controller change first.
  *
  * The "run now" triggers are NOT here: all three moved into the shell header band
- * as one `.be-shell-add` picker (`list.hc1.tpl.php`), per the css-backend rule that a
+ * as one `.be-shell-add` picker (`list.act.tpl.php`, the action cell), per the css-backend rule that a
  * view with SEVERAL add kinds uses a picker instead of stacking buttons. The db entry
  * is disabled there when no database is configured; this template only reflects that
  * state in the section's empty text.

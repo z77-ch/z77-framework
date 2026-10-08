@@ -18,9 +18,9 @@ $summary = function (array $values, array $languages, string $defaultLang, strin
     return implode(' &nbsp;·&nbsp; ', $parts);
 };
 ?>
-<?php /* Header band: both add actions (Text / Slug) live in the shell header slot `list.hc2`
-         (translation has two co-equal sections → no single dark hc1 primary). The section heads
-         below carry only their titles. */ ?>
+<?php /* Header band: both add kinds (Text / Slug) live in the action cell as ONE picker
+         «+ Eintrag ▾» (`list.act`, ADR-033 rev. 2026-10-08). The section heads below carry only
+         their titles. */ ?>
 <div class="be-list">
     <!-- ── UI strings ─────────────────────────────────────────────────────── -->
     <div class="be-list__section">

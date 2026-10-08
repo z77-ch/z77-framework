@@ -81,8 +81,9 @@ trait DebtorControllerTrait
             'documentBase' => $this->debtorDocumentBase(),
         ]);
         // The fragment owns its header slot (financial.md, «fragment slots»): the view tabs act
-        // on the list in the work area (ADR-033 rev. 2026-09-28). A FETCH (sort, page, search —
-        // core.js «fetch regions») wants the list alone.
+        // on the list in the work area (ADR-033 rev. 2026-09-28). The action cell stays EMPTY —
+        // the list writes nothing (ADR-033 rev. 2026-10-08, css-backend.md target table). A FETCH
+        // (sort, page, search — core.js «fetch regions») wants the list alone.
         if (!ListDefinition::isFetch($request)) {
             $this->layoutManager->addPartials('toolbar', 'Backend/DebtorController', self::OPEN_ITEM_NS, 'hc2');
         }

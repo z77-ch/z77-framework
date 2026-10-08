@@ -11,6 +11,19 @@
  *     number with the shared `<datalist>` when module-financial is
  *     registered; each row shows its status.
  *
+ * The three sections are RADIO TABS (owner 2026-10-08, the `.be-radiotabs`
+ * pattern of module-backend): one hidden radio per section BEFORE the panels,
+ * a panel shows through `:checked ~` — no JavaScript, still ONE form, so
+ * «Speichern» writes all three sections. The tab labels stand in the toolbar
+ * (`editToolbar`, `<label for>` of these radios). The server checks the radio
+ * of `$openTab`: the tab with the first field error after a refused save, else
+ * the first. `novalidate`: the browser cannot focus an invalid field in a
+ * hidden panel (the submit would silently do nothing) — the server validates.
+ *
+ * The submit is NOT at the end of the body: «Speichern» («Mandant anlegen») stands in
+ * the action cell (`editAct`, ADR-033 rev. 2026-10-08) and reaches this form through
+ * `form="mandator-edit"`.
+ *
  * The bank connection is NOT here on purpose: IBAN and the creditor block
  * of the QR-bill belong to the payment target (debtor). The mandator is the
  * letterhead, the payment target is the payee.
@@ -25,6 +38,8 @@
  * @var list<array{number: string, label: string}> $accounts  postable accounts for the datalist; [] without financial
  * @var bool $ledgerKnown
  * @var string|null $unavailable  the German sentence when the record cannot be read (module not registered, table missing) — then nothing else is set
+ * @var array<string,string> $mandatorTabs  tab key → label, in form order (MandatorLayout::TABS)
+ * @var string $openTab  the tab the page opens on
  * @var string $csrfToken  provided by html()
  * @var string $actionBase
  */
@@ -60,7 +75,7 @@ $text = function (string $field, string $label, string $value, int $maxlength, s
 };
 ?>
 <div class="be-list">
-    <form method="post" action="<?= e($actionBase) ?>/edit" class="be-list__section" autocomplete="off">
+    <form method="post" action="<?= e($actionBase) ?>/edit" id="mandator-edit" class="be-list__section be-radiotabs" autocomplete="off" novalidate>
         <input type="hidden" name="csrf_token" value="<?= e($csrfToken ?? '') ?>">
         <?php if (!$isNew): ?>
         <input type="hidden" name="entity_csrf" value="<?= e($entityCsrf ?? '') ?>">
@@ -85,7 +100,14 @@ $text = function (string $field, string $label, string $value, int $maxlength, s
 
         <p class="be-form__hint">Der Mandant ist der Briefkopf: was oben auf Auswertungen und Briefen steht. Bankverbindung und Zahlungsempfänger gehören zum Zahlungsziel — beides kann verschieden heissen, und das ist kein Fehler.</p>
 
-        <h3 class="be-form__section">Briefkopf</h3>
+        <?php /* The radios first — the panels are their later siblings (`:checked ~`). Named, so they
+                 form one group (arrow keys switch); the server ignores `mandator_tab`. */ ?>
+        <?php $n = 0; foreach ($mandatorTabs as $key => $label): $n++; ?>
+        <input type="radio" class="be-radiotabs__radio" name="mandator_tab" id="mandator-tab-<?= e($key) ?>" value="<?= e($key) ?>" data-tab="<?= $n ?>"<?= $key === $openTab ? ' checked' : '' ?>>
+        <?php endforeach; ?>
+        <?php $panel = static fn(string $key): string => ' data-tab="' . (array_search($key, array_keys($mandatorTabs), true) + 1) . '" aria-label="' . e($mandatorTabs[$key]) . '"'; ?>
+
+        <section class="be-radiotabs__panel"<?= raw($panel('briefkopf')) ?>>
         <div class="be-form__grid">
             <?= raw($text('name', 'Name', $entry->getName(), \Z77\Module\Mandator\Entities\Mandator::NAME_LENGTH, '', true)) ?>
             <?= raw($text('address_suffix_one', 'Adresszusatz 1', $entry->getAddressSuffixOne(), \Z77\Module\Mandator\Entities\Mandator::SUFFIX_LENGTH)) ?>
@@ -100,8 +122,9 @@ $text = function (string $field, string $label, string $value, int $maxlength, s
             <?= raw($text('website', 'Website', $entry->getWebsite(), \Z77\Module\Mandator\Entities\Mandator::WEBSITE_LENGTH)) ?>
             <?= raw($text('logo_path', 'Logo', $entry->getLogoPath(), \Z77\Module\Mandator\Entities\Mandator::LOGO_LENGTH, 'Pfad relativ zum Projekt')) ?>
         </div>
+        </section>
 
-        <h3 class="be-form__section">UID und MWST</h3>
+        <section class="be-radiotabs__panel"<?= raw($panel('uid')) ?>>
         <div class="be-form__grid">
             <?= raw($text('uid', 'UID', $entry->getUid(), \Z77\Module\Mandator\Entities\Mandator::UID_LENGTH + 5, 'CHE-123.456.789')) ?>
             <div class="be-form__field">
@@ -111,8 +134,9 @@ $text = function (string $field, string $label, string $value, int $maxlength, s
                 <small class="be-form__hint">Merkmal — was es abschaltet (MWST-Zeilen der Rechnung, MwSt-Zeile der Buchungsmaske), entscheidet der Eigentümer separat.</small>
             </div>
         </div>
+        </section>
 
-        <h3 class="be-form__section">Konten</h3>
+        <section class="be-radiotabs__panel"<?= raw($panel('konten')) ?>>
         <p class="be-form__hint">Die Konten, auf die Debitoren und MWST buchen. Leer = nicht hinterlegt; eine Buchung, die das Konto braucht, wird dann mit Hinweis abgelehnt.<?php if (!$ledgerKnown): ?> Ohne z77/module-financial werden die Nummern nicht gegen die Buchhaltung geprüft.<?php endif; ?></p>
         <?= $this->partial('partials/accountDatalist', ['id' => 'mandator-accounts', 'accounts' => $accounts], 'Z77\\Module\\Mandator') ?>
         <div class="be-form__grid">
@@ -135,11 +159,7 @@ $text = function (string $field, string $label, string $value, int $maxlength, s
             </div>
             <?php endforeach; ?>
         </div>
+        </section>
 
-        <div class="be-form__row" style="--be-form-cols: auto">
-            <div class="be-form__field">
-                <button type="submit" class="be-btn be-btn--primary"><?= $isNew ? 'Mandant anlegen' : 'Speichern' ?></button>
-            </div>
-        </div>
     </form>
 </div>

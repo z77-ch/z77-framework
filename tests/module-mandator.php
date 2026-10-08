@@ -589,6 +589,10 @@ $renderer = new class($package . '/res/view/templates/') {
     }
 };
 $render = fn($h) => $renderer->partial('Backend/MandatorController/edit', $h->context);
+$actSlot = fn($h) => implode('', array_map(fn($p) => $renderer->partial($p, $h->context), $h->layoutManager->sections['hc1'] ?? []));
+$toolSlot = fn($h) => implode('', array_map(fn($p) => $renderer->partial($p, $h->context), $h->layoutManager->sections['hc2'] ?? []));
+// The radio of a tab, and whether the server rendered it `checked`.
+$tabChecked = fn(string $html, string $key): bool => preg_match('/<input type="radio" class="be-radiotabs__radio" name="mandator_tab" id="mandator-tab-' . $key . '"[^>]*\schecked>/', $html) === 1;
 $layout = MandatorLayout::config();
 check('G1 the layout pins the body to the fragment\'s EDIT template in module-mandator — one record, one page', ($layout['levelElements']['body']['main'][0]['nameSpace'] ?? '') === 'Z77\\Module\\Mandator'
     && ($layout['levelElements']['body']['main'][0]['path'] ?? '') === 'Backend/MandatorController' && ($layout['levelElements']['body']['main'][0]['name'] ?? '') === 'edit');
@@ -611,6 +615,23 @@ check('G5 the template: a plain page form with csrf_token, the hidden 0 before t
     str_contains($html, '<form method="post" action="/backend/finance/mandator/edit"') && str_contains($html, 'name="csrf_token" value="csrf-x"')
     && strpos($html, '<input type="hidden" name="liable_to_vat" value="0">') < strpos($html, 'type="checkbox" id="mandator-liable"')
     && stripos($html, '<script') === false && !preg_match('/\son[a-z]+\s*=/i', $html) && !str_contains($html, 'placeholder='));
+check('G4b the submit stands in the action cell (hc1, ADR-033 rev. 2026-10-08): a green confirm button «Mandant anlegen» with the check glyph, submitting the form from outside (form="mandator-edit") — no submit left at the end of the body',
+    $h->layoutManager->sections['hc1'] === ['Backend/MandatorController/editAct'] && str_contains($html, 'id="mandator-edit"')
+    && preg_match('/<button type="submit" form="mandator-edit" class="be-btn be-btn--confirm">\s*<svg[^>]*><use href="#icon-check"\/><\/svg>\s*<span class="be-btn__label">Mandant anlegen<\/span>/', $actSlot($h)) === 1
+    && !str_contains($html, 'type="submit"'));
+$tb = $toolSlot($h);
+check('G4c the three sections are radio tabs (owner 2026-10-08): ONE form (novalidate), a radio per tab BEFORE the three panels, the first tab open; the tab labels stand in the toolbar (hc2) as `<label for>` of the radios, numbered like radio and panel',
+    $h->layoutManager->sections['hc2'] === ['Backend/MandatorController/editToolbar'] && $h->context['openTab'] === 'briefkopf'
+    && substr_count($html, '<form') === 1 && preg_match('/<form [^>]*class="be-list__section be-radiotabs"[^>]* novalidate>/', $html) === 1
+    && substr_count($html, 'class="be-radiotabs__radio"') === 3 && substr_count($html, '<section class="be-radiotabs__panel"') === 3
+    && strrpos($html, 'be-radiotabs__radio') < strpos($html, 'be-radiotabs__panel')
+    && $tabChecked($html, 'briefkopf') && !$tabChecked($html, 'uid') && !$tabChecked($html, 'konten')
+    && str_contains($html, '<section class="be-radiotabs__panel" data-tab="1" aria-label="Briefkopf">') && str_contains($html, '<section class="be-radiotabs__panel" data-tab="2" aria-label="UID und MWST">') && str_contains($html, '<section class="be-radiotabs__panel" data-tab="3" aria-label="Konten">')
+    && strpos($html, 'id="mandator-name"') < strpos($html, 'data-tab="2" aria-label') && strpos($html, 'id="mandator-uid"') < strpos($html, 'data-tab="3" aria-label') && strpos($html, 'id="mandator-account_receivable"') > strpos($html, 'data-tab="3" aria-label')
+    && str_contains($tb, '<label class="be-viewtabs__tab be-viewtabs__tab--for" for="mandator-tab-briefkopf" data-tab="1">Briefkopf</label>')
+    && str_contains($tb, '<label class="be-viewtabs__tab be-viewtabs__tab--for" for="mandator-tab-uid" data-tab="2">UID und MWST</label>')
+    && str_contains($tb, '<label class="be-viewtabs__tab be-viewtabs__tab--for" for="mandator-tab-konten" data-tab="3">Konten</label>')
+    && !str_contains($tb, 'is-active') && stripos($tb, '<script') === false);
 check('G5b the rule of thumb stands on the page: the mandator is the letterhead, the payment target is the payee', str_contains($html, 'Zahlungsziel') && str_contains($html, 'kein Fehler'));
 
 // POST: the first save creates the record.
@@ -633,6 +654,21 @@ check('G7 a refused POST re-renders with the DRAFT (Thun, the bad UID) and its f
     && str_contains($html, 'Prüfziffer') && str_contains($html, 'Gruppe') && str_contains($html, 'aria-invalid="true"')
     && $db->fetchOne('SELECT city FROM mandator') === 'Bern' && $db->fetchOne('SELECT account_receivable FROM mandator') === '1100');
 check('G7b … the unchecked checkbox arrived as 0 in the draft (the hidden field)', !$h->context['entry']->isLiableToVat());
+check('G7c … the page opens the tab holding the FIRST field with an error: the UID (tab 2) before the account (tab 3)',
+    $h->context['openTab'] === 'uid' && $tabChecked($html, 'uid') && !$tabChecked($html, 'briefkopf') && !$tabChecked($html, 'konten'));
+// Only an account refused → the Konten tab; only the name missing → Briefkopf.
+$useRequest([], ['csrf_token' => 'csrf-x', 'entity_csrf' => "tok-mandator-{$id}", 'account_receivable' => '100'] + array_diff_key($postBody, ['account_receivable' => 1]));
+$h = $host();
+$h->editAction();
+$html = $render($h);
+$kontenOnly = $h->redirectedTo === null && array_keys($h->context['validator']->getFieldErrors()) === ['account_receivable'] && $h->context['openTab'] === 'konten' && $tabChecked($html, 'konten') && !$tabChecked($html, 'briefkopf');
+$useRequest([], ['csrf_token' => 'csrf-x', 'entity_csrf' => "tok-mandator-{$id}", 'name' => '', 'account_receivable' => '100'] + $postBody);
+$h = $host();
+$h->editAction();
+$html = $render($h);
+check('G7d … an account error alone opens «Konten»; a missing name opens «Briefkopf» even with an account error behind it (MandatorLayout::openTab)',
+    $kontenOnly && $h->context['validator']->hasFieldError('name') && $h->context['openTab'] === 'briefkopf' && $tabChecked($html, 'briefkopf') && !$tabChecked($html, 'konten')
+    && $db->fetchOne('SELECT name FROM mandator') === 'Screen AG');
 // A wrong entity token on an existing record.
 $useRequest([], ['csrf_token' => 'csrf-x', 'entity_csrf' => 'wrong', 'name' => 'Hijack AG', 'country' => 'CH']);
 $h = $host();
@@ -644,7 +680,7 @@ $h = $host();
 $h->editAction();
 $html = $render($h);
 check('G9 GET with the record: not new, the entity token in the form, «Speichern», the status badges, no tax-code select', $h->context['isNew'] === false && str_contains($html, 'name="entity_csrf" value="tok-mandator-' . $id . '"')
-    && str_contains($html, '>Speichern<') && str_contains($html, 'badge--success') && !str_contains($html, 'default_tax_code') && $h->context['unavailable'] === null);
+    && str_contains($actSlot($h), '>Speichern<') && str_contains($html, 'badge--success') && !str_contains($html, 'default_tax_code') && $h->context['unavailable'] === null);
 // The record cannot be read (table missing): the page shows the sentence as a band and no form (review 2026-09-23, P6d).
 $db->executeStatement('RENAME TABLE mandator TO mandator_gone');
 $em = $wireDi();

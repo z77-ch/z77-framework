@@ -178,7 +178,7 @@ class JournalEntryRepository extends DoctrineRepository
             $add('e.entry_date <= ?', $search->dateTo);
         }
         if ($search->text !== null) {
-            $add("e.text LIKE ? ESCAPE '!'", '%' . addcslashes($search->text, '!%_') . '%');
+            $add("e.text LIKE ? ESCAPE '!'", '%' . strtr($search->text, ['!' => '!!', '%' => '!%', '_' => '!_']) . '%');
         }
         foreach (['debit' => $search->debitAccount, 'credit' => $search->creditAccount] as $side => $number) {
             if ($number !== null) {

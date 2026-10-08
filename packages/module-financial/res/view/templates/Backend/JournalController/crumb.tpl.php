@@ -2,7 +2,7 @@
 /**
  * Journal — the crumb line (hc3): Finanzen › Journal › fiscal year › month of
  * the date being captured (owner 2026-09-28, FIN-JOURNAL-CAPTURE-001). Position
- * only (ADR-033) — the year is SELECTED in the action cell (owner 2026-09-29);
+ * only (ADR-033) — the year is SELECTED at the top of the rail (owner 2026-10-08);
  * the month only while the form's date lies in that year (a refused form keeps
  * its own date).
  *

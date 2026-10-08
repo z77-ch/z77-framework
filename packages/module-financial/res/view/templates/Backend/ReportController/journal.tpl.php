@@ -4,7 +4,8 @@
  * order, each with its lines — the printable journal. One page of
  * `LedgerReports::JOURNAL_PAGE_SIZE` entries; count, Σ Soll and Σ Haben (each
  * its own SQL sum) cover the whole range. The number links to the entry's detail page. Deleted manual
- * entries are gaps in the numbering; the journal screen lists them.
+ * entries are gaps in the numbering; the change log screen (Finanzen ›
+ * Änderungsprotokoll) lists them.
  *
  * Styling: the shared backend list v2 classes only.
  *

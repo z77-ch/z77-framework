@@ -11,13 +11,13 @@
     });
 
     // ── Group tabs ────────────────────────────────────────────────────────────
-    document.querySelectorAll('.be-tabs__tab[data-group]').forEach(function (tab) {
+    document.querySelectorAll('.be-viewtabs__tab[data-group]').forEach(function (tab) {
         tab.addEventListener('click', function () {
-            document.querySelectorAll('.be-tabs__tab[data-group]').forEach(function (t) {
-                t.classList.remove('be-tabs__tab--active');
+            document.querySelectorAll('.be-viewtabs__tab[data-group]').forEach(function (t) {
+                t.classList.remove('is-active');
                 t.setAttribute('aria-selected', 'false');
             });
-            tab.classList.add('be-tabs__tab--active');
+            tab.classList.add('is-active');
             tab.setAttribute('aria-selected', 'true');
 
             var group = tab.dataset.group;

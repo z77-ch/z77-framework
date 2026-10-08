@@ -161,11 +161,13 @@ trait InvoiceControllerTrait
             'fmt'       => static fn(?Money $m) => AmountFormat::of($m),
             'actionBase' => $this->invoiceListBase(),
         ]);
-        // The fragment owns its header slots (financial.md, «fragment slots»): the view tabs,
-        // «Rechnung erstellen» and — in the invoicing view — «Definitiv stellen …» act on the
-        // list in the work area, so they stand in the toolbar (ADR-033 rev. 2026-09-28). A FETCH
-        // (sort, page, search — core.js «fetch regions») wants the list alone.
+        // The fragment owns its header slots (financial.md, «fragment slots»), ADR-033 rev.
+        // 2026-10-08: «+ Rechnung» is the entry's most frequent action → action cell (hc1); the
+        // view tabs → toolbar (hc2). «Definitiv stellen …» is bound to the row selection and stands
+        // in the list's selection bar. A FETCH (sort, page, search — core.js «fetch regions»)
+        // wants the list alone.
         if (!$this->invoiceIsFetch()) {
+            $this->layoutManager->addPartials('act', 'Backend/InvoiceController', self::INVOICE_NS, 'hc1');
             $this->layoutManager->addPartials('toolbar', 'Backend/InvoiceController', self::INVOICE_NS, 'hc2');
         }
 

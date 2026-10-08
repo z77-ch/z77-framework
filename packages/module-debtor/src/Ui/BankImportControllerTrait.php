@@ -67,6 +67,9 @@ trait BankImportControllerTrait
     {
         $context += ['actionBase' => $this->bankImportListBase(), 'fmt' => static fn(?Money $m) => AmountFormat::of($m)];
         $response = $this->html($context);
+        // The fragment owns its header slot (financial.md, «fragment slots»): «+ camt.054 einlesen»
+        // is the entry's most frequent action → action cell (ADR-033 rev. 2026-10-08).
+        $this->layoutManager->addPartials('act', 'Backend/BankImportController', self::BANK_NS, 'hc1');
         if ($template !== 'listAction') {
             $this->layoutManager->removeSection('main');
             $this->layoutManager->addPartials($template, 'Backend/BankImportController', self::BANK_NS);

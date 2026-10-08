@@ -1,7 +1,8 @@
 <?php
 /**
  * Mahnungen (P4 part 3, plan §6.5) — the due list as of a day, with a
- * checkbox per invoice and «Mahnlauf starten»; below, the runs so far with
+ * checkbox per invoice and «Mahnlauf starten» in the selection bar ABOVE it
+ * (green confirm, ADR-033 rev. 2026-10-08); below, the runs so far with
  * their notices and a «PDF» link each. Page forms, no JavaScript (Rule 7);
  * `csrf_token` is the page-mode field (`#[Csrf]`). The as-of day is a GET
  * form of its own (a different day re-reads the list).
@@ -38,6 +39,17 @@ $invoiceBase = $invoiceBase ?? '/backend/finance/invoice';
         <form method="post" action="<?= e($actionBase) ?>/run" id="dunning-run">
             <input type="hidden" name="csrf_token" value="<?= e($csrfToken ?? '') ?>">
             <input type="hidden" name="as_of" value="<?= e($asOf->format('Y-m-d')) ?>">
+            <?php if ($due !== []): ?>
+            <?php /* Bound to the ticked rows (ADR-033 exception 2), so it stands with them — ABOVE the
+                     list, sticky while it scrolls; the run WRITES notices and fee postings → green. */ ?>
+            <div class="z77-form-actions" data-selection-bar="dunning-run">
+                <button type="submit" class="be-btn be-btn--confirm be-btn--sm">
+                    <svg class="be-icon" width="14" height="14" aria-hidden="true"><use href="#icon-check"/></svg>
+                    <span class="be-btn__label">Mahnlauf starten</span>
+                </button>
+                <small class="be-list__cell--muted">für die angekreuzten Rechnungen, datiert auf den <?= e($asOf->format('d.m.Y')) ?></small>
+            </div>
+            <?php endif; ?>
             <div class="be-list__table" style="--be-list-cols: 2.5rem 7rem minmax(10rem, 2fr) 7rem 8rem 8rem 9rem 7rem">
                 <div class="be-list__head">
                     <span class="be-list__col"></span>
@@ -68,11 +80,6 @@ $invoiceBase = $invoiceBase ?? '/backend/finance/invoice';
                 <?php endforeach; ?>
             </div>
             <p class="be-form__hint">Der Mahnlauf erstellt je angekreuzte Rechnung eine Mahnung auf der nächsten Stufe, datiert auf den Stichtag. Trägt die Stufe eine Gebühr, wird ein Gebühren-Beleg erstellt und verbucht (ohne MWST). Die Mahnung als PDF: unten in der Liste.</p>
-            <div class="z77-form-actions">
-                <?php if ($due !== []): ?>
-                <button type="submit" class="be-btn be-btn--primary be-btn--sm">Mahnlauf starten</button>
-                <?php endif; ?>
-            </div>
         </form>
     </div>
 

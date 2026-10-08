@@ -7,8 +7,8 @@ use Z77\Module\Financial\Reports\JournalSearch;
 /**
  * The journal list's search and order as the URL carries them
  * (FIN-JOURNAL-CAPTURE-001). The state IS the address — a GET form, no
- * JavaScript: bookmarkable, and every link on the page (a sort, a page, a
- * toggle) keeps the rest of it.
+ * JavaScript: bookmarkable, and every link on the page (a sort, a page)
+ * keeps the rest of it.
  *
  * One field per column magnifier, prefixed `f_` so they never collide with
  * the capture area's own `date` / `mode`:
@@ -20,8 +20,9 @@ use Z77\Module\Financial\Reports\JournalSearch;
  *   f_credit  account with a credit line
  *   f_amount  the entry total         «1'250.50», «1250,5»
  *
- * plus `all` (every fiscal year instead of the shown one), `deleted` (the
- * deleted numbers inline), `sort` / `dir` and `page`. A value that cannot be
+ * plus `all` (every fiscal year instead of the shown one), `sort` / `dir`
+ * and `page`. (The deleted numbers are no longer shown inline — the change
+ * log is a screen of its own, Finanzen › Änderungsprotokoll, owner 2026-10-08.) A value that cannot be
  * read (a date «31.02.2032») is kept for the field, marked invalid and does
  * not narrow the search — a typo must not look like «nothing found».
  */
@@ -55,7 +56,6 @@ final class JournalFilter
 
     private function __construct(
         public readonly bool $allYears,
-        public readonly bool $showDeleted,
         public readonly string $sort,
         public readonly bool $descending,
         public readonly int $page,
@@ -68,7 +68,6 @@ final class JournalFilter
         $sort = is_string($query['sort'] ?? null) && in_array($query['sort'], JournalSearch::SORTS, true) ? $query['sort'] : 'number';
         $filter = new self(
             ($query['all'] ?? '') === '1',
-            ($query['deleted'] ?? '') === '1',
             $sort,
             ($query['dir'] ?? 'desc') !== 'asc',
             max(1, (int) ($query['page'] ?? 1)),
@@ -119,7 +118,7 @@ final class JournalFilter
 
     /**
      * The query string of this state with $changes applied — for the sort
-     * links, the pager and the toggles. A change to anything but the page
+     * links and the pager. A change to anything but the page
      * starts at page 1 again; empty / default values are left out.
      *
      * @param array<string, string|int|bool|null> $changes
@@ -128,7 +127,6 @@ final class JournalFilter
     {
         $state = $this->values + [
             'all'     => $this->allYears ? '1' : '',
-            'deleted' => $this->showDeleted ? '1' : '',
             'sort'    => $this->sort === 'number' ? '' : $this->sort,
             'dir'     => $this->descending ? '' : 'asc',
             'page'    => $this->page > 1 ? (string) $this->page : '',
@@ -153,10 +151,9 @@ final class JournalFilter
     public function hiddenState(): array
     {
         return array_filter([
-            'all'     => $this->allYears ? '1' : '',
-            'deleted' => $this->showDeleted ? '1' : '',
-            'sort'    => $this->sort === 'number' ? '' : $this->sort,
-            'dir'     => $this->descending ? '' : 'asc',
+            'all'  => $this->allYears ? '1' : '',
+            'sort' => $this->sort === 'number' ? '' : $this->sort,
+            'dir'  => $this->descending ? '' : 'asc',
         ], static fn($v) => $v !== '');
     }
 

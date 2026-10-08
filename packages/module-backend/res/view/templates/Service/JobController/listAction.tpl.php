@@ -114,10 +114,14 @@ $stateLabel = [
                     </form>
 
                     <?php if ($schedule !== null): ?>
-                    <form data-fetch-post="/backend/service/job/toggle" style="margin:0">
-                        <input type="hidden" name="job" value="<?= e($job['key']) ?>">
-                        <button type="submit" class="be-btn"><?= $schedule->isEnabled() ? 'Ausschalten' : 'Einschalten' ?></button>
-                    </form>
+                    <?php // On/off is a `.be-switch` (one look per kind, css-backend.md); the core
+                          // `data-fetch-toggle` contract POSTs on change, `?job=` names the schedule. ?>
+                    <label class="be-switch be-switch--sm" title="Zeitplan ein- oder ausschalten">
+                        <input type="checkbox" class="be-switch__input"
+                               data-fetch-toggle="/backend/service/job/toggle?job=<?= e(rawurlencode($job['key'])) ?>"<?= $schedule->isEnabled() ? ' checked' : '' ?>>
+                        <span class="be-switch__track"><span class="be-switch__thumb"></span></span>
+                        <span class="be-switch__label">Zeitplan aktiv</span>
+                    </label>
                     <?php endif; ?>
 
                     <span style="font-size:.7rem;<?= $muted ?>">

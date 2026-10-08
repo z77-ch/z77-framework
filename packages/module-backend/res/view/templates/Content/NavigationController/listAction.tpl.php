@@ -46,18 +46,10 @@ $renderNode = function(array $node, int $depth = 0) use (&$renderNode): void {
 };
 ?>
 
-<?php /* Content-header (breadcrumb/title + add + filter/print/aliases) moved to the shell header
-         band: Content/NavigationController/list.hc1.tpl.php + list.hc2.tpl.php (auto-loaded). The
-         view-area tabs stay in the body — they filter the list below. Render-slots + view areas
-         are config (ADR-022): the list mirrors the config, there is no group CRUD here. */ ?>
-<div class="be-tabs" role="tablist" style="padding:14px 32px 0">
-    <button class="be-tabs__tab be-tabs__tab--active" data-group="*" role="tab" aria-selected="true">Alle</button>
-    <?php foreach ($areas as $area): ?>
-    <button class="be-tabs__tab" data-group="<?= e($area['key']) ?>" role="tab" aria-selected="false">
-        <?= e($area['label']) ?>
-    </button>
-    <?php endforeach; ?>
-</div>
+<?php /* Content-header moved to the shell header band: «+ Eintrag» in the action cell
+         (list.act.tpl.php), the view-area tabs, filter and print in the toolbar (list.hc2.tpl.php,
+         ADR-033 rev. 2026-10-08). Render-slots + view areas are config (ADR-022): the list mirrors
+         the config, there is no group CRUD here. */ ?>
 
 <!-- ── Content body ──────────────────────────────────────────────────────── -->
 <div class="be-list" id="js-nav-body">

@@ -6,7 +6,11 @@
  *
  *   - the «MwSt» checkbox reveals the VAT row through CSS (`.be-reveal`, the
  *     `:checked` sibling selector); it is a submitted field, so the server
- *     knows whether the row was on and renders it `checked` again;
+ *     knows whether the row was on and renders it `checked` again. Its
+ *     control is a SWITCH right AFTER «Betrag» (owner 2026-10-08: «ich gebe
+ *     den Betrag ein und klicke gleich MwSt») — a `<label for>` of the
+ *     checkbox (`.be-switch--for`), which stays BEFORE the row so the same
+ *     `:checked ~` reaches the panel AND the switch's look; no `:has()`, no JS;
  *   - the Bu-Nr is shown (an `<output>`), never entered: «neu» for a new entry (the ledger
  *     draws the number at post time — it is not known before), the number
  *     when editing;
@@ -18,9 +22,8 @@
  *
  * New entry = the CAPTURE area of the journal page (FIN-JOURNAL-CAPTURE-001,
  * owner 2026-09-28): no title, no explanatory paragraph («jeder, der bucht,
- * weiss, was da rein kommt»), no buttons of its own — «Buchen» and «MwSt» sit
- * in the toolbar (`captureTools`, ADR-033 rev. 2026-09-28) and reach this form
- * through `form="journal-capture"` / `for="journal-vat"`. The date is free: the
+ * weiss, was da rein kommt»), no buttons of its own — «Buchen» sits in the action cell (`captureAct`, ADR-033 rev. 2026-10-08)
+ * and reaches this form through `form="journal-capture"`. The date is free: the
  * fiscal year follows it. The list below is `listAction`. Edit: the entity
  * token, the version and a link to the Sammelbuchung form of the same entry.
  *
@@ -69,7 +72,7 @@ $invalid    = static fn(string $field): string => $form->error($field) !== '' ? 
         <?php if (!$isNew): ?>
         <?php /* The action bar (ADR-049): sticky at the top of the form — change a field, save,
                  without scrolling; first in the document, so Enter saves. «N Fehler» leads to the
-                 first invalid field. A new entry has none: «Buchen» is in the toolbar. */ ?>
+                 first invalid field. A new entry has none: «Buchen» is in the action cell. */ ?>
         <?php
         $invalidIds = [];
         foreach (['debit' => 'journal-debit', 'date' => 'journal-date', 'text' => 'journal-text', 'credit' => 'journal-credit', 'amount' => 'journal-amount', 'tax_code' => 'journal-tax-code', 'tax_amount' => 'journal-tax-amount'] as $field => $id) {
@@ -109,7 +112,7 @@ $invalid    = static fn(string $field): string => $form->error($field) !== '' ? 
 
         <div class="be-reveal">
             <input class="be-reveal__toggle" type="checkbox" id="journal-vat" name="vat" value="1"<?= $form->vat() ? ' checked' : '' ?>>
-            <div class="be-form__row" style="--be-form-cols: 8rem 9.5rem 4.5rem minmax(10rem, 1fr) 8rem 8rem">
+            <div class="be-form__row" style="--be-form-cols: 8rem 9.5rem 4.5rem minmax(10rem, 1fr) 8rem 8rem 4.5rem">
                 <div class="be-form__field" data-z77-field-wrapper>
                     <label for="journal-debit">Soll</label>
                     <input type="text" id="journal-debit" name="debit" list="journal-accounts" value="<?= e($form->debit()) ?>" inputmode="numeric" required<?= $isNew ? ' autofocus' : '' ?> aria-invalid="<?= $invalid('debit') ?>">
@@ -142,7 +145,12 @@ $invalid    = static fn(string $field): string => $form->error($field) !== '' ? 
                     <label for="journal-amount">Betrag</label>
                     <input type="text" id="journal-amount" name="amount" value="<?= e($form->amount()) ?>" inputmode="decimal" required aria-invalid="<?= $invalid('amount') ?>">
                     <?= raw($fieldError($form->error('amount'))) ?>
-                    <?php if (!$isNew): ?><label class="be-reveal__label" for="journal-vat">MwSt</label><?php endif; ?>
+                </div>
+                <div class="be-form__field">
+                    <label class="be-switch be-switch--for" for="journal-vat" title="MWST-Zeile ein / aus">
+                        <span class="be-switch__label">MwSt</span>
+                        <span class="be-switch__track"><span class="be-switch__thumb"></span></span>
+                    </label>
                 </div>
             </div>
 

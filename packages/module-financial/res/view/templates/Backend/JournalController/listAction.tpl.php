@@ -8,13 +8,15 @@
  *     sorts (a link, `?sort=` / `?dir=`), the magnifier beside it opens the
  *     search field right there (a `<label for>` that focuses a collapsed input
  *     — no JavaScript). All fields belong to the GET form `#journal-find`;
- *     Enter searches, over one fiscal year or — «alle Geschäftsjahre» — all;
+ *     Enter searches, over one fiscal year or — «Alle Jahre», the last entry
+ *     of the year dropdown at the top of the rail (owner 2026-10-08; was a
+ *     toggle here) — all;
  *   - a state icon starts every row: editable · generated · closed · VAT
- *     settled (`$states`), and a deleted number when «gelöschte zeigen» is on
- *     — inline at its number (one year, number order, no search);
- *   - the toggles are LINKS: the state is the address;
+ *     settled (`$states`). Deleted numbers are NOT shown here (owner
+ *     2026-10-08: «gelöschte zeigen macht keinen Sinn») — every change and
+ *     deletion is in the change log, Finanzen › Änderungsprotokoll;
  *   - the whole list is a FETCH REGION (`data-fetch-region="journal-list"`,
- *     core.js): sort / page / toggle links and the search form reload only
+ *     core.js): sort / page links and the search form reload only
  *     this part, the capture form above keeps what is typed (owner
  *     2026-09-28). Without the script they are plain page loads;
  *   - the state icon is the ONLY way into an entry (owner 2026-09-29): it
@@ -25,14 +27,13 @@
  *     field: a click opens that search (owner 2026-09-29) — no JavaScript.
  *
  * Styling: the shared backend list v2 classes plus `.be-list__find`,
- * `.be-list__state`, `.be-list__toggle` (module-backend `_list.scss`) — no CSS
+ * `.be-list__state` (module-backend `_list.scss`) — no CSS
  * and no JavaScript of its own.
  *
  * @var \Z77\Module\Financial\Entities\FiscalYear|null $year  the SELECTED year (FiscalYearSelection, owner 2026-09-29) — null without any year
- * @var list<array{entry?: \Z77\Module\Financial\Entities\JournalEntry, state?: string, deleted?: \Z77\Module\Financial\Entities\EntryChange, number: int}> $rows
+ * @var list<array{entry: \Z77\Module\Financial\Entities\JournalEntry, state: string, number: int}> $rows
  * @var \Z77\Module\Financial\Ui\JournalFilter $filter
  * @var \Z77\Shared\Paging\Paging $paging
- * @var bool $gapsApply  the deleted numbers are merged into this page
  * @var array<string, string> $keep    the capture state (`mode`, `date`) every link carries
  * @var array<string, string> $states  state key → German title
  * @var callable $fmt  Money → «1'234.50»
@@ -87,15 +88,11 @@ $priority = ['f_date' => '3', 'f_debit' => '2', 'f_credit' => '2'];
                 Buchungen
                 <small class="be-list__cell--muted">· <?= $filter->allYears ? 'alle Geschäftsjahre' : 'Geschäftsjahr ' . e($year->getCode()) ?></small>
             </h2>
-            <nav class="be-list__toggles" aria-label="Umfang">
-                <a class="be-list__toggle<?= $filter->allYears ? ' be-list__toggle--on' : '' ?>" data-fetch-region-link role="switch" aria-checked="<?= $filter->allYears ? 'true' : 'false' ?>"
-                   href="<?= e($link(['all' => !$filter->allYears])) ?>">alle Geschäftsjahre</a>
-                <a class="be-list__toggle<?= $filter->showDeleted ? ' be-list__toggle--on' : '' ?>" data-fetch-region-link role="switch" aria-checked="<?= $filter->showDeleted ? 'true' : 'false' ?>"
-                   href="<?= e($link(['deleted' => !$filter->showDeleted])) ?>">gelöschte zeigen</a>
-                <?php if ($filter->isActive()): ?>
+            <?php if ($filter->isActive()): ?>
+            <nav class="be-list__toggles" aria-label="Suche">
                 <a data-fetch-region-link href="<?= e($link(array_fill_keys(array_keys(JournalFilter::FIELDS), null))) ?>">Suche zurücksetzen</a>
-                <?php endif; ?>
             </nav>
+            <?php endif; ?>
             <span class="be-list__section-badge" title="Buchungen"><?= $paging->total ?></span>
         </div>
 
@@ -105,10 +102,6 @@ $priority = ['f_date' => '3', 'f_debit' => '2', 'f_credit' => '2'];
             <?php endforeach; ?>
             <button type="submit" class="be-list__find-submit" tabindex="-1">Suchen</button>
         </form>
-
-        <?php if ($filter->showDeleted && !$gapsApply): ?>
-        <p class="be-list__section-hint">Gelöschte Nummern erscheinen im Journal EINES Geschäftsjahres, nach Nummer sortiert und ohne Suche.</p>
-        <?php endif; ?>
 
         <div class="be-list__frame">
             <div class="be-list__table be-list__table--drop" style="--be-list-cols: <?= $cols ?>; --be-list-cols-sm: <?= $colsSm ?>; --be-list-cols-xs: <?= $colsXs ?>">
@@ -136,19 +129,7 @@ $priority = ['f_date' => '3', 'f_debit' => '2', 'f_credit' => '2'];
                     <?php endforeach; ?>
                 </div>
                 <?php foreach ($rows as $row): ?>
-                <?php if (isset($row['deleted'])): $change = $row['deleted']; ?>
-                <div class="be-list__item">
-                    <div class="be-list__row be-list__row--inactive">
-                        <span class="be-list__cell be-list__state be-list__state--deleted" role="img" aria-label="gelöscht" title="gelöscht"><svg class="be-icon" width="14" height="14" aria-hidden="true"><use href="#icon-trash"/></svg></span>
-                        <span class="be-list__cell be-list__cell--num be-list__cell--mono"><?= $change->getEntryNumber() ?></span>
-                        <span class="be-list__cell" data-priority="3"><?= e($change->getChangedAt()->format('d.m.Y')) ?></span>
-                        <span class="be-list__cell">gelöscht: «<?= e((string) ($change->before()['text'] ?? '')) ?>» <small class="be-list__cell--muted">· <?= e($change->getChangedBy()) ?>, <?= e($change->getChangedAt()->format('d.m.Y H:i')) ?></small></span>
-                        <span class="be-list__cell" data-priority="2"></span>
-                        <span class="be-list__cell" data-priority="2"></span>
-                        <span class="be-list__cell"></span>
-                    </div>
-                </div>
-                <?php else: $entry = $row['entry']; ?>
+                <?php $entry = $row['entry']; ?>
                 <div class="be-list__item" data-entry-id="<?= e((string) $entry->getId()) ?>">
                     <div class="be-list__row">
                         <?php $stateUrl = $actionBase . ($row['state'] === 'editable' ? '/edit' : '/detail') . '?id=' . $entry->getId(); ?>
@@ -161,7 +142,6 @@ $priority = ['f_date' => '3', 'f_debit' => '2', 'f_credit' => '2'];
                         <label class="be-list__cell be-list__cell--num" for="journal-find-f_amount"><?= e($fmt($entry->total())) ?></label>
                     </div>
                 </div>
-                <?php endif; ?>
                 <?php endforeach; ?>
             </div>
         </div>
