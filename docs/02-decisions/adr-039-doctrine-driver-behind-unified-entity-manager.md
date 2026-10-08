@@ -1,6 +1,6 @@
 # ADR-039 — The Doctrine driver: own package, reached through `UnifiedEntityManager`
 
-**Status:** `[APPROVED]` — approved by the owner 2026-09-21 (P0 of [`order-debtor-financial-bauplan.md`](../03-development/order-debtor-financial-bauplan.md))
+**Status:** `[APPROVED]` — approved by the owner 2026-09-21 (P0 of [`order-debtor-financial-bauplan.md`](../03-development/order-debtor-financial-bauplan.md)); addendum 2026-10-08 (owner decisions on deploy, extendable entities, project migrations and `setup`, below)
 **Date:** 2026-09-21
 
 ---
@@ -222,3 +222,117 @@ How the code works today, and what this ADR builds on: `RepositoryInterface` car
 | Connection config inside the Doctrine package or a second key next to `backup.inc.php` → `database` | Two copies of the credentials (Rule 2) |
 | Entity directories scanned by convention | Picks up whatever lies in the directory; the `importEntities` precedent is explicit and fails loudly |
 | Deleting only the cache directory, without OPcache invalidation | Stale metadata served until OPcache revalidates — never, with `validate_timestamps = 0` |
+
+## Addendum 2026-10-08 — copied-database deploy, extendable master data, project migrations, `setup` (owner decisions)
+
+Four owner decisions of 2026-10-08, taken with the developer. They amend decisions 12–14; the
+original text above stays as written, and where it and this addendum differ, the addendum applies.
+
+### (a) Deploy with a copied database — amends decision 14
+
+The owner's proven practice from wdv-630: for `next`, **copy the production database**, point
+`next`'s `config/client/database.inc.php` at the copy, run the pending migrations there, test, then
+switch `next` to `current`. At the switch the copy is **refreshed from `current`** (the data `current`
+wrote during the test) and the pending migrations are re-run on it — a matter of seconds — and the
+copy becomes the production database.
+
+1. **Decision 14 binds only the single-database deploy.** With a copied database, `current` and `next`
+   no longer share one database, so «never drop what the running release reads» does not apply: a
+   migration MAY drop a column or a table — deliberately and visibly. `setup` refuses a draft
+   containing `DROP` unless confirmed (`--allow-drop`, part (d)).
+2. **Both deploys are legitimate; the release names which one it uses.** The single-database
+   expand/contract deploy of decision 14 (`current` and `next` as two doors of the ADR-035 layout on
+   one database) remains the option when a switch must not lose a second of writes; the copied
+   database fits when a short write freeze at the switch is acceptable.
+3. **Migrations stay the single schema path in both** (decision 12 unchanged): they carry the
+   history, they are what the tests run, and they move data — `UPDATE … SELECT`, and
+   `ALTER … CHANGE` for a rename instead of a drop plus an add.
+4. **SchemaTool stays rejected** (`updateSchema`, what wdv-630's `setup.php` ran). It compares mapping
+   and database and knows no intent: a renamed property becomes `DROP` + `ADD`, and the data of the
+   column is gone without a warning. A migration states the intent; that is the reason it exists.
+5. **Automating the copy step** (copy, repoint, refresh at the switch) in the `.releases/` tooling is
+   pending, not part of this addendum's build. Until then the steps are manual.
+
+*Precondition — on demand, not the standard (owner 2026-10-08: «nach Bedarf ja, aber nicht
+Standard»):* the release layout links `config/` to `shared/config`
+([`release-structure.md`](../01-handbook/release-structure.md)), so by default `current` and `next`
+read the **same** `config/client/database.inc.php` — the single-database deploy stays the default.
+A release that uses the copied-database deploy gives `next` its own `database.inc.php` (pointing at
+the copy) for that release only; the `.releases/` tooling offers it as an option, never as the
+standard layout (part of the pending item above). `data/` (the File driver) stays shared between
+the doors either way; only the database is copied.
+
+### (b) Extendable master-data entities — the abstract class carries everything, the entity is empty
+
+The wdv-630 pattern, verified in a customer project: the project's `ShopArticle` extends the
+framework's `AbstractShopArticle` and adds its own columns (grape variety, supplier, SEO title and
+description, offer price) with getters, setters and business methods such as `hasOfferPrice()`;
+the framework's own `ShopArticle` is an **empty** class that carries only the entity mapping.
+
+1. **The shape.** An extendable master-data entity is built as two classes:
+   - `#[ORM\MappedSuperclass] abstract class Abstract{X}` — every standard field, its mapping and
+     the logic;
+   - `#[ORM\Entity, ORM\Table(...)] class {X} extends Abstract{X} {}` — **empty**, next to z77's
+     `#[Entity('doctrine')]`.
+2. **A project overrides only the empty class**, under
+   `override/z77/module/{module}/src/Entities/{X}.php` — same FQCN; Composer's psr-4 map searches
+   `override/` first (the CE mechanism, [`architecture.md`](../01-handbook/architecture.md)). The
+   override extends `Abstract{X}`, repeats the class-level mapping of the empty class (the attributes
+   of a replaced class do not carry over) and adds its columns with real getters and setters.
+3. **Why this is not the «fork by copying a class» CE forbids.** The class the project replaces holds
+   nothing but the mapping header. Every standard field and every line of logic stays in
+   `Abstract{X}` in the package, so a framework update reaches the project through the abstract class
+   with no hand merge.
+4. **What it gives:** real columns — an index, SQL search and sort, accessors the IDE knows — and the
+   standard list ([`listing.md`](../topics/listing.md)) can offer them as columns with a magnifier
+   like any standard field.
+5. **Considered and rejected as the default:** a JSON `attributes` column (no index, no typed
+   accessors, a search that slows with volume) and a 1:1 `{X}Extra` entity (a second object for every
+   read).
+6. **Scope — «nicht auf Vorrat».** The pattern is documented now with **one** example,
+   `module-article` (decided in [`order-debtor-financial-bauplan.md` §4b](../03-development/order-debtor-financial-bauplan.md),
+   not built yet): when module-article is built, its master entities are built this way. `Contact`,
+   `Address` and the other existing entities are **not** converted in advance; each moves to the
+   pattern only when a project actually needs to extend it.
+
+### (c) Project migrations — amends decision 13
+
+A project's own schema changes — the columns its overriding entity adds (b), or an entity of its own
+announced through `override/z77/module/{module}/src/App/Config/doctrineEntitiesConfig.inc.php`
+(decision 5, `ModuleManager::getDoctrineEntities()`) — need a migration **in the project**, never in
+`vendor/`.
+
+1. **One directory per project:** `override/z77/project/res/migrations/`, namespace
+   `Z77\Project\Migrations`.
+2. **The rule: a migration goes where the entity's class file lives.** Class file in a framework
+   package → that module's `res/migrations` (decision 13). Class file under `override/` → the project
+   directory. A project-overridden `{X}` (b) is therefore a project entity for its migrations: the
+   columns the project adds are migrated by the project, the standard columns by the module.
+3. **Order stays chronological across all namespaces** (DOCTRINE-MIG-002,
+   [`persistence-doctrine.md`](../topics/persistence-doctrine.md)); the project namespace is one more
+   source in the same timestamp order.
+4. This answers the open question named in the docblock of
+   `packages/persistence-doctrine/src/Console/MigrationDirectories.php`.
+
+### (d) One command: `php vendor/bin/z77-db setup`
+
+The developer's flow becomes **1. change the entity, 2. run `setup`** — locally and on the server
+(the server via SSH). Schema changes stay CLI-only; decision 12 holds, no web request changes the
+schema.
+
+`setup` does, in this order:
+
+1. apply the pending migrations;
+2. compute the difference between the mapping and the database;
+3. group the statements per owner, by the rule of (c);
+4. where the owner's directory is writable and inside the tree being worked on — the framework repo:
+   `packages/*`; a project: `override/z77/project` — write the migration file(s), each with a
+   docblock stub to fill in;
+5. show the SQL;
+6. refuse to apply a draft containing `DROP` unless confirmed with `--allow-drop`;
+7. apply;
+8. verify that the difference is now empty.
+
+In a project, a difference owned by a **framework** module — a framework entity changed, its
+migration not shipped — is refused with a message naming the module; it is never written into
+`vendor/` (DOCTRINE-CLI-001). `migrate`, `status`, `diff` and `generate` stay available.

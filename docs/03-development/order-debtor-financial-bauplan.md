@@ -643,6 +643,15 @@ What this plan builds from A1–A4: the **product group tree** (one placement, c
 account, VAT default and turnover statistics), **product + variant**, **prices with history**, the
 **article number on the variant**, and stock (§4b below). That is what an order line needs.
 
+**Extendable master data (owner, 2026-10-08).** module-article is the reference example of
+[ADR-039 addendum 2026-10-08](../02-decisions/adr-039-doctrine-driver-behind-unified-entity-manager.md)
+(b): its master entity is built as `AbstractArticle` (`#[ORM\MappedSuperclass]`, every standard
+field, mapping and logic) plus an **empty** `Article` carrying only the entity mapping. A project
+that needs its own columns overrides only `Article` under `override/` and migrates those columns in
+its own `override/z77/project/res/migrations/`. *Open when built:* A3 splits the article into
+product + variant, so which class or classes carry the pattern (product, variant, or both) is
+settled then — the class names above stand for the master entity, not for a decision against A3.
+
 **What A1 implies but this plan deliberately does not build** — the review of 2026-09-20 pointed out
 that none of it has a consumer here, and a shop is out of scope (§13), so building it now would be
 exactly the "in stock" the guiding rule forbids. It belongs to the shop module's concept:
