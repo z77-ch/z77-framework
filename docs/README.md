@@ -33,6 +33,7 @@ recipes — what a project follows when building).
 | [css-conventions.md](01-handbook/css-conventions.md) | CSS/SCSS standards: BEM, tokens, components |
 | [shell-regions.svg](01-handbook/shell-regions.svg) | Shell-region glossary as a picture: backend and member side by side, German word + job name + class per region (text version: [css-backend.md → shell regions](topics/css-backend.md#shell-regions-glossary)) |
 | [templates.md](01-handbook/templates.md) | Template layer: location, context injection, partials |
+| [backend-screen.md](01-handbook/backend-screen.md) | Building a backend area: action cell, rail-top selection, toolbar, controls, standard lists, help, checklist (owner rules 2026-10-08) |
 | [installer.md](01-handbook/installer.md) | Composer installer: configuration, generated files, directory structure |
 | [release-structure.md](01-handbook/release-structure.md) | Zero-downtime deploys on shared hosting: shared/releases/current/next, SSH setup, switch mechanics |
 | [vision.md](01-handbook/vision.md) | Why this framework, goals, scope |
@@ -58,6 +59,7 @@ Structure is enforced by `npm run docs:check` ([docs-lint/STANDARD.md](../docs-l
 |---|---|
 | alert, alarm, outage notification, operator mail/SMS, escalation, monitoring signal | [topics/alert.md](topics/alert.md) |
 | API, /api, module-api, bearer key, tenant key, stateless route, ApiKeyGuard, JSON endpoint, data broker | [topics/api.md](topics/api.md) |
+| new backend area / screen, action cell, Aktionszelle, where does a button go, toolbar, tabs, switch, help button | [01-handbook/backend-screen.md](01-handbook/backend-screen.md) |
 | backend, dashboard, service panel, user preferences, system pages | [topics/backend.md](topics/backend.md) |
 | backup, restore, z77-backup CLI | [topics/backup.md](topics/backup.md) |
 | content block types | [topics/block-types.md](topics/block-types.md) |

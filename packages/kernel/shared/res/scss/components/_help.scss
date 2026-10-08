@@ -82,6 +82,31 @@
     overflow:   auto;
 }
 
+// The field section the help was opened at (ADR-048 addendum 2026-10-08): core.js scrolls a
+// `[data-help-field]` section into view and marks it `is-help-hit` for a moment. The colour is
+// the host's (`--z77-help-hit`); with `prefers-reduced-motion` the mark shows without the fade
+// (core.js removes the class after the same 1.6 s either way).
+.z77-help {
+    --z77-help-hit: rgba(255, 214, 0, .35);
+}
+.z77-help__body [data-help-field] {
+    scroll-margin-top: .5rem;
+    border-radius:     .25rem;
+}
+.z77-help__body .is-help-hit {
+    animation: z77-help-hit 1.6s ease-out;
+}
+@keyframes z77-help-hit {
+    0%, 35% { background: var(--z77-help-hit); }
+    100%    { background: transparent; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .z77-help__body .is-help-hit {
+        animation:  none;
+        background: var(--z77-help-hit);
+    }
+}
+
 // A phone: no room beside anything — the help covers the screen, × is the way back.
 @media (max-width: 767px) {
     .z77-help,

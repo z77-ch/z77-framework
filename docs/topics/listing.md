@@ -24,6 +24,8 @@ SOURCE=/packages/module-debtor/src/Ui/InvoiceListing.php
 SOURCE=/packages/module-debtor/src/Ui/OpenItemListing.php
 SOURCE=/packages/module-debtor/res/view/templates/Backend/InvoiceController/listAction.tpl.php
 SOURCE=/packages/module-debtor/res/view/templates/Backend/DebtorController/listAction.tpl.php
+SOURCE=/packages/module-financial/src/Ui/ChangeLogListing.php
+SOURCE=/packages/module-financial/res/view/templates/Backend/ChangeLogController/listAction.tpl.php
 SOURCE=/packages/module-financial/src/Ui/JournalFilter.php
 SOURCE=/packages/module-financial/res/view/templates/Backend/JournalController/listAction.tpl.php
 SOURCE=/tests/listing.php
@@ -57,13 +59,13 @@ Every table in the backend is a STANDARD LIST (owner 2026-10-08, after the journ
 
 ## pending
 
-- **The journal list still carries its own `JournalFilter`** (`module-financial/src/Ui/JournalFilter.php`) and head markup — the reference the standard was cut from (2026-10-08). Migrate it onto `ListDefinition` / the partials: the `keep` of the capture state (`mode`, `date`) is already supported by both partials, the deleted-numbers rows and the fiscal-year toggles stay the module's. `tests/module-financial.php` has the list cases.
+- **The journal list still carries its own `JournalFilter`** (`module-financial/src/Ui/JournalFilter.php`) and head markup — the reference the standard was cut from (2026-10-08). Migrate it onto `ListDefinition` / the partials: the `keep` of the capture state (`mode`, `date`) is already supported by both partials, the year scope (`all`) becomes an extra; the deleted-numbers rows are gone since 2026-10-08 (the change log is its own standard list, `ChangeLogListing`). `tests/module-financial.php` has the list cases.
 - The bank-import message list and the dunning due list (module-debtor) are short fixed lists without paging or column search — standard lists when they grow.
 
 ## see also
 
 - [`css-backend.md`](css-backend.md) — `.be-list` v2, `.be-list__find`, the drop stages (LIST-DROP-STAGES-001), `.be-pagination`
 - [`fetch.md`](fetch.md) — FETCH-REGION-001: how the region reloads from the same URLs
-- [`financial.md`](financial.md) — the journal list, the first consumer of the column search (FIN-JOURNAL-CAPTURE-001)
+- [`financial.md`](financial.md) — the journal list, the first consumer of the column search (FIN-JOURNAL-CAPTURE-001); the change log screen (`ChangeLogListing`, a year scope as the extra `all` driven by the rail-top year selection)
 - [`debtor.md`](debtor.md) — the document list and the open-item list, the first standard lists on the shared block
 - [`money.md`](money.md) — `AmountFormat` for the amount cells

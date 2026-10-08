@@ -1076,11 +1076,22 @@ _Z77.core.windows = (function () {
  *   <template data-help data-help-title="…">…</template>
  *                               the help, rendered by HelpService at the end of `main` (page and
  *                               fetch mode — so a window's body carries it too). Inert until opened.
- *   [data-help-open]            the «i»: opens the help that belongs to where it stands — inside a
- *                               window that window's template, else the first template of the page
- *                               that is not inside a window. No template → nothing happens.
- *                               The skeleton renders it in the crumb line; `windows.fill()` adds it
- *                               to a window's title bar.
+ *   [data-help-open]            opens the help that belongs to where it stands — inside a
+ *                               window that window's template; outside a window (the top bar's
+ *                               «? Hilfe») the template of the window that holds the last focused
+ *                               field, else the first template of the page outside any window.
+ *                               No template → nothing happens. A shell renders «? Hilfe»
+ *                               (`partials/helpTrigger`, `[data-help-trigger]`, server-side
+ *                               `hidden` — revealed here, so without JS there is no button);
+ *                               `windows.fill()` adds the «i» to a window's title bar.
+ *   [data-help-field="<key>"]   a section INSIDE the help template about one field (owner
+ *                               2026-10-08). Opening scrolls to the section of the field focused
+ *                               last and marks it `is-help-hit` for 1.6 s; no match → the top
+ *                               (the general part).
+ *   [data-help-key="<key>"]     on a form control: the key its help section carries, when it is
+ *                               not the control's `name` (default: `name` without `[…]`, so
+ *                               `debit[]` → `debit`).
+ *   F1 in a form control        opens the same help (preventDefault only when there is help).
  *   Inside the help window (built here):
  *   [data-help-full]            toggles full screen (`is-full`, aria-pressed follows)
  *   [data-help-close]           closes the help window
@@ -1090,7 +1101,9 @@ _Z77.core.windows = (function () {
  * CSS (`resize`), the geometry lives in kernel/shared `_help.scss`, the look in the host.
  */
 _Z77.core.help = (function () {
-    var _win = null;
+    var _win    = null;
+    var _last   = null;   // the form control focused last outside the help window
+    var _HIT_MS = 1600;   // the fade in `_help.scss` (`is-help-hit`)
 
     function _build() {
         var t = _Z77.core.i18n.t;
@@ -1110,9 +1123,8 @@ _Z77.core.help = (function () {
         return _win;
     }
 
-    /* The help that belongs to where the «i» stands. */
-    function _templateFor(el) {
-        var win = _Z77.core.windows.of(el);
+    /* The help of a window, or of the page (the first template outside any window). */
+    function _templateIn(win) {
         if (win) return win.querySelector('.z77-window__body template[data-help]');
         var all = document.querySelectorAll('template[data-help]');
         for (var i = 0; i < all.length; i++) {
@@ -1121,15 +1133,65 @@ _Z77.core.help = (function () {
         return null;
     }
 
-    /* Shows <template>'s content in the help window (opens it, or replaces what it shows). */
-    function open(tpl) {
+    /* The help that belongs to where the opener stands. Outside a window (the top bar) the
+     * last focused field decides: in a window with help → that help, else the page's. */
+    function _templateFor(el) {
+        var win = _Z77.core.windows.of(el);
+        if (win) return _templateIn(win);
+        if (_last && _last.isConnected) {
+            var lastWin = _Z77.core.windows.of(_last);
+            var tpl = lastWin ? _templateIn(lastWin) : null;
+            if (tpl) return tpl;
+        }
+        return _templateIn(null);
+    }
+
+    /* A field the help can be about: a form control, not one of the help window's own. */
+    function _isField(el) {
+        if (!el || !el.matches || !el.matches('input, select, textarea')) return false;
+        if (/^(hidden|submit|button|reset|image)$/i.test(el.type || '')) return false;
+        return !el.closest('[data-z77-help]');
+    }
+
+    /* The section key of a field: `data-help-key`, else its name without brackets. */
+    function _keyOf(el) {
+        var key = el.getAttribute('data-help-key');
+        if (key) return key;
+        return (el.getAttribute('name') || '').replace(/\[[^\]]*\]$/, '');
+    }
+
+    /* The key of the last field — only when it lies in the same scope (page / window) as
+     * the help being opened; a field of another window says nothing about this help. */
+    function _lastKeyFor(tpl) {
+        if (!_last || !_last.isConnected) return '';
+        return _Z77.core.windows.of(_last) === _Z77.core.windows.of(tpl) ? _keyOf(_last) : '';
+    }
+
+    /* Scrolls the help body to the section about `key` and marks it; none → the top.
+     * Compares attribute values — the key never goes into a selector. */
+    function _reveal(body, key) {
+        body.scrollTop = 0;
+        if (!key) return;
+        var all = body.querySelectorAll('[data-help-field]'), sec = null;
+        for (var i = 0; i < all.length; i++) {
+            if (all[i].getAttribute('data-help-field') === key) { sec = all[i]; break; }
+        }
+        if (!sec) return;
+        body.scrollTop = sec.getBoundingClientRect().top - body.getBoundingClientRect().top - 8;
+        sec.classList.add('is-help-hit');
+        setTimeout(function () { sec.classList.remove('is-help-hit'); }, _HIT_MS);
+    }
+
+    /* Shows <template>'s content in the help window (opens it, or replaces what it shows),
+     * at the section of `key` when the help has one. */
+    function open(tpl, key) {
         if (!tpl || !tpl.content) return null;
         var win = _win || _build();
         win.querySelector('.z77-help__title').textContent = tpl.getAttribute('data-help-title') || _Z77.core.i18n.t('common.help', 'Hilfe');
         var body = win.querySelector('.z77-help__body');
         body.textContent = '';
         body.appendChild(tpl.content.cloneNode(true));
-        body.scrollTop = 0;
+        _reveal(body, key || '');
         return win;
     }
 
@@ -1182,10 +1244,30 @@ _Z77.core.help = (function () {
     }
 
     function bind() {
+        // The trigger is rendered `hidden` (no script, no help window — no button).
+        var triggers = document.querySelectorAll('[data-help-trigger][hidden]');
+        for (var i = 0; i < triggers.length; i++) triggers[i].hidden = false;
+
+        document.addEventListener('focusin', function (e) {
+            if (_isField(e.target)) _last = e.target;
+        });
+        document.addEventListener('keydown', function (e) {
+            if (e.key !== 'F1' || e.altKey || e.ctrlKey || e.metaKey || !_isField(e.target)) return;
+            var tpl = _templateIn(_Z77.core.windows.of(e.target));
+            if (!tpl) return;   // no help here: F1 stays the browser's
+            e.preventDefault();
+            _last = e.target;
+            open(tpl, _keyOf(e.target));
+        });
         document.addEventListener('click', function (e) {
             if (e.button !== 0) return;
             var opener = e.target.closest('[data-help-open]');
-            if (opener) { e.preventDefault(); open(_templateFor(opener)); return; }
+            if (opener) {
+                e.preventDefault();
+                var tpl = _templateFor(opener);
+                open(tpl, tpl ? _lastKeyFor(tpl) : '');
+                return;
+            }
             if (!_win || !_win.contains(e.target)) return;
             if (e.target.closest('[data-help-close]')) { close(); return; }
             if (e.target.closest('[data-help-full]')) _full(!_win.classList.contains('is-full'));

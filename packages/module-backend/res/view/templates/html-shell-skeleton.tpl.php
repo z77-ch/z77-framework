@@ -30,10 +30,10 @@
     <?= $systemBanner ?? '' ?>
     <?= $noindexBanner ?? '' ?>
     <?php $hasTabs = trim((string)($tabs ?? '')) !== ''; ?>
-    <?php /* Auf dem Telefon ist die ganze linke Seite eine Schublade (ADR-033, 2026-09-28):
-             Bereichswaehler, Aktionszelle und Spalte 1 fahren gemeinsam ueber das Menue-Icon
-             ein — _shell.scss, Mobile-Block. Die Schublade haengt an Kopfleiste + Band, nicht
-             an der Reiter-Zeile; darum braucht die Schale keine Reiter-Markierung mehr. */ ?>
+    <?php /* On a phone area switcher and column 1 (with its top selection) are ONE drawer
+             (ADR-033 rev. 2026-09-28 / 2026-10-08): they slide in together from the menu icon —
+             _shell.scss, mobile block. The action cell is NOT in the drawer: its button becomes
+             a square icon at the right end of the band (pure CSS, the same element). */ ?>
     <div class="be-shell" data-shell data-z77-split-root>
         <?= $shellTopbar ?? '' ?>
         <?php /* Header-Band mit den Slots hc1 (über Spalte 1) + hc2 (über Spalte 2):
@@ -50,7 +50,10 @@
                  die unter 767px mit der Spalte im Navigations-Drawer — hinter dem Burger, wo
                  niemand «Neu anlegen» sucht. Per CSS war das nicht zu retten: die Spalte trägt dort
                  ein `transform`, und ein transformierter Vorfahre ist auch für `position: fixed`
-                 der Bezugsrahmen. */ ?>
+                 der Bezugsrahmen.
+
+                 hc1 = the action cell: the MOST FREQUENT action of the selected navigation entry,
+                 one inset button (ADR-033 rev. 2026-10-08). The band is as high as the top bar. */ ?>
         <div class="be-shell-band">
             <div class="be-shell-band__slot be-shell-band__slot--1"><?= $hc1 ?? '' ?></div>
             <div class="be-shell-band__slot be-shell-band__slot--2"><?= $hc2 ?? '' ?></div>
@@ -76,14 +79,26 @@
                  renders ALWAYS for the same reason the band does (no height jump
                  between screens). A screen without an own hc3 template gets the
                  navigation-derived default; slot 1 is a bare cell capping the dark
-                 island. */ ?>
+                 island. Its height is ONE token (`--shell-crumb`) and nothing in it
+                 may grow it: the help trigger moved to the top bar (ADR-048 addendum,
+                 owner 2026-10-08), so a page with help looks like one without. */ ?>
         <div class="be-shell-crumb">
             <div class="be-shell-crumb__slot be-shell-crumb__slot--1"></div>
             <div class="be-shell-crumb__slot be-shell-crumb__slot--2"><?= $hc3 ?? $this->partial('partials/shell/crumb', [
                 'backendMenu' => $backendMenu ?? null,
-            ]) ?><?= !empty($helpBlock) ? $this->partial('partials/helpOpen', [], 'Z77\Shared') : '' ?></div>
+            ]) ?></div>
         </div>
+        <?php /* Rail-top selection (section `railSelect`, template `{action}.select`, ADR-033
+                 rev. 2026-10-08): a choice that holds for the whole area (the fiscal year)
+                 stands above the menu entries it applies to. Only when there is one — an
+                 empty wrapper would draw a stray border at the top of every rail. trim() for
+                 the same reason as the tab row: a template that switches itself off yields
+                 whitespace. Inside column 1, so on a phone it rides along in the drawer. */ ?>
+        <?php $railSelect = trim((string)($railSelect ?? '')); ?>
         <div class="be-shell-col be-shell-col--1" data-shell-col="l">
+            <?php if ($railSelect !== ''): ?>
+            <div class="be-shell-select"><?= $railSelect ?></div>
+            <?php endif; ?>
             <?= $subnav ?? '' ?>
         </div>
         <div class="be-shell-col be-shell-col--2">

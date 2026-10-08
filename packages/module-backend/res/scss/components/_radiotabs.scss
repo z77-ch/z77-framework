@@ -1,0 +1,64 @@
+// ── Radio tabs — sections of ONE page switched without a request and without JS ─────────────
+// Owner 2026-10-08, first user: Stammdaten › Firma › Mandant (one form, three sections).
+// Rule 7: the `:checked ~` sibling selector does what a tab script would. One radio per tab,
+// all in one group (same `name`), visually hidden but focusable (arrow keys switch, like any
+// radio group), placed BEFORE the panels as their siblings; the tabs themselves are
+// `<label for>` of those radios and may stand anywhere on the page — in the toolbar (hc2), in
+// the standard tab look `.be-viewtabs`:
+//
+//   <div class="be-viewtabs" role="group" aria-label="Abschnitte">           ← toolbar (hc2)
+//     <label class="be-viewtabs__tab be-viewtabs__tab--for" for="x-tab-a" data-tab="1">A</label>
+//     <label class="be-viewtabs__tab be-viewtabs__tab--for" for="x-tab-b" data-tab="2">B</label>
+//   </div>
+//   <form class="be-radiotabs" novalidate>                                   ← work area
+//     <input type="radio" class="be-radiotabs__radio" name="x_tab" id="x-tab-a" data-tab="1" checked>
+//     <input type="radio" class="be-radiotabs__radio" name="x_tab" id="x-tab-b" data-tab="2">
+//     <section class="be-radiotabs__panel" data-tab="1" aria-label="A">…</section>
+//     <section class="be-radiotabs__panel" data-tab="2" aria-label="B">…</section>
+//   </form>
+//
+// `data-tab` is the tab's POSITION (1..$be-radiotabs-max), the same number on radio, panel and
+// label — no screen-specific id in this file. The server renders `checked` on the tab to open
+// (the first; after a refused save the one holding the first field error).
+//
+// The labels are NOT siblings of the radios, so the ACTIVE underline and the focus ring reach
+// them through `:has()` on the shell (supported by all current browsers). Without `:has()` the
+// panels still switch — only the underline does not follow. ONE radio-tab set per shell page:
+// the `:has()` rule matches by position, a second set would light the same numbers.
+//
+// A form split into radio tabs SHOULD carry `novalidate` (the server validates anyway, Rule 7):
+// the browser cannot focus an invalid `required` field inside a hidden panel, and the submit
+// would then silently do nothing.
+
+$be-radiotabs-max: 6;
+
+.be-radiotabs { position: relative; }
+
+.be-radiotabs__radio {
+    position:       absolute;
+    top:            0;
+    left:           0;
+    width:          1px;
+    height:         1px;
+    opacity:        0;
+    pointer-events: none;
+}
+
+.be-radiotabs__panel { display: none; }
+
+@for $i from 1 through $be-radiotabs-max {
+    .be-radiotabs__radio[data-tab="#{$i}"]:checked ~ .be-radiotabs__panel[data-tab="#{$i}"] { display: block; }
+}
+
+.be-viewtabs__tab--for { user-select: none; }
+
+@for $i from 1 through $be-radiotabs-max {
+    .be-shell:has(.be-radiotabs__radio[data-tab="#{$i}"]:checked) .be-viewtabs__tab--for[data-tab="#{$i}"] {
+        color:               var(--be-text);
+        border-bottom-color: var(--be-accent);
+    }
+    .be-shell:has(.be-radiotabs__radio[data-tab="#{$i}"]:focus-visible) .be-viewtabs__tab--for[data-tab="#{$i}"] {
+        outline:        2px solid var(--be-accent);
+        outline-offset: -2px;
+    }
+}

@@ -118,3 +118,62 @@
     order: -1;
     margin-right: auto;
 }
+
+/* ── Remote variant: the checkbox lives elsewhere (`.be-switch--for`) ──────
+ * A switch that is a `<label for>` of a checkbox placed BEFORE it, not inside
+ * it — when the same checkbox must also drive something else through the
+ * `:checked ~` sibling selector (a `.be-reveal` panel). The label carries no
+ * input; its look follows the checkbox through the sibling chain — pure CSS,
+ * no `:has()`, no JavaScript (Rule 7). The checkbox stays a real, SUBMITTED,
+ * keyboard-focusable field (visually hidden, `.be-reveal__toggle`); the focus
+ * ring is drawn on the track.
+ *
+ * Usage (the journal's one-line entry, «MwSt» between Haben and Betrag):
+ *   <div class="be-reveal">
+ *     <input class="be-reveal__toggle" type="checkbox" id="x-vat" name="vat" value="1">
+ *     <div class="be-form__row">…
+ *       <div class="be-form__field">
+ *         <label class="be-switch be-switch--for" for="x-vat">
+ *           <span class="be-switch__label">MwSt</span>
+ *           <span class="be-switch__track"><span class="be-switch__thumb"></span></span>
+ *         </label>
+ *       </div>
+ *     …</div>
+ *     <div class="be-reveal__panel">…</div>
+ *   </div>
+ * The switch may be a direct sibling of the toggle or anywhere inside one.
+ */
+.be-reveal__toggle:checked ~ .be-switch--for .be-switch__track,
+.be-reveal__toggle:checked ~ * .be-switch--for .be-switch__track {
+    background: var(--be-accent);
+}
+.be-reveal__toggle:checked ~ .be-switch--for .be-switch__thumb,
+.be-reveal__toggle:checked ~ * .be-switch--for .be-switch__thumb {
+    transform: translateX(1rem);
+}
+.be-reveal__toggle:checked ~ .be-switch--sm.be-switch--for .be-switch__thumb,
+.be-reveal__toggle:checked ~ * .be-switch--sm.be-switch--for .be-switch__thumb {
+    transform: translateX(.75rem);
+}
+.be-reveal__toggle:focus-visible ~ .be-switch--for .be-switch__track,
+.be-reveal__toggle:focus-visible ~ * .be-switch--for .be-switch__track {
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--be-accent) 25%, transparent);
+}
+
+/* ── A switch as a field of a form row (`.be-form__row`) ──────────────────
+ * Its text stands where the other fields have their caption, the track on
+ * the line of their inputs (an input is ~2.1rem high: .45rem padding twice,
+ * one .875rem line, the border) — so the switch sits in the row like a field. */
+.be-form__field > .be-switch {
+    flex-direction: column;
+    align-items:    flex-start;
+    gap:            .3rem;
+}
+.be-form__field > .be-switch .be-switch__label {
+    font-size:   .8rem;
+    font-weight: 500;
+    color:       var(--be-muted);
+}
+.be-form__field > .be-switch .be-switch__track {
+    margin-block: .42rem;
+}

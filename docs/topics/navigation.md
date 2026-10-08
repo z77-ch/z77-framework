@@ -337,7 +337,7 @@ hand without a key is recognised by its route.
 | kernel | Stammdaten (`stammdaten`) | root 5 |
 | kernel | System (`stammdaten-system`) — Benutzer (`benutzer`) | `stammdaten` (4) |
 | kernel | Service (`service`) — Backup · E-Mail · Jobs · Import · Formular-Protokoll (`backup`, `email`, `jobs`, `import`, `form-log`) | root 6 |
-| module-financial | Finanzen (`finanzen`) — Journal (`journal`) · Auswertungen (`auswertungen`) | root 1 |
+| module-financial | Finanzen (`finanzen`) — Journal (`journal`) · Auswertungen (`auswertungen`) · Änderungsprotokoll (`aenderungsprotokoll`, added 2026-10-08) | root 1 |
 | module-financial | Finanzen (`stammdaten-finanzen`) — Geschäftsjahre (`geschaeftsjahre`) · Kontenplan (`kontenplan`) | `stammdaten` |
 | module-vat | MWST-Codes (`mwst-codes`) | `stammdaten-finanzen` |
 | module-contact | Kontakte (`kontakte`) — Kontakte (`kontakte-liste`) | root 3 |

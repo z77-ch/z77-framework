@@ -14,22 +14,44 @@
     align-items:   center;
     gap:           .35rem;
     padding:       .4rem .85rem;
-    border:        1px solid transparent;
+    // The SECONDARY look is the default (owner 2026-10-08, one look per kind of control): a
+    // plain `.be-btn` without modifier had no background and a transparent border — it read as
+    // bare text (the import and job screens' «Plan berechnen», «Nochmals» …). Surface with a
+    // border now; the modifiers below override it.
+    border:        1px solid var(--be-line);
     border-radius: var(--radius-md);
+    background:    var(--be-surface);
+    color:         var(--be-text);
     font-size:     var(--font-size-sm);
     font-weight:   var(--font-weight-medium);
     cursor:        pointer;
     transition:    background var(--transition-fast), border-color var(--transition-fast);
 }
+// `:where()` keeps this hover at the specificity of `.be-btn` itself, so every modifier's own
+// colours (declared later) win over it — a plain `.be-btn:hover` (0,2,0) would paint the
+// secondary hover onto a primary or confirm button.
+.be-btn:where(:hover)  { background: var(--be-surface2); border-color: var(--be-muted); }
 
+// The four kinds — each looks the same wherever it stands (css-backend.md → «buttons, tabs, switch»):
+//   create    `--primary`: accent fill — «+ Neu»; the action cell's create action
+//   confirm   `--confirm`: green fill — something is WRITTEN: Buchen, Speichern, Definitiv stellen
+//   secondary base / `--ghost`: surface with border — Drucken, Neuer Ordner, Abbrechen
+//   danger    `--danger`: red border and text, NEVER filled; «…» in the label when a confirmation follows
 .be-btn--primary       { background: var(--be-accent); color: var(--color-text-inverse); border-color: var(--be-accent); }
 .be-btn--primary:hover { filter: brightness(1.1); }
 
-.be-btn--ghost         { background: transparent; border-color: var(--be-line); color: var(--be-text); }
-.be-btn--ghost:hover   { background: var(--be-bg); }
+.be-btn--confirm       { background: var(--be-confirm); color: var(--be-on-confirm); border-color: var(--be-confirm); }
+.be-btn--confirm:hover { filter: brightness(1.1); }
 
-.be-btn--danger        { color: var(--be-danger); border-color: var(--color-danger-border); }
-.be-btn--danger:hover  { background: var(--color-danger-bg); }
+// `--ghost` is the explicit name of the secondary look — the same as the base since 2026-10-08,
+// kept because 140+ templates carry it. It was `background: transparent`: on the band and in
+// lists it read as a word, not as a button.
+.be-btn--ghost         { background: var(--be-surface); border-color: var(--be-line); color: var(--be-text); }
+.be-btn--ghost:hover   { background: var(--be-surface2); border-color: var(--be-muted); }
+
+// Tokens only (dark mode, every palette) — the former `--color-danger-border` / `-bg` are light-only.
+.be-btn--danger        { background: var(--be-surface); color: var(--be-danger); border-color: color-mix(in srgb, var(--be-danger) 50%, var(--be-surface)); }
+.be-btn--danger:hover  { background: color-mix(in srgb, var(--be-danger) 10%, var(--be-surface)); border-color: var(--be-danger); }
 
 .be-btn--sm   { padding: .25rem .6rem; font-size: var(--font-size-xs); }
 .be-btn--full { width: 100%; justify-content: center; }
@@ -40,8 +62,9 @@
 // The button's TEXT, wrapped so a narrow context can drop it and leave the icon alone.
 // It carries no styling of its own and never will — a bare text node cannot be hidden by
 // CSS, and that is the entire reason this element exists. Convention: a `.be-btn` that
-// pairs an icon with a word puts the word in here. Currently required for every `hc1`
-// primary action, which collapses to its glyph in the mobile header band.
+// pairs an icon with a word puts the word in here. Required for every action-cell button
+// (`{action}.act` / hc1): on a phone the cell is a square icon at the end of the band and the
+// label is visually hidden there (still the button's accessible name) — _shell.scss.
 .be-btn__label { }
 
 // Icon-only action button (row actions, headers).

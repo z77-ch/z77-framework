@@ -1,11 +1,13 @@
 // Host binding: backend → the shared `z77-help` primitive (ADR-048, ADR-018 rule 7).
 //
 // The primitive owns the geometry; the backend gives the help window its surface and draws
-// the «i» that opens it — in the crumb line (skeleton) and in a window's title bar (core.js).
+// what opens it: «? Hilfe» in the top bar (`partials/helpTrigger`, ADR-048 addendum
+// 2026-10-08) and the «i» in a window's title bar (core.js).
 
 .be .z77-help {
     --z77-help-bg:   var(--be-bg);
     --z77-help-line: var(--be-line);
+    --z77-help-hit:  var(--be-accent-soft);
 
     box-shadow: var(--shadow-lg);
     color:      var(--be-text);
@@ -41,6 +43,43 @@
 .be .z77-help__close:hover,
 .be .z77-help__full[aria-pressed="true"] { background: var(--be-accent-soft); color: var(--be-text); }
 
+// «? Hilfe» in the top bar's right cluster, beside the bell: as high as the bell, the «?» in
+// the accent badge the window «i» uses. On a phone only the badge (the label is hidden, the
+// aria-label stays). `[hidden]` until core.js reveals it — the class's display must not win.
+.be .z77-help-trigger {
+    flex:          none;
+    display:       inline-flex;
+    align-items:   center;
+    gap:           var(--space-1);
+    height:        30px;
+    padding:       0 var(--space-2) 0 6px;
+    border:        1px solid var(--be-line);
+    border-radius: var(--radius-md);
+    background:    transparent;
+    color:         var(--be-text);
+    font:          inherit;
+    font-size:     0.8125rem;
+    cursor:        pointer;
+    transition:    background var(--transition-fast);
+
+    &[hidden] { display: none; }
+    &:hover { background: var(--be-surface); }
+    &:focus-visible { outline: 2px solid var(--be-accent); outline-offset: 2px; }
+}
+.be .z77-help-trigger__icon {
+    display:         inline-flex;
+    align-items:     center;
+    justify-content: center;
+    width:           18px;
+    height:          18px;
+    border-radius:   50%;
+    background:      var(--be-accent);
+    color:           var(--be-on-accent);
+    font-weight:     var(--font-weight-semibold);
+    font-size:       12px;
+    line-height:     1;
+}
+
 // The «i»: a small round badge in the accent colour, inline beside the crumb or the title.
 .be .z77-help-open {
     flex:            none;
@@ -63,4 +102,6 @@
 @media (max-width: 767px) {
     .be .z77-help,
     .be .z77-help__head { border-radius: 0; }
+    .be .z77-help-trigger { width: 30px; padding: 0; justify-content: center; }
+    .be .z77-help-trigger__label { display: none; }
 }

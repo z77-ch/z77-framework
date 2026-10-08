@@ -10,8 +10,15 @@
 .be-shell {
     --shell-c1:    248px;  // orientation column (drag-resizable, via the shared z77-split handle)
     --shell-bar:   48px;   // topbar height
-    --shell-band:  46px;   // header band height (hc1 | hc2)
-    --shell-crumb: 32px;   // crumb line height (hc3) — slimmer, it carries smaller type
+    // The band (action cell | toolbar) is exactly as high as the top bar (owner 2026-10-08):
+    // area switcher and action cell form one column of equal cells, and on a phone the act
+    // button is a square of this size. ONE value — change --shell-bar and both follow.
+    --shell-band:  var(--shell-bar);
+    // Crumb line height (hc3) — slimmer, it carries smaller type. FIXED: the grid track AND the
+    // slot use this one token, and the slot clips (overflow hidden) — so no content can make a
+    // page's crumb line taller than another's. The help trigger left it for the top bar
+    // (ADR-048 addendum, owner 2026-10-08).
+    --shell-crumb: 32px;
     --shell-tabs:  38px;   // tab row — rendered ONLY by screens that carry tabs
 
     position:              relative;
@@ -154,9 +161,13 @@ body.backend {
     white-space: nowrap;
 }
 // hc1 caps the dark orientation band, hc2 sits seamlessly on the content ground.
+// The action cell holds its one button INSET, with a little air all round (owner 2026-10-08,
+// after the live look — the flush button read as a coloured block, not as a button). See «Action cell».
 .be-shell-band__slot--1 {
     background:   var(--be-nav, var(--be-surface));
     border-right: 1px solid var(--be-line);
+    padding:      7px 8px;
+    align-items:  stretch;
 }
 .be-shell-band__slot--2 { background: var(--be-bg); }
 
@@ -250,7 +261,9 @@ body.backend {
     display:     flex;
     align-items: center;
     gap:         var(--space-2);
+    box-sizing:  border-box;
     height:      var(--shell-crumb);
+    overflow:    hidden;
     padding:     0 var(--space-3);
     min-width:   0;
     white-space: nowrap;
@@ -290,18 +303,55 @@ body.backend {
 // carries `flex: 1 1 auto`, the DMS fragment has `.dms--fill`); reviving a wrapper class here
 // would put that decision in the shell, where the screen cannot reach it.
 
-// hc1 holds a single primary «+ add» action → it fills the slot width and centers its content.
-.be-shell-band__slot--1 .be-btn--primary {
+// ── Action cell (hc1 / `{action}.act`) — ADR-033 revision 2026-10-08 ─────────────
+// The MOST FREQUENT action of the selected navigation entry, exactly ONE button, INSET in the
+// cell (≈8px air, radius 7px, the cell's height less the padding), label with text. Empty when
+// the entry has no frequent action (the dark cell then just caps the island).
+// Its weight is its meaning: `.be-btn--primary` = create («+ Neu»), `.be-btn--confirm` =
+// something is written («Buchen», «Speichern»), a `.be-shell-add` picker = several kinds
+// («+ Eintrag ▾»), a split picker = several kinds with a default («↓ Sichern | ▾»).
+//
+// «Insel-Akzent» (owner 2026-10-08, variant A): the fill is the ISLAND's own `--be-accent` — the
+// light accent each palette defines in the island block above — with the island's dark
+// `--be-on-accent` as ink. It belongs to the dark rail like every other control in it. In dark
+// mode the island block drops; the cell then reads the dark theme's accent, which is light too,
+// and takes `--be-on-accent-page` (the dark ground) as ink — the global `--be-on-accent` is white
+// there, unreadable on a light accent.
+// Confirm is GREEN in every palette: `--be-confirm-island`, a light green with dark ink — the
+// dark `--be-confirm` stays for confirm buttons outside the island (work-area bars, dialogs).
+.be-shell-band__slot--1 > .be-btn,
+.be-shell-band__slot--1 > .be-shell-add { flex: 1 1 auto; min-width: 0; }
+.be-shell-band__slot--1 .be-btn {
     width:           100%;
+    height:          100%;
+    padding:         0 var(--space-3);
+    border:          0;
+    border-radius:   7px;
     justify-content: center;
+    font-weight:     var(--font-weight-semibold);
 }
+.be-shell-band__slot--1 .be-btn--primary {
+    background: var(--be-accent);
+    color:      var(--be-on-accent);
+    filter:     none;
+}
+.be-shell-band__slot--1 .be-btn--primary:hover { background: color-mix(in srgb, var(--be-accent) 86%, #fff); }
+.be[data-be-theme="dark"] .be-shell-band__slot--1 .be-btn--primary { color: var(--be-on-accent-page); }
+.be-shell-band__slot--1 .be-btn--confirm {
+    background: var(--be-confirm-island);
+    color:      var(--be-on-confirm-island);
+    filter:     none;
+}
+.be-shell-band__slot--1 .be-btn--confirm:hover { background: color-mix(in srgb, var(--be-confirm-island) 86%, #fff); }
+.be-shell-band__slot--1 .be-btn:focus-visible { outline: 2px solid var(--be-text); outline-offset: 2px; }
 
 // Add-PICKER: a primary «＋ add» button that opens a small panel to choose the entry TYPE —
-// used where a view has several add kinds (e.g. translation: Text / Slug, backup: three
-// kinds). Built on the shared panel-toggle contract (data-panel-root / -trigger / -panel).
-// Since 2026-09-28 it lives in the toolbar (hc2, ADR-033 revision): natural width, the panel
-// hangs under the button with a width of its own. In the action cell (hc1) it keeps the old
-// shape: full slot width, panel as wide as the slot, lifted off the dark band.
+// used where a view has several add kinds (e.g. translation: Text / Slug). Built on the shared
+// panel-toggle contract (data-panel-root / -trigger / -panel). Its place is the action cell
+// (hc1, ADR-033 revision 2026-10-08): inset like every action-cell button, the panel as wide as
+// the button. Screens not yet migrated still carry it in the toolbar (hc2): natural width, the
+// panel hangs under the button with a width of its own.
+// The trigger's chevron carries `.be-shell-add__chevron` — on a phone it is the glyph left over.
 .be-shell-add { position: relative; }
 .be-shell-add__panel {
     position:       absolute;
@@ -320,17 +370,71 @@ body.backend {
 
     &[hidden] { display: none; }   // attribute wins over the class `display:flex`
 }
+// SPLIT picker — several kinds, ONE of them the default (backup: «Daten»). The main part runs
+// the default directly, the narrow chevron part is the panel trigger; the panel lists every
+// kind, the default first. Both parts carry the same fill and read as one button: 2px gap,
+// radius only on the outer corners. The main part is usually a <form> (POST) — the form is the
+// flex item, its button fills it.
+.be-shell-add--split { display: flex; gap: 2px; }
+.be-shell-add__main { display: flex; flex: 1 1 auto; min-width: 0; margin: 0; }
+.be-shell-add--split .be-shell-add__main .be-btn {
+    border-top-right-radius:    0;
+    border-bottom-right-radius: 0;
+}
+.be-shell-add--split > .be-shell-add__toggle {
+    flex:                      none;
+    width:                     2rem;
+    padding:                   0;
+    justify-content:           center;
+    border-top-left-radius:    0;
+    border-bottom-left-radius: 0;
+}
+
+// The SHELL CARD — the floating menu card of every picker that opens out of the dark rail: the
+// action cell's picker and the rail-top selection (owner 2026-10-08, after the live look: the
+// pure white card did not belong to the palette). A light TINT of the page accent: the card is
+// `--be-accent-soft-page` mixed into the page surface, framed by a 1px line a touch stronger
+// than the tint, items on hover and the current item in the full `--be-accent-soft-page` with
+// the page accent as ink. Works per palette without a value of its own — it reads the page
+// tokens. It must read as a menu, not as part of the rail: the island block redefines the
+// --be-* tokens on the cell/column, so the card sets them back to the page values (`--be-*-page`,
+// resolved on <html>, tokens/_colors.scss) and everything inside follows.
+// Dark theme: the dark accent-soft lies too close to the dark surface to tint anything, so the
+// card mixes the (light) page accent itself in — a dark surface with a palette cast, light text.
+@mixin shell-card {
+    --be-surface:     var(--be-surface-page);
+    --be-text:        var(--be-text-page);
+    --be-muted:       var(--be-muted-page);
+    --be-line:        var(--be-line-page);
+    --be-accent:      var(--be-accent-page);
+    --be-accent-soft: var(--be-accent-soft-page);
+    --shell-card-bg:   color-mix(in srgb, var(--be-accent-soft-page) 45%, var(--be-surface-page));
+    --shell-card-line: color-mix(in srgb, var(--be-accent-page) 18%, var(--be-accent-soft-page));
+    --shell-card-hi:   var(--be-accent-soft-page);
+    top:           calc(100% + 4px);
+    min-width:     0;
+    padding:       6px;
+    background:    var(--shell-card-bg);
+    color:         var(--be-text);
+    border:        1px solid var(--shell-card-line);
+    border-radius: 8px;
+    box-shadow:    0 8px 24px rgba(0, 0, 0, .35);
+
+    .be[data-be-theme="dark"] & {
+        --shell-card-bg:   color-mix(in srgb, var(--be-accent-page) 9%, var(--be-surface-page));
+        --shell-card-line: color-mix(in srgb, var(--be-accent-page) 28%, var(--be-surface-page));
+        --shell-card-hi:   color-mix(in srgb, var(--be-accent-page) 20%, var(--be-surface-page));
+    }
+
+    .be-shell-add__item { padding: 8px 10px; }
+    .be-shell-add__item:hover:not(:disabled),
+    .be-shell-add__item[aria-current] { background: var(--shell-card-hi); color: var(--be-accent); }
+}
 .be-shell-band__slot--1 {
-    .be-shell-add { width: 100%; }
+    .be-shell-add { display: flex; width: 100%; }   // the trigger fills the cell (less its inset)
     .be-shell-add__panel {
-        right:      0;
-        min-width:  0;
-        // Elevation: lift the panel OFF the dark orientation band instead of blending into it.
-        // In the dark band the local --be-surface is nearly the band colour, so a lighter,
-        // palette-tinted surface (surface2 mixed toward the light text colour) — "higher =
-        // lighter". Palette- and mode-correct, no hardcoded colours.
-        background: color-mix(in srgb, var(--be-surface2) 80%, var(--be-text));
-        border:     1px solid color-mix(in srgb, var(--be-surface2) 55%, var(--be-text));
+        @include shell-card;
+        right: 0;                                  // as wide as the button: cell width less the inset
     }
 }
 .be-shell-add__item {
@@ -363,7 +467,8 @@ body.backend {
 .be-shell-add__item:disabled { opacity: .45; cursor: not-allowed; }
 
 // SELECT variant — a CSS-only picker for a SELECTION the screen is scoped to (first user: the
-// fiscal year of the finance screens in the action cell, owner 2026-09-29). Same anatomy, but the
+// fiscal year of the finance screens — since 2026-10-08 at the top of the rail, `.be-shell-select`
+// below; owner 2026-09-29 had put it into the action cell). Same anatomy, but the
 // root is a `<details>` and its `<summary>` the trigger: the browser opens and closes it, no
 // panel-toggle script (Rule 7). The items are links; the chosen one carries `aria-current`.
 details.be-shell-add--select > summary {
@@ -380,6 +485,70 @@ details.be-shell-add--select > summary {
     background:  var(--be-accent-soft);
     color:       var(--be-accent);
     font-weight: var(--font-weight-medium);
+}
+// The chosen entry carries a check mark at its right end — CSS only, so the link text stays the
+// bare value (the harness reads it).
+.be-shell-add--select .be-shell-add__item[aria-current]::after {
+    content:     "¹3";
+    margin-left: auto;
+    font-weight: var(--font-weight-semibold);
+}
+// A line between groups of a picker panel (the years | «Alle Jahre»).
+.be-shell-add__sep {
+    height:     0;
+    margin:     4px 2px;
+    border:     0;
+    border-top: 1px solid var(--shell-card-line, var(--be-line));
+}
+
+// ── Rail-top selection (body section `railSelect`, template `{action}.select`) ─────
+// A choice that holds for the WHOLE AREA (the fiscal year in Finanzen) stands at the top of
+// the rail, above the menu entries it applies to (owner 2026-10-08, ADR-033 revision) — not in
+// the action cell, which carries the entry's most frequent action. Rendered by the skeleton
+// only when the section has content. It lives inside column 1, so on a phone it rides along
+// in the drawer with the rail.
+//
+// Look «Variante B» (owner 2026-10-08): the SAME inset as the action-cell button above it
+// (7px 8px, radius 7px, the button's height), filled with the island's `--be-accent-soft`,
+// framed in the island accent, the value (the year, `.be-shell-select__value`) in the accent
+// and bold, the chevron at the right. The list is the floating SHELL CARD of the action-cell
+// picker, as wide as the control.
+// The card floats although column 1 is a scroll container (`overflow: auto`): the selection
+// sits at the TOP of the column, so a card opening downward overlays the menu entries of the
+// same column and is cut only at the column bottom — and has its own scroll (`max-height`)
+// long before that. Nothing above it clips. On a phone the column is the drawer; the card
+// stays inside it (control width).
+.be-shell-select {
+    flex:    none;
+    padding: 7px 8px;
+}
+.be-shell-select .be-shell-add { display: flex; width: 100%; }
+.be-shell-select details.be-shell-add--select > summary {
+    display:         flex;
+    align-items:     center;
+    gap:             var(--space-2);
+    width:           100%;
+    height:          calc(var(--shell-band) - 14px);
+    padding:         0 10px 0 12px;
+    background:      var(--be-accent-soft);
+    border:          1px solid var(--be-accent);
+    border-radius:   7px;
+    color:           var(--be-text);
+    font-weight:     var(--font-weight-medium);
+    justify-content: space-between;
+
+    &:hover { background: color-mix(in srgb, var(--be-accent) 16%, var(--be-accent-soft)); }
+    &:focus-visible { outline: 2px solid var(--be-text); outline-offset: 2px; }
+}
+.be-shell-select .be-btn__label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.be-shell-select__value { color: var(--be-accent); font-weight: var(--font-weight-bold); }
+.be-shell-select .be-shell-add__chevron { flex: none; color: var(--be-accent); }
+.be-shell-select .be-shell-add__panel {
+    @include shell-card;
+    left:       0;
+    right:      0;
+    max-height: min(22rem, 60vh);
+    overflow-y: auto;
 }
 
 // Compact state indicator for a header slot: a coloured dot + ONE line. For screens whose
@@ -406,14 +575,38 @@ details.be-shell-add--select > summary {
 .be-shell-status--bad .be-shell-status__dot { background: var(--be-danger); }
 .be-shell-status--bad { color: var(--be-danger); }
 
-// Language switcher INSIDE a shell header slot (hc2): frameless — just the toggle buttons, no
-// banner frame and no label (per the prototype). The prominent framed `.be-lang-switch` banner
-// stays untouched for the not-yet-migrated inline views (e.g. metadata list).
-.be-shell-band__slot .be-lang-switch { background: none; border: none; padding: 0; margin: 0; gap: var(--space-1); }
+// Language switcher INSIDE a shell header slot (hc2): frameless, no label — and since
+// 2026-10-08 (owner, one look per kind of control) it looks like THE tab, `.be-viewtabs`: text
+// with an accent underline on the band's bottom edge, never a box. The same anatomy carries the
+// journal's «Einzel | Sammel». The prominent framed `.be-lang-switch` banner outside the band
+// stays untouched (it is a warning, not a tab strip).
+.be-shell-band__slot .be-lang-switch {
+    align-self:   stretch;
+    margin-block: calc(-1 * var(--space-2));   // span the full band height, like .be-viewtabs
+    background:   none;
+    border:       none;
+    padding:      0;
+    gap:          var(--space-1);
+}
 .be-shell-band__slot .be-lang-switch__label { display: none; }
-.be-shell-band__slot .be-lang-switch__option { background: transparent; border-color: transparent; color: var(--be-muted); }
-.be-shell-band__slot .be-lang-switch__option:hover,
-.be-shell-band__slot .be-lang-switch__option--active { background: var(--be-accent-soft); border-color: transparent; color: var(--be-accent); }
+.be-shell-band__slot .be-lang-switch__options { align-items: stretch; margin-left: 0; gap: var(--space-1); }
+.be-shell-band__slot .be-lang-switch__option {
+    padding:       0 var(--space-3);
+    background:    none;
+    border:        0;
+    border-bottom: 2px solid transparent;
+    border-radius: 0;
+    color:         var(--be-muted);
+    font-size:     var(--font-size-sm);
+    font-weight:   500;
+    letter-spacing: normal;
+}
+.be-shell-band__slot .be-lang-switch__option:hover { background: none; color: var(--be-text); }
+.be-shell-band__slot .be-lang-switch__option--active {
+    background:          none;
+    color:               var(--be-text);
+    border-bottom-color: var(--be-accent);
+}
 
 // Drive header slot (hc2): the DMS breadcrumb PANE (folder path) grows to fill the left, the
 // new-folder / trash action icons sit at the right — like every other view's hc2. The `.dms`
@@ -622,17 +815,24 @@ details.be-shell-add--select > summary {
 // ── Backdrop (mobile drawers) ────────────────────────────────────────────────────
 .be-shell__backdrop { display: none; }
 
-// ── Mobile: the whole left side = the drawer (Schublade) ─────────────────────────
-// ADR-033 (revised 2026-09-28): left = choose, right = work. On a phone the LEFT column
-// disappears and slides in from the menu icon as ONE drawer: area switcher, action cell
-// and rail stacked, the crumb gap dropped (it is an empty cell). The work side keeps the
-// full width. The four parts live in different grid rows, so the drawer is not one element:
-// each part is taken out of the flow, stacked by the known row heights and moved by the
-// same `is-drawer-l` class. No element is duplicated.
+// ── Mobile: area switcher + rail = the drawer (Schublade); the action stays visible ──
+// ADR-033 (revised 2026-09-28, again 2026-10-08): on a phone the LEFT column disappears and
+// slides in from the menu icon as ONE drawer: area switcher, then the rail — with its top
+// selection (`.be-shell-select`, the fiscal year) — the crumb gap dropped (an empty cell). The
+// work side keeps the full width. The parts live in different grid rows, so the drawer is not
+// one element: each is taken out of the flow, stacked by the row heights and moved by the same
+// `is-drawer-l` class. No element is duplicated.
 //
-// Per screen the action cell can stay on the work side instead: a screen whose hc1 must be
-// reachable without the drawer puts `data-shell-act-inline` on an element in its hc1
-// template — the old shape (end of the band, glyph only) comes back for that screen alone.
+// The ACTION CELL is NOT in the drawer any more (owner 2026-10-08 — the drawer hid the action).
+// Its button becomes a SQUARE ICON at the RIGHT end of the toolbar row: as high as the row
+// (`--shell-band`), flush, the label kept for screen readers. Pure CSS: the band turns into a
+// flex row and `order` moves the SAME element — never a second copy. The square sits in the
+// toolbar, OUTSIDE the island, so it takes the PAGE colours: create = `--be-accent-page` with
+// `--be-on-accent-page`, confirm = `--be-confirm` (the island's light variants are made for the
+// dark rail). A split picker shows its chevron part alone — one square that opens the menu,
+// the default listed first.
+// Glyphs: «+» (create, `icon-plus`), «✓» (confirm, `icon-check`), the chevron of a picker
+// (`.be-shell-add__chevron`); the template supplies the icon, this block only shows it alone.
 @media (max-width: 767px) {
     .be-shell {
         --shell-drawer: min(300px, 84%);
@@ -656,23 +856,68 @@ details.be-shell-add--select > summary {
         transition: transform .28s ease;
     }
 
-    // Drawer part 2 — the action cell, under the area switcher. The band keeps only the
-    // toolbar. The slot stays inside the band's stacking context (z-index 3); that is why
-    // the backdrop below leaves the drawer's width free instead of covering the whole row.
-    .be-shell-band { grid-template-columns: minmax(0, 1fr); }
-    .be-shell-band__slot--2 { grid-column: 1; }
+    // The band: the toolbar first and growing, the action cell a square at the end.
+    .be-shell-band { display: flex; align-items: stretch; }
+    .be-shell-band__slot--2 { order: 1; flex: 1 1 auto; min-width: 0; }
     .be-shell-band__slot--1 {
-        position:     absolute;
-        top:          calc(var(--shell-bar) + var(--shell-band));
-        left:         0;
-        width:        var(--shell-drawer);
-        z-index:      21;
+        order:        2;
+        flex:         none;
+        width:        var(--shell-band);
+        padding:      0;
         border-right: 0;
-        transform:    translateX(-100%);
-        transition:   transform .28s ease;
+        border-left:  1px solid var(--be-line-page);
     }
-    // An empty hc1 leaves no dark strip in the drawer — the rail moves up (see part 3).
+    // No frequent action → no square, the toolbar takes the whole row.
     .be-shell-band__slot--1:empty { display: none; }
+    .be-shell-band__slot--1 .be-btn { padding: 0; gap: 0; border-radius: 0; }
+    .be-shell-band__slot--1 .be-btn--primary,
+    .be-shell-band__slot--1 .be-btn--primary:hover {
+        background: var(--be-accent-page);
+        color:      var(--be-on-accent-page);
+    }
+    .be-shell-band__slot--1 .be-btn--confirm,
+    .be-shell-band__slot--1 .be-btn--confirm:hover {
+        background: var(--be-confirm);
+        color:      var(--be-on-confirm);
+    }
+    .be-shell-band__slot--1 .be-btn:focus-visible { outline-color: var(--be-on-accent-page); outline-offset: -4px; }
+    // Split picker: the main part leaves, the chevron part fills the square.
+    .be-shell-band__slot--1 .be-shell-add--split > .be-shell-add__main { display: none; }
+    .be-shell-band__slot--1 .be-shell-add--split > .be-shell-add__toggle { flex: 1 1 auto; width: 100%; }
+    .be-shell-band__slot--1 .be-btn .be-icon { width: 20px; height: 20px; }
+    // The label leaves the picture but NOT the accessibility tree — the button keeps its name
+    // («Inhalt», «Buchen») for screen readers and as its tooltip-less text. Visually hidden,
+    // never `display: none` (that would leave an icon-only button without a name).
+    .be-shell-band__slot--1 .be-btn__label {
+        position:    absolute;
+        width:       1px;
+        height:      1px;
+        overflow:    hidden;
+        clip-path:   inset(50%);
+        white-space: nowrap;
+    }
+    // A picker shows its chevron alone — the leading kind icon («↓ Sichern») would make it
+    // look like a plain action.
+    .be-shell-band__slot--1 .be-shell-add > .be-btn .be-icon:not(.be-shell-add__chevron) { display: none; }
+    // Its panel hangs off a square at the right edge — it anchors right with its own width,
+    // never wider than the screen less a gutter, so it opens fully visible.
+    .be-shell-band__slot--1 .be-shell-add__panel {
+        top:       100%;
+        left:      auto;
+        right:     0;
+        min-width: 12rem;
+        max-width: calc(100vw - 16px);
+    }
+    // Tabs in the toolbar scroll sideways when they do not fit beside the action square — the
+    // band is ONE line (never wraps), and the square keeps its place at the right end
+    // (the Mandant's three section tabs, the five finance reports).
+    .be-shell-band__slot--2 .be-viewtabs {
+        min-width:       0;
+        overflow-x:      auto;
+        overflow-y:      hidden;
+        scrollbar-width: none;
+    }
+    .be-shell-band__slot--2 .be-viewtabs__tab { flex: none; }
 
     // The crumb line and the tab row lose their island cell: one flex row each.
     .be-shell-crumb { display: flex; align-items: stretch; }
@@ -685,13 +930,14 @@ details.be-shell-add--select > summary {
     .be-shell-tabs__slot--2 { flex: 1; min-width: 0; overflow-x: auto; }
     .be-shell-tabs__slot--1 { display: none; }
 
-    // Drawer part 3 — the rail, under the action cell, down to the bottom.
+    // Drawer part 2 — the rail (its top selection first), under the area switcher, down to
+    // the bottom.
     // ⚠️ `grid-area: auto`: an absolutely positioned GRID CHILD takes its grid area as
     // containing block — with `grid-row: 5` kept, `top` would count from the columns row.
     .be-shell-col--1 {
         grid-area:  auto;
         position:   absolute;
-        top:        calc(var(--shell-bar) + 2 * var(--shell-band));
+        top:        calc(var(--shell-bar) + var(--shell-band));
         left:       0;
         bottom:     0;
         width:      var(--shell-drawer);
@@ -700,16 +946,13 @@ details.be-shell-add--select > summary {
         transform:  translateX(-100%);
         transition: transform .28s ease;
     }
-    .be-shell:has(.be-shell-band__slot--1:empty) .be-shell-col--1 { top: calc(var(--shell-bar) + var(--shell-band)); }
 
     .be-shell.is-drawer-l .be-shell-topbar__mod,
-    .be-shell.is-drawer-l .be-shell-band__slot--1,
     .be-shell.is-drawer-l .be-shell-col--1 { transform: none; }
     // The shadow only while open — closed, it would bleed in at the left edge.
     .be-shell.is-drawer-l .be-shell-col--1 { box-shadow: 8px 0 40px -8px rgba(0,0,0,.4); }
 
-    // Dims the work side only: the drawer's width stays free, so the action cell (inside the
-    // band's lower stacking context) is not covered. A tap on it closes the drawer.
+    // Dims the work side (the drawer covers the rest). A tap on it closes the drawer.
     .be-shell__backdrop {
         display:        block;
         position:       absolute;
@@ -721,30 +964,6 @@ details.be-shell-add--select > summary {
         transition:     opacity .2s;
     }
     .be-shell.is-drawer-l .be-shell__backdrop { opacity: 1; pointer-events: auto; }
-
-    // ── Per-screen switch: the action cell stays on the work side ──
-    // The pre-2026-09-28 shape: the hc1 action moves to the END of the band and drops to its
-    // glyph, next to the icon actions hc2 carries. Flex + `order`, so the SAME element moves.
-    .be-shell:has([data-shell-act-inline]) {
-        .be-shell-band { display: flex; align-items: stretch; }
-        .be-shell-band__slot--2 { order: 1; flex: 1; min-width: 0; }
-        .be-shell-band__slot--1 {
-            position:    static;
-            order:       2;
-            flex:        none;
-            width:       auto;
-            padding:     var(--space-2);
-            border-left: 1px solid var(--be-line);
-            transform:   none;
-            transition:  none;
-        }
-        // Glyph only: `.be-btn__label` exists for exactly this.
-        .be-shell-band__slot--1 .be-btn--primary { width: auto; padding: 0 var(--space-2); }
-        .be-shell-band__slot--1 .be-btn__label   { display: none; }
-        // The picker panel hangs off a ~34px button at the right edge — it anchors right.
-        .be-shell-band__slot--1 .be-shell-add__panel { left: auto; right: 0; min-width: 12rem; }
-        .be-shell-col--1 { top: calc(var(--shell-bar) + var(--shell-band)); }
-    }
 
     // Topbar right cluster on mobile: hide the env pill + bell (avatar + burger stay).
     // Relocated from the retired layout/_nav-mobile.scss.

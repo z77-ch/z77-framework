@@ -100,3 +100,11 @@ input[type="color"]::-moz-color-swatch          { border: none; border-radius: .
     outline:        3px solid var(--color-border-focus);
     outline-offset: 2px;
 }
+
+// `hidden` always hides. The UA rule `[hidden] { display: none }` has the specificity of one
+// attribute and loses against every class that sets `display` — `.be-icon-btn` (flex),
+// `.be-btn` (inline-flex), … — so a button a script hid (`el.hidden = true`, drive.js) stayed
+// visible. One reset instead of a `&[hidden]` patch per component. Safe in this bundle: base.css
+// is the backend's only stylesheet, frontend and member load their own; no backend template or
+// script uses `hidden` while expecting the element to show.
+[hidden] { display: none !important; }

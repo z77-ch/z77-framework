@@ -35,31 +35,42 @@
     pointer-events: none;
 }
 
-/* ── Group tabs ── */
+/* ── Group tabs ──
+ * One look per kind of control (owner 2026-10-08): a tab is text with an accent UNDERLINE,
+ * never a box — the look of `.be-viewtabs` (components/_shell.scss), which is THE tab
+ * component. This strip was a row of pills with a filled active pill; it keeps its name and
+ * markup (navigation/list.js toggles `--active`) until the screens move their tabs into the
+ * toolbar, but already looks like the one tab. New screens use `.be-viewtabs`. */
 .be-tabs {
-    display:     flex;
-    flex-wrap:   wrap;
-    align-items: center;
-    gap:         .25rem;
-    margin-top:  1rem;
-    padding-top: 1rem;
-    border-top:  1px solid var(--be-line);
+    display:       flex;
+    flex-wrap:     wrap;
+    align-items:   stretch;
+    gap:           var(--space-1);
+    margin-top:    1rem;
+    padding-top:   1rem;
+    border-bottom: 1px solid var(--be-line);
 }
 .be-tabs__tab {
-    padding:       .3rem .75rem;
-    border:        1px solid var(--be-line);
-    border-radius: var(--radius-pill);
-    background:    transparent;
-    font-size:     .8rem;
-    font-weight:   var(--font-weight-medium);
+    display:       inline-flex;
+    align-items:   center;
+    margin-bottom: -1px;               // the active line sits ON the strip's bottom edge
+    padding:       .45rem .75rem;
+    border:        0;
+    border-bottom: 2px solid transparent;
+    border-radius: 0;
+    background:    none;
+    font:          inherit;
+    font-size:     var(--font-size-sm);
+    font-weight:   500;
     color:         var(--be-muted);
+    text-decoration: none;
     white-space:   nowrap;
     cursor:        pointer;
-    transition:    background var(--transition-fast), color var(--transition-fast);
+    transition:    color var(--transition-fast), border-color var(--transition-fast);
 }
-.be-tabs__tab:hover    { background: var(--be-bg); color: var(--be-text); }
-.be-tabs__tab--active  { background: var(--be-accent); color: var(--color-text-inverse); border-color: var(--be-accent); }
-.be-tabs__tab--add     { border-style: dashed; }
+.be-tabs__tab:hover    { color: var(--be-text); }
+.be-tabs__tab--active  { color: var(--be-text); border-bottom-color: var(--be-accent); }
+.be-tabs__tab--add     { border-bottom-style: dashed; border-bottom-color: var(--be-line); }
 
 /* Eine Leiste, die eine Fläche ERÖFFNET statt sie zu unterteilen: oben im
  * Rumpf eines Dialogs, oben in einem Abschnitt. Die Vorgabe trennt nach oben

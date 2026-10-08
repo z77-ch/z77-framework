@@ -1,6 +1,6 @@
 # ADR-033 — Shell action placement: one rule for every shell
 
-Date: 2026-08-15 · Status: accepted · Revised: 2026-09-28 (an action stands where the thing it acts on is shown; the phone drawer — see «Revision 2026-09-28» below)
+Date: 2026-08-15 · Status: accepted · Revised: 2026-09-28 (an action stands where the thing it acts on is shown; the phone drawer — see «Revision 2026-09-28» below); 2026-10-08 (the action cell carries the most frequent action again; area selection at the top of the rail; the phone icon — see «Revision 2026-10-08» below)
 
 ## Context
 
@@ -27,7 +27,7 @@ added 2026-09-28. The header slots also load as `{action}.act|toolbar|crumb.tpl.
 
 | Place | backend | member | Carries |
 |---|---|---|---|
-| **Action cell** | `hc1` / `{action}.act` | `me-shell__act` (`shellActions`) | the DECISIVE action(s) on what the RAIL shows (the list there) — max two VISIBLE buttons; weight follows meaning (accent = forward, quiet = ends/leaves) (revised 2026-09-28) |
+| **Action cell** | `hc1` / `{action}.act` | `me-shell__act` (`shellActions`) | the DECISIVE action(s) on what the RAIL shows (the list there) — max two VISIBLE buttons; weight follows meaning (accent = forward, quiet = ends/leaves) (revised 2026-09-28). **Backend since 2026-10-08: the MOST FREQUENT action of the selected navigation entry, exactly one button, inset in the island accent** (see the revision of that date) |
 | **Toolbar** | `hc2` / `{action}.toolbar` | `me-shell__toolbar` (`shellTabs` / `shellTools`; `shellWorkActions`) | the page's TABS or its TOOLS on the left — never both. Tools include the shown thing's STATE SWITCHES and a list's FILTERS (revised 2026-08-15). After them, LEFT-aligned like everything in the toolbar: the actions on what the WORK AREA shows (revised 2026-09-28 — see below) |
 | **Crumb line** | `hc3` (own slim row) | `me-shell__crumbs` (own slim row) | POSITION only — the breadcrumb, nothing else |
 | **Content** | column 2 | detail pane | only what is bound to an in-content selection, and dialog-internal buttons |
@@ -100,13 +100,15 @@ owner's case-by-case decisions had in common:
 - **Member «Mandant»**: the rail only lists the sections; «Bearbeiten»
   (Stammdaten) and «Einladen» (Zugänge) change what the RIGHT side shows →
   toolbar (`shellWorkActions`).
-- **Backend**: the rail is the area's NAVIGATION (subnav — Navigation, Nav
+- ~~**Backend**~~ (superseded 2026-10-08 — the backend action cell carries the entry's most
+  frequent action again, see below): the rail is the area's NAVIGATION (subnav — Navigation, Nav
   Alias, Benutzer …); every list lives in the work area. So every backend add
   action («+ Eintrag», «+ Kontakt», «Hochladen», «Sichern», «Konto», «Buchung
   erfassen» …) acts on the right side → **toolbar (hc2)**. All sixteen moved
   on 2026-09-28; the backend action cell is empty on every framework screen
   now, and stays the place for an action that works on the rail itself.
-- **A selection is a choosing activity → action cell** (owner 2026-09-29):
+- ~~**A selection is a choosing activity → action cell**~~ (superseded 2026-10-08 — a selection
+  that holds for the whole area stands at the top of the rail, see below) (owner 2026-09-29):
   what the whole screen works on is picked on the left. First user: the
   fiscal-year selection of the journal and the reports (`financial.md`,
   `FiscalYearSelection` — default the current year, a deviation remembered per
@@ -122,7 +124,8 @@ the row. A form's Speichern + Abbrechen stays in the action cell where the
 rail is the list being edited (member forms); where it is not, it follows the
 rule like every other action.
 
-**On a phone the whole left side is a drawer (Schublade).** Area switcher,
+**On a phone the whole left side is a drawer (Schublade).** (Backend: the action cell left
+the drawer on 2026-10-08 — see below.) Area switcher,
 action cell and rail slide in together from a menu icon — the first thing in
 the top bar; the crumb gap, an empty cell, is dropped. The work side keeps the
 full width. Choosing happens in the drawer, working on the right. Backend
@@ -132,8 +135,65 @@ member opens the drawer on load when nothing is selected (`$detailOpen`
 empty) — otherwise the work side would be empty.
 
 **Per screen the action cell may stay visible on a phone** (owner: «we do not
-want to build ourselves in»). A backend screen whose hc1 must be reachable
+want to build ourselves in»). (Superseded 2026-10-08: on a phone the backend action cell is
+ALWAYS visible now, as a square icon; `data-shell-act-inline` is gone.) A backend screen whose hc1 must be reachable
 without the drawer marks an element in its hc1 template with
 `data-shell-act-inline`: that screen's action cell then moves to the end of
 the band as a glyph (the shape from SHELL-BAND-ROW-001). Details and
 mechanics: `css-backend.md` → SHELL-DRAWER-001.
+
+## Revision 2026-10-08 — the action cell carries the most frequent action again; area selection at the top of the rail; the phone icon
+
+Owner decision, worked out on the design canvas of the backend shell — the «developer canvas»,
+<https://claude.ai/artifact/4hTQySATC3KMhqxN7RZMGh>, extended when new areas come. It revises
+the BACKEND half of the 2026-09-28 revision; the member shell is not touched.
+
+**Why.** The eye looks for an action ABOVE the menu entry it belongs to: the action cell sits
+directly over the rail, and the selected rail entry is what the action is about. With the cell
+empty and «+ Neu» somewhere in the toolbar, every screen put its main action at a different
+place. And on a phone the drawer hid the action cell entirely — the action was behind the menu
+icon, where nobody looks for it.
+
+What changes against 2026-09-28:
+
+1. **Action cell = the most frequent action of the selected navigation entry** — exactly ONE
+   button, rendered INSET in the island accent (owner 2026-10-08 after the live look — first
+   built flush, which read as a coloured block: now ~8px air, radius 7px, the island's light
+   accent with dark ink; confirm a light green in every palette; label with text), fed by the
+   existing `{action}.act.tpl.php` convention (hc1). Empty when the entry has no frequent action.
+   Weight follows meaning: create («+ Neu») = accent fill (`.be-btn--primary`); confirm —
+   something is WRITTEN («Buchen», «Speichern», «Definitiv stellen») = green fill
+   (`.be-btn--confirm`); several kinds = the add-picker `.be-shell-add` («Eintrag ▾»); several
+   kinds with a default = the split picker («↓ Sichern | ▾»: the main part runs the default, the
+   chevron opens the menu) — inset as well, the menu a solid light card in the page colours. Replaces «the backend action cell is empty on every framework screen» and
+   «every backend add action → toolbar».
+2. **The band is as high as the top bar** (`--shell-band: var(--shell-bar)`) — area switcher and
+   action cell are one column of equal cells.
+3. **A selection that holds for the whole AREA stands at the TOP OF THE RAIL**, above the menu
+   entries it applies to — not in the action cell. First user: the fiscal year of Finanzen
+   (journal and reports). Convention: template `{action}.select.tpl.php`, or a fragment's
+   `addPartials(…, 'railSelect')`; the skeleton renders the section `railSelect` at the top of
+   column 1, only when it has content. Replaces «a selection is a choosing activity → action
+   cell» (2026-09-29).
+4. **Toolbar**: tabs first (left), then the tools in secondary form. No primary button there any
+   more once the screens are migrated — their primary action moves to the action cell.
+5. **Phone (below 767px)**: the drawer keeps area switcher, the rail-top selection and the rail.
+   The action cell is NOT in the drawer: its button becomes a SQUARE ICON at the RIGHT end of the
+   toolbar row, as high as the row, flush, in the PAGE colours (it is outside the island there:
+   page accent, `--be-confirm`), a split picker as its chevron alone, the label kept as the
+   accessible name (visually hidden). Glyphs: «+» create, «✓» confirm, the chevron of a picker.
+   Pure CSS — the band turns into a flex row and `order` moves the same element. The per-screen
+   switch `data-shell-act-inline` is gone: what it opted into is now the rule.
+6. **One look per kind of control** (`css-backend.md` → «buttons, tabs, switch»): tabs are text
+   with an accent underline (`.be-viewtabs`), never a box; secondary = surface with border;
+   danger = red border, never filled; `.be-switch` is the only on/off form.
+
+Unchanged: the crumb line carries the crumb only; dialogs carry their own buttons; actions bound
+to a selection of rows stay with the selection («Definitiv stellen (3)», «Mahnlauf starten»).
+
+**Consequences.** module-backend: `_shell.scss` (band height, inset island-accent cell, split picker, solid picker panel, `.be-shell-select`,
+phone block), `_buttons.scss` (`--confirm`, the secondary look as the default), the skeleton and
+`loadHeaderSlots()` (`railSelect`); module-financial: the fiscal-year dropdown moved to
+`railSelect`. Reference migration: Webseiten › Inhalte («+ Inhalt», `list.act.tpl.php`). The other
+screens move to the per-area target table in `css-backend.md` in a following step (pending
+there).

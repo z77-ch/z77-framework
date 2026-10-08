@@ -74,10 +74,14 @@ before deviating.
    open a door: no data inserted as HTML, no secrets in script-readable storage, no foreign
    scripts, no dependencies on stock; a CSP restricts scripts to the own origin. (Replaces
    «as little JavaScript as possible», owner decision 2026-09-29.) → [`conventions.md` → JavaScript](docs/01-handbook/conventions.md).
-8. **Build module-agnostic.** A recurring pattern becomes a shared, opt-in building block
+8. **A backend screen follows the area recipe.** Action cell = the most frequent action of the
+   selected entry (or empty), tabs and tools in the toolbar, tables as standard lists, one look
+   per control kind, help with field sections — and a board on the developer canvas before
+   building. → [`backend-screen.md`](docs/01-handbook/backend-screen.md).
+9. **Build module-agnostic.** A recurring pattern becomes a shared, opt-in building block
    (component, partial, trait, convention loader), never hard-wired into one view. →
    [`conventions.md` → Reusability](docs/01-handbook/conventions.md).
-9. **Topic docs are the single source of truth per area.** Read `docs/topics/{thema}.md`
+10. **Topic docs are the single source of truth per area.** Read `docs/topics/{thema}.md`
    before working; keep `npm run docs:check` green after editing.
 
 ## What you must NOT do

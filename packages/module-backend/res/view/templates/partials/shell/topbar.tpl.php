@@ -110,6 +110,10 @@ foreach ($sections as $item) {
             </div>
         </div>
 
+        <?php /* Context help (ADR-048 addendum, owner 2026-10-08): only where the controller
+                 attached help — the crumb line no longer carries a trigger. */ ?>
+        <?= !empty($helpBlock) ? $this->partial('partials/helpTrigger', [], 'Z77\Shared') : '' ?>
+
         <button class="backend-topbar__bell" aria-label="Benachrichtigungen">
             <svg class="be-icon" width="14" height="14" aria-hidden="true"><use href="#icon-bell"/></svg>
         </button>

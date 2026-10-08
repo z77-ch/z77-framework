@@ -106,3 +106,30 @@ form must be — a window never scrolls sideways because of a fixed guess in CSS
   maintain.
 - **Auto-detecting `{action}.help.tpl.php`** — an action renders different forms (the journal's
   edit: one-line or compound); the controller knows which. Can be added later as a default.
+
+## Addendum 2026-10-08 — context help from the top bar (owner decision)
+
+**Trigger in the top bar.** A page's help is opened by «? Hilfe» in the top bar's right
+cluster (backend: before the bell; `Z77\Shared` partial `partials/helpTrigger`), shown only
+when the controller attached help (`$helpBlock`). On a phone only the «?» (the accessible name
+stays). The «i» left the backend crumb line, and the crumb line has ONE fixed height
+(`--shell-crumb`) — a page with help looks like one without. A window keeps its «i» in the
+title bar: while a window is open the page behind is `inert`, the top bar included.
+
+**Sections per field.** A help template may mark sections `data-help-field="<field name>"`
+(the form control's `name` without `[…]`) beside its general part. A control whose section
+key is not its name declares `data-help-key="<key>"`.
+
+**The script.** core.js remembers the last form control focused outside the help window
+(`focusin`). «? Hilfe» opens the help as before and, when the help has a section for that
+field, scrolls to it and marks it briefly (`is-help-hit`, a CSS fade, none under
+`prefers-reduced-motion`); otherwise it opens at the top. **F1** in a form control opens the
+same help at that control's section — `preventDefault` only where there is help, so F1 stays
+the browser's elsewhere.
+
+**No fetch, no new attack surface.** The help is already in the answer; the script clones the
+template as before and compares attribute values (no selector built from data, no
+`innerHTML` with data). Without JavaScript there is no help window — so the trigger is
+rendered `hidden` and core.js reveals it (before: the crumb «i» showed but did nothing).
+
+**Open:** the member shell still shows its «i» in the crumb line (`fetch.md` pending).

@@ -41,6 +41,35 @@
     --be-warn:        #c0851c;
     --be-danger:      #dc2626;   /* palette-independent; overridable per palette if needed */
     --be-on-accent:   #ffffff;   /* indicator color on top of --be-accent (switch thumb, checkmark) */
+
+    /* Derived ONCE here, for every palette and both themes (owner 2026-10-08, ADR-033 rev.).
+       A custom property that reads var() is resolved on the element that declares it and
+       inherited as that value: declared on `.be` (= <html>, where the palette and theme
+       attributes sit too), these see the FINAL palette values and keep them all the way down —
+       also inside the dark island (column 1, the action cell), which redefines --be-accent
+       locally to a light variant that carries no white text.
+       - --be-*-page: the page's own surface, text, line and accent, island-proof. Whatever
+         lies INSIDE the island but must look like the page reads them: the picker panel of
+         the action cell (a light card over the dark rail), the phone's action square (it
+         leaves the island there and sits in the toolbar).
+       - --be-on-accent-page: the ink on the page accent where a LABEL must read — white in
+         light, the dark ground in dark (the dark accents #a3e635, #f5b528 … carry no white).
+       - --be-confirm: the «Bestätigen» fill (Buchen, Speichern, Definitiv stellen) OUTSIDE the
+         island (work-area bars, dialogs, the phone's action square): the palette's --be-good
+         darkened so white text stays readable — the dark-mode goods are far too light for white.
+       - --be-confirm-island: the same «Bestätigen» INSIDE the action cell — a light green with
+         dark ink, the counterpart of the island's light accent; one green for every palette. */
+    --be-surface-page:     var(--be-surface);
+    --be-text-page:        var(--be-text);
+    --be-muted-page:       var(--be-muted);
+    --be-line-page:        var(--be-line);
+    --be-accent-page:      var(--be-accent);
+    --be-accent-soft-page: var(--be-accent-soft);
+    --be-on-accent-page:   #ffffff;
+    --be-confirm:          color-mix(in srgb, var(--be-good) 60%, #000);
+    --be-on-confirm:       #ffffff;
+    --be-confirm-island:   #6fd49c;
+    --be-on-confirm-island: #0f2a1b;
 }
 
 /* Werkbank dark — technical indigo */
@@ -57,6 +86,9 @@
     --be-accent-soft: #24243f;
     --be-good:        #4ec98a;
     --be-warn:        #dbaa4e;
+    /* Every dark accent is light: a label on it takes the dark ground, not white. Declared
+       here (the theme attribute sits on the same element as .be), resolved per palette. */
+    --be-on-accent-page: var(--be-bg);
 }
 
 /* Citrus — frisches Apfelgrün auf Eisweiß */
