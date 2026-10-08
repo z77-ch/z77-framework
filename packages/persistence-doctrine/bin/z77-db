@@ -11,6 +11,12 @@
  *   php vendor/bin/z77-db status                                       applied / pending, and where the migrations are
  *   php vendor/bin/z77-db diff     --namespace="Z77\Module\X\Migrations"    write a migration from mapping ≠ database
  *   php vendor/bin/z77-db generate --namespace="Z77\Module\X\Migrations"    write an empty migration to fill in by hand
+ *   php vendor/bin/z77-db setup    [--dry-run] [--allow-drop]          migrate, then write one migration per owner for
+ *                                                                      what the mapping still needs, and apply it
+ *
+ * The developer's flow (ADR-039 addendum 2026-10-08): change the entity, run
+ * `setup` — locally, and on the server over SSH, where it applies the shipped
+ * migrations and must find nothing left to write.
  *
  * Lives in this package, not in the kernel: the kernel carries no Composer
  * dependency (ADR-001) and `doctrine/migrations` is one; the binary exists

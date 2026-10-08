@@ -24,7 +24,17 @@
  *     (namespace `{Module}\Migrations`), refuses to guess the namespace, and
  *     after `migrate` reports NO change — including a `money` column
  *     (DOCTRINE-TYPE-001);
- *   - a non-CLI SAPI is refused.
+ *   - a non-CLI SAPI is refused;
+ *   - `setup` (ADR-039 addendum 2026-10-08): migrate first, then one
+ *     migration per owner — a module inside the root gets it in its
+ *     `res/migrations`, a project override in `override/z77/project/res/
+ *     migrations` — applied, nothing left afterwards; a dropped column waits
+ *     for `--allow-drop`; an unmapped table and an owner under vendor/ are
+ *     refused with nothing written; `--dry-run` writes and applies nothing;
+ *     `migrate` / `status` see the project's migrations.
+ *
+ * Section I re-invokes the script with `--setup` — one process per run,
+ * because the entity classes change between runs.
  *
  * Run: php tests/persistence-doctrine-migrations.php
  * Needs what tests/persistence-doctrine.php needs (vendor/, MariaDB,
@@ -55,6 +65,7 @@ namespace {
     use Z77\Persistence\Doctrine\Bootstrap as DoctrineBootstrap;
     use Z77\Persistence\Doctrine\Console\MigrationDirectories;
     use Z77\Persistence\Doctrine\Console\MigrationsApplication;
+    use Z77\Persistence\Doctrine\Console\SetupCommand;
     use Z77\Persistence\Doctrine\Entities\NumberRange;
     use Z77\Persistence\Doctrine\EntityManagerFactory;
     use Z77\Persistence\Resolver\DataSourceResolver;
@@ -103,12 +114,22 @@ namespace {
     // column and has an (initially empty) res/migrations; `silent` declares NO
     // entity but ships a migration that must never run.
 
+    // The source paths in lookup order, like FileFinder: override/ first. `local`
+    // is a module INSIDE the project root and outside vendor/ (the framework
+    // repo's packages/*) — the owner `z77-db setup` may write for (section I).
     $moduleAutoload = static function (string $base): void {
         spl_autoload_register(static function (string $class) use ($base): void {
-            foreach (['Z77\\Module\\Probe\\' => 'module-probe', 'Z77\\Module\\Silent\\' => 'module-silent'] as $prefix => $dir) {
+            $roots = [
+                'Z77\\Module\\Probe\\'  => ['override/z77/module/probe/src', 'vendor/z77/module-probe/src'],
+                'Z77\\Module\\Silent\\' => ['vendor/z77/module-silent/src'],
+                'Z77\\Module\\Local\\'  => ['override/z77/module/local/src', 'packages/module-local/src'],
+            ];
+            foreach ($roots as $prefix => $dirs) {
                 if (str_starts_with($class, $prefix)) {
-                    $file = "{$base}/vendor/z77/{$dir}/src/" . str_replace('\\', '/', substr($class, strlen($prefix))) . '.php';
-                    if (is_file($file)) { require $file; }
+                    foreach ($dirs as $dir) {
+                        $file = "{$base}/{$dir}/" . str_replace('\\', '/', substr($class, strlen($prefix))) . '.php';
+                        if (is_file($file)) { require $file; return; }
+                    }
                     return;
                 }
             }
@@ -149,6 +170,28 @@ namespace {
             'dirFiles' => is_dir($dir) ? count(iterator_to_array(new RecursiveIteratorIterator(new RecursiveDirectoryIterator($dir, FilesystemIterator::SKIP_DOTS)))) : -1,
         ]);
         exit(0);
+    }
+
+    // ── setup mode: one `z77-db setup` in a FRESH process ────────────────────
+    //
+    // php tests/persistence-doctrine-migrations.php --setup <base> [--dry-run] [--allow-drop]
+    // Section I changes entity classes between runs; a class is loaded once per
+    // process, so every run gets its own — as on the command line.
+
+    if (($argv[1] ?? '') === '--setup') {
+        $workerBase = $argv[2];
+        define('ABS_BASE_PATH', $workerBase);
+        define('DEBUG', false);
+        $moduleAutoload($workerBase);
+        $wireDi($workerBase);
+        $app = MigrationsApplication::create(
+            DoctrineBootstrap::buildEntityManager(),
+            MigrationDirectories::collect(DI::getModuleManager(), DI::getFileFinder()),
+            DI::getCacheManager()->generatedPhp(),
+            MigrationDirectories::missing(DI::getModuleManager(), DI::getFileFinder())
+        );
+        $app->setAutoExit(false);
+        exit($app->run(new \Symfony\Component\Console\Input\ArgvInput(array_merge(['z77-db', 'setup'], array_slice($argv, 3)))));
     }
 
     // ── opcache-probe mode: the reason the pool invalidates BEFORE it deletes ─
@@ -232,6 +275,7 @@ namespace {
     $write('config/vendor/fileFinder.inc.php', $baseDirPhp . "return ['resourceDir' => ['sourceDir' => 'src', 'tplDir' => 'res/view/templates'], 'namespaces' => [\n"
         . "'Z77\\\\Module\\\\Probe\\\\'  => ['sourcePaths' => [\$baseDir.'override/z77/module/probe', \$baseDir.'vendor/z77/module-probe']],\n"
         . "'Z77\\\\Module\\\\Silent\\\\' => ['sourcePaths' => [\$baseDir.'vendor/z77/module-silent']],\n"
+        . "'Z77\\\\Module\\\\Local\\\\'  => ['sourcePaths' => [\$baseDir.'override/z77/module/local', \$baseDir.'packages/module-local']],\n"
         . "]];");
     $write('config/vendor/moduleManager.inc.php', "<?php return ['modulePrefix' => 'Module', 'frameworkPrefix' => 'Z77', 'defaultModule' => 'probe', 'modules' => ['probe' => [], 'silent' => []]];");
     $write('config/client/systemConfig.inc.php', "<?php return ['canonicalBaseUrl' => '', 'baseCurrency' => 'CHF'];");
@@ -544,6 +588,176 @@ PHP);
     [$code, $out] = $run(['command' => 'generate', '--namespace' => 'Z77\\Module\\Probe\\Migrations']);
     $all = glob($probeMigrations . '/Version*.php');
     check('H2 generate writes an empty migration into the module directory', $code === 0 && count($all) === 2);
+
+    // ── I. setup: «change the entity, run setup» (ADR-039 addendum 2026-10-08) ─
+    //
+    // Every run is a fresh process (`--setup`), because the entity classes
+    // change between runs. `probe` lives under vendor/ (foreign: setup must
+    // never write there); `local` lives under packages/ inside the root (the
+    // framework repo's situation: setup writes its migrations).
+
+    echo "I. Setup\n";
+    $setup = static function (string ...$args) use ($base): array {
+        $proc = proc_open(array_merge([PHP_BINARY, __FILE__, '--setup', $base], $args), [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
+        $out  = stream_get_contents($pipes[1]);
+        $err  = stream_get_contents($pipes[2]);
+        fclose($pipes[1]); fclose($pipes[2]);
+        return [proc_close($proc), $out . $err];
+    };
+    $localDir    = $base . '/packages/module-local/res/migrations';
+    $projectDir  = $base . '/override/z77/project/res/migrations';
+    $filesOf     = static fn(string $dir): array => glob($dir . '/Version*.php') ?: [];
+    $allFiles    = static fn(): array => array_merge($filesOf($probeMigrations), $filesOf($localDir), $filesOf($projectDir));
+    $recorded    = fn(): array => $db->fetchFirstColumn('SELECT version FROM ' . MigrationsApplication::STORAGE_TABLE);
+    $columnsOfTable = fn(string $table): array => array_map('strtolower', $db->fetchFirstColumn(
+        'SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?', [$dbName, $table]
+    ));
+    $entity = static function (string $class, string $table, array $extraColumns): string {
+        $properties = '';
+        foreach ($extraColumns as $column) {
+            $properties .= "\n    #[ORM\\Column(length: 80)]\n    private string \${$column} = '';\n";
+        }
+        return "<?php\nnamespace Z77\\Module\\Local\\Entities;\n\nuse Doctrine\\ORM\\Mapping as ORM;\nuse Z77\\Shared\\Attributes\\Entity;\n\n"
+            . "#[Entity('doctrine')]\n#[ORM\\Entity, ORM\\Table(name: '{$table}')]\nclass {$class}\n{\n"
+            . "    #[ORM\\Id, ORM\\Column, ORM\\GeneratedValue]\n    private ?int \$id = null;\n\n"
+            . "    #[ORM\\Column(length: 40)]\n    private string \$label = '';\n{$properties}}\n";
+    };
+    $postingSource = file_get_contents($base . '/vendor/z77/module-probe/src/Entities/Posting.php');
+    $newest = static function (string $dir) use ($filesOf): string {
+        $files = $filesOf($dir);
+        sort($files);
+        return $files === [] ? '' : (string) end($files);
+    };
+
+    // I1 — nothing to write: setup applies the pending (empty) migration from H2, then finds no difference.
+    $before = $allFiles();
+    [$code, $out] = $setup();
+    check('I1 setup on a current schema exits 0 and says so' . ($code !== 0 ? " — got {$code}: " . trim($out) : ''), $code === 0 && str_contains($out, 'Schema up to date'));
+    check('I1b … named project and database first', str_starts_with(ltrim($out), 'Project: ' . $base) && str_contains($out, 'database: ' . $dbName));
+    check('I1c … applied the pending migration (step 2 is migrate) and wrote nothing', count($recorded()) === 3 && $allFiles() === $before && !is_dir($base . '/override/z77/project'));
+
+    // The local module appears: two entities, no res/migrations yet.
+    $write('config/vendor/moduleManager.inc.php', "<?php return ['modulePrefix' => 'Module', 'frameworkPrefix' => 'Z77', 'defaultModule' => 'probe', 'modules' => ['probe' => [], 'silent' => [], 'local' => []]];");
+    $write('packages/module-local/src/App/Config/localConfig.inc.php', "<?php return ['doctrineEntities' => ['Z77\\\\Module\\\\Local\\\\Entities\\\\Note', 'Z77\\\\Module\\\\Local\\\\Entities\\\\Tag']];");
+    $write('packages/module-local/src/Entities/Note.php', $entity('Note', 'local_note', []));
+    $write('packages/module-local/src/Entities/Tag.php', $entity('Tag', 'local_tag', []));
+
+    // I2 — new tables of a module inside the root: one file in ITS res/migrations, created on the way.
+    [$code, $out] = $setup();
+    $first = $filesOf($localDir);
+    $src   = $first === [] ? '' : file_get_contents($first[0]);
+    check('I2 new entities of a module inside the root: exit 0' . ($code !== 0 ? " — got {$code}: " . trim($out) : ''), $code === 0);
+    check('I2b … one migration in the module\'s res/migrations (directory created)', count($first) === 1 && count($allFiles()) === count($before) + 1);
+    check('I2c … namespace Z77\\Module\\Local\\Migrations, both tables, house style', str_contains($src, 'namespace Z77\\Module\\Local\\Migrations;')
+        && str_contains($src, 'CREATE TABLE local_note') && str_contains($src, 'CREATE TABLE local_tag') && str_contains($src, 'declare(strict_types=1);')
+        && preg_match('/final class Version\d{14} extends AbstractMigration/', $src) === 1 && str_contains($src, 'getDescription') && str_contains($src, 'Generated by `z77-db setup`')
+        && str_contains($src, 'DROP TABLE local_note'));
+    check('I2d … applied: tables exist, version recorded, difference empty afterwards', in_array('local_note', $tables(), true) && in_array('local_tag', $tables(), true)
+        && in_array('Z77\\Module\\Local\\Migrations\\' . basename($first[0] ?? '', '.php'), $recorded(), true) && str_contains($out, 'Schema up to date'));
+    check('I2e … the version sorts after every migration already there (H2\'s was generated this second)', basename($first[0] ?? '') > basename($newest($probeMigrations)));
+
+    // I3 — a new column (framework side, inside the root).
+    $write('packages/module-local/src/Entities/Note.php', $entity('Note', 'local_note', ['note']));
+    [$code, $out] = $setup();
+    $file = $newest($localDir);
+    $src  = (string) @file_get_contents($file);
+    check('I3 a new column: exit 0' . ($code !== 0 ? " — got {$code}: " . trim($out) : ''), $code === 0 && count($filesOf($localDir)) === 2);
+    check('I3b … the file holds the ALTER in up() and its reverse in down()', str_contains($src, "ALTER TABLE local_note ADD note VARCHAR(80) NOT NULL") && str_contains($src, 'ALTER TABLE local_note DROP note') && !str_contains($src, 'local_tag'));
+    check('I3c … shown in the output, applied, recorded, nothing left', str_contains($out, 'ALTER TABLE local_note ADD note') && in_array('note', $columnsOfTable('local_note'), true)
+        && in_array('Z77\\Module\\Local\\Migrations\\' . basename($file, '.php'), $recorded(), true) && str_contains($out, 'Schema up to date'));
+
+    // I4 — --dry-run shows, writes nothing, applies nothing.
+    $write('packages/module-local/src/Entities/Note.php', $entity('Note', 'local_note', ['note', 'draft']));
+    $before   = $allFiles();
+    $versions = $recorded();
+    [$code, $out] = $setup('--dry-run');
+    check('I4 --dry-run exits 0 and shows the statement' . ($code !== 0 ? " — got {$code}: " . trim($out) : ''), $code === 0 && str_contains($out, 'ALTER TABLE local_note ADD draft') && str_contains($out, 'Dry run: nothing written, nothing applied'));
+    check('I4b … no file, no column, no version', $allFiles() === $before && !in_array('draft', $columnsOfTable('local_note'), true) && $recorded() === $versions);
+    $write('packages/module-local/src/Entities/Note.php', $entity('Note', 'local_note', ['note']));
+
+    // I5 — a project override (same FQCN under override/) adds a column, and a module entity changes in the same run.
+    $write('override/z77/module/local/src/Entities/Note.php', $entity('Note', 'local_note', ['note', 'flag']));
+    $write('packages/module-local/src/Entities/Tag.php', $entity('Tag', 'local_tag', ['color']));
+    [$code, $out] = $setup();
+    $projectFile = $newest($projectDir);
+    $moduleFile  = $newest($localDir);
+    $src         = (string) @file_get_contents($projectFile);
+    check('I5 project override + module change: exit 0' . ($code !== 0 ? " — got {$code}: " . trim($out) : ''), $code === 0);
+    check('I5b … the override\'s column goes to override/z77/project/res/migrations, namespace Z77\\Project\\Migrations', count($filesOf($projectDir)) === 1
+        && str_contains($src, 'namespace Z77\\Project\\Migrations;') && str_contains($src, 'ALTER TABLE local_note ADD flag') && !str_contains($src, 'local_tag'));
+    check('I5c … the module\'s column to the module, in its own file', count($filesOf($localDir)) === 3 && str_contains((string) file_get_contents($moduleFile), 'ALTER TABLE local_tag ADD color')
+        && !str_contains((string) file_get_contents($moduleFile), 'local_note'));
+    check('I5d … two names in one second stay unique and chronological: framework first, project last', basename($moduleFile) < basename($projectFile));
+    check('I5e … both applied and recorded', in_array('flag', $columnsOfTable('local_note'), true) && in_array('color', $columnsOfTable('local_tag'), true)
+        && in_array('Z77\\Project\\Migrations\\' . basename($projectFile, '.php'), $recorded(), true) && str_contains($out, 'Schema up to date'));
+    $wireDi($base);
+    $dirs = MigrationDirectories::collect(DI::getModuleManager(), DI::getFileFinder());
+    check('I5f MigrationDirectories lists the project directory (last)', array_key_last($dirs) === MigrationDirectories::PROJECT_NAMESPACE && $dirs[MigrationDirectories::PROJECT_NAMESPACE] === $projectDir);
+    [$code, $out] = $run(['command' => 'status']);
+    check('I5g status sees the project migrations: namespace listed, nothing new', $code === 0 && str_contains($out, MigrationDirectories::PROJECT_NAMESPACE) && preg_match('/\| New\s+\|\s+0\s+\|/', $out) === 1
+        && preg_match('/\| Executed\s+\|\s+' . count($recorded()) . '\s+\|/', $out) === 1);
+    [$code, $out] = $run(['command' => 'migrate']);
+    check('I5h migrate sees them too: already at the latest version', $code === 0 && str_contains($out, 'Already at the latest version'));
+
+    // I6 — a removed column: written, NOT applied without --allow-drop; applied with it.
+    unlink($base . '/override/z77/module/local/src/Entities/Note.php');   // the mapping loses `flag`
+    $before = $allFiles();
+    [$code, $out] = $setup();
+    $dropFile = array_values(array_diff($allFiles(), $before));
+    check('I6 a removed column: exit non-zero, says --allow-drop', $code !== 0 && str_contains($out, 'DATA LOSS') && str_contains($out, '--allow-drop'));
+    check('I6b … the file is written (owner: the module — the class now loads from packages/) and NOT applied', count($dropFile) === 1 && str_starts_with($dropFile[0], $localDir . '/')
+        && str_contains((string) file_get_contents($dropFile[0]), 'ALTER TABLE local_note DROP flag') && in_array('flag', $columnsOfTable('local_note'), true)
+        && !in_array('Z77\\Module\\Local\\Migrations\\' . basename($dropFile[0] ?? '', '.php'), $recorded(), true));
+    foreach ($dropFile as $f) { unlink($f); }
+    [$code, $out] = $setup('--allow-drop');
+    $dropFile = array_values(array_diff($allFiles(), $before));
+    check('I6c … with --allow-drop: written, applied, the column gone' . ($code !== 0 ? " — got {$code}: " . trim($out) : ''), $code === 0 && count($dropFile) === 1
+        && !in_array('flag', $columnsOfTable('local_note'), true) && str_contains($out, 'Schema up to date'));
+
+    // I7 — a table no announced entity maps: refused, nothing written.
+    $db->executeStatement('CREATE TABLE stray_setup (id INT NOT NULL, PRIMARY KEY (id))');
+    $write('packages/module-local/src/Entities/Note.php', $entity('Note', 'local_note', ['note', 'other']));   // a legitimate change in the same run
+    $before = $allFiles();
+    [$code, $out] = $setup();
+    check('I7 an unmapped table: refused, exit non-zero, names it and the way out', $code !== 0 && str_contains($out, 'stray_setup') && str_contains($out, 'no announced entity maps it')
+        && str_contains($out, 'DROP TABLE stray_setup') && str_contains($out, 'hand-written migration'));
+    check('I7b … nothing written for anyone, nothing applied', $allFiles() === $before && in_array('stray_setup', $tables(), true) && !in_array('other', $columnsOfTable('local_note'), true));
+    $db->executeStatement('DROP TABLE stray_setup');
+    $write('packages/module-local/src/Entities/Note.php', $entity('Note', 'local_note', ['note']));
+
+    // I8 — an owner directory under vendor/: refused for ALL groups.
+    $write('vendor/z77/module-probe/src/Entities/Posting.php', str_replace("    private Money \$amount;\n", "    private Money \$amount;\n\n    #[ORM\\Column(length: 30)]\n    private string \$memo = '';\n", $postingSource));
+    $write('packages/module-local/src/Entities/Tag.php', $entity('Tag', 'local_tag', ['color', 'alpha']));
+    $before = $allFiles();
+    [$code, $out] = $setup();
+    check('I8 a framework entity under vendor/ changed: refused, exit non-zero, names the directory', $code !== 0 && str_contains($out, $probeMigrations) && str_contains($out, 'not shipped'));
+    check('I8b … all-or-nothing: the writable module got no file either, no column added', $allFiles() === $before
+        && !in_array('memo', $columnsOfTable('probe_posting'), true) && !in_array('alpha', $columnsOfTable('local_tag'), true));
+    $write('vendor/z77/module-probe/src/Entities/Posting.php', $postingSource);
+    $write('packages/module-local/src/Entities/Tag.php', $entity('Tag', 'local_tag', ['color']));
+    [$code, $out] = $setup();
+    check('I9 back to the mapping: setup finds nothing and writes nothing', $code === 0 && str_contains($out, 'Schema up to date') && $allFiles() === $before);
+
+    echo "I. … helpers\n";
+    check('I10 data loss: DROP TABLE and a dropped column', SetupCommand::isDataLoss('DROP TABLE x') && SetupCommand::isDataLoss('ALTER TABLE t DROP c')
+        && SetupCommand::isDataLoss('ALTER TABLE t ADD a INT NOT NULL, DROP b') && SetupCommand::isDataLoss('ALTER TABLE t DROP COLUMN c'));
+    check('I10b … not an index, a foreign key, the primary key or an added column', !SetupCommand::isDataLoss('DROP INDEX idx ON t') && !SetupCommand::isDataLoss('ALTER TABLE t DROP INDEX idx, ADD INDEX idx2 (a)')
+        && !SetupCommand::isDataLoss('ALTER TABLE t DROP FOREIGN KEY FK_1') && !SetupCommand::isDataLoss('ALTER TABLE t DROP PRIMARY KEY, ADD PRIMARY KEY (a)')
+        && !SetupCommand::isDataLoss('ALTER TABLE t ADD dropped INT NOT NULL'));
+    check('I11 writable: inside the root (packages/, override/), even not yet created', SetupCommand::isWritableDirectory($base . '/packages/module-x/res/migrations', $base)
+        && SetupCommand::isWritableDirectory($projectDir, $base));
+    check('I11b … not under vendor/, not outside the root, not the root itself', !SetupCommand::isWritableDirectory($probeMigrations, $base)
+        && !SetupCommand::isWritableDirectory(dirname($base) . '/elsewhere/res/migrations', $base) && !SetupCommand::isWritableDirectory($base, $base));
+    $linkTarget = $base . '/../z77-doctrine-mig-linked-' . getmypid();
+    @mkdir($linkTarget . '/res', 0777, true);
+    @mkdir($base . '/vendor/z77', 0777, true);
+    if (@symlink($linkTarget, $base . '/packages/linked')) {
+        check('I11c … a linked package resolving OUTSIDE the root is foreign (a project\'s vendor/z77/* → framework repo)', !SetupCommand::isWritableDirectory($base . '/packages/linked/res/migrations', $base));
+        @unlink($base . '/packages/linked') || @rmdir($base . '/packages/linked');
+    } else {
+        check('I11c (link resolution not testable here: symlink() refused by the OS)', true);
+    }
+    $rm($linkTarget);
 
     echo "\n" . ($fail === 0 ? "PASS — {$pass} checks" : "FAIL — {$fail} of " . ($pass + $fail) . " checks") . "\n";
     exit($fail === 0 ? 0 : 1);

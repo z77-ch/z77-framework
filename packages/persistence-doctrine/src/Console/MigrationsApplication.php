@@ -13,6 +13,7 @@ use Doctrine\DBAL\Connection,
     Doctrine\Migrations\Version\Comparator,
     Doctrine\ORM\EntityManager,
     Symfony\Component\Console\Application,
+    Symfony\Component\Console\Input\ArrayInput,
     Symfony\Component\Console\Input\InputInterface,
     Symfony\Component\Console\Output\OutputInterface,
     Z77\Core\Libraries\Cache\GeneratedPhpCache,
@@ -27,6 +28,8 @@ use Doctrine\DBAL\Connection,
  *   php vendor/bin/z77-db status             what is applied, what is pending, where the migrations are
  *   php vendor/bin/z77-db diff --namespace=… write a migration from the difference between mapping and database
  *   php vendor/bin/z77-db generate --namespace=…   write an empty migration to fill in by hand
+ *   php vendor/bin/z77-db setup [--dry-run] [--allow-drop]   migrate, then write + apply the migrations
+ *                                            the mapping still needs, one per owner (`SetupCommand`)
  *
  * Doctrine's own commands do the work (`doctrine/migrations` 3.9); this
  * class only configures them the z77 way and adds what the ADR asks for:
@@ -73,13 +76,15 @@ final class MigrationsApplication
      * @param array<string, string> $missing     namespace → directory a module with entities would have
      *                                           but has not created yet (`MigrationDirectories::missing()`)
      * @param string                $sapi        the running SAPI — a parameter so the refusal is testable
+     * @param ?string               $projectRoot the project root `setup` writes under; null = `ABS_BASE_PATH`
      */
     public static function create(
         EntityManager $em,
         array $directories,
         GeneratedPhpCache $generatedPhp,
         array $missing = [],
-        string $sapi = PHP_SAPI
+        string $sapi = PHP_SAPI,
+        ?string $projectRoot = null
     ): Application {
         if ($sapi !== 'cli') {
             throw new \RuntimeException(
@@ -91,16 +96,7 @@ final class MigrationsApplication
             throw new \InvalidArgumentException(self::NAME . ': no migration directory configured.');
         }
 
-        $dependencyFactory = DependencyFactory::fromEntityManager(
-            new ConfigurationArray([
-                'migrations_paths' => $directories,
-                'table_storage'    => ['table_name' => self::STORAGE_TABLE],
-            ]),
-            new ExistingEntityManager($em)
-        );
-        // One namespace per module, one order for all of them: by timestamp,
-        // not by class name (which would run module by module, alphabetically).
-        $dependencyFactory->setDefinition(Comparator::class, static fn(): Comparator => new ChronologicalComparator());
+        $dependencyFactory = self::dependencyFactory($em, $directories);
 
         // `diff` / `generate` never guess where a migration goes. Doctrine would
         // take the first (or only) configured namespace — this package's — and a
@@ -131,19 +127,70 @@ final class MigrationsApplication
             return 1;
         };
 
-        $storageTableCreated = false;
         $app = new Application(self::NAME);
-        $app->addCommand(new WrappedCommand(
+        $app->addCommand(self::migrateCommand($em, $dependencyFactory, $generatedPhp));
+        $app->addCommand(new WrappedCommand('status', new StatusCommand($dependencyFactory)));
+        $app->addCommand(new WrappedCommand('diff', new DiffCommand($dependencyFactory), before: $requireNamespace));
+        $app->addCommand(new WrappedCommand('generate', new GenerateCommand($dependencyFactory), before: $requireNamespace));
+        $app->addCommand(new SetupCommand(
+            $em,
+            $directories,
+            $missing,
+            $projectRoot ?? (defined('ABS_BASE_PATH') ? (string)ABS_BASE_PATH : (string)getcwd()),
+            $generatedPhp,
+            static fn(array $dirs): DependencyFactory => self::dependencyFactory($em, $dirs),
+            // `setup` applies through exactly the `migrate` above — project and
+            // database line, metadata table, cache deletion — on a FRESH
+            // configuration: the migrations it just wrote are new classes, maybe
+            // in a new directory, which a configuration already in use would not see.
+            static function (array $dirs, OutputInterface $output) use ($em, $generatedPhp): int {
+                $inner = new Application(self::NAME);
+                $inner->setAutoExit(false);
+                $inner->addCommand(self::migrateCommand($em, self::dependencyFactory($em, $dirs), $generatedPhp));
+                $input = new ArrayInput(['command' => 'migrate', '--no-interaction' => true]);
+                $input->setInteractive(false);
+
+                return $inner->run($input, $output);
+            }
+        ));
+
+        return $app;
+    }
+
+    /**
+     * One configuration for every command: the directories given, our metadata
+     * table, timestamp order.
+     *
+     * @param array<string, string> $directories
+     */
+    private static function dependencyFactory(EntityManager $em, array $directories): DependencyFactory
+    {
+        $dependencyFactory = DependencyFactory::fromEntityManager(
+            new ConfigurationArray([
+                'migrations_paths' => $directories,
+                'table_storage'    => ['table_name' => self::STORAGE_TABLE],
+            ]),
+            new ExistingEntityManager($em)
+        );
+        // One namespace per module, one order for all of them: by timestamp,
+        // not by class name (which would run module by module, alphabetically).
+        $dependencyFactory->setDefinition(Comparator::class, static fn(): Comparator => new ChronologicalComparator());
+
+        return $dependencyFactory;
+    }
+
+    /** Doctrine's `migrate` with what z77 adds around it (see the class docblock). */
+    private static function migrateCommand(EntityManager $em, DependencyFactory $dependencyFactory, GeneratedPhpCache $generatedPhp): WrappedCommand
+    {
+        $storageTableCreated = false;
+
+        return new WrappedCommand(
             'migrate',
             new MigrateCommand($dependencyFactory),
             before: static function (InputInterface $input, OutputInterface $output) use ($em, &$storageTableCreated): ?int {
                 // Which installation is about to change — the guard against
                 // migrating the wrong release (`current` instead of `next`).
-                $output->writeln(sprintf(
-                    'Project: %s — database: %s',
-                    defined('ABS_BASE_PATH') ? ABS_BASE_PATH : '(not booted)',
-                    (string)$em->getConnection()->getDatabase()
-                ));
+                $output->writeln(self::projectLine($em));
                 $storageTableCreated = self::ensureStorageTable($em->getConnection());
 
                 return null;
@@ -171,12 +218,17 @@ final class MigrationsApplication
                     count($deleted)
                 ));
             }
-        ));
-        $app->addCommand(new WrappedCommand('status', new StatusCommand($dependencyFactory)));
-        $app->addCommand(new WrappedCommand('diff', new DiffCommand($dependencyFactory), before: $requireNamespace));
-        $app->addCommand(new WrappedCommand('generate', new GenerateCommand($dependencyFactory), before: $requireNamespace));
+        );
+    }
 
-        return $app;
+    /** «Project: … — database: …», printed before anything changes the schema. */
+    public static function projectLine(EntityManager $em): string
+    {
+        return sprintf(
+            'Project: %s — database: %s',
+            defined('ABS_BASE_PATH') ? ABS_BASE_PATH : '(not booted)',
+            (string)$em->getConnection()->getDatabase()
+        );
     }
 
     /**

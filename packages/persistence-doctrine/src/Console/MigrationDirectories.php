@@ -19,13 +19,20 @@ use Z77\Core\Libraries\FileFinder,
  *     `ModuleManager::getNamespacePrefix()` (Rule 5), the directory sits next
  *     to `src/` like `res/view/templates` does.
  *
+ *   - the project: `Z77\Project\Migrations` → `override/z77/project/res/migrations`
+ *     under the project root, when that directory exists. ONE directory for
+ *     everything the project's own mapping changes (an entity it adds through
+ *     `doctrineEntitiesConfig.inc.php`, or a module entity it shadows under
+ *     `override/`) — `z77-db setup` writes there when the changed entity's
+ *     class file lies under `override/` (ADR-039 addendum 2026-10-08).
+ *
  * A module with entities but no `res/migrations` directory yet is simply not
  * listed (Doctrine refuses a configured directory that does not exist). A
  * module whose directory exists under MORE than one source path — package
- * AND `override/` — is refused: Doctrine binds one directory per namespace,
- * and silently taking either would hide the other's migrations. How a
- * project ships a migration for an entity it adds through
- * `doctrineEntitiesConfig.inc.php` is an open question (see the topic doc).
+ * AND `override/z77/module/...` — is refused: Doctrine binds one directory
+ * per namespace, and silently taking either would hide the other's
+ * migrations. A project's migrations go to the one project directory above,
+ * never under `override/z77/module/{module}/res/migrations`.
  */
 final class MigrationDirectories
 {
@@ -34,10 +41,31 @@ final class MigrationDirectories
     /** Relative to a package or module root — the sibling of `src/`. */
     public const RELATIVE_DIR = 'res/migrations';
 
-    /** @return array<string, string> namespace → absolute directory, the package first */
-    public static function collect(ModuleManager $modules, FileFinder $files): array
+    /** The project's own migrations (ADR-039 addendum 2026-10-08). */
+    public const PROJECT_NAMESPACE = 'Z77\\Project\\Migrations';
+
+    /** Relative to the project root. */
+    public const PROJECT_RELATIVE_DIR = 'override/z77/project/' . self::RELATIVE_DIR;
+
+    /**
+     * @param ?string $projectRoot null = `ABS_BASE_PATH`; the project directory is listed when it exists
+     * @return array<string, string> namespace → absolute directory, the package first, the project last
+     */
+    public static function collect(ModuleManager $modules, FileFinder $files, ?string $projectRoot = null): array
     {
-        return self::scan($modules, $files)['found'];
+        $found       = self::scan($modules, $files)['found'];
+        $projectRoot ??= defined('ABS_BASE_PATH') ? (string)ABS_BASE_PATH : null;
+        if ($projectRoot !== null && is_dir(self::projectDirectory($projectRoot))) {
+            $found[self::PROJECT_NAMESPACE] = self::projectDirectory($projectRoot);
+        }
+
+        return $found;
+    }
+
+    /** `override/z77/project/res/migrations` under the given project root — whether or not it exists. */
+    public static function projectDirectory(string $projectRoot): string
+    {
+        return rtrim(str_replace('\\', '/', $projectRoot), '/') . '/' . self::PROJECT_RELATIVE_DIR;
     }
 
     /**
@@ -85,7 +113,8 @@ final class MigrationDirectories
                 throw new \RuntimeException(
                     "❌ Module '{$moduleKey}' has " . self::RELATIVE_DIR . ' under more than one source path ('
                     . implode(', ', $existing) . '). One directory per module (ADR-039 decision 13) — a project '
-                    . 'cannot add migrations under override/ yet.'
+                    . 'writes its migrations to ' . self::PROJECT_RELATIVE_DIR . ' (namespace '
+                    . self::PROJECT_NAMESPACE . '), never under override/z77/module/.'
                 );
             }
             $found[$namespace] = $existing[0];
