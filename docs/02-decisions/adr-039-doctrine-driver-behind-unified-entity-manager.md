@@ -291,7 +291,9 @@ the framework's own `ShopArticle` is an **empty** class that carries only the en
    read).
 6. **Scope — «nicht auf Vorrat».** The pattern is documented now with **one** example,
    `module-article` (decided in [`order-debtor-financial-bauplan.md` §4b](../03-development/order-debtor-financial-bauplan.md),
-   not built yet): when module-article is built, its master entities are built this way. `Contact`,
+   not built yet): when module-article is built, its master entities — product AND variant
+   (`AbstractProduct` / `Product`, `AbstractVariant` / `Variant`) — are built this way; the variant
+   OPTIONS (vintage, size, colour) are data, not code (§4b). `Contact`,
    `Address` and the other existing entities are **not** converted in advance; each moves to the
    pattern only when a project actually needs to extend it.
 

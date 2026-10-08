@@ -645,12 +645,31 @@ account, VAT default and turnover statistics), **product + variant**, **prices w
 
 **Extendable master data (owner, 2026-10-08).** module-article is the reference example of
 [ADR-039 addendum 2026-10-08](../02-decisions/adr-039-doctrine-driver-behind-unified-entity-manager.md)
-(b): its master entity is built as `AbstractArticle` (`#[ORM\MappedSuperclass]`, every standard
-field, mapping and logic) plus an **empty** `Article` carrying only the entity mapping. A project
-that needs its own columns overrides only `Article` under `override/` and migrates those columns in
-its own `override/z77/project/res/migrations/`. *Open when built:* A3 splits the article into
-product + variant, so which class or classes carry the pattern (product, variant, or both) is
-settled then — the class names above stand for the master entity, not for a decision against A3.
+(b), on **both** stages of A3: `AbstractProduct` + an **empty** `Product`, `AbstractVariant` + an
+**empty** `Variant` (`#[ORM\MappedSuperclass]` abstract classes carry every standard field, mapping
+and logic; the empty classes carry only the entity mapping). A project that needs its own columns
+overrides only the empty class of the stage concerned under `override/` and migrates those columns
+in its own `override/z77/project/res/migrations/` (`z77-db setup`). Example (Agostini): `Product`
+gains `rebsorte`, `aocText` — the same for every vintage; `Variant` gains `ean`, `offerPrice` —
+different per bottle.
+
+**Variant options are DATA, not code (owner, 2026-10-08).** A product names the options its variants
+differ by — none (a service: one hidden default variant), one (olive oil: content), two or three
+(Giovanni's Barolo: vintage × size; a T-shirt: colour × size). Every existing COMBINATION is one
+variant row with its own number, price and stock; a combination that does not exist has no row
+(Barolo 2024 in 150 cl). The shop shows one selector per option. Still two stages — vintage and size
+are two options of ONE variant, never product → vintage → size. Because the option names and values
+are entered in the backend, no project needs an override for «colour instead of vintage». Rule of
+thumb: *what the customer chooses between* → an option (data); *a field the framework does not
+know* (grape, EAN, offer price) → the abstract pattern (override + migration). Distinct from the
+typed attributes per product group below (classification and shop facets, deferred).
+
+**Configurable products are NOT variants (owner, 2026-10-08).** A product assembled at order time
+(a car: paint × rims × engine × upholstery × accessories — thousands of combinations, almost none on
+stock; also print jobs, made-to-measure furniture, gift baskets) must not be modelled as variants.
+It is a separate concept, not built now: option groups with a surcharge per option on the product,
+the chosen options stored on the ORDER LINE (base price + surcharges), no own number or stock per
+combination. Recorded so module-article is not bent towards it.
 
 **What A1 implies but this plan deliberately does not build** — the review of 2026-09-20 pointed out
 that none of it has a consumer here, and a shop is out of scope (§13), so building it now would be
