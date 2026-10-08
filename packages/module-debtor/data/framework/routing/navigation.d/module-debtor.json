@@ -78,6 +78,19 @@
         "parent_key": "stammdaten"
     },
     {
+        "key": "debitoren-stamm",
+        "name": "Debitoren",
+        "module": "backend",
+        "group": "finance",
+        "controller": "debtor-profile",
+        "action": "list",
+        "slot": "",
+        "active": true,
+        "param": "",
+        "sort_key": 0,
+        "parent_key": "stammdaten-auftraege"
+    },
+    {
         "key": "zahlungskonditionen",
         "name": "Zahlungskonditionen",
         "module": "backend",
@@ -87,7 +100,7 @@
         "slot": "",
         "active": true,
         "param": "",
-        "sort_key": 0,
+        "sort_key": 1,
         "parent_key": "stammdaten-auftraege"
     },
     {
@@ -100,7 +113,7 @@
         "slot": "",
         "active": true,
         "param": "",
-        "sort_key": 1,
+        "sort_key": 2,
         "parent_key": "stammdaten-auftraege"
     },
     {
@@ -113,7 +126,7 @@
         "slot": "",
         "active": true,
         "param": "",
-        "sort_key": 2,
+        "sort_key": 3,
         "parent_key": "stammdaten-auftraege"
     }
 ]

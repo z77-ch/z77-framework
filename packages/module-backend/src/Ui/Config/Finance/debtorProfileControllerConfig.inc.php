@@ -1,7 +1,7 @@
 <?php
 /**
- * Backend mount of the Debitoren fragment (plan §6.1, ADR-018 pattern):
+ * Backend mount of the debtor master-data fragment (plan §6.1, ADR-018 pattern):
  * pin the page body to the fragment's `listAction` template in
  * `module-debtor`.
  */
-return \Z77\Module\Debtor\Ui\DebtorLayout::config();
+return \Z77\Module\Debtor\Ui\DebtorProfileLayout::config();

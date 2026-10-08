@@ -78,6 +78,7 @@ Structure is enforced by `npm run docs:check` ([docs-lint/STANDARD.md](../docs-l
 | i18n, languages, locale switching | [topics/i18n.md](topics/i18n.md) |
 | import, data adoption, seed records into existing installation, wdv migration, ImportIdentity | [topics/import.md](topics/import.md) |
 | mandator / Mandant, own company / eigene Firma, letterhead / Briefkopf, UID / Unternehmens-Identifikationsnummer, `CHE-`, VAT liability / mehrwertsteuerpflichtig, default tax code / Standard-MWST-Code, account settings / Kontenzuordnung, `vatAccounts` (moved), `debtorAccounts` (moved), `CurrentMandator`, `MandatorAccounts`, `LedgerAccountCheck`, `vatAccountFor`, letterhead vs. payee / Zahlungsempfänger, multi-mandator / Mehrmandant, module-mandator | [topics/mandator.md](topics/mandator.md) |
+| list, table, backend list, column search, magnifier, sort link, pager, paging, ListDefinition, Column, Parsers, listHead, listFind, fetch region list | [topics/listing.md](topics/listing.md) |
 | money, amounts, Rappen, minor units, rounding 0.05, allocate, percentage | [topics/money.md](topics/money.md) |
 | installer, `composer install`, project setup | [topics/installer.md](topics/installer.md) |
 | jobs, cron, queue, scheduling, background work, z77-run CLI, throttling, long-running tasks | [topics/jobs.md](topics/jobs.md) |

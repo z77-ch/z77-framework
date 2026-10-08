@@ -21,10 +21,12 @@ use Z77\Core\DI,
 ;
 
 /**
- * The debtor surface (plan §6.1) — the receivables side of a contact.
+ * The debtor MASTER DATA (plan §6.1) — the receivables side of a contact,
+ * under Stammdaten › Aufträge › Debitoren (moved 2026-10-07, owner: «Stammdaten
+ * mit Einträgen vermischt» — the open items are {@see DebtorControllerTrait}).
  * Mounted by a thin host controller in the backend (ADR-018 pattern). Host
- * side: `use DebtorControllerTrait` + a one-line layout config delegating
- * to {@see DebtorLayout::config()}.
+ * side: `use DebtorProfileControllerTrait` + a one-line layout config delegating
+ * to {@see DebtorProfileLayout::config()}.
  *
  * **Why a screen of its own and not a fragment on the contact screen**
  * (decided 2026-09-22): mounting into `/backend/contact/contact` would mean
@@ -60,14 +62,14 @@ use Z77\Core\DI,
  * base): `html()`, `fetch()`, `fetchError()`, `em()`, `$layoutManager`,
  * `$messageService`.
  */
-trait DebtorControllerTrait
+trait DebtorProfileControllerTrait
 {
     private const DEBTOR_NS = 'Z77\\Module\\Debtor';
 
     /** URL root of THIS mount — every row button and modal form is built from it. */
     protected function debtorListBase(): string
     {
-        return '/backend/finance/debtor';
+        return '/backend/finance/debtor-profile';
     }
 
     private function debtorContacts(): ContactRepository
@@ -111,7 +113,7 @@ trait DebtorControllerTrait
             'actionBase'        => $this->debtorListBase(),
         ]);
         // The fragment owns its header slot (financial.md, «fragment slots»).
-        $this->layoutManager->addPartials('search', 'Backend/DebtorController', self::DEBTOR_NS, 'hc2');
+        $this->layoutManager->addPartials('search', 'Backend/DebtorProfileController', self::DEBTOR_NS, 'hc2');
 
         return $response;
     }
@@ -206,7 +208,7 @@ trait DebtorControllerTrait
             'validator'  => $validator ?? new DebtorProfileValidator($draft),
             'actionBase' => $this->debtorListBase(),
         ]);
-        $this->layoutManager->addPartials('edit', 'Backend/DebtorController', self::DEBTOR_NS);
+        $this->layoutManager->addPartials('edit', 'Backend/DebtorProfileController', self::DEBTOR_NS);
 
         return $response;
     }

@@ -7,7 +7,7 @@ namespace Z77\Module\Debtor\Repositories;
  * the invoices in `invoicing`, the final invoices, or the credit notes (any
  * state) — and the column criteria, AND-ed. Every value is bound; the sort
  * key selects from a fixed map ({@see InvoiceRepository::search()}), never
- * from input. Built by the screen's filter (`Ui\InvoiceFilter`), plain data.
+ * from input. Built by the screen's listing (`Ui\InvoiceListing`, listing.md), plain data.
  */
 final class InvoiceSearch
 {

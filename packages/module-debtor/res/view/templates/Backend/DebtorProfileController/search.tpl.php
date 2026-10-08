@@ -8,7 +8,7 @@
  * @var string $query
  * @var string $actionBase
  */
-$actionBase = $actionBase ?? '/backend/finance/debtor';
+$actionBase = $actionBase ?? '/backend/finance/debtor-profile';
 ?>
 <form method="get" action="<?= e($actionBase) ?>/list" role="search">
     <input type="search" name="q" class="be-input be-input--sm" value="<?= e($query ?? '') ?>" placeholder="Name, Firma oder E-Mail suchen …" aria-label="Debitoren suchen" autocomplete="off">

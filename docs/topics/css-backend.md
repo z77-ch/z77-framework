@@ -128,7 +128,7 @@ itself into `public/` is NOT touched — that file belongs to the project.
 | Legacy tree/hub rows (v1 — migration only, do not build new screens on it) | `components/_list.scss` (`.be-tree` / `.be-tree--hub`) |
 | Group tabs, section headers, empty state, section hint | `components/_list.scss` (`.be-tabs`, `.be-list__section-*`, `.be-list__empty`) |
 | Pager for a v2 list | `components/_pagination.scss` (`.be-pagination`) |
-| A header cell that sorts AND searches (magnifier opens the field in that column, no JS), a row state icon, scope toggles as links | `components/_list.scss` (`.be-list__find` / `__sort` / `__find-icon` / `__find-input`, `.be-list__state--*`, `.be-list__toggle`) — first consumer: the journal list (FIN-JOURNAL-CAPTURE-001) |
+| A header cell that sorts AND searches (magnifier opens the field in that column, no JS), a row state icon, scope toggles as links | `components/_list.scss` (`.be-list__find` / `__sort` / `__find-icon` / `__find-input`, `.be-list__state--*`, `.be-list__toggle`) — first consumer: the journal list (FIN-JOURNAL-CAPTURE-001); rendered by the kernel's `partials/listHead` over a `ListDefinition` since 2026-10-08 — [`listing.md`](listing.md) |
 | Login page | `components/_login.scss` |
 | GUEST full-page wrapper (login/setup, no chrome) | `components/_guest.scss` (`.be-guest`) |
 | Shell (3-column grid, header slots, add-picker, columns/drawers, topbar right cluster env/bell/avatar, `body.backend` base, responsive) | `components/_shell.scss` |

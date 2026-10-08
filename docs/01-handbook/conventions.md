@@ -58,6 +58,10 @@ module-agnostic building block** — never hard-wired into a single module or co
   `AbstractTreeEntityController`.
 - Naming stays generic (`be-*`, not `navigation-*`) so a class/partial reads as framework
   infrastructure, not one screen's private markup.
+- A backend table is a **standard list** (`Z77\Shared\Listing`, the kernel's `partials/listHead`
+  / `listFind` / `pager`): columns declared once, sort and column search in the database, paged,
+  a fetch region — [`docs/topics/listing.md`](../topics/listing.md). A screen does not hand-write
+  its own head, search form or filter class.
 
 ---
 

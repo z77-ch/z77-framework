@@ -31,7 +31,7 @@
  * @var string|null $accountsNotice  the red band while the account settings cannot be read at all (leftover config key, mandator unavailable)
  * @var string $actionBase
  */
-$actionBase = $actionBase ?? '/backend/finance/debtor';
+$actionBase = $actionBase ?? '/backend/finance/debtor-profile';
 $shown      = count($contacts);
 ?>
 <div class="be-list">

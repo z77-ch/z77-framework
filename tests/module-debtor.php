@@ -143,6 +143,8 @@ use Z77\Module\Debtor\Services\InvalidMasterDataException;
 use Z77\Module\Debtor\Services\MasterDataCodeChangedException;
 use Z77\Module\Debtor\Ui\DebtorControllerTrait;
 use Z77\Module\Debtor\Ui\DebtorLayout;
+use Z77\Module\Debtor\Ui\DebtorProfileControllerTrait;
+use Z77\Module\Debtor\Ui\DebtorProfileLayout;
 use Z77\Module\Debtor\Ui\DocumentTextForm;
 use Z77\Module\Debtor\Ui\DunningLevelControllerTrait;
 use Z77\Module\Debtor\Ui\DunningLevelLayout;
@@ -994,7 +996,8 @@ foreach ([
     ['Zahlungskonditionen', PaymentTermsControllerTrait::class, PaymentTermsLayout::class, 'Backend/PaymentTermsController', '/backend/finance/payment-terms'],
     ['Zahlungsziele',       PaymentTargetControllerTrait::class, PaymentTargetLayout::class, 'Backend/PaymentTargetController', '/backend/finance/payment-target'],
     ['Mahnstufen',          DunningLevelControllerTrait::class, DunningLevelLayout::class, 'Backend/DunningLevelController', '/backend/finance/dunning-level'],
-    ['Debitoren',           DebtorControllerTrait::class, DebtorLayout::class, 'Backend/DebtorController', '/backend/finance/debtor'],
+    ['Debitoren (Stamm)',   DebtorProfileControllerTrait::class, DebtorProfileLayout::class, 'Backend/DebtorProfileController', '/backend/finance/debtor-profile'],
+    ['Debitoren (OP)',      DebtorControllerTrait::class, DebtorLayout::class, 'Backend/DebtorController', '/backend/finance/debtor'],
 ] as $i => [$title, $trait, $layout, $path, $url]) {
     $n      = $i + 1;
     $config = $layout::config();
@@ -1021,13 +1024,13 @@ foreach ([
     check('I' . ($i + 1) . 'd ' . $title . ': the active switch catches DebtorException and answers with a fetchError, never a 500',
         str_contains($toggle, 'catch (DebtorException') && str_contains($toggle, 'fetchError'));
 }
-check('I5 the three master-data fragments carry an add action and an active switch, the debtor one too',
-    array_reduce([PaymentTermsControllerTrait::class, PaymentTargetControllerTrait::class, DunningLevelControllerTrait::class, DebtorControllerTrait::class],
+check('I5m the three master-data fragments carry an add action and an active switch, the debtor master data too',
+    array_reduce([PaymentTermsControllerTrait::class, PaymentTargetControllerTrait::class, DunningLevelControllerTrait::class, DebtorProfileControllerTrait::class],
         fn($ok, $t) => $ok && (new \ReflectionClass($t))->hasMethod('addAction') && (new \ReflectionClass($t))->hasMethod('toggleActiveAction'), true));
 
 $templateDir = $package . '/res/view/templates/Backend';
 $templates   = glob($templateDir . '/*/*.tpl.php');
-check('I6 every master-data screen has its list template, its edit template and its header slot; the document screens (P3 part 3) add six, the payment form and the delete confirmation (P4 part 1) two, the bank import list and detail (P4 part 2) two, the dunning list (P4 part 3) one', count($templates) === 23);
+check('I6 every master-data screen has its list template, its edit template and its header slot; the document screens (P3 part 3) add six, the payment form and the delete confirmation (P4 part 1) two, the bank import list and detail (P4 part 2) two, the dunning list (P4 part 3) one, the open-item list and its toolbar (2026-10-07) two', count($templates) === 25);
 check('I7 no template carries a <script> tag or an inline handler (Rule 7)',
     array_reduce($templates, fn($ok, $f) => $ok && !preg_match('/<script|\son[a-z]+\s*=/i', file_get_contents($f)), true));
 check('I8 the package ships no JavaScript at all', glob($package . '/res/**/*.js') === [] && glob($package . '/res/*.js') === []);
@@ -1035,17 +1038,20 @@ check('I9 the header slots are partials OF THE FRAGMENT (financial.md, «fragmen
     is_file($templateDir . '/PaymentTermsController/addButton.tpl.php')
     && is_file($templateDir . '/PaymentTargetController/addButton.tpl.php')
     && is_file($templateDir . '/DunningLevelController/addButton.tpl.php')
-    && is_file($templateDir . '/DebtorController/search.tpl.php'));
+    && is_file($templateDir . '/DebtorProfileController/search.tpl.php')
+    && is_file($templateDir . '/DebtorController/toolbar.tpl.php'));
 $backend = str_replace('\\', '/', realpath(__DIR__ . '/../packages/module-backend'));
-check('I10 module-backend mounts all four under the finance group',
+check('I10 module-backend mounts all five under the finance group (the debtor master data and the open items apart)',
     is_file($backend . '/src/Ui/Controllers/Finance/PaymentTermsController.php')
     && is_file($backend . '/src/Ui/Controllers/Finance/PaymentTargetController.php')
     && is_file($backend . '/src/Ui/Controllers/Finance/DunningLevelController.php')
     && is_file($backend . '/src/Ui/Controllers/Finance/DebtorController.php')
+    && is_file($backend . '/src/Ui/Controllers/Finance/DebtorProfileController.php')
     && is_file($backend . '/src/Ui/Config/Finance/paymentTermsControllerConfig.inc.php')
     && is_file($backend . '/src/Ui/Config/Finance/paymentTargetControllerConfig.inc.php')
     && is_file($backend . '/src/Ui/Config/Finance/dunningLevelControllerConfig.inc.php')
-    && is_file($backend . '/src/Ui/Config/Finance/debtorControllerConfig.inc.php'));
+    && is_file($backend . '/src/Ui/Config/Finance/debtorControllerConfig.inc.php')
+    && is_file($backend . '/src/Ui/Config/Finance/debtorProfileControllerConfig.inc.php'));
 check('I11 the debtor screen is its own — module-contact was not touched',
     !str_contains(file_get_contents($packages['Contact'] . '/src/Ui/ContactControllerTrait.php'), 'Debtor')
     && !array_filter(glob($packages['Contact'] . '/res/view/templates/Backend/*/*.tpl.php'), fn($f) => str_contains(file_get_contents($f), 'Debtor')));
@@ -1898,8 +1904,8 @@ $host->listAction();
 $listHtml = $renderList($host) . $renderSlot($host, 'hc2');
 $invoicingIds = array_map(fn($d) => $d->getId(), $host->context['documents']);
 check('P3C22 list, default view «In Fakturierung»: only invoices in invoicing, newest first, each row with its {id}:{version} checkbox; the toolbar with the view tabs (counts), «Rechnung erstellen», «Definitiv stellen …»',
-    $host->context['filter']->view === 'invoicing' && $invoicingIds !== [] && array_filter($host->context['documents'], fn($d) => $d->isFinal() || $d->isCreditNote()) === []
-    && str_contains($listHtml, 'data-fetch-region="invoice-list"') && str_contains($listHtml, 'value="' . $nonInv->getId() . ':' . $invoiceRow($nonInv->getId())['version'] . '"')
+    $host->context['state']->extra('view') === 'invoicing' && $invoicingIds !== [] && array_filter($host->context['documents'], fn($d) => $d->isFinal() || $d->isCreditNote()) === []
+    && str_contains($listHtml, 'data-fetch-region="invoice-find-list"') && str_contains($listHtml, 'value="' . $nonInv->getId() . ':' . $invoiceRow($nonInv->getId())['version'] . '"')
     && str_contains($listHtml, 'form="invoice-finalize"') && str_contains($listHtml, 'Rechnung erstellen') && str_contains($listHtml, 'be-viewtabs')
     && $host->context['counts']['invoicing'] === $host->context['paging']->total);
 $numbers = array_map(fn($d) => $d->getNumber(), $host->context['documents']);
@@ -1927,7 +1933,7 @@ $hostBad->listAction();
 check('P3C25 the column search runs in the database: number exact; name + month; an unreadable number is marked invalid and ignored, an amount with an apostrophe is read',
     array_map(fn($d) => $d->getId(), $host->context['documents']) === [$nonInv->getId()]
     && $hostName->context['documents'] !== [] && array_filter($hostName->context['documents'], fn($d) => $d->getAddress()->getName() !== 'Müller Neu AG' || $d->getInvoiceDate()->format('m.Y') !== '06.2026') === []
-    && $hostBad->context['filter']->isInvalid('f_nr') && !$hostBad->context['filter']->isInvalid('f_amount') && $hostBad->context['filter']->search()->amount === '1234.50' && $hostBad->context['filter']->search()->number === null);
+    && $hostBad->context['state']->isInvalid('f_nr') && !$hostBad->context['state']->isInvalid('f_amount') && \Z77\Module\Debtor\Ui\InvoiceListing::search($hostBad->context['state'])->amount === '1234.50' && \Z77\Module\Debtor\Ui\InvoiceListing::search($hostBad->context['state'])->number === null);
 check('P3C26 paging: the shared kernel Paging (moved from module-financial, Rule 8) and the shared pager partial', $host->context['paging'] instanceof \Z77\Shared\Paging\Paging
     && !class_exists('Z77\\Module\\Financial\\Reports\\Paging') && is_file($pkgRoot . '/kernel/shared/res/view/templates/partials/pager.tpl.php'));
 
@@ -2778,6 +2784,101 @@ check('T15 source guards: the dunning trait never persists itself; the templates
     })()
     && $wireDi()->getRepository(Invoice::class)->countPerView()['final'] === (int) $db->fetchOne("SELECT COUNT(*) FROM invoice WHERE kind IN ('invoice', 'fee') AND state = 'final'"));
 
+// ── U. Debitoren = the open-item list, master data apart (2026-10-07, after wdv-630) ──
+
+echo "U. Debitoren as the open-item list (wdv-630), the master data under Stammdaten\n";
+use Z77\Module\Debtor\Repositories\OpenItemSearch;
+use Z77\Module\Debtor\Ui\OpenItemListing;
+$repoU   = fn() => $wireDi()->getRepository(Invoice::class);
+$todayU  = new \DateTimeImmutable('today');
+$itemsU  = fn(string $view, array $fields = []) => $repoU()->openItems(new OpenItemSearch($todayU, $view, ...$fields), 0, 500);
+$idsU    = fn(array $items) => array_map(fn($i) => $i->id, $items);
+$openU   = $itemsU('open');
+$allU    = $itemsU('all');
+$byIdU   = array_column(array_map(fn($i) => ['id' => $i->id, 'item' => $i], $allU), 'item', 'id');
+check('U1 the open view: every final payable document with an open amount — invoices AND fees, never a credit note or a document in invoicing; the open amount is the service\'s',
+    $openU !== [] && array_reduce($openU, fn($ok, $i) => $ok && $i->open->isPositive() && $i->kind !== InvoiceKind::CreditNote, true)
+    && in_array($feeDoc->getId(), $idsU($openU), true) && $byIdU[$feeDoc->getId()]->kind === InvoiceKind::Fee
+    && $byIdU[$feeDoc->getId()]->open->toDecimal() === $service($wireDi())->openAmount($readInvoice($feeDoc->getId()))->toDecimal()
+    && (int) $db->fetchOne("SELECT COUNT(*) FROM invoice WHERE kind <> 'credit-note' AND state = 'final'") === count($allU));
+check('U2 a settled document is only in «all»: gross, settled = gross, open 0.00, the highest dunning level carried along; settled = allocations + final credit notes',
+    !in_array($invE->getId(), $idsU($openU), true) && isset($byIdU[$invE->getId()])
+    && $byIdU[$invE->getId()]->open->isZero() && $byIdU[$invE->getId()]->settled->toDecimal() === $byIdU[$invE->getId()]->gross->toDecimal()
+    && $byIdU[$invE->getId()]->level === 2 && $byIdU[$invE->getId()]->customerNumber === 1000
+    && array_reduce($allU, fn($ok, $i) => $ok && $i->open->toDecimal() === $service($wireDi())->openAmount($readInvoice($i->id))->toDecimal(), true));
+$overdueU = $itemsU('overdue');
+$totalsU  = $repoU()->openItemTotals(new OpenItemSearch($todayU));
+$sumU     = fn(array $items) => array_reduce($items, fn(Money $s, $i) => $s->add($i->open), Money::zero('CHF'))->toDecimal();
+check('U3 «overdue» = open and due before today; the header totals are the sums of the open and the overdue rows, with their counts',
+    array_reduce($overdueU, fn($ok, $i) => $ok && $i->isOverdue($todayU), true) && count($overdueU) === count(array_filter($openU, fn($i) => $i->isOverdue($todayU)))
+    && $totalsU['count'] === count($openU) && $totalsU['openCount'] === count($openU) && $totalsU['overdueCount'] === count($overdueU)
+    && Money::fromDecimal($totalsU['open'], 'CHF')->toDecimal() === $sumU($openU) && Money::fromDecimal($totalsU['overdue'], 'CHF')->toDecimal() === $sumU($overdueU));
+check('U4 the column search: the document number and the customer number exact, a name part, the open amount exact, a due-date range — bound values, a «%» is a character',
+    $idsU($itemsU('all', ['number' => $invE->getNumber()])) === [$invE->getId()]
+    && array_reduce($itemsU('all', ['customer' => 1000]), fn($ok, $i) => $ok && $i->customerNumber === 1000, true) && count($itemsU('all', ['customer' => 1000])) > 1
+    && array_reduce($itemsU('all', ['name' => 'Müller']), fn($ok, $i) => $ok && str_contains($i->name, 'Müller'), true) && $itemsU('all', ['name' => 'Müller']) !== []
+    && $idsU($itemsU('all', ['open' => $byIdU[$feeDoc->getId()]->open->toDecimal(), 'number' => $feeDoc->getNumber()])) === [$feeDoc->getId()]
+    && in_array($invE->getId(), $idsU($itemsU('all', ['dueFrom' => $byIdU[$invE->getId()]->dueDate->format('Y-m-d'), 'dueTo' => $byIdU[$invE->getId()]->dueDate->format('Y-m-d')])), true)
+    && $itemsU('all', ['name' => '%']) === []);
+$sortedU = $repoU()->openItems(new OpenItemSearch($todayU, 'all', sort: 'open', descending: true), 0, 500);
+check('U5 the sort comes from a fixed map: by open amount descending; an unknown sort or view is refused by the criteria',
+    array_reduce(array_keys($sortedU), fn($ok, $k) => $ok && ($k === 0 || $sortedU[$k - 1]->open->compare($sortedU[$k]->open) >= 0), true)
+    && throws(fn() => new OpenItemSearch($todayU, 'open', sort: 'id; DROP'), \InvalidArgumentException::class)
+    && throws(fn() => new OpenItemSearch($todayU, 'paid'), \InvalidArgumentException::class));
+$dU = OpenItemListing::definition('CHF');
+$sU = $dU->read(['view' => 'overdue', 'f_name' => ' sihl ', 'f_due' => '09.2026', 'f_open' => 'x', 'sort' => 'bogus', 'page' => '3']);
+$qU = OpenItemListing::search($sU, $todayU);
+check('U6 the listing is a standard list (listing.md): the view an extra, the columns searched and parsed strictly (an unreadable amount is invalid, not searched), an unknown sort falls back to the due date oldest first; the search carries what the repository needs',
+    $sU->extra('view') === 'overdue' && $sU->parsed('f_name') === 'sihl' && $sU->isInvalid('f_open') && $sU->sort === 'due' && !$sU->descending && $sU->page === 3
+    && $qU->view === 'overdue' && $qU->name === 'sihl' && $qU->dueFrom === '2026-09-01' && $qU->dueTo === '2026-09-30' && $qU->open === null && $qU->today === $todayU
+    && $sU->sortQuery('open') === 'f_name=sihl&f_open=x&f_due=09.2026&view=overdue&sort=open' && $sU->hiddenState() === ['view' => 'overdue']
+    && $dU->region() === 'debtor-find-list' && $dU->inputId('f_due') === 'debtor-find-f_due' && count($dU->columns()) === 11 && count($dU->searchKeys()) === 7);
+$opHost = function () {
+    return new class {
+        use \Z77\Module\Debtor\Ui\DebtorControllerTrait { listAction as public; }
+        public array $context = [];
+        public object $layoutManager;
+        public function __construct()
+        {
+            $this->layoutManager = new class {
+                public array $sections = [];
+                public function addPartials(string $name, string $path, string $ns, string $section = 'main'): void { $this->sections[$section][] = $path . '/' . $name; }
+            };
+        }
+        protected function em() { return DI::getUnifiedEntityManager(); }
+        protected function html(array $context = []): \Z77\Core\Http\Response\HtmlResponse { $this->context = $context; return new \Z77\Core\Http\Response\HtmlResponse(null, $context); }
+    };
+};
+$useRequest([]);
+$host = $opHost();
+$host->listAction();
+$opHtml  = $renderer->partial('Backend/DebtorController/listAction', $host->context);
+$barHtml = $renderer->partial('Backend/DebtorController/toolbar', $host->context);
+check('U7 the screen: OP-Total and overdue in the header, the kernel\'s head and find form over the listing (sort links, magnifiers, the inputs of the form), a row per open document with its cells as labels of the column search, the state icon opening the document window, «Zahlung» to the document\'s payment form; the toolbar with the three views',
+    str_contains($opHtml, 'OP-Total') && str_contains($opHtml, 'davon überfällig') && substr_count($opHtml, 'data-open-item=') === min(50, count($openU))
+    && str_contains($opHtml, 'data-window-open="/backend/finance/invoice/detail?id=' . $feeDoc->getId() . '"')
+    && str_contains($opHtml, 'href="/backend/finance/invoice/payment?id=' . $feeDoc->getId() . '"')
+    && str_contains($opHtml, '>fakturiert<') && str_contains($opHtml, '>offen<') && str_contains($opHtml, '>Fällig<') && str_contains($opHtml, '>KD-Nr.<')
+    && ($host->layoutManager->sections['hc2'] ?? []) === ['Backend/DebtorController/toolbar']
+    && str_contains($opHtml, 'data-fetch-region="debtor-find-list"') && str_contains($opHtml, '<form id="debtor-find" method="get"') && substr_count($opHtml, 'form="debtor-find"') === 7
+    && str_contains($opHtml, 'id="debtor-find-f_nr"') && str_contains($opHtml, 'for="debtor-find-f_open"') && str_contains($opHtml, 'data-sort="asc">Fällig</a>')
+    && str_contains($barHtml, '?view=overdue') && str_contains($barHtml, '?view=all') && !str_contains($barHtml, 'name="q"'));
+$useRequest(['view' => 'all', 'f_nr' => (string) $invE->getNumber()]);
+$host = $opHost();
+$host->listAction();
+$opHtml = $renderer->partial('Backend/DebtorController/listAction', $host->context);
+check('U8 a settled document in «all»: status «bezahlt», no «Zahlung», the dunning level shown',
+    substr_count($opHtml, 'data-open-item=') === 1 && str_contains($opHtml, 'bezahlt') && !str_contains($opHtml, '/payment?id=') && str_contains($opHtml, 'M2'));
+check('U9 the master data moved: «Debitoren» under Aufträge is the open-item list (debtor/list), the debtor profiles are «Debitoren» under Stammdaten › Aufträge (debtor-profile/list), first in the group; the open-item trait writes nothing and carries no master data',
+    (function () use ($package): bool {
+        $rows = array_column(json_decode(file_get_contents($package . '/data/framework/routing/navigation.d/module-debtor.json'), true), null, 'key');
+        return $rows['debitoren']['parent_key'] === 'auftraege' && $rows['debitoren']['controller'] === 'debtor'
+            && $rows['debitoren-stamm']['parent_key'] === 'stammdaten-auftraege' && $rows['debitoren-stamm']['controller'] === 'debtor-profile' && $rows['debitoren-stamm']['action'] === 'list'
+            && $rows['debitoren-stamm']['sort_key'] < $rows['zahlungskonditionen']['sort_key'];
+    })()
+    && !preg_match('/->persist\(|->flush\(|DebtorProfileService|PaymentTermsRepository/', file_get_contents($package . '/src/Ui/DebtorControllerTrait.php'))
+    && str_contains(file_get_contents($package . '/src/Ui/DebtorProfileControllerTrait.php'), "'/backend/finance/debtor-profile'"));
+
 echo "P3C. Source guards for part 3\n";
 $p3Templates = glob($package . '/res/view/templates/Backend/InvoiceController/*.tpl.php');
 check('P3C48 the document screens ship no JavaScript and no inline handler (Rule 7); no module-financial class in debtor but the adapter (the journal is linked by URL)',
@@ -2811,9 +2912,9 @@ check('P3C52 … and it re-saves without a hand edit, now in the new shape (qr_i
     $savedRow['qr_iban'] === $legacyIban && $savedRow['iban'] === ''
     && str_contains((string) $tv(fn() => (new DebtorMasterData($wireDi()))->saveTarget(new PaymentTarget(['code' => 'swap3', 'label' => 'x', 'iban' => $withIid('30800'), 'qr_iban' => '', 'account_number' => '1020'])))?->getFieldError('iban'), 'QR-IBAN'));
 
-$huge = \Z77\Module\Debtor\Ui\InvoiceFilter::fromQuery(['f_amount' => '99999999999999999999', 'f_name' => str_repeat('x', 200)], 'CHF');
+$huge = \Z77\Module\Debtor\Ui\InvoiceListing::definition('CHF', true)->read(['f_amount' => '99999999999999999999', 'f_name' => str_repeat('x', 200)]);
 check('P3C53 the amount search refuses a number Money cannot hold (invalid, no 500); the name search is bounded to the 80 characters kept',
-    $huge->isInvalid('f_amount') && $huge->search()->amount === null && mb_strlen((string) $huge->search()->name) === 80 && mb_strlen($huge->value('f_name')) === 80);
+    $huge->isInvalid('f_amount') && \Z77\Module\Debtor\Ui\InvoiceListing::search($huge)->amount === null && mb_strlen((string) \Z77\Module\Debtor\Ui\InvoiceListing::search($huge)->name) === 80 && mb_strlen($huge->value('f_name')) === 80);
 
 /** The document with a HAND-BUILT payment part — reflection, never persisted: QrBill's refusals one by one. */
 $withPayment = function (Invoice $document, array $values): Invoice {

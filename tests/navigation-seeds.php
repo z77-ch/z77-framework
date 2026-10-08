@@ -251,10 +251,10 @@ $labels     = static fn(string $prefix) => array_values(array_map(static fn($l) 
     array_filter($lines, static fn($l) => str_starts_with($l, $prefix) && !str_contains(substr($l, strlen($prefix)), ' > '))));
 $roots = array_values(array_map(static fn($l) => explode(' [', substr($l, strlen('backend-main: ')))[0],
     array_filter($lines, static fn($l) => str_starts_with($l, 'backend-main: ') && !str_contains(substr($l, strlen('backend-main: ')), ' > '))));
-check('NSEED-2g with module-debtor: the area «Aufträge» (Debitoren, Rechnungen, Zahlungseingänge) after Finanzen, its master data under Stammdaten › Aufträge — nothing of it under Finanzen',
+check('NSEED-2g with module-debtor: the area «Aufträge» (Debitoren = open items, Rechnungen, Zahlungseingänge, Mahnungen) after Finanzen, its master data — the debtors first — under Stammdaten › Aufträge — nothing of it under Finanzen',
     $roots === ['Webseiten', 'Finanzen', 'Aufträge', 'Kontakte', 'Drive', 'Stammdaten', 'Service']
     && $labels('backend-main: Aufträge > ') === ['Debitoren', 'Rechnungen', 'Zahlungseingänge', 'Mahnungen']
-    && $labels('backend-main: Stammdaten > Aufträge > ') === ['Zahlungskonditionen', 'Zahlungsziele', 'Mahnstufen']
+    && $labels('backend-main: Stammdaten > Aufträge > ') === ['Debitoren', 'Zahlungskonditionen', 'Zahlungsziele', 'Mahnstufen']
     && $labels('backend-main: Stammdaten > ') === ['Firma', 'Finanzen', 'Aufträge', 'Kontakte', 'System']
     && $labels('backend-main: Stammdaten > Finanzen > ') === ['Geschäftsjahre', 'Kontenplan', 'MWST-Codes'],
     implode(' | ', $lines));
@@ -360,7 +360,7 @@ check('NSEED-7d second run: nothing to add, file untouched',
     file_get_contents($navFile) === $before && str_contains($io->out(), 'nothing to add'), $io->out());
 $io->lines = [];
 $run($allRoots);
-check('NSEED-7e module-debtor installed later: its 9 entries added (area, group, seven screens)', str_contains($io->out(), '9 entries added'), $io->out());
+check('NSEED-7e module-debtor installed later: its 10 entries added (area, group, eight screens)', str_contains($io->out(), '10 entries added'), $io->out());
 unlink($navFile);
 $io->lines = [];
 $run($chRoots);

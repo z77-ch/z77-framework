@@ -14,7 +14,7 @@
  * @var string $actionBase
  */
 $isNew      = $entry->getId() === null;
-$actionBase = $actionBase ?? '/backend/finance/debtor';
+$actionBase = $actionBase ?? '/backend/finance/debtor-profile';
 
 $fieldError = function (string $name) use ($validator): string {
     return $validator->hasFieldError($name)

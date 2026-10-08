@@ -8,6 +8,7 @@ use Z77\Module\Debtor\Entities\Invoice;
 use Z77\Module\Debtor\Entities\InvoiceKind;
 use Z77\Module\Debtor\Entities\InvoiceState;
 use Z77\Persistence\Doctrine\Repository\DoctrineRepository;
+use Z77\Shared\Money\Money;
 
 /**
  * Convention repository for {@see Invoice}. Doctrine-only seams (ADR-039
@@ -216,6 +217,159 @@ class InvoiceRepository extends DoctrineRepository
             ->orderBy('i.number', 'ASC')
             ->getQuery()
             ->getResult();
+    }
+
+    /**
+     * One page of the open-item list (2026-10-07, the wdv-630 «Debitoren»
+     * list): the final payable documents of the view with what settled them
+     * and what is open, and the debtor's customer number and highest dunning
+     * level — ONE query, aggregates joined per document. Doctrine-only (SQL).
+     *
+     * @return list<OpenItem>
+     */
+    public function openItems(OpenItemSearch $search, int $offset, int $limit): array
+    {
+        [$where, $params, $types] = $this->openItemWhere($search);
+        $dir   = $search->descending ? 'DESC' : 'ASC';
+        $order = match ($search->sort) {
+            'number'   => "number {$dir}",
+            'date'     => "invoice_date {$dir}, number {$dir}",
+            'name'     => "addr_name {$dir}, addr_first_name {$dir}, number {$dir}",
+            'customer' => "customer_number {$dir}, number {$dir}",
+            'gross'    => "gross_total {$dir}, number {$dir}",
+            'open'     => "open_amount {$dir}, number {$dir}",
+            default    => "due_date {$dir}, number {$dir}",
+        };
+        $rows = $this->connection()->fetchAllAssociative(
+            'SELECT * FROM (' . self::OPEN_ITEM_SQL . ") t{$where} ORDER BY {$order} LIMIT ? OFFSET ?",
+            array_merge(self::openItemParams(), $params, [max(1, $limit), max(0, $offset)]),
+            array_merge(array_fill(0, count(self::openItemParams()), ParameterType::STRING), $types, [ParameterType::INTEGER, ParameterType::INTEGER])
+        );
+
+        return array_map(static fn(array $r) => new OpenItem(
+            (int) $r['id'],
+            InvoiceKind::from((string) $r['kind']),
+            (int) $r['number'],
+            (int) $r['customer_number'],
+            trim($r['addr_first_name'] . ' ' . $r['addr_name']),
+            new \DateTimeImmutable((string) $r['invoice_date']),
+            new \DateTimeImmutable((string) $r['due_date']),
+            Money::fromDecimal((string) $r['gross_total'], (string) $r['currency']),
+            Money::fromDecimal((string) $r['settled_amount'], (string) $r['currency']),
+            Money::fromDecimal((string) $r['open_amount'], (string) $r['currency']),
+            (int) $r['dunning_level'],
+        ), $rows);
+    }
+
+    /**
+     * The open-item list's count for $search, and — over ALL open documents,
+     * whatever the view — the open total and the overdue part as of the
+     * search's day: the list header (wdv «OP-Total»). Per currency would be
+     * a second line; the base currency is all P3/P4 issue. Doctrine-only (SQL).
+     *
+     * @return array{count: int, open: string, overdue: string, openCount: int, overdueCount: int} decimals as strings
+     */
+    public function openItemTotals(OpenItemSearch $search): array
+    {
+        [$where, $params, $types] = $this->openItemWhere($search);
+        $base  = self::openItemParams();
+        $count = (int) $this->connection()->fetchOne(
+            'SELECT COUNT(*) FROM (' . self::OPEN_ITEM_SQL . ") t{$where}",
+            array_merge($base, $params),
+            array_merge(array_fill(0, count($base), ParameterType::STRING), $types)
+        );
+        $sums = $this->connection()->fetchAssociative(
+            'SELECT COALESCE(SUM(open_amount), 0) AS open, COUNT(*) AS open_count,'
+            . ' COALESCE(SUM(CASE WHEN due_date < ? THEN open_amount END), 0) AS overdue, SUM(due_date < ?) AS overdue_count'
+            . ' FROM (' . self::OPEN_ITEM_SQL . ') t WHERE open_amount > 0',
+            array_merge([$search->today->format('Y-m-d'), $search->today->format('Y-m-d')], $base)
+        ) ?: [];
+
+        return [
+            'count'        => $count,
+            'open'         => (string) ($sums['open'] ?? '0.00'),
+            'overdue'      => (string) ($sums['overdue'] ?? '0.00'),
+            'openCount'    => (int) ($sums['open_count'] ?? 0),
+            'overdueCount' => (int) ($sums['overdue_count'] ?? 0),
+        ];
+    }
+
+    /**
+     * The open-item rows: every FINAL payable document with its settled
+     * amount (allocations + final credit notes against it), the open rest,
+     * the debtor's customer number and the highest dunning level. Its `?`
+     * are {@see openItemParams()}.
+     */
+    private const OPEN_ITEM_SQL =
+        'SELECT i.id, i.kind, i.number, i.invoice_date, i.due_date, i.gross_total, i.currency, i.addr_name, i.addr_first_name,'
+        . ' COALESCE(d.customer_number, 0) AS customer_number,'
+        . ' COALESCE(pa.total, 0) + COALESCE(cn.total, 0) AS settled_amount,'
+        . ' i.gross_total - COALESCE(pa.total, 0) - COALESCE(cn.total, 0) AS open_amount,'
+        . ' COALESCE(dn.level, 0) AS dunning_level'
+        . ' FROM invoice i'
+        . ' LEFT JOIN debtor_profile d ON d.contact_id = i.contact_id'
+        . ' LEFT JOIN (SELECT invoice_id, SUM(amount) AS total FROM payment_allocation GROUP BY invoice_id) pa ON pa.invoice_id = i.id'
+        . ' LEFT JOIN (SELECT credit_note_of_id, SUM(gross_total) AS total FROM invoice WHERE kind = ? AND state = ? GROUP BY credit_note_of_id) cn ON cn.credit_note_of_id = i.id'
+        . ' LEFT JOIN (SELECT invoice_id, MAX(level_number) AS level FROM dunning_notice GROUP BY invoice_id) dn ON dn.invoice_id = i.id'
+        . ' WHERE i.kind <> ? AND i.state = ?';
+
+    /** @return list<string> the values of {@see OPEN_ITEM_SQL}'s `?`, in order */
+    private static function openItemParams(): array
+    {
+        return [InvoiceKind::CreditNote->value, InvoiceState::Final->value, InvoiceKind::CreditNote->value, InvoiceState::Final->value];
+    }
+
+    /** @return array{0: string, 1: list<mixed>, 2: list<ParameterType>} the WHERE over the derived table `t` */
+    private function openItemWhere(OpenItemSearch $search): array
+    {
+        $where  = [];
+        $params = [];
+        $types  = [];
+        if ($search->view !== OpenItemSearch::VIEW_ALL) {
+            $where[] = 'open_amount > 0';
+        }
+        if ($search->view === OpenItemSearch::VIEW_OVERDUE) {
+            $where[]  = 'due_date < ?';
+            $params[] = $search->today->format('Y-m-d');
+            $types[]  = ParameterType::STRING;
+        }
+        $add = static function (string $sql, mixed $value, ParameterType $type = ParameterType::STRING) use (&$where, &$params, &$types): void {
+            $where[]  = $sql;
+            $params[] = $value;
+            $types[]  = $type;
+        };
+        if ($search->number !== null) {
+            $add('number = ?', $search->number, ParameterType::INTEGER);
+        }
+        if ($search->customer !== null) {
+            $add('customer_number = ?', $search->customer, ParameterType::INTEGER);
+        }
+        if ($search->name !== null) {
+            $like = '%' . addcslashes($search->name, '\\%_') . '%';
+            $where[]  = "(addr_name LIKE ? OR addr_first_name LIKE ? OR CONCAT(addr_first_name, ' ', addr_name) LIKE ?)";
+            array_push($params, $like, $like, $like);
+            array_push($types, ParameterType::STRING, ParameterType::STRING, ParameterType::STRING);
+        }
+        if ($search->gross !== null) {
+            $add('gross_total = ?', $search->gross);
+        }
+        if ($search->open !== null) {
+            $add('open_amount = ?', $search->open);
+        }
+        if ($search->dateFrom !== null) {
+            $add('invoice_date >= ?', $search->dateFrom);
+        }
+        if ($search->dateTo !== null) {
+            $add('invoice_date <= ?', $search->dateTo);
+        }
+        if ($search->dueFrom !== null) {
+            $add('due_date >= ?', $search->dueFrom);
+        }
+        if ($search->dueTo !== null) {
+            $add('due_date <= ?', $search->dueTo);
+        }
+
+        return [$where === [] ? '' : ' WHERE ' . implode(' AND ', $where), $params, $types];
     }
 
     /** @return array{0: string, 1: list<mixed>, 2: list<ParameterType>} */

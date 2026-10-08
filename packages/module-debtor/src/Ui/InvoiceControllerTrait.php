@@ -2,7 +2,6 @@
 namespace Z77\Module\Debtor\Ui;
 
 use Z77\Core\DI,
-    Z77\Core\Http\RequestMode,
     Z77\Core\Http\Response\BytesResponse,
     Z77\Core\Http\Response\HtmlResponse,
     Z77\Core\Http\Response\RedirectResponse,
@@ -23,12 +22,12 @@ use Z77\Core\DI,
     Z77\Module\Debtor\Services\InvoiceRefusedException,
     Z77\Module\Debtor\Services\InvoicingService,
     Z77\Module\Debtor\Services\PaymentService,
+    Z77\Shared\Listing\ListDefinition,
     Z77\Module\Mandator\Services\LedgerAccountCheck,
     Z77\Module\Vat\Entities\TaxCode,
     Z77\Shared\Attributes\Csrf,
     Z77\Shared\Money\AmountFormat,
-    Z77\Shared\Money\Money,
-    Z77\Shared\Paging\Paging
+    Z77\Shared\Money\Money
 ;
 
 /**
@@ -44,7 +43,7 @@ use Z77\Core\DI,
  *
  *   - `list` — the documents per VIEW (`?view=`): invoices in `invoicing`,
  *     final invoices, credit notes; searchable per column in the database,
- *     sortable, paged ({@see InvoiceFilter}, the journal list's pattern: a
+ *     sortable, paged ({@see InvoiceListing}, a standard list — listing.md: a
  *     fetch region, a state icon per row that opens the document as a window,
  *     ADR-047). In the `invoicing` view every row carries a checkbox with its
  *     `{id}:{version}` — the FINALIZE batch: «Definitiv stellen …» (toolbar)
@@ -76,9 +75,6 @@ use Z77\Core\DI,
 trait InvoiceControllerTrait
 {
     private const INVOICE_NS = 'Z77\\Module\\Debtor';
-
-    /** Rows per list page — a screen constant until an installation needs another (no config key before a reader wants it). */
-    private const INVOICE_LIST_LIMIT = 50;
 
     /** View → German tab label. */
     private const INVOICE_VIEWS = [
@@ -114,9 +110,7 @@ trait InvoiceControllerTrait
 
     private function invoiceIsFetch(): bool
     {
-        $request = DI::getRequest();
-
-        return method_exists($request, 'getMode') && $request->getMode() === RequestMode::Fetch;
+        return ListDefinition::isFetch(DI::getRequest());
     }
 
     /**
@@ -147,20 +141,20 @@ trait InvoiceControllerTrait
     protected function listAction(): HtmlResponse
     {
         $request = DI::getRequest();
-        $query   = [];
-        foreach (array_merge(['view', 'sort', 'dir', 'page'], array_keys(InvoiceFilter::FIELDS)) as $key) {
-            $query[$key] = $request->getGetParameter($key);
-        }
-        $filter    = InvoiceFilter::fromQuery($query, DebtorCurrency::base());
-        $search    = $filter->search();
-        $total     = $this->invoices()->countSearch($search);
-        $paging    = new Paging($filter->page, self::INVOICE_LIST_LIMIT, $total);
-        $documents = $total === 0 ? [] : $this->invoices()->search($search, $paging->offset(), $paging->pageSize);
+        // The invoicing view leads with the selection checkbox — the view is read once ahead of the definition.
+        $selectable = !in_array($request->getGetParameter('view'), [InvoiceSearch::VIEW_FINAL, InvoiceSearch::VIEW_CREDIT], true);
+        $definition = InvoiceListing::definition(DebtorCurrency::base(), $selectable);
+        $state      = $definition->readRequest($request);
+        $search     = InvoiceListing::search($state);
+        $total      = $this->invoices()->countSearch($search);
+        $paging     = $state->paging($total);
+        $documents  = $total === 0 ? [] : $this->invoices()->search($search, $paging->offset(), $paging->pageSize);
 
         $response = $this->html([
-            'documents' => $documents,
-            'filter'    => $filter,
-            'paging'    => $paging,
+            'documents'  => $documents,
+            'definition' => $definition,
+            'state'      => $state,
+            'paging'     => $paging,
             'counts'    => $this->invoices()->countPerView(),
             'views'     => self::INVOICE_VIEWS,
             'states'    => self::INVOICE_STATE_LABELS,
