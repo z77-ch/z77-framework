@@ -2,7 +2,9 @@
 namespace Z77\Module\Debtor\Ui;
 
 use Z77\Core\DI,
+    Z77\Core\Http\RequestMode,
     Z77\Core\Http\Response\HtmlResponse,
+    Z77\Core\Http\Response\JsonResponse,
     Z77\Core\Http\Response\RedirectResponse,
     Z77\Module\Debtor\Accounting\AccountingRefusedException,
     Z77\Module\Debtor\Entities\BankMessage,
@@ -12,7 +14,8 @@ use Z77\Core\DI,
     Z77\Module\Debtor\Services\InvoicingService,
     Z77\Shared\Attributes\Csrf,
     Z77\Shared\Money\AmountFormat,
-    Z77\Shared\Money\Money
+    Z77\Shared\Money\Money,
+    Z77\Shared\Upload\UploadPolicy
 ;
 
 /**
@@ -62,10 +65,37 @@ trait BankImportControllerTrait
         return new InvoicingService($this->em());
     }
 
+    /**
+     * What this screen lets in (the ONE place, read by the client's attributes AND by the
+     * server's check — `UploadPolicy`): camt.054 messages are XML, a month is a few hundred
+     * KB, several files in one go is the normal case (a bank hands out one per day).
+     *
+     * `onConflict: error` — a message already imported is not something to overwrite: the
+     * transactions behind it may be booked. The import service refuses it by message id and
+     * the row says so.
+     */
+    private function bankUploadPolicy(): UploadPolicy
+    {
+        return new UploadPolicy(
+            endpoint:   $this->bankImportListBase() . '/upload',
+            field:      'file',
+            multiple:   true,
+            accept:     ['.xml'],
+            maxBytes:   self::BANK_FILE_LIMIT,
+            onConflict: UploadPolicy::CONFLICT_ERROR,
+            label:      'camt.054-Dateien hierher ziehen',
+            hint:       'XML · bis 5 MB · mehrere',
+        );
+    }
+
     /** @param array<string, mixed> $context */
     private function bankImportPage(string $template, array $context): HtmlResponse
     {
-        $context += ['actionBase' => $this->bankImportListBase(), 'fmt' => static fn(?Money $m) => AmountFormat::of($m)];
+        $context += [
+            'actionBase'   => $this->bankImportListBase(),
+            'uploadPolicy' => $this->bankUploadPolicy(),
+            'fmt'          => static fn(?Money $m) => AmountFormat::of($m),
+        ];
         $response = $this->html($context);
         // The fragment owns its header slot (financial.md, «fragment slots»): «+ camt.054 einlesen»
         // is the entry's most frequent action → action cell (ADR-033 rev. 2026-10-08).
@@ -96,36 +126,79 @@ trait BankImportControllerTrait
         ]);
     }
 
-    /** The upload (POST, one file in `file`): import → the new message's detail. */
+    /**
+     * The upload (POST, ONE file per request in `file`) — two answers for one body:
+     *
+     *  - **fetch mode** (the upload component, one request per file): the per-file envelope
+     *    `{status, name, message, commands}`. The component shows the message AT the file
+     *    and runs the commands once the whole queue is through, so ten files give one
+     *    reload and ten rows, not ten redirects.
+     *  - **page mode** (no JavaScript, the form posted itself): the flash + redirect as
+     *    before — one file, straight to its detail.
+     *
+     * The gate is {@see UploadPolicy::check()} in both cases: the client's own check spares
+     * a round trip, it does not replace this one.
+     */
     #[Csrf]
-    protected function uploadAction(): RedirectResponse
+    protected function uploadAction(): RedirectResponse|JsonResponse
     {
         $request = DI::getRequest();
+        $fetch   = $request->getMode() === RequestMode::Fetch;
+        $policy  = $this->bankUploadPolicy();
+        $list    = $this->bankImportListBase() . '/list';
+
         if (!$request->isPost()) {
-            return $this->redirect($this->bankImportListBase() . '/list', 303);
+            return $fetch
+                ? $this->json(['status' => 'error', 'name' => '', 'message' => 'POST erwartet'], 405)
+                : $this->redirect($list, 303);
         }
+
         $file = $request->getUploadedFile('file');
-        if ($file === null || !$file->isOk()) {
-            $this->messageService->pushFlashAfterRedirect('error', 'Keine Datei empfangen — eine camt.054-Datei (XML) wählen.');
-
-            return $this->redirect($this->bankImportListBase() . '/list', 303);
+        if ($file === null) {
+            return $this->bankUploadRefusal($fetch, '', 'Keine Datei empfangen — eine camt.054-Datei (XML) wählen.');
         }
-        if ($file->size > self::BANK_FILE_LIMIT) {
-            $this->messageService->pushFlashAfterRedirect('error', 'Die Datei ist grösser als 5 MB — keine camt.054-Meldung.');
 
-            return $this->redirect($this->bankImportListBase() . '/list', 303);
+        $refusal = $policy->check($file);
+        if ($refusal !== null) {
+            return $this->bankUploadRefusal($fetch, $file->originalName, $file->originalName . ': ' . $refusal);
         }
+
         try {
             $message = $this->bankImportService()->import((string) $file->bytes(), $file->originalName);
             $counts  = $message->countPerState();
-            $this->messageService->pushFlashAfterRedirect('success', 'Meldung ' . $message->getMessageId() . ' importiert: ' . count($message->getTransactions()) . ' Transaktionen, ' . $counts['matched'] . ' zugeordnet, ' . $counts['unmatched'] . ' offen, ' . $counts['ignored'] . ' ignoriert.');
+            $summary = 'Meldung ' . $message->getMessageId() . ' importiert: '
+                . count($message->getTransactions()) . ' Transaktionen, '
+                . $counts['matched'] . ' zugeordnet, ' . $counts['unmatched'] . ' offen, '
+                . $counts['ignored'] . ' ignoriert.';
+
+            if ($fetch) {
+                // The list behind the component shows the new message — reloading is the
+                // honest refresh here: the page is a plain list, not a fetch region.
+                return $this->json([
+                    'status'   => 'ok',
+                    'name'     => $file->originalName,
+                    'message'  => $counts['matched'] . ' zugeordnet, ' . $counts['unmatched'] . ' offen',
+                    'commands' => [['action' => 'reload']],
+                ]);
+            }
+
+            $this->messageService->pushFlashAfterRedirect('success', $summary);
 
             return $this->redirect($this->bankImportListBase() . '/detail?id=' . $message->getId(), 303);
         } catch (DebtorException $e) {
-            $this->messageService->pushFlashAfterRedirect('error', $e->getMessage());
-
-            return $this->redirect($this->bankImportListBase() . '/list', 303);
+            return $this->bankUploadRefusal($fetch, $file->originalName, $e->getMessage());
         }
+    }
+
+    /** One refusal, two shapes — the row's message in fetch mode, the flash on a page. */
+    private function bankUploadRefusal(bool $fetch, string $name, string $message): RedirectResponse|JsonResponse
+    {
+        if ($fetch) {
+            return $this->json(['status' => 'error', 'name' => $name, 'message' => $message]);
+        }
+        $this->messageService->pushFlashAfterRedirect('error', $message);
+
+        return $this->redirect($this->bankImportListBase() . '/list', 303);
     }
 
     // ── detail and the actions on it ─────────────────────────────────────

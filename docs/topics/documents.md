@@ -59,7 +59,7 @@ SOURCE=/packages/module-dms/src/Ui/DriveLayout.php
 SOURCE=/packages/module-dms/src/Ui/Controllers/Media/OutputController.php
 SOURCE=/packages/module-dms/src/App/Config/dmsConfig.inc.php
 SOURCE=/packages/module-dms/res/assets/js/documents/drive.js
-SOURCE=/packages/module-dms/res/assets/js/documents/upload.js
+SOURCE=/packages/module-dms/res/assets/js/documents/upload-poster.js
 SOURCE=/packages/module-dms/res/view/templates/Documents/DriveController/listAction.tpl.php
 SOURCE=/packages/module-dms/res/view/templates/Documents/DriveController/_tree.tpl.php
 SOURCE=/packages/module-dms/res/view/templates/Documents/DriveController/_breadcrumb.tpl.php
@@ -144,9 +144,14 @@ purge is one directory removal. Images get **eager, config-profile-driven** deri
   **not host-scoped** (ADR-020 (b)): it shows every partition the session principal may
   `read` (superUser bypass = all, ADR-021) — unreadable ancestors of a granted subtree (incl.
   the drive root itself) render as path nodes
-  (masked count, no content). Upload is a real multipart POST (`documents/upload.js` + CSRF
-  header, read via `Request::getUploadedFiles()`), never the JSON fetch envelope; the location
-  is the target `folderId`, only `displayName` is user-editable. Every mutation AND every
+  (masked count, no content). Upload is a real multipart POST (since 2026-10-10 THE upload
+  component of the kernel — `Z77\Shared` `partials/upload` + `upload.js`, UPLOAD-001 in
+  [`fetch.md`](fetch.md); the Drive's own 396-line uploader is gone. Its target folder and
+  «Original ausliefern» ride inside the component's form, its video poster frame comes from
+  the per-file provider `documents/upload-poster.js`, and its two caps — transport for every
+  file, a smaller one for `image/*` — are the policy's `maxBytesPer`), read via
+  `Request::getUploadedFiles()`, never the JSON fetch envelope; the location is the target
+  `folderId`, only `displayName` is user-editable. Every mutation AND every
   per-id read (bytes, modals, panes, trash) is gated in the domain (`Authz`/`serveFor`/
   `listDeleted`), not the trait (trait precedence is bypassable — RF-4a).
 - **Delivery** (`DocumentService::serve`): returns a `FileResponse` pointing at the blob

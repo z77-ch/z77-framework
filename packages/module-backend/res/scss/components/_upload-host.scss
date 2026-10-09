@@ -1,0 +1,53 @@
+// Host binding: backend → the shared `z77-upload` component (ADR-018 rule 7, owner
+// 2026-10-09).
+//
+// The primitive owns the geometry; the backend gives it the palette. Two classes
+// (`.be .z77-…`) beat the primitive's one, so nothing here needs `!important`.
+//
+// The accent is `--be-accent-page`, NOT `--be-accent`: a drop zone can stand inside the
+// dark island (the action cell's work area) and `--be-accent` is redefined there to a light
+// variant made for text on dark — the same trap ACTION-CELL-ISLAND-001 documents.
+
+.be .z77-upload {
+    --z77-up-border:      var(--be-line-page);
+    --z77-up-surface:     var(--be-surface-page);
+    --z77-up-muted:       var(--be-muted-page);
+    --z77-up-accent:      var(--be-accent-page);
+    --z77-up-accent-soft: var(--be-accent-soft-page);
+    --z77-up-track:       var(--be-surface2);
+    --z77-up-good:        var(--be-confirm);
+    --z77-up-bad:         var(--be-danger, #b91c1c);
+    --z77-up-bad-soft:    color-mix(in srgb, var(--be-danger, #b91c1c) 8%, transparent);
+
+    color: var(--be-text-page);
+    font-size: var(--font-size-sm);
+}
+
+.be .z77-upload__zone     { border-radius: var(--radius-lg); }
+.be .z77-upload-row       { border-radius: var(--radius-md); }
+.be .z77-upload-row__name { font-family: var(--font-family-mono, ui-monospace, monospace); }
+
+// The cell shape IS a `.be-btn` in the action cell — the button's own look applies and the
+// component adds nothing but the arrow's spacing (ACTION-CELL-ISLAND-001 owns the fill).
+.be .z77-upload--cell {
+    gap: 0;
+
+    .z77-upload__cell { gap: var(--space-1); }
+}
+
+// While files hang over the window the work area says so: the whole column is the target
+// for the cell shape, and a dashed frame is the only thing that can show that.
+.be .be-shell-col--2.is-upload-target,
+.be .be-shell-work.is-upload-target {
+    outline: 2px dashed var(--be-accent-page);
+    outline-offset: -6px;
+    background: var(--be-accent-soft-page);
+}
+
+// A phone has no drag & drop: the zone's wording would promise what the device cannot do.
+// Tapping opens the file picker, which is what the label does anyway.
+@media (max-width: 767px) {
+    .be .z77-upload__label { display: none; }
+    .be .z77-upload__zone  { min-height: 0; }
+    .be .z77-upload--drop .z77-upload__zone { min-height: 96px; }
+}

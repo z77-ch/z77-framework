@@ -743,36 +743,35 @@ packages/module-backend/res/view/templates/
 
 ## pending
 
-- **Resume here (2026-10-08, end of day) — the backend action standard is BUILT, NOT COMMITTED.**
-  The working tree holds ~135 changed files (module-backend, module-financial, module-debtor,
-  module-mandator, kernel shared, docs, tests): the shell foundation (band = top-bar height,
-  inset action cell in the palette's island accent, `be-btn--confirm`, rail-top `railSelect`,
-  phone square icon, underline tabs, `[hidden]` reset, radio tabs), every screen migrated to the
-  [action cell table](#action-cell-per-area-target), the split pickers «↓ Daten sichern | ▾» and
-  «+ Texteintrag | ▾» (the main part NAMES what it does), the tinted picker card and the
-  variant-B fiscal-year select, Mandant as radio tabs, the journal MwSt switch AFTER «Betrag»,
-  «gelöschte zeigen» replaced by the screen Finanzen › Änderungsprotokoll, the context help
-  («? Hilfe» in the top bar, field sections, F1 — ADR-048 addendum). Rules for new areas:
+- **Resume here (2026-10-09) — the backend action standard is BUILT and COMMITTED**
+  (`9f34c29` foundation + screens, `0c592b6` change log / Mandant tabs / journal help,
+  `20a4f0b` the member head's help trigger). What it covers: the shell foundation (band =
+  top-bar height, inset action cell in the palette's island accent, `be-btn--confirm`,
+  rail-top `railSelect`, phone square icon, underline tabs, `[hidden]` reset, radio tabs),
+  every screen migrated to the [action cell table](#action-cell-per-area-target), the split
+  pickers «↓ Daten sichern | ▾» and «+ Texteintrag | ▾» (the main part NAMES what it does),
+  the tinted picker card and the variant-B fiscal-year select, Mandant as radio tabs, the
+  journal MwSt switch AFTER «Betrag», «gelöschte zeigen» replaced by the screen Finanzen ›
+  Änderungsprotokoll, the context help («? Hilfe» in the top bar and in the member head,
+  field sections, F1 — ADR-048 addendum). Rules for new areas:
   [`backend-screen.md`](../01-handbook/backend-screen.md); mockups: the developer canvas
   <https://claude.ai/artifact/4hTQySATC3KMhqxN7RZMGh>. Tests green at the last runs:
   financial 502, debtor 425, mandator 100, vat 153, contact 121, navigation-seeds 44,
-  listing 20, persistence-doctrine-migrations 104. Published to z77.ch (8077); the owner's
-  live look is still open for most screens. **Next, in order:** (1) the owner tests on 8077
-  (all areas, dark mode, one other palette, phone width, journal help: click Soll → «? Hilfe»,
-  F1 in Betrag); (2) commit in three parts — foundation + docs, the screen migration,
-  change log + Mandant tabs + context help; (3) core.js: close a picker / select on an outside
-  click and on Escape; (4) «+ camt.054 einlesen» opens the file dialog directly and uploads on
-  choice — the prepared approach: the act template is a small upload form of its own
-  (`data-submit-on-change`, a visually hidden `<input type="file">`, the button a `<label for>`,
-  same endpoint and CSRF field as the work-area form), plus a generic `data-submit-on-change`
-  in core.js and a `.be-visually-hidden` utility — today the act button is still the
-  `#bank-upload` anchor link; (5) the SYSTEM-WIDE UPLOAD component (owner 2026-10-08: one
-  modern upload for everything — click opens the dialog, single or multiple as the controller
-  prescribes; drag & drop of one or several files uploads at once; the whole work area is the
-  drop target; per-file progress and errors; three forms: action cell, form field, phone;
-  Drive gives up its own upload) — design draft on the canvas board «Upload — Entwurf», owner
-  feedback pending, then build (supersedes item 4's interim). Open owner questions: the
-  Übersetzungen language tabs (not built — the list shows every language per row).
+  listing 20, persistence-doctrine-migrations 104. Published to z77.ch (8077, PHP 8.5.11
+  since 2026-10-09). **Next, in order:** (1) the owner's live look is still open for most
+  screens (all areas, dark mode, one other palette, phone width, journal help: click Soll →
+  «? Hilfe», F1 in Betrag) — every entry below marked «Not verified live» waits on it;
+  (2) `core.js`: close a picker / select on an outside click and on Escape; (3) the
+  SYSTEM-WIDE UPLOAD component (owner 2026-10-08, started 2026-10-09: one modern upload for
+  everything — click opens the dialog, single or multiple as the controller prescribes;
+  drag & drop of one or several files uploads at once; the whole work area is the drop
+  target; per-file progress and errors; three forms: action cell, form field, phone; Drive
+  gives up its own upload) — design draft on the canvas board «Upload — Entwurf». It
+  SUPERSEDES the earlier interim for «+ camt.054 einlesen» (act button as its own small
+  upload form with `data-submit-on-change`); that interim is not built and should not be —
+  reading a camt.054 works today through the `#bank-upload` anchor (owner, 2026-10-09).
+  Open owner question: the Übersetzungen language tabs (not built — the list shows every
+  language per row).
 - **Top bar shows the area selection short on a phone** («Finanzen · 2026», canvas «Mobile»).
   Not built: the top bar is its own body section and does not know the selection; it needs the
   selection to hand a short label to the shell (e.g. a second, tiny `railSelect` companion

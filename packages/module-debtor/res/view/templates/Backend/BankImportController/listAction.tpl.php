@@ -16,22 +16,19 @@
 $actionBase = $actionBase ?? '/backend/finance/bank-import';
 ?>
 <div class="be-list">
-    <form method="post" action="<?= e($actionBase) ?>/upload" enctype="multipart/form-data" class="be-list__section" id="bank-upload">
-        <input type="hidden" name="csrf_token" value="<?= e($csrfToken ?? '') ?>">
+    <div class="be-list__section" id="bank-upload" data-upload-area>
         <div class="be-list__section-header">
             <h2 class="be-list__section-title">camt.054 einlesen</h2>
         </div>
-        <div class="be-form__grid">
-            <div class="be-form__field">
-                <label for="bank-file">Datei der Bank (camt.054, XML)</label>
-                <input type="file" id="bank-file" name="file" accept=".xml,text/xml,application/xml" required>
-            </div>
-        </div>
+        <?php // THE upload component (UPLOAD-001): the policy comes from the controller, so
+              // the zone, the client gate and the server check say the same thing. Several
+              // files at once is one request per file — the bank hands out one per day. ?>
+        <?= $this->partial('partials/upload', [
+            'policy'    => $uploadPolicy,
+            'csrfField' => '<input type="hidden" name="csrf_token" value="' . e($csrfToken ?? '') . '">',
+        ], 'Z77\Shared') ?>
         <p class="be-form__hint">Die Meldung wird gespeichert und jede Gutschrift über die QR-Referenz oder die Mitteilung einer definitiven Rechnung zugeordnet. Verbucht wird erst auf der Meldung — nichts passiert beim Einlesen.</p>
-        <div class="z77-form-actions">
-            <button type="submit" class="be-btn be-btn--primary be-btn--sm">Einlesen</button>
-        </div>
-    </form>
+    </div>
 
     <div class="be-list__section">
         <div class="be-list__section-header">

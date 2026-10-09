@@ -44,6 +44,10 @@ return [
         // Shared pane resizing + narrow-screen detail overlay (z77-split). Drives the shell's
         // own column-1 handle as well as any workspace inside column 2.
         ['name' => 'split',        'nameSpace' => 'Z77\\Shared',          'defer' => true],
+        // THE upload component (owner 2026-10-09): drag & drop, per-file progress and
+        // per-file outcome for every file that enters the installation. Progressive — a
+        // page without the script keeps a plain multipart form (fetch.md UPLOAD-001).
+        ['name' => 'upload',       'nameSpace' => 'Z77\\Shared',          'defer' => true],
         ['name' => 'appearance',   'nameSpace' => 'Z77\\Module\\Backend', 'defer' => true],
         ['name' => 'system/cache', 'nameSpace' => 'Z77\\Module\\Backend', 'defer' => true],
         ['name' => 'shell',        'nameSpace' => 'Z77\\Module\\Backend', 'defer' => true],

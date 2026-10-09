@@ -1,18 +1,24 @@
 <?php
 /**
- * Zahlungseingänge — the action cell (hc1): «+ camt.054 einlesen», the most
- * frequent action of «Aufträge › Zahlungseingänge» (ADR-033 rev. 2026-10-08).
- * Exactly one button, rendered FLUSH by the shell; create = `.be-btn--primary`.
- * The upload form itself stays in the work area of the list (`#bank-upload`):
- * the button is a plain link to it — on the list it scrolls there, from a
- * message's detail it opens the list at the form. No script.
+ * Zahlungseingänge — the action cell (hc1): «camt.054 einlesen», the most frequent action
+ * of «Aufträge › Zahlungseingänge» (ADR-033 rev. 2026-10-08). Exactly one button.
+ *
+ * Since 2026-10-09 it IS the upload (UPLOAD-001, owner): a click opens the file dialog
+ * right here instead of scrolling to a form, and while files hang over the window the whole
+ * work area is the drop target. Same policy object as the zone in the list, in the `cell`
+ * shape — one endpoint, one set of limits.
+ *
+ * Without JavaScript this renders a file field plus «Hochladen» in the cell and posts
+ * normally; the list's own zone (`#bank-upload`) is the fuller version of the same thing.
  *
  * Part of the fragment: added by the trait (financial.md, «fragment slots»).
  *
+ * @var \Z77\Shared\Upload\UploadPolicy $uploadPolicy
+ * @var string $csrfToken
  * @var string $actionBase
  */
 ?>
-<a class="be-btn be-btn--primary" href="<?= e(($actionBase ?? '/backend/finance/bank-import') . '/list#bank-upload') ?>">
-    <svg class="be-icon" width="14" height="14" aria-hidden="true"><use href="#icon-plus"/></svg>
-    <span class="be-btn__label">camt.054 einlesen</span>
-</a>
+<?= $this->partial('partials/upload', [
+    'policy'    => $uploadPolicy->withShape('cell'),
+    'csrfField' => '<input type="hidden" name="csrf_token" value="' . e($csrfToken ?? '') . '">',
+], 'Z77\Shared') ?>
