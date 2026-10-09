@@ -15,7 +15,6 @@ SOURCE=/packages/module-member/src/Ui/Config/layoutConfig.inc.php
 SOURCE=/packages/module-member/src/Entities/MemberAccount.php
 SOURCE=/packages/module-member/src/Entities/MemberToken.php
 SOURCE=/packages/module-member/src/Entities/MemberPendingLogin.php
-SOURCE=/packages/module-member/src/Entities/MemberGrant.php
 SOURCE=/packages/module-member/src/Services/MemberAccounts.php
 SOURCE=/packages/module-member/src/Services/TenantChoice.php
 SOURCE=/packages/module-member/src/Services/TokenService.php
@@ -40,7 +39,6 @@ SOURCE=/packages/module-member/src/Ui/Controllers/Main/ResendController.php
 SOURCE=/packages/module-member/src/Ui/Controllers/Main/LoginController.php
 SOURCE=/packages/module-member/src/Ui/Controllers/Main/LogoutController.php
 SOURCE=/packages/module-member/src/Ui/Controllers/Main/ProfileController.php
-SOURCE=/packages/module-member/src/Ui/Controllers/Main/ZugaengeController.php
 SOURCE=/packages/module-member/src/Ui/Form/RegisterFormDefinition.php
 SOURCE=/packages/module-member/src/Ui/Form/InviteFormDefinition.php
 SOURCE=/packages/module-member/src/Ui/Form/LoginFormDefinition.php
@@ -51,7 +49,6 @@ SOURCE=/packages/module-member/bin/member-cleanup.php
 SOURCE=/packages/module-member/res/view/templates/Main/LoginController/wartenAction.tpl.php
 SOURCE=/packages/module-member/res/view/templates/Main/LoginController/redeemAction.tpl.php
 SOURCE=/packages/module-member/res/view/templates/Main/ProfileController/indexAction.tpl.php
-SOURCE=/packages/module-member/res/view/templates/Main/ZugaengeController/indexAction.tpl.php
 SOURCE=/packages/module-member/res/view/templates/emails/login-link.tpl.php
 SOURCE=/packages/module-member/res/view/templates/emails/confirm.tpl.php
 SOURCE=/packages/module-member/res/view/templates/emails/activated.tpl.php
@@ -59,15 +56,11 @@ SOURCE=/packages/module-member/res/view/templates/emails/no-account.tpl.php
 SOURCE=/packages/module-member/res/view/templates/emails/existing-account.tpl.php
 SOURCE=/packages/module-member/res/view/templates/emails/confirmed-notify.tpl.php
 SOURCE=/packages/module-member/res/view/templates/emails/invite.tpl.php
-SOURCE=/packages/module-member/res/view/templates/emails/grant-activated.tpl.php
 SOURCE=/packages/module-member/res/view/templates/Main/RegisterController/indexAction.tpl.php
 SOURCE=/packages/module-member/res/view/templates/Main/RegisterController/dankeAction.tpl.php
 SOURCE=/packages/module-member/res/view/templates/Backend/AccountsController/listAction.tpl.php
 SOURCE=/packages/module-member/res/view/templates/Backend/AccountsController/confirmActivate.tpl.php
-SOURCE=/packages/module-member/res/view/templates/Backend/AccountsController/confirmGrantActivate.tpl.php
-SOURCE=/packages/module-member/res/view/templates/Backend/AccountsController/confirmGrantReject.tpl.php
 RUNTIME=/skeleton/data/framework/member/accounts.json
-RUNTIME=/skeleton/data/framework/member/grants.json
 SOURCE=/packages/module-member/res/view/templates/html-shell-skeleton.tpl.php
 SOURCE=/packages/module-member/res/view/templates/partials/shell/headLeft.tpl.php
 SOURCE=/packages/module-member/res/view/templates/partials/shell/userMenu.tpl.php
@@ -111,12 +104,12 @@ login request ─▶ waiting record + mail (link, check digits, context) │
                                                       [TOTP prompt if enabled] ─▶ session
                                                       (+ device key when ticked)
 
-master invites address ─▶ token + mail ─┬─ unknown address: name form ─▶ account `confirmed` (home = reference)
-                                        └─ known address: «add reference?» ─▶ grant `confirmed` (account untouched)
+master invites address ─▶ token + mail ─┬─ unknown address: name form ─▶ account `confirmed` + joinHook (project records the membership)
+                                        └─ known address: «add reference?» ─▶ joinHook: project records a pending membership (account untouched)
                                                                                     │
-                                     operator activates (no hook) ─▶ grant `active` ─▶ header switcher (≥ 2 refs)
+                                     project activates ITS membership row (MAY InvitationFlow::sendJoinActivated) ─▶ header switcher (≥ 2 usable refs)
                                                                                     │
-                                     session choice = member.activeTenantRef, checked by TenantChoice::choose()
+                                     session choice = member.activeTenantRef, checked by TenantChoice::choose() against membershipHook
 ```
 
 ## rules
@@ -141,11 +134,11 @@ master invites address ─▶ token + mail ─┬─ unknown address: name form 
 - When a project needs the reference an account is WORKING FOR (loading data, previews, writes) → MUST read `TenantChoice::create()->activeRef($account)` (session choice, first available as fallback). When it needs a RIGHT (inviting, renaming, pausing, «who is the owner») → MUST read its OWN membership list; the module has no answer to that any more (ADR-038) and `MemberAccount` carries no reference to read.
 - When a working request needs the acting reference → MUST take it from the session via `TenantChoice`, MUST NOT accept it as a request parameter; the only request that names a reference is the choice itself (`ProfileController::mandantAction`), and that one is checked against `available()` before it is written.
 - When a project has memberships → MUST set `membershipHook` (what an account may work for, labels included, `usable` false for paused/pending), `joinHook` (told on every redemption: account, ref, inviter id — the project writes the pending row) and, for an area not everyone may see, `areaVisibilityHook` (`controller/action` → bool; `addAreas()` drops a refused entry from switcher and rail). The activation hook creates the tenant AND the owner membership (or activates a pending one); nothing it returns is stored. A project WITHOUT memberships sets none of the three and has no switcher and no invitations — and that is the whole difference (zihlundsee).
-- When a project activates a JOIN (an existing account may now work for a reference) → it activates its own row and MAY call `InvitationFlow::sendJoinActivated($account, $ref, $loginUrl)` for the mail; the module keeps the template because a mail is its craft. Rejection sends no automatic mail.
-- When a project deletes a project reference (AXO3: `TenantPurge`) → the memberships are its own rows and go with it; an account whose LAST membership went is the project's to delete through `MemberAccounts::delete()`. The module's cleanup job never touches memberships — it does not know them.
-- When a project mounts a NARROWED backend list via `AccountsControllerTrait` → MUST decide `memberGrantRows()` for that mount (`[]` for a registrations list, the waiting ones for an invitations list); the default shows every grant, which is right only for the generic member-accounts mount.
+- When a project activates a JOIN (an existing account may now work for a reference) → MUST activate its own row (the module keeps no membership) and MAY call `InvitationFlow::sendJoinActivated($account, $ref, $loginUrl)` for the mail; the module keeps the template because a mail is its craft. Rejection sends no automatic mail.
+- When a project deletes a project reference (AXO3: `TenantPurge`) → MUST delete the memberships with it (they are its own rows); an account whose LAST membership went is the project's to delete through `MemberAccounts::delete()`. MUST NOT expect the module's cleanup job to touch memberships — it does not know them.
+- When a project mounts a NARROWED backend list via `AccountsControllerTrait` → MUST override `memberListRows()` (the set this mount shows — AXO3: one list per way in), `memberListTitle()`, `memberListEmpty()` and `memberListBase()` (every row button and the reload after a deed are built from it — a wrong base reloads the FIRST mount's list); MAY add `memberRowNotes()` (one escaped sentence per row). The memberships column comes from the project's `membershipHook` (ADR-038) — the module keeps no grants.
 
-- When a member wants her account gone → it is HER handgrip, not a mail to the operator (2026-09-14, Art. 32 revDSG): profile → Konto → «Konto löschen», a dialog with the address typed again and a checkbox (no password exists), `ProfileController::loeschenAction` → `AccountDeletion::delete()`. The PROJECT is asked FIRST through `memberConfig` `accountDeletionHook` (`__invoke(MemberAccount): ?string`, throw = refuse, nothing deleted; optional `notice()` = the sentences the dialog shows); then devices, the account (with its 2FA secret), the dead tokens and pending logins go, the session ends, and the login page says it once (`?konto=geloescht`). Nobody is mailed by the module — what a deletion means at the project's tenants (an owner leaving a tenant behind) and whom the project tells is the project's.
+- When a member wants her account gone → MUST be HER handgrip, MUST NOT be a mail to the operator (2026-09-14, Art. 32 revDSG): profile → Konto → «Konto löschen», a dialog with the address typed again and a checkbox (no password exists), `ProfileController::loeschenAction` → `AccountDeletion::delete()`. The PROJECT is asked FIRST through `memberConfig` `accountDeletionHook` (`__invoke(MemberAccount): ?string`, throw = refuse, nothing deleted; optional `notice()` = the sentences the dialog shows); then devices, the account (with its 2FA secret), the dead tokens and pending logins go, the session ends, and the login page says it once (`?konto=geloescht`). Nobody is mailed by the module — what a deletion means at the project's tenants (an owner leaving a tenant behind) and whom the project tells is the project's.
 - When something happens TO an account → it is a line in the account log: `MemberLog::write(event, memberId, ctx)` → `logs/member-YYYY-MM.jsonl`, `RETENTION_DAYS` (365) kept by `MemberCleanupJob`. The module writes `login`, `logout`, `logout.all`, `profile.update` (field names, never values), `totp.on`/`totp.off`, `device.remove`, `account.delete`; a project adds its own (memberships, tenant changes) through the same method. MUST NOT put an address or a name into a line — the member id is the key while the account lives, and after it is gone the line still says «this id was deleted that day» about nobody in particular. `actor` says who acted when it was not the person (`operator`, `owner:<id>`, `system` — set per request with `MemberLog::actor()`). The retention and the content are promised in the installation's privacy text; widen the record only with that text.
 
 ## known issues
