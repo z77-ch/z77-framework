@@ -2630,17 +2630,27 @@ $beSkel = file_get_contents(__DIR__ . '/../packages/module-backend/res/view/temp
 $meSkel = file_get_contents(__DIR__ . '/../packages/module-member/res/view/templates/html-shell-skeleton.tpl.php');
 $beTop   = file_get_contents(__DIR__ . '/../packages/module-backend/res/view/templates/partials/shell/topbar.tpl.php');
 $trigger = file_get_contents(__DIR__ . '/../packages/kernel/shared/res/view/templates/partials/helpTrigger.tpl.php');
-check('HP7 the kernel closes `main` with the help (HtmlView — survives an action that rebuilds its main); the backend trigger «? Hilfe» is in the TOP BAR (only with help, before the bell), the crumb line carries none (owner 2026-10-08); the member crumb keeps its «i» for now',
+$meHead  = file_get_contents(__DIR__ . '/../packages/module-member/res/view/templates/partials/shell/userMenu.tpl.php');
+check('HP7 the kernel closes `main` with the help (HtmlView — survives an action that rebuilds its main); the backend trigger «? Hilfe» is in the TOP BAR (only with help, before the bell), the crumb line carries none (owner 2026-10-08); the member shell likewise: «? Hilfe» in the HEAD (userMenu cluster, only with help, before the appearance switch), its crumb line carries none (owner 2026-10-09)',
     $viewHtml === '<main><template data-help>x</template></main>'
     && !str_contains($beSkel, 'helpOpen') && !str_contains($beSkel, 'helpTrigger')
     && str_contains($beTop, "!empty(\$helpBlock) ? \$this->partial('partials/helpTrigger'") && strpos($beTop, 'partials/helpTrigger') < strpos($beTop, 'backend-topbar__bell')
-    && str_contains($meSkel, "partial('partials/helpOpen'")
+    && !str_contains($meSkel, 'helpOpen') && !str_contains($meSkel, "partial('partials/helpTrigger'")
+    && str_contains($meSkel, "'showHelp'         => !empty(\$helpBlock)")
+    && str_contains($meHead, "!empty(\$showHelp) ? \$this->partial('partials/helpTrigger'") && strpos($meHead, 'partials/helpTrigger') < strpos($meHead, 'data-member-theme')
     && preg_match('/<button type="button" class="z77-help-trigger" data-help-open data-help-trigger hidden aria-label="Hilfe \\(F1\\)"/', $trigger) === 1
     && str_contains($trigger, 'z77-help-trigger__label'));
 $scssShell = file_get_contents(__DIR__ . '/../packages/module-backend/res/scss/components/_shell.scss');
 check('HP7b the crumb line has ONE fixed height: grid track and slot both --shell-crumb, the slot clips — a page with help looks like one without',
     str_contains($scssShell, 'var(--shell-band) auto var(--shell-crumb) minmax(0, 1fr)')
     && preg_match('/\.be-shell-crumb__slot \{[^}]*height:\s+var\(--shell-crumb\);[^}]*overflow:\s+hidden;/', $scssShell) === 1);
+$scssMember = file_get_contents(__DIR__ . '/../packages/module-member/res/scss/member.scss');
+$cssMember  = file_get_contents(__DIR__ . '/../packages/module-member/res/assets/css/member.css');
+check('HP7c the member crumb line has ONE fixed height too: track and cell both --crumb-h, the cell clips, the path stays on one line; the member CSS carries the trigger (hidden until the script reveals it, label off on a narrow screen) (owner 2026-10-09)',
+    str_contains($scssMember, 'var(--row-h, 3.5rem) var(--row-h, 3.5rem) var(--crumb-h, 2.375rem) 1fr')
+    && preg_match('/&__crumbs \{[^}]*height: var\(--crumb-h, 2\.375rem\);[^}]*overflow: hidden;/', $scssMember) === 1
+    && preg_match('/\.me-crumb \{[^}]*flex-wrap: nowrap;/', $scssMember) === 1
+    && str_contains($cssMember, '.me .z77-help-trigger[hidden]') && str_contains($cssMember, '.me .z77-help-trigger__label{display:none}'));
 echo "AB. the form's action bar (ADR-049): «Speichern» within reach\n";
 $GLOBALS['z77TestFetch'] = true;
 $useRequest(['id' => (string) $editId, '_origin' => 'region:journal-list']);

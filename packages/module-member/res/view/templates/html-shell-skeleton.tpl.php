@@ -84,6 +84,7 @@ $work       = !empty($railItems) || $actionList !== [] || $workList !== [];
         'memberTenants'    => $memberTenants ?? [],
         'memberTenantBack' => $memberTenantBack ?? '',
         'csrfToken'        => $csrfToken ?? '',
+        'showHelp'         => !empty($helpBlock),
     ]) ?>
 
     <div class="me-shell__act">
@@ -127,11 +128,12 @@ $work       = !empty($railItems) || $actionList !== [] || $workList !== [];
 
     <?php /* Row 3 — the crumb line: the position, nothing else (ADR-033
              revision — switches are tools). Column 1 is a bare cell so the
-             dark island runs through. */ ?>
+             dark island runs through. The help trigger is NOT here: it stands
+             in the head (`partials/shell/userMenu`, ADR-048 addendum, owner
+             2026-10-09), so the crumb line is the same on every page. */ ?>
     <div class="me-shell__crumbgap"></div>
     <div class="me-shell__crumbs">
         <?= $this->partial('partials/shell/crumbs', ['crumbs' => $crumbs ?? []]) ?>
-        <?= !empty($helpBlock) ? $this->partial('partials/helpOpen', [], 'Z77\Shared') : '' ?>
     </div>
 
     <?php /* Row 4 — the shared primitive. The rail is pane 1 (fixed width,

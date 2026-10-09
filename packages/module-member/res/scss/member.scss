@@ -378,13 +378,19 @@ $fb-info-tint: $fb-bg;
         background: var(--rail-bg, #{$fb-surface});
     }
 
+    // ONE height on every page (owner 2026-10-09): the track is `--crumb-h`, and the
+    // cell clips, so neither a long path nor anything else can make one page's line
+    // taller than another's. The help trigger moved to the head for that reason.
     &__crumbs {
         grid-column: 3;
         grid-row: 3;
         display: flex;
         align-items: center;
         gap: 0.5rem;
+        box-sizing: border-box;
+        height: var(--crumb-h, 2.375rem);
         min-width: 0;
+        overflow: hidden;
         padding: 0 1rem;
         border-bottom: var(--rule, #{$fb-rule}) solid var(--line, #{$fb-line});
         background: var(--surface, #{$fb-surface});
@@ -922,7 +928,8 @@ $fb-info-tint: $fb-bg;
     align-items: center;
     gap: 0.5rem;
     min-width: 0;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;    // one line — the cell has one fixed height (owner 2026-10-09)
+    white-space: nowrap;
     font-size: 0.875rem;
     color: var(--text-2, #{$fb-text-2});
 
@@ -1465,8 +1472,8 @@ $fb-info-tint: $fb-bg;
     --z77-split-backdrop: rgba(0, 0, 0, 0.34);
 }
 
-// The help window (ADR-048) and the «i» that opens it (crumb line; a window's
-// title bar). Neutral like the rest: the accent draws the «i», the card's edge
+// The help window (ADR-048), «? Hilfe» in the head and the «i» in a window's
+// title bar. Neutral like the rest: the accent draws the badge, the card's edge
 // draws the window.
 .me .z77-form-actions {
     --z77-form-actions-bg:   var(--surface, #{$fb-surface});
@@ -1522,6 +1529,47 @@ $fb-info-tint: $fb-bg;
 
     &:hover { background: var(--accent-hover, #{$fb-accent-hv}); }
     &:focus-visible { outline: 2px solid var(--accent, #{$fb-accent}); outline-offset: 2px; }
+}
+
+// «? Hilfe» in the head's right cluster (`partials/helpTrigger`, ADR-048 addendum, owner
+// 2026-10-09) — as high as the appearance switch beside it, the «?» in the same accent badge
+// as the window «i». `[hidden]` until core.js reveals it: the class's display must not win.
+// On a narrow screen only the badge; the aria-label stays.
+.me .z77-help-trigger {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    height: 2.25rem;
+    padding: 0 0.625rem 0 0.5rem;
+    border: var(--rule, #{$fb-rule}) solid var(--line, #{$fb-line});
+    border-radius: var(--radius, #{$fb-radius});
+    background: none;
+    color: var(--text, #{$fb-text});
+    font: inherit;
+    font-size: 0.875rem;
+    cursor: pointer;
+
+    &[hidden] { display: none; }
+    &:hover { border-color: var(--text-2, #{$fb-text-2}); }
+    &:focus-visible { outline: 2px solid var(--accent, #{$fb-accent}); outline-offset: 2px; }
+}
+.me .z77-help-trigger__icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--accent, #{$fb-accent});
+    color: var(--on-accent, #{$fb-on-accent});
+    font-weight: 600;
+    font-size: 12px;
+    line-height: 1;
+}
+@media (max-width: 60rem) {
+    .me .z77-help-trigger { width: 2.25rem; padding: 0; justify-content: center; }
+    .me .z77-help-trigger__label { display: none; }
 }
 
 // The header already carries the top gap when it is present — without this the

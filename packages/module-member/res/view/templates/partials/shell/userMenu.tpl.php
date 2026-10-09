@@ -44,6 +44,12 @@
  *      granted tenants — EMPTY unless there are at least two
  * @var string $memberTenantBack  where the choice returns to (this page)
  * @var string $csrfToken
+ * @var bool   $showHelp  the controller attached help (`$helpBlock`) — the skeleton decides
+ *
+ * ── Why the help trigger sits HERE (ADR-048 addendum, owner 2026-10-09) ──
+ * The head is the member's top bar; like the backend's «? Hilfe» (2026-10-08) the trigger
+ * left the crumb line, which now says where one is and nothing else. Only the work shape
+ * passes `showHelp` — the plain shape never had a page help.
  */
 $name          = trim($memberUser['name'] ?? '');
 $memberTenants = $memberTenants ?? [];
@@ -79,6 +85,8 @@ $memberTenants = $memberTenants ?? [];
     <?php elseif (trim($memberTenant ?? '') !== ''): ?>
     <span class="me-shell__tenant" title="Angezeigter Bestand"><?= e($memberTenant) ?></span>
     <?php endif; ?>
+
+    <?= !empty($showHelp) ? $this->partial('partials/helpTrigger', [], 'Z77\Shared') : '' ?>
 
     <button type="button" class="me-theme" data-member-theme
             data-theme-url="/member/main/profile/theme">

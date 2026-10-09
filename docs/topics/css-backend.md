@@ -157,12 +157,12 @@ Where each ACTION goes between these regions is [ADR-033](../02-decisions/adr-03
 | Region | Backend | Member | German |
 |---|---|---|---|
 | Shell (grid root) | `.be-shell` | `.me-body--shell` | Schale |
-| Top bar (right cluster: environment · «? Hilfe» `.z77-help-trigger` — only when the page carries help, ADR-048 addendum 2026-10-08 · bell · avatar) | `.be-shell-topbar` (`--shell-bar`, `--be-topbar`) | `.me-shell__head-l` / `__head-r` | Kopfleiste |
+| Top bar (right cluster: environment · «? Hilfe» `.z77-help-trigger` — only when the page carries help, ADR-048 addendum 2026-10-08 · bell · avatar) | `.be-shell-topbar` (`--shell-bar`, `--be-topbar`) | `.me-shell__head-l` / `__head-r` (right: tenant · «? Hilfe» since 2026-10-09 · appearance · avatar · mark) | Kopfleiste |
 | Area switcher (top left, over the rail) | `.be-shell-topbar__mod`, `.be-shell-mod*` | `.me-shell__area`, `.me-switcher` | Bereichswähler |
 | Action cell (backend: the MOST FREQUENT action of the selected navigation entry — exactly one INSET button in the island accent, or empty; ADR-033 rev. 2026-10-08. Member: the actions on what the rail shows) | `.be-shell-band__slot--1`, template `{action}.act` (old: `.hc1`) | `.me-shell__act` | Aktionszelle |
 | Toolbar (tabs first, then the tools in secondary form — all left-aligned; no primary button once a screen is migrated, ADR-033 rev. 2026-10-08) | `.be-shell-band__slot--2`, template `{action}.toolbar` (old: `.hc2`) | `.me-shell__toolbar` | Werkzeugzeile |
 | Tab row (backend only, optional) | `.be-shell-tabs`, `.be-viewtabs`, template `{action}.tabs` | tabs live inside `__toolbar` (`.me-tabs`) | Reiterzeile |
-| Crumb line (position only; ONE fixed height `--shell-crumb` — track and slot, the slot clips; no help trigger since 2026-10-08) | `.be-shell-crumb__slot--2`, `.be-crumb`, template `{action}.crumb` (old: `.hc3`) | `.me-shell__crumbs`, `.me-crumb` | Krumenzeile |
+| Crumb line (position only; ONE fixed height — backend `--shell-crumb`, member `--crumb-h`, track and cell, the cell clips; no help trigger since 2026-10-08, member since 2026-10-09) | `.be-shell-crumb__slot--2`, `.be-crumb`, template `{action}.crumb` (old: `.hc3`) | `.me-shell__crumbs`, `.me-crumb` | Krumenzeile |
 | Crumb gap (bare island cell left of the crumb line) | `.be-shell-crumb__slot--1` | `.me-shell__crumbgap` | Krumenlücke |
 | Rail (left orientation column) | `.be-shell-col--1` (`--shell-c1`), content `.backend-subnav` | `.me-rail` (`--rail-w`) | Schiene |
 | Rail-top selection (a choice that holds for the whole AREA — the fiscal year; above the menu entries; ADR-033 rev. 2026-10-08) | `.be-shell-select` at the top of `.be-shell-col--1`, section `railSelect`, template `{action}.select` | — | Bereichsauswahl |
@@ -771,8 +771,7 @@ packages/module-backend/res/view/templates/
   prescribes; drag & drop of one or several files uploads at once; the whole work area is the
   drop target; per-file progress and errors; three forms: action cell, form field, phone;
   Drive gives up its own upload) — design draft on the canvas board «Upload — Entwurf», owner
-  feedback pending, then build (supersedes item 4's interim). Open owner questions: the member
-  shell's help «i» (still in its crumb line — move to the member head too?), the
+  feedback pending, then build (supersedes item 4's interim). Open owner questions: the
   Übersetzungen language tabs (not built — the list shows every language per row).
 - **Top bar shows the area selection short on a phone** («Finanzen · 2026», canvas «Mobile»).
   Not built: the top bar is its own body section and does not know the selection; it needs the

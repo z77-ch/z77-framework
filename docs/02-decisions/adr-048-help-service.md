@@ -132,4 +132,4 @@ template as before and compares attribute values (no selector built from data, n
 `innerHTML` with data). Without JavaScript there is no help window — so the trigger is
 rendered `hidden` and core.js reveals it (before: the crumb «i» showed but did nothing).
 
-**Open:** the member shell still shows its «i» in the crumb line (`fetch.md` pending).
+**Member head too (owner 2026-10-09):** the member shell renders the same trigger in its head (`partials/shell/userMenu`); its crumb line carries the position only, at one fixed height (`--crumb-h`).
