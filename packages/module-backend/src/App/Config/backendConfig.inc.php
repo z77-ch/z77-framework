@@ -162,6 +162,29 @@ return [
             'ImportController' => [
                 'controllerRole' => AuthRole::SUPER_USER,
             ],
+            // Statistics report (docs/topics/stats.md): the page and «jetzt
+            // senden» are ADMIN (module baseline). `reportAction` is the LINK
+            // door behind the reserved route /stats/report/{token} — GUEST,
+            // because the client has no login; the token is the access check
+            // (ReportToken, inside the action), exactly like the DMS output.
+            'StatsController' => [
+                'actions' => [
+                    'reportAction' => AuthRole::GUEST,
+                ],
+            ],
+        ],
+    ],
+
+    // The statistics report link (docs/topics/stats.md, ReportToken::LINK_PATH):
+    // `/stats/report/{token}` — the token is the one content slug. A reserved
+    // route so the address carries no `/backend`; it stays in THIS module
+    // because the backend is neither counted by the statistic nor page-cached.
+    'reservedRoutes' => [
+        '/stats/report' => [
+            'module'     => 'backend',
+            'group'      => 'service',
+            'controller' => 'stats',
+            'action'     => 'report',
         ],
     ],
 
@@ -243,6 +266,17 @@ return [
             'runAs'           => AuthRole::CRON_JOB,
             'maxAttempts'     => 2,
             'defaultSchedule' => 'daily@04:40',
+        ],
+        // Mails the link to last month's statistics report (stats.md, Bauplan
+        // step 2). No 'defaultSchedule': a job that writes OUTWARD is switched
+        // on by a human, like form-log-cleanup. Suggested monthly@1,06:00 —
+        // after the rollup of 04:40 has folded the month's last day.
+        // Recipients: emailConfig form key 'statsReport' (backend override wins).
+        'stats-report-mail' => [
+            'class'       => \Z77\Shared\Stats\StatsReportMailJob::class,
+            'label'       => 'Statistik-Bericht per Mail',
+            'runAs'       => AuthRole::CRON_JOB,
+            'maxAttempts' => 2,
         ],
         // ⚠️ SHIPS a schedule, and that is not a violation of the rule above:
         // this job replaces a file it downloaded itself, and doing so is a

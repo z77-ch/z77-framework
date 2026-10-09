@@ -83,7 +83,7 @@ class JobController extends BackendAbstractController
             'history'      => array_slice($history, 0, 25),
             'heartbeat'    => JobRunner::lastPass(ABS_BASE_PATH),
             'heartbeatOk'  => $this->heartbeatIsFresh(),
-            'scheduleHelp' => 'every:15m · every:2h · hourly@:20 · daily@03:15 · weekly@mon,03:15',
+            'scheduleHelp' => 'every:15m · every:2h · hourly@:20 · daily@03:15 · weekly@mon,03:15 · monthly@1,06:00',
         ]);
     }
 
@@ -173,7 +173,7 @@ class JobController extends BackendAbstractController
         }
 
         if (!ScheduleExpression::isValid($expression)) {
-            return $this->fetchError('Zeitplan nicht lesbar. Erlaubt: every:15m, every:2h, hourly@:20, daily@03:15, weekly@mon,03:15');
+            return $this->fetchError('Zeitplan nicht lesbar. Erlaubt: every:15m, every:2h, hourly@:20, daily@03:15, weekly@mon,03:15, monthly@1,06:00');
         }
 
         if ($schedule === null) {
