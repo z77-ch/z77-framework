@@ -25,7 +25,7 @@
 $labels = [
     'data' => ['Daten',        'Sichert das komplette data/-Verzeichnis (Inhalte, Navigation, Benutzer).'],
     'db'   => ['Datenbank',    'SQL-Dump der konfigurierten Datenbank (config/client/database.inc.php).'],
-    'full' => ['Gesamtprojekt', 'Sichert das Projekt ohne regenerierbare Verzeichnisse (vendor/, node_modules/, Cache, Backups).'],
+    'full' => ['Gesamtprojekt', 'Sichert das Projekt ohne regenerierbare Verzeichnisse (vendor/, node_modules/, Cache, Backups) — mit SQL-Dump der Datenbank, wenn eine konfiguriert ist.'],
 ];
 
 $fmtSize = function (int $bytes): string {
