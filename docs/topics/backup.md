@@ -8,6 +8,7 @@
 2. `packages/module-backend/src/Ui/Controllers/Service/BackupController.php` — backend surface (group `service`), thin glue over the service
 3. `packages/kernel/bin/z77-backup` — CLI/cron entry (ADR-028), same service underneath
 4. `packages/kernel/core/src/Config/backup.default.inc.php` — seed-once policy defaults (retention, excludes, `dump` block); the database connection itself is `database.default.inc.php` (ADR-039)
+5. `packages/kernel/shared/src/Backup/RestoreService.php` + `packages/kernel/bin/z77-restore` — the way BACK: one SQL dump into the installation's database, CLI only (see «restore»)
 
 ## file map
 
@@ -19,9 +20,14 @@ SOURCE=/packages/kernel/shared/src/Backup/ZipArchiver.php
 SOURCE=/packages/kernel/shared/src/Backup/RetentionPolicy.php
 SOURCE=/packages/kernel/shared/src/Backup/DbDumperInterface.php
 SOURCE=/packages/kernel/shared/src/Backup/MysqlDumper.php
+SOURCE=/packages/kernel/shared/src/Backup/MysqlDefaultsFile.php
+SOURCE=/packages/kernel/shared/src/Backup/DbRestorerInterface.php
+SOURCE=/packages/kernel/shared/src/Backup/MysqlRestorer.php
+SOURCE=/packages/kernel/shared/src/Backup/RestoreService.php
 SOURCE=/packages/kernel/core/src/Config/backup.default.inc.php
 SOURCE=/packages/kernel/core/src/Config/database.default.inc.php
 SOURCE=/packages/kernel/bin/z77-backup
+SOURCE=/packages/kernel/bin/z77-restore
 SOURCE=/packages/kernel/shared/src/Jobs/BackupJob.php
 SOURCE=/packages/module-backend/src/Ui/Controllers/Service/BackupController.php
 SOURCE=/packages/module-backend/res/view/templates/Service/BackupController/listAction.tpl.php
@@ -29,6 +35,7 @@ SOURCE=/packages/module-backend/res/view/templates/Service/BackupController/acti
 SOURCE=/packages/module-backend/res/view/templates/Service/BackupController/confirmDelete.tpl.php
 SOURCE=/tests/zip-archiver-symlinks.php
 SOURCE=/tests/backup-retention.php
+SOURCE=/tests/backup-restore.php
 
 ## mental model
 
@@ -106,6 +113,51 @@ service → backup`), section «Service» in the topbar (navigation seed ids
 | `actionsAction` | Fetch GET | ⋮ hub: download link + delete (LIST-ACTIONS-HUB-001) |
 | `confirmDeleteAction` / `removeAction` | Fetch | modal + per-archive entity CSRF token (scope `backup`) |
 
+## restore — CLI only, and asymmetric on purpose
+
+```text
+php vendor/bin/z77-restore                       lists the archives that carry a dump
+php vendor/bin/z77-restore 2026-10-09_170846_full.zip
+php vendor/bin/z77-restore /path/from/nas/z77ch.sql
+php vendor/bin/z77-restore <source> --yes --keep-tables
+```
+
+`Z77\Shared\Backup\RestoreService` reads ONE SQL dump back into the
+installation's database; `MysqlRestorer` (the `mysql` client, credentials
+through the shared `MysqlDefaultsFile`, never the command line) is the
+engine behind `DbRestorerInterface`.
+
+**Why there is no button.** Taking a backup is a read: it runs from cron and has
+two frontends. A restore destroys the current state, so it has ONE — the CLI,
+where the project root is in front of you and shell access is the authorization
+model (ADR-028). The backend surface stops at creating and downloading an
+archive. The day that is not enough, the gate is DEBUG + `SUPER_USER` + the
+database name typed back, in that order, and not before someone has missed it
+while working.
+
+Three safeguards, by design not switchable:
+
+| Safeguard | Why |
+|---|---|
+| The TARGET is never an argument — host, database and credentials come from `config/client/database.inc.php` (ADR-039) | a `--host` / `--database` switch is what turns a dev tool into the one that reaches production |
+| A `db` backup of the current state runs FIRST, and its failure aborts the restore | a restore whose predecessor could not be saved is the one nobody can undo |
+| The confirmation is the DATABASE NAME typed back (`--yes` for scripts) | a y/n question is answered by reflex, a name is not |
+
+`--keep-tables` reads the dump on top of what is there; the default drops every
+existing table first (`FOREIGN_KEY_CHECKS=0`, so the order does not matter), so
+the result IS the archive and not a merge of two schemas — a `mysqldump` file
+carries `CREATE TABLE` for what it knows and says nothing about a table that
+exists only here.
+
+The source may be an archive of this installation (name resolved through
+`BackupHistory`, pattern + type checked) or any `.zip` / `.sql` file on the
+machine — the second case is why this exists: a dump from the other computer
+arrives as a file. Inside a `.zip` the dump is `database/{name}.sql` (what a
+`full` archive carries since 2026-10-09) or the single `.sql` entry (`db`
+archives); several candidates with none preferred is refused, not guessed. A
+restored dump carries `schema_migration`, so `z77-db` sees the schema as current
+— no migration run follows an import.
+
 ## cron
 
 ```text
@@ -152,7 +204,14 @@ moving.
 - When adding a directory of disposable runtime state → MUST follow ADR-034: put it under `var/` (page cache, release switches, throttle counters live there) and MUST NOT add it to `fullExcludes` — the whole `var` tree is already named, and a second entry would only start the maintained-list problem again (BACKUP-LIB-001). The test is «may this be deleted while the installation is serving requests?»; if no, it does not belong under `var/` and the decision is its location, not its exclude.
 - When choosing the level under `var/` → state that describes THIS release's code or THIS door's behaviour MUST be release-local (`var/cache`, `var/state`); state that must survive a release switch MUST go under `var/lib` (a signpost into `shared/var/lib`) — ADR-035. Both stay inside the excluded tree either way.
 
+- When exposing restore → MUST keep it CLI-only (`bin/z77-restore`, `RestoreService`); MUST NOT add a backend action for it without the DEBUG + `SUPER_USER` + typed-database-name gate, and MUST NOT give the CLI a `--host` / `--database` / `--user` switch: the target is `config/client/database.inc.php`, always (see «restore»)
+- When changing the restore flow → MUST keep the safety `db` backup in front of it and MUST keep its failure fatal; MUST NOT make the dropping of existing tables the non-default (a merge of two schemas looks like a successful restore)
+- When adding a database engine to the restore path → MUST implement `DbRestorerInterface` and MUST pass credentials through `MysqlDefaultsFile`-style defaults files (never argv, process list); the dumper's rule applies unchanged
+- When a restore needs the `mysql` client → MUST resolve it via PATH (`dump.mysql`, default `mysql`), same rule and same reason as `mysqldump` (BACKUP-DUMP-PATH-001)
+
 ## known issues
+
+- **RESTORE-001** — built 2026-10-09. **The way back exists, and it is not a button.** `RestoreService` + `MysqlRestorer` + `bin/z77-restore` read one dump into the configured database: safety `db` backup first (failure aborts), existing tables dropped unless `--keep-tables`, confirmation by typing the database name (`--yes` for scripts), source = an archive of this installation or any `.zip`/`.sql` path. Written for the case in `docs/_local/handoff-2026-10-09-*`: a dump travels from one machine to the other and `mysql -u … < dump.sql` plus «unpack the zip by hand» was the only way in. The backend has NO restore action — deliberately (see «restore»); the owner's reservation that a restore button is the most dangerous action in the installation is the reason, and it stands until working with the CLI shows it is missing. Verified: `tests/backup-restore.php`, 22 checks (source resolution incl. refusals, which `.sql` is taken out of a `full` / `db` archive, `--keep-tables` and the binary reaching the restorer, empty dump, several candidates, temp-file cleanup, listing) — the DATABASE step is faked there, since it needs a running MariaDB. Live: the listing was exercised against z77.ch (3 archives, target `z77ch`); **a real restore has NOT been run yet** — PC 2 has no MariaDB, and `z77-backup db` fails there for the same reason, so the engine step waits for the machine setup in the handoff.
 
 - **BACKUP-LIB-001**: don't assume a changed default reaches an existing installation. `fullExcludes` used to name `lib/cache` instead of `lib`, so when the throttle counters moved to `lib/throttle` (2026-08-25) they were back inside every full archive. `config/client/backup.inc.php` is seed-once — the installer writes it once and NEVER overwrites it — so changing `DEFAULT_EXCLUDES` and `backup.default.inc.php` only fixes installations that do not exist yet. Every existing installation carries its own copy and needs the line edited by hand; axo3 and zihlundsee are done — working copies AND servers, 2026-08-25, nothing open. This is the general shape, not a one-off: any seed-once default that changes needs a per-installation pass, and the change is silent until someone opens an archive and finds what should not be in it. **It happened again on 2026-09-01 (ADR-035):** the tree was renamed `lib` → `var`, so every installation whose seed-once `config/client/backup.inc.php` still says `lib` now excludes a directory that does not exist and archives all of `var/` instead. Same manual pass, working copies AND servers; `.releases/check.php` warns about it since. Two occurrences make the shape clear: a seed-once default is a copy, and a copy does not follow.
 
@@ -164,6 +223,7 @@ moving.
 
 ## pending
 
+- **Run a real restore once** (RESTORE-001): `php vendor/bin/z77-restore <db archive>` against z77.ch, then `z77-db` must report the schema as current and the backend must come up. Can only happen on a machine that HAS MariaDB — measured 2026-10-09: no `mysqldump` / `mysql` and no MariaDB service on PC 2, which is the machine the restore tool was written for (`docs/_local/handoff-2026-10-09-z77ch-database-second-pc.md`, steps 2–5 still open there). The archives in that project's `backup/` travelled with the synced working copy; they were taken on PC 1.
 - Existing (pre-1.1.0) projects do not get the «Service» navigation section automatically (navigation data is seed-once). The fix is BUILT (ADR-032): the backend data import proposes the missing shipped entries — see [`import.md`](import.md). Manual creation via the navigation UI remains the fallback on installations whose framework predates the import screen.
 
 ## see also
