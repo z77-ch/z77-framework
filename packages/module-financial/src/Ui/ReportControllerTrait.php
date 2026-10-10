@@ -236,11 +236,6 @@ trait ReportControllerTrait
                 'accountNumber' => $number,
                 'accountMissing' => $number !== '' && $account === null,
                 'report'        => $account === null ? null : $this->ledgerReports()->accountStatement($account, $range, $page),
-                // The printed header names the account — «Kontoblatt» alone
-                // does not identify the sheet once it is off the screen.
-                'reportLabel'   => $account === null
-                    ? self::REPORT_TABS['account-statement']
-                    : self::REPORT_TABS['account-statement'] . ' ' . $account->getNumber() . ' ' . $account->getName(),
             ];
         });
     }
@@ -420,13 +415,8 @@ trait ReportControllerTrait
             'reportBase'  => $base,
             'journalBase' => $this->reportJournalBase(),
             'fmt'         => static fn(?Money $m) => AmountFormat::of($m),
-            // The printed header and footer (FIN-PRINT-001). `$own` wins, so a
-            // report that knows more says so — the account statement names its
-            // account, the balance sheet is a statement AT a day.
-            'mandator'    => $this->reportMandator(),
-            'reportLabel' => self::REPORT_TABS[$tab] ?? 'Bericht',
+            // `$own` wins: the balance sheet is a statement AT a day.
             'atDay'       => false,
-            'printedAt'   => (new \DateTimeImmutable())->format('d.m.Y H:i'),
         ]);
         $this->layoutManager->removeSection('main');
         if ($range === null) {
@@ -434,11 +424,9 @@ trait ReportControllerTrait
 
             return $response;
         }
-        // Before and after the report, in document order — the shell's header
-        // slots are hidden on paper, so a printed header has to live in `main`.
-        $this->layoutManager->addPartials('printHead', 'Backend/ReportController', ReportLayout::NS);
+        // The report alone — paper is the PDF's job (FIN-PDF-001; the print-only header and
+        // footer of FIN-PRINT-001 are gone).
         $this->layoutManager->addPartials($template, 'Backend/ReportController', ReportLayout::NS);
-        $this->layoutManager->addPartials('printFoot', 'Backend/ReportController', ReportLayout::NS);
         // The report tabs stand in the toolbar (hc2, owner 2026-09-29) — the tab row stays empty.
         $this->layoutManager->addPartials('tabs', 'Backend/ReportController', ReportLayout::NS, 'hc2');
         // The year holds for the whole area: the top of the rail (owner 2026-10-08, ADR-033 rev.), the dropdown the journal shares.
