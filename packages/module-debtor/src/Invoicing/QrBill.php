@@ -41,6 +41,12 @@ use Z77\Shared\Money\Money;
  * re-issued. A debtor block that does not fit the specification is left out
  * (the payer writes it by hand); the creditor, the account, the amount and
  * the reference must fit.
+ *
+ * A DRAFT (`invoicing`) has no number yet, hence no reference and no
+ * message (owner 2026-10-10: the number is drawn at the booking print):
+ * its bill is checked for everything else — so the detail names a missing
+ * creditor field BEFORE the booking — but it is never printable
+ * ({@see isPending()}); its PDF is a preview without a payment part.
  */
 final class QrBill
 {
@@ -60,6 +66,9 @@ final class QrBill
 
     /** @var list<string> */
     private array $problems = [];
+
+    /** True for a draft: the reference and the message come with the number at the booking print. */
+    private bool $pending = false;
 
     /** @var array<string, string>|null the debtor block, null = left out */
     private ?array $debtor;
@@ -137,15 +146,28 @@ final class QrBill
                 ? 'Ohne Zahlteil ausgestellt und verbucht — er lässt sich nicht nachtragen; nötigenfalls Gutschrift und neue Rechnung mit Zahlungsziel.'
                 : 'Ohne Zahlungsziel ausgestellt — kein Zahlteil. Zahlungsziel wählen und neu fakturieren.';
         } else {
+            $bill->pending = !$document->isFinal();
             $bill->check();
         }
 
         return $bill;
     }
 
+    /** Printable: booked, and every rule of the specification met. A draft's bill never is ({@see isPending()}). */
     public function isPrintable(): bool
     {
-        return $this->problems === [];
+        return $this->problems === [] && !$this->pending;
+    }
+
+    /**
+     * Whether this is the bill of a DRAFT whose payment part waits for the
+     * number — the reference (QRR) and the message are written at the
+     * booking print. {@see problems()} then lists only what would stop the
+     * bill anyway.
+     */
+    public function isPending(): bool
+    {
+        return $this->pending;
     }
 
     /** @return list<string> German, one sentence each; empty when the bill is printable */
@@ -231,7 +253,8 @@ final class QrBill
         } elseif ($this->referenceType === PaymentSnapshot::REFERENCE_NON && Iban::isQrIban($iban)) {
             $this->problems[] = 'Eine QR-IBAN wird nie ohne Referenz gedruckt (die Bank weist die Zahlung ab).';
         }
-        if ($this->referenceType === PaymentSnapshot::REFERENCE_QRR && !QrReference::isValid($this->reference)) {
+        // A draft has no reference yet — it is derived from the number at the booking print.
+        if (!$this->pending && $this->referenceType === PaymentSnapshot::REFERENCE_QRR && !QrReference::isValid($this->reference)) {
             $this->problems[] = 'Die QR-Referenz ist ungültig (27 Ziffern, Prüfziffer Modulo 10 rekursiv).';
         }
         if ($this->referenceType === PaymentSnapshot::REFERENCE_NON && $this->reference !== '') {
@@ -266,7 +289,7 @@ final class QrBill
             $this->problems[] = 'Die Mitteilung passt nicht auf den Zahlteil (140 Zeichen, erlaubte Zeichen).';
         }
         // A guard: with every element within its own limit the payload stays near 670 characters (harness P3C55).
-        if ($this->problems === [] && mb_strlen(self::assemble($this)) > self::MAX_PAYLOAD) {
+        if ($this->problems === [] && !$this->pending && mb_strlen(self::assemble($this)) > self::MAX_PAYLOAD) {
             $this->problems[] = 'Die Daten des Zahlteils sind länger als 997 Zeichen.';
         }
     }

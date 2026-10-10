@@ -55,6 +55,10 @@ final class PostingBuilder
      */
     public static function build(Invoice $invoice, string $receivableAccount): ?PostingRequest
     {
+        if (!$invoice->isNumbered()) {
+            // The journal text and the origin name the document number — drawn first at the booking print (owner 2026-10-10).
+            throw new \LogicException('A document is numbered before its posting is built (InvoicingService::finalize())');
+        }
         $currency = $invoice->getCurrency();
         $sign     = $invoice->kind()->sign();
         $zero     = Money::zero($currency);

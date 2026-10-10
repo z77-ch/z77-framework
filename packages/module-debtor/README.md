@@ -38,7 +38,8 @@ Documents (part 2):
 
 - `Invoice` (Doctrine, table `invoice`) — ONE entity for invoices and credit notes (`kind`), the
   number `YYMMnnnn` — ONE series for every kind, by the month of the invoice date, gapless per
-  month (`Invoicing\DocumentNumber`, owner 2026-10-10) —, the state (`invoicing` → `final`), the
+  month (`Invoicing\DocumentNumber`, owner 2026-10-10), drawn at the booking print — NULL while a
+  draft —, the state (`invoicing` → `final`), the
   contact by id with the address as a snapshot (`AddressSnapshot`, ten flat `addr_*` columns), the
   language, invoice and service dates, currency and rate fields (base currency only, Q6), the
   payment terms as applied (due date, tiers, printed sentence), the totals, the opaque origin and
@@ -50,10 +51,11 @@ Documents (part 2):
 
 Pieces:
 
-- `Services/InvoicingService` — the single entry for every source: `invoice($draft)` (number once,
-  nothing posted), `reinvoice($id, $version, $draft)` (same number, new snapshot, only while
-  `invoicing`), `finalize([['id' => …, 'version' => …], …])` (batch, one unit of work, posted
-  through the port, a stale version or an already final document refuses the batch),
+- `Services/InvoicingService` — the single entry for every source: `invoice($draft)` (a draft, no
+  number, nothing posted), `reinvoice($id, $version, $draft)` (new snapshot, only while
+  `invoicing`), `finalize([['id' => …, 'version' => …], …])` (the booking print: the numbers drawn
+  by invoice date, batch, one unit of work, posted through the port, a stale version or an already
+  final document refuses the batch; the screen answers with the PDF),
   `openAmount()` (derived: gross − final credit notes). Correction of a final document = a credit
   note, which follows the VAT rate of the original supply.
 - `Accounting/AccountingGateway` — the port (`post(PostingRequest): ?string`) with debtor's own

@@ -14,6 +14,9 @@
  *   [data-copy="<selector>"]      any clickable → copies the named element's text *   [data-window-open="<url>"]    opens a controller-led window (ADR-047, see «windows»)
  *   [data-fetch-region="<name>"]  a part of the page that reloads alone —
  *     a[data-fetch-region-link] / form[data-fetch-region-form] inside it (see «fetch regions»)
+ *   form[target="_blank"][data-submit-navigate="<url>"]
+ *                                 after the native submit into a new tab, THIS tab goes to <url>
+ *                                 (see «submit-navigate»)
  *
  * Native semantics carry validity state:
  *   input/select … aria-invalid="true|false"
@@ -1321,11 +1324,45 @@ _Z77.core.help = (function () {
     return { open: open, close: close, bind: bind };
 })();
 
+/* ── submit-navigate ───────────────────────────────────────────────────────
+ * A form that answers into a NEW TAB (`target="_blank"`) leaves the page it was sent from
+ * stale — first user: the booking print of module-debtor (owner 2026-10-10), whose POST books
+ * the documents and answers their PDF in the new tab, while the confirmation page stays
+ * behind showing drafts that are booked by now. With `data-submit-navigate="<url>"` this tab
+ * goes to <url> right after the submit (same origin only); the server is untouched by it.
+ *
+ * Rule 7: nothing here decides anything — the form is sent natively, the server books and
+ * answers; this only moves the old tab on. Without the script the page simply stays (the
+ * template offers a link onwards). The navigation waits a moment so the browser has sent the
+ * POST first; the backend holds the session for the whole request, so the GET of <url> is
+ * served after the POST has finished.
+ */
+_Z77.core.submitNavigate = (function () {
+    var DELAY_MS = 400;
+
+    function bind() {
+        document.addEventListener('submit', function (e) {
+            var form = e.target;
+            if (!form || !form.matches || !form.matches('form[target="_blank"][data-submit-navigate]')) return;
+            var url = new URL(form.getAttribute('data-submit-navigate'), window.location.href);
+            if (url.origin !== window.location.origin) return;
+            // After every other handler ran: a submit another script took over is not followed.
+            setTimeout(function () {
+                if (e.defaultPrevented) return;
+                setTimeout(function () { window.location.assign(url.href); }, DELAY_MS);
+            }, 0);
+        });
+    }
+
+    return { bind: bind };
+})();
+
 /* ── boot ───────────────────────────────────────────────────────────────── */
 document.addEventListener('DOMContentLoaded', function () {
     _Z77.core.windows.bind();
     _Z77.core.help.bind();
     _Z77.core.region.bind();
+    _Z77.core.submitNavigate.bind();
     _Z77.core.i18n.load();
     _Z77.core.wire(document);
     _bindCheckUrl(document);

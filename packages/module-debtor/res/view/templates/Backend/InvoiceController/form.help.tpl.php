@@ -10,7 +10,7 @@
 $isCredit = $form->kind === \Z77\Module\Debtor\Entities\InvoiceKind::CreditNote;
 ?>
 <h3><?= $isCredit ? 'Gutschrift' : 'Rechnung' ?></h3>
-<p>Erstellen legt das Dokument <strong>in Fakturierung</strong> an: es hat eine Nummer, ist aber noch nicht verbucht. Solange es in Fakturierung ist, kann es beliebig oft <strong>neu fakturiert</strong> werden — die Nummer bleibt. Verbucht wird erst mit «Verbuchen …» in der Liste; danach ist es unveränderlich, eine Korrektur ist eine Gutschrift. Fakturiert ist es, sobald es beim Kunden ist: beim ersten Öffnen des PDFs oder mit «Als fakturiert markieren».</p>
+<p>Erstellen legt das Dokument <strong>in Fakturierung</strong> an: ein Entwurf <strong>ohne Nummer</strong>, nichts ist verbucht. Solange es in Fakturierung ist, kann es beliebig oft <strong>neu fakturiert</strong> und als <strong>Vorschau</strong> (PDF ohne Nummer und ohne Zahlteil) geöffnet werden. Erst der <strong>Buchungsdruck …</strong> (in der Liste für die angekreuzten, im Dokument für dieses) vergibt die Belegnummer, verbucht und öffnet das PDF mit Nummer und QR-Zahlteil — ein gedrucktes Dokument mit Nummer ist ein Beleg. Danach ist es unveränderlich, eine Korrektur ist eine Gutschrift; das PDF lässt sich jederzeit wieder öffnen.</p>
 <p>Beim Neu-Fakturieren werden Adresse und Zahlungskonditionen so übernommen, wie sie <strong>jetzt</strong> beim Debitor stehen.</p>
 
 <h3>Positionen</h3>
@@ -30,6 +30,6 @@ $isCredit = $form->kind === \Z77\Module\Debtor\Entities\InvoiceKind::CreditNote;
 <p>Die Positionen sind aus der Rechnung übernommen: auf das kürzen, was gutgeschrieben wird. Beträge werden positiv erfasst — das Vorzeichen gibt die Gutschrift. Eine Gutschrift hat keinen Zahlteil.</p>
 <?php else: ?>
 <h3>Zahlteil</h3>
-<p>Das Zahlungsziel bestimmt den QR-Zahlteil: mit <strong>QR-IBAN</strong> trägt der Beleg eine QR-Referenz aus der Rechnungsnummer, mit einer normalen <strong>IBAN</strong> keine Referenz (die Rechnung wird in der Mitteilung genannt). «Kein Zahlteil» erstellt die Rechnung ohne Einzahlungsschein. Der Zahlteil wird mit dem Dokument festgehalten — eine spätere Änderung am Zahlungsziel ändert eine ausgestellte Rechnung nicht.</p>
+<p>Das Zahlungsziel bestimmt den QR-Zahlteil: mit <strong>QR-IBAN</strong> trägt der Beleg eine QR-Referenz aus der Rechnungsnummer, mit einer normalen <strong>IBAN</strong> keine Referenz (die Rechnung wird in der Mitteilung genannt). Referenz und Mitteilung entstehen mit der Nummer beim Buchungsdruck. «Kein Zahlteil» erstellt die Rechnung ohne Einzahlungsschein. Der Zahlteil wird mit dem Dokument festgehalten — eine spätere Änderung am Zahlungsziel ändert eine ausgestellte Rechnung nicht.</p>
 <p><strong>Zahlungskonditionen</strong>: leer = die des Debitors.</p>
 <?php endif; ?>

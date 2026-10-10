@@ -53,25 +53,33 @@ use Z77\Shared\Money\Money;
  * (ADR-039 decision 10, ADR-040 decision 7):
  *
  *   - {@see invoice()}: VAT per line through module-vat by the SERVICE
- *     date → totals → the 0.05 rounding as a separate line → the number
- *     `YYMMnnnn` from the month's `NumberRange` `document.YYMM` of the
- *     INVOICE date ({@see DocumentNumber}, one series for every kind) as
- *     the FIRST write → the document in state `invoicing` with its full
- *     snapshot. NOTHING is posted;
- *   - {@see reinvoice()}: only in `invoicing` — the same number, a new
- *     snapshot, nothing to reverse because nothing was posted;
- *   - {@see finalize()}: a batch in one unit of work — every document
- *     locked first (in id order, before any number is drawn: two batches
- *     that overlap then wait at the first shared row instead of
- *     deadlocking on the journal range), then per document: state `final`
- *     and the posting through the {@see AccountingGateway} port. After
- *     `final` a document is immutable; the correction is a credit note.
+ *     date → totals → the 0.05 rounding as a separate line → the DRAFT in
+ *     state `invoicing` with its full snapshot — WITHOUT a number (owner
+ *     2026-10-10: «a printed invoice with a number IS a document»; a draft
+ *     prints as a preview). NOTHING is posted, no range is touched;
+ *   - {@see reinvoice()}: only in `invoicing` — a new snapshot, nothing to
+ *     reverse because nothing was posted, still no number;
+ *   - {@see finalize()} — the BOOKING PRINT («Buchungsdruck»): a batch in
+ *     one unit of work — the month ranges `document.YYMM` of the batch
+ *     locked first (in name order), then every document (in id order),
+ *     then the numbers `YYMMnnnn` drawn in a fixed order (invoice date,
+ *     then id — {@see DocumentNumber}, one series for every kind), then per
+ *     document: state `final` and the posting through the
+ *     {@see AccountingGateway} port. After `final` a document is immutable;
+ *     the correction is a credit note.
  *
  * Validation happens BEFORE the unit of work opens (the draft against the
  * party, the master data, the tax tables and the accounts), so a refused
- * draft never takes a lock or draws a number (the `LedgerService::post()`
- * order). Inside, the writes are new rows and one locked re-read — no
- * managed entity is mutated before a check (ADR-039 decision 9).
+ * draft never takes a lock (the `LedgerService::post()` order). Inside, the
+ * writes are new rows and one locked re-read — no managed entity is
+ * mutated before a check (ADR-039 decision 9).
+ *
+ * Lock order of the module (2026-10-10): `document.YYMM` ranges → invoice
+ * rows → `journal-entry.*` (financial's `post()`). `finalize()` and the
+ * dunning run take them in exactly this order; a payment takes the last
+ * two; `invoice()` / `reinvoice()` take no range at all (an issued credit
+ * note only holds a SHARED lock on the invoice row it references, through
+ * its foreign key).
  *
  * The open amount is DERIVED ({@see openAmount()}: gross − Σ final credit
  * notes; P4 subtracts payments and allocations) — there is no `open_item`
@@ -102,51 +110,22 @@ final class InvoicingService
     }
 
     /**
-     * Issue a NEW document in state `invoicing`. Joins an open unit of work
-     * (an order that changes its status and invoices in one) or opens its
-     * own.
+     * Issue a NEW document in state `invoicing` — a DRAFT without a number
+     * (owner 2026-10-10: the number is drawn at the booking print,
+     * {@see finalize()}). Joins an open unit of work (an order that changes
+     * its status and invoices in one) or opens its own. No range is touched:
+     * a draft that is never booked consumes no number, and a re-issue may
+     * move the invoice date into another month freely.
      *
-     * The number (owner 2026-10-10, {@see DocumentNumber}): ONE series for
-     * invoices, credit notes and fees, `YYMMnnnn` by the month of the
-     * INVOICE date, gapless per month. Each month is its own range
-     * `document.YYMM`, and a month's range comes into being with its first
-     * document — so it is CREATED here, before the unit of work, with
-     * `NumberRangeRepository::create()` (idempotent, consumes no number):
-     * outside a unit of work that insert commits at once, so the draw
-     * inside never takes the new-row path that can deadlock under
-     * contention (DOCTRINE-NR-003), and the FIRST write of the unit of work
-     * stays the locking `next()`. When this call JOINS a caller's open
-     * unit of work, `create()` runs inside it and commits with it — the
-     * new-row case remains possible there for the very first document of a
-     * month only (a loser sees the deadlock, nothing is consumed).
-     * The 10000th document of a month is refused (`number-range-full`)
-     * inside the unit of work, which rolls back — the range stays at 9999.
-     *
-     * @throws InvoiceRefusedException the draft is refused — nothing was written, no number drawn
+     * @throws InvoiceRefusedException the draft is refused — nothing was written
      */
     public function invoice(InvoiceDraft $draft): Invoice
     {
         $composed = $this->compose($draft, null);
         $now      = new \DateTimeImmutable();
-        $range    = DocumentNumber::range($draft->invoiceDate);   // the year was checked in compose()
 
-        /** @var NumberRangeRepository $ranges */
-        $ranges = $this->em->getRepository(NumberRange::class);
-        $ranges->create($range);   // ahead of the draw — outside a unit of work committed at once (DOCTRINE-NR-003)
-
-        return $this->em->getTransaction(Invoice::class)->run(function () use ($draft, $composed, $now, $ranges, $range): Invoice {
-            $sequence = $ranges->next($range);   // the FIRST write (lock order)
-            try {
-                $number = DocumentNumber::compose($draft->invoiceDate, $sequence);
-            } catch (\OverflowException $e) {
-                throw new InvoiceRefusedException(
-                    InvoiceRefusedException::NUMBER_RANGE_FULL,
-                    'Für den Monat ' . $draft->invoiceDate->format('m.Y') . ' sind alle ' . DocumentNumber::PER_MONTH
-                    . ' Belegnummern vergeben — ein weiteres Dokument mit Rechnungsdatum in diesem Monat ist nicht möglich.',
-                    $e
-                );
-            }
-            $invoice = new Invoice($draft->kind, $number, $composed['contact'], $composed['creditNoteOf'], $this->actor, $now);
+        return $this->em->getTransaction(Invoice::class)->run(function () use ($draft, $composed, $now): Invoice {
+            $invoice = new Invoice($draft->kind, $composed['contact'], $composed['creditNoteOf'], $this->actor, $now);
             [$lines, $taxes] = $this->materialize($invoice, $composed);
             $invoice->issue($composed['snapshot'], $lines, $taxes, $this->paymentPart($invoice, $composed));
             $this->em->persist($invoice);
@@ -156,8 +135,8 @@ final class InvoicingService
     }
 
     /**
-     * Replace the content of a document still in `invoicing` under its
-     * number (plan §6.2). Takes id + the VERSION the caller saw (the
+     * Replace the content of a document still in `invoicing` (plan §6.2; a
+     * draft has no number yet — owner 2026-10-10). Takes id + the VERSION the caller saw (the
      * `ManualEntryService::update()` model): the row is re-read under an
      * exclusive lock, a stale version is refused
      * ({@see InvoiceConflictException}), a `final` document is refused
@@ -196,15 +175,41 @@ final class InvoicingService
     }
 
     /**
-     * `invoicing` → `final` for a batch, ONE unit of work: all or nothing.
-     * Every document is locked first (id order), any that is missing, at
-     * another VERSION than the caller saw, or already `final` refuses the
-     * whole batch; then each is posted through the accounting port and set
-     * `final` with what the port answered. A refusal of the bookkeeping
+     * The BOOKING PRINT («Buchungsdruck», owner 2026-10-10): `invoicing` →
+     * `final` for a batch, ONE unit of work, all or nothing — the documents
+     * get their NUMBER here and are posted in the same step; the caller
+     * prints them (`Pdf\InvoicePdf::combined()`).
+     *
+     *   1. Before the unit of work: the batch is read (no lock) for the
+     *      months of its invoice dates, and each month's range
+     *      `document.YYMM` is created with `NumberRangeRepository::create()`
+     *      (idempotent, consumes no number; outside a unit of work committed
+     *      at once — DOCTRINE-NR-003, the former `invoice()` model).
+     *   2. Inside, FIRST: those ranges locked in NAME order (`create()` in a
+     *      unit of work holds the existing row exclusively) — several months
+     *      in one batch always lock in the same order, so two batches never
+     *      wait on each other crosswise; the dunning run takes the same
+     *      first lock.
+     *   3. Every document locked (id order); any that is missing, at another
+     *      VERSION than the caller saw, or already `final` refuses the whole
+     *      batch; a document whose month is not among the locked ranges was
+     *      re-dated since the read — refused as a conflict.
+     *   4. The numbers drawn — `next('document.YYMM')`, the first WRITES of
+     *      the unit of work — in a fixed order: invoice date, then id. So a
+     *      batch is gapless per month and numbered by date; the 10000th
+     *      document of a month is refused (`number-range-full`) and the whole
+     *      batch rolls back. Each document gets its number and its numbered
+     *      payment part (`Invoice::assignNumber()`, the QR reference and the
+     *      message come from the number).
+     *   5. Each posted through the accounting port (the journal text carries
+     *      the number) and set `final` with what the port answered, in the
+     *      same order.
+     *
+     * A refusal of the bookkeeping
      * ({@see \Z77\Module\Debtor\Accounting\AccountingRefusedException}) or a
      * unique-index failure at commit ends the unit of work — no state
-     * changes, no journal number consumed, nothing half-written; the caller
-     * does not retry inside (plan §6.6 contract).
+     * changes, no document number and no journal number consumed, nothing
+     * half-written; the caller does not retry inside (plan §6.6 contract).
      *
      * The caller names the version it SAW per document (review 2026-09-23,
      * the `reinvoice()` model): a document re-issued between the caller's
@@ -216,8 +221,8 @@ final class InvoicingService
      * see that rather than get a silent «done».
      *
      * @param list<array{id: int, version: int}> $documents
-     * @return list<Invoice> in the order given
-     * @throws InvoiceRefusedException  NOT_FOUND | NOT_INVOICING
+     * @return list<Invoice> in the order they were numbered (invoice date, then id)
+     * @throws InvoiceRefusedException  NOT_FOUND | NOT_INVOICING | NUMBER_RANGE_FULL | DATES
      * @throws InvoiceConflictException a document is at another version than the caller saw
      * @throws \Z77\Module\Debtor\Accounting\AccountingRefusedException
      */
@@ -238,8 +243,28 @@ final class InvoicingService
         $receivable = (new DebtorAccounts($this->em))->postableNumber('receivable');
         $now        = new \DateTimeImmutable();
 
-        return $this->em->getTransaction(Invoice::class)->run(function () use ($ids, $versions, $gateway, $receivable, $now): array {
-            // 1. Every row of the batch, locked in id order, BEFORE any number is drawn.
+        // 1. The month ranges of the batch, created ahead (DOCTRINE-NR-003). Read in SQL without a lock — not as
+        //    entities, so the locked re-read below is not served stale from the identity map; a document re-dated
+        //    after this read is caught under the lock (its version moved, or its month is not held).
+        $months = [];
+        foreach ($this->invoices()->invoiceDatesOf($ids) as $date) {
+            $months[$this->documentRange(new \DateTimeImmutable($date))] = true;
+        }
+        $months = array_keys($months);
+        sort($months, SORT_STRING);
+        /** @var NumberRangeRepository $ranges */
+        $ranges = $this->em->getRepository(NumberRange::class);
+        foreach ($months as $range) {
+            $ranges->create($range);
+        }
+
+        return $this->em->getTransaction(Invoice::class)->run(function () use ($ids, $versions, $gateway, $receivable, $now, $months, $ranges): array {
+            // 2. The month ranges FIRST, in name order (lock order: document.YYMM → invoice rows → journal-entry.*).
+            foreach ($months as $range) {
+                $ranges->create($range);
+            }
+
+            // 3. Every row of the batch, locked in id order.
             $locked = [];
             $sorted = $ids;
             sort($sorted);
@@ -252,13 +277,26 @@ final class InvoicingService
                     throw new InvoiceConflictException($id, $versions[$id]);
                 }
                 $this->assertInvoicing($invoice);
+                if (!in_array($this->documentRange($invoice->getInvoiceDate()), $months, true)) {
+                    throw new InvoiceConflictException($id, $versions[$id]);   // re-dated between the read and the lock
+                }
                 $locked[$id] = $invoice;
             }
 
-            // 2. Post and finalize, in the order given.
+            // 4. The numbers — the first writes — by invoice date, then id: gapless per month, numbered by date.
+            $order = array_values($locked);
+            usort($order, static fn(Invoice $a, Invoice $b) => [$a->getInvoiceDate()->format('Y-m-d'), $a->getId()] <=> [$b->getInvoiceDate()->format('Y-m-d'), $b->getId()]);
+            /** @var DebtorProfileRepository $profiles */
+            $profiles = $this->em->getRepository(DebtorProfile::class);
+            foreach ($order as $invoice) {
+                $number         = $this->drawNumber($ranges, $invoice->getInvoiceDate());
+                $customerNumber = $profiles->findByContact($invoice->getContact())?->getCustomerNumber() ?? 0;
+                $invoice->assignNumber($number, $invoice->getPayment()->numbered($customerNumber, $number, $invoice->kind()->label() . ' ' . $number));
+            }
+
+            // 5. Post and finalize, in the same order.
             $done = [];
-            foreach ($ids as $id) {
-                $invoice = $locked[$id];
+            foreach ($order as $invoice) {
                 $request = PostingBuilder::build($invoice, $receivable);
                 $ref     = $request === null ? null : $gateway->post($request);
                 $invoice->finalize($ref, $this->actor, $now);
@@ -289,6 +327,39 @@ final class InvoicingService
         return $invoice->getGrossTotal()
             ->subtract(Money::fromDecimal($this->invoices()->sumOfFinalCreditNotes($invoice), $invoice->getCurrency()))
             ->subtract(Money::fromDecimal($allocations->sumAllocated($invoice), $invoice->getCurrency()));
+    }
+
+    /** The month range `document.YYMM` of $invoiceDate; a date outside 2000–2099 is refused (`dates`). */
+    private function documentRange(\DateTimeImmutable $invoiceDate): string
+    {
+        try {
+            return DocumentNumber::range($invoiceDate);
+        } catch (\InvalidArgumentException $e) {
+            throw new InvoiceRefusedException(InvoiceRefusedException::DATES, 'Das Rechnungsdatum muss in den Jahren 2000–2099 liegen — die Belegnummer trägt Jahr und Monat zweistellig (JJMM).', $e);
+        }
+    }
+
+    /**
+     * The next document number of $invoiceDate's month — `next()` on its range
+     * (held since the start of the unit of work), composed `YYMMnnnn`. The
+     * 10000th of a month is refused; the caller's unit of work rolls back and
+     * the range stays at 9999.
+     *
+     * @throws InvoiceRefusedException NUMBER_RANGE_FULL
+     */
+    private function drawNumber(NumberRangeRepository $ranges, \DateTimeImmutable $invoiceDate): int
+    {
+        $sequence = $ranges->next(DocumentNumber::range($invoiceDate));
+        try {
+            return DocumentNumber::compose($invoiceDate, $sequence);
+        } catch (\OverflowException $e) {
+            throw new InvoiceRefusedException(
+                InvoiceRefusedException::NUMBER_RANGE_FULL,
+                'Für den Monat ' . $invoiceDate->format('m.Y') . ' sind alle ' . DocumentNumber::PER_MONTH
+                . ' Belegnummern vergeben — ein weiteres Dokument mit Rechnungsdatum in diesem Monat kann nicht verbucht werden.',
+                $e
+            );
+        }
     }
 
     private function gateway(): AccountingGateway
@@ -407,17 +478,10 @@ final class InvoicingService
             throw new InvoiceRefusedException(InvoiceRefusedException::DATES, 'Das Ende der Leistungsperiode liegt vor ihrem Beginn.');
         }
 
-        // The invoice date carries the month of the document number (owner 2026-10-10, DocumentNumber): a two-digit
-        // year, so 2000–2099 only; and a re-issue keeps its number, so its date stays in that number's month — a
-        // number of the former per-kind ranges (1, 2, …) names no month and does not bind the date.
-        try {
-            DocumentNumber::range($draft->invoiceDate);
-        } catch (\InvalidArgumentException $e) {
-            throw new InvoiceRefusedException(InvoiceRefusedException::DATES, 'Das Rechnungsdatum muss in den Jahren 2000–2099 liegen — die Belegnummer trägt Jahr und Monat zweistellig (JJMM).', $e);
-        }
-        if ($existing !== null && DocumentNumber::isOfMonth($existing->getNumber(), $existing->getInvoiceDate()) && !DocumentNumber::isOfMonth($existing->getNumber(), $draft->invoiceDate)) {
-            throw new InvoiceRefusedException(InvoiceRefusedException::DATES, $existing->documentName() . ' trägt den Monat ' . $existing->getInvoiceDate()->format('m.Y') . ' in der Nummer — das Rechnungsdatum bleibt in diesem Monat. Für einen anderen Monat ein neues Dokument erstellen.');
-        }
+        // The invoice date carries the month of the document number drawn at the booking print (owner 2026-10-10,
+        // DocumentNumber): a two-digit year, so 2000–2099 only — refused here, at issue, not first at the booking.
+        // A draft has no number yet, so a re-issue may move its date into any month.
+        $this->documentRange($draft->invoiceDate);
 
         // The lines: flattened (children after their parent), amounts computed. A fee's line carries no tax code (plan §6.5).
         $isFee = $draft->kind === InvoiceKind::Fee;
@@ -552,15 +616,16 @@ final class InvoicingService
     }
 
     /**
-     * The payment part of $invoice — built inside the unit of work, where the
-     * number is known: the reference is derived from it (QRR), the message
-     * names the document.
+     * The payment part of the DRAFT $invoice: target, account, reference type
+     * and creditor as they read now — the reference and the message follow
+     * with the number at the booking print ({@see finalize()},
+     * `PaymentSnapshot::numbered()`).
      *
      * @param array{target: ?PaymentTarget, creditor: ?Creditor} $composed
      */
     private function paymentPart(Invoice $invoice, array $composed): PaymentSnapshot
     {
-        return PaymentSnapshot::forDocument($invoice->kind(), $composed['profile']->getCustomerNumber(), $invoice->getNumber(), $invoice->documentName(), $composed['target'], $composed['creditor']);
+        return PaymentSnapshot::forDocument($invoice->kind(), $composed['target'], $composed['creditor']);
     }
 
     /**

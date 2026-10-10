@@ -46,9 +46,13 @@ final class InvoicingInProgressCheck implements OpenWorkCheckInterface
         $found    = $invoices->invoicingBetween($from, $to, self::LIST_LIMIT);
 
         foreach ($found['rows'] as $row) {
-            $name = (InvoiceKind::tryFrom((string) $row['kind'])?->label() ?? (string) $row['kind']) . ' ' . $row['number'];
+            // A draft has no number (owner 2026-10-10: it is drawn at the booking print) — named by date and customer.
+            $label = InvoiceKind::tryFrom((string) $row['kind'])?->label() ?? (string) $row['kind'];
+            $date  = (new \DateTimeImmutable((string) $row['invoice_date']))->format('d.m.Y');
+            $party = trim((string) $row['addr_first_name'] . ' ' . (string) $row['addr_name']);
+            $name  = $row['number'] !== null ? $label . ' ' . $row['number'] . ' vom ' . $date : $label . ' (Entwurf) vom ' . $date;
             yield Finding::blocking(
-                $name . ' vom ' . (new \DateTimeImmutable((string) $row['invoice_date']))->format('d.m.Y') . ' ist noch in Fakturierung, also nicht verbucht — erst verbuchen.',
+                $name . ($party !== '' ? ' an ' . $party : '') . ' ist noch in Fakturierung, also nicht verbucht — erst mit «Buchungsdruck …» verbuchen.',
                 'invoice:' . $row['id']
             );
         }

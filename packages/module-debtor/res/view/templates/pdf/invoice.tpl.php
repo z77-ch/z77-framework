@@ -10,8 +10,14 @@
  * of the last page (`pdf/qrBill`, the 105 mm zone the guidelines reserve;
  * nothing else is printed there, the footer included).
  *
+ * A DRAFT (`invoicing`, no number yet) prints as a PREVIEW (owner
+ * 2026-10-10): every page carries a large light «VORSCHAU» behind the
+ * content and a red line at the top, the title has no number, and instead
+ * of the payment part a short note says it follows with the booking print.
+ * Only a booked document prints its number and its QR-bill.
+ *
  * Drawn alone (`InvoicePdf::render()`) or as one SECTION of a combined file
- * (`InvoicePdf::combined()`, e.g. the batch just booked) — so it starts with
+ * (`InvoicePdf::combined()`, the booking print of a batch) — so it starts with
  * its own `addPage()`, resets its bag entry and numbers its pages per
  * document (`sectionPageNo()` / `sectionPageCount()`).
  *
@@ -31,14 +37,20 @@ use Z77\Module\Vat\Entities\TaxRate;
 $left   = 20.0;
 $right  = 190.0;
 $width  = $right - $left;
-$name   = $document->documentName();
 $isCredit = $document->isCreditNote();
+$preview  = !$document->isFinal();   // a draft: no number, no payment part (owner 2026-10-10)
+$name     = $preview ? $document->kind()->label() . ' — Vorschau' : $document->documentName();
 
 // ── running header (pages 2+) and footer (not on the page with the payment part) ──
 // The pages are counted per DOCUMENT (sectionPageNo / sectionPageCount): in the combined PDF of a
 // batch (InvoicePdf::combined()) each document numbers its own pages; alone it is pageNo() / {nb}.
 $pdf->set('paymentPart', false);
-$pdf->onPageStart(static function ($pdf) use ($name, $left, $right): void {
+$pdf->onPageStart(static function ($pdf) use ($name, $left, $right, $width, $preview): void {
+    if ($preview) {
+        // Drawn FIRST on every page, so the content lies on top of the light watermark.
+        $pdf->font('B', 88)->textColor(228)->text($left, 165, 'VORSCHAU', 'C', $width)->textColor(0);
+        $pdf->font('B', 8)->textColor(180, 0, 0)->text($left, 6, 'VORSCHAU — kein gültiges Dokument: ohne Belegnummer und ohne Zahlteil. Beides kommt mit dem Buchungsdruck.', 'C', $width)->textColor(0);
+    }
     if ($pdf->sectionPageNo() > 1) {
         $pdf->font('', 8)->textColor(110)->text($left, 12, $name . '  ·  Seite ' . $pdf->sectionPageNo() . ' von ' . $pdf->sectionPageCount())->textColor(0);
         $pdf->setY(24);
@@ -127,7 +139,14 @@ if (!$isCredit && $document->getTermsText() !== null && trim($document->getTerms
     $pdf->ensureSpace(14);
     $y = $pdf->paragraph($left, $pdf->y() + 6, $width, $document->getTermsText(), 4.4);
 }
-if (!$isCredit && !$bill->isPrintable() && $document->getPayment()->hasPaymentPart() === false) {
+if ($preview && !$isCredit) {
+    // The preview has no payment part: the reference and the message come with the number.
+    $pdf->ensureSpace(10);
+    $pdf->font('I', 9)->textColor(110)->paragraph($left, $pdf->y() + 4, $width, $document->getPayment()->hasPaymentPart()
+        ? 'Zahlteil folgt mit dem Buchungsdruck.'
+        : 'Ohne Zahlteil — Zahlungsvermerk folgt mit der Belegnummer beim Buchungsdruck.', 4.4);
+    $pdf->textColor(0);
+} elseif (!$isCredit && !$bill->isPrintable() && $document->getPayment()->hasPaymentPart() === false) {
     $pdf->ensureSpace(10);
     $pdf->font('', 9)->paragraph($left, $pdf->y() + 4, $width, 'Zahlbar mit Vermerk «' . $name . '».', 4.4);
 }

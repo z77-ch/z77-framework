@@ -952,22 +952,29 @@ contracts/subscriptions, fees).
   P7: it prints on the document, and after P3 every issued invoice is immutable data — adding it later
   is a migration on issued documents.
 
-**Invoice states (decided 2026-09-18 — the wdv `if` state is kept, it is proven in practice):**
+**Invoice states (decided 2026-09-18 — the wdv `if` state is kept, it is proven in practice;
+revised by the owner 2026-10-10: «a printed invoice with a number IS a document» — the number is
+drawn at the BOOKING PRINT, not when the draft is created):**
 
-| State | Invoice | Ledger |
-|---|---|---|
-| `invoicing` (in Fakturierung) | Number + PDF exist. Can be re-invoiced as often as needed (clients notice errors after printing) — **the number stays the same**, snapshot and PDF are replaced | **nothing posted**, no open item |
-| `final` (Fakturierung abgeschlossen) | Immutable; correction only by credit note | posted, open item opened |
+| State / action | PDF | Number | Ledger | Editable |
+|---|---|---|---|---|
+| `invoicing` (in Fakturierung) | **preview** only — watermarked «VORSCHAU», no QR payment part, any number of times, no side effect | **none** | **nothing posted**, no open item | yes — re-invoiced as often as needed (clients notice errors in the preview) |
+| «Buchungsdruck …» (only from `invoicing`; one draft or a selection) | the PDF with number and QR-bill, opened at once — a selection as ONE file, each document its own section (own pages, own page count, own payment part) | drawn now: `YYMMnnnn`, the month of the INVOICE date, one series for invoice / credit note / fee, in the order invoice date, then id | the one and only posting | – |
+| `final` («Verbucht») | the identical PDF, any time (reprint), no further posting | stays | posted, open item opened | no — correction only by credit note |
 
 - `invoice(draft)` (one transaction): VAT via `module-vat` → total rounded to 0.05 as **separate
-  rounding line** → number from `NumberRange` (only the first time) → `Invoice` in state
-  `invoicing` with full snapshot (addresses, lines, rates, tax summary, FX rate) → PDF with QR-bill
-  (reference QRR with a QR-IBAN, NON with a plain IBAN — owner 2026-09-23: no SCOR; bacon-qr-code is already vendored in the kernel).
-- `reinvoice(invoice, draft)`: only in state `invoicing`; same number, new snapshot and PDF.
-  Nothing to reverse — nothing was posted.
-- `finalize(invoices)` (batch, one transaction): state `final` → `OpenItem` → posting via
-  `AccountingGateway` (receivable / revenue per line + VAT per code + rounding). The PDF of this
-  moment is the binding document.
+  rounding line** → `Invoice` in state `invoicing` with full snapshot (addresses, lines, rates, tax
+  summary, FX rate, the payment target) — **without a number** (owner 2026-10-10); its PDF is the
+  preview.
+- `reinvoice(invoice, draft)`: only in state `invoicing`; new snapshot and preview, still no number
+  (so the invoice date may move into another month). Nothing to reverse — nothing was posted.
+- `finalize(invoices)` = the **booking print** (batch, one transaction): the month ranges locked
+  first, the rows, then the numbers drawn (invoice date, then id) with the QR reference / message
+  derived from them (QRR with a QR-IBAN, NON with a plain IBAN — owner 2026-09-23: no SCOR;
+  bacon-qr-code is vendored in the kernel) → state `final` → posting via `AccountingGateway`
+  (receivable / revenue per line + VAT per code + rounding) → the screen answers with the PDF of
+  exactly these documents in a new tab. The PDF of this moment is the binding document; there is
+  no booking without the print. A repeated submit of the same selection reprints, posts nothing.
 - Why posting waits for `finalize`: re-invoicing never touches the books, so no reversal noise and
   no deleted entries (wdv deletes and re-posts). The price: an invoice sitting in `invoicing` is not
   in the books yet — covered by the close check (§5.3), which **blocks** VAT return and close.
@@ -1065,8 +1072,14 @@ is financial's; the adapter is the only debtor class that knows financial.
 - Quote and order confirmation as PDF from the order.
 - VAT on quote/order **for display only** via `module-vat`.
 - "Invoice": builds an `InvoiceDraft` from one or several orders (collective invoice), calls
-  `InvoicingService::invoice()`, records the invoice number per line. Payment state is **asked** from
-  debtor, never pushed back.
+  `InvoicingService::invoice()` (a draft — no number yet), records the invoice per line (by id; its
+  number exists from the booking print on). Payment state is **asked** from debtor, never pushed back.
+- **Order status ↔ invoice (agreed 2026-10-10, for P7):** `geliefert` (delivery-note print, or set
+  by hand) → `zu fakturieren` (set by staff) → `in Fakturierung` (the invoice draft is created; its
+  preview may be printed) → «Buchungsdruck» of the invoice → the invoice is «Verbucht» and the
+  order `erledigt`. The payment state is asked from debtor, it is not an order status (above). The
+  invoice PREVIEW may be printed from earlier order statuses too (a quote check, a pro-forma look) —
+  it has no number and no side effect.
 - order posts nothing.
 
 ---

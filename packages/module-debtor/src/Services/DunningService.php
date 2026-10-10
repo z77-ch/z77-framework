@@ -116,12 +116,14 @@ final class DunningService
         $profiles = $this->em->getRepository(DebtorProfile::class);
         sort($ids);
 
-        // A fee document draws from the ONE document series (owner 2026-10-10), the month's range of the run date —
-        // the same range a credit note against a dunned invoice draws from, and that credit note then waits for the
-        // invoice row this run locks (the `credit_note_of_id` foreign key). So the range is locked FIRST, before any
-        // invoice row (lock order: `NumberRange` first, DOCTRINE-NR-002): `create()` inside the unit of work holds the
-        // existing row exclusively without consuming a number; outside, ahead of it, it makes sure the row exists and
-        // is committed (DOCTRINE-NR-003). Without a fee on the ladder nothing is drawn and nothing is locked.
+        // A fee document gets its number from the ONE document series when it is booked (owner 2026-10-10: the number
+        // is drawn by finalize(), the booking print — here inside this unit of work), from the month's range of the run
+        // date — the same range a booking print of other documents of that month locks FIRST, before their rows. So
+        // this run locks the range FIRST as well, before any invoice row (the module's lock order: document.YYMM →
+        // invoice rows → journal-entry.*; DOCTRINE-NR-002): `create()` inside the unit of work holds the existing row
+        // exclusively without consuming a number; outside, ahead of it, it makes sure the row exists and is committed
+        // (DOCTRINE-NR-003). finalize() of the fee, joining this unit of work, finds the range already held. Without a
+        // fee on the ladder nothing is drawn and nothing is locked.
         $feeRange = array_filter($ladder, static fn(DunningLevel $l) => $l->getFee() > 0) !== [] ? DocumentNumber::range($date) : null;
         /** @var NumberRangeRepository $ranges */
         $ranges = $this->em->getRepository(NumberRange::class);

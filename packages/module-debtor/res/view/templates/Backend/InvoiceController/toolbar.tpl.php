@@ -1,8 +1,8 @@
 <?php
 /**
- * Documents — the toolbar (hc2): the four views as tabs (`.be-viewtabs`,
+ * Documents — the toolbar (hc2): the three views as tabs (`.be-viewtabs`,
  * each with its count), nothing else. «+ Rechnung» stands in the action cell
- * (`act.tpl.php`), «Verbuchen …» is bound to the selection and stands
+ * (`act.tpl.php`), «Buchungsdruck …» is bound to the selection and stands
  * in the bar above the list (`listAction.tpl.php`) — ADR-033 rev. 2026-10-08.
  *
  * Part of the fragment: added by the trait (financial.md, «fragment slots»).

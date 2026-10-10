@@ -20,23 +20,28 @@ use Doctrine\Common\Collections\ArrayCollection,
  * later change of master data, contact or tax table never alters it
  * (plan §4a, ADR-041 decision 6, ADR-043 decision 19).
  *
- * States ({@see InvoiceState}): `invoicing` — the number exists, the content
- * may be replaced as often as needed under the same number ({@see reissue()}),
- * nothing is posted; `final` — posted through the accounting port
- * ({@see finalize()}), immutable, corrected only by a credit note.
+ * States ({@see InvoiceState}): `invoicing` — a DRAFT without a number
+ * (owner 2026-10-10: «a printed invoice with a number IS a document»), the
+ * content may be replaced as often as needed ({@see reissue()}), nothing is
+ * posted, its PDF is a preview; `final` — numbered and posted in ONE step,
+ * the booking print ({@see assignNumber()} then {@see finalize()}, both in
+ * `InvoicingService::finalize()`), immutable, corrected only by a credit
+ * note.
  *
  * What is on the header, and why:
  *
  *   - `kind` + `number`: ONE number series for every kind (owner
  *     2026-10-10) — `YYMMnnnn` by the month of the invoice date, the
  *     running `nnnn` from the month's range `document.YYMM`
- *     ({@see \Z77\Module\Debtor\Invoicing\DocumentNumber}); unique across
- *     kinds (`uniq_invoice_number`), so a number names exactly one
- *     document. Numbers issued before 2026-10-10 (the former per-kind
- *     ranges, 1, 2, …) stay as they were printed and booked. The former
- *     per-kind index `uniq_invoice_kind_number` is implied by the new one
- *     and stays until a later release drops it (expand/contract, ADR-039
- *     decision 14 — `debtor.md` pending);
+ *     ({@see \Z77\Module\Debtor\Invoicing\DocumentNumber}), drawn when the
+ *     document is BOOKED (the booking print), NULL while `invoicing`;
+ *     unique across kinds (`uniq_invoice_number` — any number of NULLs),
+ *     so a number names exactly one document. Numbers issued before
+ *     2026-10-10 (the former per-kind ranges, 1, 2, …) stay as they were
+ *     printed and booked. The former per-kind index
+ *     `uniq_invoice_kind_number` is implied by the new one and stays until
+ *     a later release drops it (expand/contract, ADR-039 decision 14 —
+ *     `debtor.md` pending);
  *   - `contact`: the party BY ID (plan §4a) — the reference; the address is
  *     copied into `addr_*` ({@see AddressSnapshot}), the language into
  *     `language` (a contact's language change must not re-language an
@@ -70,15 +75,13 @@ use Doctrine\Common\Collections\ArrayCollection,
  *     `EntryRef` shape of financial written as it reads on a document),
  *     NULL while `invoicing` or when the installation keeps its books
  *     elsewhere (`NullAccountingGateway`);
- *   - `deliveredAt` / `deliveredBy` / `deliveredVia` (owner 2026-10-10):
- *     «Fakturiert» — the booked document reached the customer; a fact of
- *     its own next to the state, see the property;
  *   - created / changed by and at: the actor's NAME (a backend user can be
  *     deleted, the document keeps the name); `version` is the optimistic
  *     lock a re-issue names (the `journal_entry.version` model).
  *
  * No setters. The header snapshot is written whole by {@see issue()} /
- * {@see reissue()}, the state by {@see finalize()} — and both refuse a
+ * {@see reissue()}, the number and the payment reference by
+ * {@see assignNumber()}, the state by {@see finalize()} — and all refuse a
  * `final` document themselves, not only in the service (ADR-042 decision 7
  * applied to the document).
  *
@@ -103,7 +106,6 @@ class Invoice
     public const SOURCE_REF_LENGTH  = 128;
     public const LEDGER_REF_LENGTH  = 32;
     public const ACTOR_LENGTH       = 80;
-    public const DELIVERY_CHANNEL_LENGTH = 12;
 
     /** Server-controlled — no setter; the database assigns it. */
     #[ORM\Id, ORM\Column, ORM\GeneratedValue]
@@ -113,9 +115,13 @@ class Invoice
     #[ORM\Column(length: 12)]
     private string $kind;
 
-    /** `YYMMnnnn` (`DocumentNumber`) — one series for every kind; before 2026-10-10 the bare integer of the kind's range. */
-    #[ORM\Column]
-    private int $number;
+    /**
+     * `YYMMnnnn` (`DocumentNumber`) — one series for every kind, drawn at the
+     * booking print; NULL while `invoicing` (owner 2026-10-10). Before
+     * 2026-10-10 the bare integer of the kind's range.
+     */
+    #[ORM\Column(nullable: true)]
+    private ?int $number = null;
 
     /** An {@see InvoiceState} value, stored as its string. */
     #[ORM\Column(length: 12)]
@@ -219,26 +225,6 @@ class Invoice
     #[ORM\Column(name: 'changed_at', type: Types::DATETIME_IMMUTABLE, nullable: true)]
     private ?\DateTimeImmutable $changedAt = null;
 
-    /**
-     * «Fakturiert» (owner 2026-10-10): when the BOOKED document reached the
-     * customer — a dated fact of its own, independent of the posting state
-     * and of the open amount (nothing in payments, dunning or the ledger
-     * reads it). NULL = not yet. Written only by `Services\DeliveryService`
-     * through `InvoiceRepository::markDelivered()` / `unmarkDelivered()` — a
-     * guarded SQL update (first one wins, only `final`), deliberately NOT
-     * through the entity: delivery is not content, so it does not bump
-     * `version` and never makes an open confirmation or form stale.
-     */
-    #[ORM\Column(name: 'delivered_at', type: Types::DATETIME_IMMUTABLE, nullable: true)]
-    private ?\DateTimeImmutable $deliveredAt = null;
-
-    #[ORM\Column(name: 'delivered_by', length: self::ACTOR_LENGTH, nullable: true)]
-    private ?string $deliveredBy = null;
-
-    /** A {@see DeliveryChannel} value — how it was delivered; NULL while not delivered. */
-    #[ORM\Column(name: 'delivered_via', length: self::DELIVERY_CHANNEL_LENGTH, nullable: true)]
-    private ?string $deliveredVia = null;
-
     /** Optimistic lock: a re-issue names the version it saw (`InvoicingService::reinvoice()`). */
     #[ORM\Version]
     #[ORM\Column(type: Types::INTEGER)]
@@ -264,22 +250,19 @@ class Invoice
     private Collection $taxes;
 
     /**
-     * A document with its identity — kind, number, party, the invoice it
-     * corrects — and no content yet: {@see issue()} follows in the same unit
-     * of work. Built by `InvoicingService` only.
+     * A DRAFT with its identity — kind, party, the invoice it corrects — and
+     * no content and no number yet: {@see issue()} follows in the same unit
+     * of work, the number comes with the booking print
+     * ({@see assignNumber()}). Built by `InvoicingService` only.
      */
-    public function __construct(InvoiceKind $kind, int $number, Contact $contact, ?Invoice $creditNoteOf, string $createdBy, \DateTimeImmutable $createdAt)
+    public function __construct(InvoiceKind $kind, Contact $contact, ?Invoice $creditNoteOf, string $createdBy, \DateTimeImmutable $createdAt)
     {
-        if ($number < 1) {
-            throw new \LogicException('A document number starts at 1');
-        }
         if (($kind === InvoiceKind::CreditNote) !== ($creditNoteOf !== null)) {
             throw new \LogicException('A credit note references the invoice it corrects; an invoice references none');
         }
         $this->lines        = new ArrayCollection();
         $this->taxes        = new ArrayCollection();
         $this->kind         = $kind->value;
-        $this->number       = $number;
         $this->contact      = $contact;
         $this->creditNoteOf = $creditNoteOf;
         $this->createdBy    = $createdBy;
@@ -287,7 +270,8 @@ class Invoice
     }
 
     public function getId(): ?int { return $this->id; }
-    public function getNumber(): int { return $this->number; }
+    /** The document number — NULL while the document is a draft (`invoicing`). */
+    public function getNumber(): ?int { return $this->number; }
     public function getContact(): Contact { return $this->contact; }
     public function getCreditNoteOf(): ?Invoice { return $this->creditNoteOf; }
     public function getAddress(): AddressSnapshot { return $this->address; }
@@ -313,19 +297,6 @@ class Invoice
     public function getChangedBy(): ?string { return $this->changedBy; }
     public function getChangedAt(): ?\DateTimeImmutable { return $this->changedAt; }
     public function getVersion(): int { return $this->version; }
-    public function getDeliveredAt(): ?\DateTimeImmutable { return $this->deliveredAt; }
-    public function getDeliveredBy(): ?string { return $this->deliveredBy; }
-
-    /** «Fakturiert»: the booked document reached the customer (owner 2026-10-10). */
-    public function isDelivered(): bool
-    {
-        return $this->deliveredAt !== null;
-    }
-
-    public function deliveredVia(): ?DeliveryChannel
-    {
-        return $this->deliveredVia !== null ? DeliveryChannel::tryFrom($this->deliveredVia) : null;
-    }
 
     public function kind(): InvoiceKind
     {
@@ -342,10 +313,22 @@ class Invoice
         return $this->kind === InvoiceKind::CreditNote->value;
     }
 
-    /** «Rechnung 12» / «Gutschrift 3» — how a screen, a journal text or a document names it. */
+    /**
+     * «Rechnung 26100012» / «Gutschrift 26100003» — how a screen, a journal
+     * text or a document names it. A draft has no number yet (owner
+     * 2026-10-10): «Rechnung (Entwurf vom 10.10.2026)».
+     */
     public function documentName(): string
     {
-        return $this->kind()->label() . ' ' . $this->number;
+        return $this->number !== null
+            ? $this->kind()->label() . ' ' . $this->number
+            : $this->kind()->label() . ' (Entwurf' . (isset($this->invoiceDate) ? ' vom ' . $this->invoiceDate->format('d.m.Y') : '') . ')';
+    }
+
+    /** Whether the document carries its number — true from the booking print on (and for every document of the former ranges). */
+    public function isNumbered(): bool
+    {
+        return $this->number !== null;
     }
 
     /** @return list<array{days: int, percent: int, until: string}> */
@@ -403,8 +386,35 @@ class Invoice
     }
 
     /**
+     * The booking print's first step (owner 2026-10-10): the document gets
+     * its number and, with it, the numbered payment part — the QR reference
+     * and the message are derived from the number
+     * ({@see PaymentSnapshot::numbered()}). Only once, only while
+     * `invoicing`; {@see finalize()} follows in the same unit of work
+     * (`InvoicingService::finalize()` draws the number from the month's
+     * range).
+     */
+    public function assignNumber(int $number, PaymentSnapshot $payment): void
+    {
+        $this->assertInvoicing('numbered');
+        if ($this->number !== null) {
+            throw new \LogicException($this->documentName() . ' already carries its number');
+        }
+        if ($number < 1) {
+            throw new \LogicException('A document number starts at 1');
+        }
+        if ($this->isCreditNote() && $payment->hasPaymentPart()) {
+            throw new \LogicException('A credit note has no payment part');
+        }
+        $this->number  = $number;
+        $this->payment = $payment;
+    }
+
+    /**
      * `invoicing` → `final`: the one state change, one way (plan §6.2). From
-     * here on the document is immutable; a correction is a credit note.
+     * here on the document is immutable; a correction is a credit note. The
+     * number is assigned first ({@see assignNumber()}) — a booked document
+     * always carries one.
      *
      * @param string|null $ledgerEntryRef what the accounting port answered — `{year}/{number}`, or null
      *                                    when the installation keeps its books elsewhere (`NullAccountingGateway`)
@@ -412,6 +422,9 @@ class Invoice
     public function finalize(?string $ledgerEntryRef, string $by, \DateTimeImmutable $at): void
     {
         $this->assertInvoicing('finalized');
+        if ($this->number === null) {
+            throw new \LogicException('A document is numbered before it is finalized (assignNumber(), the booking print)');
+        }
         if ($ledgerEntryRef !== null && (trim($ledgerEntryRef) === '' || mb_strlen($ledgerEntryRef) > self::LEDGER_REF_LENGTH)) {
             throw new \LogicException('A ledger entry reference is 1-' . self::LEDGER_REF_LENGTH . ' characters or null');
         }

@@ -49,17 +49,18 @@
  * (plan §6.2, §6.6), on top of the state the sections above leave:
  *
  *   - (J) `invoice()`: a draft becomes a document in state `invoicing` —
- *     the number drawn ONCE from `invoice`, the full snapshot (address,
+ *     WITHOUT a number (owner 2026-10-10: drawn at the booking print), the full snapshot (address,
  *     language, terms as applied, lines with rate and label, the tax
  *     summary per code, totals), the 0.05 rounding as a separate line —
  *     also when it is 0.00 (no line) —, line types, a parent with children
  *     at 0.00, a negative quantity, a text line, gross price mode, the rate
  *     by SERVICE date across the 2024 rate change, and NOTHING posted;
  *     every refusal a draft can earn, without a number consumed;
- *   - (K) `reinvoice()`: the same number, a new snapshot, the version
+ *   - (K) `reinvoice()`: still no number, a new snapshot, the version
  *     bumped, a stale version refused, the kind immutable, still nothing
- *     posted;
- *   - (L) `finalize()`: posted ONCE through `LedgerAccountingGateway`, the
+ *     posted, the date free to move into another month;
+ *   - (L) `finalize()` — the booking print: the number `YYMMnnnn` drawn
+ *     and posted ONCE through `LedgerAccountingGateway`, the
  *     posting shape (receivable = gross, revenue per line with the tax data
  *     of the net method, VAT per code, rounding; Σ debit = Σ credit), the
  *     open amount, a second finalize refused, a batch where one document
@@ -368,17 +369,21 @@ check('A4 … both debtor migrations ran in ONE run across the modules (timestam
     str_contains($out, 'Migrating up to Z77\\Module\\')
     && in_array('Z77\\Module\\Debtor\\Migrations\\Version20260922173918', $executed, true) && in_array('Z77\\Module\\Debtor\\Migrations\\Version20260923043935', $executed, true)
     && in_array('Z77\\Module\\Debtor\\Migrations\\Version20261006100000', $executed, true) && in_array('Z77\\Module\\Debtor\\Migrations\\Version20261010100000', $executed, true)
-    && in_array('Z77\\Module\\Debtor\\Migrations\\Version20261010140000', $executed, true));
+    && in_array('Z77\\Module\\Debtor\\Migrations\\Version20261010140000', $executed, true)
+    && in_array('Z77\\Module\\Debtor\\Migrations\\Version20261010170000', $executed, true) && in_array('Z77\\Module\\Debtor\\Migrations\\Version20261010170100', $executed, true));
 check('A5 debtor_profile, invoice, invoice_line and invoice_tax exist next to contact\'s, mandator\'s and financial\'s tables',
     array_diff(['debtor_profile', 'invoice', 'invoice_line', 'invoice_tax', 'mandator'], $tables()) === []);
 $rangeOf = fn(string $name) => $db->fetchOne('SELECT last_number FROM number_range WHERE name = ?', [$name]);
 check('A5b the ranges invoice and credit-note exist at 0, customer at 999 (the first customer number is 1000, owner 2026-10-06) — created by the migrations ahead of the first draw (DOCTRINE-NR-003), nothing consumed',
     (string) $rangeOf('invoice') === '0' && (string) $rangeOf('credit-note') === '0' && (string) $rangeOf('customer') === '999');
-check('A5b2 no month range document.YYMM at install — each month\'s range is created with its first document (owner 2026-10-10, InvoicingService::invoice())',
+check('A5b2 no month range document.YYMM at install — each month\'s range is created with its first BOOKED document (owner 2026-10-10, InvoicingService::finalize())',
     (int) $db->fetchOne("SELECT COUNT(*) FROM number_range WHERE name LIKE 'document.%'") === 0);
 $invoiceUniques = $db->fetchAllKeyValue('SELECT INDEX_NAME, GROUP_CONCAT(COLUMN_NAME ORDER BY SEQ_IN_INDEX) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND NON_UNIQUE = 0 GROUP BY INDEX_NAME', [$dbName, 'invoice']);
 check('A5b3 the document number is unique ACROSS kinds (uniq_invoice_number on number — one series, owner 2026-10-10); the former per-kind index stays until the contract step',
     ($invoiceUniques['uniq_invoice_number'] ?? '') === 'number' && ($invoiceUniques['uniq_invoice_kind_number'] ?? '') === 'kind,number');
+check('A5b4 a draft has no number (owner 2026-10-10, Version20261010170000): invoice.number is NULLABLE — the unique indexes admit any number of NULLs; «Fakturiert» is gone (Version20261010170100): no delivered_* column',
+    $db->fetchOne('SELECT IS_NULLABLE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ?', [$dbName, 'invoice', 'number']) === 'YES'
+    && (int) $db->fetchOne("SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME LIKE 'delivered%'", [$dbName, 'invoice']) === 0);
 $invoiceFks = $db->fetchFirstColumn('SELECT DISTINCT REFERENCED_TABLE_NAME FROM information_schema.KEY_COLUMN_USAGE WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND REFERENCED_TABLE_NAME IS NOT NULL ORDER BY 1', [$dbName, 'invoice']);
 check('A5c invoice references contact (the party) and itself (credit note → invoice) — no address, no terms, no tax code (they are snapshots / by code)', $invoiceFks === ['contact', 'invoice']);
 $addrColumns = $db->fetchFirstColumn('SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME LIKE ? ORDER BY ORDINAL_POSITION', [$dbName, 'invoice', 'addr\_%']);
@@ -400,10 +405,13 @@ check('A9 the unique contact index, the unique customer-number index and the pay
 [$code, $out] = $run(['command' => 'migrate']);
 check('A10 a second migrate is a no-op', $code === 0 && str_contains($out, 'Already at the latest version'));
 [$code, $out] = $run(['command' => 'diff', '--namespace' => 'Z77\\Module\\Debtor\\Migrations']);
-check('A11 diff after migrate reports NO change — mapping and migration agree (embedded address and payment part, money and decimal columns included)' . (str_contains($out, 'No changes detected') ? '' : ' — ' . trim($out)), $code !== 0 && str_contains($out, 'No changes detected') && count(glob($package . '/res/migrations/Version*.php')) === 9);
-check('A12 all eight migrations are expand-only: no DROP outside down()', array_reduce(glob($package . '/res/migrations/Version*.php'), function ($ok, $f) {
-    $s = file_get_contents($f);
-    return $ok && substr_count(substr($s, 0, strpos($s, 'function down')), 'DROP') === 0;
+check('A11 diff after migrate reports NO change — mapping and migration agree (embedded address and payment part, money and decimal columns included)' . (str_contains($out, 'No changes detected') ? '' : ' — ' . trim($out)), $code !== 0 && str_contains($out, 'No changes detected') && count(glob($package . '/res/migrations/Version*.php')) === 11);
+check('A12 every migration is expand-only (no DROP outside down()) — but the ONE contract step Version20261010170100, which drops the «Fakturiert» columns no release ever read (owner 2026-10-10), in a file of its own without a data step', array_reduce(glob($package . '/res/migrations/Version*.php'), function ($ok, $f) {
+    $s  = file_get_contents($f);
+    $up = substr($s, 0, strpos($s, 'function down'));
+    return $ok && (basename($f) === 'Version20261010170100.php'
+        ? substr_count($up, 'DROP') === 3 && !str_contains($up, 'UPDATE') && !str_contains($up, 'INSERT')
+        : substr_count($up, 'DROP') === 0);
 }, true));
 
 
@@ -1159,9 +1167,10 @@ check('J0 an inactive DEBTOR (profile) refuses a new document → debtor-inactiv
     return $refused;
 })());
 $inv1 = $service($emJ)->invoice($standardDraft());
-check('J1 the document exists: number 26030001 — YYMMnnnn by its INVOICE date 2026-03-10 although issued today, the first of the month\'s range document.2603 (the former ranges invoice / credit-note untouched), state invoicing, NOTHING posted',
-    $inv1->getId() !== null && $inv1->getNumber() === 26030001 && $stateOf($inv1->getId()) === InvoiceState::Invoicing->value && !$inv1->isFinal()
-    && (string) $rangeOf('document.2603') === '1' && (string) $rangeOf('invoice') === '0' && (string) $rangeOf('credit-note') === '0' && $journalCount() === 0);
+check('J1 the document exists as a DRAFT: NO number (owner 2026-10-10 — drawn at the booking print), named «Rechnung (Entwurf vom 10.03.2026)», no range touched (no document.2603, the former ranges untouched), state invoicing, NOTHING posted',
+    $inv1->getId() !== null && $inv1->getNumber() === null && !$inv1->isNumbered() && $invoiceRow($inv1->getId())['number'] === null && $inv1->documentName() === 'Rechnung (Entwurf vom 10.03.2026)'
+    && $stateOf($inv1->getId()) === InvoiceState::Invoicing->value && !$inv1->isFinal()
+    && $rangeOf('document.2603') === false && (string) $rangeOf('invoice') === '0' && (string) $rangeOf('credit-note') === '0' && $journalCount() === 0);
 check('J2 totals: net 310.00, tax 23.46 (UN 22.68 + UR 0.78), 333.46 rounded to 333.45 — rounding −0.01 at the DOCUMENT level',
     $inv1->getNetTotal()->toDecimal() === '310.00' && $inv1->getTaxTotal()->toDecimal() === '23.46'
     && $inv1->getRounding()->toDecimal() === '-0.01' && $inv1->getGrossTotal()->toDecimal() === '333.45');
@@ -1199,17 +1208,17 @@ check('J10b the line rows: quantity DECIMAL(12,3), the rounding line\'s account,
     && $lineRows($inv1->getId())[2]['unit_price'] === null && array_map('intval', array_column($lineRows($inv1->getId()), 'position')) === [1, 2, 3, 4, 5]);
 
 $inv2 = $service($emJ)->invoice($oneLine($mid, '2026-03-11', '1.000', '100.00'));
-check('J11 the next document of the month takes 26030002 (gapless per month); 100.00 + 8.10 = 108.10 needs no rounding: NO rounding line, rounding 0.00',
-    $inv2->getNumber() === 26030002 && count($inv2->getLines()) === 1 && $inv2->getRounding()->isZero() && $inv2->getGrossTotal()->toDecimal() === '108.10'
-    && count($lineRows($inv2->getId())) === 1 && (string) $rangeOf('document.2603') === '2' && (string) $rangeOf('invoice') === '0');
-$qr8 = QrReference::forDocument(1000, $inv2->getNumber());
-check('J11b DocumentNumber (pure, owner 2026-10-10): range document.YYMM by the invoice date; YYMM·10000 + n (the 3rd of March 2026 → 26030003); 0001 and 9999 the edges, the 10000th an OverflowException — never carried into the next month; a running number below 1 and a year outside 2000–2099 refused; isOfMonth() tells a former number (1, 2609002) from the format; the 8-digit number fits the QR reference (positions 17–26, zero-padded)',
+check('J11 a second draft of the month: no number either, the unique index admits both NULLs; 100.00 + 8.10 = 108.10 needs no rounding: NO rounding line, rounding 0.00',
+    $inv2->getNumber() === null && count($inv2->getLines()) === 1 && $inv2->getRounding()->isZero() && $inv2->getGrossTotal()->toDecimal() === '108.10'
+    && count($lineRows($inv2->getId())) === 1 && $rangeOf('document.2603') === false && (string) $rangeOf('invoice') === '0');
+$qr8 = QrReference::forDocument(1000, 26030002);
+check('J11b DocumentNumber (pure, owner 2026-10-10): range document.YYMM by the invoice date; YYMM·10000 + n (the 3rd of March 2026 → 26030003); 0001 and 9999 the edges, the 10000th an OverflowException — never carried into the next month; a running number below 1 and a year outside 2000–2099 refused; the 8-digit number fits the QR reference (positions 17–26, zero-padded); isOfMonth() is gone with its one caller (the re-issue month rule, owner 2026-10-10)',
     DocumentNumber::range(day('2026-03-31')) === 'document.2603' && DocumentNumber::compose(day('2026-03-05'), 3) === 26030003
     && DocumentNumber::compose(day('2026-12-01'), 1) === 26120001 && DocumentNumber::compose(day('2026-12-31'), 9999) === 26129999
     && throws(fn() => DocumentNumber::compose(day('2026-12-01'), 10000), \OverflowException::class)
     && throws(fn() => DocumentNumber::compose(day('2026-12-01'), 0), \InvalidArgumentException::class)
     && throws(fn() => DocumentNumber::range(day('2100-01-01')), \InvalidArgumentException::class) && throws(fn() => DocumentNumber::range(day('1999-12-31')), \InvalidArgumentException::class)
-    && DocumentNumber::isOfMonth(26030003, day('2026-03-20')) && !DocumentNumber::isOfMonth(26030003, day('2026-04-01')) && !DocumentNumber::isOfMonth(1, day('2026-03-20')) && !DocumentNumber::isOfMonth(2609002, day('2026-09-07'))
+    && !method_exists(DocumentNumber::class, 'isOfMonth')
     && QrReference::isValid($qr8) && substr($qr8, 10, 6) === '001000' && substr($qr8, 16, 10) === '0026030002');
 
 echo "J. … line types, parent lines, negative quantities, discount, gross mode\n";
@@ -1299,7 +1308,7 @@ check('J21 … while a NEW document takes the changed data: Seestrasse 99, due i
 
 echo "J. … refusals — no number consumed, nothing written\n";
 $emJ6    = $wireDi();
-$before  = (string) $rangeOf('document.2603');   // every refused draft below is dated March 2026
+$before  = (string) $rangeOf('document.2603');   // '' — a draft draws nothing (owner 2026-10-10); every refused draft below is dated March 2026
 $svc     = $service($emJ6);
 $lonely  = new Contact(['kind' => 'person', 'first_name' => 'Ohne', 'last_name' => 'Profil', 'language' => 'de']);
 (new ContactService($emJ6))->save($lonely);
@@ -1354,13 +1363,13 @@ check('J30 after every refusal: the range stands where it stood, no document and
 
 // ── K. reinvoice() ───────────────────────────────────────────────────────
 
-echo "K. reinvoice(): the same number, a new snapshot, the version bumped — still nothing posted\n";
+echo "K. reinvoice(): still no number, a new snapshot, the version bumped — still nothing posted\n";
 $emK = $wireDi();
 $re  = $service($emK)->reinvoice($inv1->getId(), 1, InvoiceDraft::invoice($mid, day('2026-03-15'), day('2026-03-01'), 'CHF', [
     LineDraft::service('Beratung, korrigiert', '3.000', 'Std.', chf('50.00'), 'UN', '3200'),
 ]));
-check('K1 number 26030001 kept; new date in the same month, ONE line, 150.00 + 12.15 = 162.15 (no rounding), version 2, changed by tester; nothing posted, no number drawn',
-    $re->getNumber() === 26030001 && $re->getId() === $inv1->getId() && $re->getInvoiceDate()->format('Y-m-d') === '2026-03-15' && count($re->getLines()) === 1
+check('K1 still no number; new date, ONE line, 150.00 + 12.15 = 162.15 (no rounding), version 2, changed by tester; nothing posted, no number drawn',
+    $re->getNumber() === null && $re->getId() === $inv1->getId() && $re->getInvoiceDate()->format('Y-m-d') === '2026-03-15' && count($re->getLines()) === 1
     && $re->getGrossTotal()->toDecimal() === '162.15' && $re->getRounding()->isZero() && $re->getVersion() === 2 && $re->getChangedBy() === 'tester'
     && $journalCount() === 0 && (string) $rangeOf('document.2603') === $before);
 check('K2 the old lines and tax rows are GONE (orphan removal), the new ones there', count($lineRows($inv1->getId())) === 1 && count($taxRows($inv1->getId())) === 1 && $taxRows($inv1->getId())[0]['tax_amount'] === '12.15');
@@ -1373,11 +1382,11 @@ check('K4 a STALE version (1) is refused — another writer was first (InvoiceCo
 check('K5 the kind is immutable: re-issuing an invoice as a credit note → kind-changed',
     $refusal(fn() => $service($wireDi())->reinvoice($inv1->getId(), 2, InvoiceDraft::creditNote($inv2->getId(), $mid, day('2026-03-15'), 'CHF', [LineDraft::lumpSum('a', chf('1.00'), 'UN', '3200')]))) === InvoiceRefusedException::KIND_CHANGED);
 check('K6 a refused re-issue leaves the document as it was (version 2, one line)', $readInvoice($inv1->getId())->getVersion() === 2 && count($lineRows($inv1->getId())) === 1);
-check('K7 the number carries the month of the invoice date (owner 2026-10-10): a re-issue dated in April for a March number → dates, the document unchanged; an invoice date in 2100 → dates (two-digit year), no range created, no number drawn',
-    $refusal(fn() => $service($wireDi())->reinvoice($inv1->getId(), 2, $oneLine($mid, '2026-04-01', '1.000', '10.00'))) === InvoiceRefusedException::DATES
-    && $readInvoice($inv1->getId())->getVersion() === 2 && $readInvoice($inv1->getId())->getInvoiceDate()->format('Y-m-d') === '2026-03-15'
+$movedTo = $service($wireDi())->reinvoice($inv10->getId(), 1, $oneLine($mid, '2026-04-17', '1.000', '10.00'));
+check('K7 a draft has no number, so a re-issue may move it into another MONTH (the rule of cf8abc3 is gone, owner 2026-10-10): inv10 March → April, still unnumbered, no range; an invoice date in 2100 → dates (two-digit year of the number to come), no range created',
+    $movedTo->getInvoiceDate()->format('Y-m-d') === '2026-04-17' && $movedTo->getNumber() === null && $movedTo->getVersion() === 2
     && $refusal(fn() => $service($wireDi())->invoice($oneLine($mid, '2100-01-05', '1.000', '10.00'))) === InvoiceRefusedException::DATES
-    && (int) $db->fetchOne("SELECT COUNT(*) FROM number_range WHERE name LIKE 'document.00%'") === 0 && (string) $rangeOf('document.2603') === $before);
+    && (int) $db->fetchOne("SELECT COUNT(*) FROM number_range WHERE name LIKE 'document.%'") === 0);
 
 
 // ── L. finalize() and the accounting port ────────────────────────────────
@@ -1393,8 +1402,9 @@ check('L0b finalize() with a STALE version (1 — the document is at 2 since K1)
 check('L0c finalize() refuses a bare id — it takes {id, version} pairs (DEBTOR-FINAL-001)', throws(fn() => $service($wireDi())->finalize([$inv1->getId()]), \InvalidArgumentException::class));
 $done = $svc->finalize([$at($inv1->getId())]);
 $f1   = $done[0];
-check('L1 final: state, ledger reference 2026/1, ONE journal entry, the actor stamped, version bumped',
-    count($done) === 1 && $f1->isFinal() && $stateOf($inv1->getId()) === InvoiceState::Final->value && $f1->getLedgerEntryRef() === '2026/1' && $journalCount() === 1 && $f1->getChangedBy() === 'tester' && $f1->getVersion() === 3);
+check('L1 the BOOKING PRINT (owner 2026-10-10): the number drawn now — 26030001, the first of document.2603 (the month of the invoice date 2026-03-15) —, final, ledger reference 2026/1, ONE journal entry, the actor stamped, version bumped ONCE (number and state in one update)',
+    count($done) === 1 && $f1->isFinal() && $f1->getNumber() === 26030001 && (int) $invoiceRow($inv1->getId())['number'] === 26030001 && (string) $rangeOf('document.2603') === '1'
+    && $stateOf($inv1->getId()) === InvoiceState::Final->value && $f1->getLedgerEntryRef() === '2026/1' && $journalCount() === 1 && $f1->getChangedBy() === 'tester' && $f1->getVersion() === 3);
 $jl = $entryLines('2026/1');
 check('L2 the posting shape: 1100 DEBIT 162.15 | 3200 CREDIT 150.00 with UN 810, base 150.00, tax 12.15 (the net line) | 2200 CREDIT 12.15 (VAT by category); Σ debit = Σ credit',
     count($jl) === 3
@@ -1430,16 +1440,17 @@ $rangeBefore = (string) $rangeOf('journal-entry.2026');
 $e = caught(fn() => $service($emL4)->finalize([$at($inv2->getId()), $at($inv11->getId())]), AccountingRefusedException::class);
 check('L9 the ledger refuses the second document (no-fiscal-year) through the port — AccountingRefusedException with financial\'s reason and exception behind it',
     $e instanceof AccountingRefusedException && $e->reason === 'no-fiscal-year' && $e->getPrevious() !== null && str_contains($e->getMessage(), '2027'));
-check('L10 … and the FIRST document of the batch is still invoicing, the journal range untouched, no entry written, no unit of work open',
-    $stateOf($inv2->getId()) === 'invoicing' && $readInvoice($inv2->getId())->getLedgerEntryRef() === null
+check('L10 … and the FIRST document of the batch is still invoicing WITHOUT a number — the numbers drawn for the batch rolled back with it (document.2603 still 1, document.2703 at 0) —, the journal range untouched, no entry written, no unit of work open',
+    $stateOf($inv2->getId()) === 'invoicing' && $readInvoice($inv2->getId())->getLedgerEntryRef() === null && $invoiceRow($inv2->getId())['number'] === null
+    && (string) $rangeOf('document.2603') === '1' && (string) $rangeOf('document.2703') === '0'
     && (string) $rangeOf('journal-entry.2026') === $rangeBefore && $journalCount() === 1 && !$wireDi()->getTransaction(Invoice::class)->isOpen());
 
 echo "L. … NullAccountingGateway and the gateway selection by config\n";
 $emL5 = $wireDi();
 $null = new InvoicingService($emL5, 'tester', new NullAccountingGateway($emL5, 'tester'));
 $null->finalize([$at($inv2->getId())]);
-check('L11 with the Null gateway finalize() works and posts NOTHING: final, ledger reference null, no entry, open amount = gross',
-    $readInvoice($inv2->getId())->isFinal() && $readInvoice($inv2->getId())->getLedgerEntryRef() === null && $journalCount() === 1
+check('L11 with the Null gateway finalize() works and posts NOTHING: final, numbered 26030002 (gapless after the refused batch), ledger reference null, no entry, open amount = gross',
+    $readInvoice($inv2->getId())->isFinal() && $readInvoice($inv2->getId())->getNumber() === 26030002 && $readInvoice($inv2->getId())->getLedgerEntryRef() === null && $journalCount() === 1
     && $null->openAmount($readInvoice($inv2->getId()))->toDecimal() === '108.10');
 check('L12 the package config names the ledger gateway, and fromConfig() builds it while financial is registered',
     DI::getModuleManager()->getModuleConfig('debtor')?->get('accountingGateway') === LedgerAccountingGateway::class
@@ -1470,13 +1481,15 @@ $marchBefore = (int) $rangeOf('document.2603');
 $cn   = $svcC->invoice(InvoiceDraft::creditNote($inv1->getId(), $mid, day('2026-03-20'), 'CHF', [
     LineDraft::service('Beratung — 1 Std. zu viel verrechnet', '1.000', 'Std.', chf('50.00'), 'UN', '3200'),
 ]));
-check('L17 a credit note against the FINAL invoice: the NEXT number of the ONE series (dated March: document.2603, the invoices\' range — the credit-note range untouched), lines AS PRINTED (50.00 + 4.05 = 54.05), state invoicing, references the invoice',
-    $cn->isCreditNote() && $cn->kind() === InvoiceKind::CreditNote && $cn->getNumber() === 26030000 + $marchBefore + 1 && $cn->getCreditNoteOf()?->getId() === $inv1->getId() && !$cn->isFinal()
-    && $cn->getGrossTotal()->toDecimal() === '54.05' && $cn->getLines()[0]->getAmount()->toDecimal() === '50.00' && (int) $rangeOf('document.2603') === $marchBefore + 1
-    && (string) $rangeOf('credit-note') === '0' && $cn->documentName() === 'Gutschrift ' . $cn->getNumber());
+check('L17 a credit note against the FINAL invoice: a DRAFT without a number (no range touched), lines AS PRINTED (50.00 + 4.05 = 54.05), state invoicing, references the invoice',
+    $cn->isCreditNote() && $cn->kind() === InvoiceKind::CreditNote && $cn->getNumber() === null && $cn->getCreditNoteOf()?->getId() === $inv1->getId() && !$cn->isFinal()
+    && $cn->getGrossTotal()->toDecimal() === '54.05' && $cn->getLines()[0]->getAmount()->toDecimal() === '50.00' && (int) $rangeOf('document.2603') === $marchBefore
+    && (string) $rangeOf('credit-note') === '0' && $cn->documentName() === 'Gutschrift (Entwurf vom 20.03.2026)');
 check('L17b … its service dates are the INVOICE\'s (2026-03-01, none) — not the credit note\'s own date', $cn->getServiceFrom()->format('Y-m-d') === '2026-03-01' && $cn->getServiceTo() === null);
 check('L18 … while it is invoicing the invoice\'s open amount is unchanged', $svcC->openAmount($emL6->getRepository(Invoice::class)->find($inv1->getId()))->toDecimal() === '162.15');
 $svcC->finalize([$at($cn->getId())]);
+check('L18b … its booking print gives it the NEXT number of the ONE series in its month (document.2603, the invoices\' range — the credit-note range untouched)',
+    $cn->getNumber() === 26030000 + $marchBefore + 1 && (int) $rangeOf('document.2603') === $marchBefore + 1 && (string) $rangeOf('credit-note') === '0' && $cn->documentName() === 'Gutschrift ' . $cn->getNumber());
 
 echo "L. … the credit note follows the rate of the ORIGINAL supply (review 2026-09-23, ADR-041 decision 4)\n";
 $emL6b = $wireDi();
@@ -1574,10 +1587,11 @@ check('L28 a document without an amount (text only) finalizes and posts NOTHING:
 $emL13 = $wireDi();
 $countBefore = $journalCount();
 $pair  = $service($emL13)->finalize([$at($inv4->getId()), $at($inv3->getId())]);
-check('L29 a batch of two in ONE unit of work: both final, two consecutive journal numbers, in the order given',
-    count($pair) === 2 && $pair[0]->getId() === $inv4->getId() && $pair[0]->isFinal() && $pair[1]->isFinal() && $journalCount() === $countBefore + 2
+check('L29 a batch of two in ONE unit of work: both final, numbered and posted in the order of their INVOICE DATE (inv3 12.03. before inv4 13.03., whatever the order given) — consecutive document numbers and consecutive journal numbers',
+    count($pair) === 2 && $pair[0]->getId() === $inv3->getId() && $pair[1]->getId() === $inv4->getId() && $pair[0]->isFinal() && $pair[1]->isFinal() && $journalCount() === $countBefore + 2
+    && $pair[0]->getNumber() + 1 === $pair[1]->getNumber()
     && (int) explode('/', (string) $pair[0]->getLedgerEntryRef())[1] + 1 === (int) explode('/', (string) $pair[1]->getLedgerEntryRef())[1]);
-$rl = $entryLines((string) $pair[1]->getLedgerEntryRef());
+$rl = $entryLines((string) $pair[0]->getLedgerEntryRef());
 check('L30 the rounding line posts to 3809 without tax: rounded UP by 0.02 → 3809 CREDIT 0.02 (inv3); the children at 0.00 post nothing',
     count(array_filter($rl, fn($r) => $r['account_number'] === '3809' && $r['credit'] === '0.02' && $r['tax_code'] === null)) === 1
     && count(array_filter($rl, fn($r) => $r['account_number'] === '3200')) === 2);   // Paket 200.00 credit, Treuerabatt 20.00 debit — the 0.00 child is absent
@@ -1599,7 +1613,7 @@ $rappen = fn(int $n, string ...$more) => InvoiceDraft::invoice($mid, day('2026-0
 ), priceMode: PriceMode::Gross);
 $countInvoicesBefore = $count('invoice');
 $e = caught(fn() => $service($emL14)->invoice($rappen(100)), InvoiceRefusedException::class);
-check('L32 100 × 0.01 gross (tax 0.07 on 1.00): no line can carry a share and keep a positive net → REFUSED at issue (line-tax-share), no number drawn',
+check('L32 100 × 0.01 gross (tax 0.07 on 1.00): no line can carry a share and keep a positive net → REFUSED at issue (line-tax-share), nothing written',
     $e?->reason === InvoiceRefusedException::LINE_TAX_SHARE && str_contains($e->getMessage(), '0.07') && $e->getPrevious() instanceof \Z77\Module\Debtor\Invoicing\NoTaxShareException
     && $count('invoice') === $countInvoicesBefore);
 $small = $service($emL14)->invoice($rappen(20, '0.30'));
@@ -1625,7 +1639,7 @@ check('L35 TaxShares::distribute() directly: [0.01 × 7, 0.20] gross at 8.1 % (t
 // ── M. source guards ─────────────────────────────────────────────────────
 
 echo "M. Source guards for part 2\n";
-check('M1 Invoice has NO setter — the header is written whole by issue() / reissue(), the state by finalize()',
+check('M1 Invoice has NO setter — the header is written whole by issue() / reissue(), the number by assignNumber() (the booking print), the state by finalize()',
     array_filter(get_class_methods(Invoice::class), fn($m) => str_starts_with($m, 'set')) === []
     && array_filter(get_class_methods(InvoiceLine::class), fn($m) => str_starts_with($m, 'set')) === []
     && array_filter(get_class_methods(InvoiceTax::class), fn($m) => str_starts_with($m, 'set')) === []);
@@ -1652,8 +1666,17 @@ check('M6 the migration seeds the two former ranges with the statement create() 
     $s = file_get_contents($package . '/res/migrations/Version20260923043935.php');
     return str_contains($s, "VALUES ('invoice', 0), ('credit-note', 0) ON DUPLICATE KEY UPDATE last_number = last_number") && str_contains($s, 'AND last_number = 0');
 })());
-check('M7 InvoicingService::finalize() locks every row BEFORE any number is drawn (id order) — the source keeps that order',
-    strpos(file_get_contents($package . '/src/Services/InvoicingService.php'), 'lockForUpdate($id)') < strpos(file_get_contents($package . '/src/Services/InvoicingService.php'), '$gateway->post($request)'));
+check('M7 InvoicingService::finalize() keeps the module\'s lock order (2026-10-10): the month ranges FIRST (create() inside the unit of work, name order), then the rows (id order), then the numbers drawn, then the journal through the port; invoice() touches no range any more',
+    (function () use ($package): bool {
+        $s = file_get_contents($package . '/src/Services/InvoicingService.php');
+        $f = substr($s, strpos($s, 'public function finalize('));
+        $i = substr($s, strpos($s, 'public function invoice('), strpos($s, 'public function reinvoice(') - strpos($s, 'public function invoice('));
+        $inUow = substr($f, strpos($f, '->run(function'));
+        return strpos($inUow, '$ranges->create($range)') < strpos($inUow, 'lockForUpdate($id)')
+            && strpos($inUow, 'lockForUpdate($id)') < strpos($inUow, 'drawNumber(')
+            && strpos($inUow, 'drawNumber(') < strpos($inUow, '$gateway->post($request)')
+            && !str_contains($i, 'NumberRange') && !str_contains($i, '->next(') && !str_contains($i, '->create(');
+    })());
 check('M8 the migration says what a development rollback does to a drawn range (leaves the row; up() is idempotent)',
     str_contains(file_get_contents($package . '/res/migrations/Version20260923043935.php'), 'idempotent'));
 check('M9 the customer-number migration numbers EXISTING profiles in id order before the unique index, seeds the range `customer` with the create() statement, raises it with GREATEST and drops it only at 0', (function () use ($package): bool {
@@ -1679,7 +1702,7 @@ check('N1 debtorConfig registers InvoicingInProgressCheck under `period-close`; 
     && $inInvoicing > 0 && $inInvoicing <= \Z77\Module\Debtor\Close\InvoicingInProgressCheck::LIST_LIMIT
     && $open2026->isBlocked() && count($open2026->blocking()) === $inInvoicing && $open2026->warnings() === []
     && str_contains($open2026->blocking()[0]->message, 'in Fakturierung') && str_starts_with($open2026->blocking()[0]->reference, 'invoice:')
-    && preg_match('/^(Rechnung|Gutschrift) \d+ vom \d\d\.\d\d\.2026 /', $open2026->blocking()[0]->message) === 1);
+    && preg_match('/^(Rechnung|Gutschrift|Gebühr) \(Entwurf\) vom \d\d\.\d\d\.2026 an .+Buchungsdruck/u', $open2026->blocking()[0]->message) === 1);
 $inv1Day = (string) $db->fetchOne('SELECT invoice_date FROM invoice WHERE id = ?', [$inv1->getId()]);
 check('N2 a FINAL document does not count (inv1, final since L1: its day yields only the documents still in invoicing); a range without open documents is «nothing open»',
     $stateOf($inv1->getId()) === 'final'
@@ -1793,12 +1816,23 @@ $withTarget = fn(string $target, string $date = '2026-06-10') => InvoiceDraft::i
 ], paymentTargetCode: $target);
 $qrInv = $service($emP)->invoice($withTarget('qr'));
 $qrRow = $invoiceRow($qrInv->getId());
-check('P3C8 target with a QR-IBAN → the columns: pay_target_code qr, the QR-IBAN, QRR, the reference from the NUMBER, the message «Rechnung n», the creditor as resolved',
+$draftBill = QrBill::of($readInvoice($qrInv->getId()));
+check('P3C8 a DRAFT with a QR-IBAN target → the columns: pay_target_code qr, the QR-IBAN, QRR, the creditor as resolved — but NO reference and NO message yet (both come from the number, drawn at the booking print — owner 2026-10-10); its bill is PENDING: checked, no problem, not printable, no payload',
     $qrRow['pay_target_code'] === 'qr' && $qrRow['pay_account'] === $lower && $qrRow['pay_reference_type'] === 'QRR'
-    && $qrRow['pay_reference'] === QrReference::forDocument($emP->getRepository(DebtorProfile::class)->findByContact($mid)->getCustomerNumber(), $qrInv->getNumber())
-    && substr($qrRow['pay_reference'], 10, 6) === str_pad((string) $emP->getRepository(DebtorProfile::class)->findByContact($mid)->getCustomerNumber(), 6, '0', STR_PAD_LEFT)
-    && $qrRow['pay_message'] === 'Rechnung ' . $qrInv->getNumber()
-    && $qrRow['pay_creditor_name'] === 'Harness AG' && $qrRow['pay_creditor_zip'] === '8000' && $qrRow['pay_creditor_country'] === 'CH');
+    && $qrRow['pay_reference'] === '' && $qrRow['pay_message'] === '' && $qrRow['number'] === null
+    && $qrRow['pay_creditor_name'] === 'Harness AG' && $qrRow['pay_creditor_zip'] === '8000' && $qrRow['pay_creditor_country'] === 'CH'
+    && $draftBill->isPending() && $draftBill->problems() === [] && !$draftBill->isPrintable() && throws(fn() => $draftBill->payload(), \LogicException::class));
+// The snapshot test below (P3C15/16) needs a QR draft issued BEFORE the master data changes, and P3C17 one carrying `bank`.
+$qrDraft   = $service($wireDi())->invoice($withTarget('qr'));
+$bankDraft = $service($wireDi())->invoice($withTarget('bank'));
+$finalQr = $service($wireDi())->finalize([$at($qrInv->getId())])[0];
+$qrRow   = $invoiceRow($qrInv->getId());
+$custNoP = $emP->getRepository(DebtorProfile::class)->findByContact($mid)->getCustomerNumber();
+check('P3C8b … the booking print writes them with the number: the reference from customer and document NUMBER (wdv-630 layout), the message «Rechnung n»',
+    $finalQr->isFinal() && (int) $qrRow['number'] === $finalQr->getNumber() && intdiv($finalQr->getNumber(), 10000) === 2606
+    && $qrRow['pay_reference'] === QrReference::forDocument($custNoP, $finalQr->getNumber())
+    && substr($qrRow['pay_reference'], 10, 6) === str_pad((string) $custNoP, 6, '0', STR_PAD_LEFT)
+    && $qrRow['pay_message'] === 'Rechnung ' . $finalQr->getNumber() && $qrRow['pay_creditor_name'] === 'Harness AG');
 $qrBill  = QrBill::of($readInvoice($qrInv->getId()));
 $payload = $qrBill->isPrintable() ? $qrBill->payload() : '';
 $el      = explode("\n", $payload);
@@ -1807,12 +1841,15 @@ check('P3C9 the QR payload follows the guidelines (independent check: 31 element
     && $el[21] === $qrInv->getAddress()->getName() && $el[22] === $qrInv->getAddress()->getStreet() && $el[24] === $qrInv->getAddress()->getZip() && $el[27] === 'QRR' && $el[28] === $qrRow['pay_reference']);
 check('P3C10 … and it encodes as a QR code (the kernel facade, level M)', str_contains(\Z77\Shared\Qr\QrCode::svg($payload), '<svg'));
 $nonInv = $service($wireDi())->invoice($withTarget('bank'));
+$service($wireDi())->finalize([$at($nonInv->getId())]);
+$nonInv = $readInvoice($nonInv->getId());
 $nonRow = $invoiceRow($nonInv->getId());
 $nonEl  = explode("\n", QrBill::of($readInvoice($nonInv->getId()))->payload());
 check('P3C11 target with only a plain IBAN → NON: the IBAN, NO reference, the document named in the message (the payment can still be assigned)',
     $nonRow['pay_reference_type'] === 'NON' && $nonRow['pay_reference'] === '' && $nonRow['pay_account'] === 'CH9300762011623852957'
     && $nonEl[27] === 'NON' && $nonEl[28] === '' && $nonEl[29] === 'Rechnung ' . $nonInv->getNumber() && $specErrors(implode("\n", $nonEl)) === []);
 $bothInv = $service($wireDi())->invoice($withTarget('both'));
+$service($wireDi())->finalize([$at($bothInv->getId())]);
 check('P3C12 a target with BOTH numbers: an invoice has a reference → the QR-IBAN + QRR (never the QR-IBAN with NON); the holder\'s own name and country on the bill',
     $invoiceRow($bothInv->getId())['pay_reference_type'] === 'QRR' && $invoiceRow($bothInv->getId())['pay_account'] === $withIid('30001')
     && explode("\n", QrBill::of($readInvoice($bothInv->getId()))->payload())[5] === 'Peter u/o Regina Ruepp' && explode("\n", QrBill::of($readInvoice($bothInv->getId()))->payload())[10] === 'LI');
@@ -1833,17 +1870,19 @@ $qrTarget->setHolderName('Neuer Inhaber GmbH');
 $db->executeStatement("UPDATE mandator SET name = 'Umbenannt AG', city = 'Bern'");
 $db->executeStatement("UPDATE address a JOIN contact_address ca ON ca.address_id = a.id SET a.name = 'Müller Neu AG', a.street = 'Neugasse' WHERE ca.contact_id = ?", [$mid]);
 $payloadAfter = QrBill::of($readInvoice($qrInv->getId()))->payload();
-check('P3C15 SNAPSHOT ONLY: after the target\'s holder, the mandator and the contact\'s address changed, the issued document renders the SAME payload (creditor, debtor, reference)',
+check('P3C15 SNAPSHOT ONLY: after the target\'s holder, the mandator and the contact\'s address changed, the booked document renders the SAME payload (creditor, debtor, reference)',
     $payloadAfter === $payloadBefore && str_contains($payloadAfter, 'Harness AG') && str_contains($payloadAfter, $qrInv->getAddress()->getName()) && !str_contains($payloadAfter, 'Neuer Inhaber'));
-$reissued = $service($wireDi())->reinvoice($qrInv->getId(), (int) $invoiceRow($qrInv->getId())['version'], $withTarget('qr'));
-$reEl = explode("\n", QrBill::of($readInvoice($qrInv->getId()))->payload());
-check('P3C16 a RE-ISSUE takes the payment part as it reads NOW (the snapshot moves with it): the new holder, the renamed contact — the SAME number, so the SAME reference',
-    $reEl[5] === 'Neuer Inhaber GmbH' && $reEl[21] === 'Müller Neu AG' && $reEl[28] === $qrRow['pay_reference'] && $reissued->getNumber() === $qrInv->getNumber());
+$reissued = $service($wireDi())->reinvoice($qrDraft->getId(), (int) $invoiceRow($qrDraft->getId())['version'], $withTarget('qr'));
+$service($wireDi())->finalize([$at($qrDraft->getId())]);
+$reEl = explode("\n", QrBill::of($readInvoice($qrDraft->getId()))->payload());
+check('P3C16 a RE-ISSUE of a draft takes the payment part as it reads NOW (the snapshot moves with it): booked afterwards, its bill shows the new holder and the renamed contact, the reference from ITS number',
+    $reEl[5] === 'Neuer Inhaber GmbH' && $reEl[21] === 'Müller Neu AG' && $reissued->getNumber() === null
+    && $reEl[28] === QrReference::forDocument($custNoP, (int) $readInvoice($qrDraft->getId())->getNumber()));
 $emS = $wireDi();
 (new DebtorMasterData($emS))->setTargetActive($emS->getRepository(PaymentTarget::class)->findByCode('bank'), false);
 check('P3C17 the reference rule: a DEACTIVATED target is refused on a new document (target-inactive) — a re-issue of a document that carries it keeps it',
     $refusal(fn() => $service($wireDi())->invoice($withTarget('bank'))) === InvoiceRefusedException::TARGET_INACTIVE
-    && $service($wireDi())->reinvoice($nonInv->getId(), (int) $invoiceRow($nonInv->getId())['version'], $withTarget('bank'))->getPayment()->getTargetCode() === 'bank');
+    && $service($wireDi())->reinvoice($bankDraft->getId(), (int) $invoiceRow($bankDraft->getId())['version'], $withTarget('bank'))->getPayment()->getTargetCode() === 'bank');
 $emS = $wireDi();
 (new DebtorMasterData($emS))->setTargetActive($emS->getRepository(PaymentTarget::class)->findByCode('bank'), true);
 // A creditor field that does not fit the specification: the mandator's city (70 in the letterhead) longer than 35.
@@ -1851,7 +1890,7 @@ $db->executeStatement("UPDATE mandator SET city = ?", [str_repeat('Ort', 12)]);
 $longInv  = $service($wireDi())->invoice($withTarget('qr'));
 $longBill = QrBill::of($readInvoice($longInv->getId()));
 $db->executeStatement("UPDATE mandator SET name = 'Harness AG', city = 'Zürich'");
-check('P3C18 «degrade quietly»: a creditor city of 36 (from the mandator) is NOT cut — the document is issued, its bill reports the problem and prints no payment part',
+check('P3C18 «degrade quietly»: a creditor city of 36 (from the mandator) is NOT cut — the draft is issued, its bill reports the problem BEFORE the booking print (the pending bill is checked) and prints no payment part',
     $longInv->getId() !== null && $invoiceRow($longInv->getId())['pay_creditor_city'] === str_repeat('Ort', 12) && !$longBill->isPrintable()
     && str_contains(implode(' ', $longBill->problems()), 'Ort hat mehr als 35'));
 check('P3C19 the printed address block: salutation, title + names, the address row, street + number, zip + city; the country only when foreign',
@@ -1859,7 +1898,6 @@ check('P3C19 the printed address block: salutation, title + names, the address r
     && (new AddressSnapshot('', '', '', 'Muster AG', '', '', '', '9490', 'Vaduz', 'LI'))->lines() === ['Muster AG', '9490 Vaduz', 'LI']);
 
 echo "P3C. The credit note: no payment part, its bill says so\n";
-$finalQr = $service($wireDi())->finalize([$at($qrInv->getId())])[0];
 $cn      = $service($wireDi())->invoice(InvoiceDraft::creditNote($qrInv->getId(), $mid, day('2026-06-20'), 'CHF', [LineDraft::lumpSum('Gutschrift', chf('50.00'), 'UN', '3400')]));
 $cnBill  = QrBill::of($readInvoice($cn->getId()));
 check('P3C20 a credit note carries NO payment part (every pay_* empty) and its bill is «not printable: Gutschrift»',
@@ -1904,7 +1942,7 @@ $useRequest = function (array $get, ?array $post = null) use ($wireDi): UnifiedE
 };
 $invoiceHost = function () {
     return new class {
-        use \Z77\Module\Debtor\Ui\InvoiceControllerTrait { listAction as public; detailAction as public; pdfAction as public; paymentAction as public; confirmPaymentDeleteAction as public; paymentDeleteAction as public; addAction as public; editAction as public; creditNoteAction as public; confirmFinalizeAction as public; finalizeAction as public; bookedAction as public; pdfBatchAction as public; markDeliveredAction as public; unmarkDeliveredAction as public; }
+        use \Z77\Module\Debtor\Ui\InvoiceControllerTrait { listAction as public; detailAction as public; pdfAction as public; paymentAction as public; confirmPaymentDeleteAction as public; paymentDeleteAction as public; addAction as public; editAction as public; creditNoteAction as public; confirmFinalizeAction as public; finalizeAction as public; }
         public array $context = [];
         public object $layoutManager;
         public object $messageService;
@@ -1934,7 +1972,6 @@ $invoiceHost = function () {
         private function invoicingService(): InvoicingService { return new InvoicingService($this->em(), 'sachbearbeiter'); }
         private function paymentService(): \Z77\Module\Debtor\Services\PaymentService { return new \Z77\Module\Debtor\Services\PaymentService($this->em(), 'sachbearbeiter'); }
         private function invoiceDunningService(): \Z77\Module\Debtor\Services\DunningService { return new \Z77\Module\Debtor\Services\DunningService($this->em(), 'sachbearbeiter'); }
-        private function invoiceDeliveryService(): \Z77\Module\Debtor\Services\DeliveryService { return new \Z77\Module\Debtor\Services\DeliveryService($this->em(), 'sachbearbeiter'); }
     };
 };
 $renderMain = fn($host) => implode('', array_map(fn($p) => $renderer->partial($p, $host->context), $host->layoutManager->sections['main'] ?? []));
@@ -1961,22 +1998,27 @@ $listHtml = $renderList($host) . $renderSlot($host, 'hc2');
 $actHtml  = $renderSlot($host, 'hc1');
 $toolHtml = $renderSlot($host, 'hc2');
 $invoicingIds = array_map(fn($d) => $d->getId(), $host->context['documents']);
-check('P3C22 list, default view «In Fakturierung»: only invoices in invoicing, newest first, each row with its {id}:{version} checkbox; «+ Rechnung» in the action cell, the toolbar with the view tabs (counts) only, «Verbuchen …» (owner 2026-10-10, formerly «Definitiv stellen …») a green confirm in the selection bar ABOVE the rows (ADR-033 rev. 2026-10-08)',
+check('P3C22 list, default view «In Fakturierung»: only invoices in invoicing, newest first, each row with its {id}:{version} checkbox; «+ Rechnung» in the action cell, the toolbar with the view tabs (counts) only, «Buchungsdruck …» (owner 2026-10-10, formerly «Verbuchen …» / «Definitiv stellen …») a green confirm in the selection bar ABOVE the rows (ADR-033 rev. 2026-10-08)',
     $host->context['state']->extra('view') === 'invoicing' && $invoicingIds !== [] && array_filter($host->context['documents'], fn($d) => $d->isFinal() || $d->isCreditNote()) === []
-    && str_contains($listHtml, 'data-fetch-region="invoice-find-list"') && str_contains($listHtml, 'value="' . $nonInv->getId() . ':' . $invoiceRow($nonInv->getId())['version'] . '"')
+    && str_contains($listHtml, 'data-fetch-region="invoice-find-list"') && str_contains($listHtml, 'value="' . $plainInv->getId() . ':' . $invoiceRow($plainInv->getId())['version'] . '"')
     && str_contains($listHtml, 'form="invoice-finalize"') && str_contains($listHtml, 'be-viewtabs')
     && str_contains($actHtml, 'href="/backend/finance/invoice/add"') && str_contains($actHtml, 'be-btn--primary')
     && !str_contains($toolHtml, 'be-btn') && !str_contains($toolHtml, 'invoice-finalize')
-    && preg_match('/data-selection-bar="invoice-finalize".*?be-btn--confirm.*?Verbuchen …/s', $renderList($host)) === 1
+    && preg_match('/data-selection-bar="invoice-finalize".*?be-btn--confirm.*?Buchungsdruck …/s', $renderList($host)) === 1
     && strpos($renderList($host), 'data-selection-bar=') < strpos($renderList($host), 'data-invoice-id=')
     && $host->context['counts']['invoicing'] === $host->context['paging']->total);
-$numbers = array_map(fn($d) => $d->getNumber(), $host->context['documents']);
-$sorted  = $numbers; rsort($sorted);
-check('P3C22b … sorted by number, newest first', $numbers === $sorted);
+$draftIds = array_map(fn($d) => $d->getId(), $host->context['documents']);
+$sortedIds = $draftIds; rsort($sortedIds);
+check('P3C22b … drafts carry no number (owner 2026-10-10): «Entwurf» in «Nr.», sorted «by number» = newest draft first (the id breaks the tie)',
+    array_filter($host->context['documents'], fn($d) => $d->getNumber() !== null) === [] && $draftIds === $sortedIds
+    && str_contains($renderList($host), '<span class="be-list__cell--muted">Entwurf</span>'));
 $useRequest(['view' => 'final']);
 $host = $invoiceHost();
 $host->listAction();
-check('P3C23 view «Verbucht»: only final invoices, no selection checkbox', $host->context['documents'] !== [] && array_filter($host->context['documents'], fn($d) => !$d->isFinal() || $d->isCreditNote()) === []
+$finalNumbers = array_map(fn($d) => $d->getNumber(), $host->context['documents']);
+$finalSorted  = $finalNumbers; rsort($finalSorted);
+check('P3C23 view «Verbucht»: only final invoices, each with its number, newest first, no selection checkbox', $host->context['documents'] !== [] && array_filter($host->context['documents'], fn($d) => !$d->isFinal() || $d->isCreditNote()) === []
+    && !in_array(null, $finalNumbers, true) && $finalNumbers === $finalSorted
     && !str_contains($renderList($host), 'name="doc[]"') && !str_contains($renderList($host), 'data-selection-bar=')
     && $host->layoutManager->sections === ['hc1' => ['Backend/InvoiceController/act'], 'hc2' => ['Backend/InvoiceController/toolbar']]);
 $useRequest(['view' => 'credit']);
@@ -1984,7 +2026,7 @@ $host = $invoiceHost();
 $host->listAction();
 check('P3C24 view «Gutschriften»: credit notes only (any state), each naming its invoice', $host->context['documents'] !== [] && array_filter($host->context['documents'], fn($d) => !$d->isCreditNote()) === []
     && str_contains($renderList($host), 'zu Rechnung'));
-$useRequest(['f_nr' => (string) $nonInv->getNumber()]);
+$useRequest(['view' => 'final', 'f_nr' => (string) $nonInv->getNumber()]);
 $host = $invoiceHost();
 $host->listAction();
 $useRequest(['f_name' => 'Müller Neu', 'f_date' => '06.2026']);
@@ -2009,7 +2051,7 @@ $ledgerRef = $invoiceRow($qrInv->getId())['ledger_entry_ref'];
 check('P3C27 detail of a final invoice: the address block from the snapshot, the lines, the QR data (QR-IBAN, the reference in blocks of five), the ledger reference as a journal WINDOW (?ref=), the credit note, «Gutschrift erstellen …»',
     $ledgerRef !== null && str_contains($detail, 'data-window-open="/backend/finance/journal/detail?ref=' . rawurlencode($ledgerRef) . '"')
     && str_contains($detail, 'Müller Neu AG') && str_contains($detail, QrReference::format($qrRow['pay_reference'])) && str_contains($detail, 'data-qr-bill="printable"')
-    && str_contains($detail, 'Gutschrift ' . $cn->getNumber()) && str_contains($detail, '/credit-note?of=' . $qrInv->getId()) && !str_contains($detail, '/edit?id='));
+    && str_contains($detail, e($cn->documentName())) && str_contains($detail, '/credit-note?of=' . $qrInv->getId()) && !str_contains($detail, '/edit?id=') && !str_contains($detail, 'Buchungsdruck'));
 check('P3C27b the detail\'s actions are its action row (`.z77-form-actions`, above the title): «Gutschrift erstellen …» and the credit-note link stay in the window (`data-window-link`), the PDF is a plain link to a new tab',
     strpos($detail, 'z77-form-actions') < strpos($detail, 'be-list__section-title')
     && str_contains($detail, 'href="/backend/finance/invoice/credit-note?of=' . $qrInv->getId() . '" data-window-link')
@@ -2019,7 +2061,10 @@ $useRequest(['id' => (string) $plainInv->getId()]);
 $host = $invoiceHost();
 $host->detailAction();
 $plainDetail = $renderMain($host);
-check('P3C28 detail of a document without payment part: «Kein Zahlteil» with the reason; «Neu fakturieren …» while invoicing', str_contains($plainDetail, 'data-qr-bill="missing"') && str_contains($plainDetail, 'Kein Zahlteil') && str_contains($plainDetail, '/edit?id=' . $plainInv->getId()));
+check('P3C28 detail of a draft without payment part: «Kein Zahlteil» with the reason; «Vorschau», «Neu fakturieren …» and «Buchungsdruck …» (a plain link to the confirmation of THIS draft, outside the window) while invoicing',
+    str_contains($plainDetail, 'data-qr-bill="missing"') && str_contains($plainDetail, 'Kein Zahlteil') && str_contains($plainDetail, '/edit?id=' . $plainInv->getId())
+    && str_contains($plainDetail, '>Vorschau</a>') && str_contains($plainDetail, 'href="/backend/finance/invoice/confirm-finalize?' . e(http_build_query(['doc' => [$plainInv->getId() . ':' . $invoiceRow($plainInv->getId())['version']]])) . '"')
+    && preg_match('/confirm-finalize\?[^"]*"[^>]*data-window-link/', $plainDetail) === 0);
 
 // The journal detail answers ?ref= (financial).
 $journalTraitSource = file_get_contents($pkgRoot . '/module-financial/src/Ui/JournalControllerTrait.php');
@@ -2051,8 +2096,8 @@ $host = $invoiceHost();
 $host->addAction();
 $newId  = (int) $db->fetchOne('SELECT MAX(id) FROM invoice');
 $newDoc = $readInvoice($newId);
-check('P3C31 POST add → invoice(): a new document in invoicing (number drawn once), the lines with the discount (10 % → 1000), the child beneath its parent, the empty row ignored, the target qr → QRR; redirect to its detail',
-    (int) $db->fetchOne("SELECT last_number FROM number_range WHERE name = 'document.2607'") === $before + 1 && $newDoc->getNumber() === 26070000 + $before + 1 && $host->redirectedTo === '/backend/finance/invoice/detail?id=' . $newId
+check('P3C31 POST add → invoice(): a new DRAFT in invoicing (no number, no range touched), the lines with the discount (10 % → 1000), the child beneath its parent, the empty row ignored, the target qr → QRR; redirect to its detail',
+    (int) $db->fetchOne("SELECT last_number FROM number_range WHERE name = 'document.2607'") === $before && $newDoc->getNumber() === null && $host->redirectedTo === '/backend/finance/invoice/detail?id=' . $newId
     && $newDoc->getLines()[0]->getDiscountPercent() === 1000 && $newDoc->getLines()[0]->getAmount()->toDecimal() === '900.00' && $newDoc->getLines()[1]->getParentLine() === $newDoc->getLines()[0]
     && count(array_filter($newDoc->getLines(), fn($l) => $l->type() !== LineType::Rounding)) === 3 && $newDoc->getPayment()->getReferenceType() === 'QRR' && !$newDoc->isFinal()
     && $host->messageService->flashes[0][0] === 'success');
@@ -2094,8 +2139,8 @@ $editPost['rows'][0]['price'] = '1200.00';
 $useRequest(['id' => (string) $newId], $editPost);
 $host = $invoiceHost();
 $host->editAction();
-check('P3C36 POST edit → reinvoice(): the same number, the new price, the version bumped, redirect to the detail',
-    $readInvoice($newId)->getLines()[0]->getAmount()->toDecimal() === '1080.00' && (int) $invoiceRow($newId)['version'] === $v0 + 1 && $readInvoice($newId)->getNumber() === $newDoc->getNumber()
+check('P3C36 POST edit → reinvoice(): still no number, the new price, the version bumped, redirect to the detail',
+    $readInvoice($newId)->getLines()[0]->getAmount()->toDecimal() === '1080.00' && (int) $invoiceRow($newId)['version'] === $v0 + 1 && $readInvoice($newId)->getNumber() === null
     && $host->redirectedTo === '/backend/finance/invoice/detail?id=' . $newId);
 $useRequest(['id' => (string) $newId], $editPost);   // the SAME (now stale) version again
 $host = $invoiceHost();
@@ -2133,17 +2178,22 @@ $useRequest(['doc' => [$pairA, $pairB]]);
 $host = $invoiceHost();
 $host->confirmFinalizeAction();
 $confirm = $renderMain($host);
-check('P3C38 confirm-finalize lists the selection with its versions and one button that posts the same pairs', count($host->context['documents']) === 2 && $host->context['stale'] === []
-    && str_contains($confirm, 'value="' . $pairA . '"') && str_contains($confirm, 'value="' . $pairB . '"') && str_contains($confirm, 'action="/backend/finance/invoice/finalize"'));
+check('P3C38 confirm-finalize («Buchungsdruck», owner 2026-10-10) lists the selection with its versions and one button that posts the same pairs INTO A NEW TAB; the page then moves itself to the «Verbucht» view (data-submit-navigate, core.js)',
+    count($host->context['documents']) === 2 && $host->context['stale'] === []
+    && str_contains($confirm, 'value="' . $pairA . '"') && str_contains($confirm, 'value="' . $pairB . '"')
+    && str_contains($confirm, 'action="/backend/finance/invoice/finalize" target="_blank" data-submit-navigate="/backend/finance/invoice/list?view=final"')
+    && str_contains($confirm, '>Buchungsdruck</button>') && !str_contains($confirm, 'fakturiert'));
 // B is re-issued between the look and the click: the whole batch is refused, nothing posted.
 $service($wireDi())->reinvoice($second->getId(), (int) $invoiceRow($second->getId())['version'], $withTarget('qr', '2026-07-03'));
 $journalBefore = $journalCount();
 $useRequest([], ['doc' => [$pairA, $pairB]]);
 $host = $invoiceHost();
-$host->finalizeAction();
-check('P3C39 finalize with a STALE version (B re-issued since): refused whole — A and B stay in invoicing, no journal entry, the flash says why',
-    $stateOf($newId) === 'invoicing' && $stateOf($second->getId()) === 'invoicing' && $journalCount() === $journalBefore
-    && $host->messageService->flashes[0][0] === 'error' && str_contains($host->messageService->flashes[0][1], 'nichts wurde verbucht'));
+$refusedAnswer = $host->finalizeAction();
+check('P3C39 the booking print with a STALE version (B re-issued since): refused whole — A and B stay unnumbered in invoicing, no journal entry, no PDF; the NEW TAB shows the German message page (bookingRefused) saying why',
+    $stateOf($newId) === 'invoicing' && $stateOf($second->getId()) === 'invoicing' && $invoiceRow($newId)['number'] === null && $journalCount() === $journalBefore
+    && $refusedAnswer instanceof \Z77\Core\Http\Response\HtmlResponse && $host->bytes === [] && $host->messageService->flashes === []
+    && $host->layoutManager->sections['main'] === ['Backend/InvoiceController/bookingRefused']
+    && str_contains($host->context['message'], 'nichts wurde verbucht') && str_contains($renderMain($host), 'Zur Liste «In Fakturierung»'));
 $useRequest(['doc' => [$pairA, $pairB]]);
 $host = $invoiceHost();
 $host->confirmFinalizeAction();
@@ -2152,10 +2202,29 @@ $pairB2 = $second->getId() . ':' . $invoiceRow($second->getId())['version'];
 $useRequest([], ['doc' => [$pairA, $pairB2, 'garbage', '1:x']]);
 $host = $invoiceHost();
 $host->finalizeAction();
-check('P3C41 finalize with the CURRENT versions: both final and posted (two journal entries) in one unit of work, to the «Verbucht» summary of exactly these two (owner 2026-10-10); junk values dropped',
+$numA = (int) $invoiceRow($newId)['number'];
+$numB = (int) $invoiceRow($second->getId())['number'];
+check('P3C41 the booking print with the CURRENT versions: both numbered (July, by invoice date: A 01.07. before B 03.07.), final and posted (two journal entries) in one unit of work; the answer IS the PDF of exactly these two (one file «dokumente-A-bis-B.pdf»), the success flash waits for the next page of the original tab; junk values dropped',
     $stateOf($newId) === 'final' && $stateOf($second->getId()) === 'final' && $journalCount() === $journalBefore + 2
-    && $host->redirectedTo === '/backend/finance/invoice/booked?' . http_build_query(['doc' => [$newId, $second->getId()]]) && $host->messageService->flashes[0][0] === 'success'
-    && str_contains($host->messageService->flashes[0][1], 'verbucht') && !str_contains($host->messageService->flashes[0][1], 'definitiv'));
+    && intdiv($numA, 10000) === 2607 && $numB === $numA + 1
+    && $host->redirectedTo === null && ($host->bytes['mime'] ?? '') === 'application/pdf' && str_starts_with($host->bytes['content'] ?? '', '%PDF-')
+    && $host->bytes['filename'] === 'dokumente-' . $numA . '-bis-' . $numB . '.pdf'
+    && $host->messageService->flashes[0][0] === 'success' && str_contains($host->messageService->flashes[0][1], 'verbucht und gedruckt') && !str_contains($host->messageService->flashes[0][1], 'definitiv'));
+$journalAfter = $journalCount();
+$firstPdf     = $host->bytes['content'];
+$useRequest([], ['doc' => [$pairA, $pairB2]]);
+$host = $invoiceHost();
+$host->finalizeAction();
+check('P3C41b IDEMPOTENT: the SAME selection again (a double click, a reload of the PDF tab) — every document final at the version it showed + 1 — answers the same PDF again, nothing posted, no flash, the numbers unchanged',
+    $journalCount() === $journalAfter && ($host->bytes['filename'] ?? '') === 'dokumente-' . $numA . '-bis-' . $numB . '.pdf' && strlen($host->bytes['content']) > 1000
+    && $host->messageService->flashes === [] && (int) $invoiceRow($newId)['number'] === $numA && (int) $invoiceRow($second->getId())['number'] === $numB);
+$useRequest([], ['doc' => [$newId . ':' . $v0, $pairB2]]);   // A at a version OLDER than the one booked
+$host = $invoiceHost();
+$staleAnswer = $host->finalizeAction();
+check('P3C41c anything else stale is REFUSED with the message page: a selection naming A at an older version (not the booked one) — nothing posted, «Bereits verbucht» names what is booked',
+    $staleAnswer instanceof \Z77\Core\Http\Response\HtmlResponse && $host->bytes === [] && $journalCount() === $journalAfter
+    && $host->layoutManager->sections['main'] === ['Backend/InvoiceController/bookingRefused']
+    && in_array('Rechnung ' . $numA, $host->context['already'], true) && str_contains($renderMain($host), 'Bereits verbucht'));
 $useRequest(['id' => (string) $newId]);
 $host = $invoiceHost();
 $host->editAction();
@@ -2170,7 +2239,7 @@ $cnForm = $host->context['form'];
 $cnHtml = $renderMain($host);
 check('P3C43 GET credit-note: service dates PREFILLED from the invoice, the lines prefilled (rounding left out), no payment target field, the party fixed',
     $cnForm->header('service_from') === '2026-06-30' && $cnForm->header('service_to') === '' && $cnForm->rows()[0]['text'] === 'Paket Web' && $cnForm->rows()[0]['price'] === '1200.00'
-    && !str_contains($cnHtml, 'name="target"') && str_contains($cnHtml, 'Gutschrift zu Rechnung ' . $newDoc->getNumber()) && str_contains($cnHtml, 'type="hidden" name="contact"'));
+    && !str_contains($cnHtml, 'name="target"') && str_contains($cnHtml, 'Gutschrift zu Rechnung ' . $numA) && str_contains($cnHtml, 'type="hidden" name="contact"'));
 $cnPost = ['contact' => '999999', 'invoice_date' => '2026-07-10', 'service_from' => '2026-06-30', 'service_to' => '', 'price_mode' => 'net', 'terms' => '', 'target' => 'qr',
     'rows' => [['type' => 'lump-sum', 'text' => 'Gutschrift Paket', 'price' => '100.00', 'tax_code' => 'UN', 'account' => '3400']]];
 $useRequest(['of' => (string) $newId], $cnPost);
@@ -2230,6 +2299,7 @@ check('P3D4 the same document yields the same bytes up to the creation timestamp
     $withoutStamp(\Z77\Module\Debtor\Pdf\InvoicePdf::of($readInvoice($qrInv->getId()), $wireDi())->withoutCompression()->output()) === $withoutStamp($pdfBin));
 check('P3D5 the file name is the document name in kebab-case lower', \Z77\Module\Debtor\Pdf\InvoicePdf::fileName($qrDoc) === 'rechnung-' . $qrDoc->getNumber() . '.pdf');
 
+$service($wireDi())->finalize([$at($cn->getId())]);   // booked: its PDF is the real one (a draft's is the preview, P3E)
 $cnDoc = $readInvoice($cn->getId());
 $cnBin = \Z77\Module\Debtor\Pdf\InvoicePdf::of($cnDoc, $wireDi())->withoutCompression()->output();
 check('P3D6 a credit note prints without a payment part and names the invoice it corrects', str_contains($cnBin, '(Gutschrift zu)') && !str_contains($cnBin, '(Zahlteil)') && str_contains($cnBin, '(' . $cnDoc->documentName() . ')'));
@@ -2241,6 +2311,7 @@ for ($i = 1; $i <= 45; $i++) {
     $longLines[] = LineDraft::service("Position {$i} — eine Leistung mit einem Text, der in der ersten Spalte umbricht, damit die Tabelle Platz braucht", '1.000', 'Stk', chf('10.00'), 'UN', '3400');
 }
 $longInv = $service($emL)->invoice(InvoiceDraft::invoice($mid, day('2026-06-12'), day('2026-06-12'), 'CHF', $longLines, paymentTargetCode: 'qr'));
+$service($wireDi())->finalize([$at($longInv->getId())]);   // booked: the real PDF with number and payment part
 $longDoc = $readInvoice($longInv->getId());
 $longPdf = \Z77\Module\Debtor\Pdf\InvoicePdf::of($longDoc, $wireDi())->withoutCompression();
 $longBin = $longPdf->output();
@@ -2259,7 +2330,7 @@ $useRequest(['id' => $qrInv->getId()]);
 $host = $invoiceHost();
 $host->pdfAction();
 check('P3D8 pdfAction(): application/pdf inline, named rechnung-N.pdf, the bytes of the document', $host->bytes['mime'] === 'application/pdf' && $host->bytes['inline'] === true
-    && $host->bytes['filename'] === 'rechnung-' . $qrInv->getNumber() . '.pdf' && str_starts_with($host->bytes['content'], '%PDF-'));
+    && $host->bytes['filename'] === 'rechnung-' . $qrDoc->getNumber() . '.pdf' && str_starts_with($host->bytes['content'], '%PDF-'));
 $useRequest(['id' => 999999]);
 $host = $invoiceHost();
 $host->pdfAction();
@@ -2269,106 +2340,69 @@ $host = $invoiceHost();
 $host->detailAction();
 check('P3D10 the detail offers «PDF» (a new tab) next to the other actions', str_contains($renderMain($host), '/pdf?id=' . $qrInv->getId()) && str_contains($renderMain($host), 'target="_blank"'));
 
-// ── P3E. «Verbucht» and «Fakturiert» (owner 2026-10-10) ──
+// ── P3E. Preview and booking print (owner 2026-10-10: «a printed invoice with a number IS a document») ──
 
-echo "P3E. Verbucht / Fakturiert: the delivery fact, the combined PDF of a booked batch, the state words\n";
-$qrRow = $invoiceRow($qrInv->getId());
-check('P3E1 the FIRST PDF of a booked document (P3D8 above) marked it «Fakturiert» — via pdf, by the actor',
-    $qrRow['delivered_at'] !== null && $qrRow['delivered_via'] === 'pdf' && $qrRow['delivered_by'] === 'sachbearbeiter');
-$db->executeStatement("UPDATE invoice SET delivered_at = '2026-01-01 08:00:00' WHERE id = ?", [$qrInv->getId()]);   // a recognisable first date
-$useRequest(['id' => $qrInv->getId()]);
+echo "P3E. A draft prints as a PREVIEW (no number, no payment part, no side effect); the booking print numbers in a fixed order; «Fakturiert» is gone\n";
+$previewDraft = $service($wireDi())->invoice($withTarget('qr', '2026-06-15'));
+$pvRow        = $invoiceRow($previewDraft->getId());
+$journalPv    = $journalCount();
+$rangesPv     = $db->fetchAllKeyValue("SELECT name, last_number FROM number_range WHERE name LIKE 'document.%'");
+$pvPdf        = \Z77\Module\Debtor\Pdf\InvoicePdf::of($readInvoice($previewDraft->getId()), $wireDi())->withoutCompression();
+$pvBin        = $pvPdf->output();
+check('P3E1 the PDF of a DRAFT is a PREVIEW: watermark «VORSCHAU» and the red top line, the title «Rechnung — Vorschau» without a number, NO payment part (no receipt, no QR) but the note that it follows with the booking print',
+    str_starts_with($pvBin, '%PDF-') && str_contains($pvBin, '(VORSCHAU)') && str_contains($pvBin, 'kein g') && str_contains($pvBin, 'Buchungsdruck')
+    && str_contains($pvBin, '(Zahlteil folgt mit dem Buchungsdruck.)') && !str_contains($pvBin, '(Empfangsschein)') && !str_contains($pvBin, '(Vor der Einzahlung abzutrennen)')
+    && str_contains($pvBin, '(Rechnung ' . $pdfDoc->enc('—') . ' Vorschau)') && preg_match('/\(Rechnung 26\d{6}\)/', $pvBin) === 0);
+$useRequest(['id' => $previewDraft->getId()]);
 $host = $invoiceHost();
 $host->pdfAction();
-check('P3E2 … a later PDF changes nothing (the first one wins)', $invoiceRow($qrInv->getId())['delivered_at'] === '2026-01-01 08:00:00');
-$useRequest(['id' => $plainInv->getId()]);
-$host = $invoiceHost();
 $host->pdfAction();
-check('P3E3 the PDF of a document still in invoicing marks nothing', $stateOf($plainInv->getId()) === 'invoicing' && $invoiceRow($plainInv->getId())['delivered_at'] === null && str_starts_with($host->bytes['content'], '%PDF-'));
-
-$delivery = new \Z77\Module\Debtor\Services\DeliveryService($wireDi(), 'tester');
-$deliveryRefused = function (callable $f, string $reason): bool { try { $f(); return false; } catch (InvoiceRefusedException $e) { return $e->reason === $reason; } };
-check('P3E4 only a BOOKED document can become «Fakturiert»: a mark by hand on one in invoicing is refused (not-final), nothing written',
-    $deliveryRefused(fn() => $delivery->markManually($plainInv->getId()), InvoiceRefusedException::NOT_FINAL) && $invoiceRow($plainInv->getId())['delivered_at'] === null);
-$verBefore = (int) $invoiceRow($second->getId())['version'];
-$delivery->markManually($second->getId());
-check('P3E5 «Als fakturiert markieren» on a booked one: marked manual by the actor; again → already-delivered; the version is untouched',
-    $invoiceRow($second->getId())['delivered_via'] === 'manual' && $invoiceRow($second->getId())['delivered_by'] === 'tester'
-    && $deliveryRefused(fn() => (new \Z77\Module\Debtor\Services\DeliveryService($wireDi(), 'tester'))->markManually($second->getId()), InvoiceRefusedException::ALREADY_DELIVERED)
-    && (int) $invoiceRow($second->getId())['version'] === $verBefore);
-check('P3E6 «Markierung entfernen» only for a mark by hand: the PDF mark stays (not-manual), the manual one goes',
-    $deliveryRefused(fn() => (new \Z77\Module\Debtor\Services\DeliveryService($wireDi(), 'tester'))->unmark($qrInv->getId()), InvoiceRefusedException::NOT_MANUAL)
-    && $invoiceRow($qrInv->getId())['delivered_at'] !== null
-    && (function () use ($wireDi, $second, $invoiceRow): bool { (new \Z77\Module\Debtor\Services\DeliveryService($wireDi(), 'tester'))->unmark($second->getId()); return $invoiceRow($second->getId())['delivered_at'] === null; })());
-
-// The screens: the detail's button, the actions page and fetch, the views.
-$useRequest(['id' => (string) $newId]);
+check('P3E2 … through the action (twice): inline, named «vorschau-rechnung-entwurf-{id}.pdf» — and NO side effect: still invoicing, no number, the same version and payment columns, no range moved, no journal entry',
+    ($host->bytes['mime'] ?? '') === 'application/pdf' && $host->bytes['filename'] === 'vorschau-rechnung-entwurf-' . $previewDraft->getId() . '.pdf'
+    && $invoiceRow($previewDraft->getId()) == $pvRow && $journalCount() === $journalPv
+    && $db->fetchAllKeyValue("SELECT name, last_number FROM number_range WHERE name LIKE 'document.%'") == $rangesPv);
+$useRequest(['id' => $previewDraft->getId()]);
 $host = $invoiceHost();
 $host->detailAction();
-$detHtml = $renderMain($host);
-check('P3E7 the detail of a booked, undelivered document: «verbucht» + «nicht fakturiert» in the header, the info row, «Als fakturiert markieren» submitting a POST form to mark-delivered',
-    str_contains($detHtml, '>verbucht</span>') && str_contains($detHtml, '>nicht fakturiert</span>') && !str_contains($detHtml, 'definitiv')
-    && str_contains($detHtml, 'form="invoice-delivery-' . $newId . '"') && str_contains($detHtml, 'action="/backend/finance/invoice/mark-delivered?id=' . $newId . '"'));
-$useRequest(['id' => (string) $newId], ['csrf_token' => 'tok-session']);
-$host = $invoiceHost();
-$host->markDeliveredAction();
-check('P3E8 mark-delivered (page): marked manual, flash, back to the detail', $invoiceRow($newId)['delivered_via'] === 'manual' && $host->messageService->flashes[0][0] === 'success'
-    && $host->redirectedTo === '/backend/finance/invoice/detail?id=' . $newId);
-$useRequest(['id' => (string) $newId]);
-$host = $invoiceHost();
-$host->detailAction();
-check('P3E9 … the detail now shows «fakturiert {date}», «manuell markiert» and «Markierung entfernen»', str_contains($renderMain($host), 'fakturiert ' . date('d.m.Y')) && str_contains($renderMain($host), 'manuell markiert')
-    && str_contains($renderMain($host), '/unmark-delivered?id=' . $newId));
-$GLOBALS['z77TestFetch'] = true;
-$useRequest(['id' => (string) $newId], ['csrf_token' => 'tok-session', '_origin' => 'region:invoice-find-list']);
-$host = $invoiceHost();
-$answer = $host->unmarkDeliveredAction();
-check('P3E10 unmark-delivered from the detail WINDOW: the detail back into the window, the list reloads, the mark gone',
-    $answer instanceof \Z77\Core\Http\Response\FetchResponse && $host->redirectedTo === null && $invoiceRow($newId)['delivered_at'] === null
-    && (fn() => $this->commands)->call($answer) === [['action' => 'open-window', 'url' => '/backend/finance/invoice/detail?id=' . $newId, 'replace' => true], ['action' => 'refresh-region', 'name' => 'invoice-find-list']]);
-$GLOBALS['z77TestFetch'] = false;
+$pvDetail = $renderMain($host);
+check('P3E3 the detail of a draft: «Vorschau» (a new tab), «Neu fakturieren …», «Buchungsdruck …» (a green confirm to the confirmation of THIS draft at its version); the payment part «pending»: the reference follows with the number',
+    str_contains($pvDetail, '>Vorschau</a>') && str_contains($pvDetail, 'be-btn be-btn--confirm') && str_contains($pvDetail, '>Buchungsdruck …</a>')
+    && str_contains($pvDetail, 'confirm-finalize?' . e(http_build_query(['doc' => [$previewDraft->getId() . ':' . $pvRow['version']]])))
+    && str_contains($pvDetail, 'data-qr-bill="pending"') && str_contains($pvDetail, 'folgt mit der Belegnummer beim Buchungsdruck') && !str_contains($pvDetail, 'Kein Zahlteil'));
 
-// The «Verbucht» summary after a batch and the combined PDF.
-$useRequest(['doc' => [(string) $newId, (string) $second->getId(), (string) $plainInv->getId(), 'x']]);
-$host = $invoiceHost();
-$host->bookedAction();
-$bookedHtml = $renderMain($host);
-check('P3E11 booked: exactly the FINAL documents of the batch (one in invoicing and junk left out), ONE form posting their ids to pdf-batch in a new tab',
-    array_map(fn($d) => $d->getId(), $host->context['documents']) === [$newId, $second->getId()]
-    && str_contains($bookedHtml, 'action="/backend/finance/invoice/pdf-batch" target="_blank"') && substr_count($bookedHtml, 'name="doc[]"') === 2
-    && str_contains($bookedHtml, 'PDF der 2 Dokumente öffnen') && str_contains($bookedHtml, '2 nicht fakturiert'));
-$useRequest([], ['csrf_token' => 'tok-session', 'doc' => [(string) $newId, (string) $plainInv->getId()]]);
-$host = $invoiceHost();
-$host->pdfBatchAction();
-check('P3E12 pdf-batch with a document still in invoicing: refused whole, no PDF, nothing marked', $host->bytes === [] && $host->messageService->flashes[0][0] === 'error' && $invoiceRow($newId)['delivered_at'] === null);
-$useRequest([], ['csrf_token' => 'tok-session', 'doc' => [(string) $newId, (string) $second->getId()]]);
-$host = $invoiceHost();
-$host->pdfBatchAction();
-$pagesOf = fn(int $id) => (function ($p) { $p->output(); return $p->pageNo(); })(\Z77\Module\Debtor\Pdf\InvoicePdf::of($readInvoice($id), $wireDi()));
-$combined = \Z77\Module\Debtor\Pdf\InvoicePdf::combined([$readInvoice($newId), $readInvoice($second->getId()), $readInvoice($longInv->getId())], $wireDi())->withoutCompression();
-$combinedBin = $combined->output();
-check('P3E13 pdf-batch: ONE PDF named «dokumente-…-bis-….pdf», both documents marked «Fakturiert» via pdf',
-    str_starts_with($host->bytes['content'], '%PDF-') && preg_match('/^dokumente-\d+-bis-\d+\.pdf$/', $host->bytes['filename']) === 1
-    && $invoiceRow($newId)['delivered_via'] === 'pdf' && $invoiceRow($second->getId())['delivered_via'] === 'pdf');
-check('P3E14 the combined PDF contains every document: the pages add up, each title once per document, each payment part, the long one numbered «Seite 2 von N» of ITS pages, no alias left',
-    $combined->pageNo() === $pagesOf($newId) + $pagesOf($second->getId()) + $pagesOf($longInv->getId())
-    && str_contains($combinedBin, '(' . $readInvoice($newId)->documentName() . ')') && str_contains($combinedBin, '(' . $readInvoice($second->getId())->documentName() . ')')
-    && substr_count($combinedBin, '(Zahlteil)') === 3 && str_contains($combinedBin, 'Seite 2 von ' . $pagesOf($longInv->getId())) && !str_contains($combinedBin, '{nb'));
+// The booking print of a batch across two months: the numbers in a FIXED order (invoice date, then id), the ranges locked by name.
+$b0920  = $service($wireDi())->invoice($oneLine($mid, '2026-09-20', '1.000', '10.00'));
+$b0805 = $service($wireDi())->invoice($oneLine($mid, '2026-08-05', '1.000', '10.00'));
+$b0902 = $service($wireDi())->invoice($oneLine($mid, '2026-09-02', '1.000', '10.00'));
+$aug0  = (int) $rangeOf('document.2608');
+$sep0  = (int) $rangeOf('document.2609');
+$batch = $service($wireDi())->finalize([$at($b0920->getId()), $at($b0805->getId()), $at($b0902->getId())]);
+check('P3E4 one booking print over two months: numbered by INVOICE DATE (05.08. → the next of document.2608; 02.09. and 20.09. → the next two of document.2609), returned in that order; each month gapless',
+    array_map(fn($d) => $d->getId(), $batch) === [$b0805->getId(), $b0902->getId(), $b0920->getId()]
+    && $batch[0]->getNumber() === 26080000 + $aug0 + 1 && $batch[1]->getNumber() === 26090000 + $sep0 + 1 && $batch[2]->getNumber() === 26090000 + $sep0 + 2
+    && (int) $rangeOf('document.2608') === $aug0 + 1 && (int) $rangeOf('document.2609') === $sep0 + 2);
+$refusedBatch = caught(fn() => $service($wireDi())->finalize([$at($previewDraft->getId()), $at($b0920->getId())]), InvoiceRefusedException::class);
+check('P3E5 a batch naming a booked document is refused WHOLE (not-invoicing) — the draft in it keeps no number, no range moved',
+    $refusedBatch?->reason === InvoiceRefusedException::NOT_INVOICING && $invoiceRow($previewDraft->getId())['number'] === null
+    && (int) $rangeOf('document.2606') === (int) $rangesPv['document.2606'] && (int) $rangeOf('document.2609') === $sep0 + 2);
 
-// The views and the state words.
-$useRequest(['view' => 'undelivered']);
+// «Fakturiert» is gone (owner 2026-10-10): no class, no column, no action, no view.
+$useRequest([]);
 $host = $invoiceHost();
 $host->listAction();
-$undeliveredHtml = $renderList($host);
-check('P3E15 view «Nicht fakturiert»: every booked document of any kind without the mark, no selection, the «Fakturiert» column; its tab counts them',
-    $host->context['documents'] !== [] && array_filter($host->context['documents'], fn($d) => !$d->isFinal() || $d->isDelivered()) === []
-    && $host->context['counts']['undelivered'] === (int) $db->fetchOne("SELECT COUNT(*) FROM invoice WHERE state = 'final' AND delivered_at IS NULL")
-    && !str_contains($undeliveredHtml, 'name="doc[]"') && str_contains($undeliveredHtml, 'nicht fakturiert</span>') && str_contains($renderSlot($host, 'hc2'), 'Nicht fakturiert <small>'));
-$useRequest(['view' => 'final']);
+$tabs = $renderSlot($host, 'hc2');
+check('P3E6 «Fakturiert» is gone: three tabs «In Fakturierung» · «Verbucht» · «Gutschriften» (no «Nicht fakturiert»), no «Fakturiert» column; no DeliveryService / DeliveryChannel, no delivered_* on the entity, no mark/unmark/booked/pdf-batch action in the trait',
+    array_keys($host->context['views']) === ['invoicing', 'final', 'credit'] && str_contains($tabs, '>Verbucht <small>') && !str_contains($tabs, 'fakturiert <small>') && !str_contains($tabs, 'Definitiv')
+    && !str_contains($renderList($host), 'Fakturiert')
+    && !class_exists('Z77\\Module\\Debtor\\Services\\DeliveryService') && !enum_exists('Z77\\Module\\Debtor\\Entities\\DeliveryChannel')
+    && !str_contains(file_get_contents($package . '/src/Entities/Invoice.php'), 'delivered')
+    && preg_match('/function (markDelivered|unmarkDelivered|booked|pdfBatch)Action/', file_get_contents($package . '/src/Ui/InvoiceControllerTrait.php')) === 0);
+$useRequest(['view' => 'credit']);
 $host = $invoiceHost();
 $host->listAction();
-check('P3E16 view «Verbucht»: the tab says «Verbucht», the delivered ones show their date in the «Fakturiert» column (title: who and how)',
-    str_contains($renderSlot($host, 'hc2'), '>Verbucht <small>') && !str_contains($renderSlot($host, 'hc2'), 'Definitiv')
-    && str_contains($renderList($host), '>' . date('d.m.Y') . '</span>') && str_contains($renderList($host), 'title="Fakturiert am '));
+check('P3E7 «Gutschriften»: the credit-note drafts appear with «Entwurf» (first when sorted by number, newest first), the booked ones with their number',
+    array_filter($host->context['documents'], fn($d) => !$d->isFinal()) !== [] && array_filter($host->context['documents'], fn($d) => $d->isFinal()) !== []
+    && !$host->context['documents'][0]->isFinal() && str_contains($renderList($host), '>Entwurf</span>'));
 
 // ── Q. P4 part 1: payments, discount and loss (plan §6.3, owner go 2026-10-06) ──
 
@@ -2744,12 +2778,13 @@ check('R9 book() with nothing matched → nothing-to-book; an unknown message �
 echo "R. … assign and ignore: the office steers what the file could not say\n";
 $invD = $service($wireDi())->invoice($oneLine($mid, '2026-06-08', '1.000', '10.00'));
 $service($wireDi())->finalize([$at($invD->getId())]);
+$invD = $readInvoice($invD->getId());   // numbered by the booking print — in ANOTHER unit of work's EntityManager
 $txG  = $txB[6];   // 7.00 «ohne Angabe», unmatched
 $assigned = $bank($wireDi())->assign((int) $txG->getId(), $invD->getNumber());
-check('R10 assign(): an unmatched credit named to a final invoice by document number → matched («Manuell zugeordnet»); an unknown number → invoice-unknown; a document in invoicing → invoice-not-final; a booked transaction → state',
+check('R10 assign(): an unmatched credit named to a final invoice by document number → matched («Manuell zugeordnet»); an unknown number → invoice-unknown; a document in invoicing has NO number to name (owner 2026-10-10); a booked transaction → state',
     $assigned->state()->value === 'matched' && $assigned->getInvoice()?->getId() === $invD->getId() && $assigned->getNote() === 'Manuell zugeordnet.'
     && caught(fn() => $bank($wireDi())->assign((int) $txB[2]->getId(), 999999), BankImportRefusedException::class)?->reason === BankImportRefusedException::INVOICE_UNKNOWN
-    && caught(fn() => $bank($wireDi())->assign((int) $txB[2]->getId(), $stillInvoicing->getNumber()), BankImportRefusedException::class)?->reason === BankImportRefusedException::INVOICE_NOT_FINAL
+    && $readInvoice($stillInvoicing->getId())->getNumber() === null
     && caught(fn() => $bank($wireDi())->assign((int) $txB[0]->getId(), $invD->getNumber()), BankImportRefusedException::class)?->reason === BankImportRefusedException::STATE);
 $ignored = $bank($wireDi())->ignore((int) $txB[2]->getId(), true);
 $back    = $bank($wireDi())->ignore((int) $txB[2]->getId(), false, 'doch prüfen');
@@ -2895,13 +2930,17 @@ check('T1 InvoiceKind::Fee: label «Gebühr», payable; a credit note is not pay
 $emT = $wireDi();
 $rangeBefore = (int) $rangeOf('document.2607');   // the fee below is dated 2026-07-15
 $feeDoc = $service($emT)->invoice(InvoiceDraft::fee($mid, day('2026-07-15'), 'CHF', chf('20.00'), 'Mahngebühr Test', $feeAccount, 'qr', 'dunning', '0:test'));
-check('T2 InvoiceDraft::fee() → a document of kind fee: the next number of the ONE series in its month (July: 2607…), one lump-sum line without tax code, no tax rows, net = gross = 20.00, a QRR payment part under its own number, source dunning',
-    $feeDoc->kind() === InvoiceKind::Fee && $feeDoc->getNumber() === 26070000 + $rangeBefore + 1 && (int) $rangeOf('document.2607') === $rangeBefore + 1 && $feeDoc->documentName() === 'Gebühr ' . $feeDoc->getNumber()
+check('T2 InvoiceDraft::fee() → a document of kind fee, as a draft without a number yet: one lump-sum line without tax code, no tax rows, net = gross = 20.00, a QRR payment part (its reference follows with the number), source dunning',
+    $feeDoc->kind() === InvoiceKind::Fee && $feeDoc->getNumber() === null && (int) $rangeOf('document.2607') === $rangeBefore
     && count($feeDoc->getLines()) === 1 && $feeDoc->getLines()[0]->getTaxCode() === null && $feeDoc->getLines()[0]->getRevenueAccount() === $feeAccount && $feeDoc->getTaxes() === []
     && $feeDoc->getNetTotal()->toDecimal() === '20.00' && $feeDoc->getGrossTotal()->toDecimal() === '20.00' && $feeDoc->getTaxTotal()->isZero()
-    && $feeDoc->getPayment()->getReferenceType() === 'QRR' && $feeDoc->getPayment()->getReference() === QrReference::forDocument(1000, $feeDoc->getNumber()) && $feeDoc->getSourceType() === 'dunning');
+    && $feeDoc->getPayment()->getReferenceType() === 'QRR' && $feeDoc->getPayment()->getReference() === '' && $feeDoc->getSourceType() === 'dunning');
 $journalBefore = $journalCount();
 $service($wireDi())->finalize([$at($feeDoc->getId())]);
+$feeDoc = $readInvoice($feeDoc->getId());
+check('T2b … booked: the next number of the ONE series in its month (July: 2607…), named «Gebühr n», the QRR reference under its own number',
+    $feeDoc->getNumber() === 26070000 + $rangeBefore + 1 && (int) $rangeOf('document.2607') === $rangeBefore + 1 && $feeDoc->documentName() === 'Gebühr ' . $feeDoc->getNumber()
+    && $feeDoc->getPayment()->getReference() === QrReference::forDocument(1000, $feeDoc->getNumber()));
 $feeRef = $readInvoice($feeDoc->getId())->getLedgerEntryRef();
 $fl     = $entryLines((string) $feeRef);
 check('T3 finalize() of a fee: receivable DEBIT 20.00 | dunning-fee account CREDIT 20.00, no tax data, no VAT line; the fee is a payable document (open 20.00) and the CAMT lookup by number finds it',
@@ -2918,6 +2957,7 @@ $dun  = fn(UnifiedEntityManager $em) => new DunningService($em, 'mahner');
 // disc-2-10: due after 20 days → 2026-06-30; with a payment target — the fee document takes the invoice's.
 $invE = $service($wireDi())->invoice(InvoiceDraft::invoice($mid, day('2026-06-10'), day('2026-06-10'), 'CHF', [LineDraft::service('Stunden', '1.000', 'h', chf('100.00'), 'UN', '3400')], paymentTargetCode: 'qr'));
 $service($wireDi())->finalize([$at($invE->getId())]);
+$invE = $readInvoice($invE->getId());   // numbered by the booking print — in ANOTHER unit of work's EntityManager
 $dueIds = fn(array $list) => array_map(fn($i) => $i['invoice']->getId(), $list);
 check('T5 dueList(): nothing on the due date + 9 days; on due + 10 the invoice is due for «Zahlungserinnerung» (level 1, no fee) with its open 108.10; a settled invoice never appears',
     !in_array($invE->getId(), $dueIds($dun($wireDi())->dueList(day('2026-07-09'))), true)
@@ -2939,7 +2979,7 @@ $rangeBefore   = (int) $rangeOf('document.2608');   // the fee document is dated
 $run2 = $dun($wireDi())->run(day('2026-08-10'), [$invE->getId()]);
 $n2   = $run2->getNotices()[0];
 $fee2 = $n2->getFeeInvoice();
-check('T7 run() at level 2 («1. Mahnung», fee 20.00): the notice carries a FEE DOCUMENT — kind fee, the next invoice number, final, posted (one entry), source dunning «{invoice}:{level}», the invoice\'s payment target; open on the fee 20.00, on the invoice still 108.10',
+check('T7 run() at level 2 («1. Mahnung», fee 20.00): the notice carries a FEE DOCUMENT — kind fee, numbered at its booking inside the run (the next of the run date\'s month, the range locked FIRST), final, posted (one entry), source dunning «{invoice}:{level}», the invoice\'s payment target; open on the fee 20.00, on the invoice still 108.10',
     $n2->getLevelCode() === 'dunning-1' && $fee2 !== null && $fee2->kind() === InvoiceKind::Fee && $fee2->getNumber() === 26080000 + $rangeBefore + 1 && $fee2->isFinal() && $fee2->getLedgerEntryRef() !== null
     && $journalCount() === $journalBefore + 1 && $fee2->getSourceRef() === $invE->getNumber() . ':dunning-1' && $fee2->getPayment()->getTargetCode() === 'qr' && $fee2->getGrossTotal()->toDecimal() === '20.00'
     && str_contains($fee2->getLines()[0]->getText(), '1. Mahnung') && $service($wireDi())->openAmount($readInvoice($fee2->getId()))->toDecimal() === '20.00' && $service($wireDi())->openAmount($readInvoice($invE->getId()))->toDecimal() === '108.10');
@@ -3152,9 +3192,9 @@ file_put_contents($targetsFile, json_encode($rows, JSON_PRETTY_PRINT | JSON_UNES
 $emL    = $wireDi();
 $legacy = $emL->getRepository(PaymentTarget::class)->findByCode('legacy');
 $legInv = $service($emL)->invoice($withTarget('legacy', '2026-08-01'));
-check('P3C51 a LEGACY row (QR-IBAN in `iban`, no `qr_iban` key) is read as a QR-IBAN target: the document snapshots QRR with it, not NON',
+check('P3C51 a LEGACY row (QR-IBAN in `iban`, no `qr_iban` key) is read as a QR-IBAN target: the document snapshots QRR with it, not NON (a draft: the bill pending, nothing wrong with it)',
     $legacy->getQrIban() === $legacyIban && $legacy->getIban() === '' && $invoiceRow($legInv->getId())['pay_reference_type'] === 'QRR'
-    && $invoiceRow($legInv->getId())['pay_account'] === $legacyIban && QrBill::of($readInvoice($legInv->getId()))->isPrintable());
+    && $invoiceRow($legInv->getId())['pay_account'] === $legacyIban && QrBill::of($readInvoice($legInv->getId()))->isPending() && QrBill::of($readInvoice($legInv->getId()))->problems() === []);
 (new DebtorMasterData($emL))->saveTarget($legacy);
 $savedRow = array_values(array_filter(json_decode(file_get_contents($targetsFile), true), fn($r) => $r['code'] === 'legacy'))[0];
 check('P3C52 … and it re-saves without a hand edit, now in the new shape (qr_iban set, iban empty); a FORM post (both keys) with a QR-IBAN in the IBAN field is still refused',
@@ -3195,9 +3235,9 @@ $journalBefore = $journalCount();
 $useRequest([], ['doc' => [$pairA, $pairB2]]);   // the batch of P3C41 submitted a second time
 $host = $invoiceHost();
 $host->finalizeAction();
-check('P3C57 a DOUBLE submit of a finalize batch: «bereits verbucht» (not «nichts wurde verbucht»), nothing posted twice, to the «Verbucht» view',
-    $journalCount() === $journalBefore && $host->messageService->flashes[0][0] === 'error' && str_contains($host->messageService->flashes[0][1], 'Bereits verbucht')
-    && $host->redirectedTo === '/backend/finance/invoice/list?view=final');
+check('P3C57 a DOUBLE submit of a booking print (owner 2026-10-10: idempotent): the same PDF again, nothing posted twice, no flash, no redirect',
+    $journalCount() === $journalBefore && $host->messageService->flashes === [] && $host->redirectedTo === null
+    && ($host->bytes['mime'] ?? '') === 'application/pdf' && str_starts_with($host->bytes['content'] ?? '', '%PDF-'));
 
 $journalHost = function () {
     return new class {
@@ -3243,7 +3283,9 @@ $uInv = $service($wireDi())->invoice($oneLine($mid, '2026-12-03', '1.000', '100.
 $service($wireDi())->finalize([$at($uInv->getId())]);
 $uCn  = $service($wireDi())->invoice(InvoiceDraft::creditNote($uInv->getId(), $mid, day('2026-12-04'), 'CHF', [LineDraft::lumpSum('Gutschrift', chf('10.00'), 'UN', '3400')]));
 $uFee = $service($wireDi())->invoice(InvoiceDraft::fee($mid, day('2026-12-05'), 'CHF', chf('20.00'), 'Gebühr', $feeAccount, 'qr', 'dunning', 'u:test'));
-check('U1 invoice, credit note and fee of one month share ONE gapless series: n, n+1, n+2 in document.2612, the former ranges untouched',
+$service($wireDi())->finalize([$at($uCn->getId()), $at($uFee->getId())]);
+[$uInv, $uCn, $uFee] = [$readInvoice($uInv->getId()), $readInvoice($uCn->getId()), $readInvoice($uFee->getId())];
+check('U1 invoice, credit note and fee of one month share ONE gapless series, numbered when BOOKED: n, n+1, n+2 in document.2612, the former ranges untouched',
     [$uInv->getNumber(), $uCn->getNumber(), $uFee->getNumber()] === [26120000 + $decBefore + 1, 26120000 + $decBefore + 2, 26120000 + $decBefore + 3]
     && $docRange('2026-12-31') === $decBefore + 3 && (string) $rangeOf('credit-note') === '0');
 check('U2 the number is unique across kinds: a payable lookup finds the fee by its number, the credit note\'s number names no payable document',
@@ -3253,13 +3295,20 @@ check('U2 the number is unique across kinds: a payable lookup finds the fee by i
 // The month at its last number — set in SQL, the way only a harness may touch number_range.
 $db->executeStatement("INSERT INTO number_range (name, last_number) VALUES ('document.2611', 9999) ON DUPLICATE KEY UPDATE last_number = 9999");
 $documentsBefore = $count('invoice');
-$full = caught(fn() => $service($wireDi())->invoice($oneLine($mid, '2026-11-20', '1.000', '10.00')), InvoiceRefusedException::class);
-check('U3 the 10000th document of a month is REFUSED (number-range-full, German message naming the month; the English OverflowException behind it), never 2612…: the range stays at 9999, no document written, the unit of work closed',
+$novDraft = $service($wireDi())->invoice($oneLine($mid, '2026-11-20', '1.000', '10.00'));   // a draft draws nothing — it is issued
+$journalU = $journalCount();
+$full = caught(fn() => $service($wireDi())->finalize([$at($novDraft->getId())]), InvoiceRefusedException::class);
+check('U3 the 10000th document of a month is REFUSED at its booking print (number-range-full, German message naming the month; the English OverflowException behind it), never 2612…: the range stays at 9999, the draft stays an unnumbered draft, nothing posted, the unit of work closed',
     $full?->reason === InvoiceRefusedException::NUMBER_RANGE_FULL && str_contains($full->getMessage(), '11.2026') && str_contains($full->getMessage(), '9999')
     && $full->getPrevious() instanceof \OverflowException && str_contains($full->getPrevious()->getMessage(), 'document.2611')
-    && (string) $rangeOf('document.2611') === '9999' && $count('invoice') === $documentsBefore && !$wireDi()->getTransaction(Invoice::class)->isOpen());
-check('U4 … the next month is unaffected: a document dated December continues document.2612',
-    $service($wireDi())->invoice($oneLine($mid, '2026-12-06', '1.000', '10.00'))->getNumber() === 26120000 + $decBefore + 4);
+    && (string) $rangeOf('document.2611') === '9999' && $count('invoice') === $documentsBefore + 1 && $stateOf($novDraft->getId()) === 'invoicing' && $invoiceRow($novDraft->getId())['number'] === null
+    && $journalCount() === $journalU && !$wireDi()->getTransaction(Invoice::class)->isOpen());
+check('U4 … the next month is unaffected: a document dated December, booked, continues document.2612',
+    (function () use ($service, $wireDi, $oneLine, $mid, $at, $readInvoice): ?int {
+        $d = $service($wireDi())->invoice($oneLine($mid, '2026-12-06', '1.000', '10.00'));
+        $service($wireDi())->finalize([$at($d->getId())]);
+        return $readInvoice($d->getId())->getNumber();
+    })() === 26120000 + $decBefore + 4);
 
 // ── result ───────────────────────────────────────────────────────────────
 

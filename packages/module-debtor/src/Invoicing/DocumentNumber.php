@@ -29,8 +29,9 @@ namespace Z77\Module\Debtor\Invoicing;
  * Years 2000–2099 only: `YY` would repeat after 2099 (2126 and 2026 would
  * share `26…`), and the unique index on the number refuses that anyway.
  * Numbers issued before 2026-10-10 (the former per-kind ranges `invoice` /
- * `credit-note`, 1, 2, …) stay as they are — {@see isOfMonth()} tells a
- * number of this format from them.
+ * `credit-note`, 1, 2, …) stay as they are. Since the second decision of
+ * 2026-10-10 the number is drawn at the booking print
+ * (`InvoicingService::finalize()`) — a draft has none.
  */
 final class DocumentNumber
 {
@@ -78,22 +79,6 @@ final class DocumentNumber
         }
 
         return (int) $period * self::MONTH_FACTOR + $sequence;
-    }
-
-    /**
-     * Whether $number is a number of this format for $date's month — false
-     * for a number of the former per-kind ranges (1, 2, …) and for any other
-     * month.
-     */
-    public static function isOfMonth(int $number, \DateTimeImmutable $date): bool
-    {
-        $year = (int) $date->format('Y');
-        if ($year < self::FIRST_YEAR || $year > self::LAST_YEAR) {
-            return false;
-        }
-        $sequence = $number % self::MONTH_FACTOR;
-
-        return intdiv($number, self::MONTH_FACTOR) === (int) $date->format('ym') && $sequence >= 1;
     }
 
     /** `YYMM` of the date, as four digits. */

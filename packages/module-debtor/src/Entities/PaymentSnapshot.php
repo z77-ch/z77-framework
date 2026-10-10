@@ -17,6 +17,13 @@ use Z77\Module\Debtor\Services\Creditor;
  * the mandator's address or the reference rule never alters it — the QR-bill
  * is rendered from THIS snapshot only (`Invoicing\QrBill::of()`).
  *
+ * Two steps since owner decision 2026-10-10 (the number is drawn at the
+ * booking print): a draft carries target, account, reference type and
+ * creditor ({@see forDocument()}); the reference and the message — both
+ * derived from the number — are added when the document is booked
+ * ({@see numbered()}). A draft therefore prints no payment part (its PDF is
+ * a preview).
+ *
  * The reference rule (owner 2026-09-23, wdv-630 `PrepaymentQrCode`,
  * confirmed): the USE CASE decides. An invoice has a reference (its number):
  * with a QR-IBAN on the target → that QR-IBAN + QRR ({@see QrReference});
@@ -90,13 +97,16 @@ final class PaymentSnapshot
     }
 
     /**
-     * The payment part of document $number to the debtor with
-     * $customerNumber, from the target and the creditor block as they read
-     * NOW. A credit note gets {@see none()}. The creditor fields are copied
-     * as they resolved, never cut; `QrBill` compares them with the
-     * specification and reports a value that does not fit.
+     * The payment part of a DRAFT, from the target and the creditor block as
+     * they read NOW: target, account, reference type and creditor — but no
+     * reference and no message yet, because both are derived from the
+     * document number, which a draft does not have (owner 2026-10-10: the
+     * number is drawn at the booking print, {@see numbered()}). A credit
+     * note gets {@see none()}. The creditor fields are copied as they
+     * resolved, never cut; `QrBill` compares them with the specification and
+     * reports a value that does not fit.
      */
-    public static function forDocument(InvoiceKind $kind, int $customerNumber, int $number, string $message, ?PaymentTarget $target, ?Creditor $creditor): self
+    public static function forDocument(InvoiceKind $kind, ?PaymentTarget $target, ?Creditor $creditor): self
     {
         $snapshot = new self();
         if ($kind === InvoiceKind::CreditNote || $target === null) {
@@ -106,12 +116,10 @@ final class PaymentSnapshot
         if ($target->hasQrIban()) {
             $snapshot->account       = $target->getQrIban();
             $snapshot->referenceType = self::REFERENCE_QRR;
-            $snapshot->reference     = QrReference::forDocument($customerNumber, $number);
         } else {
             $snapshot->account       = $target->getIban();
             $snapshot->referenceType = self::REFERENCE_NON;
         }
-        $snapshot->message = mb_substr(trim($message), 0, self::MESSAGE_LENGTH);
         if ($creditor !== null) {
             $snapshot->creditorName    = $creditor->name;
             $snapshot->creditorStreet  = $creditor->street;
@@ -120,6 +128,26 @@ final class PaymentSnapshot
             $snapshot->creditorCity    = $creditor->city;
             $snapshot->creditorCountry = $creditor->country;
         }
+
+        return $snapshot;
+    }
+
+    /**
+     * This payment part with what the document NUMBER gives it — at the
+     * booking print (`Invoice::assignNumber()`): with QRR the reference from
+     * customer number and document number ({@see QrReference::forDocument()},
+     * the wdv-630 layout), and the message naming the document («Rechnung
+     * 26100012») — what a NON payment is matched by. Without a payment part
+     * the snapshot stays empty. A new object; this one is not changed.
+     */
+    public function numbered(int $customerNumber, int $number, string $message): self
+    {
+        $snapshot = clone $this;
+        if (!$this->hasPaymentPart()) {
+            return $snapshot;
+        }
+        $snapshot->reference = $this->referenceType === self::REFERENCE_QRR ? QrReference::forDocument($customerNumber, $number) : '';
+        $snapshot->message   = mb_substr(trim($message), 0, self::MESSAGE_LENGTH);
 
         return $snapshot;
     }

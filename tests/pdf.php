@@ -257,7 +257,7 @@ check('H7 fit(): a short text is unchanged, a long one is cut to the width and e
 $bytes = PdfDocument::create('nowrap')->withoutCompression()->partial('pdf/report', ['title' => 'T', 'blocks' => [['columns' => $cols, 'rows' => [['cells' => ['1', $long . $long, '1.00']]], 'wrap' => null]]])->output();
 check('H8 `wrap` null: the long name is ONE line ending in «…» (cp1252 0x85), the left margin is 12 mm', preg_match_all('/\(([^)]*Kontobezeichnung[^)]*)\)/', $bytes) === 1 && str_contains($bytes, "\x85)"));
 
-// ── I. sections: several documents in one file (2026-10-10, the combined PDF of a booked batch) ──
+// ── I. sections: several documents in one file (2026-10-10, the booking print of a batch of invoices) ──
 // Each «document» sets its hooks BEFORE its first addPage() (as a layout does), numbers its own
 // pages and gets exactly one footer per page — never the next document's footer on its last page.
 $sections = PdfDocument::create('sections')->withoutCompression();

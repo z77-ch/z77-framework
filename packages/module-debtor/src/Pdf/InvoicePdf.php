@@ -30,11 +30,18 @@ use Z77\Shared\Pdf\PdfDocument;
  * number of the party, and the amount formatter. Nothing is resolved from
  * master data — what prints is what was issued.
  *
+ * A DRAFT (`invoicing`) renders as a PREVIEW (owner 2026-10-10: «a printed
+ * invoice with a number IS a document»): the same layout, watermarked
+ * «VORSCHAU», without a number and without the payment part — it has
+ * neither before the booking print. Rendering it has no side effect. A
+ * booked document renders the real PDF with number and QR-bill, any time,
+ * identical each time.
+ *
  * {@see combined()} (owner 2026-10-10) draws SEVERAL documents into one
- * file — the batch just booked, opened once and printed or sent in one go:
- * each document is a section of its own (`PdfDocument::startSection()`),
- * starts on a new page, numbers its own pages and carries its own payment
- * part.
+ * file — the booking print of a batch, opened once and printed or sent in
+ * one go: each document is a section of its own
+ * (`PdfDocument::startSection()`), starts on a new page, numbers its own
+ * pages and carries its own payment part.
  */
 final class InvoicePdf
 {
@@ -47,7 +54,7 @@ final class InvoicePdf
     /** The document rendered; call `output()` on it for the bytes. $document with its lines loaded. */
     public static function render(Invoice $document, ?Mandator $mandator, int $customerNumber = 0): PdfDocument
     {
-        return self::draw(PdfDocument::create($document->documentName(), $mandator?->getName() ?? ''), $document, $mandator, $customerNumber);
+        return self::draw(PdfDocument::create(self::title($document), $mandator?->getName() ?? ''), $document, $mandator, $customerNumber);
     }
 
     /** The context a controller gathers: the mandator through the one reader debtor has, the customer number from the profile. */
@@ -77,10 +84,22 @@ final class InvoicePdf
         return $pdf;
     }
 
-    /** «rechnung-12.pdf» — the browser-reachable name, kebab-case lower (conventions: file names follow the layer). */
+    /**
+     * «rechnung-26100012.pdf» — the browser-reachable name, kebab-case lower
+     * (conventions: file names follow the layer); a draft's preview
+     * «vorschau-rechnung-entwurf-42.pdf» (by id — it has no number).
+     */
     public static function fileName(Invoice $document): string
     {
-        return Naming::toSlug($document->documentName()) . '.pdf';
+        return $document->isNumbered()
+            ? Naming::toSlug($document->documentName()) . '.pdf'
+            : Naming::toSlug('Vorschau ' . $document->kind()->label() . ' Entwurf ' . $document->getId()) . '.pdf';
+    }
+
+    /** The PDF's title: the document name; a draft's «Vorschau — Rechnung (Entwurf vom …)». */
+    public static function title(Invoice $document): string
+    {
+        return ($document->isFinal() ? '' : 'Vorschau — ') . $document->documentName();
     }
 
     /**
@@ -98,7 +117,7 @@ final class InvoicePdf
     private static function combinedTitle(array $documents): string
     {
         if (count($documents) === 1) {
-            return $documents[0]->documentName();
+            return self::title($documents[0]);
         }
         $numbers = array_map(static fn(Invoice $d) => $d->getNumber(), $documents);
 

@@ -324,7 +324,7 @@ final class PaymentService
             throw new PaymentRefusedException(PaymentRefusedException::CREDIT_NOTE, $invoice->documentName() . ' ist eine Gutschrift — sie wird nicht bezahlt, sie reduziert eine Rechnung.');
         }
         if (!$invoice->isFinal()) {
-            throw new PaymentRefusedException(PaymentRefusedException::NOT_FINAL, $invoice->documentName() . ' ist noch in Fakturierung — erst verbuchen, dann Zahlungen erfassen.');
+            throw new PaymentRefusedException(PaymentRefusedException::NOT_FINAL, $invoice->documentName() . ' ist noch in Fakturierung — erst mit «Buchungsdruck …» verbuchen, dann Zahlungen erfassen.');
         }
     }
 

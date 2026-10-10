@@ -156,11 +156,14 @@ class InvoiceRepository extends DoctrineRepository
     {
         [$where, $params, $types] = $this->searchWhere($search);
         $dir   = $search->descending ? 'DESC' : 'ASC';
+        // A draft has no number (owner 2026-10-10): by number, the drafts come first when descending (they are
+        // the newest) and last when ascending; the id breaks every tie — drafts among themselves by creation.
+        $byNumber = "number IS NULL {$dir}, number {$dir}, id {$dir}";
         $order = match ($search->sort) {
-            'date'   => "invoice_date {$dir}, number {$dir}",
-            'name'   => "addr_name {$dir}, addr_first_name {$dir}, number {$dir}",
-            'amount' => "gross_total {$dir}, number {$dir}",
-            default  => "number {$dir}",
+            'date'   => "invoice_date {$dir}, {$byNumber}",
+            'name'   => "addr_name {$dir}, addr_first_name {$dir}, {$byNumber}",
+            'amount' => "gross_total {$dir}, {$byNumber}",
+            default  => $byNumber,
         };
         $ids = $this->connection()->fetchFirstColumn(
             "SELECT id FROM invoice{$where} ORDER BY {$order} LIMIT ? OFFSET ?",
@@ -195,62 +198,33 @@ class InvoiceRepository extends DoctrineRepository
     public function countPerView(): array
     {
         $row = $this->connection()->fetchAssociative(
-            'SELECT SUM(kind IN (?, ?) AND state = ?) AS invoicing, SUM(kind IN (?, ?) AND state = ?) AS final, SUM(kind = ?) AS credit,'
-            . ' SUM(state = ? AND delivered_at IS NULL) AS undelivered FROM invoice',
-            [InvoiceKind::Invoice->value, InvoiceKind::Fee->value, InvoiceState::Invoicing->value, InvoiceKind::Invoice->value, InvoiceKind::Fee->value, InvoiceState::Final->value, InvoiceKind::CreditNote->value, InvoiceState::Final->value]
+            'SELECT SUM(kind IN (?, ?) AND state = ?) AS invoicing, SUM(kind IN (?, ?) AND state = ?) AS final, SUM(kind = ?) AS credit FROM invoice',
+            [InvoiceKind::Invoice->value, InvoiceKind::Fee->value, InvoiceState::Invoicing->value, InvoiceKind::Invoice->value, InvoiceKind::Fee->value, InvoiceState::Final->value, InvoiceKind::CreditNote->value]
         ) ?: [];
 
         return array_map(static fn($n) => (int) $n, array_merge(array_fill_keys(InvoiceSearch::VIEWS, 0), array_filter($row, static fn($n) => $n !== null)));
     }
 
     /**
-     * «Fakturiert» (owner 2026-10-10): records that the documents of $ids
-     * reached the customer — but only those that are FINAL and not yet
-     * marked. ONE guarded statement, so the first delivery wins under any
-     * race and a later PDF changes nothing; a document in `invoicing` is
-     * never marked. Plain SQL on purpose: delivery is not content — it
-     * must not bump the optimistic `version` a re-issue, a finalize batch
-     * or an open confirmation relies on. Answers how many rows it marked.
-     * Called by `Services\DeliveryService` only. Doctrine-only (SQL).
+     * The invoice dates of the documents $ids, as `Y-m-d` strings by id —
+     * what the booking print reads BEFORE its unit of work to create the
+     * month ranges it will lock (`InvoicingService::finalize()`). Plain SQL
+     * on purpose: no entity enters the identity map, so the locked re-read
+     * inside the unit of work is the one that counts. Unknown ids are left
+     * out. Doctrine-only (SQL).
      *
      * @param list<int> $ids
+     * @return array<int, string>
      */
-    public function markDelivered(array $ids, \DateTimeImmutable $at, string $by, string $via): int
+    public function invoiceDatesOf(array $ids): array
     {
         $ids = array_values(array_unique(array_filter(array_map('intval', $ids), static fn(int $id) => $id > 0)));
         if ($ids === []) {
-            return 0;
+            return [];
         }
-        try {
-            return (int) $this->connection()->executeStatement(
-                'UPDATE invoice SET delivered_at = ?, delivered_by = ?, delivered_via = ? WHERE id IN (?) AND state = ? AND delivered_at IS NULL',
-                [$at->format('Y-m-d H:i:s'), $by, $via, $ids, InvoiceState::Final->value],
-                [ParameterType::STRING, ParameterType::STRING, ParameterType::STRING, ArrayParameterType::INTEGER, ParameterType::STRING]
-            );
-        } catch (\Throwable $e) {
-            $this->markTransactionRollbackOnly();
-            throw $e;
-        }
-    }
+        $rows = $this->connection()->fetchAllKeyValue('SELECT id, invoice_date FROM invoice WHERE id IN (?)', [$ids], [ArrayParameterType::INTEGER]);
 
-    /**
-     * Removes the «Fakturiert» mark of $id — only one set by hand ($via, the
-     * manual channel): a mark the system recorded (the PDF) is a fact, not a
-     * click to take back. Answers 1 when removed, 0 otherwise. Called by
-     * `Services\DeliveryService` only. Doctrine-only (SQL).
-     */
-    public function unmarkDelivered(int $id, string $via): int
-    {
-        try {
-            return (int) $this->connection()->executeStatement(
-                'UPDATE invoice SET delivered_at = NULL, delivered_by = NULL, delivered_via = NULL WHERE id = ? AND delivered_via = ?',
-                [$id, $via],
-                [ParameterType::INTEGER, ParameterType::STRING]
-            );
-        } catch (\Throwable $e) {
-            $this->markTransactionRollbackOnly();
-            throw $e;
-        }
+        return array_map(static fn($date) => (string) $date, $rows);
     }
 
     /**
@@ -437,10 +411,6 @@ class InvoiceRepository extends DoctrineRepository
         };
         if ($search->view === InvoiceSearch::VIEW_CREDIT) {
             $add('kind = ?', InvoiceKind::CreditNote->value);
-        } elseif ($search->view === InvoiceSearch::VIEW_UNDELIVERED) {
-            // «Nicht fakturiert» (owner 2026-10-10): booked, not yet with the customer — every kind.
-            $add('state = ?', InvoiceState::Final->value);
-            $where[] = 'delivered_at IS NULL';
         } else {
             // The payable kinds — invoices and fees (P4 part 3) — share the two views.
             $add('kind <> ?', InvoiceKind::CreditNote->value);
@@ -473,10 +443,11 @@ class InvoiceRepository extends DoctrineRepository
      * $to, both inclusive — what the year close is blocked by
      * (`InvoicingInProgressCheck`, plan §5.3): their posting would land in a
      * closed year. The count of all of them and the first $limit rows
-     * (`id`, `kind`, `number`, `invoice_date`) in date order — by the index
-     * `idx_invoice_state_date`. Doctrine-only (SQL).
+     * (`id`, `kind`, `number` — NULL, a draft has none since 2026-10-10 —,
+     * `invoice_date`, `addr_first_name`, `addr_name`) in date order — by the
+     * index `idx_invoice_state_date`. Doctrine-only (SQL).
      *
-     * @return array{count: int, rows: list<array{id: int|string, kind: string, number: int|string, invoice_date: string}>}
+     * @return array{count: int, rows: list<array{id: int|string, kind: string, number: int|string|null, invoice_date: string, addr_first_name: string, addr_name: string}>}
      */
     public function invoicingBetween(\DateTimeImmutable $from, \DateTimeImmutable $to, int $limit): array
     {
@@ -484,7 +455,7 @@ class InvoiceRepository extends DoctrineRepository
         $where  = 'FROM invoice WHERE state = ? AND invoice_date BETWEEN ? AND ?';
         $count  = (int) $this->connection()->fetchOne('SELECT COUNT(*) ' . $where, $params);
         $rows   = $count === 0 ? [] : $this->connection()->fetchAllAssociative(
-            'SELECT id, kind, number, invoice_date ' . $where . ' ORDER BY invoice_date, id LIMIT ?',
+            'SELECT id, kind, number, invoice_date, addr_first_name, addr_name ' . $where . ' ORDER BY invoice_date, id LIMIT ?',
             [...$params, max(1, $limit)],
             [ParameterType::STRING, ParameterType::STRING, ParameterType::STRING, ParameterType::INTEGER]
         );

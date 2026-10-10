@@ -9,19 +9,19 @@
  * reference linked to the journal entry as a WINDOW (ADR-047) when the
  * bookkeeping is here, the credit notes and the open amount.
  *
- * Offers «PDF» (the document rendered on request, `pdf` action, a new tab),
- * «Zahlung erfassen …» while something is open, «Neu fakturieren» while
- * `invoicing`, «Gutschrift erstellen …» on a final invoice — nothing else on
- * a final credit note — and on every booked document «Als fakturiert
- * markieren» (or «Markierung entfernen» for a mark set by hand; owner
- * 2026-10-10: the header shows «verbucht» and «fakturiert {date}» /
- * «nicht fakturiert», the info rows when and how). They form the action row (`.z77-form-actions` through
- * the shared `partials/modalActions`, ADR-049 revision 2026-10-10) under the
- * title; every link but the PDF is a `data-window-link` (ADR-047 addendum
- * 2026-10-10): inside the window it loads the editor / the payment form
- * into THIS window, on a page it is a plain link. The links to other
- * documents (credit notes, the credited invoice, a fee) and «ändern» of a
- * payment stay in the window the same way.
+ * Offers, on a DRAFT (`invoicing`, no number yet — owner 2026-10-10):
+ * «Vorschau» (the preview PDF, a new tab, no side effect), «Neu fakturieren …»
+ * and «Buchungsdruck …» (the confirmation of the booking print for this one
+ * draft, a PAGE — a plain link that leaves the window; DEBTOR-WIN-002); on a
+ * BOOKED document: «PDF» (the reprint with number and QR-bill),
+ * «Zahlung erfassen …» while something is open, «Gutschrift erstellen …» on
+ * an invoice — nothing else on a final credit note. They form the action
+ * row (`.z77-form-actions` through the shared `partials/modalActions`,
+ * ADR-049 revision 2026-10-10) under the title; the editor and payment
+ * links are `data-window-link` (ADR-047 addendum 2026-10-10): inside the
+ * window they load into THIS window, on a page they are plain links. The
+ * links to other documents (credit notes, the credited invoice, a fee) and
+ * «ändern» of a payment stay in the window the same way.
  *
  * @var \Z77\Module\Debtor\Entities\Invoice $document  lines loaded
  * @var \Z77\Module\Debtor\Invoicing\QrBill $bill
@@ -38,7 +38,6 @@
  * @var string $origin  where the window came from (WindowOrigin) — the links inside keep it (core.js)
  */
 use Z77\Module\Vat\Entities\TaxRate;
-use Z77\Module\Debtor\Entities\DeliveryChannel;
 use Z77\Module\Debtor\Services\Iban;
 
 $window  = $window ?? false;
@@ -54,48 +53,32 @@ $period     = $document->getServiceFrom()->format('d.m.Y') . ($document->getServ
 /** A link that stays in the window (ADR-047): `data-window-link`; on a page a plain link. */
 $winLink    = static fn(string $href, string $label, string $class = 'be-btn be-btn--ghost', string $title = ''): string
     => '<a' . ($class !== '' ? ' class="' . e($class) . '"' : '') . ' href="' . e($href) . '" data-window-link' . ($title !== '' ? ' title="' . e($title) . '"' : '') . '>' . e($label) . '</a>';
-$actions    = '<a class="be-btn be-btn--ghost" href="' . e($actionBase . '/pdf?id=' . (int) $document->getId()) . '" target="_blank" rel="noopener" title="Als PDF öffnen (neuer Tab)">PDF</a>';
-if ($document->isFinal() && !$document->isCreditNote() && $openAmount !== null && !$openAmount->isZero()) {
-    $actions .= $winLink($actionBase . '/payment?id=' . (int) $document->getId(), 'Zahlung erfassen …');
-}
+$pdfUrl     = $actionBase . '/pdf?id=' . (int) $document->getId();
 if (!$document->isFinal()) {
+    // A draft (owner 2026-10-10): the preview, the editor, and the booking print — which leaves the window for
+    // its confirmation PAGE (DEBTOR-WIN-002) and then prints into a new tab.
+    $actions  = '<a class="be-btn be-btn--ghost" href="' . e($pdfUrl) . '" target="_blank" rel="noopener" title="Vorschau als PDF (neuer Tab) — ohne Nummer und ohne Zahlteil">Vorschau</a>';
     $actions .= $winLink($actionBase . '/edit?id=' . (int) $document->getId(), 'Neu fakturieren …');
-} elseif (!$document->isCreditNote()) {
-    $actions .= $winLink($actionBase . '/credit-note?of=' . (int) $document->getId(), 'Gutschrift erstellen …');
-}
-// «Fakturiert» (owner 2026-10-10): a booked document is marked by its first PDF or by hand; only a
-// mark set by hand can be removed. The button submits the small POST form below the action row
-// (in a window core.js sends it by fetch; the answer is the detail again + the list reloads).
-$deliveryForm  = '';
-$deliveryBadge = '';
-if ($document->isFinal()) {
-    $deliveryBadge = $document->isDelivered()
-        ? '<span class="badge badge--success" title="' . e('Fakturiert am ' . $document->getDeliveredAt()->format('d.m.Y H:i') . ' von ' . $document->getDeliveredBy()) . '">fakturiert ' . e($document->getDeliveredAt()->format('d.m.Y')) . '</span>'
-        : '<span class="badge badge--warning" title="Noch nicht beim Kunden — beim ersten Öffnen des PDFs oder von Hand markieren">nicht fakturiert</span>';
-    $deliveryAction = !$document->isDelivered() ? 'mark-delivered' : ($document->deliveredVia() === DeliveryChannel::Manual ? 'unmark-delivered' : '');
-    if ($deliveryAction !== '') {
-        $formId   = 'invoice-delivery-' . (int) $document->getId();
-        $actions .= '<button type="submit" form="' . e($formId) . '" class="be-btn be-btn--ghost">' . ($deliveryAction === 'mark-delivered' ? 'Als fakturiert markieren' : 'Markierung entfernen') . '</button>';
-        $deliveryForm = '<form id="' . e($formId) . '" method="post" action="' . e($actionBase . '/' . $deliveryAction . '?id=' . (int) $document->getId()) . '" hidden>'
-            . '<input type="hidden" name="csrf_token" value="' . e($csrfToken ?? '') . '">'
-            . ($window ? '<input type="hidden" name="_origin" value="' . e($origin ?? 'page') . '">' : '')
-            . '</form>';
+    $actions .= '<a class="be-btn be-btn--confirm" href="' . e($actionBase . '/confirm-finalize?' . http_build_query(['doc' => [$document->getId() . ':' . $document->getVersion()]])) . '" title="Nummer vergeben, verbuchen und als PDF drucken">Buchungsdruck …</a>';
+} else {
+    $actions = '<a class="be-btn be-btn--ghost" href="' . e($pdfUrl) . '" target="_blank" rel="noopener" title="Als PDF öffnen (neuer Tab)">PDF</a>';
+    if (!$document->isCreditNote() && $openAmount !== null && !$openAmount->isZero()) {
+        $actions .= $winLink($actionBase . '/payment?id=' . (int) $document->getId(), 'Zahlung erfassen …');
+    }
+    if (!$document->isCreditNote()) {
+        $actions .= $winLink($actionBase . '/credit-note?of=' . (int) $document->getId(), 'Gutschrift erstellen …');
     }
 }
 ?>
 <div class="be-list"<?= $winAttr ?>>
     <div class="be-list__section">
         <?= $this->partial('partials/modalActions', ['submit' => '', 'cancel' => '', 'extra' => $actions], 'Z77\\Shared') ?>
-        <?= raw($deliveryForm) ?>
         <div class="be-list__section-header">
             <h2 class="be-list__section-title">
                 <?= e($document->documentName()) ?>
                 <small class="be-list__cell--muted">· <?= e($document->getInvoiceDate()->format('d.m.Y')) ?> · <?= e($document->getCurrency()) ?> <?= e($fmt($document->getGrossTotal())) ?></small>
             </h2>
             <span class="badge <?= $state === 'final' ? 'badge--success' : 'badge--info' ?>" title="<?= e($states[$state]) ?>"><?= $state === 'final' ? 'verbucht' : 'in Fakturierung' ?></span>
-            <?php if ($document->isFinal()): ?>
-            <?= raw($deliveryBadge) ?>
-            <?php endif; ?>
         </div>
 
 
@@ -114,11 +97,7 @@ if ($document->isFinal()) {
             <?php elseif ($document->isFinal()): ?>
             <?= raw($row('Buchung', 'keine (Buchhaltung ausserhalb oder nichts zu buchen)')) ?>
             <?php endif; ?>
-            <?php if ($document->isFinal()): ?>
-            <?= raw($row('Fakturiert', $document->isDelivered()
-                ? e($document->getDeliveredAt()->format('d.m.Y H:i') . ' von ' . $document->getDeliveredBy()) . ' <small class="be-list__cell--muted">· ' . e($document->deliveredVia()?->label() ?? '') . '</small>'
-                : 'noch nicht <small class="be-list__cell--muted">· beim ersten Öffnen des PDFs oder mit «Als fakturiert markieren»</small>')) ?>
-            <?php endif; ?>
+
             <?php if ($allocations !== []): ?>
             <?= raw($row('Zahlungen', implode('<br>', array_map(static function ($a) use ($fmt, $actionBase, $document, $winLink): string {
                 $p = $a->getPayment();
@@ -179,14 +158,18 @@ if ($document->isFinal()) {
 
         <?php if (!$document->isCreditNote()): ?>
         <div class="be-form__section">Zahlteil (QR-Rechnung)</div>
-        <div class="be-list__table" style="--be-list-cols: 11rem minmax(12rem, 1fr)" data-qr-bill="<?= $bill->isPrintable() ? 'printable' : 'missing' ?>">
+        <div class="be-list__table" style="--be-list-cols: 11rem minmax(12rem, 1fr)" data-qr-bill="<?= $bill->isPending() ? 'pending' : ($bill->isPrintable() ? 'printable' : 'missing') ?>">
             <?php if ($payment->hasPaymentPart()): ?>
             <?= raw($row('Konto', e($bill->formattedAccount()) . ' <span class="badge ' . (Iban::isQrIban($payment->getAccount()) ? 'badge--success">QR-IBAN' : 'badge--muted">IBAN') . '</span> <small class="be-list__cell--muted">· Zahlungsziel ' . e($payment->getTargetCode()) . '</small>')) ?>
             <?= raw($row('Zahlbar an', e(implode(', ', array_filter([$payment->getCreditorName(), trim($payment->getCreditorStreet() . ' ' . $payment->getCreditorHouseNo()), trim($payment->getCreditorCountry() . ' ' . $payment->getCreditorZip() . ' ' . $payment->getCreditorCity())]))))) ?>
+            <?php if ($bill->isPending()): ?>
+            <?= raw($row('Referenz', 'folgt mit der Belegnummer beim Buchungsdruck' . ($payment->getReferenceType() === 'QRR' ? ' (QR-Referenz)' : ' (keine Referenz, NON — die Mitteilung nennt das Dokument)'))) ?>
+            <?php else: ?>
             <?= raw($row('Referenz', $payment->getReferenceType() === 'QRR' ? '<code>' . e($bill->formattedReference()) . '</code>' : 'keine (NON) · Mitteilung «' . e($payment->getMessage()) . '»')) ?>
             <?php endif; ?>
-            <?php if (!$bill->isPrintable()): ?>
-            <?= raw($row('Kein Zahlteil', implode('<br>', array_map('e', $bill->problems())))) ?>
+            <?php endif; ?>
+            <?php if (!$bill->isPrintable() && $bill->problems() !== []): ?>
+            <?= raw($row($bill->isPending() ? 'Vor dem Buchungsdruck beheben' : 'Kein Zahlteil', implode('<br>', array_map('e', $bill->problems())))) ?>
             <?php endif; ?>
         </div>
         <?php endif; ?>

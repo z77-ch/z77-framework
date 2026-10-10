@@ -13,7 +13,8 @@ use Z77\Shared\Listing\Parsers;
  * as an extra, the columns Nr. · Datum · Name · Fällig · Betrag — four of
  * them searched in the database, strictly parsed — sorted by number newest
  * first, 50 per page. The invoicing view leads with the selection checkbox
- * of «Verbuchen …»; the booked views end with «Fakturiert» (owner 2026-10-10).
+ * of «Buchungsdruck …» (owner 2026-10-10); a draft shows «Entwurf» in «Nr.»
+ * — it has no number until it is booked.
  */
 final class InvoiceListing
 {
@@ -21,21 +22,17 @@ final class InvoiceListing
 
     public const LIMIT = 50;
 
-    public static function definition(string $currency, bool $selectable, bool $showDelivery = false): ListDefinition
+    public static function definition(string $currency, bool $selectable): ListDefinition
     {
         $columns = $selectable ? [Column::slot('Auswahl')] : [];
         $columns = array_merge($columns, [
             Column::slot('Status'),
-            Column::search('f_nr', 'Nr.', '5rem', 'number', Parsers::integer(9), numeric: true, descendingFirst: true),
+            Column::search('f_nr', 'Nr.', '6rem', 'number', Parsers::integer(9), numeric: true, descendingFirst: true),
             Column::search('f_date', 'Datum', '6.5rem', 'date', Parsers::dateRange(), priority: '3', descendingFirst: true),
             Column::search('f_name', 'Name', 'minmax(10rem, 2fr)', 'name', Parsers::text()),
             Column::plain('Fällig', '6.5rem', priority: '2'),
             Column::search('f_amount', 'Betrag', '8rem', 'amount', Parsers::amount($currency), numeric: true, descendingFirst: true, inputMode: 'decimal'),
         ]);
-        if ($showDelivery) {
-            // «Fakturiert» (owner 2026-10-10): the date the booked document reached the customer, or «nicht fakturiert».
-            $columns[] = Column::plain('Fakturiert', '8.5rem', priority: '2');
-        }
 
         return new ListDefinition(self::ID, $columns, 'number', self::LIMIT, ['view' => InvoiceSearch::VIEWS]);
     }
