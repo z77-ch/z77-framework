@@ -288,7 +288,10 @@ body.backend {
     align-items: center;
     gap:         var(--space-1);
     min-width:   0;
-    font-size:   var(--font-size-sm);
+    // As small as the toolbar's search placeholder (`.be-input--sm`, .8125rem — owner
+    // 2026-10-10: «so klein wie der Placeholder im Suchfeld darüber»). Fixed like the
+    // inputs: with the font scale it grew past the toolbar above it.
+    font-size:   .8125rem;
     color:       var(--be-muted);
 
     a { color: var(--be-muted); text-decoration: none; }
