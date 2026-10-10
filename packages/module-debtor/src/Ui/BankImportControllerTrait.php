@@ -83,7 +83,10 @@ trait BankImportControllerTrait
             accept:     ['.xml'],
             maxBytes:   self::BANK_FILE_LIMIT,
             onConflict: UploadPolicy::CONFLICT_ERROR,
-            label:      'camt.054-Dateien hierher ziehen',
+            // The action cell is narrow and the label stands next to an ↑: «camt.054
+            // Upload» says it, «camt.054-Dateien hierher ziehen» overflows the cell
+            // (owner 2026-10-10).
+            label:      'camt.054 Upload',
             hint:       'XML · bis 5 MB · mehrere',
         );
     }

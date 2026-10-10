@@ -172,8 +172,17 @@ check('page mode keeps flash + redirect',     str_contains($trait, 'pushFlashAft
 check('a camt.054 already imported is an error, never overwritten',
     str_contains($trait, 'CONFLICT_ERROR'));
 check('the action cell is the cell shape',    str_contains($act, "withShape('cell')"));
-check('the list renders the zone + is the drop area',
-    str_contains($list, "partial('partials/upload'") && str_contains($list, 'data-upload-area'));
+// Owner 2026-10-10, after the live look: no upload box in the middle. The page keeps the
+// drop AREA and the place the queue is moved to; the button in the cell is the surface.
+check('the page has NO upload box of its own',   !str_contains($list, "partial('partials/upload'"));
+check('the work area is still the drop target',  str_contains($list, 'data-upload-area'));
+check('the progress has a place with room',      str_contains($list, 'data-upload-progress')
+    && str_contains($js, "[data-upload-progress]") && str_contains($js, 'z77-upload-queue'));
+check('the moved queue keeps its tokens',
+    str_contains($scss, '.z77-upload-queue') && str_contains($host, '.be .z77-upload-queue'));
+check('the cell label is short',                 str_contains($trait, "'camt.054 Upload'"));
+check('the phone hides the label the shell way', str_contains($partial, 'be-btn__label'));
+check('the form fills the action cell',          str_contains($host, '.be-shell-band__slot--1 > .z77-upload--cell'));
 check('the old hand-written file field is gone', !str_contains($list, 'id="bank-file"'));
 
 echo "\ntwo caps (the Drive's case)\n";

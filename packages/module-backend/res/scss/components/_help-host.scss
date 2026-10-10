@@ -43,9 +43,13 @@
 .be .z77-help__close:hover,
 .be .z77-help__full[aria-pressed="true"] { background: var(--be-accent-soft); color: var(--be-text); }
 
-// «? Hilfe» in the top bar's right cluster, beside the bell: as high as the bell, the «?» in
-// the accent badge the window «i» uses. On a phone only the badge (the label is hidden, the
-// aria-label stays). `[hidden]` until core.js reveals it — the class's display must not win.
+// «Hilfe» in the top bar's right cluster, beside the bell: as high as the bell.
+//
+// NO «?» badge where the word fits (owner 2026-10-10): an icon is for a place that has no
+// room for the word, or a layout that prescribes one — next to a label it only repeats it.
+// On a PHONE the room is gone, so the badge appears and the label hides; the accessible
+// name stays either way. `[hidden]` until core.js reveals it — the class's display must
+// not win.
 .be .z77-help-trigger {
     flex:          none;
     display:       inline-flex;
@@ -66,8 +70,10 @@
     &:hover { background: var(--be-surface); }
     &:focus-visible { outline: 2px solid var(--be-accent); outline-offset: 2px; }
 }
+// Desktop: the word alone — the badge is hidden here and switched on for the phone at the
+// bottom of this file, where the room for the word is gone.
 .be .z77-help-trigger__icon {
-    display:         inline-flex;
+    display:         none;
     align-items:     center;
     justify-content: center;
     width:           18px;
@@ -102,6 +108,8 @@
 @media (max-width: 767px) {
     .be .z77-help,
     .be .z77-help__head { border-radius: 0; }
+    // No room for the word → the badge takes over (the rule's other half).
     .be .z77-help-trigger { width: 30px; padding: 0; justify-content: center; }
+    .be .z77-help-trigger__icon  { display: inline-flex; }
     .be .z77-help-trigger__label { display: none; }
 }

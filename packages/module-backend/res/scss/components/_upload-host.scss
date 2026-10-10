@@ -8,7 +8,8 @@
 // dark island (the action cell's work area) and `--be-accent` is redefined there to a light
 // variant made for text on dark — the same trap ACTION-CELL-ISLAND-001 documents.
 
-.be .z77-upload {
+.be .z77-upload,
+.be .z77-upload-queue {
     --z77-up-border:      var(--be-line-page);
     --z77-up-surface:     var(--be-surface-page);
     --z77-up-muted:       var(--be-muted-page);
@@ -29,10 +30,33 @@
 
 // The cell shape IS a `.be-btn` in the action cell — the button's own look applies and the
 // component adds nothing but the arrow's spacing (ACTION-CELL-ISLAND-001 owns the fill).
+// The FORM is what sits in the cell, so it has to behave like the button the cell expects
+// (`.be-shell-band__slot--1 > .be-btn { flex: 1 1 auto }`): fill it, add no gap, and let
+// the label inside be the full-size target.
 .be .z77-upload--cell {
     gap: 0;
 
     .z77-upload__cell { gap: var(--space-1); }
+}
+
+.be .be-shell-band__slot--1 > .z77-upload--cell {
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 100%;
+
+    > .z77-upload__cell {
+        width: 100%;
+        height: 100%;
+        justify-content: center;
+    }
+}
+
+// On a phone the cell is a square at the right end of the band (SHELL-ACTION-STANDARD-001
+// part d): the shell hides `.be-btn__label` there, which this label carries, so what is
+// left is the ↑ — and that is the whole upload, reachable from the toolbar.
+@media (max-width: 767px) {
+    .be .be-shell-band__slot--1 > .z77-upload--cell > .z77-upload__cell { padding: 0; }
+    .be .z77-upload--cell .z77-upload__arrow { font-size: 1.15rem; }
 }
 
 // While files hang over the window the work area says so: the whole column is the target

@@ -74,6 +74,15 @@ often?* That is the action cell. The target table of the existing areas is in
 | Area choice | the rail-top select (`railSelect`) — a floating tinted card | a dropdown in the toolbar |
 | Sections of a long form | radio tabs (`.be-radiotabs` + `.be-viewtabs__tab--for` in the toolbar), one form, one save; the first tab with an error opens | separate pages per section |
 
+**An icon stands for a word only where there is no room for the word, or where the layout
+prescribes one** (owner 2026-10-10, at the «? Hilfe» button). Next to its own label an icon
+repeats it and adds a second thing to read: «Hilfe» is the button, the «?» badge is what a
+phone falls back to when the label no longer fits. Where an icon does take over, the label
+is hidden VISUALLY (`clip-path`, as the action cell does it) — never `display: none`, which
+would leave a button without a name for a screen reader. The leading kind glyph of an action
+(«+» create, «↑» upload, «✓» confirm) is not this case: it marks the KIND, it does not
+replace the word.
+
 Details and selectors: [css-backend.md → button / tab / switch vocabulary](../topics/css-backend.md).
 
 ## 4. The work area

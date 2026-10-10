@@ -614,10 +614,16 @@ details.be-shell-add--select > summary {
 // tokens the `.be-icon-btn`s use inherit from the `.be` root regardless).
 .be-drive-head { display: flex; align-items: center; gap: var(--space-2); flex: 1; min-width: 0; }
 
-// Drive hc2 tools (ADR-033): folder edit/move/delete left (acting on the open
-// folder, hidden while none is), the gap pushes new-folder + trash to the right.
-.be-drive-tools { display: flex; align-items: center; gap: var(--space-1); flex: 1; min-width: 0; }
+// Drive hc2 (ADR-033, rev. 2026-10-10): the TOOLS on the open folder stand left in one
+// look (icon + label each), the gap pushes the VIEWS of the whole collection to the right
+// — today the «Papierkorb» tab. The two differ in what they act on, so they differ in
+// place: a tool needs a selection, a view does not.
+.be-drive-tools { display: flex; align-items: stretch; gap: var(--space-1); flex: 1; min-width: 0; }
+.be-drive-tools > .be-btn { align-self: center; }
 .be-drive-tools__gap { flex: 1; }
+// The tab strip fills the band's height so its underline sits on the band's edge, exactly
+// as a tab row does — it is the same control, only in another slot.
+.be-drive-tools > .be-viewtabs { flex: none; align-self: stretch; }
 
 // Empty state of a pane that waits for a selection ("choose a document for the preview").
 // Was `.be-shell-preview__empty`, tied to the removed column 3; renamed because the workspace
