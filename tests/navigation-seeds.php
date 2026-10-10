@@ -182,6 +182,7 @@ $expectedBackend = [
     'backend-main: Service > Jobs [backend/service/job/list]',
     'backend-main: Service > Import [backend/service/import/list]',
     'backend-main: Service > Formular-Protokoll [backend/service/form-log/list]',
+    'backend-main: Service > Statistik [backend/service/stats/list]',
 ];
 $expectedFrontend = [
     'frontend-main: Home [frontend/main/index/home]',
@@ -350,7 +351,7 @@ $run = static fn(array $roots) => (new ReflectionMethod(Install::class, 'seedNav
 $run($chRoots);
 $written = json_decode((string) file_get_contents($navFile), true);
 check('NSEED-7a fresh: navigation.json holds the target tree', outline($written) === $expected);
-check('NSEED-7b the output names the added entries', str_contains($io->out(), 'Navigation seeds → 32 entries added')
+check('NSEED-7b the output names the added entries', str_contains($io->out(), 'Navigation seeds → 33 entries added')
     && str_contains($io->out(), '+ «Journal» (journal)'), $io->out());
 check('NSEED-7c written like FileStorage (pretty, unescaped unicode, no BOM)',
     str_contains((string) file_get_contents($navFile), '"Übersetzungen"') && !str_starts_with((string) file_get_contents($navFile), "\xEF\xBB\xBF"));
@@ -366,7 +367,7 @@ unlink($navFile);
 $io->lines = [];
 $run($chRoots);
 check('NSEED-7f no navigation.json at all: created (the backend menu, no frontend pages)',
-    is_file($navFile) && count(json_decode((string) file_get_contents($navFile), true)) === 32);
+    is_file($navFile) && count(json_decode((string) file_get_contents($navFile), true)) === 33);
 file_put_contents($navFile, '{ broken');
 $thrown = '';
 try { $run($chRoots); } catch (\RuntimeException $e) { $thrown = $e->getMessage(); }
@@ -383,7 +384,7 @@ check('NSEED-8a the spec carries the seeds, the source folds them in',
     count($spec['navigation_seeds']) === 6 && $source instanceof NavigationSeedSource);
 $navSet = $source->recordSets()[Navigation::class];
 check('NSEED-8b Navigation set = default (ids kept) + every seed entry',
-    count($navSet) === 8 + 32 && array_slice(array_column($navSet, 'id'), 0, 8) === [3, 4, 5, 8, 9, 10, 11, 12]);
+    count($navSet) === 8 + 33 && array_slice(array_column($navSet, 'id'), 0, 8) === [3, 4, 5, 8, 9, 10, 11, 12]);
 
 // Target: the hand-built installation without Geschäftsjahre, aliases of the fresh ids +100.
 $aliasTarget = array_map(static function (array $a) { $a['navigation_id'] += 100; return $a; },
