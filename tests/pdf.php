@@ -227,5 +227,10 @@ $bytes = $doc->output();
 check('H5 trial balance PDF: title, the account, the totals row; balanced → no notice', str_contains($bytes, '(Saldobilanz)') && str_contains($bytes, '(1020)') && str_contains($bytes, '(Total)') && str_contains($bytes, '(500.00)') && !str_contains($bytes, 'Soll ='));
 check('H6 the NAME column wraps (`wrap` => 1), not the account number: the long name is drawn over several lines', preg_match_all('/\(([^)]*Kontobezeichnung[^)]*)\)/', $bytes) >= 3);
 
+$doc = PdfDocument::create('fit')->withoutCompression()->addPage()->font('', 9);
+check('H7 fit(): a short text is unchanged, a long one is cut to the width and ends in «…»', $doc->fit('Kasse', 40) === 'Kasse' && str_ends_with($doc->fit($long, 40), '…') && $doc->textWidth($doc->fit($long, 40)) <= 40);
+$bytes = PdfDocument::create('nowrap')->withoutCompression()->partial('pdf/report', ['title' => 'T', 'blocks' => [['columns' => $cols, 'rows' => [['cells' => ['1', $long . $long, '1.00']]], 'wrap' => null]]])->output();
+check('H8 `wrap` null: the long name is ONE line ending in «…» (cp1252 0x85), the left margin is 12 mm', preg_match_all('/\(([^)]*Kontobezeichnung[^)]*)\)/', $bytes) === 1 && str_contains($bytes, "\x85)"));
+
 echo "\n{$pass} passed, {$fail} failed\n";
 exit($fail === 0 ? 0 : 1);
