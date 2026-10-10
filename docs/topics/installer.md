@@ -1,6 +1,6 @@
 # installer
 
-2026-09-29
+2026-10-10
 
 ## entry
 
@@ -26,13 +26,14 @@ SOURCE=/packages/kernel/core/data/framework/seo/metadata.default.json
 SOURCE=/skeleton/composer.json
 SOURCE=/tests/fresh-install-setup.php
 SOURCE=/tests/installer-asset-publish.php
+SOURCE=/tests/installer-asset-cleanup.php
 RUNTIME=/skeleton/var/state/published-assets.json
 
 ## mental model
 
 Runs as a Composer post-install/post-update hook. Reads `extra` config from `composer.json`, scans all installed packages for those matching `frameworkPrefix` (Z77), processes only those. For each match: project directories are created, public assets copied, config files written (regenerated every install), and data files seeded (written once — never overwritten).
 
-- Published public files carry a **publication record** (`var/state/published-assets.json`): the sha1 each file had when the installer wrote it. It is what separates «untouched since we published it» (refreshed silently on the next install) from «edited in this project» (never written without consent) — INST-ASSET-DIFF-001, [ADR-046](../02-decisions/adr-046-publication-record-for-public-files.md). It covers `res/assets` plus the entry files `index.php` and `.htaccess`, not the branding files.
+- Published public files carry a **publication record** (`var/state/published-assets.json`): the sha1 each file had when the installer wrote it. It is what separates «untouched since we published it» (refreshed silently on the next install, and deleted when the packages drop it) from «edited in this project» (never written and never deleted without consent) — INST-ASSET-DIFF-001 / INST-ASSET-002, [ADR-046](../02-decisions/adr-046-publication-record-for-public-files.md). It covers `res/assets` plus the entry files `index.php` and `.htaccess`, not the branding files.
 - All failures throw `\RuntimeException` — no silent errors.
 - `skeleton/composer.json` is the single source of truth for project configuration.
 - `run()` is static (Composer requirement); creates `new self($event)` internally → instance pattern, no global state.
@@ -56,6 +57,7 @@ Runs as a Composer post-install/post-update hook. Reads `extra` config from `com
 | 4 | `copyFiles()` | `public/` entry files → project web root — **first install only** (`public/` absent; ADR-024). On update (`public/` present) instead: `loadPublishedAssets()` + `reportAssetDrift()` sort the shipped assets into refreshable / changed / new (ADR-025) |
 | 4b | `reportEntryFileDrift()` | update only: the same classification for `public/index.php` and `public/.htaccess` (INST-ASSET-ENTRY-001) |
 | 4c | `deployUndisputedAssets()` | update only: write every file still byte-identical to the publication record, plus every file that is absent AND unrecorded — **no prompt, interactive and non-interactive alike** (INST-ASSET-DIFF-001). Saves the record in a `finally`, so an abort mid-loop still records what was written |
+| 4d | `unpublishDroppedAssets()` | update only, the reverse direction (INST-ASSET-002): DELETE every published file the walked packages no longer ship while it is still byte-identical to the publication record, drop its record entry, prune the emptied dirs. No prompt — our own untouched copy is not a decision. Saves the record in a `finally` |
 | 5 | `createDirectories()` | override dirs, moduleTree, logs (always) + publicAssetTree asset copy (**first install only**; every copied file enters the publication record) |
 | 6 | `seedCronEntry()` | seed `cron/run.php` from the kernel template — **seed-once**: the cron entry for hosts whose panel takes one command and no `cd` (the starter `chdir()`s into the project and hands over to `vendor/bin/z77-run`), see [`jobs.md`](jobs.md) |
 | 6b | `migrateConfigSplit()` | one-time flat→split migration (ADR-036): flat generated files deleted (rewritten below), flat seed-once files RENAMED into `config/client/` so hand edits survive; no-op on a split layout |
@@ -74,7 +76,7 @@ Runs as a Composer post-install/post-update hook. Reads `extra` config from `com
 | 17 | `writeDebugFlag()` | create/remove `var/state/debug.flag` per `debug` (release-local, ADR-035; creates `var/state/` if missing) |
 | 18 | `seedDenyFiles()` | seed a deny `.htaccess` (`Require all denied`, from `core/res/htaccess-deny`) into `data/`, `config/`, `logs/` — **seed-once**, existing files never touched, missing dirs skipped (INST-DENY-001) |
 | 19 | `seedProjectClaudeMd()` | seed `CLAUDE.md` (project context for AI assistants) from the kernel template — **seed-once**, never overwritten |
-| 19b | `renderAssetWriteNotice()` | name every file written in step 4c (plain lines — it needed no decision, but a deploy log must show it) |
+| 19b | `renderAssetWriteNotice()` | name every file written in step 4c and, through `renderAssetRemovalNotice()`, every file deleted in step 4d (plain lines — neither needed a decision, but a deploy log must show it) |
 | 20 | `renderAssetDriftNotice()` | the ONE list of the files that still need a DECISION, as a coloured notice (ADR-025) — with the reason per file, in BOTH run modes; non-interactively it carries the closing guidance line |
 | 21 | `promptAssetDeploy()` | **interactive only**: per-file, default-No (ADR-026). Non-interactive: does nothing — the notice above was the report, so no file is named twice |
 | 21b | `savePublishedAssets()` | write `var/state/published-assets.json` when anything was published this run |
@@ -97,7 +99,7 @@ Runs as a Composer post-install/post-update hook. Reads `extra` config from `com
 
 The target dir name is derived by `deriveAssetDirName($namespace)`: 3-segment namespaces whose middle segment is `modulePrefix` (`Z77\Module\Frontend`) use the third segment; all others (`Z77\Shared`) use the second; always lowercased.
 
-On a fresh project the installer creates the `publicAssetTree` subdirectories (`css/`, `js/`, `images/`, …) with `<*module*>` resolved to that name, then copies `vendor/{package}/res/assets/` into `public/{assetDir}/{module}/` — and writes the sha1 of every copied file into the publication record. Once `public/` exists this step is skipped entirely; from then on the update path (`reportAssetDrift()` + `deployUndisputedAssets()`) decides per file, and only a file that still matches the record, or that `public/` never had, is written.
+On a fresh project the installer creates the `publicAssetTree` subdirectories (`css/`, `js/`, `images/`, …) with `<*module*>` resolved to that name, then copies `vendor/{package}/res/assets/` into `public/{assetDir}/{module}/` — and writes the sha1 of every copied file into the publication record. Once `public/` exists this step is skipped entirely; from then on the update path (`reportAssetDrift()` + `deployUndisputedAssets()` + `unpublishDroppedAssets()`) decides per file, and only a file that still matches the record, or that `public/` never had, is written — and only a file that still matches the record is deleted when the packages drop it.
 
 To add assets to a future framework package: create `res/assets/` in that package. No installer changes needed.
 
@@ -153,14 +155,16 @@ account (also role `superUser`), and deletes the token. See [`security.md`](secu
 | Situation | Behaviour |
 |---|---|
 | `public/` absent (fresh project) | seed the full baseline: entry files (`index.php`, `.htaccess`, favicons) + `res/assets` → `public/assets/{module}` |
-| `public/` exists (any re-install / update) | **not seeded wholesale.** Per file (assets + `index.php` / `.htaccess`): identical to the publication record, or absent and unrecorded → **written silently** (INST-ASSET-DIFF-001); differs from the record, or no record → kept, offered per file on an interactive run (ADR-026) and named on a non-interactive one; absent but recorded → reported as removed here, never re-created. The branding files (favicons, `site.webmanifest`) are never touched |
+| `public/` exists (any re-install / update) | **not seeded wholesale.** Per file (assets + `index.php` / `.htaccess`): identical to the publication record, or absent and unrecorded → **written silently** (INST-ASSET-DIFF-001); differs from the record, or no record → kept, offered per file on an interactive run (ADR-026) and named on a non-interactive one; absent but recorded → reported as removed here, never re-created; **no longer shipped** by a walked package and still identical to the record → **deleted silently** (INST-ASSET-002), anything else no longer shipped stays. The branding files (favicons, `site.webmanifest`) are never touched |
 
 `copyFiles()` also skips any individual file that already exists (defensive). There is **no**
 `debug`-driven overwrite and **no** unattended/"yes-to-all" force command (a blind force-copy is the
 footgun that caused INST-ASSET-002). The installer writes into an existing `public/` on exactly two
 paths: the automatic refresh of an asset that is **byte-identical to the copy the installer itself
 published** (no developer work can be at stake — that is the whole point of the record), and the
-interactive, per-file, default-No deploy prompt (ADR-026). Everything else stays. To refresh the
+interactive, per-file, default-No deploy prompt (ADR-026). It DELETES on exactly one: a file a
+walked package no longer ships that is still byte-identical to the record — the same proof, used
+the other way round (INST-ASSET-002). Everything else stays. To refresh the
 framework baseline wholesale the developer deletes the target file(s) — or `public/` — and
 re-installs, or starts a new project and migrates old data in.
 
@@ -211,10 +215,16 @@ installer wrote it**:
   mid-way still leaves the record describing what was already written; `savePublishedAssets()`
   writes a `.tmp` file and `rename()`s it, so an interrupted write cannot leave a truncated record
   (which would read back as «unknown» for every file below the cut).
-- **It only grows.** An entry for a file the framework no longer ships stays. Pruning would mean
-  trusting one run's view of `vendor/` to decide that a file is gone for good — a disabled module,
-  a half-installed tree or a renamed package would each delete entries that are still true. A sha1
-  per path is cheap; a wrong deletion is not.
+- **It grows by itself and shrinks only where the installer removed the file** (amended
+  2026-10-10 by INST-ASSET-002; the original rule was "it only grows"). An entry is dropped in
+  exactly two places, both inside a package asset tree the run actually WALKED: the file was
+  deleted by `unpublishDroppedAssets()`, or it was already gone from disk. Both are statements
+  about what we did or found, not guesses about `vendor/` — a disabled module, a half-installed
+  tree or a renamed package is not walked at all (`is_dir($source)`), so none of its entries is
+  ever considered. An entry for a path outside the walked trees (another module, the entry files)
+  stays untouched. Dropping the entry is not optional: left behind it would classify the same
+  name, the day a package ships it again, as «− removed here» and block it from ever being
+  published.
 - **Deleting it is safe**: in-sync files adopt a record again on the next install, and the
   currently-differing ones cost one round of prompts.
 
@@ -223,7 +233,9 @@ installer wrote it**:
 Since `public/` is seed-once, a framework update that changes `core.js` / `base.css` would otherwise
 be **invisible** — the `FileFinder` keeps serving the stale deployed copy, no error. On an update
 (`public/` present) `classifyPublishedFile()` compares THREE values per file — the shipped file, the
-deployed copy, and what the record says we last wrote — and sorts it into one of five outcomes:
+deployed copy, and what the record says we last wrote — and sorts it into one of five outcomes.
+`collectDroppedAssets()` then looks the same tree over the other way round (what the record holds
+but the package no longer ships) and adds a sixth:
 
 | Outcome | Condition | What happens |
 |---|---|---|
@@ -232,9 +244,14 @@ deployed copy, and what the record says we last wrote — and sorts it into one 
 | `+ published` | absent in `public/` **and unrecorded** | genuinely new — nobody can have edited what never existed here, so it is written unattended and recorded |
 | `− removed here` | absent in `public/` but **recorded** | WE published it and it is gone: someone deleted it in this project. Never re-created on its own; reported, and asked once on an interactive run |
 | `~ kept` | present, differs from the record (`edited`) or has no record (`unrecorded`) | never written on its own. Interactive: warned + asked, default No. Non-interactive: named, with the reason |
+| `✖ unpublished` | no longer shipped by the walked package, on disk, **identical to the record** | deleted immediately, **no prompt, in every run mode**; the record entry is dropped, emptied dirs are pruned, the file is named afterwards (INST-ASSET-002) |
 
-A framework file that vanished from `vendor/` is still NOT reported: comparing new-vendor against
-deployed-public cannot tell a dropped framework file from a developer-added one.
+A file the package dropped that does NOT match the record (edited here, or never recorded) stays
+and is deliberately **not named**: it can be the project's own file in its own `public/` directory,
+and naming it would put it in every install log forever — the INST-ASSET-ENTRY-001 noise argument.
+That is also why the drift walk cannot report it as drift: comparing new-vendor against
+deployed-public cannot tell a dropped framework file from a developer-added one. Only the record
+can, and only for the files it knows.
 
 - `reportAssetDrift()` runs in the `else` branch of `execute()` (only when `public/` exists). It
   reuses `$this->publicAssetPaths` (built by `buildPaths()`) and `deriveAssetDirName()` to locate,
@@ -243,11 +260,23 @@ deployed-public cannot tell a dropped framework file from a developer-added one.
   only **collect** — they print nothing.
 - `collectAssetDrift()` recurses the source tree and hands each file to `classifyPublishedFile()`;
   the entries carry `src` (vendor) + `dst` (public) alongside `display`, and a `~ kept` entry
-  additionally carries `reason` (`edited` / `unrecorded`).
+  additionally carries `reason` (`edited` / `unrecorded`). It also notes every shipped file in
+  `$shippedPublicFiles` (record keys) — the set `collectDroppedAssets()` subtracts from the record.
+- `collectDroppedAssets($target, $assetName)` runs once per asset tree, and **only when that
+  tree's vendor source existed this run**. It scans the record for keys under
+  `public/{assetDir}/{name}/` that `$shippedPublicFiles` does not hold: on disk + hash matches →
+  `$assetUnpublished` (delete), on disk + hash differs → left alone silently, already gone →
+  `$assetForgotten` (drop the entry only). `isSafeRecordKey()` rejects a hand-edited key that
+  could aim the delete out of the tree (`..`, absolute, drive letter, backslash).
 - `deployUndisputedAssets()` performs the `↻ refreshed` + `+ published` writes right there — before
   the rest of the install — and saves the record in a `finally`.
-- `renderAssetWriteNotice()` prints those files as plain lines; they needed no decision, but a
-  deploy log must still show what changed under `public/`.
+- `unpublishDroppedAssets()` performs the `✖ unpublished` deletes right after it, drops those
+  record entries (`forgetPublishedAsset()`), prunes the emptied directories up to (never
+  including) the asset root (`pruneEmptyAssetDirs()` — cosmetic, a refused `rmdir()` is not an
+  error), throws on a failing `unlink()`, and saves the record in a `finally`.
+- `renderAssetWriteNotice()` prints those files as plain lines, and `renderAssetRemovalNotice()`
+  the deleted ones; they needed no decision, but a deploy log must still show what changed under
+  `public/`.
 - `renderAssetDriftNotice()` is called near the **end of `execute()`** (after "installation
   complete") and prints what still needs a decision, as ONE notice with a solid coloured background
   (`<bg=yellow;fg=black>` Symfony Console / Composer IO inline style, lines padded to a uniform
@@ -347,7 +376,9 @@ Installer creates the override dirs, registers the module in `moduleManager.inc.
 - When `public/` and `vendor/` hold the same bytes → the record MUST be corrected whenever it says something else, missing entry and WRONG entry alike (`classifyPublishedFile()`); MUST NOT make the adoption conditional on the entry being absent — a stale hash would then never heal and would freeze the file as "edited" forever.
 - When writing files into `public/` in a loop → MUST save the record in a `finally`; MUST NOT save only after the loop (an abort would leave files on disk that the record does not know).
 - When writing the record → MUST write a temp file and `rename()` it; MUST NOT write in place (a truncated record reads back as "provenance unknown" for every file below the cut).
-- When a record entry names a file the framework no longer ships → MUST leave it; MUST NOT prune the record from one run's view of `vendor/`.
+- When a published file is no longer shipped → MUST delete it ONLY while its sha1 still equals the publication record, and MUST drop its record entry in the same step; MUST NOT delete a file that differs from the record or has no record entry (it can be the project's own), MUST NOT name the kept ones (permanent log noise), and MUST NOT act on an asset tree whose vendor source was absent this run (`is_dir($source)` — a disabled, half-installed or renamed package says nothing about what is shipped).
+- When deleting under `public/` → MUST stay inside the asset tree the record key was matched against (`isSafeRecordKey()` + the `public/{assetDir}/{name}/` prefix); MUST NOT touch the entry files, the branding files, another module's tree or anything outside `public/{assetDir}/`.
+- When a record entry names a file the framework no longer ships → MUST leave it unless the installer itself removed that file, or found it already gone, while walking that package's asset tree; MUST NOT prune the record from one run's view of `vendor/` beyond those two cases.
 - When a file is absent in `public/` → MUST consult the record before writing: unrecorded = genuinely new (write it), recorded = published here and deleted since (report as removed, MUST NOT re-create it on its own, and MUST NOT call restoring it risk-free).
 - When a run is non-interactive → MUST NAME every file that keeps its current state, with the reason, in the drift notice; MUST NOT end with a bare "nothing written", and MUST NOT list the same file twice (INST-ASSET-DIFF-001).
 - When choosing which entry files the record covers → MUST keep `RECORDED_ENTRY_FILES` to framework-owned code (`index.php`, `.htaccess`); MUST NOT add the branding files (favicons, `site.webmanifest`), which nearly every project replaces and which would then stand in every install log forever (INST-ASSET-ENTRY-001).
@@ -361,7 +392,29 @@ Installer creates the override dirs, registers the module in `moduleManager.inc.
 ## known issues
 
 - **INST-FRESH-001** — resolved 2026-09-22 (P2 exit check, findings S1–S3). Don't assume a fresh install needs no hand edit before it is fully usable: two seed-once values are deliberately left for the installation. (1) `canonicalBaseUrl` is empty — until 2026-09-22 that took down even `/backend/system/setup/setup`, and with status 200 (fixed in the framework: [`bootstrap.md`](bootstrap.md) BOOT-SETUP-001, BOOT-ERR-001). Now the setup and the backend run; frontend pages and mail links answer 500 until it is set. Where it is named: the installer prints one line naming `config/client/systemConfig.inc.php` and `canonicalBaseUrl` at the end of every run while the value is empty (`reportMissingCanonicalBaseUrl()`, seed-once file only read; checked by `tests/fresh-install-setup.php` through the static `canonicalBaseUrlNotice()`), and the backend Störer names it — but only AFTER login: the setup page and `/login` show no banner. (2) The database `host` is `localhost` — right on Linux (socket), ~2 s per request on Windows against a MariaDB bound to `127.0.0.1` ([`persistence-doctrine.md`](persistence-doctrine.md) DOCTRINE-HOST-001). Both files are seed-once: any change to a seed reaches only NEW installations; an existing installation keeps its file.
-- **INST-ASSET-002** (open, measured 2026-10-10 on z77.ch): don't assume `public/assets/` mirrors the packages — the asset publish ADDS and REFRESHES, it never REMOVES. When a package drops a file, its published copy stays behind. Found with UPLOAD-001: the DMS deleted `documents/upload.js` + `.min.js`, and `public/assets/dms/js/documents/` still served both after a `composer update "z77/*"` (deleted by hand). Harmless as long as nothing references them — a stale copy is dead weight, not a wrong answer — but exactly the shape that is dangerous the day a file comes BACK under the same name with other content, or a template still names it. A fix would delete a published file that is still byte-identical to the copy the publish last wrote (identical = never hand-edited, so deleting it loses nothing); anything else stays, because a project may legitimately keep its own file there.
+- **INST-ASSET-002 (second incident)** — measured 2026-10-10 on z77.ch, **resolved 2026-10-10**.
+  Don't assume `public/assets/` mirrored the packages: the asset publish ADDED and REFRESHED, it
+  never REMOVED, so a file a package dropped kept being published and served. Found with
+  UPLOAD-001: the DMS deleted `documents/upload.js` + `.min.js`, and `public/assets/dms/js/documents/`
+  still served both after a `composer update "z77/*"` (deleted by hand then). **Cause:** the whole
+  update path was driven by the vendor tree — `collectAssetDrift()` walked what the packages ship
+  and classified each file, so a path that had vanished from `vendor/` was never looked at by
+  anything. The publication record held the one fact nobody read in that direction. Harmless while
+  nothing references the leftover, dangerous the day the same name comes BACK with other content or
+  a template still asks for it. **Fix:** `collectDroppedAssets()` reads the record the other way
+  round — per asset tree, the recorded keys that this run's walk did NOT see. Still byte-identical
+  to the record ⇒ ours, never hand-edited ⇒ `unpublishDroppedAssets()` deletes it, drops the record
+  entry (so a returning file publishes as new instead of reading as «− removed here») and prunes
+  the emptied dirs; already gone from disk ⇒ the dead entry is dropped, nothing else. Everything
+  that differs from the record, or that the record never knew, stays and is not even named — it can
+  be the project's own file, and naming it would stand in every install log forever. Scoped three
+  ways: only a tree whose vendor source existed this run (a disabled / half-installed / renamed
+  package is never walked), only keys under `public/{assetDir}/{name}/`, and only keys
+  `isSafeRecordKey()` accepts. Worst case is bounded by design: a delete can only ever hit a copy
+  identical to what we published, and the next install republishes it as new. **verified:**
+  `tests/installer-asset-cleanup.php` (54 checks — delete/keep/edited/unrecorded, the returning
+  file, missing vendor tree, entry files and foreign trees untouched, traversal keys, dir pruning,
+  duplicate asset dir, abort mid-delete), plus `tests/installer-asset-publish.php` (53 checks) unchanged and green.
 - `Install.php` is a single large class (ARCH-C) — planned split for v1.1 (low priority).
 - **INST-ASSET-001** — resolved 2026-05-17. Asset installation no longer module-only: `createPublicAssets()` now installs `res/assets/` from every framework package (modules + shared + any future non-module package). Previously the `Z77\Module\` filter silently dropped shared assets, so e.g. `packages/kernel/shared/res/assets/js/core.js` never reached `public/assets/shared/js/` via Composer install.
 - **INST-ASSET-002** — resolved 2026-07-14 (ADR-024). `composer install` clobbered
