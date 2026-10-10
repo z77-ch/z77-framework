@@ -4,7 +4,10 @@ namespace Z77\Module\Financial\Ui;
 use Z77\Shared\Money\AmountFormat;
 
 use Z77\Core\DI,
+    Z77\Core\Http\Response\BytesResponse,
     Z77\Core\Http\Response\HtmlResponse,
+    Z77\Core\Http\Response\RedirectResponse,
+    Z77\Module\Financial\Pdf\ReportPdf,
     Z77\Module\Financial\Entities\Account,
     Z77\Module\Financial\Entities\FiscalYear,
     Z77\Module\Financial\Reports\ReportRange,
@@ -58,7 +61,10 @@ trait ReportControllerTrait
         'journal'           => 'Journal',
     ];
 
-    private const REPORT_MONTHS = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez'];
+    /** The reports that have a PDF already (FIN-PDF-001, built step by step). */
+    private const REPORT_PDF = ['balance-sheet'];
+
+    private const REPORT_MONTHS =['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez'];
 
     /** URL root of THIS mount — every report link and form is built from it. */
     protected function reportBase(): string
@@ -155,6 +161,29 @@ trait ReportControllerTrait
                     : self::REPORT_TABS['account-statement'] . ' ' . $account->getNumber() . ' ' . $account->getName(),
             ];
         });
+    }
+
+    /**
+     * The report as a PDF (FIN-PDF-001): `?report=<tab>` plus the same range parameters as the
+     * page (`year`, `from`, `to`, `period`), answered inline through the kernel's `pdf/report`
+     * layout. A report without a PDF yet, or no fiscal year → back to the report page.
+     */
+    protected function pdfAction(): BytesResponse|RedirectResponse
+    {
+        $tab     = $this->reportParameter('report');
+        $notices = [];
+        $range   = $this->reportRange($notices);
+        if ($range === null || !in_array($tab, self::REPORT_PDF, true)) {
+            return $this->redirect($this->reportBase() . '/' . (isset(self::REPORT_TABS[$tab]) ? $tab : 'trial-balance'));
+        }
+
+        $issuer    = $this->reportMandator()?->getName() ?? '';
+        $printedAt = (new \DateTimeImmutable())->format('d.m.Y H:i');
+        $pdf       = match ($tab) {
+            'balance-sheet' => ReportPdf::balanceSheet($this->ledgerReports()->balanceSheet($range), $issuer, $printedAt),
+        };
+
+        return $this->bytes($pdf->output(), ReportPdf::fileName(self::REPORT_TABS[$tab], $range->year->getCode(), $range->toDay()), 'application/pdf');
     }
 
     /** `?page=` — the journal of the range, oldest first, one page of entries at a time. */
@@ -286,6 +315,7 @@ trait ReportControllerTrait
             'tab'         => $tab,
             'reportTabs'  => self::REPORT_TABS,
             'months'      => self::REPORT_MONTHS,
+            'pdfTabs'     => self::REPORT_PDF,
             'link'        => $link,
             'reportBase'  => $base,
             'journalBase' => $this->reportJournalBase(),

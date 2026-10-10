@@ -183,5 +183,31 @@ check('G1 report: a PDF, more than one page for 90 rows, the head on every page'
 check('G2 report: the page count is resolved («Seite 1 von n», no {nb} left), the printed-at line and the notice are there', !str_contains($bytes, '{nb}') && str_contains($bytes, '(Seite 1 von ' . $report->pageNo() . ')') && str_contains($bytes, '(Gedruckt 10.10.2026 12:27)') && str_contains($bytes, 'Differenz 12.00'));
 check('G3 report: the block title and the total are drawn', str_contains($bytes, '(Aktiven)') && str_contains($bytes, '(Total Aktiven)'));
 
+
+// ── H: the balance sheet through the shared layout (FIN-PDF-001 step 2) ───────────────────
+spl_autoload_register(static function (string $class): void {
+    $prefix = 'Z77\\Module\\Financial\\';
+    if (str_starts_with($class, $prefix)) {
+        $file = __DIR__ . '/../packages/module-financial/src/' . str_replace('\\', '/', substr($class, strlen($prefix))) . '.php';
+        if (is_file($file)) {
+            require $file;
+        }
+    }
+});
+$chf   = static fn(string $d) => \Z77\Shared\Money\Money::fromDecimal($d, 'CHF');
+$year  = new \Z77\Module\Financial\Entities\FiscalYear('2026', new \DateTimeImmutable('2026-01-01'), new \DateTimeImmutable('2026-12-31'));
+$range = new \Z77\Module\Financial\Reports\ReportRange($year, new \DateTimeImmutable('2026-01-01'), new \DateTimeImmutable('2026-12-31'));
+$line  = static fn(string $n, string $name, int $depth, bool $group, string $amount) => new \Z77\Module\Financial\Reports\StatementLine($n, $name, $depth, $group, $chf($amount));
+$sheet = new \Z77\Module\Financial\Reports\BalanceSheet(
+    $range,
+    new \Z77\Module\Financial\Reports\StatementSection('Aktiven', [$line('1', 'Aktiven', 0, true, '100.00'), $line('1020', 'Bankguthaben', 3, false, '100.00')], $chf('100.00')),
+    new \Z77\Module\Financial\Reports\StatementSection('Fremdkapital', [], $chf('0.00')),
+    new \Z77\Module\Financial\Reports\StatementSection('Eigenkapital', [], $chf('0.00')),
+    $chf('100.00'),
+);
+$bytes = \Z77\Module\Financial\Pdf\ReportPdf::balanceSheet($sheet, 'Muster AG', '10.10.2026 12:27')->withoutCompression()->output();
+check('H1 balance sheet PDF: title, range, the account line, the totals, no fault notice (balanced)', str_starts_with($bytes, '%PDF') && str_contains($bytes, '(Bilanz)') && str_contains($bytes, 'per 31.12.2026') && str_contains($bytes, '(Bankguthaben)') && str_contains($bytes, '(Total Aktiven)') && str_contains($bytes, '(Total Passiven)') && !str_contains($bytes, 'Differenz'));
+check('H2 file name kebab-case', \Z77\Module\Financial\Pdf\ReportPdf::fileName('Bilanz', '2026', '2026-12-31') === 'bilanz-2026-per-2026-12-31.pdf');
+
 echo "\n{$pass} passed, {$fail} failed\n";
 exit($fail === 0 ? 0 : 1);

@@ -84,6 +84,13 @@ $max      = $year->getEndDate()->format('Y-m-d');
         </div>
         <div class="be-form__field be-form__field--actions">
             <button type="submit" class="be-btn be-btn--primary">Anzeigen</button>
+            <?php if (in_array($tab, $pdfTabs ?? [], true)): ?>
+            <?php // The report as a real PDF (FIN-PDF-001): what is SHOWN — the range after
+                  // «Anzeigen», not the form's unsent values. A new tab, inline. ?>
+            <a class="be-btn be-btn--ghost" href="<?= e($link('pdf', ['report' => $tab] + $keep)) ?>" target="_blank" rel="noopener">
+                <svg class="be-icon" width="14" height="14" aria-hidden="true"><use href="#icon-download"/></svg> <span class="be-btn__label">PDF</span>
+            </a>
+            <?php endif; ?>
         </div>
     </form>
     <?php if (($notices ?? []) !== []): ?>

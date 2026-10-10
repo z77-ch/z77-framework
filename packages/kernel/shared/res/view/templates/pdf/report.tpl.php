@@ -16,7 +16,7 @@
  *   - `subtitle`   string — «Geschäftsjahr 2026 · per 31.12.2026»
  *   - `issuer`     string — the company name in the running head ('' = none)
  *   - `printedAt`  string — «10.10.2026 12:27»
- *   - `blocks`     list<array{title?: string, columns: list<array>, rows: list<array>, gapAfter?: float}>
+ *   - `blocks`     list<array{title?: string, columns: list<array>, rows: list<array>, gapAfter?: float, header?: bool}>
  *                  `columns` / `rows` exactly as `pdf/table` takes them
  *   - `notice`     string — an error line in red above the first block ('' = none), e.g.
  *                  «Aktiven ≠ Passiven — Differenz 12.00»
@@ -72,6 +72,7 @@ foreach ($blocks as $block) {
     $pdf->partial('pdf/table', [
         'columns' => $block['columns'],
         'rows'    => $block['rows'],
+        'header'  => $block['header'] ?? true,
         'x'       => $left,
         'y'       => $pdf->y(),
     ], 'Z77\\Shared');
