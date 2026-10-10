@@ -4,6 +4,7 @@ namespace Z77\Module\Backend\Ui\Controllers\Service;
 use Z77\Core\DI,
     Z77\Core\Http\Response\FetchResponse,
     Z77\Core\Http\Response\HtmlResponse,
+    Z77\Core\Services\TemplateRenderer,
     Z77\Module\Backend\Ui\Controllers\BackendAbstractController,
     Z77\Shared\Attributes\Fetch,
     Z77\Shared\Attributes\HttpMethod,
@@ -35,6 +36,9 @@ class JobController extends BackendAbstractController
     /** A heartbeat older than this means the cron line is not firing. */
     private const HEARTBEAT_STALE_SECONDS = 900;
 
+    /** Number of history entries the screen shows (newest first). */
+    private const HISTORY_SHOWN = 25;
+
     private function queue(): JobQueue
     {
         return new JobQueue(DI::getInstance()->get('UnifiedEntityManager'));
@@ -46,6 +50,26 @@ class JobController extends BackendAbstractController
     }
 
     protected function listAction(): HtmlResponse
+    {
+        ['jobs' => $jobs, 'open' => $open, 'history' => $history] = $this->board();
+
+        return $this->html([
+            'jobs'         => $jobs,
+            'open'         => $open,
+            'history'      => array_slice($history, 0, self::HISTORY_SHOWN),
+            'heartbeat'    => JobRunner::lastPass(ABS_BASE_PATH),
+            'heartbeatOk'  => $this->heartbeatIsFresh(),
+            'scheduleHelp' => 'every:15m · every:2h · hourly@:20 · daily@03:15 · weekly@mon,03:15 · monthly@1,06:00',
+        ]);
+    }
+
+    /**
+     * The screen's data — the job rows, the open queue, the history (newest first). Shared by the
+     * list and by the in-place answers, so a changed row renders as on a page load.
+     *
+     * @return array{jobs: list<array>, open: list<JobRun>, history: list<JobRun>}
+     */
+    private function board(): array
     {
         $registry  = DI::getModuleManager()->getJobs();
         $schedules = $this->schedules();
@@ -77,14 +101,36 @@ class JobController extends BackendAbstractController
             ];
         }
 
-        return $this->html([
-            'jobs'         => $jobs,
-            'open'         => $open,
-            'history'      => array_slice($history, 0, 25),
-            'heartbeat'    => JobRunner::lastPass(ABS_BASE_PATH),
-            'heartbeatOk'  => $this->heartbeatIsFresh(),
-            'scheduleHelp' => 'every:15m · every:2h · hourly@:20 · daily@03:15 · weekly@mon,03:15 · monthly@1,06:00',
-        ]);
+        return ['jobs' => $jobs, 'open' => $open, 'history' => $history];
+    }
+
+    /**
+     * The in-place answer (ADR-047 addendum 2026-10-10): the job's row re-rendered by the list's
+     * own partial (`replaceRow('job', key)`), and — when the action changed the queue — the
+     * queue part (`_queue`, `replace-html` of `[data-job-queue]`). core.js wires the forms and
+     * the switch they bring (FETCH-ROW-001). Flashes pushed by the caller BEFORE this runs fetch().
+     */
+    private function boardAnswer(string $jobKey, bool $queueChanged): FetchResponse
+    {
+        $board    = $this->board();
+        $renderer = new TemplateRenderer(self::NAMESPACE);
+        $response = $this->fetch()->setStatus('success');
+
+        foreach ($board['jobs'] as $job) {
+            if ($job['key'] === $jobKey) {
+                $response->replaceRow('job', $jobKey, $renderer->partial('Service/JobController/_job', ['job' => $job]));
+            }
+        }
+        if ($queueChanged) {
+            $response->addCommand('replace-html', [
+                'target' => '[data-job-queue]',
+                'html'   => $renderer->partial('Service/JobController/_queue', [
+                    'open'    => $board['open'],
+                    'history' => array_slice($board['history'], 0, self::HISTORY_SHOWN),
+                ]),
+            ]);
+        }
+        return $response;
     }
 
     /**
@@ -108,12 +154,12 @@ class JobController extends BackendAbstractController
 
         $queue->enqueue($jobKey, [], $this->actorName());
 
-        $this->messageService->pushFlashAfterRedirect(
+        $this->messageService->pushFlash(
             'success',
             'Job «' . $jobKey . '» eingereiht — er läuft beim nächsten Durchlauf'
         );
 
-        return $this->fetch()->setStatus('success')->addCommand('reload');
+        return $this->boardAnswer($jobKey, true);
     }
 
     /**
@@ -144,7 +190,7 @@ class JobController extends BackendAbstractController
         }
         $schedules->save($schedule);
 
-        return $this->fetch()->setStatus('success')->addCommand('reload');
+        return $this->boardAnswer($jobKey, false);
     }
 
     /**
@@ -169,7 +215,7 @@ class JobController extends BackendAbstractController
             if ($schedule !== null) {
                 $schedules->delete($schedule);
             }
-            return $this->fetch()->setStatus('success')->addCommand('reload');
+            return $this->boardAnswer($jobKey, false);
         }
 
         if (!ScheduleExpression::isValid($expression)) {
@@ -184,7 +230,7 @@ class JobController extends BackendAbstractController
         $schedule->setNextRunAt(date(DATE_ATOM, ScheduleExpression::parse($expression)->nextAfter(time())));
         $schedules->save($schedule);
 
-        return $this->fetch()->setStatus('success')->addCommand('reload');
+        return $this->boardAnswer($jobKey, false);
     }
 
     /** Puts a failed entry back into the queue, attempt counter reset. */
@@ -204,7 +250,7 @@ class JobController extends BackendAbstractController
         $entry->setNote('erneut eingereiht');
         $this->queue()->save($entry);
 
-        return $this->fetch()->setStatus('success')->addCommand('reload');
+        return $this->boardAnswer($entry->getJobKey(), true);
     }
 
     #[Fetch, HttpMethod('POST')]
@@ -220,7 +266,7 @@ class JobController extends BackendAbstractController
 
         $this->queue()->delete($entry);
 
-        return $this->fetch()->setStatus('success')->addCommand('reload');
+        return $this->boardAnswer($entry->getJobKey(), true);
     }
 
     private function findEntry(string $id): ?JobRun

@@ -1,6 +1,6 @@
 # stats
 
-2026-09-26
+2026-10-10
 
 ## entry
 
@@ -28,6 +28,8 @@ SOURCE=/packages/kernel/shared/res/view/templates/emails/statsReport.tpl.php
 SOURCE=/packages/kernel/shared/src/Jobs/ScheduleExpression.php
 SOURCE=/packages/module-backend/src/Ui/Controllers/Service/StatsController.php
 SOURCE=/packages/module-backend/res/view/templates/Service/StatsController/_report.tpl.php
+SOURCE=/packages/module-backend/res/view/templates/Service/StatsController/listAction.tpl.php
+SOURCE=/packages/module-backend/res/view/templates/Service/StatsController/list.hc2.tpl.php
 SOURCE=/packages/module-backend/res/view/templates/html-report-skeleton.tpl.php
 SOURCE=/packages/kernel/shared/src/Throttle/FileThrottle.php
 SOURCE=/packages/kernel/shared/src/Backup/BackupService.php
@@ -177,6 +179,7 @@ statt.
 
 ## known issues
 
+- **STATS-UI-SEND-001** (2026-10-10, ADR-049 revision / ADR-047 addendum, forms-actions review row 30): «Bericht <Monat> senden» stands in the toolbar (`list.hc2.tpl.php`, a `be-btn--ghost` form shown only when the month has a report and a link) — no longer in the middle of the page body under the mail paragraph. The send answers with an in-place flash only (`pushFlash`), no `reload`: nothing on the page changes. Don't assume `pushFlashAfterRedirect` works for an answer without a page load — it shows on the NEXT page load only. Covered by `tests/web-stats-report.php`.
 - **STATS-013** — resolved 2026-09-23, found in production (zihlundsee, first day of counting). Don't assume the bot filter covers OUR OWN tooling: `.releases/switch.php` calls `/` twice per door switch — once to prove the new release answers (`/?z77-switch=<token>`), once as the reachability probe — with `User-Agent: z77-releases-switch`, and that string matched no token of `BOT_PATTERN`. Every deploy therefore wrote two page views into the owner's statistic; on the measured day 10 of 47 raw lines. Fixed by adding `z77-` to the pattern, so any z77 tool that names itself `z77-…` inherits the rule and no browser agent is caught. The general lesson for the next tool that speaks to a site over HTTP: **name it, and name it `z77-`.**
 - **STATS-001**: don't assume a 304 respects `data-stats="off"`. The mark is read from the response body, and a 304 has none — a revalidation of a page marked off is still counted. Small (only pages both marked off and page-cached with a client copy) and accepted for step 1; the fix would read the cache entry's head on the 304 path.
 - **STATS-002**: don't assume «visitors» in the aggregate is a monthly unique — it is the sum of daily distinct keys (see mental model). A report label must say so. Likewise `visits` / `entries` count a visit across midnight twice (the day file is the unit).

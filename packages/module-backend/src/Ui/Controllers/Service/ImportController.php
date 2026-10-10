@@ -4,6 +4,7 @@ namespace Z77\Module\Backend\Ui\Controllers\Service;
 use Z77\Core\DI,
     Z77\Core\Http\Response\FetchResponse,
     Z77\Core\Http\Response\HtmlResponse,
+    Z77\Core\Services\TemplateRenderer,
     Z77\Module\Backend\Ui\Controllers\BackendAbstractController,
     Z77\Shared\Attributes\Fetch,
     Z77\Shared\Attributes\HttpMethod,
@@ -222,6 +223,40 @@ class ImportController extends BackendAbstractController
         return $this->fetch()->setStatus('success')->addCommand('reload');
     }
 
+    /**
+     * The in-place answer of a decision (ADR-047 addendum 2026-10-10). A decision REPLANS — a
+     * record decided «neu anlegen» changes its group, «n markiert» and the enabled state of
+     * «Übernehmen» follow — so the unit that changes is the plan section plus the toolbar, not
+     * the row: both are re-rendered by their own templates (`_plan`, `list.hc2`) and swapped;
+     * scroll position and the rest of the screen stay. core.js wires the decide forms they bring
+     * (FETCH-ROW-001). A plan gone stale in between is the one case that reloads: the whole
+     * screen changes then.
+     */
+    private function planAnswer(array $state): FetchResponse
+    {
+        try {
+            $source = ImportServiceFactory::sourceFromSpec($state['source'] ?? []);
+            ['plan' => $plan] = $this->service()->computePlan($source, $state['decisions'] ?? []);
+        } catch (ImportStaleException | ImportSourceException) {
+            return $this->fetch()->setStatus('success')->addCommand('reload');
+        }
+        $planView = $this->buildPlanView($plan, $state);
+        $renderer = new TemplateRenderer(self::NAMESPACE);
+
+        return $this->fetch()
+            ->setStatus('success')
+            ->addCommand('replace-html', [
+                'target' => '[data-import-plan]',
+                'html'   => $renderer->partial('Service/ImportController/_plan', ['planView' => $planView]),
+            ])
+            ->addCommand('update-html', [
+                'target' => '[data-shell-slot="hc2"]',
+                'html'   => $renderer->partial('Service/ImportController/list.hc2', [
+                    'planView' => $planView, 'staleError' => null, 'jobThreshold' => self::JOB_THRESHOLD,
+                ]),
+            ]);
+    }
+
     // -------------------------------------------------------------------------
     // Decisions
     // -------------------------------------------------------------------------
@@ -261,7 +296,7 @@ class ImportController extends BackendAbstractController
         }
         $this->service()->getPlanStore()->save($state);
 
-        return $this->fetch()->setStatus('success')->addCommand('reload');
+        return $this->planAnswer($state);
     }
 
     /** Bulk decision for a whole DISPLAY group (the per-group «alle markieren» button). */
@@ -305,7 +340,7 @@ class ImportController extends BackendAbstractController
         }
         $service->getPlanStore()->save($state);
 
-        return $this->fetch()->setStatus('success')->addCommand('reload');
+        return $this->planAnswer($state);
     }
 
     // -------------------------------------------------------------------------

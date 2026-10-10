@@ -271,6 +271,14 @@ $src = (string) file_get_contents($root . '/packages/module-backend/src/Ui/Contr
 $sendAction = substr($src, (int) strpos($src, 'function sendAction'), 1200);
 check('«jetzt senden» sends in the request through StatsReportMailer', str_contains($sendAction, '(new StatsReportMailer())->send($month)'));
 check('«jetzt senden» queues nothing (no JobQueue in the controller)', !str_contains($src, 'JobQueue'));
+// ADR-049 rev. / ADR-047 addendum 2026-10-10: the send is a toolbar action answered by a flash only.
+check('«jetzt senden» answers with an in-place flash, no reload',
+    str_contains($sendAction, '->pushFlash(') && !str_contains($sendAction, "'reload'") && !str_contains($sendAction, 'pushFlashAfterRedirect'));
+$tplDir  = $root . '/packages/module-backend/res/view/templates/Service/StatsController/';
+$toolbar = (string) @file_get_contents($tplDir . 'list.hc2.tpl.php');
+check('the send form stands in the toolbar (list.hc2), not in the page body',
+    str_contains($toolbar, 'data-fetch-post="/backend/service/stats/send"')
+    && !str_contains((string) file_get_contents($tplDir . 'listAction.tpl.php'), '/backend/service/stats/send'));
 $job = (string) file_get_contents($root . '/packages/kernel/shared/src/Stats/StatsReportMailJob.php');
 check('the job delegates to the mailer (one send path)', str_contains($job, '(new StatsReportMailer())->send($month)'));
 

@@ -5,6 +5,7 @@ use Z77\Core\DI,
     Z77\Core\Http\Response\FetchResponse,
     Z77\Core\Http\Response\FileResponse,
     Z77\Core\Http\Response\HtmlResponse,
+    Z77\Core\Services\TemplateRenderer,
     Z77\Module\Backend\Ui\Controllers\BackendAbstractController,
     Z77\Shared\Attributes\Fetch,
     Z77\Shared\Attributes\HttpMethod,
@@ -79,12 +80,25 @@ class BackupController extends BackendAbstractController
             return $this->fetchError('Backup fehlgeschlagen: ' . $e->getMessage());
         }
 
-        $this->messageService->pushFlashAfterRedirect(
-            'success',
-            'Backup «' . $entry->getFileName() . '» erstellt'
-        );
+        // In place (ADR-047 addendum 2026-10-10): the type's section is re-rendered — the new
+        // row appears, the count follows, and archives the retention pruned in the same run go.
+        // core.js wires the new rows' ⋮ (FETCH-ROW-001).
+        $this->messageService->pushFlash('success', 'Backup «' . $entry->getFileName() . '» erstellt');
+        return $this->fetch()->setStatus('success')->addCommand('replace-html', [
+            'target' => '[data-backup-section="' . $type->value . '"]',
+            'html'   => $this->sectionHtml($type),
+        ]);
+    }
 
-        return $this->fetch()->setStatus('success')->addCommand('reload');
+    /** One type section rendered as the list renders it (`_section.tpl.php`). */
+    private function sectionHtml(BackupType $type): string
+    {
+        $service = $this->service();
+        return (new TemplateRenderer(self::NAMESPACE))->partial('Service/BackupController/_section', [
+            'type'         => $type->value,
+            'entries'      => $service->history()->scan($type),
+            'dbConfigured' => $service->isDatabaseConfigured(),
+        ]);
     }
 
     protected function downloadAction(): FileResponse|FetchResponse
@@ -160,6 +174,26 @@ class BackupController extends BackendAbstractController
             return $this->fetchError('Löschen fehlgeschlagen: ' . $e->getMessage());
         }
 
-        return $this->fetch()->setStatus('success')->addCommand('reload');
+        // In place (ADR-047 addendum 2026-10-10): the row goes, the section's count follows; a
+        // section the delete empties is re-rendered whole, so it shows its empty text as on a
+        // page load. pushFlash() (in place) BEFORE fetch(): fetch() takes the flashes pushed so
+        // far into the envelope.
+        $remaining = count($this->service()->history()->scan($type));
+        $this->messageService->pushFlash('success', 'Backup «' . $file . '» gelöscht');
+        $response = $this->fetch()->setStatus('success')->addCommand('close-modal');
+        if ($remaining === 0) {
+            $response->addCommand('replace-html', [
+                'target' => '[data-backup-section="' . $type->value . '"]',
+                'html'   => $this->sectionHtml($type),
+            ]);
+        } else {
+            $response->removeRow('backup', $type->value . '/' . $file)
+                ->addCommand('update-text', [
+                    'target' => '[data-backup-count="' . $type->value . '"]',
+                    'text'   => (string) $remaining,
+                ]);
+        }
+
+        return $response;
     }
 }

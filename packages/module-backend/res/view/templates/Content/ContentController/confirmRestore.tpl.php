@@ -37,8 +37,5 @@ $stand = function (\Z77\Shared\Entities\Content $c) use ($when): string {
         <p>Die jetzige Live-Fassung (<?= e($stand($live)) ?>) wird vorher als Version gesichert; wer zurück will, stellt diese wieder her.</p>
         <?php endif; ?>
     </div>
-    <div class="be-modal__footer">
-        <button type="button" class="be-btn be-btn--ghost" data-popup-close>Abbrechen</button>
-        <button type="submit" class="be-btn be-btn--primary">Wiederherstellen</button>
-    </div>
+    <?= $this->partial('partials/modalActions', ['submit' => 'Wiederherstellen', 'end' => true], 'Z77\\Shared') ?>
 </form>

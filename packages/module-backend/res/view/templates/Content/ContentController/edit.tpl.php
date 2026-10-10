@@ -230,6 +230,27 @@ $ceUnknownBlock = function (array $block, bool $orphan = false): string {
         <small class="be-form__hint" title="Beim Speichern wird dieser Stand als Version gesichert">zuletzt gespeichert <?= e($savedAt) ?><?= $content->getChangedBy() !== '' ? ' von ' . e($content->getChangedBy()) : '' ?></small>
         <?php endif; ?>
     </div>
+    <?php
+    // ONE fixed action row under the header (ADR-049 revision 2026-10-10) — this is the one
+    // long form of the area, so «Speichern» must not wait at the end of the block list.
+    // «n Fehler» jumps to the first invalid field that has an input of its own (slug, title);
+    // a blocks error is shown in place by the alert at the top of the body.
+    $invalid = [];
+    foreach (['slug' => 'content-slug', 'title' => 'content-title', 'language' => '', 'blocks' => ''] as $name => $id) {
+        if ($validator->hasFieldError($name)) {
+            $invalid[$name] = $id;
+        }
+    }
+    $firstTarget = (string)(array_values(array_filter($invalid))[0] ?? '');
+    // Slot mode (page editor in an iframe): cancel asks the parent window (slot.js), never
+    // the shell popup — so no `data-popup-close`, the cancel goes in as `extra`.
+    echo $this->partial('partials/modalActions', [
+        'submit' => 'Speichern',
+        'cancel' => $slot !== null ? '' : 'Abbrechen',
+        'extra'  => $slot !== null ? '<button type="button" class="be-btn be-btn--ghost" data-ce-slot-close>Abbrechen</button>' : '',
+        'errors' => ['count' => count($invalid), 'target' => $firstTarget],
+    ], 'Z77\\Shared');
+    ?>
     <div class="be-modal__body">
         <?php if ($validator->hasErrors()): ?>
         <div class="be-modal__alert be-modal__alert--error">
@@ -261,7 +282,7 @@ $ceUnknownBlock = function (array $block, bool $orphan = false): string {
         <div class="be-form__grid" style="grid-template-columns:1fr 1fr">
             <div class="be-form__field" data-z77-field-wrapper>
                 <label>Slug</label>
-                <input type="text" name="slug" value="<?= e($content->getSlug()) ?>" required autocomplete="off"
+                <input type="text" id="content-slug" name="slug" value="<?= e($content->getSlug()) ?>" required autocomplete="off"
                        placeholder="z.B. home" <?= $isNew ? '' : 'disabled' ?>
                        aria-invalid="<?= $validator->hasFieldError('slug') ? 'true' : 'false' ?>">
                 <?= raw($fieldError('slug')) ?>
@@ -277,7 +298,7 @@ $ceUnknownBlock = function (array $block, bool $orphan = false): string {
 
         <div class="be-form__field" data-z77-field-wrapper>
             <label>Titel</label>
-            <input type="text" name="title" value="<?= e($content->getTitle()) ?>" required autocomplete="off"
+            <input type="text" id="content-title" name="title" value="<?= e($content->getTitle()) ?>" required autocomplete="off"
                    aria-invalid="<?= $validator->hasFieldError('title') ? 'true' : 'false' ?>">
             <?= raw($fieldError('title')) ?>
         </div>
@@ -352,13 +373,5 @@ $ceUnknownBlock = function (array $block, bool $orphan = false): string {
                 <?php endif; ?>
             </div>
         </div>
-    </div>
-    <div class="be-modal__footer">
-        <?php if ($slot !== null): ?>
-        <button type="button" class="be-btn be-btn--ghost" data-ce-slot-close>Abbrechen</button>
-        <?php else: ?>
-        <button type="button" class="be-btn be-btn--ghost" data-popup-close>Abbrechen</button>
-        <?php endif; ?>
-        <button type="submit" class="be-btn be-btn--primary">Speichern</button>
     </div>
 </form>

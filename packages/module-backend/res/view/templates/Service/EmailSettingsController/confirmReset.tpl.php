@@ -3,7 +3,8 @@
  * Confirm resetting a form-mail override to the config seed — deletes the
  * backend record (the operator-entered recipients/subject/routes are lost; the
  * config default applies again). Mirrors the backend-user / navigation confirm
- * modals.
+ * modals. A confirm without an input field: its action row may stand at the bottom (`end`,
+ * ADR-049 revision 2026-10-10).
  *
  * @var string $formKey
  * @var string $entityCsrf
@@ -19,8 +20,5 @@
         <p>Die Backend-Einstellungen für «<?= e($formKey) ?>» werden gelöscht — danach gilt wieder die
            Entwickler-Vorgabe (Config). Die hier erfassten Empfänger, CC, Betreff und Routen gehen verloren.</p>
     </div>
-    <div class="be-modal__footer">
-        <button type="button" class="be-btn be-btn--ghost" data-popup-close>Abbrechen</button>
-        <button type="submit" class="be-btn be-btn--danger">Zurücksetzen</button>
-    </div>
+    <?= $this->partial('partials/modalActions', ['submit' => 'Zurücksetzen', 'kind' => 'danger', 'end' => true], 'Z77\\Shared') ?>
 </form>

@@ -1,6 +1,6 @@
 # mail
 
-2026-07-18
+2026-10-10
 
 ## entry
 
@@ -29,6 +29,8 @@ SOURCE=/packages/kernel/shared/src/Validators/EmailFormSettingValidator.php
 SOURCE=/packages/module-backend/src/Ui/Controllers/Service/EmailSettingsController.php
 SOURCE=/packages/module-backend/res/view/templates/Service/EmailSettingsController/listAction.tpl.php
 SOURCE=/packages/module-backend/res/view/templates/Service/EmailSettingsController/edit.tpl.php
+SOURCE=/packages/module-backend/res/view/templates/Service/EmailSettingsController/_row.tpl.php
+SOURCE=/packages/module-backend/res/view/templates/Service/EmailSettingsController/confirmReset.tpl.php
 SOURCE=/packages/kernel/shared/res/view/templates/emails/layout.tpl.php
 SOURCE=/packages/kernel/core/src/Config/mail.default.inc.php
 SOURCE=/packages/module-dms/src/Images/DocumentKind.php
@@ -302,6 +304,7 @@ address in config:
 
 ## known issues
 
+- **MAIL-SETTINGS-UI-001** (2026-10-10, ADR-049 revision / ADR-047 addendum): the Service → E-Mail dialogs carry their actions in the shared row `partials/modalActions` — the edit form under the header with the «n Fehler» link (ids `es-*`), the reset confirm (no input field) at the bottom (`end`), the ⋮ hub its «Schliessen» under the header. Save (also the first one, which creates the override), reset and the active toggle answer IN PLACE: `replaceRow('email-setting', key)` with `_row.tpl.php`, the list's own row partial (or `removeRow` when a reset leaves a key that is no longer in the config), plus an in-place flash. core.js wires the replaced row's switch, ⋮ and «Übersteuern» (FETCH-ROW-001). Don't assume the list badge «n» changes — only a reset of an entity-only key removes a row, and the count stays until the next load.
 - **MAIL-SPAM-001 — resolved 2026-09-11: on cyon, send via `transport='smtp'`, not `'mail'`.**
   Cause chain (2026-09-09): `PhpMailTransport` → local sendmail → cyon's rspamd gateway
   scores 6.7 (9.00 of it `RBL_AMI_NOIP` — a locally injected mail has no client IP) →

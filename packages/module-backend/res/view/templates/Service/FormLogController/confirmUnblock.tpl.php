@@ -2,7 +2,7 @@
 /**
  * Confirm lifting a country block. It shows the reason the block was entered
  * under — the decision is reviewed against what justified it, not against
- * memory.
+ * memory. No input field: the action row may stand at the bottom (`end`, ADR-049 rev. 2026-10-10).
  *
  * @var \Z77\Shared\Entities\BlockedCountry $entry
  * @var string $entityCsrf
@@ -24,8 +24,5 @@
             <em><?= e($entry->getReason()) ?></em>
         </p>
     </div>
-    <div class="be-modal__footer">
-        <button type="button" class="be-btn be-btn--ghost" data-popup-close>Abbrechen</button>
-        <button type="submit" class="be-btn">Sperre aufheben</button>
-    </div>
+    <?= $this->partial('partials/modalActions', ['submit' => 'Sperre aufheben', 'end' => true], 'Z77\\Shared') ?>
 </form>

@@ -1,6 +1,6 @@
 # forms
 
-2026-09-01
+2026-10-10
 
 ## entry
 
@@ -24,6 +24,8 @@ SOURCE=/packages/module-backend/src/Ui/Controllers/Service/FormLogController.php
 SOURCE=/packages/module-backend/res/view/templates/Service/FormLogController/listAction.tpl.php
 SOURCE=/packages/module-backend/res/view/templates/Service/FormLogController/confirmBlock.tpl.php
 SOURCE=/packages/module-backend/res/view/templates/Service/FormLogController/confirmUnblock.tpl.php
+SOURCE=/packages/module-backend/res/view/templates/Service/FormLogController/_blocked.tpl.php
+SOURCE=/packages/module-backend/res/view/templates/Service/FormLogController/_countryState.tpl.php
 SOURCE=/tests/form-geo-guard.php
 SOURCE=/tests/country-blocklist.php
 SOURCE=/packages/kernel/persistence/src/Validation/EntityValidator.php
@@ -195,6 +197,7 @@ GET /frontend/main/contact/danke   ← the PRG target: a page of its own
 
 ## known issues
 
+- **FORM-LOG-UI-001** (2026-10-10, ADR-049 revision / ADR-047 addendum, forms-actions review rows 18, 19): the Formular-Protokoll dialogs carry their actions in the shared row `partials/modalActions` — «Land sperren» (the reason is an input field) under the header, «Sperre aufheben» (no field) at the bottom (`end`). Block and unblock answer in place (`FormLogController::blocklistAnswer`): `update-html` of the country's state in the «Woher» tally (`_countryState.tpl.php`, `[data-form-log-country="<code>"]` — «gesperrt» ↔ «Land sperren») and `replace-html` of the blocklist section (`_blocked.tpl.php`, `[data-form-log-blocked]` — row, count, empty text), plus an in-place flash. Don't assume the log rows change — a block changes what comes, not what came. core.js wires the triggers (FETCH-ROW-001).
 - **PUBLIC-FORM-005 — resolved 2026-08-11.** `partials/publicForm` printed the note
   «Bitte alle Felder ausfüllen» unconditionally, so the member login — one e-mail field
   plus an optional «angemeldet bleiben» checkbox — asked the visitor to fill in *all*

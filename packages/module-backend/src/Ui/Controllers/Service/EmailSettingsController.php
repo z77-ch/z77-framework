@@ -4,6 +4,7 @@ namespace Z77\Module\Backend\Ui\Controllers\Service;
 use Z77\Core\Http\Response\HtmlResponse,
     Z77\Core\Http\Response\FetchResponse,
     Z77\Core\DI,
+    Z77\Core\Services\TemplateRenderer,
     Z77\Module\Backend\Ui\Controllers\BackendAbstractController,
     Z77\Shared\Attributes\Fetch,
     Z77\Shared\Attributes\HttpMethod,
@@ -92,6 +93,22 @@ class EmailSettingsController extends BackendAbstractController
         return $rows;
     }
 
+    /**
+     * The in-place answer for one form key (ADR-047 addendum 2026-10-10): its row re-rendered by
+     * the list's own partial (`replaceRow`), or removed when the key is no longer listed. core.js
+     * wires the new row's switch, ⋮ and «Übersteuern» (FETCH-ROW-001).
+     */
+    private function rowAnswer(FetchResponse $response, string $key): FetchResponse
+    {
+        foreach ($this->rows() as $row) {
+            if ($row['key'] === $key) {
+                return $response->replaceRow('email-setting', $key, (new TemplateRenderer(self::NAMESPACE))
+                    ->partial('Service/EmailSettingsController/_row', ['row' => $row]));
+            }
+        }
+        return $response->removeRow('email-setting', $key);
+    }
+
     protected function listAction(): HtmlResponse
     {
         return $this->html(['rows' => $this->rows()]);
@@ -129,7 +146,8 @@ class EmailSettingsController extends BackendAbstractController
     /**
      * Inline active toggle from the list — enables/disables the override without
      * deleting it. Non-destructive → global CSRF only (no entity token, like the
-     * navigation toggle). The effective recipients change, so the list reloads.
+     * navigation toggle). The effective recipients and the origin badge change: the row is
+     * replaced in place (it was a `reload` until 2026-10-10).
      */
     #[Fetch, HttpMethod('POST')]
     protected function toggleActiveAction(): FetchResponse
@@ -145,7 +163,7 @@ class EmailSettingsController extends BackendAbstractController
         $this->em()->persist($entity);
         $this->em()->flush();
 
-        return $this->fetch()->setStatus('success')->addCommand('reload');
+        return $this->rowAnswer($this->fetch()->setStatus('success'), $key);
     }
 
     protected function confirmResetAction(): HtmlResponse|FetchResponse
@@ -203,11 +221,10 @@ class EmailSettingsController extends BackendAbstractController
                 $this->em()->persist($entity);
                 $this->em()->flush();
 
-                $this->messageService->pushFlashAfterRedirect('success', "E-Mail-Einstellungen «{$key}» gespeichert");
-                return $this->fetch()
-                    ->setStatus('success')
-                    ->addCommand('close-modal')
-                    ->addCommand('reload');
+                // In place (ADR-047 addendum 2026-10-10) — also the first save, which gives the
+                // row its on/off switch in place of «Übersteuern».
+                $this->messageService->pushFlash('success', "E-Mail-Einstellungen «{$key}» gespeichert");
+                return $this->rowAnswer($this->fetch()->setStatus('success'), $key)->addCommand('close-modal');
             }
             // validation failed — fall through to re-render the form with errors
         }
@@ -247,11 +264,10 @@ class EmailSettingsController extends BackendAbstractController
         $this->em()->remove($entity);
         $this->em()->flush();
 
-        $this->messageService->pushFlashAfterRedirect('success', "E-Mail-Einstellungen «{$key}» auf die Config zurückgesetzt");
-        return $this->fetch()
-            ->setStatus('success')
-            ->addCommand('close-modal')
-            ->addCommand('reload');
+        // In place: the row shows the config values and «Übersteuern» again — or goes, when the
+        // key exists no longer in the config (an entity-only leftover).
+        $this->messageService->pushFlash('success', "E-Mail-Einstellungen «{$key}» auf die Config zurückgesetzt");
+        return $this->rowAnswer($this->fetch()->setStatus('success'), $key)->addCommand('close-modal');
     }
 
     /**

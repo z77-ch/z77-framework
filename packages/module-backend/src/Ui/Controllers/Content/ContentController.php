@@ -6,6 +6,7 @@ use Z77\Core\DI,
     Z77\Core\Http\RequestMode,
     Z77\Core\Http\Response\HtmlResponse,
     Z77\Core\Http\Response\FetchResponse,
+    Z77\Core\Services\TemplateRenderer,
     Z77\Module\Backend\Ui\Controllers\BackendAbstractController,
     Z77\Persistence\Cleaning\BodyCleaner,
     Z77\Persistence\Concurrency\EntityStateHash,
@@ -106,7 +107,7 @@ class ContentController extends BackendAbstractController
         });
 
         $response = $this->html([
-            'contents'      => $contents,
+            'rows'          => array_map(fn(Content $c) => $this->rowDisplay($c), $contents),
             'editLanguage'  => $language,
             'editLanguages' => DI::getI18n()->getLanguages(),
         ]);
@@ -117,6 +118,63 @@ class ContentController extends BackendAbstractController
         // Header band (act = «+ Inhalt», ADR-033 rev. 2026-10-08; hc2 = language tabs) is auto-loaded by
         // convention from list.act.tpl.php / list.hc2.tpl.php — see BackendAbstractController::loadHeaderSlots().
         return $response;
+    }
+
+    /**
+     * Display view-model for one list row. SINGLE source for the list render AND the
+     * in-place answer of a variant save (`update-fields`) — the two must show the same.
+     * `id` is the row's entity id (`data-entity="content:<id>"`), the same key the entity
+     * CSRF uses ({@see csrfKey}).
+     *
+     * @return array{content:Content, id:string, name:string, meta:string, qs:string}
+     */
+    private function rowDisplay(Content $c): array
+    {
+        // «22.09.2026 15:30» from a changedAt (ISO-8601); '' when unknown or unreadable.
+        $when = function (string $iso): string {
+            try {
+                return $iso !== '' ? (new \DateTimeImmutable($iso))->format('d.m.Y H:i') : '';
+            } catch (\Exception) {
+                return '';
+            }
+        };
+        $at = $when($c->getChangedAt());
+        $by = $c->getChangedBy();
+
+        // What a row is: live (with its last save), variant, or version (whose state, from when).
+        if ($c->isVersion()) {
+            if ($at !== '') {
+                $label = 'Version ' . $at . ($by !== '' ? ' · ' . $by : '') . ' · ';
+            } else {
+                // Archived before ADR-045 stamped documents: only the key knows when.
+                $archived = \DateTimeImmutable::createFromFormat('Ymd-His', substr($c->getVariant(), 2, 15));
+                $label    = 'Version (älterer Stand' . ($archived ? ', gesichert ' . $archived->format('d.m.Y H:i') : '') . ') · ';
+            }
+        } else {
+            $label = $c->isLive() ? '' : 'Variante ' . $c->getVariant() . ' · ';
+        }
+        $lastSaved = ($c->isLive() && $at !== '')
+            ? ' · zuletzt gespeichert ' . $at . ($by !== '' ? ' von ' . $by : '')
+            : '';
+
+        $blockCount = count($c->getBlocks());
+
+        return [
+            'content' => $c,
+            'id'      => $this->csrfKey($c),
+            'name'    => $c->getTitle() !== '' ? $c->getTitle() : $c->getSlug(),
+            'meta'    => $label . $c->getLanguage() . ' · ' . $blockCount . ' Block' . ($blockCount === 1 ? '' : 'e')
+                       . ($c->isActive() ? '' : ' · inaktiv') . $lastSaved,
+            'qs'      => 'slug=' . rawurlencode($c->getSlug()) . '&language=' . rawurlencode($c->getLanguage())
+                       . '&variant=' . rawurlencode($c->getVariant()),
+        ];
+    }
+
+    /** One list row as HTML — the `_row` partial the list renders, for `insertRow`. */
+    private function rowHtml(Content $content): string
+    {
+        return (new TemplateRenderer(self::NAMESPACE))
+            ->partial('Content/ContentController/_row', ['row' => $this->rowDisplay($content)]);
     }
 
     protected function addAction(): HtmlResponse|FetchResponse
@@ -229,16 +287,47 @@ class ContentController extends BackendAbstractController
                 $this->em()->flush();
             }
 
-            $this->messageService->pushFlashAfterRedirect(
-                'success',
-                $isNew
-                    ? 'Inhalt «' . $content->getSlug() . '» angelegt'
-                    : 'Inhalt «' . $content->getSlug() . '» gespeichert'
-            );
+            $flash = $isNew
+                ? 'Inhalt «' . $content->getSlug() . '» angelegt'
+                : 'Inhalt «' . $content->getSlug() . '» gespeichert';
+
+            if ($isNew) {
+                // A new document is one new row (there is no earlier live copy, so no
+                // version): appended to the list, the empty notice goes.
+                $this->messageService->pushFlash('success', $flash);
+                return $this->fetch()
+                    ->setStatus('success')
+                    ->insertRow('content', $this->rowHtml($content))
+                    ->addCommand('remove-element', ['target' => '[data-entity-empty="content"]'])
+                    ->addCommand('close-modal');
+            }
+
+            if ($content->isLive()) {
+                // Still `reload` (ADR-047 addendum: judged): a live save is never one row —
+                // saveLive() archives the previous copy as a NEW version row, whose place
+                // (after the slug's variants, before its older versions) depends on the
+                // whole slug group (ADR-045). docs/topics/content.md CONTENT-ACTIONS-002.
+                $this->messageService->pushFlashAfterRedirect('success', $flash);
+                return $this->fetch()
+                    ->setStatus('success')
+                    ->addCommand('close-modal')
+                    ->addCommand('reload');
+            }
+
+            // A variant save changes its one row only: title, block count, active look.
+            $row    = $this->rowDisplay($content);
+            $target = FetchResponse::rowTarget('content', $row['id']);
+            $this->messageService->pushFlash('success', $flash);
             return $this->fetch()
                 ->setStatus('success')
-                ->addCommand('close-modal')
-                ->addCommand('reload');
+                ->setData(['name' => $row['name'], 'meta' => $row['meta']])
+                ->addCommand('update-fields', ['target' => $target, 'fields' => ['name' => 'text', 'meta' => 'text']])
+                ->addCommand('set-class', [
+                    'target' => $target,
+                    'class'  => 'be-tree__node--inactive',
+                    'on'     => !$content->isActive(),
+                ])
+                ->addCommand('close-modal');
         }
 
         $entityCsrf = !$isNew ? DI::getCsrfService()->generateEntityToken('content', $origKey) : '';
@@ -513,9 +602,13 @@ class ContentController extends BackendAbstractController
 
         $this->em()->remove($content);
 
+        // One row leaves the list (a document's variants and versions are files of their
+        // own and stay — as they did before this answer went in place).
+        $this->messageService->pushFlash('success', 'Inhalt «' . $content->getSlug() . '» gelöscht');
         return $this->fetch()
             ->setStatus('success')
-            ->addCommand('reload');
+            ->removeRow('content', $this->csrfKey($content))
+            ->addCommand('close-modal');
     }
 
     /**
@@ -589,19 +682,22 @@ class ContentController extends BackendAbstractController
             }
 
             try {
-                ContentVariantService::create()->createVariant($content, $key);
+                $variant = ContentVariantService::create()->createVariant($content, $key);
             } catch (\DomainException $e) {
                 return $this->fetchError($e->getMessage());
             }
 
-            $this->messageService->pushFlashAfterRedirect(
+            // One new row, inserted directly under its live row (the variants of a slug
+            // follow the live copy; a later reload sorts them by key).
+            $this->messageService->pushFlash(
                 'success',
                 'Variante «' . $key . '» von «' . $content->getSlug() . '» angelegt'
             );
             return $this->fetch()
                 ->setStatus('success')
-                ->addCommand('close-modal')
-                ->addCommand('reload');
+                ->insertRow('content', $this->rowHtml($variant), 'after', '',
+                    FetchResponse::rowTarget('content', $this->csrfKey($content)))
+                ->addCommand('close-modal');
         }
 
         $response = $this->html([
@@ -663,6 +759,8 @@ class ContentController extends BackendAbstractController
         if ($report['archive'] !== '') {
             $text .= ' — bisherige Fassungen als Version «' . $report['archive'] . '» gesichert';
         }
+        // Still `reload`: the list changes shape — the set's rows leave, live rows change,
+        // a version row appears per replaced live copy (in every language of the set).
         $this->messageService->pushFlashAfterRedirect('success', $text);
 
         return $this->fetch()
@@ -720,6 +818,8 @@ class ContentController extends BackendAbstractController
         if ($archive !== '') {
             $text .= ' — bisherige Fassung als Version «' . $archive . '» gesichert';
         }
+        // Still `reload`: the live row changes AND the previous live copy appears as a new
+        // version row at the head of the slug's versions — two rows, one of them new.
         $this->messageService->pushFlashAfterRedirect('success', $text);
 
         return $this->fetch()

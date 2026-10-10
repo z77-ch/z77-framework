@@ -1,6 +1,6 @@
 # import
 
-2026-09-29
+2026-10-10
 
 ## entry
 
@@ -41,6 +41,8 @@ SOURCE=/packages/kernel/core/src/Services/ModuleManager.php
 SOURCE=/packages/module-backend/src/App/Config/backendConfig.inc.php
 SOURCE=/packages/module-backend/src/Ui/Controllers/Service/ImportController.php
 SOURCE=/packages/module-backend/res/view/templates/Service/ImportController/listAction.tpl.php
+SOURCE=/packages/module-backend/res/view/templates/Service/ImportController/list.hc2.tpl.php
+SOURCE=/packages/module-backend/res/view/templates/Service/ImportController/_plan.tpl.php
 
 ## mental model
 
@@ -162,6 +164,7 @@ Quelle (Vendor-Defaults | Inbox-Datei + Entity-Typ aus der Whitelist)
 
 ## known issues
 
+- **IMP-UI-ACTIONS-001** (2026-10-10, ADR-049 revision / ADR-047 addendum, forms-actions review rows 22, 24, 25): a stale plan's «Plan verwerfen» stands in the toolbar (`list.hc2.tpl.php`, status «Plan nicht mehr gültig» + one danger form) — no longer inside the body's alert, which keeps only the explanation. «Alle N markieren» stands in a selection bar (`.z77-form-actions`, green `be-btn--confirm`) ABOVE the group's rows. A per-row decision and «Alle N markieren» answer in place (`ImportController::planAnswer`): `replace-html` of the plan section (`_plan.tpl.php`, `[data-import-plan]`) + `update-html` of the toolbar slot (`.be-shell-band__slot--2` with `list.hc2`). Don't assume the ROW is the unit — the review suggested it, but a decision REPLANS (an unclear record decided «neu anlegen» changes its group) and «n markiert» / «Übernehmen» follow; the section is what changes. A plan that went stale in between still reloads (the whole screen changes). Start / apply / discard keep `reload` — they genuinely rebuild the screen.
 - **IMP-001**: don't assume `changed` apply moves an entry — ref diffs (e.g. `parent_id`) are
   DISPLAYED but never written; the developer reparents via the navigation screen (`moveAction`
   guards). Only content fields are overwritten.

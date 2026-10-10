@@ -19,6 +19,7 @@ $ic  = fn(string $name) => '<svg class="be-icon" width="15" height="15" aria-hid
 ?>
 <div class="be-actions">
     <div class="be-modal__header"><h2 class="be-modal__title">Aktionen — «<?= e($entry->getTitle() !== '' ? $entry->getTitle() : $entry->getSlug()) ?>»<?= $entry->isLive() ? '' : ($entry->isVersion() ? ' · Version ' : ' · Variante ') . e($entry->getVariant()) ?></h2></div>
+    <?= $this->partial('partials/modalActions', ['submit' => '', 'cancel' => 'Schliessen'], 'Z77\\Shared') ?>
     <div class="be-modal__body">
         <div class="be-actions__list">
             <?php if (!$entry->isVersion()): ?>
@@ -37,8 +38,5 @@ $ic  = fn(string $name) => '<svg class="be-icon" width="15" height="15" aria-hid
             <button type="button" class="be-btn be-btn--danger be-actions__item" data-fetch-get="/backend/content/content/confirm-delete?<?= e($qs) ?>"><?= raw($ic('icon-trash')) ?> Löschen</button>
             <?php endif; ?>
         </div>
-    </div>
-    <div class="be-modal__footer">
-        <button type="button" class="be-btn be-btn--ghost" data-popup-close>Schliessen</button>
     </div>
 </div>

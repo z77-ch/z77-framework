@@ -14,6 +14,7 @@ $renderNode = function(array $node, int $depth = 0) use (&$renderNode): void {
     <div class="be-tree__node<?= $hasChildren ? ' be-tree__node--has-children' : '' ?><?= $isRef ? ' be-tree__node--ref' : '' ?><?= $active ? '' : ' be-tree__node--inactive' ?>"
          style="--node-depth:<?= $depth ?>"
          data-nav-id="<?= e($nodeId) ?>"
+         data-entity="navigation:<?= e($nodeId) ?>"
          data-nav-active="<?= $active ? '1' : '0' ?>">
         <div class="be-tree__row">
             <span class="be-tree__toggle" aria-hidden="true">

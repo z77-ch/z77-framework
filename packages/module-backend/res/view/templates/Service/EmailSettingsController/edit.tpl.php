@@ -31,6 +31,11 @@ foreach ($entry->getRoutes() as $routeKey => $route) {
 for ($i = 0; $i < $emptyRouteRows; $i++) {
     $routeRows[] = ['key' => '', 'to' => '', 'subject' => ''];
 }
+
+// «n Fehler» in the action row (ADR-049): count + the first invalid field in document order.
+$fieldIds = ['to' => 'es-to', 'cc' => 'es-cc', 'subject' => 'es-subject', 'routes' => 'es-route-key-0'];
+$invalid  = array_values(array_filter(array_keys($fieldIds), [$validator, 'hasFieldError']));
+$errors   = ['count' => count($validator->getFieldErrors()), 'target' => $fieldIds[$invalid[0] ?? ''] ?? ''];
 ?>
 <form data-fetch-post>
     <input type="hidden" name="entity_csrf" value="<?= e($entityCsrf) ?>">
@@ -38,6 +43,7 @@ for ($i = 0; $i < $emptyRouteRows; $i++) {
     <div class="be-modal__header">
         <h2 class="be-modal__title">E-Mail-Einstellungen «<?= e($entry->getFormKey()) ?>»</h2>
     </div>
+    <?= $this->partial('partials/modalActions', ['submit' => 'Speichern', 'errors' => $errors], 'Z77\\Shared') ?>
     <div class="be-modal__body">
         <?php if ($validator->hasErrors()): ?>
         <div class="be-modal__alert be-modal__alert--error">
@@ -57,20 +63,20 @@ for ($i = 0; $i < $emptyRouteRows; $i++) {
         <div class="be-form__grid" style="grid-template-columns:1fr 1fr">
             <div class="be-form__field" data-z77-field-wrapper>
                 <label>Empfänger <small>(eine Adresse pro Zeile)</small></label>
-                <textarea name="to" rows="3" required
+                <textarea id="es-to" name="to" rows="3" required
                           aria-invalid="<?= $validator->hasFieldError('to') ? 'true' : 'false' ?>"><?= e(implode("\n", $entry->getTo())) ?></textarea>
                 <?= raw($fieldError('to')) ?>
             </div>
             <div class="be-form__field" data-z77-field-wrapper>
                 <label>CC <small>(optional, eine Adresse pro Zeile)</small></label>
-                <textarea name="cc" rows="3"
+                <textarea id="es-cc" name="cc" rows="3"
                           aria-invalid="<?= $validator->hasFieldError('cc') ? 'true' : 'false' ?>"><?= e(implode("\n", $entry->getCc())) ?></textarea>
                 <?= raw($fieldError('cc')) ?>
             </div>
         </div>
         <div class="be-form__field" data-z77-field-wrapper>
             <label>Betreff</label>
-            <input type="text" name="subject" value="<?= e($entry->getSubject()) ?>" autocomplete="off"
+            <input type="text" id="es-subject" name="subject" value="<?= e($entry->getSubject()) ?>" autocomplete="off"
                    aria-invalid="<?= $validator->hasFieldError('subject') ? 'true' : 'false' ?>">
             <?= raw($fieldError('subject')) ?>
         </div>
@@ -80,7 +86,7 @@ for ($i = 0; $i < $emptyRouteRows; $i++) {
         <div class="be-form__field" data-z77-field-wrapper>
             <?php foreach ($routeRows as $i => $row): ?>
             <div class="be-form__grid" style="grid-template-columns:1fr 2fr 1fr;margin-bottom:.4rem">
-                <input type="text" name="route_key[<?= $i ?>]" value="<?= e($row['key']) ?>"
+                <input type="text" id="es-route-key-<?= $i ?>" name="route_key[<?= $i ?>]" value="<?= e($row['key']) ?>"
                        placeholder="Auswahl-Wert" autocomplete="off">
                 <input type="text" name="route_to[<?= $i ?>]" value="<?= e($row['to']) ?>"
                        placeholder="empfaenger@domain.ch, weitere@domain.ch" autocomplete="off">
@@ -91,9 +97,5 @@ for ($i = 0; $i < $emptyRouteRows; $i++) {
             <?= raw($fieldError('routes')) ?>
             <small style="color:var(--be-muted,#94a3b8)">Leere Zeilen werden ignoriert; für weitere Routen speichern und erneut öffnen.</small>
         </div>
-    </div>
-    <div class="be-modal__footer">
-        <button type="button" class="be-btn be-btn--ghost" data-popup-close>Abbrechen</button>
-        <button type="submit" class="be-btn be-btn--primary">Speichern</button>
     </div>
 </form>

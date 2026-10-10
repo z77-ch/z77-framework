@@ -239,6 +239,11 @@ class NavigationController extends AbstractTreeEntityController
                 $this->em()->flush();
 
                 if ($isNew) {
+                    // Still `reload` (ADR-047 addendum: judged, not forgotten): a new node's
+                    // place depends on the whole tree (area → slot group → parent → sort key,
+                    // rendered recursively, a parent gains the has-children look), and
+                    // list.js's drag-and-drop works on the tree it set up at load.
+                    // See docs/topics/content.md CONTENT-ACTIONS-002.
                     $this->messageService->pushFlashAfterRedirect('success', 'Eintrag «' . $nav->getName() . '» angelegt');
                     return $this->fetch()
                         ->setStatus('success')
@@ -250,7 +255,7 @@ class NavigationController extends AbstractTreeEntityController
                 // Same node display model as the list tree (nodeDisplay) — the in-place
                 // update must render the url/route cells identically to a full reload.
                 $display = $this->nodeDisplay($nav);
-                $target  = '[data-nav-id="' . $nav->getId() . '"]';
+                $target  = FetchResponse::rowTarget('navigation', $nav->getId());
 
                 $this->messageService->pushFlash('success', 'Eintrag «' . $nav->getName() . '» gespeichert');
                 return $this->fetch()
@@ -365,9 +370,10 @@ class NavigationController extends AbstractTreeEntityController
         $this->em()->remove($nav);
         $this->em()->flush();
 
+        $this->messageService->pushFlash('success', 'Eintrag «' . $nav->getName() . '» gelöscht');
         return $this->fetch()
             ->setStatus('success')
-            ->addCommand('remove-element', ['target' => '[data-nav-id="' . $id . '"]'])
+            ->removeRow('navigation', $id)
             ->addCommand('close-modal');
     }
 

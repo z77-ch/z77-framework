@@ -35,6 +35,7 @@ $fieldError = function (string $name) use ($validator): string {
             <?php endif; ?>
         </h2>
     </div>
+    <?= $this->partial('partials/modalActions', ['submit' => 'Speichern'], 'Z77\\Shared') ?>
     <div class="be-modal__body">
         <?php if ($validator->hasErrors()): ?>
         <div class="be-modal__alert be-modal__alert--error">
@@ -145,9 +146,5 @@ $fieldError = function (string $name) use ($validator): string {
             <?= raw($fieldError('slot')) ?>
         </div>
         <?php endif; ?>
-    </div>
-    <div class="be-modal__footer">
-        <button type="button" class="be-btn be-btn--ghost" data-popup-close>Abbrechen</button>
-        <button type="submit" class="be-btn be-btn--primary">Speichern</button>
     </div>
 </form>

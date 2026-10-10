@@ -4,6 +4,7 @@ namespace Z77\Module\Backend\Ui\Controllers\Service;
 use Z77\Core\DI,
     Z77\Core\Http\Response\FetchResponse,
     Z77\Core\Http\Response\HtmlResponse,
+    Z77\Core\Services\TemplateRenderer,
     Z77\Module\Backend\Ui\Controllers\BackendAbstractController,
     Z77\Shared\Attributes\Fetch,
     Z77\Shared\Attributes\HttpMethod,
@@ -195,12 +196,12 @@ class FormLogController extends BackendAbstractController
             return $this->fetchError('Dieses Land steht bereits auf der Sperrliste');
         }
 
-        $this->messageService->pushFlashAfterRedirect(
+        $this->messageService->pushFlash(
             'success',
             'Land «' . $code . '» gesperrt — Formulare mit Geo-Guard weisen Übermittlungen von dort ab sofort ab.'
         );
 
-        return $this->fetch()->setStatus('success')->addCommand('close-modal')->addCommand('reload');
+        return $this->blocklistAnswer($code);
     }
 
     /** Confirm lifting a block — shows the reason it was entered under. */
@@ -234,15 +235,48 @@ class FormLogController extends BackendAbstractController
             return $this->fetchError('Dieses Land steht nicht auf der Sperrliste');
         }
 
-        $this->messageService->pushFlashAfterRedirect(
+        $this->messageService->pushFlash(
             'success',
             'Sperre für «' . $code . '» aufgehoben — Übermittlungen von dort laufen wieder normal.'
         );
 
-        return $this->fetch()->setStatus('success')->addCommand('close-modal')->addCommand('reload');
+        return $this->blocklistAnswer($code);
     }
 
     // ── shared plumbing ────────────────────────────────────────────────────
+
+    /**
+     * The in-place answer of a block / unblock (ADR-047 addendum 2026-10-10). Two places change,
+     * nothing else: the country's state in the «Woher» tally («gesperrt» ↔ «Land sperren») and
+     * the blocklist section (row, count, empty text). Both are re-rendered by the list's own
+     * partials; core.js wires the triggers they bring (FETCH-ROW-001). The log rows below keep
+     * their outcome — a block changes what comes, not what came. In-place flash pushed by the
+     * caller BEFORE this runs fetch().
+     */
+    private function blocklistAnswer(string $code): FetchResponse
+    {
+        $blocked = [];
+        foreach ($this->countryBlocklist()->all() as $entry) {
+            $blocked[$entry->getCode()] = $entry;
+        }
+        $renderer = new TemplateRenderer(self::NAMESPACE);
+
+        return $this->fetch()
+            ->setStatus('success')
+            ->addCommand('update-html', [
+                'target' => '[data-form-log-country="' . $code . '"]',
+                'html'   => $renderer->partial('Service/FormLogController/_countryState', [
+                    'code' => $code, 'isBlocked' => isset($blocked[$code]), 'blockedBroken' => false, 'actionBase' => self::ACTION_BASE,
+                ]),
+            ])
+            ->addCommand('replace-html', [
+                'target' => '[data-form-log-blocked]',
+                'html'   => $renderer->partial('Service/FormLogController/_blocked', [
+                    'blocked' => $blocked, 'blockedBroken' => false, 'actionBase' => self::ACTION_BASE,
+                ]),
+            ])
+            ->addCommand('close-modal');
+    }
 
     /**
      * WHERE the attempts come from. Counted over the rows actually shown, so

@@ -111,14 +111,17 @@ class StatsController extends BackendAbstractController
         }
 
         $to = DI::getEmailService()->formRecipients(StatsReportMailer::FORM_KEY);
-        $this->messageService->pushFlashAfterRedirect(
+        // A flash only, no `reload` (ADR-047 addendum 2026-10-10): nothing on the page changes. The
+        // in-place flash (`pushFlash`, before fetch() takes it into the envelope) — the one pushed
+        // for after a redirect would only show on the next page load.
+        $this->messageService->pushFlash(
             'success',
             'Bericht ' . StatsReport::monthLabel($month) . ' gesendet an ' . implode(', ', $to['to'])
             . ($to['cc'] !== [] ? ' (Kopie ' . implode(', ', $to['cc']) . ')' : '')
             . ' — Link gültig bis ' . date('j.n.Y', (int) $result['expiresAt'])
         );
 
-        return $this->fetch()->setStatus('success')->addCommand('reload');
+        return $this->fetch()->setStatus('success');
     }
 
     /**

@@ -2,8 +2,8 @@
 /**
  * «Statistik» — the monthly report in the backend (StatsController::listAction,
  * docs/topics/stats.md). Above the report: the month switch, the link of the month
- * (the one the client would get, minted fresh, valid ten days), «jetzt senden», and
- * where the monthly mail stands. The report below is the same template the link
+ * (the one the client would get, minted fresh, valid ten days) and where the monthly mail
+ * stands; «Bericht … senden» is the toolbar (`list.hc2.tpl.php`). The report below is the same template the link
  * page renders (`_report`).
  *
  * @var string       $title
@@ -80,13 +80,8 @@ $muted = 'font-size:.8rem;color:var(--be-muted,#94a3b8)';
                         <?php endif; ?>
                         Jede Mail trägt einen eigenen, frischen Link.
                     </div>
-                    <?php if ($link !== null && $report !== null): ?>
-                        <form data-fetch-post="/backend/service/stats/send" style="margin:.4rem 0 0">
-                            <input type="hidden" name="month" value="<?= e((string) $month) ?>">
-                            <button type="submit" class="be-btn">Bericht <?= e(StatsReport::monthLabel((string) $month)) ?> jetzt senden</button>
-                            <span style="<?= $muted ?>">geht sofort hinaus, an die Empfänger oben</span>
-                        </form>
-                    <?php endif; ?>
+                    <?php /* «Bericht … senden» stands in the toolbar (`list.hc2.tpl.php`) — a screen
+                             action in the fixed row, not in the page body (ADR-049 rev. 2026-10-10). */ ?>
                 </div>
             </div>
         <?php endif; ?>

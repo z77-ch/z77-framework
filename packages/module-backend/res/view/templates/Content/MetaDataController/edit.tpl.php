@@ -34,6 +34,7 @@ $pageLabel = $page !== null
         <h2 class="be-modal__title"><?= $isNew ? 'Metadaten anlegen' : 'Metadaten bearbeiten' ?></h2>
         <span class="be-lang-tag" title="Bearbeitungssprache"><?= e(strtoupper($meta->getLanguage())) ?></span>
     </div>
+    <?= $this->partial('partials/modalActions', ['submit' => 'Speichern'], 'Z77\\Shared') ?>
     <div class="be-modal__body">
         <?php if ($validator->hasErrors()): ?>
         <div class="be-modal__alert be-modal__alert--error">Bitte überprüfe die markierten Eingaben.</div>
@@ -83,9 +84,5 @@ $pageLabel = $page !== null
                       aria-invalid="<?= $validator->hasFieldError('application_ld') ? 'true' : 'false' ?>"><?= e($ldValue) ?></textarea>
             <?= raw($fieldError('application_ld')) ?>
         </div>
-    </div>
-    <div class="be-modal__footer">
-        <button type="button" class="be-btn be-btn--ghost" data-popup-close>Abbrechen</button>
-        <button type="submit" class="be-btn be-btn--primary">Speichern</button>
     </div>
 </form>

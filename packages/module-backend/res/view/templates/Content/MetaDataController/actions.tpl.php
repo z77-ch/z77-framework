@@ -11,6 +11,7 @@ $ic = fn(string $name) => '<svg class="be-icon" width="15" height="15" aria-hidd
 ?>
 <div class="be-actions">
     <div class="be-modal__header"><h2 class="be-modal__title">Aktionen — «<?= e($page->getUrl()) ?>»</h2></div>
+    <?= $this->partial('partials/modalActions', ['submit' => '', 'cancel' => 'Schliessen'], 'Z77\\Shared') ?>
     <div class="be-modal__body">
         <div class="be-actions__list">
             <?php if ($meta !== null): ?>
@@ -20,8 +21,5 @@ $ic = fn(string $name) => '<svg class="be-icon" width="15" height="15" aria-hidd
             <button type="button" class="be-btn be-btn--ghost be-actions__item" data-fetch-get="/backend/content/meta-data/add?navigation_id=<?= e((string)$page->getId()) ?>"><?= raw($ic('icon-plus')) ?> Metadaten anlegen</button>
             <?php endif; ?>
         </div>
-    </div>
-    <div class="be-modal__footer">
-        <button type="button" class="be-btn be-btn--ghost" data-popup-close>Schliessen</button>
     </div>
 </div>

@@ -21,6 +21,7 @@ $title    = ($isNew ? 'Neuer ' : '') . ($isSlug ? 'Routen-Slug' : 'UI-Text') . (
     <div class="be-modal__header">
         <h2 class="be-modal__title"><?= e($title) ?></h2>
     </div>
+    <?= $this->partial('partials/modalActions', ['submit' => 'Speichern'], 'Z77\\Shared') ?>
     <div class="be-modal__body">
         <?php if (!empty($errors)): ?>
         <div class="be-modal__alert be-modal__alert--error">
@@ -47,9 +48,5 @@ $title    = ($isNew ? 'Neuer ' : '') . ($isSlug ? 'Routen-Slug' : 'UI-Text') . (
             </div>
             <?php endforeach; ?>
         </div>
-    </div>
-    <div class="be-modal__footer">
-        <button type="button" class="be-btn be-btn--ghost" data-popup-close>Abbrechen</button>
-        <button type="submit" class="be-btn be-btn--primary">Speichern</button>
     </div>
 </form>

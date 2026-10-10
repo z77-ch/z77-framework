@@ -14,6 +14,7 @@
         <h2 class="be-modal__title">Variante anlegen — «<?= e($content->getTitle() !== '' ? $content->getTitle() : $content->getSlug()) ?>»</h2>
         <span class="be-lang-tag" title="Sprache"><?= e(strtoupper($content->getLanguage())) ?></span>
     </div>
+    <?= $this->partial('partials/modalActions', ['submit' => 'Anlegen'], 'Z77\\Shared') ?>
     <div class="be-modal__body">
         <p>Die Live-Fassung wird kopiert. Die Kopie ist im Frontend nur mit dem Vorschau-Link des Satzes sichtbar, bis der Satz veröffentlicht wird.</p>
 
@@ -35,9 +36,5 @@
                 <small class="be-form__hint">Nur für «Neuer Satz». Kleinbuchstaben, Ziffern und Bindestrich; eine Zufallsendung wird angehängt (herbst-a7f3k2).</small>
             </div>
         </div>
-    </div>
-    <div class="be-modal__footer">
-        <button type="button" class="be-btn be-btn--ghost" data-popup-close>Abbrechen</button>
-        <button type="submit" class="be-btn be-btn--primary">Anlegen</button>
     </div>
 </form>

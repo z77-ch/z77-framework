@@ -1,6 +1,6 @@
 # jobs
 
-2026-09-23
+2026-10-10
 
 ## entry
 
@@ -27,6 +27,9 @@ SOURCE=/packages/kernel/core/cron/run.php
 SOURCE=/packages/kernel/core/src/Services/ModuleManager.php
 SOURCE=/packages/module-backend/src/Ui/Controllers/Service/JobController.php
 SOURCE=/packages/module-backend/res/view/templates/Service/JobController/listAction.tpl.php
+SOURCE=/packages/module-backend/res/view/templates/Service/JobController/_job.tpl.php
+SOURCE=/packages/module-backend/res/view/templates/Service/JobController/_queue.tpl.php
+SOURCE=/packages/module-backend/res/view/templates/Service/JobController/_jobState.tpl.php
 SOURCE=/packages/module-member/src/Jobs/MemberCleanupJob.php
 SOURCE=/packages/kernel/shared/src/GeoIp/GeoIpUpdateJob.php
 SOURCE=/packages/kernel/shared/src/Stats/StatsRollupJob.php
@@ -125,6 +128,7 @@ Only `every:` consults the last run; the wall-clock forms do not. Deliberately n
 
 ## known issues
 
+- **JOBS-UI-ACTIONS-001** (2026-10-10, ADR-047 addendum / forms-actions review rows 26–29): no action on the job screen reloads any more. Every answer replaces the job's row (`_job.tpl.php`, `replaceRow('job', key)` — state line, the schedule field, the switch appearing / going), and «Jetzt einreihen», «Nochmals» and «Entfernen» also replace the queue part (`_queue.tpl.php`, `[data-job-queue]`: «Wartet» + «Verlauf»), `JobController::boardAnswer`. core.js wires the forms and the switch they bring (FETCH-ROW-001). The row-bound placement stays (ADR-033). Don't assume the heartbeat status in the toolbar refreshes — it is read on page load only.
 - **JOBS-001**: don't assume the runner can stop a job at its deadline — it cannot. `pcntl` is absent on shared hosting, so the budget is cooperative. A job ignoring `hasTimeLeft()` runs to completion and delays the next pass for its own key only.
 - **JOBS-002**: don't assume `JobRun::state = running` means a process is alive. It survives a fatal, a kill and a reboot. The job lock is the evidence; `JobQueue::abandoned()` requires both an old `startedAt` AND no held lock.
 - **JOBS-003**: don't assume a backend click runs a job. It queues one. On an installation without the cron line nothing is ever picked up — which is what the heartbeat banner on the job screen exists to reveal.
@@ -133,5 +137,6 @@ Only `every:` consults the last run; the wall-clock forms do not. Deliberately n
 
 ## pending
 
+- **JOBS-UI-ACTIONS-001**: «Zeitplan setzen» is a one-field edit inline in the job row (forms-actions review 2026-10-10, row 27, R2 «no»): a small «Zeitplan» dialog, or kept as a cell edit — waits for the owner's ruling on cell edits.
 - Existing projects do not get the «Jobs» navigation entry automatically (navigation data is seed-once, node id 28). The fix is BUILT (ADR-032): backend → Service → Import → «Framework-Standarddaten» proposes the missing entries; assign the keyless containers once, accept, done — see [`import.md`](import.md). Manual creation via the navigation UI remains the fallback on projects whose framework predates the import screen (chicken-and-egg: the «Import» entry itself is seed-once).
 - `JobSchedules::enqueueDue()` moves a schedule on even when the previous entry is still open, so a run that is permanently stuck silently skips its slots. Acceptable while the job screen shows the open entry; revisit if a "missed run" report is ever wanted.

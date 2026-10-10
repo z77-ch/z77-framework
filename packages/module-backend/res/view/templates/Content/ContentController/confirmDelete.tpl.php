@@ -14,8 +14,5 @@ $ident = $content->getSlug() . '.' . $content->getLanguage() . ($content->isLive
     <div class="be-modal__body">
         <p>«<?= e($content->getTitle() !== '' ? $content->getTitle() : $content->getSlug()) ?>» (<?= e($ident) ?>) wirklich löschen? Die Datei wird entfernt.</p>
     </div>
-    <div class="be-modal__footer">
-        <button type="button" class="be-btn be-btn--ghost" data-popup-close>Abbrechen</button>
-        <button type="submit" class="be-btn be-btn--danger">Löschen</button>
-    </div>
+    <?= $this->partial('partials/modalActions', ['submit' => 'Löschen', 'kind' => 'danger', 'end' => true], 'Z77\\Shared') ?>
 </form>

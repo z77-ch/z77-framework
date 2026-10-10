@@ -114,11 +114,10 @@ $detailSays = [
                         <span><?= $known ? e($code) : '<span style="' . $muted . '">unbekannt</span>' ?></span>
                         <span style="display:flex;gap:.5rem;align-items:center">
                             <strong><?= (int)$count ?></strong>
-                            <?php if ($isBlocked): ?>
-                                <span class="badge badge--warning">gesperrt</span>
-                            <?php elseif ($known && !$blockedBroken): ?>
-                                <button type="button" class="be-btn be-btn--ghost be-btn--sm"
-                                        data-fetch-get="<?= e($actionBase) ?>/confirm-block?code=<?= e(rawurlencode($code)) ?>">Land sperren</button>
+                            <?php if ($known): ?>
+                            <span data-form-log-country="<?= e($code) ?>"><?= $this->partial('Service/FormLogController/_countryState', [
+                                'code' => $code, 'isBlocked' => $isBlocked, 'blockedBroken' => $blockedBroken, 'actionBase' => $actionBase,
+                            ], 'Z77\\Module\\Backend') ?></span>
                             <?php endif; ?>
                         </span>
                     </div>
@@ -138,62 +137,11 @@ $detailSays = [
         <?php endif; ?>
     </section>
 
-    <section class="be-list__section">
-        <div class="be-list__section-header">
-            <h2 class="be-list__section-title">Gesperrte Länder</h2>
-            <span class="be-list__section-badge"><?= count($blocked) ?></span>
-        </div>
-
-        <?php if ($blockedBroken): ?>
-            <p style="padding:.5rem">
-                <strong>Sperrliste unlesbar — die Regel ist derzeit AUS.</strong><br>
-                <span style="<?= $muted ?>">
-                    Die Datei <code>data/framework/forms/blocked-countries.json</code>
-                    kann nicht gelesen werden. Die Formulare laufen weiter (die Regel
-                    fällt offen aus), aber kein Land wird gesperrt, bis die Datei
-                    repariert oder gelöscht ist. Details stehen im error_log.
-                </span>
-            </p>
-        <?php elseif ($blocked === []): ?>
-            <p style="<?= $muted ?>;padding:.5rem">
-                Keine Sperre gesetzt — Übermittlungen werden aus allen Ländern
-                angenommen. Das ist der Normalfall: gesperrt wird erst, wenn die
-                Auszählung oben einen Grund zeigt.
-            </p>
-        <?php else: ?>
-            <p style="<?= $muted ?>;padding:.25rem .5rem .75rem">
-                Aus diesen Ländern weisen Formulare mit eingeschaltetem Geo-Guard
-                jede Übermittlung ab. Ein Land, das der Datenbestand nicht zuordnen
-                kann, wird <strong>nie</strong> gesperrt — im Zweifel läuft die
-                Übermittlung durch.
-            </p>
-            <table class="be-table">
-                <thead>
-                    <tr>
-                        <th>Land</th>
-                        <th>Grund</th>
-                        <th>Gesperrt am</th>
-                        <th>Durch</th>
-                        <th></th>
-                    </tr>
-                </thead>
-                <tbody>
-                <?php foreach ($blocked as $entry): ?>
-                    <tr>
-                        <td><strong><?= e($entry->getCode()) ?></strong></td>
-                        <td><?= e($entry->getReason()) ?></td>
-                        <td style="white-space:nowrap"><?= e($when($entry->getAddedAt())) ?></td>
-                        <td style="<?= $muted ?>"><?= e($entry->getAddedBy() ?? '—') ?></td>
-                        <td style="text-align:right">
-                            <button type="button" class="be-btn be-btn--ghost be-btn--sm"
-                                    data-fetch-get="<?= e($actionBase) ?>/confirm-unblock?code=<?= e(rawurlencode($entry->getCode())) ?>">Aufheben</button>
-                        </td>
-                    </tr>
-                <?php endforeach; ?>
-                </tbody>
-            </table>
-        <?php endif; ?>
-    </section>
+    <?= $this->partial('Service/FormLogController/_blocked', [
+        'blocked'       => $blocked,
+        'blockedBroken' => $blockedBroken,
+        'actionBase'    => $actionBase,
+    ], 'Z77\\Module\\Backend') ?>
 
     <?php if ($total > 0): ?>
     <section class="be-list__section">

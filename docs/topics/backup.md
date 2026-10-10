@@ -1,6 +1,6 @@
 # backup
 
-2026-10-09
+2026-10-10
 
 ## entry
 
@@ -31,6 +31,7 @@ SOURCE=/packages/kernel/bin/z77-restore
 SOURCE=/packages/kernel/shared/src/Jobs/BackupJob.php
 SOURCE=/packages/module-backend/src/Ui/Controllers/Service/BackupController.php
 SOURCE=/packages/module-backend/res/view/templates/Service/BackupController/listAction.tpl.php
+SOURCE=/packages/module-backend/res/view/templates/Service/BackupController/_section.tpl.php
 SOURCE=/packages/module-backend/res/view/templates/Service/BackupController/actions.tpl.php
 SOURCE=/packages/module-backend/res/view/templates/Service/BackupController/confirmDelete.tpl.php
 SOURCE=/tests/zip-archiver-symlinks.php
@@ -111,7 +112,11 @@ service → backup`), section «Service» in the topbar (navigation seed ids
 | `runAction` | Fetch POST | run one backup synchronously (`set_time_limit(0)`); service errors become flash errors |
 | `downloadAction` | GET | archive as `FileResponse` (`application/zip`, delivery=php — cyon has no X-Sendfile) |
 | `actionsAction` | Fetch GET | ⋮ hub: download link + delete (LIST-ACTIONS-HUB-001) |
-| `confirmDeleteAction` / `removeAction` | Fetch | modal + per-archive entity CSRF token (scope `backup`) |
+| `confirmDeleteAction` / `removeAction` | Fetch | modal + per-archive entity CSRF token (scope `backup`); answers IN PLACE (BACKUP-UI-ACTIONS-001) |
+
+One section = `_section.tpl.php`, rendered by the list and by `removeAction`. A row carries
+`data-entity="backup:<type>/<file>"`, the badge `data-backup-count="<type>"`, the section
+`data-backup-section="<type>"`.
 
 ## restore — CLI only, and asymmetric on purpose
 
@@ -211,6 +216,7 @@ moving.
 
 ## known issues
 
+- **BACKUP-UI-ACTIONS-001** (2026-10-10, ADR-049 revision / ADR-047 addendum): the dialogs carry their actions in the shared row `partials/modalActions` — the ⋮ hub its «Schliessen» under the header, the delete confirm (no input field) at the bottom (`end`, placed AFTER the body). No action reloads the screen any more: «Daten sichern» answers `replace-html` of the type's section (`_section.tpl.php` — the new row, the count, and archives the retention pruned in the same run); the delete answers `removeRow` + the section count (`update-text`), or the re-rendered section when it empties. core.js wires the ⋮ of rows a command brings in (FETCH-ROW-001). Don't assume the split menu of the action cell closes by itself after a run — it used to vanish with the reload.
 - **RESTORE-001** — built 2026-10-09. **The way back exists, and it is not a button.** `RestoreService` + `MysqlRestorer` + `bin/z77-restore` read one dump into the configured database: safety `db` backup first (failure aborts), existing tables dropped unless `--keep-tables`, confirmation by typing the database name (`--yes` for scripts), source = an archive of this installation or any `.zip`/`.sql` path. Written for the case in `docs/_local/handoff-2026-10-09-*`: a dump travels from one machine to the other and `mysql -u … < dump.sql` plus «unpack the zip by hand» was the only way in. The backend has NO restore action — deliberately (see «restore»); the owner's reservation that a restore button is the most dangerous action in the installation is the reason, and it stands until working with the CLI shows it is missing. Verified: `tests/backup-restore.php`, 22 checks (source resolution incl. refusals, which `.sql` is taken out of a `full` / `db` archive, `--keep-tables` and the binary reaching the restorer, empty dump, several candidates, temp-file cleanup, listing) — the DATABASE step is faked there, since it needs a running MariaDB. Live: the listing was exercised against z77.ch (3 archives, target `z77ch`); **a real restore has NOT been run yet** — PC 2 has no MariaDB, and `z77-backup db` fails there for the same reason, so the engine step waits for the machine setup in the handoff.
 
 - **BACKUP-LIB-001**: don't assume a changed default reaches an existing installation. `fullExcludes` used to name `lib/cache` instead of `lib`, so when the throttle counters moved to `lib/throttle` (2026-08-25) they were back inside every full archive. `config/client/backup.inc.php` is seed-once — the installer writes it once and NEVER overwrites it — so changing `DEFAULT_EXCLUDES` and `backup.default.inc.php` only fixes installations that do not exist yet. Every existing installation carries its own copy and needs the line edited by hand; axo3 and zihlundsee are done — working copies AND servers, 2026-08-25, nothing open. This is the general shape, not a one-off: any seed-once default that changes needs a per-installation pass, and the change is silent until someone opens an archive and finds what should not be in it. **It happened again on 2026-09-01 (ADR-035):** the tree was renamed `lib` → `var`, so every installation whose seed-once `config/client/backup.inc.php` still says `lib` now excludes a directory that does not exist and archives all of `var/` instead. Same manual pass, working copies AND servers; `.releases/check.php` warns about it since. Two occurrences make the shape clear: a seed-once default is a copy, and a copy does not follow.

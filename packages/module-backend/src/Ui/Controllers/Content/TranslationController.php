@@ -58,14 +58,44 @@ class TranslationController extends BackendAbstractController
 
     protected function listAction(): HtmlResponse
     {
+        $uiLanguages   = $this->catalog()->uiLanguages();
+        $slugLanguages = $this->catalog()->slugLanguages();
+
         $response = $this->html([
-            'uiLanguages'   => $this->catalog()->uiLanguages(),
-            'uiRows'        => $this->catalog()->uiMatrix(),
-            'slugLanguages' => $this->catalog()->slugLanguages(),
-            'slugRows'      => $this->catalog()->slugMatrix(),
+            'uiRows'        => array_map(
+                fn(array $row) => $row + ['summary' => $this->valueSummary('ui', $row['values'], $uiLanguages)],
+                $this->catalog()->uiMatrix()
+            ),
+            'slugLanguages' => $slugLanguages,
+            'slugRows'      => array_map(
+                fn(array $row) => $row + ['summary' => $this->valueSummary('slug', $row['values'], $slugLanguages)],
+                $this->catalog()->slugMatrix()
+            ),
             'defaultLang'   => DI::getI18n()->getDefaultLanguage(),
         ]);
         return $response;
+    }
+
+    /**
+     * Compact per-language value summary of one catalog row (pre-escaped HTML); an empty
+     * value shows a muted «fehlt» / «nicht lokalisiert». SINGLE source for the list cell
+     * and the in-place answer of a save (`update-fields`) — the two must show the same.
+     *
+     * @param array<string, string> $values     language → value
+     * @param list<string>          $languages  the columns of this kind
+     */
+    private function valueSummary(string $kind, array $values, array $languages): string
+    {
+        $missing = $kind === 'slug' ? 'nicht lokalisiert' : 'fehlt';
+        $parts   = [];
+        foreach ($languages as $lang) {
+            $value = (string)($values[$lang] ?? '');
+            $shown = $value === ''
+                ? '<span style="color:var(--be-muted,#94a3b8)">' . e($missing) . '</span>'
+                : e($value);
+            $parts[] = '<strong style="font-weight:600">' . e($lang) . ':</strong> ' . $shown;
+        }
+        return implode(' &nbsp;·&nbsp; ', $parts);
     }
 
     protected function addAction(): HtmlResponse|FetchResponse
@@ -120,15 +150,41 @@ class TranslationController extends BackendAbstractController
                 : $this->catalog()->saveUiEntry($formKey, $formValues, $isNew ? null : $originalKey);
 
             if ($errors === []) {
-                $this->messageService->pushFlashAfterRedirect(
-                    'success',
-                    ($kind === 'slug' ? 'Slug «' : 'Schlüssel «') . $formKey
-                        . ($isNew ? '» angelegt' : '» gespeichert')
-                );
-                return $this->fetch()
-                    ->setStatus('success')
-                    ->addCommand('close-modal')
-                    ->addCommand('reload');
+                $flash = ($kind === 'slug' ? 'Slug «' : 'Schlüssel «') . $formKey
+                       . ($isNew ? '» angelegt' : '» gespeichert');
+
+                if ($isNew || $formKey !== $originalKey) {
+                    // Still `reload`: a new or renamed key takes a new place in the
+                    // key-sorted list (and a rename changes the key its ⋮ link carries) —
+                    // the position depends on the whole list. See docs/topics/content.md
+                    // CONTENT-ACTIONS-002.
+                    $this->messageService->pushFlashAfterRedirect('success', $flash);
+                    return $this->fetch()
+                        ->setStatus('success')
+                        ->addCommand('close-modal')
+                        ->addCommand('reload');
+                }
+
+                // Same key, new values: one row changes (ADR-047 addendum 2026-10-10).
+                $this->messageService->pushFlash('success', $flash);
+                $entity    = $this->csrfScope($kind);
+                $languages = $kind === 'slug' ? $this->catalog()->slugLanguages() : $this->catalog()->uiLanguages();
+                $stored    = $kind === 'slug' ? $this->catalog()->slugEntry($formKey) : $this->catalog()->uiEntry($formKey);
+                $response  = $this->fetch()->setStatus('success');
+
+                // A slug row exists only while some language localizes it (slugMatrix());
+                // emptied everywhere, it leaves the list.
+                if ($kind === 'slug' && array_filter($stored, fn(string $v) => $v !== '') === []) {
+                    return $response->removeRow($entity, $formKey)->addCommand('close-modal');
+                }
+
+                return $response
+                    ->setData(['summary' => $this->valueSummary($kind, $stored, $languages)])
+                    ->addCommand('update-fields', [
+                        'target' => FetchResponse::rowTarget($entity, $formKey),
+                        'fields' => ['summary' => 'html'],
+                    ])
+                    ->addCommand('close-modal');
             }
         }
 
@@ -205,8 +261,10 @@ class TranslationController extends BackendAbstractController
             $this->catalog()->deleteUiEntry($key);
         }
 
+        $this->messageService->pushFlash('success', ($kind === 'slug' ? 'Slug «' : 'Schlüssel «') . $key . '» gelöscht');
         return $this->fetch()
             ->setStatus('success')
-            ->addCommand('reload');
+            ->removeRow($this->csrfScope($kind), $key)
+            ->addCommand('close-modal');
     }
 }

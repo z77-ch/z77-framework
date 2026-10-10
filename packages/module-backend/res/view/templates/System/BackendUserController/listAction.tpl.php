@@ -1,35 +1,29 @@
 <?php
-/** @var \Z77\Shared\Entities\BackendUser[] $users */
-/** @var array<string, string> $roleLabels */
-/** @var \Z77\Shared\Auth\AuthUser $authUser */
-
-$roleText = function (\Z77\Shared\Entities\BackendUser $u) use ($roleLabels): string {
-    $labels = array_map(fn(string $r) => $roleLabels[$r] ?? $r, $u->getRoles());
-    return $labels ? implode(', ', $labels) : '—';
-};
+/**
+ * Backend users — a flat list, drag & drop order (`backend-user/list.js`), the ⋮ hub per row.
+ * One row = `_row.tpl.php`: a save answers `replaceRow`, a create `insertRow` into
+ * `data-entity-list="backend-user"`, a delete `removeRow` (ADR-047 addendum 2026-10-10).
+ *
+ * @var \Z77\Shared\Entities\BackendUser[] $users
+ * @var array<string, string> $roleLabels
+ * @var \Z77\Shared\Auth\AuthUser $authUser
+ */
 ?>
 <?php /* Content-header (add + title) moved to the shell header band:
          System/BackendUserController/list.hc1.tpl.php (auto-loaded). */ ?>
 <div class="be-list" id="js-user-body">
     <section class="be-list__section">
-        <div class="be-tree be-tree--hub">
+        <div class="be-tree be-tree--hub" data-entity-list="backend-user">
             <?php if (empty($users)): ?>
             <p style="font-size:.8rem;color:var(--be-muted,#94a3b8);padding:.5rem">Keine Benutzer vorhanden.</p>
             <?php endif; ?>
 
-            <?php foreach ($users as $u):
-                $isSelf = $u->getId() === $authUser->getId();
-            ?>
-            <div class="be-tree__node" style="--node-depth:0" data-user-id="<?= e($u->getId()) ?>">
-                <div class="be-tree__row">
-                    <span class="be-tree__toggle" aria-hidden="true"></span>
-                    <button type="button" class="be-tree__menu" title="Aktionen"
-                            data-fetch-get="/backend/system/backend-user/actions?id=<?= e($u->getId()) ?>">⋮</button>
-                    <span class="be-tree__name"><?= e($u->getUsername()) ?><?php if ($isSelf): ?> <small style="color:var(--be-muted,#94a3b8)">(du)</small><?php endif; ?></span>
-                    <span class="be-tree__url"><?= e($roleText($u)) ?></span>
-                    <span class="be-tree__route"></span>
-                </div>
-            </div>
+            <?php foreach ($users as $u): ?>
+            <?= $this->partial('System/BackendUserController/_row', [
+                'user'       => $u,
+                'isSelf'     => $u->getId() === $authUser->getId(),
+                'roleLabels' => $roleLabels,
+            ], 'Z77\Module\Backend') ?>
             <?php endforeach; ?>
         </div>
     </section>

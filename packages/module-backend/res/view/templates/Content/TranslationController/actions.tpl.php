@@ -12,13 +12,11 @@ $ic    = fn(string $name) => '<svg class="be-icon" width="15" height="15" aria-h
 ?>
 <div class="be-actions">
     <div class="be-modal__header"><h2 class="be-modal__title">Aktionen — «<?= e($entryKey) ?>»</h2></div>
+    <?= $this->partial('partials/modalActions', ['submit' => '', 'cancel' => 'Schliessen'], 'Z77\\Shared') ?>
     <div class="be-modal__body">
         <div class="be-actions__list">
             <button type="button" class="be-btn be-btn--ghost be-actions__item" data-fetch-get="/backend/content/translation/edit?kind=<?= e(rawurlencode($kind)) ?>&key=<?= e(rawurlencode($entryKey)) ?>"><?= raw($ic('icon-edit')) ?> <?= e($label) ?> bearbeiten</button>
             <button type="button" class="be-btn be-btn--danger be-actions__item" data-fetch-get="/backend/content/translation/confirm-delete?kind=<?= e(rawurlencode($kind)) ?>&key=<?= e(rawurlencode($entryKey)) ?>"><?= raw($ic('icon-trash')) ?> <?= e($label) ?> löschen</button>
         </div>
-    </div>
-    <div class="be-modal__footer">
-        <button type="button" class="be-btn be-btn--ghost" data-popup-close>Schliessen</button>
     </div>
 </div>

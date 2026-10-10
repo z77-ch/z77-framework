@@ -1,6 +1,6 @@
 # backend
 
-2026-09-22
+2026-10-10
 
 ## entry
 
@@ -51,6 +51,7 @@ SOURCE=/packages/module-backend/src/Ui/Controllers/System/BackendUserController.
 SOURCE=/packages/module-backend/res/view/templates/System/BackendUserController/listAction.tpl.php
 SOURCE=/packages/module-backend/res/view/templates/System/BackendUserController/edit.tpl.php
 SOURCE=/packages/module-backend/res/view/templates/System/BackendUserController/confirmDelete.tpl.php
+SOURCE=/packages/module-backend/res/view/templates/System/BackendUserController/_row.tpl.php
 SOURCE=/packages/module-backend/res/assets/js/backend-user/list.js
 SOURCE=/packages/module-backend/res/assets/js/password-meter.js
 SOURCE=/packages/kernel/shared/src/Validators/BackendUserValidator.php
@@ -371,6 +372,7 @@ design. Owned by [`security.md`](security.md) — see it for the gating rules.
 
 ## known issues
 
+- **BE-USER-UI-001** (2026-10-10, ADR-049 revision / ADR-047 addendum, forms-actions review rows 31, 32, 36): the user dialogs carry their actions in the shared row `partials/modalActions` — the edit form under the header with the «n Fehler» link (ids `bu-*`), the delete confirm (no input field) at the bottom (`end`), the not-found / blocked messages and the ⋮ hub their «Schliessen» under the header. Save answers in place with the list's own row partial (`_row.tpl.php`): `replaceRow('backend-user', id)` for an edit, `insertRow` into `[data-entity-list="backend-user"]` (appended — a new user gets the last sortKey) for a create; delete answers `removeRow`; in-place flash. core.js wires the ⋮ (FETCH-ROW-001); the drag & drop of `backend-user/list.js` listens on the list body and reads `data-user-id`, so a row brought in later takes part (the row carries `draggable="true"` itself).
 - ARCH-P002 — resolved. `UserPreferences` moved to `Z77\Shared\ValueObjects\`.
 - BUG-P001 — resolved. `Naming::toCamelCase` fixed; `BackendUser` save round-trip works again.
 - **ARCH-B001** — resolved. `AuthService::savePreferences()` and `getPreferences()` removed. `login()` no longer accepts `UserPreferences`. Preference session writes/reads are now the controller's responsibility.

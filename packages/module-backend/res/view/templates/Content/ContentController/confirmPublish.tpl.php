@@ -24,8 +24,5 @@
         <p>Jede bisherige Live-Fassung wird als Version «v-…» gesichert; wer zurück will, stellt beim betreffenden Dokument diese Version wieder her. Die Dokumente von «<?= e($setKey) ?>» verschwinden danach aus der Liste.</p>
         <p>Ein Dokument, das bisher keine Live-Fassung hatte, wird neu angelegt; dafür gibt es keine Version, bei einer Rücknahme bleibt es bestehen.</p>
     </div>
-    <div class="be-modal__footer">
-        <button type="button" class="be-btn be-btn--ghost" data-popup-close>Abbrechen</button>
-        <button type="submit" class="be-btn be-btn--danger">Veröffentlichen</button>
-    </div>
+    <?= $this->partial('partials/modalActions', ['submit' => 'Veröffentlichen', 'kind' => 'danger', 'end' => true], 'Z77\\Shared') ?>
 </form>

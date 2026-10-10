@@ -1,22 +1,13 @@
 <?php
-/** @var list<string> $uiLanguages */
-/** @var list<array{key: string, values: array<string, string>}> $uiRows */
+/** @var list<array{key: string, values: array<string, string>, summary: string}> $uiRows */
 /** @var list<string> $slugLanguages */
-/** @var list<array{canonical: string, values: array<string, string>}> $slugRows */
+/** @var list<array{canonical: string, values: array<string, string>, summary: string}> $slugRows */
 /** @var string $defaultLang */
 
-/** Compact per-language value summary; empty non-default = muted "fehlt" marker. */
-$summary = function (array $values, array $languages, string $defaultLang, string $missingLabel): string {
-    $parts = [];
-    foreach ($languages as $lang) {
-        $value = (string)($values[$lang] ?? '');
-        $shown = $value === ''
-            ? '<span style="color:var(--be-muted,#94a3b8)">' . e($missingLabel) . '</span>'
-            : e($value);
-        $parts[] = '<strong style="font-weight:600">' . e($lang) . ':</strong> ' . $shown;
-    }
-    return implode(' &nbsp;·&nbsp; ', $parts);
-};
+// `summary` is pre-escaped HTML from TranslationController::valueSummary() — the same
+// source fills the `update-fields` answer of a save. Rows carry
+// `data-entity="translationUi:<key>"` / `"translationSlug:<canonical>"` (the entry-CSRF
+// scopes) so a save / delete answers in place (ADR-047 addendum 2026-10-10).
 ?>
 <?php /* Header band: both add kinds (Text / Slug) live in the action cell as ONE picker
          «+ Eintrag ▾» (`list.act`, ADR-033 rev. 2026-10-08). The section heads below carry only
@@ -32,13 +23,13 @@ $summary = function (array $values, array $languages, string $defaultLang, strin
             <p style="font-size:.8rem;color:var(--be-muted,#94a3b8);padding:.5rem">Keine UI-Texte vorhanden.</p>
             <?php endif; ?>
             <?php foreach ($uiRows as $row): ?>
-            <div class="be-tree__node" style="--node-depth:0">
+            <div class="be-tree__node" style="--node-depth:0" data-entity="translationUi:<?= e($row['key']) ?>">
                 <div class="be-tree__row">
                     <span class="be-tree__toggle" aria-hidden="true"></span>
                     <button type="button" class="be-tree__menu" title="Aktionen"
                             data-fetch-get="/backend/content/translation/actions?kind=ui&key=<?= e(rawurlencode($row['key'])) ?>">⋮</button>
                     <span class="be-tree__name"><code><?= e($row['key']) ?></code></span>
-                    <span class="be-tree__url"><?= raw($summary($row['values'], $uiLanguages, $defaultLang, 'fehlt')) ?></span>
+                    <span class="be-tree__url" data-field="summary"><?= raw($row['summary']) ?></span>
                 </div>
             </div>
             <?php endforeach; ?>
@@ -58,13 +49,13 @@ $summary = function (array $values, array $languages, string $defaultLang, strin
             <p style="font-size:.8rem;color:var(--be-muted,#94a3b8);padding:.5rem">Keine Routen-Slugs vorhanden.</p>
             <?php endif; ?>
             <?php foreach ($slugRows as $row): ?>
-            <div class="be-tree__node" style="--node-depth:0">
+            <div class="be-tree__node" style="--node-depth:0" data-entity="translationSlug:<?= e($row['canonical']) ?>">
                 <div class="be-tree__row">
                     <span class="be-tree__toggle" aria-hidden="true"></span>
                     <button type="button" class="be-tree__menu" title="Aktionen"
                             data-fetch-get="/backend/content/translation/actions?kind=slug&key=<?= e(rawurlencode($row['canonical'])) ?>">⋮</button>
                     <span class="be-tree__name"><code><?= e($row['canonical']) ?></code></span>
-                    <span class="be-tree__url"><?= raw($summary($row['values'], $slugLanguages, $defaultLang, 'nicht lokalisiert')) ?></span>
+                    <span class="be-tree__url" data-field="summary"><?= raw($row['summary']) ?></span>
                 </div>
             </div>
             <?php endforeach; ?>

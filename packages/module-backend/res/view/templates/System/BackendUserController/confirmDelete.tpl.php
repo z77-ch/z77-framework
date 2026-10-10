@@ -1,14 +1,22 @@
 <?php
-/** @var \Z77\Shared\Entities\BackendUser|null $entry */
-/** @var string $entityCsrf */
-/** @var string|null $blockReason */
+/**
+ * Delete a backend user. Three shapes: not found, blocked (self / last admin — the reason and a
+ * close), and the confirm itself. The confirm has no input field, so its action row may stand at
+ * the bottom (`end`, ADR-049 revision 2026-10-10); the two message shapes carry their «Schliessen»
+ * in the row under the header like every dialog. The delete answers in place (`removeRow`).
+ *
+ * @var \Z77\Shared\Entities\BackendUser|null $entry
+ * @var string $entityCsrf
+ * @var string|null $blockReason
+ */
 
 if ($entry === null): ?>
+<div class="be-modal__header">
+    <h2 class="be-modal__title">Benutzer nicht gefunden</h2>
+</div>
+<?= $this->partial('partials/modalActions', ['submit' => '', 'cancel' => 'Schliessen'], 'Z77\\Shared') ?>
 <div class="be-modal__body">
     <p>Benutzer nicht gefunden.</p>
-</div>
-<div class="be-modal__footer">
-    <button type="button" class="be-btn be-btn--ghost" data-popup-close>Schliessen</button>
 </div>
 <?php return; endif; ?>
 
@@ -16,11 +24,9 @@ if ($entry === null): ?>
 <div class="be-modal__header">
     <h2 class="be-modal__title">Löschen nicht möglich</h2>
 </div>
+<?= $this->partial('partials/modalActions', ['submit' => '', 'cancel' => 'Schliessen'], 'Z77\\Shared') ?>
 <div class="be-modal__body">
     <div class="be-modal__alert be-modal__alert--error"><?= e($blockReason) ?></div>
-</div>
-<div class="be-modal__footer">
-    <button type="button" class="be-btn be-btn--ghost" data-popup-close>Schliessen</button>
 </div>
 <?php return; endif; ?>
 
@@ -33,8 +39,5 @@ if ($entry === null): ?>
     <div class="be-modal__body">
         <p>«<?= e($entry->getUsername()) ?>» wirklich löschen? Das Konto wird dauerhaft entfernt.</p>
     </div>
-    <div class="be-modal__footer">
-        <button type="button" class="be-btn be-btn--ghost" data-popup-close>Abbrechen</button>
-        <button type="submit" class="be-btn be-btn--danger">Löschen</button>
-    </div>
+    <?= $this->partial('partials/modalActions', ['submit' => 'Löschen', 'kind' => 'danger', 'end' => true], 'Z77\\Shared') ?>
 </form>

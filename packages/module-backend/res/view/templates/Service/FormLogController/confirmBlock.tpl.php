@@ -17,6 +17,7 @@
     <div class="be-modal__header">
         <h2 class="be-modal__title">Land «<?= e($code) ?>» sperren</h2>
     </div>
+    <?= $this->partial('partials/modalActions', ['submit' => 'Land sperren', 'kind' => 'danger'], 'Z77\\Shared') ?>
     <div class="be-modal__body">
         <p>Übermittlungen aus <strong><?= e($code) ?></strong> werden ab sofort
            abgewiesen — auf jedem Formular mit eingeschaltetem Geo-Guard, andere
@@ -28,12 +29,8 @@
             Land. Sperren Sie, was die Auszählung belegt — nicht, was plausibel klingt.
         </p>
         <div class="be-form__field" data-z77-field-wrapper>
-            <label>Grund <small>(steht später im Protokoll der Sperrliste)</small></label>
-            <textarea name="reason" rows="2" required><?= e($reason) ?></textarea>
+            <label for="formlog-block-reason">Grund <small>(steht später im Protokoll der Sperrliste)</small></label>
+            <textarea id="formlog-block-reason" name="reason" rows="2" required><?= e($reason) ?></textarea>
         </div>
-    </div>
-    <div class="be-modal__footer">
-        <button type="button" class="be-btn be-btn--ghost" data-popup-close>Abbrechen</button>
-        <button type="submit" class="be-btn be-btn--danger">Land sperren</button>
     </div>
 </form>

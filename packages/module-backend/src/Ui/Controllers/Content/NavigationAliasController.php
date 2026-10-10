@@ -3,6 +3,7 @@ namespace Z77\Module\Backend\Ui\Controllers\Content;
 
 use Z77\Core\Http\Response\HtmlResponse,
     Z77\Core\Http\Response\FetchResponse,
+    Z77\Core\Services\TemplateRenderer,
     Z77\Core\DI,
     Z77\Module\Backend\Ui\Controllers\BackendAbstractController,
     Z77\Persistence\Cleaning\BodyCleaner,
@@ -49,10 +50,35 @@ class NavigationAliasController extends BackendAbstractController
         }
 
         $response = $this->html([
-            'aliases' => $this->repo()->findAll(),
-            'navById' => $navById,
+            'rows' => array_map(fn(NavigationAlias $a) => $this->aliasDisplay($a, $navById), $this->repo()->findAll()),
         ]);
         return $response;
+    }
+
+    /**
+     * Display view-model for one alias row. SINGLE source for the list render AND the
+     * in-place answer of a save (`update-fields`) — the two must show the same thing.
+     *
+     * @param array<int, Navigation>|null $navById  null → looked up for this one alias
+     * @return array{id:?int, path:string, navLabel:string, flags:string, active:bool}
+     */
+    private function aliasDisplay(NavigationAlias $alias, ?array $navById = null): array
+    {
+        $nav = $navById !== null
+            ? ($navById[$alias->getNavigationId()] ?? null)
+            : $this->navRepo()->find($alias->getNavigationId());
+
+        // Pre-escaped: it becomes HTML in the list cell and in the `update-fields` answer.
+        $flags = ($alias->isCanonical() ? '<span class="be-tree__ref-label">canonical</span>' : '')
+               . ($alias->acceptsSlugs() ? '<span class="be-tree__ref-label">/…</span>' : '');
+
+        return [
+            'id'       => $alias->getId(),
+            'path'     => $alias->getPath(),
+            'navLabel' => '→ ' . ($nav ? $nav->getName() . ' (' . $nav->getCanonicalPath() . ')' : '#' . $alias->getNavigationId() . ' — fehlt'),
+            'flags'    => $flags,
+            'active'   => $alias->isActive(),
+        ];
     }
 
     protected function addAction(): HtmlResponse|FetchResponse
@@ -91,17 +117,42 @@ class NavigationAliasController extends BackendAbstractController
                 $this->em()->persist($alias);
                 $this->em()->flush();
 
-                $this->messageService->pushFlashAfterRedirect(
-                    'success',
-                    $isNew
-                        ? 'Alias «' . $alias->getPath() . '» angelegt'
-                        : 'Alias «' . $alias->getPath() . '» gespeichert'
-                );
+                if ($isNew) {
+                    // One new row: appended to the (unsorted, storage-order) list through the
+                    // same `_row` partial the list renders; the empty notice goes.
+                    $this->messageService->pushFlash('success', 'Alias «' . $alias->getPath() . '» angelegt');
+                    return $this->fetch()
+                        ->setStatus('success')
+                        ->setData(['id' => $alias->getId()])
+                        ->insertRow('navigationAlias', (new TemplateRenderer(self::NAMESPACE))
+                            ->partial('Content/NavigationAliasController/_row', ['row' => $this->aliasDisplay($alias)]))
+                        ->addCommand('remove-element', ['target' => '[data-entity-empty="navigationAlias"]'])
+                        ->addCommand('close-modal');
+                }
+
+                // One row changed: update its cells in place (ADR-047 addendum 2026-10-10).
+                $display = $this->aliasDisplay($alias);
+                $target  = FetchResponse::rowTarget('navigationAlias', $alias->getId());
+
+                $this->messageService->pushFlash('success', 'Alias «' . $alias->getPath() . '» gespeichert');
                 return $this->fetch()
                     ->setStatus('success')
-                    ->setData(['id' => $alias->getId()])
-                    ->addCommand('close-modal')
-                    ->addCommand('reload');
+                    ->setData([
+                        'id'        => $alias->getId(),
+                        'path'      => $display['path'],
+                        'nav_label' => $display['navLabel'],
+                        'flags'     => $display['flags'],
+                    ])
+                    ->addCommand('update-fields', [
+                        'target' => $target,
+                        'fields' => ['path' => 'text', 'nav_label' => 'text', 'flags' => 'html'],
+                    ])
+                    ->addCommand('set-class', [
+                        'target' => $target,
+                        'class'  => 'be-tree__node--inactive',
+                        'on'     => !$alias->isActive(),
+                    ])
+                    ->addCommand('close-modal');
             }
         }
 
@@ -164,9 +215,11 @@ class NavigationAliasController extends BackendAbstractController
 
         $this->em()->remove($alias);
 
+        $this->messageService->pushFlash('success', 'Alias «' . $alias->getPath() . '» gelöscht');
         return $this->fetch()
             ->setStatus('success')
-            ->addCommand('reload');
+            ->removeRow('navigationAlias', $id)
+            ->addCommand('close-modal');
     }
 
     /** Inline active toggle from the list view (global CSRF, no entity token — non-destructive). */

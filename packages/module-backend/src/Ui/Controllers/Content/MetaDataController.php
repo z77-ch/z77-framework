@@ -89,9 +89,11 @@ class MetaDataController extends BackendAbstractController
 
             $rows = [];
             foreach ($envPages as $page) {
+                $meta   = $this->repo()->findByNavigationAndLanguage($page->getId(), $lang);
                 $rows[] = [
-                    'page' => $page,
-                    'meta' => $this->repo()->findByNavigationAndLanguage($page->getId(), $lang),
+                    'page'   => $page,
+                    'meta'   => $meta,
+                    'status' => $this->metaStatus($meta),
                 ];
             }
             $groups[] = ['key' => $name, 'label' => $mm->getViewAreaLabel($name), 'rows' => $rows];
@@ -195,16 +197,16 @@ class MetaDataController extends BackendAbstractController
             $page = $this->navRepo()->find($meta->getNavigationId());
             $name = $page?->getName() ?? ('#' . $meta->getNavigationId());
 
-            $this->messageService->pushFlashAfterRedirect(
+            // The list has one row per PAGE (present or missing) — a create, an edit and a
+            // delete all change that one row's status only: answered in place.
+            $this->messageService->pushFlash(
                 'success',
                 $isNew
                     ? 'Metadaten für «' . $name . '» angelegt'
                     : 'Metadaten für «' . $name . '» gespeichert'
             );
-            return $this->fetch()
-                ->setStatus('success')
-                ->addCommand('close-modal')
-                ->addCommand('reload');
+            return $this->pageRowUpdate($meta->getNavigationId(), $meta)
+                ->addCommand('close-modal');
         }
 
         $entityCsrf = !$isNew ? DI::getCsrfService()->generateEntityToken('metadata', $meta->getId()) : '';
@@ -264,8 +266,41 @@ class MetaDataController extends BackendAbstractController
         $this->em()->remove($meta);
         $this->em()->flush();
 
+        $page = $this->navRepo()->find($meta->getNavigationId());
+        $this->messageService->pushFlash('success', 'Metadaten für «' . ($page?->getName() ?? '#' . $meta->getNavigationId()) . '» gelöscht');
+        return $this->pageRowUpdate($meta->getNavigationId(), null)
+            ->addCommand('close-modal');
+    }
+
+    /**
+     * The status cell of a page row — SINGLE source for the list render and the
+     * in-place answer of a save / delete ({@see pageRowUpdate}).
+     */
+    private function metaStatus(?MetaData $meta): string
+    {
+        return $meta !== null
+            ? '✓ vorhanden' . ($meta->getTitle() !== '' ? ' · ' . $meta->getTitle() : '')
+            : '✗ fehlt';
+    }
+
+    /**
+     * In-place answer for one page row (ADR-047 addendum 2026-10-10): the row is keyed by
+     * its navigation entry (`data-entity="navigation:<id>"`, the list's identity — one row
+     * per page), so its ⋮ link stays valid whether the metadata exists or not; only the
+     * status cell and the «missing» look change.
+     */
+    private function pageRowUpdate(?int $navigationId, ?MetaData $meta): FetchResponse
+    {
+        $target = FetchResponse::rowTarget('navigation', (int)$navigationId);
+
         return $this->fetch()
             ->setStatus('success')
-            ->addCommand('reload');
+            ->setData(['status' => $this->metaStatus($meta)])
+            ->addCommand('update-fields', ['target' => $target, 'fields' => ['status' => 'text']])
+            ->addCommand('set-class', [
+                'target' => $target,
+                'class'  => 'be-tree__node--inactive',
+                'on'     => $meta === null,
+            ]);
     }
 }

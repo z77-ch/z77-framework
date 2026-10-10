@@ -1,5 +1,5 @@
 <?php
-/** @var array<int,array{key:string,label:string,rows:array<int,array{page:\Z77\Shared\Entities\Navigation,meta:?\Z77\Shared\Entities\MetaData}>}> $groups */
+/** @var array<int,array{key:string,label:string,rows:array<int,array{page:\Z77\Shared\Entities\Navigation,meta:?\Z77\Shared\Entities\MetaData,status:string}>}> $groups */
 /** @var array<int,array{key:string,label:string}> $environments  public view areas for the filter bar */
 /** @var string $envFilter  active environment name, or '' for all */
 /** @var string $editLanguage   the active content-editing language (session-sticky) */
@@ -36,20 +36,19 @@ foreach ($groups as $g) {
 
             <?php foreach ($group['rows'] as $row):
                 $page = $row['page'];
-                $meta = $row['meta'];
-                $has  = $meta !== null;
-                $status = $has
-                    ? '✓ vorhanden' . ($meta->getTitle() !== '' ? ' · ' . $meta->getTitle() : '')
-                    : '✗ fehlt';
+                $has  = $row['meta'] !== null;
+                // One row per page, keyed by its navigation entry: a save / delete answers
+                // in place on this row (MetaDataController::pageRowUpdate, `data-field="status"`).
             ?>
-            <div class="be-tree__node<?= $has ? '' : ' be-tree__node--inactive' ?>" style="--node-depth:0">
+            <div class="be-tree__node<?= $has ? '' : ' be-tree__node--inactive' ?>" style="--node-depth:0"
+                 data-entity="navigation:<?= e((string)$page->getId()) ?>">
                 <div class="be-tree__row">
                     <span class="be-tree__toggle" aria-hidden="true"></span>
                     <button type="button" class="be-tree__menu" title="Aktionen"
                             data-fetch-get="/backend/content/meta-data/actions?navigation_id=<?= e((string)$page->getId()) ?>">⋮</button>
                     <span class="be-tree__name"><?= e(t('nav.' . $page->getAction(), [], $editLanguage)) ?></span>
                     <span class="be-tree__url"><?= e($page->getUrl()) ?></span>
-                    <span class="be-tree__route"><?= e($status) ?></span>
+                    <span class="be-tree__route" data-field="status"><?= e($row['status']) ?></span>
                 </div>
             </div>
             <?php endforeach; ?>

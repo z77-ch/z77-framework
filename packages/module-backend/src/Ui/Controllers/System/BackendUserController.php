@@ -5,6 +5,7 @@ use Z77\Core\Http\Response\HtmlResponse,
     Z77\Core\Http\Response\FetchResponse,
     Z77\Core\DI,
     Z77\Core\Config\AuthRole,
+    Z77\Core\Services\TemplateRenderer,
     Z77\Module\Backend\Ui\Controllers\BackendAbstractController,
     Z77\Persistence\Cleaning\BodyCleaner,
     Z77\Shared\Attributes\Fetch,
@@ -167,15 +168,23 @@ class BackendUserController extends BackendAbstractController
                 $this->em()->persist($user);
                 $this->em()->flush();
 
-                $this->messageService->pushFlashAfterRedirect(
-                    'success',
-                    'Benutzer «' . $user->getUsername() . '» ' . ($isNew ? 'angelegt' : 'gespeichert')
-                );
-                return $this->fetch()
-                    ->setStatus('success')
-                    ->setData(['id' => $user->getId()])
-                    ->addCommand('close-modal')
-                    ->addCommand('reload');
+                // In place (ADR-047 addendum 2026-10-10): the row rendered by the list's own partial —
+                // appended for a new user (the list orders by sortKey, a new one gets the last),
+                // replaced for an edit. core.js wires its ⋮ (FETCH-ROW-001); the drag & drop listens
+                // on the list body, so the new row takes part without re-binding.
+                $html = (new TemplateRenderer(self::NAMESPACE))->partial('System/BackendUserController/_row', [
+                    'user'       => $user,
+                    'isSelf'     => $user->getId() === DI::getAuthService()->getCurrentUser()->getId(),
+                    'roleLabels' => $this->roleLabels(),
+                ]);
+                $this->messageService->pushFlash('success', 'Benutzer «' . $user->getUsername() . '» ' . ($isNew ? 'angelegt' : 'gespeichert'));
+                $response = $this->fetch()->setStatus('success')->setData(['id' => $user->getId()]);
+                if ($isNew) {
+                    $response->insertRow('backend-user', $html);
+                } else {
+                    $response->replaceRow('backend-user', $user->getId(), $html);
+                }
+                return $response->addCommand('close-modal');
             }
             // validation failed — fall through to re-render the form with errors
         }
@@ -265,7 +274,7 @@ class BackendUserController extends BackendAbstractController
 
         return $this->fetch()
             ->setStatus('success')
-            ->addCommand('remove-element', ['target' => '[data-user-id="' . $id . '"]'])
+            ->removeRow('backend-user', $id)
             ->addCommand('close-modal');
     }
 
