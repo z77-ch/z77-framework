@@ -48,7 +48,7 @@ $shown      = count($contacts);
         <?php if (!empty($accountsNotice)): ?>
         <div class="be-modal__alert be-modal__alert--error"><?= e($accountsNotice) ?></div>
         <?php endif; ?>
-        <div class="be-tree be-tree--hub">
+        <div class="be-tree be-tree--hub be-tree--lead-switch">
             <?php foreach ($accounts as $key => $row): ?>
             <div class="be-tree__node" style="--node-depth:0" data-debtor-account="<?= e($key) ?>">
                 <div class="be-tree__row">
@@ -83,7 +83,7 @@ $shown      = count($contacts);
         <?php if ($shown < $total): ?>
         <p class="be-form__hint"><?= $shown ?> von <?= $total ?> angezeigt — die Suche grenzt ein.</p>
         <?php endif; ?>
-        <div class="be-tree be-tree--hub">
+        <div class="be-tree be-tree--hub be-tree--lead-switch">
             <?php if ($contacts === []): ?>
             <p class="be-list__empty"><?= $query === '' ? 'Keine Kontakte vorhanden.' : 'Kein Kontakt passt zu «' . e($query) . '».' ?></p>
             <?php endif; ?>

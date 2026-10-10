@@ -17,7 +17,6 @@
  * @var list<\Z77\Shared\Entities\JobRun> $history
  * @var array{at:string,summary:array}|null $heartbeat
  * @var bool   $heartbeatOk
- * @var string $scheduleHelp
  */
 
 $fmt = static function (?string $iso): string {
@@ -52,15 +51,11 @@ $fmt = static function (?string $iso): string {
             <h2 class="be-list__section-title">Jobs</h2>
             <span class="be-list__section-badge"><?= count($jobs) ?></span>
         </div>
-        <p class="be-list__section-hint">
-            Zeitplan-Formen: <code><?= e($scheduleHelp) ?></code> — leer lassen entfernt den Zeitplan.
-        </p>
-
         <?php if (empty($jobs)): ?>
         <p class="be-list__empty">Kein Modul bietet Jobs an.</p>
         <?php endif; ?>
 
-        <div class="be-tree be-tree--hub">
+        <div class="be-tree be-tree--hub be-tree--lead-switch">
             <?php foreach ($jobs as $job): ?>
             <?= $this->partial('Service/JobController/_job', ['job' => $job], 'Z77\Module\Backend') ?>
             <?php endforeach; ?>

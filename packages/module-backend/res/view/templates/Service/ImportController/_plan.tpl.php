@@ -56,7 +56,7 @@ $fmt = static function (?string $iso): string {
 
         <?php if ($group['key'] === 'skipped'): ?>
         <?php else: ?>
-        <div class="be-tree be-tree--hub">
+        <div class="be-tree be-tree--hub be-tree--lead-none">
             <?php foreach ($group['rows'] as $row): ?>
             <div class="be-tree__node" style="--node-depth:0">
                 <div class="be-tree__row" title="<?= e($row['reasonRaw']) ?>">

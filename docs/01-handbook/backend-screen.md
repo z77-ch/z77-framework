@@ -101,6 +101,14 @@ Details and selectors: [css-backend.md → button / tab / switch vocabulary](../
 - A log or history is its **own navigation entry** (read-only list), not a toggle on another list
   («Änderungsprotokoll», not «gelöschte zeigen»).
 - A form's save is in the action cell, never at the end of the body.
+- **One left edge.** The crumb, the toolbar's first control, a section title, a list's head
+  and its first cell all start on `--be-edge`; nothing else indents, only a tree child by one
+  step per level (owner 2026-10-10, css-backend.md EDGE-001). A list declares the lead slots it
+  HAS (`be-tree--lead-switch` / `--lead-menu` / `--lead-none`); it never reserves an empty one.
+- **A helper action in a row is an icon.** «Jetzt starten» (▶), download, retry — a glyph
+  with its name in `aria-label` and `title`, in the row's trailing `.be-tree__tools`, never a
+  labelled primary button per row (owner 2026-10-10, the jobs' «Jetzt einreihen»). A row has
+  ONE line; a second line under it is a sign that something belongs in a dialog.
 - **A dialog or window shows its actions in ONE fixed row directly under its title** — the
   shared partial `Z77\Shared` `partials/modalActions` (primary first, then «Abbrechen»), never
   at the bottom, never between two sections (ADR-049 revision 2026-10-10). The one exception,

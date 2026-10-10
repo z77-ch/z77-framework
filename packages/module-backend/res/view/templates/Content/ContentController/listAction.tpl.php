@@ -12,7 +12,7 @@
          Content/ContentController/hc2.tpl.php (added as the `contentHead` section in listAction). */ ?>
 <div class="be-list">
     <section class="be-list__section">
-        <div class="be-tree be-tree--hub" data-entity-list="content">
+        <div class="be-tree be-tree--hub be-tree--lead-switch" data-entity-list="content">
             <?php if (empty($rows)): ?>
             <p style="font-size:.8rem;color:var(--be-muted,#94a3b8);padding:.5rem" data-entity-empty="content">Noch keine Inhalte vorhanden.</p>
             <?php endif; ?>

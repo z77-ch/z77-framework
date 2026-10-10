@@ -86,23 +86,25 @@
     line-height:     1;
 }
 
-// The «i»: a small round badge in the accent colour, inline beside the crumb or the title.
+// «Hilfe» in a window's title bar (core.js `_helpButton`, ADR-048).
 .be .z77-help-open {
+    // The word, not a badge (owner 2026-10-10): a quiet ghost button in the title bar, the
+    // same look as a secondary tool — the title bar has room for «Hilfe».
     flex:            none;
     display:         inline-flex;
     align-items:     center;
-    justify-content: center;
-    width:           18px;
-    height:          18px;
-    padding:         0;
-    border:          0;
-    border-radius:   50%;
-    background:      var(--be-accent);
-    color:           var(--be-on-accent);
-    font:            italic var(--font-weight-semibold) 12px/1 Georgia, "Times New Roman", serif;
+    height:          24px;
+    padding:         0 var(--space-2);
+    border:          1px solid var(--be-line);
+    border-radius:   var(--radius-md);
+    background:      var(--be-surface);
+    color:           var(--be-text);
+    font:            inherit;
+    font-size:       var(--font-size-xs);
+    font-weight:     var(--font-weight-medium);
     cursor:          pointer;
 }
-.be .z77-help-open:hover { filter: brightness(1.1); }
+.be .z77-help-open:hover { background: var(--be-accent-soft); }
 .be .z77-help-open:focus-visible { outline: 2px solid var(--be-accent); outline-offset: 2px; }
 
 @media (max-width: 767px) {

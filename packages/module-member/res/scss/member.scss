@@ -1525,21 +1525,22 @@ $fb-info-tint: $fb-bg;
 .me .z77-help__full[aria-pressed="true"] { color: var(--text, #{$fb-text}); }
 
 .me .z77-help-open {
+    // The word, not a badge (owner 2026-10-10) — a quiet secondary button in the title bar.
     flex: none;
     display: inline-flex;
     align-items: center;
-    justify-content: center;
-    width: 18px;
-    height: 18px;
-    padding: 0;
-    border: 0;
-    border-radius: 50%;
-    background: var(--accent, #{$fb-accent});
-    color: var(--on-accent, #{$fb-on-accent});
-    font: italic 600 12px/1 Georgia, "Times New Roman", serif;
+    height: 24px;
+    padding: 0 .5rem;
+    border: 1px solid var(--line, #{$fb-line});
+    border-radius: .375rem;
+    background: var(--surface, #{$fb-surface});
+    color: var(--text, #{$fb-text});
+    font: inherit;
+    font-size: .75rem;
+    font-weight: 500;
     cursor: pointer;
 
-    &:hover { background: var(--accent-hover, #{$fb-accent-hv}); }
+    &:hover { background: var(--bg, #{$fb-bg}); }
     &:focus-visible { outline: 2px solid var(--accent, #{$fb-accent}); outline-offset: 2px; }
 }
 

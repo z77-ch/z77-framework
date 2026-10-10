@@ -389,3 +389,12 @@ select.be-input option {
     background: var(--be-surface);
     color:      var(--be-text);
 }
+
+// A form cell that holds the form's buttons side by side («Anzeigen» + «Drucken» in the report
+// range form), bottom-aligned with the fields of the same grid row.
+.be-form__field--actions {
+    flex-direction: row;
+    flex-wrap:      wrap;
+    align-items:    flex-end;
+    gap:            var(--space-2);
+}

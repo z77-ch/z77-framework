@@ -31,6 +31,14 @@
     line-height:   1;
 }
 .be .z77-window__close:hover { background: var(--be-accent-soft); color: var(--be-text); }
+// The body keeps the head's side padding (owner 2026-10-10: the form stood flush on the
+// window's edge); the form's action row bleeds back out so it runs edge to edge directly
+// under the title bar, as the dialog's row does (ADR-049).
+.be .z77-window__body { padding: 0 var(--space-3) var(--space-3); }
+.be .z77-window__body .z77-form-actions {
+    margin-inline:  calc(-1 * var(--space-3));
+    padding-inline: var(--space-3);
+}
 
 @media (max-width: 767px) {
     .be .z77-window,

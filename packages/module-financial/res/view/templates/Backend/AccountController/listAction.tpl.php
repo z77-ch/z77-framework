@@ -28,7 +28,7 @@ $actionBase = $actionBase ?? '/backend/finance/account';
             <h2 class="be-list__section-title">Kontenplan</h2>
             <span class="be-list__section-badge"><?= count($accounts) ?></span>
         </div>
-        <div class="be-tree be-tree--hub" data-entity-list="account">
+        <div class="be-tree be-tree--hub be-tree--lead-switch" data-entity-list="account">
             <?php if ($accounts === []): ?>
             <p class="be-list__empty">Der Kontenplan ist leer. Konten einzeln anlegen — oder den KMU-Kontenrahmen
                (Klassen 1–9 mit den gebräuchlichen Konten) als Ausgangslage übernehmen.</p>

@@ -13,7 +13,7 @@
          System/BackendUserController/list.hc1.tpl.php (auto-loaded). */ ?>
 <div class="be-list" id="js-user-body">
     <section class="be-list__section">
-        <div class="be-tree be-tree--hub" data-entity-list="backend-user">
+        <div class="be-tree be-tree--hub be-tree--lead-menu" data-entity-list="backend-user">
             <?php if (empty($users)): ?>
             <p style="font-size:.8rem;color:var(--be-muted,#94a3b8);padding:.5rem">Keine Benutzer vorhanden.</p>
             <?php endif; ?>

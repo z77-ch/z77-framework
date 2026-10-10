@@ -4,8 +4,8 @@
  * the fiscal year travels as a hidden field (the year is switched in hc2,
  * whose links carry no dates, so a date of another year never arrives
  * here), from and to (the balance sheet only «Stichtag»), the account on the
- * account statement — and the months of the year as shortcut links that set
- * from–to. Then what was not usable in the request. Screen only
+ * account statement — and the «Zeitraum» select (whole year, the months)
+ * between the date and «Anzeigen». Then what was not usable in the request. Screen only
  * (`.be-noprint`): the printed report carries its range in its title.
  *
  * Styling: the shared form classes (`.be-form__grid`, `.be-form__field`,
@@ -53,16 +53,39 @@ $max      = $year->getEndDate()->format('Y-m-d');
             <label for="report-to"><?= $atDay ? 'Stichtag' : 'Bis' ?></label>
             <input id="report-to" type="date" name="to" value="<?= e($range->toDay()) ?>" min="<?= e($min) ?>" max="<?= e($max) ?>">
         </div>
+        <?php
+        // «Zeitraum» (owner 2026-10-10): «Ganzes Jahr» and the months in ONE select between
+        // the date and «Anzeigen» — it replaced a row of 13 buttons. The option that matches
+        // the shown range is selected (the balance sheet matches on the Stichtag only); an
+        // edited date wins over it on the server (`shown_from` / `shown_to`, reportRange()).
+        $toDay   = $range->toDay();
+        $fromDay = $range->fromDay();
+        $matches = static fn(string $f, string $t): bool => $t === $toDay && ($atDay || $f === $fromDay);
+        $options = [['year', 'Ganzes Jahr', $matches($min, $max)]];
+        foreach ($year->getPeriods() as $p) {
+            $f = $p->getStartDate()->format('Y-m-d');
+            $t = $p->getEndDate()->format('Y-m-d');
+            $options[] = [$p->getStartDate()->format('Y-m'), $months[(int) $p->getStartDate()->format('n') - 1] . ' ' . $p->getStartDate()->format('Y'), $matches($f, $t)];
+        }
+        $anySelected = in_array(true, array_column($options, 2), true);
+        ?>
         <div class="be-form__field">
+            <label for="report-period">Zeitraum</label>
+            <input type="hidden" name="shown_from" value="<?= e($atDay ? '' : $fromDay) ?>">
+            <input type="hidden" name="shown_to" value="<?= e($toDay) ?>">
+            <select id="report-period" name="period">
+                <?php if (!$anySelected): ?>
+                <option value="" selected>Eigene Daten</option>
+                <?php endif; ?>
+                <?php foreach ($options as [$value, $label, $selected]): ?>
+                <option value="<?= e($value) ?>"<?= $selected ? ' selected' : '' ?>><?= e($label) ?></option>
+                <?php endforeach; ?>
+            </select>
+        </div>
+        <div class="be-form__field be-form__field--actions">
             <button type="submit" class="be-btn be-btn--primary">Anzeigen</button>
         </div>
     </form>
-    <p class="be-form__hint">
-        <a class="be-btn be-btn--ghost be-btn--sm" href="<?= e($link($tab, $keep + ['from' => $min, 'to' => $max])) ?>">Ganzes Jahr</a>
-        <?php foreach ($year->getPeriods() as $period): ?>
-        <a class="be-btn be-btn--ghost be-btn--sm" href="<?= e($link($tab, $keep + ['from' => $period->getStartDate()->format('Y-m-d'), 'to' => $period->getEndDate()->format('Y-m-d')])) ?>"><?= e($months[(int) $period->getStartDate()->format('n') - 1] . ' ' . $period->getStartDate()->format('Y')) ?></a>
-        <?php endforeach; ?>
-    </p>
     <?php if (($notices ?? []) !== []): ?>
     <div class="be-modal__alert be-modal__alert--error">
         <?php foreach ($notices as $notice): ?>

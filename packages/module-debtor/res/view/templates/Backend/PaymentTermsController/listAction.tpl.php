@@ -23,7 +23,7 @@ $actionBase = $actionBase ?? '/backend/finance/payment-terms';
             <h2 class="be-list__section-title">Zahlungskonditionen</h2>
             <span class="be-list__section-badge"><?= count($terms) ?></span>
         </div>
-        <div class="be-tree be-tree--hub" data-entity-list="paymentTerms">
+        <div class="be-tree be-tree--hub be-tree--lead-switch" data-entity-list="paymentTerms">
             <?php if ($terms === []): ?>
             <p class="be-list__empty">Keine Zahlungskonditionen vorhanden.</p>
             <?php endif; ?>

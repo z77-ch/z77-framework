@@ -32,7 +32,7 @@ $stateLabel = [
             <h2 class="be-list__section-title">Wartet</h2>
             <span class="be-list__section-badge"><?= count($open) ?></span>
         </div>
-        <div class="be-tree be-tree--hub">
+        <div class="be-tree be-tree--hub be-tree--lead-none">
             <?php foreach ($open as $entry): ?>
             <div class="be-tree__node" style="--node-depth:0" data-entity="job-run:<?= e((string) $entry->getId()) ?>">
                 <div class="be-tree__row">
@@ -69,7 +69,7 @@ $stateLabel = [
             <h2 class="be-list__section-title">Verlauf</h2>
             <span class="be-list__section-badge"><?= count($history) ?></span>
         </div>
-        <div class="be-tree be-tree--hub">
+        <div class="be-tree be-tree--hub be-tree--lead-none">
             <?php if (empty($history)): ?>
             <p class="be-list__empty">Noch keine abgeschlossenen Läufe.</p>
             <?php endif; ?>

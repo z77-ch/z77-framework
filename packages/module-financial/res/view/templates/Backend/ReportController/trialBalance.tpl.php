@@ -19,6 +19,13 @@ $ok   = $report->isBalanced();
 ?>
 <div class="be-list">
     <?= $this->partial('Backend/ReportController/rangeForm', ['range' => $range, 'tab' => $tab, 'link' => $link, 'months' => $months, 'reportBase' => $reportBase, 'notices' => $notices, 'keep' => $keep], $ns) ?>
+    <?php // Balanced is the normal state and says nothing; only the FAULT shows, at the top
+          // (owner 2026-10-10). ?>
+    <?php if ($report->rows !== [] && !$ok): ?>
+    <div class="be-modal__alert be-modal__alert--error">
+        <strong>Soll ≠ Haben.</strong> Die Totale stimmen nicht überein — das Journal ist nicht ausgeglichen. Bitte melden.
+    </div>
+    <?php endif; ?>
     <div class="be-list__section">
         <div class="be-list__section-header">
             <h2 class="be-list__section-title">
@@ -53,9 +60,9 @@ $ok   = $report->isBalanced();
                 </div>
                 <?php endforeach; ?>
                 <div class="be-list__item">
-                    <div class="be-list__row">
+                    <div class="be-list__row be-list__row--total">
                         <span class="be-list__cell"></span>
-                        <span class="be-list__cell"><strong>Total</strong></span>
+                        <span class="be-list__cell">Total</span>
                         <span class="be-list__cell be-list__cell--num"><strong><?= e($fmt($report->totalDebit)) ?></strong></span>
                         <span class="be-list__cell be-list__cell--num"><strong><?= e($fmt($report->totalCredit)) ?></strong></span>
                         <span class="be-list__cell be-list__cell--num"><strong><?= e($fmt($report->totalDebitBalance)) ?></strong></span>
@@ -64,10 +71,6 @@ $ok   = $report->isBalanced();
                 </div>
             </div>
         </div>
-        <p class="be-form__hint">
-            <span class="badge <?= $ok ? 'badge--success' : 'badge--danger' ?>"><?= $ok ? 'Soll = Haben' : 'Soll ≠ Haben' ?></span>
-            <?= $ok ? 'Total Soll und Total Haben stimmen überein, ebenso die Salden.' : 'Die Totale stimmen nicht überein — das Journal ist nicht ausgeglichen. Bitte melden.' ?>
-        </p>
         <?php endif; ?>
     </div>
 </div>

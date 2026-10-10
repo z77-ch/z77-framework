@@ -195,6 +195,26 @@ trait ReportControllerTrait
             return null;
         }
 
+        // The «Zeitraum» dropdown (owner 2026-10-10: «Ganzes Jahr» and the months in ONE select
+        // between the date and «Anzeigen», no row of buttons). It wins only when the dates were
+        // NOT edited: the form carries the range it was rendered with (`shown_from` /
+        // `shown_to`), so a changed date is never overruled by the still-selected period. No
+        // JavaScript — the select and the dates are one GET form.
+        $period = $this->reportParameter('period');
+        if ($period !== ''
+            && $this->reportParameter('from') === $this->reportParameter('shown_from')
+            && $this->reportParameter('to') === $this->reportParameter('shown_to')) {
+            if ($period === 'year') {
+                return ReportRange::wholeYear($year);
+            }
+            foreach ($year->getPeriods() as $p) {
+                if ($p->getStartDate()->format('Y-m') === $period) {
+                    return new ReportRange($year, $p->getStartDate(), $p->getEndDate());
+                }
+            }
+            $notices[] = "Zeitraum «{$period}» gibt es im Geschäftsjahr {$year->getCode()} nicht — es gelten die Daten.";
+        }
+
         $day = function (string $name, \DateTimeImmutable $default, string $label) use ($year, &$notices): \DateTimeImmutable {
             $value = $this->reportParameter($name);
             if ($value === '') {

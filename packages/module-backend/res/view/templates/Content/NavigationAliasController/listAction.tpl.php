@@ -8,7 +8,7 @@
 ?>
 <div class="be-list">
     <div class="be-list__section">
-        <div class="be-tree be-tree--hub" data-entity-list="navigationAlias">
+        <div class="be-tree be-tree--hub be-tree--lead-switch" data-entity-list="navigationAlias">
             <?php if (empty($rows)): ?>
             <p style="font-size:.8rem;color:var(--be-muted,#94a3b8);padding:.5rem" data-entity-empty="navigationAlias">Keine Aliase vorhanden.</p>
             <?php endif; ?>

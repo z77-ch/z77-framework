@@ -33,7 +33,7 @@ $creditors  = $creditors ?? [];
         <?php if (!$ledgerKnown): ?>
         <p class="be-form__hint">Ohne z77/module-financial bleibt das Konto ungeprüft — die Buchhaltung liegt ausserhalb.</p>
         <?php endif; ?>
-        <div class="be-tree be-tree--hub" data-entity-list="paymentTarget">
+        <div class="be-tree be-tree--hub be-tree--lead-switch" data-entity-list="paymentTarget">
             <?php if ($targets === []): ?>
             <p class="be-list__empty">Kein Zahlungsziel erfasst. Eine IBAN lässt sich nicht erraten — darum wird hier nichts vorbelegt.</p>
             <?php endif; ?>

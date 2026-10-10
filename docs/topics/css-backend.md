@@ -420,6 +420,38 @@ packages/module-backend/res/view/templates/
   migration: Webseiten › Inhalte («+ Inhalt» in `list.act.tpl.php`, language tabs in hc2).
   **Not verified live** (built without a browser; the 8077 project was refreshed).
 
+- **WIN-UI-001** — built 2026-10-10 (owner at the live look of the journal window: «im Modal
+  ist die Ausrichtung des Forms nicht richtig und das Icon ‹i› sollte einfach ‹Hilfe› heissen»).
+  The window body stood flush on the window's edge: `.be .z77-window__body` now keeps the
+  head's side padding (`--space-3`), and `.z77-form-actions` inside it bleeds back out
+  (negative margin, same padding) so the action row runs edge to edge under the title bar as
+  the dialog's row does. The help trigger in the title bar says the word: core.js
+  `_helpButton` writes the translated label («Hilfe») instead of «i», `.be .z77-help-open` /
+  `.me .z77-help-open` are a small ghost button (24px, line, surface) instead of the round
+  accent badge — the icon rule of the day (an icon only where the word has no room; the title
+  bar has room). The badge survives only where it belongs: the phone fallback of the shell's
+  «? Hilfe» trigger. **Not verified live.**
+- **EDGE-001** — built 2026-10-10 (owner at the live look: «die Abstufung stimmt nicht, der
+  Leerraum irritiert»). **One left edge for the work area.** Measured before: the crumb at
+  12px, section titles at 32px (`.be-list` padding 2rem), hub rows at 60–120px because the
+  hub grid RESERVED a toggle and a switch column for every list (translations: 90px of nothing
+  before the ⋮), the first title 24px under the crumb line. Now: `--be-edge` (`var(--space-4)`,
+  on `.be-shell`) is the padding-inline of the toolbar slot, the crumb slot and `.be-list`; the
+  first tab in the toolbar drops its left padding so its text and underline start on the edge;
+  `.be-list` keeps `--space-3` above its first title. Rows bleed past the edge by their inner
+  padding (`--be-row-bleed: .5rem` on `.be-list`: `margin-inline` on `.be-tree__row`, and on
+  `.be-list__frame` for the standard list — not on its rows, the frame is a scrollport; a
+  `.be-list__table` WITHOUT a frame bleeds itself, `.be-list__frame > .be-list__table` resets
+  it — 15 templates render a bare table, the owner caught «Total Passiven» half a step right)
+  so the text stands on the edge and the hover surface keeps its air. Hub lead slots are what a list
+  HAS: `be-tree--lead-switch` (switch | ⋮), `be-tree--lead-menu` (⋮), `be-tree--lead-none`,
+  the unmodified `be-tree--hub` keeps toggle | switch | ⋮ for the navigation tree; a
+  placeholder span a template still renders for a dropped slot is hidden. Tagged: 12 lists
+  switch, 4 menu, 7 none (import, member accounts; the job list is `lead-switch` since
+  JOBS-UI-ROW-001). Only a tree child indents, one step per level (`--node-depth`, unchanged).
+  New row helpers: `.be-tree__tools` (trailing meta + icon buttons), `.be-tree__key`,
+  `.be-tree__meta`. The empty toolbar band on a screen without tools STAYS — the action cell
+  lives in the same band (owner 2026-10-08, band = top-bar height). **Not verified live.**
 - **FORM-ACTIONS-002** — built 2026-10-10 (ADR-049 revision 2026-10-10, owner: «die möglichen
   Aktionen immer in einer fixierten Zeile, niemals unten oder in der Mitte»). **Every dialog's
   actions in ONE fixed row under the header.** Three pieces: (1) the first aid in

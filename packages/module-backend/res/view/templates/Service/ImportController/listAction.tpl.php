@@ -51,7 +51,7 @@ $fmt = static function (?string $iso): string {
             </p>
         </div>
         <?php if ((int) $lastResult['failed'] > 0): ?>
-        <div class="be-tree be-tree--hub">
+        <div class="be-tree be-tree--hub be-tree--lead-none">
             <?php foreach ($lastResult['lines'] as $line): if ($line['status'] !== 'failed') continue; ?>
             <div class="be-tree__node" style="--node-depth:0">
                 <div class="be-tree__row">
@@ -76,7 +76,7 @@ $fmt = static function (?string $iso): string {
             </p>
         </div>
 
-        <div class="be-tree be-tree--hub">
+        <div class="be-tree be-tree--hub be-tree--lead-none">
             <div class="be-tree__node" style="--node-depth:0">
                 <div class="be-tree__row">
                     <span class="be-tree__toggle" aria-hidden="true"></span>

@@ -37,16 +37,19 @@ $extra = $extra ?? [];
         <span class="be-list__cell"></span>
     </div></div>
     <?php endif; ?>
+    <?php // No indent (owner 2026-10-10): the depth is already in the number (1 → 10 → 100 →
+          // 1020), an indent said it twice and made the block restless. A GROUP row carries its
+          // depth as a weight step (`--l0` class … `--l2` group); an account row is plain. ?>
     <?php foreach ($section->lines as $line): ?>
     <div class="be-list__item" data-account="<?= e($line->number) ?>">
-        <div class="be-list__row">
+        <div class="be-list__row<?= $line->isGroup ? ' be-list__row--group be-list__row--l' . min((int) $line->depth, 2) : '' ?>">
             <?php if ($line->isGroup): ?>
-            <span class="be-list__cell be-list__cell--mono"><strong><?= e($line->number) ?></strong></span>
-            <span class="be-list__cell" style="padding-left: calc(<?= $line->depth ?> * 1.25rem)"><strong><?= e($line->name) ?></strong></span>
-            <span class="be-list__cell be-list__cell--num"><strong><?= e($fmt($line->amount)) ?></strong></span>
+            <span class="be-list__cell be-list__cell--mono"><?= e($line->number) ?></span>
+            <span class="be-list__cell"><?= e($line->name) ?></span>
+            <span class="be-list__cell be-list__cell--num"><?= e($fmt($line->amount)) ?></span>
             <?php else: ?>
             <span class="be-list__cell be-list__cell--mono"><a href="<?= e($link('account-statement', ['account' => $line->number])) ?>"><?= e($line->number) ?></a></span>
-            <span class="be-list__cell" style="padding-left: calc(<?= $line->depth ?> * 1.25rem)"><?= e($line->name) ?></span>
+            <span class="be-list__cell"><?= e($line->name) ?></span>
             <span class="be-list__cell be-list__cell--num"><?= e($fmt($line->amount)) ?></span>
             <?php endif; ?>
         </div>
@@ -62,10 +65,10 @@ $extra = $extra ?? [];
     </div>
     <?php endforeach; ?>
     <div class="be-list__item">
-        <div class="be-list__row">
+        <div class="be-list__row be-list__row--total">
             <span class="be-list__cell"></span>
-            <span class="be-list__cell"><strong><?= e($totalLabel) ?></strong></span>
-            <span class="be-list__cell be-list__cell--num"><strong><?= e($fmt($total)) ?></strong></span>
+            <span class="be-list__cell"><?= e($totalLabel) ?></span>
+            <span class="be-list__cell be-list__cell--num"><?= e($fmt($total)) ?></span>
         </div>
     </div>
 </div>

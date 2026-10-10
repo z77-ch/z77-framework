@@ -18,7 +18,7 @@
         <div class="be-list__section__head" style="margin-bottom:.5rem">
             <h2 style="font-size:.95rem;margin:0">UI-Texte</h2>
         </div>
-        <div class="be-tree be-tree--hub">
+        <div class="be-tree be-tree--hub be-tree--lead-menu">
             <?php if (empty($uiRows)): ?>
             <p style="font-size:.8rem;color:var(--be-muted,#94a3b8);padding:.5rem">Keine UI-Texte vorhanden.</p>
             <?php endif; ?>
@@ -42,7 +42,7 @@
             <h2 style="font-size:.95rem;margin:0">Routen-Slugs</h2>
             <p style="font-size:.75rem;color:var(--be-muted,#94a3b8);margin:.15rem 0 0">Kanonisch (<code><?= e($defaultLang) ?></code>) → lokalisiert. Pro Sprache 1:1, kein Slug darf einen anderen kanonischen verdecken.</p>
         </div>
-        <div class="be-tree be-tree--hub">
+        <div class="be-tree be-tree--hub be-tree--lead-menu">
             <?php if (empty($slugLanguages)): ?>
             <p style="font-size:.8rem;color:var(--be-muted,#94a3b8);padding:.5rem">Nur die Standardsprache ist konfiguriert — keine Slug-Übersetzungen nötig.</p>
             <?php elseif (empty($slugRows)): ?>

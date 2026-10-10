@@ -30,7 +30,7 @@ $actionBase = $actionBase ?? '/backend/finance/dunning-level';
         <?php else: ?>
         <p class="be-form__hint">Mahngebühren werden auf Konto <?= e($feeAccount['number']) ?> gebucht — ohne MWST (Plan §6.5).</p>
         <?php endif; ?>
-        <div class="be-tree be-tree--hub">
+        <div class="be-tree be-tree--hub be-tree--lead-switch">
             <?php if ($levels === []): ?>
             <p class="be-list__empty">Keine Mahnstufen vorhanden.</p>
             <?php endif; ?>

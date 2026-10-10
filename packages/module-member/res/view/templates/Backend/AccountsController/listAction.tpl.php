@@ -49,7 +49,7 @@ $labelsOf     = static fn(array $rows): string => implode(', ', array_map(
             <h2 class="be-list__section-title"><?= e($listTitle) ?></h2>
             <span class="be-list__section-badge"><?= count($accounts) ?></span>
         </div>
-        <div class="be-tree be-tree--hub">
+        <div class="be-tree be-tree--hub be-tree--lead-none">
             <?php if (empty($accounts)): ?>
             <p style="font-size:.8rem;color:var(--be-muted,#94a3b8);padding:.5rem"><?= e($listEmpty) ?></p>
             <?php endif; ?>

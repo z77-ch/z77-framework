@@ -20,6 +20,10 @@
     // (ADR-048 addendum, owner 2026-10-08).
     --shell-crumb: 32px;
     --shell-tabs:  38px;   // tab row — rendered ONLY by screens that carry tabs
+    // ONE left edge for the work area (owner 2026-10-10, «die Abstufung stimmt nicht»): the
+    // crumb, the toolbar's first control, a section title, a list's head and its first cell all
+    // start here. Nothing else indents — only a tree child, one step per level (`--node-depth`).
+    --be-edge:     var(--space-4);
 
     position:              relative;
     // NOT `height: 100dvh`: the Störer bands (`.be-shell-banner`) sit in normal flow above the
@@ -169,7 +173,7 @@ body.backend {
     padding:      7px 8px;
     align-items:  stretch;
 }
-.be-shell-band__slot--2 { background: var(--be-bg); }
+.be-shell-band__slot--2 { background: var(--be-bg); padding-inline: var(--be-edge); }
 
 // ── Tab row (slot `tabs`, B10 v1.17.0) ─────────────────────────────────────
 // Which VIEW of one object you are looking at — a level above hc2, which carries the tools of
@@ -238,6 +242,9 @@ body.backend {
 // the band slot's vertical padding, so the tabs span the full band height and the active line
 // sits on the band's bottom edge, as it does in the tab row.
 .be-shell-band__slot .be-viewtabs { margin-block: calc(-1 * var(--space-2)); }
+// The first tab's TEXT stands on the edge (its underline starts where the text starts), as the
+// crumb below and the titles further down do.
+.be-shell-band__slot .be-viewtabs:first-child .be-viewtabs__tab:first-child { padding-left: 0; }
 .be-viewtabs__tab:hover { color: var(--be-text); }
 .be-viewtabs__tab.is-active {
     color:               var(--be-text);
@@ -273,7 +280,7 @@ body.backend {
     border-right: 1px solid var(--be-line);
     padding:      0;
 }
-.be-shell-crumb__slot--2 { background: var(--be-bg); }
+.be-shell-crumb__slot--2 { background: var(--be-bg); padding-inline: var(--be-edge); }
 
 // The default crumb: section › page, muted, small — a position line, not a heading.
 .be-crumb {

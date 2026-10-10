@@ -1540,7 +1540,7 @@ $em = $wireDi();
 check('R35 trial balance page: the printed header, the report\'s own template and the printed footer in main, the year selection at the TOP OF THE RAIL (railSelect, owner 2026-10-08 — was hc1, before that hc2), the action cell (hc1) empty, the report tabs in the TOOLBAR (hc2, owner 2026-09-29 — was the `tabs` row, which stays empty)', $sections['main'] === ['Backend/ReportController/printHead', 'Backend/ReportController/trialBalance', 'Backend/ReportController/printFoot'] && empty($sections['tabs']) && $sections['railSelect'] === ['Backend/partials/fiscalYearSelect'] && empty($sections['hc1']) && $sections['hc2'] === ['Backend/ReportController/tabs']
     && str_contains(file_get_contents(__DIR__ . '/../packages/module-backend/res/assets/css/base.css'), '.be-shell-band__slot .be-viewtabs{margin-block:')
     && !file_exists($package . '/res/view/templates/Backend/ReportController/yearSwitch.tpl.php'));
-check('R36 … renders the totals the Swiss way (15\'364.20), «Soll = Haben», a link to the account statement with the range', str_contains($html, "15&apos;364.20") && str_contains($html, 'Soll = Haben')
+check('R36 … renders the totals the Swiss way (15\'364.20), balanced says nothing (no badge, no fault block), a link to the account statement with the range', str_contains($html, "15&apos;364.20") && !str_contains($html, 'Soll = Haben') && !str_contains($html, 'Soll ≠ Haben')
     && str_contains($html, '/backend/finance/report/account-statement?account=1020&amp;year=2030-31&amp;from=2030-07-01&amp;to=2031-06-30'));
 [$ctx, $html] = $page('trialBalance', []);
 check('R37 no parameters: the year containing today, else the latest (currentOrLatest()), whole year, no notice', $ctx['range']->year->getCode() === $em->getRepository(FiscalYear::class)->currentOrLatest()->getCode()
@@ -1551,8 +1551,8 @@ check('R38 a date outside the year or not a date falls back to the year\'s bound
 [$ctx] = $page('trialBalance', ['year' => '2030-31', 'from' => '2030-10-01', 'to' => '2030-09-01']);
 check('R39 «from» after «to» → the whole year, with a notice', $ctx['range']->fromDay() === '2030-07-01' && $ctx['range']->toDay() === '2031-06-30' && count($ctx['notices']) === 1);
 [$ctx, $html] = $page('balanceSheet', ['year' => '2030-31']);
-check('R40 balance sheet page: Aktiven = Passiven, the result line «Verlust laufendes Jahr» −795.00, «Stichtag» instead of from/to, and the missing-opening note (not the first year)', str_contains($html, 'Aktiven = Passiven')
-    && str_contains($html, 'Verlust laufendes Jahr') && str_contains($html, '−795.00') && str_contains($html, 'Stichtag') && !str_contains($html, 'name="from"') && str_contains($html, 'Ohne Eröffnungsbuchung'));
+check('R40 balance sheet page: balanced says nothing (no badge, no fault block, owner 2026-10-10), the result line «Verlust laufendes Jahr» −795.00, «Stichtag» instead of from/to, no missing-opening note', !str_contains($html, 'Aktiven = Passiven') && !str_contains($html, 'Aktiven ≠ Passiven')
+    && str_contains($html, 'Verlust laufendes Jahr') && str_contains($html, '−795.00') && str_contains($html, 'Stichtag') && !str_contains($html, 'name="from"') && !str_contains($html, 'Ohne Eröffnungsbuchung'));
 [$ctx, $html] = $page('incomeStatement', ['year' => '2030-31']);
 check('R41 income statement page: Ertrag 1\'005.00, Aufwand 1\'800.00, Verlust −795.00', str_contains($html, "1&apos;005.00") && str_contains($html, "1&apos;800.00") && str_contains($html, 'Verlust (Ertrag − Aufwand)'));
 [$ctx, $html] = $page('accountStatement', ['year' => '2030-31']);

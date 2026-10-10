@@ -39,6 +39,9 @@ class JobController extends BackendAbstractController
     /** Number of history entries the screen shows (newest first). */
     private const HISTORY_SHOWN = 25;
 
+    /** The accepted schedule forms, as the schedule dialog shows them. */
+    private const SCHEDULE_HELP = 'every:15m · every:2h · hourly@:20 · daily@03:15 · weekly@mon,03:15 · monthly@1,06:00';
+
     private function queue(): JobQueue
     {
         return new JobQueue(DI::getInstance()->get('UnifiedEntityManager'));
@@ -59,8 +62,31 @@ class JobController extends BackendAbstractController
             'history'      => array_slice($history, 0, self::HISTORY_SHOWN),
             'heartbeat'    => JobRunner::lastPass(ABS_BASE_PATH),
             'heartbeatOk'  => $this->heartbeatIsFresh(),
-            'scheduleHelp' => 'every:15m · every:2h · hourly@:20 · daily@03:15 · weekly@mon,03:15 · monthly@1,06:00',
         ]);
+    }
+
+    /** One job's row data by key, as the list renders it — null for a key no module offers. */
+    private function jobRow(string $jobKey): ?array
+    {
+        foreach ($this->board()['jobs'] as $job) {
+            if ($job['key'] === $jobKey) {
+                return $job;
+            }
+        }
+        return null;
+    }
+
+    /** The row's ⋮ hub: «Zeitplan …» (the dialog) and «Jetzt starten». */
+    protected function actionsAction(): HtmlResponse|FetchResponse
+    {
+        $job = $this->jobRow(trim((string) DI::getRequest()->getGetParameter('job')));
+        if ($job === null) {
+            return $this->fetchError('Unbekannter Job');
+        }
+
+        $response = $this->html(['job' => $job]);
+        $this->layoutManager->addPartials('actions', 'Service/JobController', self::NAMESPACE);
+        return $response;
     }
 
     /**
@@ -197,10 +223,28 @@ class JobController extends BackendAbstractController
      * Sets or replaces a schedule. An empty expression removes the record —
      * that is how a job goes back to "runs only when someone queues it".
      */
-    #[Fetch, HttpMethod('POST')]
-    protected function scheduleAction(): FetchResponse
+    /**
+     * The schedule dialog (GET, from the row's ⋮ hub) and its save (POST). The one field used
+     * to sit inline in the row; since 2026-10-10 it is a popup with the fixed action row (R2,
+     * forms-actions review row 27). The save re-renders the job's row and closes the dialog.
+     */
+    #[Fetch]
+    protected function scheduleAction(): HtmlResponse|FetchResponse
     {
-        $body       = DI::getRequest()->getJsonBody();
+        $request = DI::getRequest();
+
+        if (!$request->isPost()) {
+            $job = $this->jobRow(trim((string) $request->getGetParameter('job')));
+            if ($job === null) {
+                return $this->fetchError('Unbekannter Job');
+            }
+
+            $response = $this->html(['job' => $job, 'scheduleHelp' => self::SCHEDULE_HELP]);
+            $this->layoutManager->addPartials('schedule', 'Service/JobController', self::NAMESPACE);
+            return $response;
+        }
+
+        $body       = $request->getJsonBody();
         $jobKey     = trim((string) ($body['job'] ?? ''));
         $expression = strtolower(trim((string) ($body['expression'] ?? '')));
 
@@ -214,8 +258,9 @@ class JobController extends BackendAbstractController
         if ($expression === '') {
             if ($schedule !== null) {
                 $schedules->delete($schedule);
+                $this->messageService->pushFlash('success', 'Zeitplan entfernt');
             }
-            return $this->boardAnswer($jobKey, false);
+            return $this->boardAnswer($jobKey, false)->addCommand('close-modal');
         }
 
         if (!ScheduleExpression::isValid($expression)) {
@@ -230,7 +275,8 @@ class JobController extends BackendAbstractController
         $schedule->setNextRunAt(date(DATE_ATOM, ScheduleExpression::parse($expression)->nextAfter(time())));
         $schedules->save($schedule);
 
-        return $this->boardAnswer($jobKey, false);
+        $this->messageService->pushFlash('success', 'Zeitplan «' . $expression . '» gespeichert');
+        return $this->boardAnswer($jobKey, false)->addCommand('close-modal');
     }
 
     /** Puts a failed entry back into the queue, attempt counter reset. */

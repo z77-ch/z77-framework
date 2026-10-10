@@ -31,7 +31,7 @@ $shown       = count($contacts);
             <h2 class="be-list__section-title"><?= $query === '' ? 'Kontakte' : 'Kontakte zu «' . e($query) . '»' ?></h2>
             <span class="be-list__section-badge"><?= $total ?></span>
         </div>
-        <div class="be-tree be-tree--hub" data-entity-list="contact">
+        <div class="be-tree be-tree--hub be-tree--lead-switch" data-entity-list="contact">
             <?php if ($contacts === []): ?>
             <p class="be-list__empty"><?= $query === '' ? 'Keine Kontakte vorhanden.' : 'Kein Kontakt passt zu «' . e($query) . '».' ?></p>
             <?php endif; ?>

@@ -88,7 +88,14 @@
 .be-tabs--sub .be-tabs__tab { padding: .2rem .6rem; font-size: .75rem; }
 
 /* ── List body ── */
-.be-list { padding: 1.5rem 2rem; }
+/* The body starts on the shell's edge (`--be-edge`, _shell.scss) and close under the crumb
+   line — the first title must not hang in empty air (owner 2026-10-10). Rows BLEED past the
+   edge by their own inner padding (`--be-row-bleed`) so their text stands on the edge and the
+   hover surface still has air around it. */
+.be-list {
+    --be-row-bleed: .5rem;
+    padding: var(--space-3) var(--be-edge) var(--space-6);
+}
 
 /* ── Section (one per tag group) ── */
 .be-list__section { margin-bottom: 2rem; }
@@ -125,7 +132,7 @@
    the 12 list screens carried its own slightly different copy of. */
 .be-list__empty {
     margin:    0;
-    padding:   .5rem;
+    padding:   .5rem 0;
     font-size: .8rem;
     color:     var(--be-muted);
 }
@@ -210,7 +217,14 @@
    tracks (or forgets a stage) then scrolls itself instead of pushing the whole page open. It
    costs nothing while the tracks fit. No vertical scrollbar comes with it — the frame has no
    height of its own, so `overflow-y: auto` never has anything to clip. */
-.be-list__frame { container-type: inline-size; overflow-x: auto; }
+.be-list__frame {
+    container-type: inline-size;
+    overflow-x:     auto;
+    /* The frame bleeds past the edge by the rows' inner padding (see `.be-list`), so the
+       first cell's text stands on the edge — the frame itself, not the rows: a negative
+       margin on a row would be clipped by this scrollport. */
+    margin-inline:  calc(-1 * var(--be-row-bleed, 0px));
+}
 
 .be-list__table {
     /* One definition of the track list, reused by the subgrid fallback below. The optional
@@ -226,7 +240,13 @@
     display:               grid;
     grid-template-columns: var(--be-list-tracks);
     align-items:           stretch;
+    /* A table NOT in a frame bleeds itself (EDGE-001) — 15 templates render a bare table
+       (detail views, report totals); without this they stood half a step right of the edge.
+       Inside a frame the frame bleeds, so the table must not do it twice. Outside `.be-list`
+       (a dialog) the token is unset and this is 0. */
+    margin-inline:         calc(-1 * var(--be-row-bleed, 0px));
 }
+.be-list__frame > .be-list__table { margin-inline: 0; }
 
 .be-list__table--disclose { --be-list-disclose: 1.2rem; }
 .be-list__table--select   { --be-list-select:   1.5rem; }
@@ -434,6 +454,19 @@ label.be-list__cell { cursor: pointer; }
 }
 /* Secondary fields read as secondary — v1 achieved this with an inline style per template. */
 .be-list__cell--muted { color: var(--be-muted); font-size: .78rem; }
+
+/* ── Hierarchy by weight, not by indent (owner 2026-10-10, the balance sheet) ──
+ * A statement's depth is already in the account number (1 → 10 → 100 → 1020); an indent said
+ * it a second time and made the block restless. Three weight steps are what the eye tells
+ * apart: class (`--l0`) bold and one size up with the head's letter-spacing, main group
+ * (`--l1`) bold, group (`--l2`) semibold; an account row is plain. A total is bold with a
+ * rule above it, on the same edge as everything else. */
+.be-list__row--group .be-list__cell { color: var(--be-text); }
+.be-list__row--l0 .be-list__cell { font-weight: var(--font-weight-bold); font-size: var(--font-size-md); letter-spacing: .02em; }
+.be-list__row--l1 .be-list__cell { font-weight: var(--font-weight-bold); }
+.be-list__row--l2 .be-list__cell { font-weight: var(--font-weight-semibold); }
+.be-list__row--total { border-top: 2px solid var(--be-line); }
+.be-list__row--total .be-list__cell { font-weight: var(--font-weight-bold); color: var(--be-text); }
 .be-list__cell--mono  { font-family: var(--font-family-mono); font-size: .78rem; }
 .be-list__cell--wrap  { white-space: normal; }
 
@@ -539,6 +572,7 @@ label.be-list__cell { cursor: pointer; }
     align-items:   center;
     gap:           .6rem;
     padding:       .45rem .5rem;
+    margin-inline: calc(-1 * var(--be-row-bleed, 0px));
     border-radius: var(--radius-md);
     transition:    background var(--transition-fast);
 }
@@ -598,6 +632,42 @@ label.be-list__cell { cursor: pointer; }
 .be-tree--hub .be-tree__name   { grid-column: 4; min-width: 0; }
 .be-tree--hub .be-tree__url    { grid-column: 5; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .be-tree--hub .be-tree__route  { grid-column: 6; }
+
+/* Lead slots are what a LIST has, not what the grid reserves (owner 2026-10-10: a list without
+   a toggle and a switch showed 90px of nothing before its ⋮). The default above keeps all three
+   (the navigation tree: toggle | switch | ⋮); the modifiers drop the ones a list does not have,
+   and an empty placeholder span a template still renders for them is simply not shown. */
+.be-tree--hub.be-tree--lead-switch .be-tree__row { grid-template-columns: 2.4rem 1.6rem minmax(0, auto) minmax(0, 1fr) auto; }
+.be-tree--hub.be-tree--lead-switch .be-tree__toggle { display: none; }
+.be-tree--hub.be-tree--lead-switch .be-tree__switch { grid-column: 1; }
+.be-tree--hub.be-tree--lead-switch .be-tree__menu   { grid-column: 2; }
+.be-tree--hub.be-tree--lead-switch .be-tree__name   { grid-column: 3; }
+.be-tree--hub.be-tree--lead-switch .be-tree__url    { grid-column: 4; }
+.be-tree--hub.be-tree--lead-switch .be-tree__route  { grid-column: 5; }
+
+.be-tree--hub.be-tree--lead-menu .be-tree__row { grid-template-columns: 1.6rem minmax(0, auto) minmax(0, 1fr) auto; }
+.be-tree--hub.be-tree--lead-menu .be-tree__toggle,
+.be-tree--hub.be-tree--lead-menu .be-tree__switch { display: none; }
+.be-tree--hub.be-tree--lead-menu .be-tree__menu   { grid-column: 1; }
+.be-tree--hub.be-tree--lead-menu .be-tree__name   { grid-column: 2; }
+.be-tree--hub.be-tree--lead-menu .be-tree__url    { grid-column: 3; }
+.be-tree--hub.be-tree--lead-menu .be-tree__route  { grid-column: 4; }
+
+.be-tree--hub.be-tree--lead-none .be-tree__row { grid-template-columns: minmax(0, auto) minmax(0, 1fr) auto; }
+.be-tree--hub.be-tree--lead-none .be-tree__toggle,
+.be-tree--hub.be-tree--lead-none .be-tree__switch,
+.be-tree--hub.be-tree--lead-none .be-tree__menu   { display: none; }
+.be-tree--hub.be-tree--lead-none .be-tree__name   { grid-column: 1; }
+.be-tree--hub.be-tree--lead-none .be-tree__url    { grid-column: 2; }
+.be-tree--hub.be-tree--lead-none .be-tree__route  { grid-column: 3; }
+
+/* A row's trailing tools (route slot): quiet meta text, then helper ICON buttons — a helper
+   action in a row is a glyph with an accessible name, not a labelled button (owner 2026-10-10,
+   the jobs' «Jetzt einreihen»). The key beside a name reads as code, small and muted. */
+.be-tree__tools { display: flex; align-items: center; gap: .5rem; justify-self: end; }
+.be-tree__tools > form { margin: 0; display: flex; }
+.be-tree__meta  { font-size: .7rem; color: var(--be-muted); white-space: nowrap; }
+.be-tree__key   { font-size: .7rem; color: var(--be-muted); }
 
 /* ⋮ row-menu trigger — reusable in any hub row. */
 .be-tree__menu {

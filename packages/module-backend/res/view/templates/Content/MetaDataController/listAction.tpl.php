@@ -29,7 +29,7 @@ foreach ($groups as $g) {
             <h2 class="be-list__section-title"><?= e($group['label']) ?></h2>
             <span class="be-list__section-badge"><?= count($group['rows']) ?> Seite<?= count($group['rows']) === 1 ? '' : 'n' ?></span>
         </div>
-        <div class="be-tree be-tree--hub">
+        <div class="be-tree be-tree--hub be-tree--lead-menu">
             <?php if (empty($group['rows'])): ?>
             <p style="font-size:.8rem;color:var(--be-muted,#94a3b8);padding:.5rem">Keine routbaren Seiten in dieser Umgebung.</p>
             <?php endif; ?>

@@ -26,7 +26,7 @@ $tplNs      = 'Z77\\Module\\Vat';
             <h2 class="be-list__section-title">Steuercodes</h2>
             <span class="be-list__section-badge"><?= count($codes) ?></span>
         </div>
-        <div class="be-tree be-tree--hub" data-entity-list="taxCode">
+        <div class="be-tree be-tree--hub be-tree--lead-switch" data-entity-list="taxCode">
             <?php if (empty($codes)): ?>
             <p class="be-list__empty">Keine Steuercodes vorhanden.</p>
             <?php endif; ?>

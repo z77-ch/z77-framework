@@ -30,7 +30,7 @@
             Entwickler-Vorgabe (Config), solange die Übersteuerung aktiv ist. Templates und
             neue Formular-Keys bleiben Code.
         </p>
-        <div class="be-tree be-tree--hub">
+        <div class="be-tree be-tree--hub be-tree--lead-switch">
             <?php if (empty($rows)): ?>
             <p style="font-size:.8rem;color:var(--be-muted,#94a3b8);padding:.5rem">Keine Formular-Mails definiert (emailConfig `forms` ist leer).</p>
             <?php endif; ?>

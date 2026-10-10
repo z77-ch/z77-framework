@@ -23,7 +23,7 @@ $actionBase = $actionBase ?? '/backend/contact/address-type';
             <h2 class="be-list__section-title">Adresstypen</h2>
             <span class="be-list__section-badge"><?= count($types) ?></span>
         </div>
-        <div class="be-tree be-tree--hub" data-entity-list="addressType">
+        <div class="be-tree be-tree--hub be-tree--lead-switch" data-entity-list="addressType">
             <?php if ($types === []): ?>
             <p class="be-list__empty">Keine Adresstypen vorhanden.</p>
             <?php endif; ?>
