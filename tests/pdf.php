@@ -160,5 +160,28 @@ $pdf = PdfDocument::create('window')->withoutCompression()->addPage();
 $pdf->partial('pdf/addressWindow', ['lines' => ['Frau', 'Anna Ébauche', '', 'Rue du Lac 1', '1000 Lausanne']]);
 check('F3 addressWindow: the lines at the window (y from 50), the empty one skipped, the cursor below the block', str_contains($pdf->output(), "(Anna \xC9bauche)") && abs($pdf->y() - (50 + 4 * 4.6)) < 0.01);
 
+
+// ── G: the shared report layout (FIN-PDF-001) ─────────────────────────────────────────────
+$cols = [['label' => 'Konto', 'width' => 20], ['label' => 'Bezeichnung', 'width' => 130], ['label' => 'Betrag', 'width' => 30, 'align' => 'R']];
+$many = [];
+for ($i = 0; $i < 90; $i++) {
+    $many[] = ['cells' => [(string) (1000 + $i), 'Konto ' . $i, '1.00']];
+}
+$report = PdfDocument::create('Bilanz')->withoutCompression()->partial('pdf/report', [
+    'title'     => 'Bilanz',
+    'subtitle'  => 'Geschäftsjahr 2026 · per 31.12.2026',
+    'issuer'    => 'Muster AG',
+    'printedAt' => '10.10.2026 12:27',
+    'notice'    => 'Aktiven ≠ Passiven — Differenz 12.00',
+    'blocks'    => [
+        ['title' => 'Aktiven', 'columns' => $cols, 'rows' => $many],
+        ['columns' => $cols, 'rows' => [['cells' => ['', 'Total Aktiven', '90.00'], 'bold' => true, 'rule' => true]]],
+    ],
+]);
+$bytes = $report->output();
+check('G1 report: a PDF, more than one page for 90 rows, the head on every page', str_starts_with($bytes, '%PDF') && $report->pageNo() >= 2 && substr_count($bytes, '(Muster AG)') === $report->pageNo());
+check('G2 report: the page count is resolved («Seite 1 von n», no {nb} left), the printed-at line and the notice are there', !str_contains($bytes, '{nb}') && str_contains($bytes, '(Seite 1 von ' . $report->pageNo() . ')') && str_contains($bytes, '(Gedruckt 10.10.2026 12:27)') && str_contains($bytes, 'Differenz 12.00'));
+check('G3 report: the block title and the total are drawn', str_contains($bytes, '(Aktiven)') && str_contains($bytes, '(Total Aktiven)'));
+
 echo "\n{$pass} passed, {$fail} failed\n";
 exit($fail === 0 ? 0 : 1);
