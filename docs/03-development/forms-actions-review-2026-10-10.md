@@ -59,23 +59,19 @@ with the bar placed last, the bank-import detail's per-row page POSTs, the membe
 bottom dialogs, screen actions placed inside cards (Stats «Bericht jetzt senden», Import «Alle N
 markieren», DMS «Papierkorb leeren» in a `<details>` at the modal's end).
 
-## 3. What the owner has to decide first
+## 3. The owner's decision (2026-10-10)
 
-**ADR-049 §2 allows `.z77-form-actions--end`** («sticky at the BOTTOM — for forms filled once
-from top to bottom, and short dialogs»). R1 as worded does not. Nobody uses `--end` today
-(0 of 110), but 21 short confirms («Wirklich löschen?») sit on a bottom footer and would be the
-first to claim the exception.
+**ADR-049 §2 allowed `.z77-form-actions--end`** for «forms filled once from top to bottom, and
+short dialogs». The owner decided the same day: the fixed row at the top is the rule for every
+form and dialog; **the exception survives for the very short confirm only** — «Wirklich löschen?
+Ja / Nein» or the like: one question and its answers, no input field, nothing to scroll. The test
+is «no field», not «short». Written into ADR-049 as the Revision 2026-10-10; R2 went into ADR-047
+as the Addendum 2026-10-10. Of the 21 short confirms in the inventory, those with a field (the
+fiscal-year open/reopen dialogs hide an edit form among the confirms) are forms and go to the top.
 
-Recommendation: **drop the exception.** A confirm with its button at the top reads fine («Löschen
-… — Abbrechen» above one sentence), and one place for every action is the whole point of R1; an
-exception for «short» starts the argument about what short is. That is a revision of ADR-049,
-not a silent change — it needs the owner's word.
+## 4. Order of work (approved 2026-10-10 — «ADR revidieren und umbauen»)
 
-## 4. Order of work (proposal)
-
-1. **ADR-049 revision** (owner): R1 as the rule, `--end` removed; R2 added to ADR-047 as the
-   default («window or modal unless a reload is needed»), with the list of what counts as a
-   needed reload (a changed navigation tree, a changed shell, a sign-in).
+1. **ADR-049 revision + ADR-047 addendum** — DONE 2026-10-10 (docs only, nothing built yet).
 2. **P1 first aid** — the `order` rule in `_modal.scss`: every dialog complies the same hour.
    Then the shared partial `partials/modalActions` on `.z77-form-actions`, and the dialogs move
    onto it as they are touched; the two misplaced bars (invoice confirms) and the DMS middle

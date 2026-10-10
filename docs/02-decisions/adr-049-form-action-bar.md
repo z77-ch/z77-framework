@@ -1,6 +1,7 @@
 # ADR-049 — The form's action bar: «Speichern» always within reach
 
 **Status:** `[APPROVED]` — the owner's idea, approved 2026-09-29 («ja los»)
+**Revised:** 2026-10-10 — the fixed row is the RULE for every form and dialog; the bottom bar survives only for the very short confirm («Wirklich löschen? Ja / Nein») — see Revision 2026-10-10
 **Date:** 2026-09-29
 **Builds on:** [ADR-033](adr-033-shell-action-placement.md) (an action stands where the thing it
 acts on is shown), [ADR-047](adr-047-controller-led-windows.md) (windows)
@@ -71,6 +72,43 @@ keeps «Speichern» first in the document (the journal already does, see FIN-JOU
 - Existing forms move over when they are touched. First user (built 2026-09-29): the journal's
   edit forms, one-line and compound (`financial.md` FIN-JOURNAL-CAPTURE-001). Other forms move
   over as needed (owner 2026-09-29).
+
+## Revision 2026-10-10 — one fixed row for every form and dialog; the exception is the very short confirm (owner decision)
+
+**Trigger.** The owner, looking at the e-mail settings modal with «Abbrechen / Speichern» at its
+bottom: «gleich wie bei Word, Excel oder anderen Tools werden die möglichen Aktionen immer in einer
+fixierten Zeile angezeigt, niemals unten oder in der Mitte». The review of 2026-10-10
+(`docs/03-development/forms-actions-review-2026-10-10.md`, 110 forms) found this ADR built in the
+journal and reached by nothing else: 53 dialogs keep their actions in a bottom footer, no action
+bar and no window exist outside finance / debtor.
+
+**Point 2 is rewritten — the form no longer decides:**
+
+- Every form and dialog shows its actions in ONE fixed row: on a page the toolbar (`form="<id>"`,
+  point 3 unchanged), in a window directly under the title bar, in a popup modal directly under
+  the modal's header — always `.z77-form-actions`, sticky at the TOP of the scroll area. Never at
+  the end of the form, never in the middle (the DMS edit modal had its footer between the fields
+  and the ACL section).
+- `.z77-form-actions--end` stays for exactly ONE shape, by the owner's word (2026-10-10, «Ausnahme
+  für ganz kurze Bestätigungen … z.B. wirklich löschen ja nein oder ähnlich»): a confirm that is
+  one question and its answers — no input field, no section, nothing to scroll. The moment a
+  dialog carries a field, it is a form and the bar goes to the top. «Short» is not the test;
+  «no field» is.
+- The popup modal's `.be-modal__footer` is retired as the home of actions: the shared row renders
+  through one partial (`Z77\Shared` `partials/modalActions` → `.z77-form-actions`), so 53 dialogs
+  cannot drift apart again. First aid before the partial lands: a CSS `order` in `_modal.scss`
+  that moves every existing footer under the header at once (no template change; Enter still
+  presses the first submit button in document order).
+
+**Why the fixed row and not «the form decides».** The flexibility of 2026-09-29 produced no
+second placement in fifteen screens — every new dialog copied the footer it saw. A placement that
+is the same everywhere is the one the eye stops searching for; that is the owner's argument, and
+it is the same argument ADR-033 makes for the action cell. The confirm exception costs nothing:
+with no field there is nothing between the question and its answer.
+
+**Built with this revision:** nothing yet — the order of work is in the review document (§4):
+this revision → the `order` first aid → the shared partial → the `reload` helper (ADR-047
+addendum) → pages to windows.
 
 ## Rejected Alternatives
 

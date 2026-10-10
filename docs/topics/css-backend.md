@@ -752,6 +752,26 @@ packages/module-backend/res/view/templates/
 
 ## pending
 
+- **Resume here (2026-10-10, before the context compact) — the forms rework is DECIDED, nothing
+  of it is built.** Owner rules of the day: R1 every form's actions in ONE fixed row (toolbar /
+  `.z77-form-actions` at the top; the bottom bar only for the field-less confirm «Wirklich
+  löschen? Ja / Nein»), R2 window or modal by default, a page only where a reload is needed.
+  Both are written: ADR-049 «Revision 2026-10-10», ADR-047 «Addendum 2026-10-10», the inventory
+  of 110 forms with every file:line in
+  [`../03-development/forms-actions-review-2026-10-10.md`](../03-development/forms-actions-review-2026-10-10.md)
+  (§4 = the approved order of work). **Next, in order:** (1) the CSS `order` first aid in
+  `components/_modal.scss` so all 53 footers sit under the header at once; (2) the shared
+  partial `Z77\Shared` `partials/modalActions` on `.z77-form-actions` + its backend host rule,
+  the two misplaced invoice bars and the DMS middle footer moved right away; (3) the
+  `FetchResponse` row helper and the 12 backend controllers off `reload` (Navigation is the
+  template, the three bank-import per-row POSTs with them); (4) invoice editor / payment / two
+  confirms from pages to windows with the journal recipe; (5) screen actions out of the body
+  (Stats, Import, DMS trash, member profile). Also open from today: the owner's live look at the
+  upload (Zahlungseingänge + Drive, pending list in `fetch.md`), `.min.js` for `upload.js` /
+  `upload-poster.js` (needs terser), the stray `public/assets/dms/js/documents/drive_at-*.js` on
+  z77.ch (owner decides), ADR-046 addendum awaiting the owner's word, and NO tag since `1.6.0`.
+  Rule learned the hard way today: a framework CSS/JS change reaches a project only after
+  `composer install` there — publish before asking the owner to look.
 - **Resume here (2026-10-09) — the backend action standard is BUILT and COMMITTED**
   (`9f34c29` foundation + screens, `0c592b6` change log / Mandant tabs / journal help,
   `20a4f0b` the member head's help trigger). What it covers: the shell foundation (band =

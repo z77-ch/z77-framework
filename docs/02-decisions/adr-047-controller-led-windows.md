@@ -139,6 +139,33 @@ computes, `core.js` writes them.
   controller.** The framework offers the mechanics; which of them a screen uses is decided in
   its controller, not fixed in `core.js`.
 
+## Addendum 2026-10-10 — a window or a modal is the default; a page only where a reload is needed (owner decision)
+
+The owner, 2026-10-10: «wenn immer möglich soll ein Fetch-Modal aufgehen, nur dort, wo ein Reload
+zwingend nötig ist, kann eine eigene Seite angezeigt werden». The review of the same day
+(`docs/03-development/forms-actions-review-2026-10-10.md`) found 9 edits that open as a page while
+the journal does the same thing in a window, and 12 backend controllers (33 call sites) that
+answer a one-row save with `reload` — the page comes back, the scroll position, the open tree and
+the filter do not.
+
+**Rule.** An edit, a confirm, a small action opens as a controller-led window (this ADR) or a
+fetch modal and answers with commands that change what changed — `replace-html` of the row or
+pane, `update-fields`, `remove-element`, `close-window` / `close-modal`, `refresh-region`. A
+page of its own, and a `reload` as the answer, are reserved for the case where the page behind
+genuinely has to be rebuilt: the navigation tree changed (the shell's rail), a setting that
+redraws the shell (palette, language, sign-in), a bulk operation whose result IS a new list.
+«It was simpler» is not that case.
+
+**What makes the right answer the short one.** A small `FetchResponse` helper names the row of an
+entity («replace the row of `invoice:42`, close the window») so the in-place answer is one line —
+`NavigationController` already answers this way by hand and is the template; the DMS answers pane
+`replace-html` throughout. The 12 controllers switch as they are touched, the three per-row page
+POSTs of the bank-import detail with them.
+
+**The recipe for a page that becomes a window** is the journal's (`JournalControllerTrait`
+`'window' => isFetch()`, `_origin` in the form, `open-window` + `refresh-region` as the save's
+answer) — the invoice editor, the payment form and the two invoice confirms follow it first.
+
 ## Rejected Alternatives
 
 | Option | Why rejected |
