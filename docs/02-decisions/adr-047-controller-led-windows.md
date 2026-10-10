@@ -166,6 +166,21 @@ POSTs of the bank-import detail with them.
 `'window' => isFetch()`, `_origin` in the form, `open-window` + `refresh-region` as the save's
 answer) — the invoice editor, the payment form and the two invoice confirms follow it first.
 
+**Built 2026-10-10 (the same day):** `FetchResponse::replaceRow / removeRow / insertRow` on
+`data-entity="<entity>:<id>"` / `data-entity-list` (`fetch.md` FETCH-ROW-001); `core.js` wires
+the HTML a command inserts and keeps the keyboard focus across a `replace-html` — before that,
+a replaced row arrived dead, which is the real reason every controller answered `reload`;
+`close-modal` also closes a native page `<dialog>` (the member shell). Switched to in-place
+answers: Content (delete, variant edit, three creates), MetaData, NavigationAlias, Navigation
+(delete), Translation, Backup, E-Mail settings, form log, Import (plan section), Jobs, Stats
+(flash only), backend users, VAT, contact, address types, accounts, the debtor popups, the
+bank-import rows, the member devices / Konto. Windows: invoice editor, credit note, payment,
+payment delete (`debtor.md` DEBTOR-WIN-001). `reload` stays, each with a code comment naming
+the reason: live content save, navigation create (tree position + drag & drop), translation
+new / renamed key (sorted list), publish / restore (list changes shape), fiscal years, account
+group move, KMU fill, import start / apply / discard. Open: `confirmFinalize` as a window
+(DEBTOR-WIN-002), count badges beside the lists do not follow an inserted row.
+
 ## Rejected Alternatives
 
 | Option | Why rejected |

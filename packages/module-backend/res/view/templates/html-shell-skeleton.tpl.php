@@ -55,8 +55,8 @@
                  hc1 = the action cell: the MOST FREQUENT action of the selected navigation entry,
                  one inset button (ADR-033 rev. 2026-10-08). The band is as high as the top bar. */ ?>
         <div class="be-shell-band">
-            <div class="be-shell-band__slot be-shell-band__slot--1"><?= $hc1 ?? '' ?></div>
-            <div class="be-shell-band__slot be-shell-band__slot--2"><?= $hc2 ?? '' ?></div>
+            <div class="be-shell-band__slot be-shell-band__slot--1" data-shell-slot="hc1"><?= $hc1 ?? '' ?></div>
+            <div class="be-shell-band__slot be-shell-band__slot--2" data-shell-slot="hc2"><?= $hc2 ?? '' ?></div>
         </div>
         <?php /* Reiter-Zeile (Slot `tabs`, B10 v1.17.0): WELCHE Ansicht eines Gegenstands man
                  sieht — eine Ebene ueber hc2, das die Werkzeuge der gewaehlten Ansicht traegt.

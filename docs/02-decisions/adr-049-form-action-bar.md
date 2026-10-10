@@ -106,9 +106,15 @@ is the same everywhere is the one the eye stops searching for; that is the owner
 it is the same argument ADR-033 makes for the action cell. The confirm exception costs nothing:
 with no field there is nothing between the question and its answer.
 
-**Built with this revision:** nothing yet — the order of work is in the review document (§4):
-this revision → the `order` first aid → the shared partial → the `reload` helper (ADR-047
-addendum) → pages to windows.
+**Built with this revision (2026-10-10, the same day):** the `order` first aid in `_modal.scss`;
+the shared partial `Z77\Shared` `partials/modalActions` (`css-backend.md` FORM-ACTIONS-002); every
+dialog of every module moved onto it — Content, Service, System, debtor, financial, VAT, contact,
+DMS, member profile and member backend — so `tests/form-actions.php` finds no `.be-modal__footer`
+left under `packages/`; the field-less confirms use `end`, everything with a field the top row;
+the DMS edit modal's middle footer is one top row, the trash's «Papierkorb leeren …» stands in the
+top row; the member Konto dialog's bar moved under its title (member buttons, same geometry).
+Still open: the invoice «Definitiv stellen» confirm is a page (DEBTOR-WIN-002, needs a window
+opener for a GET form), the member 2FA setup card, and the browser look at all of it.
 
 ## Rejected Alternatives
 

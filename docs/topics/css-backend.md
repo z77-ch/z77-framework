@@ -420,6 +420,25 @@ packages/module-backend/res/view/templates/
   migration: Webseiten › Inhalte («+ Inhalt» in `list.act.tpl.php`, language tabs in hc2).
   **Not verified live** (built without a browser; the 8077 project was refreshed).
 
+- **FORM-ACTIONS-002** — built 2026-10-10 (ADR-049 revision 2026-10-10, owner: «die möglichen
+  Aktionen immer in einer fixierten Zeile, niemals unten oder in der Mitte»). **Every dialog's
+  actions in ONE fixed row under the header.** Three pieces: (1) the first aid in
+  `components/_modal.scss` — the popup content is a flex column, so `order` puts
+  `.be-modal__header` (-2) and `.be-modal__footer` (-1) before the body; `row-reverse` +
+  `flex-end` shows the primary button first (left) although the old templates still write
+  «Abbrechen, Speichern» — every remaining footer complies without a template change, and
+  Enter still presses the first submit in document order; (2) the shared partial `Z77\Shared`
+  `partials/modalActions` → `.z77-form-actions` (submit first, `kind` primary/danger,
+  `cancel` as `data-popup-close` or, in a window, `cancelHref` as `data-window-link`, `extra`,
+  `errors` → `formErrorsLink`, `end` ONLY for the field-less confirm — the owner's one
+  exception), placed directly after `.be-modal__header`; the host rule
+  `.be .be-modal .z77-form-actions` gives it the header's side padding and `order: -1`,
+  `--end` keeps `order: 0` with the line on top; (3) `.be-modal__footer` is retired as the
+  home of actions — `tests/form-actions.php` lints every `*.tpl.php` under `packages/` for it
+  (54 dialogs on 2026-10-10 before the migration; the harness names what is left). The
+  dialogs of every module moved onto the partial the same day (Content, Service, System,
+  debtor, financial, contact, DMS, member — see each topic's entry of 2026-10-10). Verified:
+  `tests/form-actions.php` (partial output, CSS first aid, lint). **Not verified live.**
 - **FORM-ACTIONS-001** — built 2026-09-29 (ADR-049, approved the same day). **A form's action bar**: `.z77-form-actions` (geometry `kernel/shared/res/scss/components/_form-actions.scss`, the backend's surface `components/_form-actions-host.scss`, member bound in `member.scss`) — `position: sticky` at the top of the form's scroll area (a window's body, the page), `--end` at the bottom; first in the document so Enter saves. «N Fehler»: `Z77\Shared` `partials/formErrorsLink` (count + the id of the first invalid field, a `<label for>`). On a page with a toolbar «Speichern» stays in the toolbar (`form="<id>"`, ADR-033). First user: the journal's edit forms. Other forms move over as needed (owner 2026-09-29). Verified: `tests/module-financial.php` AB1–AB4. **Not verified live.**
 
 - **SHELL-DRAWER-001** — added 2026-09-28 (owner decision, ADR-033 revision). ⚠️ **Partly
@@ -752,26 +771,31 @@ packages/module-backend/res/view/templates/
 
 ## pending
 
-- **Resume here (2026-10-10, before the context compact) — the forms rework is DECIDED, nothing
-  of it is built.** Owner rules of the day: R1 every form's actions in ONE fixed row (toolbar /
-  `.z77-form-actions` at the top; the bottom bar only for the field-less confirm «Wirklich
-  löschen? Ja / Nein»), R2 window or modal by default, a page only where a reload is needed.
-  Both are written: ADR-049 «Revision 2026-10-10», ADR-047 «Addendum 2026-10-10», the inventory
-  of 110 forms with every file:line in
+- **Resume here (2026-10-10, after the context compact) — the forms rework is BUILT, not yet
+  seen in a browser.** Owner rules of the day: R1 every form's actions in ONE fixed row (the
+  bottom bar only for the field-less confirm), R2 window or modal by default, a page only where
+  a reload is needed — ADR-049 «Revision 2026-10-10», ADR-047 «Addendum 2026-10-10», the
+  inventory and the status per step in
   [`../03-development/forms-actions-review-2026-10-10.md`](../03-development/forms-actions-review-2026-10-10.md)
-  (§4 = the approved order of work). **Next, in order:** (1) the CSS `order` first aid in
-  `components/_modal.scss` so all 53 footers sit under the header at once; (2) the shared
-  partial `Z77\Shared` `partials/modalActions` on `.z77-form-actions` + its backend host rule,
-  the two misplaced invoice bars and the DMS middle footer moved right away; (3) the
-  `FetchResponse` row helper and the 12 backend controllers off `reload` (Navigation is the
-  template, the three bank-import per-row POSTs with them); (4) invoice editor / payment / two
-  confirms from pages to windows with the journal recipe; (5) screen actions out of the body
-  (Stats, Import, DMS trash, member profile). Also open from today: the owner's live look at the
-  upload (Zahlungseingänge + Drive, pending list in `fetch.md`), `.min.js` for `upload.js` /
-  `upload-poster.js` (needs terser), the stray `public/assets/dms/js/documents/drive_at-*.js` on
-  z77.ch (owner decides), ADR-046 addendum awaiting the owner's word, and NO tag since `1.6.0`.
-  Rule learned the hard way today: a framework CSS/JS change reaches a project only after
-  `composer install` there — publish before asking the owner to look.
+  §4. What stands (FORM-ACTIONS-002, `fetch.md` FETCH-ROW-001, each module's 2026-10-10 entry):
+  the `order` first aid, the partial `partials/modalActions`, every dialog of every module on it
+  (lint in `tests/form-actions.php`: 0 footers left), `FetchResponse` row helpers, `core.js`
+  wiring + focus keeping for inserted HTML, `close-modal` for native dialogs, in-place answers
+  across the backend and the modules, the invoice editor / payment as windows, Stats and Import
+  actions in the toolbar (`data-shell-slot="hc2"` is the slot's hook), the member profile by
+  fetch. Verified by 23 offline harnesses; the DB-backed ones (financial 502, debtor 425,
+  contact 121, mandator 100) could NOT run on this machine (no `z77test` password here) — their
+  new assertions are unexecuted. **Next, in order:** (1) run the DB harnesses on a machine with
+  `%USERPROFILE%\.z77\mariadb.txt`; (2) the owner's browser look — one dialog per module, a
+  field-less confirm (bar at the bottom), the DMS edit modal, the Stats toolbar button, an
+  in-place save (the row changes, the page stays), the invoice editor as a window; (3)
+  `confirmFinalize` as a window (DEBTOR-WIN-002: `core.js` needs an opener for a GET form); (4)
+  count badges beside lists after an inserted / removed row (owner's word). Also open: the
+  owner's live look at the upload (`fetch.md` pending), `.min.js` for `core.js` / `upload.js` /
+  `upload-poster.js` (terser missing on PC2 — `docs/_local/maintainer-machine-runbook.md`), the
+  stray `public/assets/dms/js/documents/drive_at-*.js` on z77.ch, ADR-046 addendum awaiting the
+  owner's word, NO tag since `1.6.0`. Rule: a framework CSS/JS change reaches a project only
+  after `composer install` there — publish before asking the owner to look.
 - **Resume here (2026-10-09) — the backend action standard is BUILT and COMMITTED**
   (`9f34c29` foundation + screens, `0c592b6` change log / Mandant tabs / journal help,
   `20a4f0b` the member head's help trigger). What it covers: the shell foundation (band =

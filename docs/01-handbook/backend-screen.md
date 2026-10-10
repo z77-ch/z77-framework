@@ -101,6 +101,13 @@ Details and selectors: [css-backend.md → button / tab / switch vocabulary](../
 - A log or history is its **own navigation entry** (read-only list), not a toggle on another list
   («Änderungsprotokoll», not «gelöschte zeigen»).
 - A form's save is in the action cell, never at the end of the body.
+- **A dialog or window shows its actions in ONE fixed row directly under its title** — the
+  shared partial `Z77\Shared` `partials/modalActions` (primary first, then «Abbrechen»), never
+  at the bottom, never between two sections (ADR-049 revision 2026-10-10). The one exception,
+  by the owner's word: a confirm that is a question and its answers, with no input field, may
+  keep the row at the bottom (`end`). The dialog's save answers with what changed — the row,
+  the pane, a field — not with a page reload (ADR-047 addendum, FETCH-ROW-001); the page
+  behind stays where it was.
 
 ## 5. Help
 

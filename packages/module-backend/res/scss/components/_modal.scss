@@ -125,11 +125,37 @@
     border-bottom:  1px solid var(--be-line);
 }
 
+// ADR-049 (revision 2026-10-10): every dialog shows its actions in ONE fixed row directly
+// under the header — never at the bottom. `.be-modal__footer` is retired as the home of
+// actions; the shared partial `Z77\Shared` `partials/modalActions` (→ `.z77-form-actions`)
+// replaces it as dialogs are touched. Until then this first aid moves every existing footer
+// up: the popup content is a flex column (`.z77-popup__body > *` above), so `order` places
+// header (-2) and footer (-1) before the body without a template change. `row-reverse` +
+// `flex-end` shows the PRIMARY button first (left), as the shared row does, although the
+// templates still write «Abbrechen, Speichern»; Enter keeps pressing the first submit in
+// document order (ADR-049 §5), which is unchanged.
+.be-modal .be-modal__header { order: -2; }
 .be-modal__footer {
+    order:           -1;
     display:         flex;
+    flex-direction:  row-reverse;
     justify-content: flex-end;
+    flex-wrap:       wrap;
     gap:             .5rem;
-    padding:         1rem 1.25rem;
-    border-top:      1px solid var(--be-line);
+    padding:         .6rem 1.25rem;
+    border-bottom:   1px solid var(--be-line);
     flex-shrink:     0;
+}
+// The shared row inside a dialog reads like the header: same side padding, no outer margin.
+// `--end` (field-less confirm only, ADR-049) stays at the bottom, border on top.
+.be .be-modal .z77-form-actions {
+    order:         -1;
+    padding:       .6rem 1.25rem;
+    margin:        0;
+    border-bottom: 1px solid var(--be-line);
+}
+.be .be-modal .z77-form-actions--end {
+    order:         1;
+    border-bottom: 0;
+    border-top:    1px solid var(--be-line);
 }

@@ -71,19 +71,27 @@ fiscal-year open/reopen dialogs hide an edit form among the confirms) are forms 
 
 ## 4. Order of work (approved 2026-10-10 — «ADR revidieren und umbauen»)
 
-1. **ADR-049 revision + ADR-047 addendum** — DONE 2026-10-10 (docs only, nothing built yet).
-2. **P1 first aid** — the `order` rule in `_modal.scss`: every dialog complies the same hour.
-   Then the shared partial `partials/modalActions` on `.z77-form-actions`, and the dialogs move
-   onto it as they are touched; the two misplaced bars (invoice confirms) and the DMS middle
-   footer right away.
-3. **P2** — the `FetchResponse` row helper; the 12 backend controllers switch from `reload` to
-   row / pane replacement, Navigation as the template. The bank-import detail's three per-row
-   POSTs become fetch + row replace at the same time.
-4. **Pages → windows** where the journal already shows the recipe: invoice editor, payment form,
-   the two confirms (`JournalControllerTrait.php:453-462`: `'window' => isFetch()`, `_origin`,
-   `open-window` + `refresh-region`).
-5. **Screen actions out of the body** into the toolbar / action bar (Stats, Import, DMS trash,
-   member profile) — small, one at a time, when each screen is next open.
+1. **ADR-049 revision + ADR-047 addendum** — DONE 2026-10-10 (docs).
+2. **P1 first aid** — DONE 2026-10-10: the `order` rule in `_modal.scss`, the shared partial
+   `partials/modalActions`, and — more than planned — EVERY dialog of every module moved onto it
+   the same day (five agents in parallel); `tests/form-actions.php` lints for a leftover
+   `.be-modal__footer` (0 left). The DMS middle footer and the invoice confirms' bars included.
+3. **P2** — DONE 2026-10-10 except where the reason to reload is real: `FetchResponse` row
+   helpers, `core.js` wires inserted HTML (the hidden blocker: replaced rows arrived dead), the
+   backend controllers and the modules answer in place, the bank-import rows post by fetch. The
+   remaining `reload`s each carry a code comment (list in ADR-047 «Built 2026-10-10»).
+4. **Pages → windows** — DONE for the invoice editor, credit note, payment form and payment
+   delete (DEBTOR-WIN-001). OPEN: «Definitiv stellen» (DEBTOR-WIN-002) — the confirm is fed by a
+   GET form with `form=` checkboxes, and `data-window-open` takes only a fixed URL; `core.js`
+   needs a window opener for a GET form first.
+5. **Screen actions out of the body** — DONE for Stats (hc2), Import (stale plan → hc2, group
+   bar above the rows), DMS trash (top row), member profile (Konto / devices / 2FA remove by
+   fetch). OPEN: the member 2FA setup card outside the shell, Jobs «Zeitplan setzen» as an inline
+   cell edit (no owner ruling on cell edits yet).
+
+Not built on purpose, waiting on a word: count badges beside a list («Zahlungsziele n», section
+counts) do not follow an inserted / removed row — a small `update-text` per answer, or a helper
+that names the count's hook, once the owner has seen the screens.
 
 Not in scope: the pre-auth member cards (login, register, resend) — flow steps, not forms with
 a fixed action set; the content editor's window is item 4's last entry, not its first.
