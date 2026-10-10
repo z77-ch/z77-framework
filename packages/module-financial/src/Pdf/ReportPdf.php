@@ -40,14 +40,11 @@ final class ReportPdf
                 'label'  => ($result->isNegative() ? 'Jahresverlust ' : 'Jahresgewinn ') . $code,
                 'amount' => $result,
             ]]),
-            // The check at a glance: both totals one under the other at the foot.
+            // Total Passiven closes the sheet; Total Aktiven is not repeated (owner 2026-10-10).
             [
                 'columns'  => self::STATEMENT_COLUMNS,
                 'header'   => false,
-                'rows'     => [
-                    ['cells' => ['', 'Total Aktiven', self::fmt($report->assets->total)], 'bold' => true, 'rule' => true],
-                    ['cells' => ['', 'Total Passiven', self::fmt($report->totalLiabilitiesAndEquity())], 'bold' => true],
-                ],
+                'rows'     => [['cells' => ['', 'Total Passiven', self::fmt($report->totalLiabilitiesAndEquity())], 'bold' => true, 'rule' => true]],
                 'gapAfter' => 0,
             ],
         ];

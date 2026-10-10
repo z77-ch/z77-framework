@@ -206,7 +206,7 @@ $sheet = new \Z77\Module\Financial\Reports\BalanceSheet(
     $chf('100.00'),
 );
 $bytes = \Z77\Module\Financial\Pdf\ReportPdf::balanceSheet($sheet, 'Muster AG', '10.10.2026 12:27')->withoutCompression()->output();
-check('H1 balance sheet PDF: title, range, the account line, the totals, no fault notice (balanced)', str_starts_with($bytes, '%PDF') && str_contains($bytes, '(Bilanz)') && str_contains($bytes, 'per 31.12.2026') && str_contains($bytes, '(Bankguthaben)') && substr_count($bytes, '(Total Aktiven)') === 2 && str_contains($bytes, '(Jahresgewinn 2026)') && str_contains($bytes, '(Total Passiven)') && !str_contains($bytes, 'Differenz'));
+check('H1 balance sheet PDF: title, range, the account line, the totals, no fault notice (balanced)', str_starts_with($bytes, '%PDF') && str_contains($bytes, '(Bilanz)') && str_contains($bytes, 'per 31.12.2026') && str_contains($bytes, '(Bankguthaben)') && str_contains($bytes, '(Total Aktiven)') && str_contains($bytes, '(Jahresgewinn 2026)') && str_contains($bytes, '(Total Passiven)') && !str_contains($bytes, 'Differenz'));
 check('H2 file name kebab-case', \Z77\Module\Financial\Pdf\ReportPdf::fileName('Bilanz', '2026', '2026-12-31') === 'bilanz-2026-per-2026-12-31.pdf');
 
 echo "\n{$pass} passed, {$fail} failed\n";

@@ -54,16 +54,11 @@ $shared = ['link' => $link, 'fmt' => $fmt];
                 'total'      => $report->totalEquity(),
             ], $ns) ?>
         </div>
-        <?php // The check at a glance (owner 2026-10-10): Total Aktiven and Total Passiven
-              // directly one under the other at the foot — equal is the normal state. ?>
+        <?php // Total Passiven closes the sheet; no repeat of Total Aktiven (owner 2026-10-10:
+              // «überflüssig» — it stands under the Aktiven already). ?>
         <div class="be-list__frame">
             <div class="be-list__table" style="--be-list-cols: 6rem minmax(12rem, 1fr) 9rem">
                 <div class="be-list__item"><div class="be-list__row be-list__row--total">
-                    <span class="be-list__cell"></span>
-                    <span class="be-list__cell">Total Aktiven</span>
-                    <span class="be-list__cell be-list__cell--num"><?= e($fmt($report->assets->total)) ?></span>
-                </div></div>
-                <div class="be-list__item"><div class="be-list__row be-list__row--group be-list__row--l1">
                     <span class="be-list__cell"></span>
                     <span class="be-list__cell">Total Passiven</span>
                     <span class="be-list__cell be-list__cell--num"><?= e($fmt($report->totalLiabilitiesAndEquity())) ?></span>
