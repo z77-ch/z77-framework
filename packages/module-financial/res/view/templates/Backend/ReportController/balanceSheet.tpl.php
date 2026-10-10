@@ -49,16 +49,21 @@ $shared = ['link' => $link, 'fmt' => $fmt];
         <div class="be-list__frame">
             <?= $this->partial('Backend/ReportController/statementSection', $shared + [
                 'section'    => $report->equity,
-                'extra'      => [['label' => $report->result->isNegative() ? 'Verlust laufendes Jahr (Ertrag − Aufwand)' : 'Gewinn laufendes Jahr (Ertrag − Aufwand)', 'amount' => $report->result]],
+                'extra'      => [['label' => ($report->result->isNegative() ? 'Jahresverlust ' : 'Jahresgewinn ') . $range->year->getCode(), 'amount' => $report->result]],
                 'totalLabel' => 'Total Eigenkapital',
                 'total'      => $report->totalEquity(),
             ], $ns) ?>
         </div>
-        <?php // In a frame like the blocks above: the frame carries the edge bleed (EDGE-001),
-              // a bare table stood half a step to the right. ?>
+        <?php // The check at a glance (owner 2026-10-10): Total Aktiven and Total Passiven
+              // directly one under the other at the foot — equal is the normal state. ?>
         <div class="be-list__frame">
             <div class="be-list__table" style="--be-list-cols: 6rem minmax(12rem, 1fr) 9rem">
                 <div class="be-list__item"><div class="be-list__row be-list__row--total">
+                    <span class="be-list__cell"></span>
+                    <span class="be-list__cell">Total Aktiven</span>
+                    <span class="be-list__cell be-list__cell--num"><?= e($fmt($report->assets->total)) ?></span>
+                </div></div>
+                <div class="be-list__item"><div class="be-list__row be-list__row--group be-list__row--l1">
                     <span class="be-list__cell"></span>
                     <span class="be-list__cell">Total Passiven</span>
                     <span class="be-list__cell be-list__cell--num"><?= e($fmt($report->totalLiabilitiesAndEquity())) ?></span>

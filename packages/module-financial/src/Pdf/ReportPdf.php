@@ -37,13 +37,17 @@ final class ReportPdf
             self::statementBlock($report->assets, 'Total Aktiven', $report->assets->total),
             self::statementBlock($report->liabilities, 'Total Fremdkapital', $report->liabilities->total),
             self::statementBlock($report->equity, 'Total Eigenkapital', $report->totalEquity(), [[
-                'label'  => ($result->isNegative() ? 'Verlust' : 'Gewinn') . ' laufendes Jahr (Ertrag − Aufwand)',
+                'label'  => ($result->isNegative() ? 'Jahresverlust ' : 'Jahresgewinn ') . $code,
                 'amount' => $result,
             ]]),
+            // The check at a glance: both totals one under the other at the foot.
             [
                 'columns'  => self::STATEMENT_COLUMNS,
                 'header'   => false,
-                'rows'     => [['cells' => ['', 'Total Passiven', self::fmt($report->totalLiabilitiesAndEquity())], 'bold' => true, 'rule' => true]],
+                'rows'     => [
+                    ['cells' => ['', 'Total Aktiven', self::fmt($report->assets->total)], 'bold' => true, 'rule' => true],
+                    ['cells' => ['', 'Total Passiven', self::fmt($report->totalLiabilitiesAndEquity())], 'bold' => true],
+                ],
                 'gapAfter' => 0,
             ],
         ];
@@ -81,7 +85,8 @@ final class ReportPdf
             $rows[] = ['cells' => ['', 'keine Buchung', ''], 'muted' => true];
         }
         foreach ($extra as $row) {
-            $rows[] = ['cells' => ['', $row['label'], self::fmt($row['amount'])], 'muted' => true];
+            // A position of the block (OR 959a: the year's result is an equity item), bold.
+            $rows[] = ['cells' => ['', $row['label'], self::fmt($row['amount'])], 'bold' => true];
         }
         $rows[] = ['cells' => ['', $totalLabel, self::fmt($total)], 'bold' => true, 'rule' => true];
 

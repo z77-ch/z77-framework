@@ -56,11 +56,13 @@ $extra = $extra ?? [];
     </div>
     <?php endforeach; ?>
     <?php foreach ($extra as $row): ?>
+    <?php // An extra line is a POSITION of the block (OR 959a: the year's result is an equity
+          // item) — set like a main group, not as a grey aside (owner 2026-10-10). ?>
     <div class="be-list__item">
-        <div class="be-list__row">
+        <div class="be-list__row be-list__row--group be-list__row--l1">
             <span class="be-list__cell"></span>
-            <span class="be-list__cell"><em><?= e($row['label']) ?></em></span>
-            <span class="be-list__cell be-list__cell--num"><em><?= e($fmt($row['amount'])) ?></em></span>
+            <span class="be-list__cell"><?= e($row['label']) ?></span>
+            <span class="be-list__cell be-list__cell--num"><?= e($fmt($row['amount'])) ?></span>
         </div>
     </div>
     <?php endforeach; ?>

@@ -1551,8 +1551,8 @@ check('R38 a date outside the year or not a date falls back to the year\'s bound
 [$ctx] = $page('trialBalance', ['year' => '2030-31', 'from' => '2030-10-01', 'to' => '2030-09-01']);
 check('R39 «from» after «to» → the whole year, with a notice', $ctx['range']->fromDay() === '2030-07-01' && $ctx['range']->toDay() === '2031-06-30' && count($ctx['notices']) === 1);
 [$ctx, $html] = $page('balanceSheet', ['year' => '2030-31']);
-check('R40 balance sheet page: balanced says nothing (no badge, no fault block, owner 2026-10-10), the result line «Verlust laufendes Jahr» −795.00, «Stichtag» instead of from/to, no missing-opening note', !str_contains($html, 'Aktiven = Passiven') && !str_contains($html, 'Aktiven ≠ Passiven')
-    && str_contains($html, 'Verlust laufendes Jahr') && str_contains($html, '−795.00') && str_contains($html, 'Stichtag') && !str_contains($html, 'name="from"') && !str_contains($html, 'Ohne Eröffnungsbuchung'));
+check('R40 balance sheet page: balanced says nothing (no badge, no fault block, owner 2026-10-10), the result line «Jahresverlust 2030-31» −795.00 as an equity position, Total Aktiven and Total Passiven together at the foot, «Stichtag» instead of from/to, no missing-opening note', !str_contains($html, 'Aktiven = Passiven') && !str_contains($html, 'Aktiven ≠ Passiven')
+    && str_contains($html, 'Jahresverlust 2030-31') && substr_count($html, 'Total Aktiven') === 2 && str_contains($html, '−795.00') && str_contains($html, 'Stichtag') && !str_contains($html, 'name="from"') && !str_contains($html, 'Ohne Eröffnungsbuchung'));
 [$ctx, $html] = $page('incomeStatement', ['year' => '2030-31']);
 check('R41 income statement page: Ertrag 1\'005.00, Aufwand 1\'800.00, Verlust −795.00', str_contains($html, "1&apos;005.00") && str_contains($html, "1&apos;800.00") && str_contains($html, 'Verlust (Ertrag − Aufwand)'));
 [$ctx, $html] = $page('accountStatement', ['year' => '2030-31']);
