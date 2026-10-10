@@ -17,8 +17,5 @@ $actionBase = $actionBase ?? '/backend/finance/account';
         <p class="be-form__hint">Danach lassen sich Konten ergänzen, umbenennen und deaktivieren. Eine Installation, die ihren
            bisherigen Kontenplan übernimmt, braucht diesen Schritt nicht.</p>
     </div>
-    <div class="be-modal__footer">
-        <button type="button" class="be-btn be-btn--ghost" data-popup-close>Abbrechen</button>
-        <button type="submit" class="be-btn be-btn--primary">Übernehmen</button>
-    </div>
+    <?= $this->partial('partials/modalActions', ['submit' => 'Übernehmen', 'end' => true], 'Z77\\Shared') ?>
 </form>

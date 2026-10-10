@@ -1,6 +1,6 @@
 # contact
 
-2026-09-29
+2026-10-10
 
 ## entry
 
@@ -44,8 +44,10 @@ SOURCE=/packages/module-contact/res/view/templates/Backend/ContactController/act
 SOURCE=/packages/module-contact/res/view/templates/Backend/ContactController/confirmRemoveAddress.tpl.php
 SOURCE=/packages/module-contact/res/view/templates/Backend/ContactController/_address.tpl.php
 SOURCE=/packages/module-contact/res/view/templates/Backend/ContactController/_addressFields.tpl.php
+SOURCE=/packages/module-contact/res/view/templates/Backend/ContactController/_row.tpl.php
 SOURCE=/packages/module-contact/res/view/templates/Backend/AddressTypeController/listAction.tpl.php
 SOURCE=/packages/module-contact/res/view/templates/Backend/AddressTypeController/edit.tpl.php
+SOURCE=/packages/module-contact/res/view/templates/Backend/AddressTypeController/_row.tpl.php
 SOURCE=/packages/module-contact/data/framework/contact/address_types.default.json
 SOURCE=/packages/module-backend/src/Ui/Controllers/Contact/ContactController.php
 SOURCE=/packages/module-backend/src/Ui/Controllers/Contact/AddressTypeController.php
@@ -105,6 +107,8 @@ SOURCE=/docs/03-development/order-debtor-financial-bauplan.md
 - When an installation needs a different list size → MUST set `contactListLimit` (a positive int) in the project's override copy of `contactConfig.inc.php` — today the FULL config, because an override replaces the package file (first source match; framework-wide, BOOT-CONFIG-001 in `bootstrap.md`, proposed: override merges as deviation only); MUST read it only through `ContactService::listLimit()`, which throws `UnexpectedValueException` for 0, a negative number, a string, a float or null instead of falling back; MUST NOT hard-code a limit in the trait or the template
 - When a kind needs a German label in a screen → MUST read it from the UI layer (`KIND_LABELS` in the trait); MUST NOT put display text into `ContactKind`
 - When editing `address_types.json` or the `*.default.json` seed by hand → MUST keep UTF-8 without BOM; MUST NOT round-trip it through Windows PowerShell (DATA-JSON-001, `persistence-file.md`)
+- When a save changes one contact or address-type row (edit, the active switch, an address added, edited or removed) → MUST answer with `contactRowAnswer()` / `addressTypeRowAnswer()` (`FetchResponse::replaceRow()` with the screen's `_row`), a NEW row with `insertRow()`, and the in-place flash (`pushFlash()` BEFORE the answer is built); MUST NOT answer `reload` (CONTACT-UI-001). A template showing such a row MUST render `_row`, never its own copy
+- When a dialog of the screens gets actions → MUST render them with `partials/modalActions` (namespace `Z77\Shared`) directly under `.be-modal__header`; `'end' => true` only for a confirm without any input field (ADR-049 rev. 2026-10-10)
 - When adding a method to this package → MUST have a production caller in the same change (CLAUDE.md «no just-in-case», plan «nothing in stock»); snapshot serialisation, pickers and the like arrive with the module that needs them
 
 ## known issues
@@ -116,13 +120,14 @@ SOURCE=/docs/03-development/order-debtor-financial-bauplan.md
 - **CONTACT-MEMBER-001** — resolved 2026-09-21 by removal: don't look for a link from a contact to a member account. `memberAccountId` removed (owner, 2026-09-21) — added back with the first consumer (customer portal/shop). It had no caller and no named purpose (plan «nothing in stock»); column, unique index, validator rule, repository lookup, race mapping and form field went with it, and the first migration was adjusted in place before it was ever committed.
 - **CONTACT-LIST-001** — don't assume the list shows every contact: it stops at `contactListLimit` rows (contactConfig, default 200 — configurable since 2026-09-21, owner decision) and says «n von m angezeigt»; the search narrows. No pagination yet — a screen for thousands of contacts is a later step.
 - **CONTACT-FK-001** — don't assume the foreign keys of `contact_address` carry readable names: Doctrine names them by hash (`FK_97614E00E7A1254A`, `IDX_…`), and the migration keeps those names so `diff` stays clean. Renaming them by hand would be reported as a change.
+- **CONTACT-UI-001** — 2026-10-10 (ADR-049 rev. / ADR-047 addendum of the same day, `forms-actions-review-2026-10-10.md` Part B #35–39): the dialogs carry their actions in ONE row under the header (`partials/modalActions`) — contact, address and type forms «Speichern», the ⋮ hub «Schliessen» only; «Adresse entfernen» (a confirm without a field) keeps the bar at the END. A one-row save answers in place: contact edit, add / edit / remove address and the switch replace the contact row with `ContactController/_row`; a type's edit and switch its row with `AddressTypeController/_row`; a new type is inserted before the type that follows it, a new contact on TOP of the list (the list may be filtered by a search the POST does not carry, so its sorted place is not known). The lists render the same partials; nodes carry `data-entity="contact:<id>"` / `"addressType:<id>"`, lists `data-entity-list="contact"` / `"addressType"`; core.js wires the inserted rows (FETCH-ROW-001, `fetch.md`). No `reload` left on either screen. Don't expect a new or renamed contact at its sorted place, the section badge to count a new row, nor a type row's usage count to follow an address saved on the contact screen, until the next load.
 
 ## pending
 
 - **Backend group `contact`** — proposed here (`groupDefaults['contact'] = 'contact'`, URLs `/backend/contact/…`), not owner-confirmed. Alternatives: the `finance` group next to the tax codes, or a broader «Stammdaten» group. Renaming touches `backendConfig`, the two host controllers, the `*ListBase()` defaults and this doc.
 - **Snapshot shape** — closed 2026-09-23 with the invoice (`debtor.md`, P3 part 2): a document stores the ten `Address` fields as FLAT COLUMNS through an embeddable of the consuming module (`Z77\Module\Debtor\Entities\AddressSnapshot`, `#[ORM\Embedded(columnPrefix: 'addr_')]` on `invoice`), filled with `AddressSnapshot::of($address)` at issue — no JSON, no reference to `address` / `contact_address`; this module still carries no serialisation of its own. The invoice takes the contact's `invoice`-typed link, else `main`, else the first, by `ContactAddress::getTypeCode()` — so `AddressTypes::resolve(code)` was NOT needed and stays unbuilt (no caller); it comes back if a consumer ever snapshots the TYPE rather than the address.
 - **Import of `AddressType`** (adopt a seed change into an existing installation, ADR-032): needs `#[ImportIdentity(['code'])]`, `importEntities` in `contactConfig`, and the module-side validator seam module-vat is waiting for too (`vat.md` pending). Same blocker, same fix.
-- `tests/module-contact.php` covers the traits only by reflection (no delete actions); a request-level check of the screens (mount, hc1/hc2 slots, toggle, the optional address block on «add») is manual in a project installation until a controller harness exists.
+- `tests/module-contact.php` covers the traits by reflection and source checks (no delete actions; the in-place answers, E13c/E13d); a request-level check of the screens (mount, hc1/hc2 slots, toggle, the optional address block on «add») is manual in a project installation until a controller harness exists.
 - Publishing: the package is not a split target yet (`.github/workflows/split.yml`, repo `z77-ch/module-contact`, Packagist) — owner's step when the package is ready to publish.
 
 ## see also

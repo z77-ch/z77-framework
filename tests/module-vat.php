@@ -397,5 +397,33 @@ check('a row valid from today but created earlier is not removable today', !$mas
 check('the seed validator run (no today) does not apply the backdating rule', (new TaxRateValidator(new TaxRate(['code' => 'UN', 'valid_from' => '2020-01-01', 'rate' => 900]), $codes, $rates))->isValid());
 check('created_on is a persisted JSON key', array_key_exists('created_on', $backfill->mapToArray()));
 
+// ── the screen: one row partial, in-place answers (ADR-047 addendum / ADR-049 rev. 2026-10-10) ──
+require_once __DIR__ . '/../packages/kernel/core/src/autoload/prod/php/Helper.php';
+$vatTpl   = __DIR__ . '/../packages/module-vat/res/view/templates/';
+$renderer = new class($vatTpl) {
+    public function __construct(private string $dir) {}
+    public function partial(string $path, array $context = [], ?string $ns = null): string
+    {
+        // Same scope rules as TemplateRenderer::renderIsolated(): prefixed locals, EXTR_SKIP.
+        $dir = $ns === 'Z77\\Shared' ? __DIR__ . '/../packages/kernel/shared/res/view/templates/' : $this->dir;
+        return (function (string $z77TplPath, array $z77TplContext) { extract($z77TplContext, EXTR_SKIP); ob_start(); require $z77TplPath; return ob_get_clean(); })->call($this, $dir . $path . '.tpl.php', $context);
+    }
+};
+$un      = $codes->findByCode('UN');
+$rowCtx  = ['code' => $un, 'rates' => $rates->findByCode('UN'), 'categoryLabels' => [], 'today' => $today->format('Y-m-d'), 'actionBase' => '/backend/finance/tax-code'];
+$row     = $renderer->partial('Backend/TaxCodeController/_row', $rowCtx);
+check('the row partial carries data-entity="taxCode:<id>" (FetchResponse::rowTarget) and the three data-field slots', str_contains($row, 'data-entity="taxCode:' . $un->getId() . '"') && substr_count($row, 'data-field=') === 3);
+check('…and is the whole row: switch, ⋮ hub and the rate in effect (core.js wires a replaced or inserted row, FETCH-ROW-001)', str_contains($row, 'data-fetch-toggle="/backend/finance/tax-code/toggle-active?id=' . $un->getId() . '"') && str_contains($row, 'data-fetch-get="/backend/finance/tax-code/actions?id=' . $un->getId() . '"') && str_contains($row, '8.1 %'));
+$traitSrc = file_get_contents(__DIR__ . '/../packages/module-vat/src/Ui/TaxCodeControllerTrait.php');
+check('edit, toggle, add-rate and remove-rate answer with the row (replaceRow via vatRowAnswer), a new code with insertRow at its sorted place — no reload left', substr_count($traitSrc, '$this->vatRowAnswer(') === 4 && substr_count($traitSrc, '->replaceRow(') === 1 && substr_count($traitSrc, '->insertRow(') === 1 && !str_contains($traitSrc, "addCommand('reload')"));
+$listHtml = $renderer->partial('Backend/TaxCodeController/listAction', ['codes' => $codes->allSorted(), 'ratesByCode' => $rates->allGroupedByCode(), 'categoryLabels' => [], 'today' => $today->format('Y-m-d'), 'actionBase' => '/backend/finance/tax-code']);
+check('the list carries data-entity-list="taxCode" (insertRow) and one data-entity row per code', str_contains($listHtml, 'data-entity-list="taxCode"') && substr_count($listHtml, 'data-entity="taxCode:') === count($codes->allSorted()));
+$listSrc = file_get_contents($vatTpl . 'Backend/TaxCodeController/listAction.tpl.php');
+check('the list renders its rows through the same partial', str_contains($listSrc, "partial('Backend/TaxCodeController/_row'"));
+$footers = array_filter(glob($vatTpl . 'Backend/TaxCodeController/*.tpl.php'), fn($f) => str_contains(file_get_contents($f), 'be-modal__footer'));
+check('no dialog keeps .be-modal__footer — the action row is partials/modalActions', $footers === []);
+$bar = $renderer->partial('Backend/TaxCodeController/edit', ['entry' => $un, 'entityCsrf' => 't', 'validator' => new TaxCodeValidator($un), 'categoryLabels' => [], 'actionBase' => '/x']);
+check('the edit dialog: the action row directly under the header, «Speichern» first', preg_match('~be-modal__header.*?</div>\s*<div class="z77-form-actions">\s*<button type="submit"[^>]*>Speichern~s', $bar) === 1);
+
 echo "\n" . ($fail === 0 ? "PASS — {$pass} checks" : "FAIL — {$fail} of " . ($pass + $fail) . " checks") . "\n";
 exit($fail === 0 ? 0 : 1);

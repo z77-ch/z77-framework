@@ -4,6 +4,7 @@ namespace Z77\Module\Vat\Ui;
 use Z77\Core\DI,
     Z77\Core\Http\Response\FetchResponse,
     Z77\Core\Http\Response\HtmlResponse,
+    Z77\Core\Services\TemplateRenderer,
     Z77\Module\Vat\Entities\TaxCategory,
     Z77\Module\Vat\Entities\TaxCode,
     Z77\Module\Vat\Entities\TaxRate,
@@ -167,16 +168,30 @@ trait TaxCodeControllerTrait
                     return $this->fetchError('Der Code ist nach dem Anlegen fix — für eine andere Steuerart einen neuen Code anlegen.');
                 }
 
-                $this->messageService->pushFlashAfterRedirect(
-                    'success',
-                    'Steuercode «' . $code->getCode() . '» ' . ($isNew ? 'angelegt' : 'gespeichert')
-                );
+                if (!$isNew) {
+                    $this->messageService->pushFlash('success', 'Steuercode «' . $code->getCode() . '» gespeichert');
+
+                    return $this->vatRowAnswer($code)->addCommand('close-modal');
+                }
+
+                $this->messageService->pushFlash('success', 'Steuercode «' . $code->getCode() . '» angelegt');
+
+                // The new row goes where the list puts it: before the code that follows it.
+                $next = null;
+                $all  = $this->vatCodes()->allSorted();
+                foreach ($all as $i => $candidate) {
+                    if ($candidate->getId() === $code->getId()) {
+                        $next = $all[$i + 1] ?? null;
+                    }
+                }
 
                 return $this->fetch()
                     ->setStatus('success')
                     ->setData(['id' => $code->getId()])
-                    ->addCommand('close-modal')
-                    ->addCommand('reload');
+                    ->insertRow('taxCode', $this->vatRowHtml($code), $next === null ? 'append' : 'before', '',
+                        $next === null ? null : FetchResponse::rowTarget('taxCode', (int) $next->getId()))
+                    ->addCommand('remove-element', ['target' => FetchResponse::listTarget('taxCode') . ' > .be-list__empty'])
+                    ->addCommand('close-modal');
             }
             // validation failed — fall through to re-render the form with errors
         }
@@ -208,7 +223,7 @@ trait TaxCodeControllerTrait
         $body = DI::getRequest()->getJsonBody();
         $this->vatMasterData()->setActive($code, (bool) ($body['value'] ?? !$code->isActive()));
 
-        return $this->fetch()->setStatus('success')->addCommand('reload');
+        return $this->vatRowAnswer($code);
     }
 
     // ── rate: new row ────────────────────────────────────────────────────
@@ -267,16 +282,13 @@ trait TaxCodeControllerTrait
             }
 
             if ($saved) {
-                $this->messageService->pushFlashAfterRedirect(
+                $this->messageService->pushFlash(
                     'success',
                     'Satz ' . TaxRate::formatPercent($rate->getRate()) . ' % für «' . $code->getCode() . '» gültig ab ' . $rate->getValidFrom() . ' angelegt'
                 );
 
-                return $this->fetch()
-                    ->setStatus('success')
-                    ->setData(['id' => $rate->getId()])
-                    ->addCommand('close-modal')
-                    ->addCommand('reload');
+                // The rate lives in its code's row (rates + state slots) — that row answers.
+                return $this->vatRowAnswer($code)->addCommand('close-modal');
             }
             // fall through: the template reads the rate error from $rateError
         }
@@ -332,7 +344,8 @@ trait TaxCodeControllerTrait
         }
 
         $rate = $this->vatRates()->find($id);
-        if ($rate === null) {
+        $code = $rate === null ? null : $this->vatCodes()->findByCode($rate->getCode());
+        if ($rate === null || $code === null) {
             return $this->fetchError('Satz nicht gefunden');
         }
 
@@ -342,12 +355,40 @@ trait TaxCodeControllerTrait
             return $this->fetchError('Der Satz ist bereits in Kraft und bleibt als Historie stehen — eine Korrektur ist ein neuer Satz.');
         }
 
-        $this->messageService->pushFlashAfterRedirect(
+        $this->messageService->pushFlash(
             'success',
             'Satz ' . TaxRate::formatPercent($rate->getRate()) . ' % für «' . $rate->getCode() . '» gültig ab ' . $rate->getValidFrom() . ' entfernt'
         );
 
-        return $this->fetch()->setStatus('success')->addCommand('close-modal')->addCommand('reload');
+        // The rate lives in its code's row (rates + state) — that row answers.
+        return $this->vatRowAnswer($code)->addCommand('close-modal');
+    }
+
+    // ── in-place answer ──────────────────────────────────────────────────
+
+    /**
+     * A save that changed one code row answers with that row, not with `reload` (ADR-047
+     * addendum 2026-10-10): `_row` — the partial the list renders — replaces the row in place.
+     * Push the flash BEFORE calling: `fetch()` takes the in-place flash buffer when it is built.
+     */
+    private function vatRowAnswer(TaxCode $code): FetchResponse
+    {
+        return $this->fetch()
+            ->setStatus('success')
+            ->setData(['id' => $code->getId()])
+            ->replaceRow('taxCode', (int) $code->getId(), $this->vatRowHtml($code));
+    }
+
+    /** The code's list row, rendered by the list's own partial. */
+    private function vatRowHtml(TaxCode $code): string
+    {
+        return (new TemplateRenderer(self::VAT_NS))->partial('Backend/TaxCodeController/_row', [
+            'code'           => $code,
+            'rates'          => $this->vatRates()->findByCode($code->getCode()),
+            'categoryLabels' => $this->vatCategoryLabels(),
+            'today'          => $this->vatToday()->format('Y-m-d'),
+            'actionBase'     => $this->vatListBase(),
+        ]);
     }
 
     // ── row action hub (⋮) ───────────────────────────────────────────────

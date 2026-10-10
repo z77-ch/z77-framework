@@ -26,6 +26,7 @@ $fieldError = function (string $name) use ($validator): string {
     <div class="be-modal__header">
         <h2 class="be-modal__title">Neuer Satz für «<?= e($code->getCode()) ?>» — <?= e($code->getLabel()) ?></h2>
     </div>
+    <?= $this->partial('partials/modalActions', ['submit' => 'Satz anlegen'], 'Z77\\Shared') ?>
     <div class="be-modal__body">
         <?php if ($validator->hasErrors() || $rateError !== ''): ?>
         <div class="be-modal__alert be-modal__alert--error">Bitte überprüfe die markierten Eingaben.</div>
@@ -54,9 +55,5 @@ $fieldError = function (string $name) use ($validator): string {
             (Historie nachtragen). Der bisherige Satz bleibt bis zum Vortag gültig. Ein Satz in Kraft wird nie
             geändert oder gelöscht — nur ein heute für heute erfasster Satz lässt sich heute noch entfernen.
         </p>
-    </div>
-    <div class="be-modal__footer">
-        <button type="button" class="be-btn be-btn--ghost" data-popup-close>Abbrechen</button>
-        <button type="submit" class="be-btn be-btn--primary">Satz anlegen</button>
     </div>
 </form>

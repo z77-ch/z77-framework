@@ -17,11 +17,9 @@ if ($refusal !== null): ?>
     <div class="be-modal__header">
         <h2 class="be-modal__title">Löschen nicht möglich</h2>
     </div>
+    <?= $this->partial('partials/modalActions', ['submit' => '', 'cancel' => 'Schliessen'], 'Z77\\Shared') ?>
     <div class="be-modal__body">
         <div class="be-modal__alert be-modal__alert--error">Geschäftsjahr <?= e($year->getCode()) ?>: <?= e($refusal) ?></div>
-    </div>
-    <div class="be-modal__footer">
-        <button type="button" class="be-btn be-btn--ghost" data-popup-close>Schliessen</button>
     </div>
 </div>
 <?php return; endif; ?>
@@ -38,8 +36,5 @@ if ($refusal !== null): ?>
            <code><?= e($year->journalEntryRange()) ?></code>. Das geht nur, solange im Jahr nie gebucht wurde; danach lässt es sich mit
            korrigierten Daten neu eröffnen — auch mit demselben Kürzel.</p>
     </div>
-    <div class="be-modal__footer">
-        <button type="button" class="be-btn be-btn--ghost" data-popup-close>Abbrechen</button>
-        <button type="submit" class="be-btn be-btn--danger">Löschen</button>
-    </div>
+    <?= $this->partial('partials/modalActions', ['submit' => 'Löschen', 'kind' => 'danger', 'end' => true], 'Z77\\Shared') ?>
 </form>

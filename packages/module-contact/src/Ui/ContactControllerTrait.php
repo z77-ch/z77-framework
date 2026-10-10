@@ -4,6 +4,7 @@ namespace Z77\Module\Contact\Ui;
 use Z77\Core\DI,
     Z77\Core\Http\Response\FetchResponse,
     Z77\Core\Http\Response\HtmlResponse,
+    Z77\Core\Services\TemplateRenderer,
     Z77\Module\Contact\Entities\Address,
     Z77\Module\Contact\Entities\Contact,
     Z77\Module\Contact\Entities\ContactAddress,
@@ -209,13 +210,16 @@ trait ContactControllerTrait
 
             try {
                 $this->contactService()->save($contact);
-                $this->messageService->pushFlashAfterRedirect('success', 'Kontakt «' . $contact->displayName() . '» angelegt');
+                $this->messageService->pushFlash('success', 'Kontakt «' . $contact->displayName() . '» angelegt');
 
+                // The new row goes on top: the list may be filtered by a search the POST does
+                // not carry, so its sorted place is not known here — the next load sorts it.
                 return $this->fetch()
                     ->setStatus('success')
                     ->setData(['id' => $contact->getId()])
-                    ->addCommand('close-modal')
-                    ->addCommand('reload');
+                    ->insertRow('contact', $this->contactRowHtml($contact), 'prepend')
+                    ->addCommand('remove-element', ['target' => FetchResponse::listTarget('contact') . ' > .be-list__empty'])
+                    ->addCommand('close-modal');
             } catch (InvalidContactException $e) {
                 $validator = $e->validator;
             } catch (InvalidAddressException $e) {
@@ -255,13 +259,9 @@ trait ContactControllerTrait
 
             try {
                 $this->contactService()->update($contact, $this->contactValues($body));
-                $this->messageService->pushFlashAfterRedirect('success', 'Kontakt «' . $contact->displayName() . '» gespeichert');
+                $this->messageService->pushFlash('success', 'Kontakt «' . $contact->displayName() . '» gespeichert');
 
-                return $this->fetch()
-                    ->setStatus('success')
-                    ->setData(['id' => $contact->getId()])
-                    ->addCommand('close-modal')
-                    ->addCommand('reload');
+                return $this->contactRowAnswer($contact)->addCommand('close-modal');
             } catch (InvalidContactException $e) {
                 $validator = $e->validator;
                 $shown     = $e->draft;
@@ -313,7 +313,7 @@ trait ContactControllerTrait
             return $this->fetchError('Kontakt ist unvollständig — zuerst bearbeiten.');
         }
 
-        return $this->fetch()->setStatus('success')->addCommand('reload');
+        return $this->contactRowAnswer($contact);
     }
 
     // ── address: add ─────────────────────────────────────────────────────
@@ -353,13 +353,9 @@ trait ContactControllerTrait
 
             try {
                 $this->contactService()->addAddress($link);
-                $this->messageService->pushFlashAfterRedirect('success', 'Adresse «' . $address->oneLine() . '» zu «' . $contact->displayName() . '» hinzugefügt');
+                $this->messageService->pushFlash('success', 'Adresse «' . $address->oneLine() . '» zu «' . $contact->displayName() . '» hinzugefügt');
 
-                return $this->fetch()
-                    ->setStatus('success')
-                    ->setData(['id' => $link->getId()])
-                    ->addCommand('close-modal')
-                    ->addCommand('reload');
+                return $this->contactRowAnswer($contact)->addCommand('close-modal');
             } catch (InvalidAddressException $e) {
                 $linkValidator    = $e->linkValidator;
                 $addressValidator = $e->addressValidator;
@@ -403,13 +399,9 @@ trait ContactControllerTrait
 
             try {
                 $this->contactService()->saveAddress($link, $this->linkValues($body), $this->addressValues($body));
-                $this->messageService->pushFlashAfterRedirect('success', 'Adresse «' . $link->getAddress()->oneLine() . '» gespeichert');
+                $this->messageService->pushFlash('success', 'Adresse «' . $link->getAddress()->oneLine() . '» gespeichert');
 
-                return $this->fetch()
-                    ->setStatus('success')
-                    ->setData(['id' => $link->getId()])
-                    ->addCommand('close-modal')
-                    ->addCommand('reload');
+                return $this->contactRowAnswer($link->getContact())->addCommand('close-modal');
             } catch (InvalidAddressException $e) {
                 $linkValidator    = $e->linkValidator;
                 $addressValidator = $e->addressValidator;
@@ -486,12 +478,40 @@ trait ContactControllerTrait
             return $this->fetchError('Adresse nicht gefunden');
         }
 
-        $line = $link->getAddress()->oneLine();
+        $line    = $link->getAddress()->oneLine();
+        $contact = $link->getContact();
         $this->contactService()->removeAddress($link);
 
-        $this->messageService->pushFlashAfterRedirect('success', 'Adresse «' . $line . '» entfernt');
+        $this->messageService->pushFlash('success', 'Adresse «' . $line . '» entfernt');
 
-        return $this->fetch()->setStatus('success')->addCommand('close-modal')->addCommand('reload');
+        return $this->contactRowAnswer($contact)->addCommand('close-modal');
+    }
+
+    // ── in-place answer ──────────────────────────────────────────────────
+
+    /**
+     * A save that changed one contact row answers with that row, not with `reload` (ADR-047
+     * addendum 2026-10-10): `_row` — the partial the list renders — replaces the row in place.
+     * Push the flash BEFORE calling: `fetch()` takes the in-place flash buffer when it is built.
+     */
+    private function contactRowAnswer(Contact $contact): FetchResponse
+    {
+        return $this->fetch()
+            ->setStatus('success')
+            ->setData(['id' => $contact->getId()])
+            ->replaceRow('contact', (int) $contact->getId(), $this->contactRowHtml($contact));
+    }
+
+    /** The contact's list row, rendered by the list's own partial. */
+    private function contactRowHtml(Contact $contact): string
+    {
+        return (new TemplateRenderer(self::CONTACT_NS))->partial('Backend/ContactController/_row', [
+            'contact'      => $contact,
+            'links'        => $this->contactAddresses()->findByContact($contact),
+            'kindLabels'   => $this->contactKindLabels(),
+            'addressTypes' => $this->addressTypes(),
+            'actionBase'   => $this->contactListBase(),
+        ]);
     }
 
     // ── row action hub (⋮) ───────────────────────────────────────────────

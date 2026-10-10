@@ -22,8 +22,5 @@ $addressLine = $this->partial('Backend/ContactController/_address', ['link' => $
         <p>Die Adresse <?= raw($addressLine) ?> von «<?= e($entry->getContact()->displayName()) ?>» wirklich entfernen?
            Bereits erstellte Belege behalten ihre Kopie.</p>
     </div>
-    <div class="be-modal__footer">
-        <button type="button" class="be-btn be-btn--ghost" data-popup-close>Abbrechen</button>
-        <button type="submit" class="be-btn be-btn--danger">Entfernen</button>
-    </div>
+    <?= $this->partial('partials/modalActions', ['submit' => 'Entfernen', 'kind' => 'danger', 'end' => true], 'Z77\\Shared') ?>
 </form>

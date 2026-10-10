@@ -20,6 +20,7 @@ $ic         = fn(string $name) => '<svg class="be-icon" width="15" height="15" a
 ?>
 <div class="be-actions">
     <div class="be-modal__header"><h2 class="be-modal__title">Aktionen — «<?= e($entry->getCode()) ?>» <?= e($entry->getLabel()) ?></h2></div>
+    <?= $this->partial('partials/modalActions', ['submit' => '', 'cancel' => 'Schliessen'], 'Z77\\Shared') ?>
     <div class="be-modal__body">
         <div class="be-actions__list">
             <button type="button" class="be-btn be-btn--ghost be-actions__item" data-fetch-get="<?= e($actionBase) ?>/edit?id=<?= e((string) $id) ?>"><?= raw($ic('icon-edit')) ?> Bearbeiten</button>
@@ -47,8 +48,5 @@ $ic         = fn(string $name) => '<svg class="be-icon" width="15" height="15" a
             <?php endforeach; ?>
         </div>
         <?php endif; ?>
-    </div>
-    <div class="be-modal__footer">
-        <button type="button" class="be-btn be-btn--ghost" data-popup-close>Schliessen</button>
     </div>
 </div>

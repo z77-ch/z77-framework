@@ -15,14 +15,12 @@ if (!$removable): ?>
 <div class="be-modal__header">
     <h2 class="be-modal__title">Entfernen nicht möglich</h2>
 </div>
+<?= $this->partial('partials/modalActions', ['submit' => '', 'cancel' => 'Schliessen'], 'Z77\\Shared') ?>
 <div class="be-modal__body">
     <div class="be-modal__alert be-modal__alert--error">
         Der Satz <?= raw($rateLine) ?> für «<?= e($entry->getCode()) ?>» ist in Kraft und bleibt als Historie
         stehen. Eine Korrektur ist ein neuer Satz.
     </div>
-</div>
-<div class="be-modal__footer">
-    <button type="button" class="be-btn be-btn--ghost" data-popup-close>Schliessen</button>
 </div>
 <?php return; endif; ?>
 
@@ -36,8 +34,5 @@ if (!$removable): ?>
         <p>Den Satz <?= raw($rateLine) ?> für «<?= e($entry->getCode()) ?>» wirklich entfernen?
            Er ist noch nicht in Kraft; kein Beleg rechnet damit.</p>
     </div>
-    <div class="be-modal__footer">
-        <button type="button" class="be-btn be-btn--ghost" data-popup-close>Abbrechen</button>
-        <button type="submit" class="be-btn be-btn--danger">Entfernen</button>
-    </div>
+    <?= $this->partial('partials/modalActions', ['submit' => 'Entfernen', 'kind' => 'danger', 'end' => true], 'Z77\\Shared') ?>
 </form>

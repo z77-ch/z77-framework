@@ -9,6 +9,8 @@
  * While the chart is EMPTY the list offers «KMU-Kontenrahmen übernehmen»
  * (owner, 2026-09-22) — and only then; the service refuses it otherwise.
  *
+ * One row = `_row` (also the in-place answer of a save, ADR-047 addendum 2026-10-10).
+ *
  * Styling: the shared backend list/tree classes only (`.be-tree--hub` row
  * anatomy with `--node-depth` for the indentation, `.be-list__cell--muted`,
  * `.be-list__empty`, badges) — no CSS of its own.
@@ -26,7 +28,7 @@ $actionBase = $actionBase ?? '/backend/finance/account';
             <h2 class="be-list__section-title">Kontenplan</h2>
             <span class="be-list__section-badge"><?= count($accounts) ?></span>
         </div>
-        <div class="be-tree be-tree--hub">
+        <div class="be-tree be-tree--hub" data-entity-list="account">
             <?php if ($accounts === []): ?>
             <p class="be-list__empty">Der Kontenplan ist leer. Konten einzeln anlegen — oder den KMU-Kontenrahmen
                (Klassen 1–9 mit den gebräuchlichen Konten) als Ausgangslage übernehmen.</p>
@@ -35,42 +37,12 @@ $actionBase = $actionBase ?? '/backend/finance/account';
             </p>
             <?php endif; ?>
             <?php foreach ($accounts as $account): ?>
-            <div class="be-tree__node<?= $account->isActive() ? '' : ' be-tree__node--inactive' ?>" style="--node-depth:<?= (int) ($depths[$account->getId()] ?? 0) ?>" data-account-id="<?= e((string) $account->getId()) ?>">
-                <div class="be-tree__row">
-                    <span class="be-tree__toggle" aria-hidden="true"></span>
-
-                    <label class="be-switch be-switch--sm be-tree__switch"
-                           title="<?= $account->isActive() ? 'Aktiv — wird für neue Buchungen angeboten' : 'Inaktiv — nur noch für bestehende Buchungen' ?>">
-                        <input type="checkbox" class="be-switch__input"
-                               data-fetch-toggle="<?= e($actionBase) ?>/toggle-active?id=<?= e((string) $account->getId()) ?>"<?= $account->isActive() ? ' checked' : '' ?>>
-                        <span class="be-switch__track"><span class="be-switch__thumb"></span></span>
-                    </label>
-
-                    <button type="button" class="be-tree__menu" title="Bearbeiten"
-                            data-fetch-get="<?= e($actionBase) ?>/edit?id=<?= e((string) $account->getId()) ?>">⋮</button>
-
-                    <span class="be-tree__name" data-field="name">
-                        <?php if ($account->isPostable()): ?>
-                        <code><?= e($account->getNumber()) ?></code> <?= e($account->getName()) ?>
-                        <?php else: ?>
-                        <strong><code><?= e($account->getNumber()) ?></code> <?= e($account->getName()) ?></strong>
-                        <?php endif; ?>
-                    </span>
-
-                    <span class="be-tree__url" data-field="type">
-                        <small class="be-list__cell--muted"><?= e($typeLabels[$account->getType()] ?? $account->getType()) ?></small>
-                    </span>
-
-                    <span class="be-tree__route" data-field="state">
-                        <?php if (!$account->isPostable()): ?>
-                        <span class="badge badge--muted">Gruppe</span>
-                        <?php endif; ?>
-                        <?php if (!$account->isActive()): ?>
-                        <span class="badge badge--muted">inaktiv</span>
-                        <?php endif; ?>
-                    </span>
-                </div>
-            </div>
+            <?= raw($this->partial('Backend/AccountController/_row', [
+                'account'    => $account,
+                'depth'      => (int) ($depths[$account->getId()] ?? 0),
+                'typeLabels' => $typeLabels,
+                'actionBase' => $actionBase,
+            ], 'Z77\\Module\\Financial')) ?>
             <?php endforeach; ?>
         </div>
     </div>

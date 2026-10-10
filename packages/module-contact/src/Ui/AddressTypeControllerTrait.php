@@ -4,6 +4,7 @@ namespace Z77\Module\Contact\Ui;
 use Z77\Core\DI,
     Z77\Core\Http\Response\FetchResponse,
     Z77\Core\Http\Response\HtmlResponse,
+    Z77\Core\Services\TemplateRenderer,
     Z77\Module\Contact\Entities\AddressType,
     Z77\Module\Contact\Entities\ContactAddress,
     Z77\Module\Contact\Repositories\AddressTypeRepository,
@@ -121,16 +122,30 @@ trait AddressTypeControllerTrait
                     return $this->fetchError('Der Code ist nach dem Anlegen fix — für eine andere Adressart einen neuen Typ anlegen.');
                 }
 
-                $this->messageService->pushFlashAfterRedirect(
-                    'success',
-                    'Adresstyp «' . $type->getLabel() . '» ' . ($isNew ? 'angelegt' : 'gespeichert')
-                );
+                if (!$isNew) {
+                    $this->messageService->pushFlash('success', 'Adresstyp «' . $type->getLabel() . '» gespeichert');
+
+                    return $this->addressTypeRowAnswer($type)->addCommand('close-modal');
+                }
+
+                $this->messageService->pushFlash('success', 'Adresstyp «' . $type->getLabel() . '» angelegt');
+
+                // The new row goes where the list puts it: before the type that follows it.
+                $next = null;
+                $all  = $this->addressTypeRepo()->allInOrder();
+                foreach ($all as $i => $candidate) {
+                    if ($candidate->getId() === $type->getId()) {
+                        $next = $all[$i + 1] ?? null;
+                    }
+                }
 
                 return $this->fetch()
                     ->setStatus('success')
                     ->setData(['id' => $type->getId()])
-                    ->addCommand('close-modal')
-                    ->addCommand('reload');
+                    ->insertRow('addressType', $this->addressTypeRowHtml($type), $next === null ? 'append' : 'before', '',
+                        $next === null ? null : FetchResponse::rowTarget('addressType', (int) $next->getId()))
+                    ->addCommand('remove-element', ['target' => FetchResponse::listTarget('addressType') . ' > .be-list__empty'])
+                    ->addCommand('close-modal');
             }
             // validation failed — fall through to re-render the form with errors
         }
@@ -161,6 +176,31 @@ trait AddressTypeControllerTrait
         $body = DI::getRequest()->getJsonBody();
         $this->addressTypeMasterData()->setActive($type, (bool) ($body['value'] ?? !$type->isActive()));
 
-        return $this->fetch()->setStatus('success')->addCommand('reload');
+        return $this->addressTypeRowAnswer($type);
+    }
+
+    // ── in-place answer ──────────────────────────────────────────────────
+
+    /**
+     * A save that changed one type row answers with that row, not with `reload` (ADR-047
+     * addendum 2026-10-10): `_row` — the partial the list renders — replaces the row in place.
+     * Push the flash BEFORE calling: `fetch()` takes the in-place flash buffer when it is built.
+     */
+    private function addressTypeRowAnswer(AddressType $type): FetchResponse
+    {
+        return $this->fetch()
+            ->setStatus('success')
+            ->setData(['id' => $type->getId()])
+            ->replaceRow('addressType', (int) $type->getId(), $this->addressTypeRowHtml($type));
+    }
+
+    /** The type's list row, rendered by the list's own partial. */
+    private function addressTypeRowHtml(AddressType $type): string
+    {
+        return (new TemplateRenderer(self::ADDRESS_TYPE_NS))->partial('Backend/AddressTypeController/_row', [
+            'type'       => $type,
+            'count'      => $this->addressTypeLinks()->countByTypeCode($type->getCode()),
+            'actionBase' => $this->addressTypeListBase(),
+        ]);
     }
 }

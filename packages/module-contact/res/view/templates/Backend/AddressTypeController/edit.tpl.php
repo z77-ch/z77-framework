@@ -25,6 +25,7 @@ $fieldError = function (string $name) use ($validator): string {
     <div class="be-modal__header">
         <h2 class="be-modal__title"><?= $isNew ? 'Adresstyp anlegen' : 'Adresstyp «' . e($entry->getCode()) . '» bearbeiten' ?></h2>
     </div>
+    <?= $this->partial('partials/modalActions', ['submit' => 'Speichern'], 'Z77\\Shared') ?>
     <div class="be-modal__body">
         <?php if ($validator->hasErrors()): ?>
         <div class="be-modal__alert be-modal__alert--error">
@@ -50,9 +51,5 @@ $fieldError = function (string $name) use ($validator): string {
                 <?= raw($fieldError('label')) ?>
             </div>
         </div>
-    </div>
-    <div class="be-modal__footer">
-        <button type="button" class="be-btn be-btn--ghost" data-popup-close>Abbrechen</button>
-        <button type="submit" class="be-btn be-btn--primary">Speichern</button>
     </div>
 </form>

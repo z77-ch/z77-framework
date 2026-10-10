@@ -1,6 +1,6 @@
 # vat
 
-2026-09-30
+2026-10-10
 
 ## entry
 
@@ -44,6 +44,7 @@ SOURCE=/packages/module-vat/res/view/templates/Backend/TaxCodeController/addRate
 SOURCE=/packages/module-vat/res/view/templates/Backend/TaxCodeController/actions.tpl.php
 SOURCE=/packages/module-vat/res/view/templates/Backend/TaxCodeController/confirmRemoveRate.tpl.php
 SOURCE=/packages/module-vat/res/view/templates/Backend/TaxCodeController/_rate.tpl.php
+SOURCE=/packages/module-vat/res/view/templates/Backend/TaxCodeController/_row.tpl.php
 SOURCE=/packages/module-vat/res/view/templates/partials/taxCodeSelect.tpl.php
 SOURCE=/packages/module-vat/data/framework/vat/tax_codes.default.json
 SOURCE=/packages/module-vat/data/framework/vat/tax_rates.default.json
@@ -94,6 +95,8 @@ SOURCE=/docs/03-development/order-debtor-financial-bauplan.md
 - When editing `tax_codes.json` / `tax_rates.json` or the `*.default.json` seeds by hand → MUST keep UTF-8 without BOM and integer rates; MUST NOT round-trip through Windows PowerShell (DATA-JSON-001, `persistence-file.md`)
 - When mounting the backend screen elsewhere (another group, a project backend) → MUST `use TaxCodeControllerTrait` and delegate the controller layout config to `TaxCodeLayout::config()`, and MUST override `vatListBase()` to the mount's URL root — the templates build every URL from it
 - When a template shows a rate row → MUST render the `Backend/TaxCodeController/_rate` partial (namespace `Z77\Module\Vat`); MUST NOT format percent and date inline
+- When a save changes one tax-code row (edit, the active switch, a rate added or removed) → MUST answer with `vatRowAnswer($code)` (`FetchResponse::replaceRow()` with `Backend/TaxCodeController/_row`), a NEW code with `insertRow()` before the code that follows it in `allSorted()`, and the in-place flash (`pushFlash()` BEFORE the answer is built); MUST NOT answer `reload` (VAT-UI-001). A template showing a code row MUST render `_row`, never its own copy
+- When a dialog of the screen gets actions → MUST render them with `partials/modalActions` (namespace `Z77\Shared`) directly under `.be-modal__header`; `'end' => true` only for a confirm without any input field (ADR-049 rev. 2026-10-10)
 - When a category needs a German label in a screen → MUST read it from the UI layer (`CATEGORY_LABELS` in the trait, fallback = the value); MUST NOT put display text into `TaxCategory`
 - When adding another country → MUST add its codes and rates as data (seed or backend) and its form mapping as a new country pack; MUST NOT change `TaxCategory` or the calculator for it (ADR-041 decision 9)
 - When adding a method to this package → MUST have a production caller in the same change (CLAUDE.md «no just-in-case», plan «nothing in stock»); serialisation, pickers and the like arrive with the module that needs them
@@ -105,13 +108,14 @@ SOURCE=/docs/03-development/order-debtor-financial-bauplan.md
 - **VAT-SEED-001** — don't assume an existing installation receives the CH seed or a later seed change: the installer walk is seed-once per FILE (`data/framework/vat/*.json` present → untouched). The record-level import (ADR-032) is not wired for `TaxCode` / `TaxRate` yet (see pending); until then a new code goes in through the backend.
 - **VAT-NAV-001** — resolved 2026-09-29 ([ADR-050](../02-decisions/adr-050-module-navigation-seeds.md)): the module ships «MWST-Codes» (`mwst-codes`) in `data/framework/routing/navigation.d/module-vat.json`, under module-financial's group `stammdaten-finanzen`. Don't expect it without module-financial: module-vat does not require it, so the parent is missing and the installer skips the entry (`Skipped navigation entry «MWST-Codes» …`) until module-financial is installed — then it is added on the next run.
 - **VAT-CAT-001** — don't assume `TaxCode::getCategory()` is one of the eight: it is the stored string, so a hand-edited file may carry an unknown value; `category()` returns null for it, the list shows the raw string, and the validator refuses it on the next save.
+- **VAT-UI-001** — 2026-10-10 (ADR-049 rev. / ADR-047 addendum of the same day, `forms-actions-review-2026-10-10.md` Part B #40–43): the dialogs carry their actions in ONE row under the header (`partials/modalActions`) — edit «Speichern», «Neuer Satz» «Satz anlegen», the ⋮ hub and the refusal «Schliessen» only; «Satz entfernen» (a confirm without a field) keeps the bar at the END. A one-row save answers in place: edit, the switch, add-rate and remove-rate replace the code row with `_row` (the list renders the same partial; the node carries `data-entity="taxCode:<id>"`, the list `data-entity-list="taxCode"`), «Steuercode anlegen» inserts the new row at its sorted place — no `reload` left on the screen; core.js wires the inserted row (FETCH-ROW-001, `fetch.md`). Don't expect the section badge (number of codes) to count a new code before the next load.
 
 ## pending
 
 - **ESTV form mapping (country pack `CH`, P5)**: `ADR-041` decision 9 — code + rate → form field (200, 302, 312, 342, 400, 405, …), consumed only by financial's VAT return. Deferred to P5 with the return itself; the seed is the P1 content of the pack. Place: `packages/module-vat/src/CountryPack/` once a consumer exists.
 - **Snapshot serialisation** — closed 2026-09-23 without a serialiser in this module: the invoice stores `ResolvedRate` as columns of its lines (`invoice_line.tax_code` / `tax_rate` / `tax_label`) and `TaxSummaryEntry` as rows of `invoice_tax` (code, category, label, rate, base, tax) — `debtor.md`, P3 part 2. No `toArray()` / `fromArray()` was needed. The **code picker** («active codes for a new document») was built with the draft editor of P3 part 3 (above, «The tax-code picker»); `InvoicingService` still refuses a deactivated code on a NEW document (`tax-code-inactive`) as the last line.
 - **Import of `TaxCode` / `TaxRate`** (adopt a seed change into an existing installation, ADR-032): needs `#[ImportIdentity(['code'])]` / `#[ImportIdentity(['code', 'validFrom'])]`, `importEntities` in `vatConfig`, and a validator factory — today `ImportServiceFactory::fromDi()` in the kernel wires validators by a fixed map, so a module cannot register its own without a kernel edit. Needs a module-side seam first; the import must then write rates through `VatMasterData::addRate()`.
-- `tests/module-vat.php` covers the trait only by reflection (no remove action for a code, no `$originalCode` re-set); a request-level check of the screen (mount, hc1 slot, toggle) is manual in a project installation until a controller harness exists.
+- `tests/module-vat.php` covers the trait by reflection and source checks (no remove action for a code; the in-place answers) and renders `_row` and the edit dialog through a template double; a request-level check of the screen (mount, hc1 slot, toggle) is manual in a project installation until a controller harness exists.
 
 - **The journal forms' tax-code select** (`ManualEntryForm` rows, the one-line MwSt row) read the shared list but still render their own `<select>`; switch them to `partials/taxCodeSelect` when those templates are next touched (the one-line form filters reverse charge — the partial takes the filtered list as it is).
 

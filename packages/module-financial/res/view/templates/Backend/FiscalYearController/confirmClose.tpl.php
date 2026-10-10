@@ -23,6 +23,7 @@ if ($refusal !== null || $blocking !== []): ?>
     <div class="be-modal__header">
         <h2 class="be-modal__title">Abschliessen nicht möglich</h2>
     </div>
+    <?= $this->partial('partials/modalActions', ['submit' => '', 'cancel' => 'Schliessen'], 'Z77\\Shared') ?>
     <div class="be-modal__body">
         <?php if ($refusal !== null): ?>
         <div class="be-modal__alert be-modal__alert--error">Geschäftsjahr <?= e($year->getCode()) ?>: <?= e($refusal) ?></div>
@@ -35,9 +36,6 @@ if ($refusal !== null || $blocking !== []): ?>
         </ul>
         <?php endif; ?>
     </div>
-    <div class="be-modal__footer">
-        <button type="button" class="be-btn be-btn--ghost" data-popup-close>Schliessen</button>
-    </div>
 </div>
 <?php return; endif; ?>
 
@@ -48,6 +46,7 @@ if ($refusal !== null || $blocking !== []): ?>
     <div class="be-modal__header">
         <h2 class="be-modal__title"><?= e($title) ?></h2>
     </div>
+    <?= $this->partial('partials/modalActions', ['submit' => 'Abschliessen'], 'Z77\\Shared') ?>
     <div class="be-modal__body">
         <p>Geschäftsjahr <code><?= e($year->getCode()) ?></code> (<?= e($year->getStartDate()->format('d.m.Y')) ?> – <?= e($year->getEndDate()->format('d.m.Y')) ?>) abschliessen?</p>
         <p class="be-form__hint">Alle <?= count($year->getPeriods()) ?> Perioden werden abgeschlossen: danach wird im Jahr nichts mehr gebucht,
@@ -67,9 +66,5 @@ if ($refusal !== null || $blocking !== []): ?>
         <?php else: ?>
         <p class="be-form__hint">Die Abschlussprüfung hat nichts Offenes gefunden.</p>
         <?php endif; ?>
-    </div>
-    <div class="be-modal__footer">
-        <button type="button" class="be-btn be-btn--ghost" data-popup-close>Abbrechen</button>
-        <button type="submit" class="be-btn be-btn--primary">Abschliessen</button>
     </div>
 </form>

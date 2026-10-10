@@ -29,6 +29,7 @@ $target     = $isNew
     <div class="be-modal__header">
         <h2 class="be-modal__title"><?= $isNew ? 'Adresse hinzufügen' : 'Adresse bearbeiten' ?> — <?= e($contact->displayName()) ?></h2>
     </div>
+    <?= $this->partial('partials/modalActions', ['submit' => 'Speichern'], 'Z77\\Shared') ?>
     <div class="be-modal__body">
         <?php if ($hasErrors): ?>
         <div class="be-modal__alert be-modal__alert--error">Bitte überprüfe die markierten Eingaben.</div>
@@ -45,9 +46,5 @@ $target     = $isNew
         <?php if (!$isNew): ?>
         <p class="be-form__hint">Belege, die diese Adresse bereits verwendet haben, behalten ihren Stand — sie tragen eine Kopie.</p>
         <?php endif; ?>
-    </div>
-    <div class="be-modal__footer">
-        <button type="button" class="be-btn be-btn--ghost" data-popup-close>Abbrechen</button>
-        <button type="submit" class="be-btn be-btn--primary">Speichern</button>
     </div>
 </form>

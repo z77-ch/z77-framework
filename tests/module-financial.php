@@ -1944,6 +1944,18 @@ $afterRefusal = $tForm($refusedDraft, ['type' => true, 'postable' => true], 'ass
 check('T12b after a refusal the DISABLED type select shows the STORED type (asset), not the refused draft\'s (expense)', str_contains($afterRefusal, '<option value="asset" selected>') && !str_contains($afterRefusal, '<option value="expense" selected>'));
 $accountSource = file_get_contents($package . '/src/Ui/AccountControllerTrait.php');
 check('T13 the trait asks the service for the locks (one source for the rule)', str_contains($accountSource, '->postingLocks('));
+$accountList = $renderer->partial('Backend/AccountController/listAction', $accountHost->context);
+check('T14 ADR-049 rev. / ADR-047 addendum 2026-10-10: the edit dialog has its action row directly under the header («Speichern» first); the list renders every row through `_row` with data-entity="account:<id>"; edit and the switch answer with the row (replaceRow via accountRowAnswer), a new account with insertRow before the next number — reload only for a GROUP moved to another group (its subtree changes depth) and the KMU fill',
+    preg_match('~be-modal__header.*?</div>\s*<div class="z77-form-actions">\s*<button type="submit"[^>]*>Speichern~s', $free) === 1 && !str_contains($free, 'be-modal__footer')
+    && $accountHost->context['accounts'] !== [] && substr_count($accountList, 'data-entity="account:') === count($accountHost->context['accounts'])
+    && substr_count($accountSource, '$this->accountRowAnswer(') === 2 && substr_count($accountSource, "addCommand('reload')") === 2 && substr_count($accountSource, '->replaceRow(') === 1 && substr_count($accountSource, '->insertRow(') === 1
+    && str_contains($accountList, 'data-entity-list="account"'));
+$fyTemplates = glob($package . '/res/view/templates/Backend/{AccountController,FiscalYearController}/*.tpl.php', GLOB_BRACE);
+check('T15 no account or fiscal-year dialog keeps .be-modal__footer; the field-less confirms (KMU fill, delete a year) keep the bar at the end, the rest at the top',
+    array_filter($fyTemplates, fn($f) => str_contains(file_get_contents($f), 'be-modal__footer')) === []
+    && str_contains(file_get_contents($package . '/res/view/templates/Backend/FiscalYearController/confirmDelete.tpl.php'), "'end' => true")
+    && str_contains(file_get_contents($package . '/res/view/templates/Backend/AccountController/confirmAdoptKmuChart.tpl.php'), "'end' => true")
+    && !str_contains(file_get_contents($package . '/res/view/templates/Backend/FiscalYearController/confirmReopen.tpl.php'), "'end' => true"));
 
 echo "T. … races between a posting and «becomes a group» (two processes, forced order)\n";
 // Race 1: a posting on 1098 is IN FLIGHT (number drawn, rows share-locked, not committed) when the

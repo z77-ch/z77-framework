@@ -30,6 +30,7 @@ $fieldError = function (string $name) use ($validator): string {
     <div class="be-modal__header">
         <h2 class="be-modal__title">Geschäftsjahr eröffnen</h2>
     </div>
+    <?= $this->partial('partials/modalActions', ['submit' => 'Eröffnen'], 'Z77\\Shared') ?>
     <div class="be-modal__body">
         <?php if (!empty($hasYears)): ?>
         <?php /* Next or prior: two GETs of this modal — the server proposes the dates (no JavaScript of its own).
@@ -77,9 +78,5 @@ $fieldError = function (string $name) use ($validator): string {
             Beim Eröffnen entstehen die Perioden (je Kalendermonat, am Anfang und Ende auf das Geschäftsjahr gekürzt)
             und der Nummernkreis der Buchungen dieses Jahres.
         </p>
-    </div>
-    <div class="be-modal__footer">
-        <button type="button" class="be-btn be-btn--ghost" data-popup-close>Abbrechen</button>
-        <button type="submit" class="be-btn be-btn--primary">Eröffnen</button>
     </div>
 </form>

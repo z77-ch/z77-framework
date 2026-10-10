@@ -268,6 +268,8 @@ trait FiscalYearControllerTrait
                 $this->messageService->pushFlashAfterRedirect('success', 'Geschäftsjahr «' . $year->getCode() . '» eröffnet: '
                     . count($year->getPeriods()) . ' Perioden');
 
+                // Not one row: the new year lands at one end of the list and takes «Löschen …» off
+                // the year that was at that end (only the end years are deletable) — reload.
                 return $this->fetch()
                     ->setStatus('success')
                     ->setData(['id' => $year->getId()])
@@ -342,6 +344,7 @@ trait FiscalYearControllerTrait
         }
         $this->messageService->pushFlashAfterRedirect('success', 'Geschäftsjahr «' . $code . '» gelöscht — mit seinen Perioden und seinem Nummernkreis');
 
+        // Not one row: the year now at that end may become deletable — the list is rebuilt.
         return $this->fetch()
             ->setStatus('success')
             ->addCommand('close-modal')
@@ -406,6 +409,8 @@ trait FiscalYearControllerTrait
         }
         $this->messageService->pushFlashAfterRedirect('success', 'Geschäftsjahr «' . $code . '» abgeschlossen — darin wird nichts mehr gebucht oder geändert.');
 
+        // Not one row: closing moves «abschliessen» / «wieder öffnen» between neighbouring years
+        // and writes a protocol line under the header — the list is rebuilt.
         return $this->fetch()
             ->setStatus('success')
             ->addCommand('close-modal')
@@ -459,6 +464,7 @@ trait FiscalYearControllerTrait
         }
         $this->messageService->pushFlashAfterRedirect('success', 'Geschäftsjahr «' . $code . '» wieder geöffnet — der Grund steht im Protokoll.');
 
+        // Not one row: as with the close — neighbours' actions and the protocol change.
         return $this->fetch()
             ->setStatus('success')
             ->addCommand('close-modal')

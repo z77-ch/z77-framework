@@ -37,6 +37,7 @@ $addressErrors = ($linkValidator !== null && $linkValidator->hasErrors()) || ($a
     <div class="be-modal__header">
         <h2 class="be-modal__title"><?= $isNew ? 'Kontakt anlegen' : 'Kontakt «' . e($entry->displayName()) . '» bearbeiten' ?></h2>
     </div>
+    <?= $this->partial('partials/modalActions', ['submit' => 'Speichern'], 'Z77\\Shared') ?>
     <div class="be-modal__body">
         <?php if ($validator->hasErrors() || $addressErrors): ?>
         <div class="be-modal__alert be-modal__alert--error">
@@ -116,9 +117,5 @@ $addressErrors = ($linkValidator !== null && $linkValidator->hasErrors()) || ($a
         <?php else: ?>
         <p class="be-form__hint">Adressen werden im ⋮-Menü der Zeile verwaltet.</p>
         <?php endif; ?>
-    </div>
-    <div class="be-modal__footer">
-        <button type="button" class="be-btn be-btn--ghost" data-popup-close>Abbrechen</button>
-        <button type="submit" class="be-btn be-btn--primary">Speichern</button>
     </div>
 </form>

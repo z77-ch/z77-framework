@@ -6,6 +6,8 @@
  * list with edit and remove. The search (`?q=`, hc2 slot) is a plain GET
  * form; the list shows at most $limit rows and says how many match.
  *
+ * One row = `_row` (also the in-place answer of a save, ADR-047 addendum 2026-10-10).
+ *
  * Styling: the shared backend list/tree classes only (`.be-tree--hub` row
  * anatomy, `.be-tree__url` and `.be-list__cell--muted` for secondary text,
  * `.be-list__empty`, badges) — no inline styles, no CSS of its own.
@@ -21,7 +23,6 @@
  */
 $actionBase  = $actionBase ?? '/backend/contact/contact';
 $tplNs       = 'Z77\\Module\\Contact';
-$addressLine = fn($link): string => $this->partial('Backend/ContactController/_address', ['link' => $link, 'addressTypes' => $addressTypes], $tplNs);
 $shown       = count($contacts);
 ?>
 <div class="be-list">
@@ -30,48 +31,18 @@ $shown       = count($contacts);
             <h2 class="be-list__section-title"><?= $query === '' ? 'Kontakte' : 'Kontakte zu «' . e($query) . '»' ?></h2>
             <span class="be-list__section-badge"><?= $total ?></span>
         </div>
-        <div class="be-tree be-tree--hub">
+        <div class="be-tree be-tree--hub" data-entity-list="contact">
             <?php if ($contacts === []): ?>
             <p class="be-list__empty"><?= $query === '' ? 'Keine Kontakte vorhanden.' : 'Kein Kontakt passt zu «' . e($query) . '».' ?></p>
             <?php endif; ?>
             <?php foreach ($contacts as $contact): ?>
-            <?php $links = $linksByContact[$contact->getId()] ?? []; ?>
-            <div class="be-tree__node<?= $contact->isActive() ? '' : ' be-tree__node--inactive' ?>" style="--node-depth:0" data-contact-id="<?= e((string) $contact->getId()) ?>">
-                <div class="be-tree__row">
-                    <span class="be-tree__toggle" aria-hidden="true"></span>
-
-                    <label class="be-switch be-switch--sm be-tree__switch"
-                           title="<?= $contact->isActive() ? 'Aktiv — wird für neue Belege angeboten' : 'Inaktiv — nur noch für bestehende Belege' ?>">
-                        <input type="checkbox" class="be-switch__input"
-                               data-fetch-toggle="<?= e($actionBase) ?>/toggle-active?id=<?= e((string) $contact->getId()) ?>"<?= $contact->isActive() ? ' checked' : '' ?>>
-                        <span class="be-switch__track"><span class="be-switch__thumb"></span></span>
-                    </label>
-
-                    <button type="button" class="be-tree__menu" title="Aktionen"
-                            data-fetch-get="<?= e($actionBase) ?>/actions?id=<?= e((string) $contact->getId()) ?>">⋮</button>
-
-                    <span class="be-tree__name" data-field="name">
-                        <?= e($contact->displayName()) ?>
-                        <small class="be-list__cell--muted">· <?= e($kindLabels[$contact->getKind()] ?? $contact->getKind()) ?><?= $contact->getEmail() !== '' ? ' · ' . e($contact->getEmail()) : '' ?> · <?= e(mb_strtoupper($contact->getLanguage())) ?></small>
-                    </span>
-
-                    <span class="be-tree__url" data-field="addresses">
-                        <?php if ($links === []): ?>
-                        <span class="badge badge--warning">keine Adresse</span>
-                        <?php else: ?>
-                        <?php foreach ($links as $i => $link): ?>
-                        <?= $i > 0 ? ' · ' : '' ?><?= raw($addressLine($link)) ?>
-                        <?php endforeach; ?>
-                        <?php endif; ?>
-                    </span>
-
-                    <span class="be-tree__route" data-field="state">
-                        <?php if (!$contact->isActive()): ?>
-                        <span class="badge badge--muted">inaktiv</span>
-                        <?php endif; ?>
-                    </span>
-                </div>
-            </div>
+            <?= raw($this->partial('Backend/ContactController/_row', [
+                'contact'      => $contact,
+                'links'        => $linksByContact[$contact->getId()] ?? [],
+                'kindLabels'   => $kindLabels,
+                'addressTypes' => $addressTypes,
+                'actionBase'   => $actionBase,
+            ], $tplNs)) ?>
             <?php endforeach; ?>
         </div>
         <?php if ($total > $shown): ?>

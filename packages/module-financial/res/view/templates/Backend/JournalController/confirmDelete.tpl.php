@@ -22,9 +22,7 @@ if (!$editable): ?>
     <div class="be-modal__body">
         <div class="be-modal__alert be-modal__alert--error">Buchung <?= e($label) ?>: <?= e($notEditableWhy) ?></div>
     </div>
-    <div class="be-modal__footer">
-        <button type="button" class="be-btn be-btn--ghost" data-popup-close>Schliessen</button>
-    </div>
+    <?= $this->partial('partials/modalActions', ['submit' => '', 'cancel' => 'Schliessen', 'end' => true], 'Z77\Shared') ?>
 </div>
 <?php return; endif; ?>
 
@@ -40,8 +38,6 @@ if (!$editable): ?>
         <p class="be-form__hint">Die Nummer <?= e($label) ?> bleibt als Lücke im Journal; das Änderungsprotokoll hält fest, wer die Buchung wann gelöscht hat und was sie enthielt.
            Eine Buchung, deren Periode MWST-abgerechnet ist, lässt sich nur ohne MWST-Zeile löschen.</p>
     </div>
-    <div class="be-modal__footer">
-        <button type="button" class="be-btn be-btn--ghost" data-popup-close>Abbrechen</button>
-        <button type="submit" class="be-btn be-btn--danger">Löschen</button>
-    </div>
+    <?php // A field-less confirm: the owner's one exception keeps the row at the end (ADR-049). ?>
+    <?= $this->partial('partials/modalActions', ['submit' => 'Löschen', 'kind' => 'danger', 'end' => true], 'Z77\Shared') ?>
 </form>

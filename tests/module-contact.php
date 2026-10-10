@@ -486,6 +486,19 @@ $typeActions = $methodsOf(AddressTypeControllerTrait::class);
 check('E13 the address-type trait exposes no delete at all', array_filter($typeActions, fn($m) => stripos($m, 'remove') !== false || stripos($m, 'delete') !== false) === [] && in_array('toggleActiveAction', $typeActions, true));
 $traitSource = file_get_contents(__DIR__ . '/../packages/module-contact/src/Ui/ContactControllerTrait.php');
 check('E13b the trait never maps a body onto a managed entity (source guard: mapFromArray only on the NEW `$contact` / `$address` objects of add / add-address)', preg_match_all('/->mapFromArray\(/', $traitSource) === 3 && !str_contains($traitSource, '$link->mapFromArray') && !str_contains($traitSource, 'getAddress()->mapFromArray') && !str_contains($traitSource, '$shown->mapFromArray'));
+$typeSource = file_get_contents(__DIR__ . '/../packages/module-contact/src/Ui/AddressTypeControllerTrait.php');
+$contactTpl = __DIR__ . '/../packages/module-contact/res/view/templates/Backend/';
+check('E13c ADR-047 addendum 2026-10-10: a one-row save answers in place (replaceRow with the row partial `_row`, the list renders the same) — contact: edit, switch, add/edit/remove address; type: edit, switch; a new contact / type with insertRow. No reload left',
+    substr_count($traitSource, '$this->contactRowAnswer(') === 5 && !str_contains($traitSource, "addCommand('reload')") && str_contains($traitSource, '->insertRow(')
+    && substr_count($typeSource, '$this->addressTypeRowAnswer(') === 2 && !str_contains($typeSource, "addCommand('reload')") && str_contains($typeSource, '->insertRow(')
+    && str_contains(file_get_contents($contactTpl . 'ContactController/listAction.tpl.php'), 'data-entity-list="contact"')
+    && str_contains(file_get_contents($contactTpl . 'ContactController/listAction.tpl.php'), "partial('Backend/ContactController/_row'")
+    && str_contains(file_get_contents($contactTpl . 'AddressTypeController/listAction.tpl.php'), "partial('Backend/AddressTypeController/_row'")
+    && str_contains(file_get_contents($contactTpl . 'ContactController/_row.tpl.php'), 'data-entity="contact:')
+    && str_contains(file_get_contents($contactTpl . 'AddressTypeController/_row.tpl.php'), 'data-entity="addressType:'));
+check('E13d ADR-049 rev. 2026-10-10: no contact dialog keeps .be-modal__footer — the action row is partials/modalActions; only the field-less «Adresse entfernen» keeps it at the end',
+    array_filter(glob($contactTpl . '*/*.tpl.php'), fn($f) => str_contains(file_get_contents($f), 'be-modal__footer')) === []
+    && array_values(array_map('basename', array_filter(glob($contactTpl . '*/*.tpl.php'), fn($f) => str_contains(file_get_contents($f), "'end' => true")))) === ['confirmRemoveAddress.tpl.php']);
 $em9    = $wireDi();
 $links9 = $em9->getRepository(ContactAddress::class);
 $org9   = $em9->getRepository(Contact::class)->find($musterId);

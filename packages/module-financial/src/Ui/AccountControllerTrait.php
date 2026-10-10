@@ -4,6 +4,7 @@ namespace Z77\Module\Financial\Ui;
 use Z77\Core\DI,
     Z77\Core\Http\Response\FetchResponse,
     Z77\Core\Http\Response\HtmlResponse,
+    Z77\Core\Services\TemplateRenderer,
     Z77\Module\Financial\Entities\Account,
     Z77\Module\Financial\Entities\AccountType,
     Z77\Module\Financial\Repositories\AccountRepository,
@@ -171,13 +172,27 @@ trait AccountControllerTrait
 
             try {
                 $this->accountService()->save($account);
-                $this->messageService->pushFlashAfterRedirect('success', 'Konto «' . $account->label() . '» angelegt');
+                $this->messageService->pushFlash('success', 'Konto «' . $account->label() . '» angelegt');
+
+                // The chart is in number order: the new row goes before the account that follows it.
+                $next = null;
+                $all  = $this->accounts()->allInOrder();
+                foreach ($all as $i => $candidate) {
+                    if ($candidate->getId() === $account->getId()) {
+                        $next = $all[$i + 1] ?? null;
+                    }
+                }
+                $list = FetchResponse::listTarget('account');
 
                 return $this->fetch()
                     ->setStatus('success')
                     ->setData(['id' => $account->getId()])
-                    ->addCommand('close-modal')
-                    ->addCommand('reload');
+                    ->insertRow('account', $this->accountRowHtml($account), $next === null ? 'append' : 'before', '',
+                        $next === null ? null : FetchResponse::rowTarget('account', (int) $next->getId()))
+                    // The empty chart's note and its KMU offer go with the first account (both `<p>`; rows are `<div>`).
+                    ->addCommand('remove-element', ['target' => $list . ' > .be-list__empty'])
+                    ->addCommand('remove-element', ['target' => $list . ' > p'])
+                    ->addCommand('close-modal');
             } catch (InvalidAccountException $e) {
                 $validator = $e->validator;
             }
@@ -211,15 +226,26 @@ trait AccountControllerTrait
                 return $this->fetchError($values);
             }
 
+            $parentBefore = $account->getParent()?->getId();
             try {
                 $this->accountService()->update($account, $values);
-                $this->messageService->pushFlashAfterRedirect('success', 'Konto «' . $account->label() . '» gespeichert');
 
-                return $this->fetch()
-                    ->setStatus('success')
-                    ->setData(['id' => $account->getId()])
-                    ->addCommand('close-modal')
-                    ->addCommand('reload');
+                // A GROUP moved to another group takes its whole subtree to a new depth: the
+                // chart changes shape, so that one case reloads. A postable account has no
+                // children — its row alone changes depth (the list is in number order, so its
+                // position stays) and answers in place like every other edit.
+                if (!$account->isPostable() && $account->getParent()?->getId() !== $parentBefore) {
+                    $this->messageService->pushFlashAfterRedirect('success', 'Konto «' . $account->label() . '» gespeichert');
+
+                    return $this->fetch()
+                        ->setStatus('success')
+                        ->setData(['id' => $account->getId()])
+                        ->addCommand('close-modal')
+                        ->addCommand('reload');
+                }
+                $this->messageService->pushFlash('success', 'Konto «' . $account->label() . '» gespeichert');
+
+                return $this->accountRowAnswer($account)->addCommand('close-modal');
             } catch (InvalidAccountException $e) {
                 $validator = $e->validator;
                 $shown     = $e->draft;
@@ -290,7 +316,31 @@ trait AccountControllerTrait
             return $this->fetchError('Konto ist unvollständig — zuerst bearbeiten.');
         }
 
-        return $this->fetch()->setStatus('success')->addCommand('reload');
+        return $this->accountRowAnswer($account);
+    }
+
+    /**
+     * A save that changed one account row answers with that row, not with `reload` (ADR-047
+     * addendum 2026-10-10): `_row` — the partial the list renders — replaces the row in place.
+     * Push the flash BEFORE calling: `fetch()` takes the in-place flash buffer when it is built.
+     */
+    private function accountRowAnswer(Account $account): FetchResponse
+    {
+        return $this->fetch()
+            ->setStatus('success')
+            ->setData(['id' => $account->getId()])
+            ->replaceRow('account', (int) $account->getId(), $this->accountRowHtml($account));
+    }
+
+    /** The account's chart row, rendered by the list's own partial, at its depth in the group chain. */
+    private function accountRowHtml(Account $account): string
+    {
+        return (new TemplateRenderer(self::ACCOUNT_NS))->partial('Backend/AccountController/_row', [
+            'account'    => $account,
+            'depth'      => self::accountDepths([$account])[(int) $account->getId()] ?? 0,
+            'typeLabels' => $this->accountTypeLabels(),
+            'actionBase' => $this->accountListBase(),
+        ]);
     }
 
     // ── KMU chart ────────────────────────────────────────────────────────
@@ -318,6 +368,7 @@ trait AccountControllerTrait
         }
         $this->messageService->pushFlashAfterRedirect('success', 'KMU-Kontenrahmen übernommen: ' . $created . ' Konten und Gruppen');
 
+        // A bulk fill of the empty chart — the whole list is new, a reload is the honest answer.
         return $this->fetch()->setStatus('success')->addCommand('close-modal')->addCommand('reload');
     }
 }
