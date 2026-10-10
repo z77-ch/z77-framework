@@ -20,8 +20,11 @@
  *     through the `form` attribute. Without script the bar cannot count the
  *     ticked rows («n ausgewählt»), so it always shows in the invoicing view
  *     and names the count on the confirmation page instead;
- *   - the whole list is a FETCH REGION: sort / page / search reload only
- *     this part.
+ *   - the whole list is a FETCH REGION (`invoice-find-list`): sort / page /
+ *     search reload only this part, and a save in a window opened from here
+ *     (the detail and what it links, «+ Rechnung») reloads it
+ *     (`refresh-region`, ADR-047 addendum 2026-10-10). The confirmation of
+ *     «Definitiv stellen …» is still a page (debtor.md DEBTOR-WIN-002).
  *
  * @var list<\Z77\Module\Debtor\Entities\Invoice> $documents
  * @var \Z77\Shared\Listing\ListDefinition $definition

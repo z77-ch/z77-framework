@@ -1030,7 +1030,16 @@ check('I5m the three master-data fragments carry an add action and an active swi
 
 $templateDir = $package . '/res/view/templates/Backend';
 $templates   = glob($templateDir . '/*/*.tpl.php');
-check('I6 every master-data screen has its list template, its edit template and its header slot; the document screens (P3 part 3) add six, the payment form and the delete confirmation (P4 part 1) two, the bank import list and detail (P4 part 2) two, the dunning list (P4 part 3) one, the open-item list and its toolbar (2026-10-07) two, the action cells of the invoice list, the bank import and the debtor master data (ADR-033 rev. 2026-10-08) three', count($templates) === 28);
+check('I6 every master-data screen has its list template, its edit template and its header slot; the document screens (P3 part 3) add six, the payment form and the delete confirmation (P4 part 1) two, the bank import list and detail (P4 part 2) two, the dunning list (P4 part 3) one, the open-item list and its toolbar (2026-10-07) two, the action cells of the invoice list, the bank import and the debtor master data (ADR-033 rev. 2026-10-08) three; the row partials of the in-place answers (ADR-047 addendum 2026-10-10: bank transaction + unbooked bar, payment terms, payment target, debtor contact) five', count($templates) === 33);
+check('I6b the master-data rows are ONE partial each, rendered by the list and answered in place (replaceRow / insertRow, DEBTOR-WIN-003) — no `reload` left for a one-row save or switch of terms, targets or debtors',
+    array_reduce([['PaymentTerms', 'paymentTerms'], ['PaymentTarget', 'paymentTarget'], ['DebtorProfile', 'debtorContact']], fn($ok, $p) => $ok
+        && str_contains(file_get_contents($templateDir . '/' . $p[0] . 'Controller/listAction.tpl.php'), "partial('Backend/" . $p[0] . "Controller/_row'")
+        && str_contains(file_get_contents($templateDir . '/' . $p[0] . 'Controller/_row.tpl.php'), 'data-entity="' . $p[1] . ':')
+        && str_contains(file_get_contents($package . '/src/Ui/' . $p[0] . 'ControllerTrait.php'), "replaceRow('" . $p[1] . "'")
+        && !str_contains(file_get_contents($package . '/src/Ui/' . $p[0] . 'ControllerTrait.php'), "addCommand('reload')"), true));
+check('I6c every popup of the module carries its action row FIRST (ADR-049 revision 2026-10-10): the shared partials/modalActions right under the header, no .be-modal__footer left',
+    array_reduce(glob($templateDir . '/*/edit.tpl.php'), fn($ok, $f) => $ok && !str_contains(file_get_contents($f), 'be-modal__footer')
+        && preg_match('/be-modal__header.*?<\/div>\s*<\?= \$this->partial\(\'partials\/modalActions\'/s', file_get_contents($f)) === 1, true));
 check('I7 no template carries a <script> tag or an inline handler (Rule 7)',
     array_reduce($templates, fn($ok, $f) => $ok && !preg_match('/<script|\son[a-z]+\s*=/i', file_get_contents($f)), true));
 check('I8 the package ships no JavaScript at all', glob($package . '/res/**/*.js') === [] && glob($package . '/res/*.js') === []);
@@ -1861,8 +1870,10 @@ $useRequest = function (array $get, ?array $post = null) use ($wireDi): UnifiedE
         public function getPostParameters(): array { return $_POST; }
         public function getUploadedFile(string $field): ?\Z77\Shared\ValueObjects\UploadedFile { return $GLOBALS['z77TestUpload'][$field] ?? null; }
         public function getMode(): \Z77\Core\Http\RequestMode { return !empty($GLOBALS['z77TestFetch']) ? \Z77\Core\Http\RequestMode::Fetch : \Z77\Core\Http\RequestMode::Page; }
+        public function getJsonBody(): array { return $GLOBALS['z77TestJson'] ?? []; }
     }, true);
     DI::getInstance()->set('CsrfService', fn() => new class {
+        public function getToken(): string { return 'tok-session'; }
         public function generateEntityToken(string $context, int $id): string { return "tok-{$context}-{$id}"; }
         public function validateEntityToken(string $token, string $context, int $id): bool { return $token === "tok-{$context}-{$id}"; }
     }, true);
@@ -1887,11 +1898,13 @@ $invoiceHost = function () {
             $this->messageService = new class {
                 public array $flashes = [];
                 public function pushFlashAfterRedirect(string $type, string $message): void { $this->flashes[] = [$type, $message]; }
+                public function pushFlash(string $type, string $message): void { $this->flashes[] = [$type, $message, 'in-place']; }
             };
         }
         protected function em() { return DI::getUnifiedEntityManager(); }
         protected function html(array $context = []): \Z77\Core\Http\Response\HtmlResponse { $this->context = $context; return new \Z77\Core\Http\Response\HtmlResponse(null, $context); }
         protected function redirect(string $url, int $status = 302): \Z77\Core\Http\Response\RedirectResponse { $this->redirectedTo = $url; return new \Z77\Core\Http\Response\RedirectResponse($url, $status); }
+        protected function fetch(): \Z77\Core\Http\Response\FetchResponse { return new \Z77\Core\Http\Response\FetchResponse(); }
         public array $bytes = [];
         protected function bytes(string $content, string $filename, string $mimeType, bool $inline = true): \Z77\Core\Http\Response\BytesResponse { $this->bytes = ['content' => $content, 'filename' => $filename, 'mime' => $mimeType, 'inline' => $inline]; return new \Z77\Core\Http\Response\BytesResponse($content, $filename, $mimeType, $inline); }
         // The session actor is not wired in the harness — name it, as a CLI caller must.
@@ -1973,6 +1986,11 @@ check('P3C27 detail of a final invoice: the address block from the snapshot, the
     $ledgerRef !== null && str_contains($detail, 'data-window-open="/backend/finance/journal/detail?ref=' . rawurlencode($ledgerRef) . '"')
     && str_contains($detail, 'Müller Neu AG') && str_contains($detail, QrReference::format($qrRow['pay_reference'])) && str_contains($detail, 'data-qr-bill="printable"')
     && str_contains($detail, 'Gutschrift ' . $cn->getNumber()) && str_contains($detail, '/credit-note?of=' . $qrInv->getId()) && !str_contains($detail, '/edit?id='));
+check('P3C27b the detail\'s actions are its action row (`.z77-form-actions`, above the title): «Gutschrift erstellen …» and the credit-note link stay in the window (`data-window-link`), the PDF is a plain link to a new tab',
+    strpos($detail, 'z77-form-actions') < strpos($detail, 'be-list__section-title')
+    && str_contains($detail, 'href="/backend/finance/invoice/credit-note?of=' . $qrInv->getId() . '" data-window-link')
+    && str_contains($detail, 'href="/backend/finance/invoice/detail?id=' . $cn->getId() . '" data-window-link')
+    && preg_match('/pdf\?id=\d+"[^>]*data-window-link/', $detail) === 0 && str_contains($detail, 'target="_blank"'));
 $useRequest(['id' => (string) $plainInv->getId()]);
 $host = $invoiceHost();
 $host->detailAction();
@@ -2060,6 +2078,28 @@ $host = $invoiceHost();
 $host->editAction();
 check('P3C37 a stale version (the form of before the re-issue) is refused: flash, back to the detail, nothing changed', $host->messageService->flashes[0][0] === 'error'
     && str_contains($host->messageService->flashes[0][1], 'inzwischen geändert') && (int) $invoiceRow($newId)['version'] === $v0 + 1);
+
+// The editor as a WINDOW (ADR-047 addendum 2026-10-10, the journal's recipe; debtor.md DEBTOR-WIN-001).
+$GLOBALS['z77TestFetch'] = true;
+$useRequest(['id' => (string) $newId, '_origin' => 'region:invoice-find-list']);
+$host = $invoiceHost();
+$host->editAction();
+$winHtml = $renderMain($host);
+check('P3C37b fetched, the editor is a WINDOW: mask invoice-edit on invoice:<id> with its title, `_origin` carried back, the shared action row first (ADR-049 rev. 2026-10-10), «Abbrechen» back to the read view inside the window',
+    str_contains($winHtml, 'data-window="invoice-edit"') && str_contains($winHtml, 'data-window-entity="invoice:' . $newId . '"') && str_contains($winHtml, 'data-window-title=')
+    && str_contains($winHtml, 'name="_origin" value="region:invoice-find-list"')
+    && strpos($winHtml, 'z77-form-actions') < strpos($winHtml, 'name="invoice_date"') && strpos($winHtml, 'value="save"') < strpos($winHtml, 'value="more"')
+    && str_contains($winHtml, 'href="/backend/finance/invoice/detail?id=' . $newId . '" data-window-link'));
+$v1 = (int) $invoiceRow($newId)['version'];
+$useRequest(['id' => (string) $newId], ['entity_csrf' => "tok-invoice-{$newId}", 'version' => (string) $v1, '_origin' => 'region:invoice-find-list'] + $editPost);
+$host = $invoiceHost();
+$answer = $host->editAction();
+$commands = $answer instanceof \Z77\Core\Http\Response\FetchResponse ? (fn() => $this->commands)->call($answer) : [];
+check('P3C37c a save in the window answers with INSTRUCTIONS for its origin: the detail back into the window, the document list (`invoice-find-list`) reloads, the flash in place — no redirect',
+    $answer instanceof \Z77\Core\Http\Response\FetchResponse && $host->redirectedTo === null
+    && $commands === [['action' => 'open-window', 'url' => '/backend/finance/invoice/detail?id=' . $newId, 'replace' => true], ['action' => 'refresh-region', 'name' => 'invoice-find-list']]
+    && ($host->messageService->flashes[0][2] ?? '') === 'in-place' && (int) $invoiceRow($newId)['version'] === $v1 + 1);
+$GLOBALS['z77TestFetch'] = false;
 
 // Finalize batch with versions.
 $second = $service($wireDi())->invoice($withTarget('qr', '2026-07-02'));
@@ -2433,6 +2473,24 @@ $useRequest(['id' => $inv4->getId(), 'payment' => $edited->getId()]);
 $host = $invoiceHost();
 $host->confirmPaymentDeleteAction();
 $confirmHtml = $renderMain($host);
+// Fetched: the payment form and its delete confirmation are WINDOW contents (DEBTOR-WIN-001).
+$GLOBALS['z77TestFetch'] = true;
+$useRequest(['id' => $inv4->getId(), 'payment' => $edited->getId(), '_origin' => 'region:debtor-find-list']);
+$host = $invoiceHost();
+$host->paymentAction();
+$payWin = $renderMain($host);
+$useRequest(['id' => $inv4->getId(), 'payment' => $edited->getId(), '_origin' => 'region:debtor-find-list']);
+$host = $invoiceHost();
+$host->confirmPaymentDeleteAction();
+$delWin = $renderMain($host);
+$GLOBALS['z77TestFetch'] = false;
+check('Q24b fetched, «Zahlung ändern» is a window (mask invoice-payment on payment:<id>, `_origin` carried): one action row first — Änderung verbuchen · Löschen … · Abbrechen, the last two stay in the window; the delete confirmation is the next content of that window, its bar first',
+    str_contains($payWin, 'data-window="invoice-payment"') && str_contains($payWin, 'data-window-entity="payment:' . $edited->getId() . '"')
+    && str_contains($payWin, 'name="_origin" value="region:debtor-find-list"')
+    && preg_match('/z77-form-actions.*?Änderung verbuchen.*?confirm-payment-delete[^"]*" data-window-link>Löschen.*?detail\?id=' . $inv4->getId() . '" data-window-link>Abbrechen/s', $payWin) === 1
+    && strpos($payWin, 'z77-form-actions') < strpos($payWin, 'name="date"')
+    && str_contains($delWin, 'data-window="invoice-payment-delete"') && str_contains($delWin, 'name="_origin" value="region:debtor-find-list"')
+    && strpos($delWin, 'z77-form-actions') < strpos($delWin, 'wird gelöscht') && str_contains($delWin, 'be-btn--danger'));
 $useRequest(['id' => $inv4->getId(), 'payment' => $edited->getId()], ['entity_csrf' => 'tok-payment-' . $edited->getId(), 'version' => $edited->getVersion()]);
 $host = $invoiceHost();
 $host->paymentDeleteAction();
@@ -2599,6 +2657,7 @@ $bankHost = function () {
             $this->messageService = new class {
                 public array $flashes = [];
                 public function pushFlashAfterRedirect(string $type, string $message): void { $this->flashes[] = [$type, $message]; }
+                public function pushFlash(string $type, string $message): void { $this->flashes[] = [$type, $message, 'in-place']; }
             };
         }
         protected function em() { return DI::getUnifiedEntityManager(); }
@@ -2606,6 +2665,9 @@ $bankHost = function () {
         protected function redirect(string $url, int $status = 302): \Z77\Core\Http\Response\RedirectResponse { $this->redirectedTo = $url; return new \Z77\Core\Http\Response\RedirectResponse($url, $status); }
         private function bankImportService(): BankImportService { return new BankImportService($this->em(), 'bankimport'); }
         private function bankInvoicingService(): InvoicingService { return new InvoicingService($this->em(), 'bankimport'); }
+        protected function fetch(): \Z77\Core\Http\Response\FetchResponse { return new \Z77\Core\Http\Response\FetchResponse(); }
+        // The kernel's TemplateRenderer needs the file finder — the harness renders with its own double.
+        private function bankRenderPartial(string $name, array $context): string { return $GLOBALS['renderer']->partial('Backend/BankImportController/' . $name, $context); }
     };
 };
 $useRequest([]);
@@ -2662,6 +2724,28 @@ $host2->assignAction();
 check('R18 ignore and assign through the host: flashes and redirects, the states changed',
     ($host->messageService->flashes[0][0] ?? '') === 'success' && $db->fetchOne('SELECT state FROM bank_transaction WHERE id = ?', [$txB[4]->getId()]) === 'ignored'
     && ($host2->messageService->flashes[0][0] ?? '') === 'success' && $db->fetchOne('SELECT state FROM bank_transaction WHERE id = ?', [$txB[3]->getId()]) === 'matched');
+// Fetched (`data-fetch-post`, a JSON body): ONE row changes, so the answer is that row and the bar (DEBTOR-WIN-003).
+$GLOBALS['z77TestFetch'] = true;
+$GLOBALS['z77TestJson']  = ['transaction' => $txB[4]->getId(), 'value' => '0'];
+$useRequest(['id' => $msgR1->getId()], []);
+$host = $bankHost();
+$answer = $host->ignoreAction();
+$GLOBALS['z77TestFetch'] = false;
+$GLOBALS['z77TestJson']  = [];
+$commands = $answer instanceof \Z77\Core\Http\Response\FetchResponse ? (fn() => $this->commands)->call($answer) : [];
+$rowState = (string) $db->fetchOne('SELECT state FROM bank_transaction WHERE id = ?', [$txB[4]->getId()]);
+check('R18b fetched, «Zurücknehmen» answers IN PLACE: the row of that transaction (`replaceRow` → [data-entity="bank-transaction:<id>"], its new state) and the unbooked bar slot, the flash in the envelope — no redirect',
+    $answer instanceof \Z77\Core\Http\Response\FetchResponse && $host->redirectedTo === null && $rowState !== 'ignored'
+    && ($commands[0]['action'] ?? '') === 'replace-html' && ($commands[0]['target'] ?? '') === '[data-entity="bank-transaction:' . $txB[4]->getId() . '"]'
+    && str_contains($commands[0]['html'] ?? '', 'data-state="' . $rowState . '"') && str_contains($commands[0]['html'] ?? '', 'data-fetch-post="/backend/finance/bank-import/ignore?id=' . $msgR1->getId() . '"')
+    && ($commands[1]['action'] ?? '') === 'replace-html' && ($commands[1]['target'] ?? '') === '[data-bank-unbooked-slot]' && str_contains($commands[1]['html'] ?? '', 'data-bank-unbooked-slot')
+    && ($host->messageService->flashes[0][2] ?? '') === 'in-place');
+// … back to «ignored» as R18 left it (a page POST — the no-script path still answers with flash + redirect).
+$useRequest(['id' => $msgR1->getId()], ['transaction' => $txB[4]->getId(), 'value' => '1']);
+$host = $bankHost();
+$host->ignoreAction();
+check('R18c … and the same action as a page POST still answers flash + redirect to the detail', $host->redirectedTo === '/backend/finance/bank-import/detail?id=' . $msgR1->getId()
+    && $db->fetchOne('SELECT state FROM bank_transaction WHERE id = ?', [$txB[4]->getId()]) === 'ignored');
 check('R19 source guards: the trait never persists itself, every write goes through BankImportService; the templates carry no script; the host and its config exist; the seed puts «Zahlungseingänge» under «Aufträge»',
     !str_contains(file_get_contents($package . '/src/Ui/BankImportControllerTrait.php'), '->persist(')
     && array_reduce(glob($package . '/res/view/templates/Backend/BankImportController/*.tpl.php'), fn($ok, $f) => $ok && !preg_match('/<script|\son[a-z]+\s*=/i', file_get_contents($f)), true)

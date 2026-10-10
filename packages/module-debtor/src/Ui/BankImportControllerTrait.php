@@ -3,11 +3,13 @@ namespace Z77\Module\Debtor\Ui;
 
 use Z77\Core\DI,
     Z77\Core\Http\RequestMode,
+    Z77\Core\Http\Response\FetchResponse,
     Z77\Core\Http\Response\HtmlResponse,
     Z77\Core\Http\Response\JsonResponse,
     Z77\Core\Http\Response\RedirectResponse,
     Z77\Module\Debtor\Accounting\AccountingRefusedException,
     Z77\Module\Debtor\Entities\BankMessage,
+    Z77\Module\Debtor\Entities\BankTransaction,
     Z77\Module\Debtor\Entities\TransactionState,
     Z77\Module\Debtor\Services\BankImportService,
     Z77\Module\Debtor\Services\DebtorException,
@@ -15,7 +17,8 @@ use Z77\Core\DI,
     Z77\Shared\Attributes\Csrf,
     Z77\Shared\Money\AmountFormat,
     Z77\Shared\Money\Money,
-    Z77\Shared\Upload\UploadPolicy
+    Z77\Shared\Upload\UploadPolicy,
+    Z77\Core\Services\TemplateRenderer
 ;
 
 /**
@@ -34,10 +37,15 @@ use Z77\Core\DI,
  *     invoice (a link to its detail), what is open on it, the note; per
  *     transaction the small forms «Zuordnen» (a document number),
  *     «Ignorieren» / «Zurücknehmen»; «Verbuchen» for every matched one;
- *   - `book` / `assign` / `ignore` — the POSTs, back to the detail with
- *     the flash.
+ *   - `book` — the POST of «Verbuchen», back to the detail with the flash
+ *     (every row changes — a page is right here);
+ *   - `assign` / `ignore` — ONE row changes (ADR-047 addendum 2026-10-10):
+ *     fetched (`data-fetch-post`), the answer replaces that row
+ *     (`replaceRow('bank-transaction', id)`) and the unbooked bar, with the
+ *     flash; a page POST (no script) goes back to the detail with the flash
+ *     as before.
  *
- * Page forms, no JavaScript (Rule 7). Every write goes through
+ * No JavaScript of its own (Rule 7). Every write goes through
  * {@see BankImportService}.
  */
 trait BankImportControllerTrait
@@ -250,41 +258,110 @@ trait BankImportControllerTrait
 
     /** «Zuordnen»: `transaction` + `number` (the document number) → matched. */
     #[Csrf]
-    protected function assignAction(): RedirectResponse
+    protected function assignAction(): RedirectResponse|FetchResponse
     {
         $message = $this->bankMessageOf();
         if ($message === null || !DI::getRequest()->isPost()) {
             return $this->bankMessageNotFound();
         }
-        $post = DI::getRequest()->getPostParameters();
+        $post = $this->bankRowPost();
         try {
             $transaction = $this->bankImportService()->assign((int) ($post['transaction'] ?? 0), (int) ($post['number'] ?? 0));
-            $this->messageService->pushFlashAfterRedirect('success', 'Transaktion ' . $transaction->getPosition() . ' zugeordnet: ' . $transaction->getInvoice()?->documentName());
-        } catch (DebtorException $e) {
-            $this->messageService->pushFlashAfterRedirect('error', $e->getMessage());
-        }
 
-        return $this->redirect($this->bankImportListBase() . '/detail?id=' . $message->getId(), 303);
+            return $this->bankRowAnswer($message, $transaction, 'Transaktion ' . $transaction->getPosition() . ' zugeordnet: ' . $transaction->getInvoice()?->documentName());
+        } catch (DebtorException $e) {
+            return $this->bankRowRefusal($message, $e->getMessage());
+        }
     }
 
     /** «Ignorieren» (`value` 1) / «Zurücknehmen» (`value` 0) for `transaction`. */
     #[Csrf]
-    protected function ignoreAction(): RedirectResponse
+    protected function ignoreAction(): RedirectResponse|FetchResponse
     {
         $message = $this->bankMessageOf();
         if ($message === null || !DI::getRequest()->isPost()) {
             return $this->bankMessageNotFound();
         }
-        $post = DI::getRequest()->getPostParameters();
+        $post = $this->bankRowPost();
         try {
             $ignore      = (string) ($post['value'] ?? '1') !== '0';
             $transaction = $this->bankImportService()->ignore((int) ($post['transaction'] ?? 0), $ignore, $ignore ? null : 'Zurückgenommen — bitte zuordnen.');
-            $this->messageService->pushFlashAfterRedirect('success', 'Transaktion ' . $transaction->getPosition() . ($ignore ? ' ignoriert.' : ' wieder offen.'));
+
+            return $this->bankRowAnswer($message, $transaction, 'Transaktion ' . $transaction->getPosition() . ($ignore ? ' ignoriert.' : ' wieder offen.'));
         } catch (DebtorException $e) {
-            $this->messageService->pushFlashAfterRedirect('error', $e->getMessage());
+            return $this->bankRowRefusal($message, $e->getMessage());
         }
+    }
+
+    private function bankIsFetch(): bool
+    {
+        $request = DI::getRequest();
+
+        return method_exists($request, 'getMode') && $request->getMode() === RequestMode::Fetch;
+    }
+
+    /** The body of a row action: JSON from `data-fetch-post`, the form fields of a page POST. @return array<string, mixed> */
+    private function bankRowPost(): array
+    {
+        return $this->bankIsFetch() ? DI::getRequest()->getJsonBody() : DI::getRequest()->getPostParameters();
+    }
+
+    /**
+     * A row action went through. Fetched: the row of THIS transaction re-rendered in place
+     * (`replaceRow`, the `data-entity="bank-transaction:<id>"` of `transactionRow`) and the
+     * unbooked bar with its new count — the flash pushed BEFORE `fetch()`, which takes it
+     * along. A page POST: the flash and back to the detail.
+     */
+    private function bankRowAnswer(BankMessage $message, BankTransaction $transaction, string $flash): RedirectResponse|FetchResponse
+    {
+        if (!$this->bankIsFetch()) {
+            $this->messageService->pushFlashAfterRedirect('success', $flash);
+
+            return $this->redirect($this->bankImportListBase() . '/detail?id=' . $message->getId(), 303);
+        }
+        $invoice = $transaction->getInvoice();
+        $open    = $invoice === null ? [] : [$invoice->getId() => $this->bankInvoicingService()->openAmount($invoice)];
+        $csrf    = DI::getCsrfService()->getToken();
+        $row     = $this->bankRenderPartial('transactionRow', [
+            't'           => $transaction,
+            'messageId'   => (int) $message->getId(),
+            'open'        => $open,
+            'states'      => self::bankStateLabels(),
+            'invoiceBase' => '/backend/finance/invoice',
+            'fmt'         => static fn(?Money $m) => AmountFormat::of($m),
+            'csrfToken'   => $csrf,
+            'actionBase'  => $this->bankImportListBase(),
+        ]);
+        $bar = $this->bankRenderPartial('unbookedBar', [
+            'matched'    => (int) $message->countPerState()['matched'],
+            'messageId'  => (int) $message->getId(),
+            'csrfToken'  => $csrf,
+            'actionBase' => $this->bankImportListBase(),
+        ]);
+        $this->messageService->pushFlash('success', $flash);
+
+        return $this->fetch()->setStatus('success')
+            ->replaceRow('bank-transaction', (int) $transaction->getId(), $row)
+            ->addCommand('replace-html', ['target' => '[data-bank-unbooked-slot]', 'html' => $bar]);
+    }
+
+    /** A row action refused (unknown number, already booked …): the error flash — fetched, the page stays as it is. */
+    private function bankRowRefusal(BankMessage $message, string $text): RedirectResponse|FetchResponse
+    {
+        if ($this->bankIsFetch()) {
+            $this->messageService->pushFlash('error', $text);
+
+            return $this->fetch()->setStatus('error');
+        }
+        $this->messageService->pushFlashAfterRedirect('error', $text);
 
         return $this->redirect($this->bankImportListBase() . '/detail?id=' . $message->getId(), 303);
+    }
+
+    /** A partial of this fragment as a string — the HTML a fetch answer carries (the same template the page renders). */
+    private function bankRenderPartial(string $name, array $context): string
+    {
+        return (new TemplateRenderer(self::BANK_NS))->partial('Backend/BankImportController/' . $name, $context);
     }
 
     private function bankMessageOf(): ?BankMessage

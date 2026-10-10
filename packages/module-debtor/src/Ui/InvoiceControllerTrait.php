@@ -2,7 +2,9 @@
 namespace Z77\Module\Debtor\Ui;
 
 use Z77\Core\DI,
+    Z77\Core\Http\WindowOrigin,
     Z77\Core\Http\Response\BytesResponse,
+    Z77\Core\Http\Response\FetchResponse,
     Z77\Core\Http\Response\HtmlResponse,
     Z77\Core\Http\Response\RedirectResponse,
     Z77\Module\Debtor\Entities\DebtorProfile,
@@ -67,9 +69,18 @@ use Z77\Core\DI,
  * or edit of a final document anywhere (plan §1: the correction is a credit
  * note).
  *
- * No JavaScript of its own (Rule 7): pages with plain forms (`#[Csrf]`,
- * the `csrf_token` field), «Weitere Zeilen» is a submit. The using class MUST
- * provide (via its host base): `html()`, `redirect()`, `em()`,
+ * Windows (ADR-047, addendum 2026-10-10): fetched, the detail, the editor
+ * (add / edit / credit note), the payment form and the payment-delete
+ * confirmation are WINDOW contents — the root declares mask + entity, the
+ * form carries `_origin` back, the links inside stay in the window
+ * (`data-window-link`). A save answers {@see invoiceWindowSaved()}: the
+ * detail into the same window + `refresh-region` of the list it was opened
+ * from. Without the script each of them is the page it always was (plain
+ * form, `#[Csrf]`, redirect to the detail) — the fallback.
+ *
+ * No JavaScript of its own (Rule 7): plain forms (`#[Csrf]`, the
+ * `csrf_token` field), «Weitere Zeilen» is a submit. The using class MUST
+ * provide (via its host base): `html()`, `redirect()`, `fetch()`, `em()`,
  * `$layoutManager`, `$messageService`, `$help`.
  */
 trait InvoiceControllerTrait
@@ -111,6 +122,25 @@ trait InvoiceControllerTrait
     private function invoiceIsFetch(): bool
     {
         return ListDefinition::isFetch(DI::getRequest());
+    }
+
+    /**
+     * The answer to a save inside a window (ADR-047, the journal's recipe): the document's
+     * read view into the window the save came from, and — when the window was opened from a
+     * fetch region (the document list `invoice-find-list`, the open-item list
+     * `debtor-find-list`) — that region reloads, because a row in it changed. Other origins
+     * get the window only. The flash is pushed BEFORE `fetch()`, which takes it along.
+     */
+    private function invoiceWindowSaved(int $id, string $origin, string $flash): FetchResponse
+    {
+        $this->messageService->pushFlash('success', $flash);
+        $response = $this->fetch()->setStatus('success')
+            ->addCommand('open-window', ['url' => $this->invoiceListBase() . '/detail?id=' . $id, 'replace' => true]);
+        if (str_starts_with($origin, 'region:')) {
+            $response->addCommand('refresh-region', ['name' => substr($origin, strlen('region:'))]);
+        }
+
+        return $response;
     }
 
     /**
@@ -188,6 +218,7 @@ trait InvoiceControllerTrait
         return $this->invoicePage('detail', [
             'window'       => $this->invoiceIsFetch(),
             'windowWidth'  => '60rem',
+            'origin'       => WindowOrigin::of(DI::getRequest()),
             'document'     => $document,
             'bill'         => QrBill::of($document),
             'creditNotes'  => $isInvoice ? $this->invoices()->creditNotesOf($document) : [],
@@ -237,11 +268,13 @@ trait InvoiceControllerTrait
      * note. The POST goes to `PaymentService::record()` or — with the
      * entity token and the VERSION the form was rendered from —
      * `update()`: posted or amended at once, all or nothing — and back to
-     * the detail. A document that is not settleable, or a payment that is
-     * not the document's, goes back to the detail with the refusal.
+     * the detail (fetched: a window — the detail replaces it and the list it
+     * came from reloads, {@see invoiceWindowSaved()}). A document that is
+     * not settleable, or a payment that is not the document's, goes back to
+     * the detail with the refusal.
      */
     #[Csrf]
-    protected function paymentAction(): HtmlResponse|RedirectResponse
+    protected function paymentAction(): HtmlResponse|RedirectResponse|FetchResponse
     {
         $request  = DI::getRequest();
         $document = $this->settleableDocument();
@@ -276,11 +309,15 @@ trait InvoiceControllerTrait
             try {
                 if ($payment === null) {
                     $recorded = $this->paymentService()->record($draft);
-                    $this->messageService->pushFlashAfterRedirect('success', 'Zahlung erfasst und verbucht: ' . AmountFormat::of($recorded->allocated()) . ' auf ' . $document->documentName());
+                    $text     = 'Zahlung erfasst und verbucht: ' . AmountFormat::of($recorded->allocated()) . ' auf ' . $document->documentName();
                 } else {
                     $recorded = $this->paymentService()->update((int) $payment->getId(), (int) ($post['version'] ?? 0), $draft);
-                    $this->messageService->pushFlashAfterRedirect('success', 'Zahlung geändert und umgebucht: ' . AmountFormat::of($recorded->allocated()) . ' auf ' . $document->documentName());
+                    $text     = 'Zahlung geändert und umgebucht: ' . AmountFormat::of($recorded->allocated()) . ' auf ' . $document->documentName();
                 }
+                if ($this->invoiceIsFetch()) {
+                    return $this->invoiceWindowSaved((int) $document->getId(), WindowOrigin::of($request), $text);
+                }
+                $this->messageService->pushFlashAfterRedirect('success', $text);
 
                 return $this->redirect($this->invoiceListBase() . '/detail?id=' . $document->getId(), 303);
             } catch (DebtorException | \Z77\Module\Debtor\Accounting\AccountingRefusedException $e) {
@@ -291,7 +328,11 @@ trait InvoiceControllerTrait
         return $this->invoicePaymentPage($form, $document, $payment, $open);
     }
 
-    /** «Zahlung löschen …» (`?id=&payment=`): the confirmation page naming the postings that go. */
+    /**
+     * «Zahlung löschen …» (`?id=&payment=`): the confirmation naming the postings that go —
+     * fetched, the content of the payment window it is linked from (`data-window-link`), so
+     * the delete answers into that window; else a page.
+     */
     protected function confirmPaymentDeleteAction(): HtmlResponse|RedirectResponse
     {
         $document = $this->settleableDocument();
@@ -304,15 +345,21 @@ trait InvoiceControllerTrait
         }
 
         return $this->invoicePage('confirmPaymentDelete', [
+            'window'     => $this->invoiceIsFetch(),
+            'origin'     => WindowOrigin::of(DI::getRequest()),
             'document'   => $document,
             'payment'    => $payment,
             'entityCsrf' => DI::getCsrfService()->generateEntityToken('payment', (int) $payment->getId()),
         ]);
     }
 
-    /** The delete itself (POST, `#[Csrf]`, entity token + version): `PaymentService::delete()`, then back to the detail. */
+    /**
+     * The delete itself (POST, `#[Csrf]`, entity token + version): `PaymentService::delete()`,
+     * then back to the detail — fetched (from the window), the detail replaces the window and
+     * the list it came from reloads; a refusal is the error flash, the window stays.
+     */
     #[Csrf]
-    protected function paymentDeleteAction(): RedirectResponse
+    protected function paymentDeleteAction(): RedirectResponse|FetchResponse
     {
         $request  = DI::getRequest();
         $document = $this->settleableDocument();
@@ -332,8 +379,17 @@ trait InvoiceControllerTrait
         try {
             $amount = $payment->allocated();
             $this->paymentService()->delete((int) $payment->getId(), (int) ($post['version'] ?? 0));
-            $this->messageService->pushFlashAfterRedirect('success', 'Zahlung gelöscht, Buchungen entfernt: ' . AmountFormat::of($amount) . ' wieder offen auf ' . $document->documentName());
+            $text = 'Zahlung gelöscht, Buchungen entfernt: ' . AmountFormat::of($amount) . ' wieder offen auf ' . $document->documentName();
+            if ($this->invoiceIsFetch()) {
+                return $this->invoiceWindowSaved((int) $document->getId(), WindowOrigin::of($request), $text);
+            }
+            $this->messageService->pushFlashAfterRedirect('success', $text);
         } catch (DebtorException | \Z77\Module\Debtor\Accounting\AccountingRefusedException $e) {
+            if ($this->invoiceIsFetch()) {
+                $this->messageService->pushFlash('error', $e->getMessage());
+
+                return $this->fetch()->setStatus('error');
+            }
             $this->messageService->pushFlashAfterRedirect('error', $e->getMessage());
         }
 
@@ -384,6 +440,9 @@ trait InvoiceControllerTrait
     private function invoicePaymentPage(PaymentForm $form, Invoice $document, ?Payment $payment, Money $open): HtmlResponse
     {
         return $this->invoicePage('payment', [
+            'window'      => $this->invoiceIsFetch(),
+            'windowWidth' => '52rem',
+            'origin'      => WindowOrigin::of(DI::getRequest()),
             'form'       => $form,
             'document'   => $document,
             'payment'    => $payment,
@@ -395,9 +454,13 @@ trait InvoiceControllerTrait
 
     // ── add / edit / credit note ─────────────────────────────────────────
 
-    /** A new invoice: `?contact=` preselects the party (the link from the debtor list). */
+    /**
+     * A new invoice: `?contact=` preselects the party (the link from the debtor list).
+     * Fetched (the action cell's «+ Rechnung», `data-window-open`): a window; the save
+     * answers {@see invoiceWindowSaved()} — the new document's detail in the same window.
+     */
     #[Csrf]
-    protected function addAction(): HtmlResponse|RedirectResponse
+    protected function addAction(): HtmlResponse|RedirectResponse|FetchResponse
     {
         $request = DI::getRequest();
         $form    = new InvoiceForm(DebtorCurrency::base());
@@ -418,7 +481,11 @@ trait InvoiceControllerTrait
         if ($draft !== null) {
             try {
                 $document = $this->invoicingService()->invoice($draft);
-                $this->messageService->pushFlashAfterRedirect('success', $document->documentName() . ' erstellt (in Fakturierung, nichts verbucht)');
+                $text     = $document->documentName() . ' erstellt (in Fakturierung, nichts verbucht)';
+                if ($this->invoiceIsFetch()) {
+                    return $this->invoiceWindowSaved((int) $document->getId(), WindowOrigin::of($request), $text);
+                }
+                $this->messageService->pushFlashAfterRedirect('success', $text);
 
                 return $this->redirect($this->invoiceListBase() . '/detail?id=' . $document->getId(), 303);
             } catch (DebtorException $e) {
@@ -432,10 +499,12 @@ trait InvoiceControllerTrait
     /**
      * «Neu fakturieren» (`?id=`): a document still in `invoicing`, re-issued
      * under its number with the VERSION the form was rendered from. A final
-     * document goes back to its detail with the refusal.
+     * document goes back to its detail with the refusal. Fetched (from the
+     * detail window, `data-window-link`): the window's content; the save
+     * answers {@see invoiceWindowSaved()}.
      */
     #[Csrf]
-    protected function editAction(): HtmlResponse|RedirectResponse
+    protected function editAction(): HtmlResponse|RedirectResponse|FetchResponse
     {
         $request  = DI::getRequest();
         $id       = (int) $request->getGetParameter('id');
@@ -470,7 +539,11 @@ trait InvoiceControllerTrait
         if ($draft !== null) {
             try {
                 $reissued = $this->invoicingService()->reinvoice($id, $version, $draft);
-                $this->messageService->pushFlashAfterRedirect('success', $reissued->documentName() . ' neu fakturiert (gleiche Nummer, nichts verbucht)');
+                $text     = $reissued->documentName() . ' neu fakturiert (gleiche Nummer, nichts verbucht)';
+                if ($this->invoiceIsFetch()) {
+                    return $this->invoiceWindowSaved($id, WindowOrigin::of($request), $text);
+                }
+                $this->messageService->pushFlashAfterRedirect('success', $text);
 
                 return $this->redirect($this->invoiceListBase() . '/detail?id=' . $id, 303);
             } catch (InvoiceConflictException) {
@@ -487,9 +560,13 @@ trait InvoiceControllerTrait
         return $this->invoiceFormPage($form, $document, $version);
     }
 
-    /** «Gutschrift erstellen» (`?of=`): against a FINAL invoice only (plan §6.2). */
+    /**
+     * «Gutschrift erstellen» (`?of=`): against a FINAL invoice only (plan §6.2). Fetched
+     * (from the invoice's detail window): the window's content; the save answers with the
+     * NEW credit note's detail in that window ({@see invoiceWindowSaved()}).
+     */
     #[Csrf]
-    protected function creditNoteAction(): HtmlResponse|RedirectResponse
+    protected function creditNoteAction(): HtmlResponse|RedirectResponse|FetchResponse
     {
         $request = DI::getRequest();
         $ofId    = (int) $request->getGetParameter('of');
@@ -517,7 +594,11 @@ trait InvoiceControllerTrait
         if ($draft !== null) {
             try {
                 $note = $this->invoicingService()->invoice($draft);
-                $this->messageService->pushFlashAfterRedirect('success', $note->documentName() . ' zu ' . $invoice->documentName() . ' erstellt (in Fakturierung, nichts verbucht)');
+                $text = $note->documentName() . ' zu ' . $invoice->documentName() . ' erstellt (in Fakturierung, nichts verbucht)';
+                if ($this->invoiceIsFetch()) {
+                    return $this->invoiceWindowSaved((int) $note->getId(), WindowOrigin::of($request), $text);
+                }
+                $this->messageService->pushFlashAfterRedirect('success', $text);
 
                 return $this->redirect($this->invoiceListBase() . '/detail?id=' . $note->getId(), 303);
             } catch (DebtorException $e) {
@@ -542,6 +623,10 @@ trait InvoiceControllerTrait
         $this->help->attach('Backend/InvoiceController/form.help', self::INVOICE_NS, ['form' => $form, 'document' => $document], 'Hilfe: ' . ($form->kind === InvoiceKind::CreditNote ? 'Gutschrift' : 'Rechnung'));
 
         return $this->invoicePage('form', [
+            'window'      => $this->invoiceIsFetch(),
+            // Wide enough for the nine-column line row — the window must not scroll sideways.
+            'windowWidth' => '72rem',
+            'origin'      => WindowOrigin::of(DI::getRequest()),
             'form'       => $form,
             'document'   => $document,
             'version'    => $version,

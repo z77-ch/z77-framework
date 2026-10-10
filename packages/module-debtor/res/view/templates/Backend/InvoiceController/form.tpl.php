@@ -1,13 +1,22 @@
 <?php
 /**
  * The document editor (P3 part 3) — a new invoice, «neu fakturieren» of a
- * document in `invoicing`, or a credit note against a final invoice. A PAGE
- * with a plain form, no JavaScript (Rule 7): a fixed number of line rows,
- * «Weitere Zeilen» submits and comes back with more. `csrf_token` is the
- * page-mode field (`#[Csrf]`); an edit also carries the entity token and the
- * VERSION it was rendered from (the optimistic lock of `reinvoice()`).
+ * document in `invoicing`, or a credit note against a final invoice. A
+ * plain form, no JavaScript of its own (Rule 7): a fixed number of line
+ * rows, «Weitere Zeilen» submits and comes back with more. `csrf_token` is
+ * the page-mode field (`#[Csrf]`); an edit also carries the entity token and
+ * the VERSION it was rendered from (the optimistic lock of `reinvoice()`).
  *
- * The action bar (ADR-049) stands first: Speichern · Abbrechen · «N Fehler».
+ * Fetched, a WINDOW (ADR-047, addendum 2026-10-10): the root declares the
+ * mask `invoice-edit` (a credit note: `invoice-credit-note`) and the record,
+ * the title moves into the title bar, the form carries `_origin` back, and
+ * «Abbrechen» returns to the read view inside the window. Without the script
+ * the same markup is the page it always was.
+ *
+ * The action row (ADR-049, revision 2026-10-10) is the shared
+ * `partials/modalActions`, FIRST in the form — directly under the window's
+ * title bar: Erstellen / Neu fakturieren · Abbrechen · «N Fehler»; first in
+ * the document, so Enter saves (not «Weitere Zeilen»).
  * No explanations in the form (ADR-048) — the rules are the help
  * (`form.help`). The pickers are shared building blocks: the tax code
  * (`partials/taxCodeSelect`, module-vat — active codes plus the ones the
@@ -26,6 +35,9 @@
  * @var list<array{number: string, label: string}> $accounts
  * @var string $csrfToken  provided by html()
  * @var string $actionBase
+ * @var bool   $window       fetched as a window (ADR-047)
+ * @var string $origin       where the window came from (WindowOrigin) — travels back as `_origin`
+ * @var string $windowWidth  the window's width, the controller's call
  */
 use Z77\Module\Debtor\Ui\InvoiceForm;
 
@@ -44,25 +56,40 @@ $fieldError = static fn(string $message): string => $message === ''
     ? ''
     : '<small class="be-form__field-error" data-z77-field-error>' . e($message) . '</small>';
 $invalid    = static fn(string $message): string => $message !== '' ? 'true' : 'false';
+
+$window  = !empty($window);
+$winAttr = '';
+if ($window) {
+    // A new invoice has no record yet: mask only. A credit note is a mask of its own on the invoice it credits.
+    $winAttr = ' data-window="' . ($isCredit && !$isEdit ? 'invoice-credit-note' : 'invoice-edit') . '"'
+        . ($isEdit ? ' data-window-entity="invoice:' . (int) $document->getId() . '"' : ($isCredit ? ' data-window-entity="invoice:' . (int) $form->creditNoteOf->getId() . '"' : ''))
+        . ' data-window-title="' . e($title) . '"'
+        . (!empty($windowWidth) ? ' data-window-width="' . e($windowWidth) . '"' : '');
+}
+// Cancel: the read view. Inside a window a new invoice has none — the button closes the window.
+$cancelHref = $window && !$isEdit && !$isCredit ? '' : $cancel;
 ?>
-<div class="be-list">
+<div class="be-list"<?= $winAttr ?>>
     <form method="post" action="<?= e($action) ?>" class="be-list__section" id="invoice-form" autocomplete="off">
         <input type="hidden" name="csrf_token" value="<?= e($csrfToken ?? '') ?>">
+        <?php if ($window): ?><input type="hidden" name="_origin" value="<?= e($origin ?? 'page') ?>"><?php endif; ?>
         <?php if ($isEdit): ?>
         <input type="hidden" name="entity_csrf" value="<?= e($entityCsrf ?? '') ?>">
         <input type="hidden" name="version" value="<?= (int) ($version ?? $document->getVersion()) ?>">
         <?php endif; ?>
 
-        <?php /* The action bar (ADR-049): first in the document, so Enter saves (not «Weitere Zeilen»). */ ?>
-        <div class="z77-form-actions">
-            <button type="submit" class="be-btn be-btn--primary be-btn--sm" name="op" value="save"><?= $isEdit ? 'Neu fakturieren' : 'Erstellen' ?></button>
-            <a class="be-btn be-btn--ghost be-btn--sm" href="<?= e($cancel) ?>">Abbrechen</a>
-            <?= $this->partial('partials/formErrorsLink', ['count' => count($invalidIds), 'target' => $invalidIds[0] ?? ''], 'Z77\\Shared') ?>
-        </div>
+        <?= $this->partial('partials/modalActions', [
+            'submit'      => $isEdit ? 'Neu fakturieren' : 'Erstellen',
+            'submitAttrs' => ['name' => 'op', 'value' => 'save'],
+            'cancelHref'  => $cancelHref,
+            'errors'      => ['count' => count($invalidIds), 'target' => $invalidIds[0] ?? ''],
+        ], 'Z77\\Shared') ?>
 
+        <?php if (!$window): ?>
         <div class="be-list__section-header">
             <h2 class="be-list__section-title"><?= e($title) ?></h2>
         </div>
+        <?php endif; ?>
 
         <?php if ($form->generalErrors() !== []): ?>
         <div class="be-modal__alert be-modal__alert--error">

@@ -4,6 +4,7 @@ namespace Z77\Module\Debtor\Ui;
 use Z77\Core\DI,
     Z77\Core\Http\Response\FetchResponse,
     Z77\Core\Http\Response\HtmlResponse,
+    Z77\Core\Services\TemplateRenderer,
     Z77\Module\Contact\Entities\Contact,
     Z77\Module\Contact\Repositories\ContactRepository,
     Z77\Module\Contact\Services\ContactService,
@@ -203,16 +204,9 @@ trait DebtorProfileControllerTrait
                     $this->profileService()->update($profile, $values);
                 }
 
-                $this->messageService->pushFlashAfterRedirect(
-                    'success',
-                    'Debitor «' . $contact->displayName() . '» ' . ($isNew ? 'angelegt' : 'gespeichert')
-                );
+                $this->messageService->pushFlash('success', 'Debitor «' . $contact->displayName() . '» ' . ($isNew ? 'angelegt' : 'gespeichert'));
 
-                return $this->fetch()
-                    ->setStatus('success')
-                    ->setData(['id' => $profile->getId()])
-                    ->addCommand('close-modal')
-                    ->addCommand('reload');
+                return $this->debtorRowAnswer($profile, $contact)->addCommand('close-modal');
             } catch (InvalidDebtorProfileException $e) {
                 $validator = $e->validator;
                 $draft     = $e->profile;
@@ -259,7 +253,7 @@ trait DebtorProfileControllerTrait
     {
         $id      = (int) DI::getRequest()->getGetParameter('id');
         $profile = $id ? $this->profiles()->find($id) : null;
-        if ($profile === null) {
+        if ($profile === null || $profile->getContact() === null) {
             return $this->fetchError('Debitor nicht gefunden');
         }
 
@@ -270,7 +264,32 @@ trait DebtorProfileControllerTrait
             return $this->fetchError(implode(' ', [...$e->validator->getErrors(), ...array_values($e->validator->getFieldErrors())]));
         }
 
-        return $this->fetch()->setStatus('success')->addCommand('reload');
+        return $this->debtorRowAnswer($profile, $profile->getContact());
+    }
+
+    // ── in-place answer ──────────────────────────────────────────────────
+
+    /**
+     * A save or a switch that changed one debtor answers with its CONTACT's row, not with
+     * `reload` (ADR-047 addendum 2026-10-10): `_row` — the partial the list renders — replaces
+     * the node `debtorContact:<id>` (`replaceRow`). A new profile replaces the same row (it
+     * was «kein Debitor» before) and core.js wires its new switch and ⋮. A contact not shown
+     * in the current list (search, limit) has no row — nothing to replace, the flash says it.
+     * Push the flash BEFORE calling: `fetch()` takes the flashes pushed so far.
+     */
+    private function debtorRowAnswer(DebtorProfile $profile, Contact $contact): FetchResponse
+    {
+        $html = (new TemplateRenderer(self::DEBTOR_NS))->partial('Backend/DebtorProfileController/_row', [
+            'contact'     => $contact,
+            'profile'     => $profile,
+            'termsByCode' => self::termsByCode($this->debtorTerms()->allInOrder()),
+            'actionBase'  => $this->debtorListBase(),
+        ]);
+
+        return $this->fetch()
+            ->setStatus('success')
+            ->setData(['id' => $profile->getId()])
+            ->replaceRow('debtorContact', (int) $contact->getId(), $html);
     }
 
     // ── selects ──────────────────────────────────────────────────────────

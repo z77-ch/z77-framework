@@ -10,8 +10,15 @@
  * bookkeeping is here, the credit notes and the open amount.
  *
  * Offers «PDF» (the document rendered on request, `pdf` action, a new tab),
- * «Neu fakturieren» while `invoicing`, «Gutschrift erstellen …» on a final
- * invoice — nothing else on a final credit note.
+ * «Zahlung erfassen …» while something is open, «Neu fakturieren» while
+ * `invoicing`, «Gutschrift erstellen …» on a final invoice — nothing else on
+ * a final credit note. They form the action row (`.z77-form-actions` through
+ * the shared `partials/modalActions`, ADR-049 revision 2026-10-10) under the
+ * title; every link but the PDF is a `data-window-link` (ADR-047 addendum
+ * 2026-10-10): inside the window it loads the editor / the payment form
+ * into THIS window, on a page it is a plain link. The links to other
+ * documents (credit notes, the credited invoice, a fee) and «ändern» of a
+ * payment stay in the window the same way.
  *
  * @var \Z77\Module\Debtor\Entities\Invoice $document  lines loaded
  * @var \Z77\Module\Debtor\Invoicing\QrBill $bill
@@ -25,6 +32,7 @@
  * @var string $actionBase
  * @var bool   $window
  * @var string $windowWidth
+ * @var string $origin  where the window came from (WindowOrigin) — the links inside keep it (core.js)
  */
 use Z77\Module\Vat\Entities\TaxRate;
 use Z77\Module\Debtor\Services\Iban;
@@ -39,9 +47,22 @@ $payment    = $document->getPayment();
 $state      = $document->isFinal() ? 'final' : 'invoicing';
 $row        = static fn(string $label, string $html): string => '<div class="be-list__item"><div class="be-list__row"><span class="be-list__cell be-list__cell--muted">' . e($label) . '</span><span class="be-list__cell be-list__cell--wrap">' . $html . '</span></div></div>';
 $period     = $document->getServiceFrom()->format('d.m.Y') . ($document->getServiceTo() !== null ? ' – ' . $document->getServiceTo()->format('d.m.Y') : '');
+/** A link that stays in the window (ADR-047): `data-window-link`; on a page a plain link. */
+$winLink    = static fn(string $href, string $label, string $class = 'be-btn be-btn--ghost', string $title = ''): string
+    => '<a' . ($class !== '' ? ' class="' . e($class) . '"' : '') . ' href="' . e($href) . '" data-window-link' . ($title !== '' ? ' title="' . e($title) . '"' : '') . '>' . e($label) . '</a>';
+$actions    = '<a class="be-btn be-btn--ghost" href="' . e($actionBase . '/pdf?id=' . (int) $document->getId()) . '" target="_blank" rel="noopener" title="Als PDF öffnen (neuer Tab)">PDF</a>';
+if ($document->isFinal() && !$document->isCreditNote() && $openAmount !== null && !$openAmount->isZero()) {
+    $actions .= $winLink($actionBase . '/payment?id=' . (int) $document->getId(), 'Zahlung erfassen …');
+}
+if (!$document->isFinal()) {
+    $actions .= $winLink($actionBase . '/edit?id=' . (int) $document->getId(), 'Neu fakturieren …');
+} elseif (!$document->isCreditNote()) {
+    $actions .= $winLink($actionBase . '/credit-note?of=' . (int) $document->getId(), 'Gutschrift erstellen …');
+}
 ?>
 <div class="be-list"<?= $winAttr ?>>
     <div class="be-list__section">
+        <?= $this->partial('partials/modalActions', ['submit' => '', 'cancel' => '', 'extra' => $actions], 'Z77\\Shared') ?>
         <div class="be-list__section-header">
             <h2 class="be-list__section-title">
                 <?= e($document->documentName()) ?>
@@ -50,23 +71,12 @@ $period     = $document->getServiceFrom()->format('d.m.Y') . ($document->getServ
             <span class="badge <?= $state === 'final' ? 'badge--success' : 'badge--info' ?>" title="<?= e($states[$state]) ?>"><?= $state === 'final' ? 'definitiv' : 'in Fakturierung' ?></span>
         </div>
 
-        <nav class="be-list__toggles" aria-label="Aktionen">
-            <a class="be-btn be-btn--ghost be-btn--sm" href="<?= e($actionBase . '/pdf?id=' . (int) $document->getId()) ?>" target="_blank" rel="noopener" title="Als PDF öffnen (neuer Tab)">PDF</a>
-            <?php if ($document->isFinal() && !$document->isCreditNote() && $openAmount !== null && !$openAmount->isZero()): ?>
-            <a class="be-btn be-btn--ghost be-btn--sm" href="<?= e($actionBase . '/payment?id=' . (int) $document->getId()) ?>">Zahlung erfassen …</a>
-            <?php endif; ?>
-            <?php if (!$document->isFinal()): ?>
-            <a class="be-btn be-btn--ghost be-btn--sm" href="<?= e($actionBase . '/edit?id=' . (int) $document->getId()) ?>">Neu fakturieren …</a>
-            <?php elseif (!$document->isCreditNote()): ?>
-            <a class="be-btn be-btn--ghost be-btn--sm" href="<?= e($actionBase . '/credit-note?of=' . (int) $document->getId()) ?>">Gutschrift erstellen …</a>
-            <?php endif; ?>
-        </nav>
 
         <div class="be-list__table" style="--be-list-cols: 11rem minmax(12rem, 1fr)">
             <?= raw($row('Adresse', implode('<br>', array_map('e', $document->getAddress()->lines())))) ?>
             <?= raw($row('Leistung', e($period))) ?>
             <?php if ($document->isCreditNote()): ?>
-            <?= raw($row('Gutschrift zu', '<a href="' . e($actionBase . '/detail?id=' . (int) $document->getCreditNoteOf()->getId()) . '">' . e($document->getCreditNoteOf()->documentName()) . '</a>')) ?>
+            <?= raw($row('Gutschrift zu', $winLink($actionBase . '/detail?id=' . (int) $document->getCreditNoteOf()->getId(), $document->getCreditNoteOf()->documentName(), ''))) ?>
             <?php else: ?>
             <?= raw($row('Fällig', e($document->getDueDate()->format('d.m.Y')) . ($document->getTermsText() !== null ? ' · ' . e($document->getTermsText()) : ''))) ?>
             <?php endif; ?>
@@ -78,23 +88,23 @@ $period     = $document->getServiceFrom()->format('d.m.Y') . ($document->getServ
             <?= raw($row('Buchung', 'keine (Buchhaltung ausserhalb oder nichts zu buchen)')) ?>
             <?php endif; ?>
             <?php if ($allocations !== []): ?>
-            <?= raw($row('Zahlungen', implode('<br>', array_map(static function ($a) use ($fmt, $actionBase, $document): string {
+            <?= raw($row('Zahlungen', implode('<br>', array_map(static function ($a) use ($fmt, $actionBase, $document, $winLink): string {
                 $p = $a->getPayment();
                 return e($p->getDate()->format('d.m.Y') . ' · ' . $a->kind()->label() . ' ' . $fmt($a->getAmount()))
                     . ($a->kind()->value === 'payment' && $p->getAccountNumber() !== '' ? ' <small class="be-list__cell--muted">· Konto ' . e($p->getAccountNumber()) . '</small>' : '')
                     . ($a->getLedgerEntryRef() !== null ? ' <small class="be-list__cell--muted">· Buchung ' . e($a->getLedgerEntryRef()) . '</small>' : '')
                     . ($p->getNote() !== null ? ' <small class="be-list__cell--muted">· ' . e($p->getNote()) . '</small>' : '')
-                    . ' <a class="be-list__cell--muted" href="' . e($actionBase . '/payment?id=' . (int) $document->getId() . '&payment=' . (int) $p->getId()) . '" title="Zahlung ändern oder löschen">ändern</a>';
+                    . ' ' . $winLink($actionBase . '/payment?id=' . (int) $document->getId() . '&payment=' . (int) $p->getId(), 'ändern', 'be-list__cell--muted', 'Zahlung ändern oder löschen');
             }, $allocations)))) ?>
             <?php endif; ?>
             <?php if ($openAmount !== null): ?>
             <?= raw($row('Offen', $openAmount->isZero() ? '<span class="badge badge--success">bezahlt</span>' : e($fmt($openAmount)))) ?>
             <?php endif; ?>
             <?php if ($notices !== []): ?>
-            <?= raw($row('Mahnungen', implode('<br>', array_map(static function ($n) use ($fmt, $actionBase): string {
+            <?= raw($row('Mahnungen', implode('<br>', array_map(static function ($n) use ($fmt, $actionBase, $winLink): string {
                 $fee = $n->getFeeInvoice();
                 return e($n->getRun()->getRunDate()->format('d.m.Y') . ' · ' . $n->getLevelCode() . ' · offen damals ' . $fmt($n->getOpenAmount()))
-                    . ($fee !== null ? ' <small class="be-list__cell--muted">· <a href="' . e($actionBase . '/detail?id=' . (int) $fee->getId()) . '">' . e($fee->documentName()) . '</a> ' . e($fmt($fee->getGrossTotal())) . '</small>' : '')
+                    . ($fee !== null ? ' <small class="be-list__cell--muted">· ' . $winLink($actionBase . '/detail?id=' . (int) $fee->getId(), $fee->documentName(), '') . ' ' . e($fmt($fee->getGrossTotal())) . '</small>' : '')
                     . ' <a class="be-list__cell--muted" href="/backend/finance/dunning/notice-pdf?id=' . (int) $n->getId() . '" target="_blank" rel="noopener">PDF</a>';
             }, $notices)))) ?>
             <?php endif; ?>
@@ -102,7 +112,7 @@ $period     = $document->getServiceFrom()->format('d.m.Y') . ($document->getServ
             <?= raw($row('Mahngebühr zu', 'Rechnung ' . e($feeOfNumber) . ' <small class="be-list__cell--muted">· Stufe ' . e($feeLevel) . '</small>')) ?>
             <?php endif; ?>
             <?php if ($creditNotes !== []): ?>
-            <?= raw($row('Gutschriften', implode(', ', array_map(fn($n) => '<a href="' . e($actionBase . '/detail?id=' . (int) $n->getId()) . '">' . e($n->documentName()) . '</a> ' . e($fmt($n->getGrossTotal())) . ($n->isFinal() ? '' : ' (in Fakturierung)'), $creditNotes)))) ?>
+            <?= raw($row('Gutschriften', implode(', ', array_map(fn($n) => $winLink($actionBase . '/detail?id=' . (int) $n->getId(), $n->documentName(), '') . ' ' . e($fmt($n->getGrossTotal())) . ($n->isFinal() ? '' : ' (in Fakturierung)'), $creditNotes)))) ?>
             <?php endif; ?>
             <?= raw($row('Erstellt', e($document->getCreatedAt()->format('d.m.Y H:i') . ' von ' . $document->getCreatedBy()) . ($document->getChangedAt() !== null ? ' · zuletzt ' . e($document->getChangedAt()->format('d.m.Y H:i') . ' von ' . $document->getChangedBy()) : ''))) ?>
         </div>

@@ -19,6 +19,10 @@
  * so a wrong account is found here and not when an invoice is posted. They
  * are edited on the mandator screen — the panel only shows them.
  *
+ * A contact row is `_row` — the same partial a save or a switch answers
+ * with in place (`replaceRow('debtorContact', …)`, ADR-047 addendum
+ * 2026-10-10).
+ *
  * Styling: the shared backend list/tree classes only.
  *
  * @var list<\Z77\Module\Contact\Entities\Contact> $contacts
@@ -84,58 +88,12 @@ $shown      = count($contacts);
             <p class="be-list__empty"><?= $query === '' ? 'Keine Kontakte vorhanden.' : 'Kein Kontakt passt zu «' . e($query) . '».' ?></p>
             <?php endif; ?>
             <?php foreach ($contacts as $contact): ?>
-            <?php $profile = $profilesByContact[$contact->getId()] ?? null; ?>
-            <div class="be-tree__node<?= $profile === null || $profile->isActive() ? '' : ' be-tree__node--inactive' ?>" style="--node-depth:0" data-contact-id="<?= e((string) $contact->getId()) ?>">
-                <div class="be-tree__row">
-                    <span class="be-tree__toggle" aria-hidden="true"></span>
-
-                    <?php if ($profile !== null): ?>
-                    <label class="be-switch be-switch--sm be-tree__switch"
-                           title="<?= $profile->isActive() ? 'Aktiv — wird für neue Rechnungen angeboten' : 'Inaktiv — nur noch für bestehende Belege' ?>">
-                        <input type="checkbox" class="be-switch__input"
-                               data-fetch-toggle="<?= e($actionBase) ?>/toggle-active?id=<?= e((string) $profile->getId()) ?>"<?= $profile->isActive() ? ' checked' : '' ?>>
-                        <span class="be-switch__track"><span class="be-switch__thumb"></span></span>
-                    </label>
-                    <button type="button" class="be-tree__menu" title="Debitor bearbeiten"
-                            data-fetch-get="<?= e($actionBase) ?>/edit?id=<?= e((string) $profile->getId()) ?>">⋮</button>
-                    <?php else: ?>
-                    <?php /* No profile yet: «+ Debitor» in the action cell offers the active contacts without one
-                             (2026-10-08) — the row carries no button of its own. An inactive contact gets no
-                             debtor (ADR-043/19 on the party); the server refuses a hand-built URL. */ ?>
-                    <span class="be-tree__switch" aria-hidden="true"></span>
-                    <span class="be-tree__menu" aria-hidden="true"></span>
-                    <?php endif; ?>
-
-                    <span class="be-tree__name" data-field="name">
-                        <?php if ($profile !== null): ?>
-                        <small class="be-list__cell--muted" data-field="customer-number" title="Kundennummer — vergeben beim Anlegen, steht auf der QR-Referenz"><?= e((string) $profile->getCustomerNumber()) ?> ·</small>
-                        <?php endif; ?>
-                        <?= e($contact->displayName()) ?>
-                        <small class="be-list__cell--muted">· <?= e(mb_strtoupper($contact->getLanguage())) ?></small>
-                    </span>
-
-                    <span class="be-tree__url" data-field="terms">
-                        <?php if ($profile === null): ?>
-                        <span class="be-list__cell--muted">kein Debitor</span>
-                        <?php else: ?>
-                        <?php $terms = $termsByCode[$profile->getPaymentTermsCode()] ?? null; ?>
-                        <?= e($terms?->getLabel() ?? $profile->getPaymentTermsCode()) ?>
-                        <?php endif; ?>
-                    </span>
-
-                    <span class="be-tree__route" data-field="state">
-                        <?php if ($profile !== null && $profile->hasDunningBlock()): ?>
-                        <span class="badge badge--warning" title="Kein Mahnlauf erfasst diesen Debitor">Mahnsperre</span>
-                        <?php endif; ?>
-                        <?php if ($profile !== null && !$profile->isActive()): ?>
-                        <span class="badge badge--muted">inaktiv</span>
-                        <?php endif; ?>
-                        <?php if (!$contact->isActive()): ?>
-                        <span class="badge badge--muted">Kontakt inaktiv</span>
-                        <?php endif; ?>
-                    </span>
-                </div>
-            </div>
+            <?= $this->partial('Backend/DebtorProfileController/_row', [
+                'contact'     => $contact,
+                'profile'     => $profilesByContact[$contact->getId()] ?? null,
+                'termsByCode' => $termsByCode,
+                'actionBase'  => $actionBase,
+            ], 'Z77\\Module\\Debtor') ?>
             <?php endforeach; ?>
         </div>
     </div>

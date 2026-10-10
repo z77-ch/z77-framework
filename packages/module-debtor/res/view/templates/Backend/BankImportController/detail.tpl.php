@@ -1,13 +1,18 @@
 <?php
 /**
  * One CAMT.054 message (P4 part 2): its transactions with state, the
- * matched invoice (a link to its detail) and what is still open on it,
- * the remainder of an overpayment, the note — and the actions: «Zuordnen»
- * (a document number) and «Ignorieren» / «Zurücknehmen» per transaction
- * that is not booked, «Verbuchen» for every matched one — at the TOP, with
- * the notice «n zugeordnet · noch nicht verbucht» and as the green confirm
- * (`.be-btn--confirm`, it writes; 2026-10-08). Page forms, no
- * JavaScript (Rule 7); every POST carries `csrf_token` (`#[Csrf]`).
+ * matched invoice (a link to its detail, a window) and what is still open
+ * on it, the remainder of an overpayment, the note — and the actions:
+ * «Zuordnen» (a document number) and «Ignorieren» / «Zurücknehmen» per
+ * transaction that is not booked, «Verbuchen» for every matched one — at
+ * the TOP, with the notice «n zugeordnet · noch nicht verbucht» and as the
+ * green confirm (`.be-btn--confirm`, it writes; 2026-10-08).
+ *
+ * The row and the bar are partials (`transactionRow`, `unbookedBar`): a row
+ * action is a fetch POST that answers with exactly these two in place
+ * (ADR-047 addendum 2026-10-10) — one row changes, nothing reloads. Without
+ * the script the forms are page POSTs as before; every POST carries
+ * `csrf_token` (`#[Csrf]`). No JavaScript of its own (Rule 7).
  *
  * @var \Z77\Module\Debtor\Entities\BankMessage $message
  * @var array<int, \Z77\Shared\Money\Money> $open  invoice id → open amount now
@@ -19,31 +24,23 @@
  * @var string $actionBase
  */
 $actionBase = $actionBase ?? '/backend/finance/bank-import';
-$detail     = $actionBase . '/detail?id=' . (int) $message->getId();
-$badge      = static fn(string $state): string => match ($state) {
-    'booked'    => 'badge--success',
-    'matched'   => 'badge--info',
-    'unmatched' => 'badge--warning',
-    default     => 'badge--muted',
-};
+$rowContext = [
+    'messageId'   => (int) $message->getId(),
+    'open'        => $open,
+    'states'      => $states,
+    'invoiceBase' => $invoiceBase,
+    'fmt'         => $fmt,
+    'csrfToken'   => $csrfToken ?? '',
+    'actionBase'  => $actionBase,
+];
 ?>
 <div class="be-list">
-    <?php if ($counts['matched'] > 0): ?>
-    <?php /* The step the office missed in the live test (2026-10-08): matching is not booking. The bar
-             stands at the TOP and stays there while the transactions scroll (`.z77-form-actions` is
-             sticky); «Verbuchen» WRITES payments and journal entries → the green confirm. */ ?>
-    <div class="z77-form-actions" data-bank-unbooked="<?= (int) $counts['matched'] ?>">
-        <strong><?= (int) $counts['matched'] ?> zugeordnet · noch nicht verbucht</strong>
-        <form method="post" action="<?= e($actionBase) ?>/book?id=<?= (int) $message->getId() ?>" style="display: inline">
-            <input type="hidden" name="csrf_token" value="<?= e($csrfToken ?? '') ?>">
-            <button type="submit" class="be-btn be-btn--confirm be-btn--sm">
-                <svg class="be-icon" width="14" height="14" aria-hidden="true"><use href="#icon-check"/></svg>
-                <span class="be-btn__label">Verbuchen</span>
-            </button>
-        </form>
-        <small class="be-list__cell--muted">erst damit entstehen die Zahlungen auf den Rechnungen</small>
-    </div>
-    <?php endif; ?>
+    <?= $this->partial('Backend/BankImportController/unbookedBar', [
+        'matched'    => (int) $counts['matched'],
+        'messageId'  => (int) $message->getId(),
+        'csrfToken'  => $csrfToken ?? '',
+        'actionBase' => $actionBase,
+    ], 'Z77\\Module\\Debtor') ?>
     <div class="be-list__section">
         <div class="be-list__section-header">
             <h2 class="be-list__section-title">
@@ -63,48 +60,8 @@ $badge      = static fn(string $state): string => match ($state) {
                 <span class="be-list__col">Status</span>
                 <span class="be-list__col">Hinweis · Aktion</span>
             </div>
-            <?php foreach ($message->getTransactions() as $t): $state = $t->state()->value; $invoice = $t->getInvoice(); ?>
-            <div class="be-list__item" data-bank-transaction="<?= (int) $t->getId() ?>" data-state="<?= e($state) ?>">
-                <div class="be-list__row">
-                    <span class="be-list__cell be-list__cell--num"><?= (int) $t->getPosition() ?></span>
-                    <span class="be-list__cell"><?= e($t->getValueDate()->format('d.m.Y')) ?></span>
-                    <span class="be-list__cell be-list__cell--num"><?= e($t->getCurrency()) ?> <?= e($fmt($t->getAmount())) ?></span>
-                    <span class="be-list__cell be-list__cell--wrap">
-                        <?= e($t->getDebtorName() !== '' ? $t->getDebtorName() : '–') ?><?= $t->getDebtorCity() !== '' ? ', ' . e($t->getDebtorCity()) : '' ?>
-                        <br><small class="be-list__cell--muted"><?= e($t->getReferenceType() !== '' ? $t->getReferenceType() : '–') ?><?= $t->getReference() !== '' ? ' ' . e($t->getReference()) : '' ?><?= $t->getRemittance() !== '' ? ' · ' . e($t->getRemittance()) : '' ?></small>
-                    </span>
-                    <span class="be-list__cell be-list__cell--wrap">
-                        <?php if ($invoice !== null): ?>
-                        <a href="<?= e($invoiceBase) ?>/detail?id=<?= (int) $invoice->getId() ?>"><?= e($invoice->documentName()) ?></a>
-                        <small class="be-list__cell--muted">· <?= e($invoice->getAddress()->getName()) ?> · offen <?= e($fmt($open[$invoice->getId()] ?? null)) ?></small>
-                        <?php if ($t->getRemainder()->isPositive()): ?>
-                        <br><span class="badge badge--warning">Überzahlung <?= e($fmt($t->getRemainder())) ?></span>
-                        <?php endif; ?>
-                        <?php else: ?>
-                        <span class="be-list__cell--muted">–</span>
-                        <?php endif; ?>
-                    </span>
-                    <span class="be-list__cell"><span class="badge <?= $badge($state) ?>"><?= e($states[$state] ?? $state) ?></span></span>
-                    <span class="be-list__cell be-list__cell--wrap">
-                        <?php if ($t->getNote() !== null): ?><small><?= e($t->getNote()) ?></small><br><?php endif; ?>
-                        <?php if ($t->getPayment() !== null): ?><small class="be-list__cell--muted">Zahlung #<?= (int) $t->getPayment()->getId() ?></small><?php endif; ?>
-                        <?php if ($state !== 'booked'): ?>
-                        <form method="post" action="<?= e($actionBase) ?>/assign?id=<?= (int) $message->getId() ?>" style="display: inline">
-                            <input type="hidden" name="csrf_token" value="<?= e($csrfToken ?? '') ?>">
-                            <input type="hidden" name="transaction" value="<?= (int) $t->getId() ?>">
-                            <input class="be-input be-input--sm" type="text" name="number" inputmode="numeric" placeholder="Rechnung Nr." aria-label="Rechnungsnummer" style="width: 7rem">
-                            <button type="submit" class="be-btn be-btn--ghost be-btn--sm">Zuordnen</button>
-                        </form>
-                        <form method="post" action="<?= e($actionBase) ?>/ignore?id=<?= (int) $message->getId() ?>" style="display: inline">
-                            <input type="hidden" name="csrf_token" value="<?= e($csrfToken ?? '') ?>">
-                            <input type="hidden" name="transaction" value="<?= (int) $t->getId() ?>">
-                            <input type="hidden" name="value" value="<?= $state === 'ignored' ? '0' : '1' ?>">
-                            <button type="submit" class="be-btn be-btn--ghost be-btn--sm"><?= $state === 'ignored' ? 'Zurücknehmen' : 'Ignorieren' ?></button>
-                        </form>
-                        <?php endif; ?>
-                    </span>
-                </div>
-            </div>
+            <?php foreach ($message->getTransactions() as $t): ?>
+            <?= $this->partial('Backend/BankImportController/transactionRow', ['t' => $t] + $rowContext, 'Z77\\Module\\Debtor') ?>
             <?php endforeach; ?>
         </div>
         <p class="be-form__hint">Verbuchen legt je zugeordnete Transaktion eine Zahlung auf der Rechnung an (Valuta, Konto des Zahlungsziels). Mehr als offen: der Rest bleibt als Überzahlung stehen. Bereits beglichen: nichts gebucht, die Transaktion wird wieder offen.</p>

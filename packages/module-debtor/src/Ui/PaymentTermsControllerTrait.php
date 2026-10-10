@@ -4,6 +4,7 @@ namespace Z77\Module\Debtor\Ui;
 use Z77\Core\DI,
     Z77\Core\Http\Response\FetchResponse,
     Z77\Core\Http\Response\HtmlResponse,
+    Z77\Core\Services\TemplateRenderer,
     Z77\Module\Debtor\Entities\DebtorProfile,
     Z77\Module\Debtor\Entities\PaymentTerms,
     Z77\Module\Debtor\Repositories\DebtorProfileRepository,
@@ -151,16 +152,9 @@ trait PaymentTermsControllerTrait
                 try {
                     $this->debtorMasterData()->saveTerms($terms);
 
-                    $this->messageService->pushFlashAfterRedirect(
-                        'success',
-                        'Zahlungskonditionen «' . $terms->getLabel() . '» ' . ($isNew ? 'angelegt' : 'gespeichert')
-                    );
+                    $this->messageService->pushFlash('success', 'Zahlungskonditionen «' . $terms->getLabel() . '» ' . ($isNew ? 'angelegt' : 'gespeichert'));
 
-                    return $this->fetch()
-                        ->setStatus('success')
-                        ->setData(['id' => $terms->getId()])
-                        ->addCommand('close-modal')
-                        ->addCommand('reload');
+                    return $this->paymentTermsRowAnswer($terms, $isNew)->addCommand('close-modal');
                 } catch (MasterDataCodeChangedException) {
                     return $this->fetchError('Der Code ist nach dem Anlegen fix — für andere Konditionen einen neuen Code anlegen.');
                 } catch (InvalidMasterDataException $e) {
@@ -209,7 +203,34 @@ trait PaymentTermsControllerTrait
             return $this->fetchError($e->getMessage());
         }
 
-        return $this->fetch()->setStatus('success')->addCommand('reload');
+        return $this->paymentTermsRowAnswer($terms);
+    }
+
+    // ── in-place answer ──────────────────────────────────────────────────
+
+    /**
+     * A save or a switch that changed one terms row answers with that row, not with `reload`
+     * (ADR-047 addendum 2026-10-10): the row re-rendered through `_row` — the partial the list
+     * renders — replaces its node (`replaceRow`), a NEW row is appended to the list
+     * (`insertRow`, the empty-list sentence goes). core.js wires the switch and the ⋮ of the
+     * inserted HTML. Push the flash BEFORE calling: `fetch()` takes the flashes pushed so far.
+     */
+    private function paymentTermsRowAnswer(PaymentTerms $terms, bool $isNew = false): FetchResponse
+    {
+        $html = (new TemplateRenderer(self::PAYMENT_TERMS_NS))->partial('Backend/PaymentTermsController/_row', [
+            'row'        => $terms,
+            'count'      => $this->debtorProfiles()->countByPaymentTermsCode($terms->getCode()),
+            'languages'  => $this->documentLanguages(),
+            'actionBase' => $this->paymentTermsListBase(),
+        ]);
+        $response = $this->fetch()->setStatus('success')->setData(['id' => $terms->getId()]);
+        if (!$isNew) {
+            return $response->replaceRow('paymentTerms', (int) $terms->getId(), $html);
+        }
+
+        return $response
+            ->addCommand('remove-element', ['target' => FetchResponse::listTarget('paymentTerms') . ' > .be-list__empty'])
+            ->insertRow('paymentTerms', $html);
     }
 
     // ── posted structures ────────────────────────────────────────────────

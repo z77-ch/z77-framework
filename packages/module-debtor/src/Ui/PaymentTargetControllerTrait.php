@@ -4,6 +4,7 @@ namespace Z77\Module\Debtor\Ui;
 use Z77\Core\DI,
     Z77\Core\Http\Response\FetchResponse,
     Z77\Core\Http\Response\HtmlResponse,
+    Z77\Core\Services\TemplateRenderer,
     Z77\Module\Debtor\Entities\PaymentTarget,
     Z77\Module\Debtor\Repositories\PaymentTargetRepository,
     Z77\Module\Debtor\Services\Creditor,
@@ -133,16 +134,9 @@ trait PaymentTargetControllerTrait
             try {
                 $this->targetMasterData()->saveTarget($target);
 
-                $this->messageService->pushFlashAfterRedirect(
-                    'success',
-                    'Zahlungsziel «' . $target->getLabel() . '» ' . ($isNew ? 'angelegt' : 'gespeichert')
-                );
+                $this->messageService->pushFlash('success', 'Zahlungsziel «' . $target->getLabel() . '» ' . ($isNew ? 'angelegt' : 'gespeichert'));
 
-                return $this->fetch()
-                    ->setStatus('success')
-                    ->setData(['id' => $target->getId()])
-                    ->addCommand('close-modal')
-                    ->addCommand('reload');
+                return $this->paymentTargetRowAnswer($target, $isNew)->addCommand('close-modal');
             } catch (MasterDataCodeChangedException) {
                 return $this->fetchError('Der Code ist nach dem Anlegen fix — für ein anderes Konto ein neues Zahlungsziel anlegen.');
             } catch (InvalidMasterDataException $e) {
@@ -185,6 +179,33 @@ trait PaymentTargetControllerTrait
             return $this->fetchError($e->getMessage());
         }
 
-        return $this->fetch()->setStatus('success')->addCommand('reload');
+        return $this->paymentTargetRowAnswer($target);
+    }
+
+    // ── in-place answer ──────────────────────────────────────────────────
+
+    /**
+     * A save or a switch that changed one target answers with that row, not with `reload`
+     * (ADR-047 addendum 2026-10-10): the row re-rendered through `_row` — the partial the list
+     * renders, with the account check and the effective creditor block — replaces its node
+     * (`replaceRow`); a NEW target is appended (`insertRow`, the empty-list sentence goes).
+     * core.js wires the switch and the ⋮ of the inserted HTML. Push the flash BEFORE calling.
+     */
+    private function paymentTargetRowAnswer(PaymentTarget $target, bool $isNew = false): FetchResponse
+    {
+        $html = (new TemplateRenderer(self::PAYMENT_TARGET_NS))->partial('Backend/PaymentTargetController/_row', [
+            'target'     => $target,
+            'postable'   => (new LedgerAccountCheck($this->em()))->isPostable($target->getAccountNumber()),
+            'creditor'   => Creditor::of($target, Creditor::mandator($this->em())),
+            'actionBase' => $this->paymentTargetListBase(),
+        ]);
+        $response = $this->fetch()->setStatus('success')->setData(['id' => $target->getId()]);
+        if (!$isNew) {
+            return $response->replaceRow('paymentTarget', (int) $target->getId(), $html);
+        }
+
+        return $response
+            ->addCommand('remove-element', ['target' => FetchResponse::listTarget('paymentTarget') . ' > .be-list__empty'])
+            ->insertRow('paymentTarget', $html);
     }
 }

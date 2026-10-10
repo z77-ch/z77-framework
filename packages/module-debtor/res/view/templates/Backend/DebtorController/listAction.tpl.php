@@ -13,7 +13,9 @@
  *   - the state icon starts every row and opens the document detail as a
  *     WINDOW (ADR-047, `data-window-open`), the href stays for a ctrl-click;
  *   - every searchable cell is a `<label for>` of its column's search field;
- *   - «Zahlung» on an open row opens the document screen's payment form;
+ *   - «Zahlung» on an open row opens the document screen's payment form as a
+ *     WINDOW (ADR-047 addendum 2026-10-10); its save reloads this region
+ *     (origin `region:debtor-find-list`) and shows the detail in the window;
  *   - the whole list is a FETCH REGION: sort / page / search reload only
  *     this part.
  *
@@ -88,7 +90,7 @@ $view         = $state->extra('view');
                         <label class="be-list__cell" for="<?= e($definition->inputId('f_due')) ?>" data-field="due"><?= e($item->dueDate->format('d.m.Y')) ?></label>
                         <span class="be-list__cell">
                             <?php if (!$item->isSettled()): ?>
-                            <a class="be-btn be-btn--ghost be-btn--sm" href="<?= e($documentBase . '/payment?id=' . $item->id) ?>" title="Zahlung zu <?= e($item->documentName()) ?> erfassen">Zahlung</a>
+                            <a class="be-btn be-btn--ghost be-btn--sm" href="<?= e($documentBase . '/payment?id=' . $item->id) ?>" data-window-open="<?= e($documentBase . '/payment?id=' . $item->id) ?>" title="Zahlung zu <?= e($item->documentName()) ?> erfassen">Zahlung</a>
                             <?php endif; ?>
                         </span>
                     </div>
