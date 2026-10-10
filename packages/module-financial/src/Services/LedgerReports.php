@@ -108,9 +108,10 @@ final class LedgerReports
 
     /**
      * One page of an account's statement. The account is any account of the
-     * chart — a group simply has no lines.
+     * chart — a group simply has no lines. $pageSize overrides the screen's page
+     * (the PDF takes every line in one page, FIN-PDF-001).
      */
-    public function accountStatement(Account $account, ReportRange $range, int $page): AccountStatement
+    public function accountStatement(Account $account, ReportRange $range, int $page, ?int $pageSize = null): AccountStatement
     {
         $lines     = $this->lines();
         $accountId = (int) $account->getId();
@@ -123,7 +124,7 @@ final class LedgerReports
         $opening = $this->money($totals['opening']);
         $debit   = $this->money($totals['debit']);
         $credit  = $this->money($totals['credit']);
-        $paging  = new Paging($page, self::ACCOUNT_STATEMENT_PAGE_SIZE, $totals['lines']);
+        $paging  = new Paging($page, $pageSize ?? self::ACCOUNT_STATEMENT_PAGE_SIZE, $totals['lines']);
 
         $rows     = $lines->accountLines($accountId, $yearId, $range->fromDay(), $range->toDay(), $paging->offset(), $paging->pageSize);
         $counters = $lines->counterAccounts(array_column($rows, 'entry_id'), $accountId);
@@ -164,12 +165,12 @@ final class LedgerReports
         );
     }
 
-    public function journal(ReportRange $range, int $page): JournalReport
+    public function journal(ReportRange $range, int $page, ?int $pageSize = null): JournalReport
     {
         /** @var JournalEntryRepository $entries */
         $entries = $this->em->getRepository(JournalEntry::class);
         $summary = $entries->rangeSummary($range->year, $range->fromDay(), $range->toDay());
-        $paging  = new Paging($page, self::JOURNAL_PAGE_SIZE, $summary['entries']);
+        $paging  = new Paging($page, $pageSize ?? self::JOURNAL_PAGE_SIZE, $summary['entries']);
 
         return new JournalReport(
             $entries->chronological($range->year, $range->fromDay(), $range->toDay(), $paging->offset(), $paging->pageSize),

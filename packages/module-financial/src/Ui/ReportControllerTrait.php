@@ -61,8 +61,11 @@ trait ReportControllerTrait
         'journal'           => 'Journal',
     ];
 
-    /** The reports that have a PDF already (FIN-PDF-001, built step by step). */
-    private const REPORT_PDF = ['balance-sheet', 'income-statement'];
+    /** The PDF takes every line in one page (not PHP_INT_MAX: Paging adds to it and would overflow). */
+    private const PDF_ALL_ROWS = 1_000_000;
+
+    /** The reports that have a PDF (FIN-PDF-001). */
+    private const REPORT_PDF = ['trial-balance', 'balance-sheet', 'income-statement', 'account-statement', 'journal'];
 
     private const REPORT_MONTHS =['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez'];
 
@@ -182,7 +185,19 @@ trait ReportControllerTrait
         $pdf       = match ($tab) {
             'balance-sheet'    => ReportPdf::balanceSheet($this->ledgerReports()->balanceSheet($range), $issuer, $printedAt),
             'income-statement' => ReportPdf::incomeStatement($this->ledgerReports()->incomeStatement($range), $range, $issuer, $printedAt),
+            'trial-balance'    => ReportPdf::trialBalance($this->ledgerReports()->trialBalance($range), $range, $issuer, $printedAt),
+            // The PDF takes every line on one «page» of the report — paging is the screen's.
+            'journal'          => ReportPdf::journal($this->ledgerReports()->journal($range, 1, self::PDF_ALL_ROWS), $range, $issuer, $printedAt),
+            'account-statement' => null,
         };
+        if ($tab === 'account-statement') {
+            $number  = $this->reportParameter('account');
+            $account = $number === '' ? null : $this->reportAccounts()->findOneBy(['number' => $number]);
+            if ($account === null) {
+                return $this->redirect($this->reportBase() . '/account-statement');
+            }
+            $pdf = ReportPdf::accountStatement($this->ledgerReports()->accountStatement($account, $range, 1, self::PDF_ALL_ROWS), $range, $issuer, $printedAt);
+        }
 
         $from = $tab === 'balance-sheet' ? null : $range->fromDay();
 

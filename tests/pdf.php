@@ -217,5 +217,15 @@ $bytes = \Z77\Module\Financial\Pdf\ReportPdf::incomeStatement($income, $range, '
 check('H3 income statement PDF: title, the range «01.01.2026 – 31.12.2026», both totals, the result 300.00 as «Gewinn»', str_contains($bytes, '(Erfolgsrechnung)') && str_contains($bytes, '01.01.2026') && str_contains($bytes, '(Total Ertrag)') && str_contains($bytes, '(Total Aufwand)') && str_contains($bytes, 'Gewinn \\(Ertrag') && str_contains($bytes, '(300.00)'));
 check('H4 file name of a range: «von … bis»', \Z77\Module\Financial\Pdf\ReportPdf::fileName('Erfolgsrechnung', '2026', '2026-12-31', '2026-01-01') === 'erfolgsrechnung-2026-von-2026-01-01-bis-2026-12-31.pdf');
 
+$long  = str_repeat('Sehr lange Kontobezeichnung ', 6);
+$trial = new \Z77\Module\Financial\Reports\TrialBalance(
+    [new \Z77\Module\Financial\Reports\AccountBalance(1, '1020', $long, \Z77\Module\Financial\Entities\AccountType::Asset, $chf('500.00'), $chf('200.00'))],
+    $chf('500.00'), $chf('200.00'), $chf('300.00'), $chf('0.00'),
+);
+$doc   = \Z77\Module\Financial\Pdf\ReportPdf::trialBalance($trial, $range, 'Muster AG', '10.10.2026 12:27')->withoutCompression();
+$bytes = $doc->output();
+check('H5 trial balance PDF: title, the account, the totals row; balanced → no notice', str_contains($bytes, '(Saldobilanz)') && str_contains($bytes, '(1020)') && str_contains($bytes, '(Total)') && str_contains($bytes, '(500.00)') && !str_contains($bytes, 'Soll ='));
+check('H6 the NAME column wraps (`wrap` => 1), not the account number: the long name is drawn over several lines', preg_match_all('/\(([^)]*Kontobezeichnung[^)]*)\)/', $bytes) >= 3);
+
 echo "\n{$pass} passed, {$fail} failed\n";
 exit($fail === 0 ? 0 : 1);
