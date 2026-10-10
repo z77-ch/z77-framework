@@ -1,7 +1,7 @@
 <?php
 
 /**
- * Installer asset-cleanup harness (CLI) — INST-ASSET-002 (second incident, 2026-10-10).
+ * Installer asset-cleanup harness (CLI) — INST-ASSET-003 (2026-10-10).
  *
  * The defect: the asset publish ADDS and REFRESHES, it never REMOVED. When a package
  * dropped a file, its published copy stayed in `public/assets/` and kept being served —

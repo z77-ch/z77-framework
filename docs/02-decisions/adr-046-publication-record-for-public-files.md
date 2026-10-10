@@ -1,6 +1,7 @@
 # ADR-046 — Publication record: the installer may refresh what it wrote itself
 
 **Status:** `[APPROVED]` — approved by the owner 2026-09-23
+**Amended:** 2026-10-10 — the installer deletes its own unchanged leftovers and the record forgets them (see Addendum; built, owner approval pending)
 **Date:** 2026-09-23
 **Amends:** [ADR-024](adr-024-asset-ownership-and-first-install-seed.md) §3,
 [ADR-025](adr-025-asset-drift-report-on-update.md) ("nothing is stored"),
@@ -59,6 +60,35 @@ without asking whenever the evidence says nothing of the project's is at stake.*
 6. **The record is a record, not a manifest.** It says only what WE last wrote. It is written
    atomically (temp file + `rename()`), saved in a `finally` around every write loop, and never
    pruned.
+
+## Addendum 2026-10-10 — the installer takes back its own leftovers, and the record forgets them (built; owner approval pending)
+
+**Incident (INST-ASSET-003, `topics/installer.md`).** The DMS dropped `documents/upload.js`; the
+project's `public/assets/dms/js/documents/` kept serving it after a `composer update`. Every
+update path walked what `vendor/` SHIPS, so a path that had vanished from `vendor/` was looked at
+by nothing — while the record held the one fact nobody read in that direction.
+
+**Point 3 gains a third unattended operation, with the same evidence standard as the first two:**
+
+- a file that NO walked package ships any more, whose deployed copy still has exactly the recorded
+  sha1 → **deleted**, and the emptied directories below the asset root with it.
+
+Identical to the record means nobody edited it since we wrote it — deleting it loses nothing, and
+a package that brings the file back has it published as new on the next run. A file that differs
+from the record, or that the record never knew, stays and is not even named: it may be the
+project's own, and naming it would stand in every install log forever.
+
+**Point 6 is narrowed: the record is pruned in exactly two cases**, both inside a package asset
+tree the run actually walked (a tree whose `vendor/` source did not exist this run is never
+entered, so a disabled or half-installed package cannot trigger a delete): the installer itself
+removed the file, or found it already gone from disk. Without the pruning, a returning file would
+read as «− removed here» for ever and never be published again. «Never pruned» stays true for every
+other path — in particular, nothing is ever dropped on a guess about what `vendor/` still ships.
+
+Bounded by construction (`collectDroppedAssets()` / `unpublishDroppedAssets()`): only keys under
+`public/{assetDir}/{name}/`, only keys that are relative, forward-slashed and free of `..` (the
+record is a file on disk and could be edited), delete and record save share the write loop's
+`finally`. Verified: `tests/installer-asset-cleanup.php`, 54 checks.
 
 ## Reasoning
 

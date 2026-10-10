@@ -119,7 +119,7 @@ class Install
     private array  $assetPublishedNew   = [];
     private array  $assetRemovedHere    = [];
 
-    // The reverse direction (INST-ASSET-002, second incident): a file the packages no longer
+    // The reverse direction (INST-ASSET-003): a file the packages no longer
     // ship, collected by collectDroppedAssets() over the SAME asset trees the walk above just
     // scanned. Filled only for a tree whose vendor source was actually present this run.
     //
@@ -211,7 +211,7 @@ class Install
                 // the project never touched since we published them, and files it never had.
                 // A stale copy of an unedited framework file is a bug, not developer ownership.
                 $this->deployUndisputedAssets();
-                // The same argument in the other direction (INST-ASSET-002): a published copy
+                // The same argument in the other direction (INST-ASSET-003): a published copy
                 // of a file the packages dropped, still byte-identical to what we wrote, is
                 // ours to take back. Anything the project changed stays.
                 $this->unpublishDroppedAssets();
@@ -553,7 +553,7 @@ class Install
      * hands it to {@see classifyPublishedFile()}, which sorts it into the four lists declared
      * at the top of this class (ADR-025 + INST-ASSET-DIFF-001). Per asset tree it then also
      * looks the other way round — {@see collectDroppedAssets()} for what the packages no
-     * longer ship (INST-ASSET-002). Collects only — the notices print at the very end of the
+     * longer ship (INST-ASSET-003). Collects only — the notices print at the very end of the
      * run, after {@see deployUndisputedAssets()} has written what needs no decision.
      */
     private function reportAssetDrift(): void
@@ -589,7 +589,7 @@ class Install
             }
 
             // Only for a tree we actually walked: without a vendor source there is no
-            // statement to make about what is "no longer shipped" (INST-ASSET-002).
+            // statement to make about what is "no longer shipped" (INST-ASSET-003).
             if ($scanned) {
                 $this->collectDroppedAssets($target, $assetName);
             }
@@ -626,7 +626,7 @@ class Install
 
     /**
      * The publish ADDS and REFRESHES — it used to never REMOVE, so a file a package dropped
-     * stayed published forever and kept being served (INST-ASSET-002, measured 2026-10-10:
+     * stayed published forever and kept being served (INST-ASSET-003, measured 2026-10-10:
      * the DMS deleted `documents/upload.js` + `.min.js`, `public/assets/dms/js/documents/`
      * served both for weeks). Dead weight while nothing references it, and a live defect the
      * day the same name comes back with other content or a template still asks for it.
@@ -794,7 +794,7 @@ class Install
     }
 
     /**
-     * Names what was taken back out of public/ (INST-ASSET-002). A delete needs no decision
+     * Names what was taken back out of public/ (INST-ASSET-003). A delete needs no decision
      * either — it only ever hits a file still byte-identical to the copy we published — but a
      * deploy log must show it: this is the one place that says a served file is gone.
      */

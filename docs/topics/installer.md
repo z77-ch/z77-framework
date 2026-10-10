@@ -57,7 +57,7 @@ Runs as a Composer post-install/post-update hook. Reads `extra` config from `com
 | 4 | `copyFiles()` | `public/` entry files → project web root — **first install only** (`public/` absent; ADR-024). On update (`public/` present) instead: `loadPublishedAssets()` + `reportAssetDrift()` sort the shipped assets into refreshable / changed / new (ADR-025) |
 | 4b | `reportEntryFileDrift()` | update only: the same classification for `public/index.php` and `public/.htaccess` (INST-ASSET-ENTRY-001) |
 | 4c | `deployUndisputedAssets()` | update only: write every file still byte-identical to the publication record, plus every file that is absent AND unrecorded — **no prompt, interactive and non-interactive alike** (INST-ASSET-DIFF-001). Saves the record in a `finally`, so an abort mid-loop still records what was written |
-| 4d | `unpublishDroppedAssets()` | update only, the reverse direction (INST-ASSET-002): DELETE every published file the walked packages no longer ship while it is still byte-identical to the publication record, drop its record entry, prune the emptied dirs. No prompt — our own untouched copy is not a decision. Saves the record in a `finally` |
+| 4d | `unpublishDroppedAssets()` | update only, the reverse direction (INST-ASSET-003): DELETE every published file the walked packages no longer ship while it is still byte-identical to the publication record, drop its record entry, prune the emptied dirs. No prompt — our own untouched copy is not a decision. Saves the record in a `finally` |
 | 5 | `createDirectories()` | override dirs, moduleTree, logs (always) + publicAssetTree asset copy (**first install only**; every copied file enters the publication record) |
 | 6 | `seedCronEntry()` | seed `cron/run.php` from the kernel template — **seed-once**: the cron entry for hosts whose panel takes one command and no `cd` (the starter `chdir()`s into the project and hands over to `vendor/bin/z77-run`), see [`jobs.md`](jobs.md) |
 | 6b | `migrateConfigSplit()` | one-time flat→split migration (ADR-036): flat generated files deleted (rewritten below), flat seed-once files RENAMED into `config/client/` so hand edits survive; no-op on a split layout |
@@ -164,7 +164,7 @@ paths: the automatic refresh of an asset that is **byte-identical to the copy th
 published** (no developer work can be at stake — that is the whole point of the record), and the
 interactive, per-file, default-No deploy prompt (ADR-026). It DELETES on exactly one: a file a
 walked package no longer ships that is still byte-identical to the record — the same proof, used
-the other way round (INST-ASSET-002). Everything else stays. To refresh the
+the other way round (INST-ASSET-003). Everything else stays. To refresh the
 framework baseline wholesale the developer deletes the target file(s) — or `public/` — and
 re-installs, or starts a new project and migrates old data in.
 
@@ -216,7 +216,7 @@ installer wrote it**:
   writes a `.tmp` file and `rename()`s it, so an interrupted write cannot leave a truncated record
   (which would read back as «unknown» for every file below the cut).
 - **It grows by itself and shrinks only where the installer removed the file** (amended
-  2026-10-10 by INST-ASSET-002; the original rule was "it only grows"). An entry is dropped in
+  2026-10-10 by INST-ASSET-003; the original rule was "it only grows"). An entry is dropped in
   exactly two places, both inside a package asset tree the run actually WALKED: the file was
   deleted by `unpublishDroppedAssets()`, or it was already gone from disk. Both are statements
   about what we did or found, not guesses about `vendor/` — a disabled module, a half-installed
@@ -244,7 +244,7 @@ but the package no longer ships) and adds a sixth:
 | `+ published` | absent in `public/` **and unrecorded** | genuinely new — nobody can have edited what never existed here, so it is written unattended and recorded |
 | `− removed here` | absent in `public/` but **recorded** | WE published it and it is gone: someone deleted it in this project. Never re-created on its own; reported, and asked once on an interactive run |
 | `~ kept` | present, differs from the record (`edited`) or has no record (`unrecorded`) | never written on its own. Interactive: warned + asked, default No. Non-interactive: named, with the reason |
-| `✖ unpublished` | no longer shipped by the walked package, on disk, **identical to the record** | deleted immediately, **no prompt, in every run mode**; the record entry is dropped, emptied dirs are pruned, the file is named afterwards (INST-ASSET-002) |
+| `✖ unpublished` | no longer shipped by the walked package, on disk, **identical to the record** | deleted immediately, **no prompt, in every run mode**; the record entry is dropped, emptied dirs are pruned, the file is named afterwards (INST-ASSET-003) |
 
 A file the package dropped that does NOT match the record (edited here, or never recorded) stays
 and is deliberately **not named**: it can be the project's own file in its own `public/` directory,
@@ -392,7 +392,7 @@ Installer creates the override dirs, registers the module in `moduleManager.inc.
 ## known issues
 
 - **INST-FRESH-001** — resolved 2026-09-22 (P2 exit check, findings S1–S3). Don't assume a fresh install needs no hand edit before it is fully usable: two seed-once values are deliberately left for the installation. (1) `canonicalBaseUrl` is empty — until 2026-09-22 that took down even `/backend/system/setup/setup`, and with status 200 (fixed in the framework: [`bootstrap.md`](bootstrap.md) BOOT-SETUP-001, BOOT-ERR-001). Now the setup and the backend run; frontend pages and mail links answer 500 until it is set. Where it is named: the installer prints one line naming `config/client/systemConfig.inc.php` and `canonicalBaseUrl` at the end of every run while the value is empty (`reportMissingCanonicalBaseUrl()`, seed-once file only read; checked by `tests/fresh-install-setup.php` through the static `canonicalBaseUrlNotice()`), and the backend Störer names it — but only AFTER login: the setup page and `/login` show no banner. (2) The database `host` is `localhost` — right on Linux (socket), ~2 s per request on Windows against a MariaDB bound to `127.0.0.1` ([`persistence-doctrine.md`](persistence-doctrine.md) DOCTRINE-HOST-001). Both files are seed-once: any change to a seed reaches only NEW installations; an existing installation keeps its file.
-- **INST-ASSET-002 (second incident)** — measured 2026-10-10 on z77.ch, **resolved 2026-10-10**.
+- **INST-ASSET-003** — measured 2026-10-10 on z77.ch, **resolved 2026-10-10** (first filed and committed under the id INST-ASSET-002 in `5721236` / `7c26b57` — that id already belonged to the 2026-07-14 clobber incident below; renamed the same day, the commit messages cannot be). Amends ADR-046 point 3 and 6 (addendum 2026-10-10, owner approval pending).
   Don't assume `public/assets/` mirrored the packages: the asset publish ADDED and REFRESHED, it
   never REMOVED, so a file a package dropped kept being published and served. Found with
   UPLOAD-001: the DMS deleted `documents/upload.js` + `.min.js`, and `public/assets/dms/js/documents/`
