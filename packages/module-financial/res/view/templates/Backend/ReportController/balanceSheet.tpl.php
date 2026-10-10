@@ -20,7 +20,7 @@ $ok     = $report->isBalanced();
 $shared = ['link' => $link, 'fmt' => $fmt];
 ?>
 <div class="be-list">
-    <?= $this->partial('Backend/ReportController/rangeForm', ['atDay' => true] + ['range' => $range, 'tab' => $tab, 'link' => $link, 'months' => $months, 'reportBase' => $reportBase, 'notices' => $notices, 'keep' => $keep], $ns) ?>
+    <?= $this->partial('Backend/ReportController/rangeForm', ['atDay' => true] + ['range' => $range, 'tab' => $tab, 'link' => $link, 'months' => $months, 'reportBase' => $reportBase, 'notices' => $notices, 'keep' => $keep, 'pdfTabs' => $pdfTabs ?? []], $ns) ?>
     <?php // A balanced sheet says nothing — that is the normal state. Only the FAULT is shown,
           // as an error block at the top (owner 2026-10-10); the carried-forward note of
           // FIN-REPORT-001 is gone with it, the figures speak for themselves. ?>
