@@ -83,14 +83,14 @@ $max      = $year->getEndDate()->format('Y-m-d');
             </select>
         </div>
         <?php // «Anzeige» (owner 2026-10-10): one field, two ways to show the SAME form values —
-              // on the screen (the monitor, this page) or as a real PDF in a new tab (FIN-PDF-001).
+              // on the screen («Bildschirm», this page) or as a real PDF in a new tab (FIN-PDF-001).
               // The PDF button submits the form itself (`formaction` + `formtarget`), so an edited
               // date or a picked period reaches the PDF without pressing «Anzeigen» first. ?>
         <div class="be-form__field">
             <span class="be-form__label">Anzeige</span>
             <div class="be-form__buttons">
-                <button type="submit" class="be-btn be-btn--primary be-btn--icon" title="Am Bildschirm anzeigen" aria-label="Am Bildschirm anzeigen">
-                    <svg class="be-icon" width="16" height="16" aria-hidden="true"><use href="#icon-monitor"/></svg>
+                <button type="submit" class="be-btn be-btn--primary" title="Am Bildschirm anzeigen">
+                    <svg class="be-icon" width="14" height="14" aria-hidden="true"><use href="#icon-monitor"/></svg> <span class="be-btn__label">Bildschirm</span>
                 </button>
                 <?php if (in_array($tab, $pdfTabs ?? [], true)): ?>
                 <button type="submit" class="be-btn be-btn--ghost" name="report" value="<?= e($tab) ?>"
