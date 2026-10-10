@@ -26,7 +26,7 @@ $actionBase = $actionBase ?? '/backend/finance/bank-import';
           // `cell` component into `[data-upload-progress]`, because rows and bars are
           // unreadable in a 210px action cell. ?>
     <div class="be-list__section" id="bank-upload" data-upload-area data-upload-progress>
-        <p class="be-form__hint">Die Meldung wird gespeichert und jede Gutschrift über die QR-Referenz oder die Mitteilung einer definitiven Rechnung zugeordnet. Verbucht wird erst auf der Meldung — nichts passiert beim Einlesen.</p>
+        <p class="be-form__hint">Die Meldung wird gespeichert und jede Gutschrift über die QR-Referenz oder die Mitteilung einer verbuchten Rechnung zugeordnet. Verbucht wird erst auf der Meldung — nichts passiert beim Einlesen.</p>
     </div>
 
     <div class="be-list__section">

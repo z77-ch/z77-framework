@@ -29,6 +29,12 @@ use Z77\Shared\Pdf\PdfDocument;
  * letterhead (null = none saved, the letterhead stays empty), the customer
  * number of the party, and the amount formatter. Nothing is resolved from
  * master data — what prints is what was issued.
+ *
+ * {@see combined()} (owner 2026-10-10) draws SEVERAL documents into one
+ * file — the batch just booked, opened once and printed or sent in one go:
+ * each document is a section of its own (`PdfDocument::startSection()`),
+ * starts on a new page, numbers its own pages and carries its own payment
+ * part.
  */
 final class InvoicePdf
 {
@@ -41,31 +47,80 @@ final class InvoicePdf
     /** The document rendered; call `output()` on it for the bytes. $document with its lines loaded. */
     public static function render(Invoice $document, ?Mandator $mandator, int $customerNumber = 0): PdfDocument
     {
-        $author = $mandator?->getName() ?? '';
-
-        return PdfDocument::create($document->documentName(), $author)
-            ->partial(self::LAYOUT, [
-                'document'       => $document,
-                'bill'           => QrBill::of($document),
-                'mandator'       => $mandator,
-                'customerNumber' => $customerNumber,
-                'fmt'            => static fn(?Money $m) => AmountFormat::of($m),
-            ], self::NS);
+        return self::draw(PdfDocument::create($document->documentName(), $mandator?->getName() ?? ''), $document, $mandator, $customerNumber);
     }
 
     /** The context a controller gathers: the mandator through the one reader debtor has, the customer number from the profile. */
     public static function of(Invoice $document, UnifiedEntityManager $em): PdfDocument
     {
-        /** @var DebtorProfileRepository $profiles */
-        $profiles = $em->getRepository(DebtorProfile::class);
-        $profile  = $profiles->findByContact($document->getContact());
+        return self::render($document, Creditor::mandator($em), self::customerNumber($document, $em));
+    }
 
-        return self::render($document, Creditor::mandator($em), $profile?->getCustomerNumber() ?? 0);
+    /**
+     * Several documents in ONE file, in the order given — each a section of
+     * its own (a new page, its own page count, its own payment part). The
+     * mandator is read once. $documents with their lines loaded, at least one.
+     *
+     * @param list<Invoice> $documents
+     */
+    public static function combined(array $documents, UnifiedEntityManager $em): PdfDocument
+    {
+        if ($documents === []) {
+            throw new \InvalidArgumentException('A combined PDF needs at least one document');
+        }
+        $mandator = Creditor::mandator($em);
+        $pdf      = PdfDocument::create(self::combinedTitle($documents), $mandator?->getName() ?? '');
+        foreach ($documents as $document) {
+            self::draw($pdf->startSection(), $document, $mandator, self::customerNumber($document, $em));
+        }
+
+        return $pdf;
     }
 
     /** «rechnung-12.pdf» — the browser-reachable name, kebab-case lower (conventions: file names follow the layer). */
     public static function fileName(Invoice $document): string
     {
         return Naming::toSlug($document->documentName()) . '.pdf';
+    }
+
+    /**
+     * The name of a combined file: one document → its own name; several →
+     * «dokumente-26100001-bis-26100003.pdf» (lowest and highest number).
+     *
+     * @param list<Invoice> $documents
+     */
+    public static function combinedFileName(array $documents): string
+    {
+        return count($documents) === 1 ? self::fileName($documents[0]) : Naming::toSlug(self::combinedTitle($documents)) . '.pdf';
+    }
+
+    /** @param list<Invoice> $documents */
+    private static function combinedTitle(array $documents): string
+    {
+        if (count($documents) === 1) {
+            return $documents[0]->documentName();
+        }
+        $numbers = array_map(static fn(Invoice $d) => $d->getNumber(), $documents);
+
+        return 'Dokumente ' . min($numbers) . ' bis ' . max($numbers);
+    }
+
+    private static function draw(PdfDocument $pdf, Invoice $document, ?Mandator $mandator, int $customerNumber): PdfDocument
+    {
+        return $pdf->partial(self::LAYOUT, [
+            'document'       => $document,
+            'bill'           => QrBill::of($document),
+            'mandator'       => $mandator,
+            'customerNumber' => $customerNumber,
+            'fmt'            => static fn(?Money $m) => AmountFormat::of($m),
+        ], self::NS);
+    }
+
+    private static function customerNumber(Invoice $document, UnifiedEntityManager $em): int
+    {
+        /** @var DebtorProfileRepository $profiles */
+        $profiles = $em->getRepository(DebtorProfile::class);
+
+        return $profiles->findByContact($document->getContact())?->getCustomerNumber() ?? 0;
     }
 }

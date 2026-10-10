@@ -48,7 +48,7 @@ final class InvoicingInProgressCheck implements OpenWorkCheckInterface
         foreach ($found['rows'] as $row) {
             $name = (InvoiceKind::tryFrom((string) $row['kind'])?->label() ?? (string) $row['kind']) . ' ' . $row['number'];
             yield Finding::blocking(
-                $name . ' vom ' . (new \DateTimeImmutable((string) $row['invoice_date']))->format('d.m.Y') . ' ist noch in Fakturierung, also nicht verbucht — erst definitiv stellen (verbuchen).',
+                $name . ' vom ' . (new \DateTimeImmutable((string) $row['invoice_date']))->format('d.m.Y') . ' ist noch in Fakturierung, also nicht verbucht — erst verbuchen.',
                 'invoice:' . $row['id']
             );
         }

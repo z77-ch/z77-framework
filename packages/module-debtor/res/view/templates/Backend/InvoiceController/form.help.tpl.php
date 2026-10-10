@@ -10,7 +10,7 @@
 $isCredit = $form->kind === \Z77\Module\Debtor\Entities\InvoiceKind::CreditNote;
 ?>
 <h3><?= $isCredit ? 'Gutschrift' : 'Rechnung' ?></h3>
-<p>Erstellen legt das Dokument <strong>in Fakturierung</strong> an: es hat eine Nummer, ist aber noch nicht verbucht. Solange es in Fakturierung ist, kann es beliebig oft <strong>neu fakturiert</strong> werden — die Nummer bleibt. Verbucht wird erst mit «Definitiv stellen» in der Liste; danach ist es unveränderlich, eine Korrektur ist eine Gutschrift.</p>
+<p>Erstellen legt das Dokument <strong>in Fakturierung</strong> an: es hat eine Nummer, ist aber noch nicht verbucht. Solange es in Fakturierung ist, kann es beliebig oft <strong>neu fakturiert</strong> werden — die Nummer bleibt. Verbucht wird erst mit «Verbuchen …» in der Liste; danach ist es unveränderlich, eine Korrektur ist eine Gutschrift. Fakturiert ist es, sobald es beim Kunden ist: beim ersten Öffnen des PDFs oder mit «Als fakturiert markieren».</p>
 <p>Beim Neu-Fakturieren werden Adresse und Zahlungskonditionen so übernommen, wie sie <strong>jetzt</strong> beim Debitor stehen.</p>
 
 <h3>Positionen</h3>

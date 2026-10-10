@@ -1,6 +1,7 @@
 <?php
 /**
- * «Definitiv stellen» — the last look before the batch (P3 part 3): the
+ * «Verbuchen» (until 2026-10-10 «Definitiv stellen») — the last look before
+ * the batch (P3 part 3): the
  * documents selected in the invoicing view, each with the version its row
  * SHOWED (`doc[]` = `{id}:{version}`). One button posts the same pairs to
  * `finalize` (`#[Csrf]`), which hands them to `InvoicingService::finalize()`:
@@ -28,14 +29,14 @@ $actionBase = $actionBase ?? '/backend/finance/invoice';
     <form method="post" action="<?= e($actionBase) ?>/finalize" class="be-list__section">
         <input type="hidden" name="csrf_token" value="<?= e($csrfToken ?? '') ?>">
         <?= $this->partial('partials/modalActions', [
-            'submit'     => $documents !== [] ? 'Definitiv stellen und verbuchen' : '',
+            'submit'     => $documents !== [] ? 'Verbuchen' : '',
             'cancelHref' => $actionBase . '/list',
         ], 'Z77\\Shared') ?>
         <div class="be-list__section-header">
-            <h2 class="be-list__section-title">Definitiv stellen <small class="be-list__cell--muted">· <?= count($documents) ?> Dokument<?= count($documents) === 1 ? '' : 'e' ?><?= $total !== null ? ' · ' . e($fmt($total)) : '' ?></small></h2>
+            <h2 class="be-list__section-title">Verbuchen <small class="be-list__cell--muted">· <?= count($documents) ?> Dokument<?= count($documents) === 1 ? '' : 'e' ?><?= $total !== null ? ' · ' . e($fmt($total)) : '' ?></small></h2>
         </div>
         <?php if ($stale !== []): ?>
-        <div class="be-modal__alert be-modal__alert--error">Seit der Auswahl geändert, definitiv oder nicht mehr vorhanden — ausgelassen: <?= e(implode(', ', array_map(static fn(int $id) => '#' . $id, $stale))) ?>. Liste neu laden.</div>
+        <div class="be-modal__alert be-modal__alert--error">Seit der Auswahl geändert, bereits verbucht oder nicht mehr vorhanden — ausgelassen: <?= e(implode(', ', array_map(static fn(int $id) => '#' . $id, $stale))) ?>. Liste neu laden.</div>
         <?php endif; ?>
         <div class="be-list__table" style="--be-list-cols: 5rem 6.5rem minmax(10rem, 2fr) 8rem">
             <?php foreach ($documents as $document): ?>
@@ -49,6 +50,6 @@ $actionBase = $actionBase ?? '/backend/finance/invoice';
             </div>
             <?php endforeach; ?>
         </div>
-        <p class="be-form__hint">Definitiv gestellte Dokumente werden verbucht und sind danach unveränderlich — eine Korrektur ist eine Gutschrift.</p>
+        <p class="be-form__hint">Verbuchte Dokumente sind unveränderlich — eine Korrektur ist eine Gutschrift. Danach lassen sich die verbuchten Dokumente als ein PDF öffnen; das markiert sie als fakturiert.</p>
     </form>
 </div>

@@ -70,6 +70,9 @@ use Doctrine\Common\Collections\ArrayCollection,
  *     `EntryRef` shape of financial written as it reads on a document),
  *     NULL while `invoicing` or when the installation keeps its books
  *     elsewhere (`NullAccountingGateway`);
+ *   - `deliveredAt` / `deliveredBy` / `deliveredVia` (owner 2026-10-10):
+ *     «Fakturiert» — the booked document reached the customer; a fact of
+ *     its own next to the state, see the property;
  *   - created / changed by and at: the actor's NAME (a backend user can be
  *     deleted, the document keeps the name); `version` is the optimistic
  *     lock a re-issue names (the `journal_entry.version` model).
@@ -100,6 +103,7 @@ class Invoice
     public const SOURCE_REF_LENGTH  = 128;
     public const LEDGER_REF_LENGTH  = 32;
     public const ACTOR_LENGTH       = 80;
+    public const DELIVERY_CHANNEL_LENGTH = 12;
 
     /** Server-controlled — no setter; the database assigns it. */
     #[ORM\Id, ORM\Column, ORM\GeneratedValue]
@@ -215,6 +219,26 @@ class Invoice
     #[ORM\Column(name: 'changed_at', type: Types::DATETIME_IMMUTABLE, nullable: true)]
     private ?\DateTimeImmutable $changedAt = null;
 
+    /**
+     * «Fakturiert» (owner 2026-10-10): when the BOOKED document reached the
+     * customer — a dated fact of its own, independent of the posting state
+     * and of the open amount (nothing in payments, dunning or the ledger
+     * reads it). NULL = not yet. Written only by `Services\DeliveryService`
+     * through `InvoiceRepository::markDelivered()` / `unmarkDelivered()` — a
+     * guarded SQL update (first one wins, only `final`), deliberately NOT
+     * through the entity: delivery is not content, so it does not bump
+     * `version` and never makes an open confirmation or form stale.
+     */
+    #[ORM\Column(name: 'delivered_at', type: Types::DATETIME_IMMUTABLE, nullable: true)]
+    private ?\DateTimeImmutable $deliveredAt = null;
+
+    #[ORM\Column(name: 'delivered_by', length: self::ACTOR_LENGTH, nullable: true)]
+    private ?string $deliveredBy = null;
+
+    /** A {@see DeliveryChannel} value — how it was delivered; NULL while not delivered. */
+    #[ORM\Column(name: 'delivered_via', length: self::DELIVERY_CHANNEL_LENGTH, nullable: true)]
+    private ?string $deliveredVia = null;
+
     /** Optimistic lock: a re-issue names the version it saw (`InvoicingService::reinvoice()`). */
     #[ORM\Version]
     #[ORM\Column(type: Types::INTEGER)]
@@ -289,6 +313,19 @@ class Invoice
     public function getChangedBy(): ?string { return $this->changedBy; }
     public function getChangedAt(): ?\DateTimeImmutable { return $this->changedAt; }
     public function getVersion(): int { return $this->version; }
+    public function getDeliveredAt(): ?\DateTimeImmutable { return $this->deliveredAt; }
+    public function getDeliveredBy(): ?string { return $this->deliveredBy; }
+
+    /** «Fakturiert»: the booked document reached the customer (owner 2026-10-10). */
+    public function isDelivered(): bool
+    {
+        return $this->deliveredAt !== null;
+    }
+
+    public function deliveredVia(): ?DeliveryChannel
+    {
+        return $this->deliveredVia !== null ? DeliveryChannel::tryFrom($this->deliveredVia) : null;
+    }
 
     public function kind(): InvoiceKind
     {

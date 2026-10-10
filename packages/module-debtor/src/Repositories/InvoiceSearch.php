@@ -4,8 +4,9 @@ namespace Z77\Module\Debtor\Repositories;
 
 /**
  * What the document list asks the database for (P3 part 3): one VIEW —
- * the invoices in `invoicing`, the final invoices, or the credit notes (any
- * state) — and the column criteria, AND-ed. Every value is bound; the sort
+ * the invoices in `invoicing`, the final invoices, the final documents of
+ * every kind not yet delivered («Nicht fakturiert», 2026-10-10), or the
+ * credit notes (any state) — and the column criteria, AND-ed. Every value is bound; the sort
  * key selects from a fixed map ({@see InvoiceRepository::search()}), never
  * from input. Built by the screen's listing (`Ui\InvoiceListing`, listing.md), plain data.
  */
@@ -14,8 +15,10 @@ final class InvoiceSearch
     public const VIEW_INVOICING = 'invoicing';
     public const VIEW_FINAL     = 'final';
     public const VIEW_CREDIT    = 'credit';
+    /** Booked, not yet with the customer — every kind («Nicht fakturiert», owner 2026-10-10). */
+    public const VIEW_UNDELIVERED = 'undelivered';
 
-    public const VIEWS = [self::VIEW_INVOICING, self::VIEW_FINAL, self::VIEW_CREDIT];
+    public const VIEWS = [self::VIEW_INVOICING, self::VIEW_UNDELIVERED, self::VIEW_FINAL, self::VIEW_CREDIT];
     public const SORTS = ['number', 'date', 'name', 'amount'];
 
     public function __construct(

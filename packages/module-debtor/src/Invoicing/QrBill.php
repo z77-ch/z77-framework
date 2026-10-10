@@ -134,7 +134,7 @@ final class QrBill
         } elseif (!$payment->hasPaymentPart()) {
             // A final document is never re-issued (review 2026-09-30): the way out is a credit note and a new invoice.
             $bill->problems[] = $document->isFinal()
-                ? 'Ohne Zahlteil ausgestellt und definitiv — er lässt sich nicht nachtragen; nötigenfalls Gutschrift und neue Rechnung mit Zahlungsziel.'
+                ? 'Ohne Zahlteil ausgestellt und verbucht — er lässt sich nicht nachtragen; nötigenfalls Gutschrift und neue Rechnung mit Zahlungsziel.'
                 : 'Ohne Zahlungsziel ausgestellt — kein Zahlteil. Zahlungsziel wählen und neu fakturieren.';
         } else {
             $bill->check();

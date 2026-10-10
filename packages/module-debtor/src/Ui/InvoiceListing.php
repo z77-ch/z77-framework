@@ -13,7 +13,7 @@ use Z77\Shared\Listing\Parsers;
  * as an extra, the columns Nr. · Datum · Name · Fällig · Betrag — four of
  * them searched in the database, strictly parsed — sorted by number newest
  * first, 50 per page. The invoicing view leads with the selection checkbox
- * of «Definitiv stellen …».
+ * of «Verbuchen …»; the booked views end with «Fakturiert» (owner 2026-10-10).
  */
 final class InvoiceListing
 {
@@ -21,7 +21,7 @@ final class InvoiceListing
 
     public const LIMIT = 50;
 
-    public static function definition(string $currency, bool $selectable): ListDefinition
+    public static function definition(string $currency, bool $selectable, bool $showDelivery = false): ListDefinition
     {
         $columns = $selectable ? [Column::slot('Auswahl')] : [];
         $columns = array_merge($columns, [
@@ -32,6 +32,10 @@ final class InvoiceListing
             Column::plain('Fällig', '6.5rem', priority: '2'),
             Column::search('f_amount', 'Betrag', '8rem', 'amount', Parsers::amount($currency), numeric: true, descendingFirst: true, inputMode: 'decimal'),
         ]);
+        if ($showDelivery) {
+            // «Fakturiert» (owner 2026-10-10): the date the booked document reached the customer, or «nicht fakturiert».
+            $columns[] = Column::plain('Fakturiert', '8.5rem', priority: '2');
+        }
 
         return new ListDefinition(self::ID, $columns, 'number', self::LIMIT, ['view' => InvoiceSearch::VIEWS]);
     }

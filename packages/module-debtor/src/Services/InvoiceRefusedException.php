@@ -3,7 +3,9 @@
 namespace Z77\Module\Debtor\Services;
 
 /**
- * `InvoicingService` refused a draft or a state change. `reason` is a
+ * `InvoicingService` refused a draft or a state change — or `DeliveryService`
+ * a «Fakturiert» mark (`not-found`, `not-final`, `already-delivered`,
+ * `not-manual`). `reason` is a
  * stable code (the `PostingRefusedException` model) a screen maps to a field
  * or a sentence; `getMessage()` is German and says what to fix — the
  * document screens of part 3 print it as it is.
@@ -33,6 +35,10 @@ final class InvoiceRefusedException extends DebtorException
     public const NOT_FOUND           = 'not-found';
     public const KIND_CHANGED        = 'kind-changed';
     public const NUMBER_RANGE_FULL   = 'number-range-full';
+    // «Fakturiert» (DeliveryService, owner 2026-10-10)
+    public const NOT_FINAL           = 'not-final';
+    public const ALREADY_DELIVERED   = 'already-delivered';
+    public const NOT_MANUAL          = 'not-manual';
     // the lines
     public const LINE                = 'line';
     public const LINE_TAX_SHARE      = 'line-tax-share';

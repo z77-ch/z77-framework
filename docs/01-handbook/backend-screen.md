@@ -94,7 +94,7 @@ Details and selectors: [css-backend.md → button / tab / switch vocabulary](../
   other cells are `<label for>` of their column's search field.
 - Per-row on/off: a `be-switch` in a column headed «Aktiv». Per-row actions: the ⋮ menu, which
   ALWAYS opens the row's action menu.
-- **Selection-bound actions** («Definitiv stellen», «Mahnlauf starten») stand in a bar ABOVE the
+- **Selection-bound actions** («Verbuchen …» of the invoices — «Definitiv stellen» until 2026-10-10 —, «Mahnlauf starten») stand in a bar ABOVE the
   list, green, never at its end.
 - **A pending step must be visible**: when data waits for a follow-up step, the top of the page
   says so and offers the green button («5 zugeordnet · noch nicht verbucht — Verbuchen»).

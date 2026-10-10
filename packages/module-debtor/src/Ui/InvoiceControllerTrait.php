@@ -19,6 +19,7 @@ use Z77\Core\DI,
     Z77\Module\Debtor\Repositories\InvoiceSearch,
     Z77\Module\Debtor\Services\DebtorCurrency,
     Z77\Module\Debtor\Services\DebtorException,
+    Z77\Module\Debtor\Services\DeliveryService,
     Z77\Module\Debtor\Services\DunningService,
     Z77\Module\Debtor\Services\InvoiceConflictException,
     Z77\Module\Debtor\Services\InvoiceRefusedException,
@@ -44,14 +45,20 @@ use Z77\Core\DI,
  * What the screens can do, and deliberately cannot:
  *
  *   - `list` — the documents per VIEW (`?view=`): invoices in `invoicing`,
- *     final invoices, credit notes; searchable per column in the database,
- *     sortable, paged ({@see InvoiceListing}, a standard list — listing.md: a
- *     fetch region, a state icon per row that opens the document as a window,
- *     ADR-047). In the `invoicing` view every row carries a checkbox with its
- *     `{id}:{version}` — the FINALIZE batch: «Definitiv stellen …» (toolbar)
- *     → `confirm-finalize` lists the selection → `finalize` POSTs the pairs
- *     to `InvoicingService::finalize()`; a document re-issued in between is
- *     refused by its version (DEBTOR-FINAL-001);
+ *     booked documents not yet delivered («Nicht fakturiert»), booked
+ *     («Verbucht») invoices, credit notes; searchable per column in the
+ *     database, sortable, paged ({@see InvoiceListing}, a standard list —
+ *     listing.md: a fetch region, a state icon per row that opens the
+ *     document as a window, ADR-047). In the `invoicing` view every row
+ *     carries a checkbox with its `{id}:{version}` — the FINALIZE batch:
+ *     «Verbuchen …» (selection bar) → `confirm-finalize` lists the selection
+ *     → `finalize` POSTs the pairs to `InvoicingService::finalize()`; a
+ *     document re-issued in between is refused by its version
+ *     (DEBTOR-FINAL-001) → `booked` sums up what was booked and offers ONE
+ *     PDF of exactly those documents (`pdf-batch`, a new tab);
+ *   - «Fakturiert» (owner 2026-10-10, {@see DeliveryService}): the first PDF
+ *     of a booked document marks it, `mark-delivered` / `unmark-delivered`
+ *     set and remove a mark by hand;
  *   - `detail` — the document from its SNAPSHOT: address block, lines, tax
  *     summary, totals, the payment part and whether its QR-bill is printable
  *     ({@see QrBill}), the ledger reference linked to the journal entry (a
@@ -64,8 +71,7 @@ use Z77\Core\DI,
  *   - `credit-note` (`?of=`) — the credit note against a FINAL invoice,
  *     service dates and lines prefilled from it.
  *
- * NOT here: the PDF with the QR-bill — no PDF library in the framework yet;
- * the owner decides the dependency (`debtor.md` pending). No delete, cancel
+ * NOT here: no delete, cancel
  * or edit of a final document anywhere (plan §1: the correction is a credit
  * note).
  *
@@ -87,18 +93,26 @@ trait InvoiceControllerTrait
 {
     private const INVOICE_NS = 'Z77\\Module\\Debtor';
 
-    /** View → German tab label. */
+    /**
+     * View → German tab label. The workflow reads «In Fakturierung» → «Verbucht» →
+     * «Fakturiert» (owner 2026-10-10): «Nicht fakturiert» is the work queue between the
+     * last two — booked, not yet with the customer, every kind.
+     */
     private const INVOICE_VIEWS = [
-        InvoiceSearch::VIEW_INVOICING => 'In Fakturierung',
-        InvoiceSearch::VIEW_FINAL     => 'Definitiv',
-        InvoiceSearch::VIEW_CREDIT    => 'Gutschriften',
+        InvoiceSearch::VIEW_INVOICING   => 'In Fakturierung',
+        InvoiceSearch::VIEW_UNDELIVERED => 'Nicht fakturiert',
+        InvoiceSearch::VIEW_FINAL       => 'Verbucht',
+        InvoiceSearch::VIEW_CREDIT      => 'Gutschriften',
     ];
 
-    /** The state icon of a row — German title per state. */
+    /** The state icon of a row — German title per state (the UI word for `final` is «verbucht», owner 2026-10-10). */
     private const INVOICE_STATE_LABELS = [
         'invoicing' => 'in Fakturierung — kann neu fakturiert werden, nichts verbucht',
-        'final'     => 'definitiv — verbucht, unveränderlich; Korrektur mit Gutschrift',
+        'final'     => 'verbucht — unveränderlich; Korrektur mit Gutschrift',
     ];
+
+    /** How many documents one combined PDF / one «Verbucht» summary takes — a batch screen's size, not a limit of the writer. */
+    private const INVOICE_BATCH_MAX = 200;
 
     private const INVOICE_CONFLICT_MESSAGE = 'Das Dokument wurde inzwischen geändert — bitte neu laden und erneut prüfen.';
 
@@ -172,8 +186,9 @@ trait InvoiceControllerTrait
     {
         $request = DI::getRequest();
         // The invoicing view leads with the selection checkbox — the view is read once ahead of the definition.
-        $selectable = !in_array($request->getGetParameter('view'), [InvoiceSearch::VIEW_FINAL, InvoiceSearch::VIEW_CREDIT], true);
-        $definition = InvoiceListing::definition(DebtorCurrency::base(), $selectable);
+        $selectable = !in_array($request->getGetParameter('view'), [InvoiceSearch::VIEW_FINAL, InvoiceSearch::VIEW_CREDIT, InvoiceSearch::VIEW_UNDELIVERED], true);
+        // Every view but «In Fakturierung» shows the «Fakturiert» column (owner 2026-10-10).
+        $definition = InvoiceListing::definition(DebtorCurrency::base(), $selectable, !$selectable);
         $state      = $definition->readRequest($request);
         $search     = InvoiceListing::search($state);
         $total      = $this->invoices()->countSearch($search);
@@ -193,7 +208,7 @@ trait InvoiceControllerTrait
         ]);
         // The fragment owns its header slots (financial.md, «fragment slots»), ADR-033 rev.
         // 2026-10-08: «+ Rechnung» is the entry's most frequent action → action cell (hc1); the
-        // view tabs → toolbar (hc2). «Definitiv stellen …» is bound to the row selection and stands
+        // view tabs → toolbar (hc2). «Verbuchen …» is bound to the row selection and stands
         // in the list's selection bar. A FETCH (sort, page, search — core.js «fetch regions»)
         // wants the list alone.
         if (!$this->invoiceIsFetch()) {
@@ -235,6 +250,10 @@ trait InvoiceControllerTrait
      * through {@see InvoicePdf} (the layout `pdf/invoice`), never stored.
      * The same document yields the same file; a document still in
      * `invoicing` prints as it stands now and changes with a re-issue.
+     *
+     * The FIRST PDF of a BOOKED document marks it «Fakturiert» (owner
+     * 2026-10-10, {@see DeliveryService::recordPdf()}): opening it is taken as
+     * sending it. Later PDFs change nothing; a draft's PDF marks nothing.
      */
     protected function pdfAction(): BytesResponse|RedirectResponse
     {
@@ -243,8 +262,105 @@ trait InvoiceControllerTrait
         if ($document === null) {
             return $this->invoiceNotFound();
         }
+        $bytes = InvoicePdf::of($document, $this->em())->output();
+        if ($document->isFinal() && !$document->isDelivered()) {
+            $this->invoiceDeliveryService()->recordPdf([$id]);
+        }
 
-        return $this->bytes(InvoicePdf::of($document, $this->em())->output(), InvoicePdf::fileName($document), 'application/pdf');
+        return $this->bytes($bytes, InvoicePdf::fileName($document), 'application/pdf');
+    }
+
+    /**
+     * ONE PDF of several booked documents (POST `doc[]` = ids, `#[Csrf]`, owner
+     * 2026-10-10) — what the «Verbucht» summary offers after a batch: each
+     * document a section of its own ({@see InvoicePdf::combined()}: a new page,
+     * its own page count, its own payment part), opened in a new tab. Producing
+     * it marks every document in it «Fakturiert» that was not yet. Only FINAL
+     * documents: an id that is unknown or still in invoicing refuses the whole
+     * file (the flash, back to the list) — the selection was stale.
+     */
+    #[Csrf]
+    protected function pdfBatchAction(): BytesResponse|RedirectResponse
+    {
+        $request = DI::getRequest();
+        $ids     = $request->isPost() ? self::invoiceIds($request->getPostParameters()['doc'] ?? null) : [];
+        if ($ids === []) {
+            return $this->redirect($this->invoiceListBase() . '/list', 303);
+        }
+        $documents = [];
+        foreach ($ids as $id) {
+            $document = $this->invoices()->withLines($id);
+            if ($document === null || !$document->isFinal()) {
+                $this->messageService->pushFlashAfterRedirect('error', 'Kein PDF erstellt: ' . ($document === null ? 'ein Dokument ist nicht mehr vorhanden' : $document->documentName() . ' ist noch in Fakturierung') . ' — nur verbuchte Dokumente werden zusammengefasst.');
+
+                return $this->redirect($this->invoiceListBase() . '/list', 303);
+            }
+            $documents[] = $document;
+        }
+        $bytes = InvoicePdf::combined($documents, $this->em())->output();
+        $this->invoiceDeliveryService()->recordPdf($ids);
+
+        return $this->bytes($bytes, InvoicePdf::combinedFileName($documents), 'application/pdf');
+    }
+
+    /**
+     * «Als fakturiert markieren» (POST, `#[Csrf]`, `?id=`) — the document was
+     * sent another way. Fetched (from the detail window): the detail back into
+     * the window and the list it came from reloads; else flash + the detail.
+     */
+    #[Csrf]
+    protected function markDeliveredAction(): RedirectResponse|FetchResponse
+    {
+        return $this->invoiceDelivery(true);
+    }
+
+    /** «Markierung entfernen» (POST, `#[Csrf]`, `?id=`) — only a mark set by hand ({@see DeliveryService::unmark()}). */
+    #[Csrf]
+    protected function unmarkDeliveredAction(): RedirectResponse|FetchResponse
+    {
+        return $this->invoiceDelivery(false);
+    }
+
+    private function invoiceDelivery(bool $mark): RedirectResponse|FetchResponse
+    {
+        $request = DI::getRequest();
+        $id      = (int) $request->getGetParameter('id');
+        if (!$request->isPost()) {
+            return $this->redirect($this->invoiceListBase() . '/detail?id=' . $id, 303);
+        }
+        try {
+            if ($mark) {
+                $this->invoiceDeliveryService()->markManually($id);
+            } else {
+                $this->invoiceDeliveryService()->unmark($id);
+            }
+        } catch (InvoiceRefusedException $e) {
+            if ($e->reason === InvoiceRefusedException::NOT_FOUND) {
+                return $this->invoiceNotFound();
+            }
+            if ($this->invoiceIsFetch()) {
+                $this->messageService->pushFlash('error', $e->getMessage());
+
+                return $this->fetch()->setStatus('error');
+            }
+            $this->messageService->pushFlashAfterRedirect('error', $e->getMessage());
+
+            return $this->redirect($this->invoiceListBase() . '/detail?id=' . $id, 303);
+        }
+        $name = (string) $this->invoices()->find($id)?->documentName();
+        $text = $mark ? $name . ' als fakturiert markiert' : 'Markierung «fakturiert» von ' . $name . ' entfernt';
+        if ($this->invoiceIsFetch()) {
+            return $this->invoiceWindowSaved($id, WindowOrigin::of($request), $text);
+        }
+        $this->messageService->pushFlashAfterRedirect('success', $text);
+
+        return $this->redirect($this->invoiceListBase() . '/detail?id=' . $id, 303);
+    }
+
+    /** The delivery write path (owner 2026-10-10); the session actor. A harness host overrides it with a named actor. */
+    private function invoiceDeliveryService(): DeliveryService
+    {
+        return new DeliveryService($this->em());
     }
 
     // ── payment (P4 part 1) ──────────────────────────────────────────────
@@ -405,7 +521,7 @@ trait InvoiceControllerTrait
             return $this->invoiceNotFound();
         }
         if (!$document->isFinal() || $document->isCreditNote()) {
-            $this->messageService->pushFlashAfterRedirect('error', $document->isCreditNote() ? 'Eine Gutschrift wird nicht bezahlt — sie reduziert eine Rechnung.' : $document->documentName() . ' ist noch in Fakturierung — erst definitiv stellen.');
+            $this->messageService->pushFlashAfterRedirect('error', $document->isCreditNote() ? 'Eine Gutschrift wird nicht bezahlt — sie reduziert eine Rechnung.' : $document->documentName() . ' ist noch in Fakturierung — erst verbuchen.');
 
             return $this->redirect($this->invoiceListBase() . '/detail?id=' . $document->getId(), 303);
         }
@@ -513,7 +629,7 @@ trait InvoiceControllerTrait
             return $this->invoiceNotFound();
         }
         if ($document->isFinal()) {
-            $this->messageService->pushFlashAfterRedirect('error', $document->documentName() . ' ist definitiv und bleibt unverändert — eine Korrektur ist eine Gutschrift.');
+            $this->messageService->pushFlashAfterRedirect('error', $document->documentName() . ' ist verbucht und bleibt unverändert — eine Korrektur ist eine Gutschrift.');
 
             return $this->redirect($this->invoiceListBase() . '/detail?id=' . $id, 303);
         }
@@ -654,7 +770,8 @@ trait InvoiceControllerTrait
     // ── finalize ─────────────────────────────────────────────────────────
 
     /**
-     * «Definitiv stellen …»: the selection of the list (`doc[]` = `{id}:{version}`,
+     * «Verbuchen …» (owner 2026-10-10 — until then «Definitiv stellen»; the code keeps
+     * `finalize` and the state `final`): the selection of the list (`doc[]` = `{id}:{version}`,
      * the version each row SHOWED) listed for a last look — number, party,
      * date, amount — with one button that posts the same pairs.
      */
@@ -685,7 +802,12 @@ trait InvoiceControllerTrait
         ]);
     }
 
-    /** POST: the pairs to `InvoicingService::finalize()` — one unit of work, all or nothing. */
+    /**
+     * POST: the pairs to `InvoicingService::finalize()` — one unit of work, all or nothing.
+     * Booked → the «Verbucht» summary of exactly these documents ({@see bookedAction()}),
+     * which offers their combined PDF (owner 2026-10-10: after booking, something must say
+     * what happens next — sending them).
+     */
     #[Csrf]
     protected function finalizeAction(): RedirectResponse
     {
@@ -701,7 +823,7 @@ trait InvoiceControllerTrait
             // are final now at a new version — say THAT, not «nothing was booked».
             $already = $this->invoiceAlreadyFinal($pairs);
             if ($already !== []) {
-                $this->messageService->pushFlashAfterRedirect('error', 'Bereits definitiv und verbucht: ' . implode(', ', $already) . ' — wohl doppelt abgeschickt; in diesem Durchgang wurde nichts weiter verbucht.');
+                $this->messageService->pushFlashAfterRedirect('error', 'Bereits verbucht: ' . implode(', ', $already) . ' — wohl doppelt abgeschickt; in diesem Durchgang wurde nichts weiter verbucht.');
 
                 return $this->redirect($this->invoiceListBase() . '/list?view=' . InvoiceSearch::VIEW_FINAL, 303);
             }
@@ -716,9 +838,58 @@ trait InvoiceControllerTrait
             return $this->redirect($this->invoiceListBase() . '/list', 303);
         }
         $names = implode(', ', array_map(fn(Invoice $d) => $d->documentName(), $done));
-        $this->messageService->pushFlashAfterRedirect('success', count($done) === 1 ? $names . ' definitiv gestellt und verbucht' : count($done) . ' Dokumente definitiv gestellt und verbucht: ' . $names);
+        $this->messageService->pushFlashAfterRedirect('success', count($done) === 1 ? $names . ' verbucht' : count($done) . ' Dokumente verbucht: ' . $names);
 
-        return $this->redirect($this->invoiceListBase() . '/list?view=' . InvoiceSearch::VIEW_FINAL, 303);
+        return $this->redirect($this->invoiceListBase() . '/booked?' . http_build_query(['doc' => array_map(fn(Invoice $d) => (int) $d->getId(), $done)]), 303);
+    }
+
+    /**
+     * «Verbucht» — the summary after a batch (GET `doc[]` = ids, owner 2026-10-10): the
+     * documents just booked with their «Fakturiert» state, and ONE button that opens their
+     * combined PDF in a new tab ({@see pdfBatchAction()}) — which marks them «Fakturiert».
+     * Only the FINAL documents of the ids are shown (a hand-edited URL shows nothing else);
+     * none → the «Verbucht» view. Reading it writes nothing.
+     */
+    protected function bookedAction(): HtmlResponse|RedirectResponse
+    {
+        $documents = [];
+        foreach (self::invoiceIds(DI::getRequest()->getGetParameter('doc')) as $id) {
+            $document = $this->invoices()->find($id);
+            if ($document !== null && $document->isFinal()) {
+                $documents[] = $document;
+            }
+        }
+        if ($documents === []) {
+            return $this->redirect($this->invoiceListBase() . '/list?view=' . InvoiceSearch::VIEW_FINAL, 303);
+        }
+
+        return $this->invoicePage('booked', [
+            'documents' => $documents,
+            // The gross of each document, a credit note counted negative — what the batch invoiced net of credits.
+            'total'     => array_reduce($documents, static function (?Money $sum, Invoice $d): Money {
+                $gross = $d->kind()->sign() < 0 ? $d->getGrossTotal()->negate() : $d->getGrossTotal();
+
+                return $sum === null ? $gross : $sum->add($gross);
+            }, null),
+        ]);
+    }
+
+    /**
+     * `doc[]` ids → distinct positive ints, at most {@see INVOICE_BATCH_MAX}; anything else
+     * dropped (the ids only select documents — every action re-checks each one).
+     *
+     * @return list<int>
+     */
+    private static function invoiceIds(mixed $values): array
+    {
+        $ids = [];
+        foreach (is_array($values) ? $values : [] as $value) {
+            if ((is_string($value) || is_int($value)) && preg_match('/^\d{1,9}$/', (string) $value) && (int) $value > 0) {
+                $ids[(int) $value] = (int) $value;
+            }
+        }
+
+        return array_slice(array_values($ids), 0, self::INVOICE_BATCH_MAX);
     }
 
     /**

@@ -2,6 +2,7 @@
 
 namespace Z77\Module\Debtor\Repositories;
 
+use Doctrine\DBAL\ArrayParameterType;
 use Doctrine\DBAL\LockMode;
 use Doctrine\DBAL\ParameterType;
 use Z77\Module\Debtor\Entities\Invoice;
@@ -194,11 +195,62 @@ class InvoiceRepository extends DoctrineRepository
     public function countPerView(): array
     {
         $row = $this->connection()->fetchAssociative(
-            'SELECT SUM(kind IN (?, ?) AND state = ?) AS invoicing, SUM(kind IN (?, ?) AND state = ?) AS final, SUM(kind = ?) AS credit FROM invoice',
-            [InvoiceKind::Invoice->value, InvoiceKind::Fee->value, InvoiceState::Invoicing->value, InvoiceKind::Invoice->value, InvoiceKind::Fee->value, InvoiceState::Final->value, InvoiceKind::CreditNote->value]
+            'SELECT SUM(kind IN (?, ?) AND state = ?) AS invoicing, SUM(kind IN (?, ?) AND state = ?) AS final, SUM(kind = ?) AS credit,'
+            . ' SUM(state = ? AND delivered_at IS NULL) AS undelivered FROM invoice',
+            [InvoiceKind::Invoice->value, InvoiceKind::Fee->value, InvoiceState::Invoicing->value, InvoiceKind::Invoice->value, InvoiceKind::Fee->value, InvoiceState::Final->value, InvoiceKind::CreditNote->value, InvoiceState::Final->value]
         ) ?: [];
 
         return array_map(static fn($n) => (int) $n, array_merge(array_fill_keys(InvoiceSearch::VIEWS, 0), array_filter($row, static fn($n) => $n !== null)));
+    }
+
+    /**
+     * «Fakturiert» (owner 2026-10-10): records that the documents of $ids
+     * reached the customer — but only those that are FINAL and not yet
+     * marked. ONE guarded statement, so the first delivery wins under any
+     * race and a later PDF changes nothing; a document in `invoicing` is
+     * never marked. Plain SQL on purpose: delivery is not content — it
+     * must not bump the optimistic `version` a re-issue, a finalize batch
+     * or an open confirmation relies on. Answers how many rows it marked.
+     * Called by `Services\DeliveryService` only. Doctrine-only (SQL).
+     *
+     * @param list<int> $ids
+     */
+    public function markDelivered(array $ids, \DateTimeImmutable $at, string $by, string $via): int
+    {
+        $ids = array_values(array_unique(array_filter(array_map('intval', $ids), static fn(int $id) => $id > 0)));
+        if ($ids === []) {
+            return 0;
+        }
+        try {
+            return (int) $this->connection()->executeStatement(
+                'UPDATE invoice SET delivered_at = ?, delivered_by = ?, delivered_via = ? WHERE id IN (?) AND state = ? AND delivered_at IS NULL',
+                [$at->format('Y-m-d H:i:s'), $by, $via, $ids, InvoiceState::Final->value],
+                [ParameterType::STRING, ParameterType::STRING, ParameterType::STRING, ArrayParameterType::INTEGER, ParameterType::STRING]
+            );
+        } catch (\Throwable $e) {
+            $this->markTransactionRollbackOnly();
+            throw $e;
+        }
+    }
+
+    /**
+     * Removes the «Fakturiert» mark of $id — only one set by hand ($via, the
+     * manual channel): a mark the system recorded (the PDF) is a fact, not a
+     * click to take back. Answers 1 when removed, 0 otherwise. Called by
+     * `Services\DeliveryService` only. Doctrine-only (SQL).
+     */
+    public function unmarkDelivered(int $id, string $via): int
+    {
+        try {
+            return (int) $this->connection()->executeStatement(
+                'UPDATE invoice SET delivered_at = NULL, delivered_by = NULL, delivered_via = NULL WHERE id = ? AND delivered_via = ?',
+                [$id, $via],
+                [ParameterType::INTEGER, ParameterType::STRING]
+            );
+        } catch (\Throwable $e) {
+            $this->markTransactionRollbackOnly();
+            throw $e;
+        }
     }
 
     /**
@@ -385,6 +437,10 @@ class InvoiceRepository extends DoctrineRepository
         };
         if ($search->view === InvoiceSearch::VIEW_CREDIT) {
             $add('kind = ?', InvoiceKind::CreditNote->value);
+        } elseif ($search->view === InvoiceSearch::VIEW_UNDELIVERED) {
+            // «Nicht fakturiert» (owner 2026-10-10): booked, not yet with the customer — every kind.
+            $add('state = ?', InvoiceState::Final->value);
+            $where[] = 'delivered_at IS NULL';
         } else {
             // The payable kinds — invoices and fees (P4 part 3) — share the two views.
             $add('kind <> ?', InvoiceKind::CreditNote->value);

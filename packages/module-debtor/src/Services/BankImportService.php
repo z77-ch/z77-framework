@@ -143,7 +143,7 @@ final class BankImportService
             throw new BankImportRefusedException(BankImportRefusedException::INVOICE_UNKNOWN, "Rechnung {$documentNumber} gibt es nicht.");
         }
         if (!$invoice->isFinal()) {
-            throw new BankImportRefusedException(BankImportRefusedException::INVOICE_NOT_FINAL, $invoice->documentName() . ' ist noch in Fakturierung — erst definitiv stellen.');
+            throw new BankImportRefusedException(BankImportRefusedException::INVOICE_NOT_FINAL, $invoice->documentName() . ' ist noch in Fakturierung — erst verbuchen.');
         }
 
         return $this->em->getTransaction(BankMessage::class)->run(function () use ($transactionId, $invoice): BankTransaction {
@@ -334,7 +334,7 @@ final class BankImportService
             return;
         }
         if (!$invoice->isFinal()) {
-            $transaction->unmatch($invoice->documentName() . ' ist noch in Fakturierung — erst definitiv stellen, dann zuordnen.');
+            $transaction->unmatch($invoice->documentName() . ' ist noch in Fakturierung — erst verbuchen, dann zuordnen.');
 
             return;
         }
@@ -356,7 +356,7 @@ final class BankImportService
             return;
         }
         if (!$invoice->isFinal()) {
-            $transaction->unmatch($invoice->documentName() . ' ist noch in Fakturierung — erst definitiv stellen, dann zuordnen.');
+            $transaction->unmatch($invoice->documentName() . ' ist noch in Fakturierung — erst verbuchen, dann zuordnen.');
 
             return;
         }

@@ -10,6 +10,11 @@
  * of the last page (`pdf/qrBill`, the 105 mm zone the guidelines reserve;
  * nothing else is printed there, the footer included).
  *
+ * Drawn alone (`InvoicePdf::render()`) or as one SECTION of a combined file
+ * (`InvoicePdf::combined()`, e.g. the batch just booked) — so it starts with
+ * its own `addPage()`, resets its bag entry and numbers its pages per
+ * document (`sectionPageNo()` / `sectionPageCount()`).
+ *
  * A project that wants another look overrides THIS file under `override/`
  * (and only this file: the facts come from the context, the blocks are the
  * shared partials). Draws through `$pdf` only — echoes nothing.
@@ -30,9 +35,12 @@ $name   = $document->documentName();
 $isCredit = $document->isCreditNote();
 
 // ── running header (pages 2+) and footer (not on the page with the payment part) ──
+// The pages are counted per DOCUMENT (sectionPageNo / sectionPageCount): in the combined PDF of a
+// batch (InvoicePdf::combined()) each document numbers its own pages; alone it is pageNo() / {nb}.
+$pdf->set('paymentPart', false);
 $pdf->onPageStart(static function ($pdf) use ($name, $left, $right): void {
-    if ($pdf->pageNo() > 1) {
-        $pdf->font('', 8)->textColor(110)->text($left, 12, $name . '  ·  Seite ' . $pdf->pageNo() . ' von {nb}')->textColor(0);
+    if ($pdf->sectionPageNo() > 1) {
+        $pdf->font('', 8)->textColor(110)->text($left, 12, $name . '  ·  Seite ' . $pdf->sectionPageNo() . ' von ' . $pdf->sectionPageCount())->textColor(0);
         $pdf->setY(24);
     }
 });
@@ -40,7 +48,7 @@ $pdf->onPageEnd(static function ($pdf) use ($name, $left, $width): void {
     if ($pdf->get('paymentPart') === true) {
         return;
     }
-    $pdf->font('', 7.5)->textColor(110)->text($left, 284, $name . '  ·  Seite ' . $pdf->pageNo() . ' von {nb}', 'R', $width)->textColor(0);
+    $pdf->font('', 7.5)->textColor(110)->text($left, 284, $name . '  ·  Seite ' . $pdf->sectionPageNo() . ' von ' . $pdf->sectionPageCount(), 'R', $width)->textColor(0);
 });
 
 $pdf->autoPageBreak(30)->addPage();

@@ -99,7 +99,7 @@ $view         = $state->extra('view');
             </div>
         </div>
         <?php if ($items === []): ?>
-        <p class="be-list__empty"><?= $state->isActive() ? 'Kein Beleg gefunden.' : ($view === 'all' ? 'Noch keine definitiven Belege.' : 'Keine offenen Posten.') ?></p>
+        <p class="be-list__empty"><?= $state->isActive() ? 'Kein Beleg gefunden.' : ($view === 'all' ? 'Noch keine verbuchten Belege.' : 'Keine offenen Posten.') ?></p>
         <?php endif; ?>
         <?= $this->partial('partials/pager', [
             'paging'      => $paging,

@@ -39,6 +39,12 @@ use Z77\Shared\Qr\QrCode;
  * and footer); the key-value bag ({@see set()} / {@see get()}) lets a layout
  * tell its hooks what a page carries («no footer on the page with the
  * payment part»). `{nb}` in a text is replaced by the page count at output.
+ *
+ * Several documents in ONE file (2026-10-10): {@see startSection()} before
+ * each layout — the hooks and the bag start empty again, and
+ * {@see sectionPageNo()} / {@see sectionPageCount()} number the pages per
+ * document (the invoice prints «Seite 1 von 2» of ITS pages, not the
+ * file's).
  */
 final class PdfDocument
 {
@@ -138,6 +144,43 @@ final class PdfDocument
         $this->writer->onPageEnd = $hook;
 
         return $this;
+    }
+
+    // ── sections: several documents in one file ─────────────────────────
+
+    /**
+     * Starts a new DOCUMENT inside this file (2026-10-10, the combined PDF of
+     * a batch of invoices): the open page is finished with the footer hook it
+     * was drawn with, both hooks and the layout's bag are cleared, and page
+     * numbering starts again — {@see sectionPageNo()} counts from 1 on the
+     * next {@see addPage()}, {@see sectionPageCount()} names this section's
+     * pages. A layout drawn into a fresh file is section 0 and needs no
+     * call; a caller that appends several layouts calls this before each.
+     * The layout itself must start with `addPage()` (every layout does).
+     */
+    public function startSection(): self
+    {
+        $this->writer->startSection();
+        $this->bag = [];
+
+        return $this;
+    }
+
+    /** The page number within the current section — equal to {@see pageNo()} in a single-document file. */
+    public function sectionPageNo(): int
+    {
+        return $this->writer->sectionPageNo();
+    }
+
+    /**
+     * A placeholder for the page count of the CURRENT section, replaced at
+     * output — «Seite 2 von {nb}» counts the whole file, «Seite 2 von » .
+     * sectionPageCount() counts this document only. Equal to `{nb}` in a
+     * single-document file.
+     */
+    public function sectionPageCount(): string
+    {
+        return $this->writer->sectionAlias();
     }
 
     // ── the layout's bag ────────────────────────────────────────────────

@@ -34,7 +34,7 @@
 
 // The four kinds — each looks the same wherever it stands (css-backend.md → «buttons, tabs, switch»):
 //   create    `--primary`: accent fill — «+ Neu»; the action cell's create action
-//   confirm   `--confirm`: green fill — something is WRITTEN: Buchen, Speichern, Definitiv stellen
+//   confirm   `--confirm`: green fill — something is WRITTEN: Buchen, Speichern, Verbuchen
 //   secondary base / `--ghost`: surface with border — Drucken, Neuer Ordner, Abbrechen
 //   danger    `--danger`: red border and text, NEVER filled; «…» in the label when a confirmation follows
 .be-btn--primary       { background: var(--be-accent); color: var(--color-text-inverse); border-color: var(--be-accent); }

@@ -12,7 +12,10 @@
  * Offers «PDF» (the document rendered on request, `pdf` action, a new tab),
  * «Zahlung erfassen …» while something is open, «Neu fakturieren» while
  * `invoicing`, «Gutschrift erstellen …» on a final invoice — nothing else on
- * a final credit note. They form the action row (`.z77-form-actions` through
+ * a final credit note — and on every booked document «Als fakturiert
+ * markieren» (or «Markierung entfernen» for a mark set by hand; owner
+ * 2026-10-10: the header shows «verbucht» and «fakturiert {date}» /
+ * «nicht fakturiert», the info rows when and how). They form the action row (`.z77-form-actions` through
  * the shared `partials/modalActions`, ADR-049 revision 2026-10-10) under the
  * title; every link but the PDF is a `data-window-link` (ADR-047 addendum
  * 2026-10-10): inside the window it loads the editor / the payment form
@@ -35,6 +38,7 @@
  * @var string $origin  where the window came from (WindowOrigin) — the links inside keep it (core.js)
  */
 use Z77\Module\Vat\Entities\TaxRate;
+use Z77\Module\Debtor\Entities\DeliveryChannel;
 use Z77\Module\Debtor\Services\Iban;
 
 $window  = $window ?? false;
@@ -59,16 +63,39 @@ if (!$document->isFinal()) {
 } elseif (!$document->isCreditNote()) {
     $actions .= $winLink($actionBase . '/credit-note?of=' . (int) $document->getId(), 'Gutschrift erstellen …');
 }
+// «Fakturiert» (owner 2026-10-10): a booked document is marked by its first PDF or by hand; only a
+// mark set by hand can be removed. The button submits the small POST form below the action row
+// (in a window core.js sends it by fetch; the answer is the detail again + the list reloads).
+$deliveryForm  = '';
+$deliveryBadge = '';
+if ($document->isFinal()) {
+    $deliveryBadge = $document->isDelivered()
+        ? '<span class="badge badge--success" title="' . e('Fakturiert am ' . $document->getDeliveredAt()->format('d.m.Y H:i') . ' von ' . $document->getDeliveredBy()) . '">fakturiert ' . e($document->getDeliveredAt()->format('d.m.Y')) . '</span>'
+        : '<span class="badge badge--warning" title="Noch nicht beim Kunden — beim ersten Öffnen des PDFs oder von Hand markieren">nicht fakturiert</span>';
+    $deliveryAction = !$document->isDelivered() ? 'mark-delivered' : ($document->deliveredVia() === DeliveryChannel::Manual ? 'unmark-delivered' : '');
+    if ($deliveryAction !== '') {
+        $formId   = 'invoice-delivery-' . (int) $document->getId();
+        $actions .= '<button type="submit" form="' . e($formId) . '" class="be-btn be-btn--ghost">' . ($deliveryAction === 'mark-delivered' ? 'Als fakturiert markieren' : 'Markierung entfernen') . '</button>';
+        $deliveryForm = '<form id="' . e($formId) . '" method="post" action="' . e($actionBase . '/' . $deliveryAction . '?id=' . (int) $document->getId()) . '" hidden>'
+            . '<input type="hidden" name="csrf_token" value="' . e($csrfToken ?? '') . '">'
+            . ($window ? '<input type="hidden" name="_origin" value="' . e($origin ?? 'page') . '">' : '')
+            . '</form>';
+    }
+}
 ?>
 <div class="be-list"<?= $winAttr ?>>
     <div class="be-list__section">
         <?= $this->partial('partials/modalActions', ['submit' => '', 'cancel' => '', 'extra' => $actions], 'Z77\\Shared') ?>
+        <?= raw($deliveryForm) ?>
         <div class="be-list__section-header">
             <h2 class="be-list__section-title">
                 <?= e($document->documentName()) ?>
                 <small class="be-list__cell--muted">· <?= e($document->getInvoiceDate()->format('d.m.Y')) ?> · <?= e($document->getCurrency()) ?> <?= e($fmt($document->getGrossTotal())) ?></small>
             </h2>
-            <span class="badge <?= $state === 'final' ? 'badge--success' : 'badge--info' ?>" title="<?= e($states[$state]) ?>"><?= $state === 'final' ? 'definitiv' : 'in Fakturierung' ?></span>
+            <span class="badge <?= $state === 'final' ? 'badge--success' : 'badge--info' ?>" title="<?= e($states[$state]) ?>"><?= $state === 'final' ? 'verbucht' : 'in Fakturierung' ?></span>
+            <?php if ($document->isFinal()): ?>
+            <?= raw($deliveryBadge) ?>
+            <?php endif; ?>
         </div>
 
 
@@ -86,6 +113,11 @@ if (!$document->isFinal()) {
             <?= raw($row('Buchung', $ledgerKnown ? '<a href="' . e($journal) . '" data-window-open="' . e($journal) . '">' . e($ref) . '</a>' : e($ref))) ?>
             <?php elseif ($document->isFinal()): ?>
             <?= raw($row('Buchung', 'keine (Buchhaltung ausserhalb oder nichts zu buchen)')) ?>
+            <?php endif; ?>
+            <?php if ($document->isFinal()): ?>
+            <?= raw($row('Fakturiert', $document->isDelivered()
+                ? e($document->getDeliveredAt()->format('d.m.Y H:i') . ' von ' . $document->getDeliveredBy()) . ' <small class="be-list__cell--muted">· ' . e($document->deliveredVia()?->label() ?? '') . '</small>'
+                : 'noch nicht <small class="be-list__cell--muted">· beim ersten Öffnen des PDFs oder mit «Als fakturiert markieren»</small>')) ?>
             <?php endif; ?>
             <?php if ($allocations !== []): ?>
             <?= raw($row('Zahlungen', implode('<br>', array_map(static function ($a) use ($fmt, $actionBase, $document, $winLink): string {

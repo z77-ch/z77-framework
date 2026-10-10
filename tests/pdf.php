@@ -257,5 +257,28 @@ check('H7 fit(): a short text is unchanged, a long one is cut to the width and e
 $bytes = PdfDocument::create('nowrap')->withoutCompression()->partial('pdf/report', ['title' => 'T', 'blocks' => [['columns' => $cols, 'rows' => [['cells' => ['1', $long . $long, '1.00']]], 'wrap' => null]]])->output();
 check('H8 `wrap` null: the long name is ONE line ending in «…» (cp1252 0x85), the left margin is 12 mm', preg_match_all('/\(([^)]*Kontobezeichnung[^)]*)\)/', $bytes) === 1 && str_contains($bytes, "\x85)"));
 
+// ── I. sections: several documents in one file (2026-10-10, the combined PDF of a booked batch) ──
+// Each «document» sets its hooks BEFORE its first addPage() (as a layout does), numbers its own
+// pages and gets exactly one footer per page — never the next document's footer on its last page.
+$sections = PdfDocument::create('sections')->withoutCompression();
+foreach ([['A', 2], ['B', 3], ['C', 1]] as [$name, $pages]) {
+    $sections->startSection();
+    $check0 = $sections->get('marker');   // the bag starts empty per section
+    $sections->set('marker', $name);
+    $sections->onPageEnd(static fn(PdfDocument $p) => $p->font('', 8)->text(20, 284, 'Fuss ' . $p->get('marker') . ' ' . $p->sectionPageNo() . '/' . $p->sectionPageCount()));
+    for ($i = 0; $i < $pages; $i++) {
+        $sections->addPage()->font('', 10)->text(20, 30, "Dok {$name}");
+    }
+}
+$bytes = $sections->output();
+check('I1 sections: 6 pages in the file, each document counts its own pages (A 1/2 2/2, B 1/3 … 3/3, C 1/1), no alias left',
+    $sections->pageNo() === 6 && str_contains($bytes, '(Fuss A 2/2)') && str_contains($bytes, '(Fuss B 1/3)') && str_contains($bytes, '(Fuss B 3/3)') && str_contains($bytes, '(Fuss C 1/1)') && !str_contains($bytes, '{nb'));
+check('I2 sections: exactly one footer per page, each from its own document (no B footer on A\'s last page), the bag empty at each start',
+    substr_count($bytes, '(Fuss ') === 6 && substr_count($bytes, '(Fuss A ') === 2 && substr_count($bytes, '(Fuss B ') === 3 && $check0 === null);
+$single = PdfDocument::create('one')->withoutCompression();
+$single->onPageEnd(static fn(PdfDocument $p) => $p->text(20, 284, 'S ' . $p->sectionPageNo() . ' von ' . $p->sectionPageCount() . ' / {nb}'));
+$single->addPage()->addPage();
+check('I3 a single document needs no startSection(): sectionPageNo() = pageNo(), sectionPageCount() = {nb}', str_contains($single->output(), '(S 2 von 2 / 2)'));
+
 echo "\n{$pass} passed, {$fail} failed\n";
 exit($fail === 0 ? 0 : 1);

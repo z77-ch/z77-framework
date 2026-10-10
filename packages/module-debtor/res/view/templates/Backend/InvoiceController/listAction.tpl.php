@@ -1,7 +1,9 @@
 <?php
 /**
  * The document list (P3 part 3) — one VIEW at a time (toolbar tabs):
- * invoices in `invoicing`, final invoices, credit notes. A STANDARD LIST
+ * invoices in `invoicing`, booked documents not yet delivered («Nicht
+ * fakturiert»), booked («Verbucht») invoices, credit notes — the booked
+ * views with the «Fakturiert» column (owner 2026-10-10). A STANDARD LIST
  * (listing.md, since 2026-10-08): the head and the search form are the
  * kernel's partials over {@see \Z77\Module\Debtor\Ui\InvoiceListing}, the
  * rows are this template's; no CSS and no JavaScript of its own:
@@ -14,7 +16,7 @@
  *     `#invoice-finalize` (GET to `confirm-finalize`) with the value
  *     `{id}:{version}` — the version THIS row shows, so a document re-issued
  *     before the batch runs is refused instead of finalized unseen;
- *   - «Definitiv stellen …» is bound to that selection, so it stands in the
+ *   - «Verbuchen …» (until 2026-10-10 «Definitiv stellen …») is bound to that selection, so it stands in the
  *     SELECTION BAR above the list (ADR-033 exception 2, rev. 2026-10-08),
  *     a green confirm (`.be-btn--confirm`) submitting `#invoice-finalize`
  *     through the `form` attribute. Without script the bar cannot count the
@@ -24,7 +26,7 @@
  *     search reload only this part, and a save in a window opened from here
  *     (the detail and what it links, «+ Rechnung») reloads it
  *     (`refresh-region`, ADR-047 addendum 2026-10-10). The confirmation of
- *     «Definitiv stellen …» is still a page (debtor.md DEBTOR-WIN-002).
+ *     «Verbuchen …» is still a page (debtor.md DEBTOR-WIN-002).
  *
  * @var list<\Z77\Module\Debtor\Entities\Invoice> $documents
  * @var \Z77\Shared\Listing\ListDefinition $definition
@@ -40,6 +42,9 @@ $listUrl    = $actionBase . '/list';
 $link       = static fn(array $changes = []): string => $listUrl . '?' . $state->query($changes);
 $view       = $state->extra('view');
 $selectable = $view === 'invoicing';
+// «Fakturiert» (owner 2026-10-10): every view but «In Fakturierung» shows whether the booked
+// document reached the customer — the date (who and how in the title) or «nicht fakturiert».
+$showDelivery = !$selectable;
 $icons      = ['invoicing' => 'edit', 'final' => 'lock'];
 ?>
 <div class="be-list" data-fetch-region="<?= e($definition->region()) ?>">
@@ -60,7 +65,7 @@ $icons      = ['invoicing' => 'edit', 'final' => 'lock'];
         <div class="z77-form-actions" data-selection-bar="invoice-finalize">
             <button type="submit" form="invoice-finalize" class="be-btn be-btn--confirm be-btn--sm">
                 <svg class="be-icon" width="14" height="14" aria-hidden="true"><use href="#icon-check"/></svg>
-                <span class="be-btn__label">Definitiv stellen …</span>
+                <span class="be-btn__label">Verbuchen …</span>
             </button>
             <small class="be-list__cell--muted">die angekreuzten Rechnungen — die Bestätigung nennt Anzahl und Total</small>
         </div>
@@ -82,6 +87,9 @@ $icons      = ['invoicing' => 'edit', 'final' => 'lock'];
                         <label class="be-list__cell" for="<?= e($definition->inputId('f_name')) ?>"><?= e(trim($document->getAddress()->getFirstName() . ' ' . $document->getAddress()->getName())) ?><?= $document->isCreditNote() ? ' <small class="be-list__cell--muted">· zu ' . e($document->getCreditNoteOf()->documentName()) . ($document->isFinal() ? '' : ' · in Fakturierung') . '</small>' : '' ?></label>
                         <span class="be-list__cell" data-priority="2"><?= $document->isCreditNote() ? '' : e($document->getDueDate()->format('d.m.Y')) ?></span>
                         <label class="be-list__cell be-list__cell--num" for="<?= e($definition->inputId('f_amount')) ?>"><?= e($fmt($document->getGrossTotal())) ?></label>
+                        <?php if ($showDelivery): ?>
+                        <span class="be-list__cell" data-priority="2"><?php if (!$document->isFinal()): ?><?php elseif ($document->isDelivered()): ?><span title="<?= e('Fakturiert am ' . $document->getDeliveredAt()->format('d.m.Y H:i') . ' von ' . $document->getDeliveredBy() . ' · ' . ($document->deliveredVia()?->label() ?? '')) ?>"><?= e($document->getDeliveredAt()->format('d.m.Y')) ?></span><?php else: ?><span class="badge badge--warning">nicht fakturiert</span><?php endif; ?></span>
+                        <?php endif; ?>
                     </div>
                 </div>
                 <?php endforeach; ?>

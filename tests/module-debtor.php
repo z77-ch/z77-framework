@@ -367,7 +367,8 @@ $executed = $db->fetchFirstColumn('SELECT version FROM schema_migration');
 check('A4 … both debtor migrations ran in ONE run across the modules (timestamp order; the newest is the mandator\'s)',
     str_contains($out, 'Migrating up to Z77\\Module\\')
     && in_array('Z77\\Module\\Debtor\\Migrations\\Version20260922173918', $executed, true) && in_array('Z77\\Module\\Debtor\\Migrations\\Version20260923043935', $executed, true)
-    && in_array('Z77\\Module\\Debtor\\Migrations\\Version20261006100000', $executed, true) && in_array('Z77\\Module\\Debtor\\Migrations\\Version20261010100000', $executed, true));
+    && in_array('Z77\\Module\\Debtor\\Migrations\\Version20261006100000', $executed, true) && in_array('Z77\\Module\\Debtor\\Migrations\\Version20261010100000', $executed, true)
+    && in_array('Z77\\Module\\Debtor\\Migrations\\Version20261010140000', $executed, true));
 check('A5 debtor_profile, invoice, invoice_line and invoice_tax exist next to contact\'s, mandator\'s and financial\'s tables',
     array_diff(['debtor_profile', 'invoice', 'invoice_line', 'invoice_tax', 'mandator'], $tables()) === []);
 $rangeOf = fn(string $name) => $db->fetchOne('SELECT last_number FROM number_range WHERE name = ?', [$name]);
@@ -399,7 +400,7 @@ check('A9 the unique contact index, the unique customer-number index and the pay
 [$code, $out] = $run(['command' => 'migrate']);
 check('A10 a second migrate is a no-op', $code === 0 && str_contains($out, 'Already at the latest version'));
 [$code, $out] = $run(['command' => 'diff', '--namespace' => 'Z77\\Module\\Debtor\\Migrations']);
-check('A11 diff after migrate reports NO change — mapping and migration agree (embedded address and payment part, money and decimal columns included)' . (str_contains($out, 'No changes detected') ? '' : ' — ' . trim($out)), $code !== 0 && str_contains($out, 'No changes detected') && count(glob($package . '/res/migrations/Version*.php')) === 8);
+check('A11 diff after migrate reports NO change — mapping and migration agree (embedded address and payment part, money and decimal columns included)' . (str_contains($out, 'No changes detected') ? '' : ' — ' . trim($out)), $code !== 0 && str_contains($out, 'No changes detected') && count(glob($package . '/res/migrations/Version*.php')) === 9);
 check('A12 all eight migrations are expand-only: no DROP outside down()', array_reduce(glob($package . '/res/migrations/Version*.php'), function ($ok, $f) {
     $s = file_get_contents($f);
     return $ok && substr_count(substr($s, 0, strpos($s, 'function down')), 'DROP') === 0;
@@ -1903,7 +1904,7 @@ $useRequest = function (array $get, ?array $post = null) use ($wireDi): UnifiedE
 };
 $invoiceHost = function () {
     return new class {
-        use \Z77\Module\Debtor\Ui\InvoiceControllerTrait { listAction as public; detailAction as public; pdfAction as public; paymentAction as public; confirmPaymentDeleteAction as public; paymentDeleteAction as public; addAction as public; editAction as public; creditNoteAction as public; confirmFinalizeAction as public; finalizeAction as public; }
+        use \Z77\Module\Debtor\Ui\InvoiceControllerTrait { listAction as public; detailAction as public; pdfAction as public; paymentAction as public; confirmPaymentDeleteAction as public; paymentDeleteAction as public; addAction as public; editAction as public; creditNoteAction as public; confirmFinalizeAction as public; finalizeAction as public; bookedAction as public; pdfBatchAction as public; markDeliveredAction as public; unmarkDeliveredAction as public; }
         public array $context = [];
         public object $layoutManager;
         public object $messageService;
@@ -1933,6 +1934,7 @@ $invoiceHost = function () {
         private function invoicingService(): InvoicingService { return new InvoicingService($this->em(), 'sachbearbeiter'); }
         private function paymentService(): \Z77\Module\Debtor\Services\PaymentService { return new \Z77\Module\Debtor\Services\PaymentService($this->em(), 'sachbearbeiter'); }
         private function invoiceDunningService(): \Z77\Module\Debtor\Services\DunningService { return new \Z77\Module\Debtor\Services\DunningService($this->em(), 'sachbearbeiter'); }
+        private function invoiceDeliveryService(): \Z77\Module\Debtor\Services\DeliveryService { return new \Z77\Module\Debtor\Services\DeliveryService($this->em(), 'sachbearbeiter'); }
     };
 };
 $renderMain = fn($host) => implode('', array_map(fn($p) => $renderer->partial($p, $host->context), $host->layoutManager->sections['main'] ?? []));
@@ -1959,13 +1961,13 @@ $listHtml = $renderList($host) . $renderSlot($host, 'hc2');
 $actHtml  = $renderSlot($host, 'hc1');
 $toolHtml = $renderSlot($host, 'hc2');
 $invoicingIds = array_map(fn($d) => $d->getId(), $host->context['documents']);
-check('P3C22 list, default view «In Fakturierung»: only invoices in invoicing, newest first, each row with its {id}:{version} checkbox; «+ Rechnung» in the action cell, the toolbar with the view tabs (counts) only, «Definitiv stellen …» a green confirm in the selection bar ABOVE the rows (ADR-033 rev. 2026-10-08)',
+check('P3C22 list, default view «In Fakturierung»: only invoices in invoicing, newest first, each row with its {id}:{version} checkbox; «+ Rechnung» in the action cell, the toolbar with the view tabs (counts) only, «Verbuchen …» (owner 2026-10-10, formerly «Definitiv stellen …») a green confirm in the selection bar ABOVE the rows (ADR-033 rev. 2026-10-08)',
     $host->context['state']->extra('view') === 'invoicing' && $invoicingIds !== [] && array_filter($host->context['documents'], fn($d) => $d->isFinal() || $d->isCreditNote()) === []
     && str_contains($listHtml, 'data-fetch-region="invoice-find-list"') && str_contains($listHtml, 'value="' . $nonInv->getId() . ':' . $invoiceRow($nonInv->getId())['version'] . '"')
     && str_contains($listHtml, 'form="invoice-finalize"') && str_contains($listHtml, 'be-viewtabs')
     && str_contains($actHtml, 'href="/backend/finance/invoice/add"') && str_contains($actHtml, 'be-btn--primary')
     && !str_contains($toolHtml, 'be-btn') && !str_contains($toolHtml, 'invoice-finalize')
-    && preg_match('/data-selection-bar="invoice-finalize".*?be-btn--confirm.*?Definitiv stellen/s', $renderList($host)) === 1
+    && preg_match('/data-selection-bar="invoice-finalize".*?be-btn--confirm.*?Verbuchen …/s', $renderList($host)) === 1
     && strpos($renderList($host), 'data-selection-bar=') < strpos($renderList($host), 'data-invoice-id=')
     && $host->context['counts']['invoicing'] === $host->context['paging']->total);
 $numbers = array_map(fn($d) => $d->getNumber(), $host->context['documents']);
@@ -1974,7 +1976,7 @@ check('P3C22b … sorted by number, newest first', $numbers === $sorted);
 $useRequest(['view' => 'final']);
 $host = $invoiceHost();
 $host->listAction();
-check('P3C23 view «Definitiv»: only final invoices, no selection checkbox', $host->context['documents'] !== [] && array_filter($host->context['documents'], fn($d) => !$d->isFinal() || $d->isCreditNote()) === []
+check('P3C23 view «Verbucht»: only final invoices, no selection checkbox', $host->context['documents'] !== [] && array_filter($host->context['documents'], fn($d) => !$d->isFinal() || $d->isCreditNote()) === []
     && !str_contains($renderList($host), 'name="doc[]"') && !str_contains($renderList($host), 'data-selection-bar=')
     && $host->layoutManager->sections === ['hc1' => ['Backend/InvoiceController/act'], 'hc2' => ['Backend/InvoiceController/toolbar']]);
 $useRequest(['view' => 'credit']);
@@ -2150,9 +2152,10 @@ $pairB2 = $second->getId() . ':' . $invoiceRow($second->getId())['version'];
 $useRequest([], ['doc' => [$pairA, $pairB2, 'garbage', '1:x']]);
 $host = $invoiceHost();
 $host->finalizeAction();
-check('P3C41 finalize with the CURRENT versions: both final and posted (two journal entries) in one unit of work, to the «Definitiv» view; junk values dropped',
+check('P3C41 finalize with the CURRENT versions: both final and posted (two journal entries) in one unit of work, to the «Verbucht» summary of exactly these two (owner 2026-10-10); junk values dropped',
     $stateOf($newId) === 'final' && $stateOf($second->getId()) === 'final' && $journalCount() === $journalBefore + 2
-    && $host->redirectedTo === '/backend/finance/invoice/list?view=final' && $host->messageService->flashes[0][0] === 'success');
+    && $host->redirectedTo === '/backend/finance/invoice/booked?' . http_build_query(['doc' => [$newId, $second->getId()]]) && $host->messageService->flashes[0][0] === 'success'
+    && str_contains($host->messageService->flashes[0][1], 'verbucht') && !str_contains($host->messageService->flashes[0][1], 'definitiv'));
 $useRequest(['id' => (string) $newId]);
 $host = $invoiceHost();
 $host->editAction();
@@ -2265,6 +2268,107 @@ $useRequest(['id' => $qrInv->getId()]);
 $host = $invoiceHost();
 $host->detailAction();
 check('P3D10 the detail offers «PDF» (a new tab) next to the other actions', str_contains($renderMain($host), '/pdf?id=' . $qrInv->getId()) && str_contains($renderMain($host), 'target="_blank"'));
+
+// ── P3E. «Verbucht» and «Fakturiert» (owner 2026-10-10) ──
+
+echo "P3E. Verbucht / Fakturiert: the delivery fact, the combined PDF of a booked batch, the state words\n";
+$qrRow = $invoiceRow($qrInv->getId());
+check('P3E1 the FIRST PDF of a booked document (P3D8 above) marked it «Fakturiert» — via pdf, by the actor',
+    $qrRow['delivered_at'] !== null && $qrRow['delivered_via'] === 'pdf' && $qrRow['delivered_by'] === 'sachbearbeiter');
+$db->executeStatement("UPDATE invoice SET delivered_at = '2026-01-01 08:00:00' WHERE id = ?", [$qrInv->getId()]);   // a recognisable first date
+$useRequest(['id' => $qrInv->getId()]);
+$host = $invoiceHost();
+$host->pdfAction();
+check('P3E2 … a later PDF changes nothing (the first one wins)', $invoiceRow($qrInv->getId())['delivered_at'] === '2026-01-01 08:00:00');
+$useRequest(['id' => $plainInv->getId()]);
+$host = $invoiceHost();
+$host->pdfAction();
+check('P3E3 the PDF of a document still in invoicing marks nothing', $stateOf($plainInv->getId()) === 'invoicing' && $invoiceRow($plainInv->getId())['delivered_at'] === null && str_starts_with($host->bytes['content'], '%PDF-'));
+
+$delivery = new \Z77\Module\Debtor\Services\DeliveryService($wireDi(), 'tester');
+$deliveryRefused = function (callable $f, string $reason): bool { try { $f(); return false; } catch (InvoiceRefusedException $e) { return $e->reason === $reason; } };
+check('P3E4 only a BOOKED document can become «Fakturiert»: a mark by hand on one in invoicing is refused (not-final), nothing written',
+    $deliveryRefused(fn() => $delivery->markManually($plainInv->getId()), InvoiceRefusedException::NOT_FINAL) && $invoiceRow($plainInv->getId())['delivered_at'] === null);
+$verBefore = (int) $invoiceRow($second->getId())['version'];
+$delivery->markManually($second->getId());
+check('P3E5 «Als fakturiert markieren» on a booked one: marked manual by the actor; again → already-delivered; the version is untouched',
+    $invoiceRow($second->getId())['delivered_via'] === 'manual' && $invoiceRow($second->getId())['delivered_by'] === 'tester'
+    && $deliveryRefused(fn() => (new \Z77\Module\Debtor\Services\DeliveryService($wireDi(), 'tester'))->markManually($second->getId()), InvoiceRefusedException::ALREADY_DELIVERED)
+    && (int) $invoiceRow($second->getId())['version'] === $verBefore);
+check('P3E6 «Markierung entfernen» only for a mark by hand: the PDF mark stays (not-manual), the manual one goes',
+    $deliveryRefused(fn() => (new \Z77\Module\Debtor\Services\DeliveryService($wireDi(), 'tester'))->unmark($qrInv->getId()), InvoiceRefusedException::NOT_MANUAL)
+    && $invoiceRow($qrInv->getId())['delivered_at'] !== null
+    && (function () use ($wireDi, $second, $invoiceRow): bool { (new \Z77\Module\Debtor\Services\DeliveryService($wireDi(), 'tester'))->unmark($second->getId()); return $invoiceRow($second->getId())['delivered_at'] === null; })());
+
+// The screens: the detail's button, the actions page and fetch, the views.
+$useRequest(['id' => (string) $newId]);
+$host = $invoiceHost();
+$host->detailAction();
+$detHtml = $renderMain($host);
+check('P3E7 the detail of a booked, undelivered document: «verbucht» + «nicht fakturiert» in the header, the info row, «Als fakturiert markieren» submitting a POST form to mark-delivered',
+    str_contains($detHtml, '>verbucht</span>') && str_contains($detHtml, '>nicht fakturiert</span>') && !str_contains($detHtml, 'definitiv')
+    && str_contains($detHtml, 'form="invoice-delivery-' . $newId . '"') && str_contains($detHtml, 'action="/backend/finance/invoice/mark-delivered?id=' . $newId . '"'));
+$useRequest(['id' => (string) $newId], ['csrf_token' => 'tok-session']);
+$host = $invoiceHost();
+$host->markDeliveredAction();
+check('P3E8 mark-delivered (page): marked manual, flash, back to the detail', $invoiceRow($newId)['delivered_via'] === 'manual' && $host->messageService->flashes[0][0] === 'success'
+    && $host->redirectedTo === '/backend/finance/invoice/detail?id=' . $newId);
+$useRequest(['id' => (string) $newId]);
+$host = $invoiceHost();
+$host->detailAction();
+check('P3E9 … the detail now shows «fakturiert {date}», «manuell markiert» and «Markierung entfernen»', str_contains($renderMain($host), 'fakturiert ' . date('d.m.Y')) && str_contains($renderMain($host), 'manuell markiert')
+    && str_contains($renderMain($host), '/unmark-delivered?id=' . $newId));
+$GLOBALS['z77TestFetch'] = true;
+$useRequest(['id' => (string) $newId], ['csrf_token' => 'tok-session', '_origin' => 'region:invoice-find-list']);
+$host = $invoiceHost();
+$answer = $host->unmarkDeliveredAction();
+check('P3E10 unmark-delivered from the detail WINDOW: the detail back into the window, the list reloads, the mark gone',
+    $answer instanceof \Z77\Core\Http\Response\FetchResponse && $host->redirectedTo === null && $invoiceRow($newId)['delivered_at'] === null
+    && (fn() => $this->commands)->call($answer) === [['action' => 'open-window', 'url' => '/backend/finance/invoice/detail?id=' . $newId, 'replace' => true], ['action' => 'refresh-region', 'name' => 'invoice-find-list']]);
+$GLOBALS['z77TestFetch'] = false;
+
+// The «Verbucht» summary after a batch and the combined PDF.
+$useRequest(['doc' => [(string) $newId, (string) $second->getId(), (string) $plainInv->getId(), 'x']]);
+$host = $invoiceHost();
+$host->bookedAction();
+$bookedHtml = $renderMain($host);
+check('P3E11 booked: exactly the FINAL documents of the batch (one in invoicing and junk left out), ONE form posting their ids to pdf-batch in a new tab',
+    array_map(fn($d) => $d->getId(), $host->context['documents']) === [$newId, $second->getId()]
+    && str_contains($bookedHtml, 'action="/backend/finance/invoice/pdf-batch" target="_blank"') && substr_count($bookedHtml, 'name="doc[]"') === 2
+    && str_contains($bookedHtml, 'PDF der 2 Dokumente öffnen') && str_contains($bookedHtml, '2 nicht fakturiert'));
+$useRequest([], ['csrf_token' => 'tok-session', 'doc' => [(string) $newId, (string) $plainInv->getId()]]);
+$host = $invoiceHost();
+$host->pdfBatchAction();
+check('P3E12 pdf-batch with a document still in invoicing: refused whole, no PDF, nothing marked', $host->bytes === [] && $host->messageService->flashes[0][0] === 'error' && $invoiceRow($newId)['delivered_at'] === null);
+$useRequest([], ['csrf_token' => 'tok-session', 'doc' => [(string) $newId, (string) $second->getId()]]);
+$host = $invoiceHost();
+$host->pdfBatchAction();
+$pagesOf = fn(int $id) => (function ($p) { $p->output(); return $p->pageNo(); })(\Z77\Module\Debtor\Pdf\InvoicePdf::of($readInvoice($id), $wireDi()));
+$combined = \Z77\Module\Debtor\Pdf\InvoicePdf::combined([$readInvoice($newId), $readInvoice($second->getId()), $readInvoice($longInv->getId())], $wireDi())->withoutCompression();
+$combinedBin = $combined->output();
+check('P3E13 pdf-batch: ONE PDF named «dokumente-…-bis-….pdf», both documents marked «Fakturiert» via pdf',
+    str_starts_with($host->bytes['content'], '%PDF-') && preg_match('/^dokumente-\d+-bis-\d+\.pdf$/', $host->bytes['filename']) === 1
+    && $invoiceRow($newId)['delivered_via'] === 'pdf' && $invoiceRow($second->getId())['delivered_via'] === 'pdf');
+check('P3E14 the combined PDF contains every document: the pages add up, each title once per document, each payment part, the long one numbered «Seite 2 von N» of ITS pages, no alias left',
+    $combined->pageNo() === $pagesOf($newId) + $pagesOf($second->getId()) + $pagesOf($longInv->getId())
+    && str_contains($combinedBin, '(' . $readInvoice($newId)->documentName() . ')') && str_contains($combinedBin, '(' . $readInvoice($second->getId())->documentName() . ')')
+    && substr_count($combinedBin, '(Zahlteil)') === 3 && str_contains($combinedBin, 'Seite 2 von ' . $pagesOf($longInv->getId())) && !str_contains($combinedBin, '{nb'));
+
+// The views and the state words.
+$useRequest(['view' => 'undelivered']);
+$host = $invoiceHost();
+$host->listAction();
+$undeliveredHtml = $renderList($host);
+check('P3E15 view «Nicht fakturiert»: every booked document of any kind without the mark, no selection, the «Fakturiert» column; its tab counts them',
+    $host->context['documents'] !== [] && array_filter($host->context['documents'], fn($d) => !$d->isFinal() || $d->isDelivered()) === []
+    && $host->context['counts']['undelivered'] === (int) $db->fetchOne("SELECT COUNT(*) FROM invoice WHERE state = 'final' AND delivered_at IS NULL")
+    && !str_contains($undeliveredHtml, 'name="doc[]"') && str_contains($undeliveredHtml, 'nicht fakturiert</span>') && str_contains($renderSlot($host, 'hc2'), 'Nicht fakturiert <small>'));
+$useRequest(['view' => 'final']);
+$host = $invoiceHost();
+$host->listAction();
+check('P3E16 view «Verbucht»: the tab says «Verbucht», the delivered ones show their date in the «Fakturiert» column (title: who and how)',
+    str_contains($renderSlot($host, 'hc2'), '>Verbucht <small>') && !str_contains($renderSlot($host, 'hc2'), 'Definitiv')
+    && str_contains($renderList($host), '>' . date('d.m.Y') . '</span>') && str_contains($renderList($host), 'title="Fakturiert am '));
 
 // ── Q. P4 part 1: payments, discount and loss (plan §6.3, owner go 2026-10-06) ──
 
@@ -3091,8 +3195,8 @@ $journalBefore = $journalCount();
 $useRequest([], ['doc' => [$pairA, $pairB2]]);   // the batch of P3C41 submitted a second time
 $host = $invoiceHost();
 $host->finalizeAction();
-check('P3C57 a DOUBLE submit of a finalize batch: «bereits definitiv» (not «nichts wurde verbucht»), nothing posted twice, to the «Definitiv» view',
-    $journalCount() === $journalBefore && $host->messageService->flashes[0][0] === 'error' && str_contains($host->messageService->flashes[0][1], 'Bereits definitiv')
+check('P3C57 a DOUBLE submit of a finalize batch: «bereits verbucht» (not «nichts wurde verbucht»), nothing posted twice, to the «Verbucht» view',
+    $journalCount() === $journalBefore && $host->messageService->flashes[0][0] === 'error' && str_contains($host->messageService->flashes[0][1], 'Bereits verbucht')
     && $host->redirectedTo === '/backend/finance/invoice/list?view=final');
 
 $journalHost = function () {
