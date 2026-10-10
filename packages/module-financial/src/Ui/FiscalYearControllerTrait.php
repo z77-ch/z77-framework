@@ -239,6 +239,50 @@ trait FiscalYearControllerTrait
         return $response;
     }
 
+    /**
+     * The year's ⋮ hub (owner 2026-10-10: the year actions in a ⋮ before the title, as every
+     * backend list row has them — not as buttons at the far right). Offers exactly what the
+     * list used to show as buttons, by the same rules: «Jahr abschliessen …» when the order
+     * rule allows it, «Wieder öffnen …» for who may reach the action, «Löschen …» for the
+     * latest / earliest year without postings. Each opens its confirm (unchanged).
+     */
+    protected function actionsAction(): HtmlResponse|FetchResponse
+    {
+        $id   = (int) DI::getRequest()->getGetParameter('id');
+        $year = $id > 0 ? $this->fiscalYears()->find($id) : null;
+        if ($year === null) {
+            return $this->fetchError('Geschäftsjahr nicht gefunden');
+        }
+
+        $response = $this->html(['year' => $year, 'actions' => $this->fiscalYearActions($year), 'actionBase' => $this->fiscalYearListBase()]);
+        $this->layoutManager->addPartials('actions', 'Backend/FiscalYearController', self::FISCAL_YEAR_NS);
+
+        return $response;
+    }
+
+    /**
+     * What may be done with this year now — the list's ⋮ shows only when this is not empty.
+     *
+     * @return list<'close'|'reopen'|'delete'>
+     */
+    private function fiscalYearActions(FiscalYear $year): array
+    {
+        $closer  = $this->fiscalYearCloseService();
+        $actions = [];
+        if ($closer->closeRefusal($year) === null) {
+            $actions[] = 'close';
+        }
+        if ($this->fiscalYearCanReach('reopen') && $closer->reopenRefusal($year) === null) {
+            $actions[] = 'reopen';
+        }
+        $isEnd = in_array($year->getId(), [$this->fiscalYears()->latest()?->getId(), $this->fiscalYears()->earliest()?->getId()], true);
+        if ($isEnd && $this->fiscalYearService()->deletionRefusal($year) === null) {
+            $actions[] = 'delete';
+        }
+
+        return $actions;
+    }
+
     // ── open ─────────────────────────────────────────────────────────────
 
     /**

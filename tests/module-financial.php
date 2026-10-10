@@ -286,6 +286,12 @@ use Z77\Persistence\Doctrine\OpenWork\OpenWorkChecks;
 use Z77\Persistence\Resolver\DataSourceResolver;
 use Z77\Persistence\Resolver\UnifiedEntityManager;
 
+/** Whether the fiscal-year list offers $action for year $id in its ⋮ (the confirm links live in the hub since 2026-10-10). */
+function fyOffers(string $html, int|string $id, string $action): bool
+{
+    return preg_match('/data-fiscal-year-id="' . $id . '" data-fiscal-year-actions="[^"]*\b' . $action . '\b/', $html) === 1;
+}
+
 $pass = 0;
 $fail = 0;
 
@@ -1746,8 +1752,8 @@ check('Y3 deletionRefusal(): null for the new empty latest year, not-latest for 
     && $service->deletionRefusal($years->findOneBy(['code' => '2031-32'])) === FiscalYearNotDeletableException::NOT_LATEST);
 $yearListHtml = fn() => $renderer->partial('Backend/FiscalYearController/listAction', $listHost('fiscal-year')->context);
 $html = $yearListHtml();
-check('Y4 the list shows «Löschen …» for that year — never for one in the middle (the earliest may carry one too, since the prior years)', str_contains($html, '/backend/finance/fiscal-year/confirm-delete?id=' . $yearId('2032-33'))
-    && !str_contains($html, '/confirm-delete?id=' . $yearId('2031-32') . '"') && !str_contains($html, '/confirm-delete?id=' . $yearId('2030-31') . '"'));
+check('Y4 the list shows «Löschen …» for that year — never for one in the middle (the earliest may carry one too, since the prior years)', fyOffers($html, $yearId('2032-33'), 'delete')
+    && !fyOffers($html, $yearId('2031-32'), 'delete') && !fyOffers($html, $yearId('2030-31'), 'delete'));
 
 $nested = null;
 $outer  = function () use ($service, $yearId, &$nested) {
@@ -1769,7 +1775,7 @@ $em = $wireDi();
 (new FiscalYearService($em))->delete($yearId('2032-33'));
 check('Y7 the latest empty year is deleted: year, periods and range gone', $yearSnapshot('2032-33') === ['0', '0', false]);
 $em = $wireDi();
-check('Y8 … the latest is 2031-32 again, and the list offers no delete (it has entries)', $em->getRepository(FiscalYear::class)->latest()->getCode() === '2031-32' && !str_contains($yearListHtml(), '/confirm-delete?id=' . $yearId('2031-32') . '"'));
+check('Y8 … the latest is 2031-32 again, and the list offers no delete (it has entries)', $em->getRepository(FiscalYear::class)->latest()->getCode() === '2031-32' && !fyOffers($yearListHtml(), $yearId('2031-32'), 'delete'));
 (new FiscalYearService($em))->open(new FiscalYear('2032-33', day('2032-07-01'), day('2033-06-30')));
 check('Y9 … and it re-opens with the same code: 12 periods, its range new at 0', $yearSnapshot('2032-33') === ['1', '12', '0']);
 
@@ -1832,7 +1838,7 @@ check('PY3 open() takes the prior year: the earliest now, its monthly periods, i
 check('PY4 the next year is still offered after the latest (both ends stay open)', (new FiscalYearService($em))->proposeNext()->getStartDate()->format('Y-m-d') === $years->latest()->getEndDate()->modify('+1 day')->format('Y-m-d'));
 $html = $yearListHtml();
 check('PY5 the empty prior year carries «Löschen …» (the earliest — a prior year opened by mistake), the year after it does not',
-    str_contains($html, '/confirm-delete?id=' . $yearId($priorCode)) && $refusal($earliest->getCode()) === FiscalYearNotDeletableException::NOT_LATEST);
+    fyOffers($html, $yearId($priorCode), 'delete') && $refusal($earliest->getCode()) === FiscalYearNotDeletableException::NOT_LATEST);
 (new FiscalYearService($wireDi()))->delete($yearId($priorCode));
 check('PY6 … and it is deleted: year, periods and range gone; the earliest is the old one again', $yearSnapshot($priorCode) === ['0', '0', false]
     && $wireDi()->getRepository(FiscalYear::class)->earliest()->getCode() === $earliest->getCode());
@@ -3135,7 +3141,7 @@ $wireDiKeep();
 $html = $ycList();
 check('YC26 the list, all years open: each year a state badge «offen»; «Jahr abschliessen …» on the EARLIEST year only (in order), no «Wieder öffnen …»',
     substr_count($html, 'data-fiscal-year-state="open"') === (int) $db->fetchOne('SELECT COUNT(*) FROM fiscal_year') && !str_contains($html, 'data-fiscal-year-state="closed"')
-    && str_contains($html, '/backend/finance/fiscal-year/confirm-close?id=' . $yearId($pCode) . '"') && substr_count($html, '/confirm-close?id=') === 1 && !str_contains($html, '/confirm-reopen?id='));
+    && fyOffers($html, $yearId($pCode), 'close') && preg_match_all('/data-fiscal-year-actions="[^"]*\\bclose\\b/', $html) === 1 && preg_match_all('/data-fiscal-year-actions="[^"]*\breopen\b/', $html) === 0);
 check('YC27 … and the protocol of the prior year in the list, newest first, small and muted: «wieder geöffnet … von admin — Grund: Nachbuchung Beleg 18», «abgeschlossen … (1 Warnung bestätigt)»',
     str_contains($html, 'data-fiscal-year-log><small>wieder geöffnet ') && str_contains($html, 'von admin — Grund: Nachbuchung Beleg 18')
     && str_contains($html, 'von buchhalter (1 Warnung bestätigt)') && strpos($html, 'Nachbuchung Beleg 18') < strpos($html, '(1 Warnung bestätigt)'));
@@ -3194,11 +3200,11 @@ YcCloseCheck::$findings = [];
 $wireDiKeep();
 $html = $ycList();
 check('YC34 the list after the close: «abgeschlossen» on the prior year, «Wieder öffnen …» on it (latest closed, canReach yes), «Jahr abschliessen …» moved on to the next year',
-    str_contains($html, 'data-fiscal-year-state="closed"') && str_contains($html, '/confirm-reopen?id=' . $yearId($pCode) . '"')
-    && str_contains($html, '/confirm-close?id=' . $yearId($nCode) . '"') && !str_contains($html, '/confirm-close?id=' . $yearId($pCode) . '"')
-    && !str_contains($html, '/confirm-delete?id=' . $yearId($pCode) . '"'));
+    str_contains($html, 'data-fiscal-year-state="closed"') && fyOffers($html, $yearId($pCode), 'reopen')
+    && fyOffers($html, $yearId($nCode), 'close') && !fyOffers($html, $yearId($pCode), 'close')
+    && !fyOffers($html, $yearId($pCode), 'delete'));
 $GLOBALS['ycCanReach'] = false;
-check('YC35 … for a user the access config refuses (canReach no): no «Wieder öffnen …»', !str_contains($ycList(), '/confirm-reopen?id='));
+check('YC35 … for a user the access config refuses (canReach no): no «Wieder öffnen …»', preg_match_all('/data-fiscal-year-actions="[^"]*\breopen\b/', $ycList()) === 0);
 $GLOBALS['ycCanReach'] = true;
 $_GET = ['id' => (string) $yearId($pCode)];
 $h = $ycHost();

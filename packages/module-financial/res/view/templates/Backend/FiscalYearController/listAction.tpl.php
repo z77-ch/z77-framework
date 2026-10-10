@@ -1,7 +1,8 @@
 <?php
 /**
- * The fiscal years, newest first, each with its monthly periods and their
- * close state (ADR-042 decision 10). A year is opened through the toolbar
+ * The fiscal years, newest first: per year a header with the ⋮ BEFORE the title (the year
+ * actions, `actionsAction` hub — owner 2026-10-10), the state badge, the protocol lines, and
+ * the months in ONE line, marked only where a month differs from the year (FIN-UI-012). A year is opened through the toolbar
  * button and never edited; the LATEST and the EARLIEST year carry «Löschen …»
  * while nothing was ever posted in them (`$deletableIds`, FIN-FY-002 — the
  * modal and the service decide again). Closing (P5 part 1, owner decisions 2026-09-30): each year
@@ -29,6 +30,7 @@ $closedIds     = $closedIds ?? [];
 $closableIds   = $closableIds ?? [];
 $reopenableIds = $reopenableIds ?? [];
 $logLines      = $logLines ?? [];
+$monthNames = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez'];
 $badge = [
     'open'        => 'badge--success',
     'vat-settled' => 'badge--warning',
@@ -47,39 +49,44 @@ $badge = [
     <?php endif; ?>
     <?php foreach ($years as $year): ?>
     <?php $periods = $year->getPeriods(); $yearClosed = in_array($year->getId(), $closedIds, true); ?>
-    <div class="be-list__section" data-fiscal-year-id="<?= e((string) $year->getId()) ?>">
+    <?php
+    // What the ⋮ offers for this year — also on the section as `data-fiscal-year-actions`, the
+    // hook the harness reads now that the confirm links live in the hub, not in the list.
+    $yearActions = array_keys(array_filter([
+        'close'  => in_array($year->getId(), $closableIds, true),
+        'reopen' => in_array($year->getId(), $reopenableIds, true),
+        'delete' => in_array($year->getId(), $deletableIds, true),
+    ]));
+    $hasActions = $yearActions !== [];
+    ?>
+    <div class="be-list__section" data-fiscal-year-id="<?= e((string) $year->getId()) ?>" data-fiscal-year-actions="<?= e(implode(' ', $yearActions)) ?>">
         <div class="be-list__section-header">
+            <?php // The year's actions in a ⋮ BEFORE the title, as every backend list row has
+                  // them (owner 2026-10-10) — no buttons at the far right any more. ?>
+            <?php if ($hasActions): ?>
+            <button type="button" class="be-tree__menu" title="Aktionen" data-fetch-get="<?= e($actionBase) ?>/actions?id=<?= e((string) $year->getId()) ?>">⋮</button>
+            <?php else: ?>
+            <span class="be-tree__menu" aria-hidden="true"></span><?php // keeps the titles in one line ?>
+            <?php endif; ?>
             <h2 class="be-list__section-title">
                 Geschäftsjahr <code><?= e($year->getCode()) ?></code>
                 <small class="be-list__cell--muted">· <?= e($year->getStartDate()->format('d.m.Y')) ?> – <?= e($year->getEndDate()->format('d.m.Y')) ?> · Nummernkreis <code><?= e($year->journalEntryRange()) ?></code></small>
                 <span class="badge <?= $yearClosed ? 'badge--muted' : 'badge--success' ?>" data-fiscal-year-state="<?= $yearClosed ? 'closed' : 'open' ?>"><?= $yearClosed ? 'abgeschlossen' : 'offen' ?></span>
             </h2>
-            <?php if (in_array($year->getId(), $closableIds, true)): ?>
-            <button type="button" class="be-btn be-btn--primary be-btn--sm" data-fetch-get="<?= e($actionBase) ?>/confirm-close?id=<?= e((string) $year->getId()) ?>">Jahr abschliessen …</button>
-            <?php endif; ?>
-            <?php if (in_array($year->getId(), $reopenableIds, true)): ?>
-            <button type="button" class="be-btn be-btn--ghost be-btn--sm" data-fetch-get="<?= e($actionBase) ?>/confirm-reopen?id=<?= e((string) $year->getId()) ?>">Wieder öffnen …</button>
-            <?php endif; ?>
-            <?php if (in_array($year->getId(), $deletableIds, true)): ?>
-            <button type="button" class="be-btn be-btn--danger be-btn--sm" data-fetch-get="<?= e($actionBase) ?>/confirm-delete?id=<?= e((string) $year->getId()) ?>">Löschen …</button>
-            <?php endif; ?>
-            <span class="be-list__section-badge" title="Perioden"><?= count($periods) ?></span>
         </div>
         <?php foreach ($logLines[$year->getId()] ?? [] as $line): ?>
         <p class="be-list__cell--muted" data-fiscal-year-log><small><?= e($line) ?></small></p>
         <?php endforeach; ?>
-        <div class="be-list__table">
-            <?php foreach ($periods as $period): ?>
-            <div class="be-list__item">
-                <div class="be-list__row">
-                    <span class="be-list__cell"><?= e($period->getStartDate()->format('d.m.Y')) ?> – <?= e($period->getEndDate()->format('d.m.Y')) ?></span>
-                    <span class="be-list__cell">
-                        <span class="badge <?= e($badge[$period->getState()] ?? 'badge--muted') ?>"><?= e($stateLabels[$period->getState()] ?? $period->getState()) ?></span>
-                    </span>
-                </div>
-            </div>
+        <?php // The months in ONE line (owner 2026-10-10): only the YEAR is closed (financial.md,
+              // «Only the whole YEAR is closed»), so a badge under every month only repeated the
+              // year's state. A month is marked only where it differs from the year — later
+              // «MWST abgerechnet» (P5 part 2). The full dates stay in the title attribute. ?>
+        <p class="be-list__section-hint" data-fiscal-year-months>
+            <?php foreach ($periods as $i => $period): ?>
+            <?php $differs = $period->getState() !== ($yearClosed ? 'closed' : 'open'); ?>
+            <?= $i > 0 ? ' · ' : '' ?><span title="<?= e($period->getStartDate()->format('d.m.Y') . ' – ' . $period->getEndDate()->format('d.m.Y')) ?>"><?= e($monthNames[(int) $period->getStartDate()->format('n') - 1] . ($period->getStartDate()->format('Y') !== $year->getStartDate()->format('Y') ? ' ' . $period->getStartDate()->format('y') : '')) ?></span><?php if ($differs): ?> <span class="badge <?= e($badge[$period->getState()] ?? 'badge--muted') ?>"><?= e($stateLabels[$period->getState()] ?? $period->getState()) ?></span><?php endif; ?>
             <?php endforeach; ?>
-        </div>
+        </p>
     </div>
     <?php endforeach; ?>
 </div>
