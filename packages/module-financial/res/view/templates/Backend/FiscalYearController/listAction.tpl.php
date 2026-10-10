@@ -66,7 +66,8 @@ $badge = [
             <?php if ($hasActions): ?>
             <button type="button" class="be-tree__menu" title="Aktionen" data-fetch-get="<?= e($actionBase) ?>/actions?id=<?= e((string) $year->getId()) ?>">⋮</button>
             <?php else: ?>
-            <span class="be-tree__menu" aria-hidden="true"></span><?php // keeps the titles in one line ?>
+            <?php // Keeps the titles in one line — the ⋮'s size without its look or hover. ?>
+            <span class="be-tree__menu" aria-hidden="true" style="visibility:hidden"></span>
             <?php endif; ?>
             <h2 class="be-list__section-title">
                 Geschäftsjahr <code><?= e($year->getCode()) ?></code>
