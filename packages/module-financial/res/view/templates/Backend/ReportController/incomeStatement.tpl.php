@@ -32,12 +32,14 @@ $shared = ['link' => $link, 'fmt' => $fmt];
         <div class="be-list__frame">
             <?= $this->partial('Backend/ReportController/statementSection', $shared + ['section' => $report->expense, 'totalLabel' => 'Total Aufwand', 'total' => $report->expense->total], $ns) ?>
         </div>
-        <div class="be-list__table" style="--be-list-cols: 6rem minmax(12rem, 1fr) 9rem">
-            <div class="be-list__item"><div class="be-list__row">
-                <span class="be-list__cell"></span>
-                <span class="be-list__cell"><strong><?= $result->isNegative() ? 'Verlust' : 'Gewinn' ?> (Ertrag − Aufwand)</strong></span>
-                <span class="be-list__cell be-list__cell--num" data-result><strong><?= e($fmt($result)) ?></strong></span>
-            </div></div>
+        <div class="be-list__frame">
+            <div class="be-list__table" style="--be-list-cols: 6rem minmax(12rem, 1fr) 9rem">
+                <div class="be-list__item"><div class="be-list__row be-list__row--total">
+                    <span class="be-list__cell"></span>
+                    <span class="be-list__cell"><?= $result->isNegative() ? 'Verlust' : 'Gewinn' ?> (Ertrag − Aufwand)</span>
+                    <span class="be-list__cell be-list__cell--num" data-result><?= e($fmt($result)) ?></span>
+                </div></div>
+            </div>
         </div>
     </div>
 </div>

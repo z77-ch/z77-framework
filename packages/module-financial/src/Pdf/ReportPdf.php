@@ -3,6 +3,8 @@
 namespace Z77\Module\Financial\Pdf;
 
 use Z77\Module\Financial\Reports\BalanceSheet;
+use Z77\Module\Financial\Reports\IncomeStatement;
+use Z77\Module\Financial\Reports\ReportRange;
 use Z77\Module\Financial\Reports\StatementSection;
 use Z77\Shared\Libraries\Convention\Naming;
 use Z77\Shared\Money\AmountFormat;
@@ -59,10 +61,38 @@ final class ReportPdf
         ], 'Z77\\Shared');
     }
 
-    /** «bilanz-2026-per-2026-12-31.pdf» — kebab-case lower (file names follow the layer). */
-    public static function fileName(string $title, string $yearCode, string $day): string
+    /** The income statement over the range: Ertrag, Aufwand, the result (Ertrag − Aufwand). */
+    public static function incomeStatement(IncomeStatement $report, ReportRange $range, string $issuer, string $printedAt): PdfDocument
     {
-        return Naming::toSlug($title . ' ' . $yearCode . ' per ' . $day) . '.pdf';
+        $code   = $range->year->getCode();
+        $result = $report->result();
+        $blocks = [
+            self::statementBlock($report->revenue, 'Total Ertrag', $report->revenue->total),
+            self::statementBlock($report->expense, 'Total Aufwand', $report->expense->total),
+            [
+                'columns'  => self::STATEMENT_COLUMNS,
+                'header'   => false,
+                'rows'     => [['cells' => ['', ($result->isNegative() ? 'Verlust' : 'Gewinn') . ' (Ertrag − Aufwand)', self::fmt($result)], 'bold' => true, 'rule' => true]],
+                'gapAfter' => 0,
+            ],
+        ];
+
+        return PdfDocument::create('Erfolgsrechnung ' . $code, $issuer)->partial('pdf/report', [
+            'title'     => 'Erfolgsrechnung',
+            'subtitle'  => 'Geschäftsjahr ' . $code . ' · ' . $range->from->format('d.m.Y') . ' – ' . $range->to->format('d.m.Y'),
+            'issuer'    => $issuer,
+            'printedAt' => $printedAt,
+            'blocks'    => $blocks,
+        ], 'Z77\\Shared');
+    }
+
+    /** «bilanz-2026-per-2026-12-31.pdf» — kebab-case lower (file names follow the layer). */
+    public static function fileName(string $title, string $yearCode, string $day, ?string $from = null): string
+    {
+        // A statement AT a day says «per», one over a range says «von … bis» (erfolgsrechnung-2026-von-…-bis-….pdf).
+        $range = $from === null ? ' per ' . $day : ' von ' . $from . ' bis ' . $day;
+
+        return Naming::toSlug($title . ' ' . $yearCode . $range) . '.pdf';
     }
 
     /**

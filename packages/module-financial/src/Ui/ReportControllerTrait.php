@@ -62,7 +62,7 @@ trait ReportControllerTrait
     ];
 
     /** The reports that have a PDF already (FIN-PDF-001, built step by step). */
-    private const REPORT_PDF = ['balance-sheet'];
+    private const REPORT_PDF = ['balance-sheet', 'income-statement'];
 
     private const REPORT_MONTHS =['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez'];
 
@@ -180,10 +180,13 @@ trait ReportControllerTrait
         $issuer    = $this->reportMandator()?->getName() ?? '';
         $printedAt = (new \DateTimeImmutable())->format('d.m.Y H:i');
         $pdf       = match ($tab) {
-            'balance-sheet' => ReportPdf::balanceSheet($this->ledgerReports()->balanceSheet($range), $issuer, $printedAt),
+            'balance-sheet'    => ReportPdf::balanceSheet($this->ledgerReports()->balanceSheet($range), $issuer, $printedAt),
+            'income-statement' => ReportPdf::incomeStatement($this->ledgerReports()->incomeStatement($range), $range, $issuer, $printedAt),
         };
 
-        return $this->bytes($pdf->output(), ReportPdf::fileName(self::REPORT_TABS[$tab], $range->year->getCode(), $range->toDay()), 'application/pdf');
+        $from = $tab === 'balance-sheet' ? null : $range->fromDay();
+
+        return $this->bytes($pdf->output(), ReportPdf::fileName(self::REPORT_TABS[$tab], $range->year->getCode(), $range->toDay(), $from), 'application/pdf');
     }
 
     /** `?page=` — the journal of the range, oldest first, one page of entries at a time. */

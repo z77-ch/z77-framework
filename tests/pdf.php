@@ -209,5 +209,13 @@ $bytes = \Z77\Module\Financial\Pdf\ReportPdf::balanceSheet($sheet, 'Muster AG', 
 check('H1 balance sheet PDF: title, range, the account line, the totals, no fault notice (balanced)', str_starts_with($bytes, '%PDF') && str_contains($bytes, '(Bilanz)') && str_contains($bytes, 'per 31.12.2026') && str_contains($bytes, '(Bankguthaben)') && str_contains($bytes, '(Total Aktiven)') && str_contains($bytes, '(Jahresgewinn 2026)') && str_contains($bytes, '(Total Passiven)') && !str_contains($bytes, 'Differenz'));
 check('H2 file name kebab-case', \Z77\Module\Financial\Pdf\ReportPdf::fileName('Bilanz', '2026', '2026-12-31') === 'bilanz-2026-per-2026-12-31.pdf');
 
+$income = new \Z77\Module\Financial\Reports\IncomeStatement(
+    new \Z77\Module\Financial\Reports\StatementSection('Ertrag', [$line('3400', 'Dienstleistungserlöse', 0, false, '500.00')], $chf('500.00')),
+    new \Z77\Module\Financial\Reports\StatementSection('Aufwand', [$line('6500', 'Büromaterial', 0, false, '200.00')], $chf('200.00')),
+);
+$bytes = \Z77\Module\Financial\Pdf\ReportPdf::incomeStatement($income, $range, 'Muster AG', '10.10.2026 12:27')->withoutCompression()->output();
+check('H3 income statement PDF: title, the range «01.01.2026 – 31.12.2026», both totals, the result 300.00 as «Gewinn»', str_contains($bytes, '(Erfolgsrechnung)') && str_contains($bytes, '01.01.2026') && str_contains($bytes, '(Total Ertrag)') && str_contains($bytes, '(Total Aufwand)') && str_contains($bytes, 'Gewinn \\(Ertrag') && str_contains($bytes, '(300.00)'));
+check('H4 file name of a range: «von … bis»', \Z77\Module\Financial\Pdf\ReportPdf::fileName('Erfolgsrechnung', '2026', '2026-12-31', '2026-01-01') === 'erfolgsrechnung-2026-von-2026-01-01-bis-2026-12-31.pdf');
+
 echo "\n{$pass} passed, {$fail} failed\n";
 exit($fail === 0 ? 0 : 1);
