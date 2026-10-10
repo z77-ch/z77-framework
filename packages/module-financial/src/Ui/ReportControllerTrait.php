@@ -11,6 +11,7 @@ use Z77\Core\DI,
     Z77\Module\Financial\Entities\Account,
     Z77\Module\Financial\Entities\FiscalYear,
     Z77\Module\Financial\Reports\ReportRange,
+    Z77\Module\Financial\Reports\StatementComparison,
     Z77\Module\Financial\Repositories\AccountRepository,
     Z77\Module\Financial\Repositories\FiscalYearRepository,
     Z77\Module\Financial\Services\LedgerReports,
@@ -63,6 +64,12 @@ trait ReportControllerTrait
 
     /** The PDF takes every line in one page (not PHP_INT_MAX: Paging adds to it and would overflow). */
     private const PDF_ALL_ROWS = 1_000_000;
+
+    /** Balance sheet and income statement: the shown year and the two before it (owner 2026-10-10). */
+    private const COMPARE_YEARS = 3;
+
+    /** The reports with the «Vorjahre» checkbox. */
+    private const REPORT_COMPARE = ['balance-sheet', 'income-statement'];
 
     /** The reports that have a PDF (FIN-PDF-001). */
     private const REPORT_PDF = ['trial-balance', 'balance-sheet', 'income-statement', 'account-statement', 'journal'];
@@ -130,15 +137,87 @@ trait ReportControllerTrait
     protected function balanceSheetAction(): HtmlResponse
     {
         return $this->reportPage('balanceSheet', 'balance-sheet', fn(ReportRange $range) => [
-            'report' => $this->ledgerReports()->balanceSheet($range),
-            'atDay'  => true,
+            'report'     => $this->ledgerReports()->balanceSheet($range),
+            'comparison' => $this->balanceComparison($range),
+            'atDay'      => true,
         ]);
     }
 
     protected function incomeStatementAction(): HtmlResponse
     {
         return $this->reportPage('incomeStatement', 'income-statement', fn(ReportRange $range) => [
-            'report' => $this->ledgerReports()->incomeStatement($range),
+            'report'     => $this->ledgerReports()->incomeStatement($range),
+            'comparison' => $this->incomeComparison($range),
+        ]);
+    }
+
+    // ── the comparison over the last years (owner 2026-10-10) ────────────
+
+    /** «Vorjahre» on (the default) unless the form sent `compare=0` — an absent parameter is the first load. */
+    private function reportCompares(): bool
+    {
+        return $this->reportParameter('compare') !== '0';
+    }
+
+    /**
+     * The shown range and the same range in the older fiscal years — up to COMPARE_YEARS in all,
+     * newest first. Each older range is the shown one moved back by whole years and clamped into
+     * that year (a 29 February, a shorter first year); a year that does not exist is left out.
+     *
+     * @return list<ReportRange>
+     */
+    private function comparisonRanges(ReportRange $range): array
+    {
+        if (!$this->reportCompares()) {
+            return [$range];
+        }
+        $older = array_values(array_filter(
+            $this->reportYearSelection()->all(),
+            static fn(FiscalYear $y) => $y->getStartDate() < $range->year->getStartDate(),
+        ));
+        usort($older, static fn(FiscalYear $a, FiscalYear $b) => $b->getStartDate() <=> $a->getStartDate());
+
+        $ranges = [$range];
+        foreach (array_slice($older, 0, self::COMPARE_YEARS - 1) as $n => $year) {
+            $clamp    = static fn(\DateTimeImmutable $d) => max($year->getStartDate(), min($year->getEndDate(), $d));
+            $back     = '-' . ($n + 1) . ' year';
+            $ranges[] = new ReportRange($year, $clamp($range->from->modify($back)), $clamp($range->to->modify($back)));
+        }
+
+        return $ranges;
+    }
+
+    private function balanceComparison(ReportRange $range): StatementComparison
+    {
+        $sheets = array_map(fn(ReportRange $r) => $this->ledgerReports()->balanceSheet($r), $this->comparisonRanges($range));
+        $col    = static fn(callable $f) => array_map($f, $sheets);
+
+        return new StatementComparison($col(static fn($s) => $s->range->year->getCode()), [
+            StatementComparison::block('Aktiven', $col(static fn($s) => $s->assets), 'Total Aktiven', $col(static fn($s) => $s->assets->total)),
+            StatementComparison::block('Fremdkapital', $col(static fn($s) => $s->liabilities), 'Total Fremdkapital', $col(static fn($s) => $s->liabilities->total)),
+            StatementComparison::block('Eigenkapital', $col(static fn($s) => $s->equity), 'Total Eigenkapital', $col(static fn($s) => $s->totalEquity()), [[
+                // One period: the sign names it («Jahresgewinn 2026», FIN-UI-010); several: both.
+                'label'   => count($sheets) === 1
+                    ? ($sheets[0]->result->isNegative() ? 'Jahresverlust ' : 'Jahresgewinn ') . $range->year->getCode()
+                    : 'Jahresgewinn / -verlust',
+                'amounts' => $col(static fn($s) => $s->result),
+            ]]),
+            ['title' => '', 'rows' => [], 'extra' => [], 'totalLabel' => 'Total Passiven', 'totals' => $col(static fn($s) => $s->totalLiabilitiesAndEquity())],
+        ]);
+    }
+
+    private function incomeComparison(ReportRange $range): StatementComparison
+    {
+        $ranges     = $this->comparisonRanges($range);
+        $statements = array_map(fn(ReportRange $r) => $this->ledgerReports()->incomeStatement($r), $ranges);
+        $col        = static fn(callable $f) => array_map($f, $statements);
+
+        return new StatementComparison(array_map(static fn(ReportRange $r) => $r->year->getCode(), $ranges), [
+            StatementComparison::block('Ertrag', $col(static fn($s) => $s->revenue), 'Total Ertrag', $col(static fn($s) => $s->revenue->total)),
+            StatementComparison::block('Aufwand', $col(static fn($s) => $s->expense), 'Total Aufwand', $col(static fn($s) => $s->expense->total)),
+            ['title' => '', 'rows' => [], 'extra' => [], 'totals' => $col(static fn($s) => $s->result()), 'totalLabel' => count($statements) === 1
+                ? ($statements[0]->result()->isNegative() ? 'Verlust' : 'Gewinn') . ' (Ertrag − Aufwand)'
+                : 'Gewinn / Verlust (Ertrag − Aufwand)'],
         ]);
     }
 
@@ -183,8 +262,9 @@ trait ReportControllerTrait
         $issuer    = $this->reportMandator()?->getName() ?? '';
         $printedAt = (new \DateTimeImmutable())->format('d.m.Y H:i');
         $pdf       = match ($tab) {
-            'balance-sheet'    => ReportPdf::balanceSheet($this->ledgerReports()->balanceSheet($range), $issuer, $printedAt),
-            'income-statement' => ReportPdf::incomeStatement($this->ledgerReports()->incomeStatement($range), $range, $issuer, $printedAt),
+            // The same comparison as the screen — `compare` travels with the form (FIN-UI-011).
+            'balance-sheet'    => ReportPdf::balanceSheet($this->ledgerReports()->balanceSheet($range), $this->balanceComparison($range), $issuer, $printedAt),
+            'income-statement' => ReportPdf::incomeStatement($this->incomeComparison($range), $range, $issuer, $printedAt),
             'trial-balance'    => ReportPdf::trialBalance($this->ledgerReports()->trialBalance($range), $range, $issuer, $printedAt),
             // The PDF takes every line on one «page» of the report — paging is the screen's.
             'journal'          => ReportPdf::journal($this->ledgerReports()->journal($range, 1, self::PDF_ALL_ROWS), $range, $issuer, $printedAt),
@@ -334,6 +414,8 @@ trait ReportControllerTrait
             'reportTabs'  => self::REPORT_TABS,
             'months'      => self::REPORT_MONTHS,
             'pdfTabs'     => self::REPORT_PDF,
+            'compareTabs' => self::REPORT_COMPARE,
+            'compare'     => $this->reportCompares(),
             'link'        => $link,
             'reportBase'  => $base,
             'journalBase' => $this->reportJournalBase(),

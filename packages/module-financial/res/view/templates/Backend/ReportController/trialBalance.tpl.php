@@ -18,7 +18,7 @@ $cols = '--be-list-cols: 5rem minmax(12rem, 2fr) 8rem 8rem 8rem 8rem';
 $ok   = $report->isBalanced();
 ?>
 <div class="be-list">
-    <?= $this->partial('Backend/ReportController/rangeForm', ['range' => $range, 'tab' => $tab, 'link' => $link, 'months' => $months, 'reportBase' => $reportBase, 'notices' => $notices, 'keep' => $keep, 'pdfTabs' => $pdfTabs ?? []], $ns) ?>
+    <?= $this->partial('Backend/ReportController/rangeForm', ['range' => $range, 'tab' => $tab, 'link' => $link, 'months' => $months, 'reportBase' => $reportBase, 'notices' => $notices, 'keep' => $keep, 'pdfTabs' => $pdfTabs ?? [], 'compareTabs' => $compareTabs ?? [], 'compare' => $compare ?? true], $ns) ?>
     <?php // Balanced is the normal state and says nothing; only the FAULT shows, at the top
           // (owner 2026-10-10). ?>
     <?php if ($report->rows !== [] && !$ok): ?>

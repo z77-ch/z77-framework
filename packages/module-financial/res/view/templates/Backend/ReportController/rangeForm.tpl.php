@@ -86,6 +86,20 @@ $max      = $year->getEndDate()->format('Y-m-d');
               // on the screen («Bildschirm», this page) or as a real PDF in a new tab (FIN-PDF-001).
               // The PDF button submits the form itself (`formaction` + `formtarget`), so an edited
               // date or a picked period reaches the PDF without pressing «Anzeigen» first. ?>
+        <?php if (in_array($tab, $compareTabs ?? [], true)): ?>
+        <?php // «Vorjahre» (owner 2026-10-10): the two years before beside the shown one; on
+              // by default. A GET form sends nothing for an unticked box, so a hidden `0` goes
+              // first and a ticked box overrides it with `1` (the last value wins) — an absent
+              // parameter stays «first load = on». ?>
+        <div class="be-form__field">
+            <span class="be-form__label">Vergleich</span>
+            <input type="hidden" name="compare" value="0">
+            <label class="be-choice">
+                <input type="checkbox" class="be-choice__input" name="compare" value="1"<?= ($compare ?? true) ? ' checked' : '' ?>>
+                <span class="be-choice__label">Vorjahre</span>
+            </label>
+        </div>
+        <?php endif; ?>
         <div class="be-form__field">
             <span class="be-form__label">Anzeige</span>
             <div class="be-form__buttons">

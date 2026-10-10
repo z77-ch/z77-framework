@@ -24,7 +24,7 @@ $ns   = 'Z77\\Module\\Financial';
 $cols = '--be-list-cols: 6rem 4rem minmax(12rem, 2fr) minmax(8rem, 1fr) 8rem 8rem 9rem';
 ?>
 <div class="be-list">
-    <?= $this->partial('Backend/ReportController/rangeForm', ['accounts' => $accounts, 'accountNumber' => $accountNumber] + ['range' => $range, 'tab' => $tab, 'link' => $link, 'months' => $months, 'reportBase' => $reportBase, 'notices' => $notices, 'keep' => $keep, 'pdfTabs' => $pdfTabs ?? []], $ns) ?>
+    <?= $this->partial('Backend/ReportController/rangeForm', ['accounts' => $accounts, 'accountNumber' => $accountNumber] + ['range' => $range, 'tab' => $tab, 'link' => $link, 'months' => $months, 'reportBase' => $reportBase, 'notices' => $notices, 'keep' => $keep, 'pdfTabs' => $pdfTabs ?? [], 'compareTabs' => $compareTabs ?? [], 'compare' => $compare ?? true], $ns) ?>
     <?php if ($report === null): ?>
     <div class="be-list__section">
         <div class="be-list__section-header">

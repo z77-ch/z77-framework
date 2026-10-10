@@ -18,7 +18,7 @@ $result = $report->result();
 $shared = ['link' => $link, 'fmt' => $fmt];
 ?>
 <div class="be-list">
-    <?= $this->partial('Backend/ReportController/rangeForm', ['range' => $range, 'tab' => $tab, 'link' => $link, 'months' => $months, 'reportBase' => $reportBase, 'notices' => $notices, 'keep' => $keep, 'pdfTabs' => $pdfTabs ?? []], $ns) ?>
+    <?= $this->partial('Backend/ReportController/rangeForm', ['range' => $range, 'tab' => $tab, 'link' => $link, 'months' => $months, 'reportBase' => $reportBase, 'notices' => $notices, 'keep' => $keep, 'pdfTabs' => $pdfTabs ?? [], 'compareTabs' => $compareTabs ?? [], 'compare' => $compare ?? true], $ns) ?>
     <div class="be-list__section">
         <div class="be-list__section-header">
             <h2 class="be-list__section-title">
@@ -26,20 +26,12 @@ $shared = ['link' => $link, 'fmt' => $fmt];
                 <small class="be-list__cell--muted">· <?= e($range->from->format('d.m.Y')) ?> – <?= e($range->to->format('d.m.Y')) ?></small>
             </h2>
         </div>
+        <?php // One block per section, one amount column per period (StatementComparison,
+              // owner 2026-10-10: the last three years, «Vorjahre» off = the one period). ?>
+        <?php foreach ($comparison->blocks as $block): ?>
         <div class="be-list__frame">
-            <?= $this->partial('Backend/ReportController/statementSection', $shared + ['section' => $report->revenue, 'totalLabel' => 'Total Ertrag', 'total' => $report->revenue->total], $ns) ?>
+            <?= $this->partial('Backend/ReportController/statementCompare', ['block' => $block, 'labels' => $comparison->labels, 'link' => $link, 'fmt' => $fmt], $ns) ?>
         </div>
-        <div class="be-list__frame">
-            <?= $this->partial('Backend/ReportController/statementSection', $shared + ['section' => $report->expense, 'totalLabel' => 'Total Aufwand', 'total' => $report->expense->total], $ns) ?>
-        </div>
-        <div class="be-list__frame">
-            <div class="be-list__table" style="--be-list-cols: 6rem minmax(12rem, 1fr) 9rem">
-                <div class="be-list__item"><div class="be-list__row be-list__row--total">
-                    <span class="be-list__cell"></span>
-                    <span class="be-list__cell"><?= $result->isNegative() ? 'Verlust' : 'Gewinn' ?> (Ertrag − Aufwand)</span>
-                    <span class="be-list__cell be-list__cell--num" data-result><?= e($fmt($result)) ?></span>
-                </div></div>
-            </div>
-        </div>
+        <?php endforeach; ?>
     </div>
 </div>

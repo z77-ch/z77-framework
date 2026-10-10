@@ -4,10 +4,9 @@ namespace Z77\Module\Financial\Pdf;
 
 use Z77\Module\Financial\Reports\AccountStatement;
 use Z77\Module\Financial\Reports\BalanceSheet;
-use Z77\Module\Financial\Reports\IncomeStatement;
 use Z77\Module\Financial\Reports\JournalReport;
 use Z77\Module\Financial\Reports\ReportRange;
-use Z77\Module\Financial\Reports\StatementSection;
+use Z77\Module\Financial\Reports\StatementComparison;
 use Z77\Module\Financial\Reports\TrialBalance;
 use Z77\Module\Financial\Ui\ManualEntryForm;
 use Z77\Shared\Libraries\Convention\Naming;
@@ -27,67 +26,70 @@ use Z77\Shared\Pdf\PdfDocument;
  */
 final class ReportPdf
 {
-    /** Konto | Bezeichnung | Betrag — 180 mm, the A4 text width of `pdf/report`. */
-    private const STATEMENT_COLUMNS = [
-        ['label' => 'Konto',       'width' => 20],
-        ['label' => 'Bezeichnung', 'width' => 125],
-        ['label' => 'Betrag',      'width' => 35, 'align' => 'R'],
-    ];
+    /** The A4 text width of `pdf/report` (210 − 12 − 10 mm); landscape: 297 − 22. */
+    private const WIDTH = 188.0;
+    private const WIDTH_LANDSCAPE = 275.0;
 
-    /** The balance sheet at its day: Aktiven, Fremdkapital, Eigenkapital (with the year's result), Total Passiven. */
-    public static function balanceSheet(BalanceSheet $report, string $issuer, string $printedAt): PdfDocument
+    /** One amount column of a statement, per period. */
+    private const AMOUNT_WIDTH = 30.0;
+
+    /**
+     * The balance sheet at its day — over one or more years side by side (owner 2026-10-10:
+     * the last three years; «Vorjahre» off = the one year). $current decides the fault notice.
+     */
+    public static function balanceSheet(BalanceSheet $current, StatementComparison $comparison, string $issuer, string $printedAt): PdfDocument
     {
-        $code     = $report->range->year->getCode();
-        $result   = $report->result;
-        $blocks   = [
-            self::statementBlock($report->assets, 'Total Aktiven', $report->assets->total),
-            self::statementBlock($report->liabilities, 'Total Fremdkapital', $report->liabilities->total),
-            self::statementBlock($report->equity, 'Total Eigenkapital', $report->totalEquity(), [[
-                'label'  => ($result->isNegative() ? 'Jahresverlust ' : 'Jahresgewinn ') . $code,
-                'amount' => $result,
-            ]]),
-            // Total Passiven closes the sheet; Total Aktiven is not repeated (owner 2026-10-10).
-            [
-                'columns'  => self::STATEMENT_COLUMNS,
-                'header'   => false,
-                'rows'     => [['cells' => ['', 'Total Passiven', self::fmt($report->totalLiabilitiesAndEquity())], 'bold' => true, 'rule' => true]],
-                'gapAfter' => 0,
-            ],
-        ];
+        $code = $current->range->year->getCode();
 
-        return PdfDocument::create('Bilanz ' . $code, $issuer)->partial('pdf/report', [
-            'title'     => 'Bilanz',
-            'subtitle'  => 'Geschäftsjahr ' . $code . ' · per ' . $report->range->to->format('d.m.Y'),
-            'issuer'    => $issuer,
-            'printedAt' => $printedAt,
-            'notice'    => $report->isBalanced() ? '' : 'Aktiven ≠ Passiven — Differenz ' . self::fmt($report->difference()) . '. Das Journal ist nicht ausgeglichen.',
-            'blocks'    => $blocks,
-        ], 'Z77\\Shared');
+        return self::statement('Bilanz', 'Geschäftsjahr ' . $code . ' · per ' . $current->range->to->format('d.m.Y'), $comparison, $issuer, $printedAt,
+            $current->isBalanced() ? '' : 'Aktiven ≠ Passiven — Differenz ' . self::fmt($current->difference()) . '. Das Journal ist nicht ausgeglichen.');
     }
 
-    /** The income statement over the range: Ertrag, Aufwand, the result (Ertrag − Aufwand). */
-    public static function incomeStatement(IncomeStatement $report, ReportRange $range, string $issuer, string $printedAt): PdfDocument
+    /** The income statement over the range — over one or more years side by side. */
+    public static function incomeStatement(StatementComparison $comparison, ReportRange $range, string $issuer, string $printedAt): PdfDocument
     {
-        $code   = $range->year->getCode();
-        $result = $report->result();
-        $blocks = [
-            self::statementBlock($report->revenue, 'Total Ertrag', $report->revenue->total),
-            self::statementBlock($report->expense, 'Total Aufwand', $report->expense->total),
-            [
-                'columns'  => self::STATEMENT_COLUMNS,
-                'header'   => false,
-                'rows'     => [['cells' => ['', ($result->isNegative() ? 'Verlust' : 'Gewinn') . ' (Ertrag − Aufwand)', self::fmt($result)], 'bold' => true, 'rule' => true]],
-                'gapAfter' => 0,
-            ],
-        ];
+        return self::statement('Erfolgsrechnung', 'Geschäftsjahr ' . $range->year->getCode() . ' · ' . $range->from->format('d.m.Y') . ' – ' . $range->to->format('d.m.Y'), $comparison, $issuer, $printedAt);
+    }
 
-        return PdfDocument::create('Erfolgsrechnung ' . $code, $issuer)->partial('pdf/report', [
-            'title'     => 'Erfolgsrechnung',
-            'subtitle'  => 'Geschäftsjahr ' . $code . ' · ' . $range->from->format('d.m.Y') . ' – ' . $range->to->format('d.m.Y'),
+    /**
+     * A statement through `pdf/report`: Konto | Bezeichnung | one 30 mm amount column per
+     * period, the SAME columns in every block so the amounts stand in one line. Nothing wraps:
+     * a name that does not fit ends in «…» (owner 2026-10-10). Groups bold, no indent
+     * (FIN-UI-007), the extra rows (the year's result) bold, totals bold with a rule.
+     */
+    private static function statement(string $title, string $subtitle, StatementComparison $comparison, string $issuer, string $printedAt, string $notice = ''): PdfDocument
+    {
+        $n      = $comparison->width();
+        $name   = self::WIDTH - 18 - $n * self::AMOUNT_WIDTH;
+        $amt    = static fn(?Money $m): string => $m === null ? '' : self::fmt($m);
+        $blocks = [];
+        foreach ($comparison->blocks as $block) {
+            $columns = [['label' => 'Konto', 'width' => 18], ['label' => $block['title'], 'width' => $name]];
+            foreach ($comparison->labels as $label) {
+                $columns[] = ['label' => $n === 1 ? 'Betrag' : $label, 'width' => self::AMOUNT_WIDTH, 'align' => 'R'];
+            }
+            $rows = [];
+            foreach ($block['rows'] as $row) {
+                $rows[] = ['cells' => [$row['number'], $row['name'], ...array_map($amt, $row['amounts'])], 'bold' => $row['isGroup']];
+            }
+            if ($block['title'] !== '' && $rows === [] && $block['extra'] === []) {
+                $rows[] = ['cells' => ['', 'keine Buchung'], 'muted' => true];
+            }
+            foreach ($block['extra'] as $row) {
+                $rows[] = ['cells' => ['', $row['label'], ...array_map($amt, $row['amounts'])], 'bold' => true];
+            }
+            $rows[]   = ['cells' => ['', $block['totalLabel'], ...array_map($amt, $block['totals'])], 'bold' => true, 'rule' => true];
+            $blocks[] = ['columns' => $columns, 'rows' => $rows, 'wrap' => null, 'header' => $block['title'] !== ''] + ($block['title'] === '' ? ['gapAfter' => 0] : []);
+        }
+
+        return PdfDocument::create($title, $issuer)->partial('pdf/report', [
+            'title'     => $title,
+            'subtitle'  => $subtitle,
             'issuer'    => $issuer,
             'printedAt' => $printedAt,
+            'notice'    => $notice,
             'blocks'    => $blocks,
-        ], 'Z77\\Shared');
+        ], 'Z77\Shared');
     }
 
     /** Every account with lines: Σ Soll, Σ Haben, the balance on its side; the totals. */
@@ -95,7 +97,7 @@ final class ReportPdf
     {
         $columns = [
             ['label' => 'Konto', 'width' => 18],
-            ['label' => 'Bezeichnung', 'width' => 62],
+            ['label' => 'Bezeichnung', 'width' => 70],
             ['label' => 'Soll', 'width' => 25, 'align' => 'R'],
             ['label' => 'Haben', 'width' => 25, 'align' => 'R'],
             ['label' => 'Saldo Soll', 'width' => 25, 'align' => 'R'],
@@ -121,8 +123,8 @@ final class ReportPdf
         $columns = [
             ['label' => 'Datum', 'width' => 18],
             ['label' => 'Nr.', 'width' => 12, 'align' => 'R'],
-            ['label' => 'Text', 'width' => 58],
-            ['label' => 'Gegenkonto', 'width' => 32],
+            ['label' => 'Text', 'width' => 62],
+            ['label' => 'Gegenkonto', 'width' => 36],
             ['label' => 'Soll', 'width' => 20, 'align' => 'R'],
             ['label' => 'Haben', 'width' => 20, 'align' => 'R'],
             ['label' => 'Saldo', 'width' => 20, 'align' => 'R'],
@@ -151,7 +153,7 @@ final class ReportPdf
             ['label' => 'Datum', 'width' => 20],
             ['label' => 'Nr.', 'width' => 14, 'align' => 'R'],
             ['label' => 'Konto', 'width' => 18],
-            ['label' => 'Text', 'width' => 105],
+            ['label' => 'Text', 'width' => 113],
             ['label' => 'MWST', 'width' => 50],
             ['label' => 'Soll', 'width' => 30, 'align' => 'R'],
             ['label' => 'Haben', 'width' => 30, 'align' => 'R'],
@@ -197,35 +199,6 @@ final class ReportPdf
         $range = $from === null ? ' per ' . $day : ' von ' . $from . ' bis ' . $day;
 
         return Naming::toSlug($title . ' ' . $yearCode . $range) . '.pdf';
-    }
-
-    /**
-     * One statement block: the section's lines (groups bold, accounts plain, no indent), the
-     * caller's extra lines (the year's result in equity), the total with a rule.
-     *
-     * @param list<array{label: string, amount: Money}> $extra
-     * @return array<string, mixed>
-     */
-    private static function statementBlock(StatementSection $section, string $totalLabel, Money $total, array $extra = []): array
-    {
-        $rows = [];
-        foreach ($section->lines as $line) {
-            $rows[] = ['cells' => [$line->number, $line->name, self::fmt($line->amount)], 'bold' => $line->isGroup];
-        }
-        if ($rows === [] && $extra === []) {
-            $rows[] = ['cells' => ['', 'keine Buchung', ''], 'muted' => true];
-        }
-        foreach ($extra as $row) {
-            // A position of the block (OR 959a: the year's result is an equity item), bold.
-            $rows[] = ['cells' => ['', $row['label'], self::fmt($row['amount'])], 'bold' => true];
-        }
-        $rows[] = ['cells' => ['', $totalLabel, self::fmt($total)], 'bold' => true, 'rule' => true];
-
-        return [
-            'columns' => array_replace(self::STATEMENT_COLUMNS, [1 => ['label' => $section->title, 'width' => 125]]),
-            'rows'    => $rows,
-            'wrap'    => 1,
-        ];
     }
 
     private static function fmt(?Money $amount): string

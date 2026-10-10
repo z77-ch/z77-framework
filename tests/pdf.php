@@ -205,7 +205,17 @@ $sheet = new \Z77\Module\Financial\Reports\BalanceSheet(
     new \Z77\Module\Financial\Reports\StatementSection('Eigenkapital', [], $chf('0.00')),
     $chf('100.00'),
 );
-$bytes = \Z77\Module\Financial\Pdf\ReportPdf::balanceSheet($sheet, 'Muster AG', '10.10.2026 12:27')->withoutCompression()->output();
+// The comparison as the controller builds it (balanceComparison), here for two years — the
+// older one an empty sheet, so every amount cell of that column is empty.
+$C     = \Z77\Module\Financial\Reports\StatementComparison::class;
+$sheetCmp = new $C(['2026', '2025'], [
+    $C::block('Aktiven', [$sheet->assets, null], 'Total Aktiven', [$sheet->assets->total, null]),
+    $C::block('Fremdkapital', [$sheet->liabilities, null], 'Total Fremdkapital', [$sheet->liabilities->total, null]),
+    $C::block('Eigenkapital', [$sheet->equity, null], 'Total Eigenkapital', [$sheet->totalEquity(), null], [['label' => 'Jahresgewinn 2026', 'amounts' => [$sheet->result, null]]]),
+    ['title' => '', 'rows' => [], 'extra' => [], 'totalLabel' => 'Total Passiven', 'totals' => [$sheet->totalLiabilitiesAndEquity(), null]],
+]);
+$bytes = \Z77\Module\Financial\Pdf\ReportPdf::balanceSheet($sheet, $sheetCmp, 'Muster AG', '10.10.2026 12:27')->withoutCompression()->output();
+check('H1b balance sheet PDF over two years: one amount column per year, headed by the year code', str_contains($bytes, '(2026)') && str_contains($bytes, '(2025)') && !str_contains($bytes, '(Betrag)'));
 check('H1 balance sheet PDF: title, range, the account line, the totals, no fault notice (balanced)', str_starts_with($bytes, '%PDF') && str_contains($bytes, '(Bilanz)') && str_contains($bytes, 'per 31.12.2026') && str_contains($bytes, '(Bankguthaben)') && str_contains($bytes, '(Total Aktiven)') && str_contains($bytes, '(Jahresgewinn 2026)') && str_contains($bytes, '(Total Passiven)') && !str_contains($bytes, 'Differenz'));
 check('H2 file name kebab-case', \Z77\Module\Financial\Pdf\ReportPdf::fileName('Bilanz', '2026', '2026-12-31') === 'bilanz-2026-per-2026-12-31.pdf');
 
@@ -213,7 +223,12 @@ $income = new \Z77\Module\Financial\Reports\IncomeStatement(
     new \Z77\Module\Financial\Reports\StatementSection('Ertrag', [$line('3400', 'Dienstleistungserlöse', 0, false, '500.00')], $chf('500.00')),
     new \Z77\Module\Financial\Reports\StatementSection('Aufwand', [$line('6500', 'Büromaterial', 0, false, '200.00')], $chf('200.00')),
 );
-$bytes = \Z77\Module\Financial\Pdf\ReportPdf::incomeStatement($income, $range, 'Muster AG', '10.10.2026 12:27')->withoutCompression()->output();
+$incomeCmp = new $C(['2026'], [
+    $C::block('Ertrag', [$income->revenue], 'Total Ertrag', [$income->revenue->total]),
+    $C::block('Aufwand', [$income->expense], 'Total Aufwand', [$income->expense->total]),
+    ['title' => '', 'rows' => [], 'extra' => [], 'totalLabel' => 'Gewinn (Ertrag − Aufwand)', 'totals' => [$income->result()]],
+]);
+$bytes = \Z77\Module\Financial\Pdf\ReportPdf::incomeStatement($incomeCmp, $range, 'Muster AG', '10.10.2026 12:27')->withoutCompression()->output();
 check('H3 income statement PDF: title, the range «01.01.2026 – 31.12.2026», both totals, the result 300.00 as «Gewinn»', str_contains($bytes, '(Erfolgsrechnung)') && str_contains($bytes, '01.01.2026') && str_contains($bytes, '(Total Ertrag)') && str_contains($bytes, '(Total Aufwand)') && str_contains($bytes, 'Gewinn \\(Ertrag') && str_contains($bytes, '(300.00)'));
 check('H4 file name of a range: «von … bis»', \Z77\Module\Financial\Pdf\ReportPdf::fileName('Erfolgsrechnung', '2026', '2026-12-31', '2026-01-01') === 'erfolgsrechnung-2026-von-2026-01-01-bis-2026-12-31.pdf');
 
@@ -226,6 +241,16 @@ $doc   = \Z77\Module\Financial\Pdf\ReportPdf::trialBalance($trial, $range, 'Must
 $bytes = $doc->output();
 check('H5 trial balance PDF: title, the account, the totals row; balanced → no notice', str_contains($bytes, '(Saldobilanz)') && str_contains($bytes, '(1020)') && str_contains($bytes, '(Total)') && str_contains($bytes, '(500.00)') && !str_contains($bytes, 'Soll ='));
 check('H6 the NAME column wraps (`wrap` => 1), not the account number: the long name is drawn over several lines', preg_match_all('/\(([^)]*Kontobezeichnung[^)]*)\)/', $bytes) >= 3);
+
+$cmp = \Z77\Module\Financial\Reports\StatementComparison::block('Aktiven', [
+    new \Z77\Module\Financial\Reports\StatementSection('Aktiven', [$line('1', 'Aktiven', 0, true, '150.00'), $line('1100', 'Debitoren', 3, false, '50.00'), $line('1020', 'Bank', 3, false, '100.00')], $chf('150.00')),
+    new \Z77\Module\Financial\Reports\StatementSection('Aktiven', [$line('1', 'Aktiven', 0, true, '80.00'), $line('1000', 'Kasse', 3, false, '80.00')], $chf('80.00')),
+    null,
+], 'Total Aktiven', [$chf('150.00'), $chf('80.00'), null]);
+check('H9 comparison: lines of every year merged by number, in chart order (1, 1000, 1020, 1100), an account missing in a year is an empty cell, a missing year is null throughout',
+    array_column($cmp['rows'], 'number') === ['1', '1000', '1020', '1100']
+    && $cmp['rows'][1]['amounts'][0] === null && $cmp['rows'][1]['amounts'][1]->toDecimal() === '80.00'
+    && $cmp['rows'][0]['amounts'][2] === null && $cmp['totals'][2] === null);
 
 $doc = PdfDocument::create('fit')->withoutCompression()->addPage()->font('', 9);
 check('H7 fit(): a short text is unchanged, a long one is cut to the width and ends in «…»', $doc->fit('Kasse', 40) === 'Kasse' && str_ends_with($doc->fit($long, 40), '…') && $doc->textWidth($doc->fit($long, 40)) <= 40);
