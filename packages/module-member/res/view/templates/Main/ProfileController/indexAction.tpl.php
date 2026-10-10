@@ -22,7 +22,6 @@
  * @var string $csrfToken
  */
 $day  = static fn(string $iso): string => $iso === '' ? '' : date('d.m.Y', (int)strtotime($iso));
-$name = trim(($account->getFirstName() ?? '') . ' ' . ($account->getLastName() ?? ''));
 $title = [
     'konto'    => 'Konto',
     'zweifa'   => 'Zwei-Faktor-Schutz',
@@ -55,7 +54,6 @@ $title = [
              active account whose every access is closed lands HERE with no
              areas, so this band is the one thing telling it why. */ ?>
     <?php $closed = array_values(array_filter($memberships ?? [], static fn(array $m): bool => empty($m['usable']))); ?>
-    <?php $open   = array_filter($memberships ?? [], static fn(array $m): bool => !empty($m['usable'])); ?>
     <?php foreach ($closed as $m): ?>
     <div class="me-band me-band--info">
         <span class="me-band__dot" aria-hidden="true"></span>
@@ -65,46 +63,7 @@ $title = [
     </div>
     <?php endforeach; ?>
 
-    <dl class="me-field">
-        <?php if ($name !== ''): ?>
-        <dt>Name</dt>
-        <dd><?= e($name) ?></dd>
-        <?php endif; ?>
-        <dt>E-Mail</dt>
-        <dd><?= e($account->getEmail()) ?> <span class="me-quiet">— Ihr Zugang</span></dd>
-        <?php if ($account->getCompany() !== null): ?>
-        <dt>Firma / Verwaltung</dt>
-        <dd><?= e($account->getCompany()) ?></dd>
-        <?php endif; ?>
-        <dt>Status</dt>
-        <?php /* The status the PERSON experiences, not the record's field: an
-                 active account whose every access is paused reads «pausiert»
-                 — «aktiv» there was true of the login and false of everything
-                 the person came for (Peter, 2026-09-14). The band above says
-                 which access and whom to ask. */ ?>
-        <?php
-        $paused = array_filter($closed, static fn(array $m): bool => ($m['state'] ?? '') === 'paused');
-        if (!$account->isActive()) {
-            $statusText = 'wartet auf Freischaltung';
-            $statusNote = '';
-        } elseif ($closed !== [] && $open === [] && $paused !== []) {
-            $statusText = 'pausiert';
-            $statusNote = 'Konto und Anmeldung bleiben bestehen';
-        } elseif ($closed !== [] && $open === []) {
-            $statusText = 'wartet auf Freischaltung';
-            $statusNote = '';
-        } else {
-            $statusText = 'aktiv';
-            $statusNote = '';
-        }
-        ?>
-        <dd>
-            <?= e($statusText) ?>
-            <?php if ($statusNote !== ''): ?>
-            <span class="me-quiet">— <?= e($statusNote) ?></span>
-            <?php endif; ?>
-        </dd>
-    </dl>
+    <?= $this->partial('Main/ProfileController/_kontoFields', ['account' => $account, 'memberships' => $memberships ?? []], 'Z77\\Module\\Member') ?>
 
     <?php /* Why the address is not a field: it IS the access — a typo locks the
              account out, so changing it needs the confirmation path of B7, not
@@ -121,12 +80,24 @@ $title = [
              request would only fetch what is here.
              ⚠️ «Speichern» sits INSIDE: a modal dialog makes the rest of the
              document inert, so a button in the action cell would be dead while
-             the dialog is open. */ ?>
+             the dialog is open.
+             The actions stand in ONE row directly under the title (ADR-049
+             revision 2026-10-10, MEMBER-FORM-ACTIONS-001): `.z77-form-actions`
+             with the member buttons, «Speichern» first in document order so
+             Enter presses it. Posts by fetch: the answer replaces the values
+             above (`[data-konto-fields]`) and closes the dialog; without script
+             the same form posts as a page (method/action kept). */ ?>
     <dialog class="me-dialog" id="<?= e($dialogId) ?>" aria-labelledby="<?= e($dialogId) ?>-title">
-        <form method="post" action="/member/main/profile/konto" class="me-dialog__form">
+        <form method="post" action="/member/main/profile/konto" class="me-dialog__form"
+              data-fetch-post="/member/main/profile/konto">
             <input type="hidden" name="csrf_token" value="<?= e($csrfToken) ?>">
 
             <h2 class="me-dialog__title" id="<?= e($dialogId) ?>-title">Konto bearbeiten</h2>
+
+            <div class="z77-form-actions">
+                <button type="submit" class="me-btn">Speichern</button>
+                <button type="button" class="me-btn me-btn--quiet" data-dialog-close>Abbrechen</button>
+            </div>
 
             <div class="fe-form__row">
                 <label for="konto-first">Vorname</label>
@@ -149,11 +120,6 @@ $title = [
                     Wo Sie arbeiten. Der Name Ihrer Verwaltung wird davon nicht berührt —
                     ihn ändert, wer sie besitzt, im Bereich der Verwaltung.
                 </small>
-            </div>
-
-            <div class="me-dialog__actions">
-                <button type="button" class="me-btn me-btn--quiet" data-dialog-close>Abbrechen</button>
-                <button type="submit" class="me-btn">Speichern</button>
             </div>
         </form>
     </dialog>
@@ -185,6 +151,14 @@ $title = [
 
             <h2 class="me-dialog__title" id="<?= e($deleteDialogId) ?>-title">Konto endgültig löschen</h2>
 
+            <?php /* Two fields (address + checkbox), so this is a form, not a bare
+                     confirm: the row stands at the top (ADR-049 revision
+                     2026-10-10 — «no field» is the only test for the bottom). */ ?>
+            <div class="z77-form-actions">
+                <button type="submit" class="me-btn">Konto endgültig löschen</button>
+                <button type="button" class="me-btn me-btn--quiet" data-dialog-close>Abbrechen</button>
+            </div>
+
             <p>
                 Gelöscht werden Ihr Konto, Ihre angemeldeten Geräte und Ihr
                 Zwei-Faktor-Schutz. Das lässt sich nicht rückgängig machen.
@@ -207,11 +181,6 @@ $title = [
                     Ich weiss, dass das nicht rückgängig zu machen ist.
                 </label>
             </div>
-
-            <div class="me-dialog__actions">
-                <button type="button" class="me-btn me-btn--quiet" data-dialog-close>Abbrechen</button>
-                <button type="submit" class="me-btn">Konto endgültig löschen</button>
-            </div>
         </form>
     </dialog>
 
@@ -226,8 +195,13 @@ $title = [
 
     <?php /* Removal asks for a live code on purpose: whoever holds a stolen
              session must not be able to strip the second factor with one
-             click. That is why this is a form and not an action in the cell. */ ?>
-    <form method="post" action="/member/main/profile/totp-remove" class="fe-form" novalidate>
+             click. That is why this is a form and not an action in the cell.
+             Posts by fetch (MEMBER-FORM-ACTIONS-001): a wrong code answers in
+             place — the page stays, the typed code too; a removal changes the
+             section, the rail and the action cell, so it answers with the page
+             again. Without script the same form posts as a page. */ ?>
+    <form method="post" action="/member/main/profile/totp-remove" class="fe-form" novalidate
+          data-fetch-post="/member/main/profile/totp-remove">
         <input type="hidden" name="csrf_token" value="<?= e($csrfToken) ?>">
         <div class="fe-form__row">
             <label for="totp-remove-code">Zum Entfernen: Code aus der App</label>
@@ -251,7 +225,7 @@ $title = [
     <?php endif; ?>
 
     <?php else: ?>
-    <p class="me-detail__sub">
+    <p class="me-detail__sub" data-device-count>
         <?= $devices === [] ? 'Kein Gerät bleibt angemeldet' : e(count($devices) . ' Gerät' . (count($devices) === 1 ? '' : 'e') . ' bleiben angemeldet') ?>
     </p>
 
@@ -263,13 +237,18 @@ $title = [
     <?php else: ?>
     <div class="me-units">
         <?php foreach ($devices as $device): ?>
-        <div class="me-unit">
+        <?php /* One row per device, addressed as `device:<id>` (the row vocabulary
+                 of the ADR-047 addendum): «Abmelden» posts by fetch and the
+                 answer removes exactly this row (MEMBER-FORM-ACTIONS-001). The
+                 form keeps method/action — without script it posts as a page. */ ?>
+        <div class="me-unit" data-entity="device:<?= e((string)$device['id']) ?>">
             <span class="me-unit__name">
                 <?= e((string)$device['label']) ?>
                 <?php if ($device['current']): ?><span class="me-quiet">— dieses Gerät</span><?php endif; ?>
             </span>
             <span class="me-unit__status">seit <?= e($day((string)$device['created_at'])) ?></span>
-            <form method="post" action="/member/main/profile/device-remove" class="me-actions" style="margin:0">
+            <form method="post" action="/member/main/profile/device-remove" class="me-actions" style="margin:0"
+                  data-fetch-post="/member/main/profile/device-remove">
                 <input type="hidden" name="csrf_token" value="<?= e($csrfToken) ?>">
                 <input type="hidden" name="device" value="<?= e((string)$device['id']) ?>">
                 <button type="submit">Abmelden</button>

@@ -1449,8 +1449,20 @@ $fb-info-tint: $fb-bg;
         font-size: 1.125rem;
     }
 
-    // The way out sits left of the way on: what confirms is the rightmost
-    // thing, which is where the hand ends up after reading the fields.
+    // The action row of a dialog (ADR-049 revision 2026-10-10,
+    // MEMBER-FORM-ACTIONS-001): ONE row directly under the title, sticky while
+    // the dialog scrolls, the confirming button FIRST (document order = Enter),
+    // «Abbrechen» beside it. Geometry from the shared primitive, surface from
+    // the member tokens (`.me .z77-form-actions` below).
+    .z77-form-actions {
+        margin: 0 0 1.25rem;
+
+        .me-btn { width: auto; }
+    }
+
+    // Older shape — the row at the END of the dialog. Kept for project
+    // dialogs that still use it; the module's own dialogs moved to the row
+    // above.
     &__actions {
         display: flex;
         justify-content: flex-end;

@@ -40,8 +40,5 @@ $note     = (string)($mine[0]['note'] ?? '');
            «Sie sind freigeschaltet»-Mail.</p>
         <?php endif; ?>
     </div>
-    <div class="be-modal__footer">
-        <button type="button" class="be-btn be-btn--ghost" data-popup-close>Abbrechen</button>
-        <button type="submit" class="be-btn">Freischalten</button>
-    </div>
+    <?= $this->partial('partials/modalActions', ['submit' => 'Freischalten', 'kind' => 'primary', 'end' => true], 'Z77\\Shared') ?>
 </form>

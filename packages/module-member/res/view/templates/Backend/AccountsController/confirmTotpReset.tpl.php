@@ -19,8 +19,5 @@
            — die Anmeldung verlangt danach nur noch den Magic-Link, bis der Kunde
            den Schutz im Profil neu einrichtet. Nur bei verlorenem Gerät verwenden.</p>
     </div>
-    <div class="be-modal__footer">
-        <button type="button" class="be-btn be-btn--ghost" data-popup-close>Abbrechen</button>
-        <button type="submit" class="be-btn be-btn--danger">Zurücksetzen</button>
-    </div>
+    <?= $this->partial('partials/modalActions', ['submit' => 'Zurücksetzen', 'kind' => 'danger', 'end' => true], 'Z77\\Shared') ?>
 </form>

@@ -8,6 +8,9 @@ use Z77\Core\DI,
     Z77\Core\Http\Response\FetchResponse,
     Z77\Core\Http\Response\HtmlResponse,
     Z77\Core\Http\Response\RedirectResponse,
+    Z77\Core\Http\RequestMode,
+    Z77\Core\Services\TemplateRenderer,
+    Z77\Module\Member\Entities\MemberAccount,
     Z77\Module\Member\Services\AccountDeletion,
     Z77\Module\Member\Services\DeviceKeys,
     Z77\Module\Member\Services\MemberAccounts,
@@ -251,16 +254,33 @@ class ProfileController extends AbstractMemberController
      * project that renamed its tenant from here re-created the very
      * conflation this ADR removed, and stopped.
      */
-    protected function kontoAction(): RedirectResponse
+    protected function kontoAction(): RedirectResponse|FetchResponse
     {
+        $request = DI::getRequest();
+        $isFetch = $request->getMode() === RequestMode::Fetch;
+
         $account = MemberAuth::create()->current();
         if ($account === null) {
-            return $this->redirect('/member/main/login');
+            // A fetch cannot follow a page redirect into the shell — it is told where to go.
+            return $isFetch
+                ? $this->fetch()->setRedirect('/member/main/login')
+                : $this->redirect('/member/main/login');
         }
 
-        $request = DI::getRequest();
-        if (!$request->isPost() || !DI::getCsrfService()->validate((string)$request->getPostParameter('csrf_token'))) {
-            return $this->redirect('/member/main/profile?bereich=konto');
+        // Two transports (MEMBER-FORM-ACTIONS-001, 2026-10-10): the dialog posts
+        // by fetch (JSON body; CSRF is AccessGuard's Fetch gate, as in
+        // themeAction), and without script as a page (form body + csrf_token).
+        if ($isFetch) {
+            if (!$request->isPost()) {
+                return $this->fetch()->setStatus('error');
+            }
+            $body  = $request->getJsonBody();
+            $input = static fn(string $key): mixed => $body[$key] ?? null;
+        } else {
+            if (!$request->isPost() || !DI::getCsrfService()->validate((string)$request->getPostParameter('csrf_token'))) {
+                return $this->redirect('/member/main/profile?bereich=konto');
+            }
+            $input = static fn(string $key): mixed => $request->getPostParameter($key);
         }
 
         // Empty stays empty, not a blank string: the entity's fields are
@@ -272,9 +292,9 @@ class ProfileController extends AbstractMemberController
         };
 
         $before = [$account->getFirstName(), $account->getLastName(), $account->getCompany()];
-        $account->setFirstName($clean($request->getPostParameter('first_name')));
-        $account->setLastName($clean($request->getPostParameter('last_name')));
-        $account->setCompany($clean($request->getPostParameter('company')));
+        $account->setFirstName($clean($input('first_name')));
+        $account->setLastName($clean($input('last_name')));
+        $account->setCompany($clean($input('company')));
 
         $this->accounts()->save($account);
         $this->profileHook()?->__invoke($account);
@@ -286,6 +306,23 @@ class ProfileController extends AbstractMemberController
         ));
         if ($changed !== []) {
             MemberLog::write('profile.update', (string)$account->getId(), ['detail' => implode(',', $changed)]);
+        }
+
+        if ($isFetch) {
+            // What changed is the pane's values — the same partial the page
+            // renders — and the dialog closes (`close-modal` falls back to the
+            // open page `<dialog>` where the host has no popup). Nothing here
+            // can be refused field by field: every field is optional and is
+            // cut to 120 characters, so there is no error state to re-render.
+            $this->messageService->pushFlash('success', 'Ihre Angaben sind gespeichert.');
+            $fields = (new TemplateRenderer('Z77\\Module\\Member'))->partial('Main/ProfileController/_kontoFields', [
+                'account'     => $account,
+                'memberships' => TenantChoice::create()->memberships($account),
+            ]);
+
+            return $this->fetch()
+                ->addCommand('replace-html', ['target' => '[data-konto-fields]', 'html' => $fields])
+                ->addCommand('close-modal', []);
         }
 
         $this->messageService->pushFlashAfterRedirect('success', 'Ihre Angaben sind gespeichert.');
@@ -361,15 +398,31 @@ class ProfileController extends AbstractMemberController
         return new MemberAccounts(new UnifiedEntityManager(new DataSourceResolver(['file' => 'File'])));
     }
 
-    /** One device out of the list — POST with its key id. */
-    protected function deviceRemoveAction(): RedirectResponse
+    /**
+     * One device out of the list — POST with its key id.
+     *
+     * Two transports, one rule set (MEMBER-FORM-ACTIONS-001, 2026-10-10): the
+     * row's form posts by fetch and the answer is what changed — this row
+     * gone, the count above the list and in the rail (ADR-047 addendum: a
+     * one-row change answers with the row, not `reload`). The LAST device is
+     * the exception: the list turns into its empty state and «Alle abmelden»
+     * leaves the action cell — that is the page, so the answer goes there.
+     * Without script the form posts as a page and lands back in the list.
+     */
+    protected function deviceRemoveAction(): RedirectResponse|FetchResponse
     {
         $account = MemberAuth::create()->current();
         if ($account === null) {
-            return $this->redirect('/member/main/login');
+            // A fetch cannot follow a page redirect into the shell — it is told where to go.
+            return DI::getRequest()->getMode() === RequestMode::Fetch
+                ? $this->fetch()->setRedirect('/member/main/login')
+                : $this->redirect('/member/main/login');
         }
 
         $request = DI::getRequest();
+        if ($request->getMode() === RequestMode::Fetch) {
+            return $this->deviceRemoveInPlace($account);
+        }
         if ($request->isPost()
             && DI::getCsrfService()->validate((string)$request->getPostParameter('csrf_token'))
             && DeviceKeys::create()->revoke($account, (string)$request->getPostParameter('device'))
@@ -386,6 +439,51 @@ class ProfileController extends AbstractMemberController
         // without ?bereich the page falls back to Konto — the person was in
         // the device list and expects to still be there.
         return $this->redirect('/member/main/profile?bereich=geraete');
+    }
+
+    /**
+     * The fetch half of {@see deviceRemoveAction}. No CSRF field check: a Fetch
+     * POST passes `AccessGuard`'s `X-CSRF-Token` gate before any controller
+     * runs (same reasoning as {@see themeAction}).
+     */
+    private function deviceRemoveInPlace(MemberAccount $account): FetchResponse
+    {
+        $device  = (string) (DI::getRequest()->getJsonBody()['device'] ?? '');
+        $devices = DeviceKeys::create();
+
+        if (!$devices->revoke($account, $device)) {
+            $this->messageService->pushFlash('error', 'Dieses Gerät ist nicht (mehr) in der Liste.');
+
+            return $this->fetch()->setStatus('error');
+        }
+
+        $left = count($devices->listFor($account));
+        if ($left === 0) {
+            $this->messageService->pushFlashAfterRedirect(
+                'success',
+                'Das Gerät ist abgemeldet — es verlangt beim nächsten Besuch einen neuen Anmelde-Link.'
+            );
+
+            return $this->fetch()->setRedirect('/member/main/profile?bereich=geraete');
+        }
+
+        $this->messageService->pushFlash(
+            'success',
+            'Das Gerät ist abgemeldet — es verlangt beim nächsten Besuch einen neuen Anmelde-Link.'
+        );
+
+        // The id is one the account held (revoke() found it) — hex, so it is
+        // safe inside the attribute selector.
+        return $this->fetch()
+            ->removeRow('device', $device)
+            ->addCommand('update-text', [
+                'target' => '[data-device-count]',
+                'text'   => $left . ' Gerät' . ($left === 1 ? '' : 'e') . ' bleiben angemeldet',
+            ])
+            ->addCommand('update-text', [
+                'target' => 'a.me-item[href="/member/main/profile?bereich=geraete"] .me-item__meta',
+                'text'   => $left === 1 ? '1 Gerät' : $left . ' Geräte',
+            ]);
     }
 
     /**
@@ -459,15 +557,41 @@ class ProfileController extends AbstractMemberController
         ]);
     }
 
-    /** Removing 2FA demands a valid app code (spec) — POST only. */
-    protected function totpRemoveAction(): RedirectResponse
+    /**
+     * Removing 2FA demands a valid app code (spec) — POST only.
+     *
+     * By fetch (MEMBER-FORM-ACTIONS-001, 2026-10-10): a wrong code answers in
+     * place — a flash, the page and the typed code stay. A removal changes
+     * the section, the rail's «aktiv» and the action cell («Jetzt
+     * einrichten»), i.e. the page — so it answers with the page. Without
+     * script the form posts as a page, as before.
+     */
+    protected function totpRemoveAction(): RedirectResponse|FetchResponse
     {
         $account = MemberAuth::create()->current();
         if ($account === null) {
-            return $this->redirect('/member/main/login');
+            // A fetch cannot follow a page redirect into the shell — it is told where to go.
+            return DI::getRequest()->getMode() === RequestMode::Fetch
+                ? $this->fetch()->setRedirect('/member/main/login')
+                : $this->redirect('/member/main/login');
         }
 
         $request = DI::getRequest();
+        if ($request->getMode() === RequestMode::Fetch) {
+            // CSRF: the Fetch gate in AccessGuard, as in themeAction.
+            $code = (string) ($request->getJsonBody()['code'] ?? '');
+            if (!TotpSetup::create()->remove($account, $code)) {
+                $this->messageService->pushFlash(
+                    'error',
+                    'Entfernen fehlgeschlagen — der App-Code ist erforderlich und muss gültig sein.'
+                );
+
+                return $this->fetch()->setStatus('error');
+            }
+            $this->messageService->pushFlashAfterRedirect('success', 'Zwei-Faktor-Schutz entfernt.');
+
+            return $this->fetch()->setRedirect('/member/main/profile?bereich=zweifa');
+        }
         if ($request->isPost()
             && DI::getCsrfService()->validate((string)$request->getPostParameter('csrf_token'))
             && TotpSetup::create()->remove($account, (string)$request->getPostParameter('code'))
