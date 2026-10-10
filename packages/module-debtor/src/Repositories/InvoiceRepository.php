@@ -75,15 +75,15 @@ class InvoiceRepository extends DoctrineRepository
         return (string) $sum;
     }
 
-    /** A document by kind and number — the number is unique per kind (`uniq_invoice_kind_number`). */
+    /** A document by kind and number — the number is unique across kinds (`uniq_invoice_number`), the kind only narrows. */
     public function findByNumber(InvoiceKind $kind, int $number): ?Invoice
     {
         return $this->findOneBy(['kind' => $kind->value, 'number' => $number]);
     }
 
     /**
-     * The PAYABLE document with $number — an invoice or a fee; they share
-     * the `invoice` number range, so there is at most one. What a QR
+     * The PAYABLE document with $number — an invoice or a fee; every kind
+     * shares one number series, so there is at most one. What a QR
      * reference (positions 17–26) and a message's «Rechnung n» name.
      */
     public function findPayableByNumber(int $number): ?Invoice

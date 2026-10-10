@@ -20,6 +20,7 @@ use Z77\Module\Debtor\Entities\PaymentSnapshot;
 use Z77\Module\Debtor\Entities\PaymentTarget;
 use Z77\Module\Debtor\Entities\PaymentTerms;
 use Z77\Module\Debtor\Invoicing\DocumentSnapshot;
+use Z77\Module\Debtor\Invoicing\DocumentNumber;
 use Z77\Module\Debtor\Invoicing\InvoiceDraft;
 use Z77\Module\Debtor\Invoicing\LineDraft;
 use Z77\Module\Debtor\Invoicing\NoTaxShareException;
@@ -53,9 +54,10 @@ use Z77\Shared\Money\Money;
  *
  *   - {@see invoice()}: VAT per line through module-vat by the SERVICE
  *     date → totals → the 0.05 rounding as a separate line → the number
- *     from `NumberRange` (`invoice` / `credit-note`) as the FIRST write →
- *     the document in state `invoicing` with its full snapshot. NOTHING is
- *     posted;
+ *     `YYMMnnnn` from the month's `NumberRange` `document.YYMM` of the
+ *     INVOICE date ({@see DocumentNumber}, one series for every kind) as
+ *     the FIRST write → the document in state `invoicing` with its full
+ *     snapshot. NOTHING is posted;
  *   - {@see reinvoice()}: only in `invoicing` — the same number, a new
  *     snapshot, nothing to reverse because nothing was posted;
  *   - {@see finalize()}: a batch in one unit of work — every document
@@ -104,17 +106,46 @@ final class InvoicingService
      * (an order that changes its status and invoices in one) or opens its
      * own.
      *
+     * The number (owner 2026-10-10, {@see DocumentNumber}): ONE series for
+     * invoices, credit notes and fees, `YYMMnnnn` by the month of the
+     * INVOICE date, gapless per month. Each month is its own range
+     * `document.YYMM`, and a month's range comes into being with its first
+     * document — so it is CREATED here, before the unit of work, with
+     * `NumberRangeRepository::create()` (idempotent, consumes no number):
+     * outside a unit of work that insert commits at once, so the draw
+     * inside never takes the new-row path that can deadlock under
+     * contention (DOCTRINE-NR-003), and the FIRST write of the unit of work
+     * stays the locking `next()`. When this call JOINS a caller's open
+     * unit of work, `create()` runs inside it and commits with it — the
+     * new-row case remains possible there for the very first document of a
+     * month only (a loser sees the deadlock, nothing is consumed).
+     * The 10000th document of a month is refused (`number-range-full`)
+     * inside the unit of work, which rolls back — the range stays at 9999.
+     *
      * @throws InvoiceRefusedException the draft is refused — nothing was written, no number drawn
      */
     public function invoice(InvoiceDraft $draft): Invoice
     {
         $composed = $this->compose($draft, null);
         $now      = new \DateTimeImmutable();
+        $range    = DocumentNumber::range($draft->invoiceDate);   // the year was checked in compose()
 
-        return $this->em->getTransaction(Invoice::class)->run(function () use ($draft, $composed, $now): Invoice {
-            /** @var NumberRangeRepository $ranges */
-            $ranges  = $this->em->getRepository(NumberRange::class);
-            $number  = $ranges->next($draft->kind->numberRange());   // the FIRST write (lock order)
+        /** @var NumberRangeRepository $ranges */
+        $ranges = $this->em->getRepository(NumberRange::class);
+        $ranges->create($range);   // ahead of the draw — outside a unit of work committed at once (DOCTRINE-NR-003)
+
+        return $this->em->getTransaction(Invoice::class)->run(function () use ($draft, $composed, $now, $ranges, $range): Invoice {
+            $sequence = $ranges->next($range);   // the FIRST write (lock order)
+            try {
+                $number = DocumentNumber::compose($draft->invoiceDate, $sequence);
+            } catch (\OverflowException $e) {
+                throw new InvoiceRefusedException(
+                    InvoiceRefusedException::NUMBER_RANGE_FULL,
+                    'Für den Monat ' . $draft->invoiceDate->format('m.Y') . ' sind alle ' . DocumentNumber::PER_MONTH
+                    . ' Belegnummern vergeben — ein weiteres Dokument mit Rechnungsdatum in diesem Monat ist nicht möglich.',
+                    $e
+                );
+            }
             $invoice = new Invoice($draft->kind, $number, $composed['contact'], $composed['creditNoteOf'], $this->actor, $now);
             [$lines, $taxes] = $this->materialize($invoice, $composed);
             $invoice->issue($composed['snapshot'], $lines, $taxes, $this->paymentPart($invoice, $composed));
@@ -374,6 +405,18 @@ final class InvoicingService
         }
         if ($serviceTo !== null && $serviceTo->format('Y-m-d') < $serviceFrom->format('Y-m-d')) {
             throw new InvoiceRefusedException(InvoiceRefusedException::DATES, 'Das Ende der Leistungsperiode liegt vor ihrem Beginn.');
+        }
+
+        // The invoice date carries the month of the document number (owner 2026-10-10, DocumentNumber): a two-digit
+        // year, so 2000–2099 only; and a re-issue keeps its number, so its date stays in that number's month — a
+        // number of the former per-kind ranges (1, 2, …) names no month and does not bind the date.
+        try {
+            DocumentNumber::range($draft->invoiceDate);
+        } catch (\InvalidArgumentException $e) {
+            throw new InvoiceRefusedException(InvoiceRefusedException::DATES, 'Das Rechnungsdatum muss in den Jahren 2000–2099 liegen — die Belegnummer trägt Jahr und Monat zweistellig (JJMM).', $e);
+        }
+        if ($existing !== null && DocumentNumber::isOfMonth($existing->getNumber(), $existing->getInvoiceDate()) && !DocumentNumber::isOfMonth($existing->getNumber(), $draft->invoiceDate)) {
+            throw new InvoiceRefusedException(InvoiceRefusedException::DATES, $existing->documentName() . ' trägt den Monat ' . $existing->getInvoiceDate()->format('m.Y') . ' in der Nummer — das Rechnungsdatum bleibt in diesem Monat. Für einen anderen Monat ein neues Dokument erstellen.');
         }
 
         // The lines: flattened (children after their parent), amounts computed. A fee's line carries no tax code (plan §6.5).

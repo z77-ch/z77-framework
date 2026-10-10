@@ -117,6 +117,7 @@ use Z77\Module\Debtor\Entities\InvoiceTax;
 use Z77\Module\Debtor\Entities\LineType;
 use Z77\Module\Debtor\Entities\PaymentTarget;
 use Z77\Module\Debtor\Entities\PaymentTerms;
+use Z77\Module\Debtor\Invoicing\DocumentNumber;
 use Z77\Module\Debtor\Invoicing\InvoiceDraft;
 use Z77\Module\Debtor\Invoicing\LineDraft;
 use Z77\Module\Debtor\Invoicing\PostingBuilder;
@@ -366,12 +367,17 @@ $executed = $db->fetchFirstColumn('SELECT version FROM schema_migration');
 check('A4 … both debtor migrations ran in ONE run across the modules (timestamp order; the newest is the mandator\'s)',
     str_contains($out, 'Migrating up to Z77\\Module\\')
     && in_array('Z77\\Module\\Debtor\\Migrations\\Version20260922173918', $executed, true) && in_array('Z77\\Module\\Debtor\\Migrations\\Version20260923043935', $executed, true)
-    && in_array('Z77\\Module\\Debtor\\Migrations\\Version20261006100000', $executed, true));
+    && in_array('Z77\\Module\\Debtor\\Migrations\\Version20261006100000', $executed, true) && in_array('Z77\\Module\\Debtor\\Migrations\\Version20261010100000', $executed, true));
 check('A5 debtor_profile, invoice, invoice_line and invoice_tax exist next to contact\'s, mandator\'s and financial\'s tables',
     array_diff(['debtor_profile', 'invoice', 'invoice_line', 'invoice_tax', 'mandator'], $tables()) === []);
 $rangeOf = fn(string $name) => $db->fetchOne('SELECT last_number FROM number_range WHERE name = ?', [$name]);
 check('A5b the ranges invoice and credit-note exist at 0, customer at 999 (the first customer number is 1000, owner 2026-10-06) — created by the migrations ahead of the first draw (DOCTRINE-NR-003), nothing consumed',
     (string) $rangeOf('invoice') === '0' && (string) $rangeOf('credit-note') === '0' && (string) $rangeOf('customer') === '999');
+check('A5b2 no month range document.YYMM at install — each month\'s range is created with its first document (owner 2026-10-10, InvoicingService::invoice())',
+    (int) $db->fetchOne("SELECT COUNT(*) FROM number_range WHERE name LIKE 'document.%'") === 0);
+$invoiceUniques = $db->fetchAllKeyValue('SELECT INDEX_NAME, GROUP_CONCAT(COLUMN_NAME ORDER BY SEQ_IN_INDEX) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND NON_UNIQUE = 0 GROUP BY INDEX_NAME', [$dbName, 'invoice']);
+check('A5b3 the document number is unique ACROSS kinds (uniq_invoice_number on number — one series, owner 2026-10-10); the former per-kind index stays until the contract step',
+    ($invoiceUniques['uniq_invoice_number'] ?? '') === 'number' && ($invoiceUniques['uniq_invoice_kind_number'] ?? '') === 'kind,number');
 $invoiceFks = $db->fetchFirstColumn('SELECT DISTINCT REFERENCED_TABLE_NAME FROM information_schema.KEY_COLUMN_USAGE WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND REFERENCED_TABLE_NAME IS NOT NULL ORDER BY 1', [$dbName, 'invoice']);
 check('A5c invoice references contact (the party) and itself (credit note → invoice) — no address, no terms, no tax code (they are snapshots / by code)', $invoiceFks === ['contact', 'invoice']);
 $addrColumns = $db->fetchFirstColumn('SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME LIKE ? ORDER BY ORDINAL_POSITION', [$dbName, 'invoice', 'addr\_%']);
@@ -393,8 +399,8 @@ check('A9 the unique contact index, the unique customer-number index and the pay
 [$code, $out] = $run(['command' => 'migrate']);
 check('A10 a second migrate is a no-op', $code === 0 && str_contains($out, 'Already at the latest version'));
 [$code, $out] = $run(['command' => 'diff', '--namespace' => 'Z77\\Module\\Debtor\\Migrations']);
-check('A11 diff after migrate reports NO change — mapping and migration agree (embedded address and payment part, money and decimal columns included)' . (str_contains($out, 'No changes detected') ? '' : ' — ' . trim($out)), $code !== 0 && str_contains($out, 'No changes detected') && count(glob($package . '/res/migrations/Version*.php')) === 7);
-check('A12 all seven migrations are expand-only: no DROP outside down()', array_reduce(glob($package . '/res/migrations/Version*.php'), function ($ok, $f) {
+check('A11 diff after migrate reports NO change — mapping and migration agree (embedded address and payment part, money and decimal columns included)' . (str_contains($out, 'No changes detected') ? '' : ' — ' . trim($out)), $code !== 0 && str_contains($out, 'No changes detected') && count(glob($package . '/res/migrations/Version*.php')) === 8);
+check('A12 all eight migrations are expand-only: no DROP outside down()', array_reduce(glob($package . '/res/migrations/Version*.php'), function ($ok, $f) {
     $s = file_get_contents($f);
     return $ok && substr_count(substr($s, 0, strpos($s, 'function down')), 'DROP') === 0;
 }, true));
@@ -1152,9 +1158,9 @@ check('J0 an inactive DEBTOR (profile) refuses a new document → debtor-inactiv
     return $refused;
 })());
 $inv1 = $service($emJ)->invoice($standardDraft());
-check('J1 the document exists: number 1 from the `invoice` range (credit-note untouched), state invoicing, NOTHING posted',
-    $inv1->getId() !== null && $inv1->getNumber() === 1 && $stateOf($inv1->getId()) === InvoiceState::Invoicing->value && !$inv1->isFinal()
-    && (string) $rangeOf('invoice') === '1' && (string) $rangeOf('credit-note') === '0' && $journalCount() === 0);
+check('J1 the document exists: number 26030001 — YYMMnnnn by its INVOICE date 2026-03-10 although issued today, the first of the month\'s range document.2603 (the former ranges invoice / credit-note untouched), state invoicing, NOTHING posted',
+    $inv1->getId() !== null && $inv1->getNumber() === 26030001 && $stateOf($inv1->getId()) === InvoiceState::Invoicing->value && !$inv1->isFinal()
+    && (string) $rangeOf('document.2603') === '1' && (string) $rangeOf('invoice') === '0' && (string) $rangeOf('credit-note') === '0' && $journalCount() === 0);
 check('J2 totals: net 310.00, tax 23.46 (UN 22.68 + UR 0.78), 333.46 rounded to 333.45 — rounding −0.01 at the DOCUMENT level',
     $inv1->getNetTotal()->toDecimal() === '310.00' && $inv1->getTaxTotal()->toDecimal() === '23.46'
     && $inv1->getRounding()->toDecimal() === '-0.01' && $inv1->getGrossTotal()->toDecimal() === '333.45');
@@ -1192,9 +1198,18 @@ check('J10b the line rows: quantity DECIMAL(12,3), the rounding line\'s account,
     && $lineRows($inv1->getId())[2]['unit_price'] === null && array_map('intval', array_column($lineRows($inv1->getId()), 'position')) === [1, 2, 3, 4, 5]);
 
 $inv2 = $service($emJ)->invoice($oneLine($mid, '2026-03-11', '1.000', '100.00'));
-check('J11 the next document takes number 2; 100.00 + 8.10 = 108.10 needs no rounding: NO rounding line, rounding 0.00',
-    $inv2->getNumber() === 2 && count($inv2->getLines()) === 1 && $inv2->getRounding()->isZero() && $inv2->getGrossTotal()->toDecimal() === '108.10'
-    && count($lineRows($inv2->getId())) === 1 && (string) $rangeOf('invoice') === '2');
+check('J11 the next document of the month takes 26030002 (gapless per month); 100.00 + 8.10 = 108.10 needs no rounding: NO rounding line, rounding 0.00',
+    $inv2->getNumber() === 26030002 && count($inv2->getLines()) === 1 && $inv2->getRounding()->isZero() && $inv2->getGrossTotal()->toDecimal() === '108.10'
+    && count($lineRows($inv2->getId())) === 1 && (string) $rangeOf('document.2603') === '2' && (string) $rangeOf('invoice') === '0');
+$qr8 = QrReference::forDocument(1000, $inv2->getNumber());
+check('J11b DocumentNumber (pure, owner 2026-10-10): range document.YYMM by the invoice date; YYMM·10000 + n (the 3rd of March 2026 → 26030003); 0001 and 9999 the edges, the 10000th an OverflowException — never carried into the next month; a running number below 1 and a year outside 2000–2099 refused; isOfMonth() tells a former number (1, 2609002) from the format; the 8-digit number fits the QR reference (positions 17–26, zero-padded)',
+    DocumentNumber::range(day('2026-03-31')) === 'document.2603' && DocumentNumber::compose(day('2026-03-05'), 3) === 26030003
+    && DocumentNumber::compose(day('2026-12-01'), 1) === 26120001 && DocumentNumber::compose(day('2026-12-31'), 9999) === 26129999
+    && throws(fn() => DocumentNumber::compose(day('2026-12-01'), 10000), \OverflowException::class)
+    && throws(fn() => DocumentNumber::compose(day('2026-12-01'), 0), \InvalidArgumentException::class)
+    && throws(fn() => DocumentNumber::range(day('2100-01-01')), \InvalidArgumentException::class) && throws(fn() => DocumentNumber::range(day('1999-12-31')), \InvalidArgumentException::class)
+    && DocumentNumber::isOfMonth(26030003, day('2026-03-20')) && !DocumentNumber::isOfMonth(26030003, day('2026-04-01')) && !DocumentNumber::isOfMonth(1, day('2026-03-20')) && !DocumentNumber::isOfMonth(2609002, day('2026-09-07'))
+    && QrReference::isValid($qr8) && substr($qr8, 10, 6) === '001000' && substr($qr8, 16, 10) === '0026030002');
 
 echo "J. … line types, parent lines, negative quantities, discount, gross mode\n";
 $emJ2 = $wireDi();
@@ -1283,7 +1298,7 @@ check('J21 … while a NEW document takes the changed data: Seestrasse 99, due i
 
 echo "J. … refusals — no number consumed, nothing written\n";
 $emJ6    = $wireDi();
-$before  = (string) $rangeOf('invoice');
+$before  = (string) $rangeOf('document.2603');   // every refused draft below is dated March 2026
 $svc     = $service($emJ6);
 $lonely  = new Contact(['kind' => 'person', 'first_name' => 'Ohne', 'last_name' => 'Profil', 'language' => 'de']);
 (new ContactService($emJ6))->save($lonely);
@@ -1333,7 +1348,7 @@ check('J29b … the profile\'s deactivated terms → terms-inactive (the debtor 
 (new VatMasterData($emJ7))->setActive($emJ7->getRepository(TaxCode::class)->findByCode('US'), true);
 (new DebtorMasterData($emJ7))->setTermsActive($emJ7->getRepository(PaymentTerms::class)->findByCode('net-30'), true);
 check('J30 after every refusal: the range stands where it stood, no document and no journal entry was written',
-    (string) $rangeOf('invoice') === $before && $count('invoice') === 11 && $journalCount() === 0 && !$wireDi()->getTransaction(Invoice::class)->isOpen());
+    (string) $rangeOf('document.2603') === $before && $count('invoice') === 11 && $journalCount() === 0 && !$wireDi()->getTransaction(Invoice::class)->isOpen());
 
 
 // ── K. reinvoice() ───────────────────────────────────────────────────────
@@ -1343,10 +1358,10 @@ $emK = $wireDi();
 $re  = $service($emK)->reinvoice($inv1->getId(), 1, InvoiceDraft::invoice($mid, day('2026-03-15'), day('2026-03-01'), 'CHF', [
     LineDraft::service('Beratung, korrigiert', '3.000', 'Std.', chf('50.00'), 'UN', '3200'),
 ]));
-check('K1 number 1 kept; new date, ONE line, 150.00 + 12.15 = 162.15 (no rounding), version 2, changed by tester; nothing posted, no number drawn',
-    $re->getNumber() === 1 && $re->getId() === $inv1->getId() && $re->getInvoiceDate()->format('Y-m-d') === '2026-03-15' && count($re->getLines()) === 1
+check('K1 number 26030001 kept; new date in the same month, ONE line, 150.00 + 12.15 = 162.15 (no rounding), version 2, changed by tester; nothing posted, no number drawn',
+    $re->getNumber() === 26030001 && $re->getId() === $inv1->getId() && $re->getInvoiceDate()->format('Y-m-d') === '2026-03-15' && count($re->getLines()) === 1
     && $re->getGrossTotal()->toDecimal() === '162.15' && $re->getRounding()->isZero() && $re->getVersion() === 2 && $re->getChangedBy() === 'tester'
-    && $journalCount() === 0 && (string) $rangeOf('invoice') === $before);
+    && $journalCount() === 0 && (string) $rangeOf('document.2603') === $before);
 check('K2 the old lines and tax rows are GONE (orphan removal), the new ones there', count($lineRows($inv1->getId())) === 1 && count($taxRows($inv1->getId())) === 1 && $taxRows($inv1->getId())[0]['tax_amount'] === '12.15');
 check('K3 the snapshot moved with it: the address is the CURRENT one now (Seestrasse), the due date follows the new invoice date',
     $readInvoice($inv1->getId())->getAddress()->getStreet() === 'Seestrasse' && $readInvoice($inv1->getId())->getDueDate()->format('Y-m-d') === '2026-04-04');
@@ -1357,6 +1372,11 @@ check('K4 a STALE version (1) is refused — another writer was first (InvoiceCo
 check('K5 the kind is immutable: re-issuing an invoice as a credit note → kind-changed',
     $refusal(fn() => $service($wireDi())->reinvoice($inv1->getId(), 2, InvoiceDraft::creditNote($inv2->getId(), $mid, day('2026-03-15'), 'CHF', [LineDraft::lumpSum('a', chf('1.00'), 'UN', '3200')]))) === InvoiceRefusedException::KIND_CHANGED);
 check('K6 a refused re-issue leaves the document as it was (version 2, one line)', $readInvoice($inv1->getId())->getVersion() === 2 && count($lineRows($inv1->getId())) === 1);
+check('K7 the number carries the month of the invoice date (owner 2026-10-10): a re-issue dated in April for a March number → dates, the document unchanged; an invoice date in 2100 → dates (two-digit year), no range created, no number drawn',
+    $refusal(fn() => $service($wireDi())->reinvoice($inv1->getId(), 2, $oneLine($mid, '2026-04-01', '1.000', '10.00'))) === InvoiceRefusedException::DATES
+    && $readInvoice($inv1->getId())->getVersion() === 2 && $readInvoice($inv1->getId())->getInvoiceDate()->format('Y-m-d') === '2026-03-15'
+    && $refusal(fn() => $service($wireDi())->invoice($oneLine($mid, '2100-01-05', '1.000', '10.00'))) === InvoiceRefusedException::DATES
+    && (int) $db->fetchOne("SELECT COUNT(*) FROM number_range WHERE name LIKE 'document.00%'") === 0 && (string) $rangeOf('document.2603') === $before);
 
 
 // ── L. finalize() and the accounting port ────────────────────────────────
@@ -1382,9 +1402,9 @@ check('L2 the posting shape: 1100 DEBIT 162.15 | 3200 CREDIT 150.00 with UN 810,
     && $jl[2]['account_number'] === '2200' && $jl[2]['credit'] === '12.15' && $jl[2]['tax_code'] === null
     && $sumOf($jl, 'debit')->equals($sumOf($jl, 'credit')) && $sumOf($jl, 'debit')->toDecimal() === '162.15');
 $e1 = $entryRow('2026/1');
-check('L3 the entry is GENERATED, dated the invoice date, origin invoice / 1 (opaque), key invoice:{id}:final, text names document and party, author tester',
-    $e1['kind'] === 'generated' && $e1['entry_date'] === '2026-03-15' && $e1['source_type'] === 'invoice' && $e1['source_ref'] === '1'
-    && $e1['idempotency_key'] === 'invoice:' . $inv1->getId() . ':final' && $e1['text'] === 'Rechnung 1 · Müller & Söhne AG' && $e1['created_by'] === 'tester');
+check('L3 the entry is GENERATED, dated the invoice date, origin invoice / 26030001 (opaque), key invoice:{id}:final, text names document and party, author tester',
+    $e1['kind'] === 'generated' && $e1['entry_date'] === '2026-03-15' && $e1['source_type'] === 'invoice' && $e1['source_ref'] === '26030001'
+    && $e1['idempotency_key'] === 'invoice:' . $inv1->getId() . ':final' && $e1['text'] === 'Rechnung 26030001 · Müller & Söhne AG' && $e1['created_by'] === 'tester');
 check('L4 the open amount of the final invoice is its gross', $svc->openAmount($f1)->toDecimal() === '162.15');
 $emL2 = $wireDi();
 check('L5 finalize TWICE is refused (not-invoicing), not silently accepted — and nothing was posted again',
@@ -1445,12 +1465,14 @@ $emL6 = $writeOverride(null);
 
 echo "L. … the credit note: the only correction of a final document, the mirrored posting, the open amount\n";
 $svcC = $service($emL6);
+$marchBefore = (int) $rangeOf('document.2603');
 $cn   = $svcC->invoice(InvoiceDraft::creditNote($inv1->getId(), $mid, day('2026-03-20'), 'CHF', [
     LineDraft::service('Beratung — 1 Std. zu viel verrechnet', '1.000', 'Std.', chf('50.00'), 'UN', '3200'),
 ]));
-check('L17 a credit note against the FINAL invoice: number 1 of the credit-note range, lines AS PRINTED (50.00 + 4.05 = 54.05), state invoicing, references the invoice',
-    $cn->isCreditNote() && $cn->kind() === InvoiceKind::CreditNote && $cn->getNumber() === 1 && $cn->getCreditNoteOf()?->getId() === $inv1->getId() && !$cn->isFinal()
-    && $cn->getGrossTotal()->toDecimal() === '54.05' && $cn->getLines()[0]->getAmount()->toDecimal() === '50.00' && (string) $rangeOf('credit-note') === '1' && $cn->documentName() === 'Gutschrift 1');
+check('L17 a credit note against the FINAL invoice: the NEXT number of the ONE series (dated March: document.2603, the invoices\' range — the credit-note range untouched), lines AS PRINTED (50.00 + 4.05 = 54.05), state invoicing, references the invoice',
+    $cn->isCreditNote() && $cn->kind() === InvoiceKind::CreditNote && $cn->getNumber() === 26030000 + $marchBefore + 1 && $cn->getCreditNoteOf()?->getId() === $inv1->getId() && !$cn->isFinal()
+    && $cn->getGrossTotal()->toDecimal() === '54.05' && $cn->getLines()[0]->getAmount()->toDecimal() === '50.00' && (int) $rangeOf('document.2603') === $marchBefore + 1
+    && (string) $rangeOf('credit-note') === '0' && $cn->documentName() === 'Gutschrift ' . $cn->getNumber());
 check('L17b … its service dates are the INVOICE\'s (2026-03-01, none) — not the credit note\'s own date', $cn->getServiceFrom()->format('Y-m-d') === '2026-03-01' && $cn->getServiceTo() === null);
 check('L18 … while it is invoicing the invoice\'s open amount is unchanged', $svcC->openAmount($emL6->getRepository(Invoice::class)->find($inv1->getId()))->toDecimal() === '162.15');
 $svcC->finalize([$at($cn->getId())]);
@@ -1489,9 +1511,9 @@ check('L19 the MIRRORED posting: 1100 CREDIT 54.05 | 3200 DEBIT 50.00 with base 
     && $cl[1]['account_number'] === '3200' && $cl[1]['debit'] === '50.00' && $cl[1]['tax_code'] === 'UN' && $cl[1]['tax_base'] === '-50.00' && $cl[1]['tax_amount'] === '-4.05'
     && $cl[2]['account_number'] === '2200' && $cl[2]['debit'] === '4.05' && $sumOf($cl, 'debit')->equals($sumOf($cl, 'credit')));
 $e2 = $entryRow('2026/2');
-check('L20 its entry: origin credit-note / 1, key credit-note:{id}:final, text «Gutschrift 1 · …», ledger reference 2026/2 on the document',
-    $e2['source_type'] === 'credit-note' && $e2['source_ref'] === '1' && $e2['idempotency_key'] === 'credit-note:' . $cn->getId() . ':final'
-    && str_starts_with($e2['text'], 'Gutschrift 1 · Müller') && $readInvoice($cn->getId())->getLedgerEntryRef() === '2026/2');
+check('L20 its entry: origin credit-note / its number, key credit-note:{id}:final, text «Gutschrift {number} · …», ledger reference 2026/2 on the document',
+    $e2['source_type'] === 'credit-note' && $e2['source_ref'] === (string) $cn->getNumber() && $e2['idempotency_key'] === 'credit-note:' . $cn->getId() . ':final'
+    && str_starts_with($e2['text'], 'Gutschrift ' . $cn->getNumber() . ' · Müller') && $readInvoice($cn->getId())->getLedgerEntryRef() === '2026/2');
 $emL7 = $wireDi();
 check('L21 the invoice\'s open amount drops by the credit note: 162.15 − 54.05 = 108.10 (derived, not stored); the credit note itself has none',
     $service($emL7)->openAmount($emL7->getRepository(Invoice::class)->find($inv1->getId()))->toDecimal() === '108.10'
@@ -1625,7 +1647,7 @@ check('M4 no Accounting or Invoicing class but the adapter names financial; the 
 check('M5 the AddressSnapshot is an embeddable with no reference to address or contact_address (§4a: copied, never referenced)',
     str_contains(file_get_contents($package . '/src/Entities/AddressSnapshot.php'), '#[ORM\\Embeddable]')
     && !str_contains(file_get_contents($package . '/src/Entities/Invoice.php'), 'ContactAddress') && !str_contains(file_get_contents($package . '/src/Entities/Invoice.php'), 'targetEntity: Address::class'));
-check('M6 the migration seeds the two ranges with the statement create() runs and drops them only at 0', (function () use ($package): bool {
+check('M6 the migration seeds the two former ranges with the statement create() runs and drops them only at 0', (function () use ($package): bool {
     $s = file_get_contents($package . '/res/migrations/Version20260923043935.php');
     return str_contains($s, "VALUES ('invoice', 0), ('credit-note', 0) ON DUPLICATE KEY UPDATE last_number = last_number") && str_contains($s, 'AND last_number = 0');
 })());
@@ -2021,14 +2043,14 @@ $post = [
         ['type' => 'service', 'text' => '', 'quantity' => '', 'price' => ''],
     ],
 ];
-$before = (int) $db->fetchOne("SELECT last_number FROM number_range WHERE name = 'invoice'");
+$before = (int) $db->fetchOne("SELECT last_number FROM number_range WHERE name = 'document.2607'");   // the form's invoice date 2026-07-01
 $useRequest([], $post);
 $host = $invoiceHost();
 $host->addAction();
 $newId  = (int) $db->fetchOne('SELECT MAX(id) FROM invoice');
 $newDoc = $readInvoice($newId);
 check('P3C31 POST add → invoice(): a new document in invoicing (number drawn once), the lines with the discount (10 % → 1000), the child beneath its parent, the empty row ignored, the target qr → QRR; redirect to its detail',
-    (int) $db->fetchOne("SELECT last_number FROM number_range WHERE name = 'invoice'") === $before + 1 && $host->redirectedTo === '/backend/finance/invoice/detail?id=' . $newId
+    (int) $db->fetchOne("SELECT last_number FROM number_range WHERE name = 'document.2607'") === $before + 1 && $newDoc->getNumber() === 26070000 + $before + 1 && $host->redirectedTo === '/backend/finance/invoice/detail?id=' . $newId
     && $newDoc->getLines()[0]->getDiscountPercent() === 1000 && $newDoc->getLines()[0]->getAmount()->toDecimal() === '900.00' && $newDoc->getLines()[1]->getParentLine() === $newDoc->getLines()[0]
     && count(array_filter($newDoc->getLines(), fn($l) => $l->type() !== LineType::Rounding)) === 3 && $newDoc->getPayment()->getReferenceType() === 'QRR' && !$newDoc->isFinal()
     && $host->messageService->flashes[0][0] === 'success');
@@ -2764,13 +2786,13 @@ use Z77\Module\Debtor\Services\DunningService;
 use Z77\Module\Debtor\Services\DunningRefusedException;
 use Z77\Module\Debtor\Pdf\DunningPdf;
 $feeAccount = (string) $db->fetchOne('SELECT account_dunning_fee FROM mandator');
-check('T1 InvoiceKind::Fee: label «Gebühr», draws from the INVOICE range (one number space for everything payable), payable; a credit note is not payable',
-    InvoiceKind::Fee->label() === 'Gebühr' && InvoiceKind::Fee->numberRange() === 'invoice' && InvoiceKind::Fee->isPayable() && !InvoiceKind::CreditNote->isPayable() && InvoiceKind::Invoice->isPayable());
+check('T1 InvoiceKind::Fee: label «Gebühr», payable; a credit note is not payable; no kind names a range of its own any more (one series, owner 2026-10-10)',
+    InvoiceKind::Fee->label() === 'Gebühr' && !method_exists(InvoiceKind::class, 'numberRange') && InvoiceKind::Fee->isPayable() && !InvoiceKind::CreditNote->isPayable() && InvoiceKind::Invoice->isPayable());
 $emT = $wireDi();
-$rangeBefore = (int) $rangeOf('invoice');
+$rangeBefore = (int) $rangeOf('document.2607');   // the fee below is dated 2026-07-15
 $feeDoc = $service($emT)->invoice(InvoiceDraft::fee($mid, day('2026-07-15'), 'CHF', chf('20.00'), 'Mahngebühr Test', $feeAccount, 'qr', 'dunning', '0:test'));
-check('T2 InvoiceDraft::fee() → a document of kind fee: the next INVOICE number, one lump-sum line without tax code, no tax rows, net = gross = 20.00, a QRR payment part under its own number, source dunning',
-    $feeDoc->kind() === InvoiceKind::Fee && $feeDoc->getNumber() === $rangeBefore + 1 && (string) $rangeOf('invoice') === (string) ($rangeBefore + 1) && $feeDoc->documentName() === 'Gebühr ' . $feeDoc->getNumber()
+check('T2 InvoiceDraft::fee() → a document of kind fee: the next number of the ONE series in its month (July: 2607…), one lump-sum line without tax code, no tax rows, net = gross = 20.00, a QRR payment part under its own number, source dunning',
+    $feeDoc->kind() === InvoiceKind::Fee && $feeDoc->getNumber() === 26070000 + $rangeBefore + 1 && (int) $rangeOf('document.2607') === $rangeBefore + 1 && $feeDoc->documentName() === 'Gebühr ' . $feeDoc->getNumber()
     && count($feeDoc->getLines()) === 1 && $feeDoc->getLines()[0]->getTaxCode() === null && $feeDoc->getLines()[0]->getRevenueAccount() === $feeAccount && $feeDoc->getTaxes() === []
     && $feeDoc->getNetTotal()->toDecimal() === '20.00' && $feeDoc->getGrossTotal()->toDecimal() === '20.00' && $feeDoc->getTaxTotal()->isZero()
     && $feeDoc->getPayment()->getReferenceType() === 'QRR' && $feeDoc->getPayment()->getReference() === QrReference::forDocument(1000, $feeDoc->getNumber()) && $feeDoc->getSourceType() === 'dunning');
@@ -2809,12 +2831,12 @@ check('T6 run() at level 1: one notice (reminder, open 108.10, no fee document),
     && count($dun($wireDi())->noticesOf($readInvoice($invE->getId()))) === 1
     && caught(fn() => $dun($wireDi())->run(day('2026-07-20'), [$invE->getId()]), DunningRefusedException::class)?->reason === DunningRefusedException::NOT_DUE);
 $journalBefore = $journalCount();
-$rangeBefore   = (int) $rangeOf('invoice');
+$rangeBefore   = (int) $rangeOf('document.2608');   // the fee document is dated the run date
 $run2 = $dun($wireDi())->run(day('2026-08-10'), [$invE->getId()]);
 $n2   = $run2->getNotices()[0];
 $fee2 = $n2->getFeeInvoice();
 check('T7 run() at level 2 («1. Mahnung», fee 20.00): the notice carries a FEE DOCUMENT — kind fee, the next invoice number, final, posted (one entry), source dunning «{invoice}:{level}», the invoice\'s payment target; open on the fee 20.00, on the invoice still 108.10',
-    $n2->getLevelCode() === 'dunning-1' && $fee2 !== null && $fee2->kind() === InvoiceKind::Fee && $fee2->getNumber() === $rangeBefore + 1 && $fee2->isFinal() && $fee2->getLedgerEntryRef() !== null
+    $n2->getLevelCode() === 'dunning-1' && $fee2 !== null && $fee2->kind() === InvoiceKind::Fee && $fee2->getNumber() === 26080000 + $rangeBefore + 1 && $fee2->isFinal() && $fee2->getLedgerEntryRef() !== null
     && $journalCount() === $journalBefore + 1 && $fee2->getSourceRef() === $invE->getNumber() . ':dunning-1' && $fee2->getPayment()->getTargetCode() === 'qr' && $fee2->getGrossTotal()->toDecimal() === '20.00'
     && str_contains($fee2->getLines()[0]->getText(), '1. Mahnung') && $service($wireDi())->openAmount($readInvoice($fee2->getId()))->toDecimal() === '20.00' && $service($wireDi())->openAmount($readInvoice($invE->getId()))->toDecimal() === '108.10');
 check('T8 refusals: no selection (nothing), a date in the future (date), an unknown id (not-found) — and a debtor with a dunning block is not on the due list',
@@ -3107,6 +3129,33 @@ $financialDetail = function (array $get) use ($useRequest, $journalHost, $pkgRoo
 check('P3C58 the journal window opened by ?ref= has the SAME identity as one opened by id (mask journal-entry-detail, entity journal-entry:<id>); a malformed ref is «not found»',
     $refIdentity !== '' && $refIdentity === $idIdentity && str_contains($refIdentity, 'journal-entry:' . $byRef->context['entry']->getId())
     && $byRef->context['window'] === true && $bad->redirectedTo === '/backend/finance/journal/list');
+
+// ── U. one document series, YYMMnnnn (owner 2026-10-10) ────────────────
+
+echo "U. Document numbers: one series across kinds, gapless per month, the 10000th refused\n";
+$docRange  = fn(string $date) => (int) $rangeOf(DocumentNumber::range(day($date)));
+$decBefore = $docRange('2026-12-01');
+$uInv = $service($wireDi())->invoice($oneLine($mid, '2026-12-03', '1.000', '100.00'));
+$service($wireDi())->finalize([$at($uInv->getId())]);
+$uCn  = $service($wireDi())->invoice(InvoiceDraft::creditNote($uInv->getId(), $mid, day('2026-12-04'), 'CHF', [LineDraft::lumpSum('Gutschrift', chf('10.00'), 'UN', '3400')]));
+$uFee = $service($wireDi())->invoice(InvoiceDraft::fee($mid, day('2026-12-05'), 'CHF', chf('20.00'), 'Gebühr', $feeAccount, 'qr', 'dunning', 'u:test'));
+check('U1 invoice, credit note and fee of one month share ONE gapless series: n, n+1, n+2 in document.2612, the former ranges untouched',
+    [$uInv->getNumber(), $uCn->getNumber(), $uFee->getNumber()] === [26120000 + $decBefore + 1, 26120000 + $decBefore + 2, 26120000 + $decBefore + 3]
+    && $docRange('2026-12-31') === $decBefore + 3 && (string) $rangeOf('credit-note') === '0');
+check('U2 the number is unique across kinds: a payable lookup finds the fee by its number, the credit note\'s number names no payable document',
+    $wireDi()->getRepository(Invoice::class)->findPayableByNumber($uFee->getNumber())?->getId() === $uFee->getId()
+    && $wireDi()->getRepository(Invoice::class)->findPayableByNumber($uCn->getNumber()) === null
+    && $wireDi()->getRepository(Invoice::class)->findByNumber(InvoiceKind::CreditNote, $uCn->getNumber())?->getId() === $uCn->getId());
+// The month at its last number — set in SQL, the way only a harness may touch number_range.
+$db->executeStatement("INSERT INTO number_range (name, last_number) VALUES ('document.2611', 9999) ON DUPLICATE KEY UPDATE last_number = 9999");
+$documentsBefore = $count('invoice');
+$full = caught(fn() => $service($wireDi())->invoice($oneLine($mid, '2026-11-20', '1.000', '10.00')), InvoiceRefusedException::class);
+check('U3 the 10000th document of a month is REFUSED (number-range-full, German message naming the month; the English OverflowException behind it), never 2612…: the range stays at 9999, no document written, the unit of work closed',
+    $full?->reason === InvoiceRefusedException::NUMBER_RANGE_FULL && str_contains($full->getMessage(), '11.2026') && str_contains($full->getMessage(), '9999')
+    && $full->getPrevious() instanceof \OverflowException && str_contains($full->getPrevious()->getMessage(), 'document.2611')
+    && (string) $rangeOf('document.2611') === '9999' && $count('invoice') === $documentsBefore && !$wireDi()->getTransaction(Invoice::class)->isOpen());
+check('U4 … the next month is unaffected: a document dated December continues document.2612',
+    $service($wireDi())->invoice($oneLine($mid, '2026-12-06', '1.000', '10.00'))->getNumber() === 26120000 + $decBefore + 4);
 
 // ── result ───────────────────────────────────────────────────────────────
 

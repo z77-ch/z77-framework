@@ -7,11 +7,14 @@ use Z77\Module\Debtor\Entities\DunningLevel;
 use Z77\Module\Debtor\Entities\DunningNotice;
 use Z77\Module\Debtor\Entities\DunningRun;
 use Z77\Module\Debtor\Entities\Invoice;
+use Z77\Module\Debtor\Invoicing\DocumentNumber;
 use Z77\Module\Debtor\Invoicing\InvoiceDraft;
 use Z77\Module\Debtor\Repositories\DebtorProfileRepository;
 use Z77\Module\Debtor\Repositories\DunningLevelRepository;
 use Z77\Module\Debtor\Repositories\DunningNoticeRepository;
 use Z77\Module\Debtor\Repositories\InvoiceRepository;
+use Z77\Persistence\Doctrine\Entities\NumberRange;
+use Z77\Persistence\Doctrine\Repositories\NumberRangeRepository;
 use Z77\Persistence\Resolver\UnifiedEntityManager;
 use Z77\Shared\Money\Money;
 
@@ -39,7 +42,7 @@ use Z77\Shared\Money\Money;
  *     (`DebtorAccounts` `dunningFee`), the invoice's payment target, the
  *     debtor's terms, finalized at once (posted: receivable / fee account),
  *     `source_type` `dunning`, `source_ref` `{invoice number}:{level code}`;
- *     the notice links it. The fee shares the invoice number range, so the
+ *     the notice links it. The fee shares the one document series, so the
  *     QR reference stays unique (the notice's bill is over open + fee under
  *     the INVOICE's reference; a credit above the invoice's open amount is
  *     placed on the debtor's open fees by the CAMT booking).
@@ -113,7 +116,23 @@ final class DunningService
         $profiles = $this->em->getRepository(DebtorProfile::class);
         sort($ids);
 
-        return $this->em->getTransaction(DunningRun::class)->run(function () use ($ids, $date, $ladder, $accounts, &$feeAccount, $invoicing, $now, $profiles): DunningRun {
+        // A fee document draws from the ONE document series (owner 2026-10-10), the month's range of the run date —
+        // the same range a credit note against a dunned invoice draws from, and that credit note then waits for the
+        // invoice row this run locks (the `credit_note_of_id` foreign key). So the range is locked FIRST, before any
+        // invoice row (lock order: `NumberRange` first, DOCTRINE-NR-002): `create()` inside the unit of work holds the
+        // existing row exclusively without consuming a number; outside, ahead of it, it makes sure the row exists and
+        // is committed (DOCTRINE-NR-003). Without a fee on the ladder nothing is drawn and nothing is locked.
+        $feeRange = array_filter($ladder, static fn(DunningLevel $l) => $l->getFee() > 0) !== [] ? DocumentNumber::range($date) : null;
+        /** @var NumberRangeRepository $ranges */
+        $ranges = $this->em->getRepository(NumberRange::class);
+        if ($feeRange !== null) {
+            $ranges->create($feeRange);
+        }
+
+        return $this->em->getTransaction(DunningRun::class)->run(function () use ($ids, $date, $ladder, $accounts, &$feeAccount, $invoicing, $now, $profiles, $ranges, $feeRange): DunningRun {
+            if ($feeRange !== null) {
+                $ranges->create($feeRange);   // the FIRST lock of the unit of work — see above
+            }
             $run     = new DunningRun($date, $this->actor, $now);
             $highest = $this->notices()->highestLevelPerInvoice();
             $position = 0;

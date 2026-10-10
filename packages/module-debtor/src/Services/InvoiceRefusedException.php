@@ -32,6 +32,7 @@ final class InvoiceRefusedException extends DebtorException
     public const NOT_INVOICING       = 'not-invoicing';
     public const NOT_FOUND           = 'not-found';
     public const KIND_CHANGED        = 'kind-changed';
+    public const NUMBER_RANGE_FULL   = 'number-range-full';
     // the lines
     public const LINE                = 'line';
     public const LINE_TAX_SHARE      = 'line-tax-share';

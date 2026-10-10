@@ -6,7 +6,8 @@ namespace Z77\Module\Debtor\Entities;
  * What kind of document an {@see Invoice} row is (plan §6.2). ONE entity
  * carries both: a credit note is an invoice with the opposite sign in the
  * ledger and against the open amount — same lines, same VAT summary, same
- * snapshot, same states, same number mechanics on its own range. Two
+ * snapshot, same states, same number series (owner 2026-10-10: invoices,
+ * credit notes and fees share ONE series, `Invoicing\DocumentNumber`). Two
  * entities would duplicate every column and every rule and differ in one
  * word.
  *
@@ -25,17 +26,11 @@ enum InvoiceKind: string
      * number, a payment part, an open amount and settlements like an
      * invoice; ONE lump-sum line without VAT (plan §6.5: damages for the
      * delay, not a supply) on the mandator's dunning-fee account, issued and
-     * finalized by the dunning run (P4 part 3). It draws from the INVOICE
-     * number range — the QR reference carries only the number (positions
-     * 17–26), so a fee and an invoice must never share one.
+     * finalized by the dunning run (P4 part 3). It draws from the ONE
+     * document series — the QR reference carries only the number
+     * (positions 17–26), so a fee and an invoice must never share one.
      */
     case Fee        = 'fee';
-
-    /** The `NumberRange` the number of this kind is drawn from — a fee shares the invoice's (one number space for everything payable). */
-    public function numberRange(): string
-    {
-        return $this === self::Fee ? self::Invoice->value : $this->value;
-    }
 
     /** German, for a journal text or a screen; the code stays English. */
     public function label(): string

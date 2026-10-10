@@ -37,7 +37,8 @@ code immutable, deactivated and never deleted, no foreign key across the two dri
 Documents (part 2):
 
 - `Invoice` (Doctrine, table `invoice`) — ONE entity for invoices and credit notes (`kind`), the
-  bare number of its range (`invoice` / `credit-note`), the state (`invoicing` → `final`), the
+  number `YYMMnnnn` — ONE series for every kind, by the month of the invoice date, gapless per
+  month (`Invoicing\DocumentNumber`, owner 2026-10-10) —, the state (`invoicing` → `final`), the
   contact by id with the address as a snapshot (`AddressSnapshot`, ten flat `addr_*` columns), the
   language, invoice and service dates, currency and rate fields (base currency only, Q6), the
   payment terms as applied (due date, tiers, printed sentence), the totals, the opaque origin and

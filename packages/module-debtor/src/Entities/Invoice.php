@@ -27,10 +27,16 @@ use Doctrine\Common\Collections\ArrayCollection,
  *
  * What is on the header, and why:
  *
- *   - `kind` + `number`: the bare integer of the range `invoice` /
- *     `credit-note` (one range per kind, gapless each); unique per kind
- *     (`uniq_invoice_kind_number`). No prefix, no year segment — a document
- *     number is what the range gives (`persistence-doctrine.md`);
+ *   - `kind` + `number`: ONE number series for every kind (owner
+ *     2026-10-10) — `YYMMnnnn` by the month of the invoice date, the
+ *     running `nnnn` from the month's range `document.YYMM`
+ *     ({@see \Z77\Module\Debtor\Invoicing\DocumentNumber}); unique across
+ *     kinds (`uniq_invoice_number`), so a number names exactly one
+ *     document. Numbers issued before 2026-10-10 (the former per-kind
+ *     ranges, 1, 2, …) stay as they were printed and booked. The former
+ *     per-kind index `uniq_invoice_kind_number` is implied by the new one
+ *     and stays until a later release drops it (expand/contract, ADR-039
+ *     decision 14 — `debtor.md` pending);
  *   - `contact`: the party BY ID (plan §4a) — the reference; the address is
  *     copied into `addr_*` ({@see AddressSnapshot}), the language into
  *     `language` (a contact's language change must not re-language an
@@ -78,10 +84,13 @@ use Doctrine\Common\Collections\ArrayCollection,
  */
 #[Entity('doctrine')]
 #[ORM\Entity, ORM\Table(name: 'invoice')]
+#[ORM\UniqueConstraint(name: Invoice::UNIQUE_NUMBER, columns: ['number'])]
 #[ORM\UniqueConstraint(name: Invoice::UNIQUE_KIND_NUMBER, columns: ['kind', 'number'])]
 #[ORM\Index(name: 'idx_invoice_state_date', columns: ['state', 'invoice_date'])]
 class Invoice
 {
+    public const UNIQUE_NUMBER = 'uniq_invoice_number';
+    /** The former per-kind index — implied by {@see UNIQUE_NUMBER}, kept until the contract step drops it (ADR-039 decision 14). */
     public const UNIQUE_KIND_NUMBER = 'uniq_invoice_kind_number';
 
     public const LANGUAGE_LENGTH    = 5;
@@ -100,7 +109,7 @@ class Invoice
     #[ORM\Column(length: 12)]
     private string $kind;
 
-    /** Bare integer from the kind's `NumberRange`, from 1. */
+    /** `YYMMnnnn` (`DocumentNumber`) — one series for every kind; before 2026-10-10 the bare integer of the kind's range. */
     #[ORM\Column]
     private int $number;
 
