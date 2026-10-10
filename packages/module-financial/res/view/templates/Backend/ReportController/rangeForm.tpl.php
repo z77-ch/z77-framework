@@ -82,15 +82,23 @@ $max      = $year->getEndDate()->format('Y-m-d');
                 <?php endforeach; ?>
             </select>
         </div>
-        <div class="be-form__field be-form__field--actions">
-            <button type="submit" class="be-btn be-btn--primary">Anzeigen</button>
-            <?php if (in_array($tab, $pdfTabs ?? [], true)): ?>
-            <?php // The report as a real PDF (FIN-PDF-001): what is SHOWN — the range after
-                  // «Anzeigen», not the form's unsent values. A new tab, inline. ?>
-            <a class="be-btn be-btn--ghost" href="<?= e($link('pdf', ['report' => $tab] + $keep)) ?>" target="_blank" rel="noopener">
-                <svg class="be-icon" width="14" height="14" aria-hidden="true"><use href="#icon-download"/></svg> <span class="be-btn__label">PDF</span>
-            </a>
-            <?php endif; ?>
+        <?php // «Anzeige» (owner 2026-10-10): one field, two ways to show the SAME form values —
+              // on the screen (the monitor, this page) or as a real PDF in a new tab (FIN-PDF-001).
+              // The PDF button submits the form itself (`formaction` + `formtarget`), so an edited
+              // date or a picked period reaches the PDF without pressing «Anzeigen» first. ?>
+        <div class="be-form__field">
+            <span class="be-form__label">Anzeige</span>
+            <div class="be-form__buttons">
+                <button type="submit" class="be-btn be-btn--primary be-btn--icon" title="Am Bildschirm anzeigen" aria-label="Am Bildschirm anzeigen">
+                    <svg class="be-icon" width="16" height="16" aria-hidden="true"><use href="#icon-monitor"/></svg>
+                </button>
+                <?php if (in_array($tab, $pdfTabs ?? [], true)): ?>
+                <button type="submit" class="be-btn be-btn--ghost" name="report" value="<?= e($tab) ?>"
+                        formaction="<?= e($reportBase . '/pdf') ?>" formtarget="_blank" title="Als PDF in neuem Tab öffnen">
+                    <svg class="be-icon" width="14" height="14" aria-hidden="true"><use href="#icon-download"/></svg> <span class="be-btn__label">PDF</span>
+                </button>
+                <?php endif; ?>
+            </div>
         </div>
     </form>
     <?php if (($notices ?? []) !== []): ?>

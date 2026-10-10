@@ -49,6 +49,9 @@
     <?php /* play = Lucide «play»: the one glyph everybody reads as «start now» — the job
              row's helper button carries it alone, the word stays in aria-label/title
              (owner 2026-10-10: a helper action in a row is an icon, not a labelled button). */ ?>
-    <symbol id="icon-play" viewBox="0 0 24 24"><polygon points="6 3 20 12 6 21 6 3"/></symbol>
+    <?php /* monitor = Lucide «monitor»: «show on the screen» — the report form's «Anzeigen»
+             beside «PDF» (owner 2026-10-10). */ ?>
+    <symbol id="icon-monitor" viewBox="0 0 24 24"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></symbol>
+    <symbol id="icon-play"viewBox="0 0 24 24"><polygon points="6 3 20 12 6 21 6 3"/></symbol>
     <symbol id="icon-zap" viewBox="0 0 24 24"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/></symbol>
 </svg>

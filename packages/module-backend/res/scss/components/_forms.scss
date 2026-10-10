@@ -390,11 +390,17 @@ select.be-input option {
     color:      var(--be-text);
 }
 
-// A form cell that holds the form's buttons side by side («Anzeigen» + «Drucken» in the report
-// range form), bottom-aligned with the fields of the same grid row.
-.be-form__field--actions {
-    flex-direction: row;
-    flex-wrap:      wrap;
-    align-items:    flex-end;
-    gap:            var(--space-2);
+// Buttons as the VALUE of a form field: a caption above (`.be-form__label`), the buttons side
+// by side below, as high as the inputs beside them (the report form's «Anzeige»: the monitor
+// and «PDF», owner 2026-10-10).
+.be-form__buttons {
+    display:     flex;
+    align-items: stretch;
+    gap:         var(--space-2);
+}
+// An icon-only button: square, the icon centred; its name lives in aria-label and title.
+.be-btn--icon {
+    aspect-ratio:    1;
+    padding-inline:  0;
+    justify-content: center;
 }
