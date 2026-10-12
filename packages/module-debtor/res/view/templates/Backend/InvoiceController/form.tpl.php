@@ -33,6 +33,7 @@
  * @var list<\Z77\Module\Debtor\Entities\DebtorProfile> $debtors  a new invoice only
  * @var list<\Z77\Module\Contact\Entities\Contact> $candidates  a new invoice only — active contacts without a profile (`_debtorSelect`)
  * @var list<\Z77\Module\Debtor\Entities\PaymentTerms> $terms
+ * @var \Z77\Module\Debtor\Entities\PaymentTerms|null $defaultTerms  the terms a new debtor gets (null = none marked / inactive)
  * @var list<\Z77\Module\Debtor\Entities\PaymentTarget> $targets
  * @var list<\Z77\Module\Vat\Entities\TaxCode> $taxCodes
  * @var list<array{number: string, label: string}> $accounts
@@ -145,7 +146,7 @@ $cancelHref = $window && !$isEdit && !$isCredit ? '' : $cancel;
             <div class="be-form__field" data-z77-field-wrapper>
                 <label for="invoice-terms">Zahlungskonditionen</label>
                 <select id="invoice-terms" name="terms">
-                    <option value="">wie beim Debitor</option>
+                    <option value="">wie beim Debitor<?= ($candidates ?? []) !== [] && ($defaultTerms ?? null) !== null ? ' — neu als Debitor: ' . e($defaultTerms->getLabel()) : '' ?></option>
                     <?php foreach ($terms as $row): ?>
                     <option value="<?= e($row->getCode()) ?>"<?= $row->getCode() === $form->header('terms') ? ' selected' : '' ?>><?= e($row->getLabel()) ?><?= $row->isActive() ? '' : ' (inaktiv)' ?></option>
                     <?php endforeach; ?>

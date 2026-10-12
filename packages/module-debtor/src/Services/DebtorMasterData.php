@@ -38,16 +38,36 @@ final class DebtorMasterData
     public function __construct(private readonly UnifiedEntityManager $em) {}
 
     /**
+     * The DEFAULT marker (owner 2026-10-12) stays on ONE row: saving a row marked `default`
+     * takes the marker off every other row in the same flush — the collection file is written
+     * once, under its lock (DATA-LOCK-001). Marking is moving, never a refusal, so «make this
+     * the standard» is one action on the row that becomes it.
+     *
+     * @return list<PaymentTerms> the OTHER rows that lost the marker (the screen re-renders them)
+     *
      * @throws MasterDataCodeChangedException the code of an existing row differs from what is stored
      * @throws InvalidMasterDataException     the validator refused the row
      */
-    public function saveTerms(PaymentTerms $terms): void
+    public function saveTerms(PaymentTerms $terms): array
     {
         $this->assertCodeUnchanged($terms, 'payment terms');
         $this->assertValid(new PaymentTermsValidator($terms, $this->em->getRepository(PaymentTerms::class)));
 
+        $unmarked = [];
+        if ($terms->isDefault()) {
+            foreach ($this->em->getRepository(PaymentTerms::class)->allInOrder() as $other) {
+                if ($other->isDefault() && $other->getId() !== $terms->getId()) {
+                    $other->setDefault(false);
+                    $this->em->persist($other);
+                    $unmarked[] = $other;
+                }
+            }
+        }
+
         $this->em->persist($terms);
         $this->em->flush();
+
+        return $unmarked;
     }
 
     /**

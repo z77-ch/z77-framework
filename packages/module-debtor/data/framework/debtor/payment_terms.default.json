@@ -5,7 +5,8 @@
         "label": "30 Tage netto",
         "due_days": 30,
         "discounts": [],
-        "active": true
+        "active": true,
+        "default": true
     },
     {
         "id": 2,

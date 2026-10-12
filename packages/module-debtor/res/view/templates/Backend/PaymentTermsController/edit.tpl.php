@@ -5,6 +5,9 @@
  * the field is read-only on edit and the write service refuses a change
  * regardless.
  *
+ * «Standard» (owner 2026-10-12): the terms a new debtor gets — at most one
+ * row; checking it here takes the marker off the previous row on save.
+ *
  * Two discount tiers, days + percent each. A percent is typed as «2» or
  * «2.5» and stored as an integer in hundredths (plan §3). A document text
  * per language of this installation — the default language first, because
@@ -67,6 +70,14 @@ $fieldError = function (string $name) use ($validator): string {
                        aria-invalid="<?= $validator->hasFieldError('due_days') ? 'true' : 'false' ?>">
                 <?= raw($fieldError('due_days')) ?>
             </div>
+        </div>
+        <div class="be-form__field" data-z77-field-wrapper>
+            <label class="be-choice">
+                <input type="checkbox" class="be-choice__input" name="default" value="1"<?= $entry->isDefault() ? ' checked' : '' ?>
+                       aria-invalid="<?= $validator->hasFieldError('default') ? 'true' : 'false' ?>">
+                <span class="be-choice__label">Standard — neue Debitoren erhalten diese Konditionen</span>
+            </label>
+            <?= raw($fieldError('default')) ?>
         </div>
 
         <div class="be-form__section">Skonto</div>

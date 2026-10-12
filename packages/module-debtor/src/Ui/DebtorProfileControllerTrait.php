@@ -157,7 +157,7 @@ trait DebtorProfileControllerTrait
             return $this->fetchError('Kontakt «' . $contact->displayName() . '» ist inaktiv — für einen inaktiven Kontakt wird kein Debitor angelegt.');
         }
 
-        $profile = new DebtorProfile();
+        $profile = $this->newDebtorProfile();
         $profile->setContact($contact);
 
         return $this->editProfile($profile, $contact);
@@ -227,10 +227,26 @@ trait DebtorProfileControllerTrait
         return $response;
     }
 
+    /**
+     * A new profile with the DEFAULT payment terms preselected (owner 2026-10-12) — a posted
+     * form overwrites them with what was chosen, and the validator checks that code again
+     * (exists, active). No active default marked: the select starts at «— wählen —», as before.
+     */
+    private function newDebtorProfile(): DebtorProfile
+    {
+        $profile = new DebtorProfile();
+        $default = $this->debtorTerms()->defaultForNewDebtor();
+        if ($default !== null) {
+            $profile->setPaymentTermsCode($default->getCode());
+        }
+
+        return $profile;
+    }
+
     /** The «+ Debitor» dialog before a contact is chosen: the same form, the contact a select. */
     private function debtorContactChoice(): HtmlResponse
     {
-        $draft    = new DebtorProfile();
+        $draft    = $this->newDebtorProfile();
         $response = $this->html([
             'entry'      => $draft,
             'contact'    => null,

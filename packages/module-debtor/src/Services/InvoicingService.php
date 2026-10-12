@@ -127,10 +127,11 @@ final class InvoicingService
      * invoice rows; nothing takes `customer` after an invoice row), so a refused draft, a
      * refused insert or a race consumes no number and leaves no profile behind. The draft is
      * composed against the unsaved profile BEFORE the unit of work, as every draft is. The
-     * profile's payment terms are the ones the draft NAMES — there is no default terms
-     * setting (decided 2026-09-22), so a draft without terms («wie beim Debitor») is refused
-     * (`no-debtor-profile`) with what to choose. false (every other source) = a contact
-     * without a profile is refused, as before.
+     * profile gets the DEFAULT payment terms (owner 2026-10-12, {@see profileToOpen()}), so
+     * «wie beim Debitor» resolves to them; terms the draft names apply to the document. Without
+     * an active default the profile takes the terms the draft names, and a draft without terms
+     * is refused (`no-debtor-profile`) with what to choose. false (every other source) = a
+     * contact without a profile is refused, as before.
      *
      * @throws InvoiceRefusedException the draft is refused — nothing was written
      */
@@ -163,11 +164,14 @@ final class InvoicingService
     }
 
     /**
-     * The profile {@see invoice()} opens for an active contact without one, with the payment
-     * terms the draft names — or null: the contact has a profile (the usual path), or compose()
-     * refuses the party with its own reason (unknown, inactive), or the draft is no invoice.
+     * The profile {@see invoice()} opens for an active contact without one, with the DEFAULT
+     * payment terms ({@see PaymentTermsRepository::defaultForNewDebtor()}, owner 2026-10-12) —
+     * the draft's own terms, if it names any, stay on the document only; without an active
+     * default, with the terms the draft names. Or null: the contact has a profile (the usual
+     * path), or compose() refuses the party with its own reason (unknown, inactive), or the
+     * draft is no invoice.
      *
-     * @throws InvoiceRefusedException NO_DEBTOR_PROFILE — the draft names no payment terms
+     * @throws InvoiceRefusedException NO_DEBTOR_PROFILE — no active default and the draft names no payment terms
      */
     private function profileToOpen(InvoiceDraft $draft): ?DebtorProfile
     {
@@ -178,15 +182,20 @@ final class InvoicingService
         if ($contact === null || !$contact->isActive() || $this->em->getRepository(DebtorProfile::class)->findByContact($contact) !== null) {
             return null;
         }
-        if (PaymentTerms::normalizeCode((string) $draft->paymentTermsCode) === '') {
+        // The profile is the standing agreement: it gets the DEFAULT terms (owner 2026-10-12);
+        // terms the draft names apply to this document only. Without an active default the
+        // terms the draft names go to the profile (the behaviour before the default existed).
+        $terms = $this->em->getRepository(PaymentTerms::class)->defaultForNewDebtor()?->getCode()
+            ?? PaymentTerms::normalizeCode((string) $draft->paymentTermsCode);
+        if ($terms === '') {
             throw new InvoiceRefusedException(
                 InvoiceRefusedException::NO_DEBTOR_PROFILE,
-                '«' . $contact->displayName() . '» ist noch kein Debitor — Zahlungskonditionen wählen: sie werden beim neuen Debitor hinterlegt (es gibt keine Standard-Konditionen, «wie beim Debitor» setzt ein Debitorenprofil voraus).'
+                '«' . $contact->displayName() . '» ist noch kein Debitor — Zahlungskonditionen wählen: sie werden beim neuen Debitor hinterlegt (unter Zahlungskonditionen sind keine aktiven Standard-Konditionen markiert).'
             );
         }
         $profile = new DebtorProfile();
         $profile->setContact($contact);
-        $profile->setPaymentTermsCode((string) $draft->paymentTermsCode);
+        $profile->setPaymentTermsCode($terms);
 
         return $profile;
     }

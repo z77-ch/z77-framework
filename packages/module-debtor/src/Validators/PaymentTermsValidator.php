@@ -24,6 +24,10 @@ use Z77\Persistence\Validation\EntityValidator;
  * Document text: keys must be languages of this installation
  * ({@see DocumentTextRule}, shared with {@see DunningLevelValidator}).
  *
+ * Default marker (owner 2026-10-12): only an ACTIVE row may carry it. That it
+ * stays on ONE row is the write service's job, not a refusal here
+ * (`DebtorMasterData::saveTerms()` moves it).
+ *
  * Without a repository the uniqueness check is skipped (format-only).
  */
 class PaymentTermsValidator extends EntityValidator
@@ -89,6 +93,17 @@ class PaymentTermsValidator extends EntityValidator
             }
             $seenDays[$tier['days']] = true;
             $previous                = $tier['percent'];
+        }
+    }
+
+    /**
+     * An inactive row is never given to a new debtor, so it cannot be the default either —
+     * marking it would be a default that silently does nothing.
+     */
+    public function validateDefault(bool $default): void
+    {
+        if ($default && !$this->entity->isActive()) {
+            $this->addFieldError('default', 'Inaktive Konditionen können nicht Standard sein — zuerst aktivieren.');
         }
     }
 

@@ -29,6 +29,16 @@ use Z77\Shared\Traits\ArrayMappable;
  * the document falls back to `defaultLanguage` — the fallback resolver
  * arrives with the document in part 2, nothing reads it yet).
  *
+ * The DEFAULT marker (owner 2026-10-12 — reverses «no default terms» of
+ * 2026-09-22 for new debtors): AT MOST ONE row carries `default`, the terms
+ * a NEW debtor profile gets when nobody names others («+ Debitor» preselects
+ * it, an invoice that opens a profile gives it to the profile, an import
+ * falls back to it). It lives on the row, not in a setting naming a code:
+ * it is maintained where the terms are and can never point to a missing row
+ * (Rule 2). {@see \Z77\Module\Debtor\Services\DebtorMasterData::saveTerms()}
+ * keeps it to one row; an INACTIVE default is no default
+ * ({@see \Z77\Module\Debtor\Repositories\PaymentTermsRepository::defaultForNewDebtor()}).
+ *
  * A discount percent is an INTEGER IN HUNDREDTHS OF A PERCENT, exactly as
  * the VAT rates are (plan §3, `TaxRate::$rate`): 2 % = `200`. No float
  * anywhere near an amount.
@@ -71,6 +81,12 @@ class PaymentTerms
     #[Clean('bool')]
     private bool $active = true;
 
+    /**
+     * The terms a NEW debtor gets — at most one row. Set by the form field by
+     * field, never mapped raw from a request body — hence no `#[Clean]`.
+     */
+    private bool $default = false;
+
     public function __construct(array $data = [])
     {
         if ($data) {
@@ -89,6 +105,7 @@ class PaymentTerms
     public function getLabel(): string { return $this->label; }
     public function getDueDays(): int { return $this->dueDays; }
     public function isActive(): bool { return $this->active; }
+    public function isDefault(): bool { return $this->default; }
 
     /** @return list<array{days: int, percent: int}> ascending by days */
     public function getDiscounts(): array { return $this->discounts; }
@@ -97,6 +114,7 @@ class PaymentTerms
     public function setLabel(string $label): void { $this->label = $label; }
     public function setDueDays(mixed $days): void { $this->dueDays = (int) $days; }
     public function setActive(bool $active): void { $this->active = $active; }
+    public function setDefault(bool $default): void { $this->default = $default; }
 
     /**
      * Coerces the tiers to integers, drops entries that carry neither a day

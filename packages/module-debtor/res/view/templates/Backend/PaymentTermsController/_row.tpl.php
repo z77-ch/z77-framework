@@ -32,6 +32,10 @@ $slots = [
                         <?php endif; ?>
 <?php },
     'state' => function () use ($row, $count, $languages): void { ?>
+                        <?php if ($row->isDefault()): ?>
+                        <span class="badge <?= $row->isActive() ? 'badge--success' : 'badge--muted' ?>"
+                              title="<?= $row->isActive() ? 'Neue Debitoren erhalten diese Konditionen' : 'Inaktiv — wirkt nicht, neue Debitoren müssen Konditionen wählen' ?>">Standard</span>
+                        <?php endif; ?>
                         <?php foreach ($languages as $language): ?>
                         <span class="badge <?= isset($row->getDocumentText()[$language]) ? 'badge--success' : 'badge--muted' ?>"
                               title="<?= isset($row->getDocumentText()[$language]) ? 'Belegtext vorhanden' : 'Kein Belegtext' ?>"><?= e(mb_strtoupper($language)) ?></span>

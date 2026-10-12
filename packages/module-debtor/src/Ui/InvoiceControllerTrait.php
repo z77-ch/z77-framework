@@ -484,7 +484,7 @@ trait InvoiceControllerTrait
         $form    = new InvoiceForm(DebtorCurrency::base());
         if (!$request->isPost()) {
             $contact = (int) $request->getGetParameter('contact');
-            $form->startBlank(new \DateTimeImmutable('today'), $contact > 0 ? $contact : null, $this->invoiceDefaultTarget());
+            $form->startBlank(new \DateTimeImmutable('today'), $contact > 0 ? $contact : null, $this->invoiceDefaultTarget(), $this->invoiceNewDebtorTerms($contact));
 
             return $this->invoiceFormPage($form, null);
         }
@@ -721,6 +721,8 @@ trait InvoiceControllerTrait
             // Owner 2026-10-10: contacts without a profile are choosable too — the save opens it.
             'candidates' => $document === null && $form->creditNoteOf === null ? $this->em()->getRepository(DebtorProfile::class)->contactsWithoutProfile() : [],
             'terms'      => $terms,
+            // What «wie beim Debitor» means for a contact «(neu als Debitor)» (owner 2026-10-12).
+            'defaultTerms' => $this->em()->getRepository(PaymentTerms::class)->defaultForNewDebtor(),
             'targets'    => $targets,
             'taxCodes'   => $this->em()->getRepository(TaxCode::class)->selectable($form->keptCodes()),
             // A line posts to a revenue account flagged «auf Belegen wählbar» (owner 2026-10-10 / 2026-10-12) — the service refuses any other.
@@ -738,6 +740,21 @@ trait InvoiceControllerTrait
         }
 
         return '';
+    }
+
+    /**
+     * The terms preselected for `?contact=` when that contact is NOT a debtor yet: the default
+     * terms (owner 2026-10-12) — what the profile opened with the draft gets as well. '' = «wie
+     * beim Debitor»: the contact is a debtor (its profile's terms apply), none is named, or no
+     * active default is marked (then terms must be chosen, the service says so).
+     */
+    private function invoiceNewDebtorTerms(int $contactId): string
+    {
+        if ($contactId < 1 || $this->em()->getRepository(DebtorProfile::class)->findByContact($contactId) !== null) {
+            return '';
+        }
+
+        return $this->em()->getRepository(PaymentTerms::class)->defaultForNewDebtor()?->getCode() ?? '';
     }
 
     // ── finalize ─────────────────────────────────────────────────────────

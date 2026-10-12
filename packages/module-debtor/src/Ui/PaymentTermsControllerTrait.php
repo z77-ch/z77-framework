@@ -34,7 +34,10 @@ use Z77\Core\DI,
  *   - add a row; edit label, due days, the tiers and the texts — the CODE is
  *     immutable once created (profiles and, from part 2, invoices carry it,
  *     ADR-043 decision 19);
- *   - activate / deactivate (inline switch). There is NO delete.
+ *   - activate / deactivate (inline switch). There is NO delete;
+ *   - mark a row «Standard» (checkbox in the form, owner 2026-10-12) — the
+ *     terms a new debtor gets; marking moves the marker off the previous
+ *     row, and both rows are answered in place.
  *
  * The discount tiers and the per-language texts are read from the body FIELD
  * BY FIELD, never mapped raw: a percent arrives as «2» or «2.5» and becomes
@@ -139,10 +142,11 @@ trait PaymentTermsControllerTrait
 
             // Structured fields are built here, never mapped raw from the body.
             $values = BodyCleaner::cleanFor(PaymentTerms::class, $body);
-            unset($values['discounts'], $values['document_text']);
+            unset($values['discounts'], $values['document_text'], $values['default']);
             $terms->mapFromArray($values);
             // `active` has its own switch on the list; the form never touches it.
             $terms->setActive($isNew ? true : $originalActive);
+            $terms->setDefault(filter_var($body['default'] ?? false, FILTER_VALIDATE_BOOLEAN));
             $terms->setDocumentText(DocumentTextForm::posted($body, $this->documentLanguages()));
 
             [$tiers, $percents, $tierErrors] = self::postedTiers($body);
@@ -150,11 +154,17 @@ trait PaymentTermsControllerTrait
 
             if ($tierErrors === []) {
                 try {
-                    $this->debtorMasterData()->saveTerms($terms);
+                    $unmarked = $this->debtorMasterData()->saveTerms($terms);
 
                     $this->messageService->pushFlash('success', 'Zahlungskonditionen «' . $terms->getLabel() . '» ' . ($isNew ? 'angelegt' : 'gespeichert'));
 
-                    return $this->paymentTermsRowAnswer($terms, $isNew)->addCommand('close-modal');
+                    $answer = $this->paymentTermsRowAnswer($terms, $isNew);
+                    // The default marker moved: the row that lost it is answered too (its «Standard» goes).
+                    foreach ($unmarked as $other) {
+                        $answer->replaceRow('paymentTerms', (int) $other->getId(), $this->paymentTermsRowHtml($other));
+                    }
+
+                    return $answer->addCommand('close-modal');
                 } catch (MasterDataCodeChangedException) {
                     return $this->fetchError('Der Code ist nach dem Anlegen fix — für andere Konditionen einen neuen Code anlegen.');
                 } catch (InvalidMasterDataException $e) {
@@ -217,12 +227,7 @@ trait PaymentTermsControllerTrait
      */
     private function paymentTermsRowAnswer(PaymentTerms $terms, bool $isNew = false): FetchResponse
     {
-        $html = (new TemplateRenderer(self::PAYMENT_TERMS_NS))->partial('Backend/PaymentTermsController/_row', [
-            'row'        => $terms,
-            'count'      => $this->debtorProfiles()->countByPaymentTermsCode($terms->getCode()),
-            'languages'  => $this->documentLanguages(),
-            'actionBase' => $this->paymentTermsListBase(),
-        ]);
+        $html     = $this->paymentTermsRowHtml($terms);
         $response = $this->fetch()->setStatus('success')->setData(['id' => $terms->getId()]);
         if (!$isNew) {
             return $response->replaceRow('paymentTerms', (int) $terms->getId(), $html);
@@ -231,6 +236,17 @@ trait PaymentTermsControllerTrait
         return $response
             ->addCommand('remove-element', ['target' => FetchResponse::listTarget('paymentTerms') . ' > .be-list__empty'])
             ->insertRow('paymentTerms', $html);
+    }
+
+    /** One row through `_row` — the partial the list renders. */
+    private function paymentTermsRowHtml(PaymentTerms $terms): string
+    {
+        return (new TemplateRenderer(self::PAYMENT_TERMS_NS))->partial('Backend/PaymentTermsController/_row', [
+            'row'        => $terms,
+            'count'      => $this->debtorProfiles()->countByPaymentTermsCode($terms->getCode()),
+            'languages'  => $this->documentLanguages(),
+            'actionBase' => $this->paymentTermsListBase(),
+        ]);
     }
 
     // ── posted structures ────────────────────────────────────────────────

@@ -80,10 +80,11 @@ final class InvoiceForm
         }
     }
 
-    /** A new invoice: today, net, the party and the payment target the screen preselects, empty rows. */
-    public function startBlank(\DateTimeImmutable $today, ?int $contactId, string $target): self
+    /** A new invoice: today, net, the party, the payment target and the terms the screen preselects ('' = «wie beim Debitor»), empty rows. */
+    public function startBlank(\DateTimeImmutable $today, ?int $contactId, string $target, string $terms = ''): self
     {
         $this->header['contact']      = $contactId !== null ? (string) $contactId : '';
+        $this->header['terms']        = $terms;
         $this->header['invoice_date'] = $today->format('Y-m-d');
         $this->header['service_from'] = $today->format('Y-m-d');
         $this->header['target']       = $target;

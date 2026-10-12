@@ -426,6 +426,9 @@ $targets = $em->getRepository(PaymentTarget::class);
 check('B1 convention repositories resolve on the File driver', $terms instanceof PaymentTermsRepository && $levels instanceof DunningLevelRepository && $targets instanceof PaymentTargetRepository);
 check('B2 two seeded terms rows, in file order: net-30, disc-2-10', array_map(fn(PaymentTerms $t) => $t->getCode(), $terms->allInOrder()) === ['net-30', 'disc-2-10']);
 check('B3 every seeded terms row is active and passes its validator', array_reduce($terms->allInOrder(), fn($ok, PaymentTerms $t) => $ok && $t->isActive() && (new PaymentTermsValidator($t, $terms))->isValid(), true));
+check('B3b the seed marks «30 Tage netto» as the default for new debtors (owner 2026-10-12) — exactly one row',
+    $terms->defaultForNewDebtor()?->getCode() === 'net-30'
+    && array_map(fn(PaymentTerms $t) => $t->isDefault(), $terms->allInOrder()) === [true, false]);
 $net30 = $terms->findByCode('net-30');
 $disc  = $terms->findByCode('disc-2-10');
 check('B4 net-30: 30 days, no discount tier', $net30?->getDueDays() === 30 && $net30->getDiscounts() === []);
@@ -521,6 +524,37 @@ $stored = $em3->getRepository(PaymentTerms::class)->findByCode('two');
 $stored->setCode('renamed');
 $e = caught(fn() => $masterData->saveTerms($stored), MasterDataCodeChangedException::class);
 check('C17 the code of an existing row is immutable — the write service refuses it', $e instanceof MasterDataCodeChangedException && $e->storedCode === 'two' && $e->submittedCode === 'renamed');
+
+// The default marker (owner 2026-10-12): one row, moved by marking another, never on an inactive row.
+$emC        = $wireDi();
+$cTerms     = $emC->getRepository(PaymentTerms::class);
+$cData      = new DebtorMasterData($emC);
+$cTwo       = $cTerms->findByCode('two');
+$cTwo->setDefault(true);
+$cUnmarked  = $cData->saveTerms($cTwo);
+$cFresh     = $wireDi()->getRepository(PaymentTerms::class);
+check('C18 marking another row MOVES the default: the previous one (net-30) loses it in the same flush and is returned for the screen; exactly one row marked',
+    array_map(fn(PaymentTerms $t) => $t->getCode(), $cUnmarked) === ['net-30']
+    && $cFresh->defaultForNewDebtor()?->getCode() === 'two'
+    && count(array_filter($cFresh->allInOrder(), fn(PaymentTerms $t) => $t->isDefault())) === 1);
+$cData->setTermsActive($cTwo, false);
+check('C19 an INACTIVE default is no default — defaultForNewDebtor() answers null (the caller keeps «choose the terms»), the marker stays on the row',
+    $wireDi()->getRepository(PaymentTerms::class)->defaultForNewDebtor() === null && $wireDi()->getRepository(PaymentTerms::class)->findByCode('two')?->isDefault() === true);
+$v = $invalid(fn() => (new DebtorMasterData($wireDi()))->saveTerms($wireDi()->getRepository(PaymentTerms::class)->findByCode('two')));
+check('C20 saving an inactive row WITH the marker is refused (field `default`) — a default that silently does nothing is not written', $v?->hasFieldError('default') === true);
+// Back to the seed's state for the sections below: «two» active and unmarked, net-30 the default.
+$emC2 = $wireDi();
+$cTwo = $emC2->getRepository(PaymentTerms::class)->findByCode('two');
+$cTwo->setDefault(false);
+(new DebtorMasterData($emC2))->setTermsActive($cTwo, true);
+(new DebtorMasterData($emC2))->saveTerms($cTwo);
+$cNet = $emC2->getRepository(PaymentTerms::class)->findByCode('net-30');
+$cNet->setDefault(true);
+(new DebtorMasterData($emC2))->saveTerms($cNet);
+check('C21 … and marked back: net-30 is the default again, «two» active and unmarked',
+    $wireDi()->getRepository(PaymentTerms::class)->defaultForNewDebtor()?->getCode() === 'net-30'
+    && $wireDi()->getRepository(PaymentTerms::class)->findByCode('two')?->isActive() === true
+    && $wireDi()->getRepository(PaymentTerms::class)->findByCode('two')?->isDefault() === false);
 
 
 // ── D. IBAN, QR-IBAN and the payment target ──────────────────────────────
@@ -3378,23 +3412,50 @@ $vId       = (int) $vForm->contact->getId();
 $vCustomer = (int) $rangeOf('customer');
 $vProfiles = $count('debtor_profile');
 $vDraft    = fn(?string $terms) => InvoiceDraft::invoice($vId, day('2026-12-07'), day('2026-12-07'), 'CHF', [LineDraft::lumpSum('Stunden', chf('10.00'), 'UN', '3400')], paymentTermsCode: $terms);
-check('V2 without openProfile the contact is refused as before (no-debtor-profile); with it but WITHOUT terms too — no default terms (2026-09-22), the message names the choice; nothing drawn, no profile',
+check('V2 without openProfile the contact is refused as before (no-debtor-profile); nothing drawn, no profile',
     $refusal(fn() => $service($wireDi())->invoice($vDraft('net-30'))) === InvoiceRefusedException::NO_DEBTOR_PROFILE
-    && ($e = caught(fn() => $service($wireDi())->invoice($vDraft(null), openProfile: true), InvoiceRefusedException::class))?->reason === InvoiceRefusedException::NO_DEBTOR_PROFILE
-    && str_contains($e->getMessage(), 'Zahlungskonditionen wählen')
     && (int) $rangeOf('customer') === $vCustomer && $count('debtor_profile') === $vProfiles);
+// No ACTIVE default marked (the marker taken off net-30, then net-30 marked but deactivated): the
+// behaviour before the default existed — a draft without terms is refused with what to choose.
+$vMark = function (bool $default, bool $active) use ($wireDi): void {
+    $em  = $wireDi();
+    $net = $em->getRepository(PaymentTerms::class)->findByCode('net-30');
+    $net->setDefault($default);
+    (new DebtorMasterData($em))->setTermsActive($net, $active);   // a pure state change writes the whole row, marker included
+};
+$vNoDefault = fn() => ($e = caught(fn() => $service($wireDi())->invoice($vDraft(null), openProfile: true), InvoiceRefusedException::class))?->reason === InvoiceRefusedException::NO_DEBTOR_PROFILE
+    && str_contains($e->getMessage(), 'Zahlungskonditionen wählen');
+$vMark(false, true);
+$vUnmarked = $vNoDefault();
+$vMark(true, false);
+$vInactive = $vNoDefault();
+$vMark(true, true);
+check('V2b no default marked, or the marked one inactive: «wie beim Debitor» for a contact without a profile is REFUSED with what to choose (nothing invented); nothing drawn, no profile',
+    $vUnmarked && $vInactive && (int) $rangeOf('customer') === $vCustomer && $count('debtor_profile') === $vProfiles
+    && $wireDi()->getRepository(PaymentTerms::class)->defaultForNewDebtor()?->getCode() === 'net-30');
 check('V3 a refused draft (unknown tax code) for the contact opens no profile and draws no customer number',
     $refusal(fn() => $service($wireDi())->invoice(InvoiceDraft::invoice($vId, day('2026-12-07'), day('2026-12-07'), 'CHF', [LineDraft::lumpSum('X', chf('10.00'), 'NOPE', '3400')], paymentTermsCode: 'net-30'), openProfile: true)) !== null
     && (int) $rangeOf('customer') === $vCustomer && $count('debtor_profile') === $vProfiles);
-$vInvoice = $service($wireDi())->invoice($vDraft('net-30'), openProfile: true);
+$vInvoice = $service($wireDi())->invoice($vDraft(null), openProfile: true);
 $vProfile = $wireDi()->getRepository(DebtorProfile::class)->findByContact($vId);
-check('V4 with terms: the draft AND the profile in one unit of work — the next customer number, the draft\'s terms, active; the draft unnumbered in `invoicing`',
+check('V4 «wie beim Debitor» with the default marked (owner 2026-10-12): the draft AND the profile in one unit of work — the next customer number, the DEFAULT terms net-30 on profile and document, active; the draft unnumbered in `invoicing`',
     $vProfile !== null && $vProfile->getCustomerNumber() === $vCustomer + 1 && (int) $rangeOf('customer') === $vCustomer + 1
-    && $vProfile->getPaymentTermsCode() === 'net-30' && $vProfile->isActive() && $count('debtor_profile') === $vProfiles + 1
+    && $vProfile->getPaymentTermsCode() === 'net-30' && $vInvoice->getPaymentTermsCode() === 'net-30' && $vProfile->isActive() && $count('debtor_profile') === $vProfiles + 1
     && $stateOf($vInvoice->getId()) === 'invoicing' && $invoiceRow($vInvoice->getId())['number'] === null);
 $vAgain = $service($wireDi())->invoice($vDraft(null), openProfile: true);
-check('V5 the next draft for the same contact is an ordinary one: «wie beim Debitor» now resolves, no second profile, no further number',
+check('V5 the next draft for the same contact is an ordinary one: «wie beim Debitor» resolves to the profile, no second profile, no further number',
     $vAgain->getPaymentTermsCode() === 'net-30' && (int) $rangeOf('customer') === $vCustomer + 1 && $count('debtor_profile') === $vProfiles + 1);
+// Terms the draft NAMES apply to that document only — the profile is the standing agreement and gets the default.
+$vForm2 = (new ContactForm(addressRequired: true))->fromPost([
+    'kind' => 'organisation', 'company' => 'Skonto Erstkunde AG', 'language' => 'de', 'type_code' => 'main',
+    'address_name' => 'Skonto Erstkunde AG', 'address_street' => 'Weg', 'address_house_no' => '2', 'address_zip' => '6000', 'address_city' => 'Luzern', 'address_country' => 'CH',
+]);
+$vForm2->save(new ContactService($wireDi()));
+$vId2      = (int) $vForm2->contact->getId();
+$vNamed    = $service($wireDi())->invoice(InvoiceDraft::invoice($vId2, day('2026-12-07'), day('2026-12-07'), 'CHF', [LineDraft::lumpSum('Stunden', chf('10.00'), 'UN', '3400')], paymentTermsCode: 'disc-2-10'), openProfile: true);
+$vProfile2 = $wireDi()->getRepository(DebtorProfile::class)->findByContact($vId2);
+check('V5b a first draft that NAMES other terms (disc-2-10): the document carries them, the new profile gets the DEFAULT net-30',
+    $vNamed->getPaymentTermsCode() === 'disc-2-10' && $vProfile2?->getPaymentTermsCode() === 'net-30' && $vProfile2->getCustomerNumber() === $vCustomer + 2);
 $vSource = file_get_contents((new \ReflectionClass(InvoicingService::class))->getFileName());
 $vInvoiceFn = substr($vSource, strpos($vSource, 'public function invoice(InvoiceDraft'), 2600);
 check('V6 lock order in the source: the profile is saved as the FIRST write of invoice()\'s unit of work, before the invoice row is built',
@@ -3412,6 +3473,12 @@ check('V8 «+ Kontakt» is a window over the editor (`data-window-open` → new-
     && str_contains(file_get_contents($vTpl . '/newContact.tpl.php'), 'name="_origin"')
     && str_contains($vTrait, 'new ContactForm(addressRequired: true)')
     && preg_match("/'replace-html', \[\s*'target' => '#invoice-contact'.*?'origin' => WindowOrigin::of\(\\\$request\).*?->addCommand\('close-modal'\)/s", $vTrait) === 1);
+$vProfileTrait = file_get_contents($package . '/src/Ui/DebtorProfileControllerTrait.php');
+$vTermsTpl     = $package . '/res/view/templates/Backend/PaymentTermsController';
+check('V9 the default is read in ONE place (PaymentTermsRepository::defaultForNewDebtor) by its users: the service opening a profile, the editor preselecting it for `?contact=` of a contact without a profile, «+ Debitor» preselecting it; the terms screen sets it (checkbox `default`) and shows «Standard»',
+    str_contains($vSource, '->defaultForNewDebtor()') && str_contains($vTrait, 'invoiceNewDebtorTerms($contact)') && str_contains($vTrait, '->defaultForNewDebtor()')
+    && str_contains($vProfileTrait, '$this->newDebtorProfile()') && substr_count($vProfileTrait, 'new DebtorProfile()') === 1 && str_contains($vProfileTrait, '->defaultForNewDebtor()')
+    && str_contains(file_get_contents($vTermsTpl . '/edit.tpl.php'), 'name="default"') && str_contains(file_get_contents($vTermsTpl . '/_row.tpl.php'), '>Standard</span>'));
 
 // ── result ───────────────────────────────────────────────────────────────
 

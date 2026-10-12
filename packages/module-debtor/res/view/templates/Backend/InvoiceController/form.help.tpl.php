@@ -16,7 +16,7 @@ $isCredit = $form->kind === \Z77\Module\Debtor\Entities\InvoiceKind::CreditNote;
 <?php if ($document === null && !$isCredit): ?>
 <section data-help-field="contact">
 <h3>Debitor</h3>
-<p>Angeboten werden die aktiven Debitoren und darunter die aktiven <strong>Kontakte ohne Debitorenprofil</strong>. Wird ein solcher Kontakt gewählt, legt das Speichern der Rechnung den Debitor gleich mit an — mit der nächsten <strong>Kundennummer</strong> und den hier gewählten <strong>Zahlungskonditionen</strong> (es gibt keine Standard-Konditionen; «wie beim Debitor» geht erst, wenn das Profil besteht). Wird die Rechnung abgelehnt, entsteht auch kein Debitor und keine Kundennummer wird verbraucht.</p>
+<p>Angeboten werden die aktiven Debitoren und darunter die aktiven <strong>Kontakte ohne Debitorenprofil</strong>. Wird ein solcher Kontakt gewählt, legt das Speichern der Rechnung den Debitor gleich mit an — mit der nächsten <strong>Kundennummer</strong> und den <strong>Standard-Konditionen</strong> (unter Zahlungskonditionen als «Standard» markiert); «wie beim Debitor» heisst für ihn diese Standard-Konditionen. Andere Konditionen gelten nur für diese Rechnung, der Debitor behält den Standard. Ist kein aktiver Standard markiert, erhält der Debitor die hier gewählten Konditionen, und «wie beim Debitor» geht erst, wenn das Profil besteht. Wird die Rechnung abgelehnt, entsteht auch kein Debitor und keine Kundennummer wird verbraucht.</p>
 <p><strong>+ Kontakt</strong> erfasst einen neuen Kontakt mit Adresse, ohne die Rechnung zu verlassen: das Eingegebene bleibt stehen, der neue Kontakt ist danach gewählt. Debitor wird er beim Speichern der Rechnung.</p>
 </section>
 <?php endif; ?>
