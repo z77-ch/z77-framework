@@ -77,6 +77,19 @@ final class DebtorAccounts
         'dunningFee' => 'dunning-fee',
     ];
 
+    /**
+     * The chart type a key's account must have, where the posting fixes it
+     * (owner 2026-10-10): the dunning fee is the line of a fee DOCUMENT, and
+     * every document line posts to revenue (`InvoicingService`, «only
+     * revenue accounts») — checked here too, so the refusal names the key
+     * and the dunning-level screen shows it before a run. The other keys
+     * stay untyped: the receivable is an asset, and discount / loss /
+     * rounding are revenue reductions or expenses depending on the chart.
+     */
+    private const REQUIRED_TYPES = [
+        'dunningFee' => LedgerAccountCheck::TYPE_REVENUE,
+    ];
+
     /** Where a missing account is set — the sentence every refusal ends with. */
     private const MANDATOR_HINT = 'im Mandanten hinterlegen (Finanzen → Mandant, Konten)';
 
@@ -129,11 +142,20 @@ final class DebtorAccounts
     {
         $number = $this->number($key);
 
-        if ((new LedgerAccountCheck($this->em))->isPostable($number) === false) {
+        $check = new LedgerAccountCheck($this->em);
+        if ($check->isPostable($number) === false) {
             throw new AccountNotConfiguredException(
                 $key,
                 'Konto ' . $number . ' für «' . self::LABELS[$key] . '» gibt es in der Buchhaltung nicht, '
                 . 'es ist eine Gruppe oder inaktiv — ' . self::MANDATOR_HINT . '.'
+            );
+        }
+        $type = self::REQUIRED_TYPES[$key] ?? null;
+        if ($type !== null && $check->hasType($number, $type) === false) {
+            throw new AccountNotConfiguredException(
+                $key,
+                'Konto ' . $number . ' für «' . self::LABELS[$key] . '» ist kein Ertragskonto (Typ «Ertrag» im Kontenplan) — '
+                . self::MANDATOR_HINT . '.'
             );
         }
 

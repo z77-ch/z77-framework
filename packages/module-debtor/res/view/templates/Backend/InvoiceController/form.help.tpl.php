@@ -13,6 +13,14 @@ $isCredit = $form->kind === \Z77\Module\Debtor\Entities\InvoiceKind::CreditNote;
 <p>Erstellen legt das Dokument <strong>in Fakturierung</strong> an: ein Entwurf <strong>ohne Nummer</strong>, nichts ist verbucht. Solange es in Fakturierung ist, kann es beliebig oft <strong>neu fakturiert</strong> und als <strong>Vorschau</strong> (PDF ohne Nummer und ohne Zahlteil) geöffnet werden. Erst der <strong>Buchungsdruck …</strong> (in der Liste für die angekreuzten, im Dokument für dieses) vergibt die Belegnummer, verbucht und öffnet das PDF mit Nummer und QR-Zahlteil — ein gedrucktes Dokument mit Nummer ist ein Beleg. Danach ist es unveränderlich, eine Korrektur ist eine Gutschrift; das PDF lässt sich jederzeit wieder öffnen.</p>
 <p>Beim Neu-Fakturieren werden Adresse und Zahlungskonditionen so übernommen, wie sie <strong>jetzt</strong> beim Debitor stehen.</p>
 
+<?php if ($document === null && !$isCredit): ?>
+<section data-help-field="contact">
+<h3>Debitor</h3>
+<p>Angeboten werden die aktiven Debitoren und darunter die aktiven <strong>Kontakte ohne Debitorenprofil</strong>. Wird ein solcher Kontakt gewählt, legt das Speichern der Rechnung den Debitor gleich mit an — mit der nächsten <strong>Kundennummer</strong> und den hier gewählten <strong>Zahlungskonditionen</strong> (es gibt keine Standard-Konditionen; «wie beim Debitor» geht erst, wenn das Profil besteht). Wird die Rechnung abgelehnt, entsteht auch kein Debitor und keine Kundennummer wird verbraucht.</p>
+<p><strong>+ Kontakt</strong> erfasst einen neuen Kontakt mit Adresse, ohne die Rechnung zu verlassen: das Eingegebene bleibt stehen, der neue Kontakt ist danach gewählt. Debitor wird er beim Speichern der Rechnung.</p>
+</section>
+<?php endif; ?>
+
 <h3>Positionen</h3>
 <ul>
     <li><strong>Leistung</strong>: Menge × Preis (Menge mit höchstens drei Dezimalen, auch negativ).</li>
@@ -21,6 +29,7 @@ $isCredit = $form->kind === \Z77\Module\Debtor\Entities\InvoiceKind::CreditNote;
     <li><strong>unter</strong>: die Zeile wird unter der Position darüber gedruckt (eine Ebene, z.B. der Inhalt eines Pakets zu 0.00). Nur eine Position mit Preis trägt Unterpositionen.</li>
     <li>Rabatt in Prozent, auf den Positionsbetrag. Leere Zeilen werden ignoriert.</li>
     <li>MWST-Code und Ertragskonto: angeboten werden die aktiven; ein Code, den das Dokument schon trägt, bleibt wählbar.</li>
+    <li>Konto: nur ein Ertragskonto (Typ «Ertrag» im Kontenplan). Ein Entwurf mit einem anderen Konto zeigt es weiter an, wird aber erst nach der Korrektur gespeichert oder verbucht.</li>
 </ul>
 <p>Das Total wird auf 5 Rappen gerundet; die Differenz erscheint als eigene Rundungszeile.</p>
 

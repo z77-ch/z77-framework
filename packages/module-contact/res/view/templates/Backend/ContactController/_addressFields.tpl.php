@@ -2,7 +2,8 @@
 /**
  * The address block of a form — type + title of the link, then the address
  * fields. Used by the contact form (optional first address on «add») and
- * the address modal (add / edit). One place for the fields (Rule 8).
+ * the address modal (add / edit). One place for the fields (Rule 8). Other
+ * modules' new-contact forms render it too, with `Ui\ContactForm::vars()`.
  *
  * Address fields post under the `address_` prefix (`address_first_name`, …)
  * because `first_name` and `title` exist on the contact / the link as well;

@@ -8,7 +8,6 @@ use Z77\Core\DI,
     Z77\Module\Contact\Entities\Address,
     Z77\Module\Contact\Entities\Contact,
     Z77\Module\Contact\Entities\ContactAddress,
-    Z77\Module\Contact\Entities\ContactKind,
     Z77\Module\Contact\Repositories\ContactAddressRepository,
     Z77\Module\Contact\Repositories\ContactRepository,
     Z77\Module\Contact\Services\AddressTypes,
@@ -16,7 +15,6 @@ use Z77\Core\DI,
     Z77\Module\Contact\Services\InvalidAddressException,
     Z77\Module\Contact\Services\InvalidContactException,
     Z77\Module\Contact\Validators\ContactValidator,
-    Z77\Persistence\Cleaning\BodyCleaner,
     Z77\Shared\Attributes\Fetch,
     Z77\Shared\Attributes\HttpMethod
 ;
@@ -56,18 +54,6 @@ trait ContactControllerTrait
 {
     private const CONTACT_NS = 'Z77\\Module\\Contact';
 
-    /** Address fields arrive in the contact form under this prefix (they collide with the contact's own names otherwise). */
-    private const ADDRESS_PREFIX = 'address_';
-
-    /** German display labels — PRESENTATION ONLY (the `ROLE_LABELS` pattern). The kind SET is {@see ContactKind}. */
-    private const KIND_LABELS = [
-        'person'       => 'Person',
-        'organisation' => 'Organisation',
-    ];
-
-    /** Offered when the site's own languages do not cover a contact — the Swiss set. */
-    private const CONTACT_LANGUAGES = ['de', 'fr', 'it', 'en'];
-
     /** URL root of THIS mount — every row button and modal form is built from it. */
     protected function contactListBase(): string
     {
@@ -94,68 +80,6 @@ trait ContactControllerTrait
         return AddressTypes::from($this->em());
     }
 
-    /** @return array<string,string> kind value → German label, for selects */
-    private function contactKindLabels(): array
-    {
-        $labels = [];
-        foreach (ContactKind::cases() as $kind) {
-            $labels[$kind->value] = self::KIND_LABELS[$kind->value] ?? $kind->value;
-        }
-
-        return $labels;
-    }
-
-    /** @return list<string> the site's languages first, then the common set, the contact's own always included */
-    private function contactLanguages(string $current = ''): array
-    {
-        $languages = [...DI::getI18n()->getLanguages(), ...self::CONTACT_LANGUAGES];
-        if ($current !== '') {
-            $languages[] = $current;
-        }
-
-        return array_values(array_unique($languages));
-    }
-
-    /** The contact's own fields of a posted form, cleaned; `active` has its own switch and never comes from the form. */
-    private function contactValues(array $body): array
-    {
-        $values = BodyCleaner::cleanFor(Contact::class, $body);
-        unset($values['active']);
-
-        return $values;
-    }
-
-    /** The address block of a posted form: `address_first_name` → `first_name`, …, cleaned for {@see Address}. */
-    private function addressValues(array $body): array
-    {
-        $raw = [];
-        foreach ($body as $key => $value) {
-            if (is_string($key) && str_starts_with($key, self::ADDRESS_PREFIX)) {
-                $raw[substr($key, strlen(self::ADDRESS_PREFIX))] = $value;
-            }
-        }
-
-        return BodyCleaner::cleanFor(Address::class, $raw);
-    }
-
-    /** The link fields of a posted form (`type_code`, `title`), cleaned for {@see ContactAddress}. */
-    private function linkValues(array $body): array
-    {
-        return BodyCleaner::cleanFor(ContactAddress::class, ['type_code' => $body['type_code'] ?? '', 'title' => $body['title'] ?? '']);
-    }
-
-    /** True when nothing of the address block was filled in (the block is optional on «add»). */
-    private function addressValuesAreEmpty(array $addressValues): bool
-    {
-        foreach ($addressValues as $key => $value) {
-            if ($key !== 'country' && trim((string) $value) !== '') {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
     // ── list ─────────────────────────────────────────────────────────────
 
     protected function listAction(): HtmlResponse
@@ -170,7 +94,7 @@ trait ContactControllerTrait
             'total'          => $this->contacts()->countMatching($query),
             'limit'          => $limit,
             'query'          => $query,
-            'kindLabels'     => $this->contactKindLabels(),
+            'kindLabels'     => ContactForm::kindLabels(),
             'addressTypes'   => $this->addressTypes(),
             'actionBase'     => $this->contactListBase(),
         ]);
@@ -186,30 +110,12 @@ trait ContactControllerTrait
      */
     protected function addAction(): HtmlResponse|FetchResponse
     {
-        $contact = new Contact();
-        $contact->setLanguage(DI::getI18n()->getDefaultLanguage());
-        $address          = new Address();
-        $typeCode         = 'main';
-        $linkTitle        = '';
-        $validator        = null;
-        $linkValidator    = null;
-        $addressValidator = null;
+        $form = new ContactForm(addressRequired: false);
 
         if (DI::getRequest()->isPost()) {
-            $body = DI::getRequest()->getJsonBody();
-            $contact->mapFromArray($this->contactValues($body));
-
-            $addressValues = $this->addressValues($body);
-            $linkValues    = $this->linkValues($body);
-            $typeCode      = (string) ($linkValues['type_code'] ?? $typeCode);
-            $linkTitle     = (string) ($linkValues['title'] ?? '');
-            if (!$this->addressValuesAreEmpty($addressValues)) {
-                $address->mapFromArray($addressValues);
-                $contact->addAddress(new ContactAddress($contact, $typeCode, $address, $linkTitle));
-            }
-
-            try {
-                $this->contactService()->save($contact);
+            $form->fromPost(DI::getRequest()->getJsonBody());
+            if ($form->save($this->contactService())) {
+                $contact = $form->contact;
                 $this->messageService->pushFlash('success', 'Kontakt «' . $contact->displayName() . '» angelegt');
 
                 // The new row goes on top: the list may be filtered by a search the POST does
@@ -220,16 +126,11 @@ trait ContactControllerTrait
                     ->insertRow('contact', $this->contactRowHtml($contact), 'prepend')
                     ->addCommand('remove-element', ['target' => FetchResponse::listTarget('contact') . ' > .be-list__empty'])
                     ->addCommand('close-modal');
-            } catch (InvalidContactException $e) {
-                $validator = $e->validator;
-            } catch (InvalidAddressException $e) {
-                $linkValidator    = $e->linkValidator;
-                $addressValidator = $e->addressValidator;
             }
             // validation failed — fall through to re-render the form with errors
         }
 
-        return $this->renderContactForm($contact, $validator, $address, $typeCode, $linkTitle, $linkValidator, $addressValidator);
+        return $this->renderContactForm($form->contact, $form->vars($this->addressTypes()));
     }
 
     // ── contact: edit ────────────────────────────────────────────────────
@@ -258,7 +159,7 @@ trait ContactControllerTrait
             }
 
             try {
-                $this->contactService()->update($contact, $this->contactValues($body));
+                $this->contactService()->update($contact, ContactForm::contactValues($body));
                 $this->messageService->pushFlash('success', 'Kontakt «' . $contact->displayName() . '» gespeichert');
 
                 return $this->contactRowAnswer($contact)->addCommand('close-modal');
@@ -268,26 +169,23 @@ trait ContactControllerTrait
             }
         }
 
-        return $this->renderContactForm($shown, $validator, new Address(), 'main', '', null, null);
+        $fields = (new ContactForm(addressRequired: false))->vars($this->addressTypes());
+
+        return $this->renderContactForm($shown, ['entry' => $shown, 'validator' => $validator ?? new ContactValidator($shown), 'languages' => ContactForm::languages($shown->getLanguage())] + $fields);
     }
 
-    private function renderContactForm(Contact $shown, ?ContactValidator $validator, Address $address, string $typeCode, string $linkTitle, $linkValidator, $addressValidator): HtmlResponse
+    /**
+     * The contact dialog: `_contactFields` (+ on «add» the optional `_addressFields`) — the
+     * field variables come from {@see ContactForm::vars()}.
+     *
+     * @param array<string, mixed> $fields
+     */
+    private function renderContactForm(Contact $shown, array $fields): HtmlResponse
     {
         $isNew    = $shown->getId() === null;
-        $response = $this->html([
-            'entry'            => $shown,
-            'entityCsrf'       => $isNew ? '' : DI::getCsrfService()->generateEntityToken('contact', $shown->getId()),
-            'validator'        => $validator ?? new ContactValidator($shown),
-            'kindLabels'       => $this->contactKindLabels(),
-            'languages'        => $this->contactLanguages($shown->getLanguage()),
-            // The optional first address (add only).
-            'address'          => $address,
-            'typeCode'         => $typeCode,
-            'linkTitle'        => $linkTitle,
-            'types'            => $this->addressTypes()->active(),
-            'linkValidator'    => $linkValidator,
-            'addressValidator' => $addressValidator,
-            'actionBase'       => $this->contactListBase(),
+        $response = $this->html($fields + [
+            'entityCsrf' => $isNew ? '' : DI::getCsrfService()->generateEntityToken('contact', $shown->getId()),
+            'actionBase' => $this->contactListBase(),
         ]);
         $this->layoutManager->addPartials('edit', 'Backend/ContactController', self::CONTACT_NS);
 
@@ -345,10 +243,10 @@ trait ContactControllerTrait
                 return $this->fetchError('Invalid token');
             }
 
-            $linkValues = $this->linkValues($body);
+            $linkValues = ContactForm::linkValues($body);
             $typeCode   = (string) ($linkValues['type_code'] ?? '');
             $linkTitle  = (string) ($linkValues['title'] ?? '');
-            $address->mapFromArray($this->addressValues($body));
+            $address->mapFromArray(ContactForm::addressValues($body));
             $link = new ContactAddress($contact, $typeCode, $address, $linkTitle);
 
             try {
@@ -398,7 +296,7 @@ trait ContactControllerTrait
             }
 
             try {
-                $this->contactService()->saveAddress($link, $this->linkValues($body), $this->addressValues($body));
+                $this->contactService()->saveAddress($link, ContactForm::linkValues($body), ContactForm::addressValues($body));
                 $this->messageService->pushFlash('success', 'Adresse «' . $link->getAddress()->oneLine() . '» gespeichert');
 
                 return $this->contactRowAnswer($link->getContact())->addCommand('close-modal');
@@ -508,7 +406,7 @@ trait ContactControllerTrait
         return (new TemplateRenderer(self::CONTACT_NS))->partial('Backend/ContactController/_row', [
             'contact'      => $contact,
             'links'        => $this->contactAddresses()->findByContact($contact),
-            'kindLabels'   => $this->contactKindLabels(),
+            'kindLabels'   => ContactForm::kindLabels(),
             'addressTypes' => $this->addressTypes(),
             'actionBase'   => $this->contactListBase(),
         ]);

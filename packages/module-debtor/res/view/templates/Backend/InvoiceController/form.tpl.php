@@ -21,7 +21,8 @@
  * (`form.help`). The pickers are shared building blocks: the tax code
  * (`partials/taxCodeSelect`, module-vat — active codes plus the ones the
  * document carries) and the revenue account (`partials/accountDatalist`,
- * module-mandator — the postable, active accounts; a plain text field
+ * module-mandator — the postable, active accounts of type «Ertrag» only,
+ * the service refuses any other; a stored other value still shows; a plain text field
  * without module-financial).
  *
  * @var \Z77\Module\Debtor\Ui\InvoiceForm $form
@@ -29,6 +30,7 @@
  * @var int|null $version  edit only
  * @var string $entityCsrf  edit only
  * @var list<\Z77\Module\Debtor\Entities\DebtorProfile> $debtors  a new invoice only
+ * @var list<\Z77\Module\Contact\Entities\Contact> $candidates  a new invoice only — active contacts without a profile (`_debtorSelect`)
  * @var list<\Z77\Module\Debtor\Entities\PaymentTerms> $terms
  * @var list<\Z77\Module\Debtor\Entities\PaymentTarget> $targets
  * @var list<\Z77\Module\Vat\Entities\TaxCode> $taxCodes
@@ -106,12 +108,14 @@ $cancelHref = $window && !$isEdit && !$isCredit ? '' : $cancel;
                 <input type="text" id="invoice-contact" value="<?= e($party->displayName()) ?>" readonly>
                 <input type="hidden" name="contact" value="<?= (int) $party->getId() ?>">
                 <?php else: ?>
-                <select id="invoice-contact" name="contact" required aria-invalid="<?= $invalid($form->error('contact')) ?>">
-                    <option value="">–</option>
-                    <?php foreach ($debtors as $profile): $contact = $profile->getContact(); ?>
-                    <option value="<?= (int) $contact->getId() ?>"<?= (string) $contact->getId() === $form->header('contact') ? ' selected' : '' ?>><?= e($contact->displayName()) ?></option>
-                    <?php endforeach; ?>
-                </select>
+                <?= $this->partial('Backend/InvoiceController/_debtorSelect', [
+                    'debtors'    => $debtors,
+                    'candidates' => $candidates ?? [],
+                    'selected'   => $form->header('contact'),
+                    'invalid'    => $form->error('contact') !== '',
+                ], 'Z77\\Module\\Debtor') ?>
+                <?php // «+ Kontakt»: a window over this one; its save replaces the select above — the draft stays (debtor.md, DEBTOR-CONTACT-001). ?>
+                <a class="be-btn be-btn--ghost be-btn--sm" href="<?= e($actionBase . '/new-contact') ?>" data-window-open="<?= e($actionBase . '/new-contact') ?>">+ Kontakt</a>
                 <?php endif; ?>
                 <?= raw($fieldError($form->error('contact'))) ?>
             </div>

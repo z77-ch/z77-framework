@@ -51,6 +51,17 @@ final class LedgerAccountCheck
     /** The module that must be registered for the class to be usable at all. */
     public const LEDGER_MODULE = 'financial';
 
+    /**
+     * The chart's account type «Ertrag» — the value of financial's
+     * `AccountType::Revenue`, named as a string for the same reason as the
+     * class names above. What a document line that earns something (an
+     * invoice line, a credit note's reversal of it, a dunning fee) posts to:
+     * the chart's OWN classification decides, never a number range — the
+     * KMU chart has revenue in class 3 and in 6950 / 7xxx / 8xxx, another
+     * chart numbers differently (financial.md, «Five types»).
+     */
+    public const TYPE_REVENUE = 'revenue';
+
     public function __construct(private readonly UnifiedEntityManager $em) {}
 
     /** Whether the bookkeeping this check asks is installed AND registered as a module. */
@@ -77,20 +88,41 @@ final class LedgerAccountCheck
     }
 
     /**
+     * Whether account $number is a postable, active account of type $type
+     * (e.g. {@see TYPE_REVENUE}) — three-valued like {@see isPostable()}:
+     * `null` when financial is not usable here or the number is empty,
+     * `false` when the account is missing, a group, inactive or of another
+     * type. Ask {@see isPostable()} first when the refusal should tell
+     * «does not exist» from «wrong type».
+     */
+    public function hasType(string $number, string $type): ?bool
+    {
+        $number = trim($number);
+        if ($number === '' || !$this->available()) {
+            return null;
+        }
+        $account = $this->em->getRepository(self::ACCOUNT_ENTITY)->findOneBy(['number' => $number]);
+
+        return $account !== null && $account->isPostable() && $account->isActive() && $account->getType() === $type;
+    }
+
+    /**
      * The postable, active accounts of the chart in chart order, as
      * `{number, label}` rows for a `<datalist>` — `[]` when financial is not
-     * usable here (the field is then a plain text input).
+     * usable here (the field is then a plain text input). $type narrows the
+     * list to one account type ({@see TYPE_REVENUE} for an invoice line);
+     * null = every type.
      *
      * @return list<array{number: string, label: string}>
      */
-    public function postableAccounts(): array
+    public function postableAccounts(?string $type = null): array
     {
         if (!$this->available()) {
             return [];
         }
         $rows = [];
         foreach ($this->em->getRepository(self::ACCOUNT_ENTITY)->allInOrder() as $account) {
-            if ($account->isPostable() && $account->isActive()) {
+            if ($account->isPostable() && $account->isActive() && ($type === null || $account->getType() === $type)) {
                 $rows[] = ['number' => $account->getNumber(), 'label' => $account->label()];
             }
         }

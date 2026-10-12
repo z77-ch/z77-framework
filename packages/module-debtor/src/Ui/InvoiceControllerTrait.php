@@ -7,6 +7,10 @@ use Z77\Core\DI,
     Z77\Core\Http\Response\FetchResponse,
     Z77\Core\Http\Response\HtmlResponse,
     Z77\Core\Http\Response\RedirectResponse,
+    Z77\Core\Services\TemplateRenderer,
+    Z77\Module\Contact\Services\AddressTypes,
+    Z77\Module\Contact\Services\ContactService,
+    Z77\Module\Contact\Ui\ContactForm,
     Z77\Module\Debtor\Entities\DebtorProfile,
     Z77\Module\Debtor\Entities\Invoice,
     Z77\Module\Debtor\Entities\InvoiceKind,
@@ -494,8 +498,15 @@ trait InvoiceControllerTrait
         $draft = $form->toDraft();
         if ($draft !== null) {
             try {
-                $document = $this->invoicingService()->invoice($draft);
+                // The picker offers contacts without a profile too (owner 2026-10-10): the service
+                // opens the profile in the draft's unit of work — and decides again whether it may.
+                $isDebtor = $this->em()->getRepository(DebtorProfile::class)->findByContact($draft->contactId) !== null;
+                $document = $this->invoicingService()->invoice($draft, openProfile: true);
                 $text     = $document->documentName() . ' erstellt (in Fakturierung, noch ohne Nummer, nichts verbucht)';
+                $opened   = $isDebtor ? null : $this->em()->getRepository(DebtorProfile::class)->findByContact($draft->contactId);
+                if ($opened !== null) {
+                    $text .= ' — «' . $document->getContact()->displayName() . '» ist neu Debitor mit Kundennummer ' . $opened->getCustomerNumber();
+                }
                 if ($this->invoiceIsFetch()) {
                     return $this->invoiceWindowSaved((int) $document->getId(), WindowOrigin::of($request), $text);
                 }
@@ -624,6 +635,67 @@ trait InvoiceControllerTrait
     }
 
     /**
+     * «+ Kontakt» in the invoice editor (owner 2026-10-10, DEBTOR-CONTACT-001): a NEW contact
+     * with its first address, without leaving the half-filled draft. The editor's link opens
+     * it as a window of its own (`data-window-open`; origin = the editor's window). Fields and
+     * save are module-contact's building block ({@see ContactForm}: the partials
+     * `_contactFields` + `_addressFields`, `ContactService::save()` — no contact rule lives
+     * here), the address REQUIRED (a document needs one). The save answers with two commands:
+     * `replace-html` of the debtor select IN THE EDITOR (`#invoice-contact`, scoped to the
+     * origin) — re-rendered with the new contact selected — and `close-modal` for this window;
+     * nothing else of the draft is touched. The contact gets its debtor profile when the
+     * draft is saved ({@see addAction()}). Without the script: a page whose save goes to a
+     * new invoice with the contact preselected.
+     */
+    #[Csrf]
+    protected function newContactAction(): HtmlResponse|RedirectResponse|FetchResponse
+    {
+        $request = DI::getRequest();
+        $form    = new ContactForm(addressRequired: true);
+        if ($request->isPost()) {
+            $form->fromPost($request->getPostParameters());
+            if ($form->save(new ContactService($this->em()))) {
+                $contact = $form->contact;
+                $text    = 'Kontakt «' . $contact->displayName() . '» erfasst — Debitor wird er mit dem Speichern der Rechnung';
+                if (!$this->invoiceIsFetch()) {
+                    $this->messageService->pushFlashAfterRedirect('success', $text);
+
+                    return $this->redirect($this->invoiceListBase() . '/add?contact=' . $contact->getId(), 303);
+                }
+                $this->messageService->pushFlash('success', $text);
+
+                return $this->fetch()->setStatus('success')
+                    ->setData(['id' => $contact->getId()])
+                    ->addCommand('replace-html', [
+                        'target' => '#invoice-contact',
+                        'html'   => $this->invoiceDebtorSelect((string) $contact->getId()),
+                        'origin' => WindowOrigin::of($request),
+                    ])
+                    ->addCommand('close-modal');
+            }
+        }
+
+        return $this->invoicePage('newContact', [
+            'window' => $this->invoiceIsFetch(),
+            'origin' => WindowOrigin::of($request),
+            'failed' => $form->hasErrors(),
+        ] + $form->vars(AddressTypes::from($this->em())));
+    }
+
+    /** The editor's party picker alone — what «+ Kontakt» puts back into the editor ({@see newContactAction()}). */
+    private function invoiceDebtorSelect(string $selected): string
+    {
+        $profiles = $this->em()->getRepository(DebtorProfile::class);
+
+        return (new TemplateRenderer(self::INVOICE_NS))->partial('Backend/InvoiceController/_debtorSelect', [
+            'debtors'    => $profiles->activeWithContacts(),
+            'candidates' => $profiles->contactsWithoutProfile(),
+            'selected'   => $selected,
+            'invalid'    => false,
+        ]);
+    }
+
+    /**
      * The editor page: the form with its pickers — the active debtors (a new
      * invoice), the active payment terms and targets (+ the ones the document
      * carries), the tax codes (active + kept, module-vat's shared list) and
@@ -646,10 +718,13 @@ trait InvoiceControllerTrait
             'version'    => $version,
             'entityCsrf' => $document === null ? '' : DI::getCsrfService()->generateEntityToken('invoice', (int) $document->getId()),
             'debtors'    => $document === null && $form->creditNoteOf === null ? $this->em()->getRepository(DebtorProfile::class)->activeWithContacts() : [],
+            // Owner 2026-10-10: contacts without a profile are choosable too — the save opens it.
+            'candidates' => $document === null && $form->creditNoteOf === null ? $this->em()->getRepository(DebtorProfile::class)->contactsWithoutProfile() : [],
             'terms'      => $terms,
             'targets'    => $targets,
             'taxCodes'   => $this->em()->getRepository(TaxCode::class)->selectable($form->keptCodes()),
-            'accounts'   => (new LedgerAccountCheck($this->em()))->postableAccounts(),
+            // A line posts to revenue only (owner 2026-10-10) — the service refuses any other type.
+            'accounts'   => (new LedgerAccountCheck($this->em()))->postableAccounts(LedgerAccountCheck::TYPE_REVENUE),
         ]);
     }
 

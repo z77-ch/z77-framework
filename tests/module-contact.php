@@ -49,6 +49,7 @@ use Z77\Core\DI;
 use Z77\Core\Libraries\CacheManager;
 use Z77\Core\Libraries\ConfigManager;
 use Z77\Core\Libraries\FileFinder;
+use Z77\Core\Services\I18n;
 use Z77\Core\Services\ModuleManager;
 use Z77\Module\Contact\Entities\Address;
 use Z77\Module\Contact\Entities\AddressType;
@@ -66,6 +67,7 @@ use Z77\Module\Contact\Services\InvalidAddressException;
 use Z77\Module\Contact\Services\InvalidContactException;
 use Z77\Module\Contact\Ui\AddressTypeControllerTrait;
 use Z77\Module\Contact\Ui\ContactControllerTrait;
+use Z77\Module\Contact\Ui\ContactForm;
 use Z77\Module\Contact\Validators\AddressTypeValidator;
 use Z77\Module\Contact\Validators\AddressValidator;
 use Z77\Module\Contact\Validators\ContactValidator;
@@ -175,6 +177,8 @@ $wireDi = static function () use ($base): UnifiedEntityManager {
         ->set('FileFinder', fn($c) => new FileFinder($c->get('CacheManager')), true)
         ->set('ConfigManager', fn($c) => new ConfigManager($c->get('FileFinder'), $c->get('CacheManager')), true)
         ->set('ModuleManager', fn($c) => new ModuleManager($c->get('ConfigManager')), true)
+        // ContactForm (E13e) reads the default language and the site's languages.
+        ->set('I18n', fn($c) => new I18n($c->get('ConfigManager')), true)
         ->set('DataSourceResolver', fn() => new DataSourceResolver(['file' => 'File', 'doctrine' => 'Doctrine']), true)
         ->set('UnifiedEntityManager', fn($c) => new UnifiedEntityManager($c->get('DataSourceResolver')), true)
     ;
@@ -485,7 +489,20 @@ check('E12 the contact trait exposes no delete of the contact — only the addre
 $typeActions = $methodsOf(AddressTypeControllerTrait::class);
 check('E13 the address-type trait exposes no delete at all', array_filter($typeActions, fn($m) => stripos($m, 'remove') !== false || stripos($m, 'delete') !== false) === [] && in_array('toggleActiveAction', $typeActions, true));
 $traitSource = file_get_contents(__DIR__ . '/../packages/module-contact/src/Ui/ContactControllerTrait.php');
-check('E13b the trait never maps a body onto a managed entity (source guard: mapFromArray only on the NEW `$contact` / `$address` objects of add / add-address)', preg_match_all('/->mapFromArray\(/', $traitSource) === 3 && !str_contains($traitSource, '$link->mapFromArray') && !str_contains($traitSource, 'getAddress()->mapFromArray') && !str_contains($traitSource, '$shown->mapFromArray'));
+$formSource = file_get_contents(__DIR__ . '/../packages/module-contact/src/Ui/ContactForm.php');
+check('E13b the trait never maps a body onto a managed entity (source guard: mapFromArray only on the NEW `$address` of add-address in the trait, and on the NEW contact / address ContactForm builds itself for «add» — 2026-10-10)',
+    preg_match_all('/->mapFromArray\(/', $traitSource) === 1 && str_contains($traitSource, '$address->mapFromArray(')
+    && !str_contains($traitSource, '$link->mapFromArray') && !str_contains($traitSource, 'getAddress()->mapFromArray') && !str_contains($traitSource, '$shown->mapFromArray')
+    && preg_match_all('/->mapFromArray\(/', $formSource) === 2 && str_contains($formSource, '$this->contact->mapFromArray(') && str_contains($formSource, '$this->address->mapFromArray(')
+    && str_contains($formSource, '$this->contact = new Contact()') && str_contains($formSource, '$this->address = new Address()'));
+$formOptional = (new ContactForm(addressRequired: false))->fromPost(['kind' => 'person', 'last_name' => 'Ohne', 'language' => 'de', 'type_code' => 'main', 'address_country' => 'CH']);
+$formRequired = (new ContactForm(addressRequired: true))->fromPost(['kind' => 'person', 'last_name' => 'Ohne', 'language' => 'de', 'type_code' => 'main', 'address_country' => 'CH']);
+check('E13e ContactForm, the NEW-contact building block (Rule 9, DEBTOR-CONTACT-001): an empty address block is no address when optional (the contact screen) and a validated address when required (debtor\'s «+ Kontakt»); the save goes through ContactService and refuses the empty required block',
+    $formOptional->contact->getAddresses() === [] && count($formRequired->contact->getAddresses()) === 1
+    && !$formRequired->save(new ContactService($wireDi())) && $formRequired->addressValidator?->hasFieldError('street') === true && $formRequired->contact->getId() === null
+    && $formRequired->vars(AddressTypes::from($wireDi()))['required'] === true
+    && str_contains($traitSource, 'new ContactForm(addressRequired: false)')
+    && str_contains(file_get_contents(__DIR__ . '/../packages/module-contact/res/view/templates/Backend/ContactController/edit.tpl.php'), "partial('Backend/ContactController/_contactFields'"));
 $typeSource = file_get_contents(__DIR__ . '/../packages/module-contact/src/Ui/AddressTypeControllerTrait.php');
 $contactTpl = __DIR__ . '/../packages/module-contact/res/view/templates/Backend/';
 check('E13c ADR-047 addendum 2026-10-10: a one-row save answers in place (replaceRow with the row partial `_row`, the list renders the same) — contact: edit, switch, add/edit/remove address; type: edit, switch; a new contact / type with insertRow. No reload left',

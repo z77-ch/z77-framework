@@ -40,6 +40,8 @@ final class InvoiceRefusedException extends DebtorException
     public const TAX_CODE_INACTIVE   = 'tax-code-inactive';
     public const NO_TAX_RATE         = 'no-tax-rate';
     public const ACCOUNT_NOT_POSTABLE = 'account-not-postable';
+    /** A line's account is not of the chart's type «Ertrag» (owner 2026-10-10). */
+    public const ACCOUNT_NOT_REVENUE  = 'account-not-revenue';
 
     public function __construct(public readonly string $reason, string $message, ?\Throwable $previous = null)
     {

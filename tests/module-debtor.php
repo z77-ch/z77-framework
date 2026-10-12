@@ -100,6 +100,7 @@ use Z77\Module\Contact\Entities\Address;
 use Z77\Module\Contact\Entities\Contact;
 use Z77\Module\Contact\Entities\ContactAddress;
 use Z77\Module\Contact\Services\ContactService;
+use Z77\Module\Contact\Ui\ContactForm;
 use Z77\Module\Debtor\Accounting\AccountingGateways;
 use Z77\Module\Debtor\Accounting\AccountingRefusedException;
 use Z77\Module\Debtor\Accounting\AccountingUnavailableException;
@@ -982,6 +983,28 @@ check('H14 status() marks exactly the three broken keys and keeps their stored n
 $db->executeStatement("UPDATE mandator SET account_receivable = '1100', account_discount = '3800', account_loss = '3805'");
 $em24 = $wireDi();
 check('H15 restored: the KMU values answer again', (new DebtorAccounts($em24))->number('loss') === '3805' && (new DebtorAccounts($em24))->postableNumber('receivable') === '1100');
+// The dunning fee is the line of a fee DOCUMENT — revenue only (owner 2026-10-10); the other keys stay untyped.
+$db->executeStatement("UPDATE mandator SET account_dunning_fee = '1020'");
+$emH16 = $wireDi();
+$e = caught(fn() => (new DebtorAccounts($emH16))->postableNumber('dunningFee'), AccountNotConfiguredException::class);
+check('H16 a balance-sheet account (1020) as dunning fee is refused, in German, naming «Ertragskonto», the key and the mandator; status() marks it',
+    $e instanceof AccountNotConfiguredException && str_contains($e->getMessage(), 'Ertragskonto') && str_contains($e->getMessage(), 'Mahngebühr') && str_contains($e->getMessage(), 'Mandant')
+    && (new DebtorAccounts($emH16))->status()['dunningFee']['error'] !== null
+    && (new DebtorAccounts($emH16))->postableNumber('receivable') === '1100');
+$db->executeStatement("UPDATE mandator SET account_dunning_fee = '6950'");
+$em24 = $wireDi();
+check('H16b the shared datalist filters by the chart TYPE: revenue lists 3200, 6950, 7000, 8100 and no 1020 / 1100 / 4200; unfiltered keeps them',
+    (function () use ($em24): bool {
+        $check   = new LedgerAccountCheck($em24);
+        $revenue = array_column($check->postableAccounts(LedgerAccountCheck::TYPE_REVENUE), 'number');
+        $all     = array_column($check->postableAccounts(), 'number');
+        return array_intersect(['3200', '6950', '7000', '8100'], $revenue) === ['3200', '6950', '7000', '8100']
+            && array_intersect(['1020', '1100', '4200'], $revenue) === []
+            && in_array('1020', $all, true)
+            && $check->hasType('3200', LedgerAccountCheck::TYPE_REVENUE) === true
+            && $check->hasType('1020', LedgerAccountCheck::TYPE_REVENUE) === false
+            && $check->hasType('32', LedgerAccountCheck::TYPE_REVENUE) === false;
+    })());
 
 // No mandator at all — the record removed in SQL (nothing in the framework deletes it).
 $mandatorBackup = $db->fetchAssociative('SELECT * FROM mandator');
@@ -1045,7 +1068,7 @@ check('I5m the three master-data fragments carry an add action and an active swi
 
 $templateDir = $package . '/res/view/templates/Backend';
 $templates   = glob($templateDir . '/*/*.tpl.php');
-check('I6 every master-data screen has its list template, its edit template and its header slot; the document screens (P3 part 3) add six, the payment form and the delete confirmation (P4 part 1) two, the bank import list and detail (P4 part 2) two, the dunning list (P4 part 3) one, the open-item list and its toolbar (2026-10-07) two, the action cells of the invoice list, the bank import and the debtor master data (ADR-033 rev. 2026-10-08) three; the row partials of the in-place answers (ADR-047 addendum 2026-10-10: bank transaction + unbooked bar, payment terms, payment target, debtor contact) five', count($templates) === 33);
+check('I6 every master-data screen has its list template, its edit template and its header slot; the document screens (P3 part 3) add six, the payment form and the delete confirmation (P4 part 1) two, the bank import list and detail (P4 part 2) two, the dunning list (P4 part 3) one, the open-item list and its toolbar (2026-10-07) two, the action cells of the invoice list, the bank import and the debtor master data (ADR-033 rev. 2026-10-08) three; the row partials of the in-place answers (ADR-047 addendum 2026-10-10: bank transaction + unbooked bar, payment terms, payment target, debtor contact) five; the booking print\'s refusal page (2026-10-10) one; the editor\'s party picker and its «+ Kontakt» window (DEBTOR-CONTACT-001, 2026-10-10) two', count($templates) === 36);
 check('I6b the master-data rows are ONE partial each, rendered by the list and answered in place (replaceRow / insertRow, DEBTOR-WIN-003) — no `reload` left for a one-row save or switch of terms, targets or debtors',
     array_reduce([['PaymentTerms', 'paymentTerms'], ['PaymentTarget', 'paymentTarget'], ['DebtorProfile', 'debtorContact']], fn($ok, $p) => $ok
         && str_contains(file_get_contents($templateDir . '/' . $p[0] . 'Controller/listAction.tpl.php'), "partial('Backend/" . $p[0] . "Controller/_row'")
@@ -1338,6 +1361,12 @@ check('J25 an unknown tax code → tax-code-unknown; a service date before the s
 check('J26 a GROUP account (32) and an unknown account → account-not-postable (the soft check against financial)',
     $refusal(fn() => $svc->invoice($draftWith(LineDraft::lumpSum('a', chf('1.00'), 'UN', '32')))) === InvoiceRefusedException::ACCOUNT_NOT_POSTABLE
     && $refusal(fn() => $svc->invoice($draftWith(LineDraft::lumpSum('a', chf('1.00'), 'UN', '9999999')))) === InvoiceRefusedException::ACCOUNT_NOT_POSTABLE);
+check('J26b a postable account that is not of type «Ertrag» (1020 asset, 4200 expense) → account-not-revenue (owner 2026-10-10); 6950 / 8100 (revenue outside class 3) pass the check',
+    $refusal(fn() => $svc->invoice($draftWith(LineDraft::lumpSum('a', chf('1.00'), 'UN', '1020')))) === InvoiceRefusedException::ACCOUNT_NOT_REVENUE
+    && $refusal(fn() => $svc->invoice($draftWith(LineDraft::lumpSum('a', chf('1.00'), 'UN', '4200')))) === InvoiceRefusedException::ACCOUNT_NOT_REVENUE
+    && str_contains((string) caught(fn() => $svc->invoice($draftWith(LineDraft::lumpSum('a', chf('1.00'), 'UN', '1020'))), InvoiceRefusedException::class)?->getMessage(), 'kein Ertragskonto')
+    && $refusal(fn() => $svc->invoice($draftWith(LineDraft::lumpSum('a', chf('1.00'), 'UN', '6950'), LineDraft::lumpSum('b', chf('1.00'), 'UN', '8100'), LineDraft::lumpSum('c', chf('1.00'), 'UN', '1020')))) === InvoiceRefusedException::ACCOUNT_NOT_REVENUE
+    && str_contains((string) caught(fn() => $svc->invoice($draftWith(LineDraft::lumpSum('a', chf('1.00'), 'UN', '6950'), LineDraft::lumpSum('c', chf('1.00'), 'UN', '1020'))), InvoiceRefusedException::class)?->getMessage(), 'Position 2'));
 check('J27 an invoice whose total is negative → negative-total (that is a credit note)',
     $refusal(fn() => $svc->invoice($draftWith(LineDraft::service('Rückvergütung', '-1.000', null, chf('100.00'), 'UN', '3200')))) === InvoiceRefusedException::NEGATIVE_TOTAL);
 check('J28 a credit note against a document still `invoicing` → credit-note-target (it is re-invoiced, not credited); against an unknown one, or an invoice naming a target → the same',
@@ -1400,6 +1429,13 @@ check('L0b finalize() with a STALE version (1 — the document is at 2 since K1)
     caught(fn() => $service($wireDi())->finalize([['id' => $inv1->getId(), 'version' => 1]]), InvoiceConflictException::class)?->expectedVersion === 1
     && $journalCount() === $staleBefore && $stateOf($inv1->getId()) === 'invoicing');
 check('L0c finalize() refuses a bare id — it takes {id, version} pairs (DEBTOR-FINAL-001)', throws(fn() => $service($wireDi())->finalize([$inv1->getId()]), \InvalidArgumentException::class));
+// A draft saved before the revenue rule (owner 2026-10-10) — its line written past the service in SQL.
+$db->executeStatement("UPDATE invoice_line SET revenue_account = '1020' WHERE invoice_id = ? AND revenue_account = '3200'", [$inv1->getId()]);
+$e = caught(fn() => $service($wireDi())->finalize([$at($inv1->getId())]), InvoiceRefusedException::class);
+check('L0d the booking print re-checks the STORED lines: a draft line on 1020 → account-not-revenue, the message names the document and «kein Ertragskonto»; nothing posted, no number, still invoicing',
+    $e?->reason === InvoiceRefusedException::ACCOUNT_NOT_REVENUE && str_contains($e->getMessage(), 'Entwurf') && str_contains($e->getMessage(), 'kein Ertragskonto')
+    && $journalCount() === $staleBefore && $stateOf($inv1->getId()) === 'invoicing' && $invoiceRow($inv1->getId())['number'] === null);
+$db->executeStatement("UPDATE invoice_line SET revenue_account = '3200' WHERE invoice_id = ? AND revenue_account = '1020'", [$inv1->getId()]);
 $done = $svc->finalize([$at($inv1->getId())]);
 $f1   = $done[0];
 check('L1 the BOOKING PRINT (owner 2026-10-10): the number drawn now — 26030001, the first of document.2603 (the month of the invoice date 2026-03-15) —, final, ledger reference 2026/1, ONE journal entry, the actor stamped, version bumped ONCE (number and state in one update)',
@@ -3309,6 +3345,58 @@ check('U4 … the next month is unaffected: a document dated December, booked, c
         $service($wireDi())->finalize([$at($d->getId())]);
         return $readInvoice($d->getId())->getNumber();
     })() === 26120000 + $decBefore + 4);
+
+// ── V. a contact without a profile in the invoice editor (owner 2026-10-10, DEBTOR-CONTACT-001) ──
+
+echo "V. invoice(openProfile: true): the profile is opened in the draft's unit of work; «+ Kontakt» through module-contact's ContactForm\n";
+$emV      = $wireDi();
+$vForm    = (new ContactForm(addressRequired: true))->fromPost([
+    'kind' => 'organisation', 'company' => 'Neu Debitor AG', 'language' => 'de', 'type_code' => 'main',
+    'address_name' => 'Neu Debitor AG', 'address_street' => 'Weg', 'address_house_no' => '1', 'address_zip' => '6000', 'address_city' => 'Luzern', 'address_country' => 'CH',
+]);
+$vEmpty   = (new ContactForm(addressRequired: true))->fromPost(['kind' => 'organisation', 'company' => 'Ohne Adresse AG', 'language' => 'de', 'type_code' => 'main', 'address_country' => 'CH']);
+$vSaved   = $vForm->save(new ContactService($emV));
+check('V1 ContactForm (address REQUIRED): an empty address block is refused with the address field errors, nothing saved; a full one saves contact + link through ContactService',
+    !$vEmpty->save(new ContactService($wireDi())) && $vEmpty->addressValidator?->hasFieldError('street') === true && $vEmpty->contact->getId() === null
+    && $vSaved && $vForm->contact->getId() !== null && count($vForm->contact->getAddresses()) === 1);
+$vId       = (int) $vForm->contact->getId();
+$vCustomer = (int) $rangeOf('customer');
+$vProfiles = $count('debtor_profile');
+$vDraft    = fn(?string $terms) => InvoiceDraft::invoice($vId, day('2026-12-07'), day('2026-12-07'), 'CHF', [LineDraft::lumpSum('Stunden', chf('10.00'), 'UN', '3400')], paymentTermsCode: $terms);
+check('V2 without openProfile the contact is refused as before (no-debtor-profile); with it but WITHOUT terms too — no default terms (2026-09-22), the message names the choice; nothing drawn, no profile',
+    $refusal(fn() => $service($wireDi())->invoice($vDraft('net-30'))) === InvoiceRefusedException::NO_DEBTOR_PROFILE
+    && ($e = caught(fn() => $service($wireDi())->invoice($vDraft(null), openProfile: true), InvoiceRefusedException::class))?->reason === InvoiceRefusedException::NO_DEBTOR_PROFILE
+    && str_contains($e->getMessage(), 'Zahlungskonditionen wählen')
+    && (int) $rangeOf('customer') === $vCustomer && $count('debtor_profile') === $vProfiles);
+check('V3 a refused draft (unknown tax code) for the contact opens no profile and draws no customer number',
+    $refusal(fn() => $service($wireDi())->invoice(InvoiceDraft::invoice($vId, day('2026-12-07'), day('2026-12-07'), 'CHF', [LineDraft::lumpSum('X', chf('10.00'), 'NOPE', '3400')], paymentTermsCode: 'net-30'), openProfile: true)) !== null
+    && (int) $rangeOf('customer') === $vCustomer && $count('debtor_profile') === $vProfiles);
+$vInvoice = $service($wireDi())->invoice($vDraft('net-30'), openProfile: true);
+$vProfile = $wireDi()->getRepository(DebtorProfile::class)->findByContact($vId);
+check('V4 with terms: the draft AND the profile in one unit of work — the next customer number, the draft\'s terms, active; the draft unnumbered in `invoicing`',
+    $vProfile !== null && $vProfile->getCustomerNumber() === $vCustomer + 1 && (int) $rangeOf('customer') === $vCustomer + 1
+    && $vProfile->getPaymentTermsCode() === 'net-30' && $vProfile->isActive() && $count('debtor_profile') === $vProfiles + 1
+    && $stateOf($vInvoice->getId()) === 'invoicing' && $invoiceRow($vInvoice->getId())['number'] === null);
+$vAgain = $service($wireDi())->invoice($vDraft(null), openProfile: true);
+check('V5 the next draft for the same contact is an ordinary one: «wie beim Debitor» now resolves, no second profile, no further number',
+    $vAgain->getPaymentTermsCode() === 'net-30' && (int) $rangeOf('customer') === $vCustomer + 1 && $count('debtor_profile') === $vProfiles + 1);
+$vSource = file_get_contents((new \ReflectionClass(InvoicingService::class))->getFileName());
+$vInvoiceFn = substr($vSource, strpos($vSource, 'public function invoice(InvoiceDraft'), 2600);
+check('V6 lock order in the source: the profile is saved as the FIRST write of invoice()\'s unit of work, before the invoice row is built',
+    strpos($vInvoiceFn, '->save($opening)') !== false && strpos($vInvoiceFn, '->save($opening)') < strpos($vInvoiceFn, 'new Invoice('));
+$vTrait = file_get_contents($package . '/src/Ui/InvoiceControllerTrait.php');
+$vTpl   = $package . '/res/view/templates/Backend/InvoiceController';
+check('V7 the editor offers contacts without a profile (contactsWithoutProfile → `_debtorSelect`, an optgroup of their own) and saves a new invoice with openProfile: true — the credit note does not',
+    str_contains($vTrait, "'candidates' =>") && str_contains($vTrait, 'invoice($draft, openProfile: true)') && substr_count($vTrait, 'openProfile: true') === 1
+    && str_contains(file_get_contents($vTpl . '/_debtorSelect.tpl.php'), 'Kontakte ohne Debitorenprofil')
+    && str_contains(file_get_contents($vTpl . '/form.tpl.php'), "partial('Backend/InvoiceController/_debtorSelect'"));
+check('V8 «+ Kontakt» is a window over the editor (`data-window-open` → new-contact) built from module-contact\'s partials and ContactForm (no contact rule in debtor); its save answers replace-html on #invoice-contact scoped to the origin + close-modal',
+    str_contains(file_get_contents($vTpl . '/form.tpl.php'), 'data-window-open="<?= e($actionBase . \'/new-contact\') ?>"')
+    && str_contains(file_get_contents($vTpl . '/newContact.tpl.php'), "Backend/ContactController/_contactFields")
+    && str_contains(file_get_contents($vTpl . '/newContact.tpl.php'), "Backend/ContactController/_addressFields")
+    && str_contains(file_get_contents($vTpl . '/newContact.tpl.php'), 'name="_origin"')
+    && str_contains($vTrait, 'new ContactForm(addressRequired: true)')
+    && preg_match("/'replace-html', \[\s*'target' => '#invoice-contact'.*?'origin' => WindowOrigin::of\(\\\$request\).*?->addCommand\('close-modal'\)/s", $vTrait) === 1);
 
 // ── result ───────────────────────────────────────────────────────────────
 
