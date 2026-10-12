@@ -295,7 +295,7 @@ For forms outside the popup (or forms targeting a different endpoint), set `data
 **Form data collection** — shared `core.js` builds the request body via `_z77CollectFormData(form)`, not `Object.fromEntries(new FormData(form))`:
 
 - Multiple checkboxes sharing the same `name` are collected into an array
-- Single checkbox is a boolean
+- Single checkbox is a boolean — under its bracket key too: a single `name="roles[debtor]"` → `data.roles.debtor = true|false` (fixed 2026-10-12: it stayed a flat `roles[debtor]` key, so the contact's «Debitor» switch on «Kontakt anlegen» never reached the server)
 - Radio: selected `value`
 - Single-level bracket notation is nested: `name="value[de]"` → `data.value.de` (so a server reading an associative array, e.g. the translation editor's per-language fields, receives `value` as a map, not a flat `value[de]` key). One level only — no `name[]` arrays, no `name[a][b]`.
 - Disabled inputs are skipped (use this to make a field read-only without changing entity state)

@@ -345,6 +345,10 @@ function _z77CollectFormData(form) {
             if (multiNames[el.name] > 1) {
                 if (!Array.isArray(data[el.name])) data[el.name] = [];
                 if (el.checked) data[el.name].push(el.value);
+            } else if (/^[^[\]]+\[[^[\]]+\]$/.test(el.name)) {
+                // A single keyed switch (name="roles[debtor]") nests like every other field —
+                // left flat, the server looking for `roles` found nothing (2026-10-12).
+                put(el.name, el.checked);
             } else {
                 data[el.name] = el.checked;
             }
