@@ -993,17 +993,22 @@ check('H16 a balance-sheet account (1020) as dunning fee is refused, in German, 
     && (new DebtorAccounts($emH16))->postableNumber('receivable') === '1100');
 $db->executeStatement("UPDATE mandator SET account_dunning_fee = '6950'");
 $em24 = $wireDi();
-check('H16b the shared datalist filters by the chart TYPE: revenue lists 3200, 6950, 7000, 8100 and no 1020 / 1100 / 4200; unfiltered keeps them',
+check('H16b the document datalist = revenue accounts flagged «auf Belegen wählbar»: 3200, 6950, 7000, 8100, no 1020 / 1100 / 4200 and no 3800 / 3805 / 3809 (KMU chart file, owner 2026-10-12); the unfiltered list keeps them; hasType / isDocumentAccount answer per account',
     (function () use ($em24): bool {
-        $check   = new LedgerAccountCheck($em24);
-        $revenue = array_column($check->postableAccounts(LedgerAccountCheck::TYPE_REVENUE), 'number');
-        $all     = array_column($check->postableAccounts(), 'number');
-        return array_intersect(['3200', '6950', '7000', '8100'], $revenue) === ['3200', '6950', '7000', '8100']
-            && array_intersect(['1020', '1100', '4200'], $revenue) === []
-            && in_array('1020', $all, true)
+        $check    = new LedgerAccountCheck($em24);
+        $document = array_column($check->documentAccounts(), 'number');
+        $all      = array_column($check->postableAccounts(), 'number');
+        return array_intersect(['3200', '6950', '7000', '8100'], $document) === ['3200', '6950', '7000', '8100']
+            && array_intersect(['1020', '1100', '4200', '3800', '3805', '3809'], $document) === []
+            && in_array('1020', $all, true) && in_array('3800', $all, true)
             && $check->hasType('3200', LedgerAccountCheck::TYPE_REVENUE) === true
+            && $check->hasType('3800', LedgerAccountCheck::TYPE_REVENUE) === true
             && $check->hasType('1020', LedgerAccountCheck::TYPE_REVENUE) === false
-            && $check->hasType('32', LedgerAccountCheck::TYPE_REVENUE) === false;
+            && $check->hasType('32', LedgerAccountCheck::TYPE_REVENUE) === false
+            && $check->isDocumentAccount('3200') === true
+            && $check->isDocumentAccount('3809') === false
+            && $check->isDocumentAccount('1020') === false
+            && $check->isDocumentAccount('') === null;
     })());
 
 // No mandator at all — the record removed in SQL (nothing in the framework deletes it).
@@ -1367,6 +1372,10 @@ check('J26b a postable account that is not of type «Ertrag» (1020 asset, 4200 
     && str_contains((string) caught(fn() => $svc->invoice($draftWith(LineDraft::lumpSum('a', chf('1.00'), 'UN', '1020'))), InvoiceRefusedException::class)?->getMessage(), 'kein Ertragskonto')
     && $refusal(fn() => $svc->invoice($draftWith(LineDraft::lumpSum('a', chf('1.00'), 'UN', '6950'), LineDraft::lumpSum('b', chf('1.00'), 'UN', '8100'), LineDraft::lumpSum('c', chf('1.00'), 'UN', '1020')))) === InvoiceRefusedException::ACCOUNT_NOT_REVENUE
     && str_contains((string) caught(fn() => $svc->invoice($draftWith(LineDraft::lumpSum('a', chf('1.00'), 'UN', '6950'), LineDraft::lumpSum('c', chf('1.00'), 'UN', '1020'))), InvoiceRefusedException::class)?->getMessage(), 'Position 2'));
+check('J26c a revenue account NOT «auf Belegen wählbar» (3800 / 3805 / 3809, the KMU revenue deductions — owner 2026-10-12) → account-not-selectable, naming the position and the flag; 3200 next to it passes',
+    $refusal(fn() => $svc->invoice($draftWith(LineDraft::lumpSum('a', chf('1.00'), 'UN', '3800')))) === InvoiceRefusedException::ACCOUNT_NOT_SELECTABLE
+    && $refusal(fn() => $svc->invoice($draftWith(LineDraft::lumpSum('a', chf('1.00'), 'UN', '3805')))) === InvoiceRefusedException::ACCOUNT_NOT_SELECTABLE
+    && str_contains((string) caught(fn() => $svc->invoice($draftWith(LineDraft::lumpSum('a', chf('1.00'), 'UN', '3200'), LineDraft::lumpSum('b', chf('1.00'), 'UN', '3809'))), InvoiceRefusedException::class)?->getMessage(), 'Position 2: Konto 3809 ist im Kontenplan nicht «auf Belegen wählbar»'));
 check('J27 an invoice whose total is negative → negative-total (that is a credit note)',
     $refusal(fn() => $svc->invoice($draftWith(LineDraft::service('Rückvergütung', '-1.000', null, chf('100.00'), 'UN', '3200')))) === InvoiceRefusedException::NEGATIVE_TOTAL);
 check('J28 a credit note against a document still `invoicing` → credit-note-target (it is re-invoiced, not credited); against an unknown one, or an invoice naming a target → the same',
@@ -1435,7 +1444,13 @@ $e = caught(fn() => $service($wireDi())->finalize([$at($inv1->getId())]), Invoic
 check('L0d the booking print re-checks the STORED lines: a draft line on 1020 → account-not-revenue, the message names the document and «kein Ertragskonto»; nothing posted, no number, still invoicing',
     $e?->reason === InvoiceRefusedException::ACCOUNT_NOT_REVENUE && str_contains($e->getMessage(), 'Entwurf') && str_contains($e->getMessage(), 'kein Ertragskonto')
     && $journalCount() === $staleBefore && $stateOf($inv1->getId()) === 'invoicing' && $invoiceRow($inv1->getId())['number'] === null);
-$db->executeStatement("UPDATE invoice_line SET revenue_account = '3200' WHERE invoice_id = ? AND revenue_account = '1020'", [$inv1->getId()]);
+// The same draft on a revenue account switched off «auf Belegen wählbar» (owner 2026-10-12).
+$db->executeStatement("UPDATE invoice_line SET revenue_account = '3800' WHERE invoice_id = ? AND revenue_account = '1020'", [$inv1->getId()]);
+$e = caught(fn() => $service($wireDi())->finalize([$at($inv1->getId())]), InvoiceRefusedException::class);
+check('L0e the booking print refuses a stored line on 3800 (revenue, not «auf Belegen wählbar») → account-not-selectable naming the document; nothing posted, still invoicing',
+    $e?->reason === InvoiceRefusedException::ACCOUNT_NOT_SELECTABLE && str_contains($e->getMessage(), 'Entwurf')
+    && $journalCount() === $staleBefore && $stateOf($inv1->getId()) === 'invoicing' && $invoiceRow($inv1->getId())['number'] === null);
+$db->executeStatement("UPDATE invoice_line SET revenue_account = '3200' WHERE invoice_id = ? AND revenue_account = '3800'", [$inv1->getId()]);
 $done = $svc->finalize([$at($inv1->getId())]);
 $f1   = $done[0];
 check('L1 the BOOKING PRINT (owner 2026-10-10): the number drawn now — 26030001, the first of document.2603 (the month of the invoice date 2026-03-15) —, final, ledger reference 2026/1, ONE journal entry, the actor stamped, version bumped ONCE (number and state in one update)',

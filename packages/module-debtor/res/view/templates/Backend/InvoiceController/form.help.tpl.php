@@ -29,7 +29,7 @@ $isCredit = $form->kind === \Z77\Module\Debtor\Entities\InvoiceKind::CreditNote;
     <li><strong>unter</strong>: die Zeile wird unter der Position darüber gedruckt (eine Ebene, z.B. der Inhalt eines Pakets zu 0.00). Nur eine Position mit Preis trägt Unterpositionen.</li>
     <li>Rabatt in Prozent, auf den Positionsbetrag. Leere Zeilen werden ignoriert.</li>
     <li>MWST-Code und Ertragskonto: angeboten werden die aktiven; ein Code, den das Dokument schon trägt, bleibt wählbar.</li>
-    <li>Konto: nur ein Ertragskonto (Typ «Ertrag» im Kontenplan). Ein Entwurf mit einem anderen Konto zeigt es weiter an, wird aber erst nach der Korrektur gespeichert oder verbucht.</li>
+    <li>Konto: nur ein Ertragskonto (Typ «Ertrag» im Kontenplan), das dort <strong>auf Belegen wählbar</strong> ist — Erlösminderungen, Verluste aus Forderungen und Rundungsdifferenzen sind es nicht. Ein neues Ertragskonto ist sofort wählbar; ausschalten lässt es sich im Kontenplan beim Konto. Ein Entwurf mit einem anderen Konto zeigt es weiter an, wird aber erst nach der Korrektur gespeichert oder verbucht.</li>
 </ul>
 <p>Das Total wird auf 5 Rappen gerundet; die Differenz erscheint als eigene Rundungszeile.</p>
 

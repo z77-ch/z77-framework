@@ -580,7 +580,7 @@ final class InvoicingService
         }
 
         // The accounts every priced line names — checked softly against the bookkeeping.
-        $this->assertRevenueAccounts($lines);
+        $this->assertRevenueAccounts($lines, !$isFee);
 
         // Totals and the rounding line.
         $net      = $vat?->net() ?? array_reduce($lines, static fn(Money $sum, array $l) => $sum->add($l['amount']), Money::zero($currency));
@@ -860,13 +860,22 @@ final class InvoicingService
      * a fee is revenue too. The rounding line is not passed in (it posts to
      * the mandator's rounding account, set by the system).
      *
+     * An invoice or credit-note line names an account the USER chose, so it
+     * must also be flagged «auf Belegen wählbar» in the chart
+     * ({@see LedgerAccountCheck::isDocumentAccount()}, owner 2026-10-12 —
+     * not the revenue deductions 3800 / 3805 / 3809). A FEE's line is not a
+     * choice: it carries the mandator's dunning-fee account (`DebtorAccounts`,
+     * KMU 6950), which must be revenue and nothing more — $documentChoice =
+     * false skips the flag for it, so switching 6950 off for invoice lines
+     * never blocks a dunning run.
+     *
      * $prefix names the document in a refusal at the booking print, where a
      * batch holds several («Rechnung (Entwurf vom …), »); empty at issue.
      *
      * @param array<int, array{account: ?string}> $lines 0-based, in position order
-     * @throws InvoiceRefusedException ACCOUNT_NOT_POSTABLE | ACCOUNT_NOT_REVENUE
+     * @throws InvoiceRefusedException ACCOUNT_NOT_POSTABLE | ACCOUNT_NOT_REVENUE | ACCOUNT_NOT_SELECTABLE
      */
-    private function assertRevenueAccounts(array $lines, string $prefix = ''): void
+    private function assertRevenueAccounts(array $lines, bool $documentChoice, string $prefix = ''): void
     {
         $check = new LedgerAccountCheck($this->em);
         $seen  = [];
@@ -882,15 +891,19 @@ final class InvoicingService
             if ($check->hasType($account, LedgerAccountCheck::TYPE_REVENUE) === false) {
                 throw new InvoiceRefusedException(InvoiceRefusedException::ACCOUNT_NOT_REVENUE, $prefix . 'Position ' . ($i + 1) . ': Konto ' . $account . ' ist kein Ertragskonto — eine Position bucht nur auf ein Konto vom Typ «Ertrag» im Kontenplan.');
             }
+            if ($documentChoice && $check->isDocumentAccount($account) === false) {
+                throw new InvoiceRefusedException(InvoiceRefusedException::ACCOUNT_NOT_SELECTABLE, $prefix . 'Position ' . ($i + 1) . ': Konto ' . $account . ' ist im Kontenplan nicht «auf Belegen wählbar» — ein anderes Ertragskonto wählen oder das Konto im Kontenplan freigeben.');
+            }
         }
     }
 
     /**
      * The same rule at the booking print, on the STORED lines: a draft saved
-     * before the rule (or whose account changed its type in the chart since)
-     * is refused with the reason, never posted to a balance-sheet account.
+     * before the rule (or whose account changed its type in the chart since,
+     * or was switched off «auf Belegen wählbar») is refused with the reason,
+     * never posted to a balance-sheet account.
      *
-     * @throws InvoiceRefusedException ACCOUNT_NOT_POSTABLE | ACCOUNT_NOT_REVENUE
+     * @throws InvoiceRefusedException ACCOUNT_NOT_POSTABLE | ACCOUNT_NOT_REVENUE | ACCOUNT_NOT_SELECTABLE
      */
     private function assertStoredRevenueAccounts(Invoice $invoice): void
     {
@@ -898,7 +911,7 @@ final class InvoicingService
         foreach ($invoice->getLines() as $line) {
             $lines[$line->getPosition() - 1] = ['account' => $line->type() === LineType::Rounding ? null : $line->getRevenueAccount()];
         }
-        $this->assertRevenueAccounts($lines, $invoice->documentName() . ', ');
+        $this->assertRevenueAccounts($lines, $invoice->kind() !== InvoiceKind::Fee, $invoice->documentName() . ', ');
     }
 
     /**

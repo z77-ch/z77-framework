@@ -37,8 +37,8 @@ use Z77\Persistence\Resolver\UnifiedEntityManager;
  * It never writes and never opens a unit of work; it wraps
  * `LedgerService::accountExists()` (plan §5.4, «for configuration
  * validation»). {@see postableAccounts()} is the read the mandator screen's
- * `<datalist>` needs — plain arrays, so no template touches a financial
- * class.
+ * `<datalist>` needs, {@see documentAccounts()} the invoice editor's —
+ * plain arrays, so no template touches a financial class.
  */
 final class LedgerAccountCheck
 {
@@ -107,22 +107,68 @@ final class LedgerAccountCheck
     }
 
     /**
+     * Whether account $number may be named by a DOCUMENT LINE (an invoice or
+     * credit-note line): postable, active, of type {@see TYPE_REVENUE} AND
+     * flagged «auf Belegen wählbar» in the chart (financial's
+     * `Account::isSelectableOnDocuments()`, owner 2026-10-12 — the set
+     * grows with the chart, no list here). Three-valued like
+     * {@see isPostable()}; ask {@see hasType()} first when the refusal should
+     * tell «not revenue» from «not selectable on documents».
+     */
+    public function isDocumentAccount(string $number): ?bool
+    {
+        $number = trim($number);
+        if ($number === '' || !$this->available()) {
+            return null;
+        }
+        $account = $this->em->getRepository(self::ACCOUNT_ENTITY)->findOneBy(['number' => $number]);
+
+        return $account !== null && self::offeredOnDocuments($account);
+    }
+
+    /**
      * The postable, active accounts of the chart in chart order, as
      * `{number, label}` rows for a `<datalist>` — `[]` when financial is not
-     * usable here (the field is then a plain text input). $type narrows the
-     * list to one account type ({@see TYPE_REVENUE} for an invoice line);
-     * null = every type.
+     * usable here (the field is then a plain text input).
      *
      * @return list<array{number: string, label: string}>
      */
-    public function postableAccounts(?string $type = null): array
+    public function postableAccounts(): array
+    {
+        return $this->rows(static fn(object $account): bool => $account->isPostable() && $account->isActive());
+    }
+
+    /**
+     * The accounts a document line may name ({@see isDocumentAccount()}), in
+     * chart order, as `{number, label}` rows — the invoice editor's
+     * `<datalist>`; `[]` when financial is not usable here.
+     *
+     * @return list<array{number: string, label: string}>
+     */
+    public function documentAccounts(): array
+    {
+        return $this->rows(static fn(object $account): bool => self::offeredOnDocuments($account));
+    }
+
+    /** The one place the document rule is spelled: revenue, postable, active, flagged. */
+    private static function offeredOnDocuments(object $account): bool
+    {
+        return $account->isPostable() && $account->isActive()
+            && $account->getType() === self::TYPE_REVENUE && $account->isSelectableOnDocuments();
+    }
+
+    /**
+     * @param \Closure(object): bool $keep
+     * @return list<array{number: string, label: string}>
+     */
+    private function rows(\Closure $keep): array
     {
         if (!$this->available()) {
             return [];
         }
         $rows = [];
         foreach ($this->em->getRepository(self::ACCOUNT_ENTITY)->allInOrder() as $account) {
-            if ($account->isPostable() && $account->isActive() && ($type === null || $account->getType() === $type)) {
+            if ($keep($account)) {
                 $rows[] = ['number' => $account->getNumber(), 'label' => $account->label()];
             }
         }

@@ -433,6 +433,10 @@ $check = new LedgerAccountCheck($wireDi());
 check('E11 LedgerAccountCheck with financial REGISTERED: true / false / null for empty; the postable list is the chart\'s postable active accounts in order',
     $check->available() && $check->isPostable('1020') === true && $check->isPostable('100') === false && $check->isPostable('') === null
     && count($check->postableAccounts()) > 100 && $check->postableAccounts()[0]['label'] === '1000 Kasse' && array_filter($check->postableAccounts(), fn($r) => $r['number'] === '100') === []);
+check('E11b the document accounts (owner 2026-10-12) = postable active revenue accounts flagged «auf Belegen wählbar»: 3200 and 6950 in, 3805 (group 38, off in the chart file) and 1020 out; isDocumentAccount() true / false / null alike',
+    in_array('3200', array_column($check->documentAccounts(), 'number'), true) && in_array('6950', array_column($check->documentAccounts(), 'number'), true)
+    && !in_array('3805', array_column($check->documentAccounts(), 'number'), true) && !in_array('1020', array_column($check->documentAccounts(), 'number'), true)
+    && $check->isDocumentAccount('3200') === true && $check->isDocumentAccount('3805') === false && $check->isDocumentAccount('1020') === false && $check->isDocumentAccount(' ') === null);
 
 echo "E. … without a registered module-financial (a letterhead-only installation)\n";
 $writeModules(false);
@@ -440,7 +444,8 @@ $rm($base . '/var/cache');
 $em = $wireDi();
 $check = new LedgerAccountCheck($em);
 check('E12 the check cannot tell (null), the class still autoloads, the datalist is empty — no fatal', !$check->available() && $check->isPostable('1020') === null && $check->isPostable('9999999') === null
-    && class_exists(LedgerAccountCheck::LEDGER_SERVICE) && $check->postableAccounts() === []);
+    && class_exists(LedgerAccountCheck::LEDGER_SERVICE) && $check->postableAccounts() === []
+    && $check->documentAccounts() === [] && $check->isDocumentAccount('3200') === null);
 (new MandatorService($em))->update((new CurrentMandator($em))->find(), ['account_loss' => '9999999']);
 $em = $wireDi();
 check('E13 an unverifiable account number SAVES (financial is only suggested) and the status says nothing against it', (new CurrentMandator($em))->find()->account('loss') === '9999999'

@@ -182,6 +182,8 @@ final class AccountService
                 'name'     => (string) ($row['name'] ?? ''),
                 'type'     => (string) ($row['type'] ?? ''),
                 'postable' => (bool) ($row['postable'] ?? false),
+                // Optional in the file: absent = the entity's default (ON); the revenue deductions say false.
+                'selectable_on_documents' => (bool) ($row['selectable_on_documents'] ?? true),
                 'parent'   => $parent === null ? null : $byNumber[(string) $parent],
             ]);
             $this->assertValid($account);

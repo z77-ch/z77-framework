@@ -10,7 +10,7 @@ use Doctrine\ORM\Mapping as ORM,
 
 /**
  * One account of the chart (plan §5.1): a number, a name, a
- * {@see AccountType}, an optional parent for grouping and two flags.
+ * {@see AccountType}, an optional parent for grouping and three flags.
  *
  * Grouping is a plain parent reference — no nested set, no path column. A
  * group header (KMU class `1`, main group `10`, group `100`) is an account
@@ -84,6 +84,21 @@ class Account
     #[Clean('bool')]
     private bool $active = true;
 
+    /**
+     * «Auf Belegen wählbar» (owner 2026-10-12): whether a document line — an
+     * invoice or credit-note line of module-debtor — may name this account.
+     * MEANINGFUL FOR REVENUE ACCOUNTS ONLY: a document line posts to revenue,
+     * and module-mandator's `LedgerAccountCheck` reads the flag together with
+     * the type «Ertrag»; on every other type it is stored but ignored (the
+     * editor does not show it there). Default ON, so a new revenue account is
+     * offered on documents at once; the revenue deductions of the KMU chart
+     * (group 38: 3800, 3805, 3809) ship switched off. The set grows with the
+     * chart — there is no second list of document accounts anywhere (Rule 2).
+     */
+    #[ORM\Column(name: 'selectable_on_documents')]
+    #[Clean('bool')]
+    private bool $selectableOnDocuments = true;
+
     public function __construct(array $data = [])
     {
         if ($data) {
@@ -98,6 +113,7 @@ class Account
     public function getParent(): ?Account { return $this->parent; }
     public function isPostable(): bool { return $this->postable; }
     public function isActive(): bool { return $this->active; }
+    public function isSelectableOnDocuments(): bool { return $this->selectableOnDocuments; }
 
     /** «1020 Bankguthaben» — how an account is named in every list and select (Rule 8). */
     public function label(): string
@@ -111,4 +127,5 @@ class Account
     public function setParent(?Account $parent): void { $this->parent = $parent; }
     public function setPostable(bool $postable): void { $this->postable = $postable; }
     public function setActive(bool $active): void { $this->active = $active; }
+    public function setSelectableOnDocuments(bool $selectable): void { $this->selectableOnDocuments = $selectable; }
 }

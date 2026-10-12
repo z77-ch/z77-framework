@@ -21,7 +21,8 @@
  * (`form.help`). The pickers are shared building blocks: the tax code
  * (`partials/taxCodeSelect`, module-vat — active codes plus the ones the
  * document carries) and the revenue account (`partials/accountDatalist`,
- * module-mandator — the postable, active accounts of type «Ertrag» only,
+ * module-mandator — `LedgerAccountCheck::documentAccounts()`: the postable,
+ * active accounts of type «Ertrag» flagged «auf Belegen wählbar» only,
  * the service refuses any other; a stored other value still shows; a plain text field
  * without module-financial).
  *

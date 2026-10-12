@@ -42,6 +42,8 @@ final class InvoiceRefusedException extends DebtorException
     public const ACCOUNT_NOT_POSTABLE = 'account-not-postable';
     /** A line's account is not of the chart's type «Ertrag» (owner 2026-10-10). */
     public const ACCOUNT_NOT_REVENUE  = 'account-not-revenue';
+    /** A line's revenue account is not flagged «auf Belegen wählbar» in the chart (owner 2026-10-12). */
+    public const ACCOUNT_NOT_SELECTABLE = 'account-not-selectable';
 
     public function __construct(public readonly string $reason, string $message, ?\Throwable $previous = null)
     {

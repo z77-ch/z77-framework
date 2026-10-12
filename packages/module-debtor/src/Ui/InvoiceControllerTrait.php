@@ -723,8 +723,8 @@ trait InvoiceControllerTrait
             'terms'      => $terms,
             'targets'    => $targets,
             'taxCodes'   => $this->em()->getRepository(TaxCode::class)->selectable($form->keptCodes()),
-            // A line posts to revenue only (owner 2026-10-10) — the service refuses any other type.
-            'accounts'   => (new LedgerAccountCheck($this->em()))->postableAccounts(LedgerAccountCheck::TYPE_REVENUE),
+            // A line posts to a revenue account flagged «auf Belegen wählbar» (owner 2026-10-10 / 2026-10-12) — the service refuses any other.
+            'accounts'   => (new LedgerAccountCheck($this->em()))->documentAccounts(),
         ]);
     }
 

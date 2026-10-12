@@ -32,7 +32,9 @@ use Z77\Core\DI,
  *     the NUMBER is fixed once the account exists; the TYPE once a line of
  *     it lies in a closed period, and «bebuchbar» cannot be switched off
  *     once it carries lines (FIN-TYPE-001 — the form disables the select
- *     and says why; the service refuses regardless);
+ *     and says why; the service refuses regardless); on a revenue account
+ *     also «auf Belegen wählbar» (owner 2026-10-12 — the list marks a
+ *     revenue account that is NOT offered on documents);
  *   - activate / deactivate (inline switch). There is NO delete: journal
  *     lines reference an account;
  *   - «KMU-Kontenrahmen übernehmen» — offered ONLY while the chart is empty

@@ -85,6 +85,9 @@ final class DebtorAccounts
      * and the dunning-level screen shows it before a run. The other keys
      * stay untyped: the receivable is an asset, and discount / loss /
      * rounding are revenue reductions or expenses depending on the chart.
+     * The chart's flag «auf Belegen wählbar» (owner 2026-10-12) is NOT
+     * required of the dunning-fee account: it governs what a user may pick
+     * for an invoice line, and the fee's account is a setting, not a pick.
      */
     private const REQUIRED_TYPES = [
         'dunningFee' => LedgerAccountCheck::TYPE_REVENUE,

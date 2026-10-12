@@ -43,6 +43,9 @@ $id         = (string) $account->getId();
                         <?php if (!$account->isPostable()): ?>
                         <span class="badge badge--muted">Gruppe</span>
                         <?php endif; ?>
+                        <?php if ($account->isPostable() && !$account->isSelectableOnDocuments() && $account->getType() === \Z77\Module\Financial\Entities\AccountType::Revenue->value): ?>
+                        <span class="badge badge--muted" title="Ertragskonto, das nicht als Konto einer Beleg-Position angeboten wird">nicht auf Belegen</span>
+                        <?php endif; ?>
                         <?php if (!$account->isActive()): ?>
                         <span class="badge badge--muted">inaktiv</span>
                         <?php endif; ?>

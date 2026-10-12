@@ -10,6 +10,13 @@
  * select is not submitted, so the stored value stays. The server refuses
  * the change regardless; this only spares the round trip.
  *
+ * «Auf Belegen wählbar» (owner 2026-10-12) is shown for a revenue account
+ * and on «Konto anlegen» (the type is chosen in the same form); on any other
+ * type it is not rendered, so nothing is posted and the stored value stays —
+ * it is ignored there (`Account::$selectableOnDocuments`). Its explanation
+ * stands in the label like every field of this dialog: the dialog is a
+ * modal popup, beside which the non-modal help window cannot be used.
+ *
  * @var \Z77\Module\Financial\Entities\Account $entry
  * @var string $entityCsrf
  * @var \Z77\Persistence\Validation\EntityValidator $validator
@@ -103,5 +110,17 @@ $fieldError = function (string $name) use ($validator): string {
                 <?= raw($fieldError('parent')) ?>
             </div>
         </div>
+        <?php if ($isNew || $shownType === \Z77\Module\Financial\Entities\AccountType::Revenue->value): ?>
+        <div class="be-form__grid">
+            <div class="be-form__field" data-z77-field-wrapper>
+                <label class="be-switch">
+                    <input type="checkbox" class="be-switch__input" name="selectable_on_documents" value="1"<?= $entry->isSelectableOnDocuments() ? ' checked' : '' ?>>
+                    <span class="be-switch__track"><span class="be-switch__thumb"></span></span>
+                    <span class="be-switch__label">Auf Belegen wählbar <small>(nur Kontoart Ertrag: wird als Konto einer Rechnungs- oder Gutschriftsposition angeboten — aus für Erlösminderungen, Verluste, Rundung)</small></span>
+                </label>
+                <?= raw($fieldError('selectable_on_documents')) ?>
+            </div>
+        </div>
+        <?php endif; ?>
     </div>
 </form>

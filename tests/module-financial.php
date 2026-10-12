@@ -485,9 +485,9 @@ check('A8b journal_entry: unique number per year, unique idempotency key, unique
 [$code, $out] = $run(['command' => 'migrate']);
 check('A9 a second migrate is a no-op', $code === 0 && str_contains($out, 'Already at the latest version'));
 [$code, $out] = $run(['command' => 'diff', '--namespace' => 'Z77\\Module\\Financial\\Migrations']);
-check('A10 diff after migrate reports NO change — mapping and migration agree (money and text snapshot columns included)', $code !== 0 && str_contains($out, 'No changes detected') && count(glob($package . '/res/migrations/Version*.php')) === 3);
+check('A10 diff after migrate reports NO change — mapping and migration agree (money and text snapshot columns included)', $code !== 0 && str_contains($out, 'No changes detected') && count(glob($package . '/res/migrations/Version*.php')) === 4);
 [$code, $out] = $run(['command' => 'status']);
-check('A11 status lists the module namespace and five executed migrations (package, three of financial, one of mandator)', $code === 0 && str_contains($out, 'Z77\\Module\\Financial\\Migrations') && preg_match('/\| Executed\s+\|\s+5\s+\|/', $out) === 1);
+check('A11 status lists the module namespace and six executed migrations (package, four of financial, one of mandator)', $code === 0 && str_contains($out, 'Z77\\Module\\Financial\\Migrations') && preg_match('/\| Executed\s+\|\s+6\s+\|/', $out) === 1);
 
 // ── B. the KMU chart: a button on an EMPTY chart ─────────────────────────
 
@@ -520,6 +520,11 @@ check('B2b every account another module names by number is in the chart, postabl
 check('B2c 3809 «Rundungsdifferenzen» sits in group 38 next to 3800 and 3805, and is a DIFFERENT account than the discount one',
     ($byNumber['3809'] ?? null)?->getName() === 'Rundungsdifferenzen' && $byNumber['3809']->getParent()?->getNumber() === '38'
     && $byNumber['3809']->getType() === 'revenue');
+// «Auf Belegen wählbar» (owner 2026-10-12): ON by default, OFF in the file for the revenue deductions of group 38.
+$offOnDocuments = array_values(array_map(fn(Account $a) => $a->getNumber(), array_filter($chart, fn(Account $a) => !$a->isSelectableOnDocuments())));
+check('B2d «auf Belegen wählbar»: exactly 3800, 3805, 3809 (group 38, revenue) come OFF from the chart file; every other account ON — 3400 and 6950 included; a new Account is ON',
+    $offOnDocuments === ['3800', '3805', '3809'] && $byNumber['3400']->isSelectableOnDocuments() && $byNumber['6950']->isSelectableOnDocuments()
+    && (new Account())->isSelectableOnDocuments());
 $roots = array_values(array_filter($chart, fn(Account $a) => $a->getParent() === null));
 check('B4 the roots are exactly the classes 1–9, all groups', array_map(fn(Account $a) => $a->getNumber(), $roots) === ['1', '2', '3', '4', '5', '6', '7', '8', '9'] && array_filter($roots, fn(Account $a) => $a->isPostable()) === []);
 $chainOk = true;
