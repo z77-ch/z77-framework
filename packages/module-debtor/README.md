@@ -19,8 +19,8 @@ Model:
 - `DebtorProfile` (Doctrine, table `debtor_profile`) — the debtor-specific part of a
   `Contact`, keyed by its id, at most one per contact: default payment terms (by code), dunning
   block, active. **No language** (the contact carries it) and **no currency** (Q6 decided against
-  foreign-currency invoicing; §6.2 puts currency and rate on the document). Deactivated, never
-  deleted.
+  foreign-currency invoicing; §6.2 puts currency and rate on the document). Deleted only while
+  no document references the contact (role «Debitor» off in the contact editor), else deactivated.
 - `PaymentTerms` (file, `data/framework/debtor/payment_terms.json`) — code, label, due days, up
   to two discount tiers (days + percent as an integer in hundredths, 2 % = `200`) and the
   document text per language. Seeded with «30 Tage netto» and «10 Tage 2 %, 30 Tage netto».
@@ -64,8 +64,12 @@ Pieces:
   (books kept elsewhere), selected by `debtorConfig → accountingGateway`.
 
 - `Services/DebtorProfileService` — `save()`, `update($profile, $values)`, `setActive()`,
-  `forContact()`. Validates a detached clone before touching a managed entity (ADR-039
-  decision 9); the unique contact index becomes a field error under a race. No delete.
+  `delete()` (refused once a document references the contact). Validates a detached clone before
+  touching a managed entity (ADR-039 decision 9); the unique contact index becomes a field error
+  under a race.
+- `Roles/DebtorContactRole` — «Debitor» as a role of the contact, registered under
+  `debtorConfig → contactRoles` (module-contact's registry): on = profile with the default terms,
+  off = delete while no document exists.
 - `Services/DebtorMasterData` — the one write path of the three file entities: validates, refuses
   a changed code, deactivates instead of deleting.
 - `Services/DebtorAccounts` — the ONE reader of the five debtor accounts, which live on the

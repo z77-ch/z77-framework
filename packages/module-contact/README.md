@@ -33,6 +33,9 @@ Pieces:
 - `Ui/ContactControllerTrait` + `Ui/AddressTypeControllerTrait` — the backend screens as
   fragments; `module-backend` mounts them at `/backend/contact/contact/list` and
   `/backend/contact/address-type/list`.
+- `Roles/ContactRoles` — the contact-role registry: another module registers a role
+  (`contactRoles` → `key => class implementing Roles/ContactRoleInterface`, e.g. debtor's
+  «Debitor»); the contact dialog renders its switch and calls it, knowing no module.
 
 ```php
 $service = new ContactService(DI::getUnifiedEntityManager());

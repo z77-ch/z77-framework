@@ -6,8 +6,11 @@
  * contact's own fields are here — addresses are managed in the ⋮ hub.
  * There is no delete: a contact is deactivated on the list row. The fields
  * are the shared partials `_contactFields` and `_addressFields`; the
- * variables come from `Ui\ContactForm::vars()`.
+ * variables come from `Ui\ContactForm::vars()`. Below them `_roles`: the
+ * roles other modules contribute («Debitor» …, owner 2026-10-12) — on
+ * «edit» switches that act at once, on «add» fields applied after the save.
  *
+ * @var array{contactId: int|null, roles: list<array<string, mixed>>} $roleVars
  * @var \Z77\Module\Contact\Entities\Contact $entry
  * @var string $entityCsrf
  * @var \Z77\Persistence\Validation\EntityValidator $validator
@@ -64,5 +67,6 @@ $addressErrors = ($linkValidator !== null && $linkValidator->hasErrors()) || ($a
         <?php else: ?>
         <p class="be-form__hint">Adressen werden im ⋮-Menü der Zeile verwaltet.</p>
         <?php endif; ?>
+        <?= raw($this->partial('Backend/ContactController/_roles', ($roleVars ?? ['contactId' => null, 'roles' => []]) + ['actionBase' => $actionBase], $tplNs)) ?>
     </div>
 </form>

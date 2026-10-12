@@ -31,9 +31,9 @@ use Z77\Shared\Traits\ArrayMappable;
  *
  * The DEFAULT marker (owner 2026-10-12 — reverses «no default terms» of
  * 2026-09-22 for new debtors): AT MOST ONE row carries `default`, the terms
- * a NEW debtor profile gets when nobody names others («+ Debitor» preselects
- * it, an invoice that opens a profile gives it to the profile, an import
- * falls back to it). It lives on the row, not in a setting naming a code:
+ * a NEW debtor profile gets when nobody names others (the contact editor's
+ * role «Debitor» gives it, an invoice that opens a profile gives it to the
+ * profile, an import falls back to it). It lives on the row, not in a setting naming a code:
  * it is maintained where the terms are and can never point to a missing row
  * (Rule 2). {@see \Z77\Module\Debtor\Services\DebtorMasterData::saveTerms()}
  * keeps it to one row; an INACTIVE default is no default

@@ -10,6 +10,8 @@ use Z77\Core\DI,
     Z77\Module\Contact\Entities\ContactAddress,
     Z77\Module\Contact\Repositories\ContactAddressRepository,
     Z77\Module\Contact\Repositories\ContactRepository,
+    Z77\Module\Contact\Roles\ContactRoleRefusedException,
+    Z77\Module\Contact\Roles\ContactRoles,
     Z77\Module\Contact\Services\AddressTypes,
     Z77\Module\Contact\Services\ContactService,
     Z77\Module\Contact\Services\InvalidAddressException,
@@ -36,7 +38,14 @@ use Z77\Core\DI,
  *     contact is deactivated, never deleted — documents reference it by id;
  *   - add / edit / remove a typed address in the ⋮ hub. A new address may
  *     only use an ACTIVE type; an existing one keeps a deactivated type but
- *     is never switched to one.
+ *     is never switched to one;
+ *   - switch the ROLES other modules contribute («Debitor» …, owner decision
+ *     2026-10-12) in the contact dialog: on «edit» each switch acts at once
+ *     (`toggle-role`, the roles section answers in place); on «add» the
+ *     chosen roles are applied AFTER the contact is saved, in registration
+ *     order, each in its own unit of work — a refused role leaves the saved
+ *     contact and says why. This trait knows no role: it renders what
+ *     {@see ContactRoles} answers and calls the role's switch.
  *
  * Every write goes through {@see ContactService}, which runs the validators
  * and holds the rules; the trait only maps the request and renders. A
@@ -80,6 +89,12 @@ trait ContactControllerTrait
         return AddressTypes::from($this->em());
     }
 
+    /** The roles other modules contribute — empty when no installed module registers one. */
+    private function contactRoles(): ContactRoles
+    {
+        return ContactRoles::fromModules(DI::getModuleManager());
+    }
+
     // ── list ─────────────────────────────────────────────────────────────
 
     protected function listAction(): HtmlResponse
@@ -110,13 +125,18 @@ trait ContactControllerTrait
      */
     protected function addAction(): HtmlResponse|FetchResponse
     {
-        $form = new ContactForm(addressRequired: false);
+        $form   = new ContactForm(addressRequired: false);
+        $chosen = [];
 
         if (DI::getRequest()->isPost()) {
-            $form->fromPost(DI::getRequest()->getJsonBody());
+            $body   = DI::getRequest()->getJsonBody();
+            $chosen = self::chosenRoles($body);
+            $form->fromPost($body);
             if ($form->save($this->contactService())) {
                 $contact = $form->contact;
                 $this->messageService->pushFlash('success', 'Kontakt «' . $contact->displayName() . '» angelegt');
+                // The contact first, then the roles — each its own unit of work of the role's module.
+                $this->applyRolesToNew($contact, $chosen);
 
                 // The new row goes on top: the list may be filtered by a search the POST does
                 // not carry, so its sorted place is not known here — the next load sorts it.
@@ -130,7 +150,46 @@ trait ContactControllerTrait
             // validation failed — fall through to re-render the form with errors
         }
 
-        return $this->renderContactForm($form->contact, $form->vars($this->addressTypes()));
+        return $this->renderContactForm($form->contact, $form->vars($this->addressTypes()), $chosen);
+    }
+
+    /**
+     * The roles ticked on «add» (`roles[<key>]` switches → `['roles' => ['debtor' => true]]`),
+     * as a list of keys. Unknown keys are dropped later — the registry decides what exists.
+     *
+     * @return list<string>
+     */
+    private static function chosenRoles(array $body): array
+    {
+        $posted = $body['roles'] ?? [];
+        if (!is_array($posted)) {
+            return [];
+        }
+
+        return array_values(array_map('strval', array_keys(array_filter($posted, fn($on) => $on === true || $on === '1' || $on === 1))));
+    }
+
+    /**
+     * Applies the roles chosen on «add» to the contact just saved — in registration order,
+     * each through the role's own write path. A refusal does not undo the contact: it is
+     * saved, and the flash names the role and the reason, so the user switches it on later
+     * in «Bearbeiten» once the missing piece is set up.
+     *
+     * @param list<string> $chosen
+     */
+    private function applyRolesToNew(Contact $contact, array $chosen): void
+    {
+        foreach ($this->contactRoles()->all() as $key => $role) {
+            if (!in_array($key, $chosen, true)) {
+                continue;
+            }
+            try {
+                $role->switchOn($contact);
+                $this->messageService->pushFlash('success', '«' . $contact->displayName() . '» ist jetzt ' . $role->label());
+            } catch (ContactRoleRefusedException $e) {
+                $this->messageService->pushFlash('error', $role->label() . ' nicht festgelegt: ' . $e->getMessage());
+            }
+        }
     }
 
     // ── contact: edit ────────────────────────────────────────────────────
@@ -176,16 +235,19 @@ trait ContactControllerTrait
 
     /**
      * The contact dialog: `_contactFields` (+ on «add» the optional `_addressFields`) — the
-     * field variables come from {@see ContactForm::vars()}.
+     * field variables come from {@see ContactForm::vars()} — and `_roles`, the roles other
+     * modules contribute (nothing when none is registered).
      *
      * @param array<string, mixed> $fields
+     * @param list<string> $chosenRoles «add» only: the roles ticked before a refused save
      */
-    private function renderContactForm(Contact $shown, array $fields): HtmlResponse
+    private function renderContactForm(Contact $shown, array $fields, array $chosenRoles = []): HtmlResponse
     {
         $isNew    = $shown->getId() === null;
         $response = $this->html($fields + [
             'entityCsrf' => $isNew ? '' : DI::getCsrfService()->generateEntityToken('contact', $shown->getId()),
             'actionBase' => $this->contactListBase(),
+            'roleVars'   => $this->roleVars($isNew ? null : $shown, $chosenRoles),
         ]);
         $this->layoutManager->addPartials('edit', 'Backend/ContactController', self::CONTACT_NS);
 
@@ -212,6 +274,76 @@ trait ContactControllerTrait
         }
 
         return $this->contactRowAnswer($contact);
+    }
+
+    // ── contact: roles of other modules ──────────────────────────────────
+
+    /**
+     * A role switch in the contact dialog (`data-fetch-toggle`, session CSRF via header):
+     * `?id=<contact>&role=<key>`, body `value` = the wanted state. The role's module decides
+     * and writes ({@see \Z77\Module\Contact\Roles\ContactRoleInterface}); a refusal comes back
+     * as its German sentence and core.js reverts the switch. Success answers with the roles
+     * section in place (`contactRoles:<id>`) — the state line and the link change with it.
+     */
+    #[Fetch, HttpMethod('POST')]
+    protected function toggleRoleAction(): FetchResponse
+    {
+        $request = DI::getRequest();
+        $id      = (int) $request->getGetParameter('id');
+        $contact = $id ? $this->contacts()->find($id) : null;
+        if ($contact === null) {
+            return $this->fetchError('Kontakt nicht gefunden');
+        }
+        $role = $this->contactRoles()->role((string) $request->getGetParameter('role'));
+        if ($role === null) {
+            return $this->fetchError('Diese Rolle gibt es nicht.');
+        }
+
+        $wanted = (bool) ($request->getJsonBody()['value'] ?? false);
+        if ($role->state($contact)->on !== $wanted) {
+            try {
+                if ($wanted) {
+                    $role->switchOn($contact);
+                } else {
+                    $role->switchOff($contact);
+                }
+            } catch (ContactRoleRefusedException $e) {
+                return $this->fetchError($e->getMessage());
+            }
+            $this->messageService->pushFlash('success', '«' . $contact->displayName() . '» ' . ($wanted ? 'ist jetzt ' : 'ist nicht mehr ') . $role->label());
+        }
+
+        $html = (new TemplateRenderer(self::CONTACT_NS))->partial('Backend/ContactController/_roles', $this->roleVars($contact) + [
+            'actionBase' => $this->contactListBase(),
+        ]);
+
+        return $this->fetch()
+            ->setStatus('success')
+            ->setData(['id' => $contact->getId()])
+            ->replaceRow('contactRoles', (int) $contact->getId(), $html);
+    }
+
+    /**
+     * The variables of `_roles`: one entry per registered role with its label and the state
+     * the role answers — for an existing contact {@see \Z77\Module\Contact\Roles\ContactRoleInterface::state()}, on
+     * «add» `stateForNew()` plus whether it was ticked.
+     *
+     * @param list<string> $chosen
+     * @return array{contactId: int|null, roles: list<array{key: string, label: string, state: \Z77\Module\Contact\Roles\ContactRoleState, chosen: bool}>}
+     */
+    private function roleVars(?Contact $contact, array $chosen = []): array
+    {
+        $roles = [];
+        foreach ($this->contactRoles()->all() as $key => $role) {
+            $roles[] = [
+                'key'    => $key,
+                'label'  => $role->label(),
+                'state'  => $contact === null ? $role->stateForNew() : $role->state($contact),
+                'chosen' => in_array($key, $chosen, true),
+            ];
+        }
+
+        return ['contactId' => $contact?->getId(), 'roles' => $roles];
     }
 
     // ── address: add ─────────────────────────────────────────────────────

@@ -7,12 +7,15 @@
  * (`?q=`, contactConfig `contactListLimit`).
  *
  * A contact with a profile shows its payment terms, the dunning block and
- * the active switch — there is no delete (ADR-043 decision 19 / plan §6.1:
- * deactivate). A contact without one shows «kein Debitor» and no button:
- * a profile is opened with «+ Debitor» in the action cell (`act.tpl.php`,
- * 2026-10-08), whose dialog offers only ACTIVE contacts without a profile —
- * a new reference needs an active row, here an active party. An existing
- * profile on a contact deactivated since stays editable.
+ * the active switch — no delete here (a profile with documents is only
+ * deactivated; one WITHOUT documents is removed by the contact editor's role
+ * switch «Debitor», owner 2026-10-12). A contact without one shows «kein
+ * Debitor» and no button: a debtor is made in the CONTACT editor (role
+ * «Debitor», which offers it only for an ACTIVE contact — a new reference
+ * needs an active row, here an active party) or by the first draft of an
+ * invoice. The action cell is empty; «+ Debitor» (2026-10-08) was removed
+ * 2026-10-12. An existing profile on a contact deactivated since stays
+ * editable.
  *
  * Above the list stand the account settings (the mandator's debtor
  * accounts, `DebtorAccounts::status()`) with the refusal each would raise,

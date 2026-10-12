@@ -15,6 +15,7 @@ use Z77\Module\Debtor\Entities\InvoiceLine;
 use Z77\Module\Debtor\Entities\InvoiceTax;
 use Z77\Module\Debtor\Entities\Payment;
 use Z77\Module\Debtor\Entities\PaymentAllocation;
+use Z77\Module\Debtor\Roles\DebtorContactRole;
 
 /**
  * Debtor module (ADR-040, plan §6) — receivables. P3 part 1: the MASTER
@@ -91,6 +92,14 @@ return [
     // dated in the year blocks the close. Payments / CAMT (P4) will add their check here.
     'openWorkChecks' => [
         'period-close' => [InvoicingInProgressCheck::class, UnbookedTransactionsCheck::class],
+    ],
+
+    // The role «Debitor» in the contact editor (owner decision 2026-10-12): module-contact's
+    // registry `contactRoles` collects it — contact knows no module, this one contributes.
+    // On = open the profile (customer number, default terms); off = delete it while no
+    // document references the contact.
+    'contactRoles' => [
+        'debtor' => DebtorContactRole::class,
     ],
 
     // Nothing here renders a page; the host's cache policy applies to the mount.

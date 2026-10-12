@@ -107,6 +107,30 @@ class DebtorProfileRepository extends DoctrineRepository
             ->getResult();
     }
 
+    /**
+     * Locks the profile row of a contact until the caller's commit and answers its id, or
+     * null when the contact has none (any more). The pair that keeps «Debitor off» and a new
+     * document apart (owner 2026-10-12): `DebtorProfileService::delete()` takes it EXCLUSIVE
+     * before it counts the documents, `InvoicingService::invoice()` SHARED before it inserts
+     * a document for an existing profile — whichever comes second waits and then sees the
+     * other's result (the document, or no profile). Inside an open unit of work only.
+     * Doctrine-only (SQL).
+     *
+     * @throws \LogicException outside an open unit of work
+     */
+    public function lockForContact(int $contactId, bool $exclusive): ?int
+    {
+        if (!$this->connection()->isTransactionActive()) {
+            throw new \LogicException('lockForContact() needs an open unit of work — the row lock holds until commit');
+        }
+        $id = $this->connection()->fetchOne(
+            'SELECT id FROM debtor_profile WHERE contact_id = ? ' . ($exclusive ? 'FOR UPDATE' : 'LOCK IN SHARE MODE'),
+            [$contactId]
+        );
+
+        return $id === false ? null : (int) $id;
+    }
+
     /** How many profiles reference these payment terms — what the terms list shows before a deactivation. */
     public function countByPaymentTermsCode(string $code): int
     {

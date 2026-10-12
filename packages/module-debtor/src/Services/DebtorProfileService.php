@@ -4,8 +4,10 @@ namespace Z77\Module\Debtor\Services;
 
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Z77\Module\Debtor\Entities\DebtorProfile;
+use Z77\Module\Debtor\Entities\Invoice;
 use Z77\Module\Debtor\Entities\PaymentTerms;
 use Z77\Module\Debtor\Repositories\DebtorProfileRepository;
+use Z77\Module\Debtor\Repositories\InvoiceRepository;
 use Z77\Module\Debtor\Repositories\PaymentTermsRepository;
 use Z77\Module\Debtor\Validators\DebtorProfileValidator;
 use Z77\Persistence\Doctrine\Entities\NumberRange;
@@ -17,8 +19,11 @@ use Z77\Persistence\Resolver\UnifiedEntityManager;
  * which screen or script writes (plan §6.1, ADR-039 decision 9, ADR-043
  * decision 19):
  *
- *   - a profile is never deleted, only deactivated: there is no method for
- *     it — invoices and open items are written against the party;
+ *   - a profile is DELETED only while no document references its contact
+ *     ({@see delete()}, owner decision 2026-10-12: «Debitor» off in the
+ *     contact editor) — once one does, it is only deactivated: documents,
+ *     payments and dunning notices are written against the party. Its
+ *     customer number is never handed out again;
  *   - at most ONE profile per contact — the validator asks, the unique index
  *     `uniq_debtor_profile_contact` decides under a race and the violation
  *     comes back as the field error the validator would have given;
@@ -107,6 +112,46 @@ final class DebtorProfileService
     public function setActive(DebtorProfile $profile, bool $active): void
     {
         $this->update($profile, ['active' => $active]);
+    }
+
+    /**
+     * DELETE a profile nothing references yet — the undo of a contact declared a debtor by
+     * mistake (owner decision 2026-10-12). Refused as soon as ONE document — any kind, any
+     * state, a draft included — is written to its contact; payments and dunning notices hang
+     * on documents, so they are covered. Then only {@see setActive()} remains.
+     *
+     * Compatible with ADR-043 decision 19 and the correction principle: nothing references
+     * the row (`debtor_profile` is referenced by no table and no file; documents reference
+     * the CONTACT, and there is none), so no reference can dangle. The CUSTOMER NUMBER the
+     * profile drew is NOT given back: the range `customer` is never lowered, the number stays
+     * a gap — numbers are never reused, even one that was never printed.
+     *
+     * One unit of work: the profile row is locked EXCLUSIVE first, then the documents are
+     * counted with a locking read — {@see InvoicingService::invoice()} locks the same row
+     * SHARED before it inserts a document for an existing profile, so a parallel first draft
+     * either finishes first (and is counted here) or finds the profile gone and is refused.
+     *
+     * @throws DebtorProfileInUseException documents are written to the contact — deactivate instead
+     */
+    public function delete(DebtorProfile $profile): void
+    {
+        $contact = $profile->getContact();
+        if ($profile->getId() === null || $contact === null || $contact->getId() === null) {
+            throw new \LogicException('delete() takes an existing debtor profile with its contact');
+        }
+
+        $this->em->getTransaction(DebtorProfile::class)->run(function () use ($profile, $contact): void {
+            if ($this->profiles()->lockForContact((int) $contact->getId(), exclusive: true) === null) {
+                return;   // deleted since — nothing left to do
+            }
+            /** @var InvoiceRepository $invoices */
+            $invoices  = $this->em->getRepository(Invoice::class);
+            $documents = $invoices->countForContact((int) $contact->getId(), lock: true);
+            if ($documents > 0) {
+                throw new DebtorProfileInUseException($documents, $contact->displayName());
+            }
+            $this->em->remove($profile);
+        });
     }
 
     private function profiles(): DebtorProfileRepository

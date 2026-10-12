@@ -133,6 +133,13 @@ final class InvoicingService
      * is refused (`no-debtor-profile`) with what to choose. false (every other source) = a
      * contact without a profile is refused, as before.
      *
+     * For an EXISTING profile the unit of work first locks its row SHARED
+     * (`DebtorProfileRepository::lockForContact()`, lock order: profile row → invoice rows):
+     * `DebtorProfileService::delete()` («Debitor» off, owner 2026-10-12) locks it exclusive
+     * and counts the documents — so either the delete sees this document and is refused, or
+     * this draft finds the profile gone and is refused (`no-debtor-profile`). Never a document
+     * without a profile.
+     *
      * @throws InvoiceRefusedException the draft is refused — nothing was written
      */
     public function invoice(InvoiceDraft $draft, bool $openProfile = false): Invoice
@@ -145,6 +152,10 @@ final class InvoicingService
             return $this->em->getTransaction(Invoice::class)->run(function () use ($draft, $composed, $now, $opening): Invoice {
                 if ($opening !== null) {
                     (new DebtorProfileService($this->em))->save($opening);   // range `customer` — the FIRST write
+                } elseif ($this->em->getRepository(DebtorProfile::class)->lockForContact((int) $composed['contact']->getId(), exclusive: false) === null) {
+                    // The profile compose() found was removed since («Debitor» off in the contact
+                    // editor, owner 2026-10-12): the shared lock waits for that delete and sees it.
+                    throw new InvoiceRefusedException(InvoiceRefusedException::NO_DEBTOR_PROFILE, '«' . $composed['contact']->displayName() . '» ist soeben als Debitor entfernt worden — im Kontakt wieder als Debitor festlegen.');
                 }
                 $invoice = new Invoice($draft->kind, $composed['contact'], $composed['creditNoteOf'], $this->actor, $now);
                 [$lines, $taxes] = $this->materialize($invoice, $composed);
@@ -491,7 +502,7 @@ final class InvoicingService
         $profile  = $profiles->findByContact($contact)
             ?? ($opening !== null && $opening->getContact()?->getId() === $contact->getId() ? $opening : null);
         if ($profile === null) {
-            throw new InvoiceRefusedException(InvoiceRefusedException::NO_DEBTOR_PROFILE, 'Kontakt «' . $contact->displayName() . '» ist kein Debitor — zuerst ein Debitorenprofil anlegen.');
+            throw new InvoiceRefusedException(InvoiceRefusedException::NO_DEBTOR_PROFILE, 'Kontakt «' . $contact->displayName() . '» ist kein Debitor — im Kontakt unter «Rollen» als Debitor festlegen.');
         }
         if ($isNew && !$profile->isActive()) {
             throw new InvoiceRefusedException(InvoiceRefusedException::DEBTOR_INACTIVE, 'Debitor «' . $contact->displayName() . '» ist inaktiv — kein neues Dokument.');

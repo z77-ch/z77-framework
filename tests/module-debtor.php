@@ -796,8 +796,8 @@ $managed  = $em15->getRepository(DebtorProfile::class)->findByContact($mueller->
 $profiles->setActive($managed, false);
 $em16 = $wireDi();
 check('F16 a profile is DEACTIVATED, not deleted', $em16->getRepository(DebtorProfile::class)->findByContact($mueller->getId())?->isActive() === false && $count('debtor_profile') === 2);
-check('F17 there is no delete method on the write side or the repository',
-    !method_exists(DebtorProfileService::class, 'delete') && !method_exists(DebtorProfileService::class, 'remove')
+check('F17 the one delete is DebtorProfileService::delete() (owner 2026-10-12, «Debitor» off in the contact editor) — guarded by the documents (section W); no remove(), nothing on the repository',
+    method_exists(DebtorProfileService::class, 'delete') && !method_exists(DebtorProfileService::class, 'remove')
     && !method_exists(DebtorProfileRepository::class, 'delete'));
 check('F18 save() refuses an existing profile, update() a new one',
     throws(fn() => (new DebtorProfileService($em16))->save($em16->getRepository(DebtorProfile::class)->findByContact($mueller->getId())), \LogicException::class)
@@ -1086,8 +1086,8 @@ foreach ([
     $ref = new \ReflectionClass($trait);
     check("I{$n}b {$title}: the fragment offers list and no delete action",
         $ref->hasMethod('listAction') && !$ref->hasMethod('deleteAction') && !$ref->hasMethod('removeAction') && !$ref->hasMethod('confirmDeleteAction'));
-    $source = file_get_contents($ref->getFileName());
-    check("I{$n}c {$title}: the mount URL is built in ONE place", substr_count($source, "'" . $url . "'") === 1);
+    $source = file_get_contents($ref->getFileName()) . file_get_contents((new \ReflectionClass($layout))->getFileName());
+    check("I{$n}c {$title}: the mount URL is built in ONE place (the trait, or the layout's BASE)", substr_count($source, "'" . $url . "'") === 1);
 }
 foreach ([
     ['Zahlungskonditionen', PaymentTermsControllerTrait::class],
@@ -1101,13 +1101,15 @@ foreach ([
     check('I' . ($i + 1) . 'd ' . $title . ': the active switch catches DebtorException and answers with a fetchError, never a 500',
         str_contains($toggle, 'catch (DebtorException') && str_contains($toggle, 'fetchError'));
 }
-check('I5m the three master-data fragments carry an add action and an active switch, the debtor master data too',
-    array_reduce([PaymentTermsControllerTrait::class, PaymentTargetControllerTrait::class, DunningLevelControllerTrait::class, DebtorProfileControllerTrait::class],
-        fn($ok, $t) => $ok && (new \ReflectionClass($t))->hasMethod('addAction') && (new \ReflectionClass($t))->hasMethod('toggleActiveAction'), true));
+check('I5m the three master-data fragments carry an add action and an active switch; the debtor master data only the switch and edit — a debtor is made in the contact editor (role «Debitor», 2026-10-12)',
+    array_reduce([PaymentTermsControllerTrait::class, PaymentTargetControllerTrait::class, DunningLevelControllerTrait::class],
+        fn($ok, $t) => $ok && (new \ReflectionClass($t))->hasMethod('addAction') && (new \ReflectionClass($t))->hasMethod('toggleActiveAction'), true)
+    && !(new \ReflectionClass(DebtorProfileControllerTrait::class))->hasMethod('addAction')
+    && (new \ReflectionClass(DebtorProfileControllerTrait::class))->hasMethod('editAction') && (new \ReflectionClass(DebtorProfileControllerTrait::class))->hasMethod('toggleActiveAction'));
 
 $templateDir = $package . '/res/view/templates/Backend';
 $templates   = glob($templateDir . '/*/*.tpl.php');
-check('I6 every master-data screen has its list template, its edit template and its header slot; the document screens (P3 part 3) add six, the payment form and the delete confirmation (P4 part 1) two, the bank import list and detail (P4 part 2) two, the dunning list (P4 part 3) one, the open-item list and its toolbar (2026-10-07) two, the action cells of the invoice list, the bank import and the debtor master data (ADR-033 rev. 2026-10-08) three; the row partials of the in-place answers (ADR-047 addendum 2026-10-10: bank transaction + unbooked bar, payment terms, payment target, debtor contact) five; the booking print\'s refusal page (2026-10-10) one; the editor\'s party picker and its «+ Kontakt» window (DEBTOR-CONTACT-001, 2026-10-10) two', count($templates) === 36);
+check('I6 every master-data screen has its list template, its edit template and its header slot; the document screens (P3 part 3) add six, the payment form and the delete confirmation (P4 part 1) two, the bank import list and detail (P4 part 2) two, the dunning list (P4 part 3) one, the open-item list and its toolbar (2026-10-07) two, the action cells of the invoice list and the bank import (ADR-033 rev. 2026-10-08) two — the «+ Debitor» cell of the debtor master data removed 2026-10-12; the row partials of the in-place answers (ADR-047 addendum 2026-10-10: bank transaction + unbooked bar, payment terms, payment target, debtor contact) five; the booking print\'s refusal page (2026-10-10) one; the editor\'s party picker and its «+ Kontakt» window (DEBTOR-CONTACT-001, 2026-10-10) two', count($templates) === 35);
 check('I6b the master-data rows are ONE partial each, rendered by the list and answered in place (replaceRow / insertRow, DEBTOR-WIN-003) — no `reload` left for a one-row save or switch of terms, targets or debtors',
     array_reduce([['PaymentTerms', 'paymentTerms'], ['PaymentTarget', 'paymentTarget'], ['DebtorProfile', 'debtorContact']], fn($ok, $p) => $ok
         && str_contains(file_get_contents($templateDir . '/' . $p[0] . 'Controller/listAction.tpl.php'), "partial('Backend/" . $p[0] . "Controller/_row'")
@@ -1124,7 +1126,7 @@ check('I9 the header slots are partials OF THE FRAGMENT (financial.md, «fragmen
     is_file($templateDir . '/PaymentTermsController/act.tpl.php')
     && is_file($templateDir . '/PaymentTargetController/act.tpl.php')
     && is_file($templateDir . '/DunningLevelController/act.tpl.php')
-    && is_file($templateDir . '/DebtorProfileController/act.tpl.php')
+    && !is_file($templateDir . '/DebtorProfileController/act.tpl.php')
     && is_file($templateDir . '/InvoiceController/act.tpl.php')
     && is_file($templateDir . '/BankImportController/act.tpl.php')
     && is_file($templateDir . '/DebtorProfileController/search.tpl.php')
@@ -1132,12 +1134,14 @@ check('I9 the header slots are partials OF THE FRAGMENT (financial.md, «fragmen
     && glob($templateDir . '/*/addButton.tpl.php') === []
     && array_reduce(glob($templateDir . '/*/act.tpl.php'), fn($ok, $f) => $ok && substr_count(file_get_contents($f), 'class="be-btn be-btn--primary"') === 1
         && str_contains(file_get_contents($f), '#icon-plus') && str_contains(file_get_contents($f), 'be-btn__label'), true)
-    && array_reduce([PaymentTermsControllerTrait::class, PaymentTargetControllerTrait::class, DunningLevelControllerTrait::class, DebtorProfileControllerTrait::class],
-        fn($ok, $t) => $ok && preg_match("/addPartials\\('act', '[^']+', [^,]+, 'hc1'\\)/", file_get_contents((new \ReflectionClass($t))->getFileName())) === 1, true));
-check('I9b «+ Debitor» opens the add dialog WITHOUT a contact: the dialog offers the active contacts without a profile; the rows carry no add button of their own',
-    str_contains(file_get_contents($templateDir . '/DebtorProfileController/act.tpl.php'), "/backend/finance/debtor-profile') . '/add'")
+    && array_reduce([PaymentTermsControllerTrait::class, PaymentTargetControllerTrait::class, DunningLevelControllerTrait::class],
+        fn($ok, $t) => $ok && preg_match("/addPartials\\('act', '[^']+', [^,]+, 'hc1'\\)/", file_get_contents((new \ReflectionClass($t))->getFileName())) === 1, true)
+    && !str_contains(file_get_contents((new \ReflectionClass(DebtorProfileControllerTrait::class))->getFileName()), "addPartials('act'"));
+check('I9b «+ Debitor» is gone (owner 2026-10-12, «der Umweg ist falsch»): no action cell, no contact choice in the profile dialog, no add URL — a debtor is made in the contact editor; the rows carry no add button either',
+    !is_file($templateDir . '/DebtorProfileController/act.tpl.php')
     && !str_contains(file_get_contents($templateDir . '/DebtorProfileController/listAction.tpl.php'), 'add?contact=')
-    && str_contains(file_get_contents($templateDir . '/DebtorProfileController/edit.tpl.php'), 'name="contact_id"')
+    && !str_contains(file_get_contents($templateDir . '/DebtorProfileController/edit.tpl.php'), 'name="contact_id"')
+    && !str_contains(file_get_contents($templateDir . '/DebtorProfileController/edit.tpl.php'), '/add')
     && (function () use ($em25): bool {
         $profiles = $em25->getRepository(\Z77\Module\Debtor\Entities\DebtorProfile::class);
         foreach ($profiles->contactsWithoutProfile() as $c) {
@@ -3251,7 +3255,8 @@ check('U9 the master data moved: «Debitoren» under Aufträge is the open-item 
             && $rows['debitoren-stamm']['sort_key'] < $rows['zahlungskonditionen']['sort_key'];
     })()
     && !preg_match('/->persist\(|->flush\(|DebtorProfileService|PaymentTermsRepository/', file_get_contents($package . '/src/Ui/DebtorControllerTrait.php'))
-    && str_contains(file_get_contents($package . '/src/Ui/DebtorProfileControllerTrait.php'), "'/backend/finance/debtor-profile'"));
+    && str_contains(file_get_contents($package . '/src/Ui/DebtorProfileLayout.php'), "BASE = '/backend/finance/debtor-profile'")
+    && str_contains(file_get_contents($package . '/src/Ui/DebtorProfileControllerTrait.php'), 'return DebtorProfileLayout::BASE;'));
 
 echo "P3C. Source guards for part 3\n";
 $p3Templates = glob($package . '/res/view/templates/Backend/InvoiceController/*.tpl.php');
@@ -3475,10 +3480,61 @@ check('V8 «+ Kontakt» is a window over the editor (`data-window-open` → new-
     && preg_match("/'replace-html', \[\s*'target' => '#invoice-contact'.*?'origin' => WindowOrigin::of\(\\\$request\).*?->addCommand\('close-modal'\)/s", $vTrait) === 1);
 $vProfileTrait = file_get_contents($package . '/src/Ui/DebtorProfileControllerTrait.php');
 $vTermsTpl     = $package . '/res/view/templates/Backend/PaymentTermsController';
-check('V9 the default is read in ONE place (PaymentTermsRepository::defaultForNewDebtor) by its users: the service opening a profile, the editor preselecting it for `?contact=` of a contact without a profile, «+ Debitor» preselecting it; the terms screen sets it (checkbox `default`) and shows «Standard»',
+$vRoleSource = file_get_contents($package . '/src/Roles/DebtorContactRole.php');
+check('V9 the default is read in ONE place (PaymentTermsRepository::defaultForNewDebtor) by its users: the service opening a profile, the editor preselecting it for `?contact=` of a contact without a profile, the contact editor\'s role «Debitor» giving it (2026-10-12 — «+ Debitor» is gone); the terms screen sets it (checkbox `default`) and shows «Standard»',
     str_contains($vSource, '->defaultForNewDebtor()') && str_contains($vTrait, 'invoiceNewDebtorTerms($contact)') && str_contains($vTrait, '->defaultForNewDebtor()')
-    && str_contains($vProfileTrait, '$this->newDebtorProfile()') && substr_count($vProfileTrait, 'new DebtorProfile()') === 1 && str_contains($vProfileTrait, '->defaultForNewDebtor()')
+    && !str_contains($vProfileTrait, 'new DebtorProfile()') && !str_contains($vProfileTrait, '->defaultForNewDebtor()')
+    && str_contains($vRoleSource, '->defaultForNewDebtor()') && substr_count($vRoleSource, 'new DebtorProfile()') === 1
     && str_contains(file_get_contents($vTermsTpl . '/edit.tpl.php'), 'name="default"') && str_contains(file_get_contents($vTermsTpl . '/_row.tpl.php'), '>Standard</span>'));
+
+echo "W. «Debitor» as a role of the contact (owner 2026-10-12): module-contact's registry, on = profile with the default terms, off = DELETE while no document references the contact\n";
+$roles = \Z77\Module\Contact\Roles\ContactRoles::fromModules(DI::getModuleManager());
+check('W1 debtorConfig registers the role under contactRoles → debtor; module-contact\'s registry finds it and knows nothing else',
+    array_keys($roles->all()) === ['debtor'] && $roles->role('debtor') instanceof \Z77\Module\Debtor\Roles\DebtorContactRole && $roles->role('debtor')->label() === 'Debitor' && $roles->role('nope') === null);
+$role      = $roles->role('debtor');
+$wForm     = (new ContactForm(addressRequired: true))->fromPost([
+    'kind' => 'organisation', 'company' => 'Rolle AG', 'language' => 'de', 'type_code' => 'main',
+    'address_name' => 'Rolle AG', 'address_street' => 'Weg', 'address_house_no' => '3', 'address_zip' => '6000', 'address_city' => 'Luzern', 'address_country' => 'CH',
+]);
+$wForm->save(new ContactService($wireDi()));
+$wId       = (int) $wForm->contact->getId();
+$wCustomer = (int) $rangeOf('customer');
+$wProfiles = $count('debtor_profile');
+$wContact  = $wireDi()->getRepository(Contact::class)->find($wId);
+check('W2 a contact without a profile: off, switchable, the line says what it will get', !$role->state($wContact)->on && $role->state($wContact)->switchable && str_contains($role->state($wContact)->summary, 'Kundennummer'));
+$role->switchOn($wContact);
+$wProfile = $wireDi()->getRepository(DebtorProfile::class)->findByContact($wId);
+check('W3 ON: the profile through DebtorProfileService::save() — the next customer number, the DEFAULT terms net-30, active',
+    $wProfile !== null && $wProfile->getCustomerNumber() === $wCustomer + 1 && (int) $rangeOf('customer') === $wCustomer + 1 && $wProfile->getPaymentTermsCode() === 'net-30' && $wProfile->isActive());
+check('W4 ON twice is refused with a German sentence', caught(fn() => $role->switchOn($wireDi()->getRepository(Contact::class)->find($wId)), \Z77\Module\Contact\Roles\ContactRoleRefusedException::class) !== null);
+$role->switchOff($wireDi()->getRepository(Contact::class)->find($wId));
+check('W5 OFF without documents: the profile is DELETED, the customer number NOT given back (the range stays)',
+    $count('debtor_profile') === $wProfiles && $wireDi()->getRepository(DebtorProfile::class)->findByContact($wId) === null && (int) $rangeOf('customer') === $wCustomer + 1);
+$role->switchOn($wireDi()->getRepository(Contact::class)->find($wId));
+check('W6 ON again: a NEW number — a number is never reused', $wireDi()->getRepository(DebtorProfile::class)->findByContact($wId)?->getCustomerNumber() === $wCustomer + 2);
+$service($wireDi())->invoice(InvoiceDraft::invoice($wId, day('2026-12-07'), day('2026-12-07'), 'CHF', [LineDraft::lumpSum('Stunden', chf('10.00'), 'UN', '3400')]));
+$wState = $role->state($wireDi()->getRepository(Contact::class)->find($wId));
+$wOff   = caught(fn() => $role->switchOff($wireDi()->getRepository(Contact::class)->find($wId)), \Z77\Module\Contact\Roles\ContactRoleRefusedException::class);
+check('W7 with ONE draft: on, not switchable, the reason says «nur deaktiviert»; OFF refused, the profile stays',
+    $wState->on && !$wState->switchable && str_contains($wState->reason, 'nur deaktiviert') && $wOff !== null && str_contains($wOff->getMessage(), 'einen Beleg')
+    && $wireDi()->getRepository(DebtorProfile::class)->findByContact($wId) !== null);
+$wEm8 = $wireDi();
+check('W8 DebtorProfileService::delete() refuses directly as well (DebtorProfileInUseException)',
+    caught(fn() => (new DebtorProfileService($wEm8))->delete($wEm8->getRepository(DebtorProfile::class)->findByContact($wId)), \Z77\Module\Debtor\Services\DebtorProfileInUseException::class) !== null);
+$wInactive = new Contact(['kind' => 'person', 'first_name' => 'Ruht', 'last_name' => 'Rolle', 'language' => 'de']);
+(new ContactService($wireDi()))->save($wInactive);
+$wEm9 = $wireDi();
+(new ContactService($wEm9))->setActive($wEm9->getRepository(Contact::class)->find($wInactive->getId()), false);
+$wInactiveState = $role->state($wireDi()->getRepository(Contact::class)->find($wInactive->getId()));
+check('W9 an INACTIVE contact: not switchable, reason given; ON refused, nothing drawn',
+    !$wInactiveState->switchable && str_contains($wInactiveState->reason, 'inaktiv')
+    && caught(fn() => $role->switchOn($wireDi()->getRepository(Contact::class)->find($wInactive->getId())), \Z77\Module\Contact\Roles\ContactRoleRefusedException::class) !== null
+    && (int) $rangeOf('customer') === $wCustomer + 2);
+$wSource = file_get_contents((new \ReflectionClass(InvoicingService::class))->getFileName());
+$wFn     = substr($wSource, strpos($wSource, 'public function invoice(InvoiceDraft'), 3000);
+check('W10 lock pair in the source: invoice() locks an existing profile SHARED before the invoice row; delete() locks it EXCLUSIVE, then counts the documents with a locking read',
+    strpos($wFn, 'lockForContact(') !== false && strpos($wFn, 'exclusive: false') < strpos($wFn, 'new Invoice(')
+    && preg_match('/lockForContact\(.*exclusive: true\).*countForContact\(.*lock: true\).*->remove\(\$profile\)/s', file_get_contents((new \ReflectionClass(DebtorProfileService::class))->getFileName())) === 1);
 
 // ── result ───────────────────────────────────────────────────────────────
 

@@ -14,6 +14,14 @@ final class DebtorProfileLayout
     /** Namespace that owns the fragment's templates. */
     public const NS = 'Z77\Module\Debtor';
 
+    /**
+     * URL root of the backend mount (`DebtorProfileControllerTrait::debtorListBase()`) — also
+     * where the contact editor's «Debitor» role links to (`Roles\DebtorContactRole`). A host
+     * mounting the fragment elsewhere overrides `debtorListBase()`; the role link follows this
+     * constant (DEBTOR-ROLE-001 in debtor.md).
+     */
+    public const BASE = '/backend/finance/debtor-profile';
+
     /** @return array<string, mixed> */
     public static function config(): array
     {

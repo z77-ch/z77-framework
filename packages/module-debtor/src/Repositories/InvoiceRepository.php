@@ -21,6 +21,32 @@ use Z77\Shared\Money\Money;
 class InvoiceRepository extends DoctrineRepository
 {
     /**
+     * How many documents — every kind (invoice, credit note, fee), every state, drafts
+     * included — are written to the contact: what decides whether its debtor profile may
+     * still be DELETED (owner 2026-10-12, «Debitor» off in the contact editor). Payments
+     * (their allocations) and dunning notices hang on documents, so «none» here means none
+     * of them either.
+     *
+     * $lock (inside an open unit of work only): a LOCKING read (`FOR UPDATE`) — it sees rows
+     * committed after the unit of work began, and InnoDB's next-key lock on the `contact_id`
+     * index holds back the insert of a FIRST document for this contact until the caller
+     * commits (REPEATABLE READ, MariaDB's default). Doctrine-only (SQL).
+     *
+     * @throws \LogicException $lock outside an open unit of work
+     */
+    public function countForContact(int $contactId, bool $lock = false): int
+    {
+        if (!$lock) {
+            return (int) $this->connection()->fetchOne('SELECT COUNT(*) FROM invoice WHERE contact_id = ?', [$contactId]);
+        }
+        if (!$this->connection()->isTransactionActive()) {
+            throw new \LogicException('countForContact(lock: true) needs an open unit of work — the lock holds until commit');
+        }
+
+        return count($this->connection()->fetchFirstColumn('SELECT id FROM invoice WHERE contact_id = ? FOR UPDATE', [$contactId]));
+    }
+
+    /**
      * The document with its lines in ONE query (fetch-join). The tax rows
      * load lazily on first access — a handful per document. Doctrine-only (DQL).
      */

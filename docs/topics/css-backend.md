@@ -1,6 +1,6 @@
 # css-backend
 
-2026-10-08
+2026-10-12
 
 ## entry
 
@@ -229,7 +229,7 @@ default first), the panel anchors right inside the viewport.
 | Stammdaten › Geschäftsjahre | «+ Geschäftsjahr» | create |
 | Stammdaten › Kontenplan | «+ Konto» | create |
 | Stammdaten › MWST-Codes | «+ Steuercode» | create |
-| Stammdaten › Debitoren | «+ Debitor» | create |
+| Stammdaten › Debitoren | — (since 2026-10-12: a debtor is made in the contact dialog, role «Debitor» — `debtor.md`) | n/a |
 | Stammdaten › Zahlungskonditionen | «+ Kondition» | create |
 | Stammdaten › Zahlungsziele | «+ Zahlungsziel» | create |
 | Stammdaten › Mahnstufen | «+ Mahnstufe» | create |

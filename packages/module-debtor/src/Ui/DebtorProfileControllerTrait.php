@@ -34,8 +34,12 @@ use Z77\Core\DI,
  * the contact screen's template renders a debtor partial — a change in
  * module-contact for a module contact must not know (plan §2, «contact knows
  * no module»). So the list here IS contact-oriented — the same search, the
- * same rows — and only its columns and actions are debtor's. Nothing in
- * module-contact is touched.
+ * same rows — and only its columns and actions are debtor's. **Making a
+ * contact a debtor** is no longer done here (owner decision 2026-10-12, «der
+ * Umweg über + Debitor ist falsch»): the contact editor's role switch
+ * «Debitor» does it ({@see \Z77\Module\Debtor\Roles\DebtorContactRole},
+ * module-contact's generic `contactRoles` registry), and takes it back while
+ * no document references the contact.
  *
  * What the screen can do, and deliberately cannot:
  *
@@ -43,13 +47,14 @@ use Z77\Core\DI,
  *     list searches (`?q=`, a plain GET form, bounded by contactConfig
  *     `contactListLimit` — contact's setting, read once through
  *     `ContactService::listLimit()`);
- *   - «+ Debitor» (action cell, 2026-10-08): the add dialog offers the
- *     ACTIVE contacts that have none to choose from; edit the one a contact
- *     has: payment terms and dunning block. The CONTACT of a profile never
- *     changes — a different party is a different profile. An existing
- *     profile on a contact deactivated SINCE keeps working and stays
- *     editable (the reference rule, ADR-043 decision 19);
- *   - activate / deactivate a profile (inline switch). There is NO delete;
+ *   - edit the profile a contact has: payment terms and dunning block. The
+ *     CONTACT of a profile never changes — a different party is a different
+ *     profile. An existing profile on a contact deactivated SINCE keeps
+ *     working and stays editable (the reference rule, ADR-043 decision 19).
+ *     The action cell is EMPTY (2026-10-12: «+ Debitor» removed — a profile
+ *     is opened in the contact editor, or by the first draft of an invoice);
+ *   - activate / deactivate a profile (inline switch). No delete HERE — the
+ *     contact editor's «Debitor» off deletes a profile without documents;
  *   - show the account settings (the mandator's debtor accounts, read
  *     through {@see DebtorAccounts::status()}) with the refusal each one
  *     would raise — so a wrong account is found here and not when an
@@ -71,7 +76,7 @@ trait DebtorProfileControllerTrait
     /** URL root of THIS mount — every row button and modal form is built from it. */
     protected function debtorListBase(): string
     {
-        return '/backend/finance/debtor-profile';
+        return DebtorProfileLayout::BASE;
     }
 
     private function debtorContacts(): ContactRepository
@@ -114,54 +119,15 @@ trait DebtorProfileControllerTrait
             'accountLabels'     => DebtorAccounts::LABELS,
             'actionBase'        => $this->debtorListBase(),
         ]);
-        // The fragment owns its header slots (financial.md, «fragment slots»): «+ Debitor» is the
-        // entry's most frequent action → action cell (ADR-033 rev. 2026-10-08); the search → toolbar.
-        $this->layoutManager->addPartials('act', 'Backend/DebtorProfileController', self::DEBTOR_NS, 'hc1');
+        // The fragment owns its header slots (financial.md, «fragment slots»): the search → toolbar.
+        // The action cell stays EMPTY (2026-10-12): a debtor is made in the contact editor (role
+        // «Debitor»); what is done here — edit, switch — is bound to a row (backend-screen.md §2).
         $this->layoutManager->addPartials('search', 'Backend/DebtorProfileController', self::DEBTOR_NS, 'hc2');
 
         return $response;
     }
 
-    // ── add / edit ───────────────────────────────────────────────────────
-
-    /**
-     * «+ Debitor» (action cell) — a profile is always opened FOR a contact. Without `?contact=`
-     * the dialog first offers the CHOICE: a select of the active contacts without a profile
-     * ({@see DebtorProfileRepository::contactsWithoutProfile()}); its save posts the chosen
-     * `contact_id` with the rest. Once a contact is known — `?contact=`, or the re-rendered
-     * dialog after a refused save — it is fixed and travels in the URL.
-     */
-    protected function addAction(): HtmlResponse|FetchResponse
-    {
-        $request   = DI::getRequest();
-        $contactId = (int) $request->getGetParameter('contact');
-        if ($contactId === 0) {
-            if (!$request->isPost()) {
-                return $this->debtorContactChoice();
-            }
-            $contactId = (int) ($request->getJsonBody()['contact_id'] ?? 0);
-            if ($contactId === 0) {
-                return $this->fetchError('Bitte einen Kontakt wählen.');
-            }
-        }
-        $contact = $this->debtorContacts()->find($contactId);
-        if ($contact === null) {
-            return $this->fetchError('Kontakt nicht gefunden');
-        }
-        if ($this->profiles()->findByContact($contact) !== null) {
-            return $this->fetchError('Für diesen Kontakt gibt es bereits einen Debitor.');
-        }
-        if (!$contact->isActive()) {
-            // The list does not offer the button for an inactive contact; this
-            // is the server's own refusal for a hand-built URL.
-            return $this->fetchError('Kontakt «' . $contact->displayName() . '» ist inaktiv — für einen inaktiven Kontakt wird kein Debitor angelegt.');
-        }
-
-        $profile = $this->newDebtorProfile();
-        $profile->setContact($contact);
-
-        return $this->editProfile($profile, $contact);
-    }
+    // ── edit ─────────────────────────────────────────────────────────────
 
     protected function editAction(): HtmlResponse|FetchResponse
     {
@@ -174,37 +140,31 @@ trait DebtorProfileControllerTrait
         return $this->editProfile($profile, $profile->getContact());
     }
 
+    /**
+     * The profile dialog of an EXISTING profile — a new one is opened in the contact editor
+     * (role «Debitor», 2026-10-12) or by the first draft of an invoice, not here.
+     */
     private function editProfile(DebtorProfile $profile, Contact $contact): HtmlResponse|FetchResponse
     {
-        $isNew     = $profile->getId() === null;
         $validator = null;
         $draft     = $profile;
 
         if (DI::getRequest()->isPost()) {
             $body = DI::getRequest()->getJsonBody();
 
-            if (!$isNew) {
-                $csrf = trim((string) ($body['entity_csrf'] ?? ''));
-                if (!DI::getCsrfService()->validateEntityToken($csrf, 'debtorProfile', $profile->getId())) {
-                    return $this->fetchError('Invalid token');
-                }
+            $csrf = trim((string) ($body['entity_csrf'] ?? ''));
+            if (!DI::getCsrfService()->validateEntityToken($csrf, 'debtorProfile', $profile->getId())) {
+                return $this->fetchError('Invalid token');
             }
 
-            // The contact is resolved by addAction() (URL, or the choice's `contact_id`) and never
-            // mapped from the body; `active` has its own switch.
+            // The contact is never mapped from the body; `active` has its own switch.
             $values = BodyCleaner::cleanFor(DebtorProfile::class, $body);
             unset($values['id'], $values['contact'], $values['contact_id'], $values['active']);
 
             try {
-                if ($isNew) {
-                    // Not managed until persist() — build it and let the service validate it.
-                    $profile->mapFromArray($values);
-                    $this->profileService()->save($profile);
-                } else {
-                    $this->profileService()->update($profile, $values);
-                }
+                $this->profileService()->update($profile, $values);
 
-                $this->messageService->pushFlash('success', 'Debitor «' . $contact->displayName() . '» ' . ($isNew ? 'angelegt' : 'gespeichert'));
+                $this->messageService->pushFlash('success', 'Debitor «' . $contact->displayName() . '» gespeichert');
 
                 return $this->debtorRowAnswer($profile, $contact)->addCommand('close-modal');
             } catch (InvalidDebtorProfileException $e) {
@@ -218,42 +178,8 @@ trait DebtorProfileControllerTrait
             'entry'      => $draft,
             'contact'    => $contact,
             'terms'      => $this->selectableTerms($draft->getPaymentTermsCode()),
-            'entityCsrf' => $isNew ? '' : DI::getCsrfService()->generateEntityToken('debtorProfile', $profile->getId()),
+            'entityCsrf' => DI::getCsrfService()->generateEntityToken('debtorProfile', $profile->getId()),
             'validator'  => $validator ?? new DebtorProfileValidator($draft),
-            'actionBase' => $this->debtorListBase(),
-        ]);
-        $this->layoutManager->addPartials('edit', 'Backend/DebtorProfileController', self::DEBTOR_NS);
-
-        return $response;
-    }
-
-    /**
-     * A new profile with the DEFAULT payment terms preselected (owner 2026-10-12) — a posted
-     * form overwrites them with what was chosen, and the validator checks that code again
-     * (exists, active). No active default marked: the select starts at «— wählen —», as before.
-     */
-    private function newDebtorProfile(): DebtorProfile
-    {
-        $profile = new DebtorProfile();
-        $default = $this->debtorTerms()->defaultForNewDebtor();
-        if ($default !== null) {
-            $profile->setPaymentTermsCode($default->getCode());
-        }
-
-        return $profile;
-    }
-
-    /** The «+ Debitor» dialog before a contact is chosen: the same form, the contact a select. */
-    private function debtorContactChoice(): HtmlResponse
-    {
-        $draft    = $this->newDebtorProfile();
-        $response = $this->html([
-            'entry'      => $draft,
-            'contact'    => null,
-            'candidates' => $this->profiles()->contactsWithoutProfile(),
-            'terms'      => $this->selectableTerms($draft->getPaymentTermsCode()),
-            'entityCsrf' => '',
-            'validator'  => new DebtorProfileValidator($draft),
             'actionBase' => $this->debtorListBase(),
         ]);
         $this->layoutManager->addPartials('edit', 'Backend/DebtorProfileController', self::DEBTOR_NS);

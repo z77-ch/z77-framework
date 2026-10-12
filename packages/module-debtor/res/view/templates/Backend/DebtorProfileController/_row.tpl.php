@@ -29,9 +29,9 @@ $contactId  = (string) $contact->getId();
                     <button type="button" class="be-tree__menu" title="Debitor bearbeiten"
                             data-fetch-get="<?= e($actionBase) ?>/edit?id=<?= e((string) $profile->getId()) ?>">⋮</button>
                     <?php else: ?>
-                    <?php /* No profile yet: «+ Debitor» in the action cell offers the active contacts without one
-                             (2026-10-08) — the row carries no button of its own. An inactive contact gets no
-                             debtor (ADR-043/19 on the party); the server refuses a hand-built URL. */ ?>
+                    <?php /* No profile yet: a debtor is made in the contact editor (role «Debitor», owner
+                             2026-10-12) or by the first draft of an invoice — the row carries no button. An
+                             inactive contact gets no debtor (ADR-043/19 on the party). */ ?>
                     <span class="be-tree__switch" aria-hidden="true"></span>
                     <span class="be-tree__menu" aria-hidden="true"></span>
                     <?php endif; ?>
@@ -46,7 +46,7 @@ $contactId  = (string) $contact->getId();
 
                     <span class="be-tree__url" data-field="terms">
                         <?php if ($profile === null): ?>
-                        <span class="be-list__cell--muted">kein Debitor</span>
+                        <span class="be-list__cell--muted" title="Als Debitor festlegen: Kontakte › Bearbeiten › Rollen">kein Debitor</span>
                         <?php else: ?>
                         <?php $terms = $termsByCode[$profile->getPaymentTermsCode()] ?? null; ?>
                         <?= e($terms?->getLabel() ?? $profile->getPaymentTermsCode()) ?>

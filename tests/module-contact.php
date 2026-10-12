@@ -516,6 +516,37 @@ check('E13c ADR-047 addendum 2026-10-10: a one-row save answers in place (replac
 check('E13d ADR-049 rev. 2026-10-10: no contact dialog keeps .be-modal__footer — the action row is partials/modalActions; only the field-less «Adresse entfernen» keeps it at the end',
     array_filter(glob($contactTpl . '*/*.tpl.php'), fn($f) => str_contains(file_get_contents($f), 'be-modal__footer')) === []
     && array_values(array_map('basename', array_filter(glob($contactTpl . '*/*.tpl.php'), fn($f) => str_contains(file_get_contents($f), "'end' => true")))) === ['confirmRemoveAddress.tpl.php']);
+// The contact-role registry (owner decision 2026-10-12): other modules contribute a role
+// («Debitor») through config `contactRoles`; this module renders it and knows none.
+$roleOk = new class implements \Z77\Module\Contact\Roles\ContactRoleInterface {
+    public function label(): string { return 'Probe'; }
+    public function state(Contact $contact): \Z77\Module\Contact\Roles\ContactRoleState { return new \Z77\Module\Contact\Roles\ContactRoleState(false); }
+    public function stateForNew(): \Z77\Module\Contact\Roles\ContactRoleState { return new \Z77\Module\Contact\Roles\ContactRoleState(false); }
+    public function switchOn(Contact $contact): void {}
+    public function switchOff(Contact $contact): void {}
+};
+$roleClass = get_class($roleOk);
+$rolesOf   = fn(array $map) => new \Z77\Module\Contact\Roles\ContactRoles($map);
+check('E13f the contact-role registry: a declared role is found by key, an unknown key is null; this harness installs no contributing module, so fromModules() is empty',
+    array_keys($rolesOf(['probe' => $roleClass])->all()) === ['probe'] && $rolesOf(['probe' => $roleClass])->role('probe')?->label() === 'Probe'
+    && $rolesOf(['probe' => $roleClass])->role('nope') === null
+    && \Z77\Module\Contact\Roles\ContactRoles::fromModules(DI::getModuleManager())->all() === []);
+check('E13g … a bad declaration fails when the registry is built: a list instead of a map, an invalid key, a missing class, a class that is no role',
+    throws(fn() => $rolesOf([$roleClass]), \RuntimeException::class)
+    && throws(fn() => $rolesOf(['Bad Key' => $roleClass]), \RuntimeException::class)
+    && throws(fn() => $rolesOf(['probe' => 'No\\Such\\RoleClass']), \RuntimeException::class)
+    && throws(fn() => $rolesOf(['probe' => \stdClass::class]), \RuntimeException::class));
+$rolesTpl = file_get_contents($contactTpl . 'ContactController/_roles.tpl.php');
+check('E13h the contact dialog renders the roles generically (`_roles` in edit): on «edit» a switch per role acting at once (toggle-role, answered in place as contactRoles:<id>), on «add» a field roles[<key>] applied AFTER the save; module-contact references no class of another module (examples in docblocks name module-debtor in prose only)',
+    str_contains(file_get_contents($contactTpl . 'ContactController/edit.tpl.php'), "partial('Backend/ContactController/_roles'")
+    && str_contains($rolesTpl, 'data-fetch-toggle=') && str_contains($rolesTpl, '/toggle-role?id=') && str_contains($rolesTpl, 'name="roles[')
+    && str_contains($rolesTpl, 'data-entity="contactRoles:') && str_contains($traitSource, "replaceRow('contactRoles'")
+    && (new \ReflectionClass(ContactControllerTrait::class))->hasMethod('toggleRoleAction')
+    && strpos($traitSource, '$form->save($this->contactService())') < strpos($traitSource, '$this->applyRolesToNew($contact, $chosen)')
+    && array_filter(
+        array_merge(glob(__DIR__ . '/../packages/module-contact/src/*/*.php'), glob($contactTpl . '*/*.tpl.php')),
+        fn($f) => preg_match('/Module\\\\Debtor|DebtorProfile/', file_get_contents($f)) === 1
+    ) === []);
 $em9    = $wireDi();
 $links9 = $em9->getRepository(ContactAddress::class);
 $org9   = $em9->getRepository(Contact::class)->find($musterId);
