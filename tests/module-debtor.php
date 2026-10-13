@@ -69,8 +69,9 @@
  *     document immutable in `final`, the credit note as the only correction
  *     with its mirrored posting, a tax code with lines of MIXED signs, a
  *     zero document posting nothing;
- *   - (M) source guards: exactly ONE class names module-financial (the soft
- *     account check moved to module-mandator with E2), the
+ *   - (M) source guards: exactly TWO classes name module-financial (the port
+ *     adapter and the subledger reconciliation; the soft account check moved
+ *     to module-mandator with E2), the
  *     document has no setters, no float, the migration count.
  *
  * Run: php tests/module-debtor.php
@@ -1188,8 +1189,8 @@ check('I15 no module-debtor class touches $_POST / $_GET / $_SERVER (Rule 4)',
     array_reduce($sources, fn($ok, $f) => $ok && !preg_match('/\$_(POST|GET|SERVER|REQUEST)\b/', file_get_contents($f)), true));
 $namingFinancial = array_map('basename', array_filter($sources, fn($f) => str_contains(file_get_contents($f), 'Module\\\\Financial') || str_contains(file_get_contents($f), 'Module\\Financial')));
 sort($namingFinancial);
-check('I16 exactly ONE class names module-financial — the port adapter (ADR-040 decision 5); the soft account check lives in module-mandator since E2',
-    $namingFinancial === ['LedgerAccountingGateway.php'] && !is_file($package . '/src/Services/LedgerAccountCheck.php'));
+check('I16 exactly TWO classes name module-financial — the port adapter (ADR-040 decision 5) and, since 2026-10-13, the subledger reconciliation financial asks at the close; the soft account check lives in module-mandator since E2',
+    $namingFinancial === ['LedgerAccountingGateway.php', 'ReceivablesReconciliation.php'] && !is_file($package . '/src/Services/LedgerAccountCheck.php'));
 
 
 // ═════════════════════════════════════════════════════════════════════════
@@ -3712,6 +3713,74 @@ check('X2 … while a NEW invoice on 3400 is refused account-not-selectable, and
     $refusal(fn() => $service($wireDi())->invoice($oneLine($mid, '2026-12-09', '1.000', '10.00'))) === InvoiceRefusedException::ACCOUNT_NOT_SELECTABLE
     && $refusal(fn() => $service($wireDi())->invoice(InvoiceDraft::creditNote($xInv->getId(), $mid, day('2026-12-09'), 'CHF', [LineDraft::lumpSum('x', chf('1.00'), 'UN', '1020')]))) === InvoiceRefusedException::ACCOUNT_NOT_REVENUE);
 $db->executeStatement("UPDATE account SET selectable_on_documents = 1 WHERE number = '3400'");
+
+// ── Y. the subledger reconciliation at the year close (owner decision 2026-10-13) ──
+
+echo "Y. ReceivablesReconciliation: debtor's open items against the receivable account, asked by financial's close check\n";
+$yParams   = ['fiscalYear' => '2026', 'from' => day('2026-01-01'), 'to' => day('2026-12-31')];
+$yBalance  = function () use ($yParams): ?Money {
+    $answers = iterator_to_array((new \Z77\Module\Debtor\Close\ReceivablesReconciliation())->balances('2026', $yParams['from'], $yParams['to']), false);
+    return count($answers) === 1 && $answers[0]->account === '1100' && $answers[0]->label === 'offenen Posten Debitoren' ? $answers[0]->balance : null;
+};
+// The real path: the registry reads debtorConfig → subledgerReconciliations, financial's check asks it.
+$yDifferences = fn() => array_values(array_filter(
+    iterator_to_array((new \Z77\Module\Financial\Close\SubledgerReconciliationCheck())->check('period-close', $yParams), false),
+    fn($f) => str_contains($f->message, 'stimmt nicht mit den offenen Posten Debitoren überein')
+));
+$yLedger = fn() => (string) $db->fetchOne("SELECT COALESCE(SUM(l.debit - l.credit), 0.00) FROM journal_line l JOIN journal_entry e ON e.id = l.entry_id JOIN account a ON a.id = l.account_id JOIN fiscal_year y ON y.id = e.fiscal_year_id WHERE a.number = '1100' AND y.code = '2026'");
+
+check('Y1 debtorConfig registers ReceivablesReconciliation under its OWN key `subledgerReconciliations` (not under openWorkChecks); financial\'s registry finds it',
+    (DI::getModuleManager()->getModuleConfig('debtor')?->get('subledgerReconciliations') ?? []) === [\Z77\Module\Debtor\Close\ReceivablesReconciliation::class]
+    && array_map('get_class', \Z77\Module\Financial\Close\SubledgerReconciliations::fromModules(DI::getModuleManager())->all()) === [\Z77\Module\Debtor\Close\ReceivablesReconciliation::class]);
+
+$yBefore = $yBalance();
+$yInv    = $service($wireDi())->invoice($oneLine($mid, '2026-12-10', '1.000', '100.00'));
+$service($wireDi())->finalize([$at($yInv->getId())]);
+$yGross  = $readInvoice($yInv->getId())->getGrossTotal();
+$pay($wireDi())->record($draftOn($yInv->getId(), '2026-12-15', '40.00'));
+$yAfter  = $yBalance();
+check('Y2 a booked invoice + a part payment: the module\'s balance moves by gross − payment (' . $yGross->subtract(chf('40.00'))->toDecimal() . '), exactly what the journal shows on 1100 (' . $yLedger() . ') → no difference finding',
+    $yBefore !== null && $yAfter !== null && $yAfter->equals($yBefore->add($yGross)->subtract(chf('40.00')))
+    && $yAfter->equals(chf($yLedger())) && $yDifferences() === []);
+
+$service($wireDi())->invoice($oneLine($mid, '2026-12-20', '1.000', '70.00'));   // stays in `invoicing` — nothing posted
+$yEarlier = iterator_to_array((new \Z77\Module\Debtor\Close\ReceivablesReconciliation())->balances('2026', $yParams['from'], day('2026-12-12')), false);
+check('Y3 only what is BOOKED, AT the end of $to: a document still in `invoicing` does not count; asked per 12.12. the payment of 15.12. is not yet deducted',
+    $yBalance()?->equals($yAfter) === true && count($yEarlier) === 1 && $yEarlier[0]->balance->equals($yAfter->add(chf('40.00'))));
+
+// A manual entry on the collective account — the flag «nur durch Module bebuchbar» switched off for it (FIN-MODULE-ONLY-001).
+$yAccount = fn() => $wireDi()->getRepository(Account::class)->findOneBy(['number' => '1100']);
+$yFlagged = $yAccount()->isModulePostingOnly();
+(new AccountService($wireDi()))->update($yAccount(), ['module_posting_only' => false]);
+$yStray = (new \Z77\Module\Financial\Services\ManualEntryService($wireDi(), 'buchhalter'))->create(\Z77\Module\Financial\Ledger\PostingRequest::manual(day('2026-12-16'), 'Debitor von Hand', [
+    \Z77\Module\Financial\Ledger\PostingLine::debit('1100', chf('108.10')), \Z77\Module\Financial\Ledger\PostingLine::credit('3200', chf('108.10')),
+]));
+$yFound = $yDifferences();
+check('Y4 a manual entry on 1100 (flag off for it) → ONE warning: journal vs module, the difference 108.10, the entry named by number',
+    count($yFound) === 1 && $yFound[0]->severity === \Z77\Persistence\Doctrine\OpenWork\Severity::Warning && $yFound[0]->reference === 'account:1100'
+    && str_contains($yFound[0]->message, 'laut Modul ' . \Z77\Shared\Money\AmountFormat::of($yBalance())) && str_contains($yFound[0]->message, 'Differenz 108.10')
+    && preg_match('~Manuelle Buchungen auf dem Konto: Nr\. [0-9, ]*\b' . $yStray->number . '\b~', $yFound[0]->message) === 1);
+(new AccountService($wireDi()))->update($yAccount(), ['module_posting_only' => $yFlagged]);
+
+$yNone = fn() => iterator_to_array((new \Z77\Module\Debtor\Close\ReceivablesReconciliation())->balances('2026', $yParams['from'], $yParams['to']), false) === [];
+$writeOverride($fullConfig("'accountingGateway' => \\Z77\\Module\\Debtor\\Accounting\\NullAccountingGateway::class"));
+$yNullGateway = $yNone();
+$writeOverride(null);
+$writeModules(false);
+$rm($base . '/var/cache');
+$wireDi();
+$yNoFinancial = $yNone();
+$writeModules(true);
+$rm($base . '/var/cache');
+$yEm = $wireDi();
+(new MandatorService($yEm))->update($yEm->getRepository(Mandator::class)->theOne(), ['account_receivable' => '']);
+$wireDi();
+$yNoAccount = $yNone();
+$yEm = $wireDi();
+(new MandatorService($yEm))->update($yEm->getRepository(Mandator::class)->theOne(), ['account_receivable' => '1100']);
+$wireDi();
+check('Y5 nothing to reconcile → the reconciliation yields nothing: the installation books elsewhere (NullAccountingGateway), financial not a registered module, the mandator names no receivable account; back to normal it answers again',
+    $yNullGateway && $yNoFinancial && $yNoAccount && $yBalance() !== null);
 
 // ── result ───────────────────────────────────────────────────────────────
 

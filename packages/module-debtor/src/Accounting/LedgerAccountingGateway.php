@@ -15,9 +15,11 @@ use Z77\Persistence\Resolver\UnifiedEntityManager;
  * The default {@see AccountingGateway}: debtor's {@see PostingRequest}
  * translated 1:1 into financial's and handed to `LedgerService::post()`
  * inside the caller's unit of work (plan §5.4, §6.6; ADR-040 decisions 2, 5
- * and 7). This class is the ONLY one in debtor that names module-financial
- * (the soft account check moved to module-mandator with the account
- * settings, 2026-09-23) — the package only `suggest`s financial, and the
+ * and 7). Besides `Close\ReceivablesReconciliation` (financial's close port,
+ * loaded only by financial's own registry) this is the ONLY class in debtor
+ * that names module-financial (the soft account check moved to
+ * module-mandator with the account settings, 2026-09-23) — the package only
+ * `suggest`s financial, and the
  * adapter refuses to run rather than fatal when `financial` is not a
  * REGISTERED module ({@see LedgerAccountCheck::available()}).
  *

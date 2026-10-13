@@ -491,6 +491,26 @@ class InvoiceRepository extends DoctrineRepository
     }
 
     /**
+     * Σ gross of every BOOKED document (`ledger_entry_ref` set) dated on or before $at —
+     * invoices and fee documents positive, credit notes negative —, as a decimal string
+     * ('0.00' when none): what debtor posted onto the receivable account up to that day
+     * (`PostingBuilder`: the receivable takes the gross on the document's date, on the kind's
+     * side). A document that posted nothing (NullAccountingGateway, a zero document) has no
+     * ref and does not count. The first half of `ReceivablesReconciliation`. A plain read, no
+     * lock — it runs in the year close's snapshot. Doctrine-only (SQL).
+     */
+    public function sumBookedUpTo(\DateTimeImmutable $at): string
+    {
+        $sum = $this->connection()->fetchOne(
+            'SELECT COALESCE(SUM(CASE WHEN kind = ? THEN -gross_total ELSE gross_total END), 0.00) FROM invoice'
+            . ' WHERE ledger_entry_ref IS NOT NULL AND invoice_date <= ?',
+            [InvoiceKind::CreditNote->value, $at->format('Y-m-d')]
+        );
+
+        return (string) $sum;
+    }
+
+    /**
      * The documents still in `invoicing` (not final) dated from $from to
      * $to, both inclusive — what the year close is blocked by
      * (`InvoicingInProgressCheck`, plan §5.3): their posting would land in a

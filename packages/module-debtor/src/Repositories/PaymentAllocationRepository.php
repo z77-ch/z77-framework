@@ -61,4 +61,22 @@ class PaymentAllocationRepository extends DoctrineRepository
             ->getQuery()
             ->getResult();
     }
+
+    /**
+     * Σ of every BOOKED allocation (payment, discount, loss — `ledger_entry_ref` set) whose
+     * payment is dated on or before $at, as a decimal string ('0.00' when none): what debtor
+     * credited to the receivable account up to that day (`PaymentPostingBuilder` books each
+     * allocation on its payment's date). The second half of `ReceivablesReconciliation`.
+     * A plain read, no lock — it runs in the year close's snapshot. Doctrine-only (SQL).
+     */
+    public function sumBookedUpTo(\DateTimeImmutable $at): string
+    {
+        $sum = $this->connection()->fetchOne(
+            'SELECT COALESCE(SUM(a.amount), 0.00) FROM payment_allocation a JOIN payment p ON p.id = a.payment_id'
+            . ' WHERE a.ledger_entry_ref IS NOT NULL AND p.payment_date <= ?',
+            [$at->format('Y-m-d')]
+        );
+
+        return (string) $sum;
+    }
 }

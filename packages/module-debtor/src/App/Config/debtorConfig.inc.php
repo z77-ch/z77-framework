@@ -4,6 +4,7 @@ namespace Z77\Module\Debtor\App;
 use Z77\Core\Config\AuthRole;
 use Z77\Module\Debtor\Accounting\LedgerAccountingGateway;
 use Z77\Module\Debtor\Close\InvoicingInProgressCheck;
+use Z77\Module\Debtor\Close\ReceivablesReconciliation;
 use Z77\Module\Debtor\Close\UnbookedTransactionsCheck;
 use Z77\Module\Debtor\Entities\BankMessage;
 use Z77\Module\Debtor\Entities\BankTransaction;
@@ -93,6 +94,12 @@ return [
     'openWorkChecks' => [
         'period-close' => [InvoicingInProgressCheck::class, UnbookedTransactionsCheck::class],
     ],
+
+    // financial's subledger reconciliation at the year close (owner decision 2026-10-13): debtor's open
+    // items against the receivable account. Its OWN key, not under openWorkChecks — financial's
+    // SubledgerReconciliationCheck is the check registered there; it asks the classes named here.
+    // A ::class string loads nothing: without module-financial nobody reads this key.
+    'subledgerReconciliations' => [ReceivablesReconciliation::class],
 
     // The role «Debitor» in the contact editor (owner decision 2026-10-12): module-contact's
     // registry `contactRoles` collects it — contact knows no module, this one contributes.
