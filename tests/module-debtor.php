@@ -2150,7 +2150,7 @@ $useRequest(['id' => (string) $plainInv->getId()]);
 $host = $invoiceHost();
 $host->detailAction();
 $plainDetail = $renderMain($host);
-check('P3C28 detail of a draft without payment part: «Kein Zahlteil» with the reason; «Vorschau», «Neu fakturieren …» and «Buchungsdruck …» (a plain link to the confirmation of THIS draft, outside the window) while invoicing',
+check('P3C28 detail of a draft without payment part: «Kein Zahlteil» with the reason; «Vorschau», «Bearbeiten …» and «Buchungsdruck …» (a plain link to the confirmation of THIS draft, outside the window) while invoicing',
     str_contains($plainDetail, 'data-qr-bill="missing"') && str_contains($plainDetail, 'Kein Zahlteil') && str_contains($plainDetail, '/edit?id=' . $plainInv->getId())
     && str_contains($plainDetail, '>Vorschau</a>') && str_contains($plainDetail, 'href="/backend/finance/invoice/confirm-finalize?' . e(http_build_query(['doc' => [$plainInv->getId() . ':' . $invoiceRow($plainInv->getId())['version']]])) . '"')
     && preg_match('/confirm-finalize\?[^"]*"[^>]*data-window-link/', $plainDetail) === 0);
@@ -2454,7 +2454,7 @@ $useRequest(['id' => $previewDraft->getId()]);
 $host = $invoiceHost();
 $host->detailAction();
 $pvDetail = $renderMain($host);
-check('P3E3 the detail of a draft: «Vorschau» (a new tab), «Neu fakturieren …», «Buchungsdruck …» (a green confirm to the confirmation of THIS draft at its version); the payment part «pending»: the reference follows with the number',
+check('P3E3 the detail of a draft: «Vorschau» (a new tab), «Bearbeiten …», «Buchungsdruck …» (a green confirm to the confirmation of THIS draft at its version); the payment part «pending»: the reference follows with the number',
     str_contains($pvDetail, '>Vorschau</a>') && str_contains($pvDetail, 'be-btn be-btn--confirm') && str_contains($pvDetail, '>Buchungsdruck …</a>')
     && str_contains($pvDetail, 'confirm-finalize?' . e(http_build_query(['doc' => [$previewDraft->getId() . ':' . $pvRow['version']]])))
     && str_contains($pvDetail, 'data-qr-bill="pending"') && str_contains($pvDetail, 'folgt mit der Belegnummer beim Buchungsdruck') && !str_contains($pvDetail, 'Kein Zahlteil'));

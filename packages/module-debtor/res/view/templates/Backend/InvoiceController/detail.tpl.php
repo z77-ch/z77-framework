@@ -10,7 +10,7 @@
  * bookkeeping is here, the credit notes and the open amount.
  *
  * Offers, on a DRAFT (`invoicing`, no number yet — owner 2026-10-10):
- * «Vorschau» (the preview PDF, a new tab, no side effect), «Neu fakturieren …»
+ * «Vorschau» (the preview PDF, a new tab, no side effect), «Bearbeiten …» (until 2026-10-13 «Neu fakturieren …» — a name from when drafts had numbers; the owner did not find it)
  * and «Buchungsdruck …» (the confirmation of the booking print for this one
  * draft, a PAGE — a plain link that leaves the window; DEBTOR-WIN-002); on a
  * BOOKED document: «PDF» (the reprint with number and QR-bill),
@@ -58,7 +58,7 @@ if (!$document->isFinal()) {
     // A draft (owner 2026-10-10): the preview, the editor, and the booking print — which leaves the window for
     // its confirmation PAGE (DEBTOR-WIN-002) and then prints into a new tab.
     $actions  = '<a class="be-btn be-btn--ghost" href="' . e($pdfUrl) . '" target="_blank" rel="noopener" title="Vorschau als PDF (neuer Tab) — ohne Nummer und ohne Zahlteil">Vorschau</a>';
-    $actions .= $winLink($actionBase . '/edit?id=' . (int) $document->getId(), 'Neu fakturieren …');
+    $actions .= $winLink($actionBase . '/edit?id=' . (int) $document->getId(), 'Bearbeiten …');
     $actions .= '<a class="be-btn be-btn--confirm" href="' . e($actionBase . '/confirm-finalize?' . http_build_query(['doc' => [$document->getId() . ':' . $document->getVersion()]])) . '" title="Nummer vergeben, verbuchen und als PDF drucken">Buchungsdruck …</a>';
 } else {
     $actions = '<a class="be-btn be-btn--ghost" href="' . e($pdfUrl) . '" target="_blank" rel="noopener" title="Als PDF öffnen (neuer Tab)">PDF</a>';

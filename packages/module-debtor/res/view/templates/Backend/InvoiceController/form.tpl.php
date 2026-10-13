@@ -15,7 +15,7 @@
  *
  * The action row (ADR-049, revision 2026-10-10) is the shared
  * `partials/modalActions`, FIRST in the form — directly under the window's
- * title bar: Erstellen / Neu fakturieren · Abbrechen · «N Fehler»; first in
+ * title bar: Erstellen / Speichern · Abbrechen · «N Fehler»; first in
  * the document, so Enter saves (not «Weitere Zeilen»).
  * No explanations in the form (ADR-048) — the rules are the help
  * (`form.help`). The pickers are shared building blocks: the tax code
@@ -84,7 +84,7 @@ $cancelHref = $window && !$isEdit && !$isCredit ? '' : $cancel;
         <?php endif; ?>
 
         <?= $this->partial('partials/modalActions', [
-            'submit'      => $isEdit ? 'Neu fakturieren' : 'Erstellen',
+            'submit'      => $isEdit ? 'Speichern' : 'Erstellen',
             'submitAttrs' => ['name' => 'op', 'value' => 'save'],
             'cancelHref'  => $cancelHref,
             'errors'      => ['count' => count($invalidIds), 'target' => $invalidIds[0] ?? ''],
