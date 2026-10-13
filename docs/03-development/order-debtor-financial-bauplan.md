@@ -1116,6 +1116,8 @@ is financial's; the adapter is the only debtor class that knows financial.
 
 ## 9. Build phases
 
+> **Order changed by the owner (2026-10-13):** P7 comes **before P5**, in a slim form — quote and order with FREE lines (text, quantity incl. negative, unit, price, tax code, revenue account), status as data with the flow of 2026-10-10 (§7 note), the delivery note, the invoice draft from the order through the existing `InvoicingService`; NO articles (P6) and NO stock (P7b) yet, creation from outside (§13) later. Reason: the order closes the daily flow «Auftrag → Rechnung → Zahlung → Mahnung» that was live-tested on 2026-10-13. In the backend «Aufträge › Aufträge» becomes the first entry with «+ Neuer Auftrag» in the action cell. Then P5 / P5b, then P6, P7 with articles, P7b. The review of 2026-10-13 (`review-2026-10-13.md` §7) is the input for P5.
+
 | Phase | Content | Exit |
 |---|---|---|
 | P0 | ADRs (§10) | ADRs approved |
