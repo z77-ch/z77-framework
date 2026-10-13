@@ -5,7 +5,8 @@
  * the shared action row `partials/modalActions` renders the primary submit FIRST (Enter presses
  * it), the cancel closes the popup or follows a window link, `--end` appears only when asked;
  * the `FetchResponse` row helpers emit the existing commands on the `data-entity` address;
- * the backend modal CSS carries the first aid that pins header and row before the body.
+ * the backend modal CSS pins header and row before the body (the `.be-modal__footer` first aid
+ * is retired since 2026-10-13 — no template writes a footer).
  *
  * The last block is a lint: no dialog template may keep `.be-modal__footer` as the home of
  * its actions once the migration is through. Run: php tests/form-actions.php
@@ -103,11 +104,10 @@ check('insertRow after a sibling row',                  $env['commands'][0]['tar
 $env = $envelope((new FetchResponse())->replaceRow('a', 1, 'x')->addCommand('close-modal'));
 check('helpers chain with addCommand, order kept',      $env['commands'][1] === ['action' => 'close-modal']);
 
-echo "backend modal CSS first aid\n";
+echo "backend modal CSS order\n";
 $scss = (string) file_get_contents(__DIR__ . '/../packages/module-backend/res/scss/components/_modal.scss');
 check('header ordered first',                      preg_match('/\.be-modal \.be-modal__header\s*\{\s*order:\s*-2;/', $scss) === 1);
-check('footer ordered before the body',            preg_match('/\.be-modal__footer\s*\{\s*order:\s*-1;/', $scss) === 1);
-check('footer shows the primary first (row-reverse + flex-end)', str_contains($scss, 'flex-direction:  row-reverse') && str_contains($scss, 'justify-content: flex-end'));
+check('the retired footer first aid is gone (no .be-modal__footer rule)', preg_match('/\.be-modal__footer\s*\{/', $scss) === 0);
 check('the shared row inside a dialog is ordered before the body', preg_match('/\.be \.be-modal \.z77-form-actions\s*\{\s*order:\s*-1;/', $scss) === 1);
 check('--end keeps the bottom (order 1, wherever the template wrote it)', preg_match('/\.be \.be-modal \.z77-form-actions--end\s*\{\s*order:\s*1;/', $scss) === 1);
 check('the toolbar slot has its data hook',        str_contains((string) file_get_contents(__DIR__ . '/../packages/module-backend/res/view/templates/html-shell-skeleton.tpl.php'), 'data-shell-slot="hc2"'));

@@ -261,7 +261,8 @@ $daysCount = count($days);
     </div>
 
     <div class="z77-report__print">
-        <button type="button" onclick="window.print()">Bericht drucken</button>
+        <?php /* core.js reveals and serves it ([data-print], Rule 7: no inline handler); the client link page loads no script — there the browser prints by its own menu. */ ?>
+        <button type="button" data-print hidden>Bericht drucken</button>
     </div>
 
     <footer class="z77-report__foot">

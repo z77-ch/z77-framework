@@ -25,8 +25,9 @@ use Z77\Module\Debtor\Services\Iban;
  *             one for a plain credit)
  *             Refs/AcctSvcrRef | TxId | EndToEndId
  *             Amt @Ccy (the transaction's share of a batch; the entry's amount otherwise)
- *             RltdPties/Dbtr/Nm, RltdPties/Dbtr/PstlAdr/TwnNm (UltmtDbtr first when present;
- *               .08 nests both under Dbtr/Pty — read there when present, 2026-10-13)
+ *             RltdPties/Dbtr/Nm, RltdPties/Dbtr/PstlAdr/TwnNm (UltmtDbtr first when it carries
+ *               a name, else Dbtr — 2026-10-13; .08 nests both under …/Pty — read
+ *               there when present, 2026-10-13)
  *             RmtInf/Strd/CdtrRefInf/Tp/CdOrPrtry/Prtry (QRR | SCOR) + Ref
  *             RmtInf/Ustrd (the unstructured message, several joined)
  *
@@ -86,10 +87,10 @@ final class CamtReader
                     $refs     = $detail?->Refs;
                     $txRef    = trim((string) ($refs->AcctSvcrRef ?? '')) ?: trim((string) ($refs->TxId ?? '')) ?: trim((string) ($refs->EndToEndId ?? '')) ?: ($messageId . '#' . $pos);
                     [$type, $reference, $remittance] = self::remittance($detail);
-                    $debtor = $detail?->RltdPties?->UltmtDbtr ?? $detail?->RltdPties?->Dbtr;
-                    if (isset($debtor->Pty)) {
-                        $debtor = $debtor->Pty;   // .08 nests the party (Dbtr/Pty/Nm); .04 has it directly (Dbtr/Nm)
-                    }
+                    // The ultimate debtor when it carries a NAME, else the debtor (review 2026-10-13: an
+                    // UltmtDbtr without a name hid Dbtr's).
+                    $ultimate = self::party($detail?->RltdPties?->UltmtDbtr ?? null);
+                    $debtor   = $ultimate !== null && trim((string) ($ultimate->Nm ?? '')) !== '' ? $ultimate : self::party($detail?->RltdPties?->Dbtr ?? null);
                     $entries[] = new CamtEntry(
                         $txRef,
                         $valueDate,
@@ -109,6 +110,16 @@ final class CamtReader
         }
 
         return new CamtFile($messageId, $createdOn, $iban, $entries);
+    }
+
+    /** The party element holding `Nm` / `PstlAdr`: .08 nests it (`Dbtr/Pty`), .04 has it directly (`Dbtr`); null when absent. */
+    private static function party(?\SimpleXMLElement $element): ?\SimpleXMLElement
+    {
+        if ($element === null || $element->getName() === '') {
+            return null;
+        }
+
+        return isset($element->Pty) ? $element->Pty : $element;
     }
 
     /** @return array{0: string, 1: string, 2: string} reference type (QRR | SCOR | NON | ''), reference, unstructured message */

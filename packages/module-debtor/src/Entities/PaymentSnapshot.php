@@ -7,22 +7,26 @@ use Z77\Module\Debtor\Invoicing\QrReference;
 use Z77\Module\Debtor\Services\Creditor;
 
 /**
- * The PAYMENT PART a document prints, frozen at issue (P3 part 3; the
+ * The PAYMENT PART a document prints, frozen at the BOOKING PRINT (P3 part 3; the
  * pending of `debtor.md` «the payment target and the reference become
  * columns of `invoice`»): which payment target, the account printed, the
  * reference type and the reference, the unstructured message, and the
  * creditor block as it resolved (the target's holder fields, the mandator's
- * address as field-by-field fallback — {@see Creditor}). An issued document
+ * address as field-by-field fallback — {@see Creditor}). A BOOKED document
  * keeps what it printed: a later change of the payment target, its holder,
  * the mandator's address or the reference rule never alters it — the QR-bill
  * is rendered from THIS snapshot only (`Invoicing\QrBill::of()`).
  *
- * Two steps since owner decision 2026-10-10 (the number is drawn at the
- * booking print): a draft carries target, account, reference type and
- * creditor ({@see forDocument()}); the reference and the message — both
- * derived from the number — are added when the document is booked
- * ({@see numbered()}). A draft therefore prints no payment part (its PDF is
- * a preview).
+ * A DRAFT (no number since owner 2026-10-10) carries target, account,
+ * reference type and creditor as they read when it was saved
+ * ({@see forDocument()}) — a working copy, not what will be printed: the
+ * booking print takes the part AGAIN from the target and the mandator as
+ * they read then (`InvoicingService::bookedPaymentPart()`, owner 2026-10-13
+ * — a QR-IBAN entered after the draft reaches the bill), checks it with
+ * `QrBill` (problems refuse the booking) and adds the reference and the
+ * message, both derived from the number ({@see numbered()}). The draft's
+ * detail shows that re-taken part. A draft prints no payment part (its PDF
+ * is a preview).
  *
  * The reference rule (owner 2026-09-23, wdv-630 `PrepaymentQrCode`,
  * confirmed): the USE CASE decides. An invoice has a reference (its number):

@@ -1,6 +1,6 @@
 <?php
 /**
- * Help for the document editor (ADR-048) — new invoice, «neu fakturieren»,
+ * Help for the document editor (ADR-048) — new invoice, «Bearbeiten» of a draft,
  * credit note. Attached by the trait, opened with the «i»; the form itself
  * carries no text (owner 2026-09-29).
  *
@@ -10,8 +10,8 @@
 $isCredit = $form->kind === \Z77\Module\Debtor\Entities\InvoiceKind::CreditNote;
 ?>
 <h3><?= $isCredit ? 'Gutschrift' : 'Rechnung' ?></h3>
-<p>Erstellen legt das Dokument <strong>in Fakturierung</strong> an: ein Entwurf <strong>ohne Nummer</strong>, nichts ist verbucht. Solange es in Fakturierung ist, kann es beliebig oft <strong>neu fakturiert</strong> und als <strong>Vorschau</strong> (PDF ohne Nummer und ohne Zahlteil) geöffnet werden. Erst der <strong>Buchungsdruck …</strong> (in der Liste für die angekreuzten, im Dokument für dieses) vergibt die Belegnummer, verbucht und öffnet das PDF mit Nummer und QR-Zahlteil — ein gedrucktes Dokument mit Nummer ist ein Beleg. Danach ist es unveränderlich, eine Korrektur ist eine Gutschrift; das PDF lässt sich jederzeit wieder öffnen.</p>
-<p>Beim Neu-Fakturieren werden Adresse und Zahlungskonditionen so übernommen, wie sie <strong>jetzt</strong> beim Debitor stehen.</p>
+<p>Erstellen legt das Dokument <strong>in Fakturierung</strong> an: ein Entwurf <strong>ohne Nummer</strong>, nichts ist verbucht. Solange es in Fakturierung ist, kann es beliebig oft <strong>bearbeitet</strong> und als <strong>Vorschau</strong> (PDF ohne Nummer und ohne Zahlteil) geöffnet werden. Erst der <strong>Buchungsdruck …</strong> (in der Liste für die angekreuzten, im Dokument für dieses) vergibt die Belegnummer, verbucht und öffnet das PDF mit Nummer und QR-Zahlteil — ein gedrucktes Dokument mit Nummer ist ein Beleg. Danach ist es unveränderlich, eine Korrektur ist eine Gutschrift; das PDF lässt sich jederzeit wieder öffnen.</p>
+<p>Beim Speichern eines Entwurfs werden Adresse und Zahlungskonditionen so übernommen, wie sie <strong>jetzt</strong> beim Debitor stehen. Das Zahlungsziel muss aktiv sein; der Zahlteil (Konto, Referenzart, Zahlungsempfänger) wird beim Buchungsdruck nochmals so übernommen, wie er dann beim Zahlungsziel und beim Mandanten steht. Ein Entwurf, der nicht mehr gebraucht wird, lässt sich im Dokument mit <strong>Entwurf löschen …</strong> entfernen.</p>
 
 <?php if ($document === null && !$isCredit): ?>
 <section data-help-field="contact">

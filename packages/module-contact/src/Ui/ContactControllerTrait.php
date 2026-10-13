@@ -41,7 +41,9 @@ use Z77\Core\DI,
  *     is never switched to one;
  *   - switch the ROLES other modules contribute («Debitor» …, owner decision
  *     2026-10-12) in the contact dialog: on «edit» each switch acts at once
- *     (`toggle-role`, the roles section answers in place); on «add» the
+ *     (`toggle-role`, the roles section answers in place) — a role whose
+ *     «off» destroys something asks first (`offConfirm`, `remove-role` with an
+ *     entity token, owner 2026-10-13); on «add» the
  *     chosen roles are applied AFTER the contact is saved, in registration
  *     order, each in its own unit of work — a refused role leaves the saved
  *     contact and says why. This trait knows no role: it renders what
@@ -284,6 +286,9 @@ trait ContactControllerTrait
      * and writes ({@see \Z77\Module\Contact\Roles\ContactRoleInterface}); a refusal comes back
      * as its German sentence and core.js reverts the switch. Success answers with the roles
      * section in place (`contactRoles:<id>`) — the state line and the link change with it.
+     * OFF of a role whose state names `offConfirm` is not done here: the answer is the section
+     * asking that question (status `confirm`), the confirmation goes to {@see removeRoleAction()}.
+     * ON stays immediate.
      */
     #[Fetch, HttpMethod('POST')]
     protected function toggleRoleAction(): FetchResponse
@@ -300,7 +305,15 @@ trait ContactControllerTrait
         }
 
         $wanted = (bool) ($request->getJsonBody()['value'] ?? false);
-        if ($role->state($contact)->on !== $wanted) {
+        $state  = $role->state($contact);
+        if ($state->on !== $wanted) {
+            if (!$wanted && $state->offConfirm !== '') {
+                // Off destroys something (owner 2026-10-13, review M5): nothing is switched — the section
+                // comes back asking, the confirmation is a form of its own with the entity token
+                // (removeRoleAction()). Status `confirm` is not `success`, so core.js turns the switch
+                // back on: it shows what is stored until the confirmation.
+                return $this->rolesAnswer($contact, 'confirm', (string) $request->getGetParameter('role'));
+            }
             try {
                 if ($wanted) {
                     $role->switchOn($contact);
@@ -313,12 +326,61 @@ trait ContactControllerTrait
             $this->messageService->pushFlash('success', '«' . $contact->displayName() . '» ' . ($wanted ? 'ist jetzt ' : 'ist nicht mehr ') . $role->label());
         }
 
+        return $this->rolesAnswer($contact);
+    }
+
+    /**
+     * The confirmed «off» of a role whose state names `offConfirm` (owner 2026-10-13, review M5;
+     * fetch.md confirm-delete pattern): `?id=<contact>&role=<key>`, body `entity_csrf` — the
+     * token for `contactRole.<key>` and this contact, rendered into the question by
+     * {@see toggleRoleAction()}. The role's module decides and writes, as on every switch.
+     */
+    #[Fetch, HttpMethod('POST')]
+    protected function removeRoleAction(): FetchResponse
+    {
+        $request = DI::getRequest();
+        $id      = (int) $request->getGetParameter('id');
+        $key     = (string) $request->getGetParameter('role');
+        $contact = $id ? $this->contacts()->find($id) : null;
+        $role    = $this->contactRoles()->role($key);
+        if ($contact === null || $role === null) {
+            return $this->fetchError($contact === null ? 'Kontakt nicht gefunden' : 'Diese Rolle gibt es nicht.');
+        }
+        if (!DI::getCsrfService()->validateEntityToken(trim((string) ($request->getJsonBody()['entity_csrf'] ?? '')), self::roleTokenContext($key), $id)) {
+            return $this->fetchError('Ungültiges Formular-Token — bitte den Dialog neu öffnen.');
+        }
+        if ($role->state($contact)->on) {
+            try {
+                $role->switchOff($contact);
+            } catch (ContactRoleRefusedException $e) {
+                return $this->fetchError($e->getMessage());
+            }
+            $this->messageService->pushFlash('success', '«' . $contact->displayName() . '» ist nicht mehr ' . $role->label());
+        }
+
+        return $this->rolesAnswer($contact);
+    }
+
+    /** The entity-token context of a role's confirmed «off»: `contactRole.<key>` — a token for one role never serves another. */
+    private static function roleTokenContext(string $key): string
+    {
+        return 'contactRole.' . $key;
+    }
+
+    /**
+     * The roles section in place (`contactRoles:<id>`) — the answer of every role action. With
+     * $status `confirm` the role $confirming shows its `offConfirm` question with the entity token.
+     */
+    private function rolesAnswer(Contact $contact, string $status = 'success', ?string $confirming = null): FetchResponse
+    {
         $html = (new TemplateRenderer(self::CONTACT_NS))->partial('Backend/ContactController/_roles', $this->roleVars($contact) + [
             'actionBase' => $this->contactListBase(),
+            'confirming' => $confirming,
+            'confirmCsrf' => $confirming === null ? '' : DI::getCsrfService()->generateEntityToken(self::roleTokenContext($confirming), (int) $contact->getId()),
         ]);
 
         return $this->fetch()
-            ->setStatus('success')
+            ->setStatus($status)
             ->setData(['id' => $contact->getId()])
             ->replaceRow('contactRoles', (int) $contact->getId(), $html);
     }

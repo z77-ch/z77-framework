@@ -11,7 +11,13 @@ namespace Z77\Module\Contact\Roles;
  *   - `switchable` the switch may be flipped NOW (the server checks again on the flip);
  *   - `reason`     why not, in German, when `switchable` is false;
  *   - `linkUrl`    a dialog of the role's module for the further settings
- *                  (opened with `data-fetch-get`), '' = none; `linkLabel` its button text.
+ *                  (opened with `data-fetch-get`), '' = none; `linkLabel` its button text;
+ *   - `offConfirm` the question asked BEFORE switching the role off, in German — what
+ *                  switching off destroys («Das Debitorenprofil … wird gelöscht»); '' = off
+ *                  acts at once (a role whose off loses nothing). With a sentence the
+ *                  contact dialog asks first and switches off only on the confirmation,
+ *                  with an entity token (owner 2026-10-13, review M5 — fetch.md: a
+ *                  destructive step is confirmed, a toggle alone is non-destructive).
  */
 final readonly class ContactRoleState
 {
@@ -22,5 +28,6 @@ final readonly class ContactRoleState
         public string $reason = '',
         public string $linkUrl = '',
         public string $linkLabel = '',
+        public string $offConfirm = '',
     ) {}
 }

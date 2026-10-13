@@ -182,11 +182,15 @@ final class PaymentService
     public function delete(int $paymentId, int $expectedVersion): void
     {
         $gateway = $this->gateway();
+        // The documents of the payment, read before the unit of work: their rows are its FIRST locks (debtor.md «Lock
+        // order»: rows, then the reads, then the journal). A payment keeps its document (update() refuses another one).
+        $existing = $this->em->getRepository(Payment::class)->find($paymentId);
+        $rows     = $existing === null ? [] : array_map(static fn(PaymentAllocation $a) => (int) $a->getInvoice()->getId(), $existing->getAllocations());
 
-        $this->guarded($paymentId, $expectedVersion, function () use ($paymentId, $expectedVersion, $gateway): void {
+        $this->guarded($paymentId, $expectedVersion, function () use ($paymentId, $expectedVersion, $gateway, $rows): void {
+            $this->invoices()->lockIds($rows);
             $payment = $this->freshPayment($paymentId, $expectedVersion);
             foreach ($payment->getAllocations() as $allocation) {
-                $this->invoices()->lockForUpdate((int) $allocation->getInvoice()->getId());
                 $gateway->retract('allocation:' . $allocation->getId(), 'payment');
                 $this->em->remove($allocation);
             }

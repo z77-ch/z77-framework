@@ -2,16 +2,55 @@
 
 namespace Z77\Module\Debtor\Repositories;
 
+use Doctrine\ORM\Query;
+use Z77\Module\Debtor\Entities\BankTransaction;
 use Z77\Module\Debtor\Entities\TransactionState;
 use Z77\Persistence\Doctrine\Repository\DoctrineRepository;
 
 /**
  * Convention repository for {@see \Z77\Module\Debtor\Entities\BankTransaction}
- * — the reading the close check needs. Doctrine-only (SQL, ADR-039
+ * — the reading the close check needs, and the fresh re-reads of the
+ * writes after their message lock. Doctrine-only (SQL and DQL, ADR-039
  * decision 8).
  */
 class BankTransactionRepository extends DoctrineRepository
 {
+    /**
+     * The transactions of message $messageId in position order, RE-READ
+     * from the database even when the EntityManager already holds them
+     * (`HINT_REFRESH`): what the booking judges after it locked the message
+     * — a copy loaded before the lock (the screen's, the pre-read of the
+     * booking) would show the state before a concurrent booking or
+     * assignment. Doctrine-only (DQL).
+     *
+     * @return list<BankTransaction>
+     */
+    public function freshOfMessage(int $messageId): array
+    {
+        return $this->em()->createQueryBuilder()
+            ->select('t')
+            ->from(BankTransaction::class, 't')
+            ->where('t.message = :message')
+            ->setParameter('message', $messageId)
+            ->orderBy('t.position', 'ASC')
+            ->getQuery()
+            ->setHint(Query::HINT_REFRESH, true)
+            ->getResult();
+    }
+
+    /** One transaction RE-READ (`HINT_REFRESH`), or null — {@see freshOfMessage()} for one row. Doctrine-only (DQL). */
+    public function fresh(int $id): ?BankTransaction
+    {
+        return $this->em()->createQueryBuilder()
+            ->select('t')
+            ->from(BankTransaction::class, 't')
+            ->where('t.id = :id')
+            ->setParameter('id', $id)
+            ->getQuery()
+            ->setHint(Query::HINT_REFRESH, true)
+            ->getOneOrNullResult();
+    }
+
     /**
      * The transactions still `matched` or `unmatched` with a value date in
      * [$from, $to]: the first $limit rows (oldest first) and the total —

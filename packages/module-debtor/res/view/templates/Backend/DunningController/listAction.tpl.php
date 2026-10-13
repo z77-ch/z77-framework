@@ -42,7 +42,7 @@ $invoiceBase = $invoiceBase ?? '/backend/finance/invoice';
             <?php if ($due !== []): ?>
             <?php /* Bound to the ticked rows (ADR-033 exception 2), so it stands with them — ABOVE the
                      list, sticky while it scrolls; the run WRITES notices and fee postings → green. */ ?>
-            <div class="z77-form-actions" data-selection-bar="dunning-run">
+            <div class="z77-form-actions">
                 <button type="submit" class="be-btn be-btn--confirm be-btn--sm">
                     <svg class="be-icon" width="14" height="14" aria-hidden="true"><use href="#icon-check"/></svg>
                     <span class="be-btn__label">Mahnlauf starten</span>

@@ -444,7 +444,7 @@ Guiding rule: **build it right once, nothing twice, nothing in stock.**
 | — | Money | Integer minor units (Rappen) everywhere in PHP. Never `float`. |
 | — | VAT scope | European model from day one; only country pack `CH` is built. |
 | — | One write path (2026-09-20) | **Every stock quantity has exactly one service allowed to change it, and every change is journalled.** For the ledger that service is `LedgerService::post()` (§5.4), for stock the service in `module-article` (§4b). Neither knows its callers; a trigger arrives as an opaque reference. A quantity that many places may write is a quantity nobody can explain. |
-| — | Correction principle (2026-09-20) | **Nothing that has been posted or consumed is corrected by deletion or by a special state — always by a counterpart of the same shape.** (Sharpened after the review: stated absolutely the rule was decorative, because it already had three carve-outs — manual entries until the close, `reinvoice` while in `invoicing`, and stock correction with a reason. Bounded to *posted or consumed*, it holds.) A reversal against a journal entry, a credit note against an invoice, an order with negative quantities against an order. This is why there is no cancelled order status (§7) and why generated entries are immutable (below): the counterpart records *what happened*, a deleted row or a `cancelled` flag records only that something did not. |
+| — | Correction principle (2026-09-20) | **Nothing that has been posted or consumed is corrected by deletion or by a special state — always by a counterpart of the same shape.** (Sharpened after the review: stated absolutely the rule was decorative, because it already had three carve-outs — manual entries until the close, `reinvoice` while in `invoicing`, and stock correction with a reason. Bounded to *posted or consumed*, it holds.) A reversal against a journal entry, a credit note against an invoice, an order with negative quantities against an order. This is why there is no cancelled order status (§7) and why generated entries are immutable (below): the counterpart records *what happened*, a deleted row or a `cancelled` flag records only that something did not. A document DRAFT (`invoicing`) is neither posted nor consumed — since 2026-10-10 it has no number either — so it is edited and, when not wanted, **deleted** (`InvoicingService::discard()`, owner 2026-10-13, ADR-040 addendum); a booked document is corrected by a credit note only. |
 
 ---
 
@@ -932,7 +932,7 @@ income statement result to retained earnings. Blocked while a period of the year
 | `OpenItem`, `Payment`, `Allocation` | Doctrine | transactional with postings |
 | `CamtImport`, `CamtTransaction` | Doctrine | dedup, state per transaction |
 | `DunningRun`, `DunningNotice` | Doctrine | history per invoice |
-| `NumberRange` (invoice, credit note) | Doctrine | atomic, gapless |
+| `NumberRange` — `document.YYMM` (one per month, ONE series for invoice / credit note / fee since 2026-10-10, drawn at the booking print), `customer`; the former `invoice` / `credit-note` stay until the contract step (`debtor.md` pending) | Doctrine | atomic, gapless |
 | `PaymentTerms` (due days, discount %, text per language) | file | few rows, master data |
 | `PaymentTarget` (IBAN / QR-IBAN, bank account number in the ledger) | file | few rows |
 | `DunningLevel` (days, fee, text) | file | few rows |
@@ -958,18 +958,24 @@ drawn at the BOOKING PRINT, not when the draft is created):**
 
 | State / action | PDF | Number | Ledger | Editable |
 |---|---|---|---|---|
-| `invoicing` (in Fakturierung) | **preview** only — watermarked «VORSCHAU», no QR payment part, any number of times, no side effect | **none** | **nothing posted**, no open item | yes — re-invoiced as often as needed (clients notice errors in the preview) |
+| `invoicing` (in Fakturierung) | **preview** only — watermarked «VORSCHAU», no QR payment part, any number of times, no side effect | **none** | **nothing posted**, no open item | yes — edited («Bearbeiten …») as often as needed (clients notice errors in the preview), or deleted («Entwurf löschen …», owner 2026-10-13) |
 | «Buchungsdruck …» (only from `invoicing`; one draft or a selection) | the PDF with number and QR-bill, opened at once — a selection as ONE file, each document its own section (own pages, own page count, own payment part) | drawn now: `YYMMnnnn`, the month of the INVOICE date, one series for invoice / credit note / fee, in the order invoice date, then id | the one and only posting | – |
 | `final` («Verbucht») | the identical PDF, any time (reprint), no further posting | stays | posted, open item opened | no — correction only by credit note |
 
 - `invoice(draft)` (one transaction): VAT via `module-vat` → total rounded to 0.05 as **separate
   rounding line** → `Invoice` in state `invoicing` with full snapshot (addresses, lines, rates, tax
-  summary, FX rate, the payment target) — **without a number** (owner 2026-10-10); its PDF is the
-  preview.
+  summary, FX rate, the payment target — the payment part as a working copy, see `finalize`) —
+  **without a number** (owner 2026-10-10); its PDF is the preview.
 - `reinvoice(invoice, draft)`: only in state `invoicing`; new snapshot and preview, still no number
-  (so the invoice date may move into another month). Nothing to reverse — nothing was posted.
+  (so the invoice date may move into another month). Nothing to reverse — nothing was posted. The
+  payment target must be active (owner 2026-10-13: no exception for a target the draft carries).
+- `discard(invoice, version)` (owner 2026-10-13, ADR-040 addendum): only in state `invoicing`; the
+  draft is DELETED with its lines — no number, nothing posted, nothing references it.
 - `finalize(invoices)` = the **booking print** (batch, one transaction): the month ranges locked
-  first, the rows, then the numbers drawn (invoice date, then id) with the QR reference / message
+  first, the rows; the payment part of each document taken AGAIN from its target and the mandator
+  as they read now and checked (`QrBill::problems()`) — a problem, an unknown or an inactive target
+  refuses the whole batch before a number is drawn (owner 2026-10-13); then the numbers drawn
+  (invoice date, then id) with the QR reference / message
   derived from them (QRR with a QR-IBAN, NON with a plain IBAN — owner 2026-09-23: no SCOR;
   bacon-qr-code is vendored in the kernel) → state `final` → posting via `AccountingGateway`
   (receivable / revenue per line + VAT per code + rounding) → the screen answers with the PDF of

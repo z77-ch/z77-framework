@@ -67,6 +67,13 @@ $fieldError = function (string $name) use ($validator): string {
                 <?= raw($fieldError('days_after_due')) ?>
             </div>
             <div class="be-form__field" data-z77-field-wrapper>
+                <label>Tage nach der letzten Mahnung</label>
+                <input type="number" name="days_after_previous" value="<?= e((string) $entry->getDaysAfterPrevious()) ?>" min="0" max="365" required
+                       aria-invalid="<?= $validator->hasFieldError('days_after_previous') ? 'true' : 'false' ?>">
+                <?= raw($fieldError('days_after_previous')) ?>
+                <small class="be-form__hint">Frühestens so viele Tage nach der letzten Mahnung derselben Rechnung — auch wenn die Tage nach Verfall schon erreicht sind. Für die erste Mahnung einer Rechnung ohne Bedeutung.</small>
+            </div>
+            <div class="be-form__field" data-z77-field-wrapper>
                 <label>Mahngebühr in <?= e($currency) ?> <small>(0 = keine)</small></label>
                 <input type="text" name="fee" value="<?= e($feeField) ?>" maxlength="12" autocomplete="off" inputmode="decimal"
                        aria-invalid="<?= $feeError !== '' || $validator->hasFieldError('fee') ? 'true' : 'false' ?>">

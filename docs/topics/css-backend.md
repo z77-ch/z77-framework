@@ -1,6 +1,6 @@
 # css-backend
 
-2026-10-12
+2026-10-13
 
 ## entry
 
@@ -456,21 +456,21 @@ packages/module-backend/res/view/templates/
   Aktionen immer in einer fixierten Zeile, niemals unten oder in der Mitte»). **Every dialog's
   actions in ONE fixed row under the header.** Three pieces: (1) the first aid in
   `components/_modal.scss` — the popup content is a flex column, so `order` puts
-  `.be-modal__header` (-2) and `.be-modal__footer` (-1) before the body; `row-reverse` +
-  `flex-end` shows the primary button first (left) although the old templates still write
-  «Abbrechen, Speichern» — every remaining footer complies without a template change, and
-  Enter still presses the first submit in document order; (2) the shared partial `Z77\Shared`
-  `partials/modalActions` → `.z77-form-actions` (submit first, `kind` primary/danger,
-  `cancel` as `data-popup-close` or, in a window, `cancelHref` as `data-window-link`, `extra`,
-  `errors` → `formErrorsLink`, `end` ONLY for the field-less confirm — the owner's one
+  `.be-modal__header` (-2) and the old `.be-modal__footer` (-1) before the body — **removed
+  2026-10-13** (review §4: no template renders a footer any more; `.be-modal__header {order:-2}`
+  stays); (2) the shared partial `Z77\Shared`
+  `partials/modalActions` → `.z77-form-actions` (in document order: submit, `kind`
+  primary/danger; `extra`; `cancel` as `data-popup-close` or, in a window, `cancelHref` as
+  `data-window-link`; `errors` → `formErrorsLink`; `end` ONLY for the field-less confirm — the owner's one
   exception), placed directly after `.be-modal__header`; the host rule
   `.be .be-modal .z77-form-actions` gives it the header's side padding and `order: -1`,
-  `--end` keeps `order: 0` with the line on top; (3) `.be-modal__footer` is retired as the
+  `--end` gets `order: 1` (the bottom, wherever the template wrote it) with the line on top; (3) `.be-modal__footer` is retired as the
   home of actions — `tests/form-actions.php` lints every `*.tpl.php` under `packages/` for it
   (54 dialogs on 2026-10-10 before the migration; the harness names what is left). The
   dialogs of every module moved onto the partial the same day (Content, Service, System,
   debtor, financial, contact, DMS, member — see each topic's entry of 2026-10-10). Verified:
-  `tests/form-actions.php` (partial output, CSS first aid, lint). **Not verified live.**
+  `tests/form-actions.php` (partial output, CSS order, the footer rule gone, lint). **Not
+  verified live.**
 - **FORM-ACTIONS-001** — built 2026-09-29 (ADR-049, approved the same day). **A form's action bar**: `.z77-form-actions` (geometry `kernel/shared/res/scss/components/_form-actions.scss`, the backend's surface `components/_form-actions-host.scss`, member bound in `member.scss`) — `position: sticky` at the top of the form's scroll area (a window's body, the page), `--end` at the bottom; first in the document so Enter saves. «N Fehler»: `Z77\Shared` `partials/formErrorsLink` (count + the id of the first invalid field, a `<label for>`). On a page with a toolbar «Speichern» stays in the toolbar (`form="<id>"`, ADR-033). First user: the journal's edit forms. Other forms move over as needed (owner 2026-09-29). Verified: `tests/module-financial.php` AB1–AB4. **Not verified live.**
 
 - **SHELL-DRAWER-001** — added 2026-09-28 (owner decision, ADR-033 revision). ⚠️ **Partly
@@ -824,7 +824,8 @@ packages/module-backend/res/view/templates/
   `confirmFinalize` as a window (DEBTOR-WIN-002: `core.js` needs an opener for a GET form); (4)
   count badges beside lists after an inserted / removed row (owner's word). Also open: the
   owner's live look at the upload (`fetch.md` pending), `.min.js` for `core.js` / `upload.js` /
-  `upload-poster.js` (terser missing on PC2 — `docs/_local/maintainer-machine-runbook.md`), the
+  `upload-poster.js` (the owner re-saves them in VS Code — minify on save, owner decision
+  2026-10-13, `js-build.md`; `tests/js-min-markers.php` shows what is stale), the
   stray `public/assets/dms/js/documents/drive_at-*.js` on z77.ch, ADR-046 addendum awaiting the
   owner's word, NO tag since `1.6.0`. Rule: a framework CSS/JS change reaches a project only
   after `composer install` there — publish before asking the owner to look.

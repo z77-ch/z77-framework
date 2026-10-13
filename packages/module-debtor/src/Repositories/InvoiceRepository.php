@@ -85,6 +85,38 @@ class InvoiceRepository extends DoctrineRepository
     }
 
     /**
+     * Locks the rows of $ids EXCLUSIVELY (`SELECT id … FOR UPDATE`), one by
+     * one in ascending id order, WITHOUT reading anything else, and answers
+     * the ids that exist (ascending). What a unit of work over SEVERAL
+     * documents does FIRST (the dunning run, the CAMT booking — review
+     * 2026-10-13 H4): under REPEATABLE READ the read view is taken at the
+     * first non-locking read, so every read after the last of these locks
+     * sees what the writers that held those rows committed (payments,
+     * notices). A locking read takes no read view. Inside an open unit of
+     * work only. Doctrine-only (SQL).
+     *
+     * @param list<int> $ids
+     * @return list<int>
+     * @throws \LogicException outside an open unit of work
+     */
+    public function lockIds(array $ids): array
+    {
+        if (!$this->connection()->isTransactionActive()) {
+            throw new \LogicException('lockIds() needs an open unit of work — the row locks hold until commit');
+        }
+        $ids = array_values(array_unique(array_map('intval', $ids)));
+        sort($ids);
+        $found = [];
+        foreach ($ids as $id) {
+            if ($this->connection()->fetchOne('SELECT id FROM invoice WHERE id = ? FOR UPDATE', [$id]) !== false) {
+                $found[] = $id;
+            }
+        }
+
+        return $found;
+    }
+
+    /**
      * Σ gross of the FINAL credit notes against $invoice, as a decimal
      * string («0.00» when none) — the open amount is DERIVED from it
      * (plan §6.3: never stored in parallel). Doctrine-only (SQL).
@@ -100,12 +132,6 @@ class InvoiceRepository extends DoctrineRepository
         );
 
         return (string) $sum;
-    }
-
-    /** A document by kind and number — the number is unique across kinds (`uniq_invoice_number`), the kind only narrows. */
-    public function findByNumber(InvoiceKind $kind, int $number): ?Invoice
-    {
-        return $this->findOneBy(['kind' => $kind->value, 'number' => $number]);
     }
 
     /**

@@ -18,8 +18,9 @@ use Z77\Persistence\Resolver\UnifiedEntityManager;
  * mandator unconditionally — an account held abroad printed the wrong
  * country; not taken over).
  *
- * Why a value of its own: the invoice SNAPSHOTS this block at issue
- * (`PaymentSnapshot`), and the payment-target screen SHOWS it, so the name
+ * Why a value of its own: the document SNAPSHOTS this block at the booking
+ * print (`PaymentSnapshot`, taken again from the target then — owner
+ * 2026-10-13), and the payment-target screen SHOWS it, so the name
  * that lands on the bill is visible before printing — `fromMandator` says
  * which fields came from the fallback.
  *

@@ -5,12 +5,16 @@
  * document's, never resolved again): the address block
  * (`AddressSnapshot::lines()`), dates and terms, the lines with their tax
  * code, the tax summary, the totals, the payment part and whether its
- * QR-bill is printable (`QrBill::of()` — the problems in German), the ledger
+ * QR-bill is printable (`InvoicingService::bookingBill()` — for a DRAFT the
+ * payment part the booking print WILL write, taken again from the target
+ * and the mandator, owner 2026-10-13; the problems in German are exactly
+ * what the booking print refuses), the ledger
  * reference linked to the journal entry as a WINDOW (ADR-047) when the
  * bookkeeping is here, the credit notes and the open amount.
  *
  * Offers, on a DRAFT (`invoicing`, no number yet — owner 2026-10-10):
- * «Vorschau» (the preview PDF, a new tab, no side effect), «Bearbeiten …» (until 2026-10-13 «Neu fakturieren …» — a name from when drafts had numbers; the owner did not find it)
+ * «Vorschau» (the preview PDF, a new tab, no side effect), «Bearbeiten …» (until 2026-10-13 «Neu fakturieren …» — a name from when drafts had numbers; the owner did not find it),
+ * «Entwurf löschen …» (the confirmation in this window, owner 2026-10-13 — `InvoicingService::discard()`)
  * and «Buchungsdruck …» (the confirmation of the booking print for this one
  * draft, a PAGE — a plain link that leaves the window; DEBTOR-WIN-002); on a
  * BOOKED document: «PDF» (the reprint with number and QR-bill),
@@ -46,7 +50,9 @@ $winAttr = $window
         . (!empty($windowWidth) ? ' data-window-width="' . e($windowWidth) . '"' : '')
     : '';
 $actionBase = $actionBase ?? '/backend/finance/invoice';
-$payment    = $document->getPayment();
+// The payment part as the booking print will write it (a draft: taken again from its target and the mandator,
+// owner 2026-10-13 — InvoicingService::bookingBill()); a booked document: its snapshot.
+$payment    = $bill->payment();
 $state      = $document->isFinal() ? 'final' : 'invoicing';
 $row        = static fn(string $label, string $html): string => '<div class="be-list__item"><div class="be-list__row"><span class="be-list__cell be-list__cell--muted">' . e($label) . '</span><span class="be-list__cell be-list__cell--wrap">' . $html . '</span></div></div>';
 $period     = $document->getServiceFrom()->format('d.m.Y') . ($document->getServiceTo() !== null ? ' – ' . $document->getServiceTo()->format('d.m.Y') : '');
@@ -59,6 +65,7 @@ if (!$document->isFinal()) {
     // its confirmation PAGE (DEBTOR-WIN-002) and then prints into a new tab.
     $actions  = '<a class="be-btn be-btn--ghost" href="' . e($pdfUrl) . '" target="_blank" rel="noopener" title="Vorschau als PDF (neuer Tab) — ohne Nummer und ohne Zahlteil">Vorschau</a>';
     $actions .= $winLink($actionBase . '/edit?id=' . (int) $document->getId(), 'Bearbeiten …');
+    $actions .= $winLink($actionBase . '/confirm-discard?id=' . (int) $document->getId(), 'Entwurf löschen …', 'be-btn be-btn--ghost', 'Den Entwurf löschen — er hat keine Nummer, nichts ist verbucht');
     $actions .= '<a class="be-btn be-btn--confirm" href="' . e($actionBase . '/confirm-finalize?' . http_build_query(['doc' => [$document->getId() . ':' . $document->getVersion()]])) . '" title="Nummer vergeben, verbuchen und als PDF drucken">Buchungsdruck …</a>';
 } else {
     $actions = '<a class="be-btn be-btn--ghost" href="' . e($pdfUrl) . '" target="_blank" rel="noopener" title="Als PDF öffnen (neuer Tab)">PDF</a>';

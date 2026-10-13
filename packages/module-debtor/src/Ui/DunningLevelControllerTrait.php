@@ -28,7 +28,8 @@ use Z77\Core\DI,
  *
  *   - list the ladder in `level` order with days after due, fee and the
  *     languages its notice text exists in;
- *   - add a level; edit label, level, days and fee and the texts — the CODE
+ *   - add a level; edit label, level, days (after due; after the invoice's
+ *     last notice, owner 2026-10-13) and fee and the texts — the CODE
  *     is immutable once created (notices carry it, ADR-043 decision 19);
  *   - activate / deactivate (inline switch). There is NO delete.
  *
@@ -107,7 +108,7 @@ trait DunningLevelControllerTrait
             $next = max($next, $existing->getLevel() + 1);
         }
 
-        return $this->editLevel(new DunningLevel(['level' => $next, 'days_after_due' => 10]));
+        return $this->editLevel(new DunningLevel(['level' => $next, 'days_after_due' => 10, 'days_after_previous' => DunningLevel::DEFAULT_DAYS_AFTER_PREVIOUS]));
     }
 
     protected function editAction(): HtmlResponse|FetchResponse

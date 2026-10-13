@@ -140,6 +140,10 @@ check('withoutPreview matches the name exactly', $w === '/x?previewed=1', $w);
 $w = ContentPreview::withoutPreview(ContentPreview::carry('/wohnen?a=1#t', 'k'));
 check('withoutPreview reverses carry', $w === '/wohnen?a=1#t', $w);
 
+// key() reads through Request (Rule 4): a stand-in that reads the query the way Request does.
+\Z77\Core\DI::getInstance()->set('Request', new class {
+    public function getGetParameter(string $p): mixed { return $_GET[$p] ?? null; }
+}, true);
 $_GET = ['preview' => ' Herbst-A7 '];
 check('key() reads + normalizes ?preview=', ContentPreview::key() === 'herbst-a7');
 $_GET = ['preview' => ['x']];

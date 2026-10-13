@@ -1,6 +1,6 @@
 <?php
 /**
- * The document editor (P3 part 3) — a new invoice, «neu fakturieren» of a
+ * The document editor (P3 part 3) — a new invoice, «Bearbeiten» of a
  * document in `invoicing`, or a credit note against a final invoice. A
  * plain form, no JavaScript of its own (Rule 7): a fixed number of line
  * rows, «Weitere Zeilen» submits and comes back with more. `csrf_token` is
@@ -53,7 +53,7 @@ $action     = $isEdit ? $actionBase . '/edit?id=' . (int) $document->getId()
     : ($isCredit ? $actionBase . '/credit-note?of=' . (int) $form->creditNoteOf->getId() : $actionBase . '/add');
 $cancel     = $isEdit ? $actionBase . '/detail?id=' . (int) $document->getId()
     : ($isCredit ? $actionBase . '/detail?id=' . (int) $form->creditNoteOf->getId() : $actionBase . '/list');
-$title      = $isEdit ? $document->documentName() . ' neu fakturieren'
+$title      = $isEdit ? $document->documentName() . ' bearbeiten'
     : ($isCredit ? 'Gutschrift zu ' . $form->creditNoteOf->documentName() : 'Rechnung erstellen');
 $party      = $isEdit ? $document->getContact() : ($isCredit ? $form->creditNoteOf->getContact() : null);
 $invalidIds = $form->invalidIds();

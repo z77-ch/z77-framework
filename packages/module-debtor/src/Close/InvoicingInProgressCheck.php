@@ -11,8 +11,8 @@ use Z77\Persistence\Doctrine\OpenWork\OpenWorkCheckInterface;
 
 /**
  * debtor's answer to financial's close check (plan §5.3, ADR-042 decision
- * 11; P5 part 1): a document still in `invoicing` — issued, not final, so
- * not posted — dated inside the range being closed is BLOCKING. Its
+ * 11; P5 part 1): a document still in `invoicing` — a draft, no number
+ * (owner 2026-10-10), so not posted — dated inside the range being closed is BLOCKING. Its
  * `finalize()` posts on the invoice date, and after the close that date
  * lies in a closed year: the ledger would refuse it, and the books of the
  * closed year would lack the turnover.
@@ -26,8 +26,10 @@ use Z77\Persistence\Doctrine\OpenWork\OpenWorkCheckInterface;
  * One finding per document for the first {@see LIST_LIMIT}, then one that
  * counts the rest — the modal stays readable with a hundred drafts.
  *
- * NOT checked yet (P4 — payments and CAMT.054 do not exist): payments or
- * bank transactions not yet booked; plan §5.3 names them blocking as well.
+ * Bank transactions not yet booked are the other check of the same scope
+ * (`UnbookedTransactionsCheck`, P4 part 2). A draft that is not wanted any
+ * more is deleted (`InvoicingService::discard()`, owner 2026-10-13) — before
+ * that, a forgotten draft blocked the close forever.
  */
 final class InvoicingInProgressCheck implements OpenWorkCheckInterface
 {
@@ -50,9 +52,8 @@ final class InvoicingInProgressCheck implements OpenWorkCheckInterface
             $label = InvoiceKind::tryFrom((string) $row['kind'])?->label() ?? (string) $row['kind'];
             $date  = (new \DateTimeImmutable((string) $row['invoice_date']))->format('d.m.Y');
             $party = trim((string) $row['addr_first_name'] . ' ' . (string) $row['addr_name']);
-            $name  = $row['number'] !== null ? $label . ' ' . $row['number'] . ' vom ' . $date : $label . ' (Entwurf) vom ' . $date;
             yield Finding::blocking(
-                $name . ($party !== '' ? ' an ' . $party : '') . ' ist noch in Fakturierung, also nicht verbucht — erst mit «Buchungsdruck …» verbuchen.',
+                $label . ' (Entwurf) vom ' . $date . ($party !== '' ? ' an ' . $party : '') . ' ist noch in Fakturierung, also nicht verbucht — mit «Buchungsdruck …» verbuchen oder, wenn nicht mehr gebraucht, «Entwurf löschen …».',
                 'invoice:' . $row['id']
             );
         }

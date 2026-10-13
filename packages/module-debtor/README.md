@@ -90,5 +90,5 @@ Pieces:
 
 Migrations: `res/migrations`, applied with `vendor/bin/z77-db migrate` (the second one also
 creates the number ranges `invoice` and `credit-note`).
-Harness: `tests/module-debtor.php` (MariaDB, throwaway schema, 272 checks).
+Harness: `tests/module-debtor.php` (MariaDB, throwaway schema; the run prints its check count).
 Topic doc: [`docs/topics/debtor.md`](https://github.com/z77-ch/z77-framework/blob/main/docs/topics/debtor.md).

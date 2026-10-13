@@ -32,11 +32,18 @@ use Z77\Shared\Money\Money;
  *     level is the first step above it — nothing past the last step;
  *   - due = a FINAL invoice (kind invoice) with an open amount > 0, whose
  *     debtor profile is active and carries no dunning block, and
- *     `due date + next level's days ≤ as-of`; the due list says per
- *     invoice what the next notice would be;
- *   - a run names the invoices to dun and the notice DATE; each is
- *     checked again under the row lock (still due at that date, same next
- *     level) — a stale selection refuses the whole run, nothing issued;
+ *     `due date + next level's days after due ≤ as-of` AND — when the
+ *     invoice already carries a notice — `last notice's date + next
+ *     level's days after previous ≤ as-of` (owner 2026-10-13: a level is
+ *     never sent a few minutes after the one before); the due list says per
+ *     invoice what the next notice would be and since when;
+ *   - the notice DATE of a run (and the as-of day of the due list) is not
+ *     in the future (today is allowed) and not before the date of the
+ *     latest run (owner 2026-10-13: no backdating — a run dated 23.09.
+ *     created on 13.10. made the next level look due at once);
+ *   - a run names the invoices to dun and the notice date; each is checked
+ *     again under the row lock (still due at that date, same next level) —
+ *     a stale selection refuses the whole run, nothing issued;
  *   - a level with a fee issues a fee document in the same unit of work:
  *     one lump-sum line without VAT on the mandator's dunning-fee account
  *     (`DebtorAccounts` `dunningFee`), the invoice's payment target, the
@@ -46,6 +53,14 @@ use Z77\Shared\Money\Money;
  *     QR reference stays unique (the notice's bill is over open + fee under
  *     the INVOICE's reference; a credit above the invoice's open amount is
  *     placed on the debtor's open fees by the CAMT booking).
+ *
+ * Lock order of the run (debtor.md «Lock order», review 2026-10-13 H4):
+ * `document.YYMM` of the run date (only when the ladder carries a fee) →
+ * the debtor profiles of the invoices, SHARED, by contact id → the invoice
+ * rows, EXCLUSIVE, by id → THEN every read that judges (levels, last
+ * notices, open amounts) → THEN the notices, the fee documents and their
+ * postings (`journal-entry.*`). Nothing is read before the last lock: under
+ * REPEATABLE READ the first plain read fixes what the unit of work sees.
  */
 final class DunningService
 {
@@ -57,10 +72,10 @@ final class DunningService
     }
 
     /**
-     * What is due as of $asOf, oldest due date first.
+     * What is due as of $asOf, oldest due-since first.
      *
      * @return list<array{invoice: Invoice, open: Money, current: ?DunningLevel, next: DunningLevel, dueSince: \DateTimeImmutable}>
-     * @throws DunningRefusedException NO_LEVELS
+     * @throws DunningRefusedException NO_LEVELS | DATE (in the future, or before the latest run)
      */
     public function dueList(\DateTimeImmutable $asOf): array
     {
@@ -68,16 +83,17 @@ final class DunningService
         if ($ladder === []) {
             throw new DunningRefusedException(DunningRefusedException::NO_LEVELS, 'Keine aktive Mahnstufe — unter Stammdaten › Aufträge › Mahnstufen anlegen.');
         }
-        $opens   = $this->invoices()->openAmountsOfFinalInvoices();
+        $this->assertNoticeDate($asOf, 'Der Stichtag');
+        $opens = $this->invoices()->openAmountsOfFinalInvoices();
         if ($opens === []) {
             return [];
         }
-        $highest = $this->notices()->highestLevelPerInvoice();
+        $last = $this->notices()->lastNoticePerInvoice();
         /** @var DebtorProfileRepository $profiles */
         $profiles = $this->em->getRepository(DebtorProfile::class);
         $due      = [];
         foreach ($this->invoices()->findBy(['id' => array_keys($opens)]) as $invoice) {
-            $item = $this->dueItem($invoice, Money::fromDecimal($opens[(int) $invoice->getId()], $invoice->getCurrency()), $highest[(int) $invoice->getId()] ?? 0, $ladder, $asOf, $profiles);
+            $item = $this->dueItem($invoice, Money::fromDecimal($opens[(int) $invoice->getId()], $invoice->getCurrency()), $last[(int) $invoice->getId()] ?? null, $ladder, $asOf, $profiles);
             if ($item !== null) {
                 $due[] = $item;
             }
@@ -89,7 +105,8 @@ final class DunningService
 
     /**
      * The run: a notice per invoice at its next level, the fee documents
-     * issued and finalized, all in ONE unit of work.
+     * issued and finalized, all in ONE unit of work, in the lock order of
+     * the class docblock.
      *
      * @param list<int> $invoiceIds
      * @throws DunningRefusedException NOTHING | DATE | NOT_FOUND | NOT_DUE | NO_LEVELS
@@ -101,27 +118,40 @@ final class DunningService
         if ($ids === []) {
             throw new DunningRefusedException(DunningRefusedException::NOTHING, 'Keine Rechnung ausgewählt.');
         }
-        if ($date > new \DateTimeImmutable('today')) {
-            throw new DunningRefusedException(DunningRefusedException::DATE, 'Das Mahndatum liegt in der Zukunft.');
-        }
+        $this->assertNoticeDate($date, 'Das Mahndatum');   // early and friendly; judged again under the locks
         $ladder = $this->ladder();
         if ($ladder === []) {
             throw new DunningRefusedException(DunningRefusedException::NO_LEVELS, 'Keine aktive Mahnstufe — unter Stammdaten › Aufträge › Mahnstufen anlegen.');
         }
+        sort($ids);
+
+        // The parties, read BEFORE the unit of work: their profiles are locked before the invoice rows (rule «profile
+        // row → invoice rows», the order of InvoicingService::invoice() and DebtorProfileService::delete()), so the
+        // contacts must be known first. A document's party never changes (reinvoice() refuses another one).
+        $contactOf = [];
+        foreach ($this->invoices()->findBy(['id' => $ids]) as $invoice) {
+            $contactOf[(int) $invoice->getId()] = (int) $invoice->getContact()->getId();
+        }
+        foreach ($ids as $id) {
+            if (!isset($contactOf[$id])) {
+                throw new DunningRefusedException(DunningRefusedException::NOT_FOUND, "Dokument {$id} gibt es nicht.");
+            }
+        }
+        $contactIds = array_values(array_unique($contactOf));
+        sort($contactIds);
+
         $accounts   = new DebtorAccounts($this->em);
         $feeAccount = null;
         $invoicing  = new InvoicingService($this->em, $this->actor);
         $now        = new \DateTimeImmutable();
         /** @var DebtorProfileRepository $profiles */
         $profiles = $this->em->getRepository(DebtorProfile::class);
-        sort($ids);
 
         // A fee document gets its number from the ONE document series when it is booked (owner 2026-10-10: the number
         // is drawn by finalize(), the booking print — here inside this unit of work), from the month's range of the run
         // date — the same range a booking print of other documents of that month locks FIRST, before their rows. So
-        // this run locks the range FIRST as well, before any invoice row (the module's lock order: document.YYMM →
-        // invoice rows → journal-entry.*; DOCTRINE-NR-002): `create()` inside the unit of work holds the existing row
-        // exclusively without consuming a number; outside, ahead of it, it makes sure the row exists and is committed
+        // this run locks the range FIRST as well (DOCTRINE-NR-002): `create()` inside the unit of work holds the existing
+        // row exclusively without consuming a number; outside, ahead of it, it makes sure the row exists and is committed
         // (DOCTRINE-NR-003). finalize() of the fee, joining this unit of work, finds the range already held. Without a
         // fee on the ladder nothing is drawn and nothing is locked.
         $feeRange = array_filter($ladder, static fn(DunningLevel $l) => $l->getFee() > 0) !== [] ? DocumentNumber::range($date) : null;
@@ -131,26 +161,44 @@ final class DunningService
             $ranges->create($feeRange);
         }
 
-        return $this->em->getTransaction(DunningRun::class)->run(function () use ($ids, $date, $ladder, $accounts, &$feeAccount, $invoicing, $now, $profiles, $ranges, $feeRange): DunningRun {
+        return $this->em->getTransaction(DunningRun::class)->run(function () use ($ids, $contactOf, $contactIds, $date, $ladder, $accounts, &$feeAccount, $invoicing, $now, $profiles, $ranges, $feeRange): DunningRun {
+            // 1. The month range of the fee documents.
             if ($feeRange !== null) {
-                $ranges->create($feeRange);   // the FIRST lock of the unit of work — see above
+                $ranges->create($feeRange);
             }
-            $run     = new DunningRun($date, $this->actor, $now);
-            $highest = $this->notices()->highestLevelPerInvoice();
-            $position = 0;
+            // 2. The debtor profiles, SHARED (the fee's invoice() takes the same lock again — a no-op then); a missing
+            //    profile is judged below (no profile, nothing due).
+            foreach ($contactIds as $contactId) {
+                $profiles->lockForContact($contactId, exclusive: false);
+            }
+            // 3. Every invoice row, EXCLUSIVE, by id — locking reads only, nothing read yet.
+            if (count($this->invoices()->lockIds($ids)) !== count($ids)) {
+                throw new DunningRefusedException(DunningRefusedException::NOT_FOUND, 'Ein ausgewähltes Dokument gibt es nicht mehr — Liste neu laden.');
+            }
+
+            // 4. Now read and judge everything — the first plain read of the unit of work sees what every writer that
+            //    held these rows committed (notices of a concurrent run, payments).
+            $this->assertNoticeDate($date, 'Das Mahndatum');
+            $last = $this->notices()->lastNoticePerInvoice($ids);
+            $plan = [];
             foreach ($ids as $id) {
-                // The row locked, the open amount and the level judged again under the lock.
-                $invoice = $this->invoices()->lockForUpdate($id);
-                if ($invoice === null) {
-                    throw new DunningRefusedException(DunningRefusedException::NOT_FOUND, "Dokument {$id} gibt es nicht.");
+                $invoice = $this->invoices()->lockForUpdate($id);   // held since step 3 — the row with its lines
+                if ($invoice === null || (int) $invoice->getContact()->getId() !== $contactOf[$id]) {
+                    throw new DunningRefusedException(DunningRefusedException::NOT_FOUND, "Dokument {$id} gibt es nicht (mehr) — Liste neu laden.");
                 }
-                $open = $invoicing->openAmount($invoice);
-                $item = $this->dueItem($invoice, $open, $highest[$id] ?? 0, $ladder, $date, $profiles);
+                $item = $this->dueItem($invoice, $invoicing->openAmount($invoice), $last[$id] ?? null, $ladder, $date, $profiles);
                 if ($item === null) {
                     throw new DunningRefusedException(DunningRefusedException::NOT_DUE, $invoice->documentName() . ' ist am ' . $date->format('d.m.Y') . ' nicht (mehr) fällig für eine Mahnung — Liste neu laden.');
                 }
-                $level  = $item['next'];
-                $notice = new DunningNotice($run, ++$position, $invoice, $level, $open);
+                $plan[] = $item;
+            }
+
+            // 5. Issue: the notices, the fee documents booked (number, posting → journal-entry.*).
+            $run = new DunningRun($date, $this->actor, $now);
+            foreach ($plan as $i => $item) {
+                $invoice = $item['invoice'];
+                $level   = $item['next'];
+                $notice  = new DunningNotice($run, $i + 1, $invoice, $level, $item['open']);
                 $run->add($notice);
 
                 if ($level->getFee() > 0) {
@@ -204,14 +252,40 @@ final class DunningService
     // ── the rules ───────────────────────────────────────────────────────
 
     /**
-     * The due item of one invoice as of $asOf, or null when it is not due:
-     * no open amount, a blocked or inactive debtor, past the last step, or
-     * the next step's days not yet reached.
+     * The notice date (or the due list's as-of day) is neither in the
+     * future nor before the latest run (owner 2026-10-13). Compared by day.
+     * Not serialised against a run committed at the same moment on OTHER
+     * invoices — the rule keeps a run from being backdated by hand, it is
+     * not a lock.
      *
+     * @throws DunningRefusedException DATE
+     */
+    private function assertNoticeDate(\DateTimeImmutable $date, string $what): void
+    {
+        $day = $date->format('Y-m-d');
+        if ($day > (new \DateTimeImmutable('today'))->format('Y-m-d')) {
+            throw new DunningRefusedException(DunningRefusedException::DATE, $what . ' liegt in der Zukunft.');
+        }
+        $latest = $this->notices()->latestRunDate();
+        if ($latest !== null && $day < $latest->format('Y-m-d')) {
+            throw new DunningRefusedException(
+                DunningRefusedException::DATE,
+                $what . ' ' . $date->format('d.m.Y') . ' liegt vor dem letzten Mahnlauf vom ' . $latest->format('d.m.Y') . ' — ein Mahnlauf wird nicht zurückdatiert.'
+            );
+        }
+    }
+
+    /**
+     * The due item of one invoice as of $asOf, or null when it is not due:
+     * no open amount, a blocked or inactive debtor, past the last step, the
+     * next step's days after due not yet reached, or — after a notice — its
+     * days after that last notice not yet reached.
+     *
+     * @param array{level: int, date: \DateTimeImmutable}|null $last the invoice's last notice
      * @param list<DunningLevel> $ladder by level ascending
      * @return array{invoice: Invoice, open: Money, current: ?DunningLevel, next: DunningLevel, dueSince: \DateTimeImmutable}|null
      */
-    private function dueItem(Invoice $invoice, Money $open, int $highest, array $ladder, \DateTimeImmutable $asOf, DebtorProfileRepository $profiles): ?array
+    private function dueItem(Invoice $invoice, Money $open, ?array $last, array $ladder, \DateTimeImmutable $asOf, DebtorProfileRepository $profiles): ?array
     {
         if (!$open->isPositive() || !$invoice->isFinal() || !$invoice->kind()->isPayable() || $invoice->kind()->value !== 'invoice') {
             return null;
@@ -220,6 +294,7 @@ final class DunningService
         if ($profile === null || !$profile->isActive() || $profile->hasDunningBlock()) {
             return null;
         }
+        $highest = $last['level'] ?? 0;
         $current = null;
         $next    = null;
         foreach ($ladder as $level) {
@@ -234,6 +309,12 @@ final class DunningService
             return null;
         }
         $dueSince = $invoice->getDueDate()->modify('+' . $next->getDaysAfterDue() . ' days');
+        if ($last !== null) {
+            $afterPrevious = $last['date']->modify('+' . $next->getDaysAfterPrevious() . ' days');
+            if ($afterPrevious > $dueSince) {
+                $dueSince = $afterPrevious;
+            }
+        }
         if ($dueSince > $asOf) {
             return null;
         }

@@ -8,7 +8,9 @@
  * are the shared partials `_contactFields` and `_addressFields`; the
  * variables come from `Ui\ContactForm::vars()`. Below them `_roles`: the
  * roles other modules contribute («Debitor» …, owner 2026-10-12) — on
- * «edit» switches that act at once, on «add» fields applied after the save.
+ * «edit» switches that act at once, rendered AFTER the form (they are no
+ * fields of it; a role's «off» confirmation carries forms of its own, owner
+ * 2026-10-13), on «add» fields inside the form, applied after the save.
  *
  * @var array{contactId: int|null, roles: list<array<string, mixed>>} $roleVars
  * @var \Z77\Module\Contact\Entities\Contact $entry
@@ -67,6 +69,15 @@ $addressErrors = ($linkValidator !== null && $linkValidator->hasErrors()) || ($a
         <?php else: ?>
         <p class="be-form__hint">Adressen werden im ⋮-Menü der Zeile verwaltet.</p>
         <?php endif; ?>
+        <?php if ($isNew): ?>
         <?= raw($this->partial('Backend/ContactController/_roles', ($roleVars ?? ['contactId' => null, 'roles' => []]) + ['actionBase' => $actionBase], $tplNs)) ?>
+        <?php endif; ?>
     </div>
 </form>
+<?php if (!$isNew): ?>
+<?php /* On «edit» the roles act at once and are no fields of the contact form: they stand AFTER it, so the
+         confirmation of a role's «off» can carry forms of its own (owner 2026-10-13) — never nested in this one. */ ?>
+<div class="be-modal__body">
+    <?= raw($this->partial('Backend/ContactController/_roles', ($roleVars ?? ['contactId' => null, 'roles' => []]) + ['actionBase' => $actionBase], $tplNs)) ?>
+</div>
+<?php endif; ?>

@@ -15,6 +15,7 @@ use Z77\Module\Debtor\Payments\CamtEntry;
 use Z77\Module\Debtor\Payments\CamtReader;
 use Z77\Module\Debtor\Payments\PaymentDraft;
 use Z77\Module\Debtor\Repositories\BankMessageRepository;
+use Z77\Module\Debtor\Repositories\BankTransactionRepository;
 use Z77\Module\Debtor\Repositories\DebtorProfileRepository;
 use Z77\Module\Debtor\Repositories\InvoiceRepository;
 use Z77\Module\Debtor\Repositories\PaymentTargetRepository;
@@ -45,8 +46,10 @@ use Z77\Shared\Money\Money;
  *     (`QrReference`, the wdv-630 layout); the invoice must exist, be
  *     FINAL, and belong to the debtor with that customer number — else the
  *     transaction stays `unmatched` with the reason. A NON / SCOR credit is
- *     matched by the document named in the message («Rechnung 12», the
- *     text the payment part prints) — the office confirms by booking;
+ *     matched by the document named in the message — «{label} {number}»,
+ *     the text the payment part prints, for every PAYABLE kind («Rechnung
+ *     n», «Gebühr n»; the labels come from `InvoiceKind`, a credit note is
+ *     not paid) — the office confirms by booking;
  *   - **assign / ignore** — the office names the invoice for an unmatched
  *     credit (by document number, final invoices only), or sets a credit
  *     aside with a note; a booked transaction is never touched again (its
@@ -63,6 +66,16 @@ use Z77\Shared\Money\Money;
  *     invoice already settled books nothing and goes back to `unmatched`
  *     with the reason. One unit of work: a refusal of the ledger (period
  *     closed) rolls the whole booking back.
+ *
+ * Lock order (debtor.md «Lock order», review 2026-10-13 H4): the MESSAGE
+ * row first (book, assign and ignore all take it — a double «Verbuchen»
+ * waits and then finds nothing left to book), then — booking only — every
+ * invoice row the booking may touch (the matched invoices and the open fee
+ * documents of their debtors), EXCLUSIVE, by id; THEN the transactions are
+ * re-read and the open amounts read; THEN the payments are recorded and
+ * posted (`journal-entry.*`). Nothing is read inside the unit of work
+ * before the last lock: under REPEATABLE READ the first plain read fixes
+ * what the unit of work sees.
  *
  * Open work: `matched` and `unmatched` transactions dated in a fiscal year
  * BLOCK its close (`Close/UnbookedTransactionsCheck`, plan §5.3).
@@ -146,7 +159,10 @@ final class BankImportService
             throw new BankImportRefusedException(BankImportRefusedException::INVOICE_NOT_FINAL, $invoice->documentName() . ' ist noch in Fakturierung — erst mit «Buchungsdruck …» verbuchen.');
         }
 
-        return $this->em->getTransaction(BankMessage::class)->run(function () use ($transactionId, $invoice): BankTransaction {
+        $messageId = $this->messageIdOf($transactionId);
+
+        return $this->em->getTransaction(BankMessage::class)->run(function () use ($transactionId, $messageId, $invoice): BankTransaction {
+            $this->messages()->lockRow($messageId);   // the FIRST lock — see the class docblock
             $transaction = $this->openTransaction($transactionId);
             $transaction->matchTo($invoice, 'Manuell zugeordnet.');
             $this->em->persist($transaction);
@@ -163,7 +179,10 @@ final class BankImportService
      */
     public function ignore(int $transactionId, bool $ignore, ?string $note = null): BankTransaction
     {
-        return $this->em->getTransaction(BankMessage::class)->run(function () use ($transactionId, $ignore, $note): BankTransaction {
+        $messageId = $this->messageIdOf($transactionId);
+
+        return $this->em->getTransaction(BankMessage::class)->run(function () use ($transactionId, $messageId, $ignore, $note): BankTransaction {
+            $this->messages()->lockRow($messageId);   // the FIRST lock — see the class docblock
             $transaction = $this->openTransaction($transactionId);
             $ignore ? $transaction->ignore($note ?? 'Vom Sachbearbeiter ignoriert.') : $transaction->unmatch($note);
             $this->em->persist($transaction);
@@ -186,17 +205,51 @@ final class BankImportService
         if ($message === null) {
             throw new BankImportRefusedException(BankImportRefusedException::NOT_FOUND, "Meldung {$messageId} gibt es nicht.");
         }
-        $matched = array_values(array_filter($message->getTransactions(), static fn(BankTransaction $t) => $t->state() === TransactionState::Matched));
-        if ($matched === []) {
+        // The lock set, read BEFORE the unit of work: the invoices of the matched transactions and the final fee
+        // documents of their debtors (a credit above the invoice goes to them). Judged again under the locks.
+        $lockSet = [];
+        $feesOf  = [];
+        foreach ($this->transactions()->freshOfMessage($messageId) as $transaction) {
+            $invoice = $transaction->getInvoice();
+            if ($transaction->state() !== TransactionState::Matched || $invoice === null) {
+                continue;
+            }
+            $lockSet[] = (int) $invoice->getId();
+            $contactId = (int) $invoice->getContact()->getId();
+            $feesOf[$contactId] ??= array_map(static fn(Invoice $fee) => (int) $fee->getId(), $this->invoices()->finalOfKindFor($contactId, InvoiceKind::Fee));
+            array_push($lockSet, ...$feesOf[$contactId]);
+        }
+        if ($lockSet === []) {
             throw new BankImportRefusedException(BankImportRefusedException::NOTHING_TO_BOOK, 'Nichts zu verbuchen — keine zugeordnete Transaktion in dieser Meldung.');
         }
         $payments  = new PaymentService($this->em, $this->actor);
         $invoicing = new InvoicingService($this->em, $this->actor);
 
-        return $this->em->getTransaction(BankMessage::class)->run(function () use ($message, $matched, $payments, $invoicing): BankMessage {
+        return $this->em->getTransaction(BankMessage::class)->run(function () use ($messageId, $message, $lockSet, $payments, $invoicing): BankMessage {
+            // 1. The message row — a second «Verbuchen» of the same message waits here.
+            if (!$this->messages()->lockRow($messageId)) {
+                throw new BankImportRefusedException(BankImportRefusedException::NOT_FOUND, "Meldung {$messageId} gibt es nicht.");
+            }
+            // 2. Every invoice row the booking may touch, EXCLUSIVE, by id — locking reads only, nothing read yet.
+            $locked = array_flip($this->invoices()->lockIds($lockSet));
+
+            // 3. Now read: the transactions as committed (a booking that ran first left none matched); the open
+            //    amounts below — every writer of a payment on these documents held their rows, so a read after the
+            //    locks sees it, and the second credit on one invoice sees what the first left (own writes).
+            $matched = array_values(array_filter($this->transactions()->freshOfMessage($messageId), static fn(BankTransaction $t) => $t->state() === TransactionState::Matched));
+            if ($matched === []) {
+                throw new BankImportRefusedException(BankImportRefusedException::NOTHING_TO_BOOK, 'Nichts zu verbuchen — keine zugeordnete Transaktion in dieser Meldung (inzwischen verbucht?).');
+            }
+            foreach ($matched as $transaction) {
+                if (!isset($locked[(int) $transaction->getInvoice()?->getId()])) {
+                    throw new BankImportRefusedException(BankImportRefusedException::STATE, 'Die Meldung wurde inzwischen geändert — Seite neu laden und nochmals verbuchen.');
+                }
+            }
+
+            // 4. Book, in file order — the payments and their postings (journal-entry.*).
             foreach ($matched as $transaction) {
                 $invoice = $transaction->getInvoice();
-                $open    = $invoicing->openAmount($this->invoices()->lockForUpdate((int) $invoice->getId()));
+                $open    = $invoicing->openAmount($invoice);
                 $credit  = $transaction->getAmount();
                 if (!$open->isPositive()) {
                     $transaction->unmatch($invoice->documentName() . ' ist bereits beglichen — nichts gebucht, Betrag ' . $credit->toDecimal() . ' manuell behandeln.');
@@ -224,16 +277,20 @@ final class BankImportService
                 ));
                 // What exceeds the invoice goes to the debtor's open FEE documents first (a dunning fee paid with the
                 // invoice under the invoice's reference, P4 part 3) — this invoice's own fees before any other, each
-                // group oldest first; what is left after that is the remainder.
+                // group oldest first; what is left after that is the remainder. Only fees locked in step 2: one booked
+                // since the lock set was read is left alone (the remainder names the amount).
                 $ownRef = $invoice->getNumber() . ':';
-                $fees   = $this->invoices()->finalOfKindFor((int) $invoice->getContact()->getId(), InvoiceKind::Fee);
+                $fees   = array_values(array_filter(
+                    $this->invoices()->finalOfKindFor((int) $invoice->getContact()->getId(), InvoiceKind::Fee),
+                    static fn(Invoice $fee) => isset($locked[(int) $fee->getId()])
+                ));
                 usort($fees, static fn(Invoice $a, Invoice $b) => [!str_starts_with((string) $a->getSourceRef(), $ownRef), $a->getNumber()] <=> [!str_starts_with((string) $b->getSourceRef(), $ownRef), $b->getNumber()]);
                 $onFees = [];
                 foreach ($fees as $fee) {
                     if (!$remainder->isPositive()) {
                         break;
                     }
-                    $feeOpen = $invoicing->openAmount($this->invoices()->lockForUpdate((int) $fee->getId()));
+                    $feeOpen = $invoicing->openAmount($fee);
                     if (!$feeOpen->isPositive() || $transaction->getValueDate() < $fee->getInvoiceDate()) {
                         continue;
                     }
@@ -341,17 +398,32 @@ final class BankImportService
         $transaction->matchTo($invoice);
     }
 
+    /**
+     * NON / SCOR: the document named in the message, «{label} {number}» as
+     * the payment part prints it (`Invoice::documentName()`), for every
+     * PAYABLE kind — the labels from `InvoiceKind`, never hard-coded, so a
+     * new payable kind is recognised the day it exists (review 2026-10-13:
+     * «Gebühr n» was not). The number is unique across kinds; the label
+     * only finds it in the text.
+     */
     private function matchByMessage(BankTransaction $transaction): void
     {
-        if (!preg_match('/Rechnung\s*(\d{1,10})\b/iu', $transaction->getRemittance(), $m)) {
-            $transaction->unmatch('Keine QR-Referenz und keine Rechnungsnummer in der Mitteilung — manuell zuordnen.');
+        $labels = [];
+        foreach (InvoiceKind::cases() as $kind) {
+            if ($kind->isPayable()) {
+                $labels[] = preg_quote($kind->label(), '/');
+            }
+        }
+        if (!preg_match('/(' . implode('|', $labels) . ')\s*(\d{1,10})\b/iu', $transaction->getRemittance(), $m)) {
+            $transaction->unmatch('Keine QR-Referenz und keine Belegnummer in der Mitteilung — manuell zuordnen.');
 
             return;
         }
-        $number  = (int) $m[1];
+        $named   = $m[1] . ' ' . $m[2];
+        $number  = (int) $m[2];
         $invoice = $this->invoices()->findPayableByNumber($number);
         if ($invoice === null) {
-            $transaction->unmatch("Die Mitteilung nennt Rechnung {$number}, die es nicht gibt — manuell zuordnen.");
+            $transaction->unmatch("Die Mitteilung nennt {$named}, die es nicht gibt — manuell zuordnen.");
 
             return;
         }
@@ -360,7 +432,7 @@ final class BankImportService
 
             return;
         }
-        $transaction->matchTo($invoice, 'Zugeordnet nach der Mitteilung («Rechnung ' . $number . '») — vor dem Verbuchen prüfen.');
+        $transaction->matchTo($invoice, 'Zugeordnet nach der Mitteilung («' . $named . '») — vor dem Verbuchen prüfen.');
     }
 
     // ── helpers ─────────────────────────────────────────────────────────
@@ -384,7 +456,7 @@ final class BankImportService
     /** @throws BankImportRefusedException NOT_FOUND | STATE */
     private function openTransaction(int $transactionId): BankTransaction
     {
-        $transaction = $this->em->getRepository(BankTransaction::class)->find($transactionId);
+        $transaction = $this->transactions()->fresh($transactionId);   // after the message lock: as committed
         if ($transaction === null) {
             throw new BankImportRefusedException(BankImportRefusedException::NOT_FOUND, "Transaktion {$transactionId} gibt es nicht.");
         }
@@ -393,6 +465,27 @@ final class BankImportService
         }
 
         return $transaction;
+    }
+
+    /**
+     * The message a transaction belongs to — read before the unit of work,
+     * whose FIRST lock is that message's row. It never changes.
+     *
+     * @throws BankImportRefusedException NOT_FOUND
+     */
+    private function messageIdOf(int $transactionId): int
+    {
+        $transaction = $this->em->getRepository(BankTransaction::class)->find($transactionId);
+        if ($transaction === null) {
+            throw new BankImportRefusedException(BankImportRefusedException::NOT_FOUND, "Transaktion {$transactionId} gibt es nicht.");
+        }
+
+        return (int) $transaction->getMessage()->getId();
+    }
+
+    private function transactions(): BankTransactionRepository
+    {
+        return $this->em->getRepository(BankTransaction::class);
     }
 
     private function messages(): BankMessageRepository

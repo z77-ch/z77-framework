@@ -11,7 +11,10 @@
  *   [data-fetch-get]              generic GET trigger
  *   [data-fetch-post]             generic POST submit
  *   [data-check-url]              attribute on a form → blur-validates each input
- *   [data-copy="<selector>"]      any clickable → copies the named element's text *   [data-window-open="<url>"]    opens a controller-led window (ADR-047, see «windows»)
+ *   [data-copy="<selector>"]      any clickable → copies the named element's text
+ *   [data-select-on-focus]        a readonly field selects its whole text on focus / click
+ *   [data-print]                  any clickable → window.print()
+ *   [data-window-open="<url>"]    opens a controller-led window (ADR-047, see «windows»)
  *   [data-fetch-region="<name>"]  a part of the page that reloads alone —
  *     a[data-fetch-region-link] / form[data-fetch-region-form] inside it (see «fetch regions»)
  *   form[target="_blank"][data-submit-navigate="<url>"]
@@ -20,6 +23,7 @@
  *
  * Native semantics carry validity state:
  *   input/select … aria-invalid="true|false"
+ *   form / trigger … aria-busy="true" while its request runs (see «busy guard»)
  *
  * Extension points:
  *   _Z77.core.fetch.registerEnvelopeHandler(key, fn)
@@ -401,6 +405,45 @@ function _bindCheckUrl(scope) {
     });
 }
 
+/* ── busy guard ─────────────────────────────────────────────────────────────
+ * One request per form (or trigger) at a time: a double click on «Speichern» created two
+ * contacts or two journal entries (review 2026-10-13, H2). While the request runs the
+ * owner carries `aria-busy="true"` and the control that sent it is disabled; both are
+ * released when the request settles (`finally` — success, refusal or network error alike).
+ * A second send while busy is ignored. This spares the server a duplicate, it does not
+ * replace the server's own checks (Rule 7): a request can still be repeated by hand.
+ *
+ * guard(owner, control, send): `send` returns the request's promise; the answer is that
+ * promise, or null when the owner was busy and nothing was sent. Collect the form's data
+ * BEFORE calling it — a disabled control is not part of a form's data.
+ */
+_Z77.core.busy = (function () {
+    function isBusy(owner) { return !!(owner && owner._z77Busy); }
+
+    function guard(owner, control, send) {
+        if (isBusy(owner)) return null;
+        owner._z77Busy = true;
+        owner.setAttribute('aria-busy', 'true');
+        var held = control && !control.disabled && 'disabled' in control ? control : null;
+        if (held) held.disabled = true;
+        function release() {
+            owner._z77Busy = false;
+            owner.removeAttribute('aria-busy');
+            if (held) held.disabled = false;
+        }
+        var request;
+        try {
+            request = Promise.resolve(send());
+        } catch (e) {
+            release();
+            throw e;
+        }
+        return request.finally(release);
+    }
+
+    return { guard: guard, isBusy: isBusy };
+})();
+
 /* ── generic wire (data-fetch-post / data-fetch-get) ────────────────────── */
 /* `ctx` (optional): {window: id} when the container is a window's body (ADR-047) — a
  * request fired from inside a window answers INTO that window. */
@@ -410,12 +453,18 @@ _Z77.core.wire = function (container, defaultPostUrl, ctx) {
         if (!url) return;
         form.addEventListener('submit', function (e) {
             e.preventDefault();
-            _Z77.core.fetch.post(url, _z77CollectFormData(form), ctx);
+            if (_Z77.core.busy.isBusy(form)) return;          // the first submit is still on its way
+            var data = _z77CollectFormData(form);
+            _Z77.core.busy.guard(form, e.submitter, function () {
+                return _Z77.core.fetch.post(url, data, ctx);
+            });
         });
     });
     container.querySelectorAll('[data-fetch-get]').forEach(function (el) {
         el.addEventListener('click', function () {
-            _Z77.core.fetch.get(el.dataset.fetchGet, ctx);
+            _Z77.core.busy.guard(el, el, function () {
+                return _Z77.core.fetch.get(el.dataset.fetchGet, ctx);
+            });
         });
     });
     // Copy to clipboard: the trigger names the element holding the text, so one
@@ -433,12 +482,17 @@ _Z77.core.wire = function (container, defaultPostUrl, ctx) {
     // Inline status toggle: a checkbox POSTs its new state on change. Server is
     // authoritative (it persists + returns commands like set-class); on a failed
     // response the checkbox reverts so the UI never lies about stored state.
+    // The switch is disabled while its request runs (busy guard) — a second flip cannot
+    // race the first one's revert.
     container.querySelectorAll('[data-fetch-toggle]').forEach(function (el) {
         el.addEventListener('change', function () {
-            _Z77.core.fetch.post(el.dataset.fetchToggle, { value: el.checked })
-                .then(function (env) {
-                    if (!env || env.status !== 'success') { el.checked = !el.checked; }
-                });
+            var sent = _Z77.core.busy.guard(el, el, function () {
+                return _Z77.core.fetch.post(el.dataset.fetchToggle, { value: el.checked })
+                    .then(function (env) {
+                        if (!env || env.status !== 'success') { el.checked = !el.checked; }
+                    });
+            });
+            if (sent === null) el.checked = !el.checked;   // not sent — the switch must not lie
         });
     });
 };
@@ -487,9 +541,29 @@ _Z77.core.fetch = (function () {
         return { html: html.replace(re, ''), envelope: envelope };
     }
 
+    /* An answer a caller cannot use as its content (windows: an error status, or JSON where
+     * HTML was asked for): a JSON envelope is dispatched like any other — a redirect to the
+     * login after the session expired, a refusal's flash — and anything else (an error page)
+     * becomes ONE error message with the status, never raw markup in the page. Resolves to
+     * the envelope, or null. */
+    function _unusable(r, sourceUrl, ctx) {
+        var ct = r.headers.get('content-type') || '';
+        function statusError() {
+            _Z77.core.message.show('error', _Z77.core.i18n.t('js.requestFailed', 'Anfrage fehlgeschlagen') + ' (HTTP ' + r.status + ')');
+            return null;
+        }
+        if (ct.indexOf('json') === -1) return Promise.resolve(statusError());
+        return r.json().then(function (env) {
+            _handleEnvelope(env, sourceUrl, ctx);
+            return env;
+        }, statusError);
+    }
+
     function _parseResponse(r, sourceUrl, ctx) {
         var ct = r.headers.get('content-type') || '';
         if (ct.indexOf('text/html') !== -1) {
+            // An error page (a proxy's 502, a fatal) is no popup or window content.
+            if (!r.ok) return _unusable(r, sourceUrl, ctx);
             return r.text().then(function (html) {
                 var extracted = _extractEmbeddedEnvelope(html);
                 var handler   = _envelopeHandlers['html'];
@@ -562,12 +636,15 @@ _Z77.core.fetch = (function () {
         if (win && /\sdata-window="/.test(html)) { _Z77.core.windows.fill(win, html, sourceUrl); return; }
         _Z77.core.popup.show(html, sourceUrl);
     });
-    registerEnvelopeHandler('fields', function (fields) {
+    // A window's answer marks the fields of THAT window — the same name may stand on the page
+    // behind it or in another window.
+    registerEnvelopeHandler('fields', function (fields, _env, _src, ctx) {
         if (!fields) return;
+        var scope = (ctx && ctx.window ? _Z77.core.windows.byId(ctx.window) : null) || document;
         Object.keys(fields).forEach(function (name) {
             var info = fields[name];
             if (info && info.valid === false) {
-                _Z77.core.fields.mark(document, name, info.message || '');
+                _Z77.core.fields.mark(scope, name, info.message || '');
             }
         });
     });
@@ -606,15 +683,25 @@ _Z77.core.fetch = (function () {
         if (a.name) return '[name="' + CSS.escape(a.name) + '"]';
         return '';
     }
+    /* The control to focus again, looked up ONLY in the nodes the swap brought in — a name
+     * repeats in every row, and the neighbour row must not take the focus. */
+    function _refocus(nodes, key) {
+        if (!key) return;
+        for (var i = 0; i < nodes.length; i++) {
+            var n = nodes[i];
+            if (n.nodeType !== 1) continue;
+            var hit = n.matches(key) ? n : n.querySelector(key);
+            if (hit && typeof hit.focus === 'function') { hit.focus({ preventScroll: true }); return; }
+        }
+    }
     registerCommand('replace-html', function (p) {
         var el = _find(p);
         if (!el) return;
-        var parent = el.parentNode, key = _focusKey(el);
-        parent.replaceChild(_wiredFragment(p.html, p.origin), el);
-        if (key) {
-            var again = parent.querySelector(key);
-            if (again && typeof again.focus === 'function') again.focus({ preventScroll: true });
-        }
+        var key = _focusKey(el);
+        var frag = _wiredFragment(p.html, p.origin);
+        var nodes = Array.prototype.slice.call(frag.childNodes);
+        el.parentNode.replaceChild(frag, el);
+        _refocus(nodes, key);
     });
     registerCommand('remove-element', function (p) {
         var el = _find(p);
@@ -662,9 +749,14 @@ _Z77.core.fetch = (function () {
     // A host without the shared popup (the member shell opens native <dialog>s by
     // `data-dialog-open`) closes the open page dialog instead — one answer vocabulary
     // for both shells, no second command.
+    // A request from a window that is gone by now (closed while the save ran) closes nothing:
+    // the popup or page dialog open at this moment is not the one the request came from.
     registerCommand('close-modal', function (_p, _d, ctx) {
-        var win = ctx && ctx.window ? _Z77.core.windows.byId(ctx.window) : null;
-        if (win) { _Z77.core.windows.close(win, true); return; }
+        if (ctx && ctx.window) {
+            var win = _Z77.core.windows.byId(ctx.window);
+            if (win) _Z77.core.windows.close(win, true);
+            return;
+        }
         if (document.querySelector('[data-z77-popup]')) { _Z77.core.popup.close(); return; }
         var dialog = document.querySelector('dialog[open]');
         if (dialog && typeof dialog.close === 'function') dialog.close();
@@ -700,7 +792,9 @@ _Z77.core.fetch = (function () {
             var el = container.querySelector('[data-field="' + key + '"]');
             if (!el || data[key] === undefined) return;
             if (p.fields[key] === 'html') {
-                el.innerHTML = data[key];
+                // Server-rendered HTML, wired like every other fragment (FETCH-ROW-001).
+                el.textContent = '';
+                el.appendChild(_wiredFragment(String(data[key]), p.origin));
             } else {
                 el.textContent = data[key];
             }
@@ -758,6 +852,7 @@ _Z77.core.fetch = (function () {
         get:      get,
         extractEnvelope:         _extractEmbeddedEnvelope,
         handleEnvelope:          _handleEnvelope,
+        unusable:                _unusable,
         registerEnvelopeHandler: registerEnvelopeHandler,
         registerCommand:         registerCommand
     };
@@ -783,20 +878,35 @@ _Z77.core.fetch = (function () {
  * answer carries no such region, the browser simply navigates there.
  */
 _Z77.core.region = (function () {
+    /* name → number of the latest load. Typing in a search or paging fast sends a second load
+     * before the first one answered; answers can arrive in any order, and only the LATEST may
+     * fill the region — an older one is dropped. Keyed by name, because a swap replaces the
+     * element. */
+    var _latest = {};
+
     function _load(region, url) {
         var name = region.getAttribute('data-fetch-region');
+        var ticket = (_latest[name] || 0) + 1;
+        _latest[name] = ticket;
         var focusId = document.activeElement && region.contains(document.activeElement) ? document.activeElement.id : '';
         region.setAttribute('aria-busy', 'true');
         return fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
             .then(function (r) { return r.text(); })
             .then(function (html) {
+                if (_latest[name] !== ticket) return;      // a newer load owns the region
                 var doc = new DOMParser().parseFromString(html, 'text/html');
                 var fresh = doc.querySelector('[data-fetch-region="' + name + '"]');
                 if (!fresh) { window.location.href = url; return; }
                 region.replaceWith(fresh);
                 history.replaceState(history.state, '', url);
+                // The new content is live like a popup's body: its ⋮, switches, fetch forms and
+                // blur checks work (the region's own links and forms are delegated anyway). Inside
+                // a window, its requests answer into that window.
+                var win = _Z77.core.windows.of(fresh);
+                _Z77.core.wire(fresh, undefined, win ? { window: win.getAttribute('data-z77-window') } : undefined);
+                _bindCheckUrl(fresh);
                 if (focusId) {
-                    var el = document.getElementById(focusId);
+                    var el = fresh.querySelector('#' + CSS.escape(focusId));
                     if (el) {
                         el.focus();
                         if (typeof el.setSelectionRange === 'function' && typeof el.value === 'string') {
@@ -805,7 +915,9 @@ _Z77.core.region = (function () {
                     }
                 }
             })
-            .catch(function () { window.location.href = url; });
+            .catch(function () {
+                if (_latest[name] === ticket) window.location.href = url;
+            });
     }
 
     function bind() {
@@ -951,10 +1063,24 @@ _Z77.core.windows = (function () {
         win.tabIndex = -1;
         if (parentId) win.setAttribute('data-z77-window-parent', parentId);
         win._z77Origin = origin || 'page';
-        win.innerHTML = '<header class="z77-window__head"><span class="z77-window__title"></span>'
-            + '<button type="button" class="z77-window__close" data-window-close aria-label="'
-            + _Z77.core.i18n.t('common.close', 'Schliessen') + '">×</button></header>'
-            + '<div class="z77-window__body"></div>';
+        // Built node by node: the translated label goes in by setAttribute, never through
+        // markup (a quote in a translation would break out of the attribute).
+        var head = document.createElement('header');
+        head.className = 'z77-window__head';
+        var title = document.createElement('span');
+        title.className = 'z77-window__title';
+        var close = document.createElement('button');
+        close.type = 'button';
+        close.className = 'z77-window__close';
+        close.setAttribute('data-window-close', '');
+        close.setAttribute('aria-label', _Z77.core.i18n.t('common.close', 'Schliessen'));
+        close.textContent = '×';
+        head.appendChild(title);
+        head.appendChild(close);
+        var body = document.createElement('div');
+        body.className = 'z77-window__body';
+        win.appendChild(head);
+        win.appendChild(body);
         return win;
     }
 
@@ -1007,8 +1133,16 @@ _Z77.core.windows = (function () {
         return u.toString();
     }
 
-    function _get(url) {
-        return fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } }).then(function (r) { return r.text(); });
+    /* A window's content is HTML with a success status. Anything else — an error status, or
+     * an envelope (the session expired → redirect to the login; a refusal) — goes through
+     * the envelope dispatch / one error message (`fetch.unusable`), never as raw text into
+     * a window. Resolves to the HTML, or null when there is no window content. */
+    function _get(url, ctx) {
+        return fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } }).then(function (r) {
+            var ct = r.headers.get('content-type') || '';
+            if (r.ok && ct.indexOf('text/html') !== -1) return r.text();
+            return _Z77.core.fetch.unusable(r, url, ctx).then(function () { return null; });
+        });
     }
 
     /* Opens <url> as a window — or brings the window that already shows it to the front. */
@@ -1016,9 +1150,12 @@ _Z77.core.windows = (function () {
         opts = opts || {};
         var target = _url(url, opts.origin);
         return _get(target).then(function (html) {
-            var probe = document.createElement('div');
+            if (html === null) return null;
+            // A <template> parses without running anything: no image loads, no handler fires
+            // for content that may never be shown (a conflict brings another window forward).
+            var probe = document.createElement('template');
             probe.innerHTML = _Z77.core.fetch.extractEnvelope(html).html;
-            var hit = _conflict(probe.querySelector('[data-window]'));
+            var hit = _conflict(probe.content.querySelector('[data-window]'));
             if (hit) {
                 front(hit.win);
                 hit.win.focus();
@@ -1039,7 +1176,11 @@ _Z77.core.windows = (function () {
     /* Loads <url> into an open window (read view ↔ edit form); the origin stays the window's. */
     function load(win, url) {
         var target = _url(url, win._z77Origin);
-        return _get(target).then(function (html) { fill(win, html, target); front(win); });
+        return _get(target, { window: win.getAttribute('data-z77-window') }).then(function (html) {
+            if (html === null || !win.isConnected) return;
+            fill(win, html, target);
+            front(win);
+        });
     }
 
     /* Closes a window and the windows opened from it. `force` skips the controller's question. */
@@ -1102,10 +1243,20 @@ _Z77.core.windows = (function () {
             var form = e.target;
             var win = of(form);
             if (!win || e.defaultPrevented || form.hasAttribute('data-fetch-post')) return;
-            if ((form.getAttribute('method') || 'get').toLowerCase() !== 'post') return;
+            var sub = e.submitter || null;
+            var method = (sub && sub.getAttribute('formmethod')) || form.getAttribute('method') || 'get';
+            if (method.toLowerCase() !== 'post') return;
+            // A form (or button) that answers into another tab — a PDF, a booking print — is
+            // the browser's job: sent natively, the window stays as it is.
+            var target = (sub && sub.getAttribute('formtarget')) || form.getAttribute('target') || '';
+            if (target !== '' && target !== '_self') return;
             e.preventDefault();
-            var data = e.submitter ? new FormData(form, e.submitter) : new FormData(form);
-            _Z77.core.fetch.postForm(form.action, data, { window: win.getAttribute('data-z77-window') });
+            if (_Z77.core.busy.isBusy(form)) return;          // the first submit is still on its way
+            var data = sub ? new FormData(form, sub) : new FormData(form);
+            var action = sub && sub.hasAttribute('formaction') ? sub.formAction : form.action;
+            _Z77.core.busy.guard(form, sub, function () {
+                return _Z77.core.fetch.postForm(action, data, { window: win.getAttribute('data-z77-window') });
+            });
         });
         document.addEventListener('keydown', function (e) {
             if (e.key !== 'Escape' || !all().length || document.querySelector('dialog[open]')) return;
@@ -1163,15 +1314,34 @@ _Z77.core.help = (function () {
         _win.setAttribute('data-z77-help', '');
         _win.setAttribute('role', 'complementary');
         _win.setAttribute('aria-labelledby', 'z77-help-title');
-        _win.innerHTML = '<header class="z77-help__head"><span class="z77-help__title" id="z77-help-title"></span>'
-            + '<button type="button" class="z77-help__full" data-help-full aria-pressed="false" aria-label="'
-            + t('common.fullscreen', 'Vollbild') + '" title="' + t('common.fullscreen', 'Vollbild') + '">⤢</button>'
-            + '<button type="button" class="z77-help__close" data-help-close aria-label="'
-            + t('common.close', 'Schliessen') + '" title="' + t('common.close', 'Schliessen') + '">×</button></header>'
-            + '<div class="z77-help__body"></div>';
+        // Node by node: translated labels go in by setAttribute, never through markup.
+        var head = document.createElement('header');
+        head.className = 'z77-help__head';
+        var title = document.createElement('span');
+        title.className = 'z77-help__title';
+        title.id = 'z77-help-title';
+        head.appendChild(title);
+        head.appendChild(_headButton('z77-help__full', 'data-help-full', t('common.fullscreen', 'Vollbild'), '⤢'));
+        head.appendChild(_headButton('z77-help__close', 'data-help-close', t('common.close', 'Schliessen'), '×'));
+        head.querySelector('[data-help-full]').setAttribute('aria-pressed', 'false');
+        var body = document.createElement('div');
+        body.className = 'z77-help__body';
+        _win.appendChild(head);
+        _win.appendChild(body);
         document.body.appendChild(_win);
-        _drag(_win.querySelector('.z77-help__head'));
+        _drag(head);
         return _win;
+    }
+
+    function _headButton(className, marker, label, glyph) {
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = className;
+        btn.setAttribute(marker, '');
+        btn.setAttribute('aria-label', label);
+        btn.setAttribute('title', label);
+        btn.textContent = glyph;
+        return btn;
     }
 
     /* The help of a window, or of the page (the first template outside any window). */
@@ -1361,8 +1531,40 @@ _Z77.core.submitNavigate = (function () {
     return { bind: bind };
 })();
 
+/* ── small triggers ────────────────────────────────────────────────────────
+ * Behaviour a template would otherwise write as an inline handler (`onclick="…"`), which a
+ * CSP limited to the own origin blocks (Rule 7). Delegated on `document`: content a swap
+ * brings in needs no wiring.
+ *   [data-print]             prints the page. Render it `hidden` — revealed here, so a page
+ *                            without this script shows no dead button.
+ *   [data-select-on-focus]   a readonly field (a link to copy) selects its whole text when it
+ *                            is focused or clicked.
+ */
+_Z77.core.triggers = (function () {
+    function _select(el) {
+        if (el && typeof el.select === 'function') el.select();
+    }
+
+    function bind() {
+        var prints = document.querySelectorAll('[data-print][hidden]');
+        for (var i = 0; i < prints.length; i++) prints[i].hidden = false;
+
+        document.addEventListener('click', function (e) {
+            if (!e.target.closest) return;
+            if (e.target.closest('[data-print]')) { window.print(); return; }
+            _select(e.target.closest('[data-select-on-focus]'));
+        });
+        document.addEventListener('focusin', function (e) {
+            if (e.target.matches && e.target.matches('[data-select-on-focus]')) _select(e.target);
+        });
+    }
+
+    return { bind: bind };
+})();
+
 /* ── boot ───────────────────────────────────────────────────────────────── */
 document.addEventListener('DOMContentLoaded', function () {
+    _Z77.core.triggers.bind();
     _Z77.core.windows.bind();
     _Z77.core.help.bind();
     _Z77.core.region.bind();

@@ -1,7 +1,8 @@
 <?php
 namespace Z77\Module\Debtor\Ui;
 
-use Z77\Core\DI,
+use Doctrine\DBAL\Exception as DBALException,
+    Z77\Core\DI,
     Z77\Core\Http\RequestMode,
     Z77\Core\Http\Response\FetchResponse,
     Z77\Core\Http\Response\HtmlResponse,
@@ -14,6 +15,7 @@ use Z77\Core\DI,
     Z77\Module\Debtor\Services\BankImportService,
     Z77\Module\Debtor\Services\DebtorException,
     Z77\Module\Debtor\Services\InvoicingService,
+    Z77\Module\Debtor\Services\LockConflict,
     Z77\Shared\Attributes\Csrf,
     Z77\Shared\Money\AmountFormat,
     Z77\Shared\Money\Money,
@@ -251,6 +253,12 @@ trait BankImportControllerTrait
             $this->messageService->pushFlashAfterRedirect('success', 'Verbucht: ' . $counts['booked'] . ' Zahlungseingänge, ' . $counts['unmatched'] . ' offen geblieben.');
         } catch (DebtorException | AccountingRefusedException $e) {
             $this->messageService->pushFlashAfterRedirect('error', 'Nichts verbucht — ' . $e->getMessage());
+        } catch (DBALException $e) {
+            // A deadlock or lock wait timeout: nothing was written — say so instead of a 500 (review 2026-10-13 H4).
+            if (!LockConflict::is($e)) {
+                throw $e;
+            }
+            $this->messageService->pushFlashAfterRedirect('error', 'Nichts verbucht — ' . LockConflict::MESSAGE);
         }
 
         return $this->redirect($this->bankImportListBase() . '/detail?id=' . $message->getId(), 303);
@@ -271,6 +279,12 @@ trait BankImportControllerTrait
             return $this->bankRowAnswer($message, $transaction, 'Transaktion ' . $transaction->getPosition() . ' zugeordnet: ' . $transaction->getInvoice()?->documentName());
         } catch (DebtorException $e) {
             return $this->bankRowRefusal($message, $e->getMessage());
+        } catch (DBALException $e) {
+            if (!LockConflict::is($e)) {
+                throw $e;
+            }
+
+            return $this->bankRowRefusal($message, LockConflict::MESSAGE);
         }
     }
 
@@ -290,6 +304,12 @@ trait BankImportControllerTrait
             return $this->bankRowAnswer($message, $transaction, 'Transaktion ' . $transaction->getPosition() . ($ignore ? ' ignoriert.' : ' wieder offen.'));
         } catch (DebtorException $e) {
             return $this->bankRowRefusal($message, $e->getMessage());
+        } catch (DBALException $e) {
+            if (!LockConflict::is($e)) {
+                throw $e;
+            }
+
+            return $this->bankRowRefusal($message, LockConflict::MESSAGE);
         }
     }
 

@@ -60,7 +60,7 @@ $icons      = ['invoicing' => 'edit', 'final' => 'lock'];
         <?= $this->partial('partials/listFind', ['definition' => $definition, 'state' => $state, 'action' => $listUrl], 'Z77\\Shared') ?>
         <?php if ($selectable): ?>
         <form id="invoice-finalize" method="get" action="<?= e($actionBase) ?>/confirm-finalize"></form>
-        <div class="z77-form-actions" data-selection-bar="invoice-finalize">
+        <div class="z77-form-actions">
             <button type="submit" form="invoice-finalize" class="be-btn be-btn--confirm be-btn--sm">
                 <svg class="be-icon" width="14" height="14" aria-hidden="true"><use href="#icon-check"/></svg>
                 <span class="be-btn__label">Buchungsdruck …</span>

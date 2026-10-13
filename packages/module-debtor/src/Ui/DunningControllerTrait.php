@@ -1,7 +1,8 @@
 <?php
 namespace Z77\Module\Debtor\Ui;
 
-use Z77\Core\DI,
+use Doctrine\DBAL\Exception as DBALException,
+    Z77\Core\DI,
     Z77\Core\Http\Response\BytesResponse,
     Z77\Core\Http\Response\HtmlResponse,
     Z77\Core\Http\Response\RedirectResponse,
@@ -9,6 +10,7 @@ use Z77\Core\DI,
     Z77\Module\Debtor\Pdf\DunningPdf,
     Z77\Module\Debtor\Services\DebtorException,
     Z77\Module\Debtor\Services\DunningService,
+    Z77\Module\Debtor\Services\LockConflict,
     Z77\Shared\Attributes\Csrf,
     Z77\Shared\Money\AmountFormat,
     Z77\Shared\Money\Money
@@ -90,6 +92,12 @@ trait DunningControllerTrait
             $this->messageService->pushFlashAfterRedirect('success', 'Mahnlauf vom ' . $run->getRunDate()->format('d.m.Y') . ': ' . count($run->getNotices()) . ' Mahnungen erstellt, ' . $fees . ' Gebühren verbucht.');
         } catch (DebtorException | AccountingRefusedException $e) {
             $this->messageService->pushFlashAfterRedirect('error', 'Kein Mahnlauf — ' . $e->getMessage());
+        } catch (DBALException $e) {
+            // A deadlock or lock wait timeout: nothing was written — say so instead of a 500 (review 2026-10-13 H4).
+            if (!LockConflict::is($e)) {
+                throw $e;
+            }
+            $this->messageService->pushFlashAfterRedirect('error', 'Kein Mahnlauf — ' . LockConflict::MESSAGE);
         }
 
         return $this->redirect($this->dunningListBase() . '/list?as_of=' . $asOf->format('Y-m-d'), 303);

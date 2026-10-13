@@ -370,8 +370,8 @@ check('A4 … both debtor migrations ran in ONE run across the modules (timestam
     str_contains($out, 'Migrating up to Z77\\Module\\')
     && in_array('Z77\\Module\\Debtor\\Migrations\\Version20260922173918', $executed, true) && in_array('Z77\\Module\\Debtor\\Migrations\\Version20260923043935', $executed, true)
     && in_array('Z77\\Module\\Debtor\\Migrations\\Version20261006100000', $executed, true) && in_array('Z77\\Module\\Debtor\\Migrations\\Version20261010100000', $executed, true)
-    && in_array('Z77\\Module\\Debtor\\Migrations\\Version20261010140000', $executed, true)
-    && in_array('Z77\\Module\\Debtor\\Migrations\\Version20261010170000', $executed, true) && in_array('Z77\\Module\\Debtor\\Migrations\\Version20261010170100', $executed, true));
+    && in_array('Z77\\Module\\Debtor\\Migrations\\Version20261010170000', $executed, true) && in_array('Z77\\Module\\Debtor\\Migrations\\Version20261010170001', $executed, true)
+    && !in_array('Z77\\Module\\Debtor\\Migrations\\Version20261010140000', $executed, true) && !in_array('Z77\\Module\\Debtor\\Migrations\\Version20261010170100', $executed, true));
 check('A5 debtor_profile, invoice, invoice_line and invoice_tax exist next to contact\'s, mandator\'s and financial\'s tables',
     array_diff(['debtor_profile', 'invoice', 'invoice_line', 'invoice_tax', 'mandator'], $tables()) === []);
 $rangeOf = fn(string $name) => $db->fetchOne('SELECT last_number FROM number_range WHERE name = ?', [$name]);
@@ -382,7 +382,7 @@ check('A5b2 no month range document.YYMM at install — each month\'s range is c
 $invoiceUniques = $db->fetchAllKeyValue('SELECT INDEX_NAME, GROUP_CONCAT(COLUMN_NAME ORDER BY SEQ_IN_INDEX) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND NON_UNIQUE = 0 GROUP BY INDEX_NAME', [$dbName, 'invoice']);
 check('A5b3 the document number is unique ACROSS kinds (uniq_invoice_number on number — one series, owner 2026-10-10); the former per-kind index stays until the contract step',
     ($invoiceUniques['uniq_invoice_number'] ?? '') === 'number' && ($invoiceUniques['uniq_invoice_kind_number'] ?? '') === 'kind,number');
-check('A5b4 a draft has no number (owner 2026-10-10, Version20261010170000): invoice.number is NULLABLE — the unique indexes admit any number of NULLs; «Fakturiert» is gone (Version20261010170100): no delivered_* column',
+check('A5b4 a draft has no number (owner 2026-10-10, Version20261010170000): invoice.number is NULLABLE — the unique indexes admit any number of NULLs; «Fakturiert» never reaches a database (its migration pair removed 2026-10-13): no delivered_* column',
     $db->fetchOne('SELECT IS_NULLABLE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ?', [$dbName, 'invoice', 'number']) === 'YES'
     && (int) $db->fetchOne("SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME LIKE 'delivered%'", [$dbName, 'invoice']) === 0);
 $invoiceFks = $db->fetchFirstColumn('SELECT DISTINCT REFERENCED_TABLE_NAME FROM information_schema.KEY_COLUMN_USAGE WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND REFERENCED_TABLE_NAME IS NOT NULL ORDER BY 1', [$dbName, 'invoice']);
@@ -406,14 +406,16 @@ check('A9 the unique contact index, the unique customer-number index and the pay
 [$code, $out] = $run(['command' => 'migrate']);
 check('A10 a second migrate is a no-op', $code === 0 && str_contains($out, 'Already at the latest version'));
 [$code, $out] = $run(['command' => 'diff', '--namespace' => 'Z77\\Module\\Debtor\\Migrations']);
-check('A11 diff after migrate reports NO change — mapping and migration agree (embedded address and payment part, money and decimal columns included)' . (str_contains($out, 'No changes detected') ? '' : ' — ' . trim($out)), $code !== 0 && str_contains($out, 'No changes detected') && count(glob($package . '/res/migrations/Version*.php')) === 11);
-check('A12 every migration is expand-only (no DROP outside down()) — but the ONE contract step Version20261010170100, which drops the «Fakturiert» columns no release ever read (owner 2026-10-10), in a file of its own without a data step', array_reduce(glob($package . '/res/migrations/Version*.php'), function ($ok, $f) {
+check('A11 diff after migrate reports NO change — mapping and migration agree (embedded address and payment part, money and decimal columns included)' . (str_contains($out, 'No changes detected') ? '' : ' — ' . trim($out)), $code !== 0 && str_contains($out, 'No changes detected') && count(glob($package . '/res/migrations/Version*.php')) === 10);
+check('A12 every migration is expand-only (no DROP outside down()); the «Fakturiert» pair (ADD / DROP delivered_*, 2026-10-10) is gone — it never left the development database (owner 2026-10-13)', array_reduce(glob($package . '/res/migrations/Version*.php'), function ($ok, $f) {
     $s  = file_get_contents($f);
     $up = substr($s, 0, strpos($s, 'function down'));
-    return $ok && (basename($f) === 'Version20261010170100.php'
-        ? substr_count($up, 'DROP') === 3 && !str_contains($up, 'UPDATE') && !str_contains($up, 'INSERT')
-        : substr_count($up, 'DROP') === 0);
-}, true));
+    return $ok && substr_count($up, 'DROP') === 0;
+}, true) && !is_file($package . '/res/migrations/Version20261010140000.php') && !is_file($package . '/res/migrations/Version20261010170100.php'));
+$upOf = fn(string $version) => (static fn(string $s) => substr($s, strpos($s, 'function up'), strpos($s, 'function down') - strpos($s, 'function up')))(file_get_contents($package . '/res/migrations/' . $version . '.php'));
+check('A12b the number at the booking print is TWO files (review 2026-10-13, A6): Version20261010170000 the schema step alone (ALTER, no UPDATE — DDL commits implicitly in MariaDB), Version20261010170001 the data step alone (UPDATE, no ALTER — atomic)',
+    str_contains($upOf('Version20261010170000'), 'ALTER TABLE invoice CHANGE number') && !str_contains($upOf('Version20261010170000'), 'UPDATE')
+    && str_contains($upOf('Version20261010170001'), "UPDATE invoice SET number = NULL") && !str_contains($upOf('Version20261010170001'), 'ALTER'));
 
 
 // ── B. the seeds ─────────────────────────────────────────────────────────
@@ -443,6 +445,10 @@ check('B8 three seeded dunning levels, ascending by level: reminder, dunning-1, 
     array_map(fn(DunningLevel $l) => $l->getCode(), $levels->allInOrder()) === ['reminder', 'dunning-1', 'dunning-2']);
 check('B9 every seeded level is active and passes its validator', array_reduce($levels->allInOrder(), fn($ok, DunningLevel $l) => $ok && $l->isActive() && (new DunningLevelValidator($l, $levels))->isValid(), true));
 check('B10 the ladder is 1/2/3 with growing distance from the due date', array_map(fn(DunningLevel $l) => [$l->getLevel(), $l->getDaysAfterDue()], $levels->allInOrder()) === [[1, 10], [2, 30], [3, 50]]);
+check('B10b every seeded level is due no earlier than 10 days after the invoice\'s last notice (owner 2026-10-13), and a row stored before the field existed reads the same default',
+    array_map(fn(DunningLevel $l) => $l->getDaysAfterPrevious(), $levels->allInOrder()) === [10, 10, 10]
+    && (new DunningLevel(['code' => 'old-row', 'level' => 1, 'days_after_due' => 5]))->getDaysAfterPrevious() === DunningLevel::DEFAULT_DAYS_AFTER_PREVIOUS
+    && DunningLevel::DEFAULT_DAYS_AFTER_PREVIOUS === 10);
 check('B11 the reminder is free, the two Mahnungen cost 20.00 and 40.00 (minor units in the file)',
     array_map(fn(DunningLevel $l) => $l->fee('CHF')->toDecimal(), $levels->allInOrder()) === ['0.00', '20.00', '40.00']);
 check('B12 the dunning seeds carry no text either — the office writes its own wording',
@@ -699,6 +705,10 @@ $v = $badLevel(fn() => $masterData->saveLevel(new DunningLevel(['code' => 'neg-f
 check('E3 a negative fee is refused', $v?->hasFieldError('fee') === true);
 $v = $badLevel(fn() => $masterData->saveLevel(new DunningLevel(['code' => 'huge-fee', 'label' => 'x', 'level' => 4, 'days_after_due' => 60, 'fee' => 500000])));
 check('E4 a fee beyond 1000.00 is refused — a dunning fee is a fee, not an invoice', $v?->hasFieldError('fee') === true);
+$v  = $badLevel(fn() => $masterData->saveLevel(new DunningLevel(['code' => 'neg-gap', 'label' => 'x', 'level' => 4, 'days_after_due' => 60, 'days_after_previous' => -1])));
+$v2 = $badLevel(fn() => $masterData->saveLevel(new DunningLevel(['code' => 'long-gap', 'label' => 'x', 'level' => 4, 'days_after_due' => 60, 'days_after_previous' => 366])));
+check('E4b the days after the last notice are 0 to 365 — below and above are refused on the field',
+    $v?->hasFieldError('days_after_previous') === true && $v2?->hasFieldError('days_after_previous') === true);
 
 $fourth = new DunningLevel(['code' => 'betreibung', 'label' => 'Betreibungsandrohung', 'level' => 4, 'days_after_due' => 70,
     'fee' => Money::fromDecimal('60.00', 'CHF')->minor, 'document_text' => ['de' => 'Letzte Frist.', 'fr' => 'Dernier délai.']]);
@@ -1739,8 +1749,8 @@ check('M3 the debtor posting DTO is validated on construction: unbalanced → re
     && throws(fn() => new DebtorPostingLine(null, null, chf('1.00'), chf('0.00')), \InvalidArgumentException::class)
     && throws(fn() => new DebtorPostingLine('1100', 'standard', chf('1.00'), chf('0.00')), \InvalidArgumentException::class)
     && (new DebtorPostingRequest(day('2026-01-01'), 'x', 'invoice', '1', 'k', [DebtorPostingLine::debit('1100', chf('1.00')), DebtorPostingLine::vatCredit('standard', chf('1.00'))]))->currency() === 'CHF');
-check('M3b nothing in stock (review 2026-09-23): no toArray on the snapshot, no hasTax/total on the DTOs, no state()/getExchangeRate() on Invoice — exchange_rate stays a COLUMN (lines() and findByNumber came back with their callers in P3 part 3)',
-    !method_exists(AddressSnapshot::class, 'toArray')
+check('M3b nothing in stock (review 2026-09-23): no toArray on the snapshot, no hasTax/total on the DTOs, no state()/getExchangeRate() on Invoice — exchange_rate stays a COLUMN (lines() came back with its caller in P3 part 3); InvoiceRepository::findByNumber() is gone again (review 2026-10-13: no caller — CAMT and the fee path use findPayableByNumber())',
+    !method_exists(AddressSnapshot::class, 'toArray') && !method_exists(\Z77\Module\Debtor\Repositories\InvoiceRepository::class, 'findByNumber')
     && !method_exists(DebtorPostingLine::class, 'hasTax') && !method_exists(DebtorPostingRequest::class, 'total') && !method_exists(Invoice::class, 'state') && !method_exists(Invoice::class, 'getExchangeRate')
     && array_key_exists('exchange_rate', $invoiceRow($inv1->getId())) && $invoiceRow($inv1->getId())['currency'] === 'CHF');
 check('M4 no Accounting or Invoicing class but the adapter names financial; the interface signature is the plan\'s (§6.6)',
@@ -1961,27 +1971,85 @@ $db->executeStatement("UPDATE address a JOIN contact_address ca ON ca.address_id
 $payloadAfter = QrBill::of($readInvoice($qrInv->getId()))->payload();
 check('P3C15 SNAPSHOT ONLY: after the target\'s holder, the mandator and the contact\'s address changed, the booked document renders the SAME payload (creditor, debtor, reference)',
     $payloadAfter === $payloadBefore && str_contains($payloadAfter, 'Harness AG') && str_contains($payloadAfter, $qrInv->getAddress()->getName()) && !str_contains($payloadAfter, 'Neuer Inhaber'));
-$reissued = $service($wireDi())->reinvoice($qrDraft->getId(), (int) $invoiceRow($qrDraft->getId())['version'], $withTarget('qr'));
+// The booking print takes the payment part AGAIN (owner 2026-10-13, review H5/M4) — these checks assert what is PRINTED.
+$qrDraftRow = $invoiceRow($qrDraft->getId());
+$draftView  = $service($wireDi())->bookingBill($readInvoice($qrDraft->getId()));
 $service($wireDi())->finalize([$at($qrDraft->getId())]);
 $reEl = explode("\n", QrBill::of($readInvoice($qrDraft->getId()))->payload());
-check('P3C16 a RE-ISSUE of a draft takes the payment part as it reads NOW (the snapshot moves with it): booked afterwards, its bill shows the new holder and the renamed contact, the reference from ITS number',
-    $reEl[5] === 'Neuer Inhaber GmbH' && $reEl[21] === 'Müller Neu AG' && $reissued->getNumber() === null
+check('P3C16 the booking print takes the payment part AGAIN, without an edit (owner 2026-10-13): a draft saved before the target\'s holder changed (stored «Harness AG») is PRINTED with the new holder; its detail bill (bookingBill) showed that holder before the booking; the debtor block stays the draft\'s address (only an edit takes the address again); the reference from ITS number',
+    $qrDraftRow['pay_creditor_name'] === 'Harness AG' && $draftView->payment()->getCreditorName() === 'Neuer Inhaber GmbH' && $draftView->isPending() && $draftView->problems() === []
+    && $reEl[5] === 'Neuer Inhaber GmbH' && $invoiceRow($qrDraft->getId())['pay_creditor_name'] === 'Neuer Inhaber GmbH'
+    && $reEl[21] === $qrDraft->getAddress()->getName() && $reEl[21] !== 'Müller Neu AG'
     && $reEl[28] === QrReference::forDocument($custNoP, (int) $readInvoice($qrDraft->getId())->getNumber()));
 $emS = $wireDi();
 (new DebtorMasterData($emS))->setTargetActive($emS->getRepository(PaymentTarget::class)->findByCode('bank'), false);
-check('P3C17 the reference rule: a DEACTIVATED target is refused on a new document (target-inactive) — a re-issue of a document that carries it keeps it',
+$bankVersion  = (int) $invoiceRow($bankDraft->getId())['version'];
+$journalP3C17 = $journalCount();
+$bankBooking  = caught(fn() => $service($wireDi())->finalize([$at($bankDraft->getId())]), InvoiceRefusedException::class);
+$bankView     = $service($wireDi())->bookingBill($readInvoice($bankDraft->getId()));
+check('P3C17 an INACTIVE target is refused on a new draft AND on an edit of a draft that carries it (owner 2026-10-13: the re-issue exception is gone — such a draft could never be booked); the booking print refuses it (target-inactive, naming the document): nothing numbered, nothing posted; the draft\'s detail bill names the same problem',
     $refusal(fn() => $service($wireDi())->invoice($withTarget('bank'))) === InvoiceRefusedException::TARGET_INACTIVE
-    && $service($wireDi())->reinvoice($bankDraft->getId(), (int) $invoiceRow($bankDraft->getId())['version'], $withTarget('bank'))->getPayment()->getTargetCode() === 'bank');
+    && $refusal(fn() => $service($wireDi())->reinvoice($bankDraft->getId(), $bankVersion, $withTarget('bank'))) === InvoiceRefusedException::TARGET_INACTIVE
+    && $bankBooking?->reason === InvoiceRefusedException::TARGET_INACTIVE && str_contains($bankBooking->getMessage(), $readInvoice($bankDraft->getId())->documentName())
+    && $invoiceRow($bankDraft->getId())['number'] === null && $invoiceRow($bankDraft->getId())['state'] === 'invoicing' && $journalCount() === $journalP3C17
+    && str_contains(implode(' ', $bankView->problems()), 'inaktiv') && $bankView->isPending() && !$bankView->isPrintable());
 $emS = $wireDi();
 (new DebtorMasterData($emS))->setTargetActive($emS->getRepository(PaymentTarget::class)->findByCode('bank'), true);
+// A target that no longer exists — renamed in SQL, the way only a harness may (targets are file-based, referenced by code).
+$db->executeStatement("UPDATE invoice SET pay_target_code = 'gone' WHERE id = ?", [$bankDraft->getId()]);
+$goneBooking = caught(fn() => $service($wireDi())->finalize([$at($bankDraft->getId())]), InvoiceRefusedException::class);
+check('P3C17b a target UNKNOWN at the booking print: refused (target-unknown, naming the document), nothing numbered; the detail bill says so',
+    $goneBooking?->reason === InvoiceRefusedException::TARGET_UNKNOWN && str_contains($goneBooking->getMessage(), 'gibt es nicht mehr')
+    && $invoiceRow($bankDraft->getId())['number'] === null
+    && str_contains(implode(' ', $service($wireDi())->bookingBill($readInvoice($bankDraft->getId()))->problems()), '«gone»'));
+$db->executeStatement("UPDATE invoice SET pay_target_code = 'bank' WHERE id = ?", [$bankDraft->getId()]);
 // A creditor field that does not fit the specification: the mandator's city (70 in the letterhead) longer than 35.
 $db->executeStatement("UPDATE mandator SET city = ?", [str_repeat('Ort', 12)]);
-$longInv  = $service($wireDi())->invoice($withTarget('qr'));
-$longBill = QrBill::of($readInvoice($longInv->getId()));
-$db->executeStatement("UPDATE mandator SET name = 'Harness AG', city = 'Zürich'");
-check('P3C18 «degrade quietly»: a creditor city of 36 (from the mandator) is NOT cut — the draft is issued, its bill reports the problem BEFORE the booking print (the pending bill is checked) and prints no payment part',
+$longInv      = $service($wireDi())->invoice($withTarget('qr'));
+$plainMate    = $service($wireDi())->invoice($withTarget(''));   // a batch mate without a payment part — bookable on its own
+$longBill     = $service($wireDi())->bookingBill($readInvoice($longInv->getId()));
+$journalP3C18 = $journalCount();
+$longRefused  = caught(fn() => $service($wireDi())->finalize([$at($longInv->getId()), $at($plainMate->getId())]), InvoiceRefusedException::class);
+check('P3C18 «degrade quietly» for the DRAFT, refused at the BOOKING PRINT (owner 2026-10-13, review H5): a creditor city of 36 (from the mandator) is NOT cut — the draft is saved, its detail bill reports the problem; the booking print refuses the WHOLE batch (payment-part, the document and the problem named): nothing numbered, nothing posted',
     $longInv->getId() !== null && $invoiceRow($longInv->getId())['pay_creditor_city'] === str_repeat('Ort', 12) && !$longBill->isPrintable()
-    && str_contains(implode(' ', $longBill->problems()), 'Ort hat mehr als 35'));
+    && str_contains(implode(' ', $longBill->problems()), 'Ort hat mehr als 35')
+    && $longRefused?->reason === InvoiceRefusedException::PAYMENT_PART && str_contains($longRefused->getMessage(), $readInvoice($longInv->getId())->documentName())
+    && str_contains($longRefused->getMessage(), 'Ort hat mehr als 35')
+    && $invoiceRow($longInv->getId())['number'] === null && $invoiceRow($plainMate->getId())['number'] === null && $journalCount() === $journalP3C18);
+$db->executeStatement("UPDATE mandator SET name = 'Harness AG', city = 'Zürich'");
+$longFixed = $service($wireDi())->bookingBill($readInvoice($longInv->getId()));
+check('P3C18b … the mandator fixed, the SAME draft (not edited) is bookable: its bill is re-taken (city «Zürich», no problem) while the stored draft part still holds the long city',
+    $longFixed->problems() === [] && $longFixed->payment()->getCreditorCity() === 'Zürich' && $invoiceRow($longInv->getId())['pay_creditor_city'] === str_repeat('Ort', 12));
+// The draft-50 case of the owner's live test (2026-10-13): the QR-IBAN entered AFTER the draft was saved.
+$lateTarget = new PaymentTarget(['code' => 'late', 'label' => 'QR später', 'iban' => $withIid('00800'), 'account_number' => '1020']);
+(new DebtorMasterData($wireDi()))->saveTarget($lateTarget);
+$lateDraft  = $service($wireDi())->invoice($withTarget('late'));
+$lateStored = $invoiceRow($lateDraft->getId());
+$emL = $wireDi();
+$lateTarget = $emL->getRepository(PaymentTarget::class)->findByCode('late');
+$lateTarget->setQrIban($withIid('30800'));
+(new DebtorMasterData($emL))->saveTarget($lateTarget);
+$lateView = $service($wireDi())->bookingBill($readInvoice($lateDraft->getId()));
+$service($wireDi())->finalize([$at($lateDraft->getId())]);
+$lateRow = $invoiceRow($lateDraft->getId());
+check('P3C18c the draft-50 case: a draft saved while its target had only an IBAN (stored NON) is BOOKED with the QR-IBAN entered since — QRR, a valid reference from its number, a payload within the specification; its detail showed QRR before the booking',
+    $lateStored['pay_reference_type'] === 'NON' && $lateView->payment()->getReferenceType() === 'QRR' && $lateView->problems() === []
+    && $lateRow['pay_reference_type'] === 'QRR' && $lateRow['pay_account'] === $withIid('30800') && QrReference::isValid($lateRow['pay_reference'])
+    && $specErrors(QrBill::of($readInvoice($lateDraft->getId()))->payload()) === []);
+// Discard a draft (owner 2026-10-13, review H3): only `invoicing`, the version the caller saw, a real DELETE.
+$linesBefore  = $count('invoice_line');
+$longLines    = (int) $db->fetchOne('SELECT COUNT(*) FROM invoice_line WHERE invoice_id = ?', [$longInv->getId()]);
+$staleDiscard = caught(fn() => $service($wireDi())->discard($longInv->getId(), (int) $invoiceRow($longInv->getId())['version'] + 1), InvoiceConflictException::class);
+$discarded    = $service($wireDi())->discard($longInv->getId(), (int) $invoiceRow($longInv->getId())['version']);
+check('P3D1 discard(): a stale version is a conflict (nothing deleted); with the version seen the DRAFT is DELETED with its lines and tax rows — no row left, no number, nothing posted; the answer names it',
+    $staleDiscard !== null && $longLines > 0 && $invoiceRow($longInv->getId()) === false && $discarded === 'Rechnung (Entwurf vom 10.06.2026)'
+    && $count('invoice_line') === $linesBefore - $longLines && (int) $db->fetchOne('SELECT COUNT(*) FROM invoice_tax WHERE invoice_id = ?', [$longInv->getId()]) === 0
+    && $journalCount() === $journalP3C18);
+check('P3D2 … a BOOKED document is never discarded (not-invoicing — the correction is a credit note); a document that is gone is a conflict',
+    $refusal(fn() => $service($wireDi())->discard($lateDraft->getId(), (int) $invoiceRow($lateDraft->getId())['version'])) === InvoiceRefusedException::NOT_INVOICING
+    && $invoiceRow($lateDraft->getId())['state'] === 'final'
+    && throws(fn() => $service($wireDi())->discard($longInv->getId(), 1), InvoiceConflictException::class));
+$service($wireDi())->discard($plainMate->getId(), (int) $invoiceRow($plainMate->getId())['version']);
 check('P3C19 the printed address block: salutation, title + names, the address row, street + number, zip + city; the country only when foreign',
     (new AddressSnapshot('Herr', 'Dr.', 'Peter', 'Muster', 'c/o Firma', 'Weg', '5', '3000', 'Bern', 'CH'))->lines() === ['Herr', 'Dr. Peter Muster', 'c/o Firma', 'Weg 5', '3000 Bern']
     && (new AddressSnapshot('', '', '', 'Muster AG', '', '', '', '9490', 'Vaduz', 'LI'))->lines() === ['Muster AG', '9490 Vaduz', 'LI']);
@@ -2093,8 +2161,9 @@ check('P3C22 list, default view «In Fakturierung»: only invoices in invoicing,
     && str_contains($listHtml, 'form="invoice-finalize"') && str_contains($listHtml, 'be-viewtabs')
     && str_contains($actHtml, 'href="/backend/finance/invoice/add"') && str_contains($actHtml, 'be-btn--primary')
     && !str_contains($toolHtml, 'be-btn') && !str_contains($toolHtml, 'invoice-finalize')
-    && preg_match('/data-selection-bar="invoice-finalize".*?be-btn--confirm.*?Buchungsdruck …/s', $renderList($host)) === 1
-    && strpos($renderList($host), 'data-selection-bar=') < strpos($renderList($host), 'data-invoice-id=')
+    && preg_match('/class="z77-form-actions">.*?be-btn--confirm.*?Buchungsdruck …/s', $renderList($host)) === 1
+    && strpos($renderList($host), 'form="invoice-finalize" class="be-btn be-btn--confirm') < strpos($renderList($host), 'data-invoice-id=')
+    && !str_contains($renderList($host), 'data-selection-bar=')
     && $host->context['counts']['invoicing'] === $host->context['paging']->total);
 $draftIds = array_map(fn($d) => $d->getId(), $host->context['documents']);
 $sortedIds = $draftIds; rsort($sortedIds);
@@ -2108,7 +2177,7 @@ $finalNumbers = array_map(fn($d) => $d->getNumber(), $host->context['documents']
 $finalSorted  = $finalNumbers; rsort($finalSorted);
 check('P3C23 view «Verbucht»: only final invoices, each with its number, newest first, no selection checkbox', $host->context['documents'] !== [] && array_filter($host->context['documents'], fn($d) => !$d->isFinal() || $d->isCreditNote()) === []
     && !in_array(null, $finalNumbers, true) && $finalNumbers === $finalSorted
-    && !str_contains($renderList($host), 'name="doc[]"') && !str_contains($renderList($host), 'data-selection-bar=')
+    && !str_contains($renderList($host), 'name="doc[]"') && !str_contains($renderList($host), 'form="invoice-finalize"')
     && $host->layoutManager->sections === ['hc1' => ['Backend/InvoiceController/act'], 'hc2' => ['Backend/InvoiceController/toolbar']]);
 $useRequest(['view' => 'credit']);
 $host = $invoiceHost();
@@ -2351,7 +2420,7 @@ check('P3C45 … a PARTIAL period typed in: the credit note carries its own date
 $useRequest(['of' => (string) $plainInv->getId()]);
 $host = $invoiceHost();
 $host->creditNoteAction();
-check('P3C46 a credit note against an invoice still in invoicing is refused on the screen (it is re-invoiced, not credited)', $host->messageService->flashes[0][0] === 'error' && str_contains($host->messageService->flashes[0][1], 'neu fakturiert'));
+check('P3C46 a credit note against an invoice still in invoicing is refused on the screen (the draft is edited, not credited — wording 2026-10-13: «bearbeitet», no «neu fakturiert»)', $host->messageService->flashes[0][0] === 'error' && str_contains($host->messageService->flashes[0][1], 'bearbeitet') && !str_contains($host->messageService->flashes[0][1], 'neu fakturiert'));
 
 // Payment target screen: the effective creditor block.
 $useRequest([]);
@@ -2756,8 +2825,17 @@ use Z77\Module\Debtor\Services\BankImportService;
 use Z77\Module\Debtor\Services\BankImportRefusedException;
 use Z77\Module\Debtor\Entities\BankMessage;
 use Z77\Module\Debtor\Entities\BankTransaction;
-/** A camt.054.001.08 file as a Swiss bank sends it, reduced to what the reader reads. */
-$camtXml = function (string $msgId, array $txs, string $iban = '') use ($lower): string {
+/**
+ * A camt.054.001.08 file as a Swiss bank sends it, reduced to what the reader reads — the party
+ * NESTED as .08 has it (`Dbtr/Pty/Nm`, review 2026-10-13: the fixture used to build the .04 shape
+ * under the .08 namespace, so the `Pty` path never ran). $version '04' builds a camt.054.001.04
+ * file (`Dbtr/Nm` directly). A transaction's `ultimate` adds an `UltmtDbtr` — '' = one WITHOUT a name.
+ */
+$camtXml = function (string $msgId, array $txs, string $iban = '', string $version = '08') use ($lower): string {
+    $party = static function (?string $name, string $city) use ($version): string {
+        $inner = ($name !== null ? '<Nm>' . htmlspecialchars($name, ENT_XML1) . '</Nm>' : '') . '<PstlAdr><TwnNm>' . htmlspecialchars($city, ENT_XML1) . '</TwnNm></PstlAdr>';
+        return $version === '04' ? $inner : '<Pty>' . $inner . '</Pty>';
+    };
     $iban = $iban !== '' ? $iban : $lower;
     $entries = '';
     foreach ($txs as $i => $t) {
@@ -2773,10 +2851,11 @@ $camtXml = function (string $msgId, array $txs, string $iban = '') use ($lower):
             . (!empty($t['reversal']) ? '<RvslInd>true</RvslInd>' : '')
             . '<Sts>BOOK</Sts><BookgDt><Dt>' . $t['date'] . '</Dt></BookgDt><ValDt><Dt>' . $t['date'] . '</Dt></ValDt><AcctSvcrRef>' . ($t['txid'] ?? ('TX' . ($i + 1))) . '</AcctSvcrRef>'
             . '<NtryDtls><TxDtls><Refs><AcctSvcrRef>' . ($t['txid'] ?? ('TX' . ($i + 1))) . '</AcctSvcrRef><EndToEndId>NOTPROVIDED</EndToEndId></Refs><Amt Ccy="' . $ccy . '">' . $amount . '</Amt>'
-            . '<RltdPties><Dbtr><Nm>' . htmlspecialchars($t['name'] ?? 'Muster GmbH', ENT_XML1) . '</Nm><PstlAdr><TwnNm>' . htmlspecialchars($t['city'] ?? 'Bern', ENT_XML1) . '</TwnNm></PstlAdr></Dbtr></RltdPties>'
+            . '<RltdPties><Dbtr>' . $party($t['name'] ?? 'Muster GmbH', $t['city'] ?? 'Bern') . '</Dbtr>'
+            . (array_key_exists('ultimate', $t) ? '<UltmtDbtr>' . $party($t['ultimate'] === '' ? null : $t['ultimate'], 'Olten') . '</UltmtDbtr>' : '') . '</RltdPties>'
             . $rmt . '</TxDtls></NtryDtls></Ntry>';
     }
-    return '<?xml version="1.0" encoding="UTF-8"?><Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.054.001.08"><BkToCstmrDbtCdtNtfctn><GrpHdr><MsgId>' . $msgId . '</MsgId><CreDtTm>2026-07-02T06:15:00</CreDtTm></GrpHdr>'
+    return '<?xml version="1.0" encoding="UTF-8"?><Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.054.001.' . $version . '"><BkToCstmrDbtCdtNtfctn><GrpHdr><MsgId>' . $msgId . '</MsgId><CreDtTm>2026-07-02T06:15:00</CreDtTm></GrpHdr>'
         . '<Ntfctn><Id>' . $msgId . '-N</Id><CreDtTm>2026-07-02T06:15:00</CreDtTm><Acct><Id><IBAN>' . $iban . '</IBAN></Id></Acct>' . $entries . '</Ntfctn></BkToCstmrDbtCdtNtfctn></Document>';
 };
 $emR  = $wireDi();
@@ -2799,6 +2878,16 @@ check('R1 the reader: message id, creation date, the IBAN normalized, seven entr
     && $fileR->entries[0]->txRef === 'A1' && $fileR->entries[0]->amount === '108.10' && $fileR->entries[0]->currency === 'CHF' && $fileR->entries[0]->referenceType === 'QRR' && $fileR->entries[0]->reference === $qrrOf(1000, $invA->getNumber()) && $fileR->entries[0]->isCredit
     && $fileR->entries[1]->referenceType === 'NON' && str_contains($fileR->entries[1]->remittance, 'Rechnung ' . $invB->getNumber()) && $fileR->entries[1]->debtorName === 'Muster GmbH' && $fileR->entries[1]->debtorCity === 'Bern'
     && !$fileR->entries[5]->isCredit && $fileR->entries[0]->valueDate->format('Y-m-d') === '2026-07-01');
+$fileR04 = CamtReader::read($camtXml('MSG-R1-04', [['amount' => '5.00', 'date' => '2026-07-01', 'ustrd' => 'x', 'txid' => 'V4', 'name' => 'Alte Bank AG', 'city' => 'Chur']], '', '04'));
+$fileUlt = CamtReader::read($camtXml('MSG-R1-U', [
+    ['amount' => '5.00', 'date' => '2026-07-01', 'ustrd' => 'x', 'txid' => 'U1', 'name' => 'Zahler AG', 'city' => 'Bern', 'ultimate' => ''],
+    ['amount' => '5.00', 'date' => '2026-07-01', 'ustrd' => 'x', 'txid' => 'U2', 'name' => 'Zahler AG', 'city' => 'Bern', 'ultimate' => 'Endkunde GmbH'],
+]));
+check('R1b … the party in BOTH shapes: .08 nests it (Dbtr/Pty/Nm — R1\'s fixture is .08 as banks send it), .04 has it directly (Dbtr/Nm); an UltmtDbtr WITHOUT a name falls back to Dbtr (review 2026-10-13), one with a name wins',
+    str_contains($camtXml('X', [['amount' => '1.00', 'date' => '2026-07-01', 'txid' => 'X']]), '<Dbtr><Pty><Nm>') && str_contains($camtXml('X', [['amount' => '1.00', 'date' => '2026-07-01', 'txid' => 'X']], '', '04'), '<Dbtr><Nm>')
+    && $fileR04->entries[0]->debtorName === 'Alte Bank AG' && $fileR04->entries[0]->debtorCity === 'Chur'
+    && $fileUlt->entries[0]->debtorName === 'Zahler AG' && $fileUlt->entries[0]->debtorCity === 'Bern'
+    && $fileUlt->entries[1]->debtorName === 'Endkunde GmbH' && $fileUlt->entries[1]->debtorCity === 'Olten');
 check('R2 the reader refuses what is not XML (not-xml) and XML that is no camt.054 (not-camt054)',
     caught(fn() => CamtReader::read('nope'), BankImportRefusedException::class)?->reason === BankImportRefusedException::NOT_XML
     && caught(fn() => CamtReader::read('<?xml version="1.0"?><Document><Other/></Document>'), BankImportRefusedException::class)?->reason === BankImportRefusedException::NOT_CAMT054);
@@ -3055,7 +3144,7 @@ check('T5 dueList(): nothing on the due date + 9 days; on due + 10 the invoice i
         $item = array_values(array_filter($list, fn($i) => $i['invoice']->getId() === $invE->getId()))[0] ?? null;
         return $item !== null && $item['open']->toDecimal() === '108.10' && $item['current'] === null && $item['next']->getCode() === 'reminder' && $item['dueSince']->format('Y-m-d') === '2026-07-10';
     })()
-    && !in_array($invA->getId(), $dueIds($dun($wireDi())->dueList(day('2026-12-31'))), true));
+    && !in_array($invA->getId(), $dueIds($dun($wireDi())->dueList(new \DateTimeImmutable('today'))), true));
 $run1 = $dun($wireDi())->run(day('2026-07-20'), [$invE->getId()]);
 $n1   = $run1->getNotices()[0];
 check('T6 run() at level 1: one notice (reminder, open 108.10, no fee document), the run dated and stamped; the invoice\'s history shows it; the same day again → not-due (the next level needs due + 30)',
@@ -3079,7 +3168,7 @@ check('T8 refusals: no selection (nothing), a date in the future (date), an unkn
     && (function () use ($wireDi, $dun, $mid, $invE, $dueIds): bool {
         $em = $wireDi(); $p = $em->getRepository(DebtorProfile::class)->findByContact($mid);
         (new DebtorProfileService($em))->update($p, ['dunning_block' => true]);
-        $blocked = !in_array($invE->getId(), $dueIds($dun($wireDi())->dueList(day('2026-12-31'))), true);
+        $blocked = !in_array($invE->getId(), $dueIds($dun($wireDi())->dueList(new \DateTimeImmutable('today'))), true);
         $em2 = $wireDi(); (new DebtorProfileService($em2))->update($em2->getRepository(DebtorProfile::class)->findByContact($mid), ['dunning_block' => false]);
         return $blocked;
     })());
@@ -3099,6 +3188,24 @@ check('T10 a credit of 128.10 under the invoice\'s reference: 108.10 settle the 
     $txT->state()->value === 'booked' && $txT->getRemainder()->isZero() && str_contains((string) $txT->getNote(), 'Mit der Rechnung bezahlt') && str_contains((string) $txT->getNote(), $fee2->documentName())
     && $service($wireDi())->openAmount($readInvoice($invE->getId()))->isZero() && $service($wireDi())->openAmount($readInvoice($fee2->getId()))->isZero()
     && $service($wireDi())->openAmount($readInvoice($feeDoc->getId()))->toDecimal() === '20.00');
+
+echo "T. … NON by the message names every payable kind; a double «Verbuchen» books once (review 2026-10-13)\n";
+$msgT2 = $bank($wireDi())->import($camtXml('MSG-T2', [
+    ['amount' => '5.00', 'date' => '2026-08-25', 'ustrd' => 'Teilzahlung Gebühr ' . $feeDoc->getNumber(), 'txid' => 'F-non'],
+    ['amount' => '5.00', 'date' => '2026-08-25', 'ustrd' => 'Gutschrift 26019999', 'txid' => 'G-cn'],
+]), 'camt054-t2.xml');
+$txT2 = $msgT2->getTransactions();
+check('T10b NON: «Gebühr n» in the message matches the fee document (labels from InvoiceKind, not only «Rechnung n»), the note names it; «Gutschrift n» is no payable kind → unmatched',
+    $txT2[0]->state()->value === 'matched' && $txT2[0]->getInvoice()?->getId() === $feeDoc->getId() && str_contains((string) $txT2[0]->getNote(), '«Gebühr ' . $feeDoc->getNumber() . '»')
+    && $txT2[1]->state()->value === 'unmatched' && str_contains((string) $txT2[1]->getNote(), 'keine Belegnummer'));
+$emStale = $wireDi();
+$staleT2 = $bank($emStale)->find((int) $msgT2->getId());
+$staleT2->getTransactions();   // the screen's copy: one transaction still `matched`
+$paymentsT2 = $count('payment');
+$bank($wireDi())->book((int) $msgT2->getId());
+check('T10c a second «Verbuchen» of the same message — from a copy loaded before the first — finds nothing left to book (nothing-to-book), no second payment; the fee is open 15.00',
+    caught(fn() => $bank($emStale)->book((int) $msgT2->getId()), BankImportRefusedException::class)?->reason === BankImportRefusedException::NOTHING_TO_BOOK
+    && $count('payment') === $paymentsT2 + 1 && $service($wireDi())->openAmount($readInvoice($feeDoc->getId()))->toDecimal() === '15.00');
 
 echo "T. … the screens: the due list with the run, the notice PDF, the history on the invoice detail\n";
 $dunHost = function () {
@@ -3124,20 +3231,55 @@ $dunHost = function () {
 };
 $invF = $service($wireDi())->invoice($oneLine($mid, '2026-06-11', '1.000', '30.00'));
 $service($wireDi())->finalize([$at($invF->getId())]);
-$useRequest(['as_of' => '2026-07-25']);
+// As of 12.8. — not before the latest run (10.8., T7): a run is never backdated (owner 2026-10-13).
+$useRequest(['as_of' => '2026-08-12']);
 $host = $dunHost();
 $host->listAction();
 $listHtml = $renderer->partial('Backend/DunningController/listAction', $host->context);
-check('T11 the list as of 25.7.: the due invoice with its checkbox, open amount and next level; the runs so far with their notices and the PDF link',
+check('T11 the list as of 12.8.: the due invoice with its checkbox, open amount and next level; the runs so far with their notices and the PDF link',
     in_array($invF->getId(), $dueIds($host->context['due']), true) && str_contains($listHtml, 'name="doc[]" value="' . $invF->getId() . '"') && str_contains($listHtml, 'Zahlungserinnerung')
     && str_contains($listHtml, 'Mahnlauf starten') && str_contains($listHtml, 'notice-pdf?id=' . $n2->getId()) && str_contains($listHtml, 'data-dunning-notice=')
-    && preg_match('/data-selection-bar="dunning-run".*?be-btn--confirm.*?Mahnlauf starten/s', $listHtml) === 1
+    && preg_match('/class="z77-form-actions">.*?be-btn--confirm.*?Mahnlauf starten/s', $listHtml) === 1 && !str_contains($listHtml, 'data-selection-bar=')
     && strpos($listHtml, 'Mahnlauf starten</span>') < strpos($listHtml, 'data-due-invoice=') && !str_contains(file_get_contents($package . '/src/Ui/DunningControllerTrait.php'), "'hc1'"));
-$useRequest([], ['as_of' => '2026-07-25', 'doc' => [(string) $invF->getId()]]);
+$useRequest([], ['as_of' => '2026-08-12', 'doc' => [(string) $invF->getId()]]);
 $host = $dunHost();
 $host->runAction();
-check('T12 «Mahnlauf starten» through the host: the run, the flash with the counts, the redirect to the list as of the day', $host->redirectedTo === '/backend/finance/dunning/list?as_of=2026-07-25' && ($host->messageService->flashes[0][0] ?? '') === 'success'
+check('T12 «Mahnlauf starten» through the host: the run, the flash with the counts, the redirect to the list as of the day', $host->redirectedTo === '/backend/finance/dunning/list?as_of=2026-08-12' && ($host->messageService->flashes[0][0] ?? '') === 'success'
     && str_contains($host->messageService->flashes[0][1], '1 Mahnungen') && count($dun($wireDi())->noticesOf($readInvoice($invF->getId()))) === 1);
+
+echo "T. … the dunning rules of 2026-10-13: the interval after the last notice, no backdating, no future\n";
+// invF: due 1.7. (disc-2-10), reminder on 12.8. (T12) → «1. Mahnung» is past its 30 days after due (31.7.)
+// but due only 10 days after the reminder: 22.8.
+$dueOn = fn(string $day) => array_values(array_filter($dun($wireDi())->dueList(day($day)), fn($i) => $i['invoice']->getId() === $invF->getId()))[0] ?? null;
+check('T12b the next level waits N days after the invoice\'s LAST notice (owner 2026-10-13): on 21.8. «1. Mahnung» is past its days after due but not due; on 22.8. it is, «seit» the 22.8.; a run on 21.8. is refused (not-due), nothing issued',
+    $dueOn('2026-08-21') === null
+    && ($dueOn('2026-08-22')['next'] ?? null)?->getCode() === 'dunning-1' && $dueOn('2026-08-22')['dueSince']->format('Y-m-d') === '2026-08-22'
+    && caught(fn() => $dun($wireDi())->run(day('2026-08-21'), [$invF->getId()]), DunningRefusedException::class)?->reason === DunningRefusedException::NOT_DUE
+    && count($dun($wireDi())->noticesOf($readInvoice($invF->getId()))) === 1);
+$runsBefore = $count('dunning_run');
+$backdated  = caught(fn() => $dun($wireDi())->run(day('2026-08-11'), [$invF->getId()]), DunningRefusedException::class);
+check('T12c no backdating: a run dated before the latest run (12.8.) is refused (date) naming that run, and so is the due list as of that day; a date in the future is refused for both; the latest run\'s own day is allowed',
+    $backdated?->reason === DunningRefusedException::DATE && str_contains($backdated->getMessage(), '12.08.2026') && $count('dunning_run') === $runsBefore
+    && caught(fn() => $dun($wireDi())->dueList(day('2026-08-11')), DunningRefusedException::class)?->reason === DunningRefusedException::DATE
+    && caught(fn() => $dun($wireDi())->dueList((new \DateTimeImmutable('today'))->modify('+1 day')), DunningRefusedException::class)?->reason === DunningRefusedException::DATE
+    && is_array($dun($wireDi())->dueList(day('2026-08-12'))));
+$useRequest(['as_of' => '2026-08-11']);
+$host = $dunHost();
+$host->listAction();
+check('T12d the screen as of a backdated day shows the refusal instead of a list (server decides)',
+    $host->context['due'] === [] && str_contains((string) $host->context['notice'], 'nicht zurückdatiert'));
+// The CAMT booking reads the open amount AFTER its row locks: a payment recorded between the screen's
+// look and «Verbuchen» is seen — the credit is not placed a second time (review 2026-10-13 M2).
+$openF  = $service($wireDi())->openAmount($readInvoice($invF->getId()));
+$msgT3  = $bank($wireDi())->import($camtXml('MSG-T3', [['amount' => $openF->toDecimal(), 'date' => '2026-08-26', 'ref' => $qrrOf(1000, $invF->getNumber()), 'txid' => 'F-full']]), 'camt054-t3.xml');
+$emT3   = $wireDi();
+$bank($emT3)->find((int) $msgT3->getId())->getTransactions();   // the screen's copy: matched, open as before
+$pay($wireDi())->record(new PaymentDraft($invF->getId(), day('2026-08-25'), $openF, chf('0.00'), chf('0.00'), 'qr', 'bar am Schalter'));
+$paymentsT3 = $count('payment');
+$txT3 = $bank($emT3)->book((int) $msgT3->getId())->getTransactions()[0];
+check('T12e a payment recorded between the screen\'s look and «Verbuchen»: the booking sees it under the lock — the credit goes back to unmatched («bereits beglichen»), no second payment, the invoice open 0.00, never negative',
+    $txT3->state()->value === 'unmatched' && str_contains((string) $txT3->getNote(), 'bereits beglichen') && $count('payment') === $paymentsT3
+    && $service($wireDi())->openAmount($readInvoice($invF->getId()))->isZero());
 $useRequest(['id' => $n2->getId()]);
 $host = $dunHost();
 $host->noticePdfAction();
@@ -3317,9 +3459,10 @@ $maxBill = QrBill::of($withPayment($readInvoice($qrInv->getId()), [
 ]));
 check('P3C55 the 997 limit is a guard: a bill with every field at its maximum stays printable and under 997 (the per-field limits keep it there)',
     $maxBill->isPrintable() && mb_strlen($maxBill->payload()) <= QrBill::MAX_PAYLOAD && $specErrors($maxBill->payload()) === []);
-check('P3C56 a FINAL document without a payment part is not told to «neu fakturieren» — the way out is a credit note and a new invoice',
+check('P3C56 a FINAL document without a payment part is told the way out — a credit note and a new invoice; a DRAFT without one is told to choose a target in the draft and save (wording 2026-10-13: no «neu fakturieren» anywhere)',
     str_contains($problemsOf(['referenceType' => '', 'reference' => '', 'account' => '', 'targetCode' => '']), 'Gutschrift und neue Rechnung')
-    && str_contains(implode(' ', QrBill::of($readInvoice($plainInv->getId()))->problems()), 'neu fakturieren'));
+    && str_contains($plainProblems = implode(' ', QrBill::of($readInvoice($plainInv->getId()))->problems()), 'Zahlungsziel wählen und speichern')
+    && !str_contains($plainProblems, 'neu fakturier'));
 
 $journalBefore = $journalCount();
 $useRequest([], ['doc' => [$pairA, $pairB2]]);   // the batch of P3C41 submitted a second time
@@ -3381,7 +3524,7 @@ check('U1 invoice, credit note and fee of one month share ONE gapless series, nu
 check('U2 the number is unique across kinds: a payable lookup finds the fee by its number, the credit note\'s number names no payable document',
     $wireDi()->getRepository(Invoice::class)->findPayableByNumber($uFee->getNumber())?->getId() === $uFee->getId()
     && $wireDi()->getRepository(Invoice::class)->findPayableByNumber($uCn->getNumber()) === null
-    && $wireDi()->getRepository(Invoice::class)->findByNumber(InvoiceKind::CreditNote, $uCn->getNumber())?->getId() === $uCn->getId());
+    && $wireDi()->getRepository(Invoice::class)->findOneBy(['number' => $uCn->getNumber()])?->getId() === $uCn->getId());
 // The month at its last number — set in SQL, the way only a harness may touch number_range.
 $db->executeStatement("INSERT INTO number_range (name, last_number) VALUES ('document.2611', 9999) ON DUPLICATE KEY UPDATE last_number = 9999");
 $documentsBefore = $count('invoice');
@@ -3535,6 +3678,23 @@ $wFn     = substr($wSource, strpos($wSource, 'public function invoice(InvoiceDra
 check('W10 lock pair in the source: invoice() locks an existing profile SHARED before the invoice row; delete() locks it EXCLUSIVE, then counts the documents with a locking read',
     strpos($wFn, 'lockForContact(') !== false && strpos($wFn, 'exclusive: false') < strpos($wFn, 'new Invoice(')
     && preg_match('/lockForContact\(.*exclusive: true\).*countForContact\(.*lock: true\).*->remove\(\$profile\)/s', file_get_contents((new \ReflectionClass(DebtorProfileService::class))->getFileName())) === 1);
+// The draft of W7 discarded (owner 2026-10-13, review H3): it no longer holds the role.
+$wDraftId = (int) $db->fetchOne("SELECT id FROM invoice WHERE contact_id = ? AND state = 'invoicing'", [$wId]);
+$service($wireDi())->discard($wDraftId, (int) $invoiceRow($wDraftId)['version']);
+$wFree = $role->state($wireDi()->getRepository(Contact::class)->find($wId));
+check('W11 the draft DISCARDED, the role is free again (switchable) — and switching it OFF asks first: the state names offConfirm (owner 2026-10-13, review M5) with the customer number that goes',
+    $invoiceRow($wDraftId) === false && $wFree->on && $wFree->switchable
+    && str_contains($wFree->offConfirm, 'Kundennummer ' . ($wCustomer + 2)) && str_contains($wFree->offConfirm, 'gelöscht'));
+$wContactTrait = file_get_contents($package . '/../module-contact/src/Ui/ContactControllerTrait.php');
+$wRolesTpl     = file_get_contents($package . '/../module-contact/res/view/templates/Backend/ContactController/_roles.tpl.php');
+$wEditTpl      = file_get_contents($package . '/../module-contact/res/view/templates/Backend/ContactController/edit.tpl.php');
+$wToggle       = substr($wContactTrait, strpos($wContactTrait, 'function toggleRoleAction'), strpos($wContactTrait, 'function removeRoleAction') - strpos($wContactTrait, 'function toggleRoleAction'));
+check('W12 the contact dialog asks before «off» (fetch.md confirm-delete pattern): toggle-role with value false on a role naming offConfirm switches NOTHING — it answers the section with the question (status confirm, so the switch turns back on); «<Rolle> entfernen» posts to remove-role with the entity token contactRole.<key> + contact id; «Abbrechen» asks toggle-role for «on»; ON stays immediate; on «edit» the section stands AFTER the contact form (its forms are not nested)',
+    preg_match("/!\\\$wanted && \\\$state->offConfirm !== ''\).*?rolesAnswer\(\\\$contact, 'confirm'/s", $wToggle) === 1 && strpos($wToggle, '$role->switchOn($contact)') !== false
+    && str_contains($wContactTrait, "validateEntityToken(trim((string) (\$request->getJsonBody()['entity_csrf'] ?? '')), self::roleTokenContext(\$key), \$id)")
+    && str_contains($wContactTrait, "generateEntityToken(self::roleTokenContext(\$confirming)") && str_contains($wContactTrait, "'contactRole.' . \$key")
+    && str_contains($wRolesTpl, '/remove-role?id=') && str_contains($wRolesTpl, 'name="entity_csrf"') && str_contains($wRolesTpl, '<input type="hidden" name="value" value="1">')
+    && strpos($wEditTpl, '</form>') < strrpos($wEditTpl, "partial('Backend/ContactController/_roles'"));
 
 // ── X. a credit note mirrors its invoice (owner decision 2026-10-13) ────
 

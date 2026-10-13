@@ -27,6 +27,7 @@ use Z77\Core\DI,
     Z77\Module\Debtor\Services\DunningService,
     Z77\Module\Debtor\Services\InvoiceConflictException,
     Z77\Module\Debtor\Services\InvoicingService,
+    Z77\Module\Debtor\Services\LockConflict,
     Z77\Module\Debtor\Services\PaymentService,
     Z77\Shared\Listing\ListDefinition,
     Z77\Module\Mandator\Services\LedgerAccountCheck,
@@ -73,6 +74,10 @@ use Z77\Core\DI,
  *     module-mandator), the code a document already carries stays;
  *   - `credit-note` (`?of=`) — the credit note against a FINAL invoice,
  *     service dates and lines prefilled from it.
+ *
+ *   - `confirm-discard` / `discard` (`?id=`) — «Entwurf löschen …» of a DRAFT
+ *     (owner 2026-10-13): the confirmation with the entity token, then
+ *     `InvoicingService::discard()` — the draft is deleted, it had no number.
  *
  * NOT here: no delete, cancel
  * or edit of a final document anywhere (plan §1: the correction is a credit
@@ -236,7 +241,8 @@ trait InvoiceControllerTrait
             'windowWidth'  => '60rem',
             'origin'       => WindowOrigin::of(DI::getRequest()),
             'document'     => $document,
-            'bill'         => QrBill::of($document),
+            // What the booking print WILL print (owner 2026-10-13, review H5) — for a draft the payment part taken again.
+            'bill'         => $this->invoicingService()->bookingBill($document),
             'creditNotes'  => $isInvoice ? $this->invoices()->creditNotesOf($document) : [],
             'openAmount'   => $isInvoice && $document->isFinal() ? $this->invoicingService()->openAmount($document) : null,
             'allocations'  => $isInvoice && $document->isFinal() ? $this->paymentService()->allocationsOf($document) : [],
@@ -341,6 +347,12 @@ trait InvoiceControllerTrait
                 return $this->redirect($this->invoiceListBase() . '/detail?id=' . $document->getId(), 303);
             } catch (DebtorException | \Z77\Module\Debtor\Accounting\AccountingRefusedException $e) {
                 $form->addGeneralError($e->getMessage());
+            } catch (\Doctrine\DBAL\Exception $e) {
+                // A deadlock or lock wait (review 2026-10-13 H4): nothing was written — say so, never a 500.
+                if (!LockConflict::is($e)) {
+                    throw $e;
+                }
+                $form->addGeneralError(LockConflict::MESSAGE);
             }
         }
 
@@ -403,13 +415,18 @@ trait InvoiceControllerTrait
                 return $this->invoiceWindowSaved((int) $document->getId(), WindowOrigin::of($request), $text);
             }
             $this->messageService->pushFlashAfterRedirect('success', $text);
-        } catch (DebtorException | \Z77\Module\Debtor\Accounting\AccountingRefusedException $e) {
+        } catch (DebtorException | \Z77\Module\Debtor\Accounting\AccountingRefusedException | \Doctrine\DBAL\Exception $e) {
+            // A lock conflict (deadlock, lock wait — review 2026-10-13 H4) is answered like a refusal; any other DBAL failure is rethrown.
+            if ($e instanceof \Doctrine\DBAL\Exception && !LockConflict::is($e)) {
+                throw $e;
+            }
+            $message = $e instanceof \Doctrine\DBAL\Exception ? LockConflict::MESSAGE : $e->getMessage();
             if ($this->invoiceIsFetch()) {
-                $this->messageService->pushFlash('error', $e->getMessage());
+                $this->messageService->pushFlash('error', $message);
 
                 return $this->fetch()->setStatus('error');
             }
-            $this->messageService->pushFlashAfterRedirect('error', $e->getMessage());
+            $this->messageService->pushFlashAfterRedirect('error', $message);
         }
 
         return $this->redirect($this->invoiceListBase() . '/detail?id=' . $document->getId(), 303);
@@ -523,8 +540,8 @@ trait InvoiceControllerTrait
     }
 
     /**
-     * «Neu fakturieren» (`?id=`): a document still in `invoicing` (a draft,
-     * no number yet), re-issued with the VERSION the form was rendered from. A final
+     * «Bearbeiten …» (`?id=`, until 2026-10-13 «Neu fakturieren»): a document still in
+     * `invoicing` (a draft, no number yet), saved again with the VERSION the form was rendered from. A final
      * document goes back to its detail with the refusal. Fetched (from the
      * detail window, `data-window-link`): the window's content; the save
      * answers {@see invoiceWindowSaved()}.
@@ -565,7 +582,7 @@ trait InvoiceControllerTrait
         if ($draft !== null) {
             try {
                 $reissued = $this->invoicingService()->reinvoice($id, $version, $draft);
-                $text     = $reissued->documentName() . ' neu fakturiert (noch ohne Nummer, nichts verbucht)';
+                $text     = $reissued->documentName() . ' gespeichert (noch ohne Nummer, nichts verbucht)';
                 if ($this->invoiceIsFetch()) {
                     return $this->invoiceWindowSaved($id, WindowOrigin::of($request), $text);
                 }
@@ -586,6 +603,91 @@ trait InvoiceControllerTrait
         return $this->invoiceFormPage($form, $document, $version);
     }
 
+    // ── discard a draft ──────────────────────────────────────────────────
+
+    /**
+     * «Entwurf löschen …» (`?id=`, owner 2026-10-13, review H3): the last look before a DRAFT
+     * is deleted — party, date, amount; the entity token (`invoice:<id>`, fetch.md confirm-delete
+     * pattern) and the VERSION shown travel with the one button. Fetched, the content of the
+     * detail window it is linked from (`data-window-link`); else a page. A booked document goes
+     * back to its detail with the refusal — it is corrected by a credit note, never deleted.
+     */
+    protected function confirmDiscardAction(): HtmlResponse|RedirectResponse
+    {
+        $id       = (int) DI::getRequest()->getGetParameter('id');
+        $document = $id ? $this->invoices()->withLines($id) : null;
+        if ($document === null) {
+            return $this->invoiceNotFound();
+        }
+        if ($document->isFinal()) {
+            $this->messageService->pushFlashAfterRedirect('error', $document->documentName() . ' ist verbucht und bleibt — eine Korrektur ist eine Gutschrift.');
+
+            return $this->redirect($this->invoiceListBase() . '/detail?id=' . $id, 303);
+        }
+
+        return $this->invoicePage('confirmDiscard', [
+            'window'     => $this->invoiceIsFetch(),
+            'origin'     => WindowOrigin::of(DI::getRequest()),
+            'document'   => $document,
+            'entityCsrf' => DI::getCsrfService()->generateEntityToken('invoice', $id),
+        ]);
+    }
+
+    /**
+     * The delete itself (POST, `#[Csrf]`, entity token + version): `InvoicingService::discard()`.
+     * Fetched (from the window): the window closes and the list it was opened from reloads; a
+     * refusal or a conflict is the error flash and the window stays. As a page: back to the
+     * list «In Fakturierung» (or to the detail on a refusal).
+     */
+    #[Csrf]
+    protected function discardAction(): RedirectResponse|FetchResponse
+    {
+        $request = DI::getRequest();
+        $id      = (int) $request->getGetParameter('id');
+        $post    = $request->getPostParameters();
+        $fetch   = $this->invoiceIsFetch();
+        $refuse  = function (string $message) use ($fetch, $id): RedirectResponse|FetchResponse {
+            if ($fetch) {
+                $this->messageService->pushFlash('error', $message);
+
+                return $this->fetch()->setStatus('error');
+            }
+            $this->messageService->pushFlashAfterRedirect('error', $message);
+
+            return $this->redirect($this->invoiceListBase() . '/detail?id=' . $id, 303);
+        };
+        if ($id <= 0 || !$request->isPost() || !DI::getCsrfService()->validateEntityToken(trim((string) ($post['entity_csrf'] ?? '')), 'invoice', $id)) {
+            return $refuse(self::INVOICE_CONFLICT_MESSAGE);
+        }
+        try {
+            $name = $this->invoicingService()->discard($id, (int) ($post['version'] ?? 0));
+        } catch (InvoiceConflictException) {
+            return $refuse(self::INVOICE_CONFLICT_MESSAGE);
+        } catch (DebtorException $e) {
+            return $refuse($e->getMessage());
+        } catch (\Doctrine\DBAL\Exception $e) {
+            if (!LockConflict::is($e)) {
+                throw $e;
+            }
+
+            return $refuse(LockConflict::MESSAGE);
+        }
+        $text = $name . ' gelöscht — er hatte keine Nummer, nichts war verbucht';
+        if ($fetch) {
+            $this->messageService->pushFlash('success', $text);
+            $response = $this->fetch()->setStatus('success')->addCommand('close-window');
+            $origin   = WindowOrigin::of($request);
+            if (str_starts_with($origin, 'region:')) {
+                $response->addCommand('refresh-region', ['name' => substr($origin, strlen('region:'))]);
+            }
+
+            return $response;
+        }
+        $this->messageService->pushFlashAfterRedirect('success', $text);
+
+        return $this->redirect($this->invoiceListBase() . '/list', 303);
+    }
+
     /**
      * «Gutschrift erstellen» (`?of=`): against a FINAL invoice only (plan §6.2). Fetched
      * (from the invoice's detail window): the window's content; the save answers with the
@@ -601,7 +703,7 @@ trait InvoiceControllerTrait
             return $this->invoiceNotFound();
         }
         if (!$invoice->isFinal()) {
-            $this->messageService->pushFlashAfterRedirect('error', $invoice->documentName() . ' ist noch in Fakturierung — sie wird neu fakturiert, nicht gutgeschrieben.');
+            $this->messageService->pushFlashAfterRedirect('error', $invoice->documentName() . ' ist noch ein Entwurf — sie wird bearbeitet, nicht gutgeschrieben.');
 
             return $this->redirect($this->invoiceListBase() . '/detail?id=' . $ofId, 303);
         }
@@ -839,8 +941,10 @@ trait InvoiceControllerTrait
      * IDEMPOTENT for a repeated submit (a double click, a reload of the PDF tab): when every
      * document of the selection is FINAL at exactly the version it showed + 1 — the version
      * this booking left — the same PDF is answered again and nothing is posted. Anything
-     * else stale (re-issued since, gone, booked by another batch) and every refusal answers
-     * a German message PAGE in that tab — nothing was booked.
+     * else stale (edited since, discarded, booked by another batch) and every refusal — the
+     * service's, the bookkeeping's, or the database's (a deadlock, a lock timeout: a DBAL
+     * exception, review 2026-10-13) — answers a German message PAGE in that tab; nothing
+     * was booked.
      */
     #[Csrf]
     protected function finalizeAction(): BytesResponse|HtmlResponse|RedirectResponse
@@ -857,9 +961,18 @@ trait InvoiceControllerTrait
         try {
             $done = $this->invoicingService()->finalize($pairs);
         } catch (InvoiceConflictException) {
-            return $this->invoiceBookingRefused('Ein Dokument der Auswahl wurde inzwischen neu fakturiert oder gelöscht — nichts wurde verbucht. Liste neu laden und die Auswahl prüfen.', $pairs);
+            return $this->invoiceBookingRefused('Ein Entwurf der Auswahl wurde inzwischen bearbeitet oder gelöscht — nichts wurde verbucht. Liste neu laden und die Auswahl prüfen.', $pairs);
         } catch (DebtorException $e) {
             return $this->invoiceBookingRefused('Nichts wurde verbucht: ' . $e->getMessage(), $pairs);
+        } catch (\Doctrine\DBAL\Exception $e) {
+            // The database refused the unit of work (a deadlock against a payment, a lock wait timeout, a unique
+            // index at commit): everything rolled back. Answered as the refusal page in the new tab, never a 500
+            // (review 2026-10-13); the cause goes to the log, the user may simply try again.
+            error_log('debtor booking print: ' . get_class($e) . ': ' . $e->getMessage());
+
+            return $this->invoiceBookingRefused(LockConflict::is($e)
+                ? 'Nichts wurde verbucht: ' . LockConflict::MESSAGE
+                : 'Nichts wurde verbucht: die Datenbank hat den Buchungsdruck abgelehnt. Liste neu laden und nochmals versuchen; bleibt es dabei, steht die Ursache im Fehlerprotokoll.', $pairs);
         }
         $names = implode(', ', array_map(fn(Invoice $d) => $d->documentName(), $done));
         $this->messageService->pushFlashAfterRedirect('success', count($done) === 1 ? $names . ' verbucht und gedruckt' : count($done) . ' Dokumente verbucht und gedruckt: ' . $names);

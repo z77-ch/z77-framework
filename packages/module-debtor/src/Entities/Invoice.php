@@ -368,10 +368,10 @@ class Invoice
     }
 
     /**
-     * A NEW snapshot under the SAME number (plan §6.2: «can be re-invoiced as
-     * often as needed — the number stays the same, snapshot and PDF are
-     * replaced»). Only while `invoicing`: nothing was posted, so there is
-     * nothing to reverse. The old lines and tax rows leave their collections
+     * A NEW snapshot of the DRAFT (plan §6.2: «can be re-invoiced as often as
+     * needed — snapshot and PDF are replaced»; since owner 2026-10-10 a draft
+     * has no number yet, so there is none that «stays»). Only while
+     * `invoicing`: nothing was posted, so there is nothing to reverse. The old lines and tax rows leave their collections
      * and orphan removal deletes them at flush.
      *
      * @param list<InvoiceLine> $lines

@@ -2,6 +2,7 @@
 
 namespace Z77\Module\Debtor\Repositories;
 
+use Doctrine\DBAL\ArrayParameterType;
 use Z77\Module\Debtor\Entities\DunningNotice;
 use Z77\Module\Debtor\Entities\DunningRun;
 use Z77\Module\Debtor\Entities\Invoice;
@@ -36,17 +37,44 @@ class DunningNoticeRepository extends DoctrineRepository
     }
 
     /**
-     * The highest level number reached per invoice, for every invoice that
-     * was ever dunned: invoice id → level number. One query for the due
-     * list (DEBTOR-OPEN-001: sum per row, never one call per row).
+     * The highest level number reached and the date of the LAST notice
+     * (its run's date) per invoice, for every invoice that was ever dunned
+     * — or for $invoiceIds only: invoice id → `level`, `date`. One query
+     * for the due list (DEBTOR-OPEN-001: never one call per row). The run
+     * calls it after it locked the invoice rows: every writer of a notice
+     * holds the invoice row, so a read after the locks sees them all.
+     * Doctrine-only (SQL).
      *
-     * @return array<int, int>
+     * @param list<int>|null $invoiceIds
+     * @return array<int, array{level: int, date: \DateTimeImmutable}>
      */
-    public function highestLevelPerInvoice(): array
+    public function lastNoticePerInvoice(?array $invoiceIds = null): array
     {
-        $rows = $this->connection()->fetchAllKeyValue('SELECT invoice_id, MAX(level_number) FROM dunning_notice GROUP BY invoice_id');
+        if ($invoiceIds === []) {
+            return [];
+        }
+        $sql    = 'SELECT n.invoice_id, MAX(n.level_number) AS level, MAX(r.run_date) AS last_date FROM dunning_notice n JOIN dunning_run r ON r.id = n.run_id';
+        $params = [];
+        $types  = [];
+        if ($invoiceIds !== null) {
+            $sql     .= ' WHERE n.invoice_id IN (?)';
+            $params[] = array_values(array_map('intval', $invoiceIds));
+            $types[]  = ArrayParameterType::INTEGER;
+        }
+        $last = [];
+        foreach ($this->connection()->fetchAllAssociative($sql . ' GROUP BY n.invoice_id', $params, $types) as $row) {
+            $last[(int) $row['invoice_id']] = ['level' => (int) $row['level'], 'date' => new \DateTimeImmutable((string) $row['last_date'])];
+        }
 
-        return array_map('intval', $rows);
+        return $last;
+    }
+
+    /** The notice date of the latest run, or null before the first — the earliest date a new run may carry (owner 2026-10-13). Doctrine-only (SQL). */
+    public function latestRunDate(): ?\DateTimeImmutable
+    {
+        $date = $this->connection()->fetchOne('SELECT MAX(run_date) FROM dunning_run');
+
+        return $date === false || $date === null ? null : new \DateTimeImmutable((string) $date);
     }
 
     /**

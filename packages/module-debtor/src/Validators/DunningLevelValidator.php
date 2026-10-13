@@ -14,7 +14,8 @@ use Z77\Persistence\Validation\EntityValidator;
  *
  * `level` 1–{@see MAX_LEVEL} and UNIQUE across the rows — it is the order a
  * dunning run walks, and two rows on one step would make that order a
- * coin toss. `daysAfterDue` 0–{@see MAX_DAYS}. `fee` 0 or more, at most
+ * coin toss. `daysAfterDue` and `daysAfterPrevious` (the least distance to
+ * the invoice's last notice, owner 2026-10-13) 0–{@see MAX_DAYS}. `fee` 0 or more, at most
  * {@see MAX_FEE} minor units — a dunning fee is a fee, not an invoice; and
  * it carries NO VAT (plan §6.5), which is why this entity has no tax code
  * to validate.
@@ -68,6 +69,13 @@ class DunningLevelValidator extends EntityValidator
     {
         if ($days < 0 || $days > self::MAX_DAYS) {
             $this->addFieldError('days_after_due', 'Tage nach Verfall: 0 bis ' . self::MAX_DAYS . '.');
+        }
+    }
+
+    public function validateDaysAfterPrevious(int $days): void
+    {
+        if ($days < 0 || $days > self::MAX_DAYS) {
+            $this->addFieldError('days_after_previous', 'Tage nach der letzten Mahnung: 0 bis ' . self::MAX_DAYS . '.');
         }
     }
 

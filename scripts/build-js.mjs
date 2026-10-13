@@ -8,9 +8,13 @@
  * copies of the commented source, and four were missing (the manager then
  * falls back to the unminified file and writes a warning on every request).
  *
- * This script is the missing half of the CSS pipeline in `package.json`:
- *   npm run build:js        write every .min.js that is out of date
- *   npm run build:js -- --check   write nothing, exit 1 if one is out of date
+ * OPTIONAL since 2026-10-13: the owner writes the `.min.js` with VS Code
+ * (minify on save) and `php tests/js-min-markers.php` checks them
+ * (js-build.md, JS-BUILD-002). This script stays for a machine that has terser:
+ *   npm run build:js        write every .min.js that differs from terser's output
+ *   npm run build:js -- --check   write nothing, exit 1 if one differs — compares
+ *                           against terser's bytes, so an editor-made .min.js
+ *                           always "differs"; not a freshness check any more
  *
  * It needs terser on PATH (`npm i -g terser`) — deliberately not a
  * devDependency: it is a maintainer tool, a project never runs it.

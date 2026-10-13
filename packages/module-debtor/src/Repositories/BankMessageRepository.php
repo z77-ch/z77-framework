@@ -36,4 +36,24 @@ class BankMessageRepository extends DoctrineRepository
             ->getQuery()
             ->getResult();
     }
+
+    /**
+     * Locks the message row EXCLUSIVELY (`SELECT id … FOR UPDATE`) until the
+     * caller commits and answers whether it exists — the FIRST lock of every
+     * write on a message's transactions (book, assign, ignore), so two of
+     * them serialise and the second re-reads what the first committed
+     * (review 2026-10-13 H4: a double «Verbuchen» must not book twice). A
+     * locking read takes no read view. Inside an open unit of work only.
+     * Doctrine-only (SQL).
+     *
+     * @throws \LogicException outside an open unit of work
+     */
+    public function lockRow(int $id): bool
+    {
+        if (!$this->connection()->isTransactionActive()) {
+            throw new \LogicException('lockRow() needs an open unit of work — the row lock holds until commit');
+        }
+
+        return $this->connection()->fetchOne('SELECT id FROM bank_message WHERE id = ? FOR UPDATE', [$id]) !== false;
+    }
 }

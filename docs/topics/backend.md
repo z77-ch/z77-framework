@@ -1,6 +1,6 @@
 # backend
 
-2026-10-10
+2026-10-13
 
 ## entry
 
@@ -372,6 +372,7 @@ design. Owned by [`security.md`](security.md) — see it for the gating rules.
 
 ## known issues
 
+- **BE-INLINE-001** (2026-10-13, review §2, Rule 7): the two inline handlers of the backend are gone — the stats page's link field (`Service/StatsController/listAction.tpl.php`, was `onclick="this.select()"`) carries `data-select-on-focus`, «Bericht drucken» in `_report.tpl.php` (was `onclick="window.print()"`) is `<button data-print hidden>`, both served by core.js `_Z77.core.triggers` (fetch.md). The client's link page (`/stats/report/{token}`) loads no script, so there the button stays hidden and the browser's own print menu prints. A dialog or ⋮ hub URL opened as a page now answers 303 to its list instead of 500 — for every backend screen, by the kernel (fetch.md MODAL-PAGE-001).
 - **BE-USER-UI-001** (2026-10-10, ADR-049 revision / ADR-047 addendum, forms-actions review rows 31, 32, 36): the user dialogs carry their actions in the shared row `partials/modalActions` — the edit form under the header with the «n Fehler» link (ids `bu-*`), the delete confirm (no input field) at the bottom (`end`), the not-found / blocked messages and the ⋮ hub their «Schliessen» under the header. Save answers in place with the list's own row partial (`_row.tpl.php`): `replaceRow('backend-user', id)` for an edit, `insertRow` into `[data-entity-list="backend-user"]` (appended — a new user gets the last sortKey) for a create; delete answers `removeRow`; in-place flash. core.js wires the ⋮ (FETCH-ROW-001); the drag & drop of `backend-user/list.js` listens on the list body and reads `data-user-id`, so a row brought in later takes part (the row carries `draggable="true"` itself).
 - ARCH-P002 — resolved. `UserPreferences` moved to `Z77\Shared\ValueObjects\`.
 - BUG-P001 — resolved. `Naming::toCamelCase` fixed; `BackendUser` save round-trip works again.

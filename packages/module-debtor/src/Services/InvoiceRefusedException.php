@@ -22,6 +22,8 @@ final class InvoiceRefusedException extends DebtorException
     public const TARGET_UNKNOWN      = 'target-unknown';
     public const TARGET_INACTIVE     = 'target-inactive';
     public const NO_PAYMENT_PART     = 'no-payment-part';
+    /** The booking print: the payment part the document would print has problems (`QrBill::problems()`, owner 2026-10-13). */
+    public const PAYMENT_PART        = 'payment-part';
     // the document
     public const CURRENCY            = 'currency';
     public const DATES               = 'dates';

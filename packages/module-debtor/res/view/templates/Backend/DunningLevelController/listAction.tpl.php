@@ -56,6 +56,7 @@ $actionBase = $actionBase ?? '/backend/finance/dunning-level';
 
                     <span class="be-tree__url" data-field="timing">
                         Stufe <?= e((string) $level->getLevel()) ?> · <?= e((string) $level->getDaysAfterDue()) ?> Tage nach Verfall
+                        <small class="be-list__cell--muted">· frühestens <?= e((string) $level->getDaysAfterPrevious()) ?> Tage nach der letzten Mahnung</small>
                         <small class="be-list__cell--muted">· Gebühr <?= e($level->fee($currency)->toDecimal()) ?> <?= e($currency) ?></small>
                     </span>
 

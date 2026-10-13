@@ -38,7 +38,7 @@ being shaped by any one of them.
 3. **Invoicing lives in debtor.** `InvoicingService` is the single entry for every source — order,
    manual invoice, later contracts and fees. An invoice is posted on `finalize()`, not on
    `invoice()`: while it is `invoicing` it can be re-issued under the same number without touching
-   the books.
+   the books. *(Amended — a draft has no number and can be deleted: addendum 2026-10-13.)*
 4. **order posts nothing** and knows no ledger. It builds an invoice draft and hands it to
    `InvoicingService`.
 5. **debtor reaches financial only through a port**, `AccountingGateway`. The default adapter calls
@@ -100,3 +100,29 @@ being shaped by any one of them.
 | Payment state as order statuses set by debtor | Two truths about one amount; debtor would write into order against the dependency direction |
 | Post on `invoice()`, reverse on re-invoice | Reversal noise for every correction after printing; what wdv does today by deleting |
 | Import through `InvoicingService::finalize()` | Posts every migrated invoice a second time next to the imported journal |
+
+## Addendum 2026-10-13 — a draft has no number, and a draft can be deleted (owner decisions)
+
+Two owner decisions amend decision 3; its original text above stays as written, and where it and
+this addendum differ, the addendum applies.
+
+1. **«Re-issued under the same number» is obsolete since 2026-10-10.** A document in `invoicing` is a
+   **draft without a number**; the number (`YYMMnnnn`) is drawn at the **booking print**
+   (`InvoicingService::finalize()`), which numbers, posts and prints in one unit of work
+   ([`debtor.md`](../topics/debtor.md) → «The booking print»). What decision 3 protects stays: an
+   invoice is posted on `finalize()`, never on `invoice()`, and while it is `invoicing` it can be
+   edited (`reinvoice()`) without touching the books.
+2. **A draft can be discarded** (2026-10-13, review 2026-10-13 H3): `InvoicingService::discard($id,
+   $version)` deletes a document in `invoicing` with its lines and tax rows — a real `DELETE`, under
+   a row lock with the version the caller saw. The correction principle (plan §1: «never an edit,
+   never a deletion») binds what was **booked**: a draft has no number, nothing was posted, and
+   nothing references it (a credit note, a payment, a dunning notice all need a final document), so
+   there is nothing to correct and no gap. A booked document is still never deleted — its
+   correction is a credit note. Why it is needed: a forgotten draft blocked the year close
+   (`InvoicingInProgressCheck`) forever and kept the contact's «Debitor» role from being switched
+   off.
+
+Also decided the same day (review H5, owner): the booking print takes the payment part again from
+the payment target and the mandator as they read then, and **refuses** a document whose payment
+part would not be printable (`QrBill::problems()`) — the whole batch, before any number is drawn.
+A draft's detail shows that re-taken part, so it lists exactly what the booking print refuses.

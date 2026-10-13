@@ -26,6 +26,7 @@ use Z77\Module\Debtor\Invoicing\InvoiceDraft;
 use Z77\Module\Debtor\Invoicing\LineDraft;
 use Z77\Module\Debtor\Invoicing\NoTaxShareException;
 use Z77\Module\Debtor\Invoicing\PostingBuilder;
+use Z77\Module\Debtor\Invoicing\QrBill;
 use Z77\Module\Debtor\Invoicing\TaxShares;
 use Z77\Module\Debtor\Repositories\DebtorProfileRepository;
 use Z77\Module\Debtor\Repositories\InvoiceRepository;
@@ -60,6 +61,9 @@ use Z77\Shared\Money\Money;
  *     prints as a preview). NOTHING is posted, no range is touched;
  *   - {@see reinvoice()}: only in `invoicing` — a new snapshot, nothing to
  *     reverse because nothing was posted, still no number;
+ *   - {@see discard()}: only in `invoicing` — the draft is DELETED (owner
+ *     2026-10-13, ADR-040 addendum): no number, nothing posted, nothing
+ *     references it;
  *   - {@see finalize()} — the BOOKING PRINT («Buchungsdruck»): a batch in
  *     one unit of work — the month ranges `document.YYMM` of the batch
  *     locked first (in name order), then every document (in id order),
@@ -165,12 +169,19 @@ final class InvoicingService
                 return $invoice;
             });
         } catch (InvalidDebtorProfileException | UniqueConstraintViolationException $e) {
-            // Only a race reaches here: another request opened the profile since profileToOpen()
-            // looked (validator inside save(), or the unique index at the final flush).
             if ($opening === null || ($e instanceof UniqueConstraintViolationException && !str_contains($e->getMessage(), DebtorProfile::UNIQUE_CONTACT))) {
                 throw $e;
             }
-            throw new InvoiceRefusedException(InvoiceRefusedException::NO_DEBTOR_PROFILE, 'Für «' . $composed['contact']->displayName() . '» wurde soeben ein Debitor angelegt — bitte nochmals speichern.', $e);
+            // A RACE — another request opened the profile since profileToOpen() looked — shows as the
+            // unique index at the final flush, or as the validator inside save() refusing a second
+            // profile; only then «soeben angelegt». Any other refusal of the validator is named as it is
+            // (review 2026-10-13: every validation error was reported as a race).
+            $contact = $composed['contact'];
+            if ($e instanceof UniqueConstraintViolationException || $this->em->getRepository(DebtorProfile::class)->findByContact((int) $contact->getId()) !== null) {
+                throw new InvoiceRefusedException(InvoiceRefusedException::NO_DEBTOR_PROFILE, 'Für «' . $contact->displayName() . '» wurde soeben ein Debitor angelegt — bitte nochmals speichern.', $e);
+            }
+            $errors = [...$e->validator->getErrors(), ...array_values($e->validator->getFieldErrors())];
+            throw new InvoiceRefusedException(InvoiceRefusedException::NO_DEBTOR_PROFILE, '«' . $contact->displayName() . '» kann nicht als Debitor angelegt werden: ' . implode(' ', $errors), $e);
         }
     }
 
@@ -252,6 +263,38 @@ final class InvoicingService
     }
 
     /**
+     * Discard a DRAFT (owner 2026-10-13, review H3; ADR-040 addendum 2026-10-13): the document
+     * in `invoicing` is DELETED with its lines and tax rows — a real DELETE, not a state. The
+     * correction principle (plan §1: «never an edit, never a deletion») binds what was BOOKED;
+     * a draft has no number (owner 2026-10-10), nothing was posted and nothing references it
+     * (a credit note, a payment, a dunning notice all need a FINAL document), so nothing is
+     * left to correct. Why it is needed: a forgotten draft blocked the year close
+     * (`InvoicingInProgressCheck`) and kept the «Debitor» role from being switched off.
+     *
+     * Takes id + the VERSION the caller saw (the {@see reinvoice()} model): the row is locked
+     * (lock order: invoice row only — no range, no journal), a stale version or a missing row
+     * is a conflict, a booked document is refused (`not-invoicing`).
+     *
+     * @return string the document's name as it read before the delete («Rechnung (Entwurf vom …)»)
+     * @throws InvoiceRefusedException  NOT_INVOICING
+     * @throws InvoiceConflictException the draft is gone or at another version
+     */
+    public function discard(int $invoiceId, int $expectedVersion): string
+    {
+        return $this->em->getTransaction(Invoice::class)->run(function () use ($invoiceId, $expectedVersion): string {
+            $invoice = $this->invoices()->lockForUpdate($invoiceId);
+            if ($invoice === null || $invoice->getVersion() !== $expectedVersion) {
+                throw new InvoiceConflictException($invoiceId, $expectedVersion);
+            }
+            $this->assertInvoicing($invoice);
+            $name = $invoice->documentName();
+            $this->em->remove($invoice);   // cascade: its lines and tax rows go with it
+
+            return $name;
+        });
+    }
+
+    /**
      * The BOOKING PRINT («Buchungsdruck», owner 2026-10-10): `invoicing` →
      * `final` for a batch, ONE unit of work, all or nothing — the documents
      * get their NUMBER here and are posted in the same step; the caller
@@ -270,7 +313,11 @@ final class InvoicingService
      *   3. Every document locked (id order); any that is missing, at another
      *      VERSION than the caller saw, or already `final` refuses the whole
      *      batch; a document whose month is not among the locked ranges was
-     *      re-dated since the read — refused as a conflict.
+     *      re-dated since the read — refused as a conflict. Here, too, the
+     *      payment part each document will print is taken again
+     *      ({@see bookedPaymentPart()}) and checked by `QrBill` — a target
+     *      gone or inactive, or any problem of the would-be bill, refuses
+     *      the whole batch before a number is drawn (owner 2026-10-13).
      *   4. The numbers drawn — `next('document.YYMM')`, the first WRITES of
      *      the unit of work — in a fixed order: invoice date, then id. So a
      *      batch is gapless per month and numbered by date; the 10000th
@@ -299,7 +346,7 @@ final class InvoicingService
      *
      * @param list<array{id: int, version: int}> $documents
      * @return list<Invoice> in the order they were numbered (invoice date, then id)
-     * @throws InvoiceRefusedException  NOT_FOUND | NOT_INVOICING | NUMBER_RANGE_FULL | DATES
+     * @throws InvoiceRefusedException  NOT_FOUND | NOT_INVOICING | NUMBER_RANGE_FULL | DATES | TARGET_UNKNOWN | TARGET_INACTIVE | PAYMENT_PART
      * @throws InvoiceConflictException a document is at another version than the caller saw
      * @throws \Z77\Module\Debtor\Accounting\AccountingRefusedException
      */
@@ -342,7 +389,8 @@ final class InvoicingService
             }
 
             // 3. Every row of the batch, locked in id order.
-            $locked = [];
+            $locked   = [];
+            $payments = [];
             $sorted = $ids;
             sort($sorted);
             foreach ($sorted as $id) {
@@ -358,7 +406,11 @@ final class InvoicingService
                 if (!in_array($this->documentRange($invoice->getInvoiceDate()), $months, true)) {
                     throw new InvoiceConflictException($id, $versions[$id]);   // re-dated between the read and the lock
                 }
-                $locked[$id] = $invoice;
+                // The payment part this booking prints, checked BEFORE any number of the batch is drawn
+                // (owner 2026-10-13, review H5): a document is never booked irrevocably without a
+                // printable payment part.
+                $payments[$id] = $this->printablePaymentPart($invoice);
+                $locked[$id]   = $invoice;
             }
 
             // 4. The numbers — the first writes — by invoice date, then id: gapless per month, numbered by date.
@@ -367,7 +419,7 @@ final class InvoicingService
             /** @var DebtorProfileRepository $profiles */
             $profiles = $this->em->getRepository(DebtorProfile::class);
             foreach ($order as $invoice) {
-                $payment        = $this->bookedPaymentPart($invoice);   // refuses before any number of this document is drawn
+                $payment        = $payments[(int) $invoice->getId()];
                 $number         = $this->drawNumber($ranges, $invoice->getInvoiceDate());
                 $customerNumber = $profiles->findByContact($invoice->getContact())?->getCustomerNumber() ?? 0;
                 $invoice->assignNumber($number, $payment->numbered($customerNumber, $number, $invoice->kind()->label() . ' ' . $number));
@@ -526,9 +578,9 @@ final class InvoicingService
         $i18n     = DI::getI18n();
         $language = $contact->getLanguage() !== '' ? $contact->getLanguage() : $i18n->getDefaultLanguage();
 
-        // The payment target whose account the payment part prints — resolved now, snapshotted
-        // with the number inside the unit of work (paymentPart()).
-        $target = $this->paymentTargetOf($draft, $existing);
+        // The payment target whose account the payment part prints — resolved now for the draft
+        // (paymentPart()); the booking print takes it again (bookedPaymentPart()).
+        $target = $this->paymentTargetOf($draft);
 
         // A credit note names the FINAL invoice it corrects.
         $creditNoteOf = null;
@@ -540,7 +592,7 @@ final class InvoicingService
             if (!$creditNoteOf->isFinal()) {
                 // While the invoice is `invoicing` nothing is posted: the correction is reinvoice(), and a
                 // credit note would mirror a posting that does not exist.
-                throw new InvoiceRefusedException(InvoiceRefusedException::CREDIT_NOTE_TARGET, $creditNoteOf->documentName() . ' ist noch in Fakturierung — sie wird neu fakturiert, nicht gutgeschrieben.');
+                throw new InvoiceRefusedException(InvoiceRefusedException::CREDIT_NOTE_TARGET, $creditNoteOf->documentName() . ' ist noch ein Entwurf — sie wird bearbeitet, nicht gutgeschrieben.');
             }
             if ($creditNoteOf->getContact()->getId() !== $contact->getId()) {
                 throw new InvoiceRefusedException(InvoiceRefusedException::CREDIT_NOTE_TARGET, $creditNoteOf->documentName() . ' gehört einer anderen Partei.');
@@ -670,14 +722,18 @@ final class InvoicingService
 
     /**
      * The draft's payment target (P3 part 3): none when the draft names none;
-     * a credit note never carries one (it has no payment part). The reference
-     * rule (ADR-043 decision 19): a NEW reference needs an ACTIVE target; a
-     * re-issue keeps the target the document already carries even when it was
-     * deactivated since.
+     * a credit note never carries one (it has no payment part). The target
+     * must be ACTIVE — at issue AND at a re-issue (owner 2026-10-13, review
+     * M4): the booking print takes the target again and refuses an inactive
+     * one ({@see bookedPaymentPart()}), so a draft saved with it could never
+     * be booked. Until 2026-10-13 a re-issue kept a target deactivated since
+     * (the ADR-043 decision 19 relaxation for what a document already
+     * carries) — dropped: a draft is not a document yet, nothing printed
+     * names that target.
      *
      * @throws InvoiceRefusedException TARGET_UNKNOWN | TARGET_INACTIVE | NO_PAYMENT_PART
      */
-    private function paymentTargetOf(InvoiceDraft $draft, ?Invoice $existing): ?PaymentTarget
+    private function paymentTargetOf(InvoiceDraft $draft): ?PaymentTarget
     {
         $code = PaymentTarget::normalizeCode((string) $draft->paymentTargetCode);
         if ($code === '') {
@@ -690,7 +746,7 @@ final class InvoicingService
         if ($target === null) {
             throw new InvoiceRefusedException(InvoiceRefusedException::TARGET_UNKNOWN, 'Zahlungsziel «' . $code . '» gibt es nicht.');
         }
-        if (!$target->isActive() && ($existing === null || $existing->getPayment()->getTargetCode() !== $code)) {
+        if (!$target->isActive()) {
             throw new InvoiceRefusedException(InvoiceRefusedException::TARGET_INACTIVE, 'Zahlungsziel «' . $target->getLabel() . '» ist inaktiv — ein anderes wählen.');
         }
 
@@ -717,9 +773,12 @@ final class InvoicingService
      * before the QR-IBAN, was booked with reference type NON). A new reference needs an
      * ACTIVE target (ADR-043 decision 19). A draft without payment part keeps none.
      *
+     * Public because the draft's detail shows THIS part (what will be printed), not the
+     * part stored with the draft (owner 2026-10-13, review H5) — see {@see bookingBill()}.
+     *
      * @throws InvoiceRefusedException TARGET_UNKNOWN | TARGET_INACTIVE
      */
-    private function bookedPaymentPart(Invoice $invoice): PaymentSnapshot
+    public function bookedPaymentPart(Invoice $invoice): PaymentSnapshot
     {
         $draft = $invoice->getPayment();
         if (!$draft->hasPaymentPart()) {
@@ -734,6 +793,50 @@ final class InvoicingService
         }
 
         return PaymentSnapshot::forDocument($invoice->kind(), $target, Creditor::of($target, Creditor::mandator($this->em)));
+    }
+
+    /**
+     * The QR-bill as the booking print of $invoice WILL print it — for a draft from
+     * {@see bookedPaymentPart()} (a target gone or inactive is the bill's one problem), for a
+     * booked document from its snapshot. The draft's detail and its list «Vor dem
+     * Buchungsdruck beheben» read this (owner 2026-10-13, review H5), so what they report is
+     * exactly what {@see finalize()} refuses.
+     */
+    public function bookingBill(Invoice $invoice): QrBill
+    {
+        if ($invoice->isFinal()) {
+            return QrBill::of($invoice);
+        }
+        try {
+            return QrBill::of($invoice, null, $this->bookedPaymentPart($invoice));
+        } catch (InvoiceRefusedException $e) {
+            return QrBill::unavailable($invoice, $e->getMessage());
+        }
+    }
+
+    /**
+     * The payment part the booking print writes for $invoice — refused when its bill would
+     * not be printable (owner 2026-10-13, review H5: never book a document irrevocably without
+     * its payment part). A draft without a payment part (no target, a credit note) passes:
+     * it prints none, as it was issued.
+     *
+     * @throws InvoiceRefusedException TARGET_UNKNOWN | TARGET_INACTIVE | PAYMENT_PART
+     */
+    private function printablePaymentPart(Invoice $invoice): PaymentSnapshot
+    {
+        $payment = $this->bookedPaymentPart($invoice);
+        if (!$payment->hasPaymentPart()) {
+            return $payment;
+        }
+        $problems = QrBill::of($invoice, null, $payment)->problems();
+        if ($problems !== []) {
+            throw new InvoiceRefusedException(
+                InvoiceRefusedException::PAYMENT_PART,
+                $invoice->documentName() . ': der Zahlteil (QR-Rechnung) liesse sich nicht drucken — ' . implode(' ', $problems) . ' Im Entwurf, beim Zahlungsziel oder beim Mandanten beheben.'
+            );
+        }
+
+        return $payment;
     }
 
     /**
@@ -869,9 +972,10 @@ final class InvoicingService
 
     /**
      * Gross mode: the per-line tax share `finalize()` will post must leave
-     * every line a positive net ({@see TaxShares}). Run at ISSUE so the
-     * degenerate document (a code made of 0.01 lines) is refused before a
-     * number is drawn — at `finalize()` it would be too late.
+     * every line a positive net ({@see TaxShares}). Run when the DRAFT is
+     * saved, so the degenerate document (a code made of 0.01 lines) is
+     * refused while it can still be edited — not first at the booking
+     * print, where it would stop a whole batch.
      *
      * @param list<array<string, mixed>> $lines
      * @param list<TaxSummaryEntry> $entries

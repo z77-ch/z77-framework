@@ -34,8 +34,11 @@ use Z77\Persistence\Resolver\UnifiedEntityManager;
  *           (other terms, dunning block) is the debtor dialog the state links to.
  *   - OFF = the profile is DELETED through {@see DebtorProfileService::delete()} — only
  *           while no document (any kind, any state, drafts included) is written to the
- *           contact; otherwise refused: deactivate instead. The customer number is not
- *           given back.
+ *           contact; otherwise refused: deactivate instead (a forgotten draft can be
+ *           deleted since 2026-10-13, `InvoicingService::discard()`). The customer number
+ *           is not given back. Because off destroys the profile, the state names
+ *           `offConfirm` (owner 2026-10-13, review M5): the contact dialog asks first and
+ *           switches off only on the confirmation with an entity token; ON stays immediate.
  *
  * The «+ Kontakt» window of the invoice editor shows no such switch: a contact made
  * there becomes a debtor with its first draft anyway (DEBTOR-CONTACT-001).
@@ -72,6 +75,9 @@ final class DebtorContactRole implements ContactRoleInterface
             reason: $documents === 0 ? '' : (new DebtorProfileInUseException($documents, $contact->displayName()))->getMessage(),
             linkUrl: DebtorProfileLayout::BASE . '/edit?id=' . $profile->getId(),
             linkLabel: 'Debitor bearbeiten …',
+            // Off DELETES the profile (owner 2026-10-13, review M5: never with one click).
+            offConfirm: 'Debitor entfernen? Das Debitorenprofil von «' . $contact->displayName() . '» mit Kundennummer ' . $profile->getCustomerNumber()
+                . ' wird gelöscht; die Kundennummer wird nicht wieder vergeben. Der Kontakt bleibt.',
         );
     }
 

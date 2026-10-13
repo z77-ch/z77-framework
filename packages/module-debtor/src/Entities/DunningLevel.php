@@ -37,6 +37,9 @@ class DunningLevel
     use ArrayMappable;
     use HasDocumentText;
 
+    /** Days between two notices of one invoice when a row does not say (owner 2026-10-13). */
+    public const DEFAULT_DAYS_AFTER_PREVIOUS = 10;
+
     /** Server-controlled — no setter; the collection store assigns it. */
     private ?int $id = null;
 
@@ -55,6 +58,17 @@ class DunningLevel
     /** Days after the due date at which this level becomes applicable. */
     #[Clean('int')]
     private int $daysAfterDue = 0;
+
+    /**
+     * The least number of days between the LAST notice of an invoice and this
+     * level (owner 2026-10-13): the level is due no earlier than this many
+     * days after the previous notice, however far past its due days the
+     * invoice already is. Without a previous notice (the first notice an
+     * invoice gets) it has no effect. The default reaches a row stored before
+     * the field existed — the JSON file needs no migration.
+     */
+    #[Clean('int')]
+    private int $daysAfterPrevious = self::DEFAULT_DAYS_AFTER_PREVIOUS;
 
     /** The fee in MINOR UNITS of the base currency (plan §3); 0 = no fee. */
     #[Clean('int')]
@@ -82,6 +96,7 @@ class DunningLevel
     public function getLabel(): string { return $this->label; }
     public function getLevel(): int { return $this->level; }
     public function getDaysAfterDue(): int { return $this->daysAfterDue; }
+    public function getDaysAfterPrevious(): int { return $this->daysAfterPrevious; }
     public function isActive(): bool { return $this->active; }
 
     /** The stored minor units — the form's field and what the JSON row holds. */
@@ -97,6 +112,7 @@ class DunningLevel
     public function setLabel(string $label): void { $this->label = $label; }
     public function setLevel(mixed $level): void { $this->level = (int) $level; }
     public function setDaysAfterDue(mixed $days): void { $this->daysAfterDue = (int) $days; }
+    public function setDaysAfterPrevious(mixed $days): void { $this->daysAfterPrevious = (int) $days; }
     public function setFee(mixed $minor): void { $this->fee = (int) $minor; }
     public function setActive(bool $active): void { $this->active = $active; }
 }

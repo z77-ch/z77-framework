@@ -47,7 +47,7 @@ $muted = 'font-size:.8rem;color:var(--be-muted,#94a3b8)';
                     <strong>Link für die Kundschaft</strong>
                     <?php if ($link !== null): ?>
                         <div style="display:flex;gap:.4rem;align-items:center;flex-wrap:wrap;margin-top:.25rem">
-                            <input type="text" readonly value="<?= e($link['url']) ?>" style="flex:1;min-width:18rem;font-family:monospace;font-size:.8rem" onclick="this.select()">
+                            <input type="text" readonly value="<?= e($link['url']) ?>" style="flex:1;min-width:18rem;font-family:monospace;font-size:.8rem" data-select-on-focus>
                             <a class="be-btn be-btn--sm" href="<?= e($link['url']) ?>" target="_blank" rel="noopener">Öffnen</a>
                         </div>
                         <div style="<?= $muted ?>">

@@ -36,17 +36,23 @@ use Z77\Shared\Money\Money;
  *
  * «Degrade quietly» (wdv's `prepare()`, kept by the owner 2026-09-23): a
  * bill that cannot be built is not an exception but a list of
- * {@see problems()} in German — the document is issued anyway and prints
- * without a payment part until the cause is fixed and the document is
- * re-issued. A debtor block that does not fit the specification is left out
- * (the payer writes it by hand); the creditor, the account, the amount and
- * the reference must fit.
+ * {@see problems()} in German — a DRAFT is saved anyway and its detail lists
+ * them under «Vor dem Buchungsdruck beheben»; the booking print REFUSES a
+ * document whose payment part has problems (owner 2026-10-13, review H5 —
+ * `InvoicingService::finalize()`), so a booked document is never without
+ * the payment part it was meant to carry. A debtor block that does not fit
+ * the specification is left out (the payer writes it by hand); the creditor,
+ * the account, the amount and the reference must fit.
  *
  * A DRAFT (`invoicing`) has no number yet, hence no reference and no
  * message (owner 2026-10-10: the number is drawn at the booking print):
  * its bill is checked for everything else — so the detail names a missing
  * creditor field BEFORE the booking — but it is never printable
- * ({@see isPending()}); its PDF is a preview without a payment part.
+ * ({@see isPending()}); its PDF is a preview without a payment part. The
+ * draft's bill is built from the payment part the booking print WILL write
+ * (`InvoicingService::bookingBill()` → `bookedPaymentPart()`: the target
+ * and the mandator as they read now), not from the part stored with the
+ * draft.
  */
 final class QrBill
 {
@@ -75,6 +81,9 @@ final class QrBill
 
     /** @var array<string, string> */
     private array $creditor;
+
+    /** The payment part this bill was built from (the document's, or the one the booking print will write). */
+    private PaymentSnapshot $paymentPart;
 
     private function __construct(
         public readonly string $account,
@@ -117,10 +126,17 @@ final class QrBill
      * The bill of $document, from its snapshot — over its gross total, or
      * over $amount when given (the dunning notice bills the OPEN balance
      * plus the fee, under the invoice's own reference, P4 part 3).
+     *
+     * $payment replaces the document's stored payment part — for a DRAFT the
+     * part the booking print will write (`InvoicingService::bookingBill()`,
+     * owner 2026-10-13); a booked document is always read from its snapshot.
      */
-    public static function of(Invoice $document, ?Money $amount = null): self
+    public static function of(Invoice $document, ?Money $amount = null, ?PaymentSnapshot $payment = null): self
     {
-        $payment = $document->getPayment();
+        if ($payment !== null && $document->isFinal()) {
+            throw new \LogicException('A booked document prints the payment part it was booked with — no other');
+        }
+        $payment ??= $document->getPayment();
         $bill    = new self(
             $payment->getAccount(),
             $payment->getReferenceType(),
@@ -138,19 +154,43 @@ final class QrBill
             ],
             self::debtorOf($document->getAddress()),
         );
+        $bill->paymentPart = $payment;
         if ($document->isCreditNote()) {
             $bill->problems[] = 'Eine Gutschrift hat keinen Zahlteil.';
         } elseif (!$payment->hasPaymentPart()) {
             // A final document is never re-issued (review 2026-09-30): the way out is a credit note and a new invoice.
             $bill->problems[] = $document->isFinal()
                 ? 'Ohne Zahlteil ausgestellt und verbucht — er lässt sich nicht nachtragen; nötigenfalls Gutschrift und neue Rechnung mit Zahlungsziel.'
-                : 'Ohne Zahlungsziel ausgestellt — kein Zahlteil. Zahlungsziel wählen und neu fakturieren.';
+                : 'Ohne Zahlungsziel erstellt — kein Zahlteil. Im Entwurf ein Zahlungsziel wählen und speichern.';
         } else {
             $bill->pending = !$document->isFinal();
             $bill->check();
         }
 
         return $bill;
+    }
+
+    /**
+     * The bill of a DRAFT whose payment part cannot be taken at the booking print — its
+     * payment target is gone or inactive (`InvoicingService::bookedPaymentPart()`): the
+     * stored part as the detail shows it, $problem as its one problem, never printable.
+     */
+    public static function unavailable(Invoice $draft, string $problem): self
+    {
+        if ($draft->isFinal()) {
+            throw new \LogicException('A booked document prints the payment part it was booked with');
+        }
+        $bill           = self::of($draft);
+        $bill->problems = [$problem];
+        $bill->pending  = true;
+
+        return $bill;
+    }
+
+    /** The payment part this bill was built from — what the detail of a draft shows as «will be printed». */
+    public function payment(): PaymentSnapshot
+    {
+        return $this->paymentPart;
     }
 
     /** Printable: booked, and every rule of the specification met. A draft's bill never is ({@see isPending()}). */
