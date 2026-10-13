@@ -25,7 +25,8 @@ use Z77\Module\Debtor\Services\Iban;
  *             one for a plain credit)
  *             Refs/AcctSvcrRef | TxId | EndToEndId
  *             Amt @Ccy (the transaction's share of a batch; the entry's amount otherwise)
- *             RltdPties/Dbtr/Nm, RltdPties/Dbtr/PstlAdr/TwnNm (UltmtDbtr first when present)
+ *             RltdPties/Dbtr/Nm, RltdPties/Dbtr/PstlAdr/TwnNm (UltmtDbtr first when present;
+ *               .08 nests both under Dbtr/Pty — read there when present, 2026-10-13)
  *             RmtInf/Strd/CdtrRefInf/Tp/CdOrPrtry/Prtry (QRR | SCOR) + Ref
  *             RmtInf/Ustrd (the unstructured message, several joined)
  *
@@ -86,6 +87,9 @@ final class CamtReader
                     $txRef    = trim((string) ($refs->AcctSvcrRef ?? '')) ?: trim((string) ($refs->TxId ?? '')) ?: trim((string) ($refs->EndToEndId ?? '')) ?: ($messageId . '#' . $pos);
                     [$type, $reference, $remittance] = self::remittance($detail);
                     $debtor = $detail?->RltdPties?->UltmtDbtr ?? $detail?->RltdPties?->Dbtr;
+                    if (isset($debtor->Pty)) {
+                        $debtor = $debtor->Pty;   // .08 nests the party (Dbtr/Pty/Nm); .04 has it directly (Dbtr/Nm)
+                    }
                     $entries[] = new CamtEntry(
                         $txRef,
                         $valueDate,
