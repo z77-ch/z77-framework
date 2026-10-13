@@ -367,9 +367,10 @@ final class InvoicingService
             /** @var DebtorProfileRepository $profiles */
             $profiles = $this->em->getRepository(DebtorProfile::class);
             foreach ($order as $invoice) {
+                $payment        = $this->bookedPaymentPart($invoice);   // refuses before any number of this document is drawn
                 $number         = $this->drawNumber($ranges, $invoice->getInvoiceDate());
                 $customerNumber = $profiles->findByContact($invoice->getContact())?->getCustomerNumber() ?? 0;
-                $invoice->assignNumber($number, $invoice->getPayment()->numbered($customerNumber, $number, $invoice->kind()->label() . ' ' . $number));
+                $invoice->assignNumber($number, $payment->numbered($customerNumber, $number, $invoice->kind()->label() . ' ' . $number));
             }
 
             // 5. Post and finalize, in the same order.
@@ -707,6 +708,32 @@ final class InvoicingService
     private function paymentPart(Invoice $invoice, array $composed): PaymentSnapshot
     {
         return PaymentSnapshot::forDocument($invoice->kind(), $composed['target'], $composed['creditor']);
+    }
+
+    /**
+     * The payment part the booking print prints (owner 2026-10-13): taken AGAIN from the
+     * draft's payment target as it reads NOW — a draft is not a document yet, so a QR-IBAN
+     * entered after the draft was saved must reach the bill (it did not: draft 50, saved
+     * before the QR-IBAN, was booked with reference type NON). A new reference needs an
+     * ACTIVE target (ADR-043 decision 19). A draft without payment part keeps none.
+     *
+     * @throws InvoiceRefusedException TARGET_UNKNOWN | TARGET_INACTIVE
+     */
+    private function bookedPaymentPart(Invoice $invoice): PaymentSnapshot
+    {
+        $draft = $invoice->getPayment();
+        if (!$draft->hasPaymentPart()) {
+            return $draft;
+        }
+        $target = $this->em->getRepository(PaymentTarget::class)->findByCode($draft->getTargetCode());
+        if ($target === null) {
+            throw new InvoiceRefusedException(InvoiceRefusedException::TARGET_UNKNOWN, $invoice->documentName() . ': Zahlungsziel «' . $draft->getTargetCode() . '» gibt es nicht mehr — im Entwurf ein anderes wählen.');
+        }
+        if (!$target->isActive()) {
+            throw new InvoiceRefusedException(InvoiceRefusedException::TARGET_INACTIVE, $invoice->documentName() . ': Zahlungsziel «' . $target->getLabel() . '» ist inaktiv — im Entwurf ein anderes wählen.');
+        }
+
+        return PaymentSnapshot::forDocument($invoice->kind(), $target, Creditor::of($target, Creditor::mandator($this->em)));
     }
 
     /**
