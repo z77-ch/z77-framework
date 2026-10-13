@@ -599,8 +599,9 @@ final class InvoicingService
             $this->assertTaxSharesFit($lines, $vat->summary->entries());
         }
 
-        // The accounts every priced line names — checked softly against the bookkeeping.
-        $this->assertRevenueAccounts($lines, !$isFee);
+        // The accounts every priced line names — checked softly against the bookkeeping; the flag
+        // «auf Belegen wählbar» only for an invoice (owner 2026-10-13, see assertRevenueAccounts()).
+        $this->assertRevenueAccounts($lines, $draft->kind === InvoiceKind::Invoice);
 
         // Totals and the rounding line.
         $net      = $vat?->net() ?? array_reduce($lines, static fn(Money $sum, array $l) => $sum->add($l['amount']), Money::zero($currency));
@@ -880,14 +881,16 @@ final class InvoicingService
      * a fee is revenue too. The rounding line is not passed in (it posts to
      * the mandator's rounding account, set by the system).
      *
-     * An invoice or credit-note line names an account the USER chose, so it
-     * must also be flagged «auf Belegen wählbar» in the chart
+     * An INVOICE line names an account the USER chose, so it must also be
+     * flagged «auf Belegen wählbar» in the chart
      * ({@see LedgerAccountCheck::isDocumentAccount()}, owner 2026-10-12 —
-     * not the revenue deductions 3800 / 3805 / 3809). A FEE's line is not a
-     * choice: it carries the mandator's dunning-fee account (`DebtorAccounts`,
-     * KMU 6950), which must be revenue and nothing more — $documentChoice =
-     * false skips the flag for it, so switching 6950 off for invoice lines
-     * never blocks a dunning run.
+     * not the revenue deductions 3800 / 3805 / 3809). $documentChoice =
+     * false skips the flag for the two kinds that are not a free choice:
+     * a CREDIT NOTE mirrors the invoice it corrects (owner 2026-10-13) — the
+     * flag switched off after the invoice must never block its correction,
+     * so its lines need the type only; a FEE's line carries the mandator's
+     * dunning-fee account (`DebtorAccounts`, KMU 6950), a setting, not a
+     * pick — switching 6950 off for invoice lines never blocks a dunning run.
      *
      * $prefix names the document in a refusal at the booking print, where a
      * batch holds several («Rechnung (Entwurf vom …), »); empty at issue.
@@ -920,8 +923,8 @@ final class InvoicingService
     /**
      * The same rule at the booking print, on the STORED lines: a draft saved
      * before the rule (or whose account changed its type in the chart since,
-     * or was switched off «auf Belegen wählbar») is refused with the reason,
-     * never posted to a balance-sheet account.
+     * or — an invoice only — was switched off «auf Belegen wählbar») is
+     * refused with the reason, never posted to a balance-sheet account.
      *
      * @throws InvoiceRefusedException ACCOUNT_NOT_POSTABLE | ACCOUNT_NOT_REVENUE | ACCOUNT_NOT_SELECTABLE
      */
@@ -931,7 +934,7 @@ final class InvoicingService
         foreach ($invoice->getLines() as $line) {
             $lines[$line->getPosition() - 1] = ['account' => $line->type() === LineType::Rounding ? null : $line->getRevenueAccount()];
         }
-        $this->assertRevenueAccounts($lines, $invoice->kind() !== InvoiceKind::Fee, $invoice->documentName() . ', ');
+        $this->assertRevenueAccounts($lines, $invoice->kind() === InvoiceKind::Invoice, $invoice->documentName() . ', ');
     }
 
     /**

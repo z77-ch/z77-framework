@@ -119,6 +119,25 @@ final class PdfWriter extends \FPDF
     }
 
     /**
+     * $text (already encoded) with its baseline starting at ($x, $y), turned
+     * $degrees counter-clockwise about ($cx, $cy) — the rotation as the
+     * writer's scripts do it: the current transformation matrix is changed
+     * by a `cm` inside a saved graphics state (`q … Q`), so nothing drawn
+     * afterwards is turned. Text colour applies as in `Text()`.
+     */
+    public function rotatedText(float $x, float $y, string $text, float $degrees, float $cx, float $cy): void
+    {
+        $rad = deg2rad($degrees);
+        $c   = cos($rad);
+        $s   = sin($rad);
+        $px  = $cx * $this->k;
+        $py  = ($this->h - $cy) * $this->k;
+        $this->_out(sprintf('q %.5F %.5F %.5F %.5F %.2F %.2F cm 1 0 0 1 %.2F %.2F cm', $c, $s, -$s, $c, $px, $py, -$px, -$py));
+        $this->Text($x, $y, $text);
+        $this->_out('Q');
+    }
+
+    /**
      * Ends the current section: the open page gets its footer NOW, from the hook
      * it was drawn with, and is flagged as finished — the next section sets its
      * own hooks BEFORE its `addPage()`, and the writer's `AddPage()` would

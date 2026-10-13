@@ -3536,6 +3536,23 @@ check('W10 lock pair in the source: invoice() locks an existing profile SHARED b
     strpos($wFn, 'lockForContact(') !== false && strpos($wFn, 'exclusive: false') < strpos($wFn, 'new Invoice(')
     && preg_match('/lockForContact\(.*exclusive: true\).*countForContact\(.*lock: true\).*->remove\(\$profile\)/s', file_get_contents((new \ReflectionClass(DebtorProfileService::class))->getFileName())) === 1);
 
+// ── X. a credit note mirrors its invoice (owner decision 2026-10-13) ────
+
+echo "X. Credit notes: the account TYPE only, never the flag «auf Belegen wählbar»\n";
+$xInv = $service($wireDi())->invoice($oneLine($mid, '2026-12-08', '1.000', '100.00'));   // a line on 3400
+$service($wireDi())->finalize([$at($xInv->getId())]);
+$db->executeStatement("UPDATE account SET selectable_on_documents = 0 WHERE number = '3400'");   // switched off after the invoice
+$xCn = $service($wireDi())->invoice(InvoiceDraft::creditNote($xInv->getId(), $mid, day('2026-12-09'), 'CHF', [LineDraft::service('Stunden', '1.000', 'h', chf('40.00'), 'UN', '3400')]));
+$xRe = $service($wireDi())->reinvoice($xCn->getId(), 1, InvoiceDraft::creditNote($xInv->getId(), $mid, day('2026-12-09'), 'CHF', [LineDraft::service('Stunden', '1.000', 'h', chf('30.00'), 'UN', '3400')]));
+$xJournal = $journalCount();
+$service($wireDi())->finalize([$at($xCn->getId())]);
+check('X1 a credit note on an invoice whose account 3400 was switched off «auf Belegen wählbar» since: issued, re-issued and BOOKED (one journal entry) — a later chart setting never blocks a correction',
+    $xCn->isCreditNote() && $xRe->getVersion() === 2 && $readInvoice($xCn->getId())->isFinal() && $journalCount() === $xJournal + 1);
+check('X2 … while a NEW invoice on 3400 is refused account-not-selectable, and a credit-note line on 1020 still account-not-revenue (the type stays required)',
+    $refusal(fn() => $service($wireDi())->invoice($oneLine($mid, '2026-12-09', '1.000', '10.00'))) === InvoiceRefusedException::ACCOUNT_NOT_SELECTABLE
+    && $refusal(fn() => $service($wireDi())->invoice(InvoiceDraft::creditNote($xInv->getId(), $mid, day('2026-12-09'), 'CHF', [LineDraft::lumpSum('x', chf('1.00'), 'UN', '1020')]))) === InvoiceRefusedException::ACCOUNT_NOT_REVENUE);
+$db->executeStatement("UPDATE account SET selectable_on_documents = 1 WHERE number = '3400'");
+
 // ── result ───────────────────────────────────────────────────────────────
 
 echo "\n{$pass} passed, {$fail} failed\n";

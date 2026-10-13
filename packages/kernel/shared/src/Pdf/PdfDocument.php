@@ -275,6 +275,25 @@ final class PdfDocument
     }
 
     /**
+     * One line of text CENTRED on ($cx, $cy) and turned $degrees
+     * counter-clockwise about that point (45 = bottom-left to top-right) —
+     * a stamp across the page: «VORSCHAU», later «KOPIE» / «ENTWURF»
+     * (owner 2026-10-13). In the current font and text colour; does not
+     * move the cursor and never breaks the page. Drawn in order like
+     * everything else: a watermark goes UNDER the content when it is drawn
+     * first on the page (in the page-start hook).
+     */
+    public function rotatedText(float $cx, float $cy, string $text, float $degrees): self
+    {
+        $encoded = $this->enc($text);
+        $width   = $this->writer->GetStringWidth($encoded);
+        // Vertically centred on the cap height (Helvetica ≈ 0.72 em): the baseline lies half of it below $cy.
+        $this->writer->rotatedText($cx - $width / 2, $cy + $this->writer->fontSizeMm() * 0.36, $encoded, $degrees, $cx, $cy);
+
+        return $this;
+    }
+
+    /**
      * Several lines, one under the other from ($x, $y) at $lineHeight mm;
      * answers the y BELOW the last line. Empty lines are skipped.
      *

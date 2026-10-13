@@ -14,6 +14,7 @@ use Z77\Core\DI,
     Z77\Module\Debtor\Entities\DebtorProfile,
     Z77\Module\Debtor\Entities\Invoice,
     Z77\Module\Debtor\Entities\InvoiceKind,
+    Z77\Module\Debtor\Entities\LineType,
     Z77\Module\Debtor\Entities\Payment,
     Z77\Module\Debtor\Entities\PaymentTarget,
     Z77\Module\Debtor\Entities\PaymentTerms,
@@ -725,9 +726,41 @@ trait InvoiceControllerTrait
             'defaultTerms' => $this->em()->getRepository(PaymentTerms::class)->defaultForNewDebtor(),
             'targets'    => $targets,
             'taxCodes'   => $this->em()->getRepository(TaxCode::class)->selectable($form->keptCodes()),
-            // A line posts to a revenue account flagged «auf Belegen wählbar» (owner 2026-10-10 / 2026-10-12) — the service refuses any other.
-            'accounts'   => (new LedgerAccountCheck($this->em()))->documentAccounts(),
+            'accounts'   => $this->invoiceLineAccounts($form),
         ]);
+    }
+
+    /**
+     * The accounts the line datalist offers. An invoice line: the revenue accounts
+     * flagged «auf Belegen wählbar» (owner 2026-10-10 / 2026-10-12) — the service
+     * refuses any other. A credit note mirrors its invoice (owner 2026-10-13), the
+     * service checks its lines for the type only: the same list PLUS the revenue
+     * accounts the corrected invoice's lines carry (not its rounding line), though
+     * switched off since — in chart order. Not every revenue account: the flag
+     * still steers the choice.
+     *
+     * @return list<array{number: string, label: string}>
+     */
+    private function invoiceLineAccounts(InvoiceForm $form): array
+    {
+        $check    = new LedgerAccountCheck($this->em());
+        $accounts = $check->documentAccounts();
+        if ($form->creditNoteOf === null) {
+            return $accounts;
+        }
+        $offered  = array_fill_keys(array_column($accounts, 'number'), true);
+        $mirrored = [];
+        foreach ($form->creditNoteOf->getLines() as $line) {
+            $number = $line->type() === LineType::Rounding ? null : $line->getRevenueAccount();
+            if ($number !== null && !isset($offered[$number]) && $check->hasType($number, LedgerAccountCheck::TYPE_REVENUE) === true) {
+                $mirrored[$number] = true;
+            }
+        }
+        if ($mirrored === []) {
+            return $accounts;
+        }
+
+        return array_values(array_filter($check->postableAccounts(), static fn(array $row): bool => isset($offered[$row['number']]) || isset($mirrored[$row['number']])));
     }
 
     /** The target a new invoice starts with: the first ACTIVE one in list order — a preselection the user sees and may change, never an implicit default of the service. */

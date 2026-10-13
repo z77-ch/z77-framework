@@ -11,8 +11,8 @@
  * nothing else is printed there, the footer included).
  *
  * A DRAFT (`invoicing`, no number yet) prints as a PREVIEW (owner
- * 2026-10-10): every page carries a large light «VORSCHAU» behind the
- * content and a red line at the top, the title has no number, and instead
+ * 2026-10-10): every page carries a large light diagonal «VORSCHAU» behind
+ * the content and a red line at the top, the title has no number, and instead
  * of the payment part a short note says it follows with the booking print.
  * Only a booked document prints its number and its QR-bill.
  *
@@ -47,8 +47,10 @@ $name     = $preview ? $document->kind()->label() . ' — Vorschau' : $document-
 $pdf->set('paymentPart', false);
 $pdf->onPageStart(static function ($pdf) use ($name, $left, $right, $width, $preview): void {
     if ($preview) {
-        // Drawn FIRST on every page, so the content lies on top of the light watermark.
-        $pdf->font('B', 88)->textColor(228)->text($left, 165, 'VORSCHAU', 'C', $width)->textColor(0);
+        // Drawn FIRST on every page (the page-start hook runs before any content), so the content
+        // lies on top of the light watermark — diagonal across the page centre, 45° bottom-left to
+        // top-right (owner 2026-10-13).
+        $pdf->font('B', 110)->textColor(228)->rotatedText($pdf->pageWidth() / 2, $pdf->pageHeight() / 2, 'VORSCHAU', 45)->textColor(0);
         $pdf->font('B', 8)->textColor(180, 0, 0)->text($left, 6, 'VORSCHAU — kein gültiges Dokument: ohne Belegnummer und ohne Zahlteil. Beides kommt mit dem Buchungsdruck.', 'C', $width)->textColor(0);
     }
     if ($pdf->sectionPageNo() > 1) {

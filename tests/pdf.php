@@ -19,7 +19,10 @@
  *   - a PDF partial draws and echoes nothing — stray output is refused;
  *   - the page hooks run per page and read the layout's bag;
  *   - the kernel's `pdf/table` flows over pages, repeats its header, leaves
- *     the cursor below; `pdf/addressWindow` places the lines in the window.
+ *     the cursor below; `pdf/addressWindow` places the lines in the window;
+ *   - `rotatedText()` turns the text inside a saved graphics state (`q cm … Q`,
+ *     balanced), a stamp drawn in the page-start hook lies under every page's
+ *     content and is absent when the layout does not draw it (J).
  *
  * Run: php tests/pdf.php
  * Needs the Composer autoloader (FPDF classmap, the kernel facade) and a
@@ -279,6 +282,36 @@ $single = PdfDocument::create('one')->withoutCompression();
 $single->onPageEnd(static fn(PdfDocument $p) => $p->text(20, 284, 'S ' . $p->sectionPageNo() . ' von ' . $p->sectionPageCount() . ' / {nb}'));
 $single->addPage()->addPage();
 check('I3 a single document needs no startSection(): sectionPageNo() = pageNo(), sectionPageCount() = {nb}', str_contains($single->output(), '(S 2 von 2 / 2)'));
+
+// ── J. rotated text: the diagonal stamp (owner 2026-10-13, the «VORSCHAU» of the invoice preview) ──
+// Drawn like the invoice layout does it: in the page-start hook, only while the document is a preview.
+$stamped = static function (bool $preview): array {
+    $doc = PdfDocument::create('stamp')->withoutCompression();
+    $doc->onPageStart(static function (PdfDocument $p) use ($preview): void {
+        if ($preview) {
+            $p->font('B', 110)->textColor(228)->rotatedText($p->pageWidth() / 2, $p->pageHeight() / 2, 'VORSCHAU', 45)->textColor(0);
+        }
+    });
+    $doc->autoPageBreak(30)->addPage()->font('', 10)->text(20, 30, 'Inhalt 1')->addPage()->font('', 10)->text(20, 30, 'Inhalt 2');
+    preg_match_all('/stream\n(.*?)\nendstream/s', $doc->output(), $m);
+    // The page content streams only (the font and info objects carry no «Inhalt»).
+    return array_values(array_filter($m[1], static fn(string $s) => str_contains($s, '(Inhalt ')));
+};
+$pages = $stamped(true);
+// cos 45° = sin 45° = 0.70711; the page centre 105 / 148.5 mm = 297.64 / ~420.94 pt from the bottom-left
+// (the last digit of y follows the float of pageHeight() / 2).
+$rotation = '/q 0\.70711 0\.70711 -0\.70711 0\.70711 297\.64 420\.9\d cm 1 0 0 1 -297\.64 -420\.9\d cm\s+q [\d.]+ g BT [^\n]*\(VORSCHAU\) Tj ET Q\s+Q\s/';
+check('J1 rotatedText(): the rotation matrix (45°, about the page centre) is in the stream inside a saved state, followed by the text',
+    count($pages) === 2 && preg_match($rotation, $pages[0]) === 1);
+check('J2 q / Q balanced on every page — the rotation does not leak into the content drawn after it',
+    $pages !== [] && array_filter($pages, static fn(string $s) => preg_match_all('/(?<!\S)q(?!\S)/', $s) !== preg_match_all('/(?<!\S)Q(?!\S)/', $s)) === []);
+check('J3 every page of a two-page preview carries the stamp, BEFORE its content (drawn under it)',
+    count(array_filter($pages, static fn(string $s) => substr_count($s, '(VORSCHAU)') === 1 && strpos($s, '(VORSCHAU)') < strpos($s, '(Inhalt '))) === 2);
+$final = $stamped(false);
+check('J4 a final document carries no stamp and no rotation', count($final) === 2 && !str_contains(implode('', $final), 'VORSCHAU') && !str_contains(implode('', $final), ' cm'));
+$c = PdfDocument::create('c')->addPage()->setXY(33, 44);
+$c->font('B', 40)->rotatedText(105, 148.5, 'KOPIE', 30);
+check('J5 rotatedText() leaves the cursor where it was', abs($c->x() - 33) < 0.01 && abs($c->y() - 44) < 0.01);
 
 echo "\n{$pass} passed, {$fail} failed\n";
 exit($fail === 0 ? 0 : 1);

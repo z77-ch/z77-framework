@@ -23,7 +23,8 @@
  * document carries) and the revenue account (`partials/accountDatalist`,
  * module-mandator — `LedgerAccountCheck::documentAccounts()`: the postable,
  * active accounts of type «Ertrag» flagged «auf Belegen wählbar» only,
- * the service refuses any other; a stored other value still shows; a plain text field
+ * the service refuses any other on an invoice; a credit note adds the revenue
+ * accounts of the invoice it corrects, owner 2026-10-13; a stored other value still shows; a plain text field
  * without module-financial).
  *
  * @var \Z77\Module\Debtor\Ui\InvoiceForm $form
