@@ -46,6 +46,9 @@ $id         = (string) $account->getId();
                         <?php if ($account->isPostable() && !$account->isSelectableOnDocuments() && $account->getType() === \Z77\Module\Financial\Entities\AccountType::Revenue->value): ?>
                         <span class="badge badge--muted" title="Ertragskonto, das nicht als Konto einer Beleg-Position angeboten wird">nicht auf Belegen</span>
                         <?php endif; ?>
+                        <?php if ($account->isPostable() && $account->isModulePostingOnly()): ?>
+                        <span class="badge badge--muted" title="Sammelkonto: nur ein Modul bucht darauf, manuelle Buchungen werden abgelehnt">nur Modul</span>
+                        <?php endif; ?>
                         <?php if (!$account->isActive()): ?>
                         <span class="badge badge--muted">inaktiv</span>
                         <?php endif; ?>

@@ -271,6 +271,10 @@ trait JournalControllerTrait
             PostingRefusedException::ACCOUNT_UNKNOWN      => 'Ein Konto gibt es nicht.',
             PostingRefusedException::ACCOUNT_NOT_POSTABLE => 'Ein Konto ist eine Gruppe und nicht bebuchbar.',
             PostingRefusedException::ACCOUNT_INACTIVE     => 'Ein Konto ist inaktiv.',
+            // Owner 2026-10-13: the collective account of a module (debtor's 1100) takes no manual line.
+            PostingRefusedException::ACCOUNT_MODULE_ONLY  => 'Das Konto «' . ($e instanceof PostingRefusedException ? (string) $e->account : '') . '» ist nur durch Module bebuchbar — '
+                . 'eine manuelle Buchung darauf ist gesperrt. Korrekturen laufen über das Modul, das das Konto führt (z. B. Gutschrift oder Zahlung in den Debitoren); '
+                . 'die Sperre lässt sich im Kontenplan aufheben.',
             PostingRefusedException::TAX_CODE_UNKNOWN     => 'Einen MWST-Code gibt es nicht.',
             EntryNotEditableException::GENERATED          => 'Eine generierte Buchung wird nie geändert oder gelöscht — das Modul, das sie gebucht hat, storniert sie.',
             EntryNotEditableException::FISCAL_YEAR_CHANGED => 'Das neue Datum liegt in einem anderen Geschäftsjahr — die Nummer gehört zum Jahr. Buchung löschen und im anderen Jahr neu erfassen.',

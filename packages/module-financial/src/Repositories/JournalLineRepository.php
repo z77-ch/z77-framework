@@ -11,8 +11,9 @@ use Z77\Persistence\Doctrine\Repository\DoctrineRepository;
 /**
  * Convention repository for {@see JournalLine} — the report SQL of P2 part 3
  * (plan §5.5, ADR-039 decision 8). Every method is an AGGREGATE or a bounded
- * read over `journal_line` on `connection()`, never a hydrated entity: the
- * largest installation's volume only works that way (plan §12/§13).
+ * read over `journal_line` on `connection()` — or, for the account statement
+ * PDF, a SQL stream of rows ({@see streamAccountLines()}) — never a hydrated
+ * entity: the largest installation's volume only works that way (plan §12/§13).
  * Doctrine-only, each method marked as such.
  *
  * What comes back are plain rows with amounts as the DECIMAL STRINGS MariaDB
@@ -89,39 +90,99 @@ class JournalLineRepository extends DoctrineRepository
     }
 
     /**
-     * One PAGE of an account's lines dated from–to, in the account
-     * statement's order (date, entry number, position), each with its
-     * RUNNING Σ (debit − credit) from the first line of the range. The
-     * window function runs over the whole range BEFORE LIMIT/OFFSET cut the
-     * page, so the running figure of a line on page 7 counts pages 1–6 as
-     * well — correct under pagination without reading them (MariaDB ≥ 10.2;
-     * the installations run 10.6). Doctrine-only (SQL, window function).
+     * The account statement's lines of one account dated from–to, in its
+     * order (date, entry number, position), each with its RUNNING Σ
+     * (debit − credit) from the first line of the range. The window function
+     * runs over the whole range BEFORE LIMIT/OFFSET cut a page, so the running
+     * figure of a line on page 7 counts pages 1–6 as well — correct under
+     * pagination without reading them (MariaDB ≥ 10.2; the installations run
+     * 10.6).
+     */
+    private const ACCOUNT_LINES_SQL =
+        'SELECT l.id AS line_id, e.id AS entry_id, e.number, e.entry_date, e.text AS entry_text, l.text AS line_text,
+                l.debit, l.credit,
+                SUM(l.debit - l.credit) OVER (
+                    ORDER BY e.entry_date, e.number, l.position, l.id
+                    ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+                ) AS running
+           FROM journal_line l
+           JOIN journal_entry e ON e.id = l.entry_id
+          WHERE l.account_id = ? AND e.fiscal_year_id = ? AND e.entry_date BETWEEN ? AND ?
+          ORDER BY e.entry_date, e.number, l.position, l.id';
+
+    /**
+     * One PAGE of an account's lines ({@see ACCOUNT_LINES_SQL}) — the screen.
+     * Doctrine-only (SQL, window function).
      *
      * @return list<array{line_id: int, entry_id: int, number: int, entry_date: string, entry_text: string, line_text: ?string, debit: string, credit: string, running: string}>
      */
     public function accountLines(int $accountId, int $fiscalYearId, string $from, string $to, int $offset, int $limit): array
     {
         $rows = $this->connection()->fetchAllAssociative(
-            'SELECT l.id AS line_id, e.id AS entry_id, e.number, e.entry_date, e.text AS entry_text, l.text AS line_text,
-                    l.debit, l.credit,
-                    SUM(l.debit - l.credit) OVER (
-                        ORDER BY e.entry_date, e.number, l.position, l.id
-                        ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
-                    ) AS running
-               FROM journal_line l
-               JOIN journal_entry e ON e.id = l.entry_id
-              WHERE l.account_id = ? AND e.fiscal_year_id = ? AND e.entry_date BETWEEN ? AND ?
-              ORDER BY e.entry_date, e.number, l.position, l.id
-              LIMIT ? OFFSET ?',
+            self::ACCOUNT_LINES_SQL . ' LIMIT ? OFFSET ?',
             [$accountId, $fiscalYearId, $from, $to, max(1, $limit), max(0, $offset)],
             [ParameterType::INTEGER, ParameterType::INTEGER, ParameterType::STRING, ParameterType::STRING, ParameterType::INTEGER, ParameterType::INTEGER]
         );
 
-        return array_map(static fn(array $r) => [
-            'line_id'    => (int) $r['line_id'],
-            'entry_id'   => (int) $r['entry_id'],
-            'number'     => (int) $r['number'],
-        ] + $r, $rows);
+        return array_map(self::accountLineRow(...), $rows);
+    }
+
+    /**
+     * EVERY line of the range ({@see ACCOUNT_LINES_SQL}), one row at a time — the PDF
+     * (review 2026-10-13 §2: the PDF hydrated everything). ONE statement, so the window
+     * function sorts the range once (a page-wise read would sort it again per page —
+     * ≈ 1.6 s per page at 90'000 lines, FIN-REPORT-005); the rows are a SQL stream —
+     * the driver holds the raw result (PDO buffers it, a few dozen bytes per line), PHP
+     * builds one row array at a time. Buffered, so other statements may run while the
+     * caller iterates (the counter accounts per chunk). Doctrine-only (SQL, window function).
+     *
+     * @return \Generator<int, array{line_id: int, entry_id: int, number: int, entry_date: string, entry_text: string, line_text: ?string, debit: string, credit: string, running: string}>
+     */
+    public function streamAccountLines(int $accountId, int $fiscalYearId, string $from, string $to): \Generator
+    {
+        $result = $this->connection()->executeQuery(
+            self::ACCOUNT_LINES_SQL,
+            [$accountId, $fiscalYearId, $from, $to],
+            [ParameterType::INTEGER, ParameterType::INTEGER, ParameterType::STRING, ParameterType::STRING]
+        );
+        foreach ($result->iterateAssociative() as $row) {
+            yield self::accountLineRow($row);
+        }
+    }
+
+    private static function accountLineRow(array $r): array
+    {
+        return [
+            'line_id'  => (int) $r['line_id'],
+            'entry_id' => (int) $r['entry_id'],
+            'number'   => (int) $r['number'],
+        ] + $r;
+    }
+
+    /**
+     * The MANUAL entries with a line on one account in a fiscal year dated from–to — what the
+     * year-close reconciliation names when a collective account and its subledger disagree
+     * (`SubledgerReconciliationCheck`, owner 2026-10-13): how many, the first $limit entry
+     * numbers, and their net Σ (debit − credit) on the account. Doctrine-only (SQL).
+     *
+     * @return array{count: int, numbers: list<int>, net: string}
+     */
+    public function manualLinesOnAccount(int $accountId, int $fiscalYearId, string $from, string $to, int $limit): array
+    {
+        $where = "l.account_id = ? AND e.fiscal_year_id = ? AND e.entry_date BETWEEN ? AND ? AND e.kind = 'manual'";
+        $total = $this->connection()->fetchAssociative(
+            "SELECT COUNT(DISTINCT e.id) AS entries, COALESCE(SUM(l.debit - l.credit), 0) AS net
+               FROM journal_line l JOIN journal_entry e ON e.id = l.entry_id WHERE {$where}",
+            [$accountId, $fiscalYearId, $from, $to],
+            [ParameterType::INTEGER, ParameterType::INTEGER, ParameterType::STRING, ParameterType::STRING]
+        );
+        $numbers = $this->connection()->fetchFirstColumn(
+            "SELECT DISTINCT e.number FROM journal_line l JOIN journal_entry e ON e.id = l.entry_id WHERE {$where} ORDER BY e.number LIMIT ?",
+            [$accountId, $fiscalYearId, $from, $to, max(1, $limit)],
+            [ParameterType::INTEGER, ParameterType::INTEGER, ParameterType::STRING, ParameterType::STRING, ParameterType::INTEGER]
+        );
+
+        return ['count' => (int) $total['entries'], 'numbers' => array_map('intval', $numbers), 'net' => (string) $total['net']];
     }
 
     /**

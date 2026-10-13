@@ -17,6 +17,11 @@
  * stands in the label like every field of this dialog: the dialog is a
  * modal popup, beside which the non-modal help window cannot be used.
  *
+ * «Nur durch Module bebuchbar» (owner 2026-10-13, `Account::$modulePostingOnly`) is shown
+ * for a postable account and on «Konto anlegen»: a manual journal entry is refused on such
+ * an account, a module's posting passes. Not rendered for a group — nothing is posted, the
+ * stored value stays.
+ *
  * @var \Z77\Module\Financial\Entities\Account $entry
  * @var string $entityCsrf
  * @var \Z77\Persistence\Validation\EntityValidator $validator
@@ -119,6 +124,21 @@ $fieldError = function (string $name) use ($validator): string {
                     <span class="be-switch__label">Auf Belegen wählbar <small>(nur Kontoart Ertrag: wird als Konto einer Rechnungs- oder Gutschriftsposition angeboten — aus für Erlösminderungen, Verluste, Rundung)</small></span>
                 </label>
                 <?= raw($fieldError('selectable_on_documents')) ?>
+            </div>
+        </div>
+        <?php endif; ?>
+        <?php // «Nur durch Module bebuchbar» (owner 2026-10-13): for a postable account and on
+              // «Konto anlegen»; a group carries no line, so the switch is not rendered there and
+              // the stored value stays. The help stands in the label (the modal popup, see above). ?>
+        <?php if ($isNew || $entry->isPostable()): ?>
+        <div class="be-form__grid">
+            <div class="be-form__field" data-z77-field-wrapper>
+                <label class="be-switch">
+                    <input type="checkbox" class="be-switch__input" name="module_posting_only" value="1"<?= $entry->isModulePostingOnly() ? ' checked' : '' ?>>
+                    <span class="be-switch__track"><span class="be-switch__thumb"></span></span>
+                    <span class="be-switch__label">Nur durch Module bebuchbar <small>(Sammelkonto eines Moduls, z. B. Debitoren 1100: manuelle Buchungen im Journal werden abgelehnt, nur das Modul bucht darauf — Korrekturen über das Modul; der Jahresabschluss gleicht das Konto mit dem Modul ab)</small></span>
+                </label>
+                <?= raw($fieldError('module_posting_only')) ?>
             </div>
         </div>
         <?php endif; ?>

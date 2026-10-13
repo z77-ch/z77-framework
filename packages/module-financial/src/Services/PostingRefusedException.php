@@ -25,8 +25,14 @@ class PostingRefusedException extends FinancialException
     public const ACCOUNT_INACTIVE     = 'account-inactive';
     public const TAX_CODE_UNKNOWN     = 'tax-code-unknown';
     public const IDEMPOTENCY_CONFLICT = 'idempotency-conflict';
+    /** A MANUAL entry names an account «nur durch Module bebuchbar» (`Account::$modulePostingOnly`, owner 2026-10-13). */
+    public const ACCOUNT_MODULE_ONLY  = 'account-module-only';
 
-    public function __construct(public readonly string $reason, string $message)
+    /**
+     * @param string|null $account the account the refusal is about («1100 Forderungen …»), when it is
+     *                             about one — the screen names it in its German sentence
+     */
+    public function __construct(public readonly string $reason, string $message, public readonly ?string $account = null)
     {
         parent::__construct($message);
     }

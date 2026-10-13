@@ -1,7 +1,7 @@
 <?php
 /**
  * Journal report (plan §5.5): the entries of the range in date and number
- * order, each with its lines — the printable journal. One page of
+ * order, each with its lines — the journal on the screen (paper is the PDF). One page of
  * `LedgerReports::JOURNAL_PAGE_SIZE` entries; count, Σ Soll and Σ Haben (each
  * its own SQL sum) cover the whole range. The number links to the entry's detail page. Deleted manual
  * entries are gaps in the numbering; the change log screen (Finanzen ›

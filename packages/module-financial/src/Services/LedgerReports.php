@@ -45,11 +45,14 @@ use Z77\Shared\Money\Money;
  */
 final class LedgerReports
 {
-    /** Account statement lines per page — a year of a busy bank account is thousands of lines; 500 print as ~12 pages. */
+    /** Account statement lines per SCREEN page — a year of a busy bank account is thousands of lines; paper is the PDF, which takes them all (FIN-PDF-001). */
     public const ACCOUNT_STATEMENT_PAGE_SIZE = 500;
 
-    /** Journal report entries per page — each entry is 2–n lines, so a page stays a readable print of ~15 pages. */
+    /** Journal report entries per SCREEN page — each entry is 2–n lines; paper is the PDF, which takes them all (FIN-PDF-001). */
     public const JOURNAL_PAGE_SIZE = 200;
+
+    /** How many entries / statement lines the PDF reads per chunk before it releases them (review 2026-10-13). */
+    public const PDF_CHUNK = 500;
 
     private readonly string $currency;
 
@@ -83,8 +86,16 @@ final class LedgerReports
         $rows  = $this->balances($range);
         $chart = $this->chart();
 
-        $result = $this->section('Ertrag', $rows, [AccountType::Revenue], $chart)->total
-            ->subtract($this->section('Aufwand', $rows, [AccountType::Expense], $chart)->total);
+        // The year's result = Σ revenue − Σ expense on their natural sides — summed from the rows,
+        // not by building the income statement's two blocks a second time (review 2026-10-13).
+        $result = $this->zero();
+        foreach ($rows as $row) {
+            $result = match ($row->type) {
+                AccountType::Revenue => $result->add($row->balance()),
+                AccountType::Expense => $result->subtract($row->balance()),
+                default              => $result,
+            };
+        }
 
         return new BalanceSheet(
             $range,
@@ -107,38 +118,73 @@ final class LedgerReports
     }
 
     /**
-     * One page of an account's statement. The account is any account of the
-     * chart — a group simply has no lines. $pageSize overrides the screen's page
-     * (the PDF takes every line in one page, FIN-PDF-001).
+     * One page of an account's statement — the screen. The account is any account of the
+     * chart; a group simply has no lines.
      */
-    public function accountStatement(Account $account, ReportRange $range, int $page, ?int $pageSize = null): AccountStatement
+    public function accountStatement(Account $account, ReportRange $range, int $page): AccountStatement
     {
-        $lines     = $this->lines();
-        $accountId = (int) $account->getId();
-        $yearId    = (int) $range->year->getId();
-        $debitSide = AccountType::from($account->getType())->isDebitNormal();
-        /** debit − credit → the natural side */
-        $natural   = fn(Money $net): Money => $debitSide ? $net : $net->negate();
-
-        $totals  = $lines->accountTotals($accountId, $yearId, $range->fromDay(), $range->toDay());
+        $lines   = $this->lines();
+        $totals  = $lines->accountTotals((int) $account->getId(), (int) $range->year->getId(), $range->fromDay(), $range->toDay());
+        $paging  = new Paging($page, self::ACCOUNT_STATEMENT_PAGE_SIZE, $totals['lines']);
+        $rows    = $lines->accountLines((int) $account->getId(), (int) $range->year->getId(), $range->fromDay(), $range->toDay(), $paging->offset(), $paging->pageSize);
         $opening = $this->money($totals['opening']);
-        $debit   = $this->money($totals['debit']);
-        $credit  = $this->money($totals['credit']);
-        $paging  = new Paging($page, $pageSize ?? self::ACCOUNT_STATEMENT_PAGE_SIZE, $totals['lines']);
+        $result  = iterator_to_array($this->statementLines($account, $opening, $rows), false);
+        // The page's carry = the first line's balance minus its own movement (= the opening on page 1).
+        $carry   = $result === [] ? $opening : $this->toNet($account, $result[0]->balance)->subtract($result[0]->debit->subtract($result[0]->credit));
 
-        $rows     = $lines->accountLines($accountId, $yearId, $range->fromDay(), $range->toDay(), $paging->offset(), $paging->pageSize);
-        $counters = $lines->counterAccounts(array_column($rows, 'entry_id'), $accountId);
-        $result   = [];
-        $carry    = $opening;
-        foreach ($rows as $i => $row) {
-            $lineDebit  = $this->money($row['debit']);
-            $lineCredit = $this->money($row['credit']);
-            $balance    = $opening->add($this->money($row['running']));   // debit − credit up to and including this line
-            if ($i === 0) {
-                $carry = $balance->subtract($lineDebit->subtract($lineCredit));
+        return $this->statement($account, $totals, $carry, $result, $paging);
+    }
+
+    /**
+     * EVERY line of an account's statement over the range — the PDF (review 2026-10-13: the PDF
+     * hydrated every line and fetched the counter accounts with an `IN` of all entry ids). The
+     * lines are a lazy GENERATOR over ONE SQL stream (`JournalLineRepository::streamAccountLines()`,
+     * one sort for the window function), the counter accounts fetched per chunk of
+     * {@see PDF_CHUNK} lines; `paging` is one page holding all lines (its `total` says whether
+     * there are any). Read the lines once.
+     */
+    public function accountStatementForPdf(Account $account, ReportRange $range): AccountStatement
+    {
+        $lines  = $this->lines();
+        $totals = $lines->accountTotals((int) $account->getId(), (int) $range->year->getId(), $range->fromDay(), $range->toDay());
+        $paging = new Paging(1, max(1, $totals['lines']), $totals['lines']);
+        $stream = $lines->streamAccountLines((int) $account->getId(), (int) $range->year->getId(), $range->fromDay(), $range->toDay());
+        $chunks = (static function (\Generator $rows): \Generator {
+            $chunk = [];
+            foreach ($rows as $row) {
+                $chunk[] = $row;
+                if (count($chunk) >= self::PDF_CHUNK) {
+                    yield $chunk;
+                    $chunk = [];
+                }
             }
-            $counter  = $counters[$row['entry_id']] ?? null;
-            $result[] = new AccountStatementLine(
+            if ($chunk !== []) {
+                yield $chunk;
+            }
+        })($stream);
+        $opening = $this->money($totals['opening']);
+        $all     = (function () use ($account, $opening, $chunks): \Generator {
+            foreach ($chunks as $chunk) {
+                yield from $this->statementLines($account, $opening, $chunk);
+            }
+        })();
+
+        return $this->statement($account, $totals, $opening, $all, $paging);
+    }
+
+    /**
+     * Statement rows → lines on the account's natural side, with their counter accounts
+     * (one query for the rows given — a page, or a chunk of the PDF's stream).
+     *
+     * @param list<array<string, mixed>> $rows from `JournalLineRepository::accountLines()` / the stream
+     * @return \Generator<int, AccountStatementLine>
+     */
+    private function statementLines(Account $account, Money $opening, array $rows): \Generator
+    {
+        $counters = $this->lines()->counterAccounts(array_column($rows, 'entry_id'), (int) $account->getId());
+        foreach ($rows as $row) {
+            $counter = $counters[$row['entry_id']] ?? null;
+            yield new AccountStatementLine(
                 $row['entry_id'],
                 $row['number'],
                 new \DateTimeImmutable($row['entry_date']),
@@ -147,36 +193,81 @@ final class LedgerReports
                 $counter['count'] ?? 0,
                 $counter['number'] ?? null,
                 $counter['name'] ?? null,
-                $lineDebit,
-                $lineCredit,
-                $natural($balance),
+                $this->money($row['debit']),
+                $this->money($row['credit']),
+                // debit − credit up to and including this line, on the natural side
+                $this->natural($account, $opening->add($this->money($row['running']))),
             );
         }
+    }
+
+    /**
+     * @param array{opening: string, debit: string, credit: string, lines: int} $totals
+     * @param iterable<AccountStatementLine> $lines
+     */
+    private function statement(Account $account, array $totals, Money $carry, iterable $lines, Paging $paging): AccountStatement
+    {
+        $opening = $this->money($totals['opening']);
+        $debit   = $this->money($totals['debit']);
+        $credit  = $this->money($totals['credit']);
 
         return new AccountStatement(
             $account,
-            $natural($opening),
-            $natural($carry),
-            $result,
+            $this->natural($account, $opening),
+            $this->natural($account, $carry),
+            $lines,
             $debit,
             $credit,
-            $natural($opening->add($debit)->subtract($credit)),
+            $this->natural($account, $opening->add($debit)->subtract($credit)),
             $paging,
         );
     }
 
-    public function journal(ReportRange $range, int $page, ?int $pageSize = null): JournalReport
+    /** debit − credit → the account's natural side (positive there). */
+    private function natural(Account $account, Money $net): Money
+    {
+        return AccountType::from($account->getType())->isDebitNormal() ? $net : $net->negate();
+    }
+
+    /** The inverse of {@see natural()} — a natural-side balance back to debit − credit. */
+    private function toNet(Account $account, Money $natural): Money
+    {
+        return $this->natural($account, $natural);
+    }
+
+    /** One page of the journal report — the screen. */
+    public function journal(ReportRange $range, int $page): JournalReport
     {
         /** @var JournalEntryRepository $entries */
         $entries = $this->em->getRepository(JournalEntry::class);
         $summary = $entries->rangeSummary($range->year, $range->fromDay(), $range->toDay());
-        $paging  = new Paging($page, $pageSize ?? self::JOURNAL_PAGE_SIZE, $summary['entries']);
+        $paging  = new Paging($page, self::JOURNAL_PAGE_SIZE, $summary['entries']);
 
         return new JournalReport(
             $entries->chronological($range->year, $range->fromDay(), $range->toDay(), $paging->offset(), $paging->pageSize),
             $this->money($summary['debit']),
             $this->money($summary['credit']),
             $paging,
+        );
+    }
+
+    /**
+     * EVERY entry of the range — the PDF (review 2026-10-13): the entries are a lazy generator
+     * reading {@see PDF_CHUNK} at a time and releasing each chunk from the EntityManager
+     * (`JournalEntryRepository::chronologicalInChunks()`); `paging` is one page holding all
+     * entries. Read the entries once, read-only.
+     */
+    public function journalForPdf(ReportRange $range): JournalReport
+    {
+        /** @var JournalEntryRepository $entries */
+        $entries = $this->em->getRepository(JournalEntry::class);
+        $summary = $entries->rangeSummary($range->year, $range->fromDay(), $range->toDay());
+
+        return new JournalReport(
+            $entries->chronologicalInChunks($range->year, $range->fromDay(), $range->toDay(), self::PDF_CHUNK),
+            $this->money($summary['debit']),
+            $this->money($summary['credit']),
+            new Paging(1, max(1, $summary['entries']), $summary['entries']),
         );
     }
 

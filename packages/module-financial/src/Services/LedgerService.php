@@ -188,8 +188,10 @@ final class LedgerService
      * geändert; im Journal ist sie gesperrt»). The entry is found by its
      * idempotency KEY — the source names what it posted, never a number —
      * and $new is the posting as it should read now, from the same source
-     * (`sourceType` must match; `sourceRef` and the key are taken from $new
-     * for the stored entry). The number stays; the date may move within the
+     * (`sourceType` must match, and so must `sourceRef` — the origin is
+     * IMMUTABLE, review 2026-10-13: the entry never stored a new ref, so a
+     * differing one used to log a change on every call; now it is refused,
+     * `source-ref-changed`). The number stays; the date may move within the
      * fiscal year; a date in another year is refused (retract and post anew
      * there). Every change writes an {@see EntryChange} (who, when,
      * before / after), exactly as a manual edit does — the bookkeeper sees
@@ -205,7 +207,7 @@ final class LedgerService
      *
      * @return EntryRef where the entry is (unchanged by an amend)
      * @throws \LogicException              no unit of work is open, or $new is not generated
-     * @throws EntryNotEditableException    NOT_FOUND | MANUAL | SOURCE_MISMATCH | REVERSED | PERIOD_CLOSED | PERIOD_VAT_SETTLED | FISCAL_YEAR_CHANGED
+     * @throws EntryNotEditableException    NOT_FOUND | MANUAL | SOURCE_MISMATCH | SOURCE_REF_CHANGED | REVERSED | PERIOD_CLOSED | PERIOD_VAT_SETTLED | FISCAL_YEAR_CHANGED
      * @throws PostingRefusedException      an account or tax code of the new version is refused
      */
     public function amend(string $idempotencyKey, PostingRequest $new): EntryRef
@@ -216,6 +218,15 @@ final class LedgerService
         }
         $entry = $this->ownedGeneratedEntry($idempotencyKey, $new->sourceType, 'amended');
         $ref   = new EntryRef($entry->getFiscalYear()->getCode(), $entry->getNumber());
+        if ($entry->getSourceRef() !== $new->sourceRef) {
+            // The origin names the source document; the key is derived from it. A new ref is a
+            // different source, not a correction — and amend() would never store it.
+            throw new EntryNotEditableException(
+                EntryNotEditableException::SOURCE_REF_CHANGED,
+                "Journal entry {$ref->fiscalYear}/{$ref->number}: its origin is {$entry->getSourceType()} «{$entry->getSourceRef()}» — "
+                . "amend() cannot change it to «{$new->sourceRef}»; retract and post anew under the new source"
+            );
+        }
         if (PostingRequest::fingerprintOf($entry->snapshot()) === $new->fingerprint()) {
             return $ref;
         }
@@ -473,6 +484,10 @@ final class LedgerService
         $period = $this->rules->periodFor($year, $request->date);
         $this->rules->assertPeriodAccepts($period, $request->hasTaxLine());
         $accounts = $this->rules->resolveAccounts($request->lines, $requireActiveAccounts);
+        if ($request->kind === EntryKind::Manual) {
+            // A collective account a module keeps takes no manual line (owner 2026-10-13).
+            $this->rules->assertManualAllowed($request->lines, $accounts);
+        }
         $this->rules->assertTaxCodesExist($request->lines);
         $actor = $this->actorName();   // an unnamed author refuses here, before the lock
 

@@ -8,14 +8,12 @@
  *
  * Styling: the shared backend list v2 classes only.
  *
- * @var \Z77\Module\Financial\Reports\IncomeStatement $report
+ * @var \Z77\Module\Financial\Reports\StatementComparison $comparison  the shown range and the older years' — each statement computed once
  * @var \Z77\Module\Financial\Reports\ReportRange $range
  * @var callable $link
  * @var callable $fmt
  */
 $ns     = 'Z77\\Module\\Financial';
-$result = $report->result();
-$shared = ['link' => $link, 'fmt' => $fmt];
 ?>
 <div class="be-list">
     <?= $this->partial('Backend/ReportController/rangeForm', ['range' => $range, 'tab' => $tab, 'link' => $link, 'months' => $months, 'reportBase' => $reportBase, 'notices' => $notices, 'keep' => $keep, 'pdfTabs' => $pdfTabs ?? [], 'compareTabs' => $compareTabs ?? [], 'compare' => $compare ?? true], $ns) ?>
@@ -30,7 +28,7 @@ $shared = ['link' => $link, 'fmt' => $fmt];
               // owner 2026-10-10: the last three years, «Vorjahre» off = the one period). ?>
         <?php foreach ($comparison->blocks as $block): ?>
         <div class="be-list__frame">
-            <?= $this->partial('Backend/ReportController/statementCompare', ['block' => $block, 'labels' => $comparison->labels, 'link' => $link, 'fmt' => $fmt], $ns) ?>
+            <?= $this->partial('Backend/ReportController/statementCompare', ['block' => $block, 'labels' => $comparison->labels, 'spans' => $comparison->spans, 'link' => $link, 'fmt' => $fmt], $ns) ?>
         </div>
         <?php endforeach; ?>
     </div>

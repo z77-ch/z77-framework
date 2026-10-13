@@ -26,7 +26,8 @@ use Z77\Persistence\Doctrine\Repository\DoctrineRepository;
  *     fetch-join — one page, over one year or all of them;
  *   - the journal REPORT (part 3) reads one page of a date range the same
  *     way, oldest first — ids by SQL (bound LIMIT/OFFSET), then the same
- *     fetch-join; the page is bounded, never a whole year.
+ *     fetch-join; the page is bounded, never a whole year — and its PDF reads the
+ *     whole range in detached chunks of the same fetch-join (`chronologicalInChunks()`).
  *
  * The other reports of part 3 (trial balance, balance sheet, income
  * statement, account statement) are SQL aggregates over `journal_line` in
@@ -208,6 +209,39 @@ class JournalEntryRepository extends DoctrineRepository
         );
 
         return $this->hydrate(array_map('intval', $ids));
+    }
+
+    /**
+     * EVERY entry of a year dated from–to in the journal report's order, for the PDF (review
+     * 2026-10-13: it hydrated the whole range at once — fails at P5b volumes). The ids come in
+     * ONE statement (one sort; a few bytes per entry), the entities in chunks of $chunk through
+     * the same fetch-join as a page; each chunk is DETACHED from the EntityManager once the
+     * caller has moved past it, so the identity map holds one chunk of entries and lines, not
+     * the year (the accounts and fiscal years they name stay — a bounded set). Read-only: a
+     * caller must not write through an entry after it moved on. Doctrine-only (SQL + DQL).
+     *
+     * @return \Generator<int, JournalEntry>
+     */
+    public function chronologicalInChunks(FiscalYear $year, string $from, string $to, int $chunk): \Generator
+    {
+        $ids = array_map('intval', $this->connection()->fetchFirstColumn(
+            'SELECT id FROM journal_entry WHERE fiscal_year_id = ? AND entry_date BETWEEN ? AND ? ORDER BY entry_date, number',
+            [(int) $year->getId(), $from, $to],
+            [ParameterType::INTEGER, ParameterType::STRING, ParameterType::STRING]
+        ));
+        foreach (array_chunk($ids, max(1, $chunk)) as $part) {
+            $entries = $this->hydrate($part);
+            yield from $entries;
+            foreach ($entries as $entry) {
+                foreach ($entry->getLines() as $line) {
+                    $this->em()->detach($line);
+                }
+                if ($entry->getReversalOf() !== null) {
+                    $this->em()->detach($entry->getReversalOf());
+                }
+                $this->em()->detach($entry);
+            }
+        }
     }
 
     /**

@@ -10,25 +10,28 @@
  *
  * Styling: the shared backend list v2 classes only.
  *
- * @var \Z77\Module\Financial\Reports\BalanceSheet $report
+ * @var \Z77\Module\Financial\Reports\BalanceSheet $report  the shown year's sheet (= $sheets[0])
+ * @var list<\Z77\Module\Financial\Reports\BalanceSheet> $sheets  one per comparison column — each checked for balance
+ * @var \Z77\Module\Financial\Reports\StatementComparison $comparison
  * @var \Z77\Module\Financial\Reports\ReportRange $range
  * @var callable $link
  * @var callable $fmt
  */
 $ns     = 'Z77\\Module\\Financial';
-$ok     = $report->isBalanced();
-$shared = ['link' => $link, 'fmt' => $fmt];
+// EVERY comparison column is checked (review 2026-10-13), the fault names its year.
+$sheets = $sheets ?? [$report];
+$faulty = array_values(array_filter($sheets, static fn($s) => !$s->isBalanced()));
 ?>
 <div class="be-list">
     <?= $this->partial('Backend/ReportController/rangeForm', ['atDay' => true] + ['range' => $range, 'tab' => $tab, 'link' => $link, 'months' => $months, 'reportBase' => $reportBase, 'notices' => $notices, 'keep' => $keep, 'pdfTabs' => $pdfTabs ?? [], 'compareTabs' => $compareTabs ?? [], 'compare' => $compare ?? true], $ns) ?>
     <?php // A balanced sheet says nothing — that is the normal state. Only the FAULT is shown,
           // as an error block at the top (owner 2026-10-10); the carried-forward note of
           // FIN-REPORT-001 is gone with it, the figures speak for themselves. ?>
-    <?php if (!$ok): ?>
+    <?php foreach ($faulty as $sheet): ?>
     <div class="be-modal__alert be-modal__alert--error">
-        <strong>Aktiven ≠ Passiven.</strong> Differenz <?= e($fmt($report->difference())) ?> — das Journal ist nicht ausgeglichen. Bitte melden.
+        <strong>Aktiven ≠ Passiven<?= count($sheets) > 1 ? ' ' . e($sheet->range->year->getCode()) : '' ?>.</strong> Differenz <?= e($fmt($sheet->difference())) ?> — das Journal ist nicht ausgeglichen. Bitte melden.
     </div>
-    <?php endif; ?>
+    <?php endforeach; ?>
     <div class="be-list__section">
         <div class="be-list__section-header">
             <h2 class="be-list__section-title">
@@ -40,7 +43,7 @@ $shared = ['link' => $link, 'fmt' => $fmt];
               // owner 2026-10-10: the last three years, «Vorjahre» off = the one period). ?>
         <?php foreach ($comparison->blocks as $block): ?>
         <div class="be-list__frame">
-            <?= $this->partial('Backend/ReportController/statementCompare', ['block' => $block, 'labels' => $comparison->labels, 'link' => $link, 'fmt' => $fmt], $ns) ?>
+            <?= $this->partial('Backend/ReportController/statementCompare', ['block' => $block, 'labels' => $comparison->labels, 'spans' => $comparison->spans, 'link' => $link, 'fmt' => $fmt], $ns) ?>
         </div>
         <?php endforeach; ?>
     </div>

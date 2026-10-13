@@ -37,6 +37,83 @@ final class ReportRange
         return new self($this->year, $this->year->getStartDate(), $this->to);
     }
 
+    /**
+     * Whether the range is the WHOLE year — for a statement AT a day ($atDay, the balance
+     * sheet, which always reads from the year's first day) when it ends on the year's last day.
+     */
+    public function isWholeYear(bool $atDay = false): bool
+    {
+        return $this->toDay() === $this->year->getEndDate()->format('Y-m-d')
+            && ($atDay || $this->fromDay() === $this->year->getStartDate()->format('Y-m-d'));
+    }
+
+    /**
+     * The same range in an OLDER fiscal year — the comparison columns of the balance sheet
+     * and the income statement (review 2026-10-13 H6: moving the dates by whole calendar
+     * years was wrong for short, long and non-calendar years and for 29 February). Anchored
+     * to the fiscal-year START, never to the calendar:
+     *
+     *   - the whole year → the whole older year (whatever its length);
+     *   - exactly one period (a month; at a day: the range ends on a period's last day) →
+     *     the period with the SAME INDEX in the older year (the 3rd month → its 3rd month);
+     *     an older year without that many periods (a short year) has no comparable range;
+     *   - anything else → both dates shifted by the distance between the two year starts
+     *     (months, then days); a date on a month's last day stays on the last day of its
+     *     month (`last day of` — 29.2. → 28.2., 30.4. → 31.10. when the years start half a
+     *     year apart), and the result is clamped into the older year.
+     *
+     * $atDay: a statement AT a day (the balance sheet) — the comparable range starts on the
+     * older year's first day as well. Null when the older year holds no such range.
+     */
+    public function comparableIn(FiscalYear $older, bool $atDay = false): ?self
+    {
+        if ($this->isWholeYear($atDay)) {
+            return self::wholeYear($older);
+        }
+        foreach ($this->year->getPeriods() as $i => $period) {
+            if ($period->getEndDate()->format('Y-m-d') === $this->toDay()
+                && ($atDay || $period->getStartDate()->format('Y-m-d') === $this->fromDay())) {
+                $match = $older->getPeriods()[$i] ?? null;
+
+                return $match === null ? null : new self($older, $atDay ? $older->getStartDate() : $match->getStartDate(), $match->getEndDate());
+            }
+        }
+
+        $start  = $this->year->getStartDate();
+        $base   = $older->getStartDate();
+        $months = ((int) $start->format('Y') * 12 + (int) $start->format('n')) - ((int) $base->format('Y') * 12 + (int) $base->format('n'));
+        $days   = (int) $start->format('j') - (int) $base->format('j');
+        $from   = $atDay ? $base : max($base, self::shifted($this->from, $months, $days));
+        $to     = min($older->getEndDate(), self::shifted($this->to, $months, $days));
+
+        return $from > $to ? null : new self($older, $from, $to);
+    }
+
+    /** $date moved back by $months and $days; a month's last day stays a month's last day (when the starts share the day of the month). */
+    private static function shifted(\DateTimeImmutable $date, int $months, int $days): \DateTimeImmutable
+    {
+        $first = $date->modify('first day of this month')->modify(($months >= 0 ? '-' : '+') . abs($months) . ' months');
+        if ($days === 0 && $date->format('j') === $date->format('t')) {
+            return $first->modify('last day of this month');
+        }
+        $moved = $first->setDate((int) $first->format('Y'), (int) $first->format('n'), min((int) $date->format('j'), (int) $first->format('t')));
+
+        return $days === 0 ? $moved : $moved->modify(($days >= 0 ? '-' : '+') . abs($days) . ' days');
+    }
+
+    /**
+     * How a comparison column names its range when it is NOT the whole year: «per 31.3.2026»
+     * at a day, «1.3.–31.3.2026» over a range; null for the whole year (the code says it).
+     */
+    public function span(bool $atDay = false): ?string
+    {
+        if ($this->isWholeYear($atDay)) {
+            return null;
+        }
+
+        return $atDay ? 'per ' . $this->to->format('j.n.Y') : $this->from->format('j.n.') . '–' . $this->to->format('j.n.Y');
+    }
+
     /** `Y-m-d` — how the dates are bound in the report SQL and carried in the report URLs. */
     public function fromDay(): string
     {

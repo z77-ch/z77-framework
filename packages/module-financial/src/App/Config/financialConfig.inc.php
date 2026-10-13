@@ -2,6 +2,7 @@
 namespace Z77\Module\Financial\App;
 
 use Z77\Core\Config\AuthRole;
+use Z77\Module\Financial\Close\SubledgerReconciliationCheck;
 use Z77\Module\Financial\Entities\Account;
 use Z77\Module\Financial\Entities\EntryChange;
 use Z77\Module\Financial\Entities\FiscalYear;
@@ -19,8 +20,11 @@ use Z77\Module\Financial\Entities\Period;
  * aggregates over `journal_line` — no entity of their own). P5 part 1:
  * closing and reopening a fiscal year (`FiscalYearCloseService`) with its
  * protocol (`FiscalYearCloseLog`); the close check asks the open-work
- * registry under the scope `period-close` — financial declares no
- * `openWorkChecks` of its own, the modules that have open work do.
+ * registry under the scope `period-close` — the modules that have open work
+ * register there, and since 2026-10-13 financial registers ONE check of its
+ * own: `SubledgerReconciliationCheck`, each collective account against the
+ * subledger its module reports (`subledgerReconciliations`, a key the MODULES
+ * declare in their config — financial names none of them).
  *
  * This module has NO routes and no view area of its own: its backend screens
  * are fragments ({@see \Z77\Module\Financial\Ui\AccountControllerTrait},
@@ -67,6 +71,12 @@ return [
         JournalLine::class,
         EntryChange::class,
         FiscalYearCloseLog::class,
+    ],
+
+    // The year close compares every collective account with the subledger its module reports
+    // (owner 2026-10-13) — a warning per difference; the modules declare `subledgerReconciliations`.
+    'openWorkChecks' => [
+        'period-close' => [SubledgerReconciliationCheck::class],
     ],
 
     // Nothing here renders a page; the host's cache policy applies to the mount.

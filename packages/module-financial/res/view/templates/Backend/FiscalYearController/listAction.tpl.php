@@ -3,12 +3,11 @@
  * The fiscal years, newest first: per year a header with the ⋮ BEFORE the title (the year
  * actions, `actionsAction` hub — owner 2026-10-10), the state badge, the protocol lines, and
  * the months in ONE line, marked only where a month differs from the year (FIN-UI-012). A year is opened through the toolbar
- * button and never edited; the LATEST and the EARLIEST year carry «Löschen …»
- * while nothing was ever posted in them (`$deletableIds`, FIN-FY-002 — the
- * modal and the service decide again). Closing (P5 part 1, owner decisions 2026-09-30): each year
- * carries its state (offen / abgeschlossen — the whole year, all periods), «Jahr abschliessen …»
- * on the year that may be closed next (`$closableIds`, in order), «Wieder öffnen …» on the latest
- * closed year for who may reach the action (`$reopenableIds`, ADMIN), and the last protocol rows
+ * button and never edited. What each year's ⋮ offers — «Jahr abschliessen …» (in order),
+ * «Wieder öffnen …» (ADMIN), «Löschen …» (the latest / earliest year without postings,
+ * FIN-FY-002) — comes from the trait's `fiscalYearActions()`, the one derivation the hub
+ * uses too (`$actionsByYear`; the confirms and the services decide again). Each year carries
+ * its state (offen / abgeschlossen — the whole year, all periods) and the last protocol rows
  * (`$logLines`, small and muted).
  *
  * Styling: the shared backend list classes only (`.be-list__section`,
@@ -17,20 +16,16 @@
  *
  * @var list<\Z77\Module\Financial\Entities\FiscalYear> $years  newest first, periods loaded
  * @var array<string,string> $stateLabels
- * @var list<int> $deletableIds  the years that may be deleted (at most the latest and the earliest)
  * @var list<int> $closedIds     the years whose periods are all closed
- * @var list<int> $closableIds   the years that may be closed now (order rule, lock-free)
- * @var list<int> $reopenableIds the years the current user may reopen now
+ * @var array<int, list<'close'|'reopen'|'delete'>> $actionsByYear  year id → what its ⋮ offers now (lock-free)
  * @var array<int, list<string>> $logLines  year id → the latest protocol lines, newest first
  * @var string $actionBase
  */
 $actionBase    = $actionBase ?? '/backend/finance/fiscal-year';
-$deletableIds  = $deletableIds ?? [];
 $closedIds     = $closedIds ?? [];
-$closableIds   = $closableIds ?? [];
-$reopenableIds = $reopenableIds ?? [];
+$actionsByYear = $actionsByYear ?? [];
 $logLines      = $logLines ?? [];
-$monthNames = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez'];
+$monthNames = \Z77\Module\Financial\Ui\MonthNames::SHORT;
 $badge = [
     'open'        => 'badge--success',
     'vat-settled' => 'badge--warning',
@@ -52,11 +47,7 @@ $badge = [
     <?php
     // What the ⋮ offers for this year — also on the section as `data-fiscal-year-actions`, the
     // hook the harness reads now that the confirm links live in the hub, not in the list.
-    $yearActions = array_keys(array_filter([
-        'close'  => in_array($year->getId(), $closableIds, true),
-        'reopen' => in_array($year->getId(), $reopenableIds, true),
-        'delete' => in_array($year->getId(), $deletableIds, true),
-    ]));
+    $yearActions = $actionsByYear[(int) $year->getId()] ?? [];
     $hasActions = $yearActions !== [];
     ?>
     <div class="be-list__section" data-fiscal-year-id="<?= e((string) $year->getId()) ?>" data-fiscal-year-actions="<?= e(implode(' ', $yearActions)) ?>">

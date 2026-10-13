@@ -184,6 +184,8 @@ final class AccountService
                 'postable' => (bool) ($row['postable'] ?? false),
                 // Optional in the file: absent = the entity's default (ON); the revenue deductions say false.
                 'selectable_on_documents' => (bool) ($row['selectable_on_documents'] ?? true),
+                // Optional too: absent = OFF; the collective account 1100 says true (owner 2026-10-13).
+                'module_posting_only'     => (bool) ($row['module_posting_only'] ?? false),
                 'parent'   => $parent === null ? null : $byNumber[(string) $parent],
             ]);
             $this->assertValid($account);

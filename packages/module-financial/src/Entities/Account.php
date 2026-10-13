@@ -10,7 +10,7 @@ use Doctrine\ORM\Mapping as ORM,
 
 /**
  * One account of the chart (plan §5.1): a number, a name, a
- * {@see AccountType}, an optional parent for grouping and three flags.
+ * {@see AccountType}, an optional parent for grouping and four flags.
  *
  * Grouping is a plain parent reference — no nested set, no path column. A
  * group header (KMU class `1`, main group `10`, group `100`) is an account
@@ -99,6 +99,22 @@ class Account
     #[Clean('bool')]
     private bool $selectableOnDocuments = true;
 
+    /**
+     * «Nur durch Module bebuchbar» (owner 2026-10-13, review 2026-10-13 §2): a MANUAL journal
+     * entry may not write a line onto this account — the journal's capture forms, the edit,
+     * `ManualEntryService`, any `PostingRequest::manual()` are refused with
+     * `PostingRefusedException::ACCOUNT_MODULE_ONLY`; a module's GENERATED posting through
+     * `LedgerService::post()` / `amend()` / `reverse()` passes. For a collective account a
+     * module keeps in step with its own records — the receivables 1100 debtor reconciles with
+     * its open items (the year-close check `SubledgerReconciliationCheck`). Default OFF; the KMU
+     * chart ships 1100 ON, an existing installation got the mandator's receivable account ON
+     * (`Version20261013100000`). An existing manual line stays: an unchanged line may be kept on
+     * an edit, and a manual entry on the account may still be DELETED (the correction).
+     */
+    #[ORM\Column(name: 'module_posting_only')]
+    #[Clean('bool')]
+    private bool $modulePostingOnly = false;
+
     public function __construct(array $data = [])
     {
         if ($data) {
@@ -114,6 +130,7 @@ class Account
     public function isPostable(): bool { return $this->postable; }
     public function isActive(): bool { return $this->active; }
     public function isSelectableOnDocuments(): bool { return $this->selectableOnDocuments; }
+    public function isModulePostingOnly(): bool { return $this->modulePostingOnly; }
 
     /** «1020 Bankguthaben» — how an account is named in every list and select (Rule 8). */
     public function label(): string
@@ -128,4 +145,5 @@ class Account
     public function setPostable(bool $postable): void { $this->postable = $postable; }
     public function setActive(bool $active): void { $this->active = $active; }
     public function setSelectableOnDocuments(bool $selectable): void { $this->selectableOnDocuments = $selectable; }
+    public function setModulePostingOnly(bool $moduleOnly): void { $this->modulePostingOnly = $moduleOnly; }
 }

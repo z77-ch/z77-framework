@@ -188,32 +188,17 @@ trait FiscalYearControllerTrait
 
     protected function listAction(): HtmlResponse
     {
-        // Only the years at either end can be deletable (the latest, the earliest); the button shows for them alone.
-        $deletable = [];
-        foreach ([$this->fiscalYears()->latest(), $this->fiscalYears()->earliest()] as $end) {
-            if ($end !== null && $this->fiscalYearService()->deletionRefusal($end) === null) {
-                $deletable[] = $end->getId();
-            }
-        }
-
-        // Close / reopen (P5 part 1): the lock-free order rules per year; the reopen button only
-        // for who may reach the action (ADMIN in the backend's access config).
-        $years      = $this->fiscalYears()->allWithPeriods();
-        $closer     = $this->fiscalYearCloseService();
-        $mayReopen  = $this->fiscalYearCanReach('reopen');
-        $closable   = [];
-        $reopenable = [];
-        $closed     = [];
+        // What each year's ⋮ offers — by fiscalYearActions(), the ONE derivation the hub uses as
+        // well (review 2026-10-13: the list derived the same rules a second time).
+        $years   = $this->fiscalYears()->allWithPeriods();
+        $ends    = $this->fiscalYearEnds();
+        $actions = [];
+        $closed  = [];
         foreach ($years as $year) {
             if ($year->isClosed()) {
                 $closed[] = $year->getId();
             }
-            if ($closer->closeRefusal($year) === null) {
-                $closable[] = $year->getId();
-            }
-            if ($mayReopen && $closer->reopenRefusal($year) === null) {
-                $reopenable[] = $year->getId();
-            }
+            $actions[(int) $year->getId()] = $this->fiscalYearActions($year, $ends);
         }
         /** @var FiscalYearCloseLogRepository $logs */
         $logs     = $this->em()->getRepository(FiscalYearCloseLog::class);
@@ -225,10 +210,8 @@ trait FiscalYearControllerTrait
         $response = $this->html([
             'years'        => $years,
             'stateLabels'  => $this->periodStateLabels(),
-            'deletableIds' => array_values(array_unique($deletable)),
             'closedIds'    => $closed,
-            'closableIds'  => $closable,
-            'reopenableIds' => $reopenable,
+            'actionsByYear' => $actions,
             'logLines'     => $logLines,
             'actionBase'   => $this->fiscalYearListBase(),
         ]);
@@ -263,9 +246,14 @@ trait FiscalYearControllerTrait
     /**
      * What may be done with this year now — the list's ⋮ shows only when this is not empty.
      *
+     * The rules (lock-free; each confirm and the service decide again): «close» when the order
+     * rule allows it, «reopen» for who may reach the action (ADMIN in the backend's access
+     * config), «delete» for the latest or the earliest year while nothing was ever posted.
+     *
+     * @param list<int>|null $ends the ids of the latest and the earliest year — the list passes them once for all years
      * @return list<'close'|'reopen'|'delete'>
      */
-    private function fiscalYearActions(FiscalYear $year): array
+    private function fiscalYearActions(FiscalYear $year, ?array $ends = null): array
     {
         $closer  = $this->fiscalYearCloseService();
         $actions = [];
@@ -275,12 +263,18 @@ trait FiscalYearControllerTrait
         if ($this->fiscalYearCanReach('reopen') && $closer->reopenRefusal($year) === null) {
             $actions[] = 'reopen';
         }
-        $isEnd = in_array($year->getId(), [$this->fiscalYears()->latest()?->getId(), $this->fiscalYears()->earliest()?->getId()], true);
+        $isEnd = in_array($year->getId(), $ends ?? $this->fiscalYearEnds(), true);
         if ($isEnd && $this->fiscalYearService()->deletionRefusal($year) === null) {
             $actions[] = 'delete';
         }
 
         return $actions;
+    }
+
+    /** @return list<int> the ids of the latest and the earliest year — the only ones that can be deletable */
+    private function fiscalYearEnds(): array
+    {
+        return array_values(array_filter([$this->fiscalYears()->latest()?->getId(), $this->fiscalYears()->earliest()?->getId()], static fn($id) => $id !== null));
     }
 
     // ── open ─────────────────────────────────────────────────────────────

@@ -233,6 +233,39 @@ final class PostingRules
     }
 
     /**
+     * A MANUAL entry writes no line onto an account «nur durch Module bebuchbar»
+     * (`Account::$modulePostingOnly`, owner 2026-10-13): such an account is a collective
+     * account a module keeps in step with its own records (debtor's 1100), and a manual
+     * line there is exactly the difference the year-close reconciliation would report.
+     * Called for `EntryKind::Manual` only — a generated posting of a module passes.
+     *
+     * $applies by line, as `$requireActive` in {@see resolveAccounts()}: `true` = every
+     * line (a new entry); a `list<bool>` = only the NEW or CHANGED lines of a manual edit,
+     * so an entry that already had such a line (posted before the flag) can still be
+     * corrected around it — and deleted, which touches no account. Lock-free: the flag is
+     * configuration, read with the account; a flag switched on while an entry is being
+     * saved is caught by the reconciliation, not by a lock.
+     *
+     * @param list<PostingLine> $lines
+     * @param array<string, Account> $accounts what {@see resolveAccounts()} returned
+     * @param bool|list<bool> $applies
+     * @throws PostingRefusedException ACCOUNT_MODULE_ONLY
+     */
+    public function assertManualAllowed(array $lines, array $accounts, bool|array $applies = true): void
+    {
+        foreach ($lines as $i => $line) {
+            $account = $accounts[$line->account] ?? null;
+            if ($account !== null && $account->isModulePostingOnly() && self::mustBeActive($applies, $i)) {
+                throw new PostingRefusedException(
+                    PostingRefusedException::ACCOUNT_MODULE_ONLY,
+                    'Account «' . $account->label() . '» takes module postings only — a manual entry cannot write a line onto it',
+                    $account->label()
+                );
+            }
+        }
+    }
+
+    /**
      * Every tax code on the lines exists in module-vat. Existence only — see
      * the class docblock for why «active» is not asked here.
      *

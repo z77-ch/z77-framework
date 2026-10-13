@@ -138,6 +138,9 @@ final class ManualEntryService
             $this->assertPeriodAllows($oldPeriod, $withTax, $entry, $oldPeriod->getState());
             $this->assertPeriodAllows($newPeriod, $withTax, $entry, $newPeriod->getState());
             $accounts = $this->rules->resolveAccounts($new->lines, self::requireActiveFor($entry, $new));
+            // A NEW or CHANGED line may not land on an account «nur durch Module bebuchbar»; an
+            // unchanged line written before the flag stays (owner 2026-10-13) — the same split.
+            $this->rules->assertManualAllowed($new->lines, $accounts, self::requireActiveFor($entry, $new));
             $this->rules->assertTaxCodesExist($new->lines);
             // Lock order as in post(): accounts (S) BEFORE year / period (S) — a type change takes
             // account (X) → years / periods (S); the other order here could deadlock with it (review 2026-09-30).

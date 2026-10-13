@@ -1,12 +1,14 @@
 <?php
 /**
  * The parameters of a report page (financial.md, P2 part 3): a GET form —
- * the fiscal year travels as a hidden field (the year is switched in hc2,
- * whose links carry no dates, so a date of another year never arrives
- * here), from and to (the balance sheet only «Stichtag»), the account on the
- * account statement — and the «Zeitraum» select (whole year, the months)
- * between the date and «Anzeigen». Then what was not usable in the request. Screen only
- * (`.be-noprint`): the printed report carries its range in its title.
+ * the fiscal year travels as a hidden field (the year is switched at the top
+ * of the rail, `railSelect`, whose links carry no dates, so a date of another
+ * year never arrives here), from and to (the balance sheet only «Stichtag»),
+ * the account on the account statement — and the «Zeitraum» select (whole
+ * year, the months) between the date and «Anzeigen». Then what was not
+ * usable in the request. Paper is the PDF (the «PDF» button submits this
+ * form, FIN-PDF-001) — the browser print of the reports is gone, so the form
+ * carries no print-only class any more.
  *
  * Styling: the shared form classes (`.be-form__grid`, `.be-form__field`,
  * `.be-input`, `.be-btn`) — no CSS and no JavaScript of its own.
@@ -29,7 +31,7 @@ $year     = $range->year;
 $min      = $year->getStartDate()->format('Y-m-d');
 $max      = $year->getEndDate()->format('Y-m-d');
 ?>
-<div class="be-list__section be-noprint">
+<div class="be-list__section">
     <form method="get" action="<?= e($reportBase . '/' . $tab) ?>" class="be-form__grid" style="grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr)); align-items: end">
         <input type="hidden" name="year" value="<?= e($year->getCode()) ?>">
         <?php if ($accounts !== null): ?>

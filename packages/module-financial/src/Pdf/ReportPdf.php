@@ -35,14 +35,26 @@ final class ReportPdf
 
     /**
      * The balance sheet at its day — over one or more years side by side (owner 2026-10-10:
-     * the last three years; «Vorjahre» off = the one year). $current decides the fault notice.
+     * the last three years; «Vorjahre» off = the one year). $sheets are the comparison's
+     * columns (index 0 = the shown year); EVERY column is checked for balance (review
+     * 2026-10-13 — a fault in an older year was not reported), the notice names the year.
+     *
+     * @param BalanceSheet|non-empty-list<BalanceSheet> $sheets the comparison's columns, or the one sheet shown
      */
-    public static function balanceSheet(BalanceSheet $current, StatementComparison $comparison, string $issuer, string $printedAt): PdfDocument
+    public static function balanceSheet(BalanceSheet|array $sheets, StatementComparison $comparison, string $issuer, string $printedAt): PdfDocument
     {
-        $code = $current->range->year->getCode();
+        $sheets  = $sheets instanceof BalanceSheet ? [$sheets] : array_values($sheets);
+        $current = $sheets[0];
+        $code    = $current->range->year->getCode();
+        $faults  = [];
+        foreach ($sheets as $sheet) {
+            if (!$sheet->isBalanced()) {
+                $faults[] = 'Aktiven ≠ Passiven ' . $sheet->range->year->getCode() . ' — Differenz ' . self::fmt($sheet->difference()) . '.';
+            }
+        }
 
         return self::statement('Bilanz', 'Geschäftsjahr ' . $code . ' · per ' . $current->range->to->format('d.m.Y'), $comparison, $issuer, $printedAt,
-            $current->isBalanced() ? '' : 'Aktiven ≠ Passiven — Differenz ' . self::fmt($current->difference()) . '. Das Journal ist nicht ausgeglichen.');
+            $faults === [] ? '' : implode(' ', $faults) . ' Das Journal ist nicht ausgeglichen.');
     }
 
     /** The income statement over the range — over one or more years side by side. */
@@ -63,17 +75,26 @@ final class ReportPdf
         $name   = self::WIDTH - 18 - $n * self::AMOUNT_WIDTH;
         $amt    = static fn(?Money $m): string => $m === null ? '' : self::fmt($m);
         $blocks = [];
-        foreach ($comparison->blocks as $block) {
+        foreach ($comparison->blocks as $b => $block) {
             $columns = [['label' => 'Konto', 'width' => 18], ['label' => $block['title'], 'width' => $name]];
             foreach ($comparison->labels as $label) {
                 $columns[] = ['label' => $n === 1 ? 'Betrag' : $label, 'width' => self::AMOUNT_WIDTH, 'align' => 'R'];
             }
             $rows = [];
+            // A column that is not its whole year names its range (review 2026-10-13 H6) — one
+            // muted row under the first block's head; one column says it in the subtitle already.
+            if ($b === 0 && $n > 1 && $comparison->hasSpans()) {
+                $rows[] = ['cells' => ['', 'Zeitraum', ...array_map(static fn(?string $s) => $s ?? 'ganzes Jahr', $comparison->spans)], 'muted' => true];
+            }
             foreach ($block['rows'] as $row) {
                 $rows[] = ['cells' => [$row['number'], $row['name'], ...array_map($amt, $row['amounts'])], 'bold' => $row['isGroup']];
             }
-            if ($block['title'] !== '' && $rows === [] && $block['extra'] === []) {
+            if ($block['title'] !== '' && $block['rows'] === [] && $block['extra'] === []) {
                 $rows[] = ['cells' => ['', 'keine Buchung'], 'muted' => true];
+            }
+            if (($block['unplaced'] ?? []) !== []) {
+                // Never dropped, never silent (financial.md «Grouping»): accounts the chart tree does not reach.
+                $rows[] = ['cells' => ['', 'Nicht im Kontenbaum erreichbar: ' . implode(', ', $block['unplaced']) . ' — Gruppenkette prüfen'], 'muted' => true];
             }
             foreach ($block['extra'] as $row) {
                 $rows[] = ['cells' => ['', $row['label'], ...array_map($amt, $row['amounts'])], 'bold' => true];
@@ -117,36 +138,50 @@ final class ReportPdf
             $report->rows !== [] && !$report->isBalanced() ? 'Soll ≠ Haben — die Totale stimmen nicht überein. Das Journal ist nicht ausgeglichen.' : '');
     }
 
-    /** One account's lines over the range: the opening balance, every line with the running balance, the totals and the closing balance. */
+    /**
+     * One account's lines over the range: the opening balance, every line with the running
+     * balance, the totals and the closing balance. The rows are GENERATED while the table
+     * draws — `$report->lines` is the SQL stream of `LedgerReports::accountStatementForPdf()`
+     * (review 2026-10-13: the PDF held every line twice, as objects and as rows) — so a busy
+     * account costs one row in memory at a time, not the year.
+     */
     public static function accountStatement(AccountStatement $report, ReportRange $range, string $issuer, string $printedAt): PdfDocument
     {
         $columns = [
-            ['label' => 'Datum', 'width' => 18],
+            // 20 mm: «13.05.2026» at 9 pt needs ~17 mm plus the padding — at 18 mm it ended in «2…».
+            ['label' => 'Datum', 'width' => 20],
             ['label' => 'Nr.', 'width' => 12, 'align' => 'R'],
-            ['label' => 'Text', 'width' => 62],
+            ['label' => 'Text', 'width' => 60],
             ['label' => 'Gegenkonto', 'width' => 36],
             ['label' => 'Soll', 'width' => 20, 'align' => 'R'],
             ['label' => 'Haben', 'width' => 20, 'align' => 'R'],
             ['label' => 'Saldo', 'width' => 20, 'align' => 'R'],
         ];
         $blank = static fn(Money $m): string => $m->isZero() ? '' : self::fmt($m);
-        $rows  = [['cells' => [$range->from->format('d.m.Y'), '', 'Anfangssaldo', '', '', '', self::fmt($report->opening)], 'muted' => true]];
-        foreach ($report->lines as $line) {
-            $counter = $line->hasSeveralCounterAccounts() ? 'div.' : ($line->counterNumber === null ? '–' : trim($line->counterNumber . ' ' . (string) $line->counterName));
-            $text    = $line->text . ($line->lineText !== null && $line->lineText !== '' ? ' · ' . $line->lineText : '');
-            $rows[]  = ['cells' => [$line->date->format('d.m.Y'), (string) $line->entryNumber, $text, $counter, $blank($line->debit), $blank($line->credit), self::fmt($line->balance)]];
-        }
-        if ($report->lines === []) {
-            $rows[] = ['cells' => ['', '', 'Keine Buchung im Zeitraum.', '', '', '', ''], 'muted' => true];
-        }
-        $rows[] = ['cells' => [$range->to->format('d.m.Y'), '', 'Total Zeitraum / Schlusssaldo', '', self::fmt($report->totalDebit), self::fmt($report->totalCredit), self::fmt($report->closing)], 'bold' => true, 'rule' => true];
+        $rows  = (static function () use ($report, $range, $blank): \Generator {
+            yield ['cells' => [$range->from->format('d.m.Y'), '', 'Anfangssaldo', '', '', '', self::fmt($report->opening)], 'muted' => true];
+            foreach ($report->lines as $line) {
+                $counter = $line->hasSeveralCounterAccounts() ? 'div.' : ($line->counterNumber === null ? '–' : trim($line->counterNumber . ' ' . (string) $line->counterName));
+                $text    = $line->text . ($line->lineText !== null && $line->lineText !== '' ? ' · ' . $line->lineText : '');
+                yield ['cells' => [$line->date->format('d.m.Y'), (string) $line->entryNumber, $text, $counter, $blank($line->debit), $blank($line->credit), self::fmt($line->balance)]];
+            }
+            if ($report->paging->total === 0) {
+                yield ['cells' => ['', '', 'Keine Buchung im Zeitraum.', '', '', '', ''], 'muted' => true];
+            }
+            yield ['cells' => [$range->to->format('d.m.Y'), '', 'Total Zeitraum / Schlusssaldo', '', self::fmt($report->totalDebit), self::fmt($report->totalCredit), self::fmt($report->closing)], 'bold' => true, 'rule' => true];
+        })();
 
         $account = $report->account;
 
         return self::document('Kontoblatt ' . $account->getNumber() . ' ' . $account->getName(), $range, $issuer, $printedAt, [['columns' => $columns, 'rows' => $rows, 'wrap' => 2]]);
     }
 
-    /** The journal of the range, oldest first: each entry bold, its lines below; landscape for the width. */
+    /**
+     * The journal of the range, oldest first: each entry bold, its lines below; landscape for
+     * the width. `$report->entries` is the chunked read of `LedgerReports::journalForPdf()`
+     * (review 2026-10-13) and the rows are generated while the table draws — one chunk of
+     * entities at a time, never the whole journal.
+     */
     public static function journal(JournalReport $report, ReportRange $range, string $issuer, string $printedAt): PdfDocument
     {
         $columns = [
@@ -159,20 +194,21 @@ final class ReportPdf
             ['label' => 'Haben', 'width' => 30, 'align' => 'R'],
         ];
         $blank = static fn(Money $m): string => $m->isZero() ? '' : self::fmt($m);
-        $rows  = [];
-        foreach ($report->entries as $entry) {
-            $reversal = $entry->isReversal() ? ' · Storno von ' . $entry->getReversalOf()->getFiscalYear()->getCode() . '/' . $entry->getReversalOf()->getNumber() : '';
-            $rows[]   = ['cells' => [$entry->getDate()->format('d.m.Y'), (string) $entry->getNumber(), '', $entry->getText() . $reversal, '', '', ''], 'bold' => true, 'rule' => true];
-            foreach ($entry->getLines() as $line) {
-                $text   = $line->getAccount()->getName() . ($line->getText() !== null && $line->getText() !== '' ? ' · ' . $line->getText() : '');
-                $tax    = $line->hasTax() ? $line->getTaxCode() . ' ' . ManualEntryForm::percent((int) $line->getTaxRate()) . ' · ' . self::fmt($line->getTaxAmount()) : '';
-                $rows[] = ['cells' => ['', '', $line->getAccount()->getNumber(), $text, $tax, $blank($line->getDebit()), $blank($line->getCredit())]];
+        $rows  = (static function () use ($report, $blank): \Generator {
+            foreach ($report->entries as $entry) {
+                $reversal = $entry->isReversal() ? ' · Storno von ' . $entry->getReversalOf()->getFiscalYear()->getCode() . '/' . $entry->getReversalOf()->getNumber() : '';
+                yield ['cells' => [$entry->getDate()->format('d.m.Y'), (string) $entry->getNumber(), '', $entry->getText() . $reversal, '', '', ''], 'bold' => true, 'rule' => true];
+                foreach ($entry->getLines() as $line) {
+                    $text = $line->getAccount()->getName() . ($line->getText() !== null && $line->getText() !== '' ? ' · ' . $line->getText() : '');
+                    $tax  = $line->hasTax() ? $line->getTaxCode() . ' ' . ManualEntryForm::percent((int) $line->getTaxRate()) . ' · ' . self::fmt($line->getTaxAmount()) : '';
+                    yield ['cells' => ['', '', $line->getAccount()->getNumber(), $text, $tax, $blank($line->getDebit()), $blank($line->getCredit())]];
+                }
             }
-        }
-        if ($rows === []) {
-            $rows[] = ['cells' => ['', '', '', 'Keine Buchung in diesem Zeitraum.', '', '', ''], 'muted' => true];
-        }
-        $rows[] = ['cells' => ['', '', '', 'Total Zeitraum (' . $report->paging->total . ' Buchungen)', '', self::fmt($report->totalDebit), self::fmt($report->totalCredit)], 'bold' => true, 'rule' => true];
+            if ($report->paging->total === 0) {
+                yield ['cells' => ['', '', '', 'Keine Buchung in diesem Zeitraum.', '', '', ''], 'muted' => true];
+            }
+            yield ['cells' => ['', '', '', 'Total Zeitraum (' . $report->paging->total . ' Buchungen)', '', self::fmt($report->totalDebit), self::fmt($report->totalCredit)], 'bold' => true, 'rule' => true];
+        })();
 
         return self::document('Journal', $range, $issuer, $printedAt, [['columns' => $columns, 'rows' => $rows, 'wrap' => 3]], '', 'L');
     }

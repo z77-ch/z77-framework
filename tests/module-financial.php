@@ -462,10 +462,21 @@ check('A2 the database is empty', $tables() === []);
 [$code, $out] = $run(['command' => 'migrate']);
 check('A3 migrate exits 0' . ($code !== 0 ? " — got {$code}: " . trim($out) : ''), $code === 0);
 $executed = $db->fetchFirstColumn('SELECT version FROM schema_migration');
-check('A4 … the three financial migrations ran; the run ends at the newest of all modules (timestamp order — financial\'s close protocol of P5 part 1)',
-    str_contains($out, 'Migrating up to Z77\\Module\\Financial\\Migrations\\Version20260930120000')
-    && in_array('Z77\\Module\\Financial\\Migrations\\Version20260922071232', $executed, true) && in_array('Z77\\Module\\Financial\\Migrations\\Version20260922091711', $executed, true)
-    && in_array('Z77\\Module\\Financial\\Migrations\\Version20260930120000', $executed, true));
+// The newest migration of every collected directory — derived, not pinned (the pin went stale with each new migration).
+$newest = (function () use ($dirs): string {
+    $all = [];
+    foreach ($dirs as $ns => $dir) {
+        foreach (glob($dir . '/Version*.php') as $file) {
+            $all[substr(basename($file, '.php'), 7)] = $ns . '\\' . basename($file, '.php');
+        }
+    }
+    krsort($all, SORT_STRING);
+    return (string) reset($all);
+})();
+$financialMigrations = array_map(fn($f) => 'Z77\\Module\\Financial\\Migrations\\' . basename($f, '.php'), glob($package . '/res/migrations/Version*.php'));
+check('A4 … every financial migration ran (' . count($financialMigrations) . ', the last «nur durch Module bebuchbar» of 2026-10-13); the run ends at the newest of all modules (timestamp order: ' . $newest . ')',
+    str_contains($out, 'Migrating up to ' . $newest) && count($financialMigrations) >= 5
+    && array_diff($financialMigrations, $executed) === [] && in_array('Z77\\Module\\Financial\\Migrations\\Version20261013100000', $executed, true));
 check('A5 account, fiscal_period, fiscal_year, fiscal_year_close_log, journal_entry, journal_entry_change, journal_line exist (plus mandator, number_range and the metadata table)',
     $tables() === ['account', 'fiscal_period', 'fiscal_year', 'fiscal_year_close_log', 'journal_entry', 'journal_entry_change', 'journal_line', 'mandator', 'number_range', MigrationsApplication::STORAGE_TABLE]);
 $allUnicode = true;
@@ -525,6 +536,14 @@ $offOnDocuments = array_values(array_map(fn(Account $a) => $a->getNumber(), arra
 check('B2d «auf Belegen wählbar»: exactly 3800, 3805, 3809 (group 38, revenue) come OFF from the chart file; every other account ON — 3400 and 6950 included; a new Account is ON',
     $offOnDocuments === ['3800', '3805', '3809'] && $byNumber['3400']->isSelectableOnDocuments() && $byNumber['6950']->isSelectableOnDocuments()
     && (new Account())->isSelectableOnDocuments());
+// «Nur durch Module bebuchbar» (owner 2026-10-13): OFF by default, ON in the file for the receivables collective account 1100.
+$moduleOnly = array_values(array_map(fn(Account $a) => $a->getNumber(), array_filter($chart, fn(Account $a) => $a->isModulePostingOnly())));
+check('B2e «nur durch Module bebuchbar»: exactly 1100 comes ON from the chart file; every other account OFF; a new Account is OFF',
+    $moduleOnly === ['1100'] && !$byNumber['1020']->isModulePostingOnly() && !(new Account())->isModulePostingOnly());
+// The harness posts receivables BY HAND further down (I, O — an installation without debtor): the flag is
+// switched off through the service here and back on in section MO, which proves the refusal.
+(new AccountService($em))->update($byNumber['1100'], ['module_posting_only' => false]);
+check('B2f … switched off through AccountService::update() (the editor\'s path)', (int) $db->fetchOne("SELECT module_posting_only FROM account WHERE number = '1100'") === 0);
 $roots = array_values(array_filter($chart, fn(Account $a) => $a->getParent() === null));
 check('B4 the roots are exactly the classes 1–9, all groups', array_map(fn(Account $a) => $a->getNumber(), $roots) === ['1', '2', '3', '4', '5', '6', '7', '8', '9'] && array_filter($roots, fn(Account $a) => $a->isPostable()) === []);
 $chainOk = true;
@@ -1561,11 +1580,43 @@ check('R38 a date outside the year or not a date falls back to the year\'s bound
     && count($page('trialBalance', ['year' => 'nope'])[0]['notices']) === 1 && $page('trialBalance', ['from' => ['x']])[0]['notices'] === []);
 [$ctx] = $page('trialBalance', ['year' => '2030-31', 'from' => '2030-10-01', 'to' => '2030-09-01']);
 check('R39 «from» after «to» → the whole year, with a notice', $ctx['range']->fromDay() === '2030-07-01' && $ctx['range']->toDay() === '2031-06-30' && count($ctx['notices']) === 1);
-[$ctx, $html] = $page('balanceSheet', ['year' => '2030-31']);
-check('R40 balance sheet page: balanced says nothing (no badge, no fault block, owner 2026-10-10), the result line «Jahresverlust 2030-31» −795.00 as an equity position, «Stichtag» instead of from/to, no missing-opening note', !str_contains($html, 'Aktiven = Passiven') && !str_contains($html, 'Aktiven ≠ Passiven')
+// «Vorjahre» OFF (`compare=0`): ONE column — the sign names the result (with the default ON the
+// label is the multi-year «Jahresgewinn / -verlust», R40c).
+[$ctx, $html] = $page('balanceSheet', ['year' => '2030-31', 'compare' => '0']);
+check('R40 balance sheet page, one year: balanced says nothing (no badge, no fault block, owner 2026-10-10), the result line «Jahresverlust 2030-31» −795.00 as an equity position, «Stichtag» instead of from/to, no missing-opening note', !str_contains($html, 'Aktiven = Passiven') && !str_contains($html, 'Aktiven ≠ Passiven')
+    && $ctx['comparison']->labels === ['2030-31'] && count($ctx['sheets']) === 1 && $ctx['report'] === $ctx['sheets'][0]
     && str_contains($html, 'Jahresverlust 2030-31') && substr_count($html, 'Total Aktiven') === 1 && str_contains($html, '−795.00') && str_contains($html, 'Stichtag') && !str_contains($html, 'name="from"') && !str_contains($html, 'Ohne Eröffnungsbuchung'));
+[$ctx, $html] = $page('incomeStatement', ['year' => '2030-31', 'compare' => '0']);
+check('R41 income statement page, one year: Ertrag 1\'005.00, Aufwand 1\'800.00, the closing row reads exactly «Verlust (Ertrag − Aufwand)» −795.00 (not the multi-year label)', str_contains($html, "1&apos;005.00") && str_contains($html, "1&apos;800.00")
+    && $ctx['comparison']->blocks[2]['totalLabel'] === 'Verlust (Ertrag − Aufwand)' && $ctx['comparison']->blocks[2]['totals'][0]->toDecimal() === '-795.00'
+    && str_contains($html, '>Verlust (Ertrag − Aufwand)<') && !str_contains($html, 'Gewinn / Verlust'));
+
+echo "R. … comparison columns anchored to the fiscal-year start (review 2026-10-13 H6) — the harness's short and long years\n";
+// The years: 2025 (15.3.–31.12., 10 periods), 2026 (calendar), 2027 (1.1.–30.6., SHORT, 6 periods), 2027-28 (1.7.–30.6.).
+$fyOf  = fn(string $code) => $em->getRepository(FiscalYear::class)->findOneBy(['code' => $code]);
+$cmpOf = fn(string $code, string $from, string $to, string $older, bool $atDay = false) => (function () use ($fyOf, $code, $from, $to, $older, $atDay) {
+    $r = (new ReportRange($fyOf($code), day($from), day($to)))->comparableIn($fyOf($older), $atDay);
+    return $r === null ? null : $r->fromDay() . '..' . $r->toDay();
+})();
+check('R40a the whole year → the whole older year, whatever its length: 2027-28 → 2027 (1.1.–30.6.2027, the short year) and → 2026; 2026 → 2025 (15.3.–31.12.)',
+    $cmpOf('2027-28', '2027-07-01', '2028-06-30', '2027') === '2027-01-01..2027-06-30' && $cmpOf('2027-28', '2027-07-01', '2028-06-30', '2026') === '2026-01-01..2026-12-31'
+    && $cmpOf('2026', '2026-01-01', '2026-12-31', '2025') === '2025-03-15..2025-12-31');
+check('R40b a month → the SAME PERIOD INDEX: August 2027 (2nd period of 2027-28) → February 2027 and February 2026; February 2028 (8th) → nothing in the short 2027, August 2026, October 2025 (15.3. start: Mar…Oct)',
+    $cmpOf('2027-28', '2027-08-01', '2027-08-31', '2027') === '2027-02-01..2027-02-28' && $cmpOf('2027-28', '2027-08-01', '2027-08-31', '2026') === '2026-02-01..2026-02-28'
+    && $cmpOf('2027-28', '2028-02-01', '2028-02-29', '2027') === null && $cmpOf('2027-28', '2028-02-01', '2028-02-29', '2026') === '2026-08-01..2026-08-31'
+    && $cmpOf('2027-28', '2028-02-01', '2028-02-29', '2025') === '2025-10-01..2025-10-31');
+check('R40c the balance sheet per 29.2.2028 (a period end) → per the same period end: 31.8.2026 — from the older year\'s first day; per 15.5.2026 (no period end) → shifted by the start distance into 2025 (29.7.2025)',
+    $cmpOf('2027-28', '2027-07-01', '2028-02-29', '2026', true) === '2026-01-01..2026-08-31' && $cmpOf('2026', '2026-01-01', '2026-05-15', '2025', true) === '2025-03-15..2025-07-29');
+check('R40d a custom range → shifted by the distance between the year starts (6 months 2027-28 → 2027), a month end stays a month end («last day of»), clamped into the shorter year',
+    $cmpOf('2027-28', '2027-07-10', '2027-08-20', '2027') === '2027-01-10..2027-02-20' && $cmpOf('2027-28', '2027-07-10', '2027-09-30', '2027') === '2027-01-10..2027-03-31'
+    && $cmpOf('2027-28', '2027-07-10', '2028-06-15', '2027') === '2027-01-10..2027-06-30' && $cmpOf('2027-28', '2027-07-10', '2027-09-30', '2026') === '2026-01-10..2026-03-31');
+[$ctx, $html] = $page('balanceSheet', ['year' => '2027-28', 'to' => '2028-02-29']);
+check('R40e the page: the balance sheet of 2027-28 per 29.2.2028 compares 2026 and 2025 (the short 2027 has no 8th period and is left out), each column header names its effective range',
+    $ctx['comparison']->labels === ['2027-28', '2026', '2025'] && $ctx['comparison']->spans === ['per 29.2.2028', 'per 31.8.2026', 'per 31.10.2025']
+    && str_contains($html, '<small>per 31.8.2026</small>') && str_contains($html, 'Jahresgewinn / -verlust') && count($ctx['sheets']) === 3);
 [$ctx, $html] = $page('incomeStatement', ['year' => '2030-31']);
-check('R41 income statement page: Ertrag 1\'005.00, Aufwand 1\'800.00, Verlust −795.00', str_contains($html, "1&apos;005.00") && str_contains($html, "1&apos;800.00") && str_contains($html, 'Verlust (Ertrag − Aufwand)'));
+check('R40f the whole year with «Vorjahre» (the default): whole older years, no range under the year code; the multi-year result label',
+    count($ctx['comparison']->labels) === 3 && !$ctx['comparison']->hasSpans() && !str_contains($html, '<br><small>') && str_contains($html, 'Gewinn / Verlust (Ertrag − Aufwand)'));
 [$ctx, $html] = $page('accountStatement', ['year' => '2030-31']);
 check('R42 account statement without an account: the form with the postable accounts, no report', $ctx['report'] === null && str_contains($html, 'Konto wählen') && str_contains($html, '<option value="1020"'));
 [$ctx, $html] = $page('accountStatement', ['year' => '2030-31', 'account' => '1020']);
@@ -1711,10 +1762,10 @@ check('P2c page 2 renders «Übertrag von Seite 1» without a date (not the rang
 echo "C. Statement blocks never hide an account the tree does not reach (cycle written past the validator)\n";
 // Two groups pointing at each other and a postable expense account under them —
 // what a database edit or an import could leave; the validator refuses it.
-$db->executeStatement("INSERT INTO account (number, name, type, postable, active, parent_id) VALUES ('9900', 'Zyklus A', 'expense', 0, 1, NULL), ('9901', 'Zyklus B', 'expense', 0, 1, NULL)");
+$db->executeStatement("INSERT INTO account (number, name, type, postable, active, selectable_on_documents, module_posting_only, parent_id) VALUES ('9900', 'Zyklus A', 'expense', 0, 1, 1, 0, NULL), ('9901', 'Zyklus B', 'expense', 0, 1, 1, 0, NULL)");
 $db->executeStatement("UPDATE account SET parent_id = (SELECT id FROM (SELECT id FROM account WHERE number = '9901') t) WHERE number = '9900'");
 $db->executeStatement("UPDATE account SET parent_id = (SELECT id FROM (SELECT id FROM account WHERE number = '9900') t) WHERE number = '9901'");
-$db->executeStatement("INSERT INTO account (number, name, type, postable, active, parent_id) VALUES ('9902', 'Unter dem Zyklus', 'expense', 1, 1, (SELECT id FROM (SELECT id FROM account WHERE number = '9900') t))");
+$db->executeStatement("INSERT INTO account (number, name, type, postable, active, selectable_on_documents, module_posting_only, parent_id) VALUES ('9902', 'Unter dem Zyklus', 'expense', 1, 1, 1, 0, (SELECT id FROM (SELECT id FROM account WHERE number = '9900') t))");
 $db->executeStatement("UPDATE number_range SET last_number = 10000 WHERE name = 'journal-entry.2031-32'");   // the volume entries were SQL-inserted with numbers 1…10'000
 $em = $wireDi();
 (new ManualEntryService($em, 'buchhalter'))->create(PostingRequest::manual(day('2031-08-01'), 'Aufwand im Zyklus', [PostingLine::debit('9902', chf('77.00')), PostingLine::credit('1020', chf('77.00'))]));
@@ -3289,6 +3340,109 @@ fclose($closerPipes[1]); fclose($closerPipes[2]); proc_close($closer);
 check('YC43 close in flight, then a posting: the posting WAITED and was refused period-closed (worker: ' . $closerOut . '; posting: ' . ($raceB ? get_class($raceB) . ' ' . ($raceB instanceof PostingRefusedException ? $raceB->reason : $raceB->getMessage()) : 'posted') . ') — no deadlock, nothing written, the number went back',
     $closerOut === 'ok waited' && $raceB instanceof PostingRefusedException && $raceB->reason === PostingRefusedException::PERIOD_CLOSED
     && $ycStates($pCode) === ['closed'] && (string) $ycRange('journal-entry.' . $pCode) === $rangeB && (int) $db->fetchOne("SELECT COUNT(*) FROM journal_entry WHERE text = 'YC Race B'") === 0);
+
+// ── MO. «nur durch Module bebuchbar» and the subledger reconciliation (owner 2026-10-13) ──
+
+echo "MO. the collective account takes module postings only; the year close reconciles it with the module's subledger (owner 2026-10-13)\n";
+
+/** A subledger the harness controls — what debtor registers under `subledgerReconciliations` (pending in debtor.md). */
+class MoReceivables implements \Z77\Module\Financial\Close\SubledgerReconciliationInterface
+{
+    /** @var list<\Z77\Module\Financial\Close\SubledgerBalance> */
+    public static array $balances = [];
+    public static array $calls = [];
+
+    public function balances(string $fiscalYear, \DateTimeImmutable $from, \DateTimeImmutable $to): iterable
+    {
+        self::$calls[] = [$fiscalYear, $from->format('Y-m-d'), $to->format('Y-m-d')];
+        yield from self::$balances;
+    }
+}
+
+$em       = $wireDi();
+$moYear   = $em->getRepository(FiscalYear::class)->latest();
+$moCode   = $moYear->getCode();
+$moDay    = $moYear->getStartDate()->modify('+20 days')->format('Y-m-d');
+$moAcc    = fn(string $n) => $wireDi()->getRepository(Account::class)->findOneBy(['number' => $n]);
+$moRange  = fn() => (string) $db->fetchOne('SELECT last_number FROM number_range WHERE name = ?', ['journal-entry.' . $moCode]);
+$moFlag   = fn(bool $on) => (new AccountService($wireDi()))->update($moAcc('1100'), ['module_posting_only' => $on]);
+$moManual = fn() => new ManualEntryService($wireDi(), 'buchhalter');
+$moSale   = fn(string $amount, string $text = 'Debitor von Hand') => PostingRequest::manual(day($moDay), $text, [PostingLine::debit('1100', chf($amount)), PostingLine::credit('3200', chf($amount))]);
+
+// An entry on 1100 written BEFORE the flag (the dev data's Nr. 4–12) — the flag is still off (B2f).
+$moOld = $moManual()->create($moSale('108.10', 'Altlast vor der Sperre'));
+$moFlag(true);
+check('MO1 the flag is on again (through the service), the list row says «nur Modul»', $moAcc('1100')->isModulePostingOnly()
+    && str_contains($renderer->partial('Backend/AccountController/_row', ['account' => $moAcc('1100'), 'depth' => 3, 'typeLabels' => [], 'actionBase' => '/backend/finance/account']), 'nur Modul')
+    && !str_contains($renderer->partial('Backend/AccountController/_row', ['account' => $moAcc('1020'), 'depth' => 3, 'typeLabels' => [], 'actionBase' => '/backend/finance/account']), 'nur Modul'));
+
+$moBefore = $moRange();
+$e = caught(fn() => $moManual()->create($moSale('50.00')), PostingRefusedException::class);
+check('MO2 a NEW manual entry onto 1100 is refused (account-module-only, the account named) — before the number: the range is unchanged', $e?->reason === PostingRefusedException::ACCOUNT_MODULE_ONLY
+    && str_starts_with((string) $e->account, '1100 ') && $moRange() === $moBefore && (int) $db->fetchOne("SELECT COUNT(*) FROM journal_entry WHERE text = 'Debitor von Hand'") === 0);
+$e2 = caught(fn() => $wireDi()->getTransaction(JournalEntry::class)->run(fn() => (new LedgerService(DI::getUnifiedEntityManager(), 'import'))->post($moSale('50.00', 'Import von Hand'))), PostingRefusedException::class);
+check('MO3 … also through LedgerService::post() with PostingRequest::manual() (a script, the import) — the rule is the entry KIND, not the screen', $e2?->reason === PostingRefusedException::ACCOUNT_MODULE_ONLY);
+$moGen = $post($wireDi(), PostingRequest::generated(day($moDay), 'Rechnung MO-1', 'invoice', 'MO-1', 'mo:invoice:1', [PostingLine::debit('1100', chf('216.20')), PostingLine::credit('3200', chf('216.20'))]));
+check('MO4 a module\'s GENERATED posting onto 1100 passes', $moGen->fiscalYear === $moCode && $moGen->number > 0);
+
+$oldEntry = $wireDi()->getRepository(JournalEntry::class)->findByRef($moOld);
+$kept     = PostingRequest::manual(day($moDay), 'Altlast vor der Sperre (Text korrigiert)', [PostingLine::debit('1100', chf('108.10')), PostingLine::credit('3200', chf('108.10'))]);
+check('MO5 the entry written before the flag stays editable around its UNCHANGED 1100 line (text corrected)', $moManual()->update((int) $oldEntry->getId(), $oldEntry->getVersion(), $kept) === true);
+$oldEntry = $wireDi()->getRepository(JournalEntry::class)->findByRef($moOld);
+$e3 = caught(fn() => $moManual()->update((int) $oldEntry->getId(), $oldEntry->getVersion(), $moSale('100.00', 'Altlast geändert')), PostingRefusedException::class);
+check('MO6 … but its 1100 line cannot be CHANGED (a new amount is a new manual line on the collective account)', $e3?->reason === PostingRefusedException::ACCOUNT_MODULE_ONLY);
+$oldEntry = $wireDi()->getRepository(JournalEntry::class)->findByRef($moOld);
+$moManual()->delete((int) $oldEntry->getId(), $oldEntry->getVersion());
+check('MO7 … and it can be DELETED — the correction of a stray manual entry; the number stays a documented gap', $wireDi()->getRepository(JournalEntry::class)->findByRef($moOld) === null
+    && (int) $db->fetchOne('SELECT COUNT(*) FROM journal_entry_change WHERE entry_number = ? AND action = ? AND fiscal_year_id = (SELECT id FROM fiscal_year WHERE code = ?)', [$moOld->number, 'delete', $moCode]) === 1);
+
+$jHost = $journalHost();
+check('MO8 the journal screen says it in German, naming the account and where corrections go', str_contains($m = (new \ReflectionMethod($jHost, 'journalRefusalMessage'))->invoke($jHost, $e), 'nur durch Module bebuchbar')
+    && str_contains($m, '1100 Forderungen') && str_contains($m, 'Kontenplan'));
+$moForm  = $tForm($moAcc('1100'), ['type' => false, 'postable' => false]);
+$grpForm = $tForm($moAcc('110'), ['type' => false, 'postable' => false]);
+$newForm = $tForm(new Account(), ['type' => false, 'postable' => false]);
+check('MO9 the editor: the switch «Nur durch Module bebuchbar» with its help in the label — checked on 1100, unchecked on «Konto anlegen», not rendered on a group (nothing posted, the stored value stays)',
+    preg_match('~name="module_posting_only" value="1" checked~', $moForm) === 1 && str_contains($moForm, 'Nur durch Module bebuchbar') && str_contains($moForm, 'manuelle Buchungen')
+    && str_contains($newForm, 'name="module_posting_only" value="1">') && !str_contains($grpForm, 'module_posting_only'));
+
+// The reconciliation: financial's own check, asked like the registry asks it at the close.
+$moTo     = $moYear->getEndDate();
+$moParams = ['fiscalYear' => $moCode, 'from' => $moYear->getStartDate(), 'to' => $moTo];
+$moCheck  = fn() => iterator_to_array((new \Z77\Module\Financial\Close\SubledgerReconciliationCheck(new \Z77\Module\Financial\Close\SubledgerReconciliations([MoReceivables::class]), $wireDi()))->check('period-close', $moParams), false);
+$ledger1100 = (string) $db->fetchOne("SELECT COALESCE(SUM(l.debit - l.credit), 0) FROM journal_line l JOIN journal_entry e ON e.id = l.entry_id JOIN account a ON a.id = l.account_id JOIN fiscal_year y ON y.id = e.fiscal_year_id WHERE a.number = '1100' AND y.code = ?", [$moCode]);
+MoReceivables::$balances = [new \Z77\Module\Financial\Close\SubledgerBalance('1100', 'offenen Posten Debitoren', chf($ledger1100))];
+check('MO10 the subledger agrees with the journal (' . $ledger1100 . ') and the account is flagged → nothing to say; the module was asked with the year\'s code and bounds', $moCheck() === []
+    && end(MoReceivables::$calls) === [$moCode, $moYear->getStartDate()->format('Y-m-d'), $moTo->format('Y-m-d')]);
+// A stray manual entry, as in the dev data: written while the flag was off.
+$moFlag(false);
+$moStray = $moManual()->create($moSale('108.10', 'Streubuchung'));
+$moFlag(true);
+$findings  = $moCheck();
+// Every MANUAL line on 1100 in the year (the O section's receivables by hand may share it) — the sum the finding names.
+$manualNet = (string) $db->fetchOne("SELECT COALESCE(SUM(l.debit - l.credit), 0) FROM journal_line l JOIN journal_entry e ON e.id = l.entry_id JOIN account a ON a.id = l.account_id JOIN fiscal_year y ON y.id = e.fiscal_year_id WHERE a.number = '1100' AND y.code = ? AND e.kind = 'manual'", [$moCode]);
+check('MO11 a manual entry on the collective account → ONE warning (never blocking): both balances, the difference 108.10, and the manual entries by number with their net (' . $manualNet . ')',
+    count($findings) === 1 && $findings[0]->severity === \Z77\Persistence\Doctrine\OpenWork\Severity::Warning && $findings[0]->reference === 'account:1100'
+    && str_contains($findings[0]->message, 'stimmt nicht mit den offenen Posten Debitoren überein') && str_contains($findings[0]->message, 'Differenz 108.10')
+    && str_contains($findings[0]->message, 'Manuelle Buchungen auf dem Konto: Nr. ') && preg_match('~\b' . $moStray->number . '\b~', $findings[0]->message) === 1
+    && str_contains($findings[0]->message, 'zusammen ' . \Z77\Shared\Money\AmountFormat::of(chf($manualNet))));
+$moFlag(false);
+check('MO12 the collective account NOT flagged → a warning says so (the flag and the module\'s account setting disagree)', count(array_filter($moCheck(), fn($f) => str_contains($f->message, 'ist nicht «nur durch Module bebuchbar»'))) === 1);
+$moFlag(true);
+MoReceivables::$balances = [new \Z77\Module\Financial\Close\SubledgerBalance('9999', 'offenen Posten Debitoren', chf('0.00'))];
+check('MO13 a collective account the chart does not have → a warning naming it', count($f = $moCheck()) === 1 && str_contains($f[0]->message, '9999') && $f[0]->severity === \Z77\Persistence\Doctrine\OpenWork\Severity::Warning);
+MoReceivables::$balances = [];
+check('MO14 financial registers the check under `period-close` in its own config; no module registers a reconciliation here, so the real registry finds none and the check says nothing',
+    in_array(\Z77\Module\Financial\Close\SubledgerReconciliationCheck::class, (fn() => $this->checks)->call(OpenWorkChecks::fromModules(DI::getModuleManager()))['period-close'] ?? [], true)
+    && \Z77\Module\Financial\Close\SubledgerReconciliations::fromModules(DI::getModuleManager())->all() === []
+    && iterator_to_array((new \Z77\Module\Financial\Close\SubledgerReconciliationCheck())->check('period-close', $moParams), false) === []);
+check('MO15 a bad registration fails at registration, naming the class', throws(fn() => new \Z77\Module\Financial\Close\SubledgerReconciliations([\stdClass::class]), \RuntimeException::class)
+    && throws(fn() => new \Z77\Module\Financial\Close\SubledgerReconciliations(['Nope\\Missing']), \RuntimeException::class));
+// amend() with another sourceRef (review 2026-10-13): refused as immutable — it used to log a change on every call.
+$e4 = caught(fn() => $wireDi()->getTransaction(JournalEntry::class)->run(fn() => (new LedgerService(DI::getUnifiedEntityManager(), 'debtor'))->amend('mo:invoice:1',
+    PostingRequest::generated(day($moDay), 'Rechnung MO-1', 'invoice', 'MO-1-neu', 'mo:invoice:1', [PostingLine::debit('1100', chf('216.20')), PostingLine::credit('3200', chf('216.20'))]))), EntryNotEditableException::class);
+check('MO16 amend() with another sourceRef is refused (source-ref-changed), nothing logged', $e4?->reason === EntryNotEditableException::SOURCE_REF_CHANGED
+    && (int) $db->fetchOne('SELECT COUNT(*) FROM journal_entry_change WHERE entry_number = ? AND fiscal_year_id = (SELECT id FROM fiscal_year WHERE code = ?)', [$moGen->number, $moCode]) === 0);
 
 echo "\n" . ($fail === 0 ? "PASS — {$pass} checks" : "FAIL — {$fail} of " . ($pass + $fail) . " checks") . "\n";
 exit($fail === 0 ? 0 : 1);

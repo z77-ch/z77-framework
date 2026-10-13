@@ -20,6 +20,8 @@ final class EntryNotEditableException extends FinancialException
     public const MANUAL              = 'manual';
     public const SOURCE_MISMATCH     = 'source-mismatch';
     public const REVERSED            = 'reversed';
+    /** `amend()` with another `sourceRef` than the entry carries — the origin is immutable (review 2026-10-13). */
+    public const SOURCE_REF_CHANGED  = 'source-ref-changed';
 
     public function __construct(public readonly string $reason, string $message)
     {

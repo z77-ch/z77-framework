@@ -13,7 +13,7 @@
  * @var string $actionBase
  */
 $actionBase = $actionBase ?? '/backend/finance/journal';
-$months = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'];
+$months = \Z77\Module\Financial\Ui\MonthNames::LONG;
 $date   = \Z77\Module\Financial\Ui\ManualEntryForm::parseDate($form->date());
 $date   = $date !== null && $year->covers($date) ? $date : null;
 ?>

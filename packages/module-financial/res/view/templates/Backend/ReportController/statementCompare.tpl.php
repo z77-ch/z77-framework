@@ -8,10 +8,18 @@
  * A block without a title and rows is a closing total (Total Passiven, the result).
  *
  * @var array<string, mixed> $block   one entry of StatementComparison::$blocks
+ * A column that does not cover its whole year names its range under the year in the head
+ * (review 2026-10-13 H6: «1.3.–31.3.2026», «per 31.3.2026»), so a short or long year's month
+ * is never mistaken for the same calendar month. Accounts the chart tree does not reach
+ * (`unplaced`, a cycle or an orphaned group in the data) stand flat at the end and a note
+ * names them (financial.md «Grouping»).
+ *
  * @var list<string> $labels          the period labels, newest first
+ * @var list<?string> $spans          per column its range when not the whole year (null = whole year)
  * @var callable $link
  * @var callable $fmt
  */
+$spans = $spans ?? [];
 $n     = count($labels);
 $cols  = '--be-list-cols: 6rem minmax(12rem, 1fr) repeat(' . $n . ', 9rem)';
 $amt   = static fn($m): string => $m === null ? '' : $fmt($m);
@@ -22,8 +30,9 @@ $head  = $block['title'] !== '';
     <div class="be-list__head">
         <span class="be-list__col">Konto</span>
         <span class="be-list__col"><?= e($block['title']) ?></span>
-        <?php foreach ($labels as $label): ?>
-        <span class="be-list__col be-list__col--num"><?= $n === 1 ? 'Betrag' : e($label) ?></span>
+        <?php foreach ($labels as $i => $label): ?>
+        <?php $span = $n === 1 ? null : ($spans[$i] ?? null); ?>
+        <span class="be-list__col be-list__col--num"<?= $span === null ? '' : ' title="' . e($label . ' · ' . $span) . '"' ?>><?= $n === 1 ? 'Betrag' : e($label) ?><?php if ($span !== null): ?><br><small><?= e($span) ?></small><?php endif; ?></span>
         <?php endforeach; ?>
     </div>
     <?php if ($block['rows'] === [] && $block['extra'] === []): ?>
@@ -49,6 +58,13 @@ $head  = $block['title'] !== '';
         </div>
     </div>
     <?php endforeach; ?>
+    <?php if (($block['unplaced'] ?? []) !== []): ?>
+    <div class="be-list__item"><div class="be-list__row">
+        <span class="be-list__cell"></span>
+        <span class="be-list__cell be-list__cell--muted">Nicht im Kontenbaum erreichbar: <?= e(implode(', ', $block['unplaced'])) ?> — die Gruppenkette erreicht keine oberste Ebene; Kontenplan prüfen.</span>
+        <?php for ($i = 0; $i < $n; $i++): ?><span class="be-list__cell"></span><?php endfor; ?>
+    </div></div>
+    <?php endif; ?>
     <?php foreach ($block['extra'] as $row): ?>
     <div class="be-list__item">
         <div class="be-list__row be-list__row--group be-list__row--l1">
