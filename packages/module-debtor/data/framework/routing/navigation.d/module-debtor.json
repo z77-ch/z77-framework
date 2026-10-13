@@ -22,7 +22,7 @@
         "slot": "",
         "active": true,
         "param": "",
-        "sort_key": 0,
+        "sort_key": 1,
         "parent_key": "auftraege"
     },
     {
@@ -35,7 +35,7 @@
         "slot": "",
         "active": true,
         "param": "",
-        "sort_key": 1,
+        "sort_key": 0,
         "parent_key": "auftraege"
     },
     {
