@@ -175,6 +175,40 @@ class InvoiceRepository extends DoctrineRepository
     }
 
     /**
+     * The settlement figures of the FINAL payable documents (invoice, fee) among $ids in ONE
+     * query — gross, Σ final credit notes against each, Σ allocations of every kind (payment,
+     * discount, loss) — by id; ids that are unknown, a draft or a credit note are left out.
+     * What `Services\PaymentStates` (the read port of a source, plan §7) derives the payment
+     * state from — the aggregates of {@see openItems()}, restricted to a page (DEBTOR-OPEN-001:
+     * never `openAmount()` per row). A plain read, no lock. Doctrine-only (SQL).
+     *
+     * @param list<int> $ids
+     * @return array<int, array{gross: string, credited: string, allocated: string, currency: string}> decimals as strings
+     */
+    public function settlementFiguresOf(array $ids): array
+    {
+        $ids = array_values(array_unique(array_filter(array_map('intval', $ids), static fn(int $id) => $id > 0)));
+        if ($ids === []) {
+            return [];
+        }
+        $rows = $this->connection()->fetchAllAssociative(
+            'SELECT i.id, i.gross_total, i.currency, COALESCE(cn.total, 0) AS credited, COALESCE(pa.total, 0) AS allocated'
+            . ' FROM invoice i'
+            . ' LEFT JOIN (SELECT credit_note_of_id, SUM(gross_total) AS total FROM invoice WHERE kind = ? AND state = ? AND credit_note_of_id IN (?) GROUP BY credit_note_of_id) cn ON cn.credit_note_of_id = i.id'
+            . ' LEFT JOIN (SELECT invoice_id, SUM(amount) AS total FROM payment_allocation WHERE invoice_id IN (?) GROUP BY invoice_id) pa ON pa.invoice_id = i.id'
+            . ' WHERE i.id IN (?) AND i.kind <> ? AND i.state = ?',
+            [InvoiceKind::CreditNote->value, InvoiceState::Final->value, $ids, $ids, $ids, InvoiceKind::CreditNote->value, InvoiceState::Final->value],
+            [ParameterType::STRING, ParameterType::STRING, ArrayParameterType::INTEGER, ArrayParameterType::INTEGER, ArrayParameterType::INTEGER, ParameterType::STRING, ParameterType::STRING]
+        );
+        $figures = [];
+        foreach ($rows as $r) {
+            $figures[(int) $r['id']] = ['gross' => (string) $r['gross_total'], 'credited' => (string) $r['credited'], 'allocated' => (string) $r['allocated'], 'currency' => (string) $r['currency']];
+        }
+
+        return $figures;
+    }
+
+    /**
      * The FINAL documents of $kind of one party, oldest first — the fees
      * an overpayment is placed on (P4 part 2/3), the invoices a due list
      * walks. Doctrine-only (DQL).

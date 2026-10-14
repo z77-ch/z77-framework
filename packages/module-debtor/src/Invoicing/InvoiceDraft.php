@@ -31,6 +31,11 @@ use Z77\Shared\Money\Money;
  * WITHOUT a payment part (a credit note never has one). There is no implicit
  * default target: the screen preselects one, a source names it.
  *
+ * `subject` (P7 slim, plan D10, 2026-10-14): an optional «Betreff» printed
+ * under the title — the order passes «Auftrag {number} · {Betreff}», the
+ * manual editor a free line. null / '' = none; at most
+ * `Invoice::SUBJECT_LENGTH` characters (refused `subject`, never cut).
+ *
  * Plain data, no rules: `InvoicingService` validates and refuses with a
  * reason ({@see \Z77\Module\Debtor\Services\InvoiceRefusedException}).
  */
@@ -52,6 +57,7 @@ final class InvoiceDraft
         public readonly ?string $sourceRef = null,
         public readonly ?int $creditNoteOfId = null,
         public readonly ?string $paymentTargetCode = null,
+        public readonly ?string $subject = null,
     ) {}
 
     /** @param list<LineDraft> $lines */
@@ -68,8 +74,9 @@ final class InvoiceDraft
         ?string $sourceType = null,
         ?string $sourceRef = null,
         ?string $paymentTargetCode = null,
+        ?string $subject = null,
     ): self {
-        return new self(InvoiceKind::Invoice, $contactId, $invoiceDate, $serviceFrom, $serviceTo, $currency, $priceMode, $paymentTermsCode, $address, array_values($lines), $sourceType, $sourceRef, null, $paymentTargetCode);
+        return new self(InvoiceKind::Invoice, $contactId, $invoiceDate, $serviceFrom, $serviceTo, $currency, $priceMode, $paymentTermsCode, $address, array_values($lines), $sourceType, $sourceRef, null, $paymentTargetCode, $subject);
     }
 
     /**
@@ -114,7 +121,8 @@ final class InvoiceDraft
         ?AddressSnapshot $address = null,
         ?string $sourceType = null,
         ?string $sourceRef = null,
+        ?string $subject = null,
     ): self {
-        return new self(InvoiceKind::CreditNote, $contactId, $invoiceDate, $serviceFrom, $serviceTo, $currency, $priceMode, $paymentTermsCode, $address, array_values($lines), $sourceType, $sourceRef, $creditNoteOfId);
+        return new self(InvoiceKind::CreditNote, $contactId, $invoiceDate, $serviceFrom, $serviceTo, $currency, $priceMode, $paymentTermsCode, $address, array_values($lines), $sourceType, $sourceRef, $creditNoteOfId, null, $subject);
     }
 }

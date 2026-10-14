@@ -41,6 +41,8 @@ final class DocumentSnapshot
         public readonly Money $grossTotal,
         public readonly ?string $sourceType,
         public readonly ?string $sourceRef,
+        /** The optional «Betreff» printed under the title (P7 slim, 2026-10-14); null = none. */
+        public readonly ?string $subject = null,
     ) {
         foreach ([$netTotal, $taxTotal, $rounding, $grossTotal] as $amount) {
             if ($amount->currency !== $currency) {

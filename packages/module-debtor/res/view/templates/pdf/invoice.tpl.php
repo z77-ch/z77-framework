@@ -75,6 +75,11 @@ $pdf->partial('pdf/addressWindow', ['lines' => $document->getAddress()->lines(),
 $place = $mandator !== null && trim($mandator->getCity()) !== '' ? $mandator->getCity() . ', ' : '';
 $pdf->font('', 9)->text($left, 92, $place . $document->getInvoiceDate()->format('d.m.Y'));
 $pdf->font('B', 14)->text($left, 100, $name);
+$y = 108;
+if ($document->getSubject() !== null) {
+    // The optional «Betreff» (P7 slim, 2026-10-14) directly under the title; the facts move down.
+    $y = $pdf->font('B', 10)->paragraph($left, 106.5, $width, $document->getSubject(), 4.6) + 1.5;
+}
 
 $period = $document->getServiceFrom()->format('d.m.Y') . ($document->getServiceTo() !== null ? ' – ' . $document->getServiceTo()->format('d.m.Y') : '');
 $facts  = [];
@@ -88,7 +93,6 @@ if ($isCredit && $document->getCreditNoteOf() !== null) {
     $facts[] = ['Zahlbar bis', $document->getDueDate()->format('d.m.Y')];
 }
 $facts[] = ['Preise', $document->getPriceMode() === 'gross' ? 'inkl. MWST' : 'zzgl. MWST'];
-$y = 108;
 foreach ($facts as [$label, $value]) {
     $pdf->font('', 9)->textColor(110)->text($left, $y, $label)->textColor(0)->text($left + 32, $y, $value);
     $y += 4.4;

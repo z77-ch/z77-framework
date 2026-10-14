@@ -53,7 +53,7 @@ final class InvoiceForm
     private const EMPTY_ROW = ['type' => 'service', 'child' => '', 'text' => '', 'quantity' => '', 'unit' => '', 'price' => '', 'discount' => '', 'tax_code' => '', 'account' => ''];
 
     /** @var array<string, string> */
-    private array $header = ['contact' => '', 'invoice_date' => '', 'service_from' => '', 'service_to' => '', 'price_mode' => 'net', 'terms' => '', 'target' => ''];
+    private array $header = ['contact' => '', 'invoice_date' => '', 'service_from' => '', 'service_to' => '', 'price_mode' => 'net', 'terms' => '', 'target' => '', 'subject' => ''];
 
     /** @var list<array<string, string>> */
     private array $rows = [];
@@ -104,6 +104,7 @@ final class InvoiceForm
             'price_mode'   => $document->getPriceMode(),
             'terms'        => $document->getPaymentTermsCode(),
             'target'       => $document->getPayment()->getTargetCode(),
+            'subject'      => (string) $document->getSubject(),
         ];
         $this->rows = $this->rowsOf($document);
         $this->keepCodesOf($document);
@@ -124,6 +125,7 @@ final class InvoiceForm
             'price_mode'   => $invoice->getPriceMode(),
             'terms'        => '',
             'target'       => '',
+            'subject'      => '',
         ];
         $this->rows = $this->rowsOf($invoice);
         $this->keepCodesOf($invoice);
@@ -223,6 +225,7 @@ final class InvoiceForm
 
         $terms  = $this->header['terms'] !== '' ? $this->header['terms'] : null;
         $target = $this->header['target'] !== '' ? $this->header['target'] : null;
+        $subject = $this->header['subject'] !== '' ? $this->header['subject'] : null;   // too long: the service refuses (`subject`)
         if ($this->kind === InvoiceKind::CreditNote) {
             // Unchanged dates → null: the service takes the INVOICE's, the rate of the original supply applies.
             $invoice   = $this->creditNoteOf;
@@ -231,11 +234,11 @@ final class InvoiceForm
 
             return InvoiceDraft::creditNote(
                 (int) $invoice->getId(), $contactId, $invoiceDate, $this->currency, $lines,
-                $unchanged ? null : $serviceFrom, $unchanged ? null : $serviceTo, $mode, $terms,
+                $unchanged ? null : $serviceFrom, $unchanged ? null : $serviceTo, $mode, $terms, subject: $subject,
             );
         }
 
-        return InvoiceDraft::invoice($contactId, $invoiceDate, $serviceFrom, $this->currency, $lines, $serviceTo, $mode, $terms, paymentTargetCode: $target);
+        return InvoiceDraft::invoice($contactId, $invoiceDate, $serviceFrom, $this->currency, $lines, $serviceTo, $mode, $terms, paymentTargetCode: $target, subject: $subject);
     }
 
     public function header(string $key): string { return $this->header[$key] ?? ''; }

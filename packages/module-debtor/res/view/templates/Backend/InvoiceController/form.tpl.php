@@ -123,6 +123,11 @@ $cancelHref = $window && !$isEdit && !$isCredit ? '' : $cancel;
                 <?= raw($fieldError($form->error('contact'))) ?>
             </div>
             <div class="be-form__field" data-z77-field-wrapper>
+                <label for="invoice-subject">Betreff</label>
+                <input type="text" id="invoice-subject" name="subject" value="<?= e($form->header('subject')) ?>" maxlength="<?= \Z77\Module\Debtor\Entities\Invoice::SUBJECT_LENGTH ?>" aria-invalid="<?= $invalid($form->error('subject')) ?>">
+                <?= raw($fieldError($form->error('subject'))) ?>
+            </div>
+            <div class="be-form__field" data-z77-field-wrapper>
                 <label for="invoice-invoice_date"><?= $isCredit ? 'Gutschriftsdatum' : 'Rechnungsdatum' ?></label>
                 <input type="date" id="invoice-invoice_date" name="invoice_date" value="<?= e($form->header('invoice_date')) ?>" required aria-invalid="<?= $invalid($form->error('invoice_date')) ?>">
                 <?= raw($fieldError($form->error('invoice_date'))) ?>

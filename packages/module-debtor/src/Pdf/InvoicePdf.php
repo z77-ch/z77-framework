@@ -93,7 +93,7 @@ final class InvoicePdf
     {
         return $document->isNumbered()
             ? Naming::toSlug($document->documentName()) . '.pdf'
-            : Naming::toSlug('Vorschau ' . $document->kind()->label() . ' Entwurf ' . $document->getId()) . '.pdf';
+            : Naming::toSlug('Vorschau ' . $document->kind()->label() . ($document->getId() !== null ? ' Entwurf ' . $document->getId() : '')) . '.pdf';   // a preview of a source (InvoicingService::preview()) has no id
     }
 
     /** The PDF's title: the document name; a draft's «Vorschau — Rechnung (Entwurf vom …)». */

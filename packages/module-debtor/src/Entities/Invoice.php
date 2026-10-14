@@ -106,6 +106,7 @@ class Invoice
     public const SOURCE_REF_LENGTH  = 128;
     public const LEDGER_REF_LENGTH  = 32;
     public const ACTOR_LENGTH       = 80;
+    public const SUBJECT_LENGTH     = 200;
 
     /** Server-controlled — no setter; the database assigns it. */
     #[ORM\Id, ORM\Column, ORM\GeneratedValue]
@@ -203,6 +204,14 @@ class Invoice
     #[ORM\Column(name: 'gross_total', type: MoneyType::NAME)]
     private Money $grossTotal;
 
+    /**
+     * The optional «Betreff» printed under the title (P7 slim, plan D10, 2026-10-14): an order
+     * passes «Auftrag {number} · {Betreff}», the manual editor a free line. Part of the snapshot —
+     * written whole by issue() / reissue(); NULL = none. Migration `Version20261014120000`.
+     */
+    #[ORM\Column(length: self::SUBJECT_LENGTH, nullable: true)]
+    private ?string $subject = null;
+
     #[ORM\Column(name: 'source_type', length: self::SOURCE_TYPE_LENGTH, nullable: true)]
     private ?string $sourceType = null;
 
@@ -289,6 +298,8 @@ class Invoice
     public function getTaxTotal(): Money { return $this->taxTotal; }
     public function getRounding(): Money { return $this->rounding; }
     public function getGrossTotal(): Money { return $this->grossTotal; }
+    /** The «Betreff» under the title — null when the document has none. */
+    public function getSubject(): ?string { return $this->subject; }
     public function getSourceType(): ?string { return $this->sourceType; }
     public function getSourceRef(): ?string { return $this->sourceRef; }
     public function getLedgerEntryRef(): ?string { return $this->ledgerEntryRef; }
@@ -462,6 +473,7 @@ class Invoice
         $this->grossTotal       = $snapshot->grossTotal;
         $this->sourceType       = $snapshot->sourceType;
         $this->sourceRef        = $snapshot->sourceRef;
+        $this->subject          = $snapshot->subject !== null && trim($snapshot->subject) !== '' ? $snapshot->subject : null;
 
         $this->lines->clear();
         foreach ($lines as $line) {

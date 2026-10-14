@@ -34,6 +34,8 @@ final class InvoiceRefusedException extends DebtorException
     public const NOT_INVOICING       = 'not-invoicing';
     public const NOT_FOUND           = 'not-found';
     public const KIND_CHANGED        = 'kind-changed';
+    /** The optional subject («Betreff», P7 2026-10-14) is longer than `Invoice::SUBJECT_LENGTH`. */
+    public const SUBJECT             = 'subject';
     public const NUMBER_RANGE_FULL   = 'number-range-full';
     // the lines
     public const LINE                = 'line';

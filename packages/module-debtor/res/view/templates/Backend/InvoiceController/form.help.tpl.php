@@ -21,6 +21,11 @@ $isCredit = $form->kind === \Z77\Module\Debtor\Entities\InvoiceKind::CreditNote;
 </section>
 <?php endif; ?>
 
+<section data-help-field="subject">
+<h3>Betreff</h3>
+<p>Freiwillig, eine Zeile (höchstens 200 Zeichen): wird auf dem Dokument direkt unter dem Titel gedruckt — zum Beispiel das Projekt oder die Bestellung des Kunden. Eine Rechnung aus einem Auftrag trägt hier «Auftrag Nr · Betreff».</p>
+</section>
+
 <h3>Positionen</h3>
 <ul>
     <li><strong>Leistung</strong>: Menge × Preis (Menge mit höchstens drei Dezimalen, auch negativ).</li>

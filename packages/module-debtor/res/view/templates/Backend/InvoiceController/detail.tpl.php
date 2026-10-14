@@ -91,6 +91,9 @@ if (!$document->isFinal()) {
 
         <div class="be-list__table" style="--be-list-cols: 11rem minmax(12rem, 1fr)">
             <?= raw($row('Adresse', implode('<br>', array_map('e', $document->getAddress()->lines())))) ?>
+            <?php if ($document->getSubject() !== null): ?>
+            <?= raw($row('Betreff', e($document->getSubject()))) ?>
+            <?php endif; ?>
             <?= raw($row('Leistung', e($period))) ?>
             <?php if ($document->isCreditNote()): ?>
             <?= raw($row('Gutschrift zu', $winLink($actionBase . '/detail?id=' . (int) $document->getCreditNoteOf()->getId(), $document->getCreditNoteOf()->documentName(), ''))) ?>

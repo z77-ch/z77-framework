@@ -407,7 +407,7 @@ check('A9 the unique contact index, the unique customer-number index and the pay
 [$code, $out] = $run(['command' => 'migrate']);
 check('A10 a second migrate is a no-op', $code === 0 && str_contains($out, 'Already at the latest version'));
 [$code, $out] = $run(['command' => 'diff', '--namespace' => 'Z77\\Module\\Debtor\\Migrations']);
-check('A11 diff after migrate reports NO change — mapping and migration agree (embedded address and payment part, money and decimal columns included)' . (str_contains($out, 'No changes detected') ? '' : ' — ' . trim($out)), $code !== 0 && str_contains($out, 'No changes detected') && count(glob($package . '/res/migrations/Version*.php')) === 10);
+check('A11 diff after migrate reports NO change — mapping and migration agree (embedded address and payment part, money and decimal columns included)' . (str_contains($out, 'No changes detected') ? '' : ' — ' . trim($out)), $code !== 0 && str_contains($out, 'No changes detected') && count(glob($package . '/res/migrations/Version*.php')) === 11);
 check('A12 every migration is expand-only (no DROP outside down()); the «Fakturiert» pair (ADD / DROP delivered_*, 2026-10-10) is gone — it never left the development database (owner 2026-10-13)', array_reduce(glob($package . '/res/migrations/Version*.php'), function ($ok, $f) {
     $s  = file_get_contents($f);
     $up = substr($s, 0, strpos($s, 'function down'));
@@ -3781,6 +3781,120 @@ $yEm = $wireDi();
 $wireDi();
 check('Y5 nothing to reconcile → the reconciliation yields nothing: the installation books elsewhere (NullAccountingGateway), financial not a registered module, the mandator names no receivable account; back to normal it answers again',
     $yNullGateway && $yNoFinancial && $yNoAccount && $yBalance() !== null);
+
+// ── Z. the seams for module-order (P7 slim, plan §7, owner go 2026-10-14) ──
+
+echo "Z. preview(), prepareDocumentRanges(), openDebtorProfile(), invoiceAndFinalize(), PaymentStates, subject\n";
+$zDraft = fn(int $contact, string $date = '2026-12-21', string $account = '3400', ?string $subject = 'Auftrag 17 · Relaunch', string $price = '333.33') => InvoiceDraft::invoice($contact, day($date), day($date), 'CHF', [
+    LineDraft::service('Beratung', '2.500', 'h', chf($price), 'UN', $account, sourceType: 'order-line', sourceRef: '901'),
+    LineDraft::text('Danke.'),
+    LineDraft::lumpSum('Fachbuch', chf('19.90'), 'UR', '3400', sourceType: 'order-line', sourceRef: '902'),
+], sourceType: 'order', sourceRef: '17', subject: $subject);
+$zSnap = fn() => [$count('invoice'), $count('invoice_line'), $journalCount(), $count('debtor_profile'), $db->fetchAllKeyValue('SELECT name, last_number FROM number_range ORDER BY name')];
+$zBefore = $zSnap();
+$zPreview = $service($wireDi())->preview($zDraft($mid));
+check('Z1 preview(): a TRANSIENT document — no id, no number, state invoicing, the subject in the snapshot, 2.5 × 333.33 = 833.33 UN + 19.90 UR, gross 921.25 (8.1 % / 2.6 %, no rounding) — and NOTHING written (rows, journal, ranges)',
+    $zPreview->getId() === null && $zPreview->getNumber() === null && !$zPreview->isFinal() && $zPreview->getSubject() === 'Auftrag 17 · Relaunch'
+    && $zPreview->getNetTotal()->toDecimal() === '853.23' && $zPreview->getGrossTotal()->toDecimal() === '921.25' && count($zPreview->getLines()) === 3 && $zSnap() === $zBefore);
+$zPdf = \Z77\Module\Debtor\Pdf\InvoicePdf::of($zPreview, $wireDi())->output();
+check('Z2 the preview renders with the existing PREVIEW layout (a PDF, file name without an id) and writes nothing; its bill is pending',
+    str_starts_with($zPdf, '%PDF') && \Z77\Module\Debtor\Pdf\InvoicePdf::fileName($zPreview) === 'vorschau-rechnung.pdf' && $service($wireDi())->bookingBill($zPreview)->isPending() && $zSnap() === $zBefore);
+check('Z3 preview() refuses like invoice(): subject over 200 characters → subject; an account not of type «Ertrag» → account-not-revenue',
+    $refusal(fn() => $service($wireDi())->preview($zDraft($mid, subject: str_repeat('x', 201)))) === InvoiceRefusedException::SUBJECT
+    && $refusal(fn() => $service($wireDi())->preview($zDraft($mid, account: '1020'))) === InvoiceRefusedException::ACCOUNT_NOT_REVENUE);
+
+// A contact without a profile — the quote to a prospect (plan D9).
+$zForm = (new ContactForm(addressRequired: true))->fromPost([
+    'kind' => 'organisation', 'company' => 'Interessent AG', 'language' => 'de', 'type_code' => 'main',
+    'address_name' => 'Interessent AG', 'address_street' => 'Weg', 'address_house_no' => '3', 'address_zip' => '6000', 'address_city' => 'Luzern', 'address_country' => 'CH',
+]);
+$zForm->save(new ContactService($wireDi()));
+$zProspect = (int) $zForm->contact->getId();
+$zBefore   = $zSnap();
+check('Z4 preview() of a prospect: refused no-debtor-profile; with openProfile composed against the DEFAULT terms (net-30) — no profile, no customer number written',
+    $refusal(fn() => $service($wireDi())->preview($zDraft($zProspect))) === InvoiceRefusedException::NO_DEBTOR_PROFILE
+    && $service($wireDi())->preview($zDraft($zProspect), openProfile: true)->getPaymentTermsCode() === 'net-30' && $zSnap() === $zBefore);
+check('Z5 invoiceAndFinalize() for the prospect refuses no-debtor-profile (the profile is opened BEFORE, never inside — plan D9); nothing written',
+    $refusal(fn() => $service($wireDi())->invoiceAndFinalize([$zDraft($zProspect)])) === InvoiceRefusedException::NO_DEBTOR_PROFILE && $zSnap() === $zBefore);
+$zCustomer = (int) $rangeOf('customer');
+check('Z6 openDebtorProfile(): opens the profile with the default terms and the next customer number in its OWN unit of work (true); a second call answers false and writes nothing; inside an open unit of work it is refused (LogicException)',
+    $service($wireDi())->openDebtorProfile($zProspect) === true && (int) $rangeOf('customer') === $zCustomer + 1
+    && $wireDi()->getRepository(DebtorProfile::class)->findByContact($zProspect)?->getPaymentTermsCode() === 'net-30'
+    && $service($wireDi())->openDebtorProfile($zProspect) === false && (int) $rangeOf('customer') === $zCustomer + 1
+    && (function () use ($wireDi, $service, $zProspect) { $em = $wireDi(); try { $em->getTransaction(Invoice::class)->run(fn() => $service($em)->openDebtorProfile($zProspect)); } catch (\LogicException) { return true; } return false; })());
+
+$zRanges = fn() => (int) $db->fetchOne("SELECT COUNT(*) FROM number_range WHERE name = 'document.2611'");
+$zHad    = $zRanges();
+check('Z7 prepareDocumentRanges(): the month ranges in NAME order, created at 0 (idempotent, nothing consumed, committed at once); a date outside 2000–2099 → dates; inside an open unit of work refused (LogicException)',
+    $service($wireDi())->prepareDocumentRanges([day('2026-12-02'), day('2026-11-30'), day('2026-12-31')]) === ['document.2611', 'document.2612']
+    && $zRanges() === 1 && ($zHad === 1 || (string) $rangeOf('document.2611') === '0')
+    && $refusal(fn() => $service($wireDi())->prepareDocumentRanges([day('2100-01-01')])) === InvoiceRefusedException::DATES
+    && (function () use ($wireDi, $service) { $em = $wireDi(); try { $em->getTransaction(Invoice::class)->run(fn() => $service($em)->prepareDocumentRanges([day('2026-12-01')])); } catch (\LogicException) { return true; } return false; })());
+
+// invoiceAndFinalize() JOINED into a caller's unit of work, the caller writing too (a range stands for its write).
+$zRange   = (int) $rangeOf('document.2612');
+$zJournal = $journalCount();
+$emZ      = $wireDi();
+$zBooked  = $emZ->getTransaction(Invoice::class)->run(function () use ($emZ, $service, $zDraft, $mid): array {
+    $emZ->getRepository(\Z77\Persistence\Doctrine\Entities\NumberRange::class)->create('z-caller-write');
+    $booked = $service($emZ)->invoiceAndFinalize([$zDraft($mid, '2026-12-22'), $zDraft($mid, '2026-12-21', price: '10.00', subject: null)]);
+    return [$booked, $emZ->getTransaction(Invoice::class)->isOpen()];
+});
+[$zDocs, $zStillOpen] = $zBooked;
+$zB = $readInvoice($zDocs[1]->getId());
+check('Z8 invoiceAndFinalize() JOINS the caller (still open after the call) and books BOTH: final, numbered by invoice date then id (21.12. before 22.12.), gapless after document.2612, one journal entry each with the key invoice:{id}:final; the caller\'s write committed with them',
+    $zStillOpen && count($zDocs) === 2 && $zDocs[0]->getInvoiceDate()->format('d') === '21'
+    && $zDocs[0]->getNumber() === 26120000 + $zRange + 1 && $zDocs[1]->getNumber() === 26120000 + $zRange + 2 && (string) $rangeOf('document.2612') === (string) ($zRange + 2)
+    && $stateOf($zDocs[0]->getId()) === 'final' && $stateOf($zDocs[1]->getId()) === 'final' && $journalCount() === $zJournal + 2
+    && $entryRow($zB->getLedgerEntryRef())['idempotency_key'] === 'invoice:' . $zB->getId() . ':final' && $rangeOf('z-caller-write') !== false);
+check('Z9 the booked document carries EXACTLY the preview\'s totals, lines and tax rows (one computation, plan D11); subject and the opaque origins (order / 17, order-line / 901) stored; the subject column on the row',
+    $zB->getNetTotal()->equals($zPreview->getNetTotal()) && $zB->getTaxTotal()->equals($zPreview->getTaxTotal()) && $zB->getGrossTotal()->equals($zPreview->getGrossTotal())
+    && array_map(fn(InvoiceLine $l) => [$l->type()->value, $l->getAmount()->toDecimal(), $l->getTaxCode()], $zB->getLines()) === array_map(fn(InvoiceLine $l) => [$l->type()->value, $l->getAmount()->toDecimal(), $l->getTaxCode()], $zPreview->getLines())
+    && $zB->getSubject() === 'Auftrag 17 · Relaunch' && $invoiceRow($zB->getId())['subject'] === 'Auftrag 17 · Relaunch' && $invoiceRow($zDocs[0]->getId())['subject'] === null
+    && $zB->getSourceType() === 'order' && $zB->getSourceRef() === '17' && $zB->getLines()[0]->getSourceRef() === '901');
+
+// A refusal inside rolls back the WHOLE unit of work — the caller's write included.
+$zBefore = $zSnap();
+$e = caught(function () use ($wireDi, $service, $zDraft, $mid) {
+    $em = $wireDi();
+    $em->getTransaction(Invoice::class)->run(function () use ($em, $service, $zDraft, $mid) {
+        $em->getRepository(\Z77\Persistence\Doctrine\Entities\NumberRange::class)->create('z-caller-refused');
+        $service($em)->invoiceAndFinalize([$zDraft($mid, '2026-12-23'), $zDraft($mid, '2026-12-23', '1020')]);
+    });
+}, InvoiceRefusedException::class);
+check('Z10 the second draft on 1020 → account-not-revenue, and NOTHING stays: no document, no number, no journal entry, not the caller\'s write',
+    $e?->reason === InvoiceRefusedException::ACCOUNT_NOT_REVENUE && $zSnap() === $zBefore && $rangeOf('z-caller-refused') === false);
+check('Z11 kind invoice only: a credit-note draft → InvalidArgumentException; an empty list books nothing',
+    throws(fn() => $service($wireDi())->invoiceAndFinalize([InvoiceDraft::creditNote($zB->getId(), $mid, day('2026-12-23'), 'CHF', [LineDraft::text('x')])]), \InvalidArgumentException::class)
+    && $service($wireDi())->invoiceAndFinalize([]) === []);
+$zAlone = $service($wireDi())->invoiceAndFinalize([$zDraft($mid, '2026-11-25', price: '1.00')]);
+check('Z12 standalone (no caller unit of work): it opens its own, the month range created ahead — booked as 2611…, final', count($zAlone) === 1 && $stateOf($zAlone[0]->getId()) === 'final' && intdiv((int) $zAlone[0]->getNumber(), 10000) === 2611);
+
+// PaymentStates — the read port.
+$zStates = fn(array $ids) => (new \Z77\Module\Debtor\Services\PaymentStates($wireDi()))->of($ids);
+$zS = $zStates([$zB->getId(), 999999]);
+check('Z13 PaymentStates::of(): open = gross, «offen»; an unknown id is left out', array_keys($zS) === [$zB->getId()] && $zS[$zB->getId()]->status === 'open' && $zS[$zB->getId()]->open->toDecimal() === '921.25' && $zS[$zB->getId()]->label() === 'offen');
+$pay($wireDi())->record($draftOn($zB->getId(), '2026-12-28', '100.00'));
+$zCn = $service($wireDi())->invoice(InvoiceDraft::creditNote($zB->getId(), $mid, day('2026-12-28'), 'CHF', [LineDraft::lumpSum('Gutschrift', chf('50.00'), 'UN', '3400')]));
+$service($wireDi())->finalize([$at($zCn->getId())]);
+$zS = $zStates([$zB->getId(), $zCn->getId()]);
+check('Z14 after a payment of 100.00 and a credit note of 54.05: «teilbezahlt», open 767.20; the credit note has no state', array_keys($zS) === [$zB->getId()] && $zS[$zB->getId()]->status === 'partial' && $zS[$zB->getId()]->open->toDecimal() === '767.20');
+$pay($wireDi())->record($draftOn($zB->getId(), '2026-12-29', '767.20'));
+$zFull = $service($wireDi())->invoice(InvoiceDraft::creditNote($zDocs[0]->getId(), $mid, day('2026-12-28'), 'CHF', [
+    LineDraft::service('Beratung', '2.500', 'h', chf('10.00'), 'UN', '3400'), LineDraft::lumpSum('Fachbuch', chf('19.90'), 'UR', '3400'),
+]));
+$service($wireDi())->finalize([$at($zFull->getId())]);
+$zS = $zStates([$zB->getId(), $zDocs[0]->getId()]);
+check('Z15 paid in full → «bezahlt» (open 0.00); an invoice cancelled entirely by credit note without a payment → «gutgeschrieben»; one query for the page',
+    $zS[$zB->getId()]->status === 'paid' && $zS[$zB->getId()]->open->isZero() && $zS[$zDocs[0]->getId()]->status === 'credited' && $zS[$zDocs[0]->getId()]->label() === 'gutgeschrieben');
+
+// The subject in the manual editor and on the PDF.
+$zForm2 = (new \Z77\Module\Debtor\Ui\InvoiceForm('CHF'))->fromPost(['contact' => (string) $mid, 'invoice_date' => '2026-12-22', 'service_from' => '2026-12-22', 'price_mode' => 'net', 'subject' => ' Projekt Nord ',
+    'rows' => [['type' => 'lump-sum', 'text' => 'Pauschale', 'price' => '10.00', 'tax_code' => 'UN', 'account' => '3400']]]);
+$zEdited = $service($wireDi())->invoice($zForm2->toDraft());
+check('Z16 the editor field «Betreff» reaches the draft (trimmed) and the document; startFrom() shows it again; the booked PDF renders with it',
+    $zEdited->getSubject() === 'Projekt Nord' && (new \Z77\Module\Debtor\Ui\InvoiceForm('CHF'))->startFrom($readInvoice($zEdited->getId()))->header('subject') === 'Projekt Nord'
+    && str_starts_with(\Z77\Module\Debtor\Pdf\InvoicePdf::of($readInvoice($zB->getId()), $wireDi())->output(), '%PDF'));
 
 // ── result ───────────────────────────────────────────────────────────────
 
