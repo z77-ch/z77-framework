@@ -55,10 +55,11 @@ Every table in the backend is a STANDARD LIST (owner 2026-10-08, after the journ
 
 ## known issues
 
-- None documented.
+- **LISTING-FETCH-001** — found 2026-10-14 (product-group build, live on z77.ch 8077), not fixed. Don't assume a region load of a standard list swaps the region: a GET of a fragment list in FETCH mode (`Sec-Fetch-Mode: cors`, as the browser sends it for `core.js` region loads) answers 200 with an EMPTY body — `LayoutManager::initialize()` returns early in fetch mode and skips the controller config that pins `body.main` to the list template, and `listAction()` adds no partial of its own (the journal does, and is the only list measured that answers: `finance/journal/list` ~270 kB; `order/article/list`, `order/product-group/list`, `order/order-status/list`, `finance/invoice/list`, `finance/debtor/list`, `finance/change-log/list`, `contact/contact/list` all 0 bytes). The client finds no region in the answer and NAVIGATES to the URL (FETCH-REGION-001's fallback), so sort / page / search and a window save's `refresh-region` still work — as full page loads, not as region swaps. Fix belongs in the kernel (apply the controller's `main` pin in fetch mode too, or let `ListDefinition::isFetch()` lists add their template), verified per list — `## pending`.
 
 ## pending
 
+- **LISTING-FETCH-001**: make a fragment list answer its region in fetch mode (kernel `LayoutManager` or the list actions), then verify each standard list live (`curl -H 'Sec-Fetch-Mode: cors'` must return the region).
 - **The journal list still carries its own `JournalFilter`** (`module-financial/src/Ui/JournalFilter.php`) and head markup — the reference the standard was cut from (2026-10-08). Migrate it onto `ListDefinition` / the partials: the `keep` of the capture state (`mode`, `date`) is already supported by both partials, the year scope (`all`) becomes an extra; the deleted-numbers rows are gone since 2026-10-08 (the change log is its own standard list, `ChangeLogListing`). `tests/module-financial.php` has the list cases.
 - The bank-import message list and the dunning due list (module-debtor) are short fixed lists without paging or column search — standard lists when they grow.
 

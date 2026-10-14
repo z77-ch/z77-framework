@@ -9,8 +9,10 @@ use Z77\Core\DI;
 use Z77\Module\Article\Entities\AbstractProduct;
 use Z77\Module\Article\Entities\Price;
 use Z77\Module\Article\Entities\Product;
+use Z77\Module\Article\Entities\ProductGroup;
 use Z77\Module\Article\Entities\Variant;
 use Z77\Module\Article\Repositories\PriceRepository;
+use Z77\Module\Article\Repositories\ProductGroupRepository;
 use Z77\Module\Article\Repositories\ProductRepository;
 use Z77\Module\Article\Repositories\VariantRepository;
 use Z77\Module\Article\Validators\ArticleValidator;
@@ -33,8 +35,12 @@ use Z77\Shared\Money\Money;
  *     (module-vat: an ACTIVE code, or the one the article keeps — ADR-043 decision 19) and the
  *     revenue account (module-mandator's `LedgerAccountCheck`: postable, type «Ertrag» AND «auf
  *     Belegen wählbar» — SOFT: without module-financial the number is stored unverified);
- *   - create: the product, its DEFAULT variant (empty label — A3 in the schema, hidden in the UI)
- *     and the first price row;
+ *   - create: the product in its ONE product group (A1 — mandatory, any node), its DEFAULT
+ *     variant (empty label — A3 in the schema, hidden in the UI) and the first price row. A tax
+ *     code or revenue account left EMPTY is taken from the group's defaults (inherited from the
+ *     nearest group above that sets one, {@see ProductGroupTree::defaultsFor()}) BEFORE the draft
+ *     is validated — a NEW article only; an update never reads a default (owner 2026-10-14:
+ *     existing articles never change when a group default changes);
  *   - update: only with the VERSION the form was rendered from (a stale one is
  *     {@see ArticleConflictException}); the price follows the A4 rule — a row starting that day is
  *     REPLACED, otherwise a NEW row is written when the price valid that day says something else,
@@ -75,6 +81,7 @@ final class ArticleService
     /** @throws InvalidArticleException */
     public function create(ArticleDraft $draft): Product
     {
+        $draft = $this->withGroupDefaults($draft);
         $this->assertValid($draft, null);
         [$amount, $mode, $day] = $this->priceOf($draft);
 
@@ -83,6 +90,7 @@ final class ArticleService
             $this->em->getTransaction(Product::class)->run(function () use ($draft, $amount, $mode, $day, &$product): void {
                 $product = new Product($this->actor, new \DateTimeImmutable());
                 $product->describe($draft->name, $draft->taxCode, $draft->revenueAccount, $draft->stockRelevant);
+                $product->placeIn($this->group($draft->productGroup));
                 $this->em->persist($product);
 
                 $variant = new Variant($product);
@@ -115,6 +123,7 @@ final class ArticleService
             $this->refuseNumberRace($draft, function () use ($product, $variant, $draft, $amount, $mode, $day): void {
                 $this->em->getTransaction(Product::class)->run(function () use ($product, $variant, $draft, $amount, $mode, $day): void {
                     $product->describe($draft->name, $draft->taxCode, $draft->revenueAccount, $draft->stockRelevant);
+                    $product->placeIn($this->group($draft->productGroup));
                     // Always stamped: the product row is written on every save, so its version moves
                     // even when only the price changed — a form rendered before is then stale.
                     $product->touch($this->actor, new \DateTimeImmutable());
@@ -196,6 +205,8 @@ final class ArticleService
             taxCode: static fn(string $code): ?TaxCode => $codes->findByCode($code),
             accountProblem: static fn(string $number): ?string => self::accountProblem($check, $number),
             keptTaxCode: $existing?->getTaxCode() ?? '',
+            group: fn(int $id): ?ProductGroup => $this->groups()->find($id),
+            keptGroup: $existing !== null ? (int) $existing->getProductGroup()->getId() : 0,
         );
     }
 
@@ -216,6 +227,26 @@ final class ArticleService
         }
 
         return null;
+    }
+
+    /**
+     * A NEW article's empty tax code / revenue account from its group's defaults (nearest group
+     * above that sets one). An unknown or unchosen group adds nothing — the validator refuses it.
+     */
+    private function withGroupDefaults(ArticleDraft $draft): ArticleDraft
+    {
+        if ($draft->productGroup <= 0 || ($draft->taxCode !== '' && $draft->revenueAccount !== '')) {
+            return $draft;
+        }
+        $defaults = $this->groups()->tree()->defaultsFor($draft->productGroup);
+
+        return $draft->withDefaults($defaults['taxCode'], $defaults['revenueAccount']);
+    }
+
+    /** The validated group of a draft. */
+    private function group(int $id): ProductGroup
+    {
+        return $this->groups()->find($id) ?? throw new \LogicException('The product group was not validated');
     }
 
     /** @throws InvalidArticleException */
@@ -277,6 +308,11 @@ final class ArticleService
     private function variants(): VariantRepository
     {
         return $this->em->getRepository(Variant::class);
+    }
+
+    private function groups(): ProductGroupRepository
+    {
+        return $this->em->getRepository(ProductGroup::class);
     }
 
     private function prices(): PriceRepository

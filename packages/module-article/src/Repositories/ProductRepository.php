@@ -82,6 +82,18 @@ class ProductRepository extends DoctrineRepository
             $params[] = $search->account;
             $types[]  = ParameterType::STRING;
         }
+        if ($search->groupIds !== null) {
+            $ids = array_values(array_unique(array_map('intval', $search->groupIds)));
+            if ($ids === []) {
+                $where[] = '1 = 0';   // a group that no longer exists holds nothing
+            } else {
+                $where[] = 'p.product_group_id IN (' . implode(', ', array_fill(0, count($ids), '?')) . ')';
+                foreach ($ids as $id) {
+                    $params[] = $id;
+                    $types[]  = ParameterType::INTEGER;
+                }
+            }
+        }
 
         return [$where === [] ? '' : ' WHERE ' . implode(' AND ', $where), $params, $types];
     }

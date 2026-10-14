@@ -7,6 +7,8 @@
  *   - the state icon opens the article WINDOW (ADR-047, `data-window-open`; the origin is the
  *     list region it stands in), the href stays for a ctrl-click;
  *   - every searchable cell is a `<label for>` of its column's search field;
+ *   - Warengruppe: the path of the article's ONE group («Dienstleistungen › Beratung»); the
+ *     filter by group is the picker at the top of the rail;
  *   - Preis: the price valid today from the history (A4) — a gross price says «brutto»; a price
  *     that only starts later shows its day («ab …»);
  *   - «Aktiv»: the inline switch (`data-fetch-toggle`) — product and variants together.
@@ -14,6 +16,7 @@
  * @var \Z77\Module\Article\Entities\Product $product
  * @var \Z77\Module\Article\Entities\Variant|null $variant  the default variant
  * @var \Z77\Module\Article\Entities\Price|null $price      the price shown
+ * @var string $path                                         the group path
  * @var \Z77\Shared\Listing\ListDefinition $definition
  * @var string $actionBase
  */
@@ -32,6 +35,7 @@ $state      = $active ? 'Artikel öffnen — bearbeitbar' : 'Artikel öffnen —
                         <a class="be-list__cell be-list__state be-list__state--<?= $active ? 'editable' : 'closed' ?>" href="<?= e($url) ?>" data-window-open="<?= e($url) ?>" aria-label="<?= e($state) ?>" title="<?= e($state) ?>"><svg class="be-icon" width="14" height="14" aria-hidden="true"><use href="#icon-edit"/></svg></a>
                         <label class="be-list__cell be-list__cell--mono" for="<?= e($definition->inputId('f_number')) ?>"><?= e($variant?->getNumber() ?? '') ?></label>
                         <label class="be-list__cell" for="<?= e($definition->inputId('f_name')) ?>"><?= e($product->getName()) ?></label>
+                        <span class="be-list__cell be-list__cell--muted" data-priority="3" title="<?= e($path ?? '') ?>"><?= e($path ?? '') ?></span>
                         <span class="be-list__cell" data-priority="2"><?= e($variant?->getUnit() ?? '') ?></span>
                         <span class="be-list__cell be-list__cell--num"><?php if ($price !== null): ?><?= e(AmountFormat::of($price->getAmount())) ?><?= $price->priceMode() === PriceMode::Gross ? ' <small class="be-list__cell--muted">brutto</small>' : '' ?><?= $later ? ' <small class="be-list__cell--muted">ab ' . e($price->getValidFrom()->format('d.m.Y')) . '</small>' : '' ?><?php endif; ?></span>
                         <label class="be-list__cell be-list__cell--mono" for="<?= e($definition->inputId('f_tax')) ?>" data-priority="3"><?= e($product->getTaxCode()) ?></label>

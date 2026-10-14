@@ -235,7 +235,8 @@ default first), the panel anchors right inside the viewport.
 | Stammdaten › Zahlungsziele | «+ Zahlungsziel» | create |
 | Stammdaten › Mahnstufen | «+ Mahnstufe» | create |
 | Stammdaten › Auftragsstatus | «+ Status» (opens the status window; built 2026-10-14, `order.md`) | create (built) |
-| Stammdaten › Artikel | «+ Artikel» (opens the article window; built 2026-10-14, `article.md`) | create (built) |
+| Stammdaten › Warengruppen | «+ Warengruppe» (opens the group window for a root group; a sub-group from its parent's row icon; built 2026-10-14, `article.md`) | create (built) |
+| Stammdaten › Artikel | «+ Artikel» (opens the article window — with `?group=` while the list is filtered by a product group, the rail-top picker; built 2026-10-14, `article.md`) | create (built) |
 | Stammdaten › Adresstypen | «+ Adresstyp» | create |
 | Stammdaten › Benutzer | «+ Benutzer» | create |
 | Service › Backup | «↓ Daten sichern \| ▾» (main part = Daten) | split picker (built) |

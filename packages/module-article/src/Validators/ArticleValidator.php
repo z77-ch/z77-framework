@@ -4,6 +4,7 @@ namespace Z77\Module\Article\Validators;
 
 use Z77\Module\Article\Entities\AbstractProduct;
 use Z77\Module\Article\Entities\AbstractVariant;
+use Z77\Module\Article\Entities\ProductGroup;
 use Z77\Module\Article\Services\ArticleDraft;
 use Z77\Module\Vat\Calculation\PriceMode;
 use Z77\Module\Vat\Entities\TaxCode;
@@ -23,8 +24,13 @@ use Z77\Shared\Money\Money;
  *     (`LedgerAccountCheck`: not postable / not «Ertrag» / not «auf Belegen wählbar»), null =
  *     accepted OR not checkable (financial absent — soft, nothing is refused then).
  *
+ *   - `$group(int $id): ?ProductGroup` — the product group of the placement, null = unknown
+ *     (A1, owner 2026-10-14: mandatory, any node).
+ *
  * The reference rule (ADR-043 decision 19): a NEW reference needs an ACTIVE tax code; an
  * article that KEEPS its code ($keptTaxCode) keeps it although it was deactivated since. The
+ * same for the group: an inactive group is not offered, the article that hangs there keeps it
+ * ($keptGroup). The
  * revenue account has no such exception — like an invoice draft, a save with an account the
  * chart no longer offers on documents is refused until it is corrected (debtor.md).
  */
@@ -40,6 +46,7 @@ class ArticleValidator extends EntityValidator
      * @param \Closure(string): bool|null         $numberTaken
      * @param \Closure(string): ?TaxCode|null     $taxCode
      * @param \Closure(string): ?string|null      $accountProblem
+     * @param \Closure(int): ?ProductGroup|null   $group
      */
     public function __construct(
         ArticleDraft $draft,
@@ -47,6 +54,8 @@ class ArticleValidator extends EntityValidator
         private readonly ?\Closure $taxCode = null,
         private readonly ?\Closure $accountProblem = null,
         private readonly string $keptTaxCode = '',
+        private readonly ?\Closure $group = null,
+        private readonly int $keptGroup = 0,
     ) {
         parent::__construct($draft);
     }
@@ -165,6 +174,25 @@ class ArticleValidator extends EntityValidator
         $problem = $this->accountProblem !== null ? ($this->accountProblem)($account) : null;
         if ($problem !== null) {
             $this->addFieldError('revenue_account', $problem);
+        }
+    }
+
+    public function validateProductGroup(int $groupId): void
+    {
+        if ($groupId <= 0) {
+            $this->addFieldError('product_group', 'Eine Warengruppe wählen — jeder Artikel hängt in genau einer.');
+            return;
+        }
+        if ($this->group === null) {
+            return;
+        }
+        $group = ($this->group)($groupId);
+        if ($group === null) {
+            $this->addFieldError('product_group', 'Die gewählte Warengruppe gibt es nicht mehr — bitte neu wählen.');
+            return;
+        }
+        if (!$group->isActive() && $groupId !== $this->keptGroup) {
+            $this->addFieldError('product_group', 'Die Warengruppe «' . $group->getName() . '» ist inaktiv — nur ein Artikel, der schon darin hängt, bleibt darin.');
         }
     }
 }

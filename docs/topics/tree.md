@@ -26,8 +26,9 @@ implementing `TreeNode` (id + `parentId` + `sortKey`); `TreeService` then provid
 every tree operation once — sorting, children/roots resolution, sibling grouping,
 next-free-sortKey, depth-first traversal, cycle detection, and the mechanical part
 of a move (splice into the target group, renumber densely). Navigation is the
-prototype consumer; future self-referential tree entities (product groups, contact
-groups, account groups, …) plug in the same way.
+prototype consumer; module-article's `ProductGroup` (Doctrine, 2026-10-14 — the parent is a
+relation, so it reads `getParentId()` and moves through its own `moveUnder()`) is the second;
+future self-referential tree entities (contact groups, account groups, …) plug in the same way.
 
 - **Naming convention.** An entity that is itself a tree declares it via
   `implements TreeNode` (+ `use TreeNodeTrait` when File-backed) — the interface,
@@ -117,6 +118,7 @@ isLeaf(array $nodes, TreeNode $node): bool                  // no node has this 
 
 ## see also
 
+- [`article.md`](article.md) — `ProductGroup`, the Doctrine consumer (the product-group tree, A1)
 - [`navigation.md`](navigation.md) — reference consumer; full navigation model (slot-XOR-parent, config render-slots, refs, active, view areas) that sits on top of this foundation
 - [`persistence-architecture.md`](persistence-architecture.md) — why `TreeService` is persistence-free: reads via `RepositoryInterface`, writes via the entity manager; same contract across File / Doctrine drivers
 - [`../02-decisions/adr-008-tree-foundation.md`](../02-decisions/adr-008-tree-foundation.md) — binding decision: extract the tree primitive into interface + trait + service, supersedes ADR-007's "defer until third consumer"

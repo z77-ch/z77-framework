@@ -1,5 +1,18 @@
 [
     {
+        "key": "warengruppen",
+        "name": "Warengruppen",
+        "module": "backend",
+        "group": "order",
+        "controller": "product-group",
+        "action": "list",
+        "slot": "",
+        "active": true,
+        "param": "",
+        "sort_key": 11,
+        "parent_key": "stammdaten-auftraege"
+    },
+    {
         "key": "artikel",
         "name": "Artikel",
         "module": "backend",
@@ -9,7 +22,7 @@
         "slot": "",
         "active": true,
         "param": "",
-        "sort_key": 11,
+        "sort_key": 12,
         "parent_key": "stammdaten-auftraege"
     }
 ]

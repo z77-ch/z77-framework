@@ -11,6 +11,12 @@
 <p>Ein Artikel ist das, was eine Auftragsposition vorschlägt: Nummer, Bezeichnung, Einheit, Preis, MWST-Code und Ertragskonto. Die Position übernimmt die Werte beim Speichern als Kopie — ändert der Artikel später, bleiben bestehende Aufträge und Rechnungen, wie sie sind. Text und Preis lassen sich auf der Position überschreiben; MWST-Code und Konto kommen immer vom Artikel (ein anderes Konto ist eine freie Position).</p>
 <p>Ein Artikel wird <strong>deaktiviert</strong> (Schalter «Aktiv» in der Liste), sobald er nicht mehr angeboten werden soll — bestehende Positionen behalten ihn. <strong>Löschen …</strong> geht nur, solange ihn keine Position verwendet.</p>
 
+<section data-help-field="product_group">
+<h3>Warengruppe</h3>
+<p>Jeder Artikel hängt in genau <strong>einer</strong> Warengruppe — in einer Hauptgruppe oder in einer Untergruppe, jede Ebene ist erlaubt. Die Warengruppen werden unter Stammdaten › Aufträge › Warengruppen gepflegt; angeboten werden die aktiven, eine inaktiv gestellte bleibt für den Artikel, der schon darin hängt.</p>
+<p>Ein <strong>neuer</strong> Artikel übernimmt MWST-Code und Ertragskonto, die die Warengruppe vorgibt (oder die nächste Gruppe darüber, die etwas vorgibt): vorausgefüllt, wenn «+ Artikel» bei gewählter Warengruppe geöffnet wird, und beim Anlegen für ein leer gelassenes Feld. Bestehende Artikel ändern sich nie, wenn eine Vorgabe ändert. Wird eine Warengruppe verschoben, wandern ihre Artikel mit.</p>
+</section>
+
 <section data-help-field="number">
 <h3>Artikelnummer</h3>
 <p>Frei wählbar, ohne Leerzeichen, höchstens 32 Zeichen, eindeutig über alle Artikel. Sie wird auf Offerten, Lieferscheinen und Rechnungen gedruckt — darum nicht aus einer Gruppe abgeleitet. Eine geänderte Nummer gilt für neue Positionen; gedruckte Belege behalten die alte.</p>
@@ -43,12 +49,12 @@
 
 <section data-help-field="tax_code">
 <h3>MWST-Code</h3>
-<p>Angeboten werden die aktiven Codes; ein Code, den der Artikel schon trägt, bleibt wählbar, auch wenn er inzwischen deaktiviert ist. Der Satz richtet sich nach dem Leistungsdatum des Belegs, nicht nach dem Artikel.</p>
+<p>Angeboten werden die aktiven Codes; ein Code, den der Artikel schon trägt, bleibt wählbar, auch wenn er inzwischen deaktiviert ist. Der Satz richtet sich nach dem Leistungsdatum des Belegs, nicht nach dem Artikel. Ein neuer Artikel, bei dem das Feld leer bleibt, übernimmt den Code, den seine Warengruppe vorgibt.</p>
 </section>
 
 <section data-help-field="revenue_account">
 <h3>Ertragskonto</h3>
-<p>Das Konto, auf das der Ertrag einer Position gebucht wird: nur ein Konto vom Typ «Ertrag», das im Kontenplan <strong>auf Belegen wählbar</strong> ist (angeboten werden genau diese). Ein Konto, das im Kontenplan nicht mehr auf Belegen wählbar ist, muss beim nächsten Speichern ersetzt werden.<?php if (empty($ledger)): ?> Ohne Buchhaltungsmodul wird die Nummer nicht geprüft.<?php endif; ?></p>
+<p>Das Konto, auf das der Ertrag einer Position gebucht wird: nur ein Konto vom Typ «Ertrag», das im Kontenplan <strong>auf Belegen wählbar</strong> ist (angeboten werden genau diese). Ein Konto, das im Kontenplan nicht mehr auf Belegen wählbar ist, muss beim nächsten Speichern ersetzt werden. Ein neuer Artikel, bei dem das Feld leer bleibt, übernimmt das Konto, das seine Warengruppe vorgibt.<?php if (empty($ledger)): ?> Ohne Buchhaltungsmodul wird die Nummer nicht geprüft.<?php endif; ?></p>
 </section>
 
 <section data-help-field="stock_relevant">

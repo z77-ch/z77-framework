@@ -4,6 +4,7 @@ namespace Z77\Module\Article\App;
 use Z77\Core\Config\AuthRole;
 use Z77\Module\Article\Entities\Price;
 use Z77\Module\Article\Entities\Product;
+use Z77\Module\Article\Entities\ProductGroup;
 use Z77\Module\Article\Entities\Variant;
 
 /**
@@ -11,15 +12,18 @@ use Z77\Module\Article\Entities\Variant;
  * master an order line resolves to, and the stock SEAM (`Stock\StockLedger`) every order write
  * reaches stock through. P6 SLIM: product + hidden default variant (A3 in the schema, flat in the
  * UI), the price with «gültig ab» history (A4), the article number on the variant (A2), tax code
- * and revenue account on the article (owner 2026-10-14), the flag «führt Bestand». No product-group
- * tree, no variant options, no images, no stock journal (P7b).
+ * and revenue account on the article (owner 2026-10-14), the flag «führt Bestand», and the
+ * PRODUCT-GROUP TREE (A1, owner 2026-10-14: one tree of free depth, exactly one placement per
+ * product, defaults for new articles). No variant options, no shop categories, no images, no
+ * stock journal (P7b).
  *
- * This module has NO routes and no view area of its own: its backend screen is a fragment
- * ({@see \Z77\Module\Article\Ui\ArticleControllerTrait}) mounted by a host controller in
- * module-backend under `/backend/order/article/…` (ADR-018 pattern).
+ * This module has NO routes and no view area of its own: its backend screens are fragments
+ * ({@see \Z77\Module\Article\Ui\ArticleControllerTrait}, {@see \Z77\Module\Article\Ui\ProductGroupControllerTrait})
+ * mounted by host controllers in module-backend under `/backend/order/article/…` and
+ * `/backend/order/product-group/…` (ADR-018 pattern).
  *
- * Storage (ADR-039 decision 5 — announced here, nothing scans a directory): `Product`, `Variant`
- * and `Price` are Doctrine; the migrations live in `res/migrations`. `Product` and `Variant` are
+ * Storage (ADR-039 decision 5 — announced here, nothing scans a directory): `ProductGroup`,
+ * `Product`, `Variant` and `Price` are Doctrine; the migrations live in `res/migrations`. `Product` and `Variant` are
  * EXTENDABLE master data (ADR-039 addendum 2026-10-08 (b)): a project overrides only the empty
  * class under `override/z77/module/article/src/Entities/` and migrates its own columns in
  * `override/z77/project/res/migrations/` — the FQCN stays the one announced here.
@@ -32,6 +36,7 @@ return [
     'moduleRole' => AuthRole::ADMIN,
 
     'doctrineEntities' => [
+        ProductGroup::class,
         Product::class,
         Variant::class,
         Price::class,

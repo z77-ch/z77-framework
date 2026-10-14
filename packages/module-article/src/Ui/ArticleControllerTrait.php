@@ -9,8 +9,10 @@ use Z77\Core\DI,
     Z77\Core\Services\TemplateRenderer,
     Z77\Module\Article\Entities\Price,
     Z77\Module\Article\Entities\Product,
+    Z77\Module\Article\Entities\ProductGroup,
     Z77\Module\Article\Entities\Variant,
     Z77\Module\Article\Repositories\PriceRepository,
+    Z77\Module\Article\Repositories\ProductGroupRepository,
     Z77\Module\Article\Repositories\ProductRepository,
     Z77\Module\Article\Repositories\VariantRepository,
     Z77\Module\Article\Services\ArticleConflictException,
@@ -18,6 +20,7 @@ use Z77\Core\DI,
     Z77\Module\Article\Services\ArticleInUseException,
     Z77\Module\Article\Services\ArticleService,
     Z77\Module\Article\Services\InvalidArticleException,
+    Z77\Module\Article\Services\ProductGroupTree,
     Z77\Module\Article\Validators\ArticleValidator,
     Z77\Module\Mandator\Services\LedgerAccountCheck,
     Z77\Module\Vat\Entities\TaxCode,
@@ -37,12 +40,17 @@ use Z77\Core\DI,
  * config delegating to {@see ArticleLayout::config()}; URL `/backend/order/article/…`.
  *
  *   - `list` — a STANDARD LIST ({@see ArticleListing}, listing.md): the state icon opens the
- *     article WINDOW, then Nr., Bezeichnung, Einheit, Preis, MWST, Konto, Bestand and the
- *     «Aktiv» switch; the list is a fetch region. Action cell: «+ Artikel» (backend-screen.md
- *     §2, the most frequent action of the entry);
+ *     article WINDOW, then Nr., Bezeichnung, Warengruppe (the path), Einheit, Preis, MWST, Konto,
+ *     Bestand and the «Aktiv» switch; the list is a fetch region. Action cell: «+ Artikel»
+ *     (backend-screen.md §2, the most frequent action of the entry) — with the chosen group, so
+ *     the new article starts in it with its defaults. The product-group TREE stands at the top of
+ *     the rail (`groupSelect`, section `railSelect` — the shared CSS-only picker of the fiscal
+ *     year): a group shows its articles INCLUDING its sub-groups (owner 2026-10-14);
  *   - `add` / `edit` — the article WINDOW (ADR-047; a window and not a modal popup because it
  *     carries help — ADR-048, the help window cannot be used beside a modal): one form, one
- *     save — number, name, unit, price + «gültig ab» + net / gross, tax code (the shared picker
+ *     save — number, name, the product group (indented tree options; a NEW article opened with
+ *     `?group=` starts there, tax code and revenue account prefilled from the group's defaults),
+ *     unit, price + «gültig ab» + net / gross, tax code (the shared picker
  *     of module-vat), revenue account (module-mandator's datalist of the accounts «auf Belegen
  *     wählbar»), «führt Bestand»; below the form the price history, read-only. The save answers
  *     with commands (close the window, reload the list region it came from; an edit also
@@ -81,6 +89,11 @@ trait ArticleControllerTrait
         return $this->em()->getRepository(Variant::class);
     }
 
+    private function articleGroups(): ProductGroupRepository
+    {
+        return $this->em()->getRepository(ProductGroup::class);
+    }
+
     private function articlePrices(): PriceRepository
     {
         return $this->em()->getRepository(Price::class);
@@ -97,19 +110,22 @@ trait ArticleControllerTrait
     protected function listAction(): HtmlResponse
     {
         $request    = DI::getRequest();
-        $definition = ArticleListing::definition();
+        $tree       = $this->articleGroups()->tree();
+        $definition = ArticleListing::definition($tree->ids());
         $state      = $definition->readRequest($request);
-        $search     = ArticleListing::search($state);
+        $search     = ArticleListing::search($state, $tree);
         $total      = $this->articleProducts()->countSearch($search);
         $paging     = $state->paging($total);
         $products   = $total === 0 ? [] : $this->articleProducts()->search($search, $paging->offset(), $paging->pageSize);
 
         $response = $this->html([
             'products'   => $products,
-            'rows'       => $this->articleRows($products),
+            'rows'       => $this->articleRows($products, $tree),
             'definition' => $definition,
             'state'      => $state,
             'paging'     => $paging,
+            'tree'       => $tree,
+            'group'      => ArticleListing::groupOf($state),
             'actionBase' => $this->articleListBase(),
         ]);
         // The fragment owns its header slot (financial.md, «fragment slots»): «+ Artikel» is the
@@ -117,6 +133,9 @@ trait ArticleControllerTrait
         // region (sort, page, search) wants the list alone.
         if (!ListDefinition::isFetch($request)) {
             $this->layoutManager->addPartials('act', 'Backend/ArticleController', self::ARTICLE_NS, 'hc1');
+            // The product-group tree at the top of the rail — the filter of this list (owner
+            // 2026-10-14: «the tree in the rail»); the shared CSS-only picker, links only.
+            $this->layoutManager->addPartials('groupSelect', 'Backend/ArticleController', self::ARTICLE_NS, 'railSelect');
         }
 
         return $response;
@@ -152,8 +171,9 @@ trait ArticleControllerTrait
     private function articleWindow(?Product $product): HtmlResponse|FetchResponse|RedirectResponse
     {
         $request   = DI::getRequest();
+        $tree      = $this->articleGroups()->tree();
         $variant   = $product !== null ? $this->articleVariants()->defaultOf($product) : null;
-        $draft     = $this->articleDraftOf($product, $variant);
+        $draft     = $this->articleDraftOf($product, $variant, $tree);
         $validator = new ArticleValidator($draft);
         $version   = $product?->getVersion() ?? 0;
 
@@ -190,6 +210,7 @@ trait ArticleControllerTrait
             'version'     => $version,
             'validator'   => $validator,
             'codes'       => $this->articleTaxCodes()->selectable($product !== null ? [$product->getTaxCode()] : []),
+            'groups'      => $tree->selectable(keep: $product !== null ? (int) $product->getProductGroup()->getId() : null),
             'accounts'    => $ledger->documentAccounts(),
             'ledger'      => $ledger->available(),
             'history'     => $variant !== null ? $this->articlePrices()->historyOf($variant) : [],
@@ -204,15 +225,29 @@ trait ArticleControllerTrait
     }
 
     /**
-     * What the window shows before a POST: a new article starts net, valid from today; an
-     * existing one shows its values and the price VALID TODAY (else the next one that starts
+     * What the window shows before a POST: a new article starts net, valid from today, in the
+     * group the list was filtered by (`?group=` — «+ Artikel» carries it), else in the only group
+     * there is; its tax code and revenue account are that group's DEFAULTS (inherited from the
+     * nearest group above that sets one — owner 2026-10-14, a server-side prefill, no script).
+     * An existing one shows its values and the price VALID TODAY (else the next one that starts
      * later, with its own day) — saving it unchanged writes no price row (A4).
      */
-    private function articleDraftOf(?Product $product, ?Variant $variant): ArticleDraft
+    private function articleDraftOf(?Product $product, ?Variant $variant, ProductGroupTree $tree): ArticleDraft
     {
         $today = new \DateTimeImmutable('today');
         if ($product === null || $variant === null) {
-            return new ArticleDraft(priceMode: 'net', validFrom: $today->format('Y-m-d'));
+            $asked  = (int) DI::getRequest()->getGetParameter('group');
+            $active = $tree->selectable();
+            $group  = $tree->find($asked)?->isActive() ? $asked : (count($active) === 1 ? (int) $active[0]['group']->getId() : 0);
+            $preset = $group > 0 ? $tree->defaultsFor($group) : ['taxCode' => '', 'revenueAccount' => ''];
+
+            return new ArticleDraft(
+                priceMode:      'net',
+                validFrom:      $today->format('Y-m-d'),
+                taxCode:        $preset['taxCode'],
+                revenueAccount: $preset['revenueAccount'],
+                productGroup:   $group,
+            );
         }
         $price = $this->articlePrices()->shownAt([$variant], $today)[$variant->getId()] ?? null;
 
@@ -226,6 +261,7 @@ trait ArticleControllerTrait
             taxCode:        $product->getTaxCode(),
             revenueAccount: $product->getRevenueAccount(),
             stockRelevant:  $product->isStockRelevant(),
+            productGroup:   (int) $product->getProductGroup()->getId(),
         );
     }
 
@@ -346,20 +382,25 @@ trait ArticleControllerTrait
     // ── rows ─────────────────────────────────────────────────────────────
 
     /**
-     * Per product what its row shows: the default variant and the price valid today (else the
-     * next one, «ab …»). Two queries for a page (no N+1).
+     * Per product what its row shows: the default variant, the price valid today (else the
+     * next one, «ab …») and the path of its group. Two queries for a page (no N+1); the tree is
+     * read once by the caller.
      *
      * @param list<Product> $products
-     * @return array<int, array{variant: ?Variant, price: ?Price}> product id → row data
+     * @return array<int, array{variant: ?Variant, price: ?Price, path: string}> product id → row data
      */
-    private function articleRows(array $products): array
+    private function articleRows(array $products, ProductGroupTree $tree): array
     {
         $variants = $this->articleVariants()->defaultsFor($products);
         $prices   = $this->articlePrices()->shownAt(array_values($variants), new \DateTimeImmutable('today'));
         $rows     = [];
         foreach ($products as $product) {
             $variant = $variants[$product->getId()] ?? null;
-            $rows[$product->getId()] = ['variant' => $variant, 'price' => $variant !== null ? ($prices[$variant->getId()] ?? null) : null];
+            $rows[$product->getId()] = [
+                'variant' => $variant,
+                'price'   => $variant !== null ? ($prices[$variant->getId()] ?? null) : null,
+                'path'    => $tree->path((int) $product->getProductGroup()->getId()),
+            ];
         }
 
         return $rows;
@@ -372,11 +413,12 @@ trait ArticleControllerTrait
      */
     private function articleRowAnswer(Product $product): FetchResponse
     {
-        $row  = $this->articleRows([$product])[$product->getId()];
+        $row  = $this->articleRows([$product], $this->articleGroups()->tree())[$product->getId()];
         $html = (new TemplateRenderer(self::ARTICLE_NS))->partial('Backend/ArticleController/_row', [
             'product'    => $product,
             'variant'    => $row['variant'],
             'price'      => $row['price'],
+            'path'       => $row['path'],
             'definition' => ArticleListing::definition(),
             'actionBase' => $this->articleListBase(),
         ]);

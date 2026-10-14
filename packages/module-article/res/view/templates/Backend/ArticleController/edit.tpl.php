@@ -18,6 +18,7 @@
  * @var int $version
  * @var \Z77\Module\Article\Validators\ArticleValidator $validator
  * @var list<\Z77\Module\Vat\Entities\TaxCode> $codes      `TaxCodeRepository::selectable()`
+ * @var list<array{group: \Z77\Module\Article\Entities\ProductGroup, depth: int}> $groups  `ProductGroupTree::selectable()`
  * @var list<array{number: string, label: string}> $accounts  `LedgerAccountCheck::documentAccounts()`
  * @var bool $ledger      module-financial is there — the account is checked
  * @var list<\Z77\Module\Article\Entities\Price> $history  newest first
@@ -37,7 +38,7 @@ $isNew      = $product === null;
 $window     = !empty($window);
 $title      = $isNew ? 'Artikel anlegen' : 'Artikel ' . ($variant?->getNumber() ?? '') . ' — ' . $product->getName();
 $action     = $actionBase . ($isNew ? '/add' : '/edit?id=' . (int) $product->getId());
-$fields     = ['number', 'name', 'unit', 'price', 'valid_from', 'price_mode', 'tax_code', 'revenue_account', 'stock_relevant'];
+$fields     = ['product_group', 'number', 'name', 'unit', 'price', 'valid_from', 'price_mode', 'tax_code', 'revenue_account', 'stock_relevant'];
 $invalidIds = array_values(array_map(static fn(string $f) => 'article-' . $f, array_filter($fields, static fn(string $f) => $validator->hasFieldError($f))));
 $fieldError = static fn(string $name): string => $validator->hasFieldError($name)
     ? '<small class="be-form__field-error" data-z77-field-error>' . e($validator->getFieldError($name)) . '</small>'
@@ -78,6 +79,17 @@ $delete     = $isNew ? '' : '<a class="be-btn be-btn--danger" href="' . e($actio
             <?php endforeach; ?>
         </div>
         <?php endif; ?>
+
+        <div class="be-form__grid">
+            <div class="be-form__field" data-z77-field-wrapper>
+                <label for="article-product_group">Warengruppe</label>
+                <select id="article-product_group" name="product_group" required aria-invalid="<?= $invalid('product_group') ?>">
+                    <option value="0"<?= $draft->productGroup === 0 ? ' selected' : '' ?>>– wählen –</option>
+                    <?= $this->partial('partials/productGroupOptions', ['rows' => $groups, 'selected' => $draft->productGroup], 'Z77\\Module\\Article') ?>
+                </select>
+                <?= raw($fieldError('product_group')) ?>
+            </div>
+        </div>
 
         <div class="be-form__grid">
             <div class="be-form__field" data-z77-field-wrapper>

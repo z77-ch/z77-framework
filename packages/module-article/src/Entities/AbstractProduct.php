@@ -7,8 +7,9 @@ use Doctrine\ORM\Mapping as ORM;
 
 /**
  * The PRODUCT stage of an article (plan §4b A3) — the marketing and accounting unit: its name,
- * the tax code and the revenue account (owner 2026-10-14: on the article; a product-group tree
- * later only supplies DEFAULTS), whether stock is kept («führt Bestand», A7), active.
+ * its ONE place in the product-group tree ({@see ProductGroup}, A1 — mandatory, any node), the
+ * tax code and the revenue account (owner 2026-10-14: on the article; the group only supplies
+ * DEFAULTS for a new article), whether stock is kept («führt Bestand», A7), active.
  *
  * Every standard field, its mapping and its logic live HERE, in a `#[ORM\MappedSuperclass]`;
  * the entity {@see Product} is EMPTY (ADR-039 addendum 2026-10-08 (b)). A project that needs a
@@ -40,6 +41,15 @@ abstract class AbstractProduct
 
     #[ORM\Column(length: self::NAME_LENGTH)]
     protected string $name = '';
+
+    /**
+     * The ONE placement in the product-group tree (A1, owner 2026-10-14): mandatory, any node.
+     * By id — moving a group moves its articles with it. The foreign key refuses to delete a
+     * group that still carries articles.
+     */
+    #[ORM\ManyToOne(targetEntity: ProductGroup::class)]
+    #[ORM\JoinColumn(name: 'product_group_id', nullable: false)]
+    protected ProductGroup $productGroup;
 
     /** module-vat's `TaxCode::$code` — by code, no foreign key (ADR-043 decision 19). */
     #[ORM\Column(name: 'tax_code', length: self::TAX_CODE_LENGTH)]
@@ -82,6 +92,7 @@ abstract class AbstractProduct
 
     public function getId(): ?int { return $this->id; }
     public function getName(): string { return $this->name; }
+    public function getProductGroup(): ProductGroup { return $this->productGroup; }
     public function getTaxCode(): string { return $this->taxCode; }
     public function getRevenueAccount(): string { return $this->revenueAccount; }
     public function isStockRelevant(): bool { return $this->stockRelevant; }
@@ -103,6 +114,12 @@ abstract class AbstractProduct
         $this->taxCode        = $taxCode;
         $this->revenueAccount = $revenueAccount;
         $this->stockRelevant  = $stockRelevant;
+    }
+
+    /** The placement as the one save writes it — after the draft passed its validator. */
+    public function placeIn(ProductGroup $group): void
+    {
+        $this->productGroup = $group;
     }
 
     public function setActive(bool $active): void { $this->active = $active; }

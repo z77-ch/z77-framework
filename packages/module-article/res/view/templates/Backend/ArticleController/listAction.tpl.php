@@ -7,7 +7,9 @@
  * a save in the article window reloads it (`refresh-region`). No CSS and no JavaScript of its own.
  *
  * @var list<\Z77\Module\Article\Entities\Product> $products
- * @var array<int, array{variant: ?\Z77\Module\Article\Entities\Variant, price: ?\Z77\Module\Article\Entities\Price}> $rows
+ * @var array<int, array{variant: ?\Z77\Module\Article\Entities\Variant, price: ?\Z77\Module\Article\Entities\Price, path: string}> $rows
+ * @var \Z77\Module\Article\Services\ProductGroupTree $tree
+ * @var int|null $group  the group the list is filtered by (the rail picker), null = all
  * @var \Z77\Shared\Listing\ListDefinition $definition
  * @var \Z77\Shared\Listing\ListState $state
  * @var \Z77\Shared\Paging\Paging $paging
@@ -20,7 +22,7 @@ $link       = static fn(array $changes = []): string => $listUrl . '?' . $state-
 <div class="be-list" data-fetch-region="<?= e($definition->region()) ?>">
     <div class="be-list__section">
         <div class="be-list__section-header">
-            <h2 class="be-list__section-title">Artikel</h2>
+            <h2 class="be-list__section-title">Artikel<?php if ($group !== null): ?> <small class="be-list__cell--muted">· <?= e($tree->path($group)) ?><?= $tree->childCount($group) > 0 ? " mit Untergruppen" : "" ?></small><?php endif; ?></h2>
             <?php if ($state->isActive()): ?>
             <nav class="be-list__toggles" aria-label="Suche">
                 <a data-fetch-region-link href="<?= e($listUrl . '?' . $state->resetQuery()) ?>">Suche zurücksetzen</a>
@@ -39,6 +41,7 @@ $link       = static fn(array $changes = []): string => $listUrl . '?' . $state-
                     'product'    => $product,
                     'variant'    => $rows[$product->getId()]['variant'] ?? null,
                     'price'      => $rows[$product->getId()]['price'] ?? null,
+                    'path'       => $rows[$product->getId()]['path'] ?? '',
                     'definition' => $definition,
                     'actionBase' => $actionBase,
                 ], 'Z77\\Module\\Article') ?>
@@ -46,7 +49,7 @@ $link       = static fn(array $changes = []): string => $listUrl . '?' . $state-
             </div>
         </div>
         <?php if ($products === []): ?>
-        <p class="be-list__empty"><?= $state->isActive() ? 'Kein Artikel gefunden.' : 'Noch kein Artikel erfasst — «+ Artikel» legt den ersten an.' ?></p>
+        <p class="be-list__empty"><?= $state->isActive() ? 'Kein Artikel gefunden.' : ($group !== null ? 'In dieser Warengruppe hängt noch kein Artikel — «+ Artikel» legt einen darin an.' : 'Noch kein Artikel erfasst — «+ Artikel» legt den ersten an.') ?></p>
         <?php endif; ?>
         <?= $this->partial('partials/pager', [
             'paging'      => $paging,

@@ -348,7 +348,7 @@ hand without a key is recognised by its route.
 | module-mandator | Firma (`stammdaten-firma`) — Mandant (`mandant`) | `stammdaten` |
 | module-debtor | Aufträge (`auftraege`) — Rechnungen (`rechnungen`, P3 part 3, sort 1) · Debitoren (`debitoren`, the open items, 2) · Zahlungseingänge (`zahlungseingaenge`, P4 part 2, 3) · Mahnungen (`mahnungen`, P4 part 3, 4); module-order's «Aufträge» takes sort 0 | root 2 |
 | module-debtor | Aufträge (`stammdaten-auftraege`) — Debitoren · Zahlungskonditionen · Zahlungsziele · Mahnstufen (`debitoren-stamm` — the debtor master data, since 2026-10-07 —, `zahlungskonditionen`, `zahlungsziele`, `mahnstufen`) | `stammdaten` (2) |
-| module-article | Artikel (`artikel`, sort 11 — module-order's Auftragsstatus takes 10) | `stammdaten-auftraege` (module-debtor's group; article does not require debtor — the entry waits without it) |
+| module-article | Warengruppen (`warengruppen`, sort 11; built 2026-10-14), Artikel (`artikel`, sort 12 — module-order's Auftragsstatus takes 10) | `stammdaten-auftraege` (module-debtor's group; article does not require debtor — the entries wait without it) |
 | module-order | Aufträge (`auftraege-liste`, sort 0 — the FIRST entry of the area, the area click opens it; built 2026-10-14, plan step 7) | `auftraege` (module-debtor's area; order requires debtor) |
 | module-order | Auftragsstatus (`auftragsstatus`, sort 10; built 2026-10-14) | `stammdaten-auftraege` (module-debtor's group) |
 

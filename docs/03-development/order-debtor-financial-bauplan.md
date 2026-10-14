@@ -651,6 +651,20 @@ because wdv has no text position type**. None of this is visible from the shop c
 > history, number, name, unit, tax code, revenue account, «führt Bestand» — no tree, no options,
 > no images.
 
+> **A1 built 2026-10-14 (owner: «Der Baum reicht vorerst, ich muss ja irgendwie Waren gruppieren
+> können»; [`article.md`](../topics/article.md) → product-group tree):** ONE product-group tree
+> of free depth («Warengruppen», Stammdaten › Aufträge), exactly ONE placement per PRODUCT, by id
+> (a moved group takes its articles along). The group carries optional DEFAULT tax code and revenue
+> account for NEW articles, inherited per field from the nearest group above; existing articles
+> never change. Coordinator defaults, the owner may revise: the group is mandatory, an article may
+> hang on any node, the migration creates the root «Allgemein» and places the existing products
+> there. Not part of it, recorded as pending in `article.md`: discount group and turnover
+> statistics per group (the A1 row above names them — nothing reads them yet); **variants with
+> options** (vintage, size); **shop categories** — an article in SEVERAL categories of a shop
+> navigation (Magento-style, the owner found the idea interesting), a structure SEPARATE from the
+> one accounting group, built with the shop. The wdv import maps `group1..group4` to a path of
+> this tree (P5b / P8).
+
 What this plan builds from A1–A4: the **product group tree** (one placement, carrying revenue
 account, VAT default and turnover statistics), **product + variant**, **prices with history**, the
 **article number on the variant**, and stock (§4b below). That is what an order line needs.

@@ -18,14 +18,17 @@
  * @var string      $label     the accessible name
  * @var bool        $invalid   the field carries an error
  * @var bool        $allowNone offer «–» (no code) — a text line has none
+ * @var string      $noneLabel optional text of that option (default «–») — a product group says
+ *                             what it inherits there («– geerbt: UN –», module-article)
  */
 $selected  = (string) ($selected ?? '');
 $allowNone = $allowNone ?? true;
+$noneLabel = (string) ($noneLabel ?? '–');
 $known     = false;
 ?>
 <select class="be-input be-input--sm" name="<?= e($name) ?>"<?= !empty($id) ? ' id="' . e($id) . '"' : '' ?> aria-label="<?= e($label ?? 'MWST-Code') ?>" aria-invalid="<?= !empty($invalid) ? 'true' : 'false' ?>">
     <?php if ($allowNone): ?>
-    <option value=""<?= $selected === '' ? ' selected' : '' ?>>–</option>
+    <option value=""<?= $selected === '' ? ' selected' : '' ?>><?= e($noneLabel) ?></option>
     <?php endif; ?>
     <?php foreach ($codes as $code): $known = $known || $code->getCode() === $selected; ?>
     <option value="<?= e($code->getCode()) ?>"<?= $code->getCode() === $selected ? ' selected' : '' ?> title="<?= e($code->getLabel()) ?>"><?= e($code->getCode()) ?><?= $code->isActive() ? '' : ' (inaktiv)' ?></option>

@@ -19,6 +19,7 @@ use Z77\Module\Vat\Entities\TaxCode;
  *   - `taxCode`        module-vat's code (an ACTIVE one, or the one the article keeps)
  *   - `revenueAccount` the chart's number — type «Ertrag», «auf Belegen wählbar» (soft)
  *   - `stockRelevant`  «führt Bestand»
+ *   - `productGroup`   the id of the ONE product group (A1, mandatory — 0 = none chosen)
  *
  * `mapToArray()` gives the validator its keys (the `EntityValidator` convention, snake_case).
  */
@@ -34,6 +35,7 @@ final class ArticleDraft
         public readonly string $taxCode = '',
         public readonly string $revenueAccount = '',
         public readonly bool $stockRelevant = false,
+        public readonly int $productGroup = 0,
     ) {}
 
     /**
@@ -56,10 +58,32 @@ final class ArticleDraft
             taxCode:        TaxCode::normalizeCode($text('tax_code')),
             revenueAccount: $text('revenue_account'),
             stockRelevant:  in_array(strtolower($text('stock_relevant')), ['1', 'on', 'true', 'yes'], true),
+            productGroup:   ctype_digit($text('product_group')) ? (int) $text('product_group') : 0,
         );
     }
 
-    /** @return array<string, string|bool> the validator's keys */
+    /**
+     * The draft of a NEW article with the defaults of its group filled in where the field was
+     * left EMPTY (owner 2026-10-14: «a group supplies defaults for new articles») — what a typed
+     * value says always wins. `ArticleService::create()` asks this before it validates.
+     */
+    public function withDefaults(string $taxCode, string $revenueAccount): self
+    {
+        return new self(
+            number:         $this->number,
+            name:           $this->name,
+            unit:           $this->unit,
+            price:          $this->price,
+            priceMode:      $this->priceMode,
+            validFrom:      $this->validFrom,
+            taxCode:        $this->taxCode !== '' ? $this->taxCode : $taxCode,
+            revenueAccount: $this->revenueAccount !== '' ? $this->revenueAccount : $revenueAccount,
+            stockRelevant:  $this->stockRelevant,
+            productGroup:   $this->productGroup,
+        );
+    }
+
+    /** @return array<string, string|bool|int> the validator's keys */
     public function mapToArray(): array
     {
         return [
@@ -72,6 +96,7 @@ final class ArticleDraft
             'tax_code'        => $this->taxCode,
             'revenue_account' => $this->revenueAccount,
             'stock_relevant'  => $this->stockRelevant,
+            'product_group'   => $this->productGroup,
         ];
     }
 }

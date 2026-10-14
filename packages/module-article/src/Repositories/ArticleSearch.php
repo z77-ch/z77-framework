@@ -4,7 +4,8 @@ namespace Z77\Module\Article\Repositories;
 
 /**
  * What the article list asks the database for (Stammdaten › Artikel): the column criteria,
- * AND-ed — part of the article number, part of the name, the tax code, the revenue account.
+ * AND-ed — part of the article number, part of the name, the tax code, the revenue account, and
+ * the product groups (a group WITH its sub-groups — the ids come from `ProductGroupTree::subtreeIds()`).
  * Every value is bound; the sort key selects from a fixed map ({@see ProductRepository::search()}),
  * never from input. Built by the screen's listing (`Ui\ArticleListing`, listing.md), plain data.
  */
@@ -19,6 +20,8 @@ final class ArticleSearch
         public readonly ?string $account = null,   // the revenue account, exact
         public readonly string $sort = 'number',
         public readonly bool $descending = false,
+        /** @var list<int>|null the groups the product must hang in; null = any */
+        public readonly ?array $groupIds = null,
     ) {
         if (!in_array($sort, self::SORTS, true)) {
             throw new \InvalidArgumentException("Unknown article sort '{$sort}'");
