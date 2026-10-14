@@ -8,8 +8,10 @@ stock call per write, the invoice drafted from the order and booked by module-de
 [z77-ch/z77-framework](https://github.com/z77-ch/z77-framework) monorepo (`packages/module-order`);
 not yet a split target or on Packagist — projects consume it through a `path` repository until it is.
 
-State: **P7 slim steps 3, 5 and 6 (2026-10-14)** — the order list and window, the PDFs and the
-booking print follow (steps 7–10).
+State: **P7 slim steps 3 and 5–10 (2026-10-14)** — the order, its status and write path, the
+backend screens Aufträge › Aufträge (list + order window, `Ui\OrderControllerTrait`), the PDFs
+(`pdf/order`, `pdf/deliveryNote`), the booking print `OrderService::book()` and the year-close
+warning `Close\InvoiceableOrdersCheck`. Details: `docs/topics/order.md`.
 
 - `OrderStatus` (file, `data/framework/order/order_statuses.json`, seeded once) — code, label,
   level and the flags `offer`, `reservesStock`, `consumesStock`, `invoiceable`, `invoiceBooked`,

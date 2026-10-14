@@ -76,7 +76,7 @@ The framework writes PDFs through ONE facade, `Z77\Shared\Pdf\PdfDocument`, over
 - **Validate the first printed QR-bill** against the SIX validation portal (`validation.iso-payments.ch`) and with a bank's scanner app; adjust the geometry of `pdf/qrBill` if the portal objects. Owner's installation (z77.ch) is the place — `debtor.md` «install module-debtor in z77.ch».
 - **Labels per language** for the invoice PDF and the payment part (de / fr / it / en) — with the document texts per language (debtor.md).
 - **Storage** of the invoice PDF in the Drive — agreed and deferred (debtor.md «Storage of the PDF»); the facade is unaffected, a DMS consumer would take `output()` bytes.
-- **Further documents** the owner named (2026-10-06): an article data sheet (module-order, P7) — the first consumer of the facade outside debtor; expected to reuse `pdf/table` and `pdf/letterhead` and to add nothing to the facade.
+- **Further documents** the owner named (2026-10-06): an article data sheet (module-article) — expected to reuse `pdf/table` and `pdf/letterhead` and to add nothing to the facade. The first consumers outside debtor came with P7 slim step 8 (2026-10-14): module-order's `pdf/order` (Offerte / Auftragsbestätigung, amounts from debtor's preview) and `pdf/deliveryNote` (no prices) — letterhead, address window and table reused, nothing added to the facade (`order.md`).
 
 ## see also
 

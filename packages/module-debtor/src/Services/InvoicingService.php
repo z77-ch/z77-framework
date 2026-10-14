@@ -1374,8 +1374,13 @@ final class InvoicingService
         return [array_values($lines), $taxes];
     }
 
-    /** The contact's `invoice` address, else its `main` one, else its first — as a snapshot; null without any. */
-    private function invoiceAddressOf(Contact $contact): ?AddressSnapshot
+    /**
+     * The contact's `invoice` address, else its `main` one, else its first — as a snapshot; null
+     * without any. The ONE rule which address a document goes to (Rule 2): `compose()` snapshots
+     * it, and a source that prints to «the invoice address» asks here (module-order's delivery
+     * note without a delivery address, P7 slim step 8). Reads, writes nothing.
+     */
+    public function invoiceAddressOf(Contact $contact): ?AddressSnapshot
     {
         /** @var ContactAddressRepository $links */
         $links = $this->em->getRepository(ContactAddress::class);

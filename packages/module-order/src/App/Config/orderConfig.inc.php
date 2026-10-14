@@ -2,6 +2,7 @@
 namespace Z77\Module\Order\App;
 
 use Z77\Core\Config\AuthRole;
+use Z77\Module\Order\Close\InvoiceableOrdersCheck;
 use Z77\Module\Order\Entities\SalesOrder;
 use Z77\Module\Order\Entities\SalesOrderLine;
 use Z77\Module\Order\Entities\SalesOrderStatusChange;
@@ -11,12 +12,12 @@ use Z77\Module\Order\Entities\SalesOrderStatusChange;
  * as ONE record, D1) with its lines and its status log, the order status as file-based master
  * data with behaviour flags (`Entities\OrderStatus`, seeded once from
  * `data/framework/order/order_statuses.default.json`), the one write path `Services\OrderService`
- * (create / update / status change / delivery-note status; the booking print joins in step 9),
+ * (create / update / status change / delivery-note status / the booking print),
  * the stock call per write through module-article's `StockLedger`, and the mapping of an order to
  * debtor's `InvoiceDraft` (`Invoicing\OrderInvoiceDraft`).
  *
  * This module has NO routes and no view area of its own: its backend screens are fragments
- * (`Ui\OrderStatusControllerTrait`; the order list and window in step 7) mounted by host
+ * (`Ui\OrderStatusControllerTrait`, `Ui\OrderControllerTrait`) mounted by host
  * controllers in module-backend under `/backend/order/…` (ADR-018 pattern).
  *
  * Storage (ADR-039 decision 5 — announced here, nothing scans a directory): `SalesOrder`,
@@ -35,6 +36,13 @@ return [
         SalesOrder::class,
         SalesOrderLine::class,
         SalesOrderStatusChange::class,
+    ],
+
+    // financial's year close asks every module «anything open?» (open-work registry of
+    // persistence-doctrine, scope `period-close`): an order dated in the year that sits in a
+    // status flagged `invoiceable` is a WARNING (plan §13 step 10) — not invoiced, not booked.
+    'openWorkChecks' => [
+        'period-close' => [InvoiceableOrdersCheck::class],
     ],
 
     // Nothing here renders a page; the host's cache policy applies to the mount.

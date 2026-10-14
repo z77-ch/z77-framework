@@ -27,6 +27,22 @@ final class OrderRefusedException extends OrderException
     public const BOOKED_TARGET   = OrderStatuses::BOOKED_TARGET;
     public const BACKWARD_BARRED = OrderStatuses::BACKWARD_BARRED;
 
+    // The booking print (plan §7, step 9).
+    /** The booking print was asked for no order at all. */
+    public const NOTHING_SELECTED = 'nothing-selected';
+
+    /** No ACTIVE status carries the flag `invoiceBooked` — the booking print has no status to set. */
+    public const NO_BOOKED_STATUS = 'no-booked-status';
+
+    /** The order is already linked to an invoice — the service never books twice (idempotency is the screen's). */
+    public const ALREADY_INVOICED = 'already-invoiced';
+
+    /** The order's status is not flagged `invoiceable`. */
+    public const NOT_INVOICEABLE = 'not-invoiceable';
+
+    /** Debtor refused the invoice drafted from the order — the message names the order and debtor's reason. */
+    public const INVOICE_REFUSED = 'invoice-refused';
+
     public function __construct(public readonly string $reason, string $message, ?\Throwable $previous = null)
     {
         parent::__construct($message, 0, $previous);

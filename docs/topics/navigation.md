@@ -346,10 +346,11 @@ hand without a key is recognised by its route.
 | module-contact | Kontakte (`stammdaten-kontakte`) — Adresstypen (`adresstypen`) | `stammdaten` |
 | module-dms | Drive (`drive`) — Dokumente (`dokumente`) | root 4 |
 | module-mandator | Firma (`stammdaten-firma`) — Mandant (`mandant`) | `stammdaten` |
-| module-debtor | Aufträge (`auftraege`) — Debitoren (`debitoren`, the open items) · Rechnungen (`rechnungen`, P3 part 3) · Zahlungseingänge (`zahlungseingaenge`, P4 part 2) · Mahnungen (`mahnungen`, P4 part 3); later module-order's screens | root 2 |
+| module-debtor | Aufträge (`auftraege`) — Rechnungen (`rechnungen`, P3 part 3, sort 1) · Debitoren (`debitoren`, the open items, 2) · Zahlungseingänge (`zahlungseingaenge`, P4 part 2, 3) · Mahnungen (`mahnungen`, P4 part 3, 4); module-order's «Aufträge» takes sort 0 | root 2 |
 | module-debtor | Aufträge (`stammdaten-auftraege`) — Debitoren · Zahlungskonditionen · Zahlungsziele · Mahnstufen (`debitoren-stamm` — the debtor master data, since 2026-10-07 —, `zahlungskonditionen`, `zahlungsziele`, `mahnstufen`) | `stammdaten` (2) |
 | module-article | Artikel (`artikel`, sort 11 — module-order's Auftragsstatus takes 10) | `stammdaten-auftraege` (module-debtor's group; article does not require debtor — the entry waits without it) |
-| module-order | Auftragsstatus (`auftragsstatus`, sort 10; built 2026-10-14) — the area entry «Aufträge» (`auftraege-liste`, sort 0 under `auftraege`) follows with the order list (plan step 7) | `stammdaten-auftraege` (module-debtor's group; order requires debtor) |
+| module-order | Aufträge (`auftraege-liste`, sort 0 — the FIRST entry of the area, the area click opens it; built 2026-10-14, plan step 7) | `auftraege` (module-debtor's area; order requires debtor) |
+| module-order | Auftragsstatus (`auftragsstatus`, sort 10; built 2026-10-14) | `stammdaten-auftraege` (module-debtor's group) |
 
 Root order: Webseiten 0, Finanzen 1, Aufträge 2, Kontakte 3, Drive 4, Stammdaten 5, Service 6. Group order under Stammdaten: Firma 0, Finanzen 1, Aufträge 2, Kontakte 3, System 4 (the `sort_key` of each
 package's group). A package whose parent lives in a package it does not require waits: module-vat

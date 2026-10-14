@@ -399,7 +399,7 @@ order's current lines and status. No controller, repository or template calls st
 
 ## 9. Screens
 
-Board on the developer canvas BEFORE building (backend-screen checklist 1).
+Board on the developer canvas BEFORE building (backend-screen checklist 1). *Built 2026-10-14 from the owner's description of the board (area «Aufträge», «+ Neuer Auftrag», the six tabs, the columns, the selection bar, the window with Speichern · Vorschau · Lieferschein · Buchungsdruck …, tabs Auftrag · Verlauf · Belege) — deviations listed in [`order.md`](../topics/order.md) pending (ORDER-UI-002).*
 
 ### 9.1 Navigation seed (ADR-050)
 
@@ -565,7 +565,7 @@ order screens is still open) · 1 and 2 built 2026-10-14 ([`article.md`](../topi
 harness sections A / K green, B waits for PC1 — ARTICLE-DB-001) · 4 in parallel (debtor seams) · 3, 5 and 6
 built 2026-10-14 ([`order.md`](../topics/order.md): `OrderStatus` + Stammdaten › Auftragsstatus, the
 schema and the range `order`, `OrderService` create / update / status change / delivery-note status;
-harness S / N / T / D green, M waits for PC1 — ORDER-DB-001).
+harness S / N / T / D green, M waits for PC1 — ORDER-DB-001) · **7, 8, 9 and 10 built 2026-10-14** ([`order.md`](../topics/order.md) «screens, PDFs and the booking print»: the list with the six tabs from the flags, the order window with radio tabs Auftrag · Verlauf · Belege, «Status ändern …», «+ Kontakt», the three PDFs, `OrderService::book()` with the confirmation page and the idempotent reprint, `InvoiceableOrdersCheck`; harness V / I / F / P / C green offline; verified on z77.ch by curl and by a rolled-back `book()` of order 1 — ORDER-UI-001). Order 1 waits in «Zu fakturieren» for the owner's own booking print (step 9's exit) and the P7 slim live test (step 11).
 
 ---
 

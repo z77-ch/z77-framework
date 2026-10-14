@@ -1,0 +1,919 @@
+<?php
+namespace Z77\Module\Order\Ui;
+
+use Z77\Core\DI,
+    Z77\Core\Http\Response\BytesResponse,
+    Z77\Core\Http\Response\FetchResponse,
+    Z77\Core\Http\Response\HtmlResponse,
+    Z77\Core\Http\Response\RedirectResponse,
+    Z77\Core\Http\WindowOrigin,
+    Z77\Core\Services\TemplateRenderer,
+    Z77\Module\Article\Entities\Variant,
+    Z77\Module\Article\Repositories\VariantRepository,
+    Z77\Module\Article\Stock\StockConfirmation,
+    Z77\Module\Article\Stock\StockReasonRequiredException,
+    Z77\Module\Contact\Entities\Contact,
+    Z77\Module\Contact\Entities\ContactAddress,
+    Z77\Module\Contact\Services\AddressTypes,
+    Z77\Module\Contact\Services\ContactService,
+    Z77\Module\Contact\Ui\ContactForm,
+    Z77\Module\Debtor\Entities\AddressSnapshot,
+    Z77\Module\Debtor\Entities\DebtorProfile,
+    Z77\Module\Debtor\Entities\Invoice,
+    Z77\Module\Debtor\Entities\PaymentTarget,
+    Z77\Module\Debtor\Pdf\InvoicePdf,
+    Z77\Module\Debtor\Repositories\InvoiceRepository,
+    Z77\Module\Debtor\Services\DebtorCurrency,
+    Z77\Module\Debtor\Services\DebtorException,
+    Z77\Module\Debtor\Services\InvoicingService,
+    Z77\Module\Debtor\Services\LockConflict,
+    Z77\Module\Debtor\Services\PaymentStates,
+    Z77\Module\Mandator\Services\LedgerAccountCheck,
+    Z77\Module\Order\Entities\OrderStatus,
+    Z77\Module\Order\Entities\SalesOrder,
+    Z77\Module\Order\Entities\SalesOrderStatusChange,
+    Z77\Module\Order\Pdf\OrderPdf,
+    Z77\Module\Order\Repositories\SalesOrderRepository,
+    Z77\Module\Order\Repositories\SalesOrderStatusChangeRepository,
+    Z77\Module\Order\Services\InvalidOrderException,
+    Z77\Module\Order\Services\OrderConflictException,
+    Z77\Module\Order\Services\OrderException,
+    Z77\Module\Order\Services\OrderRefusedException,
+    Z77\Module\Order\Services\OrderService,
+    Z77\Module\Vat\Entities\TaxCode,
+    Z77\Module\Vat\Services\VatException,
+    Z77\Shared\Attributes\Csrf,
+    Z77\Shared\Libraries\Convention\Naming,
+    Z77\Shared\Listing\ListDefinition,
+    Z77\Shared\Money\AmountFormat,
+    Z77\Shared\Money\Money
+;
+
+/**
+ * Aufträge › Aufträge (plan §9.3 / §9.4, steps 7–9 of P7 slim; the owner's board on the developer
+ * canvas) — mounted by a thin host controller in the backend (ADR-018 pattern): `use
+ * OrderControllerTrait` + a one-line layout config delegating to {@see OrderLayout::config()};
+ * URL `/backend/order/order/…`.
+ *
+ *   - `list` — a STANDARD LIST ({@see OrderListing}): the view tabs from the status FLAGS in the
+ *     toolbar (Offerten · In Arbeit · Zu fakturieren · Gebucht · Erledigt · Alle, each with its
+ *     count), the state icon opens the order WINDOW, «Zahlung» in «Gebucht» from debtor's
+ *     `PaymentStates` (one query for the page); in «Zu fakturieren» the selection bar
+ *     «Buchungsdruck …». Action cell: «+ Neuer Auftrag»;
+ *   - `add` / `edit` — the ORDER WINDOW (ADR-047, mask `order-edit`, entity `sales-order:<id>`):
+ *     one form, one save, radio tabs Auftrag · Verlauf · Belege; the head (customer — debtors
+ *     and contacts without a profile, «+ Kontakt» —, subject, dates, prices, payment target,
+ *     delivery address, the starting status of a new order, an internal note) and the positions
+ *     editor ({@see OrderForm}); the totals and what the booking print would refuse from debtor's
+ *     preview (D11). Read-only when `OrderService::editRefusal()` says so (D7);
+ *   - `new-contact` — «+ Kontakt» of the window: debtor's contact window reused (Rule 9), its save
+ *     puts the re-rendered customer select back into the order window;
+ *   - `status` — «Status ändern …» in the same window: the allowed targets
+ *     (`OrderStatuses::targets()`), and — only when the stock seam demands it — a mandatory
+ *     reason (`StockReasonRequiredException` → `StockConfirmation`);
+ *   - `pdf` — «Offerte» / «Auftragsbestätigung» by the FLAG `offer` (no side effect);
+ *     `invoice-preview` — the invoice the booking print would issue today, debtor's PREVIEW
+ *     layout; `confirm-delivery-note` + `delivery-note` — the delivery note: the POST moves the
+ *     status first (`printDeliveryNote()`, D6), the answer is the PDF in a new tab;
+ *   - `confirm-book` + `book` — the BOOKING PRINT from the window (one order) or the selection bar
+ *     (several): a confirmation PAGE (the DEBTOR-WIN-002 pattern) → POST into a NEW TAB →
+ *     `OrderService::book()` → the combined invoice PDF (`InvoicePdf::combined()`); a repeated
+ *     submit of the same selection reprints and books nothing; a refusal is a message page naming
+ *     the order.
+ *
+ * Every write goes through {@see OrderService} with the logged-in user as actor. No JavaScript of
+ * its own (Rule 7): plain forms, «Weitere Zeilen» a submit, the article picker a `<datalist>`.
+ * The using class MUST provide (via its host base): `html()`, `fetch()`, `fetchError()`,
+ * `redirect()`, `bytes()`, `em()`, `$layoutManager`, `$messageService`, `$help`.
+ */
+trait OrderControllerTrait
+{
+    private const ORDER_NS = 'Z77\\Module\\Order';
+
+    private const ORDER_CONFLICT_MESSAGE = 'Der Auftrag wurde inzwischen geändert — bitte neu laden und erneut versuchen.';
+
+    /** The status-log trigger → German, for «Verlauf». */
+    private const ORDER_TRIGGERS = [
+        SalesOrderStatusChange::TRIGGER_CREATE        => 'erfasst',
+        SalesOrderStatusChange::TRIGGER_STATUS        => 'Status geändert',
+        SalesOrderStatusChange::TRIGGER_DELIVERY_NOTE => 'Lieferschein',
+        SalesOrderStatusChange::TRIGGER_BOOKING_PRINT => 'Buchungsdruck',
+    ];
+
+    /** URL root of THIS mount — every link and form is built from it. */
+    protected function orderListBase(): string
+    {
+        return OrderLayout::BASE;
+    }
+
+    /** debtor's document screens — the order window links its invoice there (order knows debtor, never the reverse). */
+    protected function orderInvoiceBase(): string
+    {
+        return '/backend/finance/invoice';
+    }
+
+    private function orders(): SalesOrderRepository
+    {
+        return $this->em()->getRepository(SalesOrder::class);
+    }
+
+    /** The one write path, acting as the logged-in user (the screen is ADMIN — someone is logged in). */
+    private function orderService(): OrderService
+    {
+        return new OrderService($this->em(), DI::getAuthService()->getCurrentUser()->getUserName());
+    }
+
+    private function orderIsFetch(): bool
+    {
+        return ListDefinition::isFetch(DI::getRequest());
+    }
+
+    /**
+     * A page or a window's content other than the list: the layout pins the body to
+     * `listAction`, so the section is swapped for the page's own template (the invoice model).
+     *
+     * @param array<string, mixed> $context
+     */
+    private function orderPage(string $template, array $context, string $path = 'Backend/OrderController', string $ns = self::ORDER_NS): HtmlResponse
+    {
+        $context += ['actionBase' => $this->orderListBase(), 'fmt' => static fn(?Money $m) => AmountFormat::of($m)];
+        $response = $this->html($context);
+        $this->layoutManager->removeSection('main');
+        $this->layoutManager->addPartials($template, $path, $ns);
+
+        return $response;
+    }
+
+    /** A refusal: in a window the error flash (the window stays), as a page flash + the list. */
+    private function orderRefuse(string $message): FetchResponse|RedirectResponse
+    {
+        if ($this->orderIsFetch()) {
+            return $this->fetchError($message);
+        }
+        $this->messageService->pushFlashAfterRedirect('error', $message);
+
+        return $this->redirect($this->orderListBase() . '/list', 303);
+    }
+
+    /** The order of `?id=` with its lines, or null. */
+    private function orderOfRequest(): ?SalesOrder
+    {
+        $id = (int) DI::getRequest()->getGetParameter('id');
+
+        return $id > 0 ? $this->orders()->withLines($id) : null;
+    }
+
+    // ── list ─────────────────────────────────────────────────────────────
+
+    protected function listAction(): HtmlResponse
+    {
+        $request = DI::getRequest();
+        // The view decides the columns (the selection checkbox, the payment column) — read once ahead of the definition.
+        $view = (string) $request->getGetParameter('view');
+        if (!isset(OrderListing::VIEWS[$view])) {
+            $view = array_key_first(OrderListing::VIEWS);
+        }
+        $definition = OrderListing::definition(DebtorCurrency::base(), $view);
+        $state      = $definition->readRequest($request);
+        $statuses   = $this->orderService()->statuses()->all();
+        $search     = OrderListing::search($state, $statuses);
+        $total      = $this->orders()->countSearch($search);
+        $paging     = $state->paging($total);
+        $orders     = $total === 0 ? [] : $this->orders()->search($search, $paging->offset(), $paging->pageSize);
+
+        $response = $this->html([
+            'orders'     => $orders,
+            'payments'   => $view === OrderListing::VIEW_BOOKED ? $this->orderPaymentStates($orders) : [],
+            'statuses'   => self::orderStatusesByCode($statuses),
+            'definition' => $definition,
+            'state'      => $state,
+            'paging'     => $paging,
+            'view'       => $view,
+            'views'      => OrderListing::VIEWS,
+            'counts'     => OrderListing::counts($statuses, $this->orders()->countPerStatus()),
+            'actionBase' => $this->orderListBase(),
+        ]);
+        // The fragment owns its header slots (financial.md «fragment slots»): «+ Neuer Auftrag» is the
+        // entry's most frequent action → the action cell (hc1); the view tabs → the toolbar (hc2).
+        // «Buchungsdruck …» is bound to the row selection → the bar above the list. A FETCH of the
+        // region (sort, page, search) wants the list alone.
+        if (!$this->orderIsFetch()) {
+            $this->layoutManager->addPartials('act', 'Backend/OrderController', self::ORDER_NS, 'hc1');
+            $this->layoutManager->addPartials('toolbar', 'Backend/OrderController', self::ORDER_NS, 'hc2');
+        }
+
+        return $response;
+    }
+
+    // ── the order window ─────────────────────────────────────────────────
+
+    #[Csrf]
+    protected function addAction(): HtmlResponse|FetchResponse|RedirectResponse
+    {
+        return $this->orderWindow(null);
+    }
+
+    #[Csrf]
+    protected function editAction(): HtmlResponse|FetchResponse|RedirectResponse
+    {
+        $order = $this->orderOfRequest();
+        if ($order === null) {
+            return $this->orderRefuse('Auftrag nicht gefunden');
+        }
+
+        return $this->orderWindow($order);
+    }
+
+    /**
+     * The order window (ADR-047): GET renders it, POST saves through {@see OrderService} —
+     * `create()` for a new order, `update()` with the VERSION the window was rendered from. Fetched,
+     * a save answers with commands: the saved order into the SAME window (`open-window`, replace)
+     * and the list region it was opened from reloads (a new row, a changed total). A refusal
+     * re-renders the window with the field errors and what was typed. Without the script it is a
+     * page: a plain form (`#[Csrf]`), redirect to the saved order.
+     */
+    private function orderWindow(?SalesOrder $order): HtmlResponse|FetchResponse|RedirectResponse
+    {
+        $request = DI::getRequest();
+        $service = $this->orderService();
+        $form    = new OrderForm();
+        $version = $order?->getVersion();
+        if (!$request->isPost()) {
+            $order === null
+                ? $form->startBlank(new \DateTimeImmutable('today'), ((int) $request->getGetParameter('contact')) ?: null, $this->orderDefaultTarget(), $service->statuses()->initial()?->getCode() ?? '')
+                : $form->startFrom($order);
+
+            return $this->orderWindowPage($form, $order, $version);
+        }
+
+        $post = $request->getPostParameters();
+        if ($order !== null && !DI::getCsrfService()->validateEntityToken(trim((string) ($post['entity_csrf'] ?? '')), 'sales-order', (int) $order->getId())) {
+            return $this->orderRefuse(self::ORDER_CONFLICT_MESSAGE);
+        }
+        $version = (int) ($post['version'] ?? 0);   // what THIS window was rendered from
+        $form->fromPost($post);
+        if (($post['op'] ?? '') === 'more') {
+            $form->addRows(OrderForm::MORE_ROWS);
+
+            return $this->orderWindowPage($form, $order, $version);
+        }
+        $reason       = trim((string) ($post['stock_reason'] ?? ''));
+        $confirmation = $reason !== '' ? new StockConfirmation(mb_substr($reason, 0, StockConfirmation::REASON_LENGTH)) : null;
+        $needReason   = false;
+        $draft        = $form->toDraft($this->orderArticleNumbers($order), $this->orderShipChoices($form->header('contact'), $order));
+        if ($draft !== null) {
+            try {
+                if ($order === null) {
+                    $saved = $service->create($draft);
+                    $text  = 'Auftrag ' . $saved->documentNumber() . ' erfasst';
+                } else {
+                    $saved = $service->update((int) $order->getId(), $version, $draft, $confirmation);
+                    $text  = 'Auftrag ' . $saved->documentNumber() . ' gespeichert';
+                }
+
+                return $this->orderSaved((int) $saved->getId(), $text);
+            } catch (InvalidOrderException $e) {
+                $form->applyErrors($e->errors);
+            } catch (OrderConflictException) {
+                return $this->orderRefuse(self::ORDER_CONFLICT_MESSAGE);
+            } catch (OrderRefusedException $e) {
+                $form->addGeneralError($e->getMessage());
+            } catch (StockReasonRequiredException) {
+                $needReason = true;
+                $form->addGeneralError('Diese Änderung bucht bereits ausgelieferten Bestand zurück — einen Grund angeben und nochmals speichern.');
+            } catch (\Doctrine\DBAL\Exception $e) {
+                if (!LockConflict::is($e)) {
+                    throw $e;
+                }
+                $form->addGeneralError(LockConflict::MESSAGE);
+            }
+            // A refused unit of work may have replaced the EntityManager — the order is re-read, display only.
+            $order = $order !== null ? ($this->orders()->withLines((int) $order->getId()) ?? $order) : null;
+        }
+
+        return $this->orderWindowPage($form, $order, $version, $needReason);
+    }
+
+    /**
+     * The answer to a save from the window (ADR-047, the invoice's recipe): the saved order into
+     * the window the save came from, and the list region it was opened from reloads. Without the
+     * script: flash and the order as a page.
+     */
+    private function orderSaved(int $id, string $flash): FetchResponse|RedirectResponse
+    {
+        $request = DI::getRequest();
+        if (!$this->orderIsFetch()) {
+            $this->messageService->pushFlashAfterRedirect('success', $flash);
+
+            return $this->redirect($this->orderListBase() . '/edit?id=' . $id, 303);
+        }
+        $this->messageService->pushFlash('success', $flash);
+        $response = $this->fetch()->setStatus('success')
+            ->addCommand('open-window', ['url' => $this->orderListBase() . '/edit?id=' . $id, 'replace' => true]);
+        $origin = WindowOrigin::of($request);
+        if (str_starts_with($origin, 'region:')) {
+            $response->addCommand('refresh-region', ['name' => substr($origin, strlen('region:'))]);
+        }
+
+        return $response;
+    }
+
+    /** The window with its pickers, the preview's totals, the status log and the invoice. */
+    private function orderWindowPage(OrderForm $form, ?SalesOrder $order, ?int $version, bool $needReason = false): HtmlResponse
+    {
+        $service  = $this->orderService();
+        $statuses = $service->statuses();
+        $status   = $order !== null ? $statuses->byCode($order->getStatusCode()) : null;
+        $refusal  = $order !== null ? $service->editRefusal($order) : null;
+
+        // The totals and what the booking print would refuse — debtor's preview of the STORED order (D11).
+        $preview = null;
+        $previewProblems = [];
+        if ($order !== null && $order->getInvoice() === null) {
+            try {
+                $preview = $service->preview($order);
+                if ($preview->getPayment()->hasPaymentPart()) {
+                    $previewProblems = (new InvoicingService($this->em()))->bookingBill($preview)->problems();
+                }
+            } catch (DebtorException | VatException $e) {
+                $previewProblems = [$e->getMessage()];
+            }
+        }
+
+        $invoice     = $order?->getInvoice();
+        /** @var InvoiceRepository $invoices */
+        $invoices    = $this->em()->getRepository(Invoice::class);
+        $variants    = $this->orderVariants()->selectable();
+        $targets     = array_values(array_filter($this->em()->getRepository(PaymentTarget::class)->allInOrder(), fn(PaymentTarget $t) => $t->isActive() || $t->getCode() === $form->header('target')));
+        $this->help->attach('Backend/OrderController/edit.help', self::ORDER_NS, ['isNew' => $order === null], 'Hilfe: Auftrag');
+
+        return $this->orderPage('edit', [
+            'window'          => $this->orderIsFetch(),
+            // Wide enough for the ten-column line row — the window must not scroll sideways.
+            'windowWidth'     => '78rem',
+            'origin'          => WindowOrigin::of(DI::getRequest()),
+            'form'            => $form,
+            'order'           => $order,
+            'version'         => $version,
+            'status'          => $status,
+            'statusLabels'    => self::orderStatusLabels($statuses->all()),
+            'startable'       => $order === null ? $statuses->startable() : [],
+            'editRefusal'     => $refusal,
+            'needReason'      => $needReason,
+            'entityCsrf'      => $order === null ? '' : DI::getCsrfService()->generateEntityToken('sales-order', (int) $order->getId()),
+            'debtors'         => $this->em()->getRepository(DebtorProfile::class)->activeWithContacts(),
+            'candidates'      => $this->em()->getRepository(DebtorProfile::class)->contactsWithoutProfile(),
+            'targets'         => $targets,
+            'ships'           => $this->orderShipLabels($form->header('contact'), $order),
+            'taxCodes'        => $this->em()->getRepository(TaxCode::class)->selectable($form->keptCodes()),
+            'accounts'        => (new LedgerAccountCheck($this->em()))->documentAccounts(),
+            'articles'        => $this->orderArticleInfo($variants, $order),
+            'preview'         => $preview,
+            'previewProblems' => $previewProblems,
+            'history'         => $order !== null ? $this->orderHistory()->historyOf($order) : [],
+            'triggers'        => self::ORDER_TRIGGERS,
+            'invoice'         => $invoice,
+            'payment'         => $invoice !== null ? ((new PaymentStates($this->em()))->of([(int) $invoice->getId()])[(int) $invoice->getId()] ?? null) : null,
+            'creditNotes'     => $invoice !== null ? $invoices->creditNotesOf($invoice) : [],
+            'invoiceBase'     => $this->orderInvoiceBase(),
+            'orderTitle'      => OrderPdf::orderTitle($status),
+            'canBook'         => $order !== null && $invoice === null && $status !== null && $status->isInvoiceable(),
+            'deliveryTarget'  => $statuses->deliveryNoteTarget(),
+        ]);
+    }
+
+    // ── «+ Kontakt» ──────────────────────────────────────────────────────
+
+    /**
+     * «+ Kontakt» in the order window (plan §9.4, answer Q4): a NEW contact with its first
+     * address, without leaving the half-filled order — debtor's contact window reused as it is
+     * (template `Backend/InvoiceController/newContact`, module-contact's `ContactForm`; Rule 9),
+     * posting here. The save answers `replace-html` of the customer select IN THE ORDER WINDOW
+     * (`#invoice-contact` — debtor's `_debtorSelect`, scoped to the origin window) with the new
+     * contact selected, and `close-modal` for this window. The contact becomes a debtor at the
+     * booking print (D9). Without the script: a page whose save opens a new order for it.
+     */
+    #[Csrf]
+    protected function newContactAction(): HtmlResponse|RedirectResponse|FetchResponse
+    {
+        $request = DI::getRequest();
+        $form    = new ContactForm(addressRequired: true);
+        if ($request->isPost()) {
+            $form->fromPost($request->getPostParameters());
+            if ($form->save(new ContactService($this->em()))) {
+                $contact = $form->contact;
+                $text    = 'Kontakt «' . $contact->displayName() . '» erfasst — Debitor wird er mit dem Buchungsdruck';
+                if (!$this->orderIsFetch()) {
+                    $this->messageService->pushFlashAfterRedirect('success', $text);
+
+                    return $this->redirect($this->orderListBase() . '/add?contact=' . $contact->getId(), 303);
+                }
+                $this->messageService->pushFlash('success', $text);
+                $profiles = $this->em()->getRepository(DebtorProfile::class);
+                $select   = (new TemplateRenderer('Z77\\Module\\Debtor'))->partial('Backend/InvoiceController/_debtorSelect', [
+                    'debtors'    => $profiles->activeWithContacts(),
+                    'candidates' => $profiles->contactsWithoutProfile(),
+                    'selected'   => (string) $contact->getId(),
+                    'invalid'    => false,
+                ]);
+
+                return $this->fetch()->setStatus('success')
+                    ->setData(['id' => $contact->getId()])
+                    ->addCommand('replace-html', ['target' => '#invoice-contact', 'html' => $select, 'origin' => WindowOrigin::of($request)])
+                    ->addCommand('close-modal');
+            }
+        }
+
+        return $this->orderPage('newContact', [
+            'window' => $this->orderIsFetch(),
+            'origin' => WindowOrigin::of($request),
+            'failed' => $form->hasErrors(),
+        ] + $form->vars(AddressTypes::from($this->em())), 'Backend/InvoiceController', 'Z77\\Module\\Debtor');
+    }
+
+    // ── «Status ändern …» ────────────────────────────────────────────────
+
+    /**
+     * «Status ändern …» (plan §6 / §9.4), loaded into the order window (`data-window-link`): the
+     * targets `OrderStatuses::targets()` allows (forward / lateral; backward only without an
+     * invoice; never the booked one; active only) as a select. POST → `changeStatus()` with the
+     * version shown; the stock seam may demand a reason (consumed stock would come back) — then
+     * the form comes back with a mandatory «Grund» and is sent again with the confirmation.
+     * Success: the order into the same window, the list reloads.
+     */
+    #[Csrf]
+    protected function statusAction(): HtmlResponse|FetchResponse|RedirectResponse
+    {
+        $request = DI::getRequest();
+        $order   = $this->orderOfRequest();
+        if ($order === null) {
+            return $this->orderRefuse('Auftrag nicht gefunden');
+        }
+        $service    = $this->orderService();
+        $statuses   = $service->statuses();
+        $needReason = false;
+        $error      = '';
+        $selected   = '';
+        $reason     = '';
+        if ($request->isPost()) {
+            $post = $request->getPostParameters();
+            if (!DI::getCsrfService()->validateEntityToken(trim((string) ($post['entity_csrf'] ?? '')), 'sales-order', (int) $order->getId())) {
+                return $this->orderRefuse(self::ORDER_CONFLICT_MESSAGE);
+            }
+            $selected = trim((string) ($post['to'] ?? ''));
+            $reason   = trim((string) ($post['stock_reason'] ?? ''));
+            try {
+                $moved = $service->changeStatus((int) $order->getId(), (int) ($post['version'] ?? 0), $selected,
+                    $reason !== '' ? new StockConfirmation(mb_substr($reason, 0, StockConfirmation::REASON_LENGTH)) : null);
+                $label = $statuses->byCode($moved->getStatusCode())?->getLabel() ?? $moved->getStatusCode();
+
+                return $this->orderSaved((int) $moved->getId(), 'Auftrag ' . $moved->documentNumber() . ': Status «' . $label . '»');
+            } catch (OrderConflictException) {
+                return $this->orderRefuse(self::ORDER_CONFLICT_MESSAGE);
+            } catch (StockReasonRequiredException) {
+                $needReason = true;
+                $error      = 'Dieser Wechsel bucht bereits ausgelieferten Bestand zurück — bitte den Grund angeben.';
+            } catch (OrderException $e) {
+                $error = $e->getMessage();
+            } catch (\Doctrine\DBAL\Exception $e) {
+                if (!LockConflict::is($e)) {
+                    throw $e;
+                }
+                $error = LockConflict::MESSAGE;
+            }
+            $order = $this->orders()->withLines((int) $order->getId()) ?? $order;
+        }
+        $current = $statuses->byCode($order->getStatusCode());
+
+        return $this->orderPage('status', [
+            'window'     => $this->orderIsFetch(),
+            'origin'     => WindowOrigin::of($request),
+            'order'      => $order,
+            'current'    => $current,
+            'targets'    => $current !== null ? $statuses->targets($current, $order->getInvoice() !== null) : [],
+            'selected'   => $selected,
+            'reason'     => $reason,
+            'needReason' => $needReason,
+            'error'      => $error,
+            'entityCsrf' => DI::getCsrfService()->generateEntityToken('sales-order', (int) $order->getId()),
+        ]);
+    }
+
+    // ── PDFs ─────────────────────────────────────────────────────────────
+
+    /**
+     * «Offerte» / «Auftragsbestätigung» (plan §10) — by the FLAG `offer` of the order's status;
+     * lines and totals from debtor's preview. Inline, a new tab, no side effect. When debtor's
+     * preview refuses the order as it stands, a message page says what to fix instead.
+     */
+    protected function pdfAction(): BytesResponse|HtmlResponse|RedirectResponse
+    {
+        $order = $this->orderOfRequest();
+        if ($order === null) {
+            return $this->orderRefuse('Auftrag nicht gefunden');
+        }
+        $service = $this->orderService();
+        $status  = $service->statuses()->byCode($order->getStatusCode());
+        $title   = OrderPdf::orderTitle($status);
+        try {
+            $preview = $service->preview($order);
+        } catch (DebtorException | VatException $e) {
+            return $this->orderPrintRefused($title . ' ' . $order->documentNumber() . ' lässt sich noch nicht drucken: ' . $e->getMessage(), $order);
+        }
+
+        return $this->bytes(OrderPdf::order($order, $status, $preview, $this->em())->output(), OrderPdf::fileName($title . ' ' . $order->documentNumber()), 'application/pdf');
+    }
+
+    /**
+     * «Rechnungsvorschau» (plan §10) — the invoice the booking print would issue TODAY, from debtor's
+     * `preview()` drawn with debtor's PREVIEW layout («VORSCHAU», no number, no payment part). No
+     * side effect.
+     */
+    protected function invoicePreviewAction(): BytesResponse|HtmlResponse|RedirectResponse
+    {
+        $order = $this->orderOfRequest();
+        if ($order === null) {
+            return $this->orderRefuse('Auftrag nicht gefunden');
+        }
+        try {
+            $preview = $this->orderService()->preview($order, new \DateTimeImmutable('today'));
+        } catch (DebtorException | VatException $e) {
+            return $this->orderPrintRefused('Die Rechnung zu Auftrag ' . $order->documentNumber() . ' lässt sich noch nicht zeigen: ' . $e->getMessage(), $order);
+        }
+
+        return $this->bytes(InvoicePdf::of($preview, $this->em())->output(), Naming::toSlug('Vorschau Rechnung Auftrag ' . $order->documentNumber()) . '.pdf', 'application/pdf');
+    }
+
+    /**
+     * «Lieferschein …» (D6), loaded into the order window: what the print will do — move the order
+     * to the `deliveryNoteTarget` status, or print again without a change — and one button that
+     * POSTs into a NEW TAB. When the status moves, the form carries `data-submit-navigate` to the
+     * list (the window would be stale; core.js, SUBMIT-NAV-001); a reprint leaves the window open.
+     */
+    protected function confirmDeliveryNoteAction(): HtmlResponse|FetchResponse|RedirectResponse
+    {
+        $order = $this->orderOfRequest();
+        if ($order === null) {
+            return $this->orderRefuse('Auftrag nicht gefunden');
+        }
+        $statuses = $this->orderService()->statuses();
+        $current  = $statuses->byCode($order->getStatusCode());
+        $target   = $statuses->deliveryNoteTarget();
+
+        return $this->orderPage('confirmDeliveryNote', [
+            'window'  => $this->orderIsFetch(),
+            'origin'  => WindowOrigin::of(DI::getRequest()),
+            'order'   => $order,
+            'current' => $current,
+            'target'  => $target,
+            'moves'   => $target !== null && $current !== null && $target->getLevel() > $current->getLevel(),
+            'address' => $this->orderService()->deliveryAddressOf($order),
+        ]);
+    }
+
+    /**
+     * The delivery note (POST, `#[Csrf]`, into a new tab): `printDeliveryNote()` FIRST — the
+     * status moves when the target lies ahead, a reprint writes nothing — then the PDF. A
+     * refusal (a stale version, a reason the stock demands) answers a message page in that tab.
+     */
+    #[Csrf]
+    protected function deliveryNoteAction(): BytesResponse|HtmlResponse|RedirectResponse
+    {
+        $request = DI::getRequest();
+        $id      = (int) $request->getGetParameter('id');
+        if ($id <= 0 || !$request->isPost()) {
+            return $this->redirect($this->orderListBase() . '/list', 303);
+        }
+        $post = $request->getPostParameters();
+        try {
+            $order = $this->orderService()->printDeliveryNote($id, (int) ($post['version'] ?? 0));
+        } catch (OrderConflictException) {
+            return $this->orderPrintRefused('Der Auftrag wurde inzwischen geändert — kein Lieferschein gedruckt, nichts gespeichert. Auftrag neu öffnen und nochmals drucken.', null);
+        } catch (StockReasonRequiredException) {
+            return $this->orderPrintRefused('Der Lieferschein würde bereits ausgelieferten Bestand zurückbuchen — nichts gespeichert. Den Status über «Status ändern …» mit Grund setzen.', null);
+        } catch (OrderException $e) {
+            return $this->orderPrintRefused($e->getMessage(), null);
+        } catch (\Doctrine\DBAL\Exception $e) {
+            if (!LockConflict::is($e)) {
+                throw $e;
+            }
+
+            return $this->orderPrintRefused(LockConflict::MESSAGE, null);
+        }
+        $order = $this->orders()->withLines((int) $order->getId()) ?? $order;
+
+        return $this->bytes(OrderPdf::deliveryNote($order, $this->orderService()->deliveryAddressOf($order), $this->em())->output(), OrderPdf::fileName('Lieferschein ' . $order->documentNumber()), 'application/pdf');
+    }
+
+    /** A print that cannot be made — a PAGE (in the new tab the link or form opened). */
+    private function orderPrintRefused(string $message, ?SalesOrder $order): HtmlResponse
+    {
+        return $this->orderPage('printRefused', ['message' => $message, 'order' => $order]);
+    }
+
+    // ── the booking print ────────────────────────────────────────────────
+
+    /**
+     * «Buchungsdruck …» (plan §7 / §9.3): the selection of «Zu fakturieren» or the one order of the
+     * window (`order[]` = `{id}:{version}`, the version each SHOWED), listed for a last look with
+     * the invoice date (default today) — a PAGE (the DEBTOR-WIN-002 pattern: the selection bar is
+     * a GET form) whose button POSTs the same pairs into a NEW TAB ({@see bookAction()}). Orders
+     * that changed since, are booked or not invoiceable are named and left out of the button.
+     */
+    protected function confirmBookAction(): HtmlResponse|RedirectResponse
+    {
+        $pairs = BookingSelection::pairs(DI::getRequest()->getGetParameter('order'));
+        if ($pairs === []) {
+            $this->messageService->pushFlashAfterRedirect('error', 'Kein Auftrag ausgewählt — in der Liste «Zu fakturieren» ankreuzen.');
+
+            return $this->redirect($this->orderListBase() . '/list?view=' . OrderListing::VIEW_INVOICEABLE, 303);
+        }
+        $statuses = $this->orderService()->statuses();
+        $orders   = [];
+        $stale    = [];
+        foreach ($pairs as $pair) {
+            $order  = $this->orders()->find($pair['id']);
+            $status = $order !== null ? $statuses->byCode($order->getStatusCode()) : null;
+            if ($order === null || $order->getVersion() !== $pair['version'] || $order->getInvoice() !== null || $status === null || !$status->isInvoiceable()) {
+                $stale[] = $order !== null ? 'Auftrag ' . $order->documentNumber() : '#' . $pair['id'];
+                continue;
+            }
+            $orders[] = $order;
+        }
+        $total = null;
+        foreach ($orders as $order) {
+            if ($order->getTotalGross() !== null) {
+                $total = $total === null ? $order->getTotalGross() : $total->add($order->getTotalGross());
+            }
+        }
+
+        return $this->orderPage('confirmBook', [
+            'orders' => $orders,
+            'stale'  => $stale,
+            'total'  => $total,
+            'today'  => new \DateTimeImmutable('today'),
+            'booked' => $statuses->invoiceBooked(),
+        ]);
+    }
+
+    /**
+     * «Buchungsdruck» — the POST of the confirmation (`#[Csrf]`, into a NEW TAB): the pairs and the
+     * invoice date to `OrderService::book()` — each order's invoice issued and booked, linked, the
+     * order set to the `invoiceBooked` status, ONE unit of work — and the answer IS the PDF of the
+     * booked invoices with number and QR-bill (`InvoicePdf::combined()`). The success flash waits
+     * for the next page of the original tab (`data-submit-navigate` sends it to «Gebucht»).
+     *
+     * IDEMPOTENT for a repeated submit (plan §7): when every order of the selection is linked to a
+     * FINAL invoice at exactly the version it showed + 1 — what this booking print left — the same
+     * PDF is answered and nothing is booked. Every refusal answers a German message PAGE naming
+     * the order; nothing was booked.
+     */
+    #[Csrf]
+    protected function bookAction(): BytesResponse|HtmlResponse|RedirectResponse
+    {
+        $request = DI::getRequest();
+        $post    = $request->isPost() ? $request->getPostParameters() : [];
+        $pairs   = BookingSelection::pairs($post['order'] ?? null);
+        if ($pairs === []) {
+            return $this->redirect($this->orderListBase() . '/list?view=' . OrderListing::VIEW_INVOICEABLE, 303);
+        }
+        $booked = BookingSelection::bookedBy($pairs, fn(int $id) => $this->orders()->find($id));
+        if ($booked !== null) {
+            return $this->orderBookingPdf($booked);   // the same selection again: reprint, nothing booked
+        }
+        $date = self::orderDate((string) ($post['invoice_date'] ?? ''));
+        if ($date === null) {
+            return $this->orderBookingRefused('Das Rechnungsdatum fehlt oder ist kein gültiges Datum — nichts wurde verbucht.', $pairs);
+        }
+        $reason = trim((string) ($post['stock_reason'] ?? ''));
+        try {
+            $invoices = $this->orderService()->book($pairs, $date, $reason !== '' ? new StockConfirmation(mb_substr($reason, 0, StockConfirmation::REASON_LENGTH)) : null);
+        } catch (OrderConflictException $e) {
+            $order = $this->orders()->find($e->orderId);
+            return $this->orderBookingRefused(($order !== null ? 'Auftrag ' . $order->documentNumber() : 'Ein Auftrag der Auswahl') . ' wurde inzwischen geändert oder ist nicht mehr vorhanden — nichts wurde verbucht. Liste neu laden und die Auswahl prüfen.', $pairs);
+        } catch (StockReasonRequiredException) {
+            return $this->orderBookingRefused('Der Buchungsdruck würde bereits ausgelieferten Bestand zurückbuchen — nichts wurde verbucht. Den Status der Aufträge prüfen.', $pairs);
+        } catch (OrderException | DebtorException $e) {
+            return $this->orderBookingRefused('Nichts wurde verbucht: ' . $e->getMessage(), $pairs);
+        } catch (\Doctrine\DBAL\Exception $e) {
+            // The database refused the unit of work (a deadlock, a lock wait, a unique index at commit): everything
+            // rolled back. Answered as the refusal page in the new tab, never a 500; the cause goes to the log.
+            error_log('order booking print: ' . get_class($e) . ': ' . $e->getMessage());
+
+            return $this->orderBookingRefused(LockConflict::is($e)
+                ? 'Nichts wurde verbucht: ' . LockConflict::MESSAGE
+                : 'Nichts wurde verbucht: die Datenbank hat den Buchungsdruck abgelehnt. Liste neu laden und nochmals versuchen; bleibt es dabei, steht die Ursache im Fehlerprotokoll.', $pairs);
+        }
+        $names = implode(', ', array_map(static fn(Invoice $i) => $i->documentName(), $invoices));
+        $this->messageService->pushFlashAfterRedirect('success', (count($pairs) === 1 ? 'Auftrag verbucht und gedruckt: ' : count($pairs) . ' Aufträge verbucht und gedruckt: ') . $names);
+
+        return $this->orderBookingPdf(array_map(static fn(Invoice $i) => (int) $i->getId(), $invoices));
+    }
+
+    /** @param list<int> $invoiceIds */
+    private function orderBookingPdf(array $invoiceIds): BytesResponse
+    {
+        /** @var InvoiceRepository $invoices */
+        $invoices  = $this->em()->getRepository(Invoice::class);
+        $documents = array_values(array_filter(array_map(static fn(int $id) => $invoices->withLines($id), $invoiceIds)));
+        usort($documents, static fn(Invoice $a, Invoice $b) => $a->getNumber() <=> $b->getNumber());
+
+        return $this->bytes(InvoicePdf::combined($documents, $this->em())->output(), InvoicePdf::combinedFileName($documents), 'application/pdf');
+    }
+
+    /**
+     * The refusal of a booking print — a PAGE in the new tab: what happened (nothing was booked),
+     * the orders of the selection that ARE booked by now, the way back to the lists.
+     *
+     * @param list<array{id: int, version: int}> $pairs
+     */
+    private function orderBookingRefused(string $message, array $pairs): HtmlResponse
+    {
+        $already = [];
+        foreach ($pairs as $pair) {
+            $order = $this->orders()->find($pair['id']);
+            if ($order !== null && $order->getInvoice() !== null) {
+                $already[] = 'Auftrag ' . $order->documentNumber() . ' (' . $order->getInvoice()->documentName() . ')';
+            }
+        }
+
+        return $this->orderPage('bookingRefused', ['message' => $message, 'already' => $already]);
+    }
+
+    // ── helpers ──────────────────────────────────────────────────────────
+
+    private function orderVariants(): VariantRepository
+    {
+        return $this->em()->getRepository(Variant::class);
+    }
+
+    private function orderHistory(): SalesOrderStatusChangeRepository
+    {
+        return $this->em()->getRepository(SalesOrderStatusChange::class);
+    }
+
+    /**
+     * Article number → variant id: the articles a new line may name, plus the ones the order
+     * already holds (kept valid although deactivated since — ADR-043 decision 19).
+     *
+     * @return array<string, int>
+     */
+    private function orderArticleNumbers(?SalesOrder $order): array
+    {
+        $map = [];
+        foreach ($this->orderVariants()->selectable() as $variant) {
+            $map[$variant->getNumber()] = (int) $variant->getId();
+        }
+        foreach ($order?->getLines() ?? [] as $line) {
+            if ($line->getVariant() !== null) {
+                $map[$line->getVariant()->getNumber()] = (int) $line->getVariant()->getId();
+            }
+        }
+
+        return $map;
+    }
+
+    /**
+     * What the window shows per article number: the picker's label and, on an article line, the
+     * tax code and account that come from the article (D3).
+     *
+     * @param list<Variant> $variants
+     * @return array<string, array{name: string, unit: string, taxCode: string, account: string, offered: bool}>
+     */
+    private function orderArticleInfo(array $variants, ?SalesOrder $order): array
+    {
+        $info = [];
+        $add  = static function (Variant $v, bool $offered) use (&$info): void {
+            $p = $v->getProduct();
+            $info[$v->getNumber()] = [
+                'name'    => trim($p->getName() . ($v->getLabel() !== '' ? ' ' . $v->getLabel() : '')),
+                'unit'    => $v->getUnit(),
+                'taxCode' => $p->getTaxCode(),
+                'account' => $p->getRevenueAccount(),
+                'offered' => $offered,
+            ];
+        };
+        foreach ($order?->getLines() ?? [] as $line) {
+            if ($line->getVariant() !== null) {
+                $add($line->getVariant(), false);
+            }
+        }
+        foreach ($variants as $variant) {
+            $add($variant, true);
+        }
+
+        return $info;
+    }
+
+    /**
+     * The delivery-address choices of the customer $contactId: '' = the invoice address (no
+     * separate delivery address), «keep» = the snapshot the order holds, `a{link id}` = one of
+     * the contact's addresses, copied as a snapshot at save.
+     *
+     * @return array<string, AddressSnapshot|null>
+     */
+    private function orderShipChoices(string $contactId, ?SalesOrder $order): array
+    {
+        $choices = ['' => null];
+        if ($order?->deliveryAddress() !== null) {
+            $choices[OrderForm::SHIP_KEEP] = $order->deliveryAddress();
+        }
+        foreach ($this->orderContactAddresses($contactId) as $link) {
+            $choices['a' . $link->getId()] = AddressSnapshot::of($link->getAddress());
+        }
+
+        return $choices;
+    }
+
+    /** @return array<string, string> the same choices as German labels for the select */
+    private function orderShipLabels(string $contactId, ?SalesOrder $order): array
+    {
+        $labels = ['' => 'wie Rechnungsadresse'];
+        if ($order?->deliveryAddress() !== null) {
+            $labels[OrderForm::SHIP_KEEP] = 'wie gespeichert: ' . implode(', ', $order->deliveryAddress()->lines());
+        }
+        $types = AddressTypes::from($this->em());
+        foreach ($this->orderContactAddresses($contactId) as $link) {
+            $labels['a' . $link->getId()] = $types->labelOf($link->getTypeCode()) . ': ' . implode(', ', AddressSnapshot::of($link->getAddress())->lines());
+        }
+
+        return $labels;
+    }
+
+    /** @return list<ContactAddress> */
+    private function orderContactAddresses(string $contactId): array
+    {
+        $contact = ctype_digit($contactId) ? $this->em()->getRepository(Contact::class)->find((int) $contactId) : null;
+
+        return $contact !== null ? $this->em()->getRepository(ContactAddress::class)->findByContact($contact) : [];
+    }
+
+    /** The target a new order starts with: the first ACTIVE one in list order — a preselection the user sees and may change. */
+    private function orderDefaultTarget(): string
+    {
+        foreach ($this->em()->getRepository(PaymentTarget::class)->allInOrder() as $target) {
+            if ($target->isActive()) {
+                return $target->getCode();
+            }
+        }
+
+        return '';
+    }
+
+    /**
+     * The payment state per order of a page, asked from debtor in ONE query (`PaymentStates`,
+     * ADR-040 decision 6 — debtor never calls order).
+     *
+     * @param list<SalesOrder> $orders
+     * @return array<int, \Z77\Module\Debtor\Services\PaymentState> order id → state
+     */
+    private function orderPaymentStates(array $orders): array
+    {
+        $invoiceIds = [];
+        foreach ($orders as $order) {
+            if ($order->getInvoice() !== null) {
+                $invoiceIds[(int) $order->getId()] = (int) $order->getInvoice()->getId();
+            }
+        }
+        if ($invoiceIds === []) {
+            return [];
+        }
+        $states = (new PaymentStates($this->em()))->of(array_values(array_unique($invoiceIds)));
+        $out    = [];
+        foreach ($invoiceIds as $orderId => $invoiceId) {
+            if (isset($states[$invoiceId])) {
+                $out[$orderId] = $states[$invoiceId];
+            }
+        }
+
+        return $out;
+    }
+
+    /** @param list<OrderStatus> $statuses @return array<string, OrderStatus> */
+    private static function orderStatusesByCode(array $statuses): array
+    {
+        $map = [];
+        foreach ($statuses as $status) {
+            $map[$status->getCode()] = $status;
+        }
+
+        return $map;
+    }
+
+    /** @param list<OrderStatus> $statuses @return array<string, string> code → label */
+    private static function orderStatusLabels(array $statuses): array
+    {
+        return array_map(static fn(OrderStatus $s) => $s->getLabel(), self::orderStatusesByCode($statuses));
+    }
+
+    /** `Y-m-d` → the day; null when it is no date. */
+    private static function orderDate(string $value): ?\DateTimeImmutable
+    {
+        $value = trim($value);
+        if (!preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $value, $m) || !checkdate((int) $m[2], (int) $m[3], (int) $m[1])) {
+            return null;
+        }
+
+        return new \DateTimeImmutable($value . ' 00:00:00');
+    }
+}

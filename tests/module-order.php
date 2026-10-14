@@ -56,9 +56,14 @@ use Z77\Module\Debtor\Entities\LineType;
 use Z77\Module\Order\Entities\OrderStatus;
 use Z77\Module\Order\Entities\SalesOrder;
 use Z77\Module\Order\Entities\SalesOrderLine;
+use Z77\Module\Order\Close\InvoiceableOrdersCheck;
 use Z77\Module\Order\Invoicing\OrderInvoiceDraft;
+use Z77\Module\Order\Pdf\OrderPdf;
 use Z77\Module\Order\Services\OrderStatuses;
 use Z77\Module\Order\Stock\OrderStockTargets;
+use Z77\Module\Order\Ui\BookingSelection;
+use Z77\Module\Order\Ui\OrderForm;
+use Z77\Module\Order\Ui\OrderListing;
 use Z77\Module\Order\Validators\OrderStatusValidator;
 use Z77\Module\Vat\Calculation\PriceMode;
 use Z77\Shared\Money\Money;
@@ -168,10 +173,16 @@ check('N4 the stock seam is called in ONE place — OrderService::syncStock() (p
     $named($orderCode, '->bringTo(') === [$root . '/packages/module-order/src/Services/OrderService.php'] && substr_count($orderCode[$root . '/packages/module-order/src/Services/OrderService.php'], '->bringTo(') === 1);
 $navSeed   = json_decode((string) file_get_contents($root . '/packages/module-order/data/framework/routing/navigation.d/module-order.json'), true);
 $debtorNav = array_column(json_decode((string) file_get_contents($root . '/packages/module-debtor/data/framework/routing/navigation.d/module-debtor.json'), true), null, 'key');
+$navByKey  = is_array($navSeed) ? array_column($navSeed, null, 'key') : [];
+$route     = static fn(array $e): array => [$e['module'], $e['group'], $e['controller'], $e['action']];
 check('N5 the navigation seed parses: «Auftragsstatus» sort 10 under debtor\'s «stammdaten-auftraege», route backend/order/order-status/list',
-    is_array($navSeed) && count($navSeed) === 1 && $navSeed[0]['key'] === 'auftragsstatus' && $navSeed[0]['sort_key'] === 10
-    && $navSeed[0]['parent_key'] === 'stammdaten-auftraege' && isset($debtorNav['stammdaten-auftraege'])
-    && [$navSeed[0]['module'], $navSeed[0]['group'], $navSeed[0]['controller'], $navSeed[0]['action']] === ['backend', 'order', 'order-status', 'list']);
+    count($navByKey) === 2 && ($navByKey['auftragsstatus']['sort_key'] ?? null) === 10
+    && $navByKey['auftragsstatus']['parent_key'] === 'stammdaten-auftraege' && isset($debtorNav['stammdaten-auftraege'])
+    && $route($navByKey['auftragsstatus']) === ['backend', 'order', 'order-status', 'list']);
+check('N6 «Aufträge» (auftraege-liste) is the FIRST entry of debtor\'s area «auftraege» (sort 0; debtor\'s entries 1–4: Rechnungen, Debitoren, Zahlungseingänge, Mahnungen), route backend/order/order/list',
+    ($navByKey['auftraege-liste']['parent_key'] ?? null) === 'auftraege' && $navByKey['auftraege-liste']['sort_key'] === 0 && isset($debtorNav['auftraege'])
+    && $route($navByKey['auftraege-liste']) === ['backend', 'order', 'order', 'list']
+    && [$debtorNav['rechnungen']['sort_key'], $debtorNav['debitoren']['sort_key'], $debtorNav['zahlungseingaenge']['sort_key'], $debtorNav['mahnungen']['sort_key']] === [1, 2, 3, 4]);
 
 // ── T. transitions and stock targets (offline) ───────────────────────────
 
@@ -275,6 +286,136 @@ $draft2 = OrderInvoiceDraft::of($order, new \DateTimeImmutable('2026-10-31'));
 check('D6 without a Betreff the subject is «Auftrag 42»; the head\'s service period wins; gross; no payment target',
     $draft2->subject === 'Auftrag 42' && $draft2->serviceFrom?->format('Y-m-d') === '2026-10-01' && $draft2->serviceTo?->format('Y-m-d') === '2026-10-10'
     && $draft2->priceMode === PriceMode::Gross && $draft2->paymentTargetCode === null);
+
+// ── V. the list's view tabs (offline) ────────────────────────────────────
+
+echo "V. List tabs from the status flags (offline)\n";
+$viewOfSeed = array_combine(array_keys($byCode), array_map(static fn($s) => OrderListing::viewOf($s), array_values($byCode)));
+check('V1 each seed status falls into ONE tab by its flags: offer → Offerten; scheduled, delivered → In Arbeit; to-invoice → Zu fakturieren; booked → Gebucht; done, done-no-stock → Erledigt',
+    $viewOfSeed === ['offer' => 'offer', 'scheduled' => 'active', 'delivered' => 'active', 'to-invoice' => 'invoiceable', 'booked' => 'booked', 'done' => 'final', 'done-no-stock' => 'final']);
+check('V2 a NEW status lands in its tab without code (by flag), inactive ones still count; «Alle» filters nothing',
+    OrderListing::viewOf(status('pickup', 35, ['consumes_stock', 'invoiceable'])) === 'invoiceable'
+    && OrderListing::codesOf('active', array_merge($seed, [status('waiting', 25, [], false)])) === ['scheduled', 'delivered', 'waiting']
+    && OrderListing::codesOf('all', $seed) === null && OrderListing::codesOf('booked', $seed) === ['booked']);
+check('V3 the badges: orders per status mapped to their tab; «Alle» counts every order, also a code missing from the master data',
+    OrderListing::counts($seed, ['offer' => 2, 'scheduled' => 1, 'delivered' => 3, 'to-invoice' => 4, 'done' => 1, 'gone' => 5])
+    === ['offer' => 2, 'active' => 4, 'invoiceable' => 4, 'booked' => 0, 'final' => 1, 'all' => 16]);
+$cols = static fn(string $view): array => array_map(static fn($c) => $c->label !== '' ? $c->label : '[' . $c->ariaLabel . ']', OrderListing::definition('CHF', $view)->columns());
+check('V4 the columns: the selection checkbox only in «Zu fakturieren», «Zahlung» only in «Gebucht»; the default tab is «Offerten»',
+    $cols('invoiceable')[0] === '[Auswahl]' && !in_array('[Auswahl]', $cols('offer'), true) && in_array('Zahlung', $cols('booked'), true) && !in_array('Zahlung', $cols('all'), true)
+    && OrderListing::definition('CHF')->extraDefault('view') === 'offer' && array_key_first(OrderListing::VIEWS) === 'offer');
+
+// ── I. the booking print's selection and its idempotency (offline) ───────
+
+echo "I. Booking selection and the repeated submit (offline)\n";
+check('I1 pairs: `{id}:{version}` read, unique by id (the last wins), anything else dropped, at most 200',
+    BookingSelection::pairs(['7:5', 'x', '8:1', '7:6', ['9:1'], '10:-1']) === [['id' => 7, 'version' => 6], ['id' => 8, 'version' => 1]]
+    && BookingSelection::pairs('7:5') === [] && count(BookingSelection::pairs(array_map(static fn($i) => $i . ':1', range(1, 250)))) === 200);
+$finalInvoice = withId(new \Z77\Module\Debtor\Entities\Invoice(InvoiceKind::Invoice, $contact, null, 'harness', new \DateTimeImmutable('2026-10-14')), 80);
+(new \ReflectionProperty($finalInvoice, 'state'))->setValue($finalInvoice, \Z77\Module\Debtor\Entities\InvoiceState::Final->value);
+$draftInvoice = withId(new \Z77\Module\Debtor\Entities\Invoice(InvoiceKind::Invoice, $contact, null, 'harness', new \DateTimeImmutable('2026-10-14')), 81);
+$bookedOrder = withId(new SalesOrder(1, $contact, 'booked', SalesOrder::SOURCE_BACKEND, null, 'harness', new \DateTimeImmutable('2026-10-14')), 7);
+$bookedOrder->linkInvoice($finalInvoice);
+(new \ReflectionProperty($bookedOrder, 'version'))->setValue($bookedOrder, 6);
+$openOrder = withId(new SalesOrder(2, $contact, 'to-invoice', SalesOrder::SOURCE_BACKEND, null, 'harness', new \DateTimeImmutable('2026-10-14')), 8);
+(new \ReflectionProperty($openOrder, 'version'))->setValue($openOrder, 6);
+$finder = static fn(array $orders): \Closure => static fn(int $id): ?SalesOrder => $orders[$id] ?? null;
+check('I2 a repeat: every order linked to a FINAL invoice at the version it showed + 1 → the invoices to reprint, nothing booked',
+    BookingSelection::bookedBy([['id' => 7, 'version' => 5]], $finder([7 => $bookedOrder])) === [80]);
+check('I3 not a repeat: another version (edited since, booked by another print), an order without invoice, a gone order, an empty selection',
+    BookingSelection::bookedBy([['id' => 7, 'version' => 4]], $finder([7 => $bookedOrder])) === null
+    && BookingSelection::bookedBy([['id' => 7, 'version' => 5], ['id' => 8, 'version' => 5]], $finder([7 => $bookedOrder, 8 => $openOrder])) === null
+    && BookingSelection::bookedBy([['id' => 9, 'version' => 1]], $finder([])) === null && BookingSelection::bookedBy([], $finder([])) === null);
+$bookedOrder->linkInvoice($draftInvoice);
+check('I4 an invoice that is not final is no repeat either', BookingSelection::bookedBy([['id' => 7, 'version' => 5]], $finder([7 => $bookedOrder])) === null);
+
+// ── F. the window's form ↔ the draft (offline) ───────────────────────────
+
+echo "F. OrderForm ↔ OrderDraft (offline)\n";
+$form = (new OrderForm())->fromPost([
+    'contact' => '6', 'subject' => ' Einführung ', 'order_date' => '2026-10-14', 'price_mode' => 'net', 'target' => 'lukb', 'ship' => 'a3', 'status' => 'offer',
+    'rows' => [
+        ['type' => 'service', 'article' => '1001', 'quantity' => '2', 'id' => '15'],
+        ['type' => 'service', 'child' => '1', 'text' => 'Unterlagen', 'quantity' => '1', 'price' => '0', 'tax_code' => 'UN', 'account' => '3400'],
+        ['type' => 'bogus', 'text' => '', 'price' => '', 'quantity' => '', 'article' => ''],
+        ['type' => 'text', 'text' => 'Danke', 'id' => 'x1'],
+        ['type' => 'service', 'article' => '1001', 'text' => 'mit Code', 'quantity' => '1', 'tax_code' => 'UR', 'account' => '3000'],
+    ],
+]);
+$ship = new \Z77\Module\Debtor\Entities\AddressSnapshot('', '', 'Anna', 'Muster', '', 'Weg', '1', '4051', 'Basel', 'CH');
+$fd   = $form->toDraft(['1001' => 11], ['' => null, 'a3' => $ship], 'harness');
+check('F1 the head: contact id, subject (the service trims), dates, target, the chosen delivery address as snapshot, the start status',
+    $fd !== null && $fd->contactId === 6 && $fd->orderDate === '2026-10-14' && $fd->paymentTargetCode === 'lukb' && $fd->deliveryAddress === $ship && $fd->statusCode === 'offer' && $fd->sourceRef === 'harness');
+check('F2 the lines: the article number → its variant id, the existing line keeps its id, a «unter» row beneath its parent, the empty row left out, a bogus id dropped',
+    count($fd->lines) === 3 && $fd->lines[0]->variantId === 11 && $fd->lines[0]->id === 15 && count($fd->lines[0]->children) === 1
+    && $fd->lines[0]->children[0]->text === 'Unterlagen' && $fd->lines[1]->type === 'text' && $fd->lines[1]->id === null);
+check('F3 an ARTICLE line sends no tax code and no account — they come from the article (D3); a free line sends its own',
+    $fd->lines[2]->variantId === 11 && $fd->lines[2]->taxCode === '' && $fd->lines[2]->revenueAccount === '' && $fd->lines[0]->children[0]->taxCode === 'UN');
+$form->applyErrors(['contact_id' => 'Kunde wählen.', 'lines.0.0.unit_price' => 'Preis fehlt.', 'lines.2.variant' => 'inaktiv', 'payment_target_code' => 'weg', 'lines.9.text' => 'verirrt']);
+check('F4 the service\'s field errors land on the form: the head by name, `lines.{path}.{field}` on the row the line came from',
+    $form->error('contact') === 'Kunde wählen.' && $form->rowError(1, 'price') === 'Preis fehlt.' && $form->rowError(4, 'article') === 'inaktiv'
+    && $form->error('target') === 'weg' && $form->generalErrors() === ['verirrt'] && $form->invalidIds()[0] === 'order-contact');
+$bad = (new OrderForm())->fromPost(['contact' => '6', 'ship' => 'a99', 'rows' => [['article' => '9999', 'quantity' => '1'], ['child' => '1', 'text' => 'x', 'quantity' => '1', 'price' => '1']]]);
+check('F5 what the form cannot read: an unknown article, a delivery address that is not the customer\'s, a «unter» row without a parent above',
+    $bad->toDraft(['1001' => 11], ['' => null]) === null && $bad->rowError(0, 'article') !== '' && $bad->error('ship') !== '');
+$bad2 = (new OrderForm())->fromPost(['contact' => '6', 'rows' => [['child' => '1', 'text' => 'x', 'quantity' => '1', 'price' => '1']]]);
+check('F6 … a child as the first row is refused on its row', $bad2->toDraft([], ['' => null]) === null && $bad2->rowError(0, 'child') !== '');
+$fresh = (new OrderForm())->startFrom($order);
+check('F7 startFrom(): one row per line with its id, «unter» on the child, the empty row at the end; an article line shows no tax code / account',
+    count($fresh->rows()) === 7 && $fresh->rows()[0]['id'] === '101' && $fresh->rows()[1]['child'] === '1' && $fresh->rows()[0]['tax_code'] === ''
+    && $fresh->rows()[4]['tax_code'] === 'UN' && $fresh->rows()[6]['id'] === '' && $fresh->rows()[0]['quantity'] === '2');
+
+// ── P. the order's PDFs (offline where possible) ─────────────────────────
+
+echo "P. Order PDFs (offline)\n";
+check('P1 the title by FLAG: «Offerte» for a status flagged offer, else «Auftragsbestätigung» (also without a status row)',
+    OrderPdf::orderTitle($byCode['offer']) === 'Offerte' && OrderPdf::orderTitle($byCode['scheduled']) === 'Auftragsbestätigung' && OrderPdf::orderTitle(null) === 'Auftragsbestätigung');
+check('P2 the file names are kebab-case lower (Rule 6)', OrderPdf::fileName('Auftragsbestätigung 12') === 'auftragsbestaetigung-12.pdf' && OrderPdf::fileName('Lieferschein 3') === 'lieferschein-3.pdf');
+$pdfBase = str_replace('\\', '/', sys_get_temp_dir()) . '/z77-order-pdf-' . getmypid();
+@mkdir($pdfBase . '/config/vendor', 0777, true);
+@mkdir($pdfBase . '/var/cache', 0777, true);
+$pkg = $root . '/packages';
+file_put_contents($pdfBase . '/config/vendor/fileFinder.inc.php', "<?php return ['resourceDir' => ['sourceDir' => 'src', 'tplDir' => 'res/view/templates'], 'namespaces' => [\n"
+    . "'Z77\\\\Shared\\\\' => ['sourcePaths' => ['{$pkg}/kernel/shared']],\n'Z77\\\\Module\\\\Mandator\\\\' => ['sourcePaths' => ['{$pkg}/module-mandator']],\n'Z77\\\\Module\\\\Order\\\\' => ['sourcePaths' => ['{$pkg}/module-order']],\n]];");
+if (!defined('ABS_BASE_PATH')) {
+    define('ABS_BASE_PATH', $pdfBase);
+}
+if (!defined('DEBUG')) {
+    define('DEBUG', false);
+}
+\Z77\Core\DI::getInstance(true)
+    ->set('CacheManager', \Z77\Core\Libraries\CacheManager::class, true)
+    ->set('FileFinder', fn($c) => new \Z77\Core\Libraries\FileFinder($c->get('CacheManager')), true)
+    ->set('ConfigManager', fn($c) => new \Z77\Core\Libraries\ConfigManager($c->get('FileFinder'), $c->get('CacheManager')), true);
+\Z77\Core\DI::getCacheManager()->setCacheDir($pdfBase . '/var/cache');
+$note = new SalesOrder(42, $contact, 'scheduled', SalesOrder::SOURCE_BACKEND, null, 'harness', new \DateTimeImmutable('2026-10-14'));
+$note->describe($contact, 'Wein fuer das Fest', new \DateTimeImmutable('2026-10-14'), null, null, PriceMode::Net, 'CHF', null, null, null);
+$variantA->identify('PN22', 'Fl.');
+$nl = withId(new SalesOrderLine($note), 201);
+$nl->write(1, null, LineType::Service, $variantA, 'PN22', 'Pinot Noir 2022', '6', 'Fl.', $chf('24.50'), 0, 'UN', '3400');
+$note->addLine($nl);
+$nt = withId(new SalesOrderLine($note), 202);
+$nt->write(2, null, LineType::Text, null, null, 'Bitte kuehl lagern', null, null, null, 0, null, null);
+$note->addLine($nt);
+try {
+    $bytes = \Z77\Shared\Pdf\PdfDocument::create('Lieferschein 42')->withoutCompression()->partial('pdf/deliveryNote', [
+        'order' => $note, 'title' => 'Lieferschein 42', 'address' => $ship, 'mandator' => null, 'customerNumber' => 1000, 'today' => new \DateTimeImmutable('2026-10-20'),
+    ], 'Z77\\Module\\Order')->output();
+} catch (\Throwable $e) {
+    $bytes = 'ERROR ' . $e->getMessage();
+}
+check('P3 pdf/deliveryNote draws offline: title, the delivery address in the window, article number, quantity and unit, the text line, the signature line',
+    str_starts_with($bytes, '%PDF-') && str_contains($bytes, '(Lieferschein 42)') && str_contains($bytes, '(Anna Muster)')
+    && str_contains($bytes, '(PN22)') && str_contains($bytes, '(Pinot Noir 2022)') && str_contains($bytes, '(Bitte kuehl lagern)') && str_contains($bytes, 'Ware erhalten'));
+check('P4 … and NO price: neither the unit price nor a total appears on the delivery note', !str_contains($bytes, '24.50') && !str_contains($bytes, '147.00'));
+
+// ── C. the year-close warning (offline) ──────────────────────────────────
+
+echo "C. InvoiceableOrdersCheck (offline)\n";
+$msg = InvoiceableOrdersCheck::message(['id' => 7, 'number' => 1, 'order_date' => '2026-10-14', 'status_code' => 'to-invoice', 'kind' => 'organisation', 'company' => 'Test-Firma xy', 'first_name' => 'A', 'last_name' => 'B'], ['to-invoice' => 'Zu fakturieren']);
+check('C1 the warning names the order, its date, the customer and the status label', str_contains($msg, 'Auftrag 1 vom 14.10.2026 an Test-Firma xy steht in «Zu fakturieren»'));
+check('C2 registered under the open-work scope period-close in orderConfig, as a class name',
+    (require $root . '/packages/module-order/src/App/Config/orderConfig.inc.php')['openWorkChecks']['period-close'] === [InvoiceableOrdersCheck::class]);
 
 // ── M. database ──────────────────────────────────────────────────────────
 

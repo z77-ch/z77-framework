@@ -86,11 +86,12 @@ final class FakeIo implements IOInterface
 
 // ── fixtures ────────────────────────────────────────────────────────────────
 
-$packages = ['kernel/core', 'module-contact', 'module-debtor', 'module-dms', 'module-financial', 'module-mandator', 'module-vat'];
+$packages = ['kernel/core', 'module-article', 'module-contact', 'module-debtor', 'module-dms', 'module-financial', 'module-mandator', 'module-order', 'module-vat'];
 $dataRoot = static fn(string $pkg): string => "{$root}/packages/{$pkg}/data";
 $allRoots = array_map($dataRoot, $packages);
-// z77.ch's package set: everything but module-debtor.
-$chRoots  = array_map($dataRoot, array_values(array_diff($packages, ['module-debtor'])));
+// The base package set of the target tree: everything but module-debtor and the two modules that hang
+// their entries under its groups (module-article, module-order — they wait without debtor, ADR-050).
+$chRoots  = array_map($dataRoot, array_values(array_diff($packages, ['module-debtor', 'module-article', 'module-order'])));
 
 $defaultFile = $root . '/packages/kernel/core/data/framework/routing/navigation.default.json';
 $default     = json_decode((string) file_get_contents($defaultFile), true);
@@ -198,8 +199,8 @@ $expected = array_merge($expectedBackend, $expectedFrontend);
 echo "NSEED-1 seeds of all packages\n";
 $files = NavigationSeeds::discover($allRoots);
 check('NSEED-1a one seed file per package, sorted by name',
-    array_map('basename', $files) === ['kernel.json', 'module-contact.json', 'module-debtor.json', 'module-dms.json',
-        'module-financial.json', 'module-mandator.json', 'module-vat.json'], implode(', ', array_map('basename', $files)));
+    array_map('basename', $files) === ['kernel.json', 'module-article.json', 'module-contact.json', 'module-debtor.json', 'module-dms.json',
+        'module-financial.json', 'module-mandator.json', 'module-order.json', 'module-vat.json'], implode(', ', array_map('basename', $files)));
 $seeds = NavigationSeeds::read($files);
 $keys  = array_values(array_filter(array_merge(array_column($seeds, 'key'), array_column($default, 'key'))));
 check('NSEED-1b keys unique across the union and the default file', count($keys) === count(array_unique($keys)));
@@ -217,7 +218,7 @@ file_put_contents($override . '/' . NavigationSeeds::SEED_DIR . '/module-vat.jso
 $withOverride = NavigationSeeds::discover(array_merge([$override], $allRoots));
 check('NSEED-1f an override tier replaces a package seed by file name (CE)',
     in_array(str_replace('\\', '/', $override) . '/' . NavigationSeeds::SEED_DIR . '/module-vat.json', $withOverride, true)
-    && count($withOverride) === 7);
+    && count($withOverride) === 9);
 $bad = [['name' => 'X', 'module' => '', 'slot' => '', 'parent_key' => null]];
 file_put_contents($override . '/' . NavigationSeeds::SEED_DIR . '/bad.json', json_encode($bad));
 $thrown = '';
@@ -253,10 +254,10 @@ $labels     = static fn(string $prefix) => array_values(array_map(static fn($l) 
     array_filter($lines, static fn($l) => str_starts_with($l, $prefix) && !str_contains(substr($l, strlen($prefix)), ' > '))));
 $roots = array_values(array_map(static fn($l) => explode(' [', substr($l, strlen('backend-main: ')))[0],
     array_filter($lines, static fn($l) => str_starts_with($l, 'backend-main: ') && !str_contains(substr($l, strlen('backend-main: ')), ' > '))));
-check('NSEED-2g with module-debtor: the area «Aufträge» (the daily work, owner 2026-10-13: Rechnungen, Debitoren = open items, Zahlungseingänge, Mahnungen) after Finanzen, its master data — the debtors first — under Stammdaten › Aufträge — nothing of it under Finanzen',
+check('NSEED-2g with module-debtor, -article and -order: the area «Aufträge» (the daily work: Aufträge — module-order, first since P7 step 7 —, then owner 2026-10-13: Rechnungen, Debitoren = open items, Zahlungseingänge, Mahnungen), Auftragsstatus and Artikel under Stammdaten › Aufträge after Finanzen, its master data — the debtors first — under Stammdaten › Aufträge — nothing of it under Finanzen',
     $roots === ['Webseiten', 'Finanzen', 'Aufträge', 'Kontakte', 'Drive', 'Stammdaten', 'Service']
-    && $labels('backend-main: Aufträge > ') === ['Rechnungen', 'Debitoren', 'Zahlungseingänge', 'Mahnungen']
-    && $labels('backend-main: Stammdaten > Aufträge > ') === ['Debitoren', 'Zahlungskonditionen', 'Zahlungsziele', 'Mahnstufen']
+    && $labels('backend-main: Aufträge > ') === ['Aufträge', 'Rechnungen', 'Debitoren', 'Zahlungseingänge', 'Mahnungen']
+    && $labels('backend-main: Stammdaten > Aufträge > ') === ['Debitoren', 'Zahlungskonditionen', 'Zahlungsziele', 'Mahnstufen', 'Auftragsstatus', 'Artikel']
     && $labels('backend-main: Stammdaten > ') === ['Firma', 'Finanzen', 'Aufträge', 'Kontakte', 'System']
     && $labels('backend-main: Stammdaten > Finanzen > ') === ['Geschäftsjahre', 'Kontenplan', 'MWST-Codes'],
     implode(' | ', $lines));
@@ -362,7 +363,7 @@ check('NSEED-7d second run: nothing to add, file untouched',
     file_get_contents($navFile) === $before && str_contains($io->out(), 'nothing to add'), $io->out());
 $io->lines = [];
 $run($allRoots);
-check('NSEED-7e module-debtor installed later: its 10 entries added (area, group, eight screens)', str_contains($io->out(), '10 entries added'), $io->out());
+check('NSEED-7e module-debtor, -article and -order installed later: their 13 entries added (debtor: area, group, eight screens; Artikel, Aufträge, Auftragsstatus)', str_contains($io->out(), '13 entries added') && str_contains($io->out(), '+ «Aufträge» (auftraege-liste)'), $io->out());
 unlink($navFile);
 $io->lines = [];
 $run($chRoots);

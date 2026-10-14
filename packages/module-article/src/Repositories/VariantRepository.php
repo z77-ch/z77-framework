@@ -25,6 +25,22 @@ class VariantRepository extends DoctrineRepository
         return $this->findOneBy(['product' => $product, 'label' => '']);
     }
 
+    /**
+     * The variants a NEW document line may name: active, of an active product, by number — the
+     * article picker of a source (module-order's order window, a `<datalist>`). One query, the
+     * products joined. Article knows no source; the source asks.
+     *
+     * @return list<Variant>
+     */
+    public function selectable(): array
+    {
+        return $this->em()->createQueryBuilder()
+            ->select('v', 'p')->from(Variant::class, 'v')->join('v.product', 'p')
+            ->where('v.active = true')->andWhere('p.active = true')
+            ->orderBy('v.number', 'ASC')
+            ->getQuery()->getResult();
+    }
+
     /** @return list<Variant> every variant of $product, by id */
     public function allOf(Product $product): array
     {

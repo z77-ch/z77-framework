@@ -2,6 +2,8 @@
 
 namespace Z77\Module\Order\Repositories;
 
+use Doctrine\DBAL\ArrayParameterType;
+use Doctrine\DBAL\ParameterType;
 use Doctrine\ORM\Query;
 use Z77\Module\Order\Entities\SalesOrder;
 use Z77\Persistence\Doctrine\Repository\DoctrineRepository;
@@ -65,5 +67,130 @@ class SalesOrderRepository extends DoctrineRepository
     public function findByNumber(int $number): ?SalesOrder
     {
         return $this->findOneBy(['number' => $number]);
+    }
+
+    // ── the list (plan §9.3, listing.md) ────────────────────────────────
+
+    /**
+     * One page of orders matching $search, sorted by the fixed map, the id breaking every tie.
+     * The ids are chosen in SQL, the entities loaded in one DQL query (the debtor list's model).
+     *
+     * @return list<SalesOrder>
+     */
+    public function search(OrderSearch $search, int $offset, int $limit): array
+    {
+        [$where, $params, $types] = $this->searchWhere($search);
+        $dir  = $search->descending ? 'DESC' : 'ASC';
+        $name = "CASE WHEN c.kind = 'organisation' THEN c.company ELSE CONCAT(c.last_name, ' ', c.first_name) END";
+        $order = match ($search->sort) {
+            'date'   => "o.order_date {$dir}, o.number {$dir}",
+            'name'   => "{$name} {$dir}, o.number {$dir}",
+            'amount' => "o.total_gross {$dir}, o.number {$dir}",
+            default  => "o.number {$dir}",
+        };
+        $ids = $this->connection()->fetchFirstColumn(
+            "SELECT o.id FROM sales_order o JOIN contact c ON c.id = o.contact_id{$where} ORDER BY {$order}, o.id {$dir} LIMIT ? OFFSET ?",
+            array_merge($params, [max(1, $limit), max(0, $offset)]),
+            array_merge($types, [ParameterType::INTEGER, ParameterType::INTEGER])
+        );
+        if ($ids === []) {
+            return [];
+        }
+        $byId = [];
+        foreach ($this->em()->createQueryBuilder()->select('o', 'c')->from(SalesOrder::class, 'o')->join('o.contact', 'c')
+            ->where('o.id IN (:ids)')->setParameter('ids', array_map('intval', $ids), ArrayParameterType::INTEGER)
+            ->getQuery()->getResult() as $row) {
+            $byId[$row->getId()] = $row;
+        }
+
+        return array_values(array_filter(array_map(static fn($id) => $byId[(int) $id] ?? null, $ids)));
+    }
+
+    /** How many orders match $search — the pager and the badge. */
+    public function countSearch(OrderSearch $search): int
+    {
+        [$where, $params, $types] = $this->searchWhere($search);
+
+        return (int) $this->connection()->fetchOne("SELECT COUNT(*) FROM sales_order o JOIN contact c ON c.id = o.contact_id{$where}", $params, $types);
+    }
+
+    /**
+     * The orders per status code — what the view tabs count after mapping the codes to their tab
+     * by FLAG (the screen does that; the repository knows no flag). One query.
+     *
+     * @return array<string, int> status code → orders
+     */
+    public function countPerStatus(): array
+    {
+        return array_map('intval', $this->connection()->fetchAllKeyValue('SELECT status_code, COUNT(*) FROM sales_order GROUP BY status_code'));
+    }
+
+    /**
+     * The orders in one of $statusCodes dated $from–$to (both inclusive): the first $limit as rows
+     * (id, number, order date, status code, the customer's name) and the total count — the year
+     * close's warning (`Close\InvoiceableOrdersCheck`). Plain SQL, no lock.
+     *
+     * @param list<string> $statusCodes
+     * @return array{rows: list<array<string, mixed>>, count: int}
+     */
+    public function inStatusBetween(array $statusCodes, \DateTimeImmutable $from, \DateTimeImmutable $to, int $limit): array
+    {
+        if ($statusCodes === []) {
+            return ['rows' => [], 'count' => 0];
+        }
+        $params = [$statusCodes, $from->format('Y-m-d'), $to->format('Y-m-d')];
+        $types  = [ArrayParameterType::STRING, ParameterType::STRING, ParameterType::STRING];
+        $where  = ' WHERE o.status_code IN (?) AND o.order_date >= ? AND o.order_date <= ?';
+        $rows   = $this->connection()->fetchAllAssociative(
+            "SELECT o.id, o.number, o.order_date, o.status_code, c.kind, c.company, c.first_name, c.last_name FROM sales_order o JOIN contact c ON c.id = o.contact_id{$where} ORDER BY o.order_date, o.number LIMIT " . max(1, $limit),
+            $params,
+            $types
+        );
+        $count = (int) $this->connection()->fetchOne("SELECT COUNT(*) FROM sales_order o JOIN contact c ON c.id = o.contact_id{$where}", $params, $types);
+
+        return ['rows' => $rows, 'count' => $count];
+    }
+
+    /** @return array{0: string, 1: list<mixed>, 2: list<mixed>} WHERE clause (with its leading space, or ''), parameters, types */
+    private function searchWhere(OrderSearch $search): array
+    {
+        $where  = [];
+        $params = [];
+        $types  = [];
+        $add = static function (string $sql, mixed $value, ParameterType|ArrayParameterType $type = ParameterType::STRING) use (&$where, &$params, &$types): void {
+            $where[]  = $sql;
+            $params[] = $value;
+            $types[]  = $type;
+        };
+        if ($search->statusCodes !== null) {
+            if ($search->statusCodes === []) {
+                $where[] = '1 = 0';   // a view no status falls into
+            } else {
+                $add('o.status_code IN (?)', array_values($search->statusCodes), ArrayParameterType::STRING);
+            }
+        }
+        if ($search->number !== null) {
+            $add('o.number = ?', $search->number, ParameterType::INTEGER);
+        }
+        if ($search->dateFrom !== null) {
+            $add('o.order_date >= ?', $search->dateFrom);
+        }
+        if ($search->dateTo !== null) {
+            $add('o.order_date <= ?', $search->dateTo);
+        }
+        if ($search->name !== null) {
+            $like = '%' . addcslashes($search->name, '\\%_') . '%';
+            $where[] = "(c.company LIKE ? OR c.last_name LIKE ? OR c.first_name LIKE ? OR CONCAT(c.last_name, ' ', c.first_name) LIKE ? OR CONCAT(c.first_name, ' ', c.last_name) LIKE ?)";
+            array_push($params, $like, $like, $like, $like, $like);
+            array_push($types, ParameterType::STRING, ParameterType::STRING, ParameterType::STRING, ParameterType::STRING, ParameterType::STRING);
+        }
+        if ($search->subject !== null) {
+            $add('o.subject LIKE ?', '%' . addcslashes($search->subject, '\\%_') . '%');
+        }
+        if ($search->amount !== null) {
+            $add('o.total_gross = ?', $search->amount);
+        }
+
+        return [$where === [] ? '' : ' WHERE ' . implode(' AND ', $where), $params, $types];
     }
 }

@@ -1,5 +1,18 @@
 [
     {
+        "key": "auftraege-liste",
+        "name": "Aufträge",
+        "module": "backend",
+        "group": "order",
+        "controller": "order",
+        "action": "list",
+        "slot": "",
+        "active": true,
+        "param": "",
+        "sort_key": 0,
+        "parent_key": "auftraege"
+    },
+    {
         "key": "auftragsstatus",
         "name": "Auftragsstatus",
         "module": "backend",

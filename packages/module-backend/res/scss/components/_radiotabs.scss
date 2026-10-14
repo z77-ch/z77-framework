@@ -62,3 +62,38 @@ $be-radiotabs-max: 6;
         outline-offset: -2px;
     }
 }
+
+// ── Tabs INSIDE the container — a window (ADR-047) has no toolbar ───────────────────────────
+// Owner board 2026-10-14, first user: the order window (Auftrag · Verlauf · Belege, module-order).
+// A window lives OUTSIDE `.be-shell` (core.js appends it to `body`), so the `:has()` rule above
+// cannot reach its labels. Here the `.be-viewtabs` group stands INSIDE `.be-radiotabs`, AFTER the
+// radios — a sibling, so `:checked ~` lights the label without `:has()`, scoped to its own
+// container: several windows with radio tabs side by side do not light each other.
+//
+//   <form class="be-radiotabs" novalidate>
+//     <input type="radio" class="be-radiotabs__radio" name="x_tab" id="x-1-tab-1" data-tab="1" checked> …
+//     <div class="be-viewtabs" role="group" aria-label="Abschnitte">
+//       <label class="be-viewtabs__tab be-viewtabs__tab--for" for="x-1-tab-1" data-tab="1">A</label> …
+//     </div>
+//     <section class="be-radiotabs__panel" data-tab="1">…</section> …
+//   </form>
+//
+// The ids carry the record (`x-<id>-tab-n`) — two open windows must not share a `for` target.
+
+.be-radiotabs > .be-viewtabs {
+    margin-bottom: var(--space-3);
+    border-bottom: 1px solid var(--be-line);
+}
+.be-radiotabs > .be-viewtabs .be-viewtabs__tab { padding-block: var(--space-2); margin-bottom: -1px; }
+.be-radiotabs > .be-viewtabs .be-viewtabs__tab:first-child { padding-left: 0; }
+
+@for $i from 1 through $be-radiotabs-max {
+    .be-radiotabs__radio[data-tab="#{$i}"]:checked ~ .be-viewtabs .be-viewtabs__tab--for[data-tab="#{$i}"] {
+        color:               var(--be-text);
+        border-bottom-color: var(--be-accent);
+    }
+    .be-radiotabs__radio[data-tab="#{$i}"]:focus-visible ~ .be-viewtabs .be-viewtabs__tab--for[data-tab="#{$i}"] {
+        outline:        2px solid var(--be-accent);
+        outline-offset: -2px;
+    }
+}
