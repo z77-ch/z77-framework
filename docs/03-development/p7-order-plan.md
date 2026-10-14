@@ -5,6 +5,7 @@
 approved and written ([ADR-040 addendum 2026-10-14](../02-decisions/adr-040-business-module-cut.md),
 [ADR-043 addendum 2026-10-14](../02-decisions/adr-043-order-status-and-stock-movements.md)).
 Built: steps 1 and 2 (`module-article` slim and the stock seam — [`article.md`](../topics/article.md));
+steps 3, 5 and 6 (`module-order`: status as data, schema, the write path — [`order.md`](../topics/order.md));
 step 4 (the debtor seams) in parallel. The board on the developer canvas
 ([`backend-screen.md`](../01-handbook/backend-screen.md), checklist 1) is still open for the order
 screens (step 7).
@@ -561,7 +562,10 @@ topic doc updated, `npm run docs:check` green.
 
 **Progress:** steps 0 (docs: §14 answers, ADR addenda, §7 / §9 notes — the canvas board for the
 order screens is still open) · 1 and 2 built 2026-10-14 ([`article.md`](../topics/article.md);
-harness sections A / K green, B waits for PC1 — ARTICLE-DB-001) · 4 in parallel (debtor seams).
+harness sections A / K green, B waits for PC1 — ARTICLE-DB-001) · 4 in parallel (debtor seams) · 3, 5 and 6
+built 2026-10-14 ([`order.md`](../topics/order.md): `OrderStatus` + Stammdaten › Auftragsstatus, the
+schema and the range `order`, `OrderService` create / update / status change / delivery-note status;
+harness S / N / T / D green, M waits for PC1 — ORDER-DB-001).
 
 ---
 

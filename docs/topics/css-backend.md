@@ -219,6 +219,7 @@ default first), the panel anchors right inside the viewport.
 | Finanzen › Journal | «Buchen» | confirm |
 | Finanzen › Auswertungen | — | n/a |
 | Finanzen (whole area) | fiscal year at the TOP OF THE RAIL | selection (built) |
+| Aufträge › Aufträge | «+ Neuer Auftrag» (opens the order window; step 7 of `p7-order-plan.md`, not built yet — `order.md`) | create |
 | Aufträge › Debitoren | — | n/a |
 | Aufträge › Rechnungen | «+ Rechnung» | create |
 | Aufträge › Zahlungseingänge | «+ camt.054 einlesen» | create |
@@ -233,6 +234,7 @@ default first), the panel anchors right inside the viewport.
 | Stammdaten › Zahlungskonditionen | «+ Kondition» | create |
 | Stammdaten › Zahlungsziele | «+ Zahlungsziel» | create |
 | Stammdaten › Mahnstufen | «+ Mahnstufe» | create |
+| Stammdaten › Auftragsstatus | «+ Status» (opens the status window; built 2026-10-14, `order.md`) | create (built) |
 | Stammdaten › Artikel | «+ Artikel» (opens the article window; built 2026-10-14, `article.md`) | create (built) |
 | Stammdaten › Adresstypen | «+ Adresstyp» | create |
 | Stammdaten › Benutzer | «+ Benutzer» | create |

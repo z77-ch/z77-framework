@@ -1,0 +1,42 @@
+{
+    "name": "z77/module-order",
+    "description": "Z77 Order Module | sales orders (quote and order as one record), order status as data with behaviour flags and a change log, the stock call per write, the invoice drafted from the order (ADR-040, ADR-043, P7 slim).",
+    "type": "library",
+    "keywords": ["php", "framework", "order", "quote", "sales-order", "order-status", "z77"],
+    "homepage": "https://github.com/z77-ch/z77-framework",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Peter Ruepp",
+            "email": "peter.ruepp@z77.ch"
+        }
+    ],
+    "autoload": {
+        "psr-4": {
+            "Z77\\Module\\Order\\": "src/"
+        }
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true,
+    "extra": {
+        "branch-alias": {
+            "dev-main": "1.0.x-dev"
+        }
+    },
+    "require": {
+        "php": ">=8.4",
+        "z77/kernel": "^1.0",
+        "z77/persistence-doctrine": "^1.0",
+        "z77/module-vat": "^1.0",
+        "z77/module-contact": "^1.0",
+        "z77/module-mandator": "^1.0",
+        "z77/module-article": "^1.0",
+        "z77/module-debtor": "^1.0"
+    },
+    "support": {
+        "issues": "https://github.com/z77-ch/z77-framework/issues",
+        "source": "https://github.com/z77-ch/module-order",
+        "docs": "https://github.com/z77-ch/z77-framework/tree/main/docs"
+    },
+    "readme": "README.md"
+}

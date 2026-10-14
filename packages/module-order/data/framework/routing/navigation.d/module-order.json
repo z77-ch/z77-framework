@@ -1,0 +1,15 @@
+[
+    {
+        "key": "auftragsstatus",
+        "name": "Auftragsstatus",
+        "module": "backend",
+        "group": "order",
+        "controller": "order-status",
+        "action": "list",
+        "slot": "",
+        "active": true,
+        "param": "",
+        "sort_key": 10,
+        "parent_key": "stammdaten-auftraege"
+    }
+]
