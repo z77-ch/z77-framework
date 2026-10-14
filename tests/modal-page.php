@@ -18,6 +18,15 @@
  *     list itself stays the error it is (no redirect loop);
  *   - run() asks hasPage() for every HtmlResponse.
  *
+ * LISTING-FETCH-001 (listing.md) — the fetch side of the same `main` question:
+ *
+ *   - LayoutManager::completeFetchMain() — in fetch mode an action that put
+ *     nothing into `main` (every standard list) gets its page's `main`: the
+ *     layout configs' pin (a fragment's list), else its `{action}.tpl.php`;
+ *     a dialog or the journal's own list partial stays as it is; page mode
+ *     and nothing-to-show are no-ops; only `main` is taken from the configs;
+ *   - run() calls it for every HtmlResponse.
+ *
  * Verified live as well (2026-10-13, z77.ch on 8077, page vs fetch mode):
  * payment-terms, payment-target, dunning-level, tax-code, contact, navigation,
  * journal, drive — fetch.md MODAL-PAGE-001.
@@ -136,6 +145,102 @@ check('W1 run() answers an HtmlResponse without a page by the fallback',
     (bool) preg_match('/\$response instanceof HtmlResponse && !\$this->layoutManager->hasPage\(\)\)\s*\{\s*return \$this->dialogPageFallback\(\);/', $base));
 check('W2 the flashes html() took for the page are put back for the list',
     str_contains($base, 'pushFlashAfterRedirect($flash[\'type\'], $flash[\'text\'])'));
+
+echo "\ncompleteFetchMain() (LISTING-FETCH-001)\n";
+/** Config stub: module config sets no `main`; the controller config pins the list (and more that must stay out). */
+$configs = new class {
+    public array $controller = [];
+    public function getArrayConfig(string $configName, ?string $nameSpace = 'ROOT', bool $throwError = true): \Z77\Core\Config\Config
+    {
+        return new \Z77\Core\Config\Config($configName === 'Ui/Config/layoutConfig'
+            ? ['levelElements' => ['body' => ['shellTopbar' => ['partials/topbar']]], 'styleSheets' => [['name' => 'base']]]
+            : $this->controller);
+    }
+};
+/** FileFinder stub: a template exists when listed; its path is `ns:file`. */
+$finder = new class {
+    public array $known = [];
+    public function getFirstTplMatch(string $fileName, string $nameSpace, bool $throwError = true): string
+    {
+        $key = $nameSpace . ':' . ltrim($fileName, '/');
+        if (!in_array($key, $this->known, true)) {
+            throw new RuntimeException("not found: {$key}");
+        }
+        return $key;
+    }
+};
+DI::getInstance()->set('ConfigManager', $configs, true);
+DI::getInstance()->set('FileFinder', $finder, true);
+
+/** A LayoutManager in the state a FETCH initialize() + the action left it. */
+function fetchLayout(array $main, string $action = 'listAction', bool $fetch = true): LayoutManager
+{
+    $ref = new ReflectionClass(LayoutManager::class);
+    $lm  = $ref->newInstanceWithoutConstructor();
+    foreach (['module' => 'Backend', 'group' => 'Finance', 'controller' => 'InvoiceController', 'action' => $action, 'nameSpace' => 'Z77\Module\Backend'] as $p => $v) {
+        $ref->getProperty($p)->setValue($lm, $v);
+    }
+    $ref->getProperty('fetchMode')->setValue($lm, $fetch);
+    $ref->getProperty('partialFilePaths')->setValue($lm, $main === [] ? [] : ['body' => ['main' => $main]]);
+    return $lm;
+}
+function partials(LayoutManager $lm): array
+{
+    return (new ReflectionProperty(LayoutManager::class, 'partialFilePaths'))->getValue($lm);
+}
+
+$listPin = 'Z77\Module\Debtor:Backend/InvoiceController/listAction.tpl.php';
+$configs->controller = ['levelElements' => ['body' => ['main' => [['nameSpace' => 'Z77\Module\Debtor', 'path' => 'Backend/InvoiceController', 'name' => 'listAction']]]]];
+$finder->known = [$listPin];
+
+$lm = fetchLayout([]);
+$lm->completeFetchMain();
+check('F1 fragment list in fetch mode: empty main gets the configured pin', (partials($lm)['body']['main'] ?? []) === [$listPin], partials($lm));
+check('F2 only `main` is taken from the configs (no other section, no assets)',
+    array_keys(partials($lm)['body'] ?? []) === ['main']
+    && (new ReflectionProperty(LayoutManager::class, 'assets'))->getValue($lm) === ['css' => [], 'js' => []],
+    partials($lm));
+
+$dialog = 'Z77\Module\Debtor:Backend/InvoiceController/edit.tpl.php';
+$lm = fetchLayout([$dialog], 'editAction');
+$lm->completeFetchMain();
+check('F3 a dialog in fetch mode keeps its partial alone (no list in front of it)', partials($lm)['body']['main'] === [$dialog], partials($lm));
+
+$journalList = 'Z77\Module\Financial:Backend/JournalController/listAction.tpl.php';
+$finder->known[] = $journalList;
+$lm = fetchLayout([]);   // as JournalControllerTrait::journalListPage() does it in fetch mode
+$lm->removeSection('main');
+$lm->addPartials('listAction', 'Backend/JournalController', 'Z77\Module\Financial');
+$lm->completeFetchMain();
+check('F4 the journal (own list partial in fetch mode) stays as it is', partials($lm)['body']['main'] === [$journalList], partials($lm));
+
+$configs->controller = [];
+$ownList = 'Z77\Module\Backend:Finance/InvoiceController/listAction.tpl.php';
+$finder->known = [$ownList];
+$lm = fetchLayout([]);
+$lm->completeFetchMain();
+check('F5 no pin: empty main gets the action template', (partials($lm)['body']['main'] ?? []) === [$ownList], partials($lm));
+
+$finder->known = [];
+$lm = fetchLayout([], 'toggleAction');
+$lm->completeFetchMain();
+check('F6 no pin, no action template: stays empty, no exception', (partials($lm)['body']['main'] ?? []) === [], partials($lm));
+
+$configs->controller = ['levelElements' => ['body' => ['main' => [['nameSpace' => 'Z77\Module\Debtor', 'path' => 'Backend/InvoiceController', 'name' => 'listAction']]]]];
+$finder->known = [$listPin];
+$lm = fetchLayout([], 'listAction', false);
+$lm->completeFetchMain();
+check('F7 page mode / never initialized: no-op', partials($lm) === [], partials($lm));
+
+$lm = fetchLayout([]);
+check('F8 completeFetchMain() leaves hasPage() true in fetch mode', $lm->hasPage() === true);
+
+$base = (string) file_get_contents(__DIR__ . '/../packages/kernel/core/src/Controller/AbstractBaseController.php');
+$lmSrc = (string) file_get_contents(__DIR__ . '/../packages/kernel/core/src/Services/LayoutManager.php');
+check('W3 run() completes the fetch main of every HtmlResponse',
+    (bool) preg_match('/\$response instanceof HtmlResponse\)\s*\{[^}]*\$this->layoutManager->completeFetchMain\(\);/s', $base));
+check('W4 initialize() marks fetch mode before returning early',
+    (bool) preg_match('/FETCH_SKELETON\);\s*\$this->fetchMode = true;\s*return \$this;/', $lmSrc));
 
 echo "\n{$pass} passed, {$fail} failed\n";
 exit($fail > 0 ? 1 : 0);

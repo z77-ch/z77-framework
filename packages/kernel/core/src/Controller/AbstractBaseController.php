@@ -70,6 +70,11 @@ abstract class AbstractBaseController
         if ($response instanceof HtmlResponse && !$this->layoutManager->hasPage()) {
             return $this->dialogPageFallback();
         }
+        if ($response instanceof HtmlResponse) {
+            // Fetch mode: a list action adds nothing to `main` — it gets its page's
+            // `main` (the fragment pin), so a region load finds its region (LISTING-FETCH-001).
+            $this->layoutManager->completeFetchMain();
+        }
 
         return $response;
     }
