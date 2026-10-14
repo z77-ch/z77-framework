@@ -18,6 +18,10 @@ return [
         // Contacts with typed addresses (module-contact, plan §4a) — the
         // party debtor and order share. Same mount pattern as `finance`.
         'contact'   => 'contact',
+        // Order processing (P7 slim, `p7-order-plan.md` §3): the article master (module-article)
+        // now; module-order's order and order-status screens join the group and its default
+        // becomes `order` then. The mounts resolve only in projects that install the module.
+        'order'     => 'article',
     ],
     // View area: this module owns a layout and is a top-level UI environment.
     // The environment identity is the module key; its display label + navigation

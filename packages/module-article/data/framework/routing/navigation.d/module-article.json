@@ -1,0 +1,15 @@
+[
+    {
+        "key": "artikel",
+        "name": "Artikel",
+        "module": "backend",
+        "group": "order",
+        "controller": "article",
+        "action": "list",
+        "slot": "",
+        "active": true,
+        "param": "",
+        "sort_key": 11,
+        "parent_key": "stammdaten-auftraege"
+    }
+]

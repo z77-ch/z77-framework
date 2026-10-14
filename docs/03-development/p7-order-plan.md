@@ -1,9 +1,13 @@
 # P7 slim — order, article (slim), the invoicing and the stock seam
 
-**Status:** `[PLAN]` — written 2026-10-14 from the owner decisions of the same day; nothing built.
-Open questions for the owner: §14. Before building: the owner's answers, the two ADR addenda (§2)
-and a board on the developer canvas ([`backend-screen.md`](../01-handbook/backend-screen.md),
-checklist 1).
+**Status:** `[IN PROGRESS]` — written 2026-10-14 from the owner decisions of the same day. **Owner go
+2026-10-14 («Alles ok los»):** the six recommendations of §14 accepted, the two ADR addenda (§2)
+approved and written ([ADR-040 addendum 2026-10-14](../02-decisions/adr-040-business-module-cut.md),
+[ADR-043 addendum 2026-10-14](../02-decisions/adr-043-order-status-and-stock-movements.md)).
+Built: steps 1 and 2 (`module-article` slim and the stock seam — [`article.md`](../topics/article.md));
+step 4 (the debtor seams) in parallel. The board on the developer canvas
+([`backend-screen.md`](../01-handbook/backend-screen.md), checklist 1) is still open for the order
+screens (step 7).
 **Basis:** [`order-debtor-financial-bauplan.md`](order-debtor-financial-bauplan.md) (§1 correction
 principle, §2 module cut, §4b article and stock, §7 order, §9 phases, §13 creation from outside),
 [ADR-040](../02-decisions/adr-040-business-module-cut.md) (incl. addendum 2026-10-13),
@@ -56,7 +60,7 @@ product-group tree, variant options, images, part lists (P6 full / shop); return
 | O7 | **Collective invoice LATER. Creation from outside LATER** — the design must not block either (§12). |
 | O8 | **Backend:** area «Aufträge» — first entry «Aufträge» with «+ Neuer Auftrag» in the action cell, then Rechnungen, Debitoren, Zahlungseingänge, Mahnungen; master data under Stammdaten › Aufträge (Auftragsstatus, Artikel …). Order editor as a WINDOW (ADR-047) like the invoice. |
 
-### Decisions of this plan (to confirm with the build go)
+### Decisions of this plan (confirmed with the owner's build go 2026-10-14)
 
 | # | Decision | Why |
 |---|---|---|
@@ -72,7 +76,7 @@ product-group tree, variant options, images, part lists (P6 full / shop); return
 | D10 | **The invoice gets an optional `subject`** (debtor: `InvoiceDraft::$subject`, column `invoice.subject`, expand only, printed under the title; the manual invoice editor gets the field too — Rule 9). Order passes «Auftrag {number} · {Betreff}». | The order's subject must reach the customer's invoice; a text line would mix header facts into the lines. |
 | D11 | **Totals are computed once — by debtor.** The order window, the order PDF and the list total come from `InvoicingService::preview()` (the same `compose()` the booking print runs: VAT per code, 0.05 rounding). The order stores `total_net` / `total_tax` / `total_gross` written by its one write path at each save, for the list only. | One calculation (Rule 2); the preview IS what the booking print will issue. |
 
-### Amendments the owner decisions require (ADR addenda, to approve before building)
+### Amendments the owner decisions require (ADR addenda — approved by the owner 2026-10-14, written)
 
 - **ADR-040 addendum 2026-10-14:** a source may issue AND book in one unit of work
   (`invoiceAndFinalize()`), without a stored draft, when the source itself is the draft (O1).
@@ -406,7 +410,7 @@ Board on the developer canvas BEFORE building (backend-screen checklist 1).
 | `auftragsstatus` | Auftragsstatus | `stammdaten-auftraege` | `backend/order/order-status/list` | 10 |
 
 `module-article/…/module-article.json`: `artikel` «Artikel» under `stammdaten-auftraege`
-(`backend/order/article/list`). The parent is debtor's key and article does not require debtor —
+(`backend/order/article/list`, `sort_key` 11 — built 2026-10-14; the installer added it to z77.ch). The parent is debtor's key and article does not require debtor —
 ADR-050: the entry waits until debtor is installed (always the case with order).
 **Debtor's seed** moves Rechnungen / Debitoren / Zahlungseingänge / Mahnungen to `sort_key` 1–4.
 The merge is add-only: an existing installation keeps its order — z77.ch is changed by hand in its
@@ -465,6 +469,10 @@ when the stock service demands it — the mandatory reason (§8.1).
   validator's invariants come back as field errors.
 - **Stammdaten › Artikel** — a standard list (Nr., Name, Einheit, Preis, MWST, Konto, «führt
   Bestand», «Aktiv»), ⋮ → the article dialog (§4.1); the price history under the form, read-only.
+  *Built 2026-10-14 ([`article.md`](../topics/article.md)) with one deviation:* the row's STATE ICON
+  opens the article as a WINDOW (ADR-047) and there is no ⋮ — the row has one action besides the
+  switch, and a modal popup cannot carry the field help (ADR-048: the help window is unusable
+  beside a modal). «Löschen …» (only an unreferenced article) sits in the window's action row.
 
 ---
 
@@ -551,24 +559,35 @@ topic doc updated, `npm run docs:check` green.
 | 10 | `InvoiceableOrdersCheck` under `period-close` | the year-close screen lists invoiceable orders of the year as a warning |
 | 11 | Docs and live test: plan §7/§9, ADR addenda, `order.md` / `article.md` / `debtor.md`, README of both packages; the DB harnesses run on PC1 | owner live test passed; `docs:check` green |
 
+**Progress:** steps 0 (docs: §14 answers, ADR addenda, §7 / §9 notes — the canvas board for the
+order screens is still open) · 1 and 2 built 2026-10-14 ([`article.md`](../topics/article.md);
+harness sections A / K green, B waits for PC1 — ARTICLE-DB-001) · 4 in parallel (debtor seams).
+
 ---
 
-## 14. Open questions for the owner
+## 14. Questions for the owner — answered 2026-10-14
 
-| # | Question | Recommendation |
-|---|---|---|
-| Q1 | Delivery note: does printing go to a status set ONCE per installation (flag `deliveryNoteTarget`), or does the print ask each time «geliefert / direkt zu fakturieren»? | **The flag** (D6): one setting, no extra click; a service business marks «zu fakturieren», retail «geliefert». The status can still be moved forward in one click. |
-| Q2 | Article: keep A3 in the schema (product + hidden default variant, the line references the variant) although the screen shows ONE flat article? | **Yes.** The UI stays flat; the schema does not have to change when the first variant (vintage, size) arrives — order lines already point at variants. |
-| Q3 | Price: history with «gültig ab» (A4) now, or one price field? | **History now, one field on screen** («Preis», «gültig ab» = today). A position proposes the price valid at the order date; changing it later is a table change on master data that every installation would need. |
-| Q4 | May an order go to a contact that is not yet a debtor (quote to a prospect), the debtor profile being opened at the booking print? | **Yes** (D9) — no customer number for prospects who never order; the profile opens with the default terms when the first invoice is booked. |
-| Q5 | Order numbers start at 1 (range `order` at 0)? | **Yes**; an installation with history gets the range raised by its import (P8). |
-| Q6 | «Erledigt»: set by hand from «gebucht» (window or later a selection action), not automatically on payment? | **By hand.** Automatic on payment would make the receivables side drive the order status (ADR-040 decision 6); the list's «Zahlung» column shows what is paid. |
+The owner accepted all six recommendations on 2026-10-14 («Alles ok los»). The answers are binding
+for the build steps; the column «Answer» records them.
+
+| # | Question | Recommendation | Answer (owner, 2026-10-14) |
+|---|---|---|---|
+| Q1 | Delivery note: does printing go to a status set ONCE per installation (flag `deliveryNoteTarget`), or does the print ask each time «geliefert / direkt zu fakturieren»? | **The flag** (D6): one setting, no extra click; a service business marks «zu fakturieren», retail «geliefert». The status can still be moved forward in one click. | **The flag** (`deliveryNoteTarget`, seed «Geliefert»). |
+| Q2 | Article: keep A3 in the schema (product + hidden default variant, the line references the variant) although the screen shows ONE flat article? | **Yes.** The UI stays flat; the schema does not have to change when the first variant (vintage, size) arrives — order lines already point at variants. | **Yes** — two levels in the schema, one flat mask (built, step 1). |
+| Q3 | Price: history with «gültig ab» (A4) now, or one price field? | **History now, one field on screen** («Preis», «gültig ab» = today). A position proposes the price valid at the order date; changing it later is a table change on master data that every installation would need. | **History now, one field in the mask** (built, step 1). |
+| Q4 | May an order go to a contact that is not yet a debtor (quote to a prospect), the debtor profile being opened at the booking print? | **Yes** (D9) — no customer number for prospects who never order; the profile opens with the default terms when the first invoice is booked. | **Yes** (D9). |
+| Q5 | Order numbers start at 1 (range `order` at 0)? | **Yes**; an installation with history gets the range raised by its import (P8). | **Yes** — the range `order` is created at 0. |
+| Q6 | «Erledigt»: set by hand from «gebucht» (window or later a selection action), not automatically on payment? | **By hand.** Automatic on payment would make the receivables side drive the order status (ADR-040 decision 6); the list's «Zahlung» column shows what is paid. | **By hand.** |
 
 ---
 
 ## 15. Contradictions with the existing plan and ADRs
 
-What the owner decisions of 2026-10-14 change — to record in the addenda (§2) and in plan §7/§9:
+What the owner decisions of 2026-10-14 change — **recorded 2026-10-14** (owner go): items 1, 3, 4, 9 in
+the [ADR-040](../02-decisions/adr-040-business-module-cut.md) and
+[ADR-043](../02-decisions/adr-043-order-status-and-stock-movements.md) addenda of 2026-10-14, item 5 in
+the ADR-043 addendum (closing paragraph), items 1, 2, 5–8 as notes in plan §4b / §7 / §9
+(`order-debtor-financial-bauplan.md`); debtor.md's rule (item 1) is amended with step 4.
 
 1. **Plan §7 «Order status ↔ invoice» (2026-10-10)** and the 2026-10-13 debtor pending: the order
    created an invoice DRAFT («in Fakturierung») booked later from the invoice screen, the booking

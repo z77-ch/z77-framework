@@ -31,6 +31,7 @@
         "z77/module-mandator": "^1.0",
         "z77/module-financial": "^1.0",
         "z77/module-debtor": "^1.0",
+        "z77/module-article": "^1.0",
         "z77/persistence-doctrine": "^1.0"
     },
     "minimum-stability": "dev",

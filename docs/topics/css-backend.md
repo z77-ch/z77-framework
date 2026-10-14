@@ -233,6 +233,7 @@ default first), the panel anchors right inside the viewport.
 | Stammdaten › Zahlungskonditionen | «+ Kondition» | create |
 | Stammdaten › Zahlungsziele | «+ Zahlungsziel» | create |
 | Stammdaten › Mahnstufen | «+ Mahnstufe» | create |
+| Stammdaten › Artikel | «+ Artikel» (opens the article window; built 2026-10-14, `article.md`) | create (built) |
 | Stammdaten › Adresstypen | «+ Adresstyp» | create |
 | Stammdaten › Benutzer | «+ Benutzer» | create |
 | Service › Backup | «↓ Daten sichern \| ▾» (main part = Daten) | split picker (built) |

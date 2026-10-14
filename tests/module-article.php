@@ -1,0 +1,400 @@
+<?php
+
+/**
+ * module-article harness (CLI) — P7 slim steps 1 and 2 (`docs/03-development/p7-order-plan.md`
+ * §4.1, §8.1, §11): the article master (P6 slim) and the stock seam.
+ *
+ * What is load-bearing here:
+ *
+ *   - (A, offline) the validator of ONE save over the typed draft: number (required, no blank,
+ *     at most 32, unique through the injected question), name, unit, the price string (no sign,
+ *     two decimals, «'» grouping, a negative price explained), net / gross, «gültig ab», the tax
+ *     code (unknown refused; an INACTIVE code refused for a new reference and kept for the
+ *     article that carries it — ADR-043 decision 19), the revenue account (digits; the soft
+ *     check is NULL-SAFE: «not checkable» refuses nothing, a refusal names the field); the draft
+ *     from a form body;
+ *   - (K, offline) the stock seam: `StockLineTarget` quantities (three places, sign kept, no
+ *     float, nothing else), `StockRequest` (origin, trigger, actor required, a line listed once,
+ *     an empty state valid), `StockConfirmation` (reason + confirmed), `PendingStockLedger`
+ *     books nothing and never refuses, `StockLedgers::default()` returns it; article never names
+ *     module-order or `OrderStatus` in code (tokens, comments excluded), the stock seam names no
+ *     financial class (stock never posts), no superglobal in the package;
+ *   - (B, database) the migration on an empty schema (`diff` clean afterwards); create = product
+ *     + DEFAULT variant + one price; the price history (same day replaces, a later day adds, an
+ *     unchanged save adds nothing, the price valid at a day); a stale version refused; a taken
+ *     number refused; deactivate = product and variants; delete of an unreferenced article, a
+ *     REFERENCED one refused by the database (a foreign key like module-order's line) and kept.
+ *
+ * Run: php tests/module-article.php
+ * A and K need nothing but PHP (the packages are autoloaded from the repository when vendor/
+ * is missing). B needs what tests/module-debtor.php needs — vendor/ with Doctrine, a reachable
+ * MariaDB and the `z77test` credentials in `%USERPROFILE%\.z77\mariadb.txt` or Z77_TEST_DB_*;
+ * without them B is reported SKIPPED and the exit code reflects A and K only. The schema
+ * `z77test_<random>` and the temp installation are removed at the end.
+ */
+
+$root     = str_replace('\\', '/', realpath(__DIR__ . '/..'));
+$autoload = $root . '/vendor/autoload.php';
+$vendor   = is_file($autoload);
+if ($vendor) {
+    require $autoload;
+} else {
+    // Offline sections only: a minimal PSR-4 autoloader over the packages (tests/module-vat.php model).
+    spl_autoload_register(static function (string $class) use ($root): void {
+        $map = [
+            'Z77\\Core\\'           => $root . '/packages/kernel/core/src/',
+            'Z77\\Shared\\'         => $root . '/packages/kernel/shared/src/',
+            'Z77\\Persistence\\'    => $root . '/packages/kernel/persistence/src/',
+            'Z77\\Module\\Vat\\'    => $root . '/packages/module-vat/src/',
+            'Z77\\Module\\Article\\' => $root . '/packages/module-article/src/',
+        ];
+        foreach ($map as $prefix => $dir) {
+            if (str_starts_with($class, $prefix)) {
+                $file = $dir . str_replace('\\', '/', substr($class, strlen($prefix))) . '.php';
+                if (is_file($file)) {
+                    require $file;
+                }
+                return;
+            }
+        }
+    });
+}
+
+use Z77\Module\Article\Services\ArticleDraft;
+use Z77\Module\Article\Stock\PendingStockLedger;
+use Z77\Module\Article\Stock\StockConfirmation;
+use Z77\Module\Article\Stock\StockLedger;
+use Z77\Module\Article\Stock\StockLedgers;
+use Z77\Module\Article\Stock\StockLineTarget;
+use Z77\Module\Article\Stock\StockRequest;
+use Z77\Module\Article\Stock\StockResult;
+use Z77\Module\Article\Validators\ArticleValidator;
+use Z77\Module\Vat\Entities\TaxCode;
+use Z77\Persistence\Resolver\DataSourceResolver;
+use Z77\Persistence\Resolver\UnifiedEntityManager;
+
+$pass = 0;
+$fail = 0;
+
+function check(string $label, bool $ok): void
+{
+    global $pass, $fail;
+    if ($ok) { $pass++; echo "  ok   {$label}\n"; }
+    else     { $fail++; echo "  FAIL {$label}\n"; }
+}
+
+/** Runs $fn and returns the exception when it throws $class, null otherwise. */
+function caught(callable $fn, string $class): ?\Throwable
+{
+    try { $fn(); } catch (\Throwable $e) { return $e instanceof $class ? $e : null; }
+    return null;
+}
+
+function throws(callable $fn, string $class): bool
+{
+    return caught($fn, $class) !== null;
+}
+
+function taxCode(string $code, bool $active): TaxCode
+{
+    $row = new TaxCode();
+    $row->setCode($code);
+    $row->setActive($active);
+
+    return $row;
+}
+
+/** A complete, valid draft with $changes applied. */
+function draft(array $changes = []): ArticleDraft
+{
+    $values = array_merge([
+        'number' => '1001', 'name' => 'Beratung', 'unit' => 'h', 'price' => '150.00', 'priceMode' => 'net',
+        'validFrom' => '2026-10-14', 'taxCode' => 'UN', 'revenueAccount' => '3400', 'stockRelevant' => false,
+    ], $changes);
+
+    return new ArticleDraft(...$values);
+}
+
+/**
+ * The validator with the three questions answered offline: taken numbers, the tax codes
+ * (UN active, OLD inactive), the account check ($accountProblem null = not checkable).
+ */
+function validator(ArticleDraft $draft, ?\Closure $accountProblem = null, string $kept = ''): ArticleValidator
+{
+    $codes = ['UN' => taxCode('UN', true), 'OLD' => taxCode('OLD', false)];
+
+    return new ArticleValidator(
+        $draft,
+        numberTaken: static fn(string $n): bool => $n === 'TAKEN',
+        taxCode: static fn(string $c): ?TaxCode => $codes[$c] ?? null,
+        accountProblem: $accountProblem,
+        keptTaxCode: $kept,
+    );
+}
+
+/** The field errors of $draft (empty = valid). */
+function errorsOf(ArticleDraft $draft, ?\Closure $accountProblem = null, string $kept = ''): array
+{
+    $v = validator($draft, $accountProblem, $kept);
+    $v->isValid();
+
+    return $v->getFieldErrors();
+}
+
+// ── A. validator (offline) ───────────────────────────────────────────────
+
+echo "A. Validator of one article save (offline)\n";
+check('A1 a complete draft is valid (financial absent: the account is not checkable → accepted)', errorsOf(draft()) === []);
+check('A2 number required', isset(errorsOf(draft(['number' => '']))['number']));
+check('A3 number without blank, at most 32', isset(errorsOf(draft(['number' => 'A 1']))['number']) && isset(errorsOf(draft(['number' => str_repeat('9', 33)]))['number']) && errorsOf(draft(['number' => 'WEIN-2024-75/0.75'])) === []);
+check('A4 a taken number is refused on the field', str_contains(errorsOf(draft(['number' => 'TAKEN']))['number'] ?? '', 'schon vergeben'));
+check('A5 name required, unit at most 16, unit may be empty', isset(errorsOf(draft(['name' => '']))['name']) && isset(errorsOf(draft(['unit' => str_repeat('x', 17)]))['unit']) && errorsOf(draft(['unit' => ''])) === []);
+check('A6 price required; «abc» and three decimals refused', isset(errorsOf(draft(['price' => '']))['price']) && isset(errorsOf(draft(['price' => 'abc']))['price']) && isset(errorsOf(draft(['price' => '1.234']))['price']));
+check('A7 a negative price is refused with the reason (a return is a negative QUANTITY)', str_contains(errorsOf(draft(['price' => '-5']))['price'] ?? '', 'negativer Menge'));
+check('A8 «1\'234.50», «12,5», «0» are prices; normalizePrice gives the decimal', errorsOf(draft(['price' => "1'234.50"])) === [] && ArticleValidator::normalizePrice('12,5') === '12.5' && ArticleValidator::normalizePrice("1'234.50") === '1234.50' && errorsOf(draft(['price' => '0'])) === []);
+check('A9 price mode net / gross only', isset(errorsOf(draft(['priceMode' => 'brutto']))['price_mode']) && errorsOf(draft(['priceMode' => 'gross'])) === []);
+check('A10 «gültig ab» required and a real date', isset(errorsOf(draft(['validFrom' => '']))['valid_from']) && isset(errorsOf(draft(['validFrom' => '2026-02-30']))['valid_from']) && ArticleValidator::parseDate('2026-02-28') instanceof \DateTimeImmutable);
+check('A11 tax code required; an unknown code refused', isset(errorsOf(draft(['taxCode' => '']))['tax_code']) && str_contains(errorsOf(draft(['taxCode' => 'XX']))['tax_code'] ?? '', 'gibt es nicht'));
+check('A12 an INACTIVE tax code: refused as a new reference, kept by the article that carries it (ADR-043 decision 19)',
+    str_contains(errorsOf(draft(['taxCode' => 'OLD']))['tax_code'] ?? '', 'inaktiv') && errorsOf(draft(['taxCode' => 'OLD']), null, 'OLD') === []);
+check('A13 revenue account required and digits only', isset(errorsOf(draft(['revenueAccount' => '']))['revenue_account']) && isset(errorsOf(draft(['revenueAccount' => '34a0']))['revenue_account']) && isset(errorsOf(draft(['revenueAccount' => '12345678901']))['revenue_account']));
+$refusal = static fn(string $n): ?string => $n === '3800' ? 'Konto 3800 ist im Kontenplan nicht «auf Belegen wählbar»' : null;
+check('A14 the soft account check: its refusal lands on the field; «not checkable» (null) refuses nothing',
+    str_contains(errorsOf(draft(['revenueAccount' => '3800']), $refusal)['revenue_account'] ?? '', 'auf Belegen wählbar') && errorsOf(draft(), $refusal) === []);
+$fromBody = ArticleDraft::fromArray(['number' => ' 1001 ', 'name' => 'Beratung', 'tax_code' => ' un ', 'price' => '150', 'price_mode' => 'net', 'valid_from' => '2026-10-14', 'revenue_account' => '3400', 'stock_relevant' => '1', 'evil' => ['x']]);
+check('A15 the draft from a form body: trimmed, code upper-cased, the switch read, a missing key is empty / off',
+    $fromBody->number === '1001' && $fromBody->taxCode === 'UN' && $fromBody->stockRelevant === true && $fromBody->unit === ''
+    && ArticleDraft::fromArray([])->stockRelevant === false && ArticleDraft::fromArray(['number' => ['array']])->number === '');
+check('A16 the validator never mutates the draft (a readonly DTO — nothing managed is touched before validation)', (new \ReflectionClass(ArticleDraft::class))->getProperty('number')->isReadOnly());
+
+// ── K. the stock seam (offline) ──────────────────────────────────────────
+
+echo "K. Stock seam (offline)\n";
+check('K1 quantities: three places, the sign kept (an inflow / a return), «-0» is zero',
+    StockLineTarget::quantity('2') === '2.000' && StockLineTarget::quantity('-1.5') === '-1.500' && StockLineTarget::quantity('-0') === '0.000' && StockLineTarget::quantity('007.25') === '7.250');
+check('K2 quantities: four places, text, a float-looking exponent are refused',
+    throws(fn() => StockLineTarget::quantity('1.2345'), \InvalidArgumentException::class) && throws(fn() => StockLineTarget::quantity('abc'), \InvalidArgumentException::class) && throws(fn() => StockLineTarget::quantity('1e3'), \InvalidArgumentException::class));
+$line = new StockLineTarget('17', 5, '3', '0');
+check('K3 a line target: reference, variant, reserved / consumed normalised; default zero', $line->lineRef === '17' && $line->variantId === 5 && $line->reserved === '3.000' && $line->consumed === StockLineTarget::ZERO);
+check('K4 a line target needs a reference and a variant id ≥ 1', throws(fn() => new StockLineTarget(' ', 5), \InvalidArgumentException::class) && throws(fn() => new StockLineTarget('1', 0), \InvalidArgumentException::class));
+$request = new StockRequest('order', '42', 'status:scheduled>delivered', 'harness', [$line, new StockLineTarget('18', 6, '0', '-2')]);
+check('K5 a request carries origin, trigger, actor and the COMPLETE state', $request->sourceType === 'order' && $request->sourceRef === '42' && count($request->lines) === 2 && $request->confirmation === null);
+check('K6 an empty state is valid — «this document holds nothing» (every line deleted)', count((new StockRequest('order', '42', 'lines', 'harness', []))->lines) === 0);
+check('K7 a line listed twice is refused — a request carries each line\'s ONE target', throws(fn() => new StockRequest('order', '42', 'lines', 'harness', [$line, new StockLineTarget('17', 9, '1')]), \InvalidArgumentException::class));
+check('K8 origin, trigger and actor are required; only targets in the list',
+    throws(fn() => new StockRequest('', '42', 'lines', 'harness', []), \InvalidArgumentException::class)
+    && throws(fn() => new StockRequest('order', '42', ' ', 'harness', []), \InvalidArgumentException::class)
+    && throws(fn() => new StockRequest('order', '42', 'lines', '', []), \InvalidArgumentException::class)
+    && throws(fn() => new StockRequest('order', '42', 'lines', 'harness', ['17']), \InvalidArgumentException::class));
+check('K9 a reversal confirmation needs a reason and a yes', (new StockConfirmation(' Fehlklick «geliefert» '))->reason === 'Fehlklick «geliefert»'
+    && throws(fn() => new StockConfirmation(''), \InvalidArgumentException::class) && throws(fn() => new StockConfirmation('Grund', false), \InvalidArgumentException::class));
+$pending = new PendingStockLedger();
+$result  = $pending->bringTo($request);
+$again   = $pending->bringTo(new StockRequest('order', '42', 'status:delivered>done-no-stock', 'harness', [new StockLineTarget('17', 5)]));
+check('K10 the pending ledger books nothing and never refuses (no reason demanded in slim)', $pending instanceof StockLedger && $result instanceof StockResult && !$result->hasMovements() && $result->movements === 0 && !$again->hasMovements());
+check('K11 StockLedgers::default() is the pending ledger in P7 slim', StockLedgers::default(new UnifiedEntityManager(new DataSourceResolver(['file' => 'File'])), 'harness') instanceof PendingStockLedger);
+check('K12 a movement count is never negative', throws(fn() => StockResult::booked(-1), \InvalidArgumentException::class) && StockResult::booked(2)->hasMovements());
+
+/** The code of every PHP file under $dir without its comments — what a grep for a NAME must look at. */
+$codeOf = static function (string $dir): array {
+    $out = [];
+    $it  = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS));
+    foreach ($it as $file) {
+        if (!str_ends_with($file->getFilename(), '.php')) {
+            continue;
+        }
+        $code = '';
+        foreach (token_get_all((string) file_get_contents($file->getPathname())) as $token) {
+            if (is_array($token) && in_array($token[0], [T_COMMENT, T_DOC_COMMENT], true)) {
+                continue;
+            }
+            $code .= is_array($token) ? $token[1] : $token;
+        }
+        $out[str_replace('\\', '/', $file->getPathname())] = $code;
+    }
+
+    return $out;
+};
+$articleCode = $codeOf($root . '/packages/module-article');
+$named       = static fn(array $code, string $needle): array => array_keys(array_filter($code, static fn(string $c) => str_contains($c, $needle)));
+check('K13 article never names module-order or OrderStatus in code (one way only, plan §3)', $named($articleCode, 'Module\\Order') === [] && $named($articleCode, 'OrderStatus') === [] && count($articleCode) > 20);
+check('K14 the stock seam names no financial class — stock never posts (ADR-043 decision 18)', $named($codeOf($root . '/packages/module-article/src/Stock'), 'Financial') === []);
+check('K15 no superglobal in module-article (HTTP input only through Request, Rule 4)', array_filter($articleCode, static fn(string $c) => preg_match('/\$_(GET|POST|SERVER|REQUEST|COOKIE)\b/', $c) === 1) === []);
+check('K16 the entities follow ADR-039 addendum (b): Product and Variant are EMPTY subclasses of their mapped superclass',
+    (new \ReflectionClass(\Z77\Module\Article\Entities\Product::class))->getParentClass()->getName() === \Z77\Module\Article\Entities\AbstractProduct::class
+    && (new \ReflectionClass(\Z77\Module\Article\Entities\Variant::class))->getParentClass()->getName() === \Z77\Module\Article\Entities\AbstractVariant::class
+    && array_filter((new \ReflectionClass(\Z77\Module\Article\Entities\Product::class))->getMethods(), static fn($m) => $m->getDeclaringClass()->getName() === \Z77\Module\Article\Entities\Product::class) === []
+    && array_filter((new \ReflectionClass(\Z77\Module\Article\Entities\Variant::class))->getProperties(), static fn($p) => $p->getDeclaringClass()->getName() === \Z77\Module\Article\Entities\Variant::class) === []);
+
+// ── B. database ──────────────────────────────────────────────────────────
+
+$credentials = [
+    'host'     => getenv('Z77_TEST_DB_HOST') ?: 'localhost',
+    'user'     => getenv('Z77_TEST_DB_USER') ?: 'z77test',
+    'password' => getenv('Z77_TEST_DB_PASSWORD') ?: '',
+];
+if ($credentials['password'] === '') {
+    $file = rtrim((string) (getenv('USERPROFILE') ?: getenv('HOME')), '/\\') . '/.z77/mariadb.txt';
+    foreach (is_file($file) ? file($file, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) : [] as $credLine) {
+        if (str_starts_with($credLine, $credentials['user'] . '=')) {
+            $credentials['password'] = substr($credLine, strlen($credentials['user']) + 1);
+        }
+    }
+}
+if (!$vendor || $credentials['password'] === '' || !class_exists(\Doctrine\DBAL\DriverManager::class)) {
+    echo "B. Database — SKIPPED (" . (!$vendor ? 'no vendor/' : 'no z77test password: %USERPROFILE%\\.z77\\mariadb.txt or Z77_TEST_DB_PASSWORD') . ")\n";
+    echo "\n{$pass} passed, {$fail} failed (B skipped)\n";
+    exit($fail === 0 ? 0 : 1);
+}
+
+echo "B. Database (throwaway schema)\n";
+
+$dbName = 'z77test_' . bin2hex(random_bytes(4));
+$admin  = \Doctrine\DBAL\DriverManager::getConnection([
+    'driver' => 'pdo_mysql', 'host' => $credentials['host'],
+    'user' => $credentials['user'], 'password' => $credentials['password'],
+]);
+$admin->executeStatement("CREATE DATABASE `{$dbName}` CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci");
+
+$base = str_replace('\\', '/', sys_get_temp_dir()) . '/z77-module-article-' . getmypid();
+define('ABS_BASE_PATH', $base);
+define('DEBUG', false);
+
+$write = function (string $rel, string $content) use ($base): void {
+    $path = $base . '/' . $rel;
+    @mkdir(dirname($path), 0777, true);
+    file_put_contents($path, $content);
+};
+$rm = function (string $dir) use (&$rm): void {
+    foreach (glob($dir . '/{,.}*', GLOB_BRACE) ?: [] as $f) {
+        if (basename($f) === '.' || basename($f) === '..') { continue; }
+        is_dir($f) ? $rm($f) : @unlink($f);
+    }
+    @rmdir($dir);
+};
+register_shutdown_function(static function () use ($admin, $dbName, $rm, $base): void {
+    try { $admin->executeStatement("DROP DATABASE IF EXISTS `{$dbName}`"); } catch (\Throwable) {}
+    $rm($base);
+});
+
+// The REAL packages are the modules' source paths. module-financial is NOT registered: the account
+// check is soft then (`LedgerAccountCheck` answers «not checkable»), the way a project without
+// bookkeeping runs — the refusal itself is section A14 and the live check (article.md).
+$packages = [
+    'Vat'      => $root . '/packages/module-vat',
+    'Mandator' => $root . '/packages/module-mandator',
+    'Article'  => $root . '/packages/module-article',
+];
+$namespaces = '';
+foreach ($packages as $name => $path) {
+    $namespaces .= "'Z77\\\\Module\\\\{$name}\\\\' => ['sourcePaths' => ['{$path}']],\n";
+}
+$write('config/vendor/fileFinder.inc.php', "<?php return ['resourceDir' => ['sourceDir' => 'src', 'tplDir' => 'res/view/templates'], 'namespaces' => [\n{$namespaces}]];");
+$write('config/vendor/moduleManager.inc.php', "<?php return ['modulePrefix' => 'Module', 'frameworkPrefix' => 'Z77', 'defaultModule' => 'vat', 'modules' => ['vat' => [], 'mandator' => [], 'article' => []]];");
+$write('config/systemConfig.inc.php', "<?php return ['canonicalBaseUrl' => '', 'baseCurrency' => 'CHF'];");
+$write('config/i18n.inc.php', "<?php return ['defaultLanguage' => 'de', 'languages' => ['de']];");
+$write('config/client/database.inc.php', '<?php return ' . var_export([
+    'host' => $credentials['host'], 'port' => null, 'name' => $dbName,
+    'user' => $credentials['user'], 'password' => $credentials['password'],
+], true) . ';');
+@mkdir($base . '/data/framework/vat', 0777, true);
+foreach (['tax_codes', 'tax_rates'] as $name) {
+    copy($packages['Vat'] . '/data/framework/vat/' . $name . '.default.json', $base . '/data/framework/vat/' . $name . '.json');
+}
+
+\Z77\Core\DI::getInstance(true)
+    ->set('CacheManager', \Z77\Core\Libraries\CacheManager::class, true)
+    ->set('FileFinder', fn($c) => new \Z77\Core\Libraries\FileFinder($c->get('CacheManager')), true)
+    ->set('ConfigManager', fn($c) => new \Z77\Core\Libraries\ConfigManager($c->get('FileFinder'), $c->get('CacheManager')), true)
+    ->set('ModuleManager', fn($c) => new \Z77\Core\Services\ModuleManager($c->get('ConfigManager')), true)
+    ->set('I18n', fn($c) => new \Z77\Core\Services\I18n($c->get('ConfigManager')), true)
+    ->set('DataSourceResolver', fn() => new DataSourceResolver(['file' => 'File', 'doctrine' => 'Doctrine']), true)
+    ->set('UnifiedEntityManager', fn($c) => new UnifiedEntityManager($c->get('DataSourceResolver')), true);
+\Z77\Core\DI::getCacheManager()->setCacheDir($base . '/var/cache');
+$em = \Z77\Core\DI::getUnifiedEntityManager();
+
+$db = \Doctrine\DBAL\DriverManager::getConnection(['driver' => 'pdo_mysql', 'dbname' => $dbName] + [
+    'host' => $credentials['host'], 'user' => $credentials['user'], 'password' => $credentials['password'],
+]);
+$tables = fn() => array_map('strtolower', $db->createSchemaManager()->listTableNames());
+$count  = fn(string $table) => (int) $db->fetchOne("SELECT COUNT(*) FROM {$table}");
+
+/** Runs one z77-db command in-process on a fresh application; returns [exit code, output]. */
+$run = static function (array $input): array {
+    $app = \Z77\Persistence\Doctrine\Console\MigrationsApplication::create(
+        \Z77\Persistence\Doctrine\Bootstrap::buildEntityManager(),
+        \Z77\Persistence\Doctrine\Console\MigrationDirectories::collect(\Z77\Core\DI::getModuleManager(), \Z77\Core\DI::getFileFinder()),
+        \Z77\Core\DI::getCacheManager()->generatedPhp(),
+        \Z77\Persistence\Doctrine\Console\MigrationDirectories::missing(\Z77\Core\DI::getModuleManager(), \Z77\Core\DI::getFileFinder())
+    );
+    $app->setAutoExit(false);
+    $out  = new \Symfony\Component\Console\Output\BufferedOutput();
+    $code = $app->run(new \Symfony\Component\Console\Input\ArrayInput($input + ['--no-interaction' => true]), $out);
+
+    return [$code, $out->fetch()];
+};
+
+$config = \Z77\Core\DI::getModuleManager()->getModuleConfig('article');
+check('B1 the module config announces Product, Variant and Price — and nothing else', $config?->get('doctrineEntities') === [
+    \Z77\Module\Article\Entities\Product::class, \Z77\Module\Article\Entities\Variant::class, \Z77\Module\Article\Entities\Price::class,
+]);
+[$code, $out] = $run(['command' => 'migrate']);
+check('B2 migrate exits 0' . ($code !== 0 ? " — got {$code}: " . trim($out) : ''), $code === 0);
+check('B3 the three tables exist', array_diff(['article_product', 'article_variant', 'article_price'], $tables()) === []);
+$migrations = glob($packages['Article'] . '/res/migrations/Version*.php');
+[$code, $out] = $run(['command' => 'diff', '--namespace' => 'Z77\\Module\\Article\\Migrations']);
+check('B4 diff after migrate reports NO change — mapping and migration agree' . (str_contains($out, 'No changes detected') ? '' : ' — ' . trim($out)),
+    $code !== 0 && str_contains($out, 'No changes detected') && glob($packages['Article'] . '/res/migrations/Version*.php') === $migrations);
+
+$service = new \Z77\Module\Article\Services\ArticleService($em, 'harness');
+/** @var \Z77\Module\Article\Repositories\VariantRepository $variants */
+$variants = $em->getRepository(\Z77\Module\Article\Entities\Variant::class);
+/** @var \Z77\Module\Article\Repositories\PriceRepository $prices */
+$prices = $em->getRepository(\Z77\Module\Article\Entities\Price::class);
+$day    = static fn(string $iso) => new \DateTimeImmutable($iso);
+
+$product = $service->create(draft(['validFrom' => '2026-10-01']));
+$variant = $variants->defaultOf($product);
+check('B5 create: product + DEFAULT variant (empty label) + one price row', $product->getId() !== null && $variant !== null && $variant->isDefault()
+    && $variant->getNumber() === '1001' && $variant->getUnit() === 'h' && $count('article_price') === 1 && $product->getCreatedBy() === 'harness' && $product->getVersion() === 1);
+check('B6 the soft account check: without module-financial registered the account is stored unverified', $product->getRevenueAccount() === '3400');
+
+$v = $product->getVersion();
+$product = $service->update((int) $product->getId(), $v, draft(['price' => '150.00', 'validFrom' => '2026-10-20']));
+check('B7 an unchanged price on a later day writes NO row (A4)', $count('article_price') === 1 && $product->getVersion() > $v);
+$product = $service->update((int) $product->getId(), $product->getVersion(), draft(['price' => '160', 'validFrom' => '2026-11-01']));
+check('B8 a changed price writes a NEW row from its day', $count('article_price') === 2);
+$product = $service->update((int) $product->getId(), $product->getVersion(), draft(['price' => '165', 'validFrom' => '2026-11-01', 'priceMode' => 'gross']));
+check('B9 a second change on the SAME day replaces that day\'s row', $count('article_price') === 2
+    && $prices->onDay($variant, $day('2026-11-01'))?->getAmount()->toDecimal() === '165.00' && $prices->onDay($variant, $day('2026-11-01'))?->priceMode()->value === 'gross');
+check('B10 the price valid at a day: before the first row none, the old one until the change, the new one from it',
+    $prices->validAt($variant, $day('2026-09-30')) === null
+    && $prices->validAt($variant, $day('2026-10-31'))?->getAmount()->toDecimal() === '150.00'
+    && $prices->validAt($variant, $day('2026-11-01'))?->getAmount()->toDecimal() === '165.00'
+    && count($prices->historyOf($variant)) === 2);
+check('B11 a STALE version is refused, nothing written', throws(fn() => $service->update((int) $product->getId(), 1, draft(['name' => 'Neu'])), \Z77\Module\Article\Services\ArticleConflictException::class)
+    && $db->fetchOne('SELECT name FROM article_product WHERE id = ?', [$product->getId()]) === 'Beratung');
+$taken = caught(fn() => $service->create(draft(['name' => 'Doppelt'])), \Z77\Module\Article\Services\InvalidArticleException::class);
+check('B12 a taken number is refused on the field — no second product', $taken !== null && isset($taken->validator->getFieldErrors()['number']) && $count('article_product') === 1);
+$refused = caught(fn() => $service->update((int) $product->getId(), $product->getVersion(), draft(['taxCode' => 'XX'])), \Z77\Module\Article\Services\InvalidArticleException::class);
+check('B13 an unknown tax code (module-vat) is refused before anything is touched', $refused !== null && isset($refused->validator->getFieldErrors()['tax_code'])
+    && $db->fetchOne('SELECT tax_code FROM article_product WHERE id = ?', [$product->getId()]) === 'UN');
+
+$product = $service->setActive((int) $product->getId(), false);
+check('B14 deactivate: product AND variant inactive', (int) $db->fetchOne('SELECT active FROM article_product WHERE id = ?', [$product->getId()]) === 0
+    && (int) $db->fetchOne('SELECT active FROM article_variant WHERE product_id = ?', [$product->getId()]) === 0);
+
+// A row elsewhere references the variant — the shape of module-order's line (a foreign key on article_variant).
+$db->executeStatement('CREATE TABLE harness_line (id INT AUTO_INCREMENT NOT NULL, variant_id INT NOT NULL, PRIMARY KEY (id), CONSTRAINT fk_harness_line_variant FOREIGN KEY (variant_id) REFERENCES article_variant (id)) ENGINE = InnoDB');
+$db->insert('harness_line', ['variant_id' => $variant->getId()]);
+$product = $em->getRepository(\Z77\Module\Article\Entities\Product::class)->find((int) $product->getId());
+check('B15 a REFERENCED article is not deleted — the database refuses, the service says «deactivate»',
+    throws(fn() => $service->delete((int) $product->getId(), $product->getVersion()), \Z77\Module\Article\Services\ArticleInUseException::class)
+    && $count('article_product') === 1 && $count('article_price') === 2);
+$db->executeStatement('DELETE FROM harness_line');
+$product = $em->getRepository(\Z77\Module\Article\Entities\Product::class)->find((int) $product->getId());
+$service->delete((int) $product->getId(), $product->getVersion());
+check('B16 an unreferenced article is deleted with its variant and price history', $count('article_product') === 0 && $count('article_variant') === 0 && $count('article_price') === 0);
+
+echo "\n{$pass} passed, {$fail} failed\n";
+exit($fail === 0 ? 0 : 1);

@@ -40,6 +40,7 @@ SOURCE=/packages/module-contact/data/framework/routing/navigation.d/module-conta
 SOURCE=/packages/module-dms/data/framework/routing/navigation.d/module-dms.json
 SOURCE=/packages/module-mandator/data/framework/routing/navigation.d/module-mandator.json
 SOURCE=/packages/module-debtor/data/framework/routing/navigation.d/module-debtor.json
+SOURCE=/packages/module-article/data/framework/routing/navigation.d/module-article.json
 SOURCE=/packages/kernel/shared/src/Import/NavigationSeeds.php
 SOURCE=/packages/kernel/core/data/framework/routing/navigation_aliases.default.json
 SOURCE=/packages/kernel/core/data/framework/seo/metadata.default.json
@@ -346,6 +347,7 @@ hand without a key is recognised by its route.
 | module-mandator | Firma (`stammdaten-firma`) — Mandant (`mandant`) | `stammdaten` |
 | module-debtor | Aufträge (`auftraege`) — Debitoren (`debitoren`, the open items) · Rechnungen (`rechnungen`, P3 part 3) · Zahlungseingänge (`zahlungseingaenge`, P4 part 2) · Mahnungen (`mahnungen`, P4 part 3); later module-order's screens | root 2 |
 | module-debtor | Aufträge (`stammdaten-auftraege`) — Debitoren · Zahlungskonditionen · Zahlungsziele · Mahnstufen (`debitoren-stamm` — the debtor master data, since 2026-10-07 —, `zahlungskonditionen`, `zahlungsziele`, `mahnstufen`) | `stammdaten` (2) |
+| module-article | Artikel (`artikel`, sort 11 — module-order's Auftragsstatus takes 10) | `stammdaten-auftraege` (module-debtor's group; article does not require debtor — the entry waits without it) |
 
 Root order: Webseiten 0, Finanzen 1, Aufträge 2, Kontakte 3, Drive 4, Stammdaten 5, Service 6. Group order under Stammdaten: Firma 0, Finanzen 1, Aufträge 2, Kontakte 3, System 4 (the `sort_key` of each
 package's group). A package whose parent lives in a package it does not require waits: module-vat

@@ -1,6 +1,6 @@
 # ADR-043 — Order status as data, and the stock movements it controls
 
-**Status:** `[APPROVED]` — approved by the owner 2026-09-21 (P0 of [`order-debtor-financial-bauplan.md`](../03-development/order-debtor-financial-bauplan.md))
+**Status:** `[APPROVED]` — approved by the owner 2026-09-21 (P0 of [`order-debtor-financial-bauplan.md`](../03-development/order-debtor-financial-bauplan.md)); addendum 2026-10-14 (P7 slim seed, `invoiceBooked` / `offer` / `deliveryNoteTarget`, position changes trigger stock — approved by the owner)
 **Date:** 2026-09-21
 
 ---
@@ -28,7 +28,7 @@ The design was reviewed on 2026-09-20; the review's objections are worked in (pl
    number), and the flags code reacts to — `reservesStock`, `consumesStock`, `invoiceable`,
    `invoiceInProgress`, `final`. Code never asks «is the status X», it asks «does this status consume
    stock». Seed: offer, reserved, ordered, delivered, to be invoiced, in invoicing, done, done without
-   stock effect.
+   stock effect. *(Amended — seed, `invoiceBooked` instead of `invoiceInProgress`, `offer`, `deliveryNoteTarget`, German label: addendum 2026-10-14.)*
 2. **Invariants per status**, checked when a status is saved:
    - `final ⇒ ¬invoiceable ∧ ¬invoiceInProgress`
    - `consumesStock ⇒ ¬reservesStock`
@@ -61,7 +61,7 @@ The design was reviewed on 2026-09-20; the review's objections are worked in (pl
 11. **The status change is the only trigger.** order turns the target status' flags into **target
     quantities** per line (`reservesStock` → reserved = line quantity, `consumesStock` → consumed = line
     quantity, neither → zero) and asks the service to bring the line there. It passes quantities, never
-    a status, so article never knows `OrderStatus`.
+    a status, so article never knows `OrderStatus`. *(Amended — position changes trigger too, the quantities still from the flags: addendum 2026-10-14.)*
 12. **The movement is the difference against the journal**, never against the previous status. The
     journal knows per order line what is reserved and consumed; the service books only the difference.
     A repeated call finds no difference and books nothing — idempotency by construction.
@@ -132,3 +132,30 @@ The design was reviewed on 2026-09-20; the review's objections are worked in (pl
 | Balance as columns on the variant | Extraction of a stock module becomes a data migration instead of a namespace move |
 | Stock posts its value to the ledger | Valuation is judgement (Q10); it would couple article to financial |
 | Foreign keys from rows to file-based master data | Impossible across two drivers |
+
+## Addendum 2026-10-14 — the P7 slim seed, position changes as trigger, German labels (approved by the owner)
+
+Approved by the owner on 2026-10-14 («Alles ok los») with the P7 slim build plan
+([`p7-order-plan.md`](../03-development/p7-order-plan.md) §2, §4.2, §15). It amends decisions 1 and 11;
+their original text above stays as written, and where it and this addendum differ, the addendum
+applies.
+
+1. **Decision 1 — the seed and the flags.** The seed is Offerte → Terminauftrag → Geliefert → Zu
+   fakturieren → Gebucht → Erledigt mit Lagerbuchung / Erledigt ohne Lagerbuchung (codes `offer`,
+   `scheduled`, `delivered`, `to-invoice`, `booked`, `done`, `done-no-stock`). `invoiceInProgress` is
+   replaced by **`invoiceBooked`** — there is no invoice draft stage for orders (ADR-040 addendum
+   2026-10-14); two flags are added: **`offer`** (the order is a quote) and **`deliveryNoteTarget`**
+   (the status the delivery-note print sets). `invoiceBooked` and `deliveryNoteTarget` are flags by
+   which code SELECTS a status, so each is unique among the active rows (decision 2). The extended
+   invariants are listed in the plan, §4.2.
+2. **Decision 11 — the trigger.** «The status change is the only trigger» becomes **«the order's
+   writes are the only trigger — status change AND position change (add / edit / delete); the
+   quantities still follow from the status flags only»** (owner decision O5). Order sends the
+   COMPLETE target state of the document every time through ONE method
+   (`StockLedger::bringTo()`, module-article); decision 12 (the difference against the journal)
+   makes that safe and idempotent. Quantities, never a status, cross the boundary.
+3. **Decision 1 — the label.** The label stays GERMAN like every master-data label; a customer-facing,
+   multilingual label comes with its first consumer (a shop, a customer portal).
+
+Also approved the same day (owner, plan §15 item 5): **tax code and revenue account sit on the
+ARTICLE** (P6 slim); when the product-group tree comes, it only supplies DEFAULTS for new articles.

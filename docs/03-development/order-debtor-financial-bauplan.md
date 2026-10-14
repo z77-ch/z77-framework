@@ -470,6 +470,11 @@ period-close check (§5.3) and the stocktake block (§4b): a module registers a 
 **These eight are the plan.** What order processing, bookkeeping, receivables and article management
 need, and nothing else.
 
+> **Changed 2026-10-14 (owner go on [`p7-order-plan.md`](p7-order-plan.md) §3 / §15 item 6):**
+> `module-article` requires `module-mandator` as well — the soft revenue-account check
+> (`LedgerAccountCheck::documentAccounts()`) and the shared `accountDatalist` partial live there.
+> No cycle: mandator → kernel, persistence-doctrine.
+
 Named but **outside this plan**, to be built later as their own modules on top of the seam in §7
 (§13): **subscriptions** (turnus, cycles, customer preferences — Q7), **shipping and delivery
 zones**, and a **shop**. None of them is a prerequisite for the eight above; each is an application
@@ -638,6 +643,13 @@ because wdv has no text position type**. None of this is visible from the shop c
 | **A3** | **Two-stage article: product + variant.** Product = the marketing unit (one page, one URL, text, images, producer). Variant (SKU) = the stock, price and invoicing unit (own article number, own purchase and sales price, own stock). Vintage and size are variants. **Every product has at least one variant** — a default variant is created implicitly and the second stage stays hidden in the UI while it is the only one (review 2026-09-20). So article number, price, stock and every document reference always sit on the variant: "no second stage" is a UI fact, never a schema fact. Without this rule a line would have to reference product *or* variant, and that nullable dual reference is exactly the cost this decision is accused of. |
 | **A4** | **Price per variant with "valid from" and history**, net/gross declared per price. An offer price stays a regular feature (it is in use, but in wdv it is a client extension that core code nonetheless calls). The wdv future-price mechanism is dropped — it is effectively unused. |
 | **A-Pos** | **Position types belong in the model:** `service` / `lump sum` / `text` (and `subtotal` later), and the position text is editable from the start. Otherwise the text-only pseudo-articles come back. This requirement is invisible in the shop case and shows up only in the service case. |
+
+> **Changed 2026-10-14 (owner go, [`p7-order-plan.md`](p7-order-plan.md) §15 item 5, ADR-043 addendum
+> 2026-10-14):** tax code and revenue account sit on the ARTICLE, not on the product group; when the
+> tree comes (P6 full), it only supplies DEFAULTS for new articles. P6 SLIM (built 2026-10-14,
+> [`article.md`](../topics/article.md)): product + hidden default variant, price with «gültig ab»
+> history, number, name, unit, tax code, revenue account, «führt Bestand» — no tree, no options,
+> no images.
 
 What this plan builds from A1–A4: the **product group tree** (one placement, carrying revenue
 account, VAT default and turnover statistics), **product + variant**, **prices with history**, the
@@ -1088,13 +1100,17 @@ is financial's; the adapter is the only debtor class that knows financial.
   it has no number and no side effect.
 - order posts nothing.
 
-> **Superseded in part by the owner decisions of 2026-10-14 → [`p7-order-plan.md`](p7-order-plan.md):**
+> **Superseded in part by the owner decisions of 2026-10-14 (build go the same day, ADR-040 and ADR-043
+> addenda 2026-10-14 approved) → [`p7-order-plan.md`](p7-order-plan.md):**
 > order and invoice are two records, but an order-based invoice has NO draft — it is issued and
 > booked from the order at the booking print in one unit of work (`invoiceAndFinalize()`), which
 > sets the order to «gebucht»; the seed becomes Offerte → Terminauftrag → geliefert → zu fakturieren
 > → gebucht → erledigt mit / ohne Lagerbuchung; one range `order` (a simple running number); the
 > invoice is linked per order, not per line; position changes trigger the stock seam as well as
 > status changes. The list of what this changes in §4b, §7 and ADR-040 / ADR-043 is that plan's §15.
+> So the table above reads: ONE `NumberRange` `order` (quote and order are one record — a quote is
+> an order in a status flagged `offer`), «Invoice» calls `invoiceAndFinalize()` (no draft), and the
+> invoice id is recorded on the ORDER (`sales_order.invoice_id`), not per line.
 
 ---
 
@@ -1126,7 +1142,7 @@ is financial's; the adapter is the only debtor class that knows financial.
 
 > **Order changed by the owner (2026-10-13):** P7 comes **before P5**, in a slim form — quote and order with FREE lines (text, quantity incl. negative, unit, price, tax code, revenue account), status as data with the flow of 2026-10-10 (§7 note), the delivery note, the invoice draft from the order through the existing `InvoicingService`; NO articles (P6) and NO stock (P7b) yet, creation from outside (§13) later. Reason: the order closes the daily flow «Auftrag → Rechnung → Zahlung → Mahnung» that was live-tested on 2026-10-13. In the backend «Aufträge › Aufträge» becomes the first entry with «+ Neuer Auftrag» in the action cell. Then P5 / P5b, then P6, P7 with articles, P7b. The review of 2026-10-13 (`review-2026-10-13.md` §7) is the input for P5.
 
-> **Changed by the owner (2026-10-14):** P7 slim comes WITH articles — a P6 slim (number, name, unit, price, tax code, revenue account, «führt Bestand») — and the stock SEAM (flags on status and article, the one call on every status and position change; the movement journal stays P7b). No invoice draft for orders: the booking print runs from the order. Collective invoice and creation from outside later. Build plan, decisions, steps and open questions: [`p7-order-plan.md`](p7-order-plan.md).
+> **Changed by the owner (2026-10-14; build go «Alles ok los» the same day — steps 1 and 2, article and the stock seam, built 2026-10-14):** P7 slim comes WITH articles — a P6 slim (number, name, unit, price, tax code, revenue account, «führt Bestand») — and the stock SEAM (flags on status and article, the one call on every status and position change; the movement journal stays P7b). No invoice draft for orders: the booking print runs from the order. Collective invoice and creation from outside later. Build plan, decisions, steps and open questions: [`p7-order-plan.md`](p7-order-plan.md).
 
 | Phase | Content | Exit |
 |---|---|---|

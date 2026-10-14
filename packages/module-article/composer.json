@@ -1,0 +1,42 @@
+{
+    "name": "z77/module-article",
+    "description": "Z77 Article Module | article master (product + hidden default variant, price with «gültig ab» history, tax code, revenue account, «führt Bestand») and the stock seam StockLedger (ADR-040, ADR-043, P7 slim).",
+    "type": "library",
+    "keywords": ["php", "framework", "article", "product", "variant", "price", "stock", "z77"],
+    "homepage": "https://github.com/z77-ch/z77-framework",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Peter Ruepp",
+            "email": "peter.ruepp@z77.ch"
+        }
+    ],
+    "autoload": {
+        "psr-4": {
+            "Z77\\Module\\Article\\": "src/"
+        }
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true,
+    "extra": {
+        "branch-alias": {
+            "dev-main": "1.0.x-dev"
+        }
+    },
+    "require": {
+        "php": ">=8.4",
+        "z77/kernel": "^1.0",
+        "z77/persistence-doctrine": "^1.0",
+        "z77/module-vat": "^1.0",
+        "z77/module-mandator": "^1.0"
+    },
+    "suggest": {
+        "z77/module-financial": "Checks the revenue account of an article against the chart (type «Ertrag», «auf Belegen wählbar»); without it the number is stored unverified."
+    },
+    "support": {
+        "issues": "https://github.com/z77-ch/z77-framework/issues",
+        "source": "https://github.com/z77-ch/module-article",
+        "docs": "https://github.com/z77-ch/z77-framework/tree/main/docs"
+    },
+    "readme": "README.md"
+}
