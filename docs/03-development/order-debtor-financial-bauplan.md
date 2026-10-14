@@ -1088,6 +1088,14 @@ is financial's; the adapter is the only debtor class that knows financial.
   it has no number and no side effect.
 - order posts nothing.
 
+> **Superseded in part by the owner decisions of 2026-10-14 → [`p7-order-plan.md`](p7-order-plan.md):**
+> order and invoice are two records, but an order-based invoice has NO draft — it is issued and
+> booked from the order at the booking print in one unit of work (`invoiceAndFinalize()`), which
+> sets the order to «gebucht»; the seed becomes Offerte → Terminauftrag → geliefert → zu fakturieren
+> → gebucht → erledigt mit / ohne Lagerbuchung; one range `order` (a simple running number); the
+> invoice is linked per order, not per line; position changes trigger the stock seam as well as
+> status changes. The list of what this changes in §4b, §7 and ADR-040 / ADR-043 is that plan's §15.
+
 ---
 
 ## 8. Migration from wdv (per installation, the developer's books first)
@@ -1117,6 +1125,8 @@ is financial's; the adapter is the only debtor class that knows financial.
 ## 9. Build phases
 
 > **Order changed by the owner (2026-10-13):** P7 comes **before P5**, in a slim form — quote and order with FREE lines (text, quantity incl. negative, unit, price, tax code, revenue account), status as data with the flow of 2026-10-10 (§7 note), the delivery note, the invoice draft from the order through the existing `InvoicingService`; NO articles (P6) and NO stock (P7b) yet, creation from outside (§13) later. Reason: the order closes the daily flow «Auftrag → Rechnung → Zahlung → Mahnung» that was live-tested on 2026-10-13. In the backend «Aufträge › Aufträge» becomes the first entry with «+ Neuer Auftrag» in the action cell. Then P5 / P5b, then P6, P7 with articles, P7b. The review of 2026-10-13 (`review-2026-10-13.md` §7) is the input for P5.
+
+> **Changed by the owner (2026-10-14):** P7 slim comes WITH articles — a P6 slim (number, name, unit, price, tax code, revenue account, «führt Bestand») — and the stock SEAM (flags on status and article, the one call on every status and position change; the movement journal stays P7b). No invoice draft for orders: the booking print runs from the order. Collective invoice and creation from outside later. Build plan, decisions, steps and open questions: [`p7-order-plan.md`](p7-order-plan.md).
 
 | Phase | Content | Exit |
 |---|---|---|
