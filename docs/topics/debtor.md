@@ -572,6 +572,8 @@ Four master-data fragments (and since P3 part 3 the document screens, above) in 
 
 ## pending
 
+- **Resume here (2026-10-14)** — the current resume point is in [`order.md`](order.md) `## pending` (P7 slim built; the debtor side gained the seams for module-order, `8bfd98c`). The debtor entries below are older.
+
 - **Resume here (2026-10-14) — P7 step 4, the debtor seams: built, uncommitted** (owner go 2026-10-14; «The seams for module-order» above): `preview()`, `prepareDocumentRanges()`, `openDebtorProfile()` (plan D9 — a fifth small seam, the profile opened before the booking), `invoiceAndFinalize()`, `PaymentStates` / `PaymentState` (four states — `credited` «gutgeschrieben» added to the plan's three, to confirm with the owner), `invoice.subject` (`Version20261014120000`, run on z77.ch). Open: (1) run harness `Z1`–`Z16` and the changed `A11` (11 migration files) on PC1 — written, `php -l` only; (2) the owner's look at «Betreff» in the invoice editor and on the PDF; (3) module-order (plan steps 5–9) uses the seams.
 
 - **Resume here (2026-10-13)** — the live test of P3/P4 is PASSED by the owner (booking print with QR-IBAN and QRR, CAMT import with QRR auto-matched and NON by text, dunning reminder and level 2 with fee). Then the review of everything since 1.6.0 (`docs/03-development/review-2026-10-13.md`) and the rework, all committed: `7e5bdd6` (kernel + debtor), `c7cdf6d` (financial), `a8d45a1` (min files re-saved in VS Code), `88383d1` (receivables reconciliation at the year close). Navigation «Aufträge»: Rechnungen, Debitoren, Zahlungseingänge, Mahnungen (`8447c7f`). **Next:**
