@@ -20,13 +20,19 @@
  * @var bool        $allowNone offer «–» (no code) — a text line has none
  * @var string      $noneLabel optional text of that option (default «–») — a product group says
  *                             what it inherits there («– geerbt: UN –», module-article)
+ * @var array<string, string|true> $attrs optional further attributes (`disabled` => true,
+ *                             `data-fill-key` => 'tax_code' — an order line locked to its article)
  */
 $selected  = (string) ($selected ?? '');
 $allowNone = $allowNone ?? true;
 $noneLabel = (string) ($noneLabel ?? '–');
 $known     = false;
+$extra     = '';
+foreach ($attrs ?? [] as $attr => $value) {
+    $extra .= ' ' . e($attr) . ($value === true ? '' : '="' . e((string) $value) . '"');
+}
 ?>
-<select class="be-input be-input--sm" name="<?= e($name) ?>"<?= !empty($id) ? ' id="' . e($id) . '"' : '' ?> aria-label="<?= e($label ?? 'MWST-Code') ?>" aria-invalid="<?= !empty($invalid) ? 'true' : 'false' ?>">
+<select class="be-input be-input--sm" name="<?= e($name) ?>"<?= !empty($id) ? ' id="' . e($id) . '"' : '' ?> aria-label="<?= e($label ?? 'MWST-Code') ?>" aria-invalid="<?= !empty($invalid) ? 'true' : 'false' ?>"<?= raw($extra) ?>>
     <?php if ($allowNone): ?>
     <option value=""<?= $selected === '' ? ' selected' : '' ?>><?= e($noneLabel) ?></option>
     <?php endif; ?>

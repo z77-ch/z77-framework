@@ -49,6 +49,7 @@ const MARKERS = [
         'js.requestFailed',
         'data-select-on-focus',     // small triggers instead of inline handlers (2026-10-13)
         'data-print',
+        'data-fill-url',            // a choice fills its row — the order line's article (2026-10-15)
         'data-help-key',            // HELP-002
         'refresh-region',           // ADR-047 windows
     ],

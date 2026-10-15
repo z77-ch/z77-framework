@@ -14,6 +14,7 @@
  *   [data-copy="<selector>"]      any clickable → copies the named element's text
  *   [data-select-on-focus]        a readonly field selects its whole text on focus / click
  *   [data-print]                  any clickable → window.print()
+ *   [data-fill-url="<url>"]       a choice fills fields of its [data-fill-scope] (see «fill»)
  *   [data-window-open="<url>"]    opens a controller-led window (ADR-047, see «windows»)
  *   [data-fetch-region="<name>"]  a part of the page that reloads alone —
  *     a[data-fetch-region-link] / form[data-fetch-region-form] inside it (see «fetch regions»)
@@ -886,6 +887,14 @@ _Z77.core.region = (function () {
 
     function _load(region, url) {
         var name = region.getAttribute('data-fetch-region');
+        // A region INSIDE a window (the customer picker, 2026-10-15) is not the page: its address
+        // stays out of the address bar, and a failed load never navigates — the page behind holds
+        // a half-filled form. It says so instead.
+        var host = _Z77.core.windows.of(region);
+        function fail() {
+            if (host) _Z77.core.message.show('error', _Z77.core.i18n.t('js.requestFailed', 'Anfrage fehlgeschlagen'));
+            else window.location.href = url;
+        }
         var ticket = (_latest[name] || 0) + 1;
         _latest[name] = ticket;
         var focusId = document.activeElement && region.contains(document.activeElement) ? document.activeElement.id : '';
@@ -896,9 +905,9 @@ _Z77.core.region = (function () {
                 if (_latest[name] !== ticket) return;      // a newer load owns the region
                 var doc = new DOMParser().parseFromString(html, 'text/html');
                 var fresh = doc.querySelector('[data-fetch-region="' + name + '"]');
-                if (!fresh) { window.location.href = url; return; }
+                if (!fresh) { fail(); return; }
                 region.replaceWith(fresh);
-                history.replaceState(history.state, '', url);
+                if (!host) history.replaceState(history.state, '', url);
                 // The new content is live like a popup's body: its ⋮, switches, fetch forms and
                 // blur checks work (the region's own links and forms are delegated anyway). Inside
                 // a window, its requests answer into that window.
@@ -916,7 +925,7 @@ _Z77.core.region = (function () {
                 }
             })
             .catch(function () {
-                if (_latest[name] === ticket) window.location.href = url;
+                if (_latest[name] === ticket) fail();
             });
     }
 
@@ -1531,6 +1540,60 @@ _Z77.core.submitNavigate = (function () {
     return { bind: bind };
 })();
 
+/* ── fill ───────────────────────────────────────────────────────────────────
+ * A choice that fills its neighbours — first user: the article of an order line fills text,
+ * unit, price, tax code and account (owner 2026-10-15). The server decides every value; the
+ * script only asks and writes `.value` (Rule 7: no markup from data). Without the script the
+ * fields stay as typed and the save fills them.
+ *
+ * Contract:
+ *   [data-fill-url="<url>"]       on an input / select: on change GETs <url>?value=<its value>
+ *   [data-fill-with="a b"]        optional: the form fields named a, b ride along (?a=…&b=…)
+ *   [data-fill-scope]             the ancestor whose fields are filled (a line row)
+ *   [data-fill-key="<key>"]       a field inside the scope the answer may set
+ * The answer is a fetch envelope; `data.fill` = { key: value } sets those fields, `data.lock` =
+ * { key: true|false } locks a field (a select disabled, an input read-only) or frees it. Flashes
+ * and an error status go the envelope's usual way; an error fills nothing.
+ */
+_Z77.core.fill = (function () {
+    function _apply(scope, data) {
+        var fill = (data && data.fill) || {};
+        var lock = (data && data.lock) || {};
+        scope.querySelectorAll('[data-fill-key]').forEach(function (field) {
+            var key = field.getAttribute('data-fill-key');
+            if (Object.prototype.hasOwnProperty.call(fill, key)) field.value = fill[key];
+            if (Object.prototype.hasOwnProperty.call(lock, key)) {
+                if (field.tagName === 'SELECT') field.disabled = !!lock[key];
+                else field.readOnly = !!lock[key];
+            }
+        });
+    }
+
+    function _request(source) {
+        var scope = source.closest('[data-fill-scope]');
+        if (!scope) return;
+        var params = new URLSearchParams();
+        params.set('value', source.value.trim());
+        var form = source.form;
+        (source.getAttribute('data-fill-with') || '').split(/\s+/).forEach(function (name) {
+            var el = name && form ? form.elements.namedItem(name) : null;
+            if (el && typeof el.value === 'string') params.set(name, el.value);
+        });
+        var url = source.getAttribute('data-fill-url');
+        _Z77.core.fetch.get(url + (url.indexOf('?') === -1 ? '?' : '&') + params.toString()).then(function (env) {
+            if (env && env.status === 'success') _apply(scope, env.data);
+        });
+    }
+
+    function bind() {
+        document.addEventListener('change', function (e) {
+            if (e.target.matches && e.target.matches('[data-fill-url]')) _request(e.target);
+        });
+    }
+
+    return { bind: bind };
+})();
+
 /* ── small triggers ────────────────────────────────────────────────────────
  * Behaviour a template would otherwise write as an inline handler (`onclick="…"`), which a
  * CSP limited to the own origin blocks (Rule 7). Delegated on `document`: content a swap
@@ -1565,6 +1628,7 @@ _Z77.core.triggers = (function () {
 /* ── boot ───────────────────────────────────────────────────────────────── */
 document.addEventListener('DOMContentLoaded', function () {
     _Z77.core.triggers.bind();
+    _Z77.core.fill.bind();
     _Z77.core.windows.bind();
     _Z77.core.help.bind();
     _Z77.core.region.bind();
