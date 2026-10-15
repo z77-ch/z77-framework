@@ -13,12 +13,13 @@ use Z77\Persistence\Doctrine\OpenWork\OpenWorkCheckInterface;
 
 /**
  * order's answer to financial's year close (plan §12 / §13 step 10, plan §5.3 of the bauplan):
- * an order dated inside the range being closed that sits in a status flagged `invoiceable` — its
- * turnover is not invoiced, so not in the books of that year. A WARNING, not a block: the order
- * is not a booking, the books of the year are complete without it; whether its invoice belongs
- * in the closed year (the service date decides the VAT period) is the office's call.
+ * an order dated inside the range being closed that sits in a BOOKABLE phase (`confirmed`,
+ * `delivered` — ADR-043 addendum 2026-10-15: every confirmed order, a service order may never see a
+ * delivery note) — its turnover is not invoiced, so not in the books of that year. A WARNING, not a
+ * block: the order is not a booking, the books of the year are complete without it; whether its
+ * invoice belongs in the closed year (the service date decides the VAT period) is the office's call.
  *
- * Which statuses count is read from the FLAG `invoiceable` (`OrderStatuses`, ADR-043 — no code is
+ * Which statuses count is read from their PHASE (`OrderPhase::isBookable()`, ADR-043 — no code is
  * named). Registered under the open-work scope `period-close` in `orderConfig` (the registry of
  * persistence-doctrine — financial knows no module). The scope's parameters are financial's:
  * `from` and `to` (`DateTimeImmutable`, the year's first and last day).
@@ -43,7 +44,7 @@ final class InvoiceableOrdersCheck implements OpenWorkCheckInterface
         $statuses   = (new OrderStatuses($statusRepo->allInOrder()))->all();
         $labels     = [];
         foreach ($statuses as $status) {
-            if ($status->isInvoiceable()) {
+            if ($status->getPhase()->isBookable()) {
                 $labels[$status->getCode()] = $status->getLabel();
             }
         }
@@ -56,7 +57,7 @@ final class InvoiceableOrdersCheck implements OpenWorkCheckInterface
         }
         $rest = $found['count'] - count($found['rows']);
         if ($rest > 0) {
-            yield Finding::warning("… und {$rest} weitere Aufträge «zu fakturieren» in diesem Zeitraum.", 'sales-order:more');
+            yield Finding::warning("… und {$rest} weitere noch nicht fakturierte Aufträge in diesem Zeitraum.", 'sales-order:more');
         }
     }
 

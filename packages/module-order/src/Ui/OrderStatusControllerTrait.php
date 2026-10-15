@@ -7,6 +7,7 @@ use Z77\Core\DI,
     Z77\Core\Http\Response\RedirectResponse,
     Z77\Core\Http\WindowOrigin,
     Z77\Core\Services\TemplateRenderer,
+    Z77\Module\Order\Entities\OrderPhase,
     Z77\Module\Order\Entities\OrderStatus,
     Z77\Module\Order\Repositories\OrderStatusRepository,
     Z77\Module\Order\Services\InvalidOrderStatusException,
@@ -22,20 +23,21 @@ use Z77\Core\DI,
 ;
 
 /**
- * Stammdaten › Aufträge › Auftragsstatus (plan §9.5, step 3) — the order statuses as DATA (owner
- * O4): a new status is added here without a line of code. Mounted by a thin host controller in
+ * Stammdaten › Aufträge › Auftragsstatus (plan §9.5, step 3) — the order statuses as DATA: labels
+ * the installation orders its orders by, each in one fixed PHASE that carries the behaviour (ADR-043
+ * addendum 2026-10-15); a new status is added here without a line of code. Mounted by a thin host controller in
  * the backend (ADR-018 pattern): `use OrderStatusControllerTrait` + a one-line layout config
  * delegating to {@see OrderStatusLayout::config()}; URL `/backend/order/order-status/…`.
  *
- *   - `list` — a STANDARD LIST ({@see OrderStatusListing}) in level order: the state icon opens
- *     the status WINDOW, then code, label, level, the flags as badges and the «Aktiv» switch.
+ *   - `list` — a STANDARD LIST ({@see OrderStatusListing}) along the ladder: the state icon opens
+ *     the status WINDOW, then code, label, phase, «Sortierung», «Wird gesetzt durch» and the «Aktiv» switch.
  *     Action cell: «+ Status»;
  *   - `add` / `edit` — the status WINDOW (ADR-047; a window, not a modal popup, because it carries
  *     help — ADR-048, the article model; deviation from plan §9.5's «⋮ → edit dialog»): code
- *     (fixed after creation), label, level and the seven flags as switches; the validator's
- *     invariants come back as field errors on the flag that breaks them;
+ *     (fixed after creation), label, phase (a select of the fixed phases), «Sortierung» and the default switch
+ *     worded by the phase («Startstatus für neue Aufträge», «Wird gesetzt beim …» — the status an action sets); a second active default of a phase is a field error;
  *   - `toggle-active` — the inline switch; deactivate always, activate only when the cross-row
- *     rules hold (one active «gebucht», one active «Ziel des Lieferscheins»). There is NO delete.
+ *     rule holds (one active default per phase). There is NO delete.
  *
  * Every write goes through {@see OrderMasterData}. No JavaScript of its own (Rule 7). The using
  * class MUST provide (via its host base): `html()`, `fetch()`, `fetchError()`, `redirect()`,
@@ -93,12 +95,7 @@ trait OrderStatusControllerTrait
     #[Csrf]
     protected function addAction(): HtmlResponse|FetchResponse|RedirectResponse
     {
-        $next = 10;
-        foreach ($this->orderStatuses()->findAll() as $row) {
-            $next = max($next, $row->getLevel() + 10);
-        }
-
-        return $this->orderStatusWindow(new OrderStatus(['level' => min($next, OrderStatusValidator::MAX_LEVEL)]));
+        return $this->orderStatusWindow(new OrderStatus(['phase' => OrderPhase::New->value, 'position' => 10]));
     }
 
     #[Csrf]
@@ -116,7 +113,7 @@ trait OrderStatusControllerTrait
     /**
      * The status window (ADR-047): GET renders it, POST saves through {@see OrderMasterData}.
      * Fetched, the save answers with commands — close the window, reload the list region it was
-     * opened from (a new or a re-levelled row changes its place); a refusal re-renders the window
+     * opened from (a new row, or one moved to another phase, changes its place); a refusal re-renders the window
      * with the field errors. Without the script it is a page: a plain form, redirect to the list.
      */
     private function orderStatusWindow(OrderStatus $status): HtmlResponse|FetchResponse|RedirectResponse
@@ -133,9 +130,7 @@ trait OrderStatusControllerTrait
 
             $active = $status->isActive();
             $values = BodyCleaner::cleanFor(OrderStatus::class, $post);
-            foreach (array_keys(OrderStatusListing::FLAG_LABELS) as $flag) {
-                $values[$flag] = ($post[$flag] ?? '') === '1';   // a switch: present = on
-            }
+            $values['phase_default'] = ($post['phase_default'] ?? '') === '1';   // a switch: present = on
             unset($values['active'], $values['id']);
             if (!$isNew) {
                 $values['code'] = $status->getCode();   // fixed after creation — the service refuses a change anyway
@@ -160,7 +155,7 @@ trait OrderStatusControllerTrait
             'origin'     => WindowOrigin::of($request),
             'entry'      => $status,
             'validator'  => $validator,
-            'flags'      => OrderStatusListing::FLAG_LABELS,
+            'phases'     => OrderPhase::choices(),
             'entityCsrf' => $isNew ? '' : DI::getCsrfService()->generateEntityToken('orderStatus', $status->getId()),
             'actionBase' => $this->orderStatusListBase(),
         ];

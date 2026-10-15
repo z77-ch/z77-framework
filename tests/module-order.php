@@ -53,6 +53,7 @@ use Z77\Module\Article\Stock\StockResult;
 use Z77\Module\Contact\Entities\Contact;
 use Z77\Module\Debtor\Entities\InvoiceKind;
 use Z77\Module\Debtor\Entities\LineType;
+use Z77\Module\Order\Entities\OrderPhase;
 use Z77\Module\Order\Entities\OrderStatus;
 use Z77\Module\Order\Entities\SalesOrder;
 use Z77\Module\Order\Entities\SalesOrderLine;
@@ -87,10 +88,10 @@ function withId(object $entity, int $id): object
     return $entity;
 }
 
-/** A status row with $flags on. */
-function status(string $code, int $level, array $flags = [], bool $active = true, ?int $id = null): OrderStatus
+/** A status row of $phase. */
+function status(string $code, OrderPhase $phase, bool $default = false, bool $active = true, ?int $id = null, int $position = 10): OrderStatus
 {
-    $row = new OrderStatus(['code' => $code, 'label' => ucfirst($code), 'level' => $level, 'active' => $active] + array_fill_keys($flags, true));
+    $row = new OrderStatus(['code' => $code, 'label' => ucfirst($code), 'phase' => $phase->value, 'position' => $position, 'phase_default' => $default, 'active' => $active]);
 
     return $id === null ? $row : withId($row, $id);
 }
@@ -103,39 +104,28 @@ foreach ($seed as $row) {
     $byCode[$row->getCode()] = $row;
 }
 
-// ── S. status invariants (offline) ───────────────────────────────────────
+// ── S. the status master data (offline) ──────────────────────────────────
 
-echo "S. Order status invariants (offline)\n";
-check('S1 the seed is UTF-8 without BOM and holds the seven statuses of plan §4.2 in level order',
-    !str_starts_with($seedRaw, "\xEF\xBB\xBF") && array_keys($byCode) === ['offer', 'scheduled', 'delivered', 'to-invoice', 'booked', 'done', 'done-no-stock']
-    && array_map(static fn($s) => $s->getLevel(), $seed) === [10, 20, 30, 40, 50, 90, 90]);
-check('S2 every seed row passes the in-row invariants and the cross-row rules',
-    array_filter($seed, static fn($s) => OrderStatusValidator::flagProblems($s) !== [] || OrderStatusValidator::crossRowProblem($s, $seed) !== null) === []);
-check('S3 the seed: exactly one invoiceBooked («booked»), one deliveryNoteTarget («delivered»), one offer, two final',
-    count(array_filter($seed, static fn($s) => $s->isInvoiceBooked())) === 1 && $byCode['booked']->isInvoiceBooked()
-    && count(array_filter($seed, static fn($s) => $s->isDeliveryNoteTarget())) === 1 && $byCode['delivered']->isDeliveryNoteTarget()
-    && count(array_filter($seed, static fn($s) => $s->isOffer())) === 1 && count(array_filter($seed, static fn($s) => $s->isFinal())) === 2);
-check('S4 the seed\'s stock behaviour: scheduled reserves; delivered, to-invoice, booked, done consume; offer and done-no-stock neither',
-    $byCode['scheduled']->isReservesStock() && !$byCode['scheduled']->isConsumesStock()
-    && $byCode['delivered']->isConsumesStock() && $byCode['to-invoice']->isConsumesStock() && $byCode['booked']->isConsumesStock() && $byCode['done']->isConsumesStock()
-    && !$byCode['offer']->isReservesStock() && !$byCode['offer']->isConsumesStock() && !$byCode['done-no-stock']->isConsumesStock() && !$byCode['done-no-stock']->isReservesStock());
-check('S5 final ⇒ ¬invoiceable ∧ ¬invoiceBooked', isset(OrderStatusValidator::flagProblems(status('x', 1, ['final', 'invoiceable']))['final'])
-    && isset(OrderStatusValidator::flagProblems(status('x', 1, ['final', 'invoice_booked']))['final']));
-check('S6 consumesStock ⇒ ¬reservesStock', isset(OrderStatusValidator::flagProblems(status('x', 1, ['consumes_stock', 'reserves_stock']))['reserves_stock']));
-check('S7 offer ⇒ ¬reserves ∧ ¬consumes ∧ ¬invoiceable', isset(OrderStatusValidator::flagProblems(status('x', 1, ['offer', 'reserves_stock']))['offer'])
-    && isset(OrderStatusValidator::flagProblems(status('x', 1, ['offer', 'consumes_stock']))['offer']) && isset(OrderStatusValidator::flagProblems(status('x', 1, ['offer', 'invoiceable']))['offer']));
-check('S8 invoiceBooked ⇒ ¬invoiceable', isset(OrderStatusValidator::flagProblems(status('x', 1, ['invoice_booked', 'invoiceable']))['invoice_booked']));
-check('S9 a second ACTIVE invoiceBooked / deliveryNoteTarget is refused; an inactive one does not count',
-    OrderStatusValidator::crossRowProblem(status('new', 60, ['invoice_booked']), $seed)[0] === 'invoice_booked'
-    && OrderStatusValidator::crossRowProblem(status('new', 35, ['delivery_note_target']), $seed)[0] === 'delivery_note_target'
-    && OrderStatusValidator::crossRowProblem(status('new', 60, ['invoice_booked']), array_map(static fn($s) => $s->isInvoiceBooked() ? status($s->getCode(), $s->getLevel(), ['invoice_booked'], false, $s->getId()) : $s, $seed)) === null);
-check('S10 the booked level lies above every invoiceable level — both directions refused',
-    OrderStatusValidator::crossRowProblem(status('late', 60, ['invoiceable', 'consumes_stock']), $seed)[0] === 'level'
-    && OrderStatusValidator::crossRowProblem(withId(status('booked', 40, ['invoice_booked', 'consumes_stock']), 5), $seed)[0] === 'level');
-check('S11 a row is not compared with its own stored copy (edit of «booked» keeps working)', OrderStatusValidator::crossRowProblem($byCode['booked'], $seed) === null);
-$v = new OrderStatusValidator(status('pickup', 0, ['offer', 'reserves_stock']));
-check('S12 the field run: level 1–999, code format, the in-row invariants as field errors', !$v->isValid() && $v->hasFieldError('level') && $v->hasFieldError('offer')
-    && !(new OrderStatusValidator(status('Bad Code', 10)))->isValid() && (new OrderStatusValidator(status('pickup', 25, ['reserves_stock'])))->isValid());
+echo "S. Order status master data (offline)\n";
+check('S1 the seed is UTF-8 without BOM and holds the seven statuses along the ladder, each in its phase',
+    !str_starts_with($seedRaw, "\xEF\xBB\xBF") && array_keys($byCode) === ['offer', 'scheduled', 'delivered', 'to-invoice', 'booked', 'done', 'cancelled']
+    && array_map(static fn($s) => $s->getPhase()->value, $seed) === ['new', 'confirmed', 'delivered', 'delivered', 'closed', 'closed', 'cancelled']);
+check('S2 every seed row passes the field run and the cross-row rule',
+    array_filter($seed, static fn($s) => !(new OrderStatusValidator($s))->isValid() || OrderStatusValidator::crossRowProblem($s, $seed) !== null) === []);
+check('S3 one default per phase an ACTION moves into: offer, scheduled, delivered, booked — none for «cancelled» (cancelling is by hand)',
+    array_values(array_map(static fn($s) => $s->getCode(), array_filter($seed, static fn($s) => $s->isPhaseDefault()))) === ['offer', 'scheduled', 'delivered', 'booked']);
+check('S4 a second ACTIVE default of a phase is refused; an inactive one, another phase and a non-default do not count; a row is not compared with its own stored copy',
+    OrderStatusValidator::crossRowProblem(status('ordered', OrderPhase::Confirmed, true), $seed)[0] === 'phase_default'
+    && OrderStatusValidator::crossRowProblem(status('ordered', OrderPhase::Confirmed, true), array_map(static fn($s) => $s->getCode() === 'scheduled' ? status('scheduled', OrderPhase::Confirmed, true, false, 2) : $s, $seed)) === null
+    && OrderStatusValidator::crossRowProblem(status('ordered', OrderPhase::Confirmed), $seed) === null
+    && OrderStatusValidator::crossRowProblem($byCode['scheduled'], $seed) === null);
+$bad = new OrderStatus(['code' => 'pickup', 'label' => 'Abholbereit', 'phase' => 'ready', 'position' => -1]);
+$v   = new OrderStatusValidator($bad);
+check('S5 the field run: an unknown phase, a position out of 0–999, a bad code are field errors; a good row passes',
+    !$v->isValid() && $v->hasFieldError('phase') && $v->hasFieldError('position')
+    && !(new OrderStatusValidator(status('Bad Code', OrderPhase::New)))->isValid() && (new OrderStatusValidator(status('pickup', OrderPhase::Delivered)))->isValid());
+check('S6 a stored phase the validator would refuse (a hand-edited file) reads as «new» — no stock, no booking print: the safe side',
+    $bad->getPhase() === OrderPhase::New && $bad->getPhaseValue() === 'ready');
 
 // ── N. one way only (offline) ────────────────────────────────────────────
 
@@ -186,29 +176,40 @@ check('N6 «Aufträge» (auftraege-liste) is the FIRST entry of debtor\'s area �
 
 // ── T. transitions and stock targets (offline) ───────────────────────────
 
-echo "T. Transitions and stock targets (offline)\n";
+echo "T. Phases, transitions and stock targets (offline)\n";
 $rules = new OrderStatuses($seed);
-check('T1 initial = the active status with the lowest level («offer»); with offer inactive → «scheduled»; none active → null',
+check('T1 the phases carry the behaviour: reserve only in «confirmed», consume in «delivered» and «closed», book in «confirmed» / «delivered», locked «closed» / «cancelled», a quote only «new», the delivery note from «confirmed»',
+    array_map(static fn(OrderPhase $p) => [$p->reservesStock(), $p->consumesStock(), $p->isBookable(), $p->isLocked(), $p->isQuote(), $p->allowsDeliveryNote()], OrderPhase::cases()) === [
+        [false, false, false, false, true, false], [true, false, true, false, false, true], [false, true, true, false, false, true],
+        [false, true, false, true, false, false], [false, false, false, true, false, false],
+    ]
+    && array_map(static fn(OrderPhase $p) => $p->rank(), OrderPhase::cases()) === [1, 2, 3, 4, 5]);
+check('T2 initial = the default of «new»; without one marked, the first ACTIVE of the phase by position; none active → null',
     $rules->initial()?->getCode() === 'offer'
-    && (new OrderStatuses(array_map(static fn($s) => $s->getCode() === 'offer' ? status('offer', 10, ['offer'], false, 1) : $s, $seed)))->initial()?->getCode() === 'scheduled'
-    && (new OrderStatuses([status('x', 1, [], false)]))->initial() === null);
-check('T2 by FLAG: delivery-note target = «delivered», booked = «booked»; startable = not booked, not final, active',
-    $rules->deliveryNoteTarget()?->getCode() === 'delivered' && $rules->invoiceBooked()?->getCode() === 'booked'
+    && (new OrderStatuses(array_merge(array_map(static fn($s) => $s->getCode() === 'offer' ? status('offer', OrderPhase::New, true, false, 1) : $s, $seed), [status('enquiry', OrderPhase::New, position: 30), status('lead', OrderPhase::New, position: 20)])))->initial()?->getCode() === 'lead'
+    && (new OrderStatuses([status('x', OrderPhase::New, true, false)]))->initial() === null);
+check('T3 the default per phase — what an action sets; startable = every active status of «new», «confirmed», «delivered»',
+    array_map(static fn(OrderPhase $p) => $rules->defaultOf($p)?->getCode(), OrderPhase::cases()) === ['offer', 'scheduled', 'delivered', 'booked', 'cancelled']
     && array_map(static fn($s) => $s->getCode(), $rules->startable()) === ['offer', 'scheduled', 'delivered', 'to-invoice']);
-$refused = static fn(string $from, string $to, bool $invoice): ?string => OrderStatuses::refusal($byCode[$from], $byCode[$to], $invoice)[0] ?? null;
-check('T3 forward is free (offer → scheduled → delivered → to-invoice → done)', $refused('offer', 'scheduled', false) === null && $refused('scheduled', 'delivered', false) === null
-    && $refused('delivered', 'to-invoice', false) === null && $refused('to-invoice', 'done', false) === null && $refused('booked', 'done', true) === null);
-check('T4 lateral (equal level) is allowed — done ↔ done-no-stock, also with an invoice', $refused('done', 'done-no-stock', true) === null && $refused('done-no-stock', 'done', false) === null);
-check('T5 backward is allowed WITHOUT an invoice, barred WITH one', $refused('delivered', 'offer', false) === null && $refused('done-no-stock', 'scheduled', false) === null
-    && $refused('to-invoice', 'scheduled', true) === OrderStatuses::BACKWARD_BARRED && $refused('done', 'booked', true) === OrderStatuses::BOOKED_TARGET);
-check('T6 the booked status is reached by the booking print only — never a target', $refused('to-invoice', 'booked', false) === OrderStatuses::BOOKED_TARGET && $refused('offer', 'booked', false) === OrderStatuses::BOOKED_TARGET);
-check('T7 the same status and an inactive target are refused; an order may SIT in an inactive one',
+check('T4 an action moves only FORWARD into its phase: a quote → «scheduled» / «delivered»; an order in or past the phase → null (a reprint)',
+    $rules->actionTarget($byCode['offer'], OrderPhase::Confirmed)?->getCode() === 'scheduled' && $rules->actionTarget($byCode['offer'], OrderPhase::Delivered)?->getCode() === 'delivered'
+    && $rules->actionTarget($byCode['scheduled'], OrderPhase::Confirmed) === null && $rules->actionTarget($byCode['to-invoice'], OrderPhase::Delivered) === null
+    && $rules->actionTarget($byCode['booked'], OrderPhase::Delivered) === null);
+$refused = static fn(string $from, string $to, bool $invoice): ?string => $rules->refusal($byCode[$from], $byCode[$to], $invoice)[0] ?? null;
+check('T5 forward and lateral are free (offer → scheduled → delivered → to-invoice → done; booked → done with an invoice)', $refused('offer', 'scheduled', false) === null && $refused('scheduled', 'delivered', false) === null
+    && $refused('delivered', 'to-invoice', false) === null && $refused('to-invoice', 'delivered', false) === null && $refused('to-invoice', 'done', false) === null && $refused('booked', 'done', true) === null);
+check('T6 backward is allowed WITHOUT an invoice, barred WITH one', $refused('delivered', 'offer', false) === null && $refused('cancelled', 'scheduled', false) === null
+    && $refused('done', 'scheduled', true) === OrderStatuses::BACKWARD_BARRED);
+check('T7 the default of «closed» is reached by the booking print only — never a target', $refused('to-invoice', 'booked', false) === OrderStatuses::BOOKED_TARGET && $refused('done', 'booked', true) === OrderStatuses::BOOKED_TARGET);
+check('T8 «cancelled» only without an invoice; a cancelled order may be reopened', $refused('scheduled', 'cancelled', false) === null && $refused('done', 'cancelled', true) === OrderStatuses::CANCEL_BARRED
+    && $refused('cancelled', 'offer', false) === null);
+check('T9 the same status and an inactive target are refused; an order may SIT in an inactive one',
     $refused('offer', 'offer', false) === OrderStatuses::SAME
-    && OrderStatuses::refusal($byCode['offer'], status('gone', 25, [], false), false)[0] === OrderStatuses::INACTIVE_TARGET
-    && OrderStatuses::refusal(status('gone', 25, [], false), $byCode['delivered'], false) === null);
-check('T8 the targets offered from «to-invoice» with an invoice: forward and lateral only, never booked',
-    array_map(static fn($s) => $s->getCode(), $rules->targets($byCode['to-invoice'], true)) === ['done', 'done-no-stock']
-    && array_map(static fn($s) => $s->getCode(), $rules->targets($byCode['to-invoice'], false)) === ['offer', 'scheduled', 'delivered', 'done', 'done-no-stock']);
+    && $rules->refusal($byCode['offer'], status('gone', OrderPhase::Confirmed, active: false), false)[0] === OrderStatuses::INACTIVE_TARGET
+    && $rules->refusal(status('gone', OrderPhase::Confirmed, active: false), $byCode['delivered'], false) === null);
+check('T10 the targets offered from «done» with an invoice: lateral only, never booked, never cancelled; from «to-invoice» without one: every other but booked',
+    array_map(static fn($s) => $s->getCode(), $rules->targets($byCode['done'], true)) === []
+    && array_map(static fn($s) => $s->getCode(), $rules->targets($byCode['to-invoice'], false)) === ['offer', 'scheduled', 'delivered', 'done', 'cancelled']);
 
 // An order in memory: an article line (2), a child article line (1) beneath it, a negative article line (-1),
 // a lump-sum article line, a free line, a text line.
@@ -234,20 +235,21 @@ $l5 = $mk(105, 5, null, LineType::Service, null, 'Degustation', '1.5', '80.00');
 $l6 = $mk(106, 6, null, LineType::Text, null, 'Danke!', null, null, null, null);
 $shape  = static fn(array $targets): array => array_map(static fn($t) => [$t->lineRef, $t->variantId, $t->reserved, $t->consumed], $targets);
 $expect = static fn(string $r1, string $c1, string $r2, string $c2, string $r3, string $c3, string $r4, string $c4): array => [['101', 11, $r1, $c1], ['102', 12, $r2, $c2], ['103', 11, $r3, $c3], ['104', 12, $r4, $c4]];
-check('T9 offer: every ARTICLE line (children included), all zero — free and text lines not sent',
-    $shape(OrderStockTargets::of($order->getLines(), $byCode['offer'])) === $expect('0.000', '0.000', '0.000', '0.000', '0.000', '0.000', '0.000', '0.000'));
-check('T10 scheduled reserves the quantity; a negative quantity stays negative (an inflow); a lump-sum article = one unit',
-    $shape(OrderStockTargets::of($order->getLines(), $byCode['scheduled'])) === $expect('2.000', '0.000', '1.000', '0.000', '-1.000', '0.000', '1.000', '0.000'));
-check('T11 delivered consumes the quantity, the reservation goes to zero',
-    $shape(OrderStockTargets::of($order->getLines(), $byCode['delivered'])) === $expect('0.000', '2.000', '0.000', '1.000', '0.000', '-1.000', '0.000', '1.000'));
-check('T12 done-no-stock: everything back to zero (the ledger demands the reason — not the order)',
-    $shape(OrderStockTargets::of($order->getLines(), $byCode['done-no-stock'])) === $expect('0.000', '0.000', '0.000', '0.000', '0.000', '0.000', '0.000', '0.000'));
+check('T11 phase «new»: every ARTICLE line (children included), all zero — free and text lines not sent',
+    $shape(OrderStockTargets::of($order->getLines(), OrderPhase::New)) === $expect('0.000', '0.000', '0.000', '0.000', '0.000', '0.000', '0.000', '0.000'));
+check('T12 «confirmed» reserves the quantity; a negative quantity stays negative (an inflow); a lump-sum article = one unit',
+    $shape(OrderStockTargets::of($order->getLines(), OrderPhase::Confirmed)) === $expect('2.000', '0.000', '1.000', '0.000', '-1.000', '0.000', '1.000', '0.000'));
+check('T13 «delivered» and «closed» consume the quantity, the reservation goes to zero',
+    $shape(OrderStockTargets::of($order->getLines(), OrderPhase::Delivered)) === $expect('0.000', '2.000', '0.000', '1.000', '0.000', '-1.000', '0.000', '1.000')
+    && $shape(OrderStockTargets::of($order->getLines(), OrderPhase::Closed)) === $shape(OrderStockTargets::of($order->getLines(), OrderPhase::Delivered)));
+check('T14 «cancelled»: everything back to zero (the ledger demands the reason — not the order)',
+    $shape(OrderStockTargets::of($order->getLines(), OrderPhase::Cancelled)) === $expect('0.000', '0.000', '0.000', '0.000', '0.000', '0.000', '0.000', '0.000'));
 $unsaved = new SalesOrderLine($order);
 $unsaved->write(7, null, LineType::Service, $variantA, '1', 'x', '1', null, $chf('1.00'), 0, 'UN', '3400');
-check('T13 an article line without its id (not flushed) is refused — the line id IS the stock reference',
-    (static function () use ($unsaved, $byCode) { try { OrderStockTargets::of([$unsaved], $byCode['scheduled']); } catch (\LogicException) { return true; } return false; })());
+check('T15 an article line without its id (not flushed) is refused — the line id IS the stock reference',
+    (static function () use ($unsaved) { try { OrderStockTargets::of([$unsaved], OrderPhase::Confirmed); } catch (\LogicException) { return true; } return false; })());
 $order->removeLine($unsaved);
-check('T14 the line guards its shape: a child beneath a text line, a nested child, a rounding line, a text line with an article are refused',
+check('T16 the line guards its shape: a child beneath a text line, a nested child, a rounding line, a text line with an article are refused',
     (static function () use ($order, $l6, $l2, $variantA, $chf) {
         $count = 0;
         foreach ([
@@ -289,21 +291,26 @@ check('D6 without a Betreff the subject is «Auftrag 42»; the head\'s service p
 
 // ── V. the list's view tabs (offline) ────────────────────────────────────
 
-echo "V. List tabs from the status flags (offline)\n";
+echo "V. List tabs are the phases (offline)\n";
 $viewOfSeed = array_combine(array_keys($byCode), array_map(static fn($s) => OrderListing::viewOf($s), array_values($byCode)));
-check('V1 each seed status falls into ONE tab by its flags: offer → Offerten; scheduled, delivered → In Arbeit; to-invoice → Zu fakturieren; booked → Gebucht; done, done-no-stock → Erledigt',
-    $viewOfSeed === ['offer' => 'offer', 'scheduled' => 'active', 'delivered' => 'active', 'to-invoice' => 'invoiceable', 'booked' => 'booked', 'done' => 'final', 'done-no-stock' => 'final']);
-check('V2 a NEW status lands in its tab without code (by flag), inactive ones still count; «Alle» filters nothing',
-    OrderListing::viewOf(status('pickup', 35, ['consumes_stock', 'invoiceable'])) === 'invoiceable'
-    && OrderListing::codesOf('active', array_merge($seed, [status('waiting', 25, [], false)])) === ['scheduled', 'delivered', 'waiting']
-    && OrderListing::codesOf('all', $seed) === null && OrderListing::codesOf('booked', $seed) === ['booked']);
-check('V3 the badges: orders per status mapped to their tab; «Alle» counts every order, also a code missing from the master data',
+check('V1 each seed status falls into the tab of its PHASE: offer → Offerten; scheduled → In Arbeit; delivered, to-invoice → Geliefert; booked, done → Abgeschlossen; cancelled → Storniert',
+    $viewOfSeed === ['offer' => 'new', 'scheduled' => 'confirmed', 'delivered' => 'delivered', 'to-invoice' => 'delivered', 'booked' => 'closed', 'done' => 'closed', 'cancelled' => 'cancelled']);
+check('V2 a NEW status lands in its tab without code (by phase), inactive ones still count; «Alle» filters nothing',
+    OrderListing::viewOf(status('pickup', OrderPhase::Delivered)) === 'delivered'
+    && OrderListing::codesOf('confirmed', array_merge($seed, [status('waiting', OrderPhase::Confirmed, active: false)])) === ['scheduled', 'waiting']
+    && OrderListing::codesOf('all', $seed) === null && OrderListing::codesOf('closed', $seed) === ['booked', 'done']);
+check('V3 «Status» searches the labels (case-insensitive) within the tab — «Alle» too; no match = nothing',
+    OrderListing::codesOf('all', $seed, 'FAKT') === ['to-invoice'] && OrderListing::codesOf('delivered', $seed, 'geliefert') === ['delivered']
+    && OrderListing::codesOf('closed', $seed, 'termin') === []);
+check('V4 the badges: orders per status mapped to their tab; «Alle» counts every order, also a code missing from the master data',
     OrderListing::counts($seed, ['offer' => 2, 'scheduled' => 1, 'delivered' => 3, 'to-invoice' => 4, 'done' => 1, 'gone' => 5])
-    === ['offer' => 2, 'active' => 4, 'invoiceable' => 4, 'booked' => 0, 'final' => 1, 'all' => 16]);
+    === ['new' => 2, 'confirmed' => 1, 'delivered' => 7, 'closed' => 1, 'cancelled' => 0, 'all' => 16]);
 $cols = static fn(string $view): array => array_map(static fn($c) => $c->label !== '' ? $c->label : '[' . $c->ariaLabel . ']', OrderListing::definition('CHF', $view)->columns());
-check('V4 the columns: the selection checkbox only in «Zu fakturieren», «Zahlung» only in «Gebucht»; the default tab is «Offerten»',
-    $cols('invoiceable')[0] === '[Auswahl]' && !in_array('[Auswahl]', $cols('offer'), true) && in_array('Zahlung', $cols('booked'), true) && !in_array('Zahlung', $cols('all'), true)
-    && OrderListing::definition('CHF')->extraDefault('view') === 'offer' && array_key_first(OrderListing::VIEWS) === 'offer');
+check('V5 the columns: the selection checkbox in the bookable tabs («In Arbeit», «Geliefert»), «Zahlung» only in «Abgeschlossen», «Status» searchable; the default tab is «Offerten»',
+    $cols('confirmed')[0] === '[Auswahl]' && $cols('delivered')[0] === '[Auswahl]' && !in_array('[Auswahl]', $cols('new'), true) && !in_array('[Auswahl]', $cols('closed'), true)
+    && in_array('Zahlung', $cols('closed'), true) && !in_array('Zahlung', $cols('all'), true)
+    && OrderListing::definition('CHF')->column('f_status')->isSearchable()
+    && OrderListing::definition('CHF')->extraDefault('view') === 'new' && array_key_first(OrderListing::VIEWS) === 'new');
 
 // ── I. the booking print's selection and its idempotency (offline) ───────
 
@@ -354,7 +361,7 @@ check('F3 an ARTICLE line sends no tax code and no account — they come from th
 $form->applyErrors(['contact_id' => 'Kunde wählen.', 'lines.0.0.unit_price' => 'Preis fehlt.', 'lines.2.variant' => 'inaktiv', 'payment_target_code' => 'weg', 'lines.9.text' => 'verirrt']);
 check('F4 the service\'s field errors land on the form: the head by name, `lines.{path}.{field}` on the row the line came from',
     $form->error('contact') === 'Kunde wählen.' && $form->rowError(1, 'price') === 'Preis fehlt.' && $form->rowError(4, 'article') === 'inaktiv'
-    && $form->error('target') === 'weg' && $form->generalErrors() === ['verirrt'] && $form->invalidIds()[0] === 'order-contact');
+    && $form->error('target') === 'weg' && $form->generalErrors() === ['verirrt'] && $form->invalidIds()[0] === 'invoice-contact-name');   // the customer field's text (debtor's CustomerPicker, 2026-10-15)
 $bad = (new OrderForm())->fromPost(['contact' => '6', 'ship' => 'a99', 'rows' => [['article' => '9999', 'quantity' => '1'], ['child' => '1', 'text' => 'x', 'quantity' => '1', 'price' => '1']]]);
 check('F5 what the form cannot read: an unknown article, a delivery address that is not the customer\'s, a «unter» row without a parent above',
     $bad->toDraft(['1001' => 11], ['' => null]) === null && $bad->rowError(0, 'article') !== '' && $bad->error('ship') !== '');
@@ -368,8 +375,9 @@ check('F7 startFrom(): one row per line with its id, «unter» on the child, the
 // ── P. the order's PDFs (offline where possible) ─────────────────────────
 
 echo "P. Order PDFs (offline)\n";
-check('P1 the title by FLAG: «Offerte» for a status flagged offer, else «Auftragsbestätigung» (also without a status row)',
-    OrderPdf::orderTitle($byCode['offer']) === 'Offerte' && OrderPdf::orderTitle($byCode['scheduled']) === 'Auftragsbestätigung' && OrderPdf::orderTitle(null) === 'Auftragsbestätigung');
+check('P1 the title by PHASE: «Offerte» for a status of phase «new», else «Auftragsbestätigung» (also without a status row)',
+    OrderPdf::orderTitle($byCode['offer']) === 'Offerte' && OrderPdf::orderTitle(status('enquiry', OrderPhase::New)) === 'Offerte'
+    && OrderPdf::orderTitle($byCode['scheduled']) === 'Auftragsbestätigung' && OrderPdf::orderTitle(null) === 'Auftragsbestätigung');
 check('P2 the file names are kebab-case lower (Rule 6)', OrderPdf::fileName('Auftragsbestätigung 12') === 'auftragsbestaetigung-12.pdf' && OrderPdf::fileName('Lieferschein 3') === 'lieferschein-3.pdf');
 $pdfBase = str_replace('\\', '/', sys_get_temp_dir()) . '/z77-order-pdf-' . getmypid();
 @mkdir($pdfBase . '/config/vendor', 0777, true);
@@ -576,7 +584,7 @@ $refusedBy = static function (callable $fn): ?string {
 
 $o1 = $svc->create(new $D($contactId, '2026-10-14', 'Fest', lines: [$L::article($variantId, '2'), $L::free('Degustation', '1', '80', 'UN', '3400'), $L::text('Danke')]));
 $o2 = $svc->create(new $D($contactId, '2026-10-14', lines: [$L::article($variantId, '1')]));
-check('M4 create draws 1, 2 from `order`; the initial status by flag (lowest active level)', $o1->getNumber() === 1 && $o2->getNumber() === 2 && $o1->getStatusCode() === 'offer'
+check('M4 create draws 1, 2 from `order`; the initial status = the default of phase «new»', $o1->getNumber() === 1 && $o2->getNumber() === 2 && $o1->getStatusCode() === 'offer'
     && (int) $db->fetchOne("SELECT last_number FROM number_range WHERE name = 'order'") === 2);
 $line1 = $o1->getLines()[0];
 check('M5 the article line takes text, unit and the price at the order date; tax code and account FROM the article (D3)',
@@ -605,17 +613,17 @@ check('M11 update: the edited line keeps its id, the deleted ones are gone, the 
 $o1 = $svc->printDeliveryNote((int) $o1->getId(), $o1->getVersion());
 $calls = count($spy->calls);
 $again = $svc->printDeliveryNote((int) $o1->getId(), $o1->getVersion() - 1);
-check('M12 the delivery note moves scheduled → delivered (forward, by flag); a reprint writes nothing', $o1->getStatusCode() === 'delivered' && $again->getVersion() === $o1->getVersion() && count($spy->calls) === $calls);
+check('M12 the delivery note moves scheduled → the default of «delivered»; a reprint writes nothing', $o1->getStatusCode() === 'delivered' && $again->getVersion() === $o1->getVersion() && count($spy->calls) === $calls);
 $spy->refuse = true;
-check('M13 delivered → done-no-stock would bring consumed stock back: refused without a reason, nothing written',
-    $refusedBy(fn() => $svc->changeStatus((int) $o1->getId(), $o1->getVersion(), 'done-no-stock')) === StockReasonRequiredException::class
+check('M13 delivered → cancelled would bring consumed stock back: refused without a reason, nothing written',
+    $refusedBy(fn() => $svc->changeStatus((int) $o1->getId(), $o1->getVersion(), 'cancelled')) === StockReasonRequiredException::class
     && $db->fetchOne('SELECT status_code FROM sales_order WHERE id = ?', [$o1->getId()]) === 'delivered');
 $o1 = $em->getRepository(SalesOrder::class)->find((int) $o1->getId());
-$o1 = $svc->changeStatus((int) $o1->getId(), (int) $db->fetchOne('SELECT version FROM sales_order WHERE id = ?', [$o1->getId()]), 'done-no-stock', new StockConfirmation('Storno durch Kunde'));
-check('M14 with the confirmation: moved, the reason in the log row', $o1->getStatusCode() === 'done-no-stock'
+$o1 = $svc->changeStatus((int) $o1->getId(), (int) $db->fetchOne('SELECT version FROM sales_order WHERE id = ?', [$o1->getId()]), 'cancelled', new StockConfirmation('Storno durch Kunde'));
+check('M14 with the confirmation: moved, the reason in the log row', $o1->getStatusCode() === 'cancelled'
     && $db->fetchOne('SELECT reason FROM sales_order_status_change WHERE order_id = ? ORDER BY id DESC LIMIT 1', [$o1->getId()]) === 'Storno durch Kunde');
 $spy->refuse = false;
-check('M15 final → read-only (D7); the booked status is never a target', $refusedBy(fn() => $svc->update((int) $o1->getId(), $o1->getVersion(), new $D($contactId, '2026-10-14'))) === 'not-editable'
+check('M15 a locked phase (cancelled) → read-only (D7); the default of «closed» is never a target by hand', $refusedBy(fn() => $svc->update((int) $o1->getId(), $o1->getVersion(), new $D($contactId, '2026-10-14'))) === 'not-editable'
     && $refusedBy(fn() => $svc->changeStatus((int) $o1->getId(), $o1->getVersion(), 'booked')) === 'booked-by-print-only');
 // An invoice linked (the booking print's part in step 9 — here by hand): backward barred, forward allowed.
 $o1 = $svc->changeStatus((int) $o1->getId(), $o1->getVersion(), 'to-invoice');
@@ -623,14 +631,24 @@ $db->executeStatement("INSERT INTO invoice (kind, state, contact_id, language, i
     SELECT 'invoice', 'final', ?, 'de', '2026-10-14', '2026-10-14', 'CHF', 'net', 'net-30', '2026-11-13', '[]', 0, 0, 0, 0, 'harness', NOW(), 1, '', '', '', 'Muster AG', '', '', '', '8000', 'Zürich', 'CH', '', '', '', '', '', '', '', '', '', '', ''", [$contactId]);
 $db->executeStatement('UPDATE sales_order SET invoice_id = ? WHERE id = ?', [(int) $db->lastInsertId(), $o1->getId()]);
 $o1 = $em->getRepository(SalesOrder::class)->withLines((int) $o1->getId());
-check('M16 with an invoice: backward barred, edit refused, forward to «erledigt» by hand',
+check('M16 with an invoice: backward barred, cancelling barred, edit refused, forward to «erledigt» by hand',
     $refusedBy(fn() => $svc->changeStatus((int) $o1->getId(), $o1->getVersion(), 'scheduled')) === 'backward-barred'
+    && $refusedBy(fn() => $svc->changeStatus((int) $o1->getId(), $o1->getVersion(), 'cancelled')) === 'cancel-barred'
     && $refusedBy(fn() => $svc->update((int) $o1->getId(), $o1->getVersion(), new $D($contactId, '2026-10-14'))) === 'not-editable'
     && $svc->changeStatus((int) $o1->getId(), $o1->getVersion(), 'done')->getStatusCode() === 'done');
 check('M17 the log of order 1: create, status ×4, delivery-note — from → to in order',
     $db->fetchFirstColumn('SELECT CONCAT(COALESCE(from_code, \'-\'), \'>\', to_code, \':\', change_trigger) FROM sales_order_status_change WHERE order_id = ? ORDER BY id', [$o1->getId()]) === [
-        '->offer:create', 'offer>scheduled:status', 'scheduled>delivered:delivery-note', 'delivered>done-no-stock:status', 'done-no-stock>to-invoice:status', 'to-invoice>done:status',
+        '->offer:create', 'offer>scheduled:status', 'scheduled>delivered:delivery-note', 'delivered>cancelled:status', 'cancelled>to-invoice:status', 'to-invoice>done:status',
     ]);
+$o2 = $svc->printConfirmation((int) $o2->getId(), $o2->getVersion());
+$calls = count($spy->calls);
+$o2again = $svc->printConfirmation((int) $o2->getId(), $o2->getVersion() - 1);
+check('M18 the order confirmation moves a quote into the DEFAULT of «confirmed» (scheduled), log row `confirmation`, the spy reserves; a reprint writes nothing; a delivery note for a quote is refused',
+    $o2->getStatusCode() === 'scheduled' && end($spy->calls)->trigger === 'status:offer>scheduled' && $spy->shape()[0][2] === '1.000'
+    && $o2again->getVersion() === $o2->getVersion() && count($spy->calls) === $calls
+    && $db->fetchOne('SELECT change_trigger FROM sales_order_status_change WHERE order_id = ? ORDER BY id DESC LIMIT 1', [$o2->getId()]) === 'confirmation'
+    && ($o3 = $svc->create(new $D($contactId, '2026-10-14', lines: [$L::article($variantId, '1')]))) !== null
+    && $refusedBy(fn() => $svc->printDeliveryNote((int) $o3->getId(), $o3->getVersion())) === 'not-printable');
 
 echo "\n{$pass} passed, {$fail} failed\n";
 exit($fail === 0 ? 0 : 1);

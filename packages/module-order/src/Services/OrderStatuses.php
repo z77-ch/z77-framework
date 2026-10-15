@@ -2,27 +2,30 @@
 
 namespace Z77\Module\Order\Services;
 
+use Z77\Module\Order\Entities\OrderPhase;
 use Z77\Module\Order\Entities\OrderStatus;
 
 /**
- * The status RULES of plan §6 over one snapshot of the status rows — pure, no database, no file
- * (the harness checks them offline, section T). Built from `OrderStatusRepository::allInOrder()`.
+ * The status RULES over one snapshot of the status rows — pure, no database, no file (the harness
+ * checks them offline, section T). Built from `OrderStatusRepository::allInOrder()`.
  *
- * **No code path selects a status by its `code`** (ADR-043 consequence, harness N1): a step that
- * needs «the» status asks a FLAG —
+ * Behaviour is the PHASE's (ADR-043 addendum 2026-10-15); a status is a label in one phase. **No
+ * code path selects a status by its `code`** (harness N1): a step that needs «the» status asks for
+ * the DEFAULT of a phase — {@see defaultOf()}: the active row marked `phaseDefault`, else the first
+ * active row of the phase by position. The steps:
  *
- *   - {@see initial()}            — a new order: the ACTIVE status with the LOWEST level;
- *   - {@see deliveryNoteTarget()} — the delivery-note print (D6): the active `deliveryNoteTarget` row;
- *   - {@see invoiceBooked()}      — the booking print: the active `invoiceBooked` row.
+ *   - a new order                 — {@see initial()}: the default of `new`;
+ *   - the order confirmation      — the default of `confirmed`;
+ *   - the delivery-note print     — the default of `delivered`;
+ *   - the booking print           — the default of `closed` («Gebucht»).
  *
- * A code only comes in from OUTSIDE — the status an order already holds, the target a user picked.
+ * An action moves an order only FORWARD into its phase ({@see actionTarget()}): an order already in
+ * that phase or past it keeps its status (a reprint).
  *
- * Transitions ({@see refusal()}): forward = target level ≥ current level (equal = lateral, the two
- * «erledigt»), always allowed; backward = a lower level, allowed only while the order has NO
- * invoice (ADR-043 decision 4 — the bar comes from the invoice, not from the status model). Only
- * ACTIVE statuses are targets; an order keeps a deactivated one. The `invoiceBooked` row is
- * reached ONLY by the booking print — never a target of a status change (otherwise «gebucht»
- * without an invoice).
+ * Transitions by hand ({@see refusal()}): forward or lateral (a phase at or after the current one)
+ * always; backward only while the order has NO invoice; never to the default of `closed` (the
+ * booking print's alone — no «gebucht» without an invoice); never to `cancelled` with an invoice
+ * (after invoicing, a credit note); only ACTIVE statuses are targets — an order keeps a deactivated one.
  */
 final class OrderStatuses
 {
@@ -30,14 +33,15 @@ final class OrderStatuses
     public const INACTIVE_TARGET = 'inactive-target';
     public const BOOKED_TARGET   = 'booked-by-print-only';
     public const BACKWARD_BARRED = 'backward-barred';
+    public const CANCEL_BARRED   = 'cancel-barred';
 
-    /** @var list<OrderStatus> ascending by level, then id */
+    /** @var list<OrderStatus> along the ladder: phase, position, id */
     private readonly array $rows;
 
     /** @param list<OrderStatus> $rows every status row, active or not */
     public function __construct(array $rows)
     {
-        usort($rows, static fn(OrderStatus $a, OrderStatus $b) => [$a->getLevel(), $a->getId() ?? PHP_INT_MAX] <=> [$b->getLevel(), $b->getId() ?? PHP_INT_MAX]);
+        usort($rows, [OrderStatus::class, 'compare']);
         $this->rows = array_values($rows);
     }
 
@@ -60,52 +64,49 @@ final class OrderStatuses
         return null;
     }
 
-    /** A new order's status: the active one with the lowest level (then the lowest id); null = no active status. */
-    public function initial(): ?OrderStatus
+    /** The status an action sets when it moves an order into $phase — null = the phase has no active status. */
+    public function defaultOf(OrderPhase $phase): ?OrderStatus
     {
+        $first = null;
         foreach ($this->rows as $row) {
-            if ($row->isActive()) {
+            if (!$row->isActive() || $row->getPhase() !== $phase) {
+                continue;
+            }
+            if ($row->isPhaseDefault()) {
                 return $row;
             }
+            $first ??= $row;
         }
 
-        return null;
+        return $first;
+    }
+
+    /** A new order's status: the default of `new`; null = no active status there. */
+    public function initial(): ?OrderStatus
+    {
+        return $this->defaultOf(OrderPhase::New);
     }
 
     /**
-     * The statuses a NEW order may start in when the create form picks one: every active one
-     * except the booked one (reached by the booking print only) and the final ones (an order is
-     * not created closed).
+     * The statuses a NEW order may start in when the create form picks one: every active one of a
+     * phase that is not locked (owner 2026-10-15: «bei der Erfassung kann ich wählen, ausser gebucht
+     * und höher») — so a service order starts as «Terminauftrag» at once.
      *
      * @return list<OrderStatus>
      */
     public function startable(): array
     {
-        return array_values(array_filter($this->rows, static fn(OrderStatus $s) => $s->isActive() && !$s->isInvoiceBooked() && !$s->isFinal()));
+        return array_values(array_filter($this->rows, static fn(OrderStatus $s) => $s->isActive() && $s->getPhase()->isStartable()));
     }
 
-    /** The active status the delivery-note print sets (D6), or null. */
-    public function deliveryNoteTarget(): ?OrderStatus
+    /**
+     * The status an ACTION moving into $phase sets for an order in $current: the default of $phase
+     * when the order stands BEFORE it on the ladder; null when it is already in or past it (a
+     * reprint moves nothing) or when $phase has no active status.
+     */
+    public function actionTarget(OrderStatus $current, OrderPhase $phase): ?OrderStatus
     {
-        foreach ($this->rows as $row) {
-            if ($row->isActive() && $row->isDeliveryNoteTarget()) {
-                return $row;
-            }
-        }
-
-        return null;
-    }
-
-    /** The active status the booking print sets, or null — the booking print is refused then, naming what to mark. */
-    public function invoiceBooked(): ?OrderStatus
-    {
-        foreach ($this->rows as $row) {
-            if ($row->isActive() && $row->isInvoiceBooked()) {
-                return $row;
-            }
-        }
-
-        return null;
+        return $current->getPhase()->rank() < $phase->rank() ? $this->defaultOf($phase) : null;
     }
 
     /**
@@ -113,7 +114,7 @@ final class OrderStatuses
      *
      * @return array{0: string, 1: string}|null the reason constant and the German message
      */
-    public static function refusal(OrderStatus $from, OrderStatus $to, bool $hasInvoice): ?array
+    public function refusal(OrderStatus $from, OrderStatus $to, bool $hasInvoice): ?array
     {
         if ($to->getCode() === $from->getCode()) {
             return [self::SAME, 'Der Auftrag ist bereits im Status «' . $to->getLabel() . '».'];
@@ -121,10 +122,13 @@ final class OrderStatuses
         if (!$to->isActive()) {
             return [self::INACTIVE_TARGET, 'Der Status «' . $to->getLabel() . '» ist deaktiviert und wird nicht mehr vergeben.'];
         }
-        if ($to->isInvoiceBooked()) {
+        if ($to->getCode() === $this->defaultOf(OrderPhase::Closed)?->getCode()) {
             return [self::BOOKED_TARGET, '«' . $to->getLabel() . '» setzt nur der Buchungsdruck — er verbucht die Rechnung und setzt den Status in einem Schritt.'];
         }
-        if ($to->getLevel() < $from->getLevel() && $hasInvoice) {
+        if ($to->getPhase() === OrderPhase::Cancelled && $hasInvoice) {
+            return [self::CANCEL_BARRED, 'Zum Auftrag ist eine Rechnung verbucht — stornieren geht nicht mehr. Eine Korrektur ist eine Gutschrift auf der Rechnung.'];
+        }
+        if ($to->getPhase()->rank() < $from->getPhase()->rank() && $hasInvoice) {
             return [self::BACKWARD_BARRED, 'Zum Auftrag ist eine Rechnung verbucht — zurück auf «' . $to->getLabel() . '» geht nicht mehr. Eine Korrektur ist eine Gutschrift auf der Rechnung.'];
         }
 
@@ -133,18 +137,12 @@ final class OrderStatuses
 
     /**
      * The targets a status change offers an order in $from (the confirm list of the screen): every
-     * row {@see refusal()} allows, in level order.
+     * row {@see refusal()} allows, along the ladder.
      *
      * @return list<OrderStatus>
      */
     public function targets(OrderStatus $from, bool $hasInvoice): array
     {
-        return array_values(array_filter($this->rows, static fn(OrderStatus $to) => self::refusal($from, $to, $hasInvoice) === null));
-    }
-
-    /** Whether moving from $from to $to is forward (or lateral) — the delivery-note print moves only so. */
-    public static function isForward(OrderStatus $from, OrderStatus $to): bool
-    {
-        return $to->getLevel() >= $from->getLevel();
+        return array_values(array_filter($this->rows, fn(OrderStatus $to) => $this->refusal($from, $to, $hasInvoice) === null));
     }
 }

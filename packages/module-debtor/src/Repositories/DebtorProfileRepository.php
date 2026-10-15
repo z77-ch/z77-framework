@@ -2,7 +2,9 @@
 
 namespace Z77\Module\Debtor\Repositories;
 
+use Doctrine\DBAL\ParameterType;
 use Z77\Module\Contact\Entities\Contact;
+use Z77\Module\Contact\Entities\ContactKind;
 use Z77\Module\Debtor\Entities\DebtorProfile;
 use Z77\Persistence\Doctrine\Repository\DoctrineRepository;
 
@@ -65,46 +67,91 @@ class DebtorProfileRepository extends DoctrineRepository
     }
 
     /**
-     * The debtors a NEW document may be written to — active profile, active
-     * contact (the reference rule on the party, ADR-043 decision 19) — with
-     * the contact fetch-joined, by name: the party picker of the invoice
-     * editor (P3 part 3). Doctrine-only (fetch-join).
+     * One page of the CUSTOMER PICKER (owner 2026-10-15): the parties a NEW document may be
+     * written to — active contacts that are an ACTIVE debtor or no debtor yet (D9: the profile
+     * opens with the first booking; a contact whose profile is deactivated is no choice) — that
+     * match every criterion of $search, each with its profile or null. The search runs in the
+     * database (thousands of contacts); every value is bound, the ORDER BY comes from a fixed
+     * map. Doctrine-only (SQL + DQL).
      *
-     * @return list<DebtorProfile>
+     * @return list<array{contact: Contact, profile: ?DebtorProfile}>
      */
-    public function activeWithContacts(): array
+    public function searchCustomers(CustomerSearch $search, int $offset, int $limit): array
     {
-        return $this->em()->createQueryBuilder()
-            ->select('p', 'c')
-            ->from(DebtorProfile::class, 'p')
-            ->join('p.contact', 'c')
-            ->where('p.active = true AND c.active = true')
-            ->orderBy('c.company', 'ASC')
-            ->addOrderBy('c.lastName', 'ASC')
-            ->addOrderBy('c.firstName', 'ASC')
-            ->getQuery()
-            ->getResult();
+        [$where, $params, $types] = $this->customerWhere($search);
+        $dir   = $search->descending ? 'DESC' : 'ASC';
+        $order = match ($search->sort) {
+            // A customer without a number (no debtor yet) sorts after the numbered ones either way.
+            'number' => "p.customer_number IS NULL, p.customer_number {$dir}, c.id",
+            default  => "IF(c.kind = '" . ContactKind::Organisation->value . "', c.company, c.last_name) {$dir}, c.last_name {$dir}, c.first_name {$dir}, c.id",
+        };
+        $ids = array_map('intval', $this->connection()->fetchFirstColumn(
+            "SELECT c.id FROM contact c LEFT JOIN debtor_profile p ON p.contact_id = c.id{$where} ORDER BY {$order} LIMIT ? OFFSET ?",
+            array_merge($params, [max(1, $limit), max(0, $offset)]),
+            array_merge($types, [ParameterType::INTEGER, ParameterType::INTEGER])
+        ));
+        if ($ids === []) {
+            return [];
+        }
+        $contacts = [];
+        foreach ($this->em()->getRepository(Contact::class)->findBy(['id' => $ids]) as $contact) {
+            $contacts[(int) $contact->getId()] = $contact;
+        }
+        $profiles = $this->findForContacts($ids);
+        $rows     = [];
+        foreach ($ids as $id) {   // the SQL order — findBy() answers in the database's
+            if (isset($contacts[$id])) {
+                $rows[] = ['contact' => $contacts[$id], 'profile' => $profiles[$id] ?? null];
+            }
+        }
+
+        return $rows;
+    }
+
+    /** How many customers match $search — the picker's pager and badge. Doctrine-only (SQL). */
+    public function countCustomers(CustomerSearch $search): int
+    {
+        [$where, $params, $types] = $this->customerWhere($search);
+
+        return (int) $this->connection()->fetchOne("SELECT COUNT(*) FROM contact c LEFT JOIN debtor_profile p ON p.contact_id = c.id{$where}", $params, $types);
     }
 
     /**
-     * The contacts a NEW profile may be opened for — ACTIVE (the reference rule on the party,
-     * ADR-043 decision 19) and without a profile yet — by name: the contact choice of «+ Debitor»
-     * in the action cell (2026-10-08). Doctrine-only (NOT EXISTS over the association).
+     * The WHERE of {@see searchCustomers()} / {@see countCustomers()}: the choosable parties, then
+     * the criteria AND-ed, one bound value each; `LIKE … ESCAPE '!'` with the wildcards escaped
+     * (holds under `NO_BACKSLASH_ESCAPES`, contact.md rule).
      *
-     * @return list<Contact>
+     * @return array{0: string, 1: list<mixed>, 2: list<ParameterType>}
      */
-    public function contactsWithoutProfile(): array
+    private function customerWhere(CustomerSearch $search): array
     {
-        return $this->em()->createQueryBuilder()
-            ->select('c')
-            ->from(Contact::class, 'c')
-            ->where('c.active = true')
-            ->andWhere('NOT EXISTS (SELECT p.id FROM ' . DebtorProfile::class . ' p WHERE p.contact = c)')
-            ->orderBy('c.company', 'ASC')
-            ->addOrderBy('c.lastName', 'ASC')
-            ->addOrderBy('c.firstName', 'ASC')
-            ->getQuery()
-            ->getResult();
+        $where  = ['c.active = 1', '(p.id IS NULL OR p.active = 1)'];
+        $params = [];
+        $types  = [];
+        $like   = static fn(string $value): string => '%' . strtr($value, ['!' => '!!', '%' => '!%', '_' => '!_']) . '%';
+        if ($search->name !== null) {
+            $where[] = "(c.company LIKE ? ESCAPE '!' OR c.last_name LIKE ? ESCAPE '!' OR c.first_name LIKE ? ESCAPE '!'"
+                . " OR CONCAT(c.first_name, ' ', c.last_name) LIKE ? ESCAPE '!' OR CONCAT(c.last_name, ' ', c.first_name) LIKE ? ESCAPE '!')";
+            array_push($params, ...array_fill(0, 5, $like($search->name)));
+            array_push($types, ...array_fill(0, 5, ParameterType::STRING));
+        }
+        if ($search->city !== null) {
+            $where[]  = "EXISTS (SELECT 1 FROM contact_address ca JOIN address a ON a.id = ca.address_id WHERE ca.contact_id = c.id AND a.city LIKE ? ESCAPE '!')";
+            $params[] = $like($search->city);
+            $types[]  = ParameterType::STRING;
+        }
+        if ($search->number !== null) {
+            $where[]  = 'p.customer_number = ?';
+            $params[] = $search->number;
+            $types[]  = ParameterType::INTEGER;
+        }
+        if ($search->email !== null) {
+            $where[]  = "c.email LIKE ? ESCAPE '!'";
+            $params[] = $like($search->email);
+            $types[]  = ParameterType::STRING;
+        }
+
+        return [' WHERE ' . implode(' AND ', $where), $params, $types];
     }
 
     /**

@@ -15,13 +15,13 @@ use Z77\Persistence\Resolver\UnifiedEntityManager;
  *   - a row is never deleted, only deactivated: there is no method for it, and the screen offers
  *     none — orders reference the code;
  *   - the `code` of an existing row is immutable ({@see OrderStatusCodeChangedException});
- *   - every save runs {@see OrderStatusValidator} (the flag invariants and the cross-row rules),
+ *   - every save runs {@see OrderStatusValidator} (phase, position, one active default per phase),
  *     so a writer that is NOT the backend (an import, a project script) is bound to the same rules.
  *
  * {@see setActive()} is a PURE STATE CHANGE like debtor's — the field validator does not run, so a
  * row that has become invalid can always be switched off. Switching ON is checked against the
- * cross-row rules only (one active «gebucht», one active «Ziel des Lieferscheins», «gebucht» above
- * every «fakturierbar»): an activation that broke them would make the selection by flag ambiguous.
+ * cross-row rule only (one active default per phase): an activation that broke it would make the
+ * status an action sets ambiguous.
  */
 final class OrderMasterData
 {

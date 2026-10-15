@@ -7,7 +7,7 @@ use Z77\Core\DI,
     Z77\Core\Http\Response\FetchResponse,
     Z77\Core\Http\Response\HtmlResponse,
     Z77\Core\Http\Response\RedirectResponse,
-    Z77\Core\Services\TemplateRenderer,
+    Z77\Module\Contact\Entities\Contact,
     Z77\Module\Contact\Services\AddressTypes,
     Z77\Module\Contact\Services\ContactService,
     Z77\Module\Contact\Ui\ContactForm,
@@ -99,6 +99,8 @@ use Z77\Core\DI,
  */
 trait InvoiceControllerTrait
 {
+    use CustomerPickerTrait;
+
     private const INVOICE_NS = 'Z77\\Module\\Debtor';
 
     /**
@@ -744,8 +746,9 @@ trait InvoiceControllerTrait
      * save are module-contact's building block ({@see ContactForm}: the partials
      * `_contactFields` + `_addressFields`, `ContactService::save()` — no contact rule lives
      * here), the address REQUIRED (a document needs one). The save answers with two commands:
-     * `replace-html` of the debtor select IN THE EDITOR (`#invoice-contact`, scoped to the
-     * origin) — re-rendered with the new contact selected — and `close-modal` for this window;
+     * `replace-html` of the customer field IN THE EDITOR (`#invoice-contact`, scoped to the
+     * origin — {@see CustomerPickerTrait::customerChosenAnswer()}, the picker's own answer) with the
+     * new contact chosen — and `close-modal` for this window (the picker too, when it was opened there);
      * nothing else of the draft is touched. The contact gets its debtor profile when the
      * draft is saved ({@see addAction()}). Without the script: a page whose save goes to a
      * new invoice with the contact preselected.
@@ -767,14 +770,7 @@ trait InvoiceControllerTrait
                 }
                 $this->messageService->pushFlash('success', $text);
 
-                return $this->fetch()->setStatus('success')
-                    ->setData(['id' => $contact->getId()])
-                    ->addCommand('replace-html', [
-                        'target' => '#invoice-contact',
-                        'html'   => $this->invoiceDebtorSelect((string) $contact->getId()),
-                        'origin' => WindowOrigin::of($request),
-                    ])
-                    ->addCommand('close-modal');
+                return $this->customerChosenAnswer($contact, WindowOrigin::of($request), $this->invoiceListBase() . '/add');
             }
         }
 
@@ -785,22 +781,20 @@ trait InvoiceControllerTrait
         ] + $form->vars(AddressTypes::from($this->em())));
     }
 
-    /** The editor's party picker alone — what «+ Kontakt» puts back into the editor ({@see newContactAction()}). */
-    private function invoiceDebtorSelect(string $selected): string
+    /** The picker lives at the editor's root ({@see CustomerPickerTrait}). */
+    protected function customerPickBase(): string
     {
-        $profiles = $this->em()->getRepository(DebtorProfile::class);
+        return $this->invoiceListBase();
+    }
 
-        return (new TemplateRenderer(self::INVOICE_NS))->partial('Backend/InvoiceController/_debtorSelect', [
-            'debtors'    => $profiles->activeWithContacts(),
-            'candidates' => $profiles->contactsWithoutProfile(),
-            'selected'   => $selected,
-            'invalid'    => false,
-        ]);
+    /** The invoice editor needs nothing beyond the customer field after a choice. */
+    protected function customerChosenCommands(FetchResponse $response, Contact $contact, string $origin): void
+    {
     }
 
     /**
-     * The editor page: the form with its pickers — the active debtors (a new
-     * invoice), the active payment terms and targets (+ the ones the document
+     * The editor page: the form with its pickers — the customer field (a new
+     * invoice, {@see CustomerPicker}), the active payment terms and targets (+ the ones the document
      * carries), the tax codes (active + kept, module-vat's shared list) and
      * the postable accounts (module-mandator's shared datalist). The help
      * (ADR-048) carries the rules the form does not spell out.
@@ -820,9 +814,9 @@ trait InvoiceControllerTrait
             'document'   => $document,
             'version'    => $version,
             'entityCsrf' => $document === null ? '' : DI::getCsrfService()->generateEntityToken('invoice', (int) $document->getId()),
-            'debtors'    => $document === null && $form->creditNoteOf === null ? $this->em()->getRepository(DebtorProfile::class)->activeWithContacts() : [],
-            // Owner 2026-10-10: contacts without a profile are choosable too — the save opens it.
-            'candidates' => $document === null && $form->creditNoteOf === null ? $this->em()->getRepository(DebtorProfile::class)->contactsWithoutProfile() : [],
+            // The customer of a NEW invoice: the field with «Kunde wählen …» (CustomerPicker, owner 2026-10-15) — contacts
+            // without a profile are choosable too, the save opens it (owner 2026-10-10).
+            'customerField' => $document === null && $form->creditNoteOf === null ? CustomerPicker::fieldHtml($this->em(), $form->header('contact'), $this->invoiceListBase() . '/customer-pick', $this->invoiceListBase() . '/add', $form->error('contact') !== '') : '',
             'terms'      => $terms,
             // What «wie beim Debitor» means for a contact «(neu als Debitor)» (owner 2026-10-12).
             'defaultTerms' => $this->em()->getRepository(PaymentTerms::class)->defaultForNewDebtor(),

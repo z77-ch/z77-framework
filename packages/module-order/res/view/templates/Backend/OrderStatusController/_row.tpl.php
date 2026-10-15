@@ -6,7 +6,9 @@
  *
  *   - the state icon opens the status WINDOW (ADR-047, `data-window-open`; the origin is the list
  *     region it stands in);
- *   - «Verhalten»: one badge per flag that is ON — the words of the window's switches;
+ *   - «Phase»: the fixed phase it belongs to (ADR-043 addendum 2026-10-15), «Sortierung» within it,
+ *     «Wird gesetzt durch»: the action that sets it (neuer Auftrag, Auftragsbestätigung, Lieferschein,
+ *     Buchungsdruck) when it is its phase's default;
  *   - «Aktiv»: the inline switch (`data-fetch-toggle`); there is no delete (orders reference the code).
  *
  * @var \Z77\Module\Order\Entities\OrderStatus $row
@@ -26,12 +28,9 @@ $region     = OrderStatusListing::definition()->region();
                         <a class="be-list__cell be-list__state be-list__state--<?= $active ? 'editable' : 'closed' ?>" href="<?= e($url) ?>" data-window-open="<?= e($url) ?>" data-origin="region:<?= e($region) ?>" aria-label="<?= e($state) ?>" title="<?= e($state) ?>"><svg class="be-icon" width="14" height="14" aria-hidden="true"><use href="#icon-edit"/></svg></a>
                         <span class="be-list__cell be-list__cell--mono"><?= e($row->getCode()) ?></span>
                         <span class="be-list__cell"><?= e($row->getLabel()) ?></span>
-                        <span class="be-list__cell be-list__cell--num"><?= $row->getLevel() ?></span>
-                        <span class="be-list__cell" data-priority="2">
-                            <?php foreach ($row->flags() as $flag => $on): ?>
-                            <?php if ($on): ?><span class="badge badge--success"><?= e(OrderStatusListing::FLAG_LABELS[$flag]) ?></span><?php endif; ?>
-                            <?php endforeach; ?>
-                        </span>
+                        <span class="be-list__cell"><?= e($row->getPhase()->label()) ?></span>
+                        <span class="be-list__cell be-list__cell--num" data-priority="2"><?= $row->getPosition() ?></span>
+                        <span class="be-list__cell" data-priority="2"><?= $row->isPhaseDefault() && $row->getPhase()->action() !== null ? e($row->getPhase()->action()) : '' ?></span>
                         <span class="be-list__cell be-list__cell--actions">
                             <label class="be-switch be-switch--sm" title="<?= $active ? 'Aktiv — wird als Status angeboten' : 'Inaktiv — Aufträge darin behalten ihn' ?>">
                                 <input type="checkbox" class="be-switch__input" aria-label="Aktiv"

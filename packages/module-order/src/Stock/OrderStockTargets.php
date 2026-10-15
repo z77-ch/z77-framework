@@ -4,15 +4,17 @@ namespace Z77\Module\Order\Stock;
 
 use Z77\Module\Article\Stock\StockLineTarget;
 use Z77\Module\Debtor\Entities\LineType;
-use Z77\Module\Order\Entities\OrderStatus;
+use Z77\Module\Order\Entities\OrderPhase;
 use Z77\Module\Order\Entities\SalesOrderLine;
 
 /**
- * The TARGET quantities of an order's lines under a status (plan §8.1, ADR-043 decision 11 with
- * the addendum 2026-10-14, owner O5) — pure, the harness checks it offline (section T):
+ * The TARGET quantities of an order's lines in a PHASE (plan §8.1, ADR-043 decision 11 with the
+ * addenda 2026-10-14 and 2026-10-15 — the phase carries the stock behaviour, a status none) — pure,
+ * the harness checks it offline (section T):
  *
  *   - every ARTICLE line (a variant referenced) becomes one {@see StockLineTarget}: `reserved` =
- *     the quantity if the status `reservesStock`, `consumed` = the quantity if it `consumesStock`,
+ *     the quantity if the phase reserves (`confirmed`), `consumed` = the quantity if it consumes
+ *     (`delivered`, `closed`),
  *     otherwise `0.000`; a NEGATIVE quantity stays negative (an inflow — a return);
  *   - a LUMP-SUM article line has no quantity: it counts as ONE unit (decided at build 2026-10-14 —
  *     a lump-sum article is a valid article, and leaving it out would let a stock-relevant one
@@ -30,7 +32,7 @@ final class OrderStockTargets
      * @return list<StockLineTarget>
      * @throws \LogicException an article line without an id (not flushed yet) or without a variant id
      */
-    public static function of(array $lines, OrderStatus $status): array
+    public static function of(array $lines, OrderPhase $phase): array
     {
         $targets = [];
         foreach ($lines as $line) {
@@ -44,8 +46,8 @@ final class OrderStockTargets
             $targets[] = new StockLineTarget(
                 (string) $line->getId(),
                 (int) $line->getVariant()->getId(),
-                $status->isReservesStock() ? $quantity : StockLineTarget::ZERO,
-                $status->isConsumesStock() ? $quantity : StockLineTarget::ZERO,
+                $phase->reservesStock() ? $quantity : StockLineTarget::ZERO,
+                $phase->consumesStock() ? $quantity : StockLineTarget::ZERO,
             );
         }
 

@@ -9,10 +9,11 @@
  *
  * Fetched, a WINDOW (ADR-047): mask `order-edit`, record `sales-order:<id>` (a new order: mask
  * only), the title in the title bar, `_origin` carried back. The action row (ADR-049) is the
- * shared `partials/modalActions`, FIRST in the form: Speichern · Offerte / Auftragsbestätigung
- * (PDF, new tab) · Lieferschein … · Rechnungsvorschau (PDF) · Status ändern … · Buchungsdruck …
- * (only `invoiceable` without an invoice — a plain link that leaves the window, the
- * DEBTOR-WIN-002 pattern) · Abbrechen · «N Fehler».
+ * shared `partials/modalActions`, FIRST in the form — by the PHASE (ADR-043 addendum 2026-10-15):
+ * Speichern · Offerte / Auftragsbestätigung (PDF, new tab) · «Auftragsbestätigung …» (a quote: it
+ * confirms the order) or «Lieferschein …» · Rechnungsvorschau (PDF) · Status ändern … ·
+ * Buchungsdruck … (only a bookable phase without an invoice — a plain link that leaves the window,
+ * the DEBTOR-WIN-002 pattern) · Abbrechen · «N Fehler». A cancelled order prints nothing.
  *
  * RADIO TABS (css-backend.md, `components/_radiotabs.scss`) over the sections of the one form:
  * Auftrag (head, positions, totals) · Verlauf (the status log) · Belege (the invoice with its
@@ -20,7 +21,7 @@
  * radios (the sibling variant of `_radiotabs.scss` — a window has no toolbar). A new order has
  * only the first section and no tabs.
  *
- * Read-only (D7: an invoice is booked, or the status is final): the head and the positions sit
+ * Read-only (D7: an invoice is booked, or the phase is closed / cancelled): the head and the positions sit
  * in a disabled fieldset, no «Speichern», the reason on top. No explanations in the form
  * (ADR-048) — the help (`edit.help`) has a section per field.
  *
@@ -33,8 +34,7 @@
  * @var string|null $editRefusal  why the order is read-only (D7), null = editable
  * @var bool $needReason  the stock seam asked for a reason (consumed stock would come back)
  * @var string $entityCsrf
- * @var list<\Z77\Module\Debtor\Entities\DebtorProfile> $debtors
- * @var list<\Z77\Module\Contact\Entities\Contact> $candidates  active contacts without a debtor profile (D9)
+ * @var string $customerField  debtor's `CustomerPicker::fieldHtml()` — the customer + «Kunde wählen …» (contacts without a profile choosable, D9)
  * @var list<\Z77\Module\Debtor\Entities\PaymentTarget> $targets
  * @var array<string, string> $ships  delivery-address choice → label
  * @var list<\Z77\Module\Vat\Entities\TaxCode> $taxCodes
@@ -48,9 +48,9 @@
  * @var \Z77\Module\Debtor\Services\PaymentState|null $payment
  * @var list<\Z77\Module\Debtor\Entities\Invoice> $creditNotes
  * @var string $invoiceBase  debtor's document screens
- * @var string $orderTitle  «Offerte» / «Auftragsbestätigung» (by the flag `offer`)
+ * @var string $orderTitle  «Offerte» / «Auftragsbestätigung» (by the phase)
  * @var bool $canBook
- * @var \Z77\Module\Order\Entities\OrderStatus|null $deliveryTarget
+ * @var \Z77\Module\Order\Entities\OrderPhase|null $phase  the order's phase, null = a new order
  * @var callable $fmt
  * @var string $csrfToken
  * @var string $actionBase
@@ -82,13 +82,21 @@ $winAttr    = $window
 
 // The action row's further controls (ADR-049): PDFs in a new tab, the confirm windows in THIS window
 // (`data-window-link`), the booking print a plain link that leaves the window (DEBTOR-WIN-002 pattern).
-$extra = '';
+// What the PHASE allows (ADR-043 addendum 2026-10-15): a quote prints «Offerte» and offers the order
+// confirmation that confirms it; from `confirmed` on the confirmation is a plain PDF and the delivery
+// note is offered; a cancelled order prints nothing.
+$extra     = '';
+$cancelled = $phase === \Z77\Module\Order\Entities\OrderPhase::Cancelled;
 if (!$isNew) {
-    $extra .= '<a class="be-btn be-btn--ghost" href="' . e($actionBase . '/pdf?id=' . $id) . '" target="_blank" rel="noopener" title="' . e($orderTitle) . ' als PDF (neuer Tab)">' . e($orderTitle) . '</a>';
-    if (!($status?->isOffer() ?? false)) {
+    if (!$cancelled) {
+        $extra .= '<a class="be-btn be-btn--ghost" href="' . e($actionBase . '/pdf?id=' . $id) . '" target="_blank" rel="noopener" title="' . e($orderTitle) . ' als PDF (neuer Tab)">' . e($orderTitle) . '</a>';
+    }
+    if ($phase?->isQuote() ?? false) {
+        $extra .= '<a class="be-btn be-btn--ghost" href="' . e($actionBase . '/confirm-confirmation?id=' . $id) . '" data-window-link title="Auftragsbestätigung drucken — der Auftrag wird bestätigt">Auftragsbestätigung …</a>';
+    } elseif (!$cancelled) {
         $extra .= '<a class="be-btn be-btn--ghost" href="' . e($actionBase . '/confirm-delivery-note?id=' . $id) . '" data-window-link>Lieferschein …</a>';
     }
-    if ($invoice === null) {
+    if ($invoice === null && !$cancelled) {
         $extra .= '<a class="be-btn be-btn--ghost" href="' . e($actionBase . '/invoice-preview?id=' . $id) . '" target="_blank" rel="noopener" title="Die Rechnung, wie der Buchungsdruck sie heute erstellen würde — ohne Nummer und ohne Zahlteil">Rechnungsvorschau</a>';
     }
     $extra .= '<a class="be-btn be-btn--ghost" href="' . e($actionBase . '/status?id=' . $id) . '" data-window-link>Status ändern …</a>';
@@ -156,16 +164,14 @@ $tabs = $isNew ? [] : [1 => 'Auftrag', 2 => 'Verlauf', 3 => 'Belege'];
         <fieldset class="be-form__fieldset"<?= $editable ? '' : ' disabled' ?> style="border: 0; padding: 0; margin: 0; min-width: 0">
         <div class="be-form__grid">
             <div class="be-form__field" data-z77-field-wrapper>
-                <label for="invoice-contact">Kunde</label>
-                <?= $this->partial('Backend/InvoiceController/_debtorSelect', [
-                    'debtors'    => $debtors,
-                    'candidates' => $candidates,
-                    'selected'   => $form->header('contact'),
-                    'invalid'    => $form->error('contact') !== '',
-                ], 'Z77\\Module\\Debtor') ?>
+                <label for="invoice-contact-name">Kunde</label>
                 <?php if ($editable): ?>
-                <?php // «+ Kontakt»: a window over this one; its save replaces the select above — the order stays as typed. ?>
+                <?php // debtor's customer field: «Kunde wählen …» opens the searching picker over this window (CustomerPicker). ?>
+                <?= raw($customerField) ?>
+                <?php // «+ Kontakt»: a window over this one; its save replaces the field above — the order stays as typed. ?>
                 <a class="be-btn be-btn--ghost be-btn--sm" href="<?= e($actionBase . '/new-contact') ?>" data-window-open="<?= e($actionBase . '/new-contact') ?>">+ Kontakt</a>
+                <?php else: ?>
+                <input type="text" id="invoice-contact-name" value="<?= e($order->getContact()->displayName()) ?>" readonly>
                 <?php endif; ?>
                 <?= raw($fieldError($form->error('contact'))) ?>
             </div>
@@ -204,11 +210,7 @@ $tabs = $isNew ? [] : [1 => 'Auftrag', 2 => 'Verlauf', 3 => 'Belege'];
             </div>
             <div class="be-form__field" data-z77-field-wrapper>
                 <label for="order-ship">Lieferadresse</label>
-                <select id="order-ship" name="ship" aria-invalid="<?= $invalid($form->error('ship')) ?>">
-                    <?php foreach ($ships as $value => $label): ?>
-                    <option value="<?= e((string) $value) ?>"<?= (string) $value === $form->header('ship') ? ' selected' : '' ?>><?= e($label) ?></option>
-                    <?php endforeach; ?>
-                </select>
+                <?= $this->partial('Backend/OrderController/_ship', ['ships' => $ships, 'selected' => $form->header('ship'), 'invalid' => $form->error('ship') !== ''], 'Z77\\Module\\Order') ?>
                 <?= raw($fieldError($form->error('ship'))) ?>
             </div>
             <div class="be-form__field" data-z77-field-wrapper>
@@ -261,7 +263,7 @@ $tabs = $isNew ? [] : [1 => 'Auftrag', 2 => 'Verlauf', 3 => 'Belege'];
                 </div>
                 <?php foreach ($form->rows() as $i => $row): $p = 'rows[' . $i . ']'; $rid = 'order-row-' . $i . '-'; $art = $row['article'] !== '' ? ($articles[$row['article']] ?? null) : null; ?>
                 <div class="be-list__item">
-                    <div class="be-list__row">
+                    <div class="be-list__row" data-fill-scope>
                         <span class="be-list__cell">
                             <?php if ($row['id'] !== ''): ?><input type="hidden" name="<?= $p ?>[id]" value="<?= e($row['id']) ?>"><?php endif; ?>
                             <select class="be-input be-input--sm" id="<?= $rid ?>type" name="<?= $p ?>[type]" data-help-key="type" aria-label="Art Zeile <?= $i + 1 ?>">
@@ -271,22 +273,20 @@ $tabs = $isNew ? [] : [1 => 'Auftrag', 2 => 'Verlauf', 3 => 'Belege'];
                             </select>
                         </span>
                         <span class="be-list__cell"><input type="checkbox" id="<?= $rid ?>child" name="<?= $p ?>[child]" value="1"<?= $row['child'] !== '' ? ' checked' : '' ?> data-help-key="child" aria-label="Zeile <?= $i + 1 ?> unter der Position darüber" aria-invalid="<?= $invalid($form->rowError($i, 'child')) ?>"></span>
-                        <span class="be-list__cell"><input class="be-input be-input--sm" type="text" id="<?= $rid ?>article" name="<?= $p ?>[article]" value="<?= e($row['article']) ?>" list="order-articles-<?= e($key) ?>" spellcheck="false" data-help-key="article" aria-label="Artikel Zeile <?= $i + 1 ?>" aria-invalid="<?= $invalid($form->rowError($i, 'article')) ?>"<?= $art !== null ? ' title="' . e($art['name']) . '"' : '' ?>></span>
-                        <span class="be-list__cell"><textarea class="be-input be-input--sm" id="<?= $rid ?>text" name="<?= $p ?>[text]" rows="1" data-help-key="text" aria-label="Text Zeile <?= $i + 1 ?>" aria-invalid="<?= $invalid($form->rowError($i, 'text')) ?>"><?= e($row['text']) ?></textarea></span>
+                        <span class="be-list__cell"><input class="be-input be-input--sm" type="text" id="<?= $rid ?>article" name="<?= $p ?>[article]" value="<?= e($row['article']) ?>" list="order-articles-<?= e($key) ?>" spellcheck="false" data-fill-url="<?= e($actionBase . '/article-defaults') ?>" data-fill-with="order_date service_from price_mode" data-help-key="article" aria-label="Artikel Zeile <?= $i + 1 ?>" aria-invalid="<?= $invalid($form->rowError($i, 'article')) ?>"<?= $art !== null ? ' title="' . e($art['name']) . '"' : '' ?>></span>
+                        <span class="be-list__cell"><textarea class="be-input be-input--sm" id="<?= $rid ?>text" name="<?= $p ?>[text]" rows="1" data-fill-key="text" data-help-key="text" aria-label="Text Zeile <?= $i + 1 ?>" aria-invalid="<?= $invalid($form->rowError($i, 'text')) ?>"><?= e($row['text']) ?></textarea></span>
                         <span class="be-list__cell be-list__cell--num"><input class="be-input be-input--sm" type="text" id="<?= $rid ?>quantity" name="<?= $p ?>[quantity]" value="<?= e($row['quantity']) ?>" inputmode="decimal" data-help-key="quantity" aria-label="Menge Zeile <?= $i + 1 ?>" aria-invalid="<?= $invalid($form->rowError($i, 'quantity')) ?>"></span>
-                        <span class="be-list__cell"><input class="be-input be-input--sm" type="text" id="<?= $rid ?>unit" name="<?= $p ?>[unit]" value="<?= e($row['unit']) ?>" maxlength="16" data-help-key="unit" aria-label="Einheit Zeile <?= $i + 1 ?>" aria-invalid="<?= $invalid($form->rowError($i, 'unit')) ?>"></span>
-                        <span class="be-list__cell be-list__cell--num"><input class="be-input be-input--sm" type="text" id="<?= $rid ?>price" name="<?= $p ?>[price]" value="<?= e($row['price']) ?>" inputmode="decimal" data-help-key="price" aria-label="Preis Zeile <?= $i + 1 ?>" aria-invalid="<?= $invalid($form->rowError($i, 'price')) ?>"></span>
+                        <span class="be-list__cell"><input class="be-input be-input--sm" type="text" id="<?= $rid ?>unit" name="<?= $p ?>[unit]" value="<?= e($row['unit']) ?>" maxlength="16" data-fill-key="unit" data-help-key="unit" aria-label="Einheit Zeile <?= $i + 1 ?>" aria-invalid="<?= $invalid($form->rowError($i, 'unit')) ?>"></span>
+                        <span class="be-list__cell be-list__cell--num"><input class="be-input be-input--sm" type="text" id="<?= $rid ?>price" name="<?= $p ?>[price]" value="<?= e($row['price']) ?>" inputmode="decimal" data-fill-key="price" data-help-key="price" aria-label="Preis Zeile <?= $i + 1 ?>" aria-invalid="<?= $invalid($form->rowError($i, 'price')) ?>"></span>
                         <span class="be-list__cell be-list__cell--num"><input class="be-input be-input--sm" type="text" id="<?= $rid ?>discount" name="<?= $p ?>[discount]" value="<?= e($row['discount']) ?>" inputmode="decimal" data-help-key="discount" aria-label="Rabatt Zeile <?= $i + 1 ?>" aria-invalid="<?= $invalid($form->rowError($i, 'discount')) ?>"></span>
-                        <?php if ($art !== null): ?>
-                        <span class="be-list__cell be-list__cell--muted" title="vom Artikel"><?= e($art['taxCode']) ?></span>
-                        <span class="be-list__cell be-list__cell--muted be-list__cell--mono" title="vom Artikel"><?= e($art['account']) ?></span>
-                        <?php else: ?>
-                        <span class="be-list__cell"><?= $this->partial('partials/taxCodeSelect', [
-                            'codes' => $taxCodes, 'name' => $p . '[tax_code]', 'selected' => $row['tax_code'], 'id' => $rid . 'tax_code',
+                        <?php // An article line shows the article's code and account LOCKED (D3 — the save takes them from the article
+                              // and ignores what is posted); the fields stay, so a changed or cleared article (core.js «fill») can set or free them. ?>
+                        <span class="be-list__cell"<?= $art !== null ? ' title="vom Artikel"' : '' ?>><?= $this->partial('partials/taxCodeSelect', [
+                            'codes' => $taxCodes, 'name' => $p . '[tax_code]', 'selected' => $art !== null ? $art['taxCode'] : $row['tax_code'], 'id' => $rid . 'tax_code',
                             'label' => 'MWST-Code Zeile ' . ($i + 1), 'invalid' => $form->rowError($i, 'tax_code') !== '',
+                            'attrs' => ['data-fill-key' => 'tax_code'] + ($art !== null ? ['disabled' => true] : []),
                         ], 'Z77\\Module\\Vat') ?></span>
-                        <span class="be-list__cell"><input class="be-input be-input--sm" type="text" id="<?= $rid ?>account" name="<?= $p ?>[account]" value="<?= e($row['account']) ?>"<?= $accounts !== [] ? ' list="order-accounts-' . e($key) . '"' : '' ?> inputmode="numeric" data-help-key="account" aria-label="Konto Zeile <?= $i + 1 ?>" aria-invalid="<?= $invalid($form->rowError($i, 'account')) ?>"></span>
-                        <?php endif; ?>
+                        <span class="be-list__cell"<?= $art !== null ? ' title="vom Artikel"' : '' ?>><input class="be-input be-input--sm" type="text" id="<?= $rid ?>account" name="<?= $p ?>[account]" value="<?= e($art !== null ? $art['account'] : $row['account']) ?>"<?= $accounts !== [] ? ' list="order-accounts-' . e($key) . '"' : '' ?> inputmode="numeric" data-fill-key="account" data-help-key="account" aria-label="Konto Zeile <?= $i + 1 ?>" aria-invalid="<?= $invalid($form->rowError($i, 'account')) ?>"<?= $art !== null ? ' readonly' : '' ?>></span>
                     </div>
                     <?php $messages = array_filter(array_map(fn($f) => $form->rowError($i, $f), ['type', 'child', 'article', 'text', 'quantity', 'unit', 'price', 'discount', 'tax_code', 'account'])); ?>
                     <?php if ($messages !== []): ?>

@@ -41,10 +41,10 @@ final class OrderPdf
     public const LAYOUT_ORDER         = 'pdf/order';
     public const LAYOUT_DELIVERY_NOTE = 'pdf/deliveryNote';
 
-    /** «Offerte» or «Auftragsbestätigung» — by the FLAG `offer` of the order's status. */
+    /** «Offerte» or «Auftragsbestätigung» — by the PHASE of the order's status (`new` is a quote). */
     public static function orderTitle(?OrderStatus $status): string
     {
-        return $status !== null && $status->isOffer() ? 'Offerte' : 'Auftragsbestätigung';
+        return $status !== null && $status->getPhase()->isQuote() ? 'Offerte' : 'Auftragsbestätigung';
     }
 
     /**

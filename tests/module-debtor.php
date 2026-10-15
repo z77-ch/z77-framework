@@ -1155,8 +1155,10 @@ check('I9b «+ Debitor» is gone (owner 2026-10-12, «der Umweg ist falsch»): n
     && !str_contains(file_get_contents($templateDir . '/DebtorProfileController/edit.tpl.php'), '/add')
     && (function () use ($em25): bool {
         $profiles = $em25->getRepository(\Z77\Module\Debtor\Entities\DebtorProfile::class);
-        foreach ($profiles->contactsWithoutProfile() as $c) {
-            if (!$c->isActive() || $profiles->findByContact($c) !== null) { return false; }
+        // The customer picker (owner 2026-10-15) offers only choosable parties: an active contact, no profile or an active one.
+        foreach ($profiles->searchCustomers(new \Z77\Module\Debtor\Repositories\CustomerSearch(), 0, 500) as $row) {
+            if (!$row['contact']->isActive() || ($row['profile'] !== null && !$row['profile']->isActive())
+                || $profiles->findByContact($row['contact'])?->getId() !== $row['profile']?->getId()) { return false; }
         }
         return true;
     })());
@@ -3611,17 +3613,21 @@ check('V6 lock order in the source: the profile is saved as the FIRST write of i
     strpos($vInvoiceFn, '->save($opening)') !== false && strpos($vInvoiceFn, '->save($opening)') < strpos($vInvoiceFn, 'new Invoice('));
 $vTrait = file_get_contents($package . '/src/Ui/InvoiceControllerTrait.php');
 $vTpl   = $package . '/res/view/templates/Backend/InvoiceController';
-check('V7 the editor offers contacts without a profile (contactsWithoutProfile → `_debtorSelect`, an optgroup of their own) and saves a new invoice with openProfile: true — the credit note does not',
-    str_contains($vTrait, "'candidates' =>") && str_contains($vTrait, 'invoice($draft, openProfile: true)') && substr_count($vTrait, 'openProfile: true') === 1
-    && str_contains(file_get_contents($vTpl . '/_debtorSelect.tpl.php'), 'Kontakte ohne Debitorenprofil')
-    && str_contains(file_get_contents($vTpl . '/form.tpl.php'), "partial('Backend/InvoiceController/_debtorSelect'"));
+$vPickTrait = file_get_contents($package . '/src/Ui/CustomerPickerTrait.php');
+$vPickTpl   = $package . '/res/view/templates/Backend/CustomerPicker';
+check('V7 the editor\'s customer is debtor\'s CustomerPicker (owner 2026-10-15): the field with «Kunde wählen …» (a window, the search in the database — contacts without a profile choosable), no select of every contact; a new invoice saves with openProfile: true — the credit note does not',
+    str_contains($vTrait, "'customerField' =>") && str_contains($vTrait, 'use CustomerPickerTrait;') && str_contains($vTrait, 'invoice($draft, openProfile: true)') && substr_count($vTrait, 'openProfile: true') === 1
+    && str_contains(file_get_contents($vTpl . '/form.tpl.php'), 'raw($customerField)') && !is_file($vTpl . '/_debtorSelect.tpl.php')
+    && str_contains(file_get_contents($vPickTpl . '/_field.tpl.php'), 'data-window-open=') && str_contains(file_get_contents($vPickTpl . '/pick.tpl.php'), 'partials/listHead')
+    && str_contains($vPickTrait, 'searchCustomers(') && str_contains($vPickTrait, 'CustomerPicker::isChoosable('));
 check('V8 «+ Kontakt» is a window over the editor (`data-window-open` → new-contact) built from module-contact\'s partials and ContactForm (no contact rule in debtor); its save answers replace-html on #invoice-contact scoped to the origin + close-modal',
     str_contains(file_get_contents($vTpl . '/form.tpl.php'), 'data-window-open="<?= e($actionBase . \'/new-contact\') ?>"')
     && str_contains(file_get_contents($vTpl . '/newContact.tpl.php'), "Backend/ContactController/_contactFields")
     && str_contains(file_get_contents($vTpl . '/newContact.tpl.php'), "Backend/ContactController/_addressFields")
     && str_contains(file_get_contents($vTpl . '/newContact.tpl.php'), 'name="_origin"')
     && str_contains($vTrait, 'new ContactForm(addressRequired: true)')
-    && preg_match("/'replace-html', \[\s*'target' => '#invoice-contact'.*?'origin' => WindowOrigin::of\(\\\$request\).*?->addCommand\('close-modal'\)/s", $vTrait) === 1);
+    && str_contains($vTrait, 'customerChosenAnswer($contact, WindowOrigin::of($request)')
+    && preg_match("/'replace-html', \[\s*'target' => '#invoice-contact'.*?'origin' => \\\$origin.*?->addCommand\('close-modal'\)/s", $vPickTrait) === 1);
 $vProfileTrait = file_get_contents($package . '/src/Ui/DebtorProfileControllerTrait.php');
 $vTermsTpl     = $package . '/res/view/templates/Backend/PaymentTermsController';
 $vRoleSource = file_get_contents($package . '/src/Roles/DebtorContactRole.php');

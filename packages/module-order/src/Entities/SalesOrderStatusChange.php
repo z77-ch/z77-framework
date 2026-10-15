@@ -13,7 +13,7 @@ use Z77\Shared\Attributes\Entity;
  * DERIVED from these rows (the window's «Verlauf»), never kept in parallel columns.
  *
  *   - `fromCode` — null at creation; `toCode` — both BY CODE into `OrderStatus` (no foreign key);
- *   - `trigger` — what caused it: {@see TRIGGER_CREATE} · {@see TRIGGER_STATUS} ·
+ *   - `trigger` — what caused it: {@see TRIGGER_CREATE} · {@see TRIGGER_STATUS} · {@see TRIGGER_CONFIRMATION} ·
  *     {@see TRIGGER_DELIVERY_NOTE} · {@see TRIGGER_BOOKING_PRINT} (column `change_trigger` —
  *     `TRIGGER` is a reserved word in MariaDB);
  *   - `reason` — the reason a stock REVERSAL was confirmed with (ADR-043 decision 14), else null.
@@ -26,10 +26,11 @@ class SalesOrderStatusChange
 {
     public const TRIGGER_CREATE        = 'create';
     public const TRIGGER_STATUS        = 'status';
+    public const TRIGGER_CONFIRMATION  = 'confirmation';
     public const TRIGGER_DELIVERY_NOTE = 'delivery-note';
     public const TRIGGER_BOOKING_PRINT = 'booking-print';
 
-    public const TRIGGERS = [self::TRIGGER_CREATE, self::TRIGGER_STATUS, self::TRIGGER_DELIVERY_NOTE, self::TRIGGER_BOOKING_PRINT];
+    public const TRIGGERS = [self::TRIGGER_CREATE, self::TRIGGER_STATUS, self::TRIGGER_CONFIRMATION, self::TRIGGER_DELIVERY_NOTE, self::TRIGGER_BOOKING_PRINT];
 
     public const REASON_LENGTH = 255;
 

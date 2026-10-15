@@ -15,8 +15,8 @@ $actionBase = $actionBase ?? \Z77\Module\Order\Ui\OrderLayout::BASE;
 <div class="be-list">
     <div class="be-list__section">
         <div class="z77-form-actions">
-            <a class="be-btn be-btn--ghost" href="<?= e($actionBase . '/list?view=invoiceable') ?>">Zur Liste «Zu fakturieren»</a>
-            <a class="be-btn be-btn--ghost" href="<?= e($actionBase . '/list?view=booked') ?>">Zur Liste «Gebucht»</a>
+            <a class="be-btn be-btn--ghost" href="<?= e($actionBase . '/list?view=delivered') ?>">Zur Liste «Geliefert»</a>
+            <a class="be-btn be-btn--ghost" href="<?= e($actionBase . '/list?view=closed') ?>">Zur Liste «Abgeschlossen»</a>
         </div>
         <div class="be-list__section-header">
             <h2 class="be-list__section-title">Buchungsdruck <small class="be-list__cell--muted">· nichts verbucht</small></h2>

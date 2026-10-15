@@ -18,7 +18,6 @@ use Z77\Core\DI,
     Z77\Module\Contact\Services\ContactService,
     Z77\Module\Contact\Ui\ContactForm,
     Z77\Module\Debtor\Entities\AddressSnapshot,
-    Z77\Module\Debtor\Entities\DebtorProfile,
     Z77\Module\Debtor\Entities\Invoice,
     Z77\Module\Debtor\Entities\PaymentTarget,
     Z77\Module\Debtor\Pdf\InvoicePdf,
@@ -28,7 +27,10 @@ use Z77\Core\DI,
     Z77\Module\Debtor\Services\InvoicingService,
     Z77\Module\Debtor\Services\LockConflict,
     Z77\Module\Debtor\Services\PaymentStates,
+    Z77\Module\Debtor\Ui\CustomerPicker,
+    Z77\Module\Debtor\Ui\CustomerPickerTrait,
     Z77\Module\Mandator\Services\LedgerAccountCheck,
+    Z77\Module\Order\Entities\OrderPhase,
     Z77\Module\Order\Entities\OrderStatus,
     Z77\Module\Order\Entities\SalesOrder,
     Z77\Module\Order\Entities\SalesOrderStatusChange,
@@ -55,10 +57,10 @@ use Z77\Core\DI,
  * OrderControllerTrait` + a one-line layout config delegating to {@see OrderLayout::config()};
  * URL `/backend/order/order/…`.
  *
- *   - `list` — a STANDARD LIST ({@see OrderListing}): the view tabs from the status FLAGS in the
- *     toolbar (Offerten · In Arbeit · Zu fakturieren · Gebucht · Erledigt · Alle, each with its
- *     count), the state icon opens the order WINDOW, «Zahlung» in «Gebucht» from debtor's
- *     `PaymentStates` (one query for the page); in «Zu fakturieren» the selection bar
+ *   - `list` — a STANDARD LIST ({@see OrderListing}): the view tabs are the PHASES in the
+ *     toolbar (Offerten · In Arbeit · Geliefert · Abgeschlossen · Storniert · Alle, each with its
+ *     count), the state icon opens the order WINDOW, «Zahlung» in «Abgeschlossen» from debtor's
+ *     `PaymentStates` (one query for the page); in «In Arbeit» and «Geliefert» the selection bar
  *     «Buchungsdruck …». Action cell: «+ Neuer Auftrag»;
  *   - `add` / `edit` — the ORDER WINDOW (ADR-047, mask `order-edit`, entity `sales-order:<id>`):
  *     one form, one save, radio tabs Auftrag · Verlauf · Belege; the head (customer — debtors
@@ -67,27 +69,35 @@ use Z77\Core\DI,
  *     editor ({@see OrderForm}); the totals and what the booking print would refuse from debtor's
  *     preview (D11). Read-only when `OrderService::editRefusal()` says so (D7);
  *   - `new-contact` — «+ Kontakt» of the window: debtor's contact window reused (Rule 9), its save
- *     puts the re-rendered customer select back into the order window;
+ *     puts the customer field back into the order window; `customer-pick` — debtor's customer
+ *     picker ({@see CustomerPickerTrait});
  *   - `status` — «Status ändern …» in the same window: the allowed targets
  *     (`OrderStatuses::targets()`), and — only when the stock seam demands it — a mandatory
  *     reason (`StockReasonRequiredException` → `StockConfirmation`);
- *   - `pdf` — «Offerte» / «Auftragsbestätigung» by the FLAG `offer` (no side effect);
+ *   - `pdf` — «Offerte» / «Auftragsbestätigung» by the PHASE (`new` is a quote; no side effect);
  *     `invoice-preview` — the invoice the booking print would issue today, debtor's PREVIEW
- *     layout; `confirm-delivery-note` + `delivery-note` — the delivery note: the POST moves the
- *     status first (`printDeliveryNote()`, D6), the answer is the PDF in a new tab;
+ *     layout; `confirm-confirmation` + `confirmation` — the order confirmation of a quote: the POST
+ *     moves it into `confirmed` first (`printConfirmation()`), the answer is the PDF in a new tab;
+ *     `confirm-delivery-note` + `delivery-note` — the delivery note, the same way into `delivered`
+ *     (`printDeliveryNote()`, D6);
  *   - `confirm-book` + `book` — the BOOKING PRINT from the window (one order) or the selection bar
  *     (several): a confirmation PAGE (the DEBTOR-WIN-002 pattern) → POST into a NEW TAB →
  *     `OrderService::book()` → the combined invoice PDF (`InvoicePdf::combined()`); a repeated
  *     submit of the same selection reprints and books nothing; a refusal is a message page naming
  *     the order.
  *
+ *   - `article-defaults` — what a line takes from the chosen article, for core.js «fill» (reads only).
+ *
  * Every write goes through {@see OrderService} with the logged-in user as actor. No JavaScript of
- * its own (Rule 7): plain forms, «Weitere Zeilen» a submit, the article picker a `<datalist>`.
+ * its own (Rule 7): plain forms, «Weitere Zeilen» a submit, the article picker a `<datalist>` whose
+ * choice fills the row through core.js «fill» — without the script the save fills it.
  * The using class MUST provide (via its host base): `html()`, `fetch()`, `fetchError()`,
  * `redirect()`, `bytes()`, `em()`, `$layoutManager`, `$messageService`, `$help`.
  */
 trait OrderControllerTrait
 {
+    use CustomerPickerTrait;
+
     private const ORDER_NS = 'Z77\\Module\\Order';
 
     private const ORDER_CONFLICT_MESSAGE = 'Der Auftrag wurde inzwischen geändert — bitte neu laden und erneut versuchen.';
@@ -96,6 +106,7 @@ trait OrderControllerTrait
     private const ORDER_TRIGGERS = [
         SalesOrderStatusChange::TRIGGER_CREATE        => 'erfasst',
         SalesOrderStatusChange::TRIGGER_STATUS        => 'Status geändert',
+        SalesOrderStatusChange::TRIGGER_CONFIRMATION  => 'Auftragsbestätigung',
         SalesOrderStatusChange::TRIGGER_DELIVERY_NOTE => 'Lieferschein',
         SalesOrderStatusChange::TRIGGER_BOOKING_PRINT => 'Buchungsdruck',
     ];
@@ -183,7 +194,7 @@ trait OrderControllerTrait
 
         $response = $this->html([
             'orders'     => $orders,
-            'payments'   => $view === OrderListing::VIEW_BOOKED ? $this->orderPaymentStates($orders) : [],
+            'payments'   => $view === OrderListing::VIEW_CLOSED ? $this->orderPaymentStates($orders) : [],
             'statuses'   => self::orderStatusesByCode($statuses),
             'definition' => $definition,
             'state'      => $state,
@@ -361,8 +372,9 @@ trait OrderControllerTrait
             'editRefusal'     => $refusal,
             'needReason'      => $needReason,
             'entityCsrf'      => $order === null ? '' : DI::getCsrfService()->generateEntityToken('sales-order', (int) $order->getId()),
-            'debtors'         => $this->em()->getRepository(DebtorProfile::class)->activeWithContacts(),
-            'candidates'      => $this->em()->getRepository(DebtorProfile::class)->contactsWithoutProfile(),
+            // The customer: debtor's field with «Kunde wählen …» — the searching picker (owner 2026-10-15).
+            'customerField'   => CustomerPicker::fieldHtml($this->em(), $form->header('contact'), $this->orderListBase() . '/customer-pick',
+                $this->orderListBase() . ($order === null ? '/add' : '/edit?id=' . $order->getId()), $form->error('contact') !== ''),
             'targets'         => $targets,
             'ships'           => $this->orderShipLabels($form->header('contact'), $order),
             'taxCodes'        => $this->em()->getRepository(TaxCode::class)->selectable($form->keptCodes()),
@@ -377,9 +389,46 @@ trait OrderControllerTrait
             'creditNotes'     => $invoice !== null ? $invoices->creditNotesOf($invoice) : [],
             'invoiceBase'     => $this->orderInvoiceBase(),
             'orderTitle'      => OrderPdf::orderTitle($status),
-            'canBook'         => $order !== null && $invoice === null && $status !== null && $status->isInvoiceable(),
-            'deliveryTarget'  => $statuses->deliveryNoteTarget(),
+            'canBook'         => $order !== null && $invoice === null && $status !== null && $status->getPhase()->isBookable(),
+            'phase'           => $status?->getPhase(),
         ]);
+    }
+
+    // ── article chosen on a line ─────────────────────────────────────────
+
+    /**
+     * The article picker of a line row (`data-fill-url`, core.js «fill»): what the line takes from
+     * the article — text, unit, the price at the order date in the order's price mode, tax code and
+     * account (`OrderService::articleDefaults()`, the save's own rule) — so the row shows them as
+     * soon as the article is chosen (owner 2026-10-15: «Einheit, Text, Preis, MWST werden nicht
+     * übernommen»). Tax code and account are locked: on an article line they are the article's
+     * (D3). Reads only; the save still decides — without the script the row fills at save as before.
+     */
+    protected function articleDefaultsAction(): FetchResponse|RedirectResponse
+    {
+        $request = DI::getRequest();
+        $number  = trim((string) $request->getGetParameter('value'));
+        if ($number === '') {
+            return $this->fetch()->setStatus('success')->setData(['lock' => ['tax_code' => false, 'account' => false]]);
+        }
+        $defaults = $this->orderService()->articleDefaults(
+            $number,
+            (string) $request->getGetParameter('order_date'),
+            (string) $request->getGetParameter('service_from'),
+            (string) $request->getGetParameter('price_mode'),
+        );
+        if ($defaults === null) {
+            return $this->orderRefuse('Den Artikel «' . $number . '» gibt es nicht — Nummer aus der Liste wählen.');
+        }
+        if ($defaults['problem'] !== '') {
+            $this->messageService->pushFlash('error', $defaults['problem']);   // the rest still fills; the price is typed
+        }
+        $fill = ['text' => $defaults['text'], 'unit' => $defaults['unit'], 'tax_code' => $defaults['taxCode'], 'account' => $defaults['account']];
+        if ($defaults['price'] !== '') {
+            $fill['price'] = $defaults['price'];
+        }
+
+        return $this->fetch()->setStatus('success')->setData(['fill' => $fill, 'lock' => ['tax_code' => true, 'account' => true]]);
     }
 
     // ── «+ Kontakt» ──────────────────────────────────────────────────────
@@ -388,9 +437,10 @@ trait OrderControllerTrait
      * «+ Kontakt» in the order window (plan §9.4, answer Q4): a NEW contact with its first
      * address, without leaving the half-filled order — debtor's contact window reused as it is
      * (template `Backend/InvoiceController/newContact`, module-contact's `ContactForm`; Rule 9),
-     * posting here. The save answers `replace-html` of the customer select IN THE ORDER WINDOW
-     * (`#invoice-contact` — debtor's `_debtorSelect`, scoped to the origin window) with the new
-     * contact selected, and `close-modal` for this window. The contact becomes a debtor at the
+     * posting here. The save answers like a choice in the customer picker
+     * (`customerChosenAnswer()`: the customer field `#invoice-contact` and the delivery addresses
+     * replaced IN THE ORDER WINDOW, scoped to the origin) and closes this window — also when it was
+     * loaded into the picker («+ Neuer Kontakt»). The contact becomes a debtor at the
      * booking print (D9). Without the script: a page whose save opens a new order for it.
      */
     #[Csrf]
@@ -409,18 +459,8 @@ trait OrderControllerTrait
                     return $this->redirect($this->orderListBase() . '/add?contact=' . $contact->getId(), 303);
                 }
                 $this->messageService->pushFlash('success', $text);
-                $profiles = $this->em()->getRepository(DebtorProfile::class);
-                $select   = (new TemplateRenderer('Z77\\Module\\Debtor'))->partial('Backend/InvoiceController/_debtorSelect', [
-                    'debtors'    => $profiles->activeWithContacts(),
-                    'candidates' => $profiles->contactsWithoutProfile(),
-                    'selected'   => (string) $contact->getId(),
-                    'invalid'    => false,
-                ]);
 
-                return $this->fetch()->setStatus('success')
-                    ->setData(['id' => $contact->getId()])
-                    ->addCommand('replace-html', ['target' => '#invoice-contact', 'html' => $select, 'origin' => WindowOrigin::of($request)])
-                    ->addCommand('close-modal');
+                return $this->customerChosenAnswer($contact, WindowOrigin::of($request), $this->orderListBase() . '/add');
             }
         }
 
@@ -429,6 +469,29 @@ trait OrderControllerTrait
             'origin' => WindowOrigin::of($request),
             'failed' => $form->hasErrors(),
         ] + $form->vars(AddressTypes::from($this->em())), 'Backend/InvoiceController', 'Z77\\Module\\Debtor');
+    }
+
+    // ── «Kunde wählen …» (debtor's CustomerPickerTrait) ──────────────────
+
+    /** The picker lives at the order window's root (`/backend/order/order/customer-pick`). */
+    protected function customerPickBase(): string
+    {
+        return $this->orderListBase();
+    }
+
+    /**
+     * After a choice the order window's delivery-address select shows THAT customer's addresses
+     * (usability review 2026-10-15, C2 — before, the choices came only after a save); the choice
+     * starts at «wie Rechnungsadresse».
+     */
+    protected function customerChosenCommands(FetchResponse $response, Contact $contact, string $origin): void
+    {
+        $ships = (new TemplateRenderer(self::ORDER_NS))->partial('Backend/OrderController/_ship', [
+            'ships'    => $this->orderShipLabels((string) $contact->getId(), null),
+            'selected' => '',
+            'invalid'  => false,
+        ]);
+        $response->addCommand('replace-html', ['target' => '#order-ship', 'html' => $ships, 'origin' => $origin]);
     }
 
     // ── «Status ändern …» ────────────────────────────────────────────────
@@ -546,11 +609,27 @@ trait OrderControllerTrait
 
     /**
      * «Lieferschein …» (D6), loaded into the order window: what the print will do — move the order
-     * to the `deliveryNoteTarget` status, or print again without a change — and one button that
+     * into `delivered` (its default status), or print again without a change — and one button that
      * POSTs into a NEW TAB. When the status moves, the form carries `data-submit-navigate` to the
      * list (the window would be stale; core.js, SUBMIT-NAV-001); a reprint leaves the window open.
      */
     protected function confirmDeliveryNoteAction(): HtmlResponse|FetchResponse|RedirectResponse
+    {
+        return $this->orderConfirmPrint('delivery-note', OrderPhase::Delivered);
+    }
+
+    /**
+     * «Auftragsbestätigung …» (ADR-043 addendum 2026-10-15) — offered for a quote (phase `new`): the
+     * print sets the default status of `confirmed`. A confirmed order prints its confirmation as a
+     * plain PDF (`pdf`), no window needed.
+     */
+    protected function confirmConfirmationAction(): HtmlResponse|FetchResponse|RedirectResponse
+    {
+        return $this->orderConfirmPrint('confirmation', OrderPhase::Confirmed);
+    }
+
+    /** The confirm window of a print that moves the order into $phase — or says it is a reprint. */
+    private function orderConfirmPrint(string $document, OrderPhase $phase): HtmlResponse|FetchResponse|RedirectResponse
     {
         $order = $this->orderOfRequest();
         if ($order === null) {
@@ -558,26 +637,71 @@ trait OrderControllerTrait
         }
         $statuses = $this->orderService()->statuses();
         $current  = $statuses->byCode($order->getStatusCode());
-        $target   = $statuses->deliveryNoteTarget();
+        if ($current !== null) {
+            try {
+                OrderService::assertPrintable($order, $current, $phase);
+            } catch (OrderRefusedException $e) {
+                return $this->orderRefuse($e->getMessage());
+            }
+        }
 
-        return $this->orderPage('confirmDeliveryNote', [
-            'window'  => $this->orderIsFetch(),
-            'origin'  => WindowOrigin::of(DI::getRequest()),
-            'order'   => $order,
-            'current' => $current,
-            'target'  => $target,
-            'moves'   => $target !== null && $current !== null && $target->getLevel() > $current->getLevel(),
-            'address' => $this->orderService()->deliveryAddressOf($order),
+        return $this->orderPage('confirmPrint', [
+            'window'   => $this->orderIsFetch(),
+            'origin'   => WindowOrigin::of(DI::getRequest()),
+            'order'    => $order,
+            'document' => $document,
+            'current'  => $current,
+            'target'   => $current !== null ? $statuses->actionTarget($current, $phase) : null,
+            'address'  => $document === 'delivery-note' ? $this->orderService()->deliveryAddressOf($order) : null,
         ]);
     }
 
     /**
      * The delivery note (POST, `#[Csrf]`, into a new tab): `printDeliveryNote()` FIRST — the
-     * status moves when the target lies ahead, a reprint writes nothing — then the PDF. A
-     * refusal (a stale version, a reason the stock demands) answers a message page in that tab.
+     * order moves into `delivered` when it stands before it, a reprint writes nothing — then the
+     * PDF. A refusal (a stale version, a reason the stock demands) answers a message page in that tab.
      */
     #[Csrf]
     protected function deliveryNoteAction(): BytesResponse|HtmlResponse|RedirectResponse
+    {
+        $order = $this->orderMovingPrint('Lieferschein', fn(int $id, int $version) => $this->orderService()->printDeliveryNote($id, $version));
+        if (!$order instanceof SalesOrder) {
+            return $order;
+        }
+
+        return $this->bytes(OrderPdf::deliveryNote($order, $this->orderService()->deliveryAddressOf($order), $this->em())->output(), OrderPdf::fileName('Lieferschein ' . $order->documentNumber()), 'application/pdf');
+    }
+
+    /**
+     * The order confirmation (POST, `#[Csrf]`, into a new tab): `printConfirmation()` FIRST — a
+     * quote moves into `confirmed`, a reprint writes nothing — then the PDF «Auftragsbestätigung».
+     */
+    #[Csrf]
+    protected function confirmationAction(): BytesResponse|HtmlResponse|RedirectResponse
+    {
+        $order = $this->orderMovingPrint('Auftragsbestätigung', fn(int $id, int $version) => $this->orderService()->printConfirmation($id, $version));
+        if (!$order instanceof SalesOrder) {
+            return $order;
+        }
+        $service = $this->orderService();
+        $status  = $service->statuses()->byCode($order->getStatusCode());
+        $title   = OrderPdf::orderTitle($status);
+        try {
+            $preview = $service->preview($order);
+        } catch (DebtorException | VatException $e) {
+            return $this->orderPrintRefused($title . ' ' . $order->documentNumber() . ' lässt sich noch nicht drucken: ' . $e->getMessage(), $order);
+        }
+
+        return $this->bytes(OrderPdf::order($order, $status, $preview, $this->em())->output(), OrderPdf::fileName($title . ' ' . $order->documentNumber()), 'application/pdf');
+    }
+
+    /**
+     * The service side of a print that moves the order, from the confirm window's POST — the
+     * order re-read with its lines, or the message page in the new tab.
+     *
+     * @param \Closure(int, int): SalesOrder $print
+     */
+    private function orderMovingPrint(string $document, \Closure $print): SalesOrder|HtmlResponse|RedirectResponse
     {
         $request = DI::getRequest();
         $id      = (int) $request->getGetParameter('id');
@@ -586,11 +710,11 @@ trait OrderControllerTrait
         }
         $post = $request->getPostParameters();
         try {
-            $order = $this->orderService()->printDeliveryNote($id, (int) ($post['version'] ?? 0));
+            $order = $print($id, (int) ($post['version'] ?? 0));
         } catch (OrderConflictException) {
-            return $this->orderPrintRefused('Der Auftrag wurde inzwischen geändert — kein Lieferschein gedruckt, nichts gespeichert. Auftrag neu öffnen und nochmals drucken.', null);
+            return $this->orderPrintRefused('Der Auftrag wurde inzwischen geändert — ' . $document . ' nicht gedruckt, nichts gespeichert. Auftrag neu öffnen und nochmals drucken.', null);
         } catch (StockReasonRequiredException) {
-            return $this->orderPrintRefused('Der Lieferschein würde bereits ausgelieferten Bestand zurückbuchen — nichts gespeichert. Den Status über «Status ändern …» mit Grund setzen.', null);
+            return $this->orderPrintRefused('Der Druck würde bereits ausgelieferten Bestand zurückbuchen — nichts gespeichert. Den Status über «Status ändern …» mit Grund setzen.', null);
         } catch (OrderException $e) {
             return $this->orderPrintRefused($e->getMessage(), null);
         } catch (\Doctrine\DBAL\Exception $e) {
@@ -600,9 +724,8 @@ trait OrderControllerTrait
 
             return $this->orderPrintRefused(LockConflict::MESSAGE, null);
         }
-        $order = $this->orders()->withLines((int) $order->getId()) ?? $order;
 
-        return $this->bytes(OrderPdf::deliveryNote($order, $this->orderService()->deliveryAddressOf($order), $this->em())->output(), OrderPdf::fileName('Lieferschein ' . $order->documentNumber()), 'application/pdf');
+        return $this->orders()->withLines((int) $order->getId()) ?? $order;
     }
 
     /** A print that cannot be made — a PAGE (in the new tab the link or form opened). */
@@ -614,7 +737,7 @@ trait OrderControllerTrait
     // ── the booking print ────────────────────────────────────────────────
 
     /**
-     * «Buchungsdruck …» (plan §7 / §9.3): the selection of «Zu fakturieren» or the one order of the
+     * «Buchungsdruck …» (plan §7 / §9.3): the selection of «In Arbeit» / «Geliefert» or the one order of the
      * window (`order[]` = `{id}:{version}`, the version each SHOWED), listed for a last look with
      * the invoice date (default today) — a PAGE (the DEBTOR-WIN-002 pattern: the selection bar is
      * a GET form) whose button POSTs the same pairs into a NEW TAB ({@see bookAction()}). Orders
@@ -624,9 +747,9 @@ trait OrderControllerTrait
     {
         $pairs = BookingSelection::pairs(DI::getRequest()->getGetParameter('order'));
         if ($pairs === []) {
-            $this->messageService->pushFlashAfterRedirect('error', 'Kein Auftrag ausgewählt — in der Liste «Zu fakturieren» ankreuzen.');
+            $this->messageService->pushFlashAfterRedirect('error', 'Kein Auftrag ausgewählt — in der Liste «In Arbeit» oder «Geliefert» ankreuzen.');
 
-            return $this->redirect($this->orderListBase() . '/list?view=' . OrderListing::VIEW_INVOICEABLE, 303);
+            return $this->redirect($this->orderListBase() . '/list?view=' . OrderListing::VIEW_DELIVERED, 303);
         }
         $statuses = $this->orderService()->statuses();
         $orders   = [];
@@ -634,7 +757,7 @@ trait OrderControllerTrait
         foreach ($pairs as $pair) {
             $order  = $this->orders()->find($pair['id']);
             $status = $order !== null ? $statuses->byCode($order->getStatusCode()) : null;
-            if ($order === null || $order->getVersion() !== $pair['version'] || $order->getInvoice() !== null || $status === null || !$status->isInvoiceable()) {
+            if ($order === null || $order->getVersion() !== $pair['version'] || $order->getInvoice() !== null || $status === null || !$status->getPhase()->isBookable()) {
                 $stale[] = $order !== null ? 'Auftrag ' . $order->documentNumber() : '#' . $pair['id'];
                 continue;
             }
@@ -652,16 +775,16 @@ trait OrderControllerTrait
             'stale'  => $stale,
             'total'  => $total,
             'today'  => new \DateTimeImmutable('today'),
-            'booked' => $statuses->invoiceBooked(),
+            'booked' => $statuses->defaultOf(OrderPhase::Closed),
         ]);
     }
 
     /**
      * «Buchungsdruck» — the POST of the confirmation (`#[Csrf]`, into a NEW TAB): the pairs and the
      * invoice date to `OrderService::book()` — each order's invoice issued and booked, linked, the
-     * order set to the `invoiceBooked` status, ONE unit of work — and the answer IS the PDF of the
+     * order set to the default status of `closed`, ONE unit of work — and the answer IS the PDF of the
      * booked invoices with number and QR-bill (`InvoicePdf::combined()`). The success flash waits
-     * for the next page of the original tab (`data-submit-navigate` sends it to «Gebucht»).
+     * for the next page of the original tab (`data-submit-navigate` sends it to «Abgeschlossen»).
      *
      * IDEMPOTENT for a repeated submit (plan §7): when every order of the selection is linked to a
      * FINAL invoice at exactly the version it showed + 1 — what this booking print left — the same
@@ -675,7 +798,7 @@ trait OrderControllerTrait
         $post    = $request->isPost() ? $request->getPostParameters() : [];
         $pairs   = BookingSelection::pairs($post['order'] ?? null);
         if ($pairs === []) {
-            return $this->redirect($this->orderListBase() . '/list?view=' . OrderListing::VIEW_INVOICEABLE, 303);
+            return $this->redirect($this->orderListBase() . '/list?view=' . OrderListing::VIEW_DELIVERED, 303);
         }
         $booked = BookingSelection::bookedBy($pairs, fn(int $id) => $this->orders()->find($id));
         if ($booked !== null) {

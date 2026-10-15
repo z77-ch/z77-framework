@@ -17,7 +17,8 @@
 
 <section data-help-field="contact">
 <h3>Kunde</h3>
-<p>Angeboten werden die aktiven Debitoren und darunter die aktiven <strong>Kontakte ohne Debitorenprofil</strong> — eine Offerte an einen Interessenten braucht noch keine Kundennummer. Debitor wird ein solcher Kontakt erst beim <strong>Buchungsdruck</strong>, mit der nächsten Kundennummer und den Standard-Konditionen. <strong>+ Kontakt</strong> erfasst einen neuen Kontakt mit Adresse, ohne den Auftrag zu verlassen; er ist danach gewählt.</p>
+<p><strong>Kunde wählen …</strong> öffnet die Suche: nach Name, Ort, Kundennummer oder E-Mail suchen, dann <strong>Übernehmen</strong>. Die Lieferadressen des gewählten Kunden stehen danach gleich zur Auswahl. Wer nicht gefunden wird, lässt sich dort mit <strong>+ Neuer Kontakt</strong> erfassen.</p>
+<p>Gefunden werden die aktiven Debitoren und die aktiven <strong>Kontakte ohne Debitorenprofil</strong> («neu») — eine Offerte an einen Interessenten braucht noch keine Kundennummer. Debitor wird ein solcher Kontakt erst beim <strong>Buchungsdruck</strong>, mit der nächsten Kundennummer und den Standard-Konditionen. <strong>+ Kontakt</strong> erfasst einen neuen Kontakt mit Adresse, ohne den Auftrag zu verlassen; er ist danach gewählt.</p>
 </section>
 
 <section data-help-field="subject">
@@ -76,7 +77,7 @@
 
 <section data-help-field="article">
 <h3>Artikel</h3>
-<p>Die Artikelnummer (die Liste schlägt die aktiven Artikel vor). Leer = eine <strong>freie Position</strong> mit eigenem MWST-Code und Konto. Bei einer Artikelposition übernimmt das Speichern <strong>Text, Einheit und Preis</strong> vom Artikel, wenn sie leer sind — überschreiben lässt sich alles; <strong>MWST-Code und Ertragskonto</strong> kommen immer vom Artikel (ein anderes Konto ist eine freie Position). Für einen anderen Artikel Text und Preis leeren, dann übernimmt das Speichern die neuen Werte.</p>
+<p>Die Artikelnummer (die Liste schlägt die aktiven Artikel vor). Leer = eine <strong>freie Position</strong> mit eigenem MWST-Code und Konto. Sobald ein Artikel gewählt ist, füllt die Zeile <strong>Text, Einheit und Preis</strong> (der Preis am Auftragsdatum) — überschreiben lässt sich alles; ein anderer Artikel füllt sie neu. <strong>MWST-Code und Ertragskonto</strong> kommen immer vom Artikel und stehen gesperrt (ein anderes Konto ist eine freie Position). Was leer bleibt, übernimmt das Speichern vom Artikel.</p>
 </section>
 
 <section data-help-field="text">
@@ -101,5 +102,5 @@
 
 <section data-help-field="account">
 <h3>MWST-Code und Konto</h3>
-<p>Nur bei einer freien Position: ein aktiver MWST-Code und ein Ertragskonto, das im Kontenplan «auf Belegen wählbar» ist. Bei einer Artikelposition stehen sie grau — sie kommen vom Artikel.</p>
+<p>Nur bei einer freien Position: ein aktiver MWST-Code und ein Ertragskonto, das im Kontenplan «auf Belegen wählbar» ist. Bei einer Artikelposition stehen sie gesperrt — sie kommen vom Artikel.</p>
 </section>

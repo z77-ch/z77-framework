@@ -4,7 +4,7 @@ namespace Z77\Module\Order\Repositories;
 
 /**
  * What the order list asks the database for (plan §9.3): the status CODES of the chosen view tab
- * (derived from the status FLAGS by the screen — `Ui\OrderListing::codesOf()`, so a new status
+ * (derived from the PHASES and a searched status label by the screen — `Ui\OrderListing::codesOf()`, so a new status
  * lands in a tab without code; null = every order, «Alle») and the column criteria, AND-ed. Every
  * value is bound; the sort key selects from a fixed map ({@see SalesOrderRepository::search()}),
  * never from input. Plain data.

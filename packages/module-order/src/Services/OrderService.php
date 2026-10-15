@@ -18,6 +18,7 @@ use Z77\Module\Debtor\Services\DebtorCurrency;
 use Z77\Module\Debtor\Services\DebtorException;
 use Z77\Module\Debtor\Services\InvoicingService;
 use Z77\Module\Mandator\Services\LedgerAccountCheck;
+use Z77\Module\Order\Entities\OrderPhase;
 use Z77\Module\Order\Entities\OrderStatus;
 use Z77\Module\Order\Entities\SalesOrder;
 use Z77\Module\Order\Entities\SalesOrderLine;
@@ -37,7 +38,8 @@ use Z77\Shared\Money\Money;
 
 /**
  * The ONE write path of an order (plan §5, owner O1–O5): {@see create()}, {@see update()},
- * {@see changeStatus()}, {@see printDeliveryNote()}, the booking print {@see book()} (step 9).
+ * {@see changeStatus()}, {@see printConfirmation()}, {@see printDeliveryNote()}, the booking print
+ * {@see book()} (step 9). The behaviour comes from the PHASE of the status (ADR-043 addendum 2026-10-15).
  * A DTO in ({@see OrderDraft}), no `Request`, so the backend window, a later API or a subscription
  * run write the same way (§12). Every method that changes an existing order takes the VERSION its
  * caller saw; a stale one is {@see OrderConflictException}; a state that does not allow the write
@@ -55,7 +57,7 @@ use Z77\Shared\Money\Money;
  * it apart for the screen: «nichts gespeichert, neu laden und nochmals versuchen»); no retry.
  *
  * **Stock** (plan §8.3): every write ends in ONE private {@see syncStock()} that sends the
- * COMPLETE target state of the order — every article line with reserved / consumed from the flags
+ * COMPLETE target state of the order — every article line with reserved / consumed from the PHASE
  * of the status it is in NOW — through `StockLedger::bringTo()`, in the same unit of work. No
  * controller, repository or template calls stock. A `StockReasonRequiredException` (consumed
  * stock would come back) propagates and rolls everything back; the screen re-asks with a
@@ -65,7 +67,7 @@ use Z77\Shared\Money\Money;
  * ({@see OrderInvoiceDraft}) and `InvoicingService::preview()` answers net, tax and gross; stored
  * for the list only. A preview that refuses the order as it stands leaves the totals null.
  *
- * **Editable** (D7) while the order has no invoice and its status is not `final`; with an invoice
+ * **Editable** (D7) while the order has no invoice and its phase is not locked (closed, cancelled); with an invoice
  * only a forward status change remains. No delete (D8).
  */
 final class OrderService
@@ -160,13 +162,14 @@ final class OrderService
     }
 
     /**
-     * Moves an order to the status $toCode (plan §6): forward / lateral always, backward only while
-     * the order has no invoice; never to the `invoiceBooked` status (the booking print's alone);
-     * only to an ACTIVE status. Writes the log row `status` (with the reversal reason, if any) and
+     * Moves an order to the status $toCode by hand (ADR-043 addendum 2026-10-15): a phase at or
+     * after the current one always, backward only while the order has no invoice; never to the
+     * default of `closed` (the booking print's alone); `cancelled` only without an invoice; only to
+     * an ACTIVE status. Writes the log row `status` (with the reversal reason, if any) and
      * brings the stock to the new status' targets. «Erledigt» is set this way, by hand (owner Q6).
      *
      * @throws OrderConflictException
-     * @throws OrderRefusedException  STATUS_UNKNOWN | SAME_STATUS | INACTIVE_TARGET | BOOKED_TARGET | BACKWARD_BARRED
+     * @throws OrderRefusedException  STATUS_UNKNOWN | SAME_STATUS | INACTIVE_TARGET | BOOKED_TARGET | BACKWARD_BARRED | CANCEL_BARRED
      * @throws \Z77\Module\Article\Stock\StockReasonRequiredException consumed stock would come back without $confirmation
      */
     public function changeStatus(int $id, int $version, string $toCode, ?StockConfirmation $confirmation = null): SalesOrder
@@ -179,7 +182,7 @@ final class OrderService
         return $this->em->getTransaction(SalesOrder::class)->run(function () use ($id, $version, $statuses, $to, $confirmation, $now): SalesOrder {
             $order = $this->lockAt($id, $version);
             $from  = $this->statusOf($order, $statuses);
-            $refusal = OrderStatuses::refusal($from, $to, $order->getInvoice() !== null);
+            $refusal = $statuses->refusal($from, $to, $order->getInvoice() !== null);
             if ($refusal !== null) {
                 throw new OrderRefusedException($refusal[0], $refusal[1]);
             }
@@ -190,36 +193,79 @@ final class OrderService
     }
 
     /**
-     * The status side of the delivery-note print (plan D6): the order moves to the active
-     * `deliveryNoteTarget` status ONLY when that lies FORWARD (a higher level) — log row
-     * `delivery-note`, stock call. At or past that level, or without such a status, NOTHING is
-     * written and the order is answered as it is (a reprint changes nothing; no version needed
-     * then — a double click prints twice and moves once). The PDF itself is step 8.
+     * The status side of the ORDER CONFIRMATION print (ADR-043 addendum 2026-10-15): an order in
+     * phase `new` moves to the default of `confirmed` — log row `confirmation`, stock reserved. An
+     * order already confirmed or further is answered as it is (a reprint). Refused for a cancelled
+     * order.
      *
      * @throws OrderConflictException the order is gone, or it must move and its version moved on
-     * @throws OrderRefusedException  STATUS_UNKNOWN
+     * @throws OrderRefusedException  STATUS_UNKNOWN | NOT_PRINTABLE
+     * @throws \Z77\Module\Article\Stock\StockReasonRequiredException
+     */
+    public function printConfirmation(int $id, int $version, ?StockConfirmation $confirmation = null): SalesOrder
+    {
+        return $this->printMoving($id, $version, OrderPhase::Confirmed, SalesOrderStatusChange::TRIGGER_CONFIRMATION, $confirmation);
+    }
+
+    /**
+     * The status side of the delivery-note print (plan D6, ADR-043 addendum 2026-10-15): a confirmed
+     * order moves to the default of `delivered` — log row `delivery-note`, stock consumed. An order
+     * already delivered or further is answered as it is (a reprint). Refused for a quote (phase
+     * `new` — the order confirmation comes first) and for a cancelled order.
+     *
+     * @throws OrderConflictException the order is gone, or it must move and its version moved on
+     * @throws OrderRefusedException  STATUS_UNKNOWN | NOT_PRINTABLE
      * @throws \Z77\Module\Article\Stock\StockReasonRequiredException
      */
     public function printDeliveryNote(int $id, int $version, ?StockConfirmation $confirmation = null): SalesOrder
     {
+        return $this->printMoving($id, $version, OrderPhase::Delivered, SalesOrderStatusChange::TRIGGER_DELIVERY_NOTE, $confirmation);
+    }
+
+    /**
+     * Whether the document that moves an order into $phase may be printed for it: never for a
+     * cancelled order, the delivery note not for a quote. Pure — the screens ask it before they
+     * offer the button.
+     *
+     * @throws OrderRefusedException NOT_PRINTABLE
+     */
+    public static function assertPrintable(SalesOrder $order, OrderStatus $status, OrderPhase $phase): void
+    {
+        $current = $status->getPhase();
+        if ($current === OrderPhase::Cancelled) {
+            throw new OrderRefusedException(OrderRefusedException::NOT_PRINTABLE, 'Auftrag ' . $order->documentNumber() . ' ist storniert («' . $status->getLabel() . '») — es wird nichts mehr gedruckt.');
+        }
+        if ($phase === OrderPhase::Delivered && $current === OrderPhase::New) {
+            throw new OrderRefusedException(OrderRefusedException::NOT_PRINTABLE, 'Auftrag ' . $order->documentNumber() . ' ist noch eine Offerte («' . $status->getLabel() . '») — zuerst die Auftragsbestätigung drucken oder den Status ändern.');
+        }
+    }
+
+    /**
+     * A print that moves the order FORWARD into $phase (its default status) — or nothing, when the
+     * order is in or past it: then nothing is written and no version is needed (a double click
+     * prints twice and moves once).
+     */
+    private function printMoving(int $id, int $version, OrderPhase $phase, string $trigger, ?StockConfirmation $confirmation): SalesOrder
+    {
         $statuses = $this->statuses();
-        $target   = $statuses->deliveryNoteTarget();
         $now      = new \DateTimeImmutable();
 
-        return $this->em->getTransaction(SalesOrder::class)->run(function () use ($id, $version, $statuses, $target, $confirmation, $now): SalesOrder {
+        return $this->em->getTransaction(SalesOrder::class)->run(function () use ($id, $version, $statuses, $phase, $trigger, $confirmation, $now): SalesOrder {
             $versions = $this->orders()->lockIds([$id]);
             if (!isset($versions[$id])) {
                 throw new OrderConflictException($id, $version);
             }
             $order = $this->orders()->withLines($id) ?? throw new OrderConflictException($id, $version);
             $from  = $this->statusOf($order, $statuses);
-            if ($target === null || $target->getLevel() <= $from->getLevel()) {
-                return $order;   // at or past the target — nothing to move
+            self::assertPrintable($order, $from, $phase);
+            $target = $statuses->actionTarget($from, $phase);
+            if ($target === null) {
+                return $order;   // in or past the phase — a reprint, nothing to move
             }
             if ($versions[$id] !== $version) {
                 throw new OrderConflictException($id, $version);
             }
-            $this->move($order, $from, $target, SalesOrderStatusChange::TRIGGER_DELIVERY_NOTE, $confirmation, $now);
+            $this->move($order, $from, $target, $trigger, $confirmation, $now);
 
             return $order;
         });
@@ -228,11 +274,11 @@ final class OrderService
     /**
      * The BOOKING PRINT of one or several orders (plan §7, D4, step 9): each order's invoice is
      * issued AND booked by debtor (`InvoicingService::invoiceAndFinalize()`), linked to the order
-     * (D5), and the order moves to the status flagged `invoiceBooked` — ONE unit of work, all or
+     * (D5), and the order moves to the default status of phase `closed` — ONE unit of work, all or
      * nothing.
      *
      *   1. Before the unit of work, at the versions the screen showed: every order exists, has no
-     *      invoice and sits in an `invoiceable` status; the debtor profile of each customer is
+     *      invoice and sits in a bookable phase (`confirmed`, `delivered`); the debtor profile of each customer is
      *      opened if it has none (D9 — its own unit of work, `openDebtorProfile()`); each order's
      *      invoice is previewed (`preview()`) so a refusal names THE ORDER («Auftrag 12: …»), and
      *      a payment part that could not be printed is refused the same way; the month range of
@@ -264,8 +310,8 @@ final class OrderService
         }
         ksort($versions);
         $statuses = $this->statuses();
-        $booked   = $statuses->invoiceBooked()
-            ?? throw new OrderRefusedException(OrderRefusedException::NO_BOOKED_STATUS, 'Kein aktiver Auftragsstatus ist als «Rechnung verbucht» markiert — unter Stammdaten › Aufträge › Auftragsstatus einen Status so markieren. Nichts wurde verbucht.');
+        $booked   = $statuses->defaultOf(OrderPhase::Closed)
+            ?? throw new OrderRefusedException(OrderRefusedException::NO_BOOKED_STATUS, 'Die Phase «Abgeschlossen» hat keinen aktiven Auftragsstatus — unter Stammdaten › Aufträge › Auftragsstatus einen anlegen (z.B. «Gebucht») und «Wird gesetzt beim Buchungsdruck» einschalten. Nichts wurde verbucht.');
         $invoiceDate = $invoiceDate->setTime(0, 0);
         $invoicing   = $this->invoicing();
 
@@ -395,8 +441,8 @@ final class OrderService
     }
 
     /**
-     * THE stock call (plan §8.3) — the only one: the COMPLETE target state of the order under
-     * $status, in the caller's unit of work.
+     * THE stock call (plan §8.3) — the only one: the COMPLETE target state of the order in the
+     * PHASE of $status (ADR-043 addendum 2026-10-15), in the caller's unit of work.
      */
     private function syncStock(SalesOrder $order, OrderStatus $status, string $trigger, ?StockConfirmation $confirmation): void
     {
@@ -406,7 +452,7 @@ final class OrderService
             (string) $order->getId(),
             $trigger,
             $this->actor,
-            OrderStockTargets::of($order->getLines(), $status),
+            OrderStockTargets::of($order->getLines(), $status->getPhase()),
             $confirmation,
         ));
     }
@@ -428,8 +474,8 @@ final class OrderService
     }
 
     /**
-     * The booking print's judgement of one order (plan §7): no invoice yet, an `invoiceable`
-     * status — before the unit of work and again under the lock.
+     * The booking print's judgement of one order (plan §7): no invoice yet, a bookable phase
+     * (`confirmed`, `delivered`) — before the unit of work and again under the lock.
      *
      * @throws OrderRefusedException ALREADY_INVOICED | NOT_INVOICEABLE
      */
@@ -439,8 +485,8 @@ final class OrderService
             $number = $order->getInvoice()->getNumber();
             throw new OrderRefusedException(OrderRefusedException::ALREADY_INVOICED, 'Zu Auftrag ' . $order->documentNumber() . ' ist die Rechnung' . ($number !== null ? ' ' . $number : '') . ' bereits verbucht — nichts wurde nochmals verbucht.');
         }
-        if (!$status->isInvoiceable()) {
-            throw new OrderRefusedException(OrderRefusedException::NOT_INVOICEABLE, 'Auftrag ' . $order->documentNumber() . ' steht in «' . $status->getLabel() . '» — verbucht wird nur ein Auftrag in einem Status, der zum Fakturieren bereit ist.');
+        if (!$status->getPhase()->isBookable()) {
+            throw new OrderRefusedException(OrderRefusedException::NOT_INVOICEABLE, 'Auftrag ' . $order->documentNumber() . ' steht in «' . $status->getLabel() . '» (Phase ' . $status->getPhase()->label() . ') — verbucht wird ein bestätigter oder gelieferter Auftrag.');
         }
     }
 
@@ -462,8 +508,8 @@ final class OrderService
             $number = $order->getInvoice()->getNumber();
             throw new OrderRefusedException(OrderRefusedException::NOT_EDITABLE, 'Zum Auftrag ' . $order->documentNumber() . ' ist die Rechnung' . ($number !== null ? ' ' . $number : '') . ' verbucht — er bleibt, wie er verbucht wurde. Eine Korrektur ist eine Gutschrift auf der Rechnung.');
         }
-        if ($status->isFinal()) {
-            throw new OrderRefusedException(OrderRefusedException::NOT_EDITABLE, 'Auftrag ' . $order->documentNumber() . ' ist abgeschlossen («' . $status->getLabel() . '») — zum Ändern zuerst den Status zurücksetzen.');
+        if ($status->getPhase()->isLocked()) {
+            throw new OrderRefusedException(OrderRefusedException::NOT_EDITABLE, 'Auftrag ' . $order->documentNumber() . ' ist ' . ($status->getPhase() === OrderPhase::Cancelled ? 'storniert' : 'abgeschlossen') . ' («' . $status->getLabel() . '») — zum Ändern zuerst den Status zurücksetzen.');
         }
     }
 
@@ -484,7 +530,7 @@ final class OrderService
         $status = $statuses->byCode($code)
             ?? throw new OrderRefusedException(OrderRefusedException::STATUS_UNKNOWN, 'Den Status «' . $code . '» gibt es nicht.');
         if (!in_array($status, $statuses->startable(), true)) {
-            throw new OrderRefusedException(OrderRefusedException::NOT_STARTABLE, 'Ein neuer Auftrag beginnt nicht in «' . $status->getLabel() . '» — nur in einem aktiven Status, der weder gebucht noch abschliessend ist.');
+            throw new OrderRefusedException(OrderRefusedException::NOT_STARTABLE, 'Ein neuer Auftrag beginnt nicht in «' . $status->getLabel() . '» — nur in einem aktiven Status der Phasen Neu, Bestätigt oder Geliefert.');
         }
 
         return $status;
@@ -800,6 +846,42 @@ final class OrderService
         }
 
         return self::spec($d->id, $type, $variant, $articleNumber, $text, $quantity, $unit === '' ? null : $unit, $unitPrice, $discount, $taxCode, $account, $children);
+    }
+
+    /**
+     * What an ARTICLE line takes from the article — the values {@see resolveLine()} fills in at
+     * save when text / unit / price are left empty, plus the tax code and account it always takes
+     * (D3) — for the window to show them as soon as the article is chosen (owner 2026-10-15). Reads,
+     * writes nothing. Null when the number names no variant; `price` is '' and `problem` names why
+     * when the article has no price on the order date or the price cannot be converted.
+     *
+     * @return array{text: string, unit: string, price: string, taxCode: string, account: string, problem: string}|null
+     */
+    public function articleDefaults(string $number, string $orderDate, string $serviceFrom, string $priceMode): ?array
+    {
+        /** @var Variant|null $variant */
+        $variant = $this->em->getRepository(Variant::class)->findByNumber(trim($number));
+        if ($variant === null) {
+            return null;
+        }
+        $product = $variant->getProduct();
+        $date    = self::date($orderDate);
+        $mode    = PriceMode::tryFrom($priceMode);
+        $price   = null;
+        $errors  = [];
+        if ($date !== null && $mode !== null) {
+            $context = ['orderDate' => $date, 'serviceDate' => (trim($serviceFrom) === '' ? null : self::date($serviceFrom)) ?? $date, 'priceMode' => $mode];
+            $price   = $this->articlePrice($variant, $product->getTaxCode(), $context, 'price', $errors);
+        }
+
+        return [
+            'text'    => trim($product->getName() . ($variant->getLabel() !== '' ? ' ' . $variant->getLabel() : '')),
+            'unit'    => $variant->getUnit(),
+            'price'   => $price?->toDecimal() ?? '',
+            'taxCode' => $product->getTaxCode(),
+            'account' => $product->getRevenueAccount(),
+            'problem' => $errors['price'] ?? '',
+        ];
     }
 
     /**

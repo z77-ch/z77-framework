@@ -1,9 +1,9 @@
 <?php
 /**
  * Aufträge › Aufträge — the toolbar (hc2): the view tabs (`.be-viewtabs`, each with its count),
- * nothing else. The tabs are derived from the status FLAGS (`OrderListing::viewOf()`) — a new
- * status lands in its tab without code. «+ Neuer Auftrag» stands in the action cell, «Buchungsdruck …»
- * in the selection bar of «Zu fakturieren».
+ * nothing else. The tabs are the PHASES (`OrderListing::viewOf()`, ADR-043 addendum 2026-10-15) — a
+ * new status lands in its tab without code. «+ Neuer Auftrag» stands in the action cell,
+ * «Buchungsdruck …» in the selection bar of «In Arbeit» and «Geliefert».
  *
  * Part of the fragment: added by `listAction()` (financial.md, «fragment slots»).
  *

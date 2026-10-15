@@ -1,6 +1,6 @@
 # contact
 
-2026-10-13
+2026-10-15
 
 ## entry
 
@@ -134,6 +134,8 @@ SOURCE=/docs/03-development/order-debtor-financial-bauplan.md
 - **CONTACT-UI-001** — 2026-10-10 (ADR-049 rev. / ADR-047 addendum of the same day, `forms-actions-review-2026-10-10.md` Part B #35–39): the dialogs carry their actions in ONE row under the header (`partials/modalActions`) — contact, address and type forms «Speichern», the ⋮ hub «Schliessen» only; «Adresse entfernen» (a confirm without a field) keeps the bar at the END. A one-row save answers in place: contact edit, add / edit / remove address and the switch replace the contact row with `ContactController/_row`; a type's edit and switch its row with `AddressTypeController/_row`; a new type is inserted before the type that follows it, a new contact on TOP of the list (the list may be filtered by a search the POST does not carry, so its sorted place is not known). The lists render the same partials; nodes carry `data-entity="contact:<id>"` / `"addressType:<id>"`, lists `data-entity-list="contact"` / `"addressType"`; core.js wires the inserted rows (FETCH-ROW-001, `fetch.md`). No `reload` left on either screen. Don't expect a new or renamed contact at its sorted place, the section badge to count a new row, nor a type row's usage count to follow an address saved on the contact screen, until the next load.
 
 ## pending
+
+- **Usability review 2026-10-15** ([`usability-review-2026-10-15-contact-debtor-order.md`](../03-development/usability-review-2026-10-15-contact-debtor-order.md) §4): proposals waiting for the owner — the first address's name taken from the contact when left empty (A2), the roles that are ON as badges in the list row, read for the page in one query (B2), the name opens «Bearbeiten» (B3), «Rollen» first in the dialog (B1), a role that needs an address (A1, through `ContactRoleInterface`).
 
 - **Backend group `contact`** — proposed here (`groupDefaults['contact'] = 'contact'`, URLs `/backend/contact/…`), not owner-confirmed. Alternatives: the `finance` group next to the tax codes, or a broader «Stammdaten» group. Renaming touches `backendConfig`, the two host controllers, the `*ListBase()` defaults and this doc.
 - **Snapshot shape** — closed 2026-09-23 with the invoice (`debtor.md`, P3 part 2): a document stores the ten `Address` fields as FLAT COLUMNS through an embeddable of the consuming module (`Z77\Module\Debtor\Entities\AddressSnapshot`, `#[ORM\Embedded(columnPrefix: 'addr_')]` on `invoice`), filled with `AddressSnapshot::of($address)` at issue — no JSON, no reference to `address` / `contact_address`; this module still carries no serialisation of its own. The invoice takes the contact's `invoice`-typed link, else `main`, else the first, by `ContactAddress::getTypeCode()` — so `AddressTypes::resolve(code)` was NOT needed and stays unbuilt (no caller); it comes back if a consumer ever snapshots the TYPE rather than the address.

@@ -1,7 +1,7 @@
 <?php
 /**
- * Stammdaten › Aufträge › Auftragsstatus (plan §9.5) — a STANDARD LIST (listing.md) in level
- * order: the head is the kernel's partial over {@see \Z77\Module\Order\Ui\OrderStatusListing},
+ * Stammdaten › Aufträge › Auftragsstatus (plan §9.5) — a STANDARD LIST (listing.md) along the
+ * ladder (phase, position): the head is the kernel's partial over {@see \Z77\Module\Order\Ui\OrderStatusListing},
  * the rows are `_row` — the same partial the switch answers with in place (FETCH-ROW-001). The
  * list is a FETCH REGION (`order-status-list`): the sort reloads only this part, and a save in the
  * status window reloads it (`refresh-region`). No CSS and no JavaScript of its own.

@@ -31,8 +31,7 @@
  * @var \Z77\Module\Debtor\Entities\Invoice|null $document  edit only
  * @var int|null $version  edit only
  * @var string $entityCsrf  edit only
- * @var list<\Z77\Module\Debtor\Entities\DebtorProfile> $debtors  a new invoice only
- * @var list<\Z77\Module\Contact\Entities\Contact> $candidates  a new invoice only — active contacts without a profile (`_debtorSelect`)
+ * @var string $customerField  a new invoice only — `CustomerPicker::fieldHtml()`: the chosen customer + «Kunde wählen …»
  * @var list<\Z77\Module\Debtor\Entities\PaymentTerms> $terms
  * @var \Z77\Module\Debtor\Entities\PaymentTerms|null $defaultTerms  the terms a new debtor gets (null = none marked / inactive)
  * @var list<\Z77\Module\Debtor\Entities\PaymentTarget> $targets
@@ -106,18 +105,13 @@ $cancelHref = $window && !$isEdit && !$isCredit ? '' : $cancel;
 
         <div class="be-form__grid">
             <div class="be-form__field" data-z77-field-wrapper>
-                <label for="invoice-contact">Debitor</label>
+                <label for="invoice-contact-name">Debitor</label>
                 <?php if ($party !== null): ?>
-                <input type="text" id="invoice-contact" value="<?= e($party->displayName()) ?>" readonly>
+                <input type="text" id="invoice-contact-name" value="<?= e($party->displayName()) ?>" readonly>
                 <input type="hidden" name="contact" value="<?= (int) $party->getId() ?>">
                 <?php else: ?>
-                <?= $this->partial('Backend/InvoiceController/_debtorSelect', [
-                    'debtors'    => $debtors,
-                    'candidates' => $candidates ?? [],
-                    'selected'   => $form->header('contact'),
-                    'invalid'    => $form->error('contact') !== '',
-                ], 'Z77\\Module\\Debtor') ?>
-                <?php // «+ Kontakt»: a window over this one; its save replaces the select above — the draft stays (debtor.md, DEBTOR-CONTACT-001). ?>
+                <?= raw($customerField) ?>
+                <?php // «+ Kontakt»: a window over this one; its save replaces the field above — the draft stays (debtor.md, DEBTOR-CONTACT-001). ?>
                 <a class="be-btn be-btn--ghost be-btn--sm" href="<?= e($actionBase . '/new-contact') ?>" data-window-open="<?= e($actionBase . '/new-contact') ?>">+ Kontakt</a>
                 <?php endif; ?>
                 <?= raw($fieldError($form->error('contact'))) ?>
@@ -152,7 +146,7 @@ $cancelHref = $window && !$isEdit && !$isCredit ? '' : $cancel;
             <div class="be-form__field" data-z77-field-wrapper>
                 <label for="invoice-terms">Zahlungskonditionen</label>
                 <select id="invoice-terms" name="terms">
-                    <option value="">wie beim Debitor<?= ($candidates ?? []) !== [] && ($defaultTerms ?? null) !== null ? ' — neu als Debitor: ' . e($defaultTerms->getLabel()) : '' ?></option>
+                    <option value="">wie beim Debitor<?= $party === null && ($defaultTerms ?? null) !== null ? ' — neu als Debitor: ' . e($defaultTerms->getLabel()) : '' ?></option>
                     <?php foreach ($terms as $row): ?>
                     <option value="<?= e($row->getCode()) ?>"<?= $row->getCode() === $form->header('terms') ? ' selected' : '' ?>><?= e($row->getLabel()) ?><?= $row->isActive() ? '' : ' (inaktiv)' ?></option>
                     <?php endforeach; ?>

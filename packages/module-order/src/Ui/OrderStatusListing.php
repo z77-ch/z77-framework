@@ -5,24 +5,16 @@ use Z77\Shared\Listing\Column;
 use Z77\Shared\Listing\ListDefinition;
 
 /**
- * The order-status list as a standard list (listing.md, plan §9.5): state icon · Code ·
- * Bezeichnung · Stufe · Verhalten (the flags as badges) · Aktiv. A short fixed list of file rows:
- * no search, one sort — the level, the order the transition rule reads. All rows on one page.
+ * The order-status list as a standard list (listing.md, plan §9.5; ADR-043 addendum 2026-10-15):
+ * state icon · Code · Bezeichnung · Phase · Sortierung · Wird gesetzt durch · Aktiv. A short fixed
+ * list of file rows: no search, one sort — along the ladder (phase, then the position within it),
+ * the order every choice offers. All rows on one page. «Wird gesetzt durch» names the ACTION that
+ * sets the status when it moves an order into the phase (the default — owner 2026-10-15: «Vorgabe»
+ * was understood by no one).
  */
 final class OrderStatusListing
 {
     public const ID = 'order-status';
-
-    /** The flags in display order with their badge text — the edit window's switches use the same words. */
-    public const FLAG_LABELS = [
-        'offer'                => 'Offerte',
-        'reserves_stock'       => 'reserviert Bestand',
-        'consumes_stock'       => 'verbraucht Bestand',
-        'invoiceable'          => 'fakturierbar',
-        'invoice_booked'       => 'gebucht',
-        'delivery_note_target' => 'Ziel des Lieferscheins',
-        'final'                => 'abschliessend',
-    ];
 
     public static function definition(): ListDefinition
     {
@@ -30,9 +22,10 @@ final class OrderStatusListing
             Column::slot('Bearbeiten'),
             Column::plain('Code', '8rem'),
             Column::plain('Bezeichnung', 'minmax(10rem, 1.5fr)'),
-            Column::plain('Stufe', '4.5rem', 'level', numeric: true),
-            Column::plain('Verhalten', 'minmax(10rem, 2fr)', priority: '2'),
+            Column::plain('Phase', 'minmax(8rem, 1fr)', 'phase'),
+            Column::plain('Sortierung', '6rem', numeric: true, priority: '2'),
+            Column::plain('Wird gesetzt durch', 'minmax(9rem, 1fr)', priority: '2'),
             Column::plain('Aktiv', '3.5rem'),
-        ], 'level', 500);
+        ], 'phase', 500);
     }
 }

@@ -277,7 +277,7 @@ final class OrderForm
         $ids = [];
         foreach (array_keys($this->header) as $key) {
             if (isset($this->errors[$key])) {
-                $ids[] = 'order-' . $key;
+                $ids[] = $key === 'contact' ? 'invoice-contact-name' : 'order-' . $key;   // the customer field's text (debtor's CustomerPicker)
             }
         }
         foreach ($this->rows as $i => $row) {

@@ -1,6 +1,6 @@
 # ADR-043 — Order status as data, and the stock movements it controls
 
-**Status:** `[APPROVED]` — approved by the owner 2026-09-21 (P0 of [`order-debtor-financial-bauplan.md`](../03-development/order-debtor-financial-bauplan.md)); addendum 2026-10-14 (P7 slim seed, `invoiceBooked` / `offer` / `deliveryNoteTarget`, position changes trigger stock — approved by the owner)
+**Status:** `[APPROVED]` — approved by the owner 2026-09-21 (P0 of [`order-debtor-financial-bauplan.md`](../03-development/order-debtor-financial-bauplan.md)); addendum 2026-10-14 (P7 slim seed, `invoiceBooked` / `offer` / `deliveryNoteTarget`, position changes trigger stock — approved by the owner); addendum 2026-10-15 (fixed phases carry the behaviour, statuses are labels, a cancelled phase — approved by the owner)
 **Date:** 2026-09-21
 
 ---
@@ -159,3 +159,58 @@ applies.
 
 Also approved the same day (owner, plan §15 item 5): **tax code and revenue account sit on the
 ARTICLE** (P6 slim); when the product-group tree comes, it only supplies DEFAULTS for new articles.
+
+## Addendum 2026-10-15 — fixed PHASES carry the behaviour, statuses are labels (approved by the owner)
+
+Decided by the owner on 2026-10-15 in the review of the status screen («ist irgendwie irreführend,
+wenn der Schalter Offerte es steuert — warum hat es noch reserviert, verbraucht, fakturierbar?»;
+«die Schwachstelle ist eigentlich nur der Mensch, der den Status verändert»; «ja passt los»). It
+amends decisions 1, 2, 3, 4 and 5 and the addendum of 2026-10-14 (1); their text above stays as
+written, and where it and this addendum differ, this addendum applies. Stock decisions 9–18 are
+unchanged.
+
+1. **Two things, apart.** The **phase** is FIXED in code and carries every behaviour; the **status**
+   is installation data — a label to order and find orders by («alle Terminaufträge», «alle
+   Bestellungen»), any number of them, each in exactly ONE phase. The phase is what wdv-630 called
+   the order state's *level*. The seven behaviour flags (`offer`, `reservesStock`, `consumesStock`,
+   `invoiceable`, `invoiceBooked`, `deliveryNoteTarget`, `final`) are REMOVED — most of their 128
+   combinations were invalid, and a human who set one wrongly booked stock wrongly.
+2. **The phases** (`OrderPhase`, in this order — the ladder):
+
+   | Phase | Stock target of a line | Booking print | Documents |
+   |---|---|---|---|
+   | `new` | nothing | no | «Offerte»; the order confirmation MOVES to `confirmed` |
+   | `confirmed` | reserved | yes | «Auftragsbestätigung»; the delivery note MOVES to `delivered` |
+   | `delivered` | consumed | yes | «Auftragsbestätigung», delivery note (reprint) |
+   | `closed` | consumed | — locked | — |
+   | `cancelled` | nothing | — locked | — |
+
+   «Bereitgestellt» and «geliefert» are both `delivered` — the goods left the shelf; where they stand
+   is the status (owner). «Zu fakturieren» is a status of `delivered`. Whether a LINE moves stock at
+   all is the ARTICLE's (`stock_relevant`, decided per variant by the stock ledger — `article.md`) — a service or a free line never does,
+   in any phase; no status says «without stock».
+3. **A status** has: `code` (immutable, the reference rule of decision 19), German `label`, `phase`,
+   `position` (the order within its phase), `phaseDefault`, `active`. Nothing else.
+4. **The default status of a phase.** At most ONE active status per phase is its default. An ACTION
+   that moves an order INTO another phase sets that phase's default: a new order starts in the default
+   of `new` (the form may pick any active status of `new`, `confirmed` or `delivered`); the order
+   confirmation print sets the default of `confirmed`; the delivery-note print the default of
+   `delivered`; the booking print the default of `closed` («Gebucht»). An action that finds the order
+   already in or past its phase moves nothing (a reprint). Without a marked default, the first active
+   status of the phase (by position) is taken.
+5. **Transitions** (decision 4, restated by phase): a status change by hand stays («Status ändern …»).
+   Forward or lateral (a phase at or after the current one) is free; backward only while the order has
+   NO invoice; the default of `closed` is reached ONLY by the booking print (no «gebucht» without an
+   invoice); `cancelled` only without an invoice (after invoicing, a credit note — decision 5's reason
+   stands for that case). Stock follows from the target state alone (decision 12): skipping a phase
+   books the end state directly, going back from consumed asks for a reason.
+6. **Decision 5 is lifted for the time before invoicing**: there IS a cancelled phase. «Erledigt»
+   means delivered and done (stock consumed); «storniert» means the order does not happen (stock
+   released). Folding both into «done without stock effect» needed a stock flag on a status — the
+   very configuration this addendum removes.
+7. **Derived, not configured:** the order list's tabs are the phases (Offerten · In Arbeit ·
+   Geliefert · Abgeschlossen · Storniert · Alle); an order is editable while it has no invoice and its
+   phase is not `closed` / `cancelled` (plan D7); the year-close warning covers `confirmed` and
+   `delivered` (every bookable order — a service order may never see a delivery note).
+8. **Later, only on demand:** a per-status «this action sets …» override, restricted by the server to
+   statuses of the action's phase. Not built.

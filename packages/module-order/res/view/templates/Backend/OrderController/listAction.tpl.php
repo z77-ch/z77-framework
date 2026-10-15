@@ -1,13 +1,13 @@
 <?php
 /**
  * Aufträge › Aufträge (plan §9.3; the owner's board on the developer canvas) — one VIEW tab at a
- * time (toolbar): Offerten · In Arbeit · Zu fakturieren · Gebucht · Erledigt · Alle, derived from
- * the status FLAGS (`OrderListing::viewOf()`). A STANDARD LIST (listing.md): the head and the
+ * time (toolbar): Offerten · In Arbeit · Geliefert · Abgeschlossen · Storniert · Alle — the
+ * PHASES (`OrderListing::viewOf()`, ADR-043 addendum 2026-10-15). A STANDARD LIST (listing.md): the head and the
  * search form are the kernel's partials over {@see \Z77\Module\Order\Ui\OrderListing}, the rows
  * are `_row`; no CSS and no JavaScript of its own:
  *
  *   - the state icon opens the order as a WINDOW (ADR-047), the href stays for a ctrl-click;
- *   - in «Zu fakturieren» each row carries a checkbox of the form `#order-book` (GET to
+ *   - in «In Arbeit» and «Geliefert» (the bookable phases) each row carries a checkbox of the form `#order-book` (GET to
  *     `confirm-book`) with `{id}:{version}` — the version THIS row shows, so an order changed
  *     before the booking print is refused instead of booked unseen; «Buchungsdruck …» is bound
  *     to that selection, so it stands in the SELECTION BAR above the list (green, ADR-033
@@ -30,7 +30,7 @@ use Z77\Module\Order\Ui\OrderListing;
 $actionBase = $actionBase ?? \Z77\Module\Order\Ui\OrderLayout::BASE;
 $listUrl    = $actionBase . '/list';
 $link       = static fn(array $changes = []): string => $listUrl . '?' . $state->query($changes);
-$selectable = $view === OrderListing::VIEW_INVOICEABLE;
+$selectable = OrderListing::isSelectable($view);
 ?>
 <div class="be-list" data-fetch-region="<?= e($definition->region()) ?>">
     <div class="be-list__section">

@@ -1,20 +1,20 @@
 <?php
 /**
- * «Buchungsdruck» from the order (plan §7 / §9.3) — the last look: the orders selected in «Zu
- * fakturieren» (or the one order of the window), each with the version it SHOWED
+ * «Buchungsdruck» from the order (plan §7 / §9.3) — the last look: the orders selected in «In
+ * Arbeit» / «Geliefert» (or the one order of the window), each with the version it SHOWED
  * (`order[]` = `{id}:{version}`), customer, subject and total, and the INVOICE DATE (default
  * today). One button posts the same pairs into a NEW TAB (`target="_blank"`, `#[Csrf]`):
  * `OrderService::book()` issues and books each order's invoice, links it and sets the order to
- * the status flagged `invoiceBooked` — one unit of work, all or nothing — and the tab shows the
+ * the default status of phase `closed` («Gebucht») — one unit of work, all or nothing — and the tab shows the
  * invoices as ONE PDF. A repeated submit reprints that PDF; a refusal is a message page naming
- * the order. Orders already stale here (changed, booked, not invoiceable) are named and left out.
+ * the order. Orders already stale here (changed, booked, not in a bookable phase) are named and left out.
  *
  * This tab does not stay stale: `data-submit-navigate` (core.js, SUBMIT-NAV-001) sends it to
- * «Gebucht» right after the submit. A PAGE, not a window (the DEBTOR-WIN-002 pattern: the
+ * «Abgeschlossen» right after the submit. A PAGE, not a window (the DEBTOR-WIN-002 pattern: the
  * selection bar is a GET form, core.js has no opener that turns it into a window).
  * Action row first (ADR-049).
  *
- * @var list<\Z77\Module\Order\Entities\SalesOrder> $orders  invoiceable at the version shown
+ * @var list<\Z77\Module\Order\Entities\SalesOrder> $orders  bookable at the version shown
  * @var list<string> $stale  names of the ones left out
  * @var \Z77\Shared\Money\Money|null $total
  * @var \DateTimeImmutable $today
@@ -27,21 +27,21 @@ $actionBase = $actionBase ?? \Z77\Module\Order\Ui\OrderLayout::BASE;
 $count      = count($orders);
 ?>
 <div class="be-list">
-    <form method="post" action="<?= e($actionBase) ?>/book" target="_blank" data-submit-navigate="<?= e($actionBase . '/list?view=booked') ?>" class="be-list__section">
+    <form method="post" action="<?= e($actionBase) ?>/book" target="_blank" data-submit-navigate="<?= e($actionBase . '/list?view=closed') ?>" class="be-list__section">
         <input type="hidden" name="csrf_token" value="<?= e($csrfToken ?? '') ?>">
         <?= $this->partial('partials/modalActions', [
             'submit'     => $orders !== [] && $booked !== null ? 'Buchungsdruck' : '',
             'cancel'     => 'Zur Liste',
-            'cancelHref' => $actionBase . '/list?view=invoiceable',
+            'cancelHref' => $actionBase . '/list?view=delivered',
         ], 'Z77\\Shared') ?>
         <div class="be-list__section-header">
             <h2 class="be-list__section-title">Buchungsdruck <small class="be-list__cell--muted">· <?= $count ?> <?= $count === 1 ? 'Auftrag' : 'Aufträge' ?><?= $total !== null ? ' · ' . e($fmt($total)) : '' ?></small></h2>
         </div>
         <?php if ($stale !== []): ?>
-        <div class="be-modal__alert be-modal__alert--error">Seit der Auswahl geändert, bereits verbucht oder nicht zu fakturieren — ausgelassen: <?= e(implode(', ', $stale)) ?>. Liste neu laden.</div>
+        <div class="be-modal__alert be-modal__alert--error">Seit der Auswahl geändert, bereits verbucht oder weder bestätigt noch geliefert — ausgelassen: <?= e(implode(', ', $stale)) ?>. Liste neu laden.</div>
         <?php endif; ?>
         <?php if ($booked === null): ?>
-        <div class="be-modal__alert be-modal__alert--error">Kein aktiver Auftragsstatus ist als «Rechnung verbucht» markiert — unter Stammdaten › Aufträge › Auftragsstatus einen markieren.</div>
+        <div class="be-modal__alert be-modal__alert--error">Die Phase «Abgeschlossen» hat keinen aktiven Auftragsstatus — unter Stammdaten › Aufträge › Auftragsstatus einen anlegen (z.B. «Gebucht») und «Wird gesetzt beim Buchungsdruck» einschalten.</div>
         <?php endif; ?>
         <?php if ($orders !== []): ?>
         <div class="be-form__grid">
