@@ -16,6 +16,7 @@ use Z77\Core\DI,
     Z77\Module\Financial\Repositories\AccountRepository,
     Z77\Module\Financial\Repositories\FiscalYearRepository,
     Z77\Module\Financial\Services\LedgerReports,
+    Z77\Module\Financial\Services\LedgerService,
     Z77\Module\Mandator\Entities\Mandator,
     Z77\Module\Mandator\Services\CurrentMandator,
     Z77\Module\Mandator\Services\MandatorUnavailableException,
@@ -301,13 +302,21 @@ trait ReportControllerTrait
         return $this->bytes($pdf->output(), ReportPdf::fileName($title, $range->year->getCode(), $range->toDay(), $from), 'application/pdf');
     }
 
-    /** `?page=` — the journal of the range, oldest first, one page of entries at a time. */
+    /**
+     * The journal of the range, one page of entries at a time — a standard list
+     * ({@see JournalReportListing}, owner 2026-10-15): the column titles sort, the magnifiers
+     * search in the database within the range (`?f_…=`, `?sort=`, `?dir=`, `?page=`), the
+     * totals follow the search. Oldest first by default.
+     */
     protected function journalAction(): HtmlResponse
     {
-        $page = (int) $this->reportParameter('page');
+        $definition = JournalReportListing::definition(LedgerService::baseCurrency());
+        $state      = $definition->readRequest(DI::getRequest());
 
         return $this->reportPage('journal', 'journal', fn(ReportRange $range) => [
-            'report' => $this->ledgerReports()->journal($range, $page),
+            'report'     => $this->ledgerReports()->journal($range, $state->page, JournalReportListing::search($state)),
+            'definition' => $definition,
+            'state'      => $state,
         ]);
     }
 

@@ -12,6 +12,7 @@ use Z77\Module\Financial\Reports\AccountStatementLine;
 use Z77\Module\Financial\Reports\BalanceSheet;
 use Z77\Module\Financial\Reports\IncomeStatement;
 use Z77\Module\Financial\Reports\JournalReport;
+use Z77\Module\Financial\Reports\JournalSearch;
 use Z77\Shared\Paging\Paging;
 use Z77\Module\Financial\Reports\ReportRange;
 use Z77\Module\Financial\Reports\StatementLine;
@@ -236,15 +237,19 @@ final class LedgerReports
     }
 
     /** One page of the journal report — the screen. */
-    public function journal(ReportRange $range, int $page): JournalReport
+    public function journal(ReportRange $range, int $page, ?JournalSearch $criteria = null): JournalReport
     {
         /** @var JournalEntryRepository $entries */
         $entries = $this->em->getRepository(JournalEntry::class);
-        $summary = $entries->rangeSummary($range->year, $range->fromDay(), $range->toDay());
+        // The column search (owner 2026-10-15) runs in the database, held to the range — without
+        // one, the whole range in date and number order.
+        $search  = ($criteria ?? new JournalSearch(sort: 'date', descending: false))
+            ->within((int) $range->year->getId(), $range->fromDay(), $range->toDay());
+        $summary = $entries->searchSummary($search);
         $paging  = new Paging($page, self::JOURNAL_PAGE_SIZE, $summary['entries']);
 
         return new JournalReport(
-            $entries->chronological($range->year, $range->fromDay(), $range->toDay(), $paging->offset(), $paging->pageSize),
+            $entries->search($search, $paging->offset(), $paging->pageSize),
             $this->money($summary['debit']),
             $this->money($summary['credit']),
             $paging,

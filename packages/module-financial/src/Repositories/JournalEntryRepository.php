@@ -112,7 +112,8 @@ class JournalEntryRepository extends DoctrineRepository
     }
 
     /**
-     * One page of the journal LIST (FIN-JOURNAL-CAPTURE-001): the entries that
+     * One page of the journal LIST (FIN-JOURNAL-CAPTURE-001) or the journal
+     * REPORT (its search held to the range, `date` ascending): the entries that
      * match every criterion of $search, in its order, with lines and accounts
      * loaded. The search runs in the database over the whole journal (one
      * year, or all of them) — never a filter of the rows on screen. Every
@@ -186,6 +187,9 @@ class JournalEntryRepository extends DoctrineRepository
                 $add("EXISTS (SELECT 1 FROM journal_line l JOIN account a ON a.id = l.account_id WHERE l.entry_id = e.id AND a.number = ? AND l.{$side} > 0)", $number);
             }
         }
+        if ($search->account !== null) {
+            $add('EXISTS (SELECT 1 FROM journal_line l JOIN account a ON a.id = l.account_id WHERE l.entry_id = e.id AND a.number = ?)', $search->account);
+        }
         if ($search->amount !== null) {
             $add('(SELECT SUM(lt.debit) FROM journal_line lt WHERE lt.entry_id = e.id) = ?', $search->amount);
         }
@@ -194,21 +198,23 @@ class JournalEntryRepository extends DoctrineRepository
     }
 
     /**
-     * One page of the entries of a year dated from–to (both inclusive), in
-     * the journal report's order — date, then number — with lines and
-     * accounts loaded. Doctrine-only (SQL + DQL).
+     * How many entries match $search and their Σ debit and Σ credit (each summed on its own) —
+     * the journal report's pager and totals since it searches (owner 2026-10-15). Every entry has
+     * at least two lines, so the join loses none. Doctrine-only (SQL).
      *
-     * @return list<JournalEntry>
+     * @return array{entries: int, debit: string, credit: string}
      */
-    public function chronological(FiscalYear $year, string $from, string $to, int $offset, int $limit): array
+    public function searchSummary(JournalSearch $search): array
     {
-        $ids = $this->connection()->fetchFirstColumn(
-            'SELECT id FROM journal_entry WHERE fiscal_year_id = ? AND entry_date BETWEEN ? AND ? ORDER BY entry_date, number LIMIT ? OFFSET ?',
-            [(int) $year->getId(), $from, $to, max(1, $limit), max(0, $offset)],
-            [ParameterType::INTEGER, ParameterType::STRING, ParameterType::STRING, ParameterType::INTEGER, ParameterType::INTEGER]
+        [$where, $params, $types] = $this->searchWhere($search);
+        $row = $this->connection()->fetchAssociative(
+            "SELECT COUNT(DISTINCT e.id) AS entries, COALESCE(SUM(jl.debit), 0) AS debit, COALESCE(SUM(jl.credit), 0) AS credit
+               FROM journal_entry e JOIN journal_line jl ON jl.entry_id = e.id{$where}",
+            $params,
+            $types
         );
 
-        return $this->hydrate(array_map('intval', $ids));
+        return ['entries' => (int) $row['entries'], 'debit' => (string) $row['debit'], 'credit' => (string) $row['credit']];
     }
 
     /**
