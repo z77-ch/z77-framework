@@ -6,8 +6,8 @@
  *
  *   - every header cell of a searchable column is a `.be-list__find`: the title
  *     sorts (a link, `?sort=` / `?dir=`), the magnifier beside it opens the
- *     search field right there (a `<label for>` that focuses a collapsed input
- *     — no JavaScript). All fields belong to the GET form `#journal-find`;
+ *     column's search pop-up (the kernel's `partials/listFindPop`, the HTML
+ *     popover — no JavaScript). All fields belong to the GET form `#journal-find`;
  *     Enter searches, over one fiscal year or — «Alle Jahre», the last entry
  *     of the year dropdown at the top of the rail (owner 2026-10-08; was a
  *     toggle here) — all;
@@ -112,7 +112,7 @@ $priority = ['f_date' => '3', 'f_debit' => '2', 'f_credit' => '2'];
                     <?php
                     $sort    = JournalFilter::SORT_OF[$key] ?? null;
                     $numeric = in_array($key, ['f_nr', 'f_amount'], true);
-                    $class   = 'be-list__col be-list__find' . ($numeric ? ' be-list__col--num' : '') . ($filter->value($key) !== '' ? ' be-list__find--active' : '');
+                    $class   = 'be-list__col be-list__find' . ($numeric ? ' be-list__col--num' : '') . ($filter->value($key) !== '' ? ' be-list__find--active' : '') . ($filter->isInvalid($key) ? ' be-list__find--invalid' : '');
                     ?>
                     <span class="<?= $class ?>"<?= isset($priority[$key]) ? ' data-priority="' . $priority[$key] . '"' : '' ?>>
                         <?php if ($sort !== null): ?>
@@ -120,12 +120,7 @@ $priority = ['f_date' => '3', 'f_debit' => '2', 'f_credit' => '2'];
                         <?php else: ?>
                         <span class="be-list__find-label"><?= e($label) ?></span>
                         <?php endif; ?>
-                        <label class="be-list__find-icon" for="journal-find-<?= e($key) ?>" title="<?= e($label) ?> suchen">
-                            <svg class="be-icon" width="12" height="12" aria-hidden="true"><use href="#icon-search"/></svg>
-                        </label>
-                        <input class="be-list__find-input" type="search" id="journal-find-<?= e($key) ?>" name="<?= e($key) ?>" form="journal-find"
-                               value="<?= e($filter->value($key)) ?>" placeholder=" " autocomplete="off" aria-label="<?= e($label) ?> suchen"
-                               aria-invalid="<?= $filter->isInvalid($key) ? 'true' : 'false' ?>"<?= $key === 'f_debit' || $key === 'f_credit' ? ' inputmode="numeric"' : '' ?>>
+                        <?= $this->partial('partials/listFindPop', ['id' => 'journal-find-' . $key, 'key' => $key, 'label' => $label, 'form' => 'journal-find', 'value' => $filter->value($key), 'invalid' => $filter->isInvalid($key), 'inputMode' => $key === 'f_debit' || $key === 'f_credit' ? 'numeric' : null], 'Z77\Shared') ?>
                     </span>
                     <?php endforeach; ?>
                 </div>

@@ -163,13 +163,16 @@ echo "D. The partials: one head cell per column, the inputs of the form, the fin
 $renderer = new TemplateRenderer('Z77\\Shared');
 $s    = $definition->read(['f_name' => 'Müller', 'f_nr' => 'x', 'sort' => 'date', 'view' => 'final']);
 $head = $renderer->partial('partials/listHead', ['definition' => $definition, 'state' => $s, 'action' => '/backend/x/list', 'keep' => ['mode' => 'sammel']]);
-check('D1 the head: the slot with its aria-label, four find cells with inputs of the form, the plain column with no input, in column order',
-    substr_count($head, 'class="be-list__col') === 6 && str_contains($head, 'aria-label="Status"') && substr_count($head, 'class="be-list__find-input"') === 4
-    && substr_count($head, 'form="doc-find"') === 4 && str_contains($head, 'id="doc-find-f_nr"') && str_contains($head, '>Fällig<') && !str_contains($head, 'name="f_due"')
+check('D1 the head: the slot with its aria-label, four find cells each with a pop-up (button = the input id, the labelled field and «Suchen» of the form), the plain column with no input, in column order',
+    substr_count($head, 'class="be-list__col') === 6 && str_contains($head, 'aria-label="Status"') && substr_count($head, 'be-list__find-input"') === 4
+    && substr_count($head, 'form="doc-find"') === 8 && substr_count($head, ' popover>') === 4
+    && str_contains($head, 'id="doc-find-f_nr" popovertarget="doc-find-f_nr-pop"') && str_contains($head, 'id="doc-find-f_nr-pop" popover')
+    && str_contains($head, 'for="doc-find-f_nr-value">Nr. suchen</label>') && str_contains($head, 'id="doc-find-f_nr-value"') && str_contains($head, '>Fällig<') && !str_contains($head, 'name="f_due"')
     && strpos($head, 'Nr.') < strpos($head, 'Datum') && strpos($head, 'Datum') < strpos($head, 'Name') && strpos($head, 'Fällig') < strpos($head, 'Betrag'));
 check('D2 the sort links carry the state and the keep, the sorted column says its direction, the others offer theirs; the find marks active and invalid; priorities and inputmode are on',
     str_contains($head, 'href="/backend/x/list?mode=sammel&amp;f_nr=x&amp;f_name=M%C3%BCller&amp;view=final&amp;sort=date&amp;dir=asc"') && str_contains($head, 'data-sort="desc">Datum</a>')
-    && str_contains($head, 'data-sort>Nr.</a>') && str_contains($head, 'be-list__find--active') && str_contains($head, 'aria-invalid="true"') && str_contains($head, 'value="Müller"')
+    && str_contains($head, 'data-sort>Nr.</a>') && str_contains($head, 'be-list__find--active') && str_contains($head, 'be-list__find--invalid') && str_contains($head, 'aria-invalid="true"') && str_contains($head, 'value="Müller"')
+    && str_contains($head, 'class="be-list__find-value" title="Name: Müller">Müller</span>')
     && str_contains($head, 'data-priority="3"') && str_contains($head, 'data-priority="2"') && str_contains($head, 'inputmode="decimal"') && str_contains($head, 'data-fetch-region-link'));
 $find = $renderer->partial('partials/listFind', ['definition' => $definition, 'state' => $s, 'action' => '/backend/x/list', 'keep' => ['mode' => 'sammel']]);
 check('D3 the find form: GET to the list, the id the inputs name, the keep and the non-default state hidden (a sort in its first direction carries no dir), no field, the region form marker',

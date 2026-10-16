@@ -308,17 +308,23 @@ a.be-list__col:hover { color: var(--be-text); }
 
 /* ── Column search (`.be-list__find`, FIN-JOURNAL-CAPTURE-001) ──
  * A header cell that sorts AND searches: the title is the sort link
- * (`.be-list__sort`, same `data-sort` contract as above), the magnifier beside it opens a
- * search field exactly in that column (the wdv way). No JavaScript: the magnifier is a
- * `<label for>` of the input, so a click FOCUSES it — and the input is collapsed until it is
- * focused or holds a value (`:placeholder-shown` with a placeholder of one space). While it
- * is open the title steps aside. The inputs belong to one GET form through `form="…"`, so
- * Enter searches — on the server, over the whole data set.
+ * (`.be-list__sort`, same `data-sort` contract as above), the magnifier beside it opens the
+ * column's search POP-UP (owner 2026-10-16: «ein richtiges Popupfenster mit der Bezeichnung,
+ * nach was gesucht wird» — the field in the column was too small and a numeric column's field
+ * was cut off at the frame). No JavaScript: the magnifier is a button with `popovertarget`, the
+ * pop-up the HTML `popover` (top layer — never clipped by the scroll frame; Esc or a click
+ * outside closes it). The field belongs to the list's GET form through `form="…"`, so Enter
+ * and «Suchen» search — on the server, over the whole data set. An active search shows its
+ * value after the title. Markup: the kernel's `partials/listFindPop`.
  *
- *   <span class="be-list__col be-list__find">
+ *   <span class="be-list__col be-list__find be-list__find--active">
  *     <a class="be-list__sort" data-sort="desc" href="?sort=date&dir=asc">Datum</a>
- *     <label class="be-list__find-icon" for="find-date"><svg class="be-icon">…search…</svg></label>
- *     <input class="be-list__find-input" id="find-date" name="f_date" form="list-find" placeholder=" ">
+ *     <span class="be-list__find-value">03.2026</span>
+ *     <button class="be-list__find-icon" id="find-date" popovertarget="find-date-pop">…search…</button>
+ *     <div class="be-list__find-pop" id="find-date-pop" popover>
+ *       <label class="be-list__find-pop-label" for="find-date-value">Datum suchen</label>
+ *       <div class="be-list__find-pop-row"><input class="be-input be-list__find-input" …> <button>Suchen</button></div>
+ *     </div>
  *   </span>
  */
 .be-list__find {
@@ -335,51 +341,56 @@ a.be-list__col:hover { color: var(--be-text); }
 .be-list__find-icon {
     display:     inline-flex;
     flex:        none;
+    padding:     0;
+    border:      0;
+    background:  none;
     cursor:      pointer;
     color:       var(--be-muted);
     opacity:     .6;
 }
 .be-list__find-icon:hover,
 .be-list__find--active .be-list__find-icon { opacity: 1; color: var(--be-accent); }
-.be-list__find .be-list__find-input {
-    flex:          0 0 0;
-    width:         0;
-    min-width:     0;
-    padding:       0;
-    border:        0;
-    opacity:       0;
-    font:          inherit;
-    font-size:     var(--font-size-sm);
+.be-list__find--invalid .be-list__find-icon { opacity: 1; color: var(--be-danger); }
+/* The active search's value after the title — cut with an ellipsis in a narrow column; the
+   whole value is its title. */
+.be-list__find-value {
+    min-width:      0;
+    overflow:       hidden;
+    text-overflow:  ellipsis;
+    font-size:      var(--font-size-sm);
+    font-weight:    400;
     text-transform: none;
     letter-spacing: normal;
-    color:         var(--be-text);
-    background:    var(--be-surface2);
+    color:          var(--be-accent);
 }
-/* The open field is a POP-UP (owner 2026-10-16: «Suchfeld zu klein» — «22.09.2026» did not fit a
-   date column): at least 12rem wide whatever the column's width, it lies over the neighbouring
-   titles instead of squeezing into its own track; a wider column it fills. A right-aligned
-   (numeric) column lets it overflow to the left (`justify-content: flex-end`). */
-.be-list__find:has(.be-list__find-input:focus, .be-list__find-input:not(:placeholder-shown)) {
-    position: relative;
-    z-index:  2;
-    overflow: visible;
+/* The pop-up: a small panel in the top layer, centred on the screen by the browser's popover
+   defaults (inset 0, margin auto), a little higher. Its text is not the header's caps. */
+.be-list__find-pop {
+    width:          min(22rem, calc(100vw - 2rem));
+    margin:         18vh auto auto;
+    padding:        var(--space-3, .9rem);
+    border:         1px solid var(--be-line);
+    border-radius:  var(--radius-md, .5rem);
+    background:     var(--be-surface);
+    color:          var(--be-text);
+    box-shadow:     var(--shadow-lg);
+    text-align:     left;
+    text-transform: none;
+    letter-spacing: normal;
+    font-weight:    400;
 }
-.be-list__find .be-list__find-input:focus,
-.be-list__find .be-list__find-input:not(:placeholder-shown) {
-    flex:          1 0 12rem;
-    width:         12rem;
-    min-width:     12rem;
-    padding:       .15rem .35rem;
-    border:        1px solid var(--be-line);
-    border-radius: var(--radius-sm);
-    box-shadow:    var(--shadow-md);
-    opacity:       1;
-    outline:       none;
+.be-list__find-pop::backdrop { background: rgb(0 0 0 / .15); }
+.be-list__find-pop-label {
+    display:       block;
+    margin-bottom: var(--space-2, .5rem);
+    font-weight:   600;
 }
-.be-list__find .be-list__find-input:focus { border-color: var(--be-accent); }
-.be-list__find .be-list__find-input[aria-invalid="true"] { border-color: var(--be-danger); }
-.be-list__find:has(.be-list__find-input:focus, .be-list__find-input:not(:placeholder-shown)) .be-list__sort,
-.be-list__find:has(.be-list__find-input:focus, .be-list__find-input:not(:placeholder-shown)) .be-list__find-label { display: none; }
+.be-list__find-pop-row {
+    display: flex;
+    gap:     var(--space-2, .5rem);
+}
+.be-list__find-pop .be-list__find-input { flex: 1 1 auto; min-width: 0; }
+.be-list__find-pop .be-list__find-input[aria-invalid="true"] { border-color: var(--be-danger); }
 /* The search form's default button: Enter needs one; nobody needs to see it. */
 .be-list__find-submit {
     position: absolute;
