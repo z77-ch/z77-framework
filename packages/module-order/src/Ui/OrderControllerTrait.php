@@ -423,10 +423,10 @@ trait OrderControllerTrait
         if ($defaults['problem'] !== '') {
             $this->messageService->pushFlash('error', $defaults['problem']);   // the rest still fills; the price is typed
         }
-        $fill = ['text' => $defaults['text'], 'unit' => $defaults['unit'], 'tax_code' => $defaults['taxCode'], 'account' => $defaults['account']];
-        if ($defaults['price'] !== '') {
-            $fill['price'] = $defaults['price'];
-        }
+        // Every key is sent, an empty one too: a changed article replaces ALL of the old article's
+        // values — without a price the field is emptied, never left at the old article's price
+        // (owner's browser test 2026-10-16).
+        $fill = ['text' => $defaults['text'], 'unit' => $defaults['unit'], 'price' => $defaults['price'], 'tax_code' => $defaults['taxCode'], 'account' => $defaults['account']];
 
         return $this->fetch()->setStatus('success')->setData(['fill' => $fill, 'lock' => ['tax_code' => true, 'account' => true]]);
     }
