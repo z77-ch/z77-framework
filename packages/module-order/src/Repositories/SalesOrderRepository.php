@@ -84,6 +84,7 @@ class SalesOrderRepository extends DoctrineRepository
         $name = "CASE WHEN c.kind = 'organisation' THEN c.company ELSE CONCAT(c.last_name, ' ', c.first_name) END";
         $order = match ($search->sort) {
             'date'   => "o.order_date {$dir}, o.number {$dir}",
+            'service' => "o.service_from IS NULL, o.service_from {$dir}, o.number {$dir}",   // no date last, either way
             'name'   => "{$name} {$dir}, o.number {$dir}",
             'amount' => "o.total_gross {$dir}, o.number {$dir}",
             default  => "o.number {$dir}",
@@ -166,6 +167,11 @@ class SalesOrderRepository extends DoctrineRepository
         }
         if ($search->dateTo !== null) {
             $add('o.order_date <= ?', $search->dateTo);
+        }
+        // «Leistung»: the order's day or period overlaps the searched day / month / year.
+        if ($search->serviceFrom !== null && $search->serviceTo !== null) {
+            $add('o.service_from <= ?', $search->serviceTo);
+            $add('COALESCE(o.service_to, o.service_from) >= ?', $search->serviceFrom);
         }
         if ($search->name !== null) {
             $like = '%' . addcslashes($search->name, '\\%_') . '%';

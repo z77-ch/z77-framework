@@ -265,6 +265,10 @@ final class OrderService
             if ($versions[$id] !== $version) {
                 throw new OrderConflictException($id, $version);
             }
+            if ($phase === OrderPhase::Delivered && $order->getServiceFrom() === null) {
+                $order->deliveredOn($now);   // the delivery date = the service date (owner 2026-10-16)
+                $this->writeTotals($order);  // the VAT rate follows the service date
+            }
             $this->move($order, $from, $target, $trigger, $confirmation, $now);
 
             return $order;

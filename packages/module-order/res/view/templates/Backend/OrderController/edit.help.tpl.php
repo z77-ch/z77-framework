@@ -33,7 +33,8 @@
 
 <section data-help-field="service_from">
 <h3>Leistung von / bis</h3>
-<p>Wann geliefert oder geleistet wird. Der <strong>MWST-Satz</strong> richtet sich nach diesem Datum; leer heisst: das Rechnungsdatum des Buchungsdrucks. «bis» nur für einen Zeitraum, und nur mit «von».</p>
+<p>Wann geliefert oder geleistet wird — bei Ware der <strong>Liefertermin</strong>, bei einer Dienstleistung der Beginn. Es ist dasselbe Datum wie das Leistungsdatum der Rechnung: der <strong>MWST-Satz</strong> richtet sich danach; leer heisst: das Rechnungsdatum des Buchungsdrucks. «bis» nur für einen Zeitraum, und nur mit «von».</p>
+<p>Ist das Feld leer, setzt der Druck des <strong>Lieferscheins</strong> den Drucktag ein. Verschiebt sich die Lieferung, hier nachführen — die Auftragsliste sucht und sortiert in der Spalte «Leistung».</p>
 </section>
 
 <section data-help-field="status">

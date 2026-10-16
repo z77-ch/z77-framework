@@ -64,7 +64,7 @@ if ($customerNumber > 0) {
     $facts[] = ['Kundennummer', (string) $customerNumber];
 }
 $facts[] = ['Auftragsdatum', $order->getOrderDate()->format('d.m.Y')];
-$facts[] = ['Leistung', $period];
+$facts[] = ['Leistung', $period];   // one word for goods and services (owner 2026-10-16: a project may word it its own way)
 $facts[] = ['Preise', $order->priceMode()->value === 'gross' ? 'inkl. MWST' : 'zzgl. MWST'];
 foreach ($facts as [$label, $value]) {
     $pdf->font('', 9)->textColor(110)->text($left, $y, $label)->textColor(0)->text($left + 32, $y, $value);

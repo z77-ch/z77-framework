@@ -53,7 +53,7 @@ if ($customerNumber > 0) {
     $facts[] = ['Kundennummer', (string) $customerNumber];
 }
 $facts[] = ['Auftrag', $order->documentNumber() . ' vom ' . $order->getOrderDate()->format('d.m.Y')];
-$facts[] = ['Lieferdatum', $today->format('d.m.Y')];
+$facts[] = ['Lieferdatum', ($order->getServiceFrom() ?? $today)->format('d.m.Y')];   // the service date — the note fills it when empty (owner 2026-10-16)
 foreach ($facts as [$label, $value]) {
     $pdf->font('', 9)->textColor(110)->text($left, $y, $label)->textColor(0)->text($left + 32, $y, $value);
     $y += 4.4;

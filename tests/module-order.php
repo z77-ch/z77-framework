@@ -316,11 +316,15 @@ check('V3 «Status» searches the labels (case-insensitive) within the tab — �
     OrderListing::codesOf('all', $seed, 'FAKT') === ['to-invoice'] && OrderListing::codesOf('delivered', $seed, 'geliefert') === ['delivered']
     && OrderListing::codesOf('closed', $seed, 'termin') === []);
 $cols = static fn(string $view): array => array_map(static fn($c) => $c->label !== '' ? $c->label : '[' . $c->ariaLabel . ']', OrderListing::definition('CHF', $view)->columns());
-check('V5 the columns: the selection checkbox in the bookable tabs («Termin», «Geliefert»), «Zahlung» only in «Abgeschlossen», «Status» searchable; the default tab is «Offerten»',
+check('V5 the columns: the selection checkbox in the bookable tabs («Termin», «Geliefert»), «Zahlung» only in «Abgeschlossen», «Status» searchable; the default tab is «Eröffnet»',
     $cols('confirmed')[0] === '[Auswahl]' && $cols('delivered')[0] === '[Auswahl]' && !in_array('[Auswahl]', $cols('new'), true) && !in_array('[Auswahl]', $cols('closed'), true)
     && in_array('Zahlung', $cols('closed'), true) && !in_array('Zahlung', $cols('all'), true)
     && OrderListing::definition('CHF')->column('f_status')->isSearchable()
     && OrderListing::definition('CHF')->extraDefault('view') === 'new' && array_key_first(OrderListing::VIEWS) === 'new');
+$svc = OrderListing::search(OrderListing::definition('CHF', 'confirmed')->read(['view' => 'confirmed', 'f_service' => '11.2026', 'sort' => 'service']), $seed);
+check('V6 «Leistung» (= «Leistung von», the delivery date of goods, owner 2026-10-16): searchable and sortable; a month searches the order day or period overlapping it, in the tab\'s codes',
+    OrderListing::definition('CHF')->column('f_service')->isSearchable() && OrderListing::definition('CHF')->column('f_service')->sort === 'service'
+    && $svc->serviceFrom === '2026-11-01' && $svc->serviceTo === '2026-11-30' && $svc->sort === 'service' && $svc->statusCodes === ['scheduled']);
 
 // ── I. the booking print's selection and its idempotency (offline) ───────
 

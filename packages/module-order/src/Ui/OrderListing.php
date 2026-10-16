@@ -52,6 +52,8 @@ final class OrderListing
             Column::slot('Öffnen'),
             Column::search('f_nr', 'Nr.', '5rem', 'number', Parsers::integer(9), numeric: true, descendingFirst: true),
             Column::search('f_date', 'Datum', '6.5rem', 'date', Parsers::dateRange(), priority: '3', descendingFirst: true),
+            // «Leistung von» IS the delivery date of goods (owner 2026-10-16) — «alle Terminaufträge mit Leistung 11.2026».
+            Column::search('f_service', 'Leistung', '7.5rem', 'service', Parsers::dateRange(), priority: '2'),
             Column::search('f_name', 'Kunde', 'minmax(10rem, 2fr)', 'name', Parsers::text()),
             Column::search('f_subject', 'Betreff', 'minmax(8rem, 2fr)', null, Parsers::text(), priority: '2'),
             Column::search('f_status', 'Status', '9rem', null, Parsers::text(), priority: '2'),
@@ -102,7 +104,8 @@ final class OrderListing
     /** What the repository is asked for. @param list<OrderStatus> $statuses */
     public static function search(ListState $state, array $statuses): OrderSearch
     {
-        $date = $state->parsed('f_date');
+        $date    = $state->parsed('f_date');
+        $service = $state->parsed('f_service');
         $text = static fn(mixed $v): ?string => is_string($v) && trim($v) !== '' ? trim($v) : null;
 
         return new OrderSearch(
@@ -113,6 +116,8 @@ final class OrderListing
             $text($state->parsed('f_name')),
             $text($state->parsed('f_subject')),
             $state->parsed('f_amount'),
+            $service[0] ?? null,
+            $service[1] ?? null,
             $state->sort,
             $state->descending,
         );

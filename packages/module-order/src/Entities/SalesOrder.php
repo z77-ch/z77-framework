@@ -194,6 +194,16 @@ class SalesOrder
     public function getOrderDate(): \DateTimeImmutable { return $this->orderDate; }
     public function getServiceFrom(): ?\DateTimeImmutable { return $this->serviceFrom; }
     public function getServiceTo(): ?\DateTimeImmutable { return $this->serviceTo; }
+
+    /**
+     * The delivery date when the delivery note moves the order (owner 2026-10-16): «Leistung von»
+     * IS the delivery date of goods (the VAT service date), so the note fills it when it is empty;
+     * a date already set — planned, or a period — stays.
+     */
+    public function deliveredOn(\DateTimeImmutable $day): void
+    {
+        $this->serviceFrom ??= $day->setTime(0, 0);
+    }
     public function getContact(): Contact { return $this->contact; }
     public function getCurrency(): string { return $this->currency; }
     public function getPaymentTargetCode(): ?string { return $this->paymentTargetCode; }

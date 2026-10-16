@@ -11,7 +11,7 @@ namespace Z77\Module\Order\Repositories;
  */
 final class OrderSearch
 {
-    public const SORTS = ['number', 'date', 'name', 'amount'];
+    public const SORTS = ['number', 'date', 'service', 'name', 'amount'];
 
     /** @param list<string>|null $statusCodes null = no status filter; [] = a view no status falls into (nothing) */
     public function __construct(
@@ -22,6 +22,8 @@ final class OrderSearch
         public readonly ?string $name = null,       // part of the customer's name (company, last or first name)
         public readonly ?string $subject = null,    // part of the subject
         public readonly ?string $amount = null,     // the gross total, a decimal string
+        public readonly ?string $serviceFrom = null, // Y-m-d: «Leistung» overlaps this day range (owner 2026-10-16)
+        public readonly ?string $serviceTo = null,   // Y-m-d, inclusive
         public readonly string $sort = 'number',
         public readonly bool $descending = true,
     ) {

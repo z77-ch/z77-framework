@@ -155,7 +155,7 @@ $tabs = $isNew ? [] : [1 => 'Auftrag', 2 => 'Verlauf', 3 => 'Belege'];
         <?php if ($tabs !== []): ?>
         <div class="be-viewtabs" role="group" aria-label="Abschnitte">
             <?php foreach ($tabs as $n => $label): ?>
-            <label class="be-viewtabs__tab be-viewtabs__tab--for" for="order-<?= e($key) ?>-tab-<?= $n ?>" data-tab="<?= $n ?>"><?= e($label) ?><?= $n === 2 ? ' <small>' . count($history) . '</small>' : '' ?><?= $n === 3 ? ' <small>' . ($invoice !== null ? 1 + count($creditNotes) : 0) . '</small>' : '' ?></label>
+            <label class="be-viewtabs__tab be-viewtabs__tab--for" for="order-<?= e($key) ?>-tab-<?= $n ?>" data-tab="<?= $n ?>"><?= e($label) ?></label><?php // no counts on tabs (owner 2026-10-16: «less is more») ?>
             <?php endforeach; ?>
         </div>
         <?php endif; ?>
