@@ -27,6 +27,16 @@ class BackupController extends BackendAbstractController
 {
     private const CSRF_SCOPE = 'backup';
 
+    /**
+     * Largest archive the browser download serves (BACKUP-DOWNLOAD-LIMIT-001). The bytes go
+     * through PHP ({@see FileResponse}, ADR-017), and LiteSpeed on cyon cuts a dynamic response
+     * at «Max Dynamic Response Body Size» (500 MB) — it appends its notice to the body and the
+     * download looks complete, but the zip has no central directory. Measured 2026-10-16 on
+     * zihlundsee: a 1.0 GB archive arrived as 524.6 MB. A restore is manual anyway, so a larger
+     * archive is fetched by SFTP; the hub says where.
+     */
+    private const DOWNLOAD_LIMIT_BYTES = 500 * 1024 * 1024;
+
     private function service(): BackupService
     {
         return BackupService::fromProjectRoot(ABS_BASE_PATH);
@@ -111,6 +121,10 @@ class BackupController extends BackendAbstractController
         if ($path === null) {
             return $this->fetchError('Backup nicht gefunden');
         }
+        // The hub shows no link above the limit; this guards a typed or bookmarked URL.
+        if (filesize($path) > self::DOWNLOAD_LIMIT_BYTES) {
+            return $this->fetchError('Backup grösser als 500 MB — bitte per SFTP holen');
+        }
 
         return $this->file($path, basename($path), 'application/zip');
     }
@@ -122,13 +136,19 @@ class BackupController extends BackendAbstractController
         $type    = $this->typeParam($request->getGetParameter('type'));
         $file    = (string)$request->getGetParameter('file');
 
-        if ($type === null || $this->service()->history()->resolvePath($type, $file) === null) {
+        $path = $type === null ? null : $this->service()->history()->resolvePath($type, $file);
+        if ($path === null) {
             return $this->fetchError('Backup nicht gefunden');
         }
 
+        $size = (int) filesize($path);
         $response = $this->html([
             'type'     => $type->value,
             'fileName' => $file,
+            'size'     => $size,
+            // realpath: in a release layout `backup/` is a symlink into shared/ — the SFTP
+            // client needs the path that survives the next release, not the release's own.
+            'sftpPath' => $size > self::DOWNLOAD_LIMIT_BYTES ? (realpath($path) ?: $path) : null,
         ]);
         $this->layoutManager->addPartials('actions', 'Service/BackupController', self::NAMESPACE);
         return $response;

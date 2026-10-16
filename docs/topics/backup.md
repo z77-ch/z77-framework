@@ -110,9 +110,19 @@ service → backup`), section «Service» in the topbar (navigation seed ids
 |---|---|---|
 | `listAction` | HTML | three type sections, history rows, per-type "Jetzt sichern" (inline `data-fetch-post` form) |
 | `runAction` | Fetch POST | run one backup synchronously (`set_time_limit(0)`); service errors become flash errors |
-| `downloadAction` | GET | archive as `FileResponse` (`application/zip`, delivery=php — cyon has no X-Sendfile) |
-| `actionsAction` | Fetch GET | ⋮ hub: download link + delete (LIST-ACTIONS-HUB-001) |
+| `downloadAction` | GET | archive as `FileResponse` (`application/zip`, delivery=php — cyon has no X-Sendfile); refused above 500 MB (BACKUP-DOWNLOAD-LIMIT-001) |
+| `actionsAction` | Fetch GET | ⋮ hub: download link + delete (LIST-ACTIONS-HUB-001); above 500 MB no link, the server path for SFTP instead |
 | `confirmDeleteAction` / `removeAction` | Fetch | modal + per-archive entity CSRF token (scope `backup`); answers IN PLACE (BACKUP-UI-ACTIONS-001) |
+
+**Download limit (BACKUP-DOWNLOAD-LIMIT-001, 2026-10-16).** The download streams through PHP,
+and LiteSpeed on cyon cuts every dynamic response at «Max Dynamic Response Body Size»
+(500 MB): it appends its notice to the body, the browser reports a finished download, and
+the zip has no central directory — Windows refuses to open it. Measured on zihlundsee: a
+1.0 GB `data` archive arrived as 524.6 MB. Shared hosting cannot raise the limit, and a
+restore is manual anyway (see below), so above `DOWNLOAD_LIMIT_BYTES` (500 MiB, the same
+MB the list shows) the hub shows the archive's real server path (`realpath()`, i.e. under
+`shared/` in a release layout) for SFTP instead of a link, and `downloadAction` refuses a
+typed URL. Splitting archives or chunked range downloads were considered and not built.
 
 One section = `_section.tpl.php`, rendered by the list and by `removeAction`. A row carries
 `data-entity="backup:<type>/<file>"`, the badge `data-backup-count="<type>"`, the section
@@ -193,6 +203,7 @@ moving.
 
 - When adding backup behaviour → MUST go into `Z77\Shared\Backup\*` (kernel, HTTP-free) so UI and CLI stay two thin frontends over one implementation; MUST NOT put backup logic into the controller or the bin script
 - When changing where archives are stored → MUST keep the backup root outside `htmlRoot` (archives contain `data/framework/auth/backendUsers.json`) and MUST keep the recursion guard (backup root excluded from `full`)
+- When serving an archive through the browser → MUST keep the `DOWNLOAD_LIMIT_BYTES` guard in both the hub and `downloadAction`; a PHP-streamed body over the host's dynamic-response limit arrives truncated without an error (BACKUP-DOWNLOAD-LIMIT-001)
 - When resolving a submitted archive name (download/delete) → MUST go through `BackupHistory::resolvePath()` (pattern + type check); MUST NOT concatenate request input into a path
 - When touching the run flow → MUST keep every failure a thrown `\RuntimeException` (installer error-model) and MUST keep the `.tmp`-then-rename write so aborted runs leave no listable archive
 - When adding a database engine → MUST implement `DbDumperInterface`; credentials MUST NOT appear on the command line (process list) — use a defaults file or environment, like `MysqlDumper`
