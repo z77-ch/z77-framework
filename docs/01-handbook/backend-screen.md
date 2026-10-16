@@ -51,7 +51,8 @@ often?* That is the action cell. The target table of the existing areas is in
 | The most frequent action … | Action cell |
 |---|---|
 | creates something | «+ Neu» — `be-btn be-btn--primary` with the plus icon: «+ Kontakt», «+ Rechnung» |
-| writes / confirms (the screen is a form or a capture) | `be-btn be-btn--confirm` (green, check icon), submitting through `form="…"`: «Buchen», «Speichern» |
+| saves a form | «Speichern» — `be-btn be-btn--primary` (accent), submitting through `form="…"` (ADR-033 addendum 2026-10-16) |
+| books / finalises (a capture that writes into the books) | `be-btn be-btn--confirm` (green, check icon), submitting through `form="…"`: «Buchen», «Verbuchen» |
 | has several kinds, one of them the everyday one | split picker `.be-shell-add--split` — the main part runs the default and its label NAMES it («↓ Daten sichern \| ▾», «+ Texteintrag \| ▾»), the menu lists the default first |
 | has several equal kinds | picker `.be-shell-add` «+ Eintrag ▾» |
 | does not exist (a report, a log, a settings list) | leave the cell EMPTY |
@@ -87,6 +88,9 @@ Details and selectors: [css-backend.md → button / tab / switch vocabulary](../
 
 ## 4. The work area
 
+- **Blocks are cards on the window ground** (ADR-051): a form section, a list, a totals block
+  sits on its own `--be-surface2` card with a 1px line on `--be-bg`; inputs on `--be-field`;
+  inputs inside a table borderless until hover / focus. What belongs together sits on one card.
 - **Every table is a standard list** — `Z77\Shared\Listing`: columns declared once
   (`{X}Listing::definition()`), sort and magnifier search per column in the database, 50 per
   page, a fetch region. Write only the rows. → [listing.md](../topics/listing.md)

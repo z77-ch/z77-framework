@@ -197,3 +197,19 @@ phone block), `_buttons.scss` (`--confirm`, the secondary look as the default), 
 `railSelect`. Reference migration: Webseiten › Inhalte («+ Inhalt», `list.act.tpl.php`). The other
 screens move to the per-area target table in `css-backend.md` in a following step (pending
 there).
+
+## Addendum 2026-10-16 — «Speichern» takes the accent
+
+**Trigger.** The consistency audit for ADR-051 found every window's «Speichern» in the accent
+(`partials/modalActions` knows only `primary | danger`), against decision 1's «Speichern = green».
+The owner, asked which is right: «Akzent».
+
+**Decision.** «Speichern» (and its window twin «Erstellen») is the accent fill
+(`.be-btn--primary`) everywhere — action cell, window action row, toolbar. Green
+(`.be-btn--confirm`) stays for the actions that BOOK or FINALISE: «Buchen», «Verbuchen»,
+«Definitiv stellen», «Buchungsdruck». Rule of thumb: accent = the form's own save or a new
+record; green = a step that writes into the books and cannot simply be edited back.
+
+**Consequences.** `modalActions` needs no new kind for saves (its `primary` default is now
+right); the action cell of Stammdaten › Mandant moves from confirm to accent; the journal's
+«Speichern» buttons are right as they are.

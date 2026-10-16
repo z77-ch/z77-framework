@@ -226,7 +226,7 @@ default first), the panel anchors right inside the viewport.
 | Aufträge › Mahnungen | — (the Stichtag is a work-area form) | n/a |
 | Kontakte | «+ Kontakt» | create |
 | Drive | «+ Hochladen» | create |
-| Stammdaten › Mandant | «Speichern» | confirm |
+| Stammdaten › Mandant | «Speichern» | accent (ADR-033 addendum 2026-10-16; still `confirm` in the code — pending) |
 | Stammdaten › Geschäftsjahre | «+ Geschäftsjahr» | create |
 | Stammdaten › Kontenplan | «+ Konto» | create |
 | Stammdaten › MWST-Codes | «+ Steuercode» | create |
@@ -261,7 +261,7 @@ label.
 | Kind | Class | Look |
 |---|---|---|
 | Create | `.be-btn--primary` | accent fill, «+» — the action cell's create action (there: the island's light accent, dark ink) |
-| Confirm (something is written) | `.be-btn--confirm` | green fill (`--be-confirm`, from `--be-good`, white text) — Buchen, Speichern, Verbuchen; in the action cell `--be-confirm-island` (light green, dark ink) |
+| Confirm (booked / finalised) | `.be-btn--confirm` | green fill (`--be-confirm`, from `--be-good`, white text) — Buchen, Verbuchen, Definitiv stellen; in the action cell `--be-confirm-island` (light green, dark ink). «Speichern» is NOT confirm: it takes the accent like create (ADR-033 addendum 2026-10-16) |
 | Several kinds with a default | `.be-shell-add--split` (`__main` form + `__toggle` chevron, one panel) | one button in two parts, 2px gap, radius on the outer corners only — Service › Backup |
 | Secondary | `.be-btn` (base) = `.be-btn--ghost` | surface with border — Drucken, Neuer Ordner, Abbrechen |
 | Danger | `.be-btn--danger` | red border and text, never filled; «…» when a confirmation follows |
@@ -350,7 +350,7 @@ packages/module-backend/res/view/templates/
 - When naming a NEW shell region, a region-level class, or a new header-slot template in any shell → MUST use the glossary job name (`topbar` / `area` / `act` / `toolbar` / `crumbs` / `rail` / `work` / `seam` — see [shell regions](#shell-regions-glossary)); new slot templates MUST be `{action}.act|toolbar|crumb.tpl.php`. MUST NOT name a class after a slot number or file suffix (`hc1`, `hc2`, `hc3`) — axo3's `.be-stock__hcfilter|hccount|hctools|…` is the counterexample. Existing `hc*` templates and `__slot--N` classes stay valid; do not rename them in passing.
 - `rail` / Schiene MUST mean the LEFT orientation column in every shell; the top bar is `topbar` (`--be-topbar`). `band` MUST mean the backend row holding action cell + toolbar only; a state sentence is `status` / Zustand (`.be-shell-status`), a shell-level notice is `banner` / Störer (`.be-shell-banner`). MUST NOT introduce a new `*-rail*` or `*-band*` name for anything else.
 - When a control shows an ICON → MUST have a reason: no room for the word (a phone, a narrow cell) or a layout that prescribes the icon; MUST NOT put an icon next to its own label as decoration (the «?» badge beside «Hilfe», removed 2026-10-10). Where the icon takes over, the label MUST be hidden visually (`clip-path`), never with `display: none` — an icon-only button without an accessible name is unusable with a screen reader. The leading KIND glyph of an action («+», «↑», «✓») is not a repetition and stays.
-- When a screen needs a button → MUST pick it by KIND ([buttons, tabs, switch](#buttons-tabs-switch)): `.be-btn--primary` only for create, `.be-btn--confirm` when something is written (Buchen, Speichern, Verbuchen), the secondary look (`.be-btn` / `.be-btn--ghost`) for tools, `.be-btn--danger` for destructive actions; MUST NOT fill a danger button and MUST NOT build a button that reads as bare text (a plain `.be-btn` has the secondary look since 2026-10-08 — that is its meaning, not an accident).
+- When a screen needs a button → MUST pick it by KIND ([buttons, tabs, switch](#buttons-tabs-switch)): `.be-btn--primary` for create and for «Speichern» (ADR-033 addendum 2026-10-16), `.be-btn--confirm` when something is booked or finalised (Buchen, Verbuchen, Definitiv stellen), the secondary look (`.be-btn` / `.be-btn--ghost`) for tools, `.be-btn--danger` for destructive actions; MUST NOT fill a danger button and MUST NOT build a button that reads as bare text (a plain `.be-btn` has the secondary look since 2026-10-08 — that is its meaning, not an accident).
 - When a screen needs tabs (language, mode Einzel/Sammel, view Offen/Alle) → MUST use `.be-viewtabs` (text with an accent underline); MUST NOT build a box/pill strip. `.be-tabs` and the in-band `.be-lang-switch` already look the same (2026-10-08) but are migration aliases — new screens MUST NOT start on them.
 - When a screen needs an on/off choice (active, MwSt-Zeile) → MUST use `.be-switch`; MUST NOT use a toggling button or a checkbox-as-button for it (`.be-choice` stays the SELECTION control, see above).
 - When ONE page or form has sections the user switches between (the Mandant) → MUST use radio tabs (`components/_radiotabs.scss`): the radios `.be-radiotabs__radio` (one group, same `name`, `data-tab` = 1..n) inside `.be-radiotabs` BEFORE the panels `.be-radiotabs__panel` (same `data-tab`) as their siblings, the tabs `.be-viewtabs__tab be-viewtabs__tab--for` `<label for>` with the same `data-tab` (in the toolbar); the server renders `checked` on the tab to open (after a refused save: the tab of the first field error); the form SHOULD carry `novalidate` (a `required` field in a hidden panel blocks the submit silently). MUST NOT switch the panels with JavaScript, MUST NOT add screen-specific ids to the SCSS (the pattern matches by position, up to `$be-radiotabs-max` = 6), MUST NOT put two radio-tab sets on one shell page (the `:has()` rule would light both). Tabs that lead to another PAGE stay links (`.be-viewtabs__tab` `<a>`, the finance reports). **In a WINDOW** (ADR-047 — it lives outside `.be-shell`, there is no toolbar) the tab group `.be-viewtabs` MUST stand INSIDE `.be-radiotabs`, AFTER the radios (the sibling rule lights it, scoped to its own container — RADIOTABS-002), and the radio ids MUST carry the record (`order-<id>-tab-n`): two open windows must not share a `for` target.
@@ -807,6 +807,39 @@ packages/module-backend/res/view/templates/
 - **CSS-CHOICE-001** — resolved 2026-05-30. Selected radios/checkboxes were only weakly indicated (bare native control). Added the shared `.be-choice` component in `_forms.scss`: an `appearance:none` box with a `::after` checkmark on `:checked`, type-agnostic so radio and checkbox look identical; optional `.be-choice--filled` tints the whole row (`color-mix` on `--be-accent`). The `NavigationController/edit.tpl.php` group picker migrated from the old `.be-form__tag-label` chip to `.be-choice`.
 
 ## pending
+
+- **Cards on the window ground, quiet inputs — backend-wide (added 2026-10-16, ADR-051).**
+  Owner decision after the order-window mockup: blocks as `--be-surface2` cards on `--be-bg`,
+  three derived tokens on `.be` (`--be-field`, `--be-line-strong`, `--be-row-tint` —
+  `color-mix` of existing `--be-*`, never hex), table inputs borderless at rest. Next: board on
+  the developer canvas (all six palettes, light and dark, one screen per module) → owner look →
+  `_colors.scss` + `_forms.scss` / list components → the order window as the first screen with
+  the new layout. Framework rules stay: «Speichern» accent (ADR-033 addendum 2026-10-16), Inter.
+  Mockup: `temp/order-mask-draft.html` (gitignored, owner machine).
+  **Consistency audit 2026-10-16** (templates of all backend modules, grep) — fix BEFORE or WITH
+  the token change, else the new look lands unevenly:
+  1. *Save in dialogs was the accent, the rule said green* — RESOLVED by the owner the other
+     way: «Speichern» = accent everywhere (ADR-033 addendum 2026-10-16). Windows and the
+     journal are right as they are; only the action cell of Stammdaten › Mandant moves from
+     `confirm` to `primary`.
+  2. *The input look is defined four times* with copied values: `.be-form__field input/select`,
+     `.be-input`, `.be-form__param-row input`, `.be-list__filter-input` (+ the find pop). → one
+     shared rule first, then `--be-field` / the quiet table variant change ONE place.
+  3. *Raw checkboxes* (neither `be-switch` nor `be-choice`): debtor `InvoiceController/form`,
+     `listAction`, `DunningController/listAction`; order `edit`, `_row`; mandator `edit`;
+     backend `Content/edit`; DMS `_list`, `_tree`, `_upload`. → `be-choice` (a selection) or
+     `be-switch` (on/off).
+  4. *Inline `style=`* instead of component classes: backend `ImportController` (`_plan` 31,
+     `listAction` 16), `FormLogController` (18 + 7), `Stats` (22), `TranslationController` 11;
+     DMS `_edit` 26, `_actions` 10, `_trash` 9; order `edit` 6; debtor 25 and financial 17
+     spread over many files. Each becomes a class or goes.
+  5. *Drive buttons keep their own geometry* (`dms-btn`: size, radius, type — unbound on
+     purpose, DMS-HOST-BIND-001; only colours follow `--be-*`). Owner 2026-10-16: the Drive
+     takes the backend's control look too («sollte er übernehmen» — one look per kind, Rule 8).
+     Way: the backend host binding (`_dms-host.scss`) also binds the control geometry
+     (button / input height, padding, radius, font size) — the fragment stays portable, other
+     hosts keep its own scale. Revises DMS-HOST-BIND-001 for controls only.
+  Member (`me-*`) is its own area and out of scope.
 
 - **Resume here (2026-10-10, after the context compact) — the forms rework is BUILT, not yet
   seen in a browser.** Owner rules of the day: R1 every form's actions in ONE fixed row (the
