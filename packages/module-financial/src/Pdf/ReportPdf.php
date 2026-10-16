@@ -177,12 +177,14 @@ final class ReportPdf
     }
 
     /**
-     * The journal of the range, oldest first: each entry bold, its lines below; landscape for
-     * the width. `$report->entries` is the chunked read of `LedgerReports::journalForPdf()`
-     * (review 2026-10-13) and the rows are generated while the table draws — one chunk of
-     * entities at a time, never the whole journal.
+     * The journal of the range as the screen shows it (owner 2026-10-16) — its search and sort,
+     * not paged; without a search oldest first. Each entry bold, its lines below; landscape for
+     * the width. $search names the search in the subtitle («Suche: Konto 1020 · …», '' = none) and
+     * the total then says «Total gefunden», like the screen. `$report->entries` is the chunked
+     * read of `LedgerReports::journalForPdf()` (review 2026-10-13) and the rows are generated
+     * while the table draws — one chunk of entities at a time, never the whole journal.
      */
-    public static function journal(JournalReport $report, ReportRange $range, string $issuer, string $printedAt): PdfDocument
+    public static function journal(JournalReport $report, ReportRange $range, string $issuer, string $printedAt, string $search = ''): PdfDocument
     {
         $columns = [
             ['label' => 'Datum', 'width' => 20],
@@ -194,7 +196,7 @@ final class ReportPdf
             ['label' => 'Haben', 'width' => 30, 'align' => 'R'],
         ];
         $blank = static fn(Money $m): string => $m->isZero() ? '' : self::fmt($m);
-        $rows  = (static function () use ($report, $blank): \Generator {
+        $rows  = (static function () use ($report, $blank, $search): \Generator {
             foreach ($report->entries as $entry) {
                 $reversal = $entry->isReversal() ? ' · Storno von ' . $entry->getReversalOf()->getFiscalYear()->getCode() . '/' . $entry->getReversalOf()->getNumber() : '';
                 yield ['cells' => [$entry->getDate()->format('d.m.Y'), (string) $entry->getNumber(), '', $entry->getText() . $reversal, '', '', ''], 'bold' => true, 'rule' => true];
@@ -205,22 +207,22 @@ final class ReportPdf
                 }
             }
             if ($report->paging->total === 0) {
-                yield ['cells' => ['', '', '', 'Keine Buchung in diesem Zeitraum.', '', '', ''], 'muted' => true];
+                yield ['cells' => ['', '', '', $search !== '' ? 'Keine Buchung gefunden — die Suche gilt im gewählten Zeitraum.' : 'Keine Buchung in diesem Zeitraum.', '', '', ''], 'muted' => true];
             }
-            yield ['cells' => ['', '', '', 'Total Zeitraum (' . $report->paging->total . ' Buchungen)', '', self::fmt($report->totalDebit), self::fmt($report->totalCredit)], 'bold' => true, 'rule' => true];
+            yield ['cells' => ['', '', '', ($search !== '' ? 'Total gefunden' : 'Total Zeitraum') . ' (' . $report->paging->total . ' Buchungen)', '', self::fmt($report->totalDebit), self::fmt($report->totalCredit)], 'bold' => true, 'rule' => true];
         })();
 
-        return self::document('Journal', $range, $issuer, $printedAt, [['columns' => $columns, 'rows' => $rows, 'wrap' => 3]], '', 'L');
+        return self::document('Journal', $range, $issuer, $printedAt, [['columns' => $columns, 'rows' => $rows, 'wrap' => 3]], '', 'L', $search !== '' ? 'Suche: ' . $search : '');
     }
 
     /** A report over a range through `pdf/report` — the frame the three list reports share. */
-    private static function document(string $title, ReportRange $range, string $issuer, string $printedAt, array $blocks, string $notice = '', string $orientation = 'P'): PdfDocument
+    private static function document(string $title, ReportRange $range, string $issuer, string $printedAt, array $blocks, string $notice = '', string $orientation = 'P', string $scope = ''): PdfDocument
     {
         $code = $range->year->getCode();
 
         return PdfDocument::create($title . ' ' . $code, $issuer, $orientation)->partial('pdf/report', [
             'title'     => $title,
-            'subtitle'  => 'Geschäftsjahr ' . $code . ' · ' . $range->from->format('d.m.Y') . ' – ' . $range->to->format('d.m.Y'),
+            'subtitle'  => 'Geschäftsjahr ' . $code . ' · ' . $range->from->format('d.m.Y') . ' – ' . $range->to->format('d.m.Y') . ($scope !== '' ? ' · ' . $scope : ''),
             'issuer'    => $issuer,
             'printedAt' => $printedAt,
             'notice'    => $notice,

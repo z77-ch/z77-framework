@@ -145,9 +145,11 @@ check('C2 null / false / \'\' remove a key, true is 1; a default extra or sort o
     $s->query(['f_name' => null, 'all' => true]) === 'view=final&all=1&sort=date&dir=asc'
     && $s->query(['view' => 'invoicing', 'sort' => 'number', 'dir' => 'desc']) === 'f_name=M%C3%BCller'
     && $s->query(['sort' => 'name', 'dir' => 'asc']) === 'f_name=M%C3%BCller&view=final&sort=name');
-check('C3 the sort link: the current column flips, another starts in its first direction; the reset drops every field and keeps the rest',
+check('C3 the sort link: the current column flips, another starts in its first direction; «Zurücksetzen» drops every field AND the sort, keeps the extras (owner 2026-10-16)',
     $s->sortQuery('date') === 'f_name=M%C3%BCller&view=final&sort=date' && $s->sortQuery('amount') === 'f_name=M%C3%BCller&view=final&sort=amount'
-    && $s->sortQuery('name') === 'f_name=M%C3%BCller&view=final&sort=name' && $s->resetQuery() === 'view=final&sort=date&dir=asc'
+    && $s->sortQuery('name') === 'f_name=M%C3%BCller&view=final&sort=name' && $s->defaultQuery() === 'view=final'
+    && $s->isChanged() && !$definition->read([])->isChanged() && !$definition->read(['view' => 'final'])->isChanged()
+    && $definition->read(['sort' => 'name'])->isChanged() && $definition->read(['f_name' => 'x'])->isChanged()
     && $s->sortDirection('date') === 'asc' && $s->sortDirection('name') === null);
 check('C4 the hidden state of the search form: the non-default extras, sort and direction — never a field, never the page',
     $s->hiddenState() === ['view' => 'final', 'sort' => 'date', 'dir' => 'asc'] && $definition->read([])->hiddenState() === []
@@ -175,6 +177,11 @@ check('D3 the find form: GET to the list, the id the inputs name, the keep and t
     && str_contains($find, 'name="mode" value="sammel"') && str_contains($find, 'name="view" value="final"') && str_contains($find, 'name="sort" value="date"') && !str_contains($find, 'name="dir"')
     && !str_contains($find, 'name="f_name"') && !str_contains($find, 'name="page"') && str_contains($find, 'be-list__find-submit'));
 check('D4 no script, no inline handler in either partial (Rule 7)', !preg_match('/<script|\son[a-z]+\s*=/i', $head . $find));
+$reset = $renderer->partial('partials/listReset', ['state' => $s, 'action' => '/backend/x/list', 'keep' => ['mode' => 'sammel']]);
+check('D5 «Zurücksetzen»: one region link to the list with the keep and the extras, no field, no sort; nothing at the default state (owner 2026-10-16)',
+    str_contains($reset, 'href="/backend/x/list?mode=sammel&amp;view=final"') && str_contains($reset, 'data-fetch-region-link') && str_contains($reset, '>Zurücksetzen</a>')
+    && trim($renderer->partial('partials/listReset', ['state' => $definition->read([]), 'action' => '/backend/x/list'])) === ''
+    && !preg_match('/<script|\son[a-z]+\s*=/i', $reset));
 
 echo "\n{$pass} passed, {$fail} failed\n";
 exit($fail === 0 ? 0 : 1);

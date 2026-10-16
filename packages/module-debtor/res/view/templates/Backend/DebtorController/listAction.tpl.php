@@ -46,14 +46,10 @@ $view         = $state->extra('view');
 <div class="be-list" data-fetch-region="<?= e($definition->region()) ?>">
     <div class="be-list__section">
         <div class="be-list__section-header">
+            <?= $this->partial('partials/listReset', ['state' => $state, 'action' => $listUrl], 'Z77\Shared') ?>
             <h2 class="be-list__section-title"><?= e($views[$view] ?? '') ?></h2>
             <span data-field="open-total" title="<?= (int) $openCount ?> offene Belege">OP-Total <strong><?= e($fmt($openTotal)) ?></strong></span>
             <span data-field="overdue-total" title="<?= (int) $overdueCount ?> überfällige Belege">davon überfällig <strong><?= e($fmt($overdueTotal)) ?></strong></span>
-            <?php if ($state->isActive()): ?>
-            <nav class="be-list__toggles" aria-label="Suche">
-                <a data-fetch-region-link href="<?= e($listUrl . '?' . $state->resetQuery()) ?>">Suche zurücksetzen</a>
-            </nav>
-            <?php endif; ?>
             <span class="be-list__section-badge" title="Belege"><?= $paging->total ?></span>
         </div>
 

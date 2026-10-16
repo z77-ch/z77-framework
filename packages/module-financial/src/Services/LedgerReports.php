@@ -257,19 +257,22 @@ final class LedgerReports
     }
 
     /**
-     * EVERY entry of the range — the PDF (review 2026-10-13): the entries are a lazy generator
-     * reading {@see PDF_CHUNK} at a time and releasing each chunk from the EntityManager
-     * (`JournalEntryRepository::chronologicalInChunks()`); `paging` is one page holding all
-     * entries. Read the entries once, read-only.
+     * EVERY entry the screen's search finds in the range, in the screen's order — the PDF prints
+     * what the list shows (owner 2026-10-16), only not paged; without a search the whole range,
+     * oldest first. The entries are a lazy generator reading {@see PDF_CHUNK} at a time and
+     * releasing each chunk from the EntityManager (`JournalEntryRepository::searchInChunks()`,
+     * review 2026-10-13); `paging` is one page holding all entries. Read the entries once, read-only.
      */
-    public function journalForPdf(ReportRange $range): JournalReport
+    public function journalForPdf(ReportRange $range, ?JournalSearch $criteria = null): JournalReport
     {
         /** @var JournalEntryRepository $entries */
         $entries = $this->em->getRepository(JournalEntry::class);
-        $summary = $entries->rangeSummary($range->year, $range->fromDay(), $range->toDay());
+        $search  = ($criteria ?? new JournalSearch(sort: 'date', descending: false))
+            ->within((int) $range->year->getId(), $range->fromDay(), $range->toDay());
+        $summary = $entries->searchSummary($search);
 
         return new JournalReport(
-            $entries->chronologicalInChunks($range->year, $range->fromDay(), $range->toDay(), self::PDF_CHUNK),
+            $entries->searchInChunks($search, self::PDF_CHUNK),
             $this->money($summary['debit']),
             $this->money($summary['credit']),
             new Paging(1, max(1, $summary['entries']), $summary['entries']),

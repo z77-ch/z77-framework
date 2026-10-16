@@ -84,15 +84,16 @@ $priority = ['f_date' => '3', 'f_debit' => '2', 'f_credit' => '2'];
     <?php else: ?>
     <div class="be-list__section" data-fiscal-year-id="<?= e((string) $year->getId()) ?>">
         <div class="be-list__section-header">
+            <?php // «Zurücksetzen» before the title, search AND sort — the markup of the kernel's `partials/listReset`, which takes a ListState; this list still has its own JournalFilter (listing.md pending). ?>
+            <?php if ($filter->isActive() || $filter->sort !== 'number' || !$filter->descending): ?>
+            <nav class="be-list__toggles" aria-label="Suche und Sortierung">
+                <a data-fetch-region-link href="<?= e($link(array_fill_keys(array_keys(JournalFilter::FIELDS), null) + ['sort' => null, 'dir' => null])) ?>" title="Suche und Sortierung zurücksetzen">Zurücksetzen</a>
+            </nav>
+            <?php endif; ?>
             <h2 class="be-list__section-title">
                 Buchungen
                 <small class="be-list__cell--muted">· <?= $filter->allYears ? 'alle Geschäftsjahre' : 'Geschäftsjahr ' . e($year->getCode()) ?></small>
             </h2>
-            <?php if ($filter->isActive()): ?>
-            <nav class="be-list__toggles" aria-label="Suche">
-                <a data-fetch-region-link href="<?= e($link(array_fill_keys(array_keys(JournalFilter::FIELDS), null))) ?>">Suche zurücksetzen</a>
-            </nav>
-            <?php endif; ?>
             <span class="be-list__section-badge" title="Buchungen"><?= $paging->total ?></span>
         </div>
 

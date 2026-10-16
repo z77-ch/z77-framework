@@ -2452,9 +2452,9 @@ check('S11 generated entries carry the «generated» state, a closed period «cl
     return in_array('editable', $states, true) && array_diff($states, ['editable', 'generated', 'closed', 'vat-settled']) === [];
 })());
 [$h, $html] = $listOf(['year' => '2032-33', 'date' => '2032-11-20', 'f_text' => 'Papeterie', 'sort' => 'date']);
-check('S12 every link keeps the state: the sort links carry the search and the capture date; «Suche zurücksetzen» drops only the search',
-    str_contains($html, 'href="/backend/finance/journal/list?date=2032-11-20&amp;f_text=Papeterie&amp;sort=amount"') && str_contains($html, 'Suche zurücksetzen')
-    && preg_match('/href="\/backend\/finance\/journal\/list\?date=2032-11-20&amp;sort=date"[^>]*>Suche zurücksetzen/', $html) === 1);
+check('S12 every link keeps the state: the sort links carry the search and the capture date; «Zurücksetzen» drops the search AND the sort (owner 2026-10-16)',
+    str_contains($html, 'href="/backend/finance/journal/list?date=2032-11-20&amp;f_text=Papeterie&amp;sort=amount"')
+    && preg_match('/href="\/backend\/finance\/journal\/list\?date=2032-11-20"[^>]*>Zurücksetzen</', $html) === 1);
 
 $GLOBALS['z77TestFetch'] = true;
 [$h, $html] = $listOf(['year' => '2032-33', 'date' => '2032-11-20', 'f_text' => 'Papeterie']);
@@ -2553,9 +2553,9 @@ check('CL6 the host renders the list of 2030-31: the region, the kernel head and
     && str_contains($rail, 'href="/backend/finance/change-log/list?year=2030-31" aria-current="true"') && str_contains($rail, 'href="/backend/finance/change-log/list?all=1"')
     && stripos($html, '<script') === false);
 [$h, $html, $rail] = $clPage(['year' => '2030-31', 'all' => '1', 'f_text' => 'Umbuchung']);
-check('CL7 «Alle Jahre»: the search reaches 2027-28 (the deleted «Umbuchung A»), the number shows its year, «Suche zurücksetzen» keeps all=1',
+check('CL7 «Alle Jahre»: the search reaches 2027-28 (the deleted «Umbuchung A»), the number shows its year, «Zurücksetzen» keeps all=1',
     str_contains($html, '2027-28/4') && str_contains($html, 'alle Geschäftsjahre') && str_contains($rail, '?all=1" aria-current="true"')
-    && str_contains($html, 'href="/backend/finance/change-log/list?all=1">Suche zurücksetzen'));
+    && preg_match('/href="\/backend\/finance\/change-log\/list\?all=1"[^>]*>Zurücksetzen</', $html) === 1);
 $GLOBALS['z77TestFetch'] = true;
 [$h] = $clPage(['year' => '2030-31', 'f_nr' => '7']);
 $GLOBALS['z77TestFetch'] = false;

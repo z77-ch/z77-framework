@@ -355,13 +355,24 @@ a.be-list__col:hover { color: var(--be-text); }
     color:         var(--be-text);
     background:    var(--be-surface2);
 }
+/* The open field is a POP-UP (owner 2026-10-16: «Suchfeld zu klein» — «22.09.2026» did not fit a
+   date column): at least 12rem wide whatever the column's width, it lies over the neighbouring
+   titles instead of squeezing into its own track; a wider column it fills. A right-aligned
+   (numeric) column lets it overflow to the left (`justify-content: flex-end`). */
+.be-list__find:has(.be-list__find-input:focus, .be-list__find-input:not(:placeholder-shown)) {
+    position: relative;
+    z-index:  2;
+    overflow: visible;
+}
 .be-list__find .be-list__find-input:focus,
 .be-list__find .be-list__find-input:not(:placeholder-shown) {
-    flex:          1 1 auto;
-    width:         auto;
+    flex:          1 0 12rem;
+    width:         12rem;
+    min-width:     12rem;
     padding:       .15rem .35rem;
     border:        1px solid var(--be-line);
     border-radius: var(--radius-sm);
+    box-shadow:    var(--shadow-md);
     opacity:       1;
     outline:       none;
 }

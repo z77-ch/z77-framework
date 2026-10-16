@@ -21,14 +21,19 @@ final class JournalReportListing
 {
     public const ID = 'journal-report-find';
 
+    /** The searching columns' titles, for {@see describe()}. */
+    private const LABELS = ['f_date' => 'Datum', 'f_nr' => 'Nr.', 'f_account' => 'Konto', 'f_text' => 'Text', 'f_amount' => 'Soll'];
+
     public static function definition(string $currency): ListDefinition
     {
         return new ListDefinition(self::ID, [
-            Column::search('f_date', 'Datum', '6rem', 'date', Parsers::dateRange()),
-            Column::search('f_nr', 'Nr.', '4rem', 'number', Parsers::integer(9), numeric: true, inputMode: 'numeric'),
-            Column::search('f_account', 'Konto', '5rem', null, self::accountParser(), inputMode: 'numeric'),
-            Column::search('f_text', 'Text', 'minmax(10rem, 2fr)', 'text', Parsers::text()),
-            Column::plain('MWST', 'minmax(8rem, 1fr)', priority: '2'),
+            // Fixed widths in rem (they grow with the font size), only Text takes the rest (owner
+            // 2026-10-16: Datum and Nr. had too little room for the value, the sort and the magnifier).
+            Column::search('f_date', 'Datum', '8.5rem', 'date', Parsers::dateRange()),
+            Column::search('f_nr', 'Nr.', '6rem', 'number', Parsers::integer(9), numeric: true, inputMode: 'numeric'),
+            Column::search('f_account', 'Konto', '5.5rem', null, self::accountParser(), inputMode: 'numeric'),
+            Column::search('f_text', 'Text', 'minmax(10rem, 1fr)', 'text', Parsers::text()),
+            Column::plain('MWST', '11rem', priority: '2'),
             Column::search('f_amount', 'Soll', '8rem', 'amount', Parsers::amount($currency), numeric: true, descendingFirst: true),
             Column::plain('Haben', '8rem', numeric: true),
         ], 'date', LedgerReports::JOURNAL_PAGE_SIZE);
@@ -49,6 +54,22 @@ final class JournalReportListing
             descending: $state->descending,
             account: $state->parsed('f_account'),
         );
+    }
+
+    /**
+     * The search as typed, for the PDF's head — «Datum 03.2026 · Konto 1020»; '' without one.
+     * An unreadable value narrows nothing (listing.md), so it is not named.
+     */
+    public static function describe(ListState $state): string
+    {
+        $parts = [];
+        foreach (self::LABELS as $key => $label) {
+            if ($state->value($key) !== '' && !$state->isInvalid($key)) {
+                $parts[] = $label . ' ' . $state->value($key);
+            }
+        }
+
+        return implode(' · ', $parts);
     }
 
     /** «6500» or «6500 Büromaterial» → «6500», like the journal list's Soll / Haben. */

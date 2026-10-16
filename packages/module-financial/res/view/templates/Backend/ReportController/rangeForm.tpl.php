@@ -23,6 +23,9 @@
  * @var bool $atDay       the balance sheet: «Stichtag» only
  * @var list<\Z77\Module\Financial\Entities\Account>|null $accounts  the account statement's select
  * @var string $accountNumber
+ * @var string $pdfForm   optional: the id of a GET form that carries the PDF's parameters itself —
+ *                        the journal's list state, kept current by the list region (owner 2026-10-16:
+ *                        the PDF prints what the screen shows); the button then submits THAT form
  */
 $keep     = $keep ?? [];
 $atDay    = $atDay ?? false;
@@ -108,7 +111,12 @@ $max      = $year->getEndDate()->format('Y-m-d');
                 <button type="submit" class="be-btn be-btn--primary" title="Am Bildschirm anzeigen">
                     <svg class="be-icon" width="14" height="14" aria-hidden="true"><use href="#icon-monitor"/></svg> <span class="be-btn__label">Bildschirm</span>
                 </button>
-                <?php if (in_array($tab, $pdfTabs ?? [], true)): ?>
+                <?php if (in_array($tab, $pdfTabs ?? [], true) && ($pdfForm ?? '') !== ''): ?>
+                <?php // The PDF of what the list below shows: the report's own GET form inside the list region carries its state (the journal). ?>
+                <button type="submit" class="be-btn be-btn--ghost" form="<?= e($pdfForm) ?>" title="Als PDF in neuem Tab öffnen — wie am Bildschirm angezeigt">
+                    <svg class="be-icon" width="14" height="14" aria-hidden="true"><use href="#icon-download"/></svg> <span class="be-btn__label">PDF</span>
+                </button>
+                <?php elseif (in_array($tab, $pdfTabs ?? [], true)): ?>
                 <button type="submit" class="be-btn be-btn--ghost" name="report" value="<?= e($tab) ?>"
                         formaction="<?= e($reportBase . '/pdf') ?>" formtarget="_blank" title="Als PDF in neuem Tab öffnen">
                     <svg class="be-icon" width="14" height="14" aria-hidden="true"><use href="#icon-download"/></svg> <span class="be-btn__label">PDF</span>

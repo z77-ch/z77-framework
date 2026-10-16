@@ -22,12 +22,8 @@ $link       = static fn(array $changes = []): string => $listUrl . '?' . $state-
 <div class="be-list" data-fetch-region="<?= e($definition->region()) ?>">
     <div class="be-list__section">
         <div class="be-list__section-header">
+            <?= $this->partial('partials/listReset', ['state' => $state, 'action' => $listUrl], 'Z77\Shared') ?>
             <h2 class="be-list__section-title">Artikel<?php if ($group !== null): ?> <small class="be-list__cell--muted">· <?= e($tree->path($group)) ?><?= $tree->childCount($group) > 0 ? " mit Untergruppen" : "" ?></small><?php endif; ?></h2>
-            <?php if ($state->isActive()): ?>
-            <nav class="be-list__toggles" aria-label="Suche">
-                <a data-fetch-region-link href="<?= e($listUrl . '?' . $state->resetQuery()) ?>">Suche zurücksetzen</a>
-            </nav>
-            <?php endif; ?>
             <span class="be-list__section-badge" title="Artikel"><?= $paging->total ?></span>
         </div>
 

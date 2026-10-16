@@ -20,7 +20,8 @@ use Z77\Core\DI,
     Z77\Module\Mandator\Entities\Mandator,
     Z77\Module\Mandator\Services\CurrentMandator,
     Z77\Module\Mandator\Services\MandatorUnavailableException,
-    Z77\Shared\Money\Money
+    Z77\Shared\Money\Money,
+    Z77\Shared\Pdf\PdfDocument
 ;
 
 /**
@@ -291,9 +292,10 @@ trait ReportControllerTrait
             $pdf = match ($tab) {
                 'income-statement' => ReportPdf::incomeStatement($this->incomeComparison($range), $range, $issuer, $printedAt),
                 'trial-balance'    => ReportPdf::trialBalance($this->ledgerReports()->trialBalance($range), $range, $issuer, $printedAt),
-                // Every entry of the range, read in chunks and released after each (review 2026-10-13) —
-                // paging is the screen's; the PDF never holds the whole journal as entities.
-                'journal'          => ReportPdf::journal($this->ledgerReports()->journalForPdf($range), $range, $issuer, $printedAt),
+                // What the screen shows — its search and sort (`?f_…=`, `?sort=`, `?dir=`, owner
+                // 2026-10-16) —, not paged; read in chunks and released after each (review
+                // 2026-10-13): the PDF never holds the whole journal as entities.
+                'journal'          => $this->journalPdf($range, $issuer, $printedAt),
             };
         }
 
@@ -318,6 +320,20 @@ trait ReportControllerTrait
             'definition' => $definition,
             'state'      => $state,
         ]);
+    }
+
+    /** The journal report's PDF with the screen's list state — the search named in the head. */
+    private function journalPdf(ReportRange $range, string $issuer, string $printedAt): PdfDocument
+    {
+        $state = JournalReportListing::definition(LedgerService::baseCurrency())->readRequest(DI::getRequest());
+
+        return ReportPdf::journal(
+            $this->ledgerReports()->journalForPdf($range, JournalReportListing::search($state)),
+            $range,
+            $issuer,
+            $printedAt,
+            JournalReportListing::describe($state),
+        );
     }
 
     // ── parameters and page frame ────────────────────────────────────────

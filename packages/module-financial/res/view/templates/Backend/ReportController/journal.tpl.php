@@ -1,7 +1,8 @@
 <?php
 /**
  * Journal report (plan §5.5): the entries of the range, each with its lines — the journal on
- * the screen (paper is the PDF, always the whole range). A STANDARD LIST since 2026-10-15
+ * the screen (paper is the PDF: what the list shows — search and sort —, not paged; owner
+ * 2026-10-16). «Zurücksetzen» before the title drops the search and the sort. A STANDARD LIST since 2026-10-15
  * (`Ui\JournalReportListing`, listing.md): the column titles sort, the magnifiers search in the
  * database within the range, the list is a fetch region (sort, page and search reload only it;
  * the range form above keeps what is typed). One page of `LedgerReports::JOURNAL_PAGE_SIZE`
@@ -26,20 +27,26 @@ $action   = $reportBase . '/journal';
 $rangeQuery = ['year' => $range->year->getCode(), 'from' => $range->fromDay(), 'to' => $range->toDay()];
 $listLink = static fn(string $query): string => $action . '?' . ltrim(http_build_query($rangeQuery) . '&' . $query, '&');
 $inputFor = static fn(string $key): string => $definition->inputId($key);
+$pdfForm  = $definition->id . '-pdf';
+parse_str($state->query([]), $listQuery);
+$pdfQuery = $rangeQuery + $listQuery;
 ?>
 <div class="be-list">
-    <?= $this->partial('Backend/ReportController/rangeForm', ['range' => $range, 'tab' => $tab, 'link' => $link, 'months' => $months, 'reportBase' => $reportBase, 'notices' => $notices, 'keep' => $keep, 'pdfTabs' => $pdfTabs ?? [], 'compareTabs' => $compareTabs ?? [], 'compare' => $compare ?? true], $ns) ?>
+    <?= $this->partial('Backend/ReportController/rangeForm', ['range' => $range, 'tab' => $tab, 'link' => $link, 'months' => $months, 'reportBase' => $reportBase, 'notices' => $notices, 'keep' => $keep, 'pdfTabs' => $pdfTabs ?? [], 'compareTabs' => $compareTabs ?? [], 'compare' => $compare ?? true, 'pdfForm' => $pdfForm], $ns) ?>
     <div class="be-list__section" data-fetch-region="<?= e($definition->region()) ?>">
+        <?php // The PDF prints what the list shows (owner 2026-10-16): this form carries the range and the list state; the «PDF» button above submits it (`form=`). Inside the region, so a sort or a search renews it. ?>
+        <form id="<?= e($pdfForm) ?>" method="get" action="<?= e($reportBase . '/pdf') ?>" target="_blank" hidden>
+            <input type="hidden" name="report" value="journal">
+            <?php foreach ($pdfQuery as $name => $value): ?>
+            <input type="hidden" name="<?= e((string) $name) ?>" value="<?= e((string) $value) ?>">
+            <?php endforeach; ?>
+        </form>
         <div class="be-list__section-header">
+            <?= $this->partial('partials/listReset', ['state' => $state, 'action' => $action, 'keep' => $rangeQuery], 'Z77\Shared') ?>
             <h2 class="be-list__section-title">
                 Journal <code><?= e($range->year->getCode()) ?></code>
                 <small class="be-list__cell--muted">· <?= e($range->from->format('d.m.Y')) ?> – <?= e($range->to->format('d.m.Y')) ?><?= $paging->pageCount > 1 ? ' · Seite ' . $paging->page . ' von ' . $paging->pageCount : '' ?></small>
             </h2>
-            <?php if ($state->isActive()): ?>
-            <nav class="be-list__toggles" aria-label="Suche">
-                <a data-fetch-region-link href="<?= e($listLink($state->resetQuery())) ?>">Suche zurücksetzen</a>
-            </nav>
-            <?php endif; ?>
             <span class="be-list__section-badge" title="<?= $state->isActive() ? 'Gefundene Buchungen im Zeitraum' : 'Buchungen im Zeitraum' ?>"><?= $paging->total ?></span>
         </div>
         <?= $this->partial('partials/listFind', ['definition' => $definition, 'state' => $state, 'action' => $action, 'keep' => $rangeQuery], 'Z77\Shared') ?>

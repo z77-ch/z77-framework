@@ -27,7 +27,8 @@ use Z77\Persistence\Doctrine\Repository\DoctrineRepository;
  *   - the journal REPORT (part 3) reads one page of a date range the same
  *     way, oldest first — ids by SQL (bound LIMIT/OFFSET), then the same
  *     fetch-join; the page is bounded, never a whole year — and its PDF reads the
- *     whole range in detached chunks of the same fetch-join (`chronologicalInChunks()`).
+ *     whole range — searched and sorted like the screen — in detached chunks of the
+ *     same fetch-join (`searchInChunks()`).
  *
  * The other reports of part 3 (trial balance, balance sheet, income
  * statement, account statement) are SQL aggregates over `journal_line` in
@@ -124,6 +125,46 @@ class JournalEntryRepository extends DoctrineRepository
      */
     public function search(JournalSearch $search, int $offset, int $limit): array
     {
+        return $this->hydrate($this->searchIds($search, $limit, $offset));
+    }
+
+    /**
+     * EVERY entry that matches $search, in its order — the journal report's PDF, which prints
+     * what the screen shows (owner 2026-10-16: the search and the sort of the list). The ids come
+     * in ONE statement (one sort; a few bytes per entry), the entities in chunks of $chunk through
+     * the same fetch-join as a page; each chunk is DETACHED from the EntityManager once the
+     * caller has moved past it, so the identity map holds one chunk of entries and lines, not
+     * the year (review 2026-10-13; the accounts and fiscal years they name stay — a bounded
+     * set). Read-only: a caller must not write through an entry after it moved on.
+     * Doctrine-only (SQL + DQL).
+     *
+     * @return \Generator<int, JournalEntry>
+     */
+    public function searchInChunks(JournalSearch $search, int $chunk): \Generator
+    {
+        foreach (array_chunk($this->searchIds($search, null, 0), max(1, $chunk)) as $part) {
+            $entries = $this->hydrate($part);
+            yield from $entries;
+            foreach ($entries as $entry) {
+                foreach ($entry->getLines() as $line) {
+                    $this->em()->detach($line);
+                }
+                if ($entry->getReversalOf() !== null) {
+                    $this->em()->detach($entry->getReversalOf());
+                }
+                $this->em()->detach($entry);
+            }
+        }
+    }
+
+    /**
+     * The ids of the entries that match $search, in its order — a page ($limit) or all of them
+     * (null). The ORDER BY comes from a fixed map, never from input.
+     *
+     * @return list<int>
+     */
+    private function searchIds(JournalSearch $search, ?int $limit, int $offset): array
+    {
         [$where, $params, $types] = $this->searchWhere($search);
         $dir   = $search->descending ? 'DESC' : 'ASC';
         $order = match ($search->sort) {
@@ -132,13 +173,14 @@ class JournalEntryRepository extends DoctrineRepository
             'amount' => "(SELECT SUM(ls.debit) FROM journal_line ls WHERE ls.entry_id = e.id) {$dir}, y.start_date {$dir}, e.number {$dir}",
             default  => "y.start_date {$dir}, e.number {$dir}",
         };
-        $ids = $this->connection()->fetchFirstColumn(
-            "SELECT e.id FROM journal_entry e JOIN fiscal_year y ON y.id = e.fiscal_year_id{$where} ORDER BY {$order} LIMIT ? OFFSET ?",
-            array_merge($params, [max(1, $limit), max(0, $offset)]),
-            array_merge($types, [ParameterType::INTEGER, ParameterType::INTEGER])
-        );
+        $sql = "SELECT e.id FROM journal_entry e JOIN fiscal_year y ON y.id = e.fiscal_year_id{$where} ORDER BY {$order}";
+        if ($limit !== null) {
+            $sql    .= ' LIMIT ? OFFSET ?';
+            $params  = array_merge($params, [max(1, $limit), max(0, $offset)]);
+            $types   = array_merge($types, [ParameterType::INTEGER, ParameterType::INTEGER]);
+        }
 
-        return $this->hydrate(array_map('intval', $ids));
+        return array_map('intval', $this->connection()->fetchFirstColumn($sql, $params, $types));
     }
 
     /** How many entries match $search — the list's pager and badge. Doctrine-only (SQL). */
@@ -215,39 +257,6 @@ class JournalEntryRepository extends DoctrineRepository
         );
 
         return ['entries' => (int) $row['entries'], 'debit' => (string) $row['debit'], 'credit' => (string) $row['credit']];
-    }
-
-    /**
-     * EVERY entry of a year dated from–to in the journal report's order, for the PDF (review
-     * 2026-10-13: it hydrated the whole range at once — fails at P5b volumes). The ids come in
-     * ONE statement (one sort; a few bytes per entry), the entities in chunks of $chunk through
-     * the same fetch-join as a page; each chunk is DETACHED from the EntityManager once the
-     * caller has moved past it, so the identity map holds one chunk of entries and lines, not
-     * the year (the accounts and fiscal years they name stay — a bounded set). Read-only: a
-     * caller must not write through an entry after it moved on. Doctrine-only (SQL + DQL).
-     *
-     * @return \Generator<int, JournalEntry>
-     */
-    public function chronologicalInChunks(FiscalYear $year, string $from, string $to, int $chunk): \Generator
-    {
-        $ids = array_map('intval', $this->connection()->fetchFirstColumn(
-            'SELECT id FROM journal_entry WHERE fiscal_year_id = ? AND entry_date BETWEEN ? AND ? ORDER BY entry_date, number',
-            [(int) $year->getId(), $from, $to],
-            [ParameterType::INTEGER, ParameterType::STRING, ParameterType::STRING]
-        ));
-        foreach (array_chunk($ids, max(1, $chunk)) as $part) {
-            $entries = $this->hydrate($part);
-            yield from $entries;
-            foreach ($entries as $entry) {
-                foreach ($entry->getLines() as $line) {
-                    $this->em()->detach($line);
-                }
-                if ($entry->getReversalOf() !== null) {
-                    $this->em()->detach($entry->getReversalOf());
-                }
-                $this->em()->detach($entry);
-            }
-        }
     }
 
     /**

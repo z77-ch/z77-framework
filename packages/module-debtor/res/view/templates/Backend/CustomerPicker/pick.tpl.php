@@ -40,12 +40,8 @@ $extra    = '<a class="be-btn be-btn--ghost" href="' . e($newContactUrl . ($wind
     </div>
     <div class="be-list__section" data-fetch-region="<?= e($definition->region()) ?>">
         <div class="be-list__section-header">
+            <?= $this->partial('partials/listReset', ['state' => $state, 'action' => $pickUrl, 'keep' => $keep], 'Z77\Shared') ?>
             <h2 class="be-list__section-title">Kunden <small class="be-list__cell--muted">· Debitoren und Kontakte ohne Debitor</small></h2>
-            <?php if ($state->isActive()): ?>
-            <nav class="be-list__toggles" aria-label="Suche">
-                <a data-fetch-region-link href="<?= e($listLink($state->resetQuery())) ?>">Suche zurücksetzen</a>
-            </nav>
-            <?php endif; ?>
             <span class="be-list__section-badge" title="Kunden"><?= $paging->total ?></span>
         </div>
         <?= $this->partial('partials/listFind', ['definition' => $definition, 'state' => $state, 'action' => $pickUrl, 'keep' => $keep], 'Z77\\Shared') ?>

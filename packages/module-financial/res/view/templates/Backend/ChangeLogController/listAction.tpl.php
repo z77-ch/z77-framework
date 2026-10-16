@@ -34,17 +34,13 @@ $allYears   = $state->flag('all');
 <div class="be-list" data-fetch-region="<?= e($definition->region()) ?>">
     <div class="be-list__section">
         <div class="be-list__section-header">
+            <?= $this->partial('partials/listReset', ['state' => $state, 'action' => $listUrl], 'Z77\Shared') ?>
             <h2 class="be-list__section-title">
                 Änderungsprotokoll
                 <?php if ($year !== null): ?>
                 <small class="be-list__cell--muted">· <?= $allYears ? 'alle Geschäftsjahre' : 'Geschäftsjahr ' . e($year->getCode()) ?></small>
                 <?php endif; ?>
             </h2>
-            <?php if ($state->isActive()): ?>
-            <nav class="be-list__toggles" aria-label="Suche">
-                <a data-fetch-region-link href="<?= e($listUrl . '?' . $state->resetQuery()) ?>">Suche zurücksetzen</a>
-            </nav>
-            <?php endif; ?>
             <span class="be-list__section-badge" title="Einträge"><?= $paging->total ?></span>
         </div>
 
