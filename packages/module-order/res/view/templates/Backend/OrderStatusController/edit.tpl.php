@@ -9,9 +9,11 @@
  * Fetched, a WINDOW (ADR-047): the root declares the mask `order-status-edit` and the record, the
  * title moves into the title bar, the form carries `_origin` back. The action row (ADR-049) is the
  * shared `partials/modalActions`, first in the form. No explanations in the form — the help
- * (ADR-048, `edit.help`) has a section per field and explains the phases. The default switch
- * (`phase_default`) is worded by the phase — «Startstatus für neue Aufträge», «Wird gesetzt beim
- * Druck der Auftragsbestätigung» … (`OrderPhase::defaultSwitchLabel()`); a cancelled status has none.
+ * (ADR-048, `edit.help`) has a section per field and explains the phases. Two switches, each shown
+ * where the phase knows it (owner 2026-10-16): «Startstatus für neue Aufträge» (`start` — one for
+ * all, in «Eröffnet» and «Termin») and the action default (`phase_default`), worded by the phase —
+ * «Wird gesetzt beim Druck der Auftragsbestätigung» … (`OrderPhase::defaultSwitchLabel()`); «Eröffnet»
+ * and «Storniert» have no action default. Setting a switch takes it from the status that held it.
  *
  * @var \Z77\Module\Order\Entities\OrderStatus $entry
  * @var \Z77\Module\Order\Validators\OrderStatusValidator $validator
@@ -27,7 +29,7 @@ $isNew      = $entry->getId() === null;
 $window     = !empty($window);
 $title      = $isNew ? 'Auftragsstatus anlegen' : 'Auftragsstatus «' . $entry->getLabel() . '»';
 $action     = $actionBase . ($isNew ? '/add' : '/edit?id=' . (int) $entry->getId());
-$fields     = ['code', 'label', 'phase', 'position', 'phase_default'];
+$fields     = ['code', 'label', 'phase', 'position', 'start', 'phase_default'];
 $invalidIds = array_values(array_map(static fn(string $f) => 'order-status-' . $f, array_filter($fields, static fn(string $f) => $validator->hasFieldError($f))));
 $fieldError = static fn(string $name): string => $validator->hasFieldError($name)
     ? '<small class="be-form__field-error" data-z77-field-error>' . e($validator->getFieldError($name)) . '</small>'
@@ -35,6 +37,7 @@ $fieldError = static fn(string $name): string => $validator->hasFieldError($name
 $invalid    = static fn(string $name): string => $validator->hasFieldError($name) ? 'true' : 'false';
 $entryPhase  = \Z77\Module\Order\Entities\OrderPhase::tryFrom($entry->getPhaseValue());
 $switchLabel = $entryPhase === null ? 'Wird von der Aktion seiner Phase gesetzt' : $entryPhase->defaultSwitchLabel();
+$showStart   = $entryPhase === null || $entryPhase->allowsStart();
 $winAttr    = $window
     ? ' data-window="order-status-edit"' . ($isNew ? '' : ' data-window-entity="orderStatus:' . (int) $entry->getId() . '"')
         . ' data-window-title="' . e($title) . '" data-window-width="40rem"'
@@ -93,8 +96,17 @@ $winAttr    = $window
                 <input type="number" id="order-status-position" name="position" value="<?= (int) $entry->getPosition() ?>" min="0" max="<?= \Z77\Module\Order\Validators\OrderStatusValidator::MAX_POSITION ?>" required aria-invalid="<?= $invalid('position') ?>">
                 <?= raw($fieldError('position')) ?>
             </div>
-            <?php // The switch says what it does for THIS status' phase (owner 2026-10-15: «Vorgabe der Phase» was understood by
-                  // no one); a cancelled status has none — no action cancels. A changed phase shows its sentence after saving. ?>
+            <?php // Each switch where THIS status' phase knows it (owner 2026-10-16); a changed phase shows its switches after saving. ?>
+            <?php if ($showStart): ?>
+            <div class="be-form__field" data-z77-field-wrapper>
+                <label class="be-switch">
+                    <input type="checkbox" class="be-switch__input" id="order-status-start" name="start" value="1"<?= $entry->isStart() ? ' checked' : '' ?> aria-invalid="<?= $invalid('start') ?>" data-help-key="start">
+                    <span class="be-switch__track"><span class="be-switch__thumb"></span></span>
+                    <span class="be-switch__label">Startstatus für neue Aufträge</span>
+                </label>
+                <?= raw($fieldError('start')) ?>
+            </div>
+            <?php endif; ?>
             <?php if ($switchLabel !== null): ?>
             <div class="be-form__field" data-z77-field-wrapper>
                 <label class="be-switch">

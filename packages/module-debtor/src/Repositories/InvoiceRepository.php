@@ -276,22 +276,6 @@ class InvoiceRepository extends DoctrineRepository
     }
 
     /**
-     * The documents per view without any criterion — the badges of the view
-     * tabs. Doctrine-only (SQL, one query).
-     *
-     * @return array<string, int> view → count
-     */
-    public function countPerView(): array
-    {
-        $row = $this->connection()->fetchAssociative(
-            'SELECT SUM(kind IN (?, ?) AND state = ?) AS invoicing, SUM(kind IN (?, ?) AND state = ?) AS final, SUM(kind = ?) AS credit FROM invoice',
-            [InvoiceKind::Invoice->value, InvoiceKind::Fee->value, InvoiceState::Invoicing->value, InvoiceKind::Invoice->value, InvoiceKind::Fee->value, InvoiceState::Final->value, InvoiceKind::CreditNote->value]
-        ) ?: [];
-
-        return array_map(static fn($n) => (int) $n, array_merge(array_fill_keys(InvoiceSearch::VIEWS, 0), array_filter($row, static fn($n) => $n !== null)));
-    }
-
-    /**
      * The invoice dates of the documents $ids, as `Y-m-d` strings by id —
      * what the booking print reads BEFORE its unit of work to create the
      * month ranges it will lock (`InvoicingService::finalize()`). Plain SQL

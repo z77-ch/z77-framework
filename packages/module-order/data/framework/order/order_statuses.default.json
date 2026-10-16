@@ -1,11 +1,12 @@
 [
     {
         "id": 1,
-        "code": "offer",
+        "code": "opened",
         "label": "Offerte",
         "phase": "new",
         "position": 10,
-        "phase_default": true,
+        "start": true,
+        "phase_default": false,
         "active": true
     },
     {

@@ -17,11 +17,10 @@ use Z77\Persistence\Validation\EntityValidator;
  * `[a-z][a-z0-9-]{1,15}`, unique; label required, at most 80. The phase one of {@see OrderPhase};
  * the position 0–{@see MAX_POSITION}, NOT unique (equal = by id).
  *
- * Across the rows: at most ONE ACTIVE default per phase — the status an action sets must be
- * unambiguous. The cross-row rule looks at the OTHER rows as they are stored; the row itself counts
- * when it is active (a new row is). Without a repository it is skipped (format-only — the form's
- * first render). {@see crossRowProblem()} is the same check for the activation switch, which runs
- * no field validator (the debtor model of `setActive()`).
+ * Across the rows there is no refusal any more (owner 2026-10-16): setting the start switch or an
+ * action default TAKES it from the row that held it — the master-data save does that
+ * ({@see \Z77\Module\Order\Services\OrderStatuses::takeovers()}). The repository is for the code's
+ * uniqueness; without one that check is skipped (format-only — the form's first render).
  *
  * There are no behaviour flags any more, so no invariant between them: the phase carries the
  * behaviour, and a phase cannot contradict itself.
@@ -49,14 +48,7 @@ class OrderStatusValidator extends EntityValidator
         parent::executeValidation($only);
         if ($only === null) {
             $this->validatePhaseValue();
-            $this->validateAcrossRows();
         }
-    }
-
-    /** A refusal found outside the field run (the activation switch) — mapped onto its field. */
-    public function flagFieldError(string $field, string $message): void
-    {
-        $this->addFieldError($field, $message);
     }
 
     public function validatePosition(int $position): void
@@ -74,41 +66,5 @@ class OrderStatusValidator extends EntityValidator
         if (OrderPhase::tryFrom($status->getPhaseValue()) === null && !$this->hasFieldError('phase')) {
             $this->addFieldError('phase', 'Phase wählen.');
         }
-    }
-
-    private function validateAcrossRows(): void
-    {
-        /** @var OrderStatus $status */
-        $status = $this->entity;
-        if ($this->repo === null || !$status->isActive()) {
-            return;
-        }
-        $problem = self::crossRowProblem($status, $this->repo->findAll());
-        if ($problem !== null && !$this->hasFieldError($problem[0])) {
-            $this->addFieldError($problem[0], $problem[1]);
-        }
-    }
-
-    /**
-     * The rule ACROSS the rows for $s as an ACTIVE row among $rows (the stored rows; the stored copy
-     * of $s itself is skipped by id): one active default per phase. Pure — the harness and the
-     * activation switch use it.
-     *
-     * @param list<OrderStatus> $rows
-     * @return array{0: string, 1: string}|null field and German message, or null
-     */
-    public static function crossRowProblem(OrderStatus $s, array $rows): ?array
-    {
-        if (!$s->isPhaseDefault()) {
-            return null;
-        }
-        foreach ($rows as $o) {
-            if ($o->isActive() && $o->isPhaseDefault() && $o->getPhase() === $s->getPhase()
-                && ($s->getId() === null || $o->getId() !== $s->getId())) {
-                return ['phase_default', '«' . $o->getLabel() . '» ist schon so markiert («' . ($s->getPhase()->defaultSwitchLabel() ?? $s->getPhase()->label()) . '») — pro Phase nur einer. Dort zuerst ausschalten oder ihn deaktivieren.'];
-            }
-        }
-
-        return null;
     }
 }

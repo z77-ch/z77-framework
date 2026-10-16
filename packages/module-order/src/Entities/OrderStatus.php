@@ -15,9 +15,13 @@ use Z77\Shared\Traits\ArrayMappable;
  *
  *   - `phase`        — the phase it belongs to;
  *   - `position`     — its order within the phase (the lists, the choices);
+ *   - `start`        — THE start status of new orders, preselected in the create form; one for
+ *                      all, in a phase that {@see OrderPhase::allowsStart()} («Eröffnet», «Termin»);
  *   - `phaseDefault` — the status an ACTION sets when it moves an order into this phase (the order
- *                      confirmation, the delivery note, the booking print, a new order); at most
- *                      one ACTIVE default per phase ({@see \Z77\Module\Order\Validators\OrderStatusValidator}).
+ *                      confirmation, the delivery note, the booking print); one per phase.
+ *   Setting a switch TAKES it from the row that held it (owner 2026-10-16 — no refusal;
+ *   {@see \Z77\Module\Order\Services\OrderStatuses::takeovers()}). A switch the row's phase
+ *   does not know reads as off.
  *
  * Installation master data, file-based (a handful of rows), seeded once on first install
  * (`data/framework/order/order_statuses.default.json`, ADR-024 seed-once) and maintained in the
@@ -50,6 +54,10 @@ class OrderStatus
     #[Clean('int')]
     private int $position = 0;
 
+    /** THE start status of new orders (one for all). */
+    #[Clean('bool')]
+    private bool $start = false;
+
     /** The status an action sets when it moves an order into this phase. */
     #[Clean('bool')]
     private bool $phaseDefault = false;
@@ -62,6 +70,10 @@ class OrderStatus
     {
         if ($data) {
             $this->mapFromArray($data);
+            // A file of 2026-10-15 has no `start`: there the default of `new` WAS the start status.
+            if (!array_key_exists('start', $data) && ($data['phase'] ?? '') === OrderPhase::New->value && !empty($data['phase_default'])) {
+                $this->start = true;
+            }
         }
     }
 
@@ -81,7 +93,11 @@ class OrderStatus
     public function getCode(): string { return $this->code; }
     public function getLabel(): string { return $this->label; }
     public function getPosition(): int { return $this->position; }
-    public function isPhaseDefault(): bool { return $this->phaseDefault; }
+    /** THE start status of new orders — only in a phase that allows one. */
+    public function isStart(): bool { return $this->start && $this->getPhase()->allowsStart(); }
+
+    /** The status its phase's action sets — only in a phase an action moves into. */
+    public function isPhaseDefault(): bool { return $this->phaseDefault && $this->getPhase()->action() !== null; }
     public function isActive(): bool { return $this->active; }
 
     /**
@@ -103,6 +119,7 @@ class OrderStatus
     public function setLabel(string $label): void { $this->label = $label; }
     public function setPhase(mixed $phase): void { $this->phase = $phase instanceof OrderPhase ? $phase->value : trim((string) $phase); }
     public function setPosition(mixed $position): void { $this->position = (int) $position; }
+    public function setStart(mixed $on): void { $this->start = (bool) $on; }
     public function setPhaseDefault(mixed $on): void { $this->phaseDefault = (bool) $on; }
     public function setActive(mixed $active): void { $this->active = (bool) $active; }
 }

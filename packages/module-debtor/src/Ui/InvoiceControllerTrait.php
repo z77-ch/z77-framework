@@ -208,7 +208,6 @@ trait InvoiceControllerTrait
             'definition' => $definition,
             'state'      => $state,
             'paging'     => $paging,
-            'counts'    => $this->invoices()->countPerView(),
             'views'     => self::INVOICE_VIEWS,
             'states'    => self::INVOICE_STATE_LABELS,
             'fmt'       => static fn(?Money $m) => AmountFormat::of($m),

@@ -115,17 +115,6 @@ class SalesOrderRepository extends DoctrineRepository
     }
 
     /**
-     * The orders per status code — what the view tabs count after mapping the codes to their tab
-     * by FLAG (the screen does that; the repository knows no flag). One query.
-     *
-     * @return array<string, int> status code → orders
-     */
-    public function countPerStatus(): array
-    {
-        return array_map('intval', $this->connection()->fetchAllKeyValue('SELECT status_code, COUNT(*) FROM sales_order GROUP BY status_code'));
-    }
-
-    /**
      * The orders in one of $statusCodes dated $from–$to (both inclusive): the first $limit as rows
      * (id, number, order date, status code, the customer's name) and the total count — the year
      * close's warning (`Close\InvoiceableOrdersCheck`). Plain SQL, no lock.

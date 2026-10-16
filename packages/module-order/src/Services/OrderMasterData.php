@@ -38,7 +38,20 @@ final class OrderMasterData
         if (!$validator->isValid()) {
             throw new InvalidOrderStatusException($validator);
         }
+        // A switch the phase does not know is not stored (a status moved to another phase).
+        $status->setStart($status->isStart());
+        $status->setPhaseDefault($status->isPhaseDefault());
 
+        // Setting a switch takes it from the row that held it (owner 2026-10-16), in the same flush.
+        $takeovers = OrderStatuses::takeovers($status, $this->statuses()->findAll());
+        foreach ($takeovers['start'] as $other) {
+            $other->setStart(false);
+            $this->em->persist($other);
+        }
+        foreach ($takeovers['default'] as $other) {
+            $other->setPhaseDefault(false);
+            $this->em->persist($other);
+        }
         $this->em->persist($status);
         $this->em->flush();
     }
@@ -47,20 +60,23 @@ final class OrderMasterData
      * Deactivate / reactivate — the only «removal» there is. An order that sits in a deactivated
      * status keeps it; the status is no longer offered as a target.
      *
+     * Switching a row ON does not take a switch from another: while it was inactive another row
+     * took over, and that one keeps it — the reactivated row drops the switch (owner 2026-10-16:
+     * only SETTING a switch takes it over).
+     *
      * @throws OrderStatusCodeChangedException the row on disk carries another code (a hand-edited file)
-     * @throws InvalidOrderStatusException     switching ON would break a cross-row rule
      */
     public function setActive(OrderStatus $status, bool $active): void
     {
         $this->assertCodeUnchanged($status);
         $status->setActive($active);
         if ($active) {
-            $problem = OrderStatusValidator::crossRowProblem($status, $this->statuses()->findAll());
-            if ($problem !== null) {
-                $status->setActive(false);
-                $validator = new OrderStatusValidator($status);
-                $validator->flagFieldError($problem[0], $problem[1]);
-                throw new InvalidOrderStatusException($validator);
+            $takeovers = OrderStatuses::takeovers($status, $this->statuses()->findAll());
+            if ($takeovers['start'] !== []) {
+                $status->setStart(false);
+            }
+            if ($takeovers['default'] !== []) {
+                $status->setPhaseDefault(false);
             }
         }
 

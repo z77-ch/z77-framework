@@ -58,9 +58,9 @@ use Z77\Core\DI,
  * URL `/backend/order/order/…`.
  *
  *   - `list` — a STANDARD LIST ({@see OrderListing}): the view tabs are the PHASES in the
- *     toolbar (Offerten · In Arbeit · Geliefert · Abgeschlossen · Storniert · Alle, each with its
+ *     toolbar (Eröffnet · Termin · Geliefert · Abgeschlossen · Storniert · Alle, each with its
  *     count), the state icon opens the order WINDOW, «Zahlung» in «Abgeschlossen» from debtor's
- *     `PaymentStates` (one query for the page); in «In Arbeit» and «Geliefert» the selection bar
+ *     `PaymentStates` (one query for the page); in «Termin» and «Geliefert» the selection bar
  *     «Buchungsdruck …». Action cell: «+ Neuer Auftrag»;
  *   - `add` / `edit` — the ORDER WINDOW (ADR-047, mask `order-edit`, entity `sales-order:<id>`):
  *     one form, one save, radio tabs Auftrag · Verlauf · Belege; the head (customer — debtors
@@ -201,7 +201,6 @@ trait OrderControllerTrait
             'paging'     => $paging,
             'view'       => $view,
             'views'      => OrderListing::VIEWS,
-            'counts'     => OrderListing::counts($statuses, $this->orders()->countPerStatus()),
             'actionBase' => $this->orderListBase(),
         ]);
         // The fragment owns its header slots (financial.md «fragment slots»): «+ Neuer Auftrag» is the
@@ -565,7 +564,7 @@ trait OrderControllerTrait
     // ── PDFs ─────────────────────────────────────────────────────────────
 
     /**
-     * «Offerte» / «Auftragsbestätigung» (plan §10) — by the FLAG `offer` of the order's status;
+     * «Offerte» / «Auftragsbestätigung» (plan §10) — by the PHASE of the order's status (`new` = «Offerte»);
      * lines and totals from debtor's preview. Inline, a new tab, no side effect. When debtor's
      * preview refuses the order as it stands, a message page says what to fix instead.
      */
@@ -737,7 +736,7 @@ trait OrderControllerTrait
     // ── the booking print ────────────────────────────────────────────────
 
     /**
-     * «Buchungsdruck …» (plan §7 / §9.3): the selection of «In Arbeit» / «Geliefert» or the one order of the
+     * «Buchungsdruck …» (plan §7 / §9.3): the selection of «Termin» / «Geliefert» or the one order of the
      * window (`order[]` = `{id}:{version}`, the version each SHOWED), listed for a last look with
      * the invoice date (default today) — a PAGE (the DEBTOR-WIN-002 pattern: the selection bar is
      * a GET form) whose button POSTs the same pairs into a NEW TAB ({@see bookAction()}). Orders
@@ -747,7 +746,7 @@ trait OrderControllerTrait
     {
         $pairs = BookingSelection::pairs(DI::getRequest()->getGetParameter('order'));
         if ($pairs === []) {
-            $this->messageService->pushFlashAfterRedirect('error', 'Kein Auftrag ausgewählt — in der Liste «In Arbeit» oder «Geliefert» ankreuzen.');
+            $this->messageService->pushFlashAfterRedirect('error', 'Kein Auftrag ausgewählt — in der Liste «Termin» oder «Geliefert» ankreuzen.');
 
             return $this->redirect($this->orderListBase() . '/list?view=' . OrderListing::VIEW_DELIVERED, 303);
         }

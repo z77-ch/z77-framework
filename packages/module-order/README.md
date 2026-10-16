@@ -14,8 +14,9 @@ backend screens Aufträge › Aufträge (list + order window, `Ui\OrderControlle
 warning `Close\InvoiceableOrdersCheck`. Details: `docs/topics/order.md`.
 
 - `OrderStatus` (file, `data/framework/order/order_statuses.json`, seeded once) — code, label,
-  level and the flags `offer`, `reservesStock`, `consumesStock`, `invoiceable`, `invoiceBooked`,
-  `deliveryNoteTarget`, `final`; written through `Services\OrderMasterData`.
+  one of the five fixed PHASES (`Entities\OrderPhase` — Eröffnet, Termin, Geliefert, Abgeschlossen,
+  Storniert; the phase carries all behaviour), position, the start switch and the action default;
+  written through `Services\OrderMasterData` (ADR-043 addenda 2026-10-15 / 2026-10-16).
 - `SalesOrder` / `SalesOrderLine` / `SalesOrderStatusChange` (Doctrine) — the order head with its
   number from the range `order`, the lines (article or free, text lines, one level of children),
   the status log.

@@ -20,7 +20,7 @@ use Z77\Shared\Pdf\PdfDocument;
  * The order's two documents (plan §10, step 8) — rendered ON REQUEST, never stored, through the
  * kernel's PDF facade and two layouts of this module (overridable per project under `override/`):
  *
- *   - `pdf/order` — «Offerte {nr}» when the order's status carries the flag `offer`, else
+ *   - `pdf/order` — «Offerte {nr}» when the order's status is in the phase `new`, else
  *     «Auftragsbestätigung {nr}» (one layout, the title by FLAG — no code is named). The lines,
  *     amounts, VAT per code, rounding and total come from debtor's PREVIEW of the order
  *     (`OrderService::preview()`, D11 — the one computation; the booking print will issue the

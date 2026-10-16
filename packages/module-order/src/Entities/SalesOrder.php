@@ -16,7 +16,7 @@ use Z77\Shared\Money\Money;
 
 /**
  * A sales order — the HEAD of a quote or an order (plan §4.3, owner O1 / D1): quote and order are
- * ONE record, the status says which (`offer` flag). The office edits the order; the invoice is
+ * ONE record, the PHASE of its status says which (`new` = a quote). The office edits the order; the invoice is
  * born `final` at the booking print from it (a separate record, linked here — D5).
  *
  *   - `number` — the simple running number of the range `order` (owner O2, `NumberRange`), drawn at

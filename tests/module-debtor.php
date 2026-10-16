@@ -2167,7 +2167,7 @@ check('P3C22 list, default view «In Fakturierung»: only invoices in invoicing,
     && preg_match('/class="z77-form-actions">.*?be-btn--confirm.*?Buchungsdruck …/s', $renderList($host)) === 1
     && strpos($renderList($host), 'form="invoice-finalize" class="be-btn be-btn--confirm') < strpos($renderList($host), 'data-invoice-id=')
     && !str_contains($renderList($host), 'data-selection-bar=')
-    && $host->context['counts']['invoicing'] === $host->context['paging']->total);
+    && !isset($host->context['counts']));
 $draftIds = array_map(fn($d) => $d->getId(), $host->context['documents']);
 $sortedIds = $draftIds; rsort($sortedIds);
 check('P3C22b … drafts carry no number (owner 2026-10-10): «Entwurf» in «Nr.», sorted «by number» = newest draft first (the id breaks the tie)',
@@ -3303,8 +3303,7 @@ check('T15 source guards: the dunning trait never persists itself; the templates
             if (($row['key'] ?? '') === 'mahnungen') { return $row['parent_key'] === 'auftraege' && $row['controller'] === 'dunning' && $row['action'] === 'list'; }
         }
         return false;
-    })()
-    && $wireDi()->getRepository(Invoice::class)->countPerView()['final'] === (int) $db->fetchOne("SELECT COUNT(*) FROM invoice WHERE kind IN ('invoice', 'fee') AND state = 'final'"));
+    })());
 
 // ── U. Debitoren = the open-item list, master data apart (2026-10-07, after wdv-630) ──
 

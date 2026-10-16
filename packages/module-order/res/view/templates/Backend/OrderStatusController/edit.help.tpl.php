@@ -23,8 +23,8 @@
 <h3>Phase</h3>
 <p>Die Phasen sind fest — die Leiter, an der jeder Auftrag hochsteigt:</p>
 <ul>
-    <li><strong>Neu / Offerte</strong> — Offerte, Anfrage, erfasst: kein Lager, kein Buchungsdruck, das PDF heisst «Offerte». «Auftragsbestätigung …» bestätigt den Auftrag.</li>
-    <li><strong>Bestätigt</strong> — Bestellung, Terminauftrag, Dienstleistung: lagerführende Artikel sind <strong>reserviert</strong>; Buchungsdruck möglich. «Lieferschein …» liefert.</li>
+    <li><strong>Eröffnet</strong> — Offerte, Anfrage, erfasst: kein Lager, kein Buchungsdruck, das PDF heisst «Offerte». «Auftragsbestätigung …» bestätigt den Auftrag.</li>
+    <li><strong>Termin</strong> — Bestellung, Terminauftrag, Dienstleistung: lagerführende Artikel sind <strong>reserviert</strong>; Buchungsdruck möglich. «Lieferschein …» liefert.</li>
     <li><strong>Geliefert</strong> — bereitgestellt, geliefert, zu fakturieren: die Ware ist aus dem Lager, der Bestand ist <strong>verbraucht</strong>; Buchungsdruck möglich.</li>
     <li><strong>Abgeschlossen</strong> — gebucht, erledigt: verbraucht, nicht mehr bearbeitbar.</li>
     <li><strong>Storniert</strong> — der Auftrag findet nicht statt: nichts reserviert oder verbraucht, nicht mehr bearbeitbar. Nach einer verbuchten Rechnung wird nicht storniert, sondern gutgeschrieben.</li>
@@ -37,14 +37,18 @@
 <p>Nur die Anzeige: in welcher Folge die Status einer Phase in dieser Liste und in den Auswahlen stehen (z.B. «Bereitgestellt» vor «Geliefert»). Mehrere Status dürfen dieselbe Zahl haben. Auf das Verhalten hat die Zahl keinen Einfluss.</p>
 </section>
 
+<section data-help-field="start">
+<h3>Startstatus für neue Aufträge</h3>
+<p>Mit diesem Status beginnt jeder neue Auftrag, wenn im Formular nichts anderes gewählt wird. Es gibt <strong>einen</strong> Startstatus für alle — in der Phase <strong>Eröffnet</strong> (z.B. «Offerte») oder <strong>Termin</strong> (z.B. «Terminauftrag», wenn Aufträge meist direkt bestätigt sind). Wird er hier eingeschaltet, verliert ihn der Status, der ihn bisher hatte.</p>
+</section>
+
 <section data-help-field="phase_default">
-<h3>Startstatus / Wird gesetzt beim …</h3>
+<h3>Wird gesetzt beim …</h3>
 <p>Welchen Status ein Auftrag bekommt, wenn eine <strong>Aktion</strong> ihn in diese Phase bringt. Der Schalter heisst je nach Phase:</p>
 <ul>
-    <li><strong>Startstatus für neue Aufträge</strong> (Neu) — z.B. «Offerte»: jeder neue Auftrag beginnt so, wenn im Formular nichts anderes gewählt wird;</li>
-    <li><strong>Wird gesetzt beim Druck der Auftragsbestätigung</strong> (Bestätigt) — z.B. «Terminauftrag»;</li>
+    <li><strong>Wird gesetzt beim Druck der Auftragsbestätigung</strong> (Termin) — z.B. «Terminauftrag»;</li>
     <li><strong>Wird gesetzt beim Druck des Lieferscheins</strong> (Geliefert) — z.B. «Geliefert»;</li>
     <li><strong>Wird gesetzt beim Buchungsdruck</strong> (Abgeschlossen) — z.B. «Gebucht». Diesen Status setzt nur der Buchungsdruck, von Hand ist er nicht wählbar.</li>
 </ul>
-<p>Pro Phase ist höchstens ein aktiver Status so markiert; ist keiner markiert, nimmt die Aktion den ersten der Phase (nach Sortierung). Steht der Auftrag schon in dieser Phase oder weiter, ändert die Aktion den Status nicht. Bei «Status ändern …» von Hand spielt der Schalter keine Rolle. Storniert wird nur von Hand — darum hat ein stornierter Status keinen Schalter.</p>
+<p>Pro Phase hat ihn ein Status; wird er hier eingeschaltet, verliert ihn der Status, der ihn bisher hatte. Ist keiner markiert, nimmt die Aktion den ersten der Phase (nach Sortierung). Steht der Auftrag schon in dieser Phase oder weiter, ändert die Aktion den Status nicht. Bei «Status ändern …» von Hand spielt der Schalter keine Rolle. Eröffnet und Storniert haben keinen solchen Schalter — keine Aktion führt dorthin (ein neuer Auftrag nimmt den Startstatus, storniert wird von Hand).</p>
 </section>

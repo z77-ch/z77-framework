@@ -130,7 +130,8 @@ trait OrderStatusControllerTrait
 
             $active = $status->isActive();
             $values = BodyCleaner::cleanFor(OrderStatus::class, $post);
-            $values['phase_default'] = ($post['phase_default'] ?? '') === '1';   // a switch: present = on
+            $values['start']         = ($post['start'] ?? '') === '1';           // switches: present = on
+            $values['phase_default'] = ($post['phase_default'] ?? '') === '1';
             unset($values['active'], $values['id']);
             if (!$isNew) {
                 $values['code'] = $status->getCode();   // fixed after creation — the service refuses a change anyway

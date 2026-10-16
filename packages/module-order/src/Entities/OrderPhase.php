@@ -8,8 +8,8 @@ namespace Z77\Module\Order\Entities;
  * installation sorts its orders by; it belongs to exactly one phase ({@see OrderStatus::getPhase()}),
  * and code asks the PHASE — never a status code, never a flag.
  *
- *   new       — a quote or a captured order: no stock, no booking print, the PDF says «Offerte»;
- *   confirmed — the order is confirmed: stock RESERVED, the booking print is offered;
+ *   new       — «Eröffnet»: a quote or a captured order: no stock, no booking print, the PDF says «Offerte»;
+ *   confirmed — «Termin»: the order is confirmed: stock RESERVED, the booking print is offered;
  *   delivered — the goods left the shelf («bereitgestellt», «geliefert», «zu fakturieren»): stock
  *               CONSUMED, the booking print is offered;
  *   closed    — booked or done: stock consumed, the order is locked;
@@ -30,8 +30,8 @@ enum OrderPhase: string
     public function label(): string
     {
         return match ($this) {
-            self::New       => 'Neu / Offerte',
-            self::Confirmed => 'Bestätigt',
+            self::New       => 'Eröffnet',     // owner 2026-10-16 (was «Neu / Offerte»)
+            self::Confirmed => 'Termin',       // owner 2026-10-16 (was «Bestätigt»)
             self::Delivered => 'Geliefert',
             self::Closed    => 'Abgeschlossen',
             self::Cancelled => 'Storniert',
@@ -41,12 +41,13 @@ enum OrderPhase: string
     /**
      * The ACTION that moves an order into this phase and sets its default status — for the status
      * list's column «Wird gesetzt durch» (owner 2026-10-15: «Vorgabe der Phase» was understood by
-     * no one); null = no action moves an order here (cancelling is by hand).
+     * no one); null = no action moves an order here: cancelling is by hand, and a NEW order takes
+     * the start status (`OrderStatus::isStart()`, owner 2026-10-16), not a default of `new`.
      */
     public function action(): ?string
     {
         return match ($this) {
-            self::New       => 'neuer Auftrag',
+            self::New       => null,
             self::Confirmed => 'Auftragsbestätigung',
             self::Delivered => 'Lieferschein',
             self::Closed    => 'Buchungsdruck',
@@ -58,7 +59,7 @@ enum OrderPhase: string
     public function defaultSwitchLabel(): ?string
     {
         return match ($this) {
-            self::New       => 'Startstatus für neue Aufträge',
+            self::New       => null,
             self::Confirmed => 'Wird gesetzt beim Druck der Auftragsbestätigung',
             self::Delivered => 'Wird gesetzt beim Druck des Lieferscheins',
             self::Closed    => 'Wird gesetzt beim Buchungsdruck',
@@ -112,6 +113,15 @@ enum OrderPhase: string
     public function allowsDeliveryNote(): bool
     {
         return $this === self::Confirmed || $this === self::Delivered;
+    }
+
+    /**
+     * A status of this phase may be THE start status of new orders (owner 2026-10-16: «Eröffnet»
+     * and «Termin» — a service order may start as «Terminauftrag»).
+     */
+    public function allowsStart(): bool
+    {
+        return $this === self::New || $this === self::Confirmed;
     }
 
     /** A new order may START here (the create form's choice) — not closed or cancelled. */

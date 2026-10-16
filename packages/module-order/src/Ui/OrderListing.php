@@ -13,7 +13,7 @@ use Z77\Shared\Listing\Parsers;
  * Aufträge › Aufträge as a standard list (listing.md, plan §9.3; the owner's board on the
  * developer canvas): the VIEW tab (`?view=`) as an extra, the columns state icon · Nr. · Datum ·
  * Kunde · Betreff · Status · Betrag — and «Zahlung» in «Abgeschlossen» —, six of them searched in
- * the database, sorted by number newest first, 50 per page. In the BOOKABLE tabs («In Arbeit»,
+ * the database, sorted by number newest first, 50 per page. In the BOOKABLE tabs («Termin»,
  * «Geliefert») the rows lead with the selection checkbox of the booking print.
  *
  * **The tabs are the PHASES** (ADR-043 addendum 2026-10-15, {@see viewOf()}): each status falls
@@ -37,8 +37,8 @@ final class OrderListing
 
     /** View → tab label, along the ladder (the first is the default). */
     public const VIEWS = [
-        self::VIEW_OFFER     => 'Offerten',
-        self::VIEW_ACTIVE    => 'In Arbeit',
+        self::VIEW_OFFER     => 'Eröffnet',   // owner 2026-10-16 (was «Offerten»)
+        self::VIEW_ACTIVE    => 'Termin',     // owner 2026-10-16 (was «Termin»)
         self::VIEW_DELIVERED => 'Geliefert',
         self::VIEW_CLOSED    => 'Abgeschlossen',
         self::VIEW_CANCELLED => 'Storniert',
@@ -98,24 +98,6 @@ final class OrderListing
         )));
     }
 
-    /**
-     * The badge per tab: the orders per status code mapped to their tab; «Alle» counts every
-     * order (a code missing from the master data included). Pure.
-     *
-     * @param list<OrderStatus>   $statuses
-     * @param array<string, int>  $perStatus status code → orders
-     * @return array<string, int> view → orders
-     */
-    public static function counts(array $statuses, array $perStatus): array
-    {
-        $counts = array_fill_keys(array_keys(self::VIEWS), 0);
-        foreach ($statuses as $status) {
-            $counts[self::viewOf($status)] += $perStatus[$status->getCode()] ?? 0;
-        }
-        $counts[self::VIEW_ALL] = array_sum($perStatus);
-
-        return $counts;
-    }
 
     /** What the repository is asked for. @param list<OrderStatus> $statuses */
     public static function search(ListState $state, array $statuses): OrderSearch

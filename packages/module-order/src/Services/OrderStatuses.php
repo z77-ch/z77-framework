@@ -14,7 +14,7 @@ use Z77\Module\Order\Entities\OrderStatus;
  * the DEFAULT of a phase — {@see defaultOf()}: the active row marked `phaseDefault`, else the first
  * active row of the phase by position. The steps:
  *
- *   - a new order                 — {@see initial()}: the default of `new`;
+ *   - a new order                 — {@see initial()}: THE start status (one for all, owner 2026-10-16);
  *   - the order confirmation      — the default of `confirmed`;
  *   - the delivery-note print     — the default of `delivered`;
  *   - the booking print           — the default of `closed` («Gebucht»).
@@ -81,10 +81,49 @@ final class OrderStatuses
         return $first;
     }
 
-    /** A new order's status: the default of `new`; null = no active status there. */
+    /**
+     * A new order's status: THE start status (owner 2026-10-16 — one for all, «Eröffnet» or
+     * «Termin»); without an active one the first active status of `new`; null = none there either.
+     */
     public function initial(): ?OrderStatus
     {
+        foreach ($this->rows as $row) {
+            if ($row->isActive() && $row->isStart()) {
+                return $row;
+            }
+        }
+
         return $this->defaultOf(OrderPhase::New);
+    }
+
+    /**
+     * The rows that LOSE a switch when $s is saved active with its switches (owner 2026-10-16:
+     * «setze ich ihn, wird der Flag bei den anderen gelöscht»): the start status is one for all,
+     * the action default one per phase. Pure — the master-data save clears them, the harness checks
+     * it; the stored copy of $s itself is skipped by id.
+     *
+     * @param list<OrderStatus> $rows
+     * @return array{start: list<OrderStatus>, default: list<OrderStatus>}
+     */
+    public static function takeovers(OrderStatus $s, array $rows): array
+    {
+        $out = ['start' => [], 'default' => []];
+        if (!$s->isActive()) {
+            return $out;
+        }
+        foreach ($rows as $o) {
+            if ($s->getId() !== null && $o->getId() === $s->getId()) {
+                continue;
+            }
+            if ($s->isStart() && $o->isStart()) {
+                $out['start'][] = $o;
+            }
+            if ($s->isPhaseDefault() && $o->isPhaseDefault() && $o->getPhase() === $s->getPhase()) {
+                $out['default'][] = $o;
+            }
+        }
+
+        return $out;
     }
 
     /**

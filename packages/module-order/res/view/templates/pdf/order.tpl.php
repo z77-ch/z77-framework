@@ -2,7 +2,7 @@
 /**
  * PDF layout: the quote («Offerte») or the order confirmation («Auftragsbestätigung») of an order
  * (plan §10, step 8) — A4 portrait. One layout for both: the title comes from the controller,
- * chosen by the status FLAG `offer` (`OrderPdf::orderTitle()`). The page: the mandator's
+ * chosen by the PHASE — `new` is a quote (`OrderPdf::orderTitle()`). The page: the mandator's
  * letterhead (module-mandator `pdf/letterhead`), the recipient — the invoice address debtor's
  * preview resolved — in the envelope window (kernel `pdf/addressWindow`), the title, the subject
  * in bold under it, the facts, the lines as a flowing table (kernel `pdf/table`) with the article

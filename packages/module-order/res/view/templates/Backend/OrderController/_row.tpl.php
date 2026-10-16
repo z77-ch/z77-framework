@@ -3,7 +3,7 @@
  * One order row of the standard list — the single place that renders it (FETCH-ROW-001): the
  * node carries `data-entity="sales-order:<id>"`.
  *
- *   - in the bookable tabs («In Arbeit», «Geliefert») a checkbox of the form `#order-book` (`{id}:{version}`);
+ *   - in the bookable tabs («Termin», «Geliefert») a checkbox of the form `#order-book` (`{id}:{version}`);
  *   - the state icon opens the order WINDOW (ADR-047, `data-window-open`; the origin is the list
  *     region it stands in) — a pencil while the order is editable, a lock once it has an invoice
  *     or a locked phase — closed, cancelled (D7);

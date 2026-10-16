@@ -214,3 +214,28 @@ unchanged.
    `delivered` (every bookable order — a service order may never see a delivery note).
 8. **Later, only on demand:** a per-status «this action sets …» override, restricted by the server to
    statuses of the action's phase. Not built.
+
+## Addendum 2026-10-16 — phase names, one start status, switches that take over (approved by the owner)
+
+From the owner's browser test of the phases. Amends decision 4 and 7 of the addendum 2026-10-15;
+where they differ, this addendum applies. The phases, their behaviour and the transitions stay.
+
+1. **Names.** The phases read **Eröffnet** (`new`, was «Neu / Offerte»), **Termin** (`confirmed`,
+   was «Bestätigt»), Geliefert, Abgeschlossen, Storniert; the order list's tabs follow: Eröffnet ·
+   Termin · Geliefert · Abgeschlossen · Storniert · Alle. The enum values stay — a name is a label.
+   The quote's PDF still says «Offerte».
+2. **ONE start status for all** (`OrderStatus::start`), in a phase that allows it — Eröffnet or
+   Termin (`OrderPhase::allowsStart()`; a service order may start as «Terminauftrag»). It replaces
+   «the default of `new`» as the start of a new order; `new` has no action default any more. Without
+   an active start status a new order takes the first active status of `new`.
+3. **Action defaults per phase** as before for the order confirmation (Termin), the delivery note
+   (Geliefert) and the booking print (Abgeschlossen) — a status in Termin may carry both switches.
+4. **Setting a switch takes it over** (`OrderStatuses::takeovers()`): the start status from every
+   other row, an action default from the other rows of its phase — in the same save, no refusal (was:
+   «a second active default is refused»). Reactivating a row takes nothing: it drops the switch
+   another row holds meanwhile. A switch its phase does not know reads as off and is not stored.
+5. A status file of 2026-10-15 (no `start` key) reads its `new` default as the start status — no
+   hand conversion.
+6. **The seed's first code is `opened`** (was `offer` — a code names the phase it starts, not a
+   document; owner 2026-10-16). Only z77.ch ran the module: its file and its orders were renamed by
+   hand the same day; no migration ships (the module was not released).
