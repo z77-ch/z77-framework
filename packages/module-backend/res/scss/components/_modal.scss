@@ -145,3 +145,32 @@
     border-bottom: 0;
     border-top:    1px solid var(--be-line);
 }
+
+// Records listed in a dialog, one per line: the name (and a muted meta line under it) takes
+// the room, the record's own buttons follow at the end — the Drive's trash and its access
+// rules. Module-agnostic: any dialog that lists records with per-record actions reuses it.
+.be-modal__rows {
+    display:        flex;
+    flex-direction: column;
+    gap:            .4rem;
+    margin:         .5rem 0;
+}
+.be-modal__row {
+    display:     flex;
+    align-items: center;
+    gap:         .5rem;
+}
+.be-modal__row-main {
+    flex:      1;
+    min-width: 0;
+}
+.be-modal__row-name {
+    display:       block;
+    overflow:      hidden;
+    text-overflow: ellipsis;
+    white-space:   nowrap;
+}
+.be-modal__row-meta {
+    font-size: .75rem;
+    color:     var(--be-muted);
+}

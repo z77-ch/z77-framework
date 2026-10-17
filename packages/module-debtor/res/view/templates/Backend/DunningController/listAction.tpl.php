@@ -67,7 +67,7 @@ $invoiceBase = $invoiceBase ?? '/backend/finance/invoice';
                 <?php foreach ($due as $item): $inv = $item['invoice']; ?>
                 <div class="be-list__item" data-due-invoice="<?= (int) $inv->getId() ?>">
                     <div class="be-list__row">
-                        <span class="be-list__cell"><input type="checkbox" name="doc[]" value="<?= (int) $inv->getId() ?>" checked aria-label="<?= e($inv->documentName()) ?> mahnen"></span>
+                        <span class="be-list__cell"><label class="be-choice"><input type="checkbox" class="be-choice__input" name="doc[]" value="<?= (int) $inv->getId() ?>" checked aria-label="<?= e($inv->documentName()) ?> mahnen"></label></span>
                         <span class="be-list__cell"><a href="<?= e($invoiceBase) ?>/detail?id=<?= (int) $inv->getId() ?>"><?= e($inv->documentName()) ?></a></span>
                         <span class="be-list__cell be-list__cell--wrap"><?= e($inv->getAddress()->getName()) ?></span>
                         <span class="be-list__cell"><?= e($inv->getDueDate()->format('d.m.Y')) ?> <small class="be-list__cell--muted">· seit <?= e($item['dueSince']->format('d.m.Y')) ?></small></span>

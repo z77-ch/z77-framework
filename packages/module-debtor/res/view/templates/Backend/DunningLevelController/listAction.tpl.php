@@ -35,7 +35,7 @@ $actionBase = $actionBase ?? '/backend/finance/dunning-level';
             <p class="be-list__empty">Keine Mahnstufen vorhanden.</p>
             <?php endif; ?>
             <?php foreach ($levels as $level): ?>
-            <div class="be-tree__node<?= $level->isActive() ? '' : ' be-tree__node--inactive' ?>" style="--node-depth:0" data-dunning-level-id="<?= e((string) $level->getId()) ?>">
+            <div class="be-tree__node<?= $level->isActive() ? '' : ' be-tree__node--inactive' ?>" data-dunning-level-id="<?= e((string) $level->getId()) ?>">
                 <div class="be-tree__row">
                     <span class="be-tree__toggle" aria-hidden="true"></span>
 

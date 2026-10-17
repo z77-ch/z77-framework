@@ -76,8 +76,10 @@ $ceInput = function (array $f, mixed $value, string $bfAttr) use ($ceHint): stri
     }
     if ($kind === 'bool') {
         $checked = $value ? ' checked' : '';
-        return '<label class="ce-field ce-field--bool"><input type="checkbox" ' . $bf . $checked . '>'
-            . '<span class="ce-field__label">' . e($label) . '</span></label>';
+        // On/off → the backend switch (css-backend.md: `.be-switch` is the only on/off form).
+        return '<label class="be-switch"><input type="checkbox" class="be-switch__input" ' . $bf . $checked . '>'
+            . '<span class="be-switch__track"><span class="be-switch__thumb"></span></span>'
+            . '<span class="be-switch__label">' . e($label) . '</span></label>';
     }
     // text | url (and any unknown kind) → single-line input
     $type = $kind === 'url' ? 'url' : 'text';

@@ -15,15 +15,15 @@
 <div class="be-list">
     <!-- ── UI strings ─────────────────────────────────────────────────────── -->
     <div class="be-list__section">
-        <div class="be-list__section__head" style="margin-bottom:.5rem">
-            <h2 style="font-size:.95rem;margin:0">UI-Texte</h2>
+        <div class="be-list__section-header">
+            <h2 class="be-list__section-title">UI-Texte</h2>
         </div>
         <div class="be-tree be-tree--hub be-tree--lead-menu">
             <?php if (empty($uiRows)): ?>
-            <p style="font-size:.8rem;color:var(--be-muted,#94a3b8);padding:.5rem">Keine UI-Texte vorhanden.</p>
+            <p class="be-list__empty">Keine UI-Texte vorhanden.</p>
             <?php endif; ?>
             <?php foreach ($uiRows as $row): ?>
-            <div class="be-tree__node" style="--node-depth:0" data-entity="translationUi:<?= e($row['key']) ?>">
+            <div class="be-tree__node" data-entity="translationUi:<?= e($row['key']) ?>">
                 <div class="be-tree__row">
                     <span class="be-tree__toggle" aria-hidden="true"></span>
                     <button type="button" class="be-tree__menu" title="Aktionen"
@@ -37,19 +37,19 @@
     </div>
 
     <!-- ── Route slugs ────────────────────────────────────────────────────── -->
-    <div class="be-list__section" style="margin-top:1.5rem">
-        <div class="be-list__section__head" style="margin-bottom:.5rem">
-            <h2 style="font-size:.95rem;margin:0">Routen-Slugs</h2>
-            <p style="font-size:.75rem;color:var(--be-muted,#94a3b8);margin:.15rem 0 0">Kanonisch (<code><?= e($defaultLang) ?></code>) → lokalisiert. Pro Sprache 1:1, kein Slug darf einen anderen kanonischen verdecken.</p>
+    <div class="be-list__section">
+        <div class="be-list__section-header">
+            <h2 class="be-list__section-title">Routen-Slugs</h2>
         </div>
+        <p class="be-list__section-hint">Kanonisch (<code><?= e($defaultLang) ?></code>) → lokalisiert. Pro Sprache 1:1, kein Slug darf einen anderen kanonischen verdecken.</p>
         <div class="be-tree be-tree--hub be-tree--lead-menu">
             <?php if (empty($slugLanguages)): ?>
-            <p style="font-size:.8rem;color:var(--be-muted,#94a3b8);padding:.5rem">Nur die Standardsprache ist konfiguriert — keine Slug-Übersetzungen nötig.</p>
+            <p class="be-list__empty">Nur die Standardsprache ist konfiguriert — keine Slug-Übersetzungen nötig.</p>
             <?php elseif (empty($slugRows)): ?>
-            <p style="font-size:.8rem;color:var(--be-muted,#94a3b8);padding:.5rem">Keine Routen-Slugs vorhanden.</p>
+            <p class="be-list__empty">Keine Routen-Slugs vorhanden.</p>
             <?php endif; ?>
             <?php foreach ($slugRows as $row): ?>
-            <div class="be-tree__node" style="--node-depth:0" data-entity="translationSlug:<?= e($row['canonical']) ?>">
+            <div class="be-tree__node" data-entity="translationSlug:<?= e($row['canonical']) ?>">
                 <div class="be-tree__row">
                     <span class="be-tree__toggle" aria-hidden="true"></span>
                     <button type="button" class="be-tree__menu" title="Aktionen"

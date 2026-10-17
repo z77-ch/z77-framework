@@ -27,3 +27,10 @@
 
 .table--compact th,
 .table--compact td { padding: var(--space-2) var(--space-3); }
+
+// `.be-table` — a plain table in the work area (the form log). It has no look of its own yet
+// (pending: css-backend.md, consistency audit); these cell modifiers replace the inline
+// styles its templates carried.
+.be-table__cell--muted  { font-size: .75rem; color: var(--be-muted); }
+.be-table__cell--nowrap { white-space: nowrap; }
+.be-table__cell--end    { text-align: right; }

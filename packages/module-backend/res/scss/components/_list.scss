@@ -10,22 +10,17 @@
 //
 // .be-tree__node--env / --slot carry no styles — they are JS hooks only.
 
+@use 'input-look' as look;
+
 /* ── Filter (navigation list search) ── */
 .be-list__filter { position: relative; }
 .be-list__filter-input {
+    @include look.rest(var(--radius-md));
     width:         200px;
     padding:       .4rem .65rem .4rem 2rem;
-    border:        1px solid var(--be-line);
-    border-radius: var(--radius-md);
     font-size:     var(--font-size-sm);
-    background:    var(--be-surface);
-    color:         var(--be-text);
 }
-.be-list__filter-input:focus {
-    outline:      none;
-    border-color: var(--be-accent);
-    box-shadow:   0 0 0 2px color-mix(in srgb, var(--be-accent) 15%, transparent);
-}
+.be-list__filter-input:focus { @include look.focus; }
 .be-list__filter-icon {
     position:       absolute;
     left:           .5rem;
@@ -135,6 +130,64 @@
     padding:   .5rem 0;
     font-size: .8rem;
     color:     var(--be-muted);
+}
+/* A muted explanatory line anywhere in the work area that is not directly under a section
+   header (a source line at the foot, a sentence under a label). */
+.be-list__note {
+    margin:    0;
+    font-size: .8rem;
+    color:     var(--be-muted);
+}
+/* A row of small controls above a list's content (the Stats month switch). */
+.be-list__bar {
+    display:       flex;
+    flex-wrap:     wrap;
+    align-items:   center;
+    gap:           .4rem;
+    margin-bottom: .75rem;
+}
+/* Labelled blocks of facts under a section header (the Stats link and monthly mail). */
+.be-list__facts {
+    display:       grid;
+    gap:           .6rem;
+    margin-bottom: .75rem;
+}
+/* A read-only value to copy, with its button (the Stats client link). */
+.be-list__copy {
+    display:     flex;
+    flex-wrap:   wrap;
+    align-items: center;
+    gap:         .4rem;
+    margin-top:  .25rem;
+}
+.be-list__copy-input {
+    flex:        1;
+    min-width:   min(18rem, 100%);
+    font-family: var(--font-family-mono);
+}
+/* Counts per key, several groups side by side (the form log: «Woher» · «Was daraus wurde»). */
+.be-list__tally {
+    display:   flex;
+    flex-wrap: wrap;
+    gap:       2rem;
+    margin:    .5rem 0 1rem;
+}
+.be-list__tally-title {
+    margin-bottom: .35rem;
+    font-size:     .75rem;
+    color:         var(--be-muted);
+}
+.be-list__tally-row {
+    display:         flex;
+    align-items:     center;
+    justify-content: space-between;
+    gap:             .75rem;
+    min-width:       14rem;
+}
+.be-list__tally-value {
+    display:     flex;
+    align-items: center;
+    gap:         .5rem;
 }
 .be-list__section-actions {
     display:    flex;
@@ -491,6 +544,13 @@ label.be-list__cell { cursor: pointer; }
 .be-list__row--total .be-list__cell { font-weight: var(--font-weight-bold); color: var(--be-text); }
 .be-list__cell--mono  { font-family: var(--font-family-mono); font-size: .78rem; }
 .be-list__cell--wrap  { white-space: normal; }
+/* A child line under its parent (an invoice line «unter der Position darüber»). */
+.be-list__cell--indent { padding-left: 1.5rem; }
+/* A cell across the whole row / across all tracks after the first (a row's messages). */
+.be-list__cell--span   { grid-column: 1 / -1; }
+.be-list__cell--rest   { grid-column: 2 / -1; }
+/* A small form that sits inline in a cell's text (assign / ignore a bank transaction). */
+.be-list__form { display: inline; }
 
 /* Action cell: a REAL column, so buttons and whole <form>s no longer need a
    `style="grid-column:6"` escape hatch to avoid landing in an icon track. */
@@ -689,6 +749,40 @@ label.be-list__cell { cursor: pointer; }
 .be-tree__tools { display: flex; align-items: center; gap: .5rem; justify-self: end; }
 .be-tree__tools > form { margin: 0; display: flex; }
 .be-tree__meta  { font-size: .7rem; color: var(--be-muted); white-space: nowrap; }
+.be-tree__meta--accent { color: var(--be-accent); }
+/* Prose in the info slot (a consequence, a description) — the slot's default is mono (URLs). */
+.be-tree__url--text { font-family: inherit; }
+
+/* Free content UNDER a hub row (an import record's diff and its decide forms). Not a
+   `be-tree__row`: the hub row is an explicit grid, free content would land in its icon
+   tracks. Starts at the name's edge. */
+.be-tree__detail { padding: 0 0 .25rem 2.1rem; }
+.be-tree__detail--actions {
+    display:        flex;
+    flex-wrap:      wrap;
+    align-items:    center;
+    gap:            .5rem;
+    padding-bottom: .6rem;
+}
+.be-tree__detail-form {
+    display:     flex;
+    align-items: center;
+    gap:         .35rem;
+}
+
+/* Field-by-field difference: field · current value · new value (the import plan). */
+.be-diff {
+    border-collapse: collapse;
+    font-size:       .72rem;
+}
+.be-diff__head {
+    padding:     0 .75rem .15rem 0;
+    text-align:  left;
+    font-weight: normal;
+    color:       var(--be-muted);
+}
+.be-diff__cell { padding: .1rem .75rem .1rem 0; }
+.be-diff__cell--old { color: var(--be-muted); }
 .be-tree__key   { font-size: .7rem; color: var(--be-muted); }
 
 /* ⋮ row-menu trigger — reusable in any hub row. */
@@ -709,6 +803,8 @@ label.be-list__cell { cursor: pointer; }
     transition:       background var(--transition-fast), color var(--transition-fast);
 }
 .be-tree__menu:hover { background: var(--be-surface2); color: var(--be-text); }
+/* Holds the ⋮'s place where a row has no actions, so the titles stay in one line. */
+.be-tree__menu--placeholder { visibility: hidden; }
 
 /* Row action hub (⋮) modal content — module-agnostic; any `actions` endpoint reuses it. */
 .be-actions__list { display: flex; flex-direction: column; gap: .35rem; }

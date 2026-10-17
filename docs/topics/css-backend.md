@@ -1,6 +1,6 @@
 # css-backend
 
-2026-10-13
+2026-10-17
 
 ## entry
 
@@ -43,6 +43,7 @@ packages/module-backend/res/scss/
 ├── components/
 │   ├── _buttons.scss       .be-btn (palette-aware) + .be-icon-btn — the single backend button system (font-capped by default)
 │   ├── _icon.scss          .be-icon — presentation for <use> sprite icons (stroke/currentColor/caps)
+│   ├── _input-look.scss    mixins only (no CSS): `rest` + `focus` — THE input look every text control includes
 │   ├── _forms.scss
 │   ├── _switch.scss        .be-switch reusable on/off toggle slider
 │   ├── _cards.scss
@@ -122,6 +123,10 @@ itself into `public/` is NOT touched — that file belongs to the project.
 | Body, html base styles, slim scrollbars | `base/_elements.scss` |
 | CSS reset, incl. `[hidden] { display: none !important }` (the attribute always hides — HIDDEN-RESET-001) | `base/_normalize.scss` |
 | Button, form, card, alert, badge, table, modal, pagination | `components/_*.scss` |
+| The input LOOK of every text control (line, corner, ground, ink, focus ring) — `.be-input`, `.be-form__control`, `.be-form__field input/select`, `.be-form__param-row input`, `.be-list__filter-input` all `@include` it; geometry stays per rule | `components/_input-look.scss` (mixins `look.rest` / `look.focus`) |
+| Form helpers instead of inline styles: one-column grid `.be-form__grid--single`, fill grid `--fill`, warning hint `.be-form__hint--warn`, divider `.be-form__divider`, option column `.be-form__stack`, short input `.be-input--short`; a disabled `.be-choice` dims itself | `components/_forms.scss` |
+| Records listed in a dialog with per-record buttons (`.be-modal__rows` / `__row` / `__row-main` / `__row-name` / `__row-meta` — Drive trash, access rules); messages in an alert (`.be-modal__alert-list`) | `components/_modal.scss` / `components/_alerts.scss` |
+| Work-area helpers instead of inline styles: `.be-list__note`, `__bar`, `__facts`, `__copy`, `__tally*`, `__form`, cell modifiers `--indent` / `--span` / `--rest`; hub-tree `.be-tree__url--text`, `__meta--accent`, `__menu--placeholder`, `__detail` (+ `--actions`, `-form`); field diff `.be-diff`; plain-table cells `.be-table__cell--muted` / `--nowrap` / `--end` | `components/_list.scss` / `components/_tables.scss` |
 | Labelled fields side by side in declared columns (`.be-form__row` + `--be-form-cols`), a shown-not-entered value (`.be-form__static`), a resolved value under a field (`.be-form__resolved`) | `components/_forms.scss` |
 | An optional part of a form opened by a checkbox, no JS (`.be-reveal` — `__toggle` / `__label` / `__panel`) | `components/_forms.scss` |
 | A switch whose checkbox lives elsewhere — the `.be-reveal__toggle` before it — (`.be-switch--for`, a `<label for>`; its look follows `:checked ~` / `:focus-visible ~`), and a switch as a field of a `.be-form__row` (`.be-form__field > .be-switch`: text as the caption, track on the input line) | `components/_switch.scss` |
@@ -822,17 +827,49 @@ packages/module-backend/res/view/templates/
      way: «Speichern» = accent everywhere (ADR-033 addendum 2026-10-16). Windows and the
      journal are right as they are; only the action cell of Stammdaten › Mandant moves from
      `confirm` to `primary`.
-  2. *The input look is defined four times* with copied values: `.be-form__field input/select`,
-     `.be-input`, `.be-form__param-row input`, `.be-list__filter-input` (+ the find pop). → one
-     shared rule first, then `--be-field` / the quiet table variant change ONE place.
-  3. *Raw checkboxes* (neither `be-switch` nor `be-choice`): debtor `InvoiceController/form`,
-     `listAction`, `DunningController/listAction`; order `edit`, `_row`; mandator `edit`;
-     backend `Content/edit`; DMS `_list`, `_tree`, `_upload`. → `be-choice` (a selection) or
-     `be-switch` (on/off).
-  4. *Inline `style=`* instead of component classes: backend `ImportController` (`_plan` 31,
-     `listAction` 16), `FormLogController` (18 + 7), `Stats` (22), `TranslationController` 11;
-     DMS `_edit` 26, `_actions` 10, `_trash` 9; order `edit` 6; debtor 25 and financial 17
-     spread over many files. Each becomes a class or goes.
+  2. DONE 2026-10-17 — *the input look was defined four times* (five: `.be-form__control` too).
+     Now ONE place: `components/_input-look.scss`, mixins `rest($radius)` (line, corner,
+     ground, ink) and `focus` (accent line + ring), included by `.be-form__control`,
+     `.be-form__field input/select` (+ `.be-form__grid > select`), `.be-form__param-row input`,
+     `.be-input` (which the column search `.be-list__find-input` carries) and
+     `.be-list__filter-input`. Mixins, not a shared selector list, so each rule keeps its place
+     in the cascade: the compiled CSS differs only in declaration ORDER inside those blocks
+     (verified by diffing the expanded build). `--be-field` / the quiet table variant now change
+     `look.rest`. Leftover: `select.be-input option` keeps its own `--be-surface` ground.
+  3. DONE 2026-10-17 — *raw checkboxes*: selections → `be-choice` (`label.be-choice` +
+     `be-choice__input`: debtor invoice list `doc[]`, dunning list `doc[]`); on/off →
+     `be-switch` (invoice editor «unter» `be-switch--sm`, mandator «Mehrwertsteuerpflichtig»
+     — the field caption is now the switch's own label, `.be-form__field > .be-switch`;
+     content editor `bool` field, its `.ce-field--bool` rule dropped from `content/editor.css`;
+     Drive upload «Originalbild unverändert ausliefern»). Names, values, `form=`, ids, `data-*`
+     kept (harness strings `name="doc[]" value="…"`, `type="checkbox" id="mandator-liable"`
+     still match). Drive `_list` `.dms-file__select`: the fragment cannot carry a backend class
+     (ADR-018 rule 3), so the box is DRAWN in the choice look in the DMS's own
+     `_filelist.scss` with `--dms-*` tokens (border, accent fill, check mark, focus ring);
+     hover-reveal and bulk-bar `:checked` hooks unchanged. Drive `_tree` `.dms-tree__switch`
+     is NOT a raw box: a visually hidden disclosure state (like `__disclosure-input`) — left
+     as is. Order `edit` / `_row` skipped (window being rebuilt).
+  4. DONE 2026-10-17 (the audited files) — *inline `style=`* replaced by classes (see `## what
+     goes where`) or dropped (`--node-depth:0` = the default, `margin:0` on forms): Import
+     `listAction` / `_plan`, FormLog `listAction` / `_blocked` / `confirm*`, Stats `listAction`
+     / `_report` / `reportAction`, Translation `listAction` / `edit`, Drive `_edit` /
+     `_actions` / `_trash` / `_upload`, debtor (bank import rows, invoice detail / form, the
+     `--node-depth:0` rows) and financial (journal form, fiscal-year placeholder ⋮, report range
+     form). Their dead `.be-list__section__head` became the standard section header + hint.
+     **Stays inline on purpose:** column tracks (`--be-list-cols`, `--be-form-cols` — also the
+     Drive's ACL grant row now — and `$definition->style()` / `$cols`), a tree depth
+     (`--node-depth:<?= $depth ?>`, `--dms-depth`), the Stats report's bar / chart percentages.
+     The Stats link-page notice and the report's own extras live in the report's `<style>`
+     block (the link page loads no backend stylesheet). **Look to check:** headers of Import /
+     Translation now carry the standard section rule; Drive edit sections use `.be-form__section`
+     (caps) with the note as a hint below; the ACL grant row and the Import / Stats selects and
+     link field are real `.be-input` controls now (they were stripped bare); the unreadable
+     blocklist is an error alert. **Leftover (not audited):** ~70 static inline styles in
+     Content / MetaData / Navigation / NavigationAlias / EmailSettings / Job / BackendUser
+     templates, the skeletons, contact / vat rows, and the smaller Drive dialogs (`move`,
+     `_folderMove`, `_bulkMove`, `_bulkConfirmDelete`, `confirmDelete`, `_trashConfirmPurge`,
+     `FolderController/edit`) — most map onto the new classes directly. `.be-table` (form log)
+     has no look of its own.
   5. *Drive buttons keep their own geometry* (`dms-btn`: size, radius, type — unbound on
      purpose, DMS-HOST-BIND-001; only colours follow `--be-*`). Owner 2026-10-16: the Drive
      takes the backend's control look too («sollte er übernehmen» — one look per kind, Rule 8).

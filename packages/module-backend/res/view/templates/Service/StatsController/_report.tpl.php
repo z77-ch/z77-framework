@@ -57,6 +57,10 @@ $daysCount = count($days);
     .z77-report__chart div.none { background:none; border:0; }
     .z77-report__chart-x { display:flex; justify-content:space-between; font-size:11px; color:var(--r-muted); margin-top:4px; }
     .z77-report__note { font-size:12.5px; color:var(--r-muted); margin:8px 0 0; }
+    .z77-report__note--lead { margin:-12px 0 20px; }
+    .z77-report__table--next { margin-top:14px; }
+    /* The paper's frame inside the backend page (listAction) — white in dark mode too. */
+    .z77-report-frame { background:#ffffff; border-radius:8px; margin:.5rem 0 1.5rem; }
     .z77-report__empty { color:var(--r-muted); font-size:14px; margin:0; }
     .z77-report__foot { margin-top:36px; padding-top:12px; border-top:1px solid var(--r-line); font-size:12px; color:var(--r-muted); }
     .z77-report__print { margin:20px 0 0; }
@@ -93,11 +97,11 @@ $daysCount = count($days);
     </div>
 
     <?php if ($report['startsLate']): ?>
-        <p class="z77-report__note" style="margin:-12px 0 20px">
+        <p class="z77-report__note z77-report__note--lead">
             Die Zählung begann in diesem Monat — die Zahlen decken nicht den ganzen Monat ab.
         </p>
     <?php elseif (!$report['previous']['compared'] && $report['closed']): ?>
-        <p class="z77-report__note" style="margin:-12px 0 20px">
+        <p class="z77-report__note z77-report__note--lead">
             Kein Vergleich mit <?= e($report['previous']['monthLabel']) ?>: dieser Monat wurde nicht vollständig gezählt.
         </p>
     <?php endif; ?>
@@ -248,7 +252,7 @@ $daysCount = count($days);
                 </table>
             <?php endif; ?>
             <?php if ($report['countries'] !== []): ?>
-                <table style="margin-top:14px">
+                <table class="z77-report__table--next">
                     <thead><tr><th>Land</th><th class="num">Aufrufe</th></tr></thead>
                     <tbody>
                     <?php foreach ($report['countries'] as $row): ?>

@@ -162,7 +162,7 @@ $fieldError = static fn(string $message): string => $message === ''
                     if ($rowMessages !== []): ?>
                     <div class="be-list__row">
                         <span class="be-list__cell"></span>
-                        <span class="be-list__cell be-list__cell--wrap" style="grid-column: 2 / -1">
+                        <span class="be-list__cell be-list__cell--wrap be-list__cell--rest">
                             <?php foreach ($rowMessages as $message): ?>
                             <small class="be-form__field-error"><?= e($message) ?></small>
                             <?php endforeach; ?>

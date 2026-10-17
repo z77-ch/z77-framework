@@ -6,7 +6,7 @@
  *   - Briefkopf: name, two address lines, street / no, zip / city, country;
  *     e-mail, phone, website; the logo path;
  *   - UID und MWST: the UID (canonical `CHE-123.456.789`) and the liability
- *     checkbox (a hidden `0` before it, so «unchecked» is submitted too);
+ *     switch (a hidden `0` before it, so «off» is submitted too);
  *   - Konten: the ledger accounts the business modules post with — typed by
  *     number with the shared `<datalist>` when module-financial is
  *     registered; each row shows its status.
@@ -128,9 +128,12 @@ $text = function (string $field, string $label, string $value, int $maxlength, s
         <div class="be-form__grid">
             <?= raw($text('uid', 'UID', $entry->getUid(), \Z77\Module\Mandator\Entities\Mandator::UID_LENGTH + 5, 'CHE-123.456.789')) ?>
             <div class="be-form__field">
-                <label for="mandator-liable">Mehrwertsteuer</label>
                 <input type="hidden" name="liable_to_vat" value="0">
-                <label class="be-choice"><input type="checkbox" id="mandator-liable" name="liable_to_vat" value="1"<?= $entry->isLiableToVat() ? ' checked' : '' ?>> mehrwertsteuerpflichtig</label>
+                <label class="be-switch">
+                    <input type="checkbox" id="mandator-liable" class="be-switch__input" name="liable_to_vat" value="1"<?= $entry->isLiableToVat() ? ' checked' : '' ?>>
+                    <span class="be-switch__track"><span class="be-switch__thumb"></span></span>
+                    <span class="be-switch__label">Mehrwertsteuerpflichtig</span>
+                </label>
                 <small class="be-form__hint">Merkmal — was es abschaltet (MWST-Zeilen der Rechnung, MwSt-Zeile der Buchungsmaske), entscheidet der Eigentümer separat.</small>
             </div>
         </div>

@@ -190,7 +190,7 @@ $cancelHref = $window && !$isEdit && !$isCredit ? '' : $cancel;
                                 <?php endforeach; ?>
                             </select>
                         </span>
-                        <span class="be-list__cell"><input type="checkbox" id="<?= $id ?>child" name="<?= $p ?>[child]" value="1"<?= $row['child'] !== '' ? ' checked' : '' ?> aria-label="Zeile <?= $i + 1 ?> unter der Position darüber" aria-invalid="<?= $invalid($form->rowError($i, 'child')) ?>"></span>
+                        <span class="be-list__cell"><label class="be-switch be-switch--sm"><input type="checkbox" class="be-switch__input" id="<?= $id ?>child" name="<?= $p ?>[child]" value="1"<?= $row['child'] !== '' ? ' checked' : '' ?> aria-label="Zeile <?= $i + 1 ?> unter der Position darüber" aria-invalid="<?= $invalid($form->rowError($i, 'child')) ?>"><span class="be-switch__track"><span class="be-switch__thumb"></span></span></label></span>
                         <span class="be-list__cell"><textarea class="be-input be-input--sm" id="<?= $id ?>text" name="<?= $p ?>[text]" rows="1" aria-label="Text Zeile <?= $i + 1 ?>" aria-invalid="<?= $invalid($form->rowError($i, 'text')) ?>"><?= e($row['text']) ?></textarea></span>
                         <span class="be-list__cell be-list__cell--num"><input class="be-input be-input--sm" type="text" id="<?= $id ?>quantity" name="<?= $p ?>[quantity]" value="<?= e($row['quantity']) ?>" inputmode="decimal" aria-label="Menge Zeile <?= $i + 1 ?>" aria-invalid="<?= $invalid($form->rowError($i, 'quantity')) ?>"></span>
                         <span class="be-list__cell"><input class="be-input be-input--sm" type="text" id="<?= $id ?>unit" name="<?= $p ?>[unit]" value="<?= e($row['unit']) ?>" maxlength="16" aria-label="Einheit Zeile <?= $i + 1 ?>"></span>
@@ -205,7 +205,7 @@ $cancelHref = $window && !$isEdit && !$isCredit ? '' : $cancel;
                     <?php $messages = array_filter(array_map(fn($f) => $form->rowError($i, $f), ['child', 'text', 'quantity', 'price', 'discount', 'tax_code', 'account'])); ?>
                     <?php if ($messages !== []): ?>
                     <div class="be-list__row">
-                        <span class="be-list__cell be-list__cell--wrap" style="grid-column: 1 / -1">
+                        <span class="be-list__cell be-list__cell--wrap be-list__cell--span">
                             <?php foreach (array_unique($messages) as $message): ?>
                             <small class="be-form__field-error"><?= e($message) ?></small>
                             <?php endforeach; ?>

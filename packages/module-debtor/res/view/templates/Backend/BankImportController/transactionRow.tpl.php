@@ -56,13 +56,13 @@ $ignore = $actionBase . '/ignore?id=' . (int) $messageId;
             <?php if ($t->getNote() !== null): ?><small><?= e($t->getNote()) ?></small><br><?php endif; ?>
             <?php if ($t->getPayment() !== null): ?><small class="be-list__cell--muted">Zahlung #<?= (int) $t->getPayment()->getId() ?></small><?php endif; ?>
             <?php if ($state !== 'booked'): ?>
-            <form method="post" action="<?= e($assign) ?>" data-fetch-post="<?= e($assign) ?>" style="display: inline">
+            <form method="post" action="<?= e($assign) ?>" data-fetch-post="<?= e($assign) ?>" class="be-list__form">
                 <input type="hidden" name="csrf_token" value="<?= e($csrfToken ?? '') ?>">
                 <input type="hidden" name="transaction" value="<?= (int) $t->getId() ?>">
-                <input class="be-input be-input--sm" type="text" name="number" inputmode="numeric" placeholder="Rechnung Nr." aria-label="Rechnungsnummer" style="width: 7rem">
+                <input class="be-input be-input--sm be-input--short" type="text" name="number" inputmode="numeric" placeholder="Rechnung Nr." aria-label="Rechnungsnummer">
                 <button type="submit" class="be-btn be-btn--ghost be-btn--sm">Zuordnen</button>
             </form>
-            <form method="post" action="<?= e($ignore) ?>" data-fetch-post="<?= e($ignore) ?>" style="display: inline">
+            <form method="post" action="<?= e($ignore) ?>" data-fetch-post="<?= e($ignore) ?>" class="be-list__form">
                 <input type="hidden" name="csrf_token" value="<?= e($csrfToken ?? '') ?>">
                 <input type="hidden" name="transaction" value="<?= (int) $t->getId() ?>">
                 <input type="hidden" name="value" value="<?= $state === 'ignored' ? '0' : '1' ?>">

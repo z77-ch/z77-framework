@@ -20,7 +20,7 @@
     <?php if ($matched > 0): ?>
     <div class="z77-form-actions" data-bank-unbooked="<?= (int) $matched ?>">
         <strong><?= (int) $matched ?> zugeordnet · noch nicht verbucht</strong>
-        <form method="post" action="<?= e($actionBase) ?>/book?id=<?= (int) $messageId ?>" style="display: inline">
+        <form method="post" action="<?= e($actionBase) ?>/book?id=<?= (int) $messageId ?>">
             <input type="hidden" name="csrf_token" value="<?= e($csrfToken ?? '') ?>">
             <button type="submit" class="be-btn be-btn--confirm be-btn--sm">
                 <svg class="be-icon" width="14" height="14" aria-hidden="true"><use href="#icon-check"/></svg>

@@ -151,7 +151,7 @@ if (!$document->isFinal()) {
             <?php $type = $line->type()->value; ?>
             <div class="be-list__item">
                 <div class="be-list__row">
-                    <span class="be-list__cell be-list__cell--wrap"<?= $line->getParentLine() !== null ? ' style="padding-left: 1.5rem"' : '' ?>><?= nl2br(e($line->getText())) ?><?= $line->getDiscountPercent() > 0 ? ' <small class="be-list__cell--muted">· Rabatt ' . e(TaxRate::formatPercent($line->getDiscountPercent())) . ' %</small>' : '' ?></span>
+                    <span class="be-list__cell be-list__cell--wrap<?= $line->getParentLine() !== null ? ' be-list__cell--indent' : '' ?>"><?= nl2br(e($line->getText())) ?><?= $line->getDiscountPercent() > 0 ? ' <small class="be-list__cell--muted">· Rabatt ' . e(TaxRate::formatPercent($line->getDiscountPercent())) . ' %</small>' : '' ?></span>
                     <span class="be-list__cell be-list__cell--num"><?= $line->getQuantity() !== null ? e(rtrim(rtrim($line->getQuantity(), '0'), '.') . ' ' . (string) $line->getUnit()) : '' ?></span>
                     <span class="be-list__cell be-list__cell--num"><?= e($fmt($line->getUnitPrice())) ?></span>
                     <span class="be-list__cell"><?= $line->getTaxCode() !== null ? e($line->getTaxCode() . ' ' . TaxRate::formatPercent((int) $line->getTaxRate()) . ' %') : '' ?></span>

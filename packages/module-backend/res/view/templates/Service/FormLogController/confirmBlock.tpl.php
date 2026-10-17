@@ -23,7 +23,7 @@
            abgewiesen — auf jedem Formular mit eingeschaltetem Geo-Guard, andere
            Formulare sind nicht betroffen. Wessen Herkunft der Datenbestand nicht
            kennt, kommt weiterhin durch.</p>
-        <p style="font-size:.8rem;color:var(--be-muted,#94a3b8)">
+        <p class="be-form__hint">
             Ein Kunde in den Ferien, hinter einem VPN oder bei einem Anbieter, der
             über das Ausland routet, sieht von hier aus wie eine Anfrage aus diesem
             Land. Sperren Sie, was die Auszählung belegt — nicht, was plausibel klingt.

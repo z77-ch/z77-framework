@@ -91,11 +91,6 @@
     border-color: var(--be-accent, #6366f1);
     box-shadow: 0 0 0 3px var(--be-accent-soft, rgba(99, 102, 241, .15));
 }
-.ce-field--bool {
-    flex-direction: row;
-    align-items: center;
-    gap: .45rem;
-}
 
 /* ── list field (repeater) ───────────────────────────────────────────────── */
 .ce-list {

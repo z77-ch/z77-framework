@@ -30,7 +30,6 @@
  * @var int|null $geoBuilt
  * @var string $geoNotice
  */
-$muted = 'font-size:.75rem;color:var(--be-muted,#94a3b8)';
 $when  = static function (?string $iso): string {
     $time = $iso === null ? false : strtotime($iso);
     return $time === false ? (string)$iso : date('d.m.Y, H:i:s', $time);
@@ -68,7 +67,7 @@ $detailSays = [
             <span class="be-list__section-badge"><?= (int)$total ?></span>
         </div>
 
-        <p style="<?= $muted ?>;padding:.25rem .5rem 0">
+        <p class="be-list__section-hint">
             Die <?= (int)$limit ?> jüngsten Versuche, neueste zuerst — aus jedem
             Formular, dessen Geo-Guard eingeschaltet ist. Aufbewahrt werden sie
             <?= (int)$retention ?> Tage, danach räumt der Job sie weg.
@@ -82,26 +81,24 @@ $detailSays = [
         </p>
 
         <?php if (count($forms) > 1 || $filter !== ''): ?>
-        <p style="<?= $muted ?>;padding:.25rem .5rem .75rem">
+        <p class="be-list__section-hint">
             Formular:
             <?php if ($filter === ''): ?><strong>alle</strong><?php else: ?><a href="<?= e($actionBase) ?>/list">alle</a><?php endif; ?>
             <?php foreach ($forms as $key): ?>
                 · <?php if ($filter === $key): ?><strong><?= e($key) ?></strong><?php else: ?><a href="<?= e($actionBase) ?>/list?form=<?= e(rawurlencode($key)) ?>"><?= e($key) ?></a><?php endif; ?>
             <?php endforeach; ?>
         </p>
-        <?php else: ?>
-        <p style="padding:0 0 .5rem"></p>
         <?php endif; ?>
 
         <?php if ($total === 0): ?>
-            <p style="<?= $muted ?>;padding:.5rem">
+            <p class="be-list__empty">
                 Noch keine Übermittlung aufgezeichnet.
             </p>
         <?php else: ?>
 
-        <div style="display:flex;gap:2rem;flex-wrap:wrap;padding:0 .5rem 1rem">
+        <div class="be-list__tally">
             <div>
-                <div style="<?= $muted ?>;margin-bottom:.35rem">Woher</div>
+                <div class="be-list__tally-title">Woher</div>
                 <?php foreach ($byCountry as $code => $count):
                     // «??» is not a country and cannot be blocked — an unknown
                     // origin is localhost, a private range or a missing
@@ -110,9 +107,9 @@ $detailSays = [
                     $known     = $code !== '??';
                     $isBlocked = $known && isset($blocked[$code]);
                 ?>
-                    <div style="display:flex;gap:.75rem;align-items:center;justify-content:space-between;min-width:14rem">
-                        <span><?= $known ? e($code) : '<span style="' . $muted . '">unbekannt</span>' ?></span>
-                        <span style="display:flex;gap:.5rem;align-items:center">
+                    <div class="be-list__tally-row">
+                        <span><?= $known ? e($code) : '<span class="be-list__cell--muted">unbekannt</span>' ?></span>
+                        <span class="be-list__tally-value">
                             <strong><?= (int)$count ?></strong>
                             <?php if ($known): ?>
                             <span data-form-log-country="<?= e($code) ?>"><?= $this->partial('Service/FormLogController/_countryState', [
@@ -124,9 +121,9 @@ $detailSays = [
                 <?php endforeach; ?>
             </div>
             <div>
-                <div style="<?= $muted ?>;margin-bottom:.35rem">Was daraus wurde</div>
+                <div class="be-list__tally-title">Was daraus wurde</div>
                 <?php foreach ($byOutcome as $key => $count): ?>
-                    <div style="display:flex;gap:.75rem;justify-content:space-between;min-width:12rem">
+                    <div class="be-list__tally-row">
                         <span><?= e($says[$key][0] ?? $key) ?></span>
                         <strong><?= (int)$count ?></strong>
                     </div>
@@ -173,20 +170,20 @@ $detailSays = [
                 }
             ?>
                 <tr>
-                    <td style="white-space:nowrap"><?= e($when($row['at'] ?? null)) ?></td>
-                    <td style="<?= $muted ?>"><?= e((string)($row['form'] ?? '—')) ?></td>
+                    <td class="be-table__cell--nowrap"><?= e($when($row['at'] ?? null)) ?></td>
+                    <td class="be-table__cell--muted"><?= e((string)($row['form'] ?? '—')) ?></td>
                     <td><?= isset($row['country']) && $row['country'] !== null
                             ? '<strong>' . e((string)$row['country']) . '</strong>'
-                            : '<span style="' . $muted . '">—</span>' ?></td>
-                    <td style="<?= $muted ?>;white-space:nowrap"><?= e((string)($row['ip'] ?? '—')) ?></td>
+                            : '<span class="be-table__cell--muted">—</span>' ?></td>
+                    <td class="be-table__cell--muted be-table__cell--nowrap"><?= e((string)($row['ip'] ?? '—')) ?></td>
                     <td>
                         <span class="badge badge--<?= e($tone) ?>"><?= e($label) ?></span>
                         <?php if ($detail !== ''): ?>
-                            <span style="<?= $muted ?>"><?= e($detailSays[$detail] ?? $detail) ?></span>
+                            <span class="be-table__cell--muted"><?= e($detailSays[$detail] ?? $detail) ?></span>
                         <?php endif; ?>
                     </td>
                     <td><?= e((string)($row['identity'] ?? '—')) ?></td>
-                    <td style="<?= $muted ?>"><?= e((string)($row['origin'] ?? '—')) ?></td>
+                    <td class="be-table__cell--muted"><?= e((string)($row['origin'] ?? '—')) ?></td>
                 </tr>
             <?php endforeach; ?>
             </tbody>
@@ -195,7 +192,7 @@ $detailSays = [
     <?php endif; ?>
 
     <?php if ($geoReady): ?>
-        <p style="<?= $muted ?>;padding:.75rem .5rem 0">
+        <p class="be-list__note">
             <?= e($geoNotice) ?>
         </p>
     <?php endif; ?>

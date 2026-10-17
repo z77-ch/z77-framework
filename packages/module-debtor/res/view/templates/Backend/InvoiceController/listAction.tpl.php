@@ -73,7 +73,7 @@ $icons      = ['invoicing' => 'edit', 'final' => 'lock'];
                 <div class="be-list__item" data-invoice-id="<?= e((string) $document->getId()) ?>">
                     <div class="be-list__row">
                         <?php if ($selectable): ?>
-                        <span class="be-list__cell"><input type="checkbox" name="doc[]" form="invoice-finalize" value="<?= e($document->getId() . ':' . $document->getVersion()) ?>" aria-label="<?= e($document->documentName()) ?> auswählen"></span>
+                        <span class="be-list__cell"><label class="be-choice"><input type="checkbox" class="be-choice__input" name="doc[]" form="invoice-finalize" value="<?= e($document->getId() . ':' . $document->getVersion()) ?>" aria-label="<?= e($document->documentName()) ?> auswählen"></label></span>
                         <?php endif; ?>
                         <a class="be-list__cell be-list__state be-list__state--<?= $docState === 'final' ? 'closed' : 'editable' ?>" href="<?= e($url) ?>" data-window-open="<?= e($url) ?>" aria-label="<?= e($states[$docState]) ?>" title="<?= e($states[$docState]) ?>"><svg class="be-icon" width="14" height="14" aria-hidden="true"><use href="#icon-<?= e($icons[$docState]) ?>"/></svg></a>
                         <label class="be-list__cell be-list__cell--num be-list__cell--mono" for="<?= e($definition->inputId('f_nr')) ?>"><?= $document->isNumbered() ? (int) $document->getNumber() : '<span class="be-list__cell--muted">Entwurf</span>' ?></label>

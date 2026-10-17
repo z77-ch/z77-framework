@@ -53,7 +53,7 @@ $shown      = count($contacts);
         <?php endif; ?>
         <div class="be-tree be-tree--hub be-tree--lead-switch">
             <?php foreach ($accounts as $key => $row): ?>
-            <div class="be-tree__node" style="--node-depth:0" data-debtor-account="<?= e($key) ?>">
+            <div class="be-tree__node" data-debtor-account="<?= e($key) ?>">
                 <div class="be-tree__row">
                     <span class="be-tree__toggle" aria-hidden="true"></span>
                     <span class="be-tree__name" data-field="label"><?= e($accountLabels[$key] ?? $key) ?></span>

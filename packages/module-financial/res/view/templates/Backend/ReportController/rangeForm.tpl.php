@@ -35,7 +35,7 @@ $min      = $year->getStartDate()->format('Y-m-d');
 $max      = $year->getEndDate()->format('Y-m-d');
 ?>
 <div class="be-list__section">
-    <form method="get" action="<?= e($reportBase . '/' . $tab) ?>" class="be-form__grid" style="grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr)); align-items: end">
+    <form method="get" action="<?= e($reportBase . '/' . $tab) ?>" class="be-form__grid be-form__grid--fill">
         <input type="hidden" name="year" value="<?= e($year->getCode()) ?>">
         <?php if ($accounts !== null): ?>
         <div class="be-form__field">

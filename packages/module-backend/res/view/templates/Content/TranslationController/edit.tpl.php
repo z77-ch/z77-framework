@@ -25,13 +25,13 @@ $title    = ($isNew ? 'Neuer ' : '') . ($isSlug ? 'Routen-Slug' : 'UI-Text') . (
     <div class="be-modal__body">
         <?php if (!empty($errors)): ?>
         <div class="be-modal__alert be-modal__alert--error">
-            <ul style="margin:0;padding-left:1.1rem">
+            <ul class="be-modal__alert-list">
                 <?php foreach ($errors as $err): ?><li><?= e($err) ?></li><?php endforeach; ?>
             </ul>
         </div>
         <?php endif; ?>
 
-        <div class="be-form__grid" style="grid-template-columns:1fr">
+        <div class="be-form__grid be-form__grid--single">
             <div class="be-form__field">
                 <label><?= e($keyLabel) ?></label>
                 <input type="text" name="<?= e($keyName) ?>" value="<?= e($formKey) ?>" required autocomplete="off"

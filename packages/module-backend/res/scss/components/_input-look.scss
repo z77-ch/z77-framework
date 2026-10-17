@@ -1,0 +1,29 @@
+// The ONE input look of the backend — mixins only, this partial emits no CSS.
+//
+// Every text control rule includes these instead of repeating the values:
+// `.be-form__control`, `.be-form__field input|select` (+ `.be-form__grid > select`),
+// `.be-form__param-row input`, `.be-input` (also the column search field
+// `.be-list__find-input`, which carries `.be-input`) and `.be-list__filter-input`.
+// Geometry (padding, font size, width) stays with each rule — a dense row is
+// meant to be smaller; the LOOK (line, ground, ink, focus ring) is defined here
+// once, so the input ground of ADR-051 changes one place (css-backend.md,
+// consistency audit 2026-10-16 point 2).
+//
+// Mixins, not one shared selector list: an include keeps every rule at its
+// position in the cascade, so the compiled result is unchanged.
+
+// Rest state: line, corner, ground, ink. `$radius` defaults to the form radius;
+// the list filter passes its token (`var(--radius-md)`).
+@mixin rest($radius: .375rem) {
+    border:        1px solid var(--be-line);
+    border-radius: $radius;
+    background:    var(--be-surface);
+    color:         var(--be-text);
+}
+
+// Focus: the accent line and its soft ring instead of the browser outline.
+@mixin focus {
+    outline:      none;
+    border-color: var(--be-accent);
+    box-shadow:   0 0 0 2px color-mix(in srgb, var(--be-accent) 15%, transparent);
+}

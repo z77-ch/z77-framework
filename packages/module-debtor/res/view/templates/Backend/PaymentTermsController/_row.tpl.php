@@ -48,7 +48,7 @@ $slots = [
 ];
 
 ?>
-            <div class="be-tree__node<?= $row->isActive() ? '' : ' be-tree__node--inactive' ?>" style="--node-depth:0" data-payment-terms-id="<?= e($id) ?>" data-entity="paymentTerms:<?= e($id) ?>">
+            <div class="be-tree__node<?= $row->isActive() ? '' : ' be-tree__node--inactive' ?>" data-payment-terms-id="<?= e($id) ?>" data-entity="paymentTerms:<?= e($id) ?>">
                 <div class="be-tree__row">
                     <span class="be-tree__toggle" aria-hidden="true"></span>
 

@@ -19,8 +19,6 @@
  * @var ?array       $recipients ['to' => list, 'cc' => list, 'error'?] as a send resolves them
  */
 use Z77\Shared\Stats\StatsReport;
-
-$muted = 'font-size:.8rem;color:var(--be-muted,#94a3b8)';
 ?>
 <div class="be-list">
 
@@ -30,39 +28,39 @@ $muted = 'font-size:.8rem;color:var(--be-muted,#94a3b8)';
         </div>
 
         <?php if ($months === []): ?>
-            <p style="<?= $muted ?>;padding:.25rem .5rem">
+            <p class="be-list__empty">
                 Noch keine Monatszahlen. Sie entstehen, wenn der Job <code>stats-rollup</code>
                 (täglich 04:40) den ersten abgeschlossenen Tag verdichtet hat.
             </p>
         <?php else: ?>
-            <div style="display:flex;gap:.4rem;flex-wrap:wrap;align-items:center;padding:.25rem .5rem .5rem">
+            <div class="be-list__bar">
                 <?php foreach ($months as $m): ?>
                     <a class="be-btn be-btn--sm<?= $m === $month ? ' be-btn--primary' : '' ?>"
                        href="/backend/service/stats/list?month=<?= e($m) ?>"><?= e(StatsReport::monthLabel($m)) ?></a>
                 <?php endforeach; ?>
             </div>
 
-            <div style="padding:.25rem .5rem .75rem;display:grid;gap:.6rem">
+            <div class="be-list__facts">
                 <div>
                     <strong>Link für die Kundschaft</strong>
                     <?php if ($link !== null): ?>
-                        <div style="display:flex;gap:.4rem;align-items:center;flex-wrap:wrap;margin-top:.25rem">
-                            <input type="text" readonly value="<?= e($link['url']) ?>" style="flex:1;min-width:18rem;font-family:monospace;font-size:.8rem" data-select-on-focus>
+                        <div class="be-list__copy">
+                            <input type="text" class="be-input be-input--sm be-list__copy-input" readonly value="<?= e($link['url']) ?>" aria-label="Link für die Kundschaft" data-select-on-focus>
                             <a class="be-btn be-btn--sm" href="<?= e($link['url']) ?>" target="_blank" rel="noopener">Öffnen</a>
                         </div>
-                        <div style="<?= $muted ?>">
+                        <div class="be-list__note">
                             Öffnet <?= e(StatsReport::monthLabel((string) $month)) ?> ohne Anmeldung, gültig bis
                             <?= e(date('j.n.Y', (int) $link['expiresAt'])) ?>. Jeder Aufruf dieser Seite erzeugt einen neuen Link;
                             alle bleiben bis zu ihrem Datum gültig.
                         </div>
                     <?php else: ?>
-                        <div style="<?= $muted ?>"><?= e((string) $linkError) ?></div>
+                        <div class="be-list__note"><?= e((string) $linkError) ?></div>
                     <?php endif; ?>
                 </div>
 
                 <div>
                     <strong>Monatsmail</strong>
-                    <div style="<?= $muted ?>">
+                    <div class="be-list__note">
                         <?php if (!empty($recipients['error'])): ?>
                             ⚠️ Empfänger nicht lesbar: <?= e((string) $recipients['error']) ?><br>
                         <?php elseif (($recipients['to'] ?? []) === []): ?>
@@ -88,9 +86,9 @@ $muted = 'font-size:.8rem;color:var(--be-muted,#94a3b8)';
     </section>
 
     <?php if ($error !== null): ?>
-        <p style="color:#c00;padding:.5rem">⚠️ <?= e($error) ?></p>
+        <div class="be-modal__alert be-modal__alert--error">⚠️ <?= e($error) ?></div>
     <?php elseif ($report !== null): ?>
-        <div style="background:#ffffff;border-radius:8px;margin:.5rem 0 1.5rem">
+        <div class="z77-report-frame">
             <?= $this->partial('Service/StatsController/_report', ['report' => $report], 'Z77\\Module\\Backend') ?>
         </div>
     <?php endif; ?>

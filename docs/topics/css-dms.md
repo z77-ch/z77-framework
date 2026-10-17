@@ -126,7 +126,7 @@ host only and, at equal specificity but later load order, would override the bin
 |---|---|
 | `.dms-drive` | FRAME of the 3-pane Drive (border, radius, background) + the per-pane look (`__tree` \| `__list` \| `__preview`). Layout, drag handles and the narrow-screen preview overlay come from the shared `.z77-split` (DMS-SPLIT-001) — the element and each pane carry both classes. The toolbar lives in the backend shell header band, not here. |
 | `.dms-tree` | left folder hierarchy; node depth via inline `--dms-depth`; `--active` / `--inactive` / `--has-children.is-open` |
-| `.dms-file` (in `.dms-filelist`) | one document row: `__select` (bulk checkbox, hover-revealed / always-on touch), `__thumb` (image thumbnail or kind-tinted icon), `__name` / `__meta`, `__badge--{public,protected,sealed}`, hover `__actions` |
+| `.dms-file` (in `.dms-filelist`) | one document row: `__select` (bulk checkbox, hover-revealed / always-on touch; DRAWN in the backend's `.be-choice` look with `--dms-*` tokens since 2026-10-17 — a backend class cannot enter the fragment), `__thumb` (image thumbnail or kind-tinted icon), `__name` / `__meta`, `__badge--{public,protected,sealed}`, hover `__actions` |
 | `.dms-filelist-bulkbar` | sticky bulk-action bar (counter, Alle/Keine, Verschieben, Löschen); revealed purely by `.dms-filelist:has(.dms-file__select:checked)` — no JS (2026-07-16, [`../03-development/dms-bulk-select-bauplan.md`](../03-development/dms-bulk-select-bauplan.md)) |
 | `.dms-preview` | right pane: `__media` (image or large kind icon), `__name`, `__meta` grid, `__actions`; `__empty` state |
 | `.dms-btn` | labelled action button (`--primary` / `--ghost` / `--muted`) |

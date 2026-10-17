@@ -17,8 +17,6 @@
  * @var int $jobThreshold
  */
 
-$muted = 'color:var(--be-muted,#94a3b8)';
-
 $fmt = static function (?string $iso): string {
     if ($iso === null || $iso === '') {
         return '—';
@@ -31,7 +29,7 @@ $fmt = static function (?string $iso): string {
 <div class="be-list">
 
     <?php if ($staleError !== null): ?>
-    <div class="be-modal__alert be-modal__alert--error" style="margin-bottom:1.25rem">
+    <div class="be-modal__alert be-modal__alert--error">
         <strong>Der Plan ist nicht mehr gültig.</strong> <?= e($staleError) ?>
         Verwerfen in der Werkzeugzeile oben, dann neu berechnen.
         <?php /* «Plan verwerfen» stands in the toolbar (`list.hc2.tpl.php`) — the one fixed row
@@ -40,20 +38,20 @@ $fmt = static function (?string $iso): string {
     <?php endif; ?>
 
     <?php if ($lastResult !== null): ?>
-    <div class="be-list__section" style="margin-bottom:1.5rem">
-        <div class="be-list__section__head" style="margin-bottom:.5rem">
-            <h2 style="font-size:.95rem;margin:0">Letzte Übernahme</h2>
-            <p style="font-size:.75rem;<?= $muted ?>;margin:.15rem 0 0">
-                <?= e($fmt($lastResult['at'])) ?> ·
-                <?= (int) $lastResult['applied'] ?> übernommen,
-                <?= (int) $lastResult['failed'] ?> fehlgeschlagen
-                (<?= $lastResult['via'] === 'job' ? 'als Job' : 'direkt' ?>)
-            </p>
+    <div class="be-list__section">
+        <div class="be-list__section-header">
+            <h2 class="be-list__section-title">Letzte Übernahme</h2>
         </div>
+        <p class="be-list__section-hint">
+            <?= e($fmt($lastResult['at'])) ?> ·
+            <?= (int) $lastResult['applied'] ?> übernommen,
+            <?= (int) $lastResult['failed'] ?> fehlgeschlagen
+            (<?= $lastResult['via'] === 'job' ? 'als Job' : 'direkt' ?>)
+        </p>
         <?php if ((int) $lastResult['failed'] > 0): ?>
         <div class="be-tree be-tree--hub be-tree--lead-none">
             <?php foreach ($lastResult['lines'] as $line): if ($line['status'] !== 'failed') continue; ?>
-            <div class="be-tree__node" style="--node-depth:0">
+            <div class="be-tree__node">
                 <div class="be-tree__row">
                     <span class="be-tree__toggle" aria-hidden="true"></span>
                     <span class="be-tree__name"><?= e($line['entry']) ?></span>
@@ -68,20 +66,20 @@ $fmt = static function (?string $iso): string {
 
     <?php if ($planView === null && $staleError === null): ?>
     <div class="be-list__section">
-        <div class="be-list__section__head" style="margin-bottom:.5rem">
-            <h2 style="font-size:.95rem;margin:0">Quelle wählen</h2>
-            <p style="font-size:.75rem;<?= $muted ?>;margin:.15rem 0 0">
-                Der Import ÜBERNIMMT Datensätze — er ersetzt nie, löscht nie, und schreibt
-                erst nach deiner Bestätigung pro Eintrag.
-            </p>
+        <div class="be-list__section-header">
+            <h2 class="be-list__section-title">Quelle wählen</h2>
         </div>
+        <p class="be-list__section-hint">
+            Der Import ÜBERNIMMT Datensätze — er ersetzt nie, löscht nie, und schreibt
+            erst nach deiner Bestätigung pro Eintrag.
+        </p>
 
         <div class="be-tree be-tree--hub be-tree--lead-none">
-            <div class="be-tree__node" style="--node-depth:0">
+            <div class="be-tree__node">
                 <div class="be-tree__row">
                     <span class="be-tree__toggle" aria-hidden="true"></span>
                     <span class="be-tree__name">Framework-Standarddaten</span>
-                    <span class="be-tree__url" style="font-family:inherit">
+                    <span class="be-tree__url be-tree__url--text">
                         <?= e(implode(', ', $vendorClasses)) ?> — was das installierte Framework
                         mitliefert, verglichen mit deiner Installation
                     </span>
@@ -91,17 +89,17 @@ $fmt = static function (?string $iso): string {
             </div>
 
             <?php foreach ($inbox as $file): ?>
-            <div class="be-tree__node" style="--node-depth:0">
+            <div class="be-tree__node">
                 <div class="be-tree__row">
                     <span class="be-tree__toggle" aria-hidden="true"></span>
                     <span class="be-tree__name"><?= e($file['name']) ?></span>
-                    <span class="be-tree__url" style="font-family:inherit">
+                    <span class="be-tree__url be-tree__url--text">
                         Inbox · <?= e(number_format($file['size'] / 1024, 1, '.', "'")) ?> KB ·
                         <?= e(date('d.m.Y H:i', $file['mtime'])) ?>
                     </span>
-                    <form data-fetch-post="/backend/service/import/start-inbox" style="margin:0;grid-column:6;display:flex;gap:.35rem">
+                    <form class="be-tree__tools" data-fetch-post="/backend/service/import/start-inbox">
                         <input type="hidden" name="file" value="<?= e($file['name']) ?>">
-                        <select name="entity" class="be-form__field" style="margin:0">
+                        <select name="entity" class="be-input be-input--sm" aria-label="Ziel">
                             <?php foreach ($entityOptions as $class => $label): ?>
                             <option value="<?= e($class) ?>"><?= e($label) ?></option>
                             <?php endforeach; ?>
@@ -113,7 +111,7 @@ $fmt = static function (?string $iso): string {
             <?php endforeach; ?>
         </div>
 
-        <p style="font-size:.75rem;<?= $muted ?>;margin:.75rem 0 0">
+        <p class="be-list__note">
             Eigene Datei importieren: als JSON per FTP/Explorer nach
             <code>data/framework/import/inbox/</code> legen — sie erscheint dann hier.
         </p>

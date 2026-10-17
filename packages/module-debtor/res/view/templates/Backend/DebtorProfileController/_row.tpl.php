@@ -15,7 +15,7 @@
 $actionBase = $actionBase ?? '/backend/finance/debtor-profile';
 $contactId  = (string) $contact->getId();
 ?>
-            <div class="be-tree__node<?= $profile === null || $profile->isActive() ? '' : ' be-tree__node--inactive' ?>" style="--node-depth:0" data-contact-id="<?= e($contactId) ?>" data-entity="debtorContact:<?= e($contactId) ?>">
+            <div class="be-tree__node<?= $profile === null || $profile->isActive() ? '' : ' be-tree__node--inactive' ?>" data-contact-id="<?= e($contactId) ?>" data-entity="debtorContact:<?= e($contactId) ?>">
                 <div class="be-tree__row">
                     <span class="be-tree__toggle" aria-hidden="true"></span>
 

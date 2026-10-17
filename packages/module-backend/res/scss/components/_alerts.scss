@@ -6,6 +6,12 @@
     margin-bottom: 1rem;
 }
 
+/* A list of messages inside an alert (several validation errors). */
+.be-modal__alert-list {
+    margin:       0;
+    padding-left: 1.1rem;
+}
+
 .be-modal__alert--error {
     background: color-mix(in srgb, var(--be-danger) 8%, transparent);
     color:      var(--be-danger);

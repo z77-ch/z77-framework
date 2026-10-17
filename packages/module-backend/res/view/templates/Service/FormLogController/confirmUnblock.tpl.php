@@ -18,7 +18,7 @@
     <div class="be-modal__body">
         <p>Übermittlungen aus <strong><?= e($entry->getCode()) ?></strong> werden
            danach wieder normal angenommen.</p>
-        <p style="font-size:.8rem;color:var(--be-muted,#94a3b8)">
+        <p class="be-form__hint">
             Gesperrt <?= e($entry->getAddedAt() !== '' ? date('d.m.Y', (int)strtotime($entry->getAddedAt())) : 'unbekannt') ?><?php
             ?><?= $entry->getAddedBy() !== null ? ' durch ' . e($entry->getAddedBy()) : '' ?>:
             <em><?= e($entry->getReason()) ?></em>
