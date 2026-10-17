@@ -239,3 +239,69 @@ where they differ, this addendum applies. The phases, their behaviour and the tr
 6. **The seed's first code is `opened`** (was `offer` — a code names the phase it starts, not a
    document; owner 2026-10-16). Only z77.ch ran the module: its file and its orders were renamed by
    hand the same day; no migration ships (the module was not released).
+
+## Addendum 2026-10-16 — the order window: billing address snapshot, free delivery address, every priced line an article (approved by the owner)
+
+Decided by the owner on 2026-10-16 with the redesign of the order window (`order.md` pending
+«Order window redesign»). It amends plan D2 and D3 ([`p7-order-plan.md`](../03-development/p7-order-plan.md))
+and the delivery-address choice of the order form; where they differ, this addendum applies. The
+phases, the statuses, the transitions and the stock decisions stay. **Decided, NOT built.**
+
+1. **The billing address is a SNAPSHOT on the order** — `bill_*`, debtor's `AddressSnapshot`
+   embeddable on `SalesOrder`, exactly like `ship_*`. Reason: an address change at the customer must
+   not change an existing order; the order's PDFs (Offerte, Auftragsbestätigung, Lieferschein,
+   invoice preview) are generated from the order, so the order must hold the address it prints. The
+   booked invoice takes it over into its `addr_*` snapshot (`Invoice`): `OrderInvoiceDraft::of()`
+   passes it as `InvoiceDraft::$address` — the seam debtor already offers for «a source that already
+   holds the address» (`InvoicingService` takes `$draft->address` before `invoiceAddressOf()`).
+2. **The delivery address is freely adjustable per order.** The choices of the customer's addresses
+   stay as a start; the snapshot may then be edited, or entered freely. The change applies to THIS
+   order only — the customer's `ContactAddress` rows stay as they are. Reason: a delivery to a
+   one-off place (an event, a neighbour) is an order fact, not customer master data. Today
+   `OrderForm::toDraft()` refuses any `ship` value outside `orderShipChoices()` («Diese Lieferadresse
+   gehört nicht zum gewählten Kunden»); that refusal goes. The same applies to `bill_*`.
+3. **No free priced lines.** Reverses D2 («the article reference is NULLABLE — a free line») for
+   PRICED lines: every service or lump-sum line references an article (variant); a lump sum is an
+   article too. Text lines stay and never reference an article. Reason: the article is the
+   accounting classification (A1, D3) — a free priced line was the one place where a person entering
+   an order picked a tax code and a revenue account, and the one line kind the stock seam could not
+   see. D3's «a different account is a free line» becomes «a different account is a different
+   article».
+4. **No revenue account (Konto) in the order window.** The article decides it (D3); it is
+   irrelevant to the person entering the order. `sales_order_line.revenue_account` stays — the
+   snapshot taken from the article at save, which the invoice line receives.
+5. **VAT shown as the rate** («8.1 %», not the tax code), from the article, not changeable in the
+   order. The rate is the article's tax code at the order's service date (`VatRates`, as the draft
+   already converts prices); `sales_order_line.tax_code` stays the stored reference.
+
+**Open — NOT decided:**
+
+- What happens to EXISTING orders that hold free priced lines (`variant_id` null on a service or
+  lump-sum line): keep them readable and bookable as they are, convert them to an article, or refuse
+  the save until the line is replaced. The owner decides before the validator change ships.
+- What existing orders get as `bill_*` (they have none): filled once from the customer's current
+  invoice address by a data migration, or left empty with «empty = debtor snapshots the contact's
+  invoice address at booking» (today's behaviour) as the fallback.
+
+**Consequences — to build:**
+
+- **Schema migration** (schema only, debtor's rule — a data step, if the open point asks for one,
+  apart): `sales_order.bill_*` with the `AddressSnapshot` columns (salutation, title, first name,
+  name, address row, street, house no, zip, city, country), like `ship_*`.
+- **`SalesOrder`**: the embedded `bill` snapshot, its getter, and `describe()` taking it; the
+  draft (`OrderDraft`) carries it; a customer change resets both snapshots to the new customer's
+  addresses.
+- **`OrderInvoiceDraft::of()`**: `address:` the order's billing snapshot instead of `null`; the
+  class doc changes accordingly. `OrderPdf` takes the recipient from `bill_*` (and the delivery
+  note's fallback from `bill_*`, not from the contact).
+- **`OrderForm::toDraft()` / `orderShipChoices()`**: the selects become starting points; the
+  submitted snapshot fields are taken and validated as an address, not checked against the
+  customer's list.
+- **Validator** (`OrderService`, the priced-line branch): a service or lump-sum line without
+  `variantId` is refused; `OrderLineDraft::free()` and the free line's tax-code / account checks
+  go; the window loses the tax-code and account inputs and shows the rate read-only.
+- **Harness `tests/module-order.php`**: D — the invoice draft carries the order's billing snapshot;
+  F — a delivery address outside the customer's list is accepted, a priced line without article is
+  refused, no tax-code / account field is read; M — `bill_*` round-trips, a later address change at
+  the contact leaves the order and its PDF unchanged, the booked invoice's `addr_*` equals `bill_*`.
+  The existing checks that create free lines (T11 fixture, F3, M `o1`) are rewritten.
