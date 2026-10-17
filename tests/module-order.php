@@ -469,9 +469,15 @@ $admin  = \Doctrine\DBAL\DriverManager::getConnection([
 ]);
 $admin->executeStatement("CREATE DATABASE `{$dbName}` CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci");
 
-$base = str_replace('\\', '/', sys_get_temp_dir()) . '/z77-module-order-' . getmypid();
-define('ABS_BASE_PATH', $base);
-define('DEBUG', false);
+// Section P already fixed the constant (a constant is set once per process): M works in THAT
+// directory and writes its own config over P's; P's cache goes first (it holds P's FileFinder map).
+if (!defined('ABS_BASE_PATH')) {
+    define('ABS_BASE_PATH', str_replace('\\', '/', sys_get_temp_dir()) . '/z77-module-order-' . getmypid());
+}
+if (!defined('DEBUG')) {
+    define('DEBUG', false);
+}
+$base = ABS_BASE_PATH;
 
 $write = function (string $rel, string $content) use ($base): void {
     $path = $base . '/' . $rel;
@@ -485,6 +491,7 @@ $rm = function (string $dir) use (&$rm): void {
     }
     @rmdir($dir);
 };
+$rm($base . '/var/cache');
 register_shutdown_function(static function () use ($admin, $dbName, $rm, $base): void {
     try { $admin->executeStatement("DROP DATABASE IF EXISTS `{$dbName}`"); } catch (\Throwable) {}
     $rm($base);
@@ -561,8 +568,12 @@ check('M3 the range `order` exists at 0 (a separate data migration)', $db->fetch
 // Master data: a contact, an article with a price.
 $db->insert('contact', ['kind' => 'organisation', 'company' => 'Muster AG', 'first_name' => '', 'last_name' => '', 'language' => 'de', 'email' => '', 'phone' => '', 'active' => 1]);
 $contactId = (int) $db->lastInsertId();
+// Debtor refuses a document without an invoice address (newer than this section) — the contact gets one.
+$db->insert('address', ['salutation' => '', 'title' => '', 'first_name' => '', 'name' => 'Muster AG', 'address_row' => '', 'street' => 'Musterweg', 'house_no' => '1', 'zip' => '6000', 'city' => 'Luzern', 'country' => 'CH']);
+$db->insert('contact_address', ['contact_id' => $contactId, 'address_id' => (int) $db->lastInsertId(), 'type_code' => 'invoice', 'title' => '']);
 $article = (new \Z77\Module\Article\Services\ArticleService($em, 'harness'))->create(new \Z77\Module\Article\Services\ArticleDraft(
     number: 'W-22', name: 'Pinot Noir', unit: 'Fl.', price: '24.50', priceMode: 'net', validFrom: '2026-01-01', taxCode: 'UN', revenueAccount: '3200', stockRelevant: true,
+    productGroup: (int) (new \Z77\Module\Article\Services\ProductGroupService($em))->create(new \Z77\Module\Article\Services\ProductGroupDraft('Wein'))->getId(),   // every article hangs in one group (A1, 2026-10-14)
 ));
 $variantId = (int) $em->getRepository(Variant::class)->defaultOf($article)->getId();
 

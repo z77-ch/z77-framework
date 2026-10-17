@@ -501,7 +501,7 @@ $product = $em->getRepository(\Z77\Module\Article\Entities\Product::class)->find
 check('B15 a REFERENCED article is not deleted — the database refuses, the service says «deactivate»',
     throws(fn() => $service->delete((int) $product->getId(), $product->getVersion()), \Z77\Module\Article\Services\ArticleInUseException::class)
     && $count('article_product') === 1 && $count('article_price') === 2);
-$db->executeStatement('DELETE FROM harness_line');
+$db->executeStatement('DROP TABLE harness_line');   // gone before B26: `diff` would GENERATE a migration for an unmapped table
 $product = $em->getRepository(\Z77\Module\Article\Entities\Product::class)->find((int) $product->getId());
 $service->delete((int) $product->getId(), $product->getVersion());
 check('B16 an unreferenced article is deleted with its variant and price history', $count('article_product') === 0 && $count('article_variant') === 0 && $count('article_price') === 0);

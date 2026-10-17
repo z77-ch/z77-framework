@@ -210,6 +210,34 @@ function chf(string $decimal): Money
     return Money::fromDecimal($decimal, 'CHF');
 }
 
+// ── worker mode (section O): ONE booking print in its own process ─────────
+// `--order-book-worker {base} {orderId} {version} {name}` — books the order at that version and
+// prints `ok:{invoiceId}`, `conflict`, or the exception class and its reason.
+if (($argv[1] ?? '') === '--order-book-worker') {
+    [, , $workerBase, $workerOrder, $workerVersion, $workerName] = $argv;
+    define('ABS_BASE_PATH', $workerBase);
+    define('DEBUG', false);
+    DI::getInstance(true)
+        ->set('CacheManager', CacheManager::class, true)
+        ->set('FileFinder', fn($c) => new FileFinder($c->get('CacheManager')), true)
+        ->set('ConfigManager', fn($c) => new ConfigManager($c->get('FileFinder'), $c->get('CacheManager')), true)
+        ->set('ModuleManager', fn($c) => new ModuleManager($c->get('ConfigManager')), true)
+        ->set('I18n', fn($c) => new I18n($c->get('ConfigManager')), true)
+        ->set('DataSourceResolver', fn() => new DataSourceResolver(['file' => 'File', 'doctrine' => 'Doctrine']), true)
+        ->set('UnifiedEntityManager', fn($c) => new UnifiedEntityManager($c->get('DataSourceResolver')), true);
+    DI::getCacheManager()->setCacheDir($workerBase . '/var/cache/' . $workerName);
+    try {
+        $booked = (new \Z77\Module\Order\Services\OrderService(DI::getUnifiedEntityManager(), $workerName))
+            ->book([['id' => (int) $workerOrder, 'version' => (int) $workerVersion]], new \DateTimeImmutable('2026-12-15'));
+        echo 'ok:' . $booked[0]->getId();
+    } catch (\Z77\Module\Order\Services\OrderConflictException) {
+        echo 'conflict';
+    } catch (\Throwable $e) {
+        echo get_class($e) . (property_exists($e, 'reason') ? ':' . $e->reason : '') . ' ' . $e->getMessage();
+    }
+    exit(0);
+}
+
 // ── credentials: never in the repository ─────────────────────────────────
 
 $credentials = [
@@ -317,6 +345,21 @@ foreach (['tax_codes', 'tax_rates'] as $name) {
  * new Doctrine EntityManager, an empty Identity Map.
  */
 $wireDi = static function () use ($base): UnifiedEntityManager {
+    // Every rewire boots a new Doctrine connection, and closures and services of earlier checks keep
+    // the old managers alive — without this the run exhausts MariaDB's max_connections (151) around
+    // section T. Close the previous one (DBAL reconnects lazily if an old manager is used again, e.g. a
+    // lazy collection of an entity it loaded) and collect the managers nobody holds any more — they
+    // sit in cycles (UnitOfWork <-> EM), so their reopened handles close only on a cycle collection.
+    gc_collect_cycles();
+    static $previous = null;
+    if ($previous !== null) {
+        $cache = (new \ReflectionProperty($previous, 'managerCache'))->getValue($previous);
+        foreach ($cache as $manager) {   // keyed by the driver name the resolver maps to ('Doctrine')
+            if ($manager instanceof \Z77\Persistence\Doctrine\DoctrineEntityManager) {
+                (new \ReflectionProperty($manager, 'holder'))->getValue($manager)->current()->getConnection()->close();
+            }
+        }
+    }
     DI::getInstance(true)
         ->set('CacheManager', CacheManager::class, true)
         ->set('FileFinder', fn($c) => new FileFinder($c->get('CacheManager')), true)
@@ -328,7 +371,7 @@ $wireDi = static function () use ($base): UnifiedEntityManager {
     ;
     DI::getCacheManager()->setCacheDir($base . '/var/cache');
 
-    return DI::getUnifiedEntityManager();
+    return $previous = DI::getUnifiedEntityManager();
 };
 $em = $wireDi();
 
@@ -1120,7 +1163,7 @@ check('I5m the three master-data fragments carry an add action and an active swi
 
 $templateDir = $package . '/res/view/templates/Backend';
 $templates   = glob($templateDir . '/*/*.tpl.php');
-check('I6 every master-data screen has its list template, its edit template and its header slot; the document screens (P3 part 3) add six, the payment form and the delete confirmation (P4 part 1) two, the bank import list and detail (P4 part 2) two, the dunning list (P4 part 3) one, the open-item list and its toolbar (2026-10-07) two, the action cells of the invoice list and the bank import (ADR-033 rev. 2026-10-08) two — the «+ Debitor» cell of the debtor master data removed 2026-10-12; the row partials of the in-place answers (ADR-047 addendum 2026-10-10: bank transaction + unbooked bar, payment terms, payment target, debtor contact) five; the booking print\'s refusal page (2026-10-10) one; the editor\'s party picker and its «+ Kontakt» window (DEBTOR-CONTACT-001, 2026-10-10) two', count($templates) === 35);
+check('I6 every master-data screen has its list template, its edit template and its header slot; the document screens (P3 part 3) add six, the payment form and the delete confirmation (P4 part 1) two, the bank import list and detail (P4 part 2) two, the dunning list (P4 part 3) one, the open-item list and its toolbar (2026-10-07) two, the action cells of the invoice list and the bank import (ADR-033 rev. 2026-10-08) two — the «+ Debitor» cell of the debtor master data removed 2026-10-12; the row partials of the in-place answers (ADR-047 addendum 2026-10-10: bank transaction + unbooked bar, payment terms, payment target, debtor contact) five; the booking print\'s refusal page (2026-10-10) one; the editor\'s party picker and its «+ Kontakt» window (DEBTOR-CONTACT-001, 2026-10-10) two; the customer picker field and window (2026-10-15) two', count($templates) === 37);
 check('I6b the master-data rows are ONE partial each, rendered by the list and answered in place (replaceRow / insertRow, DEBTOR-WIN-003) — no `reload` left for a one-row save or switch of terms, targets or debtors',
     array_reduce([['PaymentTerms', 'paymentTerms'], ['PaymentTarget', 'paymentTarget'], ['DebtorProfile', 'debtorContact']], fn($ok, $p) => $ok
         && str_contains(file_get_contents($templateDir . '/' . $p[0] . 'Controller/listAction.tpl.php'), "partial('Backend/" . $p[0] . "Controller/_row'")
@@ -1133,7 +1176,7 @@ check('I6c every popup of the module carries its action row FIRST (ADR-049 revis
 check('I7 no template carries a <script> tag or an inline handler (Rule 7)',
     array_reduce($templates, fn($ok, $f) => $ok && !preg_match('/<script|\son[a-z]+\s*=/i', file_get_contents($f)), true));
 check('I8 the package ships no JavaScript at all', glob($package . '/res/**/*.js') === [] && glob($package . '/res/*.js') === []);
-check('I9 the header slots are partials OF THE FRAGMENT (financial.md, «fragment slots»); the add actions are the action cell (`act`, hc1 — ADR-033 rev. 2026-10-08), each ONE flush-ready button with its glyph and its word in `be-btn__label`',
+check('I9 the header slots are partials OF THE FRAGMENT (financial.md, «fragment slots»); the add actions are the action cell (`act`, hc1 — ADR-033 rev. 2026-10-08), each ONE flush-ready button with its glyph and its word in `be-btn__label` (the bank import cell IS the upload since 2026-10-09, UPLOAD-001)',
     is_file($templateDir . '/PaymentTermsController/act.tpl.php')
     && is_file($templateDir . '/PaymentTargetController/act.tpl.php')
     && is_file($templateDir . '/DunningLevelController/act.tpl.php')
@@ -1143,7 +1186,7 @@ check('I9 the header slots are partials OF THE FRAGMENT (financial.md, «fragmen
     && is_file($templateDir . '/DebtorProfileController/search.tpl.php')
     && is_file($templateDir . '/DebtorController/toolbar.tpl.php')
     && glob($templateDir . '/*/addButton.tpl.php') === []
-    && array_reduce(glob($templateDir . '/*/act.tpl.php'), fn($ok, $f) => $ok && substr_count(file_get_contents($f), 'class="be-btn be-btn--primary"') === 1
+    && array_reduce(array_filter(glob($templateDir . '/*/act.tpl.php'), fn($f) => !str_contains($f, '/BankImportController/')), fn($ok, $f) => $ok && substr_count(file_get_contents($f), 'class="be-btn be-btn--primary"') === 1
         && str_contains(file_get_contents($f), '#icon-plus') && str_contains(file_get_contents($f), 'be-btn__label'), true)
     && array_reduce([PaymentTermsControllerTrait::class, PaymentTargetControllerTrait::class, DunningLevelControllerTrait::class],
         fn($ok, $t) => $ok && preg_match("/addPartials\\('act', '[^']+', [^,]+, 'hc1'\\)/", file_get_contents((new \ReflectionClass($t))->getFileName())) === 1, true)
@@ -2041,13 +2084,14 @@ check('P3C18c the draft-50 case: a draft saved while its target had only an IBAN
     && $specErrors(QrBill::of($readInvoice($lateDraft->getId()))->payload()) === []);
 // Discard a draft (owner 2026-10-13, review H3): only `invoicing`, the version the caller saw, a real DELETE.
 $linesBefore  = $count('invoice_line');
+$journalDisc  = $journalCount();   // P3C18c booked a draft since $journalP3C18
 $longLines    = (int) $db->fetchOne('SELECT COUNT(*) FROM invoice_line WHERE invoice_id = ?', [$longInv->getId()]);
 $staleDiscard = caught(fn() => $service($wireDi())->discard($longInv->getId(), (int) $invoiceRow($longInv->getId())['version'] + 1), InvoiceConflictException::class);
 $discarded    = $service($wireDi())->discard($longInv->getId(), (int) $invoiceRow($longInv->getId())['version']);
 check('P3D1 discard(): a stale version is a conflict (nothing deleted); with the version seen the DRAFT is DELETED with its lines and tax rows — no row left, no number, nothing posted; the answer names it',
     $staleDiscard !== null && $longLines > 0 && $invoiceRow($longInv->getId()) === false && $discarded === 'Rechnung (Entwurf vom 10.06.2026)'
     && $count('invoice_line') === $linesBefore - $longLines && (int) $db->fetchOne('SELECT COUNT(*) FROM invoice_tax WHERE invoice_id = ?', [$longInv->getId()]) === 0
-    && $journalCount() === $journalP3C18);
+    && $journalCount() === $journalDisc);
 check('P3D2 … a BOOKED document is never discarded (not-invoicing — the correction is a credit note); a document that is gone is a conflict',
     $refusal(fn() => $service($wireDi())->discard($lateDraft->getId(), (int) $invoiceRow($lateDraft->getId())['version'])) === InvoiceRefusedException::NOT_INVOICING
     && $invoiceRow($lateDraft->getId())['state'] === 'final'
@@ -2190,7 +2234,7 @@ check('P3C24 view «Gutschriften»: credit notes only (any state), each naming i
 $useRequest(['view' => 'final', 'f_nr' => (string) $nonInv->getNumber()]);
 $host = $invoiceHost();
 $host->listAction();
-$useRequest(['f_name' => 'Müller Neu', 'f_date' => '06.2026']);
+$useRequest(['f_name' => 'Söhne', 'f_date' => '06.2026']);   // the SNAPSHOT name: a document keeps the address of its capture (2026-10-13, P3C16)
 $hostName = $invoiceHost();
 $hostName->listAction();
 $useRequest(['f_nr' => 'abc', 'f_amount' => '1\'234.5']);
@@ -2198,7 +2242,7 @@ $hostBad = $invoiceHost();
 $hostBad->listAction();
 check('P3C25 the column search runs in the database: number exact; name + month; an unreadable number is marked invalid and ignored, an amount with an apostrophe is read',
     array_map(fn($d) => $d->getId(), $host->context['documents']) === [$nonInv->getId()]
-    && $hostName->context['documents'] !== [] && array_filter($hostName->context['documents'], fn($d) => $d->getAddress()->getName() !== 'Müller Neu AG' || $d->getInvoiceDate()->format('m.Y') !== '06.2026') === []
+    && $hostName->context['documents'] !== [] && array_filter($hostName->context['documents'], fn($d) => !str_contains($d->getAddress()->getName(), 'Söhne') || $d->getInvoiceDate()->format('m.Y') !== '06.2026') === []
     && $hostBad->context['state']->isInvalid('f_nr') && !$hostBad->context['state']->isInvalid('f_amount') && \Z77\Module\Debtor\Ui\InvoiceListing::search($hostBad->context['state'])->amount === '1234.50' && \Z77\Module\Debtor\Ui\InvoiceListing::search($hostBad->context['state'])->number === null);
 check('P3C26 paging: the shared kernel Paging (moved from module-financial, Rule 8) and the shared pager partial', $host->context['paging'] instanceof \Z77\Shared\Paging\Paging
     && !class_exists('Z77\\Module\\Financial\\Reports\\Paging') && is_file($pkgRoot . '/kernel/shared/res/view/templates/partials/pager.tpl.php'));
@@ -2209,9 +2253,9 @@ $host = $invoiceHost();
 $host->detailAction();
 $detail = $renderMain($host);
 $ledgerRef = $invoiceRow($qrInv->getId())['ledger_entry_ref'];
-check('P3C27 detail of a final invoice: the address block from the snapshot, the lines, the QR data (QR-IBAN, the reference in blocks of five), the ledger reference as a journal WINDOW (?ref=), the credit note, «Gutschrift erstellen …»',
+check('P3C27 detail of a final invoice: the address block from the snapshot (not the address renamed since), the lines, the QR data (QR-IBAN, the reference in blocks of five), the ledger reference as a journal WINDOW (?ref=), the credit note, «Gutschrift erstellen …»',
     $ledgerRef !== null && str_contains($detail, 'data-window-open="/backend/finance/journal/detail?ref=' . rawurlencode($ledgerRef) . '"')
-    && str_contains($detail, 'Müller Neu AG') && str_contains($detail, QrReference::format($qrRow['pay_reference'])) && str_contains($detail, 'data-qr-bill="printable"')
+    && str_contains($detail, e($qrInv->getAddress()->getName())) && !str_contains($detail, 'Müller Neu AG') && str_contains($detail, QrReference::format($qrRow['pay_reference'])) && str_contains($detail, 'data-qr-bill="printable"')
     && str_contains($detail, e($cn->documentName())) && str_contains($detail, '/credit-note?of=' . $qrInv->getId()) && !str_contains($detail, '/edit?id=') && !str_contains($detail, 'Buchungsdruck'));
 check('P3C27b the detail\'s actions are its action row (`.z77-form-actions`, above the title): «Gutschrift erstellen …» and the credit-note link stay in the window (`data-window-link`), the PDF is a plain link to a new tab',
     strpos($detail, 'z77-form-actions') < strpos($detail, 'be-list__section-title')
@@ -2238,7 +2282,7 @@ $host->addAction();
 $formHtml = $renderMain($host);
 check('P3C30 GET add: the editor with the action bar first (ADR-049), the debtor preselected, the first active target preselected, empty rows; pickers: ACTIVE tax codes only (the shared module-vat list) and the account datalist (module-mandator); help attached (ADR-048)',
     $host->layoutManager->sections['main'] === ['Backend/InvoiceController/form'] && strpos($formHtml, 'z77-form-actions') < strpos($formHtml, 'name="invoice_date"')
-    && str_contains($formHtml, 'value="' . $mid . '" selected') && str_contains($formHtml, 'value="bank" selected')
+    && str_contains($formHtml, 'name="contact" value="' . $mid . '"') && str_contains($formHtml, 'value="bank" selected')
     && count($host->context['form']->rows()) === \Z77\Module\Debtor\Ui\InvoiceForm::ROWS_NEW
     && array_filter($host->context['taxCodes'], fn($c) => !$c->isActive()) === [] && str_contains($formHtml, '<datalist id="invoice-accounts">') && str_contains($formHtml, 'list="invoice-accounts"')
     && $host->help->has() && !preg_match('/<script|\son[a-z]+\s*=/i', $formHtml));
@@ -2553,7 +2597,7 @@ $host = $invoiceHost();
 $host->listAction();
 $tabs = $renderSlot($host, 'hc2');
 check('P3E6 «Fakturiert» is gone: three tabs «In Fakturierung» · «Verbucht» · «Gutschriften» (no «Nicht fakturiert»), no «Fakturiert» column; no DeliveryService / DeliveryChannel, no delivered_* on the entity, no mark/unmark/booked/pdf-batch action in the trait',
-    array_keys($host->context['views']) === ['invoicing', 'final', 'credit'] && str_contains($tabs, '>Verbucht <small>') && !str_contains($tabs, 'fakturiert <small>') && !str_contains($tabs, 'Definitiv')
+    array_keys($host->context['views']) === ['invoicing', 'final', 'credit'] && str_contains($tabs, '>Verbucht</a>') && !str_contains($tabs, '<small>') && !str_contains($tabs, 'Nicht fakturiert') && !str_contains($tabs, 'Definitiv')
     && !str_contains($renderList($host), 'Fakturiert')
     && !class_exists('Z77\\Module\\Debtor\\Services\\DeliveryService') && !enum_exists('Z77\\Module\\Debtor\\Entities\\DeliveryChannel')
     && !str_contains(file_get_contents($package . '/src/Entities/Invoice.php'), 'delivered')
@@ -3016,11 +3060,12 @@ $useRequest([]);
 $host = $bankHost();
 $host->listAction();
 $listHtml = $renderer->partial('Backend/BankImportController/listAction', $host->context);
-check('R13 the list: the upload form (file, csrf) and the imported messages with their counts, newest first',
-    str_contains($listHtml, 'name="file"') && str_contains($listHtml, 'enctype="multipart/form-data"') && str_contains($listHtml, 'MSG-R3') && str_contains($listHtml, 'MSG-R1')
+$actHtml = $renderer->partial('Backend/BankImportController/act', $host->context);
+check('R13 the list: the drop area (#bank-upload) and the imported messages with their counts, newest first; the upload form (file, csrf, multipart) is the action cell (UPLOAD-001, 2026-10-10)',
+    str_contains($actHtml, 'type="file"') && str_contains($actHtml, 'enctype="multipart/form-data"') && str_contains($actHtml, 'name="csrf_token"') && str_contains($listHtml, 'MSG-R3') && str_contains($listHtml, 'MSG-R1')
     && strpos($listHtml, 'MSG-R3') < strpos($listHtml, 'MSG-R1') && count($host->context['messages']) === 2
     && str_contains($listHtml, 'id="bank-upload"') && ($host->layoutManager->sections['hc1'] ?? []) === ['Backend/BankImportController/act']
-    && str_contains($renderer->partial('Backend/BankImportController/act', $host->context), 'href="/backend/finance/bank-import/list#bank-upload"'));
+    && !str_contains($listHtml, 'type="file"'));
 $useRequest(['id' => $msgR1->getId()]);
 $host = $bankHost();
 $host->detailAction();
@@ -3274,7 +3319,7 @@ check('T12d the screen as of a backdated day shows the refusal instead of a list
 // The CAMT booking reads the open amount AFTER its row locks: a payment recorded between the screen's
 // look and «Verbuchen» is seen — the credit is not placed a second time (review 2026-10-13 M2).
 $openF  = $service($wireDi())->openAmount($readInvoice($invF->getId()));
-$msgT3  = $bank($wireDi())->import($camtXml('MSG-T3', [['amount' => $openF->toDecimal(), 'date' => '2026-08-26', 'ref' => $qrrOf(1000, $invF->getNumber()), 'txid' => 'F-full']]), 'camt054-t3.xml');
+$msgT3  = $bank($wireDi())->import($camtXml('MSG-T3', [['amount' => $openF->toDecimal(), 'date' => '2026-08-26', 'ref' => $qrrOf(1000, (int) $readInvoice($invF->getId())->getNumber()), 'txid' => 'F-full']]), 'camt054-t3.xml');
 $emT3   = $wireDi();
 $bank($emT3)->find((int) $msgT3->getId())->getTransactions();   // the screen's copy: matched, open as before
 $pay($wireDi())->record(new PaymentDraft($invF->getId(), day('2026-08-25'), $openF, chf('0.00'), chf('0.00'), 'qr', 'bar am Schalter'));
@@ -3382,8 +3427,8 @@ check('U7 the screen: OP-Total and overdue in the header, the kernel\'s head and
     && str_contains($opHtml, '>fakturiert<') && str_contains($opHtml, '>offen<') && str_contains($opHtml, '>Fällig<') && str_contains($opHtml, '>KD-Nr.<')
     && ($host->layoutManager->sections['hc2'] ?? []) === ['Backend/DebtorController/toolbar'] && !isset($host->layoutManager->sections['hc1'])
     && !preg_match('/be-list__toggles[^>]*>\s*<span data-field="open-total"/', $opHtml) && strpos($opHtml, 'data-field="open-total"') < strpos($opHtml, 'be-list__section-badge')
-    && str_contains($opHtml, 'data-fetch-region="debtor-find-list"') && str_contains($opHtml, '<form id="debtor-find" method="get"') && substr_count($opHtml, 'form="debtor-find"') === 7
-    && str_contains($opHtml, 'id="debtor-find-f_nr"') && str_contains($opHtml, 'for="debtor-find-f_open"') && str_contains($opHtml, 'data-sort="asc">Fällig</a>')
+    && str_contains($opHtml, 'data-fetch-region="debtor-find-list"') && str_contains($opHtml, '<form id="debtor-find" method="get"') && substr_count($opHtml, 'form="debtor-find"') === 14   // input + «Suchen» per column (listFindPop, 2026-10-16)
+    && str_contains($opHtml, 'id="debtor-find-f_nr"') && str_contains($opHtml, 'for="debtor-find-f_open-value"') && str_contains($opHtml, 'popovertarget="debtor-find-f_nr-pop"') && str_contains($opHtml, 'data-sort="asc">Fällig</a>')
     && str_contains($barHtml, '?view=overdue') && str_contains($barHtml, '?view=all') && !str_contains($barHtml, 'name="q"'));
 $useRequest(['view' => 'all', 'f_nr' => (string) $invE->getNumber()]);
 $host = $opHost();
@@ -3404,8 +3449,8 @@ check('U9 the master data moved: «Debitoren» under Aufträge is the open-item 
 
 echo "P3C. Source guards for part 3\n";
 $p3Templates = glob($package . '/res/view/templates/Backend/InvoiceController/*.tpl.php');
-check('P3C48 the document screens ship no JavaScript and no inline handler (Rule 7) — nine templates since the action cell `act` (2026-10-08); no module-financial class in debtor but the adapter (the journal is linked by URL)',
-    count($p3Templates) === 9 && array_reduce($p3Templates, fn($ok, $f) => $ok && !preg_match('/<script|\son[a-z]+\s*=/i', file_get_contents($f)), true)
+check('P3C48 the document screens ship no JavaScript and no inline handler (Rule 7) — twelve templates since the review rebuild (2026-10-13); no module-financial class in debtor but the adapter (the journal is linked by URL)',
+    count($p3Templates) === 12 && array_reduce($p3Templates, fn($ok, $f) => $ok && !preg_match('/<script|\son[a-z]+\s*=/i', file_get_contents($f)), true)
     && !str_contains(file_get_contents($package . '/src/Ui/InvoiceControllerTrait.php'), 'Module\\Financial'));
 check('P3C49 the module brings no PDF library of its own (owner 2026-10-06: ONE writer, vendored in the kernel behind the facade): no composer requirement, no \\FPDF / PdfWriter use in its sources or templates — the facade only',
     !preg_match('/tcpdf|fpdf|dompdf|mpdf|swiss-qr-bill/i', (string) file_get_contents($package . '/composer.json'))
@@ -3754,9 +3799,11 @@ check('Y3 only what is BOOKED, AT the end of $to: a document still in `invoicing
     $yBalance()?->equals($yAfter) === true && count($yEarlier) === 1 && $yEarlier[0]->balance->equals($yAfter->add(chf('40.00'))));
 
 // A manual entry on the collective account — the flag «nur durch Module bebuchbar» switched off for it (FIN-MODULE-ONLY-001).
-$yAccount = fn() => $wireDi()->getRepository(Account::class)->findOneBy(['number' => '1100']);
+$yAccount = fn(?UnifiedEntityManager $em = null) => ($em ?? $wireDi())->getRepository(Account::class)->findOneBy(['number' => '1100']);
+// The service and the account it updates must share ONE manager (the account's parent is managed by it).
+$yFlag    = function (bool $on) use ($wireDi, $yAccount): void { $em = $wireDi(); (new AccountService($em))->update($yAccount($em), ['module_posting_only' => $on]); };
 $yFlagged = $yAccount()->isModulePostingOnly();
-(new AccountService($wireDi()))->update($yAccount(), ['module_posting_only' => false]);
+$yFlag(false);
 $yStray = (new \Z77\Module\Financial\Services\ManualEntryService($wireDi(), 'buchhalter'))->create(\Z77\Module\Financial\Ledger\PostingRequest::manual(day('2026-12-16'), 'Debitor von Hand', [
     \Z77\Module\Financial\Ledger\PostingLine::debit('1100', chf('108.10')), \Z77\Module\Financial\Ledger\PostingLine::credit('3200', chf('108.10')),
 ]));
@@ -3765,7 +3812,7 @@ check('Y4 a manual entry on 1100 (flag off for it) → ONE warning: journal vs m
     count($yFound) === 1 && $yFound[0]->severity === \Z77\Persistence\Doctrine\OpenWork\Severity::Warning && $yFound[0]->reference === 'account:1100'
     && str_contains($yFound[0]->message, 'laut Modul ' . \Z77\Shared\Money\AmountFormat::of($yBalance())) && str_contains($yFound[0]->message, 'Differenz 108.10')
     && preg_match('~Manuelle Buchungen auf dem Konto: Nr\. [0-9, ]*\b' . $yStray->number . '\b~', $yFound[0]->message) === 1);
-(new AccountService($wireDi()))->update($yAccount(), ['module_posting_only' => $yFlagged]);
+$yFlag($yFlagged);
 
 $yNone = fn() => iterator_to_array((new \Z77\Module\Debtor\Close\ReceivablesReconciliation())->balances('2026', $yParams['from'], $yParams['to']), false) === [];
 $writeOverride($fullConfig("'accountingGateway' => \\Z77\\Module\\Debtor\\Accounting\\NullAccountingGateway::class"));
@@ -3790,11 +3837,11 @@ check('Y5 nothing to reconcile → the reconciliation yields nothing: the instal
 // ── Z. the seams for module-order (P7 slim, plan §7, owner go 2026-10-14) ──
 
 echo "Z. preview(), prepareDocumentRanges(), openDebtorProfile(), invoiceAndFinalize(), PaymentStates, subject\n";
-$zDraft = fn(int $contact, string $date = '2026-12-21', string $account = '3400', ?string $subject = 'Auftrag 17 · Relaunch', string $price = '333.33') => InvoiceDraft::invoice($contact, day($date), day($date), 'CHF', [
+$zDraft = fn(int $contact, string $date = '2026-12-21', string $account = '3400', ?string $subject = 'Auftrag 17 · Relaunch', string $price = '333.33', ?string $target = null) => InvoiceDraft::invoice($contact, day($date), day($date), 'CHF', [
     LineDraft::service('Beratung', '2.500', 'h', chf($price), 'UN', $account, sourceType: 'order-line', sourceRef: '901'),
     LineDraft::text('Danke.'),
     LineDraft::lumpSum('Fachbuch', chf('19.90'), 'UR', '3400', sourceType: 'order-line', sourceRef: '902'),
-], sourceType: 'order', sourceRef: '17', subject: $subject);
+], sourceType: 'order', sourceRef: '17', subject: $subject, paymentTargetCode: $target);
 $zSnap = fn() => [$count('invoice'), $count('invoice_line'), $journalCount(), $count('debtor_profile'), $db->fetchAllKeyValue('SELECT name, last_number FROM number_range ORDER BY name')];
 $zBefore = $zSnap();
 $zPreview = $service($wireDi())->preview($zDraft($mid));
@@ -3802,8 +3849,11 @@ check('Z1 preview(): a TRANSIENT document — no id, no number, state invoicing,
     $zPreview->getId() === null && $zPreview->getNumber() === null && !$zPreview->isFinal() && $zPreview->getSubject() === 'Auftrag 17 · Relaunch'
     && $zPreview->getNetTotal()->toDecimal() === '853.23' && $zPreview->getGrossTotal()->toDecimal() === '921.25' && count($zPreview->getLines()) === 3 && $zSnap() === $zBefore);
 $zPdf = \Z77\Module\Debtor\Pdf\InvoicePdf::of($zPreview, $wireDi())->output();
-check('Z2 the preview renders with the existing PREVIEW layout (a PDF, file name without an id) and writes nothing; its bill is pending',
-    str_starts_with($zPdf, '%PDF') && \Z77\Module\Debtor\Pdf\InvoicePdf::fileName($zPreview) === 'vorschau-rechnung.pdf' && $service($wireDi())->bookingBill($zPreview)->isPending() && $zSnap() === $zBefore);
+// The payment part comes from the draft's target (the order passes its own, OrderInvoiceDraft) — none named, none printed (since 2026-10-13).
+$zBillQr = $service($wireDi())->bookingBill($service($wireDi())->preview($zDraft($mid, target: 'late')));
+check('Z2 the preview renders with the existing PREVIEW layout (a PDF, file name without an id) and writes nothing; with a target its bill is pending (the reference waits for the number), without one it has no payment part',
+    str_starts_with($zPdf, '%PDF') && \Z77\Module\Debtor\Pdf\InvoicePdf::fileName($zPreview) === 'vorschau-rechnung.pdf'
+    && $zBillQr->isPending() && $zBillQr->problems() === [] && !$zPreview->getPayment()->hasPaymentPart() && $zSnap() === $zBefore);
 check('Z3 preview() refuses like invoice(): subject over 200 characters → subject; an account not of type «Ertrag» → account-not-revenue',
     $refusal(fn() => $service($wireDi())->preview($zDraft($mid, subject: str_repeat('x', 201)))) === InvoiceRefusedException::SUBJECT
     && $refusal(fn() => $service($wireDi())->preview($zDraft($mid, account: '1020'))) === InvoiceRefusedException::ACCOUNT_NOT_REVENUE);
@@ -3872,8 +3922,9 @@ check('Z10 the second draft on 1020 → account-not-revenue, and NOTHING stays: 
 check('Z11 kind invoice only: a credit-note draft → InvalidArgumentException; an empty list books nothing',
     throws(fn() => $service($wireDi())->invoiceAndFinalize([InvoiceDraft::creditNote($zB->getId(), $mid, day('2026-12-23'), 'CHF', [LineDraft::text('x')])]), \InvalidArgumentException::class)
     && $service($wireDi())->invoiceAndFinalize([]) === []);
-$zAlone = $service($wireDi())->invoiceAndFinalize([$zDraft($mid, '2026-11-25', price: '1.00')]);
-check('Z12 standalone (no caller unit of work): it opens its own, the month range created ahead — booked as 2611…, final', count($zAlone) === 1 && $stateOf($zAlone[0]->getId()) === 'final' && intdiv((int) $zAlone[0]->getNumber(), 10000) === 2611);
+// October, not November: U3 left document.2611 at its last number (9999).
+$zAlone = $service($wireDi())->invoiceAndFinalize([$zDraft($mid, '2026-10-25', price: '1.00')]);
+check('Z12 standalone (no caller unit of work): it opens its own, the month range created ahead — booked as 2610…, final', count($zAlone) === 1 && $stateOf($zAlone[0]->getId()) === 'final' && intdiv((int) $zAlone[0]->getNumber(), 10000) === 2610);
 
 // PaymentStates — the read port.
 $zStates = fn(array $ids) => (new \Z77\Module\Debtor\Services\PaymentStates($wireDi()))->of($ids);
@@ -3900,6 +3951,96 @@ $zEdited = $service($wireDi())->invoice($zForm2->toDraft());
 check('Z16 the editor field «Betreff» reaches the draft (trimmed) and the document; startFrom() shows it again; the booked PDF renders with it',
     $zEdited->getSubject() === 'Projekt Nord' && (new \Z77\Module\Debtor\Ui\InvoiceForm('CHF'))->startFrom($readInvoice($zEdited->getId()))->header('subject') === 'Projekt Nord'
     && str_starts_with(\Z77\Module\Debtor\Pdf\InvoicePdf::of($readInvoice($zB->getId()), $wireDi())->output(), '%PDF'));
+
+// ── O. the booking print of module-order on the REAL ledger (concurrency review 2026-10-16) ──
+// order.md «Concurrency review»: the order's booking print (`OrderService::book()`) joins debtor's
+// chain in ONE unit of work. module-article and module-order join the installation here — the
+// order lines reference article variants (a foreign key), so both migrate.
+
+echo "O. OrderService::book() — booked once, rolled back whole, two processes at once\n";
+$packages['Article'] = str_replace('\\', '/', realpath(__DIR__ . '/../packages/module-article'));
+$packages['Order']   = str_replace('\\', '/', realpath(__DIR__ . '/../packages/module-order'));
+$namespaces = '';
+foreach ($packages as $name => $path) {
+    $sources     = $name === 'Debtor' ? "'{$overrideRoot}', '{$path}'" : "'{$path}'";
+    $namespaces .= "'Z77\\\\Module\\\\{$name}\\\\' => ['sourcePaths' => [{$sources}]],\n";
+}
+$namespaces .= "'Z77\\\\Shared\\\\' => ['sourcePaths' => ['{$kernelShared}']],\n";
+$write('config/vendor/fileFinder.inc.php', "<?php return ['resourceDir' => ['sourceDir' => 'src', 'tplDir' => 'res/view/templates'], 'namespaces' => [\n{$namespaces}]];");
+$write('config/vendor/moduleManager.inc.php', "<?php return ['modulePrefix' => 'Module', 'frameworkPrefix' => 'Z77', 'defaultModule' => 'debtor', 'modules' => ['vat' => [], 'contact' => [], 'mandator' => [], 'financial' => [], 'debtor' => [], 'article' => [], 'order' => []]];");
+@mkdir($base . '/data/framework/order', 0777, true);
+copy($packages['Order'] . '/data/framework/order/order_statuses.default.json', $base . '/data/framework/order/order_statuses.json');
+$rm($base . '/var/cache');
+$wireDi();
+[$code, $out] = $run(['command' => 'migrate']);
+check('O1 article and order migrate onto the debtor installation (exit 0)' . ($code !== 0 ? ' — ' . trim($out) : ''), $code === 0);
+
+$oService = fn(?\Z77\Module\Article\Stock\StockLedger $stock = null) => new \Z77\Module\Order\Services\OrderService($wireDi(), 'harness', $stock);
+$oNew = function (string $subject) use ($oService, $mid): \Z77\Module\Order\Entities\SalesOrder {
+    $svc   = $oService();
+    $order = $svc->create(new \Z77\Module\Order\Services\OrderDraft($mid, '2026-12-10', $subject, lines: [
+        \Z77\Module\Order\Services\OrderLineDraft::free('Beratung', '2', '150.00', 'UN', '3400'),
+    ]));
+
+    return $oService()->changeStatus((int) $order->getId(), $order->getVersion(), 'scheduled');   // a bookable phase
+};
+$oRow   = fn(int $id) => $db->fetchAssociative('SELECT status_code, invoice_id, version FROM sales_order WHERE id = ?', [$id]);
+$oLog   = fn(int $id) => $db->fetchAllAssociative('SELECT from_code, to_code, change_trigger FROM sales_order_status_change WHERE order_id = ? ORDER BY id', [$id]);
+$oSnap  = fn() => [$zSnap(), $db->fetchAllAssociative('SELECT id, status_code, invoice_id, version FROM sales_order ORDER BY id'), $count('sales_order_status_change')];
+
+// O2–O3: one booking print, then the same version again.
+$o1      = $oNew('Auftrag O1');
+$oJ      = $journalCount();
+$oBooked = $oService()->book([['id' => (int) $o1->getId(), 'version' => $o1->getVersion()]], day('2026-12-15'));
+$oInv    = $oBooked[0] ?? null;
+$oR1     = $oRow((int) $o1->getId());
+check('O2 book(): ONE final invoice, its gross = the preview total of the order, linked to the order, the order in the default of «closed» (booked), the log row `booking-print`, one journal entry',
+    count($oBooked) === 1 && $stateOf($oInv->getId()) === 'final' && (int) $oR1['invoice_id'] === $oInv->getId() && $oR1['status_code'] === 'booked'
+    && array_column($oLog((int) $o1->getId()), 'change_trigger') === ['create', 'status', 'booking-print'] && $oInv->getGrossTotal()->toDecimal() === $wireDi()->getRepository(\Z77\Module\Order\Entities\SalesOrder::class)->find((int) $o1->getId())->getTotalGross()?->toDecimal() && $journalCount() === $oJ + 1
+    && $oInv->getSourceType() === 'order' && $oInv->getSourceRef() === (string) $o1->getId());
+$oBefore = $oSnap();
+check('O3 the SAME selection again (the version the screen showed): a conflict, and nothing written — no second invoice, no number, no journal entry',
+    throws(fn() => $oService()->book([['id' => (int) $o1->getId(), 'version' => $o1->getVersion()]], day('2026-12-15')), \Z77\Module\Order\Services\OrderConflictException::class)
+    && $oSnap() === $oBefore);
+$oFresh = $wireDi()->getRepository(\Z77\Module\Order\Entities\SalesOrder::class)->find((int) $o1->getId());
+$oRefused = caught(fn() => $oService()->book([['id' => (int) $o1->getId(), 'version' => $oFresh->getVersion()]], day('2026-12-15')), \Z77\Module\Order\Services\OrderRefusedException::class);
+check('O4 with the CURRENT version it is refused already-invoiced (the order carries its invoice) — nothing written',
+    $oRefused?->reason === \Z77\Module\Order\Services\OrderRefusedException::ALREADY_INVOICED && $oSnap() === $oBefore);
+
+// O5: a failure at the LAST step inside the unit of work (the stock call) rolls back everything.
+$o2 = $oNew('Auftrag O2');
+$oThrowing = new class implements \Z77\Module\Article\Stock\StockLedger {
+    public function bringTo(\Z77\Module\Article\Stock\StockRequest $request): \Z77\Module\Article\Stock\StockResult
+    {
+        if (str_starts_with($request->trigger, 'status:') && str_ends_with($request->trigger, '>booked')) {
+            throw new \RuntimeException('stock refused at the last step (harness)');
+        }
+        return (new \Z77\Module\Article\Stock\PendingStockLedger())->bringTo($request);
+    }
+};
+$oBefore = $oSnap();
+$oE = caught(fn() => $oService($oThrowing)->book([['id' => (int) $o2->getId(), 'version' => $o2->getVersion()]], day('2026-12-15')), \RuntimeException::class);
+check('O5 a failure at the last step (the stock call after the invoice was numbered and posted) rolls back the WHOLE unit of work: no invoice, no document number, no journal entry, the order unchanged, no log row',
+    $oE !== null && $oE->getMessage() === 'stock refused at the last step (harness)' && $oSnap() === $oBefore && $oRow((int) $o2->getId())['status_code'] === 'scheduled');
+
+// O6: two processes book the same order at the same moment.
+$o3     = $oNew('Auftrag O3');
+$oJ     = $journalCount();
+$oInvN  = $count('invoice');
+$oProcs = [];
+foreach (['w1', 'w2'] as $w) {
+    $oProcs[$w] = proc_open([PHP_BINARY, __FILE__, '--order-book-worker', $base, (string) $o3->getId(), (string) $o3->getVersion(), $w], [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $oPipes[$w]);
+}
+$oOut = [];
+foreach ($oProcs as $w => $proc) {
+    $oOut[$w] = trim((string) stream_get_contents($oPipes[$w][1])) . trim((string) stream_get_contents($oPipes[$w][2]));
+    proc_close($proc);
+}
+$oOk  = array_values(array_filter($oOut, fn($o) => str_starts_with($o, 'ok:')));
+$oR3  = $oRow((int) $o3->getId());
+check('O6 two processes book the same order at once: exactly ONE books, the other is refused (conflict — the row lock and the version); one invoice, one journal entry, the order linked to THAT invoice' . (count($oOk) !== 1 ? ' — got ' . json_encode($oOut) : ''),
+    count($oOk) === 1 && count(array_filter($oOut, fn($o) => $o === 'conflict')) === 1
+    && $count('invoice') === $oInvN + 1 && $journalCount() === $oJ + 1 && 'ok:' . $oR3['invoice_id'] === $oOk[0] && $oR3['status_code'] === 'booked');
 
 // ── result ───────────────────────────────────────────────────────────────
 

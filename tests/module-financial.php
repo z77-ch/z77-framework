@@ -496,9 +496,9 @@ check('A8b journal_entry: unique number per year, unique idempotency key, unique
 [$code, $out] = $run(['command' => 'migrate']);
 check('A9 a second migrate is a no-op', $code === 0 && str_contains($out, 'Already at the latest version'));
 [$code, $out] = $run(['command' => 'diff', '--namespace' => 'Z77\\Module\\Financial\\Migrations']);
-check('A10 diff after migrate reports NO change — mapping and migration agree (money and text snapshot columns included)', $code !== 0 && str_contains($out, 'No changes detected') && count(glob($package . '/res/migrations/Version*.php')) === 4);
+check('A10 diff after migrate reports NO change — mapping and migration agree (money and text snapshot columns included)', $code !== 0 && str_contains($out, 'No changes detected') && count(glob($package . '/res/migrations/Version*.php')) === 5);   // + 2026-10-13 (module postings only)
 [$code, $out] = $run(['command' => 'status']);
-check('A11 status lists the module namespace and six executed migrations (package, four of financial, one of mandator)', $code === 0 && str_contains($out, 'Z77\\Module\\Financial\\Migrations') && preg_match('/\| Executed\s+\|\s+6\s+\|/', $out) === 1);
+check('A11 status lists the module namespace and seven executed migrations (package, five of financial, one of mandator)', $code === 0 && str_contains($out, 'Z77\\Module\\Financial\\Migrations') && preg_match('/\| Executed\s+\|\s+7\s+\|/', $out) === 1);
 
 // ── B. the KMU chart: a button on an EMPTY chart ─────────────────────────
 
@@ -827,7 +827,7 @@ check('E3 the account trait: no delete action; toggle and the KMU adoption exist
 $yearActions = $methodsOf(FiscalYearControllerTrait::class);
 $yearActions = array_values(array_filter($yearActions, fn($m) => str_ends_with($m, 'Action')));
 sort($yearActions);
-check('E4 the fiscal-year trait: list, open, confirm-delete and delete, confirm-close / close and confirm-reopen / reopen (P5 part 1) — no edit', $yearActions === ['closeAction', 'confirmCloseAction', 'confirmDeleteAction', 'confirmReopenAction', 'deleteAction', 'listAction', 'openAction', 'reopenAction']);
+check('E4 the fiscal-year trait: list, the ⋮ menu (actions), open, confirm-delete and delete, confirm-close / close and confirm-reopen / reopen (P5 part 1) — no edit', $yearActions === ['actionsAction', 'closeAction', 'confirmCloseAction', 'confirmDeleteAction', 'confirmReopenAction', 'deleteAction', 'listAction', 'openAction', 'reopenAction']);
 $traitSource = file_get_contents($package . '/src/Ui/AccountControllerTrait.php');
 check('E5 the account trait maps a body only onto the NEW account of «add» (source guard, ADR-039 decision 9)', preg_match_all('/->mapFromArray\(/', $traitSource) === 1 && str_contains($traitSource, '$account->mapFromArray($values);')
     && strpos($traitSource, '$account->mapFromArray($values);') < strpos($traitSource, 'function editAction'));
@@ -1698,9 +1698,9 @@ check('R48 the aggregates are SQL over journal_line: LedgerReports never hydrate
 $reportActions = array_values(array_filter($methodsOf(ReportControllerTrait::class), fn($m) => str_ends_with($m, 'Action')));
 sort($reportActions);
 $traitSource = file_get_contents($package . '/src/Ui/ReportControllerTrait.php');
-check('R49 the report trait: five read-only pages — no POST, no CSRF, no write, no JavaScript', $reportActions === ['accountStatementAction', 'balanceSheetAction', 'incomeStatementAction', 'journalAction', 'trialBalanceAction']
+check('R49 the report trait: five read-only pages and their PDF — no POST, no CSRF, no write, no JavaScript', $reportActions === ['accountStatementAction', 'balanceSheetAction', 'incomeStatementAction', 'journalAction', 'pdfAction', 'trialBalanceAction']
     && !preg_match('/#\[(Csrf|Fetch|HttpMethod)/', $traitSource) && !preg_match('/->(persist|remove|flush|run)\(/', $traitSource)
-    && array_filter(glob($package . '/res/view/templates/Backend/ReportController/*.php'), fn($f) => preg_match('/<script|data-fetch|onclick/i', file_get_contents($f)) === 1) === []);
+    && array_filter(glob($package . '/res/view/templates/Backend/ReportController/*.php'), fn($f) => preg_match('/<script|data-fetch(?!-region)|onclick/i', file_get_contents($f)) === 1) === []);   // the journal report's list is a core.js fetch region (2026-10-15) — no script of its own
 $backendConfig = require __DIR__ . '/../packages/module-backend/src/App/Config/backendConfig.inc.php';
 check('R50 the host: backend Finance/ReportController uses the trait, its layout delegates to ReportLayout, default action trial-balance', in_array(ReportControllerTrait::class, class_uses(\Z77\Module\Backend\Ui\Controllers\Finance\ReportController::class), true)
     && (require __DIR__ . '/../packages/module-backend/src/Ui/Config/Finance/reportControllerConfig.inc.php') === ReportLayout::config()
@@ -2149,9 +2149,10 @@ $wdvValue = $oneLine()->fromPost($row('6500', '1020', '400.00', '2032-11-15', 'V
 check('O6d the wdv value 30.80 (0.83 off the computed 29.97) is REFUSED — a different rate is not voucher rounding', $wdvValue->toRequest() === null
     && str_contains($wdvValue->error('tax_amount'), 'berechneten 29.97') && str_contains($wdvValue->error('tax_amount'), 'höchstens 0.30'));
 
-$zero = $oneLine()->fromPost($row('1100', '3200', '400.00', '2032-11-17', 'UE'))->toRequest();
-check('O7 a zero-rated code (UE, 0 %): the code on the revenue line with base = gross, tax 0.00 — and NO tax line', $shape($zero) === ['1100 D 400.00', '3200 C 400.00 UE 0 400.00 0.00']);
-$exempt = $oneLine()->fromPost($row('1100', '3200', '400.00', '2032-11-17', 'UA', '0.50'));
+// 1020, not 1100: the receivables account takes module postings only since 2026-10-13.
+$zero = $oneLine()->fromPost($row('1020', '3200', '400.00', '2032-11-17', 'UE'))->toRequest();
+check('O7 a zero-rated code (UE, 0 %): the code on the revenue line with base = gross, tax 0.00 — and NO tax line', $shape($zero) === ['1020 D 400.00', '3200 C 400.00 UE 0 400.00 0.00']);
+$exempt = $oneLine()->fromPost($row('1020', '3200', '400.00', '2032-11-17', 'UA', '0.50'));
 check('O7b an exempt code (UA) with a tax amount is refused — steuerfrei, kein Steuerbetrag', $exempt->toRequest() === null && str_contains($exempt->error('tax_amount'), 'steuerfrei'));
 $zeroRef = $manual->create($zero);
 
@@ -2795,14 +2796,14 @@ echo "O. … the net side by account type (owner, 2026-09-22): credit notes, ref
 /** The Sammelbuchung's request for the same lines — the one-line form must write the tax data it writes (sign convention). */
 $compoundOf = fn(array $rows) => (new \Z77\Module\Financial\Ui\ManualEntryForm('CHF', DI::getUnifiedEntityManager()->getRepository(Account::class), DI::getUnifiedEntityManager()->getRepository(TaxCode::class), \Z77\Module\Vat\Services\VatRates::from(DI::getUnifiedEntityManager())))
     ->fromPost(['date' => '2032-11-21', 'text' => 'x', 'account' => array_column($rows, 0), 'debit' => array_column($rows, 1), 'credit' => array_column($rows, 2), 'tax_code' => array_column($rows, 3), 'line_text' => array_fill(0, count($rows), '')])->toRequest();
-$creditNote = $oneLine()->fromPost($row('3200', '1100', '108.10', '2032-11-21', 'UN'))->toRequest();
-check('O19 a customer credit note 3200/1100 with UN, 108.10 gross: the revenue line is net (Soll, base and tax NEGATIVE), 8.10 output VAT in Soll on 2200, the debtor gross in Haben',
-    $shape($creditNote) === ['3200 D 100.00 UN 810 -100.00 -8.10', '2200 D 8.10', '1100 C 108.10']);
-check('O19b … the same tax data the Sammelbuchung writes for that line (ManualEntryForm::taxFor sign convention)', $shape($creditNote) === $shape($compoundOf([['3200', '100.00', '', 'UN'], ['2200', '8.10', '', ''], ['1100', '', '108.10', '']])));
+$creditNote = $oneLine()->fromPost($row('3200', '1020', '108.10', '2032-11-21', 'UN'))->toRequest();
+check('O19 a refund 3200/1020 with UN (1020: the receivables account 1100 takes module postings only since 2026-10-13), 108.10 gross: the revenue line is net (Soll, base and tax NEGATIVE), 8.10 output VAT in Soll on 2200, the gross in Haben',
+    $shape($creditNote) === ['3200 D 100.00 UN 810 -100.00 -8.10', '2200 D 8.10', '1020 C 108.10']);
+check('O19b … the same tax data the Sammelbuchung writes for that line (ManualEntryForm::taxFor sign convention)', $shape($creditNote) === $shape($compoundOf([['3200', '100.00', '', 'UN'], ['2200', '8.10', '', ''], ['1020', '', '108.10', '']])));
 $creditNoteRef = $manual->create($creditNote);
 $cnForm = $oneLine();
-check('O19c … posted, and it round-trips: it opens one-line (3200 / 1100 / 108.10 / UN, tax field empty) and rebuilds exactly the stored lines', $cnForm->startFrom($entries->findByRef($creditNoteRef))
-    && [$cnForm->debit(), $cnForm->credit(), $cnForm->amount(), $cnForm->taxCode(), $cnForm->taxAmount()] === ['3200', '1100', '108.10', 'UN', ''] && $shape($cnForm->toRequest()) === $shape($creditNote));
+check('O19c … posted, and it round-trips: it opens one-line (3200 / 1020 / 108.10 / UN, tax field empty) and rebuilds exactly the stored lines', $cnForm->startFrom($entries->findByRef($creditNoteRef))
+    && [$cnForm->debit(), $cnForm->credit(), $cnForm->amount(), $cnForm->taxCode(), $cnForm->taxAmount()] === ['3200', '1020', '108.10', 'UN', ''] && $shape($cnForm->toRequest()) === $shape($creditNote));
 $refund = $oneLine()->fromPost($row('1020', '4200', '108.10', '2032-11-21', 'VM'))->toRequest();
 check('O20 a supplier refund 1020/4200 with VM: the expense line is net in Haben (negative base and tax), 8.10 input tax in Haben on 1170, the bank gross in Soll — as the Sammelbuchung writes it',
     $shape($refund) === ['1020 D 108.10', '4200 C 100.00 VM 810 -100.00 -8.10', '1170 C 8.10'] && $shape($refund) === $shape($compoundOf([['1020', '108.10', '', ''], ['4200', '', '100.00', 'VM'], ['1170', '', '8.10', '']])));
@@ -3365,11 +3366,16 @@ $moCode   = $moYear->getCode();
 $moDay    = $moYear->getStartDate()->modify('+20 days')->format('Y-m-d');
 $moAcc    = fn(string $n) => $wireDi()->getRepository(Account::class)->findOneBy(['number' => $n]);
 $moRange  = fn() => (string) $db->fetchOne('SELECT last_number FROM number_range WHERE name = ?', ['journal-entry.' . $moCode]);
-$moFlag   = fn(bool $on) => (new AccountService($wireDi()))->update($moAcc('1100'), ['module_posting_only' => $on]);
+$moFlag   = function (bool $on) use ($wireDi): void {   // read and write in ONE EntityManager
+    $em = $wireDi();
+    (new AccountService($em))->update($em->getRepository(Account::class)->findOneBy(['number' => '1100']), ['module_posting_only' => $on]);
+};
 $moManual = fn() => new ManualEntryService($wireDi(), 'buchhalter');
 $moSale   = fn(string $amount, string $text = 'Debitor von Hand') => PostingRequest::manual(day($moDay), $text, [PostingLine::debit('1100', chf($amount)), PostingLine::credit('3200', chf($amount))]);
 
-// An entry on 1100 written BEFORE the flag (the dev data's Nr. 4–12) — the flag is still off (B2f).
+// An entry on 1100 written BEFORE the flag (the dev data's Nr. 4–12). The KMU chart adopted in B
+// brings 1100 with the flag ON (2026-10-13) — switched off here so the old entry can be written.
+$moFlag(false);
 $moOld = $moManual()->create($moSale('108.10', 'Altlast vor der Sperre'));
 $moFlag(true);
 check('MO1 the flag is on again (through the service), the list row says «nur Modul»', $moAcc('1100')->isModulePostingOnly()

@@ -44,8 +44,8 @@ use Z77\Module\Financial\Ui\JournalFilter;
 
 $actionBase = $actionBase ?? '/backend/finance/journal';
 $ns         = 'Z77\\Module\\Financial';
-$link       = static fn(array $changes = []): string => $actionBase . '/list?'
-    . ltrim(http_build_query($keep) . '&' . $filter->query($changes), '&');
+$link       = static fn(array $changes = []): string => rtrim($actionBase . '/list?'
+    . trim(http_build_query($keep) . '&' . $filter->query($changes), '&'), '?');
 $icons      = ['editable' => 'edit', 'generated' => 'zap', 'closed' => 'lock', 'vat-settled' => 'lock'];
 /** The account numbers on one side of an entry — «div.» beyond two. */
 $side = static function (\Z77\Module\Financial\Entities\JournalEntry $e, bool $debit): string {

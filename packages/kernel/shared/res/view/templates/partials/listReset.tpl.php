@@ -14,7 +14,7 @@ if (!$state->isChanged()) {
     return;
 }
 $keep = $keep ?? [];
-$href = $action . '?' . ltrim(http_build_query($keep) . '&' . $state->defaultQuery(), '&');
+$href = $action . '?' . trim(http_build_query($keep) . '&' . $state->defaultQuery(), '&');
 ?>
 <nav class="be-list__toggles" aria-label="Suche und Sortierung">
     <a data-fetch-region-link href="<?= e(rtrim($href, '?')) ?>" title="Suche und Sortierung zurücksetzen">Zurücksetzen</a>

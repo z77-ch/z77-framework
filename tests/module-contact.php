@@ -157,6 +157,7 @@ $write('config/vendor/fileFinder.inc.php', "<?php return ['resourceDir' => ['sou
     . "]];");
 $write('config/vendor/moduleManager.inc.php', "<?php return ['modulePrefix' => 'Module', 'frameworkPrefix' => 'Z77', 'defaultModule' => 'contact', 'modules' => ['contact' => []]];");
 $write('config/client/systemConfig.inc.php', "<?php return ['canonicalBaseUrl' => '', 'baseCurrency' => 'CHF'];");
+$write('config/i18n.inc.php', "<?php return ['defaultLanguage' => 'de', 'languages' => ['de']];");   // ContactForm reads it (E13e)
 $write('config/client/database.inc.php', '<?php return ' . var_export([
     'host' => $credentials['host'], 'port' => null, 'name' => $dbName,
     'user' => $credentials['user'], 'password' => $credentials['password'],

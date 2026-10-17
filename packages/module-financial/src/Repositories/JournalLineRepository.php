@@ -159,6 +159,9 @@ class JournalLineRepository extends DoctrineRepository
         ] + $r;
     }
 
+    /** The fixed condition of {@see manualLinesOnAccount()} — every value a placeholder, nothing from input. */
+    private const MANUAL_LINES_WHERE = "l.account_id = ? AND e.fiscal_year_id = ? AND e.entry_date BETWEEN ? AND ? AND e.kind = 'manual'";
+
     /**
      * The MANUAL entries with a line on one account in a fiscal year dated from–to — what the
      * year-close reconciliation names when a collective account and its subledger disagree
@@ -169,15 +172,14 @@ class JournalLineRepository extends DoctrineRepository
      */
     public function manualLinesOnAccount(int $accountId, int $fiscalYearId, string $from, string $to, int $limit): array
     {
-        $where = "l.account_id = ? AND e.fiscal_year_id = ? AND e.entry_date BETWEEN ? AND ? AND e.kind = 'manual'";
         $total = $this->connection()->fetchAssociative(
             "SELECT COUNT(DISTINCT e.id) AS entries, COALESCE(SUM(l.debit - l.credit), 0) AS net
-               FROM journal_line l JOIN journal_entry e ON e.id = l.entry_id WHERE {$where}",
+               FROM journal_line l JOIN journal_entry e ON e.id = l.entry_id WHERE " . self::MANUAL_LINES_WHERE,
             [$accountId, $fiscalYearId, $from, $to],
             [ParameterType::INTEGER, ParameterType::INTEGER, ParameterType::STRING, ParameterType::STRING]
         );
         $numbers = $this->connection()->fetchFirstColumn(
-            "SELECT DISTINCT e.number FROM journal_line l JOIN journal_entry e ON e.id = l.entry_id WHERE {$where} ORDER BY e.number LIMIT ?",
+            "SELECT DISTINCT e.number FROM journal_line l JOIN journal_entry e ON e.id = l.entry_id WHERE " . self::MANUAL_LINES_WHERE . ' ORDER BY e.number LIMIT ?',
             [$accountId, $fiscalYearId, $from, $to, max(1, $limit)],
             [ParameterType::INTEGER, ParameterType::INTEGER, ParameterType::STRING, ParameterType::STRING, ParameterType::INTEGER]
         );
