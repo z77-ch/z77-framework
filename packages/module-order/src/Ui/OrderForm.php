@@ -43,7 +43,7 @@ final class OrderForm
     private const ROW_FIELDS    = ['variant' => 'article', 'unit_price' => 'price', 'revenue_account' => 'account', 'children' => 'child'];
 
     /** @var array<string, string> */
-    private array $header = ['contact' => '', 'subject' => '', 'order_date' => '', 'service_from' => '', 'service_to' => '', 'price_mode' => 'net', 'target' => '', 'ship' => '', 'status' => '', 'notes' => ''];
+    private array $header = ['contact' => '', 'subject' => '', 'order_date' => '', 'service_from' => '', 'service_to' => '', 'price_mode' => 'net', 'target' => '', 'ship' => '', 'bill' => '', 'status' => '', 'notes' => ''];
 
     /** @var list<array<string, string>> */
     private array $rows = [];
@@ -84,6 +84,7 @@ final class OrderForm
             'price_mode'   => $order->priceMode()->value,
             'target'       => (string) $order->getPaymentTargetCode(),
             'ship'         => $order->deliveryAddress() !== null ? self::SHIP_KEEP : '',
+            'bill'         => $order->billingAddress() !== null ? self::SHIP_KEEP : '',
             'status'       => $order->getStatusCode(),
             'notes'        => (string) $order->getNotes(),
         ];
@@ -152,8 +153,9 @@ final class OrderForm
      *
      * @param array<string, int>                  $articles  article number → variant id (the offered ones plus the ones the order holds)
      * @param array<string, AddressSnapshot|null> $ships     the delivery-address choices of the customer → snapshot ('' → null)
+     * @param array<string, AddressSnapshot|null> $bills     the billing-address choices, the same shape ('' → the customer's)
      */
-    public function toDraft(array $articles, array $ships, ?string $sourceRef = null): ?OrderDraft
+    public function toDraft(array $articles, array $ships, ?string $sourceRef = null, array $bills = ['' => null]): ?OrderDraft
     {
         $this->errors    = [];
         $this->rowErrors = [];
@@ -162,6 +164,9 @@ final class OrderForm
         $contactId = ctype_digit($this->header['contact']) ? (int) $this->header['contact'] : 0;
         if (!array_key_exists($this->header['ship'], $ships)) {
             $this->errors['ship'] = 'Diese Lieferadresse gehört nicht zum gewählten Kunden — neu wählen.';
+        }
+        if (!array_key_exists($this->header['bill'], $bills)) {
+            $this->errors['bill'] = 'Diese Rechnungsadresse gehört nicht zum gewählten Kunden — neu wählen.';
         }
 
         /** @var list<array{draft: OrderLineDraft, row: int, children: list<array{draft: OrderLineDraft, row: int}>}> $top */
@@ -228,6 +233,7 @@ final class OrderForm
             lines: $lines,
             statusCode: $this->header['status'] !== '' ? $this->header['status'] : null,
             sourceRef: $sourceRef,
+            billingAddress: $bills[$this->header['bill']] ?? null,
         );
     }
 

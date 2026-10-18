@@ -5,12 +5,17 @@
  * replaces it (`replace-html` on `#order-ship`, scoped to the order window) with THAT
  * customer's addresses, so the delivery address is chosen without saving first.
  *
- * @var array<string, string> $ships     value → label (`OrderControllerTrait::orderShipLabels()`)
+ * Since 2026-10-17 the same select serves the BILLING address (`field` = 'bill', `#order-bill`,
+ * `orderBillLabels()`) — one partial for both address cards.
+ *
+ * @var array<string, string> $ships     value → label (`OrderControllerTrait::orderShipLabels()` / `orderBillLabels()`)
  * @var string                $selected
  * @var bool                  $invalid
+ * @var string                $field     'ship' (default) | 'bill'
  */
+$field = ($field ?? 'ship') === 'bill' ? 'bill' : 'ship';
 ?>
-<select id="order-ship" name="ship" aria-invalid="<?= !empty($invalid) ? 'true' : 'false' ?>">
+<select class="be-input be-input--sm" id="order-<?= $field ?>" name="<?= $field ?>" aria-label="<?= $field === 'bill' ? 'Rechnungsadresse' : 'Lieferadresse' ?>" aria-invalid="<?= !empty($invalid) ? 'true' : 'false' ?>">
     <?php foreach ($ships as $value => $label): ?>
     <option value="<?= e((string) $value) ?>"<?= (string) $value === $selected ? ' selected' : '' ?>><?= e($label) ?></option>
     <?php endforeach; ?>

@@ -402,13 +402,13 @@ final class OrderService
     }
 
     /**
-     * Where the delivery note goes: the order's delivery address, else the customer's invoice
-     * address as debtor chooses it (`InvoicingService::invoiceAddressOf()` — one rule, Rule 2);
-     * null when the customer has no address at all.
+     * Where the delivery note goes: the order's delivery address, else its billing address, else
+     * the customer's invoice address as debtor chooses it (`InvoicingService::invoiceAddressOf()` —
+     * one rule, Rule 2); null when the customer has no address at all.
      */
     public function deliveryAddressOf(SalesOrder $order): ?\Z77\Module\Debtor\Entities\AddressSnapshot
     {
-        return $order->deliveryAddress() ?? $this->invoicing()->invoiceAddressOf($order->getContact());
+        return $order->deliveryAddress() ?? $order->billingAddress() ?? $this->invoicing()->invoiceAddressOf($order->getContact());
     }
 
     /** The status rules over the master data as it is now. */
@@ -562,6 +562,7 @@ final class OrderService
             $resolved['paymentTargetCode'],
             $resolved['deliveryAddress'],
             $resolved['notes'],
+            $resolved['billingAddress'],
         );
 
         $existing = [];
@@ -660,6 +661,13 @@ final class OrderService
         if ($ship !== null && !$ship->isComplete()) {
             $errors['ship'] = 'Die Lieferadresse braucht mindestens Name, PLZ, Ort und Land.';
         }
+        $bill = $draft->billingAddress;
+        if ($bill !== null && $bill->lines() === [] && $bill->getCountry() === '') {
+            $bill = null;
+        }
+        if ($bill !== null && !$bill->isComplete()) {
+            $errors['bill'] = 'Die Rechnungsadresse braucht mindestens Name, PLZ, Ort und Land.';
+        }
 
         $notes = trim($draft->notes);
         if (mb_strlen($notes) > SalesOrder::NOTES_LENGTH) {
@@ -708,6 +716,7 @@ final class OrderService
             'currency'          => $currency,
             'paymentTargetCode' => $targetCode === '' ? null : $targetCode,
             'deliveryAddress'   => $ship,
+            'billingAddress'    => $bill,
             'notes'             => $notes === '' ? null : $notes,
             'lines'             => $lines,
         ];

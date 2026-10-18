@@ -979,6 +979,8 @@ _Z77.core.region = (function () {
  *   a[data-window-link]         loads its href into THIS window (read view ↔ edit form)
  *   [data-window-close]         closes this window (and its children); so does
  *                               [data-popup-close] inside a window, × and Esc
+ *   [data-window-full]          toggles full screen (`is-full`, aria-pressed follows) — the icon
+ *                               every window carries in its title bar (owner 2026-10-17)
  *   <form method="post">        is sent by fetch as FormData to its action; the answer is HTML
  *                               (this window's new content, e.g. errors) or an envelope
  *
@@ -1063,6 +1065,21 @@ _Z77.core.windows = (function () {
         return hit;
     }
 
+    /* The full-screen icon of the title bar (the owner's draft, 2026-10-17): four corners pointing
+     * out, pointing in while the window is full. Built node by node — no markup from a string. */
+    var _FULL_OUT = 'M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4';
+    var _FULL_IN  = 'M6 2v4H2M14 6h-4V2M10 14v-4h4M2 10h4v4';
+    function _fullIcon() {
+        var ns = 'http://www.w3.org/2000/svg';
+        var svg = document.createElementNS(ns, 'svg');
+        svg.setAttribute('viewBox', '0 0 16 16');
+        svg.setAttribute('aria-hidden', 'true');
+        var path = document.createElementNS(ns, 'path');
+        path.setAttribute('d', _FULL_OUT);
+        svg.appendChild(path);
+        return svg;
+    }
+
     function _build(parentId, origin) {
         var win = document.createElement('section');
         win.className = 'z77-window';
@@ -1084,7 +1101,17 @@ _Z77.core.windows = (function () {
         close.setAttribute('data-window-close', '');
         close.setAttribute('aria-label', _Z77.core.i18n.t('common.close', 'Schliessen'));
         close.textContent = '×';
+        var fullLabel = _Z77.core.i18n.t('common.fullscreen', 'Vollbild');
+        var full = document.createElement('button');
+        full.type = 'button';
+        full.className = 'z77-window__full';
+        full.setAttribute('data-window-full', '');
+        full.setAttribute('aria-label', fullLabel);
+        full.setAttribute('aria-pressed', 'false');
+        full.title = fullLabel;
+        full.appendChild(_fullIcon());
         head.appendChild(title);
+        head.appendChild(full);
         head.appendChild(close);
         var body = document.createElement('div');
         body.className = 'z77-window__body';
@@ -1109,7 +1136,7 @@ _Z77.core.windows = (function () {
             btn.setAttribute('aria-label', label);
             btn.title = label;
             btn.textContent = label;
-            head.insertBefore(btn, head.querySelector('.z77-window__close'));
+            head.insertBefore(btn, head.querySelector('.z77-window__full') || head.querySelector('.z77-window__close'));
         } else if (!has && btn) {
             btn.parentNode.removeChild(btn);
         }
@@ -1245,6 +1272,15 @@ _Z77.core.windows = (function () {
             if (!win) return;
             var link = e.target.closest('a[data-window-link]');
             if (link) { e.preventDefault(); load(win, link.href); return; }
+            var fullBtn = e.target.closest('[data-window-full]');
+            if (fullBtn) {
+                var isFull = win.classList.toggle('is-full');
+                fullBtn.setAttribute('aria-pressed', String(isFull));
+                var fullPath = fullBtn.querySelector('path');
+                if (fullPath) fullPath.setAttribute('d', isFull ? _FULL_IN : _FULL_OUT);
+                front(win);
+                return;
+            }
             if (e.target.closest('[data-window-close], [data-popup-close]')) { close(win); return; }
             front(win);
         });

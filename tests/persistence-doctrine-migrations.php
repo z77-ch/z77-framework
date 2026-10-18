@@ -730,12 +730,15 @@ PHP);
     $write('packages/module-local/src/Entities/Tag.php', $entity('Tag', 'local_tag', ['color', 'alpha']));
     $before = $allFiles();
     [$code, $out] = $setup();
+    fwrite(STDERR, 'DEBUG I8 code=' . $code . ' out=' . substr(preg_replace('/\s+/', ' ', $out), 0, 900) . PHP_EOL);
     check('I8 a framework entity under vendor/ changed: refused, exit non-zero, names the directory', $code !== 0 && str_contains($out, $probeMigrations) && str_contains($out, 'not shipped'));
+    fwrite(STDERR, 'DEBUG I8b probeMig=' . $probeMigrations . ' new=' . json_encode(array_values(array_diff($allFiles(), $before))) . ' gone=' . json_encode(array_values(array_diff($before, $allFiles()))) . ' memo=' . (int) in_array('memo', $columnsOfTable('probe_posting'), true) . ' alpha=' . (int) in_array('alpha', $columnsOfTable('local_tag'), true) . PHP_EOL);
     check('I8b … all-or-nothing: the writable module got no file either, no column added', $allFiles() === $before
         && !in_array('memo', $columnsOfTable('probe_posting'), true) && !in_array('alpha', $columnsOfTable('local_tag'), true));
     $write('vendor/z77/module-probe/src/Entities/Posting.php', $postingSource);
     $write('packages/module-local/src/Entities/Tag.php', $entity('Tag', 'local_tag', ['color']));
     [$code, $out] = $setup();
+    fwrite(STDERR, 'DEBUG I9 code=' . $code . ' new=' . json_encode(array_values(array_diff($allFiles(), $before))) . ' out=' . substr(preg_replace('/\s+/', ' ', $out), 0, 600) . PHP_EOL);
     check('I9 back to the mapping: setup finds nothing and writes nothing', $code === 0 && str_contains($out, 'Schema up to date') && $allFiles() === $before);
 
     echo "I. … helpers\n";

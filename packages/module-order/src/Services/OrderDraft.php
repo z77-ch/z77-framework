@@ -17,6 +17,8 @@ use Z77\Module\Order\Entities\SalesOrder;
  *   - `priceMode` — `net` | `gross`; `paymentTargetCode` — the payment part of the booked invoice,
  *     null / '' = none;
  *   - `deliveryAddress` — the snapshot to print on the delivery note; null = the invoice address;
+ *   - `billingAddress` — the snapshot the booking print invoices to; null = the customer's invoice
+ *     address (debtor's rule);
  *   - `notes` — internal, never printed;
  *   - `lines` — {@see OrderLineDraft}, in document order, children inside their parent;
  *   - `statusCode` — CREATE only: the status to start in (an active, not booked, not final one);
@@ -41,5 +43,6 @@ final class OrderDraft
         public readonly ?string $statusCode = null,
         public readonly string $sourceType = SalesOrder::SOURCE_BACKEND,
         public readonly ?string $sourceRef = null,
+        public readonly ?AddressSnapshot $billingAddress = null,
     ) {}
 }

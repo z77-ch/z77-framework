@@ -91,6 +91,8 @@ final class CustomerPicker
         return (new TemplateRenderer(self::NS))->partial('Backend/CustomerPicker/_field', [
             'contact' => $contact,
             'label'   => $contact !== null ? self::label($contact, $profile) : '',
+            'name'    => $contact !== null ? $contact->displayName() : '',
+            'note'    => $contact !== null ? ($profile !== null ? 'Kundennr. ' . $profile->getCustomerNumber() : 'neu als Debitor') : '',
             'pickUrl' => $pickUrl,
             'back'    => $back,
             'invalid' => $invalid,

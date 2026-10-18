@@ -112,6 +112,10 @@ class SalesOrder
     #[ORM\Embedded(class: AddressSnapshot::class, columnPrefix: 'ship_')]
     private AddressSnapshot $ship;
 
+    /** The billing address snapshot; all empty = none — the customer's invoice address applies ({@see billingAddress()}). */
+    #[ORM\Embedded(class: AddressSnapshot::class, columnPrefix: 'bill_')]
+    private AddressSnapshot $bill;
+
     #[ORM\Column(type: Types::TEXT, nullable: true)]
     private ?string $notes = null;
 
@@ -178,6 +182,7 @@ class SalesOrder
         $this->createdAt  = $createdAt;
         $this->orderDate  = $createdAt->setTime(0, 0);
         $this->ship       = self::noAddress();
+        $this->bill       = self::noAddress();
         $this->lines      = new ArrayCollection();
     }
 
@@ -231,6 +236,15 @@ class SalesOrder
         return $this->ship->lines() === [] && $this->ship->getCountry() === '' ? null : $this->ship;
     }
 
+    /**
+     * The billing address snapshot, or null when none was chosen — the booking print then takes
+     * the customer's invoice address (debtor's rule), as before 2026-10-17.
+     */
+    public function billingAddress(): ?AddressSnapshot
+    {
+        return $this->bill->lines() === [] && $this->bill->getCountry() === '' ? null : $this->bill;
+    }
+
     /** The «Nr.» the screens and PDFs print — the bare number (owner O2). */
     public function documentNumber(): string
     {
@@ -261,6 +275,7 @@ class SalesOrder
         ?string $paymentTargetCode,
         ?AddressSnapshot $deliveryAddress,
         ?string $notes,
+        ?AddressSnapshot $billingAddress = null,
     ): void {
         $this->contact           = $contact;
         $this->subject           = $subject;
@@ -271,6 +286,7 @@ class SalesOrder
         $this->currency          = $currency;
         $this->paymentTargetCode = $paymentTargetCode;
         $this->ship              = $deliveryAddress ?? self::noAddress();
+        $this->bill              = $billingAddress ?? self::noAddress();
         $this->notes             = $notes;
     }
 

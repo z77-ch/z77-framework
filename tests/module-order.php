@@ -296,6 +296,10 @@ check('D4 a line carries type, quantity, unit, price, discount, tax code, accoun
 check('D5 a lump sum without quantity, a negative quantity kept, a text line without price / tax / account',
     $draft->lines[2]->type === LineType::LumpSum && $draft->lines[2]->quantity === null && $draft->lines[1]->quantity === '-1'
     && $draft->lines[4]->type === LineType::Text && $draft->lines[4]->unitPrice === null && $draft->lines[4]->taxCode === null && $draft->lines[4]->revenueAccount === null);
+$billTo = new \Z77\Module\Debtor\Entities\AddressSnapshot('', '', '', 'Muster AG Buchhaltung', '', 'Postfach', '220', '8712', 'Stäfa', 'CH');
+$order->describe($contact, 'Wein für das Fest', new \DateTimeImmutable('2026-10-14'), null, null, PriceMode::Net, 'CHF', 'lukb', null, null, $billTo);
+check('D5b a billing snapshot on the order (bill_*, 2026-10-17) is the booked invoice address; none → null (debtor takes the customer address)',
+    $order->billingAddress() === $billTo && OrderInvoiceDraft::of($order, new \DateTimeImmutable('2026-10-31'))->address === $billTo);
 $order->describe($contact, '  ', new \DateTimeImmutable('2026-10-14'), new \DateTimeImmutable('2026-10-01'), new \DateTimeImmutable('2026-10-10'), PriceMode::Gross, 'CHF', null, null, null);
 $draft2 = OrderInvoiceDraft::of($order, new \DateTimeImmutable('2026-10-31'));
 check('D6 without a Betreff the subject is «Auftrag 42»; the head\'s service period wins; gross; no payment target',
@@ -367,6 +371,12 @@ $ship = new \Z77\Module\Debtor\Entities\AddressSnapshot('', '', 'Anna', 'Muster'
 $fd   = $form->toDraft(['1001' => 11], ['' => null, 'a3' => $ship], 'harness');
 check('F1 the head: contact id, subject (the service trims), dates, target, the chosen delivery address as snapshot, the start status',
     $fd !== null && $fd->contactId === 6 && $fd->orderDate === '2026-10-14' && $fd->paymentTargetCode === 'lukb' && $fd->deliveryAddress === $ship && $fd->statusCode === 'opened' && $fd->sourceRef === 'harness');
+$fb = (new OrderForm())->fromPost(['contact' => '6', 'order_date' => '2026-10-14', 'bill' => 'a3', 'rows' => []])->toDraft([], ['' => null], 'harness', ['' => null, 'a3' => $ship]);
+$fbBad = new OrderForm();
+$fbBad->fromPost(['contact' => '6', 'order_date' => '2026-10-14', 'bill' => 'a9', 'rows' => []]);
+check('F1b the billing address (2026-10-17): the chosen one as snapshot; one the customer does not have is refused on its field',
+    $fb !== null && $fb->billingAddress === $ship && $fb->deliveryAddress === null
+    && $fbBad->toDraft([], ['' => null], null, ['' => null]) === null && $fbBad->error('bill') !== '' && in_array('order-bill', $fbBad->invalidIds(), true));
 check('F2 the lines: the article number → its variant id, the existing line keeps its id, a «unter» row beneath its parent, the empty row left out, a bogus id dropped',
     count($fd->lines) === 3 && $fd->lines[0]->variantId === 11 && $fd->lines[0]->id === 15 && count($fd->lines[0]->children) === 1
     && $fd->lines[0]->children[0]->text === 'Unterlagen' && $fd->lines[1]->type === 'text' && $fd->lines[1]->id === null);

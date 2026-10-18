@@ -22,12 +22,16 @@
  *                             what it inherits there («– geerbt: UN –», module-article)
  * @var array<string, string|true> $attrs optional further attributes (`disabled` => true,
  *                             `data-fill-key` => 'tax_code' — an order line locked to its article)
+ * @var array<string, string> $shown optional code → what the option SHOWS instead of the code
+ *                             («8.1 %» — the order window shows the rate, owner 2026-10-16);
+ *                             the value stays the code, its label the title
  */
 $selected  = (string) ($selected ?? '');
 $allowNone = $allowNone ?? true;
 $noneLabel = (string) ($noneLabel ?? '–');
 $known     = false;
 $extra     = '';
+$shown     = $shown ?? [];
 foreach ($attrs ?? [] as $attr => $value) {
     $extra .= ' ' . e($attr) . ($value === true ? '' : '="' . e((string) $value) . '"');
 }
@@ -37,7 +41,7 @@ foreach ($attrs ?? [] as $attr => $value) {
     <option value=""<?= $selected === '' ? ' selected' : '' ?>><?= e($noneLabel) ?></option>
     <?php endif; ?>
     <?php foreach ($codes as $code): $known = $known || $code->getCode() === $selected; ?>
-    <option value="<?= e($code->getCode()) ?>"<?= $code->getCode() === $selected ? ' selected' : '' ?> title="<?= e($code->getLabel()) ?>"><?= e($code->getCode()) ?><?= $code->isActive() ? '' : ' (inaktiv)' ?></option>
+    <option value="<?= e($code->getCode()) ?>"<?= $code->getCode() === $selected ? ' selected' : '' ?> title="<?= e($code->getLabel()) ?>"><?= e($shown[$code->getCode()] ?? $code->getCode()) ?><?= $code->isActive() ? '' : ' (inaktiv)' ?></option>
     <?php endforeach; ?>
     <?php if ($selected !== '' && !$known): ?>
     <option value="<?= e($selected) ?>" selected><?= e($selected) ?> (?)</option>

@@ -43,7 +43,9 @@ use Z77\Core\DI,
     Z77\Module\Order\Services\OrderRefusedException,
     Z77\Module\Order\Services\OrderService,
     Z77\Module\Vat\Entities\TaxCode,
+    Z77\Module\Vat\Entities\TaxRate,
     Z77\Module\Vat\Services\VatException,
+    Z77\Module\Vat\Services\VatRates,
     Z77\Shared\Attributes\Csrf,
     Z77\Shared\Libraries\Convention\Naming,
     Z77\Shared\Listing\ListDefinition,
@@ -270,7 +272,8 @@ trait OrderControllerTrait
         $reason       = trim((string) ($post['stock_reason'] ?? ''));
         $confirmation = $reason !== '' ? new StockConfirmation(mb_substr($reason, 0, StockConfirmation::REASON_LENGTH)) : null;
         $needReason   = false;
-        $draft        = $form->toDraft($this->orderArticleNumbers($order), $this->orderShipChoices($form->header('contact'), $order));
+        $draft        = $form->toDraft($this->orderArticleNumbers($order), $this->orderShipChoices($form->header('contact'), $order),
+            null, $this->orderBillChoices($form->header('contact'), $order));
         if ($draft !== null) {
             try {
                 if ($order === null) {
@@ -376,7 +379,10 @@ trait OrderControllerTrait
                 $this->orderListBase() . ($order === null ? '/add' : '/edit?id=' . $order->getId()), $form->error('contact') !== ''),
             'targets'         => $targets,
             'ships'           => $this->orderShipLabels($form->header('contact'), $order),
-            'taxCodes'        => $this->em()->getRepository(TaxCode::class)->selectable($form->keptCodes()),
+            'bills'           => $this->orderBillLabels($form->header('contact'), $order),
+            'taxCodes'        => $taxCodes = $this->em()->getRepository(TaxCode::class)->selectable($form->keptCodes()),
+            // The window shows a line's VAT as its RATE («8.1 %», owner 2026-10-16), not the code.
+            'taxRates'        => $this->orderTaxRates($taxCodes, $form->header('order_date')),
             'accounts'        => (new LedgerAccountCheck($this->em()))->documentAccounts(),
             'articles'        => $this->orderArticleInfo($variants, $order),
             'preview'         => $preview,
@@ -391,6 +397,29 @@ trait OrderControllerTrait
             'canBook'         => $order !== null && $invoice === null && $status !== null && $status->getPhase()->isBookable(),
             'phase'           => $status?->getPhase(),
         ]);
+    }
+
+    /**
+     * Code → rate as shown («8.1 %») on the order date (today when the date is not valid yet);
+     * a code without a rate in effect is left out — the line then shows the code.
+     *
+     * @param list<TaxCode> $codes
+     * @return array<string, string>
+     */
+    private function orderTaxRates(array $codes, string $orderDate): array
+    {
+        $date  = \DateTimeImmutable::createFromFormat('!Y-m-d', $orderDate) ?: new \DateTimeImmutable('today');
+        $rates = VatRates::from($this->em());
+        $shown = [];
+        foreach ($codes as $code) {
+            try {
+                $shown[$code->getCode()] = TaxRate::formatPercent($rates->resolve($code->getCode(), $date)->rate) . ' %';
+            } catch (VatException) {
+                // no rate in effect on that day — the code stands in
+            }
+        }
+
+        return $shown;
     }
 
     // ── article chosen on a line ─────────────────────────────────────────
@@ -485,12 +514,21 @@ trait OrderControllerTrait
      */
     protected function customerChosenCommands(FetchResponse $response, Contact $contact, string $origin): void
     {
-        $ships = (new TemplateRenderer(self::ORDER_NS))->partial('Backend/OrderController/_ship', [
+        $renderer = new TemplateRenderer(self::ORDER_NS);
+        $ships = $renderer->partial('Backend/OrderController/_ship', [
             'ships'    => $this->orderShipLabels((string) $contact->getId(), null),
             'selected' => '',
             'invalid'  => false,
         ]);
         $response->addCommand('replace-html', ['target' => '#order-ship', 'html' => $ships, 'origin' => $origin]);
+        // The billing address starts at the customer's own as well (2026-10-17).
+        $bills = $renderer->partial('Backend/OrderController/_ship', [
+            'ships'    => $this->orderBillLabels((string) $contact->getId(), null),
+            'selected' => '',
+            'invalid'  => false,
+            'field'    => 'bill',
+        ]);
+        $response->addCommand('replace-html', ['target' => '#order-bill', 'html' => $bills, 'origin' => $origin]);
     }
 
     // ── «Status ändern …» ────────────────────────────────────────────────
@@ -950,13 +988,51 @@ trait OrderControllerTrait
     /** @return array<string, string> the same choices as German labels for the select */
     private function orderShipLabels(string $contactId, ?SalesOrder $order): array
     {
-        $labels = ['' => 'wie Rechnungsadresse'];
-        if ($order?->deliveryAddress() !== null) {
-            $labels[OrderForm::SHIP_KEEP] = 'wie gespeichert: ' . implode(', ', $order->deliveryAddress()->lines());
+        return $this->orderAddressLabels('wie Rechnungsadresse', $order?->deliveryAddress(), $contactId);
+    }
+
+    /**
+     * The billing-address choices (2026-10-17, the twin of {@see orderShipChoices()}): '' = the
+     * customer's invoice address as debtor chooses it at booking, «keep» = the snapshot the order
+     * holds, `a{link id}` = one of the contact's addresses, copied as a snapshot at save.
+     *
+     * @return array<string, AddressSnapshot|null>
+     */
+    private function orderBillChoices(string $contactId, ?SalesOrder $order): array
+    {
+        $choices = ['' => null];
+        if ($order?->billingAddress() !== null) {
+            $choices[OrderForm::SHIP_KEEP] = $order->billingAddress();
+        }
+        foreach ($this->orderContactAddresses($contactId) as $link) {
+            $choices['a' . $link->getId()] = AddressSnapshot::of($link->getAddress());
+        }
+
+        return $choices;
+    }
+
+    /** @return array<string, string> */
+    private function orderBillLabels(string $contactId, ?SalesOrder $order): array
+    {
+        return $this->orderAddressLabels('Rechnungsadresse des Kunden', $order?->billingAddress(), $contactId);
+    }
+
+    /**
+     * Short labels as in the owner's draft — «Hauptadresse · Seestrasse 14, Stäfa»: the type (or
+     * «wie gespeichert») and street, city; the card below the select shows the whole address.
+     *
+     * @return array<string, string>
+     */
+    private function orderAddressLabels(string $none, ?AddressSnapshot $kept, string $contactId): array
+    {
+        $short = static fn(AddressSnapshot $a): string => trim($a->getStreet() . ' ' . $a->getHouseNo()) . ($a->getCity() !== '' ? ', ' . $a->getCity() : '');
+        $labels = ['' => $none];
+        if ($kept !== null) {
+            $labels[OrderForm::SHIP_KEEP] = 'wie gespeichert · ' . $short($kept);
         }
         $types = AddressTypes::from($this->em());
         foreach ($this->orderContactAddresses($contactId) as $link) {
-            $labels['a' . $link->getId()] = $types->labelOf($link->getTypeCode()) . ': ' . implode(', ', AddressSnapshot::of($link->getAddress())->lines());
+            $labels['a' . $link->getId()] = $types->labelOf($link->getTypeCode()) . ' · ' . $short(AddressSnapshot::of($link->getAddress()));
         }
 
         return $labels;

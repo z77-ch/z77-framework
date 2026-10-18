@@ -15,8 +15,9 @@ use Z77\Module\Order\Entities\SalesOrderLine;
  * the booking print (`invoiceAndFinalize()`, step 9) all go through it — so the preview IS what
  * the booking print will issue.
  *
- *   - kind `invoice`; the contact (debtor snapshots its INVOICE address at booking — `address`
- *     null; the order's delivery address is the delivery note's, not the invoice's);
+ *   - kind `invoice`; the contact; `address` = the order's BILLING snapshot (2026-10-17), null =
+ *     debtor snapshots the customer's INVOICE address at booking (the order's delivery address is
+ *     the delivery note's, not the invoice's);
  *   - the invoice date (the booking print's confirm, default today; the order date for the totals);
  *   - the service period from the head; an EMPTY «Leistung von» → the invoice date;
  *   - price mode and currency of the order, its payment target code; payment terms null → the
@@ -59,7 +60,7 @@ final class OrderInvoiceDraft
             currency: $order->getCurrency(),
             priceMode: $order->priceMode(),
             paymentTermsCode: null,
-            address: null,
+            address: $order->billingAddress(),   // null = debtor snapshots the customer's invoice address
             lines: $lines,
             sourceType: self::SOURCE_TYPE,
             sourceRef: $order->documentNumber(),
