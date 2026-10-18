@@ -6,19 +6,20 @@
 // `.be-list__find-input`, which carries `.be-input`) and `.be-list__filter-input`.
 // Geometry (padding, font size, width) stays with each rule — a dense row is
 // meant to be smaller; the LOOK (line, ground, ink, focus ring) is defined here
-// once, so the input ground of ADR-051 changes one place (css-backend.md,
-// consistency audit 2026-10-16 point 2).
+// once (css-backend.md, consistency audit 2026-10-16 point 2).
+//
+// ADR-051 (the order-window draft): radius 5 on the field ground `--be-field`, between the
+// card and the ink. Inside a table row the control is QUIET (`quiet`, `_list.scss`).
 //
 // Mixins, not one shared selector list: an include keeps every rule at its
-// position in the cascade, so the compiled result is unchanged.
+// position in the cascade.
 
-// Rest state: line, corner, ground, ink. `$radius` defaults to the form radius;
-// the list filter passes its token (`var(--radius-md)`).
-@mixin rest($radius: .375rem) {
-    border:        1px solid var(--be-line);
-    border-radius: $radius;
-    background:    var(--be-surface);
-    color:         var(--be-text);
+// Rest state: line, corner, ground, ink.
+@mixin rest($radius: var(--radius-field)) {
+    border:           1px solid var(--be-line);
+    border-radius:    $radius;
+    background-color: var(--be-field);
+    color:            var(--be-text);
 }
 
 // Focus: the accent line and its soft ring instead of the browser outline.
@@ -26,4 +27,22 @@
     outline:      none;
     border-color: var(--be-accent);
     box-shadow:   0 0 0 2px color-mix(in srgb, var(--be-accent) 15%, transparent);
+}
+
+// A control inside a table row (ADR-051 decision 3): the row reads as data, not as a form —
+// no ground and no line at rest, the line on hover, field ground + accent line on focus.
+// `background-color`, never the shorthand: a `select.be-input` paints its caret as a
+// background image.
+@mixin quiet {
+    background-color: transparent;
+    border-color:     transparent;
+
+    &:hover:not(:disabled):not([readonly]) { border-color: var(--be-line); }
+    &:focus,
+    &:focus-visible {
+        background-color: var(--be-field);
+        border-color:     var(--be-accent);
+    }
+    // An error stays visible at rest — the quiet look must not swallow it.
+    &[aria-invalid="true"] { border-color: var(--be-danger); }
 }

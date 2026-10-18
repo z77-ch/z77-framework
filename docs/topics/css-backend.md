@@ -31,10 +31,11 @@ A **single `base.css`** carries tokens + all components + their responsive rules
 ```text
 packages/module-backend/res/scss/
 ├── tokens/
-│   ├── _colors.scss        --be-* backend theme tokens (6 palettes × light/dark)
-│   ├── _typography.scss    Inter (ui/display, OFL — fonts/inter/), mono; --be-font-scale (slider) × font-size-vars mixin; --be-font-scale-cap + font-size-capped mixin
+│   ├── _fonts.scss         @font-face (global): Instrument Sans 400–700 + IBM Plex Mono 400/500, latin + latin-ext, OFL — res/assets/fonts/
+│   ├── _colors.scss        --be-* backend theme tokens (7 palettes × light/dark, Salbei = the base block) + derived roles
+│   ├── _typography.scss    font tokens (ui/base/display = Instrument Sans, mono = IBM Plex Mono); --be-font-scale (slider) × font-size-vars mixin; --be-font-scale-cap + font-size-capped mixin
 │   ├── _spacing.scss
-│   └── _effects.scss       --z-topbar:40, --z-dropdown:100, --z-overlay:300, shadows, transitions, radii
+│   └── _effects.scss       --z-topbar:40, --z-dropdown:100, --z-overlay:300, shadows, transitions, radii (+ roles --radius-card 8px, --radius-field 5px)
 ├── base/
 │   ├── _normalize.scss
 │   ├── _elements.scss      base html/body + slim backend scrollbars
@@ -43,7 +44,7 @@ packages/module-backend/res/scss/
 ├── components/
 │   ├── _buttons.scss       .be-btn (palette-aware) + .be-icon-btn — the single backend button system (font-capped by default)
 │   ├── _icon.scss          .be-icon — presentation for <use> sprite icons (stroke/currentColor/caps)
-│   ├── _input-look.scss    mixins only (no CSS): `rest` + `focus` — THE input look every text control includes
+│   ├── _input-look.scss    mixins only (no CSS): `rest` + `focus` + `quiet` (a control in a table row) — THE input look every text control includes
 │   ├── _forms.scss
 │   ├── _switch.scss        .be-switch reusable on/off toggle slider
 │   ├── _cards.scss
@@ -123,11 +124,12 @@ itself into `public/` is NOT touched — that file belongs to the project.
 | Body, html base styles, slim scrollbars | `base/_elements.scss` |
 | CSS reset, incl. `[hidden] { display: none !important }` (the attribute always hides — HIDDEN-RESET-001) | `base/_normalize.scss` |
 | Button, form, card, alert, badge, table, modal, pagination | `components/_*.scss` |
-| The input LOOK of every text control (line, corner, ground, ink, focus ring) — `.be-input`, `.be-form__control`, `.be-form__field input/select`, `.be-form__param-row input`, `.be-list__filter-input` all `@include` it; geometry stays per rule | `components/_input-look.scss` (mixins `look.rest` / `look.focus`) |
+| The input LOOK of every text control (line, corner, ground, ink, focus ring) — `.be-input`, `.be-form__control`, `.be-form__field input/select`, `.be-form__param-row input`, `.be-list__filter-input` all `@include` it; geometry stays per rule. A control inside a `.be-list__row` is QUIET (`look.quiet`: no ground/line at rest, line on hover, field + accent on focus, an `aria-invalid` line stays) | `components/_input-look.scss` (mixins `look.rest` / `look.focus` / `look.quiet`) |
 | Form helpers instead of inline styles: one-column grid `.be-form__grid--single`, fill grid `--fill`, warning hint `.be-form__hint--warn`, divider `.be-form__divider`, option column `.be-form__stack`, short input `.be-input--short`; a disabled `.be-choice` dims itself | `components/_forms.scss` |
 | Records listed in a dialog with per-record buttons (`.be-modal__rows` / `__row` / `__row-main` / `__row-name` / `__row-meta` — Drive trash, access rules); messages in an alert (`.be-modal__alert-list`) | `components/_modal.scss` / `components/_alerts.scss` |
 | Work-area helpers instead of inline styles: `.be-list__note`, `__bar`, `__facts`, `__copy`, `__tally*`, `__form`, cell modifiers `--indent` / `--span` / `--rest`; hub-tree `.be-tree__url--text`, `__meta--accent`, `__menu--placeholder`, `__detail` (+ `--actions`, `-form`); field diff `.be-diff`; plain-table cells `.be-table__cell--muted` / `--nowrap` / `--end` | `components/_list.scss` / `components/_tables.scss` |
 | Labelled fields side by side in declared columns (`.be-form__row` + `--be-form-cols`), a shown-not-entered value (`.be-form__static`), a resolved value under a field (`.be-form__resolved`) | `components/_forms.scss` |
+| A form laid out as CARDS on the window ground (ADR-051, first user the order window): the form `.be-form--blocks` (no card itself), a head row `.be-form__blocks` (columns in `--be-form-blocks`, stacks below 900px), each card `.be-form__block` (head `.be-form__block-head` = title + a block-wide control), `.be-form__pair` (two short fields), `.be-form__card` + `.be-form__card-label` (an address / a fact in a framed box), `.be-form__foot` (audit left `.be-form__audit`, totals right `.be-form__totals`), `details.be-form__block` (a collapsed card at the end), `.be-status-pill` (a status that opens its change; `--locked` without link), `.be-form__fieldset` (a bare fieldset, replaces inline resets) | `components/_forms.scss` |
 | An optional part of a form opened by a checkbox, no JS (`.be-reveal` — `__toggle` / `__label` / `__panel`) | `components/_forms.scss` |
 | A switch whose checkbox lives elsewhere — the `.be-reveal__toggle` before it — (`.be-switch--for`, a `<label for>`; its look follows `:checked ~` / `:focus-visible ~`), and a switch as a field of a `.be-form__row` (`.be-form__field > .be-switch`: text as the caption, track on the input line) | `components/_switch.scss` |
 | Tabs that switch SECTIONS of one page or form without a request and without JS — radios + panels in the form, the tab labels anywhere (the toolbar), active underline via `:has()` (`.be-radiotabs` / `__radio` / `__panel`, `.be-viewtabs__tab--for`, all matched by `data-tab` = position) | `components/_radiotabs.scss` |
@@ -282,7 +284,26 @@ label.
 
 ## backend theme tokens (--be-*)
 
-Defined in `tokens/_colors.scss`, declared on the `.be` wrapper (`<html class="be">`), not `:root` (ADR-018) — default `werkbank`, light. Override with `[data-be-palette="citrus|coral|lagune|beere|sonne"]` and/or `[data-be-theme="dark"]` on the same `<html>` element (kept after the `.be` block in source → wins at equal specificity).
+Defined in `tokens/_colors.scss`, declared on the `.be` wrapper (`<html class="be">`), not `:root` (ADR-018) — default **`salbei`**, light (since 2026-10-17, ADR-051 addendum: the owner's order-window draft as a palette; `UserPreferences::DEFAULT_PALETTE`, first in `Palettes::all()`). Salbei is the `.be` block and the bare `[data-be-theme="dark"]` block; every other palette overrides it with `[data-be-palette="werkbank|citrus|coral|lagune|beere|sonne"]` and `[data-be-palette="…"][data-be-theme="dark"]` (kept after the `.be` block in source → wins at equal specificity). A user who stored a palette keeps it — `werkbank` now has its own selectors (tokens and the light-mode island in `_shell.scss`).
+
+| Salbei | bg | surface | surface2 (card) | text | muted | line | accent | accent-soft | good | warn |
+|---|---|---|---|---|---|---|---|---|---|---|
+| light | `#f3f4f2` | `#f9faf8` | `#ffffff` | `#1d2421` | `#66706b` | `#dde1dd` | `#1f6b5c` | `#e2efeb` | `#2f7d4a` | `#9a5b00` |
+| dark | `#141816` | `#181d1b` | `#1c211f` | `#e4e9e6` | `#98a29d` | `#2d3431` | `#6cc3ad` | `#1f3530` | `#8fd18a` | `#e3ac5c` |
+
+From the draft: bg, sheet → `--be-surface2`, fg, muted, line, accent, accent-soft, warn (light and dark block); `--be-surface` (between ground and card), `--be-topbar` (= surface), good and the light-mode island (deep sage `#1a2f29`, accent `#6cc3ad`) are additions — the draft has no shell. `--be-danger` stays the shared `#dc2626`.
+
+**Derived roles** (ADR-051 decision 2) — declared once on `.be` next to `--be-confirm`, every palette and theme; redeclared on the light-mode island so they follow its dark set:
+
+| Token | Formula | Salbei light (draft) | Salbei dark (draft) |
+|---|---|---|---|
+| `--be-field` (input ground) | `color-mix(in srgb, var(--be-surface2) 97%, var(--be-text))` | `#f8f8f8` (`#f8f9f7`) | `#222725` (`#232927`) |
+| `--be-line-strong` (table head rule, strong frames, secondary button line) | `color-mix(in srgb, var(--be-line) 80%, var(--be-muted))` | `#c5cac6` (`#c3c9c4`) | `#424a47` (`#414a46`) |
+| `--be-row-tint` (a secondary row — the row detail) | `color-mix(in srgb, var(--be-surface2) 96%, var(--be-text))` | `#f6f6f6` (`#f5f6f2`) | `#242927` (`#202624`) |
+
+⚠️ Field and row tint mix toward `--be-text`, not toward `--be-bg` as the ADR's start formula said: the draft's dark field is LIGHTER than its card, which no mix with the ground can give.
+
+**Faces** (ADR-051 addendum, replacing Inter): `--font-family-ui` / `-base` / `-display` = `'Instrument Sans', 'Segoe UI', system-ui, sans-serif`; `--font-family-mono` = `'IBM Plex Mono', ui-monospace, Consolas, monospace`. Self-hosted woff2 under `res/assets/fonts/instrument-sans/` (400/500/600/700) and `res/assets/fonts/ibm-plex-mono/` (400/500), latin + latin-ext with `unicode-range`, `font-display: swap`, each folder with its `OFL.txt`; taken from `@fontsource/*` 5.3.0, not a dependency. Published to `public/assets/backend/fonts/` like the CSS. No CSP exists yet — whatever comes must allow `font-src 'self'`. The Inter files are gone from the package (a project's published `fonts/inter/` copy is dead and may be deleted).
 
 Active palette + theme are written by `BackendAbstractController::html()` as `data-be-palette` / `data-be-theme` attributes on the `<html>` element (see `html-default-skeleton.tpl.php`). `appearance.js` updates these attributes on user clicks for instant switching and POSTs the change to `/backend/system/system/save-preferences` for persistence. No JS-side token mirror — `_colors.scss` is the single source of truth.
 
@@ -296,10 +317,11 @@ Active palette + theme are written by `BackendAbstractController::html()` as `da
 | `--be-text` | primary text |
 | `--be-muted` | secondary / helper text |
 | `--be-line` | borders and dividers |
-| `--be-accent` | primary accent color (moss green default palette) |
+| `--be-accent` | primary accent color (dark sage green in the default Salbei) |
 | `--be-accent-soft` | accent at low opacity (hover backgrounds) |
 | `--be-good` | success / green indicator |
 | `--be-warn` | warning / orange indicator |
+| `--be-field` / `--be-line-strong` / `--be-row-tint` | derived roles, see above |
 
 ## JavaScript (no build)
 
@@ -350,7 +372,7 @@ packages/module-backend/res/view/templates/
 - When an action-cell button is built → MUST lead with ONE `.be-icon` glyph (`icon-plus` create, `icon-check` confirm; a picker's trigger ends with the chevron carrying `.be-shell-add__chevron`) and wrap its word in `<span class="be-btn__label">`: below 767px the cell is a square icon at the right end of the toolbar row and the label is visually hidden there (it stays the accessible name). MUST NOT use a bare text node (cannot be hidden) and MUST NOT add `data-shell-act-inline` (removed 2026-10-08 — the phone shape is the rule now).
 - When a choice holds for the whole AREA (the fiscal year of Finanzen) → MUST render it at the top of the rail: a `{action}.select.tpl.php` (backend host) or `addPartials(…, 'railSelect')` from a fragment trait, built as the CSS-only `.be-shell-add--select` dropdown; MUST NOT put it into the action cell or the toolbar. On a phone it rides along in the drawer with the rail.
 - On a phone (below 767px) the drawer holds area switcher, rail-top selection and rail (SHELL-DRAWER-001) → MUST NOT move the action cell into the drawer again and MUST NOT add a second copy of the action to the toolbar — the same element is re-placed by CSS (`order` in the flex band).
-- When a screen's health or queue state must be readable without reading the body (job runner, import plan, member queue) → MUST use `.be-shell-status` (`__dot` + `__text`, `--ok` / `--bad`) in hc2; MUST NOT use `.badge` for it — that component runs on the light-only `--color-*` set and is wrong in dark mode.
+- When a screen's health or queue state must be readable without reading the body (job runner, import plan, member queue) → MUST use `.be-shell-status` (`__dot` + `__text`, `--ok` / `--bad`) in hc2; MUST NOT use `.badge` for it — a badge is the state PILL of a row (accent-soft ground, tone ink, radius 999 — palette- and theme-aware since ADR-051), not the state of a screen.
 - When filling a shell header slot (`{Group}/{Controller}/{action}.hc1|hc2|hc3.tpl.php`) → MUST keep it to a SINGLE line. `.be-shell-band__slot` is a FIXED-height band (`height: var(--shell-band)` = the top bar's `--shell-bar`, 48px since 2026-10-08; not `min-height`) so every slot stays exactly equal (empty or filled) and the band lines up across columns. Content that needs more room MUST go into a dropdown or popup — MUST NOT make the band taller (would break the cross-column alignment) and MUST NOT give the band its own height value (it is the top bar's). An hc1 primary action MUST wrap its text in `<span class="be-btn__label">` — the phone shows the action cell as its glyph, and a bare text node cannot be hidden by CSS (SHELL-BAND-ROW-001). A view with SEVERAL add kinds MUST use the `.be-shell-add` hc1 picker (a «＋ add» button that opens a panel to choose the type, via the panel-toggle contract) rather than stacking multiple add buttons in the band (e.g. translation: Text / Slug). The band scales in fixed px, not `em`/`rem`: it is chrome and matches the font-capped buttons (see FONT-CAP-001) — the font slider scales content, not chrome. If a slot's text grows too large at high font scale, cap it with `.be-font-cap` rather than making the height relative.
 - When naming a NEW shell region, a region-level class, or a new header-slot template in any shell → MUST use the glossary job name (`topbar` / `area` / `act` / `toolbar` / `crumbs` / `rail` / `work` / `seam` — see [shell regions](#shell-regions-glossary)); new slot templates MUST be `{action}.act|toolbar|crumb.tpl.php`. MUST NOT name a class after a slot number or file suffix (`hc1`, `hc2`, `hc3`) — axo3's `.be-stock__hcfilter|hccount|hctools|…` is the counterexample. Existing `hc*` templates and `__slot--N` classes stay valid; do not rename them in passing.
 - `rail` / Schiene MUST mean the LEFT orientation column in every shell; the top bar is `topbar` (`--be-topbar`). `band` MUST mean the backend row holding action cell + toolbar only; a state sentence is `status` / Zustand (`.be-shell-status`), a shell-level notice is `banner` / Störer (`.be-shell-banner`). MUST NOT introduce a new `*-rail*` or `*-band*` name for anything else.
@@ -813,14 +835,48 @@ packages/module-backend/res/view/templates/
 
 ## pending
 
-- **Cards on the window ground, quiet inputs — backend-wide (added 2026-10-16, ADR-051).**
-  Owner decision after the order-window mockup: blocks as `--be-surface2` cards on `--be-bg`,
-  three derived tokens on `.be` (`--be-field`, `--be-line-strong`, `--be-row-tint` —
-  `color-mix` of existing `--be-*`, never hex), table inputs borderless at rest. Next: board on
-  the developer canvas (all six palettes, light and dark, one screen per module) → owner look →
-  `_colors.scss` + `_forms.scss` / list components → the order window as the first screen with
-  the new layout. Framework rules stay: «Speichern» accent (ADR-033 addendum 2026-10-16), Inter.
-  Mockup: `temp/order-mask-draft.html` (gitignored, owner machine).
+- **Cards on the window ground, quiet inputs — backend-wide (added 2026-10-16, ADR-051 + its
+  addendum 2026-10-17: the draft IS the target look).** Mockup: `temp/order-mask-draft.html`
+  (gitignored, owner machine).
+  **BUILT 2026-10-17, not seen in a browser** (base.css + dms.css compiled and copied with the
+  fonts to z77.ch `public/assets/`): palette Salbei as the default, the three derived roles, the
+  faces, and the draft's forms through the shared components — values in
+  [backend theme tokens](#backend-theme-tokens---be-). Where the forms landed:
+  - **Cards:** `.be-list__section` is the card (`--be-surface2`, 1px `--be-line`, `--radius-card`,
+    padding 12/16, gap `--space-3`) — every list, every window form (order, article, journal,
+    invoice …). `.be-modal__body` is the card of a dialog (the dialog itself is `--be-bg` with a
+    `--be-line-strong` frame); a section inside a dialog body or inside a section is flat. An
+    action row (`.z77-form-actions`) that is a section's child becomes the card's head strip
+    (`_form-actions-host.scss`). Dashboard module cards and the login box take the card ground
+    and radius.
+  - **Titles:** `.be-list__section-title` and `.be-form__section` = the draft's block title (xs,
+    uppercase, `.09em`, bold, accent; a `<small>` in it plain and muted). The section header lost
+    its 2px rule; the column head (`.be-list__head`) is plain case with one `--be-line-strong`
+    rule and the card behind it (`--be-list-ground`).
+  - **Inputs:** `look.rest` = radius 5 on `--be-field`; `look.quiet` for every `.be-input` /
+    `.be-form__control` in a `.be-list__row`; numeric cells (`.be-list__cell--num`, and an input
+    in one) in the mono face, right-aligned, tabular. Checkbox / reveal boxes on `--be-field`.
+  - **Buttons:** secondary = card ground + `--be-line-strong`, accent line on hover (the draft's
+    `.btn`); primary ink = `--be-on-accent-page` (white in light, the dark ground in dark — every
+    dark accent was white-on-light before). «Speichern» stays the accent.
+  - **Pills:** `.badge` = the draft's `.chip` (soft ground, tone ink, radius 999, plain case),
+    tokens only — it was light-only. Tones mix toward `--be-text` for readable ink.
+  - **Bars:** `.be-modal__header` and `.z77-window__head` = card ground + line below, title 18px
+    semibold (the draft's `.bar`); window close 32px, hover on `--be-field`; window body padded
+    on all sides (the ground around the cards).
+  - **Drive:** `_dms-host.scss` binds the faces and the new fragment tokens `--dms-control-*`
+    (point 5 below) plus `--dms-line-strong` → `--be-line-strong`, `--dms-on-accent` →
+    `--be-on-accent-page`.
+  **Owner to look at first:** an order window (Salbei light AND dark — cards, head strip, quiet
+  position inputs, mono numbers), a plain list (Stammdaten › Artikel), a dialog (Kontakte ›
+  Adresstyp bearbeiten), the journal one-line entry, the Drive (buttons), a list with badges
+  (Mahnungen / Rechnungen), the dashboard and login; then the picker: Werkbank must look as
+  before apart from the new forms. **Open:** the draft's status SELECT as a pill in the window
+  title bar and its text rows (`--be-row-tint` on a text line) wait for the order window's new
+  layout (`order.md`); the shell island in Salbei is an addition the draft does not show —
+  owner's word; ADR-051 addendum point 5 (Citrus / Lagune / Sonne cards, Citrus / Sonne accents)
+  still open; EDGE-001's «text on the edge» now means «card on the edge», the text sits the card
+  padding further in.
   **Consistency audit 2026-10-16** (templates of all backend modules, grep) — fix BEFORE or WITH
   the token change, else the new look lands unevenly:
   1. *Save in dialogs was the accent, the rule said green* — RESOLVED by the owner the other
@@ -870,12 +926,12 @@ packages/module-backend/res/view/templates/
      `_folderMove`, `_bulkMove`, `_bulkConfirmDelete`, `confirmDelete`, `_trashConfirmPurge`,
      `FolderController/edit`) — most map onto the new classes directly. `.be-table` (form log)
      has no look of its own.
-  5. *Drive buttons keep their own geometry* (`dms-btn`: size, radius, type — unbound on
-     purpose, DMS-HOST-BIND-001; only colours follow `--be-*`). Owner 2026-10-16: the Drive
-     takes the backend's control look too («sollte er übernehmen» — one look per kind, Rule 8).
-     Way: the backend host binding (`_dms-host.scss`) also binds the control geometry
-     (button / input height, padding, radius, font size) — the fragment stays portable, other
-     hosts keep its own scale. Revises DMS-HOST-BIND-001 for controls only.
+  5. DONE 2026-10-17 — *Drive buttons kept their own geometry* (`dms-btn`). Owner 2026-10-16:
+     the Drive takes the backend's control look too (one look per kind, Rule 8). The fragment
+     got `--dms-control-padding-y|-x|-radius|-font-size|-font-weight` (defaults = its old
+     values, other hosts unchanged); `_dms-host.scss` binds them to the `.be-btn` geometry and
+     binds the two faces. The Drive has no text inputs of its own (its dialogs are backend
+     templates). Revises DMS-HOST-BIND-001 for controls and faces only ([`css-dms.md`](css-dms.md)).
   Member (`me-*`) is its own area and out of scope.
 
 - **Resume here (2026-10-10, after the context compact) — the forms rework is BUILT, not yet

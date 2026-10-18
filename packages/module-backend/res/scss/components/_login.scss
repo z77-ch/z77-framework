@@ -11,9 +11,9 @@
 .login__box {
     width:         100%;
     max-width:     380px;
-    background:    var(--be-surface);
+    background:    var(--be-surface2);   /* a card on the ground (ADR-051) */
     border:        1px solid var(--be-line);
-    border-radius: var(--radius-lg);
+    border-radius: var(--radius-card);
     box-shadow:    var(--shadow-md);
     padding:       var(--space-10) var(--space-8);
 }
@@ -56,21 +56,11 @@
     margin-bottom: var(--space-6);
 }
 
-// Form overrides — the inputs sit on the card (--be-surface), so recess them
-// with the page background (--be-bg) and darken the labels for on-card
-// readability. Base `.be-form__control:focus` + `.be-btn--primary` are already
-// palette/theme-aware (accent ring, accent fill, `--color-text-inverse` label),
-// so no focus-ring or button override is needed here.
-// NOTE: these must match the template classes (`.be-form__*`, `.be-btn--*`) —
-// the pre-`be-` names left over from the .form→.be-form / .btn→.be-btn migration
-// (CSS-LIST-CONSOLIDATION-001) were dead selectors, so the inputs blended into
-// the card.
+// Form overrides — darken the labels for on-card readability. The inputs need no override
+// since ADR-051: they sit on `--be-field`, the input ground of every backend form. Base
+// `.be-form__control:focus` + `.be-btn--primary` are palette/theme-aware.
 .login .be-form__label {
     color: var(--be-text);
-}
-
-.login .be-form__control {
-    background: var(--be-bg);
 }
 
 .login__error {

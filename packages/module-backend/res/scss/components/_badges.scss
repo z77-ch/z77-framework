@@ -1,22 +1,26 @@
+// A state as a PILL (ADR-051 addendum 2026-10-17 — the order-window draft's `.chip`): a soft
+// ground and the tone as ink, radius 999, plain case. Tokens only, so it follows every palette
+// and dark mode (it ran on the light-only `--color-*` set before). The soft grounds mix the
+// tone into the card colour; the ink mixes the tone toward the text so the light tones
+// (Citrus green, Sonne orange) stay readable on their own tint.
 .badge {
     display:        inline-flex;
     align-items:    center;
-    padding:        var(--space-1) var(--space-2);
+    padding:        .125rem .5rem;
     border-radius:  var(--radius-pill);
     font-size:      var(--font-size-xs);
     font-weight:    var(--font-weight-semibold);
-    line-height:    1;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
+    line-height:    1.35;
     white-space:    nowrap;
+    background:     var(--be-accent-soft);
+    color:          var(--be-accent);
 }
 
-.badge--primary { background: var(--color-primary);    color: var(--color-text-inverse); }
-.badge--success { background: var(--color-success-bg); color: var(--color-success); }
-.badge--danger  { background: var(--color-danger-bg);  color: var(--color-danger); }
-.badge--warning { background: var(--color-warning-bg); color: var(--color-warning); }
-.badge--muted   { background: var(--color-bg-surface); color: var(--color-text-muted); }
+.badge--primary { background: var(--be-accent-soft); color: var(--be-accent); }
+.badge--success { background: color-mix(in srgb, var(--be-good) 15%, var(--be-surface2));   color: color-mix(in srgb, var(--be-good) 75%, var(--be-text)); }
+.badge--danger  { background: color-mix(in srgb, var(--be-danger) 12%, var(--be-surface2)); color: color-mix(in srgb, var(--be-danger) 85%, var(--be-text)); }
+.badge--warning { background: color-mix(in srgb, var(--be-warn) 16%, var(--be-surface2));   color: color-mix(in srgb, var(--be-warn) 75%, var(--be-text)); }
+.badge--muted   { background: var(--be-field); color: var(--be-muted); box-shadow: inset 0 0 0 1px var(--be-line); }
 // A note, not a state: the row says something the list itself does not know
-// (e.g. «Zeichnung dabei»). Intent colour, never a defect colour — the two
-// flash/popup families already use --color-info for exactly this register.
-.badge--info    { background: var(--color-info-bg);    color: var(--color-info); }
+// (e.g. «Zeichnung dabei»). Intent colour, never a defect colour — the accent family.
+.badge--info    { background: var(--be-accent-soft); color: var(--be-accent); }

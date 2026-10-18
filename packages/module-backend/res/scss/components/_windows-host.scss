@@ -3,10 +3,13 @@
 // The primitive owns the geometry; the backend gives it its surface — palette tokens,
 // radius, shadow, the title bar. Two classes (`.be .z77-…`) beat the primitive's one.
 
+// ADR-051 (the order-window draft): the window is the GROUND (`--be-bg`) with a strong frame,
+// its title bar the card colour with a line below (the draft's `.bar`), its blocks cards
+// (`.be-list__section`, `_list.scss`).
 .be .z77-windows {
     --z77-windows-backdrop: rgba(0, 0, 0, .34);
     --z77-window-bg:        var(--be-bg);
-    --z77-window-line:      var(--be-line);
+    --z77-window-line:      var(--be-line-strong);
 }
 .be .z77-window {
     border-radius: var(--radius-lg);
@@ -15,26 +18,36 @@
 }
 .be .z77-window.is-front { box-shadow: var(--shadow-lg), 0 0 0 2px var(--be-accent-soft); }
 .be .z77-window__head {
-    padding:       var(--space-2) var(--space-3);
+    padding:       .55rem var(--space-3) .55rem 1.125rem;
     border-bottom: 1px solid var(--be-line);
     background:    var(--be-surface2);
     border-radius: var(--radius-lg) var(--radius-lg) 0 0;
     font-weight:   var(--font-weight-semibold);
     font-size:     var(--font-size-sm);
 }
+// The draft's title: 18px semibold — on the title only, the «Hilfe» button beside it inherits
+// the head's font.
+.be .z77-window__title { font-size: var(--font-size-xl); }
+.be .z77-window.is-full { border-radius: 0; }
+.be .z77-window.is-full .z77-window__head { border-radius: 0; }
+.be .z77-window__full,
 .be .z77-window__close {
-    width:         28px;
-    height:        28px;
+    width:         32px;
+    height:        32px;
     border-radius: var(--radius-md);
     color:         var(--be-muted);
     font-size:     1.25rem;
     line-height:   1;
 }
-.be .z77-window__close:hover { background: var(--be-accent-soft); color: var(--be-text); }
+.be .z77-window__full[aria-pressed="true"] { color: var(--be-accent); }
+.be .z77-window__full:hover,
+.be .z77-window__close:hover { background: var(--be-field); color: var(--be-text); }
 // The body keeps the head's side padding (owner 2026-10-10: the form stood flush on the
 // window's edge); the form's action row bleeds back out so it runs edge to edge directly
-// under the title bar, as the dialog's row does (ADR-049).
-.be .z77-window__body { padding: 0 var(--space-3) var(--space-3); }
+// under the title bar, as the dialog's row does (ADR-049). Since ADR-051 the body is the
+// ground around the cards, so it has air on top too; an action row inside a card is the
+// card's head strip (`_form-actions-host.scss`).
+.be .z77-window__body { padding: var(--space-3); }
 .be .z77-window__body .z77-form-actions {
     margin-inline:  calc(-1 * var(--space-3));
     padding-inline: var(--space-3);

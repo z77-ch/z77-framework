@@ -1,20 +1,34 @@
-// Inter (variable) — SIL Open Font License 1.1, see ../fonts/inter/OFL.txt.
-// Bundled deliberately: open license permits redistribution in this MIT repo.
-// Two files cover all weights 100–900 incl. italics (no static cuts needed).
-// Path relative to compiled CSS output at res/assets/css/
+// Backend faces (ADR-051 addendum 2026-10-17 — the order-window draft's faces, replacing Inter):
+//   Instrument Sans 400/500/600/700 — the UI face   (SIL OFL 1.1, ../fonts/instrument-sans/OFL.txt)
+//   IBM Plex Mono   400/500         — numbers, codes (SIL OFL 1.1, ../fonts/ibm-plex-mono/OFL.txt)
+// Self-hosted (Rule 7: no foreign origin at runtime, no Google Fonts). Files from the npm
+// packages @fontsource/instrument-sans and @fontsource/ibm-plex-mono 5.3.0 — copied, not a
+// dependency. Two subsets per cut: latin (incl. ’ U+2019, the Swiss thousands mark) and
+// latin-ext; the browser loads a subset only when the page uses a character of its range.
+// Path relative to the compiled CSS at res/assets/css/.
+// `@font-face` stays global — the one exception to «tokens on .be» (css-backend.md rules).
 
-@font-face {
-    font-family:   'Inter';
-    src:           url('../fonts/inter/InterVariable.woff2') format('woff2');
-    font-weight:   100 900;
-    font-style:    normal;
-    font-display:  swap;
-}
+@use 'sass:string';
 
-@font-face {
-    font-family:   'Inter';
-    src:           url('../fonts/inter/InterVariable-Italic.woff2') format('woff2');
-    font-weight:   100 900;
-    font-style:    italic;
-    font-display:  swap;
+$-latin:     'U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD';
+$-latin-ext: 'U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF';
+
+$-faces: (
+    ('Instrument Sans', 'instrument-sans', (400, 500, 600, 700)),
+    ('IBM Plex Mono',   'ibm-plex-mono',   (400, 500)),
+);
+
+@each $family, $dir, $weights in $-faces {
+    @each $weight in $weights {
+        @each $subset, $range in ('latin-ext': $-latin-ext, 'latin': $-latin) {
+            @font-face {
+                font-family:   $family;
+                src:           url('../fonts/#{$dir}/#{$dir}-#{$subset}-#{$weight}-normal.woff2') format('woff2');
+                font-weight:   $weight;
+                font-style:    normal;
+                font-display:  swap;
+                unicode-range: string.unquote($range);
+            }
+        }
+    }
 }

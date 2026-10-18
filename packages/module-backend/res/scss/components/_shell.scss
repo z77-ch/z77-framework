@@ -96,7 +96,15 @@ body.backend {
 .be:not([data-be-theme="dark"]) .be-shell-band__slot--1,
 .be:not([data-be-theme="dark"]) .be-shell-crumb__slot--1,
 .be:not([data-be-theme="dark"]) .be-shell-tabs__slot--1,
-.be:not([data-be-theme="dark"]) .be-shell-topbar__mod {            // werkbank — indigo
+.be:not([data-be-theme="dark"]) .be-shell-topbar__mod {            // salbei (default) — deep sage green
+    --be-nav:#1a2f29; --be-text:#e3eeea; --be-muted:#9db6ae; --be-line:#2f4a42;
+    --be-surface:#223b34; --be-surface2:#29453d; --be-accent:#6cc3ad; --be-accent-soft:#264740; --be-on-accent:#1a2f29;
+}
+.be[data-be-palette="werkbank"]:not([data-be-theme="dark"]) .be-shell-col--1,
+.be[data-be-palette="werkbank"]:not([data-be-theme="dark"]) .be-shell-band__slot--1,
+.be[data-be-palette="werkbank"]:not([data-be-theme="dark"]) .be-shell-crumb__slot--1,
+.be[data-be-palette="werkbank"]:not([data-be-theme="dark"]) .be-shell-tabs__slot--1,
+.be[data-be-palette="werkbank"]:not([data-be-theme="dark"]) .be-shell-topbar__mod { // werkbank — indigo
     --be-nav:#211d45; --be-text:#eae9f7; --be-muted:#a4a1c6; --be-line:#3a3563;
     --be-surface:#2a2650; --be-surface2:#322d5a; --be-accent:#a5a3fb; --be-accent-soft:#363168; --be-on-accent:#211d45;
 }
@@ -134,6 +142,14 @@ body.backend {
 .be[data-be-palette="sonne"]:not([data-be-theme="dark"]) .be-shell-tabs__slot--1,
 .be[data-be-palette="sonne"]:not([data-be-theme="dark"]) .be-shell-topbar__mod {    // sonne
     --be-nav:#302211; --be-text:#f6ecd7; --be-muted:#c7b492; --be-line:#504028; --be-surface:#3d301b; --be-surface2:#493a23; --be-accent:#f5b528; --be-accent-soft:#43331b; --be-on-accent:#302211;
+}
+// The derived ADR-051 roles (`tokens/_colors.scss`) are resolved on <html> against the PAGE
+// values; redeclared here so an input or a table head inside the island derives from the
+// island's dark set instead of carrying the light page field into the rail.
+.be:not([data-be-theme="dark"]) :is(.be-shell-col--1, .be-shell-band__slot--1, .be-shell-crumb__slot--1, .be-shell-tabs__slot--1, .be-shell-topbar__mod) {
+    --be-field:       color-mix(in srgb, var(--be-surface2) 97%, var(--be-text));
+    --be-line-strong: color-mix(in srgb, var(--be-line) 80%, var(--be-muted));
+    --be-row-tint:    color-mix(in srgb, var(--be-surface2) 96%, var(--be-text));
 }
 
 // ── Header band (hc1 | hc2) ────────────────────────────────────────────────────

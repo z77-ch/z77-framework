@@ -11,8 +11,11 @@
 // regardless of load order — `dms.css` is added per action and therefore always loads
 // AFTER `base.css`. Keep it a two-class selector; a single-class binding would lose.
 //
-// Unbound on purpose: spacing, typography, radii and shadows. Those are the fragment's
+// Unbound on purpose: spacing, the size scale, radii and shadows. Those are the fragment's
 // own geometry and must stay identical across hosts (DMS-HOST-BIND-001).
+// Bound since 2026-10-17 (ADR-051 addendum, css-backend.md audit point 5 — one look per kind
+// of control, Rule 8): the two FACES and the CONTROL geometry (`--dms-control-*`, the
+// `.dms-btn`) — the Drive's buttons take the `.be-btn` look; other hosts keep the fragment's.
 
 .be .dms {
     /* ── Surfaces ──
@@ -32,7 +35,7 @@
 
     /* ── Lines ── */
     --dms-line:         var(--be-line);
-    --dms-line-strong:  color-mix(in srgb, var(--be-line) 70%, var(--be-muted));
+    --dms-line-strong:  var(--be-line-strong);
 
     /* ── Accent ──
        `accent-dark` / `accent-light` mean "more" / "less" contrast against the ground,
@@ -43,7 +46,7 @@
     --dms-accent-dark:  color-mix(in srgb, var(--be-accent) 82%, var(--be-text));
     --dms-accent-light: color-mix(in srgb, var(--be-accent) 70%, var(--be-bg));
     --dms-accent-soft:  var(--be-accent-soft);
-    --dms-on-accent:    var(--be-on-accent);
+    --dms-on-accent:    var(--be-on-accent-page);   /* white in light, the dark ground in dark — as `.be-btn--primary` */
     --dms-focus-ring:   color-mix(in srgb, var(--be-accent) 35%, transparent);
 
     /* ── Semantic ──
@@ -59,4 +62,17 @@
     --dms-warning-bg:   color-mix(in srgb, var(--be-warn) 15%, var(--be-surface2));
     --dms-info:         var(--be-accent);
     --dms-info-bg:      color-mix(in srgb, var(--be-accent) 18%, var(--be-surface2));
+
+    /* ── Faces ── the backend's UI and number faces (tokens/_typography.scss). */
+    --dms-font-family-base: var(--font-family-ui);
+    --dms-font-family-mono: var(--font-family-mono);
+
+    /* ── Controls ── the `.be-btn` geometry (components/_buttons.scss: padding .4rem .85rem,
+       --radius-md, --font-size-sm, medium). The padding is the button's literal there too —
+       change both together. */
+    --dms-control-padding-y:   .4rem;
+    --dms-control-padding-x:   .85rem;
+    --dms-control-radius:      var(--radius-md);
+    --dms-control-font-size:   var(--font-size-sm);
+    --dms-control-font-weight: var(--font-weight-medium);
 }

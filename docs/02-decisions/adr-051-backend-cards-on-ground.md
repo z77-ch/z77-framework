@@ -69,3 +69,31 @@ fixed hex values from the mockup would break every palette but one.
 | Restyle only the order window | The debtor area has the same problem; one screen looking different breaks «one look per kind» |
 | Take the mockup's hex values | Works for one palette in one theme; the picker and dark mode would break |
 | Lighten `--be-surface` instead of a new card rule | Changes every surface at once, including the shell; the card is a role, not a palette value |
+
+---
+
+## Addendum 2026-10-17 — the draft IS the target look (owner)
+
+The first boards (developer canvas versions 21 and 23) mapped the draft onto the existing
+Werkbank palette (indigo) and Inter. Owner: «es entspricht überhaupt nicht dem Artefakt» — the
+draft's look itself is wanted, not its layout on today's tokens. Decided (owner answers 2026-10-17):
+
+1. **The draft's colours become a palette of their own and the DEFAULT palette** — working name
+   **Salbei** (neutral sage ground, dark green accent). Light from the draft's `:root`, dark from
+   its dark block, mapped onto the `--be-*` roles (`--bg` → `--be-bg`, `--sheet` → `--be-surface2`,
+   `--fg` → `--be-text`, `--muted`, `--line`, `--accent`, `--accent-soft`, `--warn`). The other six
+   palettes stay in the picker. Replaces «Take the mockup's hex values — rejected» for this one
+   palette: they become a palette, not fixed values in components.
+2. **Font: the draft's faces** — Instrument Sans (UI) and IBM Plex Mono (numbers), **self-hosted**
+   under module-backend's assets (SIL OFL, licence file alongside; no Google Fonts at runtime —
+   Rule 7 / CSP own origin). Replaces decision 4's «the font stays Inter».
+3. **The draft's forms, backend-wide** (one look per kind, Rule 8/9): blocks as cards (radius 8,
+   1px line) on the window ground; block titles small caps-style — uppercase, letter-spaced, bold,
+   in the accent; inputs radius 5 on the field ground; table inputs quiet (decision 3); status as
+   a pill (accent-soft ground, accent text); numbers in the mono face, tabular, right-aligned.
+4. Unchanged: «Speichern» is the accent (ADR-033 addendum 2026-10-16), actions in the
+   `modalActions` row (ADR-049), the derived tokens of decision 2 (for Salbei they reproduce the
+   draft's `--field`, `--line-strong`, `--text-line` within a shade).
+5. Open from the first board (2026-10-17): in Citrus, Lagune and Sonne light the card
+   (`--be-surface2`, tinted) barely differs from the ground; Citrus and Sonne accents carry white
+   text poorly. Owner to decide after seeing Salbei built.

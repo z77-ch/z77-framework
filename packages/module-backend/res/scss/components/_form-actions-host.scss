@@ -11,3 +11,20 @@
     font-size:       var(--font-size-sm);
     text-decoration: underline;
 }
+
+// Inside a card (`.be-list__section`, ADR-051) the row is the card's HEAD STRIP: card ground,
+// bled out to the card's edges (its padding: `--space-3` top, `--space-4` sides), the card's
+// corner on top — `--end` the foot strip. Compiled after `_windows-host.scss`; the higher
+// specificity also beats its window-edge bleed.
+.be .be-list__section > .z77-form-actions {
+    --z77-form-actions-bg: var(--be-surface2);
+    padding-inline: var(--space-4);
+}
+.be .be-list__section > .z77-form-actions:not(.z77-form-actions--end) {
+    margin:        calc(-1 * var(--space-3)) calc(-1 * var(--space-4)) var(--space-3);
+    border-radius: var(--radius-card) var(--radius-card) 0 0;
+}
+.be .be-list__section > .z77-form-actions--end {
+    margin:        var(--space-3) calc(-1 * var(--space-4)) calc(-1 * var(--space-4));
+    border-radius: 0 0 var(--radius-card) var(--radius-card);
+}

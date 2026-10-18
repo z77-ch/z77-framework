@@ -19,10 +19,11 @@
 
 /* Tokens on the .be viewArea wrapper, not :root (ADR-018). */
 .be {
-    --font-family-base:      'Inter', system-ui, sans-serif;
-    --font-family-mono:      ui-monospace, 'Cascadia Code', monospace;
-    --font-family-ui:        'Inter', system-ui, sans-serif;
-    --font-family-display:   'Inter', system-ui, sans-serif;
+    /* The draft's faces (ADR-051 addendum 2026-10-17), self-hosted in tokens/_fonts.scss. */
+    --font-family-base:      'Instrument Sans', 'Segoe UI', system-ui, sans-serif;
+    --font-family-mono:      'IBM Plex Mono', ui-monospace, Consolas, monospace;
+    --font-family-ui:        'Instrument Sans', 'Segoe UI', system-ui, sans-serif;
+    --font-family-display:   'Instrument Sans', 'Segoe UI', system-ui, sans-serif;
 
     --be-font-scale:         1;     /* live value, set on <html> by the slider */
     --be-font-scale-cap:     1.0;   /* max growth for capped regions — 1.0 = frozen at base size */

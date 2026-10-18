@@ -24,21 +24,23 @@
     --color-border:         #dde1e7;
     --color-border-focus:   var(--color-primary);
 
-    /* Backend theme tokens — Werkbank light (default): technical indigo.
-       Neutrals carry a subtle indigo bias (~244°) so the whole palette reads as one
-       family with the accent, not "indigo accent on a grey ground". */
-    --be-bg:          #f3f4fb;
-    --be-surface:     #fafbff;
+    /* Backend theme tokens — Salbei light (DEFAULT, ADR-051 addendum 2026-10-17): the owner's
+       order-window draft as a palette. Neutral sage ground, dark green accent. Mapping from the
+       draft: --bg → --be-bg, --sheet → --be-surface2 (the card), --fg → --be-text, --muted,
+       --line, --accent, --accent-soft, --warn; --be-surface sits between ground and card.
+       Werkbank (the default until 2026-10-17) lives under its own [data-be-palette] below. */
+    --be-bg:          #f3f4f2;
+    --be-surface:     #f9faf8;
     --be-surface2:    #ffffff;
-    --be-topbar:      #fafbff;
-    --be-topbar-text: #1c1f30;
-    --be-text:        #191c2b;
-    --be-muted:       #5f6480;
-    --be-line:        #dedfef;
-    --be-accent:      #4f46e5;
-    --be-accent-soft: #e9e7fd;
-    --be-good:        #1f9d57;
-    --be-warn:        #c0851c;
+    --be-topbar:      #f9faf8;
+    --be-topbar-text: #1d2421;
+    --be-text:        #1d2421;
+    --be-muted:       #66706b;
+    --be-line:        #dde1dd;
+    --be-accent:      #1f6b5c;
+    --be-accent-soft: #e2efeb;
+    --be-good:        #2f7d4a;
+    --be-warn:        #9a5b00;
     --be-danger:      #dc2626;   /* palette-independent; overridable per palette if needed */
     --be-on-accent:   #ffffff;   /* indicator color on top of --be-accent (switch thumb, checkmark) */
 
@@ -70,10 +72,59 @@
     --be-on-confirm:       #ffffff;
     --be-confirm-island:   #6fd49c;
     --be-on-confirm-island: #0f2a1b;
+
+    /* ADR-051 decision 2 — three derived roles, every palette and both themes. Mixed toward
+       --be-text (not toward --be-bg as the ADR's start formula said): the draft's DARK field
+       is lighter than its card (#232927 on #1c211f), a mix with the ground can only make it
+       darker. Toward the text it recedes in light and lifts in dark, as the draft does.
+       Salbei result (draft value in brackets) — light: field #f8f8f8 (#f8f9f7), line-strong
+       #c5cac6 (#c3c9c4), row-tint #f6f6f6 (#f5f6f2); dark: #222725 (#232927), #424a47
+       (#414a46), #242927 (#202624).
+       - --be-field: the ground of an input (between card and ink)
+       - --be-line-strong: the rule under a table head, tree connectors
+       - --be-row-tint: a secondary row (a row detail, a text line) */
+    --be-field:            color-mix(in srgb, var(--be-surface2) 97%, var(--be-text));
+    --be-line-strong:      color-mix(in srgb, var(--be-line) 80%, var(--be-muted));
+    --be-row-tint:         color-mix(in srgb, var(--be-surface2) 96%, var(--be-text));
 }
 
-/* Werkbank dark — technical indigo */
+/* Salbei dark (default) — the draft's dark block */
 [data-be-theme="dark"] {
+    --be-bg:          #141816;
+    --be-surface:     #181d1b;
+    --be-surface2:    #1c211f;
+    --be-topbar:      #181d1b;
+    --be-topbar-text: #e4e9e6;
+    --be-text:        #e4e9e6;
+    --be-muted:       #98a29d;
+    --be-line:        #2d3431;
+    --be-accent:      #6cc3ad;
+    --be-accent-soft: #1f3530;
+    --be-good:        #8fd18a;
+    --be-warn:        #e3ac5c;
+    /* Every dark accent is light: a label on it takes the dark ground, not white. Declared
+       here (the theme attribute sits on the same element as .be), resolved per palette. */
+    --be-on-accent-page: var(--be-bg);
+}
+
+/* Werkbank — technical indigo (the default until 2026-10-17).
+   Neutrals carry a subtle indigo bias (~244°) so the whole palette reads as one
+   family with the accent, not "indigo accent on a grey ground". */
+[data-be-palette="werkbank"] {
+    --be-bg:          #f3f4fb;
+    --be-surface:     #fafbff;
+    --be-surface2:    #ffffff;
+    --be-topbar:      #fafbff;
+    --be-topbar-text: #1c1f30;
+    --be-text:        #191c2b;
+    --be-muted:       #5f6480;
+    --be-line:        #dedfef;
+    --be-accent:      #4f46e5;
+    --be-accent-soft: #e9e7fd;
+    --be-good:        #1f9d57;
+    --be-warn:        #c0851c;
+}
+[data-be-palette="werkbank"][data-be-theme="dark"] {
     --be-bg:          #12131f;
     --be-surface:     #1a1c2b;
     --be-surface2:    #24273a;
@@ -86,9 +137,6 @@
     --be-accent-soft: #24243f;
     --be-good:        #4ec98a;
     --be-warn:        #dbaa4e;
-    /* Every dark accent is light: a label on it takes the dark ground, not white. Declared
-       here (the theme attribute sits on the same element as .be), resolved per palette. */
-    --be-on-accent-page: var(--be-bg);
 }
 
 /* Citrus — frisches Apfelgrün auf Eisweiß */

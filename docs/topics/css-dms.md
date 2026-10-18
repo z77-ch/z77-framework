@@ -1,6 +1,6 @@
 # css-dms
 
-2026-07-03
+2026-10-17
 
 ## entry
 
@@ -119,6 +119,7 @@ host only and, at equal specificity but later load order, would override the bin
 | Typography | `--dms-font-family-base`/`-mono`, `--dms-font-size-xs…3xl`, `--dms-font-weight-*`, `--dms-line-height-*` |
 | Spacing | `--dms-space-1…16` |
 | Effects | `--dms-radius-*`, `--dms-shadow-*`, `--dms-transition-*`, `--dms-z-base…modal` |
+| Controls | `--dms-control-padding-y` / `-x`, `--dms-control-radius`, `--dms-control-font-size`, `--dms-control-font-weight` — the `.dms-btn` geometry; default = the fragment's scale, a host may bind them (the backend does, 2026-10-17) |
 
 ## components (--dms- prefixed, R6b)
 
@@ -158,6 +159,14 @@ host only and, at equal specificity but later load order, would override the bin
 - [`../02-decisions/adr-018-css-tokens-scoped-to-viewarea-wrapper.md`](../02-decisions/adr-018-css-tokens-scoped-to-viewarea-wrapper.md) — the binding wrapper-token decision
 
 ## known issues
+
+- **DMS-HOST-BIND-002** — added 2026-10-17 (css-backend.md audit point 5, ADR-051 addendum).
+  Don't assume the backend binds colours only: `_dms-host.scss` now also binds the two faces
+  (`--dms-font-family-base` / `-mono` → the backend's Instrument Sans / IBM Plex Mono) and the
+  control geometry (`--dms-control-*` → the `.be-btn` padding, radius, size, weight), so the
+  Drive's buttons look like the backend's. Spacing, the size scale and the other radii stay the
+  fragment's. A new control kind in the fragment reads `--dms-control-*` too, or it drifts.
+  **Not verified live.**
 
 - **DMS-SPLIT-001** — added 2026-08-08. **The Drive no longer owns its layout.** `.dms-drive` is now
   the FRAME only (border, radius, background); pane widths, drag handles, per-pane scrolling and the

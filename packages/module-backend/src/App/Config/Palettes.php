@@ -13,7 +13,10 @@ final class Palettes
     public static function all(): array
     {
         return [
-            ['id' => 'werkbank', 'name' => 'Werkbank', 'accent' => '#3f5a3a'],
+            // First = the default (UserPreferences); its tokens are the `.be` base block, the others
+            // override it under `[data-be-palette="<id>"]`.
+            ['id' => 'salbei',   'name' => 'Salbei',   'accent' => '#1f6b5c'],
+            ['id' => 'werkbank', 'name' => 'Werkbank', 'accent' => '#4f46e5'],
             ['id' => 'citrus',   'name' => 'Citrus',   'accent' => '#5cb338'],
             ['id' => 'coral',    'name' => 'Coral',    'accent' => '#ff6b4a'],
             ['id' => 'lagune',   'name' => 'Lagune',   'accent' => '#0aa5b5'],

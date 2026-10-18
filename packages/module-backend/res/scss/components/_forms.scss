@@ -105,13 +105,23 @@
 }
 
 /* ── Section heading inside modal forms ─────────────────────────────────── */
+/* The block title of the order-window draft (ADR-051 addendum 2026-10-17) — the same look as
+   `.be-list__section-title`: small, uppercase, letter-spaced, bold, in the accent. A `<small>`
+   in it is a plain muted remark. */
 .be-form__section {
-    font-size:      .8rem;
-    font-weight:    600;
+    font-size:      var(--font-size-xs);
+    font-weight:    var(--font-weight-bold);
     text-transform: uppercase;
-    letter-spacing: .04em;
-    color:          var(--be-muted);
+    letter-spacing: .09em;
+    color:          var(--be-accent);
     margin:         1rem 0 .5rem;
+}
+.be-form__section small {
+    font-size:      var(--font-size-xs);
+    font-weight:    var(--font-weight-normal);
+    text-transform: none;
+    letter-spacing: 0;
+    color:          var(--be-muted);
 }
 
 /* ── Choice: general radio / checkbox selection ─────────────────────────────
@@ -140,7 +150,7 @@
     place-content: center;
     border:        1px solid var(--be-line);
     border-radius: .25rem;
-    background:    var(--be-surface);
+    background:    var(--be-field);
     cursor:        pointer;
     transition:    background .12s, border-color .12s;
 }
@@ -185,7 +195,7 @@
 }
 .be-choice--filled:has(.be-choice__input:checked) {
     border-color: var(--be-accent);
-    background:    color-mix(in srgb, var(--be-accent) 12%, var(--be-surface));
+    background:    color-mix(in srgb, var(--be-accent) 12%, var(--be-surface2));
 }
 
 /* ── Form row: fields side by side in declared columns ──────────────────────
@@ -262,7 +272,7 @@
     place-content: center;
     border:        1.5px solid var(--be-line);
     border-radius: .25rem;
-    background:    var(--be-surface);
+    background:    var(--be-field);
     font-size:     .75rem;
     font-weight:   700;
     line-height:   1;
@@ -407,3 +417,203 @@ select.be-input option {
     align-items: stretch;
     gap:         var(--space-2);
 }
+
+// ── Blocks: a form laid out as CARDS on the window ground (ADR-051, the order-window draft) ──
+// The form itself is the ground (`.be-form--blocks`, no card of its own, so `.be-list__section`
+// is NOT used on it); its parts are cards. A head row of blocks side by side
+// (`.be-form__blocks`, the columns a screen wants in `--be-form-blocks`), full-width blocks below
+// (`.be-form__block`), a collapsed block at the end (`details.be-form__block`). Below 900px the
+// head row stacks. Opt-in per form (Rule 9) — the order window is the first user.
+.be-form--blocks {
+    display:   grid;
+    gap:       var(--space-3);
+    min-width: 0;
+}
+.be-form__fieldset {
+    display:   grid;
+    gap:       var(--space-3);
+    min-width: 0;
+    margin:    0;
+    padding:   0;
+    border:    0;
+}
+.be-form__blocks {
+    display:               grid;
+    grid-template-columns: var(--be-form-blocks, repeat(auto-fit, minmax(16rem, 1fr)));
+    gap:                   var(--space-3);
+    align-items:           stretch;   // the cards of one row share its height (the draft)
+}
+@media (max-width: 900px) {
+    .be-form__blocks { grid-template-columns: 1fr; }
+}
+.be-form__block {
+    --be-list-ground: var(--be-surface2);
+    display:       grid;
+    gap:           var(--space-3);
+    align-content: start;
+    min-width:     0;
+    padding:       var(--space-3) var(--space-4) var(--space-4);
+    background:    var(--be-surface2);
+    border:        1px solid var(--be-line);
+    border-radius: var(--radius-card);
+}
+// The block's head: its title (the draft's block title, `.be-list__section-title`) and, on the
+// right, a remark or a control that belongs to the whole block («Preise netto ▾»).
+.be-form__block-head {
+    display:         flex;
+    align-items:     center;
+    justify-content: space-between;
+    flex-wrap:       wrap;
+    gap:             var(--space-2);
+    min-width:       0;
+}
+.be-form__block-head .be-list__section-title { flex: 0 1 auto; }
+.be-form__block-head .be-form__field { flex-direction: row; align-items: center; gap: var(--space-2); }
+// Two short fields on one line («Leistung von | bis»).
+.be-form__pair {
+    display:               grid;
+    grid-template-columns: 1fr 1fr;
+    gap:                   var(--space-2);
+}
+// A fact shown, not entered (an address, the origin): the first line carries the name.
+.be-form__card {
+    display:       grid;
+    gap:           var(--space-2);
+    padding:       var(--space-2) var(--space-3);
+    border:        1px solid var(--be-line);
+    border-radius: var(--radius-card);
+    line-height:   1.45;
+    min-width:     0;
+}
+.be-form__card-label,
+.be-form__card .be-form__card-label {
+    font-size:      .72rem;
+    font-weight:    var(--font-weight-semibold);
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color:          var(--be-muted);
+}
+.be-form__address > :first-child { font-weight: var(--font-weight-semibold); }
+.be-form__fact { font-size: var(--font-size-sm); color: var(--be-muted); }
+// The block's foot: a hint / audit line left, the totals right.
+.be-form__foot {
+    display:               grid;
+    grid-template-columns: 1fr minmax(16rem, 21rem);
+    gap:                   var(--space-4);
+    align-items:           end;
+}
+@media (max-width: 700px) {
+    .be-form__foot { grid-template-columns: 1fr; }
+}
+.be-form__audit {
+    font-family: var(--font-family-mono);
+    font-size:   var(--font-size-xs);
+    color:       var(--be-muted);
+    line-height: 1.6;
+}
+.be-form__totals {
+    display:              grid;
+    gap:                  var(--space-1);
+    font-variant-numeric: tabular-nums;
+}
+.be-form__totals > div { display: flex; justify-content: space-between; gap: var(--space-3); }
+.be-form__totals > div > :last-child { font-family: var(--font-family-mono); }
+.be-form__totals-sub { font-size: var(--font-size-sm); color: var(--be-muted); }
+.be-form__totals-grand {
+    margin-top:  var(--space-1);
+    padding-top: var(--space-2);
+    border-top:  2px solid var(--be-text);
+    font-weight: var(--font-weight-bold);
+    font-size:   1rem;
+}
+// The collapsed block at the end (Verlauf und Belege — troubleshooting, rarely opened).
+details.be-form__block { padding-block: var(--space-2); }
+details.be-form__block[open] { padding-bottom: var(--space-4); }
+details.be-form__block > summary {
+    cursor:     pointer;
+    font-size:  var(--font-size-sm);
+    color:      var(--be-muted);
+    list-style: revert;
+}
+details.be-form__block > summary:hover { color: var(--be-text); }
+// A STATUS shown as a pill that opens its change («Terminauftrag ▾») — the draft's status select;
+// a locked status is the same pill without the link.
+.be-status-pill {
+    display:         inline-flex;
+    align-items:     center;
+    gap:             var(--space-1);
+    padding:         .3rem .8rem;
+    border-radius:   999px;
+    background:      var(--be-accent-soft);
+    color:           var(--be-accent);
+    font-weight:     var(--font-weight-semibold);
+    font-size:       var(--font-size-sm);
+    white-space:     nowrap;
+    text-decoration: none;
+    border:          1px solid transparent;
+}
+a.be-status-pill:hover { border-color: var(--be-accent); }
+.be-status-pill--locked { background: var(--be-field); color: var(--be-muted); border-color: var(--be-line); }
+// A field in a card takes the card's width and never more — a long option (an address) must not
+// push the control out of its card (owner's browser look 2026-10-17: the delivery select ran into
+// the next card). A control in a block head keeps its own width.
+.be-form__block :is(input, select, textarea) { max-width: 100%; min-width: 0; }
+.be-form__block .be-form__field > :is(input, select, textarea) { width: 100%; }
+.be-form__block .be-form__block-head .be-form__field > select { width: auto; }
+// One line of a field: the value and its buttons side by side («Kunde wählen …», «+ Kontakt»);
+// the text input takes what is left, the line wraps on a narrow card.
+.be-form__line {
+    display:     flex;
+    flex-wrap:   wrap;
+    align-items: center;
+    gap:         var(--space-2);
+    min-width:   0;
+}
+.be-form__line > span { display: flex; flex: 1 1 14rem; align-items: center; gap: var(--space-2); min-width: 0; }
+.be-form__line input[type="text"] { flex: 1 1 auto; min-width: 0; }
+// The pill as a SELECT (a new order's start status in the action row): the native control keeps
+// its arrow, the look stays the pill's.
+select.be-status-pill { appearance: auto; padding-right: .5rem; cursor: pointer; font: inherit; font-size: var(--font-size-sm); font-weight: var(--font-weight-semibold); }
+select.be-status-pill:hover { border-color: var(--be-accent); }
+select.be-status-pill[aria-invalid="true"] { border-color: var(--be-danger); }
+.be-form__line .be-btn { flex: none; white-space: nowrap; }
+
+// The customer of a document as TEXT (debtor's CustomerPicker field, the owner's draft
+// 2026-10-17): the name bold, its number below, «Kunde wechseln» as a link on the right.
+.be-customer {
+    display:         flex;
+    align-items:     baseline;
+    justify-content: space-between;
+    flex-wrap:       wrap;
+    gap:             var(--space-1) var(--space-3);
+    min-width:       0;
+}
+.be-customer__who  { display: grid; gap: 2px; min-width: 0; }
+.be-customer__name { font-size: 1rem; font-weight: var(--font-weight-semibold); color: var(--be-text); }
+.be-customer__note { font-family: var(--font-family-mono); font-size: var(--font-size-xs); color: var(--be-muted); }
+.be-customer__none { color: var(--be-muted); }
+.be-customer [aria-invalid="true"] { color: var(--be-danger); }
+.be-customer__change {
+    font-size:             var(--font-size-sm);
+    color:                 var(--be-accent);
+    text-decoration:       underline;
+    text-underline-offset: 2px;
+    white-space:           nowrap;
+}
+// A framed card's head: its label left, a control right (the delivery address select).
+.be-form__card-head {
+    display:         flex;
+    align-items:     center;
+    justify-content: space-between;
+    gap:             var(--space-2);
+    min-width:       0;
+}
+.be-form__card-head > select { flex: 0 1 auto; width: auto; min-width: 0; max-width: 75%; }
+// The amount of a position row — the draft's «Betrag CHF».
+.be-list__cell--amount { font-family: var(--font-family-mono); font-weight: var(--font-weight-medium); }
+
+// The field that NAMES the record (an order's Betreff): a step larger and bold, as in the draft.
+.be-form__block .be-form__field > input.be-form__input--lead { font-size: .95rem; font-weight: var(--font-weight-semibold); }
+// A fact line in the mono face (the draft's «erfasst 02.10.2026, pru»); a pill in it keeps the UI face.
+.be-form__fact--mono { font-family: var(--font-family-mono); font-size: var(--font-size-xs); }
+.be-form__fact--mono .badge { font-family: var(--font-family-ui); margin-right: var(--space-1); }

@@ -6,7 +6,8 @@ use Z77\Core\Http\Response\FetchResponse,
     Z77\Core\DI,
     Z77\Module\Backend\Ui\Controllers\BackendAbstractController,
     Z77\Shared\Attributes\Fetch,
-    Z77\Shared\Attributes\HttpMethod;
+    Z77\Shared\Attributes\HttpMethod,
+    Z77\Shared\ValueObjects\UserPreferences;
 
 class SystemController extends BackendAbstractController
 {
@@ -37,7 +38,7 @@ class SystemController extends BackendAbstractController
         // appearance fields and must not drop others (e.g. partial_labels).
         $service = DI::getCurrentUserService();
         $prefs   = $service->getPreferences();
-        $prefs->setPalette($body['palette'] ?? 'werkbank');
+        $prefs->setPalette($body['palette'] ?? UserPreferences::DEFAULT_PALETTE);
         $prefs->setDarkMode((bool) ($body['darkMode'] ?? false));
         $prefs->setFontScale((float) ($body['fontScale'] ?? 1.0));
 
