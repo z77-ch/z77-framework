@@ -14,6 +14,7 @@
  *   [data-copy="<selector>"]      any clickable → copies the named element's text
  *   [data-select-on-focus]        a readonly field selects its whole text on focus / click
  *   [data-print]                  any clickable → window.print()
+ *   select[data-switch]           shows the [data-switch-case] of its value in its [data-switch-scope] (see «small triggers»)
  *   [data-fill-url="<url>"]       a choice fills fields of its [data-fill-scope] (see «fill»)
  *   [data-window-open="<url>"]    opens a controller-led window (ADR-047, see «windows»)
  *   [data-fetch-region="<name>"]  a part of the page that reloads alone —
@@ -1638,6 +1639,11 @@ _Z77.core.fill = (function () {
  *                            without this script shows no dead button.
  *   [data-select-on-focus]   a readonly field (a link to copy) selects its whole text when it
  *                            is focused or clicked.
+ *   select[data-switch]      shows, inside its nearest [data-switch-scope], only the
+ *                            [data-switch-case="<value>"] of the chosen value (`hidden` on the
+ *                            others) — the server renders every case, the script only toggles
+ *                            (first user: the order's address cards, 2026-10-18). Without the
+ *                            script the case of the rendered choice stays shown.
  */
 _Z77.core.triggers = (function () {
     function _select(el) {
@@ -1655,6 +1661,15 @@ _Z77.core.triggers = (function () {
         });
         document.addEventListener('focusin', function (e) {
             if (e.target.matches && e.target.matches('[data-select-on-focus]')) _select(e.target);
+        });
+        document.addEventListener('change', function (e) {
+            if (!e.target.matches || !e.target.matches('select[data-switch]')) return;
+            var scope = e.target.closest('[data-switch-scope]');
+            if (!scope) return;
+            var value = e.target.value;
+            scope.querySelectorAll('[data-switch-case]').forEach(function (el) {
+                el.hidden = el.getAttribute('data-switch-case') !== value;
+            });
         });
     }
 

@@ -18,10 +18,14 @@ use Z77\Core\DI,
     Z77\Module\Contact\Services\ContactService,
     Z77\Module\Contact\Ui\ContactForm,
     Z77\Module\Debtor\Entities\AddressSnapshot,
+    Z77\Module\Debtor\Entities\DebtorProfile,
     Z77\Module\Debtor\Entities\Invoice,
     Z77\Module\Debtor\Entities\PaymentTarget,
+    Z77\Module\Debtor\Entities\PaymentTerms,
     Z77\Module\Debtor\Pdf\InvoicePdf,
+    Z77\Module\Debtor\Repositories\DebtorProfileRepository,
     Z77\Module\Debtor\Repositories\InvoiceRepository,
+    Z77\Module\Debtor\Repositories\PaymentTermsRepository,
     Z77\Module\Debtor\Services\DebtorCurrency,
     Z77\Module\Debtor\Services\DebtorException,
     Z77\Module\Debtor\Services\InvoicingService,
@@ -29,6 +33,7 @@ use Z77\Core\DI,
     Z77\Module\Debtor\Services\PaymentStates,
     Z77\Module\Debtor\Ui\CustomerPicker,
     Z77\Module\Debtor\Ui\CustomerPickerTrait,
+    Z77\Module\Debtor\Ui\DebtorProfileLayout,
     Z77\Module\Mandator\Services\LedgerAccountCheck,
     Z77\Module\Order\Entities\OrderPhase,
     Z77\Module\Order\Entities\OrderStatus,
@@ -251,8 +256,9 @@ trait OrderControllerTrait
         $form    = new OrderForm();
         $version = $order?->getVersion();
         if (!$request->isPost()) {
+            $contactId = ((int) $request->getGetParameter('contact')) ?: null;
             $order === null
-                ? $form->startBlank(new \DateTimeImmutable('today'), ((int) $request->getGetParameter('contact')) ?: null, $this->orderDefaultTarget(), $service->statuses()->initial()?->getCode() ?? '')
+                ? $form->startBlank(new \DateTimeImmutable('today'), $contactId, $this->orderDefaultTarget(), $service->statuses()->initial()?->getCode() ?? '', $this->orderStartTerms($contactId))
                 : $form->startFrom($order);
 
             return $this->orderWindowPage($form, $order, $version);
@@ -264,8 +270,20 @@ trait OrderControllerTrait
         }
         $version = (int) ($post['version'] ?? 0);   // what THIS window was rendered from
         $form->fromPost($post);
+        // The payment target is not a field of the window (owner 2026-10-18): a new order takes the
+        // first active one, an existing order keeps its own — decided here, never posted.
+        $form->withTarget($order !== null ? (string) $order->getPaymentTargetCode() : $this->orderDefaultTarget());
         if (($post['op'] ?? '') === 'more') {
             $form->addRows(OrderForm::MORE_ROWS);
+
+            return $this->orderWindowPage($form, $order, $version);
+        }
+        // «anpassen» on an address card: its fields, filled with the address it showed (owner 2026-10-18).
+        if (in_array($post['op'] ?? '', ['adjust-ship', 'adjust-bill'], true)) {
+            $field = $post['op'] === 'adjust-bill' ? 'bill' : 'ship';
+            if ($form->header($field) !== OrderForm::ADDRESS_CUSTOM) {
+                $form->adjust($field, $this->orderShownAddress($form, $order, $field));
+            }
 
             return $this->orderWindowPage($form, $order, $version);
         }
@@ -357,7 +375,6 @@ trait OrderControllerTrait
         /** @var InvoiceRepository $invoices */
         $invoices    = $this->em()->getRepository(Invoice::class);
         $variants    = $this->orderVariants()->selectable();
-        $targets     = array_values(array_filter($this->em()->getRepository(PaymentTarget::class)->allInOrder(), fn(PaymentTarget $t) => $t->isActive() || $t->getCode() === $form->header('target')));
         $this->help->attach('Backend/OrderController/edit.help', self::ORDER_NS, ['isNew' => $order === null], 'Hilfe: Auftrag');
 
         return $this->orderPage('edit', [
@@ -376,10 +393,21 @@ trait OrderControllerTrait
             'entityCsrf'      => $order === null ? '' : DI::getCsrfService()->generateEntityToken('sales-order', (int) $order->getId()),
             // The customer: debtor's field with «Kunde wählen …» — the searching picker (owner 2026-10-15).
             'customerField'   => CustomerPicker::fieldHtml($this->em(), $form->header('contact'), $this->orderListBase() . '/customer-pick',
-                $this->orderListBase() . ($order === null ? '/add' : '/edit?id=' . $order->getId()), $form->error('contact') !== ''),
-            'targets'         => $targets,
-            'ships'           => $this->orderShipLabels($form->header('contact'), $order),
-            'bills'           => $this->orderBillLabels($form->header('contact'), $order),
+                $this->orderListBase() . ($order === null ? '/add' : '/edit?id=' . $order->getId()), $form->error('contact') !== '',
+                showNumber: $this->customerFieldShowsNumber()),
+            // Block (1)'s title «Kunde 20417» + phone — the number sits here, not under the name.
+            'customerTitle'   => $this->orderCustomerTitle($form->header('contact')),
+            // Block (3): «Zahlungskonditionen» = debtor's PaymentTerms (owner 2026-10-18), '' = the customer's.
+            'termsSelect'     => $this->orderTermsSelect($form->header('terms'), $form->header('contact'), $form->error('terms') !== ''),
+            'debtorEdit'      => $this->orderDebtorEdit($form->header('contact')),
+            'ships'          => $this->orderShipLabels($form->header('contact'), $order) + $this->orderCustomLabel($form, 'ship'),
+            'bills'           => $this->orderBillLabels($form->header('contact'), $order) + $this->orderCustomLabel($form, 'bill'),
+            // Badge «angepasst»: the stored snapshot is none of the customer's addresses as they read now.
+            'shipAdjusted'    => $this->orderAddressAdjusted($order?->deliveryAddress(), $form->header('contact')),
+            'billAdjusted'    => $this->orderAddressAdjusted($order?->billingAddress(), $form->header('contact')),
+            // The cards show the address of the CURRENT choice, saved or not, and switch with it (owner 2026-10-18).
+            'billCases'       => $this->orderAddressCases('bill', $form->header('contact'), $order, $form),
+            'shipCases'       => $this->orderAddressCases('ship', $form->header('contact'), $order, $form),
             'taxCodes'        => $taxCodes = $this->em()->getRepository(TaxCode::class)->selectable($form->keptCodes()),
             // The window shows a line's VAT as its RATE («8.1 %», owner 2026-10-16), not the code.
             'taxRates'        => $this->orderTaxRates($taxCodes, $form->header('order_date')),
@@ -529,6 +557,45 @@ trait OrderControllerTrait
             'field'    => 'bill',
         ]);
         $response->addCommand('replace-html', ['target' => '#order-bill', 'html' => $bills, 'origin' => $origin]);
+        // … and the cards' addresses — THIS customer's, the select switches them (2026-10-18).
+        foreach (['bill', 'ship'] as $field) {
+            $cases = $renderer->partial('Backend/OrderController/_addressCases', [
+                'field'    => $field,
+                'cases'    => $this->orderAddressCases($field, (string) $contact->getId(), null, null),
+                'selected' => '',
+                'adjusted' => false,
+                'fields'   => '',
+            ]);
+            $response->addCommand('replace-html', ['target' => '#order-' . $field . '-cases', 'html' => $cases, 'origin' => $origin]);
+        }
+        // The payment terms start at «wie beim Kunden» — the option names THIS customer's terms (2026-10-18).
+        $response->addCommand('replace-html', ['target' => '#order-terms', 'html' => $this->orderTermsSelect('', (string) $contact->getId(), false), 'origin' => $origin]);
+        $response->addCommand('replace-html', ['target' => '#order-debtor-edit', 'html' => $this->orderDebtorEdit((string) $contact->getId()), 'origin' => $origin]);
+        // The block title carries the new customer's number and phone.
+        $response->addCommand('replace-html', ['target' => '#order-customer-title', 'html' => $this->orderCustomerTitle((string) $contact->getId()), 'origin' => $origin]);
+    }
+
+    /** The order window shows the customer number in block (1)'s title, not under the name. */
+    protected function customerFieldShowsNumber(): bool
+    {
+        return false;
+    }
+
+    /**
+     * Block (1)'s title (`_customerTitle`): «Kunde», the debtor profile's customer number and the
+     * contact's phone — just «Kunde» without a customer.
+     */
+    private function orderCustomerTitle(string $contactId): string
+    {
+        $contact = ctype_digit($contactId) && (int) $contactId > 0 ? $this->em()->getRepository(Contact::class)->find((int) $contactId) : null;
+        /** @var DebtorProfileRepository $profiles */
+        $profiles = $this->em()->getRepository(DebtorProfile::class);
+        $profile  = $contact !== null ? $profiles->findByContact($contact) : null;
+
+        return (new TemplateRenderer(self::ORDER_NS))->partial('Backend/OrderController/_customerTitle', [
+            'number' => $profile !== null ? (string) $profile->getCustomerNumber() : '',
+            'phone'  => $contact !== null ? (string) $contact->getPhone() : '',
+        ]);
     }
 
     // ── «Status ändern …» ────────────────────────────────────────────────
@@ -1038,12 +1105,147 @@ trait OrderControllerTrait
         return $labels;
     }
 
+    /**
+     * The address a card shows for its current choice — where «anpassen» starts: the chosen one;
+     * none chosen = the customer's invoice address (billing) or the billing card's (delivery,
+     * «wie Rechnungsadresse»).
+     */
+    private function orderShownAddress(OrderForm $form, ?SalesOrder $order, string $field): ?AddressSnapshot
+    {
+        $contactId = $form->header('contact');
+        if ($field === 'ship') {
+            $ship = $this->orderShipChoices($contactId, $order)[$form->header('ship')] ?? null;
+
+            return $ship ?? ($form->header('bill') === OrderForm::ADDRESS_CUSTOM ? $form->customAddress('bill') : $this->orderShownAddress($form, $order, 'bill'));
+        }
+        $bill    = $this->orderBillChoices($contactId, $order)[$form->header('bill')] ?? null;
+        $contact = ctype_digit($contactId) ? $this->em()->getRepository(Contact::class)->find((int) $contactId) : null;
+
+        return $bill ?? ($contact !== null ? (new InvoicingService($this->em()))->invoiceAddressOf($contact) : null);
+    }
+
+    /**
+     * Every choice of an address card → the lines it shows (`_addressCases`): a chosen address its
+     * own; none chosen = the customer's invoice / main address (billing) or nothing (delivery,
+     * «wie Rechnungsadresse»); «angepasst» while the card's fields are open.
+     *
+     * @return array<string, list<string>>
+     */
+    private function orderAddressCases(string $field, string $contactId, ?SalesOrder $order, ?OrderForm $form): array
+    {
+        $choices = $field === 'bill' ? $this->orderBillChoices($contactId, $order) : $this->orderShipChoices($contactId, $order);
+        $cases   = [];
+        foreach ($choices as $value => $snapshot) {
+            $cases[(string) $value] = $snapshot?->lines() ?? [];
+        }
+        if ($field === 'bill') {
+            $contact  = ctype_digit($contactId) ? $this->em()->getRepository(Contact::class)->find((int) $contactId) : null;
+            $cases[''] = $contact !== null ? ((new InvoicingService($this->em()))->invoiceAddressOf($contact)?->lines() ?? []) : [];
+        }
+        if ($form?->header($field) === OrderForm::ADDRESS_CUSTOM) {
+            $cases[OrderForm::ADDRESS_CUSTOM] = [];
+        }
+
+        return $cases;
+    }
+
+    /** @return array<string, string> the «angepasst» entry of a card's select while its fields are open */
+    private function orderCustomLabel(OrderForm $form, string $field): array
+    {
+        return $form->header($field) === OrderForm::ADDRESS_CUSTOM ? [OrderForm::ADDRESS_CUSTOM => 'angepasst'] : [];
+    }
+
+    /** Whether a stored snapshot differs from every address the customer has now. */
+    private function orderAddressAdjusted(?AddressSnapshot $kept, string $contactId): bool
+    {
+        if ($kept === null) {
+            return false;
+        }
+        foreach ($this->orderContactAddresses($contactId) as $link) {
+            if (AddressSnapshot::of($link->getAddress())->lines() === $kept->lines()) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     /** @return list<ContactAddress> */
     private function orderContactAddresses(string $contactId): array
     {
         $contact = ctype_digit($contactId) ? $this->em()->getRepository(Contact::class)->find((int) $contactId) : null;
 
         return $contact !== null ? $this->em()->getRepository(ContactAddress::class)->findByContact($contact) : [];
+    }
+
+    /**
+     * The payment terms a new order starts with (owner 2026-10-18): a preset customer's debtor
+     * terms — '' («wie beim Kunden») when they are inactive; without a debtor profile or without
+     * a customer the terms a new debtor gets (`defaultForNewDebtor()` — debtor.md: never «the
+     * first active row»); '' when none is marked.
+     */
+    private function orderStartTerms(?int $contactId): string
+    {
+        /** @var PaymentTermsRepository $repo */
+        $repo    = $this->em()->getRepository(PaymentTerms::class);
+        $profile = $this->orderDebtorProfile((string) $contactId);
+        if ($profile !== null) {
+            $terms = $repo->findByCode($profile->getPaymentTermsCode());
+
+            return $terms !== null && $terms->isActive() ? $terms->getCode() : '';
+        }
+
+        return $repo->defaultForNewDebtor()?->getCode() ?? '';
+    }
+
+    /**
+     * The «Zahlungskonditionen» select (`_terms`): the active terms plus the one the form holds
+     * (kept valid, ADR-043 decision 19). Its first option «wie beim Kunden» names what it means for
+     * $contactId — the debtor profile's terms, or for a contact without a profile the terms a new
+     * debtor gets (the invoice editor's «neu als Debitor»).
+     */
+    private function orderTermsSelect(string $selected, string $contactId, bool $invalid): string
+    {
+        /** @var PaymentTermsRepository $repo */
+        $repo     = $this->em()->getRepository(PaymentTerms::class);
+        $profile  = $this->orderDebtorProfile($contactId);
+        $customer = '';
+        if ($profile !== null) {
+            $customer = $repo->findByCode($profile->getPaymentTermsCode())?->getLabel() ?? '';
+        } elseif (ctype_digit($contactId) && (int) $contactId > 0 && ($default = $repo->defaultForNewDebtor()) !== null) {
+            $customer = 'neu als Debitor: ' . $default->getLabel();
+        }
+
+        return (new TemplateRenderer(self::ORDER_NS))->partial('Backend/OrderController/_terms', [
+            'terms'    => array_values(array_filter($repo->allInOrder(), static fn(PaymentTerms $t) => $t->isActive() || $t->getCode() === $selected)),
+            'selected' => $selected,
+            'customer' => $customer,
+            'invalid'  => $invalid,
+        ]);
+    }
+
+    /**
+     * «Debitor anpassen» (`_debtorEdit`): debtor's profile dialog of the customer — empty without a
+     * customer or for a contact without a debtor profile (debtor opens one only in the contact
+     * editor or with the first invoice / booking print).
+     */
+    private function orderDebtorEdit(string $contactId): string
+    {
+        $profile = $this->orderDebtorProfile($contactId);
+
+        return (new TemplateRenderer(self::ORDER_NS))->partial('Backend/OrderController/_debtorEdit', [
+            'url' => $profile !== null ? DebtorProfileLayout::BASE . '/edit?id=' . $profile->getId() : '',
+        ]);
+    }
+
+    /** The debtor profile of a contact id as the form holds it (a string), null = none / no contact. */
+    private function orderDebtorProfile(string $contactId): ?DebtorProfile
+    {
+        $contact = ctype_digit($contactId) && (int) $contactId > 0 ? $this->em()->getRepository(Contact::class)->find((int) $contactId) : null;
+        /** @var DebtorProfileRepository $profiles */
+        $profiles = $this->em()->getRepository(DebtorProfile::class);
+
+        return $contact !== null ? $profiles->findByContact($contact) : null;
     }
 
     /** The target a new order starts with: the first ACTIVE one in list order — a preselection the user sees and may change. */

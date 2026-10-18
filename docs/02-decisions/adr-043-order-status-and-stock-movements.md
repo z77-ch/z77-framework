@@ -305,3 +305,28 @@ phases, the statuses, the transitions and the stock decisions stay. **Decided, N
   refused, no tax-code / account field is read; M — `bill_*` round-trips, a later address change at
   the contact leaves the order and its PDF unchanged, the booked invoice's `addr_*` equals `bill_*`.
   The existing checks that create free lines (T11 fixture, F3, M `o1`) are rewritten.
+
+## Addendum 2026-10-18 — the order's payment terms; the payment target leaves the window (approved by the owner)
+
+Decided by the owner on 2026-10-18; **built the same day**. Where the order window and plan §9.4
+differ, this addendum applies. «Zahlungsziel» keeps its meaning in z77 — the BANK account of the
+payment part (debtor's `PaymentTarget`); the debtor screens and master data are unchanged.
+
+1. **Block (3) of the order window offers «Zahlungskonditionen»** — debtor's `PaymentTerms` (the
+   days, «30 Tage netto»), stored BY CODE in `sales_order.payment_terms_code` (nullable, like
+   `payment_target_code`; migration `Version20261018100000`, schema only). NULL / «wie beim
+   Kunden» = the customer's debtor terms at the booking print — what every order did before, so
+   existing orders need no data step. `OrderService` checks the code like the payment target
+   (unknown → refused on `payment_terms_code`; inactive only when the order already holds it);
+   `OrderInvoiceDraft::of()` passes it as `InvoiceDraft::$paymentTermsCode` — debtor applies it to
+   the preview and the booked invoice (`InvoicingService::compose()`: the draft's code before the
+   profile's). A new order preselects a preset customer's profile terms, else the terms a new
+   debtor gets (`defaultForNewDebtor()`); «Kunde wechseln» resets the select to «wie beim Kunden».
+2. **«Debitor anpassen»** beside the label opens debtor's own profile dialog
+   (`DebtorProfileLayout::BASE/edit`) over the window — the customer's standing terms are changed
+   there, not in the order. No link without a customer or for a contact without a debtor profile
+   (debtor opens a profile only in the contact editor or with the first invoice / booking print).
+3. **The payment target is no longer a field of the order window.** `sales_order.payment_target_code`
+   stays and the booking print still prints the payment part for it; the SERVER sets it — a new
+   order the first active target (`orderDefaultTarget()`, the former preselection), an existing
+   order keeps its own. A posted `target` is ignored (`OrderForm::withTarget()`).

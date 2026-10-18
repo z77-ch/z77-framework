@@ -213,3 +213,27 @@ record; green = a step that writes into the books and cannot simply be edited ba
 **Consequences.** `modalActions` needs no new kind for saves (its `primary` default is now
 right); the action cell of Stammdaten › Mandant moves from confirm to accent; the journal's
 «Speichern» buttons are right as they are.
+
+## Addendum 2026-10-18 — a «…» confirm only opens; one filled surface per action row
+
+**Trigger.** The owner's look at the order window's action row (2026-10-18): «Speichern» (accent
+fill) and «Buchungsdruck …» (green fill) read as two near-identical filled buttons in Salbei, and
+the status pill read as a third button. A proposal across all seven palettes, light and dark
+(artifact https://claude.ai/artifact/SAyLNbvCLqFk2YrpEcMf3o), was approved: «so umsetzen».
+
+**Decision.**
+1. **A confirm button whose label ends in «…» only OPENS the confirm dialog** — it takes the
+   green as line and ink, not as fill (`.be-btn--confirm-open`, token `--be-confirm-ink`: the
+   darkened fill in light, the palette's `--be-good` in dark). The fill belongs to the dialog's
+   button that really books. An action row has ONE filled surface: its save.
+2. **Leaving is quiet**: «Schliessen» at the row's end is a text button behind a thin rule
+   (`.be-btn--quiet`; `partials/modalActions` `cancelKind` 'quiet').
+3. **Two groups**: left what one does IN the record (save, status), right what leads OUT of it
+   (print, booking print) — `.z77-form-actions__spacer` between them.
+4. **A status in an action row is a FIELD, not a button**: the input look, a muted «STATUS»
+   label, a dot in the tone of its phase, the name (`.be-status-field`, tones `--muted`
+   `--accent` `--warn` `--good` `--danger`). It replaces the pill (`.be-status-pill`, removed).
+
+**Consequences.** Applied to the order window and the invoice detail's «Buchungsdruck …». The
+other «…» confirms (list action cells, the dunning run) keep the fill until they are reviewed —
+`css-backend.md` pending.

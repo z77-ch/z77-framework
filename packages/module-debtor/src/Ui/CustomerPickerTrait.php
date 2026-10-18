@@ -41,6 +41,16 @@ trait CustomerPickerTrait
     /** What the editor needs beyond the field after a choice (the origin window's further parts). */
     abstract protected function customerChosenCommands(FetchResponse $response, Contact $contact, string $origin): void;
 
+    /**
+     * Whether the field shows «Kundennr. …» under the name — true by default (the invoice editor);
+     * a host that shows the number elsewhere returns false (the order window: in its block title).
+     * Must match the host's own `CustomerPicker::fieldHtml()` call, so a choice renders the same field.
+     */
+    protected function customerFieldShowsNumber(): bool
+    {
+        return true;
+    }
+
     #[Csrf]
     protected function customerPickAction(): HtmlResponse|FetchResponse|RedirectResponse
     {
@@ -108,7 +118,8 @@ trait CustomerPickerTrait
             ->setData(['id' => $contact->getId()])
             ->addCommand('replace-html', [
                 'target' => '#invoice-contact',
-                'html'   => CustomerPicker::fieldHtml($this->em(), (string) $contact->getId(), $this->customerPickBase() . '/customer-pick', $back),
+                'html'   => CustomerPicker::fieldHtml($this->em(), (string) $contact->getId(), $this->customerPickBase() . '/customer-pick', $back,
+                    showNumber: $this->customerFieldShowsNumber()),
                 'origin' => $origin,
             ]);
         $this->customerChosenCommands($response, $contact, $origin);

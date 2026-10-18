@@ -15,7 +15,8 @@ use Z77\Module\Order\Entities\SalesOrder;
  *   - `orderDate` (required), `serviceFrom` / `serviceTo` (optional; «bis» needs «von») — the
  *     VAT rate follows the service date, the article price the ORDER date;
  *   - `priceMode` — `net` | `gross`; `paymentTargetCode` — the payment part of the booked invoice,
- *     null / '' = none;
+ *     null / '' = none; `paymentTermsCode` — the payment terms of the booked invoice (debtor's
+ *     `PaymentTerms`, owner 2026-10-18), null / '' = the customer's debtor terms;
  *   - `deliveryAddress` — the snapshot to print on the delivery note; null = the invoice address;
  *   - `billingAddress` — the snapshot the booking print invoices to; null = the customer's invoice
  *     address (debtor's rule);
@@ -44,5 +45,6 @@ final class OrderDraft
         public readonly string $sourceType = SalesOrder::SOURCE_BACKEND,
         public readonly ?string $sourceRef = null,
         public readonly ?AddressSnapshot $billingAddress = null,
+        public readonly ?string $paymentTermsCode = null,
     ) {}
 }

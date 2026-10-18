@@ -36,14 +36,40 @@ final class OrderForm
     /** The delivery-address choice that keeps the snapshot the order already holds. */
     public const SHIP_KEEP = 'keep';
 
+    /**
+     * The address choice «angepasst»: the card's own fields (`{ship|bill}_addr_…`, contact's
+     * `_addressFields`) — an address for THIS order only, the customer's stays (owner 2026-10-18:
+     * «anpassen» starts from the shown address; no separate «frei erfassen»).
+     */
+    public const ADDRESS_CUSTOM = 'custom';
+
+    /** What an address card says for a choice without an address (`_addressCases`). */
+    public const ADDRESS_NONE = [
+        'bill' => 'Der Kunde hat keine Haupt- oder Rechnungsadresse — «anpassen» oder beim Kontakt erfassen.',
+        'ship' => 'Lieferung an die Rechnungsadresse.',
+    ];
+
+    /** The snapshot's fields in `AddressSnapshot`'s constructor order (the posted names after the prefix). */
+    private const ADDRESS_FIELDS = ['salutation', 'title', 'first_name', 'name', 'address_row', 'street', 'house_no', 'zip', 'city', 'country'];
+
     private const EMPTY_ROW = ['id' => '', 'type' => 'service', 'child' => '', 'article' => '', 'text' => '', 'quantity' => '', 'unit' => '', 'price' => '', 'discount' => '', 'tax_code' => '', 'account' => ''];
 
     /** The service's field names → the form's. */
-    private const HEADER_FIELDS = ['contact_id' => 'contact', 'payment_target_code' => 'target', 'status_code' => 'status'];
+    private const HEADER_FIELDS = ['contact_id' => 'contact', 'payment_terms_code' => 'terms', 'status_code' => 'status'];
     private const ROW_FIELDS    = ['variant' => 'article', 'unit_price' => 'price', 'revenue_account' => 'account', 'children' => 'child'];
 
     /** @var array<string, string> */
-    private array $header = ['contact' => '', 'subject' => '', 'order_date' => '', 'service_from' => '', 'service_to' => '', 'price_mode' => 'net', 'target' => '', 'ship' => '', 'bill' => '', 'status' => '', 'notes' => ''];
+    private array $header = ['contact' => '', 'subject' => '', 'order_date' => '', 'service_from' => '', 'service_to' => '', 'price_mode' => 'net', 'terms' => '', 'ship' => '', 'bill' => '', 'status' => '', 'notes' => ''];
+
+    /**
+     * The payment target (bank account of the payment part) — NOT a posted field since 2026-10-18
+     * (owner: the window offers «Zahlungskonditionen» only): the server sets it — a new order the
+     * first active target, an existing one its own ({@see withTarget()}); a posted `target` is ignored.
+     */
+    private string $target = '';
+
+    /** @var array{ship: array<string, string>, bill: array<string, string>} the «angepasst» fields per card */
+    private array $custom = ['ship' => [], 'bill' => []];
 
     /** @var list<array<string, string>> */
     private array $rows = [];
@@ -60,12 +86,16 @@ final class OrderForm
     /** @var array<string, int> the draft's line path → the form row it came from (the last {@see toDraft()}) */
     private array $paths = [];
 
-    /** A new order: today, net, the customer and payment target the screen preselects, empty rows. */
-    public function startBlank(\DateTimeImmutable $today, ?int $contactId, string $target, string $status): self
+    /**
+     * A new order: today, net, the customer, payment target and payment terms the screen
+     * preselects ($terms '' = «wie beim Kunden»), empty rows.
+     */
+    public function startBlank(\DateTimeImmutable $today, ?int $contactId, string $target, string $status, string $terms = ''): self
     {
         $this->header['contact']    = $contactId !== null ? (string) $contactId : '';
         $this->header['order_date'] = $today->format('Y-m-d');
-        $this->header['target']     = $target;
+        $this->header['terms']      = $terms;
+        $this->target               = $target;
         $this->header['status']     = $status;
         $this->rows = array_fill(0, self::ROWS_NEW, self::EMPTY_ROW);
 
@@ -82,13 +112,14 @@ final class OrderForm
             'service_from' => $order->getServiceFrom()?->format('Y-m-d') ?? '',
             'service_to'   => $order->getServiceTo()?->format('Y-m-d') ?? '',
             'price_mode'   => $order->priceMode()->value,
-            'target'       => (string) $order->getPaymentTargetCode(),
+            'terms'        => (string) $order->getPaymentTermsCode(),
             'ship'         => $order->deliveryAddress() !== null ? self::SHIP_KEEP : '',
             'bill'         => $order->billingAddress() !== null ? self::SHIP_KEEP : '',
             'status'       => $order->getStatusCode(),
             'notes'        => (string) $order->getNotes(),
         ];
-        $this->rows = [];
+        $this->target = (string) $order->getPaymentTargetCode();
+        $this->rows   = [];
         foreach ($order->getLines() as $line) {
             $this->rows[] = [
                 'id'       => (string) $line->getId(),
@@ -115,6 +146,15 @@ final class OrderForm
         foreach (array_keys($this->header) as $key) {
             $this->header[$key] = is_string($post[$key] ?? null) ? trim($post[$key]) : '';
         }
+        foreach (['ship', 'bill'] as $field) {
+            $this->custom[$field] = [];
+            if ($this->header[$field] === self::ADDRESS_CUSTOM) {
+                foreach (self::ADDRESS_FIELDS as $name) {
+                    $value = $post[$field . '_addr_' . $name] ?? null;
+                    $this->custom[$field][$name] = is_string($value) ? trim($value) : '';
+                }
+            }
+        }
         $this->rows = [];
         foreach (is_array($post['rows'] ?? null) ? $post['rows'] : [] as $row) {
             if (!is_array($row)) {
@@ -137,6 +177,34 @@ final class OrderForm
         }
 
         return $this;
+    }
+
+    /**
+     * «anpassen» on an address card: the card switches to its own fields, filled with $start —
+     * the address it showed (null = empty fields).
+     */
+    public function adjust(string $field, ?AddressSnapshot $start): self
+    {
+        $field = $field === 'bill' ? 'bill' : 'ship';
+        $this->header[$field] = self::ADDRESS_CUSTOM;
+        $values = $start === null ? [] : [
+            $start->getSalutation(), $start->getTitle(), $start->getFirstName(), $start->getName(), $start->getAddressRow(),
+            $start->getStreet(), $start->getHouseNo(), $start->getZip(), $start->getCity(), $start->getCountry(),
+        ];
+        $this->custom[$field] = $values === [] ? array_fill_keys(self::ADDRESS_FIELDS, '') : array_combine(self::ADDRESS_FIELDS, $values);
+        if ($this->custom[$field]['country'] === '') {
+            $this->custom[$field]['country'] = 'CH';
+        }
+
+        return $this;
+    }
+
+    /** The «angepasst» address of a card as the snapshot its fields make (empty fields → an empty one). */
+    public function customAddress(string $field): AddressSnapshot
+    {
+        $values = $this->custom[$field === 'bill' ? 'bill' : 'ship'];
+
+        return new AddressSnapshot(...array_map(static fn(string $name): string => $values[$name] ?? '', self::ADDRESS_FIELDS));
     }
 
     public function addRows(int $count): self
@@ -162,6 +230,9 @@ final class OrderForm
         $this->paths     = [];
 
         $contactId = ctype_digit($this->header['contact']) ? (int) $this->header['contact'] : 0;
+        // «angepasst»: the card's own fields — OrderService checks them like any snapshot.
+        $ships[self::ADDRESS_CUSTOM] = $this->customAddress('ship');
+        $bills[self::ADDRESS_CUSTOM] = $this->customAddress('bill');
         if (!array_key_exists($this->header['ship'], $ships)) {
             $this->errors['ship'] = 'Diese Lieferadresse gehört nicht zum gewählten Kunden — neu wählen.';
         }
@@ -227,13 +298,14 @@ final class OrderForm
             serviceFrom: $this->header['service_from'],
             serviceTo: $this->header['service_to'],
             priceMode: $this->header['price_mode'],
-            paymentTargetCode: $this->header['target'] !== '' ? $this->header['target'] : null,
+            paymentTargetCode: $this->target !== '' ? $this->target : null,
             deliveryAddress: $ships[$this->header['ship']] ?? null,
             notes: $this->header['notes'],
             lines: $lines,
             statusCode: $this->header['status'] !== '' ? $this->header['status'] : null,
             sourceRef: $sourceRef,
             billingAddress: $bills[$this->header['bill']] ?? null,
+            paymentTermsCode: $this->header['terms'] !== '' ? $this->header['terms'] : null,
         );
     }
 
@@ -263,6 +335,16 @@ final class OrderForm
     }
 
     public function header(string $key): string { return $this->header[$key] ?? ''; }
+
+    /** The payment target the draft carries — set by the server, never posted ({@see $target}). */
+    public function withTarget(string $code): self
+    {
+        $this->target = $code;
+
+        return $this;
+    }
+
+    public function target(): string { return $this->target; }
     /** @return list<array<string, string>> */
     public function rows(): array { return $this->rows; }
     public function error(string $key): string { return $this->errors[$key] ?? ''; }

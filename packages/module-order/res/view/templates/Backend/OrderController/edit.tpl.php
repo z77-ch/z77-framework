@@ -36,9 +36,16 @@
  * @var bool $needReason  the stock seam asked for a reason (consumed stock would come back)
  * @var string $entityCsrf
  * @var string $customerField  debtor's `CustomerPicker::fieldHtml()` — the customer + «Kunde wählen …» (contacts without a profile choosable, D9)
- * @var list<\Z77\Module\Debtor\Entities\PaymentTarget> $targets
+ * @var string $customerTitle  block (1)'s title `_customerTitle` — «Kunde», the customer number, the phone
+ * @var string $termsSelect  block (3)'s «Zahlungskonditionen» (`_terms`, debtor's PaymentTerms; owner 2026-10-18)
+ * @var string $debtorEdit  «Debitor anpassen» (`_debtorEdit`, `#order-debtor-edit`) — debtor's profile dialog of the customer
  * @var array<string, string> $ships  delivery-address choice → label
  * @var array<string, string> $bills  billing-address choice → label (2026-10-17)
+ * @var bool $shipAdjusted  the stored delivery snapshot is none of the customer's addresses (badge «angepasst»)
+ * @var bool $billAdjusted  the same for the billing snapshot
+ * @var list<string> $billShown  the billing card's address lines for the CURRENT choice — not the
+ *                               preview's, which fails while the order has no lines (2026-10-18)
+ * @var list<string> $shipShown  the delivery card's, empty for «wie Rechnungsadresse»
  * @var list<\Z77\Module\Vat\Entities\TaxCode> $taxCodes
  * @var array<string, string> $taxRates  code → the rate shown («8.1 %») on the order date
  * @var list<array{number: string, label: string}> $accounts
@@ -91,18 +98,36 @@ $winAttr    = $window
 // confirmation is a plain PDF and the delivery note is offered; a cancelled order prints nothing.
 $extra     = '';
 $cancelled = $phase === \Z77\Module\Order\Entities\OrderPhase::Cancelled;
+// The status is a FIELD in the action row (owner 2026-10-18, `.be-status-field`): «STATUS», a dot
+// in the tone of its phase, the name. Left group: save + status; a spacer; right group: what leads
+// out of the order (print, booking print); a quiet «Schliessen» at the end.
+$tone = static fn(?\Z77\Module\Order\Entities\OrderPhase $p): string => match ($p) {
+    \Z77\Module\Order\Entities\OrderPhase::Confirmed => 'accent',
+    \Z77\Module\Order\Entities\OrderPhase::Delivered => 'warn',
+    \Z77\Module\Order\Entities\OrderPhase::Closed    => 'good',
+    \Z77\Module\Order\Entities\OrderPhase::Cancelled => 'danger',
+    default                                          => 'muted',
+};
 if ($isNew) {
     // A new order chooses its start status right beside «Erstellen» (owner 2026-10-17: the status
-    // belongs in the action row, not among the dates) — a select in the pill look.
-    $options = '';
+    // belongs in the action row, not among the dates) — the select inside the status field.
+    $options   = '';
+    $startTone = 'muted';
     foreach ($startable as $row) {
-        $options .= '<option value="' . e($row->getCode()) . '"' . ($row->getCode() === $form->header('status') ? ' selected' : '') . '>' . e($row->getLabel()) . '</option>';
+        $chosen = $row->getCode() === $form->header('status');
+        $startTone = $chosen ? $tone($row->getPhase()) : $startTone;
+        $options .= '<option value="' . e($row->getCode()) . '"' . ($chosen ? ' selected' : '') . '>' . e($row->getLabel()) . '</option>';
     }
-    $extra .= '<select class="be-status-pill" id="order-status" name="status" aria-label="Status" aria-invalid="' . $invalid($form->error('status')) . '"'
-        . ($form->error('status') !== '' ? ' title="' . e($form->error('status')) . '"' : '') . '>' . $options . '</select>';
+    $extra .= '<label class="be-status-field be-status-field--' . $startTone . '" for="order-status"><span class="be-status-field__label">Status</span><span class="be-status-field__dot"></span>'
+        . '<select id="order-status" name="status" aria-invalid="' . $invalid($form->error('status')) . '"'
+        . ($form->error('status') !== '' ? ' title="' . e($form->error('status')) . '"' : '') . '>' . $options . '</select></label>'
+        . '<span class="z77-form-actions__spacer"></span>';
 } else {
     $statusLabel = $status?->getLabel() ?? $order->getStatusCode();
-    $extra .= '<a class="be-status-pill" href="' . e($actionBase . '/status?id=' . $id) . '" data-window-link title="Status ändern …">' . e($statusLabel) . ' ▾</a>';
+    $extra .= '<a class="be-status-field be-status-field--' . $tone($phase) . '" href="' . e($actionBase . '/status?id=' . $id) . '" data-window-link title="Status ändern …">'
+        . '<span class="be-status-field__label">Status</span><span class="be-status-field__dot"></span>'
+        . '<span class="be-status-field__name">' . e($statusLabel) . '</span><span class="be-status-field__caret" aria-hidden="true">▼</span></a>'
+        . '<span class="z77-form-actions__spacer"></span>';
     $prints = [];
     if (!$cancelled) {
         $prints[] = '<a class="be-shell-add__item" href="' . e($actionBase . '/pdf?id=' . $id) . '" target="_blank" rel="noopener" title="' . e($orderTitle) . ' als PDF (neuer Tab)">' . e($orderTitle) . '</a>';
@@ -121,7 +146,7 @@ if ($isNew) {
             . '<div class="be-shell-add__panel" role="menu" aria-label="Drucken">' . implode('', $prints) . '</div></details>';
     }
     if ($canBook) {
-        $extra .= '<a class="be-btn be-btn--confirm" href="' . e($actionBase . '/confirm-book?' . http_build_query(['order' => [$id . ':' . $order->getVersion()]])) . '" title="Rechnung erstellen, verbuchen und als PDF drucken">Buchungsdruck …</a>';
+        $extra .= '<a class="be-btn be-btn--confirm-open" href="' . e($actionBase . '/confirm-book?' . http_build_query(['order' => [$id . ':' . $order->getVersion()]])) . '" title="Rechnung erstellen, verbuchen und als PDF drucken">Buchungsdruck …</a>';
     }
 }
 // The Konto column only while the order still carries a FREE priced line (D2, before the owner's
@@ -146,7 +171,18 @@ $amount = static function (array $row): string {
     }
     return number_format($qty * $price * (1 - ($num($row['discount']) ?? 0.0) / 100), 2, '.', "'");
 };
-$billing = $preview?->getAddress()->lines() ?? [];
+// «anpassen» on an address card: a submit like «+ Weitere Zeilen» — the server answers with the
+// card's own fields, filled with the address it showed (owner 2026-10-18, no script).
+$adjustButton = static fn(string $field): string => $editable && $form->header($field) !== OrderForm::ADDRESS_CUSTOM
+    ? '<button type="submit" class="be-form__card-action" name="op" value="adjust-' . $field . '" formnovalidate>anpassen</button>'
+    : '';
+// The card's fields: contact's `_addressFields` without the link part, under `{field}_addr_`.
+$addressFields = fn(string $field): string => $this->partial('Backend/ContactController/_addressFields', [
+    'address'  => $form->customAddress($field),
+    'prefix'   => $field . '_addr_',
+    'withLink' => false,
+    'required' => false,
+], 'Z77\\Module\\Contact');
 ?>
 <div class="be-list"<?= $winAttr ?>>
     <form method="post" action="<?= e($action) ?>" class="be-form--blocks" id="order-form-<?= e($key) ?>" autocomplete="off" novalidate>
@@ -162,6 +198,7 @@ $billing = $preview?->getAddress()->lines() ?? [];
             'submitAttrs' => ['name' => 'op', 'value' => 'save'],
             'extra'       => $extra,
             'cancel'      => $window ? 'Schliessen' : 'Zur Liste',
+            'cancelKind'  => 'quiet',
             'cancelHref'  => $window ? '' : $actionBase . '/list',
             'errors'      => ['count' => count($invalidIds), 'target' => $invalidIds[0] ?? ''],
         ], 'Z77\\Shared') ?>
@@ -194,7 +231,8 @@ $billing = $preview?->getAddress()->lines() ?? [];
             <?php // (1) Kunde — the customer, the billing address (what the booking print takes), the delivery address. ?>
             <div class="be-form__block">
                 <div class="be-form__block-head">
-                    <h3 class="be-list__section-title">Kunde<?php if (!$isNew && $order->getContact()->getPhone() !== ''): ?> <small>· <?= e($order->getContact()->getPhone()) ?></small><?php endif; ?></h3>
+                    <?php // «Kunde 20417» + phone (`_customerTitle`, `#order-customer-title`) — «Kunde wechseln» replaces it. ?>
+                    <?= raw($customerTitle) ?>
                 </div>
                 <div data-z77-field-wrapper>
                     <?php if ($editable): ?>
@@ -206,31 +244,26 @@ $billing = $preview?->getAddress()->lines() ?? [];
                     <?php endif; ?>
                     <?= raw($fieldError($form->error('contact'))) ?>
                 </div>
-                <div class="be-form__card" data-z77-field-wrapper>
+                <?php // The two address cards: the select in the head, the address of the CURRENT choice below — every
+                      // choice rendered, the select switches them (`_addressCases`, owner 2026-10-18). ?>
+                <?php foreach (['bill' => ['Rechnung', $bills, $billCases, $billAdjusted],
+                                'ship' => ['Lieferung', $ships, $shipCases, $shipAdjusted]] as $field => [$cardLabel, $choices, $cases, $adjusted]): ?>
+                <div class="be-form__card" data-z77-field-wrapper data-switch-scope>
                     <div class="be-form__card-head">
-                        <label class="be-form__card-label" for="order-bill">Rechnung</label>
-                        <?= $this->partial('Backend/OrderController/_ship', ['ships' => $bills, 'selected' => $form->header('bill'), 'invalid' => $form->error('bill') !== '', 'field' => 'bill'], 'Z77\\Module\\Order') ?>
+                        <label class="be-form__card-label" for="order-<?= $field ?>"><?= e($cardLabel) ?></label>
+                        <?= $this->partial('Backend/OrderController/_ship', ['ships' => $choices, 'selected' => $form->header($field), 'invalid' => $form->error($field) !== '', 'field' => $field], 'Z77\Module\Order') ?>
                     </div>
-                    <?php // The address the booking print would take: the preview's (the order's snapshot, else the customer's). ?>
-                    <?php if ($billing !== []): ?>
-                    <div class="be-form__address"><?php foreach ($billing as $line): ?><div><?= e($line) ?></div><?php endforeach; ?></div>
-                    <?php else: ?>
-                    <div class="be-form__fact">Die gewählte Adresse erscheint nach dem Speichern.</div>
-                    <?php endif; ?>
-                    <?= raw($fieldError($form->error('bill'))) ?>
+                    <?= $this->partial('Backend/OrderController/_addressCases', [
+                        'field'    => $field,
+                        'cases'    => $cases,
+                        'selected' => $form->header($field),
+                        'adjusted' => $adjusted,
+                        'fields'   => $form->header($field) === OrderForm::ADDRESS_CUSTOM ? $addressFields($field) : '',
+                    ], 'Z77\Module\Order') ?>
+                    <?= raw($fieldError($form->error($field))) ?>
+                    <?= raw($adjustButton($field)) ?>
                 </div>
-                <div class="be-form__card" data-z77-field-wrapper>
-                    <div class="be-form__card-head">
-                        <label class="be-form__card-label" for="order-ship">Lieferung</label>
-                        <?= $this->partial('Backend/OrderController/_ship', ['ships' => $ships, 'selected' => $form->header('ship'), 'invalid' => $form->error('ship') !== ''], 'Z77\\Module\\Order') ?>
-                    </div>
-                    <?php if ($form->header('ship') === ''): ?>
-                    <div class="be-form__fact">Lieferung an die Rechnungsadresse.</div>
-                    <?php elseif ($form->header('ship') === OrderForm::SHIP_KEEP && !$isNew && $order->deliveryAddress() !== null): ?>
-                    <div class="be-form__address"><?php foreach ($order->deliveryAddress()->lines() as $line): ?><div><?= e($line) ?></div><?php endforeach; ?></div>
-                    <?php endif; ?>
-                    <?= raw($fieldError($form->error('ship'))) ?>
-                </div>
+                <?php endforeach; ?>
             </div>
 
             <?php // (2) What it is about. ?>
@@ -272,15 +305,16 @@ $billing = $preview?->getAddress()->lines() ?? [];
                         <?= raw($fieldError($form->error('service_to'))) ?>
                     </div>
                 </div>
+                <?php // The payment terms (owner 2026-10-18) — «Debitor anpassen» right of the label changes the
+                      // customer's standing terms. The bank account («Zahlungsziel») is not offered here: the
+                      // server keeps it (a new order: the first active target; an existing one: its own). ?>
                 <div class="be-form__field" data-z77-field-wrapper>
-                    <label for="order-target">Zahlungsziel</label>
-                    <select id="order-target" name="target" aria-invalid="<?= $invalid($form->error('target')) ?>">
-                        <option value="">kein Zahlteil</option>
-                        <?php foreach ($targets as $row): ?>
-                        <option value="<?= e($row->getCode()) ?>"<?= $row->getCode() === $form->header('target') ? ' selected' : '' ?>><?= e($row->getLabel()) ?> (<?= $row->hasQrIban() ? 'QR-IBAN' : 'IBAN' ?>)<?= $row->isActive() ? '' : ' (inaktiv)' ?></option>
-                        <?php endforeach; ?>
-                    </select>
-                    <?= raw($fieldError($form->error('target'))) ?>
+                    <div class="be-form__card-head">
+                        <label for="order-terms">Zahlungskonditionen</label>
+                        <?= raw($debtorEdit) ?>
+                    </div>
+                    <?= raw($termsSelect) ?>
+                    <?= raw($fieldError($form->error('terms'))) ?>
                 </div>
             </div>
         </div>

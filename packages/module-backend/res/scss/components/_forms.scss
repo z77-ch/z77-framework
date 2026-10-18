@@ -51,6 +51,7 @@
 
 .be-form__field input,
 .be-form__field select,
+.be-form__field textarea,
 .be-form__grid > select {
     @include look.rest;
     padding:       .45rem .65rem;
@@ -67,14 +68,25 @@
     cursor:     pointer;
 }
 
+/* A textarea takes the same look as the input beside it (the order's Notizen under Betreff,
+ * owner 2026-10-18); the normalize reset leaves it the browser's font otherwise. */
+.be-form__field textarea {
+    font-family: inherit;
+    line-height: 1.45;
+    resize:      vertical;
+}
+
 .be-form__field input:focus,
 .be-form__field select:focus,
+.be-form__field textarea:focus,
 .be-form__grid > select:focus { @include look.focus; }
 
 .be-form__field input[aria-invalid="true"],
-.be-form__field select[aria-invalid="true"]        { border-color: var(--be-danger); }
+.be-form__field select[aria-invalid="true"],
+.be-form__field textarea[aria-invalid="true"]      { border-color: var(--be-danger); }
 .be-form__field input[aria-invalid="true"]:focus,
-.be-form__field select[aria-invalid="true"]:focus  { border-color: var(--be-danger); box-shadow: 0 0 0 2px color-mix(in srgb, var(--be-danger) 15%, transparent); }
+.be-form__field select[aria-invalid="true"]:focus,
+.be-form__field textarea[aria-invalid="true"]:focus { border-color: var(--be-danger); box-shadow: 0 0 0 2px color-mix(in srgb, var(--be-danger) 15%, transparent); }
 .be-form__field-error                             { font-size: .75rem; color: var(--be-danger); margin-top: .15rem; }
 .be-form__hint                                    { font-size: .75rem; color: var(--be-muted); margin-top: .15rem; }
 /* A hint that warns (the Drive: «liefert öffentlich aus»). */
@@ -536,24 +548,40 @@ details.be-form__block > summary {
     list-style: revert;
 }
 details.be-form__block > summary:hover { color: var(--be-text); }
-// A STATUS shown as a pill that opens its change («Terminauftrag ▾») — the draft's status select;
-// a locked status is the same pill without the link.
-.be-status-pill {
+// A STATUS in an action row (owner 2026-10-18, replaces the pill): a FIELD, not a button — the
+// input look (corner, field ground, line), a muted «STATUS» label, a dot in the tone of the
+// status' phase, the name and a caret. As a link it opens the status change (`a`), as a label it
+// wraps the start-status select of a new record. The tone is the caller's: `--muted` · `--accent`
+// · `--warn` · `--good` · `--danger` (order: new · confirmed · delivered · closed · cancelled).
+.be-status-field {
+    --be-status-tone: var(--be-muted);
     display:         inline-flex;
     align-items:     center;
-    gap:             var(--space-1);
-    padding:         .3rem .8rem;
-    border-radius:   999px;
-    background:      var(--be-accent-soft);
-    color:           var(--be-accent);
-    font-weight:     var(--font-weight-semibold);
+    gap:             var(--space-2);
+    padding:         .3rem .65rem;
+    border:          1px solid var(--be-line);
+    border-radius:   var(--radius-field);
+    background:      var(--be-field);
+    color:           var(--be-text);
     font-size:       var(--font-size-sm);
     white-space:     nowrap;
     text-decoration: none;
-    border:          1px solid transparent;
 }
-a.be-status-pill:hover { border-color: var(--be-accent); }
-.be-status-pill--locked { background: var(--be-field); color: var(--be-muted); border-color: var(--be-line); }
+a.be-status-field:hover,
+.be-status-field:focus-within { border-color: var(--be-accent); }
+.be-status-field[aria-invalid="true"],
+.be-status-field:has(select[aria-invalid="true"]) { border-color: var(--be-danger); }
+.be-status-field__label { font-size: .68rem; font-weight: var(--font-weight-semibold); letter-spacing: .06em; text-transform: uppercase; color: var(--be-muted); }
+.be-status-field__dot   { width: .5rem; height: .5rem; border-radius: 50%; background: var(--be-status-tone); flex: none; }
+.be-status-field__name,
+.be-status-field select { font-weight: var(--font-weight-semibold); }
+.be-status-field__caret { color: var(--be-muted); font-size: .65rem; }
+.be-status-field select { appearance: auto; border: 0; padding: 0; background: transparent; color: inherit; font: inherit; font-weight: var(--font-weight-semibold); cursor: pointer; }
+.be-status-field select:focus { outline: none; }
+.be-status-field--accent { --be-status-tone: var(--be-accent); }
+.be-status-field--warn   { --be-status-tone: var(--be-warn); }
+.be-status-field--good   { --be-status-tone: var(--be-good); }
+.be-status-field--danger { --be-status-tone: var(--be-danger); }
 // A field in a card takes the card's width and never more — a long option (an address) must not
 // push the control out of its card (owner's browser look 2026-10-17: the delivery select ran into
 // the next card). A control in a block head keeps its own width.
@@ -571,11 +599,6 @@ a.be-status-pill:hover { border-color: var(--be-accent); }
 }
 .be-form__line > span { display: flex; flex: 1 1 14rem; align-items: center; gap: var(--space-2); min-width: 0; }
 .be-form__line input[type="text"] { flex: 1 1 auto; min-width: 0; }
-// The pill as a SELECT (a new order's start status in the action row): the native control keeps
-// its arrow, the look stays the pill's.
-select.be-status-pill { appearance: auto; padding-right: .5rem; cursor: pointer; font: inherit; font-size: var(--font-size-sm); font-weight: var(--font-weight-semibold); }
-select.be-status-pill:hover { border-color: var(--be-accent); }
-select.be-status-pill[aria-invalid="true"] { border-color: var(--be-danger); }
 .be-form__line .be-btn { flex: none; white-space: nowrap; }
 
 // The customer of a document as TEXT (debtor's CustomerPicker field, the owner's draft
@@ -609,6 +632,23 @@ select.be-status-pill[aria-invalid="true"] { border-color: var(--be-danger); }
     min-width:       0;
 }
 .be-form__card-head > select { flex: 0 1 auto; width: auto; min-width: 0; max-width: 75%; }
+// A card's own action at its foot, right — the address card's «anpassen» (a submit in the link look
+// of «Kunde wechseln»).
+.be-form__card-action {
+    justify-self:          end;
+    padding:               0;
+    border:                0;
+    background:            none;
+    font:                  inherit;
+    font-size:             var(--font-size-sm);
+    color:                 var(--be-accent);
+    text-decoration:       underline;
+    text-underline-offset: 2px;
+    cursor:                pointer;
+}
+.be-form__card-action:focus-visible { @include look.focus; }
+// Address fields inside a card («angepasst»): the card's spacing, not the modal grid's.
+.be-form__card > .be-form__grid { gap: var(--space-2); margin-bottom: 0; }
 // The amount of a position row — the draft's «Betrag CHF».
 .be-list__cell--amount { font-family: var(--font-family-mono); font-weight: var(--font-weight-medium); }
 

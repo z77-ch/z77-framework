@@ -563,6 +563,7 @@ final class OrderService
             $resolved['deliveryAddress'],
             $resolved['notes'],
             $resolved['billingAddress'],
+            $resolved['paymentTermsCode'],
         );
 
         $existing = [];
@@ -597,9 +598,9 @@ final class OrderService
     /**
      * Judges the draft and resolves what it names — the contact, the articles with their values
      * at save (D3: tax code and account FROM the article; text / unit / price when empty), the
-     * dates, the payment target — BEFORE any unit of work. $existing = the order being rewritten
-     * (its contact, payment target, variants and tax codes stay valid although deactivated since —
-     * the reference rule, ADR-043 decision 19).
+     * dates, the payment target and terms — BEFORE any unit of work. $existing = the order being
+     * rewritten (its contact, payment target and terms, variants and tax codes stay valid although
+     * deactivated since — the reference rule, ADR-043 decision 19).
      *
      * @return array<string, mixed>
      * @throws InvalidOrderException
@@ -651,6 +652,17 @@ final class OrderService
                 $errors['payment_target_code'] = 'Das Zahlungsziel «' . $targetCode . '» gibt es nicht.';
             } elseif (!$target->isActive() && $existing?->getPaymentTargetCode() !== $targetCode) {
                 $errors['payment_target_code'] = 'Das Zahlungsziel «' . $target->getLabel() . '» ist inaktiv.';
+            }
+        }
+
+        // The payment terms (owner 2026-10-18) — '' = the customer's debtor terms at the booking print.
+        $termsCode = PaymentTerms::normalizeCode((string) $draft->paymentTermsCode);
+        if ($termsCode !== '') {
+            $terms = $this->em->getRepository(PaymentTerms::class)->findByCode($termsCode);
+            if ($terms === null) {
+                $errors['payment_terms_code'] = 'Die Zahlungskonditionen «' . $termsCode . '» gibt es nicht.';
+            } elseif (!$terms->isActive() && $existing?->getPaymentTermsCode() !== $termsCode) {
+                $errors['payment_terms_code'] = 'Die Zahlungskonditionen «' . $terms->getLabel() . '» sind inaktiv.';
             }
         }
 
@@ -715,6 +727,7 @@ final class OrderService
             'priceMode'         => $priceMode,
             'currency'          => $currency,
             'paymentTargetCode' => $targetCode === '' ? null : $targetCode,
+            'paymentTermsCode'  => $termsCode === '' ? null : $termsCode,
             'deliveryAddress'   => $ship,
             'billingAddress'    => $bill,
             'notes'             => $notes === '' ? null : $notes,

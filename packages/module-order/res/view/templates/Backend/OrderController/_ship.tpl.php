@@ -15,7 +15,7 @@
  */
 $field = ($field ?? 'ship') === 'bill' ? 'bill' : 'ship';
 ?>
-<select class="be-input be-input--sm" id="order-<?= $field ?>" name="<?= $field ?>" aria-label="<?= $field === 'bill' ? 'Rechnungsadresse' : 'Lieferadresse' ?>" aria-invalid="<?= !empty($invalid) ? 'true' : 'false' ?>">
+<select class="be-input be-input--sm" data-switch id="order-<?= $field ?>" name="<?= $field ?>" aria-label="<?= $field === 'bill' ? 'Rechnungsadresse' : 'Lieferadresse' ?>" aria-invalid="<?= !empty($invalid) ? 'true' : 'false' ?>">
     <?php foreach ($ships as $value => $label): ?>
     <option value="<?= e((string) $value) ?>"<?= (string) $value === $selected ? ' selected' : '' ?>><?= e($label) ?></option>
     <?php endforeach; ?>

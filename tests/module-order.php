@@ -300,6 +300,10 @@ $billTo = new \Z77\Module\Debtor\Entities\AddressSnapshot('', '', '', 'Muster AG
 $order->describe($contact, 'Wein für das Fest', new \DateTimeImmutable('2026-10-14'), null, null, PriceMode::Net, 'CHF', 'lukb', null, null, $billTo);
 check('D5b a billing snapshot on the order (bill_*, 2026-10-17) is the booked invoice address; none → null (debtor takes the customer address)',
     $order->billingAddress() === $billTo && OrderInvoiceDraft::of($order, new \DateTimeImmutable('2026-10-31'))->address === $billTo);
+$order->describe($contact, 'Wein für das Fest', new \DateTimeImmutable('2026-10-14'), null, null, PriceMode::Net, 'CHF', 'lukb', null, null, null, 'disc-2-10');
+check('D5c the order\'s payment terms (2026-10-18) are the booked invoice\'s; none (D1) → null = the debtor profile\'s',
+    $order->getPaymentTermsCode() === 'disc-2-10' && OrderInvoiceDraft::of($order, new \DateTimeImmutable('2026-10-31'))->paymentTermsCode === 'disc-2-10'
+    && $order->getPaymentTargetCode() === 'lukb');
 $order->describe($contact, '  ', new \DateTimeImmutable('2026-10-14'), new \DateTimeImmutable('2026-10-01'), new \DateTimeImmutable('2026-10-10'), PriceMode::Gross, 'CHF', null, null, null);
 $draft2 = OrderInvoiceDraft::of($order, new \DateTimeImmutable('2026-10-31'));
 check('D6 without a Betreff the subject is «Auftrag 42»; the head\'s service period wins; gross; no payment target',
@@ -368,24 +372,41 @@ $form = (new OrderForm())->fromPost([
     ],
 ]);
 $ship = new \Z77\Module\Debtor\Entities\AddressSnapshot('', '', 'Anna', 'Muster', '', 'Weg', '1', '4051', 'Basel', 'CH');
-$fd   = $form->toDraft(['1001' => 11], ['' => null, 'a3' => $ship], 'harness');
-check('F1 the head: contact id, subject (the service trims), dates, target, the chosen delivery address as snapshot, the start status',
-    $fd !== null && $fd->contactId === 6 && $fd->orderDate === '2026-10-14' && $fd->paymentTargetCode === 'lukb' && $fd->deliveryAddress === $ship && $fd->statusCode === 'opened' && $fd->sourceRef === 'harness');
+$fdPosted = $form->toDraft(['1001' => 11], ['' => null, 'a3' => $ship], 'harness');
+$fd   = $form->withTarget('lukb')->toDraft(['1001' => 11], ['' => null, 'a3' => $ship], 'harness');
+check('F1 the head: contact id, subject (the service trims), dates, the target the SERVER sets (a posted `target` is ignored since 2026-10-18), the chosen delivery address as snapshot, the start status',
+    $fdPosted !== null && $fdPosted->paymentTargetCode === null && $fd !== null && $fd->contactId === 6 && $fd->orderDate === '2026-10-14' && $fd->paymentTargetCode === 'lukb' && $fd->deliveryAddress === $ship && $fd->statusCode === 'opened' && $fd->sourceRef === 'harness');
 $fb = (new OrderForm())->fromPost(['contact' => '6', 'order_date' => '2026-10-14', 'bill' => 'a3', 'rows' => []])->toDraft([], ['' => null], 'harness', ['' => null, 'a3' => $ship]);
 $fbBad = new OrderForm();
 $fbBad->fromPost(['contact' => '6', 'order_date' => '2026-10-14', 'bill' => 'a9', 'rows' => []]);
 check('F1b the billing address (2026-10-17): the chosen one as snapshot; one the customer does not have is refused on its field',
     $fb !== null && $fb->billingAddress === $ship && $fb->deliveryAddress === null
     && $fbBad->toDraft([], ['' => null], null, ['' => null]) === null && $fbBad->error('bill') !== '' && in_array('order-bill', $fbBad->invalidIds(), true));
+$fa = (new OrderForm())->fromPost(['contact' => '6', 'order_date' => '2026-10-14', 'rows' => []])->adjust('ship', $ship);
+$faPost = (new OrderForm())->fromPost(['contact' => '6', 'order_date' => '2026-10-14', 'ship' => 'custom', 'ship_addr_name' => ' Lager Ost ', 'ship_addr_zip' => '8001', 'ship_addr_city' => 'Zürich', 'ship_addr_country' => 'ch', 'bill_addr_name' => 'ignored', 'rows' => []]);
+$faDraft = $faPost->toDraft([], ['' => null], null, ['' => null]);
+check('F1c «anpassen» (2026-10-18): the card switches to «custom», filled with the shown address; posted fields become THIS order\'s snapshot (trimmed); a card not on «custom» ignores its fields',
+    $fa->header('ship') === OrderForm::ADDRESS_CUSTOM && $fa->customAddress('ship')->lines() === $ship->lines()
+    && (new OrderForm())->adjust('bill', null)->customAddress('bill')->getCountry() === 'CH'
+    && $faDraft !== null && $faDraft->deliveryAddress?->getName() === 'Lager Ost' && $faDraft->deliveryAddress->getCity() === 'Zürich'
+    && $faDraft->deliveryAddress->getCountry() === 'CH' && $faDraft->billingAddress === null);
+$ft = (new OrderForm())->fromPost(['contact' => '6', 'order_date' => '2026-10-14', 'terms' => ' disc-2-10 ', 'rows' => []])->withTarget('lukb')->toDraft([], ['' => null]);
+$ftEmpty = (new OrderForm())->fromPost(['contact' => '6', 'order_date' => '2026-10-14', 'terms' => '', 'rows' => []])->toDraft([], ['' => null]);
+$ftBlank = (new OrderForm())->startBlank(new \DateTimeImmutable('2026-10-18'), 6, 'lukb', 'opened', 'net-30');
+check('F1d «Zahlungskonditionen» (2026-10-18): the posted code (trimmed) → paymentTermsCode beside the target; «wie beim Kunden» \'\' → null; startBlank() holds the preselected terms; FD and F1 carry none',
+    $ft !== null && $ft->paymentTermsCode === 'disc-2-10' && $ft->paymentTargetCode === 'lukb' && $ftEmpty !== null && $ftEmpty->paymentTermsCode === null
+    && $ftBlank->header('terms') === 'net-30' && $ftBlank->target() === 'lukb'
+    && (new OrderForm())->startBlank(new \DateTimeImmutable('2026-10-18'), null, '', 'opened')->header('terms') === '' && $fd->paymentTermsCode === null);
 check('F2 the lines: the article number → its variant id, the existing line keeps its id, a «unter» row beneath its parent, the empty row left out, a bogus id dropped',
     count($fd->lines) === 3 && $fd->lines[0]->variantId === 11 && $fd->lines[0]->id === 15 && count($fd->lines[0]->children) === 1
     && $fd->lines[0]->children[0]->text === 'Unterlagen' && $fd->lines[1]->type === 'text' && $fd->lines[1]->id === null);
 check('F3 an ARTICLE line sends no tax code and no account — they come from the article (D3); a free line sends its own',
     $fd->lines[2]->variantId === 11 && $fd->lines[2]->taxCode === '' && $fd->lines[2]->revenueAccount === '' && $fd->lines[0]->children[0]->taxCode === 'UN');
-$form->applyErrors(['contact_id' => 'Kunde wählen.', 'lines.0.0.unit_price' => 'Preis fehlt.', 'lines.2.variant' => 'inaktiv', 'payment_target_code' => 'weg', 'lines.9.text' => 'verirrt']);
-check('F4 the service\'s field errors land on the form: the head by name, `lines.{path}.{field}` on the row the line came from',
+$form->applyErrors(['contact_id' => 'Kunde wählen.', 'lines.0.0.unit_price' => 'Preis fehlt.', 'lines.2.variant' => 'inaktiv', 'payment_target_code' => 'weg', 'payment_terms_code' => 'unbekannt', 'lines.9.text' => 'verirrt']);
+check('F4 the service\'s field errors land on the form: the head by name (the terms on `terms` / #order-terms; the target — no field since 2026-10-18 — a general message), `lines.{path}.{field}` on the row the line came from',
     $form->error('contact') === 'Kunde wählen.' && $form->rowError(1, 'price') === 'Preis fehlt.' && $form->rowError(4, 'article') === 'inaktiv'
-    && $form->error('target') === 'weg' && $form->generalErrors() === ['verirrt'] && $form->invalidIds()[0] === 'invoice-contact-name');   // the customer field's text (debtor's CustomerPicker, 2026-10-15)
+    && $form->error('target') === '' && $form->error('terms') === 'unbekannt' && $form->generalErrors() === ['weg', 'verirrt'] && $form->invalidIds()[0] === 'invoice-contact-name'   // the customer field's text (debtor's CustomerPicker, 2026-10-15)
+    && $form->invalidIds()[1] === 'order-terms' && !in_array('order-target', $form->invalidIds(), true));
 $bad = (new OrderForm())->fromPost(['contact' => '6', 'ship' => 'a99', 'rows' => [['article' => '9999', 'quantity' => '1'], ['child' => '1', 'text' => 'x', 'quantity' => '1', 'price' => '1']]]);
 check('F5 what the form cannot read: an unknown article, a delivery address that is not the customer\'s, a «unter» row without a parent above',
     $bad->toDraft(['1001' => 11], ['' => null]) === null && $bad->rowError(0, 'article') !== '' && $bad->error('ship') !== '');
@@ -395,6 +416,13 @@ $fresh = (new OrderForm())->startFrom($order);
 check('F7 startFrom(): one row per line with its id, «unter» on the child, the empty row at the end; an article line shows no tax code / account',
     count($fresh->rows()) === 7 && $fresh->rows()[0]['id'] === '101' && $fresh->rows()[1]['child'] === '1' && $fresh->rows()[0]['tax_code'] === ''
     && $fresh->rows()[4]['tax_code'] === 'UN' && $fresh->rows()[6]['id'] === '' && $fresh->rows()[0]['quantity'] === '2');
+$termsOrder = withId(new SalesOrder(43, $contact, 'opened', SalesOrder::SOURCE_BACKEND, null, 'harness', new \DateTimeImmutable('2026-10-18 10:00')), 6);
+$termsOrder->describe($contact, '', new \DateTimeImmutable('2026-10-18'), null, null, PriceMode::Net, 'CHF', null, null, null, null, 'disc-2-10');
+check('F7b startFrom() reads the order\'s payment terms; an order without (existing rows: NULL) shows «wie beim Kunden» \'\'',
+    (new OrderForm())->startFrom($termsOrder)->header('terms') === 'disc-2-10' && $fresh->header('terms') === '');
+$keptTarget = (new OrderForm())->startFrom($order);
+check('F7c an existing order keeps its stored payment target (no field in the window); startFrom() reads it, toDraft() sends it',
+    (new OrderForm())->startFrom($termsOrder)->target() === '' && $keptTarget->withTarget('lukb')->toDraft(['W-1' => 11, 'W-2' => 12], ['' => null, OrderForm::SHIP_KEEP => null])?->paymentTargetCode === 'lukb');
 
 // ── P. the order's PDFs (offline where possible) ─────────────────────────
 
@@ -684,6 +712,20 @@ check('M18 the order confirmation moves a quote into the DEFAULT of «confirmed�
     && $db->fetchOne('SELECT change_trigger FROM sales_order_status_change WHERE order_id = ? ORDER BY id DESC LIMIT 1', [$o2->getId()]) === 'confirmation'
     && ($o3 = $svc->create(new $D($contactId, '2026-10-14', lines: [$L::article($variantId, '1')]))) !== null
     && $refusedBy(fn() => $svc->printDeliveryNote((int) $o3->getId(), $o3->getVersion())) === 'not-printable');
+
+// The order's payment terms (owner 2026-10-18): by code, validated like the payment target, the preview applies them.
+$badTerms = null;
+try { $svc->create(new $D($contactId, '2026-10-18', lines: [$L::article($variantId, '1')], paymentTermsCode: 'gibts-nicht')); } catch (\Z77\Module\Order\Services\InvalidOrderException $e) { $badTerms = $e->errors; }
+// The lines of M7 (a total without a rounding difference — the harness has no mandator for the rounding account).
+$o4 = $svc->create(new $D($contactId, '2026-10-18', lines: [$L::article($variantId, '2'), $L::free('Degustation', '1', '80', 'UN', '3400')], paymentTermsCode: ' DISC-2-10 '));
+$o4Terms = $svc->preview($o4)->getPaymentTermsCode();
+$o4Stored = $db->fetchOne('SELECT payment_terms_code FROM sales_order WHERE id = ?', [$o4->getId()]);
+$o4 = $svc->update((int) $o4->getId(), $o4->getVersion(), new $D($contactId, '2026-10-18', lines: [$L::article($variantId, '2', id: (int) $o4->getLines()[0]->getId()), $L::free('Degustation', '1', '80', 'UN', '3400', id: (int) $o4->getLines()[1]->getId())]));
+check('M19 payment terms: an unknown code refused on `payment_terms_code`; a known one stored normalised and applied by the preview (= the booking print); cleared → NULL = the customer\'s (the profile\'s net-30)',
+    $badTerms !== null && isset($badTerms['payment_terms_code']) && count($badTerms) === 1
+    && $o4Stored === 'disc-2-10' && $o4Terms === 'disc-2-10'
+    && $db->fetchOne('SELECT payment_terms_code FROM sales_order WHERE id = ?', [$o4->getId()]) === null
+    && $svc->preview($o4)->getPaymentTermsCode() === 'net-30');
 
 echo "\n{$pass} passed, {$fail} failed\n";
 exit($fail === 0 ? 0 : 1);

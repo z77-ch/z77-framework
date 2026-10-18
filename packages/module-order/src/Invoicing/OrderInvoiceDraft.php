@@ -20,8 +20,8 @@ use Z77\Module\Order\Entities\SalesOrderLine;
  *     the delivery note's, not the invoice's);
  *   - the invoice date (the booking print's confirm, default today; the order date for the totals);
  *   - the service period from the head; an EMPTY «Leistung von» → the invoice date;
- *   - price mode and currency of the order, its payment target code; payment terms null → the
- *     debtor profile's;
+ *   - price mode and currency of the order, its payment target code and its payment terms code
+ *     (2026-10-18) — null → the debtor profile's;
  *   - the subject «Auftrag {number} · {Betreff}» (D10), «Auftrag {number}» without a Betreff;
  *   - the lines 1:1 in document order with type, text, quantity (service only), unit, unit price,
  *     discount, tax code and account; a child beneath its parent (`LineDraft::beneath()`);
@@ -59,7 +59,7 @@ final class OrderInvoiceDraft
             serviceTo: $order->getServiceTo(),
             currency: $order->getCurrency(),
             priceMode: $order->priceMode(),
-            paymentTermsCode: null,
+            paymentTermsCode: $order->getPaymentTermsCode(),   // null = debtor takes the customer's profile terms
             address: $order->billingAddress(),   // null = debtor snapshots the customer's invoice address
             lines: $lines,
             sourceType: self::SOURCE_TYPE,

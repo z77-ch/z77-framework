@@ -79,9 +79,12 @@ final class CustomerPicker
      * The field as HTML — the editor renders it, a choice and «+ Kontakt» answer it.
      *
      * @param string $pickUrl  the host's `customer-pick` URL
-     * @param string $back     where the picker returns without the script (the editor's own URL)
+     * @param string $back        where the picker returns without the script (the editor's own URL)
+     * @param bool   $showNumber  false: no «Kundennr. …» line under the name — for a host that shows
+     *                            the number elsewhere (the order window: in the block title); «neu
+     *                            als Debitor» stays, it is a state, not the number
      */
-    public static function fieldHtml(UnifiedEntityManager $em, string $contactId, string $pickUrl, string $back, bool $invalid = false): string
+    public static function fieldHtml(UnifiedEntityManager $em, string $contactId, string $pickUrl, string $back, bool $invalid = false, bool $showNumber = true): string
     {
         $contact = ctype_digit($contactId) && (int) $contactId > 0 ? $em->getRepository(Contact::class)->find((int) $contactId) : null;
         /** @var DebtorProfileRepository $profiles */
@@ -92,7 +95,7 @@ final class CustomerPicker
             'contact' => $contact,
             'label'   => $contact !== null ? self::label($contact, $profile) : '',
             'name'    => $contact !== null ? $contact->displayName() : '',
-            'note'    => $contact !== null ? ($profile !== null ? 'Kundennr. ' . $profile->getCustomerNumber() : 'neu als Debitor') : '',
+            'note'    => $contact === null ? '' : ($profile === null ? 'neu als Debitor' : ($showNumber ? 'Kundennr. ' . $profile->getCustomerNumber() : '')),
             'pickUrl' => $pickUrl,
             'back'    => $back,
             'invalid' => $invalid,

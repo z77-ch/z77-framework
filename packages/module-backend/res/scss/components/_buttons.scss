@@ -38,6 +38,11 @@
 //   confirm   `--confirm`: green fill — something is WRITTEN: Buchen, Speichern, Verbuchen
 //   secondary base / `--ghost`: surface with border — Drucken, Neuer Ordner, Abbrechen
 //   danger    `--danger`: red border and text, NEVER filled; «…» in the label when a confirmation follows
+// and two that refine them (owner 2026-10-18, the order window's action row — ADR-033 addendum):
+//   confirm-open `--confirm-open`: green LINE and ink — a «…» button that only OPENS the confirm
+//                dialog (Buchungsdruck …); the fill belongs to the dialog's button that writes.
+//                One filled surface per row: the row's own save.
+//   quiet     `--quiet`: text only — leaving (Schliessen at the end of an action row)
 // The label on the accent is `--be-on-accent-page`: white in light, the dark ground in dark —
 // every dark accent is light and carries no white (the draft writes its card colour on it).
 .be-btn--primary       { background: var(--be-accent); color: var(--be-on-accent-page); border-color: var(--be-accent); }
@@ -45,6 +50,12 @@
 
 .be-btn--confirm       { background: var(--be-confirm); color: var(--be-on-confirm); border-color: var(--be-confirm); }
 .be-btn--confirm:hover { filter: brightness(1.1); }
+
+.be-btn--confirm-open       { background: var(--be-surface2); color: var(--be-confirm-ink); border-color: var(--be-confirm-ink); }
+.be-btn--confirm-open:hover { background: color-mix(in srgb, var(--be-confirm-ink) 10%, var(--be-surface2)); }
+
+.be-btn--quiet       { background: transparent; border-color: transparent; color: var(--be-muted); }
+.be-btn--quiet:hover { background: var(--be-field); border-color: transparent; color: var(--be-text); }
 
 // `--ghost` is the explicit name of the secondary look — the same as the base since 2026-10-08,
 // kept because 140+ templates carry it. It was `background: transparent`: on the band and in

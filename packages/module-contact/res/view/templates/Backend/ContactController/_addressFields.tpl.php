@@ -17,8 +17,18 @@
  * @var \Z77\Module\Contact\Validators\ContactAddressValidator|null $linkValidator
  * @var \Z77\Module\Contact\Validators\AddressValidator|null $addressValidator
  * @var bool $required  whether the block's required fields carry `required` (false = optional block on «add»)
+ * @var string $prefix  the address fields' name prefix (default `address_`; the order's address
+ *                      cards post `ship_addr_…` / `bill_addr_…`, two blocks in one form)
+ * @var bool $withLink  the link fields (type + title) first (default true; false = a document's
+ *                      address snapshot, which has no link)
+ *
+ * `$address` is any object with the ten address getters — an `Address` or debtor's `AddressSnapshot`.
  */
 $required  = $required ?? true;
+$prefix    = $prefix ?? 'address_';
+$withLink  = $withLink ?? true;
+$linkValidator    = $linkValidator ?? null;
+$addressValidator = $addressValidator ?? null;
 $req       = $required ? ' required' : '';
 $linkError = function (string $name) use ($linkValidator): string {
     return $linkValidator !== null && $linkValidator->hasFieldError($name)
@@ -32,6 +42,7 @@ $addrError = function (string $name) use ($addressValidator): string {
 };
 $invalid = fn(?object $v, string $name): string => $v !== null && $v->hasFieldError($name) ? 'true' : 'false';
 ?>
+<?php if ($withLink): ?>
 <div class="be-form__grid">
     <div class="be-form__field" data-z77-field-wrapper>
         <label>Adresstyp</label>
@@ -49,16 +60,17 @@ $invalid = fn(?object $v, string $name): string => $v !== null && $v->hasFieldEr
         <?= raw($linkError('title')) ?>
     </div>
 </div>
+<?php endif; ?>
 <div class="be-form__grid">
     <div class="be-form__field" data-z77-field-wrapper>
         <label>Anrede</label>
-        <input type="text" name="address_salutation" value="<?= e($address->getSalutation()) ?>" maxlength="20" autocomplete="off" placeholder="Herr / Frau / Firma"
+        <input type="text" name="<?= e($prefix) ?>salutation" value="<?= e($address->getSalutation()) ?>" maxlength="20" autocomplete="off" placeholder="Herr / Frau / Firma"
                aria-invalid="<?= $invalid($addressValidator, 'salutation') ?>">
         <?= raw($addrError('salutation')) ?>
     </div>
     <div class="be-form__field" data-z77-field-wrapper>
         <label>Titel</label>
-        <input type="text" name="address_title" value="<?= e($address->getTitle()) ?>" maxlength="40" autocomplete="off"
+        <input type="text" name="<?= e($prefix) ?>title" value="<?= e($address->getTitle()) ?>" maxlength="40" autocomplete="off"
                aria-invalid="<?= $invalid($addressValidator, 'title') ?>">
         <?= raw($addrError('title')) ?>
     </div>
@@ -66,33 +78,33 @@ $invalid = fn(?object $v, string $name): string => $v !== null && $v->hasFieldEr
 <div class="be-form__grid">
     <div class="be-form__field" data-z77-field-wrapper>
         <label>Vorname</label>
-        <input type="text" name="address_first_name" value="<?= e($address->getFirstName()) ?>" maxlength="70" autocomplete="off"
+        <input type="text" name="<?= e($prefix) ?>first_name" value="<?= e($address->getFirstName()) ?>" maxlength="70" autocomplete="off"
                aria-invalid="<?= $invalid($addressValidator, 'first_name') ?>">
         <?= raw($addrError('first_name')) ?>
     </div>
     <div class="be-form__field" data-z77-field-wrapper>
         <label>Name <small>(Nachname oder Firma)</small></label>
-        <input type="text" name="address_name" value="<?= e($address->getName()) ?>" maxlength="70" autocomplete="off"<?= $req ?>
+        <input type="text" name="<?= e($prefix) ?>name" value="<?= e($address->getName()) ?>" maxlength="70" autocomplete="off"<?= $req ?>
                aria-invalid="<?= $invalid($addressValidator, 'name') ?>">
         <?= raw($addrError('name')) ?>
     </div>
 </div>
 <div class="be-form__field" data-z77-field-wrapper>
     <label>Adresszusatz <small>(Abteilung, c/o)</small></label>
-    <input type="text" name="address_address_row" value="<?= e($address->getAddressRow()) ?>" maxlength="120" autocomplete="off"
+    <input type="text" name="<?= e($prefix) ?>address_row" value="<?= e($address->getAddressRow()) ?>" maxlength="120" autocomplete="off"
            aria-invalid="<?= $invalid($addressValidator, 'address_row') ?>">
     <?= raw($addrError('address_row')) ?>
 </div>
 <div class="be-form__grid">
     <div class="be-form__field" data-z77-field-wrapper>
         <label>Strasse</label>
-        <input type="text" name="address_street" value="<?= e($address->getStreet()) ?>" maxlength="120" autocomplete="off"<?= $req ?>
+        <input type="text" name="<?= e($prefix) ?>street" value="<?= e($address->getStreet()) ?>" maxlength="120" autocomplete="off"<?= $req ?>
                aria-invalid="<?= $invalid($addressValidator, 'street') ?>">
         <?= raw($addrError('street')) ?>
     </div>
     <div class="be-form__field" data-z77-field-wrapper>
         <label>Nr.</label>
-        <input type="text" name="address_house_no" value="<?= e($address->getHouseNo()) ?>" maxlength="16" autocomplete="off"
+        <input type="text" name="<?= e($prefix) ?>house_no" value="<?= e($address->getHouseNo()) ?>" maxlength="16" autocomplete="off"
                aria-invalid="<?= $invalid($addressValidator, 'house_no') ?>">
         <?= raw($addrError('house_no')) ?>
     </div>
@@ -100,19 +112,19 @@ $invalid = fn(?object $v, string $name): string => $v !== null && $v->hasFieldEr
 <div class="be-form__grid">
     <div class="be-form__field" data-z77-field-wrapper>
         <label>PLZ</label>
-        <input type="text" name="address_zip" value="<?= e($address->getZip()) ?>" maxlength="16" autocomplete="off"<?= $req ?>
+        <input type="text" name="<?= e($prefix) ?>zip" value="<?= e($address->getZip()) ?>" maxlength="16" autocomplete="off"<?= $req ?>
                aria-invalid="<?= $invalid($addressValidator, 'zip') ?>">
         <?= raw($addrError('zip')) ?>
     </div>
     <div class="be-form__field" data-z77-field-wrapper>
         <label>Ort</label>
-        <input type="text" name="address_city" value="<?= e($address->getCity()) ?>" maxlength="70" autocomplete="off"<?= $req ?>
+        <input type="text" name="<?= e($prefix) ?>city" value="<?= e($address->getCity()) ?>" maxlength="70" autocomplete="off"<?= $req ?>
                aria-invalid="<?= $invalid($addressValidator, 'city') ?>">
         <?= raw($addrError('city')) ?>
     </div>
     <div class="be-form__field" data-z77-field-wrapper>
         <label>Land <small>(ISO, z.B. CH)</small></label>
-        <input type="text" name="address_country" value="<?= e($address->getCountry()) ?>" maxlength="2" autocomplete="off"<?= $req ?>
+        <input type="text" name="<?= e($prefix) ?>country" value="<?= e($address->getCountry()) ?>" maxlength="2" autocomplete="off"<?= $req ?>
                aria-invalid="<?= $invalid($addressValidator, 'country') ?>">
         <?= raw($addrError('country')) ?>
     </div>

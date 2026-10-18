@@ -60,6 +60,7 @@ class SalesOrder
     public const SUBJECT_LENGTH     = 200;
     public const CURRENCY_LENGTH    = 3;
     public const TARGET_LENGTH      = 16;
+    public const TERMS_LENGTH       = 16;
     public const NOTES_LENGTH       = 2000;
     public const SOURCE_TYPE_LENGTH = 64;
     public const SOURCE_REF_LENGTH  = 128;
@@ -107,6 +108,13 @@ class SalesOrder
     /** The payment target the booked invoice prints its payment part for (by code); null = none. */
     #[ORM\Column(name: 'payment_target_code', length: self::TARGET_LENGTH, nullable: true)]
     private ?string $paymentTargetCode = null;
+
+    /**
+     * The payment terms the booked invoice applies (debtor's `PaymentTerms`, by code; owner
+     * 2026-10-18); null = «wie beim Kunden» — the customer's debtor terms at the booking print.
+     */
+    #[ORM\Column(name: 'payment_terms_code', length: self::TERMS_LENGTH, nullable: true)]
+    private ?string $paymentTermsCode = null;
 
     /** The delivery address snapshot; all empty = none ({@see deliveryAddress()}). */
     #[ORM\Embedded(class: AddressSnapshot::class, columnPrefix: 'ship_')]
@@ -212,6 +220,7 @@ class SalesOrder
     public function getContact(): Contact { return $this->contact; }
     public function getCurrency(): string { return $this->currency; }
     public function getPaymentTargetCode(): ?string { return $this->paymentTargetCode; }
+    public function getPaymentTermsCode(): ?string { return $this->paymentTermsCode; }
     public function getNotes(): ?string { return $this->notes; }
     public function getTotalNet(): ?Money { return $this->totalNet; }
     public function getTotalTax(): ?Money { return $this->totalTax; }
@@ -276,6 +285,7 @@ class SalesOrder
         ?AddressSnapshot $deliveryAddress,
         ?string $notes,
         ?AddressSnapshot $billingAddress = null,
+        ?string $paymentTermsCode = null,
     ): void {
         $this->contact           = $contact;
         $this->subject           = $subject;
@@ -285,6 +295,7 @@ class SalesOrder
         $this->priceMode         = $priceMode->value;
         $this->currency          = $currency;
         $this->paymentTargetCode = $paymentTargetCode;
+        $this->paymentTermsCode  = $paymentTermsCode;
         $this->ship              = $deliveryAddress ?? self::noAddress();
         $this->bill              = $billingAddress ?? self::noAddress();
         $this->notes             = $notes;

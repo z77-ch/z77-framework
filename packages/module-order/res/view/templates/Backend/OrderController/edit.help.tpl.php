@@ -52,9 +52,9 @@
 <p>Ob die Preise der Positionen die MWST enthalten. Ein Artikelpreis in der anderen Art wird beim Übernehmen umgerechnet.</p>
 </section>
 
-<section data-help-field="target">
-<h3>Zahlungsziel</h3>
-<p>Das Konto, für das die Rechnung beim Buchungsdruck den QR-Zahlteil druckt (QR-IBAN mit Referenz, IBAN ohne). «kein Zahlteil» = die Rechnung ohne Einzahlungsschein.</p>
+<section data-help-field="terms">
+<h3>Zahlungskonditionen</h3>
+<p>Die Zahlungsfrist und ein allfälliges Skonto der Rechnung, die der Buchungsdruck erstellt («30 Tage netto»). «wie beim Kunden» = die Konditionen, die beim Debitor hinterlegt sind — so, wie sie beim Buchungsdruck gelten. Eine andere Wahl gilt nur für diesen Auftrag. «Debitor anpassen» ändert die Konditionen, die beim Kunden hinterlegt sind (für alle künftigen Rechnungen). Das Konto für den QR-Zahlteil wählt der Auftrag selbst: ein neuer Auftrag das erste aktive Zahlungsziel, ein bestehender behält seines.</p>
 </section>
 
 <section data-help-field="notes">

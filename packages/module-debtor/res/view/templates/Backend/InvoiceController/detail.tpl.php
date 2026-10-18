@@ -66,7 +66,7 @@ if (!$document->isFinal()) {
     $actions  = '<a class="be-btn be-btn--ghost" href="' . e($pdfUrl) . '" target="_blank" rel="noopener" title="Vorschau als PDF (neuer Tab) — ohne Nummer und ohne Zahlteil">Vorschau</a>';
     $actions .= $winLink($actionBase . '/edit?id=' . (int) $document->getId(), 'Bearbeiten …');
     $actions .= $winLink($actionBase . '/confirm-discard?id=' . (int) $document->getId(), 'Entwurf löschen …', 'be-btn be-btn--ghost', 'Den Entwurf löschen — er hat keine Nummer, nichts ist verbucht');
-    $actions .= '<a class="be-btn be-btn--confirm" href="' . e($actionBase . '/confirm-finalize?' . http_build_query(['doc' => [$document->getId() . ':' . $document->getVersion()]])) . '" title="Nummer vergeben, verbuchen und als PDF drucken">Buchungsdruck …</a>';
+    $actions .= '<a class="be-btn be-btn--confirm-open" href="' . e($actionBase . '/confirm-finalize?' . http_build_query(['doc' => [$document->getId() . ':' . $document->getVersion()]])) . '" title="Nummer vergeben, verbuchen und als PDF drucken">Buchungsdruck …</a>';
 } else {
     $actions = '<a class="be-btn be-btn--ghost" href="' . e($pdfUrl) . '" target="_blank" rel="noopener" title="Als PDF öffnen (neuer Tab)">PDF</a>';
     if (!$document->isCreditNote() && $openAmount !== null && !$openAmount->isZero()) {

@@ -10,7 +10,8 @@
  * @var \Z77\Module\Contact\Entities\Contact|null $contact
  * @var string $label    `CustomerPicker::label()` — '' without a customer (the title of the name)
  * @var string $name     the customer's display name, '' without a customer
- * @var string $note     «Kundennr. …» or «neu als Debitor», '' without a customer
+ * @var string $note     «Kundennr. …» or «neu als Debitor», '' without a customer (or when the host
+ *                       shows the number itself — `fieldHtml(..., showNumber: false)`, the order window)
  * @var string $pickUrl  the host's `customer-pick` URL
  * @var string $back     the editor's own URL (the picker's way back without the script)
  * @var bool   $invalid

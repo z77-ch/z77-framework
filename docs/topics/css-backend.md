@@ -272,6 +272,9 @@ label.
 | Several kinds with a default | `.be-shell-add--split` (`__main` form + `__toggle` chevron, one panel) | one button in two parts, 2px gap, radius on the outer corners only — Service › Backup |
 | Secondary | `.be-btn` (base) = `.be-btn--ghost` | surface with border — Drucken, Neuer Ordner, Abbrechen |
 | Danger | `.be-btn--danger` | red border and text, never filled; «…» when a confirmation follows |
+| Confirm that opens a dialog | `.be-btn--confirm-open` | green LINE and ink (`--be-confirm-ink`), never filled — a «…» confirm such as «Buchungsdruck …»; the fill is the dialog's button (ADR-033 addendum 2026-10-18) |
+| Leave | `.be-btn--quiet` | text only, at the end of an action row behind `.z77-form-actions__sep` — «Schliessen» (`modalActions` `cancelKind` 'quiet') |
+| Status in an action row | `.be-status-field` (+ `--accent` / `--warn` / `--good` / `--danger`) | a FIELD: input look, «STATUS» label, phase dot, name — a link to the status change or the wrapper of a start-status select; replaces `.be-status-pill` |
 | Tab (language, mode, view) | `.be-viewtabs` (aliases until migrated: `.be-tabs`, in-band `.be-lang-switch`) | text with an accent underline, never a box |
 | Tab over sections of ONE form (radio tabs) | `.be-viewtabs__tab--for` (a `<label for>` of a `.be-radiotabs__radio` in the form) — the Mandant's Briefkopf · UID und MWST · Konten | the same underline tab; switches a panel, not a page |
 | Switch (on/off) | `.be-switch` (checkbox inside); `.be-switch--for` (a `<label for>` of a `.be-reveal__toggle` placed before it — the journal's «MwSt») | the only on/off form |
@@ -834,6 +837,12 @@ packages/module-backend/res/view/templates/
 - **CSS-CHOICE-001** — resolved 2026-05-30. Selected radios/checkboxes were only weakly indicated (bare native control). Added the shared `.be-choice` component in `_forms.scss`: an `appearance:none` box with a `::after` checkmark on `:checked`, type-agnostic so radio and checkbox look identical; optional `.be-choice--filled` tints the whole row (`color-mix` on `--be-accent`). The `NavigationController/edit.tpl.php` group picker migrated from the old `.be-form__tag-label` chip to `.be-choice`.
 
 ## pending
+
+- **The other «…» confirm buttons (added 2026-10-18, ADR-033 addendum 2026-10-18).** The order
+  window and the invoice detail take `.be-btn--confirm-open` for «Buchungsdruck …»; the list
+  action cells (invoice list «Buchungsdruck …», dunning «Mahnlauf starten …») still FILL — review
+  them with the owner (the action cell's island has its own confirm look), and decide whether
+  other window rows take `cancelKind` 'quiet' too.
 
 - **Cards on the window ground, quiet inputs — backend-wide (added 2026-10-16, ADR-051 + its
   addendum 2026-10-17: the draft IS the target look).** Mockup: `temp/order-mask-draft.html`
