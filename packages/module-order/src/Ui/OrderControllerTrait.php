@@ -425,7 +425,10 @@ trait OrderControllerTrait
             'shipCases'       => $this->orderAddressCases('ship', $form->header('contact'), $order, $form),
             'taxCodes'        => $taxCodes = $this->em()->getRepository(TaxCode::class)->selectable($form->keptCodes()),
             // The window shows a line's VAT as its RATE («8.1 %», owner 2026-10-16), not the code.
-            'taxRates'        => $this->orderTaxRates($taxCodes, $form->header('order_date')),
+            'taxRates'        => $this->orderTaxRates($taxCodes, $form->header('service_from'), $form->header('order_date')),
+            // Every rate of the shown codes with its start — core.js «dated rates» re-labels the rows
+            // when «Leistung von» / the order date change (owner 2026-10-18).
+            'rateSchedule'    => $this->orderRateSchedule($taxCodes),
             'articles'        => $this->orderArticleInfo($variants, $order),
             'preview'         => $preview,
             // The totals' currency before there is a preview (a new order, a refused preview).
@@ -450,9 +453,13 @@ trait OrderControllerTrait
      * @param list<TaxCode> $codes
      * @return array<string, string>
      */
-    private function orderTaxRates(array $codes, string $orderDate): array
+    private function orderTaxRates(array $codes, string $serviceFrom, string $orderDate): array
     {
-        $date  = \DateTimeImmutable::createFromFormat('!Y-m-d', $orderDate) ?: new \DateTimeImmutable('today');
+        // The SERVICE date decides the rate (owner 2026-10-18, as the save and the booking print):
+        // «Leistung von», else the order date.
+        $date  = \DateTimeImmutable::createFromFormat('!Y-m-d', $serviceFrom)
+            ?: \DateTimeImmutable::createFromFormat('!Y-m-d', $orderDate)
+            ?: new \DateTimeImmutable('today');
         $rates = VatRates::from($this->em());
         $shown = [];
         foreach ($codes as $code) {
@@ -464,6 +471,31 @@ trait OrderControllerTrait
         }
 
         return $shown;
+    }
+
+    /**
+     * The rate history of $codes for core.js «dated rates»: code → [[valid from 'Y-m-d', rate in
+     * percent as shown («8.1»)], …], oldest first.
+     *
+     * @param list<TaxCode> $codes
+     * @return array<string, list<array{0: string, 1: string}>>
+     */
+    private function orderRateSchedule(array $codes): array
+    {
+        $wanted = array_flip(array_map(static fn(TaxCode $c) => $c->getCode(), $codes));
+        /** @var \Z77\Module\Vat\Repositories\TaxRateRepository $repo */
+        $repo     = $this->em()->getRepository(TaxRate::class);
+        $schedule = [];
+        foreach ($repo->allGroupedByCode() as $code => $rows) {
+            if (!isset($wanted[$code])) {
+                continue;
+            }
+            foreach (array_reverse($rows) as $row) {
+                $schedule[$code][] = [$row->getValidFrom(), TaxRate::formatPercent($row->getRate())];
+            }
+        }
+
+        return $schedule;
     }
 
     // ── article chosen on a line ─────────────────────────────────────────

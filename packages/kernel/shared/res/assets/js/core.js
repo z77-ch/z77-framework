@@ -23,6 +23,7 @@
  *                                 template[data-row-template], [data-row-add] (see «rows»)
  *   textarea[data-autosize]       grows with its text; ="title" shows the first line as a title (see «autosize»)
  *   [data-sum]                    a live total of the lines inside it, display only (see «line sums»)
+ *   select[data-rate-schedule-ref] its options' rates follow a date field of the form (see «dated rates»)
  *   [data-price-mode]             its rows convert their prices when the price mode changes (see «price mode»)
  *   [data-tree-picker]            a tree filter as a field: <details> + the JSON island
  *                                 script[data-tree-picker-data] → search + one level at a time (see «tree picker»)
@@ -2194,6 +2195,76 @@ _Z77.core.sums = (function () {
     return { bind: bind, update: update };
 })();
 
+/* ── dated rates ────────────────────────────────────────────────────────────
+ * Options whose RATE depends on a date field of the form (first user: the order's VAT per row —
+ * the SERVICE date decides the rate, owner 2026-10-18). The server renders the rates for the date
+ * it knew; when the date changes, the options are re-labelled from the schedule at once, and
+ * «line sums» / «price mode» read the new `data-rate`. Display only — the save resolves the rate
+ * itself (Rule 7).
+ *
+ * Contract:
+ *   script[type="application/json"][data-rate-schedule="<name>"]
+ *                                 inside a form: { option value: [[valid from 'Y-m-d', rate], …] }
+ *                                 oldest first; `data-rate-date="a b"` = the form fields that hold
+ *                                 the date, the first non-empty one counts
+ *   select[data-rate-schedule-ref="<name>"]  its options get `data-rate` and the label «<rate> %»
+ *                                 for that date (no rate in effect: the value as label, no rate)
+ * Re-applied when a date field changes and when rows are added ([data-rows] fires `input`).
+ */
+_Z77.core.datedRates = (function () {
+    function _at(list, date) {
+        var hit = null;
+        (list || []).forEach(function (entry) { if (entry[0] <= date) hit = entry[1]; });
+        return hit;
+    }
+
+    function apply(island) {
+        var form = island.closest('form');
+        if (!form) return;
+        var schedule;
+        try { schedule = JSON.parse(island.textContent) || {}; } catch (e) { return; }
+        var date = '';
+        (island.getAttribute('data-rate-date') || '').split(/\s+/).some(function (name) {
+            var field = name ? form.elements.namedItem(name) : null;
+            date = field && typeof field.value === 'string' ? field.value.trim() : '';
+            return date !== '';
+        });
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return;
+        var name = island.getAttribute('data-rate-schedule');
+        form.querySelectorAll('select[data-rate-schedule-ref="' + name + '"]').forEach(function (select) {
+            var before = select.selectedIndex >= 0 ? select.options[select.selectedIndex].getAttribute('data-rate') : null;
+            Array.prototype.forEach.call(select.options, function (option) {
+                if (!option.value || !Object.prototype.hasOwnProperty.call(schedule, option.value)) return;
+                var rate = _at(schedule[option.value], date);
+                if (rate === null) { option.removeAttribute('data-rate'); option.textContent = option.value; }
+                else { option.setAttribute('data-rate', rate); option.textContent = rate + ' %'; }
+            });
+            var after = select.selectedIndex >= 0 ? select.options[select.selectedIndex].getAttribute('data-rate') : null;
+            if (after !== before) select.dispatchEvent(new Event('change', { bubbles: true }));
+        });
+    }
+
+    function _islandsFor(target) {
+        var form = target.form || (target.closest && target.closest('form'));
+        if (!form) return [];
+        return Array.prototype.filter.call(form.querySelectorAll('script[data-rate-schedule]'), function (island) {
+            if (target.hasAttribute && target.hasAttribute('data-rows')) return true;
+            return target.name && (' ' + (island.getAttribute('data-rate-date') || '') + ' ').indexOf(' ' + target.name + ' ') !== -1;
+        });
+    }
+
+    function bind() {
+        ['change', 'input'].forEach(function (type) {
+            document.addEventListener(type, function (e) {
+                if (e.target.tagName === 'SELECT' && e.target.hasAttribute('data-rate-schedule-ref')) return;   // our own echo
+                _islandsFor(e.target).forEach(apply);
+            });
+        });
+    }
+
+    return { bind: bind, apply: apply };
+})();
+
 /* ── price mode ─────────────────────────────────────────────────────────────
  * Prices that follow a change of the price mode (owner 2026-10-18 — before, an article price
  * filled under «netto» kept its number under «brutto»: an article of 16.65 gross was billed
@@ -2636,6 +2707,7 @@ document.addEventListener('DOMContentLoaded', function () {
     _Z77.core.autosize.bind();
     _Z77.core.treePicker.bind();
     _Z77.core.sums.bind();
+    _Z77.core.datedRates.bind();
     _Z77.core.priceMode.bind();
     _Z77.core.windows.bind();
     _Z77.core.help.bind();

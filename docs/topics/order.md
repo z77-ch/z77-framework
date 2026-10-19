@@ -164,11 +164,22 @@ Built 2026-10-14 (plan §13 steps 7–10, the owner's board on the developer can
   addendum); (5) product-group TREE PICKER in the article list's toolbar (article.md). The files
   overlap (edit.tpl.php, core.js, OrderService) — if splitting is not worth it, one commit
   «order window round 3». Then `composer install` on z77.ch instead of the hand copies.
-  - **Owner's browser test**: positions (drag with mouse/touch, Alt+↑/↓, ⇥ indent, the title
+  - **VAT in the window by the SERVICE date** (owner 2026-10-19: «MwSt nach Leistung», the article
+    price stays at the ORDER date): the rows' MWST rate and the live totals use «Leistung von», else
+    the order date — as the save and the booking print always did. `orderTaxRates()` resolves at
+    that date; the rate history travels as a JSON island (`rateSchedule`), core.js «dated rates»
+    re-labels the rate selects when a date field changes. Test case on z77.ch: order 14 (order date
+    2018, service 06.04.2026 → 8.1 %; service emptied → 7.7 %).
+  - **Owner's browser test — PASSED 2026-10-19** (step by step on z77.ch): positions (drag with mouse/touch, Alt+↑/↓, ⇥ indent, the title
     mirror over the first text line, column widths at 78rem, both themes); price mode (switch
     «Preise» with article rows: 16.65 gross ↔ 15.40 net; choose a contact without a debtor →
     «Debitor anlegen»); save quiet/calling incl. «anpassen» and back; the tree picker
     (Stammdaten › Artikel, toolbar «WARENGRUPPE»: ›, path back, search, keys).
+  - **Fixed in the test 2026-10-19**: the window's VAT by the service date (entry above); the
+    booking-print PDF printed the rounding twice (as a bold position and in the summary) — the
+    invoice PDF skips the rounding LINE like the order PDF already did; quantity and unit in TWO
+    columns on the invoice and order PDFs (Menge right, Einheit left — «2 h» stood off «1 Stk.»;
+    the delivery note had them already); `tests/pdf.php` F5 (an indented row shifts its text only).
   - **Owner to decide**: (a) the ⇥ indent toggle is a checkbox in button look, not `.be-switch`
     (ROWS-001 exception — recommended: keep); (b) PDF: first line bold also for TEXT lines? and
     the «(Rabatt x %)» suffix sits in the bold line of a one-line position — keep or own line?;

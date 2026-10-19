@@ -49,7 +49,8 @@
  *                               preview's, which fails while the order has no lines (2026-10-18)
  * @var list<string> $shipShown  the delivery card's, empty for «wie Rechnungsadresse»
  * @var list<\Z77\Module\Vat\Entities\TaxCode> $taxCodes
- * @var array<string, string> $taxRates  code → the rate shown («8.1 %») on the order date
+ * @var array<string, string> $taxRates  code → the rate shown («8.1 %») on the SERVICE date («Leistung von», else the order date)
+ * @var array<string, list<array{0: string, 1: string}>> $rateSchedule  code → [[valid from, rate], …] for core.js «dated rates»
  * @var array<string, array{name: string, unit: string, taxCode: string, account: string, offered: bool}> $articles  article number → what it brings
  * @var \Z77\Module\Debtor\Entities\Invoice|null $preview  debtor's preview of the STORED order (D11)
  * @var string $currency  the order's currency (the totals' before there is a preview)
@@ -366,7 +367,7 @@ $addressFields = fn(string $field): string => $this->partial('Backend/ContactCon
                     <span class="be-list__cell be-list__cell--num"><input class="be-input be-input--sm" type="text" id="<?= $rid ?>discount" name="<?= $p ?>[discount]" value="<?= e($row['discount']) ?>" inputmode="decimal" data-sum-discount data-help-key="discount" aria-label="Rabatt in Prozent" aria-invalid="<?= $invalid($err('discount')) ?>"></span>
                     <?php // The RATE of the article's tax code («8.1 %», D3 — not changeable, never sent): a select only so
                           // that core.js «fill» can set the code and the option shows its rate; `data-rate` feeds «line sums». ?>
-                    <span class="be-list__cell" title="vom Artikel"><select class="be-input be-input--sm be-rows__rate" data-fill-key="tax_code" data-sum-rate data-price-mode-rate tabindex="-1" aria-label="MWST-Satz (vom Artikel)" disabled>
+                    <span class="be-list__cell" title="vom Artikel"><select class="be-input be-input--sm be-rows__rate" data-fill-key="tax_code" data-sum-rate data-price-mode-rate data-rate-schedule-ref="order-vat" tabindex="-1" aria-label="MWST-Satz (vom Artikel)" disabled>
                         <option value=""<?= $code === '' ? ' selected' : '' ?>>–</option>
                         <?php foreach ($taxCodes as $taxCode): $c = $taxCode->getCode(); ?>
                         <option value="<?= e($c) ?>"<?= $c === $code ? ' selected' : '' ?><?= isset($taxRates[$c]) ? ' data-rate="' . e(rtrim($taxRates[$c], ' %')) . '"' : '' ?>><?= e($taxRates[$c] ?? $c) ?></option>
@@ -410,6 +411,8 @@ $addressFields = fn(string $field): string => $this->partial('Backend/ContactCon
                     <input type="hidden" name="prices_mode" value="<?= e($form->header('prices_mode')) ?>" data-price-mode-shown>
                 </div>
             </div>
+            <?php // The rate history for core.js «dated rates»: the rows' MWST follows «Leistung von» (else the order date) live. ?>
+            <script type="application/json" data-rate-schedule="order-vat" data-rate-date="service_from order_date"><?= json_encode($rateSchedule ?? [], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?></script>
             <datalist id="order-articles-<?= e($key) ?>">
                 <?php foreach ($articles as $number => $article): ?>
                 <?php if ($article['offered']): ?>

@@ -180,6 +180,17 @@ check('F4 lead: the first line in the bold font, the description and the next ro
     && $fontBefore($bytes, '(Beschreibung eins)') === $fontBefore($bytes, '(Ohne lead)') && str_contains($bytes, '(Beschreibung zwei)')
     && abs($leadY - (30 + (3 * 4.5 + 1) + (4.5 + 1))) < 0.01);
 
+// An indented row (a sub-position) shifts its TEXT only — the other columns stay where they are
+// (owner's booking print 2026-10-19: «2 h» of an indented line stood left of «1 Stk.»).
+$pdf = PdfDocument::create('indent')->withoutCompression()->addPage();
+$pdf->partial('pdf/table', ['x' => 20, 'y' => 30, 'header' => false, 'columns' => [['label' => 'Text', 'width' => 100], ['label' => 'Menge', 'width' => 25, 'align' => 'R'], ['label' => 'Betrag', 'width' => 30, 'align' => 'R']], 'rows' => [
+    ['cells' => ['Oben', '2 h', '9.00'], 'lead' => true],
+    ['cells' => ['Darunter', '2 h', '9.00'], 'lead' => true, 'indent' => 4],
+    ['cells' => ['Text', '2 h', '9.00'], 'indent' => 4],
+]]);
+preg_match_all('/([\d.]+) [\d.]+ Td \(2 h\)/', $pdf->output(), $xs);
+check('F5 indent: «2 h» of the indented rows (with and without lead) stands at the same x as the row above', count($xs[1]) === 3 && count(array_unique($xs[1])) === 1);
+
 
 // ── G: the shared report layout (FIN-PDF-001) ─────────────────────────────────────────────
 $cols = [['label' => 'Konto', 'width' => 20], ['label' => 'Bezeichnung', 'width' => 130], ['label' => 'Betrag', 'width' => 30, 'align' => 'R']];
