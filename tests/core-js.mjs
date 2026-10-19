@@ -17,6 +17,8 @@
  *   X  windows: a 403 envelope / a 500 page never lands as text in a window
  *   T  tree picker: index (roots, children, path), the search over all levels (every word
  *      in the path, one in the own name, order, limit), marks; no HTML from strings
+ *   P  price mode: rows convert with their own rate (net ↔ gross, half away from zero);
+ *      dated rates on a code picker ([data-rate-keep-label] — the invoice editor)
  *
  * What it cannot prove: layout, focus, real event order — those need a browser.
  * Run: node tests/core-js.mjs
@@ -300,6 +302,68 @@ console.log('T  tree picker');
     const from = SOURCE.indexOf('/* ── tree picker'), to = SOURCE.indexOf('/* ── small triggers');
     check('T10 the tree picker section builds no HTML from strings (no innerHTML / outerHTML / insertAdjacentHTML / eval — Rule 7)',
         from > 0 && to > from && !/innerHTML|outerHTML|insertAdjacentHTML|eval\(/.test(SOURCE.slice(from, to)));
+}
+
+// ── P: price mode + dated rates on a code picker (the invoice editor, owner 2026-10-19) ──
+console.log('P  price mode, dated rates');
+{
+    const { ctx, document } = makeContext();
+    ctx.Event = class { constructor(type, init) { this.type = type; this.bubbles = !!(init && init.bubbles); } };
+    const option = (value, label, rate) => {
+        const o = new El('option', { value, textContent: label });
+        if (rate !== undefined) o.setAttribute('data-rate', rate);
+        return o;
+    };
+    const fired = (el) => { el.events = []; el.dispatchEvent = (e) => el.events.push(e.type); return el; };
+    // A row: price field + the MWST code select (label = the CODE, `data-rate` = the rate).
+    const row = (price, code) => {
+        const r = new El('div');
+        const field = fired(new El('input', { value: price }));
+        const select = fired(new El('select'));
+        select.options = [option('', '–'), option('UN', 'UN', '8.1'), option('RE', 'RE', '2.6'), option('XX', 'XX')];
+        select.selectedIndex = Math.max(0, select.options.findIndex((o) => o.value === code));
+        select.setAttribute('data-rate-keep-label', '');
+        r.qsa['[data-price-mode-price]'] = [field];
+        r.qsa['[data-price-mode-rate]'] = [select];
+        return { r, field, select };
+    };
+    const rows = [row('20.00', 'UN'), row('0.05', 'UN'), row('100.00', 'RE'), row('50.00', 'XX'), row('', 'UN')];
+    const form = new El('form');
+    const mode = fired(new El('select', { value: 'gross' }));
+    mode.matches = (sel) => sel === 'select[data-price-mode-select]';
+    mode.closest = (sel) => (sel === '[data-price-mode]' ? form : null);
+    const shown = fired(new El('input', { value: 'net' }));
+    form.qsa['[data-price-mode-select]'] = [mode];
+    form.qsa['[data-price-mode-shown]'] = [shown];
+    form.qsa['[data-row]'] = rows.map((x) => x.r);
+    ctx._Z77.core.priceMode.bind();
+    const settle = async () => { for (let i = 0; i < 6; i++) await tick(); };
+    document.dispatch('change', { target: mode });
+    await settle();
+    check('P1 net → gross converts each row with ITS rate, cents half away from zero (20.00 → 21.62 at 8.1 %, 0.05 → 0.05, 100.00 → 102.60 at 2.6 %); a row without a rate and an empty price stay; the shown mode follows',
+        rows.map((x) => x.field.value).join(' ') === '21.62 0.05 102.60 50.00 ' && shown.value === 'gross' && rows[0].field.events.includes('input'),
+        rows.map((x) => x.field.value));
+    mode.value = 'net';
+    document.dispatch('change', { target: mode });
+    await settle();
+    check('P2 and back gross → net (21.62 → 20.00, 102.60 → 100.00)', rows.map((x) => x.field.value).join(' ') === '20.00 0.05 100.00 50.00 ' && shown.value === 'net',
+        rows.map((x) => x.field.value));
+
+    // Dated rates on the same select: the rate follows the service date, the label (the code) stays.
+    const island = new El('script', { textContent: JSON.stringify({ UN: [['2011-01-01', '8'], ['2018-01-01', '7.7'], ['2024-01-01', '8.1']] }) });
+    island.setAttribute('data-rate-schedule', 'invoice-vat');
+    island.setAttribute('data-rate-date', 'service_from invoice_date');
+    const dated = new El('form', { elements: { namedItem: (n) => (n === 'service_from' ? { value: '' } : n === 'invoice_date' ? { value: '2018-06-30' } : null) } });
+    island.closest = (sel) => (sel === 'form' ? dated : null);
+    const select = rows[0].select;
+    const plain = fired(new El('select'));
+    plain.options = [option('UN', '8.1 %', '8.1')];
+    plain.selectedIndex = 0;
+    dated.qsa['select[data-rate-schedule-ref="invoice-vat"]'] = [select, plain];
+    ctx._Z77.core.datedRates.apply(island);
+    check('P3 dated rates: the service date empty → the invoice date (2018) decides — UN 7.7 on both selects; [data-rate-keep-label] keeps the code «UN», the plain one shows «7.7 %»; a changed rate fires change',
+        select.options[1].getAttribute('data-rate') === '7.7' && select.options[1].textContent === 'UN' && plain.options[0].textContent === '7.7 %'
+        && select.events.includes('change'), [select.options[1].getAttribute('data-rate'), select.options[1].textContent, plain.options[0].textContent]);
 }
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed');

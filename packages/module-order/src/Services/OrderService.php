@@ -10,11 +10,13 @@ use Z77\Module\Article\Stock\StockLedger;
 use Z77\Module\Article\Stock\StockLedgers;
 use Z77\Module\Article\Stock\StockRequest;
 use Z77\Module\Contact\Entities\Contact;
+use Z77\Module\Debtor\Entities\DebtorProfile;
 use Z77\Module\Debtor\Entities\LineType;
 use Z77\Module\Debtor\Entities\PaymentTarget;
 use Z77\Module\Debtor\Entities\PaymentTerms;
 use Z77\Module\Debtor\Services\DebtorCurrency;
 use Z77\Module\Debtor\Services\DebtorException;
+use Z77\Module\Debtor\Services\DebtorProfileService;
 use Z77\Module\Debtor\Services\InvoicingService;
 use Z77\Module\Order\Entities\OrderPhase;
 use Z77\Module\Order\Entities\OrderStatus;
@@ -26,6 +28,7 @@ use Z77\Module\Order\Repositories\OrderStatusRepository;
 use Z77\Module\Order\Repositories\SalesOrderRepository;
 use Z77\Module\Order\Stock\OrderStockTargets;
 use Z77\Module\Vat\Calculation\PriceMode;
+use Z77\Module\Vat\Calculation\VatCalculator;
 use Z77\Module\Vat\Services\VatException;
 use Z77\Module\Vat\Services\VatRates;
 use Z77\Persistence\Doctrine\Entities\NumberRange;
@@ -614,6 +617,13 @@ final class OrderService
             $errors['contact_id'] = $draft->contactId > 0 ? 'Diesen Kontakt gibt es nicht (mehr).' : 'Kunde wählen.';
         } elseif (!$contact->isActive() && $existing?->getContact()->getId() !== $contact->getId()) {
             $errors['contact_id'] = '«' . $contact->displayName() . '» ist inaktiv — für einen inaktiven Kontakt wird kein Auftrag erfasst.';
+        } elseif ($existing?->getContact()->getId() !== $contact->getId()
+            && $this->em->getRepository(DebtorProfile::class)->findByContact($contact) === null) {
+            // No document for a contact without a debtor profile (owner 2026-10-18, in the service
+            // since 2026-10-19 — an import, a shop, a script are bound like the window): a NEW
+            // customer — a new order, a customer change — must be a debtor. An order keeps the
+            // customer it already holds (older drafts; its booking print opens the missing profile).
+            $errors['contact_id'] = DebtorProfileService::notDebtor($contact);
         }
 
         $subject = trim($draft->subject);
@@ -1007,10 +1017,9 @@ final class OrderService
     }
 
     /**
-     * $price from one price mode into the other with the rate of $taxCode on $date, in cents,
-     * rounded half away from zero (`Money::multiplyByRatio()`): net → gross × (10000 + r) / 10000,
-     * gross → net × 10000 / (10000 + r), r = the rate in hundredths of a percent. Null when the
-     * code has no rate on that day.
+     * $price from one price mode into the other with the rate of $taxCode on $date — module-vat's
+     * `VatCalculator::convertPrice()` (cents, half away from zero; the invoice editor converts with
+     * the same rule). Null when the code has no rate on that day.
      */
     private function convertByRate(Money $price, string $taxCode, PriceMode $from, PriceMode $to, \DateTimeImmutable $date): ?Money
     {
@@ -1023,9 +1032,7 @@ final class OrderService
             return null;
         }
 
-        return $to === PriceMode::Gross
-            ? $price->multiplyByRatio(10000 + $rate, 10000)
-            : $price->multiplyByRatio(10000, 10000 + $rate);
+        return VatCalculator::convertPrice($price, $rate, $from, $to);   // module-vat's ONE rule
     }
 
     /**

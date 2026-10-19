@@ -49,4 +49,50 @@ final class VatRates
 
         return ResolvedRate::fromEntities($taxCode, $rate);
     }
+
+    /**
+     * What a document editor shows per tax code on $date: code → the rate in percent as shown
+     * («8.1», `TaxRate::formatPercent()`). A code without a rate in effect is left out — the row
+     * then shows the code and carries no rate. The order window and the invoice editor render
+     * their rows' `data-rate` from it (core.js «line sums», «price mode»).
+     *
+     * @param list<TaxCode> $codes
+     * @return array<string, string>
+     */
+    public function shownRates(array $codes, \DateTimeImmutable $date): array
+    {
+        $shown = [];
+        foreach ($codes as $code) {
+            $rate = $this->rates->findEffective($code->getCode(), $date);
+            if ($rate !== null) {
+                $shown[$code->getCode()] = TaxRate::formatPercent($rate->getRate());
+            }
+        }
+
+        return $shown;
+    }
+
+    /**
+     * The rate history of $codes for core.js «dated rates» (the rate follows the SERVICE date
+     * while it is typed): code → [[valid from 'Y-m-d', rate in percent as shown («8.1»)], …],
+     * oldest first.
+     *
+     * @param list<TaxCode> $codes
+     * @return array<string, list<array{0: string, 1: string}>>
+     */
+    public function schedule(array $codes): array
+    {
+        $wanted   = array_flip(array_map(static fn(TaxCode $c) => $c->getCode(), $codes));
+        $schedule = [];
+        foreach ($this->rates->allGroupedByCode() as $code => $rows) {
+            if (!isset($wanted[$code])) {
+                continue;
+            }
+            foreach (array_reverse($rows) as $row) {
+                $schedule[$code][] = [$row->getValidFrom(), TaxRate::formatPercent($row->getRate())];
+            }
+        }
+
+        return $schedule;
+    }
 }

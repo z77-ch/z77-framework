@@ -8,6 +8,9 @@ use Z77\Module\Debtor\Entities\LineType;
 use Z77\Module\Debtor\Invoicing\InvoiceDraft;
 use Z77\Module\Debtor\Invoicing\LineDraft;
 use Z77\Module\Vat\Calculation\PriceMode;
+use Z77\Module\Vat\Calculation\VatCalculator;
+use Z77\Module\Vat\Services\VatException;
+use Z77\Module\Vat\Services\VatRates;
 use Z77\Shared\Money\Money;
 
 /**
@@ -41,6 +44,14 @@ use Z77\Shared\Money\Money;
  * stay `InvoicingService`'s: the form only turns the fields into a draft and
  * says which FIELD is unreadable; a refusal of the service comes back as a
  * general error.
+ *
+ * **The price mode** (owner 2026-10-19, as the order window — ADR-043 addendum 2026-10-18
+ * «price mode»): a change of «Preise» converts the typed prices at once in the browser (core.js
+ * «price mode»; every row with its own VAT rate — the invoice has no article prices); the
+ * hidden `prices_mode` says which mode the posted prices are in. When it still names the other
+ * mode (no script, a stale client), {@see toDraft()} converts them with the row's rate on the
+ * service date — module-vat's `VatCalculator::convertPrice()`, the order's rule — so a price is
+ * never stored under the other meaning (Rule 7).
  */
 final class InvoiceForm
 {
@@ -53,7 +64,7 @@ final class InvoiceForm
     private const EMPTY_ROW = ['type' => 'service', 'child' => '', 'text' => '', 'quantity' => '', 'unit' => '', 'price' => '', 'discount' => '', 'tax_code' => '', 'account' => ''];
 
     /** @var array<string, string> */
-    private array $header = ['contact' => '', 'invoice_date' => '', 'service_from' => '', 'service_to' => '', 'price_mode' => 'net', 'terms' => '', 'target' => '', 'subject' => ''];
+    private array $header = ['contact' => '', 'invoice_date' => '', 'service_from' => '', 'service_to' => '', 'price_mode' => 'net', 'prices_mode' => 'net', 'terms' => '', 'target' => '', 'subject' => ''];
 
     /** @var list<array<string, string>> */
     private array $rows = [];
@@ -66,6 +77,9 @@ final class InvoiceForm
 
     /** @var list<string> */
     private array $general = [];
+
+    /** @var array{from: PriceMode, to: PriceMode, date: \DateTimeImmutable, rates: VatRates}|null the price conversion of the running toDraft() */
+    private ?array $convert = null;
 
     /** @var list<string> tax codes the edited / credited document carries — kept selectable though deactivated */
     private array $keptCodes = [];
@@ -89,6 +103,7 @@ final class InvoiceForm
         $this->header['contact']      = $contactId !== null ? (string) $contactId : '';
         $this->header['terms']        = $terms;
         $this->header['price_mode']   = $priceMode === 'gross' ? 'gross' : 'net';
+        $this->header['prices_mode']  = $this->header['price_mode'];
         $this->header['invoice_date'] = $today->format('Y-m-d');
         $this->header['service_from'] = $today->format('Y-m-d');
         $this->header['target']       = $target;
@@ -106,6 +121,7 @@ final class InvoiceForm
             'service_from' => $document->getServiceFrom()->format('Y-m-d'),
             'service_to'   => $document->getServiceTo()?->format('Y-m-d') ?? '',
             'price_mode'   => $document->getPriceMode(),
+            'prices_mode'  => $document->getPriceMode(),
             'terms'        => $document->getPaymentTermsCode(),
             'target'       => $document->getPayment()->getTargetCode(),
             'subject'      => (string) $document->getSubject(),
@@ -127,6 +143,7 @@ final class InvoiceForm
             'service_from' => $invoice->getServiceFrom()->format('Y-m-d'),
             'service_to'   => $invoice->getServiceTo()?->format('Y-m-d') ?? '',
             'price_mode'   => $invoice->getPriceMode(),
+            'prices_mode'  => $invoice->getPriceMode(),
             'terms'        => '',
             'target'       => '',
             'subject'      => '',
@@ -149,6 +166,9 @@ final class InvoiceForm
     {
         foreach (array_keys($this->header) as $key) {
             $this->header[$key] = is_string($post[$key] ?? null) ? trim($post[$key]) : '';
+        }
+        if ($this->header['prices_mode'] === '') {
+            $this->header['prices_mode'] = $this->header['price_mode'];   // not posted (an older form): the prices are in «Preise»
         }
         $fixed = $this->creditNoteOf ?? $document;
         if ($fixed !== null) {
@@ -190,9 +210,14 @@ final class InvoiceForm
 
     /**
      * The draft, or null with the field errors set. The DOCUMENT rules are
-     * the service's; here only what cannot be read.
+     * the service's; here only what cannot be read — and the prices converted
+     * into «Preise» when the posted `prices_mode` names the other mode
+     * (class comment; $rates resolves each row's rate on the service date —
+     * required for that case only).
+     *
+     * @throws \LogicException the prices must be converted and no $rates were given
      */
-    public function toDraft(): ?InvoiceDraft
+    public function toDraft(?VatRates $rates = null): ?InvoiceDraft
     {
         $this->errors    = [];
         $this->rowErrors = [];
@@ -216,6 +241,20 @@ final class InvoiceForm
         $mode = PriceMode::tryFrom($this->header['price_mode']);
         if ($mode === null) {
             $this->errors['price_mode'] = 'Netto oder brutto wählen.';
+        }
+        $pricesMode    = PriceMode::tryFrom($this->header['prices_mode']);
+        $this->convert = null;
+        if ($pricesMode === null && $mode !== null) {
+            $this->errors['price_mode'] = 'Die Preise lassen sich keinem Preismodus zuordnen — das Fenster neu laden.';
+        } elseif ($mode !== null && $pricesMode !== $mode) {
+            if ($rates === null) {
+                throw new \LogicException('InvoiceForm::toDraft() must convert the prices (prices_mode differs from price_mode) — pass VatRates');
+            }
+            // The rate of the SERVICE date (ADR-041 decision 4); a credit note without own dates takes the invoice's.
+            $date = $serviceFrom ?? $this->creditNoteOf?->getServiceFrom() ?? $invoiceDate;
+            if ($date !== null) {
+                $this->convert = ['from' => $pricesMode, 'to' => $mode, 'date' => $date, 'rates' => $rates];
+            }
         }
 
         $lines = $this->lineDrafts();
@@ -370,6 +409,8 @@ final class InvoiceForm
         $price = self::parseAmount($row['price'], $this->currency);
         if ($price === null) {
             $this->rowErrors[$i]['price'] = 'Preis fehlt oder ist kein Betrag (z.B. 120.00).';
+        } elseif ($this->convert !== null && $row['tax_code'] !== '') {
+            $price = $this->converted($i, $price, $row['tax_code']);
         }
         $discount = $row['discount'] === '' ? 0 : self::parsePercent($row['discount']);
         if ($discount === null) {
@@ -396,6 +437,24 @@ final class InvoiceForm
         return $type === 'service'
             ? LineDraft::service($row['text'], $quantity, $row['unit'] !== '' ? $row['unit'] : null, $price, $row['tax_code'], $row['account'], $discount)
             : LineDraft::lumpSum($row['text'], $price, $row['tax_code'], $row['account'], $discount);
+    }
+
+    /**
+     * $price of row $i from the posted prices' mode into «Preise» with its tax code's rate on the
+     * service date; null with a row error when the code has no rate that day.
+     */
+    private function converted(int $i, Money $price, string $taxCode): ?Money
+    {
+        ['from' => $from, 'to' => $to, 'date' => $date, 'rates' => $rates] = $this->convert;
+        try {
+            $rate = $rates->resolve($taxCode, $date)->rate;
+        } catch (VatException) {
+            $this->rowErrors[$i]['price'] = 'Der Preis lässt sich nicht nach ' . ($to === PriceMode::Gross ? 'brutto' : 'netto') . ' umrechnen: MWST-Code «' . $taxCode . '» hat am Leistungsdatum keinen Satz.';
+
+            return null;
+        }
+
+        return VatCalculator::convertPrice($price, $rate, $from, $to);
     }
 
     /** @return list<array<string, string>> the document's lines as form rows, the rounding line left out */

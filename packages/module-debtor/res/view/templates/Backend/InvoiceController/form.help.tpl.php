@@ -18,8 +18,8 @@ $isCredit = $form->kind === \Z77\Module\Debtor\Entities\InvoiceKind::CreditNote;
 <h3>Debitor</h3>
 <p><strong>Kunde wählen …</strong> öffnet die Suche: nach Name, Ort, Kundennummer oder E-Mail suchen, dann <strong>Übernehmen</strong>. Wer nicht gefunden wird, lässt sich dort mit <strong>+ Neuer Kontakt</strong> erfassen.</p>
 <p>Gefunden werden die aktiven Debitoren und die aktiven <strong>Kontakte ohne Debitorenprofil</strong> («neu»). Ein solcher Kontakt wird erst Kunde, wenn er <strong>Debitor</strong> ist: <strong>Übernehmen</strong> (und <strong>+ Neuer Kontakt</strong> nach dem Speichern) fragt zuerst <strong>Debitor anlegen</strong> — mit <strong>Preisen</strong> netto oder brutto und den <strong>Zahlungskonditionen</strong> (vorgeschlagen: die als «Standard» markierten); die nächste <strong>Kundennummer</strong> wird dabei vergeben. <strong>Abbrechen</strong> wählt keinen Kunden. So geht keine Rechnung im falschen Preismodus hinaus, die gutgeschrieben und neu erstellt werden müsste.</p>
-<p>Mit dem Kunden übernimmt die Rechnung dessen Preismodus (netto oder brutto); er lässt sich für diese Rechnung ändern. Bereits erfasste Preise werden dabei <strong>nicht</strong> umgerechnet — zuerst den Kunden wählen, dann die Zeilen erfassen.</p>
-<p><strong>+ Kontakt</strong> erfasst einen neuen Kontakt mit Adresse, ohne die Rechnung zu verlassen: das Eingegebene bleibt stehen, der neue Kontakt ist danach gewählt. Debitor wird er beim Speichern der Rechnung.</p>
+<p>Mit dem Kunden übernimmt die Rechnung dessen Preismodus (netto oder brutto); er lässt sich für diese Rechnung ändern. Bereits erfasste Preise werden dabei <strong>sofort umgerechnet</strong> — jede Zeile mit ihrem MWST-Satz am Leistungsdatum, auf den Rappen gerundet (z.B. 20.00 netto → 21.62 brutto bei 8.1 %).</p>
+<p><strong>+ Kontakt</strong> erfasst einen neuen Kontakt mit Adresse, ohne die Rechnung zu verlassen: das Eingegebene bleibt stehen. Nach dem Speichern fragt das Fenster <strong>Debitor anlegen</strong>; erst der neue Debitor ist der Kunde.</p>
 </section>
 <?php endif; ?>
 

@@ -2209,6 +2209,8 @@ _Z77.core.sums = (function () {
  *                                 the date, the first non-empty one counts
  *   select[data-rate-schedule-ref="<name>"]  its options get `data-rate` and the label «<rate> %»
  *                                 for that date (no rate in effect: the value as label, no rate)
+ *     [data-rate-keep-label]      optional: only `data-rate` follows, the labels stay (a CODE picker —
+ *                                 the invoice editor's MWST code, owner 2026-10-19)
  * Re-applied when a date field changes and when rows are added ([data-rows] fires `input`).
  */
 _Z77.core.datedRates = (function () {
@@ -2233,11 +2235,12 @@ _Z77.core.datedRates = (function () {
         var name = island.getAttribute('data-rate-schedule');
         form.querySelectorAll('select[data-rate-schedule-ref="' + name + '"]').forEach(function (select) {
             var before = select.selectedIndex >= 0 ? select.options[select.selectedIndex].getAttribute('data-rate') : null;
+            var keep = select.hasAttribute('data-rate-keep-label');
             Array.prototype.forEach.call(select.options, function (option) {
                 if (!option.value || !Object.prototype.hasOwnProperty.call(schedule, option.value)) return;
                 var rate = _at(schedule[option.value], date);
-                if (rate === null) { option.removeAttribute('data-rate'); option.textContent = option.value; }
-                else { option.setAttribute('data-rate', rate); option.textContent = rate + ' %'; }
+                if (rate === null) { option.removeAttribute('data-rate'); if (!keep) option.textContent = option.value; }
+                else { option.setAttribute('data-rate', rate); if (!keep) option.textContent = rate + ' %'; }
             });
             var after = select.selectedIndex >= 0 ? select.options[select.selectedIndex].getAttribute('data-rate') : null;
             if (after !== before) select.dispatchEvent(new Event('change', { bubbles: true }));
@@ -2268,7 +2271,8 @@ _Z77.core.datedRates = (function () {
 /* ── price mode ─────────────────────────────────────────────────────────────
  * Prices that follow a change of the price mode (owner 2026-10-18 — before, an article price
  * filled under «netto» kept its number under «brutto»: an article of 16.65 gross was billed
- * 15.40 incl. VAT). A change converts every row IN PLACE at once, without a question. The script
+ * 15.40 incl. VAT). Users: the order window, debtor's invoice editor (2026-10-19 — no article
+ * source, every price converts with its row's rate). A change converts every row IN PLACE at once, without a question. The script
  * only helps: the SERVER converts again at the save whenever the posted prices are in another
  * mode than the select (no script, a stale client — Rule 7); the hidden «shown» field tells it.
  *
@@ -2287,7 +2291,7 @@ _Z77.core.datedRates = (function () {
  *                                     mode's (an article: 16.65 gross, not 15.40 × 1.081)
  * Any other price (typed by hand, no source, no answer) is converted with its row's rate — in
  * cents, r = the rate in hundredths of a percent, rounded half away from zero, the server's rule
- * (`Money::multiplyByRatio()`): net → gross c × (10000 + r) / 10000, gross → net
+ * (module-vat `VatCalculator::convertPrice()`): net → gross c × (10000 + r) / 10000, gross → net
  * c × 10000 / (10000 + r). A row without a rate keeps its price. The rows of one change are
  * written together, with the shown mode, when every answer is in — never half converted; a price
  * typed while the answers were on their way is left as typed. Changes are worked off in turn.

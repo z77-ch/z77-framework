@@ -434,3 +434,25 @@ invoice editor (start mode, refusal, «+ Kontakt»); module-order `OrderDraft::$
 refusal, «+ Kontakt»); core.js «price mode», `fill.ask()`, command `set-value`; harness
 `tests/module-order.php` F10–F12, M22–M26, `tests/module-debtor.php` A11/A12c, V7–V9, W13,
 `tests/js-min-markers.php`.
+
+**Note 2026-10-19 (owner, after the browser test of the order window; built the same day).** Two
+points of this addendum change:
+
+- **Point 3 — the invoice editor converts too.** Its «Preise» re-converts typed prices at once like
+  the order window (core.js «price mode»; each row's MWST select carries the rate on the service
+  date, core.js «dated rates» keeps it current). The invoice has no article prices: every price
+  converts with its row's rate. The ONE rule is module-vat's `VatCalculator::convertPrice()`
+  (half away from zero) — the order and the invoice editor use it, core.js does the same in the
+  browser. Server safety net as for the order: the editor posts `prices_mode`; when it names the
+  other mode, `InvoiceForm::toDraft()` converts. The sentence «the invoice editor … does NOT
+  re-convert typed prices» above no longer holds.
+- **Point 4 — the rule moves into the services.** `OrderService` (a new order, a customer change)
+  and `InvoicingService` (every new document — `invoice()`'s `$openProfile` is removed) refuse a
+  contact without a debtor profile («… ist noch kein Debitor — zuerst als Debitor anlegen.»,
+  `DebtorProfileService::notDebtor()`); the windows' own re-checks are gone (one message). The
+  sentence «`OrderService` itself still accepts a prospect … — the rule is the screens'» no longer
+  holds. **Integration rule:** an importer or a shop creates the contact AND the debtor FIRST —
+  the debtor only through `DebtorProfileService::open()` — then the document. **Kept, and the only
+  remaining place** that treats a contact without a profile as a customer: the booking print of an
+  OLD order (plan D9 — `preview(openProfile: true)` composes, `openDebtorProfile()` opens the
+  profile before the booking). An existing order keeps the customer it holds.

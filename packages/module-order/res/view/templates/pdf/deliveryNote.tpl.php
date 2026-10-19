@@ -71,7 +71,7 @@ foreach ($order->getLines() as $line) {
             $isText ? '' : (string) $line->getUnit(),
         ],
         'indent' => $line->getParentLine() !== null ? 4 : 0,
-        'lead'   => !$isText,   // a priced line: its first line (the title) bold, the description below (owner 2026-10-18)
+        'lead'   => true,   // the first line (the title) bold, the description below — text lines too (owner 2026-10-18/19)
     ];
 }
 

@@ -47,7 +47,6 @@ use Z77\Core\DI,
     Z77\Module\Order\Services\OrderRefusedException,
     Z77\Module\Order\Services\OrderService,
     Z77\Module\Vat\Entities\TaxCode,
-    Z77\Module\Vat\Entities\TaxRate,
     Z77\Module\Vat\Services\VatException,
     Z77\Module\Vat\Services\VatRates,
     Z77\Shared\Attributes\Csrf,
@@ -294,15 +293,9 @@ trait OrderControllerTrait
         $needReason   = false;
         $draft        = $form->toDraft($this->orderArticleNumbers($order), $this->orderShipChoices($form->header('contact'), $order),
             null, $this->orderBillChoices($form->header('contact'), $order));
-        // No document for a contact without a debtor profile (owner 2026-10-18): a NEW customer
-        // of this order must be a debtor — the picker asks «Debitor anlegen» first, this is the
-        // re-check (Rule 7). An existing order keeps its customer (older drafts; the booking
-        // print still opens a missing profile, D9).
-        $notDebtor = $this->orderNotDebtor($form->header('contact'), $order);
-        if ($notDebtor !== null) {
-            $form->applyErrors(['contact_id' => $notDebtor]);
-            $draft = null;
-        }
+        // No document for a contact without a debtor profile (owner 2026-10-18): the picker asks
+        // «Debitor anlegen» first; the re-check is OrderService's own (since 2026-10-19 — `contact_id`,
+        // an import is bound too), an existing order keeps its customer.
         if ($draft !== null) {
             try {
                 if ($order === null) {
@@ -447,55 +440,32 @@ trait OrderControllerTrait
     }
 
     /**
-     * Code → rate as shown («8.1 %») on the order date (today when the date is not valid yet);
-     * a code without a rate in effect is left out — the line then shows the code.
+     * Code → rate as shown («8.1 %») on the SERVICE date — «Leistung von», else the order date,
+     * else today (owner 2026-10-18, as the save and the booking print); module-vat's
+     * `VatRates::shownRates()`. A code without a rate in effect is left out — the line then shows
+     * the code.
      *
      * @param list<TaxCode> $codes
      * @return array<string, string>
      */
     private function orderTaxRates(array $codes, string $serviceFrom, string $orderDate): array
     {
-        // The SERVICE date decides the rate (owner 2026-10-18, as the save and the booking print):
-        // «Leistung von», else the order date.
-        $date  = \DateTimeImmutable::createFromFormat('!Y-m-d', $serviceFrom)
+        $date = \DateTimeImmutable::createFromFormat('!Y-m-d', $serviceFrom)
             ?: \DateTimeImmutable::createFromFormat('!Y-m-d', $orderDate)
             ?: new \DateTimeImmutable('today');
-        $rates = VatRates::from($this->em());
-        $shown = [];
-        foreach ($codes as $code) {
-            try {
-                $shown[$code->getCode()] = TaxRate::formatPercent($rates->resolve($code->getCode(), $date)->rate) . ' %';
-            } catch (VatException) {
-                // no rate in effect on that day — the code stands in
-            }
-        }
 
-        return $shown;
+        return array_map(static fn(string $rate) => $rate . ' %', VatRates::from($this->em())->shownRates($codes, $date));
     }
 
     /**
-     * The rate history of $codes for core.js «dated rates»: code → [[valid from 'Y-m-d', rate in
-     * percent as shown («8.1»)], …], oldest first.
+     * The rate history of $codes for core.js «dated rates» — module-vat's `VatRates::schedule()`.
      *
      * @param list<TaxCode> $codes
      * @return array<string, list<array{0: string, 1: string}>>
      */
     private function orderRateSchedule(array $codes): array
     {
-        $wanted = array_flip(array_map(static fn(TaxCode $c) => $c->getCode(), $codes));
-        /** @var \Z77\Module\Vat\Repositories\TaxRateRepository $repo */
-        $repo     = $this->em()->getRepository(TaxRate::class);
-        $schedule = [];
-        foreach ($repo->allGroupedByCode() as $code => $rows) {
-            if (!isset($wanted[$code])) {
-                continue;
-            }
-            foreach (array_reverse($rows) as $row) {
-                $schedule[$code][] = [$row->getValidFrom(), TaxRate::formatPercent($row->getRate())];
-            }
-        }
-
-        return $schedule;
+        return VatRates::from($this->em())->schedule($codes);
     }
 
     // ── article chosen on a line ─────────────────────────────────────────
@@ -1307,21 +1277,6 @@ trait OrderControllerTrait
         return (new TemplateRenderer(self::ORDER_NS))->partial('Backend/OrderController/_debtorEdit', [
             'url' => $profile !== null ? DebtorProfileLayout::BASE . '/edit?id=' . $profile->getId() : '',
         ]);
-    }
-
-    /**
-     * Why the posted customer may not be saved as this order's customer, or null — debtor's rule
-     * (`CustomerPicker::debtorRefusal()`, owner 2026-10-18) for a customer NEW to the order (a new
-     * order, or «Kunde wechseln»); the customer the order already holds stays valid.
-     */
-    private function orderNotDebtor(string $contactId, ?SalesOrder $order): ?string
-    {
-        $contact = ctype_digit($contactId) && (int) $contactId > 0 ? $this->em()->getRepository(Contact::class)->find((int) $contactId) : null;
-        if ($contact === null || ($order !== null && $order->getContact()->getId() === $contact->getId())) {
-            return null;   // no customer: the service says «Kunde wählen.»
-        }
-
-        return CustomerPicker::debtorRefusal($contact, $this->orderDebtorProfile($contactId));
     }
 
     /** The debtor profile of a contact id as the form holds it (a string), null = none / no contact. */

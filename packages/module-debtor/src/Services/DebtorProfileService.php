@@ -84,12 +84,29 @@ final class DebtorProfileService
     }
 
     /**
+     * The one sentence for a contact that is no debtor yet and is named as the customer of a NEW
+     * document (owner 2026-10-19 — the services refuse it: `OrderService` on `contact_id`,
+     * `InvoicingService` as `no-debtor-profile`). The screens avoid it: their customer picker asks
+     * «Debitor anlegen» first.
+     */
+    public static function notDebtor(Contact $contact): string
+    {
+        return '«' . $contact->displayName() . '» ist noch kein Debitor — zuerst als Debitor anlegen.';
+    }
+
+    /**
      * Makes $contact a DEBTOR — THE way every path opens a profile (owner 2026-10-18: «one rule,
      * one place»): the contact editor's role «Debitor», the booking print's
      * `InvoicingService::openDebtorProfile()` and the customer picker's «Debitor anlegen» of the
      * order window and the invoice editor. A new profile with the given payment terms and price
      * mode through {@see save()} — the validator judges it (an active contact, not a debtor yet,
      * active terms, `net` | `gross`), the customer number is drawn in its own unit of work.
+     *
+     * **Integration rule** (owner 2026-10-19, ADR-043 addendum 2026-10-18 point 4): no document
+     * for a contact without a debtor profile — `OrderService` (a new order, a customer change)
+     * and `InvoicingService` (every new document) refuse one ({@see notDebtor()}). An importer or
+     * a shop therefore creates the contact AND the debtor first — the contact through
+     * `ContactService`, the debtor through THIS method — and only then the order or invoice.
      *
      * @throws InvalidDebtorProfileException carries the validator and the unsaved profile (for the form)
      */

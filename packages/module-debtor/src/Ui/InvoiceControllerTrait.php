@@ -32,6 +32,7 @@ use Z77\Core\DI,
     Z77\Shared\Listing\ListDefinition,
     Z77\Module\Mandator\Services\LedgerAccountCheck,
     Z77\Module\Vat\Entities\TaxCode,
+    Z77\Module\Vat\Services\VatRates,
     Z77\Shared\Attributes\Csrf,
     Z77\Shared\Money\AmountFormat,
     Z77\Shared\Money\Money
@@ -517,16 +518,10 @@ trait InvoiceControllerTrait
 
             return $this->invoiceFormPage($form, null);
         }
-        $draft = $form->toDraft();
-        // No document for a contact without a debtor profile (owner 2026-10-18 — replaces
-        // DEBTOR-CONTACT-001's «the save opens the profile»): the picker asks «Debitor anlegen»
-        // first; a contact posted without one is refused here (Rule 7), never opened silently.
-        $party = $draft !== null && $draft->contactId > 0 ? $this->em()->getRepository(Contact::class)->find($draft->contactId) : null;
-        $notDebtor = $party !== null ? CustomerPicker::debtorRefusal($party, $this->em()->getRepository(DebtorProfile::class)->findByContact($party)) : null;
-        if ($notDebtor !== null) {
-            $form->addGeneralError($notDebtor);
-            $draft = null;
-        }
+        $draft = $form->toDraft(VatRates::from($this->em()));
+        // No document for a contact without a debtor profile (owner 2026-10-18): the picker asks
+        // «Debitor anlegen» first; the re-check is InvoicingService's own (`no-debtor-profile`,
+        // since 2026-10-19 the only one — it binds an import too), never opened silently.
         if ($draft !== null) {
             try {
                 $document = $this->invoicingService()->invoice($draft);
@@ -584,7 +579,7 @@ trait InvoiceControllerTrait
 
             return $this->invoiceFormPage($form, $document, $version);
         }
-        $draft = $form->toDraft();
+        $draft = $form->toDraft(VatRates::from($this->em()));
         if ($draft !== null) {
             try {
                 $reissued = $this->invoicingService()->reinvoice($id, $version, $draft);
@@ -724,7 +719,7 @@ trait InvoiceControllerTrait
 
             return $this->invoiceFormPage($form, null);
         }
-        $draft = $form->toDraft();
+        $draft = $form->toDraft(VatRates::from($this->em()));
         if ($draft !== null) {
             try {
                 $note = $this->invoicingService()->invoice($draft);
@@ -821,16 +816,28 @@ trait InvoiceControllerTrait
             'document'   => $document,
             'version'    => $version,
             'entityCsrf' => $document === null ? '' : DI::getCsrfService()->generateEntityToken('invoice', (int) $document->getId()),
-            // The customer of a NEW invoice: the field with «Kunde wählen …» (CustomerPicker, owner 2026-10-15) — contacts
-            // without a profile are choosable too, the save opens it (owner 2026-10-10).
+            // The customer of a NEW invoice: the field with «Kunde wählen …» (CustomerPicker, owner 2026-10-15) — a contact
+            // without a profile is made a debtor first («Debitor anlegen», owner 2026-10-18).
             'customerField' => $document === null && $form->creditNoteOf === null ? CustomerPicker::fieldHtml($this->em(), $form->header('contact'), $this->invoiceListBase() . '/customer-pick', $this->invoiceListBase() . '/add', $form->error('contact') !== '') : '',
             'terms'      => $terms,
             // What «wie beim Debitor» means for a contact «(neu als Debitor)» (owner 2026-10-12).
             'defaultTerms' => $this->em()->getRepository(PaymentTerms::class)->defaultForNewDebtor(),
             'targets'    => $targets,
-            'taxCodes'   => $this->em()->getRepository(TaxCode::class)->selectable($form->keptCodes()),
+            'taxCodes'   => $taxCodes = $this->em()->getRepository(TaxCode::class)->selectable($form->keptCodes()),
+            // Each code's RATE on the service date (else the invoice date) as `data-rate` and its history for
+            // core.js «dated rates» — «Preise» converts the typed prices with them (core.js «price mode», owner 2026-10-19).
+            'taxRates'     => VatRates::from($this->em())->shownRates($taxCodes, $this->invoiceRateDate($form)),
+            'rateSchedule' => VatRates::from($this->em())->schedule($taxCodes),
             'accounts'   => $this->invoiceLineAccounts($form),
         ]);
+    }
+
+    /** The day the rows' VAT rates are shown for: the service date, else the invoice date, else today (ADR-041 decision 4). */
+    private function invoiceRateDate(InvoiceForm $form): \DateTimeImmutable
+    {
+        return InvoiceForm::parseDate($form->header('service_from'))
+            ?? InvoiceForm::parseDate($form->header('invoice_date'))
+            ?? new \DateTimeImmutable('today');
     }
 
     /**

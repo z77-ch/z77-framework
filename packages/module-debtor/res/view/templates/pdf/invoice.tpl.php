@@ -108,45 +108,36 @@ foreach ($document->getLines() as $line) {
         continue;
     }
     $isText = $line->type()->value === 'text';
-    $text   = $line->getText();
-    if ($line->getDiscountPercent() > 0) {
-        $text .= ' (Rabatt ' . TaxRate::formatPercent($line->getDiscountPercent()) . ' %)';
-    }
     $rows[] = [
         'cells'  => [
-            $text,
+            $line->getText(),
             // Quantity and unit in two columns (owner 2026-10-19): the numbers right-aligned under each
             // other, the unit left beside them — one right-aligned «2 h» stood off «1 Stk.».
             $line->getQuantity() !== null ? rtrim(rtrim($line->getQuantity(), '0'), '.') : '',
             $line->getQuantity() !== null ? (string) $line->getUnit() : '',
             $line->getUnitPrice() !== null ? $fmt($line->getUnitPrice()) : '',
+            $line->getDiscountPercent() > 0 ? TaxRate::formatPercent($line->getDiscountPercent()) . ' %' : '',
             $line->getTaxCode() !== null ? TaxRate::formatPercent((int) $line->getTaxRate()) . ' %' : '',
             $isText ? '' : $fmt($line->getAmount()),
         ],
         'indent' => $line->getParentLine() !== null ? 4 : 0,
-        'lead'   => !$isText,   // a priced line: its first line (the title) bold, the description below (owner 2026-10-18)
+        'lead'   => true,   // the first line (the title) bold, the description below — text lines too (owner 2026-10-18/19)
     ];
 }
-$rows[] = ['cells' => ['Netto', '', '', '', '', $fmt($document->getNetTotal())], 'rule' => true];
+$rows[] = ['cells' => ['Netto', '', '', '', '', '', $fmt($document->getNetTotal())], 'rule' => true];
 foreach ($document->getTaxes() as $tax) {
-    $rows[] = ['cells' => ['MWST ' . TaxRate::formatPercent($tax->getTaxRate()) . ' % auf ' . $fmt($tax->getBase()), '', '', '', $tax->getTaxCode(), $fmt($tax->getTax())], 'muted' => true];
+    $rows[] = ['cells' => ['MWST ' . TaxRate::formatPercent($tax->getTaxRate()) . ' % auf ' . $fmt($tax->getBase()), '', '', '', '', $tax->getTaxCode(), $fmt($tax->getTax())], 'muted' => true];
 }
 if (!$document->getRounding()->isZero()) {
-    $rows[] = ['cells' => ['Rundung', '', '', '', '', $fmt($document->getRounding())], 'muted' => true];
+    $rows[] = ['cells' => ['Rundung', '', '', '', '', '', $fmt($document->getRounding())], 'muted' => true];
 }
-$rows[] = ['cells' => ['Total ' . $document->getCurrency(), '', '', '', '', $fmt($document->getGrossTotal())], 'bold' => true, 'rule' => true];
+$rows[] = ['cells' => ['Total ' . $document->getCurrency(), '', '', '', '', '', $fmt($document->getGrossTotal())], 'bold' => true, 'rule' => true];
 
+[$columns, $rows] = \Z77\Module\Debtor\Pdf\DocumentColumns::table($document->getCurrency(), $rows);
 $pdf->partial('pdf/table', [
     'x'       => $left,
     'y'       => $y + 6,
-    'columns' => [
-        ['label' => 'Bezeichnung', 'width' => 88],
-        ['label' => 'Menge',       'width' => 12, 'align' => 'R'],
-        ['label' => 'Einheit',     'width' => 10],
-        ['label' => 'Preis',       'width' => 22, 'align' => 'R'],
-        ['label' => 'MWST',        'width' => 14, 'align' => 'R'],
-        ['label' => $document->getCurrency(), 'width' => 24, 'align' => 'R'],
-    ],
+    'columns' => $columns,
     'rows'    => $rows,
 ], 'Z77\\Shared');
 

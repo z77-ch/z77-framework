@@ -191,6 +191,15 @@ $pdf->partial('pdf/table', ['x' => 20, 'y' => 30, 'header' => false, 'columns' =
 preg_match_all('/([\d.]+) [\d.]+ Td \(2 h\)/', $pdf->output(), $xs);
 check('F5 indent: «2 h» of the indented rows (with and without lead) stands at the same x as the row above', count($xs[1]) === 3 && count(array_unique($xs[1])) === 1);
 
+// The documents' line table (debtor's DocumentColumns, owner 2026-10-19 «Rabatt fehlt»): a discount
+// column only when a row has one; without it the cell drops and the text takes the width.
+$withD    = \Z77\Module\Debtor\Pdf\DocumentColumns::table('CHF', [['cells' => ['A', '1', 'Stk.', '10.00', '5 %', '8.1 %', '9.50']], ['cells' => ['Netto', '', '', '', '', '', '9.50']]]);
+$withoutD = \Z77\Module\Debtor\Pdf\DocumentColumns::table('CHF', [['cells' => ['A', '1', 'Stk.', '10.00', '', '8.1 %', '10.00']]]);
+check('F6 document columns: «Rabatt» with a discount (7 columns, text 76 mm), none without (6 columns, text 88 mm, the cell dropped); both 168 mm wide',
+    count($withD[0]) === 7 && $withD[0][4]['label'] === 'Rabatt' && $withD[0][0]['width'] === 76 && $withD[1][0]['cells'][4] === '5 %'
+    && count($withoutD[0]) === 6 && $withoutD[0][0]['width'] === 88 && $withoutD[1][0]['cells'] === ['A', '1', 'Stk.', '10.00', '8.1 %', '10.00']
+    && array_sum(array_column($withD[0], 'width')) === array_sum(array_column($withoutD[0], 'width')));
+
 
 // ── G: the shared report layout (FIN-PDF-001) ─────────────────────────────────────────────
 $cols = [['label' => 'Konto', 'width' => 20], ['label' => 'Bezeichnung', 'width' => 130], ['label' => 'Betrag', 'width' => 30, 'align' => 'R']];

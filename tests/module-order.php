@@ -464,8 +464,10 @@ check('F11 the window wires core.js «price mode»: the positions block is the s
     && str_contains($orderTrait, "getGetParameter('prices') === '1'") && str_contains($orderTrait, "['prices' => \$defaults['prices']]")
     && str_contains($pickTrait, "'set-value', ['target' => 'select[name=\"price_mode\"]'")
     && str_contains($coreJs, "registerCommand('set-value'") && str_contains($coreJs, '_Z77.core.priceMode.bind()') && str_contains($coreJs, "ask(source, { prices: '1' })"));
-check('F12 no document for a contact without a debtor profile (owner 2026-10-18): the window re-checks a NEW customer with debtor\'s rule (CustomerPicker::debtorRefusal), «+ Kontakt» answers «Debitor anlegen» (customerDebtorPage), the picker asks it for a contact without a profile',
-    str_contains($orderTrait, 'CustomerPicker::debtorRefusal(') && str_contains($orderTrait, '$this->orderNotDebtor(') && str_contains($orderTrait, 'return $this->customerDebtorPage($contact')
+$orderSvcSrc = file_get_contents($root . '/packages/module-order/src/Services/OrderService.php');
+check('F12 no document for a contact without a debtor profile (owner 2026-10-18; in the SERVICE since 2026-10-19 — M27): OrderService refuses a NEW customer without a profile on `contact_id` with debtor\'s sentence (DebtorProfileService::notDebtor), the window keeps no check of its own (no double message); «+ Kontakt» answers «Debitor anlegen» (customerDebtorPage), the picker asks it for a contact without a profile',
+    str_contains($orderSvcSrc, "\$errors['contact_id'] = DebtorProfileService::notDebtor(\$contact);")
+    && !str_contains($orderTrait, 'debtorRefusal(') && !str_contains($orderTrait, 'orderNotDebtor(') && str_contains($orderTrait, 'return $this->customerDebtorPage($contact')
     && !str_contains($orderTrait, 'Debitor wird er mit dem Buchungsdruck')
     && str_contains($pickTrait, 'if ($profile === null) {' . "\n" . '                return $this->customerDebtorPage(') && str_contains($pickTrait, '->open($contact, $terms, $mode)'));
 
@@ -651,6 +653,9 @@ check('M3 the range `order` exists at 0 (a separate data migration)', $db->fetch
 // Master data: a contact, an article with a price.
 $db->insert('contact', ['kind' => 'organisation', 'company' => 'Muster AG', 'first_name' => '', 'last_name' => '', 'language' => 'de', 'email' => '', 'phone' => '', 'active' => 1]);
 $contactId = (int) $db->lastInsertId();
+// No order for a contact without a debtor profile (owner 2026-10-19, M27): the customer is made a
+// debtor first — through THE one creation path, as an importer would.
+(new \Z77\Module\Debtor\Services\DebtorProfileService($em))->open($em->getRepository(\Z77\Module\Contact\Entities\Contact::class)->find($contactId), 'net-30');
 // Debtor refuses a document without an invoice address (newer than this section) — the contact gets one.
 $db->insert('address', ['salutation' => '', 'title' => '', 'first_name' => '', 'name' => 'Muster AG', 'address_row' => '', 'street' => 'Musterweg', 'house_no' => '1', 'zip' => '6000', 'city' => 'Luzern', 'country' => 'CH']);
 $db->insert('contact_address', ['contact_id' => $contactId, 'address_id' => (int) $db->lastInsertId(), 'type_code' => 'invoice', 'title' => '']);
@@ -847,6 +852,25 @@ check('M25 a kept free line follows the switch and still counts as unchanged: co
     $m25gross === ['86.48', '12.97', 'gross'] && [$priceOf($o6, 0), $priceOf($o6, 1), $o6->priceMode()->value] === ['80.00', '12.00', 'net']);
 $m26 = $refusal(fn() => $svc->create(new $D($contactId, '2026-10-18', priceMode: 'gross', pricesMode: 'brutto', lines: [$L::article($grossId, '1', unitPrice: '15.40')])));
 check('M26 a prices_mode that names no mode is refused on `price_mode` — the prices cannot be read', isset($m26['price_mode']));
+
+// No document for a contact without a debtor profile — in the SERVICE (owner 2026-10-19): a new
+// order and a customer change refuse it on `contact_id`; an order keeps the customer it holds.
+$db->insert('contact', ['kind' => 'organisation', 'company' => 'Interessent AG', 'first_name' => '', 'last_name' => '', 'language' => 'de', 'email' => '', 'phone' => '', 'active' => 1]);
+$prospectId = (int) $db->lastInsertId();
+$m27Number  = (int) $db->fetchOne("SELECT last_number FROM number_range WHERE name = 'order'");
+$m27New     = $refusal(fn() => $svc->create(new $D($prospectId, '2026-10-19', lines: [$L::article($variantId, '1')])));
+$m27o       = $svc->create(new $D($contactId, '2026-10-19', lines: [$L::article($variantId, '1')]));
+$m27Lines   = static fn(SalesOrder $o) => [$L::article($variantId, '1', id: (int) $o->getLines()[0]->getId())];
+$m27Change  = $refusal(fn() => $svc->update((int) $m27o->getId(), $m27o->getVersion(), new $D($prospectId, '2026-10-19', lines: $m27Lines($m27o))));
+// An OLDER order whose customer has no profile (made before the rule): it keeps that customer.
+$db->executeStatement('UPDATE sales_order SET contact_id = ? WHERE id = ?', [$prospectId, $m27o->getId()]);
+$m27o    = $em->getRepository(SalesOrder::class)->withLines((int) $m27o->getId());
+$m27Kept = $svc->update((int) $m27o->getId(), (int) $db->fetchOne('SELECT version FROM sales_order WHERE id = ?', [$m27o->getId()]), new $D($prospectId, '2026-10-19', 'behalten', lines: $m27Lines($m27o)));
+check('M27 a NEW order for a contact without a debtor profile is refused on `contact_id` («… ist noch kein Debitor — zuerst als Debitor anlegen.»), no number drawn; a customer CHANGE to one is refused too; an order that already holds such a customer saves (its booking print opens the profile, plan D9)',
+    ($m27New['contact_id'] ?? '') === '«Interessent AG» ist noch kein Debitor — zuerst als Debitor anlegen.' && count($m27New) === 1
+    && (int) $db->fetchOne("SELECT last_number FROM number_range WHERE name = 'order'") === $m27Number + 1
+    && ($m27Change['contact_id'] ?? '') === $m27New['contact_id']
+    && $m27Kept->getSubject() === 'behalten' && $m27Kept->getContact()->getId() === $prospectId);
 
 echo "\n{$pass} passed, {$fail} failed\n";
 exit($fail === 0 ? 0 : 1);

@@ -1177,8 +1177,11 @@ check('I6b the master-data rows are ONE partial each, rendered by the list and a
 check('I6c every popup of the module carries its action row FIRST (ADR-049 revision 2026-10-10): the shared partials/modalActions right under the header, no .be-modal__footer left',
     array_reduce(glob($templateDir . '/*/edit.tpl.php'), fn($ok, $f) => $ok && !str_contains(file_get_contents($f), 'be-modal__footer')
         && preg_match('/be-modal__header.*?<\/div>\s*<\?= \$this->partial\(\'partials\/modalActions\'/s', file_get_contents($f)) === 1, true));
-check('I7 no template carries a <script> tag or an inline handler (Rule 7)',
-    array_reduce($templates, fn($ok, $f) => $ok && !preg_match('/<script|\son[a-z]+\s*=/i', file_get_contents($f)), true));
+// A JSON data island (`<script type="application/json">`, never executed — the invoice editor's rate
+// history for core.js «dated rates», 2026-10-19) is data, not script: allowed.
+$noScript = static fn(string $html): bool => !preg_match('/<script(?![^>]*type="application\/json")|\son[a-z]+\s*=/i', $html);
+check('I7 no template carries a <script> tag (a JSON data island excepted) or an inline handler (Rule 7)',
+    array_reduce($templates, fn($ok, $f) => $ok && $noScript(file_get_contents($f)), true));
 check('I8 the package ships no JavaScript at all', glob($package . '/res/**/*.js') === [] && glob($package . '/res/*.js') === []);
 check('I9 the header slots are partials OF THE FRAGMENT (financial.md, «fragment slots»); the add actions are the action cell (`act`, hc1 — ADR-033 rev. 2026-10-08), each ONE flush-ready button with its glyph and its word in `be-btn__label` (the bank import cell IS the upload since 2026-10-09, UPLOAD-001)',
     is_file($templateDir . '/PaymentTermsController/act.tpl.php')
@@ -2289,7 +2292,7 @@ check('P3C30 GET add: the editor with the action bar first (ADR-049), the debtor
     && str_contains($formHtml, 'name="contact" value="' . $mid . '"') && str_contains($formHtml, 'value="bank" selected')
     && count($host->context['form']->rows()) === \Z77\Module\Debtor\Ui\InvoiceForm::ROWS_NEW
     && array_filter($host->context['taxCodes'], fn($c) => !$c->isActive()) === [] && str_contains($formHtml, '<datalist id="invoice-accounts">') && str_contains($formHtml, 'list="invoice-accounts"')
-    && $host->help->has() && !preg_match('/<script|\son[a-z]+\s*=/i', $formHtml));
+    && $host->help->has() && $noScript($formHtml));
 $post = [
     'contact' => (string) $mid, 'invoice_date' => '2026-07-01', 'service_from' => '2026-06-30', 'service_to' => '', 'price_mode' => 'net', 'terms' => '', 'target' => 'qr', 'op' => 'save',
     'rows' => [
@@ -3454,7 +3457,7 @@ check('U9 the master data moved: «Debitoren» under Aufträge is the open-item 
 echo "P3C. Source guards for part 3\n";
 $p3Templates = glob($package . '/res/view/templates/Backend/InvoiceController/*.tpl.php');
 check('P3C48 the document screens ship no JavaScript and no inline handler (Rule 7) — twelve templates since the review rebuild (2026-10-13); no module-financial class in debtor but the adapter (the journal is linked by URL)',
-    count($p3Templates) === 12 && array_reduce($p3Templates, fn($ok, $f) => $ok && !preg_match('/<script|\son[a-z]+\s*=/i', file_get_contents($f)), true)
+    count($p3Templates) === 12 && array_reduce($p3Templates, fn($ok, $f) => $ok && $noScript(file_get_contents($f)), true)
     && !str_contains(file_get_contents($package . '/src/Ui/InvoiceControllerTrait.php'), 'Module\\Financial'));
 check('P3C49 the module brings no PDF library of its own (owner 2026-10-06: ONE writer, vendored in the kernel behind the facade): no composer requirement, no \\FPDF / PdfWriter use in its sources or templates — the facade only',
     !preg_match('/tcpdf|fpdf|dompdf|mpdf|swiss-qr-bill/i', (string) file_get_contents($package . '/composer.json'))
@@ -3596,7 +3599,7 @@ check('U4 … the next month is unaffected: a document dated December, booked, c
 
 // ── V. a contact without a profile in the invoice editor (owner 2026-10-10, DEBTOR-CONTACT-001) ──
 
-echo "V. invoice(openProfile: true): the profile is opened in the draft's unit of work; «+ Kontakt» through module-contact's ContactForm\n";
+echo "V. no document for a contact without a profile — the debtor is created first (owner 2026-10-19); «+ Kontakt» through module-contact's ContactForm\n";
 $emV      = $wireDi();
 $vForm    = (new ContactForm(addressRequired: true))->fromPost([
     'kind' => 'organisation', 'company' => 'Neu Debitor AG', 'language' => 'de', 'type_code' => 'main',
@@ -3611,61 +3614,68 @@ $vId       = (int) $vForm->contact->getId();
 $vCustomer = (int) $rangeOf('customer');
 $vProfiles = $count('debtor_profile');
 $vDraft    = fn(?string $terms) => InvoiceDraft::invoice($vId, day('2026-12-07'), day('2026-12-07'), 'CHF', [LineDraft::lumpSum('Stunden', chf('10.00'), 'UN', '3400')], paymentTermsCode: $terms);
-check('V2 without openProfile the contact is refused as before (no-debtor-profile); nothing drawn, no profile',
-    $refusal(fn() => $service($wireDi())->invoice($vDraft('net-30'))) === InvoiceRefusedException::NO_DEBTOR_PROFILE
+$vRefused  = caught(fn() => $service($wireDi())->invoice($vDraft('net-30')), InvoiceRefusedException::class);
+check('V2 a NEW document for a contact without a profile is refused by the SERVICE (no-debtor-profile, «… ist noch kein Debitor — zuerst als Debitor anlegen.» — DebtorProfileService::notDebtor); invoice() can no longer open a profile (one parameter, no openProfile); nothing drawn, no profile',
+    $vRefused?->reason === InvoiceRefusedException::NO_DEBTOR_PROFILE && $vRefused->getMessage() === '«Neu Debitor AG» ist noch kein Debitor — zuerst als Debitor anlegen.'
+    && (new \ReflectionMethod(InvoicingService::class, 'invoice'))->getNumberOfParameters() === 1
     && (int) $rangeOf('customer') === $vCustomer && $count('debtor_profile') === $vProfiles);
-// No ACTIVE default marked (the marker taken off net-30, then net-30 marked but deactivated): the
-// behaviour before the default existed — a draft without terms is refused with what to choose.
+// The one remaining fallback (plan D9): the booking-print PREVIEW of an old order composes a contact
+// without a profile against the unsaved one with the DEFAULT terms. No ACTIVE default marked (the
+// marker taken off net-30, then net-30 marked but deactivated): refused with what to choose.
 $vMark = function (bool $default, bool $active) use ($wireDi): void {
     $em  = $wireDi();
     $net = $em->getRepository(PaymentTerms::class)->findByCode('net-30');
     $net->setDefault($default);
     (new DebtorMasterData($em))->setTermsActive($net, $active);   // a pure state change writes the whole row, marker included
 };
-$vNoDefault = fn() => ($e = caught(fn() => $service($wireDi())->invoice($vDraft(null), openProfile: true), InvoiceRefusedException::class))?->reason === InvoiceRefusedException::NO_DEBTOR_PROFILE
+$vNoDefault = fn() => ($e = caught(fn() => $service($wireDi())->preview($vDraft(null), openProfile: true), InvoiceRefusedException::class))?->reason === InvoiceRefusedException::NO_DEBTOR_PROFILE
     && str_contains($e->getMessage(), 'Zahlungskonditionen wählen');
 $vMark(false, true);
 $vUnmarked = $vNoDefault();
 $vMark(true, false);
 $vInactive = $vNoDefault();
 $vMark(true, true);
-check('V2b no default marked, or the marked one inactive: «wie beim Debitor» for a contact without a profile is REFUSED with what to choose (nothing invented); nothing drawn, no profile',
+check('V2b preview(openProfile) — the old order\'s booking-print preview — with no default marked, or the marked one inactive: «wie beim Debitor» for a contact without a profile is REFUSED with what to choose (nothing invented); nothing drawn, no profile',
     $vUnmarked && $vInactive && (int) $rangeOf('customer') === $vCustomer && $count('debtor_profile') === $vProfiles
     && $wireDi()->getRepository(PaymentTerms::class)->defaultForNewDebtor()?->getCode() === 'net-30');
-check('V3 a refused draft (unknown tax code) for the contact opens no profile and draws no customer number',
-    $refusal(fn() => $service($wireDi())->invoice(InvoiceDraft::invoice($vId, day('2026-12-07'), day('2026-12-07'), 'CHF', [LineDraft::lumpSum('X', chf('10.00'), 'NOPE', '3400')], paymentTermsCode: 'net-30'), openProfile: true)) !== null
+check('V3 a refused preview (unknown tax code) for the contact opens no profile and draws no customer number',
+    $refusal(fn() => $service($wireDi())->preview(InvoiceDraft::invoice($vId, day('2026-12-07'), day('2026-12-07'), 'CHF', [LineDraft::lumpSum('X', chf('10.00'), 'NOPE', '3400')], paymentTermsCode: 'net-30'), openProfile: true)) !== null
     && (int) $rangeOf('customer') === $vCustomer && $count('debtor_profile') === $vProfiles);
-$vInvoice = $service($wireDi())->invoice($vDraft(null), openProfile: true);
-$vProfile = $wireDi()->getRepository(DebtorProfile::class)->findByContact($vId);
-check('V4 «wie beim Debitor» with the default marked (owner 2026-10-12): the draft AND the profile in one unit of work — the next customer number, the DEFAULT terms net-30 on profile and document, active; the draft unnumbered in `invoicing`',
-    $vProfile !== null && $vProfile->getCustomerNumber() === $vCustomer + 1 && (int) $rangeOf('customer') === $vCustomer + 1
+// The integration rule (owner 2026-10-19): an importer / a shop creates the debtor FIRST through
+// DebtorProfileService::open() — the one creation path — and then the document.
+$vEmOpen  = $wireDi();
+$vProfile = (new DebtorProfileService($vEmOpen))->open($vEmOpen->getRepository(Contact::class)->find($vId), (string) $vEmOpen->getRepository(PaymentTerms::class)->defaultForNewDebtor()?->getCode());
+$vInvoice = $service($wireDi())->invoice($vDraft(null));
+check('V4 the importer\'s path: open() makes the contact a debtor (the next customer number, the DEFAULT terms net-30, active), THEN invoice() — «wie beim Debitor» resolves to the profile; the draft unnumbered in `invoicing`',
+    $vProfile->getCustomerNumber() === $vCustomer + 1 && (int) $rangeOf('customer') === $vCustomer + 1
     && $vProfile->getPaymentTermsCode() === 'net-30' && $vInvoice->getPaymentTermsCode() === 'net-30' && $vProfile->isActive() && $count('debtor_profile') === $vProfiles + 1
     && $stateOf($vInvoice->getId()) === 'invoicing' && $invoiceRow($vInvoice->getId())['number'] === null);
-$vAgain = $service($wireDi())->invoice($vDraft(null), openProfile: true);
-check('V5 the next draft for the same contact is an ordinary one: «wie beim Debitor» resolves to the profile, no second profile, no further number',
+$vAgain = $service($wireDi())->invoice($vDraft(null));
+check('V5 the next draft for the same contact is an ordinary one: no second profile, no further number',
     $vAgain->getPaymentTermsCode() === 'net-30' && (int) $rangeOf('customer') === $vCustomer + 1 && $count('debtor_profile') === $vProfiles + 1);
-// Terms the draft NAMES apply to that document only — the profile is the standing agreement and gets the default.
+// The preview fallback: terms the draft NAMES apply to that document; the unsaved profile has the default — nothing written.
 $vForm2 = (new ContactForm(addressRequired: true))->fromPost([
     'kind' => 'organisation', 'company' => 'Skonto Erstkunde AG', 'language' => 'de', 'type_code' => 'main',
     'address_name' => 'Skonto Erstkunde AG', 'address_street' => 'Weg', 'address_house_no' => '2', 'address_zip' => '6000', 'address_city' => 'Luzern', 'address_country' => 'CH',
 ]);
 $vForm2->save(new ContactService($wireDi()));
 $vId2      = (int) $vForm2->contact->getId();
-$vNamed    = $service($wireDi())->invoice(InvoiceDraft::invoice($vId2, day('2026-12-07'), day('2026-12-07'), 'CHF', [LineDraft::lumpSum('Stunden', chf('10.00'), 'UN', '3400')], paymentTermsCode: 'disc-2-10'), openProfile: true);
-$vProfile2 = $wireDi()->getRepository(DebtorProfile::class)->findByContact($vId2);
-check('V5b a first draft that NAMES other terms (disc-2-10): the document carries them, the new profile gets the DEFAULT net-30',
-    $vNamed->getPaymentTermsCode() === 'disc-2-10' && $vProfile2?->getPaymentTermsCode() === 'net-30' && $vProfile2->getCustomerNumber() === $vCustomer + 2);
+$vNamed    = $service($wireDi())->preview(InvoiceDraft::invoice($vId2, day('2026-12-07'), day('2026-12-07'), 'CHF', [LineDraft::lumpSum('Stunden', chf('10.00'), 'UN', '3400')], paymentTermsCode: 'disc-2-10'), openProfile: true);
+check('V5b preview(openProfile) of a draft that NAMES other terms (disc-2-10): the preview carries them; no profile written, no customer number drawn',
+    $vNamed->getPaymentTermsCode() === 'disc-2-10' && $vNamed->getId() === null
+    && $wireDi()->getRepository(DebtorProfile::class)->findByContact($vId2) === null && (int) $rangeOf('customer') === $vCustomer + 1);
 $vSource = file_get_contents((new \ReflectionClass(InvoicingService::class))->getFileName());
-$vInvoiceFn = substr($vSource, strpos($vSource, 'public function invoice(InvoiceDraft'), 2600);
-check('V6 lock order in the source: the profile is saved as the FIRST write of invoice()\'s unit of work, before the invoice row is built',
-    strpos($vInvoiceFn, '->save($opening)') !== false && strpos($vInvoiceFn, '->save($opening)') < strpos($vInvoiceFn, 'new Invoice('));
+$vInvoiceFn = substr($vSource, strpos($vSource, 'public function invoice(InvoiceDraft'), 1600);
+check('V6 the source: invoice() opens no profile (no save, no profileToOpen); the preview is the ONE user of profileToOpen(); the refusal sentence is DebtorProfileService::notDebtor()',
+    !str_contains($vInvoiceFn, '->save(') && !str_contains($vInvoiceFn, 'profileToOpen(') && str_contains($vInvoiceFn, 'lockForContact(')
+    && substr_count($vSource, '$this->profileToOpen(') === 1 && str_contains($vSource, 'DebtorProfileService::notDebtor($contact)'));
 $vTrait = file_get_contents($package . '/src/Ui/InvoiceControllerTrait.php');
 $vTpl   = $package . '/res/view/templates/Backend/InvoiceController';
 $vPickTrait = file_get_contents($package . '/src/Ui/CustomerPickerTrait.php');
 $vPickTpl   = $package . '/res/view/templates/Backend/CustomerPicker';
-check('V7 the editor\'s customer is debtor\'s CustomerPicker (owner 2026-10-15): the field with «Kunde wählen …» (a window, the search in the database — contacts without a profile choosable), no select of every contact; since 2026-10-18 (owner: no document for a contact without a debtor profile) the save never opens a profile — openProfile is gone from the editor, a contact without one is refused (CustomerPicker::debtorRefusal), the picker asks «Debitor anlegen»',
+check('V7 the editor\'s customer is debtor\'s CustomerPicker (owner 2026-10-15): the field with «Kunde wählen …» (a window, the search in the database — contacts without a profile choosable), no select of every contact; since 2026-10-18 (owner: no document for a contact without a debtor profile) the save never opens a profile — openProfile is gone from the editor, a contact without one is refused by the SERVICE (since 2026-10-19 the only re-check — no double message; CustomerPicker::debtorRefusal is gone), the picker asks «Debitor anlegen»',
     str_contains($vTrait, "'customerField' =>") && str_contains($vTrait, 'use CustomerPickerTrait;') && str_contains($vTrait, '->invoice($draft);') && substr_count($vTrait, 'openProfile: true') === 0
-    && str_contains($vTrait, 'CustomerPicker::debtorRefusal(') && str_contains($vTrait, 'return $this->customerDebtorPage($contact')
+    && !str_contains($vTrait, 'debtorRefusal(') && !method_exists(\Z77\Module\Debtor\Ui\CustomerPicker::class, 'debtorRefusal') && str_contains($vTrait, 'return $this->customerDebtorPage($contact')
     && str_contains($vPickTrait, 'protected function customerDebtorAction(') && str_contains(file_get_contents($vPickTpl . '/debtor.tpl.php'), 'name="price_mode"')
     && str_contains(file_get_contents($vPickTpl . '/debtor.tpl.php'), 'name="terms"')
     && str_contains(file_get_contents($vTpl . '/form.tpl.php'), 'raw($customerField)') && !is_file($vTpl . '/_debtorSelect.tpl.php')
@@ -3687,6 +3697,53 @@ check('V9 the default is read in ONE place (PaymentTermsRepository::defaultForNe
     && !str_contains($vProfileTrait, 'new DebtorProfile()') && !str_contains($vProfileTrait, '->defaultForNewDebtor()')
     && str_contains($vRoleSource, '->defaultForNewDebtor()') && substr_count($vRoleSource, 'new DebtorProfile()') === 0 && str_contains($vRoleSource, '->open($contact')
     && str_contains(file_get_contents($vTermsTpl . '/edit.tpl.php'), 'name="default"') && str_contains(file_get_contents($vTermsTpl . '/_row.tpl.php'), '>Standard</span>'));
+
+// The invoice editor converts typed prices at once when «Preise» changes (owner 2026-10-19) — the
+// order window's behaviour, core.js «price mode»; the server converts when the posted prices are
+// still in the other mode (Rule 7). ONE rule: module-vat's VatCalculator::convertPrice().
+$vRates   = \Z77\Module\Vat\Services\VatRates::from($wireDi());
+$vPost    = fn(string $mode, ?string $shown, array $rows, string $service = '2026-12-07') => (new \Z77\Module\Debtor\Ui\InvoiceForm('CHF'))->fromPost(
+    ['contact' => (string) $vId, 'invoice_date' => '2026-12-07', 'service_from' => $service, 'price_mode' => $mode, 'rows' => $rows] + ($shown !== null ? ['prices_mode' => $shown] : []));
+$vRow     = fn(string $price, string $code = 'UN', string $type = 'lump-sum') => ['type' => $type, 'text' => 'X', 'quantity' => $type === 'service' ? '1' : '', 'price' => $price, 'tax_code' => $code, 'account' => '3400'];
+$vPrices  = fn(?InvoiceDraft $d) => $d === null ? null : array_map(static fn(LineDraft $l) => $l->unitPrice?->toDecimal(), $d->lines);
+$vNetGross = $vPost('gross', 'net', [$vRow('20.00'), $vRow('0.05'), $vRow('100.00', 'UR', 'service'), $vRow('-20.00')]);
+$vGrossNet = $vPost('net', 'gross', [$vRow('21.62'), $vRow('102.60', 'UR')]);
+$vSame     = $vPost('gross', 'gross', [$vRow('20.00')]);
+$vNoShown  = $vPost('gross', null, [$vRow('20.00')]);
+$vOldRate  = $vPost('gross', 'net', [$vRow('20.00')], '2020-06-30');
+check('V10 InvoiceForm: posted prices still NET under «brutto» (prices_mode net — no script) are converted with each row\'s rate on the service date, cents half away from zero: 20.00 → 21.62 (UN 8.1 %), 0.05 → 0.05, 100.00 → 102.60 (UR 2.6 %), -20.00 → -21.62; gross → net back; the same mode, or no prices_mode posted, keeps the price; a service date in 2020 takes that year\'s rate (UN 7.7 % → 21.54)',
+    $vPrices($vNetGross->toDraft($vRates)) === ['21.62', '0.05', '102.60', '-21.62'] && $vPrices($vGrossNet->toDraft($vRates)) === ['20.00', '100.00']
+    && $vPrices($vSame->toDraft($vRates)) === ['20.00'] && $vPrices($vNoShown->toDraft($vRates)) === ['20.00'] && $vNoShown->header('prices_mode') === 'gross'
+    && $vPrices($vOldRate->toDraft($vRates)) === ['21.54']
+    && $vNetGross->header('prices_mode') === 'net');   // echoed on a re-render: the rows are still in the posted mode
+$vBadShown = $vPost('gross', 'brutto', [$vRow('20.00')]);
+$vNoRate   = $vPost('gross', 'net', [$vRow('20.00', 'NOPE')]);
+check('V11 a prices_mode that names no mode is refused on `price_mode`; a row whose code has no rate cannot be converted → refused on its price; toDraft() without VatRates while a conversion is due is a programming error (LogicException); the editor passes VatRates',
+    $vBadShown->toDraft($vRates) === null && str_contains($vBadShown->error('price_mode'), 'Preismodus')
+    && $vNoRate->toDraft($vRates) === null && str_contains($vNoRate->rowError(0, 'price'), 'umrechnen')
+    && throws(fn() => $vPost('gross', 'net', [$vRow('20.00')])->toDraft(), \LogicException::class)
+    && substr_count($vTrait, '$form->toDraft(VatRates::from($this->em()))') === 3);
+$vFormTpl = file_get_contents($vTpl . '/form.tpl.php');
+$vTaxTpl  = file_get_contents(dirname($package) . '/module-vat/res/view/templates/partials/taxCodeSelect.tpl.php');
+check('V12 the editor wires core.js «price mode» like the order window: the form is the scope, «Preise» its select, the hidden `prices_mode` its shown mode, each row (`data-row`) its price and its MWST select with the rate per option (`data-rate` from VatRates::shownRates, module-vat\'s taxCodeSelect `rates`); «dated rates» follows the service date (else the invoice date) and keeps the CODE labels',
+    str_contains($vFormTpl, 'id="invoice-form" autocomplete="off" data-price-mode>') && str_contains($vFormTpl, 'name="price_mode" data-price-mode-select')
+    && str_contains($vFormTpl, 'name="prices_mode" value="<?= e($form->header(\'prices_mode\')) ?>" data-price-mode-shown')
+    && str_contains($vFormTpl, '<div class="be-list__item" data-row>') && str_contains($vFormTpl, 'data-price-mode-price')
+    && str_contains($vFormTpl, "'data-price-mode-rate' => true, 'data-rate-schedule-ref' => 'invoice-vat', 'data-rate-keep-label' => true")
+    && str_contains($vFormTpl, 'data-rate-schedule="invoice-vat" data-rate-date="service_from invoice_date"')
+    && str_contains($vTaxTpl, "' data-rate=\"' . e(\$rates[\$code->getCode()]) . '\"'")
+    && str_contains($vTrait, "->shownRates(\$taxCodes, \$this->invoiceRateDate(\$form))") && str_contains($vTrait, '->schedule($taxCodes)')
+    && $vRates->shownRates([$wireDi()->getRepository(\Z77\Module\Vat\Entities\TaxCode::class)->findByCode('UN')], day('2026-12-07')) === ['UN' => '8.1']
+    && ($vRates->schedule([$wireDi()->getRepository(\Z77\Module\Vat\Entities\TaxCode::class)->findByCode('UN')])['UN'][0][0] ?? '') < '2024-01-01');
+$vOrderSrc = file_get_contents(dirname($package) . '/module-order/src/Services/OrderService.php');
+$vFormSrc  = file_get_contents($package . '/src/Ui/InvoiceForm.php');
+check('V13 ONE conversion rule: VatCalculator::convertPrice() (20.00 net → 21.62 gross at 810, back → 20.00; the same mode unchanged; a float rate refused) — used by OrderService and InvoiceForm, neither multiplies by the rate itself',
+    \Z77\Module\Vat\Calculation\VatCalculator::convertPrice(chf('20.00'), 810, \Z77\Module\Vat\Calculation\PriceMode::Net, \Z77\Module\Vat\Calculation\PriceMode::Gross)->toDecimal() === '21.62'
+    && \Z77\Module\Vat\Calculation\VatCalculator::convertPrice(chf('21.62'), 810, \Z77\Module\Vat\Calculation\PriceMode::Gross, \Z77\Module\Vat\Calculation\PriceMode::Net)->toDecimal() === '20.00'
+    && \Z77\Module\Vat\Calculation\VatCalculator::convertPrice(chf('20.00'), 810, \Z77\Module\Vat\Calculation\PriceMode::Net, \Z77\Module\Vat\Calculation\PriceMode::Net)->toDecimal() === '20.00'
+    && throws(fn() => \Z77\Module\Vat\Calculation\VatCalculator::convertPrice(chf('1.00'), 8.1, \Z77\Module\Vat\Calculation\PriceMode::Net, \Z77\Module\Vat\Calculation\PriceMode::Gross), \TypeError::class)
+    && str_contains($vOrderSrc, 'VatCalculator::convertPrice(') && !str_contains($vOrderSrc, 'multiplyByRatio(10000')
+    && str_contains($vFormSrc, 'VatCalculator::convertPrice(') && !str_contains($vFormSrc, 'multiplyByRatio('));
 
 echo "W. «Debitor» as a role of the contact (owner 2026-10-12): module-contact's registry, on = profile with the default terms, off = DELETE while no document references the contact\n";
 $roles = \Z77\Module\Contact\Roles\ContactRoles::fromModules(DI::getModuleManager());

@@ -88,6 +88,26 @@ final class VatCalculator
         return $gross->multiplyByRatio($rate, 10000 + $rate);
     }
 
+    /**
+     * A PRICE from one price mode into the other (ADR-043 addendum 2026-10-18 «price mode»):
+     * net → gross = price × (10000 + rate) / 10000, gross → net = price × 10000 / (10000 + rate),
+     * in minor units, rounded half away from zero (`Money::multiplyByRatio()`). The ONE rule of a
+     * price-mode switch — the order (`OrderService`), the invoice editor (`InvoiceForm`) and
+     * core.js «price mode» (the same arithmetic in the browser) convert with it. $rate in
+     * hundredths of a percent, int only.
+     */
+    public static function convertPrice(Money $price, mixed $rate, PriceMode $from, PriceMode $to): Money
+    {
+        $rate = self::requireRate($rate);
+        if ($from === $to) {
+            return $price;
+        }
+
+        return $to === PriceMode::Gross
+            ? $price->multiplyByRatio(10000 + $rate, 10000)
+            : $price->multiplyByRatio(10000, 10000 + $rate);
+    }
+
     private static function requireRate(mixed $rate): int
     {
         if (!is_int($rate)) {

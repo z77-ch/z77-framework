@@ -25,6 +25,9 @@
  * @var array<string, string> $shown optional code → what the option SHOWS instead of the code
  *                             («8.1 %» — the order window shows the rate, owner 2026-10-16);
  *                             the value stays the code, its label the title
+ * @var array<string, string> $rates optional code → rate in percent («8.1», `VatRates::shownRates()`):
+ *                             each option gets `data-rate` — core.js «line sums» / «price mode» read
+ *                             it (the invoice editor, owner 2026-10-19); a code without one gets none
  */
 $selected  = (string) ($selected ?? '');
 $allowNone = $allowNone ?? true;
@@ -32,6 +35,7 @@ $noneLabel = (string) ($noneLabel ?? '–');
 $known     = false;
 $extra     = '';
 $shown     = $shown ?? [];
+$rates     = $rates ?? [];
 foreach ($attrs ?? [] as $attr => $value) {
     $extra .= ' ' . e($attr) . ($value === true ? '' : '="' . e((string) $value) . '"');
 }
@@ -41,7 +45,7 @@ foreach ($attrs ?? [] as $attr => $value) {
     <option value=""<?= $selected === '' ? ' selected' : '' ?>><?= e($noneLabel) ?></option>
     <?php endif; ?>
     <?php foreach ($codes as $code): $known = $known || $code->getCode() === $selected; ?>
-    <option value="<?= e($code->getCode()) ?>"<?= $code->getCode() === $selected ? ' selected' : '' ?> title="<?= e($code->getLabel()) ?>"><?= e($shown[$code->getCode()] ?? $code->getCode()) ?><?= $code->isActive() ? '' : ' (inaktiv)' ?></option>
+    <option value="<?= e($code->getCode()) ?>"<?= $code->getCode() === $selected ? ' selected' : '' ?> title="<?= e($code->getLabel()) ?>"<?= isset($rates[$code->getCode()]) ? ' data-rate="' . e($rates[$code->getCode()]) . '"' : '' ?>><?= e($shown[$code->getCode()] ?? $code->getCode()) ?><?= $code->isActive() ? '' : ' (inaktiv)' ?></option>
     <?php endforeach; ?>
     <?php if ($selected !== '' && !$known): ?>
     <option value="<?= e($selected) ?>" selected><?= e($selected) ?> (?)</option>

@@ -2,8 +2,13 @@
 /**
  * The document editor (P3 part 3) — a new invoice, «Bearbeiten» of a
  * document in `invoicing`, or a credit note against a final invoice. A
- * plain form, no JavaScript of its own (Rule 7): a fixed number of line
- * rows, «Weitere Zeilen» submits and comes back with more. `csrf_token` is
+ * plain form (Rule 7): a fixed number of line rows, «Weitere Zeilen» submits
+ * and comes back with more. «Preise» converts the typed prices at once
+ * (core.js «price mode», owner 2026-10-19 — the form is the scope, each row's
+ * MWST select carries its rate as `data-rate`, following the service date
+ * through core.js «dated rates»); the hidden `prices_mode` tells the server
+ * the mode the prices are in — without the script the server converts them
+ * at the save (`InvoiceForm::toDraft()`). `csrf_token` is
  * the page-mode field (`#[Csrf]`); an edit also carries the entity token and
  * the VERSION it was rendered from (the optimistic lock of `reinvoice()`).
  *
@@ -36,6 +41,8 @@
  * @var \Z77\Module\Debtor\Entities\PaymentTerms|null $defaultTerms  the terms a new debtor gets (null = none marked / inactive)
  * @var list<\Z77\Module\Debtor\Entities\PaymentTarget> $targets
  * @var list<\Z77\Module\Vat\Entities\TaxCode> $taxCodes
+ * @var array<string, string> $taxRates  code → rate in percent on the service date («8.1») — `data-rate`
+ * @var array<string, list<array{0: string, 1: string}>> $rateSchedule  code → [[valid from, rate], …] for core.js «dated rates»
  * @var list<array{number: string, label: string}> $accounts
  * @var string $csrfToken  provided by html()
  * @var string $actionBase
@@ -74,7 +81,7 @@ if ($window) {
 $cancelHref = $window && !$isEdit && !$isCredit ? '' : $cancel;
 ?>
 <div class="be-list"<?= $winAttr ?>>
-    <form method="post" action="<?= e($action) ?>" class="be-list__section" id="invoice-form" autocomplete="off">
+    <form method="post" action="<?= e($action) ?>" class="be-list__section" id="invoice-form" autocomplete="off" data-price-mode>
         <input type="hidden" name="csrf_token" value="<?= e($csrfToken ?? '') ?>">
         <?php if ($window): ?><input type="hidden" name="_origin" value="<?= e($origin ?? 'page') ?>"><?php endif; ?>
         <?php if ($isEdit): ?>
@@ -138,10 +145,12 @@ $cancelHref = $window && !$isEdit && !$isCredit ? '' : $cancel;
             </div>
             <div class="be-form__field" data-z77-field-wrapper>
                 <label for="invoice-price_mode">Preise</label>
-                <select id="invoice-price_mode" name="price_mode" aria-invalid="<?= $invalid($form->error('price_mode')) ?>">
+                <select id="invoice-price_mode" name="price_mode" data-price-mode-select aria-invalid="<?= $invalid($form->error('price_mode')) ?>">
                     <option value="net"<?= $form->header('price_mode') === 'net' ? ' selected' : '' ?>>netto</option>
                     <option value="gross"<?= $form->header('price_mode') === 'gross' ? ' selected' : '' ?>>brutto (inkl. MWST)</option>
                 </select>
+                <?= raw($fieldError($form->error('price_mode'))) ?>
+                <input type="hidden" name="prices_mode" value="<?= e($form->header('prices_mode')) ?>" data-price-mode-shown>
             </div>
             <div class="be-form__field" data-z77-field-wrapper>
                 <label for="invoice-terms">Zahlungskonditionen</label>
@@ -167,6 +176,8 @@ $cancelHref = $window && !$isEdit && !$isCredit ? '' : $cancel;
 
         <div class="be-form__section">Positionen</div>
         <?= $this->partial('partials/accountDatalist', ['id' => 'invoice-accounts', 'accounts' => $accounts], 'Z77\\Module\\Mandator') ?>
+        <?php // The rate history for core.js «dated rates»: the rows' `data-rate` follows «Leistung ab» (else the invoice date) live. ?>
+        <script type="application/json" data-rate-schedule="invoice-vat" data-rate-date="service_from invoice_date"><?= json_encode($rateSchedule ?? [], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?></script>
         <div class="be-list__frame">
             <div class="be-list__table" style="--be-list-cols: 7.5rem 3rem minmax(12rem, 3fr) 5rem 4.5rem 7rem 4.5rem 7rem 6rem">
                 <div class="be-list__head">
@@ -181,7 +192,7 @@ $cancelHref = $window && !$isEdit && !$isCredit ? '' : $cancel;
                     <span class="be-list__col">Konto</span>
                 </div>
                 <?php foreach ($form->rows() as $i => $row): $p = 'rows[' . $i . ']'; $id = 'invoice-row-' . $i . '-'; ?>
-                <div class="be-list__item">
+                <div class="be-list__item" data-row>
                     <div class="be-list__row">
                         <span class="be-list__cell">
                             <select class="be-input be-input--sm" id="<?= $id ?>type" name="<?= $p ?>[type]" aria-label="Art Zeile <?= $i + 1 ?>">
@@ -194,11 +205,14 @@ $cancelHref = $window && !$isEdit && !$isCredit ? '' : $cancel;
                         <span class="be-list__cell"><textarea class="be-input be-input--sm" id="<?= $id ?>text" name="<?= $p ?>[text]" rows="1" aria-label="Text Zeile <?= $i + 1 ?>" aria-invalid="<?= $invalid($form->rowError($i, 'text')) ?>"><?= e($row['text']) ?></textarea></span>
                         <span class="be-list__cell be-list__cell--num"><input class="be-input be-input--sm" type="text" id="<?= $id ?>quantity" name="<?= $p ?>[quantity]" value="<?= e($row['quantity']) ?>" inputmode="decimal" aria-label="Menge Zeile <?= $i + 1 ?>" aria-invalid="<?= $invalid($form->rowError($i, 'quantity')) ?>"></span>
                         <span class="be-list__cell"><input class="be-input be-input--sm" type="text" id="<?= $id ?>unit" name="<?= $p ?>[unit]" value="<?= e($row['unit']) ?>" maxlength="16" aria-label="Einheit Zeile <?= $i + 1 ?>"></span>
-                        <span class="be-list__cell be-list__cell--num"><input class="be-input be-input--sm" type="text" id="<?= $id ?>price" name="<?= $p ?>[price]" value="<?= e($row['price']) ?>" inputmode="decimal" aria-label="Preis Zeile <?= $i + 1 ?>" aria-invalid="<?= $invalid($form->rowError($i, 'price')) ?>"></span>
+                        <span class="be-list__cell be-list__cell--num"><input class="be-input be-input--sm" type="text" id="<?= $id ?>price" name="<?= $p ?>[price]" value="<?= e($row['price']) ?>" inputmode="decimal" data-price-mode-price aria-label="Preis Zeile <?= $i + 1 ?>" aria-invalid="<?= $invalid($form->rowError($i, 'price')) ?>"></span>
                         <span class="be-list__cell be-list__cell--num"><input class="be-input be-input--sm" type="text" id="<?= $id ?>discount" name="<?= $p ?>[discount]" value="<?= e($row['discount']) ?>" inputmode="decimal" aria-label="Rabatt Zeile <?= $i + 1 ?>" aria-invalid="<?= $invalid($form->rowError($i, 'discount')) ?>"></span>
                         <span class="be-list__cell"><?= $this->partial('partials/taxCodeSelect', [
                             'codes' => $taxCodes, 'name' => $p . '[tax_code]', 'selected' => $row['tax_code'], 'id' => $id . 'tax_code',
                             'label' => 'MWST-Code Zeile ' . ($i + 1), 'invalid' => $form->rowError($i, 'tax_code') !== '',
+                            // The rate per code for «Preise» (core.js «price mode»); the label stays the code.
+                            'rates' => $taxRates ?? [],
+                            'attrs' => ['data-price-mode-rate' => true, 'data-rate-schedule-ref' => 'invoice-vat', 'data-rate-keep-label' => true],
                         ], 'Z77\\Module\\Vat') ?></span>
                         <span class="be-list__cell"><input class="be-input be-input--sm" type="text" id="<?= $id ?>account" name="<?= $p ?>[account]" value="<?= e($row['account']) ?>"<?= $accounts !== [] ? ' list="invoice-accounts"' : '' ?> inputmode="numeric" aria-label="Konto Zeile <?= $i + 1 ?>" aria-invalid="<?= $invalid($form->rowError($i, 'account')) ?>"></span>
                     </div>

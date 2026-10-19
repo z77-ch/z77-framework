@@ -130,7 +130,8 @@ Built 2026-10-14 (plan §13 steps 7–10, the owner's board on the developer can
 - When a screen rewrites an order → MUST send every existing line back with its `id`; MUST NOT rebuild the lines without ids (every line would get a new stock reference)
 - When an order line carries a price → MUST reference an article (variant); MUST NOT accept a new free priced line or the type `lump-sum` (a lump sum is an article with quantity 1) — the one exception is an existing free line sent back UNCHANGED with its id (`OrderService::freeLineUnchanged()`, ADR-043 addendum 2026-10-18)
 - When an order's price mode changes while it has priced lines → MUST convert the prices — the window through core.js «price mode», the server through `OrderService` from the posted `prices_mode` (an article line equal to the article's price in the posted mode → the article's price in the order's mode; any other → `convertByRate()`, cents half away from zero); MUST NOT store a price typed under one mode as the other mode's price, and MUST NOT let the window set `prices_mode` before every row is converted (owner decision C 2026-10-18)
-- When a screen takes a contact as the customer of a NEW order → MUST have it be a debtor first (debtor's picker «Debitor anlegen», `CustomerPicker::debtorRefusal()` at the save); MUST NOT take a contact without a debtor profile as a new customer (owner decision D 2026-10-18 — an existing order keeps its own)
+- When a screen takes a contact as the customer of a NEW order → MUST have it be a debtor first (debtor's picker «Debitor anlegen»); MUST NOT take a contact without a debtor profile as a new customer (owner decision D 2026-10-18 — an existing order keeps its own). The re-check is `OrderService`'s own since 2026-10-19 (`contact_id`, `DebtorProfileService::notDebtor()`) — no second check in the window.
+- When an importer, a shop or a script creates an order → MUST create the contact AND the debtor FIRST (`DebtorProfileService::open()`, the one creation path), then the order (owner 2026-10-19 — `OrderService` refuses a customer without a profile; the booking print's `openDebtorProfile()` is only the fallback for OLD orders, plan D9)
 - When an order status row is written → MUST go through `OrderMasterData::save()` / `setActive()`; MUST NOT delete a row or change an existing row's code, and MUST NOT edit `order_statuses.json` through Windows PowerShell (DATA-JSON-001)
 - When the order's totals or its invoice are needed → MUST map with `OrderInvoiceDraft::of()` and ask debtor (`preview()`, later `invoiceAndFinalize()`); MUST NOT compute VAT, line amounts or the 0.05 rounding in module-order (D11)
 - When module-order needs debtor or article → MUST use their public seams (`InvoicingService`, `PaymentStates`, the repositories, `StockLedgers::default()`); debtor and article MUST NOT name `Z77\Module\Order` (harness N2)
@@ -180,7 +181,7 @@ Built 2026-10-14 (plan §13 steps 7–10, the owner's board on the developer can
     invoice PDF skips the rounding LINE like the order PDF already did; quantity and unit in TWO
     columns on the invoice and order PDFs (Menge right, Einheit left — «2 h» stood off «1 Stk.»;
     the delivery note had them already); `tests/pdf.php` F5 (an indented row shifts its text only).
-  - **Owner to decide**: (a) the ⇥ indent toggle is a checkbox in button look, not `.be-switch`
+  - **Owner decided 2026-10-19**: (a) KEEP the button; (b) bold first line for TEXT lines too, the discount as its own PDF column «Rabatt» (`DocumentColumns`, only when used) — BUILT; (c) YES, (d) into the services, a shop/import creates contact + debtor via `DebtorProfileService::open()` — BUILT 2026-10-19 (entry below); (e) keep. Was: (a) the ⇥ indent toggle is a checkbox in button look, not `.be-switch`
     (ROWS-001 exception — recommended: keep); (b) PDF: first line bold also for TEXT lines? and
     the «(Rabatt x %)» suffix sits in the bold line of a one-line position — keep or own line?;
     (c) the invoice editor takes the debtor's price mode but does NOT convert typed prices on a
@@ -191,6 +192,26 @@ Built 2026-10-14 (plan §13 steps 7–10, the owner's board on the developer can
   - **Next after that** (owner's order): (2) the status as a real select for an existing order;
     (4) daily-use speed (Enter in the last row adds a row, article search by name, totals stay
     visible); (5) the lists.
+  - **(c) and (d) BUILT 2026-10-19, NOT committed, not seen in a browser.** (c) the invoice editor
+    converts typed prices at once on a «Preise» change — core.js «price mode» reused (the form is
+    the scope; each row's MWST select carries `data-rate` per option from module-vat's
+    `VatRates::shownRates()`; «dated rates» follows «Leistung ab» and keeps the code labels —
+    `data-rate-keep-label`, the one contract extension); server net: `InvoiceForm::toDraft(VatRates)`
+    converts when `prices_mode` names the other mode. ONE rule: `VatCalculator::convertPrice()`
+    (module-vat) — `OrderService::convertByRate()` resolves the rate and calls it; the order's
+    `orderTaxRates()` / `orderRateSchedule()` delegate to `VatRates::shownRates()` / `schedule()`.
+    (d) `OrderService::resolve()` refuses a NEW customer (new order, customer change) without a
+    debtor profile on `contact_id` («… ist noch kein Debitor — zuerst als Debitor anlegen.»,
+    `DebtorProfileService::notDebtor()`); `InvoicingService::invoice()` lost `$openProfile` and
+    refuses with the same sentence; the windows' own checks (`orderNotDebtor()`,
+    `CustomerPicker::debtorRefusal()`) are gone — one message, from the service; the picker's
+    «Debitor anlegen» dialog stays. The ONE remaining fallback: the booking print of an OLD order
+    whose customer has no profile (`preview(openProfile: true)`, `openDebtorProfile()` — plan D9).
+    **Integration rule**: an importer / a shop creates the contact AND the debtor
+    (`DebtorProfileService::open()`) first, then the order or invoice. Harness: module-order F12,
+    M27 (the Muster AG customer now opened as a debtor first), module-debtor V2–V6 (rewritten),
+    V10–V13, core-js P1–P3, js-min-markers `data-rate-keep-label`. core.js / core.min.js copied to
+    z77.ch.
 
 - **Price mode from the debtor; no document without a debtor — built 2026-10-18, NOT committed,
   not seen in a browser** (bug report 2026-10-18: article 02.100.02, 16.65 GROSS, showed 15.40
@@ -208,13 +229,14 @@ Built 2026-10-14 (plan §13 steps 7–10, the owner's board on the developer can
   else `convertByRate()`; a kept free line compares in the new mode, `storedPriceIn()`; an unknown
   `prices_mode` refused); (D) a contact without a debtor profile becomes the customer only after the
   picker's «Debitor anlegen»; «+ Kontakt» asks it too; the save refuses a NEW customer without a
-  profile (`orderNotDebtor()` → `CustomerPicker::debtorRefusal()`), an existing order keeps its own
+  profile (`orderNotDebtor()` → `CustomerPicker::debtorRefusal()` — both moved into `OrderService`
+  2026-10-19, entry above), an existing order keeps its own
   (the booking print still opens a missing profile — older drafts); (E) price lists per customer
   group: article.md `## pending`. Harness F10–F12, M22–M26 (module-order 95), module-debtor A12c,
   V7–V9, W13; a jsdom run of «price mode» + `set-value` against a copy of the window's markup
   (net → gross → net, two quick switches, core.js and core.min.js — scratch, not in the repo).
   Migration `Version20261018130000` (module-debtor) APPLIED on z77.ch, see debtor.md «Migration»
-  for the revert. **Open for the owner**: (1) the invoice editor takes the debtor's mode but does not
+  for the revert. **Open for the owner** (both decided and built 2026-10-19 — entry above): (1) the invoice editor takes the debtor's mode but does not
   re-convert typed prices (no article prices, no rate per row on the page) — its help says «first
   the customer, then the lines»; worth the same block there? (2) `OrderService` itself still accepts
   a prospect without a profile (imports, later sources) — the rule is the screens'; (3) the window's

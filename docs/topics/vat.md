@@ -5,7 +5,7 @@
 ## entry
 
 1. `packages/module-vat/src/Calculation/VatCalculator.php` — the one place VAT is computed: lines + service date + price mode → resolved rate per line and a tax summary per code
-2. `packages/module-vat/src/Services/VatRates.php` — «rate of tax code X on date D»; the loud errors (`UnknownTaxCodeException`, `NoRateException`) and the `ResolvedRate` snapshot
+2. `packages/module-vat/src/Services/VatRates.php` — «rate of tax code X on date D»; the loud errors (`UnknownTaxCodeException`, `NoRateException`) and the `ResolvedRate` snapshot; for editors `shownRates()` (code → «8.1» on a day) and `schedule()` (the history for core.js «dated rates»)
 3. `tests/module-vat.php` — the harness: seed, boundaries, rounding, negatives, no float, validators, backdating, deactivate-never-delete
 
 ## file map
@@ -82,6 +82,7 @@ SOURCE=/docs/03-development/order-debtor-financial-bauplan.md
 - When any module needs VAT on a document (quote, order, invoice, credit note) → MUST call `VatCalculator::calculate($currency, $lines, $serviceDate, $priceMode)` once, store the per-line `ResolvedRate` and the `TaxSummary` entries as the document's snapshot, and MUST NOT recompute from the tables later (PDF, posting, return, discount, loss read the snapshot — ADR-041 decision 6)
 - When resolving a rate → MUST pass the SERVICE date of the document, never the invoice date (decision 4); MUST let `NoRateException` / `UnknownTaxCodeException` propagate to the user as an error, MUST NOT fall back to 0 % and MUST NOT add a «try» variant that returns null
 - When computing a percentage of an amount anywhere near VAT → MUST use `VatCalculator::taxOf()` / `taxIn()` (or `Money::multiplyByRatio()` with the integer rate); MUST NOT multiply by a decimal rate or compute per line and sum
+- When a PRICE changes its price mode (net ↔ gross — an order's or the invoice editor's «Preise», owner 2026-10-18 / -19) → MUST use `VatCalculator::convertPrice($price, $rate, $from, $to)` (minor units, half away from zero; core.js «price mode» does the same arithmetic in the browser); MUST NOT convert with a rate of its own. A document editor that shows rates per code → MUST take them from `VatRates::shownRates($codes, $serviceDate)` (the `data-rate` of `partials/taxCodeSelect`'s `rates`) and the history for core.js «dated rates» from `VatRates::schedule($codes)`
 - When a document needs its total rounded to 0.05 → MUST do it as a separate rounding line in the document (debtor), MUST NOT round inside the tax summary or the calculator
 - When storing a rate → MUST store the integer in hundredths of a percent; MUST NOT store or accept a float (`TaxRate::setRate()` throws; a form value goes through `TaxRate::percentToHundredths()`)
 - When writing a `TaxRate` from any code path (backend, import, script) → MUST go through `VatMasterData::addRate($rate, $today)` — it stamps `createdOn`, applies the backdating rule and runs the validator; MUST NOT `persist()` a rate directly and MUST NOT edit an existing row (`addRate()` refuses a row with an id)

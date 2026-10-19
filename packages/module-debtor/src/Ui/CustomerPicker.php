@@ -29,7 +29,7 @@ use Z77\Shared\Listing\Parsers;
  *
  * Choosable = an active contact that is an active debtor or no debtor yet (D9) — but a contact
  * without a debtor profile becomes the customer only after «Debitor anlegen» (owner 2026-10-18,
- * {@see CustomerPickerTrait::customerDebtorAction()}); the save re-checks it ({@see debtorRefusal()}).
+ * {@see CustomerPickerTrait::customerDebtorAction()}); the save re-checks it (the services: `OrderService`, `InvoicingService` — `DebtorProfileService::notDebtor()`).
  */
 final class CustomerPicker
 {
@@ -69,19 +69,6 @@ final class CustomerPicker
     public static function isChoosable(Contact $contact, ?DebtorProfile $profile): bool
     {
         return $contact->isActive() && ($profile === null || $profile->isActive());
-    }
-
-    /**
-     * Why $contact cannot become the customer of a NEW document, or null (owner decision
-     * 2026-10-18: no document for a contact without a debtor profile — otherwise a net invoice
-     * goes out that has to be booked, credited and redone). The picker asks «Debitor anlegen»
-     * first; this is the server's re-check at the save (Rule 7) for whatever the form posts.
-     */
-    public static function debtorRefusal(Contact $contact, ?DebtorProfile $profile): ?string
-    {
-        return $profile === null
-            ? '«' . $contact->displayName() . '» ist noch kein Debitor — mit «Kunde wechseln» wählen und als Debitor anlegen.'
-            : null;
     }
 
     /** One line about a customer: name and its debtor state — the field and the list say the same. */

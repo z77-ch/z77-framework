@@ -2,7 +2,6 @@
 
 namespace Z77\Module\Debtor\Services;
 
-use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Z77\Core\DI;
 use Z77\Module\Contact\Entities\Contact;
 use Z77\Module\Contact\Entities\ContactAddress;
@@ -91,9 +90,9 @@ use Z77\Shared\Money\Money;
  * (with the profile rows SHARED between ranges and invoice rows — debtor.md);
  * a payment takes the last two; `invoice()` / `reinvoice()` take no DOCUMENT range at all (an issued
  * credit note only holds a SHARED lock on the invoice row it references,
- * through its foreign key). The one range `invoice()` may take is `customer`
- * — when it opens the profile of a contact without one ($openProfile, owner
- * 2026-10-10), as the first write, before the new invoice row.
+ * through its foreign key). `invoice()` opens no debtor profile (since
+ * 2026-10-19 — a contact without one is refused); the range `customer` is
+ * taken only by {@see openDebtorProfile()}, in its own unit of work.
  *
  * The open amount is DERIVED ({@see openAmount()}: gross − Σ final credit
  * notes; P4 subtracts payments and allocations) — there is no `open_item`
@@ -131,18 +130,13 @@ final class InvoicingService
      * a draft that is never booked consumes no number, and a re-issue may
      * move the invoice date into another month freely.
      *
-     * **$openProfile** (owner 2026-10-10 — the editor offers active contacts WITHOUT a debtor
-     * profile): an INVOICE for such a contact opens its profile in the SAME unit of work.
-     * {@see DebtorProfileService::save()} draws the customer number from the range `customer`
-     * as the FIRST write, before the invoice row is inserted (lock order: `customer` →
-     * invoice rows; nothing takes `customer` after an invoice row), so a refused draft, a
-     * refused insert or a race consumes no number and leaves no profile behind. The draft is
-     * composed against the unsaved profile BEFORE the unit of work, as every draft is. The
-     * profile gets the DEFAULT payment terms (owner 2026-10-12, {@see profileToOpen()}), so
-     * «wie beim Debitor» resolves to them; terms the draft names apply to the document. Without
-     * an active default the profile takes the terms the draft names, and a draft without terms
-     * is refused (`no-debtor-profile`) with what to choose. false (every other source) = a
-     * contact without a profile is refused, as before.
+     * **A contact without a debtor profile is refused** (`no-debtor-profile`, owner 2026-10-18 /
+     * 2026-10-19 — no document for a contact that is no debtor; the sentence is
+     * `DebtorProfileService::notDebtor()`). Until 2026-10-19 `$openProfile` let the editor open
+     * the profile with the draft (DEBTOR-CONTACT-001); the editor asks «Debitor anlegen» since
+     * 2026-10-18 and the parameter is gone. A source creates the debtor FIRST through
+     * `DebtorProfileService::open()` (an importer, a shop); the one remaining fallback is an old
+     * order's booking print ({@see openDebtorProfile()}, plan D9).
      *
      * For an EXISTING profile the unit of work first locks its row SHARED
      * (`DebtorProfileRepository::lockForContact()`, lock order: profile row → invoice rows):
@@ -153,48 +147,30 @@ final class InvoicingService
      *
      * @throws InvoiceRefusedException the draft is refused — nothing was written
      */
-    public function invoice(InvoiceDraft $draft, bool $openProfile = false): Invoice
+    public function invoice(InvoiceDraft $draft): Invoice
     {
-        $opening  = $openProfile ? $this->profileToOpen($draft) : null;
-        $composed = $this->compose($draft, null, $opening);
+        $composed = $this->compose($draft, null);
         $now      = new \DateTimeImmutable();
 
-        try {
-            return $this->em->getTransaction(Invoice::class)->run(function () use ($draft, $composed, $now, $opening): Invoice {
-                if ($opening !== null) {
-                    (new DebtorProfileService($this->em))->save($opening);   // range `customer` — the FIRST write
-                } elseif ($this->em->getRepository(DebtorProfile::class)->lockForContact((int) $composed['contact']->getId(), exclusive: false) === null) {
-                    // The profile compose() found was removed since («Debitor» off in the contact
-                    // editor, owner 2026-10-12): the shared lock waits for that delete and sees it.
-                    throw new InvoiceRefusedException(InvoiceRefusedException::NO_DEBTOR_PROFILE, '«' . $composed['contact']->displayName() . '» ist soeben als Debitor entfernt worden — im Kontakt wieder als Debitor festlegen.');
-                }
-                $invoice = new Invoice($draft->kind, $composed['contact'], $composed['creditNoteOf'], $this->actor, $now);
-                [$lines, $taxes] = $this->materialize($invoice, $composed);
-                $invoice->issue($composed['snapshot'], $lines, $taxes, $this->paymentPart($invoice, $composed));
-                $this->em->persist($invoice);
+        return $this->em->getTransaction(Invoice::class)->run(function () use ($draft, $composed, $now): Invoice {
+            if ($this->em->getRepository(DebtorProfile::class)->lockForContact((int) $composed['contact']->getId(), exclusive: false) === null) {
+                // The profile compose() found was removed since («Debitor» off in the contact
+                // editor, owner 2026-10-12): the shared lock waits for that delete and sees it.
+                throw new InvoiceRefusedException(InvoiceRefusedException::NO_DEBTOR_PROFILE, '«' . $composed['contact']->displayName() . '» ist soeben als Debitor entfernt worden — im Kontakt wieder als Debitor festlegen.');
+            }
+            $invoice = new Invoice($draft->kind, $composed['contact'], $composed['creditNoteOf'], $this->actor, $now);
+            [$lines, $taxes] = $this->materialize($invoice, $composed);
+            $invoice->issue($composed['snapshot'], $lines, $taxes, $this->paymentPart($invoice, $composed));
+            $this->em->persist($invoice);
 
-                return $invoice;
-            });
-        } catch (InvalidDebtorProfileException | UniqueConstraintViolationException $e) {
-            if ($opening === null || ($e instanceof UniqueConstraintViolationException && !str_contains($e->getMessage(), DebtorProfile::UNIQUE_CONTACT))) {
-                throw $e;
-            }
-            // A RACE — another request opened the profile since profileToOpen() looked — shows as the
-            // unique index at the final flush, or as the validator inside save() refusing a second
-            // profile; only then «soeben angelegt». Any other refusal of the validator is named as it is
-            // (review 2026-10-13: every validation error was reported as a race).
-            $contact = $composed['contact'];
-            if ($e instanceof UniqueConstraintViolationException || $this->em->getRepository(DebtorProfile::class)->findByContact((int) $contact->getId()) !== null) {
-                throw new InvoiceRefusedException(InvoiceRefusedException::NO_DEBTOR_PROFILE, 'Für «' . $contact->displayName() . '» wurde soeben ein Debitor angelegt — bitte nochmals speichern.', $e);
-            }
-            $errors = [...$e->validator->getErrors(), ...array_values($e->validator->getFieldErrors())];
-            throw new InvoiceRefusedException(InvoiceRefusedException::NO_DEBTOR_PROFILE, '«' . $contact->displayName() . '» kann nicht als Debitor angelegt werden: ' . implode(' ', $errors), $e);
-        }
+            return $invoice;
+        });
     }
 
     /**
-     * The profile {@see invoice()} opens for an active contact without one, with the DEFAULT
-     * payment terms ({@see PaymentTermsRepository::defaultForNewDebtor()}, owner 2026-10-12) —
+     * The UNSAVED profile {@see preview()} composes an old order's booking-print preview against
+     * (`$openProfile`, plan D9 — nothing is written; {@see openDebtorProfile()} opens it for real
+     * before the booking): an active contact without one, with the DEFAULT payment terms ({@see PaymentTermsRepository::defaultForNewDebtor()}, owner 2026-10-12) —
      * the draft's own terms, if it names any, stay on the document only; without an active
      * default, with the terms the draft names. Or null: the contact has a profile (the usual
      * path), or compose() refuses the party with its own reason (unknown, inactive), or the
@@ -453,7 +429,9 @@ final class InvoicingService
      * PREVIEW layout (watermark «VORSCHAU», no number, no payment part).
      *
      * $openProfile composes a contact WITHOUT a debtor profile against the unsaved profile with
-     * the default terms, as `invoice(openProfile: true)` does (a quote to a prospect, plan D9).
+     * the default terms ({@see profileToOpen()}) — the booking-print preview of an OLD order whose
+     * customer has no profile yet (plan D9; since 2026-10-19 a new order needs a debtor). The one
+     * remaining place that treats a contact without a profile as a customer.
      *
      * What the payment part would lack is not a refusal here (the draft is still being
      * written): ask {@see bookingBill()} of the preview — its `problems()` are what
@@ -783,7 +761,7 @@ final class InvoicingService
      *
      * @param Invoice|null $existing the document being re-issued — relaxes the «new reference needs an
      *                               active row» rule for what the document already carries (ADR-043 decision 19)
-     * @param DebtorProfile|null $opening the unsaved profile {@see invoice()} opens for a contact without one
+     * @param DebtorProfile|null $opening the unsaved profile {@see preview()} composes against for a contact without one
      * @return array{contact: Contact, creditNoteOf: ?Invoice, snapshot: DocumentSnapshot, lines: list<array<string, mixed>>, taxes: list<array<string, mixed>>, target: ?PaymentTarget, creditor: ?Creditor}
      * @throws InvoiceRefusedException
      */
@@ -814,7 +792,7 @@ final class InvoicingService
         $profile  = $profiles->findByContact($contact)
             ?? ($opening !== null && $opening->getContact()?->getId() === $contact->getId() ? $opening : null);
         if ($profile === null) {
-            throw new InvoiceRefusedException(InvoiceRefusedException::NO_DEBTOR_PROFILE, 'Kontakt «' . $contact->displayName() . '» ist kein Debitor — im Kontakt unter «Rollen» als Debitor festlegen.');
+            throw new InvoiceRefusedException(InvoiceRefusedException::NO_DEBTOR_PROFILE, DebtorProfileService::notDebtor($contact));
         }
         if ($isNew && !$profile->isActive()) {
             throw new InvoiceRefusedException(InvoiceRefusedException::DEBTOR_INACTIVE, 'Debitor «' . $contact->displayName() . '» ist inaktiv — kein neues Dokument.');
