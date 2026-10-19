@@ -28,16 +28,19 @@ final class OrderListing
 
     public const LIMIT = 50;
 
-    public const VIEW_OFFER     = 'new';
+    public const VIEW_NEW       = 'new';
     public const VIEW_ACTIVE    = 'confirmed';
     public const VIEW_DELIVERED = 'delivered';
     public const VIEW_CLOSED    = 'closed';
     public const VIEW_CANCELLED = 'cancelled';
     public const VIEW_ALL       = 'all';
 
-    /** View → tab label, along the ladder (the first is the default). */
+    /** The tab the list opens with — not the first one: the order of `VIEWS` is the ladder. */
+    public const DEFAULT_VIEW = self::VIEW_ACTIVE;
+
+    /** View → tab label, along the ladder; the default is `DEFAULT_VIEW`. */
     public const VIEWS = [
-        self::VIEW_OFFER     => 'Eröffnet',   // owner 2026-10-16 (was «Offerten»)
+        self::VIEW_NEW       => 'Eröffnet',   // owner 2026-10-16 (was «Offerten»)
         self::VIEW_ACTIVE    => 'Termin',     // owner 2026-10-16 (was «Termin»)
         self::VIEW_DELIVERED => 'Geliefert',
         self::VIEW_CLOSED    => 'Abgeschlossen',
@@ -45,7 +48,7 @@ final class OrderListing
         self::VIEW_ALL       => 'Alle',
     ];
 
-    public static function definition(string $currency, string $view = self::VIEW_OFFER): ListDefinition
+    public static function definition(string $currency, string $view = self::DEFAULT_VIEW): ListDefinition
     {
         $columns = self::isSelectable($view) ? [Column::slot('Auswahl')] : [];
         $columns = array_merge($columns, [
@@ -63,7 +66,10 @@ final class OrderListing
             $columns[] = Column::plain('Zahlung', '9rem');
         }
 
-        return new ListDefinition(self::ID, $columns, 'number', self::LIMIT, ['view' => array_keys(self::VIEWS)]);
+        // ListDefinition takes the FIRST allowed value as the default — DEFAULT_VIEW goes in front.
+        $views = array_values(array_unique([self::DEFAULT_VIEW, ...array_keys(self::VIEWS)]));
+
+        return new ListDefinition(self::ID, $columns, 'number', self::LIMIT, ['view' => $views]);
     }
 
     /** Whether the rows of $view carry the booking print's selection — the bookable phases. */

@@ -2,6 +2,7 @@
 namespace Z77\Module\Debtor\Ui;
 
 use Z77\Core\DI,
+    Z77\Core\Services\TemplateRenderer,
     Z77\Core\Http\WindowOrigin,
     Z77\Core\Http\Response\BytesResponse,
     Z77\Core\Http\Response\FetchResponse,
@@ -739,7 +740,7 @@ trait InvoiceControllerTrait
     }
 
     /**
-     * «+ Kontakt» in the invoice editor (owner 2026-10-10, DEBTOR-CONTACT-001): a NEW contact
+     * «+ Neuer Kontakt» of the customer picker (until 2026-10-19 also «+ Kontakt» beside the editor's customer; owner 2026-10-10, DEBTOR-CONTACT-001): a NEW contact
      * with its first address, without leaving the half-filled draft. The editor's link opens
      * it as a window of its own (`data-window-open`; origin = the editor's window). Fields and
      * save are module-contact's building block ({@see ContactForm}: the partials
@@ -789,9 +790,31 @@ trait InvoiceControllerTrait
         return $this->invoiceListBase();
     }
 
-    /** The invoice editor needs nothing beyond the customer field after a choice. */
+    /** The head's ids: `#invoice-customer-title`, `#invoice-terms`, `#invoice-debtor-edit` (the shared head, {@see CustomerPickerTrait}). */
+    protected function customerHeadPrefix(): string
+    {
+        return 'invoice';
+    }
+
+    /** After a choice the card «Rechnung» shows THAT customer's invoice address (owner 2026-10-19). */
     protected function customerChosenCommands(FetchResponse $response, Contact $contact, string $origin): void
     {
+        $response->addCommand('replace-html', ['target' => '#invoice-bill-address', 'html' => $this->invoiceBillAddress((string) $contact->getId()), 'origin' => $origin]);
+    }
+
+    /**
+     * The card «Rechnung» (`_billAddress`): the address the save takes — `InvoicingService::
+     * invoiceAddressOf()`, the contact's invoice / main / first address AS IT IS NOW (a draft has
+     * no address choice of its own; every save takes it again). Read-only.
+     */
+    private function invoiceBillAddress(string $contactId): string
+    {
+        $contact = ctype_digit($contactId) && (int) $contactId > 0 ? $this->em()->getRepository(Contact::class)->find((int) $contactId) : null;
+
+        return (new TemplateRenderer(self::INVOICE_NS))->partial('Backend/InvoiceController/_billAddress', [
+            'chosen' => $contact !== null,
+            'lines'  => $contact !== null ? ($this->invoicingService()->invoiceAddressOf($contact)?->lines() ?? []) : [],
+        ]);
     }
 
     /**
@@ -803,25 +826,31 @@ trait InvoiceControllerTrait
      */
     private function invoiceFormPage(InvoiceForm $form, ?Invoice $document, ?int $version = null): HtmlResponse
     {
-        $terms   = array_values(array_filter($this->em()->getRepository(PaymentTerms::class)->allInOrder(), fn(PaymentTerms $t) => $t->isActive() || $t->getCode() === $form->header('terms')));
         $targets = array_values(array_filter($this->em()->getRepository(PaymentTarget::class)->allInOrder(), fn(PaymentTarget $t) => $t->isActive() || $t->getCode() === $form->header('target')));
         $this->help->attach('Backend/InvoiceController/form.help', self::INVOICE_NS, ['form' => $form, 'document' => $document], 'Hilfe: ' . ($form->kind === InvoiceKind::CreditNote ? 'Gutschrift' : 'Rechnung'));
 
         return $this->invoicePage('form', [
             'window'      => $this->invoiceIsFetch(),
-            // Wide enough for the nine-column line row — the window must not scroll sideways.
-            'windowWidth' => '72rem',
+            // The order window's width (owner 2026-10-19: the editor takes its head) — wide enough for
+            // the nine-column line row, the window must not scroll sideways.
+            'windowWidth' => '78rem',
             'origin'      => WindowOrigin::of(DI::getRequest()),
             'form'       => $form,
             'document'   => $document,
             'version'    => $version,
             'entityCsrf' => $document === null ? '' : DI::getCsrfService()->generateEntityToken('invoice', (int) $document->getId()),
+            // The hash of the state the window was LOADED with, handed back through a POST that
+            // re-renders without saving («Weitere Zeilen», errors) — core.js «dirty forms».
+            'dirtyBase'  => preg_match('/^[0-9a-f]{8}$/', (string) (DI::getRequest()->getPostParameters()['_dirty_base'] ?? '')) === 1 ? (string) DI::getRequest()->getPostParameters()['_dirty_base'] : '',
             // The customer of a NEW invoice: the field with «Kunde wählen …» (CustomerPicker, owner 2026-10-15) — a contact
-            // without a profile is made a debtor first («Debitor anlegen», owner 2026-10-18).
-            'customerField' => $document === null && $form->creditNoteOf === null ? CustomerPicker::fieldHtml($this->em(), $form->header('contact'), $this->invoiceListBase() . '/customer-pick', $this->invoiceListBase() . '/add', $form->error('contact') !== '') : '',
-            'terms'      => $terms,
-            // What «wie beim Debitor» means for a contact «(neu als Debitor)» (owner 2026-10-12).
-            'defaultTerms' => $this->em()->getRepository(PaymentTerms::class)->defaultForNewDebtor(),
+            // without a profile is made a debtor first («Debitor anlegen», owner 2026-10-18). The number is in the title.
+            'customerField' => $document === null && $form->creditNoteOf === null ? CustomerPicker::fieldHtml($this->em(), $form->header('contact'), $this->invoiceListBase() . '/customer-pick', $this->invoiceListBase() . '/add', $form->error('contact') !== '', showNumber: false) : '',
+            // The head shared with the order window (CustomerPickerTrait, owner 2026-10-19): the block title
+            // «Kunde 20417» + phone, the terms select («wie beim Debitor — …»), «Debitor anpassen».
+            'customerTitle' => $this->customerTitleHtml($form->header('contact')),
+            'termsSelect'   => $this->customerTermsHtml($form->header('terms'), $form->header('contact'), $form->error('terms') !== ''),
+            'debtorEdit'    => $this->customerDebtorEditHtml($form->header('contact')),
+            'billAddress'   => $this->invoiceBillAddress($form->header('contact')),
             'targets'    => $targets,
             'taxCodes'   => $taxCodes = $this->em()->getRepository(TaxCode::class)->selectable($form->keptCodes()),
             // Each code's RATE on the service date (else the invoice date) as `data-rate` and its history for

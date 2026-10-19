@@ -189,7 +189,7 @@ trait OrderControllerTrait
         // The view decides the columns (the selection checkbox, the payment column) — read once ahead of the definition.
         $view = (string) $request->getGetParameter('view');
         if (!isset(OrderListing::VIEWS[$view])) {
-            $view = array_key_first(OrderListing::VIEWS);
+            $view = OrderListing::DEFAULT_VIEW;
         }
         $definition = OrderListing::definition(DebtorCurrency::base(), $view);
         $state      = $definition->readRequest($request);
@@ -402,12 +402,13 @@ trait OrderControllerTrait
             // The customer: debtor's field with «Kunde wählen …» — the searching picker (owner 2026-10-15).
             'customerField'   => CustomerPicker::fieldHtml($this->em(), $form->header('contact'), $this->orderListBase() . '/customer-pick',
                 $this->orderListBase() . ($order === null ? '/add' : '/edit?id=' . $order->getId()), $form->error('contact') !== '',
-                showNumber: $this->customerFieldShowsNumber()),
-            // Block (1)'s title «Kunde 20417» + phone — the number sits here, not under the name.
-            'customerTitle'   => $this->orderCustomerTitle($form->header('contact')),
+                showNumber: false),
+            // Block (1)'s title «Kunde 20417» + phone — the number sits here, not under the name
+            // (debtor's shared head, CustomerPickerTrait, since 2026-10-19 also the invoice editor's).
+            'customerTitle'   => $this->customerTitleHtml($form->header('contact')),
             // Block (3): «Zahlungskonditionen» = debtor's PaymentTerms (owner 2026-10-18), '' = the customer's.
-            'termsSelect'     => $this->orderTermsSelect($form->header('terms'), $form->header('contact'), $form->error('terms') !== ''),
-            'debtorEdit'      => $this->orderDebtorEdit($form->header('contact')),
+            'termsSelect'     => $this->customerTermsHtml($form->header('terms'), $form->header('contact'), $form->error('terms') !== ''),
+            'debtorEdit'      => $this->customerDebtorEditHtml($form->header('contact')),
             'ships'          => $this->orderShipLabels($form->header('contact'), $order) + $this->orderCustomLabel($form, 'ship'),
             'bills'           => $this->orderBillLabels($form->header('contact'), $order) + $this->orderCustomLabel($form, 'bill'),
             // Badge «angepasst»: the stored snapshot is none of the customer's addresses as they read now.
@@ -594,34 +595,20 @@ trait OrderControllerTrait
             ]);
             $response->addCommand('replace-html', ['target' => '#order-' . $field . '-cases', 'html' => $cases, 'origin' => $origin]);
         }
-        // The payment terms start at «wie beim Kunden» — the option names THIS customer's terms (2026-10-18).
-        $response->addCommand('replace-html', ['target' => '[data-fetch-region="order-terms"]', 'html' => $this->orderTermsSelect('', (string) $contact->getId(), false), 'origin' => $origin]);
-        $response->addCommand('replace-html', ['target' => '#order-debtor-edit', 'html' => $this->orderDebtorEdit((string) $contact->getId()), 'origin' => $origin]);
-        // The block title carries the new customer's number and phone.
-        $response->addCommand('replace-html', ['target' => '#order-customer-title', 'html' => $this->orderCustomerTitle((string) $contact->getId()), 'origin' => $origin]);
+        // The block title, the payment terms and «Debitor anpassen» are replaced by debtor's
+        // shared answer (`customerChosenAnswer()`, the head's prefix `order`).
     }
 
-    /** The order window shows the customer number in block (1)'s title, not under the name. */
-    protected function customerFieldShowsNumber(): bool
+    /** The head's ids: `#order-customer-title`, `#order-terms`, `#order-debtor-edit` (debtor's shared head). */
+    protected function customerHeadPrefix(): string
     {
-        return false;
+        return 'order';
     }
 
-    /**
-     * Block (1)'s title (`_customerTitle`): «Kunde», the debtor profile's customer number and the
-     * contact's phone — just «Kunde» without a customer.
-     */
-    private function orderCustomerTitle(string $contactId): string
+    /** The order's terms select says «wie beim Kunden — …» (owner 2026-10-18). */
+    protected function customerTermsInherit(): string
     {
-        $contact = ctype_digit($contactId) && (int) $contactId > 0 ? $this->em()->getRepository(Contact::class)->find((int) $contactId) : null;
-        /** @var DebtorProfileRepository $profiles */
-        $profiles = $this->em()->getRepository(DebtorProfile::class);
-        $profile  = $contact !== null ? $profiles->findByContact($contact) : null;
-
-        return (new TemplateRenderer(self::ORDER_NS))->partial('Backend/OrderController/_customerTitle', [
-            'number' => $profile !== null ? (string) $profile->getCustomerNumber() : '',
-            'phone'  => $contact !== null ? (string) $contact->getPhone() : '',
-        ]);
+        return 'wie beim Kunden';
     }
 
     // ── «Status ändern …» ────────────────────────────────────────────────
@@ -1222,61 +1209,6 @@ trait OrderControllerTrait
         }
 
         return $repo->defaultForNewDebtor()?->getCode() ?? '';
-    }
-
-    /**
-     * The «Zahlungskonditionen» select (`_terms`): the active terms plus the one the form holds
-     * (kept valid, ADR-043 decision 19). Its first option «wie beim Kunden» names what it means for
-     * $contactId — the debtor profile's terms, or for a contact without a profile the terms a new
-     * debtor gets (the invoice editor's «neu als Debitor»).
-     */
-    private function orderTermsSelect(string $selected, string $contactId, bool $invalid): string
-    {
-        /** @var PaymentTermsRepository $repo */
-        $repo     = $this->em()->getRepository(PaymentTerms::class);
-        $profile  = $this->orderDebtorProfile($contactId);
-        $customer = '';
-        if ($profile !== null) {
-            $customer = $repo->findByCode($profile->getPaymentTermsCode())?->getLabel() ?? '';
-        } elseif (ctype_digit($contactId) && (int) $contactId > 0 && ($default = $repo->defaultForNewDebtor()) !== null) {
-            $customer = 'neu als Debitor: ' . $default->getLabel();
-        }
-
-        return (new TemplateRenderer(self::ORDER_NS))->partial('Backend/OrderController/_terms', [
-            'terms'    => array_values(array_filter($repo->allInOrder(), static fn(PaymentTerms $t) => $t->isActive() || $t->getCode() === $selected)),
-            'selected' => $selected,
-            'customer' => $customer,
-            'invalid'  => $invalid,
-            'src'      => $this->orderListBase() . '/terms?' . http_build_query(['contact' => $contactId]),
-        ]);
-    }
-
-    /**
-     * `terms` — block (3)'s «Zahlungskonditionen» region anew (reads only): core.js reloads it when
-     * «Debitor anpassen» closes (`data-popup-refresh`), with the current choice as `terms`, so the
-     * option «wie beim Kunden — …» names the terms the debtor dialog just saved (owner 2026-10-18).
-     */
-    protected function termsAction(): HtmlResponse
-    {
-        $request = DI::getRequest();
-
-        return $this->orderPage('terms', [
-            'termsSelect' => $this->orderTermsSelect(trim((string) $request->getGetParameter('terms')), trim((string) $request->getGetParameter('contact')), false),
-        ]);
-    }
-
-    /**
-     * «Debitor anpassen» (`_debtorEdit`): debtor's profile dialog of the customer — empty without a
-     * customer or for a contact without a debtor profile (debtor opens one only in the contact
-     * editor or with the first invoice / booking print).
-     */
-    private function orderDebtorEdit(string $contactId): string
-    {
-        $profile = $this->orderDebtorProfile($contactId);
-
-        return (new TemplateRenderer(self::ORDER_NS))->partial('Backend/OrderController/_debtorEdit', [
-            'url' => $profile !== null ? DebtorProfileLayout::BASE . '/edit?id=' . $profile->getId() : '',
-        ]);
     }
 
     /** The debtor profile of a contact id as the form holds it (a string), null = none / no contact. */

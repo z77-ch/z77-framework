@@ -1167,7 +1167,7 @@ check('I5m the three master-data fragments carry an add action and an active swi
 
 $templateDir = $package . '/res/view/templates/Backend';
 $templates   = glob($templateDir . '/*/*.tpl.php');
-check('I6 every master-data screen has its list template, its edit template and its header slot; the document screens (P3 part 3) add six, the payment form and the delete confirmation (P4 part 1) two, the bank import list and detail (P4 part 2) two, the dunning list (P4 part 3) one, the open-item list and its toolbar (2026-10-07) two, the action cells of the invoice list and the bank import (ADR-033 rev. 2026-10-08) two — the «+ Debitor» cell of the debtor master data removed 2026-10-12; the row partials of the in-place answers (ADR-047 addendum 2026-10-10: bank transaction + unbooked bar, payment terms, payment target, debtor contact) five; the booking print\'s refusal page (2026-10-10) one; the editor\'s party picker and its «+ Kontakt» window (DEBTOR-CONTACT-001, 2026-10-10) two; the customer picker field and window (2026-10-15) two; its «Debitor anlegen» dialog (2026-10-18) one', count($templates) === 38);
+check('I6 every master-data screen has its list template, its edit template and its header slot; the document screens (P3 part 3) add six, the payment form and the delete confirmation (P4 part 1) two, the bank import list and detail (P4 part 2) two, the dunning list (P4 part 3) one, the open-item list and its toolbar (2026-10-07) two, the action cells of the invoice list and the bank import (ADR-033 rev. 2026-10-08) two — the «+ Debitor» cell of the debtor master data removed 2026-10-12; the row partials of the in-place answers (ADR-047 addendum 2026-10-10: bank transaction + unbooked bar, payment terms, payment target, debtor contact) five; the booking print\'s refusal page (2026-10-10) one; the editor\'s party picker and its «+ Kontakt» window (DEBTOR-CONTACT-001, 2026-10-10) two; the customer picker field and window (2026-10-15) two; its «Debitor anlegen» dialog (2026-10-18) one; the shared editor head (2026-10-19: title, terms + its reload answer, «Debitor anpassen», the fixed party) five and the card «Rechnung» of the invoice one', count($templates) === 44);
 check('I6b the master-data rows are ONE partial each, rendered by the list and answered in place (replaceRow / insertRow, DEBTOR-WIN-003) — no `reload` left for a one-row save or switch of terms, targets or debtors',
     array_reduce([['PaymentTerms', 'paymentTerms'], ['PaymentTarget', 'paymentTarget'], ['DebtorProfile', 'debtorContact']], fn($ok, $p) => $ok
         && str_contains(file_get_contents($templateDir . '/' . $p[0] . 'Controller/listAction.tpl.php'), "partial('Backend/" . $p[0] . "Controller/_row'")
@@ -3456,8 +3456,8 @@ check('U9 the master data moved: «Debitoren» under Aufträge is the open-item 
 
 echo "P3C. Source guards for part 3\n";
 $p3Templates = glob($package . '/res/view/templates/Backend/InvoiceController/*.tpl.php');
-check('P3C48 the document screens ship no JavaScript and no inline handler (Rule 7) — twelve templates since the review rebuild (2026-10-13); no module-financial class in debtor but the adapter (the journal is linked by URL)',
-    count($p3Templates) === 12 && array_reduce($p3Templates, fn($ok, $f) => $ok && $noScript(file_get_contents($f)), true)
+check('P3C48 the document screens ship no JavaScript and no inline handler (Rule 7) — thirteen templates since the editor head (2026-10-19, `_billAddress`); no module-financial class in debtor but the adapter (the journal is linked by URL)',
+    count($p3Templates) === 13 && array_reduce($p3Templates, fn($ok, $f) => $ok && $noScript(file_get_contents($f)), true)
     && !str_contains(file_get_contents($package . '/src/Ui/InvoiceControllerTrait.php'), 'Module\\Financial'));
 check('P3C49 the module brings no PDF library of its own (owner 2026-10-06: ONE writer, vendored in the kernel behind the facade): no composer requirement, no \\FPDF / PdfWriter use in its sources or templates — the facade only',
     !preg_match('/tcpdf|fpdf|dompdf|mpdf|swiss-qr-bill/i', (string) file_get_contents($package . '/composer.json'))
@@ -3681,8 +3681,8 @@ check('V7 the editor\'s customer is debtor\'s CustomerPicker (owner 2026-10-15):
     && str_contains(file_get_contents($vTpl . '/form.tpl.php'), 'raw($customerField)') && !is_file($vTpl . '/_debtorSelect.tpl.php')
     && str_contains(file_get_contents($vPickTpl . '/_field.tpl.php'), 'data-window-open=') && str_contains(file_get_contents($vPickTpl . '/pick.tpl.php'), 'partials/listHead')
     && str_contains($vPickTrait, 'searchCustomers(') && str_contains($vPickTrait, 'CustomerPicker::isChoosable('));
-check('V8 «+ Kontakt» is a window over the editor (`data-window-open` → new-contact) built from module-contact\'s partials and ContactForm (no contact rule in debtor); its save answers replace-html on #invoice-contact scoped to the origin + close-modal',
-    str_contains(file_get_contents($vTpl . '/form.tpl.php'), 'data-window-open="<?= e($actionBase . \'/new-contact\') ?>"')
+check('V8 a new contact is captured in the picker window («+ Neuer Kontakt» → new-contact; since 2026-10-19 no «+ Kontakt» in the editor, the order window\'s head) built from module-contact\'s partials and ContactForm (no contact rule in debtor); its save answers replace-html on #invoice-contact scoped to the origin + close-modal',
+    !str_contains(file_get_contents($vTpl . '/form.tpl.php'), '/new-contact') && str_contains($vPickTrait, "'newContactUrl' => \$this->customerPickBase() . '/new-contact'")
     && str_contains(file_get_contents($vTpl . '/newContact.tpl.php'), "Backend/ContactController/_contactFields")
     && str_contains(file_get_contents($vTpl . '/newContact.tpl.php'), "Backend/ContactController/_addressFields")
     && str_contains(file_get_contents($vTpl . '/newContact.tpl.php'), 'name="_origin"')
@@ -3725,8 +3725,8 @@ check('V11 a prices_mode that names no mode is refused on `price_mode`; a row wh
     && substr_count($vTrait, '$form->toDraft(VatRates::from($this->em()))') === 3);
 $vFormTpl = file_get_contents($vTpl . '/form.tpl.php');
 $vTaxTpl  = file_get_contents(dirname($package) . '/module-vat/res/view/templates/partials/taxCodeSelect.tpl.php');
-check('V12 the editor wires core.js «price mode» like the order window: the form is the scope, «Preise» its select, the hidden `prices_mode` its shown mode, each row (`data-row`) its price and its MWST select with the rate per option (`data-rate` from VatRates::shownRates, module-vat\'s taxCodeSelect `rates`); «dated rates» follows the service date (else the invoice date) and keeps the CODE labels',
-    str_contains($vFormTpl, 'id="invoice-form" autocomplete="off" data-price-mode>') && str_contains($vFormTpl, 'name="price_mode" data-price-mode-select')
+check('V12 the editor wires core.js «price mode» like the order window: the positions block is the scope, «Preise» its select, the hidden `prices_mode` its shown mode, each row (`data-row`) its price and its MWST select with the rate per option (`data-rate` from VatRates::shownRates, module-vat\'s taxCodeSelect `rates`); «dated rates» follows the service date (else the invoice date) and keeps the CODE labels',
+    str_contains($vFormTpl, '<div class="be-form__block" data-price-mode>') && str_contains($vFormTpl, 'name="price_mode" data-price-mode-select')
     && str_contains($vFormTpl, 'name="prices_mode" value="<?= e($form->header(\'prices_mode\')) ?>" data-price-mode-shown')
     && str_contains($vFormTpl, '<div class="be-list__item" data-row>') && str_contains($vFormTpl, 'data-price-mode-price')
     && str_contains($vFormTpl, "'data-price-mode-rate' => true, 'data-rate-schedule-ref' => 'invoice-vat', 'data-rate-keep-label' => true")
@@ -3735,6 +3735,22 @@ check('V12 the editor wires core.js «price mode» like the order window: the fo
     && str_contains($vTrait, "->shownRates(\$taxCodes, \$this->invoiceRateDate(\$form))") && str_contains($vTrait, '->schedule($taxCodes)')
     && $vRates->shownRates([$wireDi()->getRepository(\Z77\Module\Vat\Entities\TaxCode::class)->findByCode('UN')], day('2026-12-07')) === ['UN' => '8.1']
     && ($vRates->schedule([$wireDi()->getRepository(\Z77\Module\Vat\Entities\TaxCode::class)->findByCode('UN')])['UN'][0][0] ?? '') < '2024-01-01');
+$vOrderTpl   = file_get_contents(dirname($package) . '/module-order/res/view/templates/Backend/OrderController/edit.tpl.php');
+$vOrderTrait = file_get_contents(dirname($package) . '/module-order/src/Ui/OrderControllerTrait.php');
+check('V14 the editor takes the order window\'s HEAD (owner 2026-10-19): cards on the ground (`be-form--blocks`, three head blocks, the positions block with «Preise» in its head), core.js «dirty forms» (`data-dirty`, `_dirty_base` echoed, `data-dirty-submit`), a quiet cancel; the head parts are debtor\'s SHARED partials (`CustomerPicker/_customerTitle`, `_terms`, `_debtorEdit`, `_fixed`) rendered by CustomerPickerTrait for both hosts and replaced by the shared choice answer — the order\'s own copies are gone; the terms option names no «neu als Debitor» any more; the card «Rechnung» shows invoiceAddressOf() read-only',
+    str_contains($vFormTpl, 'class="be-form--blocks" id="invoice-form"') && substr_count($vFormTpl, '<div class="be-form__block">') === 3
+    && str_contains($vFormTpl, 'data-dirty="<?= $isNew ? \'dirty\' : \'clean\' ?>"') && str_contains($vFormTpl, 'name="_dirty_base"')
+    && str_contains($vFormTpl, "'data-dirty-submit' => ''") && str_contains($vFormTpl, "'cancelKind'  => 'quiet'")
+    && str_contains($vFormTpl, 'raw($customerTitle)') && str_contains($vFormTpl, 'raw($termsSelect)') && str_contains($vFormTpl, 'raw($debtorEdit)') && str_contains($vFormTpl, 'raw($billAddress)')
+    && str_contains($vFormTpl, "Backend/CustomerPicker/_fixed") && str_contains($vOrderTpl, "Backend/CustomerPicker/_fixed")
+    && str_contains($vTrait, "'dirtyBase'") && str_contains($vTrait, "'windowWidth' => '78rem'") && str_contains($vTrait, '->invoiceAddressOf($contact)')
+    && str_contains($vPickTrait, "'Backend/CustomerPicker/_customerTitle'") && str_contains($vPickTrait, "'Backend/CustomerPicker/_terms'") && str_contains($vPickTrait, "'Backend/CustomerPicker/_debtorEdit'")
+    && str_contains($vPickTrait, "'target' => '#' . \$prefix . '-customer-title'") && str_contains($vPickTrait, 'protected function customerTermsAction(')
+    && str_contains($vTrait, "return 'invoice';") && str_contains($vOrderTrait, "return 'order';")
+    && str_contains($vOrderTrait, '$this->customerTermsHtml(') && !str_contains($vOrderTrait, 'function orderTermsSelect(') && !str_contains($vOrderTrait, 'function orderCustomerTitle(')
+    && !is_file(dirname($package) . '/module-order/res/view/templates/Backend/OrderController/_terms.tpl.php')
+    && !is_file(dirname($package) . '/module-order/res/view/templates/Backend/OrderController/_customerTitle.tpl.php')
+    && !str_contains($vPickTrait, "'neu als Debitor: '") && !str_contains($vFormTpl, 'neu als Debitor') && !str_contains($vOrderTrait, "'neu als Debitor: '"));
 $vOrderSrc = file_get_contents(dirname($package) . '/module-order/src/Services/OrderService.php');
 $vFormSrc  = file_get_contents($package . '/src/Ui/InvoiceForm.php');
 check('V13 ONE conversion rule: VatCalculator::convertPrice() (20.00 net → 21.62 gross at 810, back → 20.00; the same mode unchanged; a float rate refused) — used by OrderService and InvoiceForm, neither multiplies by the rate itself',

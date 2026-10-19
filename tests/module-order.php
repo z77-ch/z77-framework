@@ -324,11 +324,13 @@ check('V3 «Status» searches the labels (case-insensitive) within the tab — �
     OrderListing::codesOf('all', $seed, 'FAKT') === ['to-invoice'] && OrderListing::codesOf('delivered', $seed, 'geliefert') === ['delivered']
     && OrderListing::codesOf('closed', $seed, 'termin') === []);
 $cols = static fn(string $view): array => array_map(static fn($c) => $c->label !== '' ? $c->label : '[' . $c->ariaLabel . ']', OrderListing::definition('CHF', $view)->columns());
-check('V5 the columns: the selection checkbox in the bookable tabs («Termin», «Geliefert»), «Zahlung» only in «Abgeschlossen», «Status» searchable; the default tab is «Eröffnet»',
+check('V5 the columns: the selection checkbox in the bookable tabs («Termin», «Geliefert»), «Zahlung» only in «Abgeschlossen», «Status» searchable; the default tab is «Termin», the second — «Eröffnet» stays first',
     $cols('confirmed')[0] === '[Auswahl]' && $cols('delivered')[0] === '[Auswahl]' && !in_array('[Auswahl]', $cols('new'), true) && !in_array('[Auswahl]', $cols('closed'), true)
     && in_array('Zahlung', $cols('closed'), true) && !in_array('Zahlung', $cols('all'), true)
     && OrderListing::definition('CHF')->column('f_status')->isSearchable()
-    && OrderListing::definition('CHF')->extraDefault('view') === 'new' && array_key_first(OrderListing::VIEWS) === 'new');
+    && OrderListing::definition('CHF')->extraDefault('view') === 'confirmed' && OrderListing::definition('CHF')->read([])->extra('view') === 'confirmed'
+    && OrderListing::definition('CHF')->read(['view' => 'nonsense'])->extra('view') === 'confirmed'
+    && array_keys(OrderListing::VIEWS) === ['new', 'confirmed', 'delivered', 'closed', 'cancelled', 'all']);
 $svc = OrderListing::search(OrderListing::definition('CHF', 'confirmed')->read(['view' => 'confirmed', 'f_service' => '11.2026', 'sort' => 'service']), $seed);
 check('V6 «Leistung» (= «Leistung von», the delivery date of goods, owner 2026-10-16): searchable and sortable; a month searches the order day or period overlapping it, in the tab\'s codes',
     OrderListing::definition('CHF')->column('f_service')->isSearchable() && OrderListing::definition('CHF')->column('f_service')->sort === 'service'

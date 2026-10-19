@@ -2,6 +2,7 @@
 namespace Z77\Module\Debtor\Ui;
 
 use Z77\Core\DI,
+    Z77\Core\Services\TemplateRenderer,
     Z77\Core\Http\Response\FetchResponse,
     Z77\Core\Http\Response\HtmlResponse,
     Z77\Core\Http\Response\RedirectResponse,
@@ -35,10 +36,18 @@ use Z77\Core\DI,
  *            2026-10-18): the window shows «Debitor anlegen» ({@see customerDebtorAction()},
  *            price mode and payment terms) and only the created debtor becomes the customer.
  *
- * The using trait provides `customerPickBase()` (its URL root) and
+ * THE HEAD of the document editor (shared since 2026-10-19 — the order window and the invoice
+ * editor take the same «Kunde» block and «Zahlungskonditionen»): the block title «Kunde 20417» +
+ * phone ({@see customerTitleHtml()}, `_customerTitle`), «Debitor anpassen»
+ * ({@see customerDebtorEditHtml()}, `_debtorEdit`) and the terms select
+ * ({@see customerTermsHtml()}, `_terms`; reloaded by {@see customerTermsAction()}). Their ids carry
+ * the host's {@see customerHeadPrefix()}; a choice replaces all three in the editor window. The
+ * field shows no «Kundennr.» line (`fieldHtml(showNumber: false)`) — the number is in the title.
+ *
+ * The using trait provides `customerPickBase()` (its URL root), `customerHeadPrefix()` and
  * `customerChosenCommands()` (what else the editor needs after a choice — the order's
- * delivery addresses), plus the host's `html()`, `fetch()`, `fetchError()`, `redirect()`,
- * `em()`, `$layoutManager`, `$messageService`.
+ * addresses, the invoice's address card), plus the host's `html()`, `fetch()`, `fetchError()`,
+ * `redirect()`, `em()`, `$layoutManager`, `$messageService`.
  */
 trait CustomerPickerTrait
 {
@@ -48,14 +57,13 @@ trait CustomerPickerTrait
     /** What the editor needs beyond the field after a choice (the origin window's further parts). */
     abstract protected function customerChosenCommands(FetchResponse $response, Contact $contact, string $origin): void;
 
-    /**
-     * Whether the field shows «Kundennr. …» under the name — true by default (the invoice editor);
-     * a host that shows the number elsewhere returns false (the order window: in its block title).
-     * Must match the host's own `CustomerPicker::fieldHtml()` call, so a choice renders the same field.
-     */
-    protected function customerFieldShowsNumber(): bool
+    /** The id prefix of the editor's head parts ('order', 'invoice') — `#{prefix}-customer-title`, `#{prefix}-terms` … */
+    abstract protected function customerHeadPrefix(): string;
+
+    /** The first option of the terms select — '' = the customer's terms (the order says «wie beim Kunden»). */
+    protected function customerTermsInherit(): string
     {
-        return true;
+        return 'wie beim Debitor';
     }
 
     #[Csrf]
@@ -212,10 +220,16 @@ trait CustomerPickerTrait
             ->setData(['id' => $contact->getId()])
             ->addCommand('replace-html', [
                 'target' => '#invoice-contact',
-                'html'   => CustomerPicker::fieldHtml($this->em(), (string) $contact->getId(), $this->customerPickBase() . '/customer-pick', $back,
-                    showNumber: $this->customerFieldShowsNumber()),
+                'html'   => CustomerPicker::fieldHtml($this->em(), (string) $contact->getId(), $this->customerPickBase() . '/customer-pick', $back, showNumber: false),
                 'origin' => $origin,
             ]);
+        // The head: the block title carries the new customer's number and phone; the terms start at
+        // «wie beim …» again and name THIS customer's terms; «Debitor anpassen» opens THIS profile.
+        $id     = (string) $contact->getId();
+        $prefix = $this->customerHeadPrefix();
+        $response->addCommand('replace-html', ['target' => '#' . $prefix . '-customer-title', 'html' => $this->customerTitleHtml($id), 'origin' => $origin]);
+        $response->addCommand('replace-html', ['target' => '[data-fetch-region="' . $prefix . '-terms"]', 'html' => $this->customerTermsHtml('', $id, false), 'origin' => $origin]);
+        $response->addCommand('replace-html', ['target' => '#' . $prefix . '-debtor-edit', 'html' => $this->customerDebtorEditHtml($id), 'origin' => $origin]);
         $this->customerChosenCommands($response, $contact, $origin);
         // The document's «Preise» take the debtor's price mode (owner 2026-10-18) — the editor's
         // field is named `price_mode`; `set-value` fires `change`, so whatever follows the field
@@ -226,6 +240,84 @@ trait CustomerPickerTrait
         }
 
         return $response->addCommand('close-modal');
+    }
+
+    /**
+     * The «Kunde» block's title (`_customerTitle`): «Kunde», the debtor profile's customer number
+     * and the contact's phone — just «Kunde» without a customer. $contactId as the form holds it.
+     */
+    protected function customerTitleHtml(string $contactId): string
+    {
+        $contact = $this->customerContact($contactId);
+        $profile = $contact !== null ? $this->customerProfiles()->findByContact($contact) : null;
+
+        return (new TemplateRenderer(CustomerPicker::NS))->partial('Backend/CustomerPicker/_customerTitle', [
+            'prefix' => $this->customerHeadPrefix(),
+            'number' => $profile !== null ? (string) $profile->getCustomerNumber() : '',
+            'phone'  => $contact !== null ? (string) $contact->getPhone() : '',
+        ]);
+    }
+
+    /**
+     * The «Zahlungskonditionen» select (`_terms`): the active terms plus the one the document holds
+     * (kept valid, ADR-043 decision 19). Its first option names what '' means for $contactId — the
+     * debtor profile's terms; nothing without a profile (since 2026-10-19 no new document has
+     * none — the «neu als Debitor: …» case is gone).
+     */
+    protected function customerTermsHtml(string $selected, string $contactId, bool $invalid): string
+    {
+        /** @var PaymentTermsRepository $repo */
+        $repo    = $this->em()->getRepository(PaymentTerms::class);
+        $contact = $this->customerContact($contactId);
+        $profile = $contact !== null ? $this->customerProfiles()->findByContact($contact) : null;
+
+        return (new TemplateRenderer(CustomerPicker::NS))->partial('Backend/CustomerPicker/_terms', [
+            'prefix'   => $this->customerHeadPrefix(),
+            'inherit'  => $this->customerTermsInherit(),
+            'terms'    => array_values(array_filter($repo->allInOrder(), static fn(PaymentTerms $t) => $t->isActive() || $t->getCode() === $selected)),
+            'selected' => $selected,
+            'customer' => $profile !== null ? ($repo->findByCode($profile->getPaymentTermsCode())?->getLabel() ?? '') : '',
+            'invalid'  => $invalid,
+            'src'      => $this->customerPickBase() . '/customer-terms?' . http_build_query(['contact' => $contactId]),
+        ]);
+    }
+
+    /**
+     * «Debitor anpassen» (`_debtorEdit`): debtor's profile dialog of the customer — empty without a
+     * customer or for a contact without a debtor profile.
+     */
+    protected function customerDebtorEditHtml(string $contactId): string
+    {
+        $contact = $this->customerContact($contactId);
+        $profile = $contact !== null ? $this->customerProfiles()->findByContact($contact) : null;
+
+        return (new TemplateRenderer(CustomerPicker::NS))->partial('Backend/CustomerPicker/_debtorEdit', [
+            'prefix' => $this->customerHeadPrefix(),
+            'url'    => $profile !== null ? DebtorProfileLayout::BASE . '/edit?id=' . $profile->getId() : '',
+        ]);
+    }
+
+    /**
+     * `customer-terms` — the head's «Zahlungskonditionen» region anew (reads only): core.js reloads
+     * it when «Debitor anpassen» closes (`data-popup-refresh`), with the current choice as `terms`,
+     * so the first option names the terms the debtor dialog just saved (owner 2026-10-18).
+     */
+    protected function customerTermsAction(): HtmlResponse
+    {
+        $request  = DI::getRequest();
+        $response = $this->html([
+            'termsSelect' => $this->customerTermsHtml(trim((string) $request->getGetParameter('terms')), trim((string) $request->getGetParameter('contact')), false),
+        ]);
+        $this->layoutManager->removeSection('main');
+        $this->layoutManager->addPartials('terms', 'Backend/CustomerPicker', CustomerPicker::NS);
+
+        return $response;
+    }
+
+    /** The contact of an id as a form holds it (a string), null = none. */
+    private function customerContact(string $contactId): ?Contact
+    {
+        return ctype_digit($contactId) && (int) $contactId > 0 ? $this->em()->getRepository(Contact::class)->find((int) $contactId) : null;
     }
 
     /**

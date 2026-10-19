@@ -12,10 +12,10 @@
  * @var string $actionBase
  */
 $actionBase = $actionBase ?? \Z77\Module\Order\Ui\OrderLayout::BASE;
-$first      = array_key_first($views);
+$default    = \Z77\Module\Order\Ui\OrderListing::DEFAULT_VIEW;   // the plain /list — not the first tab
 ?>
 <nav class="be-viewtabs" aria-label="Aufträge">
     <?php foreach ($views as $key => $label): ?>
-    <a class="be-viewtabs__tab<?= $key === $view ? ' is-active' : '' ?>" href="<?= e($actionBase . '/list' . ($key === $first ? '' : '?view=' . $key)) ?>"<?= $key === $view ? ' aria-current="page"' : '' ?>><?= e($label) ?></a>
+    <a class="be-viewtabs__tab<?= $key === $view ? ' is-active' : '' ?>" href="<?= e($actionBase . '/list' . ($key === $default ? '' : '?view=' . $key)) ?>"<?= $key === $view ? ' aria-current="page"' : '' ?>><?= e($label) ?></a>
     <?php endforeach; ?>
 </nav>

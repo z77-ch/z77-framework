@@ -37,9 +37,9 @@
  * @var bool $needReason  the stock seam asked for a reason (consumed stock would come back)
  * @var string $entityCsrf
  * @var string $customerField  debtor's `CustomerPicker::fieldHtml()` — the customer + «Kunde wählen …» (contacts without a profile choosable, D9)
- * @var string $customerTitle  block (1)'s title `_customerTitle` — «Kunde», the customer number, the phone
- * @var string $termsSelect  block (3)'s «Zahlungskonditionen» (`_terms`, debtor's PaymentTerms; owner 2026-10-18)
- * @var string $debtorEdit  «Debitor anpassen» (`_debtorEdit`, `#order-debtor-edit`) — debtor's profile dialog of the customer
+ * @var string $customerTitle  block (1)'s title — debtor's shared `Backend/CustomerPicker/_customerTitle` (`#order-customer-title`): «Kunde», the customer number, the phone
+ * @var string $termsSelect  block (3)'s «Zahlungskonditionen» — debtor's shared `_terms` (`#order-terms`, PaymentTerms; owner 2026-10-18)
+ * @var string $debtorEdit  «Debitor anpassen» — debtor's shared `_debtorEdit` (`#order-debtor-edit`), the profile dialog of the customer
  * @var array<string, string> $ships  delivery-address choice → label
  * @var array<string, string> $bills  billing-address choice → label (2026-10-17)
  * @var bool $shipAdjusted  the stored delivery snapshot is none of the customer's addresses (badge «angepasst»)
@@ -231,7 +231,7 @@ $addressFields = fn(string $field): string => $this->partial('Backend/ContactCon
             <?php // (1) Kunde — the customer, the billing address (what the booking print takes), the delivery address. ?>
             <div class="be-form__block">
                 <div class="be-form__block-head">
-                    <?php // «Kunde 20417» + phone (`_customerTitle`, `#order-customer-title`) — «Kunde wechseln» replaces it. ?>
+                    <?php // «Kunde 20417» + phone (debtor's shared `_customerTitle`, `#order-customer-title`) — «Kunde wechseln» replaces it. ?>
                     <?= raw($customerTitle) ?>
                 </div>
                 <div data-z77-field-wrapper>
@@ -240,7 +240,7 @@ $addressFields = fn(string $field): string => $this->partial('Backend/ContactCon
                           // (CustomerPicker); no «+ Kontakt» here — the picker window offers it (owner 2026-10-17). ?>
                     <?= raw($customerField) ?>
                     <?php else: ?>
-                    <span class="be-customer"><span class="be-customer__who"><strong class="be-customer__name" id="invoice-contact-name"><?= e($order->getContact()->displayName()) ?></strong></span></span>
+                    <?= $this->partial('Backend/CustomerPicker/_fixed', ['name' => $order->getContact()->displayName()], 'Z77\Module\Debtor') ?>
                     <?php endif; ?>
                     <?= raw($fieldError($form->error('contact'))) ?>
                 </div>
