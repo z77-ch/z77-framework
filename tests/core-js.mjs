@@ -15,6 +15,8 @@
  *      swapped content is wired
  *   C  close-modal from a window that is gone closes nothing else
  *   X  windows: a 403 envelope / a 500 page never lands as text in a window
+ *   T  tree picker: index (roots, children, path), the search over all levels (every word
+ *      in the path, one in the own name, order, limit), marks; no HTML from strings
  *
  * What it cannot prove: layout, focus, real event order — those need a browser.
  * Run: node tests/core-js.mjs
@@ -255,6 +257,49 @@ console.log('X  windows: status and envelope');
     const text = messages.children.map((m) => m.children[0] && m.children[0].textContent).join(' | ');
     check('X3 a 500 page opens no window', win2 === null, win2);
     check('X4 it becomes one error message with the status', /HTTP 500/.test(text) && !/trace/.test(text), text);
+}
+
+// ── T: tree picker — the pure parts (index, search, marks) ─────────────────
+console.log('T  tree picker');
+{
+    const { ctx } = makeContext();
+    const tp = ctx._Z77.core.treePicker;
+    const nodes = [
+        { id: 1, parent: null, name: 'Handelswaren' },
+        { id: 2, parent: 1, name: 'Elektronik' },
+        { id: 3, parent: 2, name: 'Speicher' },
+        { id: 4, parent: 3, name: 'SD-Cards' },
+        { id: 5, parent: 3, name: 'USB-Sticks' },
+        { id: 6, parent: null, name: 'Wein' },
+        { id: 7, parent: 6, name: 'Weisswein' },
+        { id: 8, parent: 7, name: 'Wallis' },
+        { id: 9, parent: 6, name: 'Rotwein' },
+        { id: 10, parent: 9, name: 'Wallis' },
+        { id: 11, parent: 99, name: 'Waise' },
+        { id: 12, parent: 8, name: 'Weisswallis Spezial' },
+    ];
+    const idx = tp.index(nodes);
+    const names = (list) => list.map((n) => n.name + ':' + n.id).join(',');
+    check('T1 index: the roots in order (a node whose parent is missing counts as a root), the children per parent',
+        names(idx.kids['']) === 'Handelswaren:1,Wein:6,Waise:11' && names(idx.kids['3']) === 'SD-Cards:4,USB-Sticks:5' && !idx.kids['4'], Object.keys(idx.kids));
+    check('T2 index: the path of a node, the root first', idx.path['4'].map((n) => n.name).join(' › ') === 'Handelswaren › Elektronik › Speicher › SD-Cards');
+    const sd = tp.search(idx, 'sd');
+    check('T3 search: a part of a name on any level', names(sd.nodes) === 'SD-Cards:4' && sd.total === 1, names(sd.nodes));
+    const ww = tp.search(idx, 'weiss wallis');
+    check('T4 search, several words: every word in the path, at least one in the own name — the Wallis under Weisswein, not the one under Rotwein; a node with ALL words in its own name comes first, even when deeper',
+        names(ww.nodes) === 'Weisswallis Spezial:12,Wallis:8', names(ww.nodes));
+    const wein = tp.search(idx, 'wein');
+    check('T5 search order: shallow first, then by name', names(wein.nodes) === 'Wein:6,Rotwein:9,Weisswein:7', names(wein.nodes));
+    check('T6 search: a word only in the path is no hit by itself («elektronik» finds the group, not its children)', names(tp.search(idx, 'elektronik').nodes) === 'Elektronik:2');
+    check('T7 search: the limit cuts the list, the total stays', tp.search(idx, 'w', 2).nodes.length === 2 && tp.search(idx, 'w', 2).total > 2);
+    check('T8 search: an empty query finds nothing', tp.search(idx, '   ').total === 0);
+    check('T9 marks: the words in the name, sorted, case-insensitive, overlaps dropped',
+        JSON.stringify(tp.marks('Weisswein Wallis', 'wallis weiss')) === '[[0,5],[10,16]]'
+        && JSON.stringify(tp.marks('SD-Cards', 'sd-c sd')) === '[[0,4]]' && JSON.stringify(tp.marks('Wein', '')) === '[]',
+        [tp.marks('Weisswein Wallis', 'wallis weiss'), tp.marks('SD-Cards', 'sd-c sd')]);
+    const from = SOURCE.indexOf('/* ── tree picker'), to = SOURCE.indexOf('/* ── small triggers');
+    check('T10 the tree picker section builds no HTML from strings (no innerHTML / outerHTML / insertAdjacentHTML / eval — Rule 7)',
+        from > 0 && to > from && !/innerHTML|outerHTML|insertAdjacentHTML|eval\(/.test(SOURCE.slice(from, to)));
 }
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed');

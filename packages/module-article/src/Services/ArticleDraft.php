@@ -12,6 +12,7 @@ use Z77\Module\Vat\Entities\TaxCode;
  *
  *   - `number`         the article number of the (default) variant — free, unique (A2)
  *   - `name`           the product name
+ *   - `description`    the product description — multi-line, '' = none (owner 2026-10-18)
  *   - `unit`           «Stk», «h» — '' = none (a lump sum)
  *   - `price`          the amount as typed («1'234.50», «120») — never negative
  *   - `priceMode`      `net` | `gross` (module-vat's `PriceMode`)
@@ -36,11 +37,13 @@ final class ArticleDraft
         public readonly string $revenueAccount = '',
         public readonly bool $stockRelevant = false,
         public readonly int $productGroup = 0,
+        public readonly string $description = '',
     ) {}
 
     /**
      * From a form body (snake_case keys, as the article dialog posts them), trimmed. Unknown keys
-     * are ignored; a missing key is ''. `stock_relevant` is on when it is truthy («1», «on»).
+     * are ignored; a missing key is ''. `stock_relevant` is on when it is truthy («1», «on»). The
+     * description keeps its inner line breaks (normalized to «\n»), only its ends are trimmed.
      *
      * @param array<string, mixed> $body
      */
@@ -59,6 +62,7 @@ final class ArticleDraft
             revenueAccount: $text('revenue_account'),
             stockRelevant:  in_array(strtolower($text('stock_relevant')), ['1', 'on', 'true', 'yes'], true),
             productGroup:   ctype_digit($text('product_group')) ? (int) $text('product_group') : 0,
+            description:    str_replace(["\r\n", "\r"], "\n", $text('description')),
         );
     }
 
@@ -80,6 +84,7 @@ final class ArticleDraft
             revenueAccount: $this->revenueAccount !== '' ? $this->revenueAccount : $revenueAccount,
             stockRelevant:  $this->stockRelevant,
             productGroup:   $this->productGroup,
+            description:    $this->description,
         );
     }
 
@@ -97,6 +102,7 @@ final class ArticleDraft
             'revenue_account' => $this->revenueAccount,
             'stock_relevant'  => $this->stockRelevant,
             'product_group'   => $this->productGroup,
+            'description'     => $this->description,
         ];
     }
 }

@@ -1,9 +1,10 @@
 <?php
 /**
  * The ORDER WINDOW (plan §9.4; the owner's board on the developer canvas) — a new order or an
- * existing one, ONE form, ONE save. A plain form, no JavaScript of its own (Rule 7): a fixed
- * number of line rows, «Weitere Zeilen» submits and comes back with more, the article picker is
- * a `<datalist>`; `csrf_token` is the page-mode field (`#[Csrf]`), an existing order also
+ * existing one, ONE form, ONE save. A plain form, no JavaScript of its own (Rule 7): the
+ * positions use the shared core.js blocks «rows» (add, remove, drag & drop, indent), «autosize»
+ * and «line sums» — without the script «+ Artikel», «+ Textzeile» and × are submits that come
+ * back with the changed rows; the article picker is a `<datalist>`; `csrf_token` is the page-mode field (`#[Csrf]`), an existing order also
  * carries the entity token and the VERSION it was rendered from (the optimistic lock of
  * `OrderService::update()`).
  *
@@ -43,14 +44,15 @@
  * @var array<string, string> $bills  billing-address choice → label (2026-10-17)
  * @var bool $shipAdjusted  the stored delivery snapshot is none of the customer's addresses (badge «angepasst»)
  * @var bool $billAdjusted  the same for the billing snapshot
+ * @var string $dirtyBase  the posted `_dirty_base` echoed back (core.js «dirty forms»), '' on a GET
  * @var list<string> $billShown  the billing card's address lines for the CURRENT choice — not the
  *                               preview's, which fails while the order has no lines (2026-10-18)
  * @var list<string> $shipShown  the delivery card's, empty for «wie Rechnungsadresse»
  * @var list<\Z77\Module\Vat\Entities\TaxCode> $taxCodes
  * @var array<string, string> $taxRates  code → the rate shown («8.1 %») on the order date
- * @var list<array{number: string, label: string}> $accounts
  * @var array<string, array{name: string, unit: string, taxCode: string, account: string, offered: bool}> $articles  article number → what it brings
  * @var \Z77\Module\Debtor\Entities\Invoice|null $preview  debtor's preview of the STORED order (D11)
+ * @var string $currency  the order's currency (the totals' before there is a preview)
  * @var list<string> $previewProblems  what the booking print would refuse now
  * @var list<\Z77\Module\Order\Entities\SalesOrderStatusChange> $history
  * @var array<string, string> $triggers  trigger → German
@@ -149,14 +151,10 @@ if ($isNew) {
         $extra .= '<a class="be-btn be-btn--confirm-open" href="' . e($actionBase . '/confirm-book?' . http_build_query(['order' => [$id . ':' . $order->getVersion()]])) . '" title="Rechnung erstellen, verbuchen und als PDF drucken">Buchungsdruck …</a>';
     }
 }
-// The Konto column only while the order still carries a FREE priced line (D2, before the owner's
-// «every priced line is an article», 2026-10-16): an article line takes its account from the
-// article (D3), so the column is noise for the person entering the order.
-$hasFree = false;
-foreach ($form->rows() as $row) {
-    $hasFree = $hasFree || ($row['article'] === '' && $row['type'] !== LineType::Text->value && $row['account'] !== '');
-}
-$cols    = '3rem 7rem 3.5rem 7.5rem minmax(11rem, 3fr) 4.5rem 4.5rem 6.5rem 5rem 5.5rem 7rem' . ($hasFree ? ' 6.5rem' : '');
+// The positions' columns: handle (⋮⋮ grip + ⇥ indent) · Pos. · Art · Art.-Nr. · Text · Menge ·
+// Einheit · Preis · Rabatt % · MWST · Betrag · ×. A text row's text spans Art.-Nr. … Betrag
+// (`--be-rows-span`). No Konto column (owner 2026-10-18: every priced line is an article, D3).
+$cols = '3.6rem 2.4rem 5.2rem 7rem minmax(12rem, 3fr) 4.5rem 4.5rem 6.5rem 4.5rem 4.5rem 7rem 1.8rem';
 // The row's amount as typed (quantity × price less the discount) — shown only, the save and the
 // totals below decide (D11); '' when a value is not a number yet.
 $amount = static function (array $row): string {
@@ -185,7 +183,8 @@ $addressFields = fn(string $field): string => $this->partial('Backend/ContactCon
 ], 'Z77\\Module\\Contact');
 ?>
 <div class="be-list"<?= $winAttr ?>>
-    <form method="post" action="<?= e($action) ?>" class="be-form--blocks" id="order-form-<?= e($key) ?>" autocomplete="off" novalidate>
+    <form method="post" action="<?= e($action) ?>" class="be-form--blocks" id="order-form-<?= e($key) ?>" autocomplete="off" novalidate data-dirty="<?= $isNew ? 'dirty' : 'clean' ?>">
+        <input type="hidden" name="_dirty_base" value="<?= e($dirtyBase ?? '') ?>">
         <input type="hidden" name="csrf_token" value="<?= e($csrfToken ?? '') ?>">
         <?php if ($window): ?><input type="hidden" name="_origin" value="<?= e($origin ?? 'page') ?>"><?php endif; ?>
         <?php if (!$isNew): ?>
@@ -195,7 +194,7 @@ $addressFields = fn(string $field): string => $this->partial('Backend/ContactCon
 
         <?= $this->partial('partials/modalActions', [
             'submit'      => $editable ? ($isNew ? 'Erstellen' : 'Speichern') : '',
-            'submitAttrs' => ['name' => 'op', 'value' => 'save'],
+            'submitAttrs' => ['name' => 'op', 'value' => 'save', 'data-dirty-submit' => ''],
             'extra'       => $extra,
             'cancel'      => $window ? 'Schliessen' : 'Zur Liste',
             'cancelKind'  => 'quiet',
@@ -319,17 +318,96 @@ $addressFields = fn(string $field): string => $this->partial('Backend/ContactCon
             </div>
         </div>
 
-        <?php // The positions: one block, the price mode in its head, the totals at its foot. ?>
-        <div class="be-form__block">
+        <?php // The positions (owner 2026-10-18, the draft): one block, the price mode in its head, the
+              // totals at its foot. The rows are a SORT ORDER — ⋮⋮ drags a row (its indented rows with it),
+              // ⇥ indents it beneath the row above, × removes it; «+ Artikel» / «+ Textzeile» add one
+              // (core.js «rows» in place; without the script the adders and × are submits, the order is
+              // the rendered one). The totals follow the typing (core.js «line sums», display only) until
+              // the save answers with debtor's preview (D11). ?>
+        <?php
+        $currency = $preview?->getCurrency() ?? $currency;
+        // One row of the positions — the server's rows and the two <template> rows share it ($i = '__i__').
+        $positionRow = function (int|string $i, array $row, string $no) use ($form, $articles, $taxCodes, $taxRates, $editable, $invalid, $amount, $actionBase, $key): string {
+            $p    = 'rows[' . $i . ']';
+            $rid  = 'order-row-' . $i . '-';
+            $err  = static fn(string $f): string => is_int($i) ? $form->rowError($i, $f) : '';
+            $text = $row['type'] === LineType::Text->value;
+            $art  = $row['article'] !== '' ? ($articles[$row['article']] ?? null) : null;
+            // The VAT rate of the line: the article's tax code (D3), a kept free line's own (display only).
+            $code = $art !== null ? $art['taxCode'] : $row['tax_code'];
+            $rows = max(1, substr_count($row['text'], "\n") + 1);
+            ob_start(); ?>
+            <div class="be-list__item" data-row>
+                <div class="be-list__row be-rows__row<?= $text ? ' be-rows__row--text' : '' ?>" data-fill-scope>
+                    <span class="be-list__cell be-rows__handle">
+                        <?php if ($editable): ?>
+                        <button type="button" class="be-rows__grip" data-row-grip hidden title="Verschieben: ziehen oder Alt+↑ / Alt+↓" aria-label="Zeile verschieben (ziehen oder Alt+Pfeil auf / ab)">⋮⋮</button>
+                        <?php endif; ?>
+                        <label class="be-rows__indent" title="Einrücken: unter die Position darüber">
+                            <input type="checkbox" class="be-rows__indent-input" id="<?= $rid ?>child" name="<?= $p ?>[child]" value="1"<?= $row['child'] !== '' ? ' checked' : '' ?> data-row-indent data-help-key="child" aria-label="Unter die Position darüber einrücken" aria-invalid="<?= $invalid($err('child')) ?>">
+                            <span aria-hidden="true">⇥</span>
+                        </label>
+                    </span>
+                    <span class="be-list__cell be-list__cell--num be-list__cell--muted" data-row-no><?= e($no) ?></span>
+                    <span class="be-list__cell">
+                        <?php if ($row['id'] !== ''): ?><input type="hidden" name="<?= $p ?>[id]" value="<?= e($row['id']) ?>"><?php endif; ?>
+                        <input type="hidden" name="<?= $p ?>[type]" value="<?= $text ? 'text' : 'service' ?>">
+                        <?php if ($art === null && $row['tax_code'] !== ''): ?><input type="hidden" name="<?= $p ?>[tax_code]" value="<?= e($row['tax_code']) ?>"><?php endif; ?>
+                        <span class="badge badge--muted"><?= e(OrderForm::TYPES[$text ? 'text' : 'service']) ?></span>
+                    </span>
+                    <?php if ($text): ?>
+                    <span class="be-list__cell be-rows__text be-rows__wide"><textarea class="be-input be-input--sm" id="<?= $rid ?>text" name="<?= $p ?>[text]" rows="<?= $rows ?>" data-autosize data-help-key="text" aria-label="Text" aria-invalid="<?= $invalid($err('text')) ?>"><?= e($row['text']) ?></textarea></span>
+                    <?php else: ?>
+                    <span class="be-list__cell"><input class="be-input be-input--sm" type="text" id="<?= $rid ?>article" name="<?= $p ?>[article]" value="<?= e($row['article']) ?>" list="order-articles-<?= e($key) ?>" spellcheck="false" data-fill-url="<?= e($actionBase . '/article-defaults') ?>" data-fill-with="order_date service_from price_mode" data-help-key="article" aria-label="Artikel" aria-invalid="<?= $invalid($err('article')) ?>"<?= $art !== null ? ' title="' . e($art['name']) . '"' : '' ?><?= $row['id'] !== '' && $row['article'] === '' ? ' placeholder="ohne Artikel"' : '' ?>></span>
+                    <span class="be-list__cell be-rows__text"><textarea class="be-input be-input--sm" id="<?= $rid ?>text" name="<?= $p ?>[text]" rows="<?= $rows ?>" data-autosize="title" data-fill-key="text" data-help-key="text" aria-label="Text" aria-invalid="<?= $invalid($err('text')) ?>"><?= e($row['text']) ?></textarea></span>
+                    <span class="be-list__cell be-list__cell--num"><input class="be-input be-input--sm" type="text" id="<?= $rid ?>quantity" name="<?= $p ?>[quantity]" value="<?= e($row['quantity']) ?>" inputmode="decimal" data-sum-qty data-help-key="quantity" aria-label="Menge" aria-invalid="<?= $invalid($err('quantity')) ?>"></span>
+                    <span class="be-list__cell"><input class="be-input be-input--sm" type="text" id="<?= $rid ?>unit" name="<?= $p ?>[unit]" value="<?= e($row['unit']) ?>" maxlength="16" data-fill-key="unit" data-help-key="unit" aria-label="Einheit" aria-invalid="<?= $invalid($err('unit')) ?>"></span>
+                    <span class="be-list__cell be-list__cell--num"><input class="be-input be-input--sm" type="text" id="<?= $rid ?>price" name="<?= $p ?>[price]" value="<?= e($row['price']) ?>" inputmode="decimal" data-fill-key="price" data-sum-price data-price-mode-price data-help-key="price" aria-label="Preis" aria-invalid="<?= $invalid($err('price')) ?>"></span>
+                    <span class="be-list__cell be-list__cell--num"><input class="be-input be-input--sm" type="text" id="<?= $rid ?>discount" name="<?= $p ?>[discount]" value="<?= e($row['discount']) ?>" inputmode="decimal" data-sum-discount data-help-key="discount" aria-label="Rabatt in Prozent" aria-invalid="<?= $invalid($err('discount')) ?>"></span>
+                    <?php // The RATE of the article's tax code («8.1 %», D3 — not changeable, never sent): a select only so
+                          // that core.js «fill» can set the code and the option shows its rate; `data-rate` feeds «line sums». ?>
+                    <span class="be-list__cell" title="vom Artikel"><select class="be-input be-input--sm be-rows__rate" data-fill-key="tax_code" data-sum-rate data-price-mode-rate tabindex="-1" aria-label="MWST-Satz (vom Artikel)" disabled>
+                        <option value=""<?= $code === '' ? ' selected' : '' ?>>–</option>
+                        <?php foreach ($taxCodes as $taxCode): $c = $taxCode->getCode(); ?>
+                        <option value="<?= e($c) ?>"<?= $c === $code ? ' selected' : '' ?><?= isset($taxRates[$c]) ? ' data-rate="' . e(rtrim($taxRates[$c], ' %')) . '"' : '' ?>><?= e($taxRates[$c] ?? $c) ?></option>
+                        <?php endforeach; ?>
+                    </select></span>
+                    <span class="be-list__cell be-list__cell--num be-list__cell--amount" data-sum-amount><?= e($amount($row)) ?></span>
+                    <?php endif; ?>
+                    <span class="be-list__cell be-rows__end">
+                        <?php if ($editable): ?>
+                        <button type="submit" class="be-rows__remove" name="op" value="remove:<?= e((string) $i) ?>" formnovalidate data-row-remove title="Zeile entfernen" aria-label="Zeile entfernen">×</button>
+                        <?php endif; ?>
+                    </span>
+                </div>
+                <?php $messages = is_int($i) ? array_filter(array_map($err, ['type', 'child', 'article', 'text', 'quantity', 'unit', 'price', 'discount', 'tax_code'])) : []; ?>
+                <?php if ($messages !== []): ?>
+                <div class="be-list__row">
+                    <span class="be-list__cell be-list__cell--wrap be-list__cell--span">
+                        <?php foreach (array_unique($messages) as $message): ?>
+                        <small class="be-form__field-error"><?= e($message) ?></small>
+                        <?php endforeach; ?>
+                    </span>
+                </div>
+                <?php endif; ?>
+            </div>
+            <?php return (string) ob_get_clean();
+        };
+        $blank = ['id' => '', 'type' => 'service', 'child' => '', 'article' => '', 'text' => '', 'quantity' => '', 'unit' => '', 'price' => '', 'discount' => '', 'tax_code' => ''];
+        ?>
+        <?php // «Preise» converts the rows at once (core.js «price mode», owner 2026-10-18); `prices_mode` says
+              // which mode the prices are in — the server converts at the save when it is still the other. ?>
+        <div class="be-form__block" data-sum data-price-mode>
             <div class="be-form__block-head">
                 <h3 class="be-list__section-title">Positionen</h3>
                 <div class="be-form__field" data-z77-field-wrapper>
                     <label for="order-price_mode">Preise</label>
-                    <select id="order-price_mode" name="price_mode" aria-invalid="<?= $invalid($form->error('price_mode')) ?>">
+                    <select id="order-price_mode" name="price_mode" data-sum-mode data-price-mode-select aria-invalid="<?= $invalid($form->error('price_mode')) ?>">
                         <option value="net"<?= $form->header('price_mode') === 'net' ? ' selected' : '' ?>>netto (exkl. MWST)</option>
                         <option value="gross"<?= $form->header('price_mode') === 'gross' ? ' selected' : '' ?>>brutto (inkl. MWST)</option>
                     </select>
                     <?= raw($fieldError($form->error('price_mode'))) ?>
+                    <input type="hidden" name="prices_mode" value="<?= e($form->header('prices_mode')) ?>" data-price-mode-shown>
                 </div>
             </div>
             <datalist id="order-articles-<?= e($key) ?>">
@@ -339,15 +417,12 @@ $addressFields = fn(string $field): string => $this->partial('Backend/ContactCon
                 <?php endif; ?>
                 <?php endforeach; ?>
             </datalist>
-            <?php if ($hasFree): ?>
-            <?= $this->partial('partials/accountDatalist', ['id' => 'order-accounts-' . $key, 'accounts' => $accounts], 'Z77\\Module\\Mandator') ?>
-            <?php endif; ?>
             <div class="be-list__frame">
-                <div class="be-list__table" style="--be-list-cols: <?= e($cols) ?>">
+                <div class="be-list__table be-rows" style="--be-list-cols: <?= e($cols) ?>; --be-rows-span: 8" data-rows="rows">
                     <div class="be-list__head">
+                        <span class="be-list__col"></span>
                         <span class="be-list__col be-list__col--num">Pos.</span>
                         <span class="be-list__col">Art</span>
-                        <span class="be-list__col" title="unter der Position darüber">unter</span>
                         <span class="be-list__col">Art.-Nr.</span>
                         <span class="be-list__col">Text</span>
                         <span class="be-list__col be-list__col--num">Menge</span>
@@ -356,59 +431,24 @@ $addressFields = fn(string $field): string => $this->partial('Backend/ContactCon
                         <span class="be-list__col be-list__col--num">Rabatt %</span>
                         <span class="be-list__col">MWST</span>
                         <span class="be-list__col be-list__col--num">Betrag</span>
-                        <?php if ($hasFree): ?><span class="be-list__col">Konto</span><?php endif; ?>
+                        <span class="be-list__col"></span>
                     </div>
                     <?php $pos = 0; $sub = 0; ?>
-                    <?php foreach ($form->rows() as $i => $row): $p = 'rows[' . $i . ']'; $rid = 'order-row-' . $i . '-'; $art = $row['article'] !== '' ? ($articles[$row['article']] ?? null) : null;
-                        // The position number as printed: a child line counts under its parent (1.1).
+                    <?php foreach ($form->rows() as $i => $row):
+                        // The position number as printed: an indented row counts under its parent (1.1).
                         if ($row['child'] !== '' && $pos > 0) { $sub++; $no = $pos . '.' . $sub; } else { $pos++; $sub = 0; $no = (string) $pos; } ?>
-                    <div class="be-list__item">
-                        <div class="be-list__row" data-fill-scope>
-                            <span class="be-list__cell be-list__cell--num be-list__cell--muted"><?= e($no) ?></span>
-                            <span class="be-list__cell">
-                                <?php if ($row['id'] !== ''): ?><input type="hidden" name="<?= $p ?>[id]" value="<?= e($row['id']) ?>"><?php endif; ?>
-                                <select class="be-input be-input--sm" id="<?= $rid ?>type" name="<?= $p ?>[type]" data-help-key="type" aria-label="Art Zeile <?= $i + 1 ?>">
-                                    <?php foreach (OrderForm::TYPES as $value => $label): ?>
-                                    <option value="<?= e($value) ?>"<?= $row['type'] === $value ? ' selected' : '' ?>><?= e($label) ?></option>
-                                    <?php endforeach; ?>
-                                </select>
-                            </span>
-                            <span class="be-list__cell"><label class="be-choice"><input type="checkbox" class="be-choice__input" id="<?= $rid ?>child" name="<?= $p ?>[child]" value="1"<?= $row['child'] !== '' ? ' checked' : '' ?> data-help-key="child" aria-label="Zeile <?= $i + 1 ?> unter der Position darüber" aria-invalid="<?= $invalid($form->rowError($i, 'child')) ?>"></label></span>
-                            <span class="be-list__cell"><input class="be-input be-input--sm" type="text" id="<?= $rid ?>article" name="<?= $p ?>[article]" value="<?= e($row['article']) ?>" list="order-articles-<?= e($key) ?>" spellcheck="false" data-fill-url="<?= e($actionBase . '/article-defaults') ?>" data-fill-with="order_date service_from price_mode" data-help-key="article" aria-label="Artikel Zeile <?= $i + 1 ?>" aria-invalid="<?= $invalid($form->rowError($i, 'article')) ?>"<?= $art !== null ? ' title="' . e($art['name']) . '"' : '' ?>></span>
-                            <span class="be-list__cell"><textarea class="be-input be-input--sm" id="<?= $rid ?>text" name="<?= $p ?>[text]" rows="1" data-fill-key="text" data-help-key="text" aria-label="Text Zeile <?= $i + 1 ?>" aria-invalid="<?= $invalid($form->rowError($i, 'text')) ?>"><?= e($row['text']) ?></textarea></span>
-                            <span class="be-list__cell be-list__cell--num"><input class="be-input be-input--sm" type="text" id="<?= $rid ?>quantity" name="<?= $p ?>[quantity]" value="<?= e($row['quantity']) ?>" inputmode="decimal" data-help-key="quantity" aria-label="Menge Zeile <?= $i + 1 ?>" aria-invalid="<?= $invalid($form->rowError($i, 'quantity')) ?>"></span>
-                            <span class="be-list__cell"><input class="be-input be-input--sm" type="text" id="<?= $rid ?>unit" name="<?= $p ?>[unit]" value="<?= e($row['unit']) ?>" maxlength="16" data-fill-key="unit" data-help-key="unit" aria-label="Einheit Zeile <?= $i + 1 ?>" aria-invalid="<?= $invalid($form->rowError($i, 'unit')) ?>"></span>
-                            <span class="be-list__cell be-list__cell--num"><input class="be-input be-input--sm" type="text" id="<?= $rid ?>price" name="<?= $p ?>[price]" value="<?= e($row['price']) ?>" inputmode="decimal" data-fill-key="price" data-help-key="price" aria-label="Preis Zeile <?= $i + 1 ?>" aria-invalid="<?= $invalid($form->rowError($i, 'price')) ?>"></span>
-                            <span class="be-list__cell be-list__cell--num"><input class="be-input be-input--sm" type="text" id="<?= $rid ?>discount" name="<?= $p ?>[discount]" value="<?= e($row['discount']) ?>" inputmode="decimal" data-help-key="discount" aria-label="Rabatt Zeile <?= $i + 1 ?>" aria-invalid="<?= $invalid($form->rowError($i, 'discount')) ?>"></span>
-                            <?php // An article line shows the article's VAT LOCKED, as the RATE (D3 — the save takes it from the article and
-                                  // ignores what is posted); the field stays, so a changed or cleared article (core.js «fill») can set or free it. ?>
-                            <span class="be-list__cell"<?= $art !== null ? ' title="vom Artikel"' : '' ?>><?= $this->partial('partials/taxCodeSelect', [
-                                'codes' => $taxCodes, 'name' => $p . '[tax_code]', 'selected' => $art !== null ? $art['taxCode'] : $row['tax_code'], 'id' => $rid . 'tax_code',
-                                'label' => 'MWST Zeile ' . ($i + 1), 'invalid' => $form->rowError($i, 'tax_code') !== '', 'shown' => $taxRates,
-                                'attrs' => ['data-fill-key' => 'tax_code'] + ($art !== null ? ['disabled' => true] : []),
-                            ], 'Z77\\Module\\Vat') ?></span>
-                            <span class="be-list__cell be-list__cell--num be-list__cell--amount"><?= e($amount($row)) ?></span>
-                            <?php if ($hasFree): ?>
-                            <span class="be-list__cell"<?= $art !== null ? ' title="vom Artikel"' : '' ?>><input class="be-input be-input--sm" type="text" id="<?= $rid ?>account" name="<?= $p ?>[account]" value="<?= e($art !== null ? $art['account'] : $row['account']) ?>"<?= $accounts !== [] ? ' list="order-accounts-' . e($key) . '"' : '' ?> inputmode="numeric" data-fill-key="account" data-help-key="account" aria-label="Konto Zeile <?= $i + 1 ?>" aria-invalid="<?= $invalid($form->rowError($i, 'account')) ?>"<?= $art !== null ? ' readonly' : '' ?>></span>
-                            <?php endif; ?>
-                        </div>
-                        <?php $messages = array_filter(array_map(fn($f) => $form->rowError($i, $f), ['type', 'child', 'article', 'text', 'quantity', 'unit', 'price', 'discount', 'tax_code', 'account'])); ?>
-                        <?php if ($messages !== []): ?>
-                        <div class="be-list__row">
-                            <span class="be-list__cell be-list__cell--wrap be-list__cell--span">
-                                <?php foreach (array_unique($messages) as $message): ?>
-                                <small class="be-form__field-error"><?= e($message) ?></small>
-                                <?php endforeach; ?>
-                            </span>
-                        </div>
-                        <?php endif; ?>
-                    </div>
+                    <?= raw($positionRow($i, $row, $no)) ?>
                     <?php endforeach; ?>
+                    <?php if ($editable): ?>
+                    <template data-row-template="article"><?= raw($positionRow('__i__', $blank, '')) ?></template>
+                    <template data-row-template="text"><?= raw($positionRow('__i__', ['type' => 'text'] + $blank, '')) ?></template>
+                    <?php endif; ?>
                 </div>
             </div>
             <?php if ($editable): ?>
-            <div>
-                <button type="submit" class="be-btn be-btn--ghost be-btn--sm" name="op" value="more">+ Weitere Zeilen</button>
+            <div class="be-rows__adders">
+                <button type="submit" class="be-btn be-btn--add be-btn--sm" name="op" value="add-article" formnovalidate data-row-add="article"><span aria-hidden="true">+</span> Artikel</button>
+                <button type="submit" class="be-btn be-btn--add be-btn--sm" name="op" value="add-text" formnovalidate data-row-add="text"><span aria-hidden="true">+</span> Textzeile</button>
             </div>
             <?php endif; ?>
 
@@ -420,19 +460,26 @@ $addressFields = fn(string $field): string => $this->partial('Backend/ContactCon
                     &nbsp;|&nbsp; Version <?= (int) $order->getVersion() ?>
                     <?php endif; ?>
                 </div>
-                <?php if ($preview !== null): ?>
-                <?php // The total of the STORED order — debtor's preview (D11): what the booking print would invoice today. ?>
-                <div class="be-form__totals" title="gespeichert — so würde der Buchungsdruck heute fakturieren">
-                    <div><span>Total netto</span><span><?= e($fmt($preview->getNetTotal())) ?></span></div>
-                    <?php foreach ($preview->getTaxes() as $tax): ?>
-                    <div class="be-form__totals-sub"><span>MWST <?= e(TaxRate::formatPercent($tax->getTaxRate())) ?> % auf <?= e($fmt($tax->getBase())) ?></span><span><?= e($fmt($tax->getTax())) ?></span></div>
-                    <?php endforeach; ?>
-                    <?php if (!$preview->getRounding()->isZero()): ?>
-                    <div class="be-form__totals-sub"><span>Rundung</span><span><?= e($fmt($preview->getRounding())) ?></span></div>
+                <?php // The total: debtor's preview of the STORED order (D11) — what the booking print would invoice
+                      // today. While rows are typed, core.js «line sums» shows what they add up to (without the
+                      // rounding, labelled so); the save answers with the preview again. ?>
+                <div class="be-form__totals" aria-live="polite">
+                    <div><span>Total netto</span><span data-sum-net><?= $preview !== null ? e($fmt($preview->getNetTotal())) : ($isNew ? '0.00' : '–') ?></span></div>
+                    <div class="be-form__totals-group" data-sum-taxes>
+                        <template data-sum-tax><div class="be-form__totals-sub"><span>MWST <span data-sum-tax-rate></span> % auf <span data-sum-tax-base></span></span><span data-sum-tax-amount></span></div></template>
+                        <?php foreach ($preview?->getTaxes() ?? [] as $tax): ?>
+                        <div class="be-form__totals-sub"><span>MWST <?= e(TaxRate::formatPercent($tax->getTaxRate())) ?> % auf <?= e($fmt($tax->getBase())) ?></span><span><?= e($fmt($tax->getTax())) ?></span></div>
+                        <?php endforeach; ?>
+                    </div>
+                    <?php if ($preview !== null && !$preview->getRounding()->isZero()): ?>
+                    <div class="be-form__totals-sub" data-sum-stored><span>Rundung</span><span><?= e($fmt($preview->getRounding())) ?></span></div>
                     <?php endif; ?>
-                    <div class="be-form__totals-grand"><span>Total <?= e($preview->getCurrency()) ?></span><span><?= e($fmt($preview->getGrossTotal())) ?></span></div>
+                    <div class="be-form__totals-grand"><span>Total <?= e($currency) ?></span><span data-sum-gross><?= $preview !== null ? e($fmt($preview->getGrossTotal())) : ($isNew ? '0.00' : '–') ?></span></div>
+                    <?php if ($preview !== null): ?>
+                    <div class="be-form__totals-note" data-sum-stored>gespeichert — so würde der Buchungsdruck heute fakturieren</div>
+                    <?php endif; ?>
+                    <div class="be-form__totals-note" data-sum-live hidden>laufend aus den Zeilen, ohne Rundung — massgebend ist das Total nach dem Speichern</div>
                 </div>
-                <?php endif; ?>
             </div>
             <?php if ($previewProblems !== []): ?>
             <div class="be-modal__alert be-modal__alert--error">

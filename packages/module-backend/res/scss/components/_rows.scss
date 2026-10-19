@@ -1,0 +1,160 @@
+@use 'input-look' as look;
+
+// ── Rows to add, remove, move and indent (core.js «rows», «autosize»; first user: the order's
+// positions, owner 2026-10-18 — the draft `order-mask-draft.html`) ──
+//
+// A standard list (`.be-list__table`, subgrid rows) whose rows the user arranges:
+//
+//   .be-rows                      on the table (the `[data-rows]` container)
+//     .be-rows__handle            the first cell: ⋮⋮ grip (`.be-rows__grip`, `[data-row-grip]`) and
+//                                 the ⇥ indent toggle (`.be-rows__indent`, a checkbox `[data-row-indent]`)
+//     .be-rows__text              the text cell — indented while the row's toggle is on
+//     .be-rows__wide              a cell over `--be-rows-span` tracks (a text row's text)
+//     .be-rows__rate              a value shown as text (the VAT rate from the article)
+//     .be-rows__end / __remove    the last cell with ×
+//     .be-rows__row--text         a text-only row: tinted (`--be-row-tint`), its text in italics
+//   .be-rows__adders              the add buttons under the table (`.be-btn--add`)
+//
+// Tokens only — every palette and both themes follow (ADR-051). The indent is visible without the
+// script (`:has()` on the checkbox); the grip is rendered `hidden` and revealed by core.js.
+
+.be-rows .be-list__row { align-items: start; }
+.be-rows .be-list__cell { align-self: center; }
+.be-rows .be-rows__text { align-self: stretch; }
+
+// The handle cell: grip and indent toggle side by side.
+.be-rows__handle {
+    display:     flex;
+    align-items: center;
+    gap:         2px;
+    overflow:    visible;
+}
+
+// One look for the row's small controls: no line at rest, the field ground on hover.
+.be-rows__grip,
+.be-rows__indent,
+.be-rows__remove {
+    display:         inline-flex;
+    align-items:     center;
+    justify-content: center;
+    width:           1.5rem;
+    height:          1.6rem;
+    padding:         0;
+    border:          1px solid transparent;
+    border-radius:   var(--radius-sm);
+    background:      none;
+    color:           var(--be-muted);
+    font:            inherit;
+    font-size:       var(--font-size-sm);
+    line-height:     1;
+    cursor:          pointer;
+    transition:      background var(--transition-fast), color var(--transition-fast);
+}
+.be-rows__grip:hover,
+.be-rows__indent:hover,
+.be-rows__remove:hover { background: var(--be-field); color: var(--be-text); }
+.be-rows__grip:focus-visible,
+.be-rows__remove:focus-visible,
+.be-rows__indent:has(:focus-visible) { @include look.focus; }
+:is(.be-rows__grip, .be-rows__remove, .be-rows__indent):is(:disabled, :has(:disabled)) { cursor: default; opacity: .6; }
+
+.be-rows__grip {
+    width:          1.1rem;
+    cursor:         grab;
+    letter-spacing: -.2em;
+    touch-action:   none;   // a touch drag moves the row, not the page
+}
+.be-rows__grip:active { cursor: grabbing; }
+
+// The indent toggle: a checkbox (it posts without the script) shown as ⇥, on = accent.
+.be-rows__indent-input {
+    position: absolute;
+    width:    1px;
+    height:   1px;
+    opacity:  0;
+}
+.be-rows__indent:has(:checked) { background: var(--be-accent-soft); color: var(--be-accent); }
+
+.be-rows__remove { font-size: 1rem; }
+.be-rows__end { display: flex; justify-content: flex-end; overflow: visible; }
+
+// The text: a field as tall as its text (core.js «autosize»; `field-sizing` where it exists).
+.be-rows__text textarea {
+    display:       block;
+    width:         100%;
+    resize:        none;
+    overflow:      hidden;
+    line-height:   1.4;
+    field-sizing:  content;
+}
+
+// Indented beneath the row above (1.1): the text steps in, an elbow line leads to it.
+.be-rows [data-row]:has([data-row-indent]:checked) .be-rows__text {
+    position:     relative;
+    padding-left: 1.4rem;
+}
+.be-rows [data-row]:has([data-row-indent]:checked) .be-rows__text::before {
+    content:       "";
+    position:      absolute;
+    left:          .5rem;
+    top:           0;
+    height:        50%;
+    width:         .55rem;
+    border-left:   1px solid var(--be-line-strong);
+    border-bottom: 1px solid var(--be-line-strong);
+}
+
+.be-rows__wide { grid-column: span var(--be-rows-span, 1); }
+
+// A text row spans the width, tinted, its text in italics.
+.be-rows__row--text { background: var(--be-row-tint); }
+.be-rows__row--text .be-rows__text textarea { font-style: italic; color: var(--be-muted); }
+
+// A value the row shows but nobody chooses here (the article's VAT rate): text, no field, no caret.
+select.be-input.be-rows__rate,
+select.be-input.be-rows__rate:disabled {
+    padding-right:    .5rem;
+    background-image: none;
+    border-color:     transparent;
+    background-color: transparent;
+    color:            var(--be-text);
+    opacity:          1;
+    pointer-events:   none;
+    font-family:      var(--font-family-mono);
+}
+
+// A row being dragged (core.js sets `data-row-dragging`): lifted on the accent.
+.be-rows [data-row-dragging] > .be-list__row {
+    background: var(--be-accent-soft);
+    box-shadow: inset 2px 0 0 var(--be-accent);
+}
+
+.be-rows__adders {
+    display:   flex;
+    flex-wrap: wrap;
+    gap:       var(--space-2);
+}
+
+// ── autosize «title» (core.js): a mirror over the field paints its text — the first line as the
+// title, the rest muted; the field keeps caret, selection and input, its own ink transparent. ──
+[data-autosize-on] { position: relative; }
+[data-autosize-on] > textarea[data-autosize="title"] { color: transparent; caret-color: var(--be-text); }
+[data-autosize-on] > [data-autosize-mirror] {
+    position:         absolute;
+    inset:            0;
+    margin:           0;
+    overflow:         hidden;
+    white-space:      pre-wrap;
+    overflow-wrap:    break-word;
+    border-color:     transparent;
+    background-color: transparent;
+    box-shadow:       none;
+    color:            var(--be-muted);
+    pointer-events:   none;
+}
+// The mirror must wrap exactly like the field: same box (the field's classes), same line height,
+// the same left edge when the row is indented — and the title differs in COLOUR only (a bolder
+// face would move the caret off its glyphs).
+.be-rows__text > [data-autosize-mirror] { line-height: 1.4; }
+.be-rows [data-row]:has([data-row-indent]:checked) .be-rows__text > [data-autosize-mirror] { left: 1.4rem; }
+[data-autosize-mirror] [data-autosize-title] { color: var(--be-text); }

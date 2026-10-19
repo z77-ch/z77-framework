@@ -450,7 +450,7 @@ check('A9 the unique contact index, the unique customer-number index and the pay
 [$code, $out] = $run(['command' => 'migrate']);
 check('A10 a second migrate is a no-op', $code === 0 && str_contains($out, 'Already at the latest version'));
 [$code, $out] = $run(['command' => 'diff', '--namespace' => 'Z77\\Module\\Debtor\\Migrations']);
-check('A11 diff after migrate reports NO change — mapping and migration agree (embedded address and payment part, money and decimal columns included)' . (str_contains($out, 'No changes detected') ? '' : ' — ' . trim($out)), $code !== 0 && str_contains($out, 'No changes detected') && count(glob($package . '/res/migrations/Version*.php')) === 11);
+check('A11 diff after migrate reports NO change — mapping and migration agree (embedded address and payment part, money and decimal columns included)' . (str_contains($out, 'No changes detected') ? '' : ' — ' . trim($out)), $code !== 0 && str_contains($out, 'No changes detected') && count(glob($package . '/res/migrations/Version*.php')) === 12);
 check('A12 every migration is expand-only (no DROP outside down()); the «Fakturiert» pair (ADD / DROP delivered_*, 2026-10-10) is gone — it never left the development database (owner 2026-10-13)', array_reduce(glob($package . '/res/migrations/Version*.php'), function ($ok, $f) {
     $s  = file_get_contents($f);
     $up = substr($s, 0, strpos($s, 'function down'));
@@ -460,6 +460,10 @@ $upOf = fn(string $version) => (static fn(string $s) => substr($s, strpos($s, 'f
 check('A12b the number at the booking print is TWO files (review 2026-10-13, A6): Version20261010170000 the schema step alone (ALTER, no UPDATE — DDL commits implicitly in MariaDB), Version20261010170001 the data step alone (UPDATE, no ALTER — atomic)',
     str_contains($upOf('Version20261010170000'), 'ALTER TABLE invoice CHANGE number') && !str_contains($upOf('Version20261010170000'), 'UPDATE')
     && str_contains($upOf('Version20261010170001'), "UPDATE invoice SET number = NULL") && !str_contains($upOf('Version20261010170001'), 'ALTER'));
+$priceModeColumn = $db->fetchAssociative('SELECT COLUMN_DEFAULT, IS_NULLABLE, CHARACTER_MAXIMUM_LENGTH FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ?', [$dbName, 'debtor_profile', 'price_mode']);
+check('A12c the debtor carries the price mode (owner 2026-10-18, Version20261018130000, schema only): debtor_profile.price_mode VARCHAR(5) NOT NULL DEFAULT \'net\' — every existing profile reads net, a row of an older release too',
+    $priceModeColumn !== false && trim((string) $priceModeColumn['COLUMN_DEFAULT'], "'") === 'net' && $priceModeColumn['IS_NULLABLE'] === 'NO' && (int) $priceModeColumn['CHARACTER_MAXIMUM_LENGTH'] === 5
+    && !str_contains($upOf('Version20261018130000'), 'UPDATE'));
 
 
 // ── B. the seeds ─────────────────────────────────────────────────────────
@@ -1163,7 +1167,7 @@ check('I5m the three master-data fragments carry an add action and an active swi
 
 $templateDir = $package . '/res/view/templates/Backend';
 $templates   = glob($templateDir . '/*/*.tpl.php');
-check('I6 every master-data screen has its list template, its edit template and its header slot; the document screens (P3 part 3) add six, the payment form and the delete confirmation (P4 part 1) two, the bank import list and detail (P4 part 2) two, the dunning list (P4 part 3) one, the open-item list and its toolbar (2026-10-07) two, the action cells of the invoice list and the bank import (ADR-033 rev. 2026-10-08) two — the «+ Debitor» cell of the debtor master data removed 2026-10-12; the row partials of the in-place answers (ADR-047 addendum 2026-10-10: bank transaction + unbooked bar, payment terms, payment target, debtor contact) five; the booking print\'s refusal page (2026-10-10) one; the editor\'s party picker and its «+ Kontakt» window (DEBTOR-CONTACT-001, 2026-10-10) two; the customer picker field and window (2026-10-15) two', count($templates) === 37);
+check('I6 every master-data screen has its list template, its edit template and its header slot; the document screens (P3 part 3) add six, the payment form and the delete confirmation (P4 part 1) two, the bank import list and detail (P4 part 2) two, the dunning list (P4 part 3) one, the open-item list and its toolbar (2026-10-07) two, the action cells of the invoice list and the bank import (ADR-033 rev. 2026-10-08) two — the «+ Debitor» cell of the debtor master data removed 2026-10-12; the row partials of the in-place answers (ADR-047 addendum 2026-10-10: bank transaction + unbooked bar, payment terms, payment target, debtor contact) five; the booking print\'s refusal page (2026-10-10) one; the editor\'s party picker and its «+ Kontakt» window (DEBTOR-CONTACT-001, 2026-10-10) two; the customer picker field and window (2026-10-15) two; its «Debitor anlegen» dialog (2026-10-18) one', count($templates) === 38);
 check('I6b the master-data rows are ONE partial each, rendered by the list and answered in place (replaceRow / insertRow, DEBTOR-WIN-003) — no `reload` left for a one-row save or switch of terms, targets or debtors',
     array_reduce([['PaymentTerms', 'paymentTerms'], ['PaymentTarget', 'paymentTarget'], ['DebtorProfile', 'debtorContact']], fn($ok, $p) => $ok
         && str_contains(file_get_contents($templateDir . '/' . $p[0] . 'Controller/listAction.tpl.php'), "partial('Backend/" . $p[0] . "Controller/_row'")
@@ -3659,8 +3663,11 @@ $vTrait = file_get_contents($package . '/src/Ui/InvoiceControllerTrait.php');
 $vTpl   = $package . '/res/view/templates/Backend/InvoiceController';
 $vPickTrait = file_get_contents($package . '/src/Ui/CustomerPickerTrait.php');
 $vPickTpl   = $package . '/res/view/templates/Backend/CustomerPicker';
-check('V7 the editor\'s customer is debtor\'s CustomerPicker (owner 2026-10-15): the field with «Kunde wählen …» (a window, the search in the database — contacts without a profile choosable), no select of every contact; a new invoice saves with openProfile: true — the credit note does not',
-    str_contains($vTrait, "'customerField' =>") && str_contains($vTrait, 'use CustomerPickerTrait;') && str_contains($vTrait, 'invoice($draft, openProfile: true)') && substr_count($vTrait, 'openProfile: true') === 1
+check('V7 the editor\'s customer is debtor\'s CustomerPicker (owner 2026-10-15): the field with «Kunde wählen …» (a window, the search in the database — contacts without a profile choosable), no select of every contact; since 2026-10-18 (owner: no document for a contact without a debtor profile) the save never opens a profile — openProfile is gone from the editor, a contact without one is refused (CustomerPicker::debtorRefusal), the picker asks «Debitor anlegen»',
+    str_contains($vTrait, "'customerField' =>") && str_contains($vTrait, 'use CustomerPickerTrait;') && str_contains($vTrait, '->invoice($draft);') && substr_count($vTrait, 'openProfile: true') === 0
+    && str_contains($vTrait, 'CustomerPicker::debtorRefusal(') && str_contains($vTrait, 'return $this->customerDebtorPage($contact')
+    && str_contains($vPickTrait, 'protected function customerDebtorAction(') && str_contains(file_get_contents($vPickTpl . '/debtor.tpl.php'), 'name="price_mode"')
+    && str_contains(file_get_contents($vPickTpl . '/debtor.tpl.php'), 'name="terms"')
     && str_contains(file_get_contents($vTpl . '/form.tpl.php'), 'raw($customerField)') && !is_file($vTpl . '/_debtorSelect.tpl.php')
     && str_contains(file_get_contents($vPickTpl . '/_field.tpl.php'), 'data-window-open=') && str_contains(file_get_contents($vPickTpl . '/pick.tpl.php'), 'partials/listHead')
     && str_contains($vPickTrait, 'searchCustomers(') && str_contains($vPickTrait, 'CustomerPicker::isChoosable('));
@@ -3670,7 +3677,7 @@ check('V8 «+ Kontakt» is a window over the editor (`data-window-open` → new-
     && str_contains(file_get_contents($vTpl . '/newContact.tpl.php'), "Backend/ContactController/_addressFields")
     && str_contains(file_get_contents($vTpl . '/newContact.tpl.php'), 'name="_origin"')
     && str_contains($vTrait, 'new ContactForm(addressRequired: true)')
-    && str_contains($vTrait, 'customerChosenAnswer($contact, WindowOrigin::of($request)')
+    && str_contains($vTrait, 'customerDebtorPage($contact, WindowOrigin::of($request)')   // «Debitor anlegen» first (owner 2026-10-18)
     && preg_match("/'replace-html', \[\s*'target' => '#invoice-contact'.*?'origin' => \\\$origin.*?->addCommand\('close-modal'\)/s", $vPickTrait) === 1);
 $vProfileTrait = file_get_contents($package . '/src/Ui/DebtorProfileControllerTrait.php');
 $vTermsTpl     = $package . '/res/view/templates/Backend/PaymentTermsController';
@@ -3678,7 +3685,7 @@ $vRoleSource = file_get_contents($package . '/src/Roles/DebtorContactRole.php');
 check('V9 the default is read in ONE place (PaymentTermsRepository::defaultForNewDebtor) by its users: the service opening a profile, the editor preselecting it for `?contact=` of a contact without a profile, the contact editor\'s role «Debitor» giving it (2026-10-12 — «+ Debitor» is gone); the terms screen sets it (checkbox `default`) and shows «Standard»',
     str_contains($vSource, '->defaultForNewDebtor()') && str_contains($vTrait, 'invoiceNewDebtorTerms($contact)') && str_contains($vTrait, '->defaultForNewDebtor()')
     && !str_contains($vProfileTrait, 'new DebtorProfile()') && !str_contains($vProfileTrait, '->defaultForNewDebtor()')
-    && str_contains($vRoleSource, '->defaultForNewDebtor()') && substr_count($vRoleSource, 'new DebtorProfile()') === 1
+    && str_contains($vRoleSource, '->defaultForNewDebtor()') && substr_count($vRoleSource, 'new DebtorProfile()') === 0 && str_contains($vRoleSource, '->open($contact')
     && str_contains(file_get_contents($vTermsTpl . '/edit.tpl.php'), 'name="default"') && str_contains(file_get_contents($vTermsTpl . '/_row.tpl.php'), '>Standard</span>'));
 
 echo "W. «Debitor» as a role of the contact (owner 2026-10-12): module-contact's registry, on = profile with the default terms, off = DELETE while no document references the contact\n";
@@ -3746,6 +3753,23 @@ check('W12 the contact dialog asks before «off» (fetch.md confirm-delete patte
     && str_contains($wContactTrait, "generateEntityToken(self::roleTokenContext(\$confirming)") && str_contains($wContactTrait, "'contactRole.' . \$key")
     && str_contains($wRolesTpl, '/remove-role?id=') && str_contains($wRolesTpl, 'name="entity_csrf"') && str_contains($wRolesTpl, '<input type="hidden" name="value" value="1">')
     && strpos($wEditTpl, '</form>') < strrpos($wEditTpl, "partial('Backend/ContactController/_roles'"));
+// The debtor carries the price mode (owner 2026-10-18); every path opens a profile through open().
+$wGross = new Contact(['kind' => 'organisation', 'company' => 'Brutto Gastro AG', 'language' => 'de']);
+(new ContactService($wireDi()))->save($wGross);
+$wEm13   = $wireDi();
+$wRange  = (int) $rangeOf('customer');
+$wBad    = caught(fn() => (new DebtorProfileService($wEm13))->open($wEm13->getRepository(Contact::class)->find($wGross->getId()), 'net-30', 'brutto'), InvalidDebtorProfileException::class);
+$wEm13b  = $wireDi();
+$wOpened = (new DebtorProfileService($wEm13b))->open($wEm13b->getRepository(Contact::class)->find($wGross->getId()), 'net-30', 'gross');
+$wEm13c  = $wireDi();
+$wRoleProfile = $wEm13c->getRepository(DebtorProfile::class)->findByContact($wId);
+check('W13 price mode: the role «Debitor» opens net (and says «Preise netto»); open() with gross stores gross and draws the next number; a mode that is neither is refused on `price_mode`, nothing drawn; the dialog changes it through update()',
+    $wRoleProfile?->getPriceMode() === 'net' && str_contains($role->state($wEm13c->getRepository(Contact::class)->find($wId))->summary, 'Preise netto')
+    && $wBad !== null && $wBad->validator->hasFieldError('price_mode') && $wOpened->getPriceMode() === 'gross' && $wOpened->getCustomerNumber() === $wRange + 1
+    && $db->fetchOne('SELECT price_mode FROM debtor_profile WHERE contact_id = ?', [$wGross->getId()]) === 'gross'
+    && ((new DebtorProfileService($wEm13c))->update($wRoleProfile, ['price_mode' => 'gross']) ?? true)
+    && $db->fetchOne('SELECT price_mode FROM debtor_profile WHERE contact_id = ?', [$wId]) === 'gross'
+    && substr_count($wSource, '->open($contact') === 1 && substr_count(file_get_contents((new \ReflectionClass(\Z77\Module\Debtor\Roles\DebtorContactRole::class))->getFileName()), '->open($contact') === 1);
 
 // ── X. a credit note mirrors its invoice (owner decision 2026-10-13) ────
 
@@ -3976,10 +4000,17 @@ $wireDi();
 check('O1 article and order migrate onto the debtor installation (exit 0)' . ($code !== 0 ? ' — ' . trim($out) : ''), $code === 0);
 
 $oService = fn(?\Z77\Module\Article\Stock\StockLedger $stock = null) => new \Z77\Module\Order\Services\OrderService($wireDi(), 'harness', $stock);
-$oNew = function (string $subject) use ($oService, $mid): \Z77\Module\Order\Entities\SalesOrder {
+// Every priced order line is an article (ADR-043 addendum 2026-10-18) — the former free line «Beratung».
+$oEm      = $wireDi();
+$oArticle = (new \Z77\Module\Article\Services\ArticleService($oEm, 'harness'))->create(new \Z77\Module\Article\Services\ArticleDraft(
+    number: 'B-150', name: 'Beratung', unit: 'h', price: '150.00', priceMode: 'net', validFrom: '2026-01-01', taxCode: 'UN', revenueAccount: '3400',
+    productGroup: (int) (new \Z77\Module\Article\Services\ProductGroupService($oEm))->create(new \Z77\Module\Article\Services\ProductGroupDraft('Dienstleistungen'))->getId(),
+));
+$oVariant = (int) $oEm->getRepository(\Z77\Module\Article\Entities\Variant::class)->defaultOf($oArticle)->getId();
+$oNew = function (string $subject) use ($oService, $mid, $oVariant): \Z77\Module\Order\Entities\SalesOrder {
     $svc   = $oService();
     $order = $svc->create(new \Z77\Module\Order\Services\OrderDraft($mid, '2026-12-10', $subject, lines: [
-        \Z77\Module\Order\Services\OrderLineDraft::free('Beratung', '2', '150.00', 'UN', '3400'),
+        \Z77\Module\Order\Services\OrderLineDraft::article($oVariant, '2'),
     ]));
 
     return $oService()->changeStatus((int) $order->getId(), $order->getVersion(), 'scheduled');   // a bookable phase

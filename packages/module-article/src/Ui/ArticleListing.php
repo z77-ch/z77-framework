@@ -18,7 +18,7 @@ use Z77\Shared\Listing\Parsers;
  *
  * The product-group FILTER is the extra `group` (owner 2026-10-14: «clicking a group shows its
  * articles including sub-groups»): its allowed values are the ids of the tree — '' (all) first —,
- * chosen at the top of the rail (`list.select`, the shared CSS-only picker); the repository gets
+ * chosen in the toolbar (`groupPicker`, the shared tree picker — owner 2026-10-18); the repository gets
  * the group WITH its sub-groups ({@see ProductGroupTree::subtreeIds()}).
  */
 final class ArticleListing

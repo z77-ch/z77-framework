@@ -215,6 +215,7 @@ Commands are server-issued instructions dispatched by the shared `core.js` to wh
 | `update-text`    | `target`, `text` | — | Set `textContent` of matching element |
 | `update-html`    | `target`, `html` | — | Set `innerHTML` of matching element |
 | `set-class`      | `target`, `class`, `on` | — | Toggle a CSS class on the matching element (`on:true` adds, `false` removes) |
+| `set-value`      | `target`, `value` | `origin` | Sets a field's `.value` and fires a bubbling `change` when it changed — whatever follows the field runs as on a choice by hand (2026-10-18; first user: debtor's customer picker sets the editor's `price_mode` from the debtor, the order's rows re-convert — core.js «price mode») |
 | `scroll-to`      | `target` | — | `scrollIntoView` on target element |
 | `reload`         | — | — | Full page reload (escape hatch) |
 | `close-modal`    | — | — | From a window: closes that window (ADR-047). With the shared popup on the page: `_Z77.core.popup.close()`. On a host without it (the member shell's native `<dialog>`s): closes the open `dialog[open]` — one vocabulary for both shells (2026-10-10) |

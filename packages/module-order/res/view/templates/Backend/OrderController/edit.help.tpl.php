@@ -10,7 +10,7 @@
 ?>
 <h3>Auftrag</h3>
 <p>Ein Auftrag läuft durch seine Status: <strong>Offerte</strong> → <strong>Terminauftrag</strong> → <strong>Lieferschein</strong> (setzt «Geliefert») → <strong>Zu fakturieren</strong> → <strong>Buchungsdruck …</strong> (setzt «Gebucht») → <strong>Erledigt</strong>. Offerte und Auftrag sind derselbe Datensatz mit derselben Nummer; was er ist, sagt der Status. Welche Status es gibt und was sie bewirken, steht unter Stammdaten › Aufträge › Auftragsstatus.</p>
-<p><strong>Speichern</strong> schreibt Kopf und Positionen; das Total rechnet die Debitorenbuchhaltung genau so, wie der Buchungsdruck die Rechnung erstellen wird (MWST pro Code, Rundung auf 5 Rappen). Was den Buchungsdruck heute verhindern würde, steht unter dem Total als «Vor dem Buchungsdruck beheben».</p>
+<p><strong>Speichern</strong> schreibt Kopf und Positionen; das Total rechnet die Debitorenbuchhaltung genau so, wie der Buchungsdruck die Rechnung erstellen wird (MWST pro Code, Rundung auf 5 Rappen). Was den Buchungsdruck heute verhindern würde, steht unter dem Total als «Vor dem Buchungsdruck beheben». Während Positionen geändert werden, rechnet das Total <strong>laufend</strong> aus den Zeilen mit (ohne Rundung, so beschriftet); massgebend ist das Total nach dem Speichern.</p>
 <p><strong>Buchungsdruck …</strong> (nur in einem Status «zu fakturieren») erstellt aus dem Auftrag die Rechnung, vergibt die Belegnummer, verbucht sie und öffnet sie als PDF mit QR-Zahlteil — in einem Schritt. Danach ist der Auftrag <strong>gebucht</strong>: er bleibt, wie er verbucht wurde, eine Korrektur ist eine Gutschrift auf der Rechnung. Ob die Rechnung bezahlt ist, ist <strong>kein Status</strong> des Auftrags: es steht unter «Belege» und in der Liste «Gebucht» in der Spalte «Zahlung» und kommt aus der Debitorenbuchhaltung. «Erledigt» setzt man von Hand.</p>
 <p>Ein Auftrag wird nie gelöscht — die Nummer ist vergeben. Ein Auftrag, der nicht zustande kommt, wird auf «Erledigt ohne Lagerbuchung» gesetzt.</p>
 <p><strong>Verlauf</strong> zeigt jeden Statuswechsel (wann, wer, von → nach, wodurch). <strong>Belege</strong> zeigt die Rechnung mit ihrem Zahlungsstand und ihre Gutschriften.</p>
@@ -18,7 +18,8 @@
 <section data-help-field="contact">
 <h3>Kunde</h3>
 <p><strong>Kunde wählen …</strong> öffnet die Suche: nach Name, Ort, Kundennummer oder E-Mail suchen, dann <strong>Übernehmen</strong>. Die Lieferadressen des gewählten Kunden stehen danach gleich zur Auswahl. Wer nicht gefunden wird, lässt sich dort mit <strong>+ Neuer Kontakt</strong> erfassen.</p>
-<p>Gefunden werden die aktiven Debitoren und die aktiven <strong>Kontakte ohne Debitorenprofil</strong> («neu») — eine Offerte an einen Interessenten braucht noch keine Kundennummer. Debitor wird ein solcher Kontakt erst beim <strong>Buchungsdruck</strong>, mit der nächsten Kundennummer und den Standard-Konditionen. <strong>+ Kontakt</strong> erfasst einen neuen Kontakt mit Adresse, ohne den Auftrag zu verlassen; er ist danach gewählt.</p>
+<p>Gefunden werden die aktiven Debitoren und die aktiven <strong>Kontakte ohne Debitorenprofil</strong> («neu»). Ein solcher Kontakt wird erst Kunde, wenn er <strong>Debitor</strong> ist: <strong>Übernehmen</strong> fragt zuerst <strong>Debitor anlegen</strong> — mit Preisen netto oder brutto und den Zahlungskonditionen; die Kundennummer wird dabei vergeben. <strong>Abbrechen</strong> wählt keinen Kunden. So entsteht kein Auftrag mit dem falschen Preismodus, der nach dem Buchen gutgeschrieben und neu erstellt werden müsste. Ebenso fragt <strong>+ Neuer Kontakt</strong> nach dem Speichern des Kontakts nach dem Debitor.</p>
+<p>Mit dem Kunden übernimmt der Auftrag dessen <strong>Preise</strong> (netto oder brutto, siehe dort).</p>
 </section>
 
 <section data-help-field="subject">
@@ -49,7 +50,8 @@
 
 <section data-help-field="price_mode">
 <h3>Preise netto / brutto</h3>
-<p>Ob die Preise der Positionen die MWST enthalten. Ein Artikelpreis in der anderen Art wird beim Übernehmen umgerechnet.</p>
+<p>Ob die Preise der Positionen die MWST enthalten. Ein neuer Auftrag beginnt mit dem Preismodus des Debitors (im Debitor hinterlegt, «Debitor anpassen»); hier lässt er sich für diesen Auftrag ändern.</p>
+<p>Ein Wechsel rechnet die Positionen <strong>sofort</strong> um: eine Artikelposition nimmt wieder genau den Artikelpreis in der neuen Art; ein von Hand geänderter Preis wird mit dem MWST-Satz der Zeile umgerechnet und auf den Rappen gerundet. Ohne JavaScript rechnet das Speichern um.</p>
 </section>
 
 <section data-help-field="terms">
@@ -63,27 +65,29 @@
 </section>
 
 <section data-help-field="type">
-<h3>Art der Position</h3>
+<h3>Positionen</h3>
+<p>Ein Auftrag kennt zwei Arten von Zeilen:</p>
 <ul>
-    <li><strong>Leistung</strong>: Menge × Preis.</li>
-    <li><strong>Pauschale</strong>: ein Preis, keine Menge (ein Artikel zählt im Lager als 1).</li>
-    <li><strong>Text</strong>: nur Text — kein Artikel, keine Menge, kein Preis.</li>
+    <li><strong>Leistung</strong>: ein Artikel, Menge × Preis. <strong>Jede Position mit Preis ist ein Artikel</strong> — auch eine Pauschale (ein Artikel mit Menge 1). MWST-Satz und Ertragskonto kommen vom Artikel.</li>
+    <li><strong>Text</strong>: nur Text über die ganze Breite — kein Artikel, keine Menge, kein Preis.</li>
 </ul>
+<p><strong>+ Artikel</strong> und <strong>+ Textzeile</strong> fügen unten eine Zeile an, <strong>×</strong> entfernt eine. Die Reihenfolge ist die Druckreihenfolge: mit <strong>⋮⋮</strong> eine Zeile an ihren Platz ziehen (oder ⋮⋮ anwählen und <strong>Alt+↑ / Alt+↓</strong>); eine Position nimmt ihre eingerückten Zeilen mit. Die Nummern 1, 1.1, 2 … stellen sich dabei neu.</p>
+<p>Eine Position <strong>ohne Artikel</strong> (aus der Zeit vor dem 18.10.2026) bleibt lesbar und lässt sich unverändert weiter speichern; wer sie ändern will, wählt einen Artikel. Eine frühere «Pauschale» steht als Leistung mit Menge 1 da — der Betrag bleibt derselbe.</p>
 </section>
 
 <section data-help-field="child">
-<h3>unter</h3>
-<p>Die Zeile wird unter der Position darüber gedruckt (eine Ebene). Nur eine Position mit Preis trägt Unterpositionen.</p>
+<h3>Einrücken ⇥</h3>
+<p>Eingeschaltet, steht die Zeile <strong>unter der Position darüber</strong> (eine Ebene, Nummer 1.1) und wird mit ihr gedruckt — z.B. eine Textzeile mit Details zu einem Artikel. Unter einer Textzeile stehen keine Positionen.</p>
 </section>
 
 <section data-help-field="article">
 <h3>Artikel</h3>
-<p>Die Artikelnummer (die Liste schlägt die aktiven Artikel vor). Leer = eine <strong>freie Position</strong> mit eigenem MWST-Code und Konto. Sobald ein Artikel gewählt ist, füllt die Zeile <strong>Text, Einheit und Preis</strong> (der Preis am Auftragsdatum) — überschreiben lässt sich alles; ein anderer Artikel füllt sie neu. <strong>MWST-Code und Ertragskonto</strong> kommen immer vom Artikel und stehen gesperrt (ein anderes Konto ist eine freie Position). Was leer bleibt, übernimmt das Speichern vom Artikel.</p>
+<p>Die Artikelnummer (die Liste schlägt die aktiven Artikel vor). Sobald ein Artikel gewählt ist, füllt die Zeile <strong>Text, Einheit und Preis</strong> (der Preis am Auftragsdatum) — überschreiben lässt sich alles; ein anderer Artikel füllt sie neu. Der <strong>MWST-Satz</strong> steht in der Spalte MWST, das Ertragskonto zeigt der Auftrag nicht: beides kommt immer vom Artikel (ein anderes Konto ist ein anderer Artikel). Was leer bleibt, übernimmt das Speichern vom Artikel.</p>
 </section>
 
 <section data-help-field="text">
 <h3>Text</h3>
-<p>Was gedruckt wird. Eine Zeile ohne Artikel, Text, Menge und Preis wird weggelassen — so wird eine Position gelöscht.</p>
+<p>Was gedruckt wird, auch über mehrere Zeilen — das Feld wächst mit. Bei einem Artikel ist die <strong>erste Zeile</strong> sein Name (hervorgehoben), darunter kann eine Beschreibung stehen. Eine Zeile ohne Artikel, Text, Menge und Preis wird beim Speichern weggelassen.</p>
 </section>
 
 <section data-help-field="quantity">
@@ -101,7 +105,3 @@
 <p>In Prozent auf den Positionsbetrag.</p>
 </section>
 
-<section data-help-field="account">
-<h3>MWST-Code und Konto</h3>
-<p>Nur bei einer freien Position: ein aktiver MWST-Code und ein Ertragskonto, das im Kontenplan «auf Belegen wählbar» ist. Bei einer Artikelposition stehen sie gesperrt — sie kommen vom Artikel.</p>
-</section>

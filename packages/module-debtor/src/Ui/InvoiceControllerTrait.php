@@ -503,7 +503,10 @@ trait InvoiceControllerTrait
         $form    = new InvoiceForm(DebtorCurrency::base());
         if (!$request->isPost()) {
             $contact = (int) $request->getGetParameter('contact');
-            $form->startBlank(new \DateTimeImmutable('today'), $contact > 0 ? $contact : null, $this->invoiceDefaultTarget(), $this->invoiceNewDebtorTerms($contact));
+            // The debtor carries the price mode (owner 2026-10-18) — a preset debtor's starts the invoice.
+            $profile = $contact > 0 ? $this->em()->getRepository(DebtorProfile::class)->findByContact($contact) : null;
+            $form->startBlank(new \DateTimeImmutable('today'), $contact > 0 ? $contact : null, $this->invoiceDefaultTarget(), $this->invoiceNewDebtorTerms($contact),
+                $profile?->priceMode()->value ?? 'net');
 
             return $this->invoiceFormPage($form, null);
         }
@@ -515,17 +518,19 @@ trait InvoiceControllerTrait
             return $this->invoiceFormPage($form, null);
         }
         $draft = $form->toDraft();
+        // No document for a contact without a debtor profile (owner 2026-10-18 — replaces
+        // DEBTOR-CONTACT-001's «the save opens the profile»): the picker asks «Debitor anlegen»
+        // first; a contact posted without one is refused here (Rule 7), never opened silently.
+        $party = $draft !== null && $draft->contactId > 0 ? $this->em()->getRepository(Contact::class)->find($draft->contactId) : null;
+        $notDebtor = $party !== null ? CustomerPicker::debtorRefusal($party, $this->em()->getRepository(DebtorProfile::class)->findByContact($party)) : null;
+        if ($notDebtor !== null) {
+            $form->addGeneralError($notDebtor);
+            $draft = null;
+        }
         if ($draft !== null) {
             try {
-                // The picker offers contacts without a profile too (owner 2026-10-10): the service
-                // opens the profile in the draft's unit of work — and decides again whether it may.
-                $isDebtor = $this->em()->getRepository(DebtorProfile::class)->findByContact($draft->contactId) !== null;
-                $document = $this->invoicingService()->invoice($draft, openProfile: true);
+                $document = $this->invoicingService()->invoice($draft);
                 $text     = $document->documentName() . ' erstellt (in Fakturierung, noch ohne Nummer, nichts verbucht)';
-                $opened   = $isDebtor ? null : $this->em()->getRepository(DebtorProfile::class)->findByContact($draft->contactId);
-                if ($opened !== null) {
-                    $text .= ' — «' . $document->getContact()->displayName() . '» ist neu Debitor mit Kundennummer ' . $opened->getCustomerNumber();
-                }
                 if ($this->invoiceIsFetch()) {
                     return $this->invoiceWindowSaved((int) $document->getId(), WindowOrigin::of($request), $text);
                 }
@@ -748,9 +753,11 @@ trait InvoiceControllerTrait
      * `replace-html` of the customer field IN THE EDITOR (`#invoice-contact`, scoped to the
      * origin — {@see CustomerPickerTrait::customerChosenAnswer()}, the picker's own answer) with the
      * new contact chosen — and `close-modal` for this window (the picker too, when it was opened there);
-     * nothing else of the draft is touched. The contact gets its debtor profile when the
-     * draft is saved ({@see addAction()}). Without the script: a page whose save goes to a
-     * new invoice with the contact preselected.
+     * nothing else of the draft is touched. Since 2026-10-18 (owner: no document for a contact
+     * without a debtor profile) the save answers «Debitor anlegen» in this window first
+     * ({@see CustomerPickerTrait::customerDebtorPage()}) — only the created debtor fills the
+     * editor. Without the script: the same dialog as a page, then a new invoice with the
+     * contact preselected.
      */
     #[Csrf]
     protected function newContactAction(): HtmlResponse|RedirectResponse|FetchResponse
@@ -760,16 +767,17 @@ trait InvoiceControllerTrait
         if ($request->isPost()) {
             $form->fromPost($request->getPostParameters());
             if ($form->save(new ContactService($this->em()))) {
+                // The new contact becomes the customer only as a DEBTOR (owner 2026-10-18): «Debitor anlegen» follows.
                 $contact = $form->contact;
-                $text    = 'Kontakt «' . $contact->displayName() . '» erfasst — Debitor wird er mit dem Speichern der Rechnung';
+                $text    = 'Kontakt «' . $contact->displayName() . '» erfasst — jetzt als Debitor anlegen';
                 if (!$this->invoiceIsFetch()) {
                     $this->messageService->pushFlashAfterRedirect('success', $text);
 
-                    return $this->redirect($this->invoiceListBase() . '/add?contact=' . $contact->getId(), 303);
+                    return $this->redirect($this->invoiceListBase() . '/customer-debtor?' . http_build_query(['contact' => $contact->getId(), 'back' => $this->invoiceListBase() . '/add']), 303);
                 }
                 $this->messageService->pushFlash('success', $text);
 
-                return $this->customerChosenAnswer($contact, WindowOrigin::of($request), $this->invoiceListBase() . '/add');
+                return $this->customerDebtorPage($contact, WindowOrigin::of($request), $this->invoiceListBase() . '/add');
             }
         }
 

@@ -9,7 +9,7 @@
  * @var list<\Z77\Module\Article\Entities\Product> $products
  * @var array<int, array{variant: ?\Z77\Module\Article\Entities\Variant, price: ?\Z77\Module\Article\Entities\Price, path: string}> $rows
  * @var \Z77\Module\Article\Services\ProductGroupTree $tree
- * @var int|null $group  the group the list is filtered by (the rail picker), null = all
+ * @var int|null $group  the group the list is filtered by (the toolbar's tree picker), null = all
  * @var \Z77\Shared\Listing\ListDefinition $definition
  * @var \Z77\Shared\Listing\ListState $state
  * @var \Z77\Shared\Paging\Paging $paging

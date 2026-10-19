@@ -163,6 +163,23 @@ $pdf = PdfDocument::create('window')->withoutCompression()->addPage();
 $pdf->partial('pdf/addressWindow', ['lines' => ['Frau', 'Anna Ébauche', '', 'Rue du Lac 1', '1000 Lausanne']]);
 check('F3 addressWindow: the lines at the window (y from 50), the empty one skipped, the cursor below the block', str_contains($pdf->output(), "(Anna \xC9bauche)") && abs($pdf->y() - (50 + 4 * 4.6)) < 0.01);
 
+// `lead` (owner 2026-10-18): a document line's first text line bold, its description below in the row's style.
+$pdf = PdfDocument::create('lead')->withoutCompression()->addPage();
+$pdf->partial('pdf/table', ['x' => 20, 'y' => 30, 'header' => false, 'columns' => [['label' => 'Text', 'width' => 100], ['label' => 'Betrag', 'width' => 30, 'align' => 'R']], 'rows' => [
+    ['cells' => ["Titelzeile\r\nBeschreibung eins\nBeschreibung zwei", '9.00'], 'lead' => true],
+    ['cells' => ['Ohne lead', '1.00']],
+]]);
+$leadY = $pdf->y();
+$bytes = $pdf->output();
+$fontBefore = static function (string $bytes, string $needle): string {
+    $at = strpos($bytes, $needle);
+    return $at !== false && preg_match_all('/\/(F\d+) [\d.]+ Tf/', substr($bytes, 0, $at), $m) ? end($m[1]) : '';
+};
+check('F4 lead: the first line in the bold font, the description and the next row in the regular one; the row is three lines high',
+    $fontBefore($bytes, '(Titelzeile)') !== '' && $fontBefore($bytes, '(Titelzeile)') !== $fontBefore($bytes, '(Beschreibung eins)')
+    && $fontBefore($bytes, '(Beschreibung eins)') === $fontBefore($bytes, '(Ohne lead)') && str_contains($bytes, '(Beschreibung zwei)')
+    && abs($leadY - (30 + (3 * 4.5 + 1) + (4.5 + 1))) < 0.01);
+
 
 // ── G: the shared report layout (FIN-PDF-001) ─────────────────────────────────────────────
 $cols = [['label' => 'Konto', 'width' => 20], ['label' => 'Bezeichnung', 'width' => 130], ['label' => 'Betrag', 'width' => 30, 'align' => 'R']];

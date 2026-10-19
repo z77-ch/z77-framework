@@ -63,6 +63,25 @@ abstract class AbstractVariant
     public function isActive(): bool { return $this->active; }
     public function isDefault(): bool { return $this->label === ''; }
 
+    /** The name a line or a picker shows: the product's name, the label of a non-default variant behind it. */
+    public function displayName(): string
+    {
+        return trim($this->product->getName() . ($this->label !== '' ? ' ' . $this->label : ''));
+    }
+
+    /**
+     * THE text a document line of this article starts with (owner 2026-10-18) — the one place
+     * every source builds it (module-order's fill and save): the {@see displayName()} on the
+     * FIRST line, the product's description from the second line on (none = the name alone).
+     * A copy — the line keeps it editable; a PDF prints the first line bold.
+     */
+    public function lineText(): string
+    {
+        $description = trim(str_replace(["\r\n", "\r"], "\n", $this->product->getDescription()));
+
+        return $this->displayName() . ($description !== '' ? "\n" . $description : '');
+    }
+
     /** Number and unit as the one save writes them — after the draft passed its validator. */
     public function identify(string $number, string $unit): void
     {

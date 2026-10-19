@@ -50,6 +50,9 @@ const MARKERS = [
         'data-select-on-focus',     // small triggers instead of inline handlers (2026-10-13)
         'data-print',
         'data-fill-url',            // a choice fills its row — the order line's article (2026-10-15)
+        'data-price-mode-shown',    // a price-mode switch re-converts the rows (2026-10-18)
+        'set-value',                // the debtor's price mode set on a customer choice (2026-10-18)
+        'data-tree-picker-data',    // the tree picker's JSON island — the article list's group filter (2026-10-18)
         'data-help-key',            // HELP-002
         'refresh-region',           // ADR-047 windows
     ],

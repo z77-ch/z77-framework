@@ -542,11 +542,8 @@ final class InvoicingService
                 '«' . $contact->displayName() . '» ist noch kein Debitor, und keine aktiven Zahlungskonditionen sind als «Standard» markiert — unter Stammdaten › Aufträge › Zahlungskonditionen eine markieren oder den Kontakt als Debitor festlegen.'
             );
         }
-        $profile = new DebtorProfile();
-        $profile->setContact($contact);
-        $profile->setPaymentTermsCode($terms->getCode());
         try {
-            (new DebtorProfileService($this->em))->save($profile);   // range `customer` — its own unit of work
+            (new DebtorProfileService($this->em))->open($contact, $terms->getCode());   // range `customer` — its own unit of work
         } catch (InvalidDebtorProfileException $e) {
             if ($this->em->getRepository(DebtorProfile::class)->findByContact($contactId) !== null) {
                 return false;   // opened by another request in between — what was wanted

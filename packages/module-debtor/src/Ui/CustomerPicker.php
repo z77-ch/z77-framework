@@ -27,7 +27,9 @@ use Z77\Shared\Listing\Parsers;
  *     paged, a fetch region inside the window; «Übernehmen» per row; «+ Neuer Kontakt» loads
  *     the host's new-contact form into the same window.
  *
- * Choosable = an active contact that is an active debtor or no debtor yet (D9).
+ * Choosable = an active contact that is an active debtor or no debtor yet (D9) — but a contact
+ * without a debtor profile becomes the customer only after «Debitor anlegen» (owner 2026-10-18,
+ * {@see CustomerPickerTrait::customerDebtorAction()}); the save re-checks it ({@see debtorRefusal()}).
  */
 final class CustomerPicker
 {
@@ -69,10 +71,23 @@ final class CustomerPicker
         return $contact->isActive() && ($profile === null || $profile->isActive());
     }
 
+    /**
+     * Why $contact cannot become the customer of a NEW document, or null (owner decision
+     * 2026-10-18: no document for a contact without a debtor profile — otherwise a net invoice
+     * goes out that has to be booked, credited and redone). The picker asks «Debitor anlegen»
+     * first; this is the server's re-check at the save (Rule 7) for whatever the form posts.
+     */
+    public static function debtorRefusal(Contact $contact, ?DebtorProfile $profile): ?string
+    {
+        return $profile === null
+            ? '«' . $contact->displayName() . '» ist noch kein Debitor — mit «Kunde wechseln» wählen und als Debitor anlegen.'
+            : null;
+    }
+
     /** One line about a customer: name and its debtor state — the field and the list say the same. */
     public static function label(Contact $contact, ?DebtorProfile $profile): string
     {
-        return $contact->displayName() . ' · ' . ($profile !== null ? 'Kundennr. ' . $profile->getCustomerNumber() : 'neu als Debitor');
+        return $contact->displayName() . ' · ' . ($profile !== null ? 'Kundennr. ' . $profile->getCustomerNumber() : 'noch kein Debitor');
     }
 
     /**
@@ -81,8 +96,8 @@ final class CustomerPicker
      * @param string $pickUrl  the host's `customer-pick` URL
      * @param string $back        where the picker returns without the script (the editor's own URL)
      * @param bool   $showNumber  false: no «Kundennr. …» line under the name — for a host that shows
-     *                            the number elsewhere (the order window: in the block title); «neu
-     *                            als Debitor» stays, it is a state, not the number
+     *                            the number elsewhere (the order window: in the block title); «noch kein
+     *                            Debitor» (an older document) stays, it is a state, not the number
      */
     public static function fieldHtml(UnifiedEntityManager $em, string $contactId, string $pickUrl, string $back, bool $invalid = false, bool $showNumber = true): string
     {
@@ -95,7 +110,7 @@ final class CustomerPicker
             'contact' => $contact,
             'label'   => $contact !== null ? self::label($contact, $profile) : '',
             'name'    => $contact !== null ? $contact->displayName() : '',
-            'note'    => $contact === null ? '' : ($profile === null ? 'neu als Debitor' : ($showNumber ? 'Kundennr. ' . $profile->getCustomerNumber() : '')),
+            'note'    => $contact === null ? '' : ($profile === null ? 'noch kein Debitor' : ($showNumber ? 'Kundennr. ' . $profile->getCustomerNumber() : '')),
             'pickUrl' => $pickUrl,
             'back'    => $back,
             'invalid' => $invalid,

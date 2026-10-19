@@ -6,7 +6,8 @@
  * letterhead (module-mandator `pdf/letterhead`), the recipient — the invoice address debtor's
  * preview resolved — in the envelope window (kernel `pdf/addressWindow`), the title, the subject
  * in bold under it, the facts, the lines as a flowing table (kernel `pdf/table`) with the article
- * number in front of the text, the tax summary and the totals. NO payment part — the invoice
+ * number in front of the text (a priced line's first text line bold, the description below —
+ * the table's `lead`), the tax summary and the totals. NO payment part — the invoice
  * carries it at the booking print.
  *
  * Every amount is the PREVIEW's (`OrderService::preview()` → debtor's `InvoicingService::preview()`,
@@ -92,6 +93,7 @@ foreach ($preview->getLines() as $line) {
             $isText ? '' : $fmt($line->getAmount()),
         ],
         'indent' => $line->getParentLine() !== null ? 4 : 0,
+        'lead'   => !$isText,   // a priced line: its first line (the title) bold, the description below (owner 2026-10-18)
     ];
 }
 $rows[] = ['cells' => ['Netto', '', '', '', $fmt($preview->getNetTotal())], 'rule' => true];

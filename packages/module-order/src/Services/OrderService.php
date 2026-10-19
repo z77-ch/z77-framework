@@ -5,7 +5,6 @@ namespace Z77\Module\Order\Services;
 use Z77\Module\Article\Entities\Price;
 use Z77\Module\Article\Entities\Variant;
 use Z77\Module\Article\Repositories\PriceRepository;
-use Z77\Module\Article\Services\ArticleService;
 use Z77\Module\Article\Stock\StockConfirmation;
 use Z77\Module\Article\Stock\StockLedger;
 use Z77\Module\Article\Stock\StockLedgers;
@@ -17,7 +16,6 @@ use Z77\Module\Debtor\Entities\PaymentTerms;
 use Z77\Module\Debtor\Services\DebtorCurrency;
 use Z77\Module\Debtor\Services\DebtorException;
 use Z77\Module\Debtor\Services\InvoicingService;
-use Z77\Module\Mandator\Services\LedgerAccountCheck;
 use Z77\Module\Order\Entities\OrderPhase;
 use Z77\Module\Order\Entities\OrderStatus;
 use Z77\Module\Order\Entities\SalesOrder;
@@ -28,7 +26,6 @@ use Z77\Module\Order\Repositories\OrderStatusRepository;
 use Z77\Module\Order\Repositories\SalesOrderRepository;
 use Z77\Module\Order\Stock\OrderStockTargets;
 use Z77\Module\Vat\Calculation\PriceMode;
-use Z77\Module\Vat\Entities\TaxCode;
 use Z77\Module\Vat\Services\VatException;
 use Z77\Module\Vat\Services\VatRates;
 use Z77\Persistence\Doctrine\Entities\NumberRange;
@@ -599,8 +596,9 @@ final class OrderService
      * Judges the draft and resolves what it names — the contact, the articles with their values
      * at save (D3: tax code and account FROM the article; text / unit / price when empty), the
      * dates, the payment target and terms — BEFORE any unit of work. $existing = the order being
-     * rewritten (its contact, payment target and terms, variants and tax codes stay valid although
-     * deactivated since — the reference rule, ADR-043 decision 19).
+     * rewritten (its contact, payment target and terms and variants stay valid although
+     * deactivated since — the reference rule, ADR-043 decision 19; its free priced lines stay
+     * while unchanged — ADR-043 addendum 2026-10-18).
      *
      * @return array<string, mixed>
      * @throws InvalidOrderException
@@ -643,6 +641,14 @@ final class OrderService
         $priceMode = PriceMode::tryFrom($draft->priceMode);
         if ($priceMode === null) {
             $errors['price_mode'] = 'Preise netto oder brutto wählen.';
+        }
+        // The mode the posted PRICES are in (owner 2026-10-18): the window converts them when
+        // «Preise» changes and says so in `prices_mode`; when it still names the other mode (no
+        // script, a stale client) the prices are converted HERE — never stored under the other
+        // meaning. Not given = the prices are in `priceMode`.
+        $pricesMode = trim((string) $draft->pricesMode) === '' ? $priceMode : PriceMode::tryFrom(trim((string) $draft->pricesMode));
+        if ($pricesMode === null && $priceMode !== null) {
+            $errors['price_mode'] = 'Die Preise lassen sich keinem Preismodus zuordnen — das Fenster neu laden.';
         }
 
         $targetCode = PaymentTarget::normalizeCode((string) $draft->paymentTargetCode);
@@ -687,14 +693,14 @@ final class OrderService
         }
 
         // What the order being rewritten already holds — kept references stay valid (decision 19).
-        $context = ['lines' => [], 'variants' => [], 'taxCodes' => [], 'seen' => []];
+        // `free`: the order's priced lines WITHOUT an article (made before 2026-10-18) — kept while unchanged.
+        $context = ['lines' => [], 'variants' => [], 'seen' => [], 'free' => []];
         foreach ($existing?->getLines() ?? [] as $line) {
             $context['lines'][$line->getId()] = true;
             if ($line->getVariant() !== null) {
                 $context['variants'][$line->getVariant()->getId()] = true;
-            }
-            if ($line->getTaxCode() !== null) {
-                $context['taxCodes'][$line->getTaxCode()] = true;
+            } elseif ($line->type() !== LineType::Text) {
+                $context['free'][$line->getId()] = $line;
             }
         }
         $context += [
@@ -703,6 +709,9 @@ final class OrderService
             'orderDate'   => $orderDate,
             'serviceDate' => $serviceFrom ?? $orderDate,
             'priceMode'   => $priceMode,
+            'pricesMode'  => $pricesMode,
+            // What the stored lines' prices mean — a kept free line compares in the new mode.
+            'storedMode'  => $existing?->priceMode(),
             'currency'    => $currency,
         ];
 
@@ -754,9 +763,11 @@ final class OrderService
             $context['seen'][$d->id] = true;
         }
 
+        // An order knows «Leistung» and «Text» only (owner 2026-10-18, ADR-043 addendum): a lump sum
+        // is an article with quantity 1. A stored lump-sum line still reads and invoices as one.
         $type = LineType::tryFrom($d->type);
-        if ($type === null || $type === LineType::Rounding) {
-            $errors[$field('type')] = 'Art der Position: Leistung, Pauschale oder Text.';
+        if ($type === null || $type === LineType::Rounding || $type === LineType::LumpSum) {
+            $errors[$field('type')] = 'Art der Position: Leistung oder Text — eine Pauschale ist ein Artikel mit Menge 1.';
             return null;
         }
         if ($isChild && $d->children !== []) {
@@ -782,8 +793,9 @@ final class OrderService
             return count($errors) > $count ? null : self::spec($d->id, $type, null, null, $text, null, null, null, 0, null, null, []);
         }
 
-        // ── a priced line: article (D3) or free (D2) ──
+        // ── a priced line: an article (D3) — or a free line (D2) the order already holds, unchanged ──
         $variant = null;
+        $keptFree = null;
         $articleNumber = null;
         $unit      = trim($d->unit);
         $unitPrice = null;
@@ -801,7 +813,7 @@ final class OrderService
                 $articleNumber = $variant->getNumber();
                 $taxCode       = $product->getTaxCode();
                 $account       = $product->getRevenueAccount();
-                $text          = $text !== '' ? $text : trim($product->getName() . ($variant->getLabel() !== '' ? ' ' . $variant->getLabel() : ''));
+                $text          = $text !== '' ? $text : $variant->lineText();   // name, then the description (owner 2026-10-18)
                 $unit          = $unit !== '' ? $unit : $variant->getUnit();
                 if ($priceText === '' && $context['orderDate'] instanceof \DateTimeImmutable && $context['priceMode'] instanceof PriceMode) {
                     $unitPrice = $this->articlePrice($variant, $taxCode, $context, $field('unit_price'), $errors);
@@ -810,12 +822,16 @@ final class OrderService
                 $taxCode = $account = '';
             }
         } else {
-            $taxCode = TaxCode::normalizeCode($d->taxCode);
-            $account = trim($d->revenueAccount);
-            if ($text === '') {
-                $errors[$field('text')] = 'Text fehlt.';
+            // Every priced line is an article (owner 2026-10-16 / -18, ADR-043 addendum 2026-10-18):
+            // no NEW free priced line. A free line the order already holds stays readable and
+            // savable while it is UNCHANGED (judged below) — with its stored tax code and account.
+            $keptFree = $d->id !== null ? ($context['free'][$d->id] ?? null) : null;
+            if ($keptFree === null) {
+                $errors[$field('variant')] = 'Artikel wählen — jede Position mit Preis ist ein Artikel.';
+                return null;
             }
-            $this->judgeFreeLine($taxCode, $account, $context, $field, $errors);
+            $taxCode = (string) $keptFree->getTaxCode();
+            $account = (string) $keptFree->getRevenueAccount();
         }
 
         if ($priceText !== '') {
@@ -825,22 +841,22 @@ final class OrderService
             } catch (\InvalidArgumentException) {
                 $errors[$field('unit_price')] = 'Preis als Betrag mit höchstens zwei Dezimalen, z.B. 120 oder 120.50.';
             }
+            // Posted in the other mode (owner 2026-10-18 — the server's safety net, Rule 7).
+            if ($unitPrice !== null && ($variant !== null || $keptFree !== null)) {
+                $unitPrice = $this->repriced($unitPrice, $variant, $taxCode, $context, $field('unit_price'), $errors);
+            }
         } elseif ($d->variantId === null) {
             $errors[$field('unit_price')] = 'Preis fehlt.';
         }
 
         $quantity = null;
         $quantityText = str_replace(["'", '’', ' '], '', str_replace(',', '.', trim($d->quantity)));
-        if ($type === LineType::Service) {
-            if ($quantityText === '') {
-                $errors[$field('quantity')] = 'Menge fehlt.';
-            } elseif (!preg_match(SalesOrderLine::QUANTITY_PATTERN, $quantityText)) {
-                $errors[$field('quantity')] = 'Menge als Zahl mit höchstens drei Dezimalen, z.B. 2, 0.25 oder -1 für eine Rücknahme.';
-            } else {
-                $quantity = $quantityText;
-            }
-        } elseif ($quantityText !== '') {
-            $errors[$field('quantity')] = 'Eine Pauschale hat keine Menge — für Menge × Preis die Art «Leistung» wählen.';
+        if ($quantityText === '') {
+            $errors[$field('quantity')] = 'Menge fehlt.';
+        } elseif (!preg_match(SalesOrderLine::QUANTITY_PATTERN, $quantityText)) {
+            $errors[$field('quantity')] = 'Menge als Zahl mit höchstens drei Dezimalen, z.B. 2, 0.25 oder -1 für eine Rücknahme.';
+        } else {
+            $quantity = $quantityText;
         }
 
         $discount = 0;
@@ -857,6 +873,10 @@ final class OrderService
 
         if (mb_strlen($unit) > SalesOrderLine::UNIT_LENGTH) {
             $errors[$field('unit')] = 'Einheit: höchstens ' . SalesOrderLine::UNIT_LENGTH . ' Zeichen.';
+        }
+
+        if ($keptFree !== null && count($errors) === $count && !self::freeLineUnchanged($keptFree, $text, $quantity, $unit, $unitPrice, $discount, $this->storedPriceIn($keptFree, $context))) {
+            $errors[$field('variant')] = 'Eine Position ohne Artikel lässt sich nur unverändert speichern — für eine Änderung einen Artikel wählen.';
         }
 
         $children = [];
@@ -876,12 +896,15 @@ final class OrderService
 
     /**
      * What an ARTICLE line takes from the article — the values {@see resolveLine()} fills in at
-     * save when text / unit / price are left empty, plus the tax code and account it always takes
-     * (D3) — for the window to show them as soon as the article is chosen (owner 2026-10-15). Reads,
+     * save when text / unit / price are left empty (the text = `Variant::lineText()`: the name on
+     * the first line, the product's description from the second — owner 2026-10-18), plus the tax
+     * code and account it always takes (D3) — for the window to show them as soon as the article is chosen (owner 2026-10-15). Reads,
      * writes nothing. Null when the number names no variant; `price` is '' and `problem` names why
-     * when the article has no price on the order date or the price cannot be converted.
+     * when the article has no price on the order date or the price cannot be converted. `prices` =
+     * the price in BOTH modes (net, gross; '' = none) — the window re-converts its rows from them
+     * when «Preise» switches (owner 2026-10-18).
      *
-     * @return array{text: string, unit: string, price: string, taxCode: string, account: string, problem: string}|null
+     * @return array{text: string, unit: string, price: string, prices: array{net: string, gross: string}, taxCode: string, account: string, problem: string}|null
      */
     public function articleDefaults(string $number, string $orderDate, string $serviceFrom, string $priceMode): ?array
     {
@@ -895,15 +918,24 @@ final class OrderService
         $mode    = PriceMode::tryFrom($priceMode);
         $price   = null;
         $errors  = [];
-        if ($date !== null && $mode !== null) {
-            $context = ['orderDate' => $date, 'serviceDate' => (trim($serviceFrom) === '' ? null : self::date($serviceFrom)) ?? $date, 'priceMode' => $mode];
-            $price   = $this->articlePrice($variant, $product->getTaxCode(), $context, 'price', $errors);
+        $prices  = ['net' => '', 'gross' => ''];
+        if ($date !== null) {
+            $context = ['orderDate' => $date, 'serviceDate' => (trim($serviceFrom) === '' ? null : self::date($serviceFrom)) ?? $date];
+            // Both modes — the window converts its rows on a price-mode switch from these (owner 2026-10-18).
+            foreach (PriceMode::cases() as $case) {
+                $ignored = [];
+                $prices[$case->value] = $this->articlePrice($variant, $product->getTaxCode(), ['priceMode' => $case] + $context, 'price', $ignored)?->toDecimal() ?? '';
+            }
+            if ($mode !== null) {
+                $price = $this->articlePrice($variant, $product->getTaxCode(), ['priceMode' => $mode] + $context, 'price', $errors);
+            }
         }
 
         return [
-            'text'    => trim($product->getName() . ($variant->getLabel() !== '' ? ' ' . $variant->getLabel() : '')),
+            'text'    => $variant->lineText(),
             'unit'    => $variant->getUnit(),
             'price'   => $price?->toDecimal() ?? '',
+            'prices'  => $prices,
             'taxCode' => $product->getTaxCode(),
             'account' => $product->getRevenueAccount(),
             'problem' => $errors['price'] ?? '',
@@ -926,49 +958,114 @@ final class OrderService
             $errors[$field] = 'Artikel ' . $variant->getNumber() . ' hat am ' . $context['orderDate']->format('d.m.Y') . ' keinen Preis — Preis eingeben.';
             return null;
         }
-        $amount = $price->getAmount();
-        if ($price->priceMode() === $context['priceMode']) {
-            return $amount;
-        }
-        try {
-            $rate = VatRates::from($this->em)->resolve($taxCode, $context['serviceDate'])->rate;
-        } catch (VatException) {
+        $converted = $this->convertByRate($price->getAmount(), $taxCode, $price->priceMode(), $context['priceMode'], $context['serviceDate']);
+        if ($converted === null) {
             $errors[$field] = 'Der Preis von Artikel ' . $variant->getNumber() . ' lässt sich nicht umrechnen: MWST-Code «' . $taxCode . '» hat am Leistungsdatum keinen Satz — Preis eingeben.';
-            return null;
         }
 
-        return $context['priceMode'] === PriceMode::Gross
-            ? $amount->multiplyByRatio(10000 + $rate, 10000)
-            : $amount->multiplyByRatio(10000, 10000 + $rate);
+        return $converted;
     }
 
     /**
-     * A free line's tax code (known, active — or kept by the order) and revenue account (digits;
-     * the soft check of the article and the invoice: postable, «Ertrag», «auf Belegen wählbar»).
-     * The BINDING check stays debtor's at the booking print (no second rule set — Rule 2).
+     * A posted price in the mode the draft says it is typed in (`pricesMode`), as the order's
+     * mode (`priceMode`) — the server's half of the price-mode switch (owner 2026-10-18; core.js
+     * «price mode» is the window's half and follows the same rule):
+     *
+     *   - the same mode → the price as posted;
+     *   - an ARTICLE line whose price EQUALS the article's price in the posted mode → the article's
+     *     price in the order's mode, exactly (16.65 gross — not 15.40 × 1.081);
+     *   - any other price (typed by hand; a kept free line) → converted with the line's VAT rate on
+     *     the service date ({@see convertByRate()}).
      *
      * @param array<string, mixed>  $context
      * @param array<string, string> $errors
      */
-    private function judgeFreeLine(string $taxCode, string $account, array $context, \Closure $field, array &$errors): void
+    private function repriced(Money $price, ?Variant $variant, string $taxCode, array $context, string $field, array &$errors): ?Money
     {
-        if ($taxCode === '') {
-            $errors[$field('tax_code')] = 'MWST-Code wählen.';
-        } else {
-            $code = $this->em->getRepository(TaxCode::class)->findByCode($taxCode);
-            if ($code === null) {
-                $errors[$field('tax_code')] = 'Den MWST-Code «' . $taxCode . '» gibt es nicht.';
-            } elseif (!$code->isActive() && !isset($context['taxCodes'][$taxCode])) {
-                $errors[$field('tax_code')] = 'Der MWST-Code «' . $taxCode . '» ist inaktiv.';
+        $from = $context['pricesMode'] ?? null;
+        $to   = $context['priceMode'] ?? null;
+        if (!$from instanceof PriceMode || !$to instanceof PriceMode || $from === $to
+            || !$context['orderDate'] instanceof \DateTimeImmutable || !$context['serviceDate'] instanceof \DateTimeImmutable) {
+            return $price;
+        }
+        if ($variant !== null) {
+            $ignored = [];
+            $before  = $this->articlePrice($variant, $taxCode, ['priceMode' => $from] + $context, $field, $ignored);
+            if ($before !== null && $before->toDecimal() === $price->toDecimal()) {
+                $exact = $this->articlePrice($variant, $taxCode, $context, $field, $ignored);
+                if ($exact !== null) {
+                    return $exact;
+                }
             }
         }
-        if ($account === '') {
-            $errors[$field('revenue_account')] = 'Ertragskonto fehlt.';
-        } elseif (!preg_match('/^[0-9]{1,' . SalesOrderLine::ACCOUNT_LENGTH . '}$/', $account)) {
-            $errors[$field('revenue_account')] = 'Konto: nur Ziffern, höchstens ' . SalesOrderLine::ACCOUNT_LENGTH . '.';
-        } elseif (($problem = ArticleService::accountProblem(new LedgerAccountCheck($this->em), $account)) !== null) {
-            $errors[$field('revenue_account')] = $problem;
+        $converted = $this->convertByRate($price, $taxCode, $from, $to, $context['serviceDate']);
+        if ($converted === null) {
+            $errors[$field] = 'Der Preis lässt sich nicht nach ' . ($to === PriceMode::Gross ? 'brutto' : 'netto') . ' umrechnen: MWST-Code «' . $taxCode . '» hat am Leistungsdatum keinen Satz.';
         }
+
+        return $converted;
+    }
+
+    /**
+     * $price from one price mode into the other with the rate of $taxCode on $date, in cents,
+     * rounded half away from zero (`Money::multiplyByRatio()`): net → gross × (10000 + r) / 10000,
+     * gross → net × 10000 / (10000 + r), r = the rate in hundredths of a percent. Null when the
+     * code has no rate on that day.
+     */
+    private function convertByRate(Money $price, string $taxCode, PriceMode $from, PriceMode $to, \DateTimeImmutable $date): ?Money
+    {
+        if ($from === $to) {
+            return $price;
+        }
+        try {
+            $rate = VatRates::from($this->em)->resolve($taxCode, $date)->rate;
+        } catch (VatException) {
+            return null;
+        }
+
+        return $to === PriceMode::Gross
+            ? $price->multiplyByRatio(10000 + $rate, 10000)
+            : $price->multiplyByRatio(10000, 10000 + $rate);
+    }
+
+    /**
+     * A kept free line's stored price as it reads in the order's NEW mode — the window converts it
+     * with the mode, so an untouched line still counts as unchanged after «Preise» switched.
+     *
+     * @param array<string, mixed> $context
+     */
+    private function storedPriceIn(SalesOrderLine $stored, array $context): ?Money
+    {
+        $price = $stored->getUnitPrice();
+        $from  = $context['storedMode'] ?? null;
+        $to    = $context['priceMode'] ?? null;
+        if ($price === null || !$from instanceof PriceMode || !$to instanceof PriceMode || $from === $to || !$context['serviceDate'] instanceof \DateTimeImmutable) {
+            return $price;
+        }
+
+        return $this->convertByRate($price, (string) $stored->getTaxCode(), $from, $to, $context['serviceDate']) ?? $price;
+    }
+
+    /**
+     * Whether a posted free line equals the stored one it names (ADR-043 addendum 2026-10-18): text,
+     * quantity, unit, unit price and discount. A stored LUMP SUM reads as quantity 1 — the window
+     * shows it as «Leistung» × 1 (the same amount), so an untouched one still counts as unchanged.
+     */
+    private static function freeLineUnchanged(SalesOrderLine $stored, string $text, ?string $quantity, string $unit, ?Money $unitPrice, int $discount, ?Money $storedPrice = null): bool
+    {
+        $storedPrice ??= $stored->getUnitPrice();   // the stored price in the order's NEW mode ({@see storedPriceIn()})
+        $storedQuantity = $stored->type() === LineType::LumpSum ? '1' : $stored->getQuantity();
+        $sameQuantity   = static fn(?string $a, ?string $b): bool => $a === null || $b === null
+            ? $a === $b
+            : number_format((float) $a, 3, '.', '') === number_format((float) $b, 3, '.', '');
+
+        $eol = static fn(string $t): string => str_replace("\r\n", "\n", $t);   // a textarea posts CRLF
+
+        return $eol($text) === $eol($stored->getText())
+            && $sameQuantity($quantity, $storedQuantity)
+            && $unit === (string) $stored->getUnit()
+            && $unitPrice?->toDecimal() === $storedPrice?->toDecimal()
+            && $discount === $stored->getDiscountPercent();
     }
 
     /** @param list<array<string, mixed>> $children @return array<string, mixed> */

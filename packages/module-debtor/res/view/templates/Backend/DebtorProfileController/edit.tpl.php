@@ -62,6 +62,15 @@ $fieldError = function (string $name) use ($validator): string {
                 </select>
                 <?= raw($fieldError('payment_terms_code')) ?>
             </div>
+            <div class="be-form__field" data-z77-field-wrapper>
+                <label for="debtor-price_mode">Preise</label>
+                <select id="debtor-price_mode" name="price_mode" aria-invalid="<?= $validator->hasFieldError('price_mode') ? 'true' : 'false' ?>">
+                    <option value="net"<?= $entry->getPriceMode() !== 'gross' ? ' selected' : '' ?>>netto (exkl. MWST)</option>
+                    <option value="gross"<?= $entry->getPriceMode() === 'gross' ? ' selected' : '' ?>>brutto (inkl. MWST)</option>
+                </select>
+                <?= raw($fieldError('price_mode')) ?>
+                <small class="be-form__hint">Damit beginnt jeder neue Auftrag und jede neue Rechnung dieses Kunden — im Beleg änderbar.</small>
+            </div>
             <div class="be-form__field">
                 <label class="be-choice">
                     <input type="checkbox" class="be-choice__input" name="dunning_block" value="1"<?= $entry->hasDunningBlock() ? ' checked' : '' ?>>

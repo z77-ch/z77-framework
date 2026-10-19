@@ -7,7 +7,8 @@ use Doctrine\ORM\Mapping as ORM;
 
 /**
  * The PRODUCT stage of an article (plan §4b A3) — the marketing and accounting unit: its name,
- * its ONE place in the product-group tree ({@see ProductGroup}, A1 — mandatory, any node), the
+ * its description (owner 2026-10-18: a multi-line text all variants share — an order line takes
+ * it below the name, {@see AbstractVariant::lineText()}), its ONE place in the product-group tree ({@see ProductGroup}, A1 — mandatory, any node), the
  * tax code and the revenue account (owner 2026-10-14: on the article; the group only supplies
  * DEFAULTS for a new article), whether stock is kept («führt Bestand», A7), active.
  *
@@ -31,6 +32,11 @@ use Doctrine\ORM\Mapping as ORM;
 abstract class AbstractProduct
 {
     public const NAME_LENGTH     = 120;
+    /**
+     * The description in characters — a TEXT column, the limit is the form's: name, label and
+     * description together stay well inside an order line's text (`SalesOrderLine::TEXT_LENGTH`).
+     */
+    public const DESCRIPTION_LENGTH = 1500;
     public const TAX_CODE_LENGTH = 8;
     public const ACCOUNT_LENGTH  = 10;
     public const ACTOR_LENGTH    = 80;
@@ -41,6 +47,13 @@ abstract class AbstractProduct
 
     #[ORM\Column(length: self::NAME_LENGTH)]
     protected string $name = '';
+
+    /**
+     * Multi-line, '' = none (owner 2026-10-18). Shared by every variant of the product; an order
+     * line takes it as the text from its second line on — a copy, editable on the line.
+     */
+    #[ORM\Column(type: Types::TEXT)]
+    protected string $description = '';
 
     /**
      * The ONE placement in the product-group tree (A1, owner 2026-10-14): mandatory, any node.
@@ -92,6 +105,7 @@ abstract class AbstractProduct
 
     public function getId(): ?int { return $this->id; }
     public function getName(): string { return $this->name; }
+    public function getDescription(): string { return $this->description; }
     public function getProductGroup(): ProductGroup { return $this->productGroup; }
     public function getTaxCode(): string { return $this->taxCode; }
     public function getRevenueAccount(): string { return $this->revenueAccount; }
@@ -108,9 +122,10 @@ abstract class AbstractProduct
      * draft passed its validator (ADR-039 decision 9: a managed entity is never mutated before
      * validation).
      */
-    public function describe(string $name, string $taxCode, string $revenueAccount, bool $stockRelevant): void
+    public function describe(string $name, string $taxCode, string $revenueAccount, bool $stockRelevant, string $description = ''): void
     {
         $this->name           = $name;
+        $this->description    = $description;
         $this->taxCode        = $taxCode;
         $this->revenueAccount = $revenueAccount;
         $this->stockRelevant  = $stockRelevant;

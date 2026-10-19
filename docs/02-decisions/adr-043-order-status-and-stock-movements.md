@@ -1,6 +1,6 @@
 # ADR-043 — Order status as data, and the stock movements it controls
 
-**Status:** `[APPROVED]` — approved by the owner 2026-09-21 (P0 of [`order-debtor-financial-bauplan.md`](../03-development/order-debtor-financial-bauplan.md)); addendum 2026-10-14 (P7 slim seed, `invoiceBooked` / `offer` / `deliveryNoteTarget`, position changes trigger stock — approved by the owner); addendum 2026-10-15 (fixed phases carry the behaviour, statuses are labels, a cancelled phase — approved by the owner)
+**Status:** `[APPROVED]` — approved by the owner 2026-09-21 (P0 of [`order-debtor-financial-bauplan.md`](../03-development/order-debtor-financial-bauplan.md)); addendum 2026-10-14 (P7 slim seed, `invoiceBooked` / `offer` / `deliveryNoteTarget`, position changes trigger stock — approved by the owner); addendum 2026-10-15 (fixed phases carry the behaviour, statuses are labels, a cancelled phase — approved by the owner); addendum 2026-10-18 (the debtor carries the price mode, a price-mode switch re-converts the rows, no document for a contact without a debtor profile — approved by the owner)
 **Date:** 2026-09-21
 
 ---
@@ -276,9 +276,9 @@ phases, the statuses, the transitions and the stock decisions stay. **Decided, N
 
 **Open — NOT decided:**
 
-- What happens to EXISTING orders that hold free priced lines (`variant_id` null on a service or
-  lump-sum line): keep them readable and bookable as they are, convert them to an article, or refuse
-  the save until the line is replaced. The owner decides before the validator change ships.
+- ~~What happens to EXISTING orders that hold free priced lines~~ — **decided 2026-10-18 (owner:
+  «ok»)**: they stay readable, savable and bookable as long as those lines are UNCHANGED; see the
+  addendum 2026-10-18 «positions» below.
 - What existing orders get as `bill_*` (they have none): filled once from the customer's current
   invoice address by a data migration, or left empty with «empty = debtor snapshots the contact's
   invoice address at booking» (today's behaviour) as the fallback.
@@ -330,3 +330,107 @@ payment part (debtor's `PaymentTarget`); the debtor screens and master data are 
    stays and the booking print still prints the payment part for it; the SERVER sets it — a new
    order the first active target (`orderDefaultTarget()`, the former preselection), an existing
    order keeps its own. A posted `target` is ignored (`OrderForm::withTarget()`).
+
+## Addendum 2026-10-18 — positions: no lump sum, every priced line an article, position as sort key (approved by the owner)
+
+Decided by the owner on 2026-10-18 with the positions block of the order window (the draft
+`order-mask-draft.html`); **built the same day**. It completes the addendum 2026-10-16 points 3–5;
+where plan D2 or the window differ, this addendum applies. Debtor's own invoice editor and
+`LineType` are unchanged — the invoice keeps «Pauschale».
+
+1. **No «Pauschale» in an order.** An order knows two line types: «Leistung» (`service`) and «Text»
+   (`text`). A lump sum is an ARTICLE with quantity 1. `OrderService` refuses the type `lump-sum`
+   (`lines.{path}.type`), `OrderForm::TYPES` offers only the two. **Existing lump-sum lines**: they
+   read and invoice as before while nobody saves the order (`OrderInvoiceDraft` maps them 1:1, the
+   stock counts them as one unit); the window shows them as «Leistung» × 1 — the same amount — and
+   a save writes them as `service` with quantity 1.000 (an existing FREE lump sum counts as
+   unchanged under point 2).
+2. **Every priced line is an article** (point 3 of the addendum 2026-10-16, now enforced). A new
+   priced line without `variantId` is refused (`lines.{path}.variant` — «Artikel wählen»). An
+   EXISTING free priced line (`variant_id` null on a non-text line, made before) stays readable,
+   savable and bookable as long as it is UNCHANGED: sent back with its `id`, with the same text,
+   quantity, unit, unit price and discount (a stored lump sum reads as quantity 1) — it keeps its
+   stored tax code and revenue account. Any change to it is refused («nur unverändert speicherbar —
+   für eine Änderung einen Artikel wählen»); moving or indenting it is no change. The rule lives in
+   `OrderService::resolveLine()` (`freeLineUnchanged()`) — the service owns rules, the form only
+   maps. `OrderLineDraft::free()` and the draft's `taxCode` / `revenueAccount` are gone, so is the
+   free line's tax-code / account check (`judgeFreeLine()`); the window has no Konto column and no
+   tax-code input — the MWST column shows the article's RATE, read-only (point 5).
+3. **The position is a SORT KEY; indentation is a FLAG.** The window's rows are ordered by drag &
+   drop (⋮⋮, keyboard Alt+↑ / Alt+↓) and posted in that order; `apply()` writes `position`
+   1, 2, 3 … in posted order as before. The indent toggle (⇥) is the row's `child` flag: an indented
+   row stays the CHILD of the nearest preceding non-indented row (`parent_line_id`, one level —
+   unchanged), so the PDFs, the invoice mapping and the stock are untouched. Dragging a main row
+   moves its indented rows with it. Without the script the order is the rendered one and the flag
+   is a checkbox.
+
+**Consequences (built):** `OrderService` (type and article rule), `OrderLineDraft` (no tax code /
+account), `OrderForm` (two types, `applyOp()` for `add-article` / `add-text` / `remove:{i}`, a
+stored lump sum shown as service × 1, no empty row on an existing order), the window
+(`edit.tpl.php`, core.js «rows» / «autosize» / «line sums»), harness `tests/module-order.php` F3,
+F7–F9, M6–M9, M19, M21; `tests/module-debtor.php` O (its order line is an article now).
+
+## Addendum 2026-10-18 — the debtor carries the price mode; no document for a contact without a debtor profile (approved by the owner)
+
+Decided by the owner on 2026-10-18 after the bug report of the same day (article 02.100.02, 16.65
+GROSS, showed 15.40 in an order «whatever its Preise setting»; the row price was filled once under
+«netto» and a later switch to «brutto» kept the number — the customer would have been billed 15.40
+incl. VAT); **built the same day**. Where plan D9 / Q4, the addendum 2026-10-18 «payment terms»
+point 2 and debtor's DEBTOR-CONTACT-001 differ, this addendum applies to the order window and
+debtor's invoice editor.
+
+1. **The debtor carries the price mode.** `debtor_profile.price_mode` `net` | `gross` (module-vat's
+   `PriceMode`; module-debtor migration `Version20261018130000`, schema only — the column default
+   `net` is what every existing profile and every order so far started with). Edited in debtor's
+   profile dialog («Debitor bearbeiten» / «Debitor anpassen»), asked in «Debitor anlegen» (point 4);
+   the contact editor's role «Debitor» opens with `net` and shows it in its summary. A NEW order or
+   invoice with a preset customer starts with the debtor's mode; choosing a customer sets the
+   document's «Preise» from the debtor (debtor's shared picker answer, core.js `set-value`).
+2. **The document's «Preise» stays changeable** per order / invoice — the debtor's mode is the
+   preset, the document's `price_mode` remains the truth of what it was priced in.
+3. **A price-mode change re-converts the order's rows at once, in the window, without a question**
+   (the select, or a customer choice that changes the mode while rows exist — core.js «price
+   mode»): an article row whose price equals the article's price in the old mode takes the
+   article's EXACT price in the new mode (16.65 gross, not 15.40 × 1.081); any other price (typed
+   by hand, an existing free line) is converted with the row's VAT rate — in cents, r = the rate in
+   hundredths of a percent, **rounded half away from zero** (`Money::multiplyByRatio()`, the rule
+   `articlePrice()` already used): net → gross = c × (10000 + r) / 10000, gross → net =
+   c × 10000 / (10000 + r); a row without a rate keeps its price. The live totals follow.
+   **Server safety net (Rule 7):** the form carries `prices_mode` — the mode its prices are in,
+   rendered as the order's mode and rewritten by the script only when a conversion is complete;
+   `OrderService` converts the posted prices by the same rule whenever `prices_mode` differs from
+   `price_mode` (no script, a stale client) — a price is never stored under the other meaning. A
+   `prices_mode` that names no mode is refused. A kept free line counts as unchanged when its price
+   equals the stored price converted into the new mode. The window's rate is the one on the ORDER
+   date, the server's on the SERVICE date — they differ only across a VAT rate change; then the
+   server's conversion of a script-converted free line may refuse it as changed (edge, accepted).
+   The invoice editor takes the debtor's mode but does NOT re-convert typed prices (it has no
+   article prices and no rate per row on the page) — its help says: choose the customer first.
+4. **No document for a contact without a debtor profile.** When the customer picker (shared by the
+   order window and the invoice editor) is answered with a contact that has no profile, or «+ Kontakt»
+   saves a new one, the window asks «<Name> ist noch kein Debitor — Debitor anlegen» (price mode,
+   payment terms preset with `defaultForNewDebtor()`, the customer number drawn on «Debitor
+   anlegen»); only the created debtor becomes the customer, «Abbrechen» chooses none. Reason
+   (owner): otherwise a net invoice goes out that must be booked, credited and redone. The profile
+   is opened through ONE path, `DebtorProfileService::open()` (the validator, the customer number
+   in its own unit of work) — also used by the role «Debitor» and `openDebtorProfile()`. The saves
+   re-check it (`CustomerPicker::debtorRefusal()`): the order window refuses a customer NEW to the
+   order without a profile, the invoice editor refuses it and no longer saves with
+   `openProfile: true`. **Kept:** an existing order keeps a profile-less customer it already holds
+   (older drafts), and the booking print still opens a missing profile (plan D9,
+   `openDebtorProfile()`); `OrderService` itself still accepts a prospect (imports and later
+   sources decide for themselves) — the rule is the screens'.
+
+**Not built (pending, article.md):** price lists per customer group (a private customer 24.90
+gross, gastro 18.50 net) — today one `article_price` per variant and day (`uniq_article_price_day`).
+
+**Consequences (built):** module-debtor `DebtorProfile::$priceMode`, `DebtorProfileValidator::
+validatePriceMode()`, `DebtorProfileService::open()`, the profile dialog's «Preise», the picker's
+`customerDebtorAction()` / `customerDebtorPage()` and template `Backend/CustomerPicker/debtor`, the
+`set-value` of `price_mode` in `customerChosenAnswer()`, `CustomerPicker::debtorRefusal()`, the
+invoice editor (start mode, refusal, «+ Kontakt»); module-order `OrderDraft::$pricesMode`,
+`OrderService::repriced()` / `convertByRate()` / `storedPriceIn()`, `articleDefaults()['prices']`,
+`OrderForm` `prices_mode`, the window (`data-price-mode`, hidden `prices_mode`, start mode,
+refusal, «+ Kontakt»); core.js «price mode», `fill.ask()`, command `set-value`; harness
+`tests/module-order.php` F10–F12, M22–M26, `tests/module-debtor.php` A11/A12c, V7–V9, W13,
+`tests/js-min-markers.php`.

@@ -24,7 +24,12 @@
 
 <section data-help-field="name">
 <h3>Bezeichnung</h3>
-<p>Der Text, den eine neue Position vorschlägt. Auf der Position lässt er sich ergänzen oder ersetzen (z.B. «Beratung Oktober»).</p>
+<p>Der Text, den eine neue Position vorschlägt (die erste Zeile, darunter die Beschreibung). Auf der Position lässt er sich ergänzen oder ersetzen (z.B. «Beratung Oktober»).</p>
+</section>
+
+<section data-help-field="description">
+<h3>Beschreibung</h3>
+<p>Freiwillig, mehrzeilig, höchstens 1500 Zeichen — gilt für den Artikel als Ganzes (alle Varianten). Wird der Artikel auf einer Auftragsposition gewählt, steht im Text der Position zuerst die Bezeichnung, ab der zweiten Zeile die Beschreibung. Auf der Position bleibt alles änderbar; geändert wird nur diese Position, nicht der Artikel. Auf Offerte, Auftragsbestätigung, Lieferschein und Rechnung wird die erste Zeile fett gedruckt, die Beschreibung darunter normal.</p>
 </section>
 
 <section data-help-field="unit">

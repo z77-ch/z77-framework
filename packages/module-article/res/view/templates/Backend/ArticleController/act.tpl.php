@@ -5,7 +5,7 @@
  * rendered inset by the shell; create = `.be-btn--primary`. Opens the article WINDOW (ADR-047,
  * `data-window-open`); the href stays for a ctrl-click and a browser without the script. The
  * origin names the list region, so the save reloads it. While the list is filtered by a product
- * group (the rail picker), the link carries it (`?group=`): the new article starts in that group
+ * group (the toolbar's tree picker), the link carries it (`?group=`): the new article starts in that group
  * with its default tax code and revenue account.
  *
  * Part of the fragment: added by `listAction()` (financial.md, «fragment slots»).

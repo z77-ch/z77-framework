@@ -8,7 +8,7 @@
  *     list region it stands in), the href stays for a ctrl-click;
  *   - every searchable cell is a `<label for>` of its column's search field;
  *   - Warengruppe: the path of the article's ONE group («Dienstleistungen › Beratung»); the
- *     filter by group is the picker at the top of the rail;
+ *     filter by group is the tree picker in the toolbar;
  *   - Preis: the price valid today from the history (A4) — a gross price says «brutto»; a price
  *     that only starts later shows its day («ab …»);
  *   - «Aktiv»: the inline switch (`data-fetch-toggle`) — product and variants together.

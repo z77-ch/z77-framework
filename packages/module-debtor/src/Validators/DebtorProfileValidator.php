@@ -6,6 +6,7 @@ use Z77\Module\Contact\Entities\Contact;
 use Z77\Module\Debtor\Entities\DebtorProfile;
 use Z77\Module\Debtor\Repositories\DebtorProfileRepository;
 use Z77\Module\Debtor\Repositories\PaymentTermsRepository;
+use Z77\Module\Vat\Calculation\PriceMode;
 use Z77\Persistence\Validation\EntityValidator;
 
 /**
@@ -70,6 +71,14 @@ class DebtorProfileValidator extends EntityValidator
         $existing = $this->profiles->findByContact($contact);
         if ($existing !== null && $existing->getId() !== $this->entity->getId()) {
             $this->addFieldError('contact_id', 'Für «' . $contact->displayName() . '» gibt es bereits einen Debitor.');
+        }
+    }
+
+    /** `net` | `gross` — module-vat's `PriceMode` (owner 2026-10-18: the debtor carries the price mode). */
+    public function validatePriceMode(string $mode): void
+    {
+        if (PriceMode::tryFrom($mode) === null) {
+            $this->addFieldError('price_mode', 'Preise netto oder brutto wählen.');
         }
     }
 

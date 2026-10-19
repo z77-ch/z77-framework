@@ -14,7 +14,11 @@ use Z77\Module\Order\Entities\SalesOrder;
  *   - `contactId` — the customer, a CONTACT (a debtor profile is not required — D9);
  *   - `orderDate` (required), `serviceFrom` / `serviceTo` (optional; «bis» needs «von») — the
  *     VAT rate follows the service date, the article price the ORDER date;
- *   - `priceMode` — `net` | `gross`; `paymentTargetCode` — the payment part of the booked invoice,
+ *   - `priceMode` — `net` | `gross`, what the order is priced in; `pricesMode` — the mode the
+ *     line PRICES of this draft are typed in (the window's hidden `prices_mode`, owner 2026-10-18):
+ *     when it differs from `priceMode` (a mode switched without the script, a stale client) the
+ *     service converts the prices — never stores a price under the other meaning; null / '' =
+ *     the same as `priceMode`; `paymentTargetCode` — the payment part of the booked invoice,
  *     null / '' = none; `paymentTermsCode` — the payment terms of the booked invoice (debtor's
  *     `PaymentTerms`, owner 2026-10-18), null / '' = the customer's debtor terms;
  *   - `deliveryAddress` — the snapshot to print on the delivery note; null = the invoice address;
@@ -46,5 +50,6 @@ final class OrderDraft
         public readonly ?string $sourceRef = null,
         public readonly ?AddressSnapshot $billingAddress = null,
         public readonly ?string $paymentTermsCode = null,
+        public readonly ?string $pricesMode = null,
     ) {}
 }

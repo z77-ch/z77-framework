@@ -13,4 +13,4 @@
  * @var string $url  debtor's profile dialog of the customer, '' = no link
  */
 ?>
-<span id="order-debtor-edit"><?php if ($url !== ''): ?><button type="button" class="be-form__card-action" data-fetch-get="<?= e($url) ?>">Debitor anpassen</button><?php endif; ?></span>
+<span id="order-debtor-edit"><?php if ($url !== ''): ?><button type="button" class="be-form__card-action" data-fetch-get="<?= e($url) ?>" data-popup-refresh="order-terms">Debitor anpassen</button><?php endif; ?></span>

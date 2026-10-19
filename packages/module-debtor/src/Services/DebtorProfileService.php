@@ -3,6 +3,7 @@
 namespace Z77\Module\Debtor\Services;
 
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
+use Z77\Module\Contact\Entities\Contact;
 use Z77\Module\Debtor\Entities\DebtorProfile;
 use Z77\Module\Debtor\Entities\Invoice;
 use Z77\Module\Debtor\Entities\PaymentTerms;
@@ -80,6 +81,27 @@ final class DebtorProfileService
                 $this->em->persist($profile);
             });
         });
+    }
+
+    /**
+     * Makes $contact a DEBTOR — THE way every path opens a profile (owner 2026-10-18: «one rule,
+     * one place»): the contact editor's role «Debitor», the booking print's
+     * `InvoicingService::openDebtorProfile()` and the customer picker's «Debitor anlegen» of the
+     * order window and the invoice editor. A new profile with the given payment terms and price
+     * mode through {@see save()} — the validator judges it (an active contact, not a debtor yet,
+     * active terms, `net` | `gross`), the customer number is drawn in its own unit of work.
+     *
+     * @throws InvalidDebtorProfileException carries the validator and the unsaved profile (for the form)
+     */
+    public function open(Contact $contact, string $paymentTermsCode, string $priceMode = 'net'): DebtorProfile
+    {
+        $profile = new DebtorProfile();
+        $profile->setContact($contact);
+        $profile->setPaymentTermsCode($paymentTermsCode);
+        $profile->setPriceMode($priceMode);
+        $this->save($profile);
+
+        return $profile;
     }
 
     /**

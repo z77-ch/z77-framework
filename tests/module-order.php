@@ -400,8 +400,10 @@ check('F1d «Zahlungskonditionen» (2026-10-18): the posted code (trimmed) → p
 check('F2 the lines: the article number → its variant id, the existing line keeps its id, a «unter» row beneath its parent, the empty row left out, a bogus id dropped',
     count($fd->lines) === 3 && $fd->lines[0]->variantId === 11 && $fd->lines[0]->id === 15 && count($fd->lines[0]->children) === 1
     && $fd->lines[0]->children[0]->text === 'Unterlagen' && $fd->lines[1]->type === 'text' && $fd->lines[1]->id === null);
-check('F3 an ARTICLE line sends no tax code and no account — they come from the article (D3); a free line sends its own',
-    $fd->lines[2]->variantId === 11 && $fd->lines[2]->taxCode === '' && $fd->lines[2]->revenueAccount === '' && $fd->lines[0]->children[0]->taxCode === 'UN');
+$lump = (new OrderForm())->fromPost(['contact' => '6', 'order_date' => '2026-10-14', 'rows' => [['type' => 'lump-sum', 'article' => '1001', 'quantity' => '1']]])->toDraft(['1001' => 11], ['' => null]);
+check('F3 the order knows «Leistung» and «Text» only (owner 2026-10-18): a posted «lump-sum» reads as service; a row carries no tax code or account to the draft — the article (or a kept free line) decides (D3)',
+    OrderForm::TYPES === ['service' => 'Leistung', 'text' => 'Text'] && $lump !== null && $lump->lines[0]->type === 'service'
+    && !property_exists(\Z77\Module\Order\Services\OrderLineDraft::class, 'taxCode') && !property_exists(\Z77\Module\Order\Services\OrderLineDraft::class, 'revenueAccount'));
 $form->applyErrors(['contact_id' => 'Kunde wählen.', 'lines.0.0.unit_price' => 'Preis fehlt.', 'lines.2.variant' => 'inaktiv', 'payment_target_code' => 'weg', 'payment_terms_code' => 'unbekannt', 'lines.9.text' => 'verirrt']);
 check('F4 the service\'s field errors land on the form: the head by name (the terms on `terms` / #order-terms; the target — no field since 2026-10-18 — a general message), `lines.{path}.{field}` on the row the line came from',
     $form->error('contact') === 'Kunde wählen.' && $form->rowError(1, 'price') === 'Preis fehlt.' && $form->rowError(4, 'article') === 'inaktiv'
@@ -413,9 +415,11 @@ check('F5 what the form cannot read: an unknown article, a delivery address that
 $bad2 = (new OrderForm())->fromPost(['contact' => '6', 'rows' => [['child' => '1', 'text' => 'x', 'quantity' => '1', 'price' => '1']]]);
 check('F6 … a child as the first row is refused on its row', $bad2->toDraft([], ['' => null]) === null && $bad2->rowError(0, 'child') !== '');
 $fresh = (new OrderForm())->startFrom($order);
-check('F7 startFrom(): one row per line with its id, «unter» on the child, the empty row at the end; an article line shows no tax code / account',
-    count($fresh->rows()) === 7 && $fresh->rows()[0]['id'] === '101' && $fresh->rows()[1]['child'] === '1' && $fresh->rows()[0]['tax_code'] === ''
-    && $fresh->rows()[4]['tax_code'] === 'UN' && $fresh->rows()[6]['id'] === '' && $fresh->rows()[0]['quantity'] === '2');
+check('F7 startFrom(): one row per line in position order with its id, the indent flag on the child, no empty row (the adders add); an article line shows no tax code, a kept free line its own (display only); a stored LUMP SUM shows as «Leistung» × 1',
+    count($fresh->rows()) === 6 && $fresh->rows()[0]['id'] === '101' && $fresh->rows()[1]['child'] === '1' && $fresh->rows()[0]['tax_code'] === ''
+    && $fresh->rows()[4]['tax_code'] === 'UN' && $fresh->rows()[0]['quantity'] === '2'
+    && $fresh->rows()[3]['type'] === 'service' && $fresh->rows()[3]['quantity'] === '1' && $fresh->rows()[3]['id'] === '104'
+    && !array_key_exists('account', $fresh->rows()[0]));
 $termsOrder = withId(new SalesOrder(43, $contact, 'opened', SalesOrder::SOURCE_BACKEND, null, 'harness', new \DateTimeImmutable('2026-10-18 10:00')), 6);
 $termsOrder->describe($contact, '', new \DateTimeImmutable('2026-10-18'), null, null, PriceMode::Net, 'CHF', null, null, null, null, 'disc-2-10');
 check('F7b startFrom() reads the order\'s payment terms; an order without (existing rows: NULL) shows «wie beim Kunden» \'\'',
@@ -423,6 +427,47 @@ check('F7b startFrom() reads the order\'s payment terms; an order without (exist
 $keptTarget = (new OrderForm())->startFrom($order);
 check('F7c an existing order keeps its stored payment target (no field in the window); startFrom() reads it, toDraft() sends it',
     (new OrderForm())->startFrom($termsOrder)->target() === '' && $keptTarget->withTarget('lukb')->toDraft(['W-1' => 11, 'W-2' => 12], ['' => null, OrderForm::SHIP_KEEP => null])?->paymentTargetCode === 'lukb');
+// The rows as a sort order (owner 2026-10-18): the posted order is the order; the row submits without script.
+$sorted = (new OrderForm())->fromPost(['contact' => '6', 'order_date' => '2026-10-14', 'rows' => [
+    3 => ['type' => 'text', 'text' => 'zuerst'],
+    0 => ['type' => 'service', 'article' => '1001', 'quantity' => '1', 'id' => '15'],
+    7 => ['type' => 'text', 'text' => 'darunter', 'child' => '1'],
+]]);
+$sortedDraft = $sorted->toDraft(['1001' => 11], ['' => null]);
+check('F8 rows come back in POSTED order (core.js «rows» renumbers the names; the keys do not decide); an indented row hangs beneath the nearest row above that is not',
+    $sortedDraft !== null && count($sortedDraft->lines) === 2 && $sortedDraft->lines[0]->text === 'zuerst' && $sortedDraft->lines[1]->id === 15
+    && $sortedDraft->lines[1]->children[0]->text === 'darunter');
+$ops = (new OrderForm())->fromPost(['contact' => '6', 'rows' => [['type' => 'service', 'article' => '1001'], ['type' => 'text', 'text' => 'weg'], ['type' => 'text', 'text' => 'bleibt']]]);
+$opsOk = $ops->applyOp('add-article') && $ops->applyOp('add-text') && $ops->applyOp('remove:1') && !$ops->applyOp('save') && !$ops->applyOp('remove:x');
+check('F9 the row submits without script: «+ Artikel» / «+ Textzeile» append an empty row of that kind, «remove:{i}» drops the posted row i (the rest closes up); any other op is no row op',
+    $opsOk && array_column($ops->rows(), 'type') === ['service', 'text', 'service', 'text'] && $ops->rows()[1]['text'] === 'bleibt'
+    && $ops->rows()[2]['article'] === '' && count($blankRows = (new OrderForm())->startBlank(new \DateTimeImmutable('2026-10-18'), null, '', 'opened')->rows()) === 1
+    && $blankRows[0]['type'] === 'service' && $blankRows[0]['article'] === '');
+// The price mode (owner 2026-10-18): the debtor's starts a new order; `prices_mode` = the mode the prices are in.
+$grossStart = (new OrderForm())->startBlank(new \DateTimeImmutable('2026-10-18'), 6, '', 'opened', '', 'gross');
+$switched   = (new OrderForm())->fromPost(['contact' => '6', 'order_date' => '2026-10-18', 'price_mode' => 'gross', 'prices_mode' => 'net', 'rows' => [['article' => '1001', 'quantity' => '1', 'price' => '15.40']]]);
+$switchedDraft = $switched->toDraft(['1001' => 11], ['' => null]);
+$noShown    = (new OrderForm())->fromPost(['contact' => '6', 'order_date' => '2026-10-18', 'price_mode' => 'gross', 'rows' => []])->toDraft([], ['' => null]);
+check('F10 price mode: startBlank() takes the debtor\'s (gross → price_mode and prices_mode gross, anything else net); startFrom() renders prices_mode = the order\'s mode; a posted prices_mode travels as OrderDraft::$pricesMode and is ECHOED on a re-render (never set to the new mode by the server); none posted → \'\' (the service reads it as price_mode)',
+    $grossStart->header('price_mode') === 'gross' && $grossStart->header('prices_mode') === 'gross'
+    && (new OrderForm())->startBlank(new \DateTimeImmutable('2026-10-18'), null, '', 'opened', '', 'brutto')->header('price_mode') === 'net'
+    && (new OrderForm())->startFrom($termsOrder)->header('prices_mode') === 'net'
+    && $switchedDraft !== null && $switchedDraft->priceMode === 'gross' && $switchedDraft->pricesMode === 'net' && $switched->header('prices_mode') === 'net'
+    && $noShown !== null && $noShown->pricesMode === '');
+$orderTpl   = file_get_contents($root . '/packages/module-order/res/view/templates/Backend/OrderController/edit.tpl.php');
+$orderTrait = file_get_contents($root . '/packages/module-order/src/Ui/OrderControllerTrait.php');
+$pickTrait  = file_get_contents($root . '/packages/module-debtor/src/Ui/CustomerPickerTrait.php');
+$coreJs     = file_get_contents($root . '/packages/kernel/shared/res/assets/js/core.js');
+check('F11 the window wires core.js «price mode»: the positions block is the scope, «Preise» its select, the hidden `prices_mode` its shown mode, each row\'s price and rate; the article answer carries `prices` (asked with prices=1); a customer choice sets `price_mode` from the debtor (`set-value`, debtor\'s shared answer); core.js has both',
+    str_contains($orderTpl, 'data-sum data-price-mode>') && str_contains($orderTpl, 'data-price-mode-select') && str_contains($orderTpl, 'name="prices_mode" value="<?= e($form->header(\'prices_mode\')) ?>" data-price-mode-shown')
+    && str_contains($orderTpl, 'data-price-mode-price') && str_contains($orderTpl, 'data-price-mode-rate')
+    && str_contains($orderTrait, "getGetParameter('prices') === '1'") && str_contains($orderTrait, "['prices' => \$defaults['prices']]")
+    && str_contains($pickTrait, "'set-value', ['target' => 'select[name=\"price_mode\"]'")
+    && str_contains($coreJs, "registerCommand('set-value'") && str_contains($coreJs, '_Z77.core.priceMode.bind()') && str_contains($coreJs, "ask(source, { prices: '1' })"));
+check('F12 no document for a contact without a debtor profile (owner 2026-10-18): the window re-checks a NEW customer with debtor\'s rule (CustomerPicker::debtorRefusal), «+ Kontakt» answers «Debitor anlegen» (customerDebtorPage), the picker asks it for a contact without a profile',
+    str_contains($orderTrait, 'CustomerPicker::debtorRefusal(') && str_contains($orderTrait, '$this->orderNotDebtor(') && str_contains($orderTrait, 'return $this->customerDebtorPage($contact')
+    && !str_contains($orderTrait, 'Debitor wird er mit dem Buchungsdruck')
+    && str_contains($pickTrait, 'if ($profile === null) {' . "\n" . '                return $this->customerDebtorPage(') && str_contains($pickTrait, '->open($contact, $terms, $mode)'));
 
 // ── P. the order's PDFs (offline where possible) ─────────────────────────
 
@@ -614,6 +659,12 @@ $article = (new \Z77\Module\Article\Services\ArticleService($em, 'harness'))->cr
     productGroup: (int) (new \Z77\Module\Article\Services\ProductGroupService($em))->create(new \Z77\Module\Article\Services\ProductGroupDraft('Wein'))->getId(),   // every article hangs in one group (A1, 2026-10-14)
 ));
 $variantId = (int) $em->getRepository(Variant::class)->defaultOf($article)->getId();
+// A service article — every priced line is an article since 2026-10-18 (the former free «Degustation» line).
+$degArticle = (new \Z77\Module\Article\Services\ArticleService($em, 'harness'))->create(new \Z77\Module\Article\Services\ArticleDraft(
+    number: 'D-80', name: 'Degustation', unit: 'Pers.', price: '80.00', priceMode: 'net', validFrom: '2026-01-01', taxCode: 'UN', revenueAccount: '3400',
+    productGroup: (int) $article->getProductGroup()->getId(),
+));
+$degId = (int) $em->getRepository(Variant::class)->defaultOf($degArticle)->getId();
 
 /** The stock spy — every request it got; refuses a consumed-stock reversal without a confirmation when told to. */
 $spy = new class implements StockLedger {
@@ -645,30 +696,31 @@ $refusedBy = static function (callable $fn): ?string {
     return null;
 };
 
-$o1 = $svc->create(new $D($contactId, '2026-10-14', 'Fest', lines: [$L::article($variantId, '2'), $L::free('Degustation', '1', '80', 'UN', '3400'), $L::text('Danke')]));
+$o1 = $svc->create(new $D($contactId, '2026-10-14', 'Fest', lines: [$L::article($variantId, '2'), $L::article($degId, '1'), $L::text('Danke')]));
 $o2 = $svc->create(new $D($contactId, '2026-10-14', lines: [$L::article($variantId, '1')]));
 check('M4 create draws 1, 2 from `order`; the initial status = the default of phase «new»', $o1->getNumber() === 1 && $o2->getNumber() === 2 && $o1->getStatusCode() === 'opened'
     && (int) $db->fetchOne("SELECT last_number FROM number_range WHERE name = 'order'") === 2);
 $line1 = $o1->getLines()[0];
 check('M5 the article line takes text, unit and the price at the order date; tax code and account FROM the article (D3)',
     $line1->getText() === 'Pinot Noir' && $line1->getUnit() === 'Fl.' && $line1->getUnitPrice()?->toDecimal() === '24.50' && $line1->getRevenueAccount() === '3200' && $line1->getArticleNumber() === 'W-22');
-check('M6 the log row `create`; the spy got the FULL state (one article line, opened = zero)', $count('sales_order_status_change') === 2 && count($spy->calls) === 2
+$line2 = $o1->getLines()[1];
+check('M6 the log row `create`; the spy got the FULL state (both article lines, opened = zero; the text line not sent)', $count('sales_order_status_change') === 2 && count($spy->calls) === 2
     && $spy->calls[0]->trigger === 'create' && $spy->calls[0]->sourceRef === (string) $o1->getId()
-    && array_map(static fn($l) => [$l->lineRef, $l->variantId, $l->reserved, $l->consumed], $spy->calls[0]->lines) === [[(string) $line1->getId(), $variantId, '0.000', '0.000']]);
+    && array_map(static fn($l) => [$l->lineRef, $l->variantId, $l->reserved, $l->consumed], $spy->calls[0]->lines) === [[(string) $line1->getId(), $variantId, '0.000', '0.000'], [(string) $line2->getId(), $degId, '0.000', '0.000']]);
 check('M7 the totals come from debtor\'s preview (D11): 49.00 + 80.00 net', $o1->getTotalNet()?->toDecimal() === '129.00' && $o1->getTotalGross() !== null);
 $bad = null;
-try { $svc->create(new $D(0, 'kein Datum', lines: [$L::free('', 'x', '', 'XX', 'abc')])); } catch (\Z77\Module\Order\Services\InvalidOrderException $e) { $bad = $e->errors; }
-check('M8 a bad draft is refused per field, nothing drawn', $bad !== null && isset($bad['contact_id'], $bad['order_date'], $bad['lines.0.text'], $bad['lines.0.quantity'], $bad['lines.0.tax_code'], $bad['lines.0.revenue_account'])
+try { $svc->create(new $D(0, 'kein Datum', lines: [new $L('service', null, '', 'x'), new $L('service', $variantId, '', 'x')])); } catch (\Z77\Module\Order\Services\InvalidOrderException $e) { $bad = $e->errors; }
+check('M8 a bad draft is refused per field, nothing drawn; a priced line without article is refused on `variant` (every priced line an article, 2026-10-18)', $bad !== null && isset($bad['contact_id'], $bad['order_date'], $bad['lines.0.variant'], $bad['lines.1.quantity'])
     && (int) $db->fetchOne("SELECT last_number FROM number_range WHERE name = 'order'") === 2);
 
 $o1 = $svc->changeStatus((int) $o1->getId(), $o1->getVersion(), 'scheduled');
-check('M9 status change opened → scheduled: log row, the spy reserves', $o1->getStatusCode() === 'scheduled' && $spy->shape() === [[(string) $line1->getId(), $variantId, '2.000', '0.000']]
+check('M9 status change opened → scheduled: log row, the spy reserves', $o1->getStatusCode() === 'scheduled' && $spy->shape() === [[(string) $line1->getId(), $variantId, '2.000', '0.000'], [(string) $line2->getId(), $degId, '1.000', '0.000']]
     && end($spy->calls)->trigger === 'status:opened>scheduled');
 check('M10 a stale version is refused', $refusedBy(fn() => $svc->changeStatus((int) $o1->getId(), $o1->getVersion() - 1, 'delivered')) === \Z77\Module\Order\Services\OrderConflictException::class);
 $o1 = $svc->update((int) $o1->getId(), $o1->getVersion(), new $D($contactId, '2026-10-14', 'Fest', lines: [
     $L::article($variantId, '3', id: (int) $line1->getId()),   // edit
     $L::article($variantId, '-1', 'Rücknahme'),                  // add
-]));                                                              // the free and the text line deleted
+]));                                                              // the second article and the text line deleted
 $lines = $o1->getLines();
 check('M11 update: the edited line keeps its id, the deleted ones are gone, the new one added; the spy got the FULL state',
     count($lines) === 2 && $lines[0]->getId() === $line1->getId() && $count('sales_order_line') === 3
@@ -717,15 +769,84 @@ check('M18 the order confirmation moves a quote into the DEFAULT of «confirmed�
 $badTerms = null;
 try { $svc->create(new $D($contactId, '2026-10-18', lines: [$L::article($variantId, '1')], paymentTermsCode: 'gibts-nicht')); } catch (\Z77\Module\Order\Services\InvalidOrderException $e) { $badTerms = $e->errors; }
 // The lines of M7 (a total without a rounding difference — the harness has no mandator for the rounding account).
-$o4 = $svc->create(new $D($contactId, '2026-10-18', lines: [$L::article($variantId, '2'), $L::free('Degustation', '1', '80', 'UN', '3400')], paymentTermsCode: ' DISC-2-10 '));
+$o4 = $svc->create(new $D($contactId, '2026-10-18', lines: [$L::article($variantId, '2'), $L::article($degId, '1')], paymentTermsCode: ' DISC-2-10 '));
 $o4Terms = $svc->preview($o4)->getPaymentTermsCode();
 $o4Stored = $db->fetchOne('SELECT payment_terms_code FROM sales_order WHERE id = ?', [$o4->getId()]);
-$o4 = $svc->update((int) $o4->getId(), $o4->getVersion(), new $D($contactId, '2026-10-18', lines: [$L::article($variantId, '2', id: (int) $o4->getLines()[0]->getId()), $L::free('Degustation', '1', '80', 'UN', '3400', id: (int) $o4->getLines()[1]->getId())]));
+$o4 = $svc->update((int) $o4->getId(), $o4->getVersion(), new $D($contactId, '2026-10-18', lines: [$L::article($variantId, '2', id: (int) $o4->getLines()[0]->getId()), $L::article($degId, '1', id: (int) $o4->getLines()[1]->getId())]));
 check('M19 payment terms: an unknown code refused on `payment_terms_code`; a known one stored normalised and applied by the preview (= the booking print); cleared → NULL = the customer\'s (the profile\'s net-30)',
     $badTerms !== null && isset($badTerms['payment_terms_code']) && count($badTerms) === 1
     && $o4Stored === 'disc-2-10' && $o4Terms === 'disc-2-10'
     && $db->fetchOne('SELECT payment_terms_code FROM sales_order WHERE id = ?', [$o4->getId()]) === null
     && $svc->preview($o4)->getPaymentTermsCode() === 'net-30');
+
+// The article description on an order line (owner 2026-10-18): the fill and the save build the
+// SAME text — `Variant::lineText()`: the name on the first line, the description below it.
+$described = (new \Z77\Module\Article\Services\ArticleService($em, 'harness'))->create(new \Z77\Module\Article\Services\ArticleDraft(
+    number: 'W-23', name: 'Chasselas', unit: 'Fl.', price: '18.00', priceMode: 'net', validFrom: '2026-01-01', taxCode: 'UN', revenueAccount: '3200',
+    productGroup: (int) $article->getProductGroup()->getId(), description: "Lavaux AOC\n75 cl",
+));
+$describedId = (int) $em->getRepository(Variant::class)->defaultOf($described)->getId();
+$fillText    = $svc->articleDefaults('W-23', '2026-10-18', '', 'net')['text'] ?? null;
+$o5 = $svc->create(new $D($contactId, '2026-10-18', lines: [$L::article($describedId, '1'), $L::article($describedId, '1', 'Chasselas Spezial')]));
+check('M20 an article with a description: the fill and an EMPTY line text at save give «name\\ndescription»; a typed text wins; an article without one stays the name',
+    $fillText === "Chasselas\nLavaux AOC\n75 cl" && $o5->getLines()[0]->getText() === "Chasselas\nLavaux AOC\n75 cl"
+    && $o5->getLines()[1]->getText() === 'Chasselas Spezial' && ($svc->articleDefaults('W-22', '2026-10-18', '', 'net')['text'] ?? null) === 'Pinot Noir');
+
+// Every priced line an article (owner 2026-10-16 / -18, ADR-043 addendum 2026-10-18): a FREE line an order
+// already holds (made before) stays while unchanged; a new one, a changed one and a lump sum are refused.
+$o6 = $svc->create(new $D($contactId, '2026-10-18', lines: [$L::article($degId, '1'), $L::article($variantId, '1')]));
+[$freeId, $lumpId] = [(int) $o6->getLines()[0]->getId(), (int) $o6->getLines()[1]->getId()];
+$db->executeStatement("UPDATE sales_order_line SET variant_id = NULL, article_number = NULL, tax_code = 'UN', revenue_account = '3400' WHERE id IN (?, ?)", [$freeId, $lumpId]);
+$db->executeStatement("UPDATE sales_order_line SET type = 'lump-sum', quantity = NULL, text = 'Versand', unit = NULL, unit_price = '12.00' WHERE id = ?", [$lumpId]);
+$em->getRepository(SalesOrder::class)->withLines((int) $o6->getId());   // the lines re-read (HINT_REFRESH) after the SQL above
+$o6v = (int) $db->fetchOne('SELECT version FROM sales_order WHERE id = ?', [$o6->getId()]);
+$kept = static fn(string $qty = '1', ?int $id = null) => [new $L('service', null, 'Degustation', $qty, 'Pers.', '80.00', '', id: $id ?? $freeId), new $L('service', null, 'Versand', '1', '', '12.00', '', id: $lumpId)];
+$refusal = static function (callable $fn): array {
+    try { $fn(); } catch (\Z77\Module\Order\Services\InvalidOrderException $e) { return $e->errors; }
+    return [];
+};
+$changed  = $refusal(fn() => $svc->update((int) $o6->getId(), $o6v, new $D($contactId, '2026-10-18', lines: $kept('2'))));
+$newFree  = $refusal(fn() => $svc->update((int) $o6->getId(), $o6v, new $D($contactId, '2026-10-18', lines: [...$kept(), new $L('service', null, 'Neu', '1', '', '5.00')])));
+$lumpType = $refusal(fn() => $svc->update((int) $o6->getId(), $o6v, new $D($contactId, '2026-10-18', lines: [new $L('lump-sum', $degId, '', '', '', '', '')])));
+$o6 = $svc->update((int) $o6->getId(), $o6v, new $D($contactId, '2026-10-18', lines: $kept()));
+$o6Lines = $db->fetchAllAssociative('SELECT id, type, variant_id, quantity, tax_code, revenue_account FROM sales_order_line WHERE order_id = ? ORDER BY position', [$o6->getId()]);
+check('M21 a stored free line saves UNCHANGED (its tax code and account kept); a stored lump sum re-posted as «Leistung» × 1 counts as unchanged and is written as service 1; a changed free line, a new free line and the type «lump-sum» are refused',
+    isset($changed['lines.0.variant']) && isset($newFree['lines.2.variant']) && isset($lumpType['lines.0.type'])
+    && array_map(static fn($r) => [(int) $r['id'], $r['type'], $r['variant_id'], $r['quantity'], $r['tax_code'], $r['revenue_account']], $o6Lines)
+        === [[$freeId, 'service', null, '1.000', 'UN', '3400'], [$lumpId, 'service', null, '1.000', 'UN', '3400']]);
+
+// The price-mode switch (bug report 2026-10-18, owner decision C): article 16.65 GROSS, UN 8.1 %. The
+// window converts on the switch and says so in `prices_mode`; the SERVICE converts whenever the posted
+// prices are still in the other mode — never stores 15.40 as a gross price.
+$grossArticle = (new \Z77\Module\Article\Services\ArticleService($em, 'harness'))->create(new \Z77\Module\Article\Services\ArticleDraft(
+    number: '02.100.02', name: 'Grossist', unit: 'Stk.', price: '16.65', priceMode: 'gross', validFrom: '2026-01-01', taxCode: 'UN', revenueAccount: '3200',
+    productGroup: (int) $article->getProductGroup()->getId(),
+));
+$grossId = (int) $em->getRepository(Variant::class)->defaultOf($grossArticle)->getId();
+$grossDefaults = $svc->articleDefaults('02.100.02', '2026-10-18', '', 'net');
+check('M22 the fill names the article\'s price in BOTH modes (core.js «price mode» re-converts from them): net 15.40 (16.65 ÷ 1.081), gross 16.65 — the fill\'s own price in the asked mode',
+    ($grossDefaults['price'] ?? null) === '15.40' && ($grossDefaults['prices'] ?? null) === ['net' => '15.40', 'gross' => '16.65']);
+$priceOf = static fn(SalesOrder $o, int $i = 0) => $o->getLines()[$i]->getUnitPrice()?->toDecimal();
+$m23a = $svc->create(new $D($contactId, '2026-10-18', priceMode: 'gross', pricesMode: 'net', lines: [$L::article($grossId, '1', unitPrice: '15.40')]));
+$m23b = $svc->create(new $D($contactId, '2026-10-18', priceMode: 'gross', pricesMode: 'gross', lines: [$L::article($grossId, '1', unitPrice: '16.65')]));
+$m23c = $svc->create(new $D($contactId, '2026-10-18', priceMode: 'net', lines: [$L::article($grossId, '1', unitPrice: '15.40')]));
+$m23d = $svc->create(new $D($contactId, '2026-10-18', priceMode: 'net', pricesMode: 'gross', lines: [$L::article($grossId, '1', unitPrice: '16.65')]));
+check('M23 THE BUG: «Preise» brutto with the row still filled net (15.40, prices_mode net — no script) → stored 16.65, the exact article price; the same in mode (gross/gross 16.65, net 15.40 without prices_mode) is kept; net with a gross 16.65 posted → 15.40',
+    $priceOf($m23a) === '16.65' && $m23a->priceMode()->value === 'gross' && $priceOf($m23b) === '16.65' && $priceOf($m23c) === '15.40' && $priceOf($m23d) === '15.40');
+$m24a = $svc->create(new $D($contactId, '2026-10-18', priceMode: 'gross', pricesMode: 'net', lines: [$L::article($grossId, '1', unitPrice: '20.00')]));
+$m24b = $svc->create(new $D($contactId, '2026-10-18', priceMode: 'net', pricesMode: 'gross', lines: [$L::article($grossId, '1', unitPrice: '21.62')]));
+$m24c = $svc->create(new $D($contactId, '2026-10-18', priceMode: 'gross', pricesMode: 'net', lines: [$L::article($grossId, '1', unitPrice: '0.05')]));
+check('M24 a price typed by hand (not the article\'s) converts with the line\'s rate, cents half away from zero: 20.00 net → 21.62 gross, 21.62 gross → 20.00 net, 0.05 net → 0.05 gross (5.405 cents)',
+    $priceOf($m24a) === '21.62' && $priceOf($m24b) === '20.00' && $priceOf($m24c) === '0.05');
+$o6 = $em->getRepository(SalesOrder::class)->withLines((int) $o6->getId());
+$keptIn = static fn(string $free, string $lump) => [new $L('service', null, 'Degustation', '1', 'Pers.', $free, '', id: $freeId), new $L('service', null, 'Versand', '1', '', $lump, '', id: $lumpId)];
+$o6 = $svc->update((int) $o6->getId(), $o6->getVersion(), new $D($contactId, '2026-10-18', priceMode: 'gross', pricesMode: 'gross', lines: $keptIn('86.48', '12.97')));
+$m25gross = [$priceOf($o6, 0), $priceOf($o6, 1), $o6->priceMode()->value];
+$o6 = $svc->update((int) $o6->getId(), $o6->getVersion(), new $D($contactId, '2026-10-18', priceMode: 'net', pricesMode: 'gross', lines: $keptIn('86.48', '12.97')));
+check('M25 a kept free line follows the switch and still counts as unchanged: converted in the window (gross/gross 86.48, 12.97 = 80.00 / 12.00 × 1.081) accepted; switched back without the script (net, prices_mode gross) the server converts → 80.00, 12.00',
+    $m25gross === ['86.48', '12.97', 'gross'] && [$priceOf($o6, 0), $priceOf($o6, 1), $o6->priceMode()->value] === ['80.00', '12.00', 'net']);
+$m26 = $refusal(fn() => $svc->create(new $D($contactId, '2026-10-18', priceMode: 'gross', pricesMode: 'brutto', lines: [$L::article($grossId, '1', unitPrice: '15.40')])));
+check('M26 a prices_mode that names no mode is refused on `price_mode` — the prices cannot be read', isset($m26['price_mode']));
 
 echo "\n{$pass} passed, {$fail} failed\n";
 exit($fail === 0 ? 0 : 1);

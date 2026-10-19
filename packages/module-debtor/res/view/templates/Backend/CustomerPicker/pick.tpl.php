@@ -62,7 +62,7 @@ $extra    = '<a class="be-btn be-btn--ghost" href="' . e($newContactUrl . ($wind
                         <span class="be-list__cell"><button type="submit" form="customer-pick-choose" name="contact" value="<?= $id ?>" class="be-btn be-btn--primary be-btn--sm">Übernehmen</button></span>
                         <label class="be-list__cell be-list__cell--wrap" for="<?= e($definition->inputId('f_name')) ?>"><?= e($contact->displayName()) ?></label>
                         <label class="be-list__cell" for="<?= e($definition->inputId('f_city')) ?>" data-priority="2"><?= e($cities[$id] ?? '') ?></label>
-                        <label class="be-list__cell be-list__cell--num be-list__cell--mono" for="<?= e($definition->inputId('f_number')) ?>"><?= $profile !== null ? $profile->getCustomerNumber() : '<span class="badge badge--muted" title="Wird mit der ersten gebuchten Rechnung Debitor">neu</span>' ?></label>
+                        <label class="be-list__cell be-list__cell--num be-list__cell--mono" for="<?= e($definition->inputId('f_number')) ?>"><?= $profile !== null ? $profile->getCustomerNumber() : '<span class="badge badge--muted" title="Noch kein Debitor — «Übernehmen» legt ihn als Debitor an">neu</span>' ?></label>
                         <label class="be-list__cell be-list__cell--wrap" for="<?= e($definition->inputId('f_email')) ?>" data-priority="3"><?= e($contact->getEmail()) ?></label>
                     </div>
                 </div>

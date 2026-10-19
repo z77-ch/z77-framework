@@ -112,6 +112,12 @@ class ArticleValidator extends EntityValidator
         $this->validate('name', 'Bezeichnung', $name)->notEmpty()->maxLength(AbstractProduct::NAME_LENGTH);
     }
 
+    /** Optional, multi-line; only its length is limited (owner 2026-10-18). */
+    public function validateDescription(string $description): void
+    {
+        $this->validate('description', 'Beschreibung', $description)->maxLength(AbstractProduct::DESCRIPTION_LENGTH);
+    }
+
     public function validateUnit(string $unit): void
     {
         $this->validate('unit', 'Einheit', $unit)->maxLength(AbstractVariant::UNIT_LENGTH);

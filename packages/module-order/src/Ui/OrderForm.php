@@ -2,6 +2,7 @@
 namespace Z77\Module\Order\Ui;
 
 use Z77\Module\Debtor\Entities\AddressSnapshot;
+use Z77\Module\Debtor\Entities\LineType;
 use Z77\Module\Debtor\Ui\InvoiceForm;
 use Z77\Module\Order\Entities\SalesOrder;
 use Z77\Module\Order\Services\OrderDraft;
@@ -9,17 +10,23 @@ use Z77\Module\Order\Services\OrderLineDraft;
 
 /**
  * The order window's form (plan §9.4): a posted form ↔ an {@see OrderDraft}. Plain PHP arrays in
- * and out, no JavaScript (Rule 7): a fixed number of line rows, «Weitere Zeilen» is a submit the
- * server answers with more rows (the invoice editor's model, `InvoiceForm`).
+ * and out. The rows are a SORT ORDER (owner 2026-10-18): they come back in the order they were
+ * posted — core.js «rows» moves them (drag & drop, Alt+↑/↓) and renumbers the field names; without
+ * the script the order is the one rendered. «+ Artikel» / «+ Textzeile» and × are submits
+ * (`op` = `add-article` | `add-text` | `remove:{i}`, {@see applyOp()}) the server answers with the
+ * changed rows; the script does the same in place, without the round trip.
  *
  * A line row: its `id` (hidden — an existing line keeps its identity, the stock seam's line
- * reference; order.md rule), the type (Leistung | Pauschale | Text), «unter» (beneath the nearest
- * preceding top-level row — one level), the ARTICLE number (a `<datalist>` of the active articles;
- * empty = a free line), text, quantity (negative = a return), unit, price, discount, and — only on
- * a FREE line — tax code and revenue account (on an article line they come from the article, D3).
- * An article line with an empty text / unit / price takes the article's values when it is SAVED
- * (`OrderService`, no script needed). A row with neither article, text, quantity nor price is
- * left out — an existing line emptied like that is removed.
+ * reference; order.md rule), the type (Leistung | Text — no «Pauschale» in an order since
+ * 2026-10-18: a stored lump sum shows as «Leistung» × 1), the INDENT flag `child` (beneath the
+ * nearest preceding non-indented row — one level, today's parent line), the ARTICLE number (a
+ * `<datalist>` of the active articles), text, quantity (negative = a return), unit, price,
+ * discount. Every priced row is an article (ADR-043 addendum 2026-10-18); a free priced line the
+ * order already holds comes back without an article and the SERVICE keeps it while unchanged —
+ * its stored tax code rides along for the display only (`tax_code`, never sent). An article line
+ * with an empty text / unit / price takes the article's values when it is SAVED (`OrderService`,
+ * no script needed). A row with neither article, text, quantity nor price is left out — an
+ * existing line emptied like that is removed.
  *
  * The form only turns the fields into a draft and says which field it cannot read (an unknown
  * article number, an unknown delivery address); every order rule is `OrderService`'s, its
@@ -27,11 +34,15 @@ use Z77\Module\Order\Services\OrderLineDraft;
  */
 final class OrderForm
 {
-    public const ROWS_NEW  = 4;
-    public const MORE_ROWS = 3;
+    /** A new order starts with one article row; «+ Artikel» / «+ Textzeile» add more. */
+    public const ROWS_NEW = 1;
 
-    /** Row type → German label (debtor's `LineType` without the rounding line). */
-    public const TYPES = InvoiceForm::TYPES;
+    /**
+     * Row type → German label: debtor's `LineType` without the rounding line and — in an order —
+     * without the lump sum (owner 2026-10-18: a lump sum is an article with quantity 1). The
+     * invoice editor keeps all three (`InvoiceForm::TYPES`).
+     */
+    public const TYPES = ['service' => 'Leistung', 'text' => 'Text'];
 
     /** The delivery-address choice that keeps the snapshot the order already holds. */
     public const SHIP_KEEP = 'keep';
@@ -52,14 +63,20 @@ final class OrderForm
     /** The snapshot's fields in `AddressSnapshot`'s constructor order (the posted names after the prefix). */
     private const ADDRESS_FIELDS = ['salutation', 'title', 'first_name', 'name', 'address_row', 'street', 'house_no', 'zip', 'city', 'country'];
 
-    private const EMPTY_ROW = ['id' => '', 'type' => 'service', 'child' => '', 'article' => '', 'text' => '', 'quantity' => '', 'unit' => '', 'price' => '', 'discount' => '', 'tax_code' => '', 'account' => ''];
+    private const EMPTY_ROW = ['id' => '', 'type' => 'service', 'child' => '', 'article' => '', 'text' => '', 'quantity' => '', 'unit' => '', 'price' => '', 'discount' => '', 'tax_code' => ''];
 
     /** The service's field names → the form's. */
     private const HEADER_FIELDS = ['contact_id' => 'contact', 'payment_terms_code' => 'terms', 'status_code' => 'status'];
-    private const ROW_FIELDS    = ['variant' => 'article', 'unit_price' => 'price', 'revenue_account' => 'account', 'children' => 'child'];
+    private const ROW_FIELDS    = ['variant' => 'article', 'unit_price' => 'price', 'children' => 'child'];
 
-    /** @var array<string, string> */
-    private array $header = ['contact' => '', 'subject' => '', 'order_date' => '', 'service_from' => '', 'service_to' => '', 'price_mode' => 'net', 'terms' => '', 'ship' => '', 'bill' => '', 'status' => '', 'notes' => ''];
+    /**
+     * The head. `prices_mode` (hidden, owner 2026-10-18) = the mode the row PRICES are in: rendered
+     * as `price_mode`, rewritten by core.js «price mode» when it converts the rows, echoed as posted
+     * on a re-render — `OrderService` converts at the save when it differs from `price_mode`.
+     *
+     * @var array<string, string>
+     */
+    private array $header = ['contact' => '', 'subject' => '', 'order_date' => '', 'service_from' => '', 'service_to' => '', 'price_mode' => 'net', 'prices_mode' => 'net', 'terms' => '', 'ship' => '', 'bill' => '', 'status' => '', 'notes' => ''];
 
     /**
      * The payment target (bank account of the payment part) — NOT a posted field since 2026-10-18
@@ -87,14 +104,16 @@ final class OrderForm
     private array $paths = [];
 
     /**
-     * A new order: today, net, the customer, payment target and payment terms the screen
-     * preselects ($terms '' = «wie beim Kunden»), empty rows.
+     * A new order: today, the customer, payment target, payment terms ($terms '' = «wie beim
+     * Kunden») and price mode the screen preselects (the debtor's, owner 2026-10-18; else net),
+     * empty rows.
      */
-    public function startBlank(\DateTimeImmutable $today, ?int $contactId, string $target, string $status, string $terms = ''): self
+    public function startBlank(\DateTimeImmutable $today, ?int $contactId, string $target, string $status, string $terms = '', string $priceMode = 'net'): self
     {
         $this->header['contact']    = $contactId !== null ? (string) $contactId : '';
         $this->header['order_date'] = $today->format('Y-m-d');
         $this->header['terms']      = $terms;
+        $this->header['price_mode'] = $this->header['prices_mode'] = $priceMode === 'gross' ? 'gross' : 'net';
         $this->target               = $target;
         $this->header['status']     = $status;
         $this->rows = array_fill(0, self::ROWS_NEW, self::EMPTY_ROW);
@@ -102,7 +121,10 @@ final class OrderForm
         return $this;
     }
 
-    /** The fields of a stored order, one row per line (children marked «unter»), plus one empty row. */
+    /**
+     * The fields of a stored order, one row per line in position order (children flagged
+     * `child`). A stored lump sum shows as «Leistung» × 1 — the same amount (owner 2026-10-18).
+     */
     public function startFrom(SalesOrder $order): self
     {
         $this->header = [
@@ -112,6 +134,7 @@ final class OrderForm
             'service_from' => $order->getServiceFrom()?->format('Y-m-d') ?? '',
             'service_to'   => $order->getServiceTo()?->format('Y-m-d') ?? '',
             'price_mode'   => $order->priceMode()->value,
+            'prices_mode'  => $order->priceMode()->value,
             'terms'        => (string) $order->getPaymentTermsCode(),
             'ship'         => $order->deliveryAddress() !== null ? self::SHIP_KEEP : '',
             'bill'         => $order->billingAddress() !== null ? self::SHIP_KEEP : '',
@@ -121,21 +144,20 @@ final class OrderForm
         $this->target = (string) $order->getPaymentTargetCode();
         $this->rows   = [];
         foreach ($order->getLines() as $line) {
+            $lumpSum      = $line->type() === LineType::LumpSum;
             $this->rows[] = [
                 'id'       => (string) $line->getId(),
-                'type'     => $line->type()->value,
+                'type'     => $lumpSum ? LineType::Service->value : $line->type()->value,
                 'child'    => $line->getParentLine() !== null ? '1' : '',
                 'article'  => $line->getVariant() !== null ? (string) $line->getArticleNumber() : '',
                 'text'     => $line->getText(),
-                'quantity' => $line->getQuantity() === null ? '' : self::trimQuantity($line->getQuantity()),
+                'quantity' => $lumpSum ? '1' : ($line->getQuantity() === null ? '' : self::trimQuantity($line->getQuantity())),
                 'unit'     => (string) $line->getUnit(),
                 'price'    => $line->getUnitPrice()?->toDecimal() ?? '',
                 'discount' => InvoiceForm::formatPercent($line->getDiscountPercent()),
                 'tax_code' => $line->getVariant() === null ? (string) $line->getTaxCode() : '',
-                'account'  => $line->getVariant() === null ? (string) $line->getRevenueAccount() : '',
             ];
         }
-        $this->addRows(1);
 
         return $this;
     }
@@ -207,13 +229,26 @@ final class OrderForm
         return new AddressSnapshot(...array_map(static fn(string $name): string => $values[$name] ?? '', self::ADDRESS_FIELDS));
     }
 
-    public function addRows(int $count): self
+    /**
+     * A row submit of the window without the script (`op`): `add-article` / `add-text` appends an
+     * empty row of that kind, `remove:{i}` drops the row at that posted index. True when $op was
+     * one of them — the window is then answered with the changed rows, nothing saved.
+     */
+    public function applyOp(string $op): bool
     {
-        for ($i = 0; $i < $count; $i++) {
-            $this->rows[] = self::EMPTY_ROW;
+        if ($op === 'add-article' || $op === 'add-text') {
+            $this->rows[] = ['type' => $op === 'add-text' ? LineType::Text->value : LineType::Service->value] + self::EMPTY_ROW;
+
+            return true;
+        }
+        if (preg_match('/^remove:(\d+)$/', $op, $m)) {
+            unset($this->rows[(int) $m[1]]);
+            $this->rows = array_values($this->rows);
+
+            return true;
         }
 
-        return $this;
+        return false;
     }
 
     /**
@@ -262,13 +297,11 @@ final class OrderForm
                 unit: $row['unit'],
                 unitPrice: $row['price'],
                 discount: $row['discount'],
-                taxCode: $variantId === null ? $row['tax_code'] : '',
-                revenueAccount: $variantId === null ? $row['account'] : '',
                 id: $row['id'] !== '' ? (int) $row['id'] : null,
             );
             if ($row['child'] !== '') {
                 if ($top === []) {
-                    $this->rowErrors[$i]['child'] = 'Eine Unterposition braucht eine Position darüber.';
+                    $this->rowErrors[$i]['child'] = 'Eine eingerückte Zeile braucht eine Position darüber.';
                     continue;
                 }
                 $top[count($top) - 1]['children'][] = ['draft' => $draft, 'row' => $i];
@@ -298,6 +331,7 @@ final class OrderForm
             serviceFrom: $this->header['service_from'],
             serviceTo: $this->header['service_to'],
             priceMode: $this->header['price_mode'],
+            pricesMode: $this->header['prices_mode'],
             paymentTargetCode: $this->target !== '' ? $this->target : null,
             deliveryAddress: $ships[$this->header['ship']] ?? null,
             notes: $this->header['notes'],

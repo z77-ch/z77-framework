@@ -43,9 +43,9 @@ use Z77\Core\DI,
  *     article WINDOW, then Nr., Bezeichnung, Warengruppe (the path), Einheit, Preis, MWST, Konto,
  *     Bestand and the «Aktiv» switch; the list is a fetch region. Action cell: «+ Artikel»
  *     (backend-screen.md §2, the most frequent action of the entry) — with the chosen group, so
- *     the new article starts in it with its defaults. The product-group TREE stands at the top of
- *     the rail (`groupSelect`, section `railSelect` — the shared CSS-only picker of the fiscal
- *     year): a group shows its articles INCLUDING its sub-groups (owner 2026-10-14);
+ *     the new article starts in it with its defaults. The product-group filter is a FIELD in the
+ *     toolbar (`groupPicker`, hc2 — the shared tree picker `partials/treePicker`, owner
+ *     2026-10-18): a group shows its articles INCLUDING its sub-groups (owner 2026-10-14);
  *   - `add` / `edit` — the article WINDOW (ADR-047; a window and not a modal popup because it
  *     carries help — ADR-048, the help window cannot be used beside a modal): one form, one
  *     save — number, name, the product group (indented tree options; a NEW article opened with
@@ -110,6 +110,7 @@ trait ArticleControllerTrait
     protected function listAction(): HtmlResponse
     {
         $request    = DI::getRequest();
+        $fetch      = ListDefinition::isFetch($request);
         $tree       = $this->articleGroups()->tree();
         $definition = ArticleListing::definition($tree->ids());
         $state      = $definition->readRequest($request);
@@ -126,16 +127,18 @@ trait ArticleControllerTrait
             'paging'     => $paging,
             'tree'       => $tree,
             'group'      => ArticleListing::groupOf($state),
+            // The picker's counts (incl. sub-groups) — only the page shows the picker.
+            'counts'     => $fetch ? [] : $tree->totals($this->articleGroups()->productCounts()),
             'actionBase' => $this->articleListBase(),
         ]);
-        // The fragment owns its header slot (financial.md, «fragment slots»): «+ Artikel» is the
+        // The fragment owns its header slots (financial.md, «fragment slots»): «+ Artikel» is the
         // entry's most frequent action → the action cell (backend-screen.md §2). A FETCH of the
         // region (sort, page, search) wants the list alone.
-        if (!ListDefinition::isFetch($request)) {
+        if (!$fetch) {
             $this->layoutManager->addPartials('act', 'Backend/ArticleController', self::ARTICLE_NS, 'hc1');
-            // The product-group tree at the top of the rail — the filter of this list (owner
-            // 2026-10-14: «the tree in the rail»); the shared CSS-only picker, links only.
-            $this->layoutManager->addPartials('groupSelect', 'Backend/ArticleController', self::ARTICLE_NS, 'railSelect');
+            // The product-group filter in the TOOLBAR (owner 2026-10-18 — a list filter is not an
+            // area choice, ARTICLE-GROUP-TREE-UI-001 b): the shared tree picker, links only.
+            $this->layoutManager->addPartials('groupPicker', 'Backend/ArticleController', self::ARTICLE_NS, 'hc2');
         }
 
         return $response;
@@ -262,6 +265,7 @@ trait ArticleControllerTrait
             revenueAccount: $product->getRevenueAccount(),
             stockRelevant:  $product->isStockRelevant(),
             productGroup:   (int) $product->getProductGroup()->getId(),
+            description:    $product->getDescription(),
         );
     }
 

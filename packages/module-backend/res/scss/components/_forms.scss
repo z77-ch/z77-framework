@@ -531,6 +531,12 @@ select.be-input option {
 .be-form__totals > div { display: flex; justify-content: space-between; gap: var(--space-3); }
 .be-form__totals > div > :last-child { font-family: var(--font-family-mono); }
 .be-form__totals-sub { font-size: var(--font-size-sm); color: var(--be-muted); }
+// A group of total lines the page refills (core.js «line sums»: the VAT lines) — no box of its own.
+.be-form__totals > .be-form__totals-group { display: contents; }
+.be-form__totals-group > div { display: flex; justify-content: space-between; gap: var(--space-3); }
+.be-form__totals-group > div > :last-child { font-family: var(--font-family-mono); }
+// What the total is: the stored preview («gespeichert …») or the rows as typed («laufend …», 2026-10-18).
+.be-form__totals > .be-form__totals-note { display: block; font-size: var(--font-size-xs); color: var(--be-muted); text-align: right; }
 .be-form__totals-grand {
     margin-top:  var(--space-1);
     padding-top: var(--space-2);
@@ -587,6 +593,10 @@ a.be-status-field:hover,
 // the next card). A control in a block head keeps its own width.
 .be-form__block :is(input, select, textarea) { max-width: 100%; min-width: 0; }
 .be-form__block .be-form__field > :is(input, select, textarea) { width: 100%; }
+// A fetch region around one control (the order's «Zahlungskonditionen», reloaded after «Debitor
+// anpassen»): no box of its own — the control stands in the field as if the wrapper were not there.
+.be-form__region { display: contents; }
+.be-form__block .be-form__field > .be-form__region > :is(input, select, textarea) { width: 100%; }
 .be-form__block .be-form__block-head .be-form__field > select { width: auto; }
 // One line of a field: the value and its buttons side by side («Kunde wählen …», «+ Kontakt»);
 // the text input takes what is left, the line wraps on a narrow card.

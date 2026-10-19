@@ -4,6 +4,7 @@ namespace Z77\Module\Debtor\Entities;
 
 use Doctrine\ORM\Mapping as ORM,
     Z77\Module\Contact\Entities\Contact,
+    Z77\Module\Vat\Calculation\PriceMode,
     Z77\Shared\Attributes\Clean,
     Z77\Shared\Attributes\Entity,
     Z77\Shared\Traits\ArrayMappable
@@ -41,6 +42,12 @@ use Doctrine\ORM\Mapping as ORM,
  *     keeps a deactivated one ({@see \Z77\Module\Debtor\Validators\DebtorProfileValidator}).
  *   - `dunningBlock` — no dunning run may pick this debtor up (P4). A
  *     decision of the office, not a state derived from the open items.
+ *   - `priceMode` — whether this customer's documents are priced NET or GROSS
+ *     (module-vat's `PriceMode`; owner decision 2026-10-18: the debtor carries
+ *     the price mode — a new order or invoice starts with it and may deviate
+ *     per document). `net` for every profile that existed before
+ *     (`Version20261018130000`, the column default) and for a profile opened
+ *     without a choice (the contact editor's role «Debitor»).
  *   - **No language.** `Contact::$language` already says which language a
  *     document to this party is written in (plan §4a); a second field would
  *     be a second truth about one fact (Rule 2).
@@ -105,6 +112,14 @@ class DebtorProfile
     #[Clean('bool')]
     private bool $dunningBlock = false;
 
+    /**
+     * `net` | `gross` — the price mode a new document for this debtor starts with (owner
+     * 2026-10-18). The database default keeps a row an older release inserts valid.
+     */
+    #[ORM\Column(name: 'price_mode', length: 5, options: ['default' => 'net'])]
+    #[Clean('ident')]
+    private string $priceMode = 'net';
+
     /** False = no longer offered for new documents; existing ones keep resolving. */
     #[ORM\Column]
     #[Clean('bool')]
@@ -123,11 +138,16 @@ class DebtorProfile
     public function getCustomerNumber(): int { return $this->customerNumber; }
     public function getPaymentTermsCode(): string { return $this->paymentTermsCode; }
     public function hasDunningBlock(): bool { return $this->dunningBlock; }
+    /** The raw value — the validator refuses anything but `net` / `gross`. */
+    public function getPriceMode(): string { return $this->priceMode; }
+    /** The price mode as module-vat's enum; a stored value the validator would refuse reads as net. */
+    public function priceMode(): PriceMode { return PriceMode::tryFrom($this->priceMode) ?? PriceMode::Net; }
     public function isActive(): bool { return $this->active; }
 
     public function setContact(?Contact $contact): void { $this->contact = $contact; }
     public function setPaymentTermsCode(string $code): void { $this->paymentTermsCode = PaymentTerms::normalizeCode($code); }
     public function setDunningBlock(bool $block): void { $this->dunningBlock = $block; }
+    public function setPriceMode(string $mode): void { $this->priceMode = trim($mode); }
     public function setActive(bool $active): void { $this->active = $active; }
 
     /**

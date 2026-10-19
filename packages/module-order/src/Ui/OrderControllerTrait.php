@@ -34,7 +34,6 @@ use Z77\Core\DI,
     Z77\Module\Debtor\Ui\CustomerPicker,
     Z77\Module\Debtor\Ui\CustomerPickerTrait,
     Z77\Module\Debtor\Ui\DebtorProfileLayout,
-    Z77\Module\Mandator\Services\LedgerAccountCheck,
     Z77\Module\Order\Entities\OrderPhase,
     Z77\Module\Order\Entities\OrderStatus,
     Z77\Module\Order\Entities\SalesOrder,
@@ -96,8 +95,10 @@ use Z77\Core\DI,
  *   - `article-defaults` — what a line takes from the chosen article, for core.js «fill» (reads only).
  *
  * Every write goes through {@see OrderService} with the logged-in user as actor. No JavaScript of
- * its own (Rule 7): plain forms, «Weitere Zeilen» a submit, the article picker a `<datalist>` whose
- * choice fills the row through core.js «fill» — without the script the save fills it.
+ * its own (Rule 7): plain forms; the positions use core.js «rows» (add, remove, drag & drop) and
+ * «line sums» (the live total), whose adders and × are submits without the script; the article
+ * picker is a `<datalist>` whose choice fills the row through core.js «fill» — without the script
+ * the save fills it.
  * The using class MUST provide (via its host base): `html()`, `fetch()`, `fetchError()`,
  * `redirect()`, `bytes()`, `em()`, `$layoutManager`, `$messageService`, `$help`.
  */
@@ -258,7 +259,9 @@ trait OrderControllerTrait
         if (!$request->isPost()) {
             $contactId = ((int) $request->getGetParameter('contact')) ?: null;
             $order === null
-                ? $form->startBlank(new \DateTimeImmutable('today'), $contactId, $this->orderDefaultTarget(), $service->statuses()->initial()?->getCode() ?? '', $this->orderStartTerms($contactId))
+                ? $form->startBlank(new \DateTimeImmutable('today'), $contactId, $this->orderDefaultTarget(), $service->statuses()->initial()?->getCode() ?? '', $this->orderStartTerms($contactId),
+                    // The debtor carries the price mode (owner 2026-10-18) — a preset customer's starts the order.
+                    $this->orderDebtorProfile((string) $contactId)?->priceMode()->value ?? 'net')
                 : $form->startFrom($order);
 
             return $this->orderWindowPage($form, $order, $version);
@@ -273,9 +276,8 @@ trait OrderControllerTrait
         // The payment target is not a field of the window (owner 2026-10-18): a new order takes the
         // first active one, an existing order keeps its own — decided here, never posted.
         $form->withTarget($order !== null ? (string) $order->getPaymentTargetCode() : $this->orderDefaultTarget());
-        if (($post['op'] ?? '') === 'more') {
-            $form->addRows(OrderForm::MORE_ROWS);
-
+        // «+ Artikel», «+ Textzeile», × without the script (core.js «rows» does them in place).
+        if ($form->applyOp(is_string($post['op'] ?? null) ? $post['op'] : '')) {
             return $this->orderWindowPage($form, $order, $version);
         }
         // «anpassen» on an address card: its fields, filled with the address it showed (owner 2026-10-18).
@@ -292,6 +294,15 @@ trait OrderControllerTrait
         $needReason   = false;
         $draft        = $form->toDraft($this->orderArticleNumbers($order), $this->orderShipChoices($form->header('contact'), $order),
             null, $this->orderBillChoices($form->header('contact'), $order));
+        // No document for a contact without a debtor profile (owner 2026-10-18): a NEW customer
+        // of this order must be a debtor — the picker asks «Debitor anlegen» first, this is the
+        // re-check (Rule 7). An existing order keeps its customer (older drafts; the booking
+        // print still opens a missing profile, D9).
+        $notDebtor = $this->orderNotDebtor($form->header('contact'), $order);
+        if ($notDebtor !== null) {
+            $form->applyErrors(['contact_id' => $notDebtor]);
+            $draft = null;
+        }
         if ($draft !== null) {
             try {
                 if ($order === null) {
@@ -383,6 +394,10 @@ trait OrderControllerTrait
             'windowWidth'     => '78rem',
             'origin'          => WindowOrigin::of(DI::getRequest()),
             'form'            => $form,
+            // The hash of the state the window was LOADED with, handed back through a POST that
+            // re-renders without saving (more rows, «anpassen», errors) — core.js «dirty forms»
+            // compares with it, so a field set back is clean again (owner 2026-10-18).
+            'dirtyBase'       => preg_match('/^[0-9a-f]{8}$/', (string) (DI::getRequest()->getPostParameters()['_dirty_base'] ?? '')) === 1 ? (string) DI::getRequest()->getPostParameters()['_dirty_base'] : '',
             'order'           => $order,
             'version'         => $version,
             'status'          => $status,
@@ -411,9 +426,10 @@ trait OrderControllerTrait
             'taxCodes'        => $taxCodes = $this->em()->getRepository(TaxCode::class)->selectable($form->keptCodes()),
             // The window shows a line's VAT as its RATE («8.1 %», owner 2026-10-16), not the code.
             'taxRates'        => $this->orderTaxRates($taxCodes, $form->header('order_date')),
-            'accounts'        => (new LedgerAccountCheck($this->em()))->documentAccounts(),
             'articles'        => $this->orderArticleInfo($variants, $order),
             'preview'         => $preview,
+            // The totals' currency before there is a preview (a new order, a refused preview).
+            'currency'        => $order?->getCurrency() ?? DebtorCurrency::base(),
             'previewProblems' => $previewProblems,
             'history'         => $order !== null ? $this->orderHistory()->historyOf($order) : [],
             'triggers'        => self::ORDER_TRIGGERS,
@@ -476,6 +492,11 @@ trait OrderControllerTrait
         if ($defaults === null) {
             return $this->orderRefuse('Den Artikel «' . $number . '» gibt es nicht — Nummer aus der Liste wählen.');
         }
+        // core.js «price mode» asks only for the article's price in both modes (`prices=1`, owner
+        // 2026-10-18): a price-mode switch re-converts the row from them — no flash, nothing filled.
+        if ((string) $request->getGetParameter('prices') === '1') {
+            return $this->fetch()->setStatus('success')->setData(['prices' => $defaults['prices']]);
+        }
         if ($defaults['problem'] !== '') {
             $this->messageService->pushFlash('error', $defaults['problem']);   // the rest still fills; the price is typed
         }
@@ -496,8 +517,10 @@ trait OrderControllerTrait
      * posting here. The save answers like a choice in the customer picker
      * (`customerChosenAnswer()`: the customer field `#invoice-contact` and the delivery addresses
      * replaced IN THE ORDER WINDOW, scoped to the origin) and closes this window — also when it was
-     * loaded into the picker («+ Neuer Kontakt»). The contact becomes a debtor at the
-     * booking print (D9). Without the script: a page whose save opens a new order for it.
+     * loaded into the picker («+ Neuer Kontakt»). Since 2026-10-18 (owner: no document for a
+     * contact without a debtor profile) the save answers «Debitor anlegen» in this window first
+     * (debtor's `customerDebtorPage()`); only the created debtor fills the order window. Without
+     * the script: the same dialog as a page, then a new order for it.
      */
     #[Csrf]
     protected function newContactAction(): HtmlResponse|RedirectResponse|FetchResponse
@@ -507,16 +530,17 @@ trait OrderControllerTrait
         if ($request->isPost()) {
             $form->fromPost($request->getPostParameters());
             if ($form->save(new ContactService($this->em()))) {
+                // The new contact becomes the customer only as a DEBTOR (owner 2026-10-18): «Debitor anlegen» follows.
                 $contact = $form->contact;
-                $text    = 'Kontakt «' . $contact->displayName() . '» erfasst — Debitor wird er mit dem Buchungsdruck';
+                $text    = 'Kontakt «' . $contact->displayName() . '» erfasst — jetzt als Debitor anlegen';
                 if (!$this->orderIsFetch()) {
                     $this->messageService->pushFlashAfterRedirect('success', $text);
 
-                    return $this->redirect($this->orderListBase() . '/add?contact=' . $contact->getId(), 303);
+                    return $this->redirect($this->orderListBase() . '/customer-debtor?' . http_build_query(['contact' => $contact->getId(), 'back' => $this->orderListBase() . '/add']), 303);
                 }
                 $this->messageService->pushFlash('success', $text);
 
-                return $this->customerChosenAnswer($contact, WindowOrigin::of($request), $this->orderListBase() . '/add');
+                return $this->customerDebtorPage($contact, WindowOrigin::of($request), $this->orderListBase() . '/add');
             }
         }
 
@@ -569,7 +593,7 @@ trait OrderControllerTrait
             $response->addCommand('replace-html', ['target' => '#order-' . $field . '-cases', 'html' => $cases, 'origin' => $origin]);
         }
         // The payment terms start at «wie beim Kunden» — the option names THIS customer's terms (2026-10-18).
-        $response->addCommand('replace-html', ['target' => '#order-terms', 'html' => $this->orderTermsSelect('', (string) $contact->getId(), false), 'origin' => $origin]);
+        $response->addCommand('replace-html', ['target' => '[data-fetch-region="order-terms"]', 'html' => $this->orderTermsSelect('', (string) $contact->getId(), false), 'origin' => $origin]);
         $response->addCommand('replace-html', ['target' => '#order-debtor-edit', 'html' => $this->orderDebtorEdit((string) $contact->getId()), 'origin' => $origin]);
         // The block title carries the new customer's number and phone.
         $response->addCommand('replace-html', ['target' => '#order-customer-title', 'html' => $this->orderCustomerTitle((string) $contact->getId()), 'origin' => $origin]);
@@ -1013,7 +1037,7 @@ trait OrderControllerTrait
         $add  = static function (Variant $v, bool $offered) use (&$info): void {
             $p = $v->getProduct();
             $info[$v->getNumber()] = [
-                'name'    => trim($p->getName() . ($v->getLabel() !== '' ? ' ' . $v->getLabel() : '')),
+                'name'    => $v->displayName(),
                 'unit'    => $v->getUnit(),
                 'taxCode' => $p->getTaxCode(),
                 'account' => $p->getRevenueAccount(),
@@ -1221,6 +1245,21 @@ trait OrderControllerTrait
             'selected' => $selected,
             'customer' => $customer,
             'invalid'  => $invalid,
+            'src'      => $this->orderListBase() . '/terms?' . http_build_query(['contact' => $contactId]),
+        ]);
+    }
+
+    /**
+     * `terms` — block (3)'s «Zahlungskonditionen» region anew (reads only): core.js reloads it when
+     * «Debitor anpassen» closes (`data-popup-refresh`), with the current choice as `terms`, so the
+     * option «wie beim Kunden — …» names the terms the debtor dialog just saved (owner 2026-10-18).
+     */
+    protected function termsAction(): HtmlResponse
+    {
+        $request = DI::getRequest();
+
+        return $this->orderPage('terms', [
+            'termsSelect' => $this->orderTermsSelect(trim((string) $request->getGetParameter('terms')), trim((string) $request->getGetParameter('contact')), false),
         ]);
     }
 
@@ -1236,6 +1275,21 @@ trait OrderControllerTrait
         return (new TemplateRenderer(self::ORDER_NS))->partial('Backend/OrderController/_debtorEdit', [
             'url' => $profile !== null ? DebtorProfileLayout::BASE . '/edit?id=' . $profile->getId() : '',
         ]);
+    }
+
+    /**
+     * Why the posted customer may not be saved as this order's customer, or null — debtor's rule
+     * (`CustomerPicker::debtorRefusal()`, owner 2026-10-18) for a customer NEW to the order (a new
+     * order, or «Kunde wechseln»); the customer the order already holds stays valid.
+     */
+    private function orderNotDebtor(string $contactId, ?SalesOrder $order): ?string
+    {
+        $contact = ctype_digit($contactId) && (int) $contactId > 0 ? $this->em()->getRepository(Contact::class)->find((int) $contactId) : null;
+        if ($contact === null || ($order !== null && $order->getContact()->getId() === $contact->getId())) {
+            return null;   // no customer: the service says «Kunde wählen.»
+        }
+
+        return CustomerPicker::debtorRefusal($contact, $this->orderDebtorProfile($contactId));
     }
 
     /** The debtor profile of a contact id as the form holds it (a string), null = none / no contact. */

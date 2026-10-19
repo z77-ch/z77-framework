@@ -5,7 +5,7 @@
  * the delivery address — the order's own snapshot, else the customer's invoice address — in the
  * envelope window (kernel `pdf/addressWindow`), the title, the subject, the facts, and the lines
  * as a flowing table (kernel `pdf/table`): article number, text, quantity, unit. A text line
- * prints its text; a child line is indented under its parent. Ends with a line for the
+ * prints its text; a priced line its first text line bold (`lead`); a child line is indented under its parent. Ends with a line for the
  * recipient's signature.
  *
  * Printing it is the POST of `OrderService::printDeliveryNote()` (the status moves to the
@@ -71,6 +71,7 @@ foreach ($order->getLines() as $line) {
             $isText ? '' : (string) $line->getUnit(),
         ],
         'indent' => $line->getParentLine() !== null ? 4 : 0,
+        'lead'   => !$isText,   // a priced line: its first line (the title) bold, the description below (owner 2026-10-18)
     ];
 }
 

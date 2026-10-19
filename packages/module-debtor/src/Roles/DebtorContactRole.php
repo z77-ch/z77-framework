@@ -66,6 +66,7 @@ final class DebtorContactRole implements ContactRoleInterface
 
         $documents = $this->invoices()->countForContact((int) $contact->getId());
         $summary   = 'Kundennummer ' . $profile->getCustomerNumber() . ' · ' . $this->termsLabel($profile->getPaymentTermsCode())
+            . ' · Preise ' . ($profile->getPriceMode() === 'gross' ? 'brutto' : 'netto')
             . ($profile->isActive() ? '' : ' · inaktiv');
 
         return new ContactRoleState(
@@ -103,11 +104,9 @@ final class DebtorContactRole implements ContactRoleInterface
             throw new ContactRoleRefusedException($refusal);
         }
 
-        $profile = new DebtorProfile();
-        $profile->setContact($contact);
-        $profile->setPaymentTermsCode((string) $this->terms()->defaultForNewDebtor()?->getCode());
         try {
-            (new DebtorProfileService($this->em()))->save($profile);   // draws the customer number
+            // The one opening path (draws the customer number); the price mode net — changed in the debtor dialog.
+            (new DebtorProfileService($this->em()))->open($contact, (string) $this->terms()->defaultForNewDebtor()?->getCode());
         } catch (InvalidDebtorProfileException $e) {
             throw new ContactRoleRefusedException(implode(' ', [...$e->validator->getErrors(), ...array_values($e->validator->getFieldErrors())]), 0, $e);
         }

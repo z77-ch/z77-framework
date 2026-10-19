@@ -1,0 +1,213 @@
+@use 'input-look' as look;
+
+// ── Tree picker (`Z77\Shared` partials/treePicker, core.js «tree picker»; first user: the product
+// group of the article list in the TOOLBAR, owner 2026-10-18 — the prototype «Warengruppen-Auswahl») ──
+//
+//   .be-tree-picker                 the root (`[data-tree-picker]`): the field + «×»
+//     .be-tree-picker__field        the <summary>: a FIELD (ADR-051 input look, like `.be-status-field`)
+//       __label / __value / __up / __caret   «WARENGRUPPE», the path (the upper part muted), ▼
+//     .be-tree-picker__clear        «×» — a link that clears the filter
+//     .be-tree-picker__panel        the card under the field: without the script the indented links
+//                                   (`__fallback`, `__link`, depth in `--be-tree-picker-depth`), with it
+//                                   the popover (`__pop`): `__search`, `__path` (`__step`, `__sep`,
+//                                   `__here`), `__list` of `__row` (`__pick` → `__name`, `__where`,
+//                                   `mark`; `__count`; `__in` «›»), `__foot`
+//
+// Tokens only — every palette and both themes follow.
+
+.be-tree-picker {
+    position:    relative;
+    display:     inline-flex;
+    align-items: center;
+    gap:         var(--space-1);
+    min-width:   0;
+}
+.be-tree-picker__details { min-width: 0; }
+
+// The field — a <summary>, so it opens without the script too.
+.be-tree-picker__field {
+    @include look.rest;
+    display:     inline-flex;
+    align-items: center;
+    gap:         var(--space-2);
+    max-width:   min(34rem, 60vw);
+    padding:     .3rem .65rem;
+    font-size:   var(--font-size-sm);
+    white-space: nowrap;
+    cursor:      pointer;
+    list-style:  none;
+
+    &::-webkit-details-marker { display: none; }
+    &:hover { border-color: var(--be-accent); }
+    &:focus-visible { @include look.focus; }
+}
+.be-tree-picker__details[open] > .be-tree-picker__field { border-color: var(--be-accent); }
+.be-tree-picker__label {
+    flex:           none;
+    font-size:      .68rem;
+    font-weight:    var(--font-weight-semibold);
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color:          var(--be-muted);
+}
+.be-tree-picker__value {
+    min-width:     0;
+    overflow:      hidden;
+    text-overflow: ellipsis;
+    font-weight:   var(--font-weight-semibold);
+}
+.be-tree-picker__up    { color: var(--be-muted); font-weight: var(--font-weight-normal); }
+.be-tree-picker__caret { flex: none; color: var(--be-muted); font-size: .65rem; }
+.be-tree-picker__clear {
+    flex:            none;
+    padding:         .15rem .4rem;
+    border-radius:   var(--radius-sm);
+    color:           var(--be-muted);
+    text-decoration: none;
+    line-height:     1;
+
+    &:hover { background: var(--be-field); color: var(--be-text); }
+}
+
+// The card under the field.
+.be-tree-picker__panel {
+    position:      absolute;
+    z-index:       20;
+    top:           calc(100% + 6px);
+    left:          0;
+    width:         min(30rem, calc(100vw - 32px));
+    max-height:    min(26rem, 70vh);
+    background:    var(--be-surface2);
+    color:         var(--be-text);
+    border:        1px solid var(--be-line-strong);
+    border-radius: var(--radius-card);
+    box-shadow:    var(--shadow-lg);
+    white-space:   normal;   // the toolbar is one nowrap line — the card is not
+    font-size:     var(--font-size-sm);
+}
+
+// Without the script: every node as a link, indented by its depth.
+.be-tree-picker__fallback {
+    display:        flex;
+    flex-direction: column;
+    padding:        4px;
+    overflow-y:     auto;
+}
+.be-tree-picker__link {
+    display:         flex;
+    gap:             var(--space-2);
+    padding:         5px 8px 5px calc(8px + var(--be-tree-picker-depth, 0) * 1rem);
+    border-radius:   var(--radius-sm);
+    color:           var(--be-text);
+    text-decoration: none;
+
+    &:hover { background: var(--be-accent-soft); color: var(--be-accent); }
+    &[aria-current] { color: var(--be-accent); font-weight: var(--font-weight-semibold); }
+}
+.be-tree-picker__note  { color: var(--be-muted); font-weight: var(--font-weight-normal); }
+.be-tree-picker__count {
+    margin-left: auto;
+    font-family: var(--font-family-mono);
+    font-size:   var(--font-size-xs);
+    color:       var(--be-muted);
+}
+
+// With the script: search, path, ONE level, foot.
+.be-tree-picker__pop {
+    display:            grid;
+    grid-template-rows: auto auto minmax(0, 1fr) auto;
+}
+.be-tree-picker__search { padding: 10px 10px 6px; }
+.be-tree-picker__search input {
+    @include look.rest;
+    width:     100%;
+    padding:   6px 9px;
+    font:      inherit;
+
+    &:focus { @include look.focus; }
+}
+.be-tree-picker__path {
+    display:       flex;
+    flex-wrap:     wrap;
+    align-items:   center;
+    gap:           2px 4px;
+    min-height:    28px;
+    padding:       2px 12px 6px;
+    border-bottom: 1px solid var(--be-line);
+    color:         var(--be-muted);
+    font-size:     var(--font-size-xs);
+}
+.be-tree-picker__step {
+    padding:       1px 3px;
+    border:        0;
+    border-radius: 3px;
+    background:    none;
+    color:         var(--be-accent);
+    font:          inherit;
+    cursor:        pointer;
+
+    &:hover { text-decoration: underline; }
+}
+.be-tree-picker__here { color: var(--be-text); font-weight: var(--font-weight-semibold); }
+.be-tree-picker__list {
+    min-height: 0;
+    padding:    4px;
+    overflow:   auto;
+}
+.be-tree-picker__row {
+    display:               grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    align-items:           center;
+    gap:                   6px;
+    border-radius:         5px;
+
+    &[data-active] { background: var(--be-accent-soft); }
+}
+.be-tree-picker__pick {
+    display:         grid;
+    gap:             1px;
+    min-width:       0;
+    padding:         6px 8px;
+    border-radius:   5px;
+    color:           var(--be-text);
+    text-decoration: none;
+
+    &:hover .be-tree-picker__name { color: var(--be-accent); }
+    &[aria-current] .be-tree-picker__name { color: var(--be-accent); font-weight: var(--font-weight-bold); }
+    &:focus-visible { outline: 2px solid var(--be-accent); outline-offset: -2px; }
+}
+.be-tree-picker__name,
+.be-tree-picker__where {
+    overflow:      hidden;
+    white-space:   nowrap;
+    text-overflow: ellipsis;
+}
+.be-tree-picker__where { font-size: var(--font-size-xs); color: var(--be-muted); }
+.be-tree-picker__pick mark {
+    padding:       0 1px;
+    border-radius: 2px;
+    background:    color-mix(in srgb, var(--be-warn) 28%, transparent);
+    color:         inherit;
+}
+.be-tree-picker__in {
+    padding:       4px 8px;
+    border:        1px solid transparent;
+    border-radius: 5px;
+    background:    none;
+    color:         var(--be-muted);
+    font:          inherit;
+    cursor:        pointer;
+
+    &:hover { border-color: var(--be-line); color: var(--be-text); }
+    &:disabled { visibility: hidden; }
+}
+.be-tree-picker__foot {
+    display:         flex;
+    flex-wrap:       wrap;
+    justify-content: space-between;
+    gap:             8px;
+    padding:         6px 12px;
+    border-top:      1px solid var(--be-line);
+    color:           var(--be-muted);
+    font-size:       var(--font-size-xs);
+}

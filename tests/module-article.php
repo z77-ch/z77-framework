@@ -15,11 +15,18 @@
  *     check is NULL-SAFE: «not checkable» refuses nothing, a refusal names the field); the
  *     product group (mandatory, unknown refused, an INACTIVE group refused for a new placement
  *     and kept by the article that hangs there); the draft from a form body; the group defaults
- *     fill only EMPTY fields;
+ *     fill only EMPTY fields; the product description (optional, length-limited, line breaks
+ *     normalized) and `Variant::lineText()` — the ONE text an order line of the article starts
+ *     with (name, then the description; owner 2026-10-18);
  *   - (G, offline) the product-group tree: tree order and depth, path, subtree, the defaults
  *     inherited per field from the nearest group, the cycle question, the picker (active + kept,
  *     the own subtree left out); the group validator (name unique among siblings only, parent
  *     known and not inside the group, defaults optional and checked like the article's);
+ *   - (P, offline) the product-group filter in the TOOLBAR (owner 2026-10-18): the totals incl.
+ *     sub-groups, the shared tree picker rendered for the list — the field (shortened path,
+ *     «×»), the no-script fallback (every group a link with the list's state), the JSON data
+ *     island (value, «all», nodes with parent / count / link), escaping (no `</script>`
+ *     breakout), the trait adds it to hc2 and no longer to the rail;
  *   - (K, offline) the stock seam: `StockLineTarget` quantities (three places, sign kept, no
  *     float, nothing else), `StockRequest` (origin, trigger, actor required, a line listed once,
  *     an empty state valid), `StockConfirmation` (reason + confirmed), `PendingStockLedger`
@@ -36,10 +43,10 @@
  *     cycle refused, delete only when empty) and the list filter by group incl. sub-groups.
  *
  * Run: php tests/module-article.php
- * A and K need nothing but PHP (the packages are autoloaded from the repository when vendor/
+ * A, G, P and K need nothing but PHP (the packages are autoloaded from the repository when vendor/
  * is missing). B needs what tests/module-debtor.php needs — vendor/ with Doctrine, a reachable
  * MariaDB and the `z77test` credentials in `%USERPROFILE%\.z77\mariadb.txt` or Z77_TEST_DB_*;
- * without them B is reported SKIPPED and the exit code reflects A and K only. The schema
+ * without them B is reported SKIPPED and the exit code reflects A, G, P and K only. The schema
  * `z77test_<random>` and the temp installation are removed at the end.
  */
 
@@ -70,6 +77,7 @@ if ($vendor) {
     });
 }
 
+use Z77\Module\Article\Entities\AbstractProduct;
 use Z77\Module\Article\Entities\ProductGroup;
 use Z77\Module\Article\Services\ArticleDraft;
 use Z77\Module\Article\Services\ProductGroupDraft;
@@ -213,6 +221,24 @@ check('A21 the group defaults fill only EMPTY fields — a typed value wins; the
     $filled->taxCode === 'UN' && $filled->revenueAccount === '3200' && $kept->taxCode === 'OLD' && $kept->revenueAccount === '3400'
     && $filled->number === '1001' && $filled->productGroup === 1 && $filled->price === '150.00');
 
+// The product description (owner 2026-10-18): optional, multi-line, length-limited; THE line text.
+check('A22 the description is optional and at most DESCRIPTION_LENGTH characters',
+    errorsOf(draft()) === [] && errorsOf(draft(['description' => str_repeat('x', AbstractProduct::DESCRIPTION_LENGTH)])) === []
+    && isset(errorsOf(draft(['description' => str_repeat('x', AbstractProduct::DESCRIPTION_LENGTH + 1)]))['description']));
+$described = ArticleDraft::fromArray(['description' => "  Zeile eins\r\nZeile zwei\rZeile drei \n "]);
+check('A23 the draft from a form body keeps the description\'s inner line breaks (normalized to \\n), trims its ends; group defaults keep it',
+    $described->description === "Zeile eins\nZeile zwei\nZeile drei" && ArticleDraft::fromArray([])->description === ''
+    && draft(['description' => "a\nb", 'taxCode' => ''])->withDefaults('UN', '3200')->description === "a\nb");
+$lineProduct = new \Z77\Module\Article\Entities\Product('harness', new \DateTimeImmutable());
+$lineProduct->describe('Beratung', 'UN', '3400', false);
+$lineVariant = new \Z77\Module\Article\Entities\Variant($lineProduct);
+$lineLabeled = new \Z77\Module\Article\Entities\Variant($lineProduct, '75 cl');
+$plain       = $lineVariant->lineText();
+$lineProduct->describe('Beratung', 'UN', '3400', false, "  Analyse und Konzept\r\nvor Ort \n");
+check('A24 lineText(): the name alone without a description; else name, "\n", the description (CRLF normalized, ends trimmed); a label follows the name',
+    $plain === 'Beratung' && $lineVariant->lineText() === "Beratung\nAnalyse und Konzept\nvor Ort"
+    && $lineLabeled->displayName() === 'Beratung 75 cl' && $lineLabeled->lineText() === "Beratung 75 cl\nAnalyse und Konzept\nvor Ort");
+
 // ── G. the product-group tree (offline) ───────────────────────────────────
 
 echo "G. Product-group tree (offline)\n";
@@ -272,6 +298,64 @@ check('G13 the group draft from a form body: trimmed, code upper-cased, a parent
 check('G14 ProductGroup is a TreeNode of the shared TreeService; its parent moves only through moveUnder() (a relation, not an id)',
     $intern instanceof \Z77\Shared\Tree\TreeNode && $intern->getParentId() === 3
     && throws(fn() => $intern->setParentId(2), \LogicException::class) && caught(fn() => $intern->setParentId(3), \Throwable::class) === null);
+
+// ── P. the group picker in the toolbar (offline) ──────────────────────────
+
+echo "P. Group picker in the toolbar (offline)\n";
+require_once $root . '/packages/kernel/core/src/autoload/prod/php/Helper.php';
+// Renders a template the way TemplateRenderer::partial() does (prefixed locals, EXTR_SKIP), with
+// `Z77\Shared` resolved to the kernel's templates and everything else to module-article's.
+$tplRenderer = new class($root) {
+    public function __construct(private string $root) {}
+    public function partial(string $path, array $context = [], ?string $ns = null): string
+    {
+        $dir = $ns === 'Z77\\Shared' ? $this->root . '/packages/kernel/shared/res/view/templates/' : $this->root . '/packages/module-article/res/view/templates/';
+        return (function (string $z77TplPath, array $z77TplContext) { extract($z77TplContext, EXTR_SKIP); ob_start(); require $z77TplPath; return ob_get_clean(); })->call($this, $dir . $path . '.tpl.php', $context);
+    }
+};
+$pDefinition = \Z77\Module\Article\Ui\ArticleListing::definition($tree->ids());
+$pState      = $pDefinition->read(['group' => '3', 'f_name' => 'Sup', 'page' => '2']);
+$pCounts     = $tree->totals([1 => 4, 3 => 2, 5 => 1, 4 => 3]);
+check('P1 totals: what a group holds INCLUDING its sub-groups; a group without articles is 0',
+    $pCounts[1] === 4 && $pCounts[2] === 6 && $pCounts[3] === 3 && $pCounts[4] === 3 && $pCounts[5] === 1 && count($pCounts) === 5);
+check('P1a totals: an empty tree has none, a group without any direct count is 0', (new ProductGroupTree([]))->totals([]) === [] && $tree->totals([])[2] === 0);
+$pickerHtml = $tplRenderer->partial('Backend/ArticleController/groupPicker', [
+    'tree' => $tree, 'state' => $pState, 'group' => 3, 'counts' => $pCounts, 'actionBase' => '/backend/order/article',
+]);
+preg_match('#<script type="application/json" data-tree-picker-data>(.*?)</script>#s', $pickerHtml, $pm);
+$island = json_decode($pm[1] ?? 'null', true);
+check('P2 the field: label «Warengruppe», the chosen group\'s path shortened (the parent muted, then the name), the full path as title, «×» clears to the list without the group',
+    str_contains($pickerHtml, 'data-tree-picker') && str_contains($pickerHtml, '<span class="be-tree-picker__label">Warengruppe</span>')
+    && str_contains($pickerHtml, '<span class="be-tree-picker__up">Dienstleistungen › </span>Beratung</span>')
+    && str_contains($pickerHtml, 'title="Dienstleistungen › Beratung"')
+    && preg_match('#<a class="be-tree-picker__clear" href="/backend/order/article/list\?f_name=Sup"#', $pickerHtml) === 1);
+$deep = $tplRenderer->partial('Backend/ArticleController/groupPicker', ['tree' => $tree, 'state' => $pState, 'group' => 5, 'counts' => $pCounts]);
+$none = $tplRenderer->partial('Backend/ArticleController/groupPicker', ['tree' => $tree, 'state' => $pDefinition->read([]), 'group' => null, 'counts' => $pCounts]);
+check('P3 a deeper group: «root › … › name»; no group: «Alle Warengruppen» and no «×»',
+    str_contains($deep, '<span class="be-tree-picker__up">Dienstleistungen › … › </span>Intern</span>')
+    && str_contains($none, '<span class="be-tree-picker__value">Alle Warengruppen</span>') && !str_contains($none, 'be-tree-picker__clear'));
+check('P4 without the script: a <details> whose panel lists «Alle Warengruppen» and every group as a link with ?group=<id> (the rest of the state kept, the page back to 1), indented by depth, the chosen one aria-current, an inactive one marked',
+    str_contains($pickerHtml, '<details class="be-tree-picker__details">') && str_contains($pickerHtml, 'data-tree-picker-fallback')
+    && substr_count($pickerHtml, 'class="be-tree-picker__link"') === 6
+    && str_contains($pickerHtml, 'href="/backend/order/article/list?f_name=Sup&amp;group=5" style="--be-tree-picker-depth: 2"')
+    && preg_match('#href="/backend/order/article/list\?f_name=Sup&amp;group=3" style="--be-tree-picker-depth: 1" aria-current="true"#', $pickerHtml) === 1
+    && str_contains($pickerHtml, '<span class="be-tree-picker__note">(inaktiv)</span>') && !str_contains($pickerHtml, 'page=2'));
+$islandNodes = array_column($island['nodes'] ?? [], null, 'id');
+check('P5 the data island: the value, «all» (link without the group, the count of all), every node in tree order with parent, name, count incl. sub-groups, its link, the note',
+    is_array($island) && $island['value'] === 3 && $island['all']['href'] === '/backend/order/article/list?f_name=Sup' && $island['all']['count'] === 10
+    && array_column($island['nodes'], 'id') === [1, 2, 3, 5, 4]
+    && $islandNodes[3] === ['id' => 3, 'parent' => 2, 'name' => 'Beratung', 'count' => 3, 'href' => '/backend/order/article/list?f_name=Sup&group=3']
+    && $islandNodes[1]['parent'] === null && $islandNodes[5]['note'] === 'inaktiv' && $island['text']['search'] === 'Gruppe suchen …');
+$evil = new ProductGroupTree([group(1, '</script><img src=x onerror=alert(1)>')]);
+$evilHtml = $tplRenderer->partial('Backend/ArticleController/groupPicker', ['tree' => $evil, 'state' => \Z77\Module\Article\Ui\ArticleListing::definition($evil->ids())->read([]), 'group' => 1, 'counts' => []]);
+check('P6 names travel escaped: no </script> breakout from the island, no markup in the field or the links; no inline handler (Rule 7)',
+    substr_count($evilHtml, '</script>') === 1 && !str_contains($evilHtml, '<img') && str_contains($evilHtml, '</script>')
+    && !preg_match('/\son[a-z]+\s*=\s*["\']/i', $pickerHtml . $evilHtml));
+check('P7 an empty tree renders nothing', trim($tplRenderer->partial('Backend/ArticleController/groupPicker', ['tree' => new ProductGroupTree([]), 'state' => $pState, 'group' => null])) === '');
+$traitSource = (string) file_get_contents($root . '/packages/module-article/src/Ui/ArticleControllerTrait.php');
+check('P8 the list puts the picker in the TOOLBAR (hc2), not at the top of the rail (owner 2026-10-18); the old rail template is gone',
+    str_contains($traitSource, "addPartials('groupPicker', 'Backend/ArticleController', self::ARTICLE_NS, 'hc2')")
+    && !str_contains($traitSource, "'railSelect')") && !is_file($root . '/packages/module-article/res/view/templates/Backend/ArticleController/groupSelect.tpl.php'));
 
 // ── K. the stock seam (offline) ──────────────────────────────────────────
 
@@ -468,6 +552,10 @@ check('B5 create: product in its group + DEFAULT variant (empty label) + one pri
     && (int) $db->fetchOne('SELECT product_group_id FROM article_product WHERE id = ?', [$product->getId()]) === $allgemein
     && $variant->getNumber() === '1001' && $variant->getUnit() === 'h' && $count('article_price') === 1 && $product->getCreatedBy() === 'harness' && $product->getVersion() === 1);
 check('B6 the soft account check: without module-financial registered the account is stored unverified', $product->getRevenueAccount() === '3400');
+check('B6a a new article without a description stores \'\' (the column of Version20261018120000)', $db->fetchOne('SELECT description FROM article_product WHERE id = ?', [$product->getId()]) === '');
+$product = $service->update((int) $product->getId(), $product->getVersion(), $draft(['validFrom' => '2026-10-01', 'description' => "Analyse\nKonzept"]));
+check('B6b the description is saved multi-line; the variant\'s line text is name + description', $db->fetchOne('SELECT description FROM article_product WHERE id = ?', [$product->getId()]) === "Analyse\nKonzept"
+    && $variants->defaultOf($product)?->lineText() === "Beratung\nAnalyse\nKonzept");
 
 $v = $product->getVersion();
 $product = $service->update((int) $product->getId(), $v, $draft(['price' => '150.00', 'validFrom' => '2026-10-20']));

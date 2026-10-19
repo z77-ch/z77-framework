@@ -124,6 +124,30 @@ final class ProductGroupTree
         return $ids;
     }
 
+    /**
+     * What each group holds INCLUDING its sub-groups — the counts of the list's group picker
+     * (a group filters with its sub-groups, so its count does too). One pass bottom-up over the
+     * tree order: a group's children come after it, so walked backwards each total is complete
+     * before it is added to its parent.
+     *
+     * @param array<int, int> $direct group id → what hangs DIRECTLY on it ({@see \Z77\Module\Article\Repositories\ProductGroupRepository::productCounts()})
+     * @return array<int, int> group id → total (every group, 0 included)
+     */
+    public function totals(array $direct): array
+    {
+        $totals = array_fill_keys($this->ids(), 0);
+        foreach (array_reverse($this->rows()) as $row) {
+            $id           = (int) $row['group']->getId();
+            $totals[$id] += (int) ($direct[$id] ?? 0);
+            $parent       = $row['group']->getParentId();
+            if ($parent !== null && isset($totals[$parent])) {
+                $totals[$parent] += $totals[$id];
+            }
+        }
+
+        return $totals;
+    }
+
     /** How many groups hang DIRECTLY under $id. */
     public function childCount(int $id): int
     {

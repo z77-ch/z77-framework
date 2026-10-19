@@ -38,7 +38,7 @@ $isNew      = $product === null;
 $window     = !empty($window);
 $title      = $isNew ? 'Artikel anlegen' : 'Artikel ' . ($variant?->getNumber() ?? '') . ' — ' . $product->getName();
 $action     = $actionBase . ($isNew ? '/add' : '/edit?id=' . (int) $product->getId());
-$fields     = ['product_group', 'number', 'name', 'unit', 'price', 'valid_from', 'price_mode', 'tax_code', 'revenue_account', 'stock_relevant'];
+$fields     = ['product_group', 'number', 'name', 'unit', 'description','price', 'valid_from', 'price_mode', 'tax_code', 'revenue_account', 'stock_relevant'];
 $invalidIds = array_values(array_map(static fn(string $f) => 'article-' . $f, array_filter($fields, static fn(string $f) => $validator->hasFieldError($f))));
 $fieldError = static fn(string $name): string => $validator->hasFieldError($name)
     ? '<small class="be-form__field-error" data-z77-field-error>' . e($validator->getFieldError($name)) . '</small>'
@@ -106,6 +106,14 @@ $delete     = $isNew ? '' : '<a class="be-btn be-btn--danger" href="' . e($actio
                 <label for="article-unit">Einheit</label>
                 <input type="text" id="article-unit" name="unit" value="<?= e($draft->unit) ?>" maxlength="<?= AbstractVariant::UNIT_LENGTH ?>" aria-invalid="<?= $invalid('unit') ?>">
                 <?= raw($fieldError('unit')) ?>
+            </div>
+        </div>
+
+        <div class="be-form__grid be-form__grid--single">
+            <div class="be-form__field" data-z77-field-wrapper>
+                <label for="article-description">Beschreibung</label>
+                <textarea id="article-description" name="description" rows="4" maxlength="<?= AbstractProduct::DESCRIPTION_LENGTH ?>" aria-invalid="<?= $invalid('description') ?>"><?= e($draft->description) ?></textarea>
+                <?= raw($fieldError('description')) ?>
             </div>
         </div>
 

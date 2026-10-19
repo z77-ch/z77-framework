@@ -73,6 +73,7 @@ often?* That is the action cell. The target table of the existing areas is in
 | Tabs | `.be-viewtabs` — text with accent underline: language, mode, view | boxes or pills |
 | On/off | `be-switch` — the ONLY on/off form; a switch for a CSS reveal is a `<label for>` of the checkbox (`.be-switch--for`) | checkbox links, text toggles |
 | Area choice | the rail-top select (`railSelect`) — a floating tinted card | a dropdown in the toolbar |
+| List filter over a long tree | the tree picker in the toolbar (`Z77\Shared` `partials/treePicker`) — a field with the chosen path, search over all levels, one level at a time | the rail-top select (it is not an area choice) |
 | Sections of a long form | radio tabs (`.be-radiotabs` + `.be-viewtabs__tab--for` in the toolbar), one form, one save; the first tab with an error opens | separate pages per section |
 
 **An icon stands for a word only where there is no room for the word, or where the layout

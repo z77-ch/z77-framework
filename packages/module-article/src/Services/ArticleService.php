@@ -31,9 +31,9 @@ use Z77\Shared\Money\Money;
  * What one save does — product, default variant and price together, in ONE unit of work:
  *
  *   - validates the draft BEFORE anything managed is touched (ADR-039 decision 9): number (free,
- *     unique — A2), name, unit, price (not negative), net / gross, «gültig ab», the tax code
- *     (module-vat: an ACTIVE code, or the one the article keeps — ADR-043 decision 19) and the
- *     revenue account (module-mandator's `LedgerAccountCheck`: postable, type «Ertrag» AND «auf
+ *     unique — A2), name, description (optional, length only), unit, price (not negative),
+ *     net / gross, «gültig ab», the tax code (module-vat: an ACTIVE code, or the one the article
+ *     keeps — ADR-043 decision 19) and the revenue account (module-mandator's `LedgerAccountCheck`: postable, type «Ertrag» AND «auf
  *     Belegen wählbar» — SOFT: without module-financial the number is stored unverified);
  *   - create: the product in its ONE product group (A1 — mandatory, any node), its DEFAULT
  *     variant (empty label — A3 in the schema, hidden in the UI) and the first price row. A tax
@@ -89,7 +89,7 @@ final class ArticleService
         $this->refuseNumberRace($draft, function () use ($draft, $amount, $mode, $day, &$product): void {
             $this->em->getTransaction(Product::class)->run(function () use ($draft, $amount, $mode, $day, &$product): void {
                 $product = new Product($this->actor, new \DateTimeImmutable());
-                $product->describe($draft->name, $draft->taxCode, $draft->revenueAccount, $draft->stockRelevant);
+                $product->describe($draft->name, $draft->taxCode, $draft->revenueAccount, $draft->stockRelevant, $draft->description);
                 $product->placeIn($this->group($draft->productGroup));
                 $this->em->persist($product);
 
@@ -122,7 +122,7 @@ final class ArticleService
         try {
             $this->refuseNumberRace($draft, function () use ($product, $variant, $draft, $amount, $mode, $day): void {
                 $this->em->getTransaction(Product::class)->run(function () use ($product, $variant, $draft, $amount, $mode, $day): void {
-                    $product->describe($draft->name, $draft->taxCode, $draft->revenueAccount, $draft->stockRelevant);
+                    $product->describe($draft->name, $draft->taxCode, $draft->revenueAccount, $draft->stockRelevant, $draft->description);
                     $product->placeIn($this->group($draft->productGroup));
                     // Always stamped: the product row is written on every save, so its version moves
                     // even when only the price changed — a form rendered before is then stale.

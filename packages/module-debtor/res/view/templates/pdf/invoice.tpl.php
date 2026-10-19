@@ -4,7 +4,8 @@
  * the document's SNAPSHOT only. The page: the mandator's letterhead
  * (module-mandator `pdf/letterhead`), the recipient in the envelope window
  * (kernel `pdf/addressWindow`), the title and the document facts, the lines
- * as a flowing table (kernel `pdf/table`, continued on further pages with
+ * as a flowing table (kernel `pdf/table`; a priced line's first text line
+ * bold, `lead`; continued on further pages with
  * a running header), the tax summary and the totals, the terms sentence —
  * and, on an invoice with a printable QR-bill, the PAYMENT PART at the foot
  * of the last page (`pdf/qrBill`, the 105 mm zone the guidelines reserve;
@@ -115,6 +116,7 @@ foreach ($document->getLines() as $line) {
             $isText ? '' : $fmt($line->getAmount()),
         ],
         'indent' => $line->getParentLine() !== null ? 4 : 0,
+        'lead'   => !$isText,   // a priced line: its first line (the title) bold, the description below (owner 2026-10-18)
     ];
 }
 $rows[] = ['cells' => ['Netto', '', '', '', $fmt($document->getNetTotal())], 'rule' => true];

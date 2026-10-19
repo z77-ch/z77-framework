@@ -54,6 +54,17 @@
 .be-btn--confirm-open       { background: var(--be-surface2); color: var(--be-confirm-ink); border-color: var(--be-confirm-ink); }
 .be-btn--confirm-open:hover { background: color-mix(in srgb, var(--be-confirm-ink) 10%, var(--be-surface2)); }
 
+// A save with nothing to save (core.js «dirty forms», owner 2026-10-18): quiet — line and muted
+// ink, still readable; it calls (its own fill) as soon as a field differs from the loaded state.
+.be-btn[data-dirty-submit][aria-disabled="true"],
+.be-btn[data-dirty-submit][aria-disabled="true"]:hover {
+    background:   transparent;
+    border-color: var(--be-line);
+    color:        var(--be-muted);
+    filter:       none;
+    cursor:       default;
+}
+
 .be-btn--quiet       { background: transparent; border-color: transparent; color: var(--be-muted); }
 .be-btn--quiet:hover { background: var(--be-field); border-color: transparent; color: var(--be-text); }
 
@@ -66,6 +77,12 @@
 // Tokens only (dark mode, every palette) — the former `--color-danger-border` / `-bg` are light-only.
 .be-btn--danger        { background: var(--be-surface2); color: var(--be-danger); border-color: color-mix(in srgb, var(--be-danger) 50%, var(--be-surface2)); }
 .be-btn--danger:hover  { background: color-mix(in srgb, var(--be-danger) 10%, var(--be-surface2)); border-color: var(--be-danger); }
+
+// Add a ROW to a form (the order's «+ Artikel» / «+ Textzeile», owner's draft 2026-10-18): a dashed
+// line, the «+» in the accent — it adds to what is there, it does not create a record.
+.be-btn--add                       { background: transparent; border-style: dashed; border-color: var(--be-line-strong); color: var(--be-text); }
+.be-btn--add:hover                 { border-color: var(--be-accent); color: var(--be-accent); }
+.be-btn--add > [aria-hidden="true"] { color: var(--be-accent); font-weight: var(--font-weight-bold); }
 
 .be-btn--sm   { padding: .25rem .6rem; font-size: var(--font-size-xs); }
 .be-btn--full { width: 100%; justify-content: center; }
