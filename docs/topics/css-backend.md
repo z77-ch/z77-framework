@@ -53,6 +53,7 @@ packages/module-backend/res/scss/
 │   ├── _tables.scss
 │   ├── _list.scss          .be-list / .be-tree / .be-tabs — shared backend listing/tree (all list views)
 │   ├── _tree-picker.scss   .be-tree-picker — a filter over a long tree as a toolbar FIELD (kernel `partials/treePicker` + core.js «tree picker»)
+│   ├── _pick-list.scss     .be-pick — a searching choice window (toolbar, active row; core.js «pick list») + .be-rows__article / __pick (the order row's magnifier)
 │   ├── _modal.scss
 │   ├── _pagination.scss
 │   ├── _login.scss         Login box (Werkbank design)
@@ -140,6 +141,7 @@ itself into `public/` is NOT touched — that file belongs to the project.
 | Group tabs, section headers, empty state, section hint | `components/_list.scss` (`.be-tabs`, `.be-list__section-*`, `.be-list__empty`) |
 | Pager for a v2 list | `components/_pagination.scss` (`.be-pagination`) |
 | A list FILTER over a long tree (the article list's product group): the field, «×», the no-script link list, the popover (search, path, one level, counts, «›», `mark`) | `components/_tree-picker.scss` (`.be-tree-picker` / `__field` / `__panel` / `__pop` / `__row` …) — markup from the kernel's `partials/treePicker`, behaviour core.js «tree picker» |
+| A searching CHOICE window (the article picker over the order window, 2026-10-19): toolbar with tree picker + search field, the compact list whose number button picks and whose cells are its labels, the active row on the accent; the order row's magnifier beside the article number | `components/_pick-list.scss` (`.be-pick` / `__bar` / `__find` / `__item`, `.be-rows__article` / `__pick`) — markup module-article's `Backend/ArticlePicker/pick`, behaviour core.js «pick list» |
 | A header cell that sorts AND searches (the magnifier opens the column's search pop-up — HTML `popover`, «{Spalte} suchen», no JS, owner 2026-10-16), a row state icon, scope toggles as links | `components/_list.scss` (`.be-list__find` / `__sort` / `__find-icon` / `__find-value` / `__find-pop` / `__find-input`, `.be-list__state--*`, `.be-list__toggle`) — first consumer: the journal list (FIN-JOURNAL-CAPTURE-001); rendered by the kernel's `partials/listHead` over a `ListDefinition` since 2026-10-08 — [`listing.md`](listing.md) |
 | Login page | `components/_login.scss` |
 | GUEST full-page wrapper (login/setup, no chrome) | `components/_guest.scss` (`.be-guest`) |

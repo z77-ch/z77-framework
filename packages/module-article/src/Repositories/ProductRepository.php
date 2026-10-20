@@ -82,6 +82,19 @@ class ProductRepository extends DoctrineRepository
             $params[] = $search->account;
             $types[]  = ParameterType::STRING;
         }
+        // The picker's one search text: each word (at most five) must stand in the number, the
+        // name or the description — «sd 32» finds «SD-Card 32 GB».
+        $words = array_slice(preg_split('/\s+/u', trim((string) $search->text), -1, PREG_SPLIT_NO_EMPTY) ?: [], 0, 5);
+        foreach ($words as $word) {
+            $where[] = '(v.number LIKE ? OR p.name LIKE ? OR p.description LIKE ?)';
+            foreach ([1, 2, 3] as $ignored) {
+                $params[] = $like($word);
+                $types[]  = ParameterType::STRING;
+            }
+        }
+        if ($search->activeOnly) {
+            $where[] = 'p.active = 1 AND v.active = 1';
+        }
         if ($search->groupIds !== null) {
             $ids = array_values(array_unique(array_map('intval', $search->groupIds)));
             if ($ids === []) {

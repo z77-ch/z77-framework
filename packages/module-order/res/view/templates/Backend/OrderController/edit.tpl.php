@@ -4,7 +4,9 @@
  * existing one, ONE form, ONE save. A plain form, no JavaScript of its own (Rule 7): the
  * positions use the shared core.js blocks «rows» (add, remove, drag & drop, indent), «autosize»
  * and «line sums» — without the script «+ Artikel», «+ Textzeile» and × are submits that come
- * back with the changed rows; the article picker is a `<datalist>`; `csrf_token` is the page-mode field (`#[Csrf]`), an existing order also
+ * back with the changed rows; the article number is typed (core.js «fill» completes the row) or chosen in
+ * article's searching picker (`article-pick`, a window over this one — the row's magnifier fills
+ * THAT row, «+ Artikel» a new one; owner 2026-10-19); `csrf_token` is the page-mode field (`#[Csrf]`), an existing order also
  * carries the entity token and the VERSION it was rendered from (the optimistic lock of
  * `OrderService::update()`).
  *
@@ -155,7 +157,14 @@ if ($isNew) {
 // The positions' columns: handle (⋮⋮ grip + ⇥ indent) · Pos. · Art · Art.-Nr. · Text · Menge ·
 // Einheit · Preis · Rabatt % · MWST · Betrag · ×. A text row's text spans Art.-Nr. … Betrag
 // (`--be-rows-span`). No Konto column (owner 2026-10-18: every priced line is an article, D3).
-$cols = '3.6rem 2.4rem 5.2rem 7rem minmax(12rem, 3fr) 4.5rem 4.5rem 6.5rem 4.5rem 4.5rem 7rem 1.8rem';
+$cols = '3.6rem 2.4rem 5.2rem 8.8rem minmax(12rem, 3fr) 4.5rem 4.5rem 6.5rem 4.5rem 4.5rem 7rem 1.8rem';
+// «Artikel wählen …» (owner 2026-10-19): article's picker at this window's root. The row's magnifier
+// and «+ Artikel» open it as a window over this one; the context its price needs rides along at
+// the click (`data-window-with` — the fields as they stand), the href carries the rendered values
+// for a page without the script (a new tab: the order here keeps what was typed).
+$pickUrl   = $actionBase . '/article-pick';
+$pickWith  = 'order_date service_from price_mode';
+$pickState = ['order_date' => $form->header('order_date'), 'service_from' => $form->header('service_from'), 'price_mode' => $form->header('price_mode')];
 // The row's amount as typed (quantity × price less the discount) — shown only, the save and the
 // totals below decide (D11); '' when a value is not a number yet.
 $amount = static function (array $row): string {
@@ -328,7 +337,7 @@ $addressFields = fn(string $field): string => $this->partial('Backend/ContactCon
         <?php
         $currency = $preview?->getCurrency() ?? $currency;
         // One row of the positions — the server's rows and the two <template> rows share it ($i = '__i__').
-        $positionRow = function (int|string $i, array $row, string $no) use ($form, $articles, $taxCodes, $taxRates, $editable, $invalid, $amount, $actionBase, $key): string {
+        $positionRow = function (int|string $i, array $row, string $no) use ($form, $articles, $taxCodes, $taxRates, $editable, $invalid, $amount, $actionBase, $key, $pickUrl, $pickWith, $pickState): string {
             $p    = 'rows[' . $i . ']';
             $rid  = 'order-row-' . $i . '-';
             $err  = static fn(string $f): string => is_int($i) ? $form->rowError($i, $f) : '';
@@ -359,7 +368,8 @@ $addressFields = fn(string $field): string => $this->partial('Backend/ContactCon
                     <?php if ($text): ?>
                     <span class="be-list__cell be-rows__text be-rows__wide"><textarea class="be-input be-input--sm" id="<?= $rid ?>text" name="<?= $p ?>[text]" rows="<?= $rows ?>" data-autosize data-help-key="text" aria-label="Text" aria-invalid="<?= $invalid($err('text')) ?>"><?= e($row['text']) ?></textarea></span>
                     <?php else: ?>
-                    <span class="be-list__cell"><input class="be-input be-input--sm" type="text" id="<?= $rid ?>article" name="<?= $p ?>[article]" value="<?= e($row['article']) ?>" list="order-articles-<?= e($key) ?>" spellcheck="false" data-fill-url="<?= e($actionBase . '/article-defaults') ?>" data-fill-with="order_date service_from price_mode" data-help-key="article" aria-label="Artikel" aria-invalid="<?= $invalid($err('article')) ?>"<?= $art !== null ? ' title="' . e($art['name']) . '"' : '' ?><?= $row['id'] !== '' && $row['article'] === '' ? ' placeholder="ohne Artikel"' : '' ?>></span>
+                    <?php // The number is typed (when known — the fastest path) or chosen in the picker (the magnifier, owner 2026-10-19); no datalist since 2026-10-20 (owner: the picker searches). ?>
+                    <span class="be-list__cell be-rows__article"><input class="be-input be-input--sm" type="text" id="<?= $rid ?>article" name="<?= $p ?>[article]" value="<?= e($row['article']) ?>" spellcheck="false" data-fill-url="<?= e($actionBase . '/article-defaults') ?>" data-fill-with="order_date service_from price_mode" data-help-key="article" aria-label="Artikel" aria-invalid="<?= $invalid($err('article')) ?>"<?= $art !== null ? ' title="' . e($art['name']) . '"' : '' ?><?= $row['id'] !== '' && $row['article'] === '' ? ' placeholder="ohne Artikel"' : '' ?>><?php if ($editable): $pick = \Z77\Module\Article\Ui\ArticlePicker::url($pickUrl, ['target' => $rid . 'article'] + $pickState); ?><a class="be-rows__pick" href="<?= e($pick) ?>" target="_blank" rel="noopener" data-window-open="<?= e($pick) ?>" data-window-with="<?= e($pickWith) ?>" title="Artikel wählen …" aria-label="Artikel wählen …"><svg class="be-icon" width="13" height="13" aria-hidden="true"><use href="#icon-search"/></svg></a><?php endif; ?></span>
                     <span class="be-list__cell be-rows__text"><textarea class="be-input be-input--sm" id="<?= $rid ?>text" name="<?= $p ?>[text]" rows="<?= $rows ?>" data-autosize="title" data-fill-key="text" data-help-key="text" aria-label="Text" aria-invalid="<?= $invalid($err('text')) ?>"><?= e($row['text']) ?></textarea></span>
                     <span class="be-list__cell be-list__cell--num"><input class="be-input be-input--sm" type="text" id="<?= $rid ?>quantity" name="<?= $p ?>[quantity]" value="<?= e($row['quantity']) ?>" inputmode="decimal" data-sum-qty data-help-key="quantity" aria-label="Menge" aria-invalid="<?= $invalid($err('quantity')) ?>"></span>
                     <span class="be-list__cell"><input class="be-input be-input--sm" type="text" id="<?= $rid ?>unit" name="<?= $p ?>[unit]" value="<?= e($row['unit']) ?>" maxlength="16" data-fill-key="unit" data-help-key="unit" aria-label="Einheit" aria-invalid="<?= $invalid($err('unit')) ?>"></span>
@@ -399,29 +409,33 @@ $addressFields = fn(string $field): string => $this->partial('Backend/ContactCon
         <?php // «Preise» converts the rows at once (core.js «price mode», owner 2026-10-18); `prices_mode` says
               // which mode the prices are in — the server converts at the save when it is still the other. ?>
         <div class="be-form__block" data-sum data-price-mode>
-            <div class="be-form__block-head">
-                <h3 class="be-list__section-title">Positionen</h3>
-                <div class="be-form__field" data-z77-field-wrapper>
+            <?php // The script data stands before the table; the bar (title, adders, «Preise») and
+                  // the column head form ONE sticky top inside it (`.be-rows__top`, owner 2026-10-20): with many
+                  // positions they stay in view while the rows scroll. ?>
+            <script type="application/json" data-rate-schedule="order-vat" data-rate-date="service_from order_date"><?= json_encode($rateSchedule ?? [], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?></script>
+            <div class="be-list__frame be-list__frame--stick">
+                <div class="be-list__table be-rows" style="--be-list-cols: <?= e($cols) ?>; --be-rows-span: 8" data-rows="rows">
+                    <div class="be-rows__top">
+                    <div class="be-form__block-head be-rows__bar">
+                        <h3 class="be-list__section-title">Positionen</h3>
+                        <?php if ($editable): ?>
+                        <div class="be-rows__adders">
+                            <?php // «+ Artikel» opens the picker (owner 2026-10-19): the chosen article lands in a NEW row,
+                                  // «Schliessen» adds none. Without the script it stays the submit that adds an empty row. ?>
+                            <button type="submit" class="be-btn be-btn--add be-btn--sm" name="op" value="add-article" formnovalidate data-window-open="<?= e(\Z77\Module\Article\Ui\ArticlePicker::url($pickUrl, $pickState)) ?>" data-window-with="<?= e($pickWith) ?>" title="Artikel wählen …"><span aria-hidden="true">+</span> Artikel</button>
+                            <button type="submit" class="be-btn be-btn--add be-btn--sm" name="op" value="add-text" formnovalidate data-row-add="text"><span aria-hidden="true">+</span> Textzeile</button>
+                        </div>
+                        <?php endif; ?>
+                        <div class="be-form__field" data-z77-field-wrapper>
                     <label for="order-price_mode">Preise</label>
                     <select id="order-price_mode" name="price_mode" data-sum-mode data-price-mode-select aria-invalid="<?= $invalid($form->error('price_mode')) ?>">
                         <option value="net"<?= $form->header('price_mode') === 'net' ? ' selected' : '' ?>>netto (exkl. MWST)</option>
                         <option value="gross"<?= $form->header('price_mode') === 'gross' ? ' selected' : '' ?>>brutto (inkl. MWST)</option>
                     </select>
                     <?= raw($fieldError($form->error('price_mode'))) ?>
-                    <input type="hidden" name="prices_mode" value="<?= e($form->header('prices_mode')) ?>" data-price-mode-shown>
-                </div>
-            </div>
-            <?php // The rate history for core.js «dated rates»: the rows' MWST follows «Leistung von» (else the order date) live. ?>
-            <script type="application/json" data-rate-schedule="order-vat" data-rate-date="service_from order_date"><?= json_encode($rateSchedule ?? [], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?></script>
-            <datalist id="order-articles-<?= e($key) ?>">
-                <?php foreach ($articles as $number => $article): ?>
-                <?php if ($article['offered']): ?>
-                <option value="<?= e((string) $number) ?>"><?= e($article['name'] . ($article['unit'] !== '' ? ' · ' . $article['unit'] : '')) ?></option>
-                <?php endif; ?>
-                <?php endforeach; ?>
-            </datalist>
-            <div class="be-list__frame">
-                <div class="be-list__table be-rows" style="--be-list-cols: <?= e($cols) ?>; --be-rows-span: 8" data-rows="rows">
+                            <input type="hidden" name="prices_mode" value="<?= e($form->header('prices_mode')) ?>" data-price-mode-shown>
+                        </div>
+                    </div>
                     <div class="be-list__head">
                         <span class="be-list__col"></span>
                         <span class="be-list__col be-list__col--num">Pos.</span>
@@ -436,6 +450,7 @@ $addressFields = fn(string $field): string => $this->partial('Backend/ContactCon
                         <span class="be-list__col be-list__col--num">Betrag</span>
                         <span class="be-list__col"></span>
                     </div>
+                    </div>
                     <?php $pos = 0; $sub = 0; ?>
                     <?php foreach ($form->rows() as $i => $row):
                         // The position number as printed: an indented row counts under its parent (1.1).
@@ -448,13 +463,6 @@ $addressFields = fn(string $field): string => $this->partial('Backend/ContactCon
                     <?php endif; ?>
                 </div>
             </div>
-            <?php if ($editable): ?>
-            <div class="be-rows__adders">
-                <button type="submit" class="be-btn be-btn--add be-btn--sm" name="op" value="add-article" formnovalidate data-row-add="article"><span aria-hidden="true">+</span> Artikel</button>
-                <button type="submit" class="be-btn be-btn--add be-btn--sm" name="op" value="add-text" formnovalidate data-row-add="text"><span aria-hidden="true">+</span> Textzeile</button>
-            </div>
-            <?php endif; ?>
-
             <div class="be-form__foot">
                 <div class="be-form__audit">
                     <?php if (!$isNew): ?>

@@ -10,6 +10,7 @@ use Z77\Core\DI,
     Z77\Core\Services\TemplateRenderer,
     Z77\Module\Article\Entities\Variant,
     Z77\Module\Article\Repositories\VariantRepository,
+    Z77\Module\Article\Ui\ArticlePickerTrait,
     Z77\Module\Article\Stock\StockConfirmation,
     Z77\Module\Article\Stock\StockReasonRequiredException,
     Z77\Module\Contact\Entities\Contact,
@@ -91,12 +92,14 @@ use Z77\Core\DI,
  *     submit of the same selection reprints and books nothing; a refusal is a message page naming
  *     the order.
  *
- *   - `article-defaults` — what a line takes from the chosen article, for core.js «fill» (reads only).
+ *   - `article-defaults` — what a line takes from the chosen article, for core.js «fill» (reads only);
+ *     `article-pick` — «Artikel wählen …», article's searching picker ({@see ArticlePickerTrait},
+ *     owner 2026-10-19): a row's «…» puts the chosen number into THAT row, «+ Artikel» into a new one.
  *
  * Every write goes through {@see OrderService} with the logged-in user as actor. No JavaScript of
  * its own (Rule 7): plain forms; the positions use core.js «rows» (add, remove, drag & drop) and
  * «line sums» (the live total), whose adders and × are submits without the script; the article
- * picker is a `<datalist>` whose choice fills the row through core.js «fill» — without the script
+ * number, typed or chosen in article's picker, fills the row through core.js «fill» — without the script
  * the save fills it.
  * The using class MUST provide (via its host base): `html()`, `fetch()`, `fetchError()`,
  * `redirect()`, `bytes()`, `em()`, `$layoutManager`, `$messageService`, `$help`.
@@ -104,6 +107,7 @@ use Z77\Core\DI,
 trait OrderControllerTrait
 {
     use CustomerPickerTrait;
+    use ArticlePickerTrait;
 
     private const ORDER_NS = 'Z77\\Module\\Order';
 
@@ -509,6 +513,62 @@ trait OrderControllerTrait
         $fill = ['text' => $defaults['text'], 'unit' => $defaults['unit'], 'price' => $defaults['price'], 'tax_code' => $defaults['taxCode'], 'account' => $defaults['account']];
 
         return $this->fetch()->setStatus('success')->setData(['fill' => $fill, 'lock' => ['tax_code' => true, 'account' => true]]);
+    }
+
+    // ── «Artikel wählen …» (article's ArticlePickerTrait) ────────────────
+
+    /** The picker lives at the order window's root (`/backend/order/order/article-pick`). */
+    protected function articlePickBase(): string
+    {
+        return $this->orderListBase();
+    }
+
+    /** What the row's price needs — the same fields «fill» sends (`data-fill-with`). */
+    protected function articlePickContextKeys(): array
+    {
+        return ['order_date', 'service_from', 'price_mode'];
+    }
+
+    /**
+     * The «Preis» column: what the line would take — the price valid at the ORDER date in the
+     * order's price mode (`OrderService::articlePriceAt()`, the rule of the save and of «fill»).
+     */
+    protected function articlePickPrices(array $variants, array $context): array
+    {
+        $service = $this->orderService();
+        $prices  = [];
+        foreach ($variants as $variant) {
+            $price = $service->articlePriceAt($variant, $context['order_date'] ?? '', $context['service_from'] ?? '', $context['price_mode'] ?? '');
+            $prices[(int) $variant->getId()] = $price !== null ? AmountFormat::of($price) : '';
+        }
+        $mode = $context['price_mode'] ?? '';
+
+        return ['label' => $mode === 'gross' ? 'Preis brutto' : ($mode === 'net' ? 'Preis netto' : 'Preis'), 'prices' => $prices];
+    }
+
+    /**
+     * The choice in the order window, scoped to it (owner 2026-10-19): opened from a row's «…»
+     * ($target = that row's article field, `order-row-<i>-article`) the field takes the number —
+     * `set-value` fires `change`, so core.js «fill» fills text, unit, price and rate exactly as when
+     * the number is typed — and the quantity takes the focus; opened from «+ Artikel» ($target '')
+     * a NEW row is added from the positions' template and filled the same way (core.js `add-row`).
+     * The picker then stays open for the next pick (owner 2026-10-20), so the focus stays in it —
+     * no `focus` into the row behind.
+     */
+    protected function articlePickedCommands(FetchResponse $response, Variant $variant, string $origin, string $target): void
+    {
+        if (preg_match('/^order-row-([A-Za-z0-9]+)-article$/', $target, $m) === 1) {
+            $response->addCommand('set-value', ['target' => '#' . $target, 'value' => $variant->getNumber(), 'origin' => $origin]);
+            $response->addCommand('focus', ['target' => '#order-row-' . $m[1] . '-quantity', 'origin' => $origin]);
+
+            return;
+        }
+        $response->addCommand('add-row', [
+            'target' => '[data-rows="rows"]',
+            'kind'   => 'article',
+            'values' => ['[data-fill-url]' => $variant->getNumber()],
+            'origin' => $origin,
+        ]);
     }
 
     // ── «+ Kontakt» ──────────────────────────────────────────────────────

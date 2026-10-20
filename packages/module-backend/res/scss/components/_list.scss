@@ -329,6 +329,10 @@
     margin-inline:         calc(-1 * var(--be-row-bleed, 0px));
 }
 .be-list__frame > .be-list__table { margin-inline: 0; }
+/* A frame whose head must stick to the PANE (the window body, the shell column): no scrollport
+   of its own, so the sticky head finds the pane — a wide table then scrolls with the pane
+   (first user: the order window's positions, owner 2026-10-20). */
+.be-list__frame--stick { overflow-x: visible; }
 
 .be-list__table--disclose { --be-list-disclose: 1.2rem; }
 .be-list__table--select   { --be-list-select:   1.5rem; }

@@ -52,6 +52,15 @@
     margin-inline:  calc(-1 * var(--space-3));
     padding-inline: var(--space-3);
 }
+// A sticky row sticks at the body's CONTENT edge — `--space-3` below the title bar; the scrolled
+// cards showed through that strip (owner 2026-10-20, order window). It sticks flush under the
+// title bar instead, and a ground-coloured shadow covers the strip above it at rest (where it is
+// ground anyway). Also a card's head strip (`_form-actions-host.scss` keeps `top`). core.js
+// «sticky top» adds this `top` to the height it publishes, so a block below meets the row.
+.be .z77-window__body .z77-form-actions:not(.z77-form-actions--end) {
+    top:        calc(-1 * var(--space-3));
+    box-shadow: 0 calc(-1 * var(--space-3)) 0 var(--be-bg);
+}
 
 @media (max-width: 767px) {
     .be .z77-window,

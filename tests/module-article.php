@@ -27,6 +27,12 @@
  *     «×»), the no-script fallback (every group a link with the list's state), the JSON data
  *     island (value, «all», nodes with parent / count / link), escaping (no `</script>`
  *     breakout), the trait adds it to hc2 and no longer to the rail;
+ *   - (Q, offline) the article PICKER (owner 2026-10-19, `Ui\ArticlePicker` /
+ *     `ArticlePickerTrait`): the address state (search, group of the tree, the target a plain
+ *     id, the context plain), the search (one text, choosable only, the group with sub-groups),
+ *     the window (one fetch region with the shared group picker and the search field, every
+ *     link carrying the state), the compact list (each number a submit, the cells its labels,
+ *     the source's prices), escaping, the page without the script; the trait knows no source;
  *   - (K, offline) the stock seam: `StockLineTarget` quantities (three places, sign kept, no
  *     float, nothing else), `StockRequest` (origin, trigger, actor required, a line listed once,
  *     an empty state valid), `StockConfirmation` (reason + confirmed), `PendingStockLedger`
@@ -40,13 +46,14 @@
  *     number refused; deactivate = product and variants; delete of an unreferenced article, a
  *     REFERENCED one refused by the database (a foreign key like module-order's line) and kept;
  *     the group service (create, defaults reach a NEW article only, move with the articles, a
- *     cycle refused, delete only when empty) and the list filter by group incl. sub-groups.
+ *     cycle refused, delete only when empty) and the list filter by group incl. sub-groups;
+ *     the picker's search (every word in number, name or description; inactive left out).
  *
  * Run: php tests/module-article.php
- * A, G, P and K need nothing but PHP (the packages are autoloaded from the repository when vendor/
+ * A, G, P, Q and K need nothing but PHP (the packages are autoloaded from the repository when vendor/
  * is missing). B needs what tests/module-debtor.php needs — vendor/ with Doctrine, a reachable
  * MariaDB and the `z77test` credentials in `%USERPROFILE%\.z77\mariadb.txt` or Z77_TEST_DB_*;
- * without them B is reported SKIPPED and the exit code reflects A, G, P and K only. The schema
+ * without them B is reported SKIPPED and the exit code reflects A, G, P, Q and K only. The schema
  * `z77test_<random>` and the temp installation are removed at the end.
  */
 
@@ -89,6 +96,7 @@ use Z77\Module\Article\Stock\StockLedgers;
 use Z77\Module\Article\Stock\StockLineTarget;
 use Z77\Module\Article\Stock\StockRequest;
 use Z77\Module\Article\Stock\StockResult;
+use Z77\Module\Article\Ui\ArticlePicker;
 use Z77\Module\Article\Validators\ArticleValidator;
 use Z77\Module\Article\Validators\ProductGroupValidator;
 use Z77\Module\Vat\Entities\TaxCode;
@@ -334,11 +342,11 @@ $none = $tplRenderer->partial('Backend/ArticleController/groupPicker', ['tree' =
 check('P3 a deeper group: «root › … › name»; no group: «Alle Warengruppen» and no «×»',
     str_contains($deep, '<span class="be-tree-picker__up">Dienstleistungen › … › </span>Intern</span>')
     && str_contains($none, '<span class="be-tree-picker__value">Alle Warengruppen</span>') && !str_contains($none, 'be-tree-picker__clear'));
-check('P4 without the script: a <details> whose panel lists «Alle Warengruppen» and every group as a link with ?group=<id> (the rest of the state kept, the page back to 1), indented by depth, the chosen one aria-current, an inactive one marked',
+check('P4 without the script: a <details> whose panel lists «Alle Warengruppen» and every group as a link with ?group=<id> (the rest of the state kept, the page back to 1; a region link — inert outside a region, also in a window before the script enhances it), indented by depth, the chosen one aria-current, an inactive one marked',
     str_contains($pickerHtml, '<details class="be-tree-picker__details">') && str_contains($pickerHtml, 'data-tree-picker-fallback')
     && substr_count($pickerHtml, 'class="be-tree-picker__link"') === 6
-    && str_contains($pickerHtml, 'href="/backend/order/article/list?f_name=Sup&amp;group=5" style="--be-tree-picker-depth: 2"')
-    && preg_match('#href="/backend/order/article/list\?f_name=Sup&amp;group=3" style="--be-tree-picker-depth: 1" aria-current="true"#', $pickerHtml) === 1
+    && str_contains($pickerHtml, 'href="/backend/order/article/list?f_name=Sup&amp;group=5" data-fetch-region-link style="--be-tree-picker-depth: 2"')
+    && preg_match('#href="/backend/order/article/list\?f_name=Sup&amp;group=3" data-fetch-region-link style="--be-tree-picker-depth: 1" aria-current="true"#', $pickerHtml) === 1
     && str_contains($pickerHtml, '<span class="be-tree-picker__note">(inaktiv)</span>') && !str_contains($pickerHtml, 'page=2'));
 $islandNodes = array_column($island['nodes'] ?? [], null, 'id');
 check('P5 the data island: the value, «all» (link without the group, the count of all), every node in tree order with parent, name, count incl. sub-groups, its link, the note',
@@ -356,6 +364,67 @@ $traitSource = (string) file_get_contents($root . '/packages/module-article/src/
 check('P8 the list puts the picker in the TOOLBAR (hc2), not at the top of the rail (owner 2026-10-18); the old rail template is gone',
     str_contains($traitSource, "addPartials('groupPicker', 'Backend/ArticleController', self::ARTICLE_NS, 'hc2')")
     && !str_contains($traitSource, "'railSelect')") && !is_file($root . '/packages/module-article/res/view/templates/Backend/ArticleController/groupSelect.tpl.php'));
+
+// ── Q. the article picker (offline) ──────────────────────────────────────
+
+echo "Q. Article picker (offline)\n";
+check('Q1 the address state: the search trimmed and cut, a group only of the tree, the target a plain id (never a selector), a context value short and plain, the url without empty values',
+    ArticlePicker::query('  sd 32  ') === 'sd 32' && mb_strlen(ArticlePicker::query(str_repeat('ä', 150))) === ArticlePicker::QUERY_LENGTH && ArticlePicker::query(['x']) === ''
+    && ArticlePicker::group('3', $tree) === 3 && ArticlePicker::group('99', $tree) === null && ArticlePicker::group('3 ', $tree) === null && ArticlePicker::group(null, $tree) === null
+    && ArticlePicker::target('order-row-n2-article') === 'order-row-n2-article' && ArticlePicker::target('#x') === '' && ArticlePicker::target('a b') === '' && ArticlePicker::target('x"><img') === '' && ArticlePicker::target('1a') === ''
+    && ArticlePicker::contextValue('2026-10-19') === '2026-10-19' && ArticlePicker::contextValue('gross') === 'gross' && ArticlePicker::contextValue('<b>') === '' && ArticlePicker::contextValue(null) === ''
+    && ArticlePicker::url('/p/article-pick', ['q' => '', 'group' => null, 'target' => 'r-1', 'price_mode' => 'net']) === '/p/article-pick?target=r-1&price_mode=net'
+    && ArticlePicker::url('/p/article-pick', ['q' => '']) === '/p/article-pick');
+$qSearch = ArticlePicker::search('sd 32', 2, $tree);
+check('Q2 the search: ONE text, choosable only, the group WITH its sub-groups; no group = any',
+    $qSearch->text === 'sd 32' && $qSearch->activeOnly && $qSearch->groupIds === $tree->subtreeIds(2) && $qSearch->sort === 'number'
+    && ArticlePicker::search('', null, $tree)->groupIds === null && ArticlePicker::search('', null, $tree)->text === null);
+$qProduct = new \Z77\Module\Article\Entities\Product('test', new \DateTimeImmutable());
+$qProduct->describe('SD-Card <32 GB>', 'UN', '3200', true, "Klasse 10\nzweite Zeile");
+$qVariant = new \Z77\Module\Article\Entities\Variant($qProduct);
+(new \ReflectionProperty(\Z77\Module\Article\Entities\AbstractVariant::class, 'id'))->setValue($qVariant, 7);
+$qVariant->identify('SD-32', 'Stk');
+$qOther = new \Z77\Module\Article\Entities\Variant($qProduct);
+(new \ReflectionProperty(\Z77\Module\Article\Entities\AbstractVariant::class, 'id'))->setValue($qOther, 8);
+$qOther->identify('SD-64', 'Stk');
+$qKeep = ['_origin' => 'window:4', 'target' => 'order-row-2-article', 'order_date' => '2026-10-19', 'price_mode' => 'gross'];
+$qHtml = $tplRenderer->partial('Backend/ArticlePicker/pick', [
+    'window' => true, 'tree' => $tree, 'query' => 'sd', 'group' => 3, 'rows' => [$qVariant, $qOther], 'total' => 60,
+    'prices' => [7 => '24.90', 8 => ''], 'priceLabel' => 'Preis brutto', 'pickUrl' => '/p/article-pick', 'keep' => $qKeep,
+    'origin' => 'window:4', 'target' => 'order-row-2-article', 'csrfToken' => 'tok',
+]);
+check('Q3 the window: mask article-pick, the pick list, Schliessen; ONE fetch region with the group picker (the shared partial) and the search field (autofocus, data-pick-search) — the region\'s links and form carry _origin, target and the context',
+    str_contains($qHtml, 'data-window="article-pick"') && str_contains($qHtml, 'data-pick-list') && str_contains($qHtml, 'Schliessen')
+    && substr_count($qHtml, 'data-fetch-region="' . ArticlePicker::REGION . '"') === 1 && str_contains($qHtml, 'id="article-pick-group"')
+    && preg_match('#<input class="be-input be-input--sm" type="search" id="article-pick-q" name="q" value="sd"[^>]*autofocus data-pick-search>#', $qHtml) === 1
+    && str_contains($qHtml, '<input type="hidden" name="target" value="order-row-2-article">') && str_contains($qHtml, '<input type="hidden" name="group" value="3">')
+    && str_contains($qHtml, 'href="/p/article-pick?_origin=window%3A4&amp;target=order-row-2-article&amp;order_date=2026-10-19&amp;price_mode=gross&amp;q=sd&amp;group=5"')
+    && str_contains($qHtml, 'class="be-tree-picker__clear" href="/p/article-pick?_origin=window%3A4&amp;target=order-row-2-article&amp;order_date=2026-10-19&amp;price_mode=gross&amp;q=sd" data-fetch-region-link'));
+check('Q4 the list: Nr. · Bezeichnung (the first description line muted) · Einheit · the source\'s price head and prices («–» without one); each number a submit of the choice form (the first active), the other cells its labels; «die ersten 2 von 60»; names escaped, no inline handler (Rule 7)',
+    str_contains($qHtml, '<button type="submit" form="article-pick-choose" name="article" value="SD-32" id="article-pick-7" class="be-pick__item" data-pick-item data-pick-active>SD-32</button>')
+    && str_contains($qHtml, 'value="SD-64" id="article-pick-8" class="be-pick__item" data-pick-item>') && substr_count($qHtml, 'for="article-pick-7"') === 3
+    && str_contains($qHtml, 'SD-Card &lt;32 GB&gt; <span class="be-list__cell--muted">Klasse 10</span>') && !str_contains($qHtml, 'zweite Zeile')
+    && str_contains($qHtml, 'Preis brutto') && str_contains($qHtml, '>24.90</label>') && str_contains($qHtml, 'title="Kein Preis an diesem Datum">–')
+    && str_contains($qHtml, '<form method="post" action="/p/article-pick" id="article-pick-choose">') && str_contains($qHtml, 'name="_origin" value="window:4"')
+    && str_contains($qHtml, 'Die ersten 2 von 60') && !preg_match('/\son[a-z]+\s*=\s*["\']/i', $qHtml) && !str_contains($qHtml, '<32'));
+$qPage = $tplRenderer->partial('Backend/ArticlePicker/pick', [
+    'window' => false, 'tree' => new ProductGroupTree([]), 'query' => '', 'group' => null, 'rows' => [], 'total' => 0,
+    'prices' => [], 'priceLabel' => 'Preis', 'pickUrl' => '/p/article-pick', 'keep' => [], 'origin' => 'page', 'target' => '',
+]);
+check('Q5 without the script a page: no window attributes, no Schliessen; an empty result says so',
+    !str_contains($qPage, 'data-window=') && !str_contains($qPage, 'Schliessen') && str_contains($qPage, 'Noch kein aktiver Artikel.'));
+$qTrait = (string) file_get_contents($root . '/packages/module-article/src/Ui/ArticlePickerTrait.php');
+check('Q6 the picker knows no source (article does not name order — K13 rule): the price and the answer are the mounting trait\'s; the choice is judged again and closes this window first',
+    !str_contains($qTrait, 'Z77\\Module\\Order') && str_contains($qTrait, 'abstract protected function articlePickPrices(') && str_contains($qTrait, 'abstract protected function articlePickedCommands(')
+    && str_contains($qTrait, 'ArticlePicker::isChoosable($variant)') && str_contains($qTrait, "->addCommand('close-modal')")
+    && str_contains($qTrait, "addPartials('pick', 'Backend/ArticlePicker', ArticlePicker::NS)"));
+check('Q7 choosable: an active variant of an active product only',
+    ArticlePicker::isChoosable($qVariant) && !ArticlePicker::isChoosable(null)
+    && (function () use ($qProduct, $qVariant) { $qVariant->setActive(false); $a = ArticlePicker::isChoosable($qVariant); $qVariant->setActive(true); $qProduct->setActive(false); $b = ArticlePicker::isChoosable($qVariant); $qProduct->setActive(true); return !$a && !$b; })());
+check('Q8 «+ Artikel» keeps the window (owner 2026-10-20): close-modal only for a pick FOR A FIELD; without a target a message names the added article and the window stays; the window is a chooser — a click outside closes it (data-window-dismiss)',
+    preg_match('#if \(\$target !== \'\'\) \{\s*\$response->addCommand\(\'close-modal\'\);#', $qTrait) === 1
+    && str_contains($qTrait, '->addMessage(\'success\', \'Artikel \' . $variant->getNumber()')
+    && substr_count($qTrait, "addCommand('close-modal')") === 1 && str_contains($qHtml, 'data-window-dismiss'));
 
 // ── K. the stock seam (offline) ──────────────────────────────────────────
 
@@ -626,6 +695,13 @@ $groups->delete((int) $beratung->getId(), $em->getRepository(ProductGroup::class
 check('B25 an EMPTY group is deleted', $count('article_product_group') === 3);
 [$code, $out] = $run(['command' => 'diff', '--namespace' => 'Z77\\Module\\Article\\Migrations']);
 check('B26 diff after the group writes still reports NO change', $code !== 0 && str_contains($out, 'No changes detected'));
+$pickIn = static fn(string $text) => $productsRepo->countSearch(new \Z77\Module\Article\Repositories\ArticleSearch(groupIds: $treeNow->subtreeIds($allgemein), text: $text, activeOnly: true));
+$service->update((int) $host->getId(), $em->getRepository(\Z77\Module\Article\Entities\Product::class)->find((int) $host->getId())->getVersion(), $draft(['number' => 'H-1', 'name' => 'Webhosting', 'description' => "Paket S\n10 GB", 'taxCode' => 'UN', 'revenueAccount' => '3410', 'productGroup' => (int) $hosting->getId()]));
+$pickAll = $pickIn('web h-1') === 1 && $pickIn('WEBHOST') === 1 && $pickIn('h-1') === 1 && $pickIn('paket 10') === 1 && $pickIn('web nix') === 0 && $pickIn('100%') === 0;
+$service->setActive((int) $host->getId(), false);
+check('B27 the picker\'s search: every word in the number, the name or the description (case-insensitive, LIKE characters literal); an inactive article is not offered',
+    $pickAll && $pickIn('web') === 0
+    && $productsRepo->countSearch(new \Z77\Module\Article\Repositories\ArticleSearch(groupIds: $treeNow->subtreeIds($allgemein), text: 'web')) === 1);
 
 echo "\n{$pass} passed, {$fail} failed\n";
 exit($fail === 0 ? 0 : 1);

@@ -472,6 +472,26 @@ check('F12 no document for a contact without a debtor profile (owner 2026-10-18;
     && !str_contains($orderTrait, 'debtorRefusal(') && !str_contains($orderTrait, 'orderNotDebtor(') && str_contains($orderTrait, 'return $this->customerDebtorPage($contact')
     && !str_contains($orderTrait, 'Debitor wird er mit dem Buchungsdruck')
     && str_contains($pickTrait, 'if ($profile === null) {' . "\n" . '                return $this->customerDebtorPage(') && str_contains($pickTrait, '->open($contact, $terms, $mode)'));
+check('F13 «Artikel wählen …» (owner 2026-10-19): the order mounts article\'s picker (the price from OrderService::articlePriceAt(), the context = the fill\'s fields); a row\'s magnifier opens it for THAT row (target = the row\'s article id, a new tab without the script), «+ Artikel» opens it for a new row and stays the no-script submit; the answer: set-value on the row + focus on its quantity, else add-row from the article template filled through the article field',
+    str_contains($orderTrait, 'use ArticlePickerTrait;') && str_contains($orderTrait, "return ['order_date', 'service_from', 'price_mode'];")
+    && str_contains($orderTrait, '$service->articlePriceAt($variant,')
+    && str_contains($orderTpl, "\\Z77\\Module\\Article\\Ui\\ArticlePicker::url(\$pickUrl, ['target' => \$rid . 'article'] + \$pickState)")
+    && str_contains($orderTpl, 'target="_blank" rel="noopener" data-window-open="<?= e($pick) ?>" data-window-with="<?= e($pickWith) ?>"')
+    && str_contains($orderTpl, "\$pickWith  = 'order_date service_from price_mode';")
+    && str_contains($orderTpl, '<span class="be-list__cell be-rows__article"><input class="be-input be-input--sm" type="text" id="<?= $rid ?>article" name="<?= $p ?>[article]"')
+    && str_contains($orderTpl, 'name="op" value="add-article" formnovalidate data-window-open=') && !str_contains($orderTpl, 'data-row-add="article"')
+    && str_contains($orderTpl, 'data-row-template="article"') && str_contains($orderTpl, 'data-fill-url="<?= e($actionBase . \'/article-defaults\') ?>"')
+    && preg_match("#'set-value', \['target' => '\#' \. \\\$target#", $orderTrait) === 1 && str_contains($orderTrait, "'focus', ['target' => '#order-row-' . \$m[1] . '-quantity'")
+    && str_contains($orderTrait, "'add-row', [") && str_contains($orderTrait, "'values' => ['[data-fill-url]' => \$variant->getNumber()]")
+    && str_contains($coreJs, "registerCommand('add-row'") && str_contains($coreJs, "registerCommand('focus'") && str_contains($coreJs, "'data-window-with'"));
+check('F14 the positions\' sticky top (owner 2026-10-20): the bar — title, «+ Artikel» / «+ Textzeile», «Preise» — and the column head in ONE `.be-rows__top` inside the rows grid, in a frame without a scrollport; no adders below the table',
+    preg_match('#<div class="be-list__frame be-list__frame--stick">\s*<div class="be-list__table be-rows"[^
+]*data-rows="rows">\s*<div class="be-rows__top">\s*<div class="be-form__block-head be-rows__bar">\s*<h3 class="be-list__section-title">Positionen</h3>#', $orderTpl) === 1
+    && strpos($orderTpl, 'value="add-text"') < strpos($orderTpl, 'id="order-price_mode"')
+    && strpos($orderTpl, 'id="order-price_mode"') < strpos($orderTpl, '<span class="be-list__col be-list__col--num">Pos.</span>')
+    && substr_count($orderTpl, 'class="be-rows__adders"') === 1);
+check('F15 no article <datalist> (owner 2026-10-20: the picker searches; the browser filtered the list to the typed value) — the number is typed or picked, «fill» completes the row',
+    !str_contains($orderTpl, '<datalist') && !str_contains($orderTpl, 'list="order-articles-') && str_contains($orderTpl, 'data-fill-url="<?= e($actionBase . \'/article-defaults\') ?>"'));
 
 // ── P. the order's PDFs (offline where possible) ─────────────────────────
 
@@ -873,6 +893,19 @@ check('M27 a NEW order for a contact without a debtor profile is refused on `con
     && (int) $db->fetchOne("SELECT last_number FROM number_range WHERE name = 'order'") === $m27Number + 1
     && ($m27Change['contact_id'] ?? '') === $m27New['contact_id']
     && $m27Kept->getSubject() === 'behalten' && $m27Kept->getContact()->getId() === $prospectId);
+
+// The article picker's «Preis» column (owner 2026-10-19): the same price the fill takes.
+$grossVariant = $em->getRepository(Variant::class)->find($grossId);
+$m28 = [
+    $svc->articlePriceAt($grossVariant, '2026-10-18', '', 'net')?->toDecimal(),
+    $svc->articlePriceAt($grossVariant, '2026-10-18', '', 'gross')?->toDecimal(),
+    $svc->articleDefaults('02.100.02', '2026-10-18', '', 'net')['price'],
+    $svc->articlePriceAt($grossVariant, '2025-12-31', '', 'net'),
+    $svc->articlePriceAt($grossVariant, '18.10.2026', '', 'net'),
+    $svc->articlePriceAt($grossVariant, '2026-10-18', '', 'brutto'),
+];
+check('M28 the picker\'s price = the fill\'s: 15.40 net / 16.65 gross at the order date; none before the price starts, none for a date or mode that is no valid input',
+    $m28[0] === '15.40' && $m28[1] === '16.65' && $m28[2] === '15.40' && $m28[3] === null && $m28[4] === null && $m28[5] === null);
 
 echo "\n{$pass} passed, {$fail} failed\n";
 exit($fail === 0 ? 0 : 1);

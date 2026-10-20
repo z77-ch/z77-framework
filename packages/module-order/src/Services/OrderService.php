@@ -953,6 +953,29 @@ final class OrderService
     }
 
     /**
+     * The price a line would take from $variant — {@see articleDefaults()}'s price, for a whole
+     * list at once (the article picker's «Preis» column, owner 2026-10-19): valid at the ORDER
+     * date, in the order's price mode, converted with the rate on the SERVICE date. Null when the
+     * dates or the mode are no valid input, the article has no price that day or it cannot be
+     * converted. Reads only.
+     */
+    public function articlePriceAt(Variant $variant, string $orderDate, string $serviceFrom, string $priceMode): ?Money
+    {
+        $date = self::date($orderDate);
+        $mode = PriceMode::tryFrom($priceMode);
+        if ($date === null || $mode === null) {
+            return null;
+        }
+        $ignored = [];
+
+        return $this->articlePrice($variant, $variant->getProduct()->getTaxCode(), [
+            'priceMode'   => $mode,
+            'orderDate'   => $date,
+            'serviceDate' => (trim($serviceFrom) === '' ? null : self::date($serviceFrom)) ?? $date,
+        ], 'price', $ignored);
+    }
+
+    /**
      * The article's price valid at the ORDER date, converted to the order's price mode with the
      * rate of its tax code on the SERVICE date when the article's mode differs — then a snapshot.
      *

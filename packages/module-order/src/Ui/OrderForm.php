@@ -20,7 +20,7 @@ use Z77\Module\Order\Services\OrderLineDraft;
  * reference; order.md rule), the type (Leistung | Text — no «Pauschale» in an order since
  * 2026-10-18: a stored lump sum shows as «Leistung» × 1), the INDENT flag `child` (beneath the
  * nearest preceding non-indented row — one level, today's parent line), the ARTICLE number (a
- * `<datalist>` of the active articles), text, quantity (negative = a return), unit, price,
+ * typed or chosen in article's picker), text, quantity (negative = a return), unit, price,
  * discount. Every priced row is an article (ADR-043 addendum 2026-10-18); a free priced line the
  * order already holds comes back without an article and the SERVICE keeps it while unchanged —
  * its stored tax code rides along for the display only (`tax_code`, never sent). An article line

@@ -19,6 +19,9 @@
  *      in the path, one in the own name, order, limit), marks; no HTML from strings
  *   P  price mode: rows convert with their own rate (net ↔ gross, half away from zero);
  *      dated rates on a code picker ([data-rate-keep-label] — the invoice editor)
+ *   K  the article picker's parts: pick-list steps, the `add-row` and `focus` commands (a clone
+ *      of the template, `__i__` replaced, the value + change, the focus), the window context
+ *      (data-window-with, autofocus, Esc), no HTML from strings
  *
  * What it cannot prove: layout, focus, real event order — those need a browser.
  * Run: node tests/core-js.mjs
@@ -364,6 +367,75 @@ console.log('P  price mode, dated rates');
     check('P3 dated rates: the service date empty → the invoice date (2018) decides — UN 7.7 on both selects; [data-rate-keep-label] keeps the code «UN», the plain one shows «7.7 %»; a changed rate fires change',
         select.options[1].getAttribute('data-rate') === '7.7' && select.options[1].textContent === 'UN' && plain.options[0].textContent === '7.7 %'
         && select.events.includes('change'), [select.options[1].getAttribute('data-rate'), select.options[1].textContent, plain.options[0].textContent]);
+}
+
+// ── K: the article picker's parts — pick list, add-row, focus, window context (owner 2026-10-19) ──
+console.log('K  pick list, add-row, window context');
+{
+    const { ctx, document } = makeContext();
+    ctx.Event = class { constructor(type, init) { this.type = type; this.bubbles = !!(init && init.bubbles); } };
+    const fired = (el) => { el.events = []; el.dispatchEvent = (e) => el.events.push(e.type); return el; };
+    const step = ctx._Z77.core.pickList.step;
+    check('K1 pick list: ↓ from none → the first, ↑ from none → the last; a step stops at the ends; no items → none',
+        step(-1, 1, 3) === 0 && step(-1, -1, 3) === 2 && step(0, 1, 3) === 1 && step(2, 1, 3) === 2 && step(0, -1, 3) === 0 && step(-1, 1, 0) === -1);
+
+    // add-row: the template cloned into the box, `__i__` replaced (also in href / data-window-open),
+    // the value written into the field the server named + `change` (so «fill» runs), the focus set.
+    const box = fired(new El('div', { attrs: { 'data-rows': 'rows' } }));
+    const article = fired(new El('input', { value: '' }));
+    const qty = new El('input');
+    let focused = null;
+    qty.focus = () => { focused = qty; };
+    const link = new El('a', { attrs: { href: '/p/article-pick?target=order-row-__i__-article', 'data-window-open': '/p/article-pick?target=order-row-__i__-article' } });
+    const row = new El('div', { attrs: { 'data-row': '' } });
+    row.qsa['*'] = [article, qty, link];
+    row.qsa['[data-fill-url]'] = [article];
+    row.qsa['[data-sum-qty]'] = [qty];
+    const tpl = new El('template', { content: { firstElementChild: { cloneNode: () => row } } });
+    tpl.closest = () => box;
+    box.qsa['template[data-row-template="article"]'] = [tpl];
+    document.qsa['[data-rows="rows"]'] = [box];
+    ctx._Z77.core.fetch.handleEnvelope({ commands: [{ action: 'add-row', target: '[data-rows="rows"]', kind: 'article', values: { '[data-fill-url]': 'SD-32' }, focus: '[data-sum-qty]' }] }, '/x');
+    check('K2 add-row: a clone of the template appended, `__i__` → a unique key in href and data-window-open, the article field takes the number and fires change, the quantity takes the focus, the box fires input',
+        box.children[0] === row && /target=order-row-n\d+-article$/.test(link.getAttribute('href')) && link.getAttribute('data-window-open') === link.getAttribute('href')
+        && article.value === 'SD-32' && article.events.includes('change') && focused === qty && box.events.includes('input'),
+        [box.children.length, link.getAttribute('href'), article.value, article.events, box.events]);
+    const before = box.children.length;
+    ctx._Z77.core.fetch.handleEnvelope({ commands: [{ action: 'add-row', target: '[data-rows="rows"]', kind: 'text' }] }, '/x');
+    check('K3 add-row without such a template adds nothing', box.children.length === before);
+
+    const field = new El('input');
+    let got = false;
+    field.focus = () => { got = true; };
+    document.qsa['#order-row-3-quantity'] = [field];
+    ctx._Z77.core.fetch.handleEnvelope({ commands: [{ action: 'focus', target: '#order-row-3-quantity' }] }, '/x');
+    check('K4 focus: the named field takes the focus', got);
+
+    const from = SOURCE.indexOf('/* ── pick list'), to = SOURCE.indexOf('/* ── small triggers');
+    check('K5 the pick list builds no HTML and runs no code from strings (Rule 7); Enter clicks the server\'s button, typing submits the search form',
+        from > 0 && to > from && !/innerHTML|outerHTML|insertAdjacentHTML|eval\(/.test(SOURCE.slice(from, to))
+        && SOURCE.slice(from, to).includes('active.click()') && SOURCE.slice(from, to).includes('form.requestSubmit()'));
+    check('K6 windows: [data-window-with] fields ride along at the click, [autofocus] takes the focus, an Esc a control used itself keeps the window; a tree picker in a region reloads the region; a region keeps what was typed',
+        SOURCE.includes("open(_withFields(opener, opener.getAttribute('data-window-open'))") && SOURCE.includes("win.querySelector('[autofocus]')")
+        && SOURCE.includes("e.key !== 'Escape' || e.defaultPrevented") && SOURCE.includes("if (inRegion) pick.setAttribute('data-fetch-region-link', '')")
+        && SOURCE.includes('if (link) link.click();') && !SOURCE.includes('window.location.assign(link.href)') && SOURCE.includes('el.value = typed;'));
+
+    // «+ Artikel» keeps the picker open (owner 2026-10-20): add-row without `focus` hands the
+    // focus back to where it was (the picker's button), not into the new row behind.
+    const pickBtn = new El('button');
+    pickBtn.isConnected = true;
+    let back = false;
+    pickBtn.focus = () => { back = true; };
+    const prevActive = document.activeElement;
+    document.activeElement = pickBtn;
+    ctx._Z77.core.fetch.handleEnvelope({ commands: [{ action: 'add-row', target: '[data-rows="rows"]', kind: 'article', values: { '[data-fill-url]': 'SD-64' } }] }, '/x');
+    document.activeElement = prevActive;
+    check('K7 add-row without `focus`: the row is added and the focus goes back to the element that had it (the picker stays usable)',
+        back && article.value === 'SD-64', [back, article.value]);
+    check('K8 windows: [data-window-dismiss] closes a chooser on a click outside it (not on the message channels, not on a removed target); wire() enhances tree pickers and publishes the action bar\'s height (--z77-form-actions-h)',
+        SOURCE.includes("w.querySelector('[data-window-dismiss]')") && SOURCE.includes("e.target.closest('#messages, #flash-messages, [data-z77-help]')")
+        && /_Z77\.core\.wire = function[\s\S]{0,600}_Z77\.core\.treePicker\.init\(container\);\s*_Z77\.core\.stickyTop\.init\(container\);/.test(SOURCE)
+        && SOURCE.includes("setProperty('--z77-form-actions-h', (bar.offsetHeight + top) + 'px')"));
 }
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed');

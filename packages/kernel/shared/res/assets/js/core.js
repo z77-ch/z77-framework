@@ -27,7 +27,10 @@
  *   [data-price-mode]             its rows convert their prices when the price mode changes (see «price mode»)
  *   [data-tree-picker]            a tree filter as a field: <details> + the JSON island
  *                                 script[data-tree-picker-data] → search + one level at a time (see «tree picker»)
- *   [data-window-open="<url>"]    opens a controller-led window (ADR-047, see «windows»)
+ *   [data-pick-list]              a searching choice list: [data-pick-search] types, ↑/↓ move over
+ *                                 [data-pick-item], Enter picks (see «pick list»)
+ *   [data-window-open="<url>"]    opens a controller-led window (ADR-047, see «windows»);
+ *     [data-window-with="a b"]    the form fields a, b ride along as query parameters
  *   [data-fetch-region="<name>"]  a part of the page that reloads alone —
  *     a[data-fetch-region-link] / form[data-fetch-region-form] inside it (see «fetch regions»)
  *   form[target="_blank"][data-submit-navigate="<url>"]
@@ -487,6 +490,10 @@ _Z77.core.wire = function (container, defaultPostUrl, ctx) {
     _Z77.core.dirty.track(container);
     _Z77.core.rows.init(container);
     _Z77.core.autosize.init(container);
+    // A tree picker in fetched content (a window, a popup, a swapped region) is enhanced like
+    // one on the page — otherwise its fallback list stays and a choice loads the whole page.
+    _Z77.core.treePicker.init(container);
+    _Z77.core.stickyTop.init(container);
     container.querySelectorAll('[data-fetch-post]').forEach(function (form) {
         var url = form.dataset.fetchPost || defaultPostUrl;
         if (!url) return;
@@ -778,6 +785,35 @@ _Z77.core.fetch = (function () {
         el.value = String(p.value);
         el.dispatchEvent(new Event('change', { bubbles: true }));
     });
+    /* {action: 'focus', target, origin?} — the field to go on with after a choice in another
+     * window (first user: the order row's quantity after «Artikel wählen …», 2026-10-19). Runs
+     * after `close-modal`, which hands the focus to the window below. */
+    registerCommand('focus', function (p) {
+        var el = _find(p);
+        if (el && typeof el.focus === 'function') el.focus();
+    });
+    /* {action: 'add-row', target, kind, values?, focus?, origin?} — a row added to the
+     * [data-rows] container `target` from its template `kind`, as its [data-row-add] button does
+     * (core.js «rows»); `values` = { selector inside the new row: value } — each field takes
+     * `.value` and fires a bubbling `change` (so «fill» runs as on a choice by hand); `focus` = a
+     * selector inside the new row. First user: «+ Artikel» → the article picker (2026-10-19).
+     * Without `focus` the focus stays where it was (the picker that stays open for the next
+     * pick, 2026-10-20) — `rows.add` would otherwise move it into the new row behind. */
+    registerCommand('add-row', function (p) {
+        var box = _find(p);
+        var keep = document.activeElement;
+        var row = box ? _Z77.core.rows.add(box, p.kind) : null;
+        if (!row) return;
+        Object.keys(p.values || {}).forEach(function (selector) {
+            var field = row.querySelector(selector);
+            if (!field || !('value' in field)) return;
+            field.value = String(p.values[selector]);
+            field.dispatchEvent(new Event('change', { bubbles: true }));
+        });
+        var next = p.focus ? row.querySelector(p.focus) : null;
+        if (next && typeof next.focus === 'function') next.focus();
+        else if (!p.focus && keep && keep.isConnected && typeof keep.focus === 'function') keep.focus();
+    });
     registerCommand('scroll-to', function (p) {
         var el = _find(p);
         if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -924,7 +960,9 @@ _Z77.core.fetch = (function () {
  * answers the page's `main` (fetch skeleton), in which the region with the
  * same name is looked up and swapped in. The address bar follows
  * (history.replaceState), so a reload or a bookmark shows the same state.
- * Focus returns to the element with the same id when there is one. When the
+ * Focus returns to the element with the same id when there is one; a focused
+ * text field keeps what was typed during the load (and fires `input` when that
+ * differs from the answer — «pick list» searches again). When the
  * answer carries no such region, the browser simply navigates there.
  */
 _Z77.core.region = (function () {
@@ -941,6 +979,7 @@ _Z77.core.region = (function () {
         // a half-filled form. It says so instead.
         var host = _Z77.core.windows.of(region);
         function fail() {
+            region.removeAttribute('aria-busy');
             if (host) _Z77.core.message.show('error', _Z77.core.i18n.t('js.requestFailed', 'Anfrage fehlgeschlagen'));
             else window.location.href = url;
         }
@@ -955,6 +994,11 @@ _Z77.core.region = (function () {
                 var doc = new DOMParser().parseFromString(html, 'text/html');
                 var fresh = doc.querySelector('[data-fetch-region="' + name + '"]');
                 if (!fresh) { fail(); return; }
+                // What was typed while the load ran stays (a search as you type, «pick list»):
+                // the focused text field keeps its value and fires `input`, so its own logic
+                // follows the newer text.
+                var typing = focusId ? document.getElementById(focusId) : null;
+                var typed = typing && typing.tagName === 'INPUT' && /^(text|search)$/.test(typing.type) ? typing.value : null;
                 region.replaceWith(fresh);
                 if (!host) history.replaceState(history.state, '', url);
                 // The new content is live like a popup's body: its ⋮, switches, fetch forms and
@@ -963,10 +1007,13 @@ _Z77.core.region = (function () {
                 var win = _Z77.core.windows.of(fresh);
                 _Z77.core.wire(fresh, undefined, win ? { window: win.getAttribute('data-z77-window') } : undefined);
                 _bindCheckUrl(fresh);
-                _Z77.core.treePicker.init(fresh);
                 if (focusId) {
                     var el = fresh.querySelector('#' + CSS.escape(focusId));
                     if (el) {
+                        if (typed !== null && el.value !== typed) {
+                            el.value = typed;
+                            el.dispatchEvent(new Event('input', { bubbles: true }));
+                        }
                         el.focus();
                         if (typeof el.setSelectionRange === 'function' && typeof el.value === 'string') {
                             try { el.setSelectionRange(el.value.length, el.value.length); } catch (e) { /* not a text field */ }
@@ -1018,6 +1065,12 @@ _Z77.core.region = (function () {
  *   [data-origin="<name>"]      (optional, on the trigger) the origin to report; default: the
  *                               window the trigger sits in (`window:<id>`), else the fetch
  *                               region (`region:<name>`), else `page`. Sent as `_origin`.
+ *   [data-window-with="a b"]    (optional, on the trigger) the fields named a, b of the trigger's
+ *                               form ride along as query parameters, with their value AT THE
+ *                               CLICK (first user: the article picker gets the order's date and
+ *                               price mode, 2026-10-19 — like «fill»'s `data-fill-with`)
+ *   [autofocus]                 inside the content: takes the focus when the window opens or
+ *                               loads (else the window itself)
  *   In the controller's answer, on the content's root element:
  *   [data-window="<mask>"]              the mask (form) this window is
  *   [data-window-entity="<type>:<id>"]  the record it shows
@@ -1025,6 +1078,9 @@ _Z77.core.region = (function () {
  *   [data-window-width="<length>"]      (optional) the width the controller wants for this content
  *                                       (e.g. `62rem`; rem/ch/px/%/vw) — a phone ignores it
  *   [data-window-confirm-close="…"]     ask this question before closing (the controller's call)
+ *   [data-window-dismiss]               a chooser without edits: a click outside the window closes
+ *                                       it too (first user: the article picker, 2026-10-20) — an
+ *                                       edit window never gets it (no form is lost by a stray click)
  *   Inside a window:
  *   a[data-window-link]         loads its href into THIS window (read view ↔ edit form)
  *   [data-window-close]         closes this window (and its children); so does
@@ -1254,7 +1310,7 @@ _Z77.core.windows = (function () {
             if (layer.hidden) { layer.hidden = false; _inert(true); }
             fill(win, html, target);
             front(win);
-            win.focus();
+            _focusIn(win);
             return win;
         }).catch(function () { window.location.href = url; });
     }
@@ -1266,7 +1322,28 @@ _Z77.core.windows = (function () {
             if (html === null || !win.isConnected) return;
             fill(win, html, target);
             front(win);
+            var auto = win.querySelector('[autofocus]');
+            if (auto) auto.focus();
         });
+    }
+
+    /* The content's [autofocus] field (a picker's search), else the window itself. */
+    function _focusIn(win) {
+        var auto = win.querySelector('[autofocus]');
+        (auto && typeof auto.focus === 'function' ? auto : win).focus();
+    }
+
+    /* The trigger's URL with its [data-window-with] fields as they stand now. */
+    function _withFields(opener, url) {
+        var names = (opener.getAttribute('data-window-with') || '').split(/\s+/).filter(Boolean);
+        var form = opener.form || opener.closest('form');
+        if (!names.length || !form) return url;
+        var u = new URL(url, window.location.href);
+        names.forEach(function (name) {
+            var el = form.elements.namedItem(name);
+            if (el && typeof el.value === 'string') u.searchParams.set(name, el.value);
+        });
+        return u.toString();
     }
 
     /* Closes a window and the windows opened from it. `force` skips the controller's question. */
@@ -1311,11 +1388,18 @@ _Z77.core.windows = (function () {
     function bind() {
         document.addEventListener('click', function (e) {
             if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+            // A chooser closes on a click outside it — not on one into the message channels, and
+            // not on a target a re-render just removed (it is no longer anywhere).
+            if (e.target.isConnected && !e.target.closest('#messages, #flash-messages, [data-z77-help]')) {
+                all().forEach(function (w) {
+                    if (!w.contains(e.target) && w.querySelector('[data-window-dismiss]')) close(w);
+                });
+            }
             var opener = e.target.closest('[data-window-open]');
             if (opener) {
                 e.preventDefault();
                 var parent = of(opener);
-                open(opener.getAttribute('data-window-open'), {
+                open(_withFields(opener, opener.getAttribute('data-window-open')), {
                     origin: _originOf(opener),
                     parent: parent ? parent.getAttribute('data-z77-window') : ''
                 });
@@ -1357,7 +1441,8 @@ _Z77.core.windows = (function () {
             });
         });
         document.addEventListener('keydown', function (e) {
-            if (e.key !== 'Escape' || !all().length || document.querySelector('dialog[open]')) return;
+            // A control that used Esc itself (an open tree picker closes its popover) keeps the window.
+            if (e.key !== 'Escape' || e.defaultPrevented || !all().length || document.querySelector('dialog[open]')) return;
             var win = _layer.querySelector('.is-front') || all()[all().length - 1];
             if (win) { e.preventDefault(); close(win); }
         });
@@ -1823,9 +1908,11 @@ _Z77.core.dirty = (function () {
  *     [data-row-no]               the position number: «1», «1.1» (textContent)
  *     [data-row-remove]           a button (a submit without the script): removes its row
  *   template[data-row-template="<kind>"]  inside the container: the row to clone; `__i__` in the
- *                                 name / id / for attributes of the clone becomes a unique key
+ *                                 name / id / for / href / data-window-open attributes of the clone
+ *                                 becomes a unique key (`n1`, `n2` …)
  *   [data-row-add="<kind>"]       a button of the same form (a submit without the script): appends
- *                                 a clone of that template and focuses its first field
+ *                                 a clone of that template and focuses its first field — so does the
+ *                                 command `add-row` (a choice in another window, «fetch» commands)
  * After every change the container fires a bubbling `input` event: «dirty forms» and «line sums»
  * follow — a move IS a change (the names carry the index), moved back the form is clean again.
  * Rows being dragged carry `data-row-dragging`. A control in a disabled fieldset does nothing.
@@ -1916,11 +2003,18 @@ _Z77.core.rows = (function () {
         var form = button.form || button.closest('form');
         var tpl = form && form.querySelector('template[data-row-template="' + button.getAttribute('data-row-add') + '"]');
         var box = tpl && tpl.closest('[data-rows]');
-        if (!box || !tpl.content.firstElementChild) return false;
+        return !!(box && add(box, button.getAttribute('data-row-add')));
+    }
+
+    /* Appends a clone of box's template `kind`, focuses its first field; returns the row (null
+     * without such a template). Also the `add-row` command's way in. */
+    function add(box, kind) {
+        var tpl = box && box.querySelector('template[data-row-template="' + kind + '"]');
+        if (!tpl || tpl.closest('[data-rows]') !== box || !tpl.content.firstElementChild) return null;
         var row = tpl.content.firstElementChild.cloneNode(true);
         var key = 'n' + (++_seq);
         [row].concat(Array.prototype.slice.call(row.querySelectorAll('*'))).forEach(function (el) {
-            ['name', 'id', 'for'].forEach(function (attr) {
+            ['name', 'id', 'for', 'href', 'data-window-open'].forEach(function (attr) {
                 var value = el.getAttribute(attr);
                 if (value && value.indexOf('__i__') !== -1) el.setAttribute(attr, value.split('__i__').join(key));
             });
@@ -1931,7 +2025,7 @@ _Z77.core.rows = (function () {
         _changed(box);
         var first = row.querySelector('input:not([type="hidden"]):not([type="checkbox"]), textarea, select');
         if (first) first.focus();
-        return true;
+        return row;
     }
 
     function _remove(button) {
@@ -2013,7 +2107,7 @@ _Z77.core.rows = (function () {
         init(document);
     }
 
-    return { bind: bind, init: init };
+    return { bind: bind, init: init, add: add };
 })();
 
 /* ── autosize ───────────────────────────────────────────────────────────────
@@ -2401,6 +2495,9 @@ _Z77.core.priceMode = (function () {
  * most 50; matches are <mark> elements. Keys in the search: ↑/↓ move, → opens, ← goes up,
  * Enter follows the active row's link, Esc closes. A click outside closes — a click on an
  * element a re-render just removed (›, the path) is NOT outside (`isConnected`).
+ * Inside a fetch region (the article picker's window, 2026-10-19) the links carry
+ * `data-fetch-region-link`: a choice reloads only that region (Enter clicks the link, so it
+ * takes the same way).
  * Rows are built with createElement / textContent only.
  */
 _Z77.core.treePicker = (function () {
@@ -2478,6 +2575,7 @@ _Z77.core.treePicker = (function () {
         if (!data || !Array.isArray(data.nodes) || !data.all) return;
 
         var text = data.text || {};
+        var inRegion = !!root.closest('[data-fetch-region]');
         var idx = index(data.nodes);
         var chosen = idx.byId[_key(data.value)] || null;
         var summary = details.querySelector('summary');
@@ -2543,6 +2641,7 @@ _Z77.core.treePicker = (function () {
             var count = node ? node.count : data.all.count;
             if (i === active) line.setAttribute('data-active', '');
             pick.href = node ? node.href : data.all.href;
+            if (inRegion) pick.setAttribute('data-fetch-region-link', '');
             if (node === chosen) pick.setAttribute('aria-current', 'true');
             if (!node) pick.appendChild(_el('span', 'be-tree-picker__name', data.all.label));
             else if (item.own) pick.appendChild(_el('span', 'be-tree-picker__name', _fmt(text.allIn, node.name)));
@@ -2616,7 +2715,7 @@ _Z77.core.treePicker = (function () {
             } else if (e.key === 'Enter') {
                 e.preventDefault();
                 var link = list.children[active] && list.children[active].querySelector('a');
-                if (link) window.location.assign(link.href);
+                if (link) link.click();   // the link's own way: a page load, or the region's reload
             } else if (e.key === 'ArrowRight' && !query && item && !item.own && hasKids(item.node)) {
                 e.preventDefault();
                 level(_key(item.node.id));
@@ -2651,6 +2750,91 @@ _Z77.core.treePicker = (function () {
     }
 
     return { bind: bind, init: init, index: index, search: search, marks: marks };
+})();
+
+/* ── pick list ──────────────────────────────────────────────────────────────
+ * A list to choose ONE entry from by keyboard (first user: «Artikel wählen …», the article picker
+ * over the order window, owner 2026-10-19): type to search, ↑/↓ to move, Enter to pick, Esc
+ * closes the window («windows»). The server searches and judges the choice; the script only
+ * submits the search form and clicks the chosen button (Rule 7) — without it the form searches
+ * on Enter and every button picks.
+ *
+ * Contract:
+ *   [data-pick-list]            the container — its search and list are a fetch region, so a
+ *                               search reloads only the list (and the field keeps what was typed
+ *                               meanwhile, «fetch regions»)
+ *   input[data-pick-search]     the search field of a GET form (`data-fetch-region-form`): typing
+ *                               searches after a short pause; ↑/↓ move the active item; Enter
+ *                               picks the active item — or searches first while the list does
+ *                               not show the typed text yet, and waits while it loads
+ *   [data-pick-item]            a submit button per entry (the choice); the active one carries
+ *                               [data-pick-active] — the server marks the first
+ * The focus stays in the search field; a click on an item picks it as well.
+ */
+_Z77.core.pickList = (function () {
+    var DELAY_MS = 250;
+    var _timer = null;
+
+    function _items(list) {
+        return Array.prototype.slice.call(list.querySelectorAll('[data-pick-item]'));
+    }
+
+    function _search(field) {
+        clearTimeout(_timer);
+        _timer = null;
+        var form = field.form;
+        if (!form) return;
+        if (typeof form.requestSubmit === 'function') form.requestSubmit();
+        else form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    }
+
+    /* Pure: the active index after a step of dir (-1 / +1) from at (-1 = none) over n items. */
+    function step(at, dir, n) {
+        if (n < 1) return -1;
+        return Math.max(0, Math.min(n - 1, at < 0 ? (dir > 0 ? 0 : n - 1) : at + dir));
+    }
+
+    function _move(list, dir) {
+        var items = _items(list), at = -1;
+        items.forEach(function (b, i) { if (b.hasAttribute('data-pick-active')) at = i; });
+        var next = step(at, dir, items.length);
+        if (next < 0) return;
+        items.forEach(function (b, i) { b.toggleAttribute('data-pick-active', i === next); });
+        if (typeof items[next].scrollIntoView === 'function') items[next].scrollIntoView({ block: 'nearest' });
+    }
+
+    function _field(e) {
+        var field = e.target;
+        return field && field.matches && field.matches('input[data-pick-search]') && field.closest('[data-pick-list]') ? field : null;
+    }
+
+    function bind() {
+        document.addEventListener('input', function (e) {
+            var field = _field(e);
+            if (!field) return;
+            clearTimeout(_timer);
+            _timer = setTimeout(function () { _search(field); }, DELAY_MS);
+        });
+        document.addEventListener('keydown', function (e) {
+            var field = _field(e);
+            if (!field || e.isComposing) return;
+            var list = field.closest('[data-pick-list]');
+            if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                e.preventDefault();
+                _move(list, e.key === 'ArrowDown' ? 1 : -1);
+                return;
+            }
+            if (e.key !== 'Enter') return;
+            e.preventDefault();
+            if (_timer) { _search(field); return; }   // the list does not show the typed text yet
+            if (list.querySelector('[data-fetch-region][aria-busy="true"]')) return;   // … nor while it loads
+            var active = list.querySelector('[data-pick-item][data-pick-active]') || _items(list)[0];
+            if (active) active.click();
+            else _search(field);
+        });
+    }
+
+    return { bind: bind, step: step };
 })();
 
 /* ── small triggers ────────────────────────────────────────────────────────
@@ -2702,6 +2886,38 @@ _Z77.core.triggers = (function () {
     return { bind: bind };
 })();
 
+/* ── sticky top under the action bar ──────────────────────────────────────
+ * A form's action bar (`.z77-form-actions`, ADR-049) sticks at the top of its scroll area; a
+ * second sticky block in the same form (the order's positions head, owner 2026-10-20) must stick
+ * BELOW it, not under it. The bar's height is not fixed (it wraps, «2 Fehler» comes and goes),
+ * so this publishes it as `--z77-form-actions-h` on the bar's parent; CSS uses
+ * `top: var(--z77-form-actions-h, 0px)`. The bar's own `top` counts in: in a window it sticks
+ * ABOVE the body's content edge (a negative top, `_windows-host.scss`), so its bottom is higher.
+ * Geometry only — without the script the block sticks at 0.
+ */
+_Z77.core.stickyTop = (function () {
+    var _observer = typeof ResizeObserver === 'function'
+        ? new ResizeObserver(function (entries) { entries.forEach(function (entry) { _publish(entry.target); }); })
+        : null;
+
+    function _publish(bar) {
+        var top = parseFloat(getComputedStyle(bar).top) || 0;
+        if (bar.parentElement) bar.parentElement.style.setProperty('--z77-form-actions-h', (bar.offsetHeight + top) + 'px');
+    }
+
+    /* Publishes (and follows) the height of every top action bar in container — each once. */
+    function init(container) {
+        container.querySelectorAll('.z77-form-actions:not(.z77-form-actions--end)').forEach(function (bar) {
+            if (bar._z77StickyTop) return;
+            bar._z77StickyTop = true;
+            _publish(bar);
+            if (_observer) _observer.observe(bar);
+        });
+    }
+
+    return { init: init };
+})();
+
 /* ── boot ───────────────────────────────────────────────────────────────── */
 document.addEventListener('DOMContentLoaded', function () {
     _Z77.core.triggers.bind();
@@ -2710,6 +2926,7 @@ document.addEventListener('DOMContentLoaded', function () {
     _Z77.core.rows.bind();
     _Z77.core.autosize.bind();
     _Z77.core.treePicker.bind();
+    _Z77.core.pickList.bind();
     _Z77.core.sums.bind();
     _Z77.core.datedRates.bind();
     _Z77.core.priceMode.bind();

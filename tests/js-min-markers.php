@@ -54,6 +54,9 @@ const MARKERS = [
         'set-value',                // the debtor's price mode set on a customer choice (2026-10-18)
         'data-rate-keep-label',     // the invoice editor's MWST codes keep their labels under «dated rates» (2026-10-19)
         'data-tree-picker-data',    // the tree picker's JSON island — the article list's group filter (2026-10-18)
+        'data-pick-search',         // «Artikel wählen …»: the pick list's keys (2026-10-19)
+        'data-window-with',         // … the order's date and price mode ride along to the picker
+        'add-row',                  // … «+ Artikel»: the chosen article lands in a new row
         'data-help-key',            // HELP-002
         'refresh-region',           // ADR-047 windows
     ],

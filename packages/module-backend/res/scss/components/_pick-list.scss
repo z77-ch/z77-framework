@@ -1,0 +1,76 @@
+@use 'input-look' as look;
+
+// ── Pick list (core.js «pick list»; first user: «Artikel wählen …», module-article's
+// `Backend/ArticlePicker/pick` over the order window, owner 2026-10-19) ──
+//
+//   .be-pick                 the window content (`[data-pick-list]`): tall enough for the group
+//                            popover even when the list is short
+//     .be-pick__bar          the toolbar: the tree picker, the search form, the count
+//     .be-pick__find         the search form — its field takes the room
+//     .be-pick__item         the number of a row: the button that picks (`[data-pick-item]`); the
+//                            row's other cells are its labels. The active row (`[data-pick-active]`)
+//                            on the accent
+//   .be-rows__pick           the magnifier beside an order row's article number («Artikel wählen …»)
+//
+// Tokens only — every palette and both themes follow.
+
+.be-pick { min-height: 28rem; }
+
+.be-pick__bar {
+    display:     flex;
+    flex-wrap:   wrap;
+    align-items: center;
+    gap:         var(--space-2);
+    padding:     0 0 var(--space-2);
+}
+.be-pick__find {
+    display:     flex;
+    flex:        1 1 16rem;
+    align-items: center;
+    gap:         var(--space-2);
+    min-width:   0;
+
+    .be-input { flex: 1; min-width: 0; }
+}
+
+.be-pick__item {
+    padding:     0;
+    border:      0;
+    background:  none;
+    color:       var(--be-accent);
+    font-family: var(--font-family-mono);
+    font-size:   .78rem;
+    cursor:      pointer;
+
+    &:focus-visible { @include look.focus; }
+}
+.be-pick .be-list__row:has(label) { cursor: pointer; }
+.be-pick .be-list__row:has([data-pick-active]) {
+    background: var(--be-accent-soft);
+    box-shadow: inset 2px 0 0 var(--be-accent);
+}
+
+// The article cell of an order row: the number and the magnifier side by side.
+.be-rows__article {
+    display:     flex;
+    align-items: center;
+    gap:         2px;
+    overflow:    visible;
+
+    .be-input { flex: 1; min-width: 0; }
+}
+.be-rows__pick {
+    display:         inline-flex;
+    flex:            none;
+    align-items:     center;
+    justify-content: center;
+    width:           1.5rem;
+    height:          1.6rem;
+    border:          1px solid transparent;
+    border-radius:   var(--radius-sm);
+    color:           var(--be-muted);
+    transition:      background var(--transition-fast), color var(--transition-fast);
+
+    &:hover { background: var(--be-field); color: var(--be-text); }
+    &:focus-visible { @include look.focus; }
+}

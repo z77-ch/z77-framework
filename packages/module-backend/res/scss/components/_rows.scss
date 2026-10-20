@@ -135,6 +135,28 @@ select.be-input.be-rows__rate:disabled {
     gap:       var(--space-2);
 }
 
+// The sticky top (owner 2026-10-20): the bar (title, adders, a field on the right) and the column
+// head stay in view while many rows scroll — ONE sticky block, so a wrapping bar never hides the
+// head. It sits in the grid as a subgrid row; core.js «rows» counts only [data-row] children.
+// Needs a frame without a scrollport of its own (`.be-list__frame--stick`). It sticks BELOW the
+// form's action bar (Speichern …), whose height core.js «sticky top» publishes.
+.be-rows__top {
+    grid-column:           1 / -1;
+    display:               grid;
+    grid-template-columns: subgrid;
+    position:              sticky;
+    top:                   var(--z77-form-actions-h, 0px);
+    z-index:               2;
+    background:            var(--be-list-ground, var(--be-bg));
+}
+.be-rows__top > .be-list__head { position: static; }
+.be-rows__bar {
+    grid-column:     1 / -1;
+    justify-content: flex-start;
+    padding:         var(--space-2) var(--be-row-bleed, 0px);
+}
+.be-rows__bar > .be-form__field { margin-inline-start: auto; }
+
 // ── autosize «title» (core.js): a mirror over the field paints its text — the first line as the
 // title, the rest muted; the field keeps caret, selection and input, its own ink transparent. ──
 [data-autosize-on] { position: relative; }

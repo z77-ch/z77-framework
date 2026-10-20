@@ -9,6 +9,11 @@
  * The field: a muted label, the chosen node's path shortened («Handelswaren › … › SD-Cards»,
  * the full path as `title`), a caret; «×» (a link to `$href(null)`) clears the filter.
  *
+ * Inside a fetch region (the article picker's window, 2026-10-19) every choice reloads only that
+ * region: «×» and the fallback list's links carry `data-fetch-region-link` (inert outside a
+ * region), core.js marks the popover's links the same way. core.js enhances a picker in fetched
+ * content through `wire()` (a window, a popup, a swapped region).
+ *
  * Without JavaScript the field is the `<summary>` of a `<details>` whose panel lists every node
  * as an indented link («all» first) — it works as it is. core.js «tree picker» enhances it: it
  * reads the JSON data island `script[data-tree-picker-data]` (never HTML strings) and replaces
@@ -86,14 +91,14 @@ $island = [
             <span class="be-tree-picker__caret" aria-hidden="true">▼</span>
         </summary>
         <nav class="be-tree-picker__panel be-tree-picker__fallback" aria-label="<?= e($label) ?>" data-tree-picker-fallback>
-            <a class="be-tree-picker__link" href="<?= e($href(null)) ?>"<?= $current === null ? ' aria-current="true"' : '' ?>><?= e($allLabel) ?></a>
+            <a class="be-tree-picker__link" href="<?= e($href(null)) ?>" data-fetch-region-link<?= $current === null ? ' aria-current="true"' : '' ?>><?= e($allLabel) ?></a>
             <?php foreach ($nodes as $node): $key = (string) $node['id']; $depth = count($chain($key)) - 1; ?>
-            <a class="be-tree-picker__link" href="<?= e($href($node['id'])) ?>" style="--be-tree-picker-depth: <?= $depth ?>"<?= $key === $current ? ' aria-current="true"' : '' ?> title="<?= e(implode(' › ', $chain($key))) ?>"><?= e((string) $node['name']) ?><?php if (($node['note'] ?? '') !== ''): ?> <span class="be-tree-picker__note">(<?= e($node['note']) ?>)</span><?php endif; ?><?php if (isset($node['count'])): ?> <span class="be-tree-picker__count"><?= (int) $node['count'] ?></span><?php endif; ?></a>
+            <a class="be-tree-picker__link" href="<?= e($href($node['id'])) ?>" data-fetch-region-link style="--be-tree-picker-depth: <?= $depth ?>"<?= $key === $current ? ' aria-current="true"' : '' ?> title="<?= e(implode(' › ', $chain($key))) ?>"><?= e((string) $node['name']) ?><?php if (($node['note'] ?? '') !== ''): ?> <span class="be-tree-picker__note">(<?= e($node['note']) ?>)</span><?php endif; ?><?php if (isset($node['count'])): ?> <span class="be-tree-picker__count"><?= (int) $node['count'] ?></span><?php endif; ?></a>
             <?php endforeach; ?>
         </nav>
     </details>
     <?php if ($current !== null): ?>
-    <a class="be-tree-picker__clear" href="<?= e($href(null)) ?>" title="<?= e($text['clear']) ?>" aria-label="<?= e($label . ': ' . $text['clear']) ?>">×</a>
+    <a class="be-tree-picker__clear" href="<?= e($href(null)) ?>" data-fetch-region-link title="<?= e($text['clear']) ?>" aria-label="<?= e($label . ': ' . $text['clear']) ?>">×</a>
     <?php endif; ?>
     <script type="application/json" data-tree-picker-data><?= json_encode($island, JSON_HEX_TAG | JSON_HEX_AMP | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?></script>
 </div>
