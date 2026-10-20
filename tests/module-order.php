@@ -546,6 +546,22 @@ check('C1 the warning names the order, its date, the customer and the status lab
 check('C2 registered under the open-work scope period-close in orderConfig, as a class name',
     (require $root . '/packages/module-order/src/App/Config/orderConfig.inc.php')['openWorkChecks']['period-close'] === [InvoiceableOrdersCheck::class]);
 
+// ── H. the list's help (offline) ─────────────────────────────────────────
+
+echo "H. The order list's help in the toolbar (offline, HELP-003)\n";
+$orderTrait = (string) file_get_contents($root . '/packages/module-order/src/Ui/OrderControllerTrait.php');
+$listSrc    = preg_match('/protected function listAction\(\): HtmlResponse\s*\{(.*?)\n    \}\n/s', $orderTrait, $mL) === 1 ? $mL[1] : '';
+check('H1 the list attaches its help with `toolbar: true` («Hilfe» at the right end of the toolbar, none in the top bar) — BEFORE html() (which renders it), and only for the page: a FETCH of the region carries none',
+    preg_match('/if \(!\$this->orderIsFetch\(\)\) \{\s*\$this->help->attach\(\'Backend\/OrderController\/list\.help\', self::ORDER_NS, \[\], \'Hilfe: Aufträge\', toolbar: true\);/', $listSrc) === 1
+    && strpos($listSrc, "->help->attach(") < strpos($listSrc, '$this->html('));
+$listHelpFile = $root . '/packages/module-order/res/view/templates/Backend/OrderController/list.help.tpl.php';
+$listHelp     = is_file($listHelpFile) ? (static function (string $f): string { ob_start(); require $f; return (string) ob_get_clean(); })($listHelpFile) : '';
+check('H2 the list help is short and says what the code does: the six tabs by their labels (OrderListing::VIEWS), «+ Neuer Auftrag», «Buchungsdruck …» only in «Termin» and «Geliefert», the search; no field sections (the list has no form field worth one)',
+    $listHelp !== '' && array_filter(OrderListing::VIEWS, static fn(string $l) => !str_contains($listHelp, '<strong>' . $l . '</strong>')) === []
+    && str_contains($listHelp, '+ Neuer Auftrag') && str_contains($listHelp, 'Buchungsdruck …') && str_contains($listHelp, 'nur in <strong>Termin</strong> und <strong>Geliefert</strong>')
+    && !str_contains($listHelp, 'data-help-field') && strlen(strip_tags($listHelp)) < 3000
+    && OrderListing::isSelectable('confirmed') && OrderListing::isSelectable('delivered') && !OrderListing::isSelectable('new'));
+
 // ── M. database ──────────────────────────────────────────────────────────
 
 $credentials = [

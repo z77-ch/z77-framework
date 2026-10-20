@@ -34,9 +34,9 @@ the topic docs are the binding text.
 |---|---|---|
 | **Aktionszelle** | the MOST FREQUENT action of the selected navigation entry — exactly one control, or empty | `{action}.act.tpl.php` (hc1); a fragment: `addPartials(…, 'hc1')` |
 | **Auswahl** (top of the rail) | a choice that holds for the WHOLE area (the fiscal year) | `{action}.select.tpl.php` / section `railSelect` |
-| **Werkzeugzeile** | first the tabs (language, mode, view), then tools in secondary form — no primary button | `{action}.toolbar.tpl.php` (hc2) |
+| **Werkzeugzeile** | first the tabs (language, mode, view), then tools in secondary form — no primary button; on a LIST with help «Hilfe» at its right end (HELP-003) | `{action}.toolbar.tpl.php` (hc2); «Hilfe» written by the shell |
 | **Krumenzeile** | the position only — fixed height, no buttons, no help icon | default crumb or `{action}.crumb.tpl.php` |
-| **Kopfleiste** | «? Hilfe» — only on pages that carry help | written by the shell |
+| **Kopfleiste** | «? Hilfe» — only on pages that carry help and are not a list (a list's stands in its toolbar) | written by the shell |
 | **Arbeitsfläche** | the content; buttons only when bound to a selection or inside a dialog | the action template |
 
 Names and classes: [css-backend.md → shell regions](../topics/css-backend.md#shell-regions-glossary);
@@ -126,6 +126,11 @@ Details and selectors: [css-backend.md → button / tab / switch vocabulary](../
 
 - A screen with help attaches it through the HelpService (ADR-048); the shell then shows
   «? Hilfe» in the top bar. No help → no button.
+- **A list attaches its help with `toolbar: true`** (owner 2026-10-20, HELP-003): «Hilfe» then
+  closes the list's toolbar at its right end and the top bar shows none — one help button per
+  page. Attach it in the list action BEFORE `html()`, and only for the page (a fetch of the
+  list region carries none). A window keeps «Hilfe» in its title bar. The text is a short
+  `list.help.tpl.php`: what the list is for, the tabs, the main actions.
 - Write the help as a general part plus one section per field: `data-help-field="debit"` (the
   field's `name`, or its `data-help-key`). «? Hilfe» or **F1** jumps to the section of the field
   the user is in; without a section the general part shows. The help is in the page — no fetch.

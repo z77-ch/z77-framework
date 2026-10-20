@@ -62,6 +62,8 @@ trait DunningControllerTrait
         } catch (DebtorException $e) {
             $notice = $e->getMessage();
         }
+        // The list's help (HELP-003): «Hilfe» at the right end of the toolbar.
+        $this->help->attach('Backend/DunningController/list.help', self::DUNNING_NS, [], 'Hilfe: Mahnungen', toolbar: true);
 
         return $this->html([
             'asOf'        => $asOf,

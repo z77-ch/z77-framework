@@ -2687,7 +2687,7 @@ $GLOBALS['z77TestFetch'] = false;
 $useRequest(['date' => '2032-11-20']);
 $host = $journalHost();
 $host->listAction();
-check('HP6 the journal PAGE attaches the capture help (its «? Hilfe» stands in the top bar)', str_contains($host->help->render(), 'data-help-title="Hilfe: Einzelbuchung"') && !str_contains($host->help->render(), 'Die Nummer 2032'));
+check('HP6 the journal PAGE attaches the capture help (its «? Hilfe» stands in the top bar — a capture page, not a list: no `toolbar`, HELP-003)', str_contains($host->help->render(), 'data-help-title="Hilfe: Einzelbuchung"') && !str_contains($host->help->render(), 'Die Nummer 2032') && !$host->help->inToolbar());
 $help = $host->help->render();
 $fields = preg_match_all('/<section data-help-field="([a-z_]+)">/', $help, $mHF) ? $mHF[1] : [];
 check('HP6b the one-line help is a general part + one section per field (owner 2026-10-08): debit, date, text, credit, amount, vat, tax_code, tax_amount — keyed by the form\'s field names, the general part first',
@@ -2708,8 +2708,8 @@ $trigger = file_get_contents(__DIR__ . '/../packages/kernel/shared/res/view/temp
 $meHead  = file_get_contents(__DIR__ . '/../packages/module-member/res/view/templates/partials/shell/userMenu.tpl.php');
 check('HP7 the kernel closes `main` with the help (HtmlView — survives an action that rebuilds its main); the backend trigger «? Hilfe» is in the TOP BAR (only with help, before the bell), the crumb line carries none (owner 2026-10-08); the member shell likewise: «? Hilfe» in the HEAD (userMenu cluster, only with help, before the appearance switch), its crumb line carries none (owner 2026-10-09)',
     $viewHtml === '<main><template data-help>x</template></main>'
-    && !str_contains($beSkel, 'helpOpen') && !str_contains($beSkel, 'helpTrigger')
-    && str_contains($beTop, "!empty(\$helpBlock) ? \$this->partial('partials/helpTrigger'") && strpos($beTop, 'partials/helpTrigger') < strpos($beTop, 'backend-topbar__bell')
+    && !str_contains($beSkel, 'helpOpen') && substr_count($beSkel, "partial('partials/helpTrigger'") === 1   // the one in the skeleton is a LIST's, in the toolbar (HELP-003, HP11)
+    && str_contains($beTop, "!empty(\$helpBlock) && empty(\$helpInToolbar) ? \$this->partial('partials/helpTrigger'") && strpos($beTop, 'partials/helpTrigger') < strpos($beTop, 'backend-topbar__bell')
     && !str_contains($meSkel, 'helpOpen') && !str_contains($meSkel, "partial('partials/helpTrigger'")
     && str_contains($meSkel, "'showHelp'         => !empty(\$helpBlock)")
     && str_contains($meHead, "!empty(\$showHelp) ? \$this->partial('partials/helpTrigger'") && strpos($meHead, 'partials/helpTrigger') < strpos($meHead, 'data-member-theme')
@@ -2774,6 +2774,38 @@ check('HP10 the highlight is CSS: a short fade on .is-help-hit, none under prefe
     str_contains($scssHelp, '@keyframes z77-help-hit') && preg_match('/prefers-reduced-motion: reduce\)\s*\{\s*\.z77-help__body \.is-help-hit\s*\{\s*animation:\s+none;/', $scssHelp) === 1
     && str_contains(file_get_contents(__DIR__ . '/../packages/module-backend/res/assets/css/base.css'), '.z77-help-trigger[hidden]')
     && str_contains(file_get_contents(__DIR__ . '/../packages/module-backend/res/assets/css/base.css'), 'is-help-hit'));
+// HELP-003 (owner 2026-10-20): a LIST's help stands at the right end of its toolbar, the top bar shows none.
+$helpSvc = new \Z77\Core\Services\HelpService();
+$helpSvc->attach('Backend/JournalController/oneLine.help', 'Z77\Module\Financial');
+$helpList = new \Z77\Core\Services\HelpService();
+$helpList->attach('Backend/JournalController/oneLine.help', 'Z77\Module\Financial', [], 'Hilfe', toolbar: true);
+$baseCtl = file_get_contents(__DIR__ . '/../packages/kernel/core/src/Controller/AbstractBaseController.php');
+check('HP11 HelpService: `toolbar: true` puts the trigger into the list\'s toolbar (inToolbar), the default stays the top bar; a second attach replaces the choice; the base controller hands it to the view as `helpInToolbar` beside `helpBlock`',
+    !$helpSvc->inToolbar() && $helpList->inToolbar() && !(new \Z77\Core\Services\HelpService())->inToolbar()
+    && (function () use ($helpList): bool { $helpList->attach('x', 'Z77\Shared'); return !$helpList->inToolbar(); })()
+    && str_contains($baseCtl, "\$context['helpInToolbar'] = \$this->help->inToolbar();"));
+// The backend skeleton rendered with a partial double: where does «Hilfe» stand?
+$renderSkel = function (array $vars) use ($beSkel): string {
+    $file = sys_get_temp_dir() . '/z77-help-beskel-' . getmypid() . '.tpl.php';
+    file_put_contents($file, $beSkel);
+    $r = new class { public function partial(string $p, array $c = [], string $ns = ''): string { return $p === 'partials/helpTrigger' ? '<button data-help-trigger hidden></button>' : ''; } };
+    $html = (function (string $f, array $v): string { extract($v, EXTR_SKIP); ob_start(); require $f; return (string) ob_get_clean(); })->call($r, $file, $vars + ['bePalette' => 'p', 'beTheme' => 't', 'beFontScale' => 1.0, 'hc2' => '<nav class="be-viewtabs"></nav>']);
+    @unlink($file);
+    return $html;
+};
+$slot2 = static fn(string $html): string => preg_match('/data-shell-slot="hc2">(.*?)<\/div>/s', $html, $mS) === 1 ? $mS[1] : '';
+$skList = $renderSkel(['helpBlock' => '<template data-help></template>', 'helpInToolbar' => true]);
+$skPage = $renderSkel(['helpBlock' => '<template data-help></template>', 'helpInToolbar' => false]);
+$skNone = $renderSkel(['helpInToolbar' => true]);
+check('HP12 the backend skeleton: a list\'s help (`helpInToolbar`) closes the toolbar slot hc2 — AFTER the toolbar template, so for every list, whatever its toolbar holds; help without `toolbar` puts nothing there (the top bar has it), no help → nothing',
+    $slot2($skList) === '<nav class="be-viewtabs"></nav><button data-help-trigger hidden></button>'
+    && $slot2($skPage) === '<nav class="be-viewtabs"></nav>' && !str_contains($skPage, 'data-help-trigger')
+    && $slot2($skNone) === '<nav class="be-viewtabs"></nav>' && !str_contains($skNone, 'data-help-trigger'));
+$hostScss = file_get_contents(__DIR__ . '/../packages/module-backend/res/scss/components/_help-host.scss');
+check('HP13 … exactly one «Hilfe» per page: the top bar renders its trigger only WITHOUT `helpInToolbar`; in the toolbar it is the SAME trigger (data-help-open, revealed by core.js), pushed to the right end by CSS — the compiled backend CSS carries it',
+    str_contains($beTop, "!empty(\$helpBlock) && empty(\$helpInToolbar)")
+    && str_contains($hostScss, '.be .be-shell-band__slot--2 > .z77-help-trigger { margin-left: auto; }')
+    && str_contains(file_get_contents(__DIR__ . '/../packages/module-backend/res/assets/css/base.css'), '.be .be-shell-band__slot--2>.z77-help-trigger{margin-left:auto}'));
 $useRequest(['id' => (string) $compoundId]);
 $host = $journalHost();
 $host->editAction();

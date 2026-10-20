@@ -202,6 +202,11 @@ trait OrderControllerTrait
         $total      = $this->orders()->countSearch($search);
         $paging     = $state->paging($total);
         $orders     = $total === 0 ? [] : $this->orders()->search($search, $paging->offset(), $paging->pageSize);
+        // The list's help (HELP-003): «Hilfe» at the right end of the toolbar — the page only; a
+        // FETCH of the region carries none (it would land inside the region).
+        if (!$this->orderIsFetch()) {
+            $this->help->attach('Backend/OrderController/list.help', self::ORDER_NS, [], 'Hilfe: Aufträge', toolbar: true);
+        }
 
         $response = $this->html([
             'orders'     => $orders,

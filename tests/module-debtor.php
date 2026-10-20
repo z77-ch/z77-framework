@@ -1167,7 +1167,7 @@ check('I5m the three master-data fragments carry an add action and an active swi
 
 $templateDir = $package . '/res/view/templates/Backend';
 $templates   = glob($templateDir . '/*/*.tpl.php');
-check('I6 every master-data screen has its list template, its edit template and its header slot; the document screens (P3 part 3) add six, the payment form and the delete confirmation (P4 part 1) two, the bank import list and detail (P4 part 2) two, the dunning list (P4 part 3) one, the open-item list and its toolbar (2026-10-07) two, the action cells of the invoice list and the bank import (ADR-033 rev. 2026-10-08) two — the «+ Debitor» cell of the debtor master data removed 2026-10-12; the row partials of the in-place answers (ADR-047 addendum 2026-10-10: bank transaction + unbooked bar, payment terms, payment target, debtor contact) five; the booking print\'s refusal page (2026-10-10) one; the editor\'s party picker and its «+ Kontakt» window (DEBTOR-CONTACT-001, 2026-10-10) two; the customer picker field and window (2026-10-15) two; its «Debitor anlegen» dialog (2026-10-18) one; the shared editor head (2026-10-19: title, terms + its reload answer, «Debitor anpassen», the fixed party) five and the card «Rechnung» of the invoice one', count($templates) === 44);
+check('I6 every master-data screen has its list template, its edit template and its header slot; the document screens (P3 part 3) add six, the payment form and the delete confirmation (P4 part 1) two, the bank import list and detail (P4 part 2) two, the dunning list (P4 part 3) one, the open-item list and its toolbar (2026-10-07) two, the action cells of the invoice list and the bank import (ADR-033 rev. 2026-10-08) two — the «+ Debitor» cell of the debtor master data removed 2026-10-12; the row partials of the in-place answers (ADR-047 addendum 2026-10-10: bank transaction + unbooked bar, payment terms, payment target, debtor contact) five; the booking print\'s refusal page (2026-10-10) one; the editor\'s party picker and its «+ Kontakt» window (DEBTOR-CONTACT-001, 2026-10-10) two; the customer picker field and window (2026-10-15) two; its «Debitor anlegen» dialog (2026-10-18) one; the shared editor head (2026-10-19: title, terms + its reload answer, «Debitor anpassen», the fixed party) five and the card «Rechnung» of the invoice one; the list helps of invoices, open items, bank import and dunning (HELP-003, 2026-10-20) four', count($templates) === 48);
 check('I6b the master-data rows are ONE partial each, rendered by the list and answered in place (replaceRow / insertRow, DEBTOR-WIN-003) — no `reload` left for a one-row save or switch of terms, targets or debtors',
     array_reduce([['PaymentTerms', 'paymentTerms'], ['PaymentTarget', 'paymentTarget'], ['DebtorProfile', 'debtorContact']], fn($ok, $p) => $ok
         && str_contains(file_get_contents($templateDir . '/' . $p[0] . 'Controller/listAction.tpl.php'), "partial('Backend/" . $p[0] . "Controller/_row'")
@@ -2238,6 +2238,20 @@ $host = $invoiceHost();
 $host->listAction();
 check('P3C24 view «Gutschriften»: credit notes only (any state), each naming its invoice', $host->context['documents'] !== [] && array_filter($host->context['documents'], fn($d) => !$d->isCreditNote()) === []
     && str_contains($renderList($host), 'zu Rechnung'));
+/** A list's help (HELP-003): attached with `toolbar: true` under its title, its template rendered with no variables. */
+$listHelp = fn(object $host, string $controller, string $title): bool => $host->help->has() && $host->help->inToolbar() && $host->help->title() === $title
+    && (new \ReflectionProperty($host->help, 'attached'))->getValue($host->help)['path'] === 'Backend/' . $controller . '/list.help'
+    && trim($renderer->partial('Backend/' . $controller . '/list.help', [])) !== '';
+$invListHelp = $renderer->partial('Backend/InvoiceController/list.help', []);
+$GLOBALS['z77TestFetch'] = true;
+$hostFetch = $invoiceHost();
+$hostFetch->listAction();
+$GLOBALS['z77TestFetch'] = false;
+check('P3C24b the list\'s help (HELP-003, owner 2026-10-20): attached with `toolbar: true` → «Hilfe» at the right end of the toolbar, none in the top bar; short: the three views, «+ Rechnung», «Buchungsdruck …» in «In Fakturierung»; a FETCH of the region (sort, page, search) carries none',
+    $listHelp($host, 'InvoiceController', 'Hilfe: Rechnungen')
+    && array_filter(['In Fakturierung', 'Verbucht', 'Gutschriften'], fn($l) => !str_contains($invListHelp, '<strong>' . $l . '</strong>')) === []
+    && str_contains($invListHelp, '+ Rechnung') && str_contains($invListHelp, 'Buchungsdruck …') && !str_contains($invListHelp, 'data-help-field')
+    && !$hostFetch->help->has());
 $useRequest(['view' => 'final', 'f_nr' => (string) $nonInv->getNumber()]);
 $host = $invoiceHost();
 $host->listAction();
@@ -3039,9 +3053,11 @@ $bankHost = function () {
         public array $context = [];
         public object $layoutManager;
         public object $messageService;
+        public object $help;
         public ?string $redirectedTo = null;
         public function __construct()
         {
+            $this->help = new \Z77\Core\Services\HelpService();
             $this->layoutManager = new class {
                 public array $sections = [];
                 public function removeSection(string $s): void { unset($this->sections[$s]); }
@@ -3073,9 +3089,15 @@ check('R13 the list: the drop area (#bank-upload) and the imported messages with
     && strpos($listHtml, 'MSG-R3') < strpos($listHtml, 'MSG-R1') && count($host->context['messages']) === 2
     && str_contains($listHtml, 'id="bank-upload"') && ($host->layoutManager->sections['hc1'] ?? []) === ['Backend/BankImportController/act']
     && !str_contains($listHtml, 'type="file"'));
+$bankListHelp = $renderer->partial('Backend/BankImportController/list.help', []);
+$bankListHost = $host;
 $useRequest(['id' => $msgR1->getId()]);
 $host = $bankHost();
 $host->detailAction();
+check('R13b the list\'s help (HELP-003): attached with `toolbar: true` («Hilfe» at the right end of the toolbar); camt.054, the upload in the action cell, nothing booked on reading, «Verbuchen» on the message; the message detail carries none',
+    $listHelp($bankListHost, 'BankImportController', 'Hilfe: Zahlungseingänge')
+    && str_contains($bankListHelp, 'camt.054 Upload') && str_contains($bankListHelp, 'verbucht wird dabei nichts') && str_contains($bankListHelp, '<strong>Verbuchen</strong>')
+    && !$host->help->has());
 $detailHtml = implode('', array_map(fn($p) => $renderer->partial($p, $host->context), $host->layoutManager->sections['main'] ?? []));
 check('R14 the detail: every transaction with its state badge, the matched invoice linked with its open amount, the remainder badge where there is one, the assign / ignore forms on the ones not booked, no «Verbuchen» without a matched one',
     substr_count($detailHtml, 'data-bank-transaction=') === 7 && str_contains($detailHtml, 'data-state="booked"') && str_contains($detailHtml, 'data-state="unmatched"')
@@ -3268,10 +3290,12 @@ $dunHost = function () {
         use \Z77\Module\Debtor\Ui\DunningControllerTrait { listAction as public; runAction as public; noticePdfAction as public; }
         public array $context = [];
         public object $messageService;
+        public object $help;
         public ?string $redirectedTo = null;
         public array $bytes = [];
         public function __construct()
         {
+            $this->help = new \Z77\Core\Services\HelpService();
             $this->messageService = new class {
                 public array $flashes = [];
                 public function pushFlashAfterRedirect(string $type, string $message): void { $this->flashes[] = [$type, $message]; }
@@ -3296,6 +3320,11 @@ check('T11 the list as of 12.8.: the due invoice with its checkbox, open amount 
     && str_contains($listHtml, 'Mahnlauf starten') && str_contains($listHtml, 'notice-pdf?id=' . $n2->getId()) && str_contains($listHtml, 'data-dunning-notice=')
     && preg_match('/class="z77-form-actions">.*?be-btn--confirm.*?Mahnlauf starten/s', $listHtml) === 1 && !str_contains($listHtml, 'data-selection-bar=')
     && strpos($listHtml, 'Mahnlauf starten</span>') < strpos($listHtml, 'data-due-invoice=') && !str_contains(file_get_contents($package . '/src/Ui/DunningControllerTrait.php'), "'hc1'"));
+$dunListHelp = $renderer->partial('Backend/DunningController/list.help', []);
+check('T11b the list\'s help (HELP-003): attached with `toolbar: true` («Hilfe» at the right end of the toolbar); the due list, «Mahnlauf starten», the runs with their PDF; one field section — «Stichtag» (`as_of`), the field the list carries',
+    $listHelp($host, 'DunningController', 'Hilfe: Mahnungen')
+    && str_contains($dunListHelp, 'Mahnlauf starten') && str_contains($dunListHelp, '<strong>PDF</strong>')
+    && preg_match_all('/<section data-help-field="([a-z_]+)">/', $dunListHelp, $mDF) === 1 && $mDF[1] === ['as_of'] && str_contains($listHtml, 'name="as_of" value="2026-08-12"'));
 $useRequest([], ['as_of' => '2026-08-12', 'doc' => [(string) $invF->getId()]]);
 $host = $dunHost();
 $host->runAction();
@@ -3411,8 +3440,10 @@ $opHost = function () {
         use \Z77\Module\Debtor\Ui\DebtorControllerTrait { listAction as public; }
         public array $context = [];
         public object $layoutManager;
+        public object $help;
         public function __construct()
         {
+            $this->help = new \Z77\Core\Services\HelpService();
             $this->layoutManager = new class {
                 public array $sections = [];
                 public function addPartials(string $name, string $path, string $ns, string $section = 'main'): void { $this->sections[$section][] = $path . '/' . $name; }
@@ -3427,6 +3458,16 @@ $host = $opHost();
 $host->listAction();
 $opHtml  = $renderer->partial('Backend/DebtorController/listAction', $host->context);
 $barHtml = $renderer->partial('Backend/DebtorController/toolbar', $host->context);
+$opListHelp = $renderer->partial('Backend/DebtorController/list.help', []);
+$GLOBALS['z77TestFetch'] = true;
+$opFetch = $opHost();
+$opFetch->listAction();
+$GLOBALS['z77TestFetch'] = false;
+check('U7b the list\'s help (HELP-003): attached with `toolbar: true` («Hilfe» at the right end of the toolbar, beside the three views); short: the views, OP-Total, the status words, «Zahlung»; a FETCH of the region carries none',
+    $listHelp($host, 'DebtorController', 'Hilfe: Debitoren')
+    && array_filter(['Offen', 'Überfällig', 'Alle', 'OP-Total', 'Zahlung'], fn($l) => !str_contains($opListHelp, '<strong>' . $l . '</strong>')) === []
+    && array_filter(['offen', 'teilbezahlt', 'überfällig', 'bezahlt'], fn($l) => !str_contains($opListHelp, '<em>' . $l . '</em>')) === []
+    && !$opFetch->help->has());
 check('U7 the screen: OP-Total and overdue in the header, the kernel\'s head and find form over the listing (sort links, magnifiers, the inputs of the form), a row per open document with its cells as labels of the column search, the state icon opening the document window, «Zahlung» to the document\'s payment form; the toolbar with the three views',
     str_contains($opHtml, 'OP-Total') && str_contains($opHtml, 'davon überfällig') && substr_count($opHtml, 'data-open-item=') === min(50, count($openU))
     && str_contains($opHtml, 'data-window-open="/backend/finance/invoice/detail?id=' . $feeDoc->getId() . '"')
@@ -3456,8 +3497,8 @@ check('U9 the master data moved: «Debitoren» under Aufträge is the open-item 
 
 echo "P3C. Source guards for part 3\n";
 $p3Templates = glob($package . '/res/view/templates/Backend/InvoiceController/*.tpl.php');
-check('P3C48 the document screens ship no JavaScript and no inline handler (Rule 7) — thirteen templates since the editor head (2026-10-19, `_billAddress`); no module-financial class in debtor but the adapter (the journal is linked by URL)',
-    count($p3Templates) === 13 && array_reduce($p3Templates, fn($ok, $f) => $ok && $noScript(file_get_contents($f)), true)
+check('P3C48 the document screens ship no JavaScript and no inline handler (Rule 7) — fourteen templates since the list help (2026-10-20, `list.help`, HELP-003); no module-financial class in debtor but the adapter (the journal is linked by URL)',
+    count($p3Templates) === 14 && array_reduce($p3Templates, fn($ok, $f) => $ok && $noScript(file_get_contents($f)), true)
     && !str_contains(file_get_contents($package . '/src/Ui/InvoiceControllerTrait.php'), 'Module\\Financial'));
 check('P3C49 the module brings no PDF library of its own (owner 2026-10-06: ONE writer, vendored in the kernel behind the facade): no composer requirement, no \\FPDF / PdfWriter use in its sources or templates — the facade only',
     !preg_match('/tcpdf|fpdf|dompdf|mpdf|swiss-qr-bill/i', (string) file_get_contents($package . '/composer.json'))

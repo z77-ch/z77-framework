@@ -204,6 +204,11 @@ trait InvoiceControllerTrait
         $total      = $this->invoices()->countSearch($search);
         $paging     = $state->paging($total);
         $documents  = $total === 0 ? [] : $this->invoices()->search($search, $paging->offset(), $paging->pageSize);
+        // The list's help (HELP-003): «Hilfe» at the right end of the toolbar — the page only; a
+        // FETCH of the region carries none (it would land inside the region).
+        if (!$this->invoiceIsFetch()) {
+            $this->help->attach('Backend/InvoiceController/list.help', self::INVOICE_NS, [], 'Hilfe: Rechnungen', toolbar: true);
+        }
 
         $response = $this->html([
             'documents'  => $documents,

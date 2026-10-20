@@ -64,6 +64,11 @@ trait DebtorControllerTrait
         $invoices = $this->em()->getRepository(Invoice::class);
         $totals   = $invoices->openItemTotals($search);
         $paging   = $state->paging($totals['count']);
+        // The list's help (HELP-003): «Hilfe» at the right end of the toolbar — the page only; a
+        // FETCH of the region carries none (it would land inside the region).
+        if (!ListDefinition::isFetch($request)) {
+            $this->help->attach('Backend/DebtorController/list.help', self::OPEN_ITEM_NS, [], 'Hilfe: Debitoren', toolbar: true);
+        }
 
         $response = $this->html([
             'items'        => $totals['count'] === 0 ? [] : $invoices->openItems($search, $paging->offset(), $paging->pageSize),

@@ -133,6 +133,10 @@ trait BankImportControllerTrait
     #[Csrf]
     protected function listAction(): HtmlResponse
     {
+        // The list's help (HELP-003): «Hilfe» at the right end of the toolbar (the message
+        // detail stays without).
+        $this->help->attach('Backend/BankImportController/list.help', self::BANK_NS, [], 'Hilfe: Zahlungseingänge', toolbar: true);
+
         return $this->bankImportPage('listAction', [
             'messages' => $this->bankImportService()->recent(50),
             'states'   => self::bankStateLabels(),

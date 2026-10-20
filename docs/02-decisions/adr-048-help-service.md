@@ -133,3 +133,14 @@ template as before and compares attribute values (no selector built from data, n
 rendered `hidden` and core.js reveals it (before: the crumb «i» showed but did nothing).
 
 **Member head too (owner 2026-10-09):** the member shell renders the same trigger in its head (`partials/shell/userMenu`); its crumb line carries the position only, at one fixed height (`--crumb-h`).
+
+## Addendum 2026-10-20 — a list's help stands in its toolbar (owner decision)
+
+On a LIST screen the help trigger is not in the top bar but at the RIGHT end of the list's
+toolbar (backend slot hc2), beside the tabs and tools it explains. The controller decides:
+`$this->help->attach(…, toolbar: true)` → `HelpService::inToolbar()` → the view gets
+`helpInToolbar`; the backend shell skeleton renders the same `partials/helpTrigger` last in the
+toolbar slot (whatever the list's toolbar template holds, or none), and the top bar renders it
+only without `helpInToolbar` — exactly one help button per page. Same trigger, same help window
+(`_Z77.core.help`); windows keep «Hilfe» in their title bar. First users: Aufträge, Rechnungen,
+Debitoren, Zahlungseingänge, Mahnungen (fetch.md HELP-003).
