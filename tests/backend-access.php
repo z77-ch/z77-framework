@@ -15,6 +15,10 @@
  *   - BackendMenu::allowsIn() / visibleIn(): a leaf is shown when its target is
  *     reachable, a ref follows its target, a section or opener is shown only
  *     with a visible child, a leaf without target is hidden.
+ *   - the session-sticky ref cursor (NAV-VIA-001): NavigationService::
+ *     resolveUiCurrent() remembers a valid `?via=` per target, applies it on the
+ *     target and its sub-pages, forgets it on via == own id, drops a stale one;
+ *     BackendMenu::href() gives a ref target's own link `?via=<own id>`.
  *
  * Run: php tests/backend-access.php
  * No DI: the classes are required through a PSR-4 map of this checkout; the
@@ -206,6 +210,80 @@ $su = $menuFor(new AuthUser(['id' => 2, 'user_name' => 'su', 'roles' => ['superU
 check('superUser sees «Service»', $su($byId[25]));
 $guest = $menuFor(new AuthUser());
 check('guest sees nothing', !$guest($byId[1]) && !$guest($byId[2]) && !$guest($byId[25]));
+
+// ── the session-sticky ref cursor (NAV-VIA-001) ─────────────────────────────
+// The real NavigationService over an in-memory entry list: the data cache
+// answers getAll(), the URL resolver answers with the 4-tuple path (no aliases).
+// The session is the array handed in and returned — what the Dispatcher stores.
+echo "Ref cursor (NAV-VIA-001)\n";
+
+$cursorEntries = [
+    nav(19, 1, 'Inhalte', 'backend/content/content/list'),
+    nav(20, 1, 'Metadaten', 'backend/content/meta-data/list'),
+    nav(6, 2, 'Navigation', 'backend/content/navigation/list'),
+    nav(40, 2, 'Inhalte (Verweis)', '', 19),
+    nav(41, 2, 'Inhalte (Verweis, inaktiv)', '', 19),
+    nav(42, 2, 'Metadaten (Verweis)', '', 20),
+];
+$cursorEntries[4]->setActive(false);
+
+$dataCache = new class($cursorEntries) extends \Z77\Core\Libraries\Cache\DataCache {
+    public function __construct(private array $entries) {}
+    public function get(string $className, array $components) { return $this->entries; }
+};
+$cacheManager = (new ReflectionClass(\Z77\Core\Libraries\CacheManager::class))->newInstanceWithoutConstructor();
+(new ReflectionProperty(\Z77\Core\Libraries\CacheManager::class, 'data'))->setValue($cacheManager, $dataCache);
+$urlResolver = new class extends \Z77\Core\Services\NavigationUrlResolver {
+    public function __construct() {}
+    public function urlFor(Navigation $entry): string { return $entry->getUrl(); }
+};
+$navService = (new ReflectionClass(\Z77\Core\Services\NavigationService::class))->newInstanceWithoutConstructor();
+(new ReflectionProperty(\Z77\Core\Services\NavigationService::class, 'cacheManager'))->setValue($navService, $cacheManager);
+(new ReflectionProperty(\Z77\Core\Services\NavigationService::class, 'urlResolver'))->setValue($navService, $urlResolver);
+
+/** One request: route to the 4-tuple, apply ?via= + session memory. Returns [uiCurrent id, current id, memory]. */
+$visit = function (string $route, ?int $via, array $memory) use ($navService): array {
+    [$m, $g, $c, $a] = explode('/', $route);
+    $navService->resolveCurrent($m, $g, $c, $a);
+    $memory = $navService->resolveUiCurrent($via, $memory);
+    return [$navService->getUiCurrent()?->getId(), $navService->getCurrent()?->getId(), $memory];
+};
+
+[$ui, $cur, $mem] = $visit('backend/content/content/list', 40, []);
+check('valid ?via= puts the cursor on the ref and remembers it', $ui === 40 && $mem === [19 => 40], json_encode([$ui, $mem]));
+check('$current stays the routing entry', $cur === 19);
+
+[$ui, $cur, $mem] = $visit('backend/content/content/list', null, [19 => 40]);
+check('without via the remembered ref holds (group, sort, save)', $ui === 40 && $cur === 19 && $mem === [19 => 40], json_encode([$ui, $mem]));
+
+[$ui, $cur, $mem] = $visit('backend/content/content/edit', null, [19 => 40]);
+check('sub-page without via applies the memory over cursorFallback', $ui === 40 && $cur === null, json_encode([$ui, $cur]));
+
+[$ui, $cur, $mem] = $visit('backend/content/content/edit', 40, []);
+check('sub-page honours an explicit ?via= (was ignored before)', $ui === 40 && $cur === null && $mem === [19 => 40], json_encode([$ui, $mem]));
+
+[$ui, $cur, $mem] = $visit('backend/content/content/list', 19, [19 => 40, 20 => 42]);
+check('via == current forgets the memory of that target only', $ui === 19 && $mem === [20 => 42], json_encode([$ui, $mem]));
+
+[$ui, $cur, $mem] = $visit('backend/content/content/list', 42, [19 => 40]);
+check('a ref to another target is ignored, the memory still applies', $ui === 40 && $mem === [19 => 40], json_encode([$ui, $mem]));
+
+[$ui, $cur, $mem] = $visit('backend/content/content/list', 41, []);
+check('an inactive ref is ignored', $ui === 19 && $mem === [], json_encode([$ui, $mem]));
+
+[$ui, $cur, $mem] = $visit('backend/content/content/list', null, [19 => 41]);
+check('a memory on an inactive ref is dropped silently', $ui === 19 && $mem === [], json_encode([$ui, $mem]));
+
+[$ui, $cur, $mem] = $visit('backend/content/content/list', null, [19 => 999]);
+check('a memory on a deleted ref is dropped silently', $ui === 19 && $mem === [], json_encode([$ui, $mem]));
+
+[$ui, $cur, $mem] = $visit('backend/content/unknown/list', 40, [19 => 40]);
+check('a screen without any entry leaves cursor and memory alone', $ui === null && $cur === null && $mem === [19 => 40], json_encode([$ui, $mem]));
+
+$menu = new BackendMenu($navService, 'backend-main', fn(): bool => true);
+check('menu href of a ref target carries ?via=<own id>', $menu->href($cursorEntries[0]) === '/backend/content/content/list?via=19', $menu->href($cursorEntries[0]));
+check('menu href of an entry without refs stays plain', $menu->href($cursorEntries[2]) === '/backend/content/navigation/list', $menu->href($cursorEntries[2]));
+check('menu href of a ref stays target + ?via=<refId>', $menu->href($cursorEntries[3]) === '/backend/content/content/list?via=40', $menu->href($cursorEntries[3]));
 
 echo "\n{$pass} passed, {$fail} failed\n";
 exit($fail === 0 ? 0 : 1);

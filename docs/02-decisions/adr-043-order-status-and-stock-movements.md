@@ -421,9 +421,6 @@ debtor's invoice editor.
    `openDebtorProfile()`); `OrderService` itself still accepts a prospect (imports and later
    sources decide for themselves) — the rule is the screens'.
 
-**Not built (pending, article.md):** price lists per customer group (a private customer 24.90
-gross, gastro 18.50 net) — today one `article_price` per variant and day (`uniq_article_price_day`).
-
 **Consequences (built):** module-debtor `DebtorProfile::$priceMode`, `DebtorProfileValidator::
 validatePriceMode()`, `DebtorProfileService::open()`, the profile dialog's «Preise», the picker's
 `customerDebtorAction()` / `customerDebtorPage()` and template `Backend/CustomerPicker/debtor`, the

@@ -164,6 +164,9 @@ final class BackendMenu
 
     /**
      * Href of an entry: ref → target URL + `?via=<refId>`, otherwise its own URL.
+     * A regular entry that is the target of a ref carries `?via=<own id>` — the
+     * «forget» signal for the session-sticky ref cursor (NAV-VIA-001); every
+     * other entry stays as it is.
      * '' when the entry leads nowhere or the user may not open it.
      */
     public function href(Navigation $entry): string
@@ -174,6 +177,9 @@ final class BackendMenu
         if ($entry->getRef() !== null) {
             $target = $this->nav->findById($entry->getRef());
             return $target !== null ? $this->nav->urlForVia($target, (int)$entry->getId()) : '';
+        }
+        if ($this->nav->isRefTarget($entry)) {
+            return $this->nav->urlForVia($entry, (int)$entry->getId());
         }
         return $this->nav->urlFor($entry);
     }
