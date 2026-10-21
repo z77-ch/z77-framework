@@ -16,6 +16,7 @@
  *
  * @var list<\Z77\Module\Order\Entities\SalesOrder> $orders  bookable at the version shown
  * @var list<string> $stale  names of the ones left out
+ * @var list<string> $zero   names of the ones totalling 0 — no invoice, left out (owner 2026-10-20)
  * @var \Z77\Shared\Money\Money|null $total
  * @var \DateTimeImmutable $today
  * @var \Z77\Module\Order\Entities\OrderStatus|null $booked  the status the booking print sets
@@ -39,6 +40,9 @@ $count      = count($orders);
         </div>
         <?php if ($stale !== []): ?>
         <div class="be-modal__alert be-modal__alert--error">Seit der Auswahl geändert, bereits verbucht oder weder bestätigt noch geliefert — ausgelassen: <?= e(implode(', ', $stale)) ?>. Liste neu laden.</div>
+        <?php endif; ?>
+        <?php if (!empty($zero)): ?>
+        <div class="be-modal__alert">Total 0 — keine Rechnung, ausgelassen: <?= e(implode(', ', $zero)) ?>. Diese Aufträge auf «Erledigt» setzen.</div>
         <?php endif; ?>
         <?php if ($booked === null): ?>
         <div class="be-modal__alert be-modal__alert--error">Die Phase «Abgeschlossen» hat keinen aktiven Auftragsstatus — unter Stammdaten › Aufträge › Auftragsstatus einen anlegen (z.B. «Gebucht») und «Wird gesetzt beim Buchungsdruck» einschalten.</div>

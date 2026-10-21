@@ -25,8 +25,7 @@ final class OrderRefusedException extends OrderException
     public const SAME_STATUS     = OrderStatuses::SAME;
     public const INACTIVE_TARGET = OrderStatuses::INACTIVE_TARGET;
     public const BOOKED_TARGET   = OrderStatuses::BOOKED_TARGET;
-    public const BACKWARD_BARRED = OrderStatuses::BACKWARD_BARRED;
-    public const CANCEL_BARRED   = OrderStatuses::CANCEL_BARRED;
+    public const INVOICED        = OrderStatuses::INVOICED;
 
     /** A document the order's phase does not print (a delivery note for a quote, anything for a cancelled order). */
     public const NOT_PRINTABLE = 'not-printable';
@@ -46,6 +45,9 @@ final class OrderRefusedException extends OrderException
 
     /** Debtor refused the invoice drafted from the order — the message names the order and debtor's reason. */
     public const INVOICE_REFUSED = 'invoice-refused';
+
+    /** The order totals 0 — no invoice (owner 2026-10-20): it is closed by the status «Erledigt», nothing printed. */
+    public const ZERO_TOTAL = 'zero-total';
 
     public function __construct(public readonly string $reason, string $message, ?\Throwable $previous = null)
     {

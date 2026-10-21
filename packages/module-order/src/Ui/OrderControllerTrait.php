@@ -311,8 +311,11 @@ trait OrderControllerTrait
                     $saved = $service->create($draft);
                     $text  = 'Auftrag ' . $saved->documentNumber() . ' erfasst';
                 } else {
-                    $saved = $service->update((int) $order->getId(), $version, $draft, $confirmation);
-                    $text  = 'Auftrag ' . $saved->documentNumber() . ' gespeichert';
+                    // The status field moves the order with this save (owner 2026-10-20), in one unit of work.
+                    $moveTo = $form->header('status') !== '' && $form->header('status') !== $order->getStatusCode() ? $form->header('status') : null;
+                    $saved  = $service->update((int) $order->getId(), $version, $draft, $confirmation, $moveTo);
+                    $text   = 'Auftrag ' . $saved->documentNumber() . ' gespeichert'
+                        . ($moveTo !== null ? ' — Status «' . ($service->statuses()->byCode($saved->getStatusCode())?->getLabel() ?? $saved->getStatusCode()) . '»' : '');
                 }
 
                 return $this->orderSaved((int) $saved->getId(), $text);
@@ -405,6 +408,9 @@ trait OrderControllerTrait
             'status'          => $status,
             'statusLabels'    => self::orderStatusLabels($statuses->all()),
             'startable'       => $order === null ? $statuses->startable() : [],
+            // An editable order's status field: the current status and what it may move to — saved
+            // with «Speichern» (owner 2026-10-20). A locked order keeps the link «Status ändern …».
+            'statusChoices'   => $order !== null && $refusal === null && $status !== null ? array_merge([$status], $statuses->targets($status, false)) : [],
             'editRefusal'     => $refusal,
             'needReason'      => $needReason,
             'entityCsrf'      => $order === null ? '' : DI::getCsrfService()->generateEntityToken('sales-order', (int) $order->getId()),
@@ -445,6 +451,8 @@ trait OrderControllerTrait
             'invoiceBase'     => $this->orderInvoiceBase(),
             'orderTitle'      => OrderPdf::orderTitle($status),
             'canBook'         => $order !== null && $invoice === null && $status !== null && $status->getPhase()->isBookable(),
+            // A stored total of 0 (owner 2026-10-20): no booking print — the window says «Erledigt» instead.
+            'zeroTotal'       => $order?->getTotalGross()?->isZero() ?? false,
             'phase'           => $status?->getPhase(),
         ]);
     }
@@ -680,7 +688,7 @@ trait OrderControllerTrait
 
     /**
      * «Status ändern …» (plan §6 / §9.4), loaded into the order window (`data-window-link`): the
-     * targets `OrderStatuses::targets()` allows (forward / lateral; backward only without an
+     * targets `OrderStatuses::targets()` allows (forward / lateral / backward, none with a booked
      * invoice; never the booked one; active only) as a select. POST → `changeStatus()` with the
      * version shown; the stock seam may demand a reason (consumed stock would come back) — then
      * the form comes back with a mandatory «Grund» and is sent again with the confirmation.
@@ -936,11 +944,17 @@ trait OrderControllerTrait
         $statuses = $this->orderService()->statuses();
         $orders   = [];
         $stale    = [];
+        $zero     = [];
         foreach ($pairs as $pair) {
             $order  = $this->orders()->find($pair['id']);
             $status = $order !== null ? $statuses->byCode($order->getStatusCode()) : null;
             if ($order === null || $order->getVersion() !== $pair['version'] || $order->getInvoice() !== null || $status === null || !$status->getPhase()->isBookable()) {
                 $stale[] = $order !== null ? 'Auftrag ' . $order->documentNumber() : '#' . $pair['id'];
+                continue;
+            }
+            // A total of 0 is no invoice (owner 2026-10-20): named and left out — closed by «Erledigt».
+            if ($order->getTotalGross()?->isZero() ?? false) {
+                $zero[] = 'Auftrag ' . $order->documentNumber();
                 continue;
             }
             $orders[] = $order;
@@ -955,6 +969,7 @@ trait OrderControllerTrait
         return $this->orderPage('confirmBook', [
             'orders' => $orders,
             'stale'  => $stale,
+            'zero'   => $zero,
             'total'  => $total,
             'today'  => new \DateTimeImmutable('today'),
             'booked' => $statuses->defaultOf(OrderPhase::Closed),

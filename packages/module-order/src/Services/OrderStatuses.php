@@ -23,17 +23,17 @@ use Z77\Module\Order\Entities\OrderStatus;
  * that phase or past it keeps its status (a reprint).
  *
  * Transitions by hand ({@see refusal()}): forward or lateral (a phase at or after the current one)
- * always; backward only while the order has NO invoice; never to the default of `closed` (the
- * booking print's alone — no «gebucht» without an invoice); never to `cancelled` with an invoice
- * (after invoicing, a credit note); only ACTIVE statuses are targets — an order keeps a deactivated one.
+ * always and backward too, while the order has NO invoice; never to the default of `closed` (the
+ * booking print's alone — no «gebucht» without an invoice); with a booked invoice NOTHING by hand
+ * (owner 2026-10-20: the invoice is final, a correction is a credit note on it — «Erledigt» is for
+ * an order that is never invoiced); only ACTIVE statuses are targets — an order keeps a deactivated one.
  */
 final class OrderStatuses
 {
     public const SAME            = 'same-status';
     public const INACTIVE_TARGET = 'inactive-target';
     public const BOOKED_TARGET   = 'booked-by-print-only';
-    public const BACKWARD_BARRED = 'backward-barred';
-    public const CANCEL_BARRED   = 'cancel-barred';
+    public const INVOICED        = 'invoiced';
 
     /** @var list<OrderStatus> along the ladder: phase, position, id */
     private readonly array $rows;
@@ -164,11 +164,8 @@ final class OrderStatuses
         if ($to->getCode() === $this->defaultOf(OrderPhase::Closed)?->getCode()) {
             return [self::BOOKED_TARGET, '«' . $to->getLabel() . '» setzt nur der Buchungsdruck — er verbucht die Rechnung und setzt den Status in einem Schritt.'];
         }
-        if ($to->getPhase() === OrderPhase::Cancelled && $hasInvoice) {
-            return [self::CANCEL_BARRED, 'Zum Auftrag ist eine Rechnung verbucht — stornieren geht nicht mehr. Eine Korrektur ist eine Gutschrift auf der Rechnung.'];
-        }
-        if ($to->getPhase()->rank() < $from->getPhase()->rank() && $hasInvoice) {
-            return [self::BACKWARD_BARRED, 'Zum Auftrag ist eine Rechnung verbucht — zurück auf «' . $to->getLabel() . '» geht nicht mehr. Eine Korrektur ist eine Gutschrift auf der Rechnung.'];
+        if ($hasInvoice) {
+            return [self::INVOICED, 'Zum Auftrag ist eine Rechnung verbucht — der Status bleibt. Eine Korrektur ist eine Gutschrift auf der Rechnung.'];
         }
 
         return null;

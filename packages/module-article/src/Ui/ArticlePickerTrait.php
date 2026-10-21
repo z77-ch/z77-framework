@@ -30,7 +30,7 @@ use Z77\Core\DI,
  *            Fetched: opened for a field, `close-modal` (this window) and the source's commands
  *            for the editor ({@see articlePickedCommands()} — an order: the row's number + its
  *            fill); opened without a target («+ Artikel»), the window STAYS for the next pick
- *            (a message names the added article) and the source adds a row. Without the
+ *            and the source adds a row (no message — the list grows). Without the
  *            script: back to the picker page with the number to type.
  *
  * The using trait provides `articlePickBase()`, `articlePickContextKeys()`,
@@ -95,13 +95,12 @@ trait ArticlePickerTrait
             }
             // Opened for a field: this window closes first, then the editor fills that field. Opened
             // from «+ Artikel» (no target, owner 2026-10-20): the window STAYS — every pick adds a
-            // row, the same article again or another one, until Schliessen / a click outside.
+            // row, the same article again or another one, until Schliessen / a click outside. No
+            // message: the growing list behind says it (owner 2026-10-21).
             $target   = ArticlePicker::target($post['target'] ?? '');
             $response = $this->fetch()->setStatus('success')->setData(['article' => $variant->getNumber()]);
             if ($target !== '') {
                 $response->addCommand('close-modal');
-            } else {
-                $response->addMessage('success', 'Artikel ' . $variant->getNumber() . ' — «' . $variant->displayName() . '» hinzugefügt.');
             }
             $this->articlePickedCommands($response, $variant, $origin, $target);
 

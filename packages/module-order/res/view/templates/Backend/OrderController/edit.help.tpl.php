@@ -40,7 +40,7 @@
 
 <section data-help-field="status">
 <h3>Status</h3>
-<p><?= !empty($isNew) ? 'Ein neuer Auftrag beginnt im ersten aktiven Status (meist «Offerte»); ein anderer lässt sich hier wählen, nur nicht «Gebucht» und kein abschliessender.' : 'Geändert wird der Status mit <strong>Status ändern …</strong>: vorwärts immer, zurück nur, solange keine Rechnung verbucht ist. «Gebucht» setzt nur der Buchungsdruck, «Geliefert» setzt auch der Lieferschein.' ?></p>
+<p><?= !empty($isNew) ? 'Ein neuer Auftrag beginnt im ersten aktiven Status (meist «Offerte»); ein anderer lässt sich hier wählen, nur nicht «Gebucht» und kein abschliessender.' : 'Der Status wird hier gewählt und mit <strong>Speichern</strong> gesetzt, zusammen mit den übrigen Änderungen: vorwärts immer, zurück nur, solange keine Rechnung verbucht ist. Bucht der Wechsel schon ausgelieferten Bestand zurück, fragt das Speichern nach dem Grund. «Gebucht» setzt nur der Buchungsdruck, «Geliefert» setzt auch der Lieferschein. Ist der Auftrag gesperrt (Rechnung, abgeschlossen, storniert), führt das Statusfeld zu <strong>Status ändern …</strong>.' ?></p>
 </section>
 
 <section data-help-field="ship">

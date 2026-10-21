@@ -209,12 +209,12 @@ check('T4 an action moves only FORWARD into its phase: a quote → «scheduled»
     && $rules->actionTarget($byCode['scheduled'], OrderPhase::Confirmed) === null && $rules->actionTarget($byCode['to-invoice'], OrderPhase::Delivered) === null
     && $rules->actionTarget($byCode['booked'], OrderPhase::Delivered) === null);
 $refused = static fn(string $from, string $to, bool $invoice): ?string => $rules->refusal($byCode[$from], $byCode[$to], $invoice)[0] ?? null;
-check('T5 forward and lateral are free (opened → scheduled → delivered → to-invoice → done; booked → done with an invoice)', $refused('opened', 'scheduled', false) === null && $refused('scheduled', 'delivered', false) === null
-    && $refused('delivered', 'to-invoice', false) === null && $refused('to-invoice', 'delivered', false) === null && $refused('to-invoice', 'done', false) === null && $refused('booked', 'done', true) === null);
-check('T6 backward is allowed WITHOUT an invoice, barred WITH one', $refused('delivered', 'opened', false) === null && $refused('cancelled', 'scheduled', false) === null
-    && $refused('done', 'scheduled', true) === OrderStatuses::BACKWARD_BARRED);
+check('T5 forward and lateral are free without an invoice (opened → scheduled → delivered → to-invoice → done); with one nothing — not even booked → done (owner 2026-10-20)', $refused('opened', 'scheduled', false) === null && $refused('scheduled', 'delivered', false) === null
+    && $refused('delivered', 'to-invoice', false) === null && $refused('to-invoice', 'delivered', false) === null && $refused('to-invoice', 'done', false) === null && $refused('booked', 'done', true) === OrderStatuses::INVOICED);
+check('T6 backward is allowed WITHOUT an invoice, refused WITH one', $refused('delivered', 'opened', false) === null && $refused('cancelled', 'scheduled', false) === null
+    && $refused('done', 'scheduled', true) === OrderStatuses::INVOICED);
 check('T7 the default of «closed» is reached by the booking print only — never a target', $refused('to-invoice', 'booked', false) === OrderStatuses::BOOKED_TARGET && $refused('done', 'booked', true) === OrderStatuses::BOOKED_TARGET);
-check('T8 «cancelled» only without an invoice; a cancelled order may be reopened', $refused('scheduled', 'cancelled', false) === null && $refused('done', 'cancelled', true) === OrderStatuses::CANCEL_BARRED
+check('T8 «cancelled» only without an invoice; a cancelled order may be reopened', $refused('scheduled', 'cancelled', false) === null && $refused('done', 'cancelled', true) === OrderStatuses::INVOICED
     && $refused('cancelled', 'opened', false) === null);
 check('T9 the same status and an inactive target are refused; an order may SIT in an inactive one',
     $refused('opened', 'opened', false) === OrderStatuses::SAME
@@ -490,6 +490,16 @@ check('F14 the positions\' sticky top (owner 2026-10-20): the bar — title, «+
     && strpos($orderTpl, 'value="add-text"') < strpos($orderTpl, 'id="order-price_mode"')
     && strpos($orderTpl, 'id="order-price_mode"') < strpos($orderTpl, '<span class="be-list__col be-list__col--num">Pos.</span>')
     && substr_count($orderTpl, 'class="be-rows__adders"') === 1);
+check('F16 the status field of an existing order (owner 2026-10-20): editable → a select `status` (the current status + OrderStatuses::targets()), moved by «Speichern» (update(moveTo:)); locked → the link «Status ändern …» stays',
+    str_contains($orderTpl, '} elseif ($statusChoices !== []) {') && str_contains($orderTpl, 'foreach ($statusChoices as $row) {')
+    && str_contains($orderTpl, 'href="\' . e($actionBase . \'/status?id=\' . $id) . \'" data-window-link title="Status ändern …"')
+    && str_contains($orderTrait, "'statusChoices'   => \$order !== null && \$refusal === null && \$status !== null ? array_merge([\$status], \$statuses->targets(\$status, false)) : [],")
+    && str_contains($orderTrait, '$service->update((int) $order->getId(), $version, $draft, $confirmation, $moveTo);'));
+check('F17 a 0 total on the screens (owner 2026-10-20): the confirmation names it and leaves it out («Total 0 — keine Rechnung, ausgelassen …»), the window shows a hint UNDER the action row instead of «Buchungsdruck …» (owner 2026-10-21); an invoiced order\'s status is shown only',
+    str_contains($orderTrait, "if (\$order->getTotalGross()?->isZero() ?? false) {") && str_contains($orderTrait, "'zero'   => \$zero,")
+    && str_contains((string) file_get_contents($root . '/packages/module-order/res/view/templates/Backend/OrderController/confirmBook.tpl.php'), 'Total 0 — keine Rechnung, ausgelassen:')
+    && str_contains($orderTpl, 'if ($canBook && empty($zeroTotal)) {') && str_contains($orderTpl, '<?php if ($canBook && !empty($zeroTotal)): ?>') && str_contains($orderTpl, '} elseif ($invoice !== null) {')
+    && str_contains($orderTpl, 'title="Rechnung verbucht — der Status bleibt"'));
 check('F15 no article <datalist> (owner 2026-10-20: the picker searches; the browser filtered the list to the typed value) — the number is typed or picked, «fill» completes the row',
     !str_contains($orderTpl, '<datalist') && !str_contains($orderTpl, 'list="order-articles-') && str_contains($orderTpl, 'data-fill-url="<?= e($actionBase . \'/article-defaults\') ?>"'));
 
@@ -789,14 +799,14 @@ $db->executeStatement("INSERT INTO invoice (kind, state, contact_id, language, i
     SELECT 'invoice', 'final', ?, 'de', '2026-10-14', '2026-10-14', 'CHF', 'net', 'net-30', '2026-11-13', '[]', 0, 0, 0, 0, 'harness', NOW(), 1, '', '', '', 'Muster AG', '', '', '', '8000', 'Zürich', 'CH', '', '', '', '', '', '', '', '', '', '', ''", [$contactId]);
 $db->executeStatement('UPDATE sales_order SET invoice_id = ? WHERE id = ?', [(int) $db->lastInsertId(), $o1->getId()]);
 $o1 = $em->getRepository(SalesOrder::class)->withLines((int) $o1->getId());
-check('M16 with an invoice: backward barred, cancelling barred, edit refused, forward to «erledigt» by hand',
-    $refusedBy(fn() => $svc->changeStatus((int) $o1->getId(), $o1->getVersion(), 'scheduled')) === 'backward-barred'
-    && $refusedBy(fn() => $svc->changeStatus((int) $o1->getId(), $o1->getVersion(), 'cancelled')) === 'cancel-barred'
-    && $refusedBy(fn() => $svc->update((int) $o1->getId(), $o1->getVersion(), new $D($contactId, '2026-10-14'))) === 'not-editable'
-    && $svc->changeStatus((int) $o1->getId(), $o1->getVersion(), 'done')->getStatusCode() === 'done');
-check('M17 the log of order 1: create, status ×4, delivery-note — from → to in order',
+check('M16 with an invoice: no status change by hand at all — backward, cancelling, forward to «erledigt» all `invoiced` (owner 2026-10-20); edit refused',
+    $refusedBy(fn() => $svc->changeStatus((int) $o1->getId(), $o1->getVersion(), 'scheduled')) === 'invoiced'
+    && $refusedBy(fn() => $svc->changeStatus((int) $o1->getId(), $o1->getVersion(), 'cancelled')) === 'invoiced'
+    && $refusedBy(fn() => $svc->changeStatus((int) $o1->getId(), $o1->getVersion(), 'done')) === 'invoiced'
+    && $refusedBy(fn() => $svc->update((int) $o1->getId(), $o1->getVersion(), new $D($contactId, '2026-10-14'))) === 'not-editable');
+check('M17 the log of order 1: create, status ×3, delivery-note — from → to in order',
     $db->fetchFirstColumn('SELECT CONCAT(COALESCE(from_code, \'-\'), \'>\', to_code, \':\', change_trigger) FROM sales_order_status_change WHERE order_id = ? ORDER BY id', [$o1->getId()]) === [
-        '->opened:create', 'opened>scheduled:status', 'scheduled>delivered:delivery-note', 'delivered>cancelled:status', 'cancelled>to-invoice:status', 'to-invoice>done:status',
+        '->opened:create', 'opened>scheduled:status', 'scheduled>delivered:delivery-note', 'delivered>cancelled:status', 'cancelled>to-invoice:status',
     ]);
 $o2 = $svc->printConfirmation((int) $o2->getId(), $o2->getVersion());
 $calls = count($spy->calls);
@@ -922,6 +932,37 @@ $m28 = [
 ];
 check('M28 the picker\'s price = the fill\'s: 15.40 net / 16.65 gross at the order date; none before the price starts, none for a date or mode that is no valid input',
     $m28[0] === '15.40' && $m28[1] === '16.65' && $m28[2] === '15.40' && $m28[3] === null && $m28[4] === null && $m28[5] === null);
+
+// The status field of the order window (owner 2026-10-20): update() moves the status with the save,
+// in ONE unit of work — order 2 stands in «scheduled» (M18).
+$o2      = $em->getRepository(SalesOrder::class)->withLines((int) $o2->getId());
+$m29Line = (int) $o2->getLines()[0]->getId();
+$m29Ver  = static fn() => (int) $db->fetchOne('SELECT version FROM sales_order WHERE id = ?', [$o2->getId()]);
+$m29Qty  = static fn() => (string) $db->fetchOne('SELECT quantity FROM sales_order_line WHERE id = ?', [$m29Line]);
+$m29Refused = $refusedBy(fn() => $svc->update((int) $o2->getId(), $m29Ver(), new $D($contactId, '2026-10-14', lines: [$L::article($variantId, '5', id: $m29Line)]), moveTo: 'booked'));
+$m29Before  = [$m29Qty(), $db->fetchOne('SELECT status_code FROM sales_order WHERE id = ?', [$o2->getId()])];
+$o2 = $svc->update((int) $o2->getId(), $m29Ver(), new $D($contactId, '2026-10-14', lines: [$L::article($variantId, '4', id: $m29Line)]), moveTo: 'delivered');
+$m29Moved = [$o2->getStatusCode(), $m29Qty(), end($spy->calls)->trigger, $spy->shape(),
+    $db->fetchOne('SELECT CONCAT(from_code, \'>\', to_code, \':\', change_trigger) FROM sales_order_status_change WHERE order_id = ? ORDER BY id DESC LIMIT 1', [$o2->getId()])];
+$o2 = $svc->update((int) $o2->getId(), $m29Ver(), new $D($contactId, '2026-10-14', lines: [$L::article($variantId, '4', id: $m29Line)]), moveTo: 'delivered');
+check('M29 update(moveTo): a refused target saves NOTHING (the edit is rolled back, the status stays); an allowed one moves with the save — the edited line, the log row `status`, the stock brought to the NEW phase in one call; the current code = no move',
+    $m29Refused === 'booked-by-print-only' && $m29Before === ['1.000', 'scheduled']
+    && $m29Moved[0] === 'delivered' && $m29Moved[1] === '4.000' && $m29Moved[2] === 'status:scheduled>delivered'
+    && $m29Moved[3] === [[(string) $m29Line, $variantId, '0.000', '4.000']] && $m29Moved[4] === 'scheduled>delivered:status'
+    && $o2->getStatusCode() === 'delivered' && end($spy->calls)->trigger === 'lines');
+
+// A total of 0 is no invoice (owner 2026-10-20): the booking print refuses it with its own reason
+// (before the payment part), nothing written; the order is closed by «Erledigt» instead.
+$o30 = $svc->create(new $D($contactId, '2026-10-14', 'gratis', lines: [$L::article($variantId, '1', discount: '100')]));
+$o30 = $svc->changeStatus((int) $o30->getId(), $o30->getVersion(), 'scheduled');
+$m30Count = $count('invoice');
+$m30Msg   = null;
+try { $svc->book([['id' => (int) $o30->getId(), 'version' => $o30->getVersion()]], new \DateTimeImmutable('2026-10-20')); } catch (\Z77\Module\Order\Services\OrderRefusedException $e) { $m30Msg = [$e->reason, $e->getMessage()]; }
+$o30Done = $svc->changeStatus((int) $o30->getId(), (int) $db->fetchOne('SELECT version FROM sales_order WHERE id = ?', [$o30->getId()]), 'done');
+check('M30 a 0 total: the stored total is 0.00, the booking print refuses `zero-total` («… Total 0 — keine Rechnung. Den Auftrag auf «Erledigt» setzen.»), no invoice written, the status stays; «Erledigt» by hand closes it',
+    $o30->getTotalGross()?->isZero() === true && ($m30Msg[0] ?? null) === 'zero-total'
+    && ($m30Msg[1] ?? '') === 'Auftrag ' . $o30->documentNumber() . ': ' . \Z77\Module\Order\Services\OrderService::ZERO_TOTAL_HINT
+    && $count('invoice') === $m30Count && $o30Done->getStatusCode() === 'done' && $o30Done->getInvoice() === null);
 
 echo "\n{$pass} passed, {$fail} failed\n";
 exit($fail === 0 ? 0 : 1);

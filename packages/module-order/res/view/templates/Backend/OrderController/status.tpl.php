@@ -2,7 +2,7 @@
 /**
  * «Status ändern …» (plan §6 / §9.4) — loaded into the order window (`data-window-link`; mask
  * `order-status`, record `sales-order:<id>`). The targets the transition rule allows
- * (`OrderStatuses::targets()`: forward and lateral, backward only while no invoice is booked,
+ * (`OrderStatuses::targets()`: forward, lateral and backward, nothing once an invoice is booked,
  * never the booked status — the booking print's alone —, only active ones) as a select; the
  * VERSION shown and the entity token travel with it. When the stock seam demands it (consumed
  * stock would come back, ADR-043 decision 14) the form comes back with a mandatory «Grund».
@@ -72,7 +72,7 @@ $winAttr    = $window ? ' data-window="order-status" data-window-entity="sales-o
             <?php endif; ?>
         </div>
         <?php if ($order->getInvoice() !== null): ?>
-        <p class="be-form__hint">Die Rechnung ist verbucht: nur noch vorwärts — eine Korrektur ist eine Gutschrift auf der Rechnung.</p>
+        <p class="be-form__hint">Die Rechnung ist verbucht: der Status bleibt — eine Korrektur ist eine Gutschrift auf der Rechnung.</p>
         <?php endif; ?>
     </form>
 </div>

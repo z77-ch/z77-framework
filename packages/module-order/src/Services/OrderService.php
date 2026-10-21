@@ -72,6 +72,9 @@ use Z77\Shared\Money\Money;
  */
 final class OrderService
 {
+    /** Why an order totalling 0 is not booked, and what to do instead (owner 2026-10-20) — the service, the confirmation and the window say the same. */
+    public const ZERO_TOTAL_HINT = 'Total 0 — keine Rechnung. Den Auftrag auf «Erledigt» setzen.';
+
     private readonly string $actor;
 
     public function __construct(
@@ -126,14 +129,19 @@ final class OrderService
     /**
      * Rewrites head and lines of an editable order (D7). Lines carrying an `id` are rewritten IN
      * PLACE (their identity is the stock reference), new ones inserted, the ones left out removed.
-     * The status does not move here.
+     *
+     * $moveTo (owner 2026-10-20: the status is a field of the order window, saved with «Speichern»):
+     * a status code other than the current one moves the order IN THE SAME unit of work, after the
+     * rewrite — the rule of `changeStatus()` (refusal, log row `status`, the stock brought to the
+     * new phase in ONE call). Refused or a missing reason → nothing is saved. null / the current
+     * code = the status stays.
      *
      * @throws OrderConflictException the order is gone, its version moved on, or a line id is not the order's
-     * @throws OrderRefusedException  NOT_EDITABLE | STATUS_UNKNOWN
+     * @throws OrderRefusedException  NOT_EDITABLE | STATUS_UNKNOWN, with $moveTo also the refusals of `changeStatus()`
      * @throws InvalidOrderException
      * @throws \Z77\Module\Article\Stock\StockReasonRequiredException consumed stock would come back without $confirmation
      */
-    public function update(int $id, int $version, OrderDraft $draft, ?StockConfirmation $confirmation = null): SalesOrder
+    public function update(int $id, int $version, OrderDraft $draft, ?StockConfirmation $confirmation = null, ?string $moveTo = null): SalesOrder
     {
         $statuses = $this->statuses();
         $current  = $this->orders()->find($id);   // the early judgement — judged again under the lock
@@ -141,21 +149,32 @@ final class OrderService
             throw new OrderConflictException($id, $version);
         }
         $this->assertEditable($current, $this->statusOf($current, $statuses));
+        $to = $moveTo === null || $moveTo === $current->getStatusCode() ? null : ($statuses->byCode($moveTo)
+            ?? throw new OrderRefusedException(OrderRefusedException::STATUS_UNKNOWN, 'Den Status «' . $moveTo . '» gibt es nicht.'));
         $resolved = $this->resolve($draft, $current);
         $now      = new \DateTimeImmutable();
 
-        return $this->em->getTransaction(SalesOrder::class)->run(function () use ($id, $version, $statuses, $resolved, $confirmation, $now): SalesOrder {
+        return $this->em->getTransaction(SalesOrder::class)->run(function () use ($id, $version, $statuses, $resolved, $confirmation, $now, $to): SalesOrder {
             $order  = $this->lockAt($id, $version);
             $status = $this->statusOf($order, $statuses);
             $this->assertEditable($order, $status);
+            $refusal = $to !== null ? $statuses->refusal($status, $to, $order->getInvoice() !== null) : null;
+            if ($refusal !== null) {
+                throw new OrderRefusedException($refusal[0], $refusal[1]);
+            }
 
             $this->apply($order, $resolved);
             $this->writeTotals($order);
             $order->touch($this->actor, $now);
             $this->em->flush();   // new lines get their ids
 
-            $this->syncStock($order, $status, 'lines', $confirmation);
-            $this->em->flush();
+            if ($to !== null) {
+                // The move brings the stock to the NEW phase — the rewritten lines included.
+                $this->move($order, $status, $to, SalesOrderStatusChange::TRIGGER_STATUS, $confirmation, $now);
+            } else {
+                $this->syncStock($order, $status, 'lines', $confirmation);
+                $this->em->flush();
+            }
 
             return $order;
         });
@@ -163,13 +182,14 @@ final class OrderService
 
     /**
      * Moves an order to the status $toCode by hand (ADR-043 addendum 2026-10-15): a phase at or
-     * after the current one always, backward only while the order has no invoice; never to the
-     * default of `closed` (the booking print's alone); `cancelled` only without an invoice; only to
-     * an ACTIVE status. Writes the log row `status` (with the reversal reason, if any) and
-     * brings the stock to the new status' targets. «Erledigt» is set this way, by hand (owner Q6).
+     * after the current one always, backward too — all only while the order has NO invoice (owner
+     * 2026-10-20: with a booked invoice the status stays; a correction is a credit note); never to
+     * the default of `closed` (the booking print's alone); only to an ACTIVE status. Writes the log
+     * row `status` (with the reversal reason, if any) and brings the stock to the new status'
+     * targets. «Erledigt» is set this way, by hand, for an order that is never invoiced (owner Q6).
      *
      * @throws OrderConflictException
-     * @throws OrderRefusedException  STATUS_UNKNOWN | SAME_STATUS | INACTIVE_TARGET | BOOKED_TARGET | BACKWARD_BARRED | CANCEL_BARRED
+     * @throws OrderRefusedException  STATUS_UNKNOWN | SAME_STATUS | INACTIVE_TARGET | BOOKED_TARGET | INVOICED
      * @throws \Z77\Module\Article\Stock\StockReasonRequiredException consumed stock would come back without $confirmation
      */
     public function changeStatus(int $id, int $version, string $toCode, ?StockConfirmation $confirmation = null): SalesOrder
@@ -285,7 +305,8 @@ final class OrderService
      *      invoice and sits in a bookable phase (`confirmed`, `delivered`); the debtor profile of each customer is
      *      opened if it has none (D9 — its own unit of work, `openDebtorProfile()`); each order's
      *      invoice is previewed (`preview()`) so a refusal names THE ORDER («Auftrag 12: …»), and
-     *      a payment part that could not be printed is refused the same way; the month range of
+     *      an order totalling 0 is refused (`zero-total` — no invoice, it is closed by «Erledigt»,
+     *      owner 2026-10-20) and a payment part that could not be printed is refused the same way; the month range of
      *      the invoice date is created ahead (`prepareDocumentRanges()`, DOCTRINE-NR-003).
      *   2. The unit of work, in the lock order of plan §5: the `sales_order` rows locked by id
      *      ({@see SalesOrderRepository::lockIds()}), the versions compared there, the orders re-read
@@ -300,7 +321,7 @@ final class OrderService
      * @param list<array{id: int, version: int}> $orders the orders as the screen showed them
      * @return list<\Z77\Module\Debtor\Entities\Invoice> the booked invoices, in number order
      * @throws OrderConflictException an order is gone or its version moved on
-     * @throws OrderRefusedException  NOTHING_SELECTED | NO_BOOKED_STATUS | STATUS_UNKNOWN | ALREADY_INVOICED | NOT_INVOICEABLE | INVOICE_REFUSED
+     * @throws OrderRefusedException  NOTHING_SELECTED | NO_BOOKED_STATUS | STATUS_UNKNOWN | ALREADY_INVOICED | NOT_INVOICEABLE | INVOICE_REFUSED | ZERO_TOTAL
      * @throws \Z77\Module\Article\Stock\StockReasonRequiredException
      */
     public function book(array $orders, \DateTimeImmutable $invoiceDate, ?StockConfirmation $confirmation = null): array
@@ -342,6 +363,11 @@ final class OrderService
                 $preview = $invoicing->preview(OrderInvoiceDraft::of($order, $invoiceDate));
             } catch (DebtorException | VatException $e) {
                 throw new OrderRefusedException(OrderRefusedException::INVOICE_REFUSED, 'Auftrag ' . $order->documentNumber() . ': ' . $e->getMessage(), $e);
+            }
+            // A total of 0 is no invoice (owner 2026-10-20) — refused BEFORE the payment part, whose
+            // «amount below 0.01» would point at the payment target instead of the cause.
+            if ($preview->getGrossTotal()->isZero()) {
+                throw new OrderRefusedException(OrderRefusedException::ZERO_TOTAL, 'Auftrag ' . $order->documentNumber() . ': ' . self::ZERO_TOTAL_HINT);
             }
             $problems = $preview->getPayment()->hasPaymentPart() ? $invoicing->bookingBill($preview)->problems() : [];
             if ($problems !== []) {

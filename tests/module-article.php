@@ -421,9 +421,9 @@ check('Q6 the picker knows no source (article does not name order — K13 rule):
 check('Q7 choosable: an active variant of an active product only',
     ArticlePicker::isChoosable($qVariant) && !ArticlePicker::isChoosable(null)
     && (function () use ($qProduct, $qVariant) { $qVariant->setActive(false); $a = ArticlePicker::isChoosable($qVariant); $qVariant->setActive(true); $qProduct->setActive(false); $b = ArticlePicker::isChoosable($qVariant); $qProduct->setActive(true); return !$a && !$b; })());
-check('Q8 «+ Artikel» keeps the window (owner 2026-10-20): close-modal only for a pick FOR A FIELD; without a target a message names the added article and the window stays; the window is a chooser — a click outside closes it (data-window-dismiss)',
+check('Q8 «+ Artikel» keeps the window (owner 2026-10-20): close-modal only for a pick FOR A FIELD; without a target the window stays, no message (the list grows, owner 2026-10-21); the window is a chooser — a click outside closes it (data-window-dismiss)',
     preg_match('#if \(\$target !== \'\'\) \{\s*\$response->addCommand\(\'close-modal\'\);#', $qTrait) === 1
-    && str_contains($qTrait, '->addMessage(\'success\', \'Artikel \' . $variant->getNumber()')
+    && !str_contains($qTrait, 'hinzugefügt')
     && substr_count($qTrait, "addCommand('close-modal')") === 1 && str_contains($qHtml, 'data-window-dismiss'));
 
 // ── K. the stock seam (offline) ──────────────────────────────────────────

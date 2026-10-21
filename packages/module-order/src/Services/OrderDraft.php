@@ -27,8 +27,9 @@ use Z77\Module\Order\Entities\SalesOrder;
  *   - `notes` — internal, never printed;
  *   - `lines` — {@see OrderLineDraft}, in document order, children inside their parent;
  *   - `statusCode` — CREATE only: the status to start in (an active, not booked, not final one);
- *     null = the initial status (the active one with the lowest level). Ignored by `update()` — a
- *     status moves through `changeStatus()` only;
+ *     null = the initial status (the active one with the lowest level). Ignored by `update()` — an
+ *     existing order moves through `changeStatus()` or `update(…, moveTo:)` (the window's status
+ *     field, owner 2026-10-20);
  *   - `sourceType` / `sourceRef` — the opaque origin (`backend`; plan §12).
  */
 final class OrderDraft

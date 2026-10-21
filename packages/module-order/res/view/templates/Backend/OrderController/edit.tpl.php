@@ -12,8 +12,8 @@
  *
  * Fetched, a WINDOW (ADR-047): mask `order-edit`, record `sales-order:<id>` (a new order: mask
  * only), the title in the title bar, `_origin` carried back. The action row (ADR-049) is the
- * shared `partials/modalActions`, FIRST in the form: Speichern · the STATUS as a pill that opens
- * «Status ändern …» (the draft's status select, owner 2026-10-16) · «Drucken ▾» — by the PHASE
+ * shared `partials/modalActions`, FIRST in the form: Speichern · the STATUS as a select saved with
+ * «Speichern» (owner 2026-10-20; a locked order: a pill that opens «Status ändern …») · «Drucken ▾» — by the PHASE
  * (ADR-043 addendum 2026-10-15): Offerte / Auftragsbestätigung (PDF, new tab), «Auftragsbestätigung
  * …» (a quote: it confirms the order) or «Lieferschein …», Rechnungsvorschau (PDF) · Buchungsdruck …
  * (only a bookable phase without an invoice — a plain link that leaves the window, the
@@ -35,6 +35,7 @@
  * @var \Z77\Module\Order\Entities\OrderStatus|null $status
  * @var array<string, string> $statusLabels  code → label
  * @var list<\Z77\Module\Order\Entities\OrderStatus> $startable  a new order's choice
+ * @var list<\Z77\Module\Order\Entities\OrderStatus> $statusChoices  an editable order's status select: the current one + the allowed targets ([] = locked: the link «Status ändern …»)
  * @var string|null $editRefusal  why the order is read-only (D7), null = editable
  * @var bool $needReason  the stock seam asked for a reason (consumed stock would come back)
  * @var string $entityCsrf
@@ -102,6 +103,7 @@ $winAttr    = $window
 // quote prints «Offerte» and offers the order confirmation that confirms it; from `confirmed` on the
 // confirmation is a plain PDF and the delivery note is offered; a cancelled order prints nothing.
 $extra     = '';
+$statusChoices = $statusChoices ?? [];
 $cancelled = $phase === \Z77\Module\Order\Entities\OrderPhase::Cancelled;
 // The status is a FIELD in the action row (owner 2026-10-18, `.be-status-field`): «STATUS», a dot
 // in the tone of its phase, the name. Left group: save + status; a spacer; right group: what leads
@@ -127,12 +129,36 @@ if ($isNew) {
         . '<select id="order-status" name="status" aria-invalid="' . $invalid($form->error('status')) . '"'
         . ($form->error('status') !== '' ? ' title="' . e($form->error('status')) . '"' : '') . '>' . $options . '</select></label>'
         . '<span class="z77-form-actions__spacer"></span>';
+} elseif ($statusChoices !== []) {
+    // An editable order: the status is a select too (owner 2026-10-20) — the current status and the
+    // targets the transition rule allows; it moves with «Speichern» (OrderService::update(), one
+    // unit of work) and, like any field, makes the save call (core.js «dirty forms»).
+    $options = '';
+    foreach ($statusChoices as $row) {
+        $chosen   = $row->getCode() === $form->header('status');
+        $options .= '<option value="' . e($row->getCode()) . '"' . ($chosen ? ' selected' : '') . '>' . e($row->getLabel()) . '</option>';
+    }
+    $extra .= '<label class="be-status-field be-status-field--' . $tone($phase) . '" for="order-status" title="Status — wird mit «Speichern» gesetzt"><span class="be-status-field__label">Status</span><span class="be-status-field__dot"></span>'
+        . '<select id="order-status" name="status" data-help-key="status" aria-invalid="' . $invalid($form->error('status')) . '"'
+        . ($form->error('status') !== '' ? ' title="' . e($form->error('status')) . '"' : '') . '>' . $options . '</select></label>'
+        . '<span class="z77-form-actions__spacer"></span>';
+} elseif ($invoice !== null) {
+    // An order with a booked invoice: the status is SHOWN only (owner 2026-10-20) — the invoice is
+    // final, a correction is a credit note on it; nothing is left to set by hand here.
+    $extra .= '<span class="be-status-field be-status-field--' . $tone($phase) . '" title="Rechnung verbucht — der Status bleibt">'
+        . '<span class="be-status-field__label">Status</span><span class="be-status-field__dot"></span>'
+        . '<span class="be-status-field__name">' . e($status?->getLabel() ?? $order->getStatusCode()) . '</span></span>'
+        . '<span class="z77-form-actions__spacer"></span>';
 } else {
+    // A locked order without an invoice (closed, cancelled): no «Speichern» — «Status ändern …» is
+    // the way back to an editable status.
     $statusLabel = $status?->getLabel() ?? $order->getStatusCode();
     $extra .= '<a class="be-status-field be-status-field--' . $tone($phase) . '" href="' . e($actionBase . '/status?id=' . $id) . '" data-window-link title="Status ändern …">'
         . '<span class="be-status-field__label">Status</span><span class="be-status-field__dot"></span>'
         . '<span class="be-status-field__name">' . e($statusLabel) . '</span><span class="be-status-field__caret" aria-hidden="true">▼</span></a>'
         . '<span class="z77-form-actions__spacer"></span>';
+}
+if (!$isNew) {
     $prints = [];
     if (!$cancelled) {
         $prints[] = '<a class="be-shell-add__item" href="' . e($actionBase . '/pdf?id=' . $id) . '" target="_blank" rel="noopener" title="' . e($orderTitle) . ' als PDF (neuer Tab)">' . e($orderTitle) . '</a>';
@@ -150,7 +176,8 @@ if ($isNew) {
         $extra .= '<details class="be-shell-add be-shell-add--select"><summary class="be-btn be-btn--ghost">Drucken ▾</summary>'
             . '<div class="be-shell-add__panel" role="menu" aria-label="Drucken">' . implode('', $prints) . '</div></details>';
     }
-    if ($canBook) {
+    // Total 0 (owner 2026-10-20): no invoice, no «Buchungsdruck …» — the hint stands under the action row.
+    if ($canBook && empty($zeroTotal)) {
         $extra .= '<a class="be-btn be-btn--confirm-open" href="' . e($actionBase . '/confirm-book?' . http_build_query(['order' => [$id . ':' . $order->getVersion()]])) . '" title="Rechnung erstellen, verbuchen und als PDF drucken">Buchungsdruck …</a>';
     }
 }
@@ -216,6 +243,9 @@ $addressFields = fn(string $field): string => $this->partial('Backend/ContactCon
         <h2 class="be-list__section-title"><?= e($title) ?></h2>
         <?php endif; ?>
 
+        <?php if ($canBook && !empty($zeroTotal)): ?>
+        <div class="be-modal__alert"><?= e(\Z77\Module\Order\Services\OrderService::ZERO_TOTAL_HINT) ?> Kein Buchungsdruck.</div>
+        <?php endif; ?>
         <?php if ($editRefusal !== null): ?>
         <div class="be-modal__alert"><?= e($editRefusal) ?></div>
         <?php endif; ?>

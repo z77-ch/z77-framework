@@ -453,3 +453,20 @@ points of this addendum change:
   remaining place** that treats a contact without a profile as a customer: the booking print of an
   OLD order (plan D9 — `preview(openProfile: true)` composes, `openDebtorProfile()` opens the
   profile before the booking). An existing order keeps the customer it holds.
+
+## Addendum 2026-10-20 — the status as a field of the order window
+
+Owner decision 2026-10-20: for an EDITABLE order the status is a select in the window's action row
+(the current status + the allowed targets) and moves with «Speichern» — `OrderService::update()`
+takes an optional `moveTo` and moves the order in the SAME unit of work as the rewrite, under the
+rule of `changeStatus()` (refusal, log row `status`, the stock brought to the new phase in one
+call). A refusal or a missing reason saves nothing. Rationale: a move on change would bump the
+version and make the next save of unsaved edits fail as a conflict. A locked order keeps «Status
+ändern …» (point 5 above stands for it).
+
+**Same day, second owner decision:** with a booked invoice the status does NOT move by hand at all
+(`OrderStatuses::INVOICED` replaces `BACKWARD_BARRED` / `CANCEL_BARRED`). Owner: an invoice is not
+changeable, it carries bookings, it is resolved only by a credit note and a write-off — «Erledigt»
+is for an order that is never invoiced (a total-0 order, owner's view). This narrows point 5 and
+Q6: «Erledigt» by hand stays, but only without an invoice. The order window shows the status of an
+invoiced order as a plain field (no link, no window).
