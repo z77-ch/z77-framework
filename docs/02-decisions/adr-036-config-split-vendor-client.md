@@ -90,3 +90,21 @@ config/
 | Generated files into `vendor/z77/config/` | vendor/ is the untouched framework by project philosophy; installation configs do not belong inside it. |
 | Six per-file symlinks inside a release-real `config/` | Same effect, but six links instead of one and no self-explaining structure; more moving parts in deploy.php. |
 | Whole `config/` release-local (drop the symlink entirely) | The six machine files must never travel with a release: a dev-machine `canonicalBaseUrl`/`transport` on production breaks mail and login links (SEC-005); and without them in the upload the release would not boot. |
+
+## Amendment 2026-10-22 — `config/client` links onto `shared/config/client`
+
+The original decision linked `config/client` onto the flat `shared/config`
+(«server migration is nearly free»). That mapping did not match the seed of a
+new project: the new-project manual put the local `config/` tree — `client/`
+and `vendor/` — into `shared/config/`, so the client files sat one level
+below the link target and the first release of z77.ch answered 500
+(«Config "config/i18n" not found»).
+
+Decision (owner, 2026-10-22): `config/client` is a store like any other —
+`releases_sharedStoreName()` keeps the path whole, the link goes to
+`shared/config/client`, the same tree as locally. `deploy.php` refuses the
+upload while `shared/config/client/` holds no `*.inc.php`, so a server still in
+the flat layout cannot ship the 500. Flat servers (axo3.ch, zihlundsee.ch) are
+migrated once by hand — copy, not move, because their running and rollback
+releases still read the flat files: `release-structure.md` → «Migrating
+`shared/config` to `shared/config/client`».

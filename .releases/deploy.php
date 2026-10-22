@@ -150,11 +150,19 @@ printf(" %.1f MB in %.0f s\n", filesize($tarFile) / 1048576, microtime(true) - $
 // --- 3. upload ---------------------------------------------------------------------
 $q = static fn(string $s): string => "'" . str_replace("'", "'\\''", $s) . "'";
 
+// ADR-036: a release with `config/client` shared boots only if the store holds
+// the client configs. An empty or missing `shared/config/client` is a server
+// still in the flat layout (before 2026-10-22) — the release would be a 500.
+$clientGuard = in_array('config/client', array_map(static fn($e) => trim((string) $e, '/'), $shared), true)
+    ? 'ls shared/config/client/*.inc.php >/dev/null 2>&1 || { echo "STOP: shared/config/client/ holds no *.inc.php — migrate the flat shared/config first (release-structure.md, ADR-036)"; exit 2; }' . "\n"
+    : '';
+
 $remote = "set -eu\n"
     . 'ROOT=' . $q($root) . "\n"
     . 'REL='  . $q($release) . "\n"
     . 'cd "$ROOT"' . "\n"
     . 'test -d shared || { echo "STOP: $ROOT/shared does not exist — first-install layout is a manual step (rule 10)"; exit 2; }' . "\n"
+    . $clientGuard
     . 'for door in current next; do' . "\n"
     . '  if [ -L "$door" ] && [ "$(readlink "$door" | cut -d/ -f1-2)" = "releases/$REL" ]; then' . "\n"
     . '    echo "STOP: $door points at releases/$REL — never upload into a running release (rule 7)"; exit 3' . "\n"

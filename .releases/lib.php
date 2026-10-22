@@ -238,26 +238,22 @@ function releases_switchArgs(array $argv, array $target): array
 /**
  * The directory name under shared/ for a `target.shared` entry:
  * `data` → `data`, `public/media` → `media`, `.propbase` → `.propbase`,
- * `var/lib` → `var/lib`.
+ * `var/lib` → `var/lib`, `config/client` → `config/client`.
  *
  * ONE level is stripped, and only `public/`: that prefix is a requirement of the
  * web root, not a property of the store — the media directory is shared state that
  * happens to have to be reachable under `public/`. Every other path is kept whole,
  * so `var/lib` (ADR-035) lands in `shared/var/lib` and stays distinguishable from a
  * store that merely ends in the same word.
+ *
+ * `config/client` (ADR-036) is kept whole like any other path — the same tree as
+ * locally. Until 2026-10-22 it was mapped onto the flat `shared/config`; a server
+ * still in that layout is migrated by hand (release-structure.md), and deploy.php
+ * refuses an empty `shared/config/client` so the old layout cannot ship a 500.
  */
 function releases_sharedStoreName(string $entry): string
 {
     $entry = trim($entry, '/');
-
-    // ADR-036: the client config tier shares the EXISTING `config` store.
-    // The server needs no migration: legacy releases (whole-config symlink)
-    // keep reading the same directory — including the stale generated files
-    // they still need — while split releases resolve config/client through
-    // this link and shadow those stale files with their own config/vendor.
-    if ($entry === 'config/client') {
-        return 'config';
-    }
 
     return str_starts_with($entry, 'public/') ? substr($entry, strlen('public/')) : $entry;
 }

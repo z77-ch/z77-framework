@@ -156,8 +156,9 @@ chmod 700 shared/backup
 
 From the second release on, `shared/` IS the state — never seed again.
 
-- `shared/config/` ← the local `config/` (both `client/` and `vendor/` — `target.shared` names
-  `config` as a whole, the legacy layout of ADR-036). Leave `database.inc.php` for stage 5.
+- `shared/config/client/` ← the local `config/client/` only (`target.shared` names
+  `config/client`, `release_dirs` names `config` — `config/vendor/` rides with every release,
+  ADR-036). Leave `database.inc.php` for stage 5.
 - `shared/data/` ← the local `data/` (admin account, navigation, seeds, content).
 - In `shared/config/client/systemConfig.inc.php`: `canonicalBaseUrl` = `https://next.<domain>`
   (switched to `https://<domain>` at go-live).

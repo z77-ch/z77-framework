@@ -51,7 +51,7 @@ Inside a release, the data locations are nothing but signposts:
 
 ```
 releases/<date>/data           -> ../../shared/data
-releases/<date>/config         -> ../../shared/config
+releases/<date>/config/client  -> ../../../shared/config/client   (config/vendor is real, ADR-036)
 releases/<date>/logs           -> ../../shared/logs
 releases/<date>/backup         -> ../../shared/backup
 releases/<date>/public/media   -> ../../../shared/media
@@ -497,6 +497,30 @@ Then, on the developer machine, in the project:
 
 The next `deploy.php` creates `var/cache`, `var/state` and the `var/lib`
 signpost by itself.
+
+## Migrating `shared/config` to `shared/config/client` (ADR-036, 2026-10-22)
+
+Until 2026-10-22 `deploy.php` linked `config/client` onto the flat
+`shared/config`. Since then it links onto `shared/config/client` — the same
+tree as locally — and refuses to upload while that directory holds no
+`*.inc.php`. A server in the old layout (axo3.ch, zihlundsee.ch) is migrated
+once, by hand, before the first deploy with the new `.releases/`:
+
+```sh
+cd $BASE/shared/config
+mkdir client
+cp -p *.inc.php client/        # COPY, not move: current, next and every rollback
+cp -p .htaccess client/        # release still read the flat files
+ls -la client/                 # systemConfig, mail, database, … all there
+```
+
+Then deploy and switch as usual. The flat copies stay until no release under
+`releases/` links onto `shared/config` any more
+(`readlink releases/*/config/client`); only then remove them. Until then a
+hand edit of a client config goes into BOTH places.
+
+A server seeded with the split layout (`shared/config/client/` already there,
+z77.ch) needs nothing.
 
 ## See also
 

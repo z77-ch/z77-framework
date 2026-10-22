@@ -122,7 +122,9 @@ flat fallback, central helper `ConfigLocator`):
   RELEASE (rides with the upload; makes module deploys testable on `next`).
 - `config/client/` — hand-maintained machine/project facts (`systemConfig`,
   `mail`, `geoip`, `auth`, `backup`, `i18n`): owned by the INSTALLATION; in
-  the release layout `config/client` is a symlink into `shared/config`.
+  the release layout `config/client` is a symlink into `shared/config/client`
+  (the flat `shared/config` until 2026-10-22 — migration in
+  `release-structure.md`).
 
 The installer migrates a flat layout automatically (generated files
 regenerated into vendor/, seed-once files renamed into client/).
