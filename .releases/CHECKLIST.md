@@ -28,6 +28,10 @@ file — read those on every release too.
    cache across all its sites).
    Decide: on any STOP or FAIL, stop — the script prints the fix or the
    rollback line.
+   On success it appends a line to `.releases/deploy-log.md` (time | release |
+   door | project commit | framework commit from the release's build stamp,
+   «dirty» where unsaved changes went out) — the same for `current` and a
+   rollback. Commit that file with the project.
 
 3b. **Run pending schema migrations on the NEW release** — only when the
    release carries a module with Doctrine tables (`module-contact` is the

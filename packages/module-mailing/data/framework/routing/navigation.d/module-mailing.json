@@ -1,0 +1,15 @@
+[
+    {
+        "key": "outbox",
+        "name": "Postausgang",
+        "module": "backend",
+        "group": "service",
+        "controller": "outbox",
+        "action": "list",
+        "slot": "",
+        "active": true,
+        "param": "",
+        "sort_key": 6,
+        "parent_key": "service"
+    }
+]

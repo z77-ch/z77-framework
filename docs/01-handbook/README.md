@@ -7,6 +7,7 @@
 [installer](installer.md) · [vision](vision.md)
 
 **Cookbook** — step-by-step build recipes (what a project follows when building):
+[new-project-manual](new-project-manual.md) (empty folder → first deploy on `next`) ·
 [create-module](create-module.md) · [create-page](create-page.md) ·
 [dms-images](dms-images.md) · [patterns/](patterns/README.md) (reusable components: slider, …)
 

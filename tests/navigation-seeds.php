@@ -86,7 +86,7 @@ final class FakeIo implements IOInterface
 
 // ── fixtures ────────────────────────────────────────────────────────────────
 
-$packages = ['kernel/core', 'module-article', 'module-contact', 'module-debtor', 'module-dms', 'module-financial', 'module-mandator', 'module-order', 'module-vat'];
+$packages = ['kernel/core', 'module-article', 'module-contact', 'module-debtor', 'module-dms', 'module-financial', 'module-mailing', 'module-mandator', 'module-order', 'module-vat'];
 $dataRoot = static fn(string $pkg): string => "{$root}/packages/{$pkg}/data";
 $allRoots = array_map($dataRoot, $packages);
 // The base package set of the target tree: everything but module-debtor and the two modules that hang
@@ -174,6 +174,7 @@ $expectedBackend = [
     'backend-main: Service > Import [backend/service/import/list]',
     'backend-main: Service > Formular-Protokoll [backend/service/form-log/list]',
     'backend-main: Service > Statistik [backend/service/stats/list]',
+    'backend-main: Service > Postausgang [backend/service/outbox/list]',
     'backend-main: Stammdaten',
     'backend-main: Stammdaten > Firma',
     'backend-main: Stammdaten > Firma > Mandant [backend/finance/mandator/edit]',
@@ -202,7 +203,7 @@ echo "NSEED-1 seeds of all packages\n";
 $files = NavigationSeeds::discover($allRoots);
 check('NSEED-1a one seed file per package, sorted by name',
     array_map('basename', $files) === ['kernel.json', 'module-article.json', 'module-contact.json', 'module-debtor.json', 'module-dms.json',
-        'module-financial.json', 'module-mandator.json', 'module-order.json', 'module-vat.json'], implode(', ', array_map('basename', $files)));
+        'module-financial.json', 'module-mailing.json', 'module-mandator.json', 'module-order.json', 'module-vat.json'], implode(', ', array_map('basename', $files)));
 $seeds = NavigationSeeds::read($files);
 $keys  = array_values(array_filter(array_merge(array_column($seeds, 'key'), array_column($default, 'key'))));
 check('NSEED-1b keys unique across the union and the default file', count($keys) === count(array_unique($keys)));
@@ -220,7 +221,7 @@ file_put_contents($override . '/' . NavigationSeeds::SEED_DIR . '/module-vat.jso
 $withOverride = NavigationSeeds::discover(array_merge([$override], $allRoots));
 check('NSEED-1f an override tier replaces a package seed by file name (CE)',
     in_array(str_replace('\\', '/', $override) . '/' . NavigationSeeds::SEED_DIR . '/module-vat.json', $withOverride, true)
-    && count($withOverride) === 9);
+    && count($withOverride) === 10);
 $bad = [['name' => 'X', 'module' => '', 'slot' => '', 'parent_key' => null]];
 file_put_contents($override . '/' . NavigationSeeds::SEED_DIR . '/bad.json', json_encode($bad));
 $thrown = '';
@@ -354,7 +355,7 @@ $run = static fn(array $roots) => (new ReflectionMethod(Install::class, 'seedNav
 $run($chRoots);
 $written = json_decode((string) file_get_contents($navFile), true);
 check('NSEED-7a fresh: navigation.json holds the target tree', outline($written) === $expected);
-check('NSEED-7b the output names the added entries', str_contains($io->out(), 'Navigation seeds → 33 entries added')
+check('NSEED-7b the output names the added entries', str_contains($io->out(), 'Navigation seeds → 34 entries added')
     && str_contains($io->out(), '+ «Journal» (journal)'), $io->out());
 check('NSEED-7c written like FileStorage (pretty, unescaped unicode, no BOM)',
     str_contains((string) file_get_contents($navFile), '"Übersetzungen"') && !str_starts_with((string) file_get_contents($navFile), "\xEF\xBB\xBF"));
@@ -370,7 +371,7 @@ unlink($navFile);
 $io->lines = [];
 $run($chRoots);
 check('NSEED-7f no navigation.json at all: created (the backend menu, no frontend pages)',
-    is_file($navFile) && count(json_decode((string) file_get_contents($navFile), true)) === 33);
+    is_file($navFile) && count(json_decode((string) file_get_contents($navFile), true)) === 34);
 file_put_contents($navFile, '{ broken');
 $thrown = '';
 try { $run($chRoots); } catch (\RuntimeException $e) { $thrown = $e->getMessage(); }
@@ -384,10 +385,10 @@ $vendorFiles = [Navigation::class => $defaultFile, NavigationAlias::class => $al
 $spec   = ImportServiceFactory::sourceSpec('vendor', 'Vendor-Defaults', $vendorFiles, NavigationSeeds::discover($chRoots));
 $source = ImportServiceFactory::sourceFromSpec($spec);
 check('NSEED-8a the spec carries the seeds, the source folds them in',
-    count($spec['navigation_seeds']) === 6 && $source instanceof NavigationSeedSource);
+    count($spec['navigation_seeds']) === 7 && $source instanceof NavigationSeedSource);
 $navSet = $source->recordSets()[Navigation::class];
 check('NSEED-8b Navigation set = default (ids kept) + every seed entry',
-    count($navSet) === 9 + 33 && array_slice(array_column($navSet, 'id'), 0, 9) === [3, 4, 5, 8, 9, 10, 11, 12, 13]);
+    count($navSet) === 9 + 34 && array_slice(array_column($navSet, 'id'), 0, 9) === [3, 4, 5, 8, 9, 10, 11, 12, 13]);
 
 // Target: the hand-built installation without Geschäftsjahre, aliases of the fresh ids +100.
 $aliasTarget = array_map(static function (array $a) { $a['navigation_id'] += 100; return $a; },

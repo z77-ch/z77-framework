@@ -586,4 +586,4 @@ Config-Zeile, kein Umbau. Gleiche Form wie der offene `xaccel`-Punkt.
 
 **Sicherheitsregel daraus:** Der `X-Sendfile`-Header wird NUR gesetzt, wenn `delivery=xsendfile`
 konfiguriert ist — sonst leakt ein nicht-unterstützender Server den absoluten Blob-Pfad in der
-Antwort (im Test beobachtet: `/home/sdhcspei/...`). Bei `delivery=php` kein Header, kein Leak.
+Antwort (im Test beobachtet: `/home/<account>/...`). Bei `delivery=php` kein Header, kein Leak.

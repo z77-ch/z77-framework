@@ -67,7 +67,9 @@ will tell them what differs.
 
 `.releases/` contains no secret. Check `.gitignore` — it must NOT match
 `.releases/`. `.vscode/` stays ignored (it holds `sftp.json` with the deploy
-path).
+path). `.releases/deploy-log.md` is project data like `target.json`: written by
+`switch.php` after every proven switch, committed, never overwritten when the
+directory is copied again from the framework.
 
 ## 5. Run the check
 

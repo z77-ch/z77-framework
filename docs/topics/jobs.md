@@ -33,6 +33,7 @@ SOURCE=/packages/module-backend/res/view/templates/Service/JobController/_jobSta
 SOURCE=/packages/module-member/src/Jobs/MemberCleanupJob.php
 SOURCE=/packages/kernel/shared/src/GeoIp/GeoIpUpdateJob.php
 SOURCE=/packages/kernel/shared/src/Stats/StatsRollupJob.php
+SOURCE=/packages/module-mailing/src/Jobs/MailOutboxJob.php
 
 RUNTIME=/skeleton/data/framework/routing/navigation.json
 
@@ -123,6 +124,7 @@ Only `every:` consults the last run; the wall-clock forms do not. Deliberately n
 - [`bootstrap.md`](bootstrap.md) — `pullUpServices()`, the HTTP-free half the runner boots
 - [`backup.md`](backup.md) — the three backup jobs and why the job directory is excluded from archives
 - [`member.md`](member.md) — `member-cleanup`, the first ported job
+- [`mailing.md`](mailing.md) — `mail-outbox` (module-mailing): the throttle as `again(cursor, notBefore: pauseSeconds)` — 10 mails per slice, a minute's pause — instead of a `sleep()`; NO `defaultSchedule`, `OutboxService` enqueues it when mails are added (an idle schedule would print every pass); a row still `sending` at the start of a slice counts as interrupted because the job lock proves its process dead
 - [`stats.md`](stats.md) — `stats-rollup`: folds the raw statistics into monthly aggregates and deletes (raw after 7 days, aggregates after 24 months) — ships `daily@04:40` although it deletes, the JOBS-SCHED-001 exception
 - [`packaging.md`](packaging.md) — PKG-005: a new binary needs `composer update` in the project, not just a deploy
 

@@ -114,7 +114,7 @@ echo "backend modal CSS order\n";
 $scss = (string) file_get_contents(__DIR__ . '/../packages/module-backend/res/scss/components/_modal.scss');
 check('header ordered first',                      preg_match('/\.be-modal \.be-modal__header\s*\{\s*order:\s*-2;/', $scss) === 1);
 check('the retired footer first aid is gone (no .be-modal__footer rule)', preg_match('/\.be-modal__footer\s*\{/', $scss) === 0);
-check('the shared row inside a dialog is ordered before the body', preg_match('/\.be \.be-modal \.z77-form-actions\s*\{\s*order:\s*-1;/', $scss) === 1);
+check('the shared row inside a dialog is ordered before the body', preg_match('/\.be \.be-modal \.z77-form-actions,\s*\.be \.be-bare \.z77-form-actions\s*\{\s*order:\s*-1;/', $scss) === 1);   // the page editor's bare page shares the rule (2026-10-22)
 check('--end keeps the bottom (order 1, wherever the template wrote it)', preg_match('/\.be \.be-modal \.z77-form-actions--end\s*\{\s*order:\s*1;/', $scss) === 1);
 check('the toolbar slot has its data hook',        str_contains((string) file_get_contents(__DIR__ . '/../packages/module-backend/res/view/templates/html-shell-skeleton.tpl.php'), 'data-shell-slot="hc2"'));
 

@@ -406,7 +406,7 @@ address in config:
 - `PhpMailTransport` relies on the platform mailer honouring `Bcc:` in additional headers
   (sendmail `-t` on Linux does; PHP's win32 SMTP mailer does) — v1 consumers don't use Bcc.
 - Live SMTP delivery: proven 2026-09-11 against `mail.cyon.ch:465` (`ssl`, AUTH LOGIN) from axo3 and, the same day, from zihlundsee.ch — see MAIL-SPAM-001. Before that only e2e against a loopback fake-SMTP server (2026-06-15); the dev env still has no relay (use `transport='file'`).
-- `SmtpTransport` does no connection pooling / retry and `STARTTLS` uses default peer verification — fine for a transactional "send one document" flow; a bulk/queue sender is out of scope (not planned).
+- `SmtpTransport` does no connection pooling / retry and `STARTTLS` uses default peer verification — fine for a transactional "send one document" flow. Mail in numbers goes through the outbox of module-mailing (2026-10-22, [`mailing.md`](mailing.md)): queued rows, the `mail-outbox` job sends 10 per minute through `Mailer` (one connection per mail), retries with backoff — still no pooling here.
 - Long non-ASCII subjects are emitted as a single RFC 2047 encoded-word (no folding) — works with common MTAs; folding is not implemented.
 - `DocumentKind::mailable()` excludes `video`/`audio` only (size); everything else is attachable. There is no per-size byte cap on attachments yet — a very large attachable document would build a large message.
 
@@ -436,4 +436,6 @@ address in config:
 - [`backend.md`](backend.md) — `EmailSettingsController` (Service → E-Mail): the backend editor for the per-form to/cc/subject/routes override + active toggle («developer setup» step E)
 - [`cache.md`](cache.md) — disabling the page cache for a form controller (CSRF token + per-user state must not be shared — «developer setup» step C)
 - [`documents.md`](documents.md) — `DocumentService::send()` is the first consumer; the DMS façade owns the mailable-document policy
+- [`mailing.md`](mailing.md) — the mail outbox (module-mailing): mails in numbers are queued and sent by the `mail-outbox` job in batches through `Mailer` (sender from `config/client/mail.inc.php`); a template is rendered at queue time through `EmailService::renderBody()` (public since 2026-10-22, the same rendering as `send()` without sending)
+- [`contact.md`](contact.md) — the recipient of business documents (owner 2026-10-22): offer, order confirmation, delivery note and invoice go to the e-mail of the BILLING address stored on the order / invoice (`AddressSnapshot::getEmail()` — `bill_email`, `addr_email`; step 1 built, the sending is step 3); the newsletter to the contact's «Newsletter» address (type `newsletter`), else the main address
 - [`../03-development/dokumentenverwaltung-bauplan.md`](../03-development/dokumentenverwaltung-bauplan.md) — OPEN-5 (own SMTP build) + the Phase-6 plan

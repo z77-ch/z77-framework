@@ -90,6 +90,7 @@ Structure is enforced by `npm run docs:check` ([docs-lint/STANDARD.md](../docs-l
 | login, auth, session, AccessGuard | [topics/login.md](topics/login.md) |
 | lottie, animation, `<lottie-figure>`, poster | [topics/lottie.md](topics/lottie.md) |
 | mail, email, e-mail versand / configure email sending, SMTP, contact form / kontaktformular, form mail, emailConfig, sender / from address, EmailService, backend mail settings | [topics/mail.md](topics/mail.md) |
+| mail outbox / Postausgang, bulk mail / Massenversand, mail queue, batch sending / Versand in Paketen, `mail-outbox` job, `OutboxService`, `OutboxDraft`, `OutboxMail`, `mail_outbox`, retry / erneut senden, attachment provider / Anhang-Provider, `mailAttachments`, `outboxConfig`, document mail / Belege per E-Mail, newsletter, module-mailing | [topics/mailing.md](topics/mailing.md) |
 | member accounts, customer login / kundenlogin, passwordless, magic link, registration / registrierung, TOTP 2FA, stay signed in / angemeldet bleiben, device keys, invitation / einladung, grants, several tenants / mehrere Mandanten, tenant switch / mandantenwechsel | [topics/member.md](topics/member.md) |
 | messages, flash messages | [topics/messages.md](topics/messages.md) |
 | metadata, SEO | [topics/metadata.md](topics/metadata.md) |

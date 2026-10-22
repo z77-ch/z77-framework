@@ -1,0 +1,37 @@
+{
+    "name": "z77/module-mailing",
+    "description": "Z77 Mailing Module | the mail outbox: queued e-mails sent in throttled batches by the `mail-outbox` job (10 per minute by default), retries with backoff, attachments resolved at send time through module-registered providers, and the backend screen Service › Postausgang. The shared base for document mails and the newsletter.",
+    "type": "library",
+    "keywords": ["php", "framework", "mail", "outbox", "queue", "newsletter", "z77"],
+    "homepage": "https://github.com/z77-ch/z77-framework",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Peter Ruepp",
+            "email": "peter.ruepp@z77.ch"
+        }
+    ],
+    "autoload": {
+        "psr-4": {
+            "Z77\\Module\\Mailing\\": "src/"
+        }
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true,
+    "extra": {
+        "branch-alias": {
+            "dev-main": "1.0.x-dev"
+        }
+    },
+    "require": {
+        "php": ">=8.4",
+        "z77/kernel": "^1.0",
+        "z77/persistence-doctrine": "^1.0"
+    },
+    "support": {
+        "issues": "https://github.com/z77-ch/z77-framework/issues",
+        "source": "https://github.com/z77-ch/module-mailing",
+        "docs": "https://github.com/z77-ch/z77-framework/tree/main/docs"
+    },
+    "readme": "README.md"
+}

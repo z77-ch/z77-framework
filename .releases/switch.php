@@ -185,4 +185,32 @@ if ($failed) {
     exit(1);
 }
 echo "\nOK: $door serves releases/$release, the root and the stores are closed.\n";
+
+// Deploy log (owner 2026-10-22): which release went out, through which door, with which state —
+// one line per PROVEN switch (also a rollback), only after X-Z77-Release and the probes above.
+// The project commit comes from the local working tree (+ «dirty»); the framework commit from the
+// RELEASE's build stamp on the server — locally vendor-dev.php has switched back to links by now.
+// The file is project data like target.json: committed, never overwritten by a copy of .releases/.
+$gitShort = static function (string $path): string {
+    $commit = trim((string) shell_exec('git -C ' . escapeshellarg($path) . ' rev-parse --short HEAD 2>' . (PHP_OS_FAMILY === 'Windows' ? 'NUL' : '/dev/null')));
+    if ($commit === '') {
+        return '?';
+    }
+    $dirty = trim((string) shell_exec('git -C ' . escapeshellarg($path) . ' status --porcelain 2>' . (PHP_OS_FAMILY === 'Windows' ? 'NUL' : '/dev/null')));
+    return $commit . ($dirty !== '' ? ' dirty' : '');
+};
+$stampJson = releases_ssh($host, 'cat ' . escapeshellarg("$root/releases/$release/vendor/z77/build.json") . ' 2>/dev/null || true' . "\n");
+$stamp     = json_decode(trim($stampJson), true);
+$framework = '?';
+if (is_array($stamp) && is_array($stamp['framework'] ?? null) && is_string($stamp['framework']['commit'] ?? null)) {
+    $framework = substr($stamp['framework']['commit'], 0, 7) . (!empty($stamp['framework']['dirty']) ? ' dirty' : '');
+}
+$logFile = __DIR__ . '/deploy-log.md';
+if (!is_file($logFile)) {
+    file_put_contents($logFile, "# Deploy log\n\nOne line per proven switch (`switch.php`): release = deploy date, door, project and framework commit"
+        . " (`git log <commit>..HEAD` shows what came since). «dirty» = shipped from a working tree with unsaved changes.\n\n"
+        . "| Time | Release | Door | Project | Framework |\n|---|---|---|---|---|\n");
+}
+file_put_contents($logFile, sprintf("| %s | %s | %s | %s | %s |\n", date('Y-m-d H:i'), $release, $door, $gitShort($projectRoot), $framework), FILE_APPEND);
+echo "Logged in .releases/deploy-log.md — commit it with the project.\n";
 echo "Next: backend on $hostname -> «Cache leeren» (see CHECKLIST.md point 4).\n";

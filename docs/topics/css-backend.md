@@ -257,6 +257,7 @@ default first), the panel anchors right inside the viewport.
 | Service › Jobs | — | n/a |
 | Service › Import | «Plan berechnen» | confirm |
 | Service › Formular-Protokoll | — | n/a |
+| Service › Postausgang | — (a log of the outbox; «Versand starten» is the pending-step band above the list, built 2026-10-22, `mailing.md`) | n/a |
 
 ## buttons, tabs, switch
 
