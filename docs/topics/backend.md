@@ -346,8 +346,8 @@ machinery: it extends `BackendAbstractController` directly (not
   `password` (plaintext, transient — hashed bcrypt cost 12; blank on edit = keep),
   `roles` (checkboxes `name="roles"` → array; validated against `AuthRole` keys),
   `initials` (`#[Clean('text')]`, optional avatar initials — see below),
-  `name` (`#[Clean('text')]`, optional full name «Peter Ruepp», max `BackendUser::NAME_LENGTH` = 80,
-  `validateName`; shown on the dashboard as «Angemeldet als: admin – Peter Ruepp», owner 2026-10-22;
+  `name` (`#[Clean('text')]`, optional full name «Max Muster», max `BackendUser::NAME_LENGTH` = 80,
+  `validateName`; shown on the dashboard as «Angemeldet als: admin – Max Muster», owner 2026-10-22;
   a `backendUsers.json` written before the field has no key and reads '').
   `passwordHash` / `roles` / `sortKey` are re-set server-side after
   `mapFromArray` — never trusted from the body.

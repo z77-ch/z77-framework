@@ -7,7 +7,7 @@
  * (DashboardController, `canReach()` per entry); the template decides nothing.
  *
  * @var \Z77\Shared\Auth\AuthUser $authUser
- * @var string $signedInAs  «admin – Peter Ruepp» (login name, person's name when entered)
+ * @var string $signedInAs  «admin – Max Muster» (login name, person's name when entered)
  * @var \DateTimeImmutable $today
  * @var list<array{name: string, url: string, links: list<array{name: string, href: string}>, creates: list<array{label: string, href: string, opens: string}>, badges: list<array>}> $tiles
  * @var list<array{severity: string, severityLabel: string, label: string, where: string, figure: string, href: string}> $pending

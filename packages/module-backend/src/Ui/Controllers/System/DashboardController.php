@@ -45,7 +45,7 @@ class DashboardController extends BackendAbstractController
             'activeSection' => 'overview',
             'crumbRoot'     => '',   // no «Dashboard» button on the dashboard itself
             'shellBare'     => true, // owner 2026-10-22: the dashboard alone starts right under the top bar — no band, no crumb row
-            // «Angemeldet als: admin – Peter Ruepp»: the login name, and the person's name when entered (BackendUser::name)
+            // «Angemeldet als: admin – Max Muster»: the login name, and the person's name when entered (BackendUser::name)
             'signedInAs'    => trim($user->getUserName() . ' – ' . (DI::getCurrentUserService()->getBackendUser()?->getName() ?? ''), ' –'),
         ]);
     }
