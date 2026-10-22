@@ -1,6 +1,6 @@
 # mail
 
-2026-10-10
+2026-10-22
 
 ## entry
 
@@ -26,11 +26,20 @@ SOURCE=/packages/kernel/shared/src/Config/emailConfig.inc.php
 SOURCE=/packages/kernel/shared/src/Entities/EmailFormSetting.php
 SOURCE=/packages/kernel/shared/src/Repositories/EmailFormSettingRepository.php
 SOURCE=/packages/kernel/shared/src/Validators/EmailFormSettingValidator.php
+SOURCE=/packages/kernel/shared/src/Mail/DocumentMailKinds.php
+SOURCE=/packages/kernel/shared/src/Entities/EmailDocumentSetting.php
+SOURCE=/packages/kernel/shared/src/Repositories/EmailDocumentSettingRepository.php
+SOURCE=/packages/kernel/shared/src/Validators/EmailDocumentSettingValidator.php
+SOURCE=/packages/kernel/shared/res/view/templates/emails/documentMail.tpl.php
 SOURCE=/packages/module-backend/src/Ui/Controllers/Service/EmailSettingsController.php
 SOURCE=/packages/module-backend/res/view/templates/Service/EmailSettingsController/listAction.tpl.php
 SOURCE=/packages/module-backend/res/view/templates/Service/EmailSettingsController/edit.tpl.php
 SOURCE=/packages/module-backend/res/view/templates/Service/EmailSettingsController/_row.tpl.php
 SOURCE=/packages/module-backend/res/view/templates/Service/EmailSettingsController/confirmReset.tpl.php
+SOURCE=/packages/module-backend/res/view/templates/Service/EmailSettingsController/_documentRow.tpl.php
+SOURCE=/packages/module-backend/res/view/templates/Service/EmailSettingsController/documentActions.tpl.php
+SOURCE=/packages/module-backend/res/view/templates/Service/EmailSettingsController/documentEdit.tpl.php
+SOURCE=/packages/module-backend/res/view/templates/Service/EmailSettingsController/confirmDocumentReset.tpl.php
 SOURCE=/packages/kernel/shared/res/view/templates/emails/layout.tpl.php
 SOURCE=/packages/kernel/core/src/Config/mail.default.inc.php
 SOURCE=/packages/module-dms/src/Images/DocumentKind.php
@@ -258,6 +267,23 @@ ADMIN) — built per
 - **No recipient resolvable** (empty config `to` + no entity, or only `ref:`
   entries) → normal `false` failure path + `getLastErrors()`, not a throw.
 
+## document mail kinds — «Beleg-Mails» (step 3 of the mail plan, 2026-10-22)
+
+The mail that carries a business document to the customer has its own SUBJECT and TEXT per
+KIND, fixed in the e-mail service like a form mail («eigener Dienst», owner 2026-10-22) and
+edited in the SAME place — Service › E-Mail, second section «Beleg-Mails». The sender is the
+installation's identity (`config/client/mail.inc.php`), as for every mail; nothing per kind.
+
+| Piece | Detail |
+|---|---|
+| Kinds | DECLARED by the module that owns the document, config key `documentMails` (kind => `label`, `subject` / `body` per language, `placeholders` name => description) — `DocumentMailKinds::fromModules()`, the registry pattern of `mailAttachments`; a project adds one through `App/Config/documentMailsConfig.inc.php`. German (`de`) required; a kind is lower-case kebab; two modules declaring one kind is refused |
+| Shipped | module-debtor: `invoice` «Rechnung», `credit-note` «Gutschrift» (SENT — debtor.md), `dunning` «Mahnung» (prepared); module-order: `quote` «Offerte», `order-confirmation` «Auftragsbestätigung», `delivery-note` «Lieferschein» (prepared — no send action yet). Each de + en |
+| Defaults | subject «Rechnung {nummer} — {absender}» (en «Invoice {nummer} — {absender}»), a short neutral text («Im Anhang erhalten Sie unsere Rechnung {nummer} über {betrag}, zahlbar bis {faellig}.»). The subject does NOT end in the number (KAM_NUMSUBJECT, rule above) |
+| Placeholders | debtor's kinds: `{nummer}` document number, `{kunde}` name of the billing address, `{betrag}` total with currency («CHF 1'234.50»), `{datum}` document date, `{faellig}` due date (invoice), `{absender}` mandator name — filled by `Mail\InvoiceMails::values()`; a placeholder without a value stays as written |
+| Override | `EmailDocumentSetting` (file entity, `data/framework/mail/emailDocumentSettings.json`): subjects / bodies per language + `active`. While active it wins COMPLETELY (the form mails' rule); switched off it is kept but dormant; «Zurücksetzen» deletes it. Validator: German subject and text required, a subject CR/LF-free and ≤ 150, a text ≤ 5000 |
+| Resolution | `EmailService::documentMail(kind, language, values)` — the ONE place: record (active) else declaration; the document's language when BOTH its subject and text are filled, else `de`; `{name}` replaced (line breaks of a value flattened in the subject). Answers text — the sender (the outbox) renders the body through `emails/documentMail` (paragraphs escaped, line breaks `<br>`) inside `emails/layout` |
+| Screen | Service › E-Mail › «Beleg-Mails»: one row per kind (label, kind, the effective German subject, languages, origin «Modul» / «Backend» / «Backend inaktiv»), the switch where a record exists, ⋮ → «Bearbeiten» / «Zurücksetzen», «Anpassen» on a module-only row. Actions `document-actions`, `document-edit`, `document-toggle-active`, `confirm-document-reset`, `document-reset` of `EmailSettingsController`; the dialog has subject + text per language and the placeholder list |
+
 ### seed-address convention (config `to` = developer test inbox)
 
 The config `forms[*].to` is the **developer's world**, the backend override is
@@ -299,6 +325,7 @@ address in config:
 - When changing the plain-text half (`HtmlToText`) → MUST keep the URL COUNT of both halves equal, a linked image included, because the receiver's filter compares them (`URI_COUNT_ODD`, MAIL-SPAM-001); MUST NOT re-introduce a whitespace pass that runs BEFORE the line breaks exist and cannot tell indentation from a space inside a sentence (MAIL-TEXT-001); and MUST re-run `php tests/mail-html-to-text.php` (18 checks, no bootstrap) — the two rules above look alike in a diff and neither shows up in the HTML half anyone reads while testing.
 - When a form mail fails → MUST treat `sendForm() === false` as the normal failure path (generic user message; cause is in `getLastErrors()` + `logs/php-error.log`); MUST NOT let a transport/config problem escalate to a 500 on a public form.
 - When routing a form mail by a user choice → MUST pass a server-validated option value as `sendForm()`'s `routeKey` (it selects an entry of the server-defined `routes` map); MUST NOT derive recipients or subject text from user input directly.
+- When a module mails a business document → MUST take subject and text from `EmailService::documentMail()` (its kind declared under `documentMails` in the module's config, German required) and queue the mail through the outbox (mailing.md); MUST NOT hard-code a subject or text in the sending code, read `emailDocumentSettings.json` directly, or put the document's text into the template as markup (it is plain text, escaped by `emails/documentMail`).
 - When reading form-mail settings anywhere → MUST go through `EmailService::sendForm()` (entity-first resolution); MUST NOT read `emailConfig` `forms` directly in app code — a backend override would be silently ignored; a screen that must SAY where a form mail goes uses `EmailService::formRecipients()` (same resolution, 2026-09-26). (The `EmailSettingsController` list is the one legitimate direct reader — it displays both tiers.)
 - When declaring a form key in `emailConfig` `forms` → the `to` MUST be a deliverable, developer-controlled test address (e.g. `webmaster@{domain}`), NOT the client's production recipient (which is set in the backend override at handover); the developer MUST ensure that address exists (mailbox/forwarding) on the staging host. Before go-live no form may still show origin «Config» on a dev address (visible in the `EmailSettingsController` list).
 
@@ -426,6 +453,8 @@ address in config:
 - From control system (owner note 2026-07-18): a later mechanism guarantees any
   `EmailMessage::from()` is domain-conform (SPF/DKIM/DMARC) — until then From stays the
   `config/client/mail.inc.php` installation identity.
+- **Beleg-Mails, owner's live look**: Service › E-Mail › «Beleg-Mails» (the rows, «Anpassen», the dialog per language, the switch, «Zurücksetzen») — built 2026-10-22, not seen in a browser.
+- **Beleg-Mails for offer / order confirmation / delivery note / dunning**: the kinds are declared (prepared); each needs its attachment provider and a send action (mailing.md step 3).
 - Re-add `RUNTIME=/skeleton/config/mail.inc.php` to the file map after the next clean-install
   regenerates `skeleton/` (installer seeds it now).
 
@@ -436,6 +465,7 @@ address in config:
 - [`backend.md`](backend.md) — `EmailSettingsController` (Service → E-Mail): the backend editor for the per-form to/cc/subject/routes override + active toggle («developer setup» step E)
 - [`cache.md`](cache.md) — disabling the page cache for a form controller (CSRF token + per-user state must not be shared — «developer setup» step C)
 - [`documents.md`](documents.md) — `DocumentService::send()` is the first consumer; the DMS façade owns the mailable-document policy
+- [`debtor.md`](debtor.md) — the first sender of document mails: the booking print's result list «Alle per E-Mail senden …» resolves the kinds `invoice` / `credit-note` through `documentMail()`
 - [`mailing.md`](mailing.md) — the mail outbox (module-mailing): mails in numbers are queued and sent by the `mail-outbox` job in batches through `Mailer` (sender from `config/client/mail.inc.php`); a template is rendered at queue time through `EmailService::renderBody()` (public since 2026-10-22, the same rendering as `send()` without sending)
 - [`contact.md`](contact.md) — the recipient of business documents (owner 2026-10-22): offer, order confirmation, delivery note and invoice go to the e-mail of the BILLING address stored on the order / invoice (`AddressSnapshot::getEmail()` — `bill_email`, `addr_email`; step 1 built, the sending is step 3); the newsletter to the contact's «Newsletter» address (type `newsletter`), else the main address
 - [`../03-development/dokumentenverwaltung-bauplan.md`](../03-development/dokumentenverwaltung-bauplan.md) — OPEN-5 (own SMTP build) + the Phase-6 plan

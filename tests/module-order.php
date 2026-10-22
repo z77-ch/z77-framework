@@ -403,7 +403,7 @@ $v5bSearch = OrderListing::search(OrderListing::definition('CHF', 'all')->read([
 check('V5b «Rechnung» is its own column between Status and Betrag in every tab (owner 2026-10-22), searched by number and sortable; «Zahlung» no longer carries the number',
     array_slice($v5bLabels, array_search('Status', $v5bLabels, true), 3) === ['Status', 'Rechnung', 'Betrag'] && in_array('Rechnung', $cols('confirmed'), true)
     && OrderListing::definition('CHF')->column('f_invoice')->isSearchable() && $v5bSearch->invoiceNumber === 2610001 && $v5bSearch->sort === 'invoice'
-    && !str_contains((string) file_get_contents($packages['Order'] . '/res/view/templates/Backend/OrderController/_row.tpl.php'), '<small class="be-list__cell--muted"><?= e((string) $order->getInvoice()->getNumber())'));
+    && !str_contains((string) file_get_contents($root . '/packages/module-order/res/view/templates/Backend/OrderController/_row.tpl.php'), '<small class="be-list__cell--muted"><?= e((string) $order->getInvoice()->getNumber())'));
 $svc = OrderListing::search(OrderListing::definition('CHF', 'confirmed')->read(['view' => 'confirmed', 'f_service' => '11.2026', 'sort' => 'service']), $seed);
 check('V6 «Leistung» (= «Leistung von», the delivery date of goods, owner 2026-10-16): searchable and sortable; a month searches the order day or period overlapping it, in the tab\'s codes',
     OrderListing::definition('CHF')->column('f_service')->isSearchable() && OrderListing::definition('CHF')->column('f_service')->sort === 'service'
@@ -432,6 +432,21 @@ check('I3 not a repeat: another version (edited since, booked by another print),
     && BookingSelection::bookedBy([['id' => 9, 'version' => 1]], $finder([])) === null && BookingSelection::bookedBy([], $finder([])) === null);
 $bookedOrder->linkInvoice($draftInvoice);
 check('I4 an invoice that is not final is no repeat either', BookingSelection::bookedBy([['id' => 7, 'version' => 5]], $finder([7 => $bookedOrder])) === null);
+
+// The booking print's answer since 2026-10-22 (step 3 of the mail plan): debtor's result list, not a PDF tab.
+$orderTraitSrc = (string) file_get_contents($root . '/packages/module-order/src/Ui/OrderControllerTrait.php');
+$confirmBookTpl = (string) file_get_contents($root . '/packages/module-order/res/view/templates/Backend/OrderController/confirmBook.tpl.php');
+$bookBody = substr($orderTraitSrc, (int) strpos($orderTraitSrc, 'protected function bookAction()'), 3200);
+check('I5 the booking print posts in the SAME tab (no blank target, no data-submit-navigate) and answers — a booking and its repeat alike — with a 303 to debtor\'s RESULT LIST of the booked invoices (`/booking-result?ids=…`, «Zurück» = «Abgeschlossen»); the combined PDF is no longer the answer',
+    str_contains($confirmBookTpl, '<form method="post" action="<?= e($actionBase) ?>/book" class="be-list__section">') && preg_match('/<form[^>]*target=/', $confirmBookTpl) === 0
+    && substr_count($bookBody, '$this->redirect($this->orderBookingResult(') === 2 && !str_contains($orderTraitSrc, 'orderBookingPdf')
+    && str_contains($orderTraitSrc, "\$this->orderInvoiceBase() . '/booking-result?'") && str_contains($orderTraitSrc, "'back' => \$this->orderListBase() . '/list?view=' . OrderListing::VIEW_CLOSED"));
+check('I5b the booking print\'s confirm page offers the invoice preview per order (eye icon, new tab) before booking (owner 2026-10-22)',
+    str_contains($confirmBookTpl, "/invoice-preview?id=' . \$order->getId()") && str_contains($confirmBookTpl, '#icon-eye'));
+$orderKinds = new \Z77\Shared\Mail\DocumentMailKinds((require $root . '/packages/module-order/src/App/Config/orderConfig.inc.php')['documentMails']);
+check('I6 the order declares its document mail kinds in the shape of debtor\'s (prepared, not sent yet): quote, order-confirmation, delivery-note — each in de + en, subjects not ending in a number',
+    array_keys($orderKinds->all()) === ['quote', 'order-confirmation', 'delivery-note']
+    && array_filter(array_keys($orderKinds->all()), fn($k) => $orderKinds->languages($k) !== ['de', 'en'] || preg_match('/\d\s*$/', $orderKinds->get($k)['subject']['de']) === 1) === []);
 
 // ── F. the window's form ↔ the draft (offline) ───────────────────────────
 

@@ -19,6 +19,7 @@ use Z77\Core\DI,
     Z77\Module\Debtor\Entities\Payment,
     Z77\Module\Debtor\Entities\PaymentTarget,
     Z77\Module\Debtor\Entities\PaymentTerms,
+    Z77\Module\Debtor\Mail\InvoiceMails,
     Z77\Module\Debtor\Pdf\InvoicePdf,
     Z77\Module\Debtor\Repositories\InvoiceRepository,
     Z77\Module\Debtor\Repositories\InvoiceSearch,
@@ -59,10 +60,14 @@ use Z77\Core\DI,
  *     `{id}:{version}` — the BOOKING PRINT (owner 2026-10-10):
  *     «Buchungsdruck …» (selection bar; in the mask of a draft for that
  *     one) → `confirm-finalize` lists the selection → `finalize` POSTs the
- *     pairs into a NEW TAB: `InvoicingService::finalize()` draws the
- *     numbers and posts, the answer is the PDF of exactly those documents
- *     with number and QR-bill; a document re-issued in between is refused
- *     by its version (DEBTOR-FINAL-001), a repeated submit reprints;
+ *     pairs: `InvoicingService::finalize()` draws the numbers and posts,
+ *     the answer is a redirect to the result list `booking-result`; a document
+ *     re-issued in between is refused by its version (DEBTOR-FINAL-001), a
+ *     repeated submit lands on the same result list;
+ *   - `booking-result?ids=` — the booking print's RESULT LIST (step 3 of the mail
+ *     plan, owner 2026-10-22; also module-order's): per document the PDF,
+ *     `pdf-all` (one file), `zip`, `confirm-mail` + `mail` (one outbox mail
+ *     per document with an address, ONE batch — `Mail\InvoiceMails`);
  *   - `pdf` — a draft's PREVIEW (watermarked, no number, no payment part,
  *     no side effect), a booked document's PDF (the same file any time);
  *   - `edit` — THE mask of a document, entry and display in one (owner
@@ -849,6 +854,8 @@ trait InvoiceControllerTrait
             'allocations' => $isInvoice && $document->isFinal() ? $this->paymentService()->allocationsOf($document) : [],
             'notices'     => $isInvoice && $document->isFinal() ? $this->invoiceDunningService()->noticesOf($document) : [],
             'ledgerKnown' => (new LedgerAccountCheck($this->em()))->available(),
+            // «per E-Mail an … gesendet am …» (step 3 of the mail plan): the outbox rows of `invoice:<id>`, read-only.
+            'deliveries'  => $document->isFinal() ? ($this->invoiceMails()->deliveries([(int) $document->getId()])[(int) $document->getId()] ?? []) : [],
             'states'      => self::INVOICE_STATE_LABELS,
         ];
 
@@ -966,7 +973,7 @@ trait InvoiceControllerTrait
      * «Definitiv stellen …»; the code keeps `finalize` and the state `final`): the selection
      * of the list or the one draft of its mask (`doc[]` = `{id}:{version}`, the version each
      * row SHOWED) listed for a last look — party, date, amount; no number yet — with one
-     * button that posts the same pairs into a NEW TAB ({@see finalizeAction()}).
+     * button that posts the same pairs ({@see finalizeAction()}, the result list after it).
      */
     protected function confirmFinalizeAction(): HtmlResponse|RedirectResponse
     {
@@ -996,25 +1003,22 @@ trait InvoiceControllerTrait
     }
 
     /**
-     * «Buchungsdruck» — the POST of the confirmation (`#[Csrf]`, sent into a NEW TAB,
-     * `target="_blank"`; owner 2026-10-10: «a printed invoice with a number IS a document» —
-     * there is no booking without the print): the pairs to `InvoicingService::finalize()` —
-     * the numbers drawn and everything posted in ONE unit of work, all or nothing — and the
-     * answer IS the PDF of exactly these documents with number and QR-bill
-     * ({@see InvoicePdf::combined()}: one section per document — its own pages, its own
-     * «Seite x von n», its own payment part). The success flash waits for the next page of
-     * the original tab (core.js `data-submit-navigate` sends it to the «Verbucht» view).
+     * «Buchungsdruck» — the POST of the confirmation (`#[Csrf]`; owner 2026-10-10: «a printed invoice
+     * with a number IS a document» — there is no booking without the print): the pairs to
+     * `InvoicingService::finalize()` — the numbers drawn and everything posted in ONE unit of work,
+     * all or nothing — and the answer is a 303 to the RESULT LIST of exactly these documents
+     * ({@see bookingResultAction()}, step 3 of the mail plan, owner 2026-10-22: the PDF per document, all as
+     * one PDF, ZIP, by e-mail). Until that day the answer was the combined PDF in a new tab.
      *
-     * IDEMPOTENT for a repeated submit (a double click, a reload of the PDF tab): when every
-     * document of the selection is FINAL at exactly the version it showed + 1 — the version
-     * this booking left — the same PDF is answered again and nothing is posted. Anything
-     * else stale (edited since, discarded, booked by another batch) and every refusal — the
-     * service's, the bookkeeping's, or the database's (a deadlock, a lock timeout: a DBAL
-     * exception, review 2026-10-13) — answers a German message PAGE in that tab; nothing
-     * was booked.
+     * IDEMPOTENT for a repeated submit (a double click, a reload): when every document of the
+     * selection is FINAL at exactly the version it showed + 1 — the version this booking left — the
+     * same result list is answered and nothing is posted. Anything else stale (edited since,
+     * discarded, booked by another batch) and every refusal — the service's, the bookkeeping's, or
+     * the database's (a deadlock, a lock timeout: a DBAL exception, review 2026-10-13) — answers a
+     * German message PAGE; nothing was booked.
      */
     #[Csrf]
-    protected function finalizeAction(): BytesResponse|HtmlResponse|RedirectResponse
+    protected function finalizeAction(): HtmlResponse|RedirectResponse
     {
         $request = DI::getRequest();
         $pairs   = $request->isPost() ? self::invoicePairs($request->getPostParameters()['doc'] ?? null) : [];
@@ -1023,7 +1027,7 @@ trait InvoiceControllerTrait
         }
         $booked = $this->invoiceBookedBy($pairs);
         if ($booked !== null) {
-            return $this->invoiceBookingPdf($booked);   // the same selection again: reprint, nothing posted
+            return $this->redirect($this->invoiceResultUrl($booked), 303);   // the same selection again: the same result list, nothing posted
         }
         try {
             $done = $this->invoicingService()->finalize($pairs);
@@ -1042,9 +1046,247 @@ trait InvoiceControllerTrait
                 : 'Nichts wurde verbucht: die Datenbank hat den Buchungsdruck abgelehnt. Liste neu laden und nochmals versuchen; bleibt es dabei, steht die Ursache im Fehlerprotokoll.', $pairs);
         }
         $names = implode(', ', array_map(fn(Invoice $d) => $d->documentName(), $done));
-        $this->messageService->pushFlashAfterRedirect('success', count($done) === 1 ? $names . ' verbucht und gedruckt' : count($done) . ' Dokumente verbucht und gedruckt: ' . $names);
+        $this->messageService->pushFlashAfterRedirect('success', count($done) === 1 ? $names . ' verbucht' : count($done) . ' Dokumente verbucht: ' . $names);
 
-        return $this->invoiceBookingPdf(array_map(fn(Invoice $d) => (int) $d->getId(), $done));
+        return $this->redirect($this->invoiceResultUrl(array_map(fn(Invoice $d) => (int) $d->getId(), $done)), 303);
+    }
+
+    // ── the booking print's result (step 3 of the mail plan, owner 2026-10-22) ──
+    //
+    // After a successful booking print — of drafts here, of orders in module-order — the browser
+    // lands on ONE result list of exactly the documents just booked: number, customer, total, the
+    // billing e-mail of the document's snapshot; per row the PDF; for all of them «Alle als ein PDF»,
+    // «Alle als ZIP» and «Alle per E-Mail senden …». The run is carried by the URL (`?ids=` — the
+    // document ids, comma-separated), never by the session: the page can be reloaded, bookmarked
+    // and sent on; closed, the list «Verbucht» is the way back. Every action re-reads the ids and
+    // shows only FINAL documents (a draft id, a gone id is left out) — the URL selects, the server
+    // decides (Rule 7). `back` (optional) is a local backend path the caller came from (module-order
+    // passes its «Abgeschlossen» list); anything else is dropped.
+
+    /** The result list of the documents `?ids=` — a PAGE (no window: it is where the booking print lands). */
+    protected function bookingResultAction(): HtmlResponse|RedirectResponse
+    {
+        $request   = DI::getRequest();
+        $documents = $this->invoiceResultDocuments($request->getGetParameter('ids'));
+        if ($documents === []) {
+            $this->messageService->pushFlashAfterRedirect('error', 'Keine verbuchten Dokumente gefunden — die Liste «Verbucht» zeigt alle.');
+
+            return $this->redirect($this->invoiceListBase() . '/list?view=final', 303);
+        }
+        $ids   = array_map(static fn(Invoice $d) => (int) $d->getId(), $documents);
+        $mails = $this->invoiceMails();
+
+        return $this->invoicePage('bookingResult', [
+            'documents'  => $documents,
+            'ids'        => implode(',', $ids),
+            'back'       => self::invoiceBack($request->getGetParameter('back')),
+            'mailable'   => $mails->available(),
+            'deliveries' => $mails->deliveries($ids),
+            'total'      => self::invoiceRunTotal($documents),
+        ]);
+    }
+
+    /** «Alle als ein PDF» — the documents of `?ids=` as ONE file, in number order (the former booking-print answer; the owner prints too). */
+    protected function pdfAllAction(): BytesResponse|RedirectResponse
+    {
+        $documents = $this->invoiceResultDocuments(DI::getRequest()->getGetParameter('ids'));
+        if ($documents === []) {
+            return $this->invoiceNotFound();
+        }
+
+        return $this->invoiceBookingPdf(array_map(static fn(Invoice $d) => (int) $d->getId(), $documents));
+    }
+
+    /**
+     * «Alle als ZIP» — one ZIP of exactly the documents of `?ids=`, each its own PDF named by its
+     * number (`rechnung-26100012.pdf`). Built in a temp file that is removed before the answer
+     * leaves (ZipArchive needs a path); the bytes go out through the response helper.
+     */
+    protected function zipAction(): BytesResponse|RedirectResponse
+    {
+        $documents = $this->invoiceResultDocuments(DI::getRequest()->getGetParameter('ids'));
+        if ($documents === []) {
+            return $this->invoiceNotFound();
+        }
+        $tmp = tempnam(sys_get_temp_dir(), 'z77zip');
+        try {
+            $zip = new \ZipArchive();
+            if ($tmp === false || $zip->open($tmp, \ZipArchive::OVERWRITE) !== true) {
+                throw new \RuntimeException('Could not create the ZIP of the booked documents.');
+            }
+            foreach ($documents as $document) {
+                $full = $this->invoices()->withLines((int) $document->getId()) ?? $document;
+                $zip->addFromString(InvoicePdf::fileName($full), InvoicePdf::of($full, $this->em())->output());
+            }
+            $zip->close();
+            $bytes = (string) file_get_contents($tmp);
+        } finally {
+            if ($tmp !== false && is_file($tmp)) {
+                @unlink($tmp);
+            }
+        }
+
+        return $this->bytes($bytes, self::invoiceZipName($documents), 'application/zip', false);
+    }
+
+    /**
+     * «Alle per E-Mail senden …» — the confirmation: how many get a mail (to whom, with which
+     * subject), which are SKIPPED and why (no address on the document — skipped, not failed), and
+     * which went out by e-mail before. One button posts the ids to {@see mailAction()}.
+     */
+    protected function confirmMailAction(): HtmlResponse|RedirectResponse
+    {
+        $request   = DI::getRequest();
+        $documents = $this->invoiceResultDocuments($request->getGetParameter('ids'));
+        if ($documents === []) {
+            return $this->invoiceNotFound();
+        }
+        $mails = $this->invoiceMails();
+        $send  = [];
+        $skip  = [];
+        foreach ($documents as $document) {
+            $reason = InvoiceMails::skipReason($document);
+            if ($reason !== null || !$mails->available()) {
+                $skip[] = ['document' => $document, 'reason' => $reason ?? ''];
+                continue;
+            }
+            $send[] = ['document' => $document, 'mail' => $mails->compose($document)];
+        }
+        $ids = array_map(static fn(Invoice $d) => (int) $d->getId(), $documents);
+
+        return $this->invoicePage('confirmMail', [
+            'send'       => $send,
+            'skip'       => $skip,
+            'ids'        => implode(',', $ids),
+            'back'       => self::invoiceBack($request->getGetParameter('back')),
+            'mailable'   => $mails->available(),
+            'mailReady'  => \Z77\Shared\Mail\Mailer::create()->isConfigured(),
+            'deliveries' => $mails->deliveries($ids),
+        ]);
+    }
+
+    /**
+     * The POST of «Alle per E-Mail senden» (`#[Csrf]`): one outbox mail per document of `ids` that
+     * has an address — ONE outbox batch, the PDF attached by reference and rendered at send time
+     * (`Mail\InvoiceMails::queue()`). Answers the result list again (303) with a flash naming what
+     * was queued and what was skipped; the rows then show «im Postausgang». Nothing is sent in the
+     * request — the `mail-outbox` job sends in batches.
+     */
+    #[Csrf]
+    protected function mailAction(): RedirectResponse
+    {
+        $request = DI::getRequest();
+        $post    = $request->isPost() ? $request->getPostParameters() : [];
+        $back    = self::invoiceBack($post['back'] ?? null);
+        $docs    = $this->invoiceResultDocuments($post['ids'] ?? null);
+        if ($docs === []) {
+            return $this->invoiceNotFound();
+        }
+        $url = $this->invoiceResultUrl(array_map(static fn(Invoice $d) => (int) $d->getId(), $docs), $back);
+        try {
+            $result = $this->invoiceMails()->queue($docs, $this->invoiceMailActor());
+        } catch (\InvalidArgumentException | \RuntimeException $e) {   // a draft the outbox refused (InvalidOutboxMailException), no outbox
+            $this->messageService->pushFlashAfterRedirect('error', 'Nichts wurde eingereiht: ' . $e->getMessage());
+
+            return $this->redirect($url, 303);
+        }
+        $queued  = count($result['queued']);
+        $skipped = array_map(static fn(Invoice $d) => $d->documentName(), $result['skipped']);
+        $message = $queued === 0
+            ? 'Keine E-Mail eingereiht — kein Dokument hat eine E-Mail-Adresse.'
+            : ($queued === 1 ? '1 E-Mail' : $queued . ' E-Mails') . ' in den Postausgang gestellt (Service › Postausgang) — der Versand läuft im Hintergrund.';
+        if ($skipped !== []) {
+            $message .= ' Ohne E-Mail-Adresse übersprungen: ' . implode(', ', $skipped) . '.';
+        }
+        $this->messageService->pushFlashAfterRedirect($queued === 0 ? 'info' : 'success', $message);
+
+        return $this->redirect($url, 303);
+    }
+
+    /** The mail side of the result list; a harness host replaces it. */
+    private function invoiceMails(): InvoiceMails
+    {
+        return new InvoiceMails($this->em());
+    }
+
+    /** Who queued the mails (the outbox row's `created_by`); a harness host names one. */
+    private function invoiceMailActor(): string
+    {
+        return \Z77\Module\Debtor\Services\Actor::current();
+    }
+
+    /**
+     * The result list's URL for $ids — what the booking print redirects to.
+     *
+     * @param list<int> $ids
+     */
+    private function invoiceResultUrl(array $ids, string $back = ''): string
+    {
+        return $this->invoiceListBase() . '/booking-result?' . http_build_query(['ids' => implode(',', $ids)] + ($back !== '' ? ['back' => $back] : []));
+    }
+
+    /**
+     * The FINAL documents of an `ids` value (`12,13` or a list), in number order, at most
+     * {@see INVOICE_BATCH_MAX}; a draft, an unknown id, junk is left out.
+     *
+     * @return list<Invoice>
+     */
+    private function invoiceResultDocuments(mixed $value): array
+    {
+        $parts = is_array($value) ? $value : explode(',', is_string($value) ? $value : '');
+        $ids   = [];
+        foreach ($parts as $part) {
+            if (is_scalar($part) && preg_match('/^\s*([1-9]\d{0,9})\s*$/', (string) $part, $m) === 1) {
+                $ids[(int) $m[1]] = (int) $m[1];
+            }
+        }
+        $documents = [];
+        foreach (array_slice(array_values($ids), 0, self::INVOICE_BATCH_MAX) as $id) {
+            $document = $this->invoices()->find($id);
+            if ($document !== null && $document->isFinal()) {
+                $documents[] = $document;
+            }
+        }
+        usort($documents, static fn(Invoice $a, Invoice $b) => $a->getNumber() <=> $b->getNumber());
+
+        return $documents;
+    }
+
+    /**
+     * The run's net amount: invoices and fees count, credit notes reduce.
+     *
+     * @param list<Invoice> $documents
+     */
+    private static function invoiceRunTotal(array $documents): ?Money
+    {
+        $total = null;
+        foreach ($documents as $document) {
+            $signed = $document->kind()->isPayable() ? $document->getGrossTotal() : $document->getGrossTotal()->negate();
+            $total  = $total === null ? $signed : $total->add($signed);
+        }
+
+        return $total;
+    }
+
+    /** A local backend path to return to, else '' — never an outside URL (an open redirect). */
+    private static function invoiceBack(mixed $value): string
+    {
+        return is_string($value) && preg_match('#^/backend/[a-z0-9/_-]+(\?[a-z0-9=&_-]*)?$#', $value) === 1 ? $value : '';
+    }
+
+    /**
+     * «belege-26100012-bis-26100014.zip» (one document: «rechnung-26100012.zip») — kebab-case,
+     * the file names of the layer (conventions).
+     *
+     * @param list<Invoice> $documents in number order
+     */
+    private static function invoiceZipName(array $documents): string
+    {
+        if (count($documents) === 1) {
+            return substr(InvoicePdf::fileName($documents[0]), 0, -4) . '.zip';
+        }
+
+        return 'belege-' . $documents[0]->getNumber() . '-bis-' . $documents[count($documents) - 1]->getNumber() . '.zip';
     }
 
     /**

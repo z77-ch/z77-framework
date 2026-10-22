@@ -1185,7 +1185,7 @@ check('I5m the three master-data fragments carry an add action and an active swi
 
 $templateDir = $package . '/res/view/templates/Backend';
 $templates   = glob($templateDir . '/*/*.tpl.php');
-check('I6 every master-data screen has its list template, its edit template and its header slot; the document screens (P3 part 3) add six (since 2026-10-21 the facts partial `_facts` in place of the read view `detail` — one mask), the payment form and the delete confirmation (P4 part 1) two, the bank import list and detail (P4 part 2) two, the dunning list (P4 part 3) one, the open-item list and its toolbar (2026-10-07) two, the action cells of the invoice list and the bank import (ADR-033 rev. 2026-10-08) two — the «+ Debitor» cell of the debtor master data removed 2026-10-12; the row partials of the in-place answers (ADR-047 addendum 2026-10-10: bank transaction + unbooked bar, payment terms, payment target, debtor contact) five; the booking print\'s refusal page (2026-10-10) one; the editor\'s party picker and its «+ Kontakt» window (DEBTOR-CONTACT-001, 2026-10-10) two; the customer picker field and window (2026-10-15) two; its «Debitor anlegen» dialog (2026-10-18) one; the shared editor head (2026-10-19: title, terms + its reload answer, «Debitor anpassen», the fixed party) five and the card «Rechnung» of the invoice one; the list helps of invoices, open items, bank import and dunning (HELP-003, 2026-10-20) four', count($templates) === 48);
+check('I6 every master-data screen has its list template, its edit template and its header slot; the document screens (P3 part 3) add six (since 2026-10-21 the facts partial `_facts` in place of the read view `detail` — one mask), the payment form and the delete confirmation (P4 part 1) two, the bank import list and detail (P4 part 2) two, the dunning list (P4 part 3) one, the open-item list and its toolbar (2026-10-07) two, the action cells of the invoice list and the bank import (ADR-033 rev. 2026-10-08) two — the «+ Debitor» cell of the debtor master data removed 2026-10-12; the row partials of the in-place answers (ADR-047 addendum 2026-10-10: bank transaction + unbooked bar, payment terms, payment target, debtor contact) five; the booking print\'s refusal page (2026-10-10) one; the editor\'s party picker and its «+ Kontakt» window (DEBTOR-CONTACT-001, 2026-10-10) two; the customer picker field and window (2026-10-15) two; its «Debitor anlegen» dialog (2026-10-18) one; the shared editor head (2026-10-19: title, terms + its reload answer, «Debitor anpassen», the fixed party) five and the card «Rechnung» of the invoice one; the list helps of invoices, open items, bank import and dunning (HELP-003, 2026-10-20) four; the result list of the booking print and its mail confirmation (step 3 of the mail plan, 2026-10-22) two', count($templates) === 50);
 check('I6b the master-data rows are ONE partial each, rendered by the list and answered in place (replaceRow / insertRow, DEBTOR-WIN-003) — no `reload` left for a one-row save or switch of terms, targets or debtors',
     array_reduce([['PaymentTerms', 'paymentTerms'], ['PaymentTarget', 'paymentTarget'], ['DebtorProfile', 'debtorContact']], fn($ok, $p) => $ok
         && str_contains(file_get_contents($templateDir . '/' . $p[0] . 'Controller/listAction.tpl.php'), "partial('Backend/" . $p[0] . "Controller/_row'")
@@ -2459,10 +2459,10 @@ $useRequest(['doc' => [$pairA, $pairB]]);
 $host = $invoiceHost();
 $host->confirmFinalizeAction();
 $confirm = $renderMain($host);
-check('P3C38 confirm-finalize («Buchungsdruck», owner 2026-10-10) lists the selection with its versions and one button that posts the same pairs INTO A NEW TAB; the page then moves itself to the «Verbucht» view (data-submit-navigate, core.js)',
+check('P3C38 confirm-finalize («Buchungsdruck», owner 2026-10-10) lists the selection with its versions and one button that posts the same pairs IN THIS TAB (since 2026-10-22 the answer is the result list — no new tab, no data-submit-navigate)',
     count($host->context['documents']) === 2 && $host->context['stale'] === []
     && str_contains($confirm, 'value="' . $pairA . '"') && str_contains($confirm, 'value="' . $pairB . '"')
-    && str_contains($confirm, 'action="/backend/finance/invoice/finalize" target="_blank" data-submit-navigate="/backend/finance/invoice/list?view=final"')
+    && str_contains($confirm, 'action="/backend/finance/invoice/finalize" class="be-list__section"') && !str_contains($confirm, 'target="_blank"') && !str_contains($confirm, 'data-submit-navigate')
     && str_contains($confirm, '>Buchungsdruck</button>') && !str_contains($confirm, 'fakturiert'));
 // B is re-issued between the look and the click: the whole batch is refused, nothing posted.
 $service($wireDi())->reinvoice($second->getId(), (int) $invoiceRow($second->getId())['version'], $withTarget('qr', '2026-07-03'));
@@ -2485,19 +2485,17 @@ $host = $invoiceHost();
 $host->finalizeAction();
 $numA = (int) $invoiceRow($newId)['number'];
 $numB = (int) $invoiceRow($second->getId())['number'];
-check('P3C41 the booking print with the CURRENT versions: both numbered (July, by invoice date: A 01.07. before B 03.07.), final and posted (two journal entries) in one unit of work; the answer IS the PDF of exactly these two (one file «dokumente-A-bis-B.pdf»), the success flash waits for the next page of the original tab; junk values dropped',
+check('P3C41 the booking print with the CURRENT versions: both numbered (July, by invoice date: A 01.07. before B 03.07.), final and posted (two journal entries) in one unit of work; the answer is a 303 to the RESULT LIST of exactly these two (`booking-result?ids=A,B`, step 3 of the mail plan — no PDF any more), the success flash for it; junk values dropped',
     $stateOf($newId) === 'final' && $stateOf($second->getId()) === 'final' && $journalCount() === $journalBefore + 2
     && intdiv($numA, 10000) === 2607 && $numB === $numA + 1
-    && $host->redirectedTo === null && ($host->bytes['mime'] ?? '') === 'application/pdf' && str_starts_with($host->bytes['content'] ?? '', '%PDF-')
-    && $host->bytes['filename'] === 'dokumente-' . $numA . '-bis-' . $numB . '.pdf'
-    && $host->messageService->flashes[0][0] === 'success' && str_contains($host->messageService->flashes[0][1], 'verbucht und gedruckt') && !str_contains($host->messageService->flashes[0][1], 'definitiv'));
+    && $host->redirectedTo === '/backend/finance/invoice/booking-result?ids=' . rawurlencode($newId . ',' . $second->getId()) && $host->bytes === []
+    && $host->messageService->flashes[0][0] === 'success' && str_contains($host->messageService->flashes[0][1], 'verbucht') && !str_contains($host->messageService->flashes[0][1], 'definitiv'));
 $journalAfter = $journalCount();
-$firstPdf     = $host->bytes['content'];
 $useRequest([], ['doc' => [$pairA, $pairB2]]);
 $host = $invoiceHost();
 $host->finalizeAction();
-check('P3C41b IDEMPOTENT: the SAME selection again (a double click, a reload of the PDF tab) — every document final at the version it showed + 1 — answers the same PDF again, nothing posted, no flash, the numbers unchanged',
-    $journalCount() === $journalAfter && ($host->bytes['filename'] ?? '') === 'dokumente-' . $numA . '-bis-' . $numB . '.pdf' && strlen($host->bytes['content']) > 1000
+check('P3C41b IDEMPOTENT: the SAME selection again (a double click, a resubmit) — every document final at the version it showed + 1 — answers the same result list again, nothing posted, no flash, the numbers unchanged',
+    $journalCount() === $journalAfter && $host->redirectedTo === '/backend/finance/invoice/booking-result?ids=' . rawurlencode($newId . ',' . $second->getId()) && $host->bytes === []
     && $host->messageService->flashes === [] && (int) $invoiceRow($newId)['number'] === $numA && (int) $invoiceRow($second->getId())['number'] === $numB);
 $useRequest([], ['doc' => [$newId . ':' . $v0, $pairB2]]);   // A at a version OLDER than the one booked
 $host = $invoiceHost();
@@ -3560,8 +3558,8 @@ check('U9 the master data moved: «Debitoren» under Aufträge is the open-item 
 
 echo "P3C. Source guards for part 3\n";
 $p3Templates = glob($package . '/res/view/templates/Backend/InvoiceController/*.tpl.php');
-check('P3C48 the document screens ship no JavaScript and no inline handler (Rule 7) — fourteen templates since the list help (2026-10-20, `list.help`, HELP-003); no module-financial class in debtor but the adapter (the journal is linked by URL)',
-    count($p3Templates) === 14 && array_reduce($p3Templates, fn($ok, $f) => $ok && $noScript(file_get_contents($f)), true)
+check('P3C48 the document screens ship no JavaScript and no inline handler (Rule 7) — sixteen templates since the result list of the booking print and its mail confirmation (2026-10-22, `booking-result`, `confirmMail`); no module-financial class in debtor but the adapter (the journal is linked by URL)',
+    count($p3Templates) === 16 && array_reduce($p3Templates, fn($ok, $f) => $ok && $noScript(file_get_contents($f)), true)
     && !str_contains(file_get_contents($package . '/src/Ui/InvoiceControllerTrait.php'), 'Module\\Financial'));
 check('P3C49 the module brings no PDF library of its own (owner 2026-10-06: ONE writer, vendored in the kernel behind the facade): no composer requirement, no \\FPDF / PdfWriter use in its sources or templates — the facade only',
     !preg_match('/tcpdf|fpdf|dompdf|mpdf|swiss-qr-bill/i', (string) file_get_contents($package . '/composer.json'))
@@ -3626,9 +3624,8 @@ $journalBefore = $journalCount();
 $useRequest([], ['doc' => [$pairA, $pairB2]]);   // the batch of P3C41 submitted a second time
 $host = $invoiceHost();
 $host->finalizeAction();
-check('P3C57 a DOUBLE submit of a booking print (owner 2026-10-10: idempotent): the same PDF again, nothing posted twice, no flash, no redirect',
-    $journalCount() === $journalBefore && $host->messageService->flashes === [] && $host->redirectedTo === null
-    && ($host->bytes['mime'] ?? '') === 'application/pdf' && str_starts_with($host->bytes['content'] ?? '', '%PDF-'));
+check('P3C57 a DOUBLE submit of a booking print (owner 2026-10-10: idempotent): the same result list again (since 2026-10-22), nothing posted twice, no flash',
+    $journalCount() === $journalBefore && $host->messageService->flashes === [] && str_starts_with((string) $host->redirectedTo, '/backend/finance/invoice/booking-result?ids=') && $host->bytes === []);
 
 $journalHost = function () {
     return new class {
@@ -4496,6 +4493,209 @@ $o8Inv = $oService()->book([['id' => (int) $o8->getId(), 'version' => $o8->getVe
 check('O8 order → invoice: the order line\'s code (stored trimmed «W-77») is the booked invoice line\'s; a line without one has none',
     array_map(fn($l) => $l->getCode(), $o8->getLines()) === ['W-77', null] && $o8Inv !== null
     && array_column(array_values(array_filter($lineRows($o8Inv->getId()), fn(array $r) => $r['type'] !== 'rounding')), 'code') === ['W-77', null]);
+
+// ── BM. the booking print's result list, ZIP, «Alle per E-Mail senden» (step 3 of the mail plan) ──
+
+echo "BM. Booking print result list, ZIP, documents by e-mail through the outbox (step 3 of the mail plan, owner 2026-10-22)\n";
+$packages['Mailing'] = str_replace('\\', '/', realpath(__DIR__ . '/../packages/module-mailing'));
+$namespaces = '';
+foreach ($packages as $name => $path) {
+    $sources     = $name === 'Debtor' ? "'{$overrideRoot}', '{$path}'" : "'{$path}'";
+    $namespaces .= "'Z77\\\\Module\\\\{$name}\\\\' => ['sourcePaths' => [{$sources}]],\n";
+}
+$namespaces .= "'Z77\\\\Shared\\\\' => ['sourcePaths' => ['{$kernelShared}']],\n";
+$write('config/vendor/fileFinder.inc.php', "<?php return ['resourceDir' => ['sourceDir' => 'src', 'tplDir' => 'res/view/templates'], 'namespaces' => [\n{$namespaces}]];");
+$write('config/vendor/moduleManager.inc.php', "<?php return ['modulePrefix' => 'Module', 'frameworkPrefix' => 'Z77', 'defaultModule' => 'debtor', 'modules' => ['vat' => [], 'contact' => [], 'mandator' => [], 'financial' => [], 'debtor' => [], 'article' => [], 'order' => [], 'mailing' => []]];");
+$rm($base . '/var/cache');
+$wireDi();
+[$code, $out] = $run(['command' => 'migrate']);
+check('BM1 module-mailing migrates onto the installation (mail_outbox)' . ($code !== 0 ? ' — ' . trim($out) : ''), $code === 0 && in_array('mail_outbox', $tables(), true));
+
+/** A request wiring with the e-mail service (the outbox renders the body at queue time). */
+$bmRequest = function (array $get, ?array $post = null) use ($useRequest): UnifiedEntityManager {
+    $em = $useRequest($get, $post);
+    DI::getInstance()->set('EmailService', fn() => new \Z77\Shared\Mail\EmailService(), true);
+    return $em;
+};
+$bmHost = function () {
+    return new class {
+        use \Z77\Module\Debtor\Ui\InvoiceControllerTrait { finalizeAction as public; bookingResultAction as public; pdfAllAction as public; zipAction as public; confirmMailAction as public; mailAction as public; editAction as public; }
+        public array $context = [];
+        public object $layoutManager;
+        public object $messageService;
+        public object $help;
+        public ?string $redirectedTo = null;
+        public array $bytes = [];
+        public function __construct()
+        {
+            $this->help = new \Z77\Core\Services\HelpService();
+            $this->layoutManager = new class {
+                public array $sections = [];
+                public function removeSection(string $s): void { unset($this->sections[$s]); }
+                public function addPartials(string $name, string $path, string $ns, string $section = 'main'): void { $this->sections[$section][] = $path . '/' . $name; }
+            };
+            $this->messageService = new class {
+                public array $flashes = [];
+                public function pushFlashAfterRedirect(string $type, string $message): void { $this->flashes[] = [$type, $message]; }
+                public function pushFlash(string $type, string $message): void { $this->flashes[] = [$type, $message, 'in-place']; }
+            };
+        }
+        protected function em() { return DI::getUnifiedEntityManager(); }
+        protected function html(array $context = []): \Z77\Core\Http\Response\HtmlResponse { $this->context = $context; return new \Z77\Core\Http\Response\HtmlResponse(null, $context); }
+        protected function redirect(string $url, int $status = 302): \Z77\Core\Http\Response\RedirectResponse { $this->redirectedTo = $url; return new \Z77\Core\Http\Response\RedirectResponse($url, $status); }
+        protected function fetch(): \Z77\Core\Http\Response\FetchResponse { return new \Z77\Core\Http\Response\FetchResponse(); }
+        protected function bytes(string $content, string $filename, string $mimeType, bool $inline = true): \Z77\Core\Http\Response\BytesResponse { $this->bytes = ['content' => $content, 'filename' => $filename, 'mime' => $mimeType, 'inline' => $inline]; return new \Z77\Core\Http\Response\BytesResponse($content, $filename, $mimeType, $inline); }
+        private function invoicingService(): InvoicingService { return new InvoicingService($this->em(), 'sachbearbeiter'); }
+        private function paymentService(): \Z77\Module\Debtor\Services\PaymentService { return new \Z77\Module\Debtor\Services\PaymentService($this->em(), 'sachbearbeiter'); }
+        private function invoiceDunningService(): \Z77\Module\Debtor\Services\DunningService { return new \Z77\Module\Debtor\Services\DunningService($this->em(), 'sachbearbeiter'); }
+        private function invoiceMailActor(): string { return 'sachbearbeiter'; }
+    };
+};
+
+// Three drafts — two invoices and a credit note — booked in ONE run; the billing e-mail on the documents' snapshot.
+$db->executeStatement("UPDATE mandator SET email = 'buero@example.ch'");
+$bmMandator = \Z77\Module\Debtor\Services\Creditor::mandator($wireDi());
+$bmX  = $service($wireDi())->invoice($withTarget('qr', '2026-08-03'));
+$bmY  = $service($wireDi())->invoice($withTarget('qr', '2026-08-04'));
+$bmCN = $service($wireDi())->invoice(InvoiceDraft::creditNote($newId, $mid, day('2026-08-05'), 'CHF', [LineDraft::lumpSum('Gutschrift', chf('50.00'), 'UN', '3400')]));
+$db->executeStatement("UPDATE invoice SET addr_email = 'kunde@example.ch', language = 'en' WHERE id = ?", [$bmX->getId()]);
+$db->executeStatement("UPDATE invoice SET addr_email = '' WHERE id = ?", [$bmY->getId()]);
+$db->executeStatement("UPDATE invoice SET addr_email = 'gutschrift@example.ch', language = 'de' WHERE id = ?", [$bmCN->getId()]);
+$bmPairs = array_map(fn(int $id) => $id . ':' . $invoiceRow($id)['version'], [$bmX->getId(), $bmY->getId(), $bmCN->getId()]);
+$bmRequest([], ['doc' => $bmPairs]);
+$host = $bmHost();
+$host->finalizeAction();
+$bmIds = [$bmX->getId(), $bmY->getId(), $bmCN->getId()];
+$bmNum = array_map(fn(int $id) => (int) $invoiceRow($id)['number'], $bmIds);
+check('BM2 the booking print of drafts (two invoices and a credit note) answers a 303 to the RESULT LIST of exactly these three (`booking-result?ids=` in number order) — no PDF',
+    array_map($stateOf, $bmIds) === ['final', 'final', 'final'] && $host->bytes === []
+    && $host->redirectedTo === '/backend/finance/invoice/booking-result?ids=' . rawurlencode(implode(',', $bmIds)));
+
+$bmIdList = implode(',', $bmIds);
+$bmDraft = $service($wireDi())->invoice($withTarget('qr', '2026-08-06'));   // stays a draft
+$bmRequest(['ids' => $bmIdList . ',abc,' . $bmDraft->getId() . ',999999', 'back' => 'https://evil.example/x']);
+$host = $bmHost();
+$host->bookingResultAction();
+$bmList = $renderMain($host);
+check('BM3 the result list: exactly the FINAL documents of `ids` (junk, a draft, an unknown id left out), in number order; per row number, customer, total, the billing e-mail of the SNAPSHOT or a muted «keine E-Mail-Adresse», the PDF as a row icon (the existing pdf route, new tab); an outside `back` is dropped',
+    array_map(fn($d) => (int) $d->getId(), $host->context['documents']) === $bmIds && $host->context['back'] === ''
+    && $host->layoutManager->sections['main'] === ['Backend/InvoiceController/bookingResult']
+    && str_contains($bmList, 'kunde@example.ch') && str_contains($bmList, 'gutschrift@example.ch') && str_contains($bmList, '<span class="be-list__cell--muted">keine E-Mail-Adresse</span>')
+    && str_contains($bmList, 'href="/backend/finance/invoice/pdf?id=' . $bmX->getId() . '" target="_blank"') && str_contains($bmList, 'Gutschrift ' . $bmNum[2])
+    && !str_contains($bmList, 'https://evil'));
+check('BM4 the header actions are plain links of the run: «Alle per E-Mail senden …» (the confirmation), «Alle als ein PDF» (new tab), «Alle als ZIP», «Zur Liste «Verbucht»» — no form, no script needed',
+    str_contains($bmList, 'href="/backend/finance/invoice/confirm-mail?ids=' . rawurlencode($bmIdList) . '"')
+    && str_contains($bmList, 'href="/backend/finance/invoice/pdf-all?ids=' . rawurlencode($bmIdList) . '" target="_blank"') && str_contains($bmList, 'href="/backend/finance/invoice/zip?ids=' . rawurlencode($bmIdList) . '"')
+    && str_contains($bmList, 'Alle per E-Mail senden …') && str_contains($bmList, 'Zur Liste «Verbucht»') && !str_contains($bmList, '<form'));
+$bmRequest(['ids' => $bmIdList, 'back' => '/backend/order/order/list?view=closed']);
+$host = $bmHost();
+$host->bookingResultAction();
+check('BM4b a local backend `back` (module-order passes «Abgeschlossen») is kept and offered as «Zurück»', $host->context['back'] === '/backend/order/order/list?view=closed' && str_contains($renderMain($host), 'href="/backend/order/order/list?view=closed">Zurück</a>'));
+
+$bmTmpBefore = count(glob(sys_get_temp_dir() . '/z77zip*') ?: []);
+$bmRequest(['ids' => $bmIdList]);
+$host = $bmHost();
+$host->zipAction();
+$bmZipFile = $base . '/bm.zip';
+file_put_contents($bmZipFile, $host->bytes['content'] ?? '');
+$bmZip     = new \ZipArchive();
+$bmEntries = [];
+$bmAllPdf  = true;
+if ($bmZip->open($bmZipFile) === true) {
+    for ($i = 0; $i < $bmZip->numFiles; $i++) {
+        $bmEntries[] = $bmZip->getNameIndex($i);
+        $bmAllPdf    = $bmAllPdf && str_starts_with((string) $bmZip->getFromIndex($i), '%PDF-');
+    }
+    $bmZip->close();
+}
+check('BM5 «Alle als ZIP»: one ZIP (application/zip, a download) of EXACTLY the three PDFs named by number, each a PDF; the temp file is gone',
+    ($host->bytes['mime'] ?? '') === 'application/zip' && ($host->bytes['inline'] ?? true) === false
+    && $host->bytes['filename'] === 'belege-' . $bmNum[0] . '-bis-' . $bmNum[2] . '.zip'
+    && $bmEntries === ['rechnung-' . $bmNum[0] . '.pdf', 'rechnung-' . $bmNum[1] . '.pdf', 'gutschrift-' . $bmNum[2] . '.pdf'] && $bmAllPdf
+    && count(glob(sys_get_temp_dir() . '/z77zip*') ?: []) === $bmTmpBefore, json_encode($bmEntries));
+$host = $bmHost();
+$host->pdfAllAction();
+check('BM6 «Alle als ein PDF»: the combined PDF of the run (the former booking-print answer — the owner prints too)',
+    ($host->bytes['mime'] ?? '') === 'application/pdf' && $host->bytes['filename'] === 'dokumente-' . $bmNum[0] . '-bis-' . $bmNum[2] . '.pdf' && str_starts_with($host->bytes['content'], '%PDF-'));
+
+$bmRequest(['ids' => $bmIdList]);
+$host = $bmHost();
+$host->confirmMailAction();
+$bmConfirm = $renderMain($host);
+$bmSender  = $bmMandator?->getName() ?? '';
+check('BM7 the confirmation names who gets a mail (2: the invoice in ENGLISH — its snapshot language —, the credit note in German, each with the subject of its kind) and who is SKIPPED (1, «keine E-Mail-Adresse»); one #[Csrf] form posting the ids',
+    count($host->context['send']) === 2 && count($host->context['skip']) === 1 && $host->context['skip'][0]['reason'] === 'keine E-Mail-Adresse'
+    && $host->context['send'][0]['mail']['to'] === 'kunde@example.ch' && $host->context['send'][0]['mail']['language'] === 'en'
+    && $host->context['send'][0]['mail']['subject'] === rtrim('Invoice ' . $bmNum[0] . ($bmSender !== '' ? ' — ' . $bmSender : ''))
+    && $host->context['send'][1]['mail']['subject'] === rtrim('Gutschrift ' . $bmNum[2] . ($bmSender !== '' ? ' — ' . $bmSender : ''))
+    && str_contains($bmConfirm, 'action="/backend/finance/invoice/mail"') && str_contains($bmConfirm, 'name="csrf_token"') && str_contains($bmConfirm, 'name="ids" value="' . e($bmIdList) . '"')
+    && str_contains($bmConfirm, '2 E-Mails senden') && str_contains($bmConfirm, 'Rechnung ' . $bmNum[1] . ' — keine E-Mail-Adresse'),
+    json_encode(array_map(fn($s) => $s['mail'], $host->context['send'])));
+
+$bmRequest([], ['ids' => $bmIdList]);
+$host = $bmHost();
+$host->mailAction();
+$bmRows = $db->fetchAllAssociative('SELECT * FROM mail_outbox WHERE source LIKE ? ORDER BY id', ['invoice:%']);
+check('BM8 «per E-Mail senden» queues ONE outbox mail per document with an address — two rows in ONE batch, source invoice:<id>, the attachment by reference invoice-pdf:<id>, the language, Reply-To the mandator\'s e-mail; the one without an address is skipped, not failed; the job is queued; back to the result list with the flash',
+    count($bmRows) === 2 && $bmRows[0]['batch_id'] === $bmRows[1]['batch_id'] && strlen($bmRows[0]['batch_id']) === 32
+    && array_column($bmRows, 'source') === ['invoice:' . $bmX->getId(), 'invoice:' . $bmCN->getId()]
+    && json_decode($bmRows[0]['attachments'], true) === ['invoice-pdf:' . $bmX->getId()] && array_column($bmRows, 'language') === ['en', 'de']
+    && array_column($bmRows, 'recipient_email') === ['kunde@example.ch', 'gutschrift@example.ch'] && array_column($bmRows, 'state') === ['queued', 'queued']
+    && $bmRows[0]['reply_to'] === (string) $bmMandator?->getEmail() && $bmRows[0]['created_by'] === 'sachbearbeiter'
+    && (new \Z77\Shared\Jobs\JobQueue($wireDi()))->hasOpenEntry('mail-outbox')
+    && $host->redirectedTo === '/backend/finance/invoice/booking-result?ids=' . rawurlencode($bmIdList)
+    && $host->messageService->flashes[0][0] === 'success' && str_contains($host->messageService->flashes[0][1], '2 E-Mails') && str_contains($host->messageService->flashes[0][1], 'Rechnung ' . $bmNum[1]),
+    json_encode(array_map(fn($r) => [$r['source'], $r['attachments'], $r['language'], $r['reply_to']], $bmRows)));
+check('BM9 the stored mail is the kind\'s text with the placeholders filled, escaped inside the shared layout: number, «CHF …», the due date — the invoice in English',
+    str_contains($bmRows[0]['html_body'], 'Please find attached our invoice ' . $bmNum[0] . ' for CHF ') && str_contains($bmRows[0]['html_body'], 'payable by ' . $readInvoice($bmX->getId())->getDueDate()->format('d.m.Y'))
+    && str_contains($bmRows[1]['html_body'], 'Im Anhang erhalten Sie unsere Gutschrift ' . $bmNum[2]) && $bmRows[0]['template'] === 'Z77\\Shared:emails/documentMail');
+
+$bmProviders = \Z77\Module\Mailing\Attachments\AttachmentProviders::fromModules(DI::getModuleManager());
+$bmAttachment = $bmProviders->resolve('invoice-pdf:' . $bmX->getId());
+check('BM10 the provider `invoice-pdf` (registered by module-debtor under mailAttachments): accepts a BOOKED document only (a draft, junk, an unknown id refused at queue time), resolves the PDF from the snapshot at send time — named by number',
+    $bmProviders->has('invoice-pdf') && $bmProviders->refusal('invoice-pdf:' . $bmX->getId()) === null
+    && $bmProviders->refusal('invoice-pdf:' . $bmDraft->getId()) !== null && $bmProviders->refusal('invoice-pdf:abc') !== null && $bmProviders->refusal('invoice-pdf:999999') !== null
+    && $bmAttachment->filename === 'rechnung-' . $bmNum[0] . '.pdf' && $bmAttachment->mimeType === 'application/pdf' && str_starts_with($bmAttachment->bytes, '%PDF-'));
+
+$bmRequest(['ids' => $bmIdList]);
+$host = $bmHost();
+$host->bookingResultAction();
+$bmList2 = $renderMain($host);
+$db->executeStatement("UPDATE mail_outbox SET state = 'sent', sent_at = '2026-08-06 09:15:00' WHERE source = ?", ['invoice:' . $bmX->getId()]);
+$bmRequest(['id' => (string) $bmX->getId()]);
+$host = $bmHost();
+$host->editAction();
+$bmMask = $renderMain($host);
+check('BM11 the history: the result list shows «im Postausgang» per row and links the outbox; the document\'s mask shows «per E-Mail an … gesendet am …» from the outbox source invoice:<id> (read-only)',
+    str_contains($bmList2, 'E-Mail an kunde@example.ch im Postausgang seit') && str_contains($bmList2, 'href="/backend/service/outbox/list?view=all"')
+    && str_contains($bmMask, 'per E-Mail an kunde@example.ch gesendet am 06.08.2026 09:15'));
+
+// The mail kind: subject and text per language, the operator's record over the module's seed.
+$bmEm    = $bmRequest([]);
+$bmMail  = new \Z77\Shared\Mail\EmailService();
+$bmVals  = ['nummer' => '26080001', 'betrag' => 'CHF 10.00', 'faellig' => '01.09.2026', 'absender' => 'Muster AG', 'kunde' => "A\r\nB"];
+$bmFr    = $bmMail->documentMail('invoice', 'fr', $bmVals);
+$bmSetting = new \Z77\Shared\Entities\EmailDocumentSetting(['kind' => 'invoice', 'subjects' => ['de' => 'Ihre Rechnung {nummer} für {kunde}', 'en' => ''], 'bodies' => ['de' => 'Text {betrag}', 'en' => 'English {betrag}']]);
+$bmEm->persist($bmSetting);
+$bmEm->flush();
+$bmOver  = $bmMail->documentMail('invoice', 'en', $bmVals);
+$bmSetting->setActive(false);
+$bmEm->persist($bmSetting);
+$bmEm->flush();
+$bmDormant = $bmMail->documentMail('invoice', 'de', $bmVals);
+$bmEm->remove($bmSetting);
+$bmEm->flush();
+check('BM12 the mail kind resolves per language with placeholders: a language without text falls back to German (fr → de); an ACTIVE record of Service › E-Mail › Beleg-Mails wins completely (its empty en subject → its German), line breaks of a value flattened in the subject; a dormant record is ignored; an undeclared kind throws',
+    $bmFr['language'] === 'de' && $bmFr['subject'] === 'Rechnung 26080001 — Muster AG' && str_contains($bmFr['body'], 'CHF 10.00') && str_contains($bmFr['body'], '01.09.2026')
+    && $bmOver === ['subject' => 'Ihre Rechnung 26080001 für A B', 'body' => 'Text CHF 10.00', 'language' => 'de']
+    && $bmDormant['subject'] === 'Rechnung 26080001 — Muster AG'
+    && throws(fn() => $bmMail->documentMail('newsletter', 'de', []), \InvalidArgumentException::class));
+$bmKinds = \Z77\Shared\Mail\DocumentMailKinds::fromModules(DI::getModuleManager());
+$bmBad   = new \Z77\Shared\Entities\EmailDocumentSetting(['kind' => 'invoice', 'subjects' => ['de' => "Zeile\nZwei"], 'bodies' => ['de' => '']]);
+$bmVal   = new \Z77\Shared\Validators\EmailDocumentSettingValidator($bmBad);
+check('BM13 the kinds are declared by the modules (debtor: invoice, credit-note, dunning; order: quote, order-confirmation, delivery-note — prepared), each in de + en; the editor\'s validator refuses a subject with a line break and a missing German text',
+    array_keys($bmKinds->all()) === ['invoice', 'credit-note', 'dunning', 'quote', 'order-confirmation', 'delivery-note'] && $bmKinds->languages('credit-note') === ['de', 'en']
+    && !$bmVal->isValid() && $bmVal->hasFieldError('subjects') && $bmVal->hasFieldError('bodies'));
 
 // ── result ───────────────────────────────────────────────────────────────
 

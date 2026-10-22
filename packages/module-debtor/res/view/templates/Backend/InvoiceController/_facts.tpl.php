@@ -11,7 +11,9 @@
  *     bookkeeping is here; «Zahlungen» — the settlements with their «ändern» link (P4 part 1);
  *     «Offen»; «Mahnungen» — the dunning history with the fee document and its PDF (P4 part 3);
  *     «Mahngebühr zu» (a fee document); «Gutschriften»; «MWST» — the note a document without
- *     VAT printed, from the snapshot (owner 2026-10-22; only when one was stored); «Erstellt»
+ *     VAT printed, from the snapshot (owner 2026-10-22; only when one was stored); «E-Mail» — the
+ *     document by e-mail, one line per outbox mail («per E-Mail an … gesendet am …», step 3 of the
+ *     mail plan); «Erstellt»
  *     with the last change;
  *   - «Zahlteil (QR-Rechnung)» (not on a credit note): account with its kind, the creditor, the
  *     reference in blocks of five or «NON» with the message — on a draft «folgt mit der
@@ -29,6 +31,7 @@
  * @var \Z77\Shared\Money\Money|null $openAmount  final invoices only — after credit notes, payments, discount and loss
  * @var list<\Z77\Module\Debtor\Entities\PaymentAllocation> $allocations  final invoices only
  * @var list<\Z77\Module\Debtor\Entities\DunningNotice> $notices  final invoices only
+ * @var list<array<string, mixed>> $deliveries  final documents only — the outbox rows of `invoice:<id>` (InvoiceMails::deliveries(); [] without module-mailing)
  * @var bool $ledgerKnown
  * @var array<string, string> $states
  * @var callable $fmt
@@ -86,6 +89,9 @@ $mask       = static fn(int $id): string => $actionBase . '/edit?id=' . $id;
         <?php endif; ?>
         <?php if ($creditNotes !== []): ?>
         <?= raw($row('Gutschriften', implode(', ', array_map(fn($n) => $winLink($mask((int) $n->getId()), $n->documentName()) . ' ' . e($fmt($n->getGrossTotal())) . ($n->isFinal() ? '' : ' (in Fakturierung)'), $creditNotes)))) ?>
+        <?php endif; ?>
+        <?php if (!empty($deliveries)): /* the document by e-mail (step 3 of the mail plan): what the outbox holds for `invoice:<id>` */ ?>
+        <?= raw($row('E-Mail', implode('<br>', array_map(static fn(array $d): string => e(\Z77\Module\Debtor\Mail\InvoiceMails::deliveryLine($d)), $deliveries)))) ?>
         <?php endif; ?>
         <?php if ($document->getVatNote() !== null): /* a document without VAT: the note as printed, from the snapshot (owner 2026-10-22) */ ?>
         <?= raw($row('MWST', '<span class="be-list__cell--muted">' . e($document->getVatNote()) . '</span>')) ?>

@@ -4,18 +4,17 @@
  * stellen» until then) — the last look before the booking print: the drafts
  * selected in the invoicing view (or the one draft of a detail), each with
  * the version its row SHOWED (`doc[]` = `{id}:{version}`); no number yet.
- * One button posts the same pairs to `finalize` (`#[Csrf]`) into a NEW TAB
- * (`target="_blank"`): `InvoicingService::finalize()` draws the numbers and
- * posts — one unit of work, all or nothing, a document re-issued since is
- * refused by its version — and the tab shows the PDF of exactly these
- * documents. A repeated submit reprints that PDF; a refusal is a message
- * page in the tab. A selection that is already stale here (final, gone,
- * re-issued) is named and left out of the button.
- *
- * This tab does not stay stale: `data-submit-navigate` (core.js, fetch.md)
- * sends it to the «Verbucht» view right after the submit — the server's
- * session lock lets that list wait for the booking. Without the script the
- * page stays as it is; «Zur Liste» leads on.
+ * One button posts the same pairs to `finalize` (`#[Csrf]`) in THIS tab:
+ * `InvoicingService::finalize()` draws the numbers and posts — one unit of
+ * work, all or nothing, a document re-issued since is refused by its version
+ * — and answers with a redirect to the RESULT LIST of exactly these documents
+ * (`booking-result?ids=…`, step 3 of the mail plan, owner 2026-10-22: per document the
+ * PDF, «Alle als ein PDF», «Alle als ZIP», «Alle per E-Mail senden …»). Until
+ * that day the answer was the combined PDF in a new tab (a blank target +
+ * `data-submit-navigate`) — both gone: the result list replaces this page. A
+ * repeated submit lands on the same result list; a refusal is a message page.
+ * A selection that is already stale here (final, gone, re-issued) is named
+ * and left out of the button.
  *
  * The action row (ADR-049, revision 2026-10-10) stands FIRST in the form —
  * the module's one shape for dialogs, `--end` is not used. Still a PAGE
@@ -34,7 +33,7 @@
 $actionBase = $actionBase ?? '/backend/finance/invoice';
 ?>
 <div class="be-list">
-    <form method="post" action="<?= e($actionBase) ?>/finalize" target="_blank" data-submit-navigate="<?= e($actionBase . '/list?view=final') ?>" class="be-list__section">
+    <form method="post" action="<?= e($actionBase) ?>/finalize" class="be-list__section">
         <input type="hidden" name="csrf_token" value="<?= e($csrfToken ?? '') ?>">
         <?= $this->partial('partials/modalActions', [
             'submit'     => $documents !== [] ? 'Buchungsdruck' : '',
@@ -59,6 +58,6 @@ $actionBase = $actionBase ?? '/backend/finance/invoice';
             </div>
             <?php endforeach; ?>
         </div>
-        <p class="be-form__hint">Der Buchungsdruck vergibt die Belegnummern, verbucht die Dokumente und öffnet sie als ein PDF in einem neuen Tab. Verbuchte Dokumente sind unveränderlich — eine Korrektur ist eine Gutschrift; das PDF lässt sich jederzeit wieder öffnen.</p>
+        <p class="be-form__hint">Der Buchungsdruck vergibt die Belegnummern, verbucht die Dokumente und zeigt sie danach als Liste — jedes PDF einzeln, alle als ein PDF, als ZIP oder per E-Mail. Verbuchte Dokumente sind unveränderlich — eine Korrektur ist eine Gutschrift; das PDF lässt sich jederzeit wieder öffnen.</p>
     </form>
 </div>

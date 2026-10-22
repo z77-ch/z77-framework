@@ -17,6 +17,8 @@
  *
  * @var list<array{key: string, to: list<string>, subject: string, routes: int,
  *                 origin: string, hasEntity: bool, hasConfig: bool, active: bool}> $rows
+ * @var list<array<string, mixed>> $documentRows  the «Beleg-Mails» section (`_documentRow.tpl.php`,
+ *      step 3 of the mail plan) — one row per document mail kind a module declares
  */
 ?>
 <div class="be-list">
@@ -39,4 +41,22 @@
             <?php endforeach; ?>
         </div>
     </div>
+    <?php if (!empty($documentRows)): ?>
+    <div class="be-list__section" data-email-documents>
+        <div class="be-list__section-header">
+            <h2 class="be-list__section-title">Beleg-Mails</h2>
+            <span class="be-list__section-badge"><?= count($documentRows) ?></span>
+        </div>
+        <p style="font-size:.8rem;color:var(--be-muted,#94a3b8);padding:0 .5rem .5rem">
+            Betreff und Text der Mails, mit denen Belege (Rechnung, Gutschrift …) per E-Mail an die Rechnungsadresse
+            gehen — pro Sprache, mit Platzhaltern wie {nummer}. Hier gepflegte Texte übersteuern die Vorgabe des Moduls,
+            solange sie aktiv sind. Absender ist das eingerichtete Mail-Konto.
+        </p>
+        <div class="be-tree be-tree--hub be-tree--lead-switch">
+            <?php foreach ($documentRows as $row): ?>
+            <?= $this->partial('Service/EmailSettingsController/_documentRow', ['row' => $row], 'Z77\\Module\\Backend') ?>
+            <?php endforeach; ?>
+        </div>
+    </div>
+    <?php endif; ?>
 </div>

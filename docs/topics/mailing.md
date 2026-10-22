@@ -52,6 +52,7 @@ The outbox is the shared base for every mail that goes out in numbers (step 2 of
 - **The sender is never in a draft** — the `Mailer` fills From from `config/client/mail.inc.php` (Service › E-Mail), as for the form mails. Reply-To is per mail (validated).
 - **Attachments are references** `type:id` (`invoice-pdf:123`), resolved at send time by the provider a module registered for the type. The outbox knows no document module.
 - **`source`** (opaque, `invoice:123`, `newsletter:5`) and **`batch_id`** (one `queueBatch()` = one batch, 32 hex) group the rows for the screen and for steps 3 / 4.
+- **What went out for a source** (`OutboxMailRepository::deliveriesOf(list<source>)`, step 3, 2026-10-22): plain rows (`to`, `state`, `created_at`, `sent_at`, `batch_id`, `created_by`) per source, one indexed query — how a document module shows «per E-Mail an … gesendet am …» without knowing the entity. Read-only; the state changes stay the transitions'.
 - **State changes are conditional UPDATEs** (`OutboxMailRepository`): the row's state is the lock; a cancel and the job's claim cannot both win. Read a row again with `fresh()` after a transition.
 - **The job is queued on write, not scheduled.** `OutboxService::ensureJobQueued()` after every write that adds work; no `defaultSchedule` (an idle schedule would print on every pass — cron mails output).
 - **Settings in ONE place:** module config `outbox` → `batchSize` 10, `pauseSeconds` 60, `maxAttempts` 3, `retryMinutes` [5, 15, 60]; a project's deviation in `override/z77/module/mailing/src/App/Config/outboxConfig.inc.php` (`OutboxSettings::fromModules()`, merged key by key, clamped).
@@ -134,7 +135,10 @@ final class InvoicePdfAttachment implements \Z77\Module\Mailing\Attachments\Atta
 ## pending
 
 - **Owner's live look** (not verified in a browser): Service › Postausgang — tabs, bands, the ⋮ menu items by state, the window with the sandboxed preview, «Versand starten».
-- **Step 3 — documents by e-mail** (offer, order confirmation, delivery note, invoice) to the billing address's e-mail, in batches: providers (`invoice-pdf`, …) in the document modules + a send action building drafts with `withSource('invoice:<id>')`. Waits for the address e-mail field (contact/debtor/order, in progress 2026-10-22).
+- **Step 3 — documents by e-mail: BUILT 2026-10-22 for invoice and credit note** (debtor.md «The booking print's result list and documents by e-mail»): the provider `invoice-pdf` (module-debtor, `mailAttachments`), the send action «Alle per E-Mail senden …» on the booking print's result list (one `queueBatch()` per click, source `invoice:<id>`), the mail kinds in Service › E-Mail › Beleg-Mails (mail.md). Still open for offer / order confirmation / delivery note / dunning: a provider per PDF and a send action (the mail kinds are declared already).
+- **Owner to confirm (raised 2026-10-22, step 3)**: (1) the default subject «Rechnung {nummer} — {absender}» instead of «Rechnung {nummer}» (mail.md: a subject must not end in a number, KAM_NUMSUBJECT); (2) the booking print no longer opens the combined PDF in a new tab — it lands on the result list, the combined PDF is «Alle als ein PDF» there; (3) the confirm page's eye icon per order = `invoice-preview` (built on the owner's request, order.md).
+- **Next session (state 2026-10-22 evening)**: try step 3 in -initial (migrations `Version20261022160000` + `Version20261022170000`, `config/client/mail.inc.php` `'transport' => 'file'`, an e-mail on a debtor's billing address, booking print → «Alle per E-Mail senden …» → `php vendor/bin/z77-run` → `.eml` in `data/framework/mail/outbox/`); then step 4 (newsletter, below).
+- **Owner's live look of step 3**: the result list after a booking print, «Alle per E-Mail senden …», the `.eml` files in -initial (debtor.md pending).
 - **Step 4 — newsletter** to selected contacts with an unsubscribe link: a newsletter entity, recipient selection, the unsubscribe token and page; drafts with `withSource('newsletter:<id>')`.
 - Existing projects (z77.ch-initial first): PSR-4 entry `"Z77\\Module\\Mailing\\": ["override/z77/module/mailing/src/"]`, `composer update`, `php vendor/bin/z77-db migrate` (`Version20261022170000`).
 - A list help (`list.help.tpl.php`, HELP-003) — no field needs explaining yet.
@@ -142,6 +146,7 @@ final class InvoicePdfAttachment implements \Z77\Module\Mailing\Attachments\Atta
 ## see also
 
 - [`mail.md`](mail.md) — the kernel mail stack the job sends through (`Message`, `Mailer`, the sender from `config/client/mail.inc.php`, `FileTransport` for development, `EmailService::renderBody()`)
+- [`debtor.md`](debtor.md) — step 3: the provider `invoice-pdf`, the booking print's result list with «Alle per E-Mail senden …» (one batch per click, source `invoice:<id>`), the history read through `deliveriesOf()`
 - [`jobs.md`](jobs.md) — the runner, `JobResult::again(cursor, notBefore)`, the job lock and the heartbeat the screen reads
 - [`persistence-doctrine.md`](persistence-doctrine.md) — `doctrineEntities`, module migrations, the registry-by-config-key pattern `mailAttachments` follows
 - [`backend.md`](backend.md) — the Service group and the dashboard registry (ADR-052) `MailingDashboard` contributes to

@@ -77,6 +77,7 @@
  * @var \Z77\Shared\Money\Money|null $openAmount
  * @var list<\Z77\Module\Debtor\Entities\PaymentAllocation> $allocations
  * @var list<\Z77\Module\Debtor\Entities\DunningNotice> $notices
+ * @var list<array<string, mixed>> $deliveries  final only — the document's outbox mails (step 3 of the mail plan)
  * @var bool $ledgerKnown
  * @var array<string, string> $states
  * @var callable $fmt
@@ -385,6 +386,7 @@ if ($isEdit) {
             'openAmount'  => $openAmount ?? null,
             'allocations' => $allocations ?? [],
             'notices'     => $notices ?? [],
+            'deliveries'  => $deliveries ?? [],
             'ledgerKnown' => !empty($ledgerKnown),
             'states'      => $states ?? [],
             'fmt'         => $fmt,

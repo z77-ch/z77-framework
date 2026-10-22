@@ -90,9 +90,10 @@ use Z77\Core\DI,
  *     (`printDeliveryNote()`, D6);
  *   - `confirm-book` + `book` — the BOOKING PRINT from the window (one order) or the selection bar
  *     (several): a confirmation PAGE (the DEBTOR-WIN-002 pattern) → POST into a NEW TAB →
- *     `OrderService::book()` → the combined invoice PDF (`InvoicePdf::combined()`); a repeated
- *     submit of the same selection reprints and books nothing; a refusal is a message page naming
- *     the order.
+ *     `OrderService::book()` → a redirect to debtor's RESULT LIST of the booked invoices
+ *     (`/backend/finance/invoice/booking-result?ids=…`, step 3 of the mail plan: PDF per invoice, all as
+ *     one PDF, ZIP, by e-mail); a repeated submit of the same selection lands there again and
+ *     books nothing; a refusal is a message page naming the order.
  *
  *   - `article-defaults` — what a line takes from the chosen article, for core.js «fill» (reads only);
  *     `article-pick` — «Artikel wählen …», article's searching picker ({@see ArticlePickerTrait},
@@ -942,7 +943,7 @@ trait OrderControllerTrait
      * «Buchungsdruck …» (plan §7 / §9.3): the selection of «Termin» / «Geliefert» or the one order of the
      * window (`order[]` = `{id}:{version}`, the version each SHOWED), listed for a last look with
      * the invoice date (default today) — a PAGE (the DEBTOR-WIN-002 pattern: the selection bar is
-     * a GET form) whose button POSTs the same pairs into a NEW TAB ({@see bookAction()}). Orders
+     * a GET form) whose button POSTs the same pairs ({@see bookAction()}, the result list after it). Orders
      * that changed since, are booked or not invoiceable are named and left out of the button.
      */
     protected function confirmBookAction(): HtmlResponse|RedirectResponse
@@ -989,19 +990,19 @@ trait OrderControllerTrait
     }
 
     /**
-     * «Buchungsdruck» — the POST of the confirmation (`#[Csrf]`, into a NEW TAB): the pairs and the
-     * invoice date to `OrderService::book()` — each order's invoice issued and booked, linked, the
-     * order set to the default status of `closed`, ONE unit of work — and the answer IS the PDF of the
-     * booked invoices with number and QR-bill (`InvoicePdf::combined()`). The success flash waits
-     * for the next page of the original tab (`data-submit-navigate` sends it to «Abgeschlossen»).
+     * «Buchungsdruck» — the POST of the confirmation (`#[Csrf]`, in the same tab since 2026-10-22): the
+     * pairs and the invoice date to `OrderService::book()` — each order's invoice issued and booked,
+     * linked, the order set to the default status of `closed`, ONE unit of work — and the answer is a
+     * 303 to debtor's RESULT LIST of the booked invoices ({@see orderBookingResult()}; until
+     * 2026-10-22 the combined PDF in a new tab). The success flash shows there.
      *
      * IDEMPOTENT for a repeated submit (plan §7): when every order of the selection is linked to a
      * FINAL invoice at exactly the version it showed + 1 — what this booking print left — the same
-     * PDF is answered and nothing is booked. Every refusal answers a German message PAGE naming
-     * the order; nothing was booked.
+     * result list is answered and nothing is booked. Every refusal answers a German message PAGE
+     * naming the order; nothing was booked.
      */
     #[Csrf]
-    protected function bookAction(): BytesResponse|HtmlResponse|RedirectResponse
+    protected function bookAction(): HtmlResponse|RedirectResponse
     {
         $request = DI::getRequest();
         $post    = $request->isPost() ? $request->getPostParameters() : [];
@@ -1011,7 +1012,7 @@ trait OrderControllerTrait
         }
         $booked = BookingSelection::bookedBy($pairs, fn(int $id) => $this->orders()->find($id));
         if ($booked !== null) {
-            return $this->orderBookingPdf($booked);   // the same selection again: reprint, nothing booked
+            return $this->redirect($this->orderBookingResult($booked), 303);   // the same selection again: the same result list, nothing booked
         }
         $date = self::orderDate((string) ($post['invoice_date'] ?? ''));
         if ($date === null) {
@@ -1037,20 +1038,25 @@ trait OrderControllerTrait
                 : 'Nichts wurde verbucht: die Datenbank hat den Buchungsdruck abgelehnt. Liste neu laden und nochmals versuchen; bleibt es dabei, steht die Ursache im Fehlerprotokoll.', $pairs);
         }
         $names = implode(', ', array_map(static fn(Invoice $i) => $i->documentName(), $invoices));
-        $this->messageService->pushFlashAfterRedirect('success', (count($pairs) === 1 ? 'Auftrag verbucht und gedruckt: ' : count($pairs) . ' Aufträge verbucht und gedruckt: ') . $names);
+        $this->messageService->pushFlashAfterRedirect('success', (count($pairs) === 1 ? 'Auftrag verbucht: ' : count($pairs) . ' Aufträge verbucht: ') . $names);
 
-        return $this->orderBookingPdf(array_map(static fn(Invoice $i) => (int) $i->getId(), $invoices));
+        return $this->redirect($this->orderBookingResult(array_map(static fn(Invoice $i) => (int) $i->getId(), $invoices)), 303);
     }
 
-    /** @param list<int> $invoiceIds */
-    private function orderBookingPdf(array $invoiceIds): BytesResponse
+    /**
+     * Where a successful booking print lands (step 3 of the mail plan, owner 2026-10-22): debtor's
+     * RESULT LIST of the booked invoices (`booking-result?ids=…` — per invoice the PDF, «Alle als ein PDF»,
+     * «Alle als ZIP», «Alle per E-Mail senden …»), the same screen as the invoice list's own booking
+     * print (Rule 9). «Zurück» leads to «Abgeschlossen», where the booked orders now stand.
+     *
+     * @param list<int> $invoiceIds
+     */
+    private function orderBookingResult(array $invoiceIds): string
     {
-        /** @var InvoiceRepository $invoices */
-        $invoices  = $this->em()->getRepository(Invoice::class);
-        $documents = array_values(array_filter(array_map(static fn(int $id) => $invoices->withLines($id), $invoiceIds)));
-        usort($documents, static fn(Invoice $a, Invoice $b) => $a->getNumber() <=> $b->getNumber());
-
-        return $this->bytes(InvoicePdf::combined($documents, $this->em())->output(), InvoicePdf::combinedFileName($documents), 'application/pdf');
+        return $this->orderInvoiceBase() . '/booking-result?' . http_build_query([
+            'ids'  => implode(',', $invoiceIds),
+            'back' => $this->orderListBase() . '/list?view=' . OrderListing::VIEW_CLOSED,
+        ]);
     }
 
     /**

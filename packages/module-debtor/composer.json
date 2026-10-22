@@ -32,7 +32,8 @@
         "z77/module-mandator": "^1.0"
     },
     "suggest": {
-        "z77/module-financial": "Books the receivables of this module; without it debtor runs against an external bookkeeping and its account settings are not checked."
+        "z77/module-financial": "Books the receivables of this module; without it debtor runs against an external bookkeeping and its account settings are not checked.",
+        "z77/module-mailing": "Sends booked documents by e-mail through the outbox (the result list of the booking print, «Alle per E-Mail senden»); without it the result list offers download and ZIP only."
     },
     "support": {
         "issues": "https://github.com/z77-ch/z77-framework/issues",

@@ -103,3 +103,32 @@ out, hammer the SMTP server and leave no record of what went out or failed.
 | Render the template at send time | The screen could not show what went out; the context (objects) is not serialisable |
 | Optimistic `version` column for the state | Protects content that never changes; a conditional UPDATE says the same in one statement |
 | Show the HTML half by inserting it into the page | Injects foreign markup and styles into the backend (Rule 7) |
+
+## Addendum 2026-10-22 — step 3: booked documents by e-mail (owner)
+
+Owner, 2026-10-22: after the booking print show a LIST of the documents just booked — each PDF,
+«Alle als ZIP», «Alle per E-Mail senden»; subject and text fixed in the e-mail service as their own
+mail kind, the sender the configured account. Built the same day on this ADR without changing it:
+
+1. **The first provider:** `invoice-pdf` = `Z77\Module\Debtor\Mail\InvoicePdfAttachment`, declared
+   in `debtorConfig` → `mailAttachments`. `accepts()` a FINAL document only; `resolve()` renders the
+   PDF from the snapshot at send time (decision 7 as written). module-debtor only SUGGESTS
+   module-mailing; the provider class is loaded by the outbox's registry alone.
+2. **One batch per send action, one row per document with an address:** «Alle per E-Mail senden»
+   of the booking print's result list calls `queueBatch()` once (decision 2), source
+   `invoice:<id>`; a document without an e-mail on its snapshot is skipped before the batch, never
+   a failed row.
+3. **Subject and text are not the caller's:** a module declares its DOCUMENT MAIL KINDS under
+   `documentMails` (kernel `DocumentMailKinds`, the registry pattern of decision 7); the operator
+   edits them under Service › E-Mail › «Beleg-Mails» (`EmailDocumentSetting`, the form mails'
+   two-layer model); `EmailService::documentMail()` is the one resolution (record if active, else
+   the declaration; the document's language, else German). The body is rendered at queue time
+   (decision 2) through `emails/documentMail`. Reply-To = the mandator's e-mail when saved — the
+   sender stays the installation's (decision 3).
+4. **«What went out» is read from `source`:** `OutboxMailRepository::deliveriesOf()` answers plain
+   rows per source; the document stores nothing about its mails (the outbox is the record).
+
+Rejected: a «sent» column on `invoice` (a second record of what the outbox already holds, and a
+write into an immutable document); the mail texts in `emailConfig` (a project override replaces
+that file whole — the kinds would vanish; the module that owns the document owns its text,
+Rule 9); one draft per batch with all PDFs attached (one customer, one mail, one document).

@@ -66,6 +66,16 @@ use Z77\Module\Debtor\Roles\DebtorContactRole;
  * — it must carry the FULL config, not just the key it changes. Known
  * framework-wide gap, BOOT-CONFIG-001 (`docs/topics/bootstrap.md`).
  */
+// The placeholders of a document mail (filled by `Mail\InvoiceMails::values()`), listed in the editor.
+$documentPlaceholders = [
+    'nummer'   => 'Belegnummer',
+    'kunde'    => 'Name der Rechnungsadresse',
+    'betrag'   => 'Total mit Währung',
+    'datum'    => 'Belegdatum',
+    'faellig'  => 'Fälligkeit (Rechnung)',
+    'absender' => 'Name des Mandanten',
+];
+
 return [
     'viewArea'   => false,
     'moduleRole' => AuthRole::ADMIN,
@@ -112,6 +122,48 @@ return [
     // The backend dashboard (ADR-052): this module's pending work and «+ Neu» buttons —
     // module-backend collects every module's `dashboard` list (`DashboardContributors`).
     'dashboard' => [\Z77\Module\Debtor\Dashboard\DebtorDashboard::class],
+
+    // Booked documents by e-mail (step 3 of the mail plan, owner 2026-10-22). Read only where
+    // module-mailing is installed (debtor only SUGGESTS it): the outbox resolves the attachment
+    // `invoice-pdf:<id>` at send time — the PDF from the snapshot, what the booking print printed.
+    'mailAttachments' => [
+        \Z77\Module\Debtor\Mail\InvoicePdfAttachment::TYPE => \Z77\Module\Debtor\Mail\InvoicePdfAttachment::class,
+    ],
+
+    // The document mail kinds this module sends («Beleg-Mails», kernel DocumentMailKinds): the
+    // SEED of subject and text per language — the operator edits them under Service › E-Mail ›
+    // Beleg-Mails (a record there wins while active). Placeholders are filled by
+    // `Mail\InvoiceMails::values()`. `dunning` is prepared (the same shape), not sent yet.
+    // Subjects do not END in a number (mail.md, KAM_NUMSUBJECT) — hence «… — {absender}».
+    'documentMails' => [
+        'invoice' => [
+            'label'        => 'Rechnung',
+            'subject'      => ['de' => 'Rechnung {nummer} — {absender}', 'en' => 'Invoice {nummer} — {absender}'],
+            'body'         => [
+                'de' => "Guten Tag\n\nIm Anhang erhalten Sie unsere Rechnung {nummer} über {betrag}, zahlbar bis {faellig}.\n\nFreundliche Grüsse\n{absender}",
+                'en' => "Hello\n\nPlease find attached our invoice {nummer} for {betrag}, payable by {faellig}.\n\nKind regards\n{absender}",
+            ],
+            'placeholders' => $documentPlaceholders,
+        ],
+        'credit-note' => [
+            'label'        => 'Gutschrift',
+            'subject'      => ['de' => 'Gutschrift {nummer} — {absender}', 'en' => 'Credit note {nummer} — {absender}'],
+            'body'         => [
+                'de' => "Guten Tag\n\nIm Anhang erhalten Sie unsere Gutschrift {nummer} über {betrag}.\n\nFreundliche Grüsse\n{absender}",
+                'en' => "Hello\n\nPlease find attached our credit note {nummer} for {betrag}.\n\nKind regards\n{absender}",
+            ],
+            'placeholders' => $documentPlaceholders,
+        ],
+        'dunning' => [
+            'label'        => 'Mahnung',
+            'subject'      => ['de' => 'Zahlungserinnerung zu Rechnung {nummer} — {absender}', 'en' => 'Payment reminder for invoice {nummer} — {absender}'],
+            'body'         => [
+                'de' => "Guten Tag\n\nUnsere Rechnung {nummer} über {betrag} ist noch offen. Im Anhang finden Sie die Zahlungserinnerung.\n\nFreundliche Grüsse\n{absender}",
+                'en' => "Hello\n\nOur invoice {nummer} for {betrag} is still open. Please find the payment reminder attached.\n\nKind regards\n{absender}",
+            ],
+            'placeholders' => $documentPlaceholders,
+        ],
+    ],
 
     // Nothing here renders a page; the host's cache policy applies to the mount.
     'cache' => [

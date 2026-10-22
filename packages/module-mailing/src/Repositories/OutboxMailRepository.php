@@ -107,6 +107,44 @@ class OutboxMailRepository extends DoctrineRepository
         return is_string($at) && $at !== '' ? new \DateTimeImmutable($at) : null;
     }
 
+    /**
+     * What went (or waits to go) out for each SOURCE — the read side of `source`
+     * (step 3 of the mail plan): a document module asks «was invoice 42 mailed, to
+     * whom, when?» without knowing the entity. Plain rows, oldest first per source;
+     * a source without mails is absent. One query (indexed by `source`).
+     *
+     * @param list<string> $sources e.g. ['invoice:42', 'invoice:43']
+     * @return array<string, list<array{id: int, to: string, state: string, created_at: \DateTimeImmutable,
+     *                                   sent_at: ?\DateTimeImmutable, batch_id: string, created_by: string}>>
+     */
+    public function deliveriesOf(array $sources): array
+    {
+        $sources = array_values(array_unique(array_filter(array_map('strval', $sources), static fn(string $s) => $s !== '')));
+        if ($sources === []) {
+            return [];
+        }
+        $rows = $this->connection()->fetchAllAssociative(
+            'SELECT id, source, recipient_email, state, created_at, sent_at, batch_id, created_by FROM ' . self::TABLE
+            . ' WHERE source IN (?) ORDER BY id ASC',
+            [$sources],
+            [ArrayParameterType::STRING]
+        );
+        $bySource = [];
+        foreach ($rows as $row) {
+            $bySource[(string) $row['source']][] = [
+                'id'         => (int) $row['id'],
+                'to'         => (string) $row['recipient_email'],
+                'state'      => (string) $row['state'],
+                'created_at' => new \DateTimeImmutable((string) $row['created_at']),
+                'sent_at'    => $row['sent_at'] !== null ? new \DateTimeImmutable((string) $row['sent_at']) : null,
+                'batch_id'   => (string) $row['batch_id'],
+                'created_by' => (string) $row['created_by'],
+            ];
+        }
+
+        return $bySource;
+    }
+
     // ── the job ──────────────────────────────────────────────────────────
 
     /**

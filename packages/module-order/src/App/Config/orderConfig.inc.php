@@ -49,6 +49,40 @@ return [
     // module-backend collects every module's `dashboard` list (`DashboardContributors`).
     'dashboard' => [\Z77\Module\Order\Dashboard\OrderDashboard::class],
 
+    // The document mail kinds of the order's prints («Beleg-Mails», kernel DocumentMailKinds) —
+    // PREPARED in the shape of debtor's invoice / credit note (step 3 of the mail plan, owner
+    // 2026-10-22): editable under Service › E-Mail › Beleg-Mails, not sent yet (no send action
+    // and no attachment provider for the order PDFs so far — mail.md pending).
+    'documentMails' => [
+        'quote' => [
+            'label'        => 'Offerte',
+            'subject'      => ['de' => 'Offerte {nummer} — {absender}', 'en' => 'Quotation {nummer} — {absender}'],
+            'body'         => [
+                'de' => "Guten Tag\n\nIm Anhang erhalten Sie unsere Offerte {nummer}.\n\nFreundliche Grüsse\n{absender}",
+                'en' => "Hello\n\nPlease find attached our quotation {nummer}.\n\nKind regards\n{absender}",
+            ],
+            'placeholders' => ['nummer' => 'Auftragsnummer', 'kunde' => 'Name der Rechnungsadresse', 'betrag' => 'Total mit Währung', 'datum' => 'Auftragsdatum', 'absender' => 'Name des Mandanten'],
+        ],
+        'order-confirmation' => [
+            'label'        => 'Auftragsbestätigung',
+            'subject'      => ['de' => 'Auftragsbestätigung {nummer} — {absender}', 'en' => 'Order confirmation {nummer} — {absender}'],
+            'body'         => [
+                'de' => "Guten Tag\n\nVielen Dank für Ihren Auftrag. Im Anhang erhalten Sie die Auftragsbestätigung {nummer}.\n\nFreundliche Grüsse\n{absender}",
+                'en' => "Hello\n\nThank you for your order. Please find attached the order confirmation {nummer}.\n\nKind regards\n{absender}",
+            ],
+            'placeholders' => ['nummer' => 'Auftragsnummer', 'kunde' => 'Name der Rechnungsadresse', 'betrag' => 'Total mit Währung', 'datum' => 'Auftragsdatum', 'absender' => 'Name des Mandanten'],
+        ],
+        'delivery-note' => [
+            'label'        => 'Lieferschein',
+            'subject'      => ['de' => 'Lieferschein {nummer} — {absender}', 'en' => 'Delivery note {nummer} — {absender}'],
+            'body'         => [
+                'de' => "Guten Tag\n\nIm Anhang erhalten Sie den Lieferschein zu Auftrag {nummer}.\n\nFreundliche Grüsse\n{absender}",
+                'en' => "Hello\n\nPlease find attached the delivery note for order {nummer}.\n\nKind regards\n{absender}",
+            ],
+            'placeholders' => ['nummer' => 'Auftragsnummer', 'kunde' => 'Name der Rechnungsadresse', 'datum' => 'Lieferdatum', 'absender' => 'Name des Mandanten'],
+        ],
+    ],
+
     // Nothing here renders a page; the host's cache policy applies to the mount.
     'cache' => [
         'enabled' => false,

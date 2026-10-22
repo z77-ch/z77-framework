@@ -343,6 +343,12 @@ $em = $wireDi();
 check('C6 a project\'s mailAttachmentsConfig.inc.php adds a type without copying a module config', AttachmentProviders::fromModules(DI::getModuleManager())->types() === ['test-pdf']);
 @unlink($override . '/src/App/Config/mailAttachmentsConfig.inc.php');
 $em = $wireDi();
+// Step 3 of the mail plan (2026-10-22): module-debtor registers the booked document's PDF.
+$debtorDeclared = (require $root . '/packages/module-debtor/src/App/Config/debtorConfig.inc.php')['mailAttachments'] ?? null;
+$debtorRegistry = is_array($debtorDeclared) ? new AttachmentProviders($debtorDeclared) : null;
+check('C7 module-debtor declares the type `invoice-pdf` under mailAttachments — a provider the registry accepts (implements AttachmentProvider, no-arg constructor); module-mailing names no document module',
+    $debtorRegistry?->types() === ['invoice-pdf'] && ($debtorDeclared['invoice-pdf'] ?? '') === 'Z77\\Module\\Debtor\\Mail\\InvoicePdfAttachment'
+    && !str_contains(implode('', array_map('file_get_contents', glob($package . '/src/*/*.php'))), 'Module\\Debtor'));
 
 // ── D. queueing ──────────────────────────────────────────────────────────
 
