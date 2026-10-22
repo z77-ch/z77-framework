@@ -46,6 +46,7 @@ class InvoiceLine
     public const ACCOUNT_LENGTH     = 10;
     public const SOURCE_TYPE_LENGTH = 64;
     public const SOURCE_REF_LENGTH  = 128;
+    public const CODE_LENGTH        = 16;
 
     /** `DECIMAL(12,3)`: up to nine digits before the point, three after, optional sign. */
     public const QUANTITY_PATTERN = '/^-?\d{1,9}(?:\.\d{1,3})?$/';
@@ -116,6 +117,15 @@ class InvoiceLine
     private ?string $sourceRef;
 
     /**
+     * The line's short CODE (owner decision 2026-10-22; the wdv `shop_positions.code`) — part of the
+     * snapshot like the text: stored, carried into a credit note and a re-issue, offered to the PDF
+     * rows (`code`). The framework's templates do NOT print it — an override template decides.
+     * Null = none. Migration `Version20261022120000`.
+     */
+    #[ORM\Column(length: self::CODE_LENGTH, nullable: true)]
+    private ?string $code = null;
+
+    /**
      * Built complete by `InvoicingService` for THIS document. The invariants
      * per type are guarded here once more; the service refuses them with a
      * message for the caller first.
@@ -139,6 +149,7 @@ class InvoiceLine
         ?string $revenueAccount,
         ?string $sourceType,
         ?string $sourceRef,
+        ?string $code = null,
     ) {
         if ($position < 1) {
             throw new \LogicException('A line position starts at 1');
@@ -173,6 +184,9 @@ class InvoiceLine
                 throw new \LogicException('The rounding line names the rounding account and sits at the top level');
             }
         }
+        if ($code !== null && ($code === '' || $code !== trim($code) || mb_strlen($code) > self::CODE_LENGTH)) {
+            throw new \LogicException('A line code is trimmed, not empty and at most ' . self::CODE_LENGTH . ' characters — null for none');
+        }
         if ($amount->currency !== ($unitPrice?->currency ?? $amount->currency)) {
             throw new \LogicException('Line amount and unit price in different currencies');
         }
@@ -192,6 +206,7 @@ class InvoiceLine
         $this->revenueAccount  = $revenueAccount;
         $this->sourceType      = $sourceType;
         $this->sourceRef       = $sourceRef;
+        $this->code            = $code;
     }
 
     public function getId(): ?int { return $this->id; }
@@ -210,6 +225,7 @@ class InvoiceLine
     public function getRevenueAccount(): ?string { return $this->revenueAccount; }
     public function getSourceType(): ?string { return $this->sourceType; }
     public function getSourceRef(): ?string { return $this->sourceRef; }
+    public function getCode(): ?string { return $this->code; }
 
     public function type(): LineType
     {

@@ -68,8 +68,9 @@ use Z77\Persistence\Resolver\UnifiedEntityManager;
  * account by number; its callers are the one-line manual entry (the VAT
  * account of the mandator record), debtor's account settings and the
  * mandator screen itself. The module's setting readers live here as well:
- * `baseCurrency()`, `listLimit()`, `vatAccountFor()` — the last one reads
- * the MANDATOR record since E2 (2026-09-23), not a config key.
+ * `baseCurrency()`, `listLimit()`, `vatAccountFor()` and
+ * `yearOpeningAccount()` — the last two read the MANDATOR record (E2,
+ * 2026-09-23; the year opening since 2026-10-22), not a config key.
  */
 final class LedgerService
 {
@@ -446,6 +447,33 @@ final class LedgerService
         }
 
         return null;
+    }
+
+    /** The mandator key of the contra account every balance-sheet account is opened against (KMU 9100 «Eröffnungsbilanz»). */
+    public const OPENING_BALANCE_ACCOUNT = 'opening-balance';
+    /** The mandator key of the account the previous year's result is carried to (KMU 2979 «Jahresgewinn oder Jahresverlust»). */
+    public const ANNUAL_RESULT_ACCOUNT = 'annual-result';
+
+    /**
+     * The account number of one of the two YEAR-OPENING accounts (P5, owner
+     * decisions 2026-10-22) — {@see OPENING_BALANCE_ACCOUNT} or
+     * {@see ANNUAL_RESULT_ACCOUNT}, read from the MANDATOR record like the VAT
+     * accounts (Rule 2: one place for the company's accounts). The ONE reader
+     * of those fields in this module; its caller is `YearOpeningService`.
+     * Null when no mandator is saved or the field is empty — the caller
+     * refuses naming the mandator ({@see MANDATOR_HINT}).
+     *
+     * @throws \InvalidArgumentException                                 not one of the two keys (a programming error)
+     * @throws \Z77\Module\Mandator\Services\MandatorUnavailableException the record cannot be read at all (module not registered, table missing)
+     */
+    public function yearOpeningAccount(string $key): ?string
+    {
+        if ($key !== self::OPENING_BALANCE_ACCOUNT && $key !== self::ANNUAL_RESULT_ACCOUNT) {
+            throw new \InvalidArgumentException("Not a year-opening account key: '{$key}'");
+        }
+        $number = (new CurrentMandator($this->em))->find()?->account($key) ?? '';
+
+        return $number === '' ? null : $number;
     }
 
     /** Where a missing VAT account is set — the sentence every refusal of {@see vatAccountFor()}'s callers ends with. */

@@ -50,6 +50,10 @@ return [
         Mandator::class,
     ],
 
+    // The backend dashboard (ADR-052): this module's pending work and «+ Neu» buttons —
+    // module-backend collects every module's `dashboard` list (`DashboardContributors`).
+    'dashboard' => [\Z77\Module\Mandator\Dashboard\MandatorDashboard::class],
+
     // Nothing here renders a page; the host's cache policy applies to the mount.
     'cache' => [
         'enabled' => false,

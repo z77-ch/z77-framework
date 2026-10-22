@@ -13,7 +13,9 @@
  *   - `rows`      list<array{cells: list<string>, bold?: bool, indent?: float, muted?: bool, rule?: bool, lead?: bool}>
  *                 `indent` shifts the first cell (a sub-line); `rule` draws a line ABOVE the row (a totals row);
  *                 `lead` prints the FIRST line of the wrapping cell bold and the rest in the row's style
- *                 (a document line: its title, then its description — owner 2026-10-18)
+ *                 (a document line: its title, then its description — owner 2026-10-18).
+ *                 Any other key of a row is carried data the partial does not draw — e.g. `code`
+ *                 (a document line's code, owner 2026-10-22): an OVERRIDE of this partial may print it.
  *   - `x`, `y`    where the table starts (default: the cursor)
  *   - `fontSize`  points (default 9); `lineHeight` mm (default 4.5)
  *   - `wrap`      int|null, the index of the column that wraps (default 0); `indent` applies to it.

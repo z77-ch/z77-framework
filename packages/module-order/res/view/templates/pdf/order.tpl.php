@@ -31,6 +31,9 @@
  *                         the mandator's flag through debtor's `InvoicingService::chargesVat()`,
  *                         owner 2026-10-21) — false: no MWST column, no MWST rows, no «zzgl. /
  *                         inkl. MWST» fact (the same rule as debtor's `pdf/invoice`)
+ * @var string|null $vatNote  the mandator's CURRENT «Hinweis ohne MWST» (owner 2026-10-22,
+ *                            `Mandator::documentVatNote()`), printed under the total by debtor's
+ *                            `pdf/documentSummary`; null with VAT or without a text
  */
 use Z77\Module\Debtor\Entities\LineType;
 use Z77\Module\Vat\Entities\TaxRate;
@@ -102,6 +105,9 @@ foreach ($preview->getLines() as $line) {
         ],
         'indent' => $line->getParentLine() !== null ? 4 : 0,
         'lead'   => true,   // the first line (the title) bold, the description below — text lines too (owner 2026-10-18/19)
+        // The line code (owner 2026-10-22) — OFFERED to an override (of this layout or of `pdf/table`),
+        // never drawn here: whether it prints is the designer's decision. Null = none.
+        'code'   => $line->getCode(),
     ];
 }
 // The line table of debtor's documents — the same columns, the discount column only when used, the
@@ -113,5 +119,6 @@ $pdf->partial('pdf/table', [
     'columns' => $columns,
     'rows'    => $rows,
 ], 'Z77\\Shared');
-// Netto, the MWST rows (only with VAT), Rundung, Total — debtor's shared summary (the invoice's too).
-$pdf->partial('pdf/documentSummary', ['document' => $preview, 'columns' => $columns, 'liableToVat' => $liableToVat, 'fmt' => $fmt, 'x' => $left], 'Z77\\Module\\Debtor');
+// Netto, the MWST rows (only with VAT), Rundung, Total — debtor's shared summary (the invoice's too) — and
+// under the total the mandator's CURRENT no-VAT note (owner 2026-10-22; a transient preview has no snapshot).
+$pdf->partial('pdf/documentSummary', ['document' => $preview, 'columns' => $columns, 'liableToVat' => $liableToVat, 'note' => $vatNote, 'fmt' => $fmt, 'x' => $left], 'Z77\\Module\\Debtor');

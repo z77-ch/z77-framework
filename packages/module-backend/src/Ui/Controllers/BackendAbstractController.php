@@ -127,6 +127,12 @@ abstract class BackendAbstractController extends AbstractBaseController
             // server of ANOTHER project on another port was read as this one).
             $context['installationName'] ??= self::installationLabel();
 
+            // The «Dashboard» button in the crumb row's rail cell (owner 2026-10-22) — its URL when this user
+            // may open it; the dashboard itself passes '' (it IS the root, ADR-052).
+            $context['crumbRoot'] ??= $auth->canReach($user, 'backend', 'system', 'dashboard', 'overview')
+                ? '/backend/system/dashboard/overview'
+                : '';
+
             $context['shellTools'] ??= [
                 'debug'      => $auth->canReach($user, 'backend', 'system', 'system', 'toggle-debug'),
                 'noindex'    => $auth->canReach($user, 'backend', 'system', 'system', 'toggle-noindex'),

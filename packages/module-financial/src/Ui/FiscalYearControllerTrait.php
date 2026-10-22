@@ -14,6 +14,13 @@ use Z77\Core\DI,
     Z77\Module\Financial\Services\FiscalYearNotDeletableException,
     Z77\Module\Financial\Services\FiscalYearService,
     Z77\Module\Financial\Services\InvalidFiscalYearException,
+    Z77\Module\Financial\Services\EntryNotEditableException,
+    Z77\Module\Financial\Services\LedgerService,
+    Z77\Module\Financial\Services\PostingRefusedException,
+    Z77\Module\Financial\Services\YearOpeningRefusedException,
+    Z77\Module\Financial\Services\YearOpeningResult,
+    Z77\Module\Financial\Services\YearOpeningService,
+    Z77\Module\Financial\Entities\Account,
     Z77\Module\Financial\Validators\FiscalYearValidator,
     Z77\Shared\Attributes\Fetch,
     Z77\Shared\Attributes\HttpMethod
@@ -46,6 +53,13 @@ use Z77\Core\DI,
  *     {@see fiscalYearCanReach()} says so), with a mandatory reason
  *     (`confirm-reopen` / `reopen`);
  *   - the protocol of both, per year, the latest rows under its header;
+ *   - «Eröffnung erstellen …» / «Eröffnung neu erstellen …» on an OPEN year
+ *     with a predecessor (P5, owner decisions 2026-10-22 — its own measure,
+ *     not part of the close, repeatable while the year is open): a dialog
+ *     (`confirm-opening`) shows the entry it would write, says when the
+ *     predecessor is still open (provisional), and POSTs `opening` (Fetch,
+ *     entity token `fiscalYear.opening`); the year's status line under its
+ *     header says whether the opening exists and is up to date;
  *   - there is NO edit of a year, and no state change of a single period.
  *
  * No JavaScript of its own: the code proposal for changed dates is made on
@@ -110,6 +124,13 @@ trait FiscalYearControllerTrait
      */
     private const FISCAL_YEAR_CLOSE_TOKEN  = 'fiscalYear.close';
     private const FISCAL_YEAR_REOPEN_TOKEN = 'fiscalYear.reopen';
+    private const FISCAL_YEAR_OPENING_TOKEN = 'fiscalYear.opening';
+
+    /** German names of the two year-opening accounts of the mandator — the refusal names the field. */
+    private const OPENING_ACCOUNT_LABELS = [
+        LedgerService::OPENING_BALANCE_ACCOUNT => 'Eröffnungsbilanz',
+        LedgerService::ANNUAL_RESULT_ACCOUNT   => 'Jahresgewinn/-verlust',
+    ];
 
     /** How many protocol rows the list shows per year (newest first). */
     private const FISCAL_YEAR_LOG_ROWS = 3;
@@ -137,6 +158,85 @@ trait FiscalYearControllerTrait
         $auth = DI::getAuthService();
 
         return $auth->canReach($auth->getCurrentUser(), $segments[0], $segments[1], $segments[2], $action);
+    }
+
+    private function yearOpeningService(): YearOpeningService
+    {
+        return new YearOpeningService($this->em());
+    }
+
+    /** Why the opening of a year cannot be created, in German — the status line, the dialog and the refused POST share it. */
+    private function fiscalYearOpeningMessage(YearOpeningRefusedException $e): string
+    {
+        $items = $e->items;
+        $label = self::OPENING_ACCOUNT_LABELS[$items[0] ?? ''] ?? ($items[0] ?? '');
+
+        return match ($e->reason) {
+            YearOpeningRefusedException::NOT_FOUND        => 'Das Geschäftsjahr gibt es nicht mehr — bitte die Liste neu laden.',
+            YearOpeningRefusedException::TARGET_CLOSED    => 'Das Geschäftsjahr ist abgeschlossen — seine Eröffnung lässt sich nicht mehr ändern.',
+            YearOpeningRefusedException::NO_PREDECESSOR   => 'Das ist das erste Geschäftsjahr — es gibt kein Vorjahr, dessen Salden eröffnet werden.',
+            YearOpeningRefusedException::ACCOUNT_MISSING  => ($items[1] ?? '') === ''
+                ? 'Kein Konto «' . $label . '» hinterlegt — ' . LedgerService::MANDATOR_HINT . '.'
+                : 'Das Konto ' . $items[1] . ' («' . $label . '») gibt es im Kontenplan nicht, es ist eine Gruppe oder inaktiv — im Kontenplan anlegen oder ' . LedgerService::MANDATOR_HINT . '.',
+            YearOpeningRefusedException::FOREIGN_OPENING  => 'Eröffnung bereits vorhanden (importiert / von Hand): «' . ($items[0] ?? '') . '» hat im Jahr die Buchungen Nr. '
+                . implode(', ', array_slice($items, 1)) . ' — eine erstellte Eröffnung käme doppelt dazu.',
+            YearOpeningRefusedException::ACCOUNT_INACTIVE => 'Inaktive Konten haben per Ende Vorjahr einen Saldo: ' . implode(', ', $items) . ' — reaktivieren oder den Saldo im Vorjahr umbuchen.',
+            YearOpeningRefusedException::NOTHING_TO_CARRY => 'Das Vorjahr hat keine Salden — es gibt nichts zu eröffnen.',
+            default                                       => 'Die Eröffnung lässt sich nicht erstellen.',
+        };
+    }
+
+    /** The owner's sentence for an opening built while the predecessor is still open (2026-10-22). */
+    private static function fiscalYearProvisionalNote(string $predecessorCode): string
+    {
+        return 'Vorjahr ' . $predecessorCode . ' noch nicht abgeschlossen — Eröffnung provisorisch, nach Änderungen neu erstellen.';
+    }
+
+    /**
+     * The opening status line of each year under its header, with a state for the harness: `none`
+     * (not created), `current`, `provisional` (current, the predecessor open), `outdated` (the
+     * predecessor says something else now — re-create), `refused` (a rule says no), `frozen` (a
+     * closed year with its opening). Years without a predecessor and closed years without an
+     * opening get no line. The plan computes the predecessor's balances (one aggregate) — only
+     * for OPEN years with a predecessor, one or two in practice.
+     *
+     * @param list<FiscalYear> $years
+     * @return array<int, array{state: string, text: string}>
+     */
+    private function fiscalYearOpeningStatus(array $years): array
+    {
+        $service = $this->yearOpeningService();
+        $status  = [];
+        foreach ($years as $year) {
+            $id      = (int) $year->getId();
+            $refusal = $service->refusal($year);
+            if ($refusal === YearOpeningRefusedException::NO_PREDECESSOR) {
+                continue;
+            }
+            if ($refusal === YearOpeningRefusedException::TARGET_CLOSED) {
+                $ref = $service->existing($year);
+                if ($ref !== null) {
+                    $status[$id] = ['state' => 'frozen', 'text' => 'Eröffnung: Buchung ' . $ref->fiscalYear . '/' . $ref->number];
+                }
+                continue;
+            }
+            try {
+                $plan = $service->plan($year);
+            } catch (YearOpeningRefusedException $e) {
+                $status[$id] = ['state' => 'refused', 'text' => 'Eröffnung: ' . $this->fiscalYearOpeningMessage($e)];
+                continue;
+            }
+            $ref = $plan->existing === null ? '' : $plan->existing->fiscalYear . '/' . $plan->existing->number;
+            $status[$id] = match (true) {
+                $plan->existing === null => ['state' => 'none', 'text' => 'Eröffnung ' . $plan->targetCode . ' nicht erstellt'
+                    . ($plan->provisional ? ' — Vorjahr ' . $plan->predecessorCode . ' noch nicht abgeschlossen' : '')],
+                !$plan->upToDate        => ['state' => 'outdated', 'text' => 'Eröffnung (Buchung ' . $ref . ') nicht aktuell — das Vorjahr ' . $plan->predecessorCode . ' hat sich seither geändert, neu erstellen'],
+                $plan->provisional      => ['state' => 'provisional', 'text' => 'Eröffnung: Buchung ' . $ref . ' — ' . self::fiscalYearProvisionalNote($plan->predecessorCode)],
+                default                 => ['state' => 'current', 'text' => 'Eröffnung: Buchung ' . $ref],
+            };
+        }
+
+        return $status;
     }
 
     /** Why a year cannot be closed or reopened, in German — the modals and the refused POSTs share it. */
@@ -213,6 +313,7 @@ trait FiscalYearControllerTrait
             'closedIds'    => $closed,
             'actionsByYear' => $actions,
             'logLines'     => $logLines,
+            'openingStatus' => $this->fiscalYearOpeningStatus($years),
             'actionBase'   => $this->fiscalYearListBase(),
         ]);
         // The fragment owns its header slot (financial.md, «fragment slots»). The add action is the
@@ -237,7 +338,12 @@ trait FiscalYearControllerTrait
             return $this->fetchError('Geschäftsjahr nicht gefunden');
         }
 
-        $response = $this->html(['year' => $year, 'actions' => $this->fiscalYearActions($year), 'actionBase' => $this->fiscalYearListBase()]);
+        $response = $this->html([
+            'year'          => $year,
+            'actions'       => $this->fiscalYearActions($year),
+            'openingExists' => $this->yearOpeningService()->existing($year) !== null,
+            'actionBase'    => $this->fiscalYearListBase(),
+        ]);
         $this->layoutManager->addPartials('actions', 'Backend/FiscalYearController', self::FISCAL_YEAR_NS);
 
         return $response;
@@ -248,15 +354,20 @@ trait FiscalYearControllerTrait
      *
      * The rules (lock-free; each confirm and the service decide again): «close» when the order
      * rule allows it, «reopen» for who may reach the action (ADMIN in the backend's access
-     * config), «delete» for the latest or the earliest year while nothing was ever posted.
+     * config), «delete» for the latest or the earliest year while nothing was ever posted,
+     * «opening» for an open year with a predecessor (P5, owner 2026-10-22 — the dialog says
+     * when a finer rule refuses).
      *
      * @param list<int>|null $ends the ids of the latest and the earliest year — the list passes them once for all years
-     * @return list<'close'|'reopen'|'delete'>
+     * @return list<'opening'|'close'|'reopen'|'delete'>
      */
     private function fiscalYearActions(FiscalYear $year, ?array $ends = null): array
     {
         $closer  = $this->fiscalYearCloseService();
         $actions = [];
+        if ($this->yearOpeningService()->refusal($year) === null) {
+            $actions[] = 'opening';
+        }
         if ($closer->closeRefusal($year) === null) {
             $actions[] = 'close';
         }
@@ -503,6 +614,104 @@ trait FiscalYearControllerTrait
         $this->messageService->pushFlashAfterRedirect('success', 'Geschäftsjahr «' . $code . '» wieder geöffnet — der Grund steht im Protokoll.');
 
         // Not one row: as with the close — neighbours' actions and the protocol change.
+        return $this->fetch()
+            ->setStatus('success')
+            ->addCommand('close-modal')
+            ->addCommand('reload');
+    }
+
+    // ── the year opening (P5, owner decisions 2026-10-22) ────────────────────
+
+    /**
+     * The opening dialog (`data-fetch-get`): the entry «Eröffnung erstellen» would write now —
+     * its lines with the account names —, whether it replaces an existing opening (same number,
+     * logged) or changes nothing, and the owner's note when the predecessor is still open. A
+     * refusal shows the sentence and no form. `YearOpeningService::create()` decides again.
+     */
+    protected function confirmOpeningAction(): HtmlResponse|FetchResponse
+    {
+        $id   = (int) DI::getRequest()->getGetParameter('id');
+        $year = $id > 0 ? $this->fiscalYears()->find($id) : null;
+        if ($year === null) {
+            return $this->fetchError($this->fiscalYearOpeningMessage(new YearOpeningRefusedException(YearOpeningRefusedException::NOT_FOUND, 'not found')));
+        }
+        $refusal = null;
+        $plan    = null;
+        try {
+            $plan = $this->yearOpeningService()->plan($year);
+            if ($plan->request === null && $plan->existing === null) {
+                throw new YearOpeningRefusedException(YearOpeningRefusedException::NOTHING_TO_CARRY, 'nothing to carry');
+            }
+        } catch (YearOpeningRefusedException $e) {
+            $refusal = $this->fiscalYearOpeningMessage($e);
+            $plan    = null;
+        }
+
+        // The lines as the change log shows a snapshot (`partials/entrySnapshot`), with the account names.
+        $lines = [];
+        $names = [];
+        if ($plan?->request !== null) {
+            $numbers = array_map(fn($l) => $l->account, $plan->request->lines);
+            foreach ($this->em()->getRepository(Account::class)->findBy(['number' => $numbers]) as $account) {
+                $names[$account->getNumber()] = $account->getName();
+            }
+            foreach ($plan->request->lines as $line) {
+                $lines[] = ['account' => $line->account, 'account_name' => $names[$line->account] ?? '', 'text' => null,
+                    'debit' => $line->debit->toDecimal(), 'credit' => $line->credit->toDecimal()];
+            }
+        }
+
+        $response = $this->html([
+            'year'        => $year,
+            'refusal'     => $refusal,
+            'plan'        => $plan,
+            'snapshot'    => ['lines' => $lines],
+            'total'       => $plan?->request === null ? '' : \Z77\Shared\Money\AmountFormat::of(array_reduce($plan->request->lines, fn($sum, $l) => $sum->add($l->debit), \Z77\Shared\Money\Money::zero($plan->request->currency()))),
+            'provisional' => $plan !== null && $plan->provisional ? self::fiscalYearProvisionalNote($plan->predecessorCode) : null,
+            'entityCsrf'  => DI::getCsrfService()->generateEntityToken(self::FISCAL_YEAR_OPENING_TOKEN, $id),
+            'actionBase'  => $this->fiscalYearListBase(),
+        ]);
+        $this->layoutManager->addPartials('confirmOpening', 'Backend/FiscalYearController', self::FISCAL_YEAR_NS);
+
+        return $response;
+    }
+
+    #[Fetch, HttpMethod('POST')]
+    protected function openingAction(): FetchResponse
+    {
+        $body = DI::getRequest()->getJsonBody();
+        $id   = (int) ($body['id'] ?? 0);
+        if ($id <= 0) {
+            return $this->fetchError('Missing id');
+        }
+        if (!DI::getCsrfService()->validateEntityToken(trim((string) ($body['entity_csrf'] ?? '')), self::FISCAL_YEAR_OPENING_TOKEN, $id)) {
+            return $this->fetchError('Invalid token');
+        }
+
+        try {
+            $result = $this->yearOpeningService()->create($id);
+        } catch (YearOpeningRefusedException $e) {
+            return $this->fetchError($this->fiscalYearOpeningMessage($e));
+        } catch (PostingRefusedException | EntryNotEditableException $e) {
+            // The ledger refused under its lock — a close of the year or a chart change in between.
+            return $this->fetchError('Die Buchhaltung hat die Eröffnung abgelehnt (' . $e->reason . ') — bitte die Liste neu laden und erneut versuchen.');
+        } catch (\Doctrine\DBAL\Exception\UniqueConstraintViolationException) {
+            // Two openings of the same year at once: the second fails on the idempotency key, nothing written.
+            return $this->fetchError('Die Eröffnung wurde gleichzeitig erstellt — bitte die Liste neu laden.');
+        }
+        $ref     = $result->ref->fiscalYear . '/' . $result->ref->number;
+        $message = match ($result->action) {
+            YearOpeningResult::CREATED   => 'Eröffnung erstellt — Buchung ' . $ref . '.',
+            YearOpeningResult::UPDATED   => 'Eröffnung neu erstellt — Buchung ' . $ref . ' ersetzt (im Änderungsprotokoll).',
+            YearOpeningResult::UNCHANGED => 'Eröffnung ist aktuell — Buchung ' . $ref . ' unverändert.',
+            default                      => 'Eröffnung entfernt — das Vorjahr hat keine Salden mehr (Buchung ' . $ref . ', im Änderungsprotokoll).',
+        };
+        if ($result->provisional) {
+            $message .= ' ' . self::fiscalYearProvisionalNote($result->predecessorCode);
+        }
+        $this->messageService->pushFlashAfterRedirect($result->provisional ? 'info' : 'success', $message);
+
+        // Not one row: the year's status line and its ⋮ label change — the list is rebuilt.
         return $this->fetch()
             ->setStatus('success')
             ->addCommand('close-modal')

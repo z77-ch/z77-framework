@@ -19,7 +19,10 @@ namespace Z77\Module\Order\Services;
  *   - `quantity` — a decimal string, three places, NEGATIVE allowed (a return); required on a
  *     priced line, empty on a text line;
  *   - `unitPrice` — a decimal string, two places, sign allowed; `discount` — percent («10», «2.5»);
- *   - `children` — lines printed beneath this one; only a priced top-level line carries them.
+ *   - `children` — lines printed beneath this one; only a priced top-level line carries them;
+ *   - `code` — the line's short code (owner 2026-10-22, the wdv `shop_positions.code`): trimmed,
+ *     '' / null = none, at most `SalesOrderLine::CODE_LENGTH` characters; stored, carried into the
+ *     invoice, offered to the PDF rows — not printed by the framework's templates, no field yet.
  */
 final class OrderLineDraft
 {
@@ -34,23 +37,24 @@ final class OrderLineDraft
         public readonly string $discount = '',
         public readonly array $children = [],
         public readonly ?int $id = null,
+        public readonly ?string $code = null,
     ) {}
 
     /** An article line: quantity × the article's price unless one is typed. */
-    public static function article(int $variantId, string $quantity, string $text = '', string $unitPrice = '', string $discount = '', ?int $id = null): self
+    public static function article(int $variantId, string $quantity, string $text = '', string $unitPrice = '', string $discount = '', ?int $id = null, ?string $code = null): self
     {
-        return new self('service', $variantId, $text, $quantity, '', $unitPrice, $discount, id: $id);
+        return new self('service', $variantId, $text, $quantity, '', $unitPrice, $discount, id: $id, code: $code);
     }
 
     /** A text line — prints only. */
-    public static function text(string $text, ?int $id = null): self
+    public static function text(string $text, ?int $id = null, ?string $code = null): self
     {
-        return new self('text', null, $text, id: $id);
+        return new self('text', null, $text, id: $id, code: $code);
     }
 
     /** The same line with $children printed beneath it. */
     public function beneath(OrderLineDraft ...$children): self
     {
-        return new self($this->type, $this->variantId, $this->text, $this->quantity, $this->unit, $this->unitPrice, $this->discount, array_values($children), $this->id);
+        return new self($this->type, $this->variantId, $this->text, $this->quantity, $this->unit, $this->unitPrice, $this->discount, array_values($children), $this->id, $this->code);
     }
 }

@@ -192,6 +192,10 @@ return [
         ],
     ],
 
+    // The backend dashboard (ADR-052): this module's pending work and «+ Neu» buttons —
+    // module-backend collects every module's `dashboard` list (`DashboardContributors`).
+    'dashboard' => [\Z77\Module\Backend\Dashboard\ServiceDashboard::class],
+
     // Importable entities (ADR-032): the whitelist the backend data import
     // works on — aggregated by ModuleManager::getImportEntities(). The screen
     // only ever offers these; an entity class never comes from a request.

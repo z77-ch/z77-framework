@@ -10,7 +10,7 @@ use Z77\Module\Backend\Ui\Controllers\BackendAbstractController,
  * ({@see BankImportControllerTrait}); this host only mounts it under the
  * backend route + auth + shell (module default role: ADMIN). The layout
  * is pinned via `Ui/Config/Finance/bankImportControllerConfig.inc.php`. In
- * the navigation it sits in the area «Aufträge» (module-debtor's seed,
+ * the navigation it sits in the area «Auftragswesen» (module-debtor's seed,
  * ADR-050); the URL group stays `finance`, like the other debtor screens.
  *
  * Reachable only in projects that install z77/module-debtor.

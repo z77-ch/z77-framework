@@ -34,8 +34,10 @@
  * @var callable $fmt  Money → «1'234.50»
  * @var bool $liableToVat  the document was computed WITH VAT (`InvoicePdf`: `Invoice::carriesVat()`,
  *                         owner 2026-10-21) — false: no MWST column (`DocumentColumns`), no MWST
- *                         rows (`pdf/documentSummary`), no «zzgl. / inkl. MWST» fact. The
- *                         letterhead keeps its own UID rule (` MWST` only for a liable mandator).
+ *                         rows (`pdf/documentSummary`), no «zzgl. / inkl. MWST» fact — and the
+ *                         snapshotted note `Invoice::getVatNote()` under the total (owner
+ *                         2026-10-22). The letterhead keeps its own UID rule (` MWST` only for a
+ *                         liable mandator).
  */
 use Z77\Module\Vat\Entities\TaxRate;
 
@@ -129,6 +131,9 @@ foreach ($document->getLines() as $line) {
         ],
         'indent' => $line->getParentLine() !== null ? 4 : 0,
         'lead'   => true,   // the first line (the title) bold, the description below — text lines too (owner 2026-10-18/19)
+        // The line code (owner 2026-10-22) — OFFERED to an override (of this layout or of `pdf/table`),
+        // never drawn here: whether it prints is the designer's decision. Null = none.
+        'code'   => $line->getCode(),
     ];
 }
 [$columns, $rows] = \Z77\Module\Debtor\Pdf\DocumentColumns::table($document->getCurrency(), $rows, $liableToVat, static fn(string $t): float => $pdf->font('', 9)->textWidth($t));
@@ -138,8 +143,9 @@ $pdf->partial('pdf/table', [
     'columns' => $columns,
     'rows'    => $rows,
 ], 'Z77\\Shared');
-// Netto, the MWST rows (only with VAT), Rundung, Total — the shared summary (also `pdf/order`'s).
-$pdf->partial('pdf/documentSummary', ['document' => $document, 'columns' => $columns, 'liableToVat' => $liableToVat, 'fmt' => $fmt, 'x' => $left], 'Z77\\Module\\Debtor');
+// Netto, the MWST rows (only with VAT), Rundung, Total — the shared summary (also `pdf/order`'s) — and
+// under the total the note of a document without VAT, from the SNAPSHOT (owner 2026-10-22; null with VAT).
+$pdf->partial('pdf/documentSummary', ['document' => $document, 'columns' => $columns, 'liableToVat' => $liableToVat, 'note' => $document->getVatNote(), 'fmt' => $fmt, 'x' => $left], 'Z77\\Module\\Debtor');
 
 // ── terms ──────────────────────────────────────────────────────────────
 $y = $pdf->y() + 6;

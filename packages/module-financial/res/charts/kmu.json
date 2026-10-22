@@ -195,5 +195,6 @@
     {"number":"9","name":"Abschluss","type":"equity","postable":false,"parent":null},
     {"number":"90","name":"Erfolgsrechnung","type":"equity","postable":false,"parent":"9"},
     {"number":"91","name":"Bilanz","type":"equity","postable":false,"parent":"9"},
+    {"number":"9100","name":"Eröffnungsbilanz","type":"equity","postable":true,"parent":"91"},
     {"number":"92","name":"Gewinnverwendung","type":"equity","postable":false,"parent":"9"}
 ]

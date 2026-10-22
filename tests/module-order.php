@@ -319,6 +319,39 @@ check('D7 the «Betreffname» (owner 2026-10-21): stored trimmed without the tra
     && $draft->subjectLabel === null && $draft2->subjectLabel === null);
 $order->describe($contact, '  ', new \DateTimeImmutable('2026-10-14'), new \DateTimeImmutable('2026-10-01'), new \DateTimeImmutable('2026-10-10'), PriceMode::Gross, 'CHF', null, null, null);
 
+// The line code (owner 2026-10-22): stored on the order line, carried into the invoice draft; no field, a hidden input.
+$ocOrder = withId(new SalesOrder(43, $contact, 'scheduled', SalesOrder::SOURCE_BACKEND, null, 'harness', new \DateTimeImmutable('2026-10-14 10:00')), 6);
+$ocOrder->describe($contact, 'Code', new \DateTimeImmutable('2026-10-14'), null, null, PriceMode::Net, 'CHF', 'lukb', null, null);
+$ocLine = withId(new SalesOrderLine($ocOrder), 301);
+$ocLine->write(1, null, LineType::Service, $variantA, '1', 'Pinot', '1', 'Fl.', $chf('24.50'), 0, 'UN', '3400', 'W-01');
+$ocOrder->addLine($ocLine);
+$ocText = withId(new SalesOrderLine($ocOrder), 302);
+$ocText->write(2, null, LineType::Text, null, null, 'Danke', null, null, null, 0, null, null);
+$ocOrder->addLine($ocText);
+$ocDraft = OrderInvoiceDraft::of($ocOrder, new \DateTimeImmutable('2026-10-31'));
+$ocThrows = static function (callable $fn, string $class): bool {
+    try { $fn(); } catch (\Throwable $e) { return $e instanceof $class; }
+    return false;
+};
+check('D8 the line code: write() stores it (getCode()), none = null; an untrimmed, an empty or a 17-character code is refused by the entity; OrderInvoiceDraft carries it into the invoice line draft (LineDraft::$code); SalesOrderLine::CODE_LENGTH is debtor\'s',
+    $ocLine->getCode() === 'W-01' && $ocText->getCode() === null && $ocDraft->lines[0]->code === 'W-01' && $ocDraft->lines[1]->code === null
+    && SalesOrderLine::CODE_LENGTH === \Z77\Module\Debtor\Entities\InvoiceLine::CODE_LENGTH && SalesOrderLine::CODE_LENGTH === 16
+    && $ocThrows(fn() => (new SalesOrderLine($ocOrder))->write(9, null, LineType::Text, null, null, 'x', null, null, null, 0, null, null, ' W '), \LogicException::class)
+    && $ocThrows(fn() => (new SalesOrderLine($ocOrder))->write(9, null, LineType::Text, null, null, 'x', null, null, null, 0, null, null, ''), \LogicException::class)
+    && $ocThrows(fn() => (new SalesOrderLine($ocOrder))->write(9, null, LineType::Text, null, null, 'x', null, null, null, 0, null, null, str_repeat('x', 17)), \LogicException::class));
+$ocL = \Z77\Module\Order\Services\OrderLineDraft::class;
+$ocForm = (new OrderForm())->startFrom($ocOrder);
+$ocPost = (new OrderForm())->fromPost(['contact' => '7', 'order_date' => '2026-10-14', 'rows' => [
+    ['type' => 'service', 'article' => '1001', 'quantity' => '1', 'code' => ' W-02 '],
+    ['type' => 'text', 'text' => 'Danke'],
+]])->toDraft(['1001' => 11], ['' => null]);
+$ocEdit = (string) file_get_contents($root . '/packages/module-order/res/view/templates/Backend/OrderController/edit.tpl.php');
+check('D9 OrderLineDraft: `code` is the last named parameter (default null) — article(code:), text(code:) and beneath() keep it; the window: startFrom() rows carry it, a posted row\'s `code` reaches the draft (trimmed like every row field), a row without one sends \'\'; the window posts it as a HIDDEN input only',
+    $ocL::article(11, '1', code: 'A')->code === 'A' && $ocL::text('x', code: 'T')->code === 'T' && $ocL::article(11, '1', code: 'P')->beneath($ocL::text('c'))->code === 'P'
+    && (new $ocL())->code === null
+    && array_column($ocForm->rows(), 'code') === ['W-01', ''] && $ocPost !== null && $ocPost->lines[0]->code === 'W-02' && $ocPost->lines[1]->code === ''
+    && str_contains($ocEdit, "<input type=\"hidden\" name=\"<?= \$p ?>[code]\" value=\"<?= e(\$row['code']) ?>\">"));
+
 // ── L. the subject label, pure (offline) ─────────────────────────────────
 
 echo "L. SubjectLabel — normalise, print, default, suggestions (offline)\n";
@@ -616,6 +649,24 @@ $orderPdfTpl = (string) file_get_contents($root . '/packages/module-order/res/vi
 check('P5 the «Betreffname» (owner 2026-10-21): the delivery note prints «Projekt: Wein fuer das Fest» on the subject line; without a label (P3) the subject alone, unchanged; pdf/order prints the same line (subjectLine())',
     str_contains($labelBytes, '(Projekt: Wein fuer das Fest)') && str_contains($bytes, '(Wein fuer das Fest)') && !str_contains($bytes, 'Projekt')
     && str_contains($orderPdfTpl, '$order->subjectLine(), 4.6)') && !str_contains($orderPdfTpl, '$order->getSubject(), 4.6)'));
+
+// The line code is OFFERED to the PDF rows, never printed by the framework's layouts (owner 2026-10-22).
+$ocNote = new SalesOrder(44, $contact, 'scheduled', SalesOrder::SOURCE_BACKEND, null, 'harness', new \DateTimeImmutable('2026-10-14'));
+$ocNote->describe($contact, 'Wein fuer das Fest', new \DateTimeImmutable('2026-10-14'), null, null, PriceMode::Net, 'CHF', null, null, null);
+$ocNl = withId(new SalesOrderLine($ocNote), 211);
+$ocNl->write(1, null, LineType::Service, $variantA, 'PN22', 'Pinot Noir 2022', '6', 'Fl.', $chf('24.50'), 0, 'UN', '3400', 'OCX-0001');
+$ocNote->addLine($ocNl);
+try {
+    $ocBytes = \Z77\Shared\Pdf\PdfDocument::create('Lieferschein 44')->withoutCompression()->partial('pdf/deliveryNote', [
+        'order' => $ocNote, 'title' => 'Lieferschein 44', 'address' => $ship, 'mandator' => null, 'customerNumber' => 1000, 'today' => new \DateTimeImmutable('2026-10-20'),
+    ], 'Z77\\Module\\Order')->output();
+} catch (\Throwable $e) {
+    $ocBytes = 'ERROR ' . $e->getMessage();
+}
+$ocNoteTpl = (string) file_get_contents($root . '/packages/module-order/res/view/templates/pdf/deliveryNote.tpl.php');
+check('P6 the line code: pdf/order and pdf/deliveryNote hand every row its `code` (for an override), the delivery note with a coded line prints exactly as before — the code is NOT in the print',
+    str_contains($orderPdfTpl, "'code'   => \$line->getCode(),") && str_contains($ocNoteTpl, "'code'   => \$line->getCode(),")
+    && str_starts_with($ocBytes, '%PDF-') && str_contains($ocBytes, '(Pinot Noir 2022)') && !str_contains($ocBytes, 'OCX-'));
 
 // ── C. the year-close warning (offline) ──────────────────────────────────
 
@@ -1079,10 +1130,53 @@ check('M34 the confirmation WITHOUT VAT: no MWST column, rows or «zzgl. MWST»,
     && str_contains($m34Tpl, "partial('pdf/documentSummary'") && !is_file($root . '/packages/module-order/res/view/templates/pdf/orderNoVat.tpl.php')
     && str_contains($m34Edit, "<?php if (\$liableToVat): ?><span class=\"be-list__col\">MWST</span><?php endif; ?>") && str_contains($m34Edit, "--be-rows-span: <?= \$span ?>")
     && str_contains($m34Trait, "'liableToVat'     => \$this->orderService()->chargesVat(),"));
+// The note a document without VAT prints (owner 2026-10-22): the quote / confirmation is a transient preview, so
+// pdf/order prints the mandator's CURRENT «Hinweis ohne MWST» (OrderPdf → Mandator::documentVatNote()) under the
+// total through debtor's shared pdf/documentSummary — the text avoids «MWST» so M34's check stays meaningful.
+$m34NoteText = 'Keine Mehrwertsteuer - der Rechnungssteller ist nicht mehrwertsteuerpflichtig.';
+(new \Z77\Module\Mandator\Services\MandatorService($em))->update((new \Z77\Module\Mandator\Services\CurrentMandator($em))->find(), ['vat_exempt_note' => $m34NoteText]);
+try {
+    $m34NotePdf = OrderPdf::order($o33, null, $m33Preview, $em)->withoutCompression()->output();
+} catch (\Throwable $e) {
+    $m34NotePdf = 'ERROR ' . $e->getMessage();
+}
+check('M34b NOT liable with a text: the confirmation prints the note under «Total CHF» (8 pt, the shared summary\'s `note`); OrderPdf hands the mandator\'s current documentVatNote() only without VAT; the delivery note layout prints no totals and no note',
+    str_starts_with($m34NotePdf, '%PDF-') && str_contains($m34NotePdf, 'Rechnungssteller ist nicht mehrwertsteuerpflichtig') && strpos($m34NotePdf, 'Rechnungssteller') > strpos($m34NotePdf, '(Total CHF)')
+    && !str_contains($m34Pdf, 'Rechnungssteller')
+    && str_contains($m34Class, "'vatNote'        => \$preview->carriesVat() ? null : \$mandator?->documentVatNote(),") && str_contains($m34Tpl, "'note' => \$vatNote,")
+    && !str_contains((string) file_get_contents($root . '/packages/module-order/res/view/templates/pdf/deliveryNote.tpl.php'), 'documentSummary'));
 (new \Z77\Module\Mandator\Services\MandatorService($em))->update((new \Z77\Module\Mandator\Services\CurrentMandator($em))->find(), ['liable_to_vat' => true]);
 $m35Preview = $svc->preview($em->getRepository(SalesOrder::class)->withLines((int) $o33->getId()));
-check('M35 liable again: the same order is computed WITH VAT as before (tax rows, a tax total)',
-    $svc->chargesVat() && $m35Preview->getTaxes() !== [] && $m35Preview->getTaxTotal()->isPositive() && $m35Preview->carriesVat());
+try {
+    $m35Pdf = OrderPdf::order($o33, null, $m35Preview, $em)->withoutCompression()->output();
+} catch (\Throwable $e) {
+    $m35Pdf = 'ERROR ' . $e->getMessage();
+}
+check('M35 liable again: the same order is computed WITH VAT as before (tax rows, a tax total); the text is still stored but the confirmation prints no note (documentVatNote() null while liable)',
+    $svc->chargesVat() && $m35Preview->getTaxes() !== [] && $m35Preview->getTaxTotal()->isPositive() && $m35Preview->carriesVat()
+    && str_starts_with($m35Pdf, '%PDF-') && str_contains($m35Pdf, '(MWST)') && !str_contains($m35Pdf, 'Rechnungssteller'));
+
+// The line code (owner 2026-10-22): stored through create / update, '' → null, 17 characters refused on its field,
+// carried into debtor's preview (the order PDFs' rows) — the confirmation does not print it.
+// Gross 16.65 × 2 = 33.30: no rounding line (the mandator here has no rounding account, M33).
+$m36 = $svc->create(new $D($contactId, '2026-10-21', 'Code', priceMode: 'gross', lines: [$L::article($grossId, '2', code: ' AB-1 '), $L::text('Danke', code: '')]));
+$m36Row = $db->fetchFirstColumn('SELECT code FROM sales_order_line WHERE order_id = ? ORDER BY position', [(int) $m36->getId()]);
+$m36Err = null;
+try { $svc->create(new $D($contactId, '2026-10-21', lines: [$L::article($variantId, '1', code: str_repeat('x', 17))])); } catch (\Z77\Module\Order\Services\InvalidOrderException $e) { $m36Err = $e->errors; }
+$m36Up = $svc->update((int) $m36->getId(), $m36->getVersion(), new $D($contactId, '2026-10-21', 'Code', priceMode: 'gross', lines: [
+    $L::article($grossId, '2', id: (int) $m36->getLines()[0]->getId(), code: 'AB-2'), $L::text('Danke', id: (int) $m36->getLines()[1]->getId(), code: 'T-1'),
+]));
+$m36Preview = $svc->preview($m36Up);
+try {
+    $m36Pdf = OrderPdf::order($m36Up, null, $m36Preview, $em)->withoutCompression()->output();
+} catch (\Throwable $e) {
+    $m36Pdf = 'ERROR ' . $e->getMessage();
+}
+check('M36 the line code: create stores it trimmed (sales_order_line.code «AB-1»), \'\' → NULL; 17 characters refused on `lines.0.code` («Code: höchstens 16 Zeichen.»); update rewrites it in place (same line id); debtor\'s preview carries it on its lines; the confirmation does not print it',
+    $m36Row === ['AB-1', null] && ($m36Err['lines.0.code'] ?? null) === 'Code: höchstens 16 Zeichen.'
+    && array_map(static fn($l) => $l->getCode(), $m36Up->getLines()) === ['AB-2', 'T-1'] && $m36Up->getLines()[0]->getId() === $m36->getLines()[0]->getId()
+    && array_map(static fn($l) => $l->getCode(), array_values(array_filter($m36Preview->getLines(), static fn($l) => $l->type() !== LineType::Rounding))) === ['AB-2', 'T-1']
+    && str_starts_with($m36Pdf, '%PDF-') && !str_contains($m36Pdf, 'AB-2') && !str_contains($m36Pdf, 'T-1'));
 $db->executeStatement('DELETE FROM mandator');
 
 echo "\n{$pass} passed, {$fail} failed\n";

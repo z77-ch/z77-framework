@@ -19,12 +19,14 @@
  * @var list<int> $closedIds     the years whose periods are all closed
  * @var array<int, list<'close'|'reopen'|'delete'>> $actionsByYear  year id → what its ⋮ offers now (lock-free)
  * @var array<int, list<string>> $logLines  year id → the latest protocol lines, newest first
+ * @var array<int, array{state: string, text: string}> $openingStatus  year id → the opening's status line (P5, 2026-10-22)
  * @var string $actionBase
  */
 $actionBase    = $actionBase ?? '/backend/finance/fiscal-year';
 $closedIds     = $closedIds ?? [];
 $actionsByYear = $actionsByYear ?? [];
 $logLines      = $logLines ?? [];
+$openingStatus = $openingStatus ?? [];
 $monthNames = \Z77\Module\Financial\Ui\MonthNames::SHORT;
 $badge = [
     'open'        => 'badge--success',
@@ -66,6 +68,12 @@ $badge = [
                 <span class="badge <?= $yearClosed ? 'badge--muted' : 'badge--success' ?>" data-fiscal-year-state="<?= $yearClosed ? 'closed' : 'open' ?>"><?= $yearClosed ? 'abgeschlossen' : 'offen' ?></span>
             </h2>
         </div>
+        <?php // The year opening (P5): exists, up to date, provisional — a pending step stays visible
+              // (backend-screen.md §4); «Eröffnung erstellen …» is in the ⋮. ?>
+        <?php if (isset($openingStatus[(int) $year->getId()])): ?>
+        <?php $opening = $openingStatus[(int) $year->getId()]; ?>
+        <p class="be-list__section-hint" data-fiscal-year-opening="<?= e($opening['state']) ?>"><?php $openingBadge = ['none' => 'fehlt', 'outdated' => 'nicht aktuell', 'provisional' => 'provisorisch'][$opening['state']] ?? null; ?><?php if ($openingBadge !== null): ?><span class="badge badge--warning"><?= e($openingBadge) ?></span> <?php endif; ?><?= e($opening['text']) ?></p>
+        <?php endif; ?>
         <?php foreach ($logLines[$year->getId()] ?? [] as $line): ?>
         <p class="be-list__cell--muted" data-fiscal-year-log><small><?= e($line) ?></small></p>
         <?php endforeach; ?>

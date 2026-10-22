@@ -450,7 +450,7 @@ check('A9 the unique contact index, the unique customer-number index and the pay
 [$code, $out] = $run(['command' => 'migrate']);
 check('A10 a second migrate is a no-op', $code === 0 && str_contains($out, 'Already at the latest version'));
 [$code, $out] = $run(['command' => 'diff', '--namespace' => 'Z77\\Module\\Debtor\\Migrations']);
-check('A11 diff after migrate reports NO change — mapping and migration agree (embedded address and payment part, money and decimal columns included)' . (str_contains($out, 'No changes detected') ? '' : ' — ' . trim($out)), $code !== 0 && str_contains($out, 'No changes detected') && count(glob($package . '/res/migrations/Version*.php')) === 13);
+check('A11 diff after migrate reports NO change — mapping and migration agree (embedded address and payment part, money and decimal columns included)' . (str_contains($out, 'No changes detected') ? '' : ' — ' . trim($out)), $code !== 0 && str_contains($out, 'No changes detected') && count(glob($package . '/res/migrations/Version*.php')) === 15);
 check('A12 every migration is expand-only (no DROP outside down()); the «Fakturiert» pair (ADD / DROP delivered_*, 2026-10-10) is gone — it never left the development database (owner 2026-10-13)', array_reduce(glob($package . '/res/migrations/Version*.php'), function ($ok, $f) {
     $s  = file_get_contents($f);
     $up = substr($s, 0, strpos($s, 'function down'));
@@ -469,6 +469,12 @@ check('A12d the «Betreffname» (owner 2026-10-21, Version20261021100000, schema
     $labelColumn('invoice', 'subject_label') === ['IS_NULLABLE' => 'YES', 'CHARACTER_MAXIMUM_LENGTH' => 80]
     && $labelColumn('debtor_profile', 'default_subject_label') === ['IS_NULLABLE' => 'YES', 'CHARACTER_MAXIMUM_LENGTH' => 80]
     && !str_contains($upOf('Version20261021100000'), 'UPDATE') && str_contains(substr(file_get_contents($package . '/res/migrations/Version20261021100000.php'), strpos(file_get_contents($package . '/res/migrations/Version20261021100000.php'), 'function down')), 'DROP subject_label'));
+check('A12e the no-VAT note (owner 2026-10-22, Version20261022100000, schema only): invoice.vat_note VARCHAR(255) NULL — NULL = nothing printed, every existing document prints as before; down() drops it',
+    $labelColumn('invoice', 'vat_note') === ['IS_NULLABLE' => 'YES', 'CHARACTER_MAXIMUM_LENGTH' => 255]
+    && !str_contains($upOf('Version20261022100000'), 'UPDATE') && str_contains(substr(file_get_contents($package . '/res/migrations/Version20261022100000.php'), strpos(file_get_contents($package . '/res/migrations/Version20261022100000.php'), 'function down')), 'DROP vat_note'));
+check('A12f the line code (owner 2026-10-22, Version20261022120000, schema only): invoice_line.code VARCHAR(16) NULL — NULL = no code, every existing document prints as before; down() drops it',
+    $labelColumn('invoice_line', 'code') === ['IS_NULLABLE' => 'YES', 'CHARACTER_MAXIMUM_LENGTH' => 16]
+    && !str_contains($upOf('Version20261022120000'), 'UPDATE') && str_contains(substr(file_get_contents($package . '/res/migrations/Version20261022120000.php'), strpos(file_get_contents($package . '/res/migrations/Version20261022120000.php'), 'function down')), 'DROP code'));
 
 
 // ── B. the seeds ─────────────────────────────────────────────────────────
@@ -1986,11 +1992,11 @@ $bankDraft = $service($wireDi())->invoice($withTarget('bank'));
 $finalQr = $service($wireDi())->finalize([$at($qrInv->getId())])[0];
 $qrRow   = $invoiceRow($qrInv->getId());
 $custNoP = $emP->getRepository(DebtorProfile::class)->findByContact($mid)->getCustomerNumber();
-check('P3C8b … the booking print writes them with the number: the reference from customer and document NUMBER (wdv-630 layout), the message «Rechnung n»',
+check('P3C8b … the booking print writes them with the number: the reference from customer and document NUMBER (wdv-630 layout), the message «Rechnung n, zahlbar bis dd.mm.yyyy» (owner 2026-10-22)',
     $finalQr->isFinal() && (int) $qrRow['number'] === $finalQr->getNumber() && intdiv($finalQr->getNumber(), 10000) === 2606
     && $qrRow['pay_reference'] === QrReference::forDocument($custNoP, $finalQr->getNumber())
     && substr($qrRow['pay_reference'], 10, 6) === str_pad((string) $custNoP, 6, '0', STR_PAD_LEFT)
-    && $qrRow['pay_message'] === 'Rechnung ' . $finalQr->getNumber() && $qrRow['pay_creditor_name'] === 'Harness AG');
+    && $qrRow['pay_message'] === 'Rechnung ' . $finalQr->getNumber() . ', zahlbar bis ' . $finalQr->getDueDate()->format('d.m.Y') && $qrRow['pay_creditor_name'] === 'Harness AG');
 $qrBill  = QrBill::of($readInvoice($qrInv->getId()));
 $payload = $qrBill->isPrintable() ? $qrBill->payload() : '';
 $el      = explode("\n", $payload);
@@ -2005,7 +2011,7 @@ $nonRow = $invoiceRow($nonInv->getId());
 $nonEl  = explode("\n", QrBill::of($readInvoice($nonInv->getId()))->payload());
 check('P3C11 target with only a plain IBAN → NON: the IBAN, NO reference, the document named in the message (the payment can still be assigned)',
     $nonRow['pay_reference_type'] === 'NON' && $nonRow['pay_reference'] === '' && $nonRow['pay_account'] === 'CH9300762011623852957'
-    && $nonEl[27] === 'NON' && $nonEl[28] === '' && $nonEl[29] === 'Rechnung ' . $nonInv->getNumber() && $specErrors(implode("\n", $nonEl)) === []);
+    && $nonEl[27] === 'NON' && $nonEl[28] === '' && $nonEl[29] === 'Rechnung ' . $nonInv->getNumber() . ', zahlbar bis ' . $nonInv->getDueDate()->format('d.m.Y') && $specErrors(implode("\n", $nonEl)) === []);
 $bothInv = $service($wireDi())->invoice($withTarget('both'));
 $service($wireDi())->finalize([$at($bothInv->getId())]);
 check('P3C12 a target with BOTH numbers: an invoice has a reference → the QR-IBAN + QRR (never the QR-IBAN with NON); the holder\'s own name and country on the bill',
@@ -4259,6 +4265,94 @@ check('MV11 the editor without VAT hides «Preise» (the mode still posted); the
     && str_contains($mvHelp, '$vat = $form->withVat;') && str_contains($mvHelp, "<?php if (\$vat): ?>\n<section data-help-field=\"price_mode\">")
     && str_contains($mvHelp, "<?php if (\$vat): ?>\n    <li>MWST-Code und Ertragskonto"));
 
+// The NOTE a document without VAT prints (owner 2026-10-22): the mandator's «Hinweis ohne MWST», snapshotted on the
+// document at composing (invoice.vat_note), printed under the total by the shared pdf/documentSummary, shown in the
+// facts block. The text here avoids «MWST» so MV5's «no MWST in the print» stays meaningful.
+$mvNoteText = 'Keine Mehrwertsteuer - der Rechnungssteller ist nicht mehrwertsteuerpflichtig.';
+$mvSetNote  = function (string $note) use ($wireDi): void {
+    $em = $wireDi();
+    (new MandatorService($em))->update($em->getRepository(Mandator::class)->theOne(), ['vat_exempt_note' => $note]);
+};
+$mvSetNote($mvNoteText);
+$mvNoteLiable = $service($wireDi())->preview($standardDraft('2026-12-23', '2026-12-23'));   // liable (MV10 ended liable): a text is stored, no note
+$mvLiable(false);
+$mvNoteDoc = $service($wireDi())->invoice($standardDraft('2026-12-23', '2026-12-23'));
+$mvNoteCn  = $service($wireDi())->preview(InvoiceDraft::creditNote($mvDoc->getId(), $mid, day('2026-12-23'), 'CHF', [LineDraft::lumpSum('Gutschrift', chf('10.00'), 'UN', '3400')]));
+$mvNoteFee = $service($wireDi())->preview(InvoiceDraft::fee($mid, day('2026-12-23'), 'CHF', chf('20.00'), 'Gebühr', $feeAccount, 'qr', 'dunning', 'mv:note'));
+$mvNoteCnVat = $service($wireDi())->preview(InvoiceDraft::creditNote($slDoc->getId(), $mid, day('2026-12-23'), 'CHF', [LineDraft::lumpSum('Gutschrift', chf('10.00'), 'UN', '3400')]));
+check('MV12 NOT liable with a text: compose() stores the mandator\'s note on an invoice (invoice.vat_note = the text, getVatNote()); a credit note of a no-VAT invoice takes the CURRENT text; a fee too (no VAT by nature, the issuer\'s sentence still true); a credit note of a VAT invoice (computed WITH VAT) none; liable with the same text: null — the note is the mandator\'s, never the draft\'s',
+    $readInvoice($mvNoteDoc->getId())->getVatNote() === $mvNoteText && $db->fetchOne('SELECT vat_note FROM invoice WHERE id = ?', [$mvNoteDoc->getId()]) === $mvNoteText
+    && !$mvNoteCn->carriesVat() && $mvNoteCn->getVatNote() === $mvNoteText && !$mvNoteFee->carriesVat() && $mvNoteFee->getVatNote() === $mvNoteText
+    && $mvNoteCnVat->carriesVat() && $mvNoteCnVat->getVatNote() === null && $mvNoteLiable->getVatNote() === null
+    && !property_exists(InvoiceDraft::class, 'vatNote') && !str_contains(file_get_contents($package . '/src/Invoicing/InvoiceDraft.php'), 'vatNote'));
+$service($wireDi())->finalize([$at($mvNoteDoc->getId())]);
+$mvNoteFinal = $readInvoice($mvNoteDoc->getId());
+$mvSetNote('');
+$mvNoteEmpty = $service($wireDi())->preview($standardDraft('2026-12-23', '2026-12-23'));   // not liable, no text
+$mvLiable(true);
+$mvNotePdf    = \Z77\Module\Debtor\Pdf\InvoicePdf::of($mvNoteFinal, $wireDi())->withoutCompression()->output();
+$mvNoVatPdf   = \Z77\Module\Debtor\Pdf\InvoicePdf::render($mvFinal, null)->withoutCompression()->output();
+$mvNoteVatPdf = \Z77\Module\Debtor\Pdf\InvoicePdf::render($mvNoteLiable, null)->withoutCompression()->output();
+check('MV13 the snapshot (ADR-041 decision 6): the booked document keeps its note after the text was emptied and the switch turned on again (a reprint reads as issued); not liable WITHOUT a text stores null; the PDF prints the note under the total — after «Total CHF», in 8 pt — only when one is stored: none on the earlier no-VAT invoice without a text, none on the VAT preview',
+    $readInvoice($mvNoteDoc->getId())->getVatNote() === $mvNoteText && $mvNoteEmpty->getVatNote() === null
+    && str_contains($mvNotePdf, 'Rechnungssteller ist nicht mehrwertsteuerpflichtig') && strpos($mvNotePdf, 'Rechnungssteller') > strpos($mvNotePdf, '(Total CHF)')
+    && preg_match('/8\.00 Tf[^(]*\([^)]*Rechnungssteller/s', $mvNotePdf) === 1
+    && !str_contains($mvNoVatPdf, 'Rechnungssteller') && !str_contains($mvNoteVatPdf, 'Rechnungssteller'));
+$mvFactsOf = fn(Invoice $doc) => $renderer->partial('Backend/InvoiceController/_facts', ['document' => $doc, 'bill' => \Z77\Module\Debtor\Invoicing\QrBill::of($doc), 'creditNotes' => [], 'openAmount' => null, 'allocations' => [], 'notices' => [],
+    'ledgerKnown' => true, 'states' => ['invoicing' => 'In Fakturierung', 'final' => 'Verbucht'], 'fmt' => static fn(?Money $m) => \Z77\Shared\Money\AmountFormat::of($m), 'actionBase' => '/backend/finance/invoice']);
+$mvFactsNote = $mvFactsOf($mvNoteFinal);
+$mvFactsVat  = $mvFactsOf($mvNoteLiable);
+check('MV14 the facts block of the mask shows the stored note as ONE muted row «MWST» — what was printed; a document with VAT has no such row',
+    preg_match('/<span class="be-list__cell be-list__cell--muted">MWST<\/span><span class="be-list__cell be-list__cell--wrap"><span class="be-list__cell--muted">' . preg_quote($mvNoteText, '/') . '<\/span><\/span>/', $mvFactsNote) === 1
+    && substr_count($mvFactsNote, '>MWST<') === 1 && !str_contains($mvFactsVat, '>MWST<') && !str_contains($mvFactsVat, 'Rechnungssteller'));
+
+// ── LC. the line code (owner 2026-10-22) ─────────────────────────────────
+// The framework STORES a short code per line (the importer fills it from wdv `shop_positions.code`) and
+// OFFERS it to the PDF rows (`code`); its own templates do not print it — the override's designer decides.
+echo "LC. The line code: draft → document → snapshot, '' → null, 17 characters refused, the editor and the credit note carry it, offered to the PDF rows, not printed\n";
+$lcDraft = fn(string $a, string $b, string $c = '') => InvoiceDraft::invoice($mid, day('2026-12-24'), day('2026-12-24'), 'CHF', [
+    LineDraft::service('Beratung', '2', 'h', chf('100.00'), 'UN', '3400', code: $a)->beneath(LineDraft::text('Unterlagen', code: $b)),
+    LineDraft::lumpSum('Pauschale', chf('10.00'), 'UN', '3400', code: $c),
+]);
+// The codes of a document's lines, the system's rounding line left out (it never carries one).
+$lcCodes = fn(Invoice $d) => array_values(array_map(fn(InvoiceLine $l) => $l->getCode(), array_filter($d->getLines(), fn(InvoiceLine $l) => $l->type() !== LineType::Rounding)));
+$lcDoc  = $service($wireDi())->invoice($lcDraft(' LCX-0001 ', 'LCX-0002'));
+$lcRows = array_values(array_filter($lineRows($lcDoc->getId()), fn(array $r) => $r['type'] !== 'rounding'));
+check('LC1 draft → document: the code stored trimmed on its line (invoice_line.code, getCode()), a text line beneath carries one too; \'\' → null; the preview carries it as well',
+    $lcCodes($readInvoice($lcDoc->getId())) === ['LCX-0001', 'LCX-0002', null]
+    && array_column($lcRows, 'code') === ['LCX-0001', 'LCX-0002', null]
+    && $service($wireDi())->preview($lcDraft('P1', ''))->getLines()[0]->getCode() === 'P1' && $service($wireDi())->preview($lcDraft('P1', ''))->getLines()[1]->getCode() === null);
+$lcBefore = $zSnap();
+$lcRefused = caught(fn() => $service($wireDi())->invoice($lcDraft(str_repeat('x', 17), '')), InvoiceRefusedException::class);
+check('LC2 17 characters refused `line` with a German message («Position 1: der Code hat höchstens 16 Zeichen.»), nothing written; 16 characters (after trimming) pass; the entity guards it once more',
+    $lcRefused?->reason === InvoiceRefusedException::LINE && $lcRefused->getMessage() === 'Position 1: der Code hat höchstens 16 Zeichen.' && $zSnap() === $lcBefore
+    && $service($wireDi())->preview($lcDraft(' ' . str_repeat('ü', 16) . ' ', ''))->getLines()[0]->getCode() === str_repeat('ü', 16)
+    && throws(fn() => new InvoiceLine($lcDoc, 1, LineType::Text, null, 'x', null, null, null, 0, Money::zero('CHF'), null, null, null, null, null, null, ''), \LogicException::class));
+$lcRe = $service($wireDi())->reinvoice($lcDoc->getId(), $readInvoice($lcDoc->getId())->getVersion(), $lcDraft('LCX-0003', '', 'LCX-0004'));
+$service($wireDi())->finalize([$at($lcDoc->getId())]);
+$lcFinal = $readInvoice($lcDoc->getId());
+check('LC3 the code is part of the snapshot (ADR-041 decision 6): a re-issue replaces the lines with their codes whole; the booked document keeps them — no setter',
+    $lcCodes($lcRe) === ['LCX-0003', null, 'LCX-0004']
+    && $lcFinal->isFinal() && $lcCodes($lcFinal) === ['LCX-0003', null, 'LCX-0004'] && !method_exists(InvoiceLine::class, 'setCode'));
+// The editor has NO code field (owner: storage only) — a hidden input carries it through an edit and into a credit note.
+$lcHeader = ['contact' => (string) $mid, 'invoice_date' => '2026-12-24', 'service_from' => '2026-12-24', 'price_mode' => 'net'];
+$lcEdit   = (new \Z77\Module\Debtor\Ui\InvoiceForm('CHF'))->startFrom($lcRe);
+$lcCnForm = (new \Z77\Module\Debtor\Ui\InvoiceForm('CHF', \Z77\Module\Debtor\Entities\InvoiceKind::CreditNote, $lcFinal))->startCreditNote(day('2026-12-24'));
+$lcCnPost = (new \Z77\Module\Debtor\Ui\InvoiceForm('CHF', \Z77\Module\Debtor\Entities\InvoiceKind::CreditNote, $lcFinal))->fromPost($lcHeader + ['rows' => $lcCnForm->rows()], $lcFinal);
+$lcCn     = $service($wireDi())->invoice($lcCnPost->toDraft());
+$lcPosted = (new \Z77\Module\Debtor\Ui\InvoiceForm('CHF'))->fromPost($lcHeader + ['rows' => [['type' => 'text', 'text' => 'Hinweis', 'code' => ' T-9 ']]])->toDraft();
+$lcFormTpl = (string) file_get_contents($package . '/res/view/templates/Backend/InvoiceController/form.tpl.php');
+check('LC4 the editor: startFrom() rows carry the code; a posted row\'s `code` reaches the draft; a credit note from the invoice copies its lines\' codes (the form round trip); the mask posts it as a HIDDEN input only — no visible field',
+    array_column($lcEdit->rows(), 'code') === ['LCX-0003', '', 'LCX-0004', ''] && $lcPosted?->lines[0]->code === 'T-9'
+    && $lcCn->isCreditNote() && $lcCodes($lcCn) === ['LCX-0003', null, 'LCX-0004']
+    && str_contains($lcFormTpl, "<input type=\"hidden\" name=\"<?= \$p ?>[code]\" value=\"<?= e(\$row['code']) ?>\">") && !str_contains($lcFormTpl, 'type="text" id="<?= $id ?>code"'));
+$lcPdf    = \Z77\Module\Debtor\Pdf\InvoicePdf::of($lcFinal, $wireDi())->withoutCompression()->output();
+$lcInvTpl = (string) file_get_contents($package . '/res/view/templates/pdf/invoice.tpl.php');
+[, $lcFit] = \Z77\Module\Debtor\Pdf\DocumentColumns::table('CHF', [['cells' => ['Beratung', '2', 'h', '100.00', '', '8.1 %', '200.00'], 'code' => 'LCX-0003']], true);
+check('LC5 the PDF: every line row of pdf/invoice carries `code` (DocumentColumns keeps the key beside the cut cells — an override of the layout or of pdf/table reads $row[\'code\']); the framework\'s print does NOT contain it',
+    str_contains($lcInvTpl, "'code'   => \$line->getCode(),") && ($lcFit[0]['code'] ?? null) === 'LCX-0003' && count($lcFit[0]['cells']) === 6
+    && str_starts_with($lcPdf, '%PDF') && str_contains($lcPdf, '(Beratung)') && !str_contains($lcPdf, 'LCX-'));
+
 // ── O. the booking print of module-order on the REAL ledger (concurrency review 2026-10-16) ──
 // order.md «Concurrency review»: the order's booking print (`OrderService::book()`) joins debtor's
 // chain in ONE unit of work. module-article and module-order join the installation here — the
@@ -4365,6 +4459,17 @@ $o7Inv = $oService()->book([['id' => (int) $o7->getId(), 'version' => $o7->getVe
 check('O7 order → invoice: the order\'s «Betreffname» (stored «Projekt») is the booked invoice\'s, beside «Auftrag N · Umbau Nord» — printed «Projekt: Auftrag N · Umbau Nord»',
     $o7->getSubjectLabel() === 'Projekt' && $o7Inv !== null && $o7Inv->getSubjectLabel() === 'Projekt'
     && $o7Inv->subjectLine() === 'Projekt: Auftrag ' . $o7->documentNumber() . ' · Umbau Nord' && $invoiceRow($o7Inv->getId())['subject_label'] === 'Projekt');
+
+// O8: the order line's code travels into the booked invoice line (owner 2026-10-22).
+$o8 = $oService()->create(new \Z77\Module\Order\Services\OrderDraft($mid, '2026-12-10', 'Code', lines: [
+    \Z77\Module\Order\Services\OrderLineDraft::article($oVariant, '1', code: ' W-77 '),
+    \Z77\Module\Order\Services\OrderLineDraft::text('Danke', code: ''),
+]));
+$o8 = $oService()->changeStatus((int) $o8->getId(), $o8->getVersion(), 'scheduled');
+$o8Inv = $oService()->book([['id' => (int) $o8->getId(), 'version' => $o8->getVersion()]], day('2026-12-15'))[0] ?? null;
+check('O8 order → invoice: the order line\'s code (stored trimmed «W-77») is the booked invoice line\'s; a line without one has none',
+    array_map(fn($l) => $l->getCode(), $o8->getLines()) === ['W-77', null] && $o8Inv !== null
+    && array_column(array_values(array_filter($lineRows($o8Inv->getId()), fn(array $r) => $r['type'] !== 'rounding')), 'code') === ['W-77', null]);
 
 // ── result ───────────────────────────────────────────────────────────────
 

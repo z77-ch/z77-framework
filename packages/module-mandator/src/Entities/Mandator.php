@@ -15,7 +15,8 @@ use Z77\Shared\Traits\ArrayMappable;
  * and written only through {@see \Z77\Module\Mandator\Services\MandatorService}.
  *
  * What it is: the LETTERHEAD of the printed reports and letters — name,
- * address, contact data, logo —, the UID and the VAT liability, and the
+ * address, contact data, logo —, the UID and the VAT liability (with the
+ * note a document without VAT prints, `vatExemptNote`, 2026-10-22), and the
  * ledger accounts the business modules post with (E2: they moved here from
  * `financialConfig → vatAccounts` and `debtorConfig → debtorAccounts`), and — since 2026-10-21 —
  * the installation's default «Betreffname» of new documents (`defaultSubjectLabel`, read by
@@ -46,8 +47,8 @@ use Z77\Shared\Traits\ArrayMappable;
  * doc for each reason): `lastInvoiceNo` / `invoiceNoPrefix` (`NumberRange`
  * numbers gaplessly under a row lock), `currentFy` / `firstDayOffFy`
  * (`FiscalYear` rows are the truth), `public`, `emailInvoicing`,
- * `deliveryAddress`, the creditor and closing accounts (no reader yet — the
- * chart does not even carry the class-9 accounts before P5), and — owner,
+ * `deliveryAddress`, the creditor accounts (no reader yet; the closing
+ * accounts of the year opening arrived with P5, 2026-10-22), and — owner,
  * review 2026-09-23 — `vatDefaultAcronym`: a default tax code has no reader
  * before articles or a shop exist, and it was the only reason this
  * letterhead module dragged `module-vat` along; it returns with an expand
@@ -79,6 +80,9 @@ class Mandator
     /** The default «Betreffname» — debtor's `SubjectLabel::LENGTH`, repeated, not imported: the mandator knows no debtor. */
     public const SUBJECT_LABEL_LENGTH = 80;
 
+    /** The note a document without VAT prints — one sentence, the column's width (debtor's `invoice.vat_note` has the same). */
+    public const VAT_EXEMPT_NOTE_LENGTH = 255;
+
     /** `CHE-123.456.789` — the canonical form {@see Uid::normalize()} writes. */
     public const UID_LENGTH = 15;
 
@@ -91,8 +95,9 @@ class Mandator
      * CATEGORY onto `vat-*`, debtor's `DebtorAccounts` maps its keys onto the
      * first five); the property is the column `account_{key}` in snake_case
      * ({@see accountField()}). A key is added here when a module gains a
-     * READER for it — creditor and closing accounts arrive with their
-     * modules (P5, a creditor module).
+     * READER for it — creditor accounts arrive with their module. The two
+     * year-opening accounts (`opening-balance`, `annual-result`, P5 2026-10-22)
+     * are read by financial's `YearOpeningService`.
      */
     public const ACCOUNT_KEYS = [
         'receivable'         => 'accountReceivable',
@@ -103,6 +108,8 @@ class Mandator
         'vat-input-material' => 'accountVatInputMaterial',
         'vat-input-other'    => 'accountVatInputOther',
         'vat-owed'           => 'accountVatOwed',
+        'opening-balance'    => 'accountOpeningBalance',
+        'annual-result'      => 'accountAnnualResult',
     ];
 
     /** Assigned ({@see ID}), never generated — see the class docblock. No setter. */
@@ -187,6 +194,19 @@ class Mandator
     #[Clean('bool')]
     private bool $liableToVat = false;
 
+    /**
+     * The NOTE a document without VAT prints (owner decision 2026-10-22): while the company is not
+     * liable (`$liableToVat` false) every invoice, credit note, quote and order confirmation says so
+     * — usually «Keine MWST — der Rechnungssteller ist nicht mehrwertsteuerpflichtig.» Maintained
+     * here, next to the switch; '' = no note. Read through {@see documentVatNote()}, which applies
+     * the switch: debtor's `InvoicingService::compose()` snapshots it on the document
+     * (`invoice.vat_note`), module-order's `OrderPdf` prints the CURRENT text on its transient
+     * preview. Migration `Version20261022100000`.
+     */
+    #[ORM\Column(name: 'vat_exempt_note', length: self::VAT_EXEMPT_NOTE_LENGTH, options: ['default' => ''])]
+    #[Clean('text')]
+    private string $vatExemptNote = '';
+
     // ── ledger accounts (E2) — '' = not set, refused at the point of use ─
 
     #[ORM\Column(name: 'account_receivable', length: self::ACCOUNT_NUMBER_LENGTH)]
@@ -220,6 +240,16 @@ class Mandator
     #[ORM\Column(name: 'account_vat_owed', length: self::ACCOUNT_NUMBER_LENGTH)]
     #[Clean('text')]
     private string $accountVatOwed = '';
+
+    // The year opening (P5, owner 2026-10-22, migration `Version20261022140000`): the column
+    // defaults give an EXISTING record the KMU numbers; a new one is pre-filled by `MandatorAccounts`.
+    #[ORM\Column(name: 'account_opening_balance', length: self::ACCOUNT_NUMBER_LENGTH, options: ['default' => '9100'])]
+    #[Clean('text')]
+    private string $accountOpeningBalance = '';
+
+    #[ORM\Column(name: 'account_annual_result', length: self::ACCOUNT_NUMBER_LENGTH, options: ['default' => '2979'])]
+    #[Clean('text')]
+    private string $accountAnnualResult = '';
 
     // ── documents ───────────────────────────────────────────────────────
 
@@ -284,7 +314,19 @@ class Mandator
     public function getLogoPath(): string { return $this->logoPath; }
     public function getUid(): string { return $this->uid; }
     public function isLiableToVat(): bool { return $this->liableToVat; }
+    public function getVatExemptNote(): string { return $this->vatExemptNote; }
     public function getDefaultSubjectLabel(): string { return $this->defaultSubjectLabel; }
+
+    /**
+     * The note a document WITHOUT VAT prints, or null — the ONE rule for both readers (debtor's
+     * `compose()`, order's `OrderPdf`): the text while the company is NOT liable to VAT and a text
+     * is stored; null while liable (the sentence would be false) or without a text. A document
+     * computed with VAT never asks.
+     */
+    public function documentVatNote(): ?string
+    {
+        return !$this->liableToVat && $this->vatExemptNote !== '' ? $this->vatExemptNote : null;
+    }
 
     public function setName(string $name): void { $this->name = $name; }
     public function setAddressSuffixOne(string $line): void { $this->addressSuffixOne = $line; }
@@ -300,6 +342,11 @@ class Mandator
     public function setLogoPath(string $path): void { $this->logoPath = str_replace('\\', '/', trim($path)); }
     public function setUid(string $uid): void { $this->uid = Uid::normalize($uid); }
     public function setLiableToVat(bool $liable): void { $this->liableToVat = $liable; }
+    /** Trimmed, whitespace collapsed to one line — the note is one printed sentence. */
+    public function setVatExemptNote(?string $note): void
+    {
+        $this->vatExemptNote = trim((string) preg_replace('/\s+/u', ' ', (string) $note));
+    }
     /** Trimmed, one line, trailing colons stripped — debtor's `SubjectLabel::normalize()` rule, repeated (the print adds «: »). */
     public function setDefaultSubjectLabel(?string $label): void
     {
@@ -314,4 +361,6 @@ class Mandator
     public function setAccountVatInputMaterial(string $number): void { $this->accountVatInputMaterial = trim($number); }
     public function setAccountVatInputOther(string $number): void { $this->accountVatInputOther = trim($number); }
     public function setAccountVatOwed(string $number): void { $this->accountVatOwed = trim($number); }
+    public function setAccountOpeningBalance(string $number): void { $this->accountOpeningBalance = trim($number); }
+    public function setAccountAnnualResult(string $number): void { $this->accountAnnualResult = trim($number); }
 }

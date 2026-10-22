@@ -13,7 +13,8 @@ use Z77\Persistence\Resolver\UnifiedEntityManager;
  *
  * Who READS an account is NOT this class: the two access points that
  * existed before E2 stay the readers — `LedgerService::vatAccountFor()` for
- * the three `vat-*` keys (by tax-code category) and debtor's
+ * the three `vat-*` keys (by tax-code category), `LedgerService::yearOpeningAccount()`
+ * for `opening-balance` / `annual-result` (the year opening, 2026-10-22) and debtor's
  * `DebtorAccounts` for the first five — so the resolution and its refusal
  * («no account for key x — set it in the mandator») live in one place per
  * module and no caller asks the record directly.
@@ -38,6 +39,8 @@ final class MandatorAccounts
         'vat-input-material' => 'Vorsteuer Material, Waren, Dienstleistungen',
         'vat-input-other'    => 'Vorsteuer Investitionen, übriger Betriebsaufwand',
         'vat-owed'           => 'Geschuldete MWST (Umsatzsteuer)',
+        'opening-balance'    => 'Eröffnungsbilanz',
+        'annual-result'      => 'Jahresgewinn/-verlust',
     ];
 
     /** Start values per the KMU chart (`res/charts/kmu.json` of module-financial) — the pre-fill of a NEW record. */
@@ -50,6 +53,8 @@ final class MandatorAccounts
         'vat-input-material' => '1170',
         'vat-input-other'    => '1171',
         'vat-owed'           => '2200',
+        'opening-balance'    => '9100',
+        'annual-result'      => '2979',
     ];
 
     public function __construct(private readonly UnifiedEntityManager $em) {}

@@ -620,7 +620,7 @@ final class OrderService
                 $line = new SalesOrderLine($order);
                 $order->addLine($line);
             }
-            $line->write(++$position, $parent, $spec['type'], $spec['variant'], $spec['articleNumber'], $spec['text'], $spec['quantity'], $spec['unit'], $spec['unitPrice'], $spec['discount'], $spec['taxCode'], $spec['account']);
+            $line->write(++$position, $parent, $spec['type'], $spec['variant'], $spec['articleNumber'], $spec['text'], $spec['quantity'], $spec['unit'], $spec['unitPrice'], $spec['discount'], $spec['taxCode'], $spec['account'], $spec['code']);
             foreach ($spec['children'] as $child) {
                 $write($child, $line);
             }
@@ -834,6 +834,12 @@ final class OrderService
         if (mb_strlen($text) > SalesOrderLine::TEXT_LENGTH) {
             $errors[$field('text')] = 'Text: höchstens ' . SalesOrderLine::TEXT_LENGTH . ' Zeichen.';
         }
+        // The line's short code (owner 2026-10-22): any line type, trimmed, '' = none, never cut.
+        $code = trim((string) $d->code);
+        if (mb_strlen($code) > SalesOrderLine::CODE_LENGTH) {
+            $errors[$field('code')] = 'Code: höchstens ' . SalesOrderLine::CODE_LENGTH . ' Zeichen.';
+        }
+        $code = $code === '' ? null : $code;
 
         if ($type === LineType::Text) {
             if ($d->variantId !== null) {
@@ -846,7 +852,7 @@ final class OrderService
                 $errors[$field('children')] = 'Unter einer Textzeile stehen keine Positionen — nur unter einer Position mit Preis.';
             }
 
-            return count($errors) > $count ? null : self::spec($d->id, $type, null, null, $text, null, null, null, 0, null, null, []);
+            return count($errors) > $count ? null : self::spec($d->id, $type, null, null, $text, null, null, null, 0, null, null, [], $code);
         }
 
         // ── a priced line: an article (D3) — or a free line (D2) the order already holds, unchanged ──
@@ -947,7 +953,7 @@ final class OrderService
             return null;
         }
 
-        return self::spec($d->id, $type, $variant, $articleNumber, $text, $quantity, $unit === '' ? null : $unit, $unitPrice, $discount, $taxCode, $account, $children);
+        return self::spec($d->id, $type, $variant, $articleNumber, $text, $quantity, $unit === '' ? null : $unit, $unitPrice, $discount, $taxCode, $account, $children, $code);
     }
 
     /**
@@ -1146,12 +1152,12 @@ final class OrderService
     }
 
     /** @param list<array<string, mixed>> $children @return array<string, mixed> */
-    private static function spec(?int $id, LineType $type, ?Variant $variant, ?string $articleNumber, string $text, ?string $quantity, ?string $unit, ?Money $unitPrice, int $discount, ?string $taxCode, ?string $account, array $children): array
+    private static function spec(?int $id, LineType $type, ?Variant $variant, ?string $articleNumber, string $text, ?string $quantity, ?string $unit, ?Money $unitPrice, int $discount, ?string $taxCode, ?string $account, array $children, ?string $code = null): array
     {
         return [
             'id' => $id, 'type' => $type, 'variant' => $variant, 'articleNumber' => $articleNumber, 'text' => $text,
             'quantity' => $quantity, 'unit' => $unit, 'unitPrice' => $unitPrice, 'discount' => $discount,
-            'taxCode' => $taxCode, 'account' => $account, 'children' => $children,
+            'taxCode' => $taxCode, 'account' => $account, 'children' => $children, 'code' => $code,
         ];
     }
 

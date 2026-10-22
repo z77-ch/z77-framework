@@ -10,7 +10,9 @@
  *     reference linked to the journal entry as a WINDOW (ADR-047, `?ref=`) when the
  *     bookkeeping is here; «Zahlungen» — the settlements with their «ändern» link (P4 part 1);
  *     «Offen»; «Mahnungen» — the dunning history with the fee document and its PDF (P4 part 3);
- *     «Mahngebühr zu» (a fee document); «Gutschriften»; «Erstellt» with the last change;
+ *     «Mahngebühr zu» (a fee document); «Gutschriften»; «MWST» — the note a document without
+ *     VAT printed, from the snapshot (owner 2026-10-22; only when one was stored); «Erstellt»
+ *     with the last change;
  *   - «Zahlteil (QR-Rechnung)» (not on a credit note): account with its kind, the creditor, the
  *     reference in blocks of five or «NON» with the message — on a draft «folgt mit der
  *     Belegnummer beim Buchungsdruck» — and «Vor dem Buchungsdruck beheben» / «Kein Zahlteil»
@@ -84,6 +86,9 @@ $mask       = static fn(int $id): string => $actionBase . '/edit?id=' . $id;
         <?php endif; ?>
         <?php if ($creditNotes !== []): ?>
         <?= raw($row('Gutschriften', implode(', ', array_map(fn($n) => $winLink($mask((int) $n->getId()), $n->documentName()) . ' ' . e($fmt($n->getGrossTotal())) . ($n->isFinal() ? '' : ' (in Fakturierung)'), $creditNotes)))) ?>
+        <?php endif; ?>
+        <?php if ($document->getVatNote() !== null): /* a document without VAT: the note as printed, from the snapshot (owner 2026-10-22) */ ?>
+        <?= raw($row('MWST', '<span class="be-list__cell--muted">' . e($document->getVatNote()) . '</span>')) ?>
         <?php endif; ?>
         <?= raw($row('Erstellt', e($document->getCreatedAt()->format('d.m.Y H:i') . ' von ' . $document->getCreatedBy()) . ($document->getChangedAt() !== null ? ' · zuletzt ' . e($document->getChangedAt()->format('d.m.Y H:i') . ' von ' . $document->getChangedBy()) : ''))) ?>
     </div>

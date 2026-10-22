@@ -5,6 +5,7 @@ namespace Z77\Module\Order\Entities;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
 use Z77\Module\Article\Entities\Variant;
+use Z77\Module\Debtor\Entities\InvoiceLine;
 use Z77\Module\Debtor\Entities\LineType;
 use Z77\Persistence\Doctrine\Type\MoneyType;
 use Z77\Shared\Attributes\Entity;
@@ -41,6 +42,8 @@ class SalesOrderLine
     public const TAX_CODE_LENGTH       = 8;
     public const ACCOUNT_LENGTH        = 10;
     public const TEXT_LENGTH           = 2000;
+    /** The line code's length — debtor's, the one rule (it is carried into the invoice line). */
+    public const CODE_LENGTH           = InvoiceLine::CODE_LENGTH;
 
     /** `DECIMAL(12,3)`: up to nine digits before the point, three after, optional sign. */
     public const QUANTITY_PATTERN = '/^-?\d{1,9}(?:\.\d{1,3})?$/';
@@ -99,6 +102,14 @@ class SalesOrderLine
     #[ORM\Column(name: 'revenue_account', length: self::ACCOUNT_LENGTH, nullable: true)]
     private ?string $revenueAccount = null;
 
+    /**
+     * The line's short CODE (owner decision 2026-10-22; the wdv `shop_positions.code`) — carried into
+     * the invoice line at the booking print, offered to the PDF rows (`code`), not printed by the
+     * framework's templates. Null = none. Migration `Version20261022120000`.
+     */
+    #[ORM\Column(length: self::CODE_LENGTH, nullable: true)]
+    private ?string $code = null;
+
     public function __construct(SalesOrder $order)
     {
         $this->order = $order;
@@ -117,6 +128,7 @@ class SalesOrderLine
     public function getDiscountPercent(): int { return $this->discountPercent; }
     public function getTaxCode(): ?string { return $this->taxCode; }
     public function getRevenueAccount(): ?string { return $this->revenueAccount; }
+    public function getCode(): ?string { return $this->code; }
 
     public function type(): LineType
     {
@@ -150,6 +162,7 @@ class SalesOrderLine
         int $discountPercent,
         ?string $taxCode,
         ?string $revenueAccount,
+        ?string $code = null,
     ): void {
         if ($position < 1) {
             throw new \LogicException('A line position starts at 1');
@@ -173,6 +186,9 @@ class SalesOrderLine
         } elseif ($variant !== null || $quantity !== null || $unitPrice !== null || $discountPercent !== 0 || $taxCode !== null || $revenueAccount !== null) {
             throw new \LogicException('A text line carries no article, quantity, price, discount, tax code or account');
         }
+        if ($code !== null && ($code === '' || $code !== trim($code) || mb_strlen($code) > self::CODE_LENGTH)) {
+            throw new \LogicException('A line code is trimmed, not empty and at most ' . self::CODE_LENGTH . ' characters — null for none');
+        }
         if ($variant === null && $articleNumber !== null) {
             throw new \LogicException('An article number belongs to an article line');
         }
@@ -188,5 +204,6 @@ class SalesOrderLine
         $this->discountPercent = $discountPercent;
         $this->taxCode         = $taxCode;
         $this->revenueAccount  = $revenueAccount;
+        $this->code            = $code;
     }
 }

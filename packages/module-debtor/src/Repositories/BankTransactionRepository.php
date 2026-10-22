@@ -74,4 +74,18 @@ class BankTransactionRepository extends DoctrineRepository
 
         return ['rows' => $rows, 'count' => $count];
     }
+
+    /**
+     * How many transactions are still `matched` or `unmatched` — received, not
+     * booked, whatever their date: the dashboard's «Zahlungseingänge nicht
+     * verbucht» (`Dashboard\DebtorDashboard`, ADR-052). One COUNT over the index
+     * `idx_bank_transaction_state_date`. Doctrine-only (SQL).
+     */
+    public function countUnbooked(): int
+    {
+        return (int) $this->connection()->fetchOne(
+            'SELECT COUNT(*) FROM bank_transaction WHERE state IN (?, ?)',
+            [TransactionState::Unmatched->value, TransactionState::Matched->value]
+        );
+    }
 }

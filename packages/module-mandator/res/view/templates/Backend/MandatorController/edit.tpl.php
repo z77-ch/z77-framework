@@ -5,8 +5,9 @@
  *
  *   - Briefkopf: name, two address lines, street / no, zip / city, country;
  *     e-mail, phone, website; the logo path;
- *   - UID und MWST: the UID (canonical `CHE-123.456.789`) and the liability
- *     switch (a hidden `0` before it, so «off» is submitted too);
+ *   - UID und MWST: the UID (canonical `CHE-123.456.789`), the liability
+ *     switch (a hidden `0` before it, so «off» is submitted too) and, under
+ *     it, the note a document without VAT prints (owner 2026-10-22);
  *   - Konten: the ledger accounts the business modules post with — typed by
  *     number with the shared `<datalist>` when module-financial is
  *     registered; each row shows its status;
@@ -137,6 +138,15 @@ $text = function (string $field, string $label, string $value, int $maxlength, s
                     <span class="be-switch__label">Mehrwertsteuerpflichtig</span>
                 </label>
                 <small class="be-form__hint">Aus: Rechnungen, Gutschriften, Offerten und Auftragsbestätigungen werden ohne MWST berechnet, verbucht und gedruckt. Eine Gutschrift folgt ihrer Rechnung.</small>
+            </div>
+            <?php /* The note a document without VAT prints (owner 2026-10-22) — directly under the switch it
+                     belongs to. No placeholder (the backend's rule: a grey suggestion reads as a value);
+                     the usual wording stands in the hint. */ ?>
+            <div class="be-form__field" data-z77-field-wrapper>
+                <label for="mandator-vat_exempt_note">Hinweis ohne MWST</label>
+                <input type="text" id="mandator-vat_exempt_note" name="vat_exempt_note" value="<?= e($entry->getVatExemptNote()) ?>" maxlength="<?= \Z77\Module\Mandator\Entities\Mandator::VAT_EXEMPT_NOTE_LENGTH ?>" autocomplete="off" aria-invalid="<?= $invalid('vat_exempt_note') ?>">
+                <?= raw($fieldError('vat_exempt_note')) ?>
+                <small class="be-form__hint">Wird auf jeder Rechnung, Gutschrift, Offerte und Auftragsbestätigung unter dem Total gedruckt, solange der Schalter aus ist. Üblich: «Keine MWST — der Rechnungssteller ist nicht mehrwertsteuerpflichtig.» Ein verbuchter Beleg behält den Text, wie er beim Erstellen lautete.</small>
             </div>
         </div>
         </section>

@@ -63,7 +63,7 @@ packages/module-backend/res/scss/
 │   ├── _shell-banner.scss  .be-shell-banner — shared Störer band at the top of the shell; users: crawl block (SEO-NOINDEX-001) + missing installation identity (ADR-030)
 │   ├── _subnav.scss        .backend-subnav + .backend-tree-*
 │   ├── _service-panel.scss .backend-service-panel (avatar dropdown)
-│   ├── _overview.scss      .be-overview + .be-module-card (+ own @media responsive)
+│   ├── _overview.scss      .be-overview + .be-tile + .be-pending — the dashboard, ADR-052 (+ own @media responsive)
 │   ├── _dms-host.scss      host binding: maps --dms-* onto --be-* on `.be .dms` (ADR-018 rule 4)
 │   └── _split-host.scss    host binding: maps --z77-split-* onto --be-* on `.be .z77-split`
 └── base.scss               tokens + base + all components — the ONLY stylesheet

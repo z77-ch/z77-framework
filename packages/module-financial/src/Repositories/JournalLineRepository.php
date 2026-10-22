@@ -187,6 +187,34 @@ class JournalLineRepository extends DoctrineRepository
         return ['count' => (int) $total['entries'], 'numbers' => array_map('intval', $numbers), 'net' => (string) $total['net']];
     }
 
+    /** The fixed condition of {@see entriesOnAccountExcept()} — every value a placeholder. */
+    private const ACCOUNT_EXCEPT_KEY_WHERE = 'l.account_id = ? AND e.fiscal_year_id = ? AND (e.idempotency_key IS NULL OR e.idempotency_key <> ?)';
+
+    /**
+     * The entries of a fiscal year with a line on one account that do NOT carry $exceptKey as
+     * their idempotency key — what the year opening asks of its contra account (P5, owner
+     * 2026-10-22): an opening the generator did not make (an imported «EB:» entry, a manual
+     * one) refuses a generated one. How many, and the first $limit entry numbers in order.
+     * Doctrine-only (SQL).
+     *
+     * @return array{count: int, numbers: list<int>}
+     */
+    public function entriesOnAccountExcept(int $accountId, int $fiscalYearId, string $exceptKey, int $limit): array
+    {
+        $count = $this->connection()->fetchOne(
+            'SELECT COUNT(DISTINCT e.id) FROM journal_line l JOIN journal_entry e ON e.id = l.entry_id WHERE ' . self::ACCOUNT_EXCEPT_KEY_WHERE,
+            [$accountId, $fiscalYearId, $exceptKey],
+            [ParameterType::INTEGER, ParameterType::INTEGER, ParameterType::STRING]
+        );
+        $numbers = $this->connection()->fetchFirstColumn(
+            'SELECT DISTINCT e.number FROM journal_line l JOIN journal_entry e ON e.id = l.entry_id WHERE ' . self::ACCOUNT_EXCEPT_KEY_WHERE . ' ORDER BY e.number LIMIT ?',
+            [$accountId, $fiscalYearId, $exceptKey, max(1, $limit)],
+            [ParameterType::INTEGER, ParameterType::INTEGER, ParameterType::STRING, ParameterType::INTEGER]
+        );
+
+        return ['count' => (int) $count, 'numbers' => array_map('intval', $numbers)];
+    }
+
     /**
      * The OTHER accounts of the given entries — the account statement's
      * counter-account column: per entry the number of distinct other

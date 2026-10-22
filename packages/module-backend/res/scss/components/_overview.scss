@@ -1,20 +1,29 @@
-// Backend overview / entry page
+// Backend overview / entry page (ADR-052): the tiles — one per menu section —
+// and below them the pending list. The weights wear the shared `.badge` pill
+// (_badges.scss: danger = dringend, warning = zu erledigen).
 .be-overview {
     flex:       1;
     overflow-y: auto;
     background: var(--be-bg);
-    padding:    var(--space-10) var(--space-8);
+    padding:    var(--space-6) var(--space-8) var(--space-10);
 }
 
 .be-overview__header {
-    margin-bottom: var(--space-8);
+    margin-bottom: var(--space-6);
 }
 
-.be-overview__greeting {
-    font-size:   var(--font-size-sm);
-    color:       var(--be-muted);
-    font-family: var(--font-family-mono);
-    margin-bottom: var(--space-1);
+// The dashboard is the ONE screen without band and crumb row (owner 2026-10-22: «eine Ausnahme und
+// Entscheidung für das Dashboard») — `shellBare` from DashboardController; both tracks collapse.
+.be-shell--bare {
+    grid-template-rows: var(--shell-bar) 0 auto 0 minmax(0, 1fr);
+
+    .be-shell-band, .be-shell-crumb { display: none; }
+}
+
+.be-overview__signed-in {
+    margin-top: var(--space-1);
+    font-size:  var(--font-size-sm);
+    color:      var(--be-muted);
 }
 
 .be-overview__title {
@@ -25,74 +34,205 @@
     color:          var(--be-text);
 }
 
-// Module card grid
-.be-overview__modules {
+// Tile grid — at most FOUR columns (owner 2026-10-22), a tile never narrower than 15rem;
+// the max() term caps the count: a track is at least a quarter of the row minus the gaps.
+.be-overview__tiles {
+    --tile-gap:            var(--space-4);
     display:               grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap:                   var(--space-4);
+    grid-template-columns: repeat(auto-fill, minmax(max(15rem, calc((100% - 3 * var(--tile-gap)) / 4)), 1fr));
+    gap:                   var(--tile-gap);
+    margin-bottom:         var(--space-8);
 }
 
-.be-module-card {
+.be-tile {
     display:        flex;
     flex-direction: column;
-    gap:            var(--space-1);
-    padding:        var(--space-6);
+    gap:            var(--space-4);
+    padding:        var(--space-5);
     background:     var(--be-surface2);          /* a card on the ground (ADR-051) */
     border:         1px solid var(--be-line);
     border-radius:  var(--radius-card);
     color:          var(--be-text);
-    transition:     box-shadow var(--transition-base), transform var(--transition-base), border-color var(--transition-fast);
-    position:       relative;
+    min-width:      0;
+    transition:     border-color .15s, box-shadow .15s;
+
+    &:hover { border-color: color-mix(in srgb, var(--be-accent) 35%, var(--be-line)); box-shadow: 0 4px 16px color-mix(in srgb, var(--be-text) 6%, transparent); }
 }
 
-.be-module-card:hover {
-    box-shadow:   var(--shadow-md);
-    transform:    translateY(-2px);
-    border-color: var(--be-accent);
+.be-tile__head {
+    display:     flex;
+    align-items: center;
+    gap:         var(--space-3);
 }
 
-.be-module-card__code {
-    font-family:    var(--font-family-mono);
-    font-size:      0.625rem;
-    color:          var(--be-muted);
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
+// The section's glyph (ModuleIcons — the same lookup as the topbar switcher) on a soft square.
+.be-tile__icon {
+    display:         inline-grid;
+    place-items:     center;
+    flex:            none;
+    width:           2.25rem;
+    height:          2.25rem;
+    border-radius:   var(--radius-sm);
+    background:      var(--be-accent-soft);
+    color:           var(--be-accent);
 }
 
-.be-module-card__label {
+.be-tile__title {
+    flex:           1;
+    min-width:      0;
     font-family:    var(--font-family-display);
-    font-size:      1.375rem;
+    font-size:      1.2rem;
     font-weight:    400;
     letter-spacing: -0.01em;
     line-height:    var(--line-height-tight);
+    overflow:       hidden;
+    text-overflow:  ellipsis;
+    white-space:    nowrap;
+
+    a       { color: inherit; }
+    a:hover { color: var(--be-accent); }
 }
 
-.be-module-card__sub {
-    font-size: var(--font-size-sm);
+// «+ Neuer …» — in the tile head (no action bar, owner 2026-10-22); on a narrow tile only the «+».
+.be-tile__new {
+    display:       inline-flex;
+    align-items:   center;
+    gap:           var(--space-1);
+    flex:          none;
+    padding:       .3125rem .625rem;
+    border:        1px solid transparent;
+    border-radius: var(--radius-sm);
+    background:    var(--be-accent-soft);
+    color:         var(--be-accent);
+    font:          inherit;
+    font-size:     var(--font-size-xs);
+    font-weight:   var(--font-weight-semibold);
+    white-space:   nowrap;
+    cursor:        pointer;
+
+    &:hover, &:focus-visible { border-color: var(--be-accent); outline: none; }
+}
+
+// The tile's pending work — one row per entry: weight as a dot, label, figure right.
+.be-tile__todos {
+    list-style: none;
+    margin:     0;
+    padding:    0;
+    display:    grid;
+    gap:        var(--space-1);
+}
+
+.be-tile__todo {
+    --dot:                 var(--be-warn);
+    display:               grid;
+    grid-template-columns: .5rem 1fr auto;
+    align-items:           center;
+    gap:                   var(--space-2);
+    padding:               var(--space-1) var(--space-2);
+    margin-inline:         calc(-1 * var(--space-2));
+    border-radius:         var(--radius-sm);
+    color:                 var(--be-text);
+    font-size:             var(--font-size-sm);
+
+    &::before { content: ""; width: .5rem; height: .5rem; border-radius: 50%; background: var(--dot); }
+    &:hover   { background: color-mix(in srgb, var(--dot) 10%, transparent); }
+}
+
+.be-tile__todo--urgent { --dot: var(--be-danger); }
+
+.be-tile__todo-label {
+    min-width:     0;
+    overflow:      hidden;
+    text-overflow: ellipsis;
+    white-space:   nowrap;
+}
+
+.be-tile__todo-figure {
+    font-variant-numeric: tabular-nums;
+    font-weight:          var(--font-weight-semibold);
+    white-space:          nowrap;
+}
+
+.be-tile__todo--urgent .be-tile__todo-figure { color: color-mix(in srgb, var(--be-danger) 85%, var(--be-text)); }
+
+// The section's pages — two quiet columns, pushed to the tile's foot.
+.be-tile__links {
+    display:               grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap:                   var(--space-1) var(--space-3);
+    margin-top:            auto;
+    padding-top:           var(--space-3);
+    border-top:            1px solid var(--be-line);
+    font-size:             var(--font-size-sm);
+
+    a       { color: var(--be-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    a:hover { color: var(--be-accent); }
+}
+
+// Pending list — every module's open work, urgent first.
+.be-pending {
+    background:    var(--be-surface2);
+    border:        1px solid var(--be-line);
+    border-radius: var(--radius-card);
+    overflow:      hidden;
+}
+
+.be-pending__head {
+    display:         flex;
+    justify-content: space-between;
+    align-items:     baseline;
+    padding:         var(--space-3) var(--space-5);
+    border-bottom:   1px solid var(--be-line);
+}
+
+.be-pending__title {
+    font-size:   var(--font-size-lg);
+    font-weight: var(--font-weight-semibold);
+}
+
+.be-pending__count,
+.be-pending__where {
     color:     var(--be-muted);
+    font-size: var(--font-size-sm);
 }
 
-.be-module-card__arrow {
-    position:   absolute;
-    bottom:     var(--space-6);
-    right:      var(--space-6);
-    color:      var(--be-accent);
-    opacity:    0;
-    transition: opacity var(--transition-fast), transform var(--transition-fast);
+.be-pending__empty {
+    padding: var(--space-4) var(--space-5);
+    color:   var(--be-muted);
 }
 
-.be-module-card:hover .be-module-card__arrow {
-    opacity:   1;
-    transform: translateX(3px);
+.be-pending__list {
+    list-style: none;
+    margin:     0;
+    padding:    0;
+
+    li + li { border-top: 1px solid var(--be-line); }
+}
+
+.be-pending__row {
+    display:               grid;
+    grid-template-columns: auto 1fr auto;
+    align-items:           center;
+    gap:                   var(--space-3);
+    padding:               var(--space-3) var(--space-5);
+    color:                 var(--be-text);
+}
+
+a.be-pending__row:hover { background: var(--be-accent-soft); }
+
+.be-pending__figure {
+    font-variant-numeric: tabular-nums;
+    font-weight:          var(--font-weight-semibold);
+    white-space:          nowrap;
 }
 
 // Responsive — relocated from layout/_mobile.scss + layout/_tablet.scss when those
 // legacy files were retired (the overview is the only live consumer of their rules).
 @media (max-width: 767px) {
-    .be-overview           { padding: var(--space-6) var(--space-4); }
-    .be-overview__modules  { grid-template-columns: 1fr; }
+    .be-overview      { padding: var(--space-6) var(--space-4); }
+    .be-pending__row  { grid-template-columns: auto 1fr; }
+    .be-pending__figure { grid-column: 2; }
 }
 @media (min-width: 768px) and (max-width: 1199px) {
-    .be-overview           { padding: var(--space-8) var(--space-6); }
-    .be-overview__modules  { grid-template-columns: repeat(2, 1fr); }
+    .be-overview      { padding: var(--space-8) var(--space-6); }
 }

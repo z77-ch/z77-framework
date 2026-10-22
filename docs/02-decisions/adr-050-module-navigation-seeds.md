@@ -137,7 +137,9 @@ Built as specified; where the text left a choice, this is what was decided (conf
   module-order (P7) adds its screens there — and Stammdaten › «Aufträge»
   (`stammdaten-auftraege`) with Zahlungskonditionen, Zahlungsziele, Mahnstufen. Roots renumbered:
   Webseiten 0, Finanzen 1, Aufträge 2, Kontakte 3, Drive 4, Stammdaten 5, Service 6; groups Firma
-  0, Finanzen 1, Aufträge 2, Kontakte 3, System 4.
+  0, Finanzen 1, Aufträge 2, Kontakte 3, System 4. **Addendum 2026-10-22 (owner):** roots reordered —
+  the daily work first, the dashboard tiles follow the menu (ADR-052): Auftragswesen 0 (renamed from «Aufträge», also the Stammdaten group; keys `auftraege` / `stammdaten-auftraege` unchanged), Drive 1, Webseiten 2,
+  Kontakte 3, Finanzen 4, Service 5, Stammdaten 6. Seeds only; an existing installation keeps its order (§3).
 - **Parent in a package not required:** module-vat and module-debtor do not require
   module-financial; without it their entries wait (the installer names them on every run).
 - **An installation seeded from the OLD kernel default** keeps Navigation and Benutzer directly

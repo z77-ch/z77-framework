@@ -59,6 +59,16 @@
  * the admin reopen with a reason in reverse order, the protocol, the access
  * config, the list / modals / POSTs through a host double, the journal.
  *
+ * The year opening (EB, P5, owner decisions 2026-10-22): the closing balances
+ * of the year before (its imported opening included) as ONE generated entry
+ * against 9100, the result on 2979, 9100 netting to zero, the module-only
+ * 1100 opened; provisional while the predecessor is open; a re-run replaces
+ * in place (same number, one change row) or changes nothing; the refusals
+ * (closed target, no predecessor, an imported «EB:» on 9100, a missing or
+ * group account on the mandator, an inactive account with a balance); the
+ * reports of the target year; the dashboard entry; the ⋮, the status line,
+ * the dialog and the POST through a host double.
+ *
  * Run: php tests/module-financial.php
  * Needs what tests/module-contact.php needs (vendor/ with Doctrine, a
  * reachable MariaDB, credentials in `%USERPROFILE%\.z77\mariadb.txt` or
@@ -498,7 +508,7 @@ check('A9 a second migrate is a no-op', $code === 0 && str_contains($out, 'Alrea
 [$code, $out] = $run(['command' => 'diff', '--namespace' => 'Z77\\Module\\Financial\\Migrations']);
 check('A10 diff after migrate reports NO change — mapping and migration agree (money and text snapshot columns included)', $code !== 0 && str_contains($out, 'No changes detected') && count(glob($package . '/res/migrations/Version*.php')) === 5);   // + 2026-10-13 (module postings only)
 [$code, $out] = $run(['command' => 'status']);
-check('A11 status lists the module namespace and seven executed migrations (package, five of financial, one of mandator)', $code === 0 && str_contains($out, 'Z77\\Module\\Financial\\Migrations') && preg_match('/\| Executed\s+\|\s+7\s+\|/', $out) === 1);
+check('A11 status lists the module namespace and ten executed migrations (package, five of financial, four of mandator — the year-opening accounts 2026-10-22)', $code === 0 && str_contains($out, 'Z77\\Module\\Financial\\Migrations') && preg_match('/\| Executed\s+\|\s+10\s+\|/', $out) === 1);
 
 // ── B. the KMU chart: a button on an EMPTY chart ─────────────────────────
 
@@ -584,11 +594,13 @@ foreach ($chart as $a) {
         '3' => ['revenue'],
         '4', '5' => ['expense'],
         '6', '7', '8' => ['expense', 'revenue'],
+        // Class 9 «Abschluss»: only the contra account of the year opening (owner 2026-10-22), equity.
+        '9' => $a->getNumber() === '9100' ? ['equity'] : [],
         default => [],
     };
     $typesOk = $typesOk && in_array($a->getType(), $expected, true);
 }
-check('B7 types plausible per class: 1 asset, 2 liability (28/29 equity), 3 revenue, 4–5 expense, 6–8 expense or revenue, 9 nothing postable', $typesOk);
+check('B7 types plausible per class: 1 asset, 2 liability (28/29 equity), 3 revenue, 4–5 expense, 6–8 expense or revenue, 9 only 9100 «Eröffnungsbilanz» (equity, the year opening 2026-10-22)', $typesOk);
 check('B8 all five types occur; every account active', count(array_unique(array_map(fn(Account $a) => $a->getType(), $chart))) === 5 && array_filter($chart, fn(Account $a) => !$a->isActive()) === []);
 check('B9 German names with umlauts intact; the key accounts are where a Swiss bookkeeper expects them',
     ($byNumber['10'] ?? null)?->getName() === 'Umlaufvermögen' && ($byNumber['1020'] ?? null)?->getName() === 'Bankguthaben'
@@ -827,7 +839,7 @@ check('E3 the account trait: no delete action; toggle and the KMU adoption exist
 $yearActions = $methodsOf(FiscalYearControllerTrait::class);
 $yearActions = array_values(array_filter($yearActions, fn($m) => str_ends_with($m, 'Action')));
 sort($yearActions);
-check('E4 the fiscal-year trait: list, the ⋮ menu (actions), open, confirm-delete and delete, confirm-close / close and confirm-reopen / reopen (P5 part 1) — no edit', $yearActions === ['actionsAction', 'closeAction', 'confirmCloseAction', 'confirmDeleteAction', 'confirmReopenAction', 'deleteAction', 'listAction', 'openAction', 'reopenAction']);
+check('E4 the fiscal-year trait: list, the ⋮ menu (actions), open, confirm-delete and delete, confirm-close / close and confirm-reopen / reopen (P5 part 1), confirm-opening / opening (the year opening) — no edit', $yearActions === ['actionsAction', 'closeAction', 'confirmCloseAction', 'confirmDeleteAction', 'confirmOpeningAction', 'confirmReopenAction', 'deleteAction', 'listAction', 'openAction', 'openingAction', 'reopenAction']);
 $traitSource = file_get_contents($package . '/src/Ui/AccountControllerTrait.php');
 check('E5 the account trait maps a body only onto the NEW account of «add» (source guard, ADR-039 decision 9)', preg_match_all('/->mapFromArray\(/', $traitSource) === 1 && str_contains($traitSource, '$account->mapFromArray($values);')
     && strpos($traitSource, '$account->mapFromArray($values);') < strpos($traitSource, 'function editAction'));
@@ -3481,6 +3493,218 @@ $e4 = caught(fn() => $wireDi()->getTransaction(JournalEntry::class)->run(fn() =>
     PostingRequest::generated(day($moDay), 'Rechnung MO-1', 'invoice', 'MO-1-neu', 'mo:invoice:1', [PostingLine::debit('1100', chf('216.20')), PostingLine::credit('3200', chf('216.20'))]))), EntryNotEditableException::class);
 check('MO16 amend() with another sourceRef is refused (source-ref-changed), nothing logged', $e4?->reason === EntryNotEditableException::SOURCE_REF_CHANGED
     && (int) $db->fetchOne('SELECT COUNT(*) FROM journal_entry_change WHERE entry_number = ? AND fiscal_year_id = (SELECT id FROM fiscal_year WHERE code = ?)', [$moGen->number, $moCode]) === 0);
+
+echo "EB. The year opening: the closing balances of the year before as ONE generated entry, repeatable while the year is open (P5, owner decisions 2026-10-22)\n";
+
+// Two fresh years after every other: T1 (the predecessor, with an «imported» wdv opening on 9100
+// and a few movements) and T2 (the target). The mandator was created in O with the KMU start
+// values — 9100 «Eröffnungsbilanz» and 2979 «Jahresgewinn oder Jahresverlust» among them.
+$em = $wireDi();
+(new FiscalYearService($em))->open((new FiscalYearService($em))->proposeNext());
+$em = $wireDi();
+(new FiscalYearService($em))->open((new FiscalYearService($em))->proposeNext());
+$ebYear  = fn(string $code) => $wireDi()->getRepository(FiscalYear::class)->findOneBy(['code' => $code]);
+$ebT2    = $wireDi()->getRepository(FiscalYear::class)->latest();
+$ebC2    = $ebT2->getCode();
+$ebC1    = DI::getUnifiedEntityManager()->getRepository(FiscalYear::class)->predecessorOf($ebT2)->getCode();
+$ebD1    = $ebYear($ebC1)->getStartDate()->format('Y-m-d');
+$ebD1b   = $ebYear($ebC1)->getStartDate()->modify('+40 days')->format('Y-m-d');
+$ebD2    = $ebT2->getStartDate()->format('Y-m-d');
+$ebSvc   = fn() => new \Z77\Module\Financial\Services\YearOpeningService($wireDi(), 'buchhalter');
+$ebCreate = fn(string $code) => $ebSvc()->create($yearId($code));
+$ebRefused = fn(string $code) => caught(fn() => $ebCreate($code), \Z77\Module\Financial\Services\YearOpeningRefusedException::class);
+$ebKey   = fn(string $code) => 'opening:' . $code;
+$ebEntry = fn(string $code) => $db->fetchAssociative('SELECT * FROM journal_entry WHERE idempotency_key = ?', ['opening:' . $code]);
+$ebLines = fn(string $code) => array_map(fn($r) => [$r['account_number'], $r['debit'], $r['credit']], $lineRows((int) $ebEntry($code)['id']));
+$ebClose = fn(string $code, string $state) => $db->executeStatement('UPDATE fiscal_period p JOIN fiscal_year y ON y.id = p.fiscal_year_id SET p.state = ? WHERE y.code = ?', [$state, $code]);
+$ebNet   = fn(string $code, string $account) => (string) $db->fetchOne("SELECT COALESCE(SUM(l.debit - l.credit), 0) FROM journal_line l JOIN journal_entry e ON e.id = l.entry_id JOIN account a ON a.id = l.account_id JOIN fiscal_year y ON y.id = e.fiscal_year_id WHERE a.number = ? AND y.code = ?", [$account, $code]);
+
+// T1: wdv's opening «EB:» against 9100, imported as GENERATED entries of the source `wdv` (1100 is
+// flagged «nur durch Module bebuchbar» — a generated entry passes), then a sale, an expense and
+// a transfer there and back (1000 ends at zero — omitted from the opening).
+$ebImport = $post($wireDi(), PostingRequest::generated(day($ebD1), 'EB:' . $ebC1, 'wdv', 'EB:' . $ebC1, 'wdv:eb:' . $ebC1, [
+    PostingLine::debit('1020', chf('1100.00')), PostingLine::debit('1100', chf('500.00')),
+    PostingLine::credit('2800', chf('1500.00')), PostingLine::credit('2979', chf('100.00')),
+    PostingLine::credit('9100', chf('1600.00')), PostingLine::debit('9100', chf('1600.00')),
+]));
+$post($wireDi(), PostingRequest::generated(day($ebD1b), 'Rechnung EB-1', 'invoice', 'EB-1', 'eb:invoice:1', [
+    PostingLine::debit('1100', chf('1080.00')), PostingLine::credit('3200', chf('1000.00')), PostingLine::credit('2200', chf('80.00')),
+]));
+(new ManualEntryService($wireDi(), 'buchhalter'))->create(PostingRequest::manual(day($ebD1b), 'Büromaterial', [PostingLine::debit('6500', chf('200.00')), PostingLine::credit('1020', chf('200.00'))]));
+(new ManualEntryService($wireDi(), 'buchhalter'))->create(PostingRequest::manual(day($ebD1b), 'Kasse hin', [PostingLine::debit('1000', chf('50.00')), PostingLine::credit('1020', chf('50.00'))]));
+(new ManualEntryService($wireDi(), 'buchhalter'))->create(PostingRequest::manual(day($ebD1b), 'Kasse zurück', [PostingLine::debit('1020', chf('50.00')), PostingLine::credit('1000', chf('50.00'))]));
+
+check('EB1 lock-free: T2 (open, with a predecessor) may be opened; the earliest year (closed in YC) may not',
+    $ebSvc()->refusal($ebYear($ebC2)) === null
+    && $ebSvc()->refusal($wireDi()->getRepository(FiscalYear::class)->earliest()) === \Z77\Module\Financial\Services\YearOpeningRefusedException::TARGET_CLOSED);
+$ebPlan = $ebSvc()->plan($ebYear($ebC2));
+check('EB2 plan() while T1 is OPEN: provisional, no opening yet, the predecessor named', $ebPlan->provisional && $ebPlan->existing === null && !$ebPlan->upToDate
+    && $ebPlan->predecessorCode === $ebC1 && $ebPlan->targetCode === $ebC2 && $ebPlan->request !== null);
+check('EB3 the dashboard says nothing while the predecessor is open (a provisional opening is the bookkeeper\'s call)',
+    array_filter(\Z77\Module\Financial\Dashboard\FinancialDashboard::entriesOn($ebT2->getStartDate()->modify('+5 days')), fn($e) => str_contains($e->label, 'Eröffnung')) === []);
+$ebClose($ebC1, 'closed');
+$wireDi();
+check('EB4 … with the predecessor CLOSED and no opening: todo «Eröffnung {code} nicht erstellt» → Geschäftsjahre',
+    array_values(array_map(fn($e) => [$e->label, $e->severity, $e->href()], array_filter(\Z77\Module\Financial\Dashboard\FinancialDashboard::entriesOn($ebT2->getStartDate()->modify('+5 days')), fn($e) => str_contains($e->label, 'Eröffnung'))))
+        === [['Eröffnung ' . $ebC2 . ' nicht erstellt', \Z77\Shared\Dashboard\Severity::Todo, '/backend/finance/fiscal-year/list']]);
+$ebClose($ebC1, 'open');
+
+$ebRange = (string) $db->fetchOne('SELECT last_number FROM number_range WHERE name = ?', ['journal-entry.' . $ebC2]);
+$ebR1    = $ebCreate($ebC2);
+$ebRow   = $ebEntry($ebC2);
+check('EB5 create() with T1 open: CREATED and provisional, one generated entry dated T2\'s first day, origin `opening` / the code, key opening:{code}, text «Eröffnungsbilanz {code}»',
+    $ebR1->action === \Z77\Module\Financial\Services\YearOpeningResult::CREATED && $ebR1->provisional && $ebR1->predecessorCode === $ebC1
+    && $ebR1->ref->fiscalYear === $ebC2 && (int) $ebRow['number'] === $ebR1->ref->number && $ebRow['kind'] === 'generated'
+    && $ebRow['entry_date'] === $ebD2 && $ebRow['source_type'] === 'opening' && $ebRow['source_ref'] === $ebC2 && $ebRow['idempotency_key'] === $ebKey($ebC2)
+    && $ebRow['text'] === 'Eröffnungsbilanz ' . $ebC2 && (int) $db->fetchOne('SELECT last_number FROM number_range WHERE name = ?', ['journal-entry.' . $ebC2]) === (int) $ebRange + 1);
+check('EB6 the lines: every balance-sheet account with its T1 closing balance (incl. T1\'s own imported opening), in chart order; 1000 at zero omitted; the result 800 added to 2979\'s own 100; 9100 Haben = Σ Soll, Soll = Σ Haben',
+    $ebLines($ebC2) === [
+        ['1020', '900.00', '0.00'], ['1100', '1580.00', '0.00'], ['2200', '0.00', '80.00'], ['2800', '0.00', '1500.00'],
+        ['2979', '0.00', '900.00'], ['9100', '0.00', '2480.00'], ['9100', '2480.00', '0.00'],
+    ]);
+check('EB7 9100 nets to ZERO in T2; the collective account 1100 (flagged «nur durch Module bebuchbar») was opened — the opening is a generated posting',
+    $ebNet($ebC2, '9100') === '0.00' && $ebNet($ebC2, '1100') === '1580.00' && $wireDi()->getRepository(Account::class)->findOneBy(['number' => '1100'])->isModulePostingOnly());
+$ebRep  = new LedgerReports($wireDi());
+$ebBs   = $ebRep->balanceSheet(new ReportRange($ebYear($ebC2), $ebT2->getStartDate(), $ebT2->getStartDate()));
+$ebTb   = $ebRep->trialBalance(ReportRange::wholeYear($ebYear($ebC2)));
+$ebAcc  = $wireDi()->getRepository(Account::class)->findOneBy(['number' => '1100']);
+$ebOpen = $wireDi()->getRepository(JournalLine::class)->accountTotals((int) $ebAcc->getId(), $yearId($ebC2), $ebT2->getStartDate()->modify('+1 day')->format('Y-m-d'), $ebT2->getEndDate()->format('Y-m-d'));
+check('EB8 the reports of T2 show the carried balances: balance sheet per day 1 — Aktiven 2480.00, balanced, result 0.00; trial balance balanced; the account statement of 1100 opens with 1580.00',
+    $ebBs->assets->total->toDecimal() === '2480.00' && $ebBs->isBalanced() && $ebBs->result->isZero() && $ebTb->isBalanced() && $ebOpen['opening'] === '1580.00');
+
+$ebChanges = fn() => (int) $db->fetchOne('SELECT COUNT(*) FROM journal_entry_change WHERE entry_id = ?', [(int) $ebEntry($ebC2)['id']]);
+$ebR2 = $ebCreate($ebC2);
+check('EB9 a re-run with nothing changed: UNCHANGED — same number, no change row, no number drawn', $ebR2->action === \Z77\Module\Financial\Services\YearOpeningResult::UNCHANGED
+    && $ebR2->ref->number === $ebR1->ref->number && $ebChanges() === 0 && (int) $db->fetchOne('SELECT last_number FROM number_range WHERE name = ?', ['journal-entry.' . $ebC2]) === (int) $ebRange + 1);
+(new ManualEntryService($wireDi(), 'buchhalter'))->create(PostingRequest::manual(day($ebD1b), 'Nachtrag Vorjahr', [PostingLine::debit('6500', chf('50.00')), PostingLine::credit('1020', chf('50.00'))]));
+check('EB10 the predecessor changed: plan() says the opening is not up to date', !$ebSvc()->plan($ebYear($ebC2))->upToDate);
+$ebR3 = $ebCreate($ebC2);
+check('EB11 … the re-run REPLACES it in place (amend): UPDATED, the SAME number, ONE opening in the year, one change row (update) with before / after; 1020 850.00, 2979 850.00, 9100 2430.00',
+    $ebR3->action === \Z77\Module\Financial\Services\YearOpeningResult::UPDATED && $ebR3->ref->number === $ebR1->ref->number
+    && (int) $db->fetchOne("SELECT COUNT(*) FROM journal_entry WHERE source_type = 'opening' AND fiscal_year_id = ?", [$yearId($ebC2)]) === 1
+    && (int) $db->fetchOne("SELECT COUNT(*) FROM journal_entry_change WHERE entry_id = ? AND action = 'update'", [(int) $ebEntry($ebC2)['id']]) === 1
+    && $ebLines($ebC2) === [['1020', '850.00', '0.00'], ['1100', '1580.00', '0.00'], ['2200', '0.00', '80.00'], ['2800', '0.00', '1500.00'], ['2979', '0.00', '850.00'], ['9100', '0.00', '2430.00'], ['9100', '2430.00', '0.00']]);
+$ebClose($ebC1, 'closed');
+$ebR4 = $ebCreate($ebC2);
+check('EB12 with the predecessor CLOSED: no longer provisional (the content unchanged — UNCHANGED); the dashboard says nothing (the opening exists)',
+    !$ebR4->provisional && $ebR4->action === \Z77\Module\Financial\Services\YearOpeningResult::UNCHANGED && !$ebSvc()->plan($ebYear($ebC2))->provisional
+    && array_filter(\Z77\Module\Financial\Dashboard\FinancialDashboard::entriesOn($ebT2->getStartDate()->modify('+5 days')), fn($e) => str_contains($e->label, 'Eröffnung')) === []);
+$ebClose($ebC1, 'open');
+
+// The refusals.
+$e = $ebRefused($ebC1);
+check('EB13 a year that holds postings on 9100 the generator did not make (T1\'s imported «EB:») is refused (foreign-opening), naming the account and the entries; isOpened() true',
+    $e?->reason === \Z77\Module\Financial\Services\YearOpeningRefusedException::FOREIGN_OPENING && ($e->items[0] ?? '') === '9100 Eröffnungsbilanz'
+    && in_array((string) $ebImport->number, $e->items, true) && $ebSvc()->isOpened($ebYear($ebC1)) && $ebEntry($ebC1) === false);
+$ebClose($ebC2, 'closed');
+$e = $ebRefused($ebC2);
+check('EB14 a CLOSED target is refused (target-closed) — lock-free and in create(); the opening stays as it was', $e?->reason === \Z77\Module\Financial\Services\YearOpeningRefusedException::TARGET_CLOSED
+    && $ebSvc()->refusal($ebYear($ebC2)) === \Z77\Module\Financial\Services\YearOpeningRefusedException::TARGET_CLOSED && $ebChanges() === 1);
+$ebClose($ebC2, 'open');
+$em = $wireDi();
+(new FiscalYearService($em))->open((new FiscalYearService($em))->proposePrior());
+$ebFirst = $wireDi()->getRepository(FiscalYear::class)->earliest();
+$e = $ebRefused($ebFirst->getCode());
+check('EB15 the FIRST year (no predecessor) is refused (no-predecessor), and the ⋮ does not offer it', $e?->reason === \Z77\Module\Financial\Services\YearOpeningRefusedException::NO_PREDECESSOR
+    && $ebSvc()->refusal($ebFirst) === \Z77\Module\Financial\Services\YearOpeningRefusedException::NO_PREDECESSOR);
+(new FiscalYearService($wireDi()))->delete((int) $ebFirst->getId());
+$db->executeStatement("UPDATE mandator SET account_opening_balance = ''");
+$e1 = $ebRefused($ebC2);
+$db->executeStatement("UPDATE mandator SET account_opening_balance = '9100', account_annual_result = '290'");   // a group, past the validator
+$e2 = $ebRefused($ebC2);
+$db->executeStatement("UPDATE mandator SET account_annual_result = '2979'");
+check('EB16 a year-opening account missing on the mandator or not a postable account is refused (account-missing), naming the key and the number', $e1?->reason === \Z77\Module\Financial\Services\YearOpeningRefusedException::ACCOUNT_MISSING
+    && $e1->items === ['opening-balance', ''] && $e2?->reason === \Z77\Module\Financial\Services\YearOpeningRefusedException::ACCOUNT_MISSING && $e2->items === ['annual-result', '290'] && $ebChanges() === 1);
+(new AccountService($wireDi()))->setActive(DI::getUnifiedEntityManager()->getRepository(Account::class)->findOneBy(['number' => '2800']), false);
+$e = $ebRefused($ebC2);
+(new AccountService($wireDi()))->setActive(DI::getUnifiedEntityManager()->getRepository(Account::class)->findOneBy(['number' => '2800']), true);
+check('EB17 an INACTIVE account with a closing balance is refused (account-inactive), naming it', $e?->reason === \Z77\Module\Financial\Services\YearOpeningRefusedException::ACCOUNT_INACTIVE
+    && count($e->items) === 1 && str_starts_with($e->items[0], '2800 '));
+$ebNested = null;
+$ebEm = $wireDi();
+$ebOuter = function () use ($ebEm, $yearId, $ebC2, &$ebNested) {
+    $ebNested = caught(fn() => (new \Z77\Module\Financial\Services\YearOpeningService($ebEm, 'buchhalter'))->create($yearId($ebC2)), \LogicException::class);
+    throw new \RuntimeException('outer aborts');
+};
+caught(fn() => $ebEm->getTransaction(JournalEntry::class)->run($ebOuter), \RuntimeException::class);   // a named closure: the reference must outlive the arrow fn
+check('EB18 create() inside an open unit of work is refused (LogicException — it owns its unit of work)', $ebNested !== null && str_contains($ebNested->getMessage(), 'owns its unit of work'));
+
+echo "EB. … the screen: the ⋮ entry, the status line, the dialog, the POST (trait + templates, rendered without a web server)\n";
+$wireDiKeep();
+$ebHost = function () {
+    return new class {
+        use FiscalYearControllerTrait { listAction as public; actionsAction as public; confirmOpeningAction as public; openingAction as public; }
+        public array $context = [];
+        public object $layoutManager;
+        public object $messageService;
+        public function __construct()
+        {
+            $this->layoutManager = new class {
+                public array $sections = [];
+                public function removeSection(string $s): void { unset($this->sections[$s]); }
+                public function addPartials(string $name, string $path, string $ns, string $section = 'main'): void { $this->sections[$section][] = $path . '/' . $name; }
+            };
+            $this->messageService = new class {
+                public array $flashes = [];
+                public function pushFlashAfterRedirect(string $type, string $message): void { $this->flashes[] = [$type, $message]; }
+                public function pushFlash(string $type, string $message): void { $this->flashes[] = [$type, $message, 'in-place']; }
+            };
+        }
+        protected function em() { return DI::getUnifiedEntityManager(); }
+        protected function fetch(): \Z77\Core\Http\Response\FetchResponse { return new \Z77\Core\Http\Response\FetchResponse(); }
+        protected function fetchError(string $text): \Z77\Core\Http\Response\FetchResponse { $this->messageService->pushFlash('error', $text); return $this->fetch()->setStatus('error'); }
+        protected function html(array $context = []): \Z77\Core\Http\Response\HtmlResponse { $this->context = $context; return new \Z77\Core\Http\Response\HtmlResponse(null, $context); }
+        protected function fiscalYearCanReach(string $action): bool { return true; }
+        private function fiscalYearCloseService(): FiscalYearCloseService { return new FiscalYearCloseService($this->em(), 'admin', $GLOBALS['ycChecks']); }
+        // No session actor in the harness.
+        private function yearOpeningService(): \Z77\Module\Financial\Services\YearOpeningService { return new \Z77\Module\Financial\Services\YearOpeningService($this->em(), 'admin'); }
+    };
+};
+$ebListHtml = function () use ($ebHost, $renderer) { $_GET = []; $h = $ebHost(); $h->listAction(); return $renderer->partial('Backend/FiscalYearController/listAction', $h->context); };
+$html = $ebListHtml();
+check('EB19 the list: the ⋮ of T2 offers «opening», T1\'s too (the dialog refuses it), the closed earliest year not; T2\'s status line «Eröffnung: Buchung …» marked provisional (T1 open), T1\'s says why not',
+    fyOffers($html, $yearId($ebC2), 'opening') && fyOffers($html, $yearId($ebC1), 'opening') && !fyOffers($html, $yearId($pCode), 'opening')
+    && str_contains($html, 'data-fiscal-year-opening="provisional">') && str_contains($html, 'Buchung ' . $ebC2 . '/' . $ebR1->ref->number . ' — Vorjahr ' . $ebC1 . ' noch nicht abgeschlossen — Eröffnung provisorisch, nach Änderungen neu erstellen.')
+    && str_contains($html, 'data-fiscal-year-opening="refused">') && str_contains($html, 'Eröffnung bereits vorhanden (importiert / von Hand)'));
+$_GET = ['id' => (string) $yearId($ebC2)];
+$h = $ebHost();
+$h->actionsAction();
+$hub = $renderer->partial('Backend/FiscalYearController/actions', $h->context);
+check('EB20 the ⋮ hub: «Eröffnung neu erstellen …» (an opening exists) opening the dialog confirm-opening', str_contains($hub, 'data-fetch-get="/backend/finance/fiscal-year/confirm-opening?id=' . $yearId($ebC2) . '"')
+    && str_contains($hub, 'Eröffnung neu erstellen …'));
+(new ManualEntryService($wireDi(), 'buchhalter'))->create(PostingRequest::manual(day($ebD1b), 'Nachtrag 2', [PostingLine::debit('6500', chf('30.00')), PostingLine::credit('1020', chf('30.00'))]));
+$wireDiKeep();
+check('EB21 after another change in T1 the status line says «nicht aktuell … neu erstellen»', str_contains($ebListHtml(), 'data-fiscal-year-opening="outdated">'));
+$_GET = ['id' => (string) $yearId($ebC2)];
+$h = $ebHost();
+$h->confirmOpeningAction();
+$modal = implode('', array_map(fn($p) => $renderer->partial($p, $h->context), $h->layoutManager->sections['main'] ?? []));
+check('EB22 the dialog: the form (POST opening, the opening-scoped entity token), the owner\'s provisional note, «wird ersetzt — gleiche Nummer», the lines with names (9100 Eröffnungsbilanz), Soll = Haben',
+    str_contains($modal, 'data-fetch-post="/backend/finance/fiscal-year/opening"') && str_contains($modal, 'value="tok-fiscalYear.opening-' . $yearId($ebC2) . '"')
+    && str_contains($modal, 'data-opening-provisional') && str_contains($modal, 'Vorjahr ' . $ebC1 . ' noch nicht abgeschlossen — Eröffnung provisorisch, nach Änderungen neu erstellen.')
+    && str_contains($modal, 'data-opening-replace') && str_contains($modal, 'Eröffnungsbilanz') && str_contains($modal, '2400.00') && str_contains($modal, 'Neu erstellen'));
+$GLOBALS['ycBody'] = ['id' => $yearId($ebC2), 'entity_csrf' => 'tok-fiscalYear.close-' . $yearId($ebC2)];
+$h = $ebHost();
+$env = $envelope($h->openingAction());
+check('EB23 the POST with another action\'s token is refused, nothing written', ($env['status'] ?? '') === 'error' && $ebChanges() === 1);
+$GLOBALS['ycBody'] = ['id' => $yearId($ebC2), 'entity_csrf' => 'tok-fiscalYear.opening-' . $yearId($ebC2)];
+$h = $ebHost();
+$env = $envelope($h->openingAction());
+check('EB24 the POST re-creates: success, close the dialog + reload, the flash (info — provisional) names the entry and the owner\'s note; one more change row',
+    ($env['status'] ?? '') === 'success' && ($h->messageService->flashes[0][0] ?? '') === 'info'
+    && str_contains($h->messageService->flashes[0][1] ?? '', 'Eröffnung neu erstellt — Buchung ' . $ebC2 . '/' . $ebR1->ref->number)
+    && str_contains($h->messageService->flashes[0][1] ?? '', 'Eröffnung provisorisch') && $ebChanges() === 2);
+$_GET = ['id' => (string) $yearId($ebC1)];
+$h = $ebHost();
+$h->confirmOpeningAction();
+$modal = implode('', array_map(fn($p) => $renderer->partial($p, $h->context), $h->layoutManager->sections['main'] ?? []));
+check('EB25 the dialog for T1 (imported «EB:» on 9100): «Eröffnung nicht möglich», the sentence naming the entries, no form', str_contains($modal, 'Eröffnung nicht möglich')
+    && str_contains($modal, 'Eröffnung bereits vorhanden (importiert / von Hand): «9100 Eröffnungsbilanz» hat im Jahr die Buchungen Nr. ' . $ebImport->number) && !str_contains($modal, 'data-fetch-post'));
+check('EB26 source guards: the service reads the mandator only through LedgerService::yearOpeningAccount(); the KMU chart ships 9100 «Eröffnungsbilanz» postable under 91',
+    !str_contains(file_get_contents($package . '/src/Services/YearOpeningService.php'), 'CurrentMandator')
+    && (array_column(json_decode(file_get_contents($package . '/res/charts/kmu.json'), true), null, 'number')['9100'] ?? null) === ['number' => '9100', 'name' => 'Eröffnungsbilanz', 'type' => 'equity', 'postable' => true, 'parent' => '91']);
+$_GET = [];
+$GLOBALS['ycBody'] = [];
 
 echo "\n" . ($fail === 0 ? "PASS — {$pass} checks" : "FAIL — {$fail} of " . ($pass + $fail) . " checks") . "\n";
 exit($fail === 0 ? 0 : 1);

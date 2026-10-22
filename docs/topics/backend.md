@@ -1,6 +1,6 @@
 # backend
 
-2026-10-13
+2026-10-22
 
 ## entry
 
@@ -31,6 +31,15 @@ SOURCE=/packages/module-backend/res/view/templates/Content/MetaDataController/li
 SOURCE=/packages/module-backend/res/view/templates/Content/MetaDataController/edit.tpl.php
 SOURCE=/packages/module-backend/res/view/templates/Content/MetaDataController/confirmDelete.tpl.php
 SOURCE=/packages/module-backend/res/view/templates/System/DashboardController/overviewAction.tpl.php
+SOURCE=/packages/module-backend/res/view/templates/System/DashboardController/overview.help.tpl.php
+SOURCE=/packages/module-backend/src/Ui/DashboardBoard.php
+SOURCE=/packages/module-backend/src/Dashboard/ServiceDashboard.php
+SOURCE=/packages/module-backend/res/scss/components/_overview.scss
+SOURCE=/packages/kernel/shared/src/Dashboard/DashboardContributors.php
+SOURCE=/packages/kernel/shared/src/Dashboard/DashboardContributor.php
+SOURCE=/packages/kernel/shared/src/Dashboard/DashboardEntry.php
+SOURCE=/packages/kernel/shared/src/Dashboard/Severity.php
+SOURCE=/tests/backend-dashboard.php
 SOURCE=/packages/module-backend/res/view/templates/partials/subnav.tpl.php
 SOURCE=/packages/module-backend/res/view/templates/partials/shell/topbar.tpl.php
 SOURCE=/packages/module-backend/res/view/templates/partials/shell/crumb.tpl.php
@@ -91,7 +100,7 @@ Backend groups exist for UI organisation only — they are NOT business-domain b
 
 | Controller | Group | Default action | Notes |
 |---|---|---|---|
-| `DashboardController` | `system` | `overview` | Entry page after login, role EDITOR (every backend user lands here, ADR-045). Module cards declared in `DashboardController::CARDS` with their target route; a card is passed to the template only when `canReach()` allows its target. Must put `userPreferences` in template context. URL: `/backend/system/dashboard/overview`. |
+| `DashboardController` | `system` | `overview` | Entry page after login, role EDITOR (every backend user lands here, ADR-045). Built per ADR-052 (see «dashboard» below): one tile per visible menu section (`DashboardBoard::tilesFrom(BackendMenu)`, the same menu instance the shell renders), the modules' entries from the `dashboard` registry, each kept only when `canReach()` allows its target, the pending list below the tiles; short help attached (`overview.help`). The former `CARDS` constant is gone. URL: `/backend/system/dashboard/overview`. |
 | `LoginController` | `system` | `login` | Extends `AbstractBaseController` (NOT a security controller); see [`login.md`](login.md). URL: `/backend/system/login/login`, alias `/login`. |
 | `SystemController` | `system` | n/a (POST-only) | Fetch endpoints only (no HTML render). No config entry — the `list` convention resolves `/backend/system/system` to a `listAction` that does not exist → 404 by design (ADR-005 §SystemController Default Action; mechanism updated by AUTH-B003). |
 | `NavigationController` | `content` | `list` | Navigation ELEMENT CRUD: list (the shared navigation screen, grouped by config render-slots) / add / edit / confirmDelete / remove + `moveAction` (DnD tree mutation via `parentId` + `sortKey`) + `checkFieldAction` for blur-based field validation (see [`fetch.md`](fetch.md), [`entity-data-handling.md`](entity-data-handling.md)). URL: `/backend/content/navigation/list`. Render-slots + view areas are config (ADR-022) — there is no group controller. |
@@ -120,6 +129,52 @@ one user and one slot (`backend-main`):
 - The pure halves `BackendMenu::allowsIn()` + `visibleIn()` take the lookups as callables — `tests/backend-access.php` checks them over the real `backendConfig` without DI.
 - Visibility is not security. AccessGuard still refuses every route the menu hides; a hand-typed URL of a hidden screen redirects to `/login` as before.
 - A project that overrides `topbar`, `subnav` or `crumb` with a copy that still walks `$navigationService` shows the unfiltered menu — the templates now read `$backendMenu`.
+
+## dashboard
+
+ADR-052 (built 2026-10-22, board `dashboard-bauplan`). The entry page knows no module: tiles
+come from the menu, entries from a registry, access from `canReach()`.
+
+- **The one bare screen** (owner 2026-10-22, «eine Ausnahme und Entscheidung für das Dashboard»): `DashboardController` passes `shellBare` → the skeleton adds `be-shell--bare`, band and crumb row collapse, the page starts right under the top bar. No other screen may use it — every other screen starts at the same height (band + crumb always render). The head: «Übersicht», under it small «Angemeldet als: {login} – {BackendUser::name} · dd.mm.yyyy».
+
+| Piece | Where | Does |
+|---|---|---|
+| `DashboardContributors` | kernel `Z77\Shared\Dashboard` | registry: config key `dashboard` (list of classes) + extension files `App/Config/dashboardConfig.inc.php`; bad entry throws naming module/file; `entriesFor($user)` isolates each contributor (throws → logged, ONE line «Pendenzen aus Modul «…» nicht verfügbar») |
+| `DashboardContributor` | kernel | `entries(AuthUser $user): iterable<DashboardEntry>`, no-arg constructor |
+| `DashboardEntry` | kernel | `pending(Severity, label, route, query, count?, Money amount?)` · `create(label, route, opens: page\|window\|dialog)` · `unavailable(label)` |
+| `Severity` | kernel | `Urgent` «dringend», `Todo` «zu erledigen» — nothing else |
+| `DashboardBoard` | module-backend `Ui` | `tilesFrom(BackendMenu)` (one tile per visible section: name, first-page URL, visible leaf pages as links, routes of all visible pages) · `build(tiles, entries, reachable)` pure: canReach filter, placement by route (exact, else same controller), badges, creates, pending list urgent-first |
+| `ServiceDashboard` | module-backend `Dashboard` | backup older than `maxAgeDays` (backup policy, default 1) or none → todo; failed job runs of 7 days → urgent |
+
+Contributors of the first stage (each module's topic doc has its own list):
+
+| Module | Entry | Weight | Target |
+|---|---|---|---|
+| debtor | Rechnungen überfällig (count + open amount) | urgent | Debitoren `?view=overdue` |
+| debtor | Mahnvorschlag bereit | todo | Mahnungen |
+| debtor | Zahlungseingänge nicht verbucht | todo | Zahlungseingänge |
+| debtor | Rechnungsentwürfe nicht verbucht | todo | Rechnungen |
+| debtor | Kein Zahlungsziel mit IBAN | todo | Zahlungsziele |
+| order | Aufträge bereit zur Verrechnung (Termin / Geliefert) | todo | Aufträge `?view=confirmed` / `delivered` |
+| order | Offerten nachfassen | todo | Aufträge `?view=new` |
+| order | + Neuer Auftrag | create (window) | `/backend/order/order/add` |
+| contact | + Neuer Kontakt | create (dialog) | `/backend/contact/contact/add` |
+| financial | Kein offenes Geschäftsjahr für heute | urgent | Geschäftsjahre |
+| financial | Geschäftsjahr ab {1. des nächsten Monats} nicht eröffnet (last month of the year) | todo | Geschäftsjahre |
+| mandator | Mandant nicht erfasst / MWST-pflichtig ohne UID | todo | Mandant |
+| backend (service) | Noch kein Backup / Letztes Backup vor N Tagen | todo | Backup (SUPER_USER) |
+| backend (service) | Jobs fehlgeschlagen (7 Tage) | urgent | Jobs (SUPER_USER) |
+
+Owner decisions 2026-10-22: the pending list stands BELOW the tiles; no action bar — «+ Neu» in
+the tile head; amounts shown for overdue invoices; no counters where nothing is to be done (no
+info kind; quotes and drafts are todos); backup daily — warning after 1 day (`maxAgeDays`,
+configurable in `config/client/backup.inc.php`). «Zuletzt bearbeitet» is a later stage.
+
+- Placement follows the MENU: «Geschäftsjahre» and «Mandant» hang under «Stammdaten» in the
+  shipped navigation, so the fiscal-year and mandator entries are badges there, not on «Finanzen».
+- Badges link to the same target as the pending row. The pending row says where: «tile › menu
+  page» (the page is omitted when it is named like the tile).
+- The template decides nothing: weights wear the shared `.badge--danger` / `.badge--warning`.
 
 ## SystemController endpoints
 
@@ -290,7 +345,10 @@ machinery: it extends `BackendAbstractController` directly (not
 - Edit form fields: `username` (`#[Clean('text')]`, validated unique on submit),
   `password` (plaintext, transient — hashed bcrypt cost 12; blank on edit = keep),
   `roles` (checkboxes `name="roles"` → array; validated against `AuthRole` keys),
-  `initials` (`#[Clean('text')]`, optional avatar initials — see below).
+  `initials` (`#[Clean('text')]`, optional avatar initials — see below),
+  `name` (`#[Clean('text')]`, optional full name «Peter Ruepp», max `BackendUser::NAME_LENGTH` = 80,
+  `validateName`; shown on the dashboard as «Angemeldet als: admin – Peter Ruepp», owner 2026-10-22;
+  a `backendUsers.json` written before the field has no key and reads '').
   `passwordHash` / `roles` / `sortKey` are re-set server-side after
   `mapFromArray` — never trusted from the body.
 - **Avatar initials**: `BackendUser::$initials` is optional user-entered display data
@@ -348,9 +406,12 @@ design. Owned by [`security.md`](security.md) — see it for the gating rules.
 - When adding a backend Fetch endpoint → MUST return a `FetchResponse` envelope via `$this->fetch()` (see [`fetch.md`](fetch.md), [`messages.md`](messages.md))
 - When defining a backend role-protected controller → MUST register in `backendConfig.inc.php` with the correct minimum role
 - When rendering backend navigation (topbar, subnav, crumb, a new menu partial) → MUST read `$backendMenu` (`sections()`, `activeSection()`, `children()`, `href()`); MUST NOT walk `$navigationService` directly or check a role in the template — the menu would show links the access config refuses (ADR-045, HEADER-AUTH-001)
-- When a backend screen shows a button/card/link to another backend route → MUST decide its visibility in the controller with `AuthService::canReach()` and hand the template a boolean or a filtered list; MUST NOT hard-code a role (the content list's «Löschen» is `canDelete`, the dashboard cards are filtered in `DashboardController`)
+- When a backend screen shows a button/card/link to another backend route → MUST decide its visibility in the controller with `AuthService::canReach()` and hand the template a boolean or a filtered list; MUST NOT hard-code a role (the content list's «Löschen» is `canDelete`, the dashboard entries are filtered in `DashboardBoard::build()`)
+- When a module wants something on the dashboard (open work, a «+ Neu» button) → MUST add a `DashboardContributor` under its config key `dashboard` (a project: `App/Config/dashboardConfig.inc.php` in `override/`), yield `DashboardEntry::pending()` / `::create()` naming only the TARGET route, ONE cheap aggregate per entry and nothing when nothing is to be done; MUST NOT name a menu section, check access itself, load a list to count it, or edit `DashboardController` (ADR-052)
+- When a pending entry links to a list → the link MUST land on rows that match its number (an existing view/filter of that list, e.g. Debitoren `?view=overdue`, the order tab `?view=delivered`); MUST NOT link a count to an unfiltered list that shows other rows
 - When adding interactive UI logic → MUST stay hand-written vanilla JS (MUST NOT introduce a JS build pipeline); reusable cross-page behaviour goes in a shared/module JS file (e.g. `panel-toggle.js`) loaded via `layoutConfig` `javascripts`, page-specific snippets stay inline in `partials/footer.tpl.php`
 - When the shell shows a control that nothing implements (a palette, a filter, a switch «for later») → MUST leave it out until its handler exists; MUST NOT ship a button, a shortcut badge or a field as a placeholder — chrome that looks like a control and does nothing costs every user one attempt and every reader one search for the handler (TOPBAR-SEARCH-001)
+- When a screen needs a way back to the dashboard → MUST NOT add a «Dashboard» link of its own — the shell skeleton puts the «Dashboard» button into the crumb row's rail cell (slot 1) from `crumbRoot` (set in `BackendAbstractController::html()` when the user may reach the dashboard; `DashboardController` passes `''`, the root carries no crumb to itself — owner 2026-10-22)
 - When a screen or a partial needs to name WHERE one stands (a crumb, a title, a heading) → MUST take it from `BackendMenu::activeTrail()`; MUST NOT walk the navigation a second time — two walks drift apart and the tab ends up naming another screen than the crumb
 - When a topbar/panel needs a click-dropdown or a collapsible → MUST use the `panel-toggle.js` data-attribute contract (`data-panel-root` / `data-panel-trigger` / `data-panel`, or `data-collapse-trigger` / `data-collapse`); MUST NOT hand-write per-panel toggle JS
 - When a panel element starts `hidden` but a class sets its `display` → MUST add `&[hidden]{display:none}` so the attribute wins (the UA `[hidden]` rule is overridden by any class `display` declaration)
@@ -370,9 +431,12 @@ design. Owned by [`security.md`](security.md) — see it for the gating rules.
 - [`css-backend.md`](css-backend.md) — Werkbank design tokens / SCSS sources
 - [`../02-decisions/adr-009-tree-entity-naming-and-controller-split.md`](../02-decisions/adr-009-tree-entity-naming-and-controller-split.md) — why navigation element + group are two controllers; multi-word kebab controller URLs
 - [`metadata.md`](metadata.md) — `MetaDataController` (SEO metadata CRUD), the `'public'` view-area flag, and the read path injected as `$metaData`
+- [`../02-decisions/adr-052-backend-dashboard-registry.md`](../02-decisions/adr-052-backend-dashboard-registry.md) — the dashboard registry: key, entry kinds, weights, placement by route, `canReach()`, failure isolation, no cache
+- [`backup.md`](backup.md) — `maxAgeDays`, the backup policy key the dashboard's backup warning reads
 
 ## known issues
 
+- **DASHBOARD-001** (2026-10-22, ADR-052): built and covered by `tests/backend-dashboard.php` (43 checks: entry, registry + extension, isolation, placement + access over the real backendConfig, service, every contributor's count on a throwaway schema). NOT seen in a browser at build time. Don't assume the «+ Neuer Kontakt» dialog's save answer behaves on the dashboard as on the list — it answers `insertRow('contact', …)` + `close-modal` for a list that is not on this page (the row command finds no target, the flash and the close should still run); the «+ Neuer Auftrag» window has no `data-origin` here. To check in the browser.
 - **BE-INLINE-001** (2026-10-13, review §2, Rule 7): the two inline handlers of the backend are gone — the stats page's link field (`Service/StatsController/listAction.tpl.php`, was `onclick="this.select()"`) carries `data-select-on-focus`, «Bericht drucken» in `_report.tpl.php` (was `onclick="window.print()"`) is `<button data-print hidden>`, both served by core.js `_Z77.core.triggers` (fetch.md). The client's link page (`/stats/report/{token}`) loads no script, so there the button stays hidden and the browser's own print menu prints. A dialog or ⋮ hub URL opened as a page now answers 303 to its list instead of 500 — for every backend screen, by the kernel (fetch.md MODAL-PAGE-001).
 - **BE-USER-UI-001** (2026-10-10, ADR-049 revision / ADR-047 addendum, forms-actions review rows 31, 32, 36): the user dialogs carry their actions in the shared row `partials/modalActions` — the edit form under the header with the «n Fehler» link (ids `bu-*`), the delete confirm (no input field) at the bottom (`end`), the not-found / blocked messages and the ⋮ hub their «Schliessen» under the header. Save answers in place with the list's own row partial (`_row.tpl.php`): `replaceRow('backend-user', id)` for an edit, `insertRow` into `[data-entity-list="backend-user"]` (appended — a new user gets the last sortKey) for a create; delete answers `removeRow`; in-place flash. core.js wires the ⋮ (FETCH-ROW-001); the drag & drop of `backend-user/list.js` listens on the list body and reads `data-user-id`, so a row brought in later takes part (the row carries `draggable="true"` itself).
 - ARCH-P002 — resolved. `UserPreferences` moved to `Z77\Shared\ValueObjects\`.

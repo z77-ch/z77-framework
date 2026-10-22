@@ -44,7 +44,7 @@ use Z77\Core\DI,
  * mounted by a thin host controller in the backend (ADR-018 pattern, the
  * journal model). Host side: `use InvoiceControllerTrait` + a one-line layout
  * config delegating to {@see InvoiceLayout::config()}. In the navigation the
- * screen lives in the area «Aufträge» (ADR-050, owner 2026-09-30: order
+ * screen lives in the area «Auftragswesen» (ADR-050, owner 2026-09-30: order
  * processing is apart from the books); the URL group stays `finance`, like
  * the other debtor screens.
  *

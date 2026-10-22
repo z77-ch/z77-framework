@@ -121,6 +121,12 @@ class MandatorValidator extends EntityValidator
         }
     }
 
+    /** The note a document without VAT prints (owner 2026-10-22): optional, at most 255 characters. */
+    public function validateVatExemptNote(string $note): void
+    {
+        $this->validate('vat_exempt_note', 'Hinweis ohne MWST', $note)->maxLength(Mandator::VAT_EXEMPT_NOTE_LENGTH);
+    }
+
     /** The default «Betreffname» of new documents (owner 2026-10-21): optional, at most 80 characters. */
     public function validateDefaultSubjectLabel(string $label): void
     {

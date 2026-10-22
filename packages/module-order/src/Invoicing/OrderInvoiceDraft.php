@@ -95,6 +95,7 @@ final class OrderInvoiceDraft
             revenueAccount: $line->getRevenueAccount(),
             sourceType: self::LINE_SOURCE_TYPE,
             sourceRef: $ref,
+            code: $line->getCode(),   // the line code travels into the invoice (owner 2026-10-22)
         );
     }
 }

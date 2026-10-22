@@ -1,6 +1,6 @@
 # backup
 
-2026-10-10
+2026-10-22
 
 ## entry
 
@@ -198,6 +198,10 @@ A backup job cannot be sliced (`ZipArchive` writes one archive in one call, no
 resume point), so a large `full` run overruns the runner's time budget by
 design — the job lock stops a second copy, `maxParallel` keeps other jobs
 moving.
+
+## dashboard
+
+`maxAgeDays` (backup policy, `config/client/backup.inc.php`; default 1 — owner 2026-10-22: daily) — after how many days without a new backup of ANY type the backend dashboard shows «Letztes Backup vor N Tagen» (or «Noch kein Backup»), read through `BackupService::maxAgeDays()` / `latest()` by module-backend's `Dashboard\ServiceDashboard` ([ADR-052](../02-decisions/adr-052-backend-dashboard-registry.md)). Visible only to whoever may open the backup screen (SUPER_USER, `canReach()`). Seed-once: an installation whose config predates 2026-10-22 has no key and falls back to 1.
 
 ## rules
 

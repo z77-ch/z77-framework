@@ -61,7 +61,7 @@ final class InvoiceForm
     /** Row type → German label; the rounding line is the system's and never offered. */
     public const TYPES = ['service' => 'Leistung', 'lump-sum' => 'Pauschale', 'text' => 'Text'];
 
-    private const EMPTY_ROW = ['type' => 'service', 'child' => '', 'text' => '', 'quantity' => '', 'unit' => '', 'price' => '', 'discount' => '', 'tax_code' => '', 'account' => ''];
+    private const EMPTY_ROW = ['type' => 'service', 'child' => '', 'text' => '', 'quantity' => '', 'unit' => '', 'price' => '', 'discount' => '', 'tax_code' => '', 'account' => '', 'code' => ''];
 
     /** @var array<string, string> */
     private array $header = ['contact' => '', 'invoice_date' => '', 'service_from' => '', 'service_to' => '', 'price_mode' => 'net', 'prices_mode' => 'net', 'terms' => '', 'target' => '', 'subject' => '', 'subject_label' => ''];
@@ -412,7 +412,7 @@ final class InvoiceForm
                 }
             }
 
-            return isset($this->rowErrors[$i]) ? null : LineDraft::text($row['text']);
+            return isset($this->rowErrors[$i]) ? null : LineDraft::text($row['text'], code: $row['code']);
         }
 
         $price = self::parseAmount($row['price'], $this->currency);
@@ -446,8 +446,8 @@ final class InvoiceForm
         }
 
         return $type === 'service'
-            ? LineDraft::service($row['text'], $quantity, $row['unit'] !== '' ? $row['unit'] : null, $price, $row['tax_code'], $row['account'], $discount)
-            : LineDraft::lumpSum($row['text'], $price, $row['tax_code'], $row['account'], $discount);
+            ? LineDraft::service($row['text'], $quantity, $row['unit'] !== '' ? $row['unit'] : null, $price, $row['tax_code'], $row['account'], $discount, code: $row['code'])
+            : LineDraft::lumpSum($row['text'], $price, $row['tax_code'], $row['account'], $discount, code: $row['code']);
     }
 
     /**
@@ -486,6 +486,9 @@ final class InvoiceForm
                 'discount' => self::formatPercent($line->getDiscountPercent()),
                 'tax_code' => (string) $line->getTaxCode(),
                 'account'  => (string) $line->getRevenueAccount(),
+                // Not editable (owner 2026-10-22: storage only) — a hidden field carries it through an
+                // edit and into a credit note, so the code survives the round trip.
+                'code'     => (string) $line->getCode(),
             ];
         }
 

@@ -13,7 +13,7 @@ $fieldError = function (string $name) use ($validator): string {
 };
 
 // «n Fehler» in the action row (ADR-049): count + the first invalid field in document order.
-$fieldIds = ['username' => 'bu-username', 'password' => 'bu-password', 'initials' => 'bu-initials', 'roles' => 'bu-roles'];
+$fieldIds = ['username' => 'bu-username', 'password' => 'bu-password', 'initials' => 'bu-initials', 'name' => 'bu-name', 'roles' => 'bu-roles'];
 $invalid  = array_values(array_filter(array_keys($fieldIds), [$validator, 'hasFieldError']));
 $errors   = ['count' => count($validator->getFieldErrors()), 'target' => $fieldIds[$invalid[0] ?? ''] ?? ''];
 ?>
@@ -53,6 +53,13 @@ $errors   = ['count' => count($validator->getFieldErrors()), 'target' => $fieldI
                        placeholder="z.B. MX"
                        aria-invalid="<?= $validator->hasFieldError('initials') ? 'true' : 'false' ?>">
                 <?= raw($fieldError('initials')) ?>
+            </div>
+            <div class="be-form__field" data-z77-field-wrapper>
+                <label>Name <small>(Vor- und Nachname, erscheint auf dem Dashboard)</small></label>
+                <input type="text" id="bu-name" name="name" value="<?= e($entry->getName()) ?>" maxlength="<?= \Z77\Shared\Entities\BackendUser::NAME_LENGTH ?>" autocomplete="off"
+                       placeholder="z.B. Max Muster"
+                       aria-invalid="<?= $validator->hasFieldError('name') ? 'true' : 'false' ?>">
+                <?= raw($fieldError('name')) ?>
             </div>
         </div>
         <div class="be-form__section">Rollen <small>(mindestens eine; die höchste bestimmt die Zugriffsstufe)</small></div>

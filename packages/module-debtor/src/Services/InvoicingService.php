@@ -409,7 +409,7 @@ final class InvoicingService
                 $payment        = $payments[(int) $invoice->getId()];
                 $number         = $this->drawNumber($ranges, $invoice->getInvoiceDate());
                 $customerNumber = $profiles->findByContact($invoice->getContact())?->getCustomerNumber() ?? 0;
-                $invoice->assignNumber($number, $payment->numbered($customerNumber, $number, $invoice->kind()->label() . ' ' . $number));
+                $invoice->assignNumber($number, $payment->numbered($customerNumber, $number, self::paymentMessage($invoice, $number)));
             }
 
             // 5. Post and finalize, in the same order.
@@ -669,7 +669,7 @@ final class InvoicingService
             foreach ($issued as $invoice) {
                 $number         = $this->drawNumber($ranges, $invoice->getInvoiceDate());
                 $customerNumber = $profiles->findByContact($invoice->getContact())?->getCustomerNumber() ?? 0;
-                $invoice->assignNumber($number, $payments[spl_object_id($invoice)]->numbered($customerNumber, $number, $invoice->kind()->label() . ' ' . $number));
+                $invoice->assignNumber($number, $payments[spl_object_id($invoice)]->numbered($customerNumber, $number, self::paymentMessage($invoice, $number)));
             }
 
             // 6. Post and finalize, in the same order.
@@ -695,6 +695,17 @@ final class InvoicingService
      * @return list<string>
      * @throws InvoiceRefusedException DATES — a date outside 2000–2099
      */
+    /**
+     * The QR bill's unstructured message (owner 2026-10-22): the document name with its number and
+     * the due date — «Rechnung 2610001, zahlbar bis 21.10.2026» — one ASCII line, written once at the
+     * booking print and kept in the snapshot. The bank import still finds the number behind the
+     * kind's label (BankImportService: label, then digits).
+     */
+    private static function paymentMessage(Invoice $invoice, int $number): string
+    {
+        return $invoice->kind()->label() . ' ' . $number . ', zahlbar bis ' . $invoice->getDueDate()->format('d.m.Y');
+    }
+
     private function monthRangesOf(iterable $dates): array
     {
         $months = [];
@@ -924,6 +935,15 @@ final class InvoicingService
         $withVat = $this->chargesVat($draft->kind, $creditNoteOf);
         $lines   = $this->composeLines($draft->lines, $currency, taxFree: $isFee, withVat: $withVat);
 
+        // The note a document WITHOUT VAT prints (owner 2026-10-22): the mandator's «Hinweis ohne MWST» as it
+        // reads NOW (Mandator::documentVatNote() — only while the company is not liable), snapshotted so a
+        // reprint reads as issued (ADR-041 decision 6). Never from the draft: it is the mandator's, no
+        // source posts it. A credit note of a no-VAT invoice takes today's text (it is composed afresh); a
+        // fee carries no VAT by nature and gets the note too while the company is not liable — the sentence
+        // «nicht mehrwertsteuerpflichtig» is true of the issuer, not of the supply; while liable, none (the
+        // fee's missing VAT is the fee's nature, not the company's state). Null with VAT or without a text.
+        $vatNote = $withVat ? null : Creditor::mandator($this->em)?->documentVatNote();
+
         // VAT once, by the service date, on the priced lines — none for a fee or a document without VAT: no rates,
         // no tax rows, net = the lines, the price mode changes no amount.
         $vat        = !$withVat ? null : $this->calculateVat($lines, $currency, $serviceFrom, $draft->priceMode, $isNew ? null : $existing);
@@ -981,7 +1001,7 @@ final class InvoicingService
             $lines[] = [
                 'type' => LineType::Rounding, 'parent' => null, 'text' => 'Rundung', 'quantity' => null, 'unit' => null,
                 'unit_price' => null, 'discount' => 0, 'amount' => $rounding, 'tax_code' => null, 'tax_rate' => null, 'tax_label' => null,
-                'account' => (new DebtorAccounts($this->em))->postableNumber('rounding'), 'source_type' => null, 'source_ref' => null,
+                'account' => (new DebtorAccounts($this->em))->postableNumber('rounding'), 'source_type' => null, 'source_ref' => null, 'code' => null,
             ];
         }
 
@@ -1019,6 +1039,7 @@ final class InvoicingService
             self::opaque($draft->sourceRef, Invoice::SOURCE_REF_LENGTH),
             $subject !== '' ? $subject : null,
             $subjectLabel,
+            $vatNote,
         );
 
         return [
@@ -1179,6 +1200,11 @@ final class InvoicingService
             if ($draft->unit !== null && mb_strlen($draft->unit) > InvoiceLine::UNIT_LENGTH) {
                 throw new InvoiceRefusedException(InvoiceRefusedException::LINE, "Position {$position}: die Einheit hat höchstens " . InvoiceLine::UNIT_LENGTH . ' Zeichen.');
             }
+            // The line's short code (owner 2026-10-22): any line type, trimmed, '' = none, never cut.
+            $code = trim((string) $draft->code);
+            if (mb_strlen($code) > InvoiceLine::CODE_LENGTH) {
+                throw new InvoiceRefusedException(InvoiceRefusedException::LINE, "Position {$position}: der Code hat höchstens " . InvoiceLine::CODE_LENGTH . ' Zeichen.');
+            }
 
             if ($type->isPriced()) {
                 if ($draft->unitPrice === null || $draft->unitPrice->currency !== $currency) {
@@ -1235,6 +1261,7 @@ final class InvoicingService
                 'discount' => $draft->discountPercent, 'amount' => $amount, 'tax_code' => $taxCode, 'tax_rate' => null, 'tax_label' => null,
                 'account' => $account, 'source_type' => self::opaque($draft->sourceType, InvoiceLine::SOURCE_TYPE_LENGTH),
                 'source_ref' => self::opaque($draft->sourceRef, InvoiceLine::SOURCE_REF_LENGTH),
+                'code' => $code === '' ? null : $code,
             ];
             $index = count($lines) - 1;
             foreach ($draft->children as $child) {
@@ -1406,6 +1433,7 @@ final class InvoicingService
                 $l['account'],
                 $l['source_type'],
                 $l['source_ref'],
+                $l['code'],
             );
         }
         $taxes = [];

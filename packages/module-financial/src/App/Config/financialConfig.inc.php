@@ -80,6 +80,10 @@ return [
     ],
 
     // Nothing here renders a page; the host's cache policy applies to the mount.
+    // The backend dashboard (ADR-052): this module's pending work and «+ Neu» buttons —
+    // module-backend collects every module's `dashboard` list (`DashboardContributors`).
+    'dashboard' => [\Z77\Module\Financial\Dashboard\FinancialDashboard::class],
+
     'cache' => [
         'enabled' => false,
     ],

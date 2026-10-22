@@ -945,6 +945,12 @@ Close the last period, carry balance-sheet balances forward as opening entry of 
 income statement result to retained earnings. Blocked while a period of the year is still `open` —
 **not** by the state of any order (wdv blocks on order state).
 
+Built 2026-10-22 with the owner's decisions of that day (ADR-042 addendum 2026-10-22): closing and
+opening are two measures — the opening is its own button on the next year, repeatable while that
+year is open (provisional while the previous year is still open); the result goes to 2979
+«Jahresgewinn/-verlust», the contra account is 9100 «Eröffnungsbilanz»
+([`financial.md`](../topics/financial.md) «P5 — the year opening»).
+
 ---
 
 ## 6. module-debtor

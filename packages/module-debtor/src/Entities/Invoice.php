@@ -110,6 +110,8 @@ class Invoice
     public const SUBJECT_LENGTH     = 200;
     /** The «Betreffname» — {@see SubjectLabel::LENGTH}, the one rule. */
     public const SUBJECT_LABEL_LENGTH = SubjectLabel::LENGTH;
+    /** The no-VAT note — the mandator's `Mandator::VAT_EXEMPT_NOTE_LENGTH`, repeated (the column is this module's). */
+    public const VAT_NOTE_LENGTH = 255;
 
     /** Server-controlled — no setter; the database assigns it. */
     #[ORM\Id, ORM\Column, ORM\GeneratedValue]
@@ -223,6 +225,16 @@ class Invoice
     #[ORM\Column(name: 'subject_label', length: self::SUBJECT_LABEL_LENGTH, nullable: true)]
     private ?string $subjectLabel = null;
 
+    /**
+     * The note a document WITHOUT VAT prints under its totals (owner decision 2026-10-22): the
+     * mandator's «Hinweis ohne MWST» as it read when the document was COMPOSED — a reprint shows
+     * what was issued, whatever the mandator says today (ADR-041 decision 6). NULL = nothing
+     * printed: computed with VAT, or no text on the mandator then. Part of the snapshot, written
+     * whole by issue() / reissue(). Migration `Version20261022100000`.
+     */
+    #[ORM\Column(name: 'vat_note', length: self::VAT_NOTE_LENGTH, nullable: true)]
+    private ?string $vatNote = null;
+
     #[ORM\Column(name: 'source_type', length: self::SOURCE_TYPE_LENGTH, nullable: true)]
     private ?string $sourceType = null;
 
@@ -313,6 +325,8 @@ class Invoice
     public function getSubject(): ?string { return $this->subject; }
     /** The «Betreffname» in front of the subject — null when the document has none. */
     public function getSubjectLabel(): ?string { return $this->subjectLabel; }
+    /** The note printed under the totals of a document without VAT, as snapshotted; null = none (owner 2026-10-22). */
+    public function getVatNote(): ?string { return $this->vatNote; }
     /** The subject line as printed: «<label>: <subject>», the subject alone, or null ({@see SubjectLabel::line()}). */
     public function subjectLine(): ?string { return SubjectLabel::line($this->subjectLabel, $this->subject); }
     public function getSourceType(): ?string { return $this->sourceType; }
@@ -512,6 +526,11 @@ class Invoice
         $this->sourceRef        = $snapshot->sourceRef;
         $this->subject          = $snapshot->subject !== null && trim($snapshot->subject) !== '' ? $snapshot->subject : null;
         $this->subjectLabel     = $subjectLabel;
+        $vatNote                = trim((string) $snapshot->vatNote);
+        if (mb_strlen($vatNote) > self::VAT_NOTE_LENGTH) {
+            throw new \LogicException('Document snapshot: the VAT note has at most ' . self::VAT_NOTE_LENGTH . ' characters');
+        }
+        $this->vatNote          = $vatNote !== '' ? $vatNote : null;
 
         $this->lines->clear();
         foreach ($lines as $line) {

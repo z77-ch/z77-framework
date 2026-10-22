@@ -404,6 +404,7 @@ $addressFields = fn(string $field): string => $this->partial('Backend/ContactCon
                     <span class="be-list__cell be-list__cell--num be-list__cell--muted" data-row-no><?= e($no) ?></span>
                     <span class="be-list__cell">
                         <?php if ($row['id'] !== ''): ?><input type="hidden" name="<?= $p ?>[id]" value="<?= e($row['id']) ?>"><?php endif; ?>
+                        <?php if (($row['code'] ?? '') !== ''): // the line code — no field yet (owner 2026-10-22), carried through ?><input type="hidden" name="<?= $p ?>[code]" value="<?= e($row['code']) ?>"><?php endif; ?>
                         <input type="hidden" name="<?= $p ?>[type]" value="<?= $text ? 'text' : 'service' ?>">
                         <?php if ($art === null && $row['tax_code'] !== ''): ?><input type="hidden" name="<?= $p ?>[tax_code]" value="<?= e($row['tax_code']) ?>"><?php endif; ?>
                         <span class="badge badge--muted"><?= e(OrderForm::TYPES[$text ? 'text' : 'service']) ?></span>

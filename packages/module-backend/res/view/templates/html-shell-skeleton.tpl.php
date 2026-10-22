@@ -34,7 +34,7 @@
              (ADR-033 rev. 2026-09-28 / 2026-10-08): they slide in together from the menu icon —
              _shell.scss, mobile block. The action cell is NOT in the drawer: its button becomes
              a square icon at the right end of the band (pure CSS, the same element). */ ?>
-    <div class="be-shell" data-shell data-z77-split-root>
+    <div class="be-shell<?= !empty($shellBare) ? ' be-shell--bare' : '' ?>" data-shell data-z77-split-root>
         <?= $shellTopbar ?? '' ?>
         <?php /* Header-Band mit den Slots hc1 (über Spalte 1) + hc2 (über Spalte 2):
                  Controller/Action-Partials (Body-Sektionen `hc1`/`hc2`).
@@ -83,12 +83,12 @@
         <?php /* Crumb line (hc3, ADR-033): position and state, its own slim row —
                  renders ALWAYS for the same reason the band does (no height jump
                  between screens). A screen without an own hc3 template gets the
-                 navigation-derived default; slot 1 is a bare cell capping the dark
-                 island. Its height is ONE token (`--shell-crumb`) and nothing in it
+                 navigation-derived default; slot 1 caps the dark island and holds
+                 the «Dashboard» button (except on the dashboard). Its height is ONE token (`--shell-crumb`) and nothing in it
                  may grow it: the help trigger moved to the top bar (ADR-048 addendum,
                  owner 2026-10-08), so a page with help looks like one without. */ ?>
         <div class="be-shell-crumb">
-            <div class="be-shell-crumb__slot be-shell-crumb__slot--1"></div>
+            <div class="be-shell-crumb__slot be-shell-crumb__slot--1"><?php if (($crumbRoot ?? '') !== ''): /* the way back to the dashboard, in the crumb row's rail cell (owner 2026-10-22); '' on the dashboard itself */ ?><a class="be-shell-crumb__home" href="<?= e($crumbRoot) ?>">Dashboard</a><?php endif; ?></div>
             <div class="be-shell-crumb__slot be-shell-crumb__slot--2"><?= $hc3 ?? $this->partial('partials/shell/crumb', [
                 'backendMenu' => $backendMenu ?? null,
             ]) ?></div>

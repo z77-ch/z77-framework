@@ -147,10 +147,13 @@ function routeOf(array $records, string $route): ?array
     return null;
 }
 
-// The target tree (ADR-050, owner 2026-09-29) — z77.ch's navigation.json as outline.
+// The target tree (ADR-050, owner 2026-09-29; root order owner 2026-10-22: Aufträge, Drive, Webseiten,
+// Kontakte, Finanzen, Service, Stammdaten — Aufträge comes with module-debtor, NSEED-2g).
 $expectedBackend = [
     'backend-auth: Login [backend/system/login/login]',
     'backend-auth: Logout [backend/system/login/logout]',
+    'backend-main: Drive',
+    'backend-main: Drive > Dokumente [backend/documents/drive/list]',
     'backend-main: Webseiten',
     'backend-main: Webseiten > Inhalte [backend/content/content/list]',
     'backend-main: Webseiten > Metadaten [backend/content/meta-data/list]',
@@ -158,14 +161,19 @@ $expectedBackend = [
     'backend-main: Webseiten > Navigation [backend/content/navigation/list]',
     'backend-main: Webseiten > Navigation > Navigation -> backend-main: Webseiten > Navigation',
     'backend-main: Webseiten > Navigation > Nav Alias [backend/content/navigation_alias/list]',
+    'backend-main: Kontakte',
+    'backend-main: Kontakte > Kontakte [backend/contact/contact/list]',
     'backend-main: Finanzen',
     'backend-main: Finanzen > Journal [backend/finance/journal/list]',
     'backend-main: Finanzen > Auswertungen [backend/finance/report/trial-balance]',
     'backend-main: Finanzen > Änderungsprotokoll [backend/finance/change-log/list]',
-    'backend-main: Kontakte',
-    'backend-main: Kontakte > Kontakte [backend/contact/contact/list]',
-    'backend-main: Drive',
-    'backend-main: Drive > Dokumente [backend/documents/drive/list]',
+    'backend-main: Service',
+    'backend-main: Service > Backup [backend/service/backup/list]',
+    'backend-main: Service > E-Mail [backend/service/email-settings/list]',
+    'backend-main: Service > Jobs [backend/service/job/list]',
+    'backend-main: Service > Import [backend/service/import/list]',
+    'backend-main: Service > Formular-Protokoll [backend/service/form-log/list]',
+    'backend-main: Service > Statistik [backend/service/stats/list]',
     'backend-main: Stammdaten',
     'backend-main: Stammdaten > Firma',
     'backend-main: Stammdaten > Firma > Mandant [backend/finance/mandator/edit]',
@@ -177,13 +185,6 @@ $expectedBackend = [
     'backend-main: Stammdaten > Kontakte > Adresstypen [backend/contact/address-type/list]',
     'backend-main: Stammdaten > System',
     'backend-main: Stammdaten > System > Benutzer [backend/system/backend-user/list]',
-    'backend-main: Service',
-    'backend-main: Service > Backup [backend/service/backup/list]',
-    'backend-main: Service > E-Mail [backend/service/email-settings/list]',
-    'backend-main: Service > Jobs [backend/service/job/list]',
-    'backend-main: Service > Import [backend/service/import/list]',
-    'backend-main: Service > Formular-Protokoll [backend/service/form-log/list]',
-    'backend-main: Service > Statistik [backend/service/stats/list]',
 ];
 $expectedFrontend = [
     'frontend-main: Home [frontend/main/index/home]',
@@ -247,7 +248,7 @@ $again = NavigationSeeds::merge($chSeeds, $fresh['records']);
 check('NSEED-2f a second run adds nothing', $again['added'] === [] && $again['records'] === $fresh['records']);
 
 // With debtor: order processing is its own area, apart from the books (owner 2026-09-30) —
-// «Aufträge» with Debitoren after Finanzen, its master data under Stammdaten › Aufträge.
+// «Auftragswesen» (owner 2026-10-22, was «Aufträge» — the area and its first page had one name) with Debitoren as the FIRST area, its master data under Stammdaten › Auftragswesen.
 $withDebtor = NavigationSeeds::merge($seeds, $default);
 $lines      = outline($withDebtor['records']);
 $labels     = static fn(string $prefix) => array_values(array_map(static fn($l) => explode(' [', substr($l, strlen($prefix)))[0],
@@ -255,10 +256,10 @@ $labels     = static fn(string $prefix) => array_values(array_map(static fn($l) 
 $roots = array_values(array_map(static fn($l) => explode(' [', substr($l, strlen('backend-main: ')))[0],
     array_filter($lines, static fn($l) => str_starts_with($l, 'backend-main: ') && !str_contains(substr($l, strlen('backend-main: ')), ' > '))));
 check('NSEED-2g with module-debtor, -article and -order: the area «Aufträge» (the daily work: Aufträge — module-order, first since P7 step 7 —, then owner 2026-10-13: Rechnungen, Debitoren = open items, Zahlungseingänge, Mahnungen), Auftragsstatus, Warengruppen and Artikel under Stammdaten › Aufträge after Finanzen, its master data — the debtors first — under Stammdaten › Aufträge — nothing of it under Finanzen',
-    $roots === ['Webseiten', 'Finanzen', 'Aufträge', 'Kontakte', 'Drive', 'Stammdaten', 'Service']
-    && $labels('backend-main: Aufträge > ') === ['Aufträge', 'Rechnungen', 'Debitoren', 'Zahlungseingänge', 'Mahnungen']
-    && $labels('backend-main: Stammdaten > Aufträge > ') === ['Debitoren', 'Zahlungskonditionen', 'Zahlungsziele', 'Mahnstufen', 'Auftragsstatus', 'Warengruppen', 'Artikel']
-    && $labels('backend-main: Stammdaten > ') === ['Firma', 'Finanzen', 'Aufträge', 'Kontakte', 'System']
+    $roots === ['Auftragswesen', 'Drive', 'Webseiten', 'Kontakte', 'Finanzen', 'Service', 'Stammdaten']
+    && $labels('backend-main: Auftragswesen > ') === ['Aufträge', 'Rechnungen', 'Debitoren', 'Zahlungseingänge', 'Mahnungen']
+    && $labels('backend-main: Stammdaten > Auftragswesen > ') === ['Debitoren', 'Zahlungskonditionen', 'Zahlungsziele', 'Mahnstufen', 'Auftragsstatus', 'Warengruppen', 'Artikel']
+    && $labels('backend-main: Stammdaten > ') === ['Firma', 'Finanzen', 'Auftragswesen', 'Kontakte', 'System']
     && $labels('backend-main: Stammdaten > Finanzen > ') === ['Geschäftsjahre', 'Kontenplan', 'MWST-Codes'],
     implode(' | ', $lines));
 

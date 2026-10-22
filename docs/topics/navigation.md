@@ -355,7 +355,7 @@ hand without a key is recognised by its route.
 | module-order | Aufträge (`auftraege-liste`, sort 0 — the FIRST entry of the area, the area click opens it; built 2026-10-14, plan step 7) | `auftraege` (module-debtor's area; order requires debtor) |
 | module-order | Auftragsstatus (`auftragsstatus`, sort 10; built 2026-10-14) | `stammdaten-auftraege` (module-debtor's group) |
 
-Root order: Webseiten 0, Finanzen 1, Aufträge 2, Kontakte 3, Drive 4, Stammdaten 5, Service 6. Group order under Stammdaten: Firma 0, Finanzen 1, Aufträge 2, Kontakte 3, System 4 (the `sort_key` of each
+Root order (owner 2026-10-22, the daily work first — the dashboard tiles follow it, ADR-052): Auftragswesen 0 (renamed from «Aufträge» 2026-10-22 — the area and its first page had one name, the crumb read «Aufträge › Aufträge»; the group under Stammdaten likewise), Drive 1, Webseiten 2, Kontakte 3, Finanzen 4, Service 5, Stammdaten 6. An existing installation keeps its own order (add-only, ADR-050 §3) — it is moved in the navigation screen. Group order under Stammdaten: Firma 0, Finanzen 1, Aufträge 2, Kontakte 3, System 4 (the `sort_key` of each
 package's group). A package whose parent lives in a package it does not require waits: module-vat
 does not require module-financial, module-debtor neither — without it, MWST-Codes and the debtor
 entries are skipped (the installer names them).

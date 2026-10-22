@@ -1,6 +1,6 @@
 # ADR-042 — Ledger and money: integer money, generated vs. manual entries, close states
 
-**Status:** `[APPROVED]` — approved by the owner 2026-09-21 (P0 of [`order-debtor-financial-bauplan.md`](../03-development/order-debtor-financial-bauplan.md)); addendum 2026-09-30 (owner decisions on the close, below)
+**Status:** `[APPROVED]` — approved by the owner 2026-09-21 (P0 of [`order-debtor-financial-bauplan.md`](../03-development/order-debtor-financial-bauplan.md)); addendum 2026-09-30 (owner decisions on the close, below); addenda 2026-10-06 (generated entries corrected by their source) and 2026-10-22 (the year opening)
 **Date:** 2026-09-21
 
 ---
@@ -161,3 +161,33 @@ der Sachbearbeiter muss korrigieren können, ohne komplizierte Stornobuchungen»
    storno pair.
 
 First consumer: module-debtor's `PaymentService::update()` / `delete()` (P4 part 1).
+
+## Addendum 2026-10-22 — the year opening (owner decisions)
+
+Decision 12 said «balance-sheet balances carry forward as the opening entry; the result goes to
+retained earnings». The owner decided how, when the first z77 opening (2026 of the migrated wdv
+books) came due:
+
+1. **One generated opening entry per fiscal year**, dated its first day: every balance-sheet
+   account with a non-zero closing balance of the previous year, opened against the contra
+   account **9100 «Eröffnungsbilanz»**, which nets to zero.
+2. **The previous year's result goes to 2979 «Jahresgewinn/-verlust»** (Swiss KMU), not straight
+   to retained earnings; its appropriation (2970 Gewinnvortrag, reserves) is booked by hand. Both
+   accounts are the company's settings on the mandator record (`opening-balance`,
+   `annual-result`), like the VAT and debtor accounts.
+3. **Closing and opening are two measures** («Sperren und neu eröffnen sind 2 unterschiedliche
+   Massnahmen»): the opening has its own button on the TARGET year and is not part of the close.
+   It **can be repeated while the target year is not closed** — the tax administration may require
+   a change in the old year, after which the opening is re-created. A re-run replaces the opening
+   IN PLACE through the source-correction path of the addendum 2026-10-06 (`amend()`: same
+   number, logged in the change log); a closed target refuses. An opening on a predecessor that is
+   still open is allowed and marked provisional (the agent's reading, to be confirmed).
+4. **The closing balance is the year's own entries, its opening included** — an imported opening
+   (wdv's «EB:YYYY») counts like a generated one; earlier years are never added up. A year whose
+   contra account already carries entries the generator did not make (an imported or manual
+   opening) is refused, so a year is never opened twice.
+5. Collective accounts flagged «nur durch Module bebuchbar» are opened like any other — the
+   opening is a generated posting.
+
+Built in `YearOpeningService` ([`financial.md`](../topics/financial.md) «P5 — the year opening»,
+FIN-OPENING-001).

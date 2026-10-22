@@ -72,6 +72,11 @@ final class OrderPdf
             // flag through `InvoicingService::chargesVat()`, the one rule; the layout drops the MWST
             // column, the MWST rows and «zzgl. / inkl. MWST» without it.
             'liableToVat'    => $preview->carriesVat(),
+            // The note a document without VAT prints (owner 2026-10-22): a quote / confirmation is a
+            // transient preview without a snapshot, so it prints the mandator's CURRENT text
+            // (`documentVatNote()` — null while liable or without a text); with VAT none. The booked
+            // invoice snapshots the text itself (debtor's compose()).
+            'vatNote'        => $preview->carriesVat() ? null : $mandator?->documentVatNote(),
             'today'          => new \DateTimeImmutable('today'),
             'fmt'            => static fn(?Money $m) => AmountFormat::of($m),
         ], self::NS);

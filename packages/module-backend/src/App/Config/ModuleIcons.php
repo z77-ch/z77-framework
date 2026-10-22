@@ -19,6 +19,9 @@ class ModuleIcons
         'webseiten'  => 'icon-globe',
         'stammdaten' => 'icon-database',
         'kunden'     => 'icon-building',
+        'kontakte'   => 'icon-users',
+        'auftragswesen' => 'icon-file-text',
+        'finanzen'   => 'icon-bar-chart',
         'drive'      => 'icon-hard-drive',
         'service'    => 'icon-wrench',
     ];

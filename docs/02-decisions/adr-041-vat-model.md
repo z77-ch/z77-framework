@@ -1,7 +1,7 @@
 # ADR-041 — VAT model: tax codes with dated rates, computed once, carried
 
 **Status:** `[APPROVED]` — approved by the owner 2026-09-21 (P0 of [`order-debtor-financial-bauplan.md`](../03-development/order-debtor-financial-bauplan.md)); addendum to decision 7 approved by the owner 2026-09-22; addendum «a mandator not liable to VAT» — owner decision 2026-10-21
-**Date:** 2026-09-21 · addendum 2026-09-22 (rate snapshot on the journal line) · addendum 2026-10-21 (a mandator not liable to VAT)
+**Date:** 2026-09-21 · addendum 2026-09-22 (rate snapshot on the journal line) · addendum 2026-10-21 (a mandator not liable to VAT) · addendum 2026-10-22 (the no-VAT note is part of the snapshot) · addendum 2026-10-22 (the line code is part of the line snapshot)
 
 ---
 
@@ -131,3 +131,19 @@ confirmations WITHOUT VAT. Decisions 5–7 apply only to a document computed WIT
 
 The «no silent 0 %» rule of `vat.md` is untouched: not being liable is a declared state of the company,
 not a data gap; a document computed with VAT still refuses an unknown code or a missing rate.
+
+**Addendum 2026-10-22 — the note is part of the snapshot (owner decision):** a document composed
+WITHOUT VAT says so — the mandator's «Hinweis ohne MWST» (`mandator.vat_exempt_note`, read as
+`Mandator::documentVatNote()`: the text only while not liable) is stored on the document at composing
+(`invoice.vat_note`) and printed under the total from THERE — decision 6 applied to the sentence as to
+the amounts: a reprint reads as issued, a later text change or a switch turned on does not reach a
+booked document. A credit note of a no-VAT invoice takes the text as it reads when IT is composed; a fee
+(no VAT by nature) carries the note too while the company is not liable. A quote or order confirmation
+(module-order) is a transient preview and prints the mandator's current text. Never printed on a
+document computed with VAT.
+
+**Addendum 2026-10-22 — the line code is part of the line snapshot (owner decision):** a document line
+may carry a short code (`invoice_line.code`, the wdv `shop_positions.code`). It is stored with the line at
+composing and read from THERE — decision 6 applied to one more line field: a re-issue replaces it with the
+lines, a booked document keeps it, a credit note copies it from its invoice's lines. Not a VAT concern; the
+framework's layouts do not print it (a project's override decides — `debtor.md` «The line code»).

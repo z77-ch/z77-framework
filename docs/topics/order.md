@@ -1,6 +1,6 @@
 # order
 
-2026-10-21
+2026-10-22
 
 ## entry
 
@@ -69,6 +69,7 @@ SOURCE=/packages/module-order/src/Ui/OrderStatusListing.php
 SOURCE=/packages/module-order/res/migrations/Version20261014140000.php
 SOURCE=/packages/module-order/res/migrations/Version20261014140001.php
 SOURCE=/packages/module-order/res/migrations/Version20261021100000.php
+SOURCE=/packages/module-order/res/migrations/Version20261022120000.php
 SOURCE=/packages/module-order/res/view/templates/Backend/OrderStatusController/listAction.tpl.php
 SOURCE=/packages/module-order/res/view/templates/Backend/OrderStatusController/_row.tpl.php
 SOURCE=/packages/module-order/res/view/templates/Backend/OrderStatusController/act.tpl.php
@@ -83,6 +84,7 @@ SOURCE=/tests/module-order.php
 SOURCE=/docs/03-development/p7-order-plan.md
 SOURCE=/docs/02-decisions/adr-043-order-status-and-stock-movements.md
 SOURCE=/docs/02-decisions/adr-040-business-module-cut.md
+SOURCE=/packages/module-order/src/Dashboard/OrderDashboard.php
 
 ## mental model
 
@@ -125,8 +127,21 @@ Built 2026-10-14 (plan §13 steps 7–10, the owner's board on the developer can
 - **Year close** (`Close\InvoiceableOrdersCheck`, `orderConfig` → `openWorkChecks['period-close']`): a WARNING per order dated in the year that sits in a bookable phase (`confirmed`, `delivered` — every confirmed order: a service order may never see a delivery note) — «Auftrag 1 vom 14.10.2026 an Test-Firma xy steht in «Zu fakturieren» — noch nicht fakturiert …», the first 10 named, the rest counted (`SalesOrderRepository::inStatusBetween()`). A warning, not a block: the books of the year are complete without the order; whether its invoice belongs into the closed year is the office's call (the service date decides the VAT period).
 - **Redesign 2026-10-16 — LAYOUT BUILT 2026-10-17** (not yet seen in a browser): the window is `.be-form--blocks` — the action row with Speichern · the status as a pill (`.be-status-pill`, opens «Status ändern …») · «Drucken ▾» (a `<details>` menu: Offerte / Auftragsbestätigung, «Auftragsbestätigung …» or «Lieferschein …», Rechnungsvorschau) · Buchungsdruck …; a head row of three cards (Kunde with phone, name, «Rechnung» = the preview's address, «Lieferung» = the `_ship` select · Betreff, Notiz, «Erfasst …» · Auftragsdatum, Leistung von | bis, Zahlungskonditionen with «Debitor anpassen» (2026-10-18), a new order's status); the positions card (Preise in its head; rebuilt 2026-10-18 — ⋮⋮ / ⇥ rows, MWST as the article's rate, no Konto column, live totals: see `## pending` «Positions block»; totals and audit line at its foot); «Verlauf und Belege» a collapsed card at the end; no radio tabs. Still open from the redesign: see `## pending` «Order window redesign».
 
-- **Without VAT** (owner decision 2026-10-21, the mandator's «mehrwertsteuerpflichtig»; the rule is debtor's `InvoicingService::chargesVat()`, debtor.md «Documents without VAT»): not liable → the preview, the stored totals (tax 0.00), the quote / confirmation and the booking print carry no VAT — the order computes nothing itself (D11). `OrderService::chargesVat()` hands the rule to the window: no MWST column (one grid track less, a text row spans 7), no rate schedule for core.js «dated rates», no VAT rows in the totals — core.js «line sums» then sums without tax (a row without a rate counts at 0 %), no core.js change. Prices: net and gross are the same price — `convertByRate()` returns the price as it is, so an article priced 16.65 gross is 16.65 in either mode (fill, picker, «Preise» switch). The order LINE keeps its article's tax code (D3, `SalesOrderLine` requires it; the document drops it). The PDF `pdf/order` stays ONE layout: `OrderPdf` passes `liableToVat` = the preview's `carriesVat()`, the columns come from debtor's `DocumentColumns` (VAT column dropped), the totals from debtor's `pdf/documentSummary`, «Preise zzgl. / inkl. MWST» only with VAT. The delivery note shows no prices and no VAT — unchanged. Without VAT the window hides «Preise» (the mode still posted) and the help drops the price-mode section and the MWST wording (owner 2026-10-21; F20).
+- **Without VAT** (owner decision 2026-10-21, the mandator's «mehrwertsteuerpflichtig»; the rule is debtor's `InvoicingService::chargesVat()`, debtor.md «Documents without VAT»): not liable → the preview, the stored totals (tax 0.00), the quote / confirmation and the booking print carry no VAT — the order computes nothing itself (D11). `OrderService::chargesVat()` hands the rule to the window: no MWST column (one grid track less, a text row spans 7), no rate schedule for core.js «dated rates», no VAT rows in the totals — core.js «line sums» then sums without tax (a row without a rate counts at 0 %), no core.js change. Prices: net and gross are the same price — `convertByRate()` returns the price as it is, so an article priced 16.65 gross is 16.65 in either mode (fill, picker, «Preise» switch). The order LINE keeps its article's tax code (D3, `SalesOrderLine` requires it; the document drops it). The PDF `pdf/order` stays ONE layout: `OrderPdf` passes `liableToVat` = the preview's `carriesVat()`, the columns come from debtor's `DocumentColumns` (VAT column dropped), the totals from debtor's `pdf/documentSummary`, «Preise zzgl. / inkl. MWST» only with VAT. The delivery note shows no prices and no VAT — unchanged. Without VAT the window hides «Preise» (the mode still posted) and the help drops the price-mode section and the MWST wording (owner 2026-10-21; F20). **The note «Hinweis ohne MWST»** (owner decision 2026-10-22, debtor.md «The note … snapshotted»): the quote / confirmation is a TRANSIENT preview without a snapshot, so `OrderPdf::order()` hands `pdf/order` the mandator's CURRENT text — `vatNote` = `Mandator::documentVatNote()` through the reader it already has (`Creditor::mandator()`), only when the preview carries no VAT (null with VAT, while liable, or without a text) — and the layout passes it as `note` to debtor's shared `pdf/documentSummary`, which prints it under the total, 8 pt, muted (M34b / M35). The delivery note has no prices and no totals — nothing. The booked invoice snapshots the text itself (debtor's `compose()`); the order window shows nothing of it and `OrderDraft` carries no note (it is the mandator's).
+- **The line code** (owner decision 2026-10-22; debtor.md «The line code» holds the rule): `sales_order_line.code` VARCHAR(16) NULL (`Version20261022120000`, schema only), `SalesOrderLine::CODE_LENGTH` = debtor's `InvoiceLine::CODE_LENGTH`. `OrderLineDraft(code:)` — the last named parameter, also on `article()` / `text()`, kept by `beneath()`; `resolveLine()` trims it, '' → null, more than 16 characters refused on `lines.{path}.code` «Code: höchstens 16 Zeichen.» (the window shows it at the text — the code has no field). `update()` rewrites it with the line in place. `OrderInvoiceDraft` hands it to the invoice line — the booking print and the preview the PDFs read; `pdf/order` and `pdf/deliveryNote` offer it as the row key `code` and do NOT print it (an override decides, pdf.md). The window carries it in a HIDDEN input (no field yet, `## pending`). Verified: `tests/module-order.php` D8, D9, P6, M36; `tests/module-debtor.php` O8.
 - **«Betreffname»** (owner decision 2026-10-21; debtor.md «`subjectLabel`» holds the rule): `sales_order.subject_label` VARCHAR(80) NULL (`Version20261021100000`), `OrderDraft::$subjectLabel` (optional named parameter, default null — the wdv importer maps `subject_title` here), `SalesOrder::getSubjectLabel()` / `subjectLine()`; `OrderService` normalises it with debtor's `SubjectLabel` and refuses over 80 on `subject_label`; no default in the service. The window: debtor's shared field «Betreffname» right before «Betreff» (`subject_label`, datalist of the orders' and documents' labels + the defaults); a NEW order is pre-filled with the debtor's label, else the mandator's (`SubjectLabelDefaults::defaultFor()`), and follows a customer choice while untouched (`data-prefill`, set-value `untouched`). Printed by `pdf/order` and `pdf/deliveryNote` on the subject line («Projekt: Umbau»; no label = as before; a label without a subject prints nothing). Harness D7, L1–L5, F18, F19, P5, M31, M32.
+
+## dashboard
+
+`Dashboard\OrderDashboard` (config key `dashboard`, [ADR-052](../02-decisions/adr-052-backend-dashboard-registry.md), built 2026-10-22):
+
+| Entry | Weight | Source | Target |
+|---|---|---|---|
+| Aufträge bereit zur Verrechnung (Termin) / (Geliefert) — one entry per bookable phase (`OrderPhase::isBookable()`, the phases `InvoiceableOrdersCheck` counts) | todo | `SalesOrderRepository::countSearch()` over `OrderListing::codesOf(phase)` | the list tab of that phase (`?view=confirmed` / `?view=delivered`) |
+| Offerten nachfassen — orders in phase `new` (owner 2026-10-22: a todo, one has to follow up) | todo | same, phase `new` | tab «Eröffnet» (`?view=new`) |
+| «+ Neuer Auftrag» | create | — | `/backend/order/order/add`, opened as the window (`data-window-open`) like the list's action cell |
+
+- One entry per bookable phase, not one sum: no single tab shows «Termin» and «Geliefert» together, and a count must land on the rows it counts.
 
 ## rules
 
@@ -147,6 +162,7 @@ Built 2026-10-14 (plan §13 steps 7–10, the owner's board on the developer can
 - When a screen shows the order list's tabs → MUST derive them from the PHASES (`OrderListing::viewOf()` / `codesOf()`); MUST NOT list status codes per tab (a new status must land in its tab without code)
 - When an order or its PDFs carry the «Betreffname» → MUST go through debtor's `SubjectLabel` (`normalize()`, `line()`) and pre-fill a NEW order from `SubjectLabelDefaults`; MUST NOT print the label without the subject or compose «label: subject» in a template
 - When the order window shows VAT (the MWST column, the rates, the VAT rows of the totals) → MUST ask `OrderService::chargesVat()` (debtor's one rule) and leave all three out when it answers false; MUST NOT convert a price between the modes with a rate then (`convertByRate()` returns it unchanged)
+- When `pdf/order` is drawn without VAT → MUST pass `vatNote` = the mandator's `documentVatNote()` (`OrderPdf`, read through `Creditor::mandator()`) and hand it to debtor's `pdf/documentSummary` as `note`; MUST NOT draw the note in the order's own layout, store it on the order, or print it on a preview that carries VAT or on the delivery note
 - When an order PDF is drawn → MUST take every amount from `OrderService::preview()` and the title from the phase (`OrderPdf::orderTitle()`); the order confirmation of a quote and the delivery note MUST be printed through the POST that calls `printConfirmation()` / `printDeliveryNote()` first; MUST NOT print them from a GET when they move the order (the status move would be skipped)
 
 ## known issues
@@ -161,7 +177,10 @@ Built 2026-10-14 (plan §13 steps 7–10, the owner's board on the developer can
 
 ## pending
 
-- **«Betreffname» — built 2026-10-21, NOT committed, not seen in a browser** (see the bullet above and debtor.md `## pending`): migrations to apply on `z77ch_initial` / z77.ch — order `Version20261021100000`, debtor and mandator `Version20261021100000`; then the owner's look at the window (field, datalist, pre-fill, the follow on a customer change) and the three PDFs.
+- **The line code — built and committed 2026-10-22** (owner decision of the day; see the bullet above and debtor.md `## pending`): migration order `Version20261022120000` to apply on `z77ch_initial` / z77.ch together with debtor's; the importer passes `code:` on `OrderLineDraft`. **UI field for the code — not built, owner decision storage only.**
+- **«Hinweis ohne MWST» — built and committed 2026-10-22, not seen in a browser** (owner decision of the day; «Without VAT» above, debtor.md and mandator.md `## pending`): `pdf/order` prints the mandator's current note under the total without VAT; no order column, no migration of this module — but the migrations to apply on `z77ch_initial` / z77.ch are debtor's and mandator's `Version20261022100000` (the symlinked packages fail with «Unknown column» until they run). Harness M34b / M35 (green 2026-10-22). Owner's browser look: Mandant › UID und MWST (text, switch off), then «Drucken ▾» Offerte / Auftragsbestätigung of an order — the note under the total; the Rechnungsvorschau (debtor's preview, snapshotted at compose) the same.
+
+- **«Betreffname» — built and committed 2026-10-21, not seen in a browser** (see the bullet above and debtor.md `## pending`): migrations to apply on `z77ch_initial` / z77.ch — order `Version20261021100000`, debtor and mandator `Version20261021100000`; then the owner's look at the window (field, datalist, pre-fill, the follow on a customer change) and the three PDFs.
 
 - **Resume here (2026-10-21, evening).** Test env is `z77-1.0.0-z77.ch-initial` (own DB `z77ch_initial`,
   production data, symlinked packages — framework changes are live there at once; the importer
@@ -186,10 +205,8 @@ Built 2026-10-14 (plan §13 steps 7–10, the owner's board on the developer can
   open whether an article line is PREFILLED with its article number (wdv) or empty until typed;
   design: `code` (?string ≤ 16) on `invoice_line` + `sales_order_line`, `LineDraft` / `OrderLineDraft`
   param `code`, order → invoice carries it, `pdf/table` gets a small muted line above the lead line;
-  (b) the QR bill's unstructured message gets the due date (importer request, owner confirmed the
-  rest of the payment part): one line, ASCII — proposed «Rechnung 2610001, zahlbar bis 21.10.2026»
-  (`InvoicingService::finalize()` → `PaymentSnapshot::numbered()`); tests that assert
-  `'Rechnung ' . $number` as the message must follow; (c) should debtor's own invoice editor refuse
+  (b) DONE 2026-10-22 (owner «ja»): the QR bill's unstructured message carries the due date —
+  «Rechnung 2610001, zahlbar bis 21.10.2026» (`InvoicingService::paymentMessage()`, see debtor.md); (c) should debtor's own invoice editor refuse
   0.00 too? Both (a) and (b) are promised to the importer session with the param names once built.
   **Next (owner's order):** daily-use speed; the lists.
 

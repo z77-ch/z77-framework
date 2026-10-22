@@ -3,40 +3,50 @@ namespace Z77\Module\Backend\Ui\Controllers\System;
 
 use Z77\Core\Http\Response\HtmlResponse,
     Z77\Core\DI,
-    Z77\Module\Backend\Ui\Controllers\BackendAbstractController
+    Z77\Module\Backend\Ui\BackendMenu,
+    Z77\Module\Backend\Ui\DashboardBoard,
+    Z77\Module\Backend\Ui\Controllers\BackendAbstractController,
+    Z77\Shared\Dashboard\DashboardContributors
 ;
 
 class DashboardController extends BackendAbstractController
 {
-    /**
-     * The overview cards: [module, group, controller, action] is the page a
-     * card opens. A card is shown only when the user may open that page — the
-     * same check the menu makes (ADR-045), so an editor sees «Frontend» and
-     * not «Stammdaten».
-     */
-    private const CARDS = [
-        ['id' => 'frontend', 'code' => '01', 'label' => 'Frontend',   'sub' => 'Webinhalte',            'target' => ['backend', 'content', 'content', 'list']],
-        ['id' => 'master',   'code' => '02', 'label' => 'Stammdaten', 'sub' => 'Navigation · Benutzer', 'target' => ['backend', 'content', 'navigation', 'list']],
-    ];
+    /** Template namespace of the dashboard's own templates (help). */
+    private const NS = 'Z77\Module\Backend';
 
+    /**
+     * The entry page (ADR-052): one tile per menu section the user may see,
+     * the modules' pending work and «+ Neu» buttons from the dashboard
+     * registry (`dashboard` config key), each entry kept only when the user
+     * may open its target — the same check the menu makes (ADR-045), so an
+     * editor sees «Webseiten» and no debtor numbers.
+     */
     protected function overviewAction(): HtmlResponse
     {
         $auth = DI::getAuthService();
         $user = $auth->getCurrentUser();
+        $menu = BackendMenu::forCurrentUser('backend-main');
 
-        $cards = [];
-        foreach (self::CARDS as $card) {
-            [$module, $group, $controller, $action] = $card['target'];
-            if ($auth->canReach($user, $module, $group, $controller, $action)) {
-                $card['url'] = '/' . implode('/', $card['target']);
-                $cards[]     = $card;
-            }
-        }
+        $board = DashboardBoard::build(
+            DashboardBoard::tilesFrom($menu),
+            DashboardContributors::fromModules(DI::getModuleManager())->entriesFor($user),
+            fn(string $module, string $group, string $controller, string $action): bool
+                => $auth->canReach($user, $module, $group, $controller, $action)
+        );
+
+        $this->help->attach('System/DashboardController/overview.help', self::NS, [], 'Hilfe: Übersicht');
 
         return $this->html([
             'authUser'      => $user,
-            'cards'         => $cards,
+            'backendMenu'   => $menu,   // the shell reuses it (BackendAbstractController::html() `??=`)
+            'tiles'         => $board['tiles'],
+            'pending'       => $board['pending'],
+            'today'         => new \DateTimeImmutable('today'),
             'activeSection' => 'overview',
+            'crumbRoot'     => '',   // no «Dashboard» button on the dashboard itself
+            'shellBare'     => true, // owner 2026-10-22: the dashboard alone starts right under the top bar — no band, no crumb row
+            // «Angemeldet als: admin – Peter Ruepp»: the login name, and the person's name when entered (BackendUser::name)
+            'signedInAs'    => trim($user->getUserName() . ' – ' . (DI::getCurrentUserService()->getBackendUser()?->getName() ?? ''), ' –'),
         ]);
     }
 }

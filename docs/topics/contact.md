@@ -1,6 +1,6 @@
 # contact
 
-2026-10-15
+2026-10-22
 
 ## entry
 
@@ -68,6 +68,7 @@ SOURCE=/docs/02-decisions/adr-039-doctrine-driver-behind-unified-entity-manager.
 SOURCE=/docs/02-decisions/adr-040-business-module-cut.md
 SOURCE=/docs/02-decisions/adr-043-order-status-and-stock-movements.md
 SOURCE=/docs/03-development/order-debtor-financial-bauplan.md
+SOURCE=/packages/module-contact/src/Dashboard/ContactDashboard.php
 
 ## mental model
 
@@ -90,6 +91,10 @@ SOURCE=/docs/03-development/order-debtor-financial-bauplan.md
 - **The navigation entries ship with the module** (ADR-050, CONTACT-NAV-001): «Kontakte» → `/backend/contact/contact/list` and «Adresstypen» → `/backend/contact/address-type/list`.
 - **Where the package is required**: the monorepo ROOT `composer.json` (so `vendor/` carries it for the harness); NOT `skeleton/composer.json` — a project requires it when it needs it (owner 2026-09-21, as for module-vat). No `RUNTIME=` paths therefore. Requires PHP 8.4 like `persistence-doctrine`.
 - **The module has no routes and no view area**: `contactConfig.inc.php` carries no `defaultGroup`; `/contact/…` resolves nothing. It is a library plus two fragments.
+
+## dashboard
+
+`Dashboard\ContactDashboard` (config key `dashboard`, [ADR-052](../02-decisions/adr-052-backend-dashboard-registry.md), built 2026-10-22): only «+ Neuer Kontakt» in the head of the tile that holds the contact list — `/backend/contact/contact/add` as the dialog (`data-fetch-get`), like the list's action cell. No counter: the number of contacts asks for nothing (owner 2026-10-22).
 
 ## rules
 

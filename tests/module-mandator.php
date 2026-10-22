@@ -283,12 +283,15 @@ check('A8 NO foreign key: the tax code is referenced by code (ADR-043/19), the a
 $mandatorIdColumns = $db->fetchFirstColumn('SELECT TABLE_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND COLUMN_NAME = ?', [$dbName, 'mandator_id']);
 check('A8b NO other table carries a mandator_id — one mandator, nothing prepared for more (E1)', $mandatorIdColumns === []);
 $accountColumns = $db->fetchFirstColumn('SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME LIKE ? ORDER BY ORDINAL_POSITION', [$dbName, 'mandator', 'account\_%']);
-check('A8c the eight account columns are the eight keys of Mandator::ACCOUNT_KEYS, VARCHAR(10)',
-    $accountColumns === array_map(fn($k) => Mandator::accountField($k), array_keys(Mandator::ACCOUNT_KEYS)) && count($accountColumns) === 8);
+check('A8c the ten account columns are the ten keys of Mandator::ACCOUNT_KEYS, VARCHAR(10) — the two year-opening accounts appended (Version20261022140000)',
+    $accountColumns === array_map(fn($k) => Mandator::accountField($k), array_keys(Mandator::ACCOUNT_KEYS)) && count($accountColumns) === 10);
+$openingDefaults = $db->fetchAllKeyValue('SELECT COLUMN_NAME, COLUMN_DEFAULT FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME IN (?, ?) ORDER BY COLUMN_NAME', [$dbName, 'mandator', 'account_annual_result', 'account_opening_balance']);
+check('A8d the year-opening accounts (P5, owner 2026-10-22): NOT NULL with the KMU numbers as column DEFAULT — an existing record gets 9100 / 2979 at once',
+    array_map(fn($d) => trim((string) $d, "'"), $openingDefaults) === ['account_annual_result' => '2979', 'account_opening_balance' => '9100']);
 [$code, $out] = $run(['command' => 'migrate']);
 check('A9 a second migrate is a no-op', $code === 0 && str_contains($out, 'Already at the latest version'));
 [$code, $out] = $run(['command' => 'diff', '--namespace' => 'Z77\\Module\\Mandator\\Migrations']);
-check('A10 diff after migrate reports NO change — mapping and migration agree', $code !== 0 && str_contains($out, 'No changes detected') && count(glob($package . '/res/migrations/Version*.php')) === 2);
+check('A10 diff after migrate reports NO change — mapping and migration agree', $code !== 0 && str_contains($out, 'No changes detected') && count(glob($package . '/res/migrations/Version*.php')) === 4);
 check('A11 every migration is expand-only: no DROP outside down()', array_reduce(glob($package . '/res/migrations/Version*.php'), function (bool $ok, string $f): bool {
     $s = file_get_contents($f);
     return $ok && substr_count(substr($s, 0, strpos($s, 'function down')), 'DROP') === 0;
@@ -300,6 +303,15 @@ check('A12 the default «Betreffname» of new documents (owner 2026-10-21, Versi
     && !(new MandatorValidator(new Mandator(['name' => 'x', 'country' => 'CH', 'default_subject_label' => str_repeat('x', 81)])))->isValid(['default_subject_label'])
     && (new MandatorValidator(new Mandator(['name' => 'x', 'country' => 'CH', 'default_subject_label' => str_repeat('x', 80)])))->isValid(['default_subject_label'])
     && MandatorLayout::tabOf('default_subject_label') === 'belege' && array_key_last(MandatorLayout::TABS) === 'belege');
+$noteColumn = $db->fetchAssociative('SELECT COLUMN_DEFAULT, IS_NULLABLE, CHARACTER_MAXIMUM_LENGTH FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ?', [$dbName, 'mandator', 'vat_exempt_note']);
+$noteOf = fn(bool $liable, string $note) => (new Mandator(['name' => 'x', 'liable_to_vat' => $liable, 'vat_exempt_note' => $note]))->documentVatNote();
+check('A13 the note a document without VAT prints (owner 2026-10-22, Version20261022100000): mandator.vat_exempt_note VARCHAR(255) NOT NULL DEFAULT \'\'; the setter trims and collapses whitespace to one line; the validator refuses 256 characters and takes 255; the field sits on the tab «UID und MWST»; documentVatNote() = the text only while NOT liable and not empty',
+    $noteColumn !== false && trim((string) $noteColumn['COLUMN_DEFAULT'], "'") === '' && $noteColumn['IS_NULLABLE'] === 'NO' && (int) $noteColumn['CHARACTER_MAXIMUM_LENGTH'] === 255
+    && (new Mandator(['vat_exempt_note' => "  Keine MWST \n —  nicht mehrwertsteuerpflichtig. "]))->getVatExemptNote() === 'Keine MWST — nicht mehrwertsteuerpflichtig.'
+    && !(new MandatorValidator(new Mandator(['name' => 'x', 'country' => 'CH', 'vat_exempt_note' => str_repeat('x', 256)])))->isValid(['vat_exempt_note'])
+    && (new MandatorValidator(new Mandator(['name' => 'x', 'country' => 'CH', 'vat_exempt_note' => str_repeat('x', 255)])))->isValid(['vat_exempt_note'])
+    && MandatorLayout::tabOf('vat_exempt_note') === 'uid'
+    && $noteOf(false, 'Keine MWST.') === 'Keine MWST.' && $noteOf(true, 'Keine MWST.') === null && $noteOf(false, '') === null && (new Mandator())->documentVatNote() === null);
 
 // ── B. the UID, pure ─────────────────────────────────────────────────────
 
@@ -408,6 +420,7 @@ echo "E. Account settings (E2): start values, the soft check on save, status\n";
 $em = $wireDi();
 check('E1 the start values are the KMU numbers — rounding its OWN account 3809, dunning fee on 6950 (owner, 2026-09-22)', MandatorAccounts::DEFAULTS === [
     'receivable' => '1100', 'discount' => '3800', 'loss' => '3805', 'rounding' => '3809', 'dunning-fee' => '6950', 'vat-input-material' => '1170', 'vat-input-other' => '1171', 'vat-owed' => '2200',
+    'opening-balance' => '9100', 'annual-result' => '2979',
 ] && array_keys(MandatorAccounts::DEFAULTS) === array_keys(Mandator::ACCOUNT_KEYS) && array_keys(MandatorAccounts::LABELS) === array_keys(Mandator::ACCOUNT_KEYS));
 $kmu = array_column(json_decode(file_get_contents($packages['Financial'] . '/res/charts/kmu.json'), true), null, 'number');
 check('E2 … every one of them is a postable account of the shipped KMU chart (verified against the FILE)',
@@ -432,7 +445,7 @@ $em = $wireDi();
 $em = $wireDi();
 check('E8 an EMPTY account field saves — «not set» is refused at the point of use, not here (an installation that never duns)', (new CurrentMandator($em))->find()->account('dunning-fee') === '');
 $status = (new MandatorAccounts($em))->status((new CurrentMandator($em))->find());
-check('E9 status(): the empty key is named, the seven others are ok', $status['dunning-fee']['error'] !== null && str_contains($status['dunning-fee']['error'], 'Mahngebühr')
+check('E9 status(): the empty key is named, the nine others are ok', $status['dunning-fee']['error'] !== null && str_contains($status['dunning-fee']['error'], 'Mahngebühr')
     && array_reduce(array_diff_key($status, ['dunning-fee' => 1]), fn($ok, $r) => $ok && $r['error'] === null && $r['number'] !== '', true));
 $db->executeStatement("UPDATE mandator SET account_loss = '100'");   // a chart change AFTER the save — past the validator
 $em = $wireDi();
@@ -660,9 +673,13 @@ check('G4c the four sections are radio tabs (owner 2026-10-08; «Belege» 2026-1
     && str_contains($tb, '<label class="be-viewtabs__tab be-viewtabs__tab--for" for="mandator-tab-belege" data-tab="4">Belege</label>')
     && !str_contains($tb, 'is-active') && stripos($tb, '<script') === false);
 check('G5b the rule of thumb stands on the page: the mandator is the letterhead, the payment target is the payee', str_contains($html, 'Zahlungsziel') && str_contains($html, 'kein Fehler'));
+check('G5c «Hinweis ohne MWST» (owner 2026-10-22): a text field directly under the switch on the tab «UID und MWST» (after the switch, before tab 3), maxlength 255, its hint names where it prints, that the switch must be off and the usual Swiss wording — as hint text, not a placeholder (G5)',
+    preg_match('/<span class="be-switch__label">Mehrwertsteuerpflichtig<\/span>.*?<label for="mandator-vat_exempt_note">Hinweis ohne MWST<\/label>\s*<input type="text" id="mandator-vat_exempt_note" name="vat_exempt_note" value="" maxlength="255"/s', $html) === 1
+    && strpos($html, 'id="mandator-vat_exempt_note"') > strpos($html, 'data-tab="2" aria-label') && strpos($html, 'id="mandator-vat_exempt_note"') < strpos($html, 'data-tab="3" aria-label')
+    && str_contains($html, 'solange der Schalter aus ist') && str_contains($html, 'unter dem Total gedruckt') && str_contains($html, 'Üblich: «Keine MWST — der Rechnungssteller ist nicht mehrwertsteuerpflichtig.»'));
 
 // POST: the first save creates the record.
-$postBody = ['csrf_token' => 'csrf-x', 'name' => 'Screen AG', 'street' => 'Weg', 'house_no' => '1', 'zip' => '3000', 'city' => 'Bern', 'country' => 'ch', 'email' => 'Mail@Screen.ch', 'uid' => 'che 109322551 MWST', 'liable_to_vat' => '1']
+$postBody = ['csrf_token' => 'csrf-x', 'name' => 'Screen AG', 'street' => 'Weg', 'house_no' => '1', 'zip' => '3000', 'city' => 'Bern', 'country' => 'ch', 'email' => 'Mail@Screen.ch', 'uid' => 'che 109322551 MWST', 'liable_to_vat' => '1', 'vat_exempt_note' => '  Keine MWST — der  Rechnungssteller ist nicht mehrwertsteuerpflichtig. ']
     + array_combine(array_map(fn($k) => Mandator::accountField($k), array_keys(MandatorAccounts::DEFAULTS)), array_values(MandatorAccounts::DEFAULTS));
 $useRequest([], $postBody);
 $h = $host();
@@ -670,6 +687,8 @@ $h->editAction();
 $em = $wireDi();
 check('G6 POST creates the one record, redirects back (303) with a success flash; the values normalised', $h->redirectedTo === '/backend/finance/mandator/edit' && ($h->messageService->flashes[0][0] ?? '') === 'success'
     && $count('mandator') === 1 && ($m = (new CurrentMandator($em))->find())->getName() === 'Screen AG' && $m->getCountry() === 'CH' && $m->getUid() === 'CHE-109.322.551' && $m->isLiableToVat() && $m->getEmail() === 'mail@screen.ch');
+check('G6b … the note saved one-lined and trimmed; stored while liable, documentVatNote() answers null until the switch is off', $m->getVatExemptNote() === 'Keine MWST — der Rechnungssteller ist nicht mehrwertsteuerpflichtig.'
+    && $m->documentVatNote() === null && $db->fetchOne('SELECT vat_exempt_note FROM mandator') === 'Keine MWST — der Rechnungssteller ist nicht mehrwertsteuerpflichtig.');
 // POST a refused change on the existing record: the draft is shown, the entity untouched.
 $id = $m->getId();
 $useRequest([], ['csrf_token' => 'csrf-x', 'entity_csrf' => "tok-mandator-{$id}", 'name' => 'Screen AG', 'country' => 'CH', 'uid' => 'CHE-109.322.552', 'account_receivable' => '100', 'city' => 'Thun'] + array_diff_key($postBody, ['uid' => 1, 'account_receivable' => 1, 'city' => 1, 'liable_to_vat' => 1]));
@@ -708,6 +727,7 @@ $h->editAction();
 $html = $render($h);
 check('G9 GET with the record: not new, the entity token in the form, «Speichern», the status badges, no tax-code select', $h->context['isNew'] === false && str_contains($html, 'name="entity_csrf" value="tok-mandator-' . $id . '"')
     && str_contains($actSlot($h), '>Speichern<') && str_contains($html, 'badge--success') && !str_contains($html, 'default_tax_code') && $h->context['unavailable'] === null);
+check('G9c … the stored note stands in its field', str_contains($html, 'name="vat_exempt_note" value="Keine MWST — der Rechnungssteller ist nicht mehrwertsteuerpflichtig."'));
 // The record cannot be read (table missing): the page shows the sentence as a band and no form (review 2026-09-23, P6d).
 $db->executeStatement('RENAME TABLE mandator TO mandator_gone');
 $em = $wireDi();

@@ -2,12 +2,14 @@
 /**
  * The fiscal year's ⋮ hub (owner 2026-10-10): the year actions that used to stand as buttons
  * at the far right of the year's header — «Jahr abschliessen …», «Wieder öffnen …»,
- * «Löschen …» — only those the rules allow now ({@see FiscalYearControllerTrait::fiscalYearActions()}).
+ * «Löschen …» — only those the rules allow now ({@see FiscalYearControllerTrait::fiscalYearActions()}),
+ * and since P5 (2026-10-22) «Eröffnung erstellen …» / «Eröffnung neu erstellen …».
  * Each opens its confirm (a click replaces this hub). Mirrors every backend ⋮ hub
  * (LIST-ACTIONS-HUB-001).
  *
  * @var \Z77\Module\Financial\Entities\FiscalYear $year
- * @var list<string> $actions  'close' | 'reopen' | 'delete'
+ * @var list<string> $actions  'opening' | 'close' | 'reopen' | 'delete'
+ * @var bool $openingExists  the year carries its generated opening — the entry reads «neu erstellen»
  * @var string $actionBase
  */
 $ic = fn(string $name) => '<svg class="be-icon" width="15" height="15" aria-hidden="true"><use href="#' . $name . '"/></svg>';
@@ -18,6 +20,9 @@ $q  = '?id=' . (int) $year->getId();
     <?= $this->partial('partials/modalActions', ['submit' => '', 'cancel' => 'Schliessen'], 'Z77\\Shared') ?>
     <div class="be-modal__body">
         <div class="be-actions__list">
+            <?php if (in_array('opening', $actions, true)): ?>
+            <button type="button" class="be-btn be-btn--ghost be-actions__item" data-fetch-get="<?= e($actionBase) ?>/confirm-opening<?= $q ?>"><?= raw($ic('icon-file-text')) ?> <?= ($openingExists ?? false) ? 'Eröffnung neu erstellen …' : 'Eröffnung erstellen …' ?></button>
+            <?php endif; ?>
             <?php if (in_array('close', $actions, true)): ?>
             <button type="button" class="be-btn be-btn--ghost be-actions__item" data-fetch-get="<?= e($actionBase) ?>/confirm-close<?= $q ?>"><?= raw($ic('icon-lock')) ?> Jahr abschliessen …</button>
             <?php endif; ?>

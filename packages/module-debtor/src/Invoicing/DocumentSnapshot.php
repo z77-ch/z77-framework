@@ -45,6 +45,13 @@ final class DocumentSnapshot
         public readonly ?string $subject = null,
         /** The optional «Betreffname» printed in front of the subject (owner 2026-10-21, {@see SubjectLabel}); null = none. */
         public readonly ?string $subjectLabel = null,
+        /**
+         * The note a document WITHOUT VAT prints under its totals (owner 2026-10-22) — the mandator's
+         * «Hinweis ohne MWST» as it read at composing (`Mandator::documentVatNote()`); null for a
+         * document computed with VAT or a mandator without a text. Snapshotted like the rest: a
+         * reprint reads as issued (ADR-041 decision 6).
+         */
+        public readonly ?string $vatNote = null,
     ) {
         foreach ([$netTotal, $taxTotal, $rounding, $grossTotal] as $amount) {
             if ($amount->currency !== $currency) {

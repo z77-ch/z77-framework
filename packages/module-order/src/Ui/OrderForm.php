@@ -63,11 +63,11 @@ final class OrderForm
     /** The snapshot's fields in `AddressSnapshot`'s constructor order (the posted names after the prefix). */
     private const ADDRESS_FIELDS = ['salutation', 'title', 'first_name', 'name', 'address_row', 'street', 'house_no', 'zip', 'city', 'country'];
 
-    private const EMPTY_ROW = ['id' => '', 'type' => 'service', 'child' => '', 'article' => '', 'text' => '', 'quantity' => '', 'unit' => '', 'price' => '', 'discount' => '', 'tax_code' => ''];
+    private const EMPTY_ROW = ['id' => '', 'type' => 'service', 'child' => '', 'article' => '', 'text' => '', 'quantity' => '', 'unit' => '', 'price' => '', 'discount' => '', 'tax_code' => '', 'code' => ''];
 
     /** The service's field names → the form's. */
     private const HEADER_FIELDS = ['contact_id' => 'contact', 'payment_terms_code' => 'terms', 'status_code' => 'status'];
-    private const ROW_FIELDS    = ['variant' => 'article', 'unit_price' => 'price', 'children' => 'child'];
+    private const ROW_FIELDS    = ['variant' => 'article', 'unit_price' => 'price', 'children' => 'child', 'code' => 'text'];   // the code has no field yet — its error shows at the text
 
     /**
      * The head. `prices_mode` (hidden, owner 2026-10-18) = the mode the row PRICES are in: rendered
@@ -159,6 +159,7 @@ final class OrderForm
                 'price'    => $line->getUnitPrice()?->toDecimal() ?? '',
                 'discount' => InvoiceForm::formatPercent($line->getDiscountPercent()),
                 'tax_code' => $line->getVariant() === null ? (string) $line->getTaxCode() : '',
+                'code'     => (string) $line->getCode(),   // no field (owner 2026-10-22: storage only) — a hidden input carries it
             ];
         }
 
@@ -301,6 +302,7 @@ final class OrderForm
                 unitPrice: $row['price'],
                 discount: $row['discount'],
                 id: $row['id'] !== '' ? (int) $row['id'] : null,
+                code: $row['code'],
             );
             if ($row['child'] !== '') {
                 if ($top === []) {

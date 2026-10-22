@@ -298,6 +298,23 @@ body.backend {
 }
 .be-shell-crumb__slot--2 { background: var(--be-bg); padding-inline: var(--be-edge); }
 
+// «Dashboard» in the rail cell of the crumb row (owner 2026-10-22) — the way back from every
+// screen; the cell wears the dark island's tokens, so the link needs no colours of its own.
+.be-shell-crumb__home {
+    display:         inline-flex;
+    align-items:     center;
+    gap:             var(--space-2);
+    height:          100%;
+    // On the line of the menu labels below (owner 2026-10-22): the tree's 6px inset, the
+    // 14px toggle cell and the node gap (_subnav.scss) — same size as a menu entry.
+    padding:         0 var(--space-3) 0 calc(6px + 14px + var(--space-1));
+    font-size:       0.78125rem;
+    color:           var(--be-muted);
+    text-decoration: none;
+
+    &:hover, &:focus-visible { color: var(--be-text); outline: none; }
+}
+
 // The default crumb: section › page, muted, small — a position line, not a heading.
 .be-crumb {
     display:     flex;
@@ -317,7 +334,6 @@ body.backend {
     &__here { color: var(--be-text); font-weight: var(--font-weight-medium);
               overflow: hidden; text-overflow: ellipsis; }
 }
-
 .be-shell-col__slot {
     flex:           1;
     font-weight:    var(--font-weight-medium);
@@ -515,7 +531,7 @@ details.be-shell-add--select > summary {
 // The chosen entry carries a check mark at its right end — CSS only, so the link text stays the
 // bare value (the harness reads it).
 .be-shell-add--select .be-shell-add__item[aria-current]::after {
-    content:     "¹3";
+    content:     "\2713";   // ✓ as a CSS escape — the literal character had been stored mis-encoded and showed «¹3»
     margin-left: auto;
     font-weight: var(--font-weight-semibold);
 }

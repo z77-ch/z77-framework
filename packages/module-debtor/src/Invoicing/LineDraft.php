@@ -11,7 +11,11 @@ use Z77\Shared\Money\Money;
  * service, a price for a lump sum, nothing for a text line), the discount in
  * hundredths of a percent, the tax code, the revenue account BY NUMBER, an
  * opaque origin, and — for a priced line — the lines printed BENEATH it
- * (`children`, one level: a package with its contents at 0.00, §13).
+ * (`children`, one level: a package with its contents at 0.00, §13). The
+ * optional `code` is the line's short code (owner 2026-10-22, the wdv
+ * `shop_positions.code`): trimmed, '' = none, at most
+ * `InvoiceLine::CODE_LENGTH` characters — stored and offered to the PDF rows,
+ * not printed by the framework's templates.
  *
  * Plain data: the rules (tax code required on a priced line, a child under a
  * priced parent only, …) are `InvoicingService`'s, which refuses with a
@@ -33,24 +37,25 @@ final class LineDraft
         public readonly ?string $sourceType = null,
         public readonly ?string $sourceRef = null,
         public readonly array $children = [],
+        public readonly ?string $code = null,
     ) {}
 
     /** quantity × unit price, with unit; the usual line. */
-    public static function service(string $text, string $quantity, ?string $unit, Money $unitPrice, string $taxCode, string $revenueAccount, int $discountPercent = 0, ?string $sourceType = null, ?string $sourceRef = null): self
+    public static function service(string $text, string $quantity, ?string $unit, Money $unitPrice, string $taxCode, string $revenueAccount, int $discountPercent = 0, ?string $sourceType = null, ?string $sourceRef = null, ?string $code = null): self
     {
-        return new self(LineType::Service, $text, $quantity, $unit, $unitPrice, $discountPercent, $taxCode, $revenueAccount, $sourceType, $sourceRef);
+        return new self(LineType::Service, $text, $quantity, $unit, $unitPrice, $discountPercent, $taxCode, $revenueAccount, $sourceType, $sourceRef, code: $code);
     }
 
     /** One price, no quantity. */
-    public static function lumpSum(string $text, Money $price, string $taxCode, string $revenueAccount, int $discountPercent = 0, ?string $sourceType = null, ?string $sourceRef = null): self
+    public static function lumpSum(string $text, Money $price, string $taxCode, string $revenueAccount, int $discountPercent = 0, ?string $sourceType = null, ?string $sourceRef = null, ?string $code = null): self
     {
-        return new self(LineType::LumpSum, $text, null, null, $price, $discountPercent, $taxCode, $revenueAccount, $sourceType, $sourceRef);
+        return new self(LineType::LumpSum, $text, null, null, $price, $discountPercent, $taxCode, $revenueAccount, $sourceType, $sourceRef, code: $code);
     }
 
     /** Prints only. */
-    public static function text(string $text, ?string $sourceType = null, ?string $sourceRef = null): self
+    public static function text(string $text, ?string $sourceType = null, ?string $sourceRef = null, ?string $code = null): self
     {
-        return new self(LineType::Text, $text, sourceType: $sourceType, sourceRef: $sourceRef);
+        return new self(LineType::Text, $text, sourceType: $sourceType, sourceRef: $sourceRef, code: $code);
     }
 
     /** The same line with $children printed beneath it. */
@@ -58,7 +63,7 @@ final class LineDraft
     {
         return new self(
             $this->type, $this->text, $this->quantity, $this->unit, $this->unitPrice, $this->discountPercent,
-            $this->taxCode, $this->revenueAccount, $this->sourceType, $this->sourceRef, array_values($children)
+            $this->taxCode, $this->revenueAccount, $this->sourceType, $this->sourceRef, array_values($children), $this->code
         );
     }
 }
