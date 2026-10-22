@@ -80,7 +80,7 @@ final class DocumentColumns
         $widest = 0.0;
         foreach ($units as $unit) {
             $unit   = trim($unit);
-            $widest = max($widest, $measure !== null ? (float) $measure($unit) : mb_strlen($unit) * self::UNIT_MM_PER_CHAR);
+            $widest = max($widest, $measure !== null ? $measure($unit) : mb_strlen($unit) * self::UNIT_MM_PER_CHAR);
         }
 
         return (int) max(self::UNIT_WIDTH_MIN, min(self::UNIT_WIDTH_MAX, ceil($widest) + self::UNIT_PADDING));
