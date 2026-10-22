@@ -9,8 +9,10 @@
  * rows are this template's; no CSS and no JavaScript of its own:
  *
  *   - a state icon starts every row and is the way into the document: it
- *     opens the detail as a WINDOW (ADR-047, `data-window-open`), the href
- *     stays for a ctrl-click and a browser without the script;
+ *     opens the document's ONE mask (`edit`, owner 2026-10-21 — a pencil for
+ *     a draft, a lock for a final document, which the mask shows read-only)
+ *     as a WINDOW (ADR-047, `data-window-open`), the href stays for a
+ *     ctrl-click and a browser without the script;
  *   - every searchable cell is a `<label for>` of its column's search field;
  *   - in the invoicing view each row carries a checkbox of the form
  *     `#invoice-finalize` (GET to `confirm-finalize`) with the value
@@ -24,7 +26,7 @@
  *     and names the count on the confirmation page instead;
  *   - the whole list is a FETCH REGION (`invoice-find-list`): sort / page /
  *     search reload only this part, and a save in a window opened from here
- *     (the detail and what it links, «+ Rechnung») reloads it
+ *     (the mask and what it links, «+ Rechnung») reloads it
  *     (`refresh-region`, ADR-047 addendum 2026-10-10). The confirmation of
  *     «Buchungsdruck …» is still a page (debtor.md DEBTOR-WIN-002); it
  *     prints into a new tab and sends itself to the «Verbucht» view.
@@ -69,7 +71,7 @@ $icons      = ['invoicing' => 'edit', 'final' => 'lock'];
             <div class="be-list__table be-list__table--drop" style="<?= e($definition->style()) ?>">
                 <?= $this->partial('partials/listHead', ['definition' => $definition, 'state' => $state, 'action' => $listUrl], 'Z77\\Shared') ?>
                 <?php foreach ($documents as $document): ?>
-                <?php $docState = $document->isFinal() ? 'final' : 'invoicing'; $url = $actionBase . '/detail?id=' . $document->getId(); ?>
+                <?php $docState = $document->isFinal() ? 'final' : 'invoicing'; $url = $actionBase . '/edit?id=' . $document->getId(); ?>
                 <div class="be-list__item" data-invoice-id="<?= e((string) $document->getId()) ?>">
                     <div class="be-list__row">
                         <?php if ($selectable): ?>

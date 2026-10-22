@@ -8,6 +8,7 @@ use Doctrine\Common\Collections\ArrayCollection,
     Doctrine\ORM\Mapping as ORM,
     Z77\Module\Contact\Entities\Contact,
     Z77\Module\Debtor\Invoicing\DocumentSnapshot,
+    Z77\Module\Debtor\Invoicing\SubjectLabel,
     Z77\Persistence\Doctrine\Type\MoneyType,
     Z77\Shared\Attributes\Entity,
     Z77\Shared\Money\Money
@@ -107,6 +108,8 @@ class Invoice
     public const LEDGER_REF_LENGTH  = 32;
     public const ACTOR_LENGTH       = 80;
     public const SUBJECT_LENGTH     = 200;
+    /** The «Betreffname» — {@see SubjectLabel::LENGTH}, the one rule. */
+    public const SUBJECT_LABEL_LENGTH = SubjectLabel::LENGTH;
 
     /** Server-controlled — no setter; the database assigns it. */
     #[ORM\Id, ORM\Column, ORM\GeneratedValue]
@@ -212,6 +215,14 @@ class Invoice
     #[ORM\Column(length: self::SUBJECT_LENGTH, nullable: true)]
     private ?string $subject = null;
 
+    /**
+     * The optional «Betreffname» printed in front of the subject — «Projekt: …» (owner decision
+     * 2026-10-21, {@see SubjectLabel}). Part of the snapshot like the subject — written whole by
+     * issue() / reissue(), immutable once final; NULL = none. Migration `Version20261021100000`.
+     */
+    #[ORM\Column(name: 'subject_label', length: self::SUBJECT_LABEL_LENGTH, nullable: true)]
+    private ?string $subjectLabel = null;
+
     #[ORM\Column(name: 'source_type', length: self::SOURCE_TYPE_LENGTH, nullable: true)]
     private ?string $sourceType = null;
 
@@ -300,6 +311,10 @@ class Invoice
     public function getGrossTotal(): Money { return $this->grossTotal; }
     /** The «Betreff» under the title — null when the document has none. */
     public function getSubject(): ?string { return $this->subject; }
+    /** The «Betreffname» in front of the subject — null when the document has none. */
+    public function getSubjectLabel(): ?string { return $this->subjectLabel; }
+    /** The subject line as printed: «<label>: <subject>», the subject alone, or null ({@see SubjectLabel::line()}). */
+    public function subjectLine(): ?string { return SubjectLabel::line($this->subjectLabel, $this->subject); }
     public function getSourceType(): ?string { return $this->sourceType; }
     public function getSourceRef(): ?string { return $this->sourceRef; }
     public function getLedgerEntryRef(): ?string { return $this->ledgerEntryRef; }
@@ -360,6 +375,24 @@ class Invoice
     public function getTaxes(): array
     {
         return $this->taxes->getValues();
+    }
+
+    /**
+     * Whether the document was COMPUTED with VAT — read from the snapshot, never from today's
+     * mandator (ADR-041 decision 6): a line carries a tax code. A document of a mandator not
+     * liable to VAT (owner 2026-10-21, `InvoicingService::chargesVat()`) and a fee carry none.
+     * The print shows the VAT column, the VAT rows and «zzgl. / inkl. MWST» by it; a credit
+     * note follows its invoice by it.
+     */
+    public function carriesVat(): bool
+    {
+        foreach ($this->lines as $line) {
+            if ($line->getTaxCode() !== null) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -451,6 +484,10 @@ class Invoice
         if ($this->isCreditNote() && $payment->hasPaymentPart()) {
             throw new \LogicException('A credit note has no payment part');
         }
+        $subjectLabel = SubjectLabel::normalize($snapshot->subjectLabel);
+        if (SubjectLabel::isTooLong($subjectLabel)) {
+            throw new \LogicException('Document snapshot: a subject label has at most ' . self::SUBJECT_LABEL_LENGTH . ' characters');
+        }
         $this->payment          = $payment;
         if (mb_strlen($snapshot->language) > self::LANGUAGE_LENGTH || strlen($snapshot->currency) !== self::CURRENCY_LENGTH) {
             throw new \LogicException('Document snapshot: language up to ' . self::LANGUAGE_LENGTH . ' characters, currency exactly ' . self::CURRENCY_LENGTH);
@@ -474,6 +511,7 @@ class Invoice
         $this->sourceType       = $snapshot->sourceType;
         $this->sourceRef        = $snapshot->sourceRef;
         $this->subject          = $snapshot->subject !== null && trim($snapshot->subject) !== '' ? $snapshot->subject : null;
+        $this->subjectLabel     = $subjectLabel;
 
         $this->lines->clear();
         foreach ($lines as $line) {

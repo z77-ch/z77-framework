@@ -309,6 +309,33 @@ $draft2 = OrderInvoiceDraft::of($order, new \DateTimeImmutable('2026-10-31'));
 check('D6 without a Betreff the subject is «Auftrag 42»; the head\'s service period wins; gross; no payment target',
     $draft2->subject === 'Auftrag 42' && $draft2->serviceFrom?->format('Y-m-d') === '2026-10-01' && $draft2->serviceTo?->format('Y-m-d') === '2026-10-10'
     && $draft2->priceMode === PriceMode::Gross && $draft2->paymentTargetCode === null);
+// The «Betreffname» (owner 2026-10-21): stored normalised on the order, travels with the subject.
+$order->describe($contact, 'Wein für das Fest', new \DateTimeImmutable('2026-10-14'), null, null, PriceMode::Net, 'CHF', 'lukb', null, null, subjectLabel: ' Projekt: ');
+$draft3 = OrderInvoiceDraft::of($order, new \DateTimeImmutable('2026-10-31'));
+check('D7 the «Betreffname» (owner 2026-10-21): stored trimmed without the trailing colon, the order prints «Projekt: Wein für das Fest»; the invoice draft carries it beside «Auftrag 42 · …» (it prints «Projekt: Auftrag 42 · Wein für das Fest»); without a label (D2) null',
+    $order->getSubjectLabel() === 'Projekt' && $order->subjectLine() === 'Projekt: Wein für das Fest'
+    && $draft3->subjectLabel === 'Projekt' && $draft3->subject === 'Auftrag 42 · Wein für das Fest'
+    && \Z77\Module\Debtor\Invoicing\SubjectLabel::line($draft3->subjectLabel, $draft3->subject) === 'Projekt: Auftrag 42 · Wein für das Fest'
+    && $draft->subjectLabel === null && $draft2->subjectLabel === null);
+$order->describe($contact, '  ', new \DateTimeImmutable('2026-10-14'), new \DateTimeImmutable('2026-10-01'), new \DateTimeImmutable('2026-10-10'), PriceMode::Gross, 'CHF', null, null, null);
+
+// ── L. the subject label, pure (offline) ─────────────────────────────────
+
+echo "L. SubjectLabel — normalise, print, default, suggestions (offline)\n";
+$SL = \Z77\Module\Debtor\Invoicing\SubjectLabel::class;
+check('L1 normalize(): trimmed, one line, the trailing colon(s) stripped (the print adds «: »); empty → null',
+    $SL::normalize('  Projekt:  ') === 'Projekt' && $SL::normalize("Ihre\n Bestellnummer ::") === 'Ihre Bestellnummer' && $SL::normalize('Ref.: 12') === 'Ref.: 12'
+    && $SL::normalize(' : ') === null && $SL::normalize('') === null && $SL::normalize(null) === null);
+check('L2 at most 80 characters after normalising (refused, never cut) — the columns are VARCHAR(80); the mandator repeats the length',
+    $SL::LENGTH === 80 && !$SL::isTooLong(str_repeat('x', 80)) && $SL::isTooLong(str_repeat('x', 81)) && !$SL::isTooLong($SL::normalize(str_repeat('x', 80) . ':'))
+    && \Z77\Module\Mandator\Entities\Mandator::SUBJECT_LABEL_LENGTH === $SL::LENGTH && \Z77\Module\Debtor\Entities\Invoice::SUBJECT_LABEL_LENGTH === $SL::LENGTH);
+check('L3 line(): «Projekt: Text»; no label → the subject alone (unchanged output); a label without a subject prints nothing',
+    $SL::line('Projekt', 'Text') === 'Projekt: Text' && $SL::line('Projekt:', ' Text ') === 'Projekt: Text' && $SL::line(null, 'Text') === 'Text' && $SL::line('', 'Text') === 'Text'
+    && $SL::line('Projekt', '') === null && $SL::line('Projekt', '  ') === null && $SL::line(null, null) === null);
+check('L4 resolve(): the debtor\'s own, else the global, else none',
+    $SL::resolve('Referenz', 'Projekt') === 'Referenz' && $SL::resolve(null, 'Projekt:') === 'Projekt' && $SL::resolve(' ', 'Projekt') === 'Projekt' && $SL::resolve(null, '') === null);
+check('L5 suggestions(): merged, normalised, without duplicates (case ignored), sorted, the over-long left out',
+    $SL::suggestions(['Projekt', null, 'referenz:'], ['projekt', 'Betrifft', str_repeat('y', 81)], []) === ['Betrifft', 'Projekt', 'referenz']);
 
 // ── V. the list's view tabs (offline) ────────────────────────────────────
 
@@ -500,8 +527,38 @@ check('F17 a 0 total on the screens (owner 2026-10-20): the confirmation names i
     && str_contains((string) file_get_contents($root . '/packages/module-order/res/view/templates/Backend/OrderController/confirmBook.tpl.php'), 'Total 0 — keine Rechnung, ausgelassen:')
     && str_contains($orderTpl, 'if ($canBook && empty($zeroTotal)) {') && str_contains($orderTpl, '<?php if ($canBook && !empty($zeroTotal)): ?>') && str_contains($orderTpl, '} elseif ($invoice !== null) {')
     && str_contains($orderTpl, 'title="Rechnung verbucht — der Status bleibt"'));
+$f20Help = (string) file_get_contents($root . '/packages/module-order/res/view/templates/Backend/OrderController/edit.help.tpl.php');
+check('F20 without VAT (owner 2026-10-21): the window hides «Preise» (the mode still posted), the help gets `liableToVat` and drops the price-mode section and the MWST wording; the article help names the magnifier, no list',
+    str_contains($orderTpl, "<div class=\"be-form__field\" data-z77-field-wrapper<?= \$liableToVat ? '' : ' hidden' ?>>")
+    && str_contains($orderTrait, "['isNew' => \$order === null, 'liableToVat' => \$service->chargesVat()], 'Hilfe: Auftrag'")
+    && str_contains($f20Help, "\$vat = \$liableToVat ?? true;") && str_contains($f20Help, "<?php if (\$vat): ?>\n<section data-help-field=\"price_mode\">")
+    && str_contains($f20Help, 'mit der Lupe suchen und wählen') && !str_contains($f20Help, 'die Liste schlägt die aktiven Artikel vor'));
 check('F15 no article <datalist> (owner 2026-10-20: the picker searches; the browser filtered the list to the typed value) — the number is typed or picked, «fill» completes the row',
     !str_contains($orderTpl, '<datalist') && !str_contains($orderTpl, 'list="order-articles-') && str_contains($orderTpl, 'data-fill-url="<?= e($actionBase . \'/article-defaults\') ?>"'));
+$flForm  = (new OrderForm())->fromPost(['contact' => '6', 'order_date' => '2026-10-14', 'subject_label' => ' Projekt: ', 'subject' => 'Umbau', 'rows' => []]);
+$flDraft = $flForm->toDraft([], ['' => null]);
+$flBlank = (new OrderForm())->startBlank(new \DateTimeImmutable('2026-10-21'), 6, 'lukb', 'opened', '', 'net', 'Referenz');
+$flNone  = (new OrderForm())->fromPost(['contact' => '6', 'order_date' => '2026-10-14', 'rows' => []])->toDraft([], ['' => null]);
+$flErr   = (new OrderForm())->fromPost(['contact' => '6', 'order_date' => '2026-10-14', 'rows' => []]);
+$flErr->applyErrors(['subject_label' => 'Betreffname: höchstens 80 Zeichen.']);
+require_once $root . '/packages/kernel/core/src/autoload/prod/php/Functions.php';   // the template helpers e() / raw()
+require_once $root . '/packages/kernel/core/src/autoload/prod/php/Helper.php';
+$labelPartial = $root . '/packages/module-debtor/res/view/templates/partials/subjectLabelField.tpl.php';
+$renderLabel  = static function (array $vars) use ($labelPartial): string { extract($vars); ob_start(); include $labelPartial; return (string) ob_get_clean(); };
+$flHtmlNew = $renderLabel(['id' => 'order-subject_label', 'value' => 'Projekt', 'suggestions' => ['Projekt', 'Referenz'], 'prefill' => true, 'error' => '']);
+$flHtmlOld = $renderLabel(['id' => 'order-subject_label', 'value' => 'Projekt', 'suggestions' => [], 'prefill' => false, 'error' => 'zu lang']);
+check('F18 «Betreffname» (owner 2026-10-21): the posted `subject_label` reaches the draft as typed (the service normalises), \'\' → null; startBlank() holds the pre-fill; a field error lands on it (`order-subject_label`); the window renders debtor\'s shared field right BEFORE «Betreff» with the suggestions and the pre-fill',
+    $flDraft !== null && $flDraft->subjectLabel === 'Projekt:' && $flNone !== null && $flNone->subjectLabel === null && $flBlank->header('subject_label') === 'Referenz'
+    && $flErr->error('subject_label') !== '' && in_array('order-subject_label', $flErr->invalidIds(), true)
+    && strpos($orderTpl, "partial('partials/subjectLabelField'") < strpos($orderTpl, '<label for="order-subject">Betreff</label>') && str_contains($orderTpl, "'id'          => 'order-subject_label'")
+    && str_contains($orderTrait, "'subjectLabels'       => (new SubjectLabelDefaults(\$this->em()))->suggestions(\$this->orders()->subjectLabelsInUse(SubjectLabel::SUGGESTIONS)),")
+    && str_contains($orderTrait, "'subjectLabelPrefill' => \$order === null,") && str_contains($orderTrait, '(new SubjectLabelDefaults($this->em()))->defaultFor($contactId))'));
+check('F19 the shared field: `subject_label`, maxlength 80, a <datalist> of the suggestions, `data-prefill` on a NEW document only (an existing one never follows a customer change), the error under it; the customer choice re-fills it through set-value `untouched`',
+    str_contains($flHtmlNew, '<label for="order-subject_label">Betreffname</label>') && str_contains($flHtmlNew, 'name="subject_label" value="Projekt" maxlength="80"')
+    && str_contains($flHtmlNew, 'list="order-subject_label-list"') && str_contains($flHtmlNew, ' data-prefill="Projekt"') && str_contains($flHtmlNew, '<option value="Referenz"></option>')
+    && !str_contains($flHtmlOld, 'data-prefill') && !str_contains($flHtmlOld, '<datalist') && str_contains($flHtmlOld, 'aria-invalid="true"') && str_contains($flHtmlOld, '>zu lang</small>')
+    && str_contains($pickTrait, "'target'    => 'input[name=\"subject_label\"][data-prefill]',") && str_contains($pickTrait, "'untouched' => true,")
+    && str_contains($coreJs, "if (!el.hasAttribute('data-prefill') || el.value !== el.getAttribute('data-prefill')) return;"));
 
 // ── P. the order's PDFs (offline where possible) ─────────────────────────
 
@@ -547,6 +604,18 @@ check('P3 pdf/deliveryNote draws offline: title, the delivery address in the win
     str_starts_with($bytes, '%PDF-') && str_contains($bytes, '(Lieferschein 42)') && str_contains($bytes, '(Anna Muster)')
     && str_contains($bytes, '(PN22)') && str_contains($bytes, '(Pinot Noir 2022)') && str_contains($bytes, '(Bitte kuehl lagern)') && str_contains($bytes, 'Ware erhalten'));
 check('P4 … and NO price: neither the unit price nor a total appears on the delivery note', !str_contains($bytes, '24.50') && !str_contains($bytes, '147.00'));
+$note->describe($contact, 'Wein fuer das Fest', new \DateTimeImmutable('2026-10-14'), null, null, PriceMode::Net, 'CHF', null, null, null, subjectLabel: 'Projekt:');
+try {
+    $labelBytes = \Z77\Shared\Pdf\PdfDocument::create('Lieferschein 42')->withoutCompression()->partial('pdf/deliveryNote', [
+        'order' => $note, 'title' => 'Lieferschein 42', 'address' => $ship, 'mandator' => null, 'customerNumber' => 1000, 'today' => new \DateTimeImmutable('2026-10-20'),
+    ], 'Z77\\Module\\Order')->output();
+} catch (\Throwable $e) {
+    $labelBytes = 'ERROR ' . $e->getMessage();
+}
+$orderPdfTpl = (string) file_get_contents($root . '/packages/module-order/res/view/templates/pdf/order.tpl.php');
+check('P5 the «Betreffname» (owner 2026-10-21): the delivery note prints «Projekt: Wein fuer das Fest» on the subject line; without a label (P3) the subject alone, unchanged; pdf/order prints the same line (subjectLine())',
+    str_contains($labelBytes, '(Projekt: Wein fuer das Fest)') && str_contains($bytes, '(Wein fuer das Fest)') && !str_contains($bytes, 'Projekt')
+    && str_contains($orderPdfTpl, '$order->subjectLine(), 4.6)') && !str_contains($orderPdfTpl, '$order->getSubject(), 4.6)'));
 
 // ── C. the year-close warning (offline) ──────────────────────────────────
 
@@ -640,7 +709,8 @@ $packages = [
     'Article'  => $root . '/packages/module-article',
     'Order'    => $root . '/packages/module-order',
 ];
-$namespaces = '';
+// The kernel's templates too: the order PDF (M34) draws the shared `pdf/table` / `pdf/addressWindow`.
+$namespaces = "'Z77\\\\Shared\\\\' => ['sourcePaths' => ['{$root}/packages/kernel/shared']],\n";
 foreach ($packages as $name => $path) {
     $namespaces .= "'Z77\\\\Module\\\\{$name}\\\\' => ['sourcePaths' => ['{$path}']],\n";
 }
@@ -963,6 +1033,57 @@ check('M30 a 0 total: the stored total is 0.00, the booking print refuses `zero-
     $o30->getTotalGross()?->isZero() === true && ($m30Msg[0] ?? null) === 'zero-total'
     && ($m30Msg[1] ?? '') === 'Auftrag ' . $o30->documentNumber() . ': ' . \Z77\Module\Order\Services\OrderService::ZERO_TOTAL_HINT
     && $count('invoice') === $m30Count && $o30Done->getStatusCode() === 'done' && $o30Done->getInvoice() === null);
+
+// The «Betreffname» (owner 2026-10-21): sales_order.subject_label VARCHAR(80) NULL; stored normalised; refused over 80.
+$m31Col = $db->fetchAssociative('SELECT IS_NULLABLE, CHARACTER_MAXIMUM_LENGTH FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ?', [$dbName, 'sales_order', 'subject_label']);
+$o31 = $svc->create(new $D($contactId, '2026-10-21', 'Umbau', lines: [$L::article($variantId, '1')], subjectLabel: ' Projekt: '));
+$m31Stored = [$db->fetchOne('SELECT subject_label FROM sales_order WHERE id = ?', [$o31->getId()]), $em->getRepository(SalesOrder::class)->subjectLabelsInUse(50)];
+$m31Errors = null;
+try { $svc->create(new $D($contactId, '2026-10-21', 'Umbau', lines: [$L::article($variantId, '1')], subjectLabel: str_repeat('x', 81))); } catch (\Z77\Module\Order\Services\InvalidOrderException $e) { $m31Errors = $e->errors; }
+$o31b = $svc->update((int) $o31->getId(), $o31->getVersion(), new $D($contactId, '2026-10-21', 'Umbau', lines: [$L::article($variantId, '1', id: (int) $o31->getLines()[0]->getId())]));
+check('M31 the «Betreffname»: the column subject_label VARCHAR(80) NULL (Version20261021100000); create() stores it trimmed without the colon; 81 characters refused on `subject_label`; a draft without one clears it (the window always sends the field)',
+    $m31Col !== false && $m31Col['IS_NULLABLE'] === 'YES' && (int) $m31Col['CHARACTER_MAXIMUM_LENGTH'] === 80
+    && $m31Stored === ['Projekt', ['Projekt']]
+    && isset($m31Errors['subject_label']) && $o31b->getSubjectLabel() === null
+    && $db->fetchOne('SELECT subject_label FROM sales_order WHERE id = ?', [$o31->getId()]) === null);
+$m31Profile = $em->getRepository(\Z77\Module\Debtor\Entities\DebtorProfile::class)->findByContact($contactId);
+(new \Z77\Module\Debtor\Services\DebtorProfileService($em))->update($m31Profile, ['default_subject_label' => ' Bestellung: ']);
+$m31Defaults = new \Z77\Module\Debtor\Services\SubjectLabelDefaults($em);
+check('M32 the default of a new order: the debtor\'s own label (normalised on the profile); the suggestions merge the orders\' labels with the debtors\' defaults',
+    $m31Defaults->defaultFor($contactId) === 'Bestellung' && $m31Defaults->suggestions(['Projekt']) === ['Bestellung', 'Projekt']);
+
+// The mandator's «mehrwertsteuerpflichtig» is binding for documents (owner 2026-10-21): not liable → the
+// order is computed WITHOUT VAT through debtor's preview (D11); liable / no mandator → as before.
+$m33Liable = $svc->chargesVat();
+(new \Z77\Module\Mandator\Services\MandatorService($em))->save(new \Z77\Module\Mandator\Entities\Mandator(['name' => 'Harness GmbH', 'country' => 'CH', 'liable_to_vat' => false]));
+$m33Defaults = $svc->articleDefaults('02.100.02', '2026-10-18', '', 'net');
+$o33 = $svc->create(new $D($contactId, '2026-10-21', 'Kleinbetrieb', lines: [$L::article($grossId, '2')]));   // 33.30 — no rounding line (the mandator here has no rounding account)
+$m33Preview = $svc->preview($o33);
+check('M33 NOT liable: chargesVat() false (no mandator before: true); the article price is NOT converted (16.65 gross is 16.65 net); the preview has no tax rows, tax 0.00, net = total; the order line keeps its article\'s code (UN), the document line none; the stored tax total 0.00',
+    $m33Liable === true && !$svc->chargesVat() && ($m33Defaults['prices'] ?? null) === ['net' => '16.65', 'gross' => '16.65'] && $priceOf($o33) === '16.65'
+    && $m33Preview->getTaxes() === [] && $m33Preview->getTaxTotal()->isZero() && $m33Preview->getNetTotal()->toDecimal() === '33.30' && $m33Preview->getGrossTotal()->toDecimal() === '33.30'
+    && $o33->getLines()[0]->getTaxCode() === 'UN' && $m33Preview->getLines()[0]->getTaxCode() === null && !$m33Preview->carriesVat()
+    && $o33->getTotalTax()?->isZero() === true);
+try {
+    $m34Pdf = OrderPdf::order($o33, null, $m33Preview, $em)->withoutCompression()->output();
+} catch (\Throwable $e) {
+    $m34Pdf = 'ERROR ' . $e->getMessage();
+}
+$m34Tpl   = (string) file_get_contents($root . '/packages/module-order/res/view/templates/pdf/order.tpl.php');
+$m34Class = (string) file_get_contents($root . '/packages/module-order/src/Pdf/OrderPdf.php');
+$m34Edit  = (string) file_get_contents($root . '/packages/module-order/res/view/templates/Backend/OrderController/edit.tpl.php');
+$m34Trait = (string) file_get_contents($root . '/packages/module-order/src/Ui/OrderControllerTrait.php');
+check('M34 the confirmation WITHOUT VAT: no MWST column, rows or «zzgl. MWST», Netto and Total stay — ONE layout (pdf/order, `liableToVat` = the preview\'s carriesVat(), debtor\'s pdf/documentSummary); the window drops the MWST column, the rate schedule and the VAT rows by `liableToVat` (OrderService::chargesVat())',
+    str_starts_with($m34Pdf, '%PDF-') && !str_contains($m34Pdf, 'MWST') && str_contains($m34Pdf, '(Netto)') && str_contains($m34Pdf, '(Total CHF)')
+    && str_contains($m34Class, "'liableToVat'    => \$preview->carriesVat(),") && str_contains($m34Tpl, 'DocumentColumns::table($preview->getCurrency(), $rows, $liableToVat, ')
+    && str_contains($m34Tpl, "partial('pdf/documentSummary'") && !is_file($root . '/packages/module-order/res/view/templates/pdf/orderNoVat.tpl.php')
+    && str_contains($m34Edit, "<?php if (\$liableToVat): ?><span class=\"be-list__col\">MWST</span><?php endif; ?>") && str_contains($m34Edit, "--be-rows-span: <?= \$span ?>")
+    && str_contains($m34Trait, "'liableToVat'     => \$this->orderService()->chargesVat(),"));
+(new \Z77\Module\Mandator\Services\MandatorService($em))->update((new \Z77\Module\Mandator\Services\CurrentMandator($em))->find(), ['liable_to_vat' => true]);
+$m35Preview = $svc->preview($em->getRepository(SalesOrder::class)->withLines((int) $o33->getId()));
+check('M35 liable again: the same order is computed WITH VAT as before (tax rows, a tax total)',
+    $svc->chargesVat() && $m35Preview->getTaxes() !== [] && $m35Preview->getTaxTotal()->isPositive() && $m35Preview->carriesVat());
+$db->executeStatement('DELETE FROM mandator');
 
 echo "\n{$pass} passed, {$fail} failed\n";
 exit($fail === 0 ? 0 : 1);

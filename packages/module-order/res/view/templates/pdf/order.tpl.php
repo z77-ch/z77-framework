@@ -27,6 +27,10 @@
  * @var int $customerNumber  0 = none yet (a prospect — D9)
  * @var \DateTimeImmutable $today
  * @var callable $fmt  Money → «1'234.50»
+ * @var bool $liableToVat  the preview was computed WITH VAT (`OrderPdf`: `Invoice::carriesVat()` —
+ *                         the mandator's flag through debtor's `InvoicingService::chargesVat()`,
+ *                         owner 2026-10-21) — false: no MWST column, no MWST rows, no «zzgl. /
+ *                         inkl. MWST» fact (the same rule as debtor's `pdf/invoice`)
  */
 use Z77\Module\Debtor\Entities\LineType;
 use Z77\Module\Vat\Entities\TaxRate;
@@ -56,8 +60,9 @@ $place = $mandator !== null && trim($mandator->getCity()) !== '' ? $mandator->ge
 $pdf->font('', 9)->text($left, 92, $place . $today->format('d.m.Y'));
 $pdf->font('B', 14)->text($left, 100, $title);
 $y = 108;
-if (trim($order->getSubject()) !== '') {
-    $y = $pdf->font('B', 10)->paragraph($left, 106.5, $width, $order->getSubject(), 4.6) + 1.5;
+if ($order->subjectLine() !== null) {
+    // «Betreffname: Betreff» on one line (owner 2026-10-21, debtor's SubjectLabel::line()); no label = the subject alone.
+    $y = $pdf->font('B', 10)->paragraph($left, 106.5, $width, $order->subjectLine(), 4.6) + 1.5;
 }
 $period = ($order->getServiceFrom() ?? $order->getOrderDate())->format('d.m.Y') . ($order->getServiceTo() !== null ? ' – ' . $order->getServiceTo()->format('d.m.Y') : '');
 $facts  = [];
@@ -66,13 +71,15 @@ if ($customerNumber > 0) {
 }
 $facts[] = ['Auftragsdatum', $order->getOrderDate()->format('d.m.Y')];
 $facts[] = ['Leistung', $period];   // one word for goods and services (owner 2026-10-16: a project may word it its own way)
-$facts[] = ['Preise', $order->priceMode()->value === 'gross' ? 'inkl. MWST' : 'zzgl. MWST'];
+if ($liableToVat) {
+    $facts[] = ['Preise', $order->priceMode()->value === 'gross' ? 'inkl. MWST' : 'zzgl. MWST'];
+}
 foreach ($facts as [$label, $value]) {
     $pdf->font('', 9)->textColor(110)->text($left, $y, $label)->textColor(0)->text($left + 32, $y, $value);
     $y += 4.4;
 }
 
-// ── the lines, then the summary rows in the same table ─────────────────
+// ── the lines, then the summary under them in the same columns ─────────
 $rows = [];
 foreach ($preview->getLines() as $line) {
     if ($line->type() === LineType::Rounding) {
@@ -97,20 +104,14 @@ foreach ($preview->getLines() as $line) {
         'lead'   => true,   // the first line (the title) bold, the description below — text lines too (owner 2026-10-18/19)
     ];
 }
-$rows[] = ['cells' => ['Netto', '', '', '', '', '', $fmt($preview->getNetTotal())], 'rule' => true];
-foreach ($preview->getTaxes() as $tax) {
-    $rows[] = ['cells' => ['MWST ' . TaxRate::formatPercent($tax->getTaxRate()) . ' % auf ' . $fmt($tax->getBase()), '', '', '', '', $tax->getTaxCode(), $fmt($tax->getTax())], 'muted' => true];
-}
-if (!$preview->getRounding()->isZero()) {
-    $rows[] = ['cells' => ['Rundung', '', '', '', '', '', $fmt($preview->getRounding())], 'muted' => true];
-}
-$rows[] = ['cells' => ['Total ' . $preview->getCurrency(), '', '', '', '', '', $fmt($preview->getGrossTotal())], 'bold' => true, 'rule' => true];
-
-// The line table of debtor's documents — the same columns, the discount column only when used.
-[$columns, $rows] = \Z77\Module\Debtor\Pdf\DocumentColumns::table($preview->getCurrency(), $rows);
+// The line table of debtor's documents — the same columns, the discount column only when used, the
+// VAT column only with VAT.
+[$columns, $rows] = \Z77\Module\Debtor\Pdf\DocumentColumns::table($preview->getCurrency(), $rows, $liableToVat, static fn(string $t): float => $pdf->font('', 9)->textWidth($t));
 $pdf->partial('pdf/table', [
     'x'       => $left,
     'y'       => $y + 6,
     'columns' => $columns,
     'rows'    => $rows,
 ], 'Z77\\Shared');
+// Netto, the MWST rows (only with VAT), Rundung, Total — debtor's shared summary (the invoice's too).
+$pdf->partial('pdf/documentSummary', ['document' => $preview, 'columns' => $columns, 'liableToVat' => $liableToVat, 'fmt' => $fmt, 'x' => $left], 'Z77\\Module\\Debtor');

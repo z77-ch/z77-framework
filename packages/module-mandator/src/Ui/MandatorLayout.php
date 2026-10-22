@@ -28,13 +28,17 @@ final class MandatorLayout
         'briefkopf' => 'Briefkopf',
         'uid'       => 'UID und MWST',
         'konten'    => 'Konten',
+        'belege'    => 'Belege',
     ];
 
-    /** The tab holding a form field: the accounts → Konten, UID and liability → UID und MWST, the rest → Briefkopf. */
+    /** The tab holding a form field: the accounts → Konten, UID and liability → UID und MWST, the document defaults → Belege, the rest → Briefkopf. */
     public static function tabOf(string $field): string
     {
         if (str_starts_with($field, 'account_')) {
             return 'konten';
+        }
+        if ($field === 'default_subject_label') {
+            return 'belege';
         }
 
         return in_array($field, ['uid', 'liable_to_vat'], true) ? 'uid' : 'briefkopf';

@@ -189,4 +189,22 @@ class DebtorProfileRepository extends DoctrineRepository
             ->getQuery()
             ->getSingleScalarResult();
     }
+
+    /**
+     * The distinct «Betreffname» defaults the debtors carry (owner 2026-10-21) — suggestions of the
+     * document screens' `<datalist>`, at most $limit, alphabetical. Doctrine-only (DQL).
+     *
+     * @return list<string>
+     */
+    public function defaultSubjectLabels(int $limit): array
+    {
+        return array_map('strval', $this->em()->createQueryBuilder()
+            ->select('DISTINCT p.defaultSubjectLabel')
+            ->from(DebtorProfile::class, 'p')
+            ->where('p.defaultSubjectLabel IS NOT NULL')
+            ->orderBy('p.defaultSubjectLabel', 'ASC')
+            ->setMaxResults($limit)
+            ->getQuery()
+            ->getSingleColumnResult());
+    }
 }

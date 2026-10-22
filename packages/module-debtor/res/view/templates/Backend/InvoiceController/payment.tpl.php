@@ -8,10 +8,11 @@
  * note. A plain form, no JavaScript of its own (Rule 7); `csrf_token` is
  * the page-mode field (`#[Csrf]`); an edit carries the entity token and the
  * VERSION it was rendered from. A refusal of `PaymentService` comes back as
- * the general error; what was recorded is posted at once and shown on the
- * detail. «Löschen …» (an edit) leads to the confirmation.
+ * the general error; what was recorded is posted at once and shown in the
+ * document's mask (its facts block). «Löschen …» (an edit) leads to the
+ * confirmation.
  *
- * Fetched, a WINDOW (ADR-047, addendum 2026-10-10) — from the detail window
+ * Fetched, a WINDOW (ADR-047, addendum 2026-10-10) — from the document window
  * (`data-window-link`, the same window) or from the open-item list
  * (`data-window-open`): mask `invoice-payment` on the invoice (a new
  * payment) or on the payment (a change), `_origin` carried back, «Abbrechen»
@@ -61,7 +62,7 @@ $invalid    = static fn(string $message): string => $message !== '' ? 'true' : '
 
         <?= $this->partial('partials/modalActions', [
             'submit'     => $isEdit ? 'Änderung verbuchen' : 'Erfassen und verbuchen',
-            'cancelHref' => $actionBase . '/detail?id=' . (int) $document->getId(),
+            'cancelHref' => $actionBase . '/edit?id=' . (int) $document->getId(),
             'extra'      => $extra,
             'errors'     => ['count' => count($invalidIds), 'target' => $invalidIds[0] ?? ''],
         ], 'Z77\\Shared') ?>

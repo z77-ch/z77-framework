@@ -68,6 +68,10 @@ final class OrderPdf
             'articleNumbers' => $numbers,
             'mandator'       => $mandator,
             'customerNumber' => self::customerNumber($order, $em),
+            // With or without VAT (owner 2026-10-21): as debtor's preview computed it — the mandator's
+            // flag through `InvoicingService::chargesVat()`, the one rule; the layout drops the MWST
+            // column, the MWST rows and «zzgl. / inkl. MWST» without it.
+            'liableToVat'    => $preview->carriesVat(),
             'today'          => new \DateTimeImmutable('today'),
             'fmt'            => static fn(?Money $m) => AmountFormat::of($m),
         ], self::NS);

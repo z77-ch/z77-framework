@@ -121,6 +121,12 @@ class MandatorValidator extends EntityValidator
         }
     }
 
+    /** The default «Betreffname» of new documents (owner 2026-10-21): optional, at most 80 characters. */
+    public function validateDefaultSubjectLabel(string $label): void
+    {
+        $this->validate('default_subject_label', 'Betreffname', $label)->maxLength(Mandator::SUBJECT_LABEL_LENGTH);
+    }
+
     public function validateLogoPath(string $path): void
     {
         $this->validate('logo_path', 'Logo', $path)->maxLength(Mandator::LOGO_LENGTH);

@@ -19,7 +19,6 @@ use Z77\Core\DI,
     Z77\Module\Debtor\Entities\Payment,
     Z77\Module\Debtor\Entities\PaymentTarget,
     Z77\Module\Debtor\Entities\PaymentTerms,
-    Z77\Module\Debtor\Invoicing\QrBill,
     Z77\Module\Debtor\Pdf\InvoicePdf,
     Z77\Module\Debtor\Repositories\InvoiceRepository,
     Z77\Module\Debtor\Repositories\InvoiceSearch,
@@ -30,6 +29,7 @@ use Z77\Core\DI,
     Z77\Module\Debtor\Services\InvoicingService,
     Z77\Module\Debtor\Services\LockConflict,
     Z77\Module\Debtor\Services\PaymentService,
+    Z77\Module\Debtor\Services\SubjectLabelDefaults,
     Z77\Shared\Listing\ListDefinition,
     Z77\Module\Mandator\Services\LedgerAccountCheck,
     Z77\Module\Vat\Entities\TaxCode,
@@ -57,7 +57,7 @@ use Z77\Core\DI,
  *     a state icon per row that opens the document as a window, ADR-047).
  *     In the `invoicing` view every row carries a checkbox with its
  *     `{id}:{version}` — the BOOKING PRINT (owner 2026-10-10):
- *     «Buchungsdruck …» (selection bar; on the detail of a draft for that
+ *     «Buchungsdruck …» (selection bar; in the mask of a draft for that
  *     one) → `confirm-finalize` lists the selection → `finalize` POSTs the
  *     pairs into a NEW TAB: `InvoicingService::finalize()` draws the
  *     numbers and posts, the answer is the PDF of exactly those documents
@@ -65,11 +65,20 @@ use Z77\Core\DI,
  *     by its version (DEBTOR-FINAL-001), a repeated submit reprints;
  *   - `pdf` — a draft's PREVIEW (watermarked, no number, no payment part,
  *     no side effect), a booked document's PDF (the same file any time);
- *   - `detail` — the document from its SNAPSHOT: address block, lines, tax
- *     summary, totals, the payment part and whether its QR-bill is printable
- *     ({@see QrBill}), the ledger reference linked to the journal entry (a
- *     window, when the bookkeeping is here), credit notes and open amount;
- *   - `add` / `edit` — the draft editor ({@see InvoiceForm}): a new invoice
+ *   - `edit` — THE mask of a document, entry and display in one (owner
+ *     2026-10-21, the order window's model — the read view `detail` is gone):
+ *     a DRAFT is the editor ({@see InvoiceForm}) with the draft's actions in
+ *     the action row («Vorschau», «Entwurf löschen …», «Buchungsdruck …»);
+ *     a FINAL document is the same template with
+ *     `InvoicingService::editRefusal()` on top, the whole form in a disabled
+ *     fieldset, no «Speichern», and the final actions («PDF», «Zahlung
+ *     erfassen …» while open, «Gutschrift erstellen …»). Under the positions
+ *     the facts block (`_facts`): the ledger reference linked to the journal
+ *     entry (a window, when the bookkeeping is here), payments, open amount,
+ *     dunning history, credit notes, the payment part and whether its QR-bill
+ *     is printable (`Invoicing\QrBill`) — from the SNAPSHOT for a final document;
+ *   - `detail` — a 303 to `edit` (bookmarks, external links);
+ *   - `add` / `edit` — the draft editor: a new invoice
  *     → `invoice()`; a document in `invoicing` → `reinvoice()` with the
  *     VERSION the form was rendered from (hidden field). Active tax codes and
  *     active accounts only (the shared pickers of module-vat and
@@ -85,14 +94,14 @@ use Z77\Core\DI,
  * or edit of a final document anywhere (plan §1: the correction is a credit
  * note).
  *
- * Windows (ADR-047, addendum 2026-10-10): fetched, the detail, the editor
- * (add / edit / credit note), the payment form and the payment-delete
- * confirmation are WINDOW contents — the root declares mask + entity, the
- * form carries `_origin` back, the links inside stay in the window
- * (`data-window-link`). A save answers {@see invoiceWindowSaved()}: the
- * detail into the same window + `refresh-region` of the list it was opened
- * from. Without the script each of them is the page it always was (plain
- * form, `#[Csrf]`, redirect to the detail) — the fallback.
+ * Windows (ADR-047, addendum 2026-10-10): fetched, the mask (add / edit /
+ * credit note), the payment form and the payment-delete confirmation are
+ * WINDOW contents — the root declares mask + entity, the form carries
+ * `_origin` back, the links inside stay in the window (`data-window-link`).
+ * A save answers {@see invoiceWindowSaved()}: the document's mask into the
+ * same window + `refresh-region` of the list it was opened from. Without the
+ * script each of them is the page it always was (plain form, `#[Csrf]`,
+ * redirect to the mask) — the fallback.
  *
  * No JavaScript of its own (Rule 7): plain forms (`#[Csrf]`, the
  * `csrf_token` field), «Weitere Zeilen» is a submit. The using class MUST
@@ -151,16 +160,17 @@ trait InvoiceControllerTrait
 
     /**
      * The answer to a save inside a window (ADR-047, the journal's recipe): the document's
-     * read view into the window the save came from, and — when the window was opened from a
-     * fetch region (the document list `invoice-find-list`, the open-item list
-     * `debtor-find-list`) — that region reloads, because a row in it changed. Other origins
-     * get the window only. The flash is pushed BEFORE `fetch()`, which takes it along.
+     * mask (`edit` — since 2026-10-21 the one screen of a document) into the window the save
+     * came from, and — when the window was opened from a fetch region (the document list
+     * `invoice-find-list`, the open-item list `debtor-find-list`) — that region reloads,
+     * because a row in it changed. Other origins get the window only. The flash is pushed
+     * BEFORE `fetch()`, which takes it along.
      */
     private function invoiceWindowSaved(int $id, string $origin, string $flash): FetchResponse
     {
         $this->messageService->pushFlash('success', $flash);
         $response = $this->fetch()->setStatus('success')
-            ->addCommand('open-window', ['url' => $this->invoiceListBase() . '/detail?id=' . $id, 'replace' => true]);
+            ->addCommand('open-window', ['url' => $this->invoiceMaskUrl($id), 'replace' => true]);
         if (str_starts_with($origin, 'region:')) {
             $response->addCommand('refresh-region', ['name' => substr($origin, strlen('region:'))]);
         }
@@ -189,6 +199,20 @@ trait InvoiceControllerTrait
         $this->messageService->pushFlashAfterRedirect('error', 'Dokument nicht gefunden');
 
         return $this->redirect($this->invoiceListBase() . '/list', 303);
+    }
+
+    /** The one screen of a document (owner 2026-10-21): every redirect and window answer lands here. */
+    private function invoiceMaskUrl(int $id): string
+    {
+        return $this->invoiceListBase() . '/edit?id=' . $id;
+    }
+
+    /** Flash + redirect to the document's mask — the page answer to a refusal or a save. */
+    private function invoiceToMask(int $id, string $type, string $message): RedirectResponse
+    {
+        $this->messageService->pushFlashAfterRedirect($type, $message);
+
+        return $this->redirect($this->invoiceMaskUrl($id), 303);
     }
 
     // ── list ─────────────────────────────────────────────────────────────
@@ -235,29 +259,15 @@ trait InvoiceControllerTrait
 
     // ── detail ───────────────────────────────────────────────────────────
 
-    protected function detailAction(): HtmlResponse|RedirectResponse
+    /**
+     * The former read view (P3 part 3 … 2026-10-21). The document has ONE screen now — the
+     * mask of {@see editAction()}, which shows a final document read-only (owner 2026-10-21).
+     * The route stays as a redirect for bookmarks, external links and the links other modules
+     * still carry (module-order's «Belege»); a browser fetch follows it into the window.
+     */
+    protected function detailAction(): RedirectResponse
     {
-        $id       = (int) DI::getRequest()->getGetParameter('id');
-        $document = $id ? $this->invoices()->withLines($id) : null;
-        if ($document === null) {
-            return $this->invoiceNotFound();
-        }
-        $isInvoice = !$document->isCreditNote();
-
-        return $this->invoicePage('detail', [
-            'window'       => $this->invoiceIsFetch(),
-            'windowWidth'  => '60rem',
-            'origin'       => WindowOrigin::of(DI::getRequest()),
-            'document'     => $document,
-            // What the booking print WILL print (owner 2026-10-13, review H5) — for a draft the payment part taken again.
-            'bill'         => $this->invoicingService()->bookingBill($document),
-            'creditNotes'  => $isInvoice ? $this->invoices()->creditNotesOf($document) : [],
-            'openAmount'   => $isInvoice && $document->isFinal() ? $this->invoicingService()->openAmount($document) : null,
-            'allocations'  => $isInvoice && $document->isFinal() ? $this->paymentService()->allocationsOf($document) : [],
-            'notices'      => $isInvoice && $document->isFinal() ? $this->invoiceDunningService()->noticesOf($document) : [],
-            'ledgerKnown'  => (new LedgerAccountCheck($this->em()))->available(),
-            'states'       => self::INVOICE_STATE_LABELS,
-        ]);
+        return $this->redirect($this->invoiceMaskUrl((int) DI::getRequest()->getGetParameter('id')), 303);
     }
 
     /**
@@ -288,7 +298,7 @@ trait InvoiceControllerTrait
         return new PaymentService($this->em());
     }
 
-    /** The dunning history the detail shows; the session actor. A harness host overrides it with a named actor. */
+    /** The dunning history the mask's facts block shows; the session actor. A harness host overrides it with a named actor. */
     private function invoiceDunningService(): DunningService
     {
         return new DunningService($this->em());
@@ -301,10 +311,10 @@ trait InvoiceControllerTrait
      * note. The POST goes to `PaymentService::record()` or — with the
      * entity token and the VERSION the form was rendered from —
      * `update()`: posted or amended at once, all or nothing — and back to
-     * the detail (fetched: a window — the detail replaces it and the list it
-     * came from reloads, {@see invoiceWindowSaved()}). A document that is
-     * not settleable, or a payment that is not the document's, goes back to
-     * the detail with the refusal.
+     * the document's mask (fetched: a window — the mask replaces it and the
+     * list it came from reloads, {@see invoiceWindowSaved()}). A document
+     * that is not settleable, or a payment that is not the document's, goes
+     * back to the mask with the refusal.
      */
     #[Csrf]
     protected function paymentAction(): HtmlResponse|RedirectResponse|FetchResponse
@@ -332,9 +342,7 @@ trait InvoiceControllerTrait
         }
         $post = $request->getPostParameters();
         if ($payment !== null && !DI::getCsrfService()->validateEntityToken(trim((string) ($post['entity_csrf'] ?? '')), 'payment', (int) $payment->getId())) {
-            $this->messageService->pushFlashAfterRedirect('error', self::INVOICE_CONFLICT_MESSAGE);
-
-            return $this->redirect($this->invoiceListBase() . '/detail?id=' . $document->getId(), 303);
+            return $this->invoiceToMask((int) $document->getId(), 'error', self::INVOICE_CONFLICT_MESSAGE);
         }
         $form->fromPost($post);
         $draft = $form->toDraft((int) $document->getId(), $open, $document->getPayment()->getTargetCode());
@@ -350,9 +358,8 @@ trait InvoiceControllerTrait
                 if ($this->invoiceIsFetch()) {
                     return $this->invoiceWindowSaved((int) $document->getId(), WindowOrigin::of($request), $text);
                 }
-                $this->messageService->pushFlashAfterRedirect('success', $text);
 
-                return $this->redirect($this->invoiceListBase() . '/detail?id=' . $document->getId(), 303);
+                return $this->invoiceToMask((int) $document->getId(), 'success', $text);
             } catch (DebtorException | \Z77\Module\Debtor\Accounting\AccountingRefusedException $e) {
                 $form->addGeneralError($e->getMessage());
             } catch (\Doctrine\DBAL\Exception $e) {
@@ -394,8 +401,8 @@ trait InvoiceControllerTrait
 
     /**
      * The delete itself (POST, `#[Csrf]`, entity token + version): `PaymentService::delete()`,
-     * then back to the detail — fetched (from the window), the detail replaces the window and
-     * the list it came from reloads; a refusal is the error flash, the window stays.
+     * then back to the document's mask — fetched (from the window), the mask replaces the
+     * window and the list it came from reloads; a refusal is the error flash, the window stays.
      */
     #[Csrf]
     protected function paymentDeleteAction(): RedirectResponse|FetchResponse
@@ -411,9 +418,7 @@ trait InvoiceControllerTrait
         }
         $post = $request->getPostParameters();
         if (!$request->isPost() || !DI::getCsrfService()->validateEntityToken(trim((string) ($post['entity_csrf'] ?? '')), 'payment', (int) $payment->getId())) {
-            $this->messageService->pushFlashAfterRedirect('error', self::INVOICE_CONFLICT_MESSAGE);
-
-            return $this->redirect($this->invoiceListBase() . '/detail?id=' . $document->getId(), 303);
+            return $this->invoiceToMask((int) $document->getId(), 'error', self::INVOICE_CONFLICT_MESSAGE);
         }
         try {
             $amount = $payment->allocated();
@@ -437,7 +442,7 @@ trait InvoiceControllerTrait
             $this->messageService->pushFlashAfterRedirect('error', $message);
         }
 
-        return $this->redirect($this->invoiceListBase() . '/detail?id=' . $document->getId(), 303);
+        return $this->redirect($this->invoiceMaskUrl((int) $document->getId()), 303);
     }
 
     /** The document of `?id=` when it can be settled — else the redirect to send. */
@@ -449,9 +454,7 @@ trait InvoiceControllerTrait
             return $this->invoiceNotFound();
         }
         if (!$document->isFinal() || $document->isCreditNote()) {
-            $this->messageService->pushFlashAfterRedirect('error', $document->isCreditNote() ? 'Eine Gutschrift wird nicht bezahlt — sie reduziert eine Rechnung.' : $document->documentName() . ' ist noch in Fakturierung — erst mit «Buchungsdruck …» verbuchen.');
-
-            return $this->redirect($this->invoiceListBase() . '/detail?id=' . $document->getId(), 303);
+            return $this->invoiceToMask((int) $document->getId(), 'error', $document->isCreditNote() ? 'Eine Gutschrift wird nicht bezahlt — sie reduziert eine Rechnung.' : $document->documentName() . ' ist noch in Fakturierung — erst mit «Buchungsdruck …» verbuchen.');
         }
 
         return $document;
@@ -501,19 +504,22 @@ trait InvoiceControllerTrait
     /**
      * A new invoice: `?contact=` preselects the party (the link from the debtor list).
      * Fetched (the action cell's «+ Rechnung», `data-window-open`): a window; the save
-     * answers {@see invoiceWindowSaved()} — the new document's detail in the same window.
+     * answers {@see invoiceWindowSaved()} — the new document's mask in the same window.
      */
     #[Csrf]
     protected function addAction(): HtmlResponse|RedirectResponse|FetchResponse
     {
         $request = DI::getRequest();
-        $form    = new InvoiceForm(DebtorCurrency::base());
+        // With or without VAT: the mandator's flag (owner 2026-10-21) — the service's one rule, asked here to show it.
+        $form    = new InvoiceForm(DebtorCurrency::base(), withVat: $this->invoicingService()->chargesVat());
         if (!$request->isPost()) {
             $contact = (int) $request->getGetParameter('contact');
             // The debtor carries the price mode (owner 2026-10-18) — a preset debtor's starts the invoice.
             $profile = $contact > 0 ? $this->em()->getRepository(DebtorProfile::class)->findByContact($contact) : null;
             $form->startBlank(new \DateTimeImmutable('today'), $contact > 0 ? $contact : null, $this->invoiceDefaultTarget(), $this->invoiceNewDebtorTerms($contact),
-                $profile?->priceMode()->value ?? 'net');
+                $profile?->priceMode()->value ?? 'net',
+                // The «Betreffname» (owner 2026-10-21): the debtor's, else the mandator's, else none.
+                (new SubjectLabelDefaults($this->em()))->defaultFor($contact > 0 ? $contact : null));
 
             return $this->invoiceFormPage($form, null);
         }
@@ -535,9 +541,8 @@ trait InvoiceControllerTrait
                 if ($this->invoiceIsFetch()) {
                     return $this->invoiceWindowSaved((int) $document->getId(), WindowOrigin::of($request), $text);
                 }
-                $this->messageService->pushFlashAfterRedirect('success', $text);
 
-                return $this->redirect($this->invoiceListBase() . '/detail?id=' . $document->getId(), 303);
+                return $this->invoiceToMask((int) $document->getId(), 'success', $text);
             } catch (DebtorException $e) {
                 $form->addGeneralError($e->getMessage());
             }
@@ -547,11 +552,13 @@ trait InvoiceControllerTrait
     }
 
     /**
-     * «Bearbeiten …» (`?id=`, until 2026-10-13 «Neu fakturieren»): a document still in
-     * `invoicing` (a draft, no number yet), saved again with the VERSION the form was rendered from. A final
-     * document goes back to its detail with the refusal. Fetched (from the
-     * detail window, `data-window-link`): the window's content; the save
-     * answers {@see invoiceWindowSaved()}.
+     * THE mask of a document (`?id=`; owner 2026-10-21 — the list opens it directly, the read
+     * view is gone): a DRAFT (`invoicing`, no number yet) is the editor, saved again with the
+     * VERSION the form was rendered from; a FINAL document is the same mask read-only —
+     * `InvoicingService::editRefusal()` on top, the form in a disabled fieldset, no «Speichern»
+     * — and a POST on it is refused with that sentence, back to the mask (the server decides,
+     * Rule 7). Fetched (the list's state icon, `data-window-open`; a link inside the window,
+     * `data-window-link`): the window's content; the save answers {@see invoiceWindowSaved()}.
      */
     #[Csrf]
     protected function editAction(): HtmlResponse|RedirectResponse|FetchResponse
@@ -562,21 +569,19 @@ trait InvoiceControllerTrait
         if ($document === null) {
             return $this->invoiceNotFound();
         }
-        if ($document->isFinal()) {
-            $this->messageService->pushFlashAfterRedirect('error', $document->documentName() . ' ist verbucht und bleibt unverändert — eine Korrektur ist eine Gutschrift.');
-
-            return $this->redirect($this->invoiceListBase() . '/detail?id=' . $id, 303);
-        }
-        $kind = $document->kind();
-        $form = new InvoiceForm(DebtorCurrency::base(), $kind, $document->getCreditNoteOf());
+        $kind    = $document->kind();
+        $form    = new InvoiceForm(DebtorCurrency::base(), $kind, $document->getCreditNoteOf(), $this->invoicingService()->chargesVat($kind, $document->getCreditNoteOf()));
+        $refusal = $this->invoicingService()->editRefusal($document);
         if (!$request->isPost()) {
             return $this->invoiceFormPage($form->startFrom($document), $document, $document->getVersion());
         }
+        if ($refusal !== null) {
+            // A stale form posted after the booking print, or a hand-made request: nothing is written.
+            return $this->invoiceToMask($id, 'error', $refusal);
+        }
         $post = $request->getPostParameters();
         if (!DI::getCsrfService()->validateEntityToken(trim((string) ($post['entity_csrf'] ?? '')), 'invoice', $id)) {
-            $this->messageService->pushFlashAfterRedirect('error', 'Ungültiges Formular-Token — bitte erneut versuchen.');
-
-            return $this->redirect($this->invoiceListBase() . '/edit?id=' . $id, 303);
+            return $this->invoiceToMask($id, 'error', 'Ungültiges Formular-Token — bitte erneut versuchen.');
         }
         $version = (int) ($post['version'] ?? 0);   // what THIS form was rendered from, not what is stored now
         $form->fromPost($post, $document);
@@ -593,13 +598,10 @@ trait InvoiceControllerTrait
                 if ($this->invoiceIsFetch()) {
                     return $this->invoiceWindowSaved($id, WindowOrigin::of($request), $text);
                 }
-                $this->messageService->pushFlashAfterRedirect('success', $text);
 
-                return $this->redirect($this->invoiceListBase() . '/detail?id=' . $id, 303);
+                return $this->invoiceToMask($id, 'success', $text);
             } catch (InvoiceConflictException) {
-                $this->messageService->pushFlashAfterRedirect('error', self::INVOICE_CONFLICT_MESSAGE);
-
-                return $this->redirect($this->invoiceListBase() . '/detail?id=' . $id, 303);
+                return $this->invoiceToMask($id, 'error', self::INVOICE_CONFLICT_MESSAGE);
             } catch (DebtorException $e) {
                 $form->addGeneralError($e->getMessage());
                 // A refused unit of work may have replaced the EntityManager — the document is re-read, display only.
@@ -616,8 +618,8 @@ trait InvoiceControllerTrait
      * «Entwurf löschen …» (`?id=`, owner 2026-10-13, review H3): the last look before a DRAFT
      * is deleted — party, date, amount; the entity token (`invoice:<id>`, fetch.md confirm-delete
      * pattern) and the VERSION shown travel with the one button. Fetched, the content of the
-     * detail window it is linked from (`data-window-link`); else a page. A booked document goes
-     * back to its detail with the refusal — it is corrected by a credit note, never deleted.
+     * document window it is linked from (`data-window-link`); else a page. A booked document goes
+     * back to its mask with the refusal — it is corrected by a credit note, never deleted.
      */
     protected function confirmDiscardAction(): HtmlResponse|RedirectResponse
     {
@@ -627,9 +629,7 @@ trait InvoiceControllerTrait
             return $this->invoiceNotFound();
         }
         if ($document->isFinal()) {
-            $this->messageService->pushFlashAfterRedirect('error', $document->documentName() . ' ist verbucht und bleibt — eine Korrektur ist eine Gutschrift.');
-
-            return $this->redirect($this->invoiceListBase() . '/detail?id=' . $id, 303);
+            return $this->invoiceToMask($id, 'error', $document->documentName() . ' ist verbucht und bleibt — eine Korrektur ist eine Gutschrift.');
         }
 
         return $this->invoicePage('confirmDiscard', [
@@ -644,7 +644,7 @@ trait InvoiceControllerTrait
      * The delete itself (POST, `#[Csrf]`, entity token + version): `InvoicingService::discard()`.
      * Fetched (from the window): the window closes and the list it was opened from reloads; a
      * refusal or a conflict is the error flash and the window stays. As a page: back to the
-     * list «In Fakturierung» (or to the detail on a refusal).
+     * list «In Fakturierung» (or to the document's mask on a refusal).
      */
     #[Csrf]
     protected function discardAction(): RedirectResponse|FetchResponse
@@ -659,9 +659,7 @@ trait InvoiceControllerTrait
 
                 return $this->fetch()->setStatus('error');
             }
-            $this->messageService->pushFlashAfterRedirect('error', $message);
-
-            return $this->redirect($this->invoiceListBase() . '/detail?id=' . $id, 303);
+            return $this->invoiceToMask($id, 'error', $message);
         };
         if ($id <= 0 || !$request->isPost() || !DI::getCsrfService()->validateEntityToken(trim((string) ($post['entity_csrf'] ?? '')), 'invoice', $id)) {
             return $refuse(self::INVOICE_CONFLICT_MESSAGE);
@@ -697,8 +695,8 @@ trait InvoiceControllerTrait
 
     /**
      * «Gutschrift erstellen» (`?of=`): against a FINAL invoice only (plan §6.2). Fetched
-     * (from the invoice's detail window): the window's content; the save answers with the
-     * NEW credit note's detail in that window ({@see invoiceWindowSaved()}).
+     * (from the invoice's window): the window's content; the save answers with the
+     * NEW credit note's mask in that window ({@see invoiceWindowSaved()}).
      */
     #[Csrf]
     protected function creditNoteAction(): HtmlResponse|RedirectResponse|FetchResponse
@@ -710,11 +708,10 @@ trait InvoiceControllerTrait
             return $this->invoiceNotFound();
         }
         if (!$invoice->isFinal()) {
-            $this->messageService->pushFlashAfterRedirect('error', $invoice->documentName() . ' ist noch ein Entwurf — sie wird bearbeitet, nicht gutgeschrieben.');
-
-            return $this->redirect($this->invoiceListBase() . '/detail?id=' . $ofId, 303);
+            return $this->invoiceToMask($ofId, 'error', $invoice->documentName() . ' ist noch ein Entwurf — sie wird bearbeitet, nicht gutgeschrieben.');
         }
-        $form = new InvoiceForm(DebtorCurrency::base(), InvoiceKind::CreditNote, $invoice);
+        // A credit note follows its invoice: with VAT exactly when the invoice carries it (chargesVat()).
+        $form = new InvoiceForm(DebtorCurrency::base(), InvoiceKind::CreditNote, $invoice, $this->invoicingService()->chargesVat(InvoiceKind::CreditNote, $invoice));
         if (!$request->isPost()) {
             return $this->invoiceFormPage($form->startCreditNote(new \DateTimeImmutable('today')), null);
         }
@@ -733,9 +730,8 @@ trait InvoiceControllerTrait
                 if ($this->invoiceIsFetch()) {
                     return $this->invoiceWindowSaved((int) $note->getId(), WindowOrigin::of($request), $text);
                 }
-                $this->messageService->pushFlashAfterRedirect('success', $text);
 
-                return $this->redirect($this->invoiceListBase() . '/detail?id=' . $note->getId(), 303);
+                return $this->invoiceToMask((int) $note->getId(), 'success', $text);
             } catch (DebtorException $e) {
                 $form->addGeneralError($e->getMessage());
             }
@@ -810,10 +806,15 @@ trait InvoiceControllerTrait
     /**
      * The card «Rechnung» (`_billAddress`): the address the save takes — `InvoicingService::
      * invoiceAddressOf()`, the contact's invoice / main / first address AS IT IS NOW (a draft has
-     * no address choice of its own; every save takes it again). Read-only.
+     * no address choice of its own; every save takes it again). Read-only. A FINAL document
+     * shows its SNAPSHOT instead (the address it was issued with — a booked document is never
+     * resolved again; the contact may have been renamed since).
      */
-    private function invoiceBillAddress(string $contactId): string
+    private function invoiceBillAddress(string $contactId, ?Invoice $final = null): string
     {
+        if ($final !== null && $final->isFinal()) {
+            return (new TemplateRenderer(self::INVOICE_NS))->partial('Backend/InvoiceController/_billAddress', ['chosen' => true, 'lines' => $final->getAddress()->lines()]);
+        }
         $contact = ctype_digit($contactId) && (int) $contactId > 0 ? $this->em()->getRepository(Contact::class)->find((int) $contactId) : null;
 
         return (new TemplateRenderer(self::INVOICE_NS))->partial('Backend/InvoiceController/_billAddress', [
@@ -823,18 +824,33 @@ trait InvoiceControllerTrait
     }
 
     /**
-     * The editor page: the form with its pickers — the customer field (a new
+     * The mask: the form with its pickers — the customer field (a new
      * invoice, {@see CustomerPicker}), the active payment terms and targets (+ the ones the document
      * carries), the tax codes (active + kept, module-vat's shared list) and
-     * the postable accounts (module-mandator's shared datalist). The help
-     * (ADR-048) carries the rules the form does not spell out.
+     * the postable accounts (module-mandator's shared datalist). An EXISTING
+     * document adds its refusal (null = editable) and the facts block's data
+     * (`_facts`: the bill the booking print will print, payments, open amount,
+     * dunning history, credit notes). The help (ADR-048) carries the rules the
+     * form does not spell out.
      */
     private function invoiceFormPage(InvoiceForm $form, ?Invoice $document, ?int $version = null): HtmlResponse
     {
         $targets = array_values(array_filter($this->em()->getRepository(PaymentTarget::class)->allInOrder(), fn(PaymentTarget $t) => $t->isActive() || $t->getCode() === $form->header('target')));
-        $this->help->attach('Backend/InvoiceController/form.help', self::INVOICE_NS, ['form' => $form, 'document' => $document], 'Hilfe: ' . ($form->kind === InvoiceKind::CreditNote ? 'Gutschrift' : 'Rechnung'));
+        $refusal = $document !== null ? $this->invoicingService()->editRefusal($document) : null;
+        $this->help->attach('Backend/InvoiceController/form.help', self::INVOICE_NS, ['form' => $form, 'document' => $document, 'editRefusal' => $refusal], 'Hilfe: ' . ($form->kind === InvoiceKind::CreditNote ? 'Gutschrift' : 'Rechnung'));
+        $isInvoice = $document !== null && !$document->isCreditNote();
+        $facts     = $document === null ? [] : [
+            // What the booking print WILL print (owner 2026-10-13, review H5) — for a draft the payment part taken again.
+            'bill'        => $this->invoicingService()->bookingBill($document),
+            'creditNotes' => $isInvoice ? $this->invoices()->creditNotesOf($document) : [],
+            'openAmount'  => $isInvoice && $document->isFinal() ? $this->invoicingService()->openAmount($document) : null,
+            'allocations' => $isInvoice && $document->isFinal() ? $this->paymentService()->allocationsOf($document) : [],
+            'notices'     => $isInvoice && $document->isFinal() ? $this->invoiceDunningService()->noticesOf($document) : [],
+            'ledgerKnown' => (new LedgerAccountCheck($this->em()))->available(),
+            'states'      => self::INVOICE_STATE_LABELS,
+        ];
 
-        return $this->invoicePage('form', [
+        return $this->invoicePage('form', $facts + [
             'window'      => $this->invoiceIsFetch(),
             // The order window's width (owner 2026-10-19: the editor takes its head) — wide enough for
             // the nine-column line row, the window must not scroll sideways.
@@ -842,6 +858,8 @@ trait InvoiceControllerTrait
             'origin'      => WindowOrigin::of(DI::getRequest()),
             'form'       => $form,
             'document'   => $document,
+            // null = editable; a final document's sentence — the mask is read-only then (owner 2026-10-21).
+            'editRefusal' => $refusal,
             'version'    => $version,
             'entityCsrf' => $document === null ? '' : DI::getCsrfService()->generateEntityToken('invoice', (int) $document->getId()),
             // The hash of the state the window was LOADED with, handed back through a POST that
@@ -855,7 +873,12 @@ trait InvoiceControllerTrait
             'customerTitle' => $this->customerTitleHtml($form->header('contact')),
             'termsSelect'   => $this->customerTermsHtml($form->header('terms'), $form->header('contact'), $form->error('terms') !== ''),
             'debtorEdit'    => $this->customerDebtorEditHtml($form->header('contact')),
-            'billAddress'   => $this->invoiceBillAddress($form->header('contact')),
+            // A final document: the snapshot's address, not the contact's of today (the snapshot rule).
+            'billAddress'   => $this->invoiceBillAddress($form->header('contact'), $document),
+            // «Betreffname» before «Betreff» (owner 2026-10-21): the labels in use + the defaults; a NEW
+            // invoice's field follows a customer choice while untouched (data-prefill, CustomerPickerTrait).
+            'subjectLabels'      => (new SubjectLabelDefaults($this->em()))->suggestions(),
+            'subjectLabelPrefill' => $document === null && $form->creditNoteOf === null,
             'targets'    => $targets,
             'taxCodes'   => $taxCodes = $this->em()->getRepository(TaxCode::class)->selectable($form->keptCodes()),
             // Each code's RATE on the service date (else the invoice date) as `data-rate` and its history for
@@ -939,7 +962,7 @@ trait InvoiceControllerTrait
     /**
      * «Buchungsdruck …» (owner 2026-10-10 — before that day «Verbuchen …», until then
      * «Definitiv stellen …»; the code keeps `finalize` and the state `final`): the selection
-     * of the list or the one draft of the detail (`doc[]` = `{id}:{version}`, the version each
+     * of the list or the one draft of its mask (`doc[]` = `{id}:{version}`, the version each
      * row SHOWED) listed for a last look — party, date, amount; no number yet — with one
      * button that posts the same pairs into a NEW TAB ({@see finalizeAction()}).
      */

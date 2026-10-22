@@ -10,12 +10,12 @@
  *     over ALL open documents, whatever the view or the search — plain
  *     figures beside the title, NOT inside `be-list__toggles` (that container
  *     holds scope links; 2026-10-08, ADR-033 rev. 2026-10-08 migration);
- *   - the state icon starts every row and opens the document detail as a
+ *   - the state icon starts every row and opens the document's mask (read-only, it is final) as a
  *     WINDOW (ADR-047, `data-window-open`), the href stays for a ctrl-click;
  *   - every searchable cell is a `<label for>` of its column's search field;
  *   - «Zahlung» on an open row opens the document screen's payment form as a
  *     WINDOW (ADR-047 addendum 2026-10-10); its save reloads this region
- *     (origin `region:debtor-find-list`) and shows the detail in the window;
+ *     (origin `region:debtor-find-list`) and shows the document's mask in the window;
  *   - the whole list is a FETCH REGION: sort / page / search reload only
  *     this part.
  *
@@ -60,7 +60,7 @@ $view         = $state->extra('view');
                 <?= $this->partial('partials/listHead', ['definition' => $definition, 'state' => $state, 'action' => $listUrl], 'Z77\\Shared') ?>
                 <?php foreach ($items as $item): ?>
                 <?php
-                $detail  = $documentBase . '/detail?id=' . $item->id;
+                $detail  = $documentBase . '/edit?id=' . $item->id;   // the document's one mask (owner 2026-10-21), read-only for a final document
                 $overdue = $item->isOverdue($today);
                 [$label, $tone] = match (true) {
                     $item->isSettled()        => ['bezahlt', 'success'],

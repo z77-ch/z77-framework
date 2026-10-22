@@ -16,6 +16,7 @@ use Z77\Core\DI,
     Z77\Module\Debtor\Repositories\PaymentTermsRepository,
     Z77\Module\Debtor\Services\DebtorProfileService,
     Z77\Module\Debtor\Services\InvalidDebtorProfileException,
+    Z77\Module\Debtor\Services\SubjectLabelDefaults,
     Z77\Persistence\Validation\EntityValidator,
     Z77\Shared\Attributes\Csrf,
     Z77\Shared\Listing\ListDefinition
@@ -238,6 +239,15 @@ trait CustomerPickerTrait
         if ($profile !== null) {
             $response->addCommand('set-value', ['target' => 'select[name="price_mode"]', 'value' => $profile->priceMode()->value, 'origin' => $origin]);
         }
+        // The «Betreffname» of a NEW document follows the new customer (owner 2026-10-21) — only while the
+        // user has not typed one of his own: the field carries `data-prefill` (a new document only,
+        // `partials/subjectLabelField`) and `untouched` writes only while it still holds that value.
+        $response->addCommand('set-value', [
+            'target'    => 'input[name="subject_label"][data-prefill]',
+            'value'     => (string) (new SubjectLabelDefaults($this->em()))->defaultFor($contact),
+            'untouched' => true,
+            'origin'    => $origin,
+        ]);
 
         return $response->addCommand('close-modal');
     }

@@ -450,7 +450,7 @@ check('A9 the unique contact index, the unique customer-number index and the pay
 [$code, $out] = $run(['command' => 'migrate']);
 check('A10 a second migrate is a no-op', $code === 0 && str_contains($out, 'Already at the latest version'));
 [$code, $out] = $run(['command' => 'diff', '--namespace' => 'Z77\\Module\\Debtor\\Migrations']);
-check('A11 diff after migrate reports NO change — mapping and migration agree (embedded address and payment part, money and decimal columns included)' . (str_contains($out, 'No changes detected') ? '' : ' — ' . trim($out)), $code !== 0 && str_contains($out, 'No changes detected') && count(glob($package . '/res/migrations/Version*.php')) === 12);
+check('A11 diff after migrate reports NO change — mapping and migration agree (embedded address and payment part, money and decimal columns included)' . (str_contains($out, 'No changes detected') ? '' : ' — ' . trim($out)), $code !== 0 && str_contains($out, 'No changes detected') && count(glob($package . '/res/migrations/Version*.php')) === 13);
 check('A12 every migration is expand-only (no DROP outside down()); the «Fakturiert» pair (ADD / DROP delivered_*, 2026-10-10) is gone — it never left the development database (owner 2026-10-13)', array_reduce(glob($package . '/res/migrations/Version*.php'), function ($ok, $f) {
     $s  = file_get_contents($f);
     $up = substr($s, 0, strpos($s, 'function down'));
@@ -464,6 +464,11 @@ $priceModeColumn = $db->fetchAssociative('SELECT COLUMN_DEFAULT, IS_NULLABLE, CH
 check('A12c the debtor carries the price mode (owner 2026-10-18, Version20261018130000, schema only): debtor_profile.price_mode VARCHAR(5) NOT NULL DEFAULT \'net\' — every existing profile reads net, a row of an older release too',
     $priceModeColumn !== false && trim((string) $priceModeColumn['COLUMN_DEFAULT'], "'") === 'net' && $priceModeColumn['IS_NULLABLE'] === 'NO' && (int) $priceModeColumn['CHARACTER_MAXIMUM_LENGTH'] === 5
     && !str_contains($upOf('Version20261018130000'), 'UPDATE'));
+$labelColumn = fn(string $table, string $column) => $db->fetchAssociative('SELECT IS_NULLABLE, CHARACTER_MAXIMUM_LENGTH FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ?', [$dbName, $table, $column]);
+check('A12d the «Betreffname» (owner 2026-10-21, Version20261021100000, schema only): invoice.subject_label and debtor_profile.default_subject_label VARCHAR(80) NULL — no label = every document prints as before',
+    $labelColumn('invoice', 'subject_label') === ['IS_NULLABLE' => 'YES', 'CHARACTER_MAXIMUM_LENGTH' => 80]
+    && $labelColumn('debtor_profile', 'default_subject_label') === ['IS_NULLABLE' => 'YES', 'CHARACTER_MAXIMUM_LENGTH' => 80]
+    && !str_contains($upOf('Version20261021100000'), 'UPDATE') && str_contains(substr(file_get_contents($package . '/res/migrations/Version20261021100000.php'), strpos(file_get_contents($package . '/res/migrations/Version20261021100000.php'), 'function down')), 'DROP subject_label'));
 
 
 // ── B. the seeds ─────────────────────────────────────────────────────────
@@ -657,7 +662,8 @@ $accounts->adoptKmuChart();
 // The mandator (E2): the account settings debtor posts with live on it — created ONCE here
 // with the KMU start values, the way the backend screen's first save does.
 $mandator = MandatorAccounts::prefilled();
-$mandator->mapFromArray(['name' => 'Harness AG', 'country' => 'CH', 'zip' => '8000', 'city' => 'Zürich']);
+// Liable to VAT (owner 2026-10-21: the flag is binding for documents — every VAT check below assumes it; MV switches it off and back).
+$mandator->mapFromArray(['name' => 'Harness AG', 'country' => 'CH', 'zip' => '8000', 'city' => 'Zürich', 'liable_to_vat' => true]);
 (new MandatorService($em4))->save($mandator);
 $em4 = $wireDi();
 $em4 = $wireDi();
@@ -1167,7 +1173,7 @@ check('I5m the three master-data fragments carry an add action and an active swi
 
 $templateDir = $package . '/res/view/templates/Backend';
 $templates   = glob($templateDir . '/*/*.tpl.php');
-check('I6 every master-data screen has its list template, its edit template and its header slot; the document screens (P3 part 3) add six, the payment form and the delete confirmation (P4 part 1) two, the bank import list and detail (P4 part 2) two, the dunning list (P4 part 3) one, the open-item list and its toolbar (2026-10-07) two, the action cells of the invoice list and the bank import (ADR-033 rev. 2026-10-08) two — the «+ Debitor» cell of the debtor master data removed 2026-10-12; the row partials of the in-place answers (ADR-047 addendum 2026-10-10: bank transaction + unbooked bar, payment terms, payment target, debtor contact) five; the booking print\'s refusal page (2026-10-10) one; the editor\'s party picker and its «+ Kontakt» window (DEBTOR-CONTACT-001, 2026-10-10) two; the customer picker field and window (2026-10-15) two; its «Debitor anlegen» dialog (2026-10-18) one; the shared editor head (2026-10-19: title, terms + its reload answer, «Debitor anpassen», the fixed party) five and the card «Rechnung» of the invoice one; the list helps of invoices, open items, bank import and dunning (HELP-003, 2026-10-20) four', count($templates) === 48);
+check('I6 every master-data screen has its list template, its edit template and its header slot; the document screens (P3 part 3) add six (since 2026-10-21 the facts partial `_facts` in place of the read view `detail` — one mask), the payment form and the delete confirmation (P4 part 1) two, the bank import list and detail (P4 part 2) two, the dunning list (P4 part 3) one, the open-item list and its toolbar (2026-10-07) two, the action cells of the invoice list and the bank import (ADR-033 rev. 2026-10-08) two — the «+ Debitor» cell of the debtor master data removed 2026-10-12; the row partials of the in-place answers (ADR-047 addendum 2026-10-10: bank transaction + unbooked bar, payment terms, payment target, debtor contact) five; the booking print\'s refusal page (2026-10-10) one; the editor\'s party picker and its «+ Kontakt» window (DEBTOR-CONTACT-001, 2026-10-10) two; the customer picker field and window (2026-10-15) two; its «Debitor anlegen» dialog (2026-10-18) one; the shared editor head (2026-10-19: title, terms + its reload answer, «Debitor anpassen», the fixed party) five and the card «Rechnung» of the invoice one; the list helps of invoices, open items, bank import and dunning (HELP-003, 2026-10-20) four', count($templates) === 48);
 check('I6b the master-data rows are ONE partial each, rendered by the list and answered in place (replaceRow / insertRow, DEBTOR-WIN-003) — no `reload` left for a one-row save or switch of terms, targets or debtors',
     array_reduce([['PaymentTerms', 'paymentTerms'], ['PaymentTarget', 'paymentTarget'], ['DebtorProfile', 'debtorContact']], fn($ok, $p) => $ok
         && str_contains(file_get_contents($templateDir . '/' . $p[0] . 'Controller/listAction.tpl.php'), "partial('Backend/" . $p[0] . "Controller/_row'")
@@ -2268,29 +2274,45 @@ check('P3C25 the column search runs in the database: number exact; name + month;
 check('P3C26 paging: the shared kernel Paging (moved from module-financial, Rule 8) and the shared pager partial', $host->context['paging'] instanceof \Z77\Shared\Paging\Paging
     && !class_exists('Z77\\Module\\Financial\\Reports\\Paging') && is_file($pkgRoot . '/kernel/shared/res/view/templates/partials/pager.tpl.php'));
 
-// Detail: from the snapshot, the ledger reference linked as a window.
+// THE mask (owner 2026-10-21: the read view is gone — `edit` is entry and display): a final document read-only, from the snapshot, the ledger reference linked as a window.
 $useRequest(['id' => (string) $qrInv->getId()]);
 $host = $invoiceHost();
-$host->detailAction();
+$host->editAction();
 $detail = $renderMain($host);
 $ledgerRef = $invoiceRow($qrInv->getId())['ledger_entry_ref'];
-check('P3C27 detail of a final invoice: the address block from the snapshot (not the address renamed since), the lines, the QR data (QR-IBAN, the reference in blocks of five), the ledger reference as a journal WINDOW (?ref=), the credit note, «Gutschrift erstellen …»',
-    $ledgerRef !== null && str_contains($detail, 'data-window-open="/backend/finance/journal/detail?ref=' . rawurlencode($ledgerRef) . '"')
+check('P3C27 the mask of a FINAL invoice (GET edit): no redirect, the refusal sentence on top, head and positions in a DISABLED fieldset, no «Speichern»; the snapshot (the address not renamed since), the QR data in the facts (QR-IBAN, the reference in blocks of five), the ledger reference as a journal WINDOW (?ref=), the credit note, «Gutschrift erstellen …», no draft action',
+    $host->redirectedTo === null && $host->context['editRefusal'] !== null && str_contains($detail, '<div class="be-modal__alert">' . e($host->context['editRefusal']) . '</div>') && str_contains($host->context['editRefusal'], 'Gutschrift')
+    && str_contains($detail, '<fieldset class="be-form__fieldset" disabled>') && !str_contains($detail, 'value="save"') && !str_contains($detail, '>Speichern<') && !str_contains($detail, 'value="more"')
+    && $ledgerRef !== null && str_contains($detail, 'data-window-open="/backend/finance/journal/detail?ref=' . rawurlencode($ledgerRef) . '"')
     && str_contains($detail, e($qrInv->getAddress()->getName())) && !str_contains($detail, 'Müller Neu AG') && str_contains($detail, QrReference::format($qrRow['pay_reference'])) && str_contains($detail, 'data-qr-bill="printable"')
-    && str_contains($detail, e($cn->documentName())) && str_contains($detail, '/credit-note?of=' . $qrInv->getId()) && !str_contains($detail, '/edit?id=') && !str_contains($detail, 'Buchungsdruck'));
-check('P3C27b the detail\'s actions are its action row (`.z77-form-actions`, above the title): «Gutschrift erstellen …» and the credit-note link stay in the window (`data-window-link`), the PDF is a plain link to a new tab',
+    && str_contains($detail, e($cn->documentName())) && str_contains($detail, '/credit-note?of=' . $qrInv->getId()) && !str_contains($detail, 'Buchungsdruck') && !str_contains($detail, 'confirm-discard') && !str_contains($detail, '>Vorschau<'));
+check('P3C27b the mask\'s actions are its action row (`.z77-form-actions`, first — ADR-049): «Gutschrift erstellen …» and the credit-note link (to ITS mask) stay in the window (`data-window-link`), the PDF is a plain link to a new tab; the facts block stands under the positions, the badge «verbucht»',
     strpos($detail, 'z77-form-actions') < strpos($detail, 'be-list__section-title')
     && str_contains($detail, 'href="/backend/finance/invoice/credit-note?of=' . $qrInv->getId() . '" data-window-link')
-    && str_contains($detail, 'href="/backend/finance/invoice/detail?id=' . $cn->getId() . '" data-window-link')
-    && preg_match('/pdf\?id=\d+"[^>]*data-window-link/', $detail) === 0 && str_contains($detail, 'target="_blank"'));
+    && str_contains($detail, 'href="/backend/finance/invoice/edit?id=' . $cn->getId() . '" data-window-link')
+    && !str_contains($detail, '/detail?id=')
+    && preg_match('/pdf\?id=\d+"[^>]*data-window-link/', $detail) === 0 && str_contains($detail, 'target="_blank"') && str_contains($detail, '>PDF</a>')
+    && strpos($detail, 'name="rows[0][text]"') < strpos($detail, 'data-invoice-facts') && str_contains($detail, '>verbucht</span>'));
+$useRequest(['id' => (string) $plainInv->getId()]);
+$host = $invoiceHost();
+$host->editAction();
+$plainDetail = $renderMain($host);
+check('P3C28 the mask of a DRAFT without payment part: editable (no refusal, «Speichern», the fieldset enabled); the facts say «Kein Zahlteil» with the reason; the draft\'s actions «Vorschau», «Entwurf löschen …» (in the window) and «Buchungsdruck …» (a plain link to the confirmation of THIS draft, outside the window); no final action',
+    $host->context['editRefusal'] === null && str_contains($plainDetail, 'value="save"') && str_contains($plainDetail, '<fieldset class="be-form__fieldset">')
+    && str_contains($plainDetail, 'data-qr-bill="missing"') && str_contains($plainDetail, 'Kein Zahlteil')
+    && str_contains($plainDetail, '>Vorschau</a>') && str_contains($plainDetail, 'href="/backend/finance/invoice/confirm-discard?id=' . $plainInv->getId() . '" data-window-link')
+    && str_contains($plainDetail, 'href="/backend/finance/invoice/confirm-finalize?' . e(http_build_query(['doc' => [$plainInv->getId() . ':' . $invoiceRow($plainInv->getId())['version']]])) . '"')
+    && preg_match('/confirm-finalize\?[^"]*"[^>]*data-window-link/', $plainDetail) === 0
+    && !str_contains($plainDetail, '/payment?id=') && !str_contains($plainDetail, '/credit-note?of=') && str_contains($plainDetail, '>in Fakturierung</span>'));
 $useRequest(['id' => (string) $plainInv->getId()]);
 $host = $invoiceHost();
 $host->detailAction();
-$plainDetail = $renderMain($host);
-check('P3C28 detail of a draft without payment part: «Kein Zahlteil» with the reason; «Vorschau», «Bearbeiten …» and «Buchungsdruck …» (a plain link to the confirmation of THIS draft, outside the window) while invoicing',
-    str_contains($plainDetail, 'data-qr-bill="missing"') && str_contains($plainDetail, 'Kein Zahlteil') && str_contains($plainDetail, '/edit?id=' . $plainInv->getId())
-    && str_contains($plainDetail, '>Vorschau</a>') && str_contains($plainDetail, 'href="/backend/finance/invoice/confirm-finalize?' . e(http_build_query(['doc' => [$plainInv->getId() . ':' . $invoiceRow($plainInv->getId())['version']]])) . '"')
-    && preg_match('/confirm-finalize\?[^"]*"[^>]*data-window-link/', $plainDetail) === 0);
+check('P3C28b `detail` stays as a thin 303 to the mask (bookmarks, external links); no detail template any more, the facts block is a partial of its own',
+    $host->redirectedTo === '/backend/finance/invoice/edit?id=' . $plainInv->getId() && $host->layoutManager->sections === [] && $host->messageService->flashes === []
+    && !is_file($package . '/res/view/templates/Backend/InvoiceController/detail.tpl.php') && is_file($package . '/res/view/templates/Backend/InvoiceController/_facts.tpl.php')
+    && !str_contains(file_get_contents($package . '/src/Ui/InvoiceControllerTrait.php'), "invoicePage('detail'")
+    && preg_match_all('#/detail\?id=#', implode('', array_map('file_get_contents', glob($package . '/res/view/templates/Backend/InvoiceController/*.tpl.php')))) === 0
+    && preg_match_all('#(invoiceBase|documentBase)[^\n]{0,40}/detail\?id=#', implode('', array_map('file_get_contents', glob($package . '/res/view/templates/Backend/*/*.tpl.php')))) === 0);
 
 // The journal detail answers ?ref= (financial).
 $journalTraitSource = file_get_contents($pkgRoot . '/module-financial/src/Ui/JournalControllerTrait.php');
@@ -2323,7 +2345,7 @@ $host->addAction();
 $newId  = (int) $db->fetchOne('SELECT MAX(id) FROM invoice');
 $newDoc = $readInvoice($newId);
 check('P3C31 POST add → invoice(): a new DRAFT in invoicing (no number, no range touched), the lines with the discount (10 % → 1000), the child beneath its parent, the empty row ignored, the target qr → QRR; redirect to its detail',
-    (int) $db->fetchOne("SELECT last_number FROM number_range WHERE name = 'document.2607'") === $before && $newDoc->getNumber() === null && $host->redirectedTo === '/backend/finance/invoice/detail?id=' . $newId
+    (int) $db->fetchOne("SELECT last_number FROM number_range WHERE name = 'document.2607'") === $before && $newDoc->getNumber() === null && $host->redirectedTo === '/backend/finance/invoice/edit?id=' . $newId
     && $newDoc->getLines()[0]->getDiscountPercent() === 1000 && $newDoc->getLines()[0]->getAmount()->toDecimal() === '900.00' && $newDoc->getLines()[1]->getParentLine() === $newDoc->getLines()[0]
     && count(array_filter($newDoc->getLines(), fn($l) => $l->type() !== LineType::Rounding)) === 3 && $newDoc->getPayment()->getReferenceType() === 'QRR' && !$newDoc->isFinal()
     && $host->messageService->flashes[0][0] === 'success');
@@ -2365,14 +2387,15 @@ $editPost['rows'][0]['price'] = '1200.00';
 $useRequest(['id' => (string) $newId], $editPost);
 $host = $invoiceHost();
 $host->editAction();
-check('P3C36 POST edit → reinvoice(): still no number, the new price, the version bumped, redirect to the detail',
+check('P3C36 POST edit → reinvoice(): still no number, the new price, the version bumped, redirect to the mask',
     $readInvoice($newId)->getLines()[0]->getAmount()->toDecimal() === '1080.00' && (int) $invoiceRow($newId)['version'] === $v0 + 1 && $readInvoice($newId)->getNumber() === null
-    && $host->redirectedTo === '/backend/finance/invoice/detail?id=' . $newId);
+    && $host->redirectedTo === '/backend/finance/invoice/edit?id=' . $newId);
 $useRequest(['id' => (string) $newId], $editPost);   // the SAME (now stale) version again
 $host = $invoiceHost();
 $host->editAction();
-check('P3C37 a stale version (the form of before the re-issue) is refused: flash, back to the detail, nothing changed', $host->messageService->flashes[0][0] === 'error'
-    && str_contains($host->messageService->flashes[0][1], 'inzwischen geändert') && (int) $invoiceRow($newId)['version'] === $v0 + 1);
+check('P3C37 a stale version (the form of before the re-issue) is refused: flash, back to the mask, nothing changed', $host->messageService->flashes[0][0] === 'error'
+    && str_contains($host->messageService->flashes[0][1], 'inzwischen geändert') && (int) $invoiceRow($newId)['version'] === $v0 + 1
+    && $host->redirectedTo === '/backend/finance/invoice/edit?id=' . $newId);
 
 // The editor as a WINDOW (ADR-047 addendum 2026-10-10, the journal's recipe; debtor.md DEBTOR-WIN-001).
 $GLOBALS['z77TestFetch'] = true;
@@ -2380,19 +2403,19 @@ $useRequest(['id' => (string) $newId, '_origin' => 'region:invoice-find-list']);
 $host = $invoiceHost();
 $host->editAction();
 $winHtml = $renderMain($host);
-check('P3C37b fetched, the editor is a WINDOW: mask invoice-edit on invoice:<id> with its title, `_origin` carried back, the shared action row first (ADR-049 rev. 2026-10-10), «Abbrechen» back to the read view inside the window',
+check('P3C37b fetched, the editor is a WINDOW: mask invoice-edit on invoice:<id> with its title, `_origin` carried back, the shared action row first (ADR-049 rev. 2026-10-10), a quiet «Schliessen» closes the window (there is no read view behind the mask, owner 2026-10-21)',
     str_contains($winHtml, 'data-window="invoice-edit"') && str_contains($winHtml, 'data-window-entity="invoice:' . $newId . '"') && str_contains($winHtml, 'data-window-title=')
     && str_contains($winHtml, 'name="_origin" value="region:invoice-find-list"')
     && strpos($winHtml, 'z77-form-actions') < strpos($winHtml, 'name="invoice_date"') && strpos($winHtml, 'value="save"') < strpos($winHtml, 'value="more"')
-    && str_contains($winHtml, 'href="/backend/finance/invoice/detail?id=' . $newId . '" data-window-link'));
+    && str_contains($winHtml, 'class="be-btn be-btn--quiet" data-popup-close>Schliessen</button>') && !str_contains($winHtml, '/detail?id='));
 $v1 = (int) $invoiceRow($newId)['version'];
 $useRequest(['id' => (string) $newId], ['entity_csrf' => "tok-invoice-{$newId}", 'version' => (string) $v1, '_origin' => 'region:invoice-find-list'] + $editPost);
 $host = $invoiceHost();
 $answer = $host->editAction();
 $commands = $answer instanceof \Z77\Core\Http\Response\FetchResponse ? (fn() => $this->commands)->call($answer) : [];
-check('P3C37c a save in the window answers with INSTRUCTIONS for its origin: the detail back into the window, the document list (`invoice-find-list`) reloads, the flash in place — no redirect',
+check('P3C37c a save in the window answers with INSTRUCTIONS for its origin: the mask back into the window (`edit`, since 2026-10-21), the document list (`invoice-find-list`) reloads, the flash in place — no redirect',
     $answer instanceof \Z77\Core\Http\Response\FetchResponse && $host->redirectedTo === null
-    && $commands === [['action' => 'open-window', 'url' => '/backend/finance/invoice/detail?id=' . $newId, 'replace' => true], ['action' => 'refresh-region', 'name' => 'invoice-find-list']]
+    && $commands === [['action' => 'open-window', 'url' => '/backend/finance/invoice/edit?id=' . $newId, 'replace' => true], ['action' => 'refresh-region', 'name' => 'invoice-find-list']]
     && ($host->messageService->flashes[0][2] ?? '') === 'in-place' && (int) $invoiceRow($newId)['version'] === $v1 + 1);
 $GLOBALS['z77TestFetch'] = false;
 
@@ -2454,8 +2477,16 @@ check('P3C41c anything else stale is REFUSED with the message page: a selection 
 $useRequest(['id' => (string) $newId]);
 $host = $invoiceHost();
 $host->editAction();
-check('P3C42 a final document is never edited: edit refuses with the credit-note sentence', $host->messageService->flashes[0][0] === 'error' && str_contains($host->messageService->flashes[0][1], 'Gutschrift')
-    && $host->redirectedTo === '/backend/finance/invoice/detail?id=' . $newId);
+$finalMask = $renderMain($host);
+$finalVersion = (int) $invoiceRow($newId)['version'];
+$useRequest(['id' => (string) $newId], ['entity_csrf' => "tok-invoice-{$newId}", 'version' => (string) $finalVersion] + $post);
+$hostPost = $invoiceHost();
+$hostPost->editAction();
+check('P3C42 a final document is never edited: GET edit renders the mask read-only (the refusal with the credit-note sentence, the disabled fieldset, no «Speichern», the hidden version still rendered); a POST on it — even with the token and the current version — is refused with that sentence, back to the mask, nothing changed',
+    $host->redirectedTo === null && $host->context['editRefusal'] === $service($wireDi())->editRefusal($readInvoice($newId)) && str_contains($host->context['editRefusal'], 'Gutschrift')
+    && str_contains($finalMask, '<fieldset class="be-form__fieldset" disabled>') && !str_contains($finalMask, 'value="save"') && str_contains($finalMask, 'name="version" value="' . $finalVersion . '"')
+    && $hostPost->redirectedTo === '/backend/finance/invoice/edit?id=' . $newId && $hostPost->messageService->flashes[0][0] === 'error' && str_contains($hostPost->messageService->flashes[0][1], 'Gutschrift')
+    && (int) $invoiceRow($newId)['version'] === $finalVersion && $readInvoice($newId)->getLines()[0]->getAmount()->toDecimal() === '1080.00');
 
 // The credit-note form: prefilled from the invoice.
 $useRequest(['of' => (string) $newId]);
@@ -2475,7 +2506,7 @@ $cnId = (int) $db->fetchOne('SELECT MAX(id) FROM invoice');
 $cnDoc = $readInvoice($cnId);
 check('P3C44 POST credit-note with the dates unchanged → invoice(credit note): of THIS invoice, the party from the invoice (a posted contact id is ignored), the service date the invoice\'s, no payment part',
     $cnDoc->isCreditNote() && $cnDoc->getCreditNoteOf()?->getId() === $newId && $cnDoc->getContact()->getId() === $mid
-    && $cnDoc->getServiceFrom()->format('Y-m-d') === '2026-06-30' && !$cnDoc->getPayment()->hasPaymentPart() && $host->redirectedTo === '/backend/finance/invoice/detail?id=' . $cnId);
+    && $cnDoc->getServiceFrom()->format('Y-m-d') === '2026-06-30' && !$cnDoc->getPayment()->hasPaymentPart() && $host->redirectedTo === '/backend/finance/invoice/edit?id=' . $cnId);
 $partial = $cnPost;
 $partial['service_from'] = '2026-07-01';
 $partial['service_to']   = '2026-07-31';
@@ -2563,8 +2594,8 @@ $host->pdfAction();
 check('P3D9 … an unknown id → flash + redirect to the list', $host->redirectedTo !== null && $host->messageService->flashes !== []);
 $useRequest(['id' => $qrInv->getId()]);
 $host = $invoiceHost();
-$host->detailAction();
-check('P3D10 the detail offers «PDF» (a new tab) next to the other actions', str_contains($renderMain($host), '/pdf?id=' . $qrInv->getId()) && str_contains($renderMain($host), 'target="_blank"'));
+$host->editAction();
+check('P3D10 the mask of a booked document offers «PDF» (a new tab) next to the other actions', str_contains($renderMain($host), '/pdf?id=' . $qrInv->getId()) && str_contains($renderMain($host), 'target="_blank"'));
 
 // ── P3E. Preview and booking print (owner 2026-10-10: «a printed invoice with a number IS a document») ──
 
@@ -2589,10 +2620,10 @@ check('P3E2 … through the action (twice): inline, named «vorschau-rechnung-en
     && $db->fetchAllKeyValue("SELECT name, last_number FROM number_range WHERE name LIKE 'document.%'") == $rangesPv);
 $useRequest(['id' => $previewDraft->getId()]);
 $host = $invoiceHost();
-$host->detailAction();
+$host->editAction();
 $pvDetail = $renderMain($host);
-check('P3E3 the detail of a draft: «Vorschau» (a new tab), «Bearbeiten …», «Buchungsdruck …» (a green confirm to the confirmation of THIS draft at its version); the payment part «pending»: the reference follows with the number',
-    str_contains($pvDetail, '>Vorschau</a>') && str_contains($pvDetail, 'be-btn be-btn--confirm') && str_contains($pvDetail, '>Buchungsdruck …</a>')
+check('P3E3 the mask of a draft: «Vorschau» (a new tab), «Speichern», «Buchungsdruck …» (a green confirm to the confirmation of THIS draft at its version); the payment part «pending» in the facts: the reference follows with the number',
+    str_contains($pvDetail, '>Vorschau</a>') && str_contains($pvDetail, 'value="save"') && str_contains($pvDetail, 'be-btn be-btn--confirm') && str_contains($pvDetail, '>Buchungsdruck …</a>')
     && str_contains($pvDetail, 'confirm-finalize?' . e(http_build_query(['doc' => [$previewDraft->getId() . ':' . $pvRow['version']]])))
     && str_contains($pvDetail, 'data-qr-bill="pending"') && str_contains($pvDetail, 'folgt mit der Belegnummer beim Buchungsdruck') && !str_contains($pvDetail, 'Kein Zahlteil'));
 
@@ -2745,7 +2776,7 @@ check('Q12 the entities are immutable: no setter on Payment / PaymentAllocation,
     && throws(fn() => new \Z77\Module\Debtor\Entities\Payment(day('2026-01-01'), chf('-1.00'), 'qr', '1020', null, 'x', new \DateTimeImmutable()), \InvalidArgumentException::class)
     && (function () use ($readInvoice, $inv3): bool { $a = (new \Z77\Module\Debtor\Entities\Payment(day('2026-01-01'), chf('1.00'), 'qr', '1020', null, 'x', new \DateTimeImmutable()))->allocate($readInvoice($inv3->getId()), \Z77\Module\Debtor\Entities\AllocationKind::Payment, chf('1.00')); $a->markPosted('2026/9'); return throws(fn() => $a->markPosted(null), \LogicException::class); })());
 
-echo "Q. … the screen: «Zahlung erfassen» as a page form, the detail shows the settlements\n";
+echo "Q. … the screen: «Zahlung erfassen» as a page form, the document's mask shows the settlements\n";
 $emQ4 = $wireDi();
 $inv4 = $service($emQ4)->invoice($oneLine($mid, '2026-06-02', '2.000', '50.00'));
 $service($emQ4)->finalize([$at($inv4->getId())]);
@@ -2764,23 +2795,23 @@ check('Q14 POST with an unreadable amount: the form comes back with the field er
 $useRequest(['id' => $inv4->getId()], ['date' => '2026-06-15', 'payment' => '100.00', 'discount' => '8.10', 'loss' => '', 'account' => '1020', 'note' => 'Eingang']);
 $host = $invoiceHost();
 $host->paymentAction();
-check('Q15 POST with 100.00 + 8.10 Skonto: recorded and posted, flash, redirect to the detail', $host->redirectedTo === '/backend/finance/invoice/detail?id=' . $inv4->getId() && ($host->messageService->flashes[0][0] ?? '') === 'success'
+check('Q15 POST with 100.00 + 8.10 Skonto: recorded and posted, flash, redirect to the mask', $host->redirectedTo === '/backend/finance/invoice/edit?id=' . $inv4->getId() && ($host->messageService->flashes[0][0] ?? '') === 'success'
     && str_contains($host->messageService->flashes[0][1], '108.10') && $paymentCount() === 5 && $service($wireDi())->openAmount($readInvoice($inv4->getId()))->isZero());
 $useRequest(['id' => $inv4->getId()]);
 $host = $invoiceHost();
-$host->detailAction();
+$host->editAction();
 $detailHtml = $renderMain($host);
-check('Q16 the detail: the «Zahlungen» row with both allocations and their journal references, «Offen» shows «bezahlt», no «Zahlung erfassen» button any more',
+check('Q16 the mask\'s facts block: the «Zahlungen» row with both allocations and their journal references and «ändern» (in the window), «Offen» shows «bezahlt», no «Zahlung erfassen» button any more',
     str_contains($detailHtml, 'Zahlung 100.00') && str_contains($detailHtml, 'Konto 1020') && str_contains($detailHtml, 'Skonto 8.10') && str_contains($detailHtml, 'Buchung 2026/') && str_contains($detailHtml, '>bezahlt<')
-    && str_contains($detailHtml, '&amp;payment=') && !str_contains($detailHtml, '/payment?id=' . $inv4->getId() . '"'));
+    && preg_match('/payment\?id=' . $inv4->getId() . '&amp;payment=\d+" data-window-link[^>]*>ändern</', $detailHtml) === 1 && !str_contains($detailHtml, '/payment?id=' . $inv4->getId() . '"'));
 $useRequest(['id' => $stillInvoicing->getId()], ['date' => '2026-06-15', 'payment' => '1.00', 'discount' => '', 'loss' => '', 'account' => '1020', 'note' => '']);
 $host = $invoiceHost();
 $host->paymentAction();
-check('Q17 a document in invoicing: no form, back to the detail with the refusal; the detail of an OPEN final invoice offers the button', $host->redirectedTo === '/backend/finance/invoice/detail?id=' . $stillInvoicing->getId() && ($host->messageService->flashes[0][0] ?? '') === 'error'
+check('Q17 a document in invoicing: no form, back to the mask with the refusal; the mask of an OPEN final invoice offers the button', $host->redirectedTo === '/backend/finance/invoice/edit?id=' . $stillInvoicing->getId() && ($host->messageService->flashes[0][0] ?? '') === 'error'
     && (function () use ($useRequest, $invoiceHost, $renderMain, $service, $wireDi, $oneLine, $mid, $at): bool {
         $em = $wireDi(); $inv = $service($em)->invoice($oneLine($mid, '2026-06-03', '1.000', '10.00')); $service($em)->finalize([$at($inv->getId())]);
-        $useRequest(['id' => $inv->getId()]); $h = $invoiceHost(); $h->detailAction();
-        return str_contains($renderMain($h), '/payment?id=' . $inv->getId());
+        $useRequest(['id' => $inv->getId()]); $h = $invoiceHost(); $h->editAction();
+        return str_contains($renderMain($h), 'href="/backend/finance/invoice/payment?id=' . $inv->getId() . '" data-window-link>Zahlung erfassen …</a>');
     })());
 
 echo "Q. … correcting and removing a settlement while the year is open (owner 2026-10-06): the postings change with it, logged in the journal\n";
@@ -2833,7 +2864,7 @@ $host = $invoiceHost();
 $host->paymentAction();
 $restPayment = $pay($wireDi())->allocationsOf($readInvoice($inv4->getId()))[0]->getPayment();
 check('Q22 «Rest als Verlust ausbuchen»: 100.00 paid, the remaining 8.10 goes to the loss account by itself — recorded, posted, the invoice settled',
-    $host->redirectedTo === '/backend/finance/invoice/detail?id=' . $inv4->getId() && array_map(fn($a) => $a->kind()->value . ':' . $a->getAmount()->toDecimal(), $restPayment->getAllocations()) === ['payment:100.00', 'loss:8.10']
+    $host->redirectedTo === '/backend/finance/invoice/edit?id=' . $inv4->getId() && array_map(fn($a) => $a->kind()->value . ':' . $a->getAmount()->toDecimal(), $restPayment->getAllocations()) === ['payment:100.00', 'loss:8.10']
     && $service($wireDi())->openAmount($readInvoice($inv4->getId()))->isZero());
 $useRequest(['id' => $inv4->getId(), 'payment' => $restPayment->getId()]);
 $host = $invoiceHost();
@@ -2847,7 +2878,7 @@ $host = $invoiceHost();
 $host->paymentAction();
 $edited = $pay($wireDi())->find((int) $restPayment->getId());
 check('Q24 POST the edit: amended — 58.10 per Kasse (1000) and 50.00 loss, the same journal numbers, flash, redirect; a POST with a wrong entity token is sent back with the conflict flash',
-    $host->redirectedTo === '/backend/finance/invoice/detail?id=' . $inv4->getId() && ($host->messageService->flashes[0][0] ?? '') === 'success' && str_contains($host->messageService->flashes[0][1], 'geändert')
+    $host->redirectedTo === '/backend/finance/invoice/edit?id=' . $inv4->getId() && ($host->messageService->flashes[0][0] ?? '') === 'success' && str_contains($host->messageService->flashes[0][1], 'geändert')
     && $edited->getAccountNumber() === '1000' && array_map(fn($a) => $a->getAmount()->toDecimal(), $edited->getAllocations()) === ['58.10', '50.00']
     && array_map(fn($a) => $a->getLedgerEntryRef(), $edited->getAllocations()) === array_map(fn($a) => $a->getLedgerEntryRef(), $restPayment->getAllocations())
     && (function () use ($useRequest, $invoiceHost, $inv4, $edited): bool {
@@ -2873,7 +2904,7 @@ $GLOBALS['z77TestFetch'] = false;
 check('Q24b fetched, «Zahlung ändern» is a window (mask invoice-payment on payment:<id>, `_origin` carried): one action row first — Änderung verbuchen · Löschen … · Abbrechen, the last two stay in the window; the delete confirmation is the next content of that window, its bar first',
     str_contains($payWin, 'data-window="invoice-payment"') && str_contains($payWin, 'data-window-entity="payment:' . $edited->getId() . '"')
     && str_contains($payWin, 'name="_origin" value="region:debtor-find-list"')
-    && preg_match('/z77-form-actions.*?Änderung verbuchen.*?confirm-payment-delete[^"]*" data-window-link>Löschen.*?detail\?id=' . $inv4->getId() . '" data-window-link>Abbrechen/s', $payWin) === 1
+    && preg_match('/z77-form-actions.*?Änderung verbuchen.*?confirm-payment-delete[^"]*" data-window-link>Löschen.*?edit\?id=' . $inv4->getId() . '" data-window-link>Abbrechen/s', $payWin) === 1
     && strpos($payWin, 'z77-form-actions') < strpos($payWin, 'name="date"')
     && str_contains($delWin, 'data-window="invoice-payment-delete"') && str_contains($delWin, 'name="_origin" value="region:debtor-find-list"')
     && strpos($delWin, 'z77-form-actions') < strpos($delWin, 'wird gelöscht') && str_contains($delWin, 'be-btn--danger'));
@@ -2882,7 +2913,7 @@ $host = $invoiceHost();
 $host->paymentDeleteAction();
 check('Q25 the confirmation page names the postings that go; the POST deletes — flash, redirect, the invoice open again at 108.10, the payment gone',
     str_contains($confirmHtml, 'Zahlung löschen') && str_contains($confirmHtml, 'wird gelöscht') && str_contains($confirmHtml, 'name="version"')
-    && $host->redirectedTo === '/backend/finance/invoice/detail?id=' . $inv4->getId() && ($host->messageService->flashes[0][0] ?? '') === 'success'
+    && $host->redirectedTo === '/backend/finance/invoice/edit?id=' . $inv4->getId() && ($host->messageService->flashes[0][0] ?? '') === 'success'
     && $pay($wireDi())->find((int) $edited->getId()) === null && $service($wireDi())->openAmount($readInvoice($inv4->getId()))->toDecimal() === '108.10');
 
 // ── R. P4 part 2: the CAMT.054 import (plan §6.4) ──────────────────────
@@ -3101,7 +3132,7 @@ check('R13b the list\'s help (HELP-003): attached with `toolbar: true` («Hilfe�
 $detailHtml = implode('', array_map(fn($p) => $renderer->partial($p, $host->context), $host->layoutManager->sections['main'] ?? []));
 check('R14 the detail: every transaction with its state badge, the matched invoice linked with its open amount, the remainder badge where there is one, the assign / ignore forms on the ones not booked, no «Verbuchen» without a matched one',
     substr_count($detailHtml, 'data-bank-transaction=') === 7 && str_contains($detailHtml, 'data-state="booked"') && str_contains($detailHtml, 'data-state="unmatched"')
-    && str_contains($detailHtml, '/backend/finance/invoice/detail?id=' . $invA->getId()) && str_contains($detailHtml, 'name="number"') && str_contains($detailHtml, 'Ignorieren')
+    && str_contains($detailHtml, 'data-window-open="/backend/finance/invoice/edit?id=' . $invA->getId() . '"') && str_contains($detailHtml, 'name="number"') && str_contains($detailHtml, 'Ignorieren')
     && !str_contains($detailHtml, 'data-bank-unbooked=') && !str_contains($detailHtml, '/book?id='));
 $tmpXml = $base . '/upload-r4.xml';
 file_put_contents($tmpXml, $camtXml('MSG-R4', [['amount' => '3.80', 'date' => '2026-07-05', 'ref' => $qrrOf(1000, $invD->getNumber()), 'txid' => 'D-rest']]));
@@ -3284,7 +3315,7 @@ check('T10c a second «Verbuchen» of the same message — from a copy loaded be
     caught(fn() => $bank($emStale)->book((int) $msgT2->getId()), BankImportRefusedException::class)?->reason === BankImportRefusedException::NOTHING_TO_BOOK
     && $count('payment') === $paymentsT2 + 1 && $service($wireDi())->openAmount($readInvoice($feeDoc->getId()))->toDecimal() === '15.00');
 
-echo "T. … the screens: the due list with the run, the notice PDF, the history on the invoice detail\n";
+echo "T. … the screens: the due list with the run, the notice PDF, the history in the invoice mask\n";
 $dunHost = function () {
     return new class {
         use \Z77\Module\Debtor\Ui\DunningControllerTrait { listAction as public; runAction as public; noticePdfAction as public; }
@@ -3370,11 +3401,11 @@ $host->noticePdfAction();
 check('T13 the notice PDF through the host: application/pdf, named after level and invoice', ($host->bytes['mime'] ?? '') === 'application/pdf' && str_starts_with($host->bytes['content'], '%PDF-') && str_ends_with($host->bytes['filename'], '.pdf'));
 $useRequest(['id' => $invE->getId()]);
 $host = $invoiceHost();
-$host->detailAction();
+$host->editAction();
 $detailE = $renderMain($host);
-check('T14 the invoice detail lists its dunning history with the fee document and a PDF link; the fee document\'s detail names the invoice it belongs to',
-    str_contains($detailE, 'Mahnungen') && str_contains($detailE, 'dunning-1') && str_contains($detailE, $fee2->documentName()) && str_contains($detailE, 'notice-pdf?id=')
-    && (function () use ($useRequest, $invoiceHost, $renderMain, $fee2, $invE): bool { $useRequest(['id' => $fee2->getId()]); $h = $invoiceHost(); $h->detailAction(); $html = $renderMain($h); return str_contains($html, 'Mahngebühr zu') && str_contains($html, 'Rechnung ' . $invE->getNumber()); })());
+check('T14 the invoice mask lists its dunning history in the facts with the fee document (a link to ITS mask, in the window) and a PDF link; the fee document\'s mask names the invoice it belongs to',
+    str_contains($detailE, 'Mahnungen') && str_contains($detailE, 'dunning-1') && str_contains($detailE, 'href="/backend/finance/invoice/edit?id=' . $fee2->getId() . '" data-window-link>' . e($fee2->documentName()) . '</a>') && str_contains($detailE, 'notice-pdf?id=')
+    && (function () use ($useRequest, $invoiceHost, $renderMain, $fee2, $invE): bool { $useRequest(['id' => $fee2->getId()]); $h = $invoiceHost(); $h->editAction(); $html = $renderMain($h); return str_contains($html, 'Mahngebühr zu') && str_contains($html, 'Rechnung ' . $invE->getNumber()); })());
 check('T15 source guards: the dunning trait never persists itself; the templates carry no script; host and config exist; the seed puts «Mahnungen» under «Aufträge»; the invoice views count fees with invoices',
     !str_contains(file_get_contents($package . '/src/Ui/DunningControllerTrait.php'), '->persist(')
     && !preg_match('/<script|\son[a-z]+\s*=/i', file_get_contents($package . '/res/view/templates/Backend/DunningController/listAction.tpl.php'))
@@ -3470,7 +3501,7 @@ check('U7b the list\'s help (HELP-003): attached with `toolbar: true` («Hilfe»
     && !$opFetch->help->has());
 check('U7 the screen: OP-Total and overdue in the header, the kernel\'s head and find form over the listing (sort links, magnifiers, the inputs of the form), a row per open document with its cells as labels of the column search, the state icon opening the document window, «Zahlung» to the document\'s payment form; the toolbar with the three views',
     str_contains($opHtml, 'OP-Total') && str_contains($opHtml, 'davon überfällig') && substr_count($opHtml, 'data-open-item=') === min(50, count($openU))
-    && str_contains($opHtml, 'data-window-open="/backend/finance/invoice/detail?id=' . $feeDoc->getId() . '"')
+    && str_contains($opHtml, 'data-window-open="/backend/finance/invoice/edit?id=' . $feeDoc->getId() . '"')
     && str_contains($opHtml, 'href="/backend/finance/invoice/payment?id=' . $feeDoc->getId() . '"')
     && str_contains($opHtml, '>fakturiert<') && str_contains($opHtml, '>offen<') && str_contains($opHtml, '>Fällig<') && str_contains($opHtml, '>KD-Nr.<')
     && ($host->layoutManager->sections['hc2'] ?? []) === ['Backend/DebtorController/toolbar'] && !isset($host->layoutManager->sections['hc1'])
@@ -4090,6 +4121,144 @@ check('Z16 the editor field «Betreff» reaches the draft (trimmed) and the docu
     $zEdited->getSubject() === 'Projekt Nord' && (new \Z77\Module\Debtor\Ui\InvoiceForm('CHF'))->startFrom($readInvoice($zEdited->getId()))->header('subject') === 'Projekt Nord'
     && str_starts_with(\Z77\Module\Debtor\Pdf\InvoicePdf::of($readInvoice($zB->getId()), $wireDi())->output(), '%PDF'));
 
+// ── SL. the subject label «Betreffname» (owner 2026-10-21) ──────────────
+
+echo "SL. The «Betreffname»: draft → document → snapshot, the print line, the default debtor > global > none, the editor\n";
+$slDraft = fn(?string $label, ?string $subject = 'Umbau', string $date = '2026-12-22') => InvoiceDraft::invoice($mid, day($date), day($date), 'CHF', [
+    LineDraft::lumpSum('Pauschale', chf('10.00'), 'UN', '3400'),
+], subject: $subject, subjectLabel: $label);
+$slDoc = $service($wireDi())->invoice($slDraft(' Projekt: '));
+check('SL1 draft → document → snapshot: stored trimmed without the trailing colon (column subject_label), printed «Projekt: Umbau»; the preview carries it too; a draft without one (Z) has none',
+    $slDoc->getSubjectLabel() === 'Projekt' && $invoiceRow($slDoc->getId())['subject_label'] === 'Projekt' && $slDoc->subjectLine() === 'Projekt: Umbau'
+    && $service($wireDi())->preview($slDraft('Referenz'))->getSubjectLabel() === 'Referenz' && $readInvoice($zB->getId())->getSubjectLabel() === null && $readInvoice($zB->getId())->subjectLine() === 'Auftrag 17 · Relaunch');
+$slBefore = $zSnap();
+check('SL2 over 80 characters (after normalising) refused `subject-label`, nothing written; 80 characters plus a colon pass',
+    $refusal(fn() => $service($wireDi())->invoice($slDraft(str_repeat('x', 81)))) === InvoiceRefusedException::SUBJECT_LABEL && $zSnap() === $slBefore
+    && $service($wireDi())->preview($slDraft(str_repeat('x', 80) . ':'))->getSubjectLabel() === str_repeat('x', 80));
+$slRe = $service($wireDi())->reinvoice($slDoc->getId(), $readInvoice($slDoc->getId())->getVersion(), $slDraft('Betrifft'));
+$service($wireDi())->finalize([$at($slDoc->getId())]);
+$slFinal = $readInvoice($slDoc->getId());
+check('SL3 the label is part of the snapshot: a re-issue replaces it whole («Betrifft»), the booked document keeps it — no setter, a booked document is never re-issued',
+    $slRe->getSubjectLabel() === 'Betrifft' && $slFinal->isFinal() && $slFinal->getSubjectLabel() === 'Betrifft' && !method_exists(Invoice::class, 'setSubjectLabel')
+    && throws(fn() => $service($wireDi())->reinvoice($slDoc->getId(), $slFinal->getVersion(), $slDraft('Projekt')), \Throwable::class) && $readInvoice($slDoc->getId())->getSubjectLabel() === 'Betrifft');
+$slPdf     = \Z77\Module\Debtor\Pdf\InvoicePdf::of($slFinal, $wireDi())->withoutCompression()->output();
+$slPlain   = $service($wireDi())->invoice($slDraft(null));
+$slPlainPdf = \Z77\Module\Debtor\Pdf\InvoicePdf::of($readInvoice($slPlain->getId()), $wireDi())->withoutCompression()->output();
+$slLonely  = $service($wireDi())->preview($slDraft('Projekt', null));
+check('SL4 the PDF prints «Betrifft: Umbau» on the subject line; without a label «Umbau» alone, exactly as before; a label without a subject prints nothing',
+    str_contains($slPdf, '(Betrifft: Umbau)') && str_contains($slPlainPdf, '(Umbau)') && !str_contains($slPlainPdf, 'Betrifft') && !str_contains($slPlainPdf, ': Umbau')
+    && $slLonely->getSubjectLabel() === 'Projekt' && $slLonely->subjectLine() === null
+    && !str_contains(\Z77\Module\Debtor\Pdf\InvoicePdf::render($slLonely, null)->withoutCompression()->output(), 'Projekt'));
+$slEm       = $wireDi();
+$slDefaults = fn() => new \Z77\Module\Debtor\Services\SubjectLabelDefaults($wireDi());
+$slMid      = fn() => $wireDi()->getRepository(DebtorProfile::class)->findByContact($mid);
+$slNone     = $slDefaults()->defaultFor($mid);
+(new MandatorService($slEm))->update($slEm->getRepository(Mandator::class)->theOne(), ['default_subject_label' => ' Projekt: ']);
+$slGlobal   = [$slDefaults()->global(), $slDefaults()->defaultFor($mid), $slDefaults()->defaultFor(null)];
+$slEm = $wireDi();
+(new DebtorProfileService($slEm))->update($slEm->getRepository(DebtorProfile::class)->findByContact($mid), ['default_subject_label' => 'Referenz:']);
+$slOwn      = [$slMid()->getDefaultSubjectLabel(), $slDefaults()->defaultFor($mid), $slDefaults()->defaultFor($zProspect)];
+$slEm = $wireDi();
+$slTooLong  = caught(fn() => (new DebtorProfileService($slEm))->update($slEm->getRepository(DebtorProfile::class)->findByContact($mid), ['default_subject_label' => str_repeat('y', 81)]), InvalidDebtorProfileException::class);
+$slSuggest  = $slDefaults()->suggestions();
+$slEm = $wireDi();
+(new DebtorProfileService($slEm))->update($slEm->getRepository(DebtorProfile::class)->findByContact($mid), ['default_subject_label' => '']);
+$slBack     = [$slMid()->getDefaultSubjectLabel(), $slDefaults()->defaultFor($mid)];
+check('SL5 the default of a new document: none without a global one (today\'s behaviour); the mandator\'s (normalised) for every debtor; a debtor\'s own wins (normalised), another debtor keeps the global; 81 characters on the profile refused on its field; emptied → the global again',
+    $slNone === null && $slGlobal === ['Projekt', 'Projekt', 'Projekt'] && $slOwn === ['Referenz', 'Referenz', 'Projekt']
+    && $slTooLong?->validator->hasFieldError('default_subject_label') === true && $slBack === [null, 'Projekt']);
+check('SL6 the suggestions: the labels in use on documents, the debtors\' defaults and the global one — merged, sorted, without duplicates',
+    in_array('Betrifft', $slSuggest, true) && in_array('Referenz', $slSuggest, true) && in_array('Projekt', $slSuggest, true) && $slSuggest === array_values(array_unique($slSuggest)));
+$slForm = (new \Z77\Module\Debtor\Ui\InvoiceForm('CHF'))->fromPost(['contact' => (string) $mid, 'invoice_date' => '2026-12-22', 'service_from' => '2026-12-22', 'price_mode' => 'net', 'subject' => 'Umbau', 'subject_label' => ' Projekt: ',
+    'rows' => [['type' => 'lump-sum', 'text' => 'Pauschale', 'price' => '10.00', 'tax_code' => 'UN', 'account' => '3400']]]);
+$slEdited  = $service($wireDi())->invoice($slForm->toDraft());
+$invoiceTpl   = (string) file_get_contents($package . '/res/view/templates/Backend/InvoiceController/form.tpl.php');
+$invoiceTrait = (string) file_get_contents($package . '/src/Ui/InvoiceControllerTrait.php');
+check('SL7 the editor: «Betreffname» reaches the draft and the document (normalised by the service); startFrom() shows it; startBlank() holds the pre-fill; the field is debtor\'s shared partial right BEFORE «Betreff», the new invoice pre-filled from SubjectLabelDefaults and following a customer choice while untouched',
+    $slEdited->getSubjectLabel() === 'Projekt' && (new \Z77\Module\Debtor\Ui\InvoiceForm('CHF'))->startFrom($readInvoice($slEdited->getId()))->header('subject_label') === 'Projekt'
+    && (new \Z77\Module\Debtor\Ui\InvoiceForm('CHF'))->startBlank(day('2026-12-22'), $mid, '', '', 'net', 'Referenz')->header('subject_label') === 'Referenz'
+    && strpos($invoiceTpl, "partial('partials/subjectLabelField'") < strpos($invoiceTpl, '<label for="invoice-subject">Betreff</label>') && str_contains($invoiceTpl, "'id'          => 'invoice-subject_label'")
+    && str_contains($invoiceTrait, '(new SubjectLabelDefaults($this->em()))->defaultFor($contact > 0 ? $contact : null));')
+    && str_contains($invoiceTrait, "'subjectLabelPrefill' => \$document === null && \$form->creditNoteOf === null,"));
+$slEm = $wireDi();
+(new MandatorService($slEm))->update($slEm->getRepository(Mandator::class)->theOne(), ['default_subject_label' => '']);
+
+// ── MV. the mandator's «mehrwertsteuerpflichtig» is binding for documents (owner 2026-10-21) ──
+echo "MV. not liable to VAT: computed without VAT (no tax, net = total, no VAT posting), printed without VAT; liable: unchanged\n";
+$mvLiable = function (bool $liable) use ($wireDi): void {
+    $em = $wireDi();
+    (new MandatorService($em))->update($em->getRepository(Mandator::class)->theOne(), ['liable_to_vat' => $liable]);
+};
+$mvWith = $service($wireDi())->preview($standardDraft('2026-12-23', '2026-12-23'));
+check('MV1 liable (the harness mandator since 2026-10-21): chargesVat() is true and the standard draft keeps its VAT — 310.00 + 23.46 → 333.45, codes and rates on the lines',
+    $service($wireDi())->chargesVat() && $mvWith->carriesVat() && $mvWith->getNetTotal()->toDecimal() === '310.00' && $mvWith->getTaxTotal()->toDecimal() === '23.46'
+    && $mvWith->getGrossTotal()->toDecimal() === '333.45' && count($mvWith->getTaxes()) === 2 && $mvWith->getLines()[0]->getTaxCode() === 'UN');
+$mvLiable(false);
+$mvNet   = $service($wireDi())->preview($standardDraft('2026-12-23', '2026-12-23'));
+$mvGross = $service($wireDi())->preview(InvoiceDraft::invoice($mid, day('2026-12-23'), day('2026-12-23'), 'CHF', $standardDraft()->lines, priceMode: \Z77\Module\Vat\Calculation\PriceMode::Gross));
+check('MV2 NOT liable: the same draft is computed without VAT — no tax rows, tax 0.00, net = total 310.00, every line WITHOUT code / rate / label (the codes of the draft dropped, not refused); chargesVat() false, a fee never',
+    !$service($wireDi())->chargesVat() && !$service($wireDi())->chargesVat(\Z77\Module\Debtor\Entities\InvoiceKind::Fee)
+    && $mvNet->getTaxes() === [] && $mvNet->getTaxTotal()->isZero() && $mvNet->getNetTotal()->toDecimal() === '310.00' && $mvNet->getGrossTotal()->toDecimal() === '310.00'
+    && !$mvNet->carriesVat() && array_filter($mvNet->getLines(), fn($l) => $l->getTaxCode() !== null || $l->getTaxRate() !== null || $l->getTaxLabel() !== null) === []);
+check('MV3 … the price mode makes no difference to the amounts: gross gives the same 310.00 total, no tax',
+    $mvGross->getTaxes() === [] && $mvGross->getNetTotal()->toDecimal() === '310.00' && $mvGross->getGrossTotal()->toDecimal() === '310.00');
+$mvDoc = $service($wireDi())->invoice($standardDraft('2026-12-23', '2026-12-23'));
+$service($wireDi())->finalize([$at($mvDoc->getId())]);
+$mvFinal = $readInvoice($mvDoc->getId());
+$mvJl    = $entryLines((string) $mvFinal->getLedgerEntryRef());
+check('MV4 issued and booked: the rows store no tax code (invoice_line.tax_code NULL, no invoice_tax row); the posting has NO VAT account and no tax data — receivable 310.00 against the revenue lines, balanced',
+    array_filter($lineRows($mvDoc->getId()), fn($r) => $r['tax_code'] !== null || $r['tax_rate'] !== null) === [] && $taxRows($mvDoc->getId()) === []
+    && $mvJl !== [] && array_filter($mvJl, fn($r) => $r['account_number'] === '2200' || $r['tax_code'] !== null || $r['tax_amount'] !== null) === []
+    && count(array_filter($mvJl, fn($r) => $r['account_number'] === '1100' && $r['debit'] === '310.00')) === 1 && $sumOf($mvJl, 'debit')->equals($sumOf($mvJl, 'credit')));
+$mvPdf    = \Z77\Module\Debtor\Pdf\InvoicePdf::of($mvFinal, $wireDi())->withoutCompression()->output();
+$mvVatPdf = \Z77\Module\Debtor\Pdf\InvoicePdf::render($mvWith, null)->withoutCompression()->output();
+check('MV5 the print WITHOUT VAT: no MWST column, no MWST rows, no «zzgl. / inkl. MWST» — Netto and Total stay; the preview WITH VAT still prints all three (one layout, `liableToVat` from the snapshot)',
+    !str_contains($mvPdf, 'MWST') && str_contains($mvPdf, '(Netto)') && str_contains($mvPdf, '(Total CHF)')
+    && str_contains($mvVatPdf, '(MWST)') && str_contains($mvVatPdf, 'zzgl. MWST') && str_contains($mvVatPdf, 'MWST 8.1 % auf'));
+// A credit note follows its INVOICE, whatever the flag says now.
+$mvCnVat = $service($wireDi())->preview(InvoiceDraft::creditNote($slDoc->getId(), $mid, day('2026-12-23'), 'CHF', [LineDraft::lumpSum('Gutschrift', chf('10.00'), 'UN', '3400')]));
+$mvLiable(true);
+$mvCnNo  = $service($wireDi())->preview(InvoiceDraft::creditNote($mvDoc->getId(), $mid, day('2026-12-23'), 'CHF', [LineDraft::lumpSum('Gutschrift', chf('10.00'), 'UN', '3400')]));
+check('MV6 a credit note follows its invoice: against a VAT invoice it carries VAT although the mandator is not liable now; against an invoice without VAT none although liable now',
+    $mvCnVat->carriesVat() && count($mvCnVat->getTaxes()) === 1 && !$mvCnNo->carriesVat() && $mvCnNo->getTaxes() === [] && $mvCnNo->getGrossTotal()->toDecimal() === '10.00'
+    && $service($wireDi())->chargesVat(\Z77\Module\Debtor\Entities\InvoiceKind::CreditNote, $mvFinal) === false);
+$mvBackup = $db->fetchAssociative('SELECT * FROM mandator');
+$db->executeStatement('DELETE FROM mandator');
+$mvNoMandator = $service($wireDi())->chargesVat();
+$db->insert('mandator', $mvBackup);
+check('MV7 no mandator saved: liable (today\'s behaviour — the absence of a record is no declaration)', $mvNoMandator === true);
+$mvForm = (new \Z77\Module\Debtor\Ui\InvoiceForm('CHF', withVat: false))->fromPost(['contact' => (string) $mid, 'invoice_date' => '2026-12-23', 'service_from' => '2026-12-23', 'price_mode' => 'gross', 'prices_mode' => 'net',
+    'rows' => [['type' => 'lump-sum', 'text' => 'Pauschale', 'price' => '10.00', 'tax_code' => '', 'account' => '3400']]]);
+$mvDraft = $mvForm->toDraft();
+$mvTpl   = (string) file_get_contents($package . '/res/view/templates/Backend/InvoiceController/form.tpl.php');
+$mvTrait = (string) file_get_contents($package . '/src/Ui/InvoiceControllerTrait.php');
+check('MV8 the editor without VAT: no tax code asked, the price NOT converted between the modes (10.00 stays), no VatRates needed; the MWST column and the rate schedule only with VAT; the trait asks chargesVat() for every form',
+    $mvDraft !== null && $mvDraft->lines[0]->taxCode === '' && $mvDraft->lines[0]->unitPrice->toDecimal() === '10.00'
+    && str_contains($mvTpl, '<?php if ($form->withVat): ?><span class="be-list__col">MWST</span><?php endif; ?>') && str_contains($mvTpl, "4.5rem<?= \$form->withVat ? ' 7rem' : '' ?> 6rem")
+    && substr_count($mvTrait, '->chargesVat(') === 3);
+$mvSummary = (string) file_get_contents($package . '/res/view/templates/pdf/documentSummary.tpl.php');
+$mvInvTpl  = (string) file_get_contents($package . '/res/view/templates/pdf/invoice.tpl.php');
+$mvPdfSrc  = (string) file_get_contents($package . '/src/Pdf/InvoicePdf.php');
+check('MV9 ONE layout per document: pdf/invoice takes `liableToVat` (InvoicePdf: from the snapshot, carriesVat()) for the columns, the fact and the shared pdf/documentSummary; no second layout file',
+    str_contains($mvPdfSrc, "'liableToVat'    => \$document->carriesVat(),") && str_contains($mvInvTpl, 'DocumentColumns::table($document->getCurrency(), $rows, $liableToVat, ')
+    && str_contains($mvInvTpl, "partial('pdf/documentSummary'") && str_contains($mvSummary, 'if ($liableToVat) {')
+    && !is_file($package . '/res/view/templates/pdf/invoiceNoVat.tpl.php'));
+// A draft saved while liable, booked after the flag was switched off (owner 2026-10-21): refused, never recomposed.
+$mvStale = $service($wireDi())->invoice($standardDraft('2026-12-23', '2026-12-23'));
+$mvLiable(false);
+$mvStaleErr = caught(fn() => $service($wireDi())->finalize([$at($mvStale->getId())]), InvoiceRefusedException::class);
+$mvStaleState = $db->fetchOne('SELECT state FROM invoice WHERE id = ?', [$mvStale->getId()]);
+$mvLiable(true);
+$service($wireDi())->discard($mvStale->getId(), $at($mvStale->getId())['version']);
+check('MV10 a draft composed with VAT, booked after «mehrwertsteuerpflichtig» was switched off: refused `vat-liability-changed` («… neu speichern, dann verbuchen»), still a draft, no number drawn',
+    $mvStaleErr?->reason === InvoiceRefusedException::VAT_LIABILITY_CHANGED && str_contains($mvStaleErr->getMessage(), 'neu speichern, dann verbuchen')
+    && $mvStaleState === 'invoicing');
+$mvHelp = (string) file_get_contents($package . '/res/view/templates/Backend/InvoiceController/form.help.tpl.php');
+check('MV11 the editor without VAT hides «Preise» (the mode still posted); the help reads `$form->withVat` and drops the price-mode section, the MWST-code item and the MWST wording of «Leistung von»',
+    str_contains($mvTpl, "<div class=\"be-form__field\" data-z77-field-wrapper<?= \$form->withVat ? '' : ' hidden' ?>>")
+    && str_contains($mvHelp, '$vat = $form->withVat;') && str_contains($mvHelp, "<?php if (\$vat): ?>\n<section data-help-field=\"price_mode\">")
+    && str_contains($mvHelp, "<?php if (\$vat): ?>\n    <li>MWST-Code und Ertragskonto"));
+
 // ── O. the booking print of module-order on the REAL ledger (concurrency review 2026-10-16) ──
 // order.md «Concurrency review»: the order's booking print (`OrderService::book()`) joins debtor's
 // chain in ONE unit of work. module-article and module-order join the installation here — the
@@ -4186,6 +4355,16 @@ $oR3  = $oRow((int) $o3->getId());
 check('O6 two processes book the same order at once: exactly ONE books, the other is refused (conflict — the row lock and the version); one invoice, one journal entry, the order linked to THAT invoice' . (count($oOk) !== 1 ? ' — got ' . json_encode($oOut) : ''),
     count($oOk) === 1 && count(array_filter($oOut, fn($o) => $o === 'conflict')) === 1
     && $count('invoice') === $oInvN + 1 && $journalCount() === $oJ + 1 && 'ok:' . $oR3['invoice_id'] === $oOk[0] && $oR3['status_code'] === 'booked');
+
+// O7: the order's «Betreffname» travels into the booked invoice (owner 2026-10-21).
+$o7 = $oService()->create(new \Z77\Module\Order\Services\OrderDraft($mid, '2026-12-10', 'Umbau Nord', lines: [
+    \Z77\Module\Order\Services\OrderLineDraft::article($oVariant, '1'),
+], subjectLabel: 'Projekt:'));
+$o7 = $oService()->changeStatus((int) $o7->getId(), $o7->getVersion(), 'scheduled');
+$o7Inv = $oService()->book([['id' => (int) $o7->getId(), 'version' => $o7->getVersion()]], day('2026-12-15'))[0] ?? null;
+check('O7 order → invoice: the order\'s «Betreffname» (stored «Projekt») is the booked invoice\'s, beside «Auftrag N · Umbau Nord» — printed «Projekt: Auftrag N · Umbau Nord»',
+    $o7->getSubjectLabel() === 'Projekt' && $o7Inv !== null && $o7Inv->getSubjectLabel() === 'Projekt'
+    && $o7Inv->subjectLine() === 'Projekt: Auftrag ' . $o7->documentNumber() . ' · Umbau Nord' && $invoiceRow($o7Inv->getId())['subject_label'] === 'Projekt');
 
 // ── result ───────────────────────────────────────────────────────────────
 

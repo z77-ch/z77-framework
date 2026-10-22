@@ -1,7 +1,7 @@
 # ADR-041 — VAT model: tax codes with dated rates, computed once, carried
 
-**Status:** `[APPROVED]` — approved by the owner 2026-09-21 (P0 of [`order-debtor-financial-bauplan.md`](../03-development/order-debtor-financial-bauplan.md)); addendum to decision 7 approved by the owner 2026-09-22
-**Date:** 2026-09-21 · addendum 2026-09-22 (rate snapshot on the journal line)
+**Status:** `[APPROVED]` — approved by the owner 2026-09-21 (P0 of [`order-debtor-financial-bauplan.md`](../03-development/order-debtor-financial-bauplan.md)); addendum to decision 7 approved by the owner 2026-09-22; addendum «a mandator not liable to VAT» — owner decision 2026-10-21
+**Date:** 2026-09-21 · addendum 2026-09-22 (rate snapshot on the journal line) · addendum 2026-10-21 (a mandator not liable to VAT)
 
 ---
 
@@ -107,3 +107,27 @@ The **label is not snapshotted on a journal line**: label snapshots belong to do
 prints the label as it read then), a ledger line reports by code + rate. Consistent with the
 reference rule in [`vat.md`](../topics/vat.md) for a Doctrine reference to a tax code. Built in
 `module-financial` P2 part 2 (`journal_line.tax_rate`, [`financial.md`](../topics/financial.md)).
+
+## Addendum 2026-10-21 — a mandator not liable to VAT (approved by the owner)
+
+The mandator's flag «mehrwertsteuerpflichtig» (`mandator.liable_to_vat`, until now without effect) is
+BINDING for documents: a company not liable to VAT issues its invoices, credit notes, quotes and order
+confirmations WITHOUT VAT. Decisions 5–7 apply only to a document computed WITH VAT; for one without:
+
+- **No calculation**: `VatCalculator` is not called, there is no tax summary, net = the lines, and the
+  price mode changes no amount. The rule lives in ONE place, debtor's `InvoicingService::chargesVat()`
+  (module-order reads it through debtor's preview, decision «order uses it for display only» unchanged).
+- **No tax code on the document lines** (NULL, the shape a dunning fee already has) — not the article's
+  code at rate 0: a coded line would be reported in the VAT return (decision 7 reads the journal line's
+  tax data) and would snapshot a label and a rate for a tax that does not exist. The order keeps its
+  article's code on its own line; the document drops it.
+- **No VAT on the posting**: receivable against revenue (and rounding); no VAT account.
+- **A credit note follows its invoice**, not the flag: a reduction of consideration is treated as the
+  supply was (decision 4's reasoning) — with VAT exactly when the invoice carries it.
+- **Decision 6 holds**: the flag is read when a document is COMPOSED; an issued document keeps its
+  snapshot, and the print decides its VAT presentation from the snapshot (`Invoice::carriesVat()`), not
+  from today's flag.
+- No mandator record (or one that cannot be read) counts as liable — the behaviour before the addendum.
+
+The «no silent 0 %» rule of `vat.md` is untouched: not being liable is a declared state of the company,
+not a data gap; a document computed with VAT still refuses an unknown code or a missing rate.

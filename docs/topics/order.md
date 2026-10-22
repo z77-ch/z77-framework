@@ -1,6 +1,6 @@
 # order
 
-2026-10-15
+2026-10-21
 
 ## entry
 
@@ -68,6 +68,7 @@ SOURCE=/packages/module-order/src/Ui/OrderStatusLayout.php
 SOURCE=/packages/module-order/src/Ui/OrderStatusListing.php
 SOURCE=/packages/module-order/res/migrations/Version20261014140000.php
 SOURCE=/packages/module-order/res/migrations/Version20261014140001.php
+SOURCE=/packages/module-order/res/migrations/Version20261021100000.php
 SOURCE=/packages/module-order/res/view/templates/Backend/OrderStatusController/listAction.tpl.php
 SOURCE=/packages/module-order/res/view/templates/Backend/OrderStatusController/_row.tpl.php
 SOURCE=/packages/module-order/res/view/templates/Backend/OrderStatusController/act.tpl.php
@@ -101,7 +102,7 @@ SOURCE=/docs/02-decisions/adr-040-business-module-cut.md
 - **Totals** (D11): `OrderInvoiceDraft::of($order, $order->getOrderDate())` → `InvoicingService::preview(…, openProfile: true)` inside the unit of work, after the order's lock (preview reads, writes nothing); net / tax / gross stored for the list; a refusal (`DebtorException`, `VatException`) leaves them null.
 - **Editable** (D7): no invoice and the phase not locked (`closed`, `cancelled`) — else `not-editable`; with an invoice only a forward status change. No delete (D8). «Erledigt» and «Storniert» by hand (Q6) through `changeStatus()`.
 - **Order confirmation and delivery note** (D6, ADR-043 addendum 2026-10-15): `printConfirmation()` moves a quote into the default of `confirmed` (trigger `confirmation`), `printDeliveryNote()` a confirmed order into the default of `delivered` (trigger `delivery-note`) and fills an EMPTY «Leistung von» with the print day (`SalesOrder::deliveredOn()`, the totals rewritten — owner 2026-10-16; a set date stays) — only FORWARD (`actionTarget()`); in or past the phase nothing is written and the order is answered as it is (no version needed: a double click prints twice, moves once). `assertPrintable()` refuses (`not-printable`) a cancelled order and the delivery note of a quote.
-- **Invoice mapping** (`Invoicing\OrderInvoiceDraft::of(order, invoiceDate)`, pure, harness D): kind invoice, contact, invoice date (a day), service from = head or the invoice date, service to, price mode, currency, payment target, terms null (the profile's), address null (debtor snapshots the invoice address), subject «Auftrag {nr} · {Betreff}» / «Auftrag {nr}», lines 1:1 with children beneath their parent, origin `order` / number, lines `order-line` / id.
+- **Invoice mapping** (`Invoicing\OrderInvoiceDraft::of(order, invoiceDate)`, pure, harness D): kind invoice, contact, invoice date (a day), service from = head or the invoice date, service to, price mode, currency, payment target, terms null (the profile's), address null (debtor snapshots the invoice address), subject «Auftrag {nr} · {Betreff}» / «Auftrag {nr}» and the order's «Betreffname» with it (`subjectLabel`, owner 2026-10-21 — the invoice prints «Projekt: Auftrag 12 · Umbau»), lines 1:1 with children beneath their parent, origin `order` / number, lines `order-line` / id.
 - **Screen** Stammdaten › Aufträge › Auftragsstatus (`/backend/order/order-status/list`, host `Order/OrderStatusController`, group `order`): a standard list along the ladder (state icon · Code · Bezeichnung · Phase · Sortierung · Wird gesetzt durch — the ACTION that sets a default: neuer Auftrag, Auftragsbestätigung, Lieferschein, Buchungsdruck · Aktiv switch), action cell «+ Status». The status opens as a WINDOW with help (code fixed after creation, label, phase — a select of the fixed phases —, «Sortierung», «Startstatus für neue Aufträge» (`start`, in Eröffnet and Termin) and the action default worded by the phase — «Wird gesetzt beim Druck der Auftragsbestätigung» … (`OrderPhase::defaultSwitchLabel()`; owner 2026-10-15: «Vorgabe der Phase» was understood by no one), none for Eröffnet and Storniert; setting either takes it from the status that held it (owner 2026-10-16); «Wird gesetzt durch» lists both («neuer Auftrag, Auftragsbestätigung»); the help explains the phases) — deviation from plan §9.5's «⋮ → edit dialog», the article's reason: a modal popup cannot carry the field help (ADR-048). The switch answers with its row; a refused activation names the phase's other default.
 - **Navigation**: seed `module-order.json` — `auftraege-liste` «Aufträge» (route `backend/order/order/list`, sort 0 under debtor's area `auftraege` — the FIRST entry; debtor's seed moved Rechnungen / Debitoren / Zahlungseingänge / Mahnungen to 1–4) and `auftragsstatus` «Auftragsstatus» under debtor's `stammdaten-auftraege`, sort 10. The area click opens its first entry, the order list; `groupDefaults['order']` → `order`. The merge is add-only (ADR-050): z77.ch received `auftraege-liste` through `composer install` (appended at sort 4) and was re-sorted by hand on 2026-10-14 (Aufträge 0, Rechnungen 1, Debitoren 2, Zahlungseingänge 3, Mahnungen 4 — NAV-SEED-002).
 
@@ -124,6 +125,9 @@ Built 2026-10-14 (plan §13 steps 7–10, the owner's board on the developer can
 - **Year close** (`Close\InvoiceableOrdersCheck`, `orderConfig` → `openWorkChecks['period-close']`): a WARNING per order dated in the year that sits in a bookable phase (`confirmed`, `delivered` — every confirmed order: a service order may never see a delivery note) — «Auftrag 1 vom 14.10.2026 an Test-Firma xy steht in «Zu fakturieren» — noch nicht fakturiert …», the first 10 named, the rest counted (`SalesOrderRepository::inStatusBetween()`). A warning, not a block: the books of the year are complete without the order; whether its invoice belongs into the closed year is the office's call (the service date decides the VAT period).
 - **Redesign 2026-10-16 — LAYOUT BUILT 2026-10-17** (not yet seen in a browser): the window is `.be-form--blocks` — the action row with Speichern · the status as a pill (`.be-status-pill`, opens «Status ändern …») · «Drucken ▾» (a `<details>` menu: Offerte / Auftragsbestätigung, «Auftragsbestätigung …» or «Lieferschein …», Rechnungsvorschau) · Buchungsdruck …; a head row of three cards (Kunde with phone, name, «Rechnung» = the preview's address, «Lieferung» = the `_ship` select · Betreff, Notiz, «Erfasst …» · Auftragsdatum, Leistung von | bis, Zahlungskonditionen with «Debitor anpassen» (2026-10-18), a new order's status); the positions card (Preise in its head; rebuilt 2026-10-18 — ⋮⋮ / ⇥ rows, MWST as the article's rate, no Konto column, live totals: see `## pending` «Positions block»; totals and audit line at its foot); «Verlauf und Belege» a collapsed card at the end; no radio tabs. Still open from the redesign: see `## pending` «Order window redesign».
 
+- **Without VAT** (owner decision 2026-10-21, the mandator's «mehrwertsteuerpflichtig»; the rule is debtor's `InvoicingService::chargesVat()`, debtor.md «Documents without VAT»): not liable → the preview, the stored totals (tax 0.00), the quote / confirmation and the booking print carry no VAT — the order computes nothing itself (D11). `OrderService::chargesVat()` hands the rule to the window: no MWST column (one grid track less, a text row spans 7), no rate schedule for core.js «dated rates», no VAT rows in the totals — core.js «line sums» then sums without tax (a row without a rate counts at 0 %), no core.js change. Prices: net and gross are the same price — `convertByRate()` returns the price as it is, so an article priced 16.65 gross is 16.65 in either mode (fill, picker, «Preise» switch). The order LINE keeps its article's tax code (D3, `SalesOrderLine` requires it; the document drops it). The PDF `pdf/order` stays ONE layout: `OrderPdf` passes `liableToVat` = the preview's `carriesVat()`, the columns come from debtor's `DocumentColumns` (VAT column dropped), the totals from debtor's `pdf/documentSummary`, «Preise zzgl. / inkl. MWST» only with VAT. The delivery note shows no prices and no VAT — unchanged. Without VAT the window hides «Preise» (the mode still posted) and the help drops the price-mode section and the MWST wording (owner 2026-10-21; F20).
+- **«Betreffname»** (owner decision 2026-10-21; debtor.md «`subjectLabel`» holds the rule): `sales_order.subject_label` VARCHAR(80) NULL (`Version20261021100000`), `OrderDraft::$subjectLabel` (optional named parameter, default null — the wdv importer maps `subject_title` here), `SalesOrder::getSubjectLabel()` / `subjectLine()`; `OrderService` normalises it with debtor's `SubjectLabel` and refuses over 80 on `subject_label`; no default in the service. The window: debtor's shared field «Betreffname» right before «Betreff» (`subject_label`, datalist of the orders' and documents' labels + the defaults); a NEW order is pre-filled with the debtor's label, else the mandator's (`SubjectLabelDefaults::defaultFor()`), and follows a customer choice while untouched (`data-prefill`, set-value `untouched`). Printed by `pdf/order` and `pdf/deliveryNote` on the subject line («Projekt: Umbau»; no label = as before; a label without a subject prints nothing). Harness D7, L1–L5, F18, F19, P5, M31, M32.
+
 ## rules
 
 - When code needs «the» status for a step (a new order, the order confirmation, the delivery note, the booking print) → MUST take the DEFAULT of the step's PHASE through `OrderStatuses` (`initial()`, `defaultOf()`, `actionTarget()`); MUST NOT name a status code in code (harness N1), and MUST NOT give a status behaviour of its own — behaviour is the phase's (`OrderPhase`, ADR-043 addendum 2026-10-15)
@@ -141,6 +145,8 @@ Built 2026-10-14 (plan §13 steps 7–10, the owner's board on the developer can
 - When an order is booked → MUST go through `OrderService::book()` (the order rows locked first, debtor's `invoiceAndFinalize()` joined, link + booked status + log row `booking-print` + stock in the SAME unit of work); MUST NOT call `InvoicingService::invoice()` / `finalize()` or `invoiceAndFinalize()` for an order from anywhere else, and MUST NOT set the `invoiceBooked` status any other way
 - When a screen offers the booking print a second time for the same selection → MUST decide the repeat with `Ui\BookingSelection::bookedBy()` (every order linked to a FINAL invoice at the version shown + 1) and answer the same PDF without calling `book()`; MUST NOT rely on the service for idempotency — it refuses an order with an invoice (`already-invoiced`)
 - When a screen shows the order list's tabs → MUST derive them from the PHASES (`OrderListing::viewOf()` / `codesOf()`); MUST NOT list status codes per tab (a new status must land in its tab without code)
+- When an order or its PDFs carry the «Betreffname» → MUST go through debtor's `SubjectLabel` (`normalize()`, `line()`) and pre-fill a NEW order from `SubjectLabelDefaults`; MUST NOT print the label without the subject or compose «label: subject» in a template
+- When the order window shows VAT (the MWST column, the rates, the VAT rows of the totals) → MUST ask `OrderService::chargesVat()` (debtor's one rule) and leave all three out when it answers false; MUST NOT convert a price between the modes with a rate then (`convertByRate()` returns it unchanged)
 - When an order PDF is drawn → MUST take every amount from `OrderService::preview()` and the title from the phase (`OrderPdf::orderTitle()`); the order confirmation of a quote and the delivery note MUST be printed through the POST that calls `printConfirmation()` / `printDeliveryNote()` first; MUST NOT print them from a GET when they move the order (the status move would be skipped)
 
 ## known issues
@@ -154,6 +160,37 @@ Built 2026-10-14 (plan §13 steps 7–10, the owner's board on the developer can
 - **ORDER-PHASE-001** — built 2026-10-15 (owner: «die Schwachstelle ist der Mensch, der den Status verändert»; ADR-043 addendum 2026-10-15). Don't look for behaviour flags on a status: the seven flags are gone, the five fixed phases carry all behaviour, a status is a label with a phase, a sort order and the default switch («Startstatus …» / «Wird gesetzt beim …»). Don't assume an installation's `order_statuses.json` converts itself: the file is seed-once, and a file in the old shape (`level` + flags) reads every row as phase `new` (the safe side — no stock, no booking print). z77.ch was converted by hand the same day (Write tool, UTF-8 without BOM): offer → new · scheduled and the owner's «Bestellt» (`ordered`, had the flag «Offerte» on) → confirmed · delivered, to-invoice → delivered · booked, done («Erledigt mit Lagerbuchung» → «Erledigt») → closed · done-no-stock («Erledigt ohne Lagerbuchung» → «Storniert») → cancelled; no order sat in done-no-stock. Verified by curl on z77.ch: the status list and window, the tabs and the status search, order 4 (id 10) Offerte → «Auftragsbestätigung …» → Terminauftrag (PDF) → «Lieferschein …» → Geliefert (PDF), the reprint notice, the status targets. Offline harness S, T, V, P green; section M rewritten for the phases (M12–M18: cancelled instead of done-no-stock, `cancel-barred`, `printConfirmation()`, the delivery note of a quote `not-printable`) — to run on PC1.
 
 ## pending
+
+- **«Betreffname» — built 2026-10-21, NOT committed, not seen in a browser** (see the bullet above and debtor.md `## pending`): migrations to apply on `z77ch_initial` / z77.ch — order `Version20261021100000`, debtor and mandator `Version20261021100000`; then the owner's look at the window (field, datalist, pre-fill, the follow on a customer change) and the three PDFs.
+
+- **Resume here (2026-10-21, evening).** Test env is `z77-1.0.0-z77.ch-initial` (own DB `z77ch_initial`,
+  production data, symlinked packages — framework changes are live there at once; the importer
+  session of that project messages this one). Committed today: `00a4272` (status field, no status
+  change with an invoice, total 0 = no invoice). **NOT committed — 67 files, FIVE themes, to go in
+  as SEPARATE commits after the owner's browser look:** (1) subject label «Betreffname» (debtor /
+  order / mandator, migrations `Version20261021100000` ×3 — APPLIED on z77ch_initial, NOT on z77.ch);
+  (2) the mandator's «mehrwertsteuerpflichtig» binding for documents (calculation, ONE template
+  per document with droppable MWST column + shared `pdf/documentSummary`, screens without MWST,
+  «Preise» hidden, help texts, a stale draft refused at the booking print `vat-liability-changed`,
+  ADR-041 addendum) — z77.ch is NOT liable, the test env runs without VAT now; (3) the invoice
+  ONE MASK (debtor.md «ONE mask — entry AND display»: `detail` removed, `_facts` block, the order
+  window's «Belege» tab links `edit?id=`) — owner saw it open, the look at draft vs booked is still
+  open; (4) the PDF unit column sized by measure (`DocumentColumns::unitWidth()`, pdf F6c; verified
+  on invoice 2609005); (5) the positions' sticky top z-index under the action row. Harness state:
+  module-order 121/0, pdf 45/0, module-debtor 563/1 — the one FAIL (MV9) was a mid-run overlap and
+  is true against the current tree: **run `php tests/module-debtor.php` once on the quiet tree
+  first thing** (~25 min), then commit (1)–(5).
+  **Open owner answers (asked 2026-10-21):** (a) the per-line CODE (wdv `shop_positions.code`,
+  importer request): owner wants it printed ABOVE the text in small type, not as a column — still
+  open whether an article line is PREFILLED with its article number (wdv) or empty until typed;
+  design: `code` (?string ≤ 16) on `invoice_line` + `sales_order_line`, `LineDraft` / `OrderLineDraft`
+  param `code`, order → invoice carries it, `pdf/table` gets a small muted line above the lead line;
+  (b) the QR bill's unstructured message gets the due date (importer request, owner confirmed the
+  rest of the payment part): one line, ASCII — proposed «Rechnung 2610001, zahlbar bis 21.10.2026»
+  (`InvoicingService::finalize()` → `PaymentSnapshot::numbered()`); tests that assert
+  `'Rechnung ' . $number` as the message must follow; (c) should debtor's own invoice editor refuse
+  0.00 too? Both (a) and (b) are promised to the importer session with the param names once built.
+  **Next (owner's order):** daily-use speed; the lists.
 
 - **Resume here (2026-10-20, evening).** Committed today: `998b599` (NAV-VIA-001 ref cursor, price
   lists struck), `acc64b3` (article picker + round-2 fixes, positions' sticky top, datalist gone,
@@ -175,7 +212,7 @@ Built 2026-10-14 (plan §13 steps 7–10, the owner's board on the developer can
   15); the status field after (2) and (3): an invoiced order shows its status without a link, a
   0-total order shows the hint instead of «Buchungsdruck …», the confirmation leaves it out.
   **Next (owner's order):** daily-use speed; the lists.
-  **2026-10-21 (test env `z77-1.0.0-z77.ch-initial`, own DB `z77ch_initial` with production data):** owner's test — invoiced status without link OK, the confirmation leaves a 0-order out OK; changed: the 0-total hint now stands UNDER the action row (it was not seen in the row), the picker's «… hinzugefügt» message removed (the list grows). Step 9 «Rabatt» NOT seen by the owner — a read-only scratch run on `z77ch_initial` rendered the invoice preview of order 180249 (id 838, 15 %) WITH the column «Rabatt» and «15 %»: ask which order he looked at (an unsaved discount does not reach the preview — it reads the STORED order).
+  **2026-10-21 (test env `z77-1.0.0-z77.ch-initial`, own DB `z77ch_initial` with production data):** owner's test — invoiced status without link OK, the confirmation leaves a 0-order out OK; changed: the 0-total hint now stands UNDER the action row (it was not seen in the row), the picker's «… hinzugefügt» message removed (the list grows). Step 9 «Rabatt» PASSED 2026-10-21 (the owner's browser had shown a cached PDF — the preview URL does not change; Ctrl+F5 in the PDF tab). Before that, a read-only scratch run on `z77ch_initial` rendered the invoice preview of order 180249 (id 838, 15 %) WITH the column «Rabatt» and «15 %»: ask which order he looked at (an unsaved discount does not reach the preview — it reads the STORED order).
 
 - **Resume here (2026-10-19, evening).** Committed today: `5d8f604` (round 3), `74aedc9` (VAT by
   service date, PDF rounding once, quantity | unit), `dfd0119` (discount column `DocumentColumns`,

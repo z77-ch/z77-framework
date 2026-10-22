@@ -23,6 +23,7 @@ use Z77\Core\DI,
     Z77\Module\Debtor\Entities\Invoice,
     Z77\Module\Debtor\Entities\PaymentTarget,
     Z77\Module\Debtor\Entities\PaymentTerms,
+    Z77\Module\Debtor\Invoicing\SubjectLabel,
     Z77\Module\Debtor\Pdf\InvoicePdf,
     Z77\Module\Debtor\Repositories\DebtorProfileRepository,
     Z77\Module\Debtor\Repositories\InvoiceRepository,
@@ -32,6 +33,7 @@ use Z77\Core\DI,
     Z77\Module\Debtor\Services\InvoicingService,
     Z77\Module\Debtor\Services\LockConflict,
     Z77\Module\Debtor\Services\PaymentStates,
+    Z77\Module\Debtor\Services\SubjectLabelDefaults,
     Z77\Module\Debtor\Ui\CustomerPicker,
     Z77\Module\Debtor\Ui\CustomerPickerTrait,
     Z77\Module\Debtor\Ui\DebtorProfileLayout,
@@ -269,7 +271,9 @@ trait OrderControllerTrait
             $order === null
                 ? $form->startBlank(new \DateTimeImmutable('today'), $contactId, $this->orderDefaultTarget(), $service->statuses()->initial()?->getCode() ?? '', $this->orderStartTerms($contactId),
                     // The debtor carries the price mode (owner 2026-10-18) — a preset customer's starts the order.
-                    $this->orderDebtorProfile((string) $contactId)?->priceMode()->value ?? 'net')
+                    $this->orderDebtorProfile((string) $contactId)?->priceMode()->value ?? 'net',
+                    // The «Betreffname» (owner 2026-10-21): the debtor's, else the mandator's, else none.
+                    (new SubjectLabelDefaults($this->em()))->defaultFor($contactId))
                 : $form->startFrom($order);
 
             return $this->orderWindowPage($form, $order, $version);
@@ -391,7 +395,7 @@ trait OrderControllerTrait
         /** @var InvoiceRepository $invoices */
         $invoices    = $this->em()->getRepository(Invoice::class);
         $variants    = $this->orderVariants()->selectable();
-        $this->help->attach('Backend/OrderController/edit.help', self::ORDER_NS, ['isNew' => $order === null], 'Hilfe: Auftrag');
+        $this->help->attach('Backend/OrderController/edit.help', self::ORDER_NS, ['isNew' => $order === null, 'liableToVat' => $service->chargesVat()], 'Hilfe: Auftrag');
 
         return $this->orderPage('edit', [
             'window'          => $this->orderIsFetch(),
@@ -424,6 +428,11 @@ trait OrderControllerTrait
             // Block (3): «Zahlungskonditionen» = debtor's PaymentTerms (owner 2026-10-18), '' = the customer's.
             'termsSelect'     => $this->customerTermsHtml($form->header('terms'), $form->header('contact'), $form->error('terms') !== ''),
             'debtorEdit'      => $this->customerDebtorEditHtml($form->header('contact')),
+            // «Betreffname» before «Betreff» (owner 2026-10-21, debtor's shared field): the labels of the
+            // orders and documents in use + the defaults; a NEW order's field follows a customer choice
+            // while untouched (data-prefill, CustomerPickerTrait).
+            'subjectLabels'       => (new SubjectLabelDefaults($this->em()))->suggestions($this->orders()->subjectLabelsInUse(SubjectLabel::SUGGESTIONS)),
+            'subjectLabelPrefill' => $order === null,
             'ships'          => $this->orderShipLabels($form->header('contact'), $order) + $this->orderCustomLabel($form, 'ship'),
             'bills'           => $this->orderBillLabels($form->header('contact'), $order) + $this->orderCustomLabel($form, 'bill'),
             // Badge «angepasst»: the stored snapshot is none of the customer's addresses as they read now.
@@ -438,6 +447,9 @@ trait OrderControllerTrait
             // Every rate of the shown codes with its start — core.js «dated rates» re-labels the rows
             // when «Leistung von» / the order date change (owner 2026-10-18).
             'rateSchedule'    => $this->orderRateSchedule($taxCodes),
+            // Without VAT (the mandator is not liable, owner 2026-10-21 — debtor's one rule): no MWST column,
+            // no VAT rows in the totals, no rates for core.js; the server computes without VAT anyway.
+            'liableToVat'     => $this->orderService()->chargesVat(),
             'articles'        => $this->orderArticleInfo($variants, $order),
             'preview'         => $preview,
             // The totals' currency before there is a preview (a new order, a refused preview).

@@ -36,6 +36,11 @@ use Z77\Shared\Money\Money;
  * manual editor a free line. null / '' = none; at most
  * `Invoice::SUBJECT_LENGTH` characters (refused `subject`, never cut).
  *
+ * `subjectLabel` (owner 2026-10-21): the optional «Betreffname» printed in front of the
+ * subject — «Projekt: …» ({@see SubjectLabel}); stored normalised (trimmed, trailing colon
+ * stripped), null / '' = none, at most `SubjectLabel::LENGTH` characters (refused
+ * `subject-label`). The wdv import maps `subject_title` here; the order passes its own.
+ *
  * Plain data, no rules: `InvoicingService` validates and refuses with a
  * reason ({@see \Z77\Module\Debtor\Services\InvoiceRefusedException}).
  */
@@ -58,6 +63,7 @@ final class InvoiceDraft
         public readonly ?int $creditNoteOfId = null,
         public readonly ?string $paymentTargetCode = null,
         public readonly ?string $subject = null,
+        public readonly ?string $subjectLabel = null,
     ) {}
 
     /** @param list<LineDraft> $lines */
@@ -75,8 +81,9 @@ final class InvoiceDraft
         ?string $sourceRef = null,
         ?string $paymentTargetCode = null,
         ?string $subject = null,
+        ?string $subjectLabel = null,
     ): self {
-        return new self(InvoiceKind::Invoice, $contactId, $invoiceDate, $serviceFrom, $serviceTo, $currency, $priceMode, $paymentTermsCode, $address, array_values($lines), $sourceType, $sourceRef, null, $paymentTargetCode, $subject);
+        return new self(InvoiceKind::Invoice, $contactId, $invoiceDate, $serviceFrom, $serviceTo, $currency, $priceMode, $paymentTermsCode, $address, array_values($lines), $sourceType, $sourceRef, null, $paymentTargetCode, $subject, $subjectLabel);
     }
 
     /**
@@ -122,7 +129,8 @@ final class InvoiceDraft
         ?string $sourceType = null,
         ?string $sourceRef = null,
         ?string $subject = null,
+        ?string $subjectLabel = null,
     ): self {
-        return new self(InvoiceKind::CreditNote, $contactId, $invoiceDate, $serviceFrom, $serviceTo, $currency, $priceMode, $paymentTermsCode, $address, array_values($lines), $sourceType, $sourceRef, $creditNoteOfId, null, $subject);
+        return new self(InvoiceKind::CreditNote, $contactId, $invoiceDate, $serviceFrom, $serviceTo, $currency, $priceMode, $paymentTermsCode, $address, array_values($lines), $sourceType, $sourceRef, $creditNoteOfId, null, $subject, $subjectLabel);
     }
 }

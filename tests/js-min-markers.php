@@ -52,6 +52,7 @@ const MARKERS = [
         'data-fill-url',            // a choice fills its row — the order line's article (2026-10-15)
         'data-price-mode-shown',    // a price-mode switch re-converts the rows (2026-10-18)
         'set-value',                // the debtor's price mode set on a customer choice (2026-10-18)
+        'data-prefill',             // set-value «untouched» — the Betreffname follows a customer choice (2026-10-21)
         'data-rate-keep-label',     // the invoice editor's MWST codes keep their labels under «dated rates» (2026-10-19)
         'data-tree-picker-data',    // the tree picker's JSON island — the article list's group filter (2026-10-18)
         'data-pick-search',         // «Artikel wählen …»: the pick list's keys (2026-10-19)

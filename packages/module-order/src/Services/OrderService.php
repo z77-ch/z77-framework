@@ -14,6 +14,7 @@ use Z77\Module\Debtor\Entities\DebtorProfile;
 use Z77\Module\Debtor\Entities\LineType;
 use Z77\Module\Debtor\Entities\PaymentTarget;
 use Z77\Module\Debtor\Entities\PaymentTerms;
+use Z77\Module\Debtor\Invoicing\SubjectLabel;
 use Z77\Module\Debtor\Services\DebtorCurrency;
 use Z77\Module\Debtor\Services\DebtorException;
 use Z77\Module\Debtor\Services\DebtorProfileService;
@@ -446,6 +447,18 @@ final class OrderService
         return new OrderStatuses($repo->allInOrder());
     }
 
+    /**
+     * Whether the order's documents carry VAT — debtor's ONE rule (`InvoicingService::chargesVat()`,
+     * owner 2026-10-21: the mandator's «mehrwertsteuerpflichtig»). The window shows or hides the
+     * MWST column and the VAT rows by it; the preview, the totals, the PDFs and the booking print
+     * follow it through debtor's computation (D11). Not liable: the price modes are equal too —
+     * an article price is taken as it is, never converted with a rate ({@see convertByRate()}).
+     */
+    public function chargesVat(): bool
+    {
+        return $this->invoicing()->chargesVat();
+    }
+
     /** Whether the order may still be edited (D7) — null = yes, else the German reason. */
     public function editRefusal(SalesOrder $order): ?string
     {
@@ -590,6 +603,7 @@ final class OrderService
             $resolved['notes'],
             $resolved['billingAddress'],
             $resolved['paymentTermsCode'],
+            $resolved['subjectLabel'],
         );
 
         $existing = [];
@@ -655,6 +669,11 @@ final class OrderService
         $subject = trim($draft->subject);
         if (mb_strlen($subject) > SalesOrder::SUBJECT_LENGTH) {
             $errors['subject'] = 'Betreff: höchstens ' . SalesOrder::SUBJECT_LENGTH . ' Zeichen.';
+        }
+        // The «Betreffname» (owner 2026-10-21) — debtor's SubjectLabel is the one rule: normalised, refused when too long.
+        $subjectLabel = SubjectLabel::normalize($draft->subjectLabel);
+        if (SubjectLabel::isTooLong($subjectLabel)) {
+            $errors['subject_label'] = 'Betreffname: höchstens ' . SubjectLabel::LENGTH . ' Zeichen.';
         }
 
         $orderDate = self::date($draft->orderDate);
@@ -766,6 +785,7 @@ final class OrderService
         return [
             'contact'           => $contact,
             'subject'           => $subject,
+            'subjectLabel'      => $subjectLabel,
             'orderDate'         => $orderDate,
             'serviceFrom'       => $serviceFrom,
             'serviceTo'         => $serviceTo,
@@ -1068,11 +1088,12 @@ final class OrderService
     /**
      * $price from one price mode into the other with the rate of $taxCode on $date — module-vat's
      * `VatCalculator::convertPrice()` (cents, half away from zero; the invoice editor converts with
-     * the same rule). Null when the code has no rate on that day.
+     * the same rule). Null when the code has no rate on that day. Without VAT ({@see chargesVat()})
+     * net and gross are the same price: no conversion (owner 2026-10-21).
      */
     private function convertByRate(Money $price, string $taxCode, PriceMode $from, PriceMode $to, \DateTimeImmutable $date): ?Money
     {
-        if ($from === $to) {
+        if ($from === $to || !$this->chargesVat()) {
             return $price;
         }
         try {

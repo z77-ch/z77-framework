@@ -42,7 +42,7 @@ $ignore = $actionBase . '/ignore?id=' . (int) $messageId;
         </span>
         <span class="be-list__cell be-list__cell--wrap">
             <?php if ($invoice !== null): ?>
-            <a href="<?= e($invoiceBase) ?>/detail?id=<?= (int) $invoice->getId() ?>" data-window-open="<?= e($invoiceBase) ?>/detail?id=<?= (int) $invoice->getId() ?>"><?= e($invoice->documentName()) ?></a>
+            <a href="<?= e($invoiceBase) ?>/edit?id=<?= (int) $invoice->getId() ?>" data-window-open="<?= e($invoiceBase) ?>/edit?id=<?= (int) $invoice->getId() ?>"><?= e($invoice->documentName()) ?></a>
             <small class="be-list__cell--muted">· <?= e($invoice->getAddress()->getName()) ?> · offen <?= e($fmt($open[$invoice->getId()] ?? null)) ?></small>
             <?php if ($t->getRemainder()->isPositive()): ?>
             <br><span class="badge badge--warning">Überzahlung <?= e($fmt($t->getRemainder())) ?></span>

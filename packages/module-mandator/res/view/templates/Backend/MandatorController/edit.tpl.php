@@ -9,9 +9,11 @@
  *     switch (a hidden `0` before it, so «off» is submitted too);
  *   - Konten: the ledger accounts the business modules post with — typed by
  *     number with the shared `<datalist>` when module-financial is
- *     registered; each row shows its status.
+ *     registered; each row shows its status;
+ *   - Belege: what a NEW order or invoice starts with — the default «Betreffname»
+ *     (owner 2026-10-21; a debtor's own label wins).
  *
- * The three sections are RADIO TABS (owner 2026-10-08, the `.be-radiotabs`
+ * The four sections are RADIO TABS (owner 2026-10-08, the `.be-radiotabs`
  * pattern of module-backend): one hidden radio per section BEFORE the panels,
  * a panel shows through `:checked ~` — no JavaScript, still ONE form, so
  * «Speichern» writes all three sections. The tab labels stand in the toolbar
@@ -134,7 +136,7 @@ $text = function (string $field, string $label, string $value, int $maxlength, s
                     <span class="be-switch__track"><span class="be-switch__thumb"></span></span>
                     <span class="be-switch__label">Mehrwertsteuerpflichtig</span>
                 </label>
-                <small class="be-form__hint">Merkmal — was es abschaltet (MWST-Zeilen der Rechnung, MwSt-Zeile der Buchungsmaske), entscheidet der Eigentümer separat.</small>
+                <small class="be-form__hint">Aus: Rechnungen, Gutschriften, Offerten und Auftragsbestätigungen werden ohne MWST berechnet, verbucht und gedruckt. Eine Gutschrift folgt ihrer Rechnung.</small>
             </div>
         </div>
         </section>
@@ -161,6 +163,13 @@ $text = function (string $field, string $label, string $value, int $maxlength, s
                 <?php endif; ?>
             </div>
             <?php endforeach; ?>
+        </div>
+        </section>
+
+        <section class="be-radiotabs__panel"<?= raw($panel('belege')) ?>>
+        <p class="be-form__hint">Womit jeder neue Auftrag und jede neue Rechnung beginnt — im Beleg änderbar. Ein Debitor mit eigenem Betreffnamen geht vor.</p>
+        <div class="be-form__grid">
+            <?= raw($text('default_subject_label', 'Betreffname', $entry->getDefaultSubjectLabel(), \Z77\Module\Mandator\Entities\Mandator::SUBJECT_LABEL_LENGTH, 'z.B. Projekt, Referenz — leer = keiner')) ?>
         </div>
         </section>
 

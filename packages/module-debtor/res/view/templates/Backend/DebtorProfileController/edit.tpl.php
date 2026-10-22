@@ -14,6 +14,7 @@
  * @var string $entityCsrf
  * @var \Z77\Persistence\Validation\EntityValidator $validator
  * @var string $actionBase
+ * @var string|null $globalSubjectLabel  the installation's default «Betreffname» (the mandator's) — the placeholder of the debtor's own
  */
 $actionBase = $actionBase ?? '/backend/finance/debtor-profile';
 
@@ -70,6 +71,14 @@ $fieldError = function (string $name) use ($validator): string {
                 </select>
                 <?= raw($fieldError('price_mode')) ?>
                 <small class="be-form__hint">Damit beginnt jeder neue Auftrag und jede neue Rechnung dieses Kunden — im Beleg änderbar.</small>
+            </div>
+            <div class="be-form__field" data-z77-field-wrapper>
+                <label for="debtor-default_subject_label">Betreffname</label>
+                <input type="text" id="debtor-default_subject_label" name="default_subject_label" value="<?= e((string) $entry->getDefaultSubjectLabel()) ?>"
+                       maxlength="<?= \Z77\Module\Debtor\Invoicing\SubjectLabel::LENGTH ?>" autocomplete="off" placeholder="<?= e($globalSubjectLabel ?? '') ?>"
+                       aria-invalid="<?= $validator->hasFieldError('default_subject_label') ? 'true' : 'false' ?>">
+                <?= raw($fieldError('default_subject_label')) ?>
+                <small class="be-form__hint">Steht vor dem Betreff jedes neuen Belegs, z.B. «Projekt» oder «Ihre Bestellnummer» — leer = die Vorgabe beim Mandanten<?= !empty($globalSubjectLabel) ? ' («' . e($globalSubjectLabel) . '»)' : '' ?>.</small>
             </div>
             <div class="be-form__field">
                 <label class="be-choice">

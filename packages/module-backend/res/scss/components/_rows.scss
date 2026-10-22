@@ -146,7 +146,8 @@ select.be-input.be-rows__rate:disabled {
     grid-template-columns: subgrid;
     position:              sticky;
     top:                   var(--z77-form-actions-h, 0px);
-    z-index:               2;
+    // BELOW the action row (z-index 2): its menus (Drucken ▾) open over this head (owner 2026-10-21).
+    z-index:               1;
     background:            var(--be-list-ground, var(--be-bg));
 }
 .be-rows__top > .be-list__head { position: static; }

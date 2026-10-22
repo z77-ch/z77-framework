@@ -32,6 +32,10 @@
  * @var \Z77\Module\Mandator\Entities\Mandator|null $mandator
  * @var int $customerNumber  0 = unknown
  * @var callable $fmt  Money → «1'234.50»
+ * @var bool $liableToVat  the document was computed WITH VAT (`InvoicePdf`: `Invoice::carriesVat()`,
+ *                         owner 2026-10-21) — false: no MWST column (`DocumentColumns`), no MWST
+ *                         rows (`pdf/documentSummary`), no «zzgl. / inkl. MWST» fact. The
+ *                         letterhead keeps its own UID rule (` MWST` only for a liable mandator).
  */
 use Z77\Module\Vat\Entities\TaxRate;
 
@@ -77,9 +81,10 @@ $place = $mandator !== null && trim($mandator->getCity()) !== '' ? $mandator->ge
 $pdf->font('', 9)->text($left, 92, $place . $document->getInvoiceDate()->format('d.m.Y'));
 $pdf->font('B', 14)->text($left, 100, $name);
 $y = 108;
-if ($document->getSubject() !== null) {
-    // The optional «Betreff» (P7 slim, 2026-10-14) directly under the title; the facts move down.
-    $y = $pdf->font('B', 10)->paragraph($left, 106.5, $width, $document->getSubject(), 4.6) + 1.5;
+if ($document->subjectLine() !== null) {
+    // The optional «Betreff» (P7 slim, 2026-10-14) directly under the title; the facts move down. With a
+    // «Betreffname» (owner 2026-10-21) the one line reads «Projekt: …» (SubjectLabel::line()).
+    $y = $pdf->font('B', 10)->paragraph($left, 106.5, $width, $document->subjectLine(), 4.6) + 1.5;
 }
 
 $period = $document->getServiceFrom()->format('d.m.Y') . ($document->getServiceTo() !== null ? ' – ' . $document->getServiceTo()->format('d.m.Y') : '');
@@ -93,13 +98,15 @@ if ($isCredit && $document->getCreditNoteOf() !== null) {
 } else {
     $facts[] = ['Zahlbar bis', $document->getDueDate()->format('d.m.Y')];
 }
-$facts[] = ['Preise', $document->getPriceMode() === 'gross' ? 'inkl. MWST' : 'zzgl. MWST'];
+if ($liableToVat) {
+    $facts[] = ['Preise', $document->getPriceMode() === 'gross' ? 'inkl. MWST' : 'zzgl. MWST'];
+}
 foreach ($facts as [$label, $value]) {
     $pdf->font('', 9)->textColor(110)->text($left, $y, $label)->textColor(0)->text($left + 32, $y, $value);
     $y += 4.4;
 }
 
-// ── the lines, then the summary rows in the same table ─────────────────
+// ── the lines, then the summary under them in the same columns ─────────
 $rows = [];
 foreach ($document->getLines() as $line) {
     // The rounding line prints ONCE, in the summary below (owner's booking print 2026-10-19: it
@@ -124,22 +131,15 @@ foreach ($document->getLines() as $line) {
         'lead'   => true,   // the first line (the title) bold, the description below — text lines too (owner 2026-10-18/19)
     ];
 }
-$rows[] = ['cells' => ['Netto', '', '', '', '', '', $fmt($document->getNetTotal())], 'rule' => true];
-foreach ($document->getTaxes() as $tax) {
-    $rows[] = ['cells' => ['MWST ' . TaxRate::formatPercent($tax->getTaxRate()) . ' % auf ' . $fmt($tax->getBase()), '', '', '', '', $tax->getTaxCode(), $fmt($tax->getTax())], 'muted' => true];
-}
-if (!$document->getRounding()->isZero()) {
-    $rows[] = ['cells' => ['Rundung', '', '', '', '', '', $fmt($document->getRounding())], 'muted' => true];
-}
-$rows[] = ['cells' => ['Total ' . $document->getCurrency(), '', '', '', '', '', $fmt($document->getGrossTotal())], 'bold' => true, 'rule' => true];
-
-[$columns, $rows] = \Z77\Module\Debtor\Pdf\DocumentColumns::table($document->getCurrency(), $rows);
+[$columns, $rows] = \Z77\Module\Debtor\Pdf\DocumentColumns::table($document->getCurrency(), $rows, $liableToVat, static fn(string $t): float => $pdf->font('', 9)->textWidth($t));
 $pdf->partial('pdf/table', [
     'x'       => $left,
     'y'       => $y + 6,
     'columns' => $columns,
     'rows'    => $rows,
 ], 'Z77\\Shared');
+// Netto, the MWST rows (only with VAT), Rundung, Total — the shared summary (also `pdf/order`'s).
+$pdf->partial('pdf/documentSummary', ['document' => $document, 'columns' => $columns, 'liableToVat' => $liableToVat, 'fmt' => $fmt, 'x' => $left], 'Z77\\Module\\Debtor');
 
 // ── terms ──────────────────────────────────────────────────────────────
 $y = $pdf->y() + 6;

@@ -4,6 +4,7 @@ namespace Z77\Module\Debtor\Validators;
 
 use Z77\Module\Contact\Entities\Contact;
 use Z77\Module\Debtor\Entities\DebtorProfile;
+use Z77\Module\Debtor\Invoicing\SubjectLabel;
 use Z77\Module\Debtor\Repositories\DebtorProfileRepository;
 use Z77\Module\Debtor\Repositories\PaymentTermsRepository;
 use Z77\Module\Vat\Calculation\PriceMode;
@@ -79,6 +80,14 @@ class DebtorProfileValidator extends EntityValidator
     {
         if (PriceMode::tryFrom($mode) === null) {
             $this->addFieldError('price_mode', 'Preise netto oder brutto wählen.');
+        }
+    }
+
+    /** The debtor's own «Betreffname» (owner 2026-10-21): optional, at most `SubjectLabel::LENGTH` characters — refused, never cut. */
+    public function validateDefaultSubjectLabel(?string $label): void
+    {
+        if (SubjectLabel::isTooLong(SubjectLabel::normalize($label))) {
+            $this->addFieldError('default_subject_label', 'Betreffname: höchstens ' . SubjectLabel::LENGTH . ' Zeichen.');
         }
     }
 

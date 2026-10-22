@@ -775,13 +775,21 @@ _Z77.core.fetch = (function () {
         el.textContent = '';
         el.appendChild(_wiredFragment(p.html, p.origin));
     });
-    /* {action: 'set-value', target, value, origin?} — a field takes a value the server decided
-     * (first user: the debtor's price mode on a customer choice, owner 2026-10-18) and fires a
-     * bubbling `change` when it changed, so everything that follows the field runs as on a
-     * choice by hand. Only `.value` is written (Rule 7: no markup from data). */
+    /* {action: 'set-value', target, value, untouched?, origin?} — a field takes a value the server
+     * decided (first user: the debtor's price mode on a customer choice, owner 2026-10-18) and fires
+     * a bubbling `change` when it changed, so everything that follows the field runs as on a
+     * choice by hand. Only `.value` is written (Rule 7: no markup from data).
+     * `untouched` (the «Betreffname» of a new document, owner 2026-10-21): written ONLY while the
+     * field still holds what the server last put there — its `data-prefill`; what the user typed
+     * stays. The new value becomes the field's `data-prefill`. */
     registerCommand('set-value', function (p) {
         var el = _find(p);
-        if (!el || !('value' in el) || el.value === String(p.value)) return;
+        if (!el || !('value' in el)) return;
+        if (p.untouched) {
+            if (!el.hasAttribute('data-prefill') || el.value !== el.getAttribute('data-prefill')) return;
+            el.setAttribute('data-prefill', String(p.value));
+        }
+        if (el.value === String(p.value)) return;
         el.value = String(p.value);
         el.dispatchEvent(new Event('change', { bubbles: true }));
     });

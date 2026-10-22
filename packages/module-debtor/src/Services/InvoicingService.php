@@ -26,6 +26,7 @@ use Z77\Module\Debtor\Invoicing\LineDraft;
 use Z77\Module\Debtor\Invoicing\NoTaxShareException;
 use Z77\Module\Debtor\Invoicing\PostingBuilder;
 use Z77\Module\Debtor\Invoicing\QrBill;
+use Z77\Module\Debtor\Invoicing\SubjectLabel;
 use Z77\Module\Debtor\Invoicing\TaxShares;
 use Z77\Module\Debtor\Repositories\DebtorProfileRepository;
 use Z77\Module\Debtor\Repositories\InvoiceRepository;
@@ -329,7 +330,7 @@ final class InvoicingService
      *
      * @param list<array{id: int, version: int}> $documents
      * @return list<Invoice> in the order they were numbered (invoice date, then id)
-     * @throws InvoiceRefusedException  NOT_FOUND | NOT_INVOICING | NUMBER_RANGE_FULL | DATES | TARGET_UNKNOWN | TARGET_INACTIVE | PAYMENT_PART
+     * @throws InvoiceRefusedException  NOT_FOUND | NOT_INVOICING | NUMBER_RANGE_FULL | DATES | TARGET_UNKNOWN | TARGET_INACTIVE | PAYMENT_PART | VAT_LIABILITY_CHANGED
      * @throws InvoiceConflictException a document is at another version than the caller saw
      * @throws \Z77\Module\Debtor\Accounting\AccountingRefusedException
      */
@@ -381,6 +382,14 @@ final class InvoicingService
                 }
                 $this->assertInvoicing($invoice);
                 $this->assertStoredRevenueAccounts($invoice);
+                // A draft keeps the amounts of its last save; composed under another VAT liability than
+                // the mandator's now, it is REFUSED (owner 2026-10-21) — saved again, the user sees the
+                // amount that will be booked. Never recomposed here. Only a document with a PRICED line
+                // tells: a text-only one carries no code either way.
+                $priced = array_filter($invoice->getLines(), static fn(InvoiceLine $line) => $line->getUnitPrice() !== null) !== [];
+                if ($priced && $invoice->carriesVat() !== $this->chargesVat($invoice->kind(), $invoice->getCreditNoteOf())) {
+                    throw new InvoiceRefusedException(InvoiceRefusedException::VAT_LIABILITY_CHANGED, $invoice->kind()->label() . ' (Entwurf ' . $id . '): die MWST-Pflicht des Mandanten hat sich seit dem Speichern geändert — den Entwurf öffnen und neu speichern, dann verbuchen.');
+                }
                 if (!in_array($this->documentRange($invoice->getInvoiceDate()), $months, true)) {
                     throw new InvoiceConflictException($id, $versions[$id]);   // re-dated between the read and the lock
                 }
@@ -451,6 +460,31 @@ final class InvoicingService
         $invoice->issue($composed['snapshot'], $lines, $taxes, $this->paymentPart($invoice, $composed));
 
         return $invoice;
+    }
+
+    /**
+     * Whether a document of $kind is computed WITH VAT — the ONE rule (owner 2026-10-21: the
+     * mandator's «mehrwertsteuerpflichtig» is binding for documents). compose() applies it, and
+     * the editors (debtor's invoice editor, module-order's window) ask it to show or hide VAT:
+     *
+     *   - a fee: never (plan §6.5 — damages, not a supply);
+     *   - a credit note: as its INVOICE was computed ({@see Invoice::carriesVat()}) — a reduction
+     *     of consideration follows the original supply (the rule of the rate, ADR-041 decision 4),
+     *     also when the mandator's flag changed in between;
+     *   - an invoice: by the mandator's flag `liable_to_vat`. No mandator saved, or a record that
+     *     cannot be read (`Creditor::mandator()` → null) counts as LIABLE — today's behaviour; the
+     *     absence of a record is no declaration of «not liable».
+     *
+     * Reads the flag NOW: a draft is composed again at every save, an issued document carries
+     * the result in its snapshot and is never recomputed (ADR-041 decision 6).
+     */
+    public function chargesVat(InvoiceKind $kind = InvoiceKind::Invoice, ?Invoice $creditNoteOf = null): bool
+    {
+        return match (true) {
+            $kind === InvoiceKind::Fee => false,
+            $creditNoteOf !== null     => $creditNoteOf->carriesVat(),
+            default                    => Creditor::mandator($this->em)?->isLiableToVat() ?? true,
+        };
     }
 
     /**
@@ -740,13 +774,31 @@ final class InvoicingService
         return $this->em->getRepository(Invoice::class);
     }
 
+    /**
+     * Whether the document may still be edited — null = yes (a draft in `invoicing`), else the
+     * German reason the write path refuses with (`not-invoicing`). The ONE mask of the document
+     * screens shows a final document read-only with this sentence on top (owner 2026-10-21,
+     * the order window's `editRefusal()` model).
+     */
+    public function editRefusal(Invoice $invoice): ?string
+    {
+        try {
+            $this->assertInvoicing($invoice);
+        } catch (InvoiceRefusedException $e) {
+            return $e->getMessage();
+        }
+
+        return null;
+    }
+
     /** @throws InvoiceRefusedException NOT_INVOICING */
     private function assertInvoicing(Invoice $invoice): void
     {
         if ($invoice->isFinal()) {
+            // «verbucht» is the UI word for `final` (owner 2026-10-10) — the mask shows this sentence.
             throw new InvoiceRefusedException(
                 InvoiceRefusedException::NOT_INVOICING,
-                $invoice->documentName() . ' ist abgeschlossen und bleibt unverändert — eine Korrektur ist eine Gutschrift.'
+                $invoice->documentName() . ' ist verbucht und bleibt unverändert — eine Korrektur ist eine Gutschrift.'
             );
         }
     }
@@ -853,18 +905,28 @@ final class InvoicingService
         if (mb_strlen($subject) > Invoice::SUBJECT_LENGTH) {
             throw new InvoiceRefusedException(InvoiceRefusedException::SUBJECT, 'Der Betreff hat höchstens ' . Invoice::SUBJECT_LENGTH . ' Zeichen.');
         }
+        // The optional subject label «Betreffname» (owner 2026-10-21): normalised (trimmed, trailing colon
+        // stripped — the print adds «: »), refused when too long, never cut. SubjectLabel is the one rule.
+        $subjectLabel = SubjectLabel::normalize($draft->subjectLabel);
+        if (SubjectLabel::isTooLong($subjectLabel)) {
+            throw new InvoiceRefusedException(InvoiceRefusedException::SUBJECT_LABEL, 'Der Betreffname hat höchstens ' . SubjectLabel::LENGTH . ' Zeichen.');
+        }
 
         // The invoice date carries the month of the document number drawn at the booking print (owner 2026-10-10,
         // DocumentNumber): a two-digit year, so 2000–2099 only — refused here, at issue, not first at the booking.
         // A draft has no number yet, so a re-issue may move its date into any month.
         $this->documentRange($draft->invoiceDate);
 
-        // The lines: flattened (children after their parent), amounts computed. A fee's line carries no tax code (plan §6.5).
-        $isFee = $draft->kind === InvoiceKind::Fee;
-        $lines = $this->composeLines($draft->lines, $currency, taxFree: $isFee);
+        // The lines: flattened (children after their parent), amounts computed. A fee's line carries no tax code (plan §6.5);
+        // a document WITHOUT VAT (mandator not liable, owner 2026-10-21 — chargesVat()) stores none either: the
+        // codes a source hands in (an order line takes its article's) are dropped, not refused.
+        $isFee   = $draft->kind === InvoiceKind::Fee;
+        $withVat = $this->chargesVat($draft->kind, $creditNoteOf);
+        $lines   = $this->composeLines($draft->lines, $currency, taxFree: $isFee, withVat: $withVat);
 
-        // VAT once, by the service date, on the priced lines — none for a fee: no rates, no tax rows, net = the lines.
-        $vat        = $isFee ? null : $this->calculateVat($lines, $currency, $serviceFrom, $draft->priceMode, $isNew ? null : $existing);
+        // VAT once, by the service date, on the priced lines — none for a fee or a document without VAT: no rates,
+        // no tax rows, net = the lines, the price mode changes no amount.
+        $vat        = !$withVat ? null : $this->calculateVat($lines, $currency, $serviceFrom, $draft->priceMode, $isNew ? null : $existing);
         $rateByCode = [];
         foreach ($vat?->lines ?? [] as $resolvedLine) {
             $rateByCode[$resolvedLine->rate->code] = $resolvedLine->rate;
@@ -956,6 +1018,7 @@ final class InvoicingService
             self::opaque($draft->sourceType, Invoice::SOURCE_TYPE_LENGTH),
             self::opaque($draft->sourceRef, Invoice::SOURCE_REF_LENGTH),
             $subject !== '' ? $subject : null,
+            $subjectLabel,
         );
 
         return [
@@ -1042,7 +1105,7 @@ final class InvoicingService
     /**
      * The QR-bill as the booking print of $invoice WILL print it — for a draft from
      * {@see bookedPaymentPart()} (a target gone or inactive is the bill's one problem), for a
-     * booked document from its snapshot. The draft's detail and its list «Vor dem
+     * booked document from its snapshot. The draft's mask (its facts block) and its list «Vor dem
      * Buchungsdruck beheben» read this (owner 2026-10-13, review H5), so what they report is
      * exactly what {@see finalize()} refuses.
      */
@@ -1092,10 +1155,10 @@ final class InvoicingService
      * @return list<array<string, mixed>>
      * @throws InvoiceRefusedException LINE
      */
-    private function composeLines(array $drafts, string $currency, bool $taxFree = false): array
+    private function composeLines(array $drafts, string $currency, bool $taxFree = false, bool $withVat = true): array
     {
         $lines = [];
-        $walk  = function (LineDraft $draft, ?int $parent, int $position) use (&$lines, &$walk, $currency, $taxFree): void {
+        $walk  = function (LineDraft $draft, ?int $parent, int $position) use (&$lines, &$walk, $currency, $taxFree, $withVat): void {
             if (!$draft instanceof LineDraft) {
                 throw new InvoiceRefusedException(InvoiceRefusedException::LINE, "Position {$position}: keine Position.");
             }
@@ -1127,6 +1190,10 @@ final class InvoicingService
                     if ($taxCode !== '') {
                         throw new InvoiceRefusedException(InvoiceRefusedException::LINE, "Position {$position}: eine Gebühr trägt keinen MWST-Code.");
                     }
+                    $taxCode = null;
+                } elseif (!$withVat) {
+                    // A document without VAT (chargesVat()): the line keeps no code — no rate, no tax row, no
+                    // tax data on its posting line. Not refused: an order line carries its article's code.
                     $taxCode = null;
                 } elseif ($taxCode === '') {
                     throw new InvoiceRefusedException(InvoiceRefusedException::LINE, "Position {$position}: der MWST-Code fehlt.");

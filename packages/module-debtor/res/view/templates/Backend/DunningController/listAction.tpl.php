@@ -68,7 +68,7 @@ $invoiceBase = $invoiceBase ?? '/backend/finance/invoice';
                 <div class="be-list__item" data-due-invoice="<?= (int) $inv->getId() ?>">
                     <div class="be-list__row">
                         <span class="be-list__cell"><label class="be-choice"><input type="checkbox" class="be-choice__input" name="doc[]" value="<?= (int) $inv->getId() ?>" checked aria-label="<?= e($inv->documentName()) ?> mahnen"></label></span>
-                        <span class="be-list__cell"><a href="<?= e($invoiceBase) ?>/detail?id=<?= (int) $inv->getId() ?>"><?= e($inv->documentName()) ?></a></span>
+                        <span class="be-list__cell"><a href="<?= e($invoiceBase) ?>/edit?id=<?= (int) $inv->getId() ?>"><?= e($inv->documentName()) ?></a></span>
                         <span class="be-list__cell be-list__cell--wrap"><?= e($inv->getAddress()->getName()) ?></span>
                         <span class="be-list__cell"><?= e($inv->getDueDate()->format('d.m.Y')) ?> <small class="be-list__cell--muted">· seit <?= e($item['dueSince']->format('d.m.Y')) ?></small></span>
                         <span class="be-list__cell be-list__cell--num"><?= e($fmt($item['open'])) ?></span>
@@ -97,11 +97,11 @@ $invoiceBase = $invoiceBase ?? '/backend/finance/invoice';
             <?php foreach ($run->getNotices() as $n): $lvl = $levelOf($n); $fee = $n->getFeeInvoice(); ?>
             <div class="be-list__item" data-dunning-notice="<?= (int) $n->getId() ?>">
                 <div class="be-list__row">
-                    <span class="be-list__cell"><a href="<?= e($invoiceBase) ?>/detail?id=<?= (int) $n->getInvoice()->getId() ?>"><?= e($n->getInvoice()->documentName()) ?></a></span>
+                    <span class="be-list__cell"><a href="<?= e($invoiceBase) ?>/edit?id=<?= (int) $n->getInvoice()->getId() ?>"><?= e($n->getInvoice()->documentName()) ?></a></span>
                     <span class="be-list__cell be-list__cell--wrap"><?= e($n->getInvoice()->getAddress()->getName()) ?></span>
                     <span class="be-list__cell"><?= e($lvl?->getLabel() ?? $n->getLevelCode()) ?></span>
                     <span class="be-list__cell be-list__cell--num"><?= e($fmt($n->getOpenAmount())) ?></span>
-                    <span class="be-list__cell"><?= $fee !== null ? '<a href="' . e($invoiceBase . '/detail?id=' . (int) $fee->getId()) . '">' . e($fee->documentName()) . '</a> ' . e($fmt($fee->getGrossTotal())) : '<span class="be-list__cell--muted">keine Gebühr</span>' ?></span>
+                    <span class="be-list__cell"><?= $fee !== null ? '<a href="' . e($invoiceBase . '/edit?id=' . (int) $fee->getId()) . '">' . e($fee->documentName()) . '</a> ' . e($fmt($fee->getGrossTotal())) : '<span class="be-list__cell--muted">keine Gebühr</span>' ?></span>
                     <span class="be-list__cell"><a href="<?= e($actionBase) ?>/notice-pdf?id=<?= (int) $n->getId() ?>" target="_blank" rel="noopener">PDF</a></span>
                 </div>
             </div>

@@ -17,7 +17,9 @@ use Z77\Shared\Traits\ArrayMappable;
  * What it is: the LETTERHEAD of the printed reports and letters — name,
  * address, contact data, logo —, the UID and the VAT liability, and the
  * ledger accounts the business modules post with (E2: they moved here from
- * `financialConfig → vatAccounts` and `debtorConfig → debtorAccounts`).
+ * `financialConfig → vatAccounts` and `debtorConfig → debtorAccounts`), and — since 2026-10-21 —
+ * the installation's default «Betreffname» of new documents (`defaultSubjectLabel`, read by
+ * debtor's `SubjectLabelDefaults`; a debtor's own label wins).
  *
  * What it is NOT (owner, 2026-09-23): the bank connection. IBAN, bank name
  * and the creditor block of the QR-bill belong to debtor's `PaymentTarget`
@@ -73,6 +75,9 @@ class Mandator
     public const PHONE_LENGTH    = 40;
     public const WEBSITE_LENGTH  = 190;
     public const LOGO_LENGTH     = 255;
+
+    /** The default «Betreffname» — debtor's `SubjectLabel::LENGTH`, repeated, not imported: the mandator knows no debtor. */
+    public const SUBJECT_LABEL_LENGTH = 80;
 
     /** `CHE-123.456.789` — the canonical form {@see Uid::normalize()} writes. */
     public const UID_LENGTH = 15;
@@ -170,10 +175,13 @@ class Mandator
     private string $uid = '';
 
     /**
-     * Whether the company is liable to VAT (mehrwertsteuerpflichtig). A
-     * FLAG only in this state: what it switches off (the VAT lines of an
-     * invoice, the MwSt row of the one-line entry) is an owner decision
-     * still open — see the topic doc's pending.
+     * Whether the company is liable to VAT (mehrwertsteuerpflichtig). BINDING
+     * for documents since the owner decision of 2026-10-21: not liable → debtor
+     * computes, books and prints its documents (and module-order its quotes and
+     * confirmations) WITHOUT VAT — the rule is `InvoicingService::chargesVat()`
+     * in module-debtor (this module knows no reader). The letterhead appends
+     * ` MWST` to the UID only when set. Still open: the one-line entry's MwSt
+     * row and the VAT return (`mandator.md` pending).
      */
     #[ORM\Column(name: 'liable_to_vat')]
     #[Clean('bool')]
@@ -212,6 +220,18 @@ class Mandator
     #[ORM\Column(name: 'account_vat_owed', length: self::ACCOUNT_NUMBER_LENGTH)]
     #[Clean('text')]
     private string $accountVatOwed = '';
+
+    // ── documents ───────────────────────────────────────────────────────
+
+    /**
+     * The default «Betreffname» of a NEW order or invoice (owner decision 2026-10-21) — printed in
+     * front of the subject, «Projekt: …»; a debtor's own label (`debtor_profile.default_subject_label`)
+     * wins. '' = none (the behaviour before). Read through debtor's `SubjectLabelDefaults`, never
+     * printed from here. Migration `Version20261021100000`.
+     */
+    #[ORM\Column(name: 'default_subject_label', length: self::SUBJECT_LABEL_LENGTH, options: ['default' => ''])]
+    #[Clean('text')]
+    private string $defaultSubjectLabel = '';
 
     public function __construct(array $data = [])
     {
@@ -264,6 +284,7 @@ class Mandator
     public function getLogoPath(): string { return $this->logoPath; }
     public function getUid(): string { return $this->uid; }
     public function isLiableToVat(): bool { return $this->liableToVat; }
+    public function getDefaultSubjectLabel(): string { return $this->defaultSubjectLabel; }
 
     public function setName(string $name): void { $this->name = $name; }
     public function setAddressSuffixOne(string $line): void { $this->addressSuffixOne = $line; }
@@ -279,6 +300,11 @@ class Mandator
     public function setLogoPath(string $path): void { $this->logoPath = str_replace('\\', '/', trim($path)); }
     public function setUid(string $uid): void { $this->uid = Uid::normalize($uid); }
     public function setLiableToVat(bool $liable): void { $this->liableToVat = $liable; }
+    /** Trimmed, one line, trailing colons stripped — debtor's `SubjectLabel::normalize()` rule, repeated (the print adds «: »). */
+    public function setDefaultSubjectLabel(?string $label): void
+    {
+        $this->defaultSubjectLabel = (string) preg_replace('/[\s:]+$/u', '', trim((string) preg_replace('/\s+/u', ' ', (string) $label)));
+    }
     // The account setters exist for `mapFromArray()` (the form posts `account_{key}`); READ through account($key).
     public function setAccountReceivable(string $number): void { $this->accountReceivable = trim($number); }
     public function setAccountDiscount(string $number): void { $this->accountDiscount = trim($number); }

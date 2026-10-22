@@ -436,6 +436,21 @@ console.log('K  pick list, add-row, window context');
         SOURCE.includes("w.querySelector('[data-window-dismiss]')") && SOURCE.includes("e.target.closest('#messages, #flash-messages, [data-z77-help]')")
         && /_Z77\.core\.wire = function[\s\S]{0,600}_Z77\.core\.treePicker\.init\(container\);\s*_Z77\.core\.stickyTop\.init\(container\);/.test(SOURCE)
         && SOURCE.includes("setProperty('--z77-form-actions-h', (bar.offsetHeight + top) + 'px')"));
+
+    // set-value `untouched` (the «Betreffname» of a new document, owner 2026-10-21): written only
+    // while the field still holds its data-prefill; the new value becomes the data-prefill.
+    const label = fired(new El('input', { value: 'Projekt', attrs: { 'data-prefill': 'Projekt' } }));
+    document.qsa['#subject-label'] = [label];
+    ctx._Z77.core.fetch.handleEnvelope({ commands: [{ action: 'set-value', target: '#subject-label', value: 'Referenz', untouched: true }] }, '/x');
+    const followed = label.value === 'Referenz' && label.getAttribute('data-prefill') === 'Referenz' && label.events.includes('change');
+    label.value = 'Eigenes';
+    ctx._Z77.core.fetch.handleEnvelope({ commands: [{ action: 'set-value', target: '#subject-label', value: 'Projekt', untouched: true }] }, '/x');
+    const kept = label.value === 'Eigenes' && label.getAttribute('data-prefill') === 'Referenz';
+    const plain = fired(new El('input', { value: 'x' }));
+    document.qsa['#no-prefill'] = [plain];
+    ctx._Z77.core.fetch.handleEnvelope({ commands: [{ action: 'set-value', target: '#no-prefill', value: 'y', untouched: true }] }, '/x');
+    check('K9 set-value untouched: an untouched field follows (data-prefill moves with it), a typed one keeps its value, a field without data-prefill is never written',
+        followed && kept && plain.value === 'x', [label.value, label.getAttribute('data-prefill'), plain.value]);
 }
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed');

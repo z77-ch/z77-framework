@@ -64,7 +64,7 @@ final class InvoiceForm
     private const EMPTY_ROW = ['type' => 'service', 'child' => '', 'text' => '', 'quantity' => '', 'unit' => '', 'price' => '', 'discount' => '', 'tax_code' => '', 'account' => ''];
 
     /** @var array<string, string> */
-    private array $header = ['contact' => '', 'invoice_date' => '', 'service_from' => '', 'service_to' => '', 'price_mode' => 'net', 'prices_mode' => 'net', 'terms' => '', 'target' => '', 'subject' => ''];
+    private array $header = ['contact' => '', 'invoice_date' => '', 'service_from' => '', 'service_to' => '', 'price_mode' => 'net', 'prices_mode' => 'net', 'terms' => '', 'target' => '', 'subject' => '', 'subject_label' => ''];
 
     /** @var list<array<string, string>> */
     private array $rows = [];
@@ -88,6 +88,9 @@ final class InvoiceForm
         private readonly string $currency,
         public readonly InvoiceKind $kind = InvoiceKind::Invoice,
         public readonly ?Invoice $creditNoteOf = null,
+        // false = the document is computed WITHOUT VAT (`InvoicingService::chargesVat()`, owner 2026-10-21):
+        // no MWST column, no tax code asked or sent, the prices are not converted between the modes.
+        public readonly bool $withVat = true,
     ) {
         if (($kind === InvoiceKind::CreditNote) !== ($creditNoteOf !== null)) {
             throw new \LogicException('A credit-note form names the invoice it corrects; an invoice form names none');
@@ -95,11 +98,14 @@ final class InvoiceForm
     }
 
     /**
-     * A new invoice: today, the party, the payment target, the terms ('' = «wie beim Debitor») and
-     * the price mode the screen preselects (the debtor's, owner 2026-10-18; else net), empty rows.
+     * A new invoice: today, the party, the payment target, the terms ('' = «wie beim Debitor»),
+     * the price mode the screen preselects (the debtor's, owner 2026-10-18; else net) and the
+     * «Betreffname» (the debtor's, else the mandator's — `SubjectLabelDefaults`, owner 2026-10-21),
+     * empty rows.
      */
-    public function startBlank(\DateTimeImmutable $today, ?int $contactId, string $target, string $terms = '', string $priceMode = 'net'): self
+    public function startBlank(\DateTimeImmutable $today, ?int $contactId, string $target, string $terms = '', string $priceMode = 'net', ?string $subjectLabel = null): self
     {
+        $this->header['subject_label'] = (string) $subjectLabel;
         $this->header['contact']      = $contactId !== null ? (string) $contactId : '';
         $this->header['terms']        = $terms;
         $this->header['price_mode']   = $priceMode === 'gross' ? 'gross' : 'net';
@@ -125,6 +131,7 @@ final class InvoiceForm
             'terms'        => $document->getPaymentTermsCode(),
             'target'       => $document->getPayment()->getTargetCode(),
             'subject'      => (string) $document->getSubject(),
+            'subject_label' => (string) $document->getSubjectLabel(),
         ];
         $this->rows = $this->rowsOf($document);
         $this->keepCodesOf($document);
@@ -147,6 +154,7 @@ final class InvoiceForm
             'terms'        => '',
             'target'       => '',
             'subject'      => '',
+            'subject_label' => '',
         ];
         $this->rows = $this->rowsOf($invoice);
         $this->keepCodesOf($invoice);
@@ -246,7 +254,7 @@ final class InvoiceForm
         $this->convert = null;
         if ($pricesMode === null && $mode !== null) {
             $this->errors['price_mode'] = 'Die Preise lassen sich keinem Preismodus zuordnen — das Fenster neu laden.';
-        } elseif ($mode !== null && $pricesMode !== $mode) {
+        } elseif ($mode !== null && $pricesMode !== $mode && $this->withVat) {
             if ($rates === null) {
                 throw new \LogicException('InvoiceForm::toDraft() must convert the prices (prices_mode differs from price_mode) — pass VatRates');
             }
@@ -269,6 +277,7 @@ final class InvoiceForm
         $terms  = $this->header['terms'] !== '' ? $this->header['terms'] : null;
         $target = $this->header['target'] !== '' ? $this->header['target'] : null;
         $subject = $this->header['subject'] !== '' ? $this->header['subject'] : null;   // too long: the service refuses (`subject`)
+        $label   = $this->header['subject_label'] !== '' ? $this->header['subject_label'] : null;   // normalised and judged by the service (`subject-label`)
         if ($this->kind === InvoiceKind::CreditNote) {
             // Unchanged dates → null: the service takes the INVOICE's, the rate of the original supply applies.
             $invoice   = $this->creditNoteOf;
@@ -277,11 +286,11 @@ final class InvoiceForm
 
             return InvoiceDraft::creditNote(
                 (int) $invoice->getId(), $contactId, $invoiceDate, $this->currency, $lines,
-                $unchanged ? null : $serviceFrom, $unchanged ? null : $serviceTo, $mode, $terms, subject: $subject,
+                $unchanged ? null : $serviceFrom, $unchanged ? null : $serviceTo, $mode, $terms, subject: $subject, subjectLabel: $label,
             );
         }
 
-        return InvoiceDraft::invoice($contactId, $invoiceDate, $serviceFrom, $this->currency, $lines, $serviceTo, $mode, $terms, paymentTargetCode: $target, subject: $subject);
+        return InvoiceDraft::invoice($contactId, $invoiceDate, $serviceFrom, $this->currency, $lines, $serviceTo, $mode, $terms, paymentTargetCode: $target, subject: $subject, subjectLabel: $label);
     }
 
     public function header(string $key): string { return $this->header[$key] ?? ''; }
@@ -416,7 +425,9 @@ final class InvoiceForm
         if ($discount === null) {
             $this->rowErrors[$i]['discount'] = 'Rabatt in Prozent (z.B. 2.5).';
         }
-        if ($row['tax_code'] === '') {
+        if (!$this->withVat) {
+            $row['tax_code'] = '';   // without VAT the line carries no code (InvoicingService drops one anyway)
+        } elseif ($row['tax_code'] === '') {
             $this->rowErrors[$i]['tax_code'] = 'MWST-Code wählen.';
         }
         if (!preg_match('/^\d{1,' . InvoiceLine::ACCOUNT_LENGTH . '}$/', $row['account'])) {

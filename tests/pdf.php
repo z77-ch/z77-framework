@@ -199,6 +199,27 @@ check('F6 document columns: «Rabatt» with a discount (7 columns, text 76 mm), 
     count($withD[0]) === 7 && $withD[0][4]['label'] === 'Rabatt' && $withD[0][0]['width'] === 76 && $withD[1][0]['cells'][4] === '5 %'
     && count($withoutD[0]) === 6 && $withoutD[0][0]['width'] === 88 && $withoutD[1][0]['cells'] === ['A', '1', 'Stk.', '10.00', '8.1 %', '10.00']
     && array_sum(array_column($withD[0], 'width')) === array_sum(array_column($withoutD[0], 'width')));
+// Without VAT (owner 2026-10-21: the mandator is not liable): the MWST column drops like the discount
+// column, the text takes its width; fit() cuts summary rows to the columns the lines chose.
+$noVat = \Z77\Module\Debtor\Pdf\DocumentColumns::table('CHF', [['cells' => ['A', '1', 'Stk.', '10.00', '', '', '10.00']]], false);
+$noVatSummary = \Z77\Module\Debtor\Pdf\DocumentColumns::fit($noVat[0], [['cells' => ['Netto', '', '', '', '', '', '10.00']]]);
+check('F6b document columns without VAT: no «MWST» (5 columns, text 102 mm, still 168 mm wide); a summary row fitted to them keeps text and amount',
+    count($noVat[0]) === 5 && !in_array('MWST', array_column($noVat[0], 'label'), true) && $noVat[0][0]['width'] === 102
+    && $noVat[1][0]['cells'] === ['A', '1', 'Stk.', '10.00', '10.00'] && array_sum(array_column($noVat[0], 'width')) === array_sum(array_column($withD[0], 'width'))
+    && $noVatSummary[0]['cells'] === ['Netto', '', '', '', '10.00']);
+// The unit column is never cut (owner 2026-10-21: «.25Std» printed as «.2…»): it widens to the
+// widest unit of the rows, MEASURED in the table's 9 pt font by the layout's `$measure`; the text
+// column gives the room, the table stays 168 mm. Without a measure an estimate per character stands in.
+$measure = static fn(string $t): float => $pdf->font('', 9)->textWidth($t);
+$units   = ['Std.', 'Betrag', '.25Std', 'Stk.', 'km', '100m', '¼ Std.', 'Pauschale', 'Kilowattstunde'];
+$short   = \Z77\Module\Debtor\Pdf\DocumentColumns::table('CHF', [['cells' => ['A', '1', 'Stk.', '10.00', '', '8.1 %', '10.00']]], true, $measure);
+$long    = \Z77\Module\Debtor\Pdf\DocumentColumns::table('CHF', [['cells' => ['A', '1', '.25Std', '10.00', '', '8.1 %', '10.00']], ['cells' => ['B', '2', 'Betrag', '1.00', '', '8.1 %', '2.00']]], true, $measure);
+$fits    = array_reduce($units, fn(bool $ok, string $u) => $ok && \Z77\Module\Debtor\Pdf\DocumentColumns::unitWidth([$u], $measure) - 3 >= $measure($u), true);
+check('F6c the unit column, measured: «Stk.» keeps 10 mm; «.25Std» / «Betrag» widen it, the text column narrower by the same (168 mm kept); every imported unit and a 14-character one fit inside the padding; an absurd unit is capped at 34 mm; the estimate without a measure keeps «Stk.» at 10',
+    $short[0][2]['width'] === 10 && $long[0][2]['width'] > 10 && $long[0][0]['width'] === $short[0][0]['width'] - ($long[0][2]['width'] - 10)
+    && array_sum(array_column($long[0], 'width')) === array_sum(array_column($short[0], 'width')) && $fits
+    && \Z77\Module\Debtor\Pdf\DocumentColumns::unitWidth([str_repeat('W', 16)], $measure) === 34
+    && \Z77\Module\Debtor\Pdf\DocumentColumns::unitWidth(['Stk.']) === 10 && \Z77\Module\Debtor\Pdf\DocumentColumns::unitWidth(['.25Std']) > 10);
 
 
 // ── G: the shared report layout (FIN-PDF-001) ─────────────────────────────────────────────

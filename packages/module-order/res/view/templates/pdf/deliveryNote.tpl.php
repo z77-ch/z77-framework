@@ -45,8 +45,9 @@ $place = $mandator !== null && trim($mandator->getCity()) !== '' ? $mandator->ge
 $pdf->font('', 9)->text($left, 92, $place . $today->format('d.m.Y'));
 $pdf->font('B', 14)->text($left, 100, $title);
 $y = 108;
-if (trim($order->getSubject()) !== '') {
-    $y = $pdf->font('B', 10)->paragraph($left, 106.5, $width, $order->getSubject(), 4.6) + 1.5;
+if ($order->subjectLine() !== null) {
+    // «Betreffname: Betreff» on one line (owner 2026-10-21, debtor's SubjectLabel::line()); no label = the subject alone.
+    $y = $pdf->font('B', 10)->paragraph($left, 106.5, $width, $order->subjectLine(), 4.6) + 1.5;
 }
 $facts = [];
 if ($customerNumber > 0) {

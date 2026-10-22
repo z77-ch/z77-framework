@@ -262,7 +262,9 @@ $newest = (function () use ($dirs): string {
     $all = [];
     foreach ($dirs as $ns => $dir) {
         foreach (glob($dir . '/Version*.php') as $file) {
-            $all[substr(basename($file, '.php'), 7)] = $ns . '\\' . basename($file, '.php');
+            // Keyed like ChronologicalComparator orders: the timestamp, the namespace breaks a tie (two
+            // modules' migrations of the same second — the «Betreffname» of 2026-10-21).
+            $all[substr(basename($file, '.php'), 7) . '|' . $ns . '\\' . basename($file, '.php')] = $ns . '\\' . basename($file, '.php');
         }
     }
     krsort($all, SORT_STRING);
@@ -286,11 +288,18 @@ check('A8c the eight account columns are the eight keys of Mandator::ACCOUNT_KEY
 [$code, $out] = $run(['command' => 'migrate']);
 check('A9 a second migrate is a no-op', $code === 0 && str_contains($out, 'Already at the latest version'));
 [$code, $out] = $run(['command' => 'diff', '--namespace' => 'Z77\\Module\\Mandator\\Migrations']);
-check('A10 diff after migrate reports NO change — mapping and migration agree', $code !== 0 && str_contains($out, 'No changes detected') && count(glob($package . '/res/migrations/Version*.php')) === 1);
-check('A11 the migration is expand-only: no DROP outside down()', (function () use ($package): bool {
-    $s = file_get_contents(glob($package . '/res/migrations/Version*.php')[0]);
-    return substr_count(substr($s, 0, strpos($s, 'function down')), 'DROP') === 0;
-})());
+check('A10 diff after migrate reports NO change — mapping and migration agree', $code !== 0 && str_contains($out, 'No changes detected') && count(glob($package . '/res/migrations/Version*.php')) === 2);
+check('A11 every migration is expand-only: no DROP outside down()', array_reduce(glob($package . '/res/migrations/Version*.php'), function (bool $ok, string $f): bool {
+    $s = file_get_contents($f);
+    return $ok && substr_count(substr($s, 0, strpos($s, 'function down')), 'DROP') === 0;
+}, true));
+$labelColumn = $db->fetchAssociative('SELECT COLUMN_DEFAULT, IS_NULLABLE, CHARACTER_MAXIMUM_LENGTH FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ?', [$dbName, 'mandator', 'default_subject_label']);
+check('A12 the default «Betreffname» of new documents (owner 2026-10-21, Version20261021100000): mandator.default_subject_label VARCHAR(80) NOT NULL DEFAULT \'\' — none, the behaviour before; the setter trims and strips the trailing colon; the validator refuses 81 characters; the field sits on the tab «Belege»',
+    $labelColumn !== false && trim((string) $labelColumn['COLUMN_DEFAULT'], "'") === '' && $labelColumn['IS_NULLABLE'] === 'NO' && (int) $labelColumn['CHARACTER_MAXIMUM_LENGTH'] === 80
+    && (new Mandator(['default_subject_label' => '  Projekt: ']))->getDefaultSubjectLabel() === 'Projekt'
+    && !(new MandatorValidator(new Mandator(['name' => 'x', 'country' => 'CH', 'default_subject_label' => str_repeat('x', 81)])))->isValid(['default_subject_label'])
+    && (new MandatorValidator(new Mandator(['name' => 'x', 'country' => 'CH', 'default_subject_label' => str_repeat('x', 80)])))->isValid(['default_subject_label'])
+    && MandatorLayout::tabOf('default_subject_label') === 'belege' && array_key_last(MandatorLayout::TABS) === 'belege');
 
 // ── B. the UID, pure ─────────────────────────────────────────────────────
 
@@ -335,7 +344,7 @@ check('C8 an account field: digits only, at most 10, empty allowed — no ledger
 check('C9 the entity: account() by key, accountField() by key, an unknown key is a programming error',
     (new Mandator(['account_dunning_fee' => '6950']))->account('dunning-fee') === '6950' && Mandator::accountField('vat-input-material') === 'account_vat_input_material'
     && throws(fn() => (new Mandator())->account('nope'), \InvalidArgumentException::class) && throws(fn() => Mandator::accountField('nope'), \InvalidArgumentException::class));
-check('C10 liableToVat is a flag with no other effect yet; there is NO default tax code and no typed account getter (owner, review 2026-09-23 — no reader)', !(new Mandator())->isLiableToVat() && (new Mandator(['liable_to_vat' => true]))->isLiableToVat()
+check('C10 liableToVat is a flag (off by default; read by InvoicingService::chargesVat() of module-debtor since 2026-10-21 — the mandator module itself switches nothing); there is NO default tax code and no typed account getter (owner, review 2026-09-23 — no reader)', !(new Mandator())->isLiableToVat() && (new Mandator(['liable_to_vat' => true]))->isLiableToVat()
     && !method_exists(Mandator::class, 'getDefaultTaxCode') && !method_exists(Mandator::class, 'setDefaultTaxCode') && !method_exists(Mandator::class, 'getAccountReceivable') && !method_exists(Mandator::class, 'getAccountVatOwed')
     && (new Mandator(['account_loss' => '  3805 ']))->account('loss') === '3805');
 
@@ -636,10 +645,11 @@ check('G4b the submit stands in the action cell (hc1, ADR-033 rev. 2026-10-08): 
     && preg_match('/<button type="submit" form="mandator-edit" class="be-btn be-btn--confirm">\s*<svg[^>]*><use href="#icon-check"\/><\/svg>\s*<span class="be-btn__label">Mandant anlegen<\/span>/', $actSlot($h)) === 1
     && !str_contains($html, 'type="submit"'));
 $tb = $toolSlot($h);
-check('G4c the three sections are radio tabs (owner 2026-10-08): ONE form (novalidate), a radio per tab BEFORE the three panels, the first tab open; the tab labels stand in the toolbar (hc2) as `<label for>` of the radios, numbered like radio and panel',
+check('G4c the four sections are radio tabs (owner 2026-10-08; «Belege» 2026-10-21): ONE form (novalidate), a radio per tab BEFORE the four panels, the first tab open; the tab labels stand in the toolbar (hc2) as `<label for>` of the radios, numbered like radio and panel',
     $h->layoutManager->sections['hc2'] === ['Backend/MandatorController/editToolbar'] && $h->context['openTab'] === 'briefkopf'
     && substr_count($html, '<form') === 1 && preg_match('/<form [^>]*class="be-list__section be-radiotabs"[^>]* novalidate>/', $html) === 1
-    && substr_count($html, 'class="be-radiotabs__radio"') === 3 && substr_count($html, '<section class="be-radiotabs__panel"') === 3
+    && substr_count($html, 'class="be-radiotabs__radio"') === 4 && substr_count($html, '<section class="be-radiotabs__panel"') === 4
+    && str_contains($html, '<section class="be-radiotabs__panel" data-tab="4" aria-label="Belege">') && strpos($html, 'id="mandator-default_subject_label"') > strpos($html, 'data-tab="4" aria-label')
     && strrpos($html, 'be-radiotabs__radio') < strpos($html, 'be-radiotabs__panel')
     && $tabChecked($html, 'briefkopf') && !$tabChecked($html, 'uid') && !$tabChecked($html, 'konten')
     && str_contains($html, '<section class="be-radiotabs__panel" data-tab="1" aria-label="Briefkopf">') && str_contains($html, '<section class="be-radiotabs__panel" data-tab="2" aria-label="UID und MWST">') && str_contains($html, '<section class="be-radiotabs__panel" data-tab="3" aria-label="Konten">')
@@ -647,6 +657,7 @@ check('G4c the three sections are radio tabs (owner 2026-10-08): ONE form (noval
     && str_contains($tb, '<label class="be-viewtabs__tab be-viewtabs__tab--for" for="mandator-tab-briefkopf" data-tab="1">Briefkopf</label>')
     && str_contains($tb, '<label class="be-viewtabs__tab be-viewtabs__tab--for" for="mandator-tab-uid" data-tab="2">UID und MWST</label>')
     && str_contains($tb, '<label class="be-viewtabs__tab be-viewtabs__tab--for" for="mandator-tab-konten" data-tab="3">Konten</label>')
+    && str_contains($tb, '<label class="be-viewtabs__tab be-viewtabs__tab--for" for="mandator-tab-belege" data-tab="4">Belege</label>')
     && !str_contains($tb, 'is-active') && stripos($tb, '<script') === false);
 check('G5b the rule of thumb stands on the page: the mandator is the letterhead, the payment target is the payee', str_contains($html, 'Zahlungsziel') && str_contains($html, 'kein Fehler'));
 

@@ -188,4 +188,22 @@ class SalesOrderRepository extends DoctrineRepository
 
         return [$where === [] ? '' : ' WHERE ' . implode(' AND ', $where), $params, $types];
     }
+
+    /**
+     * The distinct «Betreffname» labels the orders carry (owner 2026-10-21) — suggestions of the
+     * order window's `<datalist>`, at most $limit, alphabetical.
+     *
+     * @return list<string>
+     */
+    public function subjectLabelsInUse(int $limit): array
+    {
+        return array_map('strval', $this->em()->createQueryBuilder()
+            ->select('DISTINCT o.subjectLabel')
+            ->from(SalesOrder::class, 'o')
+            ->where('o.subjectLabel IS NOT NULL')
+            ->orderBy('o.subjectLabel', 'ASC')
+            ->setMaxResults($limit)
+            ->getQuery()
+            ->getSingleColumnResult());
+    }
 }

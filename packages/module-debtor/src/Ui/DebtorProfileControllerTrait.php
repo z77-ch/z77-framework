@@ -181,6 +181,8 @@ trait DebtorProfileControllerTrait
             'entityCsrf' => DI::getCsrfService()->generateEntityToken('debtorProfile', $profile->getId()),
             'validator'  => $validator ?? new DebtorProfileValidator($draft),
             'actionBase' => $this->debtorListBase(),
+            // The installation's «Betreffname» (the mandator's) — what an empty debtor label means (owner 2026-10-21).
+            'globalSubjectLabel' => (new \Z77\Module\Debtor\Services\SubjectLabelDefaults($this->em()))->global(),
         ]);
         $this->layoutManager->addPartials('edit', 'Backend/DebtorProfileController', self::DEBTOR_NS);
 

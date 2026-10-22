@@ -27,8 +27,11 @@ use Z77\Shared\Pdf\PdfDocument;
  * ({@see QrBill} — printable or not: an unprintable bill leaves the
  * payment part off, the document still prints), the mandator for the
  * letterhead (null = none saved, the letterhead stays empty), the customer
- * number of the party, and the amount formatter. Nothing is resolved from
- * master data — what prints is what was issued.
+ * number of the party, whether the document carries VAT (`liableToVat`,
+ * owner 2026-10-21 — from the snapshot, `Invoice::carriesVat()`; the layout
+ * then drops the MWST column, the MWST rows and «zzgl. / inkl. MWST»), and
+ * the amount formatter. Nothing is resolved from master data — what prints
+ * is what was issued.
  *
  * A DRAFT (`invoicing`) renders as a PREVIEW (owner 2026-10-10: «a printed
  * invoice with a number IS a document»): the same layout, watermarked
@@ -131,6 +134,9 @@ final class InvoicePdf
             'bill'           => QrBill::of($document),
             'mandator'       => $mandator,
             'customerNumber' => $customerNumber,
+            // With or without VAT (owner 2026-10-21): as the document was COMPUTED — its snapshot, not
+            // today's mandator flag (ADR-041 decision 6: a reprint reads what was issued).
+            'liableToVat'    => $document->carriesVat(),
             'fmt'            => static fn(?Money $m) => AmountFormat::of($m),
         ], self::NS);
     }

@@ -30,7 +30,11 @@ use Z77\Module\Order\Entities\SalesOrder;
  *     null = the initial status (the active one with the lowest level). Ignored by `update()` — an
  *     existing order moves through `changeStatus()` or `update(…, moveTo:)` (the window's status
  *     field, owner 2026-10-20);
- *   - `sourceType` / `sourceRef` — the opaque origin (`backend`; plan §12).
+ *   - `sourceType` / `sourceRef` — the opaque origin (`backend`; plan §12);
+ *   - `subjectLabel` — the optional «Betreffname» printed in front of the subject («Projekt: …»,
+ *     owner 2026-10-21; debtor's `SubjectLabel`): stored trimmed, a trailing colon stripped, at
+ *     most 80 characters (refused `subject_label`); null / '' = none. The service applies NO
+ *     default — the window pre-fills it (the debtor's, else the mandator's); an import names its own.
  */
 final class OrderDraft
 {
@@ -52,5 +56,6 @@ final class OrderDraft
         public readonly ?AddressSnapshot $billingAddress = null,
         public readonly ?string $paymentTermsCode = null,
         public readonly ?string $pricesMode = null,
+        public readonly ?string $subjectLabel = null,
     ) {}
 }

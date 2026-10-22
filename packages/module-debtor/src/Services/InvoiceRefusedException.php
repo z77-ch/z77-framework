@@ -34,8 +34,13 @@ final class InvoiceRefusedException extends DebtorException
     public const NOT_INVOICING       = 'not-invoicing';
     public const NOT_FOUND           = 'not-found';
     public const KIND_CHANGED        = 'kind-changed';
+    /** A draft composed under another VAT liability than the mandator's now (owner 2026-10-21): saved again first, then booked. */
+    public const VAT_LIABILITY_CHANGED = 'vat-liability-changed';
     /** The optional subject («Betreff», P7 2026-10-14) is longer than `Invoice::SUBJECT_LENGTH`. */
     public const SUBJECT             = 'subject';
+
+    /** The optional subject label («Betreffname», 2026-10-21) is longer than `SubjectLabel::LENGTH` after normalising. */
+    public const SUBJECT_LABEL       = 'subject-label';
     public const NUMBER_RANGE_FULL   = 'number-range-full';
     // the lines
     public const LINE                = 'line';

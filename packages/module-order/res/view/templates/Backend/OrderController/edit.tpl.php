@@ -54,6 +54,8 @@
  * @var list<\Z77\Module\Vat\Entities\TaxCode> $taxCodes
  * @var array<string, string> $taxRates  code → the rate shown («8.1 %») on the SERVICE date («Leistung von», else the order date)
  * @var array<string, list<array{0: string, 1: string}>> $rateSchedule  code → [[valid from, rate], …] for core.js «dated rates»
+ * @var bool $liableToVat  false = the order is computed WITHOUT VAT (the mandator is not liable, owner 2026-10-21 —
+ *                         `OrderService::chargesVat()`): no MWST column, no rates for core.js, no VAT rows in the totals
  * @var array<string, array{name: string, unit: string, taxCode: string, account: string, offered: bool}> $articles  article number → what it brings
  * @var \Z77\Module\Debtor\Entities\Invoice|null $preview  debtor's preview of the STORED order (D11)
  * @var string $currency  the order's currency (the totals' before there is a preview)
@@ -184,7 +186,10 @@ if (!$isNew) {
 // The positions' columns: handle (⋮⋮ grip + ⇥ indent) · Pos. · Art · Art.-Nr. · Text · Menge ·
 // Einheit · Preis · Rabatt % · MWST · Betrag · ×. A text row's text spans Art.-Nr. … Betrag
 // (`--be-rows-span`). No Konto column (owner 2026-10-18: every priced line is an article, D3).
-$cols = '3.6rem 2.4rem 5.2rem 8.8rem minmax(12rem, 3fr) 4.5rem 4.5rem 6.5rem 4.5rem 4.5rem 7rem 1.8rem';
+// Without VAT (owner 2026-10-21) the MWST column goes: one track less, a text row spans one less.
+$liableToVat = $liableToVat ?? true;
+$cols = '3.6rem 2.4rem 5.2rem 8.8rem minmax(12rem, 3fr) 4.5rem 4.5rem 6.5rem 4.5rem' . ($liableToVat ? ' 4.5rem' : '') . ' 7rem 1.8rem';
+$span = $liableToVat ? 8 : 7;
 // «Artikel wählen …» (owner 2026-10-19): article's picker at this window's root. The row's magnifier
 // and «+ Artikel» open it as a window over this one; the context its price needs rides along at
 // the click (`data-window-with` — the fields as they stand), the href carries the rendered values
@@ -307,6 +312,14 @@ $addressFields = fn(string $field): string => $this->partial('Backend/ContactCon
 
             <?php // (2) What it is about. ?>
             <div class="be-form__block">
+                <?php // «Betreffname» right before «Betreff» (owner 2026-10-21) — debtor's shared field with its datalist. ?>
+                <?= $this->partial('partials/subjectLabelField', [
+                    'id'          => 'order-subject_label',
+                    'value'       => $form->header('subject_label'),
+                    'suggestions' => $subjectLabels ?? [],
+                    'prefill'     => !empty($subjectLabelPrefill),
+                    'error'       => $form->error('subject_label'),
+                ], 'Z77\\Module\\Debtor') ?>
                 <div class="be-form__field" data-z77-field-wrapper>
                     <label for="order-subject">Betreff</label>
                     <input type="text" class="be-form__input--lead" id="order-subject" name="subject" value="<?= e($form->header('subject')) ?>" maxlength="<?= \Z77\Module\Order\Entities\SalesOrder::SUBJECT_LENGTH ?>" aria-invalid="<?= $invalid($form->error('subject')) ?>">
@@ -367,7 +380,7 @@ $addressFields = fn(string $field): string => $this->partial('Backend/ContactCon
         <?php
         $currency = $preview?->getCurrency() ?? $currency;
         // One row of the positions — the server's rows and the two <template> rows share it ($i = '__i__').
-        $positionRow = function (int|string $i, array $row, string $no) use ($form, $articles, $taxCodes, $taxRates, $editable, $invalid, $amount, $actionBase, $key, $pickUrl, $pickWith, $pickState): string {
+        $positionRow = function (int|string $i, array $row, string $no) use ($form, $articles, $taxCodes, $taxRates, $liableToVat, $editable, $invalid, $amount, $actionBase, $key, $pickUrl, $pickWith, $pickState): string {
             $p    = 'rows[' . $i . ']';
             $rid  = 'order-row-' . $i . '-';
             $err  = static fn(string $f): string => is_int($i) ? $form->rowError($i, $f) : '';
@@ -406,13 +419,16 @@ $addressFields = fn(string $field): string => $this->partial('Backend/ContactCon
                     <span class="be-list__cell be-list__cell--num"><input class="be-input be-input--sm" type="text" id="<?= $rid ?>price" name="<?= $p ?>[price]" value="<?= e($row['price']) ?>" inputmode="decimal" data-fill-key="price" data-sum-price data-price-mode-price data-help-key="price" aria-label="Preis" aria-invalid="<?= $invalid($err('price')) ?>"></span>
                     <span class="be-list__cell be-list__cell--num"><input class="be-input be-input--sm" type="text" id="<?= $rid ?>discount" name="<?= $p ?>[discount]" value="<?= e($row['discount']) ?>" inputmode="decimal" data-sum-discount data-help-key="discount" aria-label="Rabatt in Prozent" aria-invalid="<?= $invalid($err('discount')) ?>"></span>
                     <?php // The RATE of the article's tax code («8.1 %», D3 — not changeable, never sent): a select only so
-                          // that core.js «fill» can set the code and the option shows its rate; `data-rate` feeds «line sums». ?>
+                          // that core.js «fill» can set the code and the option shows its rate; `data-rate` feeds «line sums».
+                          // Without VAT no cell: «line sums» and «price mode» then count without a rate. ?>
+                    <?php if ($liableToVat): ?>
                     <span class="be-list__cell" title="vom Artikel"><select class="be-input be-input--sm be-rows__rate" data-fill-key="tax_code" data-sum-rate data-price-mode-rate data-rate-schedule-ref="order-vat" tabindex="-1" aria-label="MWST-Satz (vom Artikel)" disabled>
                         <option value=""<?= $code === '' ? ' selected' : '' ?>>–</option>
                         <?php foreach ($taxCodes as $taxCode): $c = $taxCode->getCode(); ?>
                         <option value="<?= e($c) ?>"<?= $c === $code ? ' selected' : '' ?><?= isset($taxRates[$c]) ? ' data-rate="' . e(rtrim($taxRates[$c], ' %')) . '"' : '' ?>><?= e($taxRates[$c] ?? $c) ?></option>
                         <?php endforeach; ?>
                     </select></span>
+                    <?php endif; ?>
                     <span class="be-list__cell be-list__cell--num be-list__cell--amount" data-sum-amount><?= e($amount($row)) ?></span>
                     <?php endif; ?>
                     <span class="be-list__cell be-rows__end">
@@ -442,9 +458,11 @@ $addressFields = fn(string $field): string => $this->partial('Backend/ContactCon
             <?php // The script data stands before the table; the bar (title, adders, «Preise») and
                   // the column head form ONE sticky top inside it (`.be-rows__top`, owner 2026-10-20): with many
                   // positions they stay in view while the rows scroll. ?>
+            <?php if ($liableToVat): ?>
             <script type="application/json" data-rate-schedule="order-vat" data-rate-date="service_from order_date"><?= json_encode($rateSchedule ?? [], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?></script>
+            <?php endif; ?>
             <div class="be-list__frame be-list__frame--stick">
-                <div class="be-list__table be-rows" style="--be-list-cols: <?= e($cols) ?>; --be-rows-span: 8" data-rows="rows">
+                <div class="be-list__table be-rows" style="--be-list-cols: <?= e($cols) ?>; --be-rows-span: <?= $span ?>" data-rows="rows">
                     <div class="be-rows__top">
                     <div class="be-form__block-head be-rows__bar">
                         <h3 class="be-list__section-title">Positionen</h3>
@@ -456,7 +474,8 @@ $addressFields = fn(string $field): string => $this->partial('Backend/ContactCon
                             <button type="submit" class="be-btn be-btn--add be-btn--sm" name="op" value="add-text" formnovalidate data-row-add="text"><span aria-hidden="true">+</span> Textzeile</button>
                         </div>
                         <?php endif; ?>
-                        <div class="be-form__field" data-z77-field-wrapper>
+                        <?php // Without VAT the price mode changes no amount (owner 2026-10-21): no select, the mode kept as a hidden field. ?>
+                        <div class="be-form__field" data-z77-field-wrapper<?= $liableToVat ? '' : ' hidden' ?>>
                     <label for="order-price_mode">Preise</label>
                     <select id="order-price_mode" name="price_mode" data-sum-mode data-price-mode-select aria-invalid="<?= $invalid($form->error('price_mode')) ?>">
                         <option value="net"<?= $form->header('price_mode') === 'net' ? ' selected' : '' ?>>netto (exkl. MWST)</option>
@@ -476,7 +495,7 @@ $addressFields = fn(string $field): string => $this->partial('Backend/ContactCon
                         <span class="be-list__col">Einheit</span>
                         <span class="be-list__col be-list__col--num">Preis</span>
                         <span class="be-list__col be-list__col--num">Rabatt %</span>
-                        <span class="be-list__col">MWST</span>
+                        <?php if ($liableToVat): ?><span class="be-list__col">MWST</span><?php endif; ?>
                         <span class="be-list__col be-list__col--num">Betrag</span>
                         <span class="be-list__col"></span>
                     </div>
@@ -506,12 +525,14 @@ $addressFields = fn(string $field): string => $this->partial('Backend/ContactCon
                       // rounding, labelled so); the save answers with the preview again. ?>
                 <div class="be-form__totals" aria-live="polite">
                     <div><span>Total netto</span><span data-sum-net><?= $preview !== null ? e($fmt($preview->getNetTotal())) : ($isNew ? '0.00' : '–') ?></span></div>
+                    <?php if ($liableToVat): ?>
                     <div class="be-form__totals-group" data-sum-taxes>
                         <template data-sum-tax><div class="be-form__totals-sub"><span>MWST <span data-sum-tax-rate></span> % auf <span data-sum-tax-base></span></span><span data-sum-tax-amount></span></div></template>
                         <?php foreach ($preview?->getTaxes() ?? [] as $tax): ?>
                         <div class="be-form__totals-sub"><span>MWST <?= e(TaxRate::formatPercent($tax->getTaxRate())) ?> % auf <?= e($fmt($tax->getBase())) ?></span><span><?= e($fmt($tax->getTax())) ?></span></div>
                         <?php endforeach; ?>
                     </div>
+                    <?php endif; ?>
                     <?php if ($preview !== null && !$preview->getRounding()->isZero()): ?>
                     <div class="be-form__totals-sub" data-sum-stored><span>Rundung</span><span><?= e($fmt($preview->getRounding())) ?></span></div>
                     <?php endif; ?>
@@ -566,7 +587,7 @@ $addressFields = fn(string $field): string => $this->partial('Backend/ContactCon
             <?php if ($invoice === null): ?>
             <p class="be-list__empty">Noch keine Rechnung — sie entsteht mit dem Buchungsdruck.</p>
             <?php else: ?>
-            <?php $detail = $invoiceBase . '/detail?id=' . (int) $invoice->getId(); $badges = ['open' => 'badge--info', 'partial' => 'badge--warning', 'paid' => 'badge--success', 'credited' => 'badge--muted']; ?>
+            <?php $detail = $invoiceBase . '/edit?id=' . (int) $invoice->getId(); $badges = ['open' => 'badge--info', 'partial' => 'badge--warning', 'paid' => 'badge--success', 'credited' => 'badge--muted']; ?>
             <div class="be-list__table" style="--be-list-cols: minmax(10rem, 2fr) 6.5rem 7rem 7rem 8rem 4rem">
                 <div class="be-list__head">
                     <span class="be-list__col">Beleg</span>
@@ -586,7 +607,7 @@ $addressFields = fn(string $field): string => $this->partial('Backend/ContactCon
                         <a class="be-list__cell" href="<?= e($invoiceBase . '/pdf?id=' . (int) $invoice->getId()) ?>" target="_blank" rel="noopener">PDF</a>
                     </div>
                 </div>
-                <?php foreach ($creditNotes as $note): $noteUrl = $invoiceBase . '/detail?id=' . (int) $note->getId(); ?>
+                <?php foreach ($creditNotes as $note): $noteUrl = $invoiceBase . '/edit?id=' . (int) $note->getId(); ?>
                 <div class="be-list__item">
                     <div class="be-list__row">
                         <a class="be-list__cell" href="<?= e($noteUrl) ?>" data-window-open="<?= e($noteUrl) ?>"><?= e($note->documentName()) ?></a>

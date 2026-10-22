@@ -38,7 +38,7 @@ $winAttr    = $window
         <?= $this->partial('partials/modalActions', [
             'submit'     => 'Zahlung löschen',
             'kind'       => 'danger',
-            'cancelHref' => $actionBase . '/detail?id=' . (int) $document->getId(),
+            'cancelHref' => $actionBase . '/edit?id=' . (int) $document->getId(),
         ], 'Z77\\Shared') ?>
         <?php if (!$window): ?>
         <div class="be-list__section-header">

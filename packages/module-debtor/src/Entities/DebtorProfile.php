@@ -4,6 +4,7 @@ namespace Z77\Module\Debtor\Entities;
 
 use Doctrine\ORM\Mapping as ORM,
     Z77\Module\Contact\Entities\Contact,
+    Z77\Module\Debtor\Invoicing\SubjectLabel,
     Z77\Module\Vat\Calculation\PriceMode,
     Z77\Shared\Attributes\Clean,
     Z77\Shared\Attributes\Entity,
@@ -120,6 +121,16 @@ class DebtorProfile
     #[Clean('ident')]
     private string $priceMode = 'net';
 
+    /**
+     * The «Betreffname» a new order or invoice for this debtor starts with (owner decision
+     * 2026-10-21, {@see SubjectLabel}) — NULL = the installation's default (the mandator's
+     * `default_subject_label`), which may be empty too. Stored normalised (trimmed, trailing colon
+     * stripped); the document may deviate — its own `subject_label` is the truth.
+     */
+    #[ORM\Column(name: 'default_subject_label', length: SubjectLabel::LENGTH, nullable: true)]
+    #[Clean('text')]
+    private ?string $defaultSubjectLabel = null;
+
     /** False = no longer offered for new documents; existing ones keep resolving. */
     #[ORM\Column]
     #[Clean('bool')]
@@ -143,12 +154,16 @@ class DebtorProfile
     /** The price mode as module-vat's enum; a stored value the validator would refuse reads as net. */
     public function priceMode(): PriceMode { return PriceMode::tryFrom($this->priceMode) ?? PriceMode::Net; }
     public function isActive(): bool { return $this->active; }
+    /** The debtor's own default «Betreffname» — null = the installation's applies. */
+    public function getDefaultSubjectLabel(): ?string { return $this->defaultSubjectLabel; }
 
     public function setContact(?Contact $contact): void { $this->contact = $contact; }
     public function setPaymentTermsCode(string $code): void { $this->paymentTermsCode = PaymentTerms::normalizeCode($code); }
     public function setDunningBlock(bool $block): void { $this->dunningBlock = $block; }
     public function setPriceMode(string $mode): void { $this->priceMode = trim($mode); }
     public function setActive(bool $active): void { $this->active = $active; }
+    /** Normalised ({@see SubjectLabel::normalize()}); '' = none = the installation's default. Too long: the validator refuses. */
+    public function setDefaultSubjectLabel(?string $label): void { $this->defaultSubjectLabel = SubjectLabel::normalize($label); }
 
     /**
      * The one write of the customer number — by `DebtorProfileService::save()`

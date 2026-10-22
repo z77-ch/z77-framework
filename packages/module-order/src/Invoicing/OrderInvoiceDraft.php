@@ -22,7 +22,8 @@ use Z77\Module\Order\Entities\SalesOrderLine;
  *   - the service period from the head; an EMPTY «Leistung von» → the invoice date;
  *   - price mode and currency of the order, its payment target code and its payment terms code
  *     (2026-10-18) — null → the debtor profile's;
- *   - the subject «Auftrag {number} · {Betreff}» (D10), «Auftrag {number}» without a Betreff;
+ *   - the subject «Auftrag {number} · {Betreff}» (D10), «Auftrag {number}» without a Betreff, and
+ *     the order's «Betreffname» with it (owner 2026-10-21 — printed «Projekt: Auftrag 12 · …»);
  *   - the lines 1:1 in document order with type, text, quantity (service only), unit, unit price,
  *     discount, tax code and account; a child beneath its parent (`LineDraft::beneath()`);
  *   - the origin opaque: `order` / the order number, per line `order-line` / the line id.
@@ -66,6 +67,8 @@ final class OrderInvoiceDraft
             sourceRef: $order->documentNumber(),
             paymentTargetCode: $order->getPaymentTargetCode(),
             subject: self::subject($order),
+            // The «Betreffname» travels with the subject (owner 2026-10-21): «Projekt: Auftrag 12 · …».
+            subjectLabel: $order->getSubjectLabel(),
         );
     }
 

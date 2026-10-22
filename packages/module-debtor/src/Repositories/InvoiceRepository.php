@@ -298,6 +298,24 @@ class InvoiceRepository extends DoctrineRepository
     }
 
     /**
+     * The distinct «Betreffname» labels the documents carry (owner 2026-10-21) — suggestions of the
+     * document screens' `<datalist>`, at most $limit, alphabetical. Doctrine-only (DQL).
+     *
+     * @return list<string>
+     */
+    public function subjectLabelsInUse(int $limit): array
+    {
+        return array_map('strval', $this->em()->createQueryBuilder()
+            ->select('DISTINCT i.subjectLabel')
+            ->from(Invoice::class, 'i')
+            ->where('i.subjectLabel IS NOT NULL')
+            ->orderBy('i.subjectLabel', 'ASC')
+            ->setMaxResults($limit)
+            ->getQuery()
+            ->getSingleColumnResult());
+    }
+
+    /**
      * The credit notes issued against $invoice, oldest first — the detail
      * view lists them. Doctrine-only (DQL).
      *

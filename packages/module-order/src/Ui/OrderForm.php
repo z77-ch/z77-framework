@@ -76,7 +76,7 @@ final class OrderForm
      *
      * @var array<string, string>
      */
-    private array $header = ['contact' => '', 'subject' => '', 'order_date' => '', 'service_from' => '', 'service_to' => '', 'price_mode' => 'net', 'prices_mode' => 'net', 'terms' => '', 'ship' => '', 'bill' => '', 'status' => '', 'notes' => ''];
+    private array $header = ['contact' => '', 'subject_label' => '', 'subject' => '', 'order_date' => '', 'service_from' => '', 'service_to' => '', 'price_mode' => 'net', 'prices_mode' => 'net', 'terms' => '', 'ship' => '', 'bill' => '', 'status' => '', 'notes' => ''];
 
     /**
      * The payment target (bank account of the payment part) — NOT a posted field since 2026-10-18
@@ -106,10 +106,12 @@ final class OrderForm
     /**
      * A new order: today, the customer, payment target, payment terms ($terms '' = «wie beim
      * Kunden») and price mode the screen preselects (the debtor's, owner 2026-10-18; else net),
-     * empty rows.
+     * the «Betreffname» (the debtor's, else the mandator's — debtor's `SubjectLabelDefaults`, owner
+     * 2026-10-21), empty rows.
      */
-    public function startBlank(\DateTimeImmutable $today, ?int $contactId, string $target, string $status, string $terms = '', string $priceMode = 'net'): self
+    public function startBlank(\DateTimeImmutable $today, ?int $contactId, string $target, string $status, string $terms = '', string $priceMode = 'net', ?string $subjectLabel = null): self
     {
+        $this->header['subject_label'] = (string) $subjectLabel;
         $this->header['contact']    = $contactId !== null ? (string) $contactId : '';
         $this->header['order_date'] = $today->format('Y-m-d');
         $this->header['terms']      = $terms;
@@ -129,6 +131,7 @@ final class OrderForm
     {
         $this->header = [
             'contact'      => (string) $order->getContact()->getId(),
+            'subject_label' => (string) $order->getSubjectLabel(),
             'subject'      => $order->getSubject(),
             'order_date'   => $order->getOrderDate()->format('Y-m-d'),
             'service_from' => $order->getServiceFrom()?->format('Y-m-d') ?? '',
@@ -328,6 +331,7 @@ final class OrderForm
             contactId: $contactId,
             orderDate: $this->header['order_date'],
             subject: $this->header['subject'],
+            subjectLabel: $this->header['subject_label'] !== '' ? $this->header['subject_label'] : null,
             serviceFrom: $this->header['service_from'],
             serviceTo: $this->header['service_to'],
             priceMode: $this->header['price_mode'],

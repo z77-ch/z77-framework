@@ -7,7 +7,7 @@
  * version to `InvoicingService::discard()`: the draft and its lines are
  * deleted. Nothing else changes — a draft has no number and nothing posted.
  *
- * Fetched, the content of the detail WINDOW it is linked from
+ * Fetched, the content of the document WINDOW (the mask) it is linked from
  * (`data-window-link`), so the delete answers into that window: it closes
  * and the list behind reloads. Without the script it is a page. The action
  * row (ADR-049, revision 2026-10-10) stands FIRST, like every other dialog
@@ -37,7 +37,7 @@ $row        = static fn(string $label, string $text): string => '<div class="be-
         <?= $this->partial('partials/modalActions', [
             'submit'     => 'Entwurf löschen',
             'kind'       => 'danger',
-            'cancelHref' => $actionBase . '/detail?id=' . (int) $document->getId(),
+            'cancelHref' => $actionBase . '/edit?id=' . (int) $document->getId(),
         ], 'Z77\\Shared') ?>
         <?php if (!$window): ?>
         <div class="be-list__section-header">

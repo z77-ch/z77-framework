@@ -9,6 +9,7 @@ use Doctrine\ORM\Mapping as ORM;
 use Z77\Module\Contact\Entities\Contact;
 use Z77\Module\Debtor\Entities\AddressSnapshot;
 use Z77\Module\Debtor\Entities\Invoice;
+use Z77\Module\Debtor\Invoicing\SubjectLabel;
 use Z77\Module\Vat\Calculation\PriceMode;
 use Z77\Persistence\Doctrine\Type\MoneyType;
 use Z77\Shared\Attributes\Entity;
@@ -82,6 +83,14 @@ class SalesOrder
 
     #[ORM\Column(length: self::SUBJECT_LENGTH)]
     private string $subject = '';
+
+    /**
+     * The optional «Betreffname» printed in front of the subject — «Projekt: …» (owner decision
+     * 2026-10-21, debtor's {@see SubjectLabel} is the one rule); NULL = none. It travels into the
+     * invoice at the booking print (`OrderInvoiceDraft`). Migration `Version20261021100000`.
+     */
+    #[ORM\Column(name: 'subject_label', length: SubjectLabel::LENGTH, nullable: true)]
+    private ?string $subjectLabel = null;
 
     #[ORM\Column(name: 'order_date', type: Types::DATE_IMMUTABLE)]
     private \DateTimeImmutable $orderDate;
@@ -204,6 +213,10 @@ class SalesOrder
     public function getNumber(): int { return $this->number; }
     public function getStatusCode(): string { return $this->statusCode; }
     public function getSubject(): string { return $this->subject; }
+    /** The «Betreffname» in front of the subject — null when the order has none. */
+    public function getSubjectLabel(): ?string { return $this->subjectLabel; }
+    /** The subject line as printed: «<label>: <subject>», the subject alone, or null ({@see SubjectLabel::line()}). */
+    public function subjectLine(): ?string { return SubjectLabel::line($this->subjectLabel, $this->subject); }
     public function getOrderDate(): \DateTimeImmutable { return $this->orderDate; }
     public function getServiceFrom(): ?\DateTimeImmutable { return $this->serviceFrom; }
     public function getServiceTo(): ?\DateTimeImmutable { return $this->serviceTo; }
@@ -286,9 +299,11 @@ class SalesOrder
         ?string $notes,
         ?AddressSnapshot $billingAddress = null,
         ?string $paymentTermsCode = null,
+        ?string $subjectLabel = null,
     ): void {
         $this->contact           = $contact;
         $this->subject           = $subject;
+        $this->subjectLabel      = SubjectLabel::normalize($subjectLabel);
         $this->orderDate         = $orderDate->setTime(0, 0);
         $this->serviceFrom       = $serviceFrom?->setTime(0, 0);
         $this->serviceTo         = $serviceTo?->setTime(0, 0);

@@ -29,7 +29,7 @@ use Z77\Core\DI,
  * {@see DebtorLayout::config()}.
  *
  * Three views (open — the default —, overdue, all) in the toolbar. A row's
- * state icon opens the document detail as a window (ADR-047), «Zahlung»
+ * state icon opens the document's mask as a window (ADR-047; read-only — the row is final), «Zahlung»
  * opens the payment form of the document screen — the list itself writes
  * nothing. No JavaScript of its own. The using class MUST provide (via its
  * host base): `html()`, `em()`, `$layoutManager`.
@@ -46,7 +46,7 @@ trait DebtorControllerTrait
         return '/backend/finance/debtor';
     }
 
-    /** URL root of the document screen the rows open (detail, payment). */
+    /** URL root of the document screen the rows open (the mask `edit`, payment). */
     protected function debtorDocumentBase(): string
     {
         return '/backend/finance/invoice';
