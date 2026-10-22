@@ -165,9 +165,10 @@ Built 2026-10-14 (plan §13 steps 7–10, the owner's board on the developer can
 
 - **Resume here (2026-10-21, evening).** Test env is `z77-1.0.0-z77.ch-initial` (own DB `z77ch_initial`,
   production data, symlinked packages — framework changes are live there at once; the importer
-  session of that project messages this one). Committed today: `00a4272` (status field, no status
-  change with an invoice, total 0 = no invoice). **NOT committed — 67 files, FIVE themes, to go in
-  as SEPARATE commits after the owner's browser look:** (1) subject label «Betreffname» (debtor /
+  session of that project messages this one). Committed: `00a4272` (status field, no status
+  change with an invoice, total 0 = no invoice) and — 2026-10-22 morning, owner «committen» —
+  `9a981cb`, ONE commit for the FIVE themes of 2026-10-21 (their files overlap, a hunk-level split
+  was not worth the risk): (1) subject label «Betreffname» (debtor /
   order / mandator, migrations `Version20261021100000` ×3 — APPLIED on z77ch_initial, NOT on z77.ch);
   (2) the mandator's «mehrwertsteuerpflichtig» binding for documents (calculation, ONE template
   per document with droppable MWST column + shared `pdf/documentSummary`, screens without MWST,
@@ -178,8 +179,8 @@ Built 2026-10-14 (plan §13 steps 7–10, the owner's board on the developer can
   open; (4) the PDF unit column sized by measure (`DocumentColumns::unitWidth()`, pdf F6c; verified
   on invoice 2609005); (5) the positions' sticky top z-index under the action row. Harness state:
   module-order 121/0, pdf 45/0, module-debtor 563/1 — the one FAIL (MV9) was a mid-run overlap and
-  is true against the current tree: **run `php tests/module-debtor.php` once on the quiet tree
-  first thing** (~25 min), then commit (1)–(5).
+  is true against the current tree; the quiet-tree run was started 2026-10-22 morning right after
+  the commit — its result is to be noted here.
   **Open owner answers (asked 2026-10-21):** (a) the per-line CODE (wdv `shop_positions.code`,
   importer request): owner wants it printed ABOVE the text in small type, not as a column — still
   open whether an article line is PREFILLED with its article number (wdv) or empty until typed;
