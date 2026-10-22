@@ -22,7 +22,9 @@
  * @var bool $withLink  the link fields (type + title) first (default true; false = a document's
  *                      address snapshot, which has no link)
  *
- * `$address` is any object with the ten address getters — an `Address` or debtor's `AddressSnapshot`.
+ * `$address` is any object with the address getters (the ten printed fields + `getEmail()` /
+ * `getPhone()`, 2026-10-22) — an `Address` or debtor's `AddressSnapshot`. E-mail and phone close
+ * the block: a document is e-mailed to its billing address's e-mail.
  */
 $required  = $required ?? true;
 $prefix    = $prefix ?? 'address_';
@@ -127,5 +129,19 @@ $invalid = fn(?object $v, string $name): string => $v !== null && $v->hasFieldEr
         <input type="text" name="<?= e($prefix) ?>country" value="<?= e($address->getCountry()) ?>" maxlength="2" autocomplete="off"<?= $req ?>
                aria-invalid="<?= $invalid($addressValidator, 'country') ?>">
         <?= raw($addrError('country')) ?>
+    </div>
+</div>
+<div class="be-form__grid">
+    <div class="be-form__field" data-z77-field-wrapper>
+        <label>E-Mail <small>(Belege an diese Adresse gehen hierhin)</small></label>
+        <input type="email" name="<?= e($prefix) ?>email" value="<?= e($address->getEmail()) ?>" maxlength="190" autocomplete="off"
+               aria-invalid="<?= $invalid($addressValidator, 'email') ?>">
+        <?= raw($addrError('email')) ?>
+    </div>
+    <div class="be-form__field" data-z77-field-wrapper>
+        <label>Telefon</label>
+        <input type="tel" name="<?= e($prefix) ?>phone" value="<?= e($address->getPhone()) ?>" maxlength="40" autocomplete="off"
+               aria-invalid="<?= $invalid($addressValidator, 'phone') ?>">
+        <?= raw($addrError('phone')) ?>
     </div>
 </div>

@@ -22,5 +22,11 @@
         "code": "regional",
         "label": "Regionaladresse",
         "active": true
+    },
+    {
+        "id": 5,
+        "code": "newsletter",
+        "label": "Newsletter",
+        "active": true
     }
 ]

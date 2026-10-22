@@ -300,6 +300,13 @@ $billTo = new \Z77\Module\Debtor\Entities\AddressSnapshot('', '', '', 'Muster AG
 $order->describe($contact, 'Wein für das Fest', new \DateTimeImmutable('2026-10-14'), null, null, PriceMode::Net, 'CHF', 'lukb', null, null, $billTo);
 check('D5b a billing snapshot on the order (bill_*, 2026-10-17) is the booked invoice address; none → null (debtor takes the customer address)',
     $order->billingAddress() === $billTo && OrderInvoiceDraft::of($order, new \DateTimeImmutable('2026-10-31'))->address === $billTo);
+$billMail = new \Z77\Module\Debtor\Entities\AddressSnapshot('', '', '', 'Muster AG', '', 'Postfach', '220', '8712', 'Stäfa', 'CH', ' rechnung@muster.ch ', ' 044 000 00 00 ');
+$order->describe($contact, 'Wein für das Fest', new \DateTimeImmutable('2026-10-14'), null, null, PriceMode::Net, 'CHF', 'lukb', null, null, $billMail);
+check('D5b2 the billing snapshot carries the address\'s e-mail and phone (2026-10-22, trimmed) into the invoice draft — where the document is e-mailed; not part of the printed lines; contactLine() «e-mail · phone»',
+    OrderInvoiceDraft::of($order, new \DateTimeImmutable('2026-10-31'))->address?->getEmail() === 'rechnung@muster.ch'
+    && OrderInvoiceDraft::of($order, new \DateTimeImmutable('2026-10-31'))->address?->getPhone() === '044 000 00 00'
+    && $billMail->lines() === ['Muster AG', 'Postfach 220', '8712 Stäfa'] && $billMail->contactLine() === 'rechnung@muster.ch · 044 000 00 00' && $billTo->contactLine() === ''
+    && $billTo->getEmail() === '' && $billTo->getPhone() === '');
 $order->describe($contact, 'Wein für das Fest', new \DateTimeImmutable('2026-10-14'), null, null, PriceMode::Net, 'CHF', 'lukb', null, null, null, 'disc-2-10');
 check('D5c the order\'s payment terms (2026-10-18) are the booked invoice\'s; none (D1) → null = the debtor profile\'s',
     $order->getPaymentTermsCode() === 'disc-2-10' && OrderInvoiceDraft::of($order, new \DateTimeImmutable('2026-10-31'))->paymentTermsCode === 'disc-2-10'
@@ -452,6 +459,20 @@ check('F1c «anpassen» (2026-10-18): the card switches to «custom», filled wi
     && (new OrderForm())->adjust('bill', null)->customAddress('bill')->getCountry() === 'CH'
     && $faDraft !== null && $faDraft->deliveryAddress?->getName() === 'Lager Ost' && $faDraft->deliveryAddress->getCity() === 'Zürich'
     && $faDraft->deliveryAddress->getCountry() === 'CH' && $faDraft->billingAddress === null);
+$shipMail = new \Z77\Module\Debtor\Entities\AddressSnapshot('', '', 'Anna', 'Muster', '', 'Weg', '1', '4051', 'Basel', 'CH', 'anna@muster.ch', '061 000 00 00');
+$fm = (new OrderForm())->fromPost(['contact' => '6', 'order_date' => '2026-10-14', 'rows' => []])->adjust('bill', $shipMail);
+$fmPost = (new OrderForm())->fromPost(['contact' => '6', 'order_date' => '2026-10-14', 'bill' => 'custom', 'bill_addr_name' => 'Muster AG', 'bill_addr_zip' => '8001', 'bill_addr_city' => 'Zürich', 'bill_addr_country' => 'CH', 'bill_addr_email' => ' buha@muster.ch ', 'bill_addr_phone' => ' 044 1 ', 'rows' => []]);
+check('F1c2 «anpassen» carries the e-mail and phone (2026-10-22): the card starts with the shown address\'s, the posted `bill_addr_email` / `bill_addr_phone` become the order\'s snapshot (trimmed)',
+    $fm->customAddress('bill')->getEmail() === 'anna@muster.ch' && $fm->customAddress('bill')->getPhone() === '061 000 00 00'
+    && $fmPost->toDraft([], ['' => null], null, ['' => null])?->billingAddress?->getEmail() === 'buha@muster.ch'
+    && $fmPost->toDraft([], ['' => null], null, ['' => null])?->billingAddress?->getPhone() === '044 1');
+$casesTpl = file_get_contents(__DIR__ . '/../packages/module-order/res/view/templates/Backend/OrderController/_addressCases.tpl.php');
+$traitSrc = file_get_contents(__DIR__ . '/../packages/module-order/src/Ui/OrderControllerTrait.php');
+check('F1c3 the order window\'s address cards show the e-mail · phone small under the address (`be-form__hint`, the cases are snapshots); «angepasst» compares them too; the PDFs print no e-mail',
+    str_contains($casesTpl, '$contactLine = $address?->contactLine()') && str_contains($casesTpl, '<div class="be-form__hint"><?= e($contactLine) ?></div>')
+    && str_contains($traitSrc, '$now->contactLine() === $kept->contactLine()')
+    && !str_contains(file_get_contents(__DIR__ . '/../packages/module-order/res/view/templates/pdf/order.tpl.php'), 'getEmail()')
+    && !str_contains(file_get_contents(__DIR__ . '/../packages/module-order/res/view/templates/pdf/deliveryNote.tpl.php'), 'getEmail()'));
 $ft = (new OrderForm())->fromPost(['contact' => '6', 'order_date' => '2026-10-14', 'terms' => ' disc-2-10 ', 'rows' => []])->withTarget('lukb')->toDraft([], ['' => null]);
 $ftEmpty = (new OrderForm())->fromPost(['contact' => '6', 'order_date' => '2026-10-14', 'terms' => '', 'rows' => []])->toDraft([], ['' => null]);
 $ftBlank = (new OrderForm())->startBlank(new \DateTimeImmutable('2026-10-18'), 6, 'lukb', 'opened', 'net-30');
@@ -826,7 +847,7 @@ $contactId = (int) $db->lastInsertId();
 // debtor first — through THE one creation path, as an importer would.
 (new \Z77\Module\Debtor\Services\DebtorProfileService($em))->open($em->getRepository(\Z77\Module\Contact\Entities\Contact::class)->find($contactId), 'net-30');
 // Debtor refuses a document without an invoice address (newer than this section) — the contact gets one.
-$db->insert('address', ['salutation' => '', 'title' => '', 'first_name' => '', 'name' => 'Muster AG', 'address_row' => '', 'street' => 'Musterweg', 'house_no' => '1', 'zip' => '6000', 'city' => 'Luzern', 'country' => 'CH']);
+$db->insert('address', ['salutation' => '', 'title' => '', 'first_name' => '', 'name' => 'Muster AG', 'address_row' => '', 'street' => 'Musterweg', 'house_no' => '1', 'zip' => '6000', 'city' => 'Luzern', 'country' => 'CH', 'email' => 'debitor@muster.ch', 'phone' => '041 000 00 02']);
 $db->insert('contact_address', ['contact_id' => $contactId, 'address_id' => (int) $db->lastInsertId(), 'type_code' => 'invoice', 'title' => '']);
 $article = (new \Z77\Module\Article\Services\ArticleService($em, 'harness'))->create(new \Z77\Module\Article\Services\ArticleDraft(
     number: 'W-22', name: 'Pinot Noir', unit: 'Fl.', price: '24.50', priceMode: 'net', validFrom: '2026-01-01', taxCode: 'UN', revenueAccount: '3200', stockRelevant: true,
@@ -1177,6 +1198,29 @@ check('M36 the line code: create stores it trimmed (sales_order_line.code «AB-1
     && array_map(static fn($l) => $l->getCode(), $m36Up->getLines()) === ['AB-2', 'T-1'] && $m36Up->getLines()[0]->getId() === $m36->getLines()[0]->getId()
     && array_map(static fn($l) => $l->getCode(), array_values(array_filter($m36Preview->getLines(), static fn($l) => $l->type() !== LineType::Rounding))) === ['AB-2', 'T-1']
     && str_starts_with($m36Pdf, '%PDF-') && !str_contains($m36Pdf, 'AB-2') && !str_contains($m36Pdf, 'T-1'));
+
+// E-mail and phone of the addresses (owner 2026-10-22, step 1 of the mail plan): the columns, the snapshots stored
+// on the order, the refusal of a bad e-mail, and the booked invoice's address (debtor's preview = the booking print).
+$m37Cols = $db->fetchAllKeyValue("SELECT COLUMN_NAME, CONCAT(COLUMN_TYPE, ' ', IS_NULLABLE) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'sales_order' AND COLUMN_NAME IN ('bill_email', 'bill_phone', 'ship_email', 'ship_phone') ORDER BY COLUMN_NAME");
+$m37Up = (static fn(string $s) => substr($s, strpos($s, 'function up'), strpos($s, 'function down') - strpos($s, 'function up')))(file_get_contents($packages['Order'] . '/res/migrations/Version20261022160000.php'));
+$m37Bill = new \Z77\Module\Debtor\Entities\AddressSnapshot('', '', '', 'Muster AG', 'Buchhaltung', 'Postfach', '9', '6000', 'Luzern', 'CH', 'rechnung@muster.ch', '041 000 00 01');
+$m37Ship = new \Z77\Module\Debtor\Entities\AddressSnapshot('', '', 'Anna', 'Muster', '', 'Weg', '1', '4051', 'Basel', 'CH', 'lager@muster.ch', '');
+$m37 = $svc->create(new $D($contactId, '2026-10-22', 'Mail', priceMode: 'gross', deliveryAddress: $m37Ship, lines: [$L::article($grossId, '2')], billingAddress: $m37Bill));
+$m37Row = $db->fetchAssociative('SELECT bill_email, bill_phone, ship_email, ship_phone FROM sales_order WHERE id = ?', [(int) $m37->getId()]);
+$m37Err = null;
+try { $svc->create(new $D($contactId, '2026-10-22', lines: [$L::article($variantId, '1')], billingAddress: new \Z77\Module\Debtor\Entities\AddressSnapshot('', '', '', 'Muster AG', '', 'Weg', '1', '6000', 'Luzern', 'CH', 'kein-at'))); } catch (\Z77\Module\Order\Services\InvalidOrderException $e) { $m37Err = $e->errors; }
+$m37Preview = $svc->preview($em->getRepository(SalesOrder::class)->withLines((int) $m37->getId()));
+// Without a billing snapshot the booking print takes the customer's invoice address (its e-mail and phone set at the master data above).
+$m37b = $svc->create(new $D($contactId, '2026-10-22', 'Mail', priceMode: 'gross', lines: [$L::article($grossId, '2')]));
+$m37bPreview = $svc->preview($em->getRepository(SalesOrder::class)->withLines((int) $m37b->getId()));
+check('M37 e-mail and phone (2026-10-22, Version20261022160000, schema only): bill_/ship_ email VARCHAR(190) / phone VARCHAR(40) NOT NULL; the order stores both snapshots\' e-mail and phone; a bad billing e-mail is refused on `bill`; the booked invoice\'s address carries the billing snapshot\'s e-mail, else the customer invoice address\'s',
+    $m37Cols === ['bill_email' => 'varchar(190) NO', 'bill_phone' => 'varchar(40) NO', 'ship_email' => 'varchar(190) NO', 'ship_phone' => 'varchar(40) NO']
+    && !str_contains($m37Up, 'UPDATE') && !str_contains($m37Up, 'DROP')
+    && $m37Row === ['bill_email' => 'rechnung@muster.ch', 'bill_phone' => '041 000 00 01', 'ship_email' => 'lager@muster.ch', 'ship_phone' => '']
+    && is_string($m37Err['bill'] ?? null) && str_contains($m37Err['bill'], 'E-Mail')
+    && $m37Preview->getAddress()->getEmail() === 'rechnung@muster.ch' && $m37Preview->getAddress()->getPhone() === '041 000 00 01'
+    && $m37bPreview->getAddress()->getEmail() === 'debitor@muster.ch' && $m37bPreview->getAddress()->getPhone() === '041 000 00 02'
+    && $db->fetchOne('SELECT bill_email FROM sales_order WHERE id = ?', [(int) $m37b->getId()]) === '');
 $db->executeStatement('DELETE FROM mandator');
 
 echo "\n{$pass} passed, {$fail} failed\n";

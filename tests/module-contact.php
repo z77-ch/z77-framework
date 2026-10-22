@@ -221,7 +221,7 @@ check('A1 the module\'s res/migrations is collected under Z77\\Module\\Contact\\
 check('A2 the database is empty', $tables() === []);
 [$code, $out] = $run(['command' => 'migrate']);
 check('A3 migrate exits 0' . ($code !== 0 ? " — got {$code}: " . trim($out) : ''), $code === 0);
-check('A4 … migrated up to the module migration (the package one runs first, by timestamp)', str_contains($out, 'Z77\\Module\\Contact\\Migrations\\Version20260921153209'));
+check('A4 … migrated up to the newest module migration (the package one runs first, by timestamp)', str_contains($out, 'Z77\\Module\\Contact\\Migrations\\Version20261022160000'));
 check('A5 contact, address, contact_address exist (plus number_range and the metadata table)', $tables() === ['address', 'contact', 'contact_address', 'number_range', MigrationsApplication::STORAGE_TABLE]);
 $allUnicode = true;
 foreach (['contact', 'address', 'contact_address'] as $table) {
@@ -236,9 +236,16 @@ check('A8 contact_address has foreign keys to address and contact — and none t
 [$code, $out] = $run(['command' => 'migrate']);
 check('A9 a second migrate is a no-op', $code === 0 && str_contains($out, 'Already at the latest version'));
 [$code, $out] = $run(['command' => 'diff', '--namespace' => 'Z77\\Module\\Contact\\Migrations']);
-check('A10 diff after migrate reports NO change — mapping and migration agree', $code !== 0 && str_contains($out, 'No changes detected') && count(glob($package . '/res/migrations/Version*.php')) === 1);
+check('A10 diff after migrate reports NO change — mapping and migration agree', $code !== 0 && str_contains($out, 'No changes detected') && count(glob($package . '/res/migrations/Version*.php')) === 2);
 [$code, $out] = $run(['command' => 'status']);
-check('A11 status lists the module namespace and two executed migrations', $code === 0 && str_contains($out, 'Z77\\Module\\Contact\\Migrations') && preg_match('/\| Executed\s+\|\s+2\s+\|/', $out) === 1);
+check('A11 status lists the module namespace and three executed migrations (package, the first, the address e-mail/phone)', $code === 0 && str_contains($out, 'Z77\\Module\\Contact\\Migrations') && preg_match('/\| Executed\s+\|\s+3\s+\|/', $out) === 1);
+$addrColumns = $db->fetchAllAssociativeIndexed("SELECT COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE, COLUMN_DEFAULT FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'address' AND COLUMN_NAME IN ('email', 'phone')", [$dbName]);
+$upOf = (static fn(string $s) => substr($s, strpos($s, 'function up'), strpos($s, 'function down') - strpos($s, 'function up')))(file_get_contents($package . '/res/migrations/Version20261022160000.php'));
+check('A12 the address e-mail and phone (owner 2026-10-22, Version20261022160000, schema only): address.email VARCHAR(190) / address.phone VARCHAR(40), NOT NULL DEFAULT \'\' — every existing address reads «none»',
+    ($addrColumns['email']['COLUMN_TYPE'] ?? '') === 'varchar(190)' && ($addrColumns['phone']['COLUMN_TYPE'] ?? '') === 'varchar(40)'
+    && ($addrColumns['email']['IS_NULLABLE'] ?? '') === 'NO' && ($addrColumns['phone']['IS_NULLABLE'] ?? '') === 'NO'
+    && in_array($addrColumns['email']['COLUMN_DEFAULT'] ?? null, ["''", ''], true) && in_array($addrColumns['phone']['COLUMN_DEFAULT'] ?? null, ["''", ''], true)
+    && !str_contains($upOf, 'UPDATE') && !str_contains($upOf, 'DROP'));
 
 
 // ── B. address types: seed, lookup, reference rule (read side) ───────────
@@ -247,13 +254,14 @@ echo "B. Address types (file-based seed)\n";
 $em    = $wireDi();
 $types = $em->getRepository(AddressType::class);
 check('B1 convention repository resolves', $types instanceof AddressTypeRepository);
-check('B2 four seed rows: main, invoice, delivery, regional — in that order', array_map(fn(AddressType $t) => $t->getCode(), $types->allInOrder()) === ['main', 'invoice', 'delivery', 'regional']);
+check('B2 five seed rows: main, invoice, delivery, regional, newsletter («Newsletter», owner 2026-10-22) — in that order', array_map(fn(AddressType $t) => $t->getCode(), $types->allInOrder()) === ['main', 'invoice', 'delivery', 'regional', 'newsletter']
+    && $types->findByCode('newsletter')?->getLabel() === 'Newsletter');
 check('B3 every seed row is active and passes its validator', array_reduce($types->allInOrder(), fn($ok, AddressType $t) => $ok && $t->isActive() && (new AddressTypeValidator($t, $types))->isValid(), true));
 check('B4 labels are German with umlauts intact (UTF-8, no BOM)', $types->findByCode('invoice')?->getLabel() === 'Rechnungsadresse');
 $lookup = AddressTypes::from($em);
 check('B5 labelOf() by code, case- and space-insensitive', $lookup->labelOf(' Invoice ') === 'Rechnungsadresse');
 check('B6 labelOf() never throws — the raw code for a missing row', $lookup->labelOf('nope') === 'nope');
-check('B7 active() offers all four, all() is keyed by code', count($lookup->active()) === 4 && array_keys($lookup->all()) === ['main', 'invoice', 'delivery', 'regional']);
+check('B7 active() offers all five, all() is keyed by code', count($lookup->active()) === 5 && array_keys($lookup->all()) === ['main', 'invoice', 'delivery', 'regional', 'newsletter']);
 check('B8 there is no resolve() that throws — it arrives with the snapshot consumer (P3)', !method_exists(AddressTypes::class, 'resolve'));
 $v = new AddressTypeValidator(new AddressType(['code' => 'MAIN', 'label' => 'Doppelt']), $types);
 check('B9 duplicate code refused (setter lower-cases)', !$v->isValid() && $v->hasFieldError('code'));
@@ -271,7 +279,7 @@ check('C0 setters normalize language (lower) — e-mail lower-casing is the body
 $main = new ContactAddress($muster, 'main', new Address(['salutation' => 'Firma', 'name' => 'Müller & Söhne AG', 'street' => 'Bahnhofstrasse', 'house_no' => '1', 'zip' => '8001', 'city' => 'Zürich', 'country' => 'ch']));
 check('C1 the constructor points back to the contact but does NOT attach', $main->getContact() === $muster && $muster->getAddresses() === []);
 $muster->addAddress($main);
-$muster->addAddress(new ContactAddress($muster, 'invoice', new Address(['name' => 'Müller & Söhne AG', 'address_row' => 'Buchhaltung', 'street' => 'Postfach', 'zip' => '8021', 'city' => 'Zürich'])));
+$muster->addAddress(new ContactAddress($muster, 'invoice', new Address(['name' => 'Müller & Söhne AG', 'address_row' => 'Buchhaltung', 'street' => 'Postfach', 'zip' => '8021', 'city' => 'Zürich', 'email' => ' buchhaltung@mueller.ch ', 'phone' => ' 044 123 45 00 '])));
 $muster->addAddress(new ContactAddress($muster, 'delivery', new Address(['salutation' => 'Herr', 'first_name' => 'Peter', 'name' => 'Müller', 'street' => 'Industriestrasse', 'house_no' => '12a', 'zip' => '8600', 'city' => 'Dübendorf']), 'Lager Ost'));
 check('C2 three links attached; country is upper-cased at the setter', count($muster->getAddresses()) === 3 && $main->getAddress()->getCountry() === 'CH');
 check('C3 nothing written before save()', $count('contact') === 0 && $count('address') === 0 && $count('contact_address') === 0);
@@ -290,6 +298,9 @@ $readLinks = $links->findByContact($read);
 check('C7 three typed addresses in creation order: main, invoice, delivery', array_map(fn(ContactAddress $l) => $l->getTypeCode(), $readLinks) === ['main', 'invoice', 'delivery']);
 check('C8 the link title travels («Lager Ost» on the delivery address)', $readLinks[2]->getTitle() === 'Lager Ost' && $readLinks[0]->getTitle() === '');
 check('C9 address fields round-trip (addressee, row, house number, zip, city)', $readLinks[1]->getAddress()->getAddressRow() === 'Buchhaltung' && $readLinks[2]->getAddress()->getHouseNo() === '12a' && $readLinks[2]->getAddress()->getFirstName() === 'Peter' && $readLinks[0]->getAddress()->getZip() === '8001' && $readLinks[0]->getAddress()->getCity() === 'Zürich');
+check('C9b the address\'s own e-mail and phone (2026-10-22) round-trip, trimmed at the setter; an address without them reads \'\'',
+    $readLinks[1]->getAddress()->getEmail() === 'buchhaltung@mueller.ch' && $readLinks[1]->getAddress()->getPhone() === '044 123 45 00'
+    && $readLinks[0]->getAddress()->getEmail() === '' && $readLinks[0]->getAddress()->getPhone() === '');
 check('C10 the inverse side sees the same three links', count($read->getAddresses()) === 3);
 check('C11 every link type resolves through AddressTypes', array_map(fn(ContactAddress $l) => AddressTypes::from($em2)->labelOf($l->getTypeCode()), $readLinks) === ['Hauptadresse', 'Rechnungsadresse', 'Lieferadresse']);
 check('C12 displayName: company with the contact person in brackets', $read->displayName() === 'Müller & Söhne AG (Müller Ursula)');
@@ -372,6 +383,12 @@ check('D12 CH zip must be four digits (80001, 800, 8O00 refused)', !$addressOk([
 check('D13 DE 80331 and GB «SW1A 1AA» accepted, DE «12» refused', $addressOk(['zip' => '80331', 'country' => 'DE'] + $full) && $addressOk(['zip' => 'SW1A 1AA', 'country' => 'GB'] + $full) && !$addressOk(['zip' => '12', 'country' => 'DE'] + $full));
 check('D14 country: lower-case input is normalized, three letters refused', (new Address(['country' => 'de']))->getCountry() === 'DE' && !$addressOk(['country' => 'CHE'] + $full) && !$addressOk(['country' => ''] + $full));
 check('D15 city shorter than 2 refused', !$addressOk(['city' => 'Z'] + $full));
+check('D15b the address e-mail (2026-10-22): empty or deliverable — «kein-at», a reserved TLD and 191 characters refused on `email` with a German message; the phone free text up to 40, 41 refused on `phone`',
+    $addressOk(['email' => ''] + $full) && $addressOk(['email' => 'rechnung@muster.ch', 'phone' => '+41 44 123 45 67'] + $full)
+    && $addressField(['email' => 'kein-at'] + $full) === ['email'] && $addressField(['email' => 'a@b.test'] + $full) === ['email']
+    && $addressField(['email' => str_repeat('a', 180) . '@muster.ch'] + $full) === ['email']
+    && $addressField(['phone' => str_repeat('1', 41)] + $full) === ['phone'] && $addressOk(['phone' => str_repeat('1', 40)] + $full)
+    && (static function () use ($full): bool { $v = new AddressValidator(new Address(['email' => 'kein-at'] + $full)); $v->isValid(); return str_starts_with($v->getFieldError('email'), 'E-Mail'); })());
 
 $org = $em5->getRepository(Contact::class)->find($musterId);
 $bad = new ContactAddress($org, 'delivery', new Address(['name' => 'Ohne Strasse', 'zip' => '8000', 'city' => 'Zürich']));
@@ -415,6 +432,22 @@ check('D26 … and the next flush writes none of it (probe P3)', $db->fetchOne('
 $svc->saveAddress($link, ['type_code' => 'main', 'title' => 'Sitz'], ['street' => 'Bahnhofstrasse', 'house_no' => '2']);
 check('D27 a valid saveAddress() applies link and address values and flushes', $db->fetchOne('SELECT house_no FROM address WHERE id = ?', [$link->getAddress()->getId()]) === '2' && $db->fetchOne('SELECT title FROM contact_address WHERE id = ?', [$link->getId()]) === 'Sitz');
 $svc->saveAddress($link, ['type_code' => 'main', 'title' => ''], ['house_no' => '1']);
+// The editor's path for the e-mail and phone (2026-10-22): the posted `address_email` / `address_phone`
+// through ContactForm::addressValues() (the address dialog's mapping) into saveAddress().
+$posted = ContactForm::addressValues(['address_email' => ' Sitz@Mueller.CH ', 'address_phone' => ' 044 123 45 01 ', 'email' => 'contact-field@x.ch']);
+$e = caught(fn() => $svc->saveAddress($link, ['type_code' => 'main', 'title' => ''], ['email' => 'kein-at']), InvalidAddressException::class);
+check('D27b the address dialog maps `address_email` / `address_phone` (not the contact\'s `email`); a bad e-mail is refused on `email` and nothing written; a valid pair is saved',
+    ($posted['email'] ?? null) !== null && strcasecmp($posted['email'], 'sitz@mueller.ch') === 0 && isset($posted['phone'])
+    && $e !== null && $e->addressValidator->hasFieldError('email') && $link->getAddress()->getEmail() === ''
+    && (static function () use ($svc, $link, $posted, $db): bool {
+        $svc->saveAddress($link, ['type_code' => 'main', 'title' => ''], $posted);
+        return strcasecmp((string) $db->fetchOne('SELECT email FROM address WHERE id = ?', [$link->getAddress()->getId()]), 'sitz@mueller.ch') === 0
+            && $db->fetchOne('SELECT phone FROM address WHERE id = ?', [$link->getAddress()->getId()]) === '044 123 45 01';
+    })());
+$fieldsTpl = file_get_contents(__DIR__ . '/../packages/module-contact/res/view/templates/Backend/ContactController/_addressFields.tpl.php');
+check('D27c the shared address block (`_addressFields` — contact dialog, address dialog, debtor\'s «+ Kontakt», the order\'s «anpassen») carries «E-Mail» and «Telefon» under the block\'s prefix',
+    str_contains($fieldsTpl, 'name="<?= e($prefix) ?>email"') && str_contains($fieldsTpl, 'name="<?= e($prefix) ?>phone"')
+    && str_contains($fieldsTpl, '<label>E-Mail') && str_contains($fieldsTpl, '<label>Telefon</label>') && str_contains($fieldsTpl, "\$addrError('email')"));
 $e = caught(fn() => $svc->update($org, ['kind' => 'person', 'last_name' => '']), InvalidContactException::class);
 check('D28 a refused kind switch leaves the managed entity an organisation', $e !== null && $org->isOrganisation() && $db->fetchOne('SELECT kind FROM contact WHERE id = ?', [$musterId]) === 'organisation');
 
@@ -445,7 +478,7 @@ $master = new AddressTypeMasterData($em6);
 $types  = $em6->getRepository(AddressType::class);
 $master->setActive($types->findByCode('regional'), false);
 $em7    = $wireDi();
-check('E3 deactivation is persisted', !$em7->getRepository(AddressType::class)->findByCode('regional')->isActive() && count(AddressTypes::from($em7)->active()) === 3);
+check('E3 deactivation is persisted', !$em7->getRepository(AddressType::class)->findByCode('regional')->isActive() && count(AddressTypes::from($em7)->active()) === 4);
 check('E4 a deactivated type still resolves for the existing link', AddressTypes::from($em7)->labelOf('regional') === 'Regionaladresse');
 $service7 = new ContactService($em7);
 $org7     = $em7->getRepository(Contact::class)->find($musterId);

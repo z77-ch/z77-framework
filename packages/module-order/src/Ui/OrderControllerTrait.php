@@ -1230,25 +1230,22 @@ trait OrderControllerTrait
     }
 
     /**
-     * Every choice of an address card → the lines it shows (`_addressCases`): a chosen address its
-     * own; none chosen = the customer's invoice / main address (billing) or nothing (delivery,
-     * «wie Rechnungsadresse»); «angepasst» while the card's fields are open.
+     * Every choice of an address card → the address it shows (`_addressCases`: its lines, and its
+     * e-mail · phone small underneath, 2026-10-22): a chosen address its own; none chosen = the
+     * customer's invoice / main address (billing) or nothing (delivery, «wie Rechnungsadresse»);
+     * «angepasst» while the card's fields are open (null — the fields show).
      *
-     * @return array<string, list<string>>
+     * @return array<string, AddressSnapshot|null>
      */
     private function orderAddressCases(string $field, string $contactId, ?SalesOrder $order, ?OrderForm $form): array
     {
-        $choices = $field === 'bill' ? $this->orderBillChoices($contactId, $order) : $this->orderShipChoices($contactId, $order);
-        $cases   = [];
-        foreach ($choices as $value => $snapshot) {
-            $cases[(string) $value] = $snapshot?->lines() ?? [];
-        }
+        $cases = $field === 'bill' ? $this->orderBillChoices($contactId, $order) : $this->orderShipChoices($contactId, $order);
         if ($field === 'bill') {
             $contact  = ctype_digit($contactId) ? $this->em()->getRepository(Contact::class)->find((int) $contactId) : null;
-            $cases[''] = $contact !== null ? ((new InvoicingService($this->em()))->invoiceAddressOf($contact)?->lines() ?? []) : [];
+            $cases[''] = $contact !== null ? (new InvoicingService($this->em()))->invoiceAddressOf($contact) : null;
         }
         if ($form?->header($field) === OrderForm::ADDRESS_CUSTOM) {
-            $cases[OrderForm::ADDRESS_CUSTOM] = [];
+            $cases[OrderForm::ADDRESS_CUSTOM] = null;
         }
 
         return $cases;
@@ -1267,7 +1264,8 @@ trait OrderControllerTrait
             return false;
         }
         foreach ($this->orderContactAddresses($contactId) as $link) {
-            if (AddressSnapshot::of($link->getAddress())->lines() === $kept->lines()) {
+            $now = AddressSnapshot::of($link->getAddress());
+            if ($now->lines() === $kept->lines() && $now->contactLine() === $kept->contactLine()) {
                 return false;
             }
         }

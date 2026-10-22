@@ -9,7 +9,10 @@ use Z77\Module\Article\Stock\StockConfirmation;
 use Z77\Module\Article\Stock\StockLedger;
 use Z77\Module\Article\Stock\StockLedgers;
 use Z77\Module\Article\Stock\StockRequest;
+use Z77\Module\Contact\Entities\Address;
 use Z77\Module\Contact\Entities\Contact;
+use Z77\Module\Contact\Validators\AddressValidator;
+use Z77\Module\Debtor\Entities\AddressSnapshot;
 use Z77\Module\Debtor\Entities\DebtorProfile;
 use Z77\Module\Debtor\Entities\LineType;
 use Z77\Module\Debtor\Entities\PaymentTarget;
@@ -733,6 +736,8 @@ final class OrderService
         }
         if ($ship !== null && !$ship->isComplete()) {
             $errors['ship'] = 'Die Lieferadresse braucht mindestens Name, PLZ, Ort und Land.';
+        } elseif ($ship !== null && ($problem = self::contactProblem($ship)) !== '') {
+            $errors['ship'] = 'Lieferadresse: ' . $problem;
         }
         $bill = $draft->billingAddress;
         if ($bill !== null && $bill->lines() === [] && $bill->getCountry() === '') {
@@ -740,6 +745,8 @@ final class OrderService
         }
         if ($bill !== null && !$bill->isComplete()) {
             $errors['bill'] = 'Die Rechnungsadresse braucht mindestens Name, PLZ, Ort und Land.';
+        } elseif ($bill !== null && ($problem = self::contactProblem($bill)) !== '') {
+            $errors['bill'] = 'Rechnungsadresse: ' . $problem;
         }
 
         $notes = trim($draft->notes);
@@ -1162,6 +1169,26 @@ final class OrderService
     }
 
     /** `Y-m-d` → the day; null when it is no date. */
+    /**
+     * What is wrong with a snapshot's e-mail / phone ('' = nothing) — module-contact's
+     * `AddressValidator` rules (2026-10-22), asked field by field (the snapshot's other fields have
+     * the document rule `isComplete()`): the e-mail empty or deliverable, the phone at most 40
+     * characters. A custom («angepasst») or imported address is bound like a contact's.
+     */
+    private static function contactProblem(AddressSnapshot $address): string
+    {
+        $validator = new AddressValidator(new Address());
+        $validator->validateEmail($address->getEmail());
+        $validator->validatePhone($address->getPhone());
+        foreach (['email', 'phone'] as $field) {
+            if ($validator->hasFieldError($field)) {
+                return $validator->getFieldError($field);
+            }
+        }
+
+        return '';
+    }
+
     private static function date(string $value): ?\DateTimeImmutable
     {
         $value = trim($value);

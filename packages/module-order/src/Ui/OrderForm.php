@@ -60,8 +60,8 @@ final class OrderForm
         'ship' => 'Lieferung an die Rechnungsadresse.',
     ];
 
-    /** The snapshot's fields in `AddressSnapshot`'s constructor order (the posted names after the prefix). */
-    private const ADDRESS_FIELDS = ['salutation', 'title', 'first_name', 'name', 'address_row', 'street', 'house_no', 'zip', 'city', 'country'];
+    /** The snapshot's fields in `AddressSnapshot`'s constructor order (the posted names after the prefix; e-mail and phone 2026-10-22). */
+    private const ADDRESS_FIELDS = ['salutation', 'title', 'first_name', 'name', 'address_row', 'street', 'house_no', 'zip', 'city', 'country', 'email', 'phone'];
 
     private const EMPTY_ROW = ['id' => '', 'type' => 'service', 'child' => '', 'article' => '', 'text' => '', 'quantity' => '', 'unit' => '', 'price' => '', 'discount' => '', 'tax_code' => '', 'code' => ''];
 
@@ -216,6 +216,7 @@ final class OrderForm
         $values = $start === null ? [] : [
             $start->getSalutation(), $start->getTitle(), $start->getFirstName(), $start->getName(), $start->getAddressRow(),
             $start->getStreet(), $start->getHouseNo(), $start->getZip(), $start->getCity(), $start->getCountry(),
+            $start->getEmail(), $start->getPhone(),
         ];
         $this->custom[$field] = $values === [] ? array_fill_keys(self::ADDRESS_FIELDS, '') : array_combine(self::ADDRESS_FIELDS, $values);
         if ($this->custom[$field]['country'] === '') {

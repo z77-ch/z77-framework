@@ -23,6 +23,14 @@ use Z77\Module\Contact\Entities\Address;
  *
  * Value object: built from an `Address` or from its fields, read only. The
  * printed address block is {@see lines()} (P3 part 3).
+ *
+ * E-mail and phone (owner 2026-10-22, step 1 of the mail plan) ride along:
+ * a document is e-mailed to the e-mail of the BILLING address it stores, so
+ * the snapshot keeps the e-mail it was issued with (ADR-041 decision 6). They
+ * are not part of {@see lines()} — the PDFs do not print them; the backend
+ * shows them under the address ({@see contactLine()}). Columns `{prefix}email`
+ * / `{prefix}phone`, NOT NULL DEFAULT '' (debtor `Version20261022160000`,
+ * order `Version20261022160000`).
  */
 #[ORM\Embeddable]
 final class AddressSnapshot
@@ -57,6 +65,13 @@ final class AddressSnapshot
     #[ORM\Column(length: 2)]
     private string $country = 'CH';
 
+    /** The address's e-mail at issue ('' = none) — where the document is e-mailed. */
+    #[ORM\Column(length: 190, options: ['default' => ''])]
+    private string $email = '';
+
+    #[ORM\Column(length: 40, options: ['default' => ''])]
+    private string $phone = '';
+
     public function __construct(
         string $salutation,
         string $title,
@@ -68,6 +83,8 @@ final class AddressSnapshot
         string $zip,
         string $city,
         string $country,
+        string $email = '',
+        string $phone = '',
     ) {
         $this->salutation = trim($salutation);
         $this->title      = trim($title);
@@ -79,6 +96,8 @@ final class AddressSnapshot
         $this->zip        = trim($zip);
         $this->city       = trim($city);
         $this->country    = mb_strtoupper(trim($country));
+        $this->email      = trim($email);
+        $this->phone      = trim($phone);
     }
 
     /** The snapshot of a contact's address row as it reads NOW. */
@@ -95,6 +114,8 @@ final class AddressSnapshot
             $address->getZip(),
             $address->getCity(),
             $address->getCountry(),
+            $address->getEmail(),
+            $address->getPhone(),
         );
     }
 
@@ -108,6 +129,18 @@ final class AddressSnapshot
     public function getZip(): string { return $this->zip; }
     public function getCity(): string { return $this->city; }
     public function getCountry(): string { return $this->country; }
+    public function getEmail(): string { return $this->email; }
+    public function getPhone(): string { return $this->phone; }
+
+    /**
+     * E-mail and phone as one line for the backend — «rechnung@muster.ch · 044 123 45 67», ''
+     * without either. Shown small under the address (the order window's cards, the invoice
+     * editor's card «Rechnung»); NOT printed on a PDF.
+     */
+    public function contactLine(): string
+    {
+        return implode(' · ', array_filter([$this->email, $this->phone], static fn(string $p) => $p !== ''));
+    }
 
     /**
      * The PRINTED address block, line by line (P3 part 3 — the part-2 note

@@ -432,7 +432,7 @@ check('A5b4 a draft has no number (owner 2026-10-10, Version20261010170000): inv
 $invoiceFks = $db->fetchFirstColumn('SELECT DISTINCT REFERENCED_TABLE_NAME FROM information_schema.KEY_COLUMN_USAGE WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND REFERENCED_TABLE_NAME IS NOT NULL ORDER BY 1', [$dbName, 'invoice']);
 check('A5c invoice references contact (the party) and itself (credit note → invoice) — no address, no terms, no tax code (they are snapshots / by code)', $invoiceFks === ['contact', 'invoice']);
 $addrColumns = $db->fetchFirstColumn('SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME LIKE ? ORDER BY ORDINAL_POSITION', [$dbName, 'invoice', 'addr\_%']);
-check('A5d the address snapshot is ten flat addr_* columns (the embeddable, contact.md «snapshot shape»)', count($addrColumns) === 10 && in_array('addr_zip', $addrColumns, true) && in_array('addr_country', $addrColumns, true));
+check('A5d the address snapshot is twelve flat addr_* columns (the ten printed fields + e-mail and phone, 2026-10-22) (the embeddable, contact.md «snapshot shape»)', count($addrColumns) === 12 && in_array('addr_email', $addrColumns, true) && in_array('addr_phone', $addrColumns, true) && in_array('addr_zip', $addrColumns, true) && in_array('addr_country', $addrColumns, true));
 foreach (['invoice', 'invoice_line', 'invoice_tax'] as $t) {
     $i = $tableInfo($t);
     check("A5e {$t} is utf8mb4_unicode_ci and InnoDB", ($i['TABLE_COLLATION'] ?? '') === 'utf8mb4_unicode_ci' && ($i['ENGINE'] ?? '') === 'InnoDB');
@@ -450,7 +450,7 @@ check('A9 the unique contact index, the unique customer-number index and the pay
 [$code, $out] = $run(['command' => 'migrate']);
 check('A10 a second migrate is a no-op', $code === 0 && str_contains($out, 'Already at the latest version'));
 [$code, $out] = $run(['command' => 'diff', '--namespace' => 'Z77\\Module\\Debtor\\Migrations']);
-check('A11 diff after migrate reports NO change — mapping and migration agree (embedded address and payment part, money and decimal columns included)' . (str_contains($out, 'No changes detected') ? '' : ' — ' . trim($out)), $code !== 0 && str_contains($out, 'No changes detected') && count(glob($package . '/res/migrations/Version*.php')) === 15);
+check('A11 diff after migrate reports NO change — mapping and migration agree (embedded address and payment part, money and decimal columns included)' . (str_contains($out, 'No changes detected') ? '' : ' — ' . trim($out)), $code !== 0 && str_contains($out, 'No changes detected') && count(glob($package . '/res/migrations/Version*.php')) === 16);
 check('A12 every migration is expand-only (no DROP outside down()); the «Fakturiert» pair (ADD / DROP delivered_*, 2026-10-10) is gone — it never left the development database (owner 2026-10-13)', array_reduce(glob($package . '/res/migrations/Version*.php'), function ($ok, $f) {
     $s  = file_get_contents($f);
     $up = substr($s, 0, strpos($s, 'function down'));
@@ -475,6 +475,12 @@ check('A12e the no-VAT note (owner 2026-10-22, Version20261022100000, schema onl
 check('A12f the line code (owner 2026-10-22, Version20261022120000, schema only): invoice_line.code VARCHAR(16) NULL — NULL = no code, every existing document prints as before; down() drops it',
     $labelColumn('invoice_line', 'code') === ['IS_NULLABLE' => 'YES', 'CHARACTER_MAXIMUM_LENGTH' => 16]
     && !str_contains($upOf('Version20261022120000'), 'UPDATE') && str_contains(substr(file_get_contents($package . '/res/migrations/Version20261022120000.php'), strpos(file_get_contents($package . '/res/migrations/Version20261022120000.php'), 'function down')), 'DROP code'));
+$snapColumn = fn(string $column) => $db->fetchAssociative('SELECT IS_NULLABLE, CHARACTER_MAXIMUM_LENGTH, COLUMN_DEFAULT FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ?', [$dbName, 'invoice', $column]);
+check('A12g the snapshot\'s e-mail and phone (owner 2026-10-22, Version20261022160000, schema only): invoice.addr_email VARCHAR(190) / addr_phone VARCHAR(40) NOT NULL DEFAULT \'\' — every existing document reads «none»; down() drops them',
+    ($snapColumn('addr_email')['IS_NULLABLE'] ?? '') === 'NO' && (int) ($snapColumn('addr_email')['CHARACTER_MAXIMUM_LENGTH'] ?? 0) === 190
+    && ($snapColumn('addr_phone')['IS_NULLABLE'] ?? '') === 'NO' && (int) ($snapColumn('addr_phone')['CHARACTER_MAXIMUM_LENGTH'] ?? 0) === 40
+    && in_array($snapColumn('addr_email')['COLUMN_DEFAULT'] ?? null, ["''", ''], true)
+    && !str_contains($upOf('Version20261022160000'), 'UPDATE') && str_contains(substr(file_get_contents($package . '/res/migrations/Version20261022160000.php'), strpos(file_get_contents($package . '/res/migrations/Version20261022160000.php'), 'function down')), 'DROP addr_email'));
 
 
 // ── B. the seeds ─────────────────────────────────────────────────────────
@@ -793,7 +799,7 @@ echo "F. Debtor profile (one per contact, CRUD, deactivate)\n";
 $em8     = $wireDi();
 $contacts = new ContactService($em8);
 $mueller = new Contact(['kind' => 'organisation', 'company' => 'Müller & Söhne AG', 'language' => 'de', 'email' => 'info@mueller.ch']);
-$mueller->addAddress(new ContactAddress($mueller, 'invoice', new Address(['name' => 'Müller & Söhne AG', 'street' => 'Bahnhofstrasse', 'house_no' => '1', 'zip' => '8001', 'city' => 'Zürich'])));
+$mueller->addAddress(new ContactAddress($mueller, 'invoice', new Address(['name' => 'Müller & Söhne AG', 'street' => 'Bahnhofstrasse', 'house_no' => '1', 'zip' => '8001', 'city' => 'Zürich', 'email' => 'buchhaltung@mueller.ch', 'phone' => '044 000 00 10'])));
 $contacts->save($mueller);
 $anna = new Contact(['kind' => 'person', 'first_name' => 'Anna', 'last_name' => 'Ébauche', 'language' => 'fr']);
 $contacts->save($anna);
@@ -1335,6 +1341,9 @@ check('J6 the tax summary per code, rounded ONCE: UN 810 on 280.00 = 22.68 (stan
 check('J7 the address snapshot is Müller\'s invoice address, the language the contact\'s, the party by id, the origin opaque',
     $read->getAddress()->getName() === 'Müller & Söhne AG' && $read->getAddress()->getStreet() === 'Bahnhofstrasse' && $read->getAddress()->getZip() === '8001' && $read->getAddress()->getCity() === 'Zürich'
     && $read->getAddress()->getCountry() === 'CH' && $read->getLanguage() === 'de' && $read->getContact()->getId() === $mid && $read->getSourceType() === 'order' && $read->getSourceRef() === 'A-17');
+check('J7b … with the invoice address\'s e-mail and phone (2026-10-22) — where the document is e-mailed (addr_email / addr_phone)',
+    $read->getAddress()->getEmail() === 'buchhaltung@mueller.ch' && $read->getAddress()->getPhone() === '044 000 00 10'
+    && $db->fetchOne('SELECT addr_email FROM invoice WHERE id = ?', [$read->getId()]) === 'buchhaltung@mueller.ch');
 check('J8 the terms AS APPLIED: net-30 → due 2026-04-09, no tiers, no text; CHF, no exchange rate, price mode net, service date kept',
     $read->getPaymentTermsCode() === 'net-30' && $read->getDueDate()->format('Y-m-d') === '2026-04-09' && $read->getDiscountTiers() === [] && $read->getTermsText() === null
     && $read->getCurrency() === 'CHF' && $read->getPriceMode() === 'net' && $read->getServiceFrom()->format('Y-m-d') === '2026-03-01' && $read->getServiceTo() === null);
@@ -1435,7 +1444,7 @@ check('J19 a language without a text falls back to the DEFAULT language (it → 
 echo "J. … the snapshot is unaffected by later master-data changes\n";
 $emJ4 = $wireDi();
 $muellerLink = $emJ4->getRepository(ContactAddress::class)->findByContact($emJ4->getRepository(Contact::class)->find($mid))[0];
-(new ContactService($emJ4))->saveAddress($muellerLink, ['type_code' => 'invoice'], ['name' => 'Müller & Söhne AG', 'street' => 'Seestrasse', 'house_no' => '99', 'zip' => '8002', 'city' => 'Zürich', 'country' => 'CH']);
+(new ContactService($emJ4))->saveAddress($muellerLink, ['type_code' => 'invoice'], ['name' => 'Müller & Söhne AG', 'street' => 'Seestrasse', 'house_no' => '99', 'zip' => '8002', 'city' => 'Zürich', 'country' => 'CH', 'email' => 'rechnung@mueller.ch']);
 $net30 = $emJ4->getRepository(PaymentTerms::class)->findByCode('net-30');
 $net30->setDueDays(20);
 (new DebtorMasterData($emJ4))->saveTerms($net30);
@@ -1446,6 +1455,9 @@ check('J20 the contact moved and net-30 became 20 days — the issued document s
 $emJ5 = $wireDi();
 $inv10 = $service($emJ5)->invoice($oneLine($mid, '2026-03-17', '1.000', '10.00'));
 check('J21 … while a NEW document takes the changed data: Seestrasse 99, due in 20 days', $inv10->getAddress()->getStreet() === 'Seestrasse' && $inv10->getDueDate()->format('Y-m-d') === '2026-04-06');
+check('J21b the e-mail follows the snapshot rule too (2026-10-22): the issued document keeps buchhaltung@, the new one takes rechnung@ — the phone unchanged on both',
+    $again->getAddress()->getEmail() === 'buchhaltung@mueller.ch' && $inv10->getAddress()->getEmail() === 'rechnung@mueller.ch'
+    && $again->getAddress()->getPhone() === '044 000 00 10' && $inv10->getAddress()->getPhone() === '044 000 00 10');
 
 echo "J. … refusals — no number consumed, nothing written\n";
 $emJ6    = $wireDi();
@@ -1650,6 +1662,9 @@ check('L17 a credit note against the FINAL invoice: a DRAFT without a number (no
     && $cn->getGrossTotal()->toDecimal() === '54.05' && $cn->getLines()[0]->getAmount()->toDecimal() === '50.00' && (int) $rangeOf('document.2603') === $marchBefore
     && (string) $rangeOf('credit-note') === '0' && $cn->documentName() === 'Gutschrift (Entwurf vom 20.03.2026)');
 check('L17b … its service dates are the INVOICE\'s (2026-03-01, none) — not the credit note\'s own date', $cn->getServiceFrom()->format('Y-m-d') === '2026-03-01' && $cn->getServiceTo() === null);
+check('L17b2 … a NEW document, it snapshots the customer\'s invoice address as it reads NOW — with its e-mail and phone (2026-10-22), stored in addr_email',
+    $cn->getAddress()->getEmail() === 'rechnung@mueller.ch' && $cn->getAddress()->getPhone() === '044 000 00 10'
+    && $db->fetchOne('SELECT addr_email FROM invoice WHERE id = ?', [$cn->getId()]) === 'rechnung@mueller.ch');
 check('L18 … while it is invoicing the invoice\'s open amount is unchanged', $svcC->openAmount($emL6->getRepository(Invoice::class)->find($inv1->getId()))->toDecimal() === '162.15');
 $svcC->finalize([$at($cn->getId())]);
 check('L18b … its booking print gives it the NEXT number of the ONE series in its month (document.2603, the invoices\' range — the credit-note range untouched)',
@@ -2119,6 +2134,17 @@ $service($wireDi())->discard($plainMate->getId(), (int) $invoiceRow($plainMate->
 check('P3C19 the printed address block: salutation, title + names, the address row, street + number, zip + city; the country only when foreign',
     (new AddressSnapshot('Herr', 'Dr.', 'Peter', 'Muster', 'c/o Firma', 'Weg', '5', '3000', 'Bern', 'CH'))->lines() === ['Herr', 'Dr. Peter Muster', 'c/o Firma', 'Weg 5', '3000 Bern']
     && (new AddressSnapshot('', '', '', 'Muster AG', '', '', '', '9490', 'Vaduz', 'LI'))->lines() === ['Muster AG', '9490 Vaduz', 'LI']);
+check('P3C19b e-mail and phone (2026-10-22) are NOT printed in the address block; contactLine() phrases them for the backend («e-mail · phone», one alone, \'\' without)',
+    (new AddressSnapshot('', '', '', 'Muster AG', '', 'Weg', '5', '3000', 'Bern', 'CH', 'info@muster.ch', '031 000 00 00'))->lines() === ['Muster AG', 'Weg 5', '3000 Bern']
+    && (new AddressSnapshot('', '', '', 'Muster AG', '', 'Weg', '5', '3000', 'Bern', 'CH', 'info@muster.ch', '031 000 00 00'))->contactLine() === 'info@muster.ch · 031 000 00 00'
+    && (new AddressSnapshot('', '', '', 'M', '', '', '', '3000', 'Bern', 'CH', '', '031 000 00 00'))->contactLine() === '031 000 00 00'
+    && (new AddressSnapshot('', '', '', 'M', '', '', '', '3000', 'Bern', 'CH'))->contactLine() === '');
+$billCardTpl = file_get_contents($packages['Debtor'] . '/res/view/templates/Backend/InvoiceController/_billAddress.tpl.php');
+$billCardSrc = file_get_contents($packages['Debtor'] . '/src/Ui/InvoiceControllerTrait.php');
+check('P3C19c the invoice editor\'s card «Rechnung» shows the e-mail · phone small under the address (`be-form__hint`) — a final document its snapshot\'s, a draft the customer address\'s as it reads now; the PDFs print no e-mail',
+    str_contains($billCardTpl, '<div class="be-form__hint"><?= e($contact) ?></div>')
+    && str_contains($billCardSrc, "'contact' => \$final->getAddress()->contactLine()") && str_contains($billCardSrc, "'contact' => \$address?->contactLine() ?? ''")
+    && !str_contains(file_get_contents($packages['Debtor'] . '/res/view/templates/pdf/invoice.tpl.php'), 'getEmail()'));
 
 echo "P3C. The credit note: no payment part, its bill says so\n";
 $cn      = $service($wireDi())->invoice(InvoiceDraft::creditNote($qrInv->getId(), $mid, day('2026-06-20'), 'CHF', [LineDraft::lumpSum('Gutschrift', chf('50.00'), 'UN', '3400')]));

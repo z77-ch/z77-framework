@@ -24,6 +24,11 @@ use Doctrine\ORM\Mapping as ORM,
  * it used as a SNAPSHOT — a later change here never alters an issued
  * document (§4a). This entity therefore has no history of its own.
  *
+ * The address carries its own e-mail and phone (owner 2026-10-22, the wdv
+ * shape): a document is e-mailed to its BILLING address's e-mail, the
+ * newsletter to the «Newsletter» address (else the main one). Both optional,
+ * '' = none; the e-mail is deliverable when set.
+ *
  * `country` is ISO 3166-1 alpha-2, upper-cased at the setter; the zip
  * format is validated per country ({@see \Z77\Module\Contact\Validators\AddressValidator}).
  *
@@ -84,6 +89,16 @@ class Address
     #[Clean('ident')]
     private string $country = 'CH';
 
+    /** The address's own e-mail ('' = none) — where a document to this address is e-mailed. Migration `Version20261022160000`. */
+    #[ORM\Column(length: 190, options: ['default' => ''])]
+    #[Clean('email')]
+    private string $email = '';
+
+    /** Free text, as written («044 123 45 67»), '' = none. */
+    #[ORM\Column(length: 40, options: ['default' => ''])]
+    #[Clean('text')]
+    private string $phone = '';
+
     public function __construct(array $data = [])
     {
         if ($data) {
@@ -102,6 +117,8 @@ class Address
     public function getZip(): string { return $this->zip; }
     public function getCity(): string { return $this->city; }
     public function getCountry(): string { return $this->country; }
+    public function getEmail(): string { return $this->email; }
+    public function getPhone(): string { return $this->phone; }
 
     public function setSalutation(string $salutation): void { $this->salutation = $salutation; }
     public function setTitle(string $title): void { $this->title = $title; }
@@ -113,6 +130,8 @@ class Address
     public function setZip(string $zip): void { $this->zip = trim($zip); }
     public function setCity(string $city): void { $this->city = $city; }
     public function setCountry(string $country): void { $this->country = mb_strtoupper(trim($country)); }
+    public function setEmail(string $email): void { $this->email = trim($email); }
+    public function setPhone(string $phone): void { $this->phone = trim($phone); }
 
     /** «Musterstrasse 12, 8000 Zürich» — the one-line phrase for lists (Rule 8). */
     public function oneLine(): string

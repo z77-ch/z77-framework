@@ -13,6 +13,10 @@ use Z77\Persistence\Validation\EntityValidator;
  * lenient 3–10 characters elsewhere. No zip DIRECTORY lookup (wdv's
  * `ChZipCode` table): a directory that is not maintained refuses real
  * addresses, which is worse than accepting a wrong one.
+ *
+ * E-mail and phone (2026-10-22) follow the contact's own rules
+ * ({@see ContactValidator}): the e-mail optional but deliverable when set,
+ * the phone free text up to 40 characters.
  */
 class AddressValidator extends EntityValidator
 {
@@ -93,5 +97,20 @@ class AddressValidator extends EntityValidator
         if (!$this->hasFieldError('country') && !preg_match('/^[A-Z]{2}$/', $country)) {
             $this->addFieldError('country', 'Land ist der zweistellige ISO-Code in Grossbuchstaben (z.B. CH).');
         }
+    }
+
+    public function validateEmail(string $email): void
+    {
+        if ($email === '') {
+            return;
+        }
+        $this->validate('email', 'E-Mail', $email)
+            ->maxLength(190)
+            ->isEmail();
+    }
+
+    public function validatePhone(string $phone): void
+    {
+        $this->validate('phone', 'Telefon', $phone)->maxLength(40);
     }
 }

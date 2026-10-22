@@ -813,13 +813,15 @@ trait InvoiceControllerTrait
     private function invoiceBillAddress(string $contactId, ?Invoice $final = null): string
     {
         if ($final !== null && $final->isFinal()) {
-            return (new TemplateRenderer(self::INVOICE_NS))->partial('Backend/InvoiceController/_billAddress', ['chosen' => true, 'lines' => $final->getAddress()->lines()]);
+            return (new TemplateRenderer(self::INVOICE_NS))->partial('Backend/InvoiceController/_billAddress', ['chosen' => true, 'lines' => $final->getAddress()->lines(), 'contact' => $final->getAddress()->contactLine()]);
         }
         $contact = ctype_digit($contactId) && (int) $contactId > 0 ? $this->em()->getRepository(Contact::class)->find((int) $contactId) : null;
+        $address = $contact !== null ? $this->invoicingService()->invoiceAddressOf($contact) : null;
 
         return (new TemplateRenderer(self::INVOICE_NS))->partial('Backend/InvoiceController/_billAddress', [
-            'chosen' => $contact !== null,
-            'lines'  => $contact !== null ? ($this->invoicingService()->invoiceAddressOf($contact)?->lines() ?? []) : [],
+            'chosen'  => $contact !== null,
+            'lines'   => $address?->lines() ?? [],
+            'contact' => $address?->contactLine() ?? '',
         ]);
     }
 
