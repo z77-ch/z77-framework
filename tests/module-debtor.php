@@ -2910,7 +2910,7 @@ $GLOBALS['z77TestFetch'] = false;
 check('Q24b fetched, «Zahlung ändern» is a window (mask invoice-payment on payment:<id>, `_origin` carried): one action row first — Änderung verbuchen · Löschen … · Abbrechen, the last two stay in the window; the delete confirmation is the next content of that window, its bar first',
     str_contains($payWin, 'data-window="invoice-payment"') && str_contains($payWin, 'data-window-entity="payment:' . $edited->getId() . '"')
     && str_contains($payWin, 'name="_origin" value="region:debtor-find-list"')
-    && preg_match('/z77-form-actions.*?Änderung verbuchen.*?confirm-payment-delete[^"]*" data-window-link>Löschen.*?edit\?id=' . $inv4->getId() . '" data-window-link>Abbrechen/s', $payWin) === 1
+    && preg_match('/z77-form-actions.*?Änderung verbuchen.*?confirm-payment-delete[^"]*" data-window-link>Löschen.*?edit\?id=' . $inv4->getId() . '" data-window-link>Schliessen/s', $payWin) === 1
     && strpos($payWin, 'z77-form-actions') < strpos($payWin, 'name="date"')
     && str_contains($delWin, 'data-window="invoice-payment-delete"') && str_contains($delWin, 'name="_origin" value="region:debtor-find-list"')
     && strpos($delWin, 'z77-form-actions') < strpos($delWin, 'wird gelöscht') && str_contains($delWin, 'be-btn--danger'));

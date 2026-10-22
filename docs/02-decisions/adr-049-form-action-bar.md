@@ -116,6 +116,22 @@ top row; the member Konto dialog's bar moved under its title (member buttons, sa
 Still open: the invoice «Definitiv stellen» confirm is a page (DEBTOR-WIN-002, needs a window
 opener for a GET form), the member 2FA setup card, and the browser look at all of it.
 
+## Addendum 2026-10-22 — «Schliessen» right, × on every dialog (owner)
+
+The owner compared dialog and window: «Dialog bekommt × wie im Fenster, gleichzeitig wie im
+Fenster in der Aktionszeile rechtsbündig Schliessen-Button wie im Auftragsfenster. Dialoge sollen
+per einfachem Esc oder ×-Klick schliessen, Fenster mit Daten sollen nachgefragt werden.»
+
+- `partials/modalActions` defaults to `cancel` «Schliessen», `cancelKind` `quiet`: the close stands
+  at the row's RIGHT end behind the thin rule — the order window's shape (2026-10-18) for every
+  dialog and window. A spacer is written unless `extra` brings its own (order / invoice put their
+  right-hand group into `extra`). `cancelKind` `ghost` stays for a caller that wants the old look;
+  an explicit label («Zurück», «Zur Liste», «Abbrechen» back to a read view) is kept.
+- The shared popup (`#z77-popup`, the dialog) carries a × top right, outermost, the full-screen
+  button left of it — like a window's title bar. × and Esc close a dialog AT ONCE, no question
+  (POPUP-ESC-001 stays). A WINDOW (ADR-047) with entered data asks before it closes (× / Esc /
+  «Schliessen», `dirty` forms) — unchanged.
+
 ## Rejected Alternatives
 
 - **Buttons only at the end** — the state before; the owner's objection.

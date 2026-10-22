@@ -57,7 +57,13 @@ check('renders the shared row class',              str_contains($html, 'class="z
 check('no --end by default',                       !str_contains($html, 'z77-form-actions--end'));
 check('the submit is the PRIMARY look',            str_contains($html, 'be-btn be-btn--primary'));
 check('the submit stands FIRST in document order', strpos($html, 'type="submit"') < strpos($html, 'data-popup-close'));
-check('the cancel closes the popup',               str_contains($html, '<button type="button" class="be-btn be-btn--ghost" data-popup-close>Abbrechen</button>'));
+check('the cancel closes the popup: «Schliessen», quiet (owner 2026-10-22)', str_contains($html, '<button type="button" class="be-btn be-btn--quiet" data-popup-close>Schliessen</button>'));
+check('… right-aligned: spacer, then the thin rule, then the close',
+    preg_match('/z77-form-actions__spacer.*?z77-form-actions__sep.*?data-popup-close/s', $html) === 1);
+$withSpacer = $row(['submit' => 'Speichern', 'extra' => '<span class="z77-form-actions__spacer"></span><a class="x-right">PDF</a>']);
+check('… an extra that brings its own spacer gets no second one', substr_count($withSpacer, 'z77-form-actions__spacer') === 1);
+$ghost = $row(['submit' => 'Speichern', 'cancelKind' => 'ghost']);
+check('cancelKind ghost keeps the outlined button without spacer', str_contains($ghost, 'class="be-btn be-btn--ghost" data-popup-close>Schliessen<') && !str_contains($ghost, '__spacer'));
 check('no errors link without errors',             !str_contains($html, 'z77-form-actions__errors'));
 
 $html = $row(['submit' => 'Löschen', 'kind' => 'danger', 'end' => true]);
@@ -68,7 +74,7 @@ $html = $row(['submit' => '', 'cancel' => 'Schliessen']);
 check('hub: no submit, the close stands alone', !str_contains($html, 'type="submit"') && str_contains($html, '>Schliessen</button>'));
 
 $html = $row(['submit' => 'Speichern', 'cancel' => 'Abbrechen', 'cancelHref' => '/backend/x/detail?id=4']);
-check('window: cancel is a data-window-link to the read view', str_contains($html, '<a class="be-btn be-btn--ghost" href="/backend/x/detail?id=4" data-window-link>Abbrechen</a>'));
+check('window: cancel is a data-window-link to the read view', str_contains($html, '<a class="be-btn be-btn--quiet" href="/backend/x/detail?id=4" data-window-link>Abbrechen</a>'));
 check('window: no popup close in a window row',               !str_contains($html, 'data-popup-close'));
 
 $html = $row(['submit' => 'Speichern', 'submitAttrs' => ['name' => 'op', 'value' => 'save', 'form' => 'f1', 'on"click' => 'x']]);

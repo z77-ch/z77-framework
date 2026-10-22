@@ -122,6 +122,11 @@
                 <svg class="be-icon be-modal__fs-icon be-modal__fs-icon--expand" width="15" height="15" aria-hidden="true"><use href="#icon-maximize"/></svg>
                 <svg class="be-icon be-modal__fs-icon be-modal__fs-icon--compress" width="15" height="15" aria-hidden="true"><use href="#icon-minimize"/></svg>
             </button>
+            <?php /* × like a window's title bar (owner 2026-10-22): a dialog closes on × or Esc at once,
+                     without a question — only a WINDOW with entered data asks (core.js «windows»). */ ?>
+            <button type="button" class="be-modal__close" data-popup-close aria-label="Schliessen" title="Schliessen">
+                <svg class="be-icon" width="15" height="15" aria-hidden="true"><use href="#icon-x"/></svg>
+            </button>
             <div class="z77-popup__body" data-z77-popup-body></div>
         </div>
     </dialog>

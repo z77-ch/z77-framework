@@ -45,7 +45,7 @@ $winAttr    = $window
         <?= $this->partial('partials/modalActions', [
             'submit'     => $empty ? 'Löschen' : '',
             'kind'       => 'danger',
-            'cancel'     => $empty ? 'Abbrechen' : 'Zurück',
+            'cancel'     => $empty ? 'Schliessen' : 'Zurück',
             'cancelHref' => $actionBase . '/edit?id=' . (int) $group->getId(),
             'end'        => true,
         ], 'Z77\\Shared') ?>

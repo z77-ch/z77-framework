@@ -146,8 +146,8 @@ check('action row between header and body',
     ($h = strpos($html, 'be-modal__header')) !== false && ($r = strpos($html, 'class="z77-form-actions"')) !== false
     && ($b = strpos($html, 'be-modal__body')) !== false && $h < $r && $r < $b);
 check('no bottom footer left', !str_contains($html, 'be-modal__footer'));
-check('Speichern before Abbrechen in the row',
-    ($s = strpos($html, '>Speichern<')) !== false && ($c = strpos($html, 'data-popup-close>Abbrechen<')) !== false && $s < $c);
+check('Speichern before Schliessen in the row',
+    ($s = strpos($html, '>Speichern<')) !== false && ($c = strpos($html, 'data-popup-close>Schliessen<')) !== false && $s < $c);
 
 echo "free mode\n";
 $html = renderEditor($base + ['blueprint' => null]);

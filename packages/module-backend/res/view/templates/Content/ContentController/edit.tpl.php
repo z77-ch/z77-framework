@@ -248,7 +248,7 @@ $ceUnknownBlock = function (array $block, bool $orphan = false): string {
     // the shell popup — so no `data-popup-close`, the cancel goes in as `extra`.
     echo $this->partial('partials/modalActions', [
         'submit' => 'Speichern',
-        'cancel' => $slot !== null ? '' : 'Abbrechen',
+        'cancel' => $slot !== null ? '' : 'Schliessen',
         'extra'  => $slot !== null ? '<button type="button" class="be-btn be-btn--ghost" data-ce-slot-close>Abbrechen</button>' : '',
         'errors' => ['count' => count($invalid), 'target' => $firstTarget],
     ], 'Z77\\Shared');
