@@ -11,7 +11,7 @@ namespace Z77\Module\Order\Repositories;
  */
 final class OrderSearch
 {
-    public const SORTS = ['number', 'date', 'service', 'name', 'amount'];
+    public const SORTS = ['number', 'date', 'service', 'name', 'amount', 'invoice'];
 
     /** @param list<string>|null $statusCodes null = no status filter; [] = a view no status falls into (nothing) */
     public function __construct(
@@ -26,6 +26,7 @@ final class OrderSearch
         public readonly ?string $serviceTo = null,   // Y-m-d, inclusive
         public readonly string $sort = 'number',
         public readonly bool $descending = true,
+        public readonly ?int $invoiceNumber = null,   // the booked invoice's number (owner 2026-10-22: its own column)
     ) {
         if (!in_array($sort, self::SORTS, true)) {
             throw new \InvalidArgumentException("Unknown order sort '{$sort}'");

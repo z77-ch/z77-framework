@@ -12,7 +12,7 @@ use Z77\Shared\Listing\Parsers;
 /**
  * Aufträge › Aufträge as a standard list (listing.md, plan §9.3; the owner's board on the
  * developer canvas): the VIEW tab (`?view=`) as an extra, the columns state icon · Nr. · Datum ·
- * Kunde · Betreff · Status · Betrag — and «Zahlung» in «Abgeschlossen» —, six of them searched in
+ * Kunde · Betreff · Status · Rechnung · Betrag — and «Zahlung» in «Abgeschlossen» —, six of them searched in
  * the database, sorted by number newest first, 50 per page. In the BOOKABLE tabs («Termin»,
  * «Geliefert») the rows lead with the selection checkbox of the booking print.
  *
@@ -60,6 +60,8 @@ final class OrderListing
             Column::search('f_name', 'Kunde', 'minmax(10rem, 2fr)', 'name', Parsers::text()),
             Column::search('f_subject', 'Betreff', 'minmax(8rem, 2fr)', null, Parsers::text(), priority: '2'),
             Column::search('f_status', 'Status', '9rem', null, Parsers::text(), priority: '2'),
+            // The booked invoice's number — its own column (owner 2026-10-22), searched and sorted; was a muted add-on of «Zahlung».
+            Column::search('f_invoice', 'Rechnung', '6.5rem', 'invoice', Parsers::integer(9), numeric: true, priority: '2', descendingFirst: true),
             Column::search('f_amount', 'Betrag', '8rem', 'amount', Parsers::amount($currency), numeric: true, descendingFirst: true, inputMode: 'decimal'),
         ]);
         if ($view === self::VIEW_CLOSED) {
@@ -126,6 +128,7 @@ final class OrderListing
             $service[1] ?? null,
             $state->sort,
             $state->descending,
+            $state->parsed('f_invoice'),
         );
     }
 }

@@ -398,6 +398,12 @@ check('V5 the columns: the selection checkbox in the bookable tabs («Termin», 
     && OrderListing::definition('CHF')->extraDefault('view') === 'confirmed' && OrderListing::definition('CHF')->read([])->extra('view') === 'confirmed'
     && OrderListing::definition('CHF')->read(['view' => 'nonsense'])->extra('view') === 'confirmed'
     && array_keys(OrderListing::VIEWS) === ['new', 'confirmed', 'delivered', 'closed', 'cancelled', 'all']);
+$v5bLabels = array_values(array_filter($cols('closed'), static fn(string $l) => !str_starts_with($l, '[')));
+$v5bSearch = OrderListing::search(OrderListing::definition('CHF', 'all')->read(['view' => 'all', 'f_invoice' => '2610001', 'sort' => 'invoice']), $seed);
+check('V5b «Rechnung» is its own column between Status and Betrag in every tab (owner 2026-10-22), searched by number and sortable; «Zahlung» no longer carries the number',
+    array_slice($v5bLabels, array_search('Status', $v5bLabels, true), 3) === ['Status', 'Rechnung', 'Betrag'] && in_array('Rechnung', $cols('confirmed'), true)
+    && OrderListing::definition('CHF')->column('f_invoice')->isSearchable() && $v5bSearch->invoiceNumber === 2610001 && $v5bSearch->sort === 'invoice'
+    && !str_contains((string) file_get_contents($packages['Order'] . '/res/view/templates/Backend/OrderController/_row.tpl.php'), '<small class="be-list__cell--muted"><?= e((string) $order->getInvoice()->getNumber())'));
 $svc = OrderListing::search(OrderListing::definition('CHF', 'confirmed')->read(['view' => 'confirmed', 'f_service' => '11.2026', 'sort' => 'service']), $seed);
 check('V6 «Leistung» (= «Leistung von», the delivery date of goods, owner 2026-10-16): searchable and sortable; a month searches the order day or period overlapping it, in the tab\'s codes',
     OrderListing::definition('CHF')->column('f_service')->isSearchable() && OrderListing::definition('CHF')->column('f_service')->sort === 'service'
@@ -1221,6 +1227,20 @@ check('M37 e-mail and phone (2026-10-22, Version20261022160000, schema only): bi
     && $m37Preview->getAddress()->getEmail() === 'rechnung@muster.ch' && $m37Preview->getAddress()->getPhone() === '041 000 00 01'
     && $m37bPreview->getAddress()->getEmail() === 'debitor@muster.ch' && $m37bPreview->getAddress()->getPhone() === '041 000 00 02'
     && $db->fetchOne('SELECT bill_email FROM sales_order WHERE id = ?', [(int) $m37b->getId()]) === '');
+// The invoice number as a list column (owner 2026-10-22): the search joins the booked invoice; sorted by it, orders without one come last.
+// The fixture's booked invoice may still be a draft without a number — give it one, the way only a harness may.
+$m38Pick = $db->fetchAssociative('SELECT o.id AS id, o.invoice_id AS invoice_id FROM sales_order o WHERE o.invoice_id IS NOT NULL ORDER BY o.id LIMIT 1');
+if ($m38Pick) { $db->executeStatement('UPDATE invoice SET number = COALESCE(number, 2699999) WHERE id = ?', [(int) $m38Pick['invoice_id']]); }
+$m38Inv = $db->fetchAssociative('SELECT o.id, i.number FROM sales_order o JOIN invoice i ON i.id = o.invoice_id WHERE i.number IS NOT NULL ORDER BY o.id LIMIT 1');
+$m38Repo = $em->getRepository(SalesOrder::class);
+$m38Hit  = $m38Inv ? $m38Repo->search(new \Z77\Module\Order\Repositories\OrderSearch(invoiceNumber: (int) $m38Inv['number']), 0, 10) : [];
+$m38Sort = $m38Repo->search(new \Z77\Module\Order\Repositories\OrderSearch(sort: 'invoice', descending: true), 0, 500);
+$m38Num  = $db->fetchAllKeyValue('SELECT o.id, i.number FROM sales_order o LEFT JOIN invoice i ON i.id = o.invoice_id');   // from SQL: the identity map may hold the invoice as it was
+$m38Has  = array_map(static fn($o) => ($m38Num[$o->getId()] ?? null) !== null, $m38Sort);
+check('M38 the order list searches the invoice number (one match, its order) and sorts by it (orders with an invoice first, either direction); countSearch agrees',
+    $m38Inv !== false && count($m38Hit) >= 1 && (int) $m38Hit[0]->getId() === (int) $m38Inv['id']
+    && $m38Repo->countSearch(new \Z77\Module\Order\Repositories\OrderSearch(invoiceNumber: (int) $m38Inv['number'])) === count($m38Hit)
+    && $m38Has === array_values(array_merge(array_filter($m38Has), array_filter($m38Has, static fn($h) => !$h))), json_encode($m38Inv));
 $db->executeStatement('DELETE FROM mandator');
 
 echo "\n{$pass} passed, {$fail} failed\n";

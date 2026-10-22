@@ -87,10 +87,11 @@ class SalesOrderRepository extends DoctrineRepository
             'service' => "o.service_from IS NULL, o.service_from {$dir}, o.number {$dir}",   // no date last, either way
             'name'   => "{$name} {$dir}, o.number {$dir}",
             'amount' => "o.total_gross {$dir}, o.number {$dir}",
+            'invoice' => "i.number IS NULL, i.number {$dir}, o.number {$dir}",   // orders without an invoice last, either way
             default  => "o.number {$dir}",
         };
         $ids = $this->connection()->fetchFirstColumn(
-            "SELECT o.id FROM sales_order o JOIN contact c ON c.id = o.contact_id{$where} ORDER BY {$order}, o.id {$dir} LIMIT ? OFFSET ?",
+            "SELECT o.id FROM sales_order o JOIN contact c ON c.id = o.contact_id" . self::INVOICE_JOIN . "{$where} ORDER BY {$order}, o.id {$dir} LIMIT ? OFFSET ?",
             array_merge($params, [max(1, $limit), max(0, $offset)]),
             array_merge($types, [ParameterType::INTEGER, ParameterType::INTEGER])
         );
@@ -112,8 +113,11 @@ class SalesOrderRepository extends DoctrineRepository
     {
         [$where, $params, $types] = $this->searchWhere($search);
 
-        return (int) $this->connection()->fetchOne("SELECT COUNT(*) FROM sales_order o JOIN contact c ON c.id = o.contact_id{$where}", $params, $types);
+        return (int) $this->connection()->fetchOne("SELECT COUNT(*) FROM sales_order o JOIN contact c ON c.id = o.contact_id" . self::INVOICE_JOIN . "{$where}", $params, $types);
     }
+
+    /** The booked invoice of a row — its number is a column of the list (search and sort, owner 2026-10-22). */
+    private const INVOICE_JOIN = ' LEFT JOIN invoice i ON i.id = o.invoice_id';
 
     /**
      * The orders in one of $statusCodes dated $from–$to (both inclusive): the first $limit as rows
@@ -184,6 +188,9 @@ class SalesOrderRepository extends DoctrineRepository
         }
         if ($search->amount !== null) {
             $add('o.total_gross = ?', $search->amount);
+        }
+        if ($search->invoiceNumber !== null) {
+            $add('i.number = ?', $search->invoiceNumber, ParameterType::INTEGER);
         }
 
         return [$where === [] ? '' : ' WHERE ' . implode(' AND ', $where), $params, $types];
