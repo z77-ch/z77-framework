@@ -68,11 +68,13 @@
         + '.z77-ce-panel{position:relative;box-sizing:border-box;width:min(760px,96vw);height:min(calc(100vh - 6rem),900px);'
         + 'margin-top:2.5rem;background:#fff;border-radius:8px;box-shadow:0 20px 60px rgba(0,0,0,.35)}'
         + '.z77-ce-iframe{display:block;width:100%;height:100%;border:0;border-radius:8px;background:#fff}'
-        // The close button sits ABOVE the panel's top-right corner, on the
-        // backdrop: inside, it would cover the editor's own header.
-        + '.z77-ce-close{all:unset;box-sizing:border-box;position:absolute;top:-2.4rem;right:0;width:2rem;height:2rem;'
-        + 'display:flex;align-items:center;justify-content:center;border-radius:999px;cursor:pointer;'
-        + 'font:400 22px/1 system-ui,sans-serif;color:#111827;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,.3)}'
+        // The close button sits IN the panel's top-right corner, over the editor header's
+        // right padding (.be-modal__header keeps room for it) — where every backend dialog
+        // carries its × (ADR-049 addendum 2026-10-22). It stays on the parent page, so a
+        // slot that failed to load can still be closed.
+        + '.z77-ce-close{all:unset;box-sizing:border-box;position:absolute;top:.6rem;right:.6rem;z-index:1;width:1.9rem;height:1.9rem;'
+        + 'display:flex;align-items:center;justify-content:center;border-radius:.4rem;cursor:pointer;'
+        + 'font:400 20px/1 system-ui,sans-serif;color:#6b7280;background:transparent}'
         + '.z77-ce-close:hover,.z77-ce-close:focus-visible{background:#e5e7eb}'
         + '.z77-ce-close:focus-visible{outline:2px solid #4f46e5;outline-offset:2px}';
 

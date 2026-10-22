@@ -147,19 +147,22 @@ template opts in.
 
 ## page architecture
 
-Each page lives as an action template under `IndexController/`:
+Each page lives as an action template under `Main/IndexController/` that only places section partials (since 2026-10-22, [`content.md`](content.md) «Starter pages»):
 
 ```text
-res/view/templates/IndexController/
+res/view/templates/Main/IndexController/
 ├── homeAction.tpl.php       /home (default)
 ├── aboutAction.tpl.php      /about
 ├── servicesAction.tpl.php   /services
 ├── contactAction.tpl.php    /contact
+├── thanksAction.tpl.php     /thanks (PRG target of the contact form)
 ├── legalAction.tpl.php      /legal
 └── privacyAction.tpl.php    /privacy
+res/view/templates/partials/sections/
+    hero · textSection · cards · imageText · cta · form · legalText
 ```
 
-Standard page composition: `<section class="fe-hero">` + 1–3 `<section class="fe-section">`. Each section wraps content in `<div class="fe-container">` (single source of horizontal gutter).
+Standard page composition: `<section class="fe-hero">` + 1–3 `<section class="fe-section">`. Each section wraps content in `<div class="fe-container">` (single source of horizontal gutter). Classes added 2026-10-22: `fe-section__body` (paragraphs under a heading), `fe-section--form` (text above a form, no rule), `fe-prose__block` + `.fe-prose h2` (legal text), `fe-grid--thirds` (three / six cards on desktop), `fe-image-text` (+ `__text`, `__media`, `--left`, `--text-only`; stacked on mobile), `fe-cta`, `fe-button` (+ `--inverse` on a dark section).
 
 ## JavaScript (vanilla, no build)
 

@@ -193,6 +193,7 @@ $expectedFrontend = [
     'frontend-main: Contact [frontend/main/index/contact]',
     'frontend-meta: Legal [frontend/main/index/legal]',
     'frontend-meta: Privacy [frontend/main/index/privacy]',
+    'frontend-route: Thanks [frontend/main/index/thanks]',
 ];
 $expected = array_merge($expectedBackend, $expectedFrontend);
 
@@ -212,7 +213,7 @@ $areasKeyed = array_filter($seeds, static fn($s) => $s['module'] === '' && ($s['
 check('NSEED-1d every area / group carries a key',
     count(array_filter($areasKeyed, static fn($s) => ($s['key'] ?? null) === null)) === 0);
 check('NSEED-1e the default file keeps only what other seeds reference by id (frontend pages, login/logout)',
-    array_column($default, 'id') === [3, 4, 5, 8, 9, 10, 11, 12], implode(',', array_column($default, 'id')));
+    array_column($default, 'id') === [3, 4, 5, 8, 9, 10, 11, 12, 13], implode(',', array_column($default, 'id')));
 $override = sys_get_temp_dir() . '/z77-nseed-override-' . getmypid();
 @mkdir($override . '/' . NavigationSeeds::SEED_DIR, 0777, true);
 file_put_contents($override . '/' . NavigationSeeds::SEED_DIR . '/module-vat.json', '[]');
@@ -237,7 +238,7 @@ check('NSEED-2b nothing skipped', $fresh['skipped'] === [], implode(' | ', $fres
 check('NSEED-2c the default entries kept their ids (alias + metadata defaults reference them)',
     array_slice(array_column($fresh['records'], 'id'), 0, 8) === [3, 4, 5, 8, 9, 10, 11, 12]);
 $ids = array_column($fresh['records'], 'id');
-check('NSEED-2d ids unique, new ones after the highest', count($ids) === count(array_unique($ids)) && min(array_column($fresh['added'], 'id')) === 13);
+check('NSEED-2d ids unique, new ones after the highest', count($ids) === count(array_unique($ids)) && min(array_column($fresh['added'], 'id')) === 14);
 check('NSEED-2e sort_key dense per sibling group (0..n)', (static function (array $rs): bool {
     $groups = [];
     foreach ($rs as $r) { $groups[$r['parent_id'] ?? ('s:' . $r['slot'])][] = $r['sort_key']; }
@@ -386,7 +387,7 @@ check('NSEED-8a the spec carries the seeds, the source folds them in',
     count($spec['navigation_seeds']) === 6 && $source instanceof NavigationSeedSource);
 $navSet = $source->recordSets()[Navigation::class];
 check('NSEED-8b Navigation set = default (ids kept) + every seed entry',
-    count($navSet) === 8 + 33 && array_slice(array_column($navSet, 'id'), 0, 8) === [3, 4, 5, 8, 9, 10, 11, 12]);
+    count($navSet) === 9 + 33 && array_slice(array_column($navSet, 'id'), 0, 9) === [3, 4, 5, 8, 9, 10, 11, 12, 13]);
 
 // Target: the hand-built installation without Geschäftsjahre, aliases of the fresh ids +100.
 $aliasTarget = array_map(static function (array $a) { $a['navigation_id'] += 100; return $a; },
@@ -409,7 +410,7 @@ check('NSEED-8f keyless module leaves: «changed» with the key as the only diff
     count($changed) === 7 && array_filter($changed, static fn($e) => array_keys($e->diff) !== ['key']) === []);
 $aliasEntries = array_filter($plan->entries, static fn($e) => $e->entityClass === NavigationAlias::class);
 check('NSEED-8g the alias defaults still resolve through the default file ids (all skipped)',
-    count($aliasEntries) === 7 && array_filter($aliasEntries, static fn($e) => $e->outcome !== ImportOutcome::Skipped) === []);
+    count($aliasEntries) === 8 && array_filter($aliasEntries, static fn($e) => $e->outcome !== ImportOutcome::Skipped) === []);
 
 // A changed seed file after the plan: stale.
 $seedCopyDir = $tmp . '/seedcopy/' . NavigationSeeds::SEED_DIR;

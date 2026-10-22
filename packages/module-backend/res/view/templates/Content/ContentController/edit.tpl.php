@@ -249,7 +249,7 @@ $ceUnknownBlock = function (array $block, bool $orphan = false): string {
     echo $this->partial('partials/modalActions', [
         'submit' => 'Speichern',
         'cancel' => $slot !== null ? '' : 'Schliessen',
-        'extra'  => $slot !== null ? '<button type="button" class="be-btn be-btn--ghost" data-ce-slot-close>Abbrechen</button>' : '',
+        'extra'  => $slot !== null ? '<span class="z77-form-actions__spacer"></span><span class="z77-form-actions__sep" aria-hidden="true"></span><button type="button" class="be-btn be-btn--quiet" data-ce-slot-close>Schliessen</button>' : '',
         'errors' => ['count' => count($invalid), 'target' => $firstTarget],
     ], 'Z77\\Shared');
     ?>

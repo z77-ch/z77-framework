@@ -1,12 +1,18 @@
 <?php
-/** @var \Z77\Core\Services\NavigationService $navigationService */
-/** @var \Z77\Shared\Entities\Navigation $entry */
+/**
+ * Frontend top bar. The brand is the installation's brand mark — the one
+ * `Z77\Shared` partial a project replaces (view-layer.md «brand mark») —, the
+ * links come from the navigation, their labels from the UI dictionary.
+ *
+ * @var \Z77\Core\Services\NavigationService $navigationService
+ * @var \Z77\Shared\Entities\Navigation $entry
+ */
 $navEntries = $navigationService->getBySlot('frontend-main');
 ?>
 <input type="checkbox" id="fe-nav-toggle" class="fe-nav-toggle" aria-label="<?= e(t('nav.aria.mobile')) ?>">
 <header class="fe-topbar">
     <div class="fe-container fe-topbar__inner">
-        <a class="fe-topbar__brand" href="/">z77</a>
+        <?= $this->partial('partials/brandMark', ['class' => 'fe-topbar__brand'], 'Z77\\Shared') ?>
 
         <nav class="fe-topbar__nav" aria-label="<?= e(t('nav.aria.primary')) ?>">
             <?php foreach ($navEntries as $entry): ?>

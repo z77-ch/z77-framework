@@ -1,0 +1,22 @@
+/* Call to action (partials/sections/cta, block type `cta`) — sits on the dark section variant. */
+.fe-cta .fe-button { margin-top: var(--fe-space-6); }
+
+/* Button link — the look of the form's submit button, for links. */
+.fe-button {
+    display:         inline-block;
+    padding:         var(--fe-space-3) var(--fe-space-6);
+    border:          1px solid var(--fe-accent);
+    background:      var(--fe-accent);
+    color:           var(--fe-on-dark-text);
+    font-weight:     var(--fe-fw-medium);
+    text-decoration: none;
+}
+.fe-button:hover,
+.fe-button:focus-visible { opacity: 0.85; }
+
+/* On a dark section: light button, dark text. */
+.fe-button--inverse {
+    border-color: var(--fe-on-dark-text);
+    background:   var(--fe-on-dark-text);
+    color:        var(--fe-text);
+}

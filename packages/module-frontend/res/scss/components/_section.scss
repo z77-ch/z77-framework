@@ -88,3 +88,18 @@
 .fe-prose h3   { margin-top: var(--fe-space-7); margin-bottom: var(--fe-space-3); font-size: var(--fe-fs-h3); }
 .fe-prose p    { margin-bottom: var(--fe-space-4); }
 .fe-prose p:last-child { margin-bottom: 0; }
+
+/* Paragraphs under a section heading (partials/sections/textSection, imageText). */
+.fe-section__body { margin-top: var(--fe-space-5); }
+
+/* The text above a public form: the form section below continues it, no rule between. */
+.fe-section--form { border-bottom: 0; padding-bottom: 0; }
+
+/* Headed blocks inside one prose column (partials/sections/legalText). */
+.fe-prose__block + .fe-prose__block { margin-top: var(--fe-space-7); }
+.fe-prose h2 {
+    margin-bottom: var(--fe-space-3);
+    font-size:     var(--fe-fs-h3);
+    font-weight:   var(--fe-fw-bold);
+    line-height:   var(--fe-lh-tight);
+}

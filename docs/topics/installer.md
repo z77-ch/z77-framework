@@ -1,6 +1,6 @@
 # installer
 
-2026-10-10
+2026-10-22
 
 ## entry
 
@@ -22,6 +22,7 @@ SOURCE=/packages/kernel/core/data/framework/routing/navigation.default.json
 SOURCE=/packages/kernel/core/data/framework/routing/navigation.d/kernel.json
 SOURCE=/packages/kernel/shared/src/Import/NavigationSeeds.php
 SOURCE=/tests/navigation-seeds.php
+SOURCE=/tests/installer-starter-content.php
 SOURCE=/packages/kernel/core/data/framework/seo/metadata.default.json
 SOURCE=/skeleton/composer.json
 SOURCE=/tests/fresh-install-setup.php
@@ -70,7 +71,7 @@ Runs as a Composer post-install/post-update hook. Reads `extra` config from `com
 | 13 | `writeSystemConfig()` | → `config/client/systemConfig.inc.php` — **seed-once**: installation identity (`canonicalBaseUrl`, `baseCurrency`), NOT fed from `composer.json` (ADR-030). `canonicalBaseUrl` is seeded EMPTY (no default is possible): the setup and the backend work without it, frontend pages and mail links answer 500 until it is set (INST-FRESH-001) |
 | 13b | `writeDatabaseConfig()` | → `config/client/database.inc.php` — **seed-once**: the ONE database connection (host, port, name, user, password; empty `name` = no database), read by the Doctrine driver and the `db` backup; like systemConfig NOT fed from `composer.json` (ADR-039 decision 4), see [`persistence-doctrine.md`](persistence-doctrine.md). Seeded `host` = `localhost` (Unix socket on Linux; on Windows set `127.0.0.1` by hand — DOCTRINE-HOST-001) |
 | 14 | `writeFileFinderConfig()` | → `config/vendor/fileFinder.inc.php` |
-| 15 | `writeDataFiles()` | seed `data/*.json` from EVERY installed framework package's data roots (skip if already exist; INST-SEED-001) |
+| 15 | `writeDataFiles()` | seed `data/*.json` from EVERY installed framework package's data roots (skip if already exist; INST-SEED-001) — EXCEPT starter content (`STARTER_DATA_DIRS` = `content`): written only while `data/content/` is absent, i.e. on the first install; afterwards never again, so a deleted starter page does not come back and an existing installation gets no new starter pages (owner 2026-10-22, `tests/installer-starter-content.php`) |
 | 15b | `seedNavigation()` | **navigation seeds** (ADR-050): collect every package's `data/framework/routing/navigation.d/*.json` (project override tier first, then `frameworkDataRoots()`; one file per name) and ADD to `data/framework/routing/navigation.json` each entry the installation does not hold — recognised by the import's identity (key → route → parent + ref, bijective; `NavigationSeeds::merge()` runs the `ImportPlanner`), parent by `parent_key`, appended after its siblings, next free id. Never changes, moves or removes an existing entry. Parent package missing, or ambiguous → `Skipped navigation entry «…» (file): reason`. Creates the file when absent; a corrupt file throws and is not touched. Same lock file + atomic replace as `FileStorage` |
 | 16 | `provisionAdmin()` | create admin (interactive) or write `SETUP_TOKEN` (non-interactive) — skip if `backendUsers.json` exists |
 | 17 | `writeDebugFlag()` | create/remove `var/state/debug.flag` per `debug` (release-local, ADR-035; creates `var/state/` if missing) |
@@ -122,6 +123,7 @@ All failures throw `\RuntimeException` — no silent errors:
 | Config (seed-once) | `config/client/i18n.inc.php`, `auth`, `backup`, `mail`, `systemConfig`, `database` (and hand-created `geoip`) | user-adjustable — written once, never overwritten (INST-CONFIG-001); INSTALLATION-owned (ADR-036) — in the release layout `config/client` is a symlink into `shared/` |
 | Data | `data/framework/**/*.json` | written once — never overwritten |
 | Data (navigation) | `data/framework/routing/navigation.json` | seeded once from `navigation.default.json`, then MERGED add-only by record from the packages' `navigation.d` seeds on every run (ADR-050) |
+| Data (starter content) | `data/content/*.json` | the frontend starter pages (de + en): written on the FIRST install only (`data/content/` absent), then the customer's — never re-seeded per file |
 
 > The blanket "config regenerated on every install" holds only for framework-controlled config (`bootstrap`, `moduleManager`, `fileFinder`) — those are fed from `composer.json`. Everything a developer or operator adjusts is seed-once. `systemConfig.inc.php` (ADR-030) is the strongest case: it holds what differs per INSTALLATION, so it is the one config file that is deliberately not fed from `composer.json` at all — that file is committed, and staging and production could then not differ.
 
@@ -369,6 +371,7 @@ Installer creates the override dirs, registers the module in `moduleManager.inc.
 
 ## rules
 
+- When shipping starter content (seeds the customer owns from the first install on and may delete — the frontend starter pages) → MUST place it under a `STARTER_DATA_DIRS` directory (`content/`), which the installer seeds only while that runtime directory is absent; MUST NOT rely on per-file seed-once for it (it re-creates a deleted page on the next update).
 - When editing a runtime config in `config/*.inc.php` → MUST NOT edit manually (regenerated on every `composer install`) — EXCEPT the seed-once files in `config/client/` (`i18n`, `auth`, `backup`, `mail`, `systemConfig`, `database`), which MAY be edited by the developer (the installer never overwrites them once they exist)
 - When changing a data file in `data/framework/**/*.json` → MUST be aware that the installer NEVER overwrites it after first install
 - When touching public file deployment → MUST keep `public/` seed-once for everything the installer did not itself publish (ADR-024); MUST NOT add a `debug`-driven overwrite or an unattended / "yes-to-all" force command. Exactly TWO unattended writes into an existing `public/` are allowed (ADR-046), both from `deployUndisputedAssets()`: a file whose sha1 still equals the publication record, and a file that is absent AND unrecorded. Everything else MUST go through the interactive, per-file, default-No prompt (ADR-026, `promptAssetDeploy()`), which MUST stay interactive-only (`io->isInteractive()`).

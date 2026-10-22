@@ -1,6 +1,6 @@
 # block-types
 
-2026-06-04
+2026-10-22
 
 ## entry
 
@@ -18,6 +18,7 @@ SOURCE=/packages/kernel/shared/src/Content/ContentRenderer.php
 SOURCE=/packages/kernel/shared/src/Content/BlockView.php
 SOURCE=/packages/kernel/shared/src/Content/Renderer/HeadingRenderer.php
 SOURCE=/packages/module-frontend/src/Content/Renderer/HeroRenderer.php
+SOURCE=/packages/module-frontend/src/Content/Renderer/SectionBlockRenderer.php
 SOURCE=/packages/module-frontend/src/App/Config/frontendConfig.inc.php
 
 ## mental model
@@ -29,6 +30,7 @@ A block type is **one `BlockRenderer` class** (`type()` + `schema()` + `render()
 - `schema()` is the authoring contract (one descriptor per field: `key`, `kind`, `label`, optional `options`/`item`/`default`); see [`../02-decisions/adr-011-block-field-schema.md`](../02-decisions/adr-011-block-field-schema.md). ADR-044 adds optional `required`, `maxLength`, `min`/`max` (lists), `inline` (`bold|italic|link|break`) and `links` (`targets`, `localize`) — checked on save, and applied when a template reads through `ContentView` ([`../02-decisions/adr-044-content-blueprints.md`](../02-decisions/adr-044-content-blueprints.md)). A list with `item: 'textarea'` is edited as paragraphs.
 - The block **storage** shape is just `{type, ...fields}` in the document's `blocks` array — a new type needs **no** change to `Content`.
 - Deploy: PHP (renderer + config) is symlinked → effective immediately. New SCSS classes need `npm run build:frontend` + `composer install -d skeleton` (copies compiled CSS to `public`).
+- **Starter set (2026-10-22):** the frontend module ships `hero`, `text-section`, `cards`, `image-text`, `cta`, `form` (+ `footer`) — the building blocks of the starter pages ([`content.md`](content.md) «Starter pages»). The new ones extend `SectionBlockRenderer`: they declare fields with bounds and inline profiles (`text()`, `textarea()`, `paragraphs()`), the pages read them through blueprint slots and `partials/sections/*`, and `render()` is a generic stream fallback. A designed type of a project can extend it the same way.
 
 ## recipe
 

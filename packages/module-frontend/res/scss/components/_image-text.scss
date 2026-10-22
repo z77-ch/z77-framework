@@ -1,0 +1,21 @@
+/* Image and text side by side (partials/sections/imageText, block type `image-text`).
+   Two columns by default (desktop + tablet); layout/_mobile stacks them. */
+.fe-image-text {
+    display:               grid;
+    grid-template-columns: 1fr 1fr;
+    gap:                   var(--fe-space-7);
+    align-items:           center;
+}
+
+.fe-image-text--text-only { grid-template-columns: 1fr; }
+
+/* Image first: the media column moves to the left, the DOM order stays text-first. */
+.fe-image-text--left .fe-image-text__media { order: -1; }
+
+.fe-image-text__media { margin: 0; }
+.fe-image-text__media img {
+    display:    block;
+    width:      100%;
+    height:     auto;
+    background: var(--fe-surface-alt);
+}

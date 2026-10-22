@@ -24,3 +24,6 @@
 
 /* Responsive text breaks (brText() helper): mobile-only breaks collapse here. */
 .z77-br--m { display: none; }
+
+/* Three or six cards: thirds instead of quarters (partials/sections/cards). */
+.fe-grid--thirds > .fe-item { grid-column: span 4; }

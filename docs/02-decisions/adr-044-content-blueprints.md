@@ -1,7 +1,7 @@
 # ADR-044 — Content blueprints: a fixed, keyed block structure per document
 
 **Status:** `[APPROVED]`
-**Date:** 2026-09-21 · addendum 2026-09-22 (variants and preview)
+**Date:** 2026-09-21 · addendum 2026-09-22 (variants and preview) · addendum 2026-10-22 (starter pages)
 
 > **Note 2026-09-21 — first consumer (zihlundsee.ch, all pages).** Link target `tel`
 > added (default targets now page, media, external, mailto, tel); `links.newTab`
@@ -222,6 +222,45 @@ different file than `current`) — both doors read the same `shared/data`, and t
 hostname would couple a code release to a text preview; on zihlundsee `zihl.z77.ch`
 even answers from `next` · *a cookie that remembers the preview* — hidden
 cross-request state.
+
+## Addendum 2026-10-22 — The frontend starter pages on blueprints
+
+**Problem.** The framework's frontend pages were the z77.ch marketing site: home a stream
+document, about a by-type bespoke template, services / contact / thanks / legal / privacy with
+their copy hard-coded in the templates («Vier Leistungen …», «DSGVO- und revDSG-konform»). A
+fresh installation showed someone else's claims, and the text was not editable.
+
+**Decision (Peter, 2026-10-22).**
+
+- **No z77 reference, neutral and self-explanatory copy.** The texts say what belongs there
+  («Ihr Hauptversprechen in einem Satz», «Leistung 1 — Was Kunden davon haben, in einem
+  Satz.»): no «wir», no company, no legal claims. Impressum and Datenschutz are an outline of the
+  usual Swiss/EU headings, each paragraph «Durch Ihre Angaben ersetzen: …».
+- **The pattern of the first consumer (zihlundsee.ch):** one content document per page and
+  language, structure = blueprint in `frontendConfig`; the controller reads `PageContent`,
+  hands each section its values plus `editAttribute()`; templates hold markup only; every
+  section is editable on the page (ADR-045 §4) and in the backend.
+- **Pages and the starter set of block types:** home (hero, text, cards, call to action),
+  about (hero, text, image-text), services (hero, cards), contact (text + the existing contact
+  form — `ContactFormDefinition` / `PublicFormHandler` unchanged), thanks (hero), legal and
+  privacy (hero + text sections), plus the shared `footer` document. Together they show each
+  block type of the set once at least: `hero`, `text-section`, `cards`, `image-text`, `cta`,
+  `form`.
+- **German and English.** The French starter documents are dropped; the frontend module offers
+  `de`, `en`. An English UI dictionary is added. Projects with French content keep it.
+- **Simple to change, simple to delete, never brought back.** Delete the documents and the menu
+  entry, and the page is gone (the action answers 404: `PageContent::find()`). Starter content
+  is seeded on the first install only (`data/content/` absent) — per-file seed-once would
+  re-create a deleted page on the next update. Existing installations get nothing new.
+
+**Consequences.** `PageContent::find()` (nullable twin of `view()`), `Ui\Services\PageSections`
+(slot → partial data, reusable), `FooterContent`, `SectionBlockRenderer` + five types, the
+`partials/sections/*` set, CSS for image-text, cta and the button, a neutral placeholder image.
+The section empty of title and paragraphs is not shown — a page drops a heading without code;
+adding one stays a blueprint change in the project's override. Installations that rendered the
+framework's frontend without overrides (z77.ch) must move their pages into `override/` (see
+`topics/content.md` pending STARTER-Z77CH-001). The brand mark still defaults to «z77»
+(STARTER-BRAND-001, open).
 
 ## Rejected Alternatives
 

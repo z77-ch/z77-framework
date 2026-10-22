@@ -1,6 +1,6 @@
 # view-layer
 
-2026-07-17
+2026-10-22
 
 ## entry
 
@@ -25,6 +25,9 @@ SOURCE=/packages/module-frontend/res/view/templates/html-default-skeleton.tpl.ph
 SOURCE=/packages/module-frontend/res/view/templates/html-fetch-skeleton.tpl.php
 SOURCE=/packages/module-frontend/res/view/templates/partials/header.tpl.php
 SOURCE=/packages/module-frontend/res/view/templates/partials/footer.tpl.php
+SOURCE=/packages/module-frontend/res/view/templates/partials/sections/
+SOURCE=/packages/module-frontend/src/Ui/Services/PageSections.php
+SOURCE=/packages/module-frontend/src/Ui/Services/FooterContent.php
 SOURCE=/packages/module-frontend/res/view/templates/partials/head/meta.tpl.php
 SOURCE=/packages/module-frontend/res/view/templates/partials/head/seo.tpl.php
 SOURCE=/packages/module-frontend/res/view/templates/partials/head/favicon.tpl.php
@@ -98,6 +101,20 @@ The keys under `body` become template variables in the document skeleton. Backen
 
 Reference: `docs/01-handbook/templates.md`.
 
+## frontend section partials (starter pages)
+
+Since 2026-10-22 the frontend starter pages are designed pages over content documents
+([`content.md`](content.md) «Starter pages», ADR-044 addendum). An action template only places
+section partials — `partials/sections/{hero,textSection,cards,imageText,cta,form,legalText}` —
+each with `['section' => …]` built by `Ui\Services\PageSections` (one mapper per block type;
+plain values for `e()`, running text as `…Html` from `ContentView` for `raw()`, and `edit`, the
+page-editor marker the partial prints on its root element). Presentation switches the template
+may pass: `alt` (alternate background), `titleTag` (`h1` when a text section opens the page).
+The templates hold no copy (`tests/frontend-starter-pages.php` strips PHP and tags and expects
+nothing left). Header and footer render the brand through `partials/brandMark` (below); the
+footer reads its texts itself via `FooterContent::data()` — a layout element on every page, like
+the navigation.
+
 ## brand mark (logo)
 
 `partials/brandMark` in the **`Z77\Shared`** namespace is the one place the installation's
@@ -108,7 +125,7 @@ writes its own wordmark, `<img>` or inline SVG. That is the FileFinder override 
 mechanism as everywhere else, deliberately NOT a config value: the mark is markup, and a
 project that wants a picture needs HTML anyway.
 
-Rendered by the backend login, the setup page (unlinked — during setup the site root has
+Rendered by the frontend top bar and footer (since 2026-10-22; the footer unlinked), the backend login, the setup page (unlinked — during setup the site root has
 nothing to show) and the member skeleton, which puts it above the card for every member
 page at once. The caller passes the block class its own bundle styles:
 

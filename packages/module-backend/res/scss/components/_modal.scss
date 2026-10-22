@@ -141,7 +141,9 @@
 .be-modal .be-modal__header { order: -2; }
 // The shared row inside a dialog reads like the header: same side padding, no outer margin.
 // `--end` (field-less confirm only, ADR-049) stays at the bottom, border on top.
-.be .be-modal .z77-form-actions {
+// The page editor's bare iframe page (html-bare-skeleton) shows the same dialog markup.
+.be .be-modal .z77-form-actions,
+.be .be-bare .z77-form-actions {
     order:         -1;
     padding:       .6rem 1.25rem;
     margin:        0;

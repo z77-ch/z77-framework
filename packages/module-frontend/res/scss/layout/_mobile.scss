@@ -28,3 +28,7 @@
 
 /* Responsive text breaks (brText() helper): desktop-only breaks collapse here. */
 .z77-br--d { display: none; }
+
+/* Image and text stack: text first, image below — also for «image left». */
+.fe-image-text { grid-template-columns: 1fr; gap: var(--fe-space-5); }
+.fe-image-text--left .fe-image-text__media { order: 0; }

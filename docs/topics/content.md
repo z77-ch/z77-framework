@@ -1,6 +1,6 @@
 # content
 
-2026-09-22
+2026-10-22
 
 ## entry
 
@@ -43,8 +43,15 @@ SOURCE=/packages/module-frontend/src/Content/Renderer/ProseSectionRenderer.php
 SOURCE=/packages/module-frontend/src/App/Config/frontendConfig.inc.php
 SOURCE=/packages/kernel/core/data/content/home.de.default.json
 SOURCE=/packages/kernel/core/data/content/about.de.default.json
-SOURCE=/packages/kernel/core/data/content/home.fr.default.json
-SOURCE=/packages/kernel/core/data/content/about.fr.default.json
+SOURCE=/packages/kernel/core/data/content/home.en.default.json
+SOURCE=/packages/kernel/core/data/content/legal.de.default.json
+SOURCE=/packages/kernel/core/data/content/footer.de.default.json
+SOURCE=/packages/module-frontend/src/Ui/Services/PageSections.php
+SOURCE=/packages/module-frontend/src/Ui/Services/FooterContent.php
+SOURCE=/packages/module-frontend/src/Content/Renderer/SectionBlockRenderer.php
+SOURCE=/packages/module-frontend/res/view/templates/partials/sections/
+SOURCE=/tests/frontend-starter-pages.php
+SOURCE=/tests/installer-starter-content.php
 SOURCE=/packages/module-frontend/src/Ui/Controllers/Main/IndexController.php
 SOURCE=/packages/module-backend/src/Ui/Controllers/Content/ContentController.php
 SOURCE=/packages/module-backend/src/Ui/Controllers/BackendAbstractController.php
@@ -57,8 +64,6 @@ SOURCE=/packages/module-backend/res/assets/css/content/editor.css
 SOURCE=/packages/module-backend/res/view/templates/Content/ContentController/confirmDelete.tpl.php
 RUNTIME=/skeleton/data/content/home.de.json
 RUNTIME=/skeleton/data/content/about.de.json
-RUNTIME=/skeleton/data/content/home.fr.json
-RUNTIME=/skeleton/data/content/about.fr.json
 
 ## mental model
 
@@ -102,14 +107,21 @@ Content is a **slug-addressed, self-contained document**, not page-bound. Identi
     - **Stream** (author composes): `ContentRenderer` renders all blocks in order into one HTML string; the page template is generic (`<?= $contentHtml ?>`); the visual editor's reorder/add drives the page.
     - **Bespoke** (designer composes): the page template owns the markup (free `<section>`/`<div>`/`<hN>` + project CSS) and reads blocks as data via `Content::block($type)` / `blocks($type)` / `has($type)` → `BlockView` (`get()` raw, `text()` escaped, `html()` inline-formatted, `list()` repeater — object items wrapped as `BlockView`, scalars raw). A missing block is an empty `BlockView` null-object (`exists()===false`, `text()===''`, `list()===[]`) — no null checks; gate the wrapper with `has()`.
     - Not exclusive: a template can hand-place a hero, then dump a stream region below. The `ContentRenderer` is one presentation adapter, not the heart — `BlockView` is the parallel read path.
-    - **Reference consumers (live):** `IndexController::homeAction` = stream (`render()` → `contentHtml`); `IndexController::aboutAction` = bespoke (`find()` → entity → `aboutAction.tpl.php` reads via `BlockView`). Both edit through the same backend block editor. Note: bespoke access is by-type — a repeated type (two `prose-section`s on about) is reached via `blocks($type)` (list) or index, not a unique name; distinct roles want distinct types or a future keyed-block concept.
+    - **Reference consumers (live, since 2026-10-22):** the frontend starter pages — blueprint + `PageContent` + section partials, see «Starter pages» below. Stream mode has no starter consumer any more; `ContentService::render()` and the `hero` / `features` / `prose-section` stream renderers stay (projects use them). Until 2026-10-22 `homeAction` was the stream reference and `aboutAction` the by-type bespoke one.
 - v1 has **no `section` field**. Zones on a page = multiple slugs composed by the controller (or a future container block). Reintroducing a page/section column would re-couple content to a page.
 - **`active` (bool, default true)** gates public visibility: an inactive document is editable in the backend but not rendered on the frontend. The gate lives in `ContentService` (not in the renderer, not in the entity) — `find()` / `render()` return null / `''` for inactive documents; the repository returns them regardless so the backend editor still sees them.
 - **Language fallback (ADR-013):** `ContentService::find()` falls back to the `defaultLanguage` document when the requested-language document does **not exist** (e.g. `/fr/about` with no `about.fr.json` → `about.de`). An existing-but-**inactive** document is a deliberate state and does NOT fall back. See [`i18n.md`](i18n.md).
-- **Frontend wiring (live):** `ContentService` (in `Z77\Shared\Services`) is **consumer-built, not a DI service** — `ContentService::create()` composes `ContentRepository` (from the DI `UnifiedEntityManager`) + a `ContentRenderer` over `BlockRegistry::assemble()` (see [`../02-decisions/adr-012-content-services-not-in-di.md`](../02-decisions/adr-012-content-services-not-in-di.md)). A controller calls `ContentService::create()->render($slug, $language)` and passes the HTML to its template. `IndexController::homeAction` is the reference consumer — the **whole home page** is content-driven: `homeAction.tpl.php` is just `<?= $contentHtml ?>`, and `home.de.json` holds the hero/features/prose-section blocks. Runtime documents live at `data/content/<slug>.<language>.json`.
+- **Frontend wiring (live):** `ContentService` (in `Z77\Shared\Services`) is **consumer-built, not a DI service** — `ContentService::create()` composes `ContentRepository` (from the DI `UnifiedEntityManager`) + a `ContentRenderer` over `BlockRegistry::assemble()` (see [`../02-decisions/adr-012-content-services-not-in-di.md`](../02-decisions/adr-012-content-services-not-in-di.md)). A stream page calls `ContentService::create()->render($slug, $language)` and passes the HTML to its template; a designed page reads `PageContent::view()` / `find()`. Runtime documents live at `data/content/<slug>.<language>.json`.
+- **Starter pages (ADR-044 addendum 2026-10-22).** The frontend module ships seven pages — home, about, services, contact, thanks, legal, privacy — plus the shared `footer` document, all on one pattern:
+    - **One document per page and language** (`<slug>.de` / `<slug>.en`), structure = the blueprint of the same slug in `frontendConfig` (`contentBlueprints`). `IndexController` reads it through `page($slug)` (`PageContent::find()`, **404** when the document is missing or inactive), passes each slot through `Ui\Services\PageSections::<type>($page, $key)` (values + `edit` marker) and hands the result to its template; the template only places `partials/sections/*` — **no copy in templates or controller**. Every section is editable on the page (ADR-045 §4) and in the backend (Webseiten › Inhalte).
+    - **Block types (the starter set)**: `hero` (existing), `text-section`, `cards`, `image-text`, `cta`, `form` — each used by at least one page; plus `footer`. Partials: `hero`, `textSection` (`titleTag` h1 when it opens the page), `cards`, `imageText`, `cta`, `form` (text + `partials/publicForm`), `legalText` (several `text-section` slots as one prose column). The new types extend `SectionBlockRenderer`: schema = the authoring contract, `render()` only a generic stream fallback.
+    - **Pages:** home = hero, intro, cards (3), cta → `/contact` · about = hero, text, image-text (neutral placeholder `/assets/frontend/images/placeholder.svg`) · services = hero, cards (4) · contact = intro (`text-section`, h1) + form (the text above the form; fields stay `ContactFormDefinition`, handler and PRG unchanged) · thanks = hero — reached at `/thanks` through a navigation entry in the slot `frontend-route` («Ohne Menü», rendered nowhere; seed id 13 + alias id 8, 2026-10-22 — before it, the PRG redirect landed on 404; an existing installation adds the entry and the alias in the backend) · legal / privacy = hero + the usual headings as `text-section` slots. **A section whose title and paragraphs are empty is not shown** (`PageSections::textSections()`) — that is how a page drops a heading without code; adding one is a blueprint change (project override of `frontendConfig` + templates).
+    - **Neutral, self-explanatory copy** (owner 2026-10-22): the texts say what belongs there («Ihr Hauptversprechen in einem Satz», «Leistung 1 — Was Kunden davon haben, in einem Satz.»), no «wir», no company, no legal claims; legal and privacy are an outline whose paragraphs say «Durch Ihre Angaben ersetzen: …». No z77 reference — except the installation's brand mark (`Z77\Shared` `partials/brandMark`, default wordmark «z77»; see pending).
+    - **Footer** = layout element: `partials/footer` reads `Ui\Services\FooterContent::data()` itself (tagline, copyright holder; empty → line left out, no document → no exception). A project with its own footer partial never reads it.
+    - **Change / delete:** text in the backend or on the page. Delete a page = delete its documents (both languages) + its menu entry; the URL then answers 404. Updates never bring it back (seeding below).
+- **Seeding:** starter content ships as `core/data/content/<slug>.<lang>.default.json` (German and English; no French since 2026-10-22) and is deployed by the Installer to `data/content/<slug>.<lang>.json` **on the first install only** — while `data/content/` does not exist (`Install::STARTER_DATA_DIRS`, owner 2026-10-22). Per-file seed-once would re-create a page the project deleted; an existing installation therefore never receives new starter documents (its own content, `fr` included, is untouched). Other data seeds keep the per-file rule ([`persistence-file.md`](persistence-file.md), [`installer.md`](installer.md)). Hand-placing a runtime file is wrong: it does not survive a clean reinstall.
 - **Backend editor (`ContentController`, group `content`, `/backend/content/content/*`):** document-mode CRUD following the clean→hydrate→validate pattern ([`entity-data-handling.md`](entity-data-handling.md)). Identity is `(slug, language)` — there is no int id, so edit/delete address documents by `?slug=&language=` and the entity-CSRF key is `"<slug>.<language>"` (`CsrfService` entity-token id widened to `int|string`). `slug`+`language` are **immutable on edit** (disabled inputs + forced server-side) so a rename can't orphan the file. Saves are guarded by an **optimistic lock** (`entity_hash` = `EntityStateHash` of the loaded document, checked by `guardStoredState()` before hydration; after a failed save the submitted hash is re-issued, so a conflict stays a conflict until reload — pattern `NavigationController`). v1 edits metadata (title, active) + blocks as a **validated JSON textarea**; `ContentValidator` checks slug/language/title and that every block's `type` is in `BlockRegistry::types()`. Reachable via navigation entry id 19 «Inhalte» under «Webseiten». The visual per-type block editor is the next step (2b).
 - **Editing-language mode (CONTENT-LANG-001, 2026-06-06):** the backend UI chrome stays single-language (German), but the *content* it edits has the `(slug, language)` dimension. The editor scopes to **one editing language at a time** — session-sticky, mirroring the frontend language-session model (ADR-013): a `?language=<code>` on the list is only the **switch trigger**, the active language lives in the session (`BackendAbstractController::contentEditLanguage()` / `setContentEditLanguage()`, key `backendContentLanguage` — deliberately distinct from the frontend request-language session key so the two never interfere). `listAction` filters `findAll()` to that language so de/fr rows never mix; a prominent `be-lang-switch` banner (and the `be-lang-tag` in the editor modal header) keeps the active language unmistakable so content is never entered under the wrong language. **The mode is the single source of a new document's language**: `addAction` seeds `new Content()` with the mode language, the edit form shows `language` read-only, and the add POST path forces it from the session mode (a crafted body cannot place a document under another language). To author another language, switch the mode. This is the reusable pattern for [`metadata.md`](metadata.md) "Backend metadata per language".
-- **Seeding:** starter content ships as `core/data/content/<slug>.<lang>.default.json` and is deployed by the Installer to `data/content/<slug>.<lang>.json` on first install (never overwritten) — same generic `*.default.json` mechanism as navigation/seo/auth (see [`persistence-file.md`](persistence-file.md)). Hand-placing a runtime file is wrong: it does not survive a clean reinstall.
 
 ## block types
 
@@ -129,12 +141,25 @@ Module-contributed (frontend, via `frontendConfig.contentBlocks` — example of 
 | `hero` | `eyebrow`, `title`, `subline` | `<section class="fe-hero">…` |
 | `features` | `eyebrow`, `title`, `items[]` ({`number`, `title`, `text`}) | `<section class="fe-section">` + `<div class="fe-grid">` of `fe-item` |
 | `prose-section` | `variant` (`dark`?), `eyebrow`, `title`, `lead` | `<section class="fe-section [fe-section--dark]">…` |
+| `text-section` | `eyebrow`, `title`, `paras[]` (bold, italic, links) | starter pages: `partials/sections/textSection` / `legalText`; stream: generic fallback |
+| `cards` | `eyebrow`, `title`, `items[]` ({`title`*, `text`}, 1–6) | `partials/sections/cards` |
+| `image-text` | `eyebrow`, `title`, `paras[]`, `image` (url), `alt`, `position` (`''`\|`left`) | `partials/sections/imageText` |
+| `cta` | `title`, `text`, `label`*, `href`* (url; page address localised) | `partials/sections/cta` |
+| `form` | `eyebrow`, `title`, `text` — the text above a public form | `partials/sections/form` (+ `partials/publicForm`) |
+| `footer` | `tagline`, `copyright` | `partials/footer` (via `FooterContent`) |
 
 ## flow
 
 ```text
+Designed page (starter pages):
 IndexController::homeAction()
-→ ContentService::create()->render('home', $language)     // factory, not DI (adr-012)
+→ page('home') = PageContent::find('home') ?? 404     // language, preview, page editor
+→ PageSections::hero($page, 'hero') …                 // values + edit marker per slot
+→ html([...]) → homeAction.tpl.php places partials/sections/*
+
+Stream page:
+SomeController::action()
+→ ContentService::create()->render('slug', $language)     // factory, not DI (adr-012)
      → ContentRepository::findBySlug('home', $language)   // document store, O(1)
      → active gate (null/'' if inactive)
      → ContentRenderer::render($content)
@@ -200,3 +225,6 @@ template: <?= $contentHtml ?>   // already-safe HTML, no re-escape
 - **Blueprints follow-ups (ADR-044)** — (a) backend list: mark blueprint documents and offer creating a document for a blueprint slug that has none; (b) file-level pull/push tooling with checksum for editing outside the backend (first built in the zihlundsee.ch project); (c) page tree in the backend list. Branch `feat/content-blueprints`, bauplan [`../03-development/content-blueprints-bauplan.md`](../03-development/content-blueprints-bauplan.md).
 - **Phase 4 — full-text search** — SQLite FTS5 derived index, indexed on save; result list reads title/excerpt from the index without touching content files.
 - **DMS-referencing block + `document` field kind (design agreed 2026-07-02, not built).** Content stays in `ContentService`/entity; the DMS ([`documents.md`](documents.md)) stays the asset store — a page **references** DMS documents, it does NOT store content JSON as a blob (that would lose slug-lookup, the block editor, validation, the `active`/i18n gates, and the safe render pipeline). Concrete first consumer: a **`gallery`/`slider`** block (module-contributed, like `hero`/`features` — MUST live in a module, NEVER in core `shared`: `shared → module-dms` is a forbidden coupling / near-cycle). Storage shape references documents by **`id`**, not a `/media` URL string: `{ "type": "gallery", "items": [ { "documentId": 42, "alt": "…", "caption": "…" } ] }`. The renderer resolves each id at render time via `DocumentService::publicUrl($doc, $variant)` (id-addressed → rename/move-safe; adds the `?v=` version token; correct per-variant extension) and builds `<img srcset>` over `s/m/l/xl`; a missing/unreadable doc → skip that slide (graceful, like an unknown block type → `''`). The new authoring piece is a **`document` (media) field kind** in the block schema/editor: an "Auswählen" button that opens the DMS **Drive in pick-mode** and returns doc id(s) (thumbnail via `document/preview?id=&variant=s`) — reusable for any block (incl. the core `image` `src`), the shared basis with the (a) content-Drive-look UI. Watch-outs: (1) a public page needs the referenced image at `deliveryMode: public` or `/media` 404s → the picker must show/enforce this; (2) module boundary as above; (3) dangling reference after a hard purge → skip silently. Editor/UX layout to be finalised first (see the DMS Drive pick-mode dependency).
+- **STARTER-BRAND-001 — resolved 2026-10-22 (owner decision via the -initial session):** `partials/brandMark` defaults to the SITE NAME instead of the fixed «z77» — the frontend `site.name` when set, else `systemConfig` → `installationName`, else the canonical host; an optional `label` overrides it. Applies everywhere the mark renders (frontend head and foot, backend login, setup, member). A real logo still replaces the whole partial in the project override.
+- **STARTER-Z77CH-001 (2026-10-22)** — z77.ch runs on the framework's frontend without overrides (no `IndexController`, templates or `frontendConfig` in `override/`) and holds the old stream/bespoke documents `home` / `about` (de, fr). With the starter pages it renders empty sections on home/about and 404 on services, contact, thanks, legal, privacy, and the switch offers de/en only. Its marketing pages belong to the project: restore the pre-2026-10-22 `IndexController`, page templates, header/footer and `frontendConfig` (languages) from git into `override/z77/module/frontend/` — or create its documents for the new blueprints.
+- **Site name vs. brand** — `site.name` (SiteIdentity, `og:site_name`) and the brand mark are two places that name the installation; the starter footer's copyright holder is a third (content). Revisit if a single source is wanted.

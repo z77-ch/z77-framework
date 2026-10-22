@@ -1,14 +1,26 @@
 <?php
-/** @var \Z77\Core\Services\NavigationService $navigationService */
-/** @var \Z77\Shared\Entities\Navigation $entry */
+/**
+ * Frontend footer. Brand = the installation's brand mark (`Z77\Shared`
+ * partials/brandMark, unlinked here); link columns = the navigation slots, their
+ * headings from the UI dictionary; tagline and copyright holder = the shared
+ * content document `footer` (Ui\Services\FooterContent, read here because the
+ * footer is a layout element on every page — like the navigation below). An
+ * empty value leaves its line out.
+ *
+ * @var \Z77\Core\Services\NavigationService $navigationService
+ * @var \Z77\Shared\Entities\Navigation $entry
+ */
 $navMain = $navigationService->getBySlot('frontend-main');
 $navMeta = $navigationService->getBySlot('frontend-meta');
+$texts   = \Z77\Module\Frontend\Ui\Services\FooterContent::data();
 ?>
-<footer class="fe-footer">
+<footer class="fe-footer"<?= raw($texts['edit']) ?>>
     <div class="fe-container fe-footer__grid">
         <div>
-            <div class="fe-footer__brand">z77</div>
-            <p class="fe-footer__tag"><?= e(t('footer.tagline')) ?></p>
+            <?= $this->partial('partials/brandMark', ['class' => 'fe-footer__brand', 'href' => ''], 'Z77\\Shared') ?>
+            <?php if ($texts['tagline'] !== ''): ?>
+            <p class="fe-footer__tag"><?= e($texts['tagline']) ?></p>
+            <?php endif; ?>
         </div>
 
         <div>
@@ -30,8 +42,9 @@ $navMeta = $navigationService->getBySlot('frontend-meta');
         </div>
     </div>
 
+    <?php if ($texts['copyright'] !== ''): ?>
     <div class="fe-container fe-footer__bottom">
-        <small class="fe-footer__copy">&copy; <?= date('Y') ?> z77. <?= e(t('footer.rights')) ?></small>
-        <small class="fe-footer__copy">v1.0.0</small>
+        <small class="fe-footer__copy">&copy; <?= e(date('Y')) ?> <?= e($texts['copyright']) ?></small>
     </div>
+    <?php endif; ?>
 </footer>
