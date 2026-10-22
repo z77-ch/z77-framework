@@ -187,60 +187,69 @@ class JournalLineRepository extends DoctrineRepository
         return ['count' => (int) $total['entries'], 'numbers' => array_map('intval', $numbers), 'net' => (string) $total['net']];
     }
 
-    /** The fixed condition of {@see entriesOnAccountExcept()} — every value a placeholder. */
-    private const ACCOUNT_EXCEPT_KEY_WHERE = 'l.account_id = ? AND e.fiscal_year_id = ? AND (e.idempotency_key IS NULL OR e.idempotency_key <> ?)';
+    /** The fixed condition of {@see entriesOnAccountNotFrom()} — every value a placeholder. */
+    private const ACCOUNT_NOT_FROM_WHERE = 'l.account_id = ? AND e.fiscal_year_id = ? AND (e.source_type IS NULL OR e.source_type <> ? OR e.source_ref IS NULL OR e.source_ref <> ?)';
 
     /**
-     * The entries of a fiscal year with a line on one account that do NOT carry $exceptKey as
-     * their idempotency key — what the year opening asks of its contra account (P5, owner
+     * The entries of a fiscal year with a line on one account that do NOT come from the origin
+     * $sourceType / $sourceRef — what the year opening asks of its contra account (P5, owner
      * 2026-10-22): an opening the generator did not make (an imported «EB:» entry, a manual
-     * one) refuses a generated one. How many, and the first $limit entry numbers in order.
-     * Doctrine-only (SQL).
+     * one) refuses a generated one; the generated one is a SET of entries of origin
+     * `opening` / the year's code (one per account). How many, and the first $limit entry
+     * numbers in order. Doctrine-only (SQL).
      *
      * @return array{count: int, numbers: list<int>}
      */
-    public function entriesOnAccountExcept(int $accountId, int $fiscalYearId, string $exceptKey, int $limit): array
+    public function entriesOnAccountNotFrom(int $accountId, int $fiscalYearId, string $sourceType, string $sourceRef, int $limit): array
     {
         $count = $this->connection()->fetchOne(
-            'SELECT COUNT(DISTINCT e.id) FROM journal_line l JOIN journal_entry e ON e.id = l.entry_id WHERE ' . self::ACCOUNT_EXCEPT_KEY_WHERE,
-            [$accountId, $fiscalYearId, $exceptKey],
-            [ParameterType::INTEGER, ParameterType::INTEGER, ParameterType::STRING]
+            'SELECT COUNT(DISTINCT e.id) FROM journal_line l JOIN journal_entry e ON e.id = l.entry_id WHERE ' . self::ACCOUNT_NOT_FROM_WHERE,
+            [$accountId, $fiscalYearId, $sourceType, $sourceRef],
+            [ParameterType::INTEGER, ParameterType::INTEGER, ParameterType::STRING, ParameterType::STRING]
         );
         $numbers = $this->connection()->fetchFirstColumn(
-            'SELECT DISTINCT e.number FROM journal_line l JOIN journal_entry e ON e.id = l.entry_id WHERE ' . self::ACCOUNT_EXCEPT_KEY_WHERE . ' ORDER BY e.number LIMIT ?',
-            [$accountId, $fiscalYearId, $exceptKey, max(1, $limit)],
-            [ParameterType::INTEGER, ParameterType::INTEGER, ParameterType::STRING, ParameterType::INTEGER]
+            'SELECT DISTINCT e.number FROM journal_line l JOIN journal_entry e ON e.id = l.entry_id WHERE ' . self::ACCOUNT_NOT_FROM_WHERE . ' ORDER BY e.number LIMIT ?',
+            [$accountId, $fiscalYearId, $sourceType, $sourceRef, max(1, $limit)],
+            [ParameterType::INTEGER, ParameterType::INTEGER, ParameterType::STRING, ParameterType::STRING, ParameterType::INTEGER]
         );
 
         return ['count' => (int) $count, 'numbers' => array_map('intval', $numbers)];
     }
 
     /**
-     * The OTHER accounts of the given entries — the account statement's
-     * counter-account column: per entry the number of distinct other
-     * accounts and, when there is exactly one, its number and name.
-     * Bounded by the page's entries. Doctrine-only (SQL).
+     * EVERY line of the given entries with its account — what the account statement needs to
+     * name the counter account of each of its lines, and to split a line into one row per
+     * counter line when the pairing is unambiguous (`LedgerReports::statementLines()`, owner
+     * 2026-10-22). ONE query for a page (or a PDF chunk) of statement rows, bounded by their
+     * entries; in entry, position order. Doctrine-only (SQL).
      *
      * @param list<int> $entryIds
-     * @return array<int, array{count: int, number: string, name: string}> entry id → counter accounts
+     * @return array<int, list<array{line_id: int, account_id: int, number: string, name: string, debit: string, credit: string}>> entry id → its lines
      */
-    public function counterAccounts(array $entryIds, int $accountId): array
+    public function linesOfEntries(array $entryIds): array
     {
         if ($entryIds === []) {
             return [];
         }
         $rows = $this->connection()->fetchAllAssociative(
-            'SELECT l.entry_id, COUNT(DISTINCT l.account_id) AS n, MIN(a.number) AS number, MIN(a.name) AS name
+            'SELECT l.entry_id, l.id AS line_id, l.account_id, a.number, a.name, l.debit, l.credit
                FROM journal_line l
                JOIN account a ON a.id = l.account_id
-              WHERE l.entry_id IN (?) AND l.account_id <> ?
-              GROUP BY l.entry_id',
-            [array_values(array_unique($entryIds)), $accountId],
-            [ArrayParameterType::INTEGER, ParameterType::INTEGER]
+              WHERE l.entry_id IN (?)
+              ORDER BY l.entry_id, l.position, l.id',
+            [array_values(array_unique($entryIds))],
+            [ArrayParameterType::INTEGER]
         );
         $result = [];
         foreach ($rows as $r) {
-            $result[(int) $r['entry_id']] = ['count' => (int) $r['n'], 'number' => (string) $r['number'], 'name' => (string) $r['name']];
+            $result[(int) $r['entry_id']][] = [
+                'line_id'    => (int) $r['line_id'],
+                'account_id' => (int) $r['account_id'],
+                'number'     => (string) $r['number'],
+                'name'       => (string) $r['name'],
+                'debit'      => (string) $r['debit'],
+                'credit'     => (string) $r['credit'],
+            ];
         }
 
         return $result;

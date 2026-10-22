@@ -191,3 +191,14 @@ books) came due:
 
 Built in `YearOpeningService` ([`financial.md`](../topics/financial.md) «P5 — the year opening»,
 FIN-OPENING-001).
+
+### Addendum 2026-10-22 b — one opening entry per account (owner decision, same day)
+
+Point 1 above is refined: the opening is **one two-line entry per account** against 9100 — the
+account with its closing balance, 9100 with the same amount on the other side — not one compound
+entry. The owner, on the statement of 9100 showing «div.» on both lines of the compound entry: «wie
+die EB:-Buchungen von wdv». The result on 2979 is one entry with 2979's own carried balance plus
+the result. Each entry has the key `opening:{code}:{account}` and the origin `opening` / the code;
+a re-run replaces the SET in one unit of work — amends the entries whose amount changed (same
+number), retracts those of accounts without a balance, posts those of new accounts, leaves the
+rest. Point 3's in-place rule holds per entry.

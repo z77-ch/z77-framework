@@ -106,6 +106,40 @@ class JournalEntryRepository extends DoctrineRepository
         return $this->hydrate(array_map('intval', $ids));
     }
 
+    /**
+     * The GENERATED entries of one origin in a fiscal year, with lines and accounts loaded, in
+     * number order — the year opening's set of entries (one per account, origin `opening` /
+     * the year's code, owner 2026-10-22). Ids by SQL, then the fetch-join: no lazy load per
+     * entry when their snapshots are compared. Doctrine-only (SQL + DQL).
+     *
+     * @return list<JournalEntry>
+     */
+    public function generatedFrom(FiscalYear $year, string $sourceType, string $sourceRef): array
+    {
+        $ids = $this->connection()->fetchFirstColumn(
+            "SELECT id FROM journal_entry WHERE fiscal_year_id = ? AND kind = 'generated' AND source_type = ? AND source_ref = ? ORDER BY number",
+            [(int) $year->getId(), $sourceType, $sourceRef],
+            [ParameterType::INTEGER, ParameterType::STRING, ParameterType::STRING]
+        );
+
+        return $this->hydrate(array_map('intval', $ids));
+    }
+
+    /**
+     * The NUMBERS of the generated entries of one origin in a fiscal year, in order — the cheap
+     * form of {@see generatedFrom()} for a status line (no entity loaded). Doctrine-only (SQL).
+     *
+     * @return list<int>
+     */
+    public function generatedNumbersFrom(FiscalYear $year, string $sourceType, string $sourceRef): array
+    {
+        return array_map('intval', $this->connection()->fetchFirstColumn(
+            "SELECT number FROM journal_entry WHERE fiscal_year_id = ? AND kind = 'generated' AND source_type = ? AND source_ref = ? ORDER BY number",
+            [(int) $year->getId(), $sourceType, $sourceRef],
+            [ParameterType::INTEGER, ParameterType::STRING, ParameterType::STRING]
+        ));
+    }
+
     /** How many entries a year holds — for «n of m» on the journal screen. Doctrine-only (SQL). */
     public function countForYear(FiscalYear $year): int
     {

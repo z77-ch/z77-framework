@@ -23,7 +23,7 @@ $sheets = $sheets ?? [$report];
 $faulty = array_values(array_filter($sheets, static fn($s) => !$s->isBalanced()));
 ?>
 <div class="be-list">
-    <?= $this->partial('Backend/ReportController/rangeForm', ['atDay' => true] + ['range' => $range, 'tab' => $tab, 'link' => $link, 'months' => $months, 'reportBase' => $reportBase, 'notices' => $notices, 'keep' => $keep, 'pdfTabs' => $pdfTabs ?? [], 'compareTabs' => $compareTabs ?? [], 'compare' => $compare ?? true], $ns) ?>
+    <?= $this->partial('Backend/ReportController/rangeForm', ['atDay' => true] + ['range' => $range, 'presets' => $presets ?? [], 'presetKey' => $presetKey ?? null, 'tab' => $tab, 'link' => $link, 'months' => $months, 'reportBase' => $reportBase, 'notices' => $notices, 'keep' => $keep, 'pdfTabs' => $pdfTabs ?? [], 'compareTabs' => $compareTabs ?? [], 'compare' => $compare ?? true], $ns) ?>
     <?php // A balanced sheet says nothing — that is the normal state. Only the FAULT is shown,
           // as an error block at the top (owner 2026-10-10); the carried-forward note of
           // FIN-REPORT-001 is gone with it, the figures speak for themselves. ?>

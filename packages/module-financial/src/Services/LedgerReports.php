@@ -174,32 +174,121 @@ final class LedgerReports
     }
 
     /**
-     * Statement rows → lines on the account's natural side, with their counter accounts
-     * (one query for the rows given — a page, or a chunk of the PDF's stream).
+     * Statement rows → lines on the account's natural side, each with its counter account
+     * (ONE query for the rows given — a page, or a chunk of the PDF's stream:
+     * `JournalLineRepository::linesOfEntries()`).
+     *
+     * One row per counter line where the pairing is unambiguous (owner 2026-10-22: «ein
+     * Kontoblatt sollte jede Buchung zeigen … weiss das Gegenkonto nicht wer sein Gegenüber
+     * ist?»), see {@see counterRows()}. A split row carries the entry's date, number and text,
+     * the counter line's account and that line's amount on the statement line's side; the
+     * running balance steps through the split rows and ends on the line's own running
+     * balance, so the totals, the closing and the next line are untouched. Display only — the
+     * posting is what it is.
      *
      * @param list<array<string, mixed>> $rows from `JournalLineRepository::accountLines()` / the stream
      * @return \Generator<int, AccountStatementLine>
      */
     private function statementLines(Account $account, Money $opening, array $rows): \Generator
     {
-        $counters = $this->lines()->counterAccounts(array_column($rows, 'entry_id'), (int) $account->getId());
+        $entries = $this->lines()->linesOfEntries(array_column($rows, 'entry_id'));
         foreach ($rows as $row) {
-            $counter = $counters[$row['entry_id']] ?? null;
-            yield new AccountStatementLine(
-                $row['entry_id'],
-                $row['number'],
-                new \DateTimeImmutable($row['entry_date']),
-                (string) $row['entry_text'],
-                $row['line_text'],
-                $counter['count'] ?? 0,
-                $counter['number'] ?? null,
-                $counter['name'] ?? null,
-                $this->money($row['debit']),
-                $this->money($row['credit']),
-                // debit − credit up to and including this line, on the natural side
-                $this->natural($account, $opening->add($this->money($row['running']))),
-            );
+            $debit   = $this->money($row['debit']);
+            $credit  = $this->money($row['credit']);
+            // debit − credit up to and including this line; split rows step from the balance before it
+            $running = $opening->add($this->money($row['running']));
+            $parts   = $this->counterRows($entries[$row['entry_id']] ?? [], $row['line_id'], (int) $account->getId(), $debit, $credit);
+            $step    = $running->subtract($debit->subtract($credit));
+            foreach ($parts as $i => $part) {
+                $step = $step->add($part['debit']->subtract($part['credit']));
+                yield new AccountStatementLine(
+                    $row['entry_id'],
+                    $row['number'],
+                    new \DateTimeImmutable($row['entry_date']),
+                    (string) $row['entry_text'],
+                    $row['line_text'],
+                    $part['count'],
+                    $part['number'],
+                    $part['name'],
+                    $part['debit'],
+                    $part['credit'],
+                    // the last part ends exactly on the SQL running balance
+                    $this->natural($account, $i === count($parts) - 1 ? $running : $step),
+                    count($parts) > 1,
+                );
+            }
         }
+    }
+
+    /**
+     * The counter account(s) of ONE statement line (owner 2026-10-22, display only):
+     *
+     *   - the line is the ONLY line on its side (debit or credit) of the entry and no line on
+     *     the other side is on the same account → its amount splits EXACTLY into the other
+     *     side's lines: one row per counter line with that line's account and amount (1:n — a
+     *     sale 1100 / 3200 + 2200 shows two rows on 1100; one row when the other side has one);
+     *   - else the other side has exactly ONE line, on another account → that is the counter
+     *     account, with the line's own amount (the n side of 1:n — 3200 → 1100);
+     *   - else (m:n — a manual Sammelbuchung with several lines on both sides, or the account
+     *     itself on both sides) the pairing is ambiguous: one row, the one other account of the
+     *     entry when there is just one, «div.» when there are several, «–» when none.
+     *
+     * An account with several lines in the same entry: each of its lines is its own statement
+     * row and is judged on its own — two own lines on the same side are not «the only line»,
+     * they fall to the second or third case. Defensive: a split whose parts do not add up to
+     * the line exactly (an unbalanced entry written past the ledger) falls back to one row.
+     *
+     * @param list<array{line_id: int, account_id: int, number: string, name: string, debit: string, credit: string}> $lines the entry's lines
+     * @return non-empty-list<array{count: int, number: ?string, name: ?string, debit: Money, credit: Money}>
+     */
+    private function counterRows(array $lines, int $lineId, int $accountId, Money $debit, Money $credit): array
+    {
+        $isDebit = $debit->isPositive() && $credit->isZero();
+        $sided   = $isDebit || ($credit->isPositive() && $debit->isZero());
+        $zero    = $debit->subtract($debit);
+        $same    = 0;
+        $other   = [];   // the lines on the other side, with their amount
+        $others  = [];   // the distinct other accounts of the entry: number → name
+        foreach ($lines as $line) {
+            if ($line['account_id'] !== $accountId) {
+                $others[$line['number']] = $line['name'];
+            }
+            if ($line['line_id'] === $lineId) {
+                continue;
+            }
+            $lineDebit  = $this->money($line['debit']);
+            $lineCredit = $this->money($line['credit']);
+            $onDebit    = $lineDebit->isPositive() && $lineCredit->isZero();
+            $onCredit   = $lineCredit->isPositive() && $lineDebit->isZero();
+            if ($isDebit ? $onDebit : $onCredit) {
+                $same++;
+            } elseif ($isDebit ? $onCredit : $onDebit) {
+                $other[] = $line + ['amount' => $isDebit ? $lineCredit : $lineDebit];
+            } else {
+                $sided = false;   // a line on both sides or on none — nothing to pair against
+            }
+        }
+        $ownOpposite = array_filter($other, static fn(array $l) => $l['account_id'] === $accountId) !== [];
+
+        if ($sided && $same === 0 && $other !== [] && !$ownOpposite) {
+            $amount = $isDebit ? $debit : $credit;
+            $sum    = array_reduce($other, static fn(Money $s, array $l) => $s->add($l['amount']), $zero);
+            if ($sum->equals($amount)) {
+                return array_map(static fn(array $l) => [
+                    'count'  => 1,
+                    'number' => $l['number'],
+                    'name'   => $l['name'],
+                    'debit'  => $isDebit ? $l['amount'] : $zero,
+                    'credit' => $isDebit ? $zero : $l['amount'],
+                ], $other);
+            }
+        }
+        if ($sided && count($other) === 1 && !$ownOpposite) {
+            return [['count' => 1, 'number' => $other[0]['number'], 'name' => $other[0]['name'], 'debit' => $debit, 'credit' => $credit]];
+        }
+        $number = count($others) === 1 ? (string) array_key_first($others) : null;
+
+        return [['count' => count($others), 'number' => $number, 'name' => $number === null ? null : $others[array_key_first($others)], 'debit' => $debit, 'credit' => $credit]];
     }
 
     /**

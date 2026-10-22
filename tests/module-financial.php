@@ -259,6 +259,7 @@ use Z77\Module\Financial\Repositories\EntryChangeRepository;
 use Z77\Module\Financial\Repositories\FiscalYearRepository;
 use Z77\Module\Financial\Repositories\JournalEntryRepository;
 use Z77\Shared\Paging\Paging;
+use Z77\Module\Financial\Reports\ReportPreset;
 use Z77\Module\Financial\Reports\ReportRange;
 use Z77\Module\Financial\Services\LedgerReports;
 use Z77\Module\Financial\Ui\ReportControllerTrait;
@@ -1467,15 +1468,21 @@ echo "R. … account statement (the page boundary is proven at volume, section P
 $bank  = $em->getRepository(Account::class)->findOneBy(['number' => '1020']);
 $page1 = $reports->accountStatement($bank, $year, 1);
 $bal   = fn($s) => array_map(fn($l) => $l->balance->toDecimal(), $s->lines);
-check('R21 1020 whole year: 6 lines (the deleted entry\'s line gone), one page at the production page size', $page1->paging->total === 6 && $page1->paging->pageCount === 1 && count($page1->lines) === 6
+check('R21 1020 whole year: 6 journal lines (the deleted entry\'s line gone) → 7 rows (entry 3 split, R24), one page at the production page size', $page1->paging->total === 6 && $page1->paging->pageCount === 1 && count($page1->lines) === 7
     && $page1->paging->pageSize === LedgerReports::ACCOUNT_STATEMENT_PAGE_SIZE);
-check('R22 opening = carry = 0.00; lines 1, 3, 4, 7, 9, 10 in date order; running 10\'000.00 / 9\'783.80 / 10\'864.80 / 9\'264.80 / 9\'269.80 / 8\'969.80', $page1->opening->isZero() && $page1->carry->isZero()
-    && array_map(fn($l) => $l->entryNumber, $page1->lines) === [1, 3, 4, 7, 9, 10] && $bal($page1) === ['10000.00', '9783.80', '10864.80', '9264.80', '9269.80', '8969.80']);
+check('R22 opening = carry = 0.00; rows of entries 1, 3, 3, 4, 7, 9, 10 in date order; the running balance steps through the split rows: 10\'000.00 / 9\'800.00 / 9\'783.80 / 10\'864.80 / 9\'264.80 / 9\'269.80 / 8\'969.80', $page1->opening->isZero() && $page1->carry->isZero()
+    && array_map(fn($l) => $l->entryNumber, $page1->lines) === [1, 3, 3, 4, 7, 9, 10] && $bal($page1) === ['10000.00', '9800.00', '9783.80', '10864.80', '9264.80', '9269.80', '8969.80']);
 check('R23 totals and closing cover the range: Soll 11\'086.00, Haben 2\'116.20, closing 8\'969.80 = the last running balance', $dec($page1->totalDebit) === '11086.00' && $dec($page1->totalCredit) === '2116.20'
     && $dec($page1->closing) === '8969.80');
-check('R24 counter accounts: 1 → 2800 (one other account), 3 → «div.» (6500 and 1170), 4 → 1100, 7 → 6000', !$page1->lines[0]->hasSeveralCounterAccounts() && $page1->lines[0]->counterNumber === '2800'
-    && $page1->lines[1]->hasSeveralCounterAccounts() && $page1->lines[2]->counterNumber === '1100' && $page1->lines[3]->counterNumber === '6000' && $page1->lines[3]->counterCount === 1);
-check('R25 the lines carry the entry id for the link to the detail page, and the entry\'s text (edited text shown)', $page1->lines[3]->entryId === (int) $entryRow('2030-31', 7)['id'] && $page1->lines[3]->text === 'Miete Oktober (korrigiert)');
+$cnt = fn($l) => [$l->entryNumber, $l->counterNumber, $l->debit->toDecimal(), $l->credit->toDecimal(), $l->isSplit];
+check('R24 counter accounts (owner 2026-10-22): 1 → 2800; 3 — 1020 is the ONLY credit line of 6500 + 1170 / 1020 → two rows, 6500 200.00 and 1170 16.20 (same date, number, text); 4 → 1100, 7 → 6000; no «div.»',
+    array_map($cnt, $page1->lines) === [[1, '2800', '10000.00', '0.00', false], [3, '6500', '0.00', '200.00', true], [3, '1170', '0.00', '16.20', true], [4, '1100', '1081.00', '0.00', false],
+        [7, '6000', '0.00', '1600.00', false], [9, '6950', '5.00', '0.00', false], [10, '1000', '0.00', '300.00', false]]
+    && array_filter($page1->lines, fn($l) => $l->hasSeveralCounterAccounts()) === [] && $page1->lines[1]->text === $page1->lines[2]->text && $page1->lines[1]->date == $page1->lines[2]->date);
+$cmpSide = $reports->accountStatement($em->getRepository(Account::class)->findOneBy(['number' => '6500']), $year, 1);
+check('R24b the n side of 1:n: on 6500 the entry 3 line is NOT split — its one counter line is 1020 (the only line on the other side), its own amount 200.00',
+    array_map($cnt, $cmpSide->lines) === [[3, '1020', '200.00', '0.00', false]] && $dec($cmpSide->totalDebit) === '200.00');
+check('R25 the lines carry the entry id for the link to the detail page, and the entry\'s text (edited text shown)', $page1->lines[4]->entryId === (int) $entryRow('2030-31', 7)['id'] && $page1->lines[4]->text === 'Miete Oktober (korrigiert)');
 $mid = $reports->accountStatement($bank, $range('2030-08-11', '2030-10-20'), 1);
 check('R26 from 11.8.: opening 9\'783.80 (entries 1 and 3 before «from»), lines 4, 7, 9, closing 9\'269.80', $dec($mid->opening) === '9783.80' && array_map(fn($l) => $l->entryNumber, $mid->lines) === [4, 7, 9] && $dec($mid->closing) === '9269.80');
 check('R27 the edges are inclusive: from 10.8. takes entry 3 (dated 10.8.) into the lines, not into the opening', (function () use ($reports, $bank, $range) {
@@ -1629,10 +1636,57 @@ check('R40e the page: the balance sheet of 2027-28 per 29.2.2028 compares 2026 a
 [$ctx, $html] = $page('incomeStatement', ['year' => '2030-31']);
 check('R40f the whole year with «Vorjahre» (the default): whole older years, no range under the year code; the multi-year result label',
     count($ctx['comparison']->labels) === 3 && !$ctx['comparison']->hasSpans() && !str_contains($html, '<br><small>') && str_contains($html, 'Gewinn / Verlust (Ertrag − Aufwand)'));
+echo "R. … the range select: whole year, halves, quarters, months; at a day their ends (owner 2026-10-22)\n";
+$keys    = fn(array $presets) => array_map(fn($p) => $p->key, $presets);
+$spanOf  = fn(array $presets, string $key) => (function () use ($presets, $key) { $p = ReportPreset::find($presets, $key); return $p === null ? null : $p->from->format('Y-m-d') . '..' . $p->to->format('Y-m-d'); })();
+$rangeP  = ReportPreset::of($fyOf('2027-28'));
+$dayP    = ReportPreset::of($fyOf('2027-28'), true);
+check('R40g a 12-period year starting in JULY (2027-28): year, h1, h2, q1–q4, then the 12 months; the halves and quarters by PERIOD (h1 = Jul–Dec 2027, q3 = Jan–Mar 2028), labelled with their months',
+    $keys($rangeP) === array_merge(['year', 'h1', 'h2', 'q1', 'q2', 'q3', 'q4'], array_map(fn($p) => $p->getStartDate()->format('Y-m'), $fyOf('2027-28')->getPeriods()))
+    && $spanOf($rangeP, 'h1') === '2027-07-01..2027-12-31' && $spanOf($rangeP, 'h2') === '2028-01-01..2028-06-30' && $spanOf($rangeP, 'q3') === '2028-01-01..2028-03-31'
+    && ReportPreset::find($rangeP, 'h1')->label === '1. Halbjahr (Jul–Dez)' && ReportPreset::find($rangeP, 'q3')->label === 'Q3 (Jan–Mär)' && ReportPreset::find($rangeP, 'q3')->group === 'Quartale'
+    && ReportPreset::find($rangeP, '2028-02')->label === 'Feb 2028');
+check('R40h at a day the same keys name the ENDS, from the year\'s first day: Jahresende 30.6.2028, Halbjahr 31.12.2027 (no h2 — it is the year end), Q1 30.9.2027, the month ends',
+    $keys($dayP) === array_values(array_filter($keys($rangeP), fn($k) => $k !== 'h2')) && $spanOf($dayP, 'year') === '2027-07-01..2028-06-30' && $spanOf($dayP, 'h1') === '2027-07-01..2027-12-31'
+    && $spanOf($dayP, 'q1') === '2027-07-01..2027-09-30' && $spanOf($dayP, '2028-02') === '2027-07-01..2028-02-29' && ReportPreset::find($dayP, 'h1')->label === 'Halbjahr · 31.12.2027'
+    && ReportPreset::find($dayP, 'year')->label === 'Jahresende · 30.06.2028' && ReportPreset::find($dayP, '2028-02')->group === 'Monatsenden');
+check('R40i a SHORT year (2027: 6 periods) and a year from 15.3. (2025: 10 periods) offer no halves or quarters — the whole year and the months only',
+    $keys(ReportPreset::of($fyOf('2027'))) === ['year', '2027-01', '2027-02', '2027-03', '2027-04', '2027-05', '2027-06'] && count(ReportPreset::of($fyOf('2025'), true)) === 11
+    && ReportPreset::find(ReportPreset::of($fyOf('2025')), 'q1') === null);
+$sel = fn(string $code, string $from, string $to, bool $atDay, string $asked = '') => ReportPreset::selected(ReportPreset::of($fyOf($code), $atDay), new ReportRange($fyOf($code), day($from), day($to)), $atDay, $asked);
+check('R40j the select never contradicts the dates: 1.7.–31.12.2027 → h1; at a day per 31.12.2027 → h1 unless q2 was asked (same end — the picked one stays); asked q1 but the dates say another range → the match; a date that is no section → none («Eigene Daten»)',
+    $sel('2027-28', '2027-07-01', '2027-12-31', false) === 'h1' && $sel('2027-28', '2027-07-01', '2027-12-31', true) === 'h1' && $sel('2027-28', '2027-07-01', '2027-12-31', true, 'q2') === 'q2'
+    && $sel('2027-28', '2027-07-01', '2027-12-31', false, 'q1') === 'h1' && $sel('2027-28', '2027-07-01', '2027-12-15', true) === null && $sel('2027-28', '2027-07-02', '2027-12-31', false) === null
+    && $sel('2027-28', '2027-07-01', '2028-06-30', true, '2028-06') === '2028-06' && $sel('2027-28', '2027-07-01', '2028-06-30', true) === 'year');
+[$ctx, $html] = $page('incomeStatement', ['year' => '2027-28', 'period' => 'h2', 'from' => '2027-07-01', 'to' => '2028-06-30', 'shown_from' => '2027-07-01', 'shown_to' => '2028-06-30']);
+check('R40k without JavaScript: the choice h2 with the dates unchanged → 1.1.–30.6.2028, the select shows «2. Halbjahr» with its dates as data attributes (core.js data-range-presets), «Eigene Daten» offered',
+    $ctx['range']->fromDay() === '2028-01-01' && $ctx['range']->toDay() === '2028-06-30' && $ctx['presetKey'] === 'h2' && $ctx['notices'] === []
+    && str_contains($html, '<option value="h2" data-from="2028-01-01" data-to="2028-06-30" selected>2. Halbjahr (Jan–Jun)</option>') && str_contains($html, 'data-range-presets data-range-to="report-to" data-range-from="report-from"')
+    && str_contains($html, '<optgroup label="Quartale">') && str_contains($html, '>Eigene Daten</option>'));
+[$ctx] = $page('incomeStatement', ['year' => '2027-28', 'period' => 'h2', 'from' => '2027-08-01', 'to' => '2028-06-30', 'shown_from' => '2027-07-01', 'shown_to' => '2028-06-30']);
+check('R40l an edited date wins over the still-selected choice (or the date core.js filled in): from 1.8. → 1.8.2027–30.6.2028, the select «Eigene Daten» (no choice)', $ctx['range']->fromDay() === '2027-08-01' && $ctx['presetKey'] === null);
+[$ctx, $html] = $page('balanceSheet', ['year' => '2027-28', 'period' => 'h1', 'from' => '2028-02-01', 'to' => '2028-02-29', 'shown_to' => '2028-02-29']);
+check('R40m the balance sheet: «Stichtag» + «Auswahl» only (no «Zeitraum», no «from» field); the choice h1 SETS the Stichtag 31.12.2027; a «from» in the URL is ignored (FIN-REPORT-002) — no notice',
+    $ctx['range']->fromDay() === '2027-07-01' && $ctx['range']->toDay() === '2027-12-31' && $ctx['presetKey'] === 'h1' && $ctx['notices'] === []
+    && str_contains($html, 'Stichtag') && str_contains($html, '>Auswahl</label>') && !str_contains($html, '>Zeitraum</label>') && !str_contains($html, 'name="from"')
+    && str_contains($html, '>Halbjahr · 31.12.2027</option>') && str_contains($html, '>Eigenes Datum</option>') && !str_contains($html, 'value="h2"'));
+[$ctx] = $page('balanceSheet', ['year' => '2027-28', 'period' => 'h2', 'to' => '2028-02-29', 'shown_to' => '2028-02-29']);
+check('R40n an unknown choice (h2 at a day, q1 in a 10-period year) → the dates apply, with a notice', $ctx['range']->toDay() === '2028-02-29' && count($ctx['notices']) === 1 && str_contains($ctx['notices'][0], 'Auswahl «h2»')
+    && count($page('trialBalance', ['year' => '2025', 'period' => 'q1'])[0]['notices']) === 1);
+check('R40o the comparison takes the SAME SECTION by period index: the 2nd half of 2027-28 (periods 7–12) → 1.7.–31.12.2026 (periods 7–12 of the calendar 2026), → nothing in the short 2027 (no 12th period); Q2 of 2026 (periods 4–6) → 2025 periods 4–6 (1.6.–31.8.2025, the year starts 15.3.)',
+    $cmpOf('2027-28', '2028-01-01', '2028-06-30', '2026') === '2026-07-01..2026-12-31' && $cmpOf('2027-28', '2028-01-01', '2028-06-30', '2027') === null
+    && $cmpOf('2026', '2026-04-01', '2026-06-30', '2025') === '2025-06-01..2025-08-31' && $cmpOf('2027-28', '2027-07-01', '2027-12-31', '2027') === '2027-01-01..2027-06-30');
+check('R40p … and at a day: per 31.12.2027 (end of period 6 of 2027-28) → per 30.6.2026 (end of period 6) and per 30.6.2027 (the short year\'s last period); per 30.6.2026 of the calendar year → per 31.8.2025 (period 6 of 2025)',
+    $cmpOf('2027-28', '2027-07-01', '2027-12-31', '2026', true) === '2026-01-01..2026-06-30' && $cmpOf('2027-28', '2027-07-01', '2027-12-31', '2027', true) === '2027-01-01..2027-06-30'
+    && $cmpOf('2026', '2026-01-01', '2026-06-30', '2025', true) === '2025-03-15..2025-08-31');
+[$ctx, $html] = $page('balanceSheet', ['year' => '2027-28', 'period' => 'h1', 'to' => '2027-07-01', 'shown_to' => '2027-07-01']);
+check('R40q the page: «Halbjahr» on the balance sheet of 2027-28 compares the 6th-period ends of the older years, each named under its code',
+    $ctx['comparison']->labels === ['2027-28', '2027', '2026'] && $ctx['comparison']->spans === ['per 31.12.2027', null, 'per 30.6.2026']);
+
 [$ctx, $html] = $page('accountStatement', ['year' => '2030-31']);
 check('R42 account statement without an account: the form with the postable accounts, no report', $ctx['report'] === null && str_contains($html, 'Konto wählen') && str_contains($html, '<option value="1020"'));
 [$ctx, $html] = $page('accountStatement', ['year' => '2030-31', 'account' => '1020']);
-check('R43 … with 1020: «Anfangssaldo», «div.», the closing 8\'969.80, and the entry number linking to the journal detail', str_contains($html, 'Anfangssaldo') && str_contains($html, 'div.') && str_contains($html, "8&apos;969.80")
+check('R43 … with 1020: «Anfangssaldo», entry 3 as two split rows (no «div.»), the closing 8\'969.80, and the entry number linking to the journal detail', str_contains($html, 'Anfangssaldo') && substr_count($html, ' data-split>') === 2 && !str_contains($html, 'div.') && str_contains($html, "8&apos;969.80")
     && str_contains($html, '/backend/finance/journal/detail?id=' . $entryRow('2030-31', 7)['id']));
 check('R44 … the year selection (hc1 dropdown) keeps the account and drops the dates; an unknown account says so', str_contains($html, '/backend/finance/report/account-statement?year=2030-31&amp;account=1020"')
     && str_contains($page('accountStatement', ['year' => '2030-31', 'account' => '4711'])[1], 'gibt es nicht'));
@@ -3494,7 +3548,7 @@ $e4 = caught(fn() => $wireDi()->getTransaction(JournalEntry::class)->run(fn() =>
 check('MO16 amend() with another sourceRef is refused (source-ref-changed), nothing logged', $e4?->reason === EntryNotEditableException::SOURCE_REF_CHANGED
     && (int) $db->fetchOne('SELECT COUNT(*) FROM journal_entry_change WHERE entry_number = ? AND fiscal_year_id = (SELECT id FROM fiscal_year WHERE code = ?)', [$moGen->number, $moCode]) === 0);
 
-echo "EB. The year opening: the closing balances of the year before as ONE generated entry, repeatable while the year is open (P5, owner decisions 2026-10-22)\n";
+echo "EB. The year opening: the closing balances of the year before as ONE two-line entry PER ACCOUNT against 9100, repeatable while the year is open (P5, owner decisions 2026-10-22)\n";
 
 // Two fresh years after every other: T1 (the predecessor, with an «imported» wdv opening on 9100
 // and a few movements) and T2 (the target). The mandator was created in O with the KMU start
@@ -3513,11 +3567,21 @@ $ebD2    = $ebT2->getStartDate()->format('Y-m-d');
 $ebSvc   = fn() => new \Z77\Module\Financial\Services\YearOpeningService($wireDi(), 'buchhalter');
 $ebCreate = fn(string $code) => $ebSvc()->create($yearId($code));
 $ebRefused = fn(string $code) => caught(fn() => $ebCreate($code), \Z77\Module\Financial\Services\YearOpeningRefusedException::class);
-$ebKey   = fn(string $code) => 'opening:' . $code;
-$ebEntry = fn(string $code) => $db->fetchAssociative('SELECT * FROM journal_entry WHERE idempotency_key = ?', ['opening:' . $code]);
-$ebLines = fn(string $code) => array_map(fn($r) => [$r['account_number'], $r['debit'], $r['credit']], $lineRows((int) $ebEntry($code)['id']));
+$ebKey   = fn(string $code, string $account) => 'opening:' . $code . ':' . $account;
+/** The year's generated opening entries, in number order. */
+$ebSet   = fn(string $code) => $db->fetchAllAssociative("SELECT e.* FROM journal_entry e JOIN fiscal_year y ON y.id = e.fiscal_year_id WHERE e.source_type = 'opening' AND y.code = ? ORDER BY e.number", [$code]);
+/** account (the key's suffix) → its entry's lines [account, debit, credit], in number order of the entries. */
+$ebLines = fn(string $code) => array_combine(
+    array_map(fn($r) => substr((string) $r['idempotency_key'], strlen('opening:' . $code . ':')), $ebSet($code)),
+    array_map(fn($r) => array_map(fn($l) => [$l['account_number'], $l['debit'], $l['credit']], $lineRows((int) $r['id'])), $ebSet($code))
+);
+$ebNumbers = fn(string $code) => array_map(fn($r) => (int) $r['number'], $ebSet($code));
 $ebClose = fn(string $code, string $state) => $db->executeStatement('UPDATE fiscal_period p JOIN fiscal_year y ON y.id = p.fiscal_year_id SET p.state = ? WHERE y.code = ?', [$state, $code]);
 $ebNet   = fn(string $code, string $account) => (string) $db->fetchOne("SELECT COALESCE(SUM(l.debit - l.credit), 0) FROM journal_line l JOIN journal_entry e ON e.id = l.entry_id JOIN account a ON a.id = l.account_id JOIN fiscal_year y ON y.id = e.fiscal_year_id WHERE a.number = ? AND y.code = ?", [$account, $code]);
+$ebLast  = fn(string $code) => (int) $db->fetchOne('SELECT last_number FROM number_range WHERE name = ?', ['journal-entry.' . $code]);
+/** Every change row of T2 — T2 holds nothing but its opening. */
+$ebChanges = fn(?string $action = null) => (int) $db->fetchOne('SELECT COUNT(*) FROM journal_entry_change WHERE fiscal_year_id = ?' . ($action === null ? '' : ' AND action = ?'), $action === null ? [$yearId($ebC2)] : [$yearId($ebC2), $action]);
+$ebPair  = fn(string $account, string $debit, string $credit) => [[$account, $debit, $credit], ['9100', $credit, $debit]];
 
 // T1: wdv's opening «EB:» against 9100, imported as GENERATED entries of the source `wdv` (1100 is
 // flagged «nur durch Module bebuchbar» — a generated entry passes), then a sale, an expense and
@@ -3534,12 +3598,23 @@ $post($wireDi(), PostingRequest::generated(day($ebD1b), 'Rechnung EB-1', 'invoic
 (new ManualEntryService($wireDi(), 'buchhalter'))->create(PostingRequest::manual(day($ebD1b), 'Kasse hin', [PostingLine::debit('1000', chf('50.00')), PostingLine::credit('1020', chf('50.00'))]));
 (new ManualEntryService($wireDi(), 'buchhalter'))->create(PostingRequest::manual(day($ebD1b), 'Kasse zurück', [PostingLine::debit('1020', chf('50.00')), PostingLine::credit('1000', chf('50.00'))]));
 
+// The account statement over T1's data (owner 2026-10-22): 1:n split, m:n «div.».
+$ebStmt = fn(string $account) => (new LedgerReports($wireDi()))->accountStatement($wireDi()->getRepository(Account::class)->findOneBy(['number' => $account]), ReportRange::wholeYear($ebYear($ebC1)), 1);
+$ebRow  = fn($l) => [$l->entryNumber, $l->hasSeveralCounterAccounts() ? 'div.' : $l->counterNumber, $l->debit->toDecimal(), $l->credit->toDecimal(), $l->balance->toDecimal(), $l->isSplit];
+$eb1100 = $ebStmt('1100');
+$eb9100 = $ebStmt('9100');
+$ebSale = (int) $db->fetchOne("SELECT e.number FROM journal_entry e WHERE e.idempotency_key = 'eb:invoice:1'");
+check('EB0 statement split: on 1100 the imported compound opening (several lines on BOTH sides, m:n) is one row «div.»; the sale 1100 / 3200 + 2200 (1100 the only debit line) splits into 3200 1000.00 and 2200 80.00 — running 500.00 → 1500.00 → 1580.00, closing and totals unchanged; on 9100 both lines of the compound entry stay «div.» (the account on both sides)',
+    array_map($ebRow, $eb1100->lines) === [[$ebImport->number, 'div.', '500.00', '0.00', '500.00', false], [$ebSale, '3200', '1000.00', '0.00', '1500.00', true], [$ebSale, '2200', '80.00', '0.00', '1580.00', true]]
+    && $eb1100->closing->toDecimal() === '1580.00' && $eb1100->totalDebit->toDecimal() === '1580.00' && $eb1100->paging->total === 2
+    && array_map(fn($l) => [$l->hasSeveralCounterAccounts(), $l->counterCount], $eb9100->lines) === [[true, 4], [true, 4]] && $eb9100->closing->isZero());
 check('EB1 lock-free: T2 (open, with a predecessor) may be opened; the earliest year (closed in YC) may not',
     $ebSvc()->refusal($ebYear($ebC2)) === null
     && $ebSvc()->refusal($wireDi()->getRepository(FiscalYear::class)->earliest()) === \Z77\Module\Financial\Services\YearOpeningRefusedException::TARGET_CLOSED);
 $ebPlan = $ebSvc()->plan($ebYear($ebC2));
-check('EB2 plan() while T1 is OPEN: provisional, no opening yet, the predecessor named', $ebPlan->provisional && $ebPlan->existing === null && !$ebPlan->upToDate
-    && $ebPlan->predecessorCode === $ebC1 && $ebPlan->targetCode === $ebC2 && $ebPlan->request !== null);
+check('EB2 plan() while T1 is OPEN: provisional, no opening yet, the predecessor named, one entry per account to post (1020 1100 2200 2800 2979)', $ebPlan->provisional && !$ebPlan->hasOpening() && !$ebPlan->isUpToDate()
+    && $ebPlan->predecessorCode === $ebC1 && $ebPlan->targetCode === $ebC2 && array_map('strval', array_keys($ebPlan->requests)) === ['1020', '1100', '2200', '2800', '2979']
+    && $ebPlan->toPost === ['1020', '1100', '2200', '2800', '2979'] && $ebPlan->toAmend === [] && $ebPlan->toRetract === []);
 check('EB3 the dashboard says nothing while the predecessor is open (a provisional opening is the bookkeeper\'s call)',
     array_filter(\Z77\Module\Financial\Dashboard\FinancialDashboard::entriesOn($ebT2->getStartDate()->modify('+5 days')), fn($e) => str_contains($e->label, 'Eröffnung')) === []);
 $ebClose($ebC1, 'closed');
@@ -3549,18 +3624,21 @@ check('EB4 … with the predecessor CLOSED and no opening: todo «Eröffnung {co
         === [['Eröffnung ' . $ebC2 . ' nicht erstellt', \Z77\Shared\Dashboard\Severity::Todo, '/backend/finance/fiscal-year/list']]);
 $ebClose($ebC1, 'open');
 
-$ebRange = (string) $db->fetchOne('SELECT last_number FROM number_range WHERE name = ?', ['journal-entry.' . $ebC2]);
+$ebRange = $ebLast($ebC2);
 $ebR1    = $ebCreate($ebC2);
-$ebRow   = $ebEntry($ebC2);
-check('EB5 create() with T1 open: CREATED and provisional, one generated entry dated T2\'s first day, origin `opening` / the code, key opening:{code}, text «Eröffnungsbilanz {code}»',
-    $ebR1->action === \Z77\Module\Financial\Services\YearOpeningResult::CREATED && $ebR1->provisional && $ebR1->predecessorCode === $ebC1
-    && $ebR1->ref->fiscalYear === $ebC2 && (int) $ebRow['number'] === $ebR1->ref->number && $ebRow['kind'] === 'generated'
-    && $ebRow['entry_date'] === $ebD2 && $ebRow['source_type'] === 'opening' && $ebRow['source_ref'] === $ebC2 && $ebRow['idempotency_key'] === $ebKey($ebC2)
-    && $ebRow['text'] === 'Eröffnungsbilanz ' . $ebC2 && (int) $db->fetchOne('SELECT last_number FROM number_range WHERE name = ?', ['journal-entry.' . $ebC2]) === (int) $ebRange + 1);
-check('EB6 the lines: every balance-sheet account with its T1 closing balance (incl. T1\'s own imported opening), in chart order; 1000 at zero omitted; the result 800 added to 2979\'s own 100; 9100 Haben = Σ Soll, Soll = Σ Haben',
+$ebRows  = $ebSet($ebC2);
+check('EB5 create() with T1 open: CREATED and provisional, FIVE generated entries (one per account) dated T2\'s first day, origin `opening` / the code, key opening:{code}:{account}, text «Eröffnungsbilanz {code}», numbered in chart order, five numbers drawn',
+    $ebR1->action === \Z77\Module\Financial\Services\YearOpeningResult::CREATED && $ebR1->provisional && $ebR1->predecessorCode === $ebC1 && $ebR1->posted === 5
+    && count($ebR1->refs) === 5 && $ebR1->refs[0]->fiscalYear === $ebC2 && array_map(fn($r) => $r->number, $ebR1->refs) === range($ebRange + 1, $ebRange + 5)
+    && $ebNumbers($ebC2) === range($ebRange + 1, $ebRange + 5) && $ebLast($ebC2) === $ebRange + 5
+    && array_column($ebRows, 'idempotency_key') === array_map(fn($a) => $ebKey($ebC2, $a), ['1020', '1100', '2200', '2800', '2979'])
+    && array_unique(array_column($ebRows, 'entry_date')) === [$ebD2] && array_unique(array_column($ebRows, 'kind')) === ['generated']
+    && array_unique(array_column($ebRows, 'source_type')) === ['opening'] && array_unique(array_column($ebRows, 'source_ref')) === [$ebC2]
+    && array_unique(array_column($ebRows, 'text')) === ['Eröffnungsbilanz ' . $ebC2]);
+check('EB6 the lines: each account with its T1 closing balance (incl. T1\'s own imported opening) against 9100 on the other side; 1000 at zero omitted; the result 800 added to 2979\'s own 100',
     $ebLines($ebC2) === [
-        ['1020', '900.00', '0.00'], ['1100', '1580.00', '0.00'], ['2200', '0.00', '80.00'], ['2800', '0.00', '1500.00'],
-        ['2979', '0.00', '900.00'], ['9100', '0.00', '2480.00'], ['9100', '2480.00', '0.00'],
+        '1020' => $ebPair('1020', '900.00', '0.00'), '1100' => $ebPair('1100', '1580.00', '0.00'), '2200' => $ebPair('2200', '0.00', '80.00'),
+        '2800' => $ebPair('2800', '0.00', '1500.00'), '2979' => $ebPair('2979', '0.00', '900.00'),
     ]);
 check('EB7 9100 nets to ZERO in T2; the collective account 1100 (flagged «nur durch Module bebuchbar») was opened — the opening is a generated posting',
     $ebNet($ebC2, '9100') === '0.00' && $ebNet($ebC2, '1100') === '1580.00' && $wireDi()->getRepository(Account::class)->findOneBy(['number' => '1100'])->isModulePostingOnly());
@@ -3571,23 +3649,39 @@ $ebAcc  = $wireDi()->getRepository(Account::class)->findOneBy(['number' => '1100
 $ebOpen = $wireDi()->getRepository(JournalLine::class)->accountTotals((int) $ebAcc->getId(), $yearId($ebC2), $ebT2->getStartDate()->modify('+1 day')->format('Y-m-d'), $ebT2->getEndDate()->format('Y-m-d'));
 check('EB8 the reports of T2 show the carried balances: balance sheet per day 1 — Aktiven 2480.00, balanced, result 0.00; trial balance balanced; the account statement of 1100 opens with 1580.00',
     $ebBs->assets->total->toDecimal() === '2480.00' && $ebBs->isBalanced() && $ebBs->result->isZero() && $ebTb->isBalanced() && $ebOpen['opening'] === '1580.00');
+$eb9100 = $ebRep->accountStatement($wireDi()->getRepository(Account::class)->findOneBy(['number' => '9100']), ReportRange::wholeYear($ebYear($ebC2)), 1);
+check('EB8b the statement of 9100 names every account — one row per entry, no «div.» (the reason for one entry per account, owner 2026-10-22), closing 0.00',
+    array_map(fn($l) => $l->counterNumber, $eb9100->lines) === ['1020', '1100', '2200', '2800', '2979'] && array_filter($eb9100->lines, fn($l) => $l->hasSeveralCounterAccounts() || $l->isSplit) === []
+    && $eb9100->closing->isZero());
 
-$ebChanges = fn() => (int) $db->fetchOne('SELECT COUNT(*) FROM journal_entry_change WHERE entry_id = ?', [(int) $ebEntry($ebC2)['id']]);
 $ebR2 = $ebCreate($ebC2);
-check('EB9 a re-run with nothing changed: UNCHANGED — same number, no change row, no number drawn', $ebR2->action === \Z77\Module\Financial\Services\YearOpeningResult::UNCHANGED
-    && $ebR2->ref->number === $ebR1->ref->number && $ebChanges() === 0 && (int) $db->fetchOne('SELECT last_number FROM number_range WHERE name = ?', ['journal-entry.' . $ebC2]) === (int) $ebRange + 1);
+check('EB9 a re-run with nothing changed: UNCHANGED — the same numbers, no change row, no number drawn', $ebR2->action === \Z77\Module\Financial\Services\YearOpeningResult::UNCHANGED
+    && array_map(fn($r) => $r->number, $ebR2->refs) === range($ebRange + 1, $ebRange + 5) && $ebChanges() === 0 && $ebLast($ebC2) === $ebRange + 5
+    && $ebR2->posted + $ebR2->amended + $ebR2->retracted === 0);
+// T1 changes: an expense more (1020 and the result move), cash in (1000 gets a balance — a NEW account),
+// the VAT paid (2200 drops to zero — its entry goes).
 (new ManualEntryService($wireDi(), 'buchhalter'))->create(PostingRequest::manual(day($ebD1b), 'Nachtrag Vorjahr', [PostingLine::debit('6500', chf('50.00')), PostingLine::credit('1020', chf('50.00'))]));
-check('EB10 the predecessor changed: plan() says the opening is not up to date', !$ebSvc()->plan($ebYear($ebC2))->upToDate);
+(new ManualEntryService($wireDi(), 'buchhalter'))->create(PostingRequest::manual(day($ebD1b), 'Kasse Einlage', [PostingLine::debit('1000', chf('30.00')), PostingLine::credit('1020', chf('30.00'))]));
+(new ManualEntryService($wireDi(), 'buchhalter'))->create(PostingRequest::manual(day($ebD1b), 'MWST bezahlt', [PostingLine::debit('2200', chf('80.00')), PostingLine::credit('1020', chf('80.00'))]));
+$ebPlan = $ebSvc()->plan($ebYear($ebC2));
+check('EB10 the predecessor changed: plan() says not up to date — post 1000, amend 1020 and 2979, retract 2200, leave 1100 and 2800',
+    !$ebPlan->isUpToDate() && $ebPlan->toPost === ['1000'] && $ebPlan->toAmend === ['1020', '2979'] && array_keys($ebPlan->toRetract) === [$ebKey($ebC2, '2200')] && $ebPlan->unchangedCount() === 2);
+$ebNo = array_combine(['1020', '1100', '2200', '2800', '2979'], range($ebRange + 1, $ebRange + 5));
 $ebR3 = $ebCreate($ebC2);
-check('EB11 … the re-run REPLACES it in place (amend): UPDATED, the SAME number, ONE opening in the year, one change row (update) with before / after; 1020 850.00, 2979 850.00, 9100 2430.00',
-    $ebR3->action === \Z77\Module\Financial\Services\YearOpeningResult::UPDATED && $ebR3->ref->number === $ebR1->ref->number
-    && (int) $db->fetchOne("SELECT COUNT(*) FROM journal_entry WHERE source_type = 'opening' AND fiscal_year_id = ?", [$yearId($ebC2)]) === 1
-    && (int) $db->fetchOne("SELECT COUNT(*) FROM journal_entry_change WHERE entry_id = ? AND action = 'update'", [(int) $ebEntry($ebC2)['id']]) === 1
-    && $ebLines($ebC2) === [['1020', '850.00', '0.00'], ['1100', '1580.00', '0.00'], ['2200', '0.00', '80.00'], ['2800', '0.00', '1500.00'], ['2979', '0.00', '850.00'], ['9100', '0.00', '2430.00'], ['9100', '2430.00', '0.00']]);
+check('EB11 … the re-run REPLACES the set in ONE unit of work: UPDATED (1 posted, 2 amended, 1 retracted); 1020 and 2979 keep their numbers with one update row each, 2200\'s entry is gone with a delete row (a documented gap), 1000 gets the next number; 1100 and 2800 untouched',
+    $ebR3->action === \Z77\Module\Financial\Services\YearOpeningResult::UPDATED && [$ebR3->posted, $ebR3->amended, $ebR3->retracted] === [1, 2, 1]
+    && $ebNumbers($ebC2) === [$ebNo['1020'], $ebNo['1100'], $ebNo['2800'], $ebNo['2979'], $ebRange + 6] && array_map(fn($r) => $r->number, $ebR3->refs) === $ebNumbers($ebC2)
+    && $ebChanges('update') === 2 && $ebChanges('delete') === 1 && $ebChanges() === 3
+    && (int) $db->fetchOne("SELECT COUNT(*) FROM journal_entry_change WHERE fiscal_year_id = ? AND action = 'update' AND entry_number IN (?, ?)", [$yearId($ebC2), $ebNo['1020'], $ebNo['2979']]) === 2
+    && (int) $db->fetchOne("SELECT COUNT(*) FROM journal_entry_change WHERE fiscal_year_id = ? AND action = 'delete' AND entry_number = ?", [$yearId($ebC2), $ebNo['2200']]) === 1
+    && $ebLines($ebC2) === [
+        '1020' => $ebPair('1020', '740.00', '0.00'), '1100' => $ebPair('1100', '1580.00', '0.00'), '2800' => $ebPair('2800', '0.00', '1500.00'),
+        '2979' => $ebPair('2979', '0.00', '850.00'), '1000' => $ebPair('1000', '30.00', '0.00'),
+    ] && $ebNet($ebC2, '9100') === '0.00');
 $ebClose($ebC1, 'closed');
 $ebR4 = $ebCreate($ebC2);
-check('EB12 with the predecessor CLOSED: no longer provisional (the content unchanged — UNCHANGED); the dashboard says nothing (the opening exists)',
-    !$ebR4->provisional && $ebR4->action === \Z77\Module\Financial\Services\YearOpeningResult::UNCHANGED && !$ebSvc()->plan($ebYear($ebC2))->provisional
+check('EB12 with the predecessor CLOSED: no longer provisional (the content unchanged — UNCHANGED, nothing written); the dashboard says nothing (the opening exists)',
+    !$ebR4->provisional && $ebR4->action === \Z77\Module\Financial\Services\YearOpeningResult::UNCHANGED && !$ebSvc()->plan($ebYear($ebC2))->provisional && $ebChanges() === 3
     && array_filter(\Z77\Module\Financial\Dashboard\FinancialDashboard::entriesOn($ebT2->getStartDate()->modify('+5 days')), fn($e) => str_contains($e->label, 'Eröffnung')) === []);
 $ebClose($ebC1, 'open');
 
@@ -3595,11 +3689,11 @@ $ebClose($ebC1, 'open');
 $e = $ebRefused($ebC1);
 check('EB13 a year that holds postings on 9100 the generator did not make (T1\'s imported «EB:») is refused (foreign-opening), naming the account and the entries; isOpened() true',
     $e?->reason === \Z77\Module\Financial\Services\YearOpeningRefusedException::FOREIGN_OPENING && ($e->items[0] ?? '') === '9100 Eröffnungsbilanz'
-    && in_array((string) $ebImport->number, $e->items, true) && $ebSvc()->isOpened($ebYear($ebC1)) && $ebEntry($ebC1) === false);
+    && in_array((string) $ebImport->number, $e->items, true) && $ebSvc()->isOpened($ebYear($ebC1)) && $ebSet($ebC1) === []);
 $ebClose($ebC2, 'closed');
 $e = $ebRefused($ebC2);
 check('EB14 a CLOSED target is refused (target-closed) — lock-free and in create(); the opening stays as it was', $e?->reason === \Z77\Module\Financial\Services\YearOpeningRefusedException::TARGET_CLOSED
-    && $ebSvc()->refusal($ebYear($ebC2)) === \Z77\Module\Financial\Services\YearOpeningRefusedException::TARGET_CLOSED && $ebChanges() === 1);
+    && $ebSvc()->refusal($ebYear($ebC2)) === \Z77\Module\Financial\Services\YearOpeningRefusedException::TARGET_CLOSED && $ebChanges() === 3);
 $ebClose($ebC2, 'open');
 $em = $wireDi();
 (new FiscalYearService($em))->open((new FiscalYearService($em))->proposePrior());
@@ -3614,7 +3708,7 @@ $db->executeStatement("UPDATE mandator SET account_opening_balance = '9100', acc
 $e2 = $ebRefused($ebC2);
 $db->executeStatement("UPDATE mandator SET account_annual_result = '2979'");
 check('EB16 a year-opening account missing on the mandator or not a postable account is refused (account-missing), naming the key and the number', $e1?->reason === \Z77\Module\Financial\Services\YearOpeningRefusedException::ACCOUNT_MISSING
-    && $e1->items === ['opening-balance', ''] && $e2?->reason === \Z77\Module\Financial\Services\YearOpeningRefusedException::ACCOUNT_MISSING && $e2->items === ['annual-result', '290'] && $ebChanges() === 1);
+    && $e1->items === ['opening-balance', ''] && $e2?->reason === \Z77\Module\Financial\Services\YearOpeningRefusedException::ACCOUNT_MISSING && $e2->items === ['annual-result', '290'] && $ebChanges() === 3);
 (new AccountService($wireDi()))->setActive(DI::getUnifiedEntityManager()->getRepository(Account::class)->findOneBy(['number' => '2800']), false);
 $e = $ebRefused($ebC2);
 (new AccountService($wireDi()))->setActive(DI::getUnifiedEntityManager()->getRepository(Account::class)->findOneBy(['number' => '2800']), true);
@@ -3628,6 +3722,12 @@ $ebOuter = function () use ($ebEm, $yearId, $ebC2, &$ebNested) {
 };
 caught(fn() => $ebEm->getTransaction(JournalEntry::class)->run($ebOuter), \RuntimeException::class);   // a named closure: the reference must outlive the arrow fn
 check('EB18 create() inside an open unit of work is refused (LogicException — it owns its unit of work)', $ebNested !== null && str_contains($ebNested->getMessage(), 'owns its unit of work'));
+// The first build's ONE compound entry (key opening:{code}, same origin) belongs to the set a re-run replaces.
+$post($wireDi(), PostingRequest::generated(day($ebD2), 'Eröffnungsbilanz ' . $ebC2, 'opening', $ebC2, 'opening:' . $ebC2, [PostingLine::debit('1000', chf('1.00')), PostingLine::credit('9100', chf('1.00'))]));
+$ebR5 = $ebCreate($ebC2);
+check('EB18b a compound opening of the first build (key opening:{code}) is part of the set: the re-run retracts it, the per-account entries stay',
+    $ebR5->action === \Z77\Module\Financial\Services\YearOpeningResult::UPDATED && [$ebR5->posted, $ebR5->amended, $ebR5->retracted] === [0, 0, 1]
+    && count($ebSet($ebC2)) === 5 && $ebChanges('delete') === 2 && $ebNet($ebC2, '1000') === '30.00');
 
 echo "EB. … the screen: the ⋮ entry, the status line, the dialog, the POST (trait + templates, rendered without a web server)\n";
 $wireDiKeep();
@@ -3662,9 +3762,11 @@ $ebHost = function () {
 };
 $ebListHtml = function () use ($ebHost, $renderer) { $_GET = []; $h = $ebHost(); $h->listAction(); return $renderer->partial('Backend/FiscalYearController/listAction', $h->context); };
 $html = $ebListHtml();
-check('EB19 the list: the ⋮ of T2 offers «opening», T1\'s too (the dialog refuses it), the closed earliest year not; T2\'s status line «Eröffnung: Buchung …» marked provisional (T1 open), T1\'s says why not',
+$ebNos = $ebNumbers($ebC2);
+$ebRefs = '5 Buchungen ' . $ebC2 . '/' . $ebNos[0] . '–' . $ebC2 . '/' . $ebNos[4];
+check('EB19 the list: the ⋮ of T2 offers «opening», T1\'s too (the dialog refuses it), the closed earliest year not; T2\'s status line «Eröffnung: 5 Buchungen …» marked provisional (T1 open), T1\'s says why not',
     fyOffers($html, $yearId($ebC2), 'opening') && fyOffers($html, $yearId($ebC1), 'opening') && !fyOffers($html, $yearId($pCode), 'opening')
-    && str_contains($html, 'data-fiscal-year-opening="provisional">') && str_contains($html, 'Buchung ' . $ebC2 . '/' . $ebR1->ref->number . ' — Vorjahr ' . $ebC1 . ' noch nicht abgeschlossen — Eröffnung provisorisch, nach Änderungen neu erstellen.')
+    && str_contains($html, 'data-fiscal-year-opening="provisional">') && str_contains($html, 'Eröffnung: ' . $ebRefs . ' — Vorjahr ' . $ebC1 . ' noch nicht abgeschlossen — Eröffnung provisorisch, nach Änderungen neu erstellen.')
     && str_contains($html, 'data-fiscal-year-opening="refused">') && str_contains($html, 'Eröffnung bereits vorhanden (importiert / von Hand)'));
 $_GET = ['id' => (string) $yearId($ebC2)];
 $h = $ebHost();
@@ -3679,21 +3781,23 @@ $_GET = ['id' => (string) $yearId($ebC2)];
 $h = $ebHost();
 $h->confirmOpeningAction();
 $modal = implode('', array_map(fn($p) => $renderer->partial($p, $h->context), $h->layoutManager->sections['main'] ?? []));
-check('EB22 the dialog: the form (POST opening, the opening-scoped entity token), the owner\'s provisional note, «wird ersetzt — gleiche Nummer», the lines with names (9100 Eröffnungsbilanz), Soll = Haben',
+check('EB22 the dialog: the form (POST opening, the opening-scoped entity token), the owner\'s provisional note, «wird nachgeführt: 2 geändert …», one line per account marked «geändert» where it changes (1020 710.00, 2979 820.00), the contra account\'s two sums (9100 Eröffnungsbilanz, 2320.00 each, «Gegenbuchung (5)»), Soll = Haben',
     str_contains($modal, 'data-fetch-post="/backend/finance/fiscal-year/opening"') && str_contains($modal, 'value="tok-fiscalYear.opening-' . $yearId($ebC2) . '"')
     && str_contains($modal, 'data-opening-provisional') && str_contains($modal, 'Vorjahr ' . $ebC1 . ' noch nicht abgeschlossen — Eröffnung provisorisch, nach Änderungen neu erstellen.')
-    && str_contains($modal, 'data-opening-replace') && str_contains($modal, 'Eröffnungsbilanz') && str_contains($modal, '2400.00') && str_contains($modal, 'Neu erstellen'));
+    && str_contains($modal, 'data-opening-replace') && str_contains($modal, '2 geändert (gleiche Nummer), 0 neu, 0 entfernt, 3 unverändert') && substr_count($modal, '>geändert<') === 2
+    && str_contains($modal, '710.00') && str_contains($modal, '820.00') && str_contains($modal, 'Eröffnungsbilanz') && substr_count($modal, '2320.00') === 2
+    && str_contains($modal, 'Gegenbuchung (5)') && str_contains($modal, "4&apos;640.00") && str_contains($modal, 'Neu erstellen'));
 $GLOBALS['ycBody'] = ['id' => $yearId($ebC2), 'entity_csrf' => 'tok-fiscalYear.close-' . $yearId($ebC2)];
 $h = $ebHost();
 $env = $envelope($h->openingAction());
-check('EB23 the POST with another action\'s token is refused, nothing written', ($env['status'] ?? '') === 'error' && $ebChanges() === 1);
+check('EB23 the POST with another action\'s token is refused, nothing written', ($env['status'] ?? '') === 'error' && $ebChanges() === 4);
 $GLOBALS['ycBody'] = ['id' => $yearId($ebC2), 'entity_csrf' => 'tok-fiscalYear.opening-' . $yearId($ebC2)];
 $h = $ebHost();
 $env = $envelope($h->openingAction());
-check('EB24 the POST re-creates: success, close the dialog + reload, the flash (info — provisional) names the entry and the owner\'s note; one more change row',
+check('EB24 the POST re-creates: success, close the dialog + reload, the flash (info — provisional) names what changed, the entries and the owner\'s note; two more change rows',
     ($env['status'] ?? '') === 'success' && ($h->messageService->flashes[0][0] ?? '') === 'info'
-    && str_contains($h->messageService->flashes[0][1] ?? '', 'Eröffnung neu erstellt — Buchung ' . $ebC2 . '/' . $ebR1->ref->number)
-    && str_contains($h->messageService->flashes[0][1] ?? '', 'Eröffnung provisorisch') && $ebChanges() === 2);
+    && str_contains($h->messageService->flashes[0][1] ?? '', 'Eröffnung neu erstellt — 2 geändert (im Änderungsprotokoll); jetzt ' . $ebRefs . '.')
+    && str_contains($h->messageService->flashes[0][1] ?? '', 'Eröffnung provisorisch') && $ebChanges() === 6);
 $_GET = ['id' => (string) $yearId($ebC1)];
 $h = $ebHost();
 $h->confirmOpeningAction();

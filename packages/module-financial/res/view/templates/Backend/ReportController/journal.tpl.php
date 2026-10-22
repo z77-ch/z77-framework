@@ -32,7 +32,7 @@ parse_str($state->query([]), $listQuery);
 $pdfQuery = $rangeQuery + $listQuery;
 ?>
 <div class="be-list">
-    <?= $this->partial('Backend/ReportController/rangeForm', ['range' => $range, 'tab' => $tab, 'link' => $link, 'months' => $months, 'reportBase' => $reportBase, 'notices' => $notices, 'keep' => $keep, 'pdfTabs' => $pdfTabs ?? [], 'compareTabs' => $compareTabs ?? [], 'compare' => $compare ?? true, 'pdfForm' => $pdfForm], $ns) ?>
+    <?= $this->partial('Backend/ReportController/rangeForm', ['range' => $range, 'presets' => $presets ?? [], 'presetKey' => $presetKey ?? null, 'tab' => $tab, 'link' => $link, 'months' => $months, 'reportBase' => $reportBase, 'notices' => $notices, 'keep' => $keep, 'pdfTabs' => $pdfTabs ?? [], 'compareTabs' => $compareTabs ?? [], 'compare' => $compare ?? true, 'pdfForm' => $pdfForm], $ns) ?>
     <div class="be-list__section" data-fetch-region="<?= e($definition->region()) ?>">
         <?php // The PDF prints what the list shows (owner 2026-10-16): this form carries the range and the list state; the «PDF» button above submits it (`form=`). Inside the region, so a sort or a search renews it. ?>
         <form id="<?= e($pdfForm) ?>" method="get" action="<?= e($reportBase . '/pdf') ?>" target="_blank" hidden>

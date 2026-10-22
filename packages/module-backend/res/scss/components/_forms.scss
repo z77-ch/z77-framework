@@ -102,6 +102,10 @@
     align-items:           end;
 }
 
+/* A field whose values are long (the report range choice «Jahresende · 31.12.2026», owner
+   2026-10-22) takes two tracks of the fill grid; on a phone the grid is one column anyway. */
+.be-form__grid--fill > .be-form__field--wide { grid-column: span 2; }
+
 /* A rule between two parts of a modal form (the Drive's edit: texts · delivery · access). */
 .be-form__divider {
     margin:     .75rem 0;

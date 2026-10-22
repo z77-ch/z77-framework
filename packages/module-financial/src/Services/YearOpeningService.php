@@ -18,44 +18,53 @@ use Z77\Persistence\Resolver\UnifiedEntityManager;
 use Z77\Shared\Money\Money;
 
 /**
- * The YEAR OPENING (Eröffnungsbuchung, plan §5.7, P5 — owner decisions
+ * The YEAR OPENING (Eröffnungsbuchungen, plan §5.7, P5 — owner decisions
  * 2026-10-22): the closing balances of the year before carried into a
- * fiscal year as ONE generated journal entry, dated the year's first day.
+ * fiscal year as generated journal entries dated the year's first day —
+ * ONE TWO-LINE ENTRY PER ACCOUNT against the contra account (owner
+ * 2026-10-22, second round: «wie die EB:-Buchungen von wdv» — so the contra
+ * account's statement names every account instead of «div.»).
  *
  *   - Every balance-sheet account (asset, liability, equity) with a
- *     non-zero closing balance in the predecessor gets ONE line with that
- *     balance, in chart order (the number as a string, as the reports sort).
+ *     non-zero closing balance in the predecessor gets ONE entry: the
+ *     account with that balance on its side, the contra account with the
+ *     same amount on the other — in chart order (the number as a string,
+ *     as the reports sort), so the numbers follow the chart.
  *   - The predecessor's RESULT (Σ of its expense and revenue accounts) is
  *     carried onto the mandator's `annual-result` account (KMU 2979
- *     «Jahresgewinn oder Jahresverlust») — added to that account's own
- *     balance, one line; its appropriation (2970, reserves) is booked by
- *     hand afterwards.
+ *     «Jahresgewinn oder Jahresverlust») — ADDED to that account's own
+ *     balance: one entry for 2979 with the sum; its appropriation (2970,
+ *     reserves) is booked by hand afterwards.
  *   - The contra account is the mandator's `opening-balance` account (KMU
- *     9100 «Eröffnungsbilanz»): two lines at the end, Haben = Σ of the debit
- *     lines, Soll = Σ of the credit lines — every account is opened against
- *     it and it nets to zero (it carries a balance only when it had one at
- *     the predecessor's end: an incomplete imported opening, shown, not hidden).
+ *     9100 «Eröffnungsbilanz»): every account is opened against it, so it
+ *     nets to zero (it carries a balance only when it had one at the
+ *     predecessor's end: an incomplete imported opening, shown, not hidden).
  *   - The predecessor's closing balance is its OWN entries, its opening
  *     included (imported or generated) — never earlier years added up
  *     (FIN-REPORT-001): `JournalLineRepository::balancesByAccount()` over
  *     the predecessor's days.
  *
- * Origin `opening` / the target code, idempotency key `opening:{code}`
- * ({@see idempotencyKey()}). A generated posting, so a collective account
- * flagged «nur durch Module bebuchbar» (1100, FIN-MODULE-ONLY-001) is
- * opened like any other.
+ * Each entry: text «Eröffnungsbilanz {code}» (the statement's counter
+ * column names the account), origin `opening` / the target code, key
+ * `opening:{code}:{account}` ({@see idempotencyKey()}). A generated
+ * posting, so a collective account flagged «nur durch Module bebuchbar»
+ * (1100, FIN-MODULE-ONLY-001) is opened like any other.
  *
  * **Repeatable while the target year is open** (owner: «Sperren und neu
  * eröffnen sind 2 unterschiedliche Massnahmen … die Eröffnungsbilanz sollte
  * wiederholt werden können, solange das neue Geschäftsjahr nicht
- * abgeschlossen ist»): a re-run REPLACES the opening IN PLACE through
- * `LedgerService::amend()` — the source correcting its own generated entry
- * (ADR-042 addendum 2026-10-06): same number, one `EntryChange` (before /
- * after) in the change log, a no-op when nothing changed. When the
- * predecessor has no balance any more, `retract()` removes it (a documented
- * gap). Never a storno pair, never a second opening. A closed TARGET year
- * refuses; an OPEN predecessor is allowed — the opening is then PROVISIONAL
- * (`YearOpeningPlan::$provisional`), to be re-created after a change there.
+ * abgeschlossen ist»): a re-run REPLACES the whole set, entry by entry, in
+ * ONE unit of work — an account whose balance changed is AMENDED in place
+ * through `LedgerService::amend()` (ADR-042 addendum 2026-10-06: same
+ * number, one `EntryChange` before / after), an account that no longer
+ * carries a balance is RETRACTED (`retract()`, a documented gap), a new
+ * account is POSTED; an unchanged entry is not touched, and an unchanged
+ * set writes nothing. Never a storno pair, never a second entry per account
+ * (the key is unique). The ONE compound entry of the first build (key
+ * `opening:{code}`, same origin) is part of the set it finds and is
+ * retracted by a re-run. A closed TARGET year refuses; an OPEN predecessor
+ * is allowed — the opening is then PROVISIONAL (`YearOpeningPlan::$provisional`),
+ * to be re-created after a change there.
  *
  * Refused as well: the earliest year (nothing to carry), a year-opening
  * account missing on the mandator or not postable and active, the contra
@@ -70,7 +79,7 @@ use Z77\Shared\Money\Money;
  */
 final class YearOpeningService
 {
-    /** The origin type of every opening entry (`journal_entry.source_type`). */
+    /** The origin type of every opening entry (`journal_entry.source_type`); the origin ref is the target year's code. */
     public const SOURCE_TYPE = 'opening';
 
     /** How many foreign entry numbers a refusal names at most. */
@@ -79,10 +88,10 @@ final class YearOpeningService
     /** @param string|null $actor the author's name; null = the session identity ({@see Actor::current()}) */
     public function __construct(private readonly UnifiedEntityManager $em, private readonly ?string $actor = null) {}
 
-    /** The idempotency key of $year's opening — the one opening of the year, found and replaced by it. */
-    public static function idempotencyKey(FiscalYear $year): string
+    /** The idempotency key of $account's opening entry in $year — found and replaced by it. */
+    public static function idempotencyKey(FiscalYear $year, string $account): string
     {
-        return self::SOURCE_TYPE . ':' . $year->getCode();
+        return self::SOURCE_TYPE . ':' . $year->getCode() . ':' . $account;
     }
 
     /**
@@ -102,14 +111,17 @@ final class YearOpeningService
     }
 
     /**
-     * The generated opening standing in $year now, or null (an imported or
-     * manual opening is not one — it carries no key of this service).
+     * The generated opening entries standing in $year now, in number order — [] when none (an
+     * imported or manual opening is not one: it carries another origin). One SQL, no entity.
+     *
+     * @return list<EntryRef>
      */
-    public function existing(FiscalYear $year): ?EntryRef
+    public function existing(FiscalYear $year): array
     {
-        $entry = $this->entries()->findOneBy(['idempotencyKey' => self::idempotencyKey($year)]);
-
-        return $entry === null ? null : new EntryRef($entry->getFiscalYear()->getCode(), $entry->getNumber());
+        return array_map(
+            static fn(int $n) => new EntryRef($year->getCode(), $n),
+            $this->entries()->generatedNumbersFrom($year, self::SOURCE_TYPE, $year->getCode())
+        );
     }
 
     /**
@@ -119,7 +131,7 @@ final class YearOpeningService
      */
     public function isOpened(FiscalYear $year): bool
     {
-        if ($this->existing($year) !== null) {
+        if ($this->existing($year) !== []) {
             return true;
         }
         try {
@@ -128,14 +140,14 @@ final class YearOpeningService
             return false;
         }
 
-        return $this->lines()->entriesOnAccountExcept((int) $contra->getId(), (int) $year->getId(), self::idempotencyKey($year), 1)['count'] > 0;
+        return $this->lines()->entriesOnAccountNotFrom((int) $contra->getId(), (int) $year->getId(), self::SOURCE_TYPE, $year->getCode(), 1)['count'] > 0;
     }
 
     /**
-     * What the opening of $year would be NOW — every rule, the lines, the
-     * provisional flag, whether the existing opening is up to date. A READ
-     * without locks and without writes; {@see create()} computes again inside
-     * its unit of work.
+     * What the opening of $year would be NOW — every rule, the entries, the
+     * provisional flag, and per entry what a re-run does (post / amend /
+     * retract / leave). A READ without locks and without writes;
+     * {@see create()} computes again inside its unit of work.
      *
      * @throws YearOpeningRefusedException
      */
@@ -145,37 +157,66 @@ final class YearOpeningService
         $contra      = $this->accountOrRefuse(LedgerService::OPENING_BALANCE_ACCOUNT);
         $result      = $this->accountOrRefuse(LedgerService::ANNUAL_RESULT_ACCOUNT);
         $this->refuseForeignOpening($year, $contra);
-        $request = $this->request($year, $predecessor, $contra, $result);
+        $requests = $this->requests($year, $predecessor, $contra, $result);
 
-        $entry    = $this->entries()->findOneBy(['idempotencyKey' => self::idempotencyKey($year)]);
-        $existing = $entry === null ? null : new EntryRef($year->getCode(), $entry->getNumber());
-        $upToDate = $entry !== null && $request !== null
-            && PostingRequest::fingerprintOf($entry->snapshot()) === $request->fingerprint();
+        /** @var array<string, JournalEntry> $standing key → entry */
+        $standing = [];
+        foreach ($this->entries()->generatedFrom($year, self::SOURCE_TYPE, $year->getCode()) as $entry) {
+            $standing[(string) $entry->getIdempotencyKey()] = $entry;
+        }
+        $toPost  = [];
+        $toAmend = [];
+        foreach ($requests as $number => $request) {
+            $entry = $standing[$request->idempotencyKey] ?? null;
+            if ($entry === null) {
+                $toPost[] = (string) $number;
+            } elseif (PostingRequest::fingerprintOf($entry->snapshot()) !== $request->fingerprint()) {
+                $toAmend[] = (string) $number;
+            }
+        }
+        $wanted    = array_flip(array_map(static fn(PostingRequest $r) => $r->idempotencyKey, $requests));
+        $toRetract = [];
+        foreach ($standing as $key => $entry) {
+            if (!isset($wanted[$key])) {
+                $toRetract[$key] = array_values(array_filter($entry->snapshot()['lines'], static fn(array $l) => $l['account'] !== $contra->getNumber()));
+            }
+        }
 
-        return new YearOpeningPlan($year->getCode(), $predecessor->getCode(), !$predecessor->isClosed(), $request, $existing, $upToDate);
+        return new YearOpeningPlan(
+            $year->getCode(),
+            $predecessor->getCode(),
+            !$predecessor->isClosed(),
+            $requests,
+            array_map(static fn($e) => new EntryRef($year->getCode(), $e->getNumber()), $standing),
+            $toPost,
+            $toAmend,
+            $toRetract,
+        );
     }
 
     /**
      * Create — or re-create — the opening of fiscal year $yearId. OWNS its
      * unit of work and refuses to run inside an open one (the
      * `ManualEntryService` model): the plain reads that compute the balances
-     * are the first statements, so they read one consistent snapshot; the
-     * ledger then takes its locks in its own order (`post()`: `NumberRange`
-     * → accounts → year → period; `amend()` / `retract()`: entry →
-     * accounts → year → period) and re-checks the target period
-     * share-locked — a close of the target committed meanwhile refuses
-     * there (`period-closed`), and the rollback gives the number back.
+     * are the first statements, so they read one consistent snapshot; then
+     * the retractions, the amendments and the new postings, each through the
+     * ledger, which takes its locks in its own order (`post()`: `NumberRange`
+     * → accounts → year → period; `amend()` / `retract()`: entry → accounts
+     * → year → period) and re-checks the target period share-locked — a
+     * close of the target committed meanwhile refuses there
+     * (`period-closed`), and the rollback undoes the whole set and gives the
+     * numbers back.
      *
      * @throws YearOpeningRefusedException
      * @throws PostingRefusedException    the ledger refused under its lock (a race with a close or a chart change)
-     * @throws EntryNotEditableException  the existing opening cannot be changed any more (its period closed in a race)
+     * @throws EntryNotEditableException  a standing opening entry cannot be changed any more (its period closed in a race, it was reversed)
      * @throws \LogicException            a unit of work is open, or nobody is named as the actor
      */
     public function create(int $yearId): YearOpeningResult
     {
         $transaction = $this->em->getTransaction(JournalEntry::class);
         if ($transaction->isOpen()) {
-            throw new \LogicException('YearOpeningService::create() owns its unit of work — call it outside getTransaction()->run(), so the balances it reads and the entry it writes commit together');
+            throw new \LogicException('YearOpeningService::create() owns its unit of work — call it outside getTransaction()->run(), so the balances it reads and the entries it writes commit together');
         }
         $ledger = new LedgerService($this->em, $this->actor);
 
@@ -185,33 +226,53 @@ final class YearOpeningService
                 throw new YearOpeningRefusedException(YearOpeningRefusedException::NOT_FOUND, "Fiscal year #{$yearId} does not exist");
             }
             $plan = $this->plan($year);
-            $key  = self::idempotencyKey($year);
-
-            if ($plan->request === null) {
-                if ($plan->existing === null) {
-                    throw new YearOpeningRefusedException(YearOpeningRefusedException::NOTHING_TO_CARRY,
-                        "Fiscal year {$plan->predecessorCode} has no closing balance — there is nothing to open {$year->getCode()} with");
-                }
-                $ledger->retract($key, self::SOURCE_TYPE);
-
-                return new YearOpeningResult(YearOpeningResult::REMOVED, $plan->existing, $plan->provisional, $plan->predecessorCode);
+            if ($plan->requests === [] && !$plan->hasOpening()) {
+                throw new YearOpeningRefusedException(YearOpeningRefusedException::NOTHING_TO_CARRY,
+                    "Fiscal year {$plan->predecessorCode} has no closing balance — there is nothing to open {$year->getCode()} with");
             }
-            if ($plan->existing === null) {
-                return new YearOpeningResult(YearOpeningResult::CREATED, $ledger->post($plan->request), $plan->provisional, $plan->predecessorCode);
-            }
-            $ref = $ledger->amend($key, $plan->request);
 
-            return new YearOpeningResult($plan->upToDate ? YearOpeningResult::UNCHANGED : YearOpeningResult::UPDATED, $ref, $plan->provisional, $plan->predecessorCode);
+            $refs = $plan->existing;
+            foreach (array_keys($plan->toRetract) as $key) {
+                $ledger->retract((string) $key, self::SOURCE_TYPE);
+                unset($refs[$key]);
+            }
+            foreach ($plan->toAmend as $number) {
+                $ledger->amend($plan->requests[$number]->idempotencyKey, $plan->requests[$number]);
+            }
+            foreach ($plan->toPost as $number) {
+                $refs[$plan->requests[$number]->idempotencyKey] = $ledger->post($plan->requests[$number]);
+            }
+            $refs = array_values($refs);
+            usort($refs, static fn(EntryRef $a, EntryRef $b) => $a->number <=> $b->number);
+
+            $action = match (true) {
+                !$plan->hasOpening()   => YearOpeningResult::CREATED,
+                $plan->requests === [] => YearOpeningResult::REMOVED,
+                $plan->isUpToDate()    => YearOpeningResult::UNCHANGED,
+                default                => YearOpeningResult::UPDATED,
+            };
+
+            return new YearOpeningResult(
+                $action,
+                $action === YearOpeningResult::REMOVED ? array_values($plan->existing) : $refs,
+                $plan->provisional,
+                $plan->predecessorCode,
+                count($plan->toPost),
+                count($plan->toAmend),
+                count($plan->toRetract),
+            );
         });
     }
 
     /**
-     * The opening entry from the predecessor's closing balances, or null when
-     * it has none (see the class docblock for the shape).
+     * The opening entries from the predecessor's closing balances — account number → its
+     * two-line entry against the contra account, in chart order; [] when it has none (see the
+     * class docblock for the shape).
      *
+     * @return array<string, PostingRequest>
      * @throws YearOpeningRefusedException ACCOUNT_INACTIVE
      */
-    private function request(FiscalYear $year, FiscalYear $predecessor, Account $contra, Account $result): ?PostingRequest
+    private function requests(FiscalYear $year, FiscalYear $predecessor, Account $contra, Account $result): array
     {
         $currency = LedgerService::baseCurrency();
         $zero     = Money::zero($currency);
@@ -226,7 +287,7 @@ final class YearOpeningService
         foreach ($rows as $row) {
             $number = (string) $row['number'];
             if ($number === $contra->getNumber()) {
-                continue;   // the contra account balances itself (two lines below)
+                continue;   // the contra account is the other side of every entry
             }
             $net = Money::fromDecimal((string) $row['debit'], $currency)->subtract(Money::fromDecimal((string) $row['credit'], $currency));
             $type = AccountType::tryFrom((string) $row['type']);
@@ -239,39 +300,29 @@ final class YearOpeningService
         $balances[$result->getNumber()] = ($balances[$result->getNumber()] ?? $zero)->add($profit);
         $balances = array_filter($balances, static fn(Money $m) => !$m->isZero());
         if ($balances === []) {
-            return null;
+            return [];
         }
         ksort($balances, SORT_STRING);
         $this->refuseInactive(array_map('strval', array_keys($balances)));
 
-        $lines  = [];
-        $debit  = $zero;
-        $credit = $zero;
+        $requests = [];
         foreach ($balances as $number => $net) {
-            if ($net->isPositive()) {
-                $lines[] = PostingLine::debit((string) $number, $net);
-                $debit   = $debit->add($net);
-            } else {
-                $lines[] = PostingLine::credit((string) $number, $net->negate());
-                $credit  = $credit->add($net->negate());
-            }
-        }
-        // Every account is opened AGAINST the contra account: its Haben takes the debit side, its Soll the credit side.
-        if ($debit->isPositive()) {
-            $lines[] = PostingLine::credit($contra->getNumber(), $debit);
-        }
-        if ($credit->isPositive()) {
-            $lines[] = PostingLine::debit($contra->getNumber(), $credit);
+            $number = (string) $number;
+            // The account on its side, the contra account with the same amount on the other.
+            $lines = $net->isPositive()
+                ? [PostingLine::debit($number, $net), PostingLine::credit($contra->getNumber(), $net)]
+                : [PostingLine::credit($number, $net->negate()), PostingLine::debit($contra->getNumber(), $net->negate())];
+            $requests[$number] = PostingRequest::generated(
+                $year->getStartDate(),
+                'Eröffnungsbilanz ' . $year->getCode(),
+                self::SOURCE_TYPE,
+                $year->getCode(),
+                self::idempotencyKey($year, $number),
+                $lines
+            );
         }
 
-        return PostingRequest::generated(
-            $year->getStartDate(),
-            'Eröffnungsbilanz ' . $year->getCode(),
-            self::SOURCE_TYPE,
-            $year->getCode(),
-            self::idempotencyKey($year),
-            $lines
-        );
+        return $requests;
     }
 
     /** @throws YearOpeningRefusedException TARGET_CLOSED | NO_PREDECESSOR */
@@ -312,7 +363,7 @@ final class YearOpeningService
     /** @throws YearOpeningRefusedException FOREIGN_OPENING — `$items`: the contra account's label, then the entry numbers */
     private function refuseForeignOpening(FiscalYear $year, Account $contra): void
     {
-        $foreign = $this->lines()->entriesOnAccountExcept((int) $contra->getId(), (int) $year->getId(), self::idempotencyKey($year), self::FOREIGN_NUMBERS);
+        $foreign = $this->lines()->entriesOnAccountNotFrom((int) $contra->getId(), (int) $year->getId(), self::SOURCE_TYPE, $year->getCode(), self::FOREIGN_NUMBERS);
         if ($foreign['count'] === 0) {
             return;
         }

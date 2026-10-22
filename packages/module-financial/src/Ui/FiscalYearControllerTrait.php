@@ -186,6 +186,26 @@ trait FiscalYearControllerTrait
         };
     }
 
+    /**
+     * The opening's entries as one phrase — «Buchung 2026/1» or «45 Buchungen 2026/1–2026/47»
+     * (one entry per account, owner 2026-10-22).
+     *
+     * @param list<\Z77\Module\Financial\Ledger\EntryRef> $refs in number order
+     */
+    private static function fiscalYearOpeningRefs(array $refs): string
+    {
+        if ($refs === []) {
+            return '';
+        }
+        $first = $refs[0]->fiscalYear . '/' . $refs[0]->number;
+        if (count($refs) === 1) {
+            return 'Buchung ' . $first;
+        }
+        $last = $refs[count($refs) - 1];
+
+        return count($refs) . ' Buchungen ' . $first . '–' . $last->fiscalYear . '/' . $last->number;
+    }
+
     /** The owner's sentence for an opening built while the predecessor is still open (2026-10-22). */
     private static function fiscalYearProvisionalNote(string $predecessorCode): string
     {
@@ -214,9 +234,9 @@ trait FiscalYearControllerTrait
                 continue;
             }
             if ($refusal === YearOpeningRefusedException::TARGET_CLOSED) {
-                $ref = $service->existing($year);
-                if ($ref !== null) {
-                    $status[$id] = ['state' => 'frozen', 'text' => 'Eröffnung: Buchung ' . $ref->fiscalYear . '/' . $ref->number];
+                $refs = $service->existing($year);
+                if ($refs !== []) {
+                    $status[$id] = ['state' => 'frozen', 'text' => 'Eröffnung: ' . self::fiscalYearOpeningRefs($refs)];
                 }
                 continue;
             }
@@ -226,13 +246,13 @@ trait FiscalYearControllerTrait
                 $status[$id] = ['state' => 'refused', 'text' => 'Eröffnung: ' . $this->fiscalYearOpeningMessage($e)];
                 continue;
             }
-            $ref = $plan->existing === null ? '' : $plan->existing->fiscalYear . '/' . $plan->existing->number;
+            $refs = self::fiscalYearOpeningRefs(array_values($plan->existing));
             $status[$id] = match (true) {
-                $plan->existing === null => ['state' => 'none', 'text' => 'Eröffnung ' . $plan->targetCode . ' nicht erstellt'
+                !$plan->hasOpening()   => ['state' => 'none', 'text' => 'Eröffnung ' . $plan->targetCode . ' nicht erstellt'
                     . ($plan->provisional ? ' — Vorjahr ' . $plan->predecessorCode . ' noch nicht abgeschlossen' : '')],
-                !$plan->upToDate        => ['state' => 'outdated', 'text' => 'Eröffnung (Buchung ' . $ref . ') nicht aktuell — das Vorjahr ' . $plan->predecessorCode . ' hat sich seither geändert, neu erstellen'],
-                $plan->provisional      => ['state' => 'provisional', 'text' => 'Eröffnung: Buchung ' . $ref . ' — ' . self::fiscalYearProvisionalNote($plan->predecessorCode)],
-                default                 => ['state' => 'current', 'text' => 'Eröffnung: Buchung ' . $ref],
+                !$plan->isUpToDate()   => ['state' => 'outdated', 'text' => 'Eröffnung (' . $refs . ') nicht aktuell — das Vorjahr ' . $plan->predecessorCode . ' hat sich seither geändert, neu erstellen'],
+                $plan->provisional     => ['state' => 'provisional', 'text' => 'Eröffnung: ' . $refs . ' — ' . self::fiscalYearProvisionalNote($plan->predecessorCode)],
+                default                => ['state' => 'current', 'text' => 'Eröffnung: ' . $refs],
             };
         }
 
@@ -341,7 +361,7 @@ trait FiscalYearControllerTrait
         $response = $this->html([
             'year'          => $year,
             'actions'       => $this->fiscalYearActions($year),
-            'openingExists' => $this->yearOpeningService()->existing($year) !== null,
+            'openingExists' => $this->yearOpeningService()->existing($year) !== [],
             'actionBase'    => $this->fiscalYearListBase(),
         ]);
         $this->layoutManager->addPartials('actions', 'Backend/FiscalYearController', self::FISCAL_YEAR_NS);
@@ -623,10 +643,13 @@ trait FiscalYearControllerTrait
     // ── the year opening (P5, owner decisions 2026-10-22) ────────────────────
 
     /**
-     * The opening dialog (`data-fetch-get`): the entry «Eröffnung erstellen» would write now —
-     * its lines with the account names —, whether it replaces an existing opening (same number,
-     * logged) or changes nothing, and the owner's note when the predecessor is still open. A
-     * refusal shows the sentence and no form. `YearOpeningService::create()` decides again.
+     * The opening dialog (`data-fetch-get`): the entries «Eröffnung erstellen» would write now —
+     * one per account against the contra account (owner 2026-10-22): each account's line with
+     * its name and what a re-run does to it («neu», «geändert», «wird entfernt», nothing when
+     * unchanged), then the contra account's two sums —, whether it replaces a standing opening
+     * (amended in place, same numbers, logged) or changes nothing, and the owner's note when the
+     * predecessor is still open. A refusal shows the sentence and no form.
+     * `YearOpeningService::create()` decides again.
      */
     protected function confirmOpeningAction(): HtmlResponse|FetchResponse
     {
@@ -639,7 +662,7 @@ trait FiscalYearControllerTrait
         $plan    = null;
         try {
             $plan = $this->yearOpeningService()->plan($year);
-            if ($plan->request === null && $plan->existing === null) {
+            if ($plan->requests === [] && !$plan->hasOpening()) {
                 throw new YearOpeningRefusedException(YearOpeningRefusedException::NOTHING_TO_CARRY, 'nothing to carry');
             }
         } catch (YearOpeningRefusedException $e) {
@@ -647,26 +670,54 @@ trait FiscalYearControllerTrait
             $plan    = null;
         }
 
-        // The lines as the change log shows a snapshot (`partials/entrySnapshot`), with the account names.
+        // The lines as the change log shows a snapshot (`partials/entrySnapshot`), with the account
+        // names: per entry the account's line (its text column says what happens to it), the
+        // removed ones, then the contra account's Haben and Soll over all entries.
         $lines = [];
-        $names = [];
-        if ($plan?->request !== null) {
-            $numbers = array_map(fn($l) => $l->account, $plan->request->lines);
-            foreach ($this->em()->getRepository(Account::class)->findBy(['number' => $numbers]) as $account) {
+        $total = '';
+        if ($plan !== null) {
+            $currency = LedgerService::baseCurrency();
+            $debit    = \Z77\Shared\Money\Money::zero($currency);
+            $contraIn = \Z77\Shared\Money\Money::zero($currency);   // Haben on the contra account
+            $contraOut = \Z77\Shared\Money\Money::zero($currency);  // Soll on the contra account
+            $contra   = null;
+            $rows     = [];
+            $marks    = array_fill_keys($plan->toPost, $plan->hasOpening() ? 'neu' : '') + array_fill_keys($plan->toAmend, 'geändert');
+            foreach ($plan->requests as $number => $request) {
+                [$own, $other] = $request->lines;
+                $contra   = $other->account;
+                $debit    = $debit->add($own->debit)->add($other->debit);
+                $contraIn = $contraIn->add($other->credit);
+                $contraOut = $contraOut->add($other->debit);
+                $rows[]   = ['account' => $own->account, 'text' => $marks[(string) $number] ?? '', 'debit' => $own->debit->toDecimal(), 'credit' => $own->credit->toDecimal()];
+            }
+            foreach ($plan->toRetract as $removed) {
+                foreach ($removed as $line) {
+                    $rows[] = ['account' => (string) $line['account'], 'text' => 'wird entfernt', 'debit' => (string) $line['debit'], 'credit' => (string) $line['credit']];
+                }
+            }
+            if ($contra !== null) {
+                $count = count($plan->requests);
+                $rows[] = ['account' => $contra, 'text' => 'Gegenbuchung (' . $count . ')', 'debit' => '0.00', 'credit' => $contraIn->toDecimal()];
+                $rows[] = ['account' => $contra, 'text' => 'Gegenbuchung (' . $count . ')', 'debit' => $contraOut->toDecimal(), 'credit' => '0.00'];
+            }
+            $names = [];
+            foreach ($this->em()->getRepository(Account::class)->findBy(['number' => array_values(array_unique(array_column($rows, 'account')))]) as $account) {
                 $names[$account->getNumber()] = $account->getName();
             }
-            foreach ($plan->request->lines as $line) {
-                $lines[] = ['account' => $line->account, 'account_name' => $names[$line->account] ?? '', 'text' => null,
-                    'debit' => $line->debit->toDecimal(), 'credit' => $line->credit->toDecimal()];
+            foreach ($rows as $row) {
+                $lines[] = $row + ['account_name' => $names[$row['account']] ?? ''];
             }
+            $total = $plan->requests === [] ? '' : \Z77\Shared\Money\AmountFormat::of($debit);
         }
 
         $response = $this->html([
             'year'        => $year,
             'refusal'     => $refusal,
             'plan'        => $plan,
-            'snapshot'    => ['lines' => $lines],
-            'total'       => $plan?->request === null ? '' : \Z77\Shared\Money\AmountFormat::of(array_reduce($plan->request->lines, fn($sum, $l) => $sum->add($l->debit), \Z77\Shared\Money\Money::zero($plan->request->currency()))),
+            'existingRefs' => $plan === null ? '' : self::fiscalYearOpeningRefs(array_values($plan->existing)),
+            'snapshot'    => ['lines' => array_values(array_filter($lines, static fn(array $l) => $l['debit'] !== '0.00' || $l['credit'] !== '0.00'))],
+            'total'       => $total,
             'provisional' => $plan !== null && $plan->provisional ? self::fiscalYearProvisionalNote($plan->predecessorCode) : null,
             'entityCsrf'  => DI::getCsrfService()->generateEntityToken(self::FISCAL_YEAR_OPENING_TOKEN, $id),
             'actionBase'  => $this->fiscalYearListBase(),
@@ -699,12 +750,17 @@ trait FiscalYearControllerTrait
             // Two openings of the same year at once: the second fails on the idempotency key, nothing written.
             return $this->fetchError('Die Eröffnung wurde gleichzeitig erstellt — bitte die Liste neu laden.');
         }
-        $ref     = $result->ref->fiscalYear . '/' . $result->ref->number;
+        $refs    = self::fiscalYearOpeningRefs($result->refs);
+        $changes = implode(', ', array_filter([
+            $result->amended > 0 ? $result->amended . ' geändert' : '',
+            $result->posted > 0 ? $result->posted . ' neu' : '',
+            $result->retracted > 0 ? $result->retracted . ' entfernt' : '',
+        ]));
         $message = match ($result->action) {
-            YearOpeningResult::CREATED   => 'Eröffnung erstellt — Buchung ' . $ref . '.',
-            YearOpeningResult::UPDATED   => 'Eröffnung neu erstellt — Buchung ' . $ref . ' ersetzt (im Änderungsprotokoll).',
-            YearOpeningResult::UNCHANGED => 'Eröffnung ist aktuell — Buchung ' . $ref . ' unverändert.',
-            default                      => 'Eröffnung entfernt — das Vorjahr hat keine Salden mehr (Buchung ' . $ref . ', im Änderungsprotokoll).',
+            YearOpeningResult::CREATED   => 'Eröffnung erstellt — ' . $refs . '.',
+            YearOpeningResult::UPDATED   => 'Eröffnung neu erstellt — ' . $changes . ' (im Änderungsprotokoll); jetzt ' . $refs . '.',
+            YearOpeningResult::UNCHANGED => 'Eröffnung ist aktuell — ' . $refs . ' unverändert.',
+            default                      => 'Eröffnung entfernt — das Vorjahr hat keine Salden mehr (' . $refs . ', im Änderungsprotokoll).',
         };
         if ($result->provisional) {
             $message .= ' ' . self::fiscalYearProvisionalNote($result->predecessorCode);

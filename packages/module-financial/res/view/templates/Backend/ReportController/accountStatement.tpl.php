@@ -2,9 +2,12 @@
 /**
  * Account statement (Kontoblatt, plan §5.5): one account over the range —
  * the opening balance (lines of the same fiscal year before «Von»), then
- * every line in date / number order with the counter account (the one other
- * account of the entry, «div.» when there are several), text, Soll, Haben
- * and the running balance, then the totals and the closing balance. Every
+ * every line in date / number order with the counter account, text, Soll,
+ * Haben and the running balance, then the totals and the closing balance.
+ * A line whose counter side is unambiguous shows ONE ROW PER COUNTER LINE
+ * (owner 2026-10-22: the same date, number and text, each counter account
+ * with its amount — `data-split`); «div.» only where both sides of the entry
+ * have several lines (m:n), «–» without another account. Every
  * balance positive on the account's natural side. One page of
  * `LedgerReports::ACCOUNT_STATEMENT_PAGE_SIZE` lines; a later page starts
  * with the «Übertrag» (the balance before its first line). The entry number
@@ -24,7 +27,7 @@ $ns   = 'Z77\\Module\\Financial';
 $cols = '--be-list-cols: 6rem 4rem minmax(12rem, 2fr) minmax(8rem, 1fr) 8rem 8rem 9rem';
 ?>
 <div class="be-list">
-    <?= $this->partial('Backend/ReportController/rangeForm', ['accounts' => $accounts, 'accountNumber' => $accountNumber] + ['range' => $range, 'tab' => $tab, 'link' => $link, 'months' => $months, 'reportBase' => $reportBase, 'notices' => $notices, 'keep' => $keep, 'pdfTabs' => $pdfTabs ?? [], 'compareTabs' => $compareTabs ?? [], 'compare' => $compare ?? true], $ns) ?>
+    <?= $this->partial('Backend/ReportController/rangeForm', ['accounts' => $accounts, 'accountNumber' => $accountNumber] + ['range' => $range, 'presets' => $presets ?? [], 'presetKey' => $presetKey ?? null, 'tab' => $tab, 'link' => $link, 'months' => $months, 'reportBase' => $reportBase, 'notices' => $notices, 'keep' => $keep, 'pdfTabs' => $pdfTabs ?? [], 'compareTabs' => $compareTabs ?? [], 'compare' => $compare ?? true], $ns) ?>
     <?php if ($report === null): ?>
     <div class="be-list__section">
         <div class="be-list__section-header">
@@ -67,7 +70,7 @@ $cols = '--be-list-cols: 6rem 4rem minmax(12rem, 2fr) minmax(8rem, 1fr) 8rem 8re
                     </div>
                 </div>
                 <?php foreach ($report->lines as $line): ?>
-                <div class="be-list__item" data-entry-id="<?= e((string) $line->entryId) ?>">
+                <div class="be-list__item" data-entry-id="<?= e((string) $line->entryId) ?>"<?= $line->isSplit ? ' data-split' : '' ?>>
                     <div class="be-list__row">
                         <span class="be-list__cell"><?= e($line->date->format('d.m.Y')) ?></span>
                         <span class="be-list__cell be-list__cell--num be-list__cell--mono"><a href="<?= e($journalBase) ?>/detail?id=<?= e((string) $line->entryId) ?>"><?= $line->entryNumber ?></a></span>

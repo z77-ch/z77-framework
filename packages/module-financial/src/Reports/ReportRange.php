@@ -50,13 +50,17 @@ final class ReportRange
     /**
      * The same range in an OLDER fiscal year — the comparison columns of the balance sheet
      * and the income statement (review 2026-10-13 H6: moving the dates by whole calendar
-     * years was wrong for short, long and non-calendar years and for 29 February). Anchored
-     * to the fiscal-year START, never to the calendar:
+     * years was wrong for short, long and non-calendar years and for 29 February). The SAME
+     * OFFSET within the fiscal year, anchored to its START, never to the calendar — for a
+     * choice of the select ({@see ReportPreset}) and for typed dates alike, because the rule
+     * reads the dates only (owner 2026-10-22: «Halbjahr 2025 vs Halbjahr 2024 vs 2023»):
      *
      *   - the whole year → the whole older year (whatever its length);
-     *   - exactly one period (a month; at a day: the range ends on a period's last day) →
-     *     the period with the SAME INDEX in the older year (the 3rd month → its 3rd month);
-     *     an older year without that many periods (a short year) has no comparable range;
+     *   - a range on PERIOD bounds — it starts on the first day of period i and ends on the
+     *     last day of period j (a month, a quarter, a half, any run of months; at a day: it
+     *     ends on the last day of period j) → periods i … j of the older year (the 2nd half
+     *     → periods 7–12, «per 30.6.» of a calendar year → per the end of the 6th period); an
+     *     older year without period j (a short year) has no comparable range;
      *   - anything else → both dates shifted by the distance between the two year starts
      *     (months, then days); a date on a month's last day stays on the last day of its
      *     month (`last day of` — 29.2. → 28.2., 30.4. → 31.10. when the years start half a
@@ -70,13 +74,23 @@ final class ReportRange
         if ($this->isWholeYear($atDay)) {
             return self::wholeYear($older);
         }
+        $first = $atDay ? 0 : null;
+        $last  = null;
         foreach ($this->year->getPeriods() as $i => $period) {
-            if ($period->getEndDate()->format('Y-m-d') === $this->toDay()
-                && ($atDay || $period->getStartDate()->format('Y-m-d') === $this->fromDay())) {
-                $match = $older->getPeriods()[$i] ?? null;
-
-                return $match === null ? null : new self($older, $atDay ? $older->getStartDate() : $match->getStartDate(), $match->getEndDate());
+            if ($first === null && $period->getStartDate()->format('Y-m-d') === $this->fromDay()) {
+                $first = $i;
             }
+            if ($period->getEndDate()->format('Y-m-d') === $this->toDay()) {
+                $last = $i;
+            }
+        }
+        if ($first !== null && $last !== null && $first <= $last) {
+            $periods = $older->getPeriods();
+            if (!isset($periods[$first], $periods[$last])) {
+                return null;
+            }
+
+            return new self($older, $atDay ? $older->getStartDate() : $periods[$first]->getStartDate(), $periods[$last]->getEndDate());
         }
 
         $start  = $this->year->getStartDate();

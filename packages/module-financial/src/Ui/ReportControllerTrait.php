@@ -11,6 +11,7 @@ use Z77\Core\DI,
     Z77\Module\Financial\Entities\Account,
     Z77\Module\Financial\Entities\FiscalYear,
     Z77\Module\Financial\Reports\BalanceSheet,
+    Z77\Module\Financial\Reports\ReportPreset,
     Z77\Module\Financial\Reports\ReportRange,
     Z77\Module\Financial\Reports\StatementComparison,
     Z77\Module\Financial\Repositories\AccountRepository,
@@ -34,9 +35,13 @@ use Z77\Core\DI,
  * One PAGE per report, switched by the tabs in the toolbar (hc2): trial balance, balance
  * sheet, income statement, account statement, journal. Read-only — nothing
  * here writes, so there is no form post, no CSRF token and no JavaScript
- * (Rule 7): the parameters are a GET form (fiscal year, from, to, the
- * «Zeitraum» select — the whole year or one month; the account on the
- * account statement), paging is `?page=` links. Paper is the PDF
+ * (Rule 7 — the server decides): the parameters are a GET form (fiscal
+ * year, from, to, the range select of {@see ReportPreset} — whole year,
+ * halves, quarters, months; on the balance sheet their ENDS for the
+ * «Stichtag»; the account on the account statement), paging is `?page=`
+ * links. The one script is core.js's progressive `select[data-range-presets]`
+ * (the choice fills the dates at once, an edited date re-selects the choice);
+ * without it the server resolves the choice on «Bildschirm». Paper is the PDF
  * (`pdfAction()`, FIN-PDF-001) — the same form submits to it; the browser
  * print of the reports is gone.
  *
@@ -70,6 +75,9 @@ trait ReportControllerTrait
 
     /** The reports with the «Vorjahre» checkbox. */
     private const REPORT_COMPARE = ['balance-sheet', 'income-statement'];
+
+    /** The reports that are a statement AT a day — «Stichtag» and the section ENDS (owner 2026-10-22). */
+    private const REPORT_AT_DAY = ['balance-sheet'];
 
     /** The reports that have a PDF (FIN-PDF-001). */
     private const REPORT_PDF = ['trial-balance', 'balance-sheet', 'income-statement', 'account-statement', 'journal'];
@@ -267,7 +275,7 @@ trait ReportControllerTrait
     {
         $tab     = $this->reportParameter('report');
         $notices = [];
-        $range   = $this->reportRange($notices);
+        $range   = $this->reportRange($notices, in_array($tab, self::REPORT_AT_DAY, true));
         if ($range === null || !in_array($tab, self::REPORT_PDF, true)) {
             return $this->redirect($this->reportBase() . '/' . (isset(self::REPORT_TABS[$tab]) ? $tab : 'trial-balance'));
         }
@@ -349,14 +357,18 @@ trait ReportControllerTrait
     /**
      * The range the request asks for (see the class doc for the defaults);
      * null when no fiscal year is open at all. What was not usable is
-     * reported in $notices (German, shown above the report).
+     * reported in $notices (German, shown above the report). $preset is the
+     * choice the request named (`?period=`), '' without one — the select keeps
+     * it while it agrees with the range ({@see ReportPreset::selected()}).
      *
      * @param list<string> $notices
+     * @param bool $atDay a statement AT a day (the balance sheet): the choices are section ENDS
      */
-    private function reportRange(array &$notices): ?ReportRange
+    private function reportRange(array &$notices, bool $atDay = false, ?string &$preset = null): ?ReportRange
     {
-        $code = $this->reportParameter('year');
-        $year = $this->reportYearSelection()->resolve($code);
+        $preset = '';
+        $code   = $this->reportParameter('year');
+        $year   = $this->reportYearSelection()->resolve($code);
         if ($code !== '' && $year?->getCode() !== $code) {
             $notices[] = "Geschäftsjahr «{$code}» gibt es nicht — das gewählte wird gezeigt.";
         }
@@ -364,24 +376,23 @@ trait ReportControllerTrait
             return null;
         }
 
-        // The «Zeitraum» dropdown (owner 2026-10-10: «Ganzes Jahr» and the months in ONE select
-        // between the date and «Anzeigen», no row of buttons). It wins only when the dates were
-        // NOT edited: the form carries the range it was rendered with (`shown_from` /
-        // `shown_to`), so a changed date is never overruled by the still-selected period. No
-        // JavaScript — the select and the dates are one GET form.
+        // The range select (owner 2026-10-22, replaced FIN-UI-009's «Zeitraum»): a choice SETS the
+        // dates. It wins only when the dates were NOT edited: the form carries the range it was
+        // rendered with (`shown_from` / `shown_to`), so a changed date is never overruled by the
+        // still-selected choice — and with core.js the choice has filled the dates already, so
+        // both ways arrive at the same range. The server decides; the select works without JS.
         $period = $this->reportParameter('period');
-        if ($period !== ''
-            && $this->reportParameter('from') === $this->reportParameter('shown_from')
-            && $this->reportParameter('to') === $this->reportParameter('shown_to')) {
-            if ($period === 'year') {
-                return ReportRange::wholeYear($year);
-            }
-            foreach ($year->getPeriods() as $p) {
-                if ($p->getStartDate()->format('Y-m') === $period) {
-                    return new ReportRange($year, $p->getStartDate(), $p->getEndDate());
+        if ($period !== '') {
+            $preset = $period;
+            // At a day there is no «from» field — a «from» in the URL (a tab link) does not count as edited.
+            if (($atDay || $this->reportParameter('from') === $this->reportParameter('shown_from'))
+                && $this->reportParameter('to') === $this->reportParameter('shown_to')) {
+                $chosen = ReportPreset::find(ReportPreset::of($year, $atDay), $period);
+                if ($chosen !== null) {
+                    return new ReportRange($year, $chosen->from, $chosen->to);
                 }
+                $notices[] = "Auswahl «{$period}» gibt es im Geschäftsjahr {$year->getCode()} nicht — es gelten die Daten.";
             }
-            $notices[] = "Zeitraum «{$period}» gibt es im Geschäftsjahr {$year->getCode()} nicht — es gelten die Daten.";
         }
 
         $day = function (string $name, \DateTimeImmutable $default, string $label) use ($year, &$notices): \DateTimeImmutable {
@@ -398,7 +409,8 @@ trait ReportControllerTrait
 
             return $date;
         };
-        $from = $day('from', $year->getStartDate(), 'Von');
+        // At a day «from» is the year's first day, whatever the URL says (FIN-REPORT-002 — a tab link carries the other reports' «from»).
+        $from = $atDay ? $year->getStartDate() : $day('from', $year->getStartDate(), 'Von');
         $to   = $day('to', $year->getEndDate(), 'Bis');
         if ($from > $to) {
             $notices[] = '«Von» liegt nach «Bis» — das ganze Geschäftsjahr wird gezeigt.';
@@ -419,8 +431,11 @@ trait ReportControllerTrait
     private function reportPage(string $template, string $tab, callable $build): HtmlResponse
     {
         $notices = [];
-        $range   = $this->reportRange($notices);
+        $atDay   = in_array($tab, self::REPORT_AT_DAY, true);
+        $range   = $this->reportRange($notices, $atDay, $requested);
         $base    = $this->reportBase();
+        // The select's choices and the one it shows — never one that contradicts the dates.
+        $presets = $range === null ? [] : ReportPreset::of($range->year, $atDay);
         /** A report URL with the current range; $params override or add (`account`, `page`, `from`, `to`). */
         $link = static function (string $report, array $params = []) use ($range, $base): string {
             $query = $params + ($range === null ? [] : ['year' => $range->year->getCode(), 'from' => $range->fromDay(), 'to' => $range->toDay()]);
@@ -455,6 +470,8 @@ trait ReportControllerTrait
             'tab'         => $tab,
             'reportTabs'  => self::REPORT_TABS,
             'months'      => MonthNames::SHORT,
+            'presets'     => $presets,
+            'presetKey'   => $range === null ? null : ReportPreset::selected($presets, $atDay ? $range->fromYearStart() : $range, $atDay, (string) $requested),
             'pdfTabs'     => self::REPORT_PDF,
             'compareTabs' => self::REPORT_COMPARE,
             'compare'     => $this->reportCompares(),
