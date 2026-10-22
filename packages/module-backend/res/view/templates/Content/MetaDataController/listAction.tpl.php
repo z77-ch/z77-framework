@@ -44,8 +44,8 @@ foreach ($groups as $g) {
                  data-entity="navigation:<?= e((string)$page->getId()) ?>">
                 <div class="be-tree__row">
                     <span class="be-tree__toggle" aria-hidden="true"></span>
-                    <button type="button" class="be-tree__menu" title="Aktionen"
-                            data-fetch-get="/backend/content/meta-data/actions?navigation_id=<?= e((string)$page->getId()) ?>">⋮</button>
+                    <button type="button" class="be-tree__menu" title="Aktionen" aria-haspopup="menu" aria-expanded="false"
+                            data-menu-open="/backend/content/meta-data/actions?navigation_id=<?= e((string)$page->getId()) ?>">⋮</button>
                     <span class="be-tree__name"><?= e(t('nav.' . $page->getAction(), [], $editLanguage)) ?></span>
                     <span class="be-tree__url"><?= e($page->getUrl()) ?></span>
                     <span class="be-tree__route" data-field="status"><?= e($row['status']) ?></span>

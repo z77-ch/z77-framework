@@ -26,8 +26,8 @@
             <div class="be-tree__node" data-entity="translationUi:<?= e($row['key']) ?>">
                 <div class="be-tree__row">
                     <span class="be-tree__toggle" aria-hidden="true"></span>
-                    <button type="button" class="be-tree__menu" title="Aktionen"
-                            data-fetch-get="/backend/content/translation/actions?kind=ui&key=<?= e(rawurlencode($row['key'])) ?>">⋮</button>
+                    <button type="button" class="be-tree__menu" title="Aktionen" aria-haspopup="menu" aria-expanded="false"
+                            data-menu-open="/backend/content/translation/actions?kind=ui&key=<?= e(rawurlencode($row['key'])) ?>">⋮</button>
                     <span class="be-tree__name"><code><?= e($row['key']) ?></code></span>
                     <span class="be-tree__url" data-field="summary"><?= raw($row['summary']) ?></span>
                 </div>
@@ -52,8 +52,8 @@
             <div class="be-tree__node" data-entity="translationSlug:<?= e($row['canonical']) ?>">
                 <div class="be-tree__row">
                     <span class="be-tree__toggle" aria-hidden="true"></span>
-                    <button type="button" class="be-tree__menu" title="Aktionen"
-                            data-fetch-get="/backend/content/translation/actions?kind=slug&key=<?= e(rawurlencode($row['canonical'])) ?>">⋮</button>
+                    <button type="button" class="be-tree__menu" title="Aktionen" aria-haspopup="menu" aria-expanded="false"
+                            data-menu-open="/backend/content/translation/actions?kind=slug&key=<?= e(rawurlencode($row['canonical'])) ?>">⋮</button>
                     <span class="be-tree__name"><code><?= e($row['canonical']) ?></code></span>
                     <span class="be-tree__url" data-field="summary"><?= raw($row['summary']) ?></span>
                 </div>

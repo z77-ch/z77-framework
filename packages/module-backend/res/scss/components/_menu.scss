@@ -1,0 +1,92 @@
+// Row context menu — the ⋮ of a list row (owner 2026-10-22). ONE look for every row menu.
+//
+// Behaviour: core.js «context menu» ([data-menu-open] on the ⋮). It builds the box
+// `.z77-menu` (position: fixed, left/top from the ⋮'s rect — set as inline style by the
+// script) and fills it with the server's fragment:
+//
+//   .be-menu                    the card (role="menu"): surface, line, corner, shadow
+//     .be-menu__item            a row per action (<button> / <a>, role="menuitem"): icon + label
+//     .be-menu__item--danger    a destructive action (Löschen) — red
+//     .be-menu__form            a <form> around one item (data-fetch-post «Jetzt starten»)
+//     .be-menu__note            a line that is no action («keine Aktion möglich»), muted
+//     .be-menu__note--error     … a refusal with its reason (the backup over the download limit)
+//     .be-menu__note--warn      … a warning (the Drive: a public delivery)
+//     .be-menu__switch          a real `.be-switch--block` as a row (the Drive's «Aktiv») — no menuitem
+//
+// Tokens only — every palette and both themes follow.
+
+.z77-menu {
+    position: fixed;
+    // Above the windows (250) and the help (260); the messages stay above it.
+    z-index:  var(--z-overlay);
+    margin:   0;
+}
+
+.be-menu {
+    display:        flex;
+    flex-direction: column;
+    min-width:      12rem;
+    max-width:      min(22rem, calc(100vw - 8px));
+    max-height:     min(24rem, calc(100vh - 8px));
+    overflow-y:     auto;
+    padding:        4px;
+    background:     var(--be-surface);
+    border:         1px solid var(--be-line-strong);
+    border-radius:  var(--radius-card);
+    box-shadow:     var(--shadow-lg);
+    color:          var(--be-text);
+}
+
+.be-menu__form { display: contents; }
+
+.be-menu__item {
+    display:         flex;
+    align-items:     center;
+    gap:             var(--space-2);
+    width:           100%;
+    min-height:      2rem;
+    padding:         4px 10px;
+    border:          0;
+    border-radius:   var(--radius-sm);
+    background:      transparent;
+    color:           var(--be-text);
+    font:            inherit;
+    font-size:       var(--font-size-sm);
+    text-align:      left;
+    text-decoration: none;
+    white-space:     nowrap;
+    cursor:          pointer;
+
+    .be-icon { flex: none; color: var(--be-muted); }
+
+    &:hover,
+    &:focus-visible { background: var(--be-accent-soft); color: var(--be-accent); outline: none; }
+    &:hover .be-icon,
+    &:focus-visible .be-icon { color: currentColor; }
+    &:focus-visible { box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--be-accent) 45%, transparent); }
+}
+
+.be-menu__item--danger,
+.be-menu__item--danger .be-icon { color: var(--be-danger); }
+.be-menu__item--danger:hover,
+.be-menu__item--danger:focus-visible { background: color-mix(in srgb, var(--be-danger) 12%, transparent); color: var(--be-danger); }
+
+.be-menu__note {
+    margin:      0;
+    padding:     6px 10px;
+    color:       var(--be-muted);
+    font-size:   var(--font-size-sm);
+    white-space: normal;
+
+    code { word-break: break-all; }
+}
+.be-menu__note--error { color: var(--be-danger); }
+.be-menu__note--warn  { color: var(--be-warn); }
+
+// A real switch as a menu row (the Drive's «Aktiv»): it toggles server-side and keeps the menu open.
+.be-menu__switch {
+    padding:       2px 10px;
+    border-bottom: 1px solid var(--be-line);
+    margin-bottom: 2px;
+    font-size:     var(--font-size-sm);
+}

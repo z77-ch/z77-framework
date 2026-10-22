@@ -30,8 +30,8 @@ $renderNode = function(array $node, int $depth = 0) use (&$renderNode): void {
                        data-fetch-toggle="/backend/content/navigation/toggle-active?id=<?= e($nodeId) ?>"<?= $active ? ' checked' : '' ?>>
                 <span class="be-switch__track"><span class="be-switch__thumb"></span></span>
             </label>
-            <button type="button" class="be-tree__menu" title="Aktionen"
-                    data-fetch-get="/backend/content/navigation/actions?id=<?= e($nodeId) ?>">⋮</button>
+            <button type="button" class="be-tree__menu" title="Aktionen" aria-haspopup="menu" aria-expanded="false"
+                    data-menu-open="/backend/content/navigation/actions?id=<?= e($nodeId) ?>">⋮</button>
             <?php endif; ?>
             <span class="be-tree__name" data-field="name"><?= e($node['name']) ?></span>
             <span class="be-tree__url" data-field="url_display"><?= raw($node['urlDisplay']) ?></span>

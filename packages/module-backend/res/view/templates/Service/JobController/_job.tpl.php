@@ -34,8 +34,8 @@ $jobQs    = 'job=' . e(rawurlencode($job['key']));
         <?php else: ?>
         <span class="be-tree__switch" aria-hidden="true"></span>
         <?php endif; ?>
-        <button type="button" class="be-tree__menu" title="Aktionen"
-                data-fetch-get="/backend/service/job/actions?<?= $jobQs ?>">⋮</button>
+        <button type="button" class="be-tree__menu" title="Aktionen" aria-haspopup="menu" aria-expanded="false"
+                data-menu-open="/backend/service/job/actions?<?= $jobQs ?>">⋮</button>
         <span class="be-tree__name">
             <?= e($job['label']) ?>
             <code class="be-tree__key"><?= e($job['key']) ?></code>

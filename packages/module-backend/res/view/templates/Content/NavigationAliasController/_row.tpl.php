@@ -17,8 +17,8 @@
                    data-fetch-toggle="/backend/content/navigation-alias/toggle-active?id=<?= e($row['id']) ?>"<?= $row['active'] ? ' checked' : '' ?>>
             <span class="be-switch__track"><span class="be-switch__thumb"></span></span>
         </label>
-        <button type="button" class="be-tree__menu" title="Aktionen"
-                data-fetch-get="/backend/content/navigation-alias/actions?id=<?= e($row['id']) ?>">⋮</button>
+        <button type="button" class="be-tree__menu" title="Aktionen" aria-haspopup="menu" aria-expanded="false"
+                data-menu-open="/backend/content/navigation-alias/actions?id=<?= e($row['id']) ?>">⋮</button>
         <span class="be-tree__name"><code data-field="path"><?= e($row['path']) ?></code></span>
         <span class="be-tree__url" data-field="nav_label"><?= e($row['navLabel']) ?></span>
         <span class="be-tree__route" data-field="flags"><?= raw($row['flags']) ?></span>

@@ -58,8 +58,8 @@ $dbBlocked = $type === 'db' && !$dbConfigured;
             ?>
             <div class="be-list__item" data-entity="backup:<?= e($type . '/' . $entry->getFileName()) ?>">
                 <div class="be-list__row">
-                    <button type="button" class="be-tree__menu" title="Aktionen"
-                            data-fetch-get="/backend/service/backup/actions?type=<?= e($type) ?>&file=<?= e(rawurlencode($entry->getFileName())) ?>">⋮</button>
+                    <button type="button" class="be-tree__menu" title="Aktionen" aria-haspopup="menu" aria-expanded="false"
+                            data-menu-open="/backend/service/backup/actions?type=<?= e($type) ?>&file=<?= e(rawurlencode($entry->getFileName())) ?>">⋮</button>
                     <span class="be-list__cell be-list__cell--mono" title="<?= e($entry->getFileName()) ?>"><?= e($entry->getFileName()) ?></span>
                     <span class="be-list__cell be-list__cell--muted"><?= e($entry->getCreatedAt()->format('d.m.Y H:i')) ?></span>
                     <span class="be-list__cell be-list__cell--muted be-list__cell--num" data-priority="2"><?= e($fmtSize($entry->getSizeBytes())) ?></span>

@@ -57,7 +57,7 @@ $badge = [
             <?php // The year's actions in a ⋮ BEFORE the title, as every backend list row has
                   // them (owner 2026-10-10) — no buttons at the far right any more. ?>
             <?php if ($hasActions): ?>
-            <button type="button" class="be-tree__menu" title="Aktionen" data-fetch-get="<?= e($actionBase) ?>/actions?id=<?= e((string) $year->getId()) ?>">⋮</button>
+            <button type="button" class="be-tree__menu" title="Aktionen" aria-haspopup="menu" aria-expanded="false" data-menu-open="<?= e($actionBase) ?>/actions?id=<?= e((string) $year->getId()) ?>">⋮</button>
             <?php else: ?>
             <?php // Keeps the titles in one line — the ⋮'s size without its look or hover. ?>
             <span class="be-tree__menu be-tree__menu--placeholder" aria-hidden="true"></span>

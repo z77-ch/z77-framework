@@ -22,6 +22,11 @@
  *   K  the article picker's parts: pick-list steps, the `add-row` and `focus` commands (a clone
  *      of the template, `__i__` replaced, the value + change, the focus), the window context
  *      (data-window-with, autofocus, Esc), no HTML from strings
+ *   M  the row ⋮ as a context menu ([data-menu-open], owner 2026-10-22): one GET, one menu in
+ *      <body> placed at the ⋮ (below / above, opening right / left), keys (↑/↓/Home/End/Tab), Esc,
+ *      a click outside, the same ⋮ again, one at a time, an item first then close, a scroll,
+ *      a stale answer, an error envelope, a switch row that keeps it open — against core.js AND
+ *      the hand-patched core.min.js
  *
  * What it cannot prove: layout, focus, real event order — those need a browser.
  * Run: node tests/core-js.mjs
@@ -34,6 +39,8 @@ import vm from 'node:vm';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const SOURCE = readFileSync(join(ROOT, 'packages/kernel/shared/res/assets/js/core.js'), 'utf8');
+// The context menu (M) runs against the minified build too: core.min.js is patched by hand (js-build.md).
+const MIN_SOURCE = readFileSync(join(ROOT, 'packages/kernel/shared/res/assets/js/core.min.js'), 'utf8');
 
 let pass = 0;
 let fail = 0;
@@ -80,7 +87,7 @@ class El {
     focus() {}
 }
 
-function makeContext() {
+function makeContext(src = SOURCE) {
     const timers = [];
     const messages = new El('div');
     const flashes = new El('div');
@@ -110,8 +117,8 @@ function makeContext() {
     };
     ctx.window = ctx;
     vm.createContext(ctx);
-    vm.runInContext(SOURCE, ctx, { filename: 'core.js' });
-    return { ctx, document, messages, fetchQueue, timers };
+    vm.runInContext(src, ctx, { filename: src === SOURCE ? 'core.js' : 'core.min.js' });
+    return { ctx, document, messages, flashes, fetchQueue, timers };
 }
 
 function response({ status = 200, type = 'text/html', body = '' }) {
@@ -451,6 +458,163 @@ console.log('K  pick list, add-row, window context');
     ctx._Z77.core.fetch.handleEnvelope({ commands: [{ action: 'set-value', target: '#no-prefill', value: 'y', untouched: true }] }, '/x');
     check('K9 set-value untouched: an untouched field follows (data-prefill moves with it), a typed one keeps its value, a field without data-prefill is never written',
         followed && kept && plain.value === 'x', [label.value, label.getAttribute('data-prefill'), plain.value]);
+}
+
+// ── M: the row ⋮ as a context menu (owner 2026-10-22) — source AND the hand-patched core.min.js ──
+console.log('M  context menu ([data-menu-open])');
+for (const [label, src] of [['core.js', SOURCE], ['core.min.js', MIN_SOURCE]]) {
+    const { ctx, document, fetchQueue, timers, flashes } = makeContext(src);
+    const menu = ctx._Z77.core.menu;
+    const body = document.body;
+    document.documentElement.clientWidth = 1000;
+    ctx.innerHeight = 600;
+    const ITEMS = 'a[href], button:not([disabled]), input[type="checkbox"]:not([disabled])';
+    const ACTS = 'a[href], button';
+    const focusable = (el) => { el.focus = () => { document.activeElement = el; }; return el; };
+    const trigger = (url, rect) => {
+        const t = focusable(new El('button', { isConnected: true }));
+        t.setAttribute('data-menu-open', url);
+        t.setAttribute('aria-expanded', 'false');
+        t.closest = (sel) => (sel === '[data-menu-open]' ? t : null);
+        t.getBoundingClientRect = () => rect;
+        return t;
+    };
+    // The menu box core.js builds: three items (the second a data-fetch-get), a note; a stub layout size.
+    let made = [];
+    document.createElement = (tag) => {
+        const el = new El(tag, { offsetWidth: 192, offsetHeight: 100, isConnected: true });
+        if (tag === 'div') {
+            const item = (url) => {
+                const b = focusable(new El('button', { isConnected: true, dataset: url ? { fetchGet: url } : {} }));
+                b.closest = (sel) => (sel === ITEMS || sel === ACTS ? b : null);
+                return b;
+            };
+            el.items = [item(''), item('/backend/x/edit?id=1'), item('')];
+            // A real switch row (the Drive's «Aktiv»): focusable, but not an action that closes.
+            el.switch = focusable(new El('input', { isConnected: true, type: 'checkbox' }));
+            el.switch.closest = (sel) => (sel === ITEMS ? el.switch : null);
+            el.qsa[ITEMS] = el.items;
+            el.qsa['[data-fetch-get]'] = [el.items[1]];
+            el.note = new El('p', { isConnected: true });
+            el.contains = (x) => x === el || el.items.includes(x) || x === el.note || x === el.switch;
+            made.push(el);
+        }
+        return el;
+    };
+    menu.bind();
+    const click = (target) => { const e = { target, preventDefault() { this.prevented = true; } }; document.dispatch('click', e); return e; };
+    const key = (target, k) => { const e = { key: k, target, preventDefault() { this.prevented = true; }, stopPropagation() { this.stopped = true; } }; return e; };
+    const answer = async (i, body) => { fetchQueue[i].answer(response(body)); for (let n = 0; n < 4; n++) await tick(); };
+    const outside = new El('main', { isConnected: true });
+    outside.closest = () => null;
+    const HUB = '<div class="be-menu" role="menu"><button role="menuitem">A</button></div>';
+
+    const a = trigger('/backend/x/actions?id=1', { left: 300, right: 324, top: 100, bottom: 124 });
+    click(a);
+    check(`M1 [${label}] a click on the ⋮ sends one GET in fetch mode to its URL`,
+        fetchQueue.length === 1 && fetchQueue[0].url === '/backend/x/actions?id=1' && fetchQueue[0].init.headers['X-Requested-With'] === 'XMLHttpRequest', fetchQueue.map((q) => q.url));
+    await answer(0, { body: HUB });
+    let box = made[0];
+    check(`M2 [${label}] the answer opens ONE menu in <body>, the ⋮ aria-expanded, the first item focused`,
+        body.children.length === 1 && body.children[0] === box && box.innerHTML === HUB && box.getAttribute('data-z77-menu') === ''
+        && a.getAttribute('aria-expanded') === 'true' && document.activeElement === box.items[0] && menu.isOpen(), [body.children.length, a.attrs]);
+    check(`M3 [${label}] placed below the ⋮, opening to the right — left edges aligned (fixed, from its rect; owner «eher unten rechts»)`, box.style.left === '300px' && box.style.top === '126px', [box.style.left, box.style.top]);
+
+    const down = key(box.items[0], 'ArrowDown');
+    box.dispatch('keydown', down);
+    const atSecond = document.activeElement === box.items[1];
+    box.dispatch('keydown', key(box.items[1], 'End'));
+    const atEnd = document.activeElement === box.items[2];
+    box.dispatch('keydown', key(box.items[2], 'ArrowDown'));
+    const wrapped = document.activeElement === box.items[0];
+    box.dispatch('keydown', key(box.items[0], 'ArrowUp'));
+    const wrappedUp = document.activeElement === box.items[2];
+    box.dispatch('keydown', key(box.items[2], 'Home'));
+    check(`M4 [${label}] ↓ / End / ↓ wraps / ↑ wraps / Home move the focus over the items`,
+        down.prevented && atSecond && atEnd && wrapped && wrappedUp && document.activeElement === box.items[0]);
+
+    const esc = key(box.items[0], 'Escape');
+    document.dispatch('keydown', esc);
+    check(`M5 [${label}] Esc closes it (prevented — a window or dialog below keeps the key), the focus back on the ⋮`,
+        body.children.length === 0 && !menu.isOpen() && esc.prevented && esc.stopped && a.getAttribute('aria-expanded') === 'false' && document.activeElement === a);
+
+    click(a);
+    await answer(1, { body: HUB });
+    box = made[1];
+    document.activeElement = box.items[0];
+    click(outside);
+    check(`M6 [${label}] a click outside closes it, the focus is not pulled back`, body.children.length === 0 && document.activeElement !== a);
+
+    click(a);
+    await answer(2, { body: HUB });
+    click(a);
+    check(`M7 [${label}] a second click on the same ⋮ closes it (no new request)`, body.children.length === 0 && fetchQueue.length === 3, fetchQueue.length);
+
+    const b = trigger('/backend/x/actions?id=2', { left: 300, right: 324, top: 200, bottom: 224 });
+    click(a);
+    await answer(3, { body: HUB });
+    const first = made[made.length - 1];
+    click(b);
+    const goneAtOnce = !body.children.includes(first);
+    await answer(4, { body: HUB });
+    check(`M8 [${label}] one at a time: another ⋮ closes the first at once and opens its own`,
+        goneAtOnce && body.children.length === 1 && body.children[0] === made[made.length - 1]
+        && a.getAttribute('aria-expanded') === 'false' && b.getAttribute('aria-expanded') === 'true');
+
+    box = made[made.length - 1];
+    const tCount = timers.length;
+    box.items[1].dispatch('click', {});       // the item's own listener (wire(): data-fetch-get)
+    click(box.items[1]);                      // … then the click reaches the document
+    const stillOpen = body.children.length === 1;
+    timers.slice(tCount).forEach((t) => t.fn());
+    check(`M9 [${label}] an item click runs the item first (its data-fetch-get GET — the dialog), then closes the menu, the focus on the ⋮`,
+        fetchQueue.length === 6 && fetchQueue[5].url === '/backend/x/edit?id=1' && stillOpen && body.children.length === 0 && document.activeElement === b, fetchQueue.map((q) => q.url));
+
+    const near = trigger('/backend/x/actions?id=3', { left: 950, right: 974, top: 560, bottom: 584 });
+    click(near);
+    await answer(6, { body: HUB });
+    box = made[made.length - 1];
+    check(`M10 [${label}] no room below → it opens above; no room on the right → it opens to the left (right edges aligned)`,
+        box.style.top === '458px' && box.style.left === '782px', [box.style.top, box.style.left]);
+    box.dispatch('keydown', key(box.items[0], 'Tab'));
+    check(`M11 [${label}] Tab closes it and gives the focus back to the ⋮`, body.children.length === 0 && document.activeElement === near);
+
+    click(a);
+    await answer(7, { body: HUB });
+    document.dispatch('scroll', { target: made[made.length - 1].note });
+    const keptOnInnerScroll = body.children.length === 1;
+    document.dispatch('scroll', { target: outside });
+    check(`M12 [${label}] a scroll inside the menu keeps it; a scroll outside closes it (a fixed box must not float away from its row)`,
+        keptOnInnerScroll && body.children.length === 0);
+
+    const count = made.length;
+    click(a);
+    click(b);
+    await answer(8, { body: HUB });
+    const staleDropped = made.length === count;
+    await answer(9, { body: HUB });
+    check(`M13 [${label}] a slow answer for a replaced request opens nothing; the latest one opens`,
+        staleDropped && body.children.length === 1 && b.getAttribute('aria-expanded') === 'true');
+    document.dispatch('keydown', key(outside, 'Escape'));
+
+    click(a);
+    await answer(10, { status: 404, type: 'application/json', body: { status: 'error', flashes: [{ type: 'error', text: 'Backup nicht gefunden' }], messages: [] } });
+    check(`M14 [${label}] an error envelope opens no menu; its flash is shown`,
+        body.children.length === 0 && !menu.isOpen() && flashes.children.some((f) => f.children[0] && f.children[0].textContent === 'Backup nicht gefunden'));
+
+    click(a);
+    await answer(11, { body: HUB });
+    box = made[made.length - 1];
+    box.qsa[ITEMS] = [box.switch].concat(box.items);
+    document.activeElement = box.items[2];
+    box.dispatch('keydown', key(box.items[2], 'ArrowDown'));
+    const switchFocused = document.activeElement === box.switch;
+    const before = timers.length;
+    click(box.switch);
+    timers.slice(before).forEach((t) => t.fn());
+    check(`M15 [${label}] a switch row (the Drive's «Aktiv») takes the focus in the ↑/↓ round and keeps the menu open when it toggles`,
+        switchFocused && body.children.length === 1 && menu.isOpen());
+    document.dispatch('keydown', key(outside, 'Escape'));
 }
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed');

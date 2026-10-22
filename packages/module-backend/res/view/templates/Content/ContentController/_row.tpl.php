@@ -26,8 +26,8 @@ $qs = $row['qs'];
         <?php endif; ?>
             <span class="be-switch__track"><span class="be-switch__thumb"></span></span>
         </label>
-        <button type="button" class="be-tree__menu" title="Aktionen"
-                data-fetch-get="/backend/content/content/actions?<?= e($qs) ?>">⋮</button>
+        <button type="button" class="be-tree__menu" title="Aktionen" aria-haspopup="menu" aria-expanded="false"
+                data-menu-open="/backend/content/content/actions?<?= e($qs) ?>">⋮</button>
         <span class="be-tree__name" data-field="name"><?= e($row['name']) ?></span>
         <span class="be-tree__url"><?= e($c->getSlug()) ?></span>
         <span class="be-tree__route" data-field="meta"><?= e($row['meta']) ?></span>

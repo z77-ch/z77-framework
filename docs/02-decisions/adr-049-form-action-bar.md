@@ -132,6 +132,23 @@ per einfachem Esc oder ×-Klick schliessen, Fenster mit Daten sollen nachgefragt
   (POPUP-ESC-001 stays). A WINDOW (ADR-047) with entered data asks before it closes (× / Esc /
   «Schliessen», `dirty` forms) — unchanged.
 
+## Addendum 2026-10-22 — a row's ⋮ is a context menu, not a dialog (owner)
+
+The owner looked at the ⋮ dialog «Aktionen — «Home»» (header, action row with «Schliessen», ×,
+full screen, 2–7 buttons): «es ist eigentlich ein Context-Menu … es sollte direkt am betroffenen
+Element neben dem Öffnungszeichen hängen. Das kann core.js sehr gut koordinieren. Ein Esc oder ein
+Klick ausserhalb würde es einfach wieder schliessen. Kein ×, kein Schliessen, kein Header, auch
+kein Fullscreen.»
+
+- A list of actions is no dialog, so the action row of this ADR does not apply to it: the
+  `actions` fragment renders only the items (`.be-menu`), core.js shows them at the ⋮
+  (`data-menu-open`, fetch.md «context menu», MENU-001). The dialog an item opens keeps its row.
+- Only the ⋮ hubs change; nothing else. The hubs that hold more than actions — contact
+  (addresses), VAT tax code (rates) — stay dialogs until the owner decides where that content
+  goes. The Drive's ⋮ (module-dms) became a menu the same day, its «Aktiv» switch a row in it.
+- Placement «abhängig vom Platz im Viewport, eher unten rechts» (owner): below the ⋮, opening
+  to the right; up / to the left only when the viewport leaves no room.
+
 ## Rejected Alternatives
 
 - **Buttons only at the end** — the state before; the owner's objection.

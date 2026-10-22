@@ -16,8 +16,8 @@ $labels = array_map(fn(string $r) => $roleLabels[$r] ?? $r, $user->getRoles());
      data-entity="backend-user:<?= e($user->getId()) ?>">
     <div class="be-tree__row" draggable="true">
         <span class="be-tree__toggle" aria-hidden="true"></span>
-        <button type="button" class="be-tree__menu" title="Aktionen"
-                data-fetch-get="/backend/system/backend-user/actions?id=<?= e($user->getId()) ?>">⋮</button>
+        <button type="button" class="be-tree__menu" title="Aktionen" aria-haspopup="menu" aria-expanded="false"
+                data-menu-open="/backend/system/backend-user/actions?id=<?= e($user->getId()) ?>">⋮</button>
         <span class="be-tree__name"><?= e($user->getUsername()) ?><?php if ($isSelf): ?> <small style="color:var(--be-muted,#94a3b8)">(du)</small><?php endif; ?></span>
         <span class="be-tree__url"><?= e($labels ? implode(', ', $labels) : '—') ?></span>
         <span class="be-tree__route"></span>

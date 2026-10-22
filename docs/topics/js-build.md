@@ -74,6 +74,7 @@ Such a file is NOT re-saved through the minify-on-save extension: its `.min.js` 
 
 ## pending
 
+- **`core.min.js` carries a hand patch since 2026-10-22** (the context menu, MENU-001 in [`fetch.md`](fetch.md) — `_Z77.core.menu` and its `bind()` in the boot, terser style; `tests/core-js.mjs` M runs against the patched file too). Owner: re-save `core.js` in VS Code so the editor's build replaces the patch, then `php tests/js-min-markers.php` and `node tests/core-js.mjs` green.
 - **Owner: re-save in VS Code** `packages/kernel/shared/res/assets/js/core.js` (changed 2026-10-13), `packages/kernel/shared/res/assets/js/upload.js` and `packages/module-dms/res/assets/js/documents/upload-poster.js` (no `.min.js` yet); then `php tests/js-min-markers.php` green, commit.
 - Run `php tests/js-min-markers.php` in whatever pre-deploy step exists once there is one (`.releases/check.php` could call it).
 - Decide whether `.min.js` should carry a source map. Not today: the map would need its own versioned name beside `name_at-{mtime}.min.js` and nothing currently reads one.

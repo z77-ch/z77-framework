@@ -187,7 +187,7 @@ check('variant row carries data-entity content:<slug>.<lang>.<variant>', str_con
 check('name + meta cells are addressable', str_contains($list, 'data-field="name">FAQ H<') && str_contains($list, 'data-field="meta">Variante herbst-a7f3k2 · de<'));
 check('list container receives inserted rows', str_contains($list, 'data-entity-list="content"'));
 check('rows come from the _row partial the insert answer renders',
-    substr_count($list, 'data-entity="content:') === 2 && str_contains($list, 'data-fetch-get="/backend/content/content/actions?'));
+    substr_count($list, 'data-entity="content:') === 2 && str_contains($list, 'data-menu-open="/backend/content/content/actions?'));
 $empty = (new StubRenderer())->render(
     __DIR__ . '/../packages/module-backend/res/view/templates/Content/ContentController/listAction.tpl.php',
     ['rows' => [], 'editLanguage' => 'de', 'editLanguages' => ['de']]
@@ -198,7 +198,7 @@ $aliasRow = (new StubRenderer())->partial('Content/NavigationAliasController/_ro
 ]], 'Z77\\Module\\Backend');
 check('alias row: data-entity + wired triggers in the insert markup',
     str_contains($aliasRow, 'data-entity="navigationAlias:7"') && str_contains($aliasRow, 'data-fetch-toggle=')
-    && str_contains($aliasRow, 'data-fetch-get="/backend/content/navigation-alias/actions?id=7"'));
+    && str_contains($aliasRow, 'data-menu-open="/backend/content/navigation-alias/actions?id=7"') && str_contains($aliasRow, 'aria-haspopup="menu" aria-expanded="false"'));
 
 echo "\n{$pass} passed, {$fail} failed\n";
 exit($fail === 0 ? 0 : 1);

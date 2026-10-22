@@ -60,6 +60,8 @@ const MARKERS = [
         'add-row',                  // … «+ Artikel»: the chosen article lands in a new row
         'data-help-key',            // HELP-002
         'refresh-region',           // ADR-047 windows
+        'data-menu-open',           // the row ⋮ as a context menu (owner 2026-10-22)
+        'data-z77-menu',
     ],
 ];
 

@@ -742,8 +742,8 @@ label.be-list__cell { cursor: pointer; }
  * Opt-in per container: add `be-tree--hub` on a `.be-tree`. Reusable across modules.
  * Row = fixed left slots [toggle | active-switch | ⋮ menu] then [name] [info…], laid
  * out with an EXPLICIT grid so every row aligns even when a slot is empty (e.g. a
- * view without an active toggle). The ⋮ opens a per-row action hub modal (see the
- * `actions` endpoint + `be-actions` below); the inline edit/trash icons are gone. */
+ * view without an active toggle). The ⋮ opens the row's context menu (`data-menu-open`,
+ * the `actions` endpoint, `_menu.scss`); the inline edit/trash icons are gone. */
 .be-tree--hub .be-tree__row {
     display:               grid;
     grid-template-columns: 1rem 2.4rem 1.6rem minmax(0, auto) minmax(0, 1fr) auto;
@@ -844,11 +844,13 @@ label.be-list__cell { cursor: pointer; }
     line-height:      1;
     transition:       background var(--transition-fast), color var(--transition-fast);
 }
-.be-tree__menu:hover { background: var(--be-surface2); color: var(--be-text); }
+.be-tree__menu:hover,
+.be-tree__menu[aria-expanded="true"] { background: var(--be-surface2); color: var(--be-text); }   /* its context menu is open (_menu.scss) */
 /* Holds the ⋮'s place where a row has no actions, so the titles stay in one line. */
 .be-tree__menu--placeholder { visibility: hidden; }
 
-/* Row action hub (⋮) modal content — module-agnostic; any `actions` endpoint reuses it. */
+/* Row action hub as a DIALOG — only the hubs that still hold more than actions (module-contact
+ * addresses, module-vat rates). A row ⋮ of actions is a context menu (_menu.scss). */
 .be-actions__list { display: flex; flex-direction: column; gap: .35rem; }
 .be-actions__item { justify-content: flex-start; }
 

@@ -97,8 +97,11 @@ Details and selectors: [css-backend.md → button / tab / switch vocabulary](../
   page, a fetch region. Write only the rows. → [listing.md](../topics/listing.md)
 - The first cell of a row is a **state icon** that opens the row as a **window** (ADR-047); the
   other cells are `<label for>` of their column's search field.
-- Per-row on/off: a `be-switch` in a column headed «Aktiv». Per-row actions: the ⋮ menu, which
-  ALWAYS opens the row's action menu.
+- Per-row on/off: a `be-switch` in a column headed «Aktiv». Per-row actions: the ⋮, which
+  ALWAYS opens the row's actions as a **context menu** hanging at the ⋮ — no dialog, no header,
+  no «Schliessen», no ×; Esc or a click outside closes it (owner 2026-10-22). Markup
+  `data-menu-open` on the ⋮, the `actions` action renders only `.be-menu` items →
+  [fetch.md → context menu](../topics/fetch.md). An item opens its dialog as before.
 - **Selection-bound actions** («Buchungsdruck …» of the invoices — «Verbuchen …» / «Definitiv stellen» until 2026-10-10 —, «Mahnlauf starten») stand in a bar ABOVE the
   list, green, never at its end.
 - **A pending step must be visible**: when data waits for a follow-up step, the top of the page
@@ -161,7 +164,7 @@ Details and selectors: [css-backend.md → button / tab / switch vocabulary](../
 2. Navigation seed (area, groups, leaves; master data under Stammdaten).
 3. Per entry: the action cell (§2) — or deliberately empty; rail-top selection if a choice holds for the whole area.
 4. Toolbar: tabs first, tools after, nothing primary.
-5. Lists as standard lists; row icon → window; switches «Aktiv»; ⋮ → action menu.
+5. Lists as standard lists; row icon → window; switches «Aktiv»; ⋮ → context menu (`data-menu-open`).
 6. Selection-bound actions in a bar above the list; pending steps announced at the top.
 7. Forms: save in the action cell; long forms as radio tabs.
 8. Help with field sections where a field needs explaining.

@@ -29,8 +29,8 @@
             </span>
             <?php endif; ?>
 
-            <button type="button" class="be-tree__menu" title="Aktionen"
-                    data-fetch-get="/backend/service/email-settings/actions?key=<?= e(rawurlencode($row['key'])) ?>">⋮</button>
+            <button type="button" class="be-tree__menu" title="Aktionen" aria-haspopup="menu" aria-expanded="false"
+                    data-menu-open="/backend/service/email-settings/actions?key=<?= e(rawurlencode($row['key'])) ?>">⋮</button>
 
             <span class="be-tree__name" data-field="name"><code><?= e($row['key']) ?></code>
                 <?php if (!$row['hasConfig']): ?>

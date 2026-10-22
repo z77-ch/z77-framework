@@ -111,7 +111,7 @@ service → backup`), section «Service» in the topbar (navigation seed ids
 | `listAction` | HTML | three type sections, history rows, per-type "Jetzt sichern" (inline `data-fetch-post` form) |
 | `runAction` | Fetch POST | run one backup synchronously (`set_time_limit(0)`); service errors become flash errors |
 | `downloadAction` | GET | archive as `FileResponse` (`application/zip`, delivery=php — cyon has no X-Sendfile); refused above 500 MB (BACKUP-DOWNLOAD-LIMIT-001) |
-| `actionsAction` | Fetch GET | ⋮ hub: download link + delete (LIST-ACTIONS-HUB-001); above 500 MB no link, the server path for SFTP instead |
+| `actionsAction` | Fetch GET | the ⋮ context menu (`data-menu-open`, MENU-001 in fetch.md, owner 2026-10-22): download link + delete; above 500 MB no link, a short line with the server path for SFTP instead |
 | `confirmDeleteAction` / `removeAction` | Fetch | modal + per-archive entity CSRF token (scope `backup`); answers IN PLACE (BACKUP-UI-ACTIONS-001) |
 
 **Download limit (BACKUP-DOWNLOAD-LIMIT-001, 2026-10-16).** The download streams through PHP,

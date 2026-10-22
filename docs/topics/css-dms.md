@@ -1,6 +1,6 @@
 # css-dms
 
-2026-10-17
+2026-10-22
 
 ## entry
 
@@ -160,6 +160,7 @@ host only and, at equal specificity but later load order, would override the bin
 
 ## known issues
 
+- **DMS-MENU-001** — added 2026-10-22 (documents.md). Don't assume the Drive's ⋮ menu is styled by the fragment: core.js builds the menu box in `<body>`, OUTSIDE the `.dms` wrapper — as the dialog it replaced, it takes the HOST's classes (`.be-menu`, `.be-menu__switch`, `.be-switch`, `.be-icon` from the backend's `components/_menu.scss`), so no `--dms-*` mapping is needed and `_dms-host.scss` stays as it is. A non-backend host that embeds the Drive must bring `.be-menu` (it had to bring `.be-actions` / `.be-switch` before). Only the trigger is a DMS look: `.dms-rowmenu[aria-expanded="true"]` keeps its hover colours while its menu is open (`base/_base.scss`).
 - **DMS-HOST-BIND-002** — added 2026-10-17 (css-backend.md audit point 5, ADR-051 addendum).
   Don't assume the backend binds colours only: `_dms-host.scss` now also binds the two faces
   (`--dms-font-family-base` / `-mono` → the backend's Instrument Sans / IBM Plex Mono) and the

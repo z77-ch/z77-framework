@@ -132,5 +132,53 @@ foreach ($left as $file) {
     echo "       - " . substr($file, strlen(__DIR__ . '/../')) . "\n";
 }
 
+echo "lint: a row ⋮ of actions is a context menu, not a dialog (owner 2026-10-22)\n";
+$pkg = __DIR__ . '/../packages/';
+$menus = [
+    'module-backend/res/view/templates/Content/ContentController/actions.tpl.php'           => 'module-backend/res/view/templates/Content/ContentController/_row.tpl.php',
+    'module-backend/res/view/templates/Content/MetaDataController/actions.tpl.php'          => 'module-backend/res/view/templates/Content/MetaDataController/listAction.tpl.php',
+    'module-backend/res/view/templates/Content/NavigationController/actions.tpl.php'        => 'module-backend/res/view/templates/Content/NavigationController/listAction.tpl.php',
+    'module-backend/res/view/templates/Content/NavigationAliasController/actions.tpl.php'   => 'module-backend/res/view/templates/Content/NavigationAliasController/_row.tpl.php',
+    'module-backend/res/view/templates/Content/TranslationController/actions.tpl.php'       => 'module-backend/res/view/templates/Content/TranslationController/listAction.tpl.php',
+    'module-backend/res/view/templates/Service/BackupController/actions.tpl.php'            => 'module-backend/res/view/templates/Service/BackupController/_section.tpl.php',
+    'module-backend/res/view/templates/Service/EmailSettingsController/actions.tpl.php'     => 'module-backend/res/view/templates/Service/EmailSettingsController/_row.tpl.php',
+    'module-backend/res/view/templates/Service/JobController/actions.tpl.php'               => 'module-backend/res/view/templates/Service/JobController/_job.tpl.php',
+    'module-backend/res/view/templates/System/BackendUserController/actions.tpl.php'        => 'module-backend/res/view/templates/System/BackendUserController/_row.tpl.php',
+    'module-financial/res/view/templates/Backend/FiscalYearController/actions.tpl.php'      => 'module-financial/res/view/templates/Backend/FiscalYearController/listAction.tpl.php',    'module-dms/res/view/templates/Documents/DriveController/_actions.tpl.php'               => 'module-dms/res/view/templates/Documents/DriveController/_list.tpl.php',
+];
+$asDialog = [];
+$badTrigger = [];
+foreach ($menus as $hub => $list) {
+    $h = (string) file_get_contents($pkg . $hub);
+    $l = (string) file_get_contents($pkg . $list);
+    if (!str_contains($h, '<div class="be-menu" role="menu"') || !str_contains($h, 'role="menuitem"')
+        || preg_match('/be-modal__header|be-modal__body|modalActions|data-popup-close/', $h) === 1) {
+        $asDialog[] = $hub;
+    }
+    if (preg_match('/aria-haspopup="menu" aria-expanded="false"\s+data-menu-open="[^"]*\/actions\?/', $l) !== 1
+        || preg_match('/data-fetch-get="[^"]*\/actions\?/', $l) === 1) {
+        $badTrigger[] = $list;
+    }
+}
+// The Drive's folder tree opens the same menu (documents: the list above).
+$tree = (string) file_get_contents($pkg . 'module-dms/res/view/templates/Documents/DriveController/_tree.tpl.php');
+if (preg_match('/aria-haspopup="menu" aria-expanded="false" data-menu-open="[^"]*\/drive\/actions\?type=folder/', $tree) !== 1 || str_contains($tree, 'data-modal="<?= $base ?>/drive/actions')) {
+    $badTrigger[] = 'module-dms/res/view/templates/Documents/DriveController/_tree.tpl.php';
+}
+check('the eleven action hubs (with the Drive) render only the menu: role="menu" + menuitems, no header, no action row, no close (' . count($asDialog) . ' left)', $asDialog === []);
+check('their ⋮ opens the menu (data-menu-open + aria-haspopup/aria-expanded), none fetches a dialog any more (' . count($badTrigger) . ' left)', $badTrigger === []);
+foreach (array_merge($asDialog, $badTrigger) as $file) {
+    echo "       - packages/{$file}\n";
+}
+$job = (string) file_get_contents($pkg . 'module-backend/res/view/templates/Service/JobController/actions.tpl.php');
+check('the job menu keeps «Jetzt starten» as its small data-fetch-post form', preg_match('/<form class="be-menu__form" role="none" data-fetch-post="\/backend\/service\/job\/run">.*?type="submit" class="be-menu__item"/s', $job) === 1);
+check('contact and VAT hubs stay dialogs until the owner decides (addresses / rates inside)',
+    str_contains((string) file_get_contents($pkg . 'module-contact/res/view/templates/Backend/ContactController/_row.tpl.php'), '/actions?id=')
+    && preg_match('/data-fetch-get="[^"]*\/actions\?id=/', (string) file_get_contents($pkg . 'module-vat/res/view/templates/Backend/TaxCodeController/_row.tpl.php')) === 1);
+$menuScss = (string) file_get_contents($pkg . 'module-backend/res/scss/components/_menu.scss');
+check('_menu.scss: the fixed box above the windows, the card, the danger item; compiled into base.scss',
+    preg_match('/\.z77-menu\s*\{[^}]*position:\s*fixed;[^}]*z-index:\s*var\(--z-overlay\)/s', $menuScss) === 1
+    && str_contains($menuScss, '.be-menu__item--danger') && str_contains((string) file_get_contents($pkg . 'module-backend/res/scss/base.scss'), "@use 'components/menu';"));
+
 echo "\n{$pass} passed, {$fail} failed\n";
 exit($fail === 0 ? 0 : 1);
