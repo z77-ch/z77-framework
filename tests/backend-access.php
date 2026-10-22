@@ -285,5 +285,15 @@ check('menu href of a ref target carries ?via=<own id>', $menu->href($cursorEntr
 check('menu href of an entry without refs stays plain', $menu->href($cursorEntries[2]) === '/backend/content/navigation/list', $menu->href($cursorEntries[2]));
 check('menu href of a ref stays target + ?via=<refId>', $menu->href($cursorEntries[3]) === '/backend/content/content/list?via=40', $menu->href($cursorEntries[3]));
 
+// The switch INTO the backend (frontend admin overlay «Backend») lands on the dashboard (owner
+// 2026-10-22): backendConfig declares `viewAreaEntry`; NavigationService::resolveViewAreaUrl() asks it
+// first (through the caller's access rule) and falls back to the first menu page.
+$backendCfg = require __DIR__ . '/../packages/module-backend/src/App/Config/backendConfig.inc.php';
+$navSrc     = file_get_contents(__DIR__ . '/../packages/kernel/core/src/Services/NavigationService.php');
+check('the backend declares the dashboard as its entry page (viewAreaEntry)',
+    ($backendCfg['viewAreaEntry'] ?? null) === ['backend', 'system', 'dashboard', 'overview']);
+check('resolveViewAreaUrl asks the declared entry first, through $allows, before the menu scan',
+    preg_match('/getViewAreaEntry\(\$moduleKey\).*?\$allows === null \|\| \$allows\(\$probe\).*?foreach \(array_keys\(\$this->moduleManager->getNavSlots/s', $navSrc) === 1);
+
 echo "\n{$pass} passed, {$fail} failed\n";
 exit($fail === 0 ? 0 : 1);

@@ -29,6 +29,10 @@ return [
     'viewArea'      => true,
     // Display label of this environment (was the NavigationGroup env-row label).
     'viewAreaLabel' => 'Backend',
+    // Entry page of this environment — where a switch INTO it lands (the frontend admin overlay's
+    // «Backend», owner 2026-10-22: the dashboard, as after the login). [module, group, controller,
+    // action]; used when the user may reach it, else the first menu page (NavigationService).
+    'viewAreaEntry' => ['backend', 'system', 'dashboard', 'overview'],
     // Navigation slots (render areas) of this environment: ordered map slotKey → label.
     // Full slug = `{moduleKey}-{slotKey}` (e.g. `backend-main`). `main` = topbar
     // sections/sidebar; `auth` = login/logout routing entries (not rendered in UI).
