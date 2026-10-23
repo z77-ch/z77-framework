@@ -2,6 +2,7 @@
 
 namespace Z77\Module\Mandator\Mail;
 
+use Z77\Shared\Files\LocalFiles;
 use Z77\Core\DI;
 use Z77\Module\Mandator\Services\CurrentMandator;
 use Z77\Shared\Mail\InlineImage;
@@ -24,10 +25,9 @@ final class EmailLogo implements InlineImageSource
     {
         $mandator = (new CurrentMandator(DI::getUnifiedEntityManager()))->find();
         $path     = $mandator !== null ? trim($mandator->getEmailLogoPath()) : '';
-        if ($path === '' || !defined('ABS_BASE_PATH')) {
-            return null;
-        }
+        // A project file or a Drive `/media` path (kernel LocalFiles, 2026-10-23).
+        $file = $path !== '' ? LocalFiles::path($path) : null;
 
-        return InlineImage::fromFile(ABS_BASE_PATH . '/' . ltrim($path, '/'), $mandator->getName());
+        return $file !== null ? InlineImage::fromFile($file, $mandator->getName()) : null;
     }
 }

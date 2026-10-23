@@ -50,9 +50,10 @@ if ($contact !== '') {
     $next += 4.5;
 }
 
-$logo = trim($m->getLogoPath());
-if ($logo !== '' && defined('ABS_BASE_PATH') && is_file(ABS_BASE_PATH . '/' . ltrim($logo, '/'))) {
-    $pdf->image(ABS_BASE_PATH . '/' . ltrim($logo, '/'), $pdf->pageWidth() - $x - $logoWidth, $y, $logoWidth, 0);
+// A project file or a Drive `/media` path (kernel LocalFiles, 2026-10-23).
+$logo = \Z77\Shared\Files\LocalFiles::path($m->getLogoPath());
+if ($logo !== null) {
+    $pdf->image($logo, $pdf->pageWidth() - $x - $logoWidth, $y, $logoWidth, 0);
 }
 
 $pdf->setY(max($next, $y + 24));
