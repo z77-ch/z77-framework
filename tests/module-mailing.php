@@ -827,7 +827,7 @@ echo "N. The sender identity (owner 2026-10-23): the account sends, the person s
 $em        = $wireDi();
 $db->executeStatement('DELETE FROM mail_outbox');
 $service   = new OutboxService(DI::getUnifiedEntityManager(), $providers, DI::getEmailService(), new JobQueue(DI::getUnifiedEntityManager()));
-$peter     = new \Z77\Shared\Mail\SenderIdentity('Peter Ruepp', 'peter.ruepp@z77.ch');
+$peter     = new \Z77\Shared\Mail\SenderIdentity('Max Muster', 'max.muster@example.ch');
 $signed    = OutboxDraft::html('kunde@example.ch', 'Rechnung 1 — Muster AG', '<p>Hallo</p>')->withSender($peter, 7)->withSource('invoice:1');
 check('N1 a draft with a valid identity has no problem; with an invalid one, or with Reply-To as well, it is refused',
     $service->problems($signed) === []
@@ -837,8 +837,8 @@ check('N1 a draft with a valid identity has no problem; with an invalid one, or 
 $row = $service->queue($signed, 'peter');
 $em  = $wireDi();
 $stored = $db->fetchAssociative('SELECT sender_user_id, sender_name, sender_email, reply_to, created_by FROM mail_outbox WHERE id = ?', [$row->getId()]);
-check('N2 the row records WHO triggered it and the identity as a snapshot: user id 7, «Peter Ruepp», peter.ruepp@z77.ch; reply_to stays empty',
-    (int) $stored['sender_user_id'] === 7 && $stored['sender_name'] === 'Peter Ruepp' && $stored['sender_email'] === 'peter.ruepp@z77.ch' && $stored['reply_to'] === '' && $stored['created_by'] === 'peter', json_encode($stored));
+check('N2 the row records WHO triggered it and the identity as a snapshot: user id 7, «Max Muster», max.muster@example.ch; reply_to stays empty',
+    (int) $stored['sender_user_id'] === 7 && $stored['sender_name'] === 'Max Muster' && $stored['sender_email'] === 'max.muster@example.ch' && $stored['reply_to'] === '' && $stored['created_by'] === 'peter', json_encode($stored));
 $plain = $service->queue(OutboxDraft::html('k2@example.ch', 'Ohne Person', '<p>x</p>')->withReplyTo('buero@example.ch'), 'system');
 check('N3 a draft without identity stores none (null / empty) — the mail of the account alone, its own Reply-To kept', (function () use ($db, $plain): bool {
     $r = $db->fetchAssociative('SELECT sender_user_id, sender_name, sender_email, reply_to FROM mail_outbox WHERE id = ?', [$plain->getId()]);
@@ -850,20 +850,20 @@ $job()->run($context());
 $byTo = [];
 foreach ($transport->sent as $sent) { $byTo[$sent['recipients'][0]] = $sent; }
 $signedData = $byTo['kunde@example.ch']['data'] ?? '';
-check('N4 sent: envelope sender and From ADDRESS = the account (outbox@example.ch), From NAME = the identity\'s, Reply-To = «"Peter Ruepp" <peter.ruepp@z77.ch>»',
-    ($byTo['kunde@example.ch']['sender'] ?? '') === 'outbox@example.ch' && preg_match('/^From: "Peter Ruepp" <outbox@example\.ch>\r$/m', $signedData) === 1
-    && preg_match('/^Reply-To: "Peter Ruepp" <peter\.ruepp@z77\.ch>\r$/m', $signedData) === 1, substr($signedData, 0, 400));
+check('N4 sent: envelope sender and From ADDRESS = the account (outbox@example.ch), From NAME = the identity\'s, Reply-To = «"Max Muster" <max.muster@example.ch>»',
+    ($byTo['kunde@example.ch']['sender'] ?? '') === 'outbox@example.ch' && preg_match('/^From: "Max Muster" <outbox@example\.ch>\r$/m', $signedData) === 1
+    && preg_match('/^Reply-To: "Max Muster" <max\.muster@example\.ch>\r$/m', $signedData) === 1, substr($signedData, 0, 400));
 $plainData = $byTo['k2@example.ch']['data'] ?? '';
 check('N5 … the mail without identity keeps the config\'s From name and its own Reply-To', preg_match('/^From: "Z77 Test" <outbox@example\.ch>\r$/m', $plainData) === 1 && preg_match('/^Reply-To: buero@example\.ch\r$/m', $plainData) === 1);
 $deliveries = DI::getUnifiedEntityManager()->getRepository(OutboxMail::class)->deliveriesOf(['invoice:1']);
-check('N6 deliveriesOf() names the identity a mail went out as (`sender`, `sender_email`)', ($deliveries['invoice:1'][0]['sender'] ?? '') === 'Peter Ruepp' && ($deliveries['invoice:1'][0]['sender_email'] ?? '') === 'peter.ruepp@z77.ch');
+check('N6 deliveriesOf() names the identity a mail went out as (`sender`, `sender_email`)', ($deliveries['invoice:1'][0]['sender'] ?? '') === 'Max Muster' && ($deliveries['invoice:1'][0]['sender_email'] ?? '') === 'max.muster@example.ch');
 $useRequest(['id' => (string) $row->getId(), 'window' => '1']);
 $h = $host();
 $h->detailAction();
 $win = $render('detail', $h->context);
-check('N7 the window: «Ausgelöst von» peter als «Peter Ruepp <peter.ruepp@z77.ch>» (user id), «Antwort an» the identity, «Absender» its name with the account\'s address',
-    str_contains($win, 'Ausgelöst von:</span> peter als Peter Ruepp &lt;peter.ruepp@z77.ch&gt; (Benutzer-Id 7)') && str_contains($win, 'Antwort an:</span> Peter Ruepp &lt;peter.ruepp@z77.ch&gt;')
-    && str_contains($win, '«Peter Ruepp» mit der Adresse aus der E-Mail-Konfiguration'), strip_tags($win));
+check('N7 the window: «Ausgelöst von» peter als «Max Muster <max.muster@example.ch>» (user id), «Antwort an» the identity, «Absender» its name with the account\'s address',
+    str_contains($win, 'Ausgelöst von:</span> peter als Max Muster &lt;max.muster@example.ch&gt; (Benutzer-Id 7)') && str_contains($win, 'Antwort an:</span> Max Muster &lt;max.muster@example.ch&gt;')
+    && str_contains($win, '«Max Muster» mit der Adresse aus der E-Mail-Konfiguration'), strip_tags($win));
 $db->executeStatement('DELETE FROM mail_outbox');
 
 // ── M. source guards ─────────────────────────────────────────────────────

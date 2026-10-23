@@ -297,8 +297,8 @@ SPF / DKIM / DMARC are aligned to it — and the person only signs:
 | Header | Value |
 |---|---|
 | Envelope sender (`MAIL FROM`), From ADDRESS | the account: `config/client/mail.inc.php` `fromAddress` (e.g. `no-reply@z77.ch`), as before |
-| From DISPLAY NAME | the chosen identity's `name` («Peter Ruepp» → `From: "Peter Ruepp" <no-reply@z77.ch>`) — `Message::fromName()`; the `Mailer` keeps a name the message carries and fills only the address |
-| Reply-To | the identity: `"Peter Ruepp" <peter.ruepp@z77.ch>` — `Message::replyTo(address, name)` |
+| From DISPLAY NAME | the chosen identity's `name` («Max Muster» → `From: "Max Muster" <no-reply@z77.ch>`) — `Message::fromName()`; the `Mailer` keeps a name the message carries and fills only the address |
+| Reply-To | the identity: `"Max Muster" <max.muster@example.ch>` — `Message::replyTo(address, name)` |
 | Text | `{anzeigename}` in the document mail kinds = the identity's name |
 
 | Piece | Detail |

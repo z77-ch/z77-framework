@@ -4793,10 +4793,10 @@ check('BM16 exactly one identity: shown read-only with its index as a hidden fie
 foreach ($bmStates as $bmRowId => $bmState) {
     $db->executeStatement('UPDATE mail_outbox SET state = ? WHERE id = ?', [$bmState, $bmRowId]);
 }
-$bmAnz  = $bmMail->documentMail('invoice', 'de', $bmVals + ['anzeigename' => 'Peter Ruepp']);
+$bmAnz  = $bmMail->documentMail('invoice', 'de', $bmVals + ['anzeigename' => 'Max Muster']);
 $bmAnz0 = $bmMail->documentMail('invoice', 'de', $bmVals + ['anzeigename' => '']);
-check('BM17 {anzeigename} (owner 2026-10-23): the default text ends «Freundliche Grüsse / Peter Ruepp / Muster AG»; empty, its own line disappears (no blank line); declared in the placeholder lists of debtor and order',
-    str_ends_with($bmAnz['body'], "Freundliche Grüsse\nPeter Ruepp\nMuster AG") && str_ends_with($bmAnz0['body'], "Freundliche Grüsse\nMuster AG")
+check('BM17 {anzeigename} (owner 2026-10-23): the default text ends «Freundliche Grüsse / Max Muster / Muster AG»; empty, its own line disappears (no blank line); declared in the placeholder lists of debtor and order',
+    str_ends_with($bmAnz['body'], "Freundliche Grüsse\nMax Muster\nMuster AG") && str_ends_with($bmAnz0['body'], "Freundliche Grüsse\nMuster AG")
     && isset($bmKinds->get('invoice')['placeholders']['anzeigename'], $bmKinds->get('credit-note')['placeholders']['anzeigename'], $bmKinds->get('quote')['placeholders']['anzeigename']),
     json_encode([$bmAnz['body'], $bmAnz0['body']], JSON_UNESCAPED_UNICODE));
 

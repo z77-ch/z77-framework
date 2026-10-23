@@ -87,16 +87,16 @@ final class RecordingTransport implements MailTransport
 // ── A. SenderIdentity ────────────────────────────────────────────────────
 
 echo "A. SenderIdentity — the rule and the form rows\n";
-$peter = new SenderIdentity('Peter Ruepp', 'peter.ruepp@z77.ch');
-check('A1 a display name and a deliverable address: no problem; the label «Name <email>»', $peter->problems() === [] && $peter->label() === 'Peter Ruepp <peter.ruepp@z77.ch>');
+$peter = new SenderIdentity('Max Muster', 'max.muster@example.ch');
+check('A1 a display name and a deliverable address: no problem; the label «Name <email>»', $peter->problems() === [] && $peter->label() === 'Max Muster <max.muster@example.ch>');
 check('A2 an empty name, an empty address are refused (both named)', count((new SenderIdentity('', ''))->problems()) === 2);
 check('A3 an invalid / reserved-TLD address is refused', (new SenderIdentity('X', 'kein-at'))->problems() !== [] && (new SenderIdentity('X', 'a@b.invalid'))->problems() !== []);
 $bad = array_map(fn(string $n) => (new SenderIdentity($n, 'a@z77.ch'))->problems() !== [], ["Eve\r\nBcc: x@y.ch", 'Eve "x"', 'Eve <a@b.ch>', 'support@bank.ch', 'Back\\slash', str_repeat('n', SenderIdentity::NAME_LENGTH + 1)]);
 check('A4 a name with CR/LF, a quote, <>, @, a backslash or over 80 characters is refused', !in_array(false, $bad, true));
 check('A5 umlauts and «&» are fine («Müller & Co»)', (new SenderIdentity('Müller & Co', 'info@mueller.ch'))->problems() === []);
-$rows = SenderIdentity::listFromForm(['0' => '  Peter   Ruepp ', '1' => '', 'n1' => "Büro\x07"], ['0' => ' Peter.Ruepp@Z77.ch ', '1' => '', 'n1' => 'buero@z77.ch']);
+$rows = SenderIdentity::listFromForm(['0' => '  Max   Muster ', '1' => '', 'n1' => "Büro\x07"], ['0' => ' Max.Muster@Example.ch ', '1' => '', 'n1' => 'buero@z77.ch']);
 check('A6 listFromForm: posted order kept (server rows, then the added n1), an empty row dropped, text and address cleaned like the entity fields',
-    array_map(fn(SenderIdentity $i) => $i->toArray(), $rows) === [['name' => 'Peter Ruepp', 'email' => 'peter.ruepp@z77.ch'], ['name' => 'Büro', 'email' => 'buero@z77.ch']],
+    array_map(fn(SenderIdentity $i) => $i->toArray(), $rows) === [['name' => 'Max Muster', 'email' => 'max.muster@example.ch'], ['name' => 'Büro', 'email' => 'buero@z77.ch']],
     json_encode(array_map(fn($i) => $i->toArray(), $rows)));
 check('A7 listFromForm: a row with only an address stays (the validator names its missing name); junk input is no row',
     count(SenderIdentity::listFromForm(['k' => ''], ['k' => 'x@z77.ch'])) === 1 && SenderIdentity::listFromForm('x', null) === [] && SenderIdentity::listFromForm([['nested']], []) !== null);
@@ -104,16 +104,16 @@ check('A7 listFromForm: a row with only an address stays (the validator names it
 // ── B. the entity ────────────────────────────────────────────────────────
 
 echo "B. BackendUser::\$senderIdentities — stored rows, the file round trip\n";
-$user = new BackendUser(['id' => 7, 'username' => 'peter', 'name' => 'Peter Ruepp']);
+$user = new BackendUser(['id' => 7, 'username' => 'peter', 'name' => 'Max Muster']);
 check('B1 a user written before the field has no identity', $user->getSenderIdentities() === [] && $user->mapToArray()['sender_identities'] === []);
-$user->setSenderIdentities([$peter, ['name' => 'Büro Ruepp', 'email' => 'buero@z77.ch'], 'junk', 42]);
+$user->setSenderIdentities([$peter, ['name' => 'Büro Muster', 'email' => 'buero@z77.ch'], 'junk', 42]);
 check('B2 the setter takes objects and rows, in order; junk is dropped; the JSON key is snake_case `sender_identities`',
-    $user->mapToArray()['sender_identities'] === [['name' => 'Peter Ruepp', 'email' => 'peter.ruepp@z77.ch'], ['name' => 'Büro Ruepp', 'email' => 'buero@z77.ch']]);
+    $user->mapToArray()['sender_identities'] === [['name' => 'Max Muster', 'email' => 'max.muster@example.ch'], ['name' => 'Büro Muster', 'email' => 'buero@z77.ch']]);
 $json = json_encode([$user->mapToArray()], JSON_UNESCAPED_UNICODE);
 $back = new BackendUser(json_decode($json, true)[0]);
 (new \ReflectionProperty(BackendUser::class, 'id'))->setValue($back, 7);   // the repository sets the id this way (no setter)
 check('B3 the file round trip (mapToArray → JSON → mapFromArray, what FileStorage does) gives the same identities, the default first',
-    count($back->getSenderIdentities()) === 2 && $back->getSenderIdentities()[0]->equals($peter) && $back->getSenderIdentities()[1]->name === 'Büro Ruepp');
+    count($back->getSenderIdentities()) === 2 && $back->getSenderIdentities()[0]->equals($peter) && $back->getSenderIdentities()[1]->name === 'Büro Muster');
 $legacy = new BackendUser(['id' => 8, 'username' => 'alt', 'password_hash' => 'x', 'roles' => ['admin']]);
 check('B4 a stored row without the key (older backendUsers.json) loads with []', $legacy->getSenderIdentities() === []);
 
@@ -131,7 +131,7 @@ check('C1 none is valid (a user may have no identity — he then cannot send)', 
 check('C2 two good rows are valid', !$validate([$peter, new SenderIdentity('Büro', 'buero@z77.ch')])->hasFieldError('sender_identities'));
 $v = $validate([$peter, new SenderIdentity('', 'x@z77.ch')]);
 check('C3 a bad second row: ONE field error «Absender 2: …», the row index for the «n Fehler» link', $v->hasFieldError('sender_identities') && str_starts_with($v->getFieldError('sender_identities'), 'Absender 2: Anzeigename fehlt') && $v->invalidSenderIdentity() === 1, $v->getFieldError('sender_identities'));
-$v = $validate([$peter, new SenderIdentity('Peter privat', 'PETER.RUEPP@z77.ch')]);
+$v = $validate([$peter, new SenderIdentity('Max privat', 'MAX.MUSTER@example.ch')]);
 check('C4 the same address twice (any case) is refused, naming the row it stands in', str_contains($v->getFieldError('sender_identities'), 'steht schon in Zeile 1'));
 $many = array_map(fn(int $i) => new SenderIdentity('P' . $i, "p{$i}@z77.ch"), range(1, BackendUser::SENDER_IDENTITIES_MAX + 1));
 check('C5 more than ' . BackendUser::SENDER_IDENTITIES_MAX . ' are refused', str_contains($validate($many)->getFieldError('sender_identities'), 'Höchstens'));
@@ -142,7 +142,7 @@ echo "D. SenderIdentities — default, choose() re-checks (Rule 7)\n";
 $senders = new SenderIdentities($back);
 check('D1 the default is the first; userId is the user\'s', $senders->default()?->equals($peter) === true && $senders->userId() === 7);
 check('D2 choose(): the posted index of THIS user\'s list (string or int); absent = the default',
-    $senders->choose('1')?->name === 'Büro Ruepp' && $senders->choose(0)?->equals($peter) && $senders->choose(null)?->equals($peter) && $senders->choose('')?->equals($peter));
+    $senders->choose('1')?->name === 'Büro Muster' && $senders->choose(0)?->equals($peter) && $senders->choose(null)?->equals($peter) && $senders->choose('')?->equals($peter));
 check('D3 choose(): an index outside the list, a negative, junk or an array is refused (null)',
     $senders->choose('2') === null && $senders->choose('-1') === null && $senders->choose('1 OR 1') === null && $senders->choose(['0']) === null && $senders->choose(1.0) === null);
 $tampered = new BackendUser(['id' => 9, 'username' => 'x', 'sender_identities' => [['name' => "Evil\nBcc", 'email' => 'e@z77.ch']]]);
@@ -152,7 +152,7 @@ check('D5 no backend user (CLI, a member): no identity, nothing chosen, no link'
 $vm = (new SenderIdentities($legacy))->viewModel();
 check('D6 the view model of a user without identity: no choices, the hint «Erfasse zuerst eine E-Mail an deinem User.»', $vm['identities'] === [] && $vm['missing'] === 'Erfasse zuerst eine E-Mail an deinem User.' && $vm['field'] === 'sender');
 check('D7 the view model of a user with two: labels by index, the default preselected, no hint',
-    $senders->viewModel()['identities'] === [0 => 'Peter Ruepp <peter.ruepp@z77.ch>', 1 => 'Büro Ruepp <buero@z77.ch>'] && $senders->viewModel()['selected'] === 0 && $senders->viewModel()['missing'] === '');
+    $senders->viewModel()['identities'] === [0 => 'Max Muster <max.muster@example.ch>', 1 => 'Büro Muster <buero@z77.ch>'] && $senders->viewModel()['selected'] === 0 && $senders->viewModel()['missing'] === '');
 
 // ── E. the kernel mail stack ─────────────────────────────────────────────
 
@@ -160,11 +160,11 @@ echo "E. Message / Mailer — the account sends, the person signs\n";
 $transport = new RecordingTransport();
 $mailer    = new Mailer($transport, 'no-reply@z77.ch', 'z77 GmbH');
 $mailer->send((new Message())->to('kunde@example.ch')->subject('Rechnung 1 — z77')->text('Hallo')
-    ->fromName('Peter Ruepp')->replyTo('peter.ruepp@z77.ch', 'Peter Ruepp'));
+    ->fromName('Max Muster')->replyTo('max.muster@example.ch', 'Max Muster'));
 $data = $transport->sent[0]['data'] ?? '';
-check('E1 envelope sender = the account; From = «"Peter Ruepp" <no-reply@z77.ch>» (the identity\'s name, the ACCOUNT\'s address)',
-    $transport->sent[0]['sender'] === 'no-reply@z77.ch' && preg_match('/^From: "Peter Ruepp" <no-reply@z77\.ch>\r$/m', $data) === 1, $data);
-check('E2 Reply-To = «"Peter Ruepp" <peter.ruepp@z77.ch>»', preg_match('/^Reply-To: "Peter Ruepp" <peter\.ruepp@z77\.ch>\r$/m', $data) === 1);
+check('E1 envelope sender = the account; From = «"Max Muster" <no-reply@z77.ch>» (the identity\'s name, the ACCOUNT\'s address)',
+    $transport->sent[0]['sender'] === 'no-reply@z77.ch' && preg_match('/^From: "Max Muster" <no-reply@z77\.ch>\r$/m', $data) === 1, $data);
+check('E2 Reply-To = «"Max Muster" <max.muster@example.ch>»', preg_match('/^Reply-To: "Max Muster" <max\.muster@example\.ch>\r$/m', $data) === 1);
 $mailer->send((new Message())->to('kunde@example.ch')->subject('A')->text('B')->replyTo('x@z77.ch'));
 $data2 = $transport->sent[1]['data'] ?? '';
 check('E3 without a name: From keeps the config\'s name, Reply-To is the bare address (unchanged behaviour)',
@@ -192,7 +192,7 @@ $renderEdit = function (BackendUser $entry, BackendUserValidator $validator): st
 };
 $form = $renderEdit($back, new BackendUserValidator($back));
 check('F1 the section «Absender für E-Mails» with one row per identity: identity_name[i] / identity_email[i] filled, a × per row',
-    str_contains($form, 'Absender für E-Mails') && str_contains($form, 'name="identity_name[0]" value="Peter Ruepp"') && str_contains($form, 'name="identity_email[1]" value="buero@z77.ch"')
+    str_contains($form, 'Absender für E-Mails') && str_contains($form, 'name="identity_name[0]" value="Max Muster"') && str_contains($form, 'name="identity_email[1]" value="buero@z77.ch"')
     && substr_count($form, 'data-row-remove') === 3);
 check('F2 the rows contract: a [data-rows] container, the template with __i__, the «+ Absender» adder; no grip (the order is the posted order)',
     preg_match('/data-rows="identity"/', $form) === 1 && str_contains($form, '<template data-row-template="identity">') && str_contains($form, 'name="identity_name[__i__]"')
@@ -226,7 +226,7 @@ echo "G. partials/senderIdentityField — «Senden als»\n";
 $partial = fn(array $vm): string => (new TplRenderer('Z77\\Shared'))->render('partials/senderIdentityField', $vm);
 $two = $partial($senders->viewModel());
 check('G1 two identities: a select «Senden als» posting the INDEX, the default selected, labels escaped',
-    str_contains($two, '<select id="sender-identity" name="sender">') && str_contains($two, '<option value="0" selected>Peter Ruepp &lt;peter.ruepp@z77.ch&gt;</option>') && str_contains($two, '<option value="1">Büro Ruepp'));
+    str_contains($two, '<select id="sender-identity" name="sender">') && str_contains($two, '<option value="0" selected>Max Muster &lt;max.muster@example.ch&gt;</option>') && str_contains($two, '<option value="1">Büro Muster'));
 $one = $partial((new SenderIdentities(new BackendUser(['id' => 2, 'username' => 'a', 'sender_identities' => [['name' => 'Anna', 'email' => 'anna@z77.ch']]])))->viewModel());
 check('G2 exactly one: read-only text and the index as a hidden field, no select', str_contains($one, 'Anna &lt;anna@z77.ch&gt;') && str_contains($one, '<input type="hidden" name="sender" value="0">') && !str_contains($one, '<select'));
 $none = $partial(['identities' => [], 'selected' => 0, 'missing' => SenderIdentities::MISSING, 'editUrl' => SenderIdentities::USER_ADMIN_URL, 'field' => 'sender']);

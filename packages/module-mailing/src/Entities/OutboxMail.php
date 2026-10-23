@@ -230,7 +230,7 @@ class OutboxMail
         return $this->senderEmail !== '';
     }
 
-    /** «Peter Ruepp <peter.ruepp@z77.ch>» — the identity the mail was sent as; '' without one. */
+    /** «Max Muster <max.muster@example.ch>» — the identity the mail was sent as; '' without one. */
     public function senderLabel(): string
     {
         if ($this->senderEmail === '') {
