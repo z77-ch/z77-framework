@@ -321,13 +321,23 @@ final class PaymentService
         }
     }
 
-    /** @throws PaymentRefusedException NOT_FINAL | CREDIT_NOTE */
+    /**
+     * Payments, discount and loss need a POSTED document (ADR-054, owner decisions 3 and 6 of
+     * 2026-10-23): an issued document in the Faktura-Journal has no debtor ledger entry yet and
+     * cannot be paid — a payment for it waits in the manual payments until the journal is posted.
+     * Until step 3 of the build plan nothing is `issued`, so `not-posted` cannot occur yet.
+     *
+     * @throws PaymentRefusedException NOT_FINAL | CREDIT_NOTE | NOT_POSTED
+     */
     private function assertSettleable(Invoice $invoice): void
     {
         if ($invoice->isCreditNote()) {
             throw new PaymentRefusedException(PaymentRefusedException::CREDIT_NOTE, $invoice->documentName() . ' ist eine Gutschrift — sie wird nicht bezahlt, sie reduziert eine Rechnung.');
         }
-        if (!$invoice->isFinal()) {
+        if ($invoice->isInJournal()) {
+            throw new PaymentRefusedException(PaymentRefusedException::NOT_POSTED, $invoice->documentName() . ' ist noch nicht verbucht (Faktura-Journal) — Zahlungen erst nach «Journal verbuchen».');
+        }
+        if (!$invoice->isPosted()) {
             throw new PaymentRefusedException(PaymentRefusedException::NOT_FINAL, $invoice->documentName() . ' ist noch in Fakturierung — erst mit «Buchungsdruck …» verbuchen, dann Zahlungen erfassen.');
         }
     }

@@ -45,7 +45,7 @@ $left   = 20.0;
 $right  = 190.0;
 $width  = $right - $left;
 $isCredit = $document->isCreditNote();
-$preview  = !$document->isFinal();   // a draft: no number, no payment part (owner 2026-10-10)
+$preview  = $document->isDraft();   // a draft: no number, no payment part (owner 2026-10-10)
 $name     = $preview ? $document->kind()->label() . ' — Vorschau' : $document->documentName();
 
 // ── running header (pages 2+) and footer (not on the page with the payment part) ──

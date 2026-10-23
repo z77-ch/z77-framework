@@ -112,6 +112,10 @@ class Invoice
     public const SUBJECT_LABEL_LENGTH = SubjectLabel::LENGTH;
     /** The no-VAT note — the mandator's `Mandator::VAT_EXEMPT_NOTE_LENGTH`, repeated (the column is this module's). */
     public const VAT_NOTE_LENGTH = 255;
+    /** A void reason and a source's re-issue blocker text (ADR-054 decisions 9, 10). */
+    public const REASON_LENGTH = 255;
+    /** The document stamp — the unique ID of an issued version (owner decision 2026-10-23, ADR-054). */
+    public const STAMP_LENGTH = 10;
 
     /** Server-controlled — no setter; the database assigns it. */
     #[ORM\Id, ORM\Column, ORM\GeneratedValue]
@@ -262,6 +266,68 @@ class Invoice
     #[ORM\Column(type: Types::INTEGER)]
     private int $version = 1;
 
+    // ── the Faktura-Journal (ADR-054; step 1 of the build plan: the columns — nothing writes them before step 3) ──
+
+    /**
+     * The REVISION of an issued document (ADR-054 decisions 3, 11): 1 when issued, +1 per revision
+     * under the same number (the previous PDF archived in `invoice_revision`). Not the ORM `version`
+     * (the optimistic lock moves on every write). Column default 1 — every existing row reads 1.
+     */
+    #[ORM\Column(options: ['default' => 1])]
+    private int $revision = 1;
+
+    /** Who / when the booking print ISSUED it (the number drawn); null before and on documents issued before the journal. */
+    #[ORM\Column(name: 'issued_by', length: self::ACTOR_LENGTH, nullable: true)]
+    private ?string $issuedBy = null;
+
+    #[ORM\Column(name: 'issued_at', type: Types::DATETIME_IMMUTABLE, nullable: true)]
+    private ?\DateTimeImmutable $issuedAt = null;
+
+    /** Who / when the journal posting POSTED it; null before and on documents posted before the journal. */
+    #[ORM\Column(name: 'posted_by', length: self::ACTOR_LENGTH, nullable: true)]
+    private ?string $postedBy = null;
+
+    #[ORM\Column(name: 'posted_at', type: Types::DATETIME_IMMUTABLE, nullable: true)]
+    private ?\DateTimeImmutable $postedAt = null;
+
+    /** The «Journal verbuchen» protocol that posted it (ADR-054 decision 6); null before and on documents posted before the journal. */
+    #[ORM\ManyToOne(targetEntity: InvoiceJournalPosting::class)]
+    #[ORM\JoinColumn(name: 'journal_posting_id', nullable: true)]
+    private ?InvoiceJournalPosting $journalPosting = null;
+
+    /** The successor that REPLACED it (ADR-054 decision 10) — the chain A → B → C; null unless `replaced`. */
+    #[ORM\ManyToOne(targetEntity: Invoice::class)]
+    #[ORM\JoinColumn(name: 'replaced_by_id', nullable: true)]
+    private ?Invoice $replacedBy = null;
+
+    /** Who / when / why it was replaced or deleted; null unless void. */
+    #[ORM\Column(name: 'voided_by', length: self::ACTOR_LENGTH, nullable: true)]
+    private ?string $voidedBy = null;
+
+    #[ORM\Column(name: 'voided_at', type: Types::DATETIME_IMMUTABLE, nullable: true)]
+    private ?\DateTimeImmutable $voidedAt = null;
+
+    #[ORM\Column(name: 'void_reason', length: self::REASON_LENGTH, nullable: true)]
+    private ?string $voidReason = null;
+
+    /**
+     * Set by a SOURCE (an order) whose content no longer matches the issued document — the blocker
+     * text the Faktura-Journal shows (ADR-054 decision 9); null = in step with its source. Debtor
+     * never interprets who set it.
+     */
+    #[ORM\Column(name: 'reissue_needed', length: self::REASON_LENGTH, nullable: true)]
+    private ?string $reissueNeeded = null;
+
+    /**
+     * The STAMP of the current issued version (owner decision 2026-10-23, ADR-054): a short ID
+     * from the SHA-256 of the version's CONTENT (number, date, recipient, lines, totals, VAT,
+     * revision) — printed small next to the number, cited by a successor's «ersetzt Rechnung …
+     * (ID …)», recorded per version in `invoice_revision`. NULL on drafts and on documents issued
+     * before the journal. Computed from step 3 on.
+     */
+    #[ORM\Column(name: 'document_stamp', length: self::STAMP_LENGTH, nullable: true)]
+    private ?string $documentStamp = null;
+
     /**
      * The lines in position order. `orphanRemoval`: a re-issue replaces them
      * whole and the old rows go at flush.
@@ -337,15 +403,69 @@ class Invoice
     public function getChangedBy(): ?string { return $this->changedBy; }
     public function getChangedAt(): ?\DateTimeImmutable { return $this->changedAt; }
     public function getVersion(): int { return $this->version; }
+    /** The revision of the document — 1 unless revised while in the Faktura-Journal (ADR-054 decision 11). */
+    public function getRevision(): int { return $this->revision; }
+    public function getIssuedBy(): ?string { return $this->issuedBy; }
+    public function getIssuedAt(): ?\DateTimeImmutable { return $this->issuedAt; }
+    public function getPostedBy(): ?string { return $this->postedBy; }
+    public function getPostedAt(): ?\DateTimeImmutable { return $this->postedAt; }
+    public function getJournalPosting(): ?InvoiceJournalPosting { return $this->journalPosting; }
+    /** The successor of a `replaced` document; null otherwise. */
+    public function getReplacedBy(): ?Invoice { return $this->replacedBy; }
+    public function getVoidedBy(): ?string { return $this->voidedBy; }
+    public function getVoidedAt(): ?\DateTimeImmutable { return $this->voidedAt; }
+    public function getVoidReason(): ?string { return $this->voidReason; }
+    /** The blocker text a source set (ADR-054 decision 9); null = in step with its source. */
+    public function getReissueNeeded(): ?string { return $this->reissueNeeded; }
+    /** The stamp of the current issued version; null on drafts and documents issued before the journal. */
+    public function getDocumentStamp(): ?string { return $this->documentStamp; }
 
     public function kind(): InvoiceKind
     {
         return InvoiceKind::from($this->kind);
     }
 
-    public function isFinal(): bool
+    public function state(): InvoiceState
+    {
+        return InvoiceState::from($this->state);
+    }
+
+    // ── the state predicates (ADR-054, build plan §3) — readers ask these, never a state value ──
+    // They replace the one former question `isFinal()`. Until step 3 of the build plan nothing
+    // produces `issued`, `replaced` or `deleted`: every document is a draft or posted, so
+    // `isIssued()` and `isPosted()` answer alike — the split is the reader's INTENT.
+
+    /** A draft (`invoicing`): no number, editable, its PDF is a preview. */
+    public function isDraft(): bool
+    {
+        return $this->state === InvoiceState::Invoicing->value;
+    }
+
+    /**
+     * Issued to the customer and standing (`issued` or `final`): numbered, the real PDF with its
+     * QR-bill, mailable. NOT payable before it is posted (ADR-054, owner decision 6). A void document is NOT issued in this sense.
+     */
+    public function isIssued(): bool
+    {
+        return $this->state === InvoiceState::Issued->value || $this->state === InvoiceState::Final->value;
+    }
+
+    /** In the Faktura-Journal (`issued`): issued, not posted yet — correctable by revision or replacement. */
+    public function isInJournal(): bool
+    {
+        return $this->state === InvoiceState::Issued->value;
+    }
+
+    /** Posted into the ledger (`final`, «verbucht»): immutable; payable (open amount, payments, discount, loss), credit-note target, dunned, reconciled. */
+    public function isPosted(): bool
     {
         return $this->state === InvoiceState::Final->value;
+    }
+
+    /** Void (`replaced` or `deleted`): kept with its number, nothing posted, no payments, no mails. */
+    public function isVoid(): bool
+    {
+        return $this->state === InvoiceState::Replaced->value || $this->state === InvoiceState::Deleted->value;
     }
 
     public function isCreditNote(): bool
@@ -550,8 +670,8 @@ class Invoice
 
     private function assertInvoicing(string $what): void
     {
-        if ($this->isFinal()) {
-            throw new \LogicException($this->documentName() . " is final and cannot be {$what} — a correction is a credit note (plan §1, §6.2)");
+        if (!$this->isDraft()) {
+            throw new \LogicException($this->documentName() . " is no longer a draft ({$this->state}) and cannot be {$what} — a posted document is corrected by a credit note (plan §1, §6.2)");
         }
     }
 }

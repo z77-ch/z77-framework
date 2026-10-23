@@ -509,7 +509,7 @@ check('A9 a second migrate is a no-op', $code === 0 && str_contains($out, 'Alrea
 [$code, $out] = $run(['command' => 'diff', '--namespace' => 'Z77\\Module\\Financial\\Migrations']);
 check('A10 diff after migrate reports NO change — mapping and migration agree (money and text snapshot columns included)', $code !== 0 && str_contains($out, 'No changes detected') && count(glob($package . '/res/migrations/Version*.php')) === 5);   // + 2026-10-13 (module postings only)
 [$code, $out] = $run(['command' => 'status']);
-check('A11 status lists the module namespace and ten executed migrations (package, five of financial, four of mandator — the year-opening accounts 2026-10-22)', $code === 0 && str_contains($out, 'Z77\\Module\\Financial\\Migrations') && preg_match('/\| Executed\s+\|\s+10\s+\|/', $out) === 1);
+check('A11 status lists the module namespace and eleven executed migrations (package, five of financial, five of mandator — the year-opening accounts 2026-10-22, the e-mail logo 2026-10-23)', $code === 0 && str_contains($out, 'Z77\\Module\\Financial\\Migrations') && preg_match('/\| Executed\s+\|\s+11\s+\|/', $out) === 1);
 
 // ── B. the KMU chart: a button on an EMPTY chart ─────────────────────────
 

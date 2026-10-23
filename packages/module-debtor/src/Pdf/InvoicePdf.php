@@ -102,7 +102,7 @@ final class InvoicePdf
     /** The PDF's title: the document name; a draft's «Vorschau — Rechnung (Entwurf vom …)». */
     public static function title(Invoice $document): string
     {
-        return ($document->isFinal() ? '' : 'Vorschau — ') . $document->documentName();
+        return ($document->isDraft() ? 'Vorschau — ' : '') . $document->documentName();
     }
 
     /**

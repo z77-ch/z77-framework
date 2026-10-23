@@ -17,6 +17,11 @@ use Z77\Shared\Money\Money;
  * its lines, the locking re-read a write path needs, the SQL aggregates, and
  * — since P3 part 3 — the lookups of the document screens (by number, the
  * list per view with its search, the credit notes of an invoice).
+ *
+ * The receivables aggregates (open amount, settlement figures, open items, the due list, the
+ * fees an overpayment lands on) read POSTED documents only — `state = final`, invoices and
+ * credit notes alike: an issued document in the Faktura-Journal has no debtor ledger entry yet
+ * and cannot be paid (ADR-054, owner decision 6 of 2026-10-23).
  */
 class InvoiceRepository extends DoctrineRepository
 {
@@ -500,7 +505,8 @@ class InvoiceRepository extends DoctrineRepository
         if ($search->view === InvoiceSearch::VIEW_CREDIT) {
             $add('kind = ?', InvoiceKind::CreditNote->value);
         } else {
-            // The payable kinds — invoices and fees (P4 part 3) — share the two views.
+            // The payable kinds — invoices and fees (P4 part 3) — share the two views. The tabs of the
+            // five states («Fakturiert», «Ersetzt / Gelöscht», ADR-054) come with step 3 / 4 of the build plan.
             $add('kind <> ?', InvoiceKind::CreditNote->value);
             $add('state = ?', $search->view === InvoiceSearch::VIEW_FINAL ? InvoiceState::Final->value : InvoiceState::Invoicing->value);
         }

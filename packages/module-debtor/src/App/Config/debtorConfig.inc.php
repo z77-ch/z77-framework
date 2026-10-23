@@ -12,7 +12,9 @@ use Z77\Module\Debtor\Entities\DebtorProfile;
 use Z77\Module\Debtor\Entities\DunningNotice;
 use Z77\Module\Debtor\Entities\DunningRun;
 use Z77\Module\Debtor\Entities\Invoice;
+use Z77\Module\Debtor\Entities\InvoiceJournalPosting;
 use Z77\Module\Debtor\Entities\InvoiceLine;
+use Z77\Module\Debtor\Entities\InvoiceRevision;
 use Z77\Module\Debtor\Entities\InvoiceTax;
 use Z77\Module\Debtor\Entities\Payment;
 use Z77\Module\Debtor\Entities\PaymentAllocation;
@@ -94,6 +96,8 @@ return [
         BankTransaction::class,
         DunningRun::class,
         DunningNotice::class,
+        InvoiceRevision::class,          // the Faktura-Journal (ADR-054, step 1)
+        InvoiceJournalPosting::class,
     ],
 
     // The accounting port (plan §6.6): the class `InvoicingService::finalize()` posts through.

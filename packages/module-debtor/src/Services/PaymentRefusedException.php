@@ -11,6 +11,8 @@ final class PaymentRefusedException extends DebtorException
 {
     public const NOT_FOUND        = 'not-found';
     public const NOT_FINAL        = 'not-final';
+    /** A payment, discount or loss on a document still in the Faktura-Journal (ADR-054, owner decision 6 of 2026-10-23). */
+    public const NOT_POSTED       = 'not-posted';
     public const CREDIT_NOTE      = 'credit-note';
     public const CURRENCY         = 'currency';
     public const NOTHING          = 'nothing';

@@ -56,7 +56,7 @@ final class BookingSelection
         foreach ($pairs as $pair) {
             $order   = $find($pair['id']);
             $invoice = $order?->getInvoice();
-            if ($order === null || $invoice === null || !$invoice->isFinal() || $order->getVersion() !== $pair['version'] + 1) {
+            if ($order === null || $invoice === null || !$invoice->isIssued() || $order->getVersion() !== $pair['version'] + 1) {
                 return null;
             }
             $ids[(int) $invoice->getId()] = (int) $invoice->getId();

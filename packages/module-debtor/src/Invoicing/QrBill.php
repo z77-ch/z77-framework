@@ -133,7 +133,7 @@ final class QrBill
      */
     public static function of(Invoice $document, ?Money $amount = null, ?PaymentSnapshot $payment = null): self
     {
-        if ($payment !== null && $document->isFinal()) {
+        if ($payment !== null && !$document->isDraft()) {
             throw new \LogicException('A booked document prints the payment part it was booked with — no other');
         }
         $payment ??= $document->getPayment();
@@ -159,11 +159,11 @@ final class QrBill
             $bill->problems[] = 'Eine Gutschrift hat keinen Zahlteil.';
         } elseif (!$payment->hasPaymentPart()) {
             // A final document is never re-issued (review 2026-09-30): the way out is a credit note and a new invoice.
-            $bill->problems[] = $document->isFinal()
+            $bill->problems[] = !$document->isDraft()
                 ? 'Ohne Zahlteil ausgestellt und verbucht — er lässt sich nicht nachtragen; nötigenfalls Gutschrift und neue Rechnung mit Zahlungsziel.'
                 : 'Ohne Zahlungsziel erstellt — kein Zahlteil. Im Entwurf ein Zahlungsziel wählen und speichern.';
         } else {
-            $bill->pending = !$document->isFinal();
+            $bill->pending = $document->isDraft();
             $bill->check();
         }
 
@@ -177,7 +177,7 @@ final class QrBill
      */
     public static function unavailable(Invoice $draft, string $problem): self
     {
-        if ($draft->isFinal()) {
+        if (!$draft->isDraft()) {
             throw new \LogicException('A booked document prints the payment part it was booked with');
         }
         $bill           = self::of($draft);

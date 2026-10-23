@@ -107,7 +107,7 @@ final class InvoiceMails
     public static function skipReason(Invoice $document): ?string
     {
         return match (true) {
-            !$document->isFinal()                   => 'nicht verbucht',
+            !$document->isIssued()                  => 'nicht verbucht',
             self::mailKindOf($document) === null    => 'für ' . $document->kind()->label() . ' gibt es keine Beleg-Mail',
             self::recipientOf($document) === ''     => trim($document->getAddress()->getEmail()) === '' ? 'keine E-Mail-Adresse' : 'E-Mail-Adresse ungültig',
             default                                 => null,

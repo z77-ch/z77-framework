@@ -287,7 +287,7 @@ final class DunningService
      */
     private function dueItem(Invoice $invoice, Money $open, ?array $last, array $ladder, \DateTimeImmutable $asOf, DebtorProfileRepository $profiles): ?array
     {
-        if (!$open->isPositive() || !$invoice->isFinal() || !$invoice->kind()->isPayable() || $invoice->kind()->value !== 'invoice') {
+        if (!$open->isPositive() || !$invoice->isPosted() || !$invoice->kind()->isPayable() || $invoice->kind()->value !== 'invoice') {
             return null;
         }
         $profile = $profiles->findByContact($invoice->getContact());

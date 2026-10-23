@@ -722,16 +722,18 @@ final class InvoicingService
     }
 
     /**
-     * What is still owed on a FINAL invoice: gross − Σ gross of its final
+     * What is still owed on a POSTED invoice: gross − Σ gross of its final
      * credit notes − Σ of its allocations (payments, discount, loss — P4
      * part 1, `PaymentAllocation`). DERIVED, never stored (plan §6.3). Zero
-     * while `invoicing` (plan §6.2: no open item yet) and for a credit note
+     * while `invoicing` (plan §6.2: no open item yet), while `issued` (in the
+     * Faktura-Journal: no debtor ledger entry, not payable — ADR-054, owner
+     * decision 6 of 2026-10-23), when void and for a credit note
      * (it is not a receivable, it reduces one). Negative = more was credited
      * than invoiced (a refund is owed).
      */
     public function openAmount(Invoice $invoice): Money
     {
-        if (!$invoice->isFinal() || $invoice->isCreditNote()) {
+        if (!$invoice->isPosted() || $invoice->isCreditNote()) {
             return Money::zero($invoice->getCurrency());
         }
         /** @var PaymentAllocationRepository $allocations */
@@ -788,7 +790,7 @@ final class InvoicingService
     /**
      * Whether the document may still be edited — null = yes (a draft in `invoicing`), else the
      * German reason the write path refuses with (`not-invoicing`). The ONE mask of the document
-     * screens shows a final document read-only with this sentence on top (owner 2026-10-21,
+     * screens shows a document that is no draft read-only with this sentence on top (owner 2026-10-21,
      * the order window's `editRefusal()` model).
      */
     public function editRefusal(Invoice $invoice): ?string
@@ -802,16 +804,24 @@ final class InvoicingService
         return null;
     }
 
-    /** @throws InvoiceRefusedException NOT_INVOICING */
+    /**
+     * Only a DRAFT is written by reinvoice() / discard() / the booking print. An issued document
+     * in the Faktura-Journal is corrected by revision or replacement (ADR-054 decision 8 — step 4
+     * of the build plan; until then nothing produces one), a void one stays as it is.
+     *
+     * @throws InvoiceRefusedException NOT_INVOICING
+     */
     private function assertInvoicing(Invoice $invoice): void
     {
-        if ($invoice->isFinal()) {
-            // «verbucht» is the UI word for `final` (owner 2026-10-10) — the mask shows this sentence.
-            throw new InvoiceRefusedException(
-                InvoiceRefusedException::NOT_INVOICING,
-                $invoice->documentName() . ' ist verbucht und bleibt unverändert — eine Korrektur ist eine Gutschrift.'
-            );
+        if ($invoice->isDraft()) {
+            return;
         }
+        // «verbucht» is the UI word for `final` (owner 2026-10-10) — the mask shows this sentence.
+        throw new InvoiceRefusedException(InvoiceRefusedException::NOT_INVOICING, match (true) {
+            $invoice->isPosted()    => $invoice->documentName() . ' ist verbucht und bleibt unverändert — eine Korrektur ist eine Gutschrift.',
+            $invoice->isInJournal() => $invoice->documentName() . ' ist fakturiert und steht im Faktura-Journal — sie wird nicht mehr als Entwurf bearbeitet.',
+            default                 => $invoice->documentName() . ' ist ' . $invoice->state()->label() . ' und bleibt unverändert.',
+        });
     }
 
     // ── composing a document from a draft ───────────────────────────────
@@ -889,7 +899,7 @@ final class InvoicingService
             if ($creditNoteOf === null || $creditNoteOf->isCreditNote()) {
                 throw new InvoiceRefusedException(InvoiceRefusedException::CREDIT_NOTE_TARGET, 'Eine Gutschrift bezieht sich auf eine Rechnung — «' . ($draft->creditNoteOfId ?? '?') . '» ist keine.');
             }
-            if (!$creditNoteOf->isFinal()) {
+            if (!$creditNoteOf->isPosted()) {
                 // While the invoice is `invoicing` nothing is posted: the correction is reinvoice(), and a
                 // credit note would mirror a posting that does not exist.
                 throw new InvoiceRefusedException(InvoiceRefusedException::CREDIT_NOTE_TARGET, $creditNoteOf->documentName() . ' ist noch ein Entwurf — sie wird bearbeitet, nicht gutgeschrieben.');
@@ -1132,7 +1142,7 @@ final class InvoicingService
      */
     public function bookingBill(Invoice $invoice): QrBill
     {
-        if ($invoice->isFinal()) {
+        if (!$invoice->isDraft()) {
             return QrBill::of($invoice);
         }
         try {

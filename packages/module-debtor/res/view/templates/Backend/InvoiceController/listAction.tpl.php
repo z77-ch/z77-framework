@@ -45,7 +45,7 @@ $listUrl    = $actionBase . '/list';
 $link       = static fn(array $changes = []): string => $listUrl . '?' . $state->query($changes);
 $view       = $state->extra('view');
 $selectable = $view === 'invoicing';
-$icons      = ['invoicing' => 'edit', 'final' => 'lock'];
+$icons      = ['invoicing' => 'edit', 'issued' => 'lock', 'final' => 'lock', 'replaced' => 'lock', 'deleted' => 'lock'];   // the five states (ADR-054); `issued` opens for editing with step 4 (revision)
 ?>
 <div class="be-list" data-fetch-region="<?= e($definition->region()) ?>">
     <div class="be-list__section">
@@ -71,16 +71,16 @@ $icons      = ['invoicing' => 'edit', 'final' => 'lock'];
             <div class="be-list__table be-list__table--drop" style="<?= e($definition->style()) ?>">
                 <?= $this->partial('partials/listHead', ['definition' => $definition, 'state' => $state, 'action' => $listUrl], 'Z77\\Shared') ?>
                 <?php foreach ($documents as $document): ?>
-                <?php $docState = $document->isFinal() ? 'final' : 'invoicing'; $url = $actionBase . '/edit?id=' . $document->getId(); ?>
+                <?php $docState = $document->state()->value; $url = $actionBase . '/edit?id=' . $document->getId(); ?>
                 <div class="be-list__item" data-invoice-id="<?= e((string) $document->getId()) ?>">
                     <div class="be-list__row">
                         <?php if ($selectable): ?>
                         <span class="be-list__cell"><label class="be-choice"><input type="checkbox" class="be-choice__input" name="doc[]" form="invoice-finalize" value="<?= e($document->getId() . ':' . $document->getVersion()) ?>" aria-label="<?= e($document->documentName()) ?> auswählen"></label></span>
                         <?php endif; ?>
-                        <a class="be-list__cell be-list__state be-list__state--<?= $docState === 'final' ? 'closed' : 'editable' ?>" href="<?= e($url) ?>" data-window-open="<?= e($url) ?>" aria-label="<?= e($states[$docState]) ?>" title="<?= e($states[$docState]) ?>"><svg class="be-icon" width="14" height="14" aria-hidden="true"><use href="#icon-<?= e($icons[$docState]) ?>"/></svg></a>
+                        <a class="be-list__cell be-list__state be-list__state--<?= $document->isDraft() ? 'editable' : 'closed' ?>" href="<?= e($url) ?>" data-window-open="<?= e($url) ?>" aria-label="<?= e($states[$docState]) ?>" title="<?= e($states[$docState]) ?>"><svg class="be-icon" width="14" height="14" aria-hidden="true"><use href="#icon-<?= e($icons[$docState]) ?>"/></svg></a>
                         <label class="be-list__cell be-list__cell--num be-list__cell--mono" for="<?= e($definition->inputId('f_nr')) ?>"><?= $document->isNumbered() ? (int) $document->getNumber() : '<span class="be-list__cell--muted">Entwurf</span>' ?></label>
                         <label class="be-list__cell" for="<?= e($definition->inputId('f_date')) ?>" data-priority="3"><?= e($document->getInvoiceDate()->format('d.m.Y')) ?></label>
-                        <label class="be-list__cell" for="<?= e($definition->inputId('f_name')) ?>"><?= e(trim($document->getAddress()->getFirstName() . ' ' . $document->getAddress()->getName())) ?><?= $document->isCreditNote() ? ' <small class="be-list__cell--muted">· zu ' . e($document->getCreditNoteOf()->documentName()) . ($document->isFinal() ? '' : ' · in Fakturierung') . '</small>' : '' ?></label>
+                        <label class="be-list__cell" for="<?= e($definition->inputId('f_name')) ?>"><?= e(trim($document->getAddress()->getFirstName() . ' ' . $document->getAddress()->getName())) ?><?= $document->isCreditNote() ? ' <small class="be-list__cell--muted">· zu ' . e($document->getCreditNoteOf()->documentName()) . ($document->isDraft() ? ' · in Fakturierung' : '') . '</small>' : '' ?></label>
                         <span class="be-list__cell" data-priority="2"><?= $document->isCreditNote() ? '' : e($document->getDueDate()->format('d.m.Y')) ?></span>
                         <label class="be-list__cell be-list__cell--num" for="<?= e($definition->inputId('f_amount')) ?>"><?= e($fmt($document->getGrossTotal())) ?></label>
 

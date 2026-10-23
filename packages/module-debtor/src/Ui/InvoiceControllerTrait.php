@@ -133,7 +133,10 @@ trait InvoiceControllerTrait
     /** The state icon of a row — German title per state (the UI word for `final` is «verbucht», owner 2026-10-10). */
     private const INVOICE_STATE_LABELS = [
         'invoicing' => 'in Fakturierung — Entwurf ohne Nummer, Vorschau möglich, nichts verbucht',
+        'issued'    => 'fakturiert — mit Nummer gedruckt, im Faktura-Journal, noch nicht verbucht',
         'final'     => 'verbucht — mit Nummer gedruckt, unveränderlich; Korrektur mit Gutschrift',
+        'replaced'  => 'ersetzt — durch eine Rechnung mit neuer Nummer, nichts verbucht',
+        'deleted'   => 'gelöscht — mit Nummer aufbewahrt, nichts verbucht',
     ];
 
     /** How many documents one booking print takes — a batch screen's size, not a limit of the writer. */
@@ -458,7 +461,7 @@ trait InvoiceControllerTrait
         if ($document === null) {
             return $this->invoiceNotFound();
         }
-        if (!$document->isFinal() || $document->isCreditNote()) {
+        if (!$document->isPosted() || $document->isCreditNote()) {
             return $this->invoiceToMask((int) $document->getId(), 'error', $document->isCreditNote() ? 'Eine Gutschrift wird nicht bezahlt — sie reduziert eine Rechnung.' : $document->documentName() . ' ist noch in Fakturierung — erst mit «Buchungsdruck …» verbuchen.');
         }
 
@@ -633,7 +636,7 @@ trait InvoiceControllerTrait
         if ($document === null) {
             return $this->invoiceNotFound();
         }
-        if ($document->isFinal()) {
+        if (!$document->isDraft()) {
             return $this->invoiceToMask($id, 'error', $document->documentName() . ' ist verbucht und bleibt — eine Korrektur ist eine Gutschrift.');
         }
 
@@ -712,7 +715,7 @@ trait InvoiceControllerTrait
         if ($invoice === null || $invoice->isCreditNote()) {
             return $this->invoiceNotFound();
         }
-        if (!$invoice->isFinal()) {
+        if (!$invoice->isPosted()) {
             return $this->invoiceToMask($ofId, 'error', $invoice->documentName() . ' ist noch ein Entwurf — sie wird bearbeitet, nicht gutgeschrieben.');
         }
         // A credit note follows its invoice: with VAT exactly when the invoice carries it (chargesVat()).
@@ -817,7 +820,7 @@ trait InvoiceControllerTrait
      */
     private function invoiceBillAddress(string $contactId, ?Invoice $final = null): string
     {
-        if ($final !== null && $final->isFinal()) {
+        if ($final !== null && !$final->isDraft()) {
             return (new TemplateRenderer(self::INVOICE_NS))->partial('Backend/InvoiceController/_billAddress', ['chosen' => true, 'lines' => $final->getAddress()->lines(), 'contact' => $final->getAddress()->contactLine()]);
         }
         $contact = ctype_digit($contactId) && (int) $contactId > 0 ? $this->em()->getRepository(Contact::class)->find((int) $contactId) : null;
@@ -850,12 +853,12 @@ trait InvoiceControllerTrait
             // What the booking print WILL print (owner 2026-10-13, review H5) — for a draft the payment part taken again.
             'bill'        => $this->invoicingService()->bookingBill($document),
             'creditNotes' => $isInvoice ? $this->invoices()->creditNotesOf($document) : [],
-            'openAmount'  => $isInvoice && $document->isFinal() ? $this->invoicingService()->openAmount($document) : null,
-            'allocations' => $isInvoice && $document->isFinal() ? $this->paymentService()->allocationsOf($document) : [],
-            'notices'     => $isInvoice && $document->isFinal() ? $this->invoiceDunningService()->noticesOf($document) : [],
+            'openAmount'  => $isInvoice && $document->isPosted() ? $this->invoicingService()->openAmount($document) : null,
+            'allocations' => $isInvoice && $document->isPosted() ? $this->paymentService()->allocationsOf($document) : [],
+            'notices'     => $isInvoice && $document->isPosted() ? $this->invoiceDunningService()->noticesOf($document) : [],
             'ledgerKnown' => (new LedgerAccountCheck($this->em()))->available(),
             // «per E-Mail an … gesendet am …» (step 3 of the mail plan): the outbox rows of `invoice:<id>`, read-only.
-            'deliveries'  => $document->isFinal() ? ($this->invoiceMails()->deliveries([(int) $document->getId()])[(int) $document->getId()] ?? []) : [],
+            'deliveries'  => !$document->isDraft() ? ($this->invoiceMails()->deliveries([(int) $document->getId()])[(int) $document->getId()] ?? []) : [],
             'states'      => self::INVOICE_STATE_LABELS,
         ];
 
@@ -987,7 +990,7 @@ trait InvoiceControllerTrait
         $stale     = [];
         foreach ($pairs as $pair) {
             $document = $this->invoices()->find($pair['id']);
-            if ($document === null || $document->isFinal() || $document->getVersion() !== $pair['version']) {
+            if ($document === null || !$document->isDraft() || $document->getVersion() !== $pair['version']) {
                 $stale[] = $pair['id'];
                 continue;
             }
@@ -1366,7 +1369,7 @@ trait InvoiceControllerTrait
         $documents = [];
         foreach (array_slice(array_values($ids), 0, self::INVOICE_BATCH_MAX) as $id) {
             $document = $this->invoices()->find($id);
-            if ($document !== null && $document->isFinal()) {
+            if ($document !== null && $document->isIssued()) {
                 $documents[] = $document;
             }
         }
@@ -1425,7 +1428,7 @@ trait InvoiceControllerTrait
         $ids = [];
         foreach ($pairs as $pair) {
             $document = $this->invoices()->find($pair['id']);
-            if ($document === null || !$document->isFinal() || $document->getVersion() !== $pair['version'] + 1) {
+            if ($document === null || !$document->isIssued() || $document->getVersion() !== $pair['version'] + 1) {
                 return null;
             }
             $ids[] = $pair['id'];
@@ -1475,7 +1478,7 @@ trait InvoiceControllerTrait
         $names = [];
         foreach ($pairs as $pair) {
             $document = $this->invoices()->find($pair['id']);
-            if ($document !== null && $document->isFinal()) {
+            if ($document !== null && $document->isIssued()) {
                 $names[] = $document->documentName();
             }
         }

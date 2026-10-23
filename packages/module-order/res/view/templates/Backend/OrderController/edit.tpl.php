@@ -615,8 +615,8 @@ $addressFields = fn(string $field): string => $this->partial('Backend/ContactCon
                         <span class="be-list__cell"><?= e($note->getInvoiceDate()->format('d.m.Y')) ?></span>
                         <span class="be-list__cell be-list__cell--num"><?= e($fmt($note->getGrossTotal())) ?></span>
                         <span class="be-list__cell"></span>
-                        <span class="be-list__cell be-list__cell--muted"><?= $note->isFinal() ? 'verbucht' : 'in Fakturierung' ?></span>
-                        <?php if ($note->isFinal()): ?><a class="be-list__cell" href="<?= e($invoiceBase . '/pdf?id=' . (int) $note->getId()) ?>" target="_blank" rel="noopener">PDF</a><?php else: ?><span class="be-list__cell"></span><?php endif; ?>
+                        <span class="be-list__cell be-list__cell--muted"><?= e($note->state()->label()) ?></span>
+                        <?php if (!$note->isDraft()): ?><a class="be-list__cell" href="<?= e($invoiceBase . '/pdf?id=' . (int) $note->getId()) ?>" target="_blank" rel="noopener">PDF</a><?php else: ?><span class="be-list__cell"></span><?php endif; ?>
                     </div>
                 </div>
                 <?php endforeach; ?>

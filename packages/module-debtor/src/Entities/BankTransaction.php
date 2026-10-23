@@ -109,6 +109,16 @@ class BankTransaction
     #[ORM\Column(type: MoneyType::NAME)]
     private Money $remainder;
 
+    /**
+     * The PRE-SELECTED document of an unmatched transaction whose reference names a REPLACED
+     * document: the last successor of the chain A → B → C (ADR-054 decision 16, owner rule 13).
+     * Never a match — one click («Zuordnen») confirms it. Step 1 of the Faktura-Journal build plan:
+     * the column; nothing writes it before step 7.
+     */
+    #[ORM\ManyToOne(targetEntity: Invoice::class)]
+    #[ORM\JoinColumn(name: 'suggested_invoice_id', nullable: true)]
+    private ?Invoice $suggestedInvoice = null;
+
     /** Why it stands where it stands — German, for the screen. */
     #[ORM\Column(length: self::NOTE_LENGTH, nullable: true)]
     private ?string $note = null;
@@ -183,6 +193,8 @@ class BankTransaction
     public function getDebtorCity(): string { return $this->debtorCity; }
     public function getInvoice(): ?Invoice { return $this->invoice; }
     public function getPayment(): ?Payment { return $this->payment; }
+    /** The successor pre-selected for a reference to a replaced document (ADR-054 decision 16); null otherwise. */
+    public function getSuggestedInvoice(): ?Invoice { return $this->suggestedInvoice; }
     public function getRemainder(): Money { return $this->remainder; }
     public function getNote(): ?string { return $this->note; }
 

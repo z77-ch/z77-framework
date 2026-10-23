@@ -155,7 +155,11 @@ final class BankImportService
         if ($invoice === null) {
             throw new BankImportRefusedException(BankImportRefusedException::INVOICE_UNKNOWN, "Rechnung {$documentNumber} gibt es nicht.");
         }
-        if (!$invoice->isFinal()) {
+        if ($invoice->isInJournal()) {
+            // ADR-054, owner decision 6: an issued invoice is not payable until the journal is posted.
+            throw new BankImportRefusedException(BankImportRefusedException::INVOICE_NOT_FINAL, $invoice->documentName() . ' ist noch nicht verbucht (Faktura-Journal) — erst «Journal verbuchen», dann zuordnen.');
+        }
+        if (!$invoice->isPosted()) {
             throw new BankImportRefusedException(BankImportRefusedException::INVOICE_NOT_FINAL, $invoice->documentName() . ' ist noch in Fakturierung — erst mit «Buchungsdruck …» verbuchen.');
         }
 
@@ -390,7 +394,13 @@ final class BankImportService
 
             return;
         }
-        if (!$invoice->isFinal()) {
+        if ($invoice->isInJournal()) {
+            // ADR-054, owner decision 6: not booked by the import — it waits in the manual payments.
+            $transaction->unmatch('Rechnung noch nicht verbucht — ' . $invoice->documentName() . ' steht im Faktura-Journal; nach «Journal verbuchen» zuordnen.');
+
+            return;
+        }
+        if (!$invoice->isPosted()) {
             $transaction->unmatch($invoice->documentName() . ' ist noch in Fakturierung — erst mit «Buchungsdruck …» verbuchen, dann zuordnen.');
 
             return;
@@ -427,7 +437,13 @@ final class BankImportService
 
             return;
         }
-        if (!$invoice->isFinal()) {
+        if ($invoice->isInJournal()) {
+            // ADR-054, owner decision 6: not booked by the import — it waits in the manual payments.
+            $transaction->unmatch('Rechnung noch nicht verbucht — ' . $invoice->documentName() . ' steht im Faktura-Journal; nach «Journal verbuchen» zuordnen.');
+
+            return;
+        }
+        if (!$invoice->isPosted()) {
             $transaction->unmatch($invoice->documentName() . ' ist noch in Fakturierung — erst mit «Buchungsdruck …» verbuchen, dann zuordnen.');
 
             return;

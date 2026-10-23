@@ -34,13 +34,13 @@ final class InvoicePdfAttachment implements AttachmentProvider
             return false;
         }
 
-        return $this->invoices()->find((int) $id)?->isFinal() ?? false;
+        return $this->invoices()->find((int) $id)?->isIssued() ?? false;
     }
 
     public function resolve(string $id): Attachment
     {
         $document = preg_match('/^[1-9]\d{0,9}$/', $id) === 1 ? $this->invoices()->withLines((int) $id) : null;
-        if ($document === null || !$document->isFinal()) {
+        if ($document === null || !$document->isIssued()) {
             throw new \RuntimeException("Invoice {$id} is missing or not booked — no PDF to attach.");
         }
 

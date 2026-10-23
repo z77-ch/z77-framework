@@ -41,7 +41,7 @@ use Z77\Module\Debtor\Services\Iban;
 
 $actionBase = $actionBase ?? '/backend/finance/invoice';
 $payment    = $bill->payment();
-$state      = $document->isFinal() ? 'final' : 'invoicing';
+$state      = $document->state();   // the five states (ADR-054) — the badge names it, its tone by the predicates
 $row        = static fn(string $label, string $html): string => '<div class="be-list__item"><div class="be-list__row"><span class="be-list__cell be-list__cell--muted">' . e($label) . '</span><span class="be-list__cell be-list__cell--wrap">' . $html . '</span></div></div>';
 /** A link that stays in the window (ADR-047): `data-window-link`; on a page a plain link. */
 $winLink    = static fn(string $href, string $label, string $title = ''): string
@@ -51,7 +51,7 @@ $mask       = static fn(int $id): string => $actionBase . '/edit?id=' . $id;
 <div class="be-form__block" data-invoice-facts>
     <div class="be-form__block-head">
         <h3 class="be-list__section-title">Beleg</h3>
-        <span class="badge <?= $state === 'final' ? 'badge--success' : 'badge--info' ?>" title="<?= e($states[$state]) ?>"><?= $state === 'final' ? 'verbucht' : 'in Fakturierung' ?></span>
+        <span class="badge <?= $document->isPosted() ? 'badge--success' : ($document->isVoid() ? 'badge--muted' : ($document->isInJournal() ? 'badge--warning' : 'badge--info')) ?>" title="<?= e($states[$state->value]) ?>"><?= e($state->label()) ?></span>
     </div>
     <div class="be-list__table" style="--be-list-cols: 11rem minmax(12rem, 1fr)">
         <?php if ($document->isCreditNote()): ?>
@@ -60,7 +60,7 @@ $mask       = static fn(int $id): string => $actionBase . '/edit?id=' . $id;
         <?php if ($document->getLedgerEntryRef() !== null): ?>
         <?php $ref = $document->getLedgerEntryRef(); $journal = '/backend/finance/journal/detail?ref=' . rawurlencode($ref); ?>
         <?= raw($row('Buchung', $ledgerKnown ? '<a href="' . e($journal) . '" data-window-open="' . e($journal) . '">' . e($ref) . '</a>' : e($ref))) ?>
-        <?php elseif ($document->isFinal()): ?>
+        <?php elseif ($document->isPosted()): ?>
         <?= raw($row('Buchung', 'keine (Buchhaltung ausserhalb oder nichts zu buchen)')) ?>
         <?php endif; ?>
         <?php if ($allocations !== []): ?>
@@ -88,7 +88,7 @@ $mask       = static fn(int $id): string => $actionBase . '/edit?id=' . $id;
         <?= raw($row('Mahngebühr zu', 'Rechnung ' . e($feeOfNumber) . ' <small class="be-list__cell--muted">· Stufe ' . e($feeLevel) . '</small>')) ?>
         <?php endif; ?>
         <?php if ($creditNotes !== []): ?>
-        <?= raw($row('Gutschriften', implode(', ', array_map(fn($n) => $winLink($mask((int) $n->getId()), $n->documentName()) . ' ' . e($fmt($n->getGrossTotal())) . ($n->isFinal() ? '' : ' (in Fakturierung)'), $creditNotes)))) ?>
+        <?= raw($row('Gutschriften', implode(', ', array_map(fn($n) => $winLink($mask((int) $n->getId()), $n->documentName()) . ' ' . e($fmt($n->getGrossTotal())) . ($n->isDraft() ? ' (in Fakturierung)' : ''), $creditNotes)))) ?>
         <?php endif; ?>
         <?php if (!empty($deliveries)): /* the document by e-mail (step 3 of the mail plan): what the outbox holds for `invoice:<id>` */ ?>
         <?= raw($row('E-Mail', implode('<br>', array_map(static fn(array $d): string => e(\Z77\Module\Debtor\Mail\InvoiceMails::deliveryLine($d)), $deliveries)))) ?>
