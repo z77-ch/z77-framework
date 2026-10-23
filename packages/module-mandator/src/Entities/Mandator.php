@@ -174,6 +174,19 @@ class Mandator
     #[Clean('text')]
     private string $logoPath = '';
 
+    /**
+     * The logo the HTML MAILS show at the top (owner decision 2026-10-23) — a file of its own,
+     * not the print logo: Outlook draws an image at its INTRINSIC pixel size, so this file must
+     * already be the display size (about 100 px wide); the print logo is scaled by the PDF and
+     * may be large. Same shape as {@see $logoPath} (relative to the project root, forward
+     * slashes); PNG, JPG or GIF only — mail clients do not show SVG ({@see MandatorValidator}).
+     * Resolved at SEND time by {@see \Z77\Module\Mandator\Mail\EmailLogo}, which degrades to
+     * «no logo» when the file is missing. Empty = no logo in the mails.
+     */
+    #[ORM\Column(name: 'email_logo_path', length: self::LOGO_LENGTH, options: ['default' => ''])]
+    #[Clean('text')]
+    private string $emailLogoPath = '';
+
     // ── UID and VAT ─────────────────────────────────────────────────────
 
     /** The Swiss Unternehmens-Identifikationsnummer, canonical `CHE-123.456.789`; empty allowed. */
@@ -312,6 +325,7 @@ class Mandator
     public function getPhone(): string { return $this->phone; }
     public function getWebsite(): string { return $this->website; }
     public function getLogoPath(): string { return $this->logoPath; }
+    public function getEmailLogoPath(): string { return $this->emailLogoPath; }
     public function getUid(): string { return $this->uid; }
     public function isLiableToVat(): bool { return $this->liableToVat; }
     public function getVatExemptNote(): string { return $this->vatExemptNote; }
@@ -340,6 +354,7 @@ class Mandator
     public function setPhone(string $phone): void { $this->phone = $phone; }
     public function setWebsite(string $website): void { $this->website = trim($website); }
     public function setLogoPath(string $path): void { $this->logoPath = str_replace('\\', '/', trim($path)); }
+    public function setEmailLogoPath(string $path): void { $this->emailLogoPath = str_replace('\\', '/', trim($path)); }
     public function setUid(string $uid): void { $this->uid = Uid::normalize($uid); }
     public function setLiableToVat(bool $liable): void { $this->liableToVat = $liable; }
     /** Trimmed, whitespace collapsed to one line — the note is one printed sentence. */

@@ -4887,6 +4887,39 @@ $db->executeStatement("UPDATE mail_outbox SET state = 'sent', sent_at = '2026-08
 check('BM23 everything went out: the band says «Alle versendet», the button stays away',
     str_contains($bmL, '<span>Alle versendet</span>') && !str_contains($bmL, 'Alle per E-Mail senden') && $host->context['status']['waiting'] === 0, strip_tags($bmL));
 
+// What the customer receives (owner 2026-10-23: a received mail looked as if the PDF part had no
+// body): ONE mail sent the way the job sends it — OutboxSender, the REAL provider `invoice-pdf`,
+// the Mailer with FileTransport — and the .eml read back: the attachment decodes to the PDF, the
+// mandator's «Logo (E-Mail)» is inline at its own size, the text half reads in paragraphs.
+require_once __DIR__ . '/support/TestPng.php';
+TestPng::write($base . '/assets/mail/logo.png', 100, 40);
+$db->executeStatement("UPDATE mandator SET email_logo_path = 'assets/mail/logo.png' WHERE id = 1");
+$bmEmlDir = $base . '/data/framework/mail/bm-outbox';
+$bmSendId = (int) $bmRows[0]['id'];
+$db->executeStatement("UPDATE mail_outbox SET state = 'queued', attempts = 0, sent_at = NULL, next_attempt_at = ? WHERE id = ?", [(new \DateTimeImmutable('-1 minute'))->format('Y-m-d H:i:s'), $bmSendId]);
+$bmRequest([]);
+$bmSender = new \Z77\Module\Mailing\Outbox\OutboxSender(
+    DI::getUnifiedEntityManager()->getRepository(\Z77\Module\Mailing\Entities\OutboxMail::class),
+    \Z77\Module\Mailing\Attachments\AttachmentProviders::fromModules(DI::getModuleManager()),
+    new \Z77\Shared\Mail\Mailer(new \Z77\Shared\Mail\FileTransport($bmEmlDir), 'no-reply@example.ch'),
+    \Z77\Module\Mailing\Outbox\OutboxSettings::fromModules(DI::getModuleManager()),
+);
+$bmOutcome = $bmSender->send($bmSendId, new \DateTimeImmutable());
+$bmEml     = (string) @file_get_contents((glob($bmEmlDir . '/*.eml') ?: [''])[0]);
+preg_match('/Content-Type: application\/pdf; name="([^"]+)"\r\nContent-Transfer-Encoding: base64\r\nContent-Disposition: attachment; filename="[^"]+"\r\n\r\n(.*?)\r\n--=_z77_mixed_/s', $bmEml, $bmPart);
+$bmPdfBytes = base64_decode(str_replace("\r\n", '', $bmPart[2] ?? ''), true);
+check('BM24 the mail as the job sends it (OutboxSender, the real provider, FileTransport): sent; the attachment part «rechnung-<nr>.pdf» carries a base64 body that decodes to the whole PDF (%PDF- … %%EOF, more than 2 KB) — no empty part',
+    $bmOutcome === 'sent' && ($bmPart[1] ?? '') === 'rechnung-' . $bmNum[0] . '.pdf' && is_string($bmPdfBytes) && str_starts_with($bmPdfBytes, '%PDF-')
+    && strlen($bmPdfBytes) > 2048 && str_contains(substr($bmPdfBytes, -32), '%%EOF'),
+    'outcome ' . $bmOutcome . ', part ' . ($bmPart[1] ?? '—') . ', ' . (is_string($bmPdfBytes) ? strlen($bmPdfBytes) . ' bytes' : 'no base64'));
+$bmEmlPlain = quoted_printable_decode($bmEml);
+check('BM25 … the mandator\'s «Logo (E-Mail)» at the top: multipart/related, the PNG inline (Content-ID), <img src="cid:…" width="100" height="40" alt="Harness AG">; the text half has a blank line between the paragraphs',
+    str_contains($bmEml, 'Content-Type: multipart/related; type="text/html"') && preg_match('/Content-ID: <(logo\.[0-9a-f]{12}@z77)>/', $bmEml, $bmCid) === 1
+    && str_contains($bmEmlPlain, '<img src="cid:' . $bmCid[1] . '" width="100" height="40" alt="Harness AG"')
+    && preg_match('/Content-Type: text\/plain; charset=UTF-8\r\nContent-Transfer-Encoding: quoted-printable\r\n\r\n(.*?)\r\n--=_z77_alt_/s', $bmEml, $bmText) === 1
+    && str_contains(quoted_printable_decode($bmText[1]), "\r\n\r\nPlease find attached our invoice " . $bmNum[0]) && str_contains(quoted_printable_decode($bmText[1]), "Kind regards\r\nBuchhaltung\r\n"),
+    json_encode(quoted_printable_decode($bmText[1] ?? ''), JSON_UNESCAPED_UNICODE));
+
 // ── result ───────────────────────────────────────────────────────────────
 
 echo "\n{$pass} passed, {$fail} failed" . ($fromSection !== null ? " (section {$fromSection} from its checkpoint)" : '') . "\n";

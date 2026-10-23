@@ -13,6 +13,8 @@
  *     (markup around it, or a trailing slash apart) keeps the label alone;
  *   - the one exception: a bare `#fragment` points into a document the text
  *     half does not have, and no receiver counts it;
+ *   - a paragraph (`</p>`, a heading) ends with ONE blank line, a `<br>` or
+ *     list item with a single break — the greeting block stays together;
  *   - the space AFTER an inline closing tag stays (`</strong> Auf` —
  *     MAIL-TEXT-001), while the markup's indentation at the start of a line
  *     goes. Both are whitespace after a `>`; only the position tells them
@@ -102,6 +104,24 @@ $text = $convert("<p>\n    Eingerückt im Markup\n</p>\n<p>\n    Zweiter Absatz\
 check('indentation at the line start goes', !str_contains($text, "\n "));
 check('…and both lines are there',
     str_contains($text, 'Eingerückt im Markup') && str_contains($text, 'Zweiter Absatz'));
+
+// ── paragraphs (2026-10-23): a blank line between, the lines of a block together ──
+
+// What `emails/documentMail` renders: paragraphs, the greeting block with <br>, the empty logo slot.
+$html = "<table><tr><td>\n<p data-z77-inline=\"logo\" style=\"margin:0 0 24px;\"></p>\n"
+      . "<p style=\"margin:0 0 14px;\">Guten Tag</p>\n"
+      . "<p style=\"margin:0 0 14px;\">Im Anhang erhalten Sie unsere Rechnung 26100004.</p>\n"
+      . "<p style=\"margin:0 0 14px;\">Freundliche Grüsse<br>\nMax Muster<br>\nMuster AG</p>\n"
+      . "</td></tr></table>";
+$text = $convert($html);
+check('paragraphs are separated by ONE blank line',
+    str_contains($text, "Guten Tag\r\n\r\nIm Anhang erhalten Sie unsere Rechnung 26100004.\r\n\r\nFreundliche Grüsse"));
+check('…the lines of the greeting block stay single-spaced', str_contains($text, "Freundliche Grüsse\r\nMax Muster\r\nMuster AG"));
+check('…never two blank lines in a row, nothing before the first line (the empty slot)',
+    !str_contains($text, "\r\n\r\n\r\n") && str_starts_with($text, 'Guten Tag') && str_ends_with($text, 'Muster AG'));
+
+$text = $convert('<h1>Titel</h1><ul><li>Eins</li><li>Zwei</li></ul><p>Schluss</p>');
+check('a heading ends with a blank line, list items with a single break', $text === "Titel\r\n\r\nEins\r\nZwei\r\n\r\nSchluss");
 
 // ── entities ────────────────────────────────────────────────────────────────
 

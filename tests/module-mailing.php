@@ -149,6 +149,17 @@ final class TestPdfAttachment implements AttachmentProvider
 
 final class NotAProvider {}
 
+/** The inline image `logo` as module-mandator registers one — the file is whatever the check sets. */
+final class TestLogo implements \Z77\Shared\Mail\InlineImageSource
+{
+    public static string $path = '';
+
+    public function image(): ?\Z77\Shared\Mail\InlineImage
+    {
+        return \Z77\Shared\Mail\InlineImage::fromFile(self::$path, 'Muster AG');
+    }
+}
+
 // ── credentials: never in the repository ─────────────────────────────────
 
 $credentials = [
@@ -864,6 +875,54 @@ $win = $render('detail', $h->context);
 check('N7 the window: «Ausgelöst von» peter als «Max Muster <max.muster@example.ch>» (user id), «Antwort an» the identity, «Absender» its name with the account\'s address',
     str_contains($win, 'Ausgelöst von:</span> peter als Max Muster &lt;max.muster@example.ch&gt; (Benutzer-Id 7)') && str_contains($win, 'Antwort an:</span> Max Muster &lt;max.muster@example.ch&gt;')
     && str_contains($win, '«Max Muster» mit der Adresse aus der E-Mail-Konfiguration'), strip_tags($win));
+$db->executeStatement('DELETE FROM mail_outbox');
+
+// ── O. the document mail through the outbox: logo, text half, attachment ──
+
+echo "O. A document mail through the outbox (owner 2026-10-23): inline logo at send time, paragraphs in the text half, the attachment's bytes\n";
+require_once __DIR__ . '/support/TestPng.php';
+$em = $wireDi();
+$db->executeStatement('DELETE FROM mail_outbox');
+TestPng::write($base . '/assets/mail/logo.png', 100, 40);
+$service = new OutboxService(DI::getUnifiedEntityManager(), $providers, DI::getEmailService(), new JobQueue(DI::getUnifiedEntityManager()));
+$docBody = "Guten Tag\n\nIm Anhang erhalten Sie unsere Rechnung 26100004.\n\nFreundliche Grüsse\nMax Muster\nMuster AG";
+$docDraft = fn(string $to) => OutboxDraft::template($to, 'Rechnung 26100004 — Muster AG', 'emails/documentMail', 'Z77\Shared', ['body' => $docBody])->withAttachments(['test-pdf:4']);
+$docRow  = $service->queue($docDraft('logo@example.ch'), 'max.muster');
+$docHtml = (string) $db->fetchOne('SELECT html_body FROM mail_outbox WHERE id = ?', [$docRow->getId()]);
+check('O1 queue time stores the SLOT, not the image: `data-z77-inline="logo"` in the stored HTML, no cid, no file path — the logo is resolved when the mail goes out',
+    str_contains($docHtml, '<p data-z77-inline="logo" style="margin:0 0 24px;"></p>') && !str_contains($docHtml, 'cid:') && !str_contains($docHtml, 'logo.png'));
+TestLogo::$path = $base . '/assets/mail/logo.png';
+$transport->sent = [];
+$clockNow = new \DateTimeImmutable('+2 seconds');
+$job(null, new Mailer($transport, 'outbox@example.ch', 'Z77 Test', new \Z77\Shared\Mail\InlineImages(['logo' => TestLogo::class])))->run($context());
+$docWire = (string) ($transport->sent[0]['data'] ?? '');
+$docPlain = quoted_printable_decode($docWire);
+// The MIME tree: mixed [ alternative [ text, related [ html, png ] ], pdf ].
+$posMixed = strpos($docWire, 'Content-Type: multipart/mixed');
+$posAlt   = strpos($docWire, 'Content-Type: multipart/alternative');
+$posRel   = strpos($docWire, 'Content-Type: multipart/related; type="text/html"');
+$posPng   = strpos($docWire, 'Content-Type: image/png; name="logo.png"');
+$posPdf   = strpos($docWire, 'Content-Type: application/pdf; name="Beleg 4.pdf"');
+check('O2 sent: mixed [ alternative [ text, related [ html, the PNG inline with its Content-ID ] ], the PDF ] — the slot holds <img src="cid:…" width="100" height="40" alt="Muster AG">',
+    $docWire !== '' && $posMixed !== false && $posAlt > $posMixed && $posRel > $posAlt && $posPng > $posRel && $posPdf > $posPng
+    && preg_match('/Content-ID: <(logo\.[0-9a-f]{12}@z77)>/', $docWire, $docCid) === 1 && str_contains($docWire, 'Content-Disposition: inline; filename="logo.png"')
+    && str_contains($docPlain, '<p style="margin:0 0 24px;"><img src="cid:' . $docCid[1] . '" width="100" height="40" alt="Muster AG"') && !str_contains($docPlain, 'data-z77-inline'),
+    substr($docWire, 0, 1200));
+preg_match('/Content-Type: text\/plain; charset=UTF-8\r\nContent-Transfer-Encoding: quoted-printable\r\n\r\n(.*?)\r\n--=_z77_alt_/s', $docWire, $docText);
+$docText = quoted_printable_decode($docText[1] ?? '');
+check('O3 the text half reads in paragraphs: a blank line between «Guten Tag», the sentence and the greeting; the greeting block single-spaced',
+    $docText === "Guten Tag\r\n\r\nIm Anhang erhalten Sie unsere Rechnung 26100004.\r\n\r\nFreundliche Grüsse\r\nMax Muster\r\nMuster AG", json_encode($docText, JSON_UNESCAPED_UNICODE));
+preg_match('/Content-Disposition: attachment; filename="Beleg 4\.pdf"\r\n\r\n(.*?)\r\n--=_z77_mixed_/s', $docWire, $docPdf);
+check('O4 the attachment part carries its bytes: base64 that decodes to the provider\'s PDF', base64_decode($docPdf[1] ?? '', true) === '%PDF-1.4 test 4');
+TestLogo::$path = $base . '/assets/mail/missing.png';
+$service->queue($docDraft('nologo@example.ch'), 'max.muster');
+$transport->sent = [];
+$clockNow = new \DateTimeImmutable('+3 seconds');
+$job(null, new Mailer($transport, 'outbox@example.ch', 'Z77 Test', new \Z77\Shared\Mail\InlineImages(['logo' => TestLogo::class])))->run($context());
+$noLogo = (string) ($transport->sent[0]['data'] ?? '');
+check('O5 the logo file gone by send time: no related part, no image, the slot removed — the mail is the text with its PDF',
+    $noLogo !== '' && !str_contains($noLogo, 'multipart/related') && !str_contains($noLogo, 'image/png') && !str_contains(quoted_printable_decode($noLogo), 'data-z77-inline')
+    && str_contains($noLogo, 'application/pdf') && str_contains(quoted_printable_decode($noLogo), 'Guten Tag'));
 $db->executeStatement('DELETE FROM mail_outbox');
 
 // ── M. source guards ─────────────────────────────────────────────────────

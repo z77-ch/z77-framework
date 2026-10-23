@@ -4,7 +4,7 @@
  * page form with `csrf_token` (`#[Csrf]`), no JavaScript (Rule 7):
  *
  *   - Briefkopf: name, two address lines, street / no, zip / city, country;
- *     e-mail, phone, website; the logo path;
+ *     e-mail, phone, website; the logo path and the e-mail logo path;
  *   - UID und MWST: the UID (canonical `CHE-123.456.789`), the liability
  *     switch (a hidden `0` before it, so «off» is submitted too) and, under
  *     it, the note a document without VAT prints (owner 2026-10-22);
@@ -124,6 +124,7 @@ $text = function (string $field, string $label, string $value, int $maxlength, s
             <?= raw($text('phone', 'Telefon', $entry->getPhone(), \Z77\Module\Mandator\Entities\Mandator::PHONE_LENGTH)) ?>
             <?= raw($text('website', 'Website', $entry->getWebsite(), \Z77\Module\Mandator\Entities\Mandator::WEBSITE_LENGTH)) ?>
             <?= raw($text('logo_path', 'Logo', $entry->getLogoPath(), \Z77\Module\Mandator\Entities\Mandator::LOGO_LENGTH, 'Pfad relativ zum Projekt')) ?>
+            <?= raw($text('email_logo_path', 'Logo (E-Mail)', $entry->getEmailLogoPath(), \Z77\Module\Mandator\Entities\Mandator::LOGO_LENGTH, 'Pfad relativ zum Projekt — PNG, JPG oder GIF in Anzeigegrösse (etwa 100 px breit), oben in den E-Mails')) ?>
         </div>
         </section>
 

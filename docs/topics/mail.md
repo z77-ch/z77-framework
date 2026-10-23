@@ -22,6 +22,10 @@ SOURCE=/packages/kernel/shared/src/Mail/Mailer.php
 SOURCE=/packages/kernel/shared/src/Mail/EmailService.php
 SOURCE=/packages/kernel/shared/src/Mail/EmailMessage.php
 SOURCE=/packages/kernel/shared/src/Mail/HtmlToText.php
+SOURCE=/packages/kernel/shared/src/Mail/InlineImages.php
+SOURCE=/packages/kernel/shared/src/Mail/InlineImage.php
+SOURCE=/packages/kernel/shared/src/Mail/InlineImageSource.php
+SOURCE=/packages/module-mandator/src/Mail/EmailLogo.php
 SOURCE=/packages/kernel/shared/src/Config/emailConfig.inc.php
 SOURCE=/packages/kernel/shared/src/Entities/EmailFormSetting.php
 SOURCE=/packages/kernel/shared/src/Repositories/EmailFormSettingRepository.php
@@ -49,6 +53,7 @@ SOURCE=/packages/module-dms/src/Images/DocumentKind.php
 SOURCE=/packages/module-dms/src/Services/DocumentService.php
 SOURCE=/tests/mail-html-to-text.php
 SOURCE=/tests/backend-user-identities.php
+SOURCE=/tests/support/TestPng.php
 
 ## mental model
 
@@ -92,7 +97,9 @@ v2 backend-editable settings entity.
   smuggle extra headers or recipients.
 - **MIME structure follows the content:** text-only → `text/plain`; text+html →
   `multipart/alternative`; any body + attachments → `multipart/mixed` wrapping the body
-  part. Text bodies are quoted-printable (since 2026-09-11 — a base64 text part is a spam
+  part; an HTML body with inline parts (`Message::embed()`) becomes `multipart/related`
+  (html + the images it names by `cid:`) inside the alternative — the fullest mail reads
+  mixed [ alternative [ text, related [ html, png ] ], pdf ]. Text bodies are quoted-printable (since 2026-09-11 — a base64 text part is a spam
   signal, `MIME_BASE64_TEXT`), attachments base64, both 76-col wrapped, CRLF throughout;
   non-ASCII subjects / display names are RFC 2047 B-encoded. `X-Mailer: z77` is always set
   (an absent user agent is a signal too, `MISSING_XM_UA`).
@@ -288,6 +295,23 @@ installation's identity (`config/client/mail.inc.php`), as for every mail; nothi
 | Resolution | `EmailService::documentMail(kind, language, values)` — the ONE place: record (active) else declaration; the document's language when BOTH its subject and text are filled, else `de`; `{name}` replaced (line breaks of a value flattened in the subject); a body LINE of nothing but placeholders that all resolved to '' is dropped (2026-10-23 — `{anzeigename}` on its own line leaves no blank line when empty). Answers text — the sender (the outbox) renders the body through `emails/documentMail` (paragraphs escaped, line breaks `<br>`) inside `emails/layout` |
 | Screen | Service › E-Mail › «Beleg-Mails»: one row per kind (label, kind, the effective German subject, languages, origin «Modul» / «Backend» / «Backend inaktiv»), the switch where a record exists, ⋮ → «Bearbeiten» / «Zurücksetzen», «Anpassen» on a module-only row. Actions `document-actions`, `document-edit`, `document-toggle-active`, `confirm-document-reset`, `document-reset` of `EmailSettingsController`; the dialog has subject + text per language and the placeholder list |
 
+## inline images — the e-mail logo (owner decision 2026-10-23)
+
+A document mail shows the mandator's «Logo (E-Mail)» at the top, as an INLINE part of the mail
+(not a remote URL: no «load images?» prompt, no tracking look, works offline). Separate from the
+print logo because Outlook (desktop, Word engine) draws an image at its INTRINSIC pixel size and
+ignores CSS widths — the file must already be the display size (≈ 100 px wide); nothing is
+resized (the operator uploads the right size).
+
+| Piece | Detail |
+|---|---|
+| The slot | a template writes an EMPTY element with `data-z77-inline="<name>"` — `emails/documentMail`: `<p data-z77-inline="logo" style="margin:0 0 24px;"></p>` at the top. The stored / rendered HTML holds only the slot, never a path |
+| Resolution | `InlineImages::embedInto(Message)` — called by `Mailer::send()` for every HTML body that has a slot (`hasSlots()`, so a mail without one never loads the registry). Per name: the registered `InlineImageSource` answers an `InlineImage` (path, real pixel size from `getimagesize()`, alt) → `Message::embed(path, cid)` (cid `logo.<12 hex>@z77`) and the element gets `<img src="cid:…" width height alt style="display:block;border:0;…">`, the attribute removed. No image (nothing stored, file missing / unreadable, not PNG / JPEG / GIF by its header, no module registers the name) → the WHOLE element is removed, the mail is what it was without the slot. A source that throws is logged (`error_log`) and treated as «no image» — an image never stops a mail |
+| Why SEND time | the outbox renders bodies at QUEUE time and sends minutes or hours later; resolving in the `Mailer` — like the attachments — means a logo changed in between is the one that goes out, and it is the ONE place the outbox and `EmailService::send()` both pass |
+| Registration | config key `mailInlineImages` (name => `InlineImageSource` class, no-arg constructor) or `App/Config/mailInlineImagesConfig.inc.php` — the `mailAttachments` registry pattern; a name by two classes is refused, a bad entry fails loud at the first mail with a slot. Shipped: module-mandator `logo` => `Mail\EmailLogo` («Logo (E-Mail)» = `mandator.email_logo_path`, alt = the mandator's name, mandator.md) |
+| MIME | an `Attachment` with a `contentId` is inline (`isInline()`, shape `CONTENT_ID_PATTERN`); `Message::attach()` sorts it into `getEmbedded()`; `MimeMessage` writes `multipart/related; type="text/html"` with `Content-ID: <…>` and `Content-Disposition: inline`. No HTML body → inline parts are left out |
+| Text half | the `<img>` carries no link, so the URL parity of `HtmlToText` is untouched; the empty slot leaves nothing in the text |
+
 ## sender identities — «Senden als» (owner decision 2026-10-23)
 
 A mail a staff member triggers (today «Alle per E-Mail senden …» of the booking print; later
@@ -353,7 +377,8 @@ address in config:
 - When a staff member triggers a mail → MUST sign it with one of HIS sender identities through `SenderIdentities` (page: `partials/senderIdentityField`; POST: `choose($index)`, refuse on null) and pass it on (`OutboxDraft::withSender()`); MUST NOT take the address or name from the request directly, fall back to another user's identity, or send when the user has none.
 - When passing user input into a mail → MUST hand it to the template context (templates escape via `e()`); the only user-controlled header is Reply-To (validated, silently dropped when invalid); MUST NOT feed user input into subjects, recipients, or template paths.
 - When a mail carries a link back into the installation → MUST build its origin from `Request::getBaseUrl()` / `CANONICAL_BASE_URL` (`config/client/systemConfig.inc.php`, ADR-030); MUST NOT derive it from the request's `Host` header, which the client chooses — a forged Host turns a genuine mail into an attacker-owned link (SEC-005, see [`security.md`](security.md)). On an installation where the value is unset this THROWS by design, so a cron aborts instead of mailing links that point nowhere.
-- When changing the plain-text half (`HtmlToText`) → MUST keep the URL COUNT of both halves equal, a linked image included, because the receiver's filter compares them (`URI_COUNT_ODD`, MAIL-SPAM-001); MUST NOT re-introduce a whitespace pass that runs BEFORE the line breaks exist and cannot tell indentation from a space inside a sentence (MAIL-TEXT-001); and MUST re-run `php tests/mail-html-to-text.php` (18 checks, no bootstrap) — the two rules above look alike in a diff and neither shows up in the HTML half anyone reads while testing.
+- When changing the plain-text half (`HtmlToText`) → MUST keep the URL COUNT of both halves equal, a linked image included, because the receiver's filter compares them (`URI_COUNT_ODD`, MAIL-SPAM-001); MUST keep a paragraph end (`</p>`, a heading, a list) a BLANK line and a `<br>` / `</li>` / row a single break (MAIL-TEXT-002); MUST NOT re-introduce a whitespace pass that runs BEFORE the line breaks exist and cannot tell indentation from a space inside a sentence (MAIL-TEXT-001); and MUST re-run `php tests/mail-html-to-text.php` (22 checks, no bootstrap) — these rules look alike in a diff and none shows up in the HTML half anyone reads while testing.
+- When a mail should show an image (a logo, a newsletter picture) → MUST mark the place with an empty element `data-z77-inline="<name>"` and register an `InlineImageSource` under `mailInlineImages`; the image is embedded at send time by `Mailer::send()`. MUST NOT link a remote image, write a file path or a `cid:` into a stored body, or embed in the caller — the slot is the contract, the `Mailer` the one place.
 - When a form mail fails → MUST treat `sendForm() === false` as the normal failure path (generic user message; cause is in `getLastErrors()` + `logs/php-error.log`); MUST NOT let a transport/config problem escalate to a 500 on a public form.
 - When routing a form mail by a user choice → MUST pass a server-validated option value as `sendForm()`'s `routeKey` (it selects an entry of the server-defined `routes` map); MUST NOT derive recipients or subject text from user input directly.
 - When a module mails a business document → MUST take subject and text from `EmailService::documentMail()` (its kind declared under `documentMails` in the module's config, German required) and queue the mail through the outbox (mailing.md); MUST NOT hard-code a subject or text in the sending code, read `emailDocumentSettings.json` directly, or put the document's text into the template as markup (it is plain text, escaped by `emails/documentMail`). A sending module fills `{anzeigename}` with the chosen identity's name and keeps `{absender}` the company (mandator).
@@ -433,6 +458,29 @@ address in config:
   when the label is EMPTY, which loses the URL of a linked image and re-opens
   `URI_COUNT_ODD` — ours keeps it (reported back; our mail templates carry no `<img>`
   today, so this is prevention).
+- **MAIL-TEXT-002 — resolved 2026-10-23: the text half had no blank line between paragraphs.**
+  A document mail arrived as «Guten Tag / Im Anhang … / Freundliche Grüsse …» in the
+  `text/plain` alternative while the HTML showed `<p>` paragraphs: `HtmlToText` turned `</p>`
+  into ONE line break. Now `</p>`, `</h1>`–`</h6>`, `</ul>`, `</ol>` end with a blank line, a
+  `<br>`, `</li>` and rows stay single (the greeting block «Freundliche Grüsse / name / company»
+  stays together), and a final pass keeps at most one blank line in a row. Applies to EVERY
+  template mail (the member mails too) and to rows already queued: the outbox derives an empty
+  text half at send time. Harness `tests/mail-html-to-text.php` (paragraph checks),
+  `tests/module-mailing.php` O3, `tests/module-debtor.php` BM25.
+- **MAIL-ATTACH-001 — checked 2026-10-23, no bug found: the PDF attachment carries its bytes.**
+  A received document mail (outbox job, SMTP) looked as if the part `application/pdf;
+  name="rechnung-26100004.pdf"` had no base64 body. Checked in code and by test: the provider
+  `invoice-pdf` returns the rendered PDF (`InvoicePdf::of()->output()`, the bytes as a string),
+  `MimeMessage` writes it base64, 76-col, CRLF; `SmtpTransport` hands the SAME blob over DATA
+  (dot-stuffing only touches lines starting with `.`, which base64 never has). Proof:
+  `tests/module-debtor.php` BM24 sends a queued invoice mail the way the job does
+  (`OutboxSender`, the real provider, `FileTransport`) and decodes the part back to the whole PDF
+  (`%PDF-` … `%%EOF`, > 2 KB); `tests/module-mailing.php` O4 the same with a test provider. Most
+  likely the pasted source was cut. To verify a received mail, open its full source («Original
+  anzeigen» / «Nachrichtenquelle»). Don't assume a short write corrupts it silently either:
+  `SmtpTransport` writes DATA with ONE `fwrite()` whose return is not checked, but the terminator
+  is the end of that same string — a short write leaves the server waiting, the reply times out,
+  the mail is retried, never delivered half.
 - **MAIL-V2-001 — built 2026-07-18.** Backend-editable form-mail settings (see «form-mail
   settings v2» section): `EmailFormSetting` entity (incl. `active` flag) +
   `EmailSettingsController` (Service → E-Mail, navigation seed id 27) + entity-first
@@ -485,6 +533,7 @@ address in config:
 - From control system (owner note 2026-07-18): a later mechanism guarantees any
   `EmailMessage::from()` is domain-conform (SPF/DKIM/DMARC) — until then From stays the
   `config/client/mail.inc.php` installation identity.
+- **E-mail logo — built 2026-10-23 (owner decision of the day), owner's live look open**: upload the ≈ 100 px wide PNG into the project (e.g. `assets/mail/logo.png`), set Mandant › Briefkopf › «Logo (E-Mail)», send a document mail on next.z77.ch (booking print → «Alle per E-Mail senden …»), check it in Outlook (desktop + web) and Gmail: the logo at the top at its size, no «Bilder herunterladen» prompt, NOT listed as an attachment, the PDF there; the text alternative with blank lines between the paragraphs. Needs the mandator migration `Version20261023120000` (mandator.md pending).
 - **Beleg-Mails, owner's live look**: Service › E-Mail › «Beleg-Mails» (the rows, «Anpassen», the dialog per language, the switch, «Zurücksetzen») — built 2026-10-22, not seen in a browser.
 - **Beleg-Mails for offer / order confirmation / delivery note / dunning**: the kinds are declared (prepared); each needs its attachment provider and a send action (mailing.md step 3).
 - Re-add `RUNTIME=/skeleton/config/mail.inc.php` to the file map after the next clean-install

@@ -291,7 +291,7 @@ check('A8d the year-opening accounts (P5, owner 2026-10-22): NOT NULL with the K
 [$code, $out] = $run(['command' => 'migrate']);
 check('A9 a second migrate is a no-op', $code === 0 && str_contains($out, 'Already at the latest version'));
 [$code, $out] = $run(['command' => 'diff', '--namespace' => 'Z77\\Module\\Mandator\\Migrations']);
-check('A10 diff after migrate reports NO change — mapping and migration agree', $code !== 0 && str_contains($out, 'No changes detected') && count(glob($package . '/res/migrations/Version*.php')) === 4);
+check('A10 diff after migrate reports NO change — mapping and migration agree', $code !== 0 && str_contains($out, 'No changes detected') && count(glob($package . '/res/migrations/Version*.php')) === 5);
 check('A11 every migration is expand-only: no DROP outside down()', array_reduce(glob($package . '/res/migrations/Version*.php'), function (bool $ok, string $f): bool {
     $s = file_get_contents($f);
     return $ok && substr_count(substr($s, 0, strpos($s, 'function down')), 'DROP') === 0;
@@ -312,6 +312,16 @@ check('A13 the note a document without VAT prints (owner 2026-10-22, Version2026
     && (new MandatorValidator(new Mandator(['name' => 'x', 'country' => 'CH', 'vat_exempt_note' => str_repeat('x', 255)])))->isValid(['vat_exempt_note'])
     && MandatorLayout::tabOf('vat_exempt_note') === 'uid'
     && $noteOf(false, 'Keine MWST.') === 'Keine MWST.' && $noteOf(true, 'Keine MWST.') === null && $noteOf(false, '') === null && (new Mandator())->documentVatNote() === null);
+
+$logoColumn = $db->fetchAssociative('SELECT COLUMN_DEFAULT, IS_NULLABLE, CHARACTER_MAXIMUM_LENGTH FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ?', [$dbName, 'mandator', 'email_logo_path']);
+$logoError  = fn(string $path): string => (function (MandatorValidator $v) { $v->isValid(['email_logo_path']); return $v->getFieldError('email_logo_path'); })(new MandatorValidator(new Mandator(['name' => 'x', 'country' => 'CH', 'email_logo_path' => $path])));
+check('A14 the logo of the HTML mails (owner 2026-10-23, Version20261023120000): mandator.email_logo_path VARCHAR(255) NOT NULL DEFAULT \'\', a field of its own next to the print logo; the setter turns backslashes; the validator takes PNG / JPG / GIF relative to the project, refuses SVG, an absolute path and «..»; the module registers it as the inline image `logo`',
+    $logoColumn !== false && trim((string) $logoColumn['COLUMN_DEFAULT'], "'") === '' && $logoColumn['IS_NULLABLE'] === 'NO' && (int) $logoColumn['CHARACTER_MAXIMUM_LENGTH'] === 255
+    && (new Mandator(['email_logo_path' => ' assets\mail\logo.png ']))->getEmailLogoPath() === 'assets/mail/logo.png' && (new Mandator(['logo_path' => 'a.png']))->getEmailLogoPath() === ''
+    && $logoError('assets/mail/logo.png') === '' && $logoError('assets/LOGO.JPG') === '' && $logoError('logo.jpeg') === '' && $logoError('logo.gif') === '' && $logoError('') === ''
+    && str_contains($logoError('assets/logo.svg'), 'SVG') && $logoError('/abs/logo.png') !== '' && $logoError('../logo.png') !== '' && $logoError('C:\logo.png') !== ''
+    && $config->get('mailInlineImages') === ['logo' => \Z77\Module\Mandator\Mail\EmailLogo::class]
+    && \Z77\Shared\Mail\InlineImages::fromModules(DI::getModuleManager())->names() === ['logo']);
 
 // ── B. the UID, pure ─────────────────────────────────────────────────────
 
@@ -757,6 +767,46 @@ check('G11 module-backend mounts the fragment under the finance group and names 
     && str_contains(file_get_contents($backend . '/src/Ui/Controllers/Finance/MandatorController.php'), 'use MandatorControllerTrait;')
     && preg_match("/'MandatorController'\s*=>\s*\[\s*'defaultAction'\s*=>\s*'edit'/", file_get_contents($backend . '/src/App/Config/backendConfig.inc.php')) === 1);
 check('G12 the package ships no JavaScript and no CSS of its own (Rule 7)', glob($package . '/res/**/*.js') === [] && glob($package . '/res/*.js') === [] && !is_dir($package . '/res/scss'));
+
+// ── I. the e-mail logo at send time ─────────────────────────────────────
+
+echo "I. The e-mail logo (inline image `logo`, owner 2026-10-23)\n";
+require_once __DIR__ . '/support/TestPng.php';
+$em = $wireDi();
+$logoOf = function (string $path) use ($db, $wireDi): ?\Z77\Shared\Mail\InlineImage {
+    $db->executeStatement('UPDATE mandator SET email_logo_path = ? WHERE id = 1', [$path]);
+    $wireDi();
+    return (new \Z77\Module\Mandator\Mail\EmailLogo())->image();
+};
+TestPng::write($base . '/assets/mail/logo.png', 100, 40);
+@mkdir($base . '/assets/mail', 0777, true);
+file_put_contents($base . '/assets/mail/fake.png', '<svg xmlns="http://www.w3.org/2000/svg"/>');
+$mandatorName = (new CurrentMandator($em))->find()?->getName();
+$logo = $logoOf('assets/mail/logo.png');
+check('I1 a stored PNG: EmailLogo answers the file with its real pixel size (100 × 40) and the mandator\'s name as alt',
+    $logo !== null && $logo->path === $base . '/assets/mail/logo.png' && $logo->width === 100 && $logo->height === 40 && $logo->alt === $mandatorName && $mandatorName !== '');
+check('I2 nothing stored, the file missing, an SVG under a .png name: no logo (null) — the mail goes out without one',
+    $logoOf('') === null && $logoOf('assets/mail/missing.png') === null && $logoOf('assets/mail/fake.png') === null);
+$logoOf('assets/mail/logo.png');
+$sent = new class implements \Z77\Shared\Mail\MailTransport {
+    public string $data = '';
+    public function send(string $sender, array $recipients, string $data): void { $this->data = $data; }
+};
+$mailer = new \Z77\Shared\Mail\Mailer($sent, 'no-reply@example.ch');
+$mailer->send((new \Z77\Shared\Mail\Message())->to('max.muster@example.ch')->subject('Logo')->text('Guten Tag')
+    ->html('<p data-z77-inline="logo" style="margin:0 0 24px;"></p><p>Guten Tag</p>'));
+$wire = $sent->data;
+check('I3 through the Mailer (the registry from the modules): the HTML is multipart/related with the PNG as an inline part (Content-ID), the slot holds <img src="cid:…" width="100" height="40" alt="<mandator>">, the attribute is gone',
+    str_contains($wire, 'Content-Type: multipart/related; type="text/html"') && preg_match('/Content-ID: <(logo\.[0-9a-f]{12}@z77)>/', $wire, $cidM) === 1
+    && str_contains($wire, 'Content-Type: image/png; name="logo.png"') && str_contains($wire, 'Content-Disposition: inline; filename="logo.png"')
+    && str_contains(quoted_printable_decode($wire), '<p style="margin:0 0 24px;"><img src="cid:' . $cidM[1] . '" width="100" height="40" alt="' . htmlspecialchars((string) $mandatorName) . '"')
+    && !str_contains(quoted_printable_decode($wire), 'data-z77-inline'));
+$logoOf('');
+$mailer->send((new \Z77\Shared\Mail\Message())->to('max.muster@example.ch')->subject('Logo')->text('Guten Tag')
+    ->html('<p data-z77-inline="logo" style="margin:0 0 24px;"></p><p>Guten Tag</p>'));
+check('I4 … and without a logo the slot is removed: no related part, no image, the mail is the text alone',
+    !str_contains($sent->data, 'multipart/related') && !str_contains($sent->data, 'image/png') && !str_contains(quoted_printable_decode($sent->data), 'data-z77-inline')
+    && str_contains(quoted_printable_decode($sent->data), '<p>Guten Tag</p>'));
 
 // ── H. source guards ─────────────────────────────────────────────────────
 

@@ -54,6 +54,11 @@ return [
     // module-backend collects every module's `dashboard` list (`DashboardContributors`).
     'dashboard' => [\Z77\Module\Mandator\Dashboard\MandatorDashboard::class],
 
+    // The «Logo (E-Mail)» as the inline image `logo` of the HTML mails (owner 2026-10-23):
+    // kernel `InlineImages` fills the slot `data-z77-inline="logo"` (emails/documentMail) at
+    // SEND time with what `EmailLogo` answers — nothing stored or the file missing → no image.
+    'mailInlineImages' => ['logo' => \Z77\Module\Mandator\Mail\EmailLogo::class],
+
     // Nothing here renders a page; the host's cache policy applies to the mount.
     'cache' => [
         'enabled' => false,

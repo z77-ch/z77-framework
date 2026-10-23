@@ -14,7 +14,8 @@ use Z77\Persistence\Validation\EntityValidator;
  * Letterhead: the name is required, everything else optional with the
  * column's length; country ISO 3166-1 alpha-2 upper-case, zip four digits
  * for CH (the `AddressValidator` rule), e-mail deliverable when set, the
- * logo path relative and without `..`.
+ * logo path relative and without `..`; the e-mail logo the same and a PNG,
+ * JPG or GIF by its extension (mail clients do not show SVG).
  *
  * UID: optional; when set it must be the canonical `CHE-ddd.ddd.ddd` (the
  * setter normalises what it can) AND its modulo-11 check digit must hold —
@@ -141,6 +142,26 @@ class MandatorValidator extends EntityValidator
         }
         if (str_starts_with($path, '/') || preg_match('/^[A-Za-z]:/', $path) || str_contains($path, '..')) {
             $this->addFieldError('logo_path', 'Logo: ein Pfad relativ zum Projekt, ohne führenden Schrägstrich und ohne «..».');
+        }
+    }
+
+    /**
+     * The logo of the HTML mails (owner 2026-10-23): the print logo's path rule, and a PNG / JPG /
+     * GIF by its name — an SVG or a PDF would arrive as a broken image. Whether the file exists
+     * and really is such an image is decided at send time (`EmailLogo`, MANDATOR-LOGO-001).
+     */
+    public function validateEmailLogoPath(string $path): void
+    {
+        $this->validate('email_logo_path', 'Logo (E-Mail)', $path)->maxLength(Mandator::LOGO_LENGTH);
+        if ($path === '' || $this->hasFieldError('email_logo_path')) {
+            return;
+        }
+        if (str_starts_with($path, '/') || preg_match('/^[A-Za-z]:/', $path) || str_contains($path, '..')) {
+            $this->addFieldError('email_logo_path', 'Logo (E-Mail): ein Pfad relativ zum Projekt, ohne führenden Schrägstrich und ohne «..».');
+            return;
+        }
+        if (preg_match('/\.(png|jpe?g|gif)$/i', $path) !== 1) {
+            $this->addFieldError('email_logo_path', 'Logo (E-Mail): eine PNG-, JPG- oder GIF-Datei — SVG zeigen viele Mailprogramme nicht an.');
         }
     }
 
