@@ -39,7 +39,9 @@ if (is_file($stamp)) {
 
 // 3) Normal install: links (composer.json options.symlink = true) + dev deps.
 putenv('COMPOSER_MIRROR_PATH_REPOS');
-releases_run('composer install', $projectRoot);
+// --no-interaction: the installer asks before overwriting a project-changed public/.htaccess; without a TTY
+// that question waits forever (2026-10-23). Unanswered, it keeps the file.
+releases_run('composer install --no-interaction', $projectRoot);
 
 // 4) Verify.
 $bad = [];

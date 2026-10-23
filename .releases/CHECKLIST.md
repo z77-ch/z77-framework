@@ -69,7 +69,8 @@ file — read those on every release too.
 6. **Back to development** — `php .releases/vendor-dev.php`
    You see: the copies turned back into links at the working trees.
    Forgetting this fails silently: you edit a framework package and nothing
-   happens.
+   happens. Then restart a running local `php -S`: OPcache keeps the classes
+   of the copies until the process ends.
 
 Rollback, any time: `php .releases/switch.php <previous> current` — the same
 script with the old name, no upload involved.

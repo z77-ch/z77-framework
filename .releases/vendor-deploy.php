@@ -34,7 +34,8 @@ echo 'Path-repo packages: ' . implode(', ', array_keys($repos)) . "\n";
 //    class in override/ and vendor/; a classmap would warn "Ambiguous class
 //    resolution", PSR-4 resolves silently by path order (override wins).
 putenv('COMPOSER_MIRROR_PATH_REPOS');
-releases_run('composer install --no-dev', $projectRoot);
+// --no-interaction: see vendor-dev.php (the installer's .htaccess question hangs without a TTY).
+releases_run('composer install --no-dev --no-interaction', $projectRoot);
 
 // 2) Replace each link with a real copy of its source tree.
 foreach ($repos as $repo) {
