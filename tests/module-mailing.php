@@ -278,6 +278,7 @@ check('A2 the database is empty', $tables() === []);
 check('A3 migrate exits 0' . ($code !== 0 ? " — got {$code}: " . trim($out) : ''), $code === 0);
 $executed = $db->fetchFirstColumn('SELECT version FROM schema_migration');
 check('A4 Version20261022170000 ran', in_array('Z77\\Module\\Mailing\\Migrations\\Version20261022170000', $executed, true), implode(', ', $executed));
+check('A4b Version20261023100000 ran (the sender identity, 2026-10-23)', in_array('Z77\\Module\\Mailing\\Migrations\\Version20261023100000', $executed, true), implode(', ', $executed));
 $info = $db->fetchAssociative('SELECT ENGINE, TABLE_COLLATION FROM information_schema.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?', [$dbName, 'mail_outbox']);
 check('A5 mail_outbox is utf8mb4_unicode_ci and InnoDB although the database default is general_ci',
     ($info['TABLE_COLLATION'] ?? '') === 'utf8mb4_unicode_ci' && ($info['ENGINE'] ?? '') === 'InnoDB');
@@ -293,11 +294,21 @@ check('A8 NO foreign key — the source reference is opaque', $fks === []);
 [$code, $out] = $run(['command' => 'migrate']);
 check('A9 a second migrate is a no-op', $code === 0 && str_contains($out, 'Already at the latest version'));
 [$code, $out] = $run(['command' => 'diff', '--namespace' => 'Z77\\Module\\Mailing\\Migrations']);
-check('A10 diff after migrate reports NO change — mapping and migration agree', $code !== 0 && str_contains($out, 'No changes detected') && count(glob($package . '/res/migrations/Version*.php')) === 1, trim($out));
-check('A11 the migration is expand-only: no DROP outside down()', (function () use ($package): bool {
-    $s = (string) file_get_contents($package . '/res/migrations/Version20261022170000.php');
-    return substr_count(substr($s, 0, (int) strpos($s, 'function down')), 'DROP') === 0;
+check('A10 diff after migrate reports NO change — mapping and migration agree', $code !== 0 && str_contains($out, 'No changes detected') && count(glob($package . '/res/migrations/Version*.php')) === 2, trim($out));
+check('A11 the migrations are expand-only: no DROP outside down()', (function () use ($package): bool {
+    foreach (glob($package . '/res/migrations/Version*.php') as $file) {
+        $s = (string) file_get_contents($file);
+        if (substr_count(substr($s, 0, (int) strpos($s, 'function down')), 'DROP') !== 0) { return false; }
+    }
+    return true;
 })());
+check('A12 the sender columns (2026-10-23): sender_user_id INT NULL, sender_name VARCHAR(190) and sender_email VARCHAR(254) NOT NULL',
+    (function () use ($db, $dbName): bool {
+        $c = $db->fetchAllAssociativeIndexed('SELECT COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME LIKE ?', [$dbName, 'mail_outbox', 'sender%']);
+        return ($c['sender_user_id']['IS_NULLABLE'] ?? '') === 'YES' && str_starts_with((string) ($c['sender_user_id']['COLUMN_TYPE'] ?? ''), 'int')
+            && ($c['sender_name']['COLUMN_TYPE'] ?? '') === 'varchar(190)' && ($c['sender_name']['IS_NULLABLE'] ?? '') === 'NO'
+            && ($c['sender_email']['COLUMN_TYPE'] ?? '') === 'varchar(254)' && ($c['sender_email']['IS_NULLABLE'] ?? '') === 'NO';
+    })());
 
 // ── B. settings ──────────────────────────────────────────────────────────
 
@@ -317,6 +328,9 @@ check('B3 values clamp instead of stopping the mail (batch ≥ 1, pause ≥ 0, a
 $d = new OutboxSettings();
 check('B4 retryDelaySeconds(): 5 min after the 1st failure, 15 after the 2nd, 60 after the 3rd, the last repeats',
     $d->retryDelaySeconds(1) === 300 && $d->retryDelaySeconds(2) === 900 && $d->retryDelaySeconds(3) === 3600 && $d->retryDelaySeconds(7) === 3600);
+check('B5 rateText(): the pace in German from the same values — what a send action tells after queueing (owner 2026-10-23)',
+    $d->rateText() === '10 pro Minute' && (new OutboxSettings(20, 300))->rateText() === '20 alle 5 Minuten'
+    && (new OutboxSettings(5, 30))->rateText() === '5 alle 30 Sekunden' && (new OutboxSettings(50, 0))->rateText() === '50 je Durchgang');
 
 // ── C. attachment providers ──────────────────────────────────────────────
 
@@ -655,6 +669,32 @@ $h = $host();
 $h->listAction();
 check('I9 a FETCH of the region adds no toolbar slot', !isset($h->layoutManager->sections['hc2']));
 
+// One send run as its own list (owner 2026-10-23): `?batch=` — the «Postausgang ansehen» of a send action.
+$runRows  = $service->queueBatch([OutboxDraft::html('r1@example.ch', 'Lauf 1', '<p>1</p>'), OutboxDraft::html('r2@example.ch', 'Lauf 2', '<p>2</p>')], 'max.muster');
+$runBatch = $runRows[0]->getBatchId();
+$db->executeStatement("UPDATE mail_outbox SET state = 'sent', attempts = 1, sent_at = '2026-10-23 08:05:00', next_attempt_at = NULL WHERE id = ?", [$runRows[0]->getId()]);
+$em = $wireDi();
+$useRequest(['view' => 'all', 'batch' => $runBatch]);
+$h = $host();
+$h->listAction();
+$html = $render('listAction', $h->context);
+$tb   = $renderer->partial('Backend/OutboxController/toolbar', $h->context);
+check('I9b `?batch=` (a pattern extra, listing.md): exactly the run\'s two mails in «Alle»; the chip «Versand #<8 hex>» with a × back to the list without the batch; the tabs keep the batch; the sent row says when (status «gesendet 23.10. 08:05»); batchUrl() is the link a send action builds',
+    array_map(fn($m) => $m->getRecipientEmail(), $h->context['mails']) === ['r2@example.ch', 'r1@example.ch'] && $h->context['paging']->total === 2
+    && str_contains($html, 'data-outbox-batch="' . $runBatch . '"') && str_contains($html, 'Versand #' . substr($runBatch, 0, 8))
+    && str_contains($html, 'href="/backend/service/outbox/list?view=all" aria-label="Filter')
+    && str_contains($tb, 'href="/backend/service/outbox/list?view=sent&amp;batch=' . $runBatch . '"') && str_contains($tb, 'href="/backend/service/outbox/list?batch=' . $runBatch . '"')
+    && str_contains($html, 'gesendet</span> <small class="be-list__cell--muted">23.10. 08:05</small>')
+    && OutboxListing::batchUrl($runBatch) === '/backend/service/outbox/list?view=all&batch=' . $runBatch && OutboxListing::batchLabel($runBatch) === 'Versand #' . substr($runBatch, 0, 8),
+    json_encode(array_map(fn($m) => $m->getRecipientEmail(), $h->context['mails'])));
+$useRequest(['view' => 'all', 'batch' => 'nicht-hex']);
+$h = $host();
+$h->listAction();
+check('I9c a batch value off the pattern narrows nothing (every mail of «Alle», no chip) — never a 500', $h->context['state']->extra('batch') === '' && $h->context['paging']->total >= 5
+    && !str_contains($render('listAction', $h->context), 'data-outbox-batch'));
+$db->executeStatement('DELETE FROM mail_outbox WHERE batch_id = ?', [$runBatch]);
+$em = $wireDi();
+
 $menu = function (int $id) use ($host, $useRequest, $render): string {
     $useRequest(['id' => (string) $id], null, true);
     $h = $host();
@@ -724,7 +764,9 @@ check('I20 retry / cancel / start are POST-only fetch actions; the read actions 
     }
     return $ref->getMethod('listAction')->getAttributes() === [] && $ref->getMethod('detailAction')->getAttributes() === [];
 })());
-check('I21 the mount URL is built in ONE place', substr_count((string) file_get_contents($ref->getFileName()), "'/backend/service/outbox'") === 1);
+check('I21 the mount URL is built in ONE place — OutboxListing::MOUNT (the trait\'s default base and the batch link other modules build, 2026-10-23)',
+    substr_count((string) file_get_contents($ref->getFileName()), "'/backend/service/outbox'") === 0
+    && substr_count((string) file_get_contents((new \ReflectionClass(OutboxListing::class))->getFileName()), "'/backend/service/outbox'") === 1);
 
 // ── J. dashboard ─────────────────────────────────────────────────────────
 
@@ -778,6 +820,51 @@ $emlData   = $eml === [] ? '' : (string) file_get_contents($eml[0]);
 check('L0 `new MailOutboxJob()` (no doubles — module config, providers, Mailer::create()) writes the mail as .eml into the FileTransport outbox; nothing is delivered',
     $devResult->isDone() && count($eml) === 1 && str_contains(basename($eml[0]), 'dev-example.ch') && str_contains($emlData, 'Subject: Lokaler Test')
     && preg_match('/^From: .*<noreply@example\.ch>\r$/m', $emlData) === 1 && $db->fetchOne("SELECT state FROM mail_outbox WHERE recipient_email = 'dev@example.ch'") === 'sent', $devResult->getNote());
+
+// ── N. the sender identity ───────────────────────────────────────────────
+
+echo "N. The sender identity (owner 2026-10-23): the account sends, the person signs\n";
+$em        = $wireDi();
+$db->executeStatement('DELETE FROM mail_outbox');
+$service   = new OutboxService(DI::getUnifiedEntityManager(), $providers, DI::getEmailService(), new JobQueue(DI::getUnifiedEntityManager()));
+$peter     = new \Z77\Shared\Mail\SenderIdentity('Peter Ruepp', 'peter.ruepp@z77.ch');
+$signed    = OutboxDraft::html('kunde@example.ch', 'Rechnung 1 — Muster AG', '<p>Hallo</p>')->withSender($peter, 7)->withSource('invoice:1');
+check('N1 a draft with a valid identity has no problem; with an invalid one, or with Reply-To as well, it is refused',
+    $service->problems($signed) === []
+    && $service->problems(OutboxDraft::html('k@example.ch', 'A', '<p>x</p>')->withSender(new \Z77\Shared\Mail\SenderIdentity("Eve\r\nBcc: x@evil.ch", 'e@z77.ch'))) !== []
+    && $service->problems(OutboxDraft::html('k@example.ch', 'A', '<p>x</p>')->withSender(new \Z77\Shared\Mail\SenderIdentity('Eve', 'kaputt'))) !== []
+    && in_array('Absender und Antwortadresse (Reply-To) schliessen sich aus — die Antwortadresse ist die des Absenders.', $service->problems($signed->withReplyTo('x@z77.ch')), true));
+$row = $service->queue($signed, 'peter');
+$em  = $wireDi();
+$stored = $db->fetchAssociative('SELECT sender_user_id, sender_name, sender_email, reply_to, created_by FROM mail_outbox WHERE id = ?', [$row->getId()]);
+check('N2 the row records WHO triggered it and the identity as a snapshot: user id 7, «Peter Ruepp», peter.ruepp@z77.ch; reply_to stays empty',
+    (int) $stored['sender_user_id'] === 7 && $stored['sender_name'] === 'Peter Ruepp' && $stored['sender_email'] === 'peter.ruepp@z77.ch' && $stored['reply_to'] === '' && $stored['created_by'] === 'peter', json_encode($stored));
+$plain = $service->queue(OutboxDraft::html('k2@example.ch', 'Ohne Person', '<p>x</p>')->withReplyTo('buero@example.ch'), 'system');
+check('N3 a draft without identity stores none (null / empty) — the mail of the account alone, its own Reply-To kept', (function () use ($db, $plain): bool {
+    $r = $db->fetchAssociative('SELECT sender_user_id, sender_name, sender_email, reply_to FROM mail_outbox WHERE id = ?', [$plain->getId()]);
+    return $r['sender_user_id'] === null && $r['sender_name'] === '' && $r['sender_email'] === '' && $r['reply_to'] === 'buero@example.ch';
+})());
+$transport->sent = [];
+$clockNow = new \DateTimeImmutable('+1 second');
+$job()->run($context());
+$byTo = [];
+foreach ($transport->sent as $sent) { $byTo[$sent['recipients'][0]] = $sent; }
+$signedData = $byTo['kunde@example.ch']['data'] ?? '';
+check('N4 sent: envelope sender and From ADDRESS = the account (outbox@example.ch), From NAME = the identity\'s, Reply-To = «"Peter Ruepp" <peter.ruepp@z77.ch>»',
+    ($byTo['kunde@example.ch']['sender'] ?? '') === 'outbox@example.ch' && preg_match('/^From: "Peter Ruepp" <outbox@example\.ch>\r$/m', $signedData) === 1
+    && preg_match('/^Reply-To: "Peter Ruepp" <peter\.ruepp@z77\.ch>\r$/m', $signedData) === 1, substr($signedData, 0, 400));
+$plainData = $byTo['k2@example.ch']['data'] ?? '';
+check('N5 … the mail without identity keeps the config\'s From name and its own Reply-To', preg_match('/^From: "Z77 Test" <outbox@example\.ch>\r$/m', $plainData) === 1 && preg_match('/^Reply-To: buero@example\.ch\r$/m', $plainData) === 1);
+$deliveries = DI::getUnifiedEntityManager()->getRepository(OutboxMail::class)->deliveriesOf(['invoice:1']);
+check('N6 deliveriesOf() names the identity a mail went out as (`sender`, `sender_email`)', ($deliveries['invoice:1'][0]['sender'] ?? '') === 'Peter Ruepp' && ($deliveries['invoice:1'][0]['sender_email'] ?? '') === 'peter.ruepp@z77.ch');
+$useRequest(['id' => (string) $row->getId(), 'window' => '1']);
+$h = $host();
+$h->detailAction();
+$win = $render('detail', $h->context);
+check('N7 the window: «Ausgelöst von» peter als «Peter Ruepp <peter.ruepp@z77.ch>» (user id), «Antwort an» the identity, «Absender» its name with the account\'s address',
+    str_contains($win, 'Ausgelöst von:</span> peter als Peter Ruepp &lt;peter.ruepp@z77.ch&gt; (Benutzer-Id 7)') && str_contains($win, 'Antwort an:</span> Peter Ruepp &lt;peter.ruepp@z77.ch&gt;')
+    && str_contains($win, '«Peter Ruepp» mit der Adresse aus der E-Mail-Konfiguration'), strip_tags($win));
+$db->executeStatement('DELETE FROM mail_outbox');
 
 // ── M. source guards ─────────────────────────────────────────────────────
 

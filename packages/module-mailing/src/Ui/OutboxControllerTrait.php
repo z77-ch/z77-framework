@@ -70,7 +70,7 @@ trait OutboxControllerTrait
     /** URL root of THIS mount — every link of the fragment is built from it. */
     protected function outboxBase(): string
     {
-        return '/backend/service/outbox';
+        return OutboxListing::MOUNT;
     }
 
     private function outboxMails(): OutboxMailRepository

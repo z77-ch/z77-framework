@@ -1,6 +1,6 @@
 # mailing
 
-2026-10-22
+2026-10-23
 
 ## entry
 
@@ -35,6 +35,7 @@ SOURCE=/packages/module-mailing/res/view/templates/Backend/OutboxController/tool
 SOURCE=/packages/module-mailing/res/view/templates/Backend/OutboxController/actions.tpl.php
 SOURCE=/packages/module-mailing/res/view/templates/Backend/OutboxController/detail.tpl.php
 SOURCE=/packages/module-mailing/res/migrations/Version20261022170000.php
+SOURCE=/packages/module-mailing/res/migrations/Version20261023100000.php
 SOURCE=/packages/module-mailing/data/framework/routing/navigation.d/module-mailing.json
 SOURCE=/packages/module-backend/src/Ui/Controllers/Service/OutboxController.php
 SOURCE=/packages/module-backend/src/Ui/Config/Service/outboxControllerConfig.inc.php
@@ -49,10 +50,11 @@ The outbox is the shared base for every mail that goes out in numbers (step 2 of
 - **One row per recipient, written once** (`OutboxMail`). The content never changes after queueing; only the delivery columns move (`state`, `attempts`, `last_error`, `sent_at`, `next_attempt_at`).
 - **States:** `queued` → `sending` → `sent`; after an error back to `queued` with `next_attempt_at` (backoff), `failed` after `maxAttempts`; `cancelled` by the operator. View «Wartend» = queued + sending.
 - **Templates are rendered at QUEUE time** (`EmailService::renderBody()`, body template inside `emails/layout`, override-first) — the row holds what goes out; `template` keeps `Namespace:path` for traceability. A finished HTML (`OutboxDraft::html()`) is stored as given; a text-only draft stores no HTML. An empty `text_body` is derived with `HtmlToText` at SEND time.
-- **The sender is never in a draft** — the `Mailer` fills From from `config/client/mail.inc.php` (Service › E-Mail), as for the form mails. Reply-To is per mail (validated).
+- **The sending ACCOUNT is never in a draft** — the `Mailer` fills the From address from `config/client/mail.inc.php` (Service › E-Mail), as for the form mails. Reply-To is per mail (validated).
+- **The person signs** (owner 2026-10-23): a mail a staff member triggers carries his SENDER IDENTITY — `OutboxDraft::withSender(SenderIdentity, userId)` (mail.md «sender identities»). The row keeps a SNAPSHOT: `sender_user_id` (the backend user, no foreign key — users are file records), `sender_name`, `sender_email`. At send time `OutboxSender` sets the From display name to `sender_name` (address still the account's) and Reply-To to «sender_name <sender_email>». `queueBatch()` checks the identity with `SenderIdentity::problems()` and refuses a draft that has an identity AND its own Reply-To. A row without identity (`''`) sends as before.
 - **Attachments are references** `type:id` (`invoice-pdf:123`), resolved at send time by the provider a module registered for the type. The outbox knows no document module.
 - **`source`** (opaque, `invoice:123`, `newsletter:5`) and **`batch_id`** (one `queueBatch()` = one batch, 32 hex) group the rows for the screen and for steps 3 / 4.
-- **What went out for a source** (`OutboxMailRepository::deliveriesOf(list<source>)`, step 3, 2026-10-22): plain rows (`to`, `state`, `created_at`, `sent_at`, `batch_id`, `created_by`) per source, one indexed query — how a document module shows «per E-Mail an … gesendet am …» without knowing the entity. Read-only; the state changes stay the transitions'.
+- **What went out for a source** (`OutboxMailRepository::deliveriesOf(list<source>)`, step 3, 2026-10-22): plain rows (`to`, `state`, `created_at`, `sent_at`, `batch_id`, `created_by`, since 2026-10-23 `sender` / `sender_email`) per source, one indexed query — how a document module shows «per E-Mail an … gesendet am …» without knowing the entity. Read-only; the state changes stay the transitions'.
 - **State changes are conditional UPDATEs** (`OutboxMailRepository`): the row's state is the lock; a cancel and the job's claim cannot both win. Read a row again with `fresh()` after a transition.
 - **The job is queued on write, not scheduled.** `OutboxService::ensureJobQueued()` after every write that adds work; no `defaultSchedule` (an idle schedule would print on every pass — cron mails output).
 - **Settings in ONE place:** module config `outbox` → `batchSize` 10, `pauseSeconds` 60, `maxAttempts` 3, `retryMinutes` [5, 15, 60]; a project's deviation in `override/z77/module/mailing/src/App/Config/outboxConfig.inc.php` (`OutboxSettings::fromModules()`, merged key by key, clamped).
@@ -72,7 +74,7 @@ cron → vendor/bin/z77-run → JobRunner → MailOutboxJob::run(context)   [job
   failInterrupted()            rows still 'sending' → failed («Versand unterbrochen …»)
   mailer not configured        → again(notBefore: 900), rows untouched
   dueIds(now, batchSize) → per id, while hasTimeLeft():
-       claim (queued → sending, conditional) → Message (to, reply-to, subject, text|derived, html)
+       claim (queued → sending, conditional) → Message (to, from-name + reply-to of the identity | reply-to, subject, text|derived, html)
        → attachments: AttachmentProviders::resolve(type:id) → Mailer::send (From from config)
        → markSent | markRetry(next = now + retryMinutes[n]) | markFailed (maxAttempts, or never sendable)
   waiting = 0   → done
@@ -103,10 +105,12 @@ final class InvoicePdfAttachment implements \Z77\Module\Mailing\Attachments\Atta
 | Piece | Detail |
 |---|---|
 | Route | `/backend/service/outbox/list` — host `module-backend` `Service/OutboxController` (`use OutboxControllerTrait`), layout `Service/outboxControllerConfig.inc.php` → `OutboxLayout::config()`; role ADMIN (module default, no deviation) |
-| List | standard list `OutboxListing` (state icon → window · ⋮ · Erstellt · Empfänger · Betreff · Quelle · Status · Versuche · Fehler), tabs Wartend · Gesendet · Fehlgeschlagen · Alle (extra `view`), 50 per page, fetch region `outbox-find-list`; action cell empty |
+| List | standard list `OutboxListing` (state icon → window · ⋮ · Erstellt · Empfänger · Betreff · Quelle · Status · Versuche · Fehler), tabs Wartend · Gesendet · Fehlgeschlagen · Alle (extra `view`), 50 per page, fetch region `outbox-find-list`; action cell empty. «Status» = the state badge, a sent mail with its time («gesendet 23.10. 08:05»); the queue time is «Erstellt», a failure's reason «Fehler» |
+| One send run (owner 2026-10-23) | `?batch=<32 hex>` — the PATTERN extra `batch` (listing.md, `OutboxSearch::BATCH_PATTERN`, `m.batch_id = ?` on `idx_mail_outbox_batch`): exactly the mails of one `queueBatch()`. A send action links it as «Postausgang ansehen» through `OutboxListing::batchUrl($batch)` (`view=all`); the list shows the chip «Versand #<first 8 hex>» beside the title, its × a plain page link without the batch; the tabs keep the batch. A value off the pattern narrows nothing. The mount URL lives once: `OutboxListing::MOUNT` (the trait's `outboxBase()` default) |
+| Pace text | `OutboxSettings::rateText()` — «10 pro Minute» (`batchSize` per `pauseSeconds`; «20 alle 5 Minuten», «5 alle 30 Sekunden», «50 je Durchgang»): what a send action says after queueing, read from the ONE setting |
 | Bands (in the region) | sending not configured · job not queued → green «Versand starten» (`start`, POST) · cron heartbeat older than 15 min |
 | ⋮ menu | `actions?id=` → `.be-menu`: «Anzeigen» (window), «Erneut senden» (failed, POST `retry`), «Abbrechen» (queued, POST `cancel`); answers: flash + `refresh-region` |
-| Window | `detail?id=` — headers as text, attachments as references, the text half escaped in `<pre>`, the HTML half in `<iframe sandbox="" srcdoc>` |
+| Window | `detail?id=` — headers as text («Antwort an» = the identity when one signs; «Absender» = its name with the account's address; «Ausgelöst von» = `created_by` als «Name <email>» (Benutzer-Id n), 2026-10-23), attachments as references, the text half escaped in `<pre>`, the HTML half in `<iframe sandbox="" srcdoc>` |
 | Navigation | seed `module-mailing.json`: key `outbox` «Postausgang» under `service`, sort 6 |
 | Dashboard | `MailingDashboard`: «E-Mails fehlgeschlagen» (urgent, `?view=failed`), «E-Mails warten seit über einer Stunde» (todo) |
 
@@ -117,7 +121,7 @@ final class InvoicePdfAttachment implements \Z77\Module\Mailing\Attachments\Atta
 ## rules
 
 - When code needs to send mail in numbers or later (documents, newsletter, notifications to many) → MUST queue drafts through `OutboxService::queue()` / `queueBatch()`; MUST NOT loop over `Mailer::send()` / `EmailService::send()` in a request.
-- When building a draft → MUST leave the sender out (it is the mail config's identity) and pass user/data text through the template context or as escaped HTML; MUST NOT put CR/LF into subject or names (refused) or hand-assemble MIME.
+- When building a draft → MUST leave the sending account out (it is the mail config's identity); a mail a person triggers MUST carry his identity via `withSender()` (resolved through `SenderIdentities`, mail.md) instead of a Reply-To; and pass user/data text through the template context or as escaped HTML; MUST NOT put CR/LF into subject or names (refused) or hand-assemble MIME.
 - When a module needs files in outbox mails → MUST implement `AttachmentProvider` and register it under `mailAttachments` in its own config (a project: `mailAttachmentsConfig.inc.php`); MUST NOT store attachment bytes or paths in `mail_outbox`, and module-mailing MUST NOT import a document module.
 - When changing a row's delivery state → MUST go through a conditional transition of `OutboxMailRepository` (`claim`, `markSent`, `markRetry`, `markFailed`, `cancel`, `requeue`, `failInterrupted`); MUST NOT persist a state change on a loaded entity (a racing writer would be overwritten).
 - When the throttle must change → MUST set it in ONE place: module config `outbox`, a project's deviation in `outboxConfig.inc.php`; MUST NOT add a second key elsewhere or `sleep()` in the job.
@@ -134,7 +138,12 @@ final class InvoicePdfAttachment implements \Z77\Module\Mailing\Attachments\Atta
 
 ## pending
 
+- **Sender identity (built 2026-10-23, owner decision the same day) — owner's live look in -initial**: (1) System › Benutzer › own user › «Absender für E-Mails»: «+ Absender», × , a bad address → «Absender n: …», save, reopen; (2) booking print → «Alle per E-Mail senden …»: «Senden als» (select with two identities, read-only with one), a user WITHOUT identity sees «Erfasse zuerst eine E-Mail an deinem User.» and no button; (3) `php vendor/bin/z77-run` → the `.eml` in `data/framework/mail/outbox/`: `From: "<Anzeigename>" <fromAddress>`, `Reply-To: "<Anzeigename>" <identity>`, the greeting «Freundliche Grüsse / <Anzeigename> / <Mandant>»; (4) Service › Postausgang › the window: «Ausgelöst von», «Antwort an». Needs `config/client/mail.inc.php` with `fromAddress` set and `'transport' => 'file'`; server :8079.
+- **Migration to apply** (framework side built, NOT run on any project DB): `Version20261023100000` (module-mailing — `mail_outbox.sender_user_id`, `sender_name`, `sender_email`) on z77ch_initial first, then z77.ch: `composer update`, `php vendor/bin/z77-db migrate`. Expand only; an older release keeps queueing (defaults).
+- **Owner proposal pending (not built)**: refuse or warn when config `fromAddress` is empty — today every outbox mail then fails with «Message has no From address.» and is retried until `maxAttempts` (the screen's band only says «not configured» when the file is missing or `enabled = false`). Options: the confirm pages / the Postausgang band warn, the job pauses like an unconfigured mailer instead of burning attempts.
+
 - **Owner's live look** (not verified in a browser): Service › Postausgang — tabs, bands, the ⋮ menu items by state, the window with the sandboxed preview, «Versand starten».
+- **Send run filter — built 2026-10-23 (owner decision of the day), NOT committed, owner's browser look on z77.ch open**: from the booking print's result list «Postausgang ansehen» → Service › Postausgang `?view=all&batch=…`: only that run's mails, the chip «Versand #…» beside the title, × clears it (all mails again), the tabs keep the run, a sent row shows its time beside «gesendet». Harness `tests/module-mailing.php` B5, I9b, I9c, I21; `tests/listing.php` C7.
 - **Step 3 — documents by e-mail: BUILT 2026-10-22 for invoice and credit note** (debtor.md «The booking print's result list and documents by e-mail»): the provider `invoice-pdf` (module-debtor, `mailAttachments`), the send action «Alle per E-Mail senden …» on the booking print's result list (one `queueBatch()` per click, source `invoice:<id>`), the mail kinds in Service › E-Mail › Beleg-Mails (mail.md). Still open for offer / order confirmation / delivery note / dunning: a provider per PDF and a send action (the mail kinds are declared already).
 - **Owner to confirm (raised 2026-10-22, step 3)**: (1) the default subject «Rechnung {nummer} — {absender}» instead of «Rechnung {nummer}» (mail.md: a subject must not end in a number, KAM_NUMSUBJECT); (2) the booking print no longer opens the combined PDF in a new tab — it lands on the result list, the combined PDF is «Alle als ein PDF» there; (3) the confirm page's eye icon per order = `invoice-preview` (built on the owner's request, order.md).
 - **Next session (state 2026-10-22 evening)**: try step 3 in -initial (migrations `Version20261022160000` + `Version20261022170000`, `config/client/mail.inc.php` `'transport' => 'file'`, an e-mail on a debtor's billing address, booking print → «Alle per E-Mail senden …» → `php vendor/bin/z77-run` → `.eml` in `data/framework/mail/outbox/`); then step 4 (newsletter, below).

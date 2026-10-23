@@ -14,7 +14,8 @@ use Z77\Shared\Mail\Message;
  * the batch loop it is and a test can hand in a `Mailer` with a fake transport.
  *
  * Per mail: claim it (`queued → sending`, conditional — a mail cancelled a
- * moment ago is skipped), build the kernel `Message` (recipient, Reply-To,
+ * moment ago is skipped), build the kernel `Message` (recipient, the sender
+ * identity's display name on From and its address as Reply-To — else the row's Reply-To,
  * subject, the HTML and its text half — derived with `HtmlToText` when the
  * row has none), resolve the attachment references through the providers,
  * send through the `Mailer` (transport and SENDER from the mail config — the
@@ -96,7 +97,11 @@ final class OutboxSender
         $message = (new Message())
             ->to($mail->getRecipientEmail())
             ->subject($mail->getSubject());
-        if ($mail->getReplyTo() !== '') {
+        if ($mail->hasSender()) {
+            // The person's identity (owner 2026-10-23): his name on the From — the ADDRESS stays
+            // the account's, filled in by the Mailer — and «name <email>» as Reply-To.
+            $message->fromName($mail->getSenderName())->replyTo($mail->getSenderEmail(), $mail->getSenderName());
+        } elseif ($mail->getReplyTo() !== '') {
             $message->replyTo($mail->getReplyTo());
         }
         $html = $mail->getHtmlBody();

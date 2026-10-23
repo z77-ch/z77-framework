@@ -1,6 +1,6 @@
 # listing
 
-2026-10-08
+2026-10-23
 
 ## entry
 
@@ -34,7 +34,7 @@ SOURCE=/tests/listing.php
 
 Every table in the backend is a STANDARD LIST (owner 2026-10-08, after the journal list `finance/journal/list`): the column titles sort, the magnifier in a title opens the search field for that column, the search runs in the database over the whole data set, the rows are paged by server links, and the list is a fetch region — sort, page and search reload only the list. One shared block carries the mechanics (`Z77\Shared\Listing`, Rule 8), a module declares its columns ONCE and writes only its rows. Exceptions exist (a short fixed list, an upload page) but are the exception, not the pattern.
 
-- **`ListDefinition`** — the list: an `id` (the search form's id, the prefix of the inputs `{id}-{key}`, the fetch region `{id}-list`), the `Column`s in order, the default sort, the page size, and the EXTRAS the address carries beside the columns (`'view' => ['open', 'overdue', 'all']` — the first value is the default; a flag is `['', '1']`). `read($query)` / `readRequest($request)` give the `ListState`; `tracks()` / `style()` the grid tracks per drop stage, computed from the columns; `isFetch($request)` says whether only the list is asked for.
+- **`ListDefinition`** — the list: an `id` (the search form's id, the prefix of the inputs `{id}-{key}`, the fetch region `{id}-list`), the `Column`s in order, the default sort, the page size, and the EXTRAS the address carries beside the columns (`'view' => ['open', 'overdue', 'all']` — the first value is the default; a flag is `['', '1']`; since 2026-10-23 a PATTERN — a regex string, default `''` — for a free value such as the outbox's `batch`, `acceptsExtra()`). `read($query)` / `readRequest($request)` give the `ListState`; `tracks()` / `style()` the grid tracks per drop stage, computed from the columns; `isFetch($request)` says whether only the list is asked for.
 - **`Column`** — three shapes: `search()` (a magnifier, a parser, a sort when given), `plain()` (a title, a sort optional), `slot()` (a cell without a title — the state icon, a checkbox, a row action — with an `aria-label`). `priority` '3' / '2' is the drop stage (css-backend.md LIST-DROP-STAGES-001); `descendingFirst` the direction a sort starts in (numbers, dates and amounts newest / largest first, names A–Z).
 - **`ListState`** — the state IS the address: `sort`, `descending`, `page`, the search values as typed and as parsed, the invalid ones, the extras. `query($changes)` builds every link (defaults left out, the page travels only when it is the change), `sortQuery()` flips the current column, `defaultQuery()` drops the fields AND the sort, keeps the extras («Zurücksetzen», shown when `isChanged()`; owner 2026-10-16 — replaced `resetQuery()`, which dropped the search only), `hiddenState()` is what the find form carries, `paging($total)` the `Paging`.
 - **`Parsers`** — the strict readers: `integer()`, `dateRange()` («15.11.2032» a day, «11.2032» a month, «2032» a year), `amount($currency)` (Swiss grouping, a comma, at most eleven digits), `text()`. An unreadable value marks the field INVALID and does not narrow the search — a typo must not look like «nothing found».
@@ -50,6 +50,7 @@ Every table in the backend is a STANDARD LIST (owner 2026-10-08, after the journ
 - When a column searches → MUST parse the value strictly with a `Parsers` closure (or one of the same shape: `string → mixed|null`); MUST NOT pass the typed text to the repository unparsed, except through `Parsers::text()` for a LIKE.
 - When the repository sorts → MUST map the sort key to an ORDER BY in a fixed `match`; MUST NOT interpolate the key.
 - When a list carries a view or a scope flag → MUST declare it as an extra of the definition with its allowed values; MUST NOT read it from `$_GET` or the request beside the definition.
+- When a list is narrowed by a value no list can enumerate (one send run, an import run) → MUST declare it as a PATTERN extra (`'batch' => '/^[0-9a-f]{32}$/'`, a regex that does not match `''`; default `''` = not narrowed, a value off the pattern falls back to it); MUST NOT accept it unchecked or as a column search.
 - When the action adds a toolbar slot → MUST skip it when `ListDefinition::isFetch($request)` is true — a fetch of the region wants the list alone.
 - When a list is answered in fetch mode → the kernel puts the list into `main` (the fragment pin or `listAction.tpl.php`, `LayoutManager::completeFetchMain()`, LISTING-FETCH-001); the action MUST NOT add the list partial itself, unless its page holds more than the list (the journal).
 - When a project overrides a list's look → overrides the module's row template or the kernel's partials under `override/z77/shared/…` (CE); MUST NOT edit the kernel's partials in place.

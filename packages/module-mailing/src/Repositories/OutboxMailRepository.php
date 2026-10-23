@@ -115,7 +115,9 @@ class OutboxMailRepository extends DoctrineRepository
      *
      * @param list<string> $sources e.g. ['invoice:42', 'invoice:43']
      * @return array<string, list<array{id: int, to: string, state: string, created_at: \DateTimeImmutable,
-     *                                   sent_at: ?\DateTimeImmutable, batch_id: string, created_by: string}>>
+     *                                   sent_at: ?\DateTimeImmutable, batch_id: string, created_by: string,
+     *                                   sender: string, sender_email: string}>> `sender` / `sender_email` = the
+     *                                   sender identity the mail went out as ('' without one, 2026-10-23)
      */
     public function deliveriesOf(array $sources): array
     {
@@ -124,7 +126,7 @@ class OutboxMailRepository extends DoctrineRepository
             return [];
         }
         $rows = $this->connection()->fetchAllAssociative(
-            'SELECT id, source, recipient_email, state, created_at, sent_at, batch_id, created_by FROM ' . self::TABLE
+            'SELECT id, source, recipient_email, state, created_at, sent_at, batch_id, created_by, sender_name, sender_email FROM ' . self::TABLE
             . ' WHERE source IN (?) ORDER BY id ASC',
             [$sources],
             [ArrayParameterType::STRING]
@@ -139,6 +141,8 @@ class OutboxMailRepository extends DoctrineRepository
                 'sent_at'    => $row['sent_at'] !== null ? new \DateTimeImmutable((string) $row['sent_at']) : null,
                 'batch_id'   => (string) $row['batch_id'],
                 'created_by' => (string) $row['created_by'],
+                'sender'     => (string) $row['sender_name'],
+                'sender_email' => (string) $row['sender_email'],
             ];
         }
 
@@ -292,7 +296,7 @@ class OutboxMailRepository extends DoctrineRepository
 
     /**
      * The WHERE clause of {@see search()} / {@see countSearch()}: the view's
-     * states, the day range half-open on `created_at`, LIKE for the texts.
+     * states, the day range half-open on `created_at`, LIKE for the texts, the batch exact.
      *
      * @return array{0: string, 1: list<mixed>, 2: list<mixed>}
      */
@@ -321,6 +325,11 @@ class OutboxMailRepository extends DoctrineRepository
             $like     = '%' . addcslashes($search->recipient, '%_\\') . '%';
             array_push($params, $like, $like);
             array_push($types, ParameterType::STRING, ParameterType::STRING);
+        }
+        if ($search->batch !== '') {
+            $parts[]  = 'm.batch_id = ?';   // idx_mail_outbox_batch
+            $params[] = $search->batch;
+            $types[]  = ParameterType::STRING;
         }
         foreach (['subject' => $search->subject, 'source' => $search->source] as $column => $value) {
             if ($value !== null) {

@@ -27,6 +27,10 @@ use Z77\Shared\Attributes\Entity;
  *     send time by the provider a module registered for the type — the outbox
  *     never stores a PDF and knows no document module
  *     ({@see \Z77\Module\Mailing\Attachments\AttachmentProviders});
+ *   - WHO triggered it (owner 2026-10-23): the backend user's id and a SNAPSHOT
+ *     of the sender identity he sent as (`sender_name`, `sender_email`) — the
+ *     From's display name and the Reply-To at send time, and «Ausgelöst von» on
+ *     the screen; all empty for a mail without a person (the account alone);
  *   - WHERE it came from: `source` (opaque, `invoice:123`, `newsletter:5`) and
  *     `batchId` (one «send» action = one batch) — for grouping on the screen
  *     and for the later document and newsletter steps;
@@ -90,6 +94,18 @@ class OutboxMail
 
     #[ORM\Column(name: 'reply_to', length: self::EMAIL_LENGTH)]
     private string $replyTo;
+
+    /** The backend user who triggered the mail; null for a mail without a person. No foreign key: a user is a file record and may be deleted. */
+    #[ORM\Column(name: 'sender_user_id', nullable: true)]
+    private ?int $senderUserId = null;
+
+    /** The sender identity's display name (the From's name, the Reply-To's name); '' = the account's own. */
+    #[ORM\Column(name: 'sender_name', length: self::NAME_LENGTH, options: ['default' => ''])]
+    private string $senderName = '';
+
+    /** The sender identity's address (the Reply-To); '' = no identity. */
+    #[ORM\Column(name: 'sender_email', length: self::EMAIL_LENGTH, options: ['default' => ''])]
+    private string $senderEmail = '';
 
     #[ORM\Column(length: self::SUBJECT_LENGTH)]
     private string $subject;
@@ -155,7 +171,13 @@ class OutboxMail
         string $batchId,
         string $createdBy,
         \DateTimeImmutable $createdAt,
+        ?int $senderUserId = null,
+        string $senderName = '',
+        string $senderEmail = '',
     ) {
+        $this->senderUserId   = $senderUserId;
+        $this->senderName     = $senderName;
+        $this->senderEmail    = $senderEmail;
         $this->recipientEmail = $recipientEmail;
         $this->recipientName  = $recipientName;
         $this->subject        = $subject;
@@ -178,6 +200,9 @@ class OutboxMail
     public function getRecipientEmail(): string { return $this->recipientEmail; }
     public function getRecipientName(): string { return $this->recipientName; }
     public function getReplyTo(): string { return $this->replyTo; }
+    public function getSenderUserId(): ?int { return $this->senderUserId; }
+    public function getSenderName(): string { return $this->senderName; }
+    public function getSenderEmail(): string { return $this->senderEmail; }
     public function getSubject(): string { return $this->subject; }
     public function getHtmlBody(): string { return $this->htmlBody; }
     public function getTextBody(): string { return $this->textBody; }
@@ -197,6 +222,22 @@ class OutboxMail
         $list = json_decode($this->attachments, true);
 
         return is_array($list) ? array_values(array_filter($list, 'is_string')) : [];
+    }
+
+    /** Whether a person's sender identity signs the mail. */
+    public function hasSender(): bool
+    {
+        return $this->senderEmail !== '';
+    }
+
+    /** «Peter Ruepp <peter.ruepp@z77.ch>» — the identity the mail was sent as; '' without one. */
+    public function senderLabel(): string
+    {
+        if ($this->senderEmail === '') {
+            return '';
+        }
+
+        return $this->senderName === '' ? $this->senderEmail : $this->senderName . ' <' . $this->senderEmail . '>';
     }
 
     /** «Max Muster <max@example.ch>» or the bare address — for the screen. */

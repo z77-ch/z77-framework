@@ -16,7 +16,13 @@
  *   - nothing of a mail's HTML is rendered here — subject, addresses and the
  *     error are text, escaped (Rule 7);
  *   - the whole list is a FETCH REGION: tabs, sort, page, search, retry and
- *     cancel reload only this part.
+ *     cancel reload only this part;
+ *   - a `batch` (one send run — the «Postausgang ansehen» of a send action,
+ *     owner 2026-10-23) shows as the chip «Versand #…» beside the title; its ×
+ *     is a plain page link (the toolbar tabs carry the batch too);
+ *   - the status cell says when: «gesendet» with the sent time, «wartend» /
+ *     «fehlgeschlagen» with the error in its own column, the queue time in
+ *     «Erstellt».
  *
  * @var list<\Z77\Module\Mailing\Entities\OutboxMail> $mails
  * @var \Z77\Shared\Listing\ListDefinition $definition
@@ -36,6 +42,7 @@ $actionBase = $actionBase ?? '/backend/service/outbox';
 $listUrl    = $actionBase . '/list';
 $link       = static fn(array $changes = []): string => $listUrl . '?' . $state->query($changes);
 $view       = $state->extra('view');
+$batch      = $state->extra('batch');
 $icons      = [
     'queued'    => ['icon-mail', ''],
     'sending'   => ['icon-zap', ' be-list__state--generated'],
@@ -73,6 +80,9 @@ $titles     = ['queued' => 'Wartende E-Mails', 'sent' => 'Gesendete E-Mails', 'f
             <?= $this->partial('partials/listReset', ['state' => $state, 'action' => $listUrl], 'Z77\\Shared') ?>
             <h2 class="be-list__section-title"><?= e($titles[$view] ?? 'E-Mails') ?></h2>
             <span class="be-list__section-badge" title="E-Mails"><?= $paging->total ?></span>
+            <?php if ($batch !== ''): ?>
+            <span class="badge badge--info" data-outbox-batch="<?= e($batch) ?>" title="Nur die E-Mails dieses Versands"><?= e(\Z77\Module\Mailing\Ui\OutboxListing::batchLabel($batch)) ?>&nbsp;<a href="<?= e($link(['batch' => null])) ?>" aria-label="Filter «<?= e(\Z77\Module\Mailing\Ui\OutboxListing::batchLabel($batch)) ?>» entfernen" title="Alle E-Mails zeigen">×</a></span>
+            <?php endif; ?>
         </div>
 
         <?= $this->partial('partials/listFind', ['definition' => $definition, 'state' => $state, 'action' => $listUrl], 'Z77\\Shared') ?>
@@ -95,7 +105,7 @@ $titles     = ['queued' => 'Wartende E-Mails', 'sent' => 'Gesendete E-Mails', 'f
                         <label class="be-list__cell" for="<?= e($definition->inputId('f_recipient')) ?>" data-field="recipient" title="<?= e($mail->recipientLabel()) ?>"><?= e($mail->getRecipientName() !== '' ? $mail->getRecipientName() : $mail->getRecipientEmail()) ?><?php if ($mail->getRecipientName() !== ''): ?> <small class="be-list__cell--muted"><?= e($mail->getRecipientEmail()) ?></small><?php endif; ?></label>
                         <label class="be-list__cell" for="<?= e($definition->inputId('f_subject')) ?>" data-field="subject"><?= e($mail->getSubject()) ?></label>
                         <label class="be-list__cell be-list__cell--mono" for="<?= e($definition->inputId('f_source')) ?>" data-priority="3" data-field="source"><?= e($mail->getSource()) ?></label>
-                        <span class="be-list__cell" data-field="state"><span class="badge <?= $badges[$mState] ?? 'badge--muted' ?>"><?= e($labels[$mState] ?? $mState) ?></span></span>
+                        <span class="be-list__cell" data-field="state"><span class="badge <?= $badges[$mState] ?? 'badge--muted' ?>"><?= e($labels[$mState] ?? $mState) ?></span><?php if ($mail->getSentAt() !== null): ?> <small class="be-list__cell--muted"><?= e($mail->getSentAt()->format('d.m. H:i')) ?></small><?php endif; ?></span>
                         <span class="be-list__cell be-list__cell--num" data-priority="2" data-field="attempts"><?= e((string) $mail->getAttempts()) ?></span>
                         <span class="be-list__cell be-list__cell--muted" data-priority="3" data-field="error" title="<?= e($mail->getLastError()) ?>"><?= e($mail->getLastError()) ?></span>
                     </div>

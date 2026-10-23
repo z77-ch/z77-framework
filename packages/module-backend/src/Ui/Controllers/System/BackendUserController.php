@@ -12,6 +12,7 @@ use Z77\Core\Http\Response\HtmlResponse,
     Z77\Shared\Attributes\HttpMethod,
     Z77\Shared\Auth\PasswordPolicy,
     Z77\Shared\Entities\BackendUser,
+    Z77\Shared\Mail\SenderIdentity,
     Z77\Shared\Repositories\BackendUserRepository,
     Z77\Shared\Validators\BackendUserValidator
 ;
@@ -146,6 +147,10 @@ class BackendUserController extends BackendAbstractController
                 array_map('strval', (array)($body['roles'] ?? [])),
                 array_keys(AuthRole::getRoleHierarchy())
             )));
+            // sender identities (owner 2026-10-23): rebuilt from the form rows — the parallel maps
+            // identity_name[k] / identity_email[k], in posted order, empty rows dropped. The
+            // body's own `sender_identities` key is never trusted; the validator judges the rows.
+            $user->setSenderIdentities(SenderIdentity::listFromForm($body['identity_name'] ?? [], $body['identity_email'] ?? []));
             // passwordHash + passwordWeak: keep current unless a new plaintext
             // password was supplied; a new one is (re-)evaluated against the policy
             // (allowed even if weak — drives the every-login nag, never blocks).

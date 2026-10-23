@@ -1073,17 +1073,52 @@ trait InvoiceControllerTrait
 
             return $this->redirect($this->invoiceListBase() . '/list?view=final', 303);
         }
-        $ids   = array_map(static fn(Invoice $d) => (int) $d->getId(), $documents);
-        $mails = $this->invoiceMails();
+        $ids        = array_map(static fn(Invoice $d) => (int) $d->getId(), $documents);
+        $mails      = $this->invoiceMails();
+        $deliveries = $mails->deliveries($ids);
 
         return $this->invoicePage('bookingResult', [
             'documents'  => $documents,
             'ids'        => implode(',', $ids),
             'back'       => self::invoiceBack($request->getGetParameter('back')),
             'mailable'   => $mails->available(),
-            'deliveries' => $mails->deliveries($ids),
+            'deliveries' => $deliveries,
+            // The band and the button (owner 2026-10-23): what is still unsent, what waits, what
+            // went out, the newest batch's outbox link and the pace.
+            'status'     => $mails->available() ? $mails->runStatus($documents, $deliveries) : null,
             'total'      => self::invoiceRunTotal($documents),
         ]);
+    }
+
+    /**
+     * The row ⋮ of the result list (owner 2026-10-23: two row actions are a menu, backend-screen.md):
+     * «PDF öffnen» and — once the document's mail is covered — «Erneut senden …». `?id=` is one of
+     * `?ids=`; the server re-reads both (Rule 7).
+     */
+    protected function resultActionsAction(): HtmlResponse|FetchResponse
+    {
+        $request   = DI::getRequest();
+        $id        = (int) $request->getGetParameter('id');
+        $documents = array_values(array_filter(
+            $this->invoiceResultDocuments($request->getGetParameter('ids')),
+            static fn(Invoice $d) => (int) $d->getId() === $id,
+        ));
+        if ($documents === []) {
+            return $this->fetchError('Dokument nicht gefunden');
+        }
+        $mails = $this->invoiceMails();
+        $sent  = $mails->available() ? ($mails->deliveries([$id])[$id] ?? []) : [];
+        $back  = self::invoiceBack($request->getGetParameter('back'));
+
+        $response = $this->html([
+            'document'   => $documents[0],
+            'actionBase' => $this->invoiceListBase(),
+            'query'      => http_build_query(['ids' => $request->getGetParameter('ids')] + ($back !== '' ? ['back' => $back] : [])),
+            'resendable' => $mails->available() && InvoiceMails::skipReason($documents[0]) === null && InvoiceMails::isCovered($sent),
+        ]);
+        $this->layoutManager->addPartials('resultActions', 'Backend/InvoiceController', self::INVOICE_NS);
+
+        return $response;
     }
 
     /** «Alle als ein PDF» — the documents of `?ids=` as ONE file, in number order (the former booking-print answer; the owner prints too). */
@@ -1132,7 +1167,14 @@ trait InvoiceControllerTrait
     /**
      * «Alle per E-Mail senden …» — the confirmation: how many get a mail (to whom, with which
      * subject), which are SKIPPED and why (no address on the document — skipped, not failed), and
-     * which went out by e-mail before. One button posts the ids to {@see mailAction()}.
+     * which are COVERED — a mail waits or went out (owner 2026-10-23, `InvoiceMails::isCovered()`):
+     * left out, listed; «Senden als» = the user's sender identities (owner 2026-10-23 — none: the
+     * hint, no button). One button posts the ids and the chosen identity's index to
+     * {@see mailAction()}.
+     *
+     * `&resend=<id>` — «Erneut senden …» of ONE row (owner 2026-10-23): the same page for that
+     * document alone, covered or not — the deliberate second mail. The id must be a document of
+     * the run.
      */
     protected function confirmMailAction(): HtmlResponse|RedirectResponse
     {
@@ -1141,36 +1183,57 @@ trait InvoiceControllerTrait
         if ($documents === []) {
             return $this->invoiceNotFound();
         }
-        $mails = $this->invoiceMails();
-        $send  = [];
-        $skip  = [];
-        foreach ($documents as $document) {
+        $resend = self::invoiceResendOf($request->getGetParameter('resend'), $documents);
+        if ($resend === false) {
+            return $this->invoiceNotFound();
+        }
+        $ids        = array_map(static fn(Invoice $d) => (int) $d->getId(), $documents);
+        $mails      = $this->invoiceMails();
+        $senders    = $this->invoiceMailSenders();
+        $deliveries = $mails->deliveries($ids);
+        $send       = [];
+        $skip       = [];
+        $done       = [];
+        foreach ($resend !== null ? [$resend] : $documents as $document) {
             $reason = InvoiceMails::skipReason($document);
             if ($reason !== null || !$mails->available()) {
                 $skip[] = ['document' => $document, 'reason' => $reason ?? ''];
                 continue;
             }
-            $send[] = ['document' => $document, 'mail' => $mails->compose($document)];
+            if ($resend === null && InvoiceMails::isCovered($deliveries[(int) $document->getId()] ?? [])) {
+                $done[] = $document;
+                continue;
+            }
+            // The preview shows the subject as the DEFAULT identity would sign it.
+            $send[] = ['document' => $document, 'mail' => $mails->compose($document, $senders->default())];
         }
-        $ids = array_map(static fn(Invoice $d) => (int) $d->getId(), $documents);
 
         return $this->invoicePage('confirmMail', [
             'send'       => $send,
             'skip'       => $skip,
+            'done'       => $done,
+            'resend'     => $resend !== null ? (int) $resend->getId() : 0,
             'ids'        => implode(',', $ids),
             'back'       => self::invoiceBack($request->getGetParameter('back')),
             'mailable'   => $mails->available(),
             'mailReady'  => \Z77\Shared\Mail\Mailer::create()->isConfigured(),
-            'deliveries' => $mails->deliveries($ids),
+            'deliveries' => $deliveries,
+            // «Senden als» (owner 2026-10-23): the logged-in user's sender identities; none →
+            // the hint and no send button (the POST refuses as well).
+            'senders'    => $senders->viewModel(),
         ]);
     }
 
     /**
      * The POST of «Alle per E-Mail senden» (`#[Csrf]`): one outbox mail per document of `ids` that
-     * has an address — ONE outbox batch, the PDF attached by reference and rendered at send time
-     * (`Mail\InvoiceMails::queue()`). Answers the result list again (303) with a flash naming what
-     * was queued and what was skipped; the rows then show «im Postausgang». Nothing is sent in the
-     * request — the `mail-outbox` job sends in batches.
+     * has an address and is not COVERED (a mail waits or went out — owner 2026-10-23; the rule is
+     * re-applied here from the outbox, not taken from the page) — ONE outbox batch, the PDF
+     * attached by reference and rendered at send time (`Mail\InvoiceMails::queue()`).
+     * `resend=<id>` («Erneut senden …» of one row) queues that document alone, covered or not.
+     * Answers the result list again (303) with a flash «n E-Mails im Postausgang — Versand 10 pro
+     * Minute» (the pace from the outbox setting); the list then shows the band with «Postausgang
+     * ansehen» (this batch). Nothing is sent in the request — the `mail-outbox` job sends in
+     * batches.
      */
     #[Csrf]
     protected function mailAction(): RedirectResponse
@@ -1182,9 +1245,38 @@ trait InvoiceControllerTrait
         if ($docs === []) {
             return $this->invoiceNotFound();
         }
-        $url = $this->invoiceResultUrl(array_map(static fn(Invoice $d) => (int) $d->getId(), $docs), $back);
+        $ids    = array_map(static fn(Invoice $d) => (int) $d->getId(), $docs);
+        $url    = $this->invoiceResultUrl($ids, $back);
+        $resend = self::invoiceResendOf($post['resend'] ?? null, $docs);
+        if ($resend === false) {
+            return $this->invoiceNotFound();
+        }
+        // The identity is re-checked HERE (Rule 7): an index of the CURRENT user's identities only;
+        // a user without one cannot send (owner 2026-10-23).
+        $senders = $this->invoiceMailSenders();
+        $sender  = $senders->choose($post[\Z77\Shared\Mail\SenderIdentities::FIELD] ?? null);
+        if ($sender === null) {
+            $this->messageService->pushFlashAfterRedirect('error', 'Nichts wurde eingereiht: ' . ($senders->isEmpty() ? \Z77\Shared\Mail\SenderIdentities::MISSING : 'Der gewählte Absender gehört nicht zu deinem User.'));
+
+            return $this->redirect($url, 303);
+        }
+        $mails = $this->invoiceMails();
+        $done  = [];
+        if ($resend !== null) {
+            $docs = [$resend];
+        } else {
+            $deliveries = $mails->deliveries($ids);
+            $done       = array_values(array_filter($docs, static fn(Invoice $d) => InvoiceMails::isCovered($deliveries[(int) $d->getId()] ?? [])));
+            $docs       = array_values(array_filter($docs, static fn(Invoice $d) => !in_array($d, $done, true)));
+            // Nothing mailable left (the rest has no address) — say «covered», not «no address».
+            if ($done !== [] && array_filter($docs, static fn(Invoice $d) => InvoiceMails::skipReason($d) === null) === []) {
+                $this->messageService->pushFlashAfterRedirect('info', 'Nichts eingereiht — alle Dokumente mit E-Mail-Adresse sind bereits versendet oder im Postausgang. Einen Beleg nochmals senden: «Erneut senden …» in seiner Zeile.');
+
+                return $this->redirect($url, 303);
+            }
+        }
         try {
-            $result = $this->invoiceMails()->queue($docs, $this->invoiceMailActor());
+            $result = $mails->queue($docs, $this->invoiceMailActor(), $sender, $senders->userId());
         } catch (\InvalidArgumentException | \RuntimeException $e) {   // a draft the outbox refused (InvalidOutboxMailException), no outbox
             $this->messageService->pushFlashAfterRedirect('error', 'Nichts wurde eingereiht: ' . $e->getMessage());
 
@@ -1192,21 +1284,52 @@ trait InvoiceControllerTrait
         }
         $queued  = count($result['queued']);
         $skipped = array_map(static fn(Invoice $d) => $d->documentName(), $result['skipped']);
+        $rate    = $mails->rate();
         $message = $queued === 0
             ? 'Keine E-Mail eingereiht — kein Dokument hat eine E-Mail-Adresse.'
-            : ($queued === 1 ? '1 E-Mail' : $queued . ' E-Mails') . ' in den Postausgang gestellt (Service › Postausgang) — der Versand läuft im Hintergrund.';
+            : ($queued === 1 ? '1 E-Mail' : $queued . ' E-Mails') . ' im Postausgang' . ($resend !== null ? ' (erneut: ' . $resend->documentName() . ')' : '')
+              . ($rate !== '' ? ' — Versand ' . $rate : '') . '.';
         if ($skipped !== []) {
             $message .= ' Ohne E-Mail-Adresse übersprungen: ' . implode(', ', $skipped) . '.';
+        }
+        if ($done !== []) {
+            $message .= ' Bereits versendet oder im Postausgang: ' . implode(', ', array_map(static fn(Invoice $d) => $d->documentName(), $done)) . '.';
         }
         $this->messageService->pushFlashAfterRedirect($queued === 0 ? 'info' : 'success', $message);
 
         return $this->redirect($url, 303);
     }
 
+    /**
+     * The document a `resend` value names — null when none is given, false when it is not one of
+     * the run's $documents (a forged or stale id: refused, Rule 7).
+     *
+     * @param list<Invoice> $documents
+     */
+    private static function invoiceResendOf(mixed $value, array $documents): Invoice|null|false
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+        foreach ($documents as $document) {
+            if (is_scalar($value) && (string) $document->getId() === trim((string) $value)) {
+                return $document;
+            }
+        }
+
+        return false;
+    }
+
     /** The mail side of the result list; a harness host replaces it. */
     private function invoiceMails(): InvoiceMails
     {
         return new InvoiceMails($this->em());
+    }
+
+    /** The logged-in user's sender identities («Senden als»); a harness host hands in a user. */
+    private function invoiceMailSenders(): \Z77\Shared\Mail\SenderIdentities
+    {
+        return \Z77\Shared\Mail\SenderIdentities::ofCurrentUser();
     }
 
     /** Who queued the mails (the outbox row's `created_by`); a harness host names one. */

@@ -181,11 +181,17 @@ use Z77\Shared\Money\Money;
 $pass = 0;
 $fail = 0;
 
-function check(string $label, bool $ok): void
+/** $detail (a json_encode() of what was compared, as many checks pass) is printed on a FAIL only. */
+function check(string $label, bool $ok, mixed $detail = null): void
 {
     global $pass, $fail;
-    if ($ok) { $pass++; echo "  ok   {$label}\n"; }
-    else     { $fail++; echo "  FAIL {$label}\n"; }
+    if ($ok) { $pass++; echo "  ok   {$label}\n"; return; }
+    $fail++;
+    echo "  FAIL {$label}\n";
+    if ($detail !== null && $detail !== '' && $detail !== false) {
+        $text = is_string($detail) ? $detail : json_encode($detail, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        echo '       → ' . (strlen($text) > 600 ? substr($text, 0, 600) . ' …' : $text) . "\n";
+    }
 }
 
 /** Runs $fn and returns the exception when it throws $class, null otherwise. */
@@ -237,6 +243,12 @@ if (($argv[1] ?? '') === '--order-book-worker') {
     }
     exit(0);
 }
+
+// ── checkpoints: `--from=BM` runs only that section on the state a full run saved there ──
+// (tests/support/HarnessCheckpoint.php; a full run saves each checkpoint at its section boundary)
+require __DIR__ . '/support/HarnessCheckpoint.php';
+$checkpoint  = new HarnessCheckpoint('module-debtor', __FILE__, ['BM']);
+$fromSection = $checkpoint->requested($argv);
 
 // ── credentials: never in the repository ─────────────────────────────────
 
@@ -396,6 +408,80 @@ $run = static function (array $input): array {
 
     return [$code, $out->fetch()];
 };
+
+// ── shared helpers — up front, so a section started from a checkpoint (`--from=…`) has them too ──
+// (they read only the wiring above; `$withTarget` takes Müller's id by reference)
+
+$journalCount = fn() => $count('journal_entry');
+$invoiceRow   = fn(int $id) => $db->fetchAssociative('SELECT * FROM invoice WHERE id = ?', [$id]);
+$lineRows     = fn(int $id) => $db->fetchAllAssociative('SELECT * FROM invoice_line WHERE invoice_id = ? ORDER BY position', [$id]);
+$taxRows      = fn(int $id) => $db->fetchAllAssociative('SELECT * FROM invoice_tax WHERE invoice_id = ? ORDER BY position', [$id]);
+$entryRow     = fn(string $ref) => $db->fetchAssociative("SELECT e.* FROM journal_entry e JOIN fiscal_year y ON y.id = e.fiscal_year_id WHERE CONCAT(y.code, '/', e.number) = ?", [$ref]);
+$entryLines   = fn(string $ref) => $db->fetchAllAssociative("SELECT l.*, a.number AS account_number FROM journal_line l JOIN journal_entry e ON e.id = l.entry_id JOIN fiscal_year y ON y.id = e.fiscal_year_id JOIN account a ON a.id = l.account_id WHERE CONCAT(y.code, '/', e.number) = ? ORDER BY l.position", [$ref]);
+$sumOf        = fn(array $rows, string $col) => array_reduce($rows, fn(Money $s, array $r) => $s->add(Money::fromDecimal((string) $r[$col], 'CHF')), chf('0.00'));
+$service      = fn(UnifiedEntityManager $em) => new InvoicingService($em, 'tester');
+$refusal      = fn(callable $fn): ?string => caught($fn, InvoiceRefusedException::class)?->reason;
+$readInvoice  = fn(int $id): Invoice => $wireDi()->getRepository(Invoice::class)->withLines($id);
+$stateOf      = fn(int $id): string => (string) $db->fetchOne('SELECT state FROM invoice WHERE id = ?', [$id]);
+/** The `{id, version}` pair finalize() takes, with the version the row carries NOW (what a screen would have shown). */
+$at           = fn(int $id): array => ['id' => $id, 'version' => (int) $db->fetchOne('SELECT version FROM invoice WHERE id = ?', [$id])];
+/** The QR-target draft of P3C and BM; `$mid` by reference — Müller's id is known from J on (or restored from a checkpoint). */
+$withTarget = function (string $target, string $date = '2026-06-10') use (&$mid): InvoiceDraft {
+    return InvoiceDraft::invoice($mid, day($date), day($date), 'CHF', [
+        LineDraft::service('Beratung', '2.000', 'h', chf('150.00'), 'UN', '3400'),
+    ], paymentTargetCode: $target);
+};
+
+// The screens' doubles (P3C on): the template renderer, the request/CSRF wiring, the slot renderers.
+require_once __DIR__ . '/../packages/kernel/core/src/autoload/prod/php/Helper.php';
+$pkgRoot = dirname($package);
+$renderer = new class($package . '/res/view/templates/', $pkgRoot) {
+    public function __construct(private string $dir, private string $root) {}
+    public function partial(string $path, array $context = [], ?string $ns = null): string
+    {
+        $dir = match ($ns) {
+            'Z77\\Module\\Mandator' => $this->root . '/module-mandator/res/view/templates/',
+            'Z77\\Module\\Vat'      => $this->root . '/module-vat/res/view/templates/',
+            'Z77\\Shared'           => $this->root . '/kernel/shared/res/view/templates/',
+            default                 => $this->dir,
+        };
+        return (function (string $z77TplPath, array $z77TplContext) { extract($z77TplContext, EXTR_SKIP); ob_start(); require $z77TplPath; return ob_get_clean(); })->call($this, $dir . $path . '.tpl.php', $context);
+    }
+};
+/** A fresh wiring with the request and CSRF doubles (DI::set() never replaces — once per wiring). */
+$useRequest = function (array $get, ?array $post = null) use ($wireDi): UnifiedEntityManager {
+    $em = $wireDi();
+    $_GET = $get; $_POST = $post ?? [];
+    $GLOBALS['z77TestIsPost'] = $post !== null;
+    DI::getInstance()->set('Request', fn() => new class {
+        public function getGetParameter(string $p): mixed { return $_GET[$p] ?? null; }
+        public function isPost(): bool { return $GLOBALS['z77TestIsPost']; }
+        public function getPostParameters(): array { return $_POST; }
+        public function getUploadedFile(string $field): ?\Z77\Shared\ValueObjects\UploadedFile { return $GLOBALS['z77TestUpload'][$field] ?? null; }
+        public function getMode(): \Z77\Core\Http\RequestMode { return !empty($GLOBALS['z77TestFetch']) ? \Z77\Core\Http\RequestMode::Fetch : \Z77\Core\Http\RequestMode::Page; }
+        public function getJsonBody(): array { return $GLOBALS['z77TestJson'] ?? []; }
+    }, true);
+    DI::getInstance()->set('CsrfService', fn() => new class {
+        public function getToken(): string { return 'tok-session'; }
+        public function generateEntityToken(string $context, int $id): string { return "tok-{$context}-{$id}"; }
+        public function validateEntityToken(string $token, string $context, int $id): bool { return $token === "tok-{$context}-{$id}"; }
+    }, true);
+    return $em;
+};
+$renderMain = fn($host) => implode('', array_map(fn($p) => $renderer->partial($p, $host->context), $host->layoutManager->sections['main'] ?? []));
+/** The list's body: the layout config pins it (InvoiceLayout), the trait adds only the toolbar. */
+$renderList = fn($host) => $renderer->partial('Backend/InvoiceController/listAction', $host->context);
+$renderSlot = fn($host, string $slot) => implode('', array_map(fn($p) => $renderer->partial($p, $host->context), $host->layoutManager->sections[$slot] ?? []));
+
+// `--from=<SECTION>`: the fresh schema and installation take the saved state, the saved variables
+// return, and the run jumps to the section (its label below) — the sections before it are skipped.
+if ($fromSection !== null) {
+    echo "Checkpoint run: only section {$fromSection}\n";
+    extract($checkpoint->restore($fromSection, $db, $base));
+    switch ($fromSection) {
+        case 'BM': goto section_BM;
+    }
+}
 
 
 // ── A. the migration ─────────────────────────────────────────────────────
@@ -1272,19 +1358,6 @@ check('I16 exactly TWO classes name module-financial — the port adapter (ADR-0
 // disc-2-10, no address yet), Rita (profile disc-2-10, no address), the
 // retired contact (inactive, no profile), financial REGISTERED, the vat seed.
 
-$journalCount = fn() => $count('journal_entry');
-$invoiceRow   = fn(int $id) => $db->fetchAssociative('SELECT * FROM invoice WHERE id = ?', [$id]);
-$lineRows     = fn(int $id) => $db->fetchAllAssociative('SELECT * FROM invoice_line WHERE invoice_id = ? ORDER BY position', [$id]);
-$taxRows      = fn(int $id) => $db->fetchAllAssociative('SELECT * FROM invoice_tax WHERE invoice_id = ? ORDER BY position', [$id]);
-$entryRow     = fn(string $ref) => $db->fetchAssociative("SELECT e.* FROM journal_entry e JOIN fiscal_year y ON y.id = e.fiscal_year_id WHERE CONCAT(y.code, '/', e.number) = ?", [$ref]);
-$entryLines   = fn(string $ref) => $db->fetchAllAssociative("SELECT l.*, a.number AS account_number FROM journal_line l JOIN journal_entry e ON e.id = l.entry_id JOIN fiscal_year y ON y.id = e.fiscal_year_id JOIN account a ON a.id = l.account_id WHERE CONCAT(y.code, '/', e.number) = ? ORDER BY l.position", [$ref]);
-$sumOf        = fn(array $rows, string $col) => array_reduce($rows, fn(Money $s, array $r) => $s->add(Money::fromDecimal((string) $r[$col], 'CHF')), chf('0.00'));
-$service      = fn(UnifiedEntityManager $em) => new InvoicingService($em, 'tester');
-$refusal      = fn(callable $fn): ?string => caught($fn, InvoiceRefusedException::class)?->reason;
-$readInvoice  = fn(int $id): Invoice => $wireDi()->getRepository(Invoice::class)->withLines($id);
-$stateOf      = fn(int $id): string => (string) $db->fetchOne('SELECT state FROM invoice WHERE id = ?', [$id]);
-/** The `{id, version}` pair finalize() takes, with the version the row carries NOW (what a screen would have shown). */
-$at           = fn(int $id): array => ['id' => $id, 'version' => (int) $db->fetchOne('SELECT version FROM invoice WHERE id = ?', [$id])];
 $mid          = $mueller->getId();
 /** The standard draft: two services (UN), a text line, a lump sum (UR) — 310.00 net, 23.46 tax, 333.46 → 333.45. */
 $standardDraft = fn(string $invoiceDate = '2026-03-10', string $serviceFrom = '2026-03-01', ?string $terms = null) => InvoiceDraft::invoice($mid, day($invoiceDate), day($serviceFrom), 'CHF', [
@@ -1990,9 +2063,6 @@ $emP = $wireDi();
 // `bank` was switched off in G (a row that became invalid) — the documents here need it active.
 (new DebtorMasterData($emP))->setTargetActive($emP->getRepository(PaymentTarget::class)->findByCode('bank'), true);
 $emP = $wireDi();
-$withTarget = fn(string $target, string $date = '2026-06-10') => InvoiceDraft::invoice($mid, day($date), day($date), 'CHF', [
-    LineDraft::service('Beratung', '2.000', 'h', chf('150.00'), 'UN', '3400'),
-], paymentTargetCode: $target);
 $qrInv = $service($emP)->invoice($withTarget('qr'));
 $qrRow = $invoiceRow($qrInv->getId());
 $draftBill = QrBill::of($readInvoice($qrInv->getId()));
@@ -2154,41 +2224,6 @@ check('P3C20 a credit note carries NO payment part (every pay_* empty) and its b
     && !$cnBill->isPrintable() && str_contains($cnBill->problems()[0], 'Gutschrift'));
 
 echo "P3C. The document screens (trait + templates through host doubles)\n";
-require_once __DIR__ . '/../packages/kernel/core/src/autoload/prod/php/Helper.php';
-$pkgRoot = dirname($package);
-$renderer = new class($package . '/res/view/templates/', $pkgRoot) {
-    public function __construct(private string $dir, private string $root) {}
-    public function partial(string $path, array $context = [], ?string $ns = null): string
-    {
-        $dir = match ($ns) {
-            'Z77\\Module\\Mandator' => $this->root . '/module-mandator/res/view/templates/',
-            'Z77\\Module\\Vat'      => $this->root . '/module-vat/res/view/templates/',
-            'Z77\\Shared'           => $this->root . '/kernel/shared/res/view/templates/',
-            default                 => $this->dir,
-        };
-        return (function (string $z77TplPath, array $z77TplContext) { extract($z77TplContext, EXTR_SKIP); ob_start(); require $z77TplPath; return ob_get_clean(); })->call($this, $dir . $path . '.tpl.php', $context);
-    }
-};
-/** A fresh wiring with the request and CSRF doubles (DI::set() never replaces — once per wiring). */
-$useRequest = function (array $get, ?array $post = null) use ($wireDi): UnifiedEntityManager {
-    $em = $wireDi();
-    $_GET = $get; $_POST = $post ?? [];
-    $GLOBALS['z77TestIsPost'] = $post !== null;
-    DI::getInstance()->set('Request', fn() => new class {
-        public function getGetParameter(string $p): mixed { return $_GET[$p] ?? null; }
-        public function isPost(): bool { return $GLOBALS['z77TestIsPost']; }
-        public function getPostParameters(): array { return $_POST; }
-        public function getUploadedFile(string $field): ?\Z77\Shared\ValueObjects\UploadedFile { return $GLOBALS['z77TestUpload'][$field] ?? null; }
-        public function getMode(): \Z77\Core\Http\RequestMode { return !empty($GLOBALS['z77TestFetch']) ? \Z77\Core\Http\RequestMode::Fetch : \Z77\Core\Http\RequestMode::Page; }
-        public function getJsonBody(): array { return $GLOBALS['z77TestJson'] ?? []; }
-    }, true);
-    DI::getInstance()->set('CsrfService', fn() => new class {
-        public function getToken(): string { return 'tok-session'; }
-        public function generateEntityToken(string $context, int $id): string { return "tok-{$context}-{$id}"; }
-        public function validateEntityToken(string $token, string $context, int $id): bool { return $token === "tok-{$context}-{$id}"; }
-    }, true);
-    return $em;
-};
 $invoiceHost = function () {
     return new class {
         use \Z77\Module\Debtor\Ui\InvoiceControllerTrait { listAction as public; detailAction as public; pdfAction as public; paymentAction as public; confirmPaymentDeleteAction as public; paymentDeleteAction as public; addAction as public; editAction as public; creditNoteAction as public; confirmFinalizeAction as public; finalizeAction as public; }
@@ -2223,10 +2258,6 @@ $invoiceHost = function () {
         private function invoiceDunningService(): \Z77\Module\Debtor\Services\DunningService { return new \Z77\Module\Debtor\Services\DunningService($this->em(), 'sachbearbeiter'); }
     };
 };
-$renderMain = fn($host) => implode('', array_map(fn($p) => $renderer->partial($p, $host->context), $host->layoutManager->sections['main'] ?? []));
-/** The list's body: the layout config pins it (InvoiceLayout), the trait adds only the toolbar. */
-$renderList = fn($host) => $renderer->partial('Backend/InvoiceController/listAction', $host->context);
-$renderSlot = fn($host, string $slot) => implode('', array_map(fn($p) => $renderer->partial($p, $host->context), $host->layoutManager->sections[$slot] ?? []));
 
 $layoutI = \Z77\Module\Debtor\Ui\InvoiceLayout::config();
 check('P3C21 the layout pins the body to the fragment\'s listAction; the host is mounted under finance; the seed puts «Rechnungen» into the area «Aufträge» (ADR-050)',
@@ -3354,8 +3385,14 @@ $dunHost = function () {
         public object $help;
         public ?string $redirectedTo = null;
         public array $bytes = [];
+        public ?\Z77\Shared\Entities\BackendUser $mailUser = null;
         public function __construct()
         {
+            $this->mailUser = new \Z77\Shared\Entities\BackendUser(['username' => 'sachbearbeiter', 'sender_identities' => [
+                ['name' => 'Sabine Sachbearbeiter', 'email' => 'sabine@example.ch'],
+                ['name' => 'Buchhaltung', 'email' => 'buchhaltung@example.ch'],
+            ]]);
+            (new \ReflectionProperty(\Z77\Shared\Entities\BackendUser::class, 'id'))->setValue($this->mailUser, 42);
             $this->help = new \Z77\Core\Services\HelpService();
             $this->messageService = new class {
                 public array $flashes = [];
@@ -4495,6 +4532,10 @@ check('O8 order → invoice: the order line\'s code (stored trimmed «W-77») is
     && array_column(array_values(array_filter($lineRows($o8Inv->getId()), fn(array $r) => $r['type'] !== 'rounding')), 'code') === ['W-77', null]);
 
 // ── BM. the booking print's result list, ZIP, «Alle per E-Mail senden» (step 3 of the mail plan) ──
+// Checkpoint BM: what the section reads from above — Müller ($mid), the editor's draft ($newId),
+// the packages section O added; the rest is in the schema and the installation.
+$checkpoint->save('BM', $db, $base, ['mid' => $mid, 'newId' => $newId, 'packages' => $packages]);
+section_BM:
 
 echo "BM. Booking print result list, ZIP, documents by e-mail through the outbox (step 3 of the mail plan, owner 2026-10-22)\n";
 $packages['Mailing'] = str_replace('\\', '/', realpath(__DIR__ . '/../packages/module-mailing'));
@@ -4519,15 +4560,22 @@ $bmRequest = function (array $get, ?array $post = null) use ($useRequest): Unifi
 };
 $bmHost = function () {
     return new class {
-        use \Z77\Module\Debtor\Ui\InvoiceControllerTrait { finalizeAction as public; bookingResultAction as public; pdfAllAction as public; zipAction as public; confirmMailAction as public; mailAction as public; editAction as public; }
+        use \Z77\Module\Debtor\Ui\InvoiceControllerTrait { finalizeAction as public; bookingResultAction as public; resultActionsAction as public; pdfAllAction as public; zipAction as public; confirmMailAction as public; mailAction as public; editAction as public; }
         public array $context = [];
         public object $layoutManager;
         public object $messageService;
         public object $help;
         public ?string $redirectedTo = null;
         public array $bytes = [];
+        /** The logged-in backend user «Senden als» reads (`invoiceMailSenders()` below): two identities, id 42 — as T's host. */
+        public ?\Z77\Shared\Entities\BackendUser $mailUser = null;
         public function __construct()
         {
+            $this->mailUser = new \Z77\Shared\Entities\BackendUser(['username' => 'sachbearbeiter', 'sender_identities' => [
+                ['name' => 'Sabine Sachbearbeiter', 'email' => 'sabine@example.ch'],
+                ['name' => 'Buchhaltung', 'email' => 'buchhaltung@example.ch'],
+            ]]);
+            (new \ReflectionProperty(\Z77\Shared\Entities\BackendUser::class, 'id'))->setValue($this->mailUser, 42);
             $this->help = new \Z77\Core\Services\HelpService();
             $this->layoutManager = new class {
                 public array $sections = [];
@@ -4549,6 +4597,7 @@ $bmHost = function () {
         private function paymentService(): \Z77\Module\Debtor\Services\PaymentService { return new \Z77\Module\Debtor\Services\PaymentService($this->em(), 'sachbearbeiter'); }
         private function invoiceDunningService(): \Z77\Module\Debtor\Services\DunningService { return new \Z77\Module\Debtor\Services\DunningService($this->em(), 'sachbearbeiter'); }
         private function invoiceMailActor(): string { return 'sachbearbeiter'; }
+        private function invoiceMailSenders(): \Z77\Shared\Mail\SenderIdentities { return new \Z77\Shared\Mail\SenderIdentities($this->mailUser); }
     };
 };
 
@@ -4577,11 +4626,11 @@ $bmRequest(['ids' => $bmIdList . ',abc,' . $bmDraft->getId() . ',999999', 'back'
 $host = $bmHost();
 $host->bookingResultAction();
 $bmList = $renderMain($host);
-check('BM3 the result list: exactly the FINAL documents of `ids` (junk, a draft, an unknown id left out), in number order; per row number, customer, total, the billing e-mail of the SNAPSHOT or a muted «keine E-Mail-Adresse», the PDF as a row icon (the existing pdf route, new tab); an outside `back` is dropped',
+check('BM3 the result list: exactly the FINAL documents of `ids` (junk, a draft, an unknown id left out), in number order; per row number, customer, total, the billing e-mail of the SNAPSHOT or a muted «keine E-Mail-Adresse», the row ⋮ (result-actions: «PDF öffnen», «Erneut senden …» — owner 2026-10-23, BM18); an outside `back` is dropped',
     array_map(fn($d) => (int) $d->getId(), $host->context['documents']) === $bmIds && $host->context['back'] === ''
     && $host->layoutManager->sections['main'] === ['Backend/InvoiceController/bookingResult']
     && str_contains($bmList, 'kunde@example.ch') && str_contains($bmList, 'gutschrift@example.ch') && str_contains($bmList, '<span class="be-list__cell--muted">keine E-Mail-Adresse</span>')
-    && str_contains($bmList, 'href="/backend/finance/invoice/pdf?id=' . $bmX->getId() . '" target="_blank"') && str_contains($bmList, 'Gutschrift ' . $bmNum[2])
+    && str_contains($bmList, 'data-menu-open="/backend/finance/invoice/result-actions?id=' . $bmX->getId() . '&amp;ids=') && str_contains($bmList, 'Gutschrift ' . $bmNum[2])
     && !str_contains($bmList, 'https://evil'));
 check('BM4 the header actions are plain links of the run: «Alle per E-Mail senden …» (the confirmation), «Alle als ein PDF» (new tab), «Alle als ZIP», «Zur Liste «Verbucht»» — no form, no script needed',
     str_contains($bmList, 'href="/backend/finance/invoice/confirm-mail?ids=' . rawurlencode($bmIdList) . '"')
@@ -4623,32 +4672,37 @@ $host = $bmHost();
 $host->confirmMailAction();
 $bmConfirm = $renderMain($host);
 $bmSender  = $bmMandator?->getName() ?? '';
-check('BM7 the confirmation names who gets a mail (2: the invoice in ENGLISH — its snapshot language —, the credit note in German, each with the subject of its kind) and who is SKIPPED (1, «keine E-Mail-Adresse»); one #[Csrf] form posting the ids',
+check('BM7 the confirmation names who gets a mail («Senden als»: the user\'s two identities, the first preselected) (2: the invoice in ENGLISH — its snapshot language —, the credit note in German, each with the subject of its kind) and who is SKIPPED (1, «keine E-Mail-Adresse»); one #[Csrf] form posting the ids',
     count($host->context['send']) === 2 && count($host->context['skip']) === 1 && $host->context['skip'][0]['reason'] === 'keine E-Mail-Adresse'
     && $host->context['send'][0]['mail']['to'] === 'kunde@example.ch' && $host->context['send'][0]['mail']['language'] === 'en'
     && $host->context['send'][0]['mail']['subject'] === rtrim('Invoice ' . $bmNum[0] . ($bmSender !== '' ? ' — ' . $bmSender : ''))
     && $host->context['send'][1]['mail']['subject'] === rtrim('Gutschrift ' . $bmNum[2] . ($bmSender !== '' ? ' — ' . $bmSender : ''))
     && str_contains($bmConfirm, 'action="/backend/finance/invoice/mail"') && str_contains($bmConfirm, 'name="csrf_token"') && str_contains($bmConfirm, 'name="ids" value="' . e($bmIdList) . '"')
-    && str_contains($bmConfirm, '2 E-Mails senden') && str_contains($bmConfirm, 'Rechnung ' . $bmNum[1] . ' — keine E-Mail-Adresse'),
+    && str_contains($bmConfirm, '2 E-Mails senden') && str_contains($bmConfirm, 'Rechnung ' . $bmNum[1] . ' — keine E-Mail-Adresse')
+    && str_contains($bmConfirm, '<select id="sender-identity" name="sender">') && str_contains($bmConfirm, '<option value="0" selected>Sabine Sachbearbeiter &lt;sabine@example.ch&gt;</option>')
+    && str_contains($bmConfirm, '<option value="1">Buchhaltung &lt;buchhaltung@example.ch&gt;</option>'),
     json_encode(array_map(fn($s) => $s['mail'], $host->context['send'])));
 
-$bmRequest([], ['ids' => $bmIdList]);
+$bmRequest([], ['ids' => $bmIdList, 'sender' => '1']);
 $host = $bmHost();
 $host->mailAction();
 $bmRows = $db->fetchAllAssociative('SELECT * FROM mail_outbox WHERE source LIKE ? ORDER BY id', ['invoice:%']);
-check('BM8 «per E-Mail senden» queues ONE outbox mail per document with an address — two rows in ONE batch, source invoice:<id>, the attachment by reference invoice-pdf:<id>, the language, Reply-To the mandator\'s e-mail; the one without an address is skipped, not failed; the job is queued; back to the result list with the flash',
+check('BM8 «per E-Mail senden» queues ONE outbox mail per document with an address — two rows in ONE batch, source invoice:<id>, the attachment by reference invoice-pdf:<id>, the language, the CHOSEN identity (index 1 «Buchhaltung», user 42) as sender — no mandator Reply-To any more (owner 2026-10-23); the one without an address is skipped, not failed; the job is queued; back to the result list with the flash',
     count($bmRows) === 2 && $bmRows[0]['batch_id'] === $bmRows[1]['batch_id'] && strlen($bmRows[0]['batch_id']) === 32
     && array_column($bmRows, 'source') === ['invoice:' . $bmX->getId(), 'invoice:' . $bmCN->getId()]
     && json_decode($bmRows[0]['attachments'], true) === ['invoice-pdf:' . $bmX->getId()] && array_column($bmRows, 'language') === ['en', 'de']
     && array_column($bmRows, 'recipient_email') === ['kunde@example.ch', 'gutschrift@example.ch'] && array_column($bmRows, 'state') === ['queued', 'queued']
-    && $bmRows[0]['reply_to'] === (string) $bmMandator?->getEmail() && $bmRows[0]['created_by'] === 'sachbearbeiter'
+    && $bmRows[0]['reply_to'] === '' && $bmRows[0]['created_by'] === 'sachbearbeiter'
+    && array_column($bmRows, 'sender_email') === ['buchhaltung@example.ch', 'buchhaltung@example.ch'] && array_column($bmRows, 'sender_name') === ['Buchhaltung', 'Buchhaltung']
+    && array_map('intval', array_column($bmRows, 'sender_user_id')) === [42, 42]
     && (new \Z77\Shared\Jobs\JobQueue($wireDi()))->hasOpenEntry('mail-outbox')
     && $host->redirectedTo === '/backend/finance/invoice/booking-result?ids=' . rawurlencode($bmIdList)
     && $host->messageService->flashes[0][0] === 'success' && str_contains($host->messageService->flashes[0][1], '2 E-Mails') && str_contains($host->messageService->flashes[0][1], 'Rechnung ' . $bmNum[1]),
-    json_encode(array_map(fn($r) => [$r['source'], $r['attachments'], $r['language'], $r['reply_to']], $bmRows)));
-check('BM9 the stored mail is the kind\'s text with the placeholders filled, escaped inside the shared layout: number, «CHF …», the due date — the invoice in English',
+    json_encode(array_map(fn($r) => [$r['source'], $r['attachments'], $r['language'], $r['reply_to'], $r['sender_name'], $r['sender_email'], $r['sender_user_id']], $bmRows)));
+check('BM9 the stored mail is the kind\'s text with the placeholders filled, escaped inside the shared layout: number, «CHF …», the due date, {anzeigename} = the chosen identity under the greeting — the invoice in English',
     str_contains($bmRows[0]['html_body'], 'Please find attached our invoice ' . $bmNum[0] . ' for CHF ') && str_contains($bmRows[0]['html_body'], 'payable by ' . $readInvoice($bmX->getId())->getDueDate()->format('d.m.Y'))
-    && str_contains($bmRows[1]['html_body'], 'Im Anhang erhalten Sie unsere Gutschrift ' . $bmNum[2]) && $bmRows[0]['template'] === 'Z77\\Shared:emails/documentMail');
+    && str_contains($bmRows[1]['html_body'], 'Im Anhang erhalten Sie unsere Gutschrift ' . $bmNum[2]) && $bmRows[0]['template'] === 'Z77\\Shared:emails/documentMail'
+    && str_contains($bmRows[0]['html_body'], 'Kind regards<br>') && str_contains($bmRows[0]['html_body'], 'Buchhaltung') && str_contains($bmRows[1]['html_body'], 'Buchhaltung'));
 
 $bmProviders = \Z77\Module\Mailing\Attachments\AttachmentProviders::fromModules(DI::getModuleManager());
 $bmAttachment = $bmProviders->resolve('invoice-pdf:' . $bmX->getId());
@@ -4666,9 +4720,11 @@ $bmRequest(['id' => (string) $bmX->getId()]);
 $host = $bmHost();
 $host->editAction();
 $bmMask = $renderMain($host);
-check('BM11 the history: the result list shows «im Postausgang» per row and links the outbox; the document\'s mask shows «per E-Mail an … gesendet am …» from the outbox source invoice:<id> (read-only)',
-    str_contains($bmList2, 'E-Mail an kunde@example.ch im Postausgang seit') && str_contains($bmList2, 'href="/backend/service/outbox/list?view=all"')
-    && str_contains($bmMask, 'per E-Mail an kunde@example.ch gesendet am 06.08.2026 09:15'));
+$bmBatch = (string) ($bmRows[0]['batch_id'] ?? '');
+check('BM11 the history: the result list shows «im Postausgang» per row and — since 2026-10-23 (owner) — the band «Alle im Postausgang — Versand 10 pro Minute» (the pace from the outbox setting) with «Postausgang ansehen» = THIS batch, no second «Alle per E-Mail senden …»; the document\'s mask shows «per E-Mail an … gesendet am …» from the outbox source invoice:<id> (read-only)',
+    str_contains($bmList2, 'E-Mail an kunde@example.ch im Postausgang seit') && str_contains($bmList2, '<span>Alle im Postausgang — Versand 10 pro Minute</span>')
+    && str_contains($bmList2, 'href="' . e(\Z77\Module\Mailing\Ui\OutboxListing::batchUrl($bmBatch)) . '">Postausgang ansehen</a>') && !str_contains($bmList2, 'Alle per E-Mail senden')
+    && str_contains($bmMask, 'per E-Mail an kunde@example.ch gesendet am 06.08.2026 09:15'), strip_tags($bmList2));
 
 // The mail kind: subject and text per language, the operator's record over the module's seed.
 $bmEm    = $bmRequest([]);
@@ -4697,7 +4753,141 @@ check('BM13 the kinds are declared by the modules (debtor: invoice, credit-note,
     array_keys($bmKinds->all()) === ['invoice', 'credit-note', 'dunning', 'quote', 'order-confirmation', 'delivery-note'] && $bmKinds->languages('credit-note') === ['de', 'en']
     && !$bmVal->isValid() && $bmVal->hasFieldError('subjects') && $bmVal->hasFieldError('bodies'));
 
+// «Senden als» refusals (owner 2026-10-23): no identity, a foreign index — the server decides (Rule 7).
+$bmCountRows = fn(): int => (int) $db->fetchOne('SELECT COUNT(*) FROM mail_outbox');
+$bmBefore    = $bmCountRows();
+// Both documents are covered now (X sent, CN queued); the confirmation would offer nothing. A
+// CANCELLED mail counts as not sent (owner 2026-10-23) — cancelled for BM14–BM16, restored after.
+$bmStates = $db->fetchAllKeyValue("SELECT id, state FROM mail_outbox WHERE source LIKE 'invoice:%'");
+$db->executeStatement("UPDATE mail_outbox SET state = 'cancelled' WHERE source LIKE 'invoice:%'");
+$bmRequest(['ids' => $bmIdList]);
+$host = $bmHost();
+$host->mailUser = new \Z77\Shared\Entities\BackendUser(['username' => 'neu']);
+$host->confirmMailAction();
+$bmNone = $renderMain($host);
+check('BM14 a user WITHOUT identity: the confirmation shows «Erfasse zuerst eine E-Mail an deinem User.» and NO send button, no «Senden als» field',
+    str_contains($bmNone, 'Erfasse zuerst eine E-Mail an deinem User.') && !str_contains($bmNone, 'E-Mails senden') && !str_contains($bmNone, 'type="submit"') && !str_contains($bmNone, 'name="sender"'), strip_tags($bmNone));
+$bmRequest([], ['ids' => $bmIdList, 'sender' => '0']);
+$host = $bmHost();
+$host->mailUser = new \Z77\Shared\Entities\BackendUser(['username' => 'neu']);
+$host->mailAction();
+$bmFlashNone = $host->messageService->flashes[0] ?? [];
+$bmRequest([], ['ids' => $bmIdList, 'sender' => '5']);
+$host = $bmHost();
+$host->mailAction();
+$bmFlashForeign = $host->messageService->flashes[0] ?? [];
+$bmRequest([], ['ids' => $bmIdList, 'sender' => 'x']);
+$host = $bmHost();
+$host->mailAction();
+check('BM15 … and the POST refuses server-side: without identity («Erfasse zuerst …»), with an index that is not one of the user\'s (5, junk) — nothing queued, back to the result list',
+    $bmCountRows() === $bmBefore && ($bmFlashNone[0] ?? '') === 'error' && str_contains($bmFlashNone[1] ?? '', 'Erfasse zuerst eine E-Mail an deinem User.')
+    && ($bmFlashForeign[0] ?? '') === 'error' && str_contains($bmFlashForeign[1] ?? '', 'gehört nicht zu deinem User') && ($host->messageService->flashes[0][0] ?? '') === 'error'
+    && $host->redirectedTo === '/backend/finance/invoice/booking-result?ids=' . rawurlencode($bmIdList), json_encode([$bmFlashNone, $bmFlashForeign]));
+$bmRequest(['ids' => $bmIdList]);
+$host = $bmHost();
+$host->mailUser = new \Z77\Shared\Entities\BackendUser(['username' => 'eins', 'sender_identities' => [['name' => 'Anna', 'email' => 'anna@example.ch']]]);
+$host->confirmMailAction();
+$bmOne = $renderMain($host);
+check('BM16 exactly one identity: shown read-only with its index as a hidden field, the button there',
+    str_contains($bmOne, 'Anna &lt;anna@example.ch&gt;') && str_contains($bmOne, '<input type="hidden" name="sender" value="0">') && !str_contains($bmOne, '<select id="sender-identity"') && str_contains($bmOne, '2 E-Mails senden'));
+foreach ($bmStates as $bmRowId => $bmState) {
+    $db->executeStatement('UPDATE mail_outbox SET state = ? WHERE id = ?', [$bmState, $bmRowId]);
+}
+$bmAnz  = $bmMail->documentMail('invoice', 'de', $bmVals + ['anzeigename' => 'Peter Ruepp']);
+$bmAnz0 = $bmMail->documentMail('invoice', 'de', $bmVals + ['anzeigename' => '']);
+check('BM17 {anzeigename} (owner 2026-10-23): the default text ends «Freundliche Grüsse / Peter Ruepp / Muster AG»; empty, its own line disappears (no blank line); declared in the placeholder lists of debtor and order',
+    str_ends_with($bmAnz['body'], "Freundliche Grüsse\nPeter Ruepp\nMuster AG") && str_ends_with($bmAnz0['body'], "Freundliche Grüsse\nMuster AG")
+    && isset($bmKinds->get('invoice')['placeholders']['anzeigename'], $bmKinds->get('credit-note')['placeholders']['anzeigename'], $bmKinds->get('quote')['placeholders']['anzeigename']),
+    json_encode([$bmAnz['body'], $bmAnz0['body']], JSON_UNESCAPED_UNICODE));
+
+// After sending it feels finished (owner 2026-10-23): what is covered is not sent again, the band
+// says what waits / went out, «Erneut senden …» per row is the deliberate second mail.
+$bmResult = function () use ($bmRequest, $bmHost, $bmIdList, $renderMain): array {
+    $bmRequest(['ids' => $bmIdList]);
+    $h = $bmHost();
+    $h->bookingResultAction();
+    return [$h, $renderMain($h)];
+};
+$bmConfirmOf = function (array $get) use ($bmRequest, $bmHost, $renderMain): array {
+    $bmRequest($get);
+    $h = $bmHost();
+    $h->confirmMailAction();
+    return [$h, $h->redirectedTo === null ? $renderMain($h) : ''];
+};
+$bmPost = function (array $post) use ($bmRequest, $bmHost) {
+    $bmRequest([], $post);
+    $h = $bmHost();
+    $h->mailAction();
+    return $h;
+};
+$bmResendHref = fn(int $id): string => 'href="' . e('/backend/finance/invoice/confirm-mail?' . http_build_query(['ids' => $bmIdList]) . '&resend=' . $id) . '"';
+$bmMenu = function (int $id) use ($bmRequest, $bmHost, $bmIdList, $renderMain): string {
+    $bmRequest(['ids' => $bmIdList, 'id' => (string) $id]);
+    $h = $bmHost();
+    $h->resultActionsAction();
+    return $renderMain($h);
+};
+[$host, $bmL] = $bmResult();
+check('BM18 the result list after sending (X sent, the credit note waiting): the band «1 E-Mail im Postausgang — Versand 10 pro Minute · 1 versendet» with «Postausgang ansehen» (the batch); NO «Alle per E-Mail senden …» (all covered); «Erneut senden …» in the row ⋮ (result-actions, owner 2026-10-23) of the two mailed rows, not of the one without an address',
+    $host->context['status']['unsent'] === 0 && $host->context['status']['waiting'] === 1 && $host->context['status']['sent'] === 1 && $host->context['status']['batch'] === $bmBatch
+    && str_contains($bmL, '<span>1 E-Mail im Postausgang — Versand 10 pro Minute · 1 versendet</span>') && !str_contains($bmL, 'Alle per E-Mail senden')
+    && substr_count($bmL, '/result-actions?id=') === 3 && !str_contains($bmL, 'resend=')
+    && str_contains($bmMenu($bmX->getId()), $bmResendHref($bmX->getId()) . '>') && str_contains($bmMenu($bmCN->getId()), $bmResendHref($bmCN->getId()))
+    && str_contains($bmMenu($bmY->getId()), 'PDF öffnen') && !str_contains($bmMenu($bmY->getId()), 'resend='),
+    strip_tags($bmL));
+
+$bmBefore = $bmCountRows();
+[$host, $bmC] = $bmConfirmOf(['ids' => $bmIdList]);
+$bmDone = array_map(fn($d) => (int) $d->getId(), $host->context['done']);
+$host = $bmPost(['ids' => $bmIdList, 'sender' => '0']);
+check('BM19 … the confirmation applies the SAME rule: nothing to send, both listed «Bereits versendet oder im Postausgang», no send button; the POST re-reads the outbox (Rule 7) — nothing queued, an info flash, back to the list',
+    $host->redirectedTo === '/backend/finance/invoice/booking-result?ids=' . rawurlencode($bmIdList) && $bmCountRows() === $bmBefore
+    && ($host->messageService->flashes[0][0] ?? '') === 'info' && str_contains($host->messageService->flashes[0][1] ?? '', 'Nichts eingereiht — alle Dokumente mit E-Mail-Adresse sind bereits versendet oder im Postausgang')
+    && $bmDone === [$bmX->getId(), $bmCN->getId()] && str_contains($bmC, 'Bereits versendet oder im Postausgang — nicht nochmals: Rechnung ' . $bmNum[0] . ', Gutschrift ' . $bmNum[2])
+    && !str_contains($bmC, 'type="submit"'), json_encode($host->messageService->flashes, JSON_UNESCAPED_UNICODE));
+
+// The credit note's mail fails: a failed mail counts as NOT sent.
+$db->executeStatement("UPDATE mail_outbox SET state = 'failed', last_error = '550 unknown' WHERE source = ?", ['invoice:' . $bmCN->getId()]);
+[$host, $bmL] = $bmResult();
+$bmLAgain = $bmL;
+[$host, $bmC] = $bmConfirmOf(['ids' => $bmIdList]);
+$bmSendIds = array_map(fn($s) => (int) $s['document']->getId(), $host->context['send']);
+$bmMaxId   = (int) $db->fetchOne('SELECT MAX(id) FROM mail_outbox');
+$host = $bmPost(['ids' => $bmIdList, 'sender' => '0']);
+$bmNew = $db->fetchAllAssociative('SELECT * FROM mail_outbox WHERE id > ? ORDER BY id', [$bmMaxId]);
+[$h2, $bmL2] = $bmResult();
+check('BM20 a FAILED mail counts as not sent: the list offers «Alle per E-Mail senden …» again («1 E-Mail versendet · 1 noch nicht gesendet»), the confirmation only the credit note, the POST queues ONE new mail for it in a NEW batch — the flash «1 E-Mail im Postausgang — Versand 10 pro Minute … Bereits versendet oder im Postausgang: Rechnung …»; the band then links that newest batch',
+    str_contains($bmLAgain, 'Alle per E-Mail senden …') && str_contains($bmLAgain, '1 E-Mail versendet · 1 noch nicht gesendet')
+    && $bmSendIds === [$bmCN->getId()] && count($bmNew) === 1 && $bmNew[0]['source'] === 'invoice:' . $bmCN->getId() && $bmNew[0]['batch_id'] !== $bmBatch
+    && str_contains($host->messageService->flashes[0][1] ?? '', '1 E-Mail im Postausgang — Versand 10 pro Minute.') && str_contains($host->messageService->flashes[0][1] ?? '', 'Bereits versendet oder im Postausgang: Rechnung ' . $bmNum[0])
+    && str_contains($bmL2, e(\Z77\Module\Mailing\Ui\OutboxListing::batchUrl((string) ($bmNew[0]['batch_id'] ?? '')))) && !str_contains($bmL2, 'Alle per E-Mail senden'),
+    json_encode([$host->messageService->flashes, count($bmNew), strip_tags($bmLAgain)], JSON_UNESCAPED_UNICODE));
+
+[$host, $bmR] = $bmConfirmOf(['ids' => $bmIdList, 'resend' => (string) $bmX->getId()]);
+$bmResendCtx = [count($host->context['send']), $host->context['resend'], $host->context['done']];
+$bmBefore = $bmCountRows();
+$host = $bmPost(['ids' => $bmIdList, 'resend' => (string) $bmX->getId(), 'sender' => '1']);
+$bmResent = $db->fetchAssociative('SELECT * FROM mail_outbox ORDER BY id DESC LIMIT 1');
+check('BM21 «Erneut senden …» (the row icon): the confirmation for that ONE document although it was sent — «Erneut per E-Mail senden», the posted `resend`, «Senden als» with both identities, the button «Erneut senden»; the POST queues exactly one new mail for it as the chosen identity, the flash says «erneut»',
+    $bmResendCtx === [1, $bmX->getId(), []] && str_contains($bmR, 'Erneut per E-Mail senden') && str_contains($bmR, '<input type="hidden" name="resend" value="' . $bmX->getId() . '">')
+    && str_contains($bmR, '<select id="sender-identity" name="sender">') && str_contains($bmR, 'Erneut senden')
+    && $bmCountRows() === $bmBefore + 1 && $bmResent['source'] === 'invoice:' . $bmX->getId() && $bmResent['sender_name'] === 'Buchhaltung' && $bmResent['state'] === 'queued'
+    && str_contains($host->messageService->flashes[0][1] ?? '', '1 E-Mail im Postausgang (erneut: Rechnung ' . $bmNum[0] . ') — Versand 10 pro Minute.'),
+    json_encode([$bmResendCtx[0], $bmResendCtx[1], $host->messageService->flashes], JSON_UNESCAPED_UNICODE));
+
+$bmBefore = $bmCountRows();
+[$host, ] = $bmConfirmOf(['ids' => $bmIdList, 'resend' => (string) $bmDraft->getId()]);
+$bmForgedGet = $host->redirectedTo;
+$host = $bmPost(['ids' => $bmIdList, 'resend' => '999999', 'sender' => '0']);
+check('BM22 a `resend` that is not a document of the run (a draft, an unknown id) is refused on the page and in the POST — nothing queued (Rule 7)',
+    $bmForgedGet === '/backend/finance/invoice/list' && $host->redirectedTo === '/backend/finance/invoice/list' && ($host->messageService->flashes[0][0] ?? '') === 'error' && $bmCountRows() === $bmBefore);
+
+$db->executeStatement("UPDATE mail_outbox SET state = 'sent', sent_at = '2026-08-06 10:00:00' WHERE source LIKE 'invoice:%' AND state = 'queued'");
+[$host, $bmL] = $bmResult();
+check('BM23 everything went out: the band says «Alle versendet», the button stays away',
+    str_contains($bmL, '<span>Alle versendet</span>') && !str_contains($bmL, 'Alle per E-Mail senden') && $host->context['status']['waiting'] === 0, strip_tags($bmL));
+
 // ── result ───────────────────────────────────────────────────────────────
 
-echo "\n{$pass} passed, {$fail} failed\n";
+echo "\n{$pass} passed, {$fail} failed" . ($fromSection !== null ? " (section {$fromSection} from its checkpoint)" : '') . "\n";
 exit($fail === 0 ? 0 : 1);

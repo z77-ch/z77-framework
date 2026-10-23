@@ -2,6 +2,8 @@
 
 namespace Z77\Module\Mailing\Outbox;
 
+use Z77\Shared\Mail\SenderIdentity;
+
 /**
  * What a caller hands the outbox for ONE recipient — intent only, validated by
  * {@see OutboxService} (never by the caller). Immutable; the fluent `with…()`
@@ -17,9 +19,12 @@ namespace Z77\Module\Mailing\Outbox;
  * The body is EITHER a finished HTML (`html()` — sent as given, the caller owns
  * the markup and escaped what it put in) OR a body template (`template()` —
  * rendered at queue time inside the shared `emails/layout`, like
- * `EmailService::send()`), or plain text only (`text()`). The sender is never
- * part of a draft: it is the installation's identity from the mail config
- * (`config/client/mail.inc.php`, mail.md), filled in by the `Mailer`.
+ * `EmailService::send()`), or plain text only (`text()`). The sending ACCOUNT is
+ * never part of a draft: it is the installation's identity from the mail config
+ * (`config/client/mail.inc.php`, mail.md), filled in by the `Mailer`. A mail a
+ * staff member triggers carries his SENDER IDENTITY (`withSender()`, owner
+ * 2026-10-23): its display name becomes the From's name, «name <email>» the
+ * Reply-To — the From address stays the account's.
  */
 final class OutboxDraft
 {
@@ -40,6 +45,8 @@ final class OutboxDraft
         public readonly string $language = '',
         public readonly array $attachments = [],
         public readonly string $source = '',
+        public readonly ?SenderIdentity $sender = null,
+        public readonly ?int $senderUserId = null,
     ) {
     }
 
@@ -94,6 +101,16 @@ final class OutboxDraft
         return $this->copy(['source' => $source]);
     }
 
+    /**
+     * Signed by a staff member's sender identity: From «{name} <account>», Reply-To «{name}
+     * <{email}>»; `$userId` = the backend user who triggered the mail («Ausgelöst von»). Excludes
+     * `withReplyTo()` — the identity IS the answer address (a draft with both is refused).
+     */
+    public function withSender(SenderIdentity $sender, ?int $userId = null): self
+    {
+        return $this->copy(['sender' => $sender, 'senderUserId' => $userId]);
+    }
+
     public function hasTemplate(): bool
     {
         return $this->template !== '';
@@ -107,6 +124,7 @@ final class OutboxDraft
         return new self(
             $v['to'], $v['toName'], $v['subject'], $v['html'], $v['text'], $v['template'],
             $v['templateNameSpace'], $v['context'], $v['replyTo'], $v['language'], $v['attachments'], $v['source'],
+            $v['sender'], $v['senderUserId'],
         );
     }
 }

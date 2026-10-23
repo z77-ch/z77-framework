@@ -76,6 +76,21 @@ final class OutboxSettings
     }
 
     /** Seconds to wait after the `$failures`-th failure (1-based). */
+    /**
+     * The pace in German — «10 pro Minute», «10 alle 5 Minuten», «10 alle 30 Sekunden», «10 je
+     * Durchgang» — what a send action tells the user after queueing (owner 2026-10-23): read
+     * from these values, never written down a second time.
+     */
+    public function rateText(): string
+    {
+        return match (true) {
+            $this->pauseSeconds === 0                                  => $this->batchSize . ' je Durchgang',
+            $this->pauseSeconds === 60                                 => $this->batchSize . ' pro Minute',
+            $this->pauseSeconds % 60 === 0                             => $this->batchSize . ' alle ' . intdiv($this->pauseSeconds, 60) . ' Minuten',
+            default                                                    => $this->batchSize . ' alle ' . $this->pauseSeconds . ' Sekunden',
+        };
+    }
+
     public function retryDelaySeconds(int $failures): int
     {
         $index = max(0, min(count($this->retryMinutes) - 1, $failures - 1));

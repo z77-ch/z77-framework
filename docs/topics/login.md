@@ -1,6 +1,6 @@
 # login
 
-2026-09-22
+2026-10-23
 
 ## entry
 
@@ -171,9 +171,13 @@ getPasswordHash(): string            // bcrypt, cost 12
 getRoles(): array                    // e.g. ['admin'] or ['guest']
 getSortKey(): int                    // order in the user-admin list
 isPasswordWeak(): bool               // set when password is set; drives the every-login nag
+getSenderIdentities(): array         // list<SenderIdentity> — whose name the user signs mail with (2026-10-23)
 ```
 
-JSON keys: `id`, `username`, `password_hash`, `roles`, `preferences`, `sort_key`, `password_weak`.
+JSON keys: `id`, `username`, `initials`, `name`, `sender_identities`, `password_hash`, `roles`, `preferences`, `sort_key`, `password_weak`.
+`sender_identities` (owner decision 2026-10-23): rows `{name, email}`, the first the default;
+display data for mail, NOT a credential and not a login address — see [`backend.md`](backend.md)
+«user management» and [`mail.md`](mail.md) «sender identities».
 `password_weak` is computed via `PasswordPolicy` whenever the password is set (it
 cannot be recovered from the hash) — see [`security.md`](security.md).
 

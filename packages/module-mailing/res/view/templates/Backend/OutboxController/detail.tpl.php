@@ -34,8 +34,13 @@ $badges  = ['queued' => 'badge--info', 'sending' => 'badge--primary', 'sent' => 
 $at      = static fn(?\DateTimeImmutable $d): string => $d === null ? '—' : $d->format('d.m.Y H:i');
 $rows    = [
     'An'           => $mail->recipientLabel(),
-    'Antwort an'   => $mail->getReplyTo() !== '' ? $mail->getReplyTo() : '— (keine)',
-    'Absender'     => 'aus der E-Mail-Konfiguration der Installation',
+    'Antwort an'   => $mail->hasSender() ? $mail->senderLabel() : ($mail->getReplyTo() !== '' ? $mail->getReplyTo() : '— (keine)'),
+    'Absender'     => $mail->hasSender()
+        ? '«' . $mail->getSenderName() . '» mit der Adresse aus der E-Mail-Konfiguration der Installation'
+        : 'aus der E-Mail-Konfiguration der Installation',
+    'Ausgelöst von' => $mail->hasSender()
+        ? $mail->getCreatedBy() . ' als ' . $mail->senderLabel() . ($mail->getSenderUserId() !== null ? ' (Benutzer-Id ' . $mail->getSenderUserId() . ')' : '')
+        : $mail->getCreatedBy(),
     'Betreff'      => $mail->getSubject(),
     'Sprache'      => $mail->getLanguage() !== '' ? $mail->getLanguage() : '—',
     'Quelle'       => $mail->getSource() !== '' ? $mail->getSource() : '—',

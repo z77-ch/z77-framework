@@ -132,3 +132,31 @@ Rejected: a «sent» column on `invoice` (a second record of what the outbox alr
 write into an immutable document); the mail texts in `emailConfig` (a project override replaces
 that file whole — the kinds would vanish; the module that owns the document owns its text,
 Rule 9); one draft per batch with all PDFs attached (one customer, one mail, one document).
+
+## Addendum 2026-10-23 — the sender identity of a staff member (owner)
+
+Owner, 2026-10-23: a mail is triggered by a staff member, a backend user — he must be able to send
+in his own name. Decision 3 («the sender is the installation's identity») stays for the ADDRESS;
+the person is added beside it:
+
+1. **The account sends, the person signs.** Envelope sender and the From ADDRESS remain
+   `config/client/mail.inc.php` `fromAddress` (SPF / DKIM / DMARC). The From DISPLAY NAME is the
+   chosen identity's name, Reply-To is «name <email>» of the identity. The identity's address
+   never becomes the From address (DMARC alignment).
+2. **The identities belong to the user** (`BackendUser::$senderIdentities`, 0..n, the first the
+   default) and are resolved in ONE kernel place, `Z77\Shared\Mail\SenderIdentities` (Rule 9 — the
+   later offer / order confirmation / newsletter actions reuse it). A send page offers them («Senden
+   als»), the POST carries the index, the server re-checks it against the current user (Rule 7). No
+   identity — no sending.
+3. **The outbox row changes shape** (expand only, `Version20261023100000`): `sender_user_id` INT
+   NULL, `sender_name` VARCHAR(190), `sender_email` VARCHAR(254) (both NOT NULL DEFAULT '') — a
+   snapshot of who triggered the mail and in which name, read by the job at send time and shown
+   as «Ausgelöst von» in the window. `OutboxDraft::withSender()`; a draft with an identity AND its
+   own Reply-To is refused (the identity is the answer address).
+4. **Step 3's Reply-To rule is replaced**: the mandator's e-mail is no longer the Reply-To of a
+   document mail; the text gets `{anzeigename}`, `{absender}` stays the company.
+
+Rejected: the identity as the From address (fails DMARC at the receiver, MAIL-SPAM-001); the
+identities in a settings store of their own (they are the person's, like his name and initials);
+an identity typed per send (no record of what the user may sign with; the server could not check
+it).

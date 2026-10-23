@@ -1,6 +1,6 @@
 # backend
 
-2026-10-22
+2026-10-23
 
 ## entry
 
@@ -64,6 +64,8 @@ SOURCE=/packages/module-backend/res/view/templates/System/BackendUserController/
 SOURCE=/packages/module-backend/res/assets/js/backend-user/list.js
 SOURCE=/packages/module-backend/res/assets/js/password-meter.js
 SOURCE=/packages/kernel/shared/src/Validators/BackendUserValidator.php
+SOURCE=/packages/kernel/shared/src/Entities/BackendUser.php
+SOURCE=/tests/backend-user-identities.php
 SOURCE=/packages/kernel/shared/src/Auth/PasswordPolicy.php
 SOURCE=/packages/kernel/shared/src/ValueObjects/UserPreferences.php
 SOURCE=/packages/module-backend/src/App/Config/Palettes.php
@@ -354,6 +356,23 @@ machinery: it extends `BackendAbstractController` directly (not
   a `backendUsers.json` written before the field has no key and reads '').
   `passwordHash` / `roles` / `sortKey` are re-set server-side after
   `mapFromArray` — never trusted from the body.
+- **Sender identities** (owner decision 2026-10-23 — a staff member sends mail in his own name):
+  `BackendUser::$senderIdentities`, JSON key `sender_identities`, a list of 0..n rows
+  `{name, email}` (`Z77\Shared\Mail\SenderIdentity`), the FIRST is the default; a file written
+  before the field reads `[]`. The edit form's section «Absender für E-Mails» shows them as rows
+  (core.js «rows»: `[data-rows="identity"]`, `<template data-row-template="identity">`, «+ Absender»,
+  × per row, no grip). The fields are two parallel ONE-bracket maps `identity_name[k]` /
+  `identity_email[k]` — a fetch form nests one bracket level only (`_z77CollectFormData`), and the
+  container prefix `identity` matches neither name, so the rows keep their keys (server rows
+  `0…n-1`, added ones `n1…`) and the posted order is the shown order. The controller REBUILDS the
+  list after `mapFromArray` with `SenderIdentity::listFromForm()` (empty rows dropped, text / email
+  cleaned) — the body's own `sender_identities` is never trusted. `BackendUserValidator::
+  validateSenderIdentities()`: per row a display name (≤ 80, no CR/LF `"` `\` `<` `>` `@`) and a
+  deliverable address (`MailAddress::isDeliverable()`, ≤ 254), no address twice, at most
+  `BackendUser::SENDER_IDENTITIES_MAX` = 10; ONE field error «Absender n: …», the «n Fehler» link
+  targets that row (`invalidSenderIdentity()`). What an identity does to a mail: mail.md «sender
+  identities». Verified: `tests/backend-user-identities.php` (41 checks, offline). **Not seen in a
+  browser.**
 - **Avatar initials**: `BackendUser::$initials` is optional user-entered display data
   (2–3 chars, `#[Clean('text')]`, `validateInitials` enforces the length only when
   non-empty). It maps straight from the form (NOT security-relevant, no server re-set).

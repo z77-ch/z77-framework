@@ -102,6 +102,9 @@ final class OutboxService
                 $batchId,
                 $actor,
                 $now,
+                $draft->sender !== null ? $draft->senderUserId : null,
+                $draft->sender?->name ?? '',
+                $draft->sender?->email ?? '',
             );
         }
 
@@ -217,6 +220,27 @@ final class OutboxService
                 $probe->replyTo($draft->replyTo);
             } catch (\InvalidArgumentException) {
                 $problems[] = 'Ungültige Antwortadresse (Reply-To) «' . trim($draft->replyTo) . '».';
+            }
+        }
+
+        if ($draft->sender !== null) {
+            // The person's identity (owner 2026-10-23): the user form's rule, then the header
+            // rules of the Message the job will build — and it replaces Reply-To, never both.
+            foreach ($draft->sender->problems() as $problem) {
+                $problems[] = 'Absender: ' . $problem;
+            }
+            if ($draft->sender->problems() === []) {
+                try {
+                    (new Message())->fromName($draft->sender->name)->replyTo($draft->sender->email, $draft->sender->name);
+                } catch (\InvalidArgumentException) {
+                    $problems[] = 'Absender: ungültig.';
+                }
+            }
+            if (trim($draft->replyTo) !== '') {
+                $problems[] = 'Absender und Antwortadresse (Reply-To) schliessen sich aus — die Antwortadresse ist die des Absenders.';
+            }
+            if ($draft->senderUserId !== null && $draft->senderUserId <= 0) {
+                $problems[] = 'Absender: ungültige Benutzer-Id.';
             }
         }
 

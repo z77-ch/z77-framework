@@ -158,6 +158,16 @@ check('C5 paging() clamps the page into the count and offsets by the page size',
 $req = new class { public function getGetParameter(string $k): mixed { return ['f_nr' => '5', 'sort' => 'amount', 'all' => '1'][$k] ?? null; } };
 check('C6 readRequest() reads every query key through getGetParameter() (Rule 4); isFetch() without getMode() is false',
     ($r = $definition->readRequest($req))->parsed('f_nr') === 5 && $r->sort === 'amount' && $r->flag('all') && !ListDefinition::isFetch($req));
+$batchList = new ListDefinition('mail-find', $columns(), 'number', 50, ['view' => ['queued', 'all'], 'batch' => '/^[0-9a-f]{32}$/']);
+$batch     = str_repeat('ab', 16);
+$bs        = $batchList->read(['batch' => $batch, 'view' => 'all']);
+check('C7 a PATTERN extra (owner 2026-10-23, the outbox batch): a matching value narrows and travels in every link and the hidden state, its default is \'\' (left out); a value off the pattern falls back to \'\'; a pattern matching \'\' or an invalid regex is refused',
+    $bs->extra('batch') === $batch && $bs->query() === 'view=all&batch=' . $batch && $bs->hiddenState() === ['view' => 'all', 'batch' => $batch]
+    && $bs->query(['batch' => null]) === 'view=all' && $bs->defaultQuery() === 'view=all&batch=' . $batch
+    && $batchList->read(['batch' => 'x' . $batch])->extra('batch') === '' && $batchList->read(['batch' => ['a']])->extra('batch') === '' && $batchList->read([])->query() === ''
+    && $batchList->extraDefault('batch') === '' && $batchList->acceptsExtra('batch', $batch) && !$batchList->acceptsExtra('batch', 'zz')
+    && throws(fn() => new ListDefinition('x', $columns(), 'number', 50, ['batch' => '/^.*$/']), \InvalidArgumentException::class)
+    && throws(fn() => new ListDefinition('x', $columns(), 'number', 50, ['batch' => '/[/']), \InvalidArgumentException::class));
 
 echo "D. The partials: one head cell per column, the inputs of the form, the find form\n";
 $renderer = new TemplateRenderer('Z77\\Shared');

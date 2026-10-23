@@ -74,6 +74,9 @@ $documentPlaceholders = [
     'datum'    => 'Belegdatum',
     'faellig'  => 'Fälligkeit (Rechnung)',
     'absender' => 'Name des Mandanten',
+    // The display name of the sender identity chosen under «Senden als» (owner 2026-10-23) —
+    // a line holding only this placeholder disappears when it is empty (EmailService::documentMail()).
+    'anzeigename' => 'Anzeigename des gewählten Absenders («Senden als»)',
 ];
 
 return [
@@ -140,8 +143,8 @@ return [
             'label'        => 'Rechnung',
             'subject'      => ['de' => 'Rechnung {nummer} — {absender}', 'en' => 'Invoice {nummer} — {absender}'],
             'body'         => [
-                'de' => "Guten Tag\n\nIm Anhang erhalten Sie unsere Rechnung {nummer} über {betrag}, zahlbar bis {faellig}.\n\nFreundliche Grüsse\n{absender}",
-                'en' => "Hello\n\nPlease find attached our invoice {nummer} for {betrag}, payable by {faellig}.\n\nKind regards\n{absender}",
+                'de' => "Guten Tag\n\nIm Anhang erhalten Sie unsere Rechnung {nummer} über {betrag}, zahlbar bis {faellig}.\n\nFreundliche Grüsse\n{anzeigename}\n{absender}",
+                'en' => "Hello\n\nPlease find attached our invoice {nummer} for {betrag}, payable by {faellig}.\n\nKind regards\n{anzeigename}\n{absender}",
             ],
             'placeholders' => $documentPlaceholders,
         ],
@@ -149,8 +152,8 @@ return [
             'label'        => 'Gutschrift',
             'subject'      => ['de' => 'Gutschrift {nummer} — {absender}', 'en' => 'Credit note {nummer} — {absender}'],
             'body'         => [
-                'de' => "Guten Tag\n\nIm Anhang erhalten Sie unsere Gutschrift {nummer} über {betrag}.\n\nFreundliche Grüsse\n{absender}",
-                'en' => "Hello\n\nPlease find attached our credit note {nummer} for {betrag}.\n\nKind regards\n{absender}",
+                'de' => "Guten Tag\n\nIm Anhang erhalten Sie unsere Gutschrift {nummer} über {betrag}.\n\nFreundliche Grüsse\n{anzeigename}\n{absender}",
+                'en' => "Hello\n\nPlease find attached our credit note {nummer} for {betrag}.\n\nKind regards\n{anzeigename}\n{absender}",
             ],
             'placeholders' => $documentPlaceholders,
         ],
@@ -158,8 +161,8 @@ return [
             'label'        => 'Mahnung',
             'subject'      => ['de' => 'Zahlungserinnerung zu Rechnung {nummer} — {absender}', 'en' => 'Payment reminder for invoice {nummer} — {absender}'],
             'body'         => [
-                'de' => "Guten Tag\n\nUnsere Rechnung {nummer} über {betrag} ist noch offen. Im Anhang finden Sie die Zahlungserinnerung.\n\nFreundliche Grüsse\n{absender}",
-                'en' => "Hello\n\nOur invoice {nummer} for {betrag} is still open. Please find the payment reminder attached.\n\nKind regards\n{absender}",
+                'de' => "Guten Tag\n\nUnsere Rechnung {nummer} über {betrag} ist noch offen. Im Anhang finden Sie die Zahlungserinnerung.\n\nFreundliche Grüsse\n{anzeigename}\n{absender}",
+                'en' => "Hello\n\nOur invoice {nummer} for {betrag} is still open. Please find the payment reminder attached.\n\nKind regards\n{anzeigename}\n{absender}",
             ],
             'placeholders' => $documentPlaceholders,
         ],

@@ -58,28 +58,28 @@ return [
             'label'        => 'Offerte',
             'subject'      => ['de' => 'Offerte {nummer} — {absender}', 'en' => 'Quotation {nummer} — {absender}'],
             'body'         => [
-                'de' => "Guten Tag\n\nIm Anhang erhalten Sie unsere Offerte {nummer}.\n\nFreundliche Grüsse\n{absender}",
-                'en' => "Hello\n\nPlease find attached our quotation {nummer}.\n\nKind regards\n{absender}",
+                'de' => "Guten Tag\n\nIm Anhang erhalten Sie unsere Offerte {nummer}.\n\nFreundliche Grüsse\n{anzeigename}\n{absender}",
+                'en' => "Hello\n\nPlease find attached our quotation {nummer}.\n\nKind regards\n{anzeigename}\n{absender}",
             ],
-            'placeholders' => ['nummer' => 'Auftragsnummer', 'kunde' => 'Name der Rechnungsadresse', 'betrag' => 'Total mit Währung', 'datum' => 'Auftragsdatum', 'absender' => 'Name des Mandanten'],
+            'placeholders' => ['nummer' => 'Auftragsnummer', 'kunde' => 'Name der Rechnungsadresse', 'betrag' => 'Total mit Währung', 'datum' => 'Auftragsdatum', 'absender' => 'Name des Mandanten', 'anzeigename' => 'Anzeigename des gewählten Absenders («Senden als»)'],
         ],
         'order-confirmation' => [
             'label'        => 'Auftragsbestätigung',
             'subject'      => ['de' => 'Auftragsbestätigung {nummer} — {absender}', 'en' => 'Order confirmation {nummer} — {absender}'],
             'body'         => [
-                'de' => "Guten Tag\n\nVielen Dank für Ihren Auftrag. Im Anhang erhalten Sie die Auftragsbestätigung {nummer}.\n\nFreundliche Grüsse\n{absender}",
-                'en' => "Hello\n\nThank you for your order. Please find attached the order confirmation {nummer}.\n\nKind regards\n{absender}",
+                'de' => "Guten Tag\n\nVielen Dank für Ihren Auftrag. Im Anhang erhalten Sie die Auftragsbestätigung {nummer}.\n\nFreundliche Grüsse\n{anzeigename}\n{absender}",
+                'en' => "Hello\n\nThank you for your order. Please find attached the order confirmation {nummer}.\n\nKind regards\n{anzeigename}\n{absender}",
             ],
-            'placeholders' => ['nummer' => 'Auftragsnummer', 'kunde' => 'Name der Rechnungsadresse', 'betrag' => 'Total mit Währung', 'datum' => 'Auftragsdatum', 'absender' => 'Name des Mandanten'],
+            'placeholders' => ['nummer' => 'Auftragsnummer', 'kunde' => 'Name der Rechnungsadresse', 'betrag' => 'Total mit Währung', 'datum' => 'Auftragsdatum', 'absender' => 'Name des Mandanten', 'anzeigename' => 'Anzeigename des gewählten Absenders («Senden als»)'],
         ],
         'delivery-note' => [
             'label'        => 'Lieferschein',
             'subject'      => ['de' => 'Lieferschein {nummer} — {absender}', 'en' => 'Delivery note {nummer} — {absender}'],
             'body'         => [
-                'de' => "Guten Tag\n\nIm Anhang erhalten Sie den Lieferschein zu Auftrag {nummer}.\n\nFreundliche Grüsse\n{absender}",
-                'en' => "Hello\n\nPlease find attached the delivery note for order {nummer}.\n\nKind regards\n{absender}",
+                'de' => "Guten Tag\n\nIm Anhang erhalten Sie den Lieferschein zu Auftrag {nummer}.\n\nFreundliche Grüsse\n{anzeigename}\n{absender}",
+                'en' => "Hello\n\nPlease find attached the delivery note for order {nummer}.\n\nKind regards\n{anzeigename}\n{absender}",
             ],
-            'placeholders' => ['nummer' => 'Auftragsnummer', 'kunde' => 'Name der Rechnungsadresse', 'datum' => 'Lieferdatum', 'absender' => 'Name des Mandanten'],
+            'placeholders' => ['nummer' => 'Auftragsnummer', 'kunde' => 'Name der Rechnungsadresse', 'datum' => 'Lieferdatum', 'absender' => 'Name des Mandanten', 'anzeigename' => 'Anzeigename des gewählten Absenders («Senden als»)'],
         ],
     ],
 
