@@ -160,7 +160,7 @@ final class BankImportService
             throw new BankImportRefusedException(BankImportRefusedException::INVOICE_NOT_FINAL, $invoice->documentName() . ' ist noch nicht verbucht (Faktura-Journal) — erst «Journal verbuchen», dann zuordnen.');
         }
         if (!$invoice->isPosted()) {
-            throw new BankImportRefusedException(BankImportRefusedException::INVOICE_NOT_FINAL, $invoice->documentName() . ' ist noch in Fakturierung — erst mit «Buchungsdruck …» verbuchen.');
+            throw new BankImportRefusedException(BankImportRefusedException::INVOICE_NOT_FINAL, $invoice->documentName() . ' ist noch in Fakturierung — erst «Fakturieren …», dann das Faktura-Journal verbuchen.');
         }
 
         $messageId = $this->messageIdOf($transactionId);
@@ -401,7 +401,7 @@ final class BankImportService
             return;
         }
         if (!$invoice->isPosted()) {
-            $transaction->unmatch($invoice->documentName() . ' ist noch in Fakturierung — erst mit «Buchungsdruck …» verbuchen, dann zuordnen.');
+            $transaction->unmatch($invoice->documentName() . ' ist noch in Fakturierung — erst «Fakturieren …» und das Faktura-Journal verbuchen, dann zuordnen.');
 
             return;
         }
@@ -444,7 +444,7 @@ final class BankImportService
             return;
         }
         if (!$invoice->isPosted()) {
-            $transaction->unmatch($invoice->documentName() . ' ist noch in Fakturierung — erst mit «Buchungsdruck …» verbuchen, dann zuordnen.');
+            $transaction->unmatch($invoice->documentName() . ' ist noch in Fakturierung — erst «Fakturieren …» und das Faktura-Journal verbuchen, dann zuordnen.');
 
             return;
         }

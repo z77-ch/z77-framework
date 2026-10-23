@@ -13,7 +13,7 @@ use Z77\Shared\Listing\Parsers;
  * as an extra, the columns Nr. · Datum · Name · Fällig · Betrag — four of
  * them searched in the database, strictly parsed — sorted by number newest
  * first, 50 per page. The invoicing view leads with the selection checkbox
- * of «Buchungsdruck …» (owner 2026-10-10); a draft shows «Entwurf» in «Nr.»
+ * of «Fakturieren …» (owner 2026-10-23; «Buchungsdruck …» since 2026-10-10); a draft shows «Entwurf» in «Nr.»
  * — it has no number until it is booked.
  */
 final class InvoiceListing

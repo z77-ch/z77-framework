@@ -338,7 +338,7 @@ final class PaymentService
             throw new PaymentRefusedException(PaymentRefusedException::NOT_POSTED, $invoice->documentName() . ' ist noch nicht verbucht (Faktura-Journal) — Zahlungen erst nach «Journal verbuchen».');
         }
         if (!$invoice->isPosted()) {
-            throw new PaymentRefusedException(PaymentRefusedException::NOT_FINAL, $invoice->documentName() . ' ist noch in Fakturierung — erst mit «Buchungsdruck …» verbuchen, dann Zahlungen erfassen.');
+            throw new PaymentRefusedException(PaymentRefusedException::NOT_FINAL, $invoice->documentName() . ' ist noch in Fakturierung — erst «Fakturieren …» und das Faktura-Journal verbuchen, dann Zahlungen erfassen.');
         }
     }
 

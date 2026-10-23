@@ -24,10 +24,12 @@ use Doctrine\Common\Collections\ArrayCollection,
  * States ({@see InvoiceState}): `invoicing` — a DRAFT without a number
  * (owner 2026-10-10: «a printed invoice with a number IS a document»), the
  * content may be replaced as often as needed ({@see reissue()}), nothing is
- * posted, its PDF is a preview; `final` — numbered and posted in ONE step,
- * the booking print ({@see assignNumber()} then {@see finalize()}, both in
- * `InvoicingService::finalize()`), immutable, corrected only by a credit
- * note.
+ * posted, its PDF is a preview; `issued` — numbered, stamped and archived by
+ * «Fakturieren» ({@see assignNumber()} then {@see markIssued()}, in
+ * `InvoicingService::issue()`), in the Faktura-Journal, NOTHING posted
+ * (ADR-054); `final` — posted by «Journal verbuchen» ({@see post()},
+ * `JournalPostingService::post()`), immutable, corrected only by a credit
+ * note. `replaced` / `deleted` come with steps 4–6 of the build plan.
  *
  * What is on the header, and why:
  *
@@ -82,9 +84,9 @@ use Doctrine\Common\Collections\ArrayCollection,
  *
  * No setters. The header snapshot is written whole by {@see issue()} /
  * {@see reissue()}, the number and the payment reference by
- * {@see assignNumber()}, the state by {@see finalize()} — and all refuse a
- * `final` document themselves, not only in the service (ADR-042 decision 7
- * applied to the document).
+ * {@see assignNumber()}, the state by {@see markIssued()} and {@see post()} —
+ * and all refuse a document past their state themselves, not only in the
+ * service (ADR-042 decision 7 applied to the document).
  *
  * Table `invoice`; the mapping IS the table definition (migration
  * `Version20260923…`, `z77-db diff` sees no change).
@@ -431,9 +433,8 @@ class Invoice
     }
 
     // ── the state predicates (ADR-054, build plan §3) — readers ask these, never a state value ──
-    // They replace the one former question `isFinal()`. Until step 3 of the build plan nothing
-    // produces `issued`, `replaced` or `deleted`: every document is a draft or posted, so
-    // `isIssued()` and `isPosted()` answer alike — the split is the reader's INTENT.
+    // They replace the one former question `isFinal()`. Since step 3 «Fakturieren» produces
+    // `issued` and «Journal verbuchen» `final`; `replaced` / `deleted` come with steps 4–6.
 
     /** A draft (`invoicing`): no number, editable, its PDF is a preview. */
     public function isDraft(): bool
@@ -568,9 +569,9 @@ class Invoice
      * its number and, with it, the numbered payment part — the QR reference
      * and the message are derived from the number
      * ({@see PaymentSnapshot::numbered()}). Only once, only while
-     * `invoicing`; {@see finalize()} follows in the same unit of work
-     * (`InvoicingService::finalize()` draws the number from the month's
-     * range).
+     * `invoicing`; {@see markIssued()} follows in the same unit of work
+     * (`InvoicingService::issue()` — «Fakturieren» — draws the number from
+     * the month's range).
      */
     public function assignNumber(int $number, PaymentSnapshot $payment): void
     {
@@ -589,25 +590,52 @@ class Invoice
     }
 
     /**
-     * `invoicing` → `final`: the one state change, one way (plan §6.2). From
-     * here on the document is immutable; a correction is a credit note. The
-     * number is assigned first ({@see assignNumber()}) — a booked document
-     * always carries one.
-     *
-     * @param string|null $ledgerEntryRef what the accounting port answered — `{year}/{number}`, or null
-     *                                    when the installation keeps its books elsewhere (`NullAccountingGateway`)
+     * `invoicing` → `issued` — «Fakturieren» (ADR-054 decision 4, step 3 of the build plan): the
+     * numbered document is issued to the customer and stands in the Faktura-Journal; NOTHING is
+     * posted. The number is assigned first ({@see assignNumber()}), then the stamp of this version
+     * is computed from the content (`Invoicing\DocumentStamp`) and handed in here; the archived
+     * PDF of the version follows in the same unit of work (`Pdf\InvoiceArchive`).
      */
-    public function finalize(?string $ledgerEntryRef, string $by, \DateTimeImmutable $at): void
+    public function markIssued(string $documentStamp, string $by, \DateTimeImmutable $at): void
     {
-        $this->assertInvoicing('finalized');
+        $this->assertInvoicing('issued');
         if ($this->number === null) {
-            throw new \LogicException('A document is numbered before it is finalized (assignNumber(), the booking print)');
+            throw new \LogicException('A document is numbered before it is issued (assignNumber(), «Fakturieren»)');
+        }
+        if (preg_match('/^[0-9a-z]{1,' . self::STAMP_LENGTH . '}$/', $documentStamp) !== 1) {
+            throw new \LogicException('A document stamp is 1-' . self::STAMP_LENGTH . ' lower-case letters or digits');
+        }
+        $this->state         = InvoiceState::Issued->value;
+        $this->documentStamp = $documentStamp;
+        $this->issuedBy      = $by;
+        $this->issuedAt      = $at;
+        $this->changedBy     = $by;
+        $this->changedAt     = $at;
+    }
+
+    /**
+     * `issued` → `final` — the journal posting (ADR-054 decision 6, «Journal verbuchen»; for the
+     * dunning fee the step right after its issue, decision 2). From here on the document is
+     * immutable; a correction is a credit note.
+     *
+     * @param string|null                $ledgerEntryRef what the accounting port answered — `{year}/{number}`, or null
+     *                                                   when the installation keeps its books elsewhere (`NullAccountingGateway`)
+     *                                                   or the document posts nothing (a zero document)
+     * @param InvoiceJournalPosting|null $posting        the «Journal verbuchen» protocol; null for the dunning fee
+     */
+    public function post(?string $ledgerEntryRef, ?InvoiceJournalPosting $posting, string $by, \DateTimeImmutable $at): void
+    {
+        if (!$this->isInJournal()) {
+            throw new \LogicException($this->documentName() . " is not in the Faktura-Journal ({$this->state}) and cannot be posted — a document is issued first («Fakturieren»), posted once");
         }
         if ($ledgerEntryRef !== null && (trim($ledgerEntryRef) === '' || mb_strlen($ledgerEntryRef) > self::LEDGER_REF_LENGTH)) {
             throw new \LogicException('A ledger entry reference is 1-' . self::LEDGER_REF_LENGTH . ' characters or null');
         }
         $this->state          = InvoiceState::Final->value;
         $this->ledgerEntryRef = $ledgerEntryRef;
+        $this->journalPosting = $posting;
+        $this->postedBy       = $by;
+        $this->postedAt       = $at;
         $this->changedBy      = $by;
         $this->changedAt      = $at;
     }

@@ -1,11 +1,13 @@
 # Faktura-Journal — build plan
 
 **Status:** `[IN PROGRESS]` — written 2026-10-23 from the owner decisions of the same day
-([ADR-054](../02-decisions/adr-054-faktura-journal.md), accepted 2026-10-23). **Steps 1–2 built
-2026-10-23, not committed** (§13). The open questions (§14) are **decided by the owner 2026-10-23**
-(ADR-054 «Owner decisions on the open questions», O1–O13) — they change parts of this plan, listed
-in §0 below; where a later section still says otherwise, §0 and the ADR win. Next: the board on the
-developer canvas ([`backend-screen.md`](../01-handbook/backend-screen.md), checklist 1) before step 3.
+([ADR-054](../02-decisions/adr-054-faktura-journal.md), accepted 2026-10-23). **Steps 1–2 built and
+committed 2026-10-23** (`b58a4b6`); **step 3 built 2026-10-23, not committed** (§13, «Step 3 as built»
+below; ADR-054 «Addendum 2026-10-23 — step 3 as built»). The open questions (§14) are **decided by the
+owner 2026-10-23** (ADR-054 «Owner decisions on the open questions», O1–O13) — they change parts of this
+plan, listed in §0 below; where a later section still says otherwise, §0 and the ADR win. The board on
+the developer canvas was waived by the owner for step 3 (2026-10-23: built on the known patterns). Next:
+step 4 (corrections of manual documents).
 **Basis:** [ADR-054](../02-decisions/adr-054-faktura-journal.md),
 [ADR-040](../02-decisions/adr-040-business-module-cut.md) (incl. addenda 2026-10-13 / 2026-10-14),
 [ADR-041](../02-decisions/adr-041-vat-model.md), [ADR-042](../02-decisions/adr-042-ledger-and-money.md)
@@ -398,7 +400,7 @@ browser look per step; `npm run docs:check` green.
 |---|---|---|
 | 1 | Schema: the migrations of §4 (debtor), entity mappings, `InvoiceState` cases, `InvoiceRevision` / `InvoiceJournalPosting` entities — no behaviour change. **Built 2026-10-23**: `Version20261023150000` (schema only, one file), fields and getters only — the transition methods (`issueNumbered()`, `post()`, `revise()`, …) come with the steps that call them | invisible; harness A (A0, A5c, A11, A12h) |
 | 2 | Predicates and readers: `isDraft` / `isIssued` / `isInJournal` / `isPosted` / `isVoid`, the audit table of §3 applied — still nothing produces `issued`, behaviour identical. **Built 2026-10-23** («Step 2 as built», §3) | refactor; full harness green unchanged; section FJ (FJ0–FJ8) + checkpoint `FJ` |
-| 3 | **The journal core**: `issue()`, `invoiceAndIssue()`, `JournalPostingService`, the Faktura-Journal screen (list, preview, PDF list, «Journal verbuchen», protocols), navigation seed, payments on `issued`, open amount / open items / PaymentStates on `issued`, the year-close check widened, the rewritten sections (L, P3E, Z, O, BM) | the booking print stops posting; the office posts the journal |
+| 3 | **The journal core**: `issue()`, `invoiceAndIssue()`, `JournalPostingService`, the Faktura-Journal screen (list, preview, PDF list, «Journal verbuchen», protocols), navigation seed, payments on `issued`, open amount / open items / PaymentStates on `issued`, the year-close check widened, the rewritten sections (L, P3E, Z, O, BM). **Built 2026-10-23** («Step 3 as built» below) — payments, open amount, open items and PaymentStates stay on `final` (O6) | the booking print stops posting; the office posts the journal |
 | 4 | **Corrections of manual documents**: `classify()`, `revise()`, revision archive, replacement with payment move and entry-text amend, the mask (editable `issued`, confirmation, void read-only, revisions), list tab «Ersetzt / Gelöscht» | correct a printed invoice without a credit note |
 | 5 | **Orders**: editable with an `issued` invoice (read port), `flagReissue()` on save, «Neu fakturieren», journal blocked by flags, the order window's «Belege» card | correct an order after the booking print |
 | 6 | **Delete**: `OrderService::delete()` + `InvoicingService::delete()` (and the manual «Rechnung löschen …» if Q7 = yes), stock to zero, order migration if Q6 = state | delete an order |
@@ -409,6 +411,35 @@ browser look per step; `npm run docs:check` green.
 Steps 1–3 are the minimum that delivers rule 1; 4–5 deliver the owner's goal (correct without a
 credit note); 6–9 complete the rules. Each step updates `debtor.md` / `order.md` (`## pending`,
 mental model), keeps `npm run docs:check` green and is committed only on the owner's word.
+
+
+## Step 3 as built (2026-10-23)
+
+The binding decisions are ADR-054 «Addendum 2026-10-23 — step 3 as built» (1–10). Where the code is:
+
+| Part | Where |
+|---|---|
+| «Fakturieren» (issue, no post), the dunning fee's issue-and-post | `InvoicingService::issue()` / `finalize()` (both `issueBatch()`), `numberAndIssue()` (numbers → stamp → `markIssued()` → archive) |
+| An order's «Fakturieren» | `InvoicingService::invoiceAndIssue()` (formerly `invoiceAndFinalize()`), `OrderService::book()` (+ `discardArchived()` on a failure after the join) |
+| State changes on the entity | `Invoice::markIssued()` (invoicing → issued), `Invoice::post()` (issued → final); `Invoice::finalize()` removed |
+| The stamp | `Invoicing\DocumentStamp` (`canonical()`, `of()`, `hash()`) |
+| The archive | `Pdf\InvoiceArchive` (`archive()`, `pdf()`, `combined()`, `discardWritten()`), `Pdf\InvoiceArchiveException`; the kernel's `Z77\Shared\Pdf\PdfConcat` for «Alle als ein PDF» |
+| The posting | `Services\JournalPostingService` (`pending()`, `totals()`, `blockers()`, `preview()`, `post()`, `protocols()`), `Services\JournalRefusedException` (`empty` · `blocked` · `changed`), `Repositories\InvoiceJournalPostingRepository` |
+| The journal's SQL | `InvoiceRepository::journalDocuments()`, `journalVersions()`, `journalTotals()`, `unpostedBetween()` (replaces `invoicingBetween()`); `InvoiceSearch::VIEW_ISSUED` / `VIEW_JOURNAL` |
+| The screen | `Ui\InvoiceJournalControllerTrait`, `Ui\InvoiceJournalListing`, `Ui\InvoiceJournalLayout`, templates `Backend/InvoiceJournalController/{listAction, act, toolbar, confirmPost, list.help}`, `Pdf\JournalPdf` + `pdf/invoiceJournal`; host `module-backend/…/Finance/InvoiceJournalController.php` + `invoiceJournalControllerConfig.inc.php`; seed entry `faktura-journal` |
+| The year close | `Close\InvoicingInProgressCheck` (drafts and issued documents dated in the year) |
+| Wording | O10 — every user-facing «Buchungsdruck» in debtor and order reads «Fakturieren»; routes unchanged |
+
+**Deviations from this plan (step 3):** the order stays locked while its invoice is `issued` (§5.3's
+«editable … OR in journal» moves to step 5 with `flagReissue()` — without the flag an edit would
+silently diverge); the list's columns «Rev.» and «Herkunft» are left out (revision 1 everywhere until
+step 4; the opaque origin is the document's business, the subject shows the order); the confirmation's
+preview is summed per account, not listed per document; the VAT-liability and revenue-account checks
+stay at «Fakturieren» (a document that could not be posted is not issued) — `post()` relies on the
+ledger's own refusal for anything changed since. **Tests:** `tests/module-debtor.php` sections L, M7,
+N1, P3C (P3C38–P3C41d, P3C57), P3E, Z (Z5–Z12b), O (O2, O5, O6), BM (BM2–BM10) rewritten for the new
+model, FJ2 / FJ4 adapted, the new block FJ9–FJ34 (`--from=FJ`); `tests/pdf.php` K1–K3 (PdfConcat);
+`tests/module-order.php` M16b, N6, H2, F17; `tests/navigation-seeds.php` NSEED-2g, NSEED-7e.
 
 ## 14. Open questions for the owner
 

@@ -46,9 +46,9 @@ $selectable = OrderListing::isSelectable($view);
         <div class="z77-form-actions">
             <button type="submit" form="order-book" class="be-btn be-btn--confirm be-btn--sm">
                 <svg class="be-icon" width="14" height="14" aria-hidden="true"><use href="#icon-check"/></svg>
-                <span class="be-btn__label">Buchungsdruck …</span>
+                <span class="be-btn__label">Fakturieren …</span>
             </button>
-            <small class="be-list__cell--muted">für die angekreuzten Aufträge die Rechnungen erstellen, verbuchen und als ein PDF drucken — die Bestätigung nennt Anzahl und Total</small>
+            <small class="be-list__cell--muted">für die angekreuzten Aufträge die Rechnungen erstellen und drucken (ins Faktura-Journal, noch nicht verbucht) — die Bestätigung nennt Anzahl und Total</small>
         </div>
         <?php endif; ?>
 

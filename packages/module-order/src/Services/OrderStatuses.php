@@ -162,10 +162,10 @@ final class OrderStatuses
             return [self::INACTIVE_TARGET, 'Der Status «' . $to->getLabel() . '» ist deaktiviert und wird nicht mehr vergeben.'];
         }
         if ($to->getCode() === $this->defaultOf(OrderPhase::Closed)?->getCode()) {
-            return [self::BOOKED_TARGET, '«' . $to->getLabel() . '» setzt nur der Buchungsdruck — er verbucht die Rechnung und setzt den Status in einem Schritt.'];
+            return [self::BOOKED_TARGET, '«' . $to->getLabel() . '» setzt nur das Fakturieren — es erstellt die Rechnung und setzt den Status in einem Schritt.'];
         }
         if ($hasInvoice) {
-            return [self::INVOICED, 'Zum Auftrag ist eine Rechnung verbucht — der Status bleibt. Eine Korrektur ist eine Gutschrift auf der Rechnung.'];
+            return [self::INVOICED, 'Zum Auftrag ist eine Rechnung fakturiert — der Status bleibt.'];
         }
 
         return null;

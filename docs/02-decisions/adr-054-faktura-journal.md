@@ -5,8 +5,9 @@ CHANGED by the owner the same day). The open questions of the build plan (§14) 
 owner 2026-10-23** («Owner decisions on the open questions» below — they replace the provisional
 answers recorded earlier that day); only Q7 (deleting a manual document) stays decided provisionally
 by the plan's recommendation. Build: steps 1–2 of
-[`faktura-journal-bauplan.md`](../03-development/faktura-journal-bauplan.md) built 2026-10-23 (schema,
-predicates — no behaviour change); steps 3–9 not built.
+[`faktura-journal-bauplan.md`](../03-development/faktura-journal-bauplan.md) built and committed
+2026-10-23 (schema, predicates — no behaviour change); **step 3 (the journal core) built 2026-10-23, not
+committed** — «Addendum 2026-10-23 — step 3 as built» at the end; steps 4–9 not built.
 **Date:** 2026-10-23
 **Amends:** [ADR-040](adr-040-business-module-cut.md) (decisions 3, 7, consequence «a payment
 arriving for it stays unmatched», addendum 2026-10-14 point 1),
@@ -360,3 +361,83 @@ the others are his to confirm before the build is used for real books.
 | ADR-043 add. 2026-10-15 point 7, add. 2026-10-20, P7 plan D7 | «editable while it has no invoice» → while it has no invoice OR its invoice is `issued`; «with a booked invoice nothing by hand» reads «with a POSTED (`final`) invoice». |
 | P7 plan D8 | «No delete of an order» → an order without a posted invoice can be deleted (decision 14). |
 | ADR-053 addendum 2026-10-22 point 1 | «`accepts()` a FINAL document only» → `issued` or `final`; the attachment names the revision (decision 21). |
+
+## Addendum 2026-10-23 — step 3 as built (the journal core)
+
+Built by the agent on the owner's go of 2026-10-23 («build step 3 directly on the known patterns, no
+canvas board»). What was decided while building — each binding until the owner revises it:
+
+1. **«Fakturieren» = `InvoicingService::issue()`** (the manual drafts) and **`invoiceAndIssue()`** (an
+   order's, formerly `invoiceAndFinalize()` — renamed, no alias): ranges → rows → numbers → per
+   document its STAMP, `Invoice::markIssued()` (`issued`, `issued_by` / `issued_at`), its PDF rendered
+   ONCE and archived with its `invoice_revision` row (revision 1) — one unit of work, NO
+   `AccountingGateway::post()`. `finalize()` stays for ONE caller, the dunning fee (decision 2): the same
+   issue, then the post in the same unit of work (`Invoice::post()` with no protocol). The entity's
+   former `finalize()` is gone: `markIssued()` (draft → issued) and `post()` (issued → final) are the
+   two state changes.
+2. **The stamp (decision 24, O12) — fixed:** the first **10 hex digits** (lower case) of
+   **SHA-256 over the canonical JSON** of the version (`Invoicing\DocumentStamp`):
+   `JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES`, no whitespace, keys in this order — `v` (format
+   «1»), `kind`, `number`, `revision`, `invoice_date`, `service_from`, `service_to`, `due_date`,
+   `currency`, `price_mode`, `recipient` (contact id, customer number, salutation, title, first name,
+   name, address row, street, house number, zip, city, country), `subject_label`, `subject`,
+   `credit_note_of` (its number), `lines` (per line: position, parent position, type, code, text,
+   quantity, unit, unit price, discount, amount, tax code, tax rate, revenue account), `totals` (net,
+   tax, rounding, gross), `taxes` (per row: code, rate, base, tax), `payment` (account, reference
+   type, reference); money as decimal strings, dates `Y-m-d`, absent `null`. Collision-checked against
+   every archived version (and the batch) before the unique index `uniq_invoice_revision_stamp` is the
+   final word: on a collision `,"salt":n` (n = 1, 2, …) is appended to the JSON and hashed again.
+   Printed small at the right edge of the title line: «ID 1235101ab7» (from revision 2 on «· Version n»).
+   A document posted before the journal has no stamp (`NULL`) and no archive.
+3. **The archive (decision 25, O13) — as built:** `Pdf\InvoiceArchive`, file
+   `data/archive/debtor/<YYYY>/<number>-r<revision>-<stamp>.pdf` (`<YYYY>` = the invoice date's year),
+   written INSIDE the unit of work before the commit; a failure to write refuses the whole batch
+   (nothing issued). A rollback after the write removes the files the call wrote when the call owns the
+   unit of work; `OrderService::book()` (which joins) removes them through
+   `InvoicingService::discardArchived()`. Reading: `InvoiceArchive::pdf()` — a draft renders its
+   preview live; an issued version delivers its stored file, the SHA-256 checked against the row; a
+   missing or altered file is an `InvoiceArchiveException` with a German sentence (logged), never a
+   re-render; a document posted before the journal (no revision row) still renders from its snapshot.
+   The single PDF, the ZIP, the mail attachment `invoice-pdf` and «Alle als ein PDF» read it — the
+   latter JOINS the archived files page for page with the kernel's new `Z77\Shared\Pdf\PdfConcat`
+   (FPDF files only; content streams untouched, objects renumbered, a page keeps its own MediaBox).
+4. **«Journal verbuchen» = `Services\JournalPostingService::post(list<{id, version}>)`:** the rows
+   locked by id, every document still `issued` at the version the confirmation showed, NO other
+   document in the journal since (`changed` — always the whole journal, O7), no `reissue_needed`
+   (`blocked`), an empty journal refused (`empty`); then ONE protocol row (`document_count`,
+   `first_number` / `last_number`, `gross_total` SIGNED — a credit note counts negative, `posted_by` /
+   `posted_at`) and per document in number order `PostingBuilder` → `post()` → `final` with
+   `posted_by` / `posted_at` / `journal_posting_id`. A refusal of the bookkeeping rolls back the whole
+   posting (proven with a document dated in a year without fiscal year). The confirmation's preview
+   («Was gebucht wird», summed per account) is computed by the same `PostingBuilder`.
+5. **The screen:** «Auftragswesen › Faktura-Journal», `/backend/finance/invoice-journal/list` (host
+   `Finance/InvoiceJournalController`, fragment `Ui\InvoiceJournalControllerTrait`, module role ADMIN
+   like every debtor screen — no own access rule). Action cell «Journal verbuchen …» (green confirm;
+   disabled with its reason while empty or blocked); toolbar tabs «Im Journal» · «Verbuchte Journale»,
+   tool «Journal drucken»; the pending band (count, total, oldest date) or the red blocker band; a
+   standard list (state icon → the document's mask as a window, Nr. · Datum · Kunde · Betreff · Netto ·
+   MWST · Total · ID · Fakturiert · Hinweis «Neu fakturieren nötig»), under it the totals per VAT code
+   and in all; the confirmation a PAGE (`confirm-post`, `post` `#[Csrf]`); the journal list PDF
+   (`Pdf\JournalPdf`, layout `pdf/invoiceJournal`) for the open journal and for each posted batch
+   (`pdf?posting=`). Seed entry `faktura-journal` with sort 2, right after «Rechnungen» (a fresh
+   installation; an existing one gets it appended, add-only — ADR-050).
+6. **The document list** gains the tab «Fakturiert» (issued invoices; no selection). A credit note is
+   refused against an issued invoice («… erst nach «Journal verbuchen»», decision 13).
+7. **Wording (O10):** every text the user reads says «Fakturieren» where it said «Buchungsdruck»
+   (buttons, titles, help, flashes, refusals, the PDF preview note, the order phase / status labels,
+   the year-close finding). **The routes keep their names** (`confirm-finalize`, `finalize`,
+   `booking-result`, module-order's `confirm-book` / `book`, the status-log trigger `booking-print`):
+   bookmarks, the order screens' links and the harness name them, the user never reads them — a rename
+   would buy nothing and break links.
+8. **The order stays LOCKED while its invoice is `issued`** — a deviation from build plan §5.3 for
+   step 3: the order lock now NAMES the invoice's state (posted: «verbucht … Gutschrift»; issued:
+   «fakturiert (im Faktura-Journal, noch nicht verbucht) — er bleibt, wie er fakturiert wurde»), but
+   editing while in the journal opens only with step 5 — without its `reissue_needed` flag an edited
+   order and its unposted invoice would disagree silently and the journal would post the old content.
+   The order's list shows «nicht verbucht» in «Zahlung» while the invoice is in the journal.
+9. **The year close (decision 17, O1)** is built: `InvoicingInProgressCheck` blocks on drafts AND issued
+   documents dated in the closing year («Rechnung … ist fakturiert, aber nicht verbucht — im
+   Faktura-Journal «Journal verbuchen».»); `InvoiceRepository::unpostedBetween()` replaces
+   `invoicingBetween()`.
+10. **A repeated «Fakturieren» after the journal was posted** is no longer recognised as the repeat (the
+    posting moved the version): it answers the refusal page «Bereits fakturiert: …» — nothing written.

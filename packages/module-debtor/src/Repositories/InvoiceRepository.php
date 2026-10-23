@@ -504,11 +504,18 @@ class InvoiceRepository extends DoctrineRepository
         };
         if ($search->view === InvoiceSearch::VIEW_CREDIT) {
             $add('kind = ?', InvoiceKind::CreditNote->value);
+        } elseif ($search->view === InvoiceSearch::VIEW_JOURNAL) {
+            // The Faktura-Journal (ADR-054 decision 5): every kind in `issued` — credit notes included.
+            $add('state = ?', InvoiceState::Issued->value);
         } else {
-            // The payable kinds — invoices and fees (P4 part 3) — share the two views. The tabs of the
-            // five states («Fakturiert», «Ersetzt / Gelöscht», ADR-054) come with step 3 / 4 of the build plan.
+            // The payable kinds — invoices and fees (P4 part 3) — share the three state views. The void
+            // ones («Ersetzt / Gelöscht», ADR-054) get their tab with step 4 of the build plan.
             $add('kind <> ?', InvoiceKind::CreditNote->value);
-            $add('state = ?', $search->view === InvoiceSearch::VIEW_FINAL ? InvoiceState::Final->value : InvoiceState::Invoicing->value);
+            $add('state = ?', match ($search->view) {
+                InvoiceSearch::VIEW_FINAL  => InvoiceState::Final->value,
+                InvoiceSearch::VIEW_ISSUED => InvoiceState::Issued->value,
+                default                    => InvoiceState::Invoicing->value,
+            });
         }
         if ($search->number !== null) {
             $add('number = ?', $search->number, ParameterType::INTEGER);
@@ -553,27 +560,117 @@ class InvoiceRepository extends DoctrineRepository
     }
 
     /**
-     * The documents still in `invoicing` (not final) dated from $from to
-     * $to, both inclusive — what the year close is blocked by
-     * (`InvoicingInProgressCheck`, plan §5.3): their posting would land in a
-     * closed year. The count of all of them and the first $limit rows
-     * (`id`, `kind`, `number` — NULL, a draft has none since 2026-10-10 —,
-     * `invoice_date`, `addr_first_name`, `addr_name`) in date order — by the
-     * index `idx_invoice_state_date`. Doctrine-only (SQL).
+     * The documents NOT POSTED dated from $from to $to, both inclusive — the drafts (`invoicing`)
+     * and, since the Faktura-Journal (ADR-054 decision 17, owner decision O1), the issued ones in
+     * the journal (`issued`): what the year close is blocked by (`InvoicingInProgressCheck`, plan
+     * §5.3) — their posting would land in a closed year. An issued document dated in the NEXT year
+     * is outside the range and does not block. The count of all of them and the first $limit rows
+     * (`id`, `kind`, `state`, `number` — NULL on a draft —, `invoice_date`, `addr_first_name`,
+     * `addr_name`) in date order — by the index `idx_invoice_state_date`. Doctrine-only (SQL).
      *
-     * @return array{count: int, rows: list<array{id: int|string, kind: string, number: int|string|null, invoice_date: string, addr_first_name: string, addr_name: string}>}
+     * @return array{count: int, rows: list<array{id: int|string, kind: string, state: string, number: int|string|null, invoice_date: string, addr_first_name: string, addr_name: string}>}
      */
-    public function invoicingBetween(\DateTimeImmutable $from, \DateTimeImmutable $to, int $limit): array
+    public function unpostedBetween(\DateTimeImmutable $from, \DateTimeImmutable $to, int $limit): array
     {
-        $params = [InvoiceState::Invoicing->value, $from->format('Y-m-d'), $to->format('Y-m-d')];
-        $where  = 'FROM invoice WHERE state = ? AND invoice_date BETWEEN ? AND ?';
-        $count  = (int) $this->connection()->fetchOne('SELECT COUNT(*) ' . $where, $params);
+        $params = [[InvoiceState::Invoicing->value, InvoiceState::Issued->value], $from->format('Y-m-d'), $to->format('Y-m-d')];
+        $types  = [ArrayParameterType::STRING, ParameterType::STRING, ParameterType::STRING];
+        $where  = 'FROM invoice WHERE state IN (?) AND invoice_date BETWEEN ? AND ?';
+        $count  = (int) $this->connection()->fetchOne('SELECT COUNT(*) ' . $where, $params, $types);
         $rows   = $count === 0 ? [] : $this->connection()->fetchAllAssociative(
-            'SELECT id, kind, number, invoice_date, addr_first_name, addr_name ' . $where . ' ORDER BY invoice_date, id LIMIT ?',
+            'SELECT id, kind, state, number, invoice_date, addr_first_name, addr_name ' . $where . ' ORDER BY invoice_date, id LIMIT ?',
             [...$params, max(1, $limit)],
-            [ParameterType::STRING, ParameterType::STRING, ParameterType::STRING, ParameterType::INTEGER]
+            [...$types, ParameterType::INTEGER]
         );
 
         return ['count' => $count, 'rows' => $rows];
+    }
+
+    // ── the Faktura-Journal (ADR-054, step 3 of the build plan) ──────────────
+
+    /**
+     * The documents of a journal in NUMBER order with their lines — the open Faktura-Journal (every
+     * kind in `issued`, $postingId null) or the batch one «Journal verbuchen» posted
+     * (`journal_posting_id = $postingId`). What the journal list prints and what the posting reads
+     * (unlocked — the posting locks by id itself). Doctrine-only (DQL).
+     *
+     * @return list<Invoice>
+     */
+    public function journalDocuments(?int $postingId = null): array
+    {
+        $qb = $this->em()->createQueryBuilder()->select('i', 'l')->from(Invoice::class, 'i')->leftJoin('i.lines', 'l');
+        if ($postingId === null) {
+            $qb->where('i.state = :state')->setParameter('state', InvoiceState::Issued->value);
+        } else {
+            $qb->where('IDENTITY(i.journalPosting) = :posting')->setParameter('posting', $postingId);
+        }
+
+        return $qb->orderBy('i.number', 'ASC')->addOrderBy('i.id', 'ASC')->addOrderBy('l.position', 'ASC')->getQuery()->getResult();
+    }
+
+    /**
+     * The ids and versions of the open Faktura-Journal in number order — what the confirmation of
+     * «Journal verbuchen» carries (the versions the user SAW) and the posting compares under its
+     * locks. Doctrine-only (SQL).
+     *
+     * @return list<array{id: int, version: int}>
+     */
+    public function journalVersions(): array
+    {
+        return array_map(
+            static fn(array $r) => ['id' => (int) $r['id'], 'version' => (int) $r['version']],
+            $this->connection()->fetchAllAssociative('SELECT id, version FROM invoice WHERE state = ? ORDER BY number, id', [InvoiceState::Issued->value])
+        );
+    }
+
+    /**
+     * The totals of a journal ({@see journalDocuments()} — open or one posted batch), SIGNED as the
+     * receivable takes them (`InvoiceKind::sign()`: a credit note negative): count, net, VAT,
+     * gross, the oldest and newest invoice date, how many are flagged «Neu fakturieren nötig»
+     * (`reissue_needed`), and one row per VAT code and rate (base, tax) in code order. Decimal
+     * strings ('0.00' when none). Doctrine-only (SQL).
+     *
+     * @return array{count: int, net: string, tax: string, gross: string, oldest: ?string, newest: ?string, blocked: int, vat: list<array{code: string, rate: int, label: string, base: string, tax: string}>}
+     */
+    public function journalTotals(?int $postingId = null): array
+    {
+        [$where, $param] = $postingId === null ? ['i.state = ?', InvoiceState::Issued->value] : ['i.journal_posting_id = ?', $postingId];
+        $sign = 'CASE WHEN i.kind = ? THEN -1 ELSE 1 END';
+        $credit = InvoiceKind::CreditNote->value;
+        $head = $this->connection()->fetchAssociative(
+            "SELECT COUNT(*) AS n, COALESCE(SUM({$sign} * i.net_total), 0) AS net, COALESCE(SUM({$sign} * i.tax_total), 0) AS tax,"
+            . " COALESCE(SUM({$sign} * i.gross_total), 0) AS gross, MIN(i.invoice_date) AS oldest, MAX(i.invoice_date) AS newest,"
+            . " COALESCE(SUM(CASE WHEN i.reissue_needed IS NULL THEN 0 ELSE 1 END), 0) AS blocked FROM invoice i WHERE {$where}",
+            [$credit, $credit, $credit, $param]
+        ) ?: [];
+        $vat = $this->connection()->fetchAllAssociative(
+            "SELECT t.tax_code AS code, t.tax_rate AS rate, MIN(t.tax_label) AS label, SUM({$sign} * t.tax_base) AS base, SUM({$sign} * t.tax_amount) AS tax"
+            . " FROM invoice_tax t JOIN invoice i ON i.id = t.invoice_id WHERE {$where} GROUP BY t.tax_code, t.tax_rate ORDER BY t.tax_code, t.tax_rate",
+            [$credit, $credit, $param]
+        );
+
+        return [
+            'count'   => (int) ($head['n'] ?? 0),
+            'net'     => self::decimal($head['net'] ?? 0),
+            'tax'     => self::decimal($head['tax'] ?? 0),
+            'gross'   => self::decimal($head['gross'] ?? 0),
+            'oldest'  => isset($head['oldest']) ? (string) $head['oldest'] : null,
+            'newest'  => isset($head['newest']) ? (string) $head['newest'] : null,
+            'blocked' => (int) ($head['blocked'] ?? 0),
+            'vat'     => array_map(static fn(array $r) => ['code' => (string) $r['code'], 'rate' => (int) $r['rate'], 'label' => (string) $r['label'], 'base' => self::decimal($r['base']), 'tax' => self::decimal($r['tax'])], $vat),
+        ];
+    }
+
+    /**
+     * A SUM of two-decimal columns as the string «-12.50» — the database answers DECIMAL already; an
+     * integer «0» is padded. String handling only, no float (the module's money rule).
+     */
+    private static function decimal(mixed $value): string
+    {
+        $s = trim((string) $value);
+        if (preg_match('/^(-?)(\d+)(?:\.(\d*))?$/', $s, $m) !== 1) {
+            throw new \UnexpectedValueException("Not a decimal sum: '{$s}'");
+        }
+
+        return $m[1] . $m[2] . '.' . str_pad(substr($m[3] ?? '', 0, 2), 2, '0');
     }
 }

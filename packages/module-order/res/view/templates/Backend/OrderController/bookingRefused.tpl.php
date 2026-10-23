@@ -19,11 +19,11 @@ $actionBase = $actionBase ?? \Z77\Module\Order\Ui\OrderLayout::BASE;
             <a class="be-btn be-btn--ghost" href="<?= e($actionBase . '/list?view=closed') ?>">Zur Liste «Abgeschlossen»</a>
         </div>
         <div class="be-list__section-header">
-            <h2 class="be-list__section-title">Buchungsdruck <small class="be-list__cell--muted">· nichts verbucht</small></h2>
+            <h2 class="be-list__section-title">Fakturieren <small class="be-list__cell--muted">· nichts fakturiert</small></h2>
         </div>
         <div class="be-modal__alert be-modal__alert--error"><?= e($message) ?></div>
         <?php if ($already !== []): ?>
-        <p class="be-form__hint">Bereits verbucht: <?= e(implode(', ', $already)) ?> — die Rechnung lässt sich im Auftrag unter «Belege» jederzeit wieder öffnen.</p>
+        <p class="be-form__hint">Bereits fakturiert: <?= e(implode(', ', $already)) ?> — die Rechnung lässt sich im Auftrag unter «Belege» jederzeit wieder öffnen.</p>
         <?php endif; ?>
     </div>
 </div>

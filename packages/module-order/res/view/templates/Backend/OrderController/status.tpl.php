@@ -72,7 +72,7 @@ $winAttr    = $window ? ' data-window="order-status" data-window-entity="sales-o
             <?php endif; ?>
         </div>
         <?php if ($order->getInvoice() !== null): ?>
-        <p class="be-form__hint">Die Rechnung ist verbucht: der Status bleibt — eine Korrektur ist eine Gutschrift auf der Rechnung.</p>
+        <p class="be-form__hint">Zum Auftrag ist die Rechnung fakturiert: der Status bleibt.</p>
         <?php endif; ?>
     </form>
 </div>

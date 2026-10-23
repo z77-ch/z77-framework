@@ -147,7 +147,7 @@ if ($isNew) {
 } elseif ($invoice !== null) {
     // An order with a booked invoice: the status is SHOWN only (owner 2026-10-20) — the invoice is
     // final, a correction is a credit note on it; nothing is left to set by hand here.
-    $extra .= '<span class="be-status-field be-status-field--' . $tone($phase) . '" title="Rechnung verbucht — der Status bleibt">'
+    $extra .= '<span class="be-status-field be-status-field--' . $tone($phase) . '" title="Rechnung fakturiert — der Status bleibt">'
         . '<span class="be-status-field__label">Status</span><span class="be-status-field__dot"></span>'
         . '<span class="be-status-field__name">' . e($status?->getLabel() ?? $order->getStatusCode()) . '</span></span>'
         . '<span class="z77-form-actions__spacer"></span>';
@@ -170,7 +170,7 @@ if (!$isNew) {
             $prints[] = '<a class="be-shell-add__item" href="' . e($actionBase . '/confirm-delivery-note?id=' . $id) . '" data-window-link>Lieferschein …</a>';
         }
         if ($invoice === null) {
-            $prints[] = '<a class="be-shell-add__item" href="' . e($actionBase . '/invoice-preview?id=' . $id) . '" target="_blank" rel="noopener" title="Die Rechnung, wie der Buchungsdruck sie heute erstellen würde — ohne Nummer und ohne Zahlteil">Rechnungsvorschau</a>';
+            $prints[] = '<a class="be-shell-add__item" href="' . e($actionBase . '/invoice-preview?id=' . $id) . '" target="_blank" rel="noopener" title="Die Rechnung, wie das Fakturieren sie heute erstellen würde — ohne Nummer und ohne Zahlteil">Rechnungsvorschau</a>';
         }
     }
     if ($prints !== []) {
@@ -178,9 +178,9 @@ if (!$isNew) {
         $extra .= '<details class="be-shell-add be-shell-add--select"><summary class="be-btn be-btn--ghost">Drucken ▾</summary>'
             . '<div class="be-shell-add__panel" role="menu" aria-label="Drucken">' . implode('', $prints) . '</div></details>';
     }
-    // Total 0 (owner 2026-10-20): no invoice, no «Buchungsdruck …» — the hint stands under the action row.
+    // Total 0 (owner 2026-10-20): no invoice, no «Fakturieren …» — the hint stands under the action row.
     if ($canBook && empty($zeroTotal)) {
-        $extra .= '<a class="be-btn be-btn--confirm-open" href="' . e($actionBase . '/confirm-book?' . http_build_query(['order' => [$id . ':' . $order->getVersion()]])) . '" title="Rechnung erstellen, verbuchen und als PDF drucken">Buchungsdruck …</a>';
+        $extra .= '<a class="be-btn be-btn--confirm-open" href="' . e($actionBase . '/confirm-book?' . http_build_query(['order' => [$id . ':' . $order->getVersion()]])) . '" title="Rechnung erstellen, nummerieren und als PDF drucken — ins Faktura-Journal, noch nicht verbucht">Fakturieren …</a>';
     }
 }
 // The positions' columns: handle (⋮⋮ grip + ⇥ indent) · Pos. · Art · Art.-Nr. · Text · Menge ·
@@ -249,7 +249,7 @@ $addressFields = fn(string $field): string => $this->partial('Backend/ContactCon
         <?php endif; ?>
 
         <?php if ($canBook && !empty($zeroTotal)): ?>
-        <div class="be-modal__alert"><?= e(\Z77\Module\Order\Services\OrderService::ZERO_TOTAL_HINT) ?> Kein Buchungsdruck.</div>
+        <div class="be-modal__alert"><?= e(\Z77\Module\Order\Services\OrderService::ZERO_TOTAL_HINT) ?> Kein Fakturieren.</div>
         <?php endif; ?>
         <?php if ($editRefusal !== null): ?>
         <div class="be-modal__alert"><?= e($editRefusal) ?></div>
@@ -539,14 +539,14 @@ $addressFields = fn(string $field): string => $this->partial('Backend/ContactCon
                     <?php endif; ?>
                     <div class="be-form__totals-grand"><span>Total <?= e($currency) ?></span><span data-sum-gross><?= $preview !== null ? e($fmt($preview->getGrossTotal())) : ($isNew ? '0.00' : '–') ?></span></div>
                     <?php if ($preview !== null): ?>
-                    <div class="be-form__totals-note" data-sum-stored>gespeichert — so würde der Buchungsdruck heute fakturieren</div>
+                    <div class="be-form__totals-note" data-sum-stored>gespeichert — so würde das Fakturieren heute fakturieren</div>
                     <?php endif; ?>
                     <div class="be-form__totals-note" data-sum-live hidden>laufend aus den Zeilen, ohne Rundung — massgebend ist das Total nach dem Speichern</div>
                 </div>
             </div>
             <?php if ($previewProblems !== []): ?>
             <div class="be-modal__alert be-modal__alert--error">
-                <strong>Vor dem Buchungsdruck beheben:</strong>
+                <strong>Vor dem Fakturieren beheben:</strong>
                 <?php foreach ($previewProblems as $problem): ?>
                 <div><?= e($problem) ?></div>
                 <?php endforeach; ?>
@@ -586,7 +586,7 @@ $addressFields = fn(string $field): string => $this->partial('Backend/ContactCon
             <?php endif; ?>
             <span class="be-form__card-label">Belege</span>
             <?php if ($invoice === null): ?>
-            <p class="be-list__empty">Noch keine Rechnung — sie entsteht mit dem Buchungsdruck.</p>
+            <p class="be-list__empty">Noch keine Rechnung — sie entsteht mit dem Fakturieren.</p>
             <?php else: ?>
             <?php $detail = $invoiceBase . '/edit?id=' . (int) $invoice->getId(); $badges = ['open' => 'badge--info', 'partial' => 'badge--warning', 'paid' => 'badge--success', 'credited' => 'badge--muted']; ?>
             <div class="be-list__table" style="--be-list-cols: minmax(10rem, 2fr) 6.5rem 7rem 7rem 8rem 4rem">

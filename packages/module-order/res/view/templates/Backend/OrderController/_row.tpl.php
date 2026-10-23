@@ -12,7 +12,8 @@
  *     preview refused the order as it stood;
  *   - Rechnung: the booked invoice's number, its own column (searched, sorted — owner 2026-10-22)
  *   - Zahlung («Abgeschlossen» only): the payment state of the order's invoice, asked from debtor
- *     (`PaymentStates`).
+ *     (`PaymentStates` — posted invoices only); an invoice still in the Faktura-Journal shows
+ *     «nicht verbucht» (ADR-054: not payable before the posting).
  *
  * @var \Z77\Module\Order\Entities\SalesOrder $order
  * @var \Z77\Module\Order\Entities\OrderStatus|null $status  null = the code is missing from the master data
@@ -29,7 +30,7 @@ $actionBase = $actionBase ?? \Z77\Module\Order\Ui\OrderLayout::BASE;
 $id         = (int) $order->getId();
 $url        = $actionBase . '/edit?id=' . $id;
 $editable   = $order->getInvoice() === null && !($status?->getPhase()->isLocked() ?? false);
-$stateText  = $editable ? 'Auftrag öffnen — bearbeitbar' : 'Auftrag öffnen — ' . ($order->getInvoice() !== null ? 'Rechnung verbucht, nicht mehr bearbeitbar' : 'abgeschlossen');
+$stateText  = $editable ? 'Auftrag öffnen — bearbeitbar' : 'Auftrag öffnen — ' . ($order->getInvoice() !== null ? 'Rechnung fakturiert, nicht mehr bearbeitbar' : 'abgeschlossen');
 $badges     = [PaymentState::OPEN => 'badge--info', PaymentState::PARTIAL => 'badge--warning', PaymentState::PAID => 'badge--success', PaymentState::CREDITED => 'badge--muted'];
 ?>
                 <div class="be-list__item" data-entity="sales-order:<?= $id ?>">
@@ -45,9 +46,9 @@ $badges     = [PaymentState::OPEN => 'badge--info', PaymentState::PARTIAL => 'ba
                         <label class="be-list__cell" for="<?= e($definition->inputId('f_subject')) ?>" data-priority="2"><?= e($order->getSubject()) ?></label>
                         <label class="be-list__cell" for="<?= e($definition->inputId('f_status')) ?>" data-priority="2"><?= e($status?->getLabel() ?? $order->getStatusCode()) ?></label>
                         <label class="be-list__cell be-list__cell--num be-list__cell--mono" for="<?= e($definition->inputId('f_invoice')) ?>" data-priority="2"><?= $order->getInvoice()?->getNumber() !== null ? e((string) $order->getInvoice()->getNumber()) : '' ?></label>
-                        <label class="be-list__cell be-list__cell--num" for="<?= e($definition->inputId('f_amount')) ?>"><?= $order->getTotalGross() !== null ? e(AmountFormat::of($order->getTotalGross())) : '<span class="be-list__cell--muted" title="Vor dem Buchungsdruck zu beheben — im Auftrag sichtbar">–</span>' ?></label>
+                        <label class="be-list__cell be-list__cell--num" for="<?= e($definition->inputId('f_amount')) ?>"><?= $order->getTotalGross() !== null ? e(AmountFormat::of($order->getTotalGross())) : '<span class="be-list__cell--muted" title="Vor dem Fakturieren zu beheben — im Auftrag sichtbar">–</span>' ?></label>
                         <?php if ($view === OrderListing::VIEW_CLOSED): ?>
-                        <span class="be-list__cell"><?php if ($payment !== null): ?><span class="badge <?= e($badges[$payment->status] ?? 'badge--muted') ?>"><?= e($payment->label()) ?></span><?php endif; ?></span>
+                        <span class="be-list__cell"><?php if ($payment !== null): ?><span class="badge <?= e($badges[$payment->status] ?? 'badge--muted') ?>"><?= e($payment->label()) ?></span><?php elseif ($order->getInvoice()?->isInJournal()): ?><span class="badge badge--warning" title="Rechnung fakturiert, im Faktura-Journal — noch nicht verbucht, noch nicht zahlbar">nicht verbucht</span><?php endif; ?></span>
                         <?php endif; ?>
                     </div>
                 </div>

@@ -101,13 +101,13 @@ final class InvoiceMails
     }
 
     /**
-     * Why $document gets no mail — German, null when it can be mailed: not booked, a kind
+     * Why $document gets no mail — German, null when it can be mailed: not issued (a draft, a void one), a kind
      * without a document mail, no (valid) address on the document.
      */
     public static function skipReason(Invoice $document): ?string
     {
         return match (true) {
-            !$document->isIssued()                  => 'nicht verbucht',
+            !$document->isIssued()                  => 'nicht fakturiert',
             self::mailKindOf($document) === null    => 'für ' . $document->kind()->label() . ' gibt es keine Beleg-Mail',
             self::recipientOf($document) === ''     => trim($document->getAddress()->getEmail()) === '' ? 'keine E-Mail-Adresse' : 'E-Mail-Adresse ungültig',
             default                                 => null,

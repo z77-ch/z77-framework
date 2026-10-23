@@ -149,7 +149,7 @@ if ($isEdit) {
         // the window for its confirmation PAGE (DEBTOR-WIN-002) and then prints into a new tab.
         $extra .= '<a class="be-btn be-btn--ghost" href="' . e($pdfUrl) . '" target="_blank" rel="noopener" title="Vorschau als PDF (neuer Tab) — ohne Nummer und ohne Zahlteil">Vorschau</a>';
         $extra .= $winBtn($actionBase . '/confirm-discard?id=' . $id, 'Entwurf löschen …', 'Den Entwurf löschen — er hat keine Nummer, nichts ist verbucht');
-        $extra .= '<a class="be-btn be-btn--confirm-open" href="' . e($actionBase . '/confirm-finalize?' . http_build_query(['doc' => [$id . ':' . (int) ($version ?? $document->getVersion())]])) . '" title="Nummer vergeben, verbuchen und als PDF drucken">Buchungsdruck …</a>';
+        $extra .= '<a class="be-btn be-btn--confirm-open" href="' . e($actionBase . '/confirm-finalize?' . http_build_query(['doc' => [$id . ':' . (int) ($version ?? $document->getVersion())]])) . '" title="Nummer vergeben, PDF ablegen und drucken — ins Faktura-Journal, noch nicht verbucht">Fakturieren …</a>';
     } else {
         $extra .= '<a class="be-btn be-btn--ghost" href="' . e($pdfUrl) . '" target="_blank" rel="noopener" title="Als PDF öffnen (neuer Tab)">PDF</a>';
         if (!$document->isCreditNote() && isset($openAmount) && !$openAmount->isZero()) {

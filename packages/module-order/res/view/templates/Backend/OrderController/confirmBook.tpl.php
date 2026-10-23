@@ -36,21 +36,21 @@ $count      = count($orders);
     <form method="post" action="<?= e($actionBase) ?>/book" class="be-list__section">
         <input type="hidden" name="csrf_token" value="<?= e($csrfToken ?? '') ?>">
         <?= $this->partial('partials/modalActions', [
-            'submit'     => $orders !== [] && $booked !== null ? 'Buchungsdruck' : '',
+            'submit'     => $orders !== [] && $booked !== null ? 'Fakturieren' : '',
             'cancel'     => 'Zur Liste',
             'cancelHref' => $actionBase . '/list?view=delivered',
         ], 'Z77\\Shared') ?>
         <div class="be-list__section-header">
-            <h2 class="be-list__section-title">Buchungsdruck <small class="be-list__cell--muted">· <?= $count ?> <?= $count === 1 ? 'Auftrag' : 'Aufträge' ?><?= $total !== null ? ' · ' . e($fmt($total)) : '' ?></small></h2>
+            <h2 class="be-list__section-title">Fakturieren <small class="be-list__cell--muted">· <?= $count ?> <?= $count === 1 ? 'Auftrag' : 'Aufträge' ?><?= $total !== null ? ' · ' . e($fmt($total)) : '' ?></small></h2>
         </div>
         <?php if ($stale !== []): ?>
-        <div class="be-modal__alert be-modal__alert--error">Seit der Auswahl geändert, bereits verbucht oder weder bestätigt noch geliefert — ausgelassen: <?= e(implode(', ', $stale)) ?>. Liste neu laden.</div>
+        <div class="be-modal__alert be-modal__alert--error">Seit der Auswahl geändert, bereits fakturiert oder weder bestätigt noch geliefert — ausgelassen: <?= e(implode(', ', $stale)) ?>. Liste neu laden.</div>
         <?php endif; ?>
         <?php if (!empty($zero)): ?>
         <div class="be-modal__alert">Total 0 — keine Rechnung, ausgelassen: <?= e(implode(', ', $zero)) ?>. Diese Aufträge auf «Erledigt» setzen.</div>
         <?php endif; ?>
         <?php if ($booked === null): ?>
-        <div class="be-modal__alert be-modal__alert--error">Die Phase «Abgeschlossen» hat keinen aktiven Auftragsstatus — unter Stammdaten › Aufträge › Auftragsstatus einen anlegen (z.B. «Gebucht») und «Wird gesetzt beim Buchungsdruck» einschalten.</div>
+        <div class="be-modal__alert be-modal__alert--error">Die Phase «Abgeschlossen» hat keinen aktiven Auftragsstatus — unter Stammdaten › Aufträge › Auftragsstatus einen anlegen (z.B. «Gebucht») und «Wird gesetzt beim Fakturieren» einschalten.</div>
         <?php endif; ?>
         <?php if ($orders !== []): ?>
         <div class="be-form__grid">
@@ -64,7 +64,7 @@ $count      = count($orders);
             <?php foreach ($orders as $order): ?>
             <div class="be-list__item">
                 <div class="be-list__row">
-                    <a class="be-list__cell be-list__state" href="<?= e($actionBase . '/invoice-preview?id=' . $order->getId()) ?>" target="_blank" rel="noopener" aria-label="Rechnungsvorschau" title="Rechnungsvorschau — die Rechnung, wie der Buchungsdruck sie heute erstellen würde (ohne Nummer und Zahlteil)"><svg class="be-icon" width="14" height="14" aria-hidden="true"><use href="#icon-eye"/></svg></a>
+                    <a class="be-list__cell be-list__state" href="<?= e($actionBase . '/invoice-preview?id=' . $order->getId()) ?>" target="_blank" rel="noopener" aria-label="Rechnungsvorschau" title="Rechnungsvorschau — die Rechnung, wie das Fakturieren sie heute erstellen würde (ohne Nummer und Zahlteil)"><svg class="be-icon" width="14" height="14" aria-hidden="true"><use href="#icon-eye"/></svg></a>
                     <span class="be-list__cell be-list__cell--mono">Nr. <?= e($order->documentNumber()) ?><input type="hidden" name="order[]" value="<?= e($order->getId() . ':' . $order->getVersion()) ?>"></span>
                     <span class="be-list__cell"><?= e($order->getOrderDate()->format('d.m.Y')) ?></span>
                     <span class="be-list__cell"><?= e($order->getContact()->displayName()) ?></span>
@@ -74,6 +74,6 @@ $count      = count($orders);
             </div>
             <?php endforeach; ?>
         </div>
-        <p class="be-form__hint">Der Buchungsdruck erstellt zu jedem Auftrag die Rechnung, vergibt die Belegnummer, verbucht sie und zeigt sie danach als Liste (PDF einzeln, alle als ein PDF, als ZIP oder per E-Mail); die Aufträge stehen danach in «<?= e($booked?->getLabel() ?? 'Gebucht') ?>». Ein Kunde ohne Debitorenprofil wird dabei Debitor (Standard-Konditionen). Verbuchte Rechnungen sind unveränderlich — eine Korrektur ist eine Gutschrift.</p>
+        <p class="be-form__hint">Fakturieren erstellt zu jedem Auftrag die Rechnung, vergibt die Belegnummer, legt ihr PDF unveränderlich ab und zeigt sie danach als Liste (PDF einzeln, alle als ein PDF, als ZIP oder per E-Mail); die Aufträge stehen danach in «<?= e($booked?->getLabel() ?? 'Gebucht') ?>». Ein Kunde ohne Debitorenprofil wird dabei Debitor (Standard-Konditionen). <strong>Verbucht wird noch nichts:</strong> die Rechnungen stehen im Faktura-Journal, bis es mit «Journal verbuchen» in die Buchhaltung übernommen wird.</p>
     </form>
 </div>

@@ -18,7 +18,7 @@
  *     `#invoice-finalize` (GET to `confirm-finalize`) with the value
  *     `{id}:{version}` — the version THIS row shows, so a document re-issued
  *     before the batch runs is refused instead of finalized unseen;
- *   - «Buchungsdruck …» (owner 2026-10-10; «Verbuchen …» that morning, «Definitiv stellen …» until then) is bound to that selection, so it stands in the
+ *   - «Fakturieren …» (ADR-054, owner 2026-10-23; «Buchungsdruck …» since 2026-10-10, «Verbuchen …» that morning, «Definitiv stellen …» until then) is bound to that selection, so it stands in the
  *     SELECTION BAR above the list (ADR-033 exception 2, rev. 2026-10-08),
  *     a green confirm (`.be-btn--confirm`) submitting `#invoice-finalize`
  *     through the `form` attribute. Without script the bar cannot count the
@@ -28,8 +28,8 @@
  *     search reload only this part, and a save in a window opened from here
  *     (the mask and what it links, «+ Rechnung») reloads it
  *     (`refresh-region`, ADR-047 addendum 2026-10-10). The confirmation of
- *     «Buchungsdruck …» is still a page (debtor.md DEBTOR-WIN-002); it
- *     prints into a new tab and sends itself to the «Verbucht» view.
+ *     «Fakturieren …» is still a page (debtor.md DEBTOR-WIN-002); it
+ *     lands on the result list of the issued documents.
  *
  * @var list<\Z77\Module\Debtor\Entities\Invoice> $documents
  * @var \Z77\Shared\Listing\ListDefinition $definition
@@ -61,9 +61,9 @@ $icons      = ['invoicing' => 'edit', 'issued' => 'lock', 'final' => 'lock', 're
         <div class="z77-form-actions">
             <button type="submit" form="invoice-finalize" class="be-btn be-btn--confirm be-btn--sm">
                 <svg class="be-icon" width="14" height="14" aria-hidden="true"><use href="#icon-check"/></svg>
-                <span class="be-btn__label">Buchungsdruck …</span>
+                <span class="be-btn__label">Fakturieren …</span>
             </button>
-            <small class="be-list__cell--muted">die angekreuzten Entwürfe nummerieren, verbuchen und als ein PDF drucken — die Bestätigung nennt Anzahl und Total</small>
+            <small class="be-list__cell--muted">die angekreuzten Entwürfe nummerieren und drucken (ins Faktura-Journal, noch nicht verbucht) — die Bestätigung nennt Anzahl und Total</small>
         </div>
         <?php endif; ?>
 

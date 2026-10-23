@@ -50,7 +50,7 @@ enum OrderPhase: string
             self::New       => null,
             self::Confirmed => 'Auftragsbestätigung',
             self::Delivered => 'Lieferschein',
-            self::Closed    => 'Buchungsdruck',
+            self::Closed    => 'Fakturieren',
             self::Cancelled => null,
         };
     }
@@ -62,7 +62,7 @@ enum OrderPhase: string
             self::New       => null,
             self::Confirmed => 'Wird gesetzt beim Druck der Auftragsbestätigung',
             self::Delivered => 'Wird gesetzt beim Druck des Lieferscheins',
-            self::Closed    => 'Wird gesetzt beim Buchungsdruck',
+            self::Closed    => 'Wird gesetzt beim Fakturieren',
             self::Cancelled => null,
         };
     }

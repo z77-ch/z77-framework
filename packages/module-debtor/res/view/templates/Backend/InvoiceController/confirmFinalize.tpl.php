@@ -1,19 +1,21 @@
 <?php
 /**
- * «Buchungsdruck» (owner 2026-10-10; «Verbuchen» that morning, «Definitiv
- * stellen» until then) — the last look before the booking print: the drafts
+ * «Fakturieren» (ADR-054, owner decision O10 of 2026-10-23; «Buchungsdruck» since
+ * 2026-10-10, «Verbuchen» that morning, «Definitiv stellen» until then) — the last
+ * look before the drafts are numbered and issued (nothing is posted): the drafts
  * selected in the invoicing view (or the one draft of a detail), each with
  * the version its row SHOWED (`doc[]` = `{id}:{version}`); no number yet.
- * One button posts the same pairs to `finalize` (`#[Csrf]`) in THIS tab:
- * `InvoicingService::finalize()` draws the numbers and posts — one unit of
- * work, all or nothing, a document re-issued since is refused by its version
+ * One button posts the same pairs to `finalize` (`#[Csrf]`, the route keeps its
+ * name) in THIS tab: `InvoicingService::issue()` draws the numbers, stamps and
+ * archives the PDFs — nothing posted; one unit of work, all or nothing, a
+ * document re-issued since is refused by its version
  * — and answers with a redirect to the RESULT LIST of exactly these documents
  * (`booking-result?ids=…`, step 3 of the mail plan, owner 2026-10-22: per document the
  * PDF, «Alle als ein PDF», «Alle als ZIP», «Alle per E-Mail senden …»). Until
  * that day the answer was the combined PDF in a new tab (a blank target +
  * `data-submit-navigate`) — both gone: the result list replaces this page. A
  * repeated submit lands on the same result list; a refusal is a message page.
- * A selection that is already stale here (final, gone, re-issued) is named
+ * A selection that is already stale here (issued, gone, re-issued) is named
  * and left out of the button.
  *
  * The action row (ADR-049, revision 2026-10-10) stands FIRST in the form —
@@ -36,15 +38,15 @@ $actionBase = $actionBase ?? '/backend/finance/invoice';
     <form method="post" action="<?= e($actionBase) ?>/finalize" class="be-list__section">
         <input type="hidden" name="csrf_token" value="<?= e($csrfToken ?? '') ?>">
         <?= $this->partial('partials/modalActions', [
-            'submit'     => $documents !== [] ? 'Buchungsdruck' : '',
+            'submit'     => $documents !== [] ? 'Fakturieren' : '',
             'cancel'     => 'Zur Liste',
             'cancelHref' => $actionBase . '/list',
         ], 'Z77\\Shared') ?>
         <div class="be-list__section-header">
-            <h2 class="be-list__section-title">Buchungsdruck <small class="be-list__cell--muted">· <?= count($documents) ?> Dokument<?= count($documents) === 1 ? '' : 'e' ?><?= $total !== null ? ' · ' . e($fmt($total)) : '' ?></small></h2>
+            <h2 class="be-list__section-title">Fakturieren <small class="be-list__cell--muted">· <?= count($documents) ?> Dokument<?= count($documents) === 1 ? '' : 'e' ?><?= $total !== null ? ' · ' . e($fmt($total)) : '' ?></small></h2>
         </div>
         <?php if ($stale !== []): ?>
-        <div class="be-modal__alert be-modal__alert--error">Seit der Auswahl geändert, bereits verbucht oder nicht mehr vorhanden — ausgelassen: <?= e(implode(', ', array_map(static fn(int $id) => '#' . $id, $stale))) ?>. Liste neu laden.</div>
+        <div class="be-modal__alert be-modal__alert--error">Seit der Auswahl geändert, bereits fakturiert oder nicht mehr vorhanden — ausgelassen: <?= e(implode(', ', array_map(static fn(int $id) => '#' . $id, $stale))) ?>. Liste neu laden.</div>
         <?php endif; ?>
         <div class="be-list__table" style="--be-list-cols: 5rem 6.5rem minmax(10rem, 2fr) 8rem">
             <?php foreach ($documents as $document): ?>
@@ -58,6 +60,6 @@ $actionBase = $actionBase ?? '/backend/finance/invoice';
             </div>
             <?php endforeach; ?>
         </div>
-        <p class="be-form__hint">Der Buchungsdruck vergibt die Belegnummern, verbucht die Dokumente und zeigt sie danach als Liste — jedes PDF einzeln, alle als ein PDF, als ZIP oder per E-Mail. Verbuchte Dokumente sind unveränderlich — eine Korrektur ist eine Gutschrift; das PDF lässt sich jederzeit wieder öffnen.</p>
+        <p class="be-form__hint">Fakturieren vergibt die Belegnummern, legt das PDF jedes Dokuments unveränderlich ab (mit seiner ID neben der Nummer) und zeigt die Dokumente danach als Liste — jedes PDF einzeln, alle als ein PDF, als ZIP oder per E-Mail. <strong>Verbucht wird noch nichts:</strong> die Dokumente stehen im <strong>Faktura-Journal</strong>, bis es mit «Journal verbuchen» in die Buchhaltung übernommen wird.</p>
     </form>
 </div>

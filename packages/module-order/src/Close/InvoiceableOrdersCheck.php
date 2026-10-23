@@ -77,6 +77,6 @@ final class InvoiceableOrdersCheck implements OpenWorkCheckInterface
         $label = $labels[(string) $row['status_code']] ?? (string) $row['status_code'];
 
         return 'Auftrag ' . $row['number'] . ' vom ' . $date . ($party !== '' ? ' an ' . $party : '')
-            . ' steht in «' . $label . '» — noch nicht fakturiert, sein Umsatz fehlt in diesem Jahr. Mit «Buchungsdruck …» verbuchen oder bewusst ins nächste Jahr nehmen.';
+            . ' steht in «' . $label . '» — noch nicht fakturiert, sein Umsatz fehlt in diesem Jahr. Mit «Fakturieren …» fakturieren (und das Faktura-Journal verbuchen) oder bewusst ins nächste Jahr nehmen.';
     }
 }

@@ -300,10 +300,12 @@ final class OrderService
     }
 
     /**
-     * The BOOKING PRINT of one or several orders (plan §7, D4, step 9): each order's invoice is
-     * issued AND booked by debtor (`InvoicingService::invoiceAndFinalize()`), linked to the order
-     * (D5), and the order moves to the default status of phase `closed` — ONE unit of work, all or
-     * nothing.
+     * «FAKTURIEREN» of one or several orders (plan §7, D4, step 9; the booking print, «Buchungsdruck»,
+     * until 2026-10-23 — ADR-054): each order's invoice is issued by debtor
+     * (`InvoicingService::invoiceAndIssue()` — numbered, stamped, its PDF archived, NOT posted: it
+     * enters the Faktura-Journal), linked to the order (D5), and the order moves to the default
+     * status of phase `closed` — ONE unit of work, all or nothing. The posting follows with
+     * «Journal verbuchen» in debtor.
      *
      *   1. Before the unit of work, at the versions the screen showed: every order exists, has no
      *      invoice and sits in a bookable phase (`confirmed`, `delivered`); the debtor profile of each customer is
@@ -314,16 +316,18 @@ final class OrderService
      *      the invoice date is created ahead (`prepareDocumentRanges()`, DOCTRINE-NR-003).
      *   2. The unit of work, in the lock order of plan §5: the `sales_order` rows locked by id
      *      ({@see SalesOrderRepository::lockIds()}), the versions compared there, the orders re-read
-     *      refreshed and judged again → debtor's chain (`invoiceAndFinalize()` joins: month range,
-     *      profile rows, compose, numbers, journal) → per order `linkInvoice()`, the status, the log
-     *      row `booking-print`, the stock call.
+     *      refreshed and judged again → debtor's chain (`invoiceAndIssue()` joins: month range,
+     *      profile rows, compose, numbers, stamps, archive) → per order `linkInvoice()`, the status,
+     *      the log row `booking-print`, the stock call. A refusal after debtor's chain (the stock
+     *      call) rolls everything back; the archive files debtor wrote are removed
+     *      (`InvoicingService::discardArchived()`).
      *
      * Idempotency is the SCREEN's (plan §7): this method refuses an order that already has an
      * invoice (`already-invoiced`); a repeated submit of the same selection is recognised by the
      * screen and answered with the same PDF without calling this.
      *
      * @param list<array{id: int, version: int}> $orders the orders as the screen showed them
-     * @return list<\Z77\Module\Debtor\Entities\Invoice> the booked invoices, in number order
+     * @return list<\Z77\Module\Debtor\Entities\Invoice> the issued invoices, in number order
      * @throws OrderConflictException an order is gone or its version moved on
      * @throws OrderRefusedException  NOTHING_SELECTED | NO_BOOKED_STATUS | STATUS_UNKNOWN | ALREADY_INVOICED | NOT_INVOICEABLE | INVOICE_REFUSED | ZERO_TOTAL
      * @throws \Z77\Module\Article\Stock\StockReasonRequiredException
@@ -335,12 +339,12 @@ final class OrderService
             $versions[(int) $pair['id']] = (int) $pair['version'];
         }
         if ($versions === []) {
-            throw new OrderRefusedException(OrderRefusedException::NOTHING_SELECTED, 'Kein Auftrag ausgewählt — nichts wurde verbucht.');
+            throw new OrderRefusedException(OrderRefusedException::NOTHING_SELECTED, 'Kein Auftrag ausgewählt — nichts wurde fakturiert.');
         }
         ksort($versions);
         $statuses = $this->statuses();
         $booked   = $statuses->defaultOf(OrderPhase::Closed)
-            ?? throw new OrderRefusedException(OrderRefusedException::NO_BOOKED_STATUS, 'Die Phase «Abgeschlossen» hat keinen aktiven Auftragsstatus — unter Stammdaten › Aufträge › Auftragsstatus einen anlegen (z.B. «Gebucht») und «Wird gesetzt beim Buchungsdruck» einschalten. Nichts wurde verbucht.');
+            ?? throw new OrderRefusedException(OrderRefusedException::NO_BOOKED_STATUS, 'Die Phase «Abgeschlossen» hat keinen aktiven Auftragsstatus — unter Stammdaten › Aufträge › Auftragsstatus einen anlegen (z.B. «Gebucht») und «Wird gesetzt beim Fakturieren» einschalten. Nichts wurde fakturiert.');
         $invoiceDate = $invoiceDate->setTime(0, 0);
         $invoicing   = $this->invoicing();
 
@@ -382,37 +386,42 @@ final class OrderService
         $now = new \DateTimeImmutable();
 
         // 2. The unit of work — order rows first, then debtor's chain, then the order's own writes.
-        return $this->em->getTransaction(SalesOrder::class)->run(function () use ($versions, $statuses, $booked, $invoiceDate, $invoicing, $confirmation, $now): array {
-            $locked = $this->orders()->lockIds(array_keys($versions));
-            foreach ($versions as $id => $version) {
-                if (($locked[$id] ?? null) !== $version) {
-                    throw new OrderConflictException($id, $version);
+        try {
+            return $this->em->getTransaction(SalesOrder::class)->run(function () use ($versions, $statuses, $booked, $invoiceDate, $invoicing, $confirmation, $now): array {
+                $locked = $this->orders()->lockIds(array_keys($versions));
+                foreach ($versions as $id => $version) {
+                    if (($locked[$id] ?? null) !== $version) {
+                        throw new OrderConflictException($id, $version);
+                    }
                 }
-            }
-            $byNumber = [];
-            $drafts   = [];
-            foreach (array_keys($versions) as $id) {
-                $order = $this->orders()->withLines($id) ?? throw new OrderConflictException($id, $versions[$id]);
-                $from  = $this->statusOf($order, $statuses);
-                $this->assertBookable($order, $from);
-                $byNumber[$order->documentNumber()] = [$order, $from];
-                $drafts[] = OrderInvoiceDraft::of($order, $invoiceDate);
-            }
-            try {
-                $invoices = $invoicing->invoiceAndFinalize($drafts);
-            } catch (DebtorException | VatException $e) {
-                $names = array_keys($byNumber);
-                throw new OrderRefusedException(OrderRefusedException::INVOICE_REFUSED, (count($names) === 1 ? 'Auftrag ' : 'Aufträge ') . implode(', ', $names) . ': ' . $e->getMessage(), $e);
-            }
-            foreach ($invoices as $invoice) {
-                [$order, $from] = $byNumber[(string) $invoice->getSourceRef()]
-                    ?? throw new \LogicException('The booked invoice ' . $invoice->getId() . ' names no order of this booking print');
-                $order->linkInvoice($invoice);
-                $this->move($order, $from, $booked, SalesOrderStatusChange::TRIGGER_BOOKING_PRINT, $confirmation, $now);
-            }
+                $byNumber = [];
+                $drafts   = [];
+                foreach (array_keys($versions) as $id) {
+                    $order = $this->orders()->withLines($id) ?? throw new OrderConflictException($id, $versions[$id]);
+                    $from  = $this->statusOf($order, $statuses);
+                    $this->assertBookable($order, $from);
+                    $byNumber[$order->documentNumber()] = [$order, $from];
+                    $drafts[] = OrderInvoiceDraft::of($order, $invoiceDate);
+                }
+                try {
+                    $invoices = $invoicing->invoiceAndIssue($drafts);
+                } catch (DebtorException | VatException $e) {
+                    $names = array_keys($byNumber);
+                    throw new OrderRefusedException(OrderRefusedException::INVOICE_REFUSED, (count($names) === 1 ? 'Auftrag ' : 'Aufträge ') . implode(', ', $names) . ': ' . $e->getMessage(), $e);
+                }
+                foreach ($invoices as $invoice) {
+                    [$order, $from] = $byNumber[(string) $invoice->getSourceRef()]
+                        ?? throw new \LogicException('The issued invoice ' . $invoice->getId() . ' names no order of this «Fakturieren»');
+                    $order->linkInvoice($invoice);
+                    $this->move($order, $from, $booked, SalesOrderStatusChange::TRIGGER_BOOKING_PRINT, $confirmation, $now);
+                }
 
-            return $invoices;
-        });
+                return $invoices;
+            });
+        } catch (\Throwable $e) {
+            $invoicing->discardArchived();   // nothing committed — no archive file may stay without its row
+            throw $e;
+        }
     }
 
     // ── reads the screens need ───────────────────────────────────────────
@@ -529,10 +538,10 @@ final class OrderService
     {
         if ($order->getInvoice() !== null) {
             $number = $order->getInvoice()->getNumber();
-            throw new OrderRefusedException(OrderRefusedException::ALREADY_INVOICED, 'Zu Auftrag ' . $order->documentNumber() . ' ist die Rechnung' . ($number !== null ? ' ' . $number : '') . ' bereits verbucht — nichts wurde nochmals verbucht.');
+            throw new OrderRefusedException(OrderRefusedException::ALREADY_INVOICED, 'Zu Auftrag ' . $order->documentNumber() . ' ist die Rechnung' . ($number !== null ? ' ' . $number : '') . ' bereits fakturiert — nichts wurde nochmals fakturiert.');
         }
         if (!$status->getPhase()->isBookable()) {
-            throw new OrderRefusedException(OrderRefusedException::NOT_INVOICEABLE, 'Auftrag ' . $order->documentNumber() . ' steht in «' . $status->getLabel() . '» (Phase ' . $status->getPhase()->label() . ') — verbucht wird ein bestätigter oder gelieferter Auftrag.');
+            throw new OrderRefusedException(OrderRefusedException::NOT_INVOICEABLE, 'Auftrag ' . $order->documentNumber() . ' steht in «' . $status->getLabel() . '» (Phase ' . $status->getPhase()->label() . ') — fakturiert wird ein bestätigter oder gelieferter Auftrag.');
         }
     }
 
@@ -547,12 +556,24 @@ final class OrderService
         return $this->orders()->withLines($id) ?? throw new OrderConflictException($id, $version);
     }
 
-    /** @throws OrderRefusedException NOT_EDITABLE (D7) */
+    /**
+     * D7, read with ADR-054 (Faktura-Journal, step 3 of its build plan): an order with an invoice
+     * stays as it was invoiced. Two sentences by the invoice's state — POSTED (`final`): a
+     * correction is a credit note; ISSUED (in the Faktura-Journal, not posted yet): the order stays
+     * locked too — editing it while its invoice is in the journal comes with step 5 of the build
+     * plan («Neu fakturieren», `reissue_needed` blocks the journal), and without that flag an
+     * edited order and its unposted invoice would silently disagree.
+     *
+     * @throws OrderRefusedException NOT_EDITABLE (D7)
+     */
     private function assertEditable(SalesOrder $order, OrderStatus $status): void
     {
-        if ($order->getInvoice() !== null) {
-            $number = $order->getInvoice()->getNumber();
-            throw new OrderRefusedException(OrderRefusedException::NOT_EDITABLE, 'Zum Auftrag ' . $order->documentNumber() . ' ist die Rechnung' . ($number !== null ? ' ' . $number : '') . ' verbucht — er bleibt, wie er verbucht wurde. Eine Korrektur ist eine Gutschrift auf der Rechnung.');
+        $invoice = $order->getInvoice();
+        if ($invoice !== null) {
+            $number = $invoice->getNumber();
+            throw new OrderRefusedException(OrderRefusedException::NOT_EDITABLE, $invoice->isPosted()
+                ? 'Zum Auftrag ' . $order->documentNumber() . ' ist die Rechnung' . ($number !== null ? ' ' . $number : '') . ' verbucht — er bleibt, wie er fakturiert wurde. Eine Korrektur ist eine Gutschrift auf der Rechnung.'
+                : 'Zum Auftrag ' . $order->documentNumber() . ' ist die Rechnung' . ($number !== null ? ' ' . $number : '') . ' fakturiert (im Faktura-Journal, noch nicht verbucht) — er bleibt, wie er fakturiert wurde.');
         }
         if ($status->getPhase()->isLocked()) {
             throw new OrderRefusedException(OrderRefusedException::NOT_EDITABLE, 'Auftrag ' . $order->documentNumber() . ' ist ' . ($status->getPhase() === OrderPhase::Cancelled ? 'storniert' : 'abgeschlossen') . ' («' . $status->getLabel() . '») — zum Ändern zuerst den Status zurücksetzen.');

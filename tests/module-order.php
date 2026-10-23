@@ -181,10 +181,10 @@ check('N5 the navigation seed parses: «Auftragsstatus» sort 10 under debtor\'s
     count($navByKey) === 2 && ($navByKey['auftragsstatus']['sort_key'] ?? null) === 10
     && $navByKey['auftragsstatus']['parent_key'] === 'stammdaten-auftraege' && isset($debtorNav['stammdaten-auftraege'])
     && $route($navByKey['auftragsstatus']) === ['backend', 'order', 'order-status', 'list']);
-check('N6 «Aufträge» (auftraege-liste) is the FIRST entry of debtor\'s area «auftraege» (sort 0; debtor\'s entries 1–4: Rechnungen, Debitoren, Zahlungseingänge, Mahnungen), route backend/order/order/list',
+check('N6 «Aufträge» (auftraege-liste) is the FIRST entry of debtor\'s area «auftraege» (sort 0; debtor\'s entries 1–5: Rechnungen, Faktura-Journal, Debitoren, Zahlungseingänge, Mahnungen — ADR-054), route backend/order/order/list',
     ($navByKey['auftraege-liste']['parent_key'] ?? null) === 'auftraege' && $navByKey['auftraege-liste']['sort_key'] === 0 && isset($debtorNav['auftraege'])
     && $route($navByKey['auftraege-liste']) === ['backend', 'order', 'order', 'list']
-    && [$debtorNav['rechnungen']['sort_key'], $debtorNav['debitoren']['sort_key'], $debtorNav['zahlungseingaenge']['sort_key'], $debtorNav['mahnungen']['sort_key']] === [1, 2, 3, 4]);
+    && [$debtorNav['rechnungen']['sort_key'], $debtorNav['faktura-journal']['sort_key'], $debtorNav['debitoren']['sort_key'], $debtorNav['zahlungseingaenge']['sort_key'], $debtorNav['mahnungen']['sort_key']] === [1, 2, 3, 4, 5]);
 
 // ── T. transitions and stock targets (offline) ───────────────────────────
 
@@ -601,7 +601,7 @@ check('F17 a 0 total on the screens (owner 2026-10-20): the confirmation names i
     str_contains($orderTrait, "if (\$order->getTotalGross()?->isZero() ?? false) {") && str_contains($orderTrait, "'zero'   => \$zero,")
     && str_contains((string) file_get_contents($root . '/packages/module-order/res/view/templates/Backend/OrderController/confirmBook.tpl.php'), 'Total 0 — keine Rechnung, ausgelassen:')
     && str_contains($orderTpl, 'if ($canBook && empty($zeroTotal)) {') && str_contains($orderTpl, '<?php if ($canBook && !empty($zeroTotal)): ?>') && str_contains($orderTpl, '} elseif ($invoice !== null) {')
-    && str_contains($orderTpl, 'title="Rechnung verbucht — der Status bleibt"'));
+    && str_contains($orderTpl, 'title="Rechnung fakturiert — der Status bleibt"'));
 $f20Help = (string) file_get_contents($root . '/packages/module-order/res/view/templates/Backend/OrderController/edit.help.tpl.php');
 check('F20 without VAT (owner 2026-10-21): the window hides «Preise» (the mode still posted), the help gets `liableToVat` and drops the price-mode section and the MWST wording; the article help names the magnifier, no list',
     str_contains($orderTpl, "<div class=\"be-form__field\" data-z77-field-wrapper<?= \$liableToVat ? '' : ' hidden' ?>>")
@@ -728,9 +728,9 @@ check('H1 the list attaches its help with `toolbar: true` («Hilfe» at the righ
     && strpos($listSrc, "->help->attach(") < strpos($listSrc, '$this->html('));
 $listHelpFile = $root . '/packages/module-order/res/view/templates/Backend/OrderController/list.help.tpl.php';
 $listHelp     = is_file($listHelpFile) ? (static function (string $f): string { ob_start(); require $f; return (string) ob_get_clean(); })($listHelpFile) : '';
-check('H2 the list help is short and says what the code does: the six tabs by their labels (OrderListing::VIEWS), «+ Neuer Auftrag», «Buchungsdruck …» only in «Termin» and «Geliefert», the search; no field sections (the list has no form field worth one)',
+check('H2 the list help is short and says what the code does: the six tabs by their labels (OrderListing::VIEWS), «+ Neuer Auftrag», «Fakturieren …» (owner 2026-10-23, formerly «Buchungsdruck …») only in «Termin» and «Geliefert», the search; no field sections (the list has no form field worth one)',
     $listHelp !== '' && array_filter(OrderListing::VIEWS, static fn(string $l) => !str_contains($listHelp, '<strong>' . $l . '</strong>')) === []
-    && str_contains($listHelp, '+ Neuer Auftrag') && str_contains($listHelp, 'Buchungsdruck …') && str_contains($listHelp, 'nur in <strong>Termin</strong> und <strong>Geliefert</strong>')
+    && str_contains($listHelp, '+ Neuer Auftrag') && str_contains($listHelp, 'Fakturieren …') && !str_contains($listHelp, 'Buchungsdruck') && str_contains($listHelp, 'nur in <strong>Termin</strong> und <strong>Geliefert</strong>')
     && !str_contains($listHelp, 'data-help-field') && strlen(strip_tags($listHelp)) < 3000
     && OrderListing::isSelectable('confirmed') && OrderListing::isSelectable('delivered') && !OrderListing::isSelectable('new'));
 
@@ -967,6 +967,17 @@ check('M16 with an invoice: no status change by hand at all — backward, cancel
     && $refusedBy(fn() => $svc->changeStatus((int) $o1->getId(), $o1->getVersion(), 'cancelled')) === 'invoiced'
     && $refusedBy(fn() => $svc->changeStatus((int) $o1->getId(), $o1->getVersion(), 'done')) === 'invoiced'
     && $refusedBy(fn() => $svc->update((int) $o1->getId(), $o1->getVersion(), new $D($contactId, '2026-10-14'))) === 'not-editable');
+// ADR-054 (step 3): the lock names the invoice's state — posted: a credit note; issued (in the Faktura-Journal): it stays as
+// invoiced (editing while in the journal comes with step 5, «Neu fakturieren»). The state flipped in memory only, then restored.
+$m16Order  = $em->getRepository(SalesOrder::class)->withLines((int) $o1->getId());
+$m16State  = new \ReflectionProperty(\Z77\Module\Debtor\Entities\Invoice::class, 'state');
+$m16Posted = (string) $svc->editRefusal($m16Order);
+$m16State->setValue($m16Order->getInvoice(), 'issued');
+$m16Issued = (string) $svc->editRefusal($m16Order);
+$m16State->setValue($m16Order->getInvoice(), 'final');
+check('M16b the lock sentence follows the invoice (ADR-054): posted → «verbucht … Gutschrift»; issued → «fakturiert (im Faktura-Journal, noch nicht verbucht)» — still not editable (step 5)',
+    str_contains($m16Posted, 'verbucht') && str_contains($m16Posted, 'Gutschrift') && str_contains($m16Issued, 'fakturiert (im Faktura-Journal, noch nicht verbucht)') && !str_contains($m16Issued, 'Gutschrift'),
+    json_encode([$m16Posted, $m16Issued], JSON_UNESCAPED_UNICODE));
 check('M17 the log of order 1: create, status ×3, delivery-note — from → to in order',
     $db->fetchFirstColumn('SELECT CONCAT(COALESCE(from_code, \'-\'), \'>\', to_code, \':\', change_trigger) FROM sales_order_status_change WHERE order_id = ? ORDER BY id', [$o1->getId()]) === [
         '->opened:create', 'opened>scheduled:status', 'scheduled>delivered:delivery-note', 'delivered>cancelled:status', 'cancelled>to-invoice:status',

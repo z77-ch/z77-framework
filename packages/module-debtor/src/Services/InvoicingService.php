@@ -13,6 +13,7 @@ use Z77\Module\Debtor\Entities\DebtorProfile;
 use Z77\Module\Debtor\Entities\Invoice;
 use Z77\Module\Debtor\Entities\InvoiceKind;
 use Z77\Module\Debtor\Entities\InvoiceLine;
+use Z77\Module\Debtor\Entities\InvoiceRevision;
 use Z77\Module\Debtor\Entities\InvoiceTax;
 use Z77\Module\Debtor\Entities\LineType;
 use Z77\Module\Debtor\Entities\PaymentAllocation;
@@ -21,6 +22,7 @@ use Z77\Module\Debtor\Entities\PaymentTarget;
 use Z77\Module\Debtor\Entities\PaymentTerms;
 use Z77\Module\Debtor\Invoicing\DocumentSnapshot;
 use Z77\Module\Debtor\Invoicing\DocumentNumber;
+use Z77\Module\Debtor\Invoicing\DocumentStamp;
 use Z77\Module\Debtor\Invoicing\InvoiceDraft;
 use Z77\Module\Debtor\Invoicing\LineDraft;
 use Z77\Module\Debtor\Invoicing\NoTaxShareException;
@@ -28,6 +30,7 @@ use Z77\Module\Debtor\Invoicing\PostingBuilder;
 use Z77\Module\Debtor\Invoicing\QrBill;
 use Z77\Module\Debtor\Invoicing\SubjectLabel;
 use Z77\Module\Debtor\Invoicing\TaxShares;
+use Z77\Module\Debtor\Pdf\InvoiceArchive;
 use Z77\Module\Debtor\Repositories\DebtorProfileRepository;
 use Z77\Module\Debtor\Repositories\InvoiceRepository;
 use Z77\Module\Debtor\Repositories\PaymentAllocationRepository;
@@ -64,14 +67,17 @@ use Z77\Shared\Money\Money;
  *   - {@see discard()}: only in `invoicing` — the draft is DELETED (owner
  *     2026-10-13, ADR-040 addendum): no number, nothing posted, nothing
  *     references it;
- *   - {@see finalize()} — the BOOKING PRINT («Buchungsdruck»): a batch in
- *     one unit of work — the month ranges `document.YYMM` of the batch
- *     locked first (in name order), then every document (in id order),
- *     then the numbers `YYMMnnnn` drawn in a fixed order (invoice date,
- *     then id — {@see DocumentNumber}, one series for every kind), then per
- *     document: state `final` and the posting through the
- *     {@see AccountingGateway} port. After `final` a document is immutable;
- *     the correction is a credit note.
+ *   - {@see issue()} — «FAKTURIEREN» (the booking print, «Buchungsdruck»
+ *     until 2026-10-23 — ADR-054): a batch in one unit of work — the month
+ *     ranges `document.YYMM` of the batch locked first (in name order), then
+ *     every document (in id order), then the numbers `YYMMnnnn` drawn in a
+ *     fixed order (invoice date, then id — {@see DocumentNumber}, one series
+ *     for every kind), then per document its stamp, state `issued` and its
+ *     archived PDF. NOTHING is posted: the document stands in the
+ *     Faktura-Journal until {@see JournalPostingService::post()} posts it
+ *     (`final`, immutable, corrected by a credit note);
+ *   - {@see finalize()} — issue AND post in one step, for the dunning fee
+ *     only (ADR-054 decision 2).
  *
  * Validation happens BEFORE the unit of work opens (the draft against the
  * party, the master data, the tax tables and the accounts), so a refused
@@ -80,14 +86,15 @@ use Z77\Shared\Money\Money;
  * mutated before a check (ADR-039 decision 9).
  *
  * Since P7 slim (2026-10-14) a source that IS its own draft (an order) has a
- * second sanctioned form: {@see invoiceAndFinalize()} issues and books in one
+ * second sanctioned form: {@see invoiceAndIssue()} creates and issues in one
  * unit of work (joining the caller's), with {@see preview()} for its totals
  * and preview PDF, {@see prepareDocumentRanges()} before its unit of work and
  * {@see openDebtorProfile()} for a prospect (plan §7, D9).
  *
  * Lock order of the module (2026-10-10): `document.YYMM` ranges → invoice
- * rows → `journal-entry.*` (financial's `post()`). `finalize()`,
- * `invoiceAndFinalize()` and the dunning run take them in exactly this order
+ * rows → `journal-entry.*` (financial's `post()`). `issue()`, `finalize()`,
+ * `invoiceAndIssue()`, the journal posting (rows → journal, no range) and
+ * the dunning run take them in exactly this order
  * (with the profile rows SHARED between ranges and invoice rows — debtor.md);
  * a payment takes the last two; `invoice()` / `reinvoice()` take no DOCUMENT range at all (an issued
  * credit note only holds a SHARED lock on the invoice row it references,
@@ -112,6 +119,7 @@ final class InvoicingService
 
     private readonly string $actor;
     private ?AccountingGateway $gateway;
+    private ?InvoiceArchive $archive = null;
 
     /**
      * @param string|null            $actor   the author's name; null = the session identity ({@see Actor::current()})
@@ -125,8 +133,8 @@ final class InvoicingService
 
     /**
      * Issue a NEW document in state `invoicing` — a DRAFT without a number
-     * (owner 2026-10-10: the number is drawn at the booking print,
-     * {@see finalize()}). Joins an open unit of work (an order that changes
+     * (owner 2026-10-10: the number is drawn by «Fakturieren»,
+     * {@see issue()}). Joins an open unit of work (an order that changes
      * its status and invoices in one) or opens its own. No range is touched:
      * a draft that is never booked consumes no number, and a re-issue may
      * move the invoice date into another month freely.
@@ -279,67 +287,81 @@ final class InvoicingService
     }
 
     /**
-     * The BOOKING PRINT («Buchungsdruck», owner 2026-10-10): `invoicing` →
-     * `final` for a batch, ONE unit of work, all or nothing — the documents
-     * get their NUMBER here and are posted in the same step; the caller
-     * prints them (`Pdf\InvoicePdf::combined()`).
+     * «FAKTURIEREN» — the booking print since the Faktura-Journal (ADR-054 decision 4, owner
+     * 2026-10-23; «Buchungsdruck» until that day): `invoicing` → `issued` for a batch, ONE unit
+     * of work, all or nothing — the documents get their NUMBER, their STAMP and their ARCHIVED
+     * PDF here; NOTHING is posted. They stand in the Faktura-Journal until «Journal verbuchen»
+     * ({@see JournalPostingService::post()}) posts them. The caller delivers the archived PDFs
+     * (`Pdf\InvoiceArchive::combined()`).
      *
-     *   1. Before the unit of work: the batch is read (no lock) for the
-     *      months of its invoice dates, and each month's range
-     *      `document.YYMM` is created with `NumberRangeRepository::create()`
-     *      (idempotent, consumes no number; outside a unit of work committed
-     *      at once — DOCTRINE-NR-003, the former `invoice()` model).
-     *   2. Inside, FIRST: those ranges locked in NAME order (`create()` in a
-     *      unit of work holds the existing row exclusively) — several months
-     *      in one batch always lock in the same order, so two batches never
-     *      wait on each other crosswise; the dunning run takes the same
-     *      first lock.
-     *   3. Every document locked (id order); any that is missing, at another
-     *      VERSION than the caller saw, or already `final` refuses the whole
-     *      batch; a document whose month is not among the locked ranges was
-     *      re-dated since the read — refused as a conflict. Here, too, the
-     *      payment part each document will print is taken again
-     *      ({@see bookedPaymentPart()}) and checked by `QrBill` — a target
-     *      gone or inactive, or any problem of the would-be bill, refuses
-     *      the whole batch before a number is drawn (owner 2026-10-13).
-     *   4. The numbers drawn — `next('document.YYMM')`, the first WRITES of
-     *      the unit of work — in a fixed order: invoice date, then id. So a
-     *      batch is gapless per month and numbered by date; the 10000th
-     *      document of a month is refused (`number-range-full`) and the whole
-     *      batch rolls back. Each document gets its number and its numbered
-     *      payment part (`Invoice::assignNumber()`, the QR reference and the
-     *      message come from the number).
-     *   5. Each posted through the accounting port (the journal text carries
-     *      the number) and set `final` with what the port answered, in the
-     *      same order.
+     *   1. Before the unit of work: the batch is read (no lock) for the months of its invoice
+     *      dates, and each month's range `document.YYMM` is created with
+     *      `NumberRangeRepository::create()` (idempotent, consumes no number; outside a unit of
+     *      work committed at once — DOCTRINE-NR-003).
+     *   2. Inside, FIRST: those ranges locked in NAME order (`create()` in a unit of work holds the
+     *      existing row exclusively) — several months in one batch always lock in the same order,
+     *      so two batches never wait on each other crosswise; the dunning run takes the same first
+     *      lock.
+     *   3. Every document locked (id order); any that is missing, at another VERSION than the
+     *      caller saw, or no draft refuses the whole batch; a document whose month is not among
+     *      the locked ranges was re-dated since the read — refused as a conflict. The stored
+     *      revenue accounts and the VAT liability are judged (a document that could not be posted
+     *      later is not issued), and the payment part each document will print is taken again
+     *      ({@see bookedPaymentPart()}) and checked by `QrBill` — before a number is drawn
+     *      (owner 2026-10-13).
+     *   4. The numbers drawn — `next('document.YYMM')`, the first WRITES of the unit of work — in a
+     *      fixed order: invoice date, then id. So a batch is gapless per month and numbered by
+     *      date; the 10000th document of a month is refused (`number-range-full`). Each document
+     *      gets its number and its numbered payment part (`Invoice::assignNumber()`).
+     *   5. Per document, in the same order: the STAMP of revision 1 (`Invoicing\DocumentStamp`,
+     *      unique against every archived version), `Invoice::markIssued()`, the PDF rendered ONCE
+     *      and stored as a file (`Pdf\InvoiceArchive::archive()`), its `invoice_revision` row.
      *
-     * A refusal of the bookkeeping
-     * ({@see \Z77\Module\Debtor\Accounting\AccountingRefusedException}) or a
-     * unique-index failure at commit ends the unit of work — no state
-     * changes, no document number and no journal number consumed, nothing
-     * half-written; the caller does not retry inside (plan §6.6 contract).
-     *
-     * The caller names the version it SAW per document (review 2026-09-23,
-     * the `reinvoice()` model): a document re-issued between the caller's
-     * look and its finalize is refused with {@see InvoiceConflictException}
-     * instead of being finalized with content the caller never checked.
-     *
-     * Finalizing twice is REFUSED (`not-invoicing`), not idempotent: a batch
-     * that names a final document is a stale list, and the caller should
-     * see that rather than get a silent «done».
+     * A refusal or a failure at commit ends the unit of work — no state, no number, no row; the
+     * archive files this call wrote are removed again (when it owns the unit of work). The caller
+     * names the version it SAW per document (DEBTOR-FINAL-001): a document re-issued in between is
+     * refused with {@see InvoiceConflictException}. Issuing twice is REFUSED (`not-invoicing`), not
+     * idempotent — the screen recognises a repeated submit itself.
      *
      * @param list<array{id: int, version: int}> $documents
      * @return list<Invoice> in the order they were numbered (invoice date, then id)
-     * @throws InvoiceRefusedException  NOT_FOUND | NOT_INVOICING | NUMBER_RANGE_FULL | DATES | TARGET_UNKNOWN | TARGET_INACTIVE | PAYMENT_PART | VAT_LIABILITY_CHANGED
+     * @throws InvoiceRefusedException  NOT_FOUND | NOT_INVOICING | NUMBER_RANGE_FULL | DATES | TARGET_UNKNOWN | TARGET_INACTIVE | PAYMENT_PART | VAT_LIABILITY_CHANGED | ACCOUNT_*
      * @throws InvoiceConflictException a document is at another version than the caller saw
+     */
+    public function issue(array $documents): array
+    {
+        return $this->issueBatch($documents, 'issue', post: false);
+    }
+
+    /**
+     * Issue AND post in one step — the ONE sanctioned caller is the dunning run's fee document
+     * (ADR-054 decision 2, owner decision O2): derived from a POSTED invoice, without an editing
+     * use case, it never enters the Faktura-Journal. Exactly {@see issue()} (number, stamp,
+     * archived PDF), then per document, in number order, `PostingBuilder` → `AccountingGateway::
+     * post()` → `final` (`Invoice::post()`, no journal protocol) — in the SAME unit of work
+     * (joining the caller's). Lock order: ranges → rows → `journal-entry.*`.
+     *
+     * @param list<array{id: int, version: int}> $documents
+     * @return list<Invoice> in the order they were numbered
+     * @throws InvoiceRefusedException  as issue()
+     * @throws InvoiceConflictException
      * @throws \Z77\Module\Debtor\Accounting\AccountingRefusedException
      */
     public function finalize(array $documents): array
     {
+        return $this->issueBatch($documents, 'finalize', post: true);
+    }
+
+    /**
+     * @param list<array{id: int, version: int}> $documents
+     * @return list<Invoice>
+     */
+    private function issueBatch(array $documents, string $method, bool $post): array
+    {
         $versions = [];
         foreach ($documents as $i => $document) {
             if (!is_array($document) || !isset($document['id'], $document['version'])) {
-                throw new \InvalidArgumentException("finalize() takes a list of ['id' => int, 'version' => int] pairs — item {$i} is not one");
+                throw new \InvalidArgumentException("{$method}() takes a list of ['id' => int, 'version' => int] pairs — item {$i} is not one");
             }
             $versions[(int) $document['id']] = (int) $document['version'];
         }
@@ -347,8 +369,8 @@ final class InvoicingService
         if ($ids === []) {
             return [];
         }
-        $gateway    = $this->gateway();
-        $receivable = (new DebtorAccounts($this->em))->postableNumber('receivable');
+        $gateway    = $post ? $this->gateway() : null;
+        $receivable = $post ? (new DebtorAccounts($this->em))->postableNumber('receivable') : '';
         $now        = new \DateTimeImmutable();
 
         // 1. The month ranges of the batch, created ahead (DOCTRINE-NR-003). Read in SQL without a lock — not as
@@ -360,70 +382,103 @@ final class InvoicingService
         foreach ($months as $range) {
             $ranges->create($range);
         }
+        $transaction = $this->em->getTransaction(Invoice::class);
+        $owned       = !$transaction->isOpen();
 
-        return $this->em->getTransaction(Invoice::class)->run(function () use ($ids, $versions, $gateway, $receivable, $now, $months, $ranges): array {
-            // 2. The month ranges FIRST, in name order (lock order: document.YYMM → invoice rows → journal-entry.*).
-            foreach ($months as $range) {
-                $ranges->create($range);
-            }
-
-            // 3. Every row of the batch, locked in id order.
-            $locked   = [];
-            $payments = [];
-            $sorted = $ids;
-            sort($sorted);
-            foreach ($sorted as $id) {
-                $invoice = $this->invoices()->lockForUpdate($id);
-                if ($invoice === null) {
-                    throw new InvoiceRefusedException(InvoiceRefusedException::NOT_FOUND, "Dokument {$id} gibt es nicht.");
+        try {
+            return $transaction->run(function () use ($ids, $versions, $gateway, $receivable, $now, $months, $ranges, $post): array {
+                // 2. The month ranges FIRST, in name order (lock order: document.YYMM → invoice rows → journal-entry.*).
+                foreach ($months as $range) {
+                    $ranges->create($range);
                 }
-                if ($invoice->getVersion() !== $versions[$id]) {
-                    throw new InvoiceConflictException($id, $versions[$id]);
-                }
-                $this->assertInvoicing($invoice);
-                $this->assertStoredRevenueAccounts($invoice);
-                // A draft keeps the amounts of its last save; composed under another VAT liability than
-                // the mandator's now, it is REFUSED (owner 2026-10-21) — saved again, the user sees the
-                // amount that will be booked. Never recomposed here. Only a document with a PRICED line
-                // tells: a text-only one carries no code either way.
-                $priced = array_filter($invoice->getLines(), static fn(InvoiceLine $line) => $line->getUnitPrice() !== null) !== [];
-                if ($priced && $invoice->carriesVat() !== $this->chargesVat($invoice->kind(), $invoice->getCreditNoteOf())) {
-                    throw new InvoiceRefusedException(InvoiceRefusedException::VAT_LIABILITY_CHANGED, $invoice->kind()->label() . ' (Entwurf ' . $id . '): die MWST-Pflicht des Mandanten hat sich seit dem Speichern geändert — den Entwurf öffnen und neu speichern, dann verbuchen.');
-                }
-                if (!in_array($this->documentRange($invoice->getInvoiceDate()), $months, true)) {
-                    throw new InvoiceConflictException($id, $versions[$id]);   // re-dated between the read and the lock
-                }
-                // The payment part this booking prints, checked BEFORE any number of the batch is drawn
-                // (owner 2026-10-13, review H5): a document is never booked irrevocably without a
-                // printable payment part.
-                $payments[$id] = $this->printablePaymentPart($invoice);
-                $locked[$id]   = $invoice;
-            }
 
-            // 4. The numbers — the first writes — by invoice date, then id: gapless per month, numbered by date.
-            $order = array_values($locked);
-            usort($order, static fn(Invoice $a, Invoice $b) => [$a->getInvoiceDate()->format('Y-m-d'), $a->getId()] <=> [$b->getInvoiceDate()->format('Y-m-d'), $b->getId()]);
-            /** @var DebtorProfileRepository $profiles */
-            $profiles = $this->em->getRepository(DebtorProfile::class);
-            foreach ($order as $invoice) {
-                $payment        = $payments[(int) $invoice->getId()];
-                $number         = $this->drawNumber($ranges, $invoice->getInvoiceDate());
-                $customerNumber = $profiles->findByContact($invoice->getContact())?->getCustomerNumber() ?? 0;
-                $invoice->assignNumber($number, $payment->numbered($customerNumber, $number, self::paymentMessage($invoice, $number)));
-            }
+                // 3. Every row of the batch, locked in id order.
+                $locked   = [];
+                $payments = [];
+                $sorted   = $ids;
+                sort($sorted);
+                foreach ($sorted as $id) {
+                    $invoice = $this->invoices()->lockForUpdate($id);
+                    if ($invoice === null) {
+                        throw new InvoiceRefusedException(InvoiceRefusedException::NOT_FOUND, "Dokument {$id} gibt es nicht.");
+                    }
+                    if ($invoice->getVersion() !== $versions[$id]) {
+                        throw new InvoiceConflictException($id, $versions[$id]);
+                    }
+                    $this->assertInvoicing($invoice);
+                    $this->assertStoredRevenueAccounts($invoice);
+                    // A draft keeps the amounts of its last save; composed under another VAT liability than
+                    // the mandator's now, it is REFUSED (owner 2026-10-21) — saved again, the user sees the
+                    // amount that will be issued. Never recomposed here. Only a document with a PRICED line
+                    // tells: a text-only one carries no code either way.
+                    $priced = array_filter($invoice->getLines(), static fn(InvoiceLine $line) => $line->getUnitPrice() !== null) !== [];
+                    if ($priced && $invoice->carriesVat() !== $this->chargesVat($invoice->kind(), $invoice->getCreditNoteOf())) {
+                        throw new InvoiceRefusedException(InvoiceRefusedException::VAT_LIABILITY_CHANGED, $invoice->kind()->label() . ' (Entwurf ' . $id . '): die MWST-Pflicht des Mandanten hat sich seit dem Speichern geändert — den Entwurf öffnen und neu speichern, dann fakturieren.');
+                    }
+                    if (!in_array($this->documentRange($invoice->getInvoiceDate()), $months, true)) {
+                        throw new InvoiceConflictException($id, $versions[$id]);   // re-dated between the read and the lock
+                    }
+                    // The payment part this issue prints, checked BEFORE any number of the batch is drawn
+                    // (owner 2026-10-13, review H5): a document is never issued irrevocably without a
+                    // printable payment part.
+                    $payments[spl_object_id($invoice)] = $this->printablePaymentPart($invoice);
+                    $locked[$id] = $invoice;
+                }
 
-            // 5. Post and finalize, in the same order.
-            $done = [];
-            foreach ($order as $invoice) {
-                $request = PostingBuilder::build($invoice, $receivable);
-                $ref     = $request === null ? null : $gateway->post($request);
-                $invoice->finalize($ref, $this->actor, $now);
-                $this->em->persist($invoice);
-                $done[] = $invoice;
-            }
+                // 4. + 5. The numbers — the first writes — by invoice date, then id; stamp, issue, archive.
+                $order = $this->numberAndIssue(array_values($locked), $payments, $ranges, $now);
 
-            return $done;
-        });
+                // The dunning fee only (finalize()): posted at once, in the same order.
+                if ($post) {
+                    foreach ($order as $invoice) {
+                        $request = PostingBuilder::build($invoice, $receivable);
+                        $invoice->post($request === null ? null : $gateway->post($request), null, $this->actor, $now);
+                        $this->em->persist($invoice);
+                    }
+                }
+
+                return $order;
+            });
+        } catch (\Throwable $e) {
+            if ($owned) {
+                $this->archive()->discardWritten();   // the rows rolled back — no file may stay without its row
+            }
+            throw $e;
+        }
+    }
+
+    /**
+     * Steps 4 and 5 of {@see issue()} (and of {@see invoiceAndIssue()}): the numbers drawn in the
+     * order invoice date, then id; per document its numbered payment part, its STAMP, `issued`,
+     * its PDF archived with the `invoice_revision` row of revision 1. Inside the caller's unit of
+     * work, after every row is locked and judged.
+     *
+     * @param list<Invoice>               $invoices locked, judged, with ids
+     * @param array<int, PaymentSnapshot> $payments the printable payment part by spl_object_id
+     * @return list<Invoice> in number order
+     */
+    private function numberAndIssue(array $invoices, array $payments, NumberRangeRepository $ranges, \DateTimeImmutable $now): array
+    {
+        usort($invoices, static fn(Invoice $a, Invoice $b) => [$a->getInvoiceDate()->format('Y-m-d'), $a->getId()] <=> [$b->getInvoiceDate()->format('Y-m-d'), $b->getId()]);
+        /** @var DebtorProfileRepository $profiles */
+        $profiles  = $this->em->getRepository(DebtorProfile::class);
+        $revisions = $this->em->getRepository(InvoiceRevision::class);
+        $customers = [];
+        foreach ($invoices as $invoice) {
+            $number   = $this->drawNumber($ranges, $invoice->getInvoiceDate());
+            $customer = $customers[spl_object_id($invoice)] = $profiles->findByContact($invoice->getContact())?->getCustomerNumber() ?? 0;
+            $invoice->assignNumber($number, $payments[spl_object_id($invoice)]->numbered($customer, $number, self::paymentMessage($invoice, $number)));
+        }
+        $batch = [];
+        foreach ($invoices as $invoice) {
+            $stamp = DocumentStamp::of($invoice, $customers[spl_object_id($invoice)], static fn(string $s): bool => isset($batch[$s]) || $revisions->findOneBy(['documentStamp' => $s]) !== null);
+            $batch[$stamp] = true;
+            $invoice->markIssued($stamp, $this->actor, $now);
+            $this->em->persist($invoice);
+            $this->em->persist($this->archive()->archive($invoice, $this->actor, $now));
+        }
+
+        return $invoices;
     }
 
     // ── the seams of a source that is its own draft (P7 slim, plan §7, owner go 2026-10-14) ──
@@ -444,7 +499,7 @@ final class InvoicingService
      *
      * What the payment part would lack is not a refusal here (the draft is still being
      * written): ask {@see bookingBill()} of the preview — its `problems()` are what
-     * {@see invoiceAndFinalize()} and {@see finalize()} refuse (`payment-part`).
+     * {@see invoiceAndIssue()} and {@see issue()} refuse (`payment-part`).
      *
      * Do not persist the result, and do not hand it to anything that writes: a preview is not a
      * document (it has no lines in the database, no version, no origin row).
@@ -490,7 +545,7 @@ final class InvoicingService
     /**
      * Creates the month ranges `document.YYMM` of $invoiceDates ahead of a unit of work that
      * will draw from them (DOCTRINE-NR-003) — for a caller that opens its OWN unit of work and
-     * lets {@see invoiceAndFinalize()} join it (an order's booking print): inside that unit of
+     * lets {@see invoiceAndIssue()} join it (an order's booking print): inside that unit of
      * work the ranges are only locked, never created, so the first document of a new month
      * never takes the new-row path under contention (DEBTOR-NR-001). Idempotent, consumes no
      * number, committed at once.
@@ -523,7 +578,7 @@ final class InvoicingService
      * terms (`PaymentTermsRepository::defaultForNewDebtor()`, owner 2026-10-12), the customer
      * number drawn from `customer` — in its OWN unit of work, BEFORE a source books
      * (plan D9, answer Q4): the profile of a prospect who was quoted is opened when the first
-     * invoice is booked. Never inside {@see invoiceAndFinalize()}'s unit of work: that would
+     * invoice is booked. Never inside {@see invoiceAndIssue()}'s unit of work: that would
      * draw `customer` next to `document.YYMM` and widen the lock order. A profile left over
      * after a refused booking is harmless — «Debitor» can be switched off while no document
      * exists.
@@ -567,12 +622,14 @@ final class InvoicingService
     }
 
     /**
-     * Issue AND book — the booking print of a source that is its own draft (an order, plan §7,
-     * ADR-040 addendum 2026-10-14): the documents are created and finalized in ONE unit of work
-     * without a stored draft ever existing. Kind `invoice` only. JOINS the caller's open unit
-     * of work (the order locks its rows first and writes its own status after this call) or
-     * opens its own; any refusal rolls back the WHOLE unit of work — the caller's writes
-     * included.
+     * «Fakturieren» of a source that is its own draft (an order, plan §7, ADR-040 addendum
+     * 2026-10-14; since the Faktura-Journal, ADR-054 decision 4: issue WITHOUT posting — until
+     * 2026-10-23 `invoiceAndFinalize()`, which also posted): the documents are created and issued
+     * (number, stamp, archived PDF, state `issued`) in ONE unit of work without a stored draft ever
+     * existing. Kind `invoice` only. JOINS the caller's open unit of work (the order locks its rows
+     * first and writes its own status after this call) or opens its own; any refusal rolls back
+     * the WHOLE unit of work — the caller's writes included. NOTHING is posted: «Journal verbuchen»
+     * posts them ({@see JournalPostingService}).
      *
      * Inside, debtor's lock order (debtor.md «Lock order of the module»):
      *
@@ -583,27 +640,27 @@ final class InvoicingService
      *      off) — no profile is `no-debtor-profile`: open it BEFORE with
      *      {@see openDebtorProfile()} (plan D9), never inside;
      *   3. THEN the reads that judge: `compose()` of every draft (party, terms, tax codes and
-     *      rates, the revenue accounts incl. «auf Belegen wählbar», the receivable account) —
-     *      after the last lock, so the read view sees what the lock holders committed;
+     *      rates, the revenue accounts incl. «auf Belegen wählbar») — after the last lock, so the
+     *      read view sees what the lock holders committed;
      *   4. the documents inserted (flushed for their ids); the payment part each will print
      *      taken NOW and checked (`QrBill::problems()` → `payment-part`) BEFORE any number;
      *   5. the numbers drawn in the order invoice date, then id (`number-range-full` at the
-     *      10000th of a month); each numbered with its payment part;
-     *   6. per document `PostingBuilder` → `AccountingGateway::post()` (`journal-entry.*`) →
-     *      `final`. Posting key unchanged: `invoice:{id}:final`.
+     *      10000th of a month); each numbered with its payment part, stamped, `issued`, its PDF
+     *      archived ({@see numberAndIssue()}).
      *
      * The drafts' origin (`sourceType` / `sourceRef`, per line too) is the caller's and opaque.
-     * IDEMPOTENCY IS THE CALLER'S: this method books what it is given every time — a source
-     * must refuse a second booking itself (an order already linked to an invoice) and decide
-     * what a repeated submit answers (plan §7, «idempotent on the screen»).
+     * IDEMPOTENCY IS THE CALLER'S: this method issues what it is given every time — a source
+     * must refuse a second issue itself (an order already linked to an invoice) and decide what a
+     * repeated submit answers (plan §7, «idempotent on the screen»). A joining caller whose own
+     * unit of work fails AFTER this call may leave the archive files of this call behind
+     * ({@see discardArchived()} removes them).
      *
      * @param list<InvoiceDraft> $drafts
-     * @return list<Invoice> the booked documents, in the order they were numbered
-     * @throws InvoiceRefusedException any refusal of invoice() or finalize() — nothing written
-     * @throws \Z77\Module\Debtor\Accounting\AccountingRefusedException
+     * @return list<Invoice> the issued documents, in the order they were numbered
+     * @throws InvoiceRefusedException any refusal of invoice() or issue() — nothing written
      * @throws \InvalidArgumentException a draft that is not an InvoiceDraft of kind invoice
      */
-    public function invoiceAndFinalize(array $drafts): array
+    public function invoiceAndIssue(array $drafts): array
     {
         if ($drafts === []) {
             return [];
@@ -612,7 +669,7 @@ final class InvoicingService
         $dates      = [];
         foreach ($drafts as $i => $draft) {
             if (!$draft instanceof InvoiceDraft || $draft->kind !== InvoiceKind::Invoice) {
-                throw new \InvalidArgumentException("invoiceAndFinalize() books invoices only — item {$i} is no InvoiceDraft of kind invoice");
+                throw new \InvalidArgumentException("invoiceAndIssue() issues invoices only — item {$i} is no InvoiceDraft of kind invoice");
             }
             $contactIds[$draft->contactId] = $draft->contactId;
             $dates[] = $draft->invoiceDate;
@@ -620,73 +677,82 @@ final class InvoicingService
         sort($contactIds);
         $months      = $this->monthRangesOf($dates);   // a date outside 2000–2099 is refused before any lock
         $transaction = $this->em->getTransaction(Invoice::class);
+        $owned       = !$transaction->isOpen();
         /** @var NumberRangeRepository $ranges */
         $ranges = $this->em->getRepository(NumberRange::class);
-        if (!$transaction->isOpen()) {
+        if ($owned) {
             foreach ($months as $range) {
-                $ranges->create($range);   // standalone: created ahead and committed (DOCTRINE-NR-003), as finalize() does
+                $ranges->create($range);   // standalone: created ahead and committed (DOCTRINE-NR-003), as issue() does
             }
         }
-        $gateway = $this->gateway();
 
-        return $transaction->run(function () use ($drafts, $contactIds, $months, $ranges, $gateway): array {
-            // 1. The month ranges FIRST, in name order.
-            foreach ($months as $range) {
-                $ranges->create($range);
-            }
-            // 2. The profile rows SHARED, by contact id — locking reads, no read view yet.
-            /** @var DebtorProfileRepository $profiles */
-            $profiles = $this->em->getRepository(DebtorProfile::class);
-            foreach ($contactIds as $contactId) {
-                if ($profiles->lockForContact($contactId, exclusive: false) === null) {
-                    $name = $this->em->getRepository(Contact::class)->find($contactId)?->displayName() ?? "Kontakt {$contactId}";
-                    throw new InvoiceRefusedException(InvoiceRefusedException::NO_DEBTOR_PROFILE, '«' . $name . '» ist kein Debitor (mehr) — nichts verbucht; im Kontakt als Debitor festlegen und nochmals versuchen.');
+        try {
+            return $transaction->run(function () use ($drafts, $contactIds, $months, $ranges): array {
+                // 1. The month ranges FIRST, in name order.
+                foreach ($months as $range) {
+                    $ranges->create($range);
                 }
-            }
+                // 2. The profile rows SHARED, by contact id — locking reads, no read view yet.
+                /** @var DebtorProfileRepository $profiles */
+                $profiles = $this->em->getRepository(DebtorProfile::class);
+                foreach ($contactIds as $contactId) {
+                    if ($profiles->lockForContact($contactId, exclusive: false) === null) {
+                        $name = $this->em->getRepository(Contact::class)->find($contactId)?->displayName() ?? "Kontakt {$contactId}";
+                        throw new InvoiceRefusedException(InvoiceRefusedException::NO_DEBTOR_PROFILE, '«' . $name . '» ist kein Debitor (mehr) — nichts fakturiert; im Kontakt als Debitor festlegen und nochmals versuchen.');
+                    }
+                }
 
-            // 3. The reads that judge, after the last lock.
-            $receivable = (new DebtorAccounts($this->em))->postableNumber('receivable');
-            $now        = new \DateTimeImmutable();
-            $issued     = [];
-            foreach ($drafts as $draft) {
-                $composed = $this->compose($draft, null);
-                $invoice  = new Invoice($draft->kind, $composed['contact'], null, $this->actor, $now);
-                [$lines, $taxes] = $this->materialize($invoice, $composed);
-                $invoice->issue($composed['snapshot'], $lines, $taxes, $this->paymentPart($invoice, $composed));
-                $issued[] = $invoice;
-            }
+                // 3. The reads that judge, after the last lock.
+                $now    = new \DateTimeImmutable();
+                $issued = [];
+                foreach ($drafts as $draft) {
+                    $composed = $this->compose($draft, null);
+                    $invoice  = new Invoice($draft->kind, $composed['contact'], null, $this->actor, $now);
+                    [$lines, $taxes] = $this->materialize($invoice, $composed);
+                    $invoice->issue($composed['snapshot'], $lines, $taxes, $this->paymentPart($invoice, $composed));
+                    $issued[] = $invoice;
+                }
 
-            // 4. The payment part each will print — checked before anything is written or numbered.
-            $payments = [];
-            foreach ($issued as $invoice) {
-                $payments[spl_object_id($invoice)] = $this->printablePaymentPart($invoice);
-                $this->em->persist($invoice);
-            }
-            $this->em->flush();   // the ids: the order of the numbers and the posting key need them
+                // 4. The payment part each will print — checked before anything is written or numbered.
+                $payments = [];
+                foreach ($issued as $invoice) {
+                    $payments[spl_object_id($invoice)] = $this->printablePaymentPart($invoice);
+                    $this->em->persist($invoice);
+                }
+                $this->em->flush();   // the ids: the order of the numbers and the stamp need them
 
-            // 5. The numbers, by invoice date, then id.
-            usort($issued, static fn(Invoice $a, Invoice $b) => [$a->getInvoiceDate()->format('Y-m-d'), $a->getId()] <=> [$b->getInvoiceDate()->format('Y-m-d'), $b->getId()]);
-            foreach ($issued as $invoice) {
-                $number         = $this->drawNumber($ranges, $invoice->getInvoiceDate());
-                $customerNumber = $profiles->findByContact($invoice->getContact())?->getCustomerNumber() ?? 0;
-                $invoice->assignNumber($number, $payments[spl_object_id($invoice)]->numbered($customerNumber, $number, self::paymentMessage($invoice, $number)));
-            }
+                // 5. Numbers, stamps, `issued`, archive.
+                $issued = $this->numberAndIssue($issued, $payments, $ranges, $now);
+                // Written NOW, not first at the caller's commit: a joining caller reads the issued state in the same
+                // unit of work (SQL reads such as PaymentStates see the rows, not the identity map), and a unique-index
+                // failure surfaces inside this call (found on the dev DB 2026-10-14: without it the rows read `invoicing`).
+                $this->em->flush();
 
-            // 6. Post and finalize, in the same order.
-            foreach ($issued as $invoice) {
-                $request = PostingBuilder::build($invoice, $receivable);
-                $invoice->finalize($request === null ? null : $gateway->post($request), $this->actor, $now);
-                $this->em->persist($invoice);
+                return $issued;
+            });
+        } catch (\Throwable $e) {
+            if ($owned) {
+                $this->archive()->discardWritten();
             }
-            // Written NOW, not first at the caller's commit: a joining caller reads the booked state in the same
-            // unit of work (SQL reads such as PaymentStates see the rows, not the identity map), and a unique-index
-            // failure surfaces inside this call (found on the dev DB 2026-10-14: without it the rows read `invoicing`).
-            $this->em->flush();
-
-            return $issued;
-        });
+            throw $e;
+        }
     }
 
+    /**
+     * Removes the archive files this service wrote in a unit of work that did NOT commit — for a
+     * caller that JOINED {@see invoiceAndIssue()} into its own unit of work and saw it fail
+     * afterwards (an order's «Fakturieren»: its status move or stock call refused). Harmless when
+     * nothing was written. Never call it after a commit: the rows name those files.
+     */
+    public function discardArchived(): void
+    {
+        $this->archive()->discardWritten();
+    }
+
+    private function archive(): InvoiceArchive
+    {
+        return $this->archive ??= new InvoiceArchive($this->em);
+    }
     /**
      * The month ranges `document.YYMM` of $dates, unique, in NAME order — the order they are
      * locked in (two batches never wait on each other crosswise).
@@ -771,7 +837,7 @@ final class InvoicingService
             throw new InvoiceRefusedException(
                 InvoiceRefusedException::NUMBER_RANGE_FULL,
                 'Für den Monat ' . $invoiceDate->format('m.Y') . ' sind alle ' . DocumentNumber::PER_MONTH
-                . ' Belegnummern vergeben — ein weiteres Dokument mit Rechnungsdatum in diesem Monat kann nicht verbucht werden.',
+                . ' Belegnummern vergeben — ein weiteres Dokument mit Rechnungsdatum in diesem Monat kann nicht fakturiert werden.',
                 $e
             );
         }
@@ -902,7 +968,9 @@ final class InvoicingService
             if (!$creditNoteOf->isPosted()) {
                 // While the invoice is `invoicing` nothing is posted: the correction is reinvoice(), and a
                 // credit note would mirror a posting that does not exist.
-                throw new InvoiceRefusedException(InvoiceRefusedException::CREDIT_NOTE_TARGET, $creditNoteOf->documentName() . ' ist noch ein Entwurf — sie wird bearbeitet, nicht gutgeschrieben.');
+                throw new InvoiceRefusedException(InvoiceRefusedException::CREDIT_NOTE_TARGET, $creditNoteOf->isInJournal()
+                    ? $creditNoteOf->documentName() . ' steht im Faktura-Journal und ist noch nicht verbucht — eine Gutschrift erst nach «Journal verbuchen».'
+                    : $creditNoteOf->documentName() . ' ist noch ein Entwurf — sie wird bearbeitet, nicht gutgeschrieben.');
             }
             if ($creditNoteOf->getContact()->getId() !== $contact->getId()) {
                 throw new InvoiceRefusedException(InvoiceRefusedException::CREDIT_NOTE_TARGET, $creditNoteOf->documentName() . ' gehört einer anderen Partei.');
@@ -1094,7 +1162,7 @@ final class InvoicingService
     /**
      * The payment part of the DRAFT $invoice: target, account, reference type
      * and creditor as they read now — the reference and the message follow
-     * with the number at the booking print ({@see finalize()},
+     * with the number at «Fakturieren» ({@see issue()},
      * `PaymentSnapshot::numbered()`).
      *
      * @param array{target: ?PaymentTarget, creditor: ?Creditor} $composed
@@ -1138,7 +1206,7 @@ final class InvoicingService
      * {@see bookedPaymentPart()} (a target gone or inactive is the bill's one problem), for a
      * booked document from its snapshot. The draft's mask (its facts block) and its list «Vor dem
      * Buchungsdruck beheben» read this (owner 2026-10-13, review H5), so what they report is
-     * exactly what {@see finalize()} refuses.
+     * exactly what {@see issue()} refuses.
      */
     public function bookingBill(Invoice $invoice): QrBill
     {
@@ -1319,7 +1387,7 @@ final class InvoicingService
     }
 
     /**
-     * Gross mode: the per-line tax share `finalize()` will post must leave
+     * Gross mode: the per-line tax share the journal posting will post must leave
      * every line a positive net ({@see TaxShares}). Run when the DRAFT is
      * saved, so the degenerate document (a code made of 0.01 lines) is
      * refused while it can still be edited — not first at the booking

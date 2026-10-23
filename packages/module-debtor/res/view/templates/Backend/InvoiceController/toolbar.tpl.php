@@ -2,7 +2,7 @@
 /**
  * Documents — the toolbar (hc2): the three views as tabs (`.be-viewtabs`,
  * no counts — owner 2026-10-16: «less is more»), nothing else. «+ Rechnung» stands in the action cell
- * (`act.tpl.php`), «Buchungsdruck …» is bound to the selection and stands
+ * (`act.tpl.php`), «Fakturieren …» is bound to the selection and stands
  * in the bar above the list (`listAction.tpl.php`) — ADR-033 rev. 2026-10-08.
  *
  * Part of the fragment: added by the trait (financial.md, «fragment slots»).

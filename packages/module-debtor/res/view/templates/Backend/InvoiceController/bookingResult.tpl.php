@@ -1,8 +1,8 @@
 <?php
 /**
- * The booking print's RESULT LIST (step 3 of the mail plan, owner 2026-10-22) — where the
- * booking print lands, of drafts (this module) or of orders (module-order): exactly the
- * documents just booked, in number order. Before that day the booking print opened the PDFs
+ * The RESULT LIST of «Fakturieren» (step 3 of the mail plan, owner 2026-10-22; the booking
+ * print until 2026-10-23) — where it lands, of drafts (this module) or of orders (module-order):
+ * exactly the documents just issued, in number order; their PDFs are the ARCHIVED files. Before that day the booking print opened the PDFs
  * in a new tab; now the user chooses: one PDF per row, «Alle als ein PDF» (printing), «Alle als
  * ZIP», «Alle per E-Mail senden …».
  *
@@ -69,10 +69,10 @@ if ($status !== null && $status['waiting'] + $status['sent'] > 0) {
             <?php if ($back !== ''): ?>
             <a class="be-btn be-btn--quiet" href="<?= e($back) ?>">Zurück</a>
             <?php endif; ?>
-            <a class="be-btn be-btn--quiet" href="<?= e($actionBase . '/list?view=final') ?>">Zur Liste «Verbucht»</a>
+            <a class="be-btn be-btn--quiet" href="<?= e($actionBase . '/list?view=issued') ?>">Zur Liste «Fakturiert»</a>
         </div>
         <div class="be-list__section-header">
-            <h2 class="be-list__section-title">Buchungsdruck <small class="be-list__cell--muted">· <?= $count ?> <?= $count === 1 ? 'Dokument' : 'Dokumente' ?> verbucht<?= $total !== null ? ' · ' . e($fmt($total)) : '' ?></small></h2>
+            <h2 class="be-list__section-title">Fakturiert <small class="be-list__cell--muted">· <?= $count ?> <?= $count === 1 ? 'Dokument' : 'Dokumente' ?><?= $total !== null ? ' · ' . e($fmt($total)) : '' ?></small></h2>
         </div>
         <?php if ($band !== ''): ?>
         <div class="be-list__bar" role="status" data-mail-status>
@@ -108,8 +108,8 @@ if ($status !== null && $status['waiting'] + $status['sent'] > 0) {
             <?php endforeach; ?>
         </div>
         <p class="be-form__hint">
-            Die Dokumente sind verbucht und unveränderlich. <?= $mailable ? ($withMail === $count ? 'Alle haben eine E-Mail-Adresse.' : $withMail . ' von ' . $count . ' haben eine E-Mail-Adresse — die anderen werden beim Versand übersprungen.') : 'Für den Versand per E-Mail fehlt das Modul «Mailing» (Postausgang).' ?>
-            Diese Liste bleibt über ihre Adresse erreichbar; die PDFs lassen sich auch später in der Liste «Verbucht» öffnen.
+            Die Dokumente sind fakturiert, ihre PDFs unveränderlich abgelegt; verbucht werden sie mit «Journal verbuchen» im Faktura-Journal. <?= $mailable ? ($withMail === $count ? 'Alle haben eine E-Mail-Adresse.' : $withMail . ' von ' . $count . ' haben eine E-Mail-Adresse — die anderen werden beim Versand übersprungen.') : 'Für den Versand per E-Mail fehlt das Modul «Mailing» (Postausgang).' ?>
+            Diese Liste bleibt über ihre Adresse erreichbar; die PDFs lassen sich auch später in den Listen «Fakturiert» und «Verbucht» öffnen.
         </p>
     </div>
 </div>

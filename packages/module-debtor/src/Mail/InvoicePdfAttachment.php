@@ -4,6 +4,7 @@ namespace Z77\Module\Debtor\Mail;
 
 use Z77\Core\DI;
 use Z77\Module\Debtor\Entities\Invoice;
+use Z77\Module\Debtor\Pdf\InvoiceArchive;
 use Z77\Module\Debtor\Pdf\InvoicePdf;
 use Z77\Module\Debtor\Repositories\InvoiceRepository;
 use Z77\Module\Mailing\Attachments\AttachmentProvider;
@@ -17,12 +18,16 @@ use Z77\Shared\Mail\Attachment;
  * this class is only ever loaded where module-mailing is installed (debtor
  * does not require it, `composer.json` suggest).
  *
- *   - {@see accepts()} at QUEUE time: the id names a FINAL document. A draft
- *     has no number and prints only as a preview — never mailed;
- *   - {@see resolve()} at SEND time: the PDF rendered from the document's
- *     SNAPSHOT through {@see InvoicePdf::of()} — deterministic, the same file
- *     as the reprint and as the booking print (up to the PDF's creation
- *     stamp). A throw is a retry of that mail (the outbox's contract).
+ *   - {@see accepts()} at QUEUE time: the id names an ISSUED document —
+ *     `issued` (in the Faktura-Journal, ADR-054 decision 21) or `final`. A draft
+ *     has no number and prints only as a preview — never mailed; a void one never;
+ *   - {@see resolve()} at SEND time: the ARCHIVED PDF of the document's current
+ *     version ({@see InvoiceArchive::pdf()}, owner decision O13 of 2026-10-23) —
+ *     byte for byte the file «Fakturieren» stored, SHA-256 checked; a document
+ *     posted before the journal renders from its snapshot as before. A missing
+ *     or altered archive file throws — a retry of that mail (the outbox's
+ *     contract), the cause in the error log. The revision-bound reference
+ *     `invoice-pdf:<id>@<revision>` comes with step 8 of the build plan.
  */
 final class InvoicePdfAttachment implements AttachmentProvider
 {
@@ -41,13 +46,13 @@ final class InvoicePdfAttachment implements AttachmentProvider
     {
         $document = preg_match('/^[1-9]\d{0,9}$/', $id) === 1 ? $this->invoices()->withLines((int) $id) : null;
         if ($document === null || !$document->isIssued()) {
-            throw new \RuntimeException("Invoice {$id} is missing or not booked — no PDF to attach.");
+            throw new \RuntimeException("Invoice {$id} is missing or not issued — no PDF to attach.");
         }
 
         return new Attachment(
             InvoicePdf::fileName($document),
             'application/pdf',
-            InvoicePdf::of($document, DI::getUnifiedEntityManager())->output()
+            (new InvoiceArchive(DI::getUnifiedEntityManager()))->pdf($document)
         );
     }
 

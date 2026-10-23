@@ -37,7 +37,7 @@ use Z77\Shared\Money\Money;
  * «Degrade quietly» (wdv's `prepare()`, kept by the owner 2026-09-23): a
  * bill that cannot be built is not an exception but a list of
  * {@see problems()} in German — a DRAFT is saved anyway and its detail lists
- * them under «Vor dem Buchungsdruck beheben»; the booking print REFUSES a
+ * them under «Vor dem Fakturieren beheben»; the booking print REFUSES a
  * document whose payment part has problems (owner 2026-10-13, review H5 —
  * `InvoicingService::finalize()`), so a booked document is never without
  * the payment part it was meant to carry. A debtor block that does not fit

@@ -425,6 +425,13 @@ $readInvoice  = fn(int $id): Invoice => $wireDi()->getRepository(Invoice::class)
 $stateOf      = fn(int $id): string => (string) $db->fetchOne('SELECT state FROM invoice WHERE id = ?', [$id]);
 /** The `{id, version}` pair finalize() takes, with the version the row carries NOW (what a screen would have shown). */
 $at           = fn(int $id): array => ['id' => $id, 'version' => (int) $db->fetchOne('SELECT version FROM invoice WHERE id = ?', [$id])];
+/** «Journal verbuchen» of the WHOLE open Faktura-Journal (ADR-054, step 3) — what a section does that needs POSTED documents after «Fakturieren». */
+$postJournal  = function () use ($wireDi): \Z77\Module\Debtor\Entities\InvoiceJournalPosting {
+    $em = $wireDi();
+    return (new \Z77\Module\Debtor\Services\JournalPostingService($em, 'tester'))->post($em->getRepository(Invoice::class)->journalVersions());
+};
+/** The archived PDFs of the year (ADR-054 decision 25) — what a rollback must leave as it was. */
+$archiveFiles = fn(string $year = '2026'): array => glob($base . '/data/archive/debtor/' . $year . '/*.pdf') ?: [];
 /** The QR-target draft of P3C and BM; `$mid` by reference — Müller's id is known from J on (or restored from a checkpoint). */
 $withTarget = function (string $target, string $date = '2026-06-10') use (&$mid): InvoiceDraft {
     return InvoiceDraft::invoice($mid, day($date), day($date), 'CHF', [
@@ -1286,7 +1293,7 @@ check('I5m the three master-data fragments carry an add action and an active swi
 
 $templateDir = $package . '/res/view/templates/Backend';
 $templates   = glob($templateDir . '/*/*.tpl.php');
-check('I6 every master-data screen has its list template, its edit template and its header slot; the document screens (P3 part 3) add six (since 2026-10-21 the facts partial `_facts` in place of the read view `detail` — one mask), the payment form and the delete confirmation (P4 part 1) two, the bank import list and detail (P4 part 2) two, the dunning list (P4 part 3) one, the open-item list and its toolbar (2026-10-07) two, the action cells of the invoice list and the bank import (ADR-033 rev. 2026-10-08) two — the «+ Debitor» cell of the debtor master data removed 2026-10-12; the row partials of the in-place answers (ADR-047 addendum 2026-10-10: bank transaction + unbooked bar, payment terms, payment target, debtor contact) five; the booking print\'s refusal page (2026-10-10) one; the editor\'s party picker and its «+ Kontakt» window (DEBTOR-CONTACT-001, 2026-10-10) two; the customer picker field and window (2026-10-15) two; its «Debitor anlegen» dialog (2026-10-18) one; the shared editor head (2026-10-19: title, terms + its reload answer, «Debitor anpassen», the fixed party) five and the card «Rechnung» of the invoice one; the list helps of invoices, open items, bank import and dunning (HELP-003, 2026-10-20) four; the result list of the booking print and its mail confirmation (step 3 of the mail plan, 2026-10-22) two; the action row of the result list `resultActions` (2026-10-23) one', count($templates) === 51, count($templates));
+check('I6 every master-data screen has its list template, its edit template and its header slot; the document screens (P3 part 3) add six (since 2026-10-21 the facts partial `_facts` in place of the read view `detail` — one mask), the payment form and the delete confirmation (P4 part 1) two, the bank import list and detail (P4 part 2) two, the dunning list (P4 part 3) one, the open-item list and its toolbar (2026-10-07) two, the action cells of the invoice list and the bank import (ADR-033 rev. 2026-10-08) two — the «+ Debitor» cell of the debtor master data removed 2026-10-12; the row partials of the in-place answers (ADR-047 addendum 2026-10-10: bank transaction + unbooked bar, payment terms, payment target, debtor contact) five; the booking print\'s refusal page (2026-10-10) one; the editor\'s party picker and its «+ Kontakt» window (DEBTOR-CONTACT-001, 2026-10-10) two; the customer picker field and window (2026-10-15) two; its «Debitor anlegen» dialog (2026-10-18) one; the shared editor head (2026-10-19: title, terms + its reload answer, «Debitor anpassen», the fixed party) five and the card «Rechnung» of the invoice one; the list helps of invoices, open items, bank import and dunning (HELP-003, 2026-10-20) four; the result list of the booking print and its mail confirmation (step 3 of the mail plan, 2026-10-22) two; the action row of the result list `resultActions` (2026-10-23) one; the Faktura-Journal (ADR-054 step 3, 2026-10-23: list, action cell, toolbar, confirmation, help) five', count($templates) === 56, count($templates));
 check('I6b the master-data rows are ONE partial each, rendered by the list and answered in place (replaceRow / insertRow, DEBTOR-WIN-003) — no `reload` left for a one-row save or switch of terms, targets or debtors',
     array_reduce([['PaymentTerms', 'paymentTerms'], ['PaymentTarget', 'paymentTarget'], ['DebtorProfile', 'debtorContact']], fn($ok, $p) => $ok
         && str_contains(file_get_contents($templateDir . '/' . $p[0] . 'Controller/listAction.tpl.php'), "partial('Backend/" . $p[0] . "Controller/_row'")
@@ -1312,8 +1319,10 @@ check('I9 the header slots are partials OF THE FRAGMENT (financial.md, «fragmen
     && is_file($templateDir . '/DebtorProfileController/search.tpl.php')
     && is_file($templateDir . '/DebtorController/toolbar.tpl.php')
     && glob($templateDir . '/*/addButton.tpl.php') === []
-    && array_reduce(array_filter(glob($templateDir . '/*/act.tpl.php'), fn($f) => !str_contains($f, '/BankImportController/')), fn($ok, $f) => $ok && substr_count(file_get_contents($f), 'class="be-btn be-btn--primary"') === 1
+    && array_reduce(array_filter(glob($templateDir . '/*/act.tpl.php'), fn($f) => !str_contains($f, '/BankImportController/') && !str_contains($f, '/InvoiceJournalController/')), fn($ok, $f) => $ok && substr_count(file_get_contents($f), 'class="be-btn be-btn--primary"') === 1
         && str_contains(file_get_contents($f), '#icon-plus') && str_contains(file_get_contents($f), 'be-btn__label'), true)
+    // The Faktura-Journal's cell books (ADR-054): the green confirm «Journal verbuchen …» (backend-screen.md §2), no create.
+    && str_contains(file_get_contents($templateDir . '/InvoiceJournalController/act.tpl.php'), 'be-btn be-btn--confirm') && !str_contains(file_get_contents($templateDir . '/InvoiceJournalController/act.tpl.php'), 'be-btn--primary')
     && array_reduce([PaymentTermsControllerTrait::class, PaymentTargetControllerTrait::class, DunningLevelControllerTrait::class],
         fn($ok, $t) => $ok && preg_match("/addPartials\\('act', '[^']+', [^,]+, 'hc1'\\)/", file_get_contents((new \ReflectionClass($t))->getFileName())) === 1, true)
     && !str_contains(file_get_contents((new \ReflectionClass(DebtorProfileControllerTrait::class))->getFileName()), "addPartials('act'"));
@@ -1689,8 +1698,9 @@ check('L6 a final document is immutable: reinvoice → not-invoicing, the row un
     && $readInvoice($inv1->getId())->getVersion() === 3 && count($lineRows($inv1->getId())) === 1);
 $finalEntity   = $readInvoice($inv1->getId());
 $blankSnapshot = (new \ReflectionClass(\Z77\Module\Debtor\Invoicing\DocumentSnapshot::class))->newInstanceWithoutConstructor();
-check('L7 the ENTITY refuses as well, not only the service: finalize() and reissue() on a final document throw',
-    throws(fn() => $finalEntity->finalize(null, 'x', new \DateTimeImmutable()), \LogicException::class)
+check('L7 the ENTITY refuses as well, not only the service: post(), markIssued() and reissue() on a final document throw (ADR-054: post() only from `issued`)',
+    throws(fn() => $finalEntity->post(null, null, 'x', new \DateTimeImmutable()), \LogicException::class)
+    && throws(fn() => $finalEntity->markIssued('abc', 'x', new \DateTimeImmutable()), \LogicException::class)
     && throws(fn() => $finalEntity->reissue($blankSnapshot, [], [], \Z77\Module\Debtor\Entities\PaymentSnapshot::none(), 'x', new \DateTimeImmutable()), \LogicException::class));
 check('L8 a batch naming an unknown id → not-found; an empty batch does nothing; a credit note at 0.00 against the final invoice → negative-total (it must be positive)',
     $refusal(fn() => $service($wireDi())->finalize([['id' => 999999, 'version' => 1]])) === InvoiceRefusedException::NOT_FOUND && $service($wireDi())->finalize([]) === []
@@ -1906,7 +1916,7 @@ check('L35 TaxShares::distribute() directly: [0.01 × 7, 0.20] gross at 8.1 % (t
 // ── M. source guards ─────────────────────────────────────────────────────
 
 echo "M. Source guards for part 2\n";
-check('M1 Invoice has NO setter — the header is written whole by issue() / reissue(), the number by assignNumber() (the booking print), the state by finalize()',
+check('M1 Invoice has NO setter — the header is written whole by issue() / reissue(), the number by assignNumber() («Fakturieren»), the state by markIssued() / post() (ADR-054)',
     array_filter(get_class_methods(Invoice::class), fn($m) => str_starts_with($m, 'set')) === []
     && array_filter(get_class_methods(InvoiceLine::class), fn($m) => str_starts_with($m, 'set')) === []
     && array_filter(get_class_methods(InvoiceTax::class), fn($m) => str_starts_with($m, 'set')) === []);
@@ -1933,15 +1943,17 @@ check('M6 the migration seeds the two former ranges with the statement create() 
     $s = file_get_contents($package . '/res/migrations/Version20260923043935.php');
     return str_contains($s, "VALUES ('invoice', 0), ('credit-note', 0) ON DUPLICATE KEY UPDATE last_number = last_number") && str_contains($s, 'AND last_number = 0');
 })());
-check('M7 InvoicingService::finalize() keeps the module\'s lock order (2026-10-10): the month ranges FIRST (create() inside the unit of work, name order), then the rows (id order), then the numbers drawn, then the journal through the port; invoice() touches no range any more',
+check('M7 InvoicingService keeps the module\'s lock order (2026-10-10; since ADR-054 issue() and finalize() share issueBatch()): the month ranges FIRST (create() inside the unit of work, name order), then the rows (id order), then the numbers drawn, stamped, issued and archived (numberAndIssue()), then — finalize() only — the journal through the port; invoice() touches no range any more',
     (function () use ($package): bool {
         $s = file_get_contents($package . '/src/Services/InvoicingService.php');
-        $f = substr($s, strpos($s, 'public function finalize('));
+        $f = substr($s, strpos($s, 'private function issueBatch('), strpos($s, 'private function numberAndIssue(') - strpos($s, 'private function issueBatch('));
+        $n = substr($s, strpos($s, 'private function numberAndIssue('), 2500);
         $i = substr($s, strpos($s, 'public function invoice('), strpos($s, 'public function reinvoice(') - strpos($s, 'public function invoice('));
         $inUow = substr($f, strpos($f, '->run(function'));
         return strpos($inUow, '$ranges->create($range)') < strpos($inUow, 'lockForUpdate($id)')
-            && strpos($inUow, 'lockForUpdate($id)') < strpos($inUow, 'drawNumber(')
-            && strpos($inUow, 'drawNumber(') < strpos($inUow, '$gateway->post($request)')
+            && strpos($inUow, 'lockForUpdate($id)') < strpos($inUow, 'numberAndIssue(')
+            && strpos($inUow, 'numberAndIssue(') < strpos($inUow, '$gateway->post($request)')
+            && strpos($n, 'drawNumber(') < strpos($n, 'markIssued(') && strpos($n, 'markIssued(') < strpos($n, '->archive(')
             && !str_contains($i, 'NumberRange') && !str_contains($i, '->next(') && !str_contains($i, '->create(');
     })());
 check('M8 the migration says what a development rollback does to a drawn range (leaves the row; up() is idempotent)',
@@ -1969,7 +1981,7 @@ check('N1 debtorConfig registers InvoicingInProgressCheck under `period-close`; 
     && $inInvoicing > 0 && $inInvoicing <= \Z77\Module\Debtor\Close\InvoicingInProgressCheck::LIST_LIMIT
     && $open2026->isBlocked() && count($open2026->blocking()) === $inInvoicing && $open2026->warnings() === []
     && str_contains($open2026->blocking()[0]->message, 'in Fakturierung') && str_starts_with($open2026->blocking()[0]->reference, 'invoice:')
-    && preg_match('/^(Rechnung|Gutschrift|Gebühr) \(Entwurf\) vom \d\d\.\d\d\.2026 an .+Buchungsdruck/u', $open2026->blocking()[0]->message) === 1);
+    && preg_match('/^(Rechnung|Gutschrift|Gebühr) \(Entwurf\) vom \d\d\.\d\d\.2026 an .+Fakturieren/u', $open2026->blocking()[0]->message) === 1);
 $inv1Day = (string) $db->fetchOne('SELECT invoice_date FROM invoice WHERE id = ?', [$inv1->getId()]);
 check('N2 a FINAL document does not count (inv1, final since L1: its day yields only the documents still in invoicing); a range without open documents is «nothing open»',
     $stateOf($inv1->getId()) === 'final'
@@ -2293,13 +2305,13 @@ $listHtml = $renderList($host) . $renderSlot($host, 'hc2');
 $actHtml  = $renderSlot($host, 'hc1');
 $toolHtml = $renderSlot($host, 'hc2');
 $invoicingIds = array_map(fn($d) => $d->getId(), $host->context['documents']);
-check('P3C22 list, default view «In Fakturierung»: only invoices in invoicing, newest first, each row with its {id}:{version} checkbox; «+ Rechnung» in the action cell, the toolbar with the view tabs (counts) only, «Buchungsdruck …» (owner 2026-10-10, formerly «Verbuchen …» / «Definitiv stellen …») a green confirm in the selection bar ABOVE the rows (ADR-033 rev. 2026-10-08)',
+check('P3C22 list, default view «In Fakturierung»: only invoices in invoicing, newest first, each row with its {id}:{version} checkbox; «+ Rechnung» in the action cell, the toolbar with the view tabs (counts) only, «Fakturieren …» (ADR-054, owner 2026-10-23; «Buchungsdruck …» since 2026-10-10, formerly «Verbuchen …» / «Definitiv stellen …») a green confirm in the selection bar ABOVE the rows (ADR-033 rev. 2026-10-08)',
     $host->context['state']->extra('view') === 'invoicing' && $invoicingIds !== [] && array_filter($host->context['documents'], fn($d) => $d->isPosted() || $d->isCreditNote()) === []
     && str_contains($listHtml, 'data-fetch-region="invoice-find-list"') && str_contains($listHtml, 'value="' . $plainInv->getId() . ':' . $invoiceRow($plainInv->getId())['version'] . '"')
     && str_contains($listHtml, 'form="invoice-finalize"') && str_contains($listHtml, 'be-viewtabs')
     && str_contains($actHtml, 'href="/backend/finance/invoice/add"') && str_contains($actHtml, 'be-btn--primary')
     && !str_contains($toolHtml, 'be-btn') && !str_contains($toolHtml, 'invoice-finalize')
-    && preg_match('/class="z77-form-actions">.*?be-btn--confirm.*?Buchungsdruck …/s', $renderList($host)) === 1
+    && preg_match('/class="z77-form-actions">.*?be-btn--confirm.*?Fakturieren …/s', $renderList($host)) === 1
     && strpos($renderList($host), 'form="invoice-finalize" class="be-btn be-btn--confirm') < strpos($renderList($host), 'data-invoice-id=')
     && !str_contains($renderList($host), 'data-selection-bar=')
     && !isset($host->context['counts']));
@@ -2331,10 +2343,10 @@ $GLOBALS['z77TestFetch'] = true;
 $hostFetch = $invoiceHost();
 $hostFetch->listAction();
 $GLOBALS['z77TestFetch'] = false;
-check('P3C24b the list\'s help (HELP-003, owner 2026-10-20): attached with `toolbar: true` → «Hilfe» at the right end of the toolbar, none in the top bar; short: the three views, «+ Rechnung», «Buchungsdruck …» in «In Fakturierung»; a FETCH of the region (sort, page, search) carries none',
+check('P3C24b the list\'s help (HELP-003, owner 2026-10-20): attached with `toolbar: true` → «Hilfe» at the right end of the toolbar, none in the top bar; short: the four views, «+ Rechnung», «Fakturieren …» in «In Fakturierung», the Faktura-Journal; a FETCH of the region (sort, page, search) carries none',
     $listHelp($host, 'InvoiceController', 'Hilfe: Rechnungen')
-    && array_filter(['In Fakturierung', 'Verbucht', 'Gutschriften'], fn($l) => !str_contains($invListHelp, '<strong>' . $l . '</strong>')) === []
-    && str_contains($invListHelp, '+ Rechnung') && str_contains($invListHelp, 'Buchungsdruck …') && !str_contains($invListHelp, 'data-help-field')
+    && array_filter(['In Fakturierung', 'Fakturiert', 'Verbucht', 'Gutschriften'], fn($l) => !str_contains($invListHelp, '<strong>' . $l . '</strong>')) === []
+    && str_contains($invListHelp, '+ Rechnung') && str_contains($invListHelp, 'Fakturieren …') && str_contains($invListHelp, 'Faktura-Journal') && !str_contains($invListHelp, 'Buchungsdruck') && !str_contains($invListHelp, 'data-help-field')
     && !$hostFetch->help->has());
 $useRequest(['view' => 'final', 'f_nr' => (string) $nonInv->getNumber()]);
 $host = $invoiceHost();
@@ -2375,7 +2387,7 @@ $useRequest(['id' => (string) $plainInv->getId()]);
 $host = $invoiceHost();
 $host->editAction();
 $plainDetail = $renderMain($host);
-check('P3C28 the mask of a DRAFT without payment part: editable (no refusal, «Speichern», the fieldset enabled); the facts say «Kein Zahlteil» with the reason; the draft\'s actions «Vorschau», «Entwurf löschen …» (in the window) and «Buchungsdruck …» (a plain link to the confirmation of THIS draft, outside the window); no final action',
+check('P3C28 the mask of a DRAFT without payment part: editable (no refusal, «Speichern», the fieldset enabled); the facts say «Kein Zahlteil» with the reason; the draft\'s actions «Vorschau», «Entwurf löschen …» (in the window) and «Fakturieren …» (a plain link to the confirmation of THIS draft, outside the window); no final action',
     $host->context['editRefusal'] === null && str_contains($plainDetail, 'value="save"') && str_contains($plainDetail, '<fieldset class="be-form__fieldset">')
     && str_contains($plainDetail, 'data-qr-bill="missing"') && str_contains($plainDetail, 'Kein Zahlteil')
     && str_contains($plainDetail, '>Vorschau</a>') && str_contains($plainDetail, 'href="/backend/finance/invoice/confirm-discard?id=' . $plainInv->getId() . '" data-window-link')
@@ -2505,11 +2517,11 @@ $useRequest(['doc' => [$pairA, $pairB]]);
 $host = $invoiceHost();
 $host->confirmFinalizeAction();
 $confirm = $renderMain($host);
-check('P3C38 confirm-finalize («Buchungsdruck», owner 2026-10-10) lists the selection with its versions and one button that posts the same pairs IN THIS TAB (since 2026-10-22 the answer is the result list — no new tab, no data-submit-navigate)',
+check('P3C38 confirm-finalize («Fakturieren», ADR-054 — «Buchungsdruck» 2026-10-10 … 2026-10-23) lists the selection with its versions and one button that posts the same pairs IN THIS TAB (since 2026-10-22 the answer is the result list — no new tab, no data-submit-navigate)',
     count($host->context['documents']) === 2 && $host->context['stale'] === []
     && str_contains($confirm, 'value="' . $pairA . '"') && str_contains($confirm, 'value="' . $pairB . '"')
     && str_contains($confirm, 'action="/backend/finance/invoice/finalize" class="be-list__section"') && !str_contains($confirm, 'target="_blank"') && !str_contains($confirm, 'data-submit-navigate')
-    && str_contains($confirm, '>Buchungsdruck</button>') && !str_contains($confirm, 'fakturiert'));
+    && str_contains($confirm, '>Fakturieren</button>') && str_contains($confirm, 'Faktura-Journal') && !str_contains($confirm, 'Buchungsdruck'));
 // B is re-issued between the look and the click: the whole batch is refused, nothing posted.
 $service($wireDi())->reinvoice($second->getId(), (int) $invoiceRow($second->getId())['version'], $withTarget('qr', '2026-07-03'));
 $journalBefore = $journalCount();
@@ -2520,7 +2532,7 @@ check('P3C39 the booking print with a STALE version (B re-issued since): refused
     $stateOf($newId) === 'invoicing' && $stateOf($second->getId()) === 'invoicing' && $invoiceRow($newId)['number'] === null && $journalCount() === $journalBefore
     && $refusedAnswer instanceof \Z77\Core\Http\Response\HtmlResponse && $host->bytes === [] && $host->messageService->flashes === []
     && $host->layoutManager->sections['main'] === ['Backend/InvoiceController/bookingRefused']
-    && str_contains($host->context['message'], 'nichts wurde verbucht') && str_contains($renderMain($host), 'Zur Liste «In Fakturierung»'));
+    && str_contains($host->context['message'], 'nichts wurde fakturiert') && str_contains($renderMain($host), 'Zur Liste «In Fakturierung»'));
 $useRequest(['doc' => [$pairA, $pairB]]);
 $host = $invoiceHost();
 $host->confirmFinalizeAction();
@@ -2531,25 +2543,40 @@ $host = $invoiceHost();
 $host->finalizeAction();
 $numA = (int) $invoiceRow($newId)['number'];
 $numB = (int) $invoiceRow($second->getId())['number'];
-check('P3C41 the booking print with the CURRENT versions: both numbered (July, by invoice date: A 01.07. before B 03.07.), final and posted (two journal entries) in one unit of work; the answer is a 303 to the RESULT LIST of exactly these two (`booking-result?ids=A,B`, step 3 of the mail plan — no PDF any more), the success flash for it; junk values dropped',
-    $stateOf($newId) === 'final' && $stateOf($second->getId()) === 'final' && $journalCount() === $journalBefore + 2
+check('P3C41 «Fakturieren» with the CURRENT versions: both numbered (July, by invoice date: A 01.07. before B 03.07.), ISSUED — in the Faktura-Journal, NOTHING posted (ADR-054: no journal entry) — in one unit of work; the answer is a 303 to the RESULT LIST of exactly these two (`booking-result?ids=A,B`, step 3 of the mail plan — no PDF any more), the success flash «fakturiert … im Faktura-Journal»; junk values dropped',
+    $stateOf($newId) === 'issued' && $stateOf($second->getId()) === 'issued' && $journalCount() === $journalBefore
     && intdiv($numA, 10000) === 2607 && $numB === $numA + 1
     && $host->redirectedTo === '/backend/finance/invoice/booking-result?ids=' . rawurlencode($newId . ',' . $second->getId()) && $host->bytes === []
-    && $host->messageService->flashes[0][0] === 'success' && str_contains($host->messageService->flashes[0][1], 'verbucht') && !str_contains($host->messageService->flashes[0][1], 'definitiv'));
+    && $host->messageService->flashes[0][0] === 'success' && str_contains($host->messageService->flashes[0][1], 'fakturiert') && str_contains($host->messageService->flashes[0][1], 'Faktura-Journal') && !str_contains($host->messageService->flashes[0][1], 'definitiv'));
+$p3cRevs = $db->fetchAllAssociative('SELECT * FROM invoice_revision WHERE invoice_id IN (?, ?) ORDER BY invoice_id', [$newId, $second->getId()]);
+check('P3C41a each issued document carries its STAMP (ten hex digits), who / when issued it, and ONE archived version (invoice_revision, revision 1): the file under data/archive/debtor/2026/<number>-r1-<stamp>.pdf exists, its SHA-256 is the recorded one',
+    count($p3cRevs) === 2 && array_filter($p3cRevs, function (array $r) use ($invoiceRow, $base): bool {
+        $row = $invoiceRow((int) $r['invoice_id']);
+        return preg_match('/^[0-9a-f]{10}$/', (string) $row['document_stamp']) === 1 && $r['document_stamp'] === $row['document_stamp'] && (int) $r['revision'] === 1
+            && $row['issued_by'] === 'sachbearbeiter' && $row['issued_at'] !== null && $row['posted_at'] === null && $row['ledger_entry_ref'] === null
+            && $r['file_path'] === 'data/archive/debtor/2026/' . $row['number'] . '-r1-' . $row['document_stamp'] . '.pdf'
+            && is_file($base . '/' . $r['file_path']) && hash_file('sha256', $base . '/' . $r['file_path']) === $r['file_sha256'];
+    }) === $p3cRevs, json_encode($p3cRevs));
 $journalAfter = $journalCount();
 $useRequest([], ['doc' => [$pairA, $pairB2]]);
 $host = $invoiceHost();
 $host->finalizeAction();
-check('P3C41b IDEMPOTENT: the SAME selection again (a double click, a resubmit) — every document final at the version it showed + 1 — answers the same result list again, nothing posted, no flash, the numbers unchanged',
+check('P3C41b IDEMPOTENT: the SAME selection again (a double click, a resubmit) — every document issued at the version it showed + 1 — answers the same result list again, nothing issued again, no flash, the numbers unchanged',
     $journalCount() === $journalAfter && $host->redirectedTo === '/backend/finance/invoice/booking-result?ids=' . rawurlencode($newId . ',' . $second->getId()) && $host->bytes === []
     && $host->messageService->flashes === [] && (int) $invoiceRow($newId)['number'] === $numA && (int) $invoiceRow($second->getId())['number'] === $numB);
 $useRequest([], ['doc' => [$newId . ':' . $v0, $pairB2]]);   // A at a version OLDER than the one booked
 $host = $invoiceHost();
 $staleAnswer = $host->finalizeAction();
-check('P3C41c anything else stale is REFUSED with the message page: a selection naming A at an older version (not the booked one) — nothing posted, «Bereits verbucht» names what is booked',
+check('P3C41c anything else stale is REFUSED with the message page: a selection naming A at an older version (not the issued one) — nothing written, «Bereits fakturiert» names what is issued',
     $staleAnswer instanceof \Z77\Core\Http\Response\HtmlResponse && $host->bytes === [] && $journalCount() === $journalAfter
     && $host->layoutManager->sections['main'] === ['Backend/InvoiceController/bookingRefused']
-    && in_array('Rechnung ' . $numA, $host->context['already'], true) && str_contains($renderMain($host), 'Bereits verbucht'));
+    && in_array('Rechnung ' . $numA, $host->context['already'], true) && str_contains($renderMain($host), 'Bereits fakturiert'));
+// «Journal verbuchen» (ADR-054): the two issued documents are posted — what the checks below (a final document, its credit note) need.
+$p3cPosting = $postJournal();
+check('P3C41d «Journal verbuchen» posts the journal — A and B: final, two journal entries (posting key invoice:{id}:final), posted by / at, one protocol naming both',
+    $stateOf($newId) === 'final' && $stateOf($second->getId()) === 'final' && $journalCount() === $journalAfter + 2 && $p3cPosting->getDocumentCount() === 2
+    && (int) $invoiceRow($newId)['journal_posting_id'] === $p3cPosting->getId() && $invoiceRow($newId)['posted_by'] === 'tester'
+    && $entryRow((string) $invoiceRow($newId)['ledger_entry_ref'])['idempotency_key'] === 'invoice:' . $newId . ':final');
 $useRequest(['id' => (string) $newId]);
 $host = $invoiceHost();
 $host->editAction();
@@ -2682,9 +2709,9 @@ $journalPv    = $journalCount();
 $rangesPv     = $db->fetchAllKeyValue("SELECT name, last_number FROM number_range WHERE name LIKE 'document.%'");
 $pvPdf        = \Z77\Module\Debtor\Pdf\InvoicePdf::of($readInvoice($previewDraft->getId()), $wireDi())->withoutCompression();
 $pvBin        = $pvPdf->output();
-check('P3E1 the PDF of a DRAFT is a PREVIEW: watermark «VORSCHAU» and the red top line, the title «Rechnung — Vorschau» without a number, NO payment part (no receipt, no QR) but the note that it follows with the booking print',
-    str_starts_with($pvBin, '%PDF-') && str_contains($pvBin, '(VORSCHAU)') && str_contains($pvBin, 'kein g') && str_contains($pvBin, 'Buchungsdruck')
-    && str_contains($pvBin, '(Zahlteil folgt mit dem Buchungsdruck.)') && !str_contains($pvBin, '(Empfangsschein)') && !str_contains($pvBin, '(Vor der Einzahlung abzutrennen)')
+check('P3E1 the PDF of a DRAFT is a PREVIEW: watermark «VORSCHAU» and the red top line, the title «Rechnung — Vorschau» without a number, NO payment part (no receipt, no QR) but the note that it follows with «Fakturieren»',
+    str_starts_with($pvBin, '%PDF-') && str_contains($pvBin, '(VORSCHAU)') && str_contains($pvBin, 'kein g') && str_contains($pvBin, 'Fakturieren')
+    && str_contains($pvBin, '(Zahlteil folgt mit dem Fakturieren.)') && !str_contains($pvBin, 'Buchungsdruck') && !str_contains($pvBin, '(Empfangsschein)') && !str_contains($pvBin, '(Vor der Einzahlung abzutrennen)')
     && str_contains($pvBin, '(Rechnung ' . $pdfDoc->enc('—') . ' Vorschau)') && preg_match('/\(Rechnung 26\d{6}\)/', $pvBin) === 0);
 $useRequest(['id' => $previewDraft->getId()]);
 $host = $invoiceHost();
@@ -2698,10 +2725,10 @@ $useRequest(['id' => $previewDraft->getId()]);
 $host = $invoiceHost();
 $host->editAction();
 $pvDetail = $renderMain($host);
-check('P3E3 the mask of a draft: «Vorschau» (a new tab), «Speichern», «Buchungsdruck …» (a green confirm to the confirmation of THIS draft at its version); the payment part «pending» in the facts: the reference follows with the number',
-    str_contains($pvDetail, '>Vorschau</a>') && str_contains($pvDetail, 'value="save"') && str_contains($pvDetail, 'be-btn be-btn--confirm') && str_contains($pvDetail, '>Buchungsdruck …</a>')
+check('P3E3 the mask of a draft: «Vorschau» (a new tab), «Speichern», «Fakturieren …» (a green confirm to the confirmation of THIS draft at its version); the payment part «pending» in the facts: the reference follows with the number',
+    str_contains($pvDetail, '>Vorschau</a>') && str_contains($pvDetail, 'value="save"') && str_contains($pvDetail, 'be-btn be-btn--confirm') && str_contains($pvDetail, '>Fakturieren …</a>')
     && str_contains($pvDetail, 'confirm-finalize?' . e(http_build_query(['doc' => [$previewDraft->getId() . ':' . $pvRow['version']]])))
-    && str_contains($pvDetail, 'data-qr-bill="pending"') && str_contains($pvDetail, 'folgt mit der Belegnummer beim Buchungsdruck') && !str_contains($pvDetail, 'Kein Zahlteil'));
+    && str_contains($pvDetail, 'data-qr-bill="pending"') && str_contains($pvDetail, 'folgt mit der Belegnummer beim Fakturieren') && !str_contains($pvDetail, 'Kein Zahlteil'));
 
 // The booking print of a batch across two months: the numbers in a FIXED order (invoice date, then id), the ranges locked by name.
 $b0920  = $service($wireDi())->invoice($oneLine($mid, '2026-09-20', '1.000', '10.00'));
@@ -2724,8 +2751,8 @@ $useRequest([]);
 $host = $invoiceHost();
 $host->listAction();
 $tabs = $renderSlot($host, 'hc2');
-check('P3E6 «Fakturiert» is gone: three tabs «In Fakturierung» · «Verbucht» · «Gutschriften» (no «Nicht fakturiert»), no «Fakturiert» column; no DeliveryService / DeliveryChannel, no delivered_* on the entity, no mark/unmark/booked/pdf-batch action in the trait',
-    array_keys($host->context['views']) === ['invoicing', 'final', 'credit'] && str_contains($tabs, '>Verbucht</a>') && !str_contains($tabs, '<small>') && !str_contains($tabs, 'Nicht fakturiert') && !str_contains($tabs, 'Definitiv')
+check('P3E6 the delivery flag «Fakturiert» of 2026-10-10 stays gone — «Fakturiert» is back as a STATE tab (ADR-054: issued, in the Faktura-Journal): four tabs «In Fakturierung» · «Fakturiert» · «Verbucht» · «Gutschriften» (no «Nicht fakturiert»), no «Fakturiert» column; no DeliveryService / DeliveryChannel, no delivered_* on the entity, no mark/unmark/booked/pdf-batch action in the trait',
+    array_keys($host->context['views']) === ['invoicing', 'issued', 'final', 'credit'] && str_contains($tabs, '>Verbucht</a>') && str_contains($tabs, '>Fakturiert</a>') && !str_contains($tabs, '<small>') && !str_contains($tabs, 'Nicht fakturiert') && !str_contains($tabs, 'Definitiv')
     && !str_contains($renderList($host), 'Fakturiert')
     && !class_exists('Z77\\Module\\Debtor\\Services\\DeliveryService') && !enum_exists('Z77\\Module\\Debtor\\Entities\\DeliveryChannel')
     && !str_contains(file_get_contents($package . '/src/Entities/Invoice.php'), 'delivered')
@@ -3676,8 +3703,9 @@ $journalBefore = $journalCount();
 $useRequest([], ['doc' => [$pairA, $pairB2]]);   // the batch of P3C41 submitted a second time
 $host = $invoiceHost();
 $host->finalizeAction();
-check('P3C57 a DOUBLE submit of a booking print (owner 2026-10-10: idempotent): the same result list again (since 2026-10-22), nothing posted twice, no flash',
-    $journalCount() === $journalBefore && $host->messageService->flashes === [] && str_starts_with((string) $host->redirectedTo, '/backend/finance/invoice/booking-result?ids=') && $host->bytes === []);
+check('P3C57 the selection of P3C41 submitted again AFTER its journal was posted (P3C41d): no longer what «Fakturieren» left (the posting moved the version) — the refusal page, nothing written, «Bereits fakturiert» names both',
+    $journalCount() === $journalBefore && $host->messageService->flashes === [] && $host->redirectedTo === null && $host->bytes === []
+    && $host->layoutManager->sections['main'] === ['Backend/InvoiceController/bookingRefused'] && in_array('Rechnung ' . $numA, $host->context['already'], true) && in_array('Rechnung ' . $numB, $host->context['already'], true));
 
 $journalHost = function () {
     return new class {
@@ -4086,7 +4114,7 @@ check('Y5 nothing to reconcile → the reconciliation yields nothing: the instal
 
 // ── Z. the seams for module-order (P7 slim, plan §7, owner go 2026-10-14) ──
 
-echo "Z. preview(), prepareDocumentRanges(), openDebtorProfile(), invoiceAndFinalize(), PaymentStates, subject\n";
+echo "Z. preview(), prepareDocumentRanges(), openDebtorProfile(), invoiceAndIssue() (ADR-054: issued, not posted), PaymentStates, subject\n";
 $zDraft = fn(int $contact, string $date = '2026-12-21', string $account = '3400', ?string $subject = 'Auftrag 17 · Relaunch', string $price = '333.33', ?string $target = null) => InvoiceDraft::invoice($contact, day($date), day($date), 'CHF', [
     LineDraft::service('Beratung', '2.500', 'h', chf($price), 'UN', $account, sourceType: 'order-line', sourceRef: '901'),
     LineDraft::text('Danke.'),
@@ -4119,8 +4147,8 @@ $zBefore   = $zSnap();
 check('Z4 preview() of a prospect: refused no-debtor-profile; with openProfile composed against the DEFAULT terms (net-30) — no profile, no customer number written',
     $refusal(fn() => $service($wireDi())->preview($zDraft($zProspect))) === InvoiceRefusedException::NO_DEBTOR_PROFILE
     && $service($wireDi())->preview($zDraft($zProspect), openProfile: true)->getPaymentTermsCode() === 'net-30' && $zSnap() === $zBefore);
-check('Z5 invoiceAndFinalize() for the prospect refuses no-debtor-profile (the profile is opened BEFORE, never inside — plan D9); nothing written',
-    $refusal(fn() => $service($wireDi())->invoiceAndFinalize([$zDraft($zProspect)])) === InvoiceRefusedException::NO_DEBTOR_PROFILE && $zSnap() === $zBefore);
+check('Z5 invoiceAndIssue() for the prospect refuses no-debtor-profile (the profile is opened BEFORE, never inside — plan D9); nothing written',
+    $refusal(fn() => $service($wireDi())->invoiceAndIssue([$zDraft($zProspect)])) === InvoiceRefusedException::NO_DEBTOR_PROFILE && $zSnap() === $zBefore);
 $zCustomer = (int) $rangeOf('customer');
 check('Z6 openDebtorProfile(): opens the profile with the default terms and the next customer number in its OWN unit of work (true); a second call answers false and writes nothing; inside an open unit of work it is refused (LogicException)',
     $service($wireDi())->openDebtorProfile($zProspect) === true && (int) $rangeOf('customer') === $zCustomer + 1
@@ -4136,22 +4164,23 @@ check('Z7 prepareDocumentRanges(): the month ranges in NAME order, created at 0 
     && $refusal(fn() => $service($wireDi())->prepareDocumentRanges([day('2100-01-01')])) === InvoiceRefusedException::DATES
     && (function () use ($wireDi, $service) { $em = $wireDi(); try { $em->getTransaction(Invoice::class)->run(fn() => $service($em)->prepareDocumentRanges([day('2026-12-01')])); } catch (\LogicException) { return true; } return false; })());
 
-// invoiceAndFinalize() JOINED into a caller's unit of work, the caller writing too (a range stands for its write).
+// invoiceAndIssue() JOINED into a caller's unit of work, the caller writing too (a range stands for its write).
 $zRange   = (int) $rangeOf('document.2612');
 $zJournal = $journalCount();
 $emZ      = $wireDi();
 $zBooked  = $emZ->getTransaction(Invoice::class)->run(function () use ($emZ, $service, $zDraft, $mid): array {
     $emZ->getRepository(\Z77\Persistence\Doctrine\Entities\NumberRange::class)->create('z-caller-write');
-    $booked = $service($emZ)->invoiceAndFinalize([$zDraft($mid, '2026-12-22'), $zDraft($mid, '2026-12-21', price: '10.00', subject: null)]);
+    $booked = $service($emZ)->invoiceAndIssue([$zDraft($mid, '2026-12-22'), $zDraft($mid, '2026-12-21', price: '10.00', subject: null)]);
     return [$booked, $emZ->getTransaction(Invoice::class)->isOpen()];
 });
 [$zDocs, $zStillOpen] = $zBooked;
 $zB = $readInvoice($zDocs[1]->getId());
-check('Z8 invoiceAndFinalize() JOINS the caller (still open after the call) and books BOTH: final, numbered by invoice date then id (21.12. before 22.12.), gapless after document.2612, one journal entry each with the key invoice:{id}:final; the caller\'s write committed with them',
+check('Z8 invoiceAndIssue() JOINS the caller (still open after the call) and issues BOTH: `issued` — in the Faktura-Journal, NO journal entry (ADR-054) —, numbered by invoice date then id (21.12. before 22.12.), gapless after document.2612, each stamped with its archived revision 1; the caller\'s write committed with them',
     $zStillOpen && count($zDocs) === 2 && $zDocs[0]->getInvoiceDate()->format('d') === '21'
     && $zDocs[0]->getNumber() === 26120000 + $zRange + 1 && $zDocs[1]->getNumber() === 26120000 + $zRange + 2 && (string) $rangeOf('document.2612') === (string) ($zRange + 2)
-    && $stateOf($zDocs[0]->getId()) === 'final' && $stateOf($zDocs[1]->getId()) === 'final' && $journalCount() === $zJournal + 2
-    && $entryRow($zB->getLedgerEntryRef())['idempotency_key'] === 'invoice:' . $zB->getId() . ':final' && $rangeOf('z-caller-write') !== false);
+    && $stateOf($zDocs[0]->getId()) === 'issued' && $stateOf($zDocs[1]->getId()) === 'issued' && $journalCount() === $zJournal && $zB->getLedgerEntryRef() === null
+    && preg_match('/^[0-9a-f]{10}$/', (string) $zB->getDocumentStamp()) === 1
+    && (int) $db->fetchOne('SELECT COUNT(*) FROM invoice_revision WHERE invoice_id IN (?, ?)', [$zDocs[0]->getId(), $zDocs[1]->getId()]) === 2 && $rangeOf('z-caller-write') !== false);
 check('Z9 the booked document carries EXACTLY the preview\'s totals, lines and tax rows (one computation, plan D11); subject and the opaque origins (order / 17, order-line / 901) stored; the subject column on the row',
     $zB->getNetTotal()->equals($zPreview->getNetTotal()) && $zB->getTaxTotal()->equals($zPreview->getTaxTotal()) && $zB->getGrossTotal()->equals($zPreview->getGrossTotal())
     && array_map(fn(InvoiceLine $l) => [$l->type()->value, $l->getAmount()->toDecimal(), $l->getTaxCode()], $zB->getLines()) === array_map(fn(InvoiceLine $l) => [$l->type()->value, $l->getAmount()->toDecimal(), $l->getTaxCode()], $zPreview->getLines())
@@ -4164,17 +4193,23 @@ $e = caught(function () use ($wireDi, $service, $zDraft, $mid) {
     $em = $wireDi();
     $em->getTransaction(Invoice::class)->run(function () use ($em, $service, $zDraft, $mid) {
         $em->getRepository(\Z77\Persistence\Doctrine\Entities\NumberRange::class)->create('z-caller-refused');
-        $service($em)->invoiceAndFinalize([$zDraft($mid, '2026-12-23'), $zDraft($mid, '2026-12-23', '1020')]);
+        $service($em)->invoiceAndIssue([$zDraft($mid, '2026-12-23'), $zDraft($mid, '2026-12-23', '1020')]);
     });
 }, InvoiceRefusedException::class);
 check('Z10 the second draft on 1020 → account-not-revenue, and NOTHING stays: no document, no number, no journal entry, not the caller\'s write',
     $e?->reason === InvoiceRefusedException::ACCOUNT_NOT_REVENUE && $zSnap() === $zBefore && $rangeOf('z-caller-refused') === false);
-check('Z11 kind invoice only: a credit-note draft → InvalidArgumentException; an empty list books nothing',
-    throws(fn() => $service($wireDi())->invoiceAndFinalize([InvoiceDraft::creditNote($zB->getId(), $mid, day('2026-12-23'), 'CHF', [LineDraft::text('x')])]), \InvalidArgumentException::class)
-    && $service($wireDi())->invoiceAndFinalize([]) === []);
+check('Z11 kind invoice only: a credit-note draft → InvalidArgumentException; an empty list issues nothing',
+    throws(fn() => $service($wireDi())->invoiceAndIssue([InvoiceDraft::creditNote($zB->getId(), $mid, day('2026-12-23'), 'CHF', [LineDraft::text('x')])]), \InvalidArgumentException::class)
+    && $service($wireDi())->invoiceAndIssue([]) === []);
 // October, not November: U3 left document.2611 at its last number (9999).
-$zAlone = $service($wireDi())->invoiceAndFinalize([$zDraft($mid, '2026-10-25', price: '1.00')]);
-check('Z12 standalone (no caller unit of work): it opens its own, the month range created ahead — booked as 2610…, final', count($zAlone) === 1 && $stateOf($zAlone[0]->getId()) === 'final' && intdiv((int) $zAlone[0]->getNumber(), 10000) === 2610);
+$zAlone = $service($wireDi())->invoiceAndIssue([$zDraft($mid, '2026-10-25', price: '1.00')]);
+check('Z12 standalone (no caller unit of work): it opens its own, the month range created ahead — issued as 2610…', count($zAlone) === 1 && $stateOf($zAlone[0]->getId()) === 'issued' && intdiv((int) $zAlone[0]->getNumber(), 10000) === 2610);
+// «Journal verbuchen» (ADR-054): the three issued documents posted — the payment states below read POSTED documents.
+$zPosting = $postJournal();
+$zB = $readInvoice($zDocs[1]->getId());
+check('Z12b «Journal verbuchen» posts the three: final, one journal entry each with the key invoice:{id}:final, dated on the invoice date; the protocol counts three',
+    $zPosting->getDocumentCount() === 3 && $journalCount() === $zJournal + 3 && $stateOf($zDocs[0]->getId()) === 'final' && $stateOf($zAlone[0]->getId()) === 'final'
+    && $entryRow($zB->getLedgerEntryRef())['idempotency_key'] === 'invoice:' . $zB->getId() . ':final' && $entryRow($zB->getLedgerEntryRef())['entry_date'] === '2026-12-22');
 
 // PaymentStates — the read port.
 $zStates = fn(array $ids) => (new \Z77\Module\Debtor\Services\PaymentStates($wireDi()))->of($ids);
@@ -4331,8 +4366,8 @@ $mvStaleErr = caught(fn() => $service($wireDi())->finalize([$at($mvStale->getId(
 $mvStaleState = $db->fetchOne('SELECT state FROM invoice WHERE id = ?', [$mvStale->getId()]);
 $mvLiable(true);
 $service($wireDi())->discard($mvStale->getId(), $at($mvStale->getId())['version']);
-check('MV10 a draft composed with VAT, booked after «mehrwertsteuerpflichtig» was switched off: refused `vat-liability-changed` («… neu speichern, dann verbuchen»), still a draft, no number drawn',
-    $mvStaleErr?->reason === InvoiceRefusedException::VAT_LIABILITY_CHANGED && str_contains($mvStaleErr->getMessage(), 'neu speichern, dann verbuchen')
+check('MV10 a draft composed with VAT, booked after «mehrwertsteuerpflichtig» was switched off: refused `vat-liability-changed` («… neu speichern, dann fakturieren»), still a draft, no number drawn',
+    $mvStaleErr?->reason === InvoiceRefusedException::VAT_LIABILITY_CHANGED && str_contains($mvStaleErr->getMessage(), 'neu speichern, dann fakturieren')
     && $mvStaleState === 'invoicing');
 $mvHelp = (string) file_get_contents($package . '/res/view/templates/Backend/InvoiceController/form.help.tpl.php');
 check('MV11 the editor without VAT hides «Preise» (the mode still posted); the help reads `$form->withVat` and drops the price-mode section, the MWST-code item and the MWST wording of «Leistung von»',
@@ -4477,9 +4512,9 @@ $oJ      = $journalCount();
 $oBooked = $oService()->book([['id' => (int) $o1->getId(), 'version' => $o1->getVersion()]], day('2026-12-15'));
 $oInv    = $oBooked[0] ?? null;
 $oR1     = $oRow((int) $o1->getId());
-check('O2 book(): ONE final invoice, its gross = the preview total of the order, linked to the order, the order in the default of «closed» (booked), the log row `booking-print`, one journal entry',
-    count($oBooked) === 1 && $stateOf($oInv->getId()) === 'final' && (int) $oR1['invoice_id'] === $oInv->getId() && $oR1['status_code'] === 'booked'
-    && array_column($oLog((int) $o1->getId()), 'change_trigger') === ['create', 'status', 'booking-print'] && $oInv->getGrossTotal()->toDecimal() === $wireDi()->getRepository(\Z77\Module\Order\Entities\SalesOrder::class)->find((int) $o1->getId())->getTotalGross()?->toDecimal() && $journalCount() === $oJ + 1
+check('O2 book() («Fakturieren»): ONE issued invoice (ADR-054: in the Faktura-Journal, NOT posted — no journal entry), its gross = the preview total of the order, linked to the order, the order in the default of «closed» (booked), the log row `booking-print`',
+    count($oBooked) === 1 && $stateOf($oInv->getId()) === 'issued' && (int) $oR1['invoice_id'] === $oInv->getId() && $oR1['status_code'] === 'booked'
+    && array_column($oLog((int) $o1->getId()), 'change_trigger') === ['create', 'status', 'booking-print'] && $oInv->getGrossTotal()->toDecimal() === $wireDi()->getRepository(\Z77\Module\Order\Entities\SalesOrder::class)->find((int) $o1->getId())->getTotalGross()?->toDecimal() && $journalCount() === $oJ
     && $oInv->getSourceType() === 'order' && $oInv->getSourceRef() === (string) $o1->getId());
 $oBefore = $oSnap();
 check('O3 the SAME selection again (the version the screen showed): a conflict, and nothing written — no second invoice, no number, no journal entry',
@@ -4502,9 +4537,11 @@ $oThrowing = new class implements \Z77\Module\Article\Stock\StockLedger {
     }
 };
 $oBefore = $oSnap();
+$oFiles  = $archiveFiles();
 $oE = caught(fn() => $oService($oThrowing)->book([['id' => (int) $o2->getId(), 'version' => $o2->getVersion()]], day('2026-12-15')), \RuntimeException::class);
-check('O5 a failure at the last step (the stock call after the invoice was numbered and posted) rolls back the WHOLE unit of work: no invoice, no document number, no journal entry, the order unchanged, no log row',
-    $oE !== null && $oE->getMessage() === 'stock refused at the last step (harness)' && $oSnap() === $oBefore && $oRow((int) $o2->getId())['status_code'] === 'scheduled');
+check('O5 a failure at the last step (the stock call after the invoice was numbered, stamped and archived) rolls back the WHOLE unit of work: no invoice, no document number, no journal entry, the order unchanged, no log row — and the archive file debtor wrote is removed again (InvoicingService::discardArchived())',
+    $oE !== null && $oE->getMessage() === 'stock refused at the last step (harness)' && $oSnap() === $oBefore && $oRow((int) $o2->getId())['status_code'] === 'scheduled'
+    && $archiveFiles() === $oFiles);
 
 // O6: two processes book the same order at the same moment.
 $o3     = $oNew('Auftrag O3');
@@ -4521,9 +4558,9 @@ foreach ($oProcs as $w => $proc) {
 }
 $oOk  = array_values(array_filter($oOut, fn($o) => str_starts_with($o, 'ok:')));
 $oR3  = $oRow((int) $o3->getId());
-check('O6 two processes book the same order at once: exactly ONE books, the other is refused (conflict — the row lock and the version); one invoice, one journal entry, the order linked to THAT invoice' . (count($oOk) !== 1 ? ' — got ' . json_encode($oOut) : ''),
+check('O6 two processes book the same order at once: exactly ONE issues, the other is refused (conflict — the row lock and the version); one invoice, no journal entry (ADR-054), the order linked to THAT invoice' . (count($oOk) !== 1 ? ' — got ' . json_encode($oOut) : ''),
     count($oOk) === 1 && count(array_filter($oOut, fn($o) => $o === 'conflict')) === 1
-    && $count('invoice') === $oInvN + 1 && $journalCount() === $oJ + 1 && 'ok:' . $oR3['invoice_id'] === $oOk[0] && $oR3['status_code'] === 'booked');
+    && $count('invoice') === $oInvN + 1 && $journalCount() === $oJ && 'ok:' . $oR3['invoice_id'] === $oOk[0] && $oR3['status_code'] === 'booked');
 
 // O7: the order's «Betreffname» travels into the booked invoice (owner 2026-10-21).
 $o7 = $oService()->create(new \Z77\Module\Order\Services\OrderDraft($mid, '2026-12-10', 'Umbau Nord', lines: [
@@ -4631,8 +4668,8 @@ $host = $bmHost();
 $host->finalizeAction();
 $bmIds = [$bmX->getId(), $bmY->getId(), $bmCN->getId()];
 $bmNum = array_map(fn(int $id) => (int) $invoiceRow($id)['number'], $bmIds);
-check('BM2 the booking print of drafts (two invoices and a credit note) answers a 303 to the RESULT LIST of exactly these three (`booking-result?ids=` in number order) — no PDF',
-    array_map($stateOf, $bmIds) === ['final', 'final', 'final'] && $host->bytes === []
+check('BM2 «Fakturieren» of drafts (two invoices and a credit note) answers a 303 to the RESULT LIST of exactly these three (`booking-result?ids=` in number order) — no PDF; all three issued, in the Faktura-Journal (ADR-054)',
+    array_map($stateOf, $bmIds) === ['issued', 'issued', 'issued'] && $host->bytes === []
     && $host->redirectedTo === '/backend/finance/invoice/booking-result?ids=' . rawurlencode(implode(',', $bmIds)));
 
 $bmIdList = implode(',', $bmIds);
@@ -4641,16 +4678,16 @@ $bmRequest(['ids' => $bmIdList . ',abc,' . $bmDraft->getId() . ',999999', 'back'
 $host = $bmHost();
 $host->bookingResultAction();
 $bmList = $renderMain($host);
-check('BM3 the result list: exactly the FINAL documents of `ids` (junk, a draft, an unknown id left out), in number order; per row number, customer, total, the billing e-mail of the SNAPSHOT or a muted «keine E-Mail-Adresse», the row ⋮ (result-actions: «PDF öffnen», «Erneut senden …» — owner 2026-10-23, BM18); an outside `back` is dropped',
+check('BM3 the result list: exactly the ISSUED documents of `ids` (junk, a draft, an unknown id left out), in number order; per row number, customer, total, the billing e-mail of the SNAPSHOT or a muted «keine E-Mail-Adresse», the row ⋮ (result-actions: «PDF öffnen», «Erneut senden …» — owner 2026-10-23, BM18); an outside `back` is dropped',
     array_map(fn($d) => (int) $d->getId(), $host->context['documents']) === $bmIds && $host->context['back'] === ''
     && $host->layoutManager->sections['main'] === ['Backend/InvoiceController/bookingResult']
     && str_contains($bmList, 'kunde@example.ch') && str_contains($bmList, 'gutschrift@example.ch') && str_contains($bmList, '<span class="be-list__cell--muted">keine E-Mail-Adresse</span>')
     && str_contains($bmList, 'data-menu-open="/backend/finance/invoice/result-actions?id=' . $bmX->getId() . '&amp;ids=') && str_contains($bmList, 'Gutschrift ' . $bmNum[2])
     && !str_contains($bmList, 'https://evil'));
-check('BM4 the header actions are plain links of the run: «Alle per E-Mail senden …» (the confirmation), «Alle als ein PDF» (new tab), «Alle als ZIP», «Zur Liste «Verbucht»» — no form, no script needed',
+check('BM4 the header actions are plain links of the run: «Alle per E-Mail senden …» (the confirmation), «Alle als ein PDF» (new tab), «Alle als ZIP», «Zur Liste «Fakturiert»» — no form, no script needed',
     str_contains($bmList, 'href="/backend/finance/invoice/confirm-mail?ids=' . rawurlencode($bmIdList) . '"')
     && str_contains($bmList, 'href="/backend/finance/invoice/pdf-all?ids=' . rawurlencode($bmIdList) . '" target="_blank"') && str_contains($bmList, 'href="/backend/finance/invoice/zip?ids=' . rawurlencode($bmIdList) . '"')
-    && str_contains($bmList, 'Alle per E-Mail senden …') && str_contains($bmList, 'Zur Liste «Verbucht»') && !str_contains($bmList, '<form'));
+    && str_contains($bmList, 'Alle per E-Mail senden …') && str_contains($bmList, 'Zur Liste «Fakturiert»') && !str_contains($bmList, '<form'));
 $bmRequest(['ids' => $bmIdList, 'back' => '/backend/order/order/list?view=closed']);
 $host = $bmHost();
 $host->bookingResultAction();
@@ -4679,8 +4716,10 @@ check('BM5 «Alle als ZIP»: one ZIP (application/zip, a download) of EXACTLY th
     && count(glob(sys_get_temp_dir() . '/z77zip*') ?: []) === $bmTmpBefore, json_encode($bmEntries));
 $host = $bmHost();
 $host->pdfAllAction();
-check('BM6 «Alle als ein PDF»: the combined PDF of the run (the former booking-print answer — the owner prints too)',
-    ($host->bytes['mime'] ?? '') === 'application/pdf' && $host->bytes['filename'] === 'dokumente-' . $bmNum[0] . '-bis-' . $bmNum[2] . '.pdf' && str_starts_with($host->bytes['content'], '%PDF-'));
+$bmArchived = array_map(fn(int $id) => (string) file_get_contents($base . '/' . $db->fetchOne('SELECT file_path FROM invoice_revision WHERE invoice_id = ? AND revision = 1', [$id])), $bmIds);
+check('BM6 «Alle als ein PDF»: the combined PDF of the run (the former booking-print answer — the owner prints too) — since ADR-054 the ARCHIVED files joined page for page (PdfConcat), nothing re-rendered',
+    ($host->bytes['mime'] ?? '') === 'application/pdf' && $host->bytes['filename'] === 'dokumente-' . $bmNum[0] . '-bis-' . $bmNum[2] . '.pdf' && str_starts_with($host->bytes['content'], '%PDF-')
+    && $host->bytes['content'] === \Z77\Shared\Pdf\PdfConcat::of($bmArchived, 'Dokumente ' . $bmNum[0] . ' bis ' . $bmNum[2]));
 
 $bmRequest(['ids' => $bmIdList]);
 $host = $bmHost();
@@ -4721,10 +4760,11 @@ check('BM9 the stored mail is the kind\'s text with the placeholders filled, esc
 
 $bmProviders = \Z77\Module\Mailing\Attachments\AttachmentProviders::fromModules(DI::getModuleManager());
 $bmAttachment = $bmProviders->resolve('invoice-pdf:' . $bmX->getId());
-check('BM10 the provider `invoice-pdf` (registered by module-debtor under mailAttachments): accepts a BOOKED document only (a draft, junk, an unknown id refused at queue time), resolves the PDF from the snapshot at send time — named by number',
+check('BM10 the provider `invoice-pdf` (registered by module-debtor under mailAttachments): accepts an ISSUED document (issued or posted — a draft, junk, an unknown id refused at queue time), resolves the ARCHIVED PDF at send time (ADR-054: the file «Fakturieren» stored, byte for byte) — named by number',
     $bmProviders->has('invoice-pdf') && $bmProviders->refusal('invoice-pdf:' . $bmX->getId()) === null
     && $bmProviders->refusal('invoice-pdf:' . $bmDraft->getId()) !== null && $bmProviders->refusal('invoice-pdf:abc') !== null && $bmProviders->refusal('invoice-pdf:999999') !== null
-    && $bmAttachment->filename === 'rechnung-' . $bmNum[0] . '.pdf' && $bmAttachment->mimeType === 'application/pdf' && str_starts_with($bmAttachment->bytes, '%PDF-'));
+    && $bmAttachment->filename === 'rechnung-' . $bmNum[0] . '.pdf' && $bmAttachment->mimeType === 'application/pdf' && str_starts_with($bmAttachment->bytes, '%PDF-')
+    && $bmAttachment->bytes === $bmArchived[0]);
 
 $bmRequest(['ids' => $bmIdList]);
 $host = $bmHost();
@@ -4936,8 +4976,8 @@ check('BM25 … the mandator\'s «Logo (E-Mail)» at the top: multipart/related,
     json_encode(quoted_printable_decode($bmText[1] ?? ''), JSON_UNESCAPED_UNICODE));
 
 // ── FJ. the Faktura-Journal — steps 1 and 2 of the build plan (ADR-054, owner 2026-10-23) ──
-// Schema and predicates only: nothing PRODUCES `issued`, `replaced` or `deleted` yet (step 3), so the
-// readers are proven by flipping one posted document's state in SQL and restoring it. Checkpoint FJ:
+// Schema and predicates (steps 1–2): the readers are proven by flipping one posted document's state in SQL and
+// restoring it; step 3 (the journal core) follows below in its own block. Checkpoint FJ:
 // what the sections of the Faktura-Journal read from above — Müller ($mid) and the packages BM added;
 // the rest is in the schema and the installation. Later steps add their sections here (build plan §12).
 $checkpoint->save('FJ', $db, $base, ['mid' => $mid, 'packages' => $packages]);
@@ -4969,11 +5009,12 @@ check('FJ1 the predicate table (build plan §3): isDraft = invoicing; isIssued =
         'deleted'   => [false, false, false, false, true, true],
     ], json_encode([$fjId, $fjTable]));
 
-$fjUntouched = (int) $db->fetchOne('SELECT COUNT(*) FROM invoice WHERE revision <> 1 OR issued_by IS NOT NULL OR issued_at IS NOT NULL OR posted_by IS NOT NULL OR posted_at IS NOT NULL OR journal_posting_id IS NOT NULL OR replaced_by_id IS NOT NULL OR voided_by IS NOT NULL OR voided_at IS NOT NULL OR void_reason IS NOT NULL OR reissue_needed IS NOT NULL OR document_stamp IS NOT NULL');
-check('FJ2 NO behaviour change (steps 1–2): after every section above, every document is a draft or posted, at revision 1, every new column NULL; no transaction carries a suggestion; the two new tables are empty',
-    (int) $db->fetchOne("SELECT COUNT(*) FROM invoice WHERE state NOT IN ('invoicing', 'final')") === 0 && $count('invoice') > 0 && $fjUntouched === 0
-    && (int) $db->fetchOne('SELECT COUNT(*) FROM bank_transaction WHERE suggested_invoice_id IS NOT NULL') === 0
-    && $count('invoice_revision') === 0 && $count('invoice_journal_posting') === 0);
+$fjUntouched = (int) $db->fetchOne('SELECT COUNT(*) FROM invoice WHERE revision <> 1 OR replaced_by_id IS NOT NULL OR voided_by IS NOT NULL OR voided_at IS NOT NULL OR void_reason IS NOT NULL OR reissue_needed IS NOT NULL');
+$fjUnstamped = (int) $db->fetchOne('SELECT COUNT(*) FROM invoice i WHERE i.document_stamp IS NOT NULL AND (i.issued_at IS NULL OR (SELECT COUNT(*) FROM invoice_revision r WHERE r.invoice_id = i.id AND r.document_stamp = i.document_stamp AND r.revision = i.revision) <> 1)');
+check('FJ2 after every section above (step 3 on): every document is a draft, issued or posted — none replaced or deleted (steps 4–6), all at revision 1, none flagged by a source; every stamped document was issued and has exactly its one archived version; every issued one is stamped; no transaction carries a suggestion',
+    (int) $db->fetchOne("SELECT COUNT(*) FROM invoice WHERE state NOT IN ('invoicing', 'issued', 'final')") === 0 && $count('invoice') > 0 && $fjUntouched === 0 && $fjUnstamped === 0
+    && (int) $db->fetchOne("SELECT COUNT(*) FROM invoice WHERE state = 'issued' AND document_stamp IS NULL") === 0
+    && (int) $db->fetchOne('SELECT COUNT(*) FROM bank_transaction WHERE suggested_invoice_id IS NOT NULL') === 0);
 
 $fjSrc = '';
 foreach (['module-debtor/src', 'module-debtor/res', 'module-order/src', 'module-order/res'] as $dir) {
@@ -4989,7 +5030,8 @@ check('FJ3 source guard: no reader in debtor or order calls isFinal() any more (
 $fjSha = hash('sha256', "%PDF-1.4\nharness revision 1\n%%EOF");
 $db->insert('invoice_journal_posting', ['posted_by' => 'tester', 'posted_at' => '2026-10-23 10:00:00', 'document_count' => 1, 'gross_total' => '300.00', 'first_number' => 26060001, 'last_number' => 26060001]);
 $fjPostingId = (int) $db->lastInsertId();
-$db->insert('invoice_revision', ['invoice_id' => $fjId, 'revision' => 1, 'document_stamp' => 'a1b2c3d4e5', 'file_path' => 'data/archive/debtor/2026/rechnung-1-r1-a1b2c3d4e5.pdf', 'file_sha256' => $fjSha, 'file_name' => 'rechnung-1.pdf', 'reason' => null, 'created_by' => 'tester', 'created_at' => '2026-10-23 10:00:00']);
+$fjKept = $db->fetchAssociative('SELECT journal_posting_id, posted_by, posted_at, document_stamp FROM invoice WHERE id = ?', [$fjId]);   // restored below
+$db->insert('invoice_revision', ['invoice_id' => $fjId, 'revision' => 9, 'document_stamp' => 'a1b2c3d4e5', 'file_path' => 'data/archive/debtor/2026/rechnung-1-r1-a1b2c3d4e5.pdf', 'file_sha256' => $fjSha, 'file_name' => 'rechnung-1.pdf', 'reason' => null, 'created_by' => 'tester', 'created_at' => '2026-10-23 10:00:00']);
 $fjRevisionId = (int) $db->lastInsertId();
 $db->executeStatement('UPDATE invoice SET journal_posting_id = ?, posted_by = ?, posted_at = ?, document_stamp = ? WHERE id = ?', [$fjPostingId, 'tester', '2026-10-23 10:00:00', 'a1b2c3d4e5', $fjId]);
 $fjEm   = $wireDi();
@@ -4998,16 +5040,16 @@ $fjRead = $fjEm->getRepository(Invoice::class)->find($fjId);
 $fjNew  = new \Z77\Module\Debtor\Entities\InvoiceRevision($fjRead, 2, 'f6e5d4c3b2', ' data/archive/debtor/2026/rechnung-1-r2-f6e5d4c3b2.pdf ', $fjSha, ' rechnung-1.pdf ', '  ', 'tester', new \DateTimeImmutable('2026-10-23 11:00:00'));
 $fjBad  = fn(string $stamp, string $path, string $sha) => caught(fn() => new \Z77\Module\Debtor\Entities\InvoiceRevision($fjRead, 3, $stamp, $path, $sha, 'x.pdf', null, 'tester', new \DateTimeImmutable()), \LogicException::class) !== null;
 check('FJ4 the entities map their tables: InvoiceRevision (one issued version: stamp, archived file reference and its SHA-256), InvoiceJournalPosting its protocol, Invoice its posting protocol, its stamp and revision 1; a new InvoiceRevision trims path and file name, a blank reason is none; a revision 0, an absolute path or one with «..», an upper-case or too long stamp, a SHA-256 that is no hex digest are refused',
-    $fjRev !== null && $fjRev->getDocumentStamp() === 'a1b2c3d4e5' && $fjRev->getFilePath() === 'data/archive/debtor/2026/rechnung-1-r1-a1b2c3d4e5.pdf' && $fjRev->getFileSha256() === $fjSha && $fjRev->getInvoice()->getId() === $fjId && $fjRev->getRevision() === 1 && $fjRead->getDocumentStamp() === 'a1b2c3d4e5'
+    $fjRev !== null && $fjRev->getDocumentStamp() === 'a1b2c3d4e5' && $fjRev->getFilePath() === 'data/archive/debtor/2026/rechnung-1-r1-a1b2c3d4e5.pdf' && $fjRev->getFileSha256() === $fjSha && $fjRev->getInvoice()->getId() === $fjId && $fjRev->getRevision() === 9 && $fjRead->getDocumentStamp() === 'a1b2c3d4e5'
     && $fjRead->getJournalPosting()?->getId() === $fjPostingId && $fjRead->getJournalPosting()->getDocumentCount() === 1 && $fjRead->getJournalPosting()->getGrossTotal()->toDecimal() === '300.00'
     && $fjRead->getPostedBy() === 'tester' && $fjRead->getRevision() === 1 && $fjRead->getReplacedBy() === null && $fjRead->getReissueNeeded() === null
     && $fjNew->getFilePath() === 'data/archive/debtor/2026/rechnung-1-r2-f6e5d4c3b2.pdf' && $fjNew->getFileName() === 'rechnung-1.pdf' && $fjNew->getReason() === null
     && caught(fn() => new \Z77\Module\Debtor\Entities\InvoiceRevision($fjRead, 0, 'abc', 'data/x.pdf', $fjSha, 'x.pdf', null, 'tester', new \DateTimeImmutable()), \LogicException::class) !== null
     && $fjBad('abc', '/data/x.pdf', $fjSha) && $fjBad('abc', 'data/../x.pdf', $fjSha) && $fjBad('ABC', 'data/x.pdf', $fjSha) && $fjBad('abcdefghijk', 'data/x.pdf', $fjSha) && $fjBad('abc', 'data/x.pdf', 'nope')
     && !$fjBad('abc', 'data/x.pdf', $fjSha));
-$db->executeStatement('UPDATE invoice SET journal_posting_id = NULL, posted_by = NULL, posted_at = NULL, document_stamp = NULL WHERE id = ?', [$fjId]);
-$db->executeStatement('DELETE FROM invoice_revision');
-$db->executeStatement('DELETE FROM invoice_journal_posting');
+$db->executeStatement('UPDATE invoice SET journal_posting_id = ?, posted_by = ?, posted_at = ?, document_stamp = ? WHERE id = ?', [$fjKept['journal_posting_id'], $fjKept['posted_by'], $fjKept['posted_at'], $fjKept['document_stamp'], $fjId]);
+$db->executeStatement('DELETE FROM invoice_revision WHERE id = ?', [$fjRevisionId]);
+$db->executeStatement('DELETE FROM invoice_journal_posting WHERE id = ?', [$fjPostingId]);
 
 // The readers, sorted by intent (build plan §3): flip the posted document's state, ask, restore. The discount draft is
 // dated before the invoice, so every state that passes the state checks is refused by the date — nothing is ever written.
@@ -5044,6 +5086,426 @@ check('FJ7 replaced (void): no open amount, no settlement figures, not dunned, n
     && $fjAs['2:replaced']['payment'] === 'not-final' && str_contains((string) $fjAs['2:replaced']['editRefusal'], 'ersetzt') && $fjAs['2:replaced']['pdfTitle'] === $fjName,
     json_encode($fjAs['2:replaced'], JSON_UNESCAPED_UNICODE));
 check('FJ8 … and the document stands posted as it was (state final, nothing written by the checks)', $stateOf($fjId) === 'final' && $fjOpen() === $fjGross && (int) $db->fetchOne('SELECT COUNT(*) FROM payment_allocation WHERE invoice_id = ?', [$fjId]) === 0);
+
+
+// ── FJ (step 3). The journal core: «Fakturieren» issues, «Journal verbuchen» posts (ADR-054, owner 2026-10-23) ──
+// Runs on the state above (a full run) or on the FJ checkpoint. What the sections above left in the journal
+// (O, BM — issued, not posted) is posted first, so this block starts from an EMPTY Faktura-Journal.
+
+echo "FJ. Faktura-Journal step 3 — issue without posting, stamp, PDF archive, the journal screen, «Journal verbuchen», the year close\n";
+if ($wireDi()->getRepository(Invoice::class)->journalVersions() !== []) {
+    $postJournal();
+}
+$fjJournal = fn(string $actor = 'tester') => new \Z77\Module\Debtor\Services\JournalPostingService($wireDi(), $actor);
+$fjRefused = fn(callable $fn): ?string => caught($fn, \Z77\Module\Debtor\Services\JournalRefusedException::class)?->reason;
+$fjPosted  = fn(): int => $count('invoice_journal_posting');
+$fjFile    = fn(int $id): array => $db->fetchAssociative('SELECT * FROM invoice_revision WHERE invoice_id = ? ORDER BY revision DESC LIMIT 1', [$id]) ?: [];
+$fjBytes   = fn(int $id): string => (string) @file_get_contents($base . '/' . ($fjFile($id)['file_path'] ?? 'none'));
+$fjPairs   = fn(): array => array_map(fn(array $p) => $p['id'] . ':' . $p['version'], $wireDi()->getRepository(Invoice::class)->journalVersions());
+$fjYc      = fn(string $from, string $to) => \Z77\Persistence\Doctrine\OpenWork\OpenWorkChecks::fromModules(DI::getModuleManager())
+    ->ask('period-close', ['fiscalYear' => substr($from, 0, 4), 'from' => day($from), 'to' => day($to)]);
+$fjHostBase = new class {
+    /** The layout and message doubles of the hosts below. */
+    public static function layout(): object
+    {
+        return new class {
+            public array $sections = [];
+            public function removeSection(string $s): void { unset($this->sections[$s]); }
+            public function addPartials(string $name, string $path, string $ns, string $section = 'main'): void { $this->sections[$section][] = $path . '/' . $name; }
+        };
+    }
+    public static function messages(): object
+    {
+        return new class {
+            public array $flashes = [];
+            public function pushFlashAfterRedirect(string $type, string $message): void { $this->flashes[] = [$type, $message]; }
+            public function pushFlash(string $type, string $message): void { $this->flashes[] = [$type, $message, 'in-place']; }
+        };
+    }
+};
+/** The document screens (InvoiceControllerTrait through a host double, actor «sachbearbeiter») — defined here so a checkpoint run has it. */
+$fjInvoiceHost = function () use ($fjHostBase) {
+    return new class($fjHostBase) {
+        use \Z77\Module\Debtor\Ui\InvoiceControllerTrait { listAction as public; pdfAction as public; editAction as public; finalizeAction as public; zipAction as public; pdfAllAction as public; }
+        public array $context = [];
+        public object $layoutManager;
+        public object $messageService;
+        public object $help;
+        public ?string $redirectedTo = null;
+        public array $bytes = [];
+        public function __construct(object $base)
+        {
+            $this->help           = new \Z77\Core\Services\HelpService();
+            $this->layoutManager  = $base::layout();
+            $this->messageService = $base::messages();
+        }
+        protected function em() { return DI::getUnifiedEntityManager(); }
+        protected function html(array $context = []): \Z77\Core\Http\Response\HtmlResponse { $this->context = $context; return new \Z77\Core\Http\Response\HtmlResponse(null, $context); }
+        protected function redirect(string $url, int $status = 302): \Z77\Core\Http\Response\RedirectResponse { $this->redirectedTo = $url; return new \Z77\Core\Http\Response\RedirectResponse($url, $status); }
+        protected function fetch(): \Z77\Core\Http\Response\FetchResponse { return new \Z77\Core\Http\Response\FetchResponse(); }
+        protected function bytes(string $content, string $filename, string $mimeType, bool $inline = true): \Z77\Core\Http\Response\BytesResponse { $this->bytes = ['content' => $content, 'filename' => $filename, 'mime' => $mimeType, 'inline' => $inline]; return new \Z77\Core\Http\Response\BytesResponse($content, $filename, $mimeType, $inline); }
+        private function invoicingService(): InvoicingService { return new InvoicingService($this->em(), 'sachbearbeiter'); }
+        private function paymentService(): \Z77\Module\Debtor\Services\PaymentService { return new \Z77\Module\Debtor\Services\PaymentService($this->em(), 'sachbearbeiter'); }
+        private function invoiceDunningService(): \Z77\Module\Debtor\Services\DunningService { return new \Z77\Module\Debtor\Services\DunningService($this->em(), 'sachbearbeiter'); }
+    };
+};
+/** The Faktura-Journal screen (InvoiceJournalControllerTrait through a host double), posting as «buchhalter». */
+$fjHost = function () use ($fjHostBase) {
+    return new class($fjHostBase) {
+        use \Z77\Module\Debtor\Ui\InvoiceJournalControllerTrait { listAction as public; pdfAction as public; confirmPostAction as public; postAction as public; }
+        public array $context = [];
+        public object $layoutManager;
+        public object $messageService;
+        public object $help;
+        public ?string $redirectedTo = null;
+        public array $bytes = [];
+        public function __construct(object $base)
+        {
+            $this->help           = new \Z77\Core\Services\HelpService();
+            $this->layoutManager  = $base::layout();
+            $this->messageService = $base::messages();
+        }
+        protected function em() { return DI::getUnifiedEntityManager(); }
+        protected function html(array $context = []): \Z77\Core\Http\Response\HtmlResponse { $this->context = $context; return new \Z77\Core\Http\Response\HtmlResponse(null, $context); }
+        protected function redirect(string $url, int $status = 302): \Z77\Core\Http\Response\RedirectResponse { $this->redirectedTo = $url; return new \Z77\Core\Http\Response\RedirectResponse($url, $status); }
+        protected function bytes(string $content, string $filename, string $mimeType, bool $inline = true): \Z77\Core\Http\Response\BytesResponse { $this->bytes = ['content' => $content, 'filename' => $filename, 'mime' => $mimeType, 'inline' => $inline]; return new \Z77\Core\Http\Response\BytesResponse($content, $filename, $mimeType, $inline); }
+        private function journalService(): \Z77\Module\Debtor\Services\JournalPostingService { return new \Z77\Module\Debtor\Services\JournalPostingService($this->em(), 'buchhalter'); }
+    };
+};
+$fjList = fn($host) => $renderer->partial('Backend/InvoiceJournalController/listAction', $host->context);
+
+check('FJ9 the journal starts empty (what the sections above issued is posted): no `issued` document; «Journal verbuchen» of an empty journal is refused `empty`, nothing written',
+    $wireDi()->getRepository(Invoice::class)->journalVersions() === [] && $fjRefused(fn() => $fjJournal()->post([])) === \Z77\Module\Debtor\Services\JournalRefusedException::EMPTY);
+
+// «Fakturieren» of two drafts through the screen — the booking print since 2026-10-23.
+$fjA = $service($wireDi())->invoice($withTarget('qr', '2026-10-03'));
+$fjB = $service($wireDi())->invoice($withTarget('qr', '2026-10-04'));
+$fjAv = (int) $invoiceRow($fjA->getId())['version'];
+$fjJ0 = $journalCount();
+$fjP0 = $fjPosted();
+$useRequest([], ['doc' => [$fjA->getId() . ':' . $fjAv, $fjB->getId() . ':' . $invoiceRow($fjB->getId())['version']]]);
+$host = $fjInvoiceHost();
+$host->finalizeAction();
+$fjRowA = $invoiceRow($fjA->getId());
+$fjRowB = $invoiceRow($fjB->getId());
+$fjRevA = $fjFile($fjA->getId());
+check('FJ10 «Fakturieren» (InvoicingService::issue()): both ISSUED — numbered (October, by date), the QR reference drawn, issued by / at, NOTHING posted (no journal entry, no ledger reference, no posting protocol), one UPDATE (version + 1); the answer is the result list',
+    $fjRowA['state'] === 'issued' && $fjRowB['state'] === 'issued' && intdiv((int) $fjRowA['number'], 10000) === 2610 && (int) $fjRowB['number'] > (int) $fjRowA['number']
+    && $fjRowA['pay_reference'] !== '' && $fjRowA['issued_by'] === 'sachbearbeiter' && $fjRowA['issued_at'] !== null && $fjRowA['posted_at'] === null
+    && $fjRowA['ledger_entry_ref'] === null && $fjRowA['journal_posting_id'] === null && $journalCount() === $fjJ0 && $fjPosted() === $fjP0
+    && (int) $fjRowA['version'] === $fjAv + 1 && str_starts_with((string) $host->redirectedTo, '/backend/finance/invoice/booking-result?ids='),
+    json_encode([$fjRowA['state'], $fjRowA['number'], $fjRowA['version'], $fjAv, $host->context['message'] ?? null, $host->redirectedTo], JSON_UNESCAPED_UNICODE));
+check('FJ11 the STAMP of revision 1: ten lower-case hex digits on the document and on its invoice_revision row; the archived PDF lies at data/archive/debtor/2026/<number>-r1-<stamp>.pdf, its SHA-256 recorded, offered as rechnung-<number>.pdf; created by the issuer',
+    preg_match('/^[0-9a-f]{10}$/', (string) $fjRowA['document_stamp']) === 1 && $fjRevA['document_stamp'] === $fjRowA['document_stamp'] && (int) $fjRevA['revision'] === 1
+    && $fjRevA['file_path'] === 'data/archive/debtor/2026/' . $fjRowA['number'] . '-r1-' . $fjRowA['document_stamp'] . '.pdf' && $fjRevA['file_name'] === 'rechnung-' . $fjRowA['number'] . '.pdf'
+    && is_file($base . '/' . $fjRevA['file_path']) && hash('sha256', $fjBytes($fjA->getId())) === $fjRevA['file_sha256'] && $fjRevA['created_by'] === 'sachbearbeiter'
+    && $fjRowB['document_stamp'] !== $fjRowA['document_stamp'], json_encode($fjRevA));
+
+// The stamp's definition (DocumentStamp): canonical content, reproducible, every change changes it.
+$fjDocA     = $readInvoice($fjA->getId());
+$fjCustomer = (int) $wireDi()->getRepository(DebtorProfile::class)->findByContact($mid)?->getCustomerNumber();
+$fjCanon    = \Z77\Module\Debtor\Invoicing\DocumentStamp::canonical($fjDocA, $fjCustomer);
+$fjFree     = fn(string $s): bool => false;
+$fjAltered  = function (string $property, mixed $value) use ($readInvoice, $fjA, $fjCustomer, $fjFree): string {
+    $doc = $readInvoice($fjA->getId());
+    (new \ReflectionProperty(Invoice::class, $property))->setValue($doc, $value);   // in memory only, never flushed
+    return \Z77\Module\Debtor\Invoicing\DocumentStamp::of($doc, $fjCustomer, $fjFree);
+};
+check('FJ12 the stamp = the first 10 hex digits of SHA-256 over the canonical JSON of the version (keys in the documented order: v, kind, number, revision, dates, currency, price mode, recipient, subject, credit note of, lines, totals, taxes, payment); recomputed from the stored row it is the stored stamp; a changed subject, revision, due date or total gives another; a collision takes the next salt',
+    \Z77\Module\Debtor\Invoicing\DocumentStamp::of($fjDocA, $fjCustomer, $fjFree) === $fjRowA['document_stamp'] && substr(hash('sha256', $fjCanon), 0, 10) === $fjRowA['document_stamp']
+    && array_keys(json_decode($fjCanon, true)) === ['v', 'kind', 'number', 'revision', 'invoice_date', 'service_from', 'service_to', 'due_date', 'currency', 'price_mode', 'recipient', 'subject_label', 'subject', 'credit_note_of', 'lines', 'totals', 'taxes', 'payment']
+    && json_decode($fjCanon, true)['totals']['gross'] === $fjDocA->getGrossTotal()->toDecimal() && json_decode($fjCanon, true)['recipient']['customer'] === $fjCustomer
+    && count(array_unique([$fjRowA['document_stamp'], $fjAltered('subject', 'Anders'), $fjAltered('revision', 2), $fjAltered('dueDate', day('2027-03-01')), $fjAltered('grossTotal', chf('1.00'))])) === 5
+    && ($fjSalted = \Z77\Module\Debtor\Invoicing\DocumentStamp::of($fjDocA, $fjCustomer, fn(string $s): bool => $s === $fjRowA['document_stamp'])) !== $fjRowA['document_stamp'] && preg_match('/^[0-9a-f]{10}$/', $fjSalted) === 1
+    && throws(fn() => \Z77\Module\Debtor\Invoicing\DocumentStamp::canonical($service($wireDi())->preview($withTarget('qr', '2026-10-03')), 0), \LogicException::class),
+    $fjCanon);
+$fjPdfText = \Z77\Module\Debtor\Pdf\InvoicePdf::of($fjDocA, $wireDi())->withoutCompression()->output();
+check('FJ13 the PDF prints the stamp small beside the number («ID …», decision 24); a draft\'s preview prints none',
+    str_contains($fjPdfText, '(ID ' . $fjRowA['document_stamp'] . ')') && str_contains($fjPdfText, '(Rechnung ' . $fjRowA['number'] . ')')
+    && !str_contains(\Z77\Module\Debtor\Pdf\InvoicePdf::of($service($wireDi())->preview($withTarget('qr', '2026-10-03')), $wireDi())->withoutCompression()->output(), '(ID '));
+
+// Every later PDF of the version is the ARCHIVED file — PDF, ZIP, «Alle als ein PDF», the mail attachment.
+$fjIds = $fjA->getId() . ',' . $fjB->getId();
+$useRequest(['id' => (string) $fjA->getId()]);
+$host = $fjInvoiceHost();
+$host->pdfAction();
+$fjSingle = $host->bytes['content'] ?? '';
+$useRequest(['ids' => $fjIds]);
+$host = $fjInvoiceHost();
+$host->zipAction();
+$fjZipFile = $base . '/fj.zip';
+file_put_contents($fjZipFile, $host->bytes['content'] ?? '');
+$fjZip = new \ZipArchive();
+$fjZipped = [];
+if ($fjZip->open($fjZipFile) === true) {
+    for ($i = 0; $i < $fjZip->numFiles; $i++) {
+        $fjZipped[] = (string) $fjZip->getFromIndex($i);
+    }
+    $fjZip->close();
+}
+$host = $fjInvoiceHost();
+$host->pdfAllAction();
+$fjAll = $host->bytes['content'] ?? '';
+$fjMailPdf = \Z77\Module\Mailing\Attachments\AttachmentProviders::fromModules(DI::getModuleManager())->resolve('invoice-pdf:' . $fjA->getId())->bytes;
+check('FJ14 delivery = the archive (owner decision O13): the single PDF, each ZIP entry and the mail attachment `invoice-pdf` are byte for byte the archived files; «Alle als ein PDF» is those files joined (PdfConcat) — its pages are the sum of theirs, and it reads back in the writer\'s shape',
+    $fjSingle === $fjBytes($fjA->getId()) && $fjZipped === [$fjBytes($fjA->getId()), $fjBytes($fjB->getId())] && $fjMailPdf === $fjBytes($fjA->getId())
+    && $fjAll === \Z77\Shared\Pdf\PdfConcat::of([$fjBytes($fjA->getId()), $fjBytes($fjB->getId())], 'Dokumente ' . $fjRowA['number'] . ' bis ' . $fjRowB['number'])
+    && substr_count($fjAll, "/Type /Page\n") === substr_count($fjBytes($fjA->getId()), "/Type /Page\n") + substr_count($fjBytes($fjB->getId()), "/Type /Page\n")
+    && str_starts_with(\Z77\Shared\Pdf\PdfConcat::of([$fjAll]), '%PDF-1.')
+    && throws(fn() => \Z77\Shared\Pdf\PdfConcat::of(['kein PDF']), \InvalidArgumentException::class) && throws(fn() => \Z77\Shared\Pdf\PdfConcat::of([]), \InvalidArgumentException::class));
+
+// A missing or altered archive file is an error, never a silent re-render.
+$fjPath = $base . '/' . $fjRevA['file_path'];
+$fjKeep = (string) file_get_contents($fjPath);
+file_put_contents($fjPath, $fjKeep . "\n% altered");
+$useRequest(['id' => (string) $fjA->getId()]);
+$host = $fjInvoiceHost();
+$host->pdfAction();
+$fjAltered1 = [$host->redirectedTo, $host->messageService->flashes[0] ?? [], $host->bytes];
+$fjMailThrows = throws(fn() => \Z77\Module\Mailing\Attachments\AttachmentProviders::fromModules(DI::getModuleManager())->resolve('invoice-pdf:' . $fjA->getId()), \RuntimeException::class);
+@unlink($fjPath);
+$useRequest(['id' => (string) $fjA->getId()]);
+$host = $fjInvoiceHost();
+$host->pdfAction();
+$fjMissing = [$host->redirectedTo, $host->messageService->flashes[0] ?? []];
+file_put_contents($fjPath, $fjKeep);
+check('FJ15 an ALTERED archive file (SHA-256 mismatch) or a MISSING one: the PDF action goes back to the mask with the German sentence («Prüfsumme» / «fehlt», the file named) and delivers nothing; the mail attachment throws (a retry of the mail); restored, the file is delivered again',
+    $fjAltered1[0] === '/backend/finance/invoice/edit?id=' . $fjA->getId() && ($fjAltered1[1][0] ?? '') === 'error' && str_contains($fjAltered1[1][1] ?? '', 'Prüfsumme') && $fjAltered1[2] === []
+    && $fjMailThrows && ($fjMissing[1][0] ?? '') === 'error' && str_contains($fjMissing[1][1] ?? '', 'fehlt') && str_contains($fjMissing[1][1] ?? '', $fjRevA['file_path'])
+    && (new \Z77\Module\Debtor\Pdf\InvoiceArchive($wireDi()))->pdf($readInvoice($fjA->getId())) === $fjKeep);
+
+// The Faktura-Journal screen.
+$useRequest([]);
+$host = $fjHost();
+$host->listAction();
+$fjHtml = $fjList($host);
+$fjAct  = $renderSlot($host, 'hc1');
+$fjTool = $renderSlot($host, 'hc2');
+$fjGross = $readInvoice($fjA->getId())->getGrossTotal()->add($readInvoice($fjB->getId())->getGrossTotal());
+check('FJ16 the journal list (tab «Im Journal»): exactly the issued documents in number order, a standard list (fetch region, the state icon opens the mask as a window, the stamp per row); the pending band «2 Dokumente im Journal · noch nicht verbucht · Total …»; the totals per VAT code and in all under the list',
+    array_map(fn($d) => (int) $d->getId(), $host->context['documents']) === [$fjA->getId(), $fjB->getId()] && $host->context['totals']['count'] === 2
+    && $host->context['totals']['gross'] === $fjGross->toDecimal() && array_column($host->context['totals']['vat'], 'code') === ['UN']
+    && str_contains($fjHtml, 'data-fetch-region="invoice-journal-find-list"') && str_contains($fjHtml, 'data-window-open="/backend/finance/invoice/edit?id=' . $fjA->getId() . '"')
+    && str_contains($fjHtml, $fjRowA['document_stamp']) && str_contains($fjHtml, 'data-journal-pending="2"') && str_contains($fjHtml, 'data-journal-totals') && str_contains($fjHtml, 'data-journal-grand-total'),
+    strip_tags($fjHtml));
+check('FJ17 the recipe (backend-screen.md): the action cell is «Journal verbuchen …» (a green confirm to the confirmation page); the toolbar the tabs «Im Journal» · «Verbuchte Journale» and the tool «Journal drucken»; the help at the right end of the toolbar (HELP-003) with field sections',
+    str_contains($fjAct, 'href="/backend/finance/invoice-journal/confirm-post"') && str_contains($fjAct, 'be-btn--confirm') && str_contains($fjAct, 'Journal verbuchen …') && !str_contains($fjAct, 'disabled')
+    && str_contains($fjTool, '>Im Journal</a>') && str_contains($fjTool, '>Verbuchte Journale</a>') && str_contains($fjTool, 'href="/backend/finance/invoice-journal/pdf"') && str_contains($fjTool, 'Journal drucken')
+    && $host->help->has() && $host->help->inToolbar() && $host->help->title() === 'Hilfe: Faktura-Journal'
+    && str_contains($renderer->partial('Backend/InvoiceJournalController/list.help', []), 'data-help-field="f_nr"'));
+$useRequest(['view' => 'issued']);
+$host = $fjInvoiceHost();
+$host->listAction();
+check('FJ18 the document list has the tab «Fakturiert» (issued invoices, no selection checkbox — they are issued already) between «In Fakturierung» and «Verbucht»',
+    array_values($host->context['views']) === ['In Fakturierung', 'Fakturiert', 'Verbucht', 'Gutschriften']
+    && in_array($fjA->getId(), array_map(fn($d) => (int) $d->getId(), $host->context['documents']), true) && array_filter($host->context['documents'], fn($d) => !$d->isInJournal()) === []
+    && !str_contains($renderer->partial('Backend/InvoiceController/listAction', $host->context), 'form="invoice-finalize"'));
+
+// Blocked: a document flagged by its source (the seam of step 5, set here in SQL).
+$db->executeStatement("UPDATE invoice SET reissue_needed = 'Betrag geändert (Harness)' WHERE id = ?", [$fjB->getId()]);
+$useRequest([]);
+$host = $fjHost();
+$host->listAction();
+$fjBlockedHtml = $fjList($host);
+$fjBlockedAct  = $renderSlot($host, 'hc1');
+$host = $fjHost();
+$host->confirmPostAction();
+$fjBlockedConfirm = $renderMain($host);
+$fjJ1 = $journalCount();
+check('FJ19 BLOCKED (decision 9): a document with «Neu fakturieren nötig» — the action cell disabled with the reason, the red band names the document and the reason, the confirmation has no button, and post() refuses `blocked` — nothing posted',
+    str_contains($fjBlockedAct, 'disabled') && str_contains($fjBlockedAct, 'Verbuchen gesperrt') && str_contains($fjBlockedHtml, 'data-journal-blocked="1"') && str_contains($fjBlockedHtml, 'Betrag geändert (Harness)')
+    && str_contains($fjBlockedHtml, 'Neu fakturieren nötig') && !str_contains($fjBlockedConfirm, 'type="submit"') && str_contains($fjBlockedConfirm, 'Verbuchen gesperrt')
+    && $fjRefused(fn() => $fjJournal()->post($wireDi()->getRepository(Invoice::class)->journalVersions())) === \Z77\Module\Debtor\Services\JournalRefusedException::BLOCKED
+    && $journalCount() === $fjJ1 && $stateOf($fjB->getId()) === 'issued' && $fjPosted() === $fjP0);
+$db->executeStatement('UPDATE invoice SET reissue_needed = NULL WHERE id = ?', [$fjB->getId()]);
+
+// The journal list as PDF.
+$useRequest([]);
+$host = $fjHost();
+$host->pdfAction();
+$fjListPdf = \Z77\Module\Debtor\Pdf\JournalPdf::render($fjJournal()->pending(), $fjJournal()->totals(), $fjJournal()->preview($fjJournal()->pending()), null, null, 'CHF')->withoutCompression()->output();
+check('FJ20 «Journal drucken»: the journal list as a PDF (faktura-journal.pdf) — every document with number and stamp, the totals per VAT code, the grand total and the entries the posting books per account',
+    ($host->bytes['mime'] ?? '') === 'application/pdf' && ($host->bytes['filename'] ?? '') === 'faktura-journal.pdf' && str_starts_with($host->bytes['content'] ?? '', '%PDF-')
+    && str_contains($fjListPdf, '(Faktura-Journal)') && str_contains($fjListPdf, '(' . $fjRowA['number'] . ')') && str_contains($fjListPdf, '(' . $fjRowA['document_stamp'] . ')')
+    && str_contains($fjListPdf, '(MWST je Code)') && str_contains($fjListPdf, '(Total)') && str_contains($fjListPdf, 'summiert je Konto'),
+    json_encode([$host->bytes['mime'] ?? null, $host->bytes['filename'] ?? null, str_contains($fjListPdf, '(Faktura-Journal)'), str_contains($fjListPdf, '(' . $fjRowA['number'] . ')'), str_contains($fjListPdf, '(' . $fjRowA['document_stamp'] . ')'), str_contains($fjListPdf, '(MWST je Code)'), str_contains($fjListPdf, '(Total)'), str_contains($fjListPdf, 'summiert je Konto')]));
+
+// The confirmation, then a document issued behind its back: the posting is refused `changed`.
+$useRequest([]);
+$host = $fjHost();
+$host->confirmPostAction();
+$fjConfirm = $renderMain($host);
+$fjSeen    = array_map(fn($d) => $d->getId() . ':' . $d->getVersion(), $host->context['documents']);
+$fjPreview = $host->context['preview'];
+check('FJ21 the confirmation «Journal verbuchen …»: a PAGE with the one green button (POST, CSRF field) carrying every document as {id}:{version}, the totals per VAT code and «Was gebucht wird» — the entries summed per account (Σ debit = Σ credit)',
+    $host->layoutManager->sections['main'] === ['Backend/InvoiceJournalController/confirmPost'] && str_contains($fjConfirm, 'action="/backend/finance/invoice-journal/post"') && str_contains($fjConfirm, 'name="csrf_token"')
+    && str_contains($fjConfirm, 'type="submit"') && array_filter($fjSeen, fn($p) => !str_contains($fjConfirm, 'value="' . $p . '"')) === [] && count($fjSeen) === 2
+    && $fjPreview['entries'] === 2 && str_contains($fjConfirm, 'data-journal-preview')
+    && array_reduce($fjPreview['rows'], fn(Money $s, array $r) => $s->add($r['debit']), chf('0.00'))->equals(array_reduce($fjPreview['rows'], fn(Money $s, array $r) => $s->add($r['credit']), chf('0.00'))));
+$fjD = $service($wireDi())->invoice($withTarget('qr', '2026-10-05'));
+$service($wireDi())->issue([$at($fjD->getId())]);
+$useRequest([], ['doc' => $fjSeen]);
+$host = $fjHost();
+$host->postAction();
+check('FJ22 a document issued after the confirmation: «Journal verbuchen» with the pairs seen is refused `changed` («ein Dokument ins Faktura-Journal gekommen») — nothing posted (always the whole journal, owner decision O7), back to the journal with the error',
+    $host->redirectedTo === '/backend/finance/invoice-journal/list' && ($host->messageService->flashes[0][0] ?? '') === 'error' && str_contains($host->messageService->flashes[0][1] ?? '', 'ins Faktura-Journal gekommen')
+    && $journalCount() === $fjJ1 && $stateOf($fjA->getId()) === 'issued' && $stateOf($fjD->getId()) === 'issued' && $fjPosted() === $fjP0);
+
+// A document dated in 2027 — a year without a fiscal year: the ledger refuses, the WHOLE posting rolls back.
+$fjE = $service($wireDi())->invoice($withTarget('qr', '2027-01-12'));
+$service($wireDi())->issue([$at($fjE->getId())]);
+$useRequest([], ['doc' => $fjPairs()]);
+$host = $fjHost();
+$host->postAction();
+check('FJ23 the bookkeeping refuses one document (2027 has no fiscal year): the posting of the whole journal rolls back — every document still issued, no journal entry, no protocol; the error names the refusal',
+    $host->redirectedTo === '/backend/finance/invoice-journal/list' && ($host->messageService->flashes[0][0] ?? '') === 'error' && str_contains($host->messageService->flashes[0][1] ?? '', 'Nichts wurde verbucht')
+    && $journalCount() === $fjJ1 && $fjPosted() === $fjP0 && array_map($stateOf, [$fjA->getId(), $fjB->getId(), $fjD->getId(), $fjE->getId()]) === ['issued', 'issued', 'issued', 'issued'],
+    json_encode($host->messageService->flashes, JSON_UNESCAPED_UNICODE));
+
+// The year close (owner decision O1) and what an issued document refuses before the posting.
+$fjUnposted = fn(string $from, string $to): array => array_map(fn(array $r) => (int) $r['id'], $wireDi()->getRepository(Invoice::class)->unpostedBetween(day($from), day($to), 10000)['rows']);
+$fjIn26     = $fjUnposted('2026-01-01', '2026-12-31');
+$fjIn27     = $fjUnposted('2027-01-01', '2027-12-31');
+$fjCloseA   = $fjYc('2026-10-03', '2026-10-03');   // A's day — the first ten are named one by one
+$fjMsgA     = array_values(array_filter($fjCloseA->blocking(), fn($f) => $f->reference === 'invoice:' . $fjA->getId()))[0]->message ?? '';
+check('FJ24 the year close 2026 is BLOCKED by the issued documents dated in 2026 («Rechnung … ist fakturiert, aber nicht verbucht — im Faktura-Journal «Journal verbuchen».»); the one dated 2027 does not block 2026 (O1) — it blocks 2027',
+    $fjYc('2026-01-01', '2026-12-31')->isBlocked() && in_array($fjA->getId(), $fjIn26, true) && in_array($fjD->getId(), $fjIn26, true) && !in_array($fjE->getId(), $fjIn26, true) && in_array($fjE->getId(), $fjIn27, true)
+    && $fjCloseA->isBlocked() && str_contains($fjMsgA, 'Rechnung ' . $fjRowA['number'] . ' vom 03.10.2026') && str_contains($fjMsgA, 'fakturiert, aber nicht verbucht') && str_contains($fjMsgA, 'Journal verbuchen')
+    && in_array('invoice:' . $fjE->getId(), array_map(fn($f) => $f->reference, $fjYc('2027-01-01', '2027-12-31')->blocking()), true), $fjMsgA);
+check('FJ25 before the posting an issued invoice takes no payment (`not-posted`, O6) and no credit note («steht im Faktura-Journal … erst nach «Journal verbuchen»»)',
+    caught(fn() => (new PaymentService($wireDi(), 'tester'))->record(new PaymentDraft($fjA->getId(), day('2026-11-20'), chf('10.00'), chf('0.00'), chf('0.00'))), PaymentRefusedException::class)?->reason === 'not-posted'
+    && str_contains((string) caught(fn() => $service($wireDi())->invoice(InvoiceDraft::creditNote($fjA->getId(), $mid, day('2026-11-20'), 'CHF', [LineDraft::lumpSum('Gutschrift', chf('10.00'), 'UN', '3400')])), InvoiceRefusedException::class)?->getMessage(), 'erst nach «Journal verbuchen»'));
+
+// 2027 opened: «Journal verbuchen» through the screen posts the whole journal.
+(new \Z77\Module\Financial\Services\FiscalYearService($wireDi()))->open(new \Z77\Module\Financial\Entities\FiscalYear('2027', day('2027-01-01'), day('2027-12-31')));
+$useRequest([]);
+$host = $fjHost();
+$host->confirmPostAction();
+$fjSeen    = array_map(fn($d) => $d->getId() . ':' . $d->getVersion(), $host->context['documents']);
+$fjPreview = $host->context['preview'];
+$fjSigned  = array_reduce($host->context['documents'], fn(Money $s, Invoice $d) => $s->add($d->getGrossTotal()->multiply($d->kind()->sign())), chf('0.00'));
+$fjNumbers = array_map(fn($d) => (int) $d->getNumber(), $host->context['documents']);
+$useRequest([], ['doc' => $fjSeen]);
+$host = $fjHost();
+$host->postAction();
+$fjProtocol = $db->fetchAssociative('SELECT * FROM invoice_journal_posting ORDER BY id DESC LIMIT 1');
+$fjAll4     = [$fjA->getId(), $fjB->getId(), $fjD->getId(), $fjE->getId()];
+$fjRefs     = array_map(fn(int $id) => (string) $invoiceRow($id)['ledger_entry_ref'], $fjAll4);
+$fjLedger   = [];
+foreach ($fjRefs as $fjRef) {
+    foreach ($entryLines($fjRef) as $fjLine) {
+        $fjLedger[$fjLine['account_number']] = ($fjLedger[$fjLine['account_number']] ?? chf('0.00'))->add(chf((string) $fjLine['debit'])->subtract(chf((string) $fjLine['credit'])));
+    }
+}
+$fjPreviewNet = [];
+foreach ($fjPreview['rows'] as $fjRow) {
+    $fjPreviewNet[$fjRow['account']] = $fjRow['debit']->subtract($fjRow['credit']);
+}
+check('FJ26 «Journal verbuchen» (JournalPostingService::post(), ONE unit of work): all four final, posted by «buchhalter» / at, each naming the ONE protocol (count 4, first / last number, the signed gross total, who / when); one journal entry each with the key invoice:{id}:final on its INVOICE date; the answer is the tab «Verbuchte Journale» with the flash',
+    array_map($stateOf, $fjAll4) === ['final', 'final', 'final', 'final'] && $journalCount() === $fjJ1 + 4 && $fjPosted() === $fjP0 + 1
+    && (int) $fjProtocol['document_count'] === 4 && (int) $fjProtocol['first_number'] === min($fjNumbers) && (int) $fjProtocol['last_number'] === max($fjNumbers)
+    && $fjProtocol['gross_total'] === $fjSigned->toDecimal() && $fjProtocol['posted_by'] === 'buchhalter'
+    && array_filter($fjAll4, fn(int $id) => (int) $invoiceRow($id)['journal_posting_id'] !== (int) $fjProtocol['id'] || $invoiceRow($id)['posted_by'] !== 'buchhalter' || $invoiceRow($id)['posted_at'] === null) === []
+    && $entryRow($fjRefs[3])['idempotency_key'] === 'invoice:' . $fjE->getId() . ':final' && $entryRow($fjRefs[3])['entry_date'] === '2027-01-12' && $entryRow($fjRefs[0])['entry_date'] === '2026-10-03'
+    && $host->redirectedTo === '/backend/finance/invoice-journal/list?view=posted' && ($host->messageService->flashes[0][0] ?? '') === 'success' && str_contains($host->messageService->flashes[0][1] ?? '', 'Journal verbucht: 4 Dokumente'),
+    json_encode([$fjProtocol, $host->messageService->flashes], JSON_UNESCAPED_UNICODE));
+check('FJ27 the preview IS the posting: what the confirmation showed per account (receivable, revenue, rounding) is what the ledger now holds on those accounts for the four entries (the VAT lines by their category\'s account)',
+    $fjPreview['entries'] === 4 && isset($fjPreviewNet['1100'], $fjPreviewNet['3400'], $fjLedger['1100'], $fjLedger['3400'])
+    && $fjPreviewNet['1100']->equals($fjLedger['1100']) && $fjPreviewNet['3400']->equals($fjLedger['3400'])
+    && array_reduce($fjLedger, fn(Money $s, Money $m) => $s->add($m), chf('0.00'))->isZero(),
+    json_encode([array_map(fn(Money $m) => $m->toDecimal(), $fjPreviewNet), array_map(fn(Money $m) => $m->toDecimal(), $fjLedger)]));
+check('FJ28 after the posting the invoice is payable (the open amount = its gross) and the journal is empty — the action cell disabled «leer»',
+    (new InvoicingService($wireDi(), 'tester'))->openAmount($readInvoice($fjA->getId()))->toDecimal() === $readInvoice($fjA->getId())->getGrossTotal()->toDecimal()
+    && $wireDi()->getRepository(Invoice::class)->journalVersions() === []
+    && (function () use ($useRequest, $fjHost, $renderSlot): bool { $useRequest([]); $h = $fjHost(); $h->listAction(); $a = $renderSlot($h, 'hc1'); return str_contains($a, 'disabled') && str_contains($a, 'leer'); })());
+
+// The tab «Verbuchte Journale» and a posted batch's journal list.
+$useRequest(['view' => 'posted']);
+$host = $fjHost();
+$host->listAction();
+$fjPostedHtml = $fjList($host);
+$useRequest(['posting' => (string) $fjProtocol['id']]);
+$hostPdf = $fjHost();
+$hostPdf->pdfAction();
+$useRequest(['posting' => '999999']);
+$hostGone = $fjHost();
+$hostGone->pdfAction();
+check('FJ29 «Verbuchte Journale»: the protocols newest first, each with its journal list (a helper icon → pdf?posting=); the posted batch reprints (faktura-journal-<id>.pdf); an unknown protocol goes back with an error',
+    (int) ($host->context['protocols'][0] ?? null)?->getId() === (int) $fjProtocol['id'] && str_contains($fjPostedHtml, 'href="/backend/finance/invoice-journal/pdf?posting=' . $fjProtocol['id'] . '"')
+    && str_contains($fjPostedHtml, 'data-fetch-region="invoice-journal-posted-list"') && str_contains($fjPostedHtml, 'buchhalter')
+    && ($hostPdf->bytes['filename'] ?? '') === 'faktura-journal-' . $fjProtocol['id'] . '.pdf' && str_starts_with($hostPdf->bytes['content'] ?? '', '%PDF-')
+    && $hostGone->redirectedTo === '/backend/finance/invoice-journal/list?view=posted' && ($hostGone->messageService->flashes[0][0] ?? '') === 'error');
+
+// A credit note and an invoice in the journal: the totals are SIGNED (a credit note reduces).
+$fjCn = $service($wireDi())->invoice(InvoiceDraft::creditNote($fjA->getId(), $mid, day('2026-10-21'), 'CHF', [LineDraft::lumpSum('Gutschrift', chf('50.00'), 'UN', '3400')]));
+$fjC  = $service($wireDi())->invoice($withTarget('qr', '2026-10-22'));
+$service($wireDi())->issue([$at($fjCn->getId()), $at($fjC->getId())]);
+$fjTot = $fjJournal()->totals();
+$fjCnDoc = $readInvoice($fjCn->getId());
+$fjCDoc  = $readInvoice($fjC->getId());
+$fjProt2 = $postJournal();
+check('FJ30 a credit note in the journal counts NEGATIVE: gross = invoice − credit note, the VAT base and tax per code the same; posted, its entry carries credit-note:{id}:final and the protocol the signed total',
+    $fjTot['count'] === 2 && $fjTot['gross'] === $fjCDoc->getGrossTotal()->subtract($fjCnDoc->getGrossTotal())->toDecimal()
+    && $fjTot['vat'][0]['tax'] === $fjCDoc->getTaxTotal()->subtract($fjCnDoc->getTaxTotal())->toDecimal()
+    && $stateOf($fjCn->getId()) === 'final' && $entryRow((string) $invoiceRow($fjCn->getId())['ledger_entry_ref'])['idempotency_key'] === 'credit-note:' . $fjCn->getId() . ':final'
+    && $fjProt2->getGrossTotal()->toDecimal() === $fjTot['gross'], json_encode($fjTot));
+
+// finalize() — issue AND post in one step, the dunning fee's path (decision 2): stamped and archived too, no protocol.
+$fjF = $service($wireDi())->invoice($withTarget('qr', '2026-10-23'));
+$fjJ2 = $journalCount();
+$service($wireDi())->finalize([$at($fjF->getId())]);
+$fjRowF = $invoiceRow($fjF->getId());
+check('FJ31 finalize() (issue and post at once — the dunning fee, ADR-054 decision 2): final, stamped, its PDF archived (revision 1), issued and posted by the same actor, one journal entry, NO journal protocol — it never enters the Faktura-Journal',
+    $fjRowF['state'] === 'final' && preg_match('/^[0-9a-f]{10}$/', (string) $fjRowF['document_stamp']) === 1 && ($fjFile($fjF->getId())['document_stamp'] ?? '') === $fjRowF['document_stamp']
+    && is_file($base . '/' . $fjFile($fjF->getId())['file_path']) && $fjRowF['issued_by'] === 'tester' && $fjRowF['posted_by'] === 'tester'
+    && $fjRowF['journal_posting_id'] === null && $journalCount() === $fjJ2 + 1);
+
+// A failure while archiving rolls everything back — and removes the files already written in that batch.
+$fjG = $service($wireDi())->invoice($withTarget('qr', '2026-10-24'));
+$fjH = $service($wireDi())->invoice($withTarget('qr', '2028-02-01'));
+@mkdir($base . '/data/archive/debtor', 0777, true);
+file_put_contents($base . '/data/archive/debtor/2028', 'a file where the year directory belongs');
+$service($wireDi())->prepareDocumentRanges([day('2026-10-24'), day('2028-02-01')]);   // the ranges exist ahead (committed) — what the snapshot compares
+$fjBefore26 = $archiveFiles();
+$fjRanges   = $db->fetchAllKeyValue("SELECT name, last_number FROM number_range WHERE name LIKE 'document.%'");
+$fjFail     = caught(fn() => $service($wireDi())->issue([$at($fjG->getId()), $at($fjH->getId())]), \RuntimeException::class);
+@unlink($base . '/data/archive/debtor/2028');
+check('FJ32 the archive cannot be written (the 2028 directory is a file): «Fakturieren» of the batch rolls back WHOLE — both still drafts without a number, no range moved, no revision row — and the 2026 PDF written before the failure is removed again',
+    $fjFail !== null && str_contains($fjFail->getMessage(), 'InvoiceArchive') && $stateOf($fjG->getId()) === 'invoicing' && $stateOf($fjH->getId()) === 'invoicing'
+    && $invoiceRow($fjG->getId())['number'] === null && $archiveFiles() === $fjBefore26
+    && $db->fetchAllKeyValue("SELECT name, last_number FROM number_range WHERE name LIKE 'document.%'") == $fjRanges
+    && (int) $db->fetchOne('SELECT COUNT(*) FROM invoice_revision WHERE invoice_id IN (?, ?)', [$fjG->getId(), $fjH->getId()]) === 0);
+$service($wireDi())->discard($fjG->getId(), (int) $invoiceRow($fjG->getId())['version']);
+$service($wireDi())->discard($fjH->getId(), (int) $invoiceRow($fjH->getId())['version']);
+
+// Mount, navigation, Rule 7, the rename.
+$fjSeed = array_column(json_decode(file_get_contents($package . '/data/framework/routing/navigation.d/module-debtor.json'), true), null, 'key');
+$fjTpl  = '';
+foreach (glob($package . '/res/view/templates/Backend/InvoiceJournalController/*.php') as $file) {
+    $fjTpl .= file_get_contents($file);
+}
+$fjLayout = \Z77\Module\Debtor\Ui\InvoiceJournalLayout::config();
+check('FJ33 mounted like the other debtor screens: host InvoiceJournalController + its config under module-backend Finance, the layout pins the fragment\'s listAction; the seed puts «Faktura-Journal» (invoice-journal/list, group finance) into «Auftragswesen» right after «Rechnungen»; the templates carry no script (Rule 7)',
+    is_file($pkgRoot . '/module-backend/src/Ui/Controllers/Finance/InvoiceJournalController.php') && is_file($pkgRoot . '/module-backend/src/Ui/Config/Finance/invoiceJournalControllerConfig.inc.php')
+    && ($fjLayout['levelElements']['body']['main'][0]['path'] ?? '') === 'Backend/InvoiceJournalController'
+    && ($fjSeed['faktura-journal']['parent_key'] ?? null) === 'auftraege' && $fjSeed['faktura-journal']['controller'] === 'invoice-journal' && $fjSeed['faktura-journal']['group'] === 'finance'
+    && $fjSeed['faktura-journal']['sort_key'] === $fjSeed['rechnungen']['sort_key'] + 1 && $fjSeed['debitoren']['sort_key'] > $fjSeed['faktura-journal']['sort_key']
+    && $fjTpl !== '' && !str_contains($fjTpl, '<script') && !str_contains($fjTpl, 'onclick='));
+$fjWords = [];
+foreach (['module-debtor/src', 'module-debtor/res', 'module-order/src', 'module-order/res'] as $dir) {
+    foreach (new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator(dirname($package) . '/' . $dir, \FilesystemIterator::SKIP_DOTS)) as $file) {
+        if (!str_ends_with($file->getFilename(), '.php')) {
+            continue;
+        }
+        foreach (token_get_all((string) file_get_contents($file->getPathname())) as $token) {
+            if (is_array($token) && in_array($token[0], [T_CONSTANT_ENCAPSED_STRING, T_INLINE_HTML, T_ENCAPSED_AND_WHITESPACE], true) && str_contains($token[1], 'Buchungsdruck')) {
+                $fjWords[] = $file->getFilename() . ':' . $token[2];
+            }
+        }
+    }
+}
+check('FJ34 the rename (owner decision O10): no text the user reads in debtor or order says «Buchungsdruck» any more — buttons, titles, help, flashes, refusals read «Fakturieren» (comments may keep the history; the routes keep their names)',
+    $fjWords === [], json_encode($fjWords));
 
 
 // ── result ───────────────────────────────────────────────────────────────

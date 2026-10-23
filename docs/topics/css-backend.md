@@ -1,6 +1,6 @@
 # css-backend
 
-2026-10-22
+2026-10-23
 
 ## entry
 
@@ -235,6 +235,7 @@ default first), the panel anchors right inside the viewport.
 | Aufträge › Aufträge | «+ Neuer Auftrag» (opens the order window; built 2026-10-14, `order.md`) — the toolbar carries the six view tabs, «Buchungsdruck …» the selection bar of «Zu fakturieren» | create (built) |
 | Aufträge › Debitoren | — | n/a |
 | Aufträge › Rechnungen | «+ Rechnung» | create |
+| Aufträge › Faktura-Journal | «Journal verbuchen …» (built 2026-10-23, ADR-054 — disabled with its reason while empty or blocked; the toolbar carries the tabs «Im Journal» · «Verbuchte Journale» and «Journal drucken») | confirm |
 | Aufträge › Zahlungseingänge | «+ camt.054 einlesen» | create |
 | Aufträge › Mahnungen | — (the Stichtag is a work-area form) | n/a |
 | Kontakte | «+ Kontakt» | create |

@@ -22,7 +22,7 @@
         "slot": "",
         "active": true,
         "param": "",
-        "sort_key": 2,
+        "sort_key": 3,
         "parent_key": "auftraege"
     },
     {
@@ -39,6 +39,19 @@
         "parent_key": "auftraege"
     },
     {
+        "key": "faktura-journal",
+        "name": "Faktura-Journal",
+        "module": "backend",
+        "group": "finance",
+        "controller": "invoice-journal",
+        "action": "list",
+        "slot": "",
+        "active": true,
+        "param": "",
+        "sort_key": 2,
+        "parent_key": "auftraege"
+    },
+    {
         "key": "zahlungseingaenge",
         "name": "Zahlungseingänge",
         "module": "backend",
@@ -48,7 +61,7 @@
         "slot": "",
         "active": true,
         "param": "",
-        "sort_key": 3,
+        "sort_key": 4,
         "parent_key": "auftraege"
     },
     {
@@ -61,7 +74,7 @@
         "slot": "",
         "active": true,
         "param": "",
-        "sort_key": 4,
+        "sort_key": 5,
         "parent_key": "auftraege"
     },
     {

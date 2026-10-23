@@ -14,11 +14,12 @@
  * A DRAFT (`invoicing`, no number yet) prints as a PREVIEW (owner
  * 2026-10-10): every page carries a large light diagonal «VORSCHAU» behind
  * the content and a red line at the top, the title has no number, and instead
- * of the payment part a short note says it follows with the booking print.
- * Only a booked document prints its number and its QR-bill.
+ * of the payment part a short note says it follows with «Fakturieren» (ADR-054;
+ * the booking print until 2026-10-23). An issued document prints its number, its
+ * QR-bill and the version STAMP beside the number («ID …», decision 24).
  *
  * Drawn alone (`InvoicePdf::render()`) or as one SECTION of a combined file
- * (`InvoicePdf::combined()`, the booking print of a batch) — so it starts with
+ * (`InvoicePdf::combined()` — a re-render of several; a batch of ISSUED documents is joined from their archived files, `InvoiceArchive::combined()`) — so it starts with
  * its own `addPage()`, resets its bag entry and numbers its pages per
  * document (`sectionPageNo()` / `sectionPageCount()`).
  *
@@ -58,7 +59,7 @@ $pdf->onPageStart(static function ($pdf) use ($name, $left, $right, $width, $pre
         // lies on top of the light watermark — diagonal across the page centre, 45° bottom-left to
         // top-right (owner 2026-10-13).
         $pdf->font('B', 110)->textColor(228)->rotatedText($pdf->pageWidth() / 2, $pdf->pageHeight() / 2, 'VORSCHAU', 45)->textColor(0);
-        $pdf->font('B', 8)->textColor(180, 0, 0)->text($left, 6, 'VORSCHAU — kein gültiges Dokument: ohne Belegnummer und ohne Zahlteil. Beides kommt mit dem Buchungsdruck.', 'C', $width)->textColor(0);
+        $pdf->font('B', 8)->textColor(180, 0, 0)->text($left, 6, 'VORSCHAU — kein gültiges Dokument: ohne Belegnummer und ohne Zahlteil. Beides kommt mit dem Fakturieren.', 'C', $width)->textColor(0);
     }
     if ($pdf->sectionPageNo() > 1) {
         $pdf->font('', 8)->textColor(110)->text($left, 12, $name . '  ·  Seite ' . $pdf->sectionPageNo() . ' von ' . $pdf->sectionPageCount())->textColor(0);
@@ -82,6 +83,11 @@ $pdf->partial('pdf/addressWindow', ['lines' => $document->getAddress()->lines(),
 $place = $mandator !== null && trim($mandator->getCity()) !== '' ? $mandator->getCity() . ', ' : '';
 $pdf->font('', 9)->text($left, 92, $place . $document->getInvoiceDate()->format('d.m.Y'));
 $pdf->font('B', 14)->text($left, 100, $name);
+if (!$preview && $document->getDocumentStamp() !== null) {
+    // The version's stamp (ADR-054 decision 24, owner 2026-10-23): small, beside the number at the right
+    // edge — the unique ID of THIS version a replacement cites («ersetzt Rechnung … (ID …)»).
+    $pdf->font('', 7.5)->textColor(110)->text($left, 100, 'ID ' . $document->getDocumentStamp() . ($document->getRevision() > 1 ? '  ·  Version ' . $document->getRevision() : ''), 'R', $width)->textColor(0);
+}
 $y = 108;
 if ($document->subjectLine() !== null) {
     // The optional «Betreff» (P7 slim, 2026-10-14) directly under the title; the facts move down. With a
@@ -157,8 +163,8 @@ if ($preview && !$isCredit) {
     // The preview has no payment part: the reference and the message come with the number.
     $pdf->ensureSpace(10);
     $pdf->font('I', 9)->textColor(110)->paragraph($left, $pdf->y() + 4, $width, $document->getPayment()->hasPaymentPart()
-        ? 'Zahlteil folgt mit dem Buchungsdruck.'
-        : 'Ohne Zahlteil — Zahlungsvermerk folgt mit der Belegnummer beim Buchungsdruck.', 4.4);
+        ? 'Zahlteil folgt mit dem Fakturieren.'
+        : 'Ohne Zahlteil — Zahlungsvermerk folgt mit der Belegnummer beim Fakturieren.', 4.4);
     $pdf->textColor(0);
 } elseif (!$isCredit && !$bill->isPrintable() && $document->getPayment()->hasPaymentPart() === false) {
     $pdf->ensureSpace(10);

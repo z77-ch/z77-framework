@@ -122,7 +122,7 @@ trait OrderControllerTrait
         SalesOrderStatusChange::TRIGGER_STATUS        => 'Status geändert',
         SalesOrderStatusChange::TRIGGER_CONFIRMATION  => 'Auftragsbestätigung',
         SalesOrderStatusChange::TRIGGER_DELIVERY_NOTE => 'Lieferschein',
-        SalesOrderStatusChange::TRIGGER_BOOKING_PRINT => 'Buchungsdruck',
+        SalesOrderStatusChange::TRIGGER_BOOKING_PRINT => 'Fakturieren',
     ];
 
     /** URL root of THIS mount — every link and form is built from it. */
@@ -1016,29 +1016,29 @@ trait OrderControllerTrait
         }
         $date = self::orderDate((string) ($post['invoice_date'] ?? ''));
         if ($date === null) {
-            return $this->orderBookingRefused('Das Rechnungsdatum fehlt oder ist kein gültiges Datum — nichts wurde verbucht.', $pairs);
+            return $this->orderBookingRefused('Das Rechnungsdatum fehlt oder ist kein gültiges Datum — nichts wurde fakturiert.', $pairs);
         }
         $reason = trim((string) ($post['stock_reason'] ?? ''));
         try {
             $invoices = $this->orderService()->book($pairs, $date, $reason !== '' ? new StockConfirmation(mb_substr($reason, 0, StockConfirmation::REASON_LENGTH)) : null);
         } catch (OrderConflictException $e) {
             $order = $this->orders()->find($e->orderId);
-            return $this->orderBookingRefused(($order !== null ? 'Auftrag ' . $order->documentNumber() : 'Ein Auftrag der Auswahl') . ' wurde inzwischen geändert oder ist nicht mehr vorhanden — nichts wurde verbucht. Liste neu laden und die Auswahl prüfen.', $pairs);
+            return $this->orderBookingRefused(($order !== null ? 'Auftrag ' . $order->documentNumber() : 'Ein Auftrag der Auswahl') . ' wurde inzwischen geändert oder ist nicht mehr vorhanden — nichts wurde fakturiert. Liste neu laden und die Auswahl prüfen.', $pairs);
         } catch (StockReasonRequiredException) {
-            return $this->orderBookingRefused('Der Buchungsdruck würde bereits ausgelieferten Bestand zurückbuchen — nichts wurde verbucht. Den Status der Aufträge prüfen.', $pairs);
+            return $this->orderBookingRefused('Das Fakturieren würde bereits ausgelieferten Bestand zurückbuchen — nichts wurde fakturiert. Den Status der Aufträge prüfen.', $pairs);
         } catch (OrderException | DebtorException $e) {
-            return $this->orderBookingRefused('Nichts wurde verbucht: ' . $e->getMessage(), $pairs);
+            return $this->orderBookingRefused('Nichts wurde fakturiert: ' . $e->getMessage(), $pairs);
         } catch (\Doctrine\DBAL\Exception $e) {
             // The database refused the unit of work (a deadlock, a lock wait, a unique index at commit): everything
             // rolled back. Answered as the refusal page in the new tab, never a 500; the cause goes to the log.
             error_log('order booking print: ' . get_class($e) . ': ' . $e->getMessage());
 
             return $this->orderBookingRefused(LockConflict::is($e)
-                ? 'Nichts wurde verbucht: ' . LockConflict::MESSAGE
-                : 'Nichts wurde verbucht: die Datenbank hat den Buchungsdruck abgelehnt. Liste neu laden und nochmals versuchen; bleibt es dabei, steht die Ursache im Fehlerprotokoll.', $pairs);
+                ? 'Nichts wurde fakturiert: ' . LockConflict::MESSAGE
+                : 'Nichts wurde fakturiert: die Datenbank hat das Fakturieren abgelehnt. Liste neu laden und nochmals versuchen; bleibt es dabei, steht die Ursache im Fehlerprotokoll.', $pairs);
         }
         $names = implode(', ', array_map(static fn(Invoice $i) => $i->documentName(), $invoices));
-        $this->messageService->pushFlashAfterRedirect('success', (count($pairs) === 1 ? 'Auftrag verbucht: ' : count($pairs) . ' Aufträge verbucht: ') . $names);
+        $this->messageService->pushFlashAfterRedirect('success', (count($pairs) === 1 ? 'Auftrag fakturiert: ' : count($pairs) . ' Aufträge fakturiert: ') . $names . ' — im Faktura-Journal, noch nicht verbucht');
 
         return $this->redirect($this->orderBookingResult(array_map(static fn(Invoice $i) => (int) $i->getId(), $invoices)), 303);
     }

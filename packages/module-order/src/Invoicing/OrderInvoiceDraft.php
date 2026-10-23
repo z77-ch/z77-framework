@@ -12,7 +12,7 @@ use Z77\Module\Order\Entities\SalesOrderLine;
  * How an order becomes its invoice (plan §7) — a PURE mapper, the harness checks it offline
  * (section D). The ONE place an order is turned into debtor's {@see InvoiceDraft}: the totals of
  * every save (`InvoicingService::preview()`, D11), the order PDF and invoice preview (step 8) and
- * the booking print (`invoiceAndFinalize()`, step 9) all go through it — so the preview IS what
+ * «Fakturieren» (`invoiceAndIssue()`, step 9) all go through it — so the preview IS what
  * the booking print will issue.
  *
  *   - kind `invoice`; the contact; `address` = the order's BILLING snapshot (2026-10-17), null =

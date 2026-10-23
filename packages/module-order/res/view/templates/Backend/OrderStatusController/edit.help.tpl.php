@@ -6,7 +6,7 @@
  */
 ?>
 <h3>Auftragsstatus</h3>
-<p>Ein Status ist eine <strong>Bezeichnung</strong>, nach der die Aufträge geordnet und gesucht werden — «Terminauftrag», «Bestellung», «bereitgestellt», «zu fakturieren». Es dürfen beliebig viele sein. Was mit einem Auftrag geschieht (Lager, Buchungsdruck, Dokumente), bestimmt allein die <strong>Phase</strong>, zu der sein Status gehört — darum kann ein Status nichts falsch buchen.</p>
+<p>Ein Status ist eine <strong>Bezeichnung</strong>, nach der die Aufträge geordnet und gesucht werden — «Terminauftrag», «Bestellung», «bereitgestellt», «zu fakturieren». Es dürfen beliebig viele sein. Was mit einem Auftrag geschieht (Lager, Fakturieren, Dokumente), bestimmt allein die <strong>Phase</strong>, zu der sein Status gehört — darum kann ein Status nichts falsch buchen.</p>
 <p>Ein Status wird nie gelöscht, nur <strong>deaktiviert</strong> (Schalter «Aktiv» in der Liste): Aufträge, die darin stehen, behalten ihn; er wird nur nicht mehr vergeben. Jeder Statuswechsel eines Auftrags wird protokolliert (wer, wann, von → nach). «Bezahlt» ist kein Status — ob eine Rechnung bezahlt ist, zeigt der Auftrag aus der Debitorenbuchhaltung.</p>
 
 <section data-help-field="code">
@@ -23,11 +23,11 @@
 <h3>Phase</h3>
 <p>Die Phasen sind fest — die Leiter, an der jeder Auftrag hochsteigt:</p>
 <ul>
-    <li><strong>Eröffnet</strong> — Offerte, Anfrage, erfasst: kein Lager, kein Buchungsdruck, das PDF heisst «Offerte». «Auftragsbestätigung …» bestätigt den Auftrag.</li>
-    <li><strong>Termin</strong> — Bestellung, Terminauftrag, Dienstleistung: lagerführende Artikel sind <strong>reserviert</strong>; Buchungsdruck möglich. «Lieferschein …» liefert.</li>
-    <li><strong>Geliefert</strong> — bereitgestellt, geliefert, zu fakturieren: die Ware ist aus dem Lager, der Bestand ist <strong>verbraucht</strong>; Buchungsdruck möglich.</li>
+    <li><strong>Eröffnet</strong> — Offerte, Anfrage, erfasst: kein Lager, kein Fakturieren, das PDF heisst «Offerte». «Auftragsbestätigung …» bestätigt den Auftrag.</li>
+    <li><strong>Termin</strong> — Bestellung, Terminauftrag, Dienstleistung: lagerführende Artikel sind <strong>reserviert</strong>; Fakturieren möglich. «Lieferschein …» liefert.</li>
+    <li><strong>Geliefert</strong> — bereitgestellt, geliefert, zu fakturieren: die Ware ist aus dem Lager, der Bestand ist <strong>verbraucht</strong>; Fakturieren möglich.</li>
     <li><strong>Abgeschlossen</strong> — gebucht, erledigt: verbraucht, nicht mehr bearbeitbar.</li>
-    <li><strong>Storniert</strong> — der Auftrag findet nicht statt: nichts reserviert oder verbraucht, nicht mehr bearbeitbar. Nach einer verbuchten Rechnung wird nicht storniert, sondern gutgeschrieben.</li>
+    <li><strong>Storniert</strong> — der Auftrag findet nicht statt: nichts reserviert oder verbraucht, nicht mehr bearbeitbar. Nach einer fakturierten Rechnung wird nicht storniert.</li>
 </ul>
 <p>Ob eine Position überhaupt Lager bewegt, entscheidet der <strong>Artikel</strong> («führt Bestand») — eine Dienstleistung oder eine freie Position nie, in keiner Phase. Ein Wechsel in eine gleiche oder spätere Phase ist immer erlaubt; zurück nur, solange keine Rechnung verbucht ist. Kommt dabei verbrauchte Ware zurück ins Lager, wird ein Grund verlangt.</p>
 </section>
@@ -48,7 +48,7 @@
 <ul>
     <li><strong>Wird gesetzt beim Druck der Auftragsbestätigung</strong> (Termin) — z.B. «Terminauftrag»;</li>
     <li><strong>Wird gesetzt beim Druck des Lieferscheins</strong> (Geliefert) — z.B. «Geliefert»;</li>
-    <li><strong>Wird gesetzt beim Buchungsdruck</strong> (Abgeschlossen) — z.B. «Gebucht». Diesen Status setzt nur der Buchungsdruck, von Hand ist er nicht wählbar.</li>
+    <li><strong>Wird gesetzt beim Fakturieren</strong> (Abgeschlossen) — z.B. «Gebucht». Diesen Status setzt nur das Fakturieren, von Hand ist er nicht wählbar.</li>
 </ul>
 <p>Pro Phase hat ihn ein Status; wird er hier eingeschaltet, verliert ihn der Status, der ihn bisher hatte. Ist keiner markiert, nimmt die Aktion den ersten der Phase (nach Sortierung). Steht der Auftrag schon in dieser Phase oder weiter, ändert die Aktion den Status nicht. Bei «Status ändern …» von Hand spielt der Schalter keine Rolle. Eröffnet und Storniert haben keinen solchen Schalter — keine Aktion führt dorthin (ein neuer Auftrag nimmt den Startstatus, storniert wird von Hand).</p>
 </section>

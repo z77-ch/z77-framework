@@ -84,7 +84,7 @@ $resend     = $resend ?? 0;
         <div class="be-modal__alert" data-mail-done>Bereits versendet oder im Postausgang — nicht nochmals: <?= e(implode(', ', array_map(static fn($d) => $d->documentName(), $done))) ?>.<?= $n === 0 ? ' Alle Dokumente sind erledigt.' : '' ?> Einen Beleg nochmals senden: «Erneut senden …» in seiner Zeile der Liste.</div>
         <?php endif; ?>
         <?php if ($skip !== []): ?>
-        <div class="be-modal__alert" data-mail-skipped>Übersprungen (keine E-Mail): <?= e(implode(', ', array_map(static fn(array $s) => $s['document']->documentName() . ($s['reason'] !== '' ? ' — ' . $s['reason'] : ''), $skip))) ?>. Die Adresse steht auf dem Beleg (Rechnungsadresse); ein verbuchter Beleg ändert sie nicht mehr.</div>
+        <div class="be-modal__alert" data-mail-skipped>Übersprungen (keine E-Mail): <?= e(implode(', ', array_map(static fn(array $s) => $s['document']->documentName() . ($s['reason'] !== '' ? ' — ' . $s['reason'] : ''), $skip))) ?>. Die Adresse steht auf dem Beleg (Rechnungsadresse); ein fakturierter Beleg ändert sie nicht mehr.</div>
         <?php endif; ?>
         <p class="be-form__hint">Jeder Beleg geht als eigene E-Mail mit seinem PDF im Anhang an die E-Mail-Adresse seiner Rechnungsadresse, in der Sprache des Belegs. Betreff und Text: Service › E-Mail › Beleg-Mails; Absender ist das eingerichtete Mail-Konto, mit deinem Anzeigenamen («Senden als»); Antworten gehen an die gewählte Adresse. Der Versand läuft im Hintergrund, in Paketen (Service › Postausgang).</p>
     </form>

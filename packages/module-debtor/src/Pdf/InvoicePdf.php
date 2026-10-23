@@ -17,9 +17,13 @@ use Z77\Shared\Pdf\PdfDocument;
 /**
  * The document as a PDF (P3 part 3, the part that waited for the PDF
  * library — owner 2026-10-06: FPDF through the kernel facade, the layouts
- * as partials). Rendered ON REQUEST from the document's immutable SNAPSHOT
- * — deterministic, the same document yields the same file — and NOT stored
- * (owner 2026-09-30; the Drive storage is a pending of `debtor.md`).
+ * as partials). Rendered from the document's immutable SNAPSHOT —
+ * deterministic, the same document yields the same file. Since the
+ * Faktura-Journal (ADR-054 decision 25, owner 2026-10-23) an ISSUED version is
+ * rendered here ONCE, at «Fakturieren», and stored by {@see InvoiceArchive};
+ * every later delivery of it is the stored file (`InvoiceArchive::pdf()`),
+ * never this class again. A draft's preview and a document posted before the
+ * journal are still rendered here on request.
  *
  * This class only assembles the CONTEXT and hands it to the layout
  * `pdf/invoice` of this module (overridable per project under

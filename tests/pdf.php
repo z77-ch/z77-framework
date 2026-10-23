@@ -371,5 +371,30 @@ $c = PdfDocument::create('c')->addPage()->setXY(33, 44);
 $c->font('B', 40)->rotatedText(105, 148.5, 'KOPIE', 30);
 check('J5 rotatedText() leaves the cursor where it was', abs($c->x() - 33) < 0.01 && abs($c->y() - 44) < 0.01);
 
+// ── K. PdfConcat — files of the writer joined page for page (ADR-054 decision 25: «Alle als ein PDF» of archived files) ──
+echo "K. PdfConcat\n";
+$k1 = PdfDocument::create('Eins');
+$k1->addPage()->text(20, 20, 'Datei eins, Seite 1');
+$k1->addPage()->text(20, 20, 'Datei eins, Seite 2');
+$k2 = PdfDocument::create('Zwei', '', 'L', 'A5');
+$k2->addPage()->text(20, 20, 'Datei zwei')->qrCode('z77', 20, 40, 30);
+$k1Bytes = $k1->withoutCompression()->output();
+$k2Bytes = $k2->output();
+$kJoined = \Z77\Shared\Pdf\PdfConcat::of([$k1Bytes, $k2Bytes], 'Dokumente 1 bis 2');
+preg_match_all('/\/MediaBox \[([0-9. ]+)\]/', $kJoined, $kBoxes);
+check('K1 two files → one: three pages in input order, the stream bytes untouched (the uncompressed text of file one is there as written), the title in the new info',
+    substr_count($kJoined, "/Type /Page\n") === 3 && str_contains($kJoined, '(Datei eins, Seite 1) Tj') && strpos($kJoined, '(Datei eins, Seite 2)') < strlen($kJoined)
+    && str_contains($kJoined, '/Count 3') && str_contains($kJoined, '/Title <FEFF') && str_starts_with($kJoined, '%PDF-1.'));
+check('K2 a page keeps its own size: the A5 landscape page of file two carries its MediaBox (the new page tree defaults to none of them)',
+    in_array('0 0 595.28 420.94', $kBoxes[1], true) && in_array('0 0 595.28 841.89', $kBoxes[1], true));
+check('K3 the result is in the writer\'s shape again (a classic xref that PdfConcat reads back), and it refuses what is not: no input, no PDF, a cut file',
+    substr_count(\Z77\Shared\Pdf\PdfConcat::of([$kJoined, $k2Bytes]), "/Type /Page\n") === 4
+    && (function () use ($k1Bytes): bool {
+        foreach ([[], ['kein PDF'], [substr($k1Bytes, 0, -20)]] as $bad) {
+            try { \Z77\Shared\Pdf\PdfConcat::of($bad); return false; } catch (\InvalidArgumentException) {}
+        }
+        return true;
+    })());
+
 echo "\n{$pass} passed, {$fail} failed\n";
 exit($fail === 0 ? 0 : 1);

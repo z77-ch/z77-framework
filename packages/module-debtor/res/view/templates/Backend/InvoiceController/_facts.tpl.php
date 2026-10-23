@@ -62,6 +62,18 @@ $mask       = static fn(int $id): string => $actionBase . '/edit?id=' . $id;
         <?= raw($row('Buchung', $ledgerKnown ? '<a href="' . e($journal) . '" data-window-open="' . e($journal) . '">' . e($ref) . '</a>' : e($ref))) ?>
         <?php elseif ($document->isPosted()): ?>
         <?= raw($row('Buchung', 'keine (Buchhaltung ausserhalb oder nichts zu buchen)')) ?>
+        <?php elseif ($document->isInJournal()): ?>
+        <?= raw($row('Buchung', 'noch keine — im <a href="/backend/finance/invoice-journal/list">Faktura-Journal</a>, verbucht mit «Journal verbuchen»')) ?>
+        <?php endif; ?>
+        <?php if ($document->getDocumentStamp() !== null): ?>
+        <?php /* The version stamp and who issued / posted it (ADR-054, owner 2026-10-23). */ ?>
+        <?= raw($row('ID', '<code>' . e($document->getDocumentStamp()) . '</code>' . ($document->getRevision() > 1 ? ' <small class="be-list__cell--muted">· Version ' . (int) $document->getRevision() . '</small>' : '') . ' <small class="be-list__cell--muted">· PDF unveränderlich abgelegt</small>')) ?>
+        <?php endif; ?>
+        <?php if ($document->getIssuedAt() !== null): ?>
+        <?= raw($row('Fakturiert', e($document->getIssuedAt()->format('d.m.Y H:i') . ' · ' . (string) $document->getIssuedBy()))) ?>
+        <?php endif; ?>
+        <?php if ($document->getPostedAt() !== null): ?>
+        <?= raw($row('Verbucht', e($document->getPostedAt()->format('d.m.Y H:i') . ' · ' . (string) $document->getPostedBy()))) ?>
         <?php endif; ?>
         <?php if ($allocations !== []): ?>
         <?= raw($row('Zahlungen', implode('<br>', array_map(static function ($a) use ($fmt, $actionBase, $document, $winLink): string {
@@ -106,13 +118,13 @@ $mask       = static fn(int $id): string => $actionBase . '/edit?id=' . $id;
         <?= raw($row('Konto', e($bill->formattedAccount()) . ' <span class="badge ' . (Iban::isQrIban($payment->getAccount()) ? 'badge--success">QR-IBAN' : 'badge--muted">IBAN') . '</span> <small class="be-list__cell--muted">· Zahlungsziel ' . e($payment->getTargetCode()) . '</small>')) ?>
         <?= raw($row('Zahlbar an', e(implode(', ', array_filter([$payment->getCreditorName(), trim($payment->getCreditorStreet() . ' ' . $payment->getCreditorHouseNo()), trim($payment->getCreditorCountry() . ' ' . $payment->getCreditorZip() . ' ' . $payment->getCreditorCity())]))))) ?>
         <?php if ($bill->isPending()): ?>
-        <?= raw($row('Referenz', 'folgt mit der Belegnummer beim Buchungsdruck' . ($payment->getReferenceType() === 'QRR' ? ' (QR-Referenz)' : ' (keine Referenz, NON — die Mitteilung nennt das Dokument)'))) ?>
+        <?= raw($row('Referenz', 'folgt mit der Belegnummer beim Fakturieren' . ($payment->getReferenceType() === 'QRR' ? ' (QR-Referenz)' : ' (keine Referenz, NON — die Mitteilung nennt das Dokument)'))) ?>
         <?php else: ?>
         <?= raw($row('Referenz', $payment->getReferenceType() === 'QRR' ? '<code>' . e($bill->formattedReference()) . '</code>' : 'keine (NON) · Mitteilung «' . e($payment->getMessage()) . '»')) ?>
         <?php endif; ?>
         <?php endif; ?>
         <?php if (!$bill->isPrintable() && $bill->problems() !== []): ?>
-        <?= raw($row($bill->isPending() ? 'Vor dem Buchungsdruck beheben' : 'Kein Zahlteil', implode('<br>', array_map('e', $bill->problems())))) ?>
+        <?= raw($row($bill->isPending() ? 'Vor dem Fakturieren beheben' : 'Kein Zahlteil', implode('<br>', array_map('e', $bill->problems())))) ?>
         <?php endif; ?>
     </div>
     <?php endif; ?>

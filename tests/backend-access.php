@@ -100,6 +100,9 @@ $expect = [
     ['content', 'navigation', 'list',            AuthRole::ADMIN],
     ['content', 'meta-data',  'list',            AuthRole::ADMIN],
     ['service', 'backup',     'list',            AuthRole::SUPER_USER],
+    // The Faktura-Journal (ADR-054 step 3): no own rule — the module role ADMIN, like every debtor screen; posting included.
+    ['finance', 'invoice-journal', 'list',       AuthRole::ADMIN],
+    ['finance', 'invoice-journal', 'post',       AuthRole::ADMIN],
     ['content', 'unknown',    'list',            AuthRole::ADMIN],   // a forgotten controller is never open
 ];
 foreach ($expect as [$group, $controller, $action, $want]) {
