@@ -34,6 +34,8 @@
  * @var list<array<string, mixed>> $deliveries  final documents only — the outbox rows of `invoice:<id>` (InvoiceMails::deliveries(); [] without module-mailing)
  * @var bool $ledgerKnown
  * @var array<string, string> $states
+ * @var list<\Z77\Module\Debtor\Entities\InvoiceRevision> $revisions  the archived versions, oldest first (ADR-054 decision 11) — «Versionen» from revision 2 on
+ * @var \Z77\Module\Debtor\Entities\Invoice|null $predecessor  the document this one REPLACED (decision 10) — «Ersetzt»
  * @var callable $fmt
  * @var string $actionBase
  */
@@ -74,6 +76,22 @@ $mask       = static fn(int $id): string => $actionBase . '/edit?id=' . $id;
         <?php endif; ?>
         <?php if ($document->getPostedAt() !== null): ?>
         <?= raw($row('Verbucht', e($document->getPostedAt()->format('d.m.Y H:i') . ' · ' . (string) $document->getPostedBy()))) ?>
+        <?php endif; ?>
+        <?php /* The Faktura-Journal's corrections (ADR-054 decisions 10, 11, 14 — step 4): links both ways, who / when / why, every archived version. */ ?>
+        <?php if ($document->getReplacedBy() !== null): ?>
+        <?= raw($row('Ersetzt durch', $winLink($mask((int) $document->getReplacedBy()->getId()), $document->getReplacedBy()->documentName()))) ?>
+        <?php endif; ?>
+        <?php if (($predecessor ?? null) !== null): ?>
+        <?= raw($row('Ersetzt', $winLink($mask((int) $predecessor->getId()), $predecessor->documentName()) . ($predecessor->getDocumentStamp() !== null ? ' <small class="be-list__cell--muted">· ID ' . e($predecessor->getDocumentStamp()) . ' — auf dem PDF: «ersetzt ' . e($predecessor->documentName()) . '»</small>' : ''))) ?>
+        <?php endif; ?>
+        <?php if ($document->isVoid() && $document->getVoidedAt() !== null): ?>
+        <?= raw($row($document->getReplacedBy() !== null ? 'Ersetzt am' : 'Gelöscht am', e($document->getVoidedAt()->format('d.m.Y H:i') . ' · ' . (string) $document->getVoidedBy()) . ' <small class="be-list__cell--muted">· ' . e((string) $document->getVoidReason()) . '</small>')) ?>
+        <?php endif; ?>
+        <?php if ($document->getReissueNeeded() !== null): ?>
+        <?= raw($row('Neu fakturieren', '<span class="badge badge--warning">nötig</span> ' . e($document->getReissueNeeded()) . ' <small class="be-list__cell--muted">· das Faktura-Journal ist gesperrt, bis die Quelle neu fakturiert ist</small>')) ?>
+        <?php endif; ?>
+        <?php if (count($revisions ?? []) > 1 || (($revisions ?? []) !== [] && $document->getRevision() > 1)): ?>
+        <?= raw($row('Versionen', implode('<br>', array_map(static fn($r) => '<a href="' . e($actionBase . '/pdf?id=' . (int) $document->getId() . '&revision=' . (int) $r->getRevision()) . '" target="_blank" rel="noopener">Version ' . (int) $r->getRevision() . '</a> <small class="be-list__cell--muted">· ID ' . e($r->getDocumentStamp()) . ' · ' . e($r->getCreatedAt()->format('d.m.Y H:i') . ' · ' . $r->getCreatedBy()) . ($r->getReason() !== null ? ' · ' . e($r->getReason()) : '') . '</small>', $revisions)))) ?>
         <?php endif; ?>
         <?php if ($allocations !== []): ?>
         <?= raw($row('Zahlungen', implode('<br>', array_map(static function ($a) use ($fmt, $actionBase, $document, $winLink): string {

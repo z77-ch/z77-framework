@@ -96,6 +96,44 @@ final class InvoiceArchive
         if ($revision === null) {
             return InvoicePdf::of($document, $this->em)->output();   // a preview, or a document posted before the journal
         }
+
+        return $this->bytesOf($document, $revision);
+    }
+
+    /**
+     * The archived PDF of ONE version of $document (ADR-054 decision 11: every revision stays as a file)
+     * — an earlier revision the customer may hold, or the version a mail was queued with (decision 21,
+     * `invoice-pdf:<id>@<revision>`). Null when that version was never archived.
+     *
+     * @throws InvoiceArchiveException the archived file is missing or altered
+     */
+    public function pdfOfRevision(Invoice $document, int $revision): ?string
+    {
+        if ($document->isDraft() || $document->getId() === null || $revision < 1) {
+            return null;
+        }
+        $row = $this->em->getRepository(InvoiceRevision::class)->findOneBy(['invoice' => $document->getId(), 'revision' => $revision]);
+
+        return $row === null ? null : $this->bytesOf($document, $row);
+    }
+
+    /**
+     * Every archived version of $document, oldest first — the mask lists them with their PDFs.
+     *
+     * @return list<InvoiceRevision>
+     */
+    public function revisionsOf(Invoice $document): array
+    {
+        if ($document->getId() === null) {
+            return [];
+        }
+
+        return array_values($this->em->getRepository(InvoiceRevision::class)->findBy(['invoice' => $document->getId()], ['revision' => 'ASC']));
+    }
+
+    /** @throws InvoiceArchiveException */
+    private function bytesOf(Invoice $document, InvoiceRevision $revision): string
+    {
         $absolute = $this->base . '/' . $revision->getFilePath();
         $bytes    = is_file($absolute) ? @file_get_contents($absolute) : false;
         if ($bytes === false) {

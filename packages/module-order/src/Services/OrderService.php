@@ -71,8 +71,16 @@ use Z77\Shared\Money\Money;
  * ({@see OrderInvoiceDraft}) and `InvoicingService::preview()` answers net, tax and gross; stored
  * for the list only. A preview that refuses the order as it stands leaves the totals null.
  *
- * **Editable** (D7) while the order has no invoice and its phase is not locked (closed, cancelled); with an invoice
- * only a forward status change remains. No delete (D8).
+ * **Editable** (D7, read with ADR-054 — the Faktura-Journal) while the order has no invoice and its phase is not
+ * locked (closed, cancelled) — OR while its invoice is ISSUED (in the Faktura-Journal, not posted): then a save
+ * that makes the order deviate from its invoice FLAGS the invoice through debtor's seam (`flagReissue()`, owner
+ * decision O9: ANY deviation) and the journal is blocked until {@see reinvoice()} («Neu fakturieren») re-issues it
+ * — a revision under the same number or a replacement with a new one, debtor decides (ADR-054 decision 8). With a
+ * POSTED invoice nothing by hand; a correction is a credit note.
+ *
+ * **Delete** ({@see delete()}, ADR-054 decision 14, owner decision O5 — replacing D8's «no delete»): an order
+ * without a posted invoice is DELETED — kept as a row stamped «gelöscht» with who / when / why, its number kept;
+ * its issued invoice goes `deleted` in debtor, its stock effects are brought to zero, all in one unit of work.
  */
 final class OrderService
 {
@@ -179,9 +187,215 @@ final class OrderService
                 $this->syncStock($order, $status, 'lines', $confirmation);
                 $this->em->flush();
             }
+            // An order whose invoice is in the Faktura-Journal (ADR-054 decision 9): the deviation flagged on it.
+            $this->flagInvoice($order);
 
             return $order;
         });
+    }
+
+    /**
+     * «NEU FAKTURIEREN» (ADR-054 decision 12, owner decisions O9 / O11): the order's ISSUED invoice is issued
+     * again from the order as it stands — debtor classifies (`InvoicingService::revise()`, decision 8): a
+     * REVISION keeps the number (version + 1, a new archived PDF), a REPLACEMENT issues a successor with a new
+     * number (its PDF prints «ersetzt Rechnung …») and the order is RE-LINKED to it; nothing to change clears
+     * the invoice's flag only. The invoice date stays the issued invoice's (the month of the number). One unit
+     * of work: the order row first, then debtor's chain (joined — the successor's month range prepared ahead,
+     * DOCTRINE-NR-003), the log row `reinvoice` (the status stays). A refusal after debtor's chain rolls back
+     * and removes the archive files written.
+     *
+     * @return \Z77\Module\Debtor\Entities\Invoice the invoice that stands now (the same or the successor)
+     * @throws OrderConflictException the order or its invoice changed since the screen
+     * @throws OrderRefusedException  DELETED | NOT_REINVOICEABLE | INVOICE_REFUSED
+     */
+    public function reinvoice(int $id, int $version): \Z77\Module\Debtor\Entities\Invoice
+    {
+        $order = $this->orders()->withLines($id);
+        if ($order === null || $order->getVersion() !== $version) {
+            throw new OrderConflictException($id, $version);
+        }
+        $invoice        = $this->reinvoiceable($order);
+        $invoiceId      = (int) $invoice->getId();
+        $invoiceVersion = $invoice->getVersion();
+        $invoiceDate    = $invoice->getInvoiceDate();
+        $before         = [$invoice->getRevision(), $invoice->getReissueNeeded()];
+        $invoicing      = $this->invoicing();
+        $invoicing->prepareDocumentRanges([$invoiceDate]);
+        $now = new \DateTimeImmutable();
+
+        try {
+            return $this->em->getTransaction(SalesOrder::class)->run(function () use ($id, $version, $invoiceId, $invoiceVersion, $invoiceDate, $before, $invoicing, $now): \Z77\Module\Debtor\Entities\Invoice {
+                $order   = $this->lockAt($id, $version);
+                $invoice = $this->reinvoiceable($order);
+                if ((int) $invoice->getId() !== $invoiceId) {
+                    throw new OrderConflictException($id, $version);
+                }
+                $previous = $invoice->documentName();
+                try {
+                    $standing = $invoicing->revise($invoiceId, $invoiceVersion, OrderInvoiceDraft::of($order, $invoiceDate), null, 'Neu fakturieren aus Auftrag ' . $order->documentNumber(), fromSource: true);
+                } catch (\Z77\Module\Debtor\Services\InvoiceConflictException) {
+                    throw new OrderConflictException($id, $version);
+                } catch (DebtorException | VatException $e) {
+                    throw new OrderRefusedException(OrderRefusedException::INVOICE_REFUSED, 'Auftrag ' . $order->documentNumber() . ': ' . $e->getMessage(), $e);
+                }
+                $replaced = (int) $standing->getId() !== $invoiceId;
+                if (!$replaced && $standing->getRevision() === $before[0] && $before[1] === null) {
+                    return $standing;   // nothing to re-issue and no flag to clear — nothing written
+                }
+                if ($replaced) {
+                    $order->relinkInvoice($standing);
+                }
+                $order->touch($this->actor, $now);
+                $note = $replaced
+                    ? $previous . ' ersetzt durch ' . $standing->documentName()
+                    : ($standing->getRevision() !== $before[0] ? $standing->documentName() . ', Version ' . $standing->getRevision() : $standing->documentName() . ' unverändert');
+                $this->em->persist(new SalesOrderStatusChange($order, $order->getStatusCode(), $order->getStatusCode(), SalesOrderStatusChange::TRIGGER_REINVOICE, $note, $this->actor, $now));
+                $this->em->flush();
+
+                return $standing;
+            });
+        } catch (\Throwable $e) {
+            $invoicing->discardArchived();   // nothing committed — no archive file may stay without its row
+            throw $e;
+        }
+    }
+
+    /**
+     * What «Neu fakturieren» WOULD do with $order now — debtor's classification (none / revision /
+     * replacement and why), for the confirmation window. Writes nothing.
+     *
+     * @throws OrderRefusedException DELETED | NOT_REINVOICEABLE | INVOICE_REFUSED (the order as it stands cannot be invoiced)
+     */
+    public function reinvoicePreview(SalesOrder $order): \Z77\Module\Debtor\Invoicing\Correction
+    {
+        $invoice = $this->reinvoiceable($order);
+        try {
+            return $this->invoicing()->classify($invoice, OrderInvoiceDraft::of($order, $invoice->getInvoiceDate()), fromSource: true);
+        } catch (DebtorException | VatException $e) {
+            throw new OrderRefusedException(OrderRefusedException::INVOICE_REFUSED, 'Auftrag ' . $order->documentNumber() . ': ' . $e->getMessage(), $e);
+        }
+    }
+
+    /**
+     * «AUFTRAG LÖSCHEN» (ADR-054 decision 14, owner decision O5): allowed while the order has no POSTED
+     * invoice — none, or one still in the Faktura-Journal. ONE unit of work: the order row locked and judged
+     * again → its issued invoice `deleted` in debtor (joined, the reason protocolled; refused there if it was
+     * posted in between) → the order stamped deleted (kept, its number kept), the log row `delete` → the stock
+     * brought to ZERO through the one stock call (consumed stock that comes back carries the deletion's reason
+     * as its confirmation, ADR-043 decision 14). The reason is mandatory.
+     *
+     * @throws OrderConflictException the order is gone or its version moved on
+     * @throws OrderRefusedException  REASON_REQUIRED | DELETED | NOT_DELETABLE | INVOICE_REFUSED
+     */
+    public function delete(int $id, int $version, string $reason): SalesOrder
+    {
+        $reason = trim($reason);
+        if ($reason === '') {
+            throw new OrderRefusedException(OrderRefusedException::REASON_REQUIRED, 'Ein Grund ist nötig — der gelöschte Auftrag bleibt mit seiner Nummer und dem Grund aufbewahrt.');
+        }
+        $order = $this->orders()->find($id);
+        if ($order === null || $order->getVersion() !== $version) {
+            throw new OrderConflictException($id, $version);
+        }
+        $this->assertDeletable($order);
+        $now = new \DateTimeImmutable();
+
+        return $this->em->getTransaction(SalesOrder::class)->run(function () use ($id, $version, $reason, $now): SalesOrder {
+            $order = $this->lockAt($id, $version);
+            $this->assertDeletable($order);
+            $invoice = $order->getInvoice();
+            if ($invoice !== null) {
+                try {
+                    $this->invoicing()->delete((int) $invoice->getId(), null, 'Auftrag ' . $order->documentNumber() . ' gelöscht: ' . $reason, fromSource: true);
+                } catch (DebtorException $e) {
+                    throw new OrderRefusedException(OrderRefusedException::NOT_DELETABLE, 'Auftrag ' . $order->documentNumber() . ': ' . $e->getMessage(), $e);
+                }
+            }
+            $order->markDeleted($reason, $this->actor, $now);
+            $order->touch($this->actor, $now);
+            $this->em->persist(new SalesOrderStatusChange($order, $order->getStatusCode(), $order->getStatusCode(), SalesOrderStatusChange::TRIGGER_DELETE, $reason, $this->actor, $now));
+            $this->em->flush();
+            // The stock to ZERO (O5): the targets of a phase that neither reserves nor consumes. Consumed stock coming back
+            // needs a reason (ADR-043 decision 14): the deletion's.
+            $this->syncStock($order, $this->statusOf($order, $this->statuses()), 'delete',
+                new StockConfirmation(mb_substr('Auftrag ' . $order->documentNumber() . ' gelöscht: ' . $reason, 0, StockConfirmation::REASON_LENGTH)), OrderPhase::Cancelled);
+            $this->em->flush();
+
+            return $order;
+        });
+    }
+
+    /** Why $order may not be deleted — null = it may (the order window offers «Auftrag löschen …» by it). */
+    public function deleteRefusal(SalesOrder $order): ?string
+    {
+        try {
+            $this->assertDeletable($order);
+        } catch (OrderRefusedException $e) {
+            return $e->getMessage();
+        }
+
+        return null;
+    }
+
+    /** @throws OrderRefusedException DELETED | NOT_DELETABLE */
+    private function assertDeletable(SalesOrder $order): void
+    {
+        if ($order->isDeleted()) {
+            throw new OrderRefusedException(OrderRefusedException::DELETED, 'Auftrag ' . $order->documentNumber() . ' ist bereits gelöscht.');
+        }
+        $invoice = $order->getInvoice();
+        if ($invoice !== null && !$invoice->isInJournal()) {
+            throw new OrderRefusedException(OrderRefusedException::NOT_DELETABLE, 'Zum Auftrag ' . $order->documentNumber() . ' ist ' . $invoice->documentName() . ' ' . $invoice->state()->label() . ' — der Auftrag wird nicht gelöscht' . ($invoice->isPosted() ? '; eine Korrektur ist eine Gutschrift auf der Rechnung.' : '.'));
+        }
+    }
+
+    /**
+     * The order's invoice when «Neu fakturieren» applies — issued, in the Faktura-Journal.
+     *
+     * @throws OrderRefusedException DELETED | NOT_REINVOICEABLE
+     */
+    private function reinvoiceable(SalesOrder $order): \Z77\Module\Debtor\Entities\Invoice
+    {
+        if ($order->isDeleted()) {
+            throw new OrderRefusedException(OrderRefusedException::DELETED, 'Auftrag ' . $order->documentNumber() . ' ist gelöscht.');
+        }
+        $invoice = $order->getInvoice();
+        if ($invoice === null || !$invoice->isInJournal()) {
+            throw new OrderRefusedException(OrderRefusedException::NOT_REINVOICEABLE, $invoice === null
+                ? 'Auftrag ' . $order->documentNumber() . ' ist noch nicht fakturiert — «Fakturieren …».'
+                : 'Zum Auftrag ' . $order->documentNumber() . ' ist ' . $invoice->documentName() . ' ' . $invoice->state()->label() . ' — neu fakturiert wird nur eine Rechnung im Faktura-Journal (noch nicht verbucht).');
+        }
+
+        return $invoice;
+    }
+
+    /**
+     * ADR-054 decision 9 / owner decision O9: after a save of an order whose invoice is ISSUED, the invoice is
+     * flagged with the deviation (`InvoicingService::flagReissue()`) — or cleared when the order is back in
+     * step. ANY deviation counts (debtor's classification of the order as it now stands against the issued
+     * invoice: a revision or a replacement); an order that debtor would refuse as it stands is a deviation
+     * too. Inside the caller's unit of work, after the order row (lock order order → invoice); an invoice
+     * posted in between refuses the save.
+     *
+     * @throws OrderRefusedException NOT_EDITABLE — the invoice was posted since
+     */
+    private function flagInvoice(SalesOrder $order): void
+    {
+        $invoice = $order->getInvoice();
+        if ($invoice === null || !$invoice->isInJournal()) {
+            return;
+        }
+        try {
+            $correction = $this->invoicing()->classify($invoice, OrderInvoiceDraft::of($order, $invoice->getInvoiceDate()), fromSource: true);
+            $reason     = $correction->isNone() ? null : 'Auftrag ' . $order->documentNumber() . ' geändert — ' . $correction->summary() . ' (' . InvoicingService::correctionWord($correction) . ')';
+        } catch (DebtorException | VatException $e) {
+            $reason = 'Auftrag ' . $order->documentNumber() . ' geändert — so nicht fakturierbar: ' . $e->getMessage();
+        }
+        try {
+            $this->invoicing()->flagReissue((int) $invoice->getId(), $reason);
+        } catch (DebtorException $e) {
+            throw new OrderRefusedException(OrderRefusedException::NOT_EDITABLE, 'Auftrag ' . $order->documentNumber() . ': ' . $e->getMessage() . ' Nichts gespeichert.', $e);
+        }
     }
 
     /**
@@ -205,6 +419,9 @@ final class OrderService
 
         return $this->em->getTransaction(SalesOrder::class)->run(function () use ($id, $version, $statuses, $to, $confirmation, $now): SalesOrder {
             $order = $this->lockAt($id, $version);
+            if ($order->isDeleted()) {
+                throw new OrderRefusedException(OrderRefusedException::DELETED, 'Auftrag ' . $order->documentNumber() . ' ist gelöscht — der Status bleibt.');
+            }
             $from  = $this->statusOf($order, $statuses);
             $refusal = $statuses->refusal($from, $to, $order->getInvoice() !== null);
             if ($refusal !== null) {
@@ -256,6 +473,9 @@ final class OrderService
     public static function assertPrintable(SalesOrder $order, OrderStatus $status, OrderPhase $phase): void
     {
         $current = $status->getPhase();
+        if ($order->isDeleted()) {
+            throw new OrderRefusedException(OrderRefusedException::NOT_PRINTABLE, 'Auftrag ' . $order->documentNumber() . ' ist gelöscht — es wird nichts mehr gedruckt.');
+        }
         if ($current === OrderPhase::Cancelled) {
             throw new OrderRefusedException(OrderRefusedException::NOT_PRINTABLE, 'Auftrag ' . $order->documentNumber() . ' ist storniert («' . $status->getLabel() . '») — es wird nichts mehr gedruckt.');
         }
@@ -499,15 +719,17 @@ final class OrderService
      * THE stock call (plan §8.3) — the only one: the COMPLETE target state of the order in the
      * PHASE of $status (ADR-043 addendum 2026-10-15), in the caller's unit of work.
      */
-    private function syncStock(SalesOrder $order, OrderStatus $status, string $trigger, ?StockConfirmation $confirmation): void
+    private function syncStock(SalesOrder $order, OrderStatus $status, string $trigger, ?StockConfirmation $confirmation, ?OrderPhase $targets = null): void
     {
+        // $targets: the phase whose targets apply instead of the status' — a deleted order's are those of
+        // `cancelled` (nothing reserved, nothing consumed — ADR-054 decision 14).
         $this->stock ??= StockLedgers::default($this->em, $this->actor);
         $this->stock->bringTo(new StockRequest(
             'order',
             (string) $order->getId(),
             $trigger,
             $this->actor,
-            OrderStockTargets::of($order->getLines(), $status->getPhase()),
+            OrderStockTargets::of($order->getLines(), $targets ?? $status->getPhase()),
             $confirmation,
         ));
     }
@@ -536,6 +758,9 @@ final class OrderService
      */
     private function assertBookable(SalesOrder $order, OrderStatus $status): void
     {
+        if ($order->isDeleted()) {
+            throw new OrderRefusedException(OrderRefusedException::DELETED, 'Auftrag ' . $order->documentNumber() . ' ist gelöscht — nichts wurde fakturiert.');
+        }
         if ($order->getInvoice() !== null) {
             $number = $order->getInvoice()->getNumber();
             throw new OrderRefusedException(OrderRefusedException::ALREADY_INVOICED, 'Zu Auftrag ' . $order->documentNumber() . ' ist die Rechnung' . ($number !== null ? ' ' . $number : '') . ' bereits fakturiert — nichts wurde nochmals fakturiert.');
@@ -557,23 +782,27 @@ final class OrderService
     }
 
     /**
-     * D7, read with ADR-054 (Faktura-Journal, step 3 of its build plan): an order with an invoice
-     * stays as it was invoiced. Two sentences by the invoice's state — POSTED (`final`): a
-     * correction is a credit note; ISSUED (in the Faktura-Journal, not posted yet): the order stays
-     * locked too — editing it while its invoice is in the journal comes with step 5 of the build
-     * plan («Neu fakturieren», `reissue_needed` blocks the journal), and without that flag an
-     * edited order and its unposted invoice would silently disagree.
+     * D7, read with ADR-054 (Faktura-Journal, step 5 of its build plan): an order whose invoice is
+     * POSTED stays as it was invoiced — a correction is a credit note. An order whose invoice is ISSUED
+     * (in the Faktura-Journal, not posted) is EDITABLE again, whatever the phase (it stands in `closed`
+     * since «Fakturieren»): its save flags the invoice ({@see flagInvoice()}), «Neu fakturieren» re-issues
+     * it ({@see reinvoice()}). A deleted order is never written again.
      *
      * @throws OrderRefusedException NOT_EDITABLE (D7)
      */
     private function assertEditable(SalesOrder $order, OrderStatus $status): void
     {
+        if ($order->isDeleted()) {
+            throw new OrderRefusedException(OrderRefusedException::NOT_EDITABLE, 'Auftrag ' . $order->documentNumber() . ' ist gelöscht'
+                . ($order->getDeletedAt() !== null ? ' (' . $order->getDeletedAt()->format('d.m.Y') . ', ' . $order->getDeletedBy() . ': ' . $order->getDeleteReason() . ')' : '') . ' — er bleibt, wie er war.');
+        }
         $invoice = $order->getInvoice();
+        if ($invoice !== null && $invoice->isInJournal()) {
+            return;   // ADR-054 decision 12: editable while the invoice is in the Faktura-Journal
+        }
         if ($invoice !== null) {
             $number = $invoice->getNumber();
-            throw new OrderRefusedException(OrderRefusedException::NOT_EDITABLE, $invoice->isPosted()
-                ? 'Zum Auftrag ' . $order->documentNumber() . ' ist die Rechnung' . ($number !== null ? ' ' . $number : '') . ' verbucht — er bleibt, wie er fakturiert wurde. Eine Korrektur ist eine Gutschrift auf der Rechnung.'
-                : 'Zum Auftrag ' . $order->documentNumber() . ' ist die Rechnung' . ($number !== null ? ' ' . $number : '') . ' fakturiert (im Faktura-Journal, noch nicht verbucht) — er bleibt, wie er fakturiert wurde.');
+            throw new OrderRefusedException(OrderRefusedException::NOT_EDITABLE, 'Zum Auftrag ' . $order->documentNumber() . ' ist die Rechnung' . ($number !== null ? ' ' . $number : '') . ' ' . ($invoice->isPosted() ? 'verbucht' : $invoice->state()->label()) . ' — er bleibt, wie er fakturiert wurde. Eine Korrektur ist eine Gutschrift auf der Rechnung.');
         }
         if ($status->getPhase()->isLocked()) {
             throw new OrderRefusedException(OrderRefusedException::NOT_EDITABLE, 'Auftrag ' . $order->documentNumber() . ' ist ' . ($status->getPhase() === OrderPhase::Cancelled ? 'storniert' : 'abgeschlossen') . ' («' . $status->getLabel() . '») — zum Ändern zuerst den Status zurücksetzen.');

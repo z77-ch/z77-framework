@@ -20,6 +20,7 @@ use Z77\Module\Debtor\Entities\PaymentAllocation;
 use Z77\Module\Debtor\Entities\PaymentSnapshot;
 use Z77\Module\Debtor\Entities\PaymentTarget;
 use Z77\Module\Debtor\Entities\PaymentTerms;
+use Z77\Module\Debtor\Invoicing\Correction;
 use Z77\Module\Debtor\Invoicing\DocumentSnapshot;
 use Z77\Module\Debtor\Invoicing\DocumentNumber;
 use Z77\Module\Debtor\Invoicing\DocumentStamp;
@@ -769,7 +770,12 @@ final class InvoicingService
      */
     private static function paymentMessage(Invoice $invoice, int $number): string
     {
-        return $invoice->kind()->label() . ' ' . $number . ', zahlbar bis ' . $invoice->getDueDate()->format('d.m.Y');
+        return self::paymentMessageFor($invoice->kind(), $number, $invoice->getDueDate());
+    }
+
+    private static function paymentMessageFor(InvoiceKind $kind, int $number, \DateTimeImmutable $dueDate): string
+    {
+        return $kind->label() . ' ' . $number . ', zahlbar bis ' . $dueDate->format('d.m.Y');
     }
 
     private function monthRangesOf(iterable $dates): array
@@ -862,12 +868,326 @@ final class InvoicingService
     public function editRefusal(Invoice $invoice): ?string
     {
         try {
-            $this->assertInvoicing($invoice);
+            // Since step 4 (ADR-054 decision 12) an ISSUED document of the mask is editable too — its save
+            // is a revision or a replacement ({@see revise()}); one issued from a SOURCE is corrected there.
+            $invoice->isInJournal() ? $this->assertCorrectable($invoice) : $this->assertInvoicing($invoice);
         } catch (InvoiceRefusedException $e) {
             return $e->getMessage();
         }
 
         return null;
+    }
+
+    // ── corrections while in the Faktura-Journal (ADR-054 decisions 8–14; steps 4–6 of the build plan) ──
+
+    /**
+     * What saving $draft over the ISSUED $issued would do — the decision rule of ADR-054 decision 8
+     * ({@see Correction}): NONE, a REVISION (same number, revision + 1) or a REPLACEMENT (a new number,
+     * $issued `replaced`). Pure: the draft is composed exactly as {@see revise()} composes it into a
+     * TRANSIENT document (never persisted, nothing locked or written). The mask asks it BEFORE the save
+     * to name the consequence; a source (an order) asks it to flag its invoice ({@see flagReissue()}).
+     *
+     * $fromSource = true: the caller IS the document's source (module-order) — a sourced document is
+     * corrected only there.
+     *
+     * @throws InvoiceRefusedException NOT_IN_JOURNAL | SOURCED | KIND_CHANGED | CREDIT_NOTE_TARGET | any refusal of compose()
+     */
+    public function classify(Invoice $issued, InvoiceDraft $draft, bool $fromSource = false): Correction
+    {
+        return $this->corrected($issued, $draft, $fromSource)['correction'];
+    }
+
+    /**
+     * Save a correction of an ISSUED document (ADR-054 decisions 8, 10, 11; step 4 of the build plan) —
+     * the server classifies it ({@see classify()}) and answers the document that STANDS afterwards:
+     *
+     *   - NONE: nothing written (a source's re-issue flag is cleared — the source is back in step);
+     *   - REVISION: the same row and number, `revision + 1`, a new stamp, the new version's PDF archived
+     *     as a new file (`<number>-r<n>-<stamp>.pdf`, `invoice_revision` row with the reason); the earlier
+     *     revisions' rows and files stay; the payment part keeps its reference, its message and due date
+     *     are taken again;
+     *   - REPLACEMENT: a NEW document (successor) is created and issued — its number from the month of
+     *     ITS invoice date, stamped, archived; its PDF prints «ersetzt Rechnung <A> (ID <stamp of A>)»
+     *     (decision 23, owner O11); $issued goes `replaced` with the link to the successor, who / when /
+     *     why; its waiting outbox mails are cancelled (decision 21). The successor is returned.
+     *
+     * ONE unit of work (joining the caller's — module-order's «Neu fakturieren» — or its own). Lock order
+     * (debtor.md): the successor's month range `document.YYMM` (created ahead; joined: by the caller,
+     * {@see prepareDocumentRanges()}) → the successor's debtor profile row SHARED → the issued row
+     * EXCLUSIVE, its version compared → the writes. The classification is judged BEFORE the unit of work
+     * and AGAIN when $expect is given: when it is no longer what the user confirmed, `correction-changed`
+     * — nothing written, the screen asks again (Rule 7).
+     *
+     * @param string|null $expect the kind the user confirmed (Correction::REVISION / REPLACEMENT), null = no confirmation asked
+     * @param string|null $reason why (protocolled on the revision row / as the void reason); null = the classification's summary
+     * @throws InvoiceRefusedException  NOT_IN_JOURNAL | SOURCED | CORRECTION_CHANGED | PAYMENT_PART | any refusal of compose() / issue()
+     * @throws InvoiceConflictException the document is gone or at another version
+     */
+    public function revise(int $invoiceId, int $expectedVersion, InvoiceDraft $draft, ?string $expect = null, ?string $reason = null, bool $fromSource = false): Invoice
+    {
+        $existing = $this->invoices()->withLines($invoiceId);
+        if ($existing === null || $existing->getVersion() !== $expectedVersion) {
+            throw new InvoiceConflictException($invoiceId, $expectedVersion);
+        }
+        ['correction' => $correction, 'composed' => $composed] = $this->corrected($existing, $draft, $fromSource);
+        if ($expect !== null && $correction->kind !== $expect) {
+            throw new InvoiceRefusedException(InvoiceRefusedException::CORRECTION_CHANGED, $existing->documentName() . ': die Änderung wird jetzt anders eingestuft (' . self::correctionWord($correction) . ' — ' . $correction->summary() . ') — bitte nochmals prüfen und bestätigen.');
+        }
+        $now         = new \DateTimeImmutable();
+        $transaction = $this->em->getTransaction(Invoice::class);
+        $owned       = !$transaction->isOpen();
+        $reason      = $reason !== null && trim($reason) !== '' ? trim($reason) : null;
+
+        if ($correction->isNone()) {
+            if ($existing->getReissueNeeded() === null) {
+                return $existing;
+            }
+
+            return $transaction->run(function () use ($invoiceId, $expectedVersion, $fromSource): Invoice {
+                $invoice = $this->lockCorrectable($invoiceId, $expectedVersion, $fromSource);
+                $invoice->flagReissue(null);
+                $this->em->persist($invoice);
+                $this->em->flush();
+
+                return $invoice;
+            });
+        }
+
+        $months = $correction->isReplacement() ? $this->monthRangesOf([$composed['snapshot']->invoiceDate]) : [];
+        /** @var NumberRangeRepository $ranges */
+        $ranges = $this->em->getRepository(NumberRange::class);
+        if ($owned) {
+            foreach ($months as $range) {
+                $ranges->create($range);   // ahead and committed (DOCTRINE-NR-003), as issue() does
+            }
+        }
+
+        try {
+            return $transaction->run(function () use ($invoiceId, $expectedVersion, $correction, $composed, $months, $ranges, $now, $reason, $fromSource): Invoice {
+                foreach ($months as $range) {
+                    $ranges->create($range);   // 1. the successor's month range FIRST
+                }
+                if ($correction->isReplacement()) {
+                    // 2. the successor's profile row SHARED (the counterpart of «Debitor» off).
+                    if ($this->em->getRepository(DebtorProfile::class)->lockForContact((int) $composed['contact']->getId(), exclusive: false) === null) {
+                        throw new InvoiceRefusedException(InvoiceRefusedException::NO_DEBTOR_PROFILE, '«' . $composed['contact']->displayName() . '» ist kein Debitor (mehr) — nichts ersetzt.');
+                    }
+                }
+                // 3. the issued row EXCLUSIVE, the version compared, judged again.
+                $invoice = $this->lockCorrectable($invoiceId, $expectedVersion, $fromSource);
+
+                return $correction->isRevision()
+                    ? $this->writeRevision($invoice, $composed, $reason ?? 'Neue Version — ' . $correction->summary(), $now)
+                    : $this->writeReplacement($invoice, $composed, $reason ?? 'Ersetzt — ' . $correction->summary(), $ranges, $now);
+            });
+        } catch (\Throwable $e) {
+            if ($owned) {
+                $this->archive()->discardWritten();   // the rows rolled back — no file may stay without its row
+            }
+            throw $e;
+        }
+    }
+
+    /**
+     * The SOURCE's seam (ADR-054 decision 9, owner decision O9): $reason set = the source no longer
+     * matches the issued document (the Faktura-Journal is blocked until it is re-invoiced); null = in
+     * step again. Joins the caller's unit of work (module-order: after its order row lock — lock order
+     * order row → invoice row) or opens its own; the row is locked EXCLUSIVE and must still be in the
+     * journal — posted in between, the caller's write is refused (`not-in-journal`).
+     *
+     * @throws InvoiceRefusedException NOT_IN_JOURNAL | NOT_FOUND
+     */
+    public function flagReissue(int $invoiceId, ?string $reason): Invoice
+    {
+        return $this->em->getTransaction(Invoice::class)->run(function () use ($invoiceId, $reason): Invoice {
+            $invoice = $this->invoices()->lockForUpdate($invoiceId)
+                ?? throw new InvoiceRefusedException(InvoiceRefusedException::NOT_FOUND, "Dokument {$invoiceId} gibt es nicht.");
+            if (!$invoice->isInJournal()) {
+                throw new InvoiceRefusedException(InvoiceRefusedException::NOT_IN_JOURNAL, $this->notInJournal($invoice));
+            }
+            if ($invoice->getReissueNeeded() !== ($reason === null ? null : mb_substr(trim($reason), 0, Invoice::REASON_LENGTH))) {
+                $invoice->flagReissue($reason);
+                $this->em->persist($invoice);
+                $this->em->flush();
+            }
+
+            return $invoice;
+        });
+    }
+
+    /**
+     * DELETE an issued document (ADR-054 decision 14, Q7 — decided provisionally): `issued` → `deleted`,
+     * kept with its number and snapshot (who / when / why), never posted; its waiting outbox mails
+     * cancelled. A posted one is corrected by a credit note; a document with payments (none can exist
+     * before the posting, O6) is refused; one issued from a SOURCE only through it ($fromSource — an
+     * order's deletion, joined into its unit of work). The reason is mandatory. $expectedVersion null:
+     * no version is compared — for a source that holds its own row lock and judged the document under it.
+     *
+     * @throws InvoiceRefusedException REASON_REQUIRED | NOT_IN_JOURNAL | SOURCED | HAS_PAYMENTS
+     * @throws InvoiceConflictException the document is gone or at another version
+     */
+    public function delete(int $invoiceId, ?int $expectedVersion, string $reason, bool $fromSource = false): Invoice
+    {
+        $reason = trim($reason);
+        if ($reason === '') {
+            throw new InvoiceRefusedException(InvoiceRefusedException::REASON_REQUIRED, 'Ein Grund ist nötig — die gelöschte Rechnung bleibt mit ihrer Nummer und dem Grund aufbewahrt.');
+        }
+        $now = new \DateTimeImmutable();
+
+        return $this->em->getTransaction(Invoice::class)->run(function () use ($invoiceId, $expectedVersion, $reason, $fromSource, $now): Invoice {
+            $invoice = $this->lockCorrectable($invoiceId, $expectedVersion, $fromSource);
+            /** @var PaymentAllocationRepository $allocations */
+            $allocations = $this->em->getRepository(PaymentAllocation::class);
+            if ($allocations->forInvoice($invoice) !== []) {
+                throw new InvoiceRefusedException(InvoiceRefusedException::HAS_PAYMENTS, $invoice->documentName() . ' trägt Zahlungen — sie wird nicht gelöscht.');
+            }
+            $invoice->markDeleted($reason, $this->actor, $now);
+            $this->em->persist($invoice);
+            $this->em->flush();
+            $this->cancelWaitingMails($invoice);
+
+            return $invoice;
+        });
+    }
+
+    /**
+     * The composed correction of $issued by $draft: the composition (as {@see revise()} writes it) and the
+     * classification against a transient candidate.
+     *
+     * @return array{correction: Correction, composed: array<string, mixed>}
+     */
+    private function corrected(Invoice $issued, InvoiceDraft $draft, bool $fromSource): array
+    {
+        $this->assertCorrectable($issued, $fromSource);
+        if ($issued->kind() !== $draft->kind) {
+            throw new InvoiceRefusedException(InvoiceRefusedException::KIND_CHANGED, $issued->documentName() . ' bleibt eine ' . $issued->kind()->label() . ' — für die andere Art ein neues Dokument erstellen.');
+        }
+        $composed = $this->compose($draft, $issued);
+        if ($issued->getCreditNoteOf()?->getId() !== $composed['creditNoteOf']?->getId()) {
+            throw new InvoiceRefusedException(InvoiceRefusedException::CREDIT_NOTE_TARGET, $issued->documentName() . ' gehört zu einer anderen Rechnung — dafür ein neues Dokument erstellen.');
+        }
+        $candidate = new Invoice($draft->kind, $composed['contact'], $composed['creditNoteOf'], $this->actor, new \DateTimeImmutable());
+        [$lines, $taxes] = $this->materialize($candidate, $composed);
+        $candidate->issue($composed['snapshot'], $lines, $taxes, $this->paymentPart($candidate, $composed));
+
+        return ['correction' => Correction::classify($issued, $candidate), 'composed' => $composed];
+    }
+
+    /**
+     * The REVISION's writes inside the unit of work: the new content under the same number, the payment
+     * part taken again (same reference, the message with the new due date) and checked, the stamp, the
+     * PDF archived with its `invoice_revision` row.
+     *
+     * @param array<string, mixed> $composed
+     */
+    private function writeRevision(Invoice $invoice, array $composed, string $reason, \DateTimeImmutable $now): Invoice
+    {
+        $customer = $this->customerNumberOf($invoice);
+        $payment  = $this->paymentPart($invoice, $composed)
+            ->numbered($customer, (int) $invoice->getNumber(), self::paymentMessageFor($invoice->kind(), (int) $invoice->getNumber(), $composed['snapshot']->dueDate));
+        [$lines, $taxes] = $this->materialize($invoice, $composed);
+        $invoice->revise($composed['snapshot'], $lines, $taxes, $payment, $this->actor, $now);
+        if ($payment->hasPaymentPart() && ($problems = QrBill::of($invoice)->problems()) !== []) {
+            throw new InvoiceRefusedException(InvoiceRefusedException::PAYMENT_PART, $invoice->documentName() . ': der Zahlteil (QR-Rechnung) liesse sich nicht drucken — ' . implode(' ', $problems));
+        }
+        $revisions = $this->em->getRepository(InvoiceRevision::class);
+        $invoice->restamp(DocumentStamp::of($invoice, $customer, static fn(string $s): bool => $revisions->findOneBy(['documentStamp' => $s]) !== null));
+        $this->em->persist($invoice);
+        $this->em->flush();   // the new lines (orphan removal drops the old ones) before the PDF reads them
+        $this->em->persist($this->archive()->archive($invoice, $this->actor, $now, $reason));
+        $this->em->flush();
+
+        return $invoice;
+    }
+
+    /**
+     * The REPLACEMENT's writes inside the unit of work: the successor inserted, $predecessor `replaced`
+     * (flushed, so the successor's PDF finds whom it replaces), the successor numbered, stamped, issued
+     * and archived ({@see numberAndIssue()}), the predecessor's waiting mails cancelled.
+     *
+     * @param array<string, mixed> $composed
+     */
+    private function writeReplacement(Invoice $predecessor, array $composed, string $reason, NumberRangeRepository $ranges, \DateTimeImmutable $now): Invoice
+    {
+        $successor = new Invoice($predecessor->kind(), $composed['contact'], $composed['creditNoteOf'], $this->actor, $now);
+        [$lines, $taxes] = $this->materialize($successor, $composed);
+        $successor->issue($composed['snapshot'], $lines, $taxes, $this->paymentPart($successor, $composed));
+        $payments = [spl_object_id($successor) => $this->printablePaymentPart($successor)];
+        $this->em->persist($successor);
+        $this->em->flush();
+        $predecessor->replaceBy($successor, $reason, $this->actor, $now);
+        $this->em->persist($predecessor);
+        $this->em->flush();
+        $this->numberAndIssue([$successor], $payments, $ranges, $now);
+        $this->em->flush();
+        $this->cancelWaitingMails($predecessor);
+
+        return $successor;
+    }
+
+    /** The row EXCLUSIVE at the version the caller saw (null = any), still correctable. */
+    private function lockCorrectable(int $invoiceId, ?int $expectedVersion, bool $fromSource): Invoice
+    {
+        $invoice = $this->invoices()->lockForUpdate($invoiceId);
+        if ($invoice === null || ($expectedVersion !== null && $invoice->getVersion() !== $expectedVersion)) {
+            throw new InvoiceConflictException($invoiceId, (int) $expectedVersion);
+        }
+        $this->assertCorrectable($invoice, $fromSource);
+
+        return $invoice;
+    }
+
+    /**
+     * Only an ISSUED document (in the Faktura-Journal) is revised, replaced or deleted — and one issued
+     * from a source (an order) only by that source.
+     *
+     * @throws InvoiceRefusedException NOT_IN_JOURNAL | SOURCED
+     */
+    private function assertCorrectable(Invoice $invoice, bool $fromSource = false): void
+    {
+        if (!$invoice->isInJournal()) {
+            throw new InvoiceRefusedException(InvoiceRefusedException::NOT_IN_JOURNAL, $this->notInJournal($invoice));
+        }
+        if (!$fromSource && $invoice->getSourceType() !== null) {
+            $origin = $invoice->subjectLine() ?? trim($invoice->getSourceType() . ' ' . $invoice->getSourceRef());
+            throw new InvoiceRefusedException(InvoiceRefusedException::SOURCED, $invoice->documentName() . ' ist aus «' . $origin . '» fakturiert — sie wird dort geändert und neu fakturiert (oder dort gelöscht), nicht hier.');
+        }
+    }
+
+    private function notInJournal(Invoice $invoice): string
+    {
+        return match (true) {
+            $invoice->isPosted() => $invoice->documentName() . ' ist verbucht und bleibt unverändert — eine Korrektur ist eine Gutschrift.',
+            $invoice->isDraft()  => $invoice->documentName() . ' ist noch ein Entwurf — er wird bearbeitet, nicht korrigiert.',
+            default              => $invoice->documentName() . ' ist ' . $invoice->state()->label() . ' und bleibt unverändert.',
+        };
+    }
+
+    /** «neue Version» / «Ersatz mit neuer Nummer» / «keine Änderung» — how a screen names the kind of a correction. */
+    public static function correctionWord(Correction $correction): string
+    {
+        return match ($correction->kind) {
+            Correction::REVISION    => 'neue Version mit gleicher Nummer',
+            Correction::REPLACEMENT => 'Ersatz mit neuer Nummer',
+            default                 => 'keine Änderung',
+        };
+    }
+
+    private function customerNumberOf(Invoice $invoice): int
+    {
+        return $this->em->getRepository(DebtorProfile::class)->findByContact($invoice->getContact())?->getCustomerNumber() ?? 0;
+    }
+
+    /**
+     * The waiting outbox mails of a replaced / deleted document are cancelled (ADR-054 decision 21) — in
+     * the caller's unit of work; a mail already sending or sent stays history. Nothing without the outbox.
+     */
+    private function cancelWaitingMails(Invoice $invoice): void
+    {
+        $mails = new \Z77\Module\Debtor\Mail\InvoiceMails($this->em);
+        if ($mails->available()) {
+            $mails->cancelWaiting($invoice);
+        }
     }
 
     /**
@@ -907,6 +1227,9 @@ final class InvoicingService
     private function compose(InvoiceDraft $draft, ?Invoice $existing, ?DebtorProfile $opening = null): array
     {
         $isNew    = $existing === null;
+        // A correction of an issued document that names ANOTHER party (a replacement, owner decision O4)
+        // takes the new party under the rules of a new document: active contact, active debtor.
+        $newParty = $isNew || $existing->getContact()->getId() !== $draft->contactId;
         $currency = strtoupper(trim($draft->currency));
         if ($currency !== DebtorCurrency::base()) {
             throw new InvoiceRefusedException(InvoiceRefusedException::CURRENCY, 'Dokumente werden nur in der Basiswährung ' . DebtorCurrency::base() . ' erstellt (Q6) — «' . $currency . '» ist nicht möglich.');
@@ -923,7 +1246,7 @@ final class InvoicingService
         if ($contact === null) {
             throw new InvoiceRefusedException(InvoiceRefusedException::CONTACT_UNKNOWN, "Kontakt {$draft->contactId} gibt es nicht.");
         }
-        if ($isNew && !$contact->isActive()) {
+        if ($newParty && !$contact->isActive()) {
             throw new InvoiceRefusedException(InvoiceRefusedException::CONTACT_INACTIVE, 'Kontakt «' . $contact->displayName() . '» ist inaktiv — für einen inaktiven Kontakt wird kein neues Dokument erstellt.');
         }
         /** @var DebtorProfileRepository $profiles */
@@ -933,7 +1256,7 @@ final class InvoicingService
         if ($profile === null) {
             throw new InvoiceRefusedException(InvoiceRefusedException::NO_DEBTOR_PROFILE, DebtorProfileService::notDebtor($contact));
         }
-        if ($isNew && !$profile->isActive()) {
+        if ($newParty && !$profile->isActive()) {
             throw new InvoiceRefusedException(InvoiceRefusedException::DEBTOR_INACTIVE, 'Debitor «' . $contact->displayName() . '» ist inaktiv — kein neues Dokument.');
         }
         $termsCode = PaymentTerms::normalizeCode($draft->paymentTermsCode ?? $profile->getPaymentTermsCode());

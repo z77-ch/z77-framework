@@ -14,7 +14,8 @@ use Z77\Module\Backend\Ui\Controllers\BackendAbstractController,
  * Reachable only in projects that install z77/module-order.
  *
  * URL: /backend/order/order/list (Aufträge › Aufträge) — add, edit (the order window), new-contact,
- * status, pdf, invoice-preview, confirm-delivery-note, delivery-note, confirm-book, book.
+ * status, pdf, invoice-preview, confirm-delivery-note, delivery-note, confirm-book, book, confirm-reinvoice,
+ * reinvoice («Neu fakturieren», ADR-054), confirm-delete («Auftrag löschen», ADR-054).
  */
 class OrderController extends BackendAbstractController
 {

@@ -42,7 +42,10 @@ use Z77\Shared\Money\Money;
  * ({@see SalesOrderStatusChange}, ADR-043 decision 4), never parallel columns. No line amount is
  * stored — what screen and PDF print comes from the preview (D11).
  *
- * Written ONLY by `Services\OrderService` (one write path, plan §5). Never deleted (D8).
+ * Written ONLY by `Services\OrderService` (one write path, plan §5). Never physically deleted (D8):
+ * since ADR-054 decision 14 (owner decision O5, 2026-10-23) an order without a POSTED invoice can be
+ * DELETED — it stays as a row with `deleted_by` / `deleted_at` / `delete_reason` («gelöscht»), its
+ * number kept (it was printed on quotes), hidden from the lists ({@see markDeleted()}).
  * Table `sales_order`.
  */
 #[Entity('doctrine')]
@@ -50,6 +53,7 @@ use Z77\Shared\Money\Money;
 #[ORM\UniqueConstraint(name: SalesOrder::UNIQUE_NUMBER, columns: ['number'])]
 #[ORM\Index(name: 'idx_sales_order_status', columns: ['status_code'])]
 #[ORM\Index(name: 'idx_sales_order_date', columns: ['order_date'])]
+#[ORM\Index(name: 'idx_sales_order_deleted', columns: ['deleted_at'])]
 class SalesOrder
 {
     /** The gapless range the number is drawn from (owner O2, plan §4.3). */
@@ -66,6 +70,8 @@ class SalesOrder
     public const SOURCE_TYPE_LENGTH = 64;
     public const SOURCE_REF_LENGTH  = 128;
     public const ACTOR_LENGTH       = 80;
+    /** The reason an order was deleted (ADR-054 decision 14) — the invoice's void reason has the same length. */
+    public const DELETE_REASON_LENGTH = 255;
 
     /** The origin of an order captured on the backend screen. */
     public const SOURCE_BACKEND = 'backend';
@@ -167,6 +173,16 @@ class SalesOrder
 
     #[ORM\Column(name: 'changed_at', type: Types::DATETIME_IMMUTABLE, nullable: true)]
     private ?\DateTimeImmutable $changedAt = null;
+
+    /** Who / when / why the order was DELETED (ADR-054 decision 14, owner decision O5); null = not deleted. Migration `Version20261024100000`. */
+    #[ORM\Column(name: 'deleted_by', length: self::ACTOR_LENGTH, nullable: true)]
+    private ?string $deletedBy = null;
+
+    #[ORM\Column(name: 'deleted_at', type: Types::DATETIME_IMMUTABLE, nullable: true)]
+    private ?\DateTimeImmutable $deletedAt = null;
+
+    #[ORM\Column(name: 'delete_reason', length: self::DELETE_REASON_LENGTH, nullable: true)]
+    private ?string $deleteReason = null;
 
     /** Optimistic lock: every write names the version its caller saw (`OrderService`). */
     #[ORM\Version]
@@ -335,6 +351,38 @@ class SalesOrder
     {
         $this->invoice = $invoice;
     }
+
+    /**
+     * «Neu fakturieren» replaced the order's invoice (ADR-054 decision 12): the order now names the
+     * SUCCESSOR — the replaced invoice stays in debtor with its link to it (`replaced_by_id`).
+     */
+    public function relinkInvoice(Invoice $successor): void
+    {
+        if ($this->invoice === null) {
+            throw new \LogicException('Only an order with an invoice is re-linked to its successor');
+        }
+        $this->invoice = $successor;
+    }
+
+    /** Deleted (ADR-054 decision 14) — kept with its number, hidden from the lists; null = not deleted. */
+    public function markDeleted(string $reason, string $by, \DateTimeImmutable $at): void
+    {
+        $reason = trim($reason);
+        if ($reason === '') {
+            throw new \LogicException('An order is deleted with its reason');
+        }
+        if ($this->deletedAt !== null) {
+            throw new \LogicException('Order ' . $this->documentNumber() . ' is deleted already');
+        }
+        $this->deleteReason = mb_substr($reason, 0, self::DELETE_REASON_LENGTH);
+        $this->deletedBy    = $by;
+        $this->deletedAt    = $at;
+    }
+
+    public function isDeleted(): bool { return $this->deletedAt !== null; }
+    public function getDeletedBy(): ?string { return $this->deletedBy; }
+    public function getDeletedAt(): ?\DateTimeImmutable { return $this->deletedAt; }
+    public function getDeleteReason(): ?string { return $this->deleteReason; }
 
     public function addLine(SalesOrderLine $line): void
     {

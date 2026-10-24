@@ -26,7 +26,9 @@ final class OrderSearch
         public readonly ?string $serviceTo = null,   // Y-m-d, inclusive
         public readonly string $sort = 'number',
         public readonly bool $descending = true,
-        public readonly ?int $invoiceNumber = null,   // the booked invoice's number (owner 2026-10-22: its own column)
+        public readonly ?int $invoiceNumber = null,
+        // true = the DELETED orders only (the tab «Gelöscht», ADR-054 decision 14); false = every list hides them.
+        public readonly bool $deleted = false,   // the booked invoice's number (owner 2026-10-22: its own column)
     ) {
         if (!in_array($sort, self::SORTS, true)) {
             throw new \InvalidArgumentException("Unknown order sort '{$sort}'");

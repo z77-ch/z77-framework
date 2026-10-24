@@ -397,7 +397,7 @@ check('V5 the columns: the selection checkbox in the bookable tabs («Termin», 
     && OrderListing::definition('CHF')->column('f_status')->isSearchable()
     && OrderListing::definition('CHF')->extraDefault('view') === 'confirmed' && OrderListing::definition('CHF')->read([])->extra('view') === 'confirmed'
     && OrderListing::definition('CHF')->read(['view' => 'nonsense'])->extra('view') === 'confirmed'
-    && array_keys(OrderListing::VIEWS) === ['new', 'confirmed', 'delivered', 'closed', 'cancelled', 'all']);
+    && array_keys(OrderListing::VIEWS) === ['new', 'confirmed', 'delivered', 'closed', 'cancelled', 'all', 'deleted']);
 $v5bLabels = array_values(array_filter($cols('closed'), static fn(string $l) => !str_starts_with($l, '[')));
 $v5bSearch = OrderListing::search(OrderListing::definition('CHF', 'all')->read(['view' => 'all', 'f_invoice' => '2610001', 'sort' => 'invoice']), $seed);
 check('V5b «Rechnung» is its own column between Status and Betrag in every tab (owner 2026-10-22), searched by number and sortable; «Zahlung» no longer carries the number',
@@ -595,7 +595,7 @@ check('F14 the positions\' sticky top (owner 2026-10-20): the bar — title, «+
 check('F16 the status field of an existing order (owner 2026-10-20): editable → a select `status` (the current status + OrderStatuses::targets()), moved by «Speichern» (update(moveTo:)); locked → the link «Status ändern …» stays',
     str_contains($orderTpl, '} elseif ($statusChoices !== []) {') && str_contains($orderTpl, 'foreach ($statusChoices as $row) {')
     && str_contains($orderTpl, 'href="\' . e($actionBase . \'/status?id=\' . $id) . \'" data-window-link title="Status ändern …"')
-    && str_contains($orderTrait, "'statusChoices'   => \$order !== null && \$refusal === null && \$status !== null ? array_merge([\$status], \$statuses->targets(\$status, false)) : [],")
+    && str_contains($orderTrait, "'statusChoices'   => \$order !== null && \$refusal === null && \$status !== null && \$order->getInvoice() === null ? array_merge([\$status], \$statuses->targets(\$status, false)) : [],")
     && str_contains($orderTrait, '$service->update((int) $order->getId(), $version, $draft, $confirmation, $moveTo);'));
 check('F17 a 0 total on the screens (owner 2026-10-20): the confirmation names it and leaves it out («Total 0 — keine Rechnung, ausgelassen …»), the window shows a hint UNDER the action row instead of «Buchungsdruck …» (owner 2026-10-21); an invoiced order\'s status is shown only',
     str_contains($orderTrait, "if (\$order->getTotalGross()?->isZero() ?? false) {") && str_contains($orderTrait, "'zero'   => \$zero,")
@@ -975,8 +975,8 @@ $m16Posted = (string) $svc->editRefusal($m16Order);
 $m16State->setValue($m16Order->getInvoice(), 'issued');
 $m16Issued = (string) $svc->editRefusal($m16Order);
 $m16State->setValue($m16Order->getInvoice(), 'final');
-check('M16b the lock sentence follows the invoice (ADR-054): posted → «verbucht … Gutschrift»; issued → «fakturiert (im Faktura-Journal, noch nicht verbucht)» — still not editable (step 5)',
-    str_contains($m16Posted, 'verbucht') && str_contains($m16Posted, 'Gutschrift') && str_contains($m16Issued, 'fakturiert (im Faktura-Journal, noch nicht verbucht)') && !str_contains($m16Issued, 'Gutschrift'),
+check('M16b the lock follows the invoice (ADR-054): posted → «verbucht … Gutschrift»; issued (in the Faktura-Journal) → EDITABLE since step 5 (its save flags the invoice, «Neu fakturieren» — debtor harness FJ60–FJ69)',
+    str_contains($m16Posted, 'verbucht') && str_contains($m16Posted, 'Gutschrift') && $m16Issued === '',
     json_encode([$m16Posted, $m16Issued], JSON_UNESCAPED_UNICODE));
 check('M17 the log of order 1: create, status ×3, delivery-note — from → to in order',
     $db->fetchFirstColumn('SELECT CONCAT(COALESCE(from_code, \'-\'), \'>\', to_code, \':\', change_trigger) FROM sales_order_status_change WHERE order_id = ? ORDER BY id', [$o1->getId()]) === [

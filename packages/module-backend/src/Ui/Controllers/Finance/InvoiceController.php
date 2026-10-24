@@ -16,7 +16,7 @@ use Z77\Module\Backend\Ui\Controllers\BackendAbstractController,
  * Reachable only in projects that install z77/module-debtor.
  *
  * URL: /backend/finance/invoice/list (detail, pdf — the preview of a draft, the reprint of a booked document —,
- * add, edit, credit-note, new-contact — «+ Neuer Kontakt» of the customer picker, customer-pick / customer-debtor / customer-terms (CustomerPickerTrait), confirm-finalize, finalize — the booking print, owner 2026-10-10; booking-result, result-actions (the row ⋮, 2026-10-23), pdf-all, zip, confirm-mail, mail — the booking print's result list, step 3 of the mail plan, 2026-10-22).
+ * add, edit, credit-note, new-contact — «+ Neuer Kontakt» of the customer picker, customer-pick / customer-debtor / customer-terms (CustomerPickerTrait), confirm-finalize, finalize — the booking print, owner 2026-10-10; booking-result, result-actions (the row ⋮, 2026-10-23), pdf-all, zip, confirm-mail, mail — the booking print's result list, step 3 of the mail plan, 2026-10-22; confirm-delete — «Rechnung löschen …» of an issued document, ADR-054 step 6).
  */
 class InvoiceController extends BackendAbstractController
 {

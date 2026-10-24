@@ -23,6 +23,16 @@
  * Under the positions the facts of an existing document (`_facts`: ledger
  * reference, payments, open amount, dunning, credit notes, the payment part).
  *
+ * An ISSUED manual document (in the Faktura-Journal, ADR-054 decision 12 — step 4)
+ * is editable too: «Speichern» answers this mask with a BAND naming what the
+ * change is — «neue Version mit gleicher Nummer» or «Ersatz mit neuer Nummer»
+ * and why — and one button «… bestätigen» (`op=confirm`, `expect`); the posted
+ * fields travel along (the form is the confirmation). An invoice may change its
+ * customer (owner decision O4 — a replacement): the customer picker as for a new
+ * invoice. Its action row: «PDF» (the archived file), «Rechnung löschen …» (the
+ * confirmation with a mandatory reason, in this window), «Senden …» (the result
+ * list of this document — the mail of the current version).
+ *
  * LAYOUT = the order window's head (owner 2026-10-19; ADR-051 «cards on the
  * ground»): the form is the window ground (`.be-form--blocks`, `_forms.scss`),
  * its parts are CARDS. A head row of three blocks —
@@ -115,7 +125,9 @@ $action     = $isEdit ? $actionBase . '/edit?id=' . (int) $document->getId()
 // A final document is named; a draft and a new one say what the mask does.
 $title      = $isEdit ? ($editable ? $document->documentName() . ' bearbeiten' : $document->documentName())
     : ($isCredit ? 'Gutschrift zu ' . $form->creditNoteOf->documentName() : 'Rechnung erstellen');
-$party      = $isEdit ? $document->getContact() : ($isCredit ? $form->creditNoteOf->getContact() : null);
+// An issued invoice of the mask may change its customer (owner decision O4): the picker, not the fixed name.
+$party      = !empty($customerChange) ? null : ($isEdit ? $document->getContact() : ($isCredit ? $form->creditNoteOf->getContact() : null));
+$correction = $correction ?? null;
 $invalidIds = $form->invalidIds();
 $fieldError = static fn(string $message): string => $message === ''
     ? ''
@@ -144,7 +156,13 @@ if ($isEdit) {
     /** A link that stays in the window (ADR-047): `data-window-link`; on a page a plain link. */
     $winBtn = static fn(string $href, string $label, string $title = ''): string
         => '<a class="be-btn be-btn--ghost" href="' . e($href) . '" data-window-link' . ($title !== '' ? ' title="' . e($title) . '"' : '') . '>' . e($label) . '</a>';
-    if ($editable) {
+    if ($editable && $document->isInJournal()) {
+        // An issued document in the Faktura-Journal (ADR-054, steps 4 / 6 / 8): its archived PDF, its deletion
+        // (with a reason, in this window) and the mail of its current version (the result list — a page).
+        $extra .= '<a class="be-btn be-btn--ghost" href="' . e($pdfUrl) . '" target="_blank" rel="noopener" title="Das abgelegte PDF der aktuellen Version (neuer Tab)">PDF</a>';
+        $extra .= $winBtn($actionBase . '/confirm-delete?id=' . $id, 'Rechnung löschen …', 'Die fakturierte, noch nicht verbuchte Rechnung löschen — sie bleibt mit Nummer und Grund unter «Gelöscht»');
+        $extra .= '<a class="be-btn be-btn--ghost" href="' . e($actionBase . '/booking-result?' . http_build_query(['ids' => (string) $id])) . '" title="PDF, ZIP und E-Mail dieser Rechnung">Senden …</a>';
+    } elseif ($editable) {
         // A draft (owner 2026-10-10 / 2026-10-13): the preview, the delete, and the booking print — which leaves
         // the window for its confirmation PAGE (DEBTOR-WIN-002) and then prints into a new tab.
         $extra .= '<a class="be-btn be-btn--ghost" href="' . e($pdfUrl) . '" target="_blank" rel="noopener" title="Vorschau als PDF (neuer Tab) — ohne Nummer und ohne Zahlteil">Vorschau</a>';
@@ -187,6 +205,23 @@ if ($isEdit) {
 
         <?php if ($editRefusal !== null): ?>
         <div class="be-modal__alert"><?= e($editRefusal) ?></div>
+        <?php endif; ?>
+        <?php if ($isEdit && $editable && $document->isInJournal() && $correction === null): ?>
+        <?php // An issued document (ADR-054 decision 12): what a save will do is decided by the server and named before it is written. ?>
+        <div class="be-modal__alert" data-invoice-issued>Fakturiert, im Faktura-Journal, noch nicht verbucht<?= $document->getRevision() > 1 ? ' · Version ' . (int) $document->getRevision() : '' ?>. Speichern prüft zuerst, was die Änderung ist: gleicher Betrag, gleiche MWST, gleicher Kunde und Monat → neue Version mit gleicher Nummer; sonst Ersatz mit neuer Nummer.<?= $document->getReissueNeeded() !== null ? ' <strong>Neu fakturieren nötig:</strong> ' . e($document->getReissueNeeded()) : '' ?></div>
+        <?php endif; ?>
+        <?php if ($correction !== null && !$correction->isNone()): ?>
+        <?php // The band of the save (step 4): the server's classification, one button confirms it with the fields as posted. ?>
+        <div class="be-modal__alert<?= $correction->isReplacement() ? ' be-modal__alert--error' : '' ?>" data-invoice-correction="<?= e($correction->kind) ?>">
+            <strong><?= e(ucfirst($correctionWord)) ?></strong> — <?= e($correction->summary()) ?>.
+            <?php if ($correction->isReplacement()): ?>
+            <?= e($document->documentName()) ?> wird <strong>ersetzt</strong> (bleibt mit Nummer unter «Ersetzt»); die neue Rechnung erhält eine neue Nummer aus dem Monat ihres Rechnungsdatums und druckt «ersetzt <?= e($document->documentName()) ?> (ID <?= e((string) $document->getDocumentStamp()) ?>)».
+            <?php else: ?>
+            <?= e($document->documentName()) ?> behält Nummer und QR-Referenz und wird zu Version <?= (int) $document->getRevision() + 1 ?>; Version <?= (int) $document->getRevision() ?> bleibt als PDF archiviert.
+            <?php endif; ?>
+            <input type="hidden" name="expect" value="<?= e($correction->kind) ?>">
+            <div class="z77-form-actions"><button type="submit" class="be-btn be-btn--confirm be-btn--sm" name="op" value="confirm"><?= $correction->isReplacement() ? 'Ersetzen bestätigen' : 'Neue Version bestätigen' ?></button></div>
+        </div>
         <?php endif; ?>
         <?php if ($form->generalErrors() !== []): ?>
         <div class="be-modal__alert be-modal__alert--error">
@@ -389,6 +424,8 @@ if ($isEdit) {
             'deliveries'  => $deliveries ?? [],
             'ledgerKnown' => !empty($ledgerKnown),
             'states'      => $states ?? [],
+            'revisions'   => $revisions ?? [],
+            'predecessor' => $predecessor ?? null,
             'fmt'         => $fmt,
             'actionBase'  => $actionBase,
         ], 'Z77\\Module\\Debtor') ?>

@@ -5,8 +5,9 @@
  *
  *   - in the bookable tabs («Termin», «Geliefert») a checkbox of the form `#order-book` (`{id}:{version}`);
  *   - the state icon opens the order WINDOW (ADR-047, `data-window-open`; the origin is the list
- *     region it stands in) — a pencil while the order is editable, a lock once it has an invoice
- *     or a locked phase — closed, cancelled (D7);
+ *     region it stands in) — a pencil while the order is editable (no invoice, or one still in the
+ *     Faktura-Journal — ADR-054), a lock once its invoice is posted, in a locked phase (closed,
+ *     cancelled — D7) or deleted;
  *   - every searchable cell is a `<label for>` of its column's search field;
  *   - Betrag: the gross total the last save stored from debtor's preview (D11), «–» when the
  *     preview refused the order as it stood;
@@ -29,8 +30,9 @@ use Z77\Shared\Money\AmountFormat;
 $actionBase = $actionBase ?? \Z77\Module\Order\Ui\OrderLayout::BASE;
 $id         = (int) $order->getId();
 $url        = $actionBase . '/edit?id=' . $id;
-$editable   = $order->getInvoice() === null && !($status?->getPhase()->isLocked() ?? false);
-$stateText  = $editable ? 'Auftrag öffnen — bearbeitbar' : 'Auftrag öffnen — ' . ($order->getInvoice() !== null ? 'Rechnung fakturiert, nicht mehr bearbeitbar' : 'abgeschlossen');
+// ADR-054 (step 5): editable too while the invoice is in the Faktura-Journal; a deleted order never.
+$editable   = !$order->isDeleted() && (($order->getInvoice()?->isInJournal() ?? false) || ($order->getInvoice() === null && !($status?->getPhase()->isLocked() ?? false)));
+$stateText  = $editable ? 'Auftrag öffnen — bearbeitbar' : 'Auftrag öffnen — ' . ($order->isDeleted() ? 'gelöscht' : ($order->getInvoice() !== null ? 'Rechnung verbucht, nicht mehr bearbeitbar' : 'abgeschlossen'));
 $badges     = [PaymentState::OPEN => 'badge--info', PaymentState::PARTIAL => 'badge--warning', PaymentState::PAID => 'badge--success', PaymentState::CREDITED => 'badge--muted'];
 ?>
                 <div class="be-list__item" data-entity="sales-order:<?= $id ?>">

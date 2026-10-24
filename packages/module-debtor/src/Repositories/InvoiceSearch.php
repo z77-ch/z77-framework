@@ -5,7 +5,8 @@ namespace Z77\Module\Debtor\Repositories;
 /**
  * What the document list asks the database for (P3 part 3): one VIEW —
  * the invoices in `invoicing` (drafts, no number yet), the issued ones in
- * the Faktura-Journal, the final invoices, or the credit notes (any state);
+ * the Faktura-Journal, the final invoices, the credit notes (any standing state), the replaced or
+ * the deleted documents (every kind — ADR-054 rule 4);
  * or the Faktura-Journal screen's every kind in `issued` — and the column
  * criteria, AND-ed. Every value is bound; the sort
  * key selects from a fixed map ({@see InvoiceRepository::search()}), never
@@ -18,8 +19,11 @@ final class InvoiceSearch
     public const VIEW_ISSUED    = 'issued';
     public const VIEW_FINAL     = 'final';
     public const VIEW_CREDIT    = 'credit';
+    /** Void documents (ADR-054 rule 4, step 4): replaced by a successor with a new number / deleted — every kind, hidden from the other tabs. */
+    public const VIEW_REPLACED  = 'replaced';
+    public const VIEW_DELETED   = 'deleted';
     /** The tabs of the document list. */
-    public const VIEWS = [self::VIEW_INVOICING, self::VIEW_ISSUED, self::VIEW_FINAL, self::VIEW_CREDIT];
+    public const VIEWS = [self::VIEW_INVOICING, self::VIEW_ISSUED, self::VIEW_FINAL, self::VIEW_CREDIT, self::VIEW_REPLACED, self::VIEW_DELETED];
     /** The Faktura-Journal screen: EVERY kind in state `issued` (credit notes included) — not a tab of the document list. */
     public const VIEW_JOURNAL   = 'journal';
     public const SORTS = ['number', 'date', 'name', 'amount'];

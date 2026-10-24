@@ -19,6 +19,7 @@ use Z77\Core\DI,
     Z77\Module\Debtor\Entities\Payment,
     Z77\Module\Debtor\Entities\PaymentTarget,
     Z77\Module\Debtor\Entities\PaymentTerms,
+    Z77\Module\Debtor\Invoicing\Correction,
     Z77\Module\Debtor\Mail\InvoiceMails,
     Z77\Module\Debtor\Pdf\InvoiceArchive,
     Z77\Module\Debtor\Pdf\InvoiceArchiveException,
@@ -29,6 +30,7 @@ use Z77\Core\DI,
     Z77\Module\Debtor\Services\DebtorException,
     Z77\Module\Debtor\Services\DunningService,
     Z77\Module\Debtor\Services\InvoiceConflictException,
+    Z77\Module\Debtor\Services\InvoiceRefusedException,
     Z77\Module\Debtor\Services\InvoicingService,
     Z77\Module\Debtor\Services\LockConflict,
     Z77\Module\Debtor\Services\PaymentService,
@@ -137,6 +139,9 @@ trait InvoiceControllerTrait
         InvoiceSearch::VIEW_ISSUED    => 'Fakturiert',
         InvoiceSearch::VIEW_FINAL     => 'Verbucht',
         InvoiceSearch::VIEW_CREDIT    => 'Gutschriften',
+        // The void documents (ADR-054 rule 4, step 4): kept with number, snapshot and PDF, hidden from the other tabs.
+        InvoiceSearch::VIEW_REPLACED  => 'Ersetzt',
+        InvoiceSearch::VIEW_DELETED   => 'Gelöscht',
     ];
 
     /** The state icon of a row — German title per state (the UI word for `final` is «verbucht», owner 2026-10-10). */
@@ -238,7 +243,7 @@ trait InvoiceControllerTrait
     {
         $request = DI::getRequest();
         // The invoicing view leads with the selection checkbox — the view is read once ahead of the definition.
-        $selectable = !in_array($request->getGetParameter('view'), [InvoiceSearch::VIEW_ISSUED, InvoiceSearch::VIEW_FINAL, InvoiceSearch::VIEW_CREDIT], true);
+        $selectable = !in_array($request->getGetParameter('view'), [InvoiceSearch::VIEW_ISSUED, InvoiceSearch::VIEW_FINAL, InvoiceSearch::VIEW_CREDIT, InvoiceSearch::VIEW_REPLACED, InvoiceSearch::VIEW_DELETED], true);
         $definition = InvoiceListing::definition(DebtorCurrency::base(), $selectable);
         $state      = $definition->readRequest($request);
         $search     = InvoiceListing::search($state);
@@ -303,13 +308,20 @@ trait InvoiceControllerTrait
         if ($document === null) {
             return $this->invoiceNotFound();
         }
+        // `&revision=n` — an EARLIER archived version (ADR-054 decision 11: every revision stays as a file).
+        $revision = (int) DI::getRequest()->getGetParameter('revision');
+        $earlier  = $revision > 0 && $revision !== $document->getRevision();
         try {
-            $bytes = $this->invoiceArchive()->pdf($document);
+            $bytes = $earlier ? $this->invoiceArchive()->pdfOfRevision($document, $revision) : $this->invoiceArchive()->pdf($document);
         } catch (InvoiceArchiveException $e) {
             return $this->invoiceToMask($id, 'error', $e->getMessage());
         }
+        if ($bytes === null) {
+            return $this->invoiceToMask($id, 'error', 'Version ' . $revision . ' von ' . $document->documentName() . ' ist nicht archiviert.');
+        }
+        $name = InvoicePdf::fileName($document);
 
-        return $this->bytes($bytes, InvoicePdf::fileName($document), 'application/pdf');
+        return $this->bytes($bytes, $earlier ? substr($name, 0, -4) . '-version-' . $revision . '.pdf' : $name, 'application/pdf');
     }
 
     /** The PDF archive of issued versions (ADR-054 decision 25). */
@@ -602,8 +614,16 @@ trait InvoiceControllerTrait
         $kind    = $document->kind();
         $form    = new InvoiceForm(DebtorCurrency::base(), $kind, $document->getCreditNoteOf(), $this->invoicingService()->chargesVat($kind, $document->getCreditNoteOf()));
         $refusal = $this->invoicingService()->editRefusal($document);
+        // An ISSUED document of the mask (ADR-054 decision 12, step 4): its save is a correction — a revision
+        // or a replacement, named BEFORE it is written; an invoice may change its customer (owner decision O4).
+        $issued  = $refusal === null && $document->isInJournal();
         if (!$request->isPost()) {
-            return $this->invoiceFormPage($form->startFrom($document), $document, $document->getVersion());
+            $form->startFrom($document);
+            if ($issued && !$document->isCreditNote()) {
+                $form->withContact((int) $request->getGetParameter('contact'));   // the customer picker's page fallback
+            }
+
+            return $this->invoiceFormPage($form, $document, $document->getVersion());
         }
         if ($refusal !== null) {
             // A stale form posted after «Fakturieren», or a hand-made request: nothing is written.
@@ -614,13 +634,16 @@ trait InvoiceControllerTrait
             return $this->invoiceToMask($id, 'error', 'Ungültiges Formular-Token — bitte erneut versuchen.');
         }
         $version = (int) ($post['version'] ?? 0);   // what THIS form was rendered from, not what is stored now
-        $form->fromPost($post, $document);
+        $form->fromPost($post, $document, partyFixed: !$issued);
         if (($post['op'] ?? '') === 'more') {
             $form->addRows(InvoiceForm::MORE_ROWS);
 
             return $this->invoiceFormPage($form, $document, $version);
         }
         $draft = $form->toDraft(VatRates::from($this->em()));
+        if ($draft !== null && $issued) {
+            return $this->invoiceCorrect($document, $version, $draft, $form, $post);
+        }
         if ($draft !== null) {
             try {
                 $reissued = $this->invoicingService()->reinvoice($id, $version, $draft);
@@ -640,6 +663,151 @@ trait InvoiceControllerTrait
         }
 
         return $this->invoiceFormPage($form, $document, $version);
+    }
+
+    /**
+     * The save of an ISSUED document's mask (ADR-054 decisions 8, 12; step 4): «Speichern» first asks the
+     * server what the change IS (`InvoicingService::classify()`) and answers the same mask with the band
+     * naming it — «neue Version mit gleicher Nummer» or «Ersatz mit neuer Nummer», the reasons — and one
+     * button «… bestätigen» (`op=confirm`, `expect=<kind>`; the posted fields travel along: the form IS the
+     * confirmation). The confirmation saves through `revise()`, which classifies AGAIN and refuses a kind
+     * other than the one confirmed (`correction-changed` → the band anew, Rule 7). A change that changes
+     * nothing writes nothing. A replacement answers the SUCCESSOR's mask (in the same window).
+     *
+     * @param array<string, mixed> $post
+     */
+    private function invoiceCorrect(Invoice $document, int $version, \Z77\Module\Debtor\Invoicing\InvoiceDraft $draft, InvoiceForm $form, array $post): HtmlResponse|RedirectResponse|FetchResponse
+    {
+        $id     = (int) $document->getId();
+        $expect = in_array($post['expect'] ?? null, [Correction::REVISION, Correction::REPLACEMENT], true) ? (string) $post['expect'] : null;
+        try {
+            if (($post['op'] ?? '') !== 'confirm' || $expect === null) {
+                $correction = $this->invoicingService()->classify($document, $draft);
+                if ($correction->isNone()) {
+                    return $this->invoiceCorrectionAnswer($id, 'info', 'Keine Änderung — nichts gespeichert. ' . $document->documentName() . ' bleibt, wie sie fakturiert wurde.');
+                }
+
+                return $this->invoiceFormPage($form, $document, $version, $correction);
+            }
+            $standing = $this->invoicingService()->revise($id, $version, $draft, $expect);
+        } catch (InvoiceConflictException) {
+            return $this->invoiceToMask($id, 'error', self::INVOICE_CONFLICT_MESSAGE);
+        } catch (InvoiceRefusedException $e) {
+            $form->addGeneralError($e->getMessage());
+            $document   = $this->invoices()->withLines($id) ?? $document;
+            $correction = null;
+            if ($e->reason === InvoiceRefusedException::CORRECTION_CHANGED) {
+                try {
+                    $correction = $this->invoicingService()->classify($document, $draft);
+                } catch (DebtorException) {
+                    $correction = null;
+                }
+            }
+
+            return $this->invoiceFormPage($form, $document, $version, $correction);
+        } catch (DebtorException $e) {
+            $form->addGeneralError($e->getMessage());
+
+            return $this->invoiceFormPage($form, $this->invoices()->withLines($id) ?? $document, $version);
+        } catch (\Doctrine\DBAL\Exception $e) {
+            if (!LockConflict::is($e)) {
+                throw $e;
+            }
+            $form->addGeneralError(LockConflict::MESSAGE);
+
+            return $this->invoiceFormPage($form, $this->invoices()->withLines($id) ?? $document, $version);
+        } catch (\RuntimeException $e) {
+            // The archive could not write the new version's PDF (InvoiceArchive): everything rolled back.
+            error_log('debtor correction: ' . get_class($e) . ': ' . $e->getMessage());
+            $form->addGeneralError('Nichts gespeichert: das PDF-Archiv konnte nicht geschrieben werden (data/archive/debtor). Die Ursache steht im Fehlerprotokoll.');
+
+            return $this->invoiceFormPage($form, $this->invoices()->withLines($id) ?? $document, $version);
+        }
+        $text = (int) $standing->getId() !== $id
+            ? $standing->documentName() . ' ersetzt ' . $document->documentName() . ' — neue Nummer, im Faktura-Journal, noch nicht verbucht. ' . $document->documentName() . ' steht unter «Ersetzt».'
+            : $standing->documentName() . ' gespeichert — Version ' . $standing->getRevision() . ' (ID ' . $standing->getDocumentStamp() . '), die frühere Version bleibt archiviert. Im Faktura-Journal, noch nicht verbucht.';
+
+        return $this->invoiceCorrectionAnswer((int) $standing->getId(), 'success', $text);
+    }
+
+    /** The answer after a correction: the standing document's mask — in the window (the list reloads) or as a page. */
+    private function invoiceCorrectionAnswer(int $id, string $type, string $text): RedirectResponse|FetchResponse
+    {
+        if (!$this->invoiceIsFetch()) {
+            return $this->invoiceToMask($id, $type, $text);
+        }
+        if ($type === 'success') {
+            return $this->invoiceWindowSaved($id, WindowOrigin::of(DI::getRequest()), $text);
+        }
+        $this->messageService->pushFlash($type, $text);
+
+        return $this->fetch()->setStatus('success')->addCommand('open-window', ['url' => $this->invoiceMaskUrl($id), 'replace' => true]);
+    }
+
+    // ── delete an issued document (ADR-054 decision 14, Q7; step 6) ──────
+
+    /**
+     * «Rechnung löschen …» (`?id=`) of an ISSUED manual document (in the Faktura-Journal, not posted):
+     * GET the last look — party, number, amount — with a MANDATORY reason; POST (`#[Csrf]`, the entity
+     * token and the VERSION shown) `InvoicingService::delete()`. The document is kept as «gelöscht» with
+     * its number (the gap documentation, ADR-054 legal note 6). A draft is discarded instead, a posted one
+     * corrected by a credit note, a sourced one deleted through its source (the order) — each answered
+     * with the refusal on the mask. Fetched, the content of the document window it is linked from.
+     */
+    #[Csrf]
+    protected function confirmDeleteAction(): HtmlResponse|RedirectResponse|FetchResponse
+    {
+        $request  = DI::getRequest();
+        $id       = (int) $request->getGetParameter('id');
+        $document = $id ? $this->invoices()->withLines($id) : null;
+        if ($document === null) {
+            return $this->invoiceNotFound();
+        }
+        $refusal = !$document->isInJournal()
+            ? ($document->isDraft()
+                ? $document->documentName() . ' ist ein Entwurf — «Entwurf löschen …».'
+                : $document->documentName() . ' ist ' . $document->state()->label() . ' und wird nicht gelöscht' . ($document->isPosted() ? ' — eine Korrektur ist eine Gutschrift.' : '.'))
+            : $this->invoicingService()->editRefusal($document);
+        if ($refusal !== null) {
+            return $this->invoiceToMask($id, 'error', $refusal);
+        }
+        $error  = '';
+        $reason = '';
+        if ($request->isPost()) {
+            $post   = $request->getPostParameters();
+            $reason = trim((string) ($post['reason'] ?? ''));
+            if (!DI::getCsrfService()->validateEntityToken(trim((string) ($post['entity_csrf'] ?? '')), 'invoice', $id)) {
+                return $this->invoiceToMask($id, 'error', self::INVOICE_CONFLICT_MESSAGE);
+            }
+            try {
+                $deleted = $this->invoicingService()->delete($id, (int) ($post['version'] ?? 0), $reason);
+                $text    = $deleted->documentName() . ' gelöscht — sie bleibt mit ihrer Nummer und dem Grund unter «Gelöscht», nichts war verbucht.';
+                if ($this->invoiceIsFetch()) {
+                    return $this->invoiceWindowSaved($id, WindowOrigin::of($request), $text);
+                }
+
+                return $this->invoiceToMask($id, 'success', $text);
+            } catch (InvoiceConflictException) {
+                return $this->invoiceToMask($id, 'error', self::INVOICE_CONFLICT_MESSAGE);
+            } catch (DebtorException $e) {
+                $error = $e->getMessage();
+            } catch (\Doctrine\DBAL\Exception $e) {
+                if (!LockConflict::is($e)) {
+                    throw $e;
+                }
+                $error = LockConflict::MESSAGE;
+            }
+            $document = $this->invoices()->withLines($id) ?? $document;
+        }
+
+        return $this->invoicePage('confirmDelete', [
+            'window'     => $this->invoiceIsFetch(),
+            'origin'     => WindowOrigin::of($request),
+            'document'   => $document,
+            'reason'     => $reason,
+            'error'      => $error,
+            'entityCsrf' => DI::getCsrfService()->generateEntityToken('invoice', $id),
+        ]);
     }
 
     // ── discard a draft ──────────────────────────────────────────────────
@@ -869,7 +1037,7 @@ trait InvoiceControllerTrait
      * dunning history, credit notes). The help (ADR-048) carries the rules the
      * form does not spell out.
      */
-    private function invoiceFormPage(InvoiceForm $form, ?Invoice $document, ?int $version = null): HtmlResponse
+    private function invoiceFormPage(InvoiceForm $form, ?Invoice $document, ?int $version = null, ?Correction $correction = null): HtmlResponse
     {
         $targets = array_values(array_filter($this->em()->getRepository(PaymentTarget::class)->allInOrder(), fn(PaymentTarget $t) => $t->isActive() || $t->getCode() === $form->header('target')));
         $refusal = $document !== null ? $this->invoicingService()->editRefusal($document) : null;
@@ -886,7 +1054,12 @@ trait InvoiceControllerTrait
             // «per E-Mail an … gesendet am …» (step 3 of the mail plan): the outbox rows of `invoice:<id>`, read-only.
             'deliveries'  => !$document->isDraft() ? ($this->invoiceMails()->deliveries([(int) $document->getId()])[(int) $document->getId()] ?? []) : [],
             'states'      => self::INVOICE_STATE_LABELS,
+            // The Faktura-Journal's corrections (ADR-054, step 4): the archived versions, whom it replaced.
+            'revisions'   => !$document->isDraft() ? $this->invoiceArchive()->revisionsOf($document) : [],
+            'predecessor' => !$document->isDraft() ? $this->invoices()->predecessorOf($document) : null,
         ];
+        // An issued INVOICE of the mask may change its customer (owner decision O4 — that is a replacement).
+        $customerChange = $document !== null && $refusal === null && $document->isInJournal() && !$document->isCreditNote();
 
         return $this->invoicePage('form', $facts + [
             'window'      => $this->invoiceIsFetch(),
@@ -905,7 +1078,13 @@ trait InvoiceControllerTrait
             'dirtyBase'  => preg_match('/^[0-9a-f]{8}$/', (string) (DI::getRequest()->getPostParameters()['_dirty_base'] ?? '')) === 1 ? (string) DI::getRequest()->getPostParameters()['_dirty_base'] : '',
             // The customer of a NEW invoice: the field with «Kunde wählen …» (CustomerPicker, owner 2026-10-15) — a contact
             // without a profile is made a debtor first («Debitor anlegen», owner 2026-10-18). The number is in the title.
-            'customerField' => $document === null && $form->creditNoteOf === null ? CustomerPicker::fieldHtml($this->em(), $form->header('contact'), $this->invoiceListBase() . '/customer-pick', $this->invoiceListBase() . '/add', $form->error('contact') !== '', showNumber: false) : '',
+            'customerField' => ($document === null && $form->creditNoteOf === null) || $customerChange
+                ? CustomerPicker::fieldHtml($this->em(), $form->header('contact'), $this->invoiceListBase() . '/customer-pick', $this->invoiceListBase() . ($document === null ? '/add' : '/edit?id=' . $document->getId()), $form->error('contact') !== '', showNumber: false)
+                : '',
+            'customerChange' => $customerChange,
+            // The band of an issued document's save (step 4): what the change IS, with its confirmation — null otherwise.
+            'correction'     => $correction,
+            'correctionWord' => $correction !== null ? InvoicingService::correctionWord($correction) : '',
             // The head shared with the order window (CustomerPickerTrait, owner 2026-10-19): the block title
             // «Kunde 20417» + phone, the terms select («wie beim Debitor — …»), «Debitor anpassen».
             'customerTitle' => $this->customerTitleHtml($form->header('contact')),
@@ -1150,7 +1329,7 @@ trait InvoiceControllerTrait
             'document'   => $documents[0],
             'actionBase' => $this->invoiceListBase(),
             'query'      => http_build_query(['ids' => $request->getGetParameter('ids')] + ($back !== '' ? ['back' => $back] : [])),
-            'resendable' => $mails->available() && InvoiceMails::skipReason($documents[0]) === null && InvoiceMails::isCovered($sent),
+            'resendable' => $mails->available() && InvoiceMails::skipReason($documents[0]) === null && InvoiceMails::isCovered($sent, $documents[0]),
         ]);
         $this->layoutManager->addPartials('resultActions', 'Backend/InvoiceController', self::INVOICE_NS);
 
@@ -1255,7 +1434,7 @@ trait InvoiceControllerTrait
                 $skip[] = ['document' => $document, 'reason' => $reason ?? ''];
                 continue;
             }
-            if ($resend === null && InvoiceMails::isCovered($deliveries[(int) $document->getId()] ?? [])) {
+            if ($resend === null && InvoiceMails::isCovered($deliveries[(int) $document->getId()] ?? [], $document)) {
                 $done[] = $document;
                 continue;
             }
@@ -1321,7 +1500,7 @@ trait InvoiceControllerTrait
             $docs = [$resend];
         } else {
             $deliveries = $mails->deliveries($ids);
-            $done       = array_values(array_filter($docs, static fn(Invoice $d) => InvoiceMails::isCovered($deliveries[(int) $d->getId()] ?? [])));
+            $done       = array_values(array_filter($docs, static fn(Invoice $d) => InvoiceMails::isCovered($deliveries[(int) $d->getId()] ?? [], $d)));
             $docs       = array_values(array_filter($docs, static fn(Invoice $d) => !in_array($d, $done, true)));
             // Nothing mailable left (the rest has no address) — say «covered», not «no address».
             if ($done !== [] && array_filter($docs, static fn(Invoice $d) => InvoiceMails::skipReason($d) === null) === []) {

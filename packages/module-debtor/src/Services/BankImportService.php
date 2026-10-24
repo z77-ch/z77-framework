@@ -155,6 +155,13 @@ final class BankImportService
         if ($invoice === null) {
             throw new BankImportRefusedException(BankImportRefusedException::INVOICE_UNKNOWN, "Rechnung {$documentNumber} gibt es nicht.");
         }
+        if ($invoice->isVoid()) {
+            // ADR-054 decisions 10, 14: a replaced or deleted document takes no payment — the chain names whom to assign.
+            $end = $this->invoices()->chainEnd($invoice);
+            throw new BankImportRefusedException(BankImportRefusedException::INVOICE_NOT_FINAL, $invoice->getReplacedBy() !== null && !$end->isVoid()
+                ? $invoice->documentName() . ' ist ersetzt durch ' . $end->documentName() . ' — ' . $end->documentName() . ' zuordnen.'
+                : $invoice->documentName() . ' ist ' . $invoice->state()->label() . ' — eine andere Rechnung zuordnen.');
+        }
         if ($invoice->isInJournal()) {
             // ADR-054, owner decision 6: an issued invoice is not payable until the journal is posted.
             throw new BankImportRefusedException(BankImportRefusedException::INVOICE_NOT_FINAL, $invoice->documentName() . ' ist noch nicht verbucht (Faktura-Journal) — erst «Journal verbuchen», dann zuordnen.');
@@ -394,6 +401,11 @@ final class BankImportService
 
             return;
         }
+        if ($invoice->isVoid()) {
+            $this->routeVoid($transaction, $invoice);
+
+            return;
+        }
         if ($invoice->isInJournal()) {
             // ADR-054, owner decision 6: not booked by the import — it waits in the manual payments.
             $transaction->unmatch('Rechnung noch nicht verbucht — ' . $invoice->documentName() . ' steht im Faktura-Journal; nach «Journal verbuchen» zuordnen.');
@@ -437,6 +449,11 @@ final class BankImportService
 
             return;
         }
+        if ($invoice->isVoid()) {
+            $this->routeVoid($transaction, $invoice);
+
+            return;
+        }
         if ($invoice->isInJournal()) {
             // ADR-054, owner decision 6: not booked by the import — it waits in the manual payments.
             $transaction->unmatch('Rechnung noch nicht verbucht — ' . $invoice->documentName() . ' steht im Faktura-Journal; nach «Journal verbuchen» zuordnen.');
@@ -449,6 +466,26 @@ final class BankImportService
             return;
         }
         $transaction->matchTo($invoice, 'Zugeordnet nach der Mitteilung («' . $named . '») — vor dem Verbuchen prüfen.');
+    }
+
+    /**
+     * A reference (QRR or a message's «Rechnung n») that names a VOID document (ADR-054 decision 16, owner
+     * rule 13) is never booked automatically: a REPLACED one leaves the transaction `unmatched` with the END
+     * of the replacement chain A → B → C pre-selected (`suggested_invoice_id`) and the note «Referenz von
+     * Rechnung A — ersetzt durch Rechnung C»; one click («Zuordnen zu …») confirms — once C is posted (an
+     * issued successor waits for «Journal verbuchen», O6, and the note says so). A DELETED one (or a chain
+     * that ends in a deleted one): `unmatched` with «Rechnung A gelöscht».
+     */
+    private function routeVoid(BankTransaction $transaction, Invoice $invoice): void
+    {
+        $end = $this->invoices()->chainEnd($invoice);
+        if ($invoice->getReplacedBy() === null || $end->isVoid()) {
+            $transaction->unmatch($invoice->documentName() . ($invoice->getReplacedBy() !== null ? ' ist ersetzt durch ' . $end->documentName() . ', diese ist ' . $end->state()->label() : ' ist gelöscht') . ' — manuell zuordnen.');
+
+            return;
+        }
+        $transaction->suggest($end, 'Referenz von ' . $invoice->documentName() . ' — ersetzt durch ' . $end->documentName()
+            . ($end->isInJournal() ? ' (noch nicht verbucht — nach «Journal verbuchen» mit «Zuordnen zu …» bestätigen)' : ' — «Zuordnen zu …» bestätigt.'));
     }
 
     // ── helpers ─────────────────────────────────────────────────────────

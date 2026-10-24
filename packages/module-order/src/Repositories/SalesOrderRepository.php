@@ -134,7 +134,7 @@ class SalesOrderRepository extends DoctrineRepository
         }
         $params = [$statusCodes, $from->format('Y-m-d'), $to->format('Y-m-d')];
         $types  = [ArrayParameterType::STRING, ParameterType::STRING, ParameterType::STRING];
-        $where  = ' WHERE o.status_code IN (?) AND o.order_date >= ? AND o.order_date <= ?';
+        $where  = ' WHERE o.status_code IN (?) AND o.order_date >= ? AND o.order_date <= ? AND o.deleted_at IS NULL';
         $rows   = $this->connection()->fetchAllAssociative(
             "SELECT o.id, o.number, o.order_date, o.status_code, c.kind, c.company, c.first_name, c.last_name FROM sales_order o JOIN contact c ON c.id = o.contact_id{$where} ORDER BY o.order_date, o.number LIMIT " . max(1, $limit),
             $params,
@@ -156,6 +156,8 @@ class SalesOrderRepository extends DoctrineRepository
             $params[] = $value;
             $types[]  = $type;
         };
+        // A deleted order (ADR-054 decision 14) is kept but hidden — only the tab «Gelöscht» shows it.
+        $where[] = $search->deleted ? 'o.deleted_at IS NOT NULL' : 'o.deleted_at IS NULL';
         if ($search->statusCodes !== null) {
             if ($search->statusCodes === []) {
                 $where[] = '1 = 0';   // a view no status falls into

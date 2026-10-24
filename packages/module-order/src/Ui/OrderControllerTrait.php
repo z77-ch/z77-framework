@@ -123,6 +123,8 @@ trait OrderControllerTrait
         SalesOrderStatusChange::TRIGGER_CONFIRMATION  => 'Auftragsbestätigung',
         SalesOrderStatusChange::TRIGGER_DELIVERY_NOTE => 'Lieferschein',
         SalesOrderStatusChange::TRIGGER_BOOKING_PRINT => 'Fakturieren',
+        SalesOrderStatusChange::TRIGGER_REINVOICE     => 'Neu fakturiert',
+        SalesOrderStatusChange::TRIGGER_DELETE        => 'gelöscht',
     ];
 
     /** URL root of THIS mount — every link and form is built from it. */
@@ -381,7 +383,8 @@ trait OrderControllerTrait
         // The totals and what the booking print would refuse — debtor's preview of the STORED order (D11).
         $preview = null;
         $previewProblems = [];
-        if ($order !== null && $order->getInvoice() === null) {
+        // Also while the invoice is in the Faktura-Journal (ADR-054, step 5): the order is editable then, its totals move.
+        if ($order !== null && ($order->getInvoice() === null || $order->getInvoice()->isInJournal())) {
             try {
                 $preview = $service->preview($order);
                 if ($preview->getPayment()->hasPaymentPart()) {
@@ -415,7 +418,8 @@ trait OrderControllerTrait
             'startable'       => $order === null ? $statuses->startable() : [],
             // An editable order's status field: the current status and what it may move to — saved
             // with «Speichern» (owner 2026-10-20). A locked order keeps the link «Status ändern …».
-            'statusChoices'   => $order !== null && $refusal === null && $status !== null ? array_merge([$status], $statuses->targets($status, false)) : [],
+            // With an invoice (also one still in the Faktura-Journal, ADR-054) the status stays — no select.
+            'statusChoices'   => $order !== null && $refusal === null && $status !== null && $order->getInvoice() === null ? array_merge([$status], $statuses->targets($status, false)) : [],
             'editRefusal'     => $refusal,
             'needReason'      => $needReason,
             'entityCsrf'      => $order === null ? '' : DI::getCsrfService()->generateEntityToken('sales-order', (int) $order->getId()),
@@ -463,7 +467,11 @@ trait OrderControllerTrait
             'creditNotes'     => $invoice !== null ? $invoices->creditNotesOf($invoice) : [],
             'invoiceBase'     => $this->orderInvoiceBase(),
             'orderTitle'      => OrderPdf::orderTitle($status),
-            'canBook'         => $order !== null && $invoice === null && $status !== null && $status->getPhase()->isBookable(),
+            'canBook'         => $order !== null && !$order->isDeleted() && $invoice === null && $status !== null && $status->getPhase()->isBookable(),
+            // «Neu fakturieren …» (ADR-054 decision 12): while the invoice is in the Faktura-Journal.
+            'canReinvoice'    => $order !== null && !$order->isDeleted() && $invoice !== null && $invoice->isInJournal(),
+            // «Auftrag löschen …» (ADR-054 decision 14): null = allowed.
+            'deleteRefusal'   => $order !== null ? $service->deleteRefusal($order) : null,
             // A stored total of 0 (owner 2026-10-20): no booking print — the window says «Erledigt» instead.
             'zeroTotal'       => $order?->getTotalGross()?->isZero() ?? false,
             'phase'           => $status?->getPhase(),
@@ -1076,6 +1084,141 @@ trait OrderControllerTrait
         }
 
         return $this->orderPage('bookingRefused', ['message' => $message, 'already' => $already]);
+    }
+
+    // ── «Neu fakturieren» and «Auftrag löschen» (ADR-054 decisions 12, 14 — steps 5 and 6) ──
+
+    /**
+     * «Neu fakturieren …» (`?id=`): the last look before the order's ISSUED invoice is issued again from the
+     * order — debtor's classification of the order as it stands («neue Version mit gleicher Nummer» /
+     * «Ersatz mit neuer Nummer — Rechnung N wird ersetzt» and why, or «keine Änderung»), the invoice's
+     * flag, one button (POST in THIS tab, the version shown). A PAGE like «Fakturieren …» (the window is
+     * left — DEBTOR-WIN-002); the answer is debtor's result list of the invoice that stands.
+     */
+    protected function confirmReinvoiceAction(): HtmlResponse|RedirectResponse|FetchResponse
+    {
+        $order = $this->orderOfRequest();
+        if ($order === null) {
+            return $this->orderRefuse('Auftrag nicht gefunden');
+        }
+        $correction = null;
+        $error      = '';
+        try {
+            $correction = $this->orderService()->reinvoicePreview($order);
+        } catch (OrderRefusedException $e) {
+            $error = $e->getMessage();
+        }
+
+        return $this->orderPage('confirmReinvoice', [
+            'order'          => $order,
+            'invoice'        => $order->getInvoice(),
+            'correction'     => $correction,
+            'correctionWord' => $correction !== null ? InvoicingService::correctionWord($correction) : '',
+            'error'          => $error,
+        ]);
+    }
+
+    /**
+     * «Neu fakturieren» — the POST (`#[Csrf]`, the order's version): `OrderService::reinvoice()` (one unit of
+     * work: debtor's revision or replacement, the order re-linked to a successor, the log row). The answer
+     * is a 303 to debtor's RESULT LIST of the invoice that stands (PDF, e-mail — the replacement mail kind
+     * for a successor); a refusal a message page.
+     */
+    #[Csrf]
+    protected function reinvoiceAction(): HtmlResponse|RedirectResponse
+    {
+        $request = DI::getRequest();
+        $id      = (int) $request->getGetParameter('id');
+        if ($id <= 0 || !$request->isPost()) {
+            return $this->redirect($this->orderListBase() . '/list', 303);
+        }
+        $post   = $request->getPostParameters();
+        $before = $this->orders()->find($id)?->getInvoice();
+        $name   = $before?->documentName();
+        $rev    = $before?->getRevision();
+        try {
+            $standing = $this->orderService()->reinvoice($id, (int) ($post['version'] ?? 0));
+        } catch (OrderConflictException) {
+            return $this->orderPrintRefused('Der Auftrag oder seine Rechnung wurde inzwischen geändert — nichts wurde neu fakturiert. Auftrag neu öffnen und nochmals versuchen.', null);
+        } catch (OrderException | DebtorException $e) {
+            return $this->orderPrintRefused('Nichts wurde neu fakturiert: ' . $e->getMessage(), null);
+        } catch (\Doctrine\DBAL\Exception $e) {
+            error_log('order reinvoice: ' . get_class($e) . ': ' . $e->getMessage());
+
+            return $this->orderPrintRefused(LockConflict::is($e) ? 'Nichts wurde neu fakturiert: ' . LockConflict::MESSAGE : 'Nichts wurde neu fakturiert: die Datenbank hat es abgelehnt — die Ursache steht im Fehlerprotokoll.', null);
+        } catch (\RuntimeException $e) {
+            error_log('order reinvoice: ' . get_class($e) . ': ' . $e->getMessage());
+
+            return $this->orderPrintRefused('Nichts wurde neu fakturiert: das PDF-Archiv konnte nicht geschrieben werden (data/archive/debtor). Die Ursache steht im Fehlerprotokoll.', null);
+        }
+        $this->messageService->pushFlashAfterRedirect('success', $name !== null && $standing->documentName() !== $name
+            ? $standing->documentName() . ' ersetzt ' . $name . ' — neue Nummer, im Faktura-Journal, noch nicht verbucht'
+            : ($standing->getRevision() !== $rev ? $standing->documentName() . ' neu fakturiert — Version ' . $standing->getRevision() . ', gleiche Nummer' : $standing->documentName() . ' stimmt mit dem Auftrag überein — nichts neu fakturiert'));
+
+        return $this->redirect($this->orderBookingResult([(int) $standing->getId()]), 303);
+    }
+
+    /**
+     * «Auftrag löschen …» (`?id=`), in the order window (`data-window-link`): GET the last look — number,
+     * customer, total, the invoice that goes `deleted` with it — and a MANDATORY reason; POST (`#[Csrf]`, the
+     * entity token and the version shown) `OrderService::delete()`. Fetched, the window closes and the list
+     * reloads; as a page the list with the flash. A refusal stays in the dialog.
+     */
+    #[Csrf]
+    protected function confirmDeleteAction(): HtmlResponse|FetchResponse|RedirectResponse
+    {
+        $request = DI::getRequest();
+        $order   = $this->orderOfRequest();
+        if ($order === null) {
+            return $this->orderRefuse('Auftrag nicht gefunden');
+        }
+        $service = $this->orderService();
+        $error   = $service->deleteRefusal($order) ?? '';
+        $reason  = '';
+        if ($error === '' && $request->isPost()) {
+            $post   = $request->getPostParameters();
+            $reason = trim((string) ($post['reason'] ?? ''));
+            if (!DI::getCsrfService()->validateEntityToken(trim((string) ($post['entity_csrf'] ?? '')), 'sales-order', (int) $order->getId())) {
+                return $this->orderRefuse(self::ORDER_CONFLICT_MESSAGE);
+            }
+            try {
+                $deleted = $service->delete((int) $order->getId(), (int) ($post['version'] ?? 0), $reason);
+                $text    = 'Auftrag ' . $deleted->documentNumber() . ' gelöscht' . ($order->getInvoice() !== null ? ' — ' . $order->getInvoice()->documentName() . ' ist gelöscht (nicht verbucht)' : '') . '; Lager zurückgebucht. Er steht unter «Gelöscht».';
+                if (!$this->orderIsFetch()) {
+                    $this->messageService->pushFlashAfterRedirect('success', $text);
+
+                    return $this->redirect($this->orderListBase() . '/list', 303);
+                }
+                $this->messageService->pushFlash('success', $text);
+                $response = $this->fetch()->setStatus('success')->addCommand('close-window');
+                $origin   = WindowOrigin::of($request);
+                if (str_starts_with($origin, 'region:')) {
+                    $response->addCommand('refresh-region', ['name' => substr($origin, strlen('region:'))]);
+                }
+
+                return $response;
+            } catch (OrderConflictException) {
+                return $this->orderRefuse(self::ORDER_CONFLICT_MESSAGE);
+            } catch (OrderException $e) {
+                $error = $e->getMessage();
+            } catch (\Doctrine\DBAL\Exception $e) {
+                if (!LockConflict::is($e)) {
+                    throw $e;
+                }
+                $error = LockConflict::MESSAGE;
+            }
+            $order = $this->orders()->withLines((int) $order->getId()) ?? $order;
+        }
+
+        return $this->orderPage('confirmDelete', [
+            'window'     => $this->orderIsFetch(),
+            'origin'     => WindowOrigin::of($request),
+            'order'      => $order,
+            'reason'     => $reason,
+            'error'      => $error,
+            'refused'    => $service->deleteRefusal($order) !== null,
+            'entityCsrf' => DI::getCsrfService()->generateEntityToken('sales-order', (int) $order->getId()),
+        ]);
     }
 
     // ── helpers ──────────────────────────────────────────────────────────

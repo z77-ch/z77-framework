@@ -34,6 +34,8 @@ final class OrderListing
     public const VIEW_CLOSED    = 'closed';
     public const VIEW_CANCELLED = 'cancelled';
     public const VIEW_ALL       = 'all';
+    /** The deleted orders (ADR-054 decision 14) — kept with their number, hidden from every other tab. */
+    public const VIEW_DELETED   = 'deleted';
 
     /** The tab the list opens with — not the first one: the order of `VIEWS` is the ladder. */
     public const DEFAULT_VIEW = self::VIEW_ACTIVE;
@@ -46,6 +48,7 @@ final class OrderListing
         self::VIEW_CLOSED    => 'Abgeschlossen',
         self::VIEW_CANCELLED => 'Storniert',
         self::VIEW_ALL       => 'Alle',
+        self::VIEW_DELETED   => 'Gelöscht',
     ];
 
     public static function definition(string $currency, string $view = self::DEFAULT_VIEW): ListDefinition
@@ -96,14 +99,14 @@ final class OrderListing
      */
     public static function codesOf(string $view, array $statuses, ?string $label = null): ?array
     {
-        if ($view === self::VIEW_ALL && $label === null) {
+        if (($view === self::VIEW_ALL || $view === self::VIEW_DELETED) && $label === null) {
             return null;
         }
         $needle = $label !== null ? mb_strtolower($label) : null;
 
         return array_values(array_map(static fn(OrderStatus $s) => $s->getCode(), array_filter(
             $statuses,
-            static fn(OrderStatus $s) => ($view === self::VIEW_ALL || self::viewOf($s) === $view)
+            static fn(OrderStatus $s) => ($view === self::VIEW_ALL || $view === self::VIEW_DELETED || self::viewOf($s) === $view)
                 && ($needle === null || str_contains(mb_strtolower($s->getLabel()), $needle))
         )));
     }
@@ -129,6 +132,7 @@ final class OrderListing
             $state->sort,
             $state->descending,
             $state->parsed('f_invoice'),
+            $state->extra('view') === self::VIEW_DELETED,
         );
     }
 }

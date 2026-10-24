@@ -321,6 +321,45 @@ class InvoiceRepository extends DoctrineRepository
     }
 
     /**
+     * The document $document REPLACED — the predecessor whose `replaced_by_id` names it (ADR-054 decision
+     * 10); null when it replaced none. What the successor's PDF prints («ersetzt Rechnung … (ID …)»,
+     * decision 23), its mail names and its mask links. A plain read (the replacement flushes the
+     * predecessor before the successor's PDF is rendered). Doctrine-only (DQL).
+     */
+    public function predecessorOf(Invoice $document): ?Invoice
+    {
+        if ($document->getId() === null) {
+            return null;
+        }
+
+        return $this->em()->createQueryBuilder()
+            ->select('i')
+            ->from(Invoice::class, 'i')
+            ->where('i.replacedBy = :doc')
+            ->setParameter('doc', $document->getId())
+            ->setMaxResults(1)
+            ->getQuery()
+            ->getOneOrNullResult();
+    }
+
+    /**
+     * The END of the replacement chain that starts at $document: A → B → C answers C (ADR-054 decision
+     * 16, owner rule 13); a document that is not replaced answers itself. Bounded — a cycle is
+     * impossible by construction (a successor is always a new row) but guarded.
+     */
+    public function chainEnd(Invoice $document): Invoice
+    {
+        $current = $document;
+        $seen    = [];
+        while ($current->getReplacedBy() !== null && !isset($seen[(int) $current->getId()]) && count($seen) < 100) {
+            $seen[(int) $current->getId()] = true;
+            $current = $current->getReplacedBy();
+        }
+
+        return $current;
+    }
+
+    /**
      * The credit notes issued against $invoice, oldest first — the detail
      * view lists them. Doctrine-only (DQL).
      *
@@ -503,13 +542,19 @@ class InvoiceRepository extends DoctrineRepository
             $types[]  = $type;
         };
         if ($search->view === InvoiceSearch::VIEW_CREDIT) {
+            // Credit notes in every standing state — the void ones have their own tabs (ADR-054 rule 4).
             $add('kind = ?', InvoiceKind::CreditNote->value);
+            $where[]  = 'state NOT IN (?, ?)';
+            array_push($params, InvoiceState::Replaced->value, InvoiceState::Deleted->value);
+            array_push($types, ParameterType::STRING, ParameterType::STRING);
+        } elseif ($search->view === InvoiceSearch::VIEW_REPLACED || $search->view === InvoiceSearch::VIEW_DELETED) {
+            // «Ersetzt» / «Gelöscht» (ADR-054 rule 4, step 4): every kind in that state — hidden from every other tab.
+            $add('state = ?', $search->view === InvoiceSearch::VIEW_REPLACED ? InvoiceState::Replaced->value : InvoiceState::Deleted->value);
         } elseif ($search->view === InvoiceSearch::VIEW_JOURNAL) {
             // The Faktura-Journal (ADR-054 decision 5): every kind in `issued` — credit notes included.
             $add('state = ?', InvoiceState::Issued->value);
         } else {
-            // The payable kinds — invoices and fees (P4 part 3) — share the three state views. The void
-            // ones («Ersetzt / Gelöscht», ADR-054) get their tab with step 4 of the build plan.
+            // The payable kinds — invoices and fees (P4 part 3) — share the three state views.
             $add('kind <> ?', InvoiceKind::CreditNote->value);
             $add('state = ?', match ($search->view) {
                 InvoiceSearch::VIEW_FINAL  => InvoiceState::Final->value,

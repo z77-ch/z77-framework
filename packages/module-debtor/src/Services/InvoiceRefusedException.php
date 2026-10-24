@@ -53,6 +53,16 @@ final class InvoiceRefusedException extends DebtorException
     public const ACCOUNT_NOT_REVENUE  = 'account-not-revenue';
     /** A line's revenue account is not flagged «auf Belegen wählbar» in the chart (owner 2026-10-12). */
     public const ACCOUNT_NOT_SELECTABLE = 'account-not-selectable';
+    /** A correction (revision, replacement, deletion) of a document that is not in the Faktura-Journal (ADR-054 decisions 8, 14). */
+    public const NOT_IN_JOURNAL = 'not-in-journal';
+    /** A document issued from a SOURCE (an order) is corrected or deleted there, not in debtor's mask (ADR-054 decision 12). */
+    public const SOURCED = 'sourced';
+    /** The server's classification differs from the one the user confirmed — shown again (Rule 7). */
+    public const CORRECTION_CHANGED = 'correction-changed';
+    /** A deletion needs its reason (ADR-054 decision 14, Q7). */
+    public const REASON_REQUIRED = 'reason-required';
+    /** A document with payments is not deleted (Q7). */
+    public const HAS_PAYMENTS = 'has-payments';
 
     public function __construct(public readonly string $reason, string $message, ?\Throwable $previous = null)
     {

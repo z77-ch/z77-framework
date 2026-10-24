@@ -32,6 +32,9 @@
  * @var \Z77\Module\Debtor\Invoicing\QrBill $bill
  * @var \Z77\Module\Mandator\Entities\Mandator|null $mandator
  * @var int $customerNumber  0 = unknown
+ * @var \Z77\Module\Debtor\Entities\Invoice|null $replaces  the document this one REPLACED (ADR-054 decision 23) — the
+ *                         note «ersetzt Rechnung <number> (ID <stamp>)» under the stamp, generated, no free text
+ *                         (owner decision O11 — the owner is the fiduciary); null when it replaced none
  * @var callable $fmt  Money → «1'234.50»
  * @var bool $liableToVat  the document was computed WITH VAT (`InvoicePdf`: `Invoice::carriesVat()`,
  *                         owner 2026-10-21) — false: no MWST column (`DocumentColumns`), no MWST
@@ -87,6 +90,11 @@ if (!$preview && $document->getDocumentStamp() !== null) {
     // The version's stamp (ADR-054 decision 24, owner 2026-10-23): small, beside the number at the right
     // edge — the unique ID of THIS version a replacement cites («ersetzt Rechnung … (ID …)»).
     $pdf->font('', 7.5)->textColor(110)->text($left, 100, 'ID ' . $document->getDocumentStamp() . ($document->getRevision() > 1 ? '  ·  Version ' . $document->getRevision() : ''), 'R', $width)->textColor(0);
+}
+if (!$preview && ($replaces ?? null) !== null) {
+    // The replacement note (ADR-054 decision 23, owner decision O11): small, under the stamp, generated —
+    // the number and the stamp of the replaced version, so the customer can tell which paper this replaces.
+    $pdf->font('', 7.5)->textColor(110)->text($left, 103.5, 'ersetzt ' . $replaces->documentName() . ($replaces->getDocumentStamp() !== null ? ' (ID ' . $replaces->getDocumentStamp() . ')' : ''), 'R', $width)->textColor(0);
 }
 $y = 108;
 if ($document->subjectLine() !== null) {

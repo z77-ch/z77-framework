@@ -2,12 +2,13 @@
 
 **Status:** `[IN PROGRESS]` — written 2026-10-23 from the owner decisions of the same day
 ([ADR-054](../02-decisions/adr-054-faktura-journal.md), accepted 2026-10-23). **Steps 1–2 built and
-committed 2026-10-23** (`b58a4b6`); **step 3 built 2026-10-23, not committed** (§13, «Step 3 as built»
-below; ADR-054 «Addendum 2026-10-23 — step 3 as built»). The open questions (§14) are **decided by the
+committed 2026-10-23** (`b58a4b6`); **step 3 built and committed 2026-10-23** (`63cbb4b`; «Step 3 as built»
+below); **steps 4–8 built 2026-10-24, not committed** («Steps 4–8 as built» below; ADR-054 «Addendum
+2026-10-24 — steps 4–8 as built»). The open questions (§14) are **decided by the
 owner 2026-10-23** (ADR-054 «Owner decisions on the open questions», O1–O13) — they change parts of this
 plan, listed in §0 below; where a later section still says otherwise, §0 and the ADR win. The board on
-the developer canvas was waived by the owner for step 3 (2026-10-23: built on the known patterns). Next:
-step 4 (corrections of manual documents).
+the developer canvas was waived by the owner for steps 3–8 (built on the known patterns). Next: step 9
+(hints and future locks).
 **Basis:** [ADR-054](../02-decisions/adr-054-faktura-journal.md),
 [ADR-040](../02-decisions/adr-040-business-module-cut.md) (incl. addenda 2026-10-13 / 2026-10-14),
 [ADR-041](../02-decisions/adr-041-vat-model.md), [ADR-042](../02-decisions/adr-042-ledger-and-money.md)
@@ -401,11 +402,11 @@ browser look per step; `npm run docs:check` green.
 | 1 | Schema: the migrations of §4 (debtor), entity mappings, `InvoiceState` cases, `InvoiceRevision` / `InvoiceJournalPosting` entities — no behaviour change. **Built 2026-10-23**: `Version20261023150000` (schema only, one file), fields and getters only — the transition methods (`issueNumbered()`, `post()`, `revise()`, …) come with the steps that call them | invisible; harness A (A0, A5c, A11, A12h) |
 | 2 | Predicates and readers: `isDraft` / `isIssued` / `isInJournal` / `isPosted` / `isVoid`, the audit table of §3 applied — still nothing produces `issued`, behaviour identical. **Built 2026-10-23** («Step 2 as built», §3) | refactor; full harness green unchanged; section FJ (FJ0–FJ8) + checkpoint `FJ` |
 | 3 | **The journal core**: `issue()`, `invoiceAndIssue()`, `JournalPostingService`, the Faktura-Journal screen (list, preview, PDF list, «Journal verbuchen», protocols), navigation seed, payments on `issued`, open amount / open items / PaymentStates on `issued`, the year-close check widened, the rewritten sections (L, P3E, Z, O, BM). **Built 2026-10-23** («Step 3 as built» below) — payments, open amount, open items and PaymentStates stay on `final` (O6) | the booking print stops posting; the office posts the journal |
-| 4 | **Corrections of manual documents**: `classify()`, `revise()`, revision archive, replacement with payment move and entry-text amend, the mask (editable `issued`, confirmation, void read-only, revisions), list tab «Ersetzt / Gelöscht» | correct a printed invoice without a credit note |
-| 5 | **Orders**: editable with an `issued` invoice (read port), `flagReissue()` on save, «Neu fakturieren», journal blocked by flags, the order window's «Belege» card | correct an order after the booking print |
-| 6 | **Delete**: `OrderService::delete()` + `InvoicingService::delete()` (and the manual «Rechnung löschen …» if Q7 = yes), stock to zero, order migration if Q6 = state | delete an order |
-| 7 | **CAMT chain**: suggestion through the chain, note, one-click assign, `bank_transaction.suggested_invoice_id` | a payment of an old QR reference lands on the successor |
-| 8 | **Mails**: revision-bound attachment, cancel on replacement, «Version n senden», replacement mail kind (Q10) | correct mails after corrections |
+| 4 | **Corrections of manual documents**: `classify()`, `revise()`, revision archive, replacement (no payment move — O6), the mask (editable `issued`, confirmation, void read-only, revisions), list tabs «Ersetzt» / «Gelöscht». **Built 2026-10-24** | correct a printed invoice without a credit note |
+| 5 | **Orders**: editable with an `issued` invoice (read port), `flagReissue()` on save, «Neu fakturieren», journal blocked by flags, the order window's «Belege» card. **Built 2026-10-24** | correct an order after the booking print |
+| 6 | **Delete**: `OrderService::delete()` + `InvoicingService::delete()` (and the manual «Rechnung löschen …» if Q7 = yes), stock to zero, order migration if Q6 = state. **Built 2026-10-24** (order kept with state, O5; manual delete, Q7) | delete an order |
+| 7 | **CAMT chain**: suggestion through the chain, note, one-click assign, `bank_transaction.suggested_invoice_id`. **Built 2026-10-24** | a payment of an old QR reference lands on the successor |
+| 8 | **Mails**: revision-bound attachment, cancel on replacement, «Version n senden», replacement mail kind (Q10). **Built 2026-10-24** («Senden …» in the mask = the result list of the document) | correct mails after corrections |
 | 9 | **Hints and future locks**: `ledger-report` hint in financial's reports, `vat-return` check registered, dashboard entry, dunning hint line | the office sees what is unposted |
 
 Steps 1–3 are the minimum that delivers rule 1; 4–5 deliver the owner's goal (correct without a
@@ -440,6 +441,29 @@ ledger's own refusal for anything changed since. **Tests:** `tests/module-debtor
 N1, P3C (P3C38–P3C41d, P3C57), P3E, Z (Z5–Z12b), O (O2, O5, O6), BM (BM2–BM10) rewritten for the new
 model, FJ2 / FJ4 adapted, the new block FJ9–FJ34 (`--from=FJ`); `tests/pdf.php` K1–K3 (PdfConcat);
 `tests/module-order.php` M16b, N6, H2, F17; `tests/navigation-seeds.php` NSEED-2g, NSEED-7e.
+
+## Steps 4–8 as built (2026-10-24)
+
+The binding decisions are ADR-054 «Addendum 2026-10-24 — steps 4–8 as built» (1–9). Where the code is:
+
+| Step | Part | Where |
+|---|---|---|
+| 4 | The decision rule | `Invoicing\Correction` (pure), `InvoicingService::classify()` |
+| 4 | Revision / replacement | `InvoicingService::revise()` (`writeRevision()`, `writeReplacement()`, `lockCorrectable()`, `assertCorrectable()`), `Invoice::revise()` / `restamp()` / `replaceBy()` / `markDeleted()` / `flagReissue()` |
+| 4 | Archive of every version | `Pdf\InvoiceArchive::pdfOfRevision()`, `revisionsOf()`; the note «ersetzt Rechnung …» in `pdf/invoice` (`InvoicePdf` → `InvoiceRepository::predecessorOf()`) |
+| 4 | The mask | `Ui\InvoiceControllerTrait::editAction()` → `invoiceCorrect()` (band + `op=confirm`), `pdfAction()` `&revision=`, `form.tpl.php`, `_facts.tpl.php`, `form.help`; `InvoiceForm::fromPost(partyFixed:)`, `withContact()` |
+| 4 | Tabs | `InvoiceSearch::VIEW_REPLACED` / `VIEW_DELETED`, `InvoiceRepository::searchWhere()` |
+| 5 | Orders editable, flag, «Neu fakturieren» | `OrderService::assertEditable()`, `flagInvoice()`, `reinvoice()`, `reinvoicePreview()`; `InvoicingService::flagReissue()`; `SalesOrder::relinkInvoice()`; `OrderControllerTrait::confirmReinvoiceAction()` / `reinvoiceAction()`, `confirmReinvoice.tpl.php`, the order window's band and button |
+| 6 | Delete | `OrderService::delete()` / `deleteRefusal()`, `SalesOrder::markDeleted()`, migration `Version20261024100000` (order), `OrderSearch::$deleted`, tab «Gelöscht»; `InvoicingService::delete()`, debtor's `confirmDeleteAction()` + `confirmDelete.tpl.php`; order's `confirmDeleteAction()` + `confirmDelete.tpl.php`; log triggers `reinvoice` / `delete` |
+| 7 | CAMT chain | `BankImportService::routeVoid()`, `assign()` refusal, `BankTransaction::suggest()`, `InvoiceRepository::chainEnd()`, `transactionRow.tpl.php` («Zuordnen zu …») |
+| 8 | Mails | `InvoiceMails::attachmentOf()` / `mailKindFor()` / `cancelWaiting()` / `isCovered(…, $document)`, `InvoicePdfAttachment` (`<id>@<revision>`), kind `invoice-replacement` in `debtorConfig`, module-mailing `OutboxMailRepository::deliveriesOf()` (+ `attachments`) |
+
+**Deviations from this plan:** no payment move (O6 made it obsolete); the confirmation of a manual
+correction is a band in the same mask, not a separate window; «Neu fakturieren» keeps the issued invoice's
+date (no date asked); the payment reference TYPE counts as a replacement reason; the board on the developer
+canvas waived (owner). **Tests:** `tests/module-debtor.php` FJ40–FJ56 (step 4 + the manual deletion),
+FJ60–FJ69 (steps 5–6), FJ70–FJ77 (steps 7–8), FJ6 / FJ18 / BM13 adapted; the FJ block migrates first (a
+checkpoint saved before step 6's migration).
 
 ## 14. Open questions for the owner
 

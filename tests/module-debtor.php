@@ -1293,7 +1293,7 @@ check('I5m the three master-data fragments carry an add action and an active swi
 
 $templateDir = $package . '/res/view/templates/Backend';
 $templates   = glob($templateDir . '/*/*.tpl.php');
-check('I6 every master-data screen has its list template, its edit template and its header slot; the document screens (P3 part 3) add six (since 2026-10-21 the facts partial `_facts` in place of the read view `detail` — one mask), the payment form and the delete confirmation (P4 part 1) two, the bank import list and detail (P4 part 2) two, the dunning list (P4 part 3) one, the open-item list and its toolbar (2026-10-07) two, the action cells of the invoice list and the bank import (ADR-033 rev. 2026-10-08) two — the «+ Debitor» cell of the debtor master data removed 2026-10-12; the row partials of the in-place answers (ADR-047 addendum 2026-10-10: bank transaction + unbooked bar, payment terms, payment target, debtor contact) five; the booking print\'s refusal page (2026-10-10) one; the editor\'s party picker and its «+ Kontakt» window (DEBTOR-CONTACT-001, 2026-10-10) two; the customer picker field and window (2026-10-15) two; its «Debitor anlegen» dialog (2026-10-18) one; the shared editor head (2026-10-19: title, terms + its reload answer, «Debitor anpassen», the fixed party) five and the card «Rechnung» of the invoice one; the list helps of invoices, open items, bank import and dunning (HELP-003, 2026-10-20) four; the result list of the booking print and its mail confirmation (step 3 of the mail plan, 2026-10-22) two; the action row of the result list `resultActions` (2026-10-23) one; the Faktura-Journal (ADR-054 step 3, 2026-10-23: list, action cell, toolbar, confirmation, help) five', count($templates) === 56, count($templates));
+check('I6 every master-data screen has its list template, its edit template and its header slot; the document screens (P3 part 3) add six (since 2026-10-21 the facts partial `_facts` in place of the read view `detail` — one mask), the payment form and the delete confirmation (P4 part 1) two, the bank import list and detail (P4 part 2) two, the dunning list (P4 part 3) one, the open-item list and its toolbar (2026-10-07) two, the action cells of the invoice list and the bank import (ADR-033 rev. 2026-10-08) two — the «+ Debitor» cell of the debtor master data removed 2026-10-12; the row partials of the in-place answers (ADR-047 addendum 2026-10-10: bank transaction + unbooked bar, payment terms, payment target, debtor contact) five; the booking print\'s refusal page (2026-10-10) one; the editor\'s party picker and its «+ Kontakt» window (DEBTOR-CONTACT-001, 2026-10-10) two; the customer picker field and window (2026-10-15) two; its «Debitor anlegen» dialog (2026-10-18) one; the shared editor head (2026-10-19: title, terms + its reload answer, «Debitor anpassen», the fixed party) five and the card «Rechnung» of the invoice one; the list helps of invoices, open items, bank import and dunning (HELP-003, 2026-10-20) four; the result list of the booking print and its mail confirmation (step 3 of the mail plan, 2026-10-22) two; the action row of the result list `resultActions` (2026-10-23) one; the Faktura-Journal (ADR-054 step 3, 2026-10-23: list, action cell, toolbar, confirmation, help) five; «Rechnung löschen …» of an issued document (ADR-054 step 6, 2026-10-24) one', count($templates) === 57, count($templates));
 check('I6b the master-data rows are ONE partial each, rendered by the list and answered in place (replaceRow / insertRow, DEBTOR-WIN-003) — no `reload` left for a one-row save or switch of terms, targets or debtors',
     array_reduce([['PaymentTerms', 'paymentTerms'], ['PaymentTarget', 'paymentTarget'], ['DebtorProfile', 'debtorContact']], fn($ok, $p) => $ok
         && str_contains(file_get_contents($templateDir . '/' . $p[0] . 'Controller/listAction.tpl.php'), "partial('Backend/" . $p[0] . "Controller/_row'")
@@ -1920,8 +1920,8 @@ check('M1 Invoice has NO setter — the header is written whole by issue() / rei
     array_filter(get_class_methods(Invoice::class), fn($m) => str_starts_with($m, 'set')) === []
     && array_filter(get_class_methods(InvoiceLine::class), fn($m) => str_starts_with($m, 'set')) === []
     && array_filter(get_class_methods(InvoiceTax::class), fn($m) => str_starts_with($m, 'set')) === []);
-check('M2 InvoicingService has no delete, cancel, void or remove — a posted document is corrected by a credit note (plan §1)',
-    array_filter(get_class_methods(InvoicingService::class), fn($m) => preg_match('/delete|cancel|void|remove|storno|reverse/i', $m)) === []);
+check('M2 InvoicingService has no cancel, void, remove, storno or reverse — a posted document is corrected by a credit note (plan §1); the ONE delete() (ADR-054 decision 14) voids an ISSUED document only — refused once posted (FJ56)',
+    array_filter(get_class_methods(InvoicingService::class), fn($m) => preg_match('/delete|cancel|void|remove|storno|reverse/i', $m) && $m !== 'delete') === []);
 check('M3 the debtor posting DTO is validated on construction: unbalanced → refused; a line naming neither account nor category → refused; both → refused',
     throws(fn() => new DebtorPostingRequest(day('2026-01-01'), 'x', 'invoice', '1', 'k', [DebtorPostingLine::debit('1100', chf('1.00')), DebtorPostingLine::credit('3200', chf('0.99'))]), \InvalidArgumentException::class)
     && throws(fn() => new DebtorPostingLine(null, null, chf('1.00'), chf('0.00')), \InvalidArgumentException::class)
@@ -2751,8 +2751,8 @@ $useRequest([]);
 $host = $invoiceHost();
 $host->listAction();
 $tabs = $renderSlot($host, 'hc2');
-check('P3E6 the delivery flag «Fakturiert» of 2026-10-10 stays gone — «Fakturiert» is back as a STATE tab (ADR-054: issued, in the Faktura-Journal): four tabs «In Fakturierung» · «Fakturiert» · «Verbucht» · «Gutschriften» (no «Nicht fakturiert»), no «Fakturiert» column; no DeliveryService / DeliveryChannel, no delivered_* on the entity, no mark/unmark/booked/pdf-batch action in the trait',
-    array_keys($host->context['views']) === ['invoicing', 'issued', 'final', 'credit'] && str_contains($tabs, '>Verbucht</a>') && str_contains($tabs, '>Fakturiert</a>') && !str_contains($tabs, '<small>') && !str_contains($tabs, 'Nicht fakturiert') && !str_contains($tabs, 'Definitiv')
+check('P3E6 the delivery flag «Fakturiert» of 2026-10-10 stays gone — «Fakturiert» is back as a STATE tab (ADR-054: issued, in the Faktura-Journal): six tabs «In Fakturierung» · «Fakturiert» · «Verbucht» · «Gutschriften» · «Ersetzt» · «Gelöscht» (no «Nicht fakturiert»), no «Fakturiert» column; no DeliveryService / DeliveryChannel, no delivered_* on the entity, no mark/unmark/booked/pdf-batch action in the trait',
+    array_keys($host->context['views']) === ['invoicing', 'issued', 'final', 'credit', 'replaced', 'deleted'] && str_contains($tabs, '>Verbucht</a>') && str_contains($tabs, '>Fakturiert</a>') && !str_contains($tabs, '<small>') && !str_contains($tabs, 'Nicht fakturiert') && !str_contains($tabs, 'Definitiv')
     && !str_contains($renderList($host), 'Fakturiert')
     && !class_exists('Z77\\Module\\Debtor\\Services\\DeliveryService') && !enum_exists('Z77\\Module\\Debtor\\Entities\\DeliveryChannel')
     && !str_contains(file_get_contents($package . '/src/Entities/Invoice.php'), 'delivered')
@@ -3637,8 +3637,8 @@ check('U9 the master data moved: «Debitoren» under Aufträge is the open-item 
 
 echo "P3C. Source guards for part 3\n";
 $p3Templates = glob($package . '/res/view/templates/Backend/InvoiceController/*.tpl.php');
-check('P3C48 the document screens ship no JavaScript and no inline handler (Rule 7) — seventeen templates since the result list of the booking print and its mail confirmation (2026-10-22, `booking-result`, `confirmMail`) and its action row `resultActions` (2026-10-23); no module-financial class in debtor but the adapter (the journal is linked by URL)',
-    count($p3Templates) === 17 && array_reduce($p3Templates, fn($ok, $f) => $ok && $noScript(file_get_contents($f)), true)
+check('P3C48 the document screens ship no JavaScript and no inline handler (Rule 7) — eighteen templates since «Rechnung löschen …» (`confirmDelete`, ADR-054 step 6); no module-financial class in debtor but the adapter (the journal is linked by URL)',
+    count($p3Templates) === 18 && array_reduce($p3Templates, fn($ok, $f) => $ok && $noScript(file_get_contents($f)), true)
     && !str_contains(file_get_contents($package . '/src/Ui/InvoiceControllerTrait.php'), 'Module\\Financial'));
 check('P3C49 the module brings no PDF library of its own (owner 2026-10-06: ONE writer, vendored in the kernel behind the facade): no composer requirement, no \\FPDF / PdfWriter use in its sources or templates — the facade only',
     !preg_match('/tcpdf|fpdf|dompdf|mpdf|swiss-qr-bill/i', (string) file_get_contents($package . '/composer.json'))
@@ -4744,7 +4744,7 @@ $bmRows = $db->fetchAllAssociative('SELECT * FROM mail_outbox WHERE source LIKE 
 check('BM8 «per E-Mail senden» queues ONE outbox mail per document with an address — two rows in ONE batch, source invoice:<id>, the attachment by reference invoice-pdf:<id>, the language, the CHOSEN identity (index 1 «Buchhaltung», user 42) as sender — no mandator Reply-To any more (owner 2026-10-23); the one without an address is skipped, not failed; the job is queued; back to the result list with the flash',
     count($bmRows) === 2 && $bmRows[0]['batch_id'] === $bmRows[1]['batch_id'] && strlen($bmRows[0]['batch_id']) === 32
     && array_column($bmRows, 'source') === ['invoice:' . $bmX->getId(), 'invoice:' . $bmCN->getId()]
-    && json_decode($bmRows[0]['attachments'], true) === ['invoice-pdf:' . $bmX->getId()] && array_column($bmRows, 'language') === ['en', 'de']
+    && json_decode($bmRows[0]['attachments'], true) === ['invoice-pdf:' . $bmX->getId() . '@1'] && array_column($bmRows, 'language') === ['en', 'de']
     && array_column($bmRows, 'recipient_email') === ['kunde@example.ch', 'gutschrift@example.ch'] && array_column($bmRows, 'state') === ['queued', 'queued']
     && $bmRows[0]['reply_to'] === '' && $bmRows[0]['created_by'] === 'sachbearbeiter'
     && array_column($bmRows, 'sender_email') === ['buchhaltung@example.ch', 'buchhaltung@example.ch'] && array_column($bmRows, 'sender_name') === ['Buchhaltung', 'Buchhaltung']
@@ -4804,8 +4804,8 @@ check('BM12 the mail kind resolves per language with placeholders: a language wi
 $bmKinds = \Z77\Shared\Mail\DocumentMailKinds::fromModules(DI::getModuleManager());
 $bmBad   = new \Z77\Shared\Entities\EmailDocumentSetting(['kind' => 'invoice', 'subjects' => ['de' => "Zeile\nZwei"], 'bodies' => ['de' => '']]);
 $bmVal   = new \Z77\Shared\Validators\EmailDocumentSettingValidator($bmBad);
-check('BM13 the kinds are declared by the modules (debtor: invoice, credit-note, dunning; order: quote, order-confirmation, delivery-note — prepared), each in de + en; the editor\'s validator refuses a subject with a line break and a missing German text',
-    array_keys($bmKinds->all()) === ['invoice', 'credit-note', 'dunning', 'quote', 'order-confirmation', 'delivery-note'] && $bmKinds->languages('credit-note') === ['de', 'en']
+check('BM13 the kinds are declared by the modules (debtor: invoice, invoice-replacement (ADR-054 step 8), credit-note, dunning; order: quote, order-confirmation, delivery-note — prepared), each in de + en; the editor\'s validator refuses a subject with a line break and a missing German text',
+    array_keys($bmKinds->all()) === ['invoice', 'invoice-replacement', 'credit-note', 'dunning', 'quote', 'order-confirmation', 'delivery-note'] && $bmKinds->languages('credit-note') === ['de', 'en']
     && !$bmVal->isValid() && $bmVal->hasFieldError('subjects') && $bmVal->hasFieldError('bodies'));
 
 // «Senden als» refusals (owner 2026-10-23): no identity, a foreign index — the server decides (Rule 7).
@@ -4986,6 +4986,8 @@ section_FJ:
 echo "FJ. Faktura-Journal — schema and state predicates (ADR-054, build plan steps 1–2)\n";
 $rm($base . '/var/cache');
 $wireDi();
+// A checkpoint saved before a later migration (step 6: `sales_order.deleted_*`) gets it here; on a full run a no-op.
+[$fjMigrateCode, $fjMigrateOut] = $run(['command' => 'migrate']);
 $fjStates = array_map(fn(InvoiceState $s) => [$s->value, $s->label()], InvoiceState::cases());
 check('FJ0 InvoiceState has the five states of ADR-054 with their screen words; Invoice no longer answers isFinal() — readers ask the intention-revealing predicates',
     $fjStates === [['invoicing', 'in Fakturierung'], ['issued', 'fakturiert'], ['final', 'verbucht'], ['replaced', 'ersetzt'], ['deleted', 'gelöscht']]
@@ -5077,9 +5079,9 @@ check('FJ5 posted (as today): open = gross, in the settlement figures, dunnable,
     $fjAs['0:final']['open'] === $fjGross && $fjAs['0:final']['figures'] && $fjAs['0:final']['dunnable'] && $fjAs['0:final']['mailable'] && $fjAs['0:final']['payment'] !== null && !in_array($fjAs['0:final']['payment'], ['not-posted', 'not-final'], true)
     && str_contains((string) $fjAs['0:final']['editRefusal'], 'ist verbucht') && $fjAs['0:final']['pdfTitle'] === $fjName && $fjAs['3:final'] === $fjAs['0:final'],
     json_encode($fjAs, JSON_UNESCAPED_UNICODE));
-check('FJ6 issued (in the journal): mailable, the real PDF — but no debtor entry yet (owner decision 6 of 2026-10-23): no open amount, no settlement figures, not dunned, every payment / discount / loss refused `not-posted`; no draft editing («Faktura-Journal»)',
+check('FJ6 issued (in the journal): mailable, the real PDF — but no debtor entry yet (owner decision 6 of 2026-10-23): no open amount, no settlement figures, not dunned, every payment / discount / loss refused `not-posted`; a manual one is editable in the mask (since step 4 a correction — revision or replacement)',
     $fjAs['1:issued']['open'] === '0.00' && !$fjAs['1:issued']['figures'] && !$fjAs['1:issued']['dunnable'] && $fjAs['1:issued']['mailable']
-    && $fjAs['1:issued']['payment'] === 'not-posted' && str_contains((string) $fjAs['1:issued']['editRefusal'], 'Faktura-Journal') && $fjAs['1:issued']['pdfTitle'] === $fjName,
+    && $fjAs['1:issued']['payment'] === 'not-posted' && $fjAs['1:issued']['editRefusal'] === null && $fjAs['1:issued']['pdfTitle'] === $fjName,
     json_encode($fjAs['1:issued'], JSON_UNESCAPED_UNICODE));
 check('FJ7 replaced (void): no open amount, no settlement figures, not dunned, not mailable, no payment (`not-final`), read-only «ersetzt», the PDF as issued (no «Vorschau»)',
     $fjAs['2:replaced']['open'] === '0.00' && !$fjAs['2:replaced']['figures'] && !$fjAs['2:replaced']['dunnable'] && !$fjAs['2:replaced']['mailable']
@@ -5296,8 +5298,8 @@ check('FJ17 the recipe (backend-screen.md): the action cell is «Journal verbuch
 $useRequest(['view' => 'issued']);
 $host = $fjInvoiceHost();
 $host->listAction();
-check('FJ18 the document list has the tab «Fakturiert» (issued invoices, no selection checkbox — they are issued already) between «In Fakturierung» and «Verbucht»',
-    array_values($host->context['views']) === ['In Fakturierung', 'Fakturiert', 'Verbucht', 'Gutschriften']
+check('FJ18 the document list has the tab «Fakturiert» (issued invoices, no selection checkbox — they are issued already) between «In Fakturierung» and «Verbucht» (since step 4 followed by «Ersetzt» · «Gelöscht»)',
+    array_values($host->context['views']) === ['In Fakturierung', 'Fakturiert', 'Verbucht', 'Gutschriften', 'Ersetzt', 'Gelöscht']
     && in_array($fjA->getId(), array_map(fn($d) => (int) $d->getId(), $host->context['documents']), true) && array_filter($host->context['documents'], fn($d) => !$d->isInJournal()) === []
     && !str_contains($renderer->partial('Backend/InvoiceController/listAction', $host->context), 'form="invoice-finalize"'));
 
@@ -5506,6 +5508,487 @@ foreach (['module-debtor/src', 'module-debtor/res', 'module-order/src', 'module-
 }
 check('FJ34 the rename (owner decision O10): no text the user reads in debtor or order says «Buchungsdruck» any more — buttons, titles, help, flashes, refusals read «Fakturieren» (comments may keep the history; the routes keep their names)',
     $fjWords === [], json_encode($fjWords));
+
+
+// ── FJ (step 4). Corrections of an issued document: revision or replacement (ADR-054 decisions 8, 10, 11, 23; owner 2026-10-23) ──
+// Runs after step 3's block (or from the FJ checkpoint): what is still in the journal is posted first, so the block starts empty.
+
+echo "FJ. Faktura-Journal step 4 — correct an issued invoice: classify, revision (same number, archive r2), replacement (new number, «ersetzt Rechnung …»), the tabs «Ersetzt» / «Gelöscht», delete with a reason\n";
+if ($wireDi()->getRepository(Invoice::class)->journalVersions() !== []) {
+    $postJournal();
+}
+$f4Draft = function (string $date = '2026-10-10', string $text = 'Beratung', string $price = '150.00', string $account = '3400', ?int $contact = null, string $target = 'qr') use (&$mid): InvoiceDraft {
+    return InvoiceDraft::invoice($contact ?? $mid, day($date), day($date), 'CHF', [LineDraft::service($text, '2.000', 'h', chf($price), 'UN', $account)], paymentTargetCode: $target);
+};
+$f4Issue = function (InvoiceDraft $draft) use ($service, $wireDi, $at): int {
+    $doc = $service($wireDi())->invoice($draft);
+    $service($wireDi())->issue([$at((int) $doc->getId())]);
+    return (int) $doc->getId();
+};
+$f4Kind = fn(int $id, InvoiceDraft $draft) => $service($wireDi())->classify($readInvoice($id), $draft);
+$f4Revs = fn(int $id): array => $db->fetchAllAssociative('SELECT * FROM invoice_revision WHERE invoice_id = ? ORDER BY revision', [$id]);
+// Another active debtor with an address (the customer change, owner decision O4).
+$f4Other = 0;
+foreach ($wireDi()->getRepository(DebtorProfile::class)->findAll() as $f4Profile) {
+    $f4C = $f4Profile->getContact();
+    if ($f4C !== null && $f4C->getId() !== $mid && $f4C->isActive() && $f4Profile->isActive() && $service($wireDi())->invoiceAddressOf($f4C) !== null) {
+        $f4Other = (int) $f4C->getId();
+        break;
+    }
+}
+$f4A = $f4Issue($f4Draft());
+$f4RowA = $invoiceRow($f4A);
+$f4K = [
+    'same'    => $f4Kind($f4A, $f4Draft()),
+    'text'    => $f4Kind($f4A, $f4Draft(text: 'Beratung vor Ort')),
+    'day'     => $f4Kind($f4A, $f4Draft('2026-10-20')),
+    'account' => $f4Kind($f4A, $f4Draft(account: '3200')),
+    'price'   => $f4Kind($f4A, $f4Draft(price: '160.00')),
+    'month'   => $f4Kind($f4A, $f4Draft('2026-11-02')),
+    'type'    => $f4Kind($f4A, $f4Draft(target: 'bank')),
+    'party'   => $f4Other > 0 ? $f4Kind($f4A, $f4Draft(contact: $f4Other)) : null,
+];
+check('FJ40 classify() — the decision rule of ADR-054 decision 8: the same content → none; a text, a day within the month, a revenue account → REVISION (named «Positionen», «Rechnungsdatum», «Ertragskonto»); the amount, the month, the payment reference type and the customer (O4) → REPLACEMENT with the reason («Betrag geändert (600.00 → 640.00)»); nothing written by asking',
+    $f4K['same']->isNone() && $f4K['text']->isRevision() && $f4K['text']->reasons === ['Positionen']
+    && $f4K['day']->isRevision() && in_array('Rechnungsdatum', $f4K['day']->reasons, true) && $f4K['account']->isRevision() && $f4K['account']->reasons === ['Ertragskonto']
+    && $f4K['price']->isReplacement() && str_contains($f4K['price']->summary(), 'Betrag geändert') && $f4K['month']->isReplacement() && str_contains($f4K['month']->summary(), 'Rechnungsmonat')
+    && $f4K['type']->isReplacement() && str_contains($f4K['type']->summary(), 'Referenzart') && $f4Other > 0 && $f4K['party']->isReplacement() && str_contains($f4K['party']->summary(), 'Kunde geändert')
+    && (int) $invoiceRow($f4A)['version'] === (int) $f4RowA['version'],
+    json_encode(array_map(fn($c) => $c?->kind . ':' . $c?->summary(), $f4K), JSON_UNESCAPED_UNICODE));
+
+// The REVISION: same number, revision 2, a new stamp, r2 archived beside r1.
+$f4R1   = $f4Revs($f4A)[0];
+$f4R1b  = (string) file_get_contents($base . '/' . $f4R1['file_path']);
+$f4Rev  = $service($wireDi())->revise($f4A, (int) $f4RowA['version'], $f4Draft(text: 'Beratung vor Ort'), \Z77\Module\Debtor\Invoicing\Correction::REVISION);
+$f4Row2 = $invoiceRow($f4A);
+$f4Rs   = $f4Revs($f4A);
+check('FJ41 revise() → a REVISION: the same row and number, revision 2, a NEW stamp; the QR reference unchanged; two invoice_revision rows — r1 and its file untouched (SHA-256 as recorded), r2 at <number>-r2-<stamp>.pdf with the reason; still issued, nothing posted, the version moved once',
+    (int) $f4Rev->getId() === $f4A && $f4Row2['number'] === $f4RowA['number'] && (int) $f4Row2['revision'] === 2 && $f4Row2['document_stamp'] !== $f4RowA['document_stamp']
+    && $f4Row2['pay_reference'] === $f4RowA['pay_reference'] && $f4Row2['state'] === 'issued' && $f4Row2['ledger_entry_ref'] === null && (int) $f4Row2['version'] > (int) $f4RowA['version']
+    && count($f4Rs) === 2 && $f4Rs[0]['file_sha256'] === hash('sha256', $f4R1b) && $f4Rs[0]['document_stamp'] === $f4RowA['document_stamp']
+    && $f4Rs[1]['document_stamp'] === $f4Row2['document_stamp'] && $f4Rs[1]['file_path'] === 'data/archive/debtor/2026/' . $f4Row2['number'] . '-r2-' . $f4Row2['document_stamp'] . '.pdf'
+    && is_file($base . '/' . $f4Rs[1]['file_path']) && str_contains((string) $f4Rs[1]['reason'], 'Positionen') && $lineRows($f4A)[0]['text'] === 'Beratung vor Ort',
+    json_encode([$f4RowA, $f4Row2, $f4Rs], JSON_UNESCAPED_UNICODE));
+$f4Pdf2 = \Z77\Module\Debtor\Pdf\InvoicePdf::of($readInvoice($f4A), $wireDi())->withoutCompression()->output();
+$f4Arch = new \Z77\Module\Debtor\Pdf\InvoiceArchive($wireDi());
+check('FJ42 the archive keeps every version: the current PDF is r2\'s file («ID <stamp> · Version 2» printed), pdfOfRevision(1) is r1\'s bytes unchanged, revisionsOf() lists both oldest first',
+    $f4Arch->pdf($readInvoice($f4A)) === (string) file_get_contents($base . '/' . $f4Rs[1]['file_path']) && str_contains($f4Pdf2, 'Version 2')
+    && $f4Arch->pdfOfRevision($readInvoice($f4A), 1) === $f4R1b && array_map(fn($r) => $r->getRevision(), $f4Arch->revisionsOf($readInvoice($f4A))) === [1, 2]);
+
+$f4Before = $invoiceRow($f4A);
+$f4Changed = $refusal(fn() => $service($wireDi())->revise($f4A, (int) $f4Before['version'], $f4Draft(price: '170.00', text: 'Beratung vor Ort'), \Z77\Module\Debtor\Invoicing\Correction::REVISION));
+check('FJ43 the confirmation is re-judged (Rule 7): a save confirmed as «revision» that now classifies as a replacement is refused `correction-changed` — nothing written; a stale version is a conflict',
+    $f4Changed === \Z77\Module\Debtor\Services\InvoiceRefusedException::CORRECTION_CHANGED && $invoiceRow($f4A) == $f4Before && count($f4Revs($f4A)) === 2
+    && throws(fn() => $service($wireDi())->revise($f4A, (int) $f4Before['version'] - 1, $f4Draft(text: 'X')), InvoiceConflictException::class));
+
+// The REPLACEMENT: a new number, A replaced, the successor prints «ersetzt Rechnung A (ID …)».
+$f4StampA = (string) $invoiceRow($f4A)['document_stamp'];
+$f4J0     = $journalCount();
+$f4B      = $service($wireDi())->revise($f4A, (int) $f4Before['version'], $f4Draft(price: '170.00', text: 'Beratung vor Ort'), \Z77\Module\Debtor\Invoicing\Correction::REPLACEMENT);
+$f4RowA2  = $invoiceRow($f4A);
+$f4RowB   = $invoiceRow((int) $f4B->getId());
+$f4PdfB   = (string) file_get_contents($base . '/' . $f4Revs((int) $f4B->getId())[0]['file_path']);
+$f4PdfBt  = \Z77\Module\Debtor\Pdf\InvoicePdf::of($readInvoice((int) $f4B->getId()), $wireDi())->withoutCompression()->output();
+check('FJ44 revise() → a REPLACEMENT: a NEW document B (issued, a new number of October, its own stamp, revision 1 archived, net 340.00); A `replaced` — replaced_by = B, voided by / at, the reason «Ersetzt — Betrag geändert …», number and stamp kept, never posted; nothing posted',
+    (int) $f4B->getId() !== $f4A && $f4RowB['state'] === 'issued' && intdiv((int) $f4RowB['number'], 10000) === 2610 && (int) $f4RowB['number'] !== (int) $f4RowA['number']
+    && $f4RowB['net_total'] === '340.00' && preg_match('/^[0-9a-f]{10}$/', (string) $f4RowB['document_stamp']) === 1 && count($f4Revs((int) $f4B->getId())) === 1
+    && $f4RowA2['state'] === 'replaced' && (int) $f4RowA2['replaced_by_id'] === (int) $f4B->getId() && $f4RowA2['voided_by'] === 'tester' && $f4RowA2['voided_at'] !== null
+    && str_starts_with((string) $f4RowA2['void_reason'], 'Ersetzt — Betrag geändert') && $f4RowA2['number'] === $f4RowA['number'] && $f4RowA2['document_stamp'] === $f4StampA
+    && $f4RowA2['ledger_entry_ref'] === null && $journalCount() === $f4J0,
+    json_encode([$f4RowA2, $f4RowB], JSON_UNESCAPED_UNICODE));
+check('FJ45 the successor\'s PDF prints the replacement note, generated (decision 23, owner O11): «ersetzt Rechnung <A> (ID <stamp of A>)» — the archived file is that PDF; A\'s own PDF is still its archived file',
+    str_contains($f4PdfBt, '(ersetzt Rechnung ' . $f4RowA['number'] . ' \\(ID ' . $f4StampA . '\\))') && hash('sha256', $f4PdfB) === $f4Revs((int) $f4B->getId())[0]['file_sha256']
+    && $f4Arch->pdf($readInvoice($f4A)) === (string) file_get_contents($base . '/' . $f4Rs[1]['file_path']) && $wireDi()->getRepository(Invoice::class)->predecessorOf($readInvoice((int) $f4B->getId()))?->getId() === $f4A,
+    substr($f4PdfBt, 0, 0) . (preg_match('/\(ersetzt[^)]*\)[^)]*\)/', $f4PdfBt, $m) ? $m[0] : 'no note'));
+check('FJ46 a replaced document is void: not in the journal, not mailable, read-only («ersetzt»), revise() refused `not-in-journal`; the journal holds B',
+    !in_array($f4A, array_column($wireDi()->getRepository(Invoice::class)->journalVersions(), 'id'), true) && in_array((int) $f4B->getId(), array_column($wireDi()->getRepository(Invoice::class)->journalVersions(), 'id'), true)
+    && !(new \Z77\Module\Debtor\Mail\InvoicePdfAttachment())->accepts((string) $f4A) && str_contains((string) $service($wireDi())->editRefusal($readInvoice($f4A)), 'ersetzt')
+    && $refusal(fn() => $service($wireDi())->revise($f4A, (int) $f4RowA2['version'], $f4Draft())) === \Z77\Module\Debtor\Services\InvoiceRefusedException::NOT_IN_JOURNAL);
+
+// A month change: the successor takes its number from the month of ITS invoice date (rule 9). The chain A → B → C.
+$f4RowB0 = $invoiceRow((int) $f4B->getId());
+$f4C     = $service($wireDi())->revise((int) $f4B->getId(), (int) $f4RowB0['version'], $f4Draft('2026-12-03', 'Beratung vor Ort', '170.00'));
+$f4RowC  = $invoiceRow((int) $f4C->getId());
+check('FJ47 a replacement for another MONTH (no confirmation asked — $expect null): C numbered from December (2612… — U3 left November full), B replaced by C — the chain A → B → C ends at C (chainEnd())',
+    intdiv((int) $f4RowC['number'], 10000) === 2612 && $stateOf((int) $f4B->getId()) === 'replaced' && (int) $invoiceRow((int) $f4B->getId())['replaced_by_id'] === (int) $f4C->getId()
+    && $wireDi()->getRepository(Invoice::class)->chainEnd($readInvoice($f4A))->getId() === (int) $f4C->getId());
+
+// A document issued from a SOURCE is corrected there, not in debtor's mask (decision 12).
+$f4S = $f4Issue($f4Draft('2026-10-12'));
+$db->executeStatement("UPDATE invoice SET source_type = 'order', source_ref = '999', subject = 'Auftrag 999 · Harness' WHERE id = ?", [$f4S]);
+check('FJ48 an issued document from a SOURCE (an order): the mask is read-only with «… ist aus «Auftrag 999 · Harness» fakturiert — sie wird dort geändert …»; revise() and delete() refuse `sourced`; the source itself (fromSource) may',
+    str_contains((string) $service($wireDi())->editRefusal($readInvoice($f4S)), 'Auftrag 999') && str_contains((string) $service($wireDi())->editRefusal($readInvoice($f4S)), 'dort geändert')
+    && $refusal(fn() => $service($wireDi())->revise($f4S, (int) $invoiceRow($f4S)['version'], $f4Draft('2026-10-12', 'X'))) === \Z77\Module\Debtor\Services\InvoiceRefusedException::SOURCED
+    && $refusal(fn() => $service($wireDi())->delete($f4S, (int) $invoiceRow($f4S)['version'], 'Test')) === \Z77\Module\Debtor\Services\InvoiceRefusedException::SOURCED
+    && $service($wireDi())->classify($readInvoice($f4S), $f4Draft('2026-10-12', 'X'), fromSource: true)->isRevision());
+$db->executeStatement('UPDATE invoice SET source_type = NULL, source_ref = NULL, subject = NULL WHERE id = ?', [$f4S]);
+
+// The mask (InvoiceControllerTrait): an issued document opens editable; «Speichern» names the correction; «… bestätigen» saves.
+$f4Host = function () use ($fjHostBase) {
+    return new class($fjHostBase) {
+        use \Z77\Module\Debtor\Ui\InvoiceControllerTrait { listAction as public; pdfAction as public; editAction as public; confirmDeleteAction as public; }
+        public array $context = [];
+        public object $layoutManager;
+        public object $messageService;
+        public object $help;
+        public ?string $redirectedTo = null;
+        public array $bytes = [];
+        public function __construct(object $base)
+        {
+            $this->help           = new \Z77\Core\Services\HelpService();
+            $this->layoutManager  = $base::layout();
+            $this->messageService = $base::messages();
+        }
+        protected function em() { return DI::getUnifiedEntityManager(); }
+        protected function html(array $context = []): \Z77\Core\Http\Response\HtmlResponse { $this->context = $context; return new \Z77\Core\Http\Response\HtmlResponse(null, $context); }
+        protected function redirect(string $url, int $status = 302): \Z77\Core\Http\Response\RedirectResponse { $this->redirectedTo = $url; return new \Z77\Core\Http\Response\RedirectResponse($url, $status); }
+        protected function fetch(): \Z77\Core\Http\Response\FetchResponse { return new \Z77\Core\Http\Response\FetchResponse(); }
+        protected function bytes(string $content, string $filename, string $mimeType, bool $inline = true): \Z77\Core\Http\Response\BytesResponse { $this->bytes = ['content' => $content, 'filename' => $filename, 'mime' => $mimeType, 'inline' => $inline]; return new \Z77\Core\Http\Response\BytesResponse($content, $filename, $mimeType, $inline); }
+        private function invoicingService(): InvoicingService { return new InvoicingService($this->em(), 'sachbearbeiter'); }
+        private function paymentService(): \Z77\Module\Debtor\Services\PaymentService { return new \Z77\Module\Debtor\Services\PaymentService($this->em(), 'sachbearbeiter'); }
+        private function invoiceDunningService(): \Z77\Module\Debtor\Services\DunningService { return new \Z77\Module\Debtor\Services\DunningService($this->em(), 'sachbearbeiter'); }
+    };
+};
+$useRequest(['id' => (string) $f4S]);
+$host = $f4Host();
+$host->editAction();
+$f4Mask = $renderMain($host);
+$f4Post = function (int $id, array $changes) use ($useRequest, $f4Host, $invoiceRow, $readInvoice) {
+    $doc  = $readInvoice($id);
+    $line = $doc->getLines()[0];
+    $post = [
+        'csrf_token' => 'tok-session', 'entity_csrf' => 'tok-invoice-' . $id, 'version' => (string) $invoiceRow($id)['version'], 'op' => 'save',
+        'contact' => (string) $doc->getContact()->getId(), 'invoice_date' => $doc->getInvoiceDate()->format('Y-m-d'), 'service_from' => $doc->getServiceFrom()->format('Y-m-d'), 'service_to' => '',
+        'price_mode' => $doc->getPriceMode(), 'prices_mode' => $doc->getPriceMode(), 'terms' => $doc->getPaymentTermsCode(), 'target' => $doc->getPayment()->getTargetCode(), 'subject' => '', 'subject_label' => '',
+        'rows' => [['type' => 'service', 'child' => '', 'text' => $line->getText(), 'quantity' => '2', 'unit' => 'h', 'price' => $line->getUnitPrice()->toDecimal(), 'discount' => '', 'tax_code' => 'UN', 'account' => (string) $line->getRevenueAccount(), 'code' => '']],
+    ];
+    foreach ($changes as $key => $value) {
+        if (str_starts_with($key, 'row.')) { $post['rows'][0][substr($key, 4)] = $value; } else { $post[$key] = $value; }
+    }
+    $useRequest(['id' => (string) $id], $post);
+    $host = $f4Host();
+    $host->editAction();
+    return $host;
+};
+$f4V0 = $invoiceRow($f4S);
+$hostSave = $f4Post($f4S, ['row.text' => 'Beratung, korrigiert']);
+$f4Band = $renderMain($hostSave);
+check('FJ49 the mask of an issued manual document is EDITABLE (no disabled fieldset, «Speichern», «PDF», «Rechnung löschen …», «Senden …», the issued band); «Speichern» of a changed text answers the SAME mask with the band «Neue version mit gleicher Nummer — geändert: Positionen» and «Neue Version bestätigen» (op=confirm, expect=revision) — nothing written yet',
+    !str_contains($f4Mask, '<fieldset class="be-form__fieldset" disabled') && str_contains($f4Mask, 'Rechnung löschen …') && str_contains($f4Mask, 'Senden …') && str_contains($f4Mask, 'data-invoice-issued')
+    && ($hostSave->context['correction'] ?? null)?->isRevision() && str_contains($f4Band, 'data-invoice-correction="revision"') && str_contains($f4Band, 'name="expect" value="revision"')
+    && str_contains($f4Band, 'value="confirm"') && str_contains($f4Band, 'Neue Version bestätigen') && $invoiceRow($f4S) == $f4V0,
+    strip_tags(substr($f4Band, 0, 3000)));
+$hostConfirm = $f4Post($f4S, ['row.text' => 'Beratung, korrigiert', 'op' => 'confirm', 'expect' => 'revision']);
+check('FJ50 «Neue Version bestätigen»: saved as revision 2 by «sachbearbeiter» — back to the document\'s mask with «… gespeichert — Version 2 (ID …), die frühere Version bleibt archiviert»',
+    (int) $invoiceRow($f4S)['revision'] === 2 && $hostConfirm->redirectedTo === '/backend/finance/invoice/edit?id=' . $f4S
+    && str_contains($hostConfirm->messageService->flashes[0][1] ?? '', 'Version 2') && $f4Revs($f4S)[1]['created_by'] === 'sachbearbeiter',
+    json_encode($hostConfirm->messageService->flashes, JSON_UNESCAPED_UNICODE));
+$hostSame = $f4Post($f4S, []);
+$hostRepl = $f4Post($f4S, ['row.price' => '155.00', 'op' => 'confirm', 'expect' => 'revision']);
+$f4V2 = $invoiceRow($f4S);
+check('FJ51 an unchanged save: «Keine Änderung — nichts gespeichert»; a confirmation of «revision» for what is a replacement: the band anew (now «Ersatz mit neuer Nummer», «Ersetzen bestätigen») with the refusal — nothing written',
+    str_contains($hostSame->messageService->flashes[0][1] ?? '', 'Keine Änderung') && (int) $f4V2['revision'] === 2 && $f4V2['state'] === 'issued'
+    && ($hostRepl->context['correction'] ?? null)?->isReplacement() && str_contains($renderMain($hostRepl), 'Ersetzen bestätigen') && str_contains($renderMain($hostRepl), 'jetzt anders eingestuft'));
+$hostRepl2 = $f4Post($f4S, ['row.price' => '155.00', 'op' => 'confirm', 'expect' => 'replacement']);
+$f4Succ = (int) $db->fetchOne('SELECT replaced_by_id FROM invoice WHERE id = ?', [$f4S]);
+check('FJ52 «Ersetzen bestätigen»: the successor issued (by «sachbearbeiter»), the answer is the SUCCESSOR\'s mask with «… ersetzt …» — the list «Ersetzt» shows the old one with «ersetzt durch …», «Fakturiert» the new one, not the old',
+    $f4Succ > 0 && $stateOf($f4S) === 'replaced' && $hostRepl2->redirectedTo === '/backend/finance/invoice/edit?id=' . $f4Succ && str_contains($hostRepl2->messageService->flashes[0][1] ?? '', 'ersetzt')
+    && $invoiceRow($f4Succ)['issued_by'] === 'sachbearbeiter'
+    && (function () use ($useRequest, $f4Host, $renderList, $f4S, $f4Succ): bool {
+        $useRequest(['view' => 'replaced']); $h = $f4Host(); $h->listAction(); $ids = array_map(fn($d) => (int) $d->getId(), $h->context['documents']); $html = $renderList($h);
+        $useRequest(['view' => 'issued']); $h2 = $f4Host(); $h2->listAction(); $ids2 = array_map(fn($d) => (int) $d->getId(), $h2->context['documents']);
+        return in_array($f4S, $ids, true) && str_contains($html, 'ersetzt durch') && in_array($f4Succ, $ids2, true) && !in_array($f4S, $ids2, true)
+            && array_values($h->context['views']) === ['In Fakturierung', 'Fakturiert', 'Verbucht', 'Gutschriften', 'Ersetzt', 'Gelöscht'];
+    })());
+$useRequest(['id' => (string) $f4Succ]);
+$host = $f4Host();
+$host->editAction();
+$f4SuccMask = $renderMain($host);
+$useRequest(['id' => (string) $f4S]);
+$host = $f4Host();
+$host->editAction();
+$f4OldMask = $renderMain($host);
+$useRequest(['id' => (string) $f4A, 'revision' => '1']);
+$host = $f4Host();
+$host->pdfAction();
+check('FJ53 the masks link both ways: the successor names «Ersetzt <old> · ID …», the replaced one «Ersetzt durch <new>» with who / when / why, read-only; «Versionen» lists the archived versions with their PDFs (pdf?revision=1 delivers r1, named …-version-1.pdf)',
+    str_contains($f4SuccMask, 'edit?id=' . $f4S) && str_contains($f4SuccMask, '>Ersetzt<') && str_contains($f4OldMask, 'Ersetzt durch') && str_contains($f4OldMask, 'edit?id=' . $f4Succ)
+    && str_contains($f4OldMask, '<fieldset class="be-form__fieldset" disabled') && str_contains($f4OldMask, 'Versionen') && str_contains($f4OldMask, 'revision=1')
+    && ($host->bytes['content'] ?? '') === $f4R1b && ($host->bytes['filename'] ?? '') === 'rechnung-' . $f4RowA['number'] . '-version-1.pdf');
+
+// The customer change through the mask (owner decision O4): the picker on an issued invoice, the save a replacement.
+$hostParty = $f4Post($f4Succ, ['contact' => (string) $f4Other, 'op' => 'confirm', 'expect' => 'replacement']);
+$f4Party = (int) $db->fetchOne('SELECT replaced_by_id FROM invoice WHERE id = ?', [$f4Succ]);
+check('FJ54 another customer on an issued invoice (O4): the mask offers «Kunde wechseln» (the picker, back to this mask); the confirmed save is a REPLACEMENT — the successor belongs to the other debtor, its QR reference carries that customer number',
+    $f4Party > 0 && (int) $invoiceRow($f4Party)['contact_id'] === $f4Other && $stateOf($f4Succ) === 'replaced'
+    && (int) substr((string) $invoiceRow($f4Party)['pay_reference'], QrReference::BANK_DIGITS, QrReference::CUSTOMER_DIGITS) === $wireDi()->getRepository(DebtorProfile::class)->findByContact($f4Other)->getCustomerNumber()
+    && str_contains($f4SuccMask, '/customer-pick') && str_contains($f4SuccMask, 'edit%3Fid%3D' . $f4Succ),
+    json_encode([$f4Party, $invoiceRow($f4Party)['pay_reference'] ?? null, $hostParty->messageService->flashes], JSON_UNESCAPED_UNICODE));
+
+// Delete an issued manual document (decision 14, Q7 — step 6, the manual part).
+$f4D = $f4Issue($f4Draft('2026-10-14'));
+$useRequest(['id' => (string) $f4D]);
+$host = $f4Host();
+$host->confirmDeleteAction();
+$f4Confirm = $renderMain($host);
+$useRequest(['id' => (string) $f4D], ['csrf_token' => 'tok-session', 'entity_csrf' => 'tok-invoice-' . $f4D, 'version' => (string) $invoiceRow($f4D)['version'], 'reason' => '  ']);
+$host = $f4Host();
+$host->confirmDeleteAction();
+$f4NoReason = [$host->context['error'] ?? '', $stateOf($f4D)];
+$useRequest(['id' => (string) $f4D], ['csrf_token' => 'tok-session', 'entity_csrf' => 'tok-invoice-' . $f4D, 'version' => (string) $invoiceRow($f4D)['version'], 'reason' => 'Doppelt erfasst']);
+$host = $f4Host();
+$host->confirmDeleteAction();
+$f4RowD = $invoiceRow($f4D);
+check('FJ55 «Rechnung löschen …»: the confirmation with a mandatory «Grund»; without one refused (`reason-required`, nothing written); with one the document is `deleted` — number, stamp and PDF kept, voided by / at, the reason; out of the journal, in the tab «Gelöscht»',
+    str_contains($f4Confirm, 'name="reason"') && str_contains($f4Confirm, 'Rechnung löschen') && str_contains($f4NoReason[0], 'Grund') && $f4NoReason[1] === 'issued'
+    && $f4RowD['state'] === 'deleted' && $f4RowD['void_reason'] === 'Doppelt erfasst' && $f4RowD['voided_by'] === 'sachbearbeiter' && $f4RowD['number'] !== null && $f4RowD['document_stamp'] !== null
+    && !in_array($f4D, array_column($wireDi()->getRepository(Invoice::class)->journalVersions(), 'id'), true)
+    && (function () use ($useRequest, $f4Host, $f4D): bool { $useRequest(['view' => 'deleted']); $h = $f4Host(); $h->listAction(); return in_array($f4D, array_map(fn($d) => (int) $d->getId(), $h->context['documents']), true); })()
+    && $host->redirectedTo === '/backend/finance/invoice/edit?id=' . $f4D);
+$f4Posted = $f4Issue($f4Draft('2026-10-15'));
+$postJournal();
+check('FJ56 a POSTED document is neither revised nor deleted (`not-in-journal` — a credit note corrects it); a draft is not «deleted» (it is discarded); the posting skipped the void documents (no journal entry for A, B, the deleted one)',
+    $refusal(fn() => $service($wireDi())->revise($f4Posted, (int) $invoiceRow($f4Posted)['version'], $f4Draft('2026-10-15', 'X'))) === \Z77\Module\Debtor\Services\InvoiceRefusedException::NOT_IN_JOURNAL
+    && $refusal(fn() => $service($wireDi())->delete($f4Posted, (int) $invoiceRow($f4Posted)['version'], 'x')) === \Z77\Module\Debtor\Services\InvoiceRefusedException::NOT_IN_JOURNAL
+    && $invoiceRow($f4A)['ledger_entry_ref'] === null && $invoiceRow((int) $f4B->getId())['ledger_entry_ref'] === null && $invoiceRow($f4D)['ledger_entry_ref'] === null
+    && $stateOf((int) $f4C->getId()) === 'final' && $stateOf($f4Party) === 'final');
+
+
+// ── FJ (steps 5–6). Orders while their invoice is in the Faktura-Journal: edit → flag, «Neu fakturieren», delete (ADR-054 decisions 9, 12, 14; O5, O9) ──
+// module-order joined the installation in section O (its packages are in the checkpoint); its migration of step 6
+// (`sales_order.deleted_*`) runs here too — a no-op on a full run, the new column on a checkpoint saved before it.
+
+echo "FJ. Faktura-Journal steps 5–6 — an order edited while its invoice is issued (flag, blocked journal), «Neu fakturieren» (revision / replacement, re-link), deleting an order\n";
+[$code, $out] = [$fjMigrateCode, $fjMigrateOut];
+if ($wireDi()->getRepository(Invoice::class)->journalVersions() !== []) {
+    $postJournal();
+}
+$f5Stock = new class implements \Z77\Module\Article\Stock\StockLedger {
+    public array $requests = [];
+    public function bringTo(\Z77\Module\Article\Stock\StockRequest $request): \Z77\Module\Article\Stock\StockResult
+    {
+        $this->requests[] = $request;
+        return (new \Z77\Module\Article\Stock\PendingStockLedger())->bringTo($request);
+    }
+};
+$f5Svc     = fn() => new \Z77\Module\Order\Services\OrderService($wireDi(), 'harness', $f5Stock);
+$f5Variant = (int) $wireDi()->getRepository(\Z77\Module\Article\Entities\Variant::class)->findByNumber('B-150')?->getId();
+$f5Order   = fn(int $id) => $wireDi()->getRepository(\Z77\Module\Order\Entities\SalesOrder::class)->withLines($id);
+$f5Draft   = function (int $id, string $subject, string $quantity) use ($f5Order, $mid, $f5Variant): \Z77\Module\Order\Services\OrderDraft {
+    $o = $f5Order($id);
+    return new \Z77\Module\Order\Services\OrderDraft($mid, $o->getOrderDate()->format('Y-m-d'), $subject, lines: [
+        \Z77\Module\Order\Services\OrderLineDraft::article($f5Variant, $quantity, id: (int) $o->getLines()[0]->getId()),
+    ]);
+};
+$f5Update  = fn(int $id, string $subject, string $quantity) => $f5Svc()->update($id, $f5Order($id)->getVersion(), $f5Draft($id, $subject, $quantity));
+$f5Booked  = function (string $subject) use ($f5Svc, $mid, $f5Variant): array {
+    $o = $f5Svc()->create(new \Z77\Module\Order\Services\OrderDraft($mid, '2026-12-10', $subject, lines: [\Z77\Module\Order\Services\OrderLineDraft::article($f5Variant, '2')]));
+    $o = $f5Svc()->changeStatus((int) $o->getId(), $o->getVersion(), 'scheduled');
+    $i = $f5Svc()->book([['id' => (int) $o->getId(), 'version' => $o->getVersion()]], day('2026-12-15'))[0];
+    return [(int) $o->getId(), (int) $i->getId()];
+};
+$f5Flag    = fn(int $invoiceId): ?string => $invoiceRow($invoiceId)['reissue_needed'];
+$f5Log     = fn(int $id): array => $db->fetchAllAssociative('SELECT from_code, to_code, change_trigger, reason FROM sales_order_status_change WHERE order_id = ? ORDER BY id', [$id]);
+$f5Last    = function (int $id) use ($f5Log): array { $rows = $f5Log($id); return $rows === [] ? [] : $rows[count($rows) - 1]; };
+$f5Blocked = fn(): ?string => caught(fn() => (new \Z77\Module\Debtor\Services\JournalPostingService($wireDi(), 'tester'))->post($wireDi()->getRepository(Invoice::class)->journalVersions()), \Z77\Module\Debtor\Services\JournalRefusedException::class)?->reason;
+
+[$f5O, $f5I] = $f5Booked('Montage');
+check('FJ60 the order\'s migration of step 6 runs (exit 0); after «Fakturieren» the order (status «booked», phase closed) is EDITABLE again while its invoice is issued — editRefusal() null; «Neu fakturieren» and «Löschen» are offered (deleteRefusal() null)' . ($code !== 0 ? ' — ' . trim($out) : ''),
+    $code === 0 && $f5Variant > 0 && $stateOf($f5I) === 'issued' && $f5Order($f5O)->getStatusCode() === 'booked'
+    && $f5Svc()->editRefusal($f5Order($f5O)) === null && $f5Svc()->deleteRefusal($f5Order($f5O)) === null);
+
+$f5Update($f5O, 'Montage Nord', '2');
+$f5F1 = $f5Flag($f5I);
+check('FJ61 a save that changes only the subject (same amount) FLAGS the invoice (owner decision O9 — ANY deviation): «Auftrag N geändert — geändert: Betreff (neue Version mit gleicher Nummer)»; the journal is BLOCKED (`blocked`); nothing else of the invoice changed',
+    $f5F1 !== null && str_contains($f5F1, 'Betreff') && str_contains($f5F1, 'neue Version') && $f5Blocked() === \Z77\Module\Debtor\Services\JournalRefusedException::BLOCKED
+    && (int) $invoiceRow($f5I)['revision'] === 1 && $stateOf($f5I) === 'issued', $f5F1);
+$f5Update($f5O, 'Montage', '2');
+check('FJ62 saved back as invoiced: the flag is CLEARED (in step again) — the journal is no longer blocked by it', $f5Flag($f5I) === null);
+
+$f5Update($f5O, 'Montage', '3');
+$f5F2 = $f5Flag($f5I);
+$f5Pre = $f5Svc()->reinvoicePreview($f5Order($f5O));
+check('FJ63 a changed quantity (the amount): flagged «… Betrag geändert (…) (Ersatz mit neuer Nummer)»; reinvoicePreview() answers REPLACEMENT — what the confirmation names',
+    $f5F2 !== null && str_contains($f5F2, 'Betrag geändert') && str_contains($f5F2, 'Ersatz mit neuer Nummer') && $f5Pre->isReplacement(), $f5F2);
+
+$f5Before = $invoiceRow($f5I);
+$f5New    = $f5Svc()->reinvoice($f5O, $f5Order($f5O)->getVersion());
+$f5NewRow = $invoiceRow((int) $f5New->getId());
+$f5NewPdf = \Z77\Module\Debtor\Pdf\InvoicePdf::of($readInvoice((int) $f5New->getId()), $wireDi())->withoutCompression()->output();
+check('FJ64 «Neu fakturieren» → REPLACEMENT: a successor (issued, a new December number, the order\'s 3 h, source order kept, no flag, its PDF «ersetzt Rechnung <old> (ID …)»); the old invoice replaced by it; the ORDER is re-linked to the successor; log row `reinvoice` (status unchanged) naming both; the journal no longer blocked',
+    (int) $f5New->getId() !== $f5I && $f5NewRow['state'] === 'issued' && intdiv((int) $f5NewRow['number'], 10000) === 2612 && $f5NewRow['source_type'] === 'order'
+    && $f5NewRow['reissue_needed'] === null && $stateOf($f5I) === 'replaced' && (int) $invoiceRow($f5I)['replaced_by_id'] === (int) $f5New->getId()
+    && (int) $f5Order($f5O)->getInvoice()->getId() === (int) $f5New->getId() && str_contains($f5NewPdf, '(ersetzt Rechnung ' . $f5Before['number'] . ' \\(ID ' . $f5Before['document_stamp'] . '\\))')
+    && $f5Last($f5O)['change_trigger'] === 'reinvoice' && $f5Last($f5O)['from_code'] === 'booked' && $f5Last($f5O)['to_code'] === 'booked'
+    && str_contains((string) $f5Last($f5O)['reason'], 'ersetzt durch Rechnung ' . $f5NewRow['number'])
+    && $f5Blocked() !== \Z77\Module\Debtor\Services\JournalRefusedException::BLOCKED,
+    json_encode([$f5NewRow['number'] ?? null, $f5Log($f5O)], JSON_UNESCAPED_UNICODE));
+// The posting attempt above may have posted the journal (nothing blocked any more) — take what stands.
+$f5I2 = (int) $f5Order($f5O)->getInvoice()->getId();
+if (!$readInvoice($f5I2)->isInJournal()) {
+    [$f5O, $f5I2] = $f5Booked('Montage zwei');
+}
+$f5Update($f5O, 'Montage zwei, Etage 3', '2');
+$f5V   = (int) $invoiceRow($f5I2)['revision'];
+$f5Rev = $f5Svc()->reinvoice($f5O, $f5Order($f5O)->getVersion());
+check('FJ65 a text change, then «Neu fakturieren» → REVISION: the same invoice (number and QR reference kept), revision + 1, a new stamp and an archived r2 — the flag cleared, log row `reinvoice` «…, Version 2»',
+    (int) $f5Rev->getId() === $f5I2 && (int) $invoiceRow($f5I2)['revision'] === $f5V + 1 && $f5Flag($f5I2) === null && $stateOf($f5I2) === 'issued'
+    && (int) $db->fetchOne('SELECT COUNT(*) FROM invoice_revision WHERE invoice_id = ?', [$f5I2]) === $f5V + 1
+    && str_contains((string) $f5Last($f5O)['reason'], 'Version ' . ($f5V + 1)) && str_contains((string) $invoiceRow($f5I2)['subject'], 'Etage 3'));
+$f5Ver = $f5Order($f5O)->getVersion();
+$f5Same = $f5Svc()->reinvoice($f5O, $f5Ver);
+check('FJ66 «Neu fakturieren» with nothing to change: the same invoice, nothing written (the order\'s version unchanged, no log row)',
+    (int) $f5Same->getId() === $f5I2 && $f5Order($f5O)->getVersion() === $f5Ver && true
+    && count(array_filter($f5Log($f5O), fn($r) => $r['change_trigger'] === 'reinvoice')) === 1);
+
+// Deleting an order (decision 14, O5).
+[$f5D, $f5DI] = $f5Booked('Zu löschen');
+$f5Stock->requests = [];
+$f5NoReason = caught(fn() => $f5Svc()->delete($f5D, $f5Order($f5D)->getVersion(), '  '), \Z77\Module\Order\Services\OrderRefusedException::class)?->reason;
+$f5Deleted  = $f5Svc()->delete($f5D, $f5Order($f5D)->getVersion(), 'Kunde hat storniert');
+$f5DRow     = $db->fetchAssociative('SELECT * FROM sales_order WHERE id = ?', [$f5D]);
+$f5Req      = $f5Stock->requests[0] ?? null;
+check('FJ67 «Auftrag löschen»: refused without a reason (`reason-required`); with one the ORDER is kept, stamped deleted (who / when / why, number kept), its issued invoice `deleted` («Auftrag N gelöscht: …»), log row `delete`; the stock call brings every line to ZERO with the reason as its confirmation',
+    $f5NoReason === \Z77\Module\Order\Services\OrderRefusedException::REASON_REQUIRED && $f5Deleted->isDeleted()
+    && $f5DRow['deleted_by'] === 'harness' && $f5DRow['deleted_at'] !== null && $f5DRow['delete_reason'] === 'Kunde hat storniert' && (int) $f5DRow['number'] > 0
+    && $stateOf($f5DI) === 'deleted' && str_contains((string) $invoiceRow($f5DI)['void_reason'], 'gelöscht: Kunde hat storniert')
+    && $f5Last($f5D)['change_trigger'] === 'delete' && $f5Req !== null && $f5Req->trigger === 'delete'
+    && array_filter($f5Req->lines, fn($l) => $l->reserved !== \Z77\Module\Article\Stock\StockLineTarget::ZERO || $l->consumed !== \Z77\Module\Article\Stock\StockLineTarget::ZERO) === []
+    && str_contains((string) $f5Req->confirmation?->reason, 'Kunde hat storniert'),
+    json_encode([$f5NoReason, $f5DRow, $f5Req], JSON_UNESCAPED_UNICODE));
+$f5List = $wireDi()->getRepository(\Z77\Module\Order\Entities\SalesOrder::class);
+$f5InAll = array_map(fn($o) => (int) $o->getId(), $f5List->search(new \Z77\Module\Order\Repositories\OrderSearch(), 0, 1000));
+$f5InDel = array_map(fn($o) => (int) $o->getId(), $f5List->search(new \Z77\Module\Order\Repositories\OrderSearch(deleted: true), 0, 1000));
+check('FJ68 a deleted order is hidden from every list and shown only in «Gelöscht»; it is read-only («… ist gelöscht …»), not deleted twice, not re-invoiced, no status change, nothing printed',
+    !in_array($f5D, $f5InAll, true) && in_array($f5D, $f5InDel, true) && str_contains((string) $f5Svc()->editRefusal($f5Order($f5D)), 'gelöscht')
+    && caught(fn() => $f5Svc()->delete($f5D, $f5Order($f5D)->getVersion(), 'x'), \Z77\Module\Order\Services\OrderRefusedException::class)?->reason === \Z77\Module\Order\Services\OrderRefusedException::DELETED
+    && caught(fn() => $f5Svc()->reinvoice($f5D, $f5Order($f5D)->getVersion()), \Z77\Module\Order\Services\OrderRefusedException::class)?->reason === \Z77\Module\Order\Services\OrderRefusedException::DELETED
+    && caught(fn() => $f5Svc()->changeStatus($f5D, $f5Order($f5D)->getVersion(), 'scheduled'), \Z77\Module\Order\Services\OrderRefusedException::class)?->reason === \Z77\Module\Order\Services\OrderRefusedException::DELETED
+    && array_key_exists(\Z77\Module\Order\Ui\OrderListing::VIEW_DELETED, \Z77\Module\Order\Ui\OrderListing::VIEWS));
+// An order without an invoice is deletable as well; one with a POSTED invoice is not.
+$f5Free = $f5Svc()->create(new \Z77\Module\Order\Services\OrderDraft($mid, '2026-12-11', 'Ohne Rechnung', lines: [\Z77\Module\Order\Services\OrderLineDraft::article($f5Variant, '1')]));
+$f5FreeDel = $f5Svc()->delete((int) $f5Free->getId(), $f5Free->getVersion(), 'Doppelt');
+$postJournal();
+$f5PostedOrder = $f5O;
+check('FJ69 an order WITHOUT an invoice is deleted (no invoice touched); after «Journal verbuchen» the order with the POSTED invoice is locked again (editRefusal «verbucht … Gutschrift»), not re-invoiced (`not-reinvoiceable`), not deleted (`not-deletable`)',
+    $f5FreeDel->isDeleted() && $stateOf($f5I2) === 'final' && str_contains((string) $f5Svc()->editRefusal($f5Order($f5PostedOrder)), 'verbucht')
+    && caught(fn() => $f5Svc()->reinvoice($f5PostedOrder, $f5Order($f5PostedOrder)->getVersion()), \Z77\Module\Order\Services\OrderRefusedException::class)?->reason === \Z77\Module\Order\Services\OrderRefusedException::NOT_REINVOICEABLE
+    && caught(fn() => $f5Svc()->delete($f5PostedOrder, $f5Order($f5PostedOrder)->getVersion(), 'x'), \Z77\Module\Order\Services\OrderRefusedException::class)?->reason === \Z77\Module\Order\Services\OrderRefusedException::NOT_DELETABLE
+    && throws(fn() => $f5Update($f5PostedOrder, 'Nachher', '2'), \Z77\Module\Order\Services\OrderRefusedException::class));
+
+
+// ── FJ (steps 7–8). A payment for a replaced invoice follows the chain; mails of revisions and replacements (ADR-054 decisions 16, 21, 23; owner rule 13, O8) ──
+
+echo "FJ. Faktura-Journal steps 7–8 — the CAMT import follows the replacement chain (suggestion, one click), mails bound to the revision, cancelled on replacement / deletion, the mail kind «ersetzt Rechnung»\n";
+if ($wireDi()->getRepository(Invoice::class)->journalVersions() !== []) {
+    $postJournal();
+}
+$f7Iban     = \Z77\Module\Debtor\Services\Iban::normalize((string) $wireDi()->getRepository(PaymentTarget::class)->findByCode('qr')?->getQrIban());
+$f7Customer = (int) $wireDi()->getRepository(DebtorProfile::class)->findByContact($mid)?->getCustomerNumber();
+$f7Camt = function (string $msgId, array $txs) use ($f7Iban): string {
+    $entries = '';
+    foreach ($txs as $i => $t) {
+        $rmt = !empty($t['ref'])
+            ? '<RmtInf><Strd><CdtrRefInf><Tp><CdOrPrtry><Prtry>QRR</Prtry></CdOrPrtry></Tp><Ref>' . $t['ref'] . '</Ref></CdtrRefInf></Strd></RmtInf>'
+            : '<RmtInf><Ustrd>' . htmlspecialchars($t['ustrd'], ENT_XML1) . '</Ustrd></RmtInf>';
+        $entries .= '<Ntry><Amt Ccy="CHF">' . $t['amount'] . '</Amt><CdtDbtInd>CRDT</CdtDbtInd><Sts>BOOK</Sts><BookgDt><Dt>' . $t['date'] . '</Dt></BookgDt><ValDt><Dt>' . $t['date'] . '</Dt></ValDt>'
+            . '<AcctSvcrRef>' . $msgId . '-' . $i . '</AcctSvcrRef><NtryDtls><TxDtls><Refs><AcctSvcrRef>' . $msgId . '-' . $i . '</AcctSvcrRef><EndToEndId>NOTPROVIDED</EndToEndId></Refs><Amt Ccy="CHF">' . $t['amount'] . '</Amt>'
+            . '<RltdPties><Dbtr><Pty><Nm>Max Muster</Nm><PstlAdr><TwnNm>Bern</TwnNm></PstlAdr></Pty></Dbtr></RltdPties>' . $rmt . '</TxDtls></NtryDtls></Ntry>';
+    }
+    return '<?xml version="1.0" encoding="UTF-8"?><Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.054.001.08"><BkToCstmrDbtCdtNtfctn><GrpHdr><MsgId>' . $msgId . '</MsgId><CreDtTm>2026-12-20T06:15:00</CreDtTm></GrpHdr>'
+        . '<Ntfctn><Id>' . $msgId . '-N</Id><CreDtTm>2026-12-20T06:15:00</CreDtTm><Acct><Id><IBAN>' . $f7Iban . '</IBAN></Id></Acct>' . $entries . '</Ntfctn></BkToCstmrDbtCdtNtfctn></Document>';
+};
+$f7Issue = function (string $date, string $price = '150.00') use ($service, $wireDi, $at, $f4Draft): int {
+    $doc = $service($wireDi())->invoice($f4Draft($date, 'Beratung', $price));
+    $service($wireDi())->issue([$at((int) $doc->getId())]);
+    return (int) $doc->getId();
+};
+$f7Replace = fn(int $id, string $price) => (int) $service($wireDi())->revise($id, (int) $invoiceRow($id)['version'], $f4Draft($readInvoice($id)->getInvoiceDate()->format('Y-m-d'), 'Beratung', $price))->getId();
+$f7A = $f7Issue('2026-12-01');
+$f7B = $f7Replace($f7A, '160.00');
+$f7C = $f7Replace($f7B, '170.00');
+$f7D = $f7Issue('2026-12-02');
+$service($wireDi())->delete($f7D, (int) $invoiceRow($f7D)['version'], 'Harness');
+$f7NumA = (int) $invoiceRow($f7A)['number'];
+$f7NumC = (int) $invoiceRow($f7C)['number'];
+$f7Bank = fn() => new \Z77\Module\Debtor\Services\BankImportService($wireDi(), 'tester');
+$f7Msg  = $f7Bank()->import($f7Camt('MSG-FJ7', [
+    ['amount' => $invoiceRow($f7C)['gross_total'], 'date' => '2026-12-20', 'ref' => QrReference::forDocument($f7Customer, $f7NumA)],
+    ['amount' => '10.00', 'date' => '2026-12-20', 'ustrd' => 'Rechnung ' . $f7NumA . ' danke'],
+    ['amount' => '10.00', 'date' => '2026-12-20', 'ref' => QrReference::forDocument($f7Customer, (int) $invoiceRow($f7D)['number'])],
+]), 'camt054-fj7.xml');
+$f7Tx = $db->fetchAllAssociative('SELECT * FROM bank_transaction WHERE message_id = ? ORDER BY position', [$f7Msg->getId()]);
+check('FJ70 a QR reference naming a REPLACED invoice A (A → B → C) is NOT booked: the transaction stays unmatched, the END of the chain C pre-selected (suggested_invoice_id), the note «Referenz von Rechnung A — ersetzt durch Rechnung C (noch nicht verbucht …)»; a message «Rechnung A» the same; a reference naming a DELETED invoice: unmatched «… ist gelöscht — manuell zuordnen», no suggestion',
+    $f7Tx[0]['state'] === 'unmatched' && (int) $f7Tx[0]['suggested_invoice_id'] === $f7C && $f7Tx[0]['invoice_id'] === null
+    && str_contains((string) $f7Tx[0]['note'], 'Referenz von Rechnung ' . $f7NumA . ' — ersetzt durch Rechnung ' . $f7NumC) && str_contains((string) $f7Tx[0]['note'], 'noch nicht verbucht')
+    && $f7Tx[1]['state'] === 'unmatched' && (int) $f7Tx[1]['suggested_invoice_id'] === $f7C
+    && $f7Tx[2]['state'] === 'unmatched' && $f7Tx[2]['suggested_invoice_id'] === null && str_contains((string) $f7Tx[2]['note'], 'gelöscht'),
+    json_encode(array_map(fn($t) => [$t['state'], $t['suggested_invoice_id'], $t['note']], $f7Tx), JSON_UNESCAPED_UNICODE));
+$f7TxEntity = $wireDi()->getRepository(\Z77\Module\Debtor\Entities\BankTransaction::class)->find((int) $f7Tx[0]['id']);
+$f7Row = $renderer->partial('Backend/BankImportController/transactionRow', ['t' => $f7TxEntity, 'messageId' => $f7Msg->getId(), 'open' => [], 'states' => ['unmatched' => 'offen'],
+    'invoiceBase' => '/backend/finance/invoice', 'fmt' => static fn($m) => \Z77\Shared\Money\AmountFormat::of($m), 'csrfToken' => 'tok', 'actionBase' => '/backend/finance/bank-import']);
+check('FJ71 the manual assignment row pre-selects the successor: a one-click «Zuordnen zu Rechnung C» (the number as a hidden field) and the number pre-filled in the manual field',
+    str_contains($f7Row, 'data-suggested-invoice="' . $f7C . '"') && str_contains($f7Row, 'Zuordnen zu Rechnung ' . $f7NumC) && str_contains($f7Row, 'name="number" value="' . $f7NumC . '"')
+    && str_contains($f7Row, 'placeholder="Rechnung Nr." aria-label="Rechnungsnummer" value="' . $f7NumC . '"'));
+$f7AssignA = caught(fn() => $f7Bank()->assign((int) $f7Tx[0]['id'], $f7NumA), \Z77\Module\Debtor\Services\BankImportRefusedException::class)?->getMessage();
+$f7AssignC = caught(fn() => $f7Bank()->assign((int) $f7Tx[0]['id'], $f7NumC), \Z77\Module\Debtor\Services\BankImportRefusedException::class)?->getMessage();
+check('FJ72 the server re-checks (Rule 7): assigning the replaced A is refused naming C («ist ersetzt durch Rechnung C — … zuordnen»); C itself is refused while it is still issued («noch nicht verbucht … erst «Journal verbuchen»», O6)',
+    str_contains((string) $f7AssignA, 'ersetzt durch Rechnung ' . $f7NumC) && str_contains((string) $f7AssignC, 'noch nicht verbucht'), json_encode([$f7AssignA, $f7AssignC], JSON_UNESCAPED_UNICODE));
+$postJournal();
+$f7Assigned = $f7Bank()->assign((int) $f7Tx[0]['id'], $f7NumC);
+$f7Booked   = $f7Bank()->book($f7Msg->getId());
+$f7After    = $db->fetchAssociative('SELECT * FROM bank_transaction WHERE id = ?', [(int) $f7Tx[0]['id']]);
+check('FJ73 after «Journal verbuchen» the one click assigns C (matched, the suggestion cleared) and «Verbuchen» books the payment on C — C paid in full, A and B (void) untouched',
+    $f7Assigned->getInvoice()?->getId() === $f7C && $f7After['state'] === 'booked' && $f7After['suggested_invoice_id'] === null && (int) $f7After['invoice_id'] === $f7C
+    && (new InvoicingService($wireDi(), 'tester'))->openAmount($readInvoice($f7C))->isZero()
+    && (int) $db->fetchOne('SELECT COUNT(*) FROM payment_allocation WHERE invoice_id IN (?, ?)', [$f7A, $f7B]) === 0);
+
+// Step 8 — the mails.
+$f7Mails  = new \Z77\Module\Debtor\Mail\InvoiceMails($wireDi(), new \Z77\Shared\Mail\EmailService());
+$f7Sender = new \Z77\Shared\Mail\SenderIdentity('Max Muster', 'max@example.ch');
+/** Queues the document's mail on a fresh wiring with the e-mail service (the outbox renders the body at queue time). */
+$f7Queue  = function (int $id) use ($readInvoice, $f7Sender): array {
+    $doc = $readInvoice($id);
+    DI::getInstance()->set('EmailService', fn() => new \Z77\Shared\Mail\EmailService(), true);
+    return (new \Z77\Module\Debtor\Mail\InvoiceMails(DI::getUnifiedEntityManager(), new \Z77\Shared\Mail\EmailService()))->queue([$doc], 'tester', $f7Sender);
+};
+$f7X = $f7Issue('2026-12-03');
+$db->executeStatement("UPDATE invoice SET addr_email = 'muster@example.ch' WHERE id = ?", [$f7X]);
+$f7Q1 = $f7Queue($f7X);
+$f7Row1 = $db->fetchAssociative("SELECT * FROM mail_outbox WHERE source = ? ORDER BY id DESC LIMIT 1", ['invoice:' . $f7X]);
+$f7R1Bytes = (string) file_get_contents($base . '/' . $f4Revs($f7X)[0]['file_path']);
+$service($wireDi())->revise($f7X, (int) $invoiceRow($f7X)['version'], $f4Draft('2026-12-03', 'Beratung, Version zwei', '150.00'));
+$f7Prov = \Z77\Module\Mailing\Attachments\AttachmentProviders::fromModules(DI::getModuleManager());
+$f7Dels = $f7Mails->deliveries([$f7X])[$f7X] ?? [];
+check('FJ74 a mail is queued with the attachment of the VERSION: `invoice-pdf:<id>@1`; after a revision the queued mail still sends revision 1\'s archived file byte for byte (decision 21); `@2` is the current file, `@3` is refused; the mail of r1 no longer COVERS the document (per version) — per document it would',
+    count($f7Q1['queued']) === 1 && json_decode($f7Row1['attachments'], true) === ['invoice-pdf:' . $f7X . '@1']
+    && $f7Prov->resolve('invoice-pdf:' . $f7X . '@1')->bytes === $f7R1Bytes && $f7Prov->resolve('invoice-pdf:' . $f7X . '@2')->bytes === (string) file_get_contents($base . '/' . $f4Revs($f7X)[1]['file_path'])
+    && (new \Z77\Module\Debtor\Mail\InvoicePdfAttachment())->accepts($f7X . '@2') && !(new \Z77\Module\Debtor\Mail\InvoicePdfAttachment())->accepts($f7X . '@3')
+    && ($f7Dels[0]['attachments'] ?? null) === ['invoice-pdf:' . $f7X . '@1'] && !\Z77\Module\Debtor\Mail\InvoiceMails::isCovered($f7Dels, $readInvoice($f7X)) && \Z77\Module\Debtor\Mail\InvoiceMails::isCovered($f7Dels),
+    json_encode([$f7Row1['attachments'] ?? null, $f7Dels], JSON_UNESCAPED_UNICODE));
+$f7StampX = (string) $invoiceRow($f7X)['document_stamp'];
+$f7Y = $f7Replace($f7X, '180.00');
+$f7Mail = $f7Mails->compose($readInvoice($f7Y), $f7Sender);
+check('FJ75 the REPLACEMENT cancels the predecessor\'s WAITING mail (state cancelled) — and the successor is mailed with its own kind `invoice-replacement`: subject «Rechnung <Y> (ersetzt Rechnung <X>) — …», the text names X, its ID (stamp) and date (owner decision O8)',
+    $db->fetchOne('SELECT state FROM mail_outbox WHERE id = ?', [(int) $f7Row1['id']]) === 'cancelled'
+    && $f7Mails->mailKindFor($readInvoice($f7Y)) === 'invoice-replacement' && $f7Mails->mailKindFor($readInvoice($f7C)) === 'invoice-replacement' && $f7Mails->mailKindFor($readInvoice($f7D)) === 'invoice'
+    && str_contains($f7Mail['subject'], 'Rechnung ' . $invoiceRow($f7Y)['number'] . ' (ersetzt Rechnung ' . $invoiceRow($f7X)['number'] . ')')
+    && str_contains($f7Mail['body'], 'ersetzt unsere Rechnung ' . $invoiceRow($f7X)['number'] . ' (ID ' . $f7StampX . ') vom 03.12.2026') && $f7Mail['kind'] === 'invoice-replacement',
+    json_encode($f7Mail, JSON_UNESCAPED_UNICODE));
+$f7Z = $f7Issue('2026-12-04');
+$db->executeStatement("UPDATE invoice SET addr_email = 'muster@example.ch' WHERE id IN (?, ?)", [$f7Z, $f7Y]);
+$f7Queue($f7Z);
+$f7Queue($f7Y);
+$db->executeStatement("UPDATE mail_outbox SET state = 'sent', sent_at = '2026-12-05 10:00:00' WHERE source = ?", ['invoice:' . $f7Y]);
+$service($wireDi())->delete($f7Z, (int) $invoiceRow($f7Z)['version'], 'Harness: doppelt');
+$f7Replace($f7Y, '190.00');
+check('FJ76 a DELETION cancels the waiting mail as well; a mail already SENT stays sent (history) when its document is replaced afterwards',
+    $db->fetchOne("SELECT state FROM mail_outbox WHERE source = ? ORDER BY id DESC LIMIT 1", ['invoice:' . $f7Z]) === 'cancelled'
+    && $db->fetchOne("SELECT state FROM mail_outbox WHERE source = ? ORDER BY id DESC LIMIT 1", ['invoice:' . $f7Y]) === 'sent');
+$f7Kinds = \Z77\Shared\Mail\DocumentMailKinds::fromModules(DI::getModuleManager());
+check('FJ77 the kind `invoice-replacement` is declared by debtor (de + en) with the placeholders {ersetzt}, {ersetzt_id}, {ersetzt_datum} — editable under Service › E-Mail › Beleg-Mails like every document mail',
+    $f7Kinds->has('invoice-replacement') && $f7Kinds->languages('invoice-replacement') === ['de', 'en']
+    && array_intersect(['ersetzt', 'ersetzt_id', 'ersetzt_datum'], array_keys($f7Kinds->get('invoice-replacement')['placeholders'])) === ['ersetzt', 'ersetzt_id', 'ersetzt_datum']);
 
 
 // ── result ───────────────────────────────────────────────────────────────

@@ -4,6 +4,11 @@
  * row action answers with (`FetchResponse::replaceRow('bank-transaction', id)`,
  * ADR-047 addendum 2026-10-10): the same markup on the page and in place.
  *
+ * A transaction whose reference named a REPLACED invoice (ADR-054 decision 16, owner rule 13) carries
+ * the END of the replacement chain as its suggestion: «Zuordnen zu Rechnung C» (one click, the number
+ * as a hidden field) and the number pre-filled in the manual field; the server re-checks the
+ * assignment (a successor still in the Faktura-Journal is refused until «Journal verbuchen»).
+ *
  * «Zuordnen» and «Ignorieren» / «Zurücknehmen» are fetch POSTs
  * (`data-fetch-post`) that replace THIS row and the unbooked bar — nothing
  * else on the page changes; core.js wires the forms of the row it puts in, so
@@ -55,11 +60,20 @@ $ignore = $actionBase . '/ignore?id=' . (int) $messageId;
         <span class="be-list__cell be-list__cell--wrap">
             <?php if ($t->getNote() !== null): ?><small><?= e($t->getNote()) ?></small><br><?php endif; ?>
             <?php if ($t->getPayment() !== null): ?><small class="be-list__cell--muted">Zahlung #<?= (int) $t->getPayment()->getId() ?></small><?php endif; ?>
+            <?php if ($state !== 'booked' && $t->getSuggestedInvoice() !== null && $t->getSuggestedInvoice()->getNumber() !== null): $suggested = $t->getSuggestedInvoice(); ?>
+            <?php // The reference named a REPLACED document (ADR-054 decision 16, owner rule 13): the end of the chain pre-selected, one click confirms. ?>
+            <form method="post" action="<?= e($assign) ?>" data-fetch-post="<?= e($assign) ?>" class="be-list__form" data-suggested-invoice="<?= (int) $suggested->getId() ?>">
+                <input type="hidden" name="csrf_token" value="<?= e($csrfToken ?? '') ?>">
+                <input type="hidden" name="transaction" value="<?= (int) $t->getId() ?>">
+                <input type="hidden" name="number" value="<?= (int) $suggested->getNumber() ?>">
+                <button type="submit" class="be-btn be-btn--confirm be-btn--sm" title="<?= e($suggested->isInJournal() ? 'Erst nach «Journal verbuchen» zuordenbar' : 'Die Zahlung der Nachfolgerin zuordnen') ?>">Zuordnen zu <?= e($suggested->documentName()) ?></button>
+            </form>
+            <?php endif; ?>
             <?php if ($state !== 'booked'): ?>
             <form method="post" action="<?= e($assign) ?>" data-fetch-post="<?= e($assign) ?>" class="be-list__form">
                 <input type="hidden" name="csrf_token" value="<?= e($csrfToken ?? '') ?>">
                 <input type="hidden" name="transaction" value="<?= (int) $t->getId() ?>">
-                <input class="be-input be-input--sm be-input--short" type="text" name="number" inputmode="numeric" placeholder="Rechnung Nr." aria-label="Rechnungsnummer">
+                <input class="be-input be-input--sm be-input--short" type="text" name="number" inputmode="numeric" placeholder="Rechnung Nr." aria-label="Rechnungsnummer" value="<?= $t->getSuggestedInvoice()?->getNumber() !== null ? (int) $t->getSuggestedInvoice()->getNumber() : '' ?>">
                 <button type="submit" class="be-btn be-btn--ghost be-btn--sm">Zuordnen</button>
             </form>
             <form method="post" action="<?= e($ignore) ?>" data-fetch-post="<?= e($ignore) ?>" class="be-list__form">

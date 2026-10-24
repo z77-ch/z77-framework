@@ -49,6 +49,18 @@ final class OrderRefusedException extends OrderException
     /** The order totals 0 — no invoice (owner 2026-10-20): it is closed by the status «Erledigt», nothing printed. */
     public const ZERO_TOTAL = 'zero-total';
 
+    /** «Neu fakturieren» needs an invoice still in the Faktura-Journal (ADR-054 decision 12). */
+    public const NOT_REINVOICEABLE = 'not-reinvoiceable';
+
+    /** The order is not deleted: its invoice is POSTED (a credit note corrects it) — ADR-054 decision 14. */
+    public const NOT_DELETABLE = 'not-deletable';
+
+    /** The order was deleted — nothing is written to it any more. */
+    public const DELETED = 'deleted';
+
+    /** A deletion needs its reason (ADR-054 decision 14). */
+    public const REASON_REQUIRED = 'reason-required';
+
     public function __construct(public readonly string $reason, string $message, ?\Throwable $previous = null)
     {
         parent::__construct($message, 0, $previous);

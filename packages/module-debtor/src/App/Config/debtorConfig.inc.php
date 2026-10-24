@@ -152,6 +152,22 @@ return [
             ],
             'placeholders' => $documentPlaceholders,
         ],
+        // A document that REPLACED another (ADR-054 decision 23, owner decision O8 — the Faktura-Journal):
+        // its own kind, the replaced number, stamp and date as placeholders. The PDF itself prints
+        // «ersetzt Rechnung … (ID …)» (owner decision O11); the mail says it too.
+        'invoice-replacement' => [
+            'label'        => 'Rechnung (ersetzt eine frühere)',
+            'subject'      => ['de' => 'Rechnung {nummer} (ersetzt Rechnung {ersetzt}) — {absender}', 'en' => 'Invoice {nummer} (replaces invoice {ersetzt}) — {absender}'],
+            'body'         => [
+                'de' => "Guten Tag\n\nIm Anhang erhalten Sie unsere Rechnung {nummer} über {betrag}, zahlbar bis {faellig}. Sie ersetzt unsere Rechnung {ersetzt} (ID {ersetzt_id}) vom {ersetzt_datum} — diese ist damit hinfällig, bitte nicht mehr bezahlen.\n\nFreundliche Grüsse\n{anzeigename}\n{absender}",
+                'en' => "Hello\n\nPlease find attached our invoice {nummer} for {betrag}, payable by {faellig}. It replaces our invoice {ersetzt} (ID {ersetzt_id}) of {ersetzt_datum}, which is void — please do not pay it.\n\nKind regards\n{anzeigename}\n{absender}",
+            ],
+            'placeholders' => $documentPlaceholders + [
+                'ersetzt'       => 'Nummer der ersetzten Rechnung',
+                'ersetzt_id'    => 'ID (Fassung) der ersetzten Rechnung',
+                'ersetzt_datum' => 'Datum der ersetzten Rechnung',
+            ],
+        ],
         'credit-note' => [
             'label'        => 'Gutschrift',
             'subject'      => ['de' => 'Gutschrift {nummer} — {absender}', 'en' => 'Credit note {nummer} — {absender}'],

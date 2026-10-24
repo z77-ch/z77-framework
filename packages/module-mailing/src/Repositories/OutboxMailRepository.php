@@ -116,8 +116,9 @@ class OutboxMailRepository extends DoctrineRepository
      * @param list<string> $sources e.g. ['invoice:42', 'invoice:43']
      * @return array<string, list<array{id: int, to: string, state: string, created_at: \DateTimeImmutable,
      *                                   sent_at: ?\DateTimeImmutable, batch_id: string, created_by: string,
-     *                                   sender: string, sender_email: string}>> `sender` / `sender_email` = the
-     *                                   sender identity the mail went out as ('' without one, 2026-10-23)
+     *                                   sender: string, sender_email: string, attachments: list<string>}>> `sender` /
+     *                                   `sender_email` = the sender identity the mail went out as ('' without one,
+     *                                   2026-10-23); `attachments` = its attachment references (2026-10-24)
      */
     public function deliveriesOf(array $sources): array
     {
@@ -126,7 +127,7 @@ class OutboxMailRepository extends DoctrineRepository
             return [];
         }
         $rows = $this->connection()->fetchAllAssociative(
-            'SELECT id, source, recipient_email, state, created_at, sent_at, batch_id, created_by, sender_name, sender_email FROM ' . self::TABLE
+            'SELECT id, source, recipient_email, state, created_at, sent_at, batch_id, created_by, sender_name, sender_email, attachments FROM ' . self::TABLE
             . ' WHERE source IN (?) ORDER BY id ASC',
             [$sources],
             [ArrayParameterType::STRING]
@@ -143,6 +144,9 @@ class OutboxMailRepository extends DoctrineRepository
                 'created_by' => (string) $row['created_by'],
                 'sender'     => (string) $row['sender_name'],
                 'sender_email' => (string) $row['sender_email'],
+                // The attachment references the mail was queued with (`type:id`) — a document module tells
+                // by them WHICH version went out (debtor: `invoice-pdf:<id>@<revision>`, ADR-054 decision 21).
+                'attachments'  => array_values(array_filter(is_array($list = json_decode((string) $row['attachments'], true)) ? $list : [], 'is_string')),
             ];
         }
 

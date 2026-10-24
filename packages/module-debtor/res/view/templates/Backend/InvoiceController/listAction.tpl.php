@@ -2,8 +2,9 @@
 /**
  * The document list (P3 part 3) — one VIEW at a time (toolbar tabs):
  * drafts in `invoicing` («Entwurf» in «Nr.» — no number before the booking
- * print, owner 2026-10-10), booked («Verbucht») invoices, credit notes (a
- * draft among them likewise «Entwurf»). A STANDARD LIST
+ * print, owner 2026-10-10), issued («Fakturiert»), booked («Verbucht») invoices, credit notes (a
+ * draft among them likewise «Entwurf»), and the void documents «Ersetzt» (with their successor) /
+ * «Gelöscht» (with the reason) — ADR-054 rule 4: hidden from every other tab. A STANDARD LIST
  * (listing.md, since 2026-10-08): the head and the search form are the
  * kernel's partials over {@see \Z77\Module\Debtor\Ui\InvoiceListing}, the
  * rows are this template's; no CSS and no JavaScript of its own:
@@ -45,7 +46,9 @@ $listUrl    = $actionBase . '/list';
 $link       = static fn(array $changes = []): string => $listUrl . '?' . $state->query($changes);
 $view       = $state->extra('view');
 $selectable = $view === 'invoicing';
-$icons      = ['invoicing' => 'edit', 'issued' => 'lock', 'final' => 'lock', 'replaced' => 'lock', 'deleted' => 'lock'];   // the five states (ADR-054); `issued` opens for editing with step 4 (revision)
+// The state icon: a pencil where the mask edits — a draft, and since step 4 an issued document of the mask
+// (revision or replacement, ADR-054 decision 12); a lock where it is read-only (posted, void, or issued from a source).
+$editableIn = static fn(\Z77\Module\Debtor\Entities\Invoice $d): bool => $d->isDraft() || ($d->isInJournal() && $d->getSourceType() === null);
 ?>
 <div class="be-list" data-fetch-region="<?= e($definition->region()) ?>">
     <div class="be-list__section">
@@ -71,16 +74,16 @@ $icons      = ['invoicing' => 'edit', 'issued' => 'lock', 'final' => 'lock', 're
             <div class="be-list__table be-list__table--drop" style="<?= e($definition->style()) ?>">
                 <?= $this->partial('partials/listHead', ['definition' => $definition, 'state' => $state, 'action' => $listUrl], 'Z77\\Shared') ?>
                 <?php foreach ($documents as $document): ?>
-                <?php $docState = $document->state()->value; $url = $actionBase . '/edit?id=' . $document->getId(); ?>
+                <?php $docState = $document->state()->value; $url = $actionBase . '/edit?id=' . $document->getId(); $editableRow = $editableIn($document); ?>
                 <div class="be-list__item" data-invoice-id="<?= e((string) $document->getId()) ?>">
                     <div class="be-list__row">
                         <?php if ($selectable): ?>
                         <span class="be-list__cell"><label class="be-choice"><input type="checkbox" class="be-choice__input" name="doc[]" form="invoice-finalize" value="<?= e($document->getId() . ':' . $document->getVersion()) ?>" aria-label="<?= e($document->documentName()) ?> auswählen"></label></span>
                         <?php endif; ?>
-                        <a class="be-list__cell be-list__state be-list__state--<?= $document->isDraft() ? 'editable' : 'closed' ?>" href="<?= e($url) ?>" data-window-open="<?= e($url) ?>" aria-label="<?= e($states[$docState]) ?>" title="<?= e($states[$docState]) ?>"><svg class="be-icon" width="14" height="14" aria-hidden="true"><use href="#icon-<?= e($icons[$docState]) ?>"/></svg></a>
+                        <a class="be-list__cell be-list__state be-list__state--<?= $editableRow ? 'editable' : 'closed' ?>" href="<?= e($url) ?>" data-window-open="<?= e($url) ?>" aria-label="<?= e($states[$docState]) ?>" title="<?= e($states[$docState]) ?>"><svg class="be-icon" width="14" height="14" aria-hidden="true"><use href="#icon-<?= $editableRow ? 'edit' : 'lock' ?>"/></svg></a>
                         <label class="be-list__cell be-list__cell--num be-list__cell--mono" for="<?= e($definition->inputId('f_nr')) ?>"><?= $document->isNumbered() ? (int) $document->getNumber() : '<span class="be-list__cell--muted">Entwurf</span>' ?></label>
                         <label class="be-list__cell" for="<?= e($definition->inputId('f_date')) ?>" data-priority="3"><?= e($document->getInvoiceDate()->format('d.m.Y')) ?></label>
-                        <label class="be-list__cell" for="<?= e($definition->inputId('f_name')) ?>"><?= e(trim($document->getAddress()->getFirstName() . ' ' . $document->getAddress()->getName())) ?><?= $document->isCreditNote() ? ' <small class="be-list__cell--muted">· zu ' . e($document->getCreditNoteOf()->documentName()) . ($document->isDraft() ? ' · in Fakturierung' : '') . '</small>' : '' ?></label>
+                        <label class="be-list__cell" for="<?= e($definition->inputId('f_name')) ?>"><?= e(trim($document->getAddress()->getFirstName() . ' ' . $document->getAddress()->getName())) ?><?= $document->isCreditNote() ? ' <small class="be-list__cell--muted">· zu ' . e($document->getCreditNoteOf()->documentName()) . ($document->isDraft() ? ' · in Fakturierung' : '') . '</small>' : '' ?><?= $document->getReplacedBy() !== null ? ' <small class="be-list__cell--muted">· ersetzt durch ' . e($document->getReplacedBy()->documentName()) . '</small>' : '' ?><?= $document->getVoidReason() !== null && $docState === 'deleted' ? ' <small class="be-list__cell--muted">· ' . e($document->getVoidReason()) . '</small>' : '' ?></label>
                         <span class="be-list__cell" data-priority="2"><?= $document->isCreditNote() ? '' : e($document->getDueDate()->format('d.m.Y')) ?></span>
                         <label class="be-list__cell be-list__cell--num" for="<?= e($definition->inputId('f_amount')) ?>"><?= e($fmt($document->getGrossTotal())) ?></label>
 

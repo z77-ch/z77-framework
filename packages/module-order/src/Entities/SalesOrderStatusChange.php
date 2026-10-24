@@ -14,8 +14,10 @@ use Z77\Shared\Attributes\Entity;
  *
  *   - `fromCode` — null at creation; `toCode` — both BY CODE into `OrderStatus` (no foreign key);
  *   - `trigger` — what caused it: {@see TRIGGER_CREATE} · {@see TRIGGER_STATUS} · {@see TRIGGER_CONFIRMATION} ·
- *     {@see TRIGGER_DELIVERY_NOTE} · {@see TRIGGER_BOOKING_PRINT} (column `change_trigger` —
- *     `TRIGGER` is a reserved word in MariaDB);
+ *     {@see TRIGGER_DELIVERY_NOTE} · {@see TRIGGER_BOOKING_PRINT} · {@see TRIGGER_REINVOICE} ·
+ *     {@see TRIGGER_DELETE} (column `change_trigger` — `TRIGGER` is a reserved word in MariaDB). The
+ *     last two (ADR-054, the Faktura-Journal) log an event WITHOUT a status change — from = to;
+ *     «Neu fakturieren» names the invoice it left behind in `reason`, a deletion its reason;
  *   - `reason` — the reason a stock REVERSAL was confirmed with (ADR-043 decision 14), else null.
  *
  * Table `sales_order_status_change`.
@@ -29,8 +31,15 @@ class SalesOrderStatusChange
     public const TRIGGER_CONFIRMATION  = 'confirmation';
     public const TRIGGER_DELIVERY_NOTE = 'delivery-note';
     public const TRIGGER_BOOKING_PRINT = 'booking-print';
+    /** «Neu fakturieren» (ADR-054 decision 12) — the status stays. */
+    public const TRIGGER_REINVOICE     = 'reinvoice';
+    /** «Auftrag löschen» (ADR-054 decision 14) — the status stays, the order is stamped deleted. */
+    public const TRIGGER_DELETE        = 'delete';
 
-    public const TRIGGERS = [self::TRIGGER_CREATE, self::TRIGGER_STATUS, self::TRIGGER_CONFIRMATION, self::TRIGGER_DELIVERY_NOTE, self::TRIGGER_BOOKING_PRINT];
+    public const TRIGGERS = [self::TRIGGER_CREATE, self::TRIGGER_STATUS, self::TRIGGER_CONFIRMATION, self::TRIGGER_DELIVERY_NOTE, self::TRIGGER_BOOKING_PRINT, self::TRIGGER_REINVOICE, self::TRIGGER_DELETE];
+
+    /** The triggers that log an event without a status change (from = to). */
+    private const EVENTS = [self::TRIGGER_REINVOICE, self::TRIGGER_DELETE];
 
     public const REASON_LENGTH = 255;
 
@@ -73,7 +82,7 @@ class SalesOrderStatusChange
         if (!in_array($trigger, self::TRIGGERS, true)) {
             throw new \LogicException("Unknown status-change trigger '{$trigger}'");
         }
-        if ($toCode === '' || $fromCode === $toCode) {
+        if ($toCode === '' || ($fromCode === $toCode && !in_array($trigger, self::EVENTS, true))) {
             throw new \LogicException('A status change names a target other than its origin');
         }
         $this->order     = $order;

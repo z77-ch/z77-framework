@@ -6,8 +6,8 @@ owner 2026-10-23** («Owner decisions on the open questions» below — they rep
 answers recorded earlier that day); only Q7 (deleting a manual document) stays decided provisionally
 by the plan's recommendation. Build: steps 1–2 of
 [`faktura-journal-bauplan.md`](../03-development/faktura-journal-bauplan.md) built and committed
-2026-10-23 (schema, predicates — no behaviour change); **step 3 (the journal core) built 2026-10-23, not
-committed** — «Addendum 2026-10-23 — step 3 as built» at the end; steps 4–9 not built.
+2026-10-23 (schema, predicates — no behaviour change); **step 3 (the journal core) built 2026-10-23 and
+committed (`63cbb4b`)** — «Addendum 2026-10-23 — step 3 as built»; **steps 4–8 built 2026-10-24, not committed** — «Addendum 2026-10-24 — steps 4–8 as built» at the end; step 9 not built.
 **Date:** 2026-10-23
 **Amends:** [ADR-040](adr-040-business-module-cut.md) (decisions 3, 7, consequence «a payment
 arriving for it stays unmatched», addendum 2026-10-14 point 1),
@@ -441,3 +441,75 @@ canvas board»). What was decided while building — each binding until the owne
    `invoicingBetween()`.
 10. **A repeated «Fakturieren» after the journal was posted** is no longer recognised as the repeat (the
     posting moved the version): it answers the refusal page «Bereits fakturiert: …» — nothing written.
+
+## Addendum 2026-10-24 — steps 4–8 as built (corrections, orders, deletion, the CAMT chain, mails)
+
+Built by the agent on the owner's go of 2026-10-24 («build steps 4–8 directly on the known patterns, no
+canvas board»). What was decided while building — each binding until the owner revises it:
+
+1. **The decision rule is `Invoicing\Correction::classify()`** (pure; `InvoicingService::classify()` composes
+   the draft into a TRANSIENT candidate and compares). REPLACEMENT on: gross, the tax rows (code / rate /
+   base / tax) or with / without VAT, the MONTH of the invoice date, the party (O4) — **and the payment
+   reference TYPE** (QR reference ↔ none; added: the reference of a revision must not change, so a target
+   switch from QR-IBAN to IBAN is a replacement). REVISION on any other snapshot content (lines incl. the
+   revenue account, dates within the month, terms / due date, address, subject, payment target / account,
+   price mode, language, the no-VAT note). NOT compared: number, revision, stamp, state, who / when, the
+   opaque origin, the QR reference / message, the creditor block. Quantities compare numerically
+   («2» = «2.000»). The reasons are German phrases («Betrag geändert (600.00 → 640.00)», «Positionen»).
+2. **`InvoicingService::revise(id, version, draft, ?expect, ?reason, fromSource)`** writes it: NONE → nothing
+   (a source's flag cleared); REVISION → same row, `revision + 1`, the payment part taken again under the same
+   reference (message and due date anew), checked by `QrBill`, a new stamp (`Invoice::revise()` +
+   `restamp()`), the PDF archived as `<number>-r<n>-<stamp>.pdf` with the reason on its `invoice_revision`
+   row; REPLACEMENT → the successor inserted, the predecessor `replaced` (flushed, so the successor's PDF
+   finds it), the successor numbered from the month of ITS date, stamped, archived, the predecessor's
+   waiting mails cancelled. Lock order: the successor's `document.YYMM` → its profile row SHARED → the
+   issued row EXCLUSIVE. `$expect` (the kind the user confirmed) is re-judged: another kind is refused
+   `correction-changed`, nothing written (Rule 7). Void reasons: «Ersetzt — <summary>» / the caller's.
+3. **The replacement note** (decision 23) prints right-aligned under the stamp, 7.5 pt: «ersetzt Rechnung
+   <A> (ID <stamp of A's current version>)» — `InvoicePdf` reads the predecessor through
+   `InvoiceRepository::predecessorOf()`. It is NOT part of the stamp's canonical serialisation (format `v`
+   stays «1»; the successor's own number and content make its stamp unique).
+4. **A document issued from a SOURCE** (`source_type` set — an order) is corrected and deleted only by that
+   source (`fromSource: true`); debtor's mask shows it read-only «… ist aus «<subject>» fakturiert — sie
+   wird dort geändert …» (`sourced`). A MANUAL issued document's mask is editable: «Speichern» answers the
+   same mask with a band naming the classification and one button «Neue Version bestätigen» / «Ersetzen
+   bestätigen» (`op=confirm`, `expect`; the posted fields travel along — the form is the confirmation). An
+   issued invoice (not a credit note) may change its customer there (the picker; always a replacement).
+   Actions of the issued mask: «PDF», «Rechnung löschen …», «Senden …» (the result list of that document).
+   The facts block shows «Ersetzt durch» / «Ersetzt» (links both ways), who / when / why, «Neu fakturieren
+   nötig», and «Versionen» (each archived revision's PDF: `pdf?id=&revision=n`, file `…-version-n.pdf`).
+5. **Tabs «Ersetzt» and «Gelöscht»** (every kind in that state) close the document list; «Gutschriften» no
+   longer shows void credit notes. The list's pencil marks what the mask edits (a draft, a manual issued one).
+6. **Orders (step 5):** `OrderService::assertEditable()` lets an order whose invoice is `issued` be edited
+   whatever its phase; after the save `flagInvoice()` classifies the order against the issued invoice
+   (`classify(fromSource)`) and calls `InvoicingService::flagReissue()` (order row → invoice row; posted in
+   between → the save is refused) with «Auftrag N geändert — <summary> (<neue Version …|Ersatz …>)», or
+   clears it; an order debtor would refuse as it stands is flagged «so nicht fakturierbar: …». The status
+   select is not offered while an invoice exists (the status stays). **«Neu fakturieren»** =
+   `OrderService::reinvoice(id, version)`: the invoice date stays the issued invoice's; debtor's `revise()`
+   joined; a successor re-links the order (`SalesOrder::relinkInvoice()`); the log row `reinvoice` (from =
+   to, the reason names what happened); nothing to change and no flag → nothing written. The confirmation
+   is a PAGE (`confirm-reinvoice`, like «Fakturieren …»), the answer debtor's result list of the standing
+   invoice.
+7. **Deleting (step 6):** `OrderService::delete(id, version, reason)` — refused while the invoice is posted;
+   its issued invoice `deleted` through `InvoicingService::delete(id, null, reason, fromSource)` (no version
+   compared: the order holds its own row lock), the order stamped `deleted_by / deleted_at / delete_reason`
+   (migration `Z77\Module\Order\Migrations\Version20261024100000`), log row `delete`, the stock brought to
+   ZERO with ONE stock call whose confirmation is the deletion's reason (no second question). Deleted orders
+   are hidden from every list (also the year-close warning) and shown in the tab «Gelöscht»; nothing is
+   written to them again. A manual issued document is deleted in debtor's mask («Rechnung löschen …»,
+   mandatory reason, refused with allocations — Q7 still provisional).
+8. **The CAMT chain (step 7):** a QRR or message naming a `replaced` document → `BankTransaction::suggest()`
+   — unmatched, `suggested_invoice_id` = `InvoiceRepository::chainEnd()`, note «Referenz von Rechnung A —
+   ersetzt durch Rechnung C» (+ «noch nicht verbucht — nach «Journal verbuchen» … bestätigen» while C is
+   issued); a `deleted` one (or a chain ending in one) → unmatched «… ist gelöscht — manuell zuordnen». The
+   row offers «Zuordnen zu Rechnung C» (one click) and pre-fills the number; `assign()` refuses a void
+   document naming the chain's end. `matchTo()` / `unmatch()` clear the suggestion.
+9. **Mails (step 8):** the attachment reference is `invoice-pdf:<id>@<revision>` (`InvoiceMails::
+   attachmentOf()`); `InvoicePdfAttachment` accepts `<id>` and `<id>@<n>` (n ≤ the current revision) and
+   resolves the named revision's archived file — also for a mail already claimed of a document replaced
+   since. «Covered» is judged per version (module-mailing's `deliveriesOf()` now answers each row's
+   `attachments`). A successor is mailed with the kind `invoice-replacement` (de / en, placeholders
+   `{ersetzt}`, `{ersetzt_id}`, `{ersetzt_datum}`; editable under Service › E-Mail › Beleg-Mails). A
+   replacement and a deletion cancel the document's `queued` outbox mails in their unit of work
+   (`InvoiceMails::cancelWaiting()`); sending / sent mails stay history.

@@ -68,6 +68,8 @@
  * @var string $invoiceBase  debtor's document screens
  * @var string $orderTitle  «Offerte» / «Auftragsbestätigung» (by the phase)
  * @var bool $canBook
+ * @var bool $canReinvoice  the invoice is in the Faktura-Journal — «Neu fakturieren …» (ADR-054 decision 12)
+ * @var string|null $deleteRefusal  why «Auftrag löschen …» is not offered; null = offered (ADR-054 decision 14)
  * @var \Z77\Module\Order\Entities\OrderPhase|null $phase  the order's phase, null = a new order
  * @var callable $fmt
  * @var string $csrfToken
@@ -145,8 +147,8 @@ if ($isNew) {
         . ($form->error('status') !== '' ? ' title="' . e($form->error('status')) . '"' : '') . '>' . $options . '</select></label>'
         . '<span class="z77-form-actions__spacer"></span>';
 } elseif ($invoice !== null) {
-    // An order with a booked invoice: the status is SHOWN only (owner 2026-10-20) — the invoice is
-    // final, a correction is a credit note on it; nothing is left to set by hand here.
+    // An order with an invoice: the status is SHOWN only (owner 2026-10-20) — posted, a correction is a credit
+    // note; still in the Faktura-Journal (ADR-054), the order is edited and «Neu fakturieren …» re-issues it.
     $extra .= '<span class="be-status-field be-status-field--' . $tone($phase) . '" title="Rechnung fakturiert — der Status bleibt">'
         . '<span class="be-status-field__label">Status</span><span class="be-status-field__dot"></span>'
         . '<span class="be-status-field__name">' . e($status?->getLabel() ?? $order->getStatusCode()) . '</span></span>'
@@ -181,6 +183,15 @@ if (!$isNew) {
     // Total 0 (owner 2026-10-20): no invoice, no «Fakturieren …» — the hint stands under the action row.
     if ($canBook && empty($zeroTotal)) {
         $extra .= '<a class="be-btn be-btn--confirm-open" href="' . e($actionBase . '/confirm-book?' . http_build_query(['order' => [$id . ':' . $order->getVersion()]])) . '" title="Rechnung erstellen, nummerieren und als PDF drucken — ins Faktura-Journal, noch nicht verbucht">Fakturieren …</a>';
+    }
+    // «Neu fakturieren …» (ADR-054 decision 12): the invoice in the Faktura-Journal issued again from the order — a
+    // PAGE like «Fakturieren …» (it leaves the window); green when the invoice is flagged (the journal is blocked).
+    if (!empty($canReinvoice)) {
+        $extra .= '<a class="be-btn ' . ($invoice->getReissueNeeded() !== null ? 'be-btn--confirm-open' : 'be-btn--ghost') . '" href="' . e($actionBase . '/confirm-reinvoice?id=' . $id) . '" title="Die Rechnung aus dem Auftrag neu fakturieren — gleiche Nummer (neue Version) oder Ersatz mit neuer Nummer">Neu fakturieren …</a>';
+    }
+    // «Auftrag löschen …» (ADR-054 decision 14): while no posted invoice exists — the dialog in this window.
+    if (($deleteRefusal ?? 'x') === null) {
+        $extra .= '<a class="be-btn be-btn--ghost" href="' . e($actionBase . '/confirm-delete?id=' . $id) . '" data-window-link title="Auftrag löschen — er bleibt mit Nummer und Grund unter «Gelöscht», das Lager wird zurückgebucht">Löschen …</a>';
     }
 }
 // The positions' columns: handle (⋮⋮ grip + ⇥ indent) · Pos. · Art · Art.-Nr. · Text · Menge ·
@@ -253,6 +264,10 @@ $addressFields = fn(string $field): string => $this->partial('Backend/ContactCon
         <?php endif; ?>
         <?php if ($editRefusal !== null): ?>
         <div class="be-modal__alert"><?= e($editRefusal) ?></div>
+        <?php endif; ?>
+        <?php if ($invoice !== null && $invoice->isInJournal() && !$order->isDeleted()): ?>
+        <?php // ADR-054 decisions 9, 12: the invoice is issued, not posted — the order is editable, a deviation blocks the journal. ?>
+        <div class="be-modal__alert<?= $invoice->getReissueNeeded() !== null ? ' be-modal__alert--error' : '' ?>" data-order-invoice-journal="<?= $invoice->getReissueNeeded() !== null ? 'flagged' : 'in-step' ?>"><?= e($invoice->documentName()) ?> ist fakturiert, aber noch nicht verbucht (Faktura-Journal).<?= $invoice->getReissueNeeded() !== null ? ' <strong>Rechnung weicht ab:</strong> ' . e($invoice->getReissueNeeded()) . ' — «Neu fakturieren …», sonst bleibt das Faktura-Journal gesperrt.' : ' Eine Änderung am Auftrag sperrt das Faktura-Journal, bis neu fakturiert ist.' ?></div>
         <?php endif; ?>
         <?php if ($form->generalErrors() !== []): ?>
         <div class="be-modal__alert be-modal__alert--error">
@@ -604,7 +619,7 @@ $addressFields = fn(string $field): string => $this->partial('Backend/ContactCon
                         <span class="be-list__cell"><?= e($invoice->getInvoiceDate()->format('d.m.Y')) ?></span>
                         <span class="be-list__cell be-list__cell--num"><?= e($fmt($invoice->getGrossTotal())) ?></span>
                         <span class="be-list__cell be-list__cell--num"><?= $payment !== null ? e($fmt($payment->open)) : '' ?></span>
-                        <span class="be-list__cell"><?php if ($payment !== null): ?><span class="badge <?= e($badges[$payment->status] ?? 'badge--muted') ?>"><?= e($payment->label()) ?></span><?php endif; ?></span>
+                        <span class="be-list__cell"><?php if ($payment !== null): ?><span class="badge <?= e($badges[$payment->status] ?? 'badge--muted') ?>"><?= e($payment->label()) ?></span><?php else: ?><span class="badge <?= $invoice->getReissueNeeded() !== null ? 'badge--warning' : 'badge--muted' ?>" title="<?= e((string) $invoice->getReissueNeeded()) ?>"><?= e($invoice->state()->label() . ($invoice->isInJournal() ? ' · nicht verbucht' : '') . ($invoice->getRevision() > 1 ? ' · Version ' . $invoice->getRevision() : '')) ?></span><?php endif; ?></span>
                         <a class="be-list__cell" href="<?= e($invoiceBase . '/pdf?id=' . (int) $invoice->getId()) ?>" target="_blank" rel="noopener">PDF</a>
                     </div>
                 </div>

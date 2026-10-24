@@ -58,16 +58,23 @@ final class InvoicePdf
     public const LAYOUT       = 'pdf/invoice';
     public const PAYMENT_PART = 'pdf/qrBill';
 
-    /** The document rendered; call `output()` on it for the bytes. $document with its lines loaded. */
-    public static function render(Invoice $document, ?Mandator $mandator, int $customerNumber = 0): PdfDocument
+    /**
+     * The document rendered; call `output()` on it for the bytes. $document with its lines loaded.
+     * $replaces = the document it REPLACED (ADR-054 decision 23) — the layout prints «ersetzt Rechnung
+     * <number> (ID <stamp>)» small beside the stamp, generated, no free text (owner decision O11).
+     */
+    public static function render(Invoice $document, ?Mandator $mandator, int $customerNumber = 0, ?Invoice $replaces = null): PdfDocument
     {
-        return self::draw(PdfDocument::create(self::title($document), $mandator?->getName() ?? ''), $document, $mandator, $customerNumber);
+        return self::draw(PdfDocument::create(self::title($document), $mandator?->getName() ?? ''), $document, $mandator, $customerNumber, $replaces);
     }
 
-    /** The context a controller gathers: the mandator through the one reader debtor has, the customer number from the profile. */
+    /**
+     * The context a controller gathers: the mandator through the one reader debtor has, the customer
+     * number from the profile, the predecessor a successor replaced (`InvoiceRepository::predecessorOf()`).
+     */
     public static function of(Invoice $document, UnifiedEntityManager $em): PdfDocument
     {
-        return self::render($document, Creditor::mandator($em), self::customerNumber($document, $em));
+        return self::render($document, Creditor::mandator($em), self::customerNumber($document, $em), self::predecessor($document, $em));
     }
 
     /**
@@ -85,7 +92,7 @@ final class InvoicePdf
         $mandator = Creditor::mandator($em);
         $pdf      = PdfDocument::create(self::combinedTitle($documents), $mandator?->getName() ?? '');
         foreach ($documents as $document) {
-            self::draw($pdf->startSection(), $document, $mandator, self::customerNumber($document, $em));
+            self::draw($pdf->startSection(), $document, $mandator, self::customerNumber($document, $em), self::predecessor($document, $em));
         }
 
         return $pdf;
@@ -131,10 +138,12 @@ final class InvoicePdf
         return 'Dokumente ' . min($numbers) . ' bis ' . max($numbers);
     }
 
-    private static function draw(PdfDocument $pdf, Invoice $document, ?Mandator $mandator, int $customerNumber): PdfDocument
+    private static function draw(PdfDocument $pdf, Invoice $document, ?Mandator $mandator, int $customerNumber, ?Invoice $replaces = null): PdfDocument
     {
         return $pdf->partial(self::LAYOUT, [
             'document'       => $document,
+            // The replaced document (ADR-054 decision 23): «ersetzt Rechnung <number> (ID <stamp>)» — null when none.
+            'replaces'       => $document->isDraft() ? null : $replaces,
             'bill'           => QrBill::of($document),
             'mandator'       => $mandator,
             'customerNumber' => $customerNumber,
@@ -143,6 +152,17 @@ final class InvoicePdf
             'liableToVat'    => $document->carriesVat(),
             'fmt'            => static fn(?Money $m) => AmountFormat::of($m),
         ], self::NS);
+    }
+
+    private static function predecessor(Invoice $document, UnifiedEntityManager $em): ?Invoice
+    {
+        if ($document->isDraft() || $document->getId() === null) {
+            return null;
+        }
+        /** @var \Z77\Module\Debtor\Repositories\InvoiceRepository $invoices */
+        $invoices = $em->getRepository(Invoice::class);
+
+        return $invoices->predecessorOf($document);
     }
 
     private static function customerNumber(Invoice $document, UnifiedEntityManager $em): int

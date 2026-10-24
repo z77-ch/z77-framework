@@ -29,7 +29,10 @@ use Doctrine\Common\Collections\ArrayCollection,
  * `InvoicingService::issue()`), in the Faktura-Journal, NOTHING posted
  * (ADR-054); `final` — posted by «Journal verbuchen» ({@see post()},
  * `JournalPostingService::post()`), immutable, corrected only by a credit
- * note. `replaced` / `deleted` come with steps 4–6 of the build plan.
+ * note. While in the journal an issued document is corrected by a REVISION ({@see revise()} +
+ * {@see restamp()} — same number, revision + 1), a REPLACEMENT ({@see replaceBy()} — `replaced`, the
+ * successor carries a new number) or deleted ({@see markDeleted()} — `deleted`); a source flags a
+ * deviation with {@see flagReissue()} (ADR-054 decisions 8–14, steps 4–6 of the build plan).
  *
  * What is on the header, and why:
  *
@@ -434,7 +437,7 @@ class Invoice
 
     // ── the state predicates (ADR-054, build plan §3) — readers ask these, never a state value ──
     // They replace the one former question `isFinal()`. Since step 3 «Fakturieren» produces
-    // `issued` and «Journal verbuchen» `final`; `replaced` / `deleted` come with steps 4–6.
+    // `issued` and «Journal verbuchen» `final`; since steps 4–6 a correction `replaced`, a deletion `deleted`.
 
     /** A draft (`invoicing`): no number, editable, its PDF is a preview. */
     public function isDraft(): bool
@@ -638,6 +641,101 @@ class Invoice
         $this->postedAt       = $at;
         $this->changedBy      = $by;
         $this->changedAt      = $at;
+    }
+
+    // ── corrections while in the Faktura-Journal (ADR-054 decisions 8–11, 14; step 4 of the build plan) ──
+
+    /**
+     * A REVISION of the issued document (ADR-054 decision 11, rule 11): a new snapshot under the SAME
+     * number — `revision + 1`, the source's re-issue flag cleared. The payment part keeps its
+     * reference (it derives from customer and number; a change of the reference TYPE is a replacement,
+     * `Invoicing\Correction`). The new version's stamp follows with {@see restamp()} (it hashes this
+     * content), its PDF is archived as a new file in the same unit of work (`Pdf\InvoiceArchive`); the
+     * archived files of the earlier revisions stay.
+     *
+     * @param list<InvoiceLine> $lines
+     * @param list<InvoiceTax>  $taxes
+     */
+    public function revise(DocumentSnapshot $snapshot, array $lines, array $taxes, PaymentSnapshot $payment, string $by, \DateTimeImmutable $at): void
+    {
+        $this->assertInJournal('revised');
+        if ($payment->getReferenceType() !== $this->payment->getReferenceType() || $payment->getReference() !== $this->payment->getReference()) {
+            throw new \LogicException($this->documentName() . ': a revision keeps the payment reference — another reference is a replacement');
+        }
+        if ($snapshot->invoiceDate->format('Y-m') !== $this->invoiceDate->format('Y-m')) {
+            throw new \LogicException($this->documentName() . ': a revision keeps the month of the invoice date (the number carries it) — another month is a replacement');
+        }
+        $this->replaceContent($snapshot, $lines, $taxes, $payment);
+        $this->revision++;
+        $this->reissueNeeded = null;
+        $this->changedBy     = $by;
+        $this->changedAt     = $at;
+    }
+
+    /** The stamp of the CURRENT version after a {@see revise()} (decision 24) — only while in the journal. */
+    public function restamp(string $documentStamp): void
+    {
+        $this->assertInJournal('stamped');
+        if (preg_match('/^[0-9a-z]{1,' . self::STAMP_LENGTH . '}$/', $documentStamp) !== 1) {
+            throw new \LogicException('A document stamp is 1-' . self::STAMP_LENGTH . ' lower-case letters or digits');
+        }
+        $this->documentStamp = $documentStamp;
+    }
+
+    /**
+     * `issued` → `replaced` (ADR-054 decision 10, rule 4): $successor carries the corrected content under
+     * a NEW number; this document keeps its number, snapshot and archived PDF, never posted, never
+     * touched again. Who / when / why are kept (the gap documentation, legal note 6).
+     */
+    public function replaceBy(Invoice $successor, string $reason, string $by, \DateTimeImmutable $at): void
+    {
+        $this->assertInJournal('replaced');
+        if ($successor === $this || ($successor->getId() !== null && $successor->getId() === $this->id)) {
+            throw new \LogicException($this->documentName() . ' cannot replace itself');
+        }
+        $this->state        = InvoiceState::Replaced->value;
+        $this->replacedBy   = $successor;
+        $this->void($reason, $by, $at);
+    }
+
+    /** `issued` → `deleted` (ADR-054 decision 14, Q7): kept with its number and snapshot, never posted. */
+    public function markDeleted(string $reason, string $by, \DateTimeImmutable $at): void
+    {
+        $this->assertInJournal('deleted');
+        $this->state = InvoiceState::Deleted->value;
+        $this->void($reason, $by, $at);
+    }
+
+    /**
+     * The SOURCE's seam (ADR-054 decision 9, owner decision O9): set when the source (an order) no
+     * longer matches this issued document — the blocker text the Faktura-Journal shows —, cleared
+     * (null) when it is back in step. Only while in the journal; debtor never interprets who set it.
+     */
+    public function flagReissue(?string $reason): void
+    {
+        $this->assertInJournal('flagged');
+        $reason = $reason !== null ? trim($reason) : null;
+        $this->reissueNeeded = $reason === null || $reason === '' ? null : mb_substr($reason, 0, self::REASON_LENGTH);
+    }
+
+    private function void(string $reason, string $by, \DateTimeImmutable $at): void
+    {
+        $reason = trim($reason);
+        if ($reason === '') {
+            throw new \LogicException('A replaced or deleted document keeps the reason why');
+        }
+        $this->voidReason = mb_substr($reason, 0, self::REASON_LENGTH);
+        $this->voidedBy   = $by;
+        $this->voidedAt   = $at;
+        $this->changedBy  = $by;
+        $this->changedAt  = $at;
+    }
+
+    private function assertInJournal(string $what): void
+    {
+        if (!$this->isInJournal()) {
+            throw new \LogicException($this->documentName() . " is not in the Faktura-Journal ({$this->state}) and cannot be {$what} — only an issued, unposted document is corrected by revision, replacement or deletion (ADR-054)");
+        }
     }
 
     /** @param list<InvoiceLine> $lines @param list<InvoiceTax> $taxes */

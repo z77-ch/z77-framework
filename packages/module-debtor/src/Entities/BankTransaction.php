@@ -113,7 +113,7 @@ class BankTransaction
      * The PRE-SELECTED document of an unmatched transaction whose reference names a REPLACED
      * document: the last successor of the chain A → B → C (ADR-054 decision 16, owner rule 13).
      * Never a match — one click («Zuordnen») confirms it. Step 1 of the Faktura-Journal build plan:
-     * the column; nothing writes it before step 7.
+     * the column; written since step 7 by `BankImportService` ({@see suggest()}).
      */
     #[ORM\ManyToOne(targetEntity: Invoice::class)]
     #[ORM\JoinColumn(name: 'suggested_invoice_id', nullable: true)]
@@ -145,17 +145,33 @@ class BankTransaction
     public function matchTo(Invoice $invoice, ?string $note = null): void
     {
         $this->assertNotBooked('matched');
-        $this->invoice = $invoice;
-        $this->state   = TransactionState::Matched->value;
-        $this->note    = self::cut($note);
+        $this->invoice          = $invoice;
+        $this->suggestedInvoice = null;
+        $this->state            = TransactionState::Matched->value;
+        $this->note             = self::cut($note);
     }
 
     public function unmatch(?string $note): void
     {
         $this->assertNotBooked('unmatched');
-        $this->invoice = null;
-        $this->state   = TransactionState::Unmatched->value;
-        $this->note    = self::cut($note);
+        $this->invoice          = null;
+        $this->suggestedInvoice = null;
+        $this->state            = TransactionState::Unmatched->value;
+        $this->note             = self::cut($note);
+    }
+
+    /**
+     * Unmatched WITH a pre-selected document (ADR-054 decision 16, owner rule 13): the reference named a
+     * REPLACED document — $successor is the end of its replacement chain; never booked automatically, one
+     * click («Zuordnen zu …») confirms it.
+     */
+    public function suggest(Invoice $successor, string $note): void
+    {
+        $this->assertNotBooked('unmatched with a suggestion');
+        $this->invoice          = null;
+        $this->suggestedInvoice = $successor;
+        $this->state            = TransactionState::Unmatched->value;
+        $this->note             = self::cut($note);
     }
 
     public function ignore(?string $note): void

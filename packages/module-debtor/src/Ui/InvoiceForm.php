@@ -118,7 +118,7 @@ final class InvoiceForm
         return $this;
     }
 
-    /** The fields of an issued document (edit in `invoicing`). */
+    /** The fields of an existing document — a draft, or an issued one in the Faktura-Journal (its correction, ADR-054). */
     public function startFrom(Invoice $document): self
     {
         $this->header = [
@@ -166,11 +166,13 @@ final class InvoiceForm
     /**
      * The posted fields. For an edit / a credit note, $document is what the
      * form was rendered from: its codes stay selectable, and the party of a
-     * fixed-party form is taken from it, not from the post.
+     * fixed-party form is taken from it, not from the post. $partyFixed =
+     * false: an ISSUED invoice's mask (ADR-054, owner decision O4) — the
+     * customer may change (a replacement); the posted party is taken.
      *
      * @param array<string, mixed> $post
      */
-    public function fromPost(array $post, ?Invoice $document = null): self
+    public function fromPost(array $post, ?Invoice $document = null, bool $partyFixed = true): self
     {
         foreach (array_keys($this->header) as $key) {
             $this->header[$key] = is_string($post[$key] ?? null) ? trim($post[$key]) : '';
@@ -180,7 +182,9 @@ final class InvoiceForm
         }
         $fixed = $this->creditNoteOf ?? $document;
         if ($fixed !== null) {
-            $this->header['contact'] = (string) $fixed->getContact()->getId();
+            if ($partyFixed || $this->creditNoteOf !== null) {
+                $this->header['contact'] = (string) $fixed->getContact()->getId();
+            }
             $this->keepCodesOf($fixed);
         }
         if ($this->kind === InvoiceKind::CreditNote) {
@@ -202,6 +206,16 @@ final class InvoiceForm
         }
         if ($this->rows === []) {
             $this->rows = [self::EMPTY_ROW];
+        }
+
+        return $this;
+    }
+
+    /** Another customer chosen for an issued invoice (the picker's page fallback `?contact=`, owner decision O4). */
+    public function withContact(int $contactId): self
+    {
+        if ($contactId > 0 && $this->creditNoteOf === null) {
+            $this->header['contact'] = (string) $contactId;
         }
 
         return $this;

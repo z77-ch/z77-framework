@@ -36,10 +36,17 @@ use Z77\Shared\Money\AmountFormat;
  *     identity (owner 2026-10-23, `SenderIdentities`): his display name on the
  *     From, «name <email>» as Reply-To, `{anzeigename}` in the text. The former
  *     Reply-To = the mandator's e-mail is gone;
- *   - the ATTACHMENT is the reference `invoice-pdf:<id>` — rendered at send
- *     time from the snapshot ({@see InvoicePdfAttachment}); the SOURCE is
- *     `invoice:<id>`, how the result list and the document's mask find what
- *     went out ({@see deliveries()}).
+ *   - the ATTACHMENT is the reference `invoice-pdf:<id>@<revision>` — the
+ *     archived PDF of exactly the version the mail was queued with, also when
+ *     a revision follows before it is sent ({@see InvoicePdfAttachment},
+ *     ADR-054 decision 21); the SOURCE is `invoice:<id>`, how the result list
+ *     and the document's mask find what went out ({@see deliveries()});
+ *   - a REPLACEMENT (a document that replaced another, ADR-054 decision 23)
+ *     is mailed with its own kind `invoice-replacement` («ersetzt Rechnung
+ *     A», owner decision O8), the replaced number, stamp and date as
+ *     placeholders; a replaced or deleted document's WAITING mails are
+ *     cancelled ({@see cancelWaiting()}); «covered» is judged per version —
+ *     a mail of an earlier revision does not cover the current one.
  *
  * module-mailing is OPTIONAL for debtor (`composer.json` suggest, the
  * financial pattern): {@see available()} says whether the outbox is there;
@@ -67,6 +74,9 @@ final class InvoiceMails
         InvoiceKind::Invoice->value    => 'invoice',
         InvoiceKind::CreditNote->value => 'credit-note',
     ];
+
+    /** The mail kind of a document that REPLACED another (ADR-054 decision 23, owner decision O8). */
+    public const REPLACEMENT_KIND = 'invoice-replacement';
 
     public function __construct(
         private UnifiedEntityManager $em,
@@ -122,6 +132,8 @@ final class InvoiceMails
      */
     public function values(Invoice $document, ?SenderIdentity $sender = null): array
     {
+        $replaced = $this->predecessorOf($document);
+
         return [
             'nummer'   => (string) $document->getNumber(),
             'kunde'    => self::customerOf($document),
@@ -132,7 +144,66 @@ final class InvoiceMails
             // The display name of the identity chosen under «Senden als» (owner 2026-10-23);
             // '' without one — a line holding only it then disappears (documentMail()).
             'anzeigename' => $sender?->name ?? '',
+            // The replaced document (ADR-054 decision 23) — '' unless this one replaced another.
+            'ersetzt'       => $replaced !== null ? (string) $replaced->getNumber() : '',
+            'ersetzt_id'    => (string) $replaced?->getDocumentStamp(),
+            'ersetzt_datum' => $replaced !== null ? $replaced->getInvoiceDate()->format('d.m.Y') : '',
         ];
+    }
+
+    /**
+     * The mail kind $document is sent with: `invoice-replacement` for an invoice that REPLACED another
+     * (owner decision O8), else its kind's ({@see mailKindOf()}); null when it is not mailed.
+     */
+    public function mailKindFor(Invoice $document): ?string
+    {
+        $kind = self::mailKindOf($document);
+
+        return $kind === 'invoice' && $this->predecessorOf($document) !== null ? self::REPLACEMENT_KIND : $kind;
+    }
+
+    /** The attachment reference of $document's CURRENT version — `invoice-pdf:<id>@<revision>` (ADR-054 decision 21). */
+    public static function attachmentOf(Invoice $document): string
+    {
+        return InvoicePdfAttachment::TYPE . ':' . $document->getId() . '@' . $document->getRevision();
+    }
+
+    /**
+     * Cancels the WAITING (`queued`) outbox mails of $document — a replaced or deleted document is never
+     * sent (ADR-054 decision 21); a mail already sending or sent stays as it is (history). Runs in the
+     * caller's unit of work (`InvoicingService`, the replacement / deletion). Answers how many.
+     */
+    public function cancelWaiting(Invoice $document): int
+    {
+        if (!$this->available() || $document->getId() === null) {
+            return 0;
+        }
+        $outbox    = new OutboxService($this->em);
+        $cancelled = 0;
+        foreach ($this->deliveries([(int) $document->getId()])[(int) $document->getId()] ?? [] as $row) {
+            if ($row['state'] !== 'queued') {
+                continue;
+            }
+            try {
+                $outbox->cancel((int) $row['id']);
+                $cancelled++;
+            } catch (\Z77\Module\Mailing\Outbox\OutboxStateException) {
+                // claimed by the job in between — it sends what it was queued with
+            }
+        }
+
+        return $cancelled;
+    }
+
+    private function predecessorOf(Invoice $document): ?Invoice
+    {
+        if ($document->isDraft() || $document->getId() === null) {
+            return null;
+        }
+        /** @var \Z77\Module\Debtor\Repositories\InvoiceRepository $invoices */
+        $invoices = $this->em->getRepository(Invoice::class);
+
+        return $invoices->predecessorOf($document);
     }
 
     /**
@@ -147,7 +218,7 @@ final class InvoiceMails
         if (($reason = self::skipReason($document)) !== null) {
             throw new \LogicException($document->documentName() . ': ' . $reason);
         }
-        $kind = (string) self::mailKindOf($document);
+        $kind = (string) $this->mailKindFor($document);
         $mail = $this->emailService()->documentMail($kind, $document->getLanguage(), $this->values($document, $sender), $this->kinds());
         // A placeholder without a value (no mandator name) must not leave a dangling dash.
         $mail['subject'] = (string) preg_replace('/[\s—–·:-]+$/u', '', $mail['subject']);
@@ -186,7 +257,7 @@ final class InvoiceMails
             $mail  = $this->compose($document, $sender);
             $draft = OutboxDraft::template($mail['to'], $mail['subject'], 'emails/documentMail', 'Z77\\Shared', ['body' => $mail['body']], self::customerOf($document))
                 ->withLanguage($mail['language'])
-                ->withAttachments([InvoicePdfAttachment::TYPE . ':' . $document->getId()])
+                ->withAttachments([self::attachmentOf($document)])
                 ->withSource(self::source($document))
                 ->withSender($sender, $userId);
             $drafts[] = $draft;
@@ -223,16 +294,36 @@ final class InvoiceMails
         return $result;
     }
 
-    /** Whether a document with these deliveries ({@see deliveries()}) is covered — a mail waits or went out. */
-    public static function isCovered(array $deliveries): bool
+    /**
+     * Whether a document with these deliveries ({@see deliveries()}) is covered — a mail waits or went
+     * out. With $document: per VERSION (ADR-054 decision 21) — only a mail that carries the current
+     * revision's attachment covers it (a mail of revision 1 queued as `invoice-pdf:<id>` before the
+     * revision-bound reference counts as revision 1); a new revision or a successor counts as unsent.
+     */
+    public static function isCovered(array $deliveries, ?Invoice $document = null): bool
     {
         foreach ($deliveries as $delivery) {
-            if (in_array($delivery['state'] ?? '', self::COVERING_STATES, true)) {
+            if (!in_array($delivery['state'] ?? '', self::COVERING_STATES, true)) {
+                continue;
+            }
+            if ($document === null || self::carriesVersion($delivery, $document)) {
                 return true;
             }
         }
 
         return false;
+    }
+
+    /** Whether the outbox row $delivery attached $document's CURRENT version. */
+    private static function carriesVersion(array $delivery, Invoice $document): bool
+    {
+        $refs = $delivery['attachments'] ?? null;
+        if (!is_array($refs)) {
+            return true;   // an outbox without the column's answer — judged per document as before
+        }
+        $plain = InvoicePdfAttachment::TYPE . ':' . $document->getId();
+
+        return in_array(self::attachmentOf($document), $refs, true) || ($document->getRevision() === 1 && in_array($plain, $refs, true));
     }
 
     /**
@@ -246,7 +337,7 @@ final class InvoiceMails
      */
     public static function unsent(array $documents, array $deliveries): array
     {
-        return array_values(array_filter($documents, static fn(Invoice $d) => self::skipReason($d) === null && !self::isCovered($deliveries[(int) $d->getId()] ?? [])));
+        return array_values(array_filter($documents, static fn(Invoice $d) => self::skipReason($d) === null && !self::isCovered($deliveries[(int) $d->getId()] ?? [], $d)));
     }
 
     /**
@@ -269,7 +360,7 @@ final class InvoiceMails
             if (self::skipReason($document) === null) {
                 $mailable++;
             }
-            if (!self::isCovered($rows)) {
+            if (!self::isCovered($rows, $document)) {
                 continue;
             }
             // Covered: a mail waits (then it counts as waiting) or one went out.
