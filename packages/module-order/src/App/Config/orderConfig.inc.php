@@ -45,6 +45,10 @@ return [
         'period-close' => [InvoiceableOrdersCheck::class],
     ],
 
+    // debtor's «Journal verbuchen» (ADR-054, owner 2026-10-24): the orders of the posted invoices move
+    // from «Fakturiert» to the status flagged «Wird gesetzt beim Verbuchen» — in the posting's unit of work.
+    'invoicePostedListeners' => [\Z77\Module\Order\Services\OrderInvoicePostedListener::class],
+
     // The backend dashboard (ADR-052): this module's pending work and «+ Neu» buttons —
     // module-backend collects every module's `dashboard` list (`DashboardContributors`).
     'dashboard' => [\Z77\Module\Order\Dashboard\OrderDashboard::class],

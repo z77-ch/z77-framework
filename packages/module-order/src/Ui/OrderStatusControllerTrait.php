@@ -70,6 +70,7 @@ trait OrderStatusControllerTrait
         $request    = DI::getRequest();
         $definition = OrderStatusListing::definition();
         $state      = $definition->readRequest($request);
+        \Z77\Module\Order\Services\OrderStatusUpgrade::apply($this->em());   // the one-time upgrade of the seed-once file (owner 2026-10-24)
         $rows       = $this->orderStatuses()->allInOrder();
         if ($state->descending) {
             $rows = array_reverse($rows);
@@ -132,6 +133,7 @@ trait OrderStatusControllerTrait
             $values = BodyCleaner::cleanFor(OrderStatus::class, $post);
             $values['start']         = ($post['start'] ?? '') === '1';           // switches: present = on
             $values['phase_default'] = ($post['phase_default'] ?? '') === '1';
+            $values['set_on_posting'] = ($post['set_on_posting'] ?? '') === '1';
             unset($values['active'], $values['id']);
             if (!$isNew) {
                 $values['code'] = $status->getCode();   // fixed after creation — the service refuses a change anyway

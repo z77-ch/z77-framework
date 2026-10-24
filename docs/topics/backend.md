@@ -156,7 +156,8 @@ Contributors of the first stage (each module's topic doc has its own list):
 | debtor | Rechnungen überfällig (count + open amount) | urgent | Debitoren `?view=overdue` |
 | debtor | Mahnvorschlag bereit | todo | Mahnungen |
 | debtor | Zahlungseingänge nicht verbucht | todo | Zahlungseingänge |
-| debtor | Rechnungsentwürfe nicht verbucht | todo | Rechnungen |
+| debtor | Rechnungsentwürfe nicht fakturiert | todo | Rechnungen |
+| debtor | Faktura-Journal nicht verbucht / gesperrt (neu fakturieren) | todo / urgent | Faktura-Journal |
 | debtor | Kein Zahlungsziel mit IBAN | todo | Zahlungsziele |
 | order | Aufträge bereit zur Verrechnung (Termin / Geliefert) | todo | Aufträge `?view=confirmed` / `delivered` |
 | order | Offerten nachfassen | todo | Aufträge `?view=new` |

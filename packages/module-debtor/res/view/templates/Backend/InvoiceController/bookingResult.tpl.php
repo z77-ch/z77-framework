@@ -64,6 +64,10 @@ if ($status !== null && $status['waiting'] + $status['sent'] > 0) {
             <?php endif; ?>
             <a class="be-btn be-btn--ghost" href="<?= e($actionBase . '/pdf-all?ids=' . rawurlencode($ids)) ?>" target="_blank" rel="noopener"><?= raw($icon('icon-print')) ?> Alle als ein PDF</a>
             <a class="be-btn be-btn--ghost" href="<?= e($actionBase . '/zip?ids=' . rawurlencode($ids)) ?>"><?= raw($icon('icon-download')) ?> Alle als ZIP</a>
+            <?php if (array_filter($documents, static fn($d) => $d->isInJournal()) !== []): ?>
+            <?php /* The next step after «Fakturieren» (owner 2026-10-24): the journal waits for «Journal verbuchen». */ ?>
+            <a class="be-btn be-btn--ghost" href="/backend/finance/invoice-journal/list"><?= raw($icon('icon-check')) ?> Zum Faktura-Journal</a>
+            <?php endif; ?>
             <span class="z77-form-actions__spacer"></span>
             <span class="z77-form-actions__sep" aria-hidden="true"></span>
             <?php if ($back !== ''): ?>

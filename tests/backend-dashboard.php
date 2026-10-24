@@ -461,7 +461,7 @@ check('M5 dunning proposal: 1 invoice due for its reminder (DunningService::dueL
     ($d['Mahnvorschlag bereit'] ?? null)?->count === 1 && $d['Mahnvorschlag bereit']->href() === '/backend/finance/dunning/list');
 check('M6 bank transactions not booked: unmatched + matched = 3 (booked, ignored not) — todo → Zahlungseingänge',
     ($d['Zahlungseingänge nicht verbucht'] ?? null)?->count === 3 && $d['Zahlungseingänge nicht verbucht']->href() === '/backend/finance/bank-import/list');
-check('M7 drafts in `invoicing`: 2 — todo → Rechnungen', ($d['Rechnungsentwürfe nicht verbucht'] ?? null)?->count === 2 && $d['Rechnungsentwürfe nicht verbucht']->severity === Severity::Todo);
+check('M7 drafts in `invoicing`: 2 — todo → Rechnungen', ($d['Rechnungsentwürfe nicht fakturiert'] ?? null)?->count === 2 && $d['Rechnungsentwürfe nicht fakturiert']->severity === Severity::Todo);
 check('M8 an active payment target with an IBAN: no «Kein Zahlungsziel mit IBAN»', !isset($d['Kein Zahlungsziel mit IBAN']), implode(', ', array_keys($d)));
 
 // Orders: statuses of the seed — opened (new), scheduled (confirmed), delivered + to-invoice (delivered), booked (closed).

@@ -21,6 +21,7 @@ use Z77\Core\DI,
     Z77\Module\Mandator\Entities\Mandator,
     Z77\Module\Mandator\Services\CurrentMandator,
     Z77\Module\Mandator\Services\MandatorUnavailableException,
+    Z77\Persistence\Doctrine\OpenWork\OpenWorkChecks,
     Z77\Shared\Money\Money,
     Z77\Shared\Pdf\PdfDocument
 ;
@@ -445,6 +446,13 @@ trait ReportControllerTrait
         };
 
         $own = $range === null ? [] : $build($range);
+        // What other modules know the ledger does not hold yet for this range (scope `ledger-report`, e.g.
+        // debtor's unposted Faktura-Journal, ADR-054) — shown above the report, financial names no module.
+        if ($range !== null) {
+            foreach (OpenWorkChecks::fromModules(DI::getModuleManager())->ask('ledger-report', ['from' => $range->from, 'to' => $range->to])->warnings() as $finding) {
+                $notices[] = $finding->message;
+            }
+        }
         // The year dropdown (railSelect, the top of the rail): a link carries the YEAR only — from and to fall back to the
         // new year's bounds — plus what the page keeps (the account of the account statement).
         $keep  = $own['keep'] ?? [];

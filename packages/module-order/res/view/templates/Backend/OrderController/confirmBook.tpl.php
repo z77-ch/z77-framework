@@ -5,7 +5,7 @@
  * (`order[]` = `{id}:{version}`), customer, subject and total, and the INVOICE DATE (default
  * today). One button posts the same pairs in THIS tab (`#[Csrf]`):
  * `OrderService::book()` issues and books each order's invoice, links it and sets the order to
- * the default status of phase `closed` («Gebucht») — one unit of work, all or nothing — and
+ * the default status of phase `closed` («Fakturiert») — one unit of work, all or nothing — and
  * answers with a redirect to debtor's RESULT LIST of the booked invoices
  * (`/backend/finance/invoice/booking-result?ids=…`, step 3 of the mail plan, owner 2026-10-22: per
  * invoice the PDF, «Alle als ein PDF», «Alle als ZIP», «Alle per E-Mail senden …»). Until that
@@ -50,7 +50,7 @@ $count      = count($orders);
         <div class="be-modal__alert">Total 0 — keine Rechnung, ausgelassen: <?= e(implode(', ', $zero)) ?>. Diese Aufträge auf «Erledigt» setzen.</div>
         <?php endif; ?>
         <?php if ($booked === null): ?>
-        <div class="be-modal__alert be-modal__alert--error">Die Phase «Abgeschlossen» hat keinen aktiven Auftragsstatus — unter Stammdaten › Aufträge › Auftragsstatus einen anlegen (z.B. «Gebucht») und «Wird gesetzt beim Fakturieren» einschalten.</div>
+        <div class="be-modal__alert be-modal__alert--error">Die Phase «Abgeschlossen» hat keinen aktiven Auftragsstatus — unter Stammdaten › Aufträge › Auftragsstatus einen anlegen (z.B. «Fakturiert») und «Wird gesetzt beim Fakturieren» einschalten.</div>
         <?php endif; ?>
         <?php if ($orders !== []): ?>
         <div class="be-form__grid">
@@ -74,6 +74,6 @@ $count      = count($orders);
             </div>
             <?php endforeach; ?>
         </div>
-        <p class="be-form__hint">Fakturieren erstellt zu jedem Auftrag die Rechnung, vergibt die Belegnummer, legt ihr PDF unveränderlich ab und zeigt sie danach als Liste (PDF einzeln, alle als ein PDF, als ZIP oder per E-Mail); die Aufträge stehen danach in «<?= e($booked?->getLabel() ?? 'Gebucht') ?>». Ein Kunde ohne Debitorenprofil wird dabei Debitor (Standard-Konditionen). <strong>Verbucht wird noch nichts:</strong> die Rechnungen stehen im Faktura-Journal, bis es mit «Journal verbuchen» in die Buchhaltung übernommen wird.</p>
+        <p class="be-form__hint">Fakturieren erstellt zu jedem Auftrag die Rechnung, vergibt die Belegnummer, legt ihr PDF unveränderlich ab und zeigt sie danach als Liste (PDF einzeln, alle als ein PDF, als ZIP oder per E-Mail); die Aufträge stehen danach in «<?= e($booked?->getLabel() ?? 'Fakturiert') ?>». Ein Kunde ohne Debitorenprofil wird dabei Debitor (Standard-Konditionen). <strong>Verbucht wird noch nichts:</strong> die Rechnungen stehen im Faktura-Journal, bis es mit «Journal verbuchen» in die Buchhaltung übernommen wird.</p>
     </form>
 </div>

@@ -5793,8 +5793,8 @@ $f5Last    = function (int $id) use ($f5Log): array { $rows = $f5Log($id); retur
 $f5Blocked = fn(): ?string => caught(fn() => (new \Z77\Module\Debtor\Services\JournalPostingService($wireDi(), 'tester'))->post($wireDi()->getRepository(Invoice::class)->journalVersions()), \Z77\Module\Debtor\Services\JournalRefusedException::class)?->reason;
 
 [$f5O, $f5I] = $f5Booked('Montage');
-check('FJ60 the order\'s migration of step 6 runs (exit 0); after «Fakturieren» the order (status «booked», phase closed) is EDITABLE again while its invoice is issued — editRefusal() null; «Neu fakturieren» and «Löschen» are offered (deleteRefusal() null)' . ($code !== 0 ? ' — ' . trim($out) : ''),
-    $code === 0 && $f5Variant > 0 && $stateOf($f5I) === 'issued' && $f5Order($f5O)->getStatusCode() === 'booked'
+check('FJ60 the order\'s migration of step 6 runs (exit 0); after «Fakturieren» the order (status «invoiced» «Fakturiert», phase closed — owner 2026-10-24) is EDITABLE again while its invoice is issued — editRefusal() null; «Neu fakturieren» and «Löschen» are offered (deleteRefusal() null)' . ($code !== 0 ? ' — ' . trim($out) : ''),
+    $code === 0 && $f5Variant > 0 && $stateOf($f5I) === 'issued' && $f5Order($f5O)->getStatusCode() === 'invoiced'
     && $f5Svc()->editRefusal($f5Order($f5O)) === null && $f5Svc()->deleteRefusal($f5Order($f5O)) === null);
 
 $f5Update($f5O, 'Montage Nord', '2');
@@ -5819,7 +5819,7 @@ check('FJ64 «Neu fakturieren» → REPLACEMENT: a successor (issued, a new Dece
     (int) $f5New->getId() !== $f5I && $f5NewRow['state'] === 'issued' && intdiv((int) $f5NewRow['number'], 10000) === 2612 && $f5NewRow['source_type'] === 'order'
     && $f5NewRow['reissue_needed'] === null && $stateOf($f5I) === 'replaced' && (int) $invoiceRow($f5I)['replaced_by_id'] === (int) $f5New->getId()
     && (int) $f5Order($f5O)->getInvoice()->getId() === (int) $f5New->getId() && str_contains($f5NewPdf, '(ersetzt Rechnung ' . $f5Before['number'] . ' \\(ID ' . $f5Before['document_stamp'] . '\\))')
-    && $f5Last($f5O)['change_trigger'] === 'reinvoice' && $f5Last($f5O)['from_code'] === 'booked' && $f5Last($f5O)['to_code'] === 'booked'
+    && $f5Last($f5O)['change_trigger'] === 'reinvoice' && $f5Last($f5O)['from_code'] === 'invoiced' && $f5Last($f5O)['to_code'] === 'invoiced'
     && str_contains((string) $f5Last($f5O)['reason'], 'ersetzt durch Rechnung ' . $f5NewRow['number'])
     && $f5Blocked() !== \Z77\Module\Debtor\Services\JournalRefusedException::BLOCKED,
     json_encode([$f5NewRow['number'] ?? null, $f5Log($f5O)], JSON_UNESCAPED_UNICODE));
@@ -5868,7 +5868,13 @@ check('FJ68 a deleted order is hidden from every list and shown only in «Gelös
 // An order without an invoice is deletable as well; one with a POSTED invoice is not.
 $f5Free = $f5Svc()->create(new \Z77\Module\Order\Services\OrderDraft($mid, '2026-12-11', 'Ohne Rechnung', lines: [\Z77\Module\Order\Services\OrderLineDraft::article($f5Variant, '1')]));
 $f5FreeDel = $f5Svc()->delete((int) $f5Free->getId(), $f5Free->getVersion(), 'Doppelt');
+$f5PreVersion = $f5Order($f5O)->getVersion();
 $postJournal();
+$f5Moved = $f5Last($f5O);
+check('FJ69a «Journal verbuchen» moves the order of the posted invoice from «invoiced» to the posting status «booked» through module-order\'s InvoicePostedListener (debtor\'s registry `invoicePostedListeners`, in the posting\'s unit of work): log row `journal-posting` naming the invoice, the version moved',
+    $f5Order($f5O)->getStatusCode() === 'booked' && $f5Moved['from_code'] === 'invoiced' && $f5Moved['to_code'] === 'booked' && $f5Moved['change_trigger'] === 'journal-posting'
+    && str_ends_with((string) $f5Moved['reason'], 'verbucht') && $f5Order($f5O)->getVersion() === $f5PreVersion + 1
+    && \Z77\Module\Debtor\Services\InvoicePostedListeners::fromModules(\Z77\Core\DI::getModuleManager()) !== [], json_encode($f5Moved));
 $f5PostedOrder = $f5O;
 check('FJ69 an order WITHOUT an invoice is deleted (no invoice touched); after «Journal verbuchen» the order with the POSTED invoice is locked again (editRefusal «verbucht … Gutschrift»), not re-invoiced (`not-reinvoiceable`), not deleted (`not-deletable`)',
     $f5FreeDel->isDeleted() && $stateOf($f5I2) === 'final' && str_contains((string) $f5Svc()->editRefusal($f5Order($f5PostedOrder)), 'verbucht')
@@ -5989,6 +5995,27 @@ $f7Kinds = \Z77\Shared\Mail\DocumentMailKinds::fromModules(DI::getModuleManager(
 check('FJ77 the kind `invoice-replacement` is declared by debtor (de + en) with the placeholders {ersetzt}, {ersetzt_id}, {ersetzt_datum} — editable under Service › E-Mail › Beleg-Mails like every document mail',
     $f7Kinds->has('invoice-replacement') && $f7Kinds->languages('invoice-replacement') === ['de', 'en']
     && array_intersect(['ersetzt', 'ersetzt_id', 'ersetzt_datum'], array_keys($f7Kinds->get('invoice-replacement')['placeholders'])) === ['ersetzt', 'ersetzt_id', 'ersetzt_datum']);
+
+// ── step 9: the report hint, the VAT-return check, the dashboard (ADR-054) ──
+$f9Summary = $em->getRepository(Invoice::class)->journalSummary();
+$f9Issued  = (int) $db->fetchOne("SELECT COUNT(*) FROM invoice WHERE state = 'issued'");
+$f9Checks  = \Z77\Persistence\Doctrine\OpenWork\OpenWorkChecks::fromModules(DI::getModuleManager());
+$f9Report  = $f9Checks->ask('ledger-report', ['from' => day('2026-01-01'), 'to' => day('2026-12-31')]);
+$f9Empty   = $f9Checks->ask('ledger-report', ['from' => day('2030-01-01'), 'to' => day('2030-12-31')]);
+$f9Vat     = $f9Checks->ask('vat-return', ['from' => day('2026-10-01'), 'to' => day('2026-12-31')]);
+check('FJ90 step 9: journalSummary counts the issued documents (as SQL does); `ledger-report` WARNS «… im Faktura-Journal noch nicht verbucht (Total …)» for a range with issued invoices, says nothing for an empty one; `vat-return` BLOCKS the quarter',
+    $f9Summary['count'] === $f9Issued && $f9Issued > 0
+    && count($f9Report->warnings()) === 1 && !$f9Report->isBlocked() && str_contains($f9Report->warnings()[0]->message, 'im Faktura-Journal noch nicht verbucht (Total CHF ')
+    && $f9Empty->isEmpty() && $f9Vat->isBlocked(),
+    json_encode([$f9Summary['count'], $f9Issued, array_map(fn($f) => $f->message, $f9Report->warnings())], JSON_UNESCAPED_UNICODE));
+$f9Entries = [];
+foreach ((new \Z77\Module\Debtor\Dashboard\DebtorDashboard())->entries(new \Z77\Shared\Auth\AuthUser(['id' => 1, 'user_name' => 'harness', 'roles' => [\Z77\Core\Config\AuthRole::ADMIN]])) as $f9E) {
+    $f9Entries[$f9E->label] = $f9E;
+}
+$f9Label = $f9Summary['blocked'] > 0 ? 'Faktura-Journal gesperrt (neu fakturieren)' : 'Faktura-Journal nicht verbucht';
+check('FJ91 step 9: the dashboard names the journal with its count (urgent while «Neu fakturieren» blocks it, else todo); the drafts entry says «nicht fakturiert»',
+    ($f9Entries[$f9Label] ?? null)?->count === $f9Summary['count'] && !isset($f9Entries['Rechnungsentwürfe nicht verbucht']),
+    json_encode(array_keys($f9Entries), JSON_UNESCAPED_UNICODE));
 
 
 // ── result ───────────────────────────────────────────────────────────────

@@ -15,7 +15,7 @@ use Z77\Persistence\Resolver\UnifiedEntityManager;
  *   - a row is never deleted, only deactivated: there is no method for it, and the screen offers
  *     none — orders reference the code;
  *   - the `code` of an existing row is immutable ({@see OrderStatusCodeChangedException});
- *   - every save runs {@see OrderStatusValidator} (phase, position, one active default per phase),
+ *   - every save runs {@see OrderStatusValidator} (phase, position, not «Fakturieren» and «Verbuchen» on one row),
  *     so a writer that is NOT the backend (an import, a project script) is bound to the same rules.
  *
  * {@see setActive()} is a PURE STATE CHANGE like debtor's — the field validator does not run, so a
@@ -41,6 +41,7 @@ final class OrderMasterData
         // A switch the phase does not know is not stored (a status moved to another phase).
         $status->setStart($status->isStart());
         $status->setPhaseDefault($status->isPhaseDefault());
+        $status->setSetOnPosting($status->isSetOnPosting());
 
         // Setting a switch takes it from the row that held it (owner 2026-10-16), in the same flush.
         $takeovers = OrderStatuses::takeovers($status, $this->statuses()->findAll());
@@ -50,6 +51,10 @@ final class OrderMasterData
         }
         foreach ($takeovers['default'] as $other) {
             $other->setPhaseDefault(false);
+            $this->em->persist($other);
+        }
+        foreach ($takeovers['posting'] as $other) {
+            $other->setSetOnPosting(false);
             $this->em->persist($other);
         }
         $this->em->persist($status);
@@ -77,6 +82,9 @@ final class OrderMasterData
             }
             if ($takeovers['default'] !== []) {
                 $status->setPhaseDefault(false);
+            }
+            if ($takeovers['posting'] !== []) {
+                $status->setSetOnPosting(false);
             }
         }
 

@@ -110,6 +110,9 @@ return [
     // dated in the year blocks the close. Payments / CAMT (P4) will add their check here.
     'openWorkChecks' => [
         'period-close' => [InvoicingInProgressCheck::class, UnbookedTransactionsCheck::class],
+        // ADR-054 step 9: financial's reports warn about the unposted journal; the VAT return (P5 part 2) will be blocked by it.
+        'ledger-report' => [\Z77\Module\Debtor\Close\UnpostedJournalHint::class],
+        'vat-return'    => [\Z77\Module\Debtor\Close\JournalForVatReturnCheck::class],
     ],
 
     // financial's subledger reconciliation at the year close (owner decision 2026-10-13): debtor's open

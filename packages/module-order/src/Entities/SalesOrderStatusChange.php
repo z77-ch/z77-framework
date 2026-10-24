@@ -15,7 +15,7 @@ use Z77\Shared\Attributes\Entity;
  *   - `fromCode` — null at creation; `toCode` — both BY CODE into `OrderStatus` (no foreign key);
  *   - `trigger` — what caused it: {@see TRIGGER_CREATE} · {@see TRIGGER_STATUS} · {@see TRIGGER_CONFIRMATION} ·
  *     {@see TRIGGER_DELIVERY_NOTE} · {@see TRIGGER_BOOKING_PRINT} · {@see TRIGGER_REINVOICE} ·
- *     {@see TRIGGER_DELETE} (column `change_trigger` — `TRIGGER` is a reserved word in MariaDB). The
+ *     {@see TRIGGER_DELETE} · {@see TRIGGER_JOURNAL_POSTING} (column `change_trigger` — `TRIGGER` is a reserved word in MariaDB). The
  *     last two (ADR-054, the Faktura-Journal) log an event WITHOUT a status change — from = to;
  *     «Neu fakturieren» names the invoice it left behind in `reason`, a deletion its reason;
  *   - `reason` — the reason a stock REVERSAL was confirmed with (ADR-043 decision 14), else null.
@@ -35,8 +35,10 @@ class SalesOrderStatusChange
     public const TRIGGER_REINVOICE     = 'reinvoice';
     /** «Auftrag löschen» (ADR-054 decision 14) — the status stays, the order is stamped deleted. */
     public const TRIGGER_DELETE        = 'delete';
+    /** «Journal verbuchen» in debtor (owner 2026-10-24) — «Fakturiert» → the posting status «Gebucht». */
+    public const TRIGGER_JOURNAL_POSTING = 'journal-posting';
 
-    public const TRIGGERS = [self::TRIGGER_CREATE, self::TRIGGER_STATUS, self::TRIGGER_CONFIRMATION, self::TRIGGER_DELIVERY_NOTE, self::TRIGGER_BOOKING_PRINT, self::TRIGGER_REINVOICE, self::TRIGGER_DELETE];
+    public const TRIGGERS = [self::TRIGGER_CREATE, self::TRIGGER_STATUS, self::TRIGGER_CONFIRMATION, self::TRIGGER_DELIVERY_NOTE, self::TRIGGER_BOOKING_PRINT, self::TRIGGER_REINVOICE, self::TRIGGER_DELETE, self::TRIGGER_JOURNAL_POSTING];
 
     /** The triggers that log an event without a status change (from = to). */
     private const EVENTS = [self::TRIGGER_REINVOICE, self::TRIGGER_DELETE];

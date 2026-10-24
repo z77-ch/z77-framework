@@ -70,7 +70,15 @@ final class DebtorDashboard implements DashboardContributor
 
         $drafts = $invoices->countSearch(new InvoiceSearch(InvoiceSearch::VIEW_INVOICING));
         if ($drafts > 0) {
-            yield DashboardEntry::pending(Severity::Todo, 'Rechnungsentwürfe nicht verbucht', ['backend', 'finance', 'invoice', 'list'], [], $drafts);
+            yield DashboardEntry::pending(Severity::Todo, 'Rechnungsentwürfe nicht fakturiert', ['backend', 'finance', 'invoice', 'list'], [], $drafts);
+        }
+
+        // ADR-054 step 9: the Faktura-Journal waits for «Journal verbuchen» — urgent while «Neu fakturieren» blocks it.
+        $journal = $invoices->journalSummary();
+        if ($journal['count'] > 0) {
+            yield DashboardEntry::pending($journal['blocked'] > 0 ? Severity::Urgent : Severity::Todo,
+                $journal['blocked'] > 0 ? 'Faktura-Journal gesperrt (neu fakturieren)' : 'Faktura-Journal nicht verbucht',
+                ['backend', 'finance', 'invoice-journal', 'list'], [], $journal['count']);
         }
 
         /** @var PaymentTargetRepository $targets */

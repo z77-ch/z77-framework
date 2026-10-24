@@ -9,6 +9,7 @@ use Z77\Module\Debtor\Entities\InvoiceJournalPosting;
 use Z77\Module\Debtor\Invoicing\PostingBuilder;
 use Z77\Module\Debtor\Repositories\InvoiceRepository;
 use Z77\Persistence\Resolver\UnifiedEntityManager;
+use Z77\Core\DI;
 use Z77\Shared\Money\Money;
 
 /**
@@ -33,15 +34,19 @@ final class JournalPostingService
 {
     private readonly string $actor;
     private ?AccountingGateway $gateway;
+    /** @var list<InvoicePostedListener>|null */
+    private ?array $listeners;
 
     /**
      * @param string|null            $actor   the author's name; null = the session identity ({@see Actor::current()})
      * @param AccountingGateway|null $gateway null = the one `debtorConfig → accountingGateway` names, built at first use
+     * @param list<InvoicePostedListener>|null $listeners null = every module's `invoicePostedListeners` ({@see InvoicePostedListeners}), collected at first use
      */
-    public function __construct(private readonly UnifiedEntityManager $em, ?string $actor = null, ?AccountingGateway $gateway = null)
+    public function __construct(private readonly UnifiedEntityManager $em, ?string $actor = null, ?AccountingGateway $gateway = null, ?array $listeners = null)
     {
-        $this->actor   = $actor !== null ? Actor::normalize($actor) : Actor::current();
-        $this->gateway = $gateway;
+        $this->actor     = $actor !== null ? Actor::normalize($actor) : Actor::current();
+        $this->gateway   = $gateway;
+        $this->listeners = $listeners;
     }
 
     /** @return list<Invoice> the open journal in number order, lines loaded */
@@ -128,6 +133,8 @@ final class JournalPostingService
      *   3. The protocol row (count, signed gross total, first and last number), then per document
      *      in NUMBER order: `PostingBuilder` → `AccountingGateway::post()` (posting date = the
      *      INVOICE date, idempotency key `{kind}:{id}:final` — unchanged) → `Invoice::post()`.
+     *   4. Every {@see InvoicePostedListener} with the posted ids — in the same unit of work (owner
+     *      2026-10-24: module-order moves the orders to «Gebucht»); a throw rolls the posting back.
      *
      * A refusal of the bookkeeping (a closed or VAT-settled period, no fiscal year, an account
      * that no longer takes postings) rolls back the WHOLE posting — nothing is half-posted; the
@@ -152,9 +159,10 @@ final class JournalPostingService
         }
         $receivable = (new DebtorAccounts($this->em))->postableNumber('receivable');
         $gateway    = $this->gateway();
+        $listeners  = $this->listeners ??= InvoicePostedListeners::fromModules(DI::getModuleManager());
         $now        = new \DateTimeImmutable();
 
-        return $this->em->getTransaction(Invoice::class)->run(function () use ($versions, $receivable, $gateway, $now): InvoiceJournalPosting {
+        return $this->em->getTransaction(Invoice::class)->run(function () use ($versions, $receivable, $gateway, $listeners, $now): InvoiceJournalPosting {
             // 2. The rows, EXCLUSIVE, in id order — then judged.
             $ids = array_keys($versions);
             sort($ids);
@@ -194,6 +202,15 @@ final class JournalPostingService
                 $this->em->persist($document);
             }
             $this->em->flush();
+
+            // 4. The listening modules, inside the unit of work — all or nothing.
+            $posted = array_map(static fn(Invoice $d) => (int) $d->getId(), $documents);
+            foreach ($listeners as $listener) {
+                $listener->invoicesPosted($posted, $this->em, $this->actor);
+            }
+            if ($listeners !== []) {
+                $this->em->flush();
+            }
 
             return $protocol;
         });

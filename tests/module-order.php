@@ -107,14 +107,16 @@ foreach ($seed as $row) {
 // ── S. the status master data (offline) ──────────────────────────────────
 
 echo "S. Order status master data (offline)\n";
-check('S1 the seed is UTF-8 without BOM and holds the seven statuses along the ladder, each in its phase',
-    !str_starts_with($seedRaw, "\xEF\xBB\xBF") && array_keys($byCode) === ['opened', 'scheduled', 'delivered', 'to-invoice', 'booked', 'done', 'cancelled']
-    && array_map(static fn($s) => $s->getPhase()->value, $seed) === ['new', 'confirmed', 'delivered', 'delivered', 'closed', 'closed', 'cancelled']);
+check('S1 the seed is UTF-8 without BOM and holds the eight statuses along the ladder, each in its phase — «Fakturiert» and «Gebucht» both closed (owner 2026-10-24)',
+    !str_starts_with($seedRaw, "\xEF\xBB\xBF") && array_keys($byCode) === ['opened', 'scheduled', 'delivered', 'to-invoice', 'invoiced', 'booked', 'done', 'cancelled']
+    && array_map(static fn($s) => $s->getPhase()->value, $seed) === ['new', 'confirmed', 'delivered', 'delivered', 'closed', 'closed', 'closed', 'cancelled']
+    && $byCode['invoiced']->getLabel() === 'Fakturiert' && $byCode['booked']->getLabel() === 'Gebucht');
 check('S2 every seed row passes the field run, and no seed row takes a switch from another (one start, one action default per phase)',
-    array_filter($seed, static fn($s) => !(new OrderStatusValidator($s))->isValid() || OrderStatuses::takeovers($s, $seed) !== ['start' => [], 'default' => []]) === []);
-check('S3 ONE start status for all — «opened» —, one action default per phase an action moves into: scheduled, delivered, booked; none for «new» and «cancelled» (owner 2026-10-16)',
+    array_filter($seed, static fn($s) => !(new OrderStatusValidator($s))->isValid() || OrderStatuses::takeovers($s, $seed) !== ['start' => [], 'default' => [], 'posting' => []]) === []);
+check('S3 ONE start status for all — «opened» —, one action default per phase an action moves into: scheduled, delivered, invoiced; none for «new» and «cancelled» (owner 2026-10-16); ONE posting status — booked (owner 2026-10-24)',
     array_values(array_map(static fn($s) => $s->getCode(), array_filter($seed, static fn($s) => $s->isStart()))) === ['opened']
-    && array_values(array_map(static fn($s) => $s->getCode(), array_filter($seed, static fn($s) => $s->isPhaseDefault()))) === ['scheduled', 'delivered', 'booked']);
+    && array_values(array_map(static fn($s) => $s->getCode(), array_filter($seed, static fn($s) => $s->isPhaseDefault()))) === ['scheduled', 'delivered', 'invoiced']
+    && array_values(array_map(static fn($s) => $s->getCode(), array_filter($seed, static fn($s) => $s->isSetOnPosting()))) === ['booked']);
 $startIn = static function (string $code, OrderPhase $phase, bool $active = true, ?int $id = null): OrderStatus {
     $row = new OrderStatus(['code' => $code, 'label' => ucfirst($code), 'phase' => $phase->value, 'position' => 10, 'start' => true, 'phase_default' => false, 'active' => $active]);
     return $id === null ? $row : withId($row, $id);
@@ -123,14 +125,22 @@ $taken = static fn(array $t, string $flag): array => array_map(static fn($s) => 
 check('S4 setting a switch TAKES it (owner 2026-10-16): a start status in «Termin» takes it from «opened»; a second action default takes it within its phase only; inactive, own stored copy and a switch the phase does not know take nothing',
     $taken(OrderStatuses::takeovers($startIn('ordered', OrderPhase::Confirmed), $seed), 'start') === ['opened']
     && $taken(OrderStatuses::takeovers(status('ordered', OrderPhase::Confirmed, true), $seed), 'default') === ['scheduled']
-    && OrderStatuses::takeovers(status('ordered', OrderPhase::Confirmed, true, false), $seed) === ['start' => [], 'default' => []]
-    && OrderStatuses::takeovers($byCode['scheduled'], $seed) === ['start' => [], 'default' => []]
+    && OrderStatuses::takeovers(status('ordered', OrderPhase::Confirmed, true, false), $seed) === ['start' => [], 'default' => [], 'posting' => []]
+    && OrderStatuses::takeovers($byCode['scheduled'], $seed) === ['start' => [], 'default' => [], 'posting' => []]
     && OrderStatuses::takeovers($startIn('ready', OrderPhase::Delivered), $seed)['start'] === []
     && !$startIn('ready', OrderPhase::Delivered)->isStart() && !status('enquiry', OrderPhase::Cancelled, true)->isPhaseDefault());
 check('S4b a status file of 2026-10-15 (no `start`) reads its «new» default as THE start status; with `start` the key decides',
     (new OrderStatus(['code' => 'opened', 'label' => 'Offerte', 'phase' => 'new', 'phase_default' => true]))->isStart()
     && !(new OrderStatus(['code' => 'opened', 'label' => 'Offerte', 'phase' => 'new', 'start' => false, 'phase_default' => true]))->isStart()
     && !(new OrderStatus(['code' => 'scheduled', 'label' => 'Termin', 'phase' => 'confirmed', 'phase_default' => true]))->isStart());
+$postingIn = static fn(string $code, OrderPhase $phase, bool $default = false): OrderStatus => new OrderStatus(['code' => $code, 'label' => ucfirst($code), 'phase' => $phase->value, 'position' => 30, 'phase_default' => $default, 'set_on_posting' => true, 'active' => true]);
+$s5Both = new OrderStatusValidator($postingIn('posted', OrderPhase::Closed, true));
+check('S4c «Wird gesetzt beim Verbuchen» (owner 2026-10-24): only in «closed» (elsewhere it reads as off); setting it TAKES it from «booked»; on the same row as «Wird gesetzt beim Fakturieren» refused (`set_on_posting`); without an active posting status postingTarget() is null',
+    $postingIn('posted', OrderPhase::Closed)->isSetOnPosting() && !$postingIn('ready', OrderPhase::Delivered)->isSetOnPosting()
+    && $taken(OrderStatuses::takeovers($postingIn('posted', OrderPhase::Closed), $seed), 'posting') === ['booked']
+    && OrderStatuses::takeovers($postingIn('ready', OrderPhase::Delivered), $seed)['posting'] === []
+    && !$s5Both->isValid() && $s5Both->hasFieldError('set_on_posting') && (new OrderStatusValidator($byCode['booked']))->isValid()
+    && (new OrderStatuses(array_values(array_filter($seed, static fn($s) => !$s->isSetOnPosting()))))->postingTarget() === null);
 $bad = new OrderStatus(['code' => 'pickup', 'label' => 'Abholbereit', 'phase' => 'ready', 'position' => -1]);
 $v   = new OrderStatusValidator($bad);
 check('S5 the field run: an unknown phase, a position out of 0–999, a bad code are field errors; a good row passes',
@@ -202,7 +212,8 @@ check('T2 initial = THE start status (also one in «Termin», owner 2026-10-16);
     && (new OrderStatuses([status('x', OrderPhase::New, true, false)]))->initial() === null
     && (new OrderStatuses(array_merge(array_map(static fn($s) => $s->getCode() === 'opened' ? status('opened', OrderPhase::New, false, true, 1) : $s, $seed), [$startIn('direct', OrderPhase::Confirmed, true, 99)])))->initial()?->getCode() === 'direct');
 check('T3 the default per phase — what an action sets; startable = every active status of «new», «confirmed», «delivered»',
-    array_map(static fn(OrderPhase $p) => $rules->defaultOf($p)?->getCode(), OrderPhase::cases()) === ['opened', 'scheduled', 'delivered', 'booked', 'cancelled']
+    array_map(static fn(OrderPhase $p) => $rules->defaultOf($p)?->getCode(), OrderPhase::cases()) === ['opened', 'scheduled', 'delivered', 'invoiced', 'cancelled']
+    && $rules->postingTarget()?->getCode() === 'booked'
     && array_map(static fn($s) => $s->getCode(), $rules->startable()) === ['opened', 'scheduled', 'delivered', 'to-invoice']);
 check('T4 an action moves only FORWARD into its phase: a quote → «scheduled» / «delivered»; an order in or past the phase → null (a reprint)',
     $rules->actionTarget($byCode['opened'], OrderPhase::Confirmed)?->getCode() === 'scheduled' && $rules->actionTarget($byCode['opened'], OrderPhase::Delivered)?->getCode() === 'delivered'
@@ -213,7 +224,9 @@ check('T5 forward and lateral are free without an invoice (opened → scheduled 
     && $refused('delivered', 'to-invoice', false) === null && $refused('to-invoice', 'delivered', false) === null && $refused('to-invoice', 'done', false) === null && $refused('booked', 'done', true) === OrderStatuses::INVOICED);
 check('T6 backward is allowed WITHOUT an invoice, refused WITH one', $refused('delivered', 'opened', false) === null && $refused('cancelled', 'scheduled', false) === null
     && $refused('done', 'scheduled', true) === OrderStatuses::INVOICED);
-check('T7 the default of «closed» is reached by the booking print only — never a target', $refused('to-invoice', 'booked', false) === OrderStatuses::BOOKED_TARGET && $refused('done', 'booked', true) === OrderStatuses::BOOKED_TARGET);
+check('T7 the default of «closed» («Fakturiert») is reached by «Fakturieren» only, the posting status («Gebucht») by «Journal verbuchen» only — never a target by hand (owner 2026-10-24)', $refused('to-invoice', 'invoiced', false) === OrderStatuses::BOOKED_TARGET && $refused('done', 'invoiced', true) === OrderStatuses::BOOKED_TARGET
+    && $refused('to-invoice', 'booked', false) === OrderStatuses::POSTED_TARGET && $refused('invoiced', 'booked', true) === OrderStatuses::POSTED_TARGET
+    && array_values(array_filter(array_map(static fn($s) => $s->getCode(), $rules->targets($byCode['to-invoice'], false)), static fn($c) => in_array($c, ['invoiced', 'booked'], true))) === []);
 check('T8 «cancelled» only without an invoice; a cancelled order may be reopened', $refused('scheduled', 'cancelled', false) === null && $refused('done', 'cancelled', true) === OrderStatuses::INVOICED
     && $refused('cancelled', 'opened', false) === null);
 check('T9 the same status and an inactive target are refused; an order may SIT in an inactive one',
@@ -381,14 +394,14 @@ check('L5 suggestions(): merged, normalised, without duplicates (case ignored), 
 
 echo "V. List tabs are the phases (offline)\n";
 $viewOfSeed = array_combine(array_keys($byCode), array_map(static fn($s) => OrderListing::viewOf($s), array_values($byCode)));
-check('V1 each seed status falls into the tab of its PHASE: opened → Eröffnet; scheduled → Termin; delivered, to-invoice → Geliefert; booked, done → Abgeschlossen; cancelled → Storniert',
-    $viewOfSeed === ['opened' => 'new', 'scheduled' => 'confirmed', 'delivered' => 'delivered', 'to-invoice' => 'delivered', 'booked' => 'closed', 'done' => 'closed', 'cancelled' => 'cancelled']);
+check('V1 each seed status falls into the tab of its PHASE: opened → Eröffnet; scheduled → Termin; delivered, to-invoice → Geliefert; invoiced, booked, done → Abgeschlossen; cancelled → Storniert',
+    $viewOfSeed === ['opened' => 'new', 'scheduled' => 'confirmed', 'delivered' => 'delivered', 'to-invoice' => 'delivered', 'invoiced' => 'closed', 'booked' => 'closed', 'done' => 'closed', 'cancelled' => 'cancelled']);
 check('V2 a NEW status lands in its tab without code (by phase), inactive ones still count; «Alle» filters nothing',
     OrderListing::viewOf(status('pickup', OrderPhase::Delivered)) === 'delivered'
     && OrderListing::codesOf('confirmed', array_merge($seed, [status('waiting', OrderPhase::Confirmed, active: false)])) === ['scheduled', 'waiting']
-    && OrderListing::codesOf('all', $seed) === null && OrderListing::codesOf('closed', $seed) === ['booked', 'done']);
+    && OrderListing::codesOf('all', $seed) === null && OrderListing::codesOf('closed', $seed) === ['invoiced', 'booked', 'done']);
 check('V3 «Status» searches the labels (case-insensitive) within the tab — «Alle» too; no match = nothing',
-    OrderListing::codesOf('all', $seed, 'FAKT') === ['to-invoice'] && OrderListing::codesOf('delivered', $seed, 'geliefert') === ['delivered']
+    OrderListing::codesOf('all', $seed, 'FAKT') === ['to-invoice', 'invoiced'] && OrderListing::codesOf('closed', $seed, 'gebucht') === ['booked'] && OrderListing::codesOf('delivered', $seed, 'geliefert') === ['delivered']
     && OrderListing::codesOf('closed', $seed, 'termin') === []);
 $cols = static fn(string $view): array => array_map(static fn($c) => $c->label !== '' ? $c->label : '[' . $c->ariaLabel . ']', OrderListing::definition('CHF', $view)->columns());
 check('V5 the columns: the selection checkbox in the bookable tabs («Termin», «Geliefert»), «Zahlung» only in «Abgeschlossen», «Status» searchable; the default tab is «Termin», the second — «Eröffnet» stays first',
@@ -954,8 +967,9 @@ $o1 = $svc->changeStatus((int) $o1->getId(), (int) $db->fetchOne('SELECT version
 check('M14 with the confirmation: moved, the reason in the log row', $o1->getStatusCode() === 'cancelled'
     && $db->fetchOne('SELECT reason FROM sales_order_status_change WHERE order_id = ? ORDER BY id DESC LIMIT 1', [$o1->getId()]) === 'Storno durch Kunde');
 $spy->refuse = false;
-check('M15 a locked phase (cancelled) → read-only (D7); the default of «closed» is never a target by hand', $refusedBy(fn() => $svc->update((int) $o1->getId(), $o1->getVersion(), new $D($contactId, '2026-10-14'))) === 'not-editable'
-    && $refusedBy(fn() => $svc->changeStatus((int) $o1->getId(), $o1->getVersion(), 'booked')) === 'booked-by-print-only');
+check('M15 a locked phase (cancelled) → read-only (D7); the default of «closed» and the posting status are never a target by hand', $refusedBy(fn() => $svc->update((int) $o1->getId(), $o1->getVersion(), new $D($contactId, '2026-10-14'))) === 'not-editable'
+    && $refusedBy(fn() => $svc->changeStatus((int) $o1->getId(), $o1->getVersion(), 'invoiced')) === 'booked-by-print-only'
+    && $refusedBy(fn() => $svc->changeStatus((int) $o1->getId(), $o1->getVersion(), 'booked')) === 'set-by-posting-only');
 // An invoice linked (the booking print's part in step 9 — here by hand): backward barred, forward allowed.
 $o1 = $svc->changeStatus((int) $o1->getId(), $o1->getVersion(), 'to-invoice');
 $db->executeStatement("INSERT INTO invoice (kind, state, contact_id, language, invoice_date, service_from, currency, price_mode, payment_terms_code, due_date, discount_tiers, net_total, tax_total, rounding, gross_total, created_by, created_at, version, addr_salutation, addr_title, addr_first_name, addr_name, addr_address_row, addr_street, addr_house_no, addr_zip, addr_city, addr_country, pay_target_code, pay_account, pay_reference_type, pay_reference, pay_message, pay_creditor_name, pay_creditor_street, pay_creditor_house_no, pay_creditor_zip, pay_creditor_city, pay_creditor_country)
@@ -1113,7 +1127,7 @@ $o2      = $em->getRepository(SalesOrder::class)->withLines((int) $o2->getId());
 $m29Line = (int) $o2->getLines()[0]->getId();
 $m29Ver  = static fn() => (int) $db->fetchOne('SELECT version FROM sales_order WHERE id = ?', [$o2->getId()]);
 $m29Qty  = static fn() => (string) $db->fetchOne('SELECT quantity FROM sales_order_line WHERE id = ?', [$m29Line]);
-$m29Refused = $refusedBy(fn() => $svc->update((int) $o2->getId(), $m29Ver(), new $D($contactId, '2026-10-14', lines: [$L::article($variantId, '5', id: $m29Line)]), moveTo: 'booked'));
+$m29Refused = $refusedBy(fn() => $svc->update((int) $o2->getId(), $m29Ver(), new $D($contactId, '2026-10-14', lines: [$L::article($variantId, '5', id: $m29Line)]), moveTo: 'invoiced'));
 $m29Before  = [$m29Qty(), $db->fetchOne('SELECT status_code FROM sales_order WHERE id = ?', [$o2->getId()])];
 $o2 = $svc->update((int) $o2->getId(), $m29Ver(), new $D($contactId, '2026-10-14', lines: [$L::article($variantId, '4', id: $m29Line)]), moveTo: 'delivered');
 $m29Moved = [$o2->getStatusCode(), $m29Qty(), end($spy->calls)->trigger, $spy->shape(),
@@ -1267,6 +1281,29 @@ check('M38 the order list searches the invoice number (one match, its order) and
     $m38Inv !== false && count($m38Hit) >= 1 && (int) $m38Hit[0]->getId() === (int) $m38Inv['id']
     && $m38Repo->countSearch(new \Z77\Module\Order\Repositories\OrderSearch(invoiceNumber: (int) $m38Inv['number'])) === count($m38Hit)
     && $m38Has === array_values(array_merge(array_filter($m38Has), array_filter($m38Has, static fn($h) => !$h))), json_encode($m38Inv));
+// The data upgrade of the seed-once status file (owner 2026-10-24): a file of before (`booked` = the default of
+// `closed`, no `invoiced`, the owner's label) gains «Fakturiert» as the default, `booked` becomes the posting status.
+$m39File = $base . '/data/framework/order/order_statuses.json';
+$m39Keep = (string) file_get_contents($m39File);
+$m39Old  = array_values(array_filter(json_decode($m39Keep, true), static fn(array $r) => $r['code'] !== 'invoiced'));
+foreach ($m39Old as &$m39Row) {
+    unset($m39Row['set_on_posting']);
+    if ($m39Row['code'] === 'booked') { $m39Row['phase_default'] = true; $m39Row['label'] = 'Verbucht'; }
+}
+unset($m39Row);
+file_put_contents($m39File, json_encode($m39Old, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+$m39Em    = new \Z77\Persistence\Resolver\UnifiedEntityManager(new \Z77\Persistence\Resolver\DataSourceResolver(['file' => 'File', 'doctrine' => 'Doctrine']));
+$m39First = \Z77\Module\Order\Services\OrderStatusUpgrade::apply($m39Em);
+$m39Again = \Z77\Module\Order\Services\OrderStatusUpgrade::apply(new \Z77\Persistence\Resolver\UnifiedEntityManager(new \Z77\Persistence\Resolver\DataSourceResolver(['file' => 'File', 'doctrine' => 'Doctrine'])));
+$m39Raw   = (string) file_get_contents($m39File);
+$m39Rows  = array_column(json_decode($m39Raw, true) ?? [], null, 'code');
+$m39Rules = new OrderStatuses(array_map(static fn(array $r) => new OrderStatus($r), array_values($m39Rows)));
+check('M39 the status-file upgrade (OrderStatusUpgrade): an old file gains `invoiced` «Fakturiert» (closed, the default of «closed», sorted before), `booked` keeps its label and becomes the posting status; UTF-8 without BOM; a second run writes nothing',
+    $m39First === true && $m39Again === false && !str_starts_with($m39Raw, "\xEF\xBB\xBF")
+    && ($m39Rows['invoiced']['label'] ?? null) === 'Fakturiert' && $m39Rules->defaultOf(OrderPhase::Closed)?->getCode() === 'invoiced'
+    && $m39Rules->postingTarget()?->getCode() === 'booked' && $m39Rows['booked']['label'] === 'Verbucht' && count($m39Rows) === 8
+    && (int) $m39Rows['invoiced']['position'] < (int) $m39Rows['booked']['position']);
+file_put_contents($m39File, $m39Keep);
 $db->executeStatement('DELETE FROM mandator');
 
 echo "\n{$pass} passed, {$fail} failed\n";

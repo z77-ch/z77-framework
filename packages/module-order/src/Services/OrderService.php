@@ -201,7 +201,7 @@ final class OrderService
      * number (its PDF prints «ersetzt Rechnung …») and the order is RE-LINKED to it; nothing to change clears
      * the invoice's flag only. The invoice date stays the issued invoice's (the month of the number). One unit
      * of work: the order row first, then debtor's chain (joined — the successor's month range prepared ahead,
-     * DOCTRINE-NR-003), the log row `reinvoice` (the status stays). A refusal after debtor's chain rolls back
+     * DOCTRINE-NR-003), the log row `reinvoice` (an order in another closed status takes the default of `closed`, «Fakturiert», owner 2026-10-24). A refusal after debtor's chain rolls back
      * and removes the archive files written.
      *
      * @return \Z77\Module\Debtor\Entities\Invoice the invoice that stands now (the same or the successor)
@@ -221,10 +221,11 @@ final class OrderService
         $before         = [$invoice->getRevision(), $invoice->getReissueNeeded()];
         $invoicing      = $this->invoicing();
         $invoicing->prepareDocumentRanges([$invoiceDate]);
-        $now = new \DateTimeImmutable();
+        $invoiced = $this->statuses()->defaultOf(OrderPhase::Closed);   // «Fakturiert» — what a re-issue sets (owner 2026-10-24)
+        $now      = new \DateTimeImmutable();
 
         try {
-            return $this->em->getTransaction(SalesOrder::class)->run(function () use ($id, $version, $invoiceId, $invoiceVersion, $invoiceDate, $before, $invoicing, $now): \Z77\Module\Debtor\Entities\Invoice {
+            return $this->em->getTransaction(SalesOrder::class)->run(function () use ($id, $version, $invoiceId, $invoiceVersion, $invoiceDate, $before, $invoicing, $invoiced, $now): \Z77\Module\Debtor\Entities\Invoice {
                 $order   = $this->lockAt($id, $version);
                 $invoice = $this->reinvoiceable($order);
                 if ((int) $invoice->getId() !== $invoiceId) {
@@ -245,11 +246,18 @@ final class OrderService
                 if ($replaced) {
                     $order->relinkInvoice($standing);
                 }
+                // A re-issued invoice is «fakturiert»: an order that still stands in another closed status (invoiced
+                // before 2026-10-24, when «Fakturieren» set «Gebucht») takes the default of `closed`. Same phase — no
+                // stock moves.
+                $fromCode = $order->getStatusCode();
+                if ($invoiced !== null && $invoiced->getCode() !== $fromCode) {
+                    $order->moveTo($invoiced->getCode());
+                }
                 $order->touch($this->actor, $now);
                 $note = $replaced
                     ? $previous . ' ersetzt durch ' . $standing->documentName()
                     : ($standing->getRevision() !== $before[0] ? $standing->documentName() . ', Version ' . $standing->getRevision() : $standing->documentName() . ' unverändert');
-                $this->em->persist(new SalesOrderStatusChange($order, $order->getStatusCode(), $order->getStatusCode(), SalesOrderStatusChange::TRIGGER_REINVOICE, $note, $this->actor, $now));
+                $this->em->persist(new SalesOrderStatusChange($order, $fromCode, $order->getStatusCode(), SalesOrderStatusChange::TRIGGER_REINVOICE, $note, $this->actor, $now));
                 $this->em->flush();
 
                 return $standing;
@@ -298,9 +306,10 @@ final class OrderService
             throw new OrderConflictException($id, $version);
         }
         $this->assertDeletable($order);
-        $now = new \DateTimeImmutable();
+        $statuses = $this->statuses();   // before the unit of work (the status file's upgrade writes a file)
+        $now      = new \DateTimeImmutable();
 
-        return $this->em->getTransaction(SalesOrder::class)->run(function () use ($id, $version, $reason, $now): SalesOrder {
+        return $this->em->getTransaction(SalesOrder::class)->run(function () use ($id, $version, $reason, $statuses, $now): SalesOrder {
             $order = $this->lockAt($id, $version);
             $this->assertDeletable($order);
             $invoice = $order->getInvoice();
@@ -317,7 +326,7 @@ final class OrderService
             $this->em->flush();
             // The stock to ZERO (O5): the targets of a phase that neither reserves nor consumes. Consumed stock coming back
             // needs a reason (ADR-043 decision 14): the deletion's.
-            $this->syncStock($order, $this->statusOf($order, $this->statuses()), 'delete',
+            $this->syncStock($order, $this->statusOf($order, $statuses), 'delete',
                 new StockConfirmation(mb_substr('Auftrag ' . $order->documentNumber() . ' gelöscht: ' . $reason, 0, StockConfirmation::REASON_LENGTH)), OrderPhase::Cancelled);
             $this->em->flush();
 
@@ -564,7 +573,7 @@ final class OrderService
         ksort($versions);
         $statuses = $this->statuses();
         $booked   = $statuses->defaultOf(OrderPhase::Closed)
-            ?? throw new OrderRefusedException(OrderRefusedException::NO_BOOKED_STATUS, 'Die Phase «Abgeschlossen» hat keinen aktiven Auftragsstatus — unter Stammdaten › Aufträge › Auftragsstatus einen anlegen (z.B. «Gebucht») und «Wird gesetzt beim Fakturieren» einschalten. Nichts wurde fakturiert.');
+            ?? throw new OrderRefusedException(OrderRefusedException::NO_BOOKED_STATUS, 'Die Phase «Abgeschlossen» hat keinen aktiven Auftragsstatus — unter Stammdaten › Aufträge › Auftragsstatus einen anlegen (z.B. «Fakturiert») und «Wird gesetzt beim Fakturieren» einschalten. Nichts wurde fakturiert.');
         $invoiceDate = $invoiceDate->setTime(0, 0);
         $invoicing   = $this->invoicing();
 
@@ -670,9 +679,13 @@ final class OrderService
         return $order->deliveryAddress() ?? $order->billingAddress() ?? $this->invoicing()->invoiceAddressOf($order->getContact());
     }
 
-    /** The status rules over the master data as it is now. */
+    /**
+     * The status rules over the master data as it is now — after the one-time data upgrade of the
+     * status file ({@see OrderStatusUpgrade}, owner 2026-10-24). Never called inside a unit of work.
+     */
     public function statuses(): OrderStatuses
     {
+        OrderStatusUpgrade::apply($this->em);
         /** @var OrderStatusRepository $repo */
         $repo = $this->em->getRepository(OrderStatus::class);
 

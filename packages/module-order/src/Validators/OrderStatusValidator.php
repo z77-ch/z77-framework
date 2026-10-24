@@ -48,6 +48,7 @@ class OrderStatusValidator extends EntityValidator
         parent::executeValidation($only);
         if ($only === null) {
             $this->validatePhaseValue();
+            $this->validateSwitches();
         }
     }
 
@@ -55,6 +56,20 @@ class OrderStatusValidator extends EntityValidator
     {
         if ($position < 0 || $position > self::MAX_POSITION) {
             $this->addFieldError('position', 'Sortierung: 0 bis ' . self::MAX_POSITION . '.');
+        }
+    }
+
+    /**
+     * «Wird gesetzt beim Fakturieren» and «Wird gesetzt beim Verbuchen» (owner 2026-10-24) are two
+     * statuses: on ONE row the posting would move no order and the two steps could not be told apart.
+     * One posting status for all is the save's takeover, not a refusal (owner 2026-10-16).
+     */
+    private function validateSwitches(): void
+    {
+        /** @var OrderStatus $status */
+        $status = $this->entity;
+        if ($status->isPhaseDefault() && $status->isSetOnPosting() && !$this->hasFieldError('set_on_posting')) {
+            $this->addFieldError('set_on_posting', '«Wird gesetzt beim Verbuchen» gehört zu einem anderen Status als «Wird gesetzt beim Fakturieren» — sonst wechselt das Verbuchen keinen Auftrag.');
         }
     }
 

@@ -125,6 +125,7 @@ trait OrderControllerTrait
         SalesOrderStatusChange::TRIGGER_BOOKING_PRINT => 'Fakturieren',
         SalesOrderStatusChange::TRIGGER_REINVOICE     => 'Neu fakturiert',
         SalesOrderStatusChange::TRIGGER_DELETE        => 'gelöscht',
+        SalesOrderStatusChange::TRIGGER_JOURNAL_POSTING => 'Journal verbucht',
     ];
 
     /** URL root of THIS mount — every link and form is built from it. */
@@ -216,6 +217,8 @@ trait OrderControllerTrait
         $response = $this->html([
             'orders'     => $orders,
             'payments'   => $view === OrderListing::VIEW_CLOSED ? $this->orderPaymentStates($orders) : [],
+            // The open Faktura-Journal (debtor's seam, ADR-054) — the link beside «Fakturieren …».
+            'journalCount' => OrderListing::isSelectable($view) ? $this->em()->getRepository(\Z77\Module\Debtor\Entities\Invoice::class)->journalSummary()['count'] : 0,
             'statuses'   => self::orderStatusesByCode($statuses),
             'definition' => $definition,
             'state'      => $state,

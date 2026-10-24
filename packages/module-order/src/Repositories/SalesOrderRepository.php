@@ -64,6 +64,26 @@ class SalesOrderRepository extends DoctrineRepository
             ->getOneOrNullResult();
     }
 
+    /**
+     * The ids of the orders (not deleted) linked to any of $invoiceIds, ascending — «Journal
+     * verbuchen»'s listener (`OrderInvoicePostedListener`).
+     *
+     * @param list<int> $invoiceIds
+     * @return list<int>
+     */
+    public function idsByInvoices(array $invoiceIds): array
+    {
+        if ($invoiceIds === []) {
+            return [];
+        }
+
+        return array_map('intval', $this->connection()->fetchFirstColumn(
+            'SELECT id FROM sales_order WHERE invoice_id IN (?) AND deleted_at IS NULL ORDER BY id',
+            [array_values(array_map('intval', $invoiceIds))],
+            [ArrayParameterType::INTEGER],
+        ));
+    }
+
     public function findByNumber(int $number): ?SalesOrder
     {
         return $this->findOneBy(['number' => $number]);

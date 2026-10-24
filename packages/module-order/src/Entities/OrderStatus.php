@@ -18,7 +18,11 @@ use Z77\Shared\Traits\ArrayMappable;
  *   - `start`        — THE start status of new orders, preselected in the create form; one for
  *                      all, in a phase that {@see OrderPhase::allowsStart()} («Eröffnet», «Termin»);
  *   - `phaseDefault` — the status an ACTION sets when it moves an order into this phase (the order
- *                      confirmation, the delivery note, the booking print); one per phase.
+ *                      confirmation, the delivery note, «Fakturieren»); one per phase;
+ *   - `setOnPosting` — the status «Journal verbuchen» sets (owner 2026-10-24): when debtor posts the
+ *                      invoice, the order moves from the `closed` default («Fakturiert») to THIS one
+ *                      («Gebucht»); one for all, only in phase `closed`, never together with
+ *                      `phaseDefault` on the same row ({@see \Z77\Module\Order\Services\OrderInvoicePostedListener}).
  *   Setting a switch TAKES it from the row that held it (owner 2026-10-16 — no refusal;
  *   {@see \Z77\Module\Order\Services\OrderStatuses::takeovers()}). A switch the row's phase
  *   does not know reads as off.
@@ -62,6 +66,10 @@ class OrderStatus
     #[Clean('bool')]
     private bool $phaseDefault = false;
 
+    /** The status «Journal verbuchen» sets (phase `closed` only). */
+    #[Clean('bool')]
+    private bool $setOnPosting = false;
+
     /** False = not offered as a target any more; an order that sits in it keeps it. */
     #[Clean('bool')]
     private bool $active = true;
@@ -98,6 +106,8 @@ class OrderStatus
 
     /** The status its phase's action sets — only in a phase an action moves into. */
     public function isPhaseDefault(): bool { return $this->phaseDefault && $this->getPhase()->action() !== null; }
+    /** The status «Journal verbuchen» sets — only in phase `closed`. */
+    public function isSetOnPosting(): bool { return $this->setOnPosting && $this->getPhase() === OrderPhase::Closed; }
     public function isActive(): bool { return $this->active; }
 
     /**
@@ -121,5 +131,6 @@ class OrderStatus
     public function setPosition(mixed $position): void { $this->position = (int) $position; }
     public function setStart(mixed $on): void { $this->start = (bool) $on; }
     public function setPhaseDefault(mixed $on): void { $this->phaseDefault = (bool) $on; }
+    public function setSetOnPosting(mixed $on): void { $this->setOnPosting = (bool) $on; }
     public function setActive(mixed $active): void { $this->active = (bool) $active; }
 }

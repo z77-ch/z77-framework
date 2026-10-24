@@ -16,7 +16,7 @@
  *     part, and a save in a window opened from here reloads it (`refresh-region`).
  *
  * @var list<\Z77\Module\Order\Entities\SalesOrder> $orders
- * @var array<int, \Z77\Module\Debtor\Services\PaymentState> $payments  order id → state («Gebucht» only)
+ * @var array<int, \Z77\Module\Debtor\Services\PaymentState> $payments  order id → state (tab «Abgeschlossen» only)
  * @var array<string, \Z77\Module\Order\Entities\OrderStatus> $statuses  code → status
  * @var \Z77\Shared\Listing\ListDefinition $definition
  * @var \Z77\Shared\Listing\ListState $state
@@ -49,6 +49,10 @@ $selectable = OrderListing::isSelectable($view);
                 <span class="be-btn__label">Fakturieren …</span>
             </button>
             <small class="be-list__cell--muted">für die angekreuzten Aufträge die Rechnungen erstellen und drucken (ins Faktura-Journal, noch nicht verbucht) — die Bestätigung nennt Anzahl und Total</small>
+            <?php if (!empty($journalCount)): ?>
+            <?php /* Where the invoiced orders went (owner 2026-10-24): the open Faktura-Journal, one click away. */ ?>
+            <a class="be-list__cell--muted" href="/backend/finance/invoice-journal/list"><?= (int) $journalCount ?> im Faktura-Journal → verbuchen</a>
+            <?php endif; ?>
         </div>
         <?php endif; ?>
 

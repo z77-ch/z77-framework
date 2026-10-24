@@ -13,7 +13,9 @@
  * where the phase knows it (owner 2026-10-16): «Startstatus für neue Aufträge» (`start` — one for
  * all, in «Eröffnet» and «Termin») and the action default (`phase_default`), worded by the phase —
  * «Wird gesetzt beim Druck der Auftragsbestätigung» … (`OrderPhase::defaultSwitchLabel()`); «Eröffnet»
- * and «Storniert» have no action default. Setting a switch takes it from the status that held it.
+ * and «Storniert» have no action default. A status of «Abgeschlossen» has a third switch, «Wird gesetzt beim
+ * Verbuchen» (`set_on_posting`, owner 2026-10-24 — the status «Journal verbuchen» sets, e.g. «Gebucht»).
+ * Setting a switch takes it from the status that held it.
  *
  * @var \Z77\Module\Order\Entities\OrderStatus $entry
  * @var \Z77\Module\Order\Validators\OrderStatusValidator $validator
@@ -29,7 +31,7 @@ $isNew      = $entry->getId() === null;
 $window     = !empty($window);
 $title      = $isNew ? 'Auftragsstatus anlegen' : 'Auftragsstatus «' . $entry->getLabel() . '»';
 $action     = $actionBase . ($isNew ? '/add' : '/edit?id=' . (int) $entry->getId());
-$fields     = ['code', 'label', 'phase', 'position', 'start', 'phase_default'];
+$fields     = ['code', 'label', 'phase', 'position', 'start', 'phase_default', 'set_on_posting'];
 $invalidIds = array_values(array_map(static fn(string $f) => 'order-status-' . $f, array_filter($fields, static fn(string $f) => $validator->hasFieldError($f))));
 $fieldError = static fn(string $name): string => $validator->hasFieldError($name)
     ? '<small class="be-form__field-error" data-z77-field-error>' . e($validator->getFieldError($name)) . '</small>'
@@ -38,6 +40,7 @@ $invalid    = static fn(string $name): string => $validator->hasFieldError($name
 $entryPhase  = \Z77\Module\Order\Entities\OrderPhase::tryFrom($entry->getPhaseValue());
 $switchLabel = $entryPhase === null ? 'Wird von der Aktion seiner Phase gesetzt' : $entryPhase->defaultSwitchLabel();
 $showStart   = $entryPhase === null || $entryPhase->allowsStart();
+$showPosting = $entryPhase === \Z77\Module\Order\Entities\OrderPhase::Closed;
 $winAttr    = $window
     ? ' data-window="order-status-edit"' . ($isNew ? '' : ' data-window-entity="orderStatus:' . (int) $entry->getId() . '"')
         . ' data-window-title="' . e($title) . '" data-window-width="40rem"'
@@ -115,6 +118,16 @@ $winAttr    = $window
                     <span class="be-switch__label"><?= e($switchLabel) ?></span>
                 </label>
                 <?= raw($fieldError('phase_default')) ?>
+            </div>
+            <?php endif; ?>
+            <?php if ($showPosting): ?>
+            <div class="be-form__field" data-z77-field-wrapper>
+                <label class="be-switch">
+                    <input type="checkbox" class="be-switch__input" id="order-status-set_on_posting" name="set_on_posting" value="1"<?= $entry->isSetOnPosting() ? ' checked' : '' ?> aria-invalid="<?= $invalid('set_on_posting') ?>">
+                    <span class="be-switch__track"><span class="be-switch__thumb"></span></span>
+                    <span class="be-switch__label">Wird gesetzt beim Verbuchen</span>
+                </label>
+                <?= raw($fieldError('set_on_posting')) ?>
             </div>
             <?php endif; ?>
         </div>

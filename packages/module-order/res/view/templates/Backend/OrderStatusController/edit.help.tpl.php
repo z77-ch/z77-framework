@@ -26,7 +26,7 @@
     <li><strong>Eröffnet</strong> — Offerte, Anfrage, erfasst: kein Lager, kein Fakturieren, das PDF heisst «Offerte». «Auftragsbestätigung …» bestätigt den Auftrag.</li>
     <li><strong>Termin</strong> — Bestellung, Terminauftrag, Dienstleistung: lagerführende Artikel sind <strong>reserviert</strong>; Fakturieren möglich. «Lieferschein …» liefert.</li>
     <li><strong>Geliefert</strong> — bereitgestellt, geliefert, zu fakturieren: die Ware ist aus dem Lager, der Bestand ist <strong>verbraucht</strong>; Fakturieren möglich.</li>
-    <li><strong>Abgeschlossen</strong> — gebucht, erledigt: verbraucht, nicht mehr bearbeitbar.</li>
+    <li><strong>Abgeschlossen</strong> — fakturiert, gebucht, erledigt: verbraucht; bearbeitbar nur, solange die Rechnung im Faktura-Journal steht (dann «Neu fakturieren»).</li>
     <li><strong>Storniert</strong> — der Auftrag findet nicht statt: nichts reserviert oder verbraucht, nicht mehr bearbeitbar. Nach einer fakturierten Rechnung wird nicht storniert.</li>
 </ul>
 <p>Ob eine Position überhaupt Lager bewegt, entscheidet der <strong>Artikel</strong> («führt Bestand») — eine Dienstleistung oder eine freie Position nie, in keiner Phase. Ein Wechsel in eine gleiche oder spätere Phase ist immer erlaubt; zurück nur, solange keine Rechnung verbucht ist. Kommt dabei verbrauchte Ware zurück ins Lager, wird ein Grund verlangt.</p>
@@ -48,7 +48,13 @@
 <ul>
     <li><strong>Wird gesetzt beim Druck der Auftragsbestätigung</strong> (Termin) — z.B. «Terminauftrag»;</li>
     <li><strong>Wird gesetzt beim Druck des Lieferscheins</strong> (Geliefert) — z.B. «Geliefert»;</li>
-    <li><strong>Wird gesetzt beim Fakturieren</strong> (Abgeschlossen) — z.B. «Gebucht». Diesen Status setzt nur das Fakturieren, von Hand ist er nicht wählbar.</li>
+    <li><strong>Wird gesetzt beim Fakturieren</strong> (Abgeschlossen) — z.B. «Fakturiert». Diesen Status setzt nur das Fakturieren, von Hand ist er nicht wählbar.</li>
 </ul>
 <p>Pro Phase hat ihn ein Status; wird er hier eingeschaltet, verliert ihn der Status, der ihn bisher hatte. Ist keiner markiert, nimmt die Aktion den ersten der Phase (nach Sortierung). Steht der Auftrag schon in dieser Phase oder weiter, ändert die Aktion den Status nicht. Bei «Status ändern …» von Hand spielt der Schalter keine Rolle. Eröffnet und Storniert haben keinen solchen Schalter — keine Aktion führt dorthin (ein neuer Auftrag nimmt den Startstatus, storniert wird von Hand).</p>
+</section>
+
+<section data-help-field="set_on_posting">
+<h3>Wird gesetzt beim Verbuchen</h3>
+<p>Nur in der Phase <strong>Abgeschlossen</strong>: der Status, den ein Auftrag bekommt, wenn seine Rechnung mit <strong>«Journal verbuchen»</strong> (Aufträge › Faktura-Journal) in die Buchhaltung übernommen wird — z.B. «Gebucht». Bis dahin steht er im Status «Wird gesetzt beim Fakturieren» (z.B. «Fakturiert»), und die Rechnung lässt sich mit «Neu fakturieren» noch ändern. Der Lagerbestand ändert sich dabei nicht.</p>
+<p>Es gibt <strong>einen</strong> solchen Status für alle; wird er hier eingeschaltet, verliert ihn der Status, der ihn bisher hatte. Er gehört zu einem anderen Status als «Wird gesetzt beim Fakturieren». Von Hand ist er nicht wählbar. Hat ihn kein Status, bleibt der Auftrag beim Verbuchen, wo er ist.</p>
 </section>

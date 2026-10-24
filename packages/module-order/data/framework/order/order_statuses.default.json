@@ -37,12 +37,22 @@
         "active": true
     },
     {
+        "id": 8,
+        "code": "invoiced",
+        "label": "Fakturiert",
+        "phase": "closed",
+        "position": 5,
+        "phase_default": true,
+        "active": true
+    },
+    {
         "id": 5,
         "code": "booked",
         "label": "Gebucht",
         "phase": "closed",
         "position": 10,
-        "phase_default": true,
+        "phase_default": false,
+        "set_on_posting": true,
         "active": true
     },
     {

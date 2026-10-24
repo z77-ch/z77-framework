@@ -30,7 +30,7 @@ $region     = OrderStatusListing::definition()->region();
                         <span class="be-list__cell"><?= e($row->getLabel()) ?></span>
                         <span class="be-list__cell"><?= e($row->getPhase()->label()) ?></span>
                         <span class="be-list__cell be-list__cell--num" data-priority="2"><?= $row->getPosition() ?></span>
-                        <span class="be-list__cell" data-priority="2"><?= e(implode(', ', array_filter([$row->isStart() ? 'neuer Auftrag' : '', $row->isPhaseDefault() ? (string) $row->getPhase()->action() : '']))) ?></span>
+                        <span class="be-list__cell" data-priority="2"><?= e(implode(', ', array_filter([$row->isStart() ? 'neuer Auftrag' : '', $row->isPhaseDefault() ? (string) $row->getPhase()->action() : '', $row->isSetOnPosting() ? 'Journal verbuchen' : '']))) ?></span>
                         <span class="be-list__cell be-list__cell--actions">
                             <label class="be-switch be-switch--sm" title="<?= $active ? 'Aktiv — wird als Status angeboten' : 'Inaktiv — Aufträge darin behalten ihn' ?>">
                                 <input type="checkbox" class="be-switch__input" aria-label="Aktiv"

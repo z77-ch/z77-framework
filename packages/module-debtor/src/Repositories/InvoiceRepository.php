@@ -630,6 +630,37 @@ class InvoiceRepository extends DoctrineRepository
         return ['count' => $count, 'rows' => $rows];
     }
 
+    /**
+     * The open Faktura-Journal in figures (ADR-054 step 9): how many documents are `issued`, how many
+     * wait for «Neu fakturieren», and the gross per currency (a credit note negative) — optionally
+     * only those dated $from … $to (a report's range). What the report hint and the dashboard say.
+     *
+     * @return array{count: int, blocked: int, gross: array<string, Money>}
+     */
+    public function journalSummary(?\DateTimeImmutable $from = null, ?\DateTimeImmutable $to = null): array
+    {
+        $where  = 'FROM invoice WHERE state = ?';
+        $params = [InvoiceState::Issued->value];
+        if ($from !== null && $to !== null) {
+            $where   .= ' AND invoice_date BETWEEN ? AND ?';
+            $params[] = $from->format('Y-m-d');
+            $params[] = $to->format('Y-m-d');
+        }
+        $rows = $this->connection()->fetchAllAssociative(
+            'SELECT currency, COUNT(*) AS n, SUM(reissue_needed IS NOT NULL) AS blocked,'
+            . ' SUM(CASE WHEN kind = ? THEN -gross_total ELSE gross_total END) AS gross ' . $where . ' GROUP BY currency',
+            [InvoiceKind::CreditNote->value, ...$params]
+        );
+        $summary = ['count' => 0, 'blocked' => 0, 'gross' => []];
+        foreach ($rows as $r) {
+            $summary['count']   += (int) $r['n'];
+            $summary['blocked'] += (int) $r['blocked'];
+            $summary['gross'][(string) $r['currency']] = Money::fromDecimal((string) $r['gross'], (string) $r['currency']);
+        }
+
+        return $summary;
+    }
+
     // ── the Faktura-Journal (ADR-054, step 3 of the build plan) ──────────────
 
     /**
