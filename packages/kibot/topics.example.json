@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "themen": [
+    {
+      "id": "kontakt",
+      "titel": "Öffnungszeiten und Kontakt",
+      "beschreibung": "Öffnungszeiten, Feiertage, Adresse, Telefon, E-Mail und Anfahrt mit Auto und öffentlichem Verkehr.",
+      "quellen": ["kontakt/oeffnungszeiten.md", "kontakt/anfahrt.md"]
+    },
+    {
+      "id": "preise",
+      "titel": "Preise und Angebote",
+      "beschreibung": "Preisliste der Dienstleistungen, Pakete, Rabatte und Zahlungsarten.",
+      "quellen": ["preise/liste.md"]
+    }
+  ]
+}

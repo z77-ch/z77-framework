@@ -1,0 +1,4 @@
+# local configuration of a standalone install (contains paths, never a key)
+/kibot.config.php
+/logs/
+/vendor/

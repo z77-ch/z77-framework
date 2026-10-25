@@ -1,0 +1,24 @@
+{
+    "name": "z77/kibot",
+    "description": "KI-Bot with topic routing: answers questions from hand-maintained sources via the Anthropic Messages API. Standalone, no framework dependency.",
+    "type": "library",
+    "keywords": ["php", "chatbot", "anthropic", "claude", "z77"],
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Peter Ruepp",
+            "email": "peter.ruepp@z77.ch"
+        }
+    ],
+    "require": {
+        "php": ">=8.2",
+        "ext-curl": "*",
+        "ext-json": "*"
+    },
+    "autoload": {
+        "psr-4": {
+            "Z77\\KiBot\\": "src/"
+        }
+    },
+    "readme": "README.md"
+}
