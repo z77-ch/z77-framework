@@ -2736,7 +2736,7 @@ $help = $host->help->render();
 check('HP1 the edit form carries NO explanation any more (owner 2026-09-29) — the tolerance rule, the computed VAT line and the number note are gone from it',
     !str_contains($html, 'Leer = aus dem Betrag') && !str_contains($html, 'Die Nummer 2032-33/') && !str_contains($html, 'Gespeichert: MWST') && !str_contains($html, 'be-form__hint">MWST'));
 check('HP2 … they are the entry\'s HELP: the controller attached `oneLine.help` with the live values, delivered as <template data-help> with its title',
-    $host->help->has() && str_starts_with($help, '<template data-help data-help-title="Hilfe: Einzelbuchung">') && str_ends_with($help, '</template>')
+    $host->help->has() && str_starts_with($help, '<template data-help ') && str_contains($help, 'data-help-title="Hilfe: Einzelbuchung"') && str_ends_with($help, '</template>')
     && str_contains($help, 'Steuerbetrag leer') && str_contains($help, '0.05') && str_contains($help, 'Die Nummer 2032-33/'));
 check('HP3 the window width is the controller\'s: the one-line edit window asks for 64rem (a six-field row must not scroll sideways)', str_contains($html, 'data-window-width="64rem"'));
 $useRequest(['id' => (string) $editId, 'form' => 'compound']);

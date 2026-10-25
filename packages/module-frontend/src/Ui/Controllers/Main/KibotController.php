@@ -2,8 +2,8 @@
 namespace Z77\Module\Frontend\Ui\Controllers\Main;
 
 use Z77\Module\Frontend\Ui\Controllers\AbstractFrontendController,
-    Z77\Module\Frontend\Ui\Kibot\KibotEndpoint,
-    Z77\Module\Frontend\Ui\Kibot\KibotSession,
+    Z77\Core\Kibot\KibotEndpoint,
+    Z77\Core\Kibot\KibotSession,
     Z77\Core\DI,
     Z77\Core\Exception\NotFoundException,
     Z77\Core\Http\Response\JsonResponse,
@@ -26,8 +26,9 @@ use Z77\Module\Frontend\Ui\Controllers\AbstractFrontendController,
  * no `config/client/kibot.inc.php`.
  *
  * The answer streams while the action runs and the action returns void():
- * the response helpers buffer a complete body, a stream has none. Headers are
- * set here, output buffers are dropped so every frame reaches the browser.
+ * the response helpers buffer a complete body, a stream has none
+ * ({@see KibotEndpoint::stream()} sets the headers and drops the buffers —
+ * shared with the backend KI-Assistent, ADR-055).
  */
 final class KibotController extends AbstractFrontendController
 {
@@ -42,26 +43,11 @@ final class KibotController extends AbstractFrontendController
     {
         $endpoint = $this->endpoint();
         $request  = DI::getRequest();
-        $session  = new KibotSession(DI::getSessionManager(), DI::getCsrfService());
 
-        ignore_user_abort(true); // finish and log even when the visitor closes the tab
-        set_time_limit(0);
-        while (ob_get_level() > 0) {
-            ob_end_clean();
-        }
-        header('Content-Type: text/event-stream; charset=utf-8');
-        header('Cache-Control: no-store');
-        header('X-Content-Type-Options: nosniff');
-        header('X-Accel-Buffering: no');
-
-        $endpoint->ask(
+        $endpoint->stream(
             $request->getJsonBody(),
             (string) $request->getClientIp(),
-            $session,
-            static function (string $frame): void {
-                echo $frame;
-                flush();
-            }
+            new KibotSession(DI::getSessionManager(), DI::getCsrfService())
         );
 
         return $this->void();

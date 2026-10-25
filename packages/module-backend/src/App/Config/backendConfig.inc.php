@@ -107,6 +107,12 @@ return [
                     'savePreferencesAction' => AuthRole::EDITOR,
                 ],
             ],
+            // The KI-Assistent (ADR-055): every logged-in backend user may ask — the lowest
+            // backend role, like save-preferences. Fetch-only config + ask; NO defaultAction
+            // on purpose (the `list` convention → no listAction → 404).
+            'AssistantController' => [
+                'controllerRole' => AuthRole::EDITOR,
+            ],
         ],
         'content' => [
             // The content editor is the editor's workplace (ADR-045): list, edit,

@@ -1,5 +1,5 @@
 <?php
-namespace Z77\Module\Frontend\Ui\Kibot;
+namespace Z77\Core\Kibot;
 
 use Z77\KiBot\Bot,
     Z77\KiBot\Config,
@@ -15,31 +15,38 @@ use Z77\KiBot\Bot,
  * The z77 side of KiBot (z77/kibot, docs/topics/kibot.md): reads the project's
  * one KiBot config file and runs the same sequence as the package's standalone
  * endpoint (packages/kibot/public/bot.php) on z77's request, session and CSRF
- * token. The controller ({@see \Z77\Module\Frontend\Ui\Controllers\Main\KibotController})
- * only maps HTTP onto it.
+ * token. Shared by every z77 bot (Rule 9): the website widget
+ * ({@see \Z77\Module\Frontend\Ui\Controllers\Main\KibotController}) and the
+ * backend KI-Assistent ({@see \Z77\Module\Backend\Ui\Assistant\BackendAssistant},
+ * ADR-055). A controller only maps HTTP onto it.
  *
  * Configuration: `config/client/kibot.inc.php` returns KiBot's Config overrides
  * unchanged (same shape as packages/kibot/kibot.config.example.php). Relative
  * paths resolve against the project root (ABS_BASE_PATH): `paths.sourceRoot`
  * defaults to `shared/kibot`, `paths.logDir` to `logs/kibot`. No file = the bot
- * is off and both routes answer 404. `paths.keyFile` has no default; without it
+ * is off and the routes answer 404. `paths.keyFile` has no default; without it
  * the endpoint answers the `noApiKey` text as an SSE error and logs the cause.
  */
 final class KibotEndpoint
 {
     public const CONFIG_FILE = 'kibot.inc.php';
 
-    /** Session key of the topics of the last answer (follow-up questions). */
+    /** Session key of the topics of the last answer (follow-up questions) — the website bot's. */
     public const TOPICS_KEY = 'kibotTopics';
 
+    /**
+     * @param string $topicsKey session key of the topics of the last answer; a second bot
+     *                          on the same session (the backend assistant) uses its own
+     */
     public function __construct(
         private Config $config,
         private string $baseDir,
         private ?Transport $transport = null,
+        private string $topicsKey = self::TOPICS_KEY,
     ) {}
 
     /**
-     * The installation's endpoint, or null when the bot is off: z77/kibot not
+     * The installation's website endpoint, or null when the bot is off: z77/kibot not
      * installed, or no `config/client/kibot.inc.php`.
      *
      * @param string|null $baseDir project root; default ABS_BASE_PATH
@@ -47,11 +54,23 @@ final class KibotEndpoint
      */
     public static function fromConfig(?string $baseDir = null): ?self
     {
+        $base      = self::baseDir($baseDir);
+        $overrides = self::overrides($base);
+        return $overrides === null ? null : new self(new Config($overrides), $base);
+    }
+
+    /**
+     * The overrides `config/client/kibot.inc.php` returns, or null when the bot is off
+     * (package not installed, no file).
+     *
+     * @throws \RuntimeException when the config file does not return an array
+     */
+    public static function overrides(string $baseDir): ?array
+    {
         if (!class_exists(Config::class)) {
             return null;
         }
-        $base = rtrim(str_replace('\\', '/', $baseDir ?? ABS_BASE_PATH), '/');
-        $file = ConfigLocator::path(self::CONFIG_FILE, $base);
+        $file = ConfigLocator::path(self::CONFIG_FILE, $baseDir);
         if ($file === null) {
             return null;
         }
@@ -59,7 +78,13 @@ final class KibotEndpoint
         if (!is_array($overrides)) {
             throw new \RuntimeException("❌ {$file} must return an array of KiBot settings (see docs/topics/kibot.md).");
         }
-        return new self(new Config($overrides), $base);
+        return $overrides;
+    }
+
+    /** The project root, normalised: forward slashes, no trailing slash. */
+    public static function baseDir(?string $baseDir = null): string
+    {
+        return rtrim(str_replace('\\', '/', $baseDir ?? ABS_BASE_PATH), '/');
     }
 
     public function config(): Config
@@ -73,6 +98,13 @@ final class KibotEndpoint
         return $this->config->path($key, $this->baseDir);
     }
 
+    /** Whether a key file is configured and readable — the bot can answer at all. Never reads the key out. */
+    public function hasKey(): bool
+    {
+        $file = $this->path('keyFile');
+        return $file !== '' && is_file($file) && is_readable($file) && filesize($file) > 0;
+    }
+
     /** The widget configuration for the browser: texts, CTAs, max length — plus the CSRF token. */
     public function widget(string $csrfToken): array
     {
@@ -82,12 +114,40 @@ final class KibotEndpoint
     }
 
     /**
+     * {@see ask()} straight to the client as an SSE stream — what every bot's ask action does.
+     * No response helper streams (KIBOT-STREAM-RESPONSE): output buffers are dropped so every
+     * frame reaches the browser, the headers are set here, and the action returns void()
+     * afterwards. Runs on when the user closes the tab, so the answer is still logged.
+     */
+    public function stream(array $body, string $ip, SessionStore $session): void
+    {
+        ignore_user_abort(true);
+        set_time_limit(0);
+        while (ob_get_level() > 0) {
+            ob_end_clean();
+        }
+        header('Content-Type: text/event-stream; charset=utf-8');
+        header('Cache-Control: no-store');
+        header('X-Content-Type-Options: nosniff');
+        header('X-Accel-Buffering: no');
+
+        $this->ask($body, $ip, $session, static function (string $frame): void {
+            echo $frame;
+            flush();
+        });
+    }
+
+    /**
      * One question: Guard → Bot → answer as SSE frames handed to $write
      * (`data: {"text": …}` … `data: {"error": …}` … `data: [DONE]`). Every
      * failure ends as an error frame plus [DONE]; nothing is thrown at the
      * caller, because by then the stream is open.
      *
-     * @param array                  $body  decoded POST body {messages, token, website}
+     * The optional body field `context` names the topic of the place the question is
+     * asked from (the backend assistant: the help topic of the current screen); the bot
+     * reads it first. An unknown id is ignored by the bot, so nothing is trusted here.
+     *
+     * @param array                  $body  decoded POST body {messages, token, website, context?}
      * @param callable(string): void $write receives each complete SSE frame
      */
     public function ask(array $body, string $ip, SessionStore $session, callable $write): void
@@ -125,12 +185,14 @@ final class KibotEndpoint
             return;
         }
 
-        $previous = $session->get(self::TOPICS_KEY);
+        $context  = $body['context'] ?? '';
+        $context  = is_string($context) && strlen($context) <= 64 ? $context : '';
+        $previous = $session->get($this->topicsKey);
         $result   = $bot->ask($messages, is_array($previous) ? $previous : [], static function (string $text) use ($event): void {
             $event(['text' => $text]);
-        }, $ip);
+        }, $ip, $context);
 
-        $session->set(self::TOPICS_KEY, $result->topics);
+        $session->set($this->topicsKey, $result->topics);
 
         if (!$result->ok()) {
             $event(['error' => $result->error]);

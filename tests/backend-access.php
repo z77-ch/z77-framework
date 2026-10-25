@@ -8,7 +8,7 @@
  *   - the role `editor` sits at level 50, between cronJob and admin;
  *   - AuthService::requiredRole() — the ONE resolution AccessGuard and the
  *     backend menu share — over the REAL backendConfig array: the content
- *     editor, the dashboard and save-preferences are EDITOR, deleting content
+ *     editor, the dashboard, save-preferences and the KI-Assistent are EDITOR, deleting content
  *     and every other backend screen stays ADMIN (or stricter), login GUEST;
  *   - the frontend admin overlay endpoint: the page editor switch is EDITOR,
  *     the other overlay toggles ADMIN (frontendConfig);
@@ -95,6 +95,9 @@ $expect = [
     ['system',  'system',     'toggle-debug',    AuthRole::ADMIN],
     ['system',  'system',     'toggle-noindex',  AuthRole::ADMIN],
     ['system',  'system',     'clear-cache',     AuthRole::ADMIN],
+    // The KI-Assistent (ADR-055): every logged-in backend user, the editor included.
+    ['system',  'assistant',  'config',          AuthRole::EDITOR],
+    ['system',  'assistant',  'ask',             AuthRole::EDITOR],
     ['system',  'login',      'logout',          AuthRole::GUEST],
     ['system',  'backend-user', 'list',          AuthRole::ADMIN],
     ['content', 'navigation', 'list',            AuthRole::ADMIN],

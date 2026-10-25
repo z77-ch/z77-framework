@@ -62,6 +62,7 @@ const MARKERS = [
         'refresh-region',           // ADR-047 windows
         'data-menu-open',           // the row ⋮ as a context menu (owner 2026-10-22)
         'data-z77-menu',
+        'data-kibot-ready',         // a window's help button as the KI-Assistent opener (ADR-055, 2026-10-25)
     ],
 ];
 

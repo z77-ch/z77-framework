@@ -6,7 +6,16 @@
  *   data-config    URL of the widget configuration (GET, JSON); default "<data-endpoint>?config".
  *                  The z77 adapter has two actions:
  *                  data-config="/frontend/main/kibot/config" data-endpoint="/frontend/main/kibot/ask"
- * Any element with the attribute data-kibot-open opens the chat on click.
+ *   data-mode      "float" (default): a round chat button bottom right opens the chat.
+ *                  "panel": no button of its own; the chat docks at the right edge and opens
+ *                  only from an opener (the z77 backend's «KI-Assistent», ADR-055).
+ * Any element with the attribute data-kibot-open opens the chat on click. Optional on it:
+ *   data-kibot-context        a topic id sent with every question as `context` (the bot reads
+ *                             that topic first — e.g. the help of the current screen)
+ *   data-kibot-context-label  the place's name for the greeting (CONFIG.contextWelcome, "%s")
+ *   data-kibot-fallback       show CONFIG.fallbackLabel as a discreet link; it closes the chat
+ *                             and lets the opener's own click action run (the host's classic help)
+ * Once built, <html> carries data-kibot-ready="<mode>" — a host can tell the chat is there.
  *
  * Security (z77 rule 7): the widget builds every node with createElement/textContent.
  * No innerHTML, no HTML strings, no eval. Links are created only for http(s) URLs and
@@ -30,8 +39,12 @@
     var ENDPOINT = (script && script.getAttribute('data-endpoint')) || 'bot.php';
     var CONFIG_URL = (script && script.getAttribute('data-config'))
         || ENDPOINT + (ENDPOINT.indexOf('?') < 0 ? '?' : '&') + 'config';
+    var MODE     = (script && script.getAttribute('data-mode')) === 'panel' ? 'panel' : 'float';
     var CONFIG   = {};
-    var state    = { open: false, loading: false, messages: [], csrfToken: '', scrollY: 0 };
+    var state    = {
+        open: false, loading: false, messages: [], csrfToken: '', scrollY: 0,
+        context: '', opener: null, greeted: false, bypass: false
+    };
     var nodes    = {};
 
     function log() {
@@ -93,11 +106,14 @@
     }
 
     function buildWidget() {
-        var widget = el('div', { id: 'kibot-widget', 'aria-label': CONFIG.widgetLabel });
+        var widget = el('div', { id: 'kibot-widget', 'aria-label': CONFIG.widgetLabel, 'class': 'kibot--' + MODE });
 
-        var toggle = el('button', { type: 'button', id: 'kibot-toggle', 'aria-label': CONFIG.toggleOpenLabel, title: CONFIG.toggleTitle });
-        toggle.appendChild(icon('chat'));
-        toggle.addEventListener('click', toggleChat);
+        var toggle = null;
+        if (MODE === 'float') {
+            toggle = el('button', { type: 'button', id: 'kibot-toggle', 'aria-label': CONFIG.toggleOpenLabel, title: CONFIG.toggleTitle });
+            toggle.appendChild(icon('chat'));
+            toggle.addEventListener('click', toggleChat);
+        }
 
         var overlay = el('div', { id: 'kibot-overlay' });
         var panel   = el('div', { id: 'kibot-panel', role: 'dialog', 'aria-label': CONFIG.botName });
@@ -132,12 +148,19 @@
         inputWrap.appendChild(nodes.input);
         inputWrap.appendChild(nodes.send);
 
+        // The discreet way back to the host's own action (the classic help text); shown only
+        // when the opener asks for it (data-kibot-fallback) and the config names it.
+        nodes.fallback = el('button', { type: 'button', 'class': 'kibot-fallback' }, CONFIG.fallbackLabel || '');
+        nodes.fallback.hidden = true;
+        nodes.fallback.addEventListener('click', runFallback);
+
         panel.appendChild(printHead);
         panel.appendChild(header);
         panel.appendChild(nodes.messages);
         panel.appendChild(inputWrap);
+        panel.appendChild(nodes.fallback);
         overlay.appendChild(panel);
-        widget.appendChild(toggle);
+        if (toggle) widget.appendChild(toggle);
         widget.appendChild(overlay);
         document.body.appendChild(widget);
         nodes.overlay = overlay;
@@ -154,15 +177,22 @@
         document.addEventListener('keydown', function (e) {
             if (e.key === 'Escape' && state.open) toggleChat();
         });
+        // Capture phase: an opener may carry an action of its host as well (the z77 help
+        // trigger); the chat takes the click first and keeps it from the host — the fallback
+        // link hands it back (runFallback).
         document.addEventListener('click', function (e) {
+            if (state.bypass) return;
             var opener = e.target && e.target.closest ? e.target.closest('[data-kibot-open]') : null;
-            if (opener && !state.open) {
-                e.preventDefault();
-                toggleChat();
-            }
-        });
+            if (!opener) return;
+            e.preventDefault();
+            e.stopPropagation();
+            openFrom(opener);
+        }, true);
 
-        appendMessage('assistant', CONFIG.welcomeMsg || '');
+        if (MODE === 'float') {
+            appendMessage('assistant', CONFIG.welcomeMsg || '');
+            state.greeted = true;
+        }
 
         // Android: follow the visual viewport when the keyboard opens
         if (window.visualViewport) {
@@ -174,6 +204,48 @@
                 }
             });
         }
+
+        document.documentElement.setAttribute('data-kibot-ready', MODE);
+    }
+
+    // ── Openers, context and fallback ────────────────────────────────────────
+
+    function fill(template, value) {
+        return String(template || '').split('%s').join(value);
+    }
+
+    // Opens the chat from an opener and takes over its context. The greeting names the place
+    // (contextWelcome); a later opener with another context adds one line (contextSwitch).
+    function openFrom(opener) {
+        var context = opener.getAttribute('data-kibot-context') || '';
+        var label   = opener.getAttribute('data-kibot-context-label') || '';
+        if (!state.greeted) {
+            appendMessage('assistant', label && CONFIG.contextWelcome ? fill(CONFIG.contextWelcome, label) : (CONFIG.welcomeMsg || ''));
+            state.greeted = true;
+        } else if (context !== state.context && label && CONFIG.contextSwitch) {
+            appendMessage('assistant', fill(CONFIG.contextSwitch, label));
+        }
+        state.context = context;
+        state.opener  = opener;
+        nodes.fallback.hidden = !(CONFIG.fallbackLabel && opener.hasAttribute('data-kibot-fallback'));
+        if (!state.open) {
+            toggleChat();
+        } else {
+            nodes.input.focus();
+        }
+    }
+
+    // Closes the chat and lets the opener's own click run once — the host's classic help.
+    function runFallback() {
+        var opener = state.opener;
+        if (state.open) toggleChat();
+        if (!opener || !opener.isConnected) return;
+        state.bypass = true;
+        try {
+            opener.click();
+        } finally {
+            state.bypass = false;
+        }
     }
 
     // ── Open / close / expand / print ────────────────────────────────────────
@@ -181,8 +253,10 @@
     function toggleChat() {
         state.open = !state.open;
         nodes.overlay.classList.toggle('kibot--open', state.open);
-        nodes.toggle.classList.toggle('kibot--active', state.open);
-        nodes.toggle.setAttribute('aria-label', state.open ? CONFIG.toggleCloseLabel : CONFIG.toggleOpenLabel);
+        if (nodes.toggle) {
+            nodes.toggle.classList.toggle('kibot--active', state.open);
+            nodes.toggle.setAttribute('aria-label', state.open ? CONFIG.toggleCloseLabel : CONFIG.toggleOpenLabel);
+        }
 
         if (state.open) {
             if (window.innerWidth <= 768) {
@@ -268,7 +342,7 @@
             finish(null);
         }
 
-        var payload = { messages: state.messages, token: state.csrfToken, website: '' };
+        var payload = { messages: state.messages, token: state.csrfToken, website: '', context: state.context };
         log('sending', payload.messages.length, 'messages');
 
         fetch(ENDPOINT, {

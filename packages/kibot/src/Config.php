@@ -136,6 +136,8 @@ final class Config
             ],
             'ctaRule'       => 'Wenn du eine Kontaktaufnahme empfiehlst, schreibe genau den Platzhalter {{CONTACT_CTA}} (ohne Link oder URL). Das System ersetzt ihn durch Buttons.',
             'previousTopics' => 'Themen der letzten Antwort (für Folgefragen wiederverwenden, wenn sie passen): %s',
+            // %1$s = "id (titel)" of the context topic, %2$d = how many more topics may join it.
+            'contextTopic'  => 'Die Frage kommt aus diesem Zusammenhang: Thema %1$s. Lies dieses Thema zu jeder Sachfrage mit, dazu höchstens %2$d weitere, ausser die Frage betrifft offensichtlich etwas anderes.',
             'noTopic'       => 'Für die aktuelle Frage wurde kein passendes Thema gefunden; es liegen keine Quellen vor. Sage das freundlich und erfinde nichts.',
         ],
 
@@ -206,7 +208,12 @@ final class Config
         return $path !== '' && ($path[0] === '/' || $path[0] === '\\' || preg_match('/^[A-Za-z]:[\/\\\\]/', $path) === 1);
     }
 
-    private static function merge(array $base, array $over): array
+    /**
+     * The merge rule of the constructor, for a caller that layers several override sets
+     * before it builds a Config (e.g. a host with two bots on one config file): maps merge
+     * per key, a list replaces as a whole.
+     */
+    public static function merge(array $base, array $over): array
     {
         foreach ($over as $key => $value) {
             if (is_array($value) && isset($base[$key]) && is_array($base[$key])

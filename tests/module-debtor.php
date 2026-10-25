@@ -1977,7 +1977,7 @@ $ycAsk = fn(string $from, string $to) => \Z77\Persistence\Doctrine\OpenWork\Open
 $inInvoicing = (int) $db->fetchOne("SELECT COUNT(*) FROM invoice WHERE state = 'invoicing' AND invoice_date BETWEEN '2026-01-01' AND '2026-12-31'");
 $open2026    = $ycAsk('2026-01-01', '2026-12-31');
 check('N1 debtorConfig registers InvoicingInProgressCheck under `period-close`; for 2026 every document still in invoicing is a BLOCKING finding (named, dated, referenced invoice:{id}) — no warnings',
-    (DI::getModuleManager()->getModuleConfig('debtor')?->get('openWorkChecks') ?? []) === ['period-close' => [\Z77\Module\Debtor\Close\InvoicingInProgressCheck::class, \Z77\Module\Debtor\Close\UnbookedTransactionsCheck::class]]
+    (DI::getModuleManager()->getModuleConfig('debtor')?->get('openWorkChecks') ?? []) === ['period-close' => [\Z77\Module\Debtor\Close\InvoicingInProgressCheck::class, \Z77\Module\Debtor\Close\UnbookedTransactionsCheck::class], 'ledger-report' => [\Z77\Module\Debtor\Close\UnpostedJournalHint::class], 'vat-return' => [\Z77\Module\Debtor\Close\JournalForVatReturnCheck::class]]
     && $inInvoicing > 0 && $inInvoicing <= \Z77\Module\Debtor\Close\InvoicingInProgressCheck::LIST_LIMIT
     && $open2026->isBlocked() && count($open2026->blocking()) === $inInvoicing && $open2026->warnings() === []
     && str_contains($open2026->blocking()[0]->message, 'in Fakturierung') && str_starts_with($open2026->blocking()[0]->reference, 'invoice:')
@@ -4512,8 +4512,8 @@ $oJ      = $journalCount();
 $oBooked = $oService()->book([['id' => (int) $o1->getId(), 'version' => $o1->getVersion()]], day('2026-12-15'));
 $oInv    = $oBooked[0] ?? null;
 $oR1     = $oRow((int) $o1->getId());
-check('O2 book() («Fakturieren»): ONE issued invoice (ADR-054: in the Faktura-Journal, NOT posted — no journal entry), its gross = the preview total of the order, linked to the order, the order in the default of «closed» (booked), the log row `booking-print`',
-    count($oBooked) === 1 && $stateOf($oInv->getId()) === 'issued' && (int) $oR1['invoice_id'] === $oInv->getId() && $oR1['status_code'] === 'booked'
+check('O2 book() («Fakturieren»): ONE issued invoice (ADR-054: in the Faktura-Journal, NOT posted — no journal entry), its gross = the preview total of the order, linked to the order, the order in the default of «closed» (`invoiced` «Fakturiert», owner 2026-10-24 — «Gebucht» comes with «Journal verbuchen»), the log row `booking-print`',
+    count($oBooked) === 1 && $stateOf($oInv->getId()) === 'issued' && (int) $oR1['invoice_id'] === $oInv->getId() && $oR1['status_code'] === 'invoiced'
     && array_column($oLog((int) $o1->getId()), 'change_trigger') === ['create', 'status', 'booking-print'] && $oInv->getGrossTotal()->toDecimal() === $wireDi()->getRepository(\Z77\Module\Order\Entities\SalesOrder::class)->find((int) $o1->getId())->getTotalGross()?->toDecimal() && $journalCount() === $oJ
     && $oInv->getSourceType() === 'order' && $oInv->getSourceRef() === (string) $o1->getId());
 $oBefore = $oSnap();
@@ -4530,7 +4530,7 @@ $o2 = $oNew('Auftrag O2');
 $oThrowing = new class implements \Z77\Module\Article\Stock\StockLedger {
     public function bringTo(\Z77\Module\Article\Stock\StockRequest $request): \Z77\Module\Article\Stock\StockResult
     {
-        if (str_starts_with($request->trigger, 'status:') && str_ends_with($request->trigger, '>booked')) {
+        if (str_starts_with($request->trigger, 'status:') && str_ends_with($request->trigger, '>invoiced')) {
             throw new \RuntimeException('stock refused at the last step (harness)');
         }
         return (new \Z77\Module\Article\Stock\PendingStockLedger())->bringTo($request);
@@ -4560,7 +4560,7 @@ $oOk  = array_values(array_filter($oOut, fn($o) => str_starts_with($o, 'ok:')));
 $oR3  = $oRow((int) $o3->getId());
 check('O6 two processes book the same order at once: exactly ONE issues, the other is refused (conflict — the row lock and the version); one invoice, no journal entry (ADR-054), the order linked to THAT invoice' . (count($oOk) !== 1 ? ' — got ' . json_encode($oOut) : ''),
     count($oOk) === 1 && count(array_filter($oOut, fn($o) => $o === 'conflict')) === 1
-    && $count('invoice') === $oInvN + 1 && $journalCount() === $oJ && 'ok:' . $oR3['invoice_id'] === $oOk[0] && $oR3['status_code'] === 'booked');
+    && $count('invoice') === $oInvN + 1 && $journalCount() === $oJ && 'ok:' . $oR3['invoice_id'] === $oOk[0] && $oR3['status_code'] === 'invoiced');
 
 // O7: the order's «Betreffname» travels into the booked invoice (owner 2026-10-21).
 $o7 = $oService()->create(new \Z77\Module\Order\Services\OrderDraft($mid, '2026-12-10', 'Umbau Nord', lines: [

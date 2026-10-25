@@ -1,5 +1,5 @@
 <?php
-namespace Z77\Module\Frontend\Ui\Kibot;
+namespace Z77\Core\Kibot;
 
 use Z77\Core\Http\Security\CsrfService,
     Z77\Core\Session\SessionManager,

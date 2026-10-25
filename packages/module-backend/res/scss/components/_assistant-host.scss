@@ -1,0 +1,43 @@
+// Host binding: backend → z77/kibot's chat panel, the KI-Assistent (ADR-055).
+//
+// bot.css (published to /assets/kibot/css/) owns the panel; the backend only maps its custom
+// properties onto the shell's palette, so the panel follows palette and dark mode like every
+// other surface. The opener is the help trigger (`partials/helpTrigger` with `assistant`) —
+// its look is `_help-host.scss`; here only what differs.
+
+.be #kibot-widget {
+    --kibot-accent:      var(--be-accent);
+    --kibot-accent-2:    var(--be-accent);
+    --kibot-text:        var(--be-text);
+    --kibot-muted:       var(--be-muted);
+    --kibot-bg:          var(--be-bg);
+    --kibot-surface:     var(--be-field);
+    --kibot-bot-bg:      var(--be-surface2);
+    --kibot-border:      var(--be-line);
+    --kibot-header-bg:   var(--be-surface2);
+    --kibot-header-text: var(--be-text);
+
+    font-size: var(--font-size-sm);
+}
+.be #kibot-widget.kibot--panel #kibot-overlay {
+    border-left: 1px solid var(--be-line);
+    box-shadow:  var(--shadow-lg);
+}
+.be #kibot-header { padding: var(--space-2) var(--space-3); }
+.be .kibot-header-btn {
+    border-color: var(--be-line);
+    background:   transparent;
+    color:        var(--be-muted);
+}
+.be .kibot-header-btn:hover { background: var(--be-accent-soft); color: var(--be-text); }
+.be .kibot-msg--user .kibot-bubble { color: var(--be-on-accent); }
+
+// «✦ KI-Assistent»: icon AND label (owner 2026-10-25) — the badge of the help trigger, quiet,
+// in the accent colour; on a phone it stays alone as in `_help-host.scss`.
+.be .z77-help-trigger--assistant .z77-help-trigger__icon {
+    display:    inline-flex;
+    width:      auto;
+    background: transparent;
+    color:      var(--be-accent);
+    font-size:  13px;
+}

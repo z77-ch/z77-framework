@@ -52,14 +52,24 @@ final class Bot
         return $this->topics;
     }
 
-    /** @param list<string> $previousTopics topics of the last answer */
-    public function systemPrompt(array $previousTopics = []): string
+    /**
+     * @param list<string> $previousTopics topics of the last answer
+     * @param string       $contextTopic   the topic of the place the question is asked from ('' = none)
+     */
+    public function systemPrompt(array $previousTopics = [], string $contextTopic = ''): string
     {
         $p     = $this->config->get('prompt');
         $rules = array_merge($p['rules'], [$p['ctaRule']]);
         $text  = $p['intro'] . "\n\nWICHTIGE REGELN:\n- " . implode("\n- ", $rules)
                . "\n\nVORGEHEN:\n- " . implode("\n- ", $p['toolRules'])
                . "\n\nTHEMENLISTE (id | titel: beschreibung):\n" . $this->topics->catalog();
+        if ($contextTopic !== '' && $this->topics->has($contextTopic)) {
+            $text .= "\n\n" . sprintf(
+                (string) $p['contextTopic'],
+                $contextTopic . ' (' . $this->topics->title($contextTopic) . ')',
+                max(0, $this->maxTopics() - 1)
+            );
+        }
         if ($previousTopics !== []) {
             $text .= "\n\n" . sprintf($p['previousTopics'], implode(', ', $previousTopics));
         }
@@ -94,8 +104,10 @@ final class Bot
      * @param list<array{role: string, content: string}> $messages cleaned history (Guard::messages)
      * @param list<string>                               $previousTopics topics of the last answer
      * @param null|callable(string): void                $onText receives the answer text while it streams
+     * @param string                                     $contextTopic topic of the place the visitor asks from
+     *                                                   (e.g. the help of the current screen); unknown ids are ignored
      */
-    public function ask(array $messages, array $previousTopics = [], ?callable $onText = null, string $ip = ''): BotResult
+    public function ask(array $messages, array $previousTopics = [], ?callable $onText = null, string $ip = '', string $contextTopic = ''): BotResult
     {
         $onText   ??= static function (string $text): void {};
         $question   = '';
@@ -113,7 +125,7 @@ final class Bot
         $usage = [];
 
         try {
-            $system = $this->systemPrompt($previousTopics);
+            $system = $this->systemPrompt($previousTopics, $contextTopic);
             $tools  = [$this->tool()];
 
             // ── Round 1: routing ──────────────────────────────────────────────

@@ -156,8 +156,11 @@ oeffnet den Chat. Farben ueber die CSS-Variablen
 
 ## In z77
 
-Der Adapter liegt in `module-frontend` (`KibotController`, `Ui/Kibot/`), der Kern bleibt
-frei von z77. Kurz:
+Der Adapter liegt im Kernel (`Z77\Core\Kibot`: `KibotEndpoint`, `KibotSession`), der Kern
+bleibt frei von z77. Zwei Bots nutzen ihn: das Website-Widget (`module-frontend`,
+`KibotController`) und der KI-Assistent im Backend (`module-backend`, ADR-055: Quellen aus den
+Hilfetexten generiert, Widget mit `data-mode="panel"`, Kontext-Thema per `data-kibot-context`).
+Kurz fuer das Website-Widget:
 
 1. `composer require z77/kibot` (Path-Repository wie die anderen Pakete); `composer install`
    publiziert `res/assets` nach `public/assets/kibot/`.
@@ -193,6 +196,7 @@ Session und CSRF-Token kommen von z77. Alles Weitere: `docs/topics/kibot.md`.
 ```
 php tests/kibot.php
 php tests/kibot-adapter.php
+php tests/kibot-assistant.php
 ```
 
 Ohne Key und ohne Netz: ein Fake-Transport spielt aufgezeichnete JSON- und SSE-Antworten

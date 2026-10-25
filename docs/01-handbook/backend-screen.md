@@ -19,7 +19,7 @@ the topic docs are the binding text.
 
 ```
 ┌──────────────────┬───────────────────────────────────────────────┐
-│ Bereichswähler   │ Kopfleiste            [? Hilfe] [🔔] [Profil] │
+│ Bereichswähler   │ Kopfleiste     [✦ KI-Assistent] [🔔] [Profil] │
 ├──────────────────┼───────────────────────────────────────────────┤
 │ Aktionszelle     │ Werkzeugzeile: Reiter, dann Werkzeuge          │  ← band, same height as the top bar
 ├──────────────────┼───────────────────────────────────────────────┤
@@ -34,9 +34,9 @@ the topic docs are the binding text.
 |---|---|---|
 | **Aktionszelle** | the MOST FREQUENT action of the selected navigation entry — exactly one control, or empty | `{action}.act.tpl.php` (hc1); a fragment: `addPartials(…, 'hc1')` |
 | **Auswahl** (top of the rail) | a choice that holds for the WHOLE area (the fiscal year) | `{action}.select.tpl.php` / section `railSelect` |
-| **Werkzeugzeile** | first the tabs (language, mode, view), then tools in secondary form — no primary button; on a LIST with help «Hilfe» at its right end (HELP-003) | `{action}.toolbar.tpl.php` (hc2); «Hilfe» written by the shell |
+| **Werkzeugzeile** | first the tabs (language, mode, view), then tools in secondary form — no primary button; on a LIST with help «KI-Assistent» (or «Hilfe», §5) at its right end (HELP-003) | `{action}.toolbar.tpl.php` (hc2); the trigger written by the shell |
 | **Krumenzeile** | the position only — fixed height, no buttons, no help icon | default crumb or `{action}.crumb.tpl.php` |
-| **Kopfleiste** | «? Hilfe» — only on pages that carry help and are not a list (a list's stands in its toolbar) | written by the shell |
+| **Kopfleiste** | «✦ KI-Assistent» (or «? Hilfe», §5) — only on pages that carry help and are not a list (a list's stands in its toolbar) | written by the shell |
 | **Arbeitsfläche** | the content; buttons only when bound to a selection or inside a dialog | the action template |
 
 Names and classes: [css-backend.md → shell regions](../topics/css-backend.md#shell-regions-glossary);
@@ -129,8 +129,18 @@ Details and selectors: [css-backend.md → button / tab / switch vocabulary](../
 
 ## 5. Help
 
+- **The KI-Assistent stands where «Hilfe» stood** (owner 2026-10-25, [ADR-055](../02-decisions/adr-055-ki-assistent-instead-of-help-button.md)):
+  with the assistant configured, the trigger reads «✦ KI-Assistent» and opens a chat panel
+  that answers from ALL help texts, starting with the current screen's. Its discreet link
+  «Hilfetext anzeigen» opens the classic help window; F1 in a field still does. Not
+  configured (no key) → the trigger is «Hilfe» as described below. Every logged-in backend
+  user may use it.
+- **The help texts stay the single source** — the assistant only reads them (index generated
+  from the templates, no hand maintenance). So everything below still applies, and a help is
+  now also prompt material: a general heading (`<h3>`) before the first field section names
+  the topic; buttons and fields are named exactly as on screen.
 - A screen with help attaches it through the HelpService (ADR-048); the shell then shows
-  «? Hilfe» in the top bar. No help → no button.
+  the trigger in the top bar. No help → no button.
 - **A list attaches its help with `toolbar: true`** (owner 2026-10-20, HELP-003): «Hilfe» then
   closes the list's toolbar at its right end and the top bar shows none — one help button per
   page. Attach it in the list action BEFORE `html()`, and only for the page (a fetch of the
@@ -167,5 +177,5 @@ Details and selectors: [css-backend.md → button / tab / switch vocabulary](../
 5. Lists as standard lists; row icon → window; switches «Aktiv»; ⋮ → context menu (`data-menu-open`).
 6. Selection-bound actions in a bar above the list; pending steps announced at the top.
 7. Forms: save in the action cell; long forms as radio tabs.
-8. Help with field sections where a field needs explaining.
+8. Help with field sections where a field needs explaining — it is also the KI-Assistent's knowledge (ADR-055).
 9. Rows added to [css-backend.md → action cell per area](../topics/css-backend.md); topic doc of the module updated; `npm run docs:check` green.

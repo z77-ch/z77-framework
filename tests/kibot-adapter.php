@@ -1,8 +1,10 @@
 <?php
 
 /**
- * KiBot z77 adapter harness (CLI) — module-frontend's KibotEndpoint, KibotSession
- * and KibotController over the standalone package, without network and key.
+ * KiBot z77 adapter harness (CLI) — the kernel's KibotEndpoint, KibotSession
+ * (Z77\Core\Kibot, shared with the backend assistant — tests/kibot-assistant.php)
+ * and module-frontend's KibotController over the standalone package, without
+ * network and key.
  *
  * What is load-bearing here:
  *
@@ -52,8 +54,8 @@ use Z77\Core\Session\SessionManager;
 use Z77\KiBot\Guard;
 use Z77\KiBot\HttpResult;
 use Z77\KiBot\Transport;
-use Z77\Module\Frontend\Ui\Kibot\KibotEndpoint;
-use Z77\Module\Frontend\Ui\Kibot\KibotSession;
+use Z77\Core\Kibot\KibotEndpoint;
+use Z77\Core\Kibot\KibotSession;
 
 $pass = 0;
 $fail = 0;

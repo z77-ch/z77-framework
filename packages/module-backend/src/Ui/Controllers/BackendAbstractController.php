@@ -5,6 +5,8 @@ use Z77\Core\Controller\AbstractBaseController,
     Z77\Core\DI,
     Z77\Core\Http\Response\HtmlResponse,
     Z77\Core\Http\Response\FetchResponse,
+    Z77\Core\Http\RequestMode,
+    Z77\Module\Backend\Ui\Assistant\BackendAssistant,
     Z77\Module\Backend\Ui\BackendMenu,
     Z77\Shared\Auth\PasswordTier,
     Z77\Shared\Controller\RouteInfoTrait
@@ -138,6 +140,21 @@ abstract class BackendAbstractController extends AbstractBaseController
                 'noindex'    => $auth->canReach($user, 'backend', 'system', 'system', 'toggle-noindex'),
                 'clearCache' => $auth->canReach($user, 'backend', 'system', 'system', 'clear-cache'),
             ];
+
+            // The KI-Assistent replaces the «Hilfe» trigger (ADR-055) — page loads only (the
+            // skeleton loads its script; a window's title-bar button follows in core.js), and
+            // only when it can answer: configured with a readable key. Otherwise unset and the
+            // shell keeps the classic help.
+            if (!isset($context['kibotAssistant'])
+                && DI::getRequest()->getMode() === RequestMode::Page
+                && BackendAssistant::enabled()) {
+                $context['kibotAssistant'] = [
+                    'config'   => BackendAssistant::CONFIG_URL,
+                    'endpoint' => BackendAssistant::ASK_URL,
+                    'topic'    => $this->help->topicId(),
+                    'label'    => BackendAssistant::screenLabel($this->help->title()),
+                ];
+            }
         }
 
         $this->loadHeaderSlots();

@@ -23,6 +23,9 @@
 <head>
     <?= $head ?? '' ?>
     <?= $css ?? '' ?>
+    <?php if (!empty($kibotAssistant)): /* KI-Assistent (ADR-055): z77/kibot's panel, published to public/assets/kibot */ ?>
+    <link rel="stylesheet" href="/assets/kibot/css/bot.css">
+    <?php endif; ?>
     <?= $jsHead ?? '' ?>
 </head>
 <body class="backend">
@@ -61,7 +64,7 @@
                  shows none (`partials/shell/topbar`): one help button per page. */ ?>
         <div class="be-shell-band">
             <div class="be-shell-band__slot be-shell-band__slot--1" data-shell-slot="hc1"><?= $hc1 ?? '' ?></div>
-            <div class="be-shell-band__slot be-shell-band__slot--2" data-shell-slot="hc2"><?= $hc2 ?? '' ?><?= !empty($helpBlock) && !empty($helpInToolbar) ? $this->partial('partials/helpTrigger', [], 'Z77\Shared') : '' ?></div>
+            <div class="be-shell-band__slot be-shell-band__slot--2" data-shell-slot="hc2"><?= $hc2 ?? '' ?><?= !empty($helpBlock) && !empty($helpInToolbar) ? $this->partial('partials/helpTrigger', ['assistant' => $kibotAssistant ?? null], 'Z77\Shared') : '' ?></div>
         </div>
         <?php /* Reiter-Zeile (Slot `tabs`, B10 v1.17.0): WELCHE Ansicht eines Gegenstands man
                  sieht — eine Ebene ueber hc2, das die Werkzeuge der gewaehlten Ansicht traegt.
@@ -131,5 +134,8 @@
         </div>
     </dialog>
     <?= $jsFooter ?? '' ?>
+    <?php if (!empty($kibotAssistant)): /* set by BackendAbstractController only when configured with a key (ADR-055) */ ?>
+    <script src="/assets/kibot/js/bot.js" data-mode="panel" data-config="<?= e($kibotAssistant['config']) ?>" data-endpoint="<?= e($kibotAssistant['endpoint']) ?>" defer></script>
+    <?php endif; ?>
 </body>
 </html>
