@@ -5,7 +5,7 @@ entscheidet, welche Dokumente die Antwort enthalten, diese liest und die Antwort
 Anthropic als Stream ausgibt. Reines PHP 8.2+, nur `ext-curl` und `ext-json`, keine
 Framework-Abhaengigkeit. Vorlage ist der Chatbot von poolmanufaktur.ch (wdv 6.2.2).
 
-Stand: Schritte 1 bis 4 des Bauplans (standalone). Der z77-Adapter folgt in Schritt 5.
+Stand: Schritte 1 bis 5 des Bauplans: standalone und mit z77-Adapter (siehe «In z77»).
 
 ## Ablauf
 
@@ -66,8 +66,10 @@ packages/kibot/
     Config.php           Texte, CTAs, Modelle, Budgets, Limits, Pfade, System-Prompt
   public/
     bot.php              Standalone-Endpunkt: GET ?config, POST = Frage (SSE)
-    bot.js, bot.css      Widget
     index.html           Demo-Seite
+  res/assets/
+    js/bot.js            Widget
+    css/bot.css          Widget-Styling (z77 publiziert res/assets nach public/assets/kibot/)
   bin/ask.php            Konsole, ohne Browser
   topics.example.json    Themenliste zu den Beispielquellen in example/
   kibot.config.example.php
@@ -135,6 +137,7 @@ geht nach STDOUT, gewaehlte Themen und Fehler nach STDERR. Statt der Optionen ge
 
 ```
 cp kibot.config.example.php kibot.config.php    # keyFile anpassen
+cp res/assets/js/bot.js res/assets/css/bot.css public/   # Kopien, gitignored
 php -S 127.0.0.1:8080 -t public
 ```
 
@@ -145,8 +148,27 @@ Dann `http://127.0.0.1:8080/` oeffnen. Einbinden in eine eigene Seite:
 <script src="/kibot/bot.js" data-endpoint="/kibot/bot.php" defer></script>
 ```
 
-Ein Element mit `data-kibot-open` oeffnet den Chat. Farben ueber die CSS-Variablen
+`data-endpoint` ist die Adresse fuer die Frage (POST), `data-config` die fuer die
+Konfiguration (GET); ohne `data-config` gilt `<data-endpoint>?config`. Das Widget sendet
+den CSRF-Token im Body und als Header `X-CSRF-Token`. Ein Element mit `data-kibot-open`
+oeffnet den Chat. Farben ueber die CSS-Variablen
 `--kibot-*` auf `#kibot-widget`.
+
+## In z77
+
+Der Adapter liegt in `module-frontend` (`KibotController`, `Ui/Kibot/`), der Kern bleibt
+frei von z77. Kurz:
+
+1. `composer require z77/kibot` (Path-Repository wie die anderen Pakete); `composer install`
+   publiziert `res/assets` nach `public/assets/kibot/`.
+2. `config/client/kibot.inc.php` gibt dieselben Abweichungen zurueck wie
+   `kibot.config.php` (mindestens `paths.keyFile`). Relative Pfade gelten relativ zum
+   Projekt; Quellen unter `shared/kibot/`, Logs unter `logs/kibot/`. Ohne Datei ist der Bot aus.
+3. Im Layout:
+   `<script src="/assets/kibot/js/bot.js" data-config="/frontend/main/kibot/config" data-endpoint="/frontend/main/kibot/ask" defer></script>`
+   und `<link rel="stylesheet" href="/assets/kibot/css/bot.css">`.
+
+Session und CSRF-Token kommen von z77. Alles Weitere: `docs/topics/kibot.md`.
 
 ## Sicherheit
 
@@ -170,6 +192,7 @@ Ein Element mit `data-kibot-open` oeffnet den Chat. Farben ueber die CSS-Variabl
 
 ```
 php tests/kibot.php
+php tests/kibot-adapter.php
 ```
 
 Ohne Key und ohne Netz: ein Fake-Transport spielt aufgezeichnete JSON- und SSE-Antworten
@@ -180,4 +203,3 @@ Refusal, Verbindungsfehler, Pfad-Ausbrueche, Guard, Logformat, Widget ohne `inne
 ## Offen
 
 - Live-Test mit echtem Key (bin/ask.php und Widget) steht aus.
-- z77-Adapter und Topic-Doku (`docs/topics/kibot.md`) folgen in Schritt 5.

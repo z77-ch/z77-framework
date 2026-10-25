@@ -536,7 +536,7 @@ check('error line: one line, body cut to 500 chars', substr_count($errLine, "\n"
 // ── Widget ──────────────────────────────────────────────────────────────────
 
 echo "\nWidget\n";
-$js = (string) file_get_contents(__DIR__ . '/../packages/kibot/public/bot.js');
+$js = (string) file_get_contents(__DIR__ . '/../packages/kibot/res/assets/js/bot.js');
 $code = preg_replace('#/\*.*?\*/#s', '', $js);          // comments may name what is forbidden
 $code = preg_replace('#^\s*//.*$#m', '', $code);
 foreach (['innerHTML', 'outerHTML', 'insertAdjacentHTML', 'document.write', 'eval(', 'new Function', 'setTimeout("'] as $forbidden) {

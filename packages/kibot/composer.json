@@ -20,5 +20,10 @@
             "Z77\\KiBot\\": "src/"
         }
     },
-    "readme": "README.md"
+    "readme": "README.md",
+    "extra": {
+        "branch-alias": {
+            "dev-main": "1.0.x-dev"
+        }
+    }
 }

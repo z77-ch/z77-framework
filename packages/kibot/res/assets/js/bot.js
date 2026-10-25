@@ -2,7 +2,10 @@
  * bot.js — KiBot chat widget (ported from the poolmanufaktur chat.js).
  *
  * Include with:  <script src="bot.js" data-endpoint="bot.php" defer></script>
- *   data-endpoint  URL of the bot endpoint (GET ?config, POST = ask as SSE); default "bot.php"
+ *   data-endpoint  URL of the bot endpoint (POST = ask as SSE); default "bot.php"
+ *   data-config    URL of the widget configuration (GET, JSON); default "<data-endpoint>?config".
+ *                  The z77 adapter has two actions:
+ *                  data-config="/frontend/main/kibot/config" data-endpoint="/frontend/main/kibot/ask"
  * Any element with the attribute data-kibot-open opens the chat on click.
  *
  * Security (z77 rule 7): the widget builds every node with createElement/textContent.
@@ -25,6 +28,8 @@
 
     var script   = document.currentScript;
     var ENDPOINT = (script && script.getAttribute('data-endpoint')) || 'bot.php';
+    var CONFIG_URL = (script && script.getAttribute('data-config'))
+        || ENDPOINT + (ENDPOINT.indexOf('?') < 0 ? '?' : '&') + 'config';
     var CONFIG   = {};
     var state    = { open: false, loading: false, messages: [], csrfToken: '', scrollY: 0 };
     var nodes    = {};
@@ -36,8 +41,7 @@
     }
 
     function init() {
-        var url = ENDPOINT + (ENDPOINT.indexOf('?') < 0 ? '?' : '&') + 'config';
-        fetch(url, { credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
+        fetch(CONFIG_URL, { credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
             .then(function (r) {
                 if (!r.ok) throw new Error('HTTP ' + r.status);
                 return r.json();
@@ -270,7 +274,9 @@
         fetch(ENDPOINT, {
             method:      'POST',
             credentials: 'same-origin',
-            headers:     { 'Content-Type': 'application/json', 'Accept': 'text/event-stream' },
+            // The token travels twice: in the body for Guard, and as X-CSRF-Token for
+            // hosts that check every fetch POST centrally (z77 AccessGuard).
+            headers:     { 'Content-Type': 'application/json', 'Accept': 'text/event-stream', 'X-CSRF-Token': state.csrfToken },
             body:        JSON.stringify(payload)
         })
         .then(function (res) {

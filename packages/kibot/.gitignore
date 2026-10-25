@@ -2,3 +2,5 @@
 /kibot.config.php
 /logs/
 /vendor/
+/public/bot.js
+/public/bot.css

@@ -27,6 +27,9 @@
         "php": ">=8.2",
         "z77/kernel": "^1.0"
     },
+    "suggest": {
+        "z77/kibot": "KI-Bot widget with topic routing; enabled by config/client/kibot.inc.php (docs/topics/kibot.md)"
+    },
     "support": {
         "issues": "https://github.com/z77-ch/z77-framework/issues",
         "source": "https://github.com/z77-ch/module-frontend",
