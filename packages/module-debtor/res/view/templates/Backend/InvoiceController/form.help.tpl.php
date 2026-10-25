@@ -14,7 +14,7 @@ $isFinal  = ($editRefusal ?? null) !== null;
 // Without VAT (the mandator is not liable, owner 2026-10-21): no MWST wording, no price mode.
 $vat = $form->withVat;
 ?>
-<h3><?= $isCredit ? 'Gutschrift' : 'Rechnung' ?></h3>
+<h3 data-help-title="Rechnung und Gutschrift"><?= !empty($isCredit) ? 'Gutschrift' : 'Rechnung' ?></h3>
 <?php if ($isFinal): ?>
 <?php if ($document !== null && $document->isInJournal()): ?>
 <p>Das Dokument ist <strong>fakturiert</strong>: mit Nummer gedruckt, ein Beleg — es steht im <strong>Faktura-Journal</strong> und ist <strong>noch nicht verbucht</strong>. Sein PDF ist beim Fakturieren unveränderlich abgelegt worden; <strong>PDF</strong> öffnet genau diese Datei. Die kurze <strong>ID</strong> neben der Nummer kennzeichnet diese Fassung eindeutig. Zahlungen, Skonto und Gutschriften gibt es erst, wenn das Journal verbucht ist (Aufträge › Faktura-Journal › «Journal verbuchen …»).</p>

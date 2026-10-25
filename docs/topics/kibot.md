@@ -130,7 +130,7 @@ return [
 - KIBOT-STANDALONE-ASSETS: don't look for `bot.js` / `bot.css` in `packages/kibot/public/` — they live in `res/assets/` (installer convention); the standalone demo needs a copy into `public/` (gitignored).
 - KIBOT-ASSIST-MIN: don't assume a window's title-bar button is the assistant in production yet — that code is in `core.js`; until `core.min.js` is re-saved (VS Code), production windows keep «Hilfe» (the top bar / toolbar trigger is the assistant already). `tests/js-min-markers.php` fails on `data-kibot-ready` until then.
 - KIBOT-ASSIST-LABEL: don't assume «KI-Assistent» on the trigger means the panel opens — the label is decided server-side (configured + key); if bot.js fails to load or its config fetch fails, the click opens the classic help.
-- KIBOT-ASSIST-TITLE: don't expect a human title for every help topic — a template without a heading before its first field section gets one from the path (`Invoice – form`, `Invoice Journal – list`); fix it in the help template, not in the index.
+- KIBOT-ASSIST-TITLE: don't expect a human title for a help topic without a static heading before its first field section — the index then names it from the path (`Invoice – form`). A heading whose text depends on controller variables carries `data-help-title="…"` for the index (resolved 2026-10-25 for the invoice form «Rechnung und Gutschrift» and the Faktura-Journal list).
 - KIBOT-ASSIST-ASSETS: don't expect cache busting on `/assets/kibot/js/bot.js` — it is loaded directly by the skeleton (not through JavascriptManager), no version query, no `.min.js`.
 
 ## pending
