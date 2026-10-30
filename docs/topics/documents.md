@@ -204,6 +204,7 @@ purge is one directory removal. Images get **eager, config-profile-driven** deri
 
 ## rules
 
+- When a project must open a folder to SOME members (not every `customer`) → MUST name project roles through `dmsConfig['principalRolesHook']` (invokable `__invoke(AuthUser): list<string>`, read by `Services\PrincipalRoles` for NON-backend identities only) and give the folder role ACEs for those names; framework role names are dropped, only `[a-z0-9][a-z0-9._-]{0,99}` passes, a throwing hook grants nothing — F1, z77-rudaz.ch 2026-10-30, harness `tests/dms-principal-roles.php`
 - When storing document bytes → MUST go through `BlobStorage`; MUST NOT write bytes into `FileStorage` or anywhere under `public/`.
 - When resolving a blob for delivery → MUST obtain the path via `BlobStorage::path(id, variant, ext)`; MUST NOT assemble the blob path by string concatenation.
 - When classifying an upload → MUST resolve the kind via `DocumentKind::fromMime()` on a server-side `finfo` sniff; a `null` result MUST be rejected (the allowlist); MUST NOT trust the client-supplied content type or file extension alone.

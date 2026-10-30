@@ -115,6 +115,7 @@ master invites address ─▶ token + mail ─┬─ unknown address: name form 
 
 ## rules
 
+- When a BACKEND user invites someone to a tenant → MUST use `InvitationFlow::inviteAsOperator($operatorName, $operatorId, $tenantRef, $email)` (same checks, token and mail as `invite()`; the token and the `joinHook` carry `invitedBy = "operator:<backend id>"`, `InvitationFlow::OPERATOR_PREFIX`); the caller checks the operator's right for the tenant (a role-guarded backend route) — F2, z77-rudaz.ch 2026-10-30, harness `tests/member-operator-invite.php`
 - When building a page for signed-in customers → MUST guard it with `MemberAuth::create()->current()` and MUST declare the route `AuthRole::GUEST` in the module config; the framework ACL resolves the ADMIN login, not the member session.
 - When a project needs its own behaviour at activation → MUST set `memberConfig['activationHook']` by overriding that config file whole; MUST NOT teach this module a project domain.
 - When a project keeps a copy of an account field elsewhere (AXO3 builds the tenant name from `company`) → MUST carry the change through `memberConfig['profileHook']`, an invokable `__invoke(MemberAccount): void` run after `kontoAction` saved; MUST NOT let the two drift, and MUST NOT throw from the hook — the account is already stored when it runs, so a failure there would report one for something that succeeded.

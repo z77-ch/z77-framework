@@ -31,6 +31,11 @@ use Z77\Shared\Mail\EmailMessage;
  *               through the membership hook — a paused membership counts, it
  *               is resumed, not re-invited), throttle per reference and day,
  *               then a token bound to reference AND address, and the mail.
+ *   inviteAsOperator()  the same act by a BACKEND user (F2, z77-rudaz.ch
+ *               2026-10-30): an installation where the operator, not a member,
+ *               lets people in. The token carries `operator:<backend id>` as
+ *               inviter, the joinHook receives exactly that string — the
+ *               project tells the two kinds of inviter apart by the prefix.
  *   redeem()   the invited person confirms. An UNKNOWN address gets an
  *               account, born `confirmed` (the invitation WAS the
  *               verification); a KNOWN address keeps the one it has. In both
@@ -63,6 +68,9 @@ final class InvitationFlow
 
     /** Spec default; the module config may raise or lower it. */
     public const INVITES_PER_DAY = MemberThrottle::MAX_INVITES_PER_DAY;
+
+    /** `invitedBy` of an operator's invitation: `operator:<backend user id>` (F2). */
+    public const OPERATOR_PREFIX = 'operator:';
 
     /**
      * emailConfig route of the operator notification: a project may give the
@@ -195,6 +203,47 @@ final class InvitationFlow
      */
     public function invite(MemberAccount $inviter, string $tenantRef, string $email, ?int $now = null): string
     {
+        $name = trim(($inviter->getFirstName() ?? '') . ' ' . ($inviter->getLastName() ?? ''));
+
+        return $this->issue(
+            $name !== '' ? $name : (string)$inviter->getEmail(),
+            (string)$inviter->getId(),
+            $tenantRef,
+            $email,
+            $now
+        );
+    }
+
+    /**
+     * The operator's invitation (F2): same checks, same token, same mail — only
+     * the inviter is a backend user, not a member account. Its right to invite
+     * for $tenantRef is, as with invite(), the caller's to check (a backend
+     * route guarded by its role).
+     *
+     * @param string $operatorName the name the recipient reads in the mail
+     *        («Adrian Muster von Rudaz + Partner») — required: an invitation
+     *        from nobody reads like spam
+     * @param int    $operatorId   the backend user's id — kept on the token as
+     *        `operator:<id>` and handed to the joinHook as $invitedBy
+     * @return self::SENT|self::ALREADY_TAKEN|self::THROTTLED|self::INVALID
+     */
+    public function inviteAsOperator(string $operatorName, int $operatorId, string $tenantRef, string $email, ?int $now = null): string
+    {
+        $operatorName = trim($operatorName);
+        if ($operatorName === '' || $operatorId <= 0) {
+            return self::INVALID;
+        }
+
+        return $this->issue($operatorName, self::OPERATOR_PREFIX . $operatorId, $tenantRef, $email, $now);
+    }
+
+    /**
+     * The one path both inviters share.
+     *
+     * @return self::SENT|self::ALREADY_TAKEN|self::THROTTLED|self::INVALID
+     */
+    private function issue(string $inviterName, string $inviterRef, string $tenantRef, string $email, ?int $now): string
+    {
         $now       = $now ?? time();
         $tenantRef = trim($tenantRef);
         if ($tenantRef === '') {
@@ -225,12 +274,12 @@ final class InvitationFlow
         $plain = $this->tokens->issueInvite(
             $tenantRef,
             $email,
-            (string)$inviter->getId(),
+            $inviterRef,
             self::INVITE_TTL_SECONDS,
             $now
         );
 
-        ($this->sendMail)($this->inviteMail($inviter, $tenantRef, $email, $plain, $existing !== null));
+        ($this->sendMail)($this->inviteMail($inviterName, $tenantRef, $email, $plain, $existing !== null));
 
         return self::SENT;
     }
@@ -420,7 +469,12 @@ final class InvitationFlow
     /** @return array{tenantRef:string, tenantName:string, inviter:string, existing:bool} */
     private function notifyContext(MemberToken $token, string $tenantRef, bool $existing): array
     {
-        $inviter = $this->accounts->findById((string)$token->getInvitedBy());
+        // An operator's invitation names no member account — nothing to look up;
+        // the operator who gets this notification knows who he is.
+        $invitedBy = (string)$token->getInvitedBy();
+        $inviter   = str_starts_with($invitedBy, self::OPERATOR_PREFIX)
+            ? null
+            : $this->accounts->findById($invitedBy);
 
         return [
             'tenantRef'  => $tenantRef,
@@ -440,7 +494,7 @@ final class InvitationFlow
     }
 
     private function inviteMail(
-        MemberAccount $inviter,
+        string $inviterName,
         string $tenantRef,
         string $email,
         string $plain,
@@ -448,8 +502,6 @@ final class InvitationFlow
     ): EmailMessage {
         $link = $this->inviteUrl . (str_contains($this->inviteUrl, '?') ? '&' : '?')
               . 'invite=' . urlencode($plain);
-
-        $name = trim(($inviter->getFirstName() ?? '') . ' ' . ($inviter->getLastName() ?? ''));
 
         return (new EmailMessage())
             ->to($email)
@@ -460,7 +512,7 @@ final class InvitationFlow
                 // spam, and a link in a mail that reads like spam is one
                 // nobody clicks.
                 'tenantName' => ($this->tenantLabel)($tenantRef),
-                'inviter'    => $name !== '' ? $name : $inviter->getEmail(),
+                'inviter'    => $inviterName,
                 'inviteUrl'  => $link,
                 'validDays'  => (int)round(self::INVITE_TTL_SECONDS / 86400),
                 // Whether the page behind the link will ask for a name (new

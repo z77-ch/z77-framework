@@ -58,7 +58,8 @@ return [
     // consumed the token — and then tells the project WHO joined WHAT.
     // FQCN of an invokable class
     //   `__invoke(MemberAccount $account, string $ref, ?string $invitedBy): void`
-    // ($invitedBy = the inviting account's id). The project writes the
+    // ($invitedBy = the inviting account's id, or `operator:<backend id>` when a
+    // backend user invited — InvitationFlow::inviteAsOperator()). The project writes the
     // membership (pending, like a `confirmed` account) and activates it
     // later on its own list. Null = nothing is attached.
     'joinHook' => null,
