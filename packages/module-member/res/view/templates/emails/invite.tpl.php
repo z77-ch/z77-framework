@@ -32,7 +32,7 @@ $noun  = \Z77\Module\Member\Services\TenantNoun::fromConfig(); // the word for t
 <?php if ($known): ?>
 <p>
     Zu Ihrer E-Mail-Adresse besteht bereits ein Konto. Über den folgenden Link
-    fügen Sie <?= e($noun->with('dies', 'acc')) ?> als weiteren Mandanten hinzu — Ihr Konto, Ihre
+    fügen Sie <?= e($noun->with('dies', 'acc')) ?> Ihrem Konto hinzu — Ihr Konto, Ihre
     Anmeldung und Ihre Geräte bleiben, wie sie sind:
 </p>
 <?php else: ?>

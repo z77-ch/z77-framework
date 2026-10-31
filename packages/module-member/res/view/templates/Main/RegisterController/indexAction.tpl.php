@@ -65,7 +65,7 @@ $taken    = $isInvite && (($invite['outcome'] ?? null) === InvitationFlow::ALREA
         Sie wurden eingeladen, für <strong><?= e((string)$invite['tenantName']) ?></strong>
         mitzuarbeiten. Zu Ihrer Adresse <strong><?= e((string)$invite['email']) ?></strong>
         besteht bereits ein Konto — es bleibt, wie es ist. Wenn Sie zustimmen,
-        kommt <?= e($noun->with('dies', 'nom')) ?> als weiterer Mandant hinzu, und Sie wählen nach
+        kommt <?= e($noun->with('dies', 'nom')) ?> zu Ihrem Konto hinzu, und Sie wählen nach
         der Anmeldung, für wen Sie gerade arbeiten.
     </p>
     <p class="me-card__aside">
