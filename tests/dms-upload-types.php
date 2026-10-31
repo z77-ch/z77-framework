@@ -184,6 +184,11 @@ file_put_contents($guardDir . '/.htaccess', 'custom');
 check('an existing guard is left alone', file_get_contents($guardDir . '/.htaccess') === 'custom');
 @unlink($guardDir . '/.htaccess');
 @rmdir($guardDir);
+(new ReflectionMethod(DocumentService::class, 'ensureMediaGuard'))->invoke(null, $guardDir);
+check('no media directory → nothing written, no directory created', !is_dir($guardDir));
+$src = (string) file_get_contents(__DIR__ . '/../packages/module-dms/src/Ui/Controllers/Media/OutputController.php');
+check('every /media request reaching PHP calls guardMedia() before any 404',
+    ($g = strpos($src, '->guardMedia()')) !== false && $g < strpos($src, "throw new NotFoundException"));
 
 echo "\n{$pass} ok, {$fail} failed\n";
 exit($fail === 0 ? 0 : 1);
