@@ -64,6 +64,15 @@ const MARKERS = [
         'data-z77-menu',
         'data-kibot-ready',         // a window's help button as the KI-Assistent opener (ADR-055, 2026-10-25)
     ],
+    'packages/kernel/shared/res/assets/js/upload.js' => [
+        'data-upload-transport',    // another wire for big files — the DMS chunked upload (F3, 2026-10-31)
+        'data-upload-transport-config',
+    ],
+    'packages/module-dms/res/assets/js/documents/chunk-upload.js' => [
+        'Z77ChunkUpload',           // the standalone API a project page calls (F3, 2026-10-31)
+        'dms-chunk',                // the upload component's transport
+        '/chunk-status?upload_id=', // resume after a broken chunk
+    ],
 ];
 
 const VENDOR_MARKER = '@z77-js: vendor';
