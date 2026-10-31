@@ -22,6 +22,7 @@
 $fromInvite = (bool)($fromInvite ?? false);
 $fromJoin   = (bool)($fromJoin ?? false);
 $declined   = (bool)($declined ?? false);
+$noun       = \Z77\Module\Member\Services\TenantNoun::fromConfig(); // the word for the tenant (memberConfig tenantNoun)
 ?>
 <div class="me-card">
 <?php if ($declined): ?>
@@ -29,14 +30,14 @@ $declined   = (bool)($declined ?? false);
     <p class="me-card__lead">
         Es ist nichts geschehen — Ihr Konto ist unverändert, und der Link aus
         der Einladung wirkt nicht mehr. Falls Sie es sich anders überlegen,
-        kann die Verwaltung Sie erneut einladen.
+        kann <?= e($noun->with('der', 'nom')) ?> Sie erneut einladen.
     </p>
 <?php elseif ($fromJoin): ?>
     <h1 class="me-card__title">Vielen Dank</h1>
     <p class="me-card__lead">
-        Die Verwaltung ist Ihrem Konto hinzugefügt und wartet auf die
+        <?= e(ucfirst($noun->with('der', 'nom'))) ?> ist Ihrem Konto hinzugefügt und wartet auf die
         Freischaltung. Sie erhalten eine E-Mail, sobald es so weit ist — danach
-        wählen Sie nach der Anmeldung, für welche Verwaltung Sie arbeiten.
+        wählen Sie nach der Anmeldung, für <?= e($noun->with('welch', 'acc')) ?> Sie arbeiten.
     </p>
     <p class="me-card__aside"><a href="/member/main/login">Zur Anmeldung</a></p>
 <?php elseif ($fromInvite): ?>

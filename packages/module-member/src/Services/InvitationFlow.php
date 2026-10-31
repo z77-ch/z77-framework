@@ -503,9 +503,15 @@ final class InvitationFlow
         $link = $this->inviteUrl . (str_contains($this->inviteUrl, '?') ? '&' : '?')
               . 'invite=' . urlencode($plain);
 
+        // «Einladung zu «Muster AG»» — without a label hook the label is the bare
+        // reference, then the noun stands in: «Einladung zur Verwaltung / zum Projekt».
+        $label = ($this->tenantLabel)($tenantRef);
+
         return (new EmailMessage())
             ->to($email)
-            ->subject('Einladung zur Verwaltung')
+            ->subject($label !== '' && $label !== $tenantRef
+                ? 'Einladung zu «' . $label . '»'
+                : 'Einladung ' . TenantNoun::fromConfig()->zu())
             ->template('emails/invite', 'Z77\\Module\\Member', [
                 // The recipient has to be able to place this mail: who invited
                 // him, and for whom. An invitation without both reads like

@@ -66,7 +66,7 @@ $isJoin = $invite !== null && (bool)($invite['existing'] ?? false);
     </tr>
     <?php else: ?>
     <tr data-str="new-line">
-        <td>Firma / Verwaltung</td>
+        <td>Firma / <?= e(\Z77\Module\Member\Services\TenantNoun::fromConfig()->singular()) ?></td>
         <td><?= e($account->getCompany() ?? '—') ?></td>
     </tr>
     <?php /* Über welchen Knopf sie kam. Nur wenn es einen gab — die

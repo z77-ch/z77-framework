@@ -189,7 +189,10 @@ class ProfileController extends AbstractMemberController
                 'Sie arbeiten jetzt für «' . $choice->labelFor($account, $ref) . '».'
             );
         } else {
-            $this->messageService->pushFlashAfterRedirect('error', 'Diese Verwaltung steht Ihnen nicht zur Wahl.');
+            $this->messageService->pushFlashAfterRedirect(
+                'error',
+                ucfirst(\Z77\Module\Member\Services\TenantNoun::fromConfig()->with('dies', 'nom')) . ' steht Ihnen nicht zur Wahl.'
+            );
         }
 
         return $this->redirect($back);

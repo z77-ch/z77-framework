@@ -27,7 +27,9 @@
  */
 
 use Z77\Module\Member\Services\InvitationFlow;
+use Z77\Module\Member\Services\TenantNoun;
 
+$noun     = TenantNoun::fromConfig(); // the word for the tenant (memberConfig tenantNoun)
 $isInvite = is_array($invite ?? null);
 $isDead   = $isInvite && ($invite['dead'] ?? false);
 $isJoin   = $isInvite && !$isDead && ($invite['join'] ?? false);
@@ -52,38 +54,38 @@ $taken    = $isInvite && (($invite['outcome'] ?? null) === InvitationFlow::ALREA
     <?php /* Whatever state — the address is on this tenant
              already. The link is consumed; nothing to do but sign in. */ ?>
     <p class="me-card__lead" role="alert">
-        Ihre E-Mail-Adresse gehört bereits zu dieser Verwaltung. Melden Sie sich
+        Ihre E-Mail-Adresse gehört bereits zu <?= e($noun->with('dies', 'dat')) ?>. Melden Sie sich
         einfach an — diese Einladung wird nicht mehr gebraucht.
     </p>
     <p class="me-card__aside"><a href="/member/main/login">Zur Anmeldung</a></p>
 
 <?php elseif ($isJoin): ?>
-    <h1 class="me-card__title">Verwaltung hinzufügen?</h1>
+    <h1 class="me-card__title"><?= e($noun->singular()) ?> hinzufügen?</h1>
     <p class="me-card__lead">
         Sie wurden eingeladen, für <strong><?= e((string)$invite['tenantName']) ?></strong>
         mitzuarbeiten. Zu Ihrer Adresse <strong><?= e((string)$invite['email']) ?></strong>
         besteht bereits ein Konto — es bleibt, wie es ist. Wenn Sie zustimmen,
-        kommt diese Verwaltung als weiterer Mandant hinzu, und Sie wählen nach
+        kommt <?= e($noun->with('dies', 'nom')) ?> als weiterer Mandant hinzu, und Sie wählen nach
         der Anmeldung, für wen Sie gerade arbeiten.
     </p>
     <p class="me-card__aside">
         Wir prüfen den Zugang und schalten ihn frei; Sie erhalten dann eine
-        E-Mail. Sie können den Zugang jederzeit wieder ablegen — die Verwaltung,
-        die Sie eingeladen hat, kann ihn ebenso pausieren oder entfernen.
+        E-Mail. Sie können den Zugang jederzeit wieder ablegen — <?= e($noun->with('der', 'nom')) ?>,
+        <?= e($noun->article('der', 'nom')) ?> Sie eingeladen hat, kann ihn ebenso pausieren oder entfernen.
     </p>
 
     <?php /* One form, two buttons. `decision` decides; there is nothing else
              to type. No JS — a POST with a name attribute is the whole of it. */ ?>
     <form method="post" class="fe-form me-decision" novalidate>
         <input type="hidden" name="csrf_token" value="<?= e($csrfToken) ?>">
-        <button class="fe-form__submit" type="submit" name="decision" value="add">Verwaltung hinzufügen</button>
+        <button class="fe-form__submit" type="submit" name="decision" value="add"><?= e($noun->singular()) ?> hinzufügen</button>
         <button class="fe-form__submit fe-form__submit--quiet" type="submit" name="decision" value="decline">Ablehnen</button>
     </form>
 
 <?php elseif ($isInvite): ?>
     <h1 class="me-card__title">Einladung annehmen</h1>
     <p class="me-card__lead">
-        Sie wurden eingeladen, an einer bestehenden Verwaltung mitzuarbeiten.
+        Sie wurden eingeladen, an <?= e($noun->with('ein', 'dat', 'bestehend')) ?> mitzuarbeiten.
         Geben Sie noch Ihren Namen an — Ihre E-Mail-Adresse ist durch die
         Einladung bereits bestätigt. Anschliessend prüfen wir den Zugang und
         schalten ihn frei.

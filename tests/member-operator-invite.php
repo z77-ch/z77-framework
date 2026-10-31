@@ -98,6 +98,7 @@ check('SENT', $out === InvitationFlow::SENT, $out);
 check('one mail', count($mails) === 1, (string)count($mails));
 $ctx = $mails ? ($mails[0]->getContext()) : [];
 check('mail names the operator', ($ctx['inviter'] ?? null) === 'Adrian Muster', json_encode($ctx['inviter'] ?? null));
+check('subject names the tenant label (tenantNoun 2026-10-31)', ($mails[0] ?? null)?->getSubject() === 'Einladung zu «Projekt p12»', (string)($mails[0] ?? null)?->getSubject());
 $token = $flow->inspect(tokenFrom($mails[0] ?? new EmailMessage()));
 check('token carries operator:7', $token !== null && $token->getInvitedBy() === 'operator:7', (string)$token?->getInvitedBy());
 

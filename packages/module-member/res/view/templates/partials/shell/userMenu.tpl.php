@@ -64,12 +64,13 @@ $memberTenants = $memberTenants ?? [];
         <span class="me-account__sr">Auswahl ein- und ausblenden</span>
     </label>
     <?php if ($memberTenants !== []): ?>
+    <?php $noun = \Z77\Module\Member\Services\TenantNoun::fromConfig()->singular(); // the word for the tenant (memberConfig tenantNoun) ?>
     <details class="me-tenant">
-        <summary class="me-shell__tenant me-tenant__summary" title="Verwaltung wechseln">
+        <summary class="me-shell__tenant me-tenant__summary" title="<?= e($noun) ?> wechseln">
             <span class="me-tenant__label"><?= e($memberTenant) ?></span>
             <span class="me-tenant__caret" aria-hidden="true">▾</span>
         </summary>
-        <div class="me-tenant__panel" aria-label="Verwaltung wählen">
+        <div class="me-tenant__panel" aria-label="<?= e($noun) ?> wählen">
             <?php foreach ($memberTenants as $tenant): ?>
             <form method="post" action="/member/main/profile/mandant" class="me-tenant__form">
                 <input type="hidden" name="csrf_token" value="<?= e($csrfToken ?? '') ?>">

@@ -20,6 +20,7 @@
  * @var bool   $known      the invited address already has an account
  */
 $known = (bool)($known ?? false);
+$noun  = \Z77\Module\Member\Services\TenantNoun::fromConfig(); // the word for the tenant (memberConfig tenantNoun)
 ?>
 <p>Guten Tag</p>
 
@@ -31,7 +32,7 @@ $known = (bool)($known ?? false);
 <?php if ($known): ?>
 <p>
     Zu Ihrer E-Mail-Adresse besteht bereits ein Konto. Über den folgenden Link
-    fügen Sie diese Verwaltung als weiteren Mandanten hinzu — Ihr Konto, Ihre
+    fügen Sie <?= e($noun->with('dies', 'acc')) ?> als weiteren Mandanten hinzu — Ihr Konto, Ihre
     Anmeldung und Ihre Geräte bleiben, wie sie sind:
 </p>
 <?php else: ?>

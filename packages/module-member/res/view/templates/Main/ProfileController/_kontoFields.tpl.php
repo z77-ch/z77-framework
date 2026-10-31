@@ -21,7 +21,7 @@ $open   = array_filter($memberships ?? [], static fn(array $m): bool => !empty($
     <dt>E-Mail</dt>
     <dd><?= e($account->getEmail()) ?> <span class="me-quiet">— Ihr Zugang</span></dd>
     <?php if ($account->getCompany() !== null): ?>
-    <dt>Firma / Verwaltung</dt>
+    <dt>Firma / <?= e(\Z77\Module\Member\Services\TenantNoun::fromConfig()->singular()) ?></dt>
     <dd><?= e($account->getCompany()) ?></dd>
     <?php endif; ?>
     <dt>Status</dt>

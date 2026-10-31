@@ -12,13 +12,14 @@
  * @var string $loginUrl   absolute URL of the member entry point
  */
 $name = trim(($account->getFirstName() ?? '') . ' ' . ($account->getLastName() ?? ''));
+$noun = \Z77\Module\Member\Services\TenantNoun::fromConfig(); // the word for the tenant (memberConfig tenantNoun)
 ?>
 <p>Guten Tag<?= $name !== '' ? ' ' . e($name) : '' ?></p>
 
 <p>
     Ihr Zugang zu <strong><?= e($tenantName) ?></strong> ist freigeschaltet.
     Melden Sie sich wie gewohnt an und wählen Sie oben im Kopf der Seite,
-    für welche Verwaltung Sie gerade arbeiten — ein Wechsel braucht keine
+    für <?= e($noun->with('welch', 'acc')) ?> Sie gerade arbeiten — ein Wechsel braucht keine
     neue Anmeldung.
 </p>
 

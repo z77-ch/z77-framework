@@ -45,7 +45,7 @@ class RegisterFormDefinition extends FormDefinition
                 'rules'        => ['required' => true, 'email' => true, 'max' => 254],
             ],
             'company' => [
-                'label'        => 'Firma / Verwaltung',
+                'label'        => 'Firma / ' . \Z77\Module\Member\Services\TenantNoun::fromConfig()->singular(),
                 'autocomplete' => 'organization',
                 'rules'        => ['required' => true, 'min' => 2, 'max' => 120],
             ],

@@ -110,15 +110,17 @@ $title = [
                        value="<?= e($account->getLastName() ?? '') ?>" autocomplete="family-name">
             </div>
             <div class="fe-form__row">
-                <label for="konto-company">Firma / Verwaltung</label>
+                <?php $noun = \Z77\Module\Member\Services\TenantNoun::fromConfig(); // the word for the tenant (memberConfig tenantNoun) ?>
+                <label for="konto-company">Firma / <?= e($noun->singular()) ?></label>
                 <input id="konto-company" type="text" name="company" maxlength="120"
                        value="<?= e($account->getCompany() ?? '') ?>" autocomplete="organization">
                 <?php /* Which one it renames: the HOME. Since ADR-037 the header
                          may name another reference, so «Ihrem Mandanten» alone
                          pointed the reader at the wrong one (Peter, 2026-09-12). */ ?>
                 <small class="me-quiet">
-                    Wo Sie arbeiten. Der Name Ihrer Verwaltung wird davon nicht berührt —
-                    ihn ändert, wer sie besitzt, im Bereich der Verwaltung.
+                    <?php /* No genitive (tenantNoun): «des Projekts» inflects the noun itself. */ ?>
+                    Wo Sie arbeiten. Am Namen von <?= e($noun->with('Ihr', 'dat')) ?> ändert das
+                    nichts — den legt fest, wer <?= e($noun->pronoun('acc')) ?> besitzt, in <?= e($noun->with('der', 'dat')) ?> selbst.
                 </small>
             </div>
         </form>

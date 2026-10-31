@@ -40,6 +40,13 @@ return [
     // project hook they fall back to showing the bare reference.
     'tenantLabelHook' => null,
 
+    // The word for what a member works FOR, as the member pages and mails
+    // name it (2026-10-31, z77-rudaz.ch): singular, plural, gender f/m/n —
+    // articles follow the gender ({@see \Z77\Module\Member\Services\TenantNoun}).
+    // e.g. ['singular' => 'Projekt', 'plural' => 'Projekte', 'gender' => 'n'].
+    // Empty = «Verwaltung / Verwaltungen / f», the wording before the key.
+    'tenantNoun' => [],
+
     // ADR-038 (2026-09-13): the module knows no project reference. WHICH
     // references an account may work for — and which one it is working for
     // right now — is the PROJECT's list, kept at its tenant. This hook is how
