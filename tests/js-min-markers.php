@@ -73,6 +73,19 @@ const MARKERS = [
         'dms-chunk',                // the upload component's transport
         '/chunk-status?upload_id=', // resume after a broken chunk
     ],
+    'packages/module-dms/res/assets/js/documents/chunk-download.js' => [
+        'Z77ChunkDownload',         // the standalone API a project page calls (DMS-CHUNK-DL-001, 2026-10-31)
+        'chunk-download-sw',        // the service worker beside it (save path a)
+        '__z77-download/',          // its synthetic download URL
+        'showSaveFilePicker',       // save path b
+    ],
+    'packages/module-dms/res/assets/js/documents/chunk-download-sw.js' => [
+        '__z77-download/',          // the only URLs the worker answers
+        'z77-download-ping',        // keep-alive while it streams
+    ],
+    'packages/module-dms/res/assets/js/documents/drive.js' => [
+        'data-dms-chunk-download',  // a large document's Download goes in pieces (DMS-CHUNK-DL-001)
+    ],
 ];
 
 const VENDOR_MARKER = '@z77-js: vendor';
