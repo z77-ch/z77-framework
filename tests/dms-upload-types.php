@@ -9,7 +9,8 @@
  *   (A) `UploadTypes` normalizes the config: list and map, case/dot, malformed MIME →
  *       octet-stream, and server-executable / page types are never listed;
  *   (B) WITHOUT an entry the allowlist is exactly `DocumentKind::fromMime()` — every
- *       installation without the key behaves as before (axo3, zihlundsee);
+ *       installation without the key behaves as before (axo3, zihlundsee) — except a
+ *       server-executable extension, refused everywhere since DMS-MEDIA-PHP-001;
  *   (C) WITH an entry a listed extension wins over the sniff → kind `file`, stored MIME
  *       from the list or octet-stream; an unlisted unknown type is still refused;
  *   (D) kind `file` is never previewable, has no variants, no poster, always downloads;
@@ -17,7 +18,10 @@
  *   (E) `DocumentService::serve()` answers a `file` document as an attachment even when
  *       inline was asked for (the /media path), other kinds stay inline; `materialize()`
  *       never writes a static copy of a `file` document;
- *   (F) Upload/SaveService default to an EMPTY list when built without config.
+ *   (F) Upload/SaveService default to an EMPTY list when built without config;
+ *   (G) DMS-MEDIA-PHP-001: executable extensions are refused whatever the sniff, a
+ *       stored one is never copied into the docroot, and the media guard `.htaccess`
+ *       takes the script handler away from exactly those extensions.
  *
  * Run: php tests/dms-upload-types.php
  */
@@ -56,7 +60,7 @@ check('list + map + mixed; case and dot folded; malformed MIME → octet-stream;
     json_encode($types->all()));
 check('empty config → empty list', (new UploadTypes())->all() === [] && (new UploadTypes([]))->all() === []);
 
-echo "(B) no entry = exactly fromMime\n";
+echo "(B) no entry = exactly fromMime (executables aside, see G)\n";
 $samples = [
     ['image/jpeg', 'jpg'], ['image/svg+xml', 'svg'], ['video/mp4', 'mp4'], ['audio/mpeg', 'mp3'], ['application/pdf', 'pdf'],
     ['application/msword', 'doc'], ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'xlsx'],
@@ -67,7 +71,8 @@ $samples = [
 $empty = new UploadTypes();
 $same  = true;
 foreach ($samples as [$mime, $ext]) {
-    if ($empty->kindFor($mime, $ext) !== DocumentKind::fromMime($mime, $ext) || $empty->storedMime($mime, $ext) !== $mime) {
+    $expected = UploadTypes::isExecutable($ext) ? null : DocumentKind::fromMime($mime, $ext);
+    if ($empty->kindFor($mime, $ext) !== $expected || $empty->storedMime($mime, $ext) !== $mime) {
         $same = false;
         echo "       differs: {$mime} / {$ext}\n";
     }
@@ -87,8 +92,8 @@ check('unlisted unknown type still refused (exe)', $types->kindFor('application/
 check('unlisted known types unchanged (jpg, pdf, txt)',
     $types->kindFor('image/jpeg', 'jpg') === DocumentKind::Image && $types->kindFor('application/pdf', 'pdf') === DocumentKind::Pdf
     && $types->kindFor('text/plain', 'txt') === DocumentKind::Text && $types->storedMime('image/jpeg', 'jpg') === 'image/jpeg');
-check('a refused extension keeps its normal classification (php → text, html → html)',
-    $types->kindFor('text/x-php', 'php') === DocumentKind::Text && $types->kindFor('text/html', 'html') === DocumentKind::Html);
+check('a page type on the list keeps its normal classification (html → html), an executable stays refused (php)',
+    $types->kindFor('text/x-php', 'php') === null && $types->kindFor('text/html', 'html') === DocumentKind::Html);
 check('no extension → fromMime', $types->kindFor('application/octet-stream', null) === null);
 
 echo "(D) kind file\n";
@@ -149,6 +154,36 @@ $default = static function (string $class): ?array {
 };
 check('SaveService: types default to an empty list', $default(SaveService::class) === []);
 check('UploadService: types default to an empty list', $default(UploadService::class) === []);
+
+echo "(G) DMS-MEDIA-PHP-001\n";
+$execRefused = true;
+foreach (['php', 'PHP', '.phtml', 'phar', 'php8', 'shtml', 'cgi', 'htaccess'] as $ext) {
+    $execRefused = $execRefused && $empty->kindFor('text/x-php', $ext) === null && $empty->kindFor('text/plain', $ext) === null;
+}
+check('executable extensions refused whatever the sniff (php, PHP, .phtml, phar, php8, shtml, cgi, htaccess)', $execRefused);
+check('a double extension is judged by its last part (shell.php.txt → text)', $empty->kindFor('text/x-php', 'txt') === DocumentKind::Text);
+check('ordinary types are not executable', !UploadTypes::isExecutable('jpg') && !UploadTypes::isExecutable('pdf') && !UploadTypes::isExecutable(null));
+
+$blob->pathCalls = 0;
+$svc->materialize($doc('text', 'php', 'text/x-php')); // stored before the refusal
+check('materialize() never copies a stored .php into the docroot', $blob->pathCalls === 0);
+
+$guardDir = sys_get_temp_dir() . '/z77-media-guard-' . getmypid();
+@mkdir($guardDir);
+(new ReflectionMethod(DocumentService::class, 'ensureMediaGuard'))->invoke(null, $guardDir);
+$guard = (string) @file_get_contents($guardDir . '/.htaccess');
+check('media guard written: handler off, plain text, no deny',
+    str_contains($guard, 'SetHandler none') && str_contains($guard, 'ForceType text/plain') && !str_contains($guard, 'Require all denied'), $guard);
+preg_match('/<FilesMatch "(.+)">/', $guard, $m);
+$rx = isset($m[1]) ? '/' . $m[1] . '/' : '/^$/';
+check('guard matches exactly the executable extensions',
+    preg_match($rx, 'x.php') === 1 && preg_match($rx, 'x.phtml') === 1 && preg_match($rx, 'x.shtml') === 1
+    && preg_match($rx, 'x.jpg') === 0 && preg_match($rx, 'x.php.jpg') === 0 && preg_match($rx, 'x.pdf') === 0, $m[1] ?? '');
+file_put_contents($guardDir . '/.htaccess', 'custom');
+(new ReflectionMethod(DocumentService::class, 'ensureMediaGuard'))->invoke(null, $guardDir);
+check('an existing guard is left alone', file_get_contents($guardDir . '/.htaccess') === 'custom');
+@unlink($guardDir . '/.htaccess');
+@rmdir($guardDir);
 
 echo "\n{$pass} ok, {$fail} failed\n";
 exit($fail === 0 ? 0 : 1);
