@@ -355,9 +355,16 @@ machinery: it extends `BackendAbstractController` directly (not
   `initials` (`#[Clean('text')]`, optional avatar initials — see below),
   `name` (`#[Clean('text')]`, optional full name «Max Muster», max `BackendUser::NAME_LENGTH` = 80,
   `validateName`; shown on the dashboard as «Angemeldet als: admin – Max Muster», owner 2026-10-22;
-  a `backendUsers.json` written before the field has no key and reads '').
+  a `backendUsers.json` written before the field has no key and reads ''),
+  `email` (`#[Clean('email')]`, label «E-Mail für Passwort-Reset», optional: the recovery address of
+  «Passwort vergessen», [`login.md`](login.md) LOGIN-RESET-001; `validateEmail`: deliverable, at most
+  `BackendUser::EMAIL_LENGTH` = 254, unique across users case-insensitively, the blur check is
+  format-only; separate from the sender identities below, which stay display data).
   `passwordHash` / `roles` / `sortKey` are re-set server-side after
-  `mapFromArray` — never trusted from the body.
+  `mapFromArray` — never trusted from the body. `authEpoch` has no setter at all, so a body cannot reach it.
+- **Saving a new password** (login.md LOGIN-RESET-001) raises the user's session stamp, so his other
+  sessions end; the user changing his OWN password keeps the session he is in
+  (`AuthService::renewSessionStamp()`). A new password or a new `email` also ends his open reset link.
 - **Sender identities** (owner decision 2026-10-23 — a staff member sends mail in his own name):
   `BackendUser::$senderIdentities`, JSON key `sender_identities`, a list of 0..n rows
   `{name, email}` (`Z77\Shared\Mail\SenderIdentity`), the FIRST is the default; a file written

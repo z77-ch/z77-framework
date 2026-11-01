@@ -266,6 +266,16 @@ return [
             'runAs'       => AuthRole::CRON_JOB,
             'maxAttempts' => 2,
         ],
+        // The rests of «Passwort vergessen» (login.md LOGIN-RESET-001): removes expired and used
+        // reset entries from data/framework/auth/passwordResets.json. No 'defaultSchedule': it
+        // deletes, so an operator switches it on (jobs.md, delete-vs-schedule rule) — every new
+        // forgot request sweeps the same entries, so the file stays clean while it is off.
+        'password-reset-cleanup' => [
+            'class'       => \Z77\Module\Backend\Jobs\PasswordResetCleanupJob::class,
+            'label'       => 'Passwort-Reset-Reste',
+            'runAs'       => AuthRole::CRON_JOB,
+            'maxAttempts' => 2,
+        ],
         // Web statistics (docs/topics/stats.md): folds the raw day files into
         // the month's aggregate and DELETES raw files after 7 days and
         // aggregates after 24 months. ⚠️ SHIPS a schedule although it deletes

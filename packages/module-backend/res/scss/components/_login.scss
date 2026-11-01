@@ -72,3 +72,21 @@
     margin-bottom: var(--space-4);
     font-size:     var(--font-size-sm);
 }
+
+// The neutral answer of the forgot form: information, not an error.
+.login__notice {
+    background:    var(--be-bg);
+    border:        1px solid var(--be-line);
+    color:         var(--be-text);
+    border-radius: var(--radius-md);
+    padding:       var(--space-3) var(--space-4);
+    margin-bottom: var(--space-4);
+    font-size:     var(--font-size-sm);
+}
+
+// A quiet way on below the form («Passwort vergessen?», «Zurück zur Anmeldung»).
+.login__after {
+    margin-top: var(--space-4);
+    font-size:  var(--font-size-sm);
+    text-align: center;
+}

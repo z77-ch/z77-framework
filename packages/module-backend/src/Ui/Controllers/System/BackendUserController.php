@@ -6,6 +6,7 @@ use Z77\Core\Http\Response\HtmlResponse,
     Z77\Core\DI,
     Z77\Core\Config\AuthRole,
     Z77\Core\Services\TemplateRenderer,
+    Z77\Module\Backend\PasswordReset\PasswordResetTokens,
     Z77\Module\Backend\Ui\Controllers\BackendAbstractController,
     Z77\Persistence\Cleaning\BodyCleaner,
     Z77\Shared\Attributes\Fetch,
@@ -136,6 +137,7 @@ class BackendUserController extends BackendAbstractController
             $originalHash     = $user->getPasswordHash();
             $originalSortKey  = $user->getSortKey();
             $originalWeak     = $user->isPasswordWeak();
+            $originalEmail    = $user->getEmail();
 
             $user->mapFromArray(BodyCleaner::cleanFor(BackendUser::class, $body));
 
@@ -168,10 +170,16 @@ class BackendUserController extends BackendAbstractController
                 }
                 if ($isNew) {
                     $user->setSortKey($this->nextSortKey());
+                } elseif ($password !== '') {
+                    $user->bumpAuthEpoch(); // the user's other sessions end (login.md LOGIN-RESET-001)
                 }
 
                 $this->em()->persist($user);
                 $this->em()->flush();
+
+                if (!$isNew) {
+                    $this->afterAccountSave($user, $password !== '', $user->getEmail() !== $originalEmail);
+                }
 
                 // In place (ADR-047 addendum 2026-10-10): the row rendered by the list's own partial —
                 // appended for a new user (the list orders by sortKey, a new one gets the last),
@@ -217,6 +225,25 @@ class BackendUserController extends BackendAbstractController
             'scope' => '[data-z77-popup-body]',
         ]);
         return $response;
+    }
+
+    /**
+     * A new password keeps the session of the user who changed his own one (the stamp was just
+     * raised). A new password or a new recovery address also ends an open reset link: the link
+     * went to the old address, or would overwrite what the admin just set.
+     */
+    private function afterAccountSave(BackendUser $user, bool $passwordChanged, bool $emailChanged): void
+    {
+        if ($passwordChanged) {
+            DI::getAuthService()->renewSessionStamp($user);
+        }
+        if ($passwordChanged || $emailChanged) {
+            try {
+                (new PasswordResetTokens())->revokeFor((int) $user->getId());
+            } catch (\RuntimeException $e) {
+                error_log('BackendUserController: open reset link not revoked — ' . $e->getMessage());
+            }
+        }
     }
 
     protected function confirmDeleteAction(): HtmlResponse

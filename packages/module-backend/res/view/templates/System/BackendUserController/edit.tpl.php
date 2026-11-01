@@ -29,7 +29,7 @@ $identityRow = static function (string $key, string $name, string $email, bool $
 
 // «n Fehler» in the action row (ADR-049): count + the first invalid field in document order.
 $fieldIds = ['username' => 'bu-username', 'password' => 'bu-password', 'initials' => 'bu-initials', 'name' => 'bu-name',
-    'sender_identities' => 'bu-identity-name-' . ($invalidIdentity ?? 0), 'roles' => 'bu-roles'];
+    'email' => 'bu-email', 'sender_identities' => 'bu-identity-name-' . ($invalidIdentity ?? 0), 'roles' => 'bu-roles'];
 $invalid  = array_values(array_filter(array_keys($fieldIds), [$validator, 'hasFieldError']));
 $errors   = ['count' => count($validator->getFieldErrors()), 'target' => $fieldIds[$invalid[0] ?? ''] ?? ''];
 ?>
@@ -76,6 +76,13 @@ $errors   = ['count' => count($validator->getFieldErrors()), 'target' => $fieldI
                        placeholder="z.B. Max Muster"
                        aria-invalid="<?= $validator->hasFieldError('name') ? 'true' : 'false' ?>">
                 <?= raw($fieldError('name')) ?>
+            </div>
+            <div class="be-form__field" data-z77-field-wrapper style="grid-column:1 / -1">
+                <label>E-Mail für Passwort-Reset <small>(für «Passwort vergessen?»; ohne Adresse ist kein Selbst-Reset möglich)</small></label>
+                <input type="email" id="bu-email" name="email" value="<?= e($entry->getEmail()) ?>" maxlength="<?= \Z77\Shared\Entities\BackendUser::EMAIL_LENGTH ?>" autocomplete="off"
+                       placeholder="z.B. max@firma.ch"
+                       aria-invalid="<?= $validator->hasFieldError('email') ? 'true' : 'false' ?>">
+                <?= raw($fieldError('email')) ?>
             </div>
         </div>
         <?php // Sender identities (owner 2026-10-23): rows of display name + e-mail, the first the default.

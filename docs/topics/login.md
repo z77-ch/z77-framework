@@ -1,6 +1,6 @@
 # login
 
-2026-10-23
+2026-11-01
 
 ## entry
 
@@ -25,8 +25,21 @@ SOURCE=/packages/module-backend/src/App/Config/backendConfig.inc.php
 SOURCE=/packages/module-backend/src/Ui/Config/layoutConfig.inc.php
 SOURCE=/packages/module-backend/src/Ui/Controllers/System/LoginController.php
 SOURCE=/packages/module-backend/res/view/templates/System/LoginController/loginAction.tpl.php
+SOURCE=/packages/module-backend/res/view/templates/System/LoginController/forgotAction.tpl.php
+SOURCE=/packages/module-backend/res/view/templates/System/LoginController/resetAction.tpl.php
+SOURCE=/packages/module-backend/res/view/templates/emails/passwordReset.tpl.php
+SOURCE=/packages/module-backend/res/view/templates/emails/passwordChanged.tpl.php
+SOURCE=/packages/module-backend/src/PasswordReset/PasswordRecovery.php
+SOURCE=/packages/module-backend/src/PasswordReset/PasswordResetTokens.php
+SOURCE=/packages/module-backend/src/Jobs/PasswordResetCleanupJob.php
+SOURCE=/packages/kernel/shared/src/Auth/LoginThrottle.php
+SOURCE=/packages/kernel/shared/src/Throttle/FileThrottle.php
+SOURCE=/packages/kernel/shared/src/Validators/BackendUserValidator.php
+SOURCE=/packages/kernel/core/src/Config/auth.default.inc.php
+SOURCE=/tests/backend-password-reset.php
 
 RUNTIME=/skeleton/data/framework/auth/backendUsers.json
+RUNTIME=/skeleton/data/framework/auth/passwordResets.json
 
 ## mental model
 
@@ -35,6 +48,7 @@ File-based authentication. Users are stored in `data/framework/auth/backendUsers
 - `LoginController` extends `AbstractBaseController` (NOT a security controller) — login page must be accessible without auth.
 - Guest identity: `id=0`, `isLoggedIn()` returns `false` — `null` is never used for the current user.
 - AccessGuard is a pipeline service (replaces the removed `AbstractSecurityController`). CSRF validation for Fetch happens here too.
+- A backend session is checked against the store once per request: its `auth_epoch` must equal `BackendUser::$authEpoch`, and the user must still exist. Otherwise `getCurrentUser()` removes `auth_user` and answers guest. This is what «end the user's other sessions» means here: there is no server-side session list.
 
 ## role system
 
@@ -92,10 +106,12 @@ Template: loginAction.tpl.php (form POST → /backend/system/login/login)
 ```text
 LoginController::handlePost()
   → CsrfService::validate($token)                 // session-global CSRF; fail → re-render with generic error
+  → LoginThrottle::tryAttempt($username, $ip)     // reserves the attempt; over a limit: neutral message, NO password_verify
   → BackendUserRepository::findByUsername($username)
   → AuthService::canLogin(BackendUser, $password)   // verifies password_verify; returns ?self
-  → null: html(['error' => '...', ...])
-  → success: AuthService::login()                 // writes auth_user via SessionManager
+  → null: html(['error' => '...', ...])           // the reservation stays: this was a failure
+  → success: LoginThrottle::succeeded()           // clears username+IP, hands the IP count back
+           → AuthService::login()                 // writes auth_user via SessionManager
            → MessageService::pushFlashAfterRedirect('success', 'Hallo {Username}, du bist angemeldet')
            → if BackendUser::isPasswordWeak() → pushMessageAfterRedirect('error', weak-password nag)
              (persistent channel, fires on EVERY login — allowed but reminded; see security.md)
@@ -115,6 +131,39 @@ LoginController::logoutAction()
   → redirect /login (alias)
 ```
 
+### GET + POST `/backend/system/login/forgot` — «Passwort vergessen» (LOGIN-RESET-001)
+
+```text
+LoginController::forgotAction()
+  GET  → form: username OR e-mail
+  POST → CSRF (empty token refused) → fail: re-render «Sitzung abgelaufen»
+       → PasswordRecovery::request($identifier, $ip)     // returns void: there is no outcome to show
+            PasswordResetTokens::purge()                 // every request, also for an unknown user
+            FileThrottle 'ip:…'      10/h → over: stop
+            findByRecoveryIdentifier → none or no address: stop
+            FileThrottle 'account:id' 3/h → over: stop
+            Request::getBaseUrl()    // canonicalBaseUrl; unset: throws → logged, no token issued
+            PasswordResetTokens::issue(id)               // ends the user's previous link, stores the hash
+            EmailService::send(emails/passwordReset)     // false → error_log without the token
+       → the one answer: «Falls das Konto existiert, ist eine E-Mail unterwegs.»
+```
+
+### GET + POST `/backend/system/login/reset` (LOGIN-RESET-001)
+
+```text
+LoginController::resetAction()                  // Referrer-Policy: no-referrer on every answer
+  peek(token) + the user exists? no → the one neutral page, link to forgot
+  GET  → the form. Nothing consumed: mail scanners follow links
+  POST → CSRF → password twice → BackendUserValidator (password only: same floor + tier as the user form)
+       → passesSecondFactor($user)              // true today; BEFORE anything changes
+       → password_hash                          // outside the store's lock
+       → PasswordResetTokens::consume(token)    // check + mark inside ONE lock; null → neutral page
+       → re-read the user, set hash + password_weak, bumpAuthEpoch(), persist
+       → notifyPasswordChanged()                // emails/passwordChanged, no link; failure only logged
+       → LoginThrottle::forgive()               // username+IP and IP counter of this address
+       → flash + redirect /login                // NO automatic login
+```
+
 ### access denied (any protected backend page)
 
 ```text
@@ -131,7 +180,7 @@ All keys accessed via `SessionManager` (`get` / `set` / `remove`).
 
 | Key | Shape | Owner |
 |---|---|---|
-| `auth_user` | `['id' => int, 'user_name' => string, 'roles' => string[]]` | `AuthService::login()` writes, `getCurrentUser()` reads, `logout()` removes |
+| `auth_user` | `['id' => int, 'user_name' => string, 'roles' => string[], 'realm' => string, 'auth_epoch' => int]` (`auth_epoch`: backend realm only; a session from before the field reads 0) | `AuthService::login()` writes, `getCurrentUser()` reads and removes a stale one, `renewSessionStamp()` updates, `logout()` removes |
 | `access.origin` | `['module' => string, 'group' => string, 'controller' => FQCN, 'action' => 'loginAction', 'get' => array]` | `AccessGuard::buildRedirect()` writes, `LoginController::resolvePostLoginRedirect()` reads + removes |
 | `_flash` / `_message` | `[{type, text}, ...]` | `MessageService::push*AfterRedirect()` — see [`messages.md`](messages.md) |
 
@@ -154,7 +203,9 @@ isLoggedIn(): bool                   // id > 0
 canLogin(BackendUser $user, string $password): ?self   // verifies credentials; returns self on success, null on failure
 login(): void                                        // writes auth_user to session; throws if canLogin() was not called first
 logout(): void                                       // removes auth_user from session
-getCurrentUser(): AuthUser                           // loads from session, caches per request; returns guest if not logged in
+getCurrentUser(): AuthUser                           // loads from session, checks the stamp, caches per request; returns guest if not logged in or stale
+renewSessionStamp(BackendUser): void                 // this session keeps up with HIS OWN password change; no-op for any other session
+static stampMatches(sessionData, BackendUser): bool  // the stamp rule, pure: missing = 0
 hasSufficientRole(AuthUser, string $requiredRole): bool   // static
 resolveRoleForCurrentController(): string                 // the current route → resolveRoleFor()
 resolveRoleFor(module, group, ControllerBaseName, actionMethod): ?string   // any route; null = module not installed
@@ -172,9 +223,12 @@ getRoles(): array                    // e.g. ['admin'] or ['guest']
 getSortKey(): int                    // order in the user-admin list
 isPasswordWeak(): bool               // set when password is set; drives the every-login nag
 getSenderIdentities(): array         // list<SenderIdentity> — whose name the user signs mail with (2026-10-23)
+getEmail(): string                   // recovery address; '' = no self-service reset (2026-11-01)
+getAuthEpoch(): int                  // session stamp; raised by bumpAuthEpoch(), deliberately no setter
 ```
 
-JSON keys: `id`, `username`, `initials`, `name`, `sender_identities`, `password_hash`, `roles`, `preferences`, `sort_key`, `password_weak`.
+JSON keys: `id`, `username`, `initials`, `name`, `email`, `sender_identities`, `password_hash`, `roles`, `preferences`, `sort_key`, `password_weak`, `auth_epoch`.
+A file written before `email` / `auth_epoch` has no such keys and reads `''` / `0`; the next save of that user adds them. No migration.
 `sender_identities` (owner decision 2026-10-23): rows `{name, email}`, the first the default;
 display data for mail, NOT a credential and not a login address — see [`backend.md`](backend.md)
 «user management» and [`mail.md`](mail.md) «sender identities».
@@ -218,6 +272,14 @@ guard never sends a customer to the admin login. Details: `member.md`
 - When access-controlling a module's controllers → MUST set `moduleRole` as the restrictive baseline and add a `controllers` entry ONLY for a deviation (looser: GUEST login/setup; stricter: SUPER_USER backup; or a non-`list` defaultAction); MUST NOT restate the baseline per controller/action — an unlisted controller/action inherits the fallback chain `actionRole → controllerRole → moduleRole` and is never open (AUTH-B003, see backend.md)
 - When configuring `loginUrl` in `backendConfig.inc.php` → MUST use the alias `/login`, NOT the canonical 4-segment URL — the alias is resistant to future URL restructuring
 - When handling a login POST → MUST validate the session-global CSRF token (`CsrfService::validate()`) before checking credentials; on failure MUST re-render the form with a generic "Sitzung abgelaufen" message. `AccessGuard` does NOT cover the login form (it skips non-Fetch requests, and the login page itself runs without auth).
+- When building the reset link → MUST take the origin from `Request::getBaseUrl()` (`canonicalBaseUrl`); MUST NOT read the `Host` header: a forged Host would put the attacker's domain into a genuine mail and hand him the token (SEC-005).
+- When storing a reset token → MUST store only its SHA-256 (`PasswordResetTokens`); the plaintext exists in the mail only and MUST NOT reach a log.
+- When redeeming a reset token → MUST consume it through `PasswordResetTokens::consume()` (check and mark in one lock) and only on a POST that passed every check; GET MUST NOT consume it, because mail scanners follow links. MUST NOT replace it with find + persist through the entity manager: that is not atomic, and the manager takes the same lock on flush, so it cannot run inside it.
+- When a reset succeeds → MUST redirect to `/login`; MUST NOT log the user in.
+- When adding a second factor to the backend → MUST ask for it at `LoginController::passesSecondFactor()`, the one place in the reset POST flow, before anything changes; MUST NOT let the recovery link bypass it (security.md «pending»).
+- When answering the forgot form → MUST give the one neutral answer whatever happened past the CSRF check; MUST NOT let `PasswordRecovery::request()` return an outcome or throw.
+- When a code path changes a backend user's password → MUST call `bumpAuthEpoch()` before persisting, and `AuthService::renewSessionStamp()` afterwards if the user's current session is to stay; MUST NOT add a setter for the stamp: `mapFromArray()` would then accept it from a form body.
+- When handling a login POST → MUST call `LoginThrottle::tryAttempt()` BEFORE `canLogin()` and skip the password check when it refuses; MUST NOT check first and count after the failure: parallel guesses would all pass the check.
 - When determining the post-login fallback URL (no `access.origin`) → MUST resolve via `ModuleManager::getDefaultGroup()` + `getGroupDefaultController()` + `getDefaultActionForController()` on the *current* module and build a 4-segment URL, NOT hardcode `/`. Reason: the redirect target must use a layout that renders flash/message containers, otherwise `MessageService::pushFlashAfterRedirect()` is silently dropped (see [`messages.md`](messages.md) FE-MSG-001).
 - When persisting `access.origin` in `AccessGuard::buildRedirect()` → MUST include `group` alongside `module`, `controller`, `action`, `get` so post-login redirect can reconstruct the full 4-segment URL
 
@@ -228,9 +290,17 @@ guard never sends a customer to the admin login. Details: `member.md`
 - [`messages.md`](messages.md) — `LoginController::logoutAction` and `handlePost()` call `messageService->pushFlashAfterRedirect()` before returning the `RedirectResponse` for post-login greeting and logout confirmation
 - [`security.md`](security.md) — `PasswordPolicy`, `passwordWeak` nag, secure-by-default install + setup token, open security pendenzen (SEC-001…004)
 - [`member.md`](member.md) — the SECOND identity: passwordless customer accounts with their own session and their own guard. It never writes `auth_user`, so `AccessGuard` sees a signed-in customer as a guest; the separation is ADR-029
+- [`mail.md`](mail.md) — `EmailService::send()`, the template + derived text the two reset mails use, the default system sender
+- [`jobs.md`](jobs.md) — `password-reset-cleanup`, and why it ships no schedule
+- [`backend.md`](backend.md) «user management» — the `email` field in the user form
 
 ## known issues
 
+- **LOGIN-RESET-001** — built 2026-11-01 (owner: an installation needs it the next day). «Passwort vergessen» for backend users: flows above; `BackendUser.email`, `auth_epoch`; store `data/framework/auth/passwordResets.json` (module-backend, plain rows through `FileStorage`; the file appears with the first request and a missing file reads empty, so there is no installer step). Job `password-reset-cleanup`, no schedule. Verified: `tests/backend-password-reset.php` (198 checks: offline sections plus the whole flow through the framework in PHP's built-in server, with a forged Host and the `file` mail transport; 6 concurrent processes consume one token, one wins). **NOT verified:** on a real host; delivery through a real MTA and how the mail looks in a mail client; the pages in a browser (the show-password toggle and meter are checked as loaded, not as working; the styling of `.login__notice` / `.login__after` not seen). Don't assume these residual risks are closed:
+  - **Timing.** A request for an existing account issues a token and sends a mail while an unknown one does not, so the answer can take measurably longer. The framework has no mechanism to send after the response is flushed; no new infrastructure was built. The limits (3/h per account, 10/h per IP) bound what can be probed.
+  - **The account limit can be triggered by anyone** who knows the username: up to 3 mails per hour to its owner, each replacing the previous link, then none for the rest of the hour. A deliberate trade: no mail bombing, at the price of a possible delay.
+  - **Login by timing.** An unknown username skips `password_verify`, so the login itself tells unknown from known by its duration. Pre-existing, not changed here; the login throttle bounds it.
+  - **The token is in the link's query string,** so it reaches the web server's access log. One-time, 30 minutes, and the hidden field carries it on POST.
 - BUG-P001 — resolved. `Naming::toCamelCase` no longer destroys camelCase input; `passwordHash` round-trip works.
 - **EDITOR-ROLE-001** — built 2026-09-22 (ADR-045 §1). New role `editor` (50) with label «Redaktor»; the role resolution was factored out of `resolveRoleForCurrentController()` into the pure `requiredRole()` + `resolveRoleFor()` + `canReach()` so the backend menu uses the identical rule. Harness: `tests/backend-access.php`. Since the same day's follow-up (FE-OVERLAY-EDITOR-001, backend.md) an editor sees the frontend admin overlay (view areas, «Seite bearbeiten», logout); its routing info and partial labels stay ADMIN on purpose.
 - **ROLE-LEVEL-SSOT-001** — resolved 2026-07-07. The "highest role level ≥ threshold" calc was copied three times (`AuthUser::hasAtLeast`, `AuthService::hasSufficientRole`, `BackendUserController::isAdminCapable`). Consolidated the permissive form into one pure helper `AuthRole::rolesSatisfy(array $roles, string $minRole)` (unknown role → level 0); `hasAtLeast` + `isAdminCapable` now route through it. **`AuthService::hasSufficientRole` was deliberately left as-is** — it uses the fail-secure form (unknown REQUIRED role → `PHP_INT_MAX` → deny everyone), the security-critical dispatch gate, which must NOT be unified onto the 0-fallback semantics.
@@ -238,4 +308,5 @@ guard never sends a customer to the admin login. Details: `member.md`
 
 ## pending
 
-_(none)_
+- **LOGIN-RESET-001** — see it once on a real installation: request, mail in a real mail client, reset, login; the toggle and the meter on the reset page in a browser.
+- **Enter the recovery addresses:** every existing account starts without one, and without one the forgot form sends nothing. The first admin is provisioned without one too (installer and `SetupController` do not ask); security.md's roadmap wanted it asked at setup.

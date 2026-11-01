@@ -39,5 +39,6 @@
             </div>
             <button class="be-btn be-btn--primary be-btn--full" type="submit">Anmelden</button>
         </form>
+        <p class="login__after"><a href="/backend/system/login/forgot">Passwort vergessen?</a></p>
     </div>
 </div>
