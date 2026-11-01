@@ -66,9 +66,10 @@ final class MemberSession
 
     /**
      * The signed-in account id, or null — none, or idle-expired (the session
-     * ends right there). A live read refreshes the idle clock (rolling).
+     * ends right there). A live read refreshes the idle clock (rolling), unless
+     * $isActivity is false: a live listener's question reads without counting.
      */
-    public function currentAccountId(?int $now = null): ?string
+    public function currentAccountId(?int $now = null, bool $isActivity = true): ?string
     {
         $accountId = $this->session->get(self::KEY_ACCOUNT);
         if (!is_string($accountId) || $accountId === '') {
@@ -83,7 +84,9 @@ final class MemberSession
             return null;
         }
 
-        $this->session->set(self::KEY_LAST_SEEN, $now);
+        if ($isActivity) {
+            $this->session->set(self::KEY_LAST_SEEN, $now);
+        }
 
         return $accountId;
     }

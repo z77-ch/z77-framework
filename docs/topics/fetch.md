@@ -1,6 +1,6 @@
 # fetch
 
-2026-10-22
+2026-11-01
 
 ## entry
 
@@ -218,6 +218,7 @@ Commands are server-issued instructions dispatched by the shared `core.js` to wh
 | `set-class`      | `target`, `class`, `on` | — | Toggle a CSS class on the matching element (`on:true` adds, `false` removes) |
 | `set-value`      | `target`, `value` | `origin` | Sets a field's `.value` and fires a bubbling `change` when it changed — whatever follows the field runs as on a choice by hand (2026-10-18; first user: debtor's customer picker sets the editor's `price_mode` from the debtor, the order's rows re-convert — core.js «price mode») |
 | `scroll-to`      | `target` | — | `scrollIntoView` on target element |
+| `stop-live`      | `target` | `origin` | The live listener on `target` asks no more (removes `data-fetch-live`, see «live listener») |
 | `reload`         | — | — | Full page reload (escape hatch) |
 | `close-modal`    | — | — | From a window: closes that window (ADR-047). With the shared popup on the page: `_Z77.core.popup.close()`. On a host without it (the member shell's native `<dialog>`s): closes the open `dialog[open]` — one vocabulary for both shells (2026-10-10) |
 | `update-fields`  | `target`, `fields` | — | Update multiple `[data-field]` children from `env.data`; `fields` = `{key: "text"\|"html"}` |
@@ -252,6 +253,7 @@ redraws the shell, a bulk operation whose result IS a new list).
 | `data-fetch-get="/url"` | any clickable | GET on click; a second click while the first GET runs is ignored (busy guard) |
 | `data-fetch-post="/url"` | `<form>` | POST on submit with collected form data (multi-value-aware); while it runs the form is `aria-busy="true"`, the submitter disabled, a second submit ignored (busy guard, FETCH-BUSY-001) |
 | `data-fetch-toggle="/url"` | `<input type=checkbox>` | POST `{value: checked}` on change; disabled while its request runs; reverts the checkbox if the response status is not `success` |
+| `data-fetch-live="/url"` | any element | Live listener: GET at intervals, the answer's commands do the rest (see «live listener»); `data-fetch-live-every="<s>"` sets the seconds |
 | `data-window-open="/url"` | any clickable (keep an `href` on a link) | opens a controller-led WINDOW (ADR-047, WIN-001): GET in fetch mode with `_origin`, the answer's root declares `data-window` (mask) + `data-window-entity` (`<type>:<id>`) + `data-window-title`; mask + entity open once; an editable field in two open masks of one entity is refused with a message |
 | `data-menu-open="/url"` | the ⋮ `<button type="button">` of a list row (with `aria-haspopup="menu" aria-expanded="false"`) | opens the row's actions as a CONTEXT MENU at the ⋮ (MENU-001, owner 2026-10-22): GET in fetch mode, the answer's fragment (`.be-menu`, `role="menu"`) is wired like popup content and shown in ONE fixed box `[data-z77-menu]` below the ⋮; Esc, a click outside, Tab or a click on an item closes it; the same ⋮ again closes it, another ⋮ replaces it. Delegated on `document` — a replaced row needs no wiring. Without the script it does nothing (see «context menu») |
 | `data-window-width="<length>"` | a window content's root | the width the CONTROLLER wants (rem/ch/px/%/vw; default 46rem, a phone ignores it) — a form row must not scroll sideways (ADR-048 part 5) |
@@ -327,6 +329,51 @@ Confirm-delete partial example (explicit URL, target differs from source):
 ```
 
 The action row is the shared partial (ADR-049) — never a hand-written `.be-modal__footer` (retired, its CSS first aid removed 2026-10-13).
+
+## live listener
+
+A part of a page that keeps asking the server while something runs, such as the progress of a running job (FETCH-LIVE-001). Polling, not SSE: PHP on shared hosting must not hold connections.
+
+Activation is markup only. The controller or partial renders the attribute while there is something to watch, and nothing otherwise; no attribute means no request and no cost.
+
+```php
+<?= $this->partial('partials/jobStatusBox', ['job' => $job]) ?>
+
+<?php /* partials/jobStatusBox */ ?>
+<div id="job-status"<?= $job->isRunning() ? ' data-fetch-live="/member/jobs/status" data-fetch-live-every="10"' : '' ?>>
+    <?= e($job->statusText()) ?>
+</div>
+```
+
+The answer is the normal `FetchResponse`, so the controller decides what happens and where:
+
+```php
+protected function statusAction(): ResponseInterface
+{
+    $job = $this->currentJob();
+
+    // The partial renders the box itself: with data-fetch-live while the job runs, without
+    // it once the job is done, which ends the listening.
+    $html = (new TemplateRenderer(self::NS))->partial('partials/jobStatusBox', ['job' => $job]);
+
+    return $this->fetch()->addCommand('replace-html', ['target' => '#job-status', 'html' => $html]);
+}
+```
+
+| Answer | What the listener does |
+|---|---|
+| Envelope with commands (`replace-html`, `update-html`, `update-text`, `reload`, a redirect, …) | Runs them, asks again |
+| `replace-html` on the listener itself | The old one ends; a fragment with `data-fetch-live` starts its own, one without ends the listening |
+| `stop-live` with `target` | Ends the listening; use it when the listener stays on the page |
+| 204 (`noContent()`) | Nothing, asks again |
+| Network failure, broken body, 408, 429, 5xx | Silent, the content stays, asks again at the next tick |
+| Any other 4xx (401, 403, 404, …) | Silent, the content stays, ends |
+| Envelope with `status: error` | Shows its flashes once, ends |
+| Not JSON (the login page after an expired session) | Silent, no popup, no jump, ends |
+
+Default interval 10 s, floor 5 s. The next request is scheduled only after the answer, so requests never overlap. No request leaves while the tab is hidden (it asks on return) or from inside a closed `<dialog>`. A listener that left the document ends, and the commands of an answer that arrives after that do not run. Fragments inserted later (popup, window, region, `replace-html`) are picked up by `_Z77.core.wire`. Inside a window the answer runs with that window's context.
+
+The first request comes one interval after the page load: the page was just rendered with current data. Every request carries `X-Z77-Live: 1`, so an idle clock does not count it as activity (`Request::isLiveRequest()`).
 
 ## context menu (row ⋮)
 
@@ -523,6 +570,8 @@ User submits
 
 ## rules
 
+- When a page part has to follow something running on the server → MUST use `data-fetch-live` and answer with commands; MUST NOT hand-roll a `setInterval` in a module script. MUST render the attribute only while there is something to watch, and MUST end it (a fragment without it, or `stop-live`) when the thing is done.
+- When answering a live listener → MUST answer `noContent()` when nothing changed and MUST NOT put `html` into the envelope (it would open a popup at every tick); the HTML goes into a command. A session-bound or user-specific listener MUST NOT stand on a page the `PageCache` stores.
 - When returning data from a Fetch endpoint → MUST construct a `FetchResponse` envelope; MUST NOT return raw `JsonResponse` from controllers
 - When a Fetch endpoint has nothing to deliver (data unchanged / up to date) → MUST return `$this->noContent()` (HTTP 204); MUST NOT signal errors with 204 and MUST NOT set status codes via raw `http_response_code()`
 - When validating CSRF for Fetch requests → MUST happen in `AccessGuard`; controllers MUST NOT validate CSRF themselves
@@ -553,6 +602,7 @@ User submits
 
 ## known issues
 
+- **FETCH-LIVE-001** (built 2026-11-01, not yet seen in a browser; first consumer: a member dashboard's progress display). Its questions do not count as activity (owner decision 2026-11-01): `core.js` sends `X-Z77-Live: 1`, `Request::isLiveRequest()` reads it, and `MemberAuth::create()` then leaves the member's idle clock alone, so a visible tab does not keep a member signed in (`tests/member-idle-clock.php`). The price: whoever only watches is signed out after `IDLE_SECONDS` (2 h) even while the job runs, and the listener then ends silently. Don't assume this covers a remembered device: with an «angemeldet bleiben» key the question resumes the session as any request does, which is what that member chose. Don't assume either: with a backend session that has expired, one question goes through `AccessGuard::buildRedirect()`, which stores the listener's URL as `access.origin`; a login directly after that returns to this URL until the next page request overwrites it.
 - **MENU-001** — built 2026-10-22 (owner decision the same day). The row ⋮ opened the shared dialog «Aktionen — «…»» with header, action row («Schliessen»), × and full screen around 2–7 buttons; it is now a context menu at the ⋮ (`data-menu-open`, `_Z77.core.menu`, «context menu» above). Converted: the ten pure action hubs — module-backend Content (Content, MetaData, Navigation, NavigationAlias, Translation ui + slug), Service (Backup, EmailSettings, Job), System (BackendUser), module-financial FiscalYear — and the Drive's ⋮ (module-dms, folder tree + document list: items, the «Aktiv» switch row, the delivery hints as notes). Placement «eher unten rechts» (owner 2026-10-22, second word of the day). Controllers unchanged. Don't assume a scrolled list moves the menu along — it closes on a scroll outside it (fixed box, by choice: simpler than following every scroll container, and a menu that slides away from its row is worse). Don't assume the windows' «click outside closes a chooser» (`data-window-dismiss`) knows the menu: a ⋮ menu inside a chooser window would close that window on an item click — no chooser has a ⋮ today. Verified: `tests/core-js.mjs` M1–M15 against `core.js` AND the hand-patched `core.min.js`, `tests/form-actions.php` (the hub / trigger lint), `tests/js-min-markers.php` (`data-menu-open`, `data-z77-menu`). **Not verified in a browser.**
 - **MODAL-PAGE-001** — found 2026-10-12, **resolved 2026-10-13** (review H1, owner go). Every dialog action (edit, add, confirm*, the ⋮ hubs) opened as a PAGE (no fetch header — a direct URL, a reload, a bookmark) ended in HTTP 500, on every screen: fragment layouts pin `body.main` to the list template for EVERY action, so the dialog's partial was appended to a list rendered without its variables (`count(null)`); a non-fragment controller has no `{action}Action.tpl.php` (`Partial 'editAction' not found`). **Fix, once, in the kernel:** `LayoutManager::hasPage()` answers after the action whether `main` holds a page of THIS action — false when no config set `main` and the action template is missing, or when a pin is still first in `main` and the action only appended to it (an action that called `removeSection('main')` built its own page and stays one; the list, and the mandator form that keeps its pin alone, stay pages). `AbstractBaseController::run()` asks it for every `HtmlResponse` and answers **303 to the controller's `list`** (`dialogPageFallback()`: the requested path with its action segment replaced, query dropped; the session flashes `html()` took for the page are put back for the list). An alias spelling or the list itself without a page stays the error it is — no redirect loop. Chosen over «render the list with the dialog open»: that needs the list's variables in every dialog action, i.e. per-screen code. Verified: `tests/modal-page.php` (17 checks, offline) and live on 8077 — page mode → 303 `…/list`, fetch mode → 200 for `payment-terms` edit/add, `payment-target`, `dunning-level`, `tax-code`, `contact` edit/add/actions, `navigation` edit/actions/confirm-delete/add, `journal` confirm-delete, `drive` add; every backend list, the journal edit page, mandator, report, invoice, bank-import pages unchanged (200); the frontend unchanged.
 - **FETCH-BUSY-001** — resolved 2026-10-13 (review H2). No double-submit guard: a double click on «Speichern» created two contacts or two journal entries. `_Z77.core.busy.guard(owner, control, send)`: per form (or trigger) a busy flag, `aria-busy="true"` and the submitter disabled while the request runs, released in `finally()`; a second submit while busy is ignored (still `preventDefault`, so no native page post either). Used by the `data-fetch-post` wire, the window forms, `data-fetch-get` and `data-fetch-toggle`. Not a server guarantee (Rule 7). Verified: `tests/core-js.mjs` B1–B7, W1–W5. **Not verified in a browser.**
@@ -602,6 +652,7 @@ User submits
 
 ## pending
 
+- **FETCH-LIVE-001: see it once in a browser** with the first consumer: updates at the interval, stops in a hidden tab and asks on return, ends when the job is done.
 - **Look at the row ⋮ menus live** (MENU-001, 8079, Ctrl+F5): Inhalte › Navigation / Inhalte / Metadaten / Aliase / Übersetzungen (ui + slug), Service › Backups / Formular-Mails / Jobs («Jetzt starten» from the menu), System › Backend-Benutzer, Finanzen › Geschäftsjahre (the muted «keine Aktion» line), Dokumente (a folder's and a document's ⋮: «Aktiv» toggles and the menu stays, the delivery note, upload / move / delete open their dialogs). Position: below and to the right of the ⋮, above it near the bottom, to the left near the right edge; Esc, a click outside, ↑/↓, the dialog an item opens and its saved row, dark mode.
 - **Owner: the two hubs that are still dialogs** (MENU-001): contact (addresses inside — move them into the edit mask?), VAT tax code (rates inside — into the edit mask?). Until then they keep the dialog.
 - **Look at the list help live** (HELP-003, 8077 → Aufträge › Aufträge, Rechnungen, Debitoren, Zahlungseingänge, Mahnungen): «Hilfe» at the right end of the toolbar and none in the top bar; it opens the docked help window; on a phone the square stays beside the scrolling tabs; with an order window open, the toolbar button still opens the help of the window last focused (the same `_templateFor()` rule as the top bar) — confirm that is wanted.

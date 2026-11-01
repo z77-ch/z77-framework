@@ -27,6 +27,10 @@
  *      a click outside, the same ⋮ again, one at a time, an item first then close, a scroll,
  *      a stale answer, an error envelope, a switch row that keeps it open — against core.js AND
  *      the hand-patched core.min.js
+ *   L  the live listener ([data-fetch-live], FETCH-LIVE-001): interval and floor, no overlap, a
+ *      hidden tab waits and asks on return, a closed dialog, a removed or replaced element,
+ *      stop-live, 204, silent retry on network / 5xx / 429, the end on 401 / 403 / 404 / an error
+ *      envelope / HTML (no popup, no jump), the stale answer, one listener per element
  *
  * What it cannot prove: layout, focus, real event order — those need a browser.
  * Run: node tests/core-js.mjs
@@ -615,6 +619,160 @@ for (const [label, src] of [['core.js', SOURCE], ['core.min.js', MIN_SOURCE]]) {
     check(`M15 [${label}] a switch row (the Drive's «Aktiv») takes the focus in the ↑/↓ round and keeps the menu open when it toggles`,
         switchFocused && body.children.length === 1 && menu.isOpen());
     document.dispatch('keydown', key(outside, 'Escape'));
+}
+
+// ── L: the live listener — asks while it is wanted, stays silent when it fails ──────────
+console.log('L  live listener');
+{
+    const json = (body) => response({ type: 'application/json', body: { status: 'success', ...body } });
+    const settle = async () => { for (let i = 0; i < 6; i++) await tick(); };
+    const setup = (attrs = {}) => {
+        const made = makeContext();
+        const el = new El('div', { isConnected: true });
+        el.setAttribute('data-fetch-live', '/status');
+        Object.entries(attrs).forEach(([k, v]) => el.setAttribute(k, v));
+        const box = new El('div');
+        box.qsa['[data-fetch-live]'] = [el];
+        made.ctx._Z77.core.live.init(box);
+        // Runs the timers that are due and forgets them, as the browser would.
+        const fire = () => made.timers.splice(0).forEach((t) => t.fn());
+        return { ...made, el, box, fire };
+    };
+
+    {
+        const { fetchQueue, timers, el, box, ctx, fire } = setup({ 'data-fetch-live-every': '30' });
+        check('L1 no request before the first interval', fetchQueue.length === 0);
+        check('L2 the interval comes from the attribute', timers.length === 1 && timers[0].ms === 30000, timers[0] && timers[0].ms);
+        ctx._Z77.core.live.init(box);
+        check('L3 wiring the same element twice starts one listener', timers.length === 1, timers.length);
+        fire();
+        check('L4 the request: GET in fetch mode, never from a cache', fetchQueue.length === 1
+            && fetchQueue[0].url === '/status' && fetchQueue[0].init.headers['X-Requested-With'] === 'XMLHttpRequest'
+            && fetchQueue[0].init.headers['X-Z77-Live'] === '1'
+            && fetchQueue[0].init.cache === 'no-store' && !fetchQueue[0].init.method);
+        check('L5 no next question while the answer is out (no overlap)', timers.length === 0, timers.length);
+        fetchQueue[0].answer(response({ status: 204, type: '' }));
+        await settle();
+        check('L6 204: nothing happens, the next question is scheduled', timers.length === 1 && el.isConnected);
+    }
+    check('L7 no interval given → the default 10 s', setup().timers[0].ms === 10000);
+    check('L8 below the floor → 5 s', setup({ 'data-fetch-live-every': '1' }).timers[0].ms === 5000);
+    {
+        const { ctx, timers } = makeContext();
+        ctx._Z77.core.live.init(new El('div'));
+        check('L9 nothing in the markup → no timer', timers.length === 0);
+    }
+
+    {
+        const { ctx, document, fetchQueue, timers, fire } = setup();
+        ctx._Z77.core.live.bind();
+        document.hidden = true;
+        fire();
+        check('L10 a hidden tab sends nothing', fetchQueue.length === 0 && timers.length === 0);
+        document.dispatch('visibilitychange');
+        check('L11 still hidden: a stray event sends nothing', fetchQueue.length === 0);
+        document.hidden = false;
+        document.dispatch('visibilitychange');
+        check('L12 back on the tab: it asks at once', fetchQueue.length === 1);
+        document.dispatch('visibilitychange');
+        check('L13 …and once', fetchQueue.length === 1);
+    }
+    {
+        const { fetchQueue, timers, el, fire } = setup();
+        el.closest = (sel) => (sel === 'dialog:not([open])' ? new El('dialog') : null);
+        fire();
+        check('L14 inside a closed dialog: no request, it looks again later', fetchQueue.length === 0 && timers.length === 1);
+    }
+    {
+        const { fetchQueue, timers, el, fire } = setup();
+        el.isConnected = false;
+        fire();
+        check('L15 out of the document: no request, no further timer', fetchQueue.length === 0 && timers.length === 0);
+    }
+
+    {
+        const { document, fetchQueue, timers, el, fire } = setup();
+        const target = new El('div');
+        document.qsa['#progress'] = [target];
+        fire();
+        fetchQueue[0].answer(json({ commands: [{ action: 'update-text', target: '#progress', text: '40 %' }] }));
+        await settle();
+        check('L16 the answer\'s commands run, the controller names the target', target.textContent === '40 %', target.textContent);
+        check('L17 …and it goes on', timers.length === 1);
+        document.qsa['#self'] = [el];
+        fire();
+        fetchQueue[1].answer(json({ commands: [{ action: 'stop-live', target: '#self' }] }));
+        await settle();
+        check('L18 stop-live: the attribute is gone, no further question', !el.hasAttribute('data-fetch-live') && timers.length === 0);
+    }
+    {
+        const { document, fetchQueue, timers, el, fire } = setup();
+        const target = new El('div');
+        document.qsa['#progress'] = [target];
+        fire();
+        el.isConnected = false;
+        fetchQueue[0].answer(json({ commands: [{ action: 'update-text', target: '#progress', text: 'stale' }] }));
+        await settle();
+        check('L19 closed while the request ran: its commands do not run, it ends', target.textContent === '' && timers.length === 0);
+    }
+    {
+        // The controller replaced the listener: the old one ends and the fragment's own one runs.
+        const { document, fetchQueue, timers, el, fire } = setup();
+        const parent = new El('div');
+        const fresh = new El('div');
+        fresh.setAttribute('data-fetch-live', '/status2');
+        parent.replaceChild = () => { el.isConnected = false; fresh.isConnected = true; };
+        el.parentNode = parent;
+        document.qsa['#self'] = [el];
+        const content = new El('#fragment', { childNodes: [fresh] });
+        content.qsa['[data-fetch-live]'] = [fresh];
+        const createElement = document.createElement;
+        document.createElement = (t) => (t === 'template' ? new El('template', { content }) : createElement(t));
+        fire();
+        fetchQueue[0].answer(json({ commands: [{ action: 'replace-html', target: '#self', html: '<div></div>' }] }));
+        await settle();
+        check('L20 a replaced listener hands over: one timer, the fragment\'s', timers.length === 1, timers.length);
+        fire();
+        check('L21 …which asks its own URL', fetchQueue[1] && fetchQueue[1].url === '/status2', fetchQueue[1] && fetchQueue[1].url);
+    }
+
+    const retries = [
+        ['a network failure', (q) => q.fail(new Error('net'))],
+        ['a 500', (q) => q.answer(response({ status: 500, type: 'application/json', body: { status: 'error', flashes: [{ type: 'error', text: 'x' }] } }))],
+        ['a 503 page', (q) => q.answer(response({ status: 503, body: 'down' }))],
+        ['a 429', (q) => q.answer(response({ status: 429, body: 'slow' }))],
+        ['a broken body', (q) => q.answer(response({ type: 'application/json', body: '{broken' }))],
+    ];
+    for (const [label, act] of retries) {
+        const { fetchQueue, timers, messages, flashes, fire } = setup();
+        fire();
+        act(fetchQueue[0]);
+        await settle();
+        check(`L22 ${label}: silent, asks again`, timers.length === 1 && messages.children.length === 0 && flashes.children.length === 0);
+    }
+    const ends = [
+        ['a 401', (q) => q.answer(response({ status: 401, type: 'application/json', body: { status: 'error', redirect: { url: '/login' } } }))],
+        ['a 403', (q) => q.answer(response({ status: 403, type: 'application/json', body: { status: 'error', flashes: [{ type: 'error', text: 'x' }] } }))],
+        ['a 404', (q) => q.answer(response({ status: 404, body: 'gone' }))],
+        ['the login page (an expired session)', (q) => q.answer(response({ body: '<html>login</html>' }))],
+    ];
+    for (const [label, act] of ends) {
+        const { ctx, fetchQueue, timers, messages, flashes, fire } = setup();
+        let popups = 0;
+        ctx._Z77.core.popup.show = () => { popups++; };
+        fire();
+        act(fetchQueue[0]);
+        await settle();
+        check(`L23 ${label}: ends, silent, no popup, no jump`, timers.length === 0 && popups === 0
+            && messages.children.length === 0 && flashes.children.length === 0 && ctx.location.href === 'http://test/page');
+    }
+    {
+        const { fetchQueue, timers, flashes, fire } = setup();
+        fire();
+        fetchQueue[0].answer(response({ type: 'application/json', body: { status: 'error', flashes: [{ type: 'error', text: 'Nicht möglich' }] } }));
+        await settle();
+        check('L24 an error envelope: its flash once, then it ends', flashes.children.length === 1 && timers.length === 0);
+    }
 }
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed');

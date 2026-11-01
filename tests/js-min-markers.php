@@ -63,6 +63,9 @@ const MARKERS = [
         'data-menu-open',           // the row ⋮ as a context menu (owner 2026-10-22)
         'data-z77-menu',
         'data-kibot-ready',         // a window's help button as the KI-Assistent opener (ADR-055, 2026-10-25)
+        'data-fetch-live',          // the live listener (FETCH-LIVE-001, 2026-11-01)
+        'stop-live',
+        'X-Z77-Live',               // … its questions do not count as activity on an idle clock
     ],
     'packages/kernel/shared/res/assets/js/upload.js' => [
         'data-upload-transport',    // another wire for big files — the DMS chunked upload (F3, 2026-10-31)

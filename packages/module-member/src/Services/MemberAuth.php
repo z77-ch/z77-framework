@@ -22,6 +22,7 @@ final class MemberAuth
         private MemberSession $session,
         private MemberAccounts $accounts,
         private DeviceKeys $deviceKeys,
+        private bool $isActivity = true,
     ) {
     }
 
@@ -32,6 +33,7 @@ final class MemberAuth
             new MemberSession(DI::getSessionManager()),
             new MemberAccounts(new UnifiedEntityManager(new DataSourceResolver(['file' => 'File']))),
             DeviceKeys::create(),
+            !DI::getRequest()->isLiveRequest(),
         );
     }
 
@@ -49,7 +51,7 @@ final class MemberAuth
      */
     public function current(?int $now = null): ?MemberAccount
     {
-        $accountId = $this->session->currentAccountId($now);
+        $accountId = $this->session->currentAccountId($now, $this->isActivity);
         if ($accountId === null) {
             return $this->resume($now);
         }
