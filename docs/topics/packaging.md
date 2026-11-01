@@ -1,6 +1,6 @@
 # packaging
 
-2026-09-23
+2026-11-01
 
 Public since 2026-07-15: the monorepo and all split repos are public on GitHub and every package (`z77/kernel`, the three modules, `z77/skeleton`, `z77/docs`) is registered on Packagist with release tags (`1.0.x`). `z77-ch/kernel` + `module-frontend/backend/dms` are the active split targets; the obsolete `z77-ch/core`, `/shared`, `/persistence` repos are archived (read-only), superseded by kernel.
 
@@ -41,7 +41,7 @@ A deploy build copies WORKING TREES into `vendor/z77/*`. Nothing else records wh
 
 - The stamp lives INSIDE `vendor/` on purpose — `vendor/` is uploaded as a whole, so the statement can never travel separately from the thing it describes. An `override/`-only upload correctly leaves it untouched.
 - Shape: `built_at` (unix) plus one object per source tree — `commit` (full hash or `null`), `branch`, `dirty`, `committed_at`. Unix timestamps, so no locale or timezone parsing anywhere in the chain.
-- **`dirty` is the load-bearing field.** A deploy build copies a working tree, not a commit; a bare hash would name a state that was never shipped. `BuildInfo::label()` renders it as a trailing `+`.
+- **`dirty`** says the build holds more than the commit names; `BuildInfo::label()` renders it as a trailing `+`. Since 2026-11-01 `vendor-deploy.php` builds from the last commit (PKG-EXPORT-001) and calls the stamp with `--committed`, so it is false there. It stays load-bearing for a project still on the older script, which copies its working tree.
 - **No stamp = development checkout.** There the junctions point at a tree that can differ between two requests, so there is nothing true to state: `BuildInfo::current()` returns `null` and the panel says «Entwicklung», never a stale deploy date. `vendor-dev.bat` deletes the file for exactly that reason.
 - Failure is loud but never fatal: no `git`, no repository, unwritable target → `commit: null`, the writer exits 0 with a warning, the panel says «unbekannt». A missing stamp must not block a deploy, and an empty string would read as a statement.
 - This is provenance, NOT a release number. Tags exist (`1.0.0` … `1.2.0`) but stopped in July; while packages ship as `dev-main` from `path` repos, the commit is the only truthful answer.
@@ -93,6 +93,7 @@ Changing the package alone changes nothing a browser sees.
 - When changing the skeleton (`README.md` / `composer.json`) → MUST commit and tag in `z77-ch/z77-skeleton` itself (not a split target) AND mirror behaviour-relevant changes in the monorepo's `skeleton/composer.json` (dev parity).
 - When a project's `vendor-deploy.bat` gains a new path-repo package → MUST add it to the `tools/build-stamp.php` call as another `name=path` pair, or the panel stays silent about that package's state.
 - When building a deployable `vendor/` → MUST run `tools/build-stamp.php` AFTER the real copies are in place, and MUST NOT hand-edit `vendor/z77/build.json` (it describes a build; an edited one describes nothing).
+- When building a deployable `vendor/` → MUST export each git source's last commit (`releases_exportCommit`) and MUST publish `public/` assets again from those copies (`composer run-script post-install-cmd`); MUST NOT copy a working tree: it carries gitignored files and uncommitted changes to the server (PKG-EXPORT-001). So a change that should ship MUST be committed first.
 - When restoring dev junctions → MUST delete `vendor/z77/build.json` (`vendor-dev.bat` does), or the local backend reports the last deploy's date for a working tree that has moved on.
 - When displaying the stamp → MUST show the `dirty` marker with the commit and MUST NOT render an empty string for an unknown commit; `BuildInfo::label()` returns `unbekannt` for that case.
 - When adding a CLI binary to a package's `bin` list → MUST run `composer update z77/<pkg>` in every consuming project; `composer install` and `vendor-deploy.bat` do NOT create the new `vendor/bin` entry (PKG-005).
@@ -100,6 +101,7 @@ Changing the package alone changes nothing a browser sees.
 
 ## known issues
 
+- **PKG-EXPORT-001** — resolved in the script 2026-11-01. `vendor-deploy.php` copied the working tree, so the gitignored `docs/_local` (maintainer notes, no credentials found by a pattern scan) went to the server with every release of a project that requires `z77/docs`, outside the docroot; uncommitted changes went along too, and the installer published uncommitted CSS into `public/` through the links. Now it exports the last commit, runs the installer again from the copies, and names what it left out. Verified: `tests/releases-export.php`, and a full run in a throwaway project with changed files in the framework's working tree: the build, its `public/` assets and its stamp held the commit. The copies already on the servers were removed by the owner's decision the same day (one installation had them, in every kept release). Don't assume every project has it: each project keeps its own copy of `.releases/`, see pending. A source that is no git tree is still copied as it stands, with a warning.
 - **PKG-001**: don't assume the split preserves per-file history — the action is a snapshot copy, each monorepo push produces one commit in the target. The workflow uses a shallow checkout (no `splitsh-lite`, so full history is not needed).
 - **ARCH-PKG-002** — resolved 2026-07-09 by ADR-023. The former circular triangle `core ↔ shared ↔ persistence` is gone: the three ship as one `z77/kernel` package, so their internal references are no longer a Composer dependency. Modules depend downward on the single foundation.
 - **PKG-003** — resolved 2026-07-15 by the public release: the split repos are public, dist zipballs download without a token, the `404 from dist` warnings are gone.
@@ -109,7 +111,7 @@ Changing the package alone changes nothing a browser sees.
 
 ## pending
 
-- None documented.
+- **PKG-EXPORT-001: every project's `.releases/`** — each keeps its own copy of `lib.php` and `vendor-deploy.php`, and only a project with the new copies builds from the commit.
 
 ## see also
 

@@ -20,7 +20,7 @@ Not a comment, not a commit message — an approval recorded here in this file.
 | `deploy.php` | uploads ONE release over ssh (tar stream, every shared name excluded), sets the signposts into `shared/`, compares the installer-generated configs (legacy whole-`config` layout only — obsolete under the ADR-036 split) — refuses an existing or running release |
 | `switch.php` | bends `next` or `current` at a release over ssh: link target per `target.link_target`, the deny files in `shared/`, the `X-Z77-Release` proof across the realpath TTL, then probes the door from outside |
 | `htaccess-deny` | `Require all denied` — copied to `<project>/.htaccess` (link_target `public`) and by `deploy.php`/`switch.php` into every shared store NOT served through `public/`; the alarm for a door bent at the wrong place |
-| `vendor-deploy.php` / `.bat` | builds a deployable `vendor/`: real copies of every path-repo package (list read from `composer.json`), production autoload, build stamp |
+| `vendor-deploy.php` / `.bat` | builds a deployable `vendor/` and `public/` assets: every path-repo package (list read from `composer.json`) as its LAST COMMIT, never the working tree, so nothing gitignored and nothing uncommitted is uploaded; production autoload, build stamp. Commit first, then build. It lists what it left out |
 | `vendor-dev.php` / `.bat` | restores the development `vendor/` (links, dev deps, stamp removed) |
 | `lib.php` | helpers shared by the scripts |
 | `CHECKLIST.md` | the run step by step (command → what you see → what you decide), plus the five things an upload does not carry — worked through on every release |

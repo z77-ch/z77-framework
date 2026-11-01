@@ -8,6 +8,11 @@
  * (production autoload, no dev deps), then swaps EVERY path-repo link for a
  * real copy and stamps the result with `vendor/z77/build.json`.
  *
+ * A copy is the source's last COMMIT, not its working tree: nothing gitignored
+ * and nothing uncommitted reaches a server (lib.php `releases_exportCommit`).
+ * Commit first, then build. A source that is no git tree is copied as it stands,
+ * with a warning.
+ *
  * The package list is read from composer.json `repositories` — nothing is
  * hard-coded, a new path repo is picked up automatically (the 2026-07-19
  * "Class not found on the server" incident was a forgotten hard-coded entry).
@@ -46,15 +51,23 @@ foreach ($repos as $repo) {
     } elseif (is_dir($target)) {
         releases_removeTree($target);
     }
-    releases_copyTree($repo['path'], $target, ['.git', 'vendor', 'node_modules', '.claude', '.vscode']);
+    $skip = ['.git', 'vendor', 'node_modules', '.claude', '.vscode'];
+    if (!releases_exportCommit($repo['path'], $target, $skip)) {
+        fwrite(STDERR, "    WARNING: {$repo['path']} is no git tree, copied as it stands.\n");
+        releases_copyTree($repo['path'], $target, $skip);
+    }
 }
+
+// 2b) The install in step 1 published res/assets into public/ through the links, so out of
+//     the WORKING TREE. Publish again from the copies: public/ holds the commit too.
+releases_run('composer run-script post-install-cmd --no-dev --no-interaction', $projectRoot);
 
 // 3) Stamp the copies with where they came from (see packaging.md → build stamp).
 //    Must run AFTER the copies; never fails the build.
 if ($framework === null || !is_file("$framework/tools/build-stamp.php")) {
     fwrite(STDERR, "WARNING: framework tools/build-stamp.php not found - no build.json, the backend will say 'unbekannt'\n");
 } else {
-    $args = [escapeshellarg($projectRoot . '/vendor/z77/build.json')];
+    $args = ['--committed', escapeshellarg($projectRoot . '/vendor/z77/build.json')];
     foreach ($sources as $label => $path) {
         $args[] = escapeshellarg("$label=$path");
     }

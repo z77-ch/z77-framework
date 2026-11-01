@@ -4,25 +4,32 @@
  * Stamp a deployable vendor/ with the provenance of the source trees it was
  * built from — the writer behind `Z77\Shared\Build\BuildInfo`.
  *
- * A deploy build copies working trees into `vendor/z77/*`. Without a stamp,
+ * A deploy build puts the source trees into `vendor/z77/*`. Without a stamp,
  * nothing on the server says WHICH state that was: composer.lock records a
  * content hash for path repos, not a commit. This writes that fact next to
  * the copies, so it can never travel separately from them.
  *
- * Run from each project's `vendor-deploy.bat`, AFTER the copies are in place:
+ * Run from each project's `vendor-deploy.php`, AFTER the copies are in place:
  *
- *   php tools/build-stamp.php <target.json> framework=<path> [propbase=<path>]
+ *   php tools/build-stamp.php [--committed] <target.json> framework=<path> [propbase=<path>]
  *
  * Exit code is always 0. A missing stamp must never block a deploy — but a
  * failure says so loudly, because a silent empty value would be read as a
  * statement.
  *
- * The dirty flag is the point of the exercise: we copy a working tree, not a
- * commit. A hash without it would name a state that was never shipped.
+ * `--committed`: the copies are the sources' last commit (`releases_exportCommit`),
+ * so changes lying around in the working tree are not in the build and the stamp is
+ * not dirty. Without it (a project still on the working-tree copy) the dirty flag says
+ * the tree was changed: a hash alone would name a state that was never shipped.
  */
 
 $argvIn = $argv ?? [];
 array_shift($argvIn);
+
+$committed = ($argvIn[0] ?? null) === '--committed';
+if ($committed) {
+    array_shift($argvIn);
+}
 
 $target  = array_shift($argvIn);
 $sources = [];
@@ -85,7 +92,7 @@ foreach ($sources as $name => $path) {
     $stamp[$name] = [
         'commit'       => $commit,
         'branch'       => ($branch === null || $branch === '' || $branch === 'HEAD') ? null : $branch,
-        'dirty'        => is_string($status) && trim($status) !== '',
+        'dirty'        => !$committed && is_string($status) && trim($status) !== '',
         'committed_at' => ($time !== null && ctype_digit($time)) ? (int)$time : null,
     ];
 }

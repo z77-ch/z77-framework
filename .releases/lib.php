@@ -158,6 +158,93 @@ function releases_copyTree(string $src, string $dest, array $skip): void
     }
 }
 
+/**
+ * Exports the last COMMIT of the git tree at $src into $dest: what is in git and nothing else.
+ * No gitignored file (`docs/_local` went to every server with the old working-tree copy, found
+ * 2026-11-01) and no uncommitted change, so a release is exactly the commit its stamp names.
+ * Skips the top-level names in $skip, like {@see releases_copyTree()}.
+ *
+ * A file identical to its working copy keeps that copy's modification time: the asset URLs are
+ * versioned by mtime, and a commit must not re-version what it did not change. Exits on any
+ * failure; a release with files missing must not get as far as an upload.
+ *
+ * @param string[] $skip
+ * @return bool false when $src is no git tree (nothing was written)
+ */
+function releases_exportCommit(string $src, string $dest, array $skip): bool
+{
+    $git = 'git -C ' . escapeshellarg($src);
+    exec("$git rev-parse --verify HEAD 2>&1", $ignored, $status);
+    if ($status !== 0) {
+        return false;
+    }
+
+    $files = array_values(array_filter(
+        explode("\0", (string) shell_exec("$git ls-tree -r -z --name-only HEAD")),
+        static fn(string $file) => $file !== '' && !in_array(explode('/', $file)[0], $skip, true)
+    ));
+    if ($files === []) {
+        fwrite(STDERR, "nothing committed under $src\n");
+        exit(1);
+    }
+
+    $changed = trim((string) shell_exec("$git status --porcelain -- ."));
+    if ($changed !== '') {
+        $lines = explode("\n", $changed);
+        echo '    NOT in this build, uncommitted: ' . count($lines) . " file(s)\n";
+        foreach (array_slice($lines, 0, 10) as $line) {
+            echo "      $line\n";
+        }
+    }
+
+    if (!is_dir($dest) && !mkdir($dest, 0777, true)) {
+        fwrite(STDERR, "cannot create $dest\n");
+        exit(1);
+    }
+
+    // autocrlf off, eol lf: the bytes as stored, the same from every machine.
+    $tar = tempnam(sys_get_temp_dir(), 'z77-export') . '.tar';
+    exec("$git -c core.autocrlf=false -c core.eol=lf archive --format=tar -o " . escapeshellarg($tar) . ' HEAD 2>&1', $output, $status);
+    if ($status !== 0) {
+        fwrite(STDERR, "git archive failed in $src: " . implode(' ', $output) . "\n");
+        exit(1);
+    }
+    try {
+        // What the archive holds, not what ls-tree lists: `export-ignore` (.gitattributes,
+        // docs/internal in the provider packages) is left out on purpose, and asking PharData
+        // for a file it does not hold fails the whole export.
+        $archive = new PharData($tar);
+        $prefix  = 'phar://' . str_replace('\\', '/', (string) realpath($tar)) . '/';
+        $held    = [];
+        foreach (new RecursiveIteratorIterator($archive) as $entry) {
+            $held[] = substr(str_replace('\\', '/', $entry->getPathname()), strlen($prefix));
+        }
+        $files = array_values(array_intersect($files, $held));
+        $archive->extractTo($dest, $files, true);
+    } catch (Exception $e) {
+        fwrite(STDERR, "export failed for $src: " . $e->getMessage() . "\n");
+        exit(1);
+    } finally {
+        @unlink($tar);
+        @unlink(substr($tar, 0, -4));
+    }
+
+    foreach ($files as $file) {
+        $exported = "$dest/$file";
+        if (!is_file($exported)) {
+            fwrite(STDERR, "export incomplete, missing: $exported\n");
+            exit(1);
+        }
+        $working = "$src/$file";
+        if (is_file($working)
+            && str_replace("\r\n", "\n", (string) file_get_contents($working)) === str_replace("\r\n", "\n", (string) file_get_contents($exported))) {
+            touch($exported, (int) filemtime($working));
+        }
+    }
+
+    return true;
+}
+
 /** Runs a command in $cwd, streams its output, exits on failure. */
 function releases_run(string $cmd, string $cwd): void
 {
