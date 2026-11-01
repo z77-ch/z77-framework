@@ -776,6 +776,7 @@ $before = count($outbox());
 [, , $html] = $b('/backend/system/login/reset', ['csrf_token' => $resetCsrf, 'token' => str_repeat('c', 64), 'password' => 'Neues-Passwort-456', 'password_repeat' => 'Neues-Passwort-456']);
 check('an unknown token: the one neutral page with a link to request a new one', str_contains($html, 'Link nicht gültig') && str_contains($html, 'href="/backend/system/login/forgot"') && count($outbox()) === $before);
 
+$mailsBeforeReset = $outbox();
 [$s, $h] = $b('/backend/system/login/reset', ['csrf_token' => $resetCsrf, 'token' => $plainToken, 'password' => 'Neues-Passwort-456', 'password_repeat' => 'Neues-Passwort-456']);
 check('POST reset: redirect to the login', ($s === 302 || $s === 303) && ($h['location'] ?? '') === '/login', "status {$s} " . ($h['location'] ?? ''));
 [$s, , $html] = $b('/login');
@@ -783,8 +784,10 @@ check('the login page shows the success flash', str_contains($html, 'Dein Passwo
 check('no automatic login: the browser is still a guest', $b('/backend/system/dashboard/overview')[0] !== 200);
 
 $mails = $outbox();
-$changed = $decoded(end($mails));
-preg_match('/^Subject: (\S+)/m', (string) file_get_contents(end($mails)), $subject);
+// By name two mails of one second sort in any order (FileTransport: a clock fragment), so not end().
+$changedFile = current(array_diff($mails, $mailsBeforeReset)) ?: '';
+$changed = $decoded($changedFile);
+preg_match('/^Subject: (\S+)/m', (string) @file_get_contents($changedFile), $subject);
 check('second mail: «Dein Passwort wurde geändert», without a link', count($mails) === 2
     && iconv_mime_decode(trim($subject[1] ?? ''), 0, 'UTF-8') === 'Dein Passwort wurde geändert'
     && str_contains($changed, 'soeben') && !str_contains($changed, 'href=') && !str_contains($changed, 'token='), trim($subject[1] ?? ''));
@@ -855,13 +858,13 @@ $phone('/backend/system/login/login', ['csrf_token' => $csrf($html), 'username' 
 check('a second session of the same user', $phone('/backend/system/dashboard/overview')[0] === 200);
 
 // An open link dies with the admin's change; used to prove it below.
-$mailsBefore = count($outbox());
+$mailsBefore = $outbox();
 $linkBrowser = $browser();
 [, , $html] = $linkBrowser('/backend/system/login/forgot');
 $linkBrowser('/backend/system/login/forgot', ['csrf_token' => $csrf($html), 'identifier' => 'max']);
 $all = $outbox();
-preg_match('#reset\?token=([a-f0-9]{64})#', $decoded(end($all)), $open);
-check('a new link for the admin path', count($all) === $mailsBefore + 1 && ($open[1] ?? '') !== '');
+preg_match('#reset\?token=([a-f0-9]{64})#', $decoded(current(array_diff($all, $mailsBefore)) ?: ''), $open);
+check('a new link for the admin path', count($all) === count($mailsBefore) + 1 && ($open[1] ?? '') !== '');
 
 $epoch = $storedUser('max')['auth_epoch'];
 [, , $answer] = $saveUser($b, 1, ['username' => 'max', 'name' => 'Max Muster', 'email' => 'max.muster@example.ch', 'password' => 'Viertes-Passwort-012']);
