@@ -8,6 +8,7 @@ use Z77\Module\Member\Entities\MemberToken;
 use Z77\Persistence\Resolver\DataSourceResolver;
 use Z77\Persistence\Resolver\UnifiedEntityManager;
 use Z77\Shared\Mail\EmailMessage;
+use Z77\Shared\Mail\SenderIdentity;
 
 /**
  * The invitation as the module's craft: a token bound to a project reference
@@ -225,16 +226,19 @@ final class InvitationFlow
      *        from nobody reads like spam
      * @param int    $operatorId   the backend user's id — kept on the token as
      *        `operator:<id>` and handed to the joinHook as $invitedBy
+     * @param ?SenderIdentity $sender how the operator signs this mail (mail.md
+     *        «sender identity», usually `SenderIdentities::choose()`); null =
+     *        the installation's name. One that cannot sign refuses before a token exists.
      * @return self::SENT|self::ALREADY_TAKEN|self::THROTTLED|self::INVALID
      */
-    public function inviteAsOperator(string $operatorName, int $operatorId, string $tenantRef, string $email, ?int $now = null): string
+    public function inviteAsOperator(string $operatorName, int $operatorId, string $tenantRef, string $email, ?int $now = null, ?SenderIdentity $sender = null): string
     {
         $operatorName = trim($operatorName);
-        if ($operatorName === '' || $operatorId <= 0) {
+        if ($operatorName === '' || $operatorId <= 0 || ($sender !== null && $sender->problems() !== [])) {
             return self::INVALID;
         }
 
-        return $this->issue($operatorName, self::OPERATOR_PREFIX . $operatorId, $tenantRef, $email, $now);
+        return $this->issue($operatorName, self::OPERATOR_PREFIX . $operatorId, $tenantRef, $email, $now, $sender);
     }
 
     /**
@@ -242,7 +246,7 @@ final class InvitationFlow
      *
      * @return self::SENT|self::ALREADY_TAKEN|self::THROTTLED|self::INVALID
      */
-    private function issue(string $inviterName, string $inviterRef, string $tenantRef, string $email, ?int $now): string
+    private function issue(string $inviterName, string $inviterRef, string $tenantRef, string $email, ?int $now, ?SenderIdentity $sender = null): string
     {
         $now       = $now ?? time();
         $tenantRef = trim($tenantRef);
@@ -279,7 +283,7 @@ final class InvitationFlow
             $now
         );
 
-        ($this->sendMail)($this->inviteMail($inviterName, $tenantRef, $email, $plain, $existing !== null));
+        ($this->sendMail)($this->signed($this->inviteMail($inviterName, $tenantRef, $email, $plain, $existing !== null), $sender));
 
         return self::SENT;
     }
@@ -414,10 +418,19 @@ final class InvitationFlow
      * the customer's chair as «Sie sind freigeschaltet», with one difference
      * worth a sentence: he signs in as always and CHOOSES the reference in the
      * header. Rejection sends NO automatic mail, as with accounts.
+     *
+     * @param ?SenderIdentity $sender how the person who activates signs this mail;
+     *        null = the installation's name. Choose it BEFORE activating: one that
+     *        cannot sign is a programmer error and throws, nothing is sent unsigned.
+     * @throws \InvalidArgumentException $sender has {@see SenderIdentity::problems()}
      */
-    public function sendJoinActivated(MemberAccount $account, string $tenantRef, string $loginUrl): void
+    public function sendJoinActivated(MemberAccount $account, string $tenantRef, string $loginUrl, ?SenderIdentity $sender = null): void
     {
-        ($this->sendMail)(
+        if ($sender !== null && $sender->problems() !== []) {
+            throw new \InvalidArgumentException('Sender identity cannot sign: ' . implode(' ', $sender->problems()));
+        }
+
+        ($this->sendMail)($this->signed(
             (new EmailMessage())
                 ->to($account->getEmail())
                 ->subject('Ihr Zugang zu «' . ($this->tenantLabel)($tenantRef) . '» ist freigeschaltet')
@@ -425,8 +438,9 @@ final class InvitationFlow
                     'account'    => $account,
                     'tenantName' => ($this->tenantLabel)($tenantRef),
                     'loginUrl'   => $loginUrl,
-                ])
-        );
+                ]),
+            $sender
+        ));
     }
 
     // ── internals ──────────────────────────────────────────────────────────
@@ -491,6 +505,11 @@ final class InvitationFlow
     private function outcome(string $outcome, ?MemberAccount $account = null): array
     {
         return ['outcome' => $outcome, 'account' => $account];
+    }
+
+    private function signed(EmailMessage $mail, ?SenderIdentity $sender): EmailMessage
+    {
+        return $sender !== null ? $mail->signedBy($sender) : $mail;
     }
 
     private function inviteMail(

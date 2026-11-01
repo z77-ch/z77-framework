@@ -359,6 +359,9 @@ $fb-info-tint: $fb-bg;
         .me-btn { width: auto; }
     }
 
+    // The action cell's copy for a phone: wide, the cell itself stands there.
+    &__actions--narrow { display: none; }
+
     // The drawer's parts exist only on a narrow screen (see the narrow block).
     &__burger,
     &__backdrop { display: none; }
@@ -1141,6 +1144,20 @@ $fb-info-tint: $fb-bg;
     .me-shell__toolbar {
         padding: 0 0.75rem;
         overflow-x: auto;
+    }
+
+    // The action cell's buttons again (ADR-033, owner 2026-11-01). They hold the
+    // right edge, so tabs that do not fit scroll away beneath them, never the
+    // page's main action. The ground reaches over the toolbar's padding to the
+    // edge and over the row's height, or a passing tab would show around it.
+    .me-shell__actions--narrow {
+        display: flex;
+        position: sticky;
+        right: -0.75rem;
+        align-self: stretch;
+        margin: 0 -0.75rem 0 auto;
+        padding: 0 0.75rem 0 0.5rem;
+        background: var(--surface, #{$fb-surface});
     }
 
     // Drawer parts 1 and 2 — area switcher and action cell, under the header.

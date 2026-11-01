@@ -323,6 +323,7 @@ SPF / DKIM / DMARC are aligned to it — and the person only signs:
 | Envelope sender (`MAIL FROM`), From ADDRESS | the account: `config/client/mail.inc.php` `fromAddress` (e.g. `no-reply@z77.ch`), as before |
 | From DISPLAY NAME | the chosen identity's `name` («Max Muster» → `From: "Max Muster" <no-reply@z77.ch>`) — `Message::fromName()`; the `Mailer` keeps a name the message carries and fills only the address |
 | Reply-To | the identity: `"Max Muster" <max.muster@example.ch>` — `Message::replyTo(address, name)` |
+| A template mail | `EmailMessage::signedBy($identity)` sets both; `EmailService::send()` applies a display name without an address (`EmailMessage::fromName()`, dropped silently before 2026-11-01). `InvitationFlow::inviteAsOperator()` and `sendJoinActivated()` take the identity as their last argument (`tests/mail-sender-identity.php`, `tests/member-operator-invite.php`) |
 | Text | `{anzeigename}` in the document mail kinds = the identity's name |
 
 | Piece | Detail |

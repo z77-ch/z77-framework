@@ -1,6 +1,6 @@
 # ADR-033 — Shell action placement: one rule for every shell
 
-Date: 2026-08-15 · Status: accepted · Revised: 2026-09-28 (an action stands where the thing it acts on is shown; the phone drawer — see «Revision 2026-09-28» below); 2026-10-08 (the action cell carries the most frequent action again; area selection at the top of the rail; the phone icon — see «Revision 2026-10-08» below)
+Date: 2026-08-15 · Status: accepted · Revised: 2026-09-28 (an action stands where the thing it acts on is shown; the phone drawer — see «Revision 2026-09-28» below); 2026-10-08 (the action cell carries the most frequent action again; area selection at the top of the rail; the phone icon — see «Revision 2026-10-08» below); 2026-11-01 (member shell: the action cell's buttons also in the toolbar on a phone — see the addendum below)
 
 ## Context
 
@@ -237,3 +237,22 @@ the status pill read as a third button. A proposal across all seven palettes, li
 **Consequences.** Applied to the order window and the invoice detail's «Buchungsdruck …». The
 other «…» confirms (list action cells, the dunning run) keep the fill until they are reviewed —
 `css-backend.md` pending.
+
+## Addendum 2026-11-01 — member shell: on a phone the action cell's buttons also stand in the toolbar
+
+**Trigger.** On a phone the member's action cell lives in the drawer, so the page's main action is
+two taps away. The 2026-10-08 revision solved this for the backend and left the member untouched.
+The owner: every button of the action cell ALSO shows in the toolbar on a phone, doubled on purpose,
+either in the drawer or in the toolbar.
+
+**Decision.** Below 60rem `html-shell-skeleton` shows `$actionList` a second time, in the toolbar
+after tabs, tools and work actions (`.me-shell__actions--narrow`, same `partials/shell/action`, so
+submit, dialog, post and link all work). It holds the right edge: tabs that do not fit scroll away
+beneath it, the main action does not. From 60rem up the copy is hidden. No project setting.
+
+**Differs from the backend on purpose.** The backend MOVES its cell to the toolbar as a square icon
+(ONE button). The member shell has up to two labelled buttons and keeps them in the drawer as well.
+
+**Consequences.** module-member: skeleton, `member.scss`, `member.css`. A project that overrides
+`html-shell-skeleton` does not get it until it takes the block over. The action partial must stay
+free of ids: everything in it renders twice on a phone.

@@ -124,6 +124,17 @@ $work       = !empty($railItems) || $actionList !== [] || $workList !== [];
             ]) ?>
         </div>
         <?php endif; ?>
+        <?php /* The action cell's buttons a second time, on purpose (owner 2026-11-01, ADR-033):
+                 on a phone the cell lives in the drawer, two taps from the page's main action.
+                 CSS shows this copy only there (member.scss, narrow block). */ ?>
+        <?php if ($actionList !== []): ?>
+        <div class="me-shell__actions me-shell__actions--narrow">
+            <?= $this->partial('partials/shell/action', [
+                'actions'   => $actionList,
+                'csrfToken' => $csrfToken ?? '',
+            ]) ?>
+        </div>
+        <?php endif; ?>
     </div>
 
     <?php /* Row 3 — the crumb line: the position, nothing else (ADR-033

@@ -13,7 +13,10 @@
  *   (C) redemption of that token: the joinHook receives `operator:<id>` verbatim,
  *       the new account is born `confirmed`;
  *   (D) the member path is unchanged: invite() still names the member and keeps
- *       the member id on the token.
+ *       the member id on the token;
+ *   (E) the sender identity (mail.md): the invitation and the release mail carry
+ *       display name + Reply-To, no identity leaves both empty, one that cannot
+ *       sign sends nothing and leaves no token.
  *
  * Run: php tests/member-operator-invite.php
  */
@@ -124,6 +127,45 @@ $ctx = $mails ? ($mails[0]->getContext()) : [];
 check('mail names the member', ($ctx['inviter'] ?? null) === 'Erika Beispiel', json_encode($ctx['inviter'] ?? null));
 $token = $flow->inspect(tokenFrom($mails[0] ?? new EmailMessage()));
 check('token carries the member id', $token !== null && $token->getInvitedBy() === (string)$inviter->getId(), (string)$token?->getInvitedBy());
+
+echo "(E) sender identity\n";
+$identity = new Z77\Shared\Mail\SenderIdentity('Max Muster', 'max.muster@example.ch');
+
+$mails = [];
+$out = $flow->inviteAsOperator('Max Muster', 7, 'p30', 'signed@example.ch', null, $identity);
+check('signed invitation: SENT', $out === InvitationFlow::SENT, $out);
+check('…display name from the identity, From address left to the installation',
+    ($mails[0] ?? null)?->getFromName() === 'Max Muster' && $mails[0]->getFrom() === '');
+check('…Reply-To is the person', $mails[0]->getReplyTo() === 'max.muster@example.ch' && $mails[0]->getReplyToName() === 'Max Muster');
+
+$mails = [];
+$flow->inviteAsOperator('Max Muster', 7, 'p31', 'plain@example.ch');
+check('no identity: neither name nor Reply-To', ($mails[0] ?? null)?->getFromName() === '' && $mails[0]->getReplyTo() === '');
+
+$mails = [];
+$open = count($flow->openInvites('p32'));
+$out = $flow->inviteAsOperator('Max Muster', 7, 'p32', 'bad@example.ch', null, new Z77\Shared\Mail\SenderIdentity('a@b.ch', 'kein-mail'));
+check('an identity that cannot sign: INVALID, no mail, no token', $out === InvitationFlow::INVALID && $mails === [] && count($flow->openInvites('p32')) === $open, $out);
+
+$member = $accounts->register('release@example.ch', 'Muster AG', 'Max', 'Muster');
+
+$mails = [];
+$flow->sendJoinActivated($member, 'p30', 'https://example.test/login', $identity);
+check('release mail carries the identity', ($mails[0] ?? null)?->getFromName() === 'Max Muster'
+    && $mails[0]->getReplyTo() === 'max.muster@example.ch' && $mails[0]->getReplyToName() === 'Max Muster');
+
+$mails = [];
+$flow->sendJoinActivated($member, 'p30', 'https://example.test/login');
+check('release mail without identity: neither', ($mails[0] ?? null)?->getFromName() === '' && $mails[0]->getReplyTo() === '');
+
+$mails = [];
+$threw = false;
+try {
+    $flow->sendJoinActivated($member, 'p30', 'https://example.test/login', new Z77\Shared\Mail\SenderIdentity('', ''));
+} catch (InvalidArgumentException) {
+    $threw = true;
+}
+check('release mail with an identity that cannot sign: throws, nothing goes out unsigned', $threw && $mails === []);
 
 // clean up the temp installation
 $it = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($base, FilesystemIterator::SKIP_DOTS), RecursiveIteratorIterator::CHILD_FIRST);
