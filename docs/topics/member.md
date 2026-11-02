@@ -1,6 +1,6 @@
 # member
 
-2026-11-01
+2026-11-02
 
 ## entry
 
@@ -72,6 +72,8 @@ SOURCE=/packages/module-member/res/view/templates/partials/shell/crumbs.tpl.php
 SOURCE=/packages/module-member/res/view/templates/partials/shell/action.tpl.php
 SOURCE=/packages/module-member/src/Ui/Config/Main/profileControllerConfig.inc.php
 SOURCE=/packages/module-member/res/assets/js/login-wait.js
+SOURCE=/tests/state-changing-get.php
+SOURCE=/tests/support/real-flow-server.php
 SOURCE=/packages/module-member/res/assets/js/shell.js
 SOURCE=/packages/module-member/res/scss/member.scss
 SOURCE=/packages/module-backend/src/Ui/Controllers/Service/MemberAccountsController.php
@@ -134,6 +136,7 @@ master invites address ─▶ token + mail ─┬─ unknown address: name form 
 - When placing a button on a shell screen → MUST follow ADR-033: the DECISIVE action(s) (a form's save + cancel, the area's add) go into the action cell as `shellActions` — the default (a save submits from outside via `'submit' => '<form id>'`); an action on the SHOWN thing goes into the toolbar as `shellWorkActions` (after tabs or tools, left-aligned) when it acts on what the WORK side shows while the rail lists something else (ADR-033 rev. 2026-09-28: an action stands where the thing it acts on is shown — axo3 «Mandant»: Bearbeiten, Einladen); the page's TABS (`shellTabs`) or TOOLS (`shellTools` — per-target: Kopieren/Vorschau/Bearbeiten/Löschen) go into the toolbar, never both; the crumb line carries position only. Exceptions live in the ADR: dialogs carry their own buttons, selection-bound mass actions stay with their list.
 - When a rail carries a mutually exclusive SHAPE choice (tree vs list) → MUST render it as a `segment` row (`['segment' => [...]]`, one bordered control, active option filled inverse), never as plain `me-item` rows — plain rows read as more data entries, not as the control that changes the whole pane (Fund Peter, 2026-08-18). Options stay links.
 - When a screen's rail selection is explicit (a key in the URL) → MUST pass `detailOpen: true`, so on a narrow screen the drawer starts CLOSED and the detail is what one sees; a screen whose selection is only a DEFAULT MUST NOT — without it the drawer starts OPEN on the list, which is what one came for (SHELL-DRAWER-001).
+- When an action of this module changes state → MUST carry `#[HttpMethod('POST')]` and check the CSRF token (in-action for a page POST, `AccessGuard` for a fetch POST); a page that shows a form on GET keeps its GET view, only the saving branch is POST (SEC-GET-001). The logout is `#[HttpMethod('POST'), Csrf]`, so a project's own logout link or `userMenu` override must move to the form with `csrf_token`: a link now answers 404 and signs nobody out.
 - When adding a route to this module → MUST add it to BOTH the module config and any project override of that file, since the override wins whole. The same holds for a `jobs` entry and for any new SETTING: a whole-file override that omits one loses it silently, and nothing reports the loss (2026-08-24: the AXO3 override carried no `jobs` key at all, so `member-cleanup` did not exist on that installation).
 - When restricting member forms by origin country → the rule is NOT this module's: register and login opt into the kernel's `PublicFormHandler::withGeoGuard()` (register visible with `identityField 'email'` + the `origin` extra; login `silent: true`, MEM-005), and blocklist, log and backend surface live in the kernel (see [`forms.md`](forms.md)). MUST NOT read a `memberConfig['blockedCountries']` key — removed 2026-08-27, a leftover entry is silently ignored (GEOIP-003) — and MUST NOT re-introduce a gate in `RegistrationFlow`: the handler refuses before the flow runs.
 - When an action ends in a redirect → MUST land the user WHERE THEY STOOD before the action: the entry's `?key`, the section's `?bereich`, the list's filters — never the surface's default selection. A `#fragment` is not a selection (the server never sees it); the query parameter is. The one exception is deletion — what one stood on is gone, the list default is honest there. (Found 2026-08-15: saving widget entry three landed the rail on entry one; the profile's device/2FA actions dropped the person back on «Konto».)

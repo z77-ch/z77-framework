@@ -674,12 +674,27 @@ $fb-info-tint: $fb-bg;
         }
     }
 
+    // Signing out is a POST, so its row is a button reading as the links above it.
+    &__form {
+        margin: 0;
+    }
+
     // The areas open the panel; the identity block below them belongs to the
     // account half, so it carries the top gap instead of the areas carrying a
     // bottom one.
     &__areas {
         padding-top: 0.25rem;
     }
+}
+
+button.me-account__row {
+    box-sizing: border-box;
+    width: 100%;
+    border: 0;
+    background: none;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
 }
 
 // In the shell the content area sets the measure — the card is a section of a

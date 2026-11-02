@@ -40,6 +40,8 @@ SOURCE=/packages/kernel/core/src/Exception/ExceptionHandler.php
 SOURCE=/packages/kernel/core/src/Http/Response/DeliveryPolicy.php
 SOURCE=/tests/file-delivery-policy.php
 SOURCE=/tests/file-delivery-browser.php
+SOURCE=/tests/state-changing-get.php
+SOURCE=/tests/support/real-flow-server.php
 RUNTIME=/skeleton/config/auth.inc.php
 RUNTIME=/skeleton/data/framework/auth/backendUsers.json
 
@@ -101,7 +103,7 @@ every `html()` context) travels on ONE of two paths, checked by `AccessGuard`:
   to `/`. Actions that want a friendly failure UX (message + form re-render,
   e.g. a public contact form) validate in-action via `CsrfService` instead —
   both are legitimate; pick per endpoint.
-- Consumers: `AdminPanelController::togglePartialLabelsAction` (`#[Csrf]`),
+- Consumers: `AdminPanelController::togglePartialLabelsAction`, both logouts (`#[Csrf]`),
   zihlundsee contact form (in-action, UX). Origin: CONTACT-CHECK-001 — a project
   fetch() sent the token only in the body and every blur check died at the
   guard; see `docs/03-development/review-email-service-usage.md`.
@@ -127,6 +129,7 @@ still the right tool for a non-form endpoint that needs the same protections.
 ## rules
 
 - When a project JS posts to a Fetch-mode endpoint → MUST send the CSRF token as the `X-CSRF-Token` header (`AccessGuard` checks ONLY the header on the global fetch path); a body copy alone dies at the guard (CONTACT-CHECK-001).
+- When an action changes state → MUST carry `#[HttpMethod('POST')]` (or, for a page that also shows a form, save only in its POST branch) and a CSRF check; MUST NOT change anything on a GET, also not behind a confirmation in the link: any page can fire a GET with an image tag, and a prefetch or a mail scanner fires it unasked (SEC-GET-001; the exceptions are named there).
 - When adding a page-mode POST endpoint → MUST protect it against CSRF: `#[Csrf]` attribute (reject semantics) or in-action `CsrfService::validate` (friendly-UX semantics); the hidden field MUST be named `csrf_token` (matches the auto-injected `$csrfToken`).
 - When building a public form → MUST declare it as a `FormDefinition` and run it through `PublicFormHandler` ([`forms.md`](forms.md)), which applies the `FormGuard` mechanics (time-trap / rate-limit) and the honeypot convention (bot detected → pretend success, send nothing); MUST NOT hand-roll session keys or the cascade. For a non-form endpoint that needs the same protections, `FormGuard::forKey()` stays the direct tool.
 - When provisioning the admin at install → MUST generate it (interactive: hidden password prompt; non-interactive: write a one-time `SETUP_TOKEN` under `data/`); MUST NOT ship a working default credential in any `*.default.json`.
@@ -157,6 +160,7 @@ still the right tool for a non-form endpoint that needs the same protections.
 ## known issues
 
 - **DMS-ACTIVE-001** — resolved 2026-11-02. Stored XSS through file delivery: an uploaded HTML, SVG or XHTML ran on the application's domain, with the session of whoever opened it, and in a public folder from a static copy with no login. Three lines: `DeliveryPolicy` at output, a static copy only for a safe extension with a safe MIME, a versioned guard per DMS partition that removes old copies provably made by the DMS. Hand-placed files outside a partition are not touched; inside one they are served as text. After a deploy one request to a non-existent `/media/...` path repairs an installation whose Drive nobody opened. Detail, verification and what is not verified (the guard on a real Apache): [`documents.md`](documents.md).
+- **SEC-GET-001** — resolved 2026-11-02. The backend and member logout were GET links: an image tag on any page signed a user out, and a device key died with the member's. Both are `#[HttpMethod('POST'), Csrf]` now, with a form button in the backend topbar, the frontend overlay and the member's account panel. A GET to the logout URL answers as every wrong method does: the framework's bare 404, the session stays. That was chosen over a confirm page as the simplest; **a bookmark or a project's own link dead-ends on that 404**, and a project's template override with the old link must move to the form. The member's `device-remove`, `device-remove-all`, `totp-remove`, `konto`, `loeschen` and `mandant` carry `#[HttpMethod('POST')]` too (they refused a GET in the action before, except the fetch branches, which only the attribute closes). Searched every other module's actions by their source: nothing else changes state on a GET; the `remove` / `delete` / `toggle` / `reset` actions are POST by attribute or branch, the `confirm*` actions only render. **Still a GET on purpose:** `ConfirmController` (MEM-007), the login link in the requesting browser (`member.md`, the session cookie is the proof), `frontend/main/stats/event` (one count), a language or view choice remembered in the session (`setContentEditLanguage`, `?via=`, a URL's language prefix), which change no record. Verified: `tests/state-changing-get.php` through the real stack (GET changes nothing, POST without token refused, POST with it works, each action); the rows compared with the old links by computed style in headless Edge. Not seen on a real installation.
 - **Lottie expressions** (open, reported with DMS-ACTIVE-001, not exploited): `module-frontend`'s `lottie.min.js` is the full player, which evaluates expressions inside the JSON with `eval`. A page that plays a Lottie file from a DMS folder runs what that file holds, on the page's origin, for whoever can write to the folder. Only where a project uses `partials/lottie` with such a file. Fix: the player build without expressions, after checking no project animation needs them.
 - **Backend 2FA** — built 2026-11-01, optional per user, TOTP only: [`login.md`](login.md) BACKEND-2FA-001 with its residual risks. Verified by `tests/backend-2fa.php`; confirmed by the owner on a real installation on 2026-11-02, release from framework commit 3662e38 (2FA and «Passwort vergessen»; what that does not cover: login.md `## pending`). The code lock fails closed on dead counters, by the owner's decision, while `LoginThrottle` keeps failing open: the second factor has no limit without its counter, the password keeps its bcrypt. How to read and fix it: login.md «code refused».
 - **SEC-001** — resolved 2026-06-02 (Phase 4). No credential is shipped anymore: `backendUsers.default.json` was removed and `Install::provisionAdmin()` creates the admin at install (interactive: hidden password prompt; non-interactive: one-time `SETUP_TOKEN` under `data/`, admin deferred to `/backend/system/setup/setup`). Was CWE-1392 / OWASP A07.

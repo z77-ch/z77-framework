@@ -685,6 +685,12 @@ final class Browser
         return $this->go('/backend/system/login/code', ['csrf_token' => $this->pageToken('/backend/system/login/code'), 'code' => $code]);
     }
 
+    /** The logout button: a POST with the session's token. */
+    public function logout(): array
+    {
+        return $this->go('/backend/system/login/logout', ['csrf_token' => $this->pageToken()]);
+    }
+
     /** A fetch POST as core.js sends it: JSON, the mode header, the CSRF header. */
     public function fetchPost(string $path, array $body, ?string $token = null): array
     {
@@ -941,7 +947,7 @@ for ($i = 0; $i < 4; $i++) {
 // erna has no 2FA yet: this proves the path without a code clears as before.
 [$s, $h] = $thr->go('/backend/system/login/login', ['csrf_token' => $token, 'username' => 'erna', 'password' => 'Passwort-Sehr-Lang-1']);
 check('no 2FA: the right password clears the counter at once', in_array($s, [302, 303], true));
-$thr->go('/backend/system/login/logout');
+$thr->logout();
 
 $thr = $browser();
 $token = $thr->pageToken();
@@ -954,10 +960,10 @@ check('2FA: 4 failures + the right password → the code page', ($h['location'] 
 check('…without the code the throttle is not cleared: the 6th attempt is refused', str_contains($html, 'Zu viele Fehlversuche'));
 $thr->code($freshCode('max', $secret));
 check('…the code passes on the same pending login', $isSignedIn($thr));
-$thr->go('/backend/system/login/logout');
+$thr->logout();
 [$s, $h] = $thr->password('max');
 check('…and only that cleared the throttle', ($h['location'] ?? '') === '/backend/system/login/code', "status {$s}");
-$thr->go('/backend/system/login/logout');
+$thr->logout();
 
 // The lock.
 $lock = $browser();
@@ -1459,7 +1465,7 @@ check('after 10 minutes the dialog is too old', $replaced === 1 && str_contains(
 // Logout and login clear it.
 [, , $d] = $owner->fetchGet('/backend/system/backend-user/two-factor');
 check('a running enrolment is in the session', str_contains($sessionOf($owner), 'auth.totp_enrolment'));
-$owner->go('/backend/system/login/logout');
+$owner->logout();
 check('logout clears it', !str_contains($sessionOf($owner), 'auth.totp_enrolment'));
 [, , $d] = $thief->fetchGet('/backend/system/backend-user/two-factor');
 $owner->password('muster1');

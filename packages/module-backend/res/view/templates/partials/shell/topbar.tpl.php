@@ -241,13 +241,16 @@ foreach ($sections as $item) {
                         </span>
                     </button>
                     <?php endif; ?>
-                    <a href="/backend/system/login/logout" class="backend-service-panel__row backend-service-panel__row--danger">
-                        <span class="backend-service-panel__row-icon"><svg class="be-icon" width="14" height="14" aria-hidden="true"><use href="#icon-logout"/></svg></span>
-                        <span class="backend-service-panel__row-body">
-                            <span class="backend-service-panel__row-label">Abmelden</span>
-                            <span class="backend-service-panel__row-sub">Aktuelle Sitzung beenden</span>
-                        </span>
-                    </a>
+                    <form method="post" action="/backend/system/login/logout">
+                        <input type="hidden" name="csrf_token" value="<?= e($csrfToken ?? '') ?>">
+                        <button type="submit" class="backend-service-panel__row backend-service-panel__row--danger">
+                            <span class="backend-service-panel__row-icon"><svg class="be-icon" width="14" height="14" aria-hidden="true"><use href="#icon-logout"/></svg></span>
+                            <span class="backend-service-panel__row-body">
+                                <span class="backend-service-panel__row-label">Abmelden</span>
+                                <span class="backend-service-panel__row-sub">Aktuelle Sitzung beenden</span>
+                            </span>
+                        </button>
+                    </form>
                 </div>
 
                 <?php

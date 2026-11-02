@@ -164,6 +164,7 @@ class ProfileController extends AbstractMemberController
      * Lands the person back where they stood (`back`, the page the switcher
      * was on) — own paths only, so a forged form cannot send anyone off-site.
      */
+    #[HttpMethod('POST')]
     protected function mandantAction(): RedirectResponse
     {
         $account = MemberAuth::create()->current();
@@ -177,7 +178,7 @@ class ProfileController extends AbstractMemberController
             $back = '/member/main/profile';
         }
 
-        if (!$request->isPost() || !DI::getCsrfService()->validate((string)$request->getPostParameter('csrf_token'))) {
+        if (!DI::getCsrfService()->validate((string)$request->getPostParameter('csrf_token'))) {
             return $this->redirect($back);
         }
 
@@ -257,6 +258,7 @@ class ProfileController extends AbstractMemberController
      * project that renamed its tenant from here re-created the very
      * conflation this ADR removed, and stopped.
      */
+    #[HttpMethod('POST')]
     protected function kontoAction(): RedirectResponse|FetchResponse
     {
         $request = DI::getRequest();
@@ -274,13 +276,10 @@ class ProfileController extends AbstractMemberController
         // by fetch (JSON body; CSRF is AccessGuard's Fetch gate, as in
         // themeAction), and without script as a page (form body + csrf_token).
         if ($isFetch) {
-            if (!$request->isPost()) {
-                return $this->fetch()->setStatus('error');
-            }
             $body  = $request->getJsonBody();
             $input = static fn(string $key): mixed => $body[$key] ?? null;
         } else {
-            if (!$request->isPost() || !DI::getCsrfService()->validate((string)$request->getPostParameter('csrf_token'))) {
+            if (!DI::getCsrfService()->validate((string)$request->getPostParameter('csrf_token'))) {
                 return $this->redirect('/member/main/profile?bereich=konto');
             }
             $input = static fn(string $key): mixed => $request->getPostParameter($key);
@@ -342,6 +341,7 @@ class ProfileController extends AbstractMemberController
      * the deletion ONCE, through the query — the flash would die with the
      * session that carried it.
      */
+    #[HttpMethod('POST')]
     protected function loeschenAction(): RedirectResponse
     {
         $account = MemberAuth::create()->current();
@@ -350,7 +350,7 @@ class ProfileController extends AbstractMemberController
         }
 
         $request = DI::getRequest();
-        if (!$request->isPost() || !DI::getCsrfService()->validate((string)$request->getPostParameter('csrf_token'))) {
+        if (!DI::getCsrfService()->validate((string)$request->getPostParameter('csrf_token'))) {
             return $this->redirect('/member/main/profile?bereich=konto');
         }
 
@@ -412,6 +412,7 @@ class ProfileController extends AbstractMemberController
      * leaves the action cell — that is the page, so the answer goes there.
      * Without script the form posts as a page and lands back in the list.
      */
+    #[HttpMethod('POST')]
     protected function deviceRemoveAction(): RedirectResponse|FetchResponse
     {
         $account = MemberAuth::create()->current();
@@ -426,8 +427,7 @@ class ProfileController extends AbstractMemberController
         if ($request->getMode() === RequestMode::Fetch) {
             return $this->deviceRemoveInPlace($account);
         }
-        if ($request->isPost()
-            && DI::getCsrfService()->validate((string)$request->getPostParameter('csrf_token'))
+        if (DI::getCsrfService()->validate((string)$request->getPostParameter('csrf_token'))
             && DeviceKeys::create()->revoke($account, (string)$request->getPostParameter('device'))
         ) {
             $this->messageService->pushFlashAfterRedirect(
@@ -493,6 +493,7 @@ class ProfileController extends AbstractMemberController
      * «Alle Geräte abmelden» — every device key dies, this one included; the
      * current session stays (the customer is standing on this page).
      */
+    #[HttpMethod('POST')]
     protected function deviceRemoveAllAction(): RedirectResponse
     {
         $account = MemberAuth::create()->current();
@@ -500,10 +501,7 @@ class ProfileController extends AbstractMemberController
             return $this->redirect('/member/main/login');
         }
 
-        $request = DI::getRequest();
-        if ($request->isPost()
-            && DI::getCsrfService()->validate((string)$request->getPostParameter('csrf_token'))
-        ) {
+        if (DI::getCsrfService()->validate((string)DI::getRequest()->getPostParameter('csrf_token'))) {
             DeviceKeys::create()->revokeAll($account);
             $this->messageService->pushFlashAfterRedirect(
                 'success',
@@ -580,6 +578,7 @@ class ProfileController extends AbstractMemberController
      * einrichten»), i.e. the page — so it answers with the page. Without
      * script the form posts as a page, as before.
      */
+    #[HttpMethod('POST')]
     protected function totpRemoveAction(): RedirectResponse|FetchResponse
     {
         $account = MemberAuth::create()->current();
@@ -606,8 +605,7 @@ class ProfileController extends AbstractMemberController
 
             return $this->fetch()->setRedirect('/member/main/profile?bereich=zweifa');
         }
-        if ($request->isPost()
-            && DI::getCsrfService()->validate((string)$request->getPostParameter('csrf_token'))
+        if (DI::getCsrfService()->validate((string)$request->getPostParameter('csrf_token'))
             && TotpSetup::create()->remove($account, (string)$request->getPostParameter('code'))
         ) {
             $this->messageService->pushFlashAfterRedirect('success', 'Zwei-Faktor-Schutz entfernt.');

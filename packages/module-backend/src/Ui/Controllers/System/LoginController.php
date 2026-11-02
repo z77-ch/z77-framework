@@ -9,6 +9,8 @@ use Z77\Core\Http\Response\HtmlResponse,
     Z77\Module\Backend\TwoFactor\BackendTwoFactor,
     Z77\Module\Backend\TwoFactor\TotpCheck,
     Z77\Module\Backend\Ui\Controllers\BackendAbstractController,
+    Z77\Shared\Attributes\Csrf,
+    Z77\Shared\Attributes\HttpMethod,
     Z77\Shared\Auth\PasswordPolicy,
     Z77\Shared\Entities\BackendUser,
     Z77\Shared\Libraries\Convention\Naming,
@@ -99,6 +101,11 @@ class LoginController extends BackendAbstractController
         return $user;
     }
 
+    /**
+     * POST with the session's token only: a logout on GET lets any page sign the user out with an
+     * image tag, and a prefetch does it by accident. A GET answers as every wrong method does.
+     */
+    #[HttpMethod('POST'), Csrf]
     protected function logoutAction(): RedirectResponse
     {
         DI::getAuthService()->logout();

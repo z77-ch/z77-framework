@@ -1,6 +1,6 @@
 # login
 
-2026-11-01
+2026-11-02
 
 ## entry
 
@@ -171,9 +171,10 @@ LoginController::codeAction()
                    → completeLogin()             // flash, weak-password nag, resolvePostLoginRedirect()
 ```
 
-### GET `/backend/system/login/logout`
+### POST `/backend/system/login/logout` (SEC-GET-001)
 
 ```text
+#[HttpMethod('POST'), Csrf]                    // GET: 404, as any wrong method; no token: 303 to /. Nothing changes
 LoginController::logoutAction()
   → AuthService::logout()     // removes auth_user via SessionManager
   → MessageService::pushFlashAfterRedirect('info', 'Du wurdest abgemeldet')
@@ -402,6 +403,7 @@ guard never sends a customer to the admin login. Details: `member.md`
 - When setting the current user → MUST use guest identity (`id=0`, `isLoggedIn()=false`); MUST NOT store `null`
 - When access-controlling a module's controllers → MUST set `moduleRole` as the restrictive baseline and add a `controllers` entry ONLY for a deviation (looser: GUEST login/setup; stricter: SUPER_USER backup; or a non-`list` defaultAction); MUST NOT restate the baseline per controller/action — an unlisted controller/action inherits the fallback chain `actionRole → controllerRole → moduleRole` and is never open (AUTH-B003, see backend.md)
 - When configuring `loginUrl` in `backendConfig.inc.php` → MUST use the alias `/login`, NOT the canonical 4-segment URL — the alias is resistant to future URL restructuring
+- When offering a way out of the backend → MUST be a form that POSTs to `/backend/system/login/logout` with the hidden `csrf_token` (`partials/shell/topbar`, the frontend's `partials/adminOverlay`); MUST NOT be a link: a GET answers 404 and signs nobody out. **A project's own logout link or template override must move to the form** (SEC-GET-001, [`security.md`](security.md)).
 - When handling a login POST → MUST validate the session-global CSRF token (`CsrfService::validate()`) before checking credentials; on failure MUST re-render the form with a generic "Sitzung abgelaufen" message. `AccessGuard` does NOT cover the login form (it skips non-Fetch requests, and the login page itself runs without auth).
 - When building the reset link → MUST take the origin from `Request::getBaseUrl()` (`canonicalBaseUrl`); MUST NOT read the `Host` header: a forged Host would put the attacker's domain into a genuine mail and hand him the token (SEC-005).
 - When storing a reset token → MUST store only its SHA-256 (`PasswordResetTokens`); the plaintext exists in the mail only and MUST NOT reach a log.
@@ -428,6 +430,7 @@ guard never sends a customer to the admin login. Details: `member.md`
 
 - [`persistence-file.md`](persistence-file.md) — `BackendUserRepository`; `passwordHash` round-trip fixed (BUG-P001 resolved)
 - [`fetch.md`](fetch.md) — CSRF validation in `AccessGuard` (Fetch POSTs only; the login form is a classic POST and validates the token in the controller itself)
+- [`security.md`](security.md) SEC-GET-001 — why the logout is a POST, and which GETs still change something
 - [`messages.md`](messages.md) — `LoginController::logoutAction` and `handlePost()` call `messageService->pushFlashAfterRedirect()` before returning the `RedirectResponse` for post-login greeting and logout confirmation
 - [`security.md`](security.md) — `PasswordPolicy`, `passwordWeak` nag, secure-by-default install + setup token, open security pendenzen (SEC-001…004)
 - [`member.md`](member.md) — the SECOND identity: passwordless customer accounts with their own session and their own guard. It never writes `auth_user`, so `AccessGuard` sees a signed-in customer as a guest; the separation is ADR-029

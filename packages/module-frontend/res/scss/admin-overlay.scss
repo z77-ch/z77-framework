@@ -149,16 +149,20 @@
     &__toggle.is-on &__switch { background: var(--ao-accent); }
     &__toggle.is-on &__thumb  { transform: translateX(13px); background: var(--ao-bg); }
 
+    // A button: signing out is a POST.
     &__logout {
         display:       block;
+        width:         100%;
         text-align:    center;
         margin-top:    4px;
         padding:       8px;
+        border:        none;
         border-radius: 7px;
         background:    var(--ao-surface);
         color:         var(--ao-text);
-        text-decoration: none;
+        font:          inherit;
         font-weight:   500;
+        cursor:        pointer;
     }
     &__logout:hover { background: #3a2230; color: #ff9aa8; }
 }

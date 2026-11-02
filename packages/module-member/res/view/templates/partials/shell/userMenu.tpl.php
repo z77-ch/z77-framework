@@ -138,7 +138,10 @@ $memberTenants = $memberTenants ?? [];
 
             <div class="me-account__divider"></div>
 
-            <a class="me-account__row me-account__row--out" href="/member/main/logout">Abmelden</a>
+            <form method="post" action="/member/main/logout" class="me-account__form">
+                <input type="hidden" name="csrf_token" value="<?= e($csrfToken ?? '') ?>">
+                <button type="submit" class="me-account__row me-account__row--out">Abmelden</button>
+            </form>
         </div>
     </div>
     <?php endif; ?>
