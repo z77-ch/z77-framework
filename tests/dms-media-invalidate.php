@@ -12,7 +12,8 @@
  *       directories go, a partition with nothing else left goes with its guard;
  *   (C) a move, a delete, a document in the trash, a stale variant, a copy from older rules;
  *   (D) a link: never followed by the invalidation, no copy written behind one, no folder walk into it;
- *   (E) a new partition does not take over a hand-placed directory; a partition keeps its own slug.
+ *   (E) a new partition does not take over a hand-placed directory; a partition keeps its own slug;
+ *   (F) a move to where a folder already stands changes nothing: the slug, the URL, the copy;
  *
  * Run: php tests/dms-media-invalidate.php
  */
@@ -120,6 +121,11 @@ file_put_contents($site . '/data/documents/documents.json', json_encode([
     $row(5, 7, 'einzig', 'jpg', 'image/jpeg', 'image'),
     $row(6, 3, 'weg', 'jpg', 'image/jpeg', 'image', [], ['deleted_at' => date(DATE_ATOM)]),
     $row(7, 9, 'dahinter', 'jpg', 'image/jpeg', 'image'),
+    $row(8, 10, 'roh', 'jpg', 'image/jpeg', 'image'),
+    $row(9, 11, 'stur', 'jpg', 'image/jpeg', 'image'),
+    $row(10, 12, 'fest', 'jpg', 'image/jpeg', 'image'),
+    $row(11, 12, 'beide', 'jpg', 'image/jpeg', 'image'),
+    $row(12, 13, 'unten', 'jpg', 'image/jpeg', 'image'),
 ], JSON_PRETTY_PRINT));
 $folder = static fn(int $id, ?int $parent, string $name, string $slug): array => ['id' => $id, 'name' => $name, 'active' => true, 'slug' => $slug, 'delivery_mode' => null, 'sort_key' => $id, 'parent_id' => $parent];
 file_put_contents($site . '/data/documents/folders.json', json_encode([
@@ -132,6 +138,10 @@ file_put_contents($site . '/data/documents/folders.json', json_encode([
     ['delivery_mode' => 'public'] + $folder(7, 1, 'Allein', 'allein'),
     $folder(8, 2, 'Leer', 'leer'),
     ['delivery_mode' => 'public'] + $folder(9, 1, 'Verlinkt', 'verlinkt'),
+    ['delivery_mode' => 'public'] + $folder(10, 1, 'Mit Hand', 'mit-hand'),
+    ['delivery_mode' => 'public'] + $folder(11, 1, 'Stur', 'stur'),
+    ['delivery_mode' => 'public'] + $folder(12, 1, 'Fest', 'fest'),
+    $folder(13, 10, 'Unter', 'unter'),
 ], JSON_PRETTY_PRINT));
 
 $media = $site . '/public/media';
@@ -368,6 +378,18 @@ $r = $admin->fetchPost($api . 'folder-add?parent=6', ['name' => 'Demo'], $token)
 $rows = json_decode((string) file_get_contents($site . '/data/documents/folders.json'), true);
 $sub  = array_values(array_filter($rows, static fn(array $f): bool => ($f['name'] ?? '') === 'Demo' && ($f['parent_id'] ?? 0) === 6))[0] ?? [];
 check('a subfolder is not asked about the top of the media tree', ($sub['slug'] ?? '') === 'demo', json_encode($sub));
+
+// ── (F) a move to where it already stands ───────────────────────────────────
+echo "(F) a move to the same place\n";
+$place('mit-hand/hand.txt', 'hand txt');
+check('a partition with a hand-placed file and a copy', $fill('mit-hand/unter/unten.jpg') && $fill('mit-hand/roh.jpg'));
+$r = $admin->fetchPost($api . 'folder-move', ['id' => 10, 'entity_csrf' => $entity(10), 'folder_id' => ''], $token);
+check('moved to the top, where it stands: no error', !str_contains($r[2], '"status":"error"'), substr($r[2], 0, 200));
+check('...its slug stays', $slugOf(10) === 'mit-hand', $slugOf(10));
+check('...its URL still answers', $guest()->go('/media/mit-hand/roh.jpg')[0] === 200 && $guest()->go('/media/mit-hand/unter/unten.jpg')[0] === 200);
+check('...a move that moves nothing removes no copy', is_file($media . '/mit-hand/roh.jpg') && is_file($media . '/mit-hand/unter/unten.jpg'));
+$r = $admin->fetchPost($api . 'folder-move', ['id' => 13, 'entity_csrf' => $entity(13), 'folder_id' => 10], $token);
+check('a subfolder moved to its own parent: its slug and copy stay', !str_contains($r[2], '"status":"error"') && $slugOf(13) === 'unter' && is_file($media . '/mit-hand/unter/unten.jpg'), substr($r[2], 0, 160));
 
 $src = (string) file_get_contents($root . '/packages/module-dms/src/Services/DocumentService.php');
 check('no whole-directory wipe is left', !str_contains($src, 'rrmdir'));

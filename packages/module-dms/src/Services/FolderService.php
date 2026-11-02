@@ -135,6 +135,10 @@ final class FolderService
             throw new \InvalidArgumentException('Ein Ordner kann nicht in sich selbst oder einen Unterordner verschoben werden.');
         }
 
+        if ($folder->getParentId() === $targetId) {
+            return $folder; // it stands there already: no path changes, no copy goes, the slug stays
+        }
+
         $this->documents->invalidateMaterializedFolder($id, pathGoesAway: true); // reparent → old descendant media paths, BEFORE the change
         $folder->setParentId($targetId);
         $folder->setSlug($this->uniqueSlug($folder)); // re-unique among the new siblings
