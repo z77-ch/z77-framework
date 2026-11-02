@@ -56,7 +56,7 @@ class EmailSettingsController extends BackendAbstractController
      *
      * @return list<array{key: string, to: list<string>, subject: string,
      *                    routes: int, origin: string, hasEntity: bool,
-     *                    hasConfig: bool, active: bool}>
+     *                    hasConfig: bool, active: bool, note: string}>
      */
     private function rows(): array
     {
@@ -97,6 +97,7 @@ class EmailSettingsController extends BackendAbstractController
                 'hasEntity' => $entity !== null,
                 'hasConfig' => is_array($config),
                 'active'    => $active,
+                'note'      => (string) ($config['note'] ?? ''),
             ];
         }
         usort($rows, static fn (array $a, array $b) => $a['key'] <=> $b['key']);
@@ -417,6 +418,13 @@ class EmailSettingsController extends BackendAbstractController
             }
         }
 
+        // An entry whose mail writes its own text (an alert) has recipients and nothing else: what
+        // a forged body sends for the other fields does not reach the record.
+        $form = (array) DI::getConfigManager()
+            ->getArrayConfig('Config/emailConfig', 'Z77\\Shared')
+            ->get(['forms', $key], []);
+        $recipientsOnly = !empty($form['recipientsOnly']);
+
         $validator = null;
 
         if (DI::getRequest()->isPost()) {
@@ -428,9 +436,11 @@ class EmailSettingsController extends BackendAbstractController
             }
 
             $entity->setTo($this->splitList((string) ($body['to'] ?? '')));
-            $entity->setCc($this->splitList((string) ($body['cc'] ?? '')));
-            $entity->setSubject(trim((string) ($body['subject'] ?? '')));
-            $entity->setRoutes($this->routesFromBody($body));
+            if (!$recipientsOnly) {
+                $entity->setCc($this->splitList((string) ($body['cc'] ?? '')));
+                $entity->setSubject(trim((string) ($body['subject'] ?? '')));
+                $entity->setRoutes($this->routesFromBody($body));
+            }
 
             $validator = new EmailFormSettingValidator($entity);
             if ($validator->isValid()) {
@@ -452,6 +462,8 @@ class EmailSettingsController extends BackendAbstractController
             'isDormant'      => !$isNew && !$entity->isActive(),
             'validator'      => $validator ?? new EmailFormSettingValidator($entity),
             'emptyRouteRows' => self::EMPTY_ROUTE_ROWS,
+            'recipientsOnly' => $recipientsOnly,
+            'note'           => (string) ($form['note'] ?? ''),
         ]);
         $this->layoutManager->addPartials('edit', 'Service/EmailSettingsController', self::NAMESPACE);
         return $response;

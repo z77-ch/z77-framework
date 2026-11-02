@@ -36,6 +36,7 @@ final class BackendTwoFactor
     public const ENROLMENT_SECONDS     = 600;
     private const TEMPLATE_NAMESPACE   = 'Z77\\Module\\Backend';
     private const ALERT_SOURCE         = 'backend-2fa:code-lock';
+    private const ALERT_FORM_KEY       = 'backendCodeLock';
 
     /** @param \Closure(EmailMessage): bool $send the mail stack; false = not sent */
     public function __construct(
@@ -53,7 +54,7 @@ final class BackendTwoFactor
     {
         $base     = rtrim(str_replace('\\', '/', ABS_BASE_PATH), '/');
         $guardDir = $base . '/var/lib/throttle/backend-totp-guard';
-        $alertTo  = trim((string) DI::getConfigManager()->getBaseConfig('config/auth', throwError: false)->get('codeLockAlertEmail', ''));
+        $alertTo  = self::alertRecipients();
 
         return new self(
             DI::getUnifiedEntityManager(),
@@ -66,6 +67,17 @@ final class BackendTwoFactor
             // cannot keep its memory there (alert.md).
             $alertTo !== '' ? new AlertService($base . '/data/framework/auth/alert', [new EmailAlertChannel($alertTo)]) : null,
         );
+    }
+
+    /** Service → E-Mail decides who is told. Whatever goes wrong here, the login's answer stays. */
+    private static function alertRecipients(): string
+    {
+        try {
+            return implode(',', DI::getEmailService()->formRecipients(self::ALERT_FORM_KEY)['to']);
+        } catch (\Throwable $e) {
+            error_log('BackendTwoFactor: alert recipients not readable — ' . get_class($e) . ': ' . $e->getMessage());
+            return '';
+        }
     }
 
     /**

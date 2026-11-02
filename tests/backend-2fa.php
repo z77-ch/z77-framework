@@ -580,7 +580,6 @@ realFlowSite($site, $root, [
     ['id' => 12, 'username' => 'muster5', 'email' => 'muster5@example.ch', 'password_hash' => $hash, 'roles' => ['editor'], 'sort_key' => 11],
     ['id' => 13, 'username' => 'muster6', 'email' => 'muster6@example.ch', 'password_hash' => $hash, 'roles' => ['editor'], 'sort_key' => 12],
 ]);
-file_put_contents($site . '/config/auth.inc.php', "<?php\nreturn ['passwordTier' => 'strong', 'codeLockAlertEmail' => 'betrieb@example.ch'];\n");
 mkdir($base . '/sessions');
 $probe = stream_socket_server('tcp://127.0.0.1:0');
 $port  = (int) substr(strrchr(stream_socket_get_name($probe, false), ':'), 1);
@@ -1716,6 +1715,30 @@ $revive = static function () use ($guardDir): void {
 $alertMails = static function () use ($outbox, $subjectOf): array {
     return array_values(array_filter($outbox(), static fn(string $m): bool => str_contains($subjectOf($m), 'backend-2fa:code-lock')));
 };
+// Who is told comes from Service → E-Mail. Nobody yet: refused as ever, no mail, no alert state.
+$alertStateDir = $site . '/data/framework/auth/alert';
+$kill();
+[, , $html] = $dcLogin->code($freshCode('muster3', $dcSecret));
+check('no recipient yet: refused as ever, no alert mail, no alert state', str_contains($html, $technical) && $alertMails() === [] && !is_dir($alertStateDir), (string) count($alertMails()));
+$revive();
+
+$mailAdmin = $browser();
+$mailAdmin->password('verwalter');
+[$s, , $list] = $mailAdmin->go('/backend/service/email-settings/list');
+check('the entry stands in Service → E-Mail, it says what it is for', $s === 200 && str_contains($list, 'backendCodeLock') && str_contains($list, 'keine 2FA-Codes annimmt'), "status {$s}");
+[, , $mask] = $mailAdmin->fetchGet('/backend/service/email-settings/edit?key=backendCodeLock');
+check('its mask offers the recipients alone', str_contains($mask, 'id="es-to"') && !str_contains($mask, 'id="es-cc"') && !str_contains($mask, 'id="es-subject"') && !str_contains($mask, 'route_key'), substr($mask, 0, 200));
+[, , $contactMask] = $mailAdmin->fetchGet('/backend/service/email-settings/edit?key=contactForm');
+check('an ordinary form keeps CC, subject and routes', str_contains($contactMask, 'id="es-cc"') && str_contains($contactMask, 'id="es-subject"') && str_contains($contactMask, 'route_key'));
+$maskToken = preg_match('/name="entity_csrf"\s+value="([a-f0-9]+)/', $mask, $m) ? $m[1] : '';
+[, , $answer] = $mailAdmin->fetchPost('/backend/service/email-settings/edit?key=backendCodeLock', [
+    'form_key' => 'backendCodeLock', 'entity_csrf' => $maskToken, 'to' => "betrieb@example.ch\nzweite@example.ch",
+    'cc' => 'fremd@example.ch', 'subject' => 'Gefälscht', 'route_key' => ['x'], 'route_to' => ['fremd@example.ch'],
+]);
+$settingRows = json_decode((string) file_get_contents($site . '/data/framework/mail/emailFormSettings.json'), true);
+$settingRow  = array_values(array_filter($settingRows, static fn(array $r): bool => ($r['form_key'] ?? '') === 'backendCodeLock'))[0] ?? [];
+check('saved: the recipients, nothing else a forged body sends', str_contains($answer, '"success"') && ($settingRow['to'] ?? []) === ['betrieb@example.ch', 'zweite@example.ch'] && ($settingRow['cc'] ?? null) === [] && ($settingRow['subject'] ?? null) === '' && ($settingRow['routes'] ?? null) === [], substr($answer, 0, 200));
+
 $kill();
 $hashBefore = $storedUser('muster3')['password_hash'];
 $right = $freshCode('muster3', $dcSecret);
@@ -1731,7 +1754,7 @@ check('every refusal logs, with step and directory', substr_count($log, 'code re
 check('…never the code', !str_contains($log, 'code=' . $right));
 check('…the secret is not in the log', !str_contains($log, $dcSecret));
 $alerts = $alertMails();
-check('one alert mail for three refusals, to the declared address', count($alerts) === 1 && str_contains($decoded($alerts[0] ?? ''), 'betrieb@example.ch'), (string) count($alerts));
+check('one alert mail for three refusals, to both addresses of the mask', count($alerts) === 1 && str_contains($decoded($alerts[0] ?? ''), 'betrieb@example.ch') && str_contains($decoded($alerts[0] ?? ''), 'zweite@example.ch'), (string) count($alerts));
 $dcOther = $browser();
 $dcOther->password('muster4');
 check('an account without 2FA still logs in', $isSignedIn($dcOther));
@@ -1742,6 +1765,41 @@ $revive();
 [$s] = $dcLogin->code($right);
 check('counters back: the right code passes, no intervention', in_array($s, [302, 303], true) && $isSignedIn($dcLogin), "status {$s}");
 check('…one recovery mail', count($alertMails()) === 2 && str_contains($subjectOf($alertMails()[1] ?? $alertMails()[0]), 'code-lock'), (string) count($alertMails()));
+
+// A project with its own emailConfig (the whole file wins) that does not carry the entry: nobody is
+// told, the log says why, the login's answer stays.
+$fileFinderFile = $site . '/config/fileFinder.inc.php';
+$fileFinderBody = (string) file_get_contents($fileFinderFile);
+mkdir($site . '/project-override/src/Config', 0777, true);
+file_put_contents($site . '/project-override/src/Config/emailConfig.inc.php', "<?php\nreturn ['forms' => ['contactForm' => ['to' => '', 'template' => ['emails/publicForm', 'Z77\\\\Shared']]]];\n");
+file_put_contents($fileFinderFile, str_replace(
+    "\$entry('kernel/shared')",
+    "array_merge_recursive(['sourcePaths' => [" . var_export($site . '/project-override', true) . "]], \$entry('kernel/shared'))",
+    $fileFinderBody
+));
+// A server of its own: a running one keeps the config in its APCu.
+$probe = stream_socket_server('tcp://127.0.0.1:0');
+$port3 = (int) substr(strrchr(stream_socket_get_name($probe, false), ':'), 1);
+fclose($probe);
+$server3 = proc_open(
+    [PHP_BINARY, '-d', 'session.save_path=' . $base . '/sessions', '-S', "127.0.0.1:{$port3}", '-t', $site . '/public', $site . '/router.php'],
+    [0 => ['pipe', 'r'], 1 => ['file', $base . '/server.log', 'a'], 2 => ['file', $base . '/server.log', 'a']],
+    $server3Pipes,
+    $site
+);
+for ($i = 0; $i < 100 && !($up = @fsockopen('127.0.0.1', $port3)); $i++) {
+    usleep(50000);
+}
+$kill();
+$dcNoEntry = new Browser($port3);
+$dcNoEntry->password('muster3');
+[, , $html] = $dcNoEntry->code($freshCode('muster3', $dcSecret));
+check('entry missing in a project\'s emailConfig: refused as ever, no alert mail', str_contains($html, $technical) && count($alertMails()) === 2, (string) count($alertMails()));
+check('…the log says why', str_contains($serverLog(), 'alert recipients not readable') && str_contains($serverLog(), 'backendCodeLock'));
+$revive();
+proc_terminate($server3);
+proc_close($server3);
+file_put_contents($fileFinderFile, $fileFinderBody);
 
 // The whole of var/lib is gone, as behind a dangling link: the alert's state is elsewhere, the rest holds.
 rename($site . '/var/lib', $site . '/var/lib.saved');

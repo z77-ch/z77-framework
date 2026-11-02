@@ -6,7 +6,7 @@
  * switch, ⋮ and «Übersteuern» (FETCH-ROW-001).
  *
  * @var array{key: string, to: list<string>, subject: string, routes: int,
- *            origin: string, hasEntity: bool, hasConfig: bool, active: bool} $row
+ *            origin: string, hasEntity: bool, hasConfig: bool, active: bool, note: string} $row
  */
 ?>
     <div class="be-tree__node<?= $row['hasEntity'] && !$row['active'] ? ' be-tree__node--inactive' : '' ?>"
@@ -42,6 +42,9 @@
                 <?php if ($row['subject'] !== ''): ?>
                 &nbsp;·&nbsp; «<?= e($row['subject']) ?>»
                 <?php endif; ?>
+                <?php if ($row['note'] !== ''): ?>
+                <?= $row['to'] !== [] ? '&nbsp;·&nbsp; ' : '' ?><?= e($row['note']) ?>
+                <?php endif; ?>
                 <?php if ($row['routes'] > 0): ?>
                 &nbsp;·&nbsp; <?= e((string) $row['routes']) ?> Route<?= $row['routes'] > 1 ? 'n' : '' ?>
                 <?php endif; ?>
@@ -54,7 +57,7 @@
                 <?php else: ?>
                 <span class="badge badge--muted" title="Entwickler-Vorgabe — noch keine Übersteuerung erfasst">Config</span>
                 <button type="button" class="be-btn be-btn--ghost be-btn--sm"
-                        title="Empfänger, CC und Betreff im Backend übersteuern"
+                        title="Im Backend übersteuern"
                         data-fetch-get="/backend/service/email-settings/edit?key=<?= e(rawurlencode($row['key'])) ?>">Übersteuern</button>
                 <?php endif; ?>
             </span>

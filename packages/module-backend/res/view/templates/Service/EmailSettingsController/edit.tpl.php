@@ -12,6 +12,8 @@
  * @var bool $isDormant   true when the override exists but is toggled off (config applies)
  * @var \Z77\Persistence\Validation\EntityValidator $validator
  * @var int $emptyRouteRows
+ * @var bool $recipientsOnly  the mail writes its own text: recipients alone, no CC, subject or routes
+ * @var string $note         what the entry is for (config 'note'), may be empty
  */
 
 $fieldError = function (string $name) use ($validator): string {
@@ -60,20 +62,26 @@ $errors   = ['count' => count($validator->getFieldErrors()), 'target' => $fieldI
             gespeichert, aber erst wirksam, wenn du sie über den Schalter in der Liste aktivierst.
         </div>
         <?php endif; ?>
-        <div class="be-form__grid" style="grid-template-columns:1fr 1fr">
+        <?php if ($note !== ''): ?>
+        <p style="margin:0 0 .75rem"><?= e($note) ?></p>
+        <?php endif; ?>
+        <div class="be-form__grid"<?= $recipientsOnly ? '' : ' style="grid-template-columns:1fr 1fr"' ?>>
             <div class="be-form__field" data-z77-field-wrapper>
                 <label>Empfänger <small>(eine Adresse pro Zeile)</small></label>
                 <textarea id="es-to" name="to" rows="3" required
                           aria-invalid="<?= $validator->hasFieldError('to') ? 'true' : 'false' ?>"><?= e(implode("\n", $entry->getTo())) ?></textarea>
                 <?= raw($fieldError('to')) ?>
             </div>
+            <?php if (!$recipientsOnly): ?>
             <div class="be-form__field" data-z77-field-wrapper>
                 <label>CC <small>(optional, eine Adresse pro Zeile)</small></label>
                 <textarea id="es-cc" name="cc" rows="3"
                           aria-invalid="<?= $validator->hasFieldError('cc') ? 'true' : 'false' ?>"><?= e(implode("\n", $entry->getCc())) ?></textarea>
                 <?= raw($fieldError('cc')) ?>
             </div>
+            <?php endif; ?>
         </div>
+        <?php if (!$recipientsOnly): ?>
         <div class="be-form__field" data-z77-field-wrapper>
             <label>Betreff</label>
             <input type="text" id="es-subject" name="subject" value="<?= e($entry->getSubject()) ?>" autocomplete="off"
@@ -97,5 +105,6 @@ $errors   = ['count' => count($validator->getFieldErrors()), 'target' => $fieldI
             <?= raw($fieldError('routes')) ?>
             <small style="color:var(--be-muted,#94a3b8)">Leere Zeilen werden ignoriert; für weitere Routen speichern und erneut öffnen.</small>
         </div>
+        <?php endif; ?>
     </div>
 </form>

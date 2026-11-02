@@ -277,6 +277,12 @@ ADMIN) — built per
   lists; v1 config comma-strings keep working (normalized on read).
 - **No recipient resolvable** (empty config `to` + no entity, or only `ref:`
   entries) → normal `false` failure path + `getLastErrors()`, not a throw.
+- **Recipients alone (`'recipientsOnly' => true`, 2026-11-02):** for a mail that writes
+  its own text, such as an alert: the entry has no template, is read with
+  `EmailService::formRecipients()`, `sendForm()` still throws on it, and the edit mask
+  offers the recipients only; `'note'` says in the list and the mask what it is for.
+  First user: `backendCodeLock` ([`login.md`](login.md) «code refused»). A project with
+  its own `emailConfig` copies the entry, the whole file wins.
 
 ## document mail kinds — «Beleg-Mails» (step 3 of the mail plan, 2026-10-22)
 
