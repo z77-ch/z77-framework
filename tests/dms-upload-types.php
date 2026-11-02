@@ -163,6 +163,14 @@ foreach (['php', 'PHP', '.phtml', 'phar', 'php8', 'shtml', 'cgi', 'htaccess'] as
 }
 check('executable extensions refused whatever the sniff (php, PHP, .phtml, phar, php8, shtml, cgi, htaccess)', $execRefused);
 check('a double extension is judged by its last part (shell.php.txt → text)', $empty->kindFor('text/x-php', 'txt') === DocumentKind::Text);
+$noExt = new UploadTypes([]);
+foreach (['', 'a_b', 'a-b', 'ä', 'a b', 'a.b'] as $bad) {
+    check("extension '{$bad}': refused before a record exists, the blob store could not hold it", $noExt->kindFor('text/plain', $bad) === null && !UploadTypes::isStorable($bad));
+}
+check('a null extension stays what it was (a caller that names none)', UploadTypes::isStorable(null));
+foreach (['jpg', 'pdf', 'TXT', '7z', 'tar'] as $good) {
+    check("extension '{$good}' is storable", UploadTypes::isStorable($good));
+}
 check('ordinary types are not executable', !UploadTypes::isExecutable('jpg') && !UploadTypes::isExecutable('pdf') && !UploadTypes::isExecutable(null));
 
 $blob->pathCalls = 0;
