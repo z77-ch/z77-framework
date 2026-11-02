@@ -1,6 +1,6 @@
 # routing
 
-2026-09-22
+2026-11-01
 
 ## entry
 
@@ -262,6 +262,8 @@ Anything thrown later and caught nowhere (an action, a template, the dispatcher)
 - [`navigation.md`](navigation.md) — NavigationAlias + content-slug details, `matchAlias`/`urlFor`
 
 ## known issues
+
+- **ROUTE-CASE-001** — resolved 2026-11-01 (framework-wide, found by the 2FA review). `Request` lower-cases a segment and PHP finds a method in any casing (`method_exists`), but the role lookup is exact: `/backend/system/backend-user/twoFactorReset` became `twofactorresetAction`, ran `twoFactorResetAction`, and its role entry was never read, so the controller's role decided. `ControllerHandler::resolveAction()` now hands on the declared name (`ReflectionMethod::getName()`), `resolveController()` the same for the class (`back-up` on a case-insensitive filesystem). Other casings of a URL keep working, for whoever may use the route. Nothing depended on the old behaviour: all 546 `*Action` methods of the framework and the projects already resolve to their declared name from their kebab URL, no navigation seed or `defaultAction` uses another form. Verified: `tests/backend-2fa.php` «URL casing».
 
 - **ROUTE-001** — resolved 2026-05-20. `parsePathSegments` always cascaded through `set*` methods even with 4 explicit segments, causing premature `defaultAction` resolution. Symptom: `/backend/system/system/clear-cache` (Fetch POST) threw `NotFoundException: No default action defined for controller: system`. Fixed by branching at 4-segment boundary — `assign*` + `setAction` without cascade.
 - **ROUTE-002** — resolved 2026-05-20. POST-only actions checked `isPost()` internally and returned a `FetchResponse` with error status — on browser GET this rendered raw JSON. Replaced by declarative `#[Fetch, HttpMethod('POST')]` attributes, enforced in `Dispatcher::enforceActionConstraints()` BEFORE the action runs; `ExceptionHandler` renders HTML 404 in Page mode or JSON 404 in Fetch mode.

@@ -85,6 +85,7 @@ class SetupController extends BackendAbstractController
         $user = new BackendUser(BodyCleaner::cleanFor(BackendUser::class, ['username' => $username]));
         $user->setRoles([AuthRole::SUPER_USER]); // first account = the governor (ADR-021)
         $user->setSortKey(0);
+        $user->seedAuthEpoch(time()); // a user store emptied by hand may have left sessions behind
         $user->setPasswordWeak(PasswordPolicy::isWeak($password, [$username], $tier));
 
         $validator = new BackendUserValidator($user, $this->repo(), $password, true, null, $tier);

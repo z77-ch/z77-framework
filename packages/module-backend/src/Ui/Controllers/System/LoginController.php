@@ -6,11 +6,13 @@ use Z77\Core\Http\Response\HtmlResponse,
     Z77\Core\DI,
     Z77\Module\Backend\PasswordReset\PasswordRecovery,
     Z77\Module\Backend\PasswordReset\PasswordResetTokens,
+    Z77\Module\Backend\TwoFactor\BackendTwoFactor,
+    Z77\Module\Backend\TwoFactor\TotpCheck,
     Z77\Module\Backend\Ui\Controllers\BackendAbstractController,
-    Z77\Shared\Auth\LoginThrottle,
     Z77\Shared\Auth\PasswordPolicy,
     Z77\Shared\Entities\BackendUser,
     Z77\Shared\Libraries\Convention\Naming,
+    Z77\Shared\Services\AuthService,
     Z77\Shared\Validators\BackendUserValidator
 ;
 
@@ -19,6 +21,13 @@ class LoginController extends BackendAbstractController
     private const THROTTLED_MESSAGE = 'Zu viele Fehlversuche, bitte in 15 Minuten erneut versuchen.';
     private const NEUTRAL_ANSWER    = 'Falls das Konto existiert, ist eine E-Mail unterwegs.';
     private const SESSION_EXPIRED   = 'Sitzung abgelaufen, bitte erneut versuchen.';
+    private const CODE_PAGE_GONE    = 'Die Anmeldung ist abgelaufen, bitte melde dich erneut an.';
+
+    /** The password was right, the code is outstanding: the only trace of such a login. */
+    private const PENDING_KEY     = 'auth.second_factor_pending';
+    private const PENDING_SECONDS = 300;
+
+    private string $secondFactorRefusal = '';
 
     protected function loginAction(): HtmlResponse|RedirectResponse
     {
@@ -29,9 +38,72 @@ class LoginController extends BackendAbstractController
         return $this->renderForm(['error' => null, 'username' => '']);
     }
 
+    /**
+     * The second step of a login with 2FA (login.md BACKEND-2FA-001). Nothing here trusts the first
+     * step beyond the marker: the user is read again, and until the code passed there is no
+     * identity in this session.
+     */
+    protected function codeAction(): HtmlResponse|RedirectResponse
+    {
+        $user = $this->pendingUser();
+        if ($user === null) {
+            $this->messageService->pushFlashAfterRedirect('info', self::CODE_PAGE_GONE);
+            return $this->redirect('/login');
+        }
+
+        if (!DI::getRequest()->isPost()) {
+            return $this->html($this->baseContext(['error' => null]));
+        }
+
+        if (!$this->csrfIsValid()) {
+            return $this->html($this->baseContext(['error' => self::SESSION_EXPIRED]));
+        }
+
+        $check = BackendTwoFactor::create()->check($user, $this->postString('code'));
+
+        return $check === TotpCheck::Passed
+            ? $this->finishSecondFactor($user)
+            : $this->html($this->baseContext(['error' => $check->refusal()]));
+    }
+
+    private function finishSecondFactor(BackendUser $user): RedirectResponse
+    {
+        DI::getSessionManager()->remove(self::PENDING_KEY);
+        // Only now: until the code passed, the attempt counts as a failure of this address.
+        $this->loginThrottle()->succeeded($user->getUsername(), DI::getRequest()->getClientIp());
+
+        return $this->completeLogin(DI::getAuthService()->passedSecondFactor($user), $user);
+    }
+
+    /**
+     * The user behind a live marker, read again: gone, 2FA switched off in the meantime (the code
+     * page would have nothing to ask), a raised stamp or an expired marker all end it. There is no
+     * «disabled user» state yet; a password change or an admin reset raises the stamp.
+     */
+    private function pendingUser(): ?BackendUser
+    {
+        $sm      = DI::getSessionManager();
+        $pending = $sm->get(self::PENDING_KEY);
+        if (!is_array($pending)) {
+            return null;
+        }
+
+        $user = time() - (int) ($pending['at'] ?? 0) < self::PENDING_SECONDS
+            ? $this->em()->getRepository(BackendUser::class)->find((int) ($pending['id'] ?? 0))
+            : null;
+        if (!$user instanceof BackendUser || !$user->hasTotp() || (int) ($pending['auth_epoch'] ?? -1) !== $user->getAuthEpoch()) {
+            $sm->remove(self::PENDING_KEY);
+            return null;
+        }
+
+        return $user;
+    }
+
     protected function logoutAction(): RedirectResponse
     {
         DI::getAuthService()->logout();
+        DI::getSessionManager()->remove(self::PENDING_KEY);
+        DI::getSessionManager()->remove(BackendTwoFactor::ENROLMENT_KEY);
 
         $this->messageService->pushFlashAfterRedirect('info', 'Du wurdest abgemeldet');
         return $this->redirect('/login');
@@ -82,29 +154,29 @@ class LoginController extends BackendAbstractController
 
         return $request->isPost()
             ? $this->handleResetPost($token, $tokens, $user)
-            : $this->renderResetForm($token);
+            : $this->renderResetForm($token, $user);
     }
 
     private function handleResetPost(string $token, PasswordResetTokens $tokens, BackendUser $user): HtmlResponse|RedirectResponse
     {
         if (!$this->csrfIsValid()) {
-            return $this->renderResetForm($token, self::SESSION_EXPIRED);
+            return $this->renderResetForm($token, $user, self::SESSION_EXPIRED);
         }
 
         $password = $this->postString('password');
         if ($password !== $this->postString('password_repeat')) {
-            return $this->renderResetForm($token, 'Die beiden Passwörter stimmen nicht überein.');
+            return $this->renderResetForm($token, $user, 'Die beiden Passwörter stimmen nicht überein.');
         }
 
         // The same rules as the user form: the tier decides whether a weak one is refused.
         $tier      = $this->passwordTier();
         $validator = new BackendUserValidator($user, null, $password, true, $user->getId(), $tier);
         if (!$validator->isValid(['password'])) {
-            return $this->renderResetForm($token, null, $validator);
+            return $this->renderResetForm($token, $user, null, $validator);
         }
 
         if (!$this->passesSecondFactor($user)) {
-            return $this->renderResetForm($token, 'Die Bestätigung ist fehlgeschlagen.');
+            return $this->renderResetForm($token, $user, $this->secondFactorRefusal);
         }
 
         // Hashed before the token is consumed: bcrypt must not run inside the store's lock, and a
@@ -137,29 +209,38 @@ class LoginController extends BackendAbstractController
     }
 
     /**
-     * The one place a second factor enters this flow. Always true today: the backend has no 2FA
-     * yet. Backend-2FA is the next step (security.md «pending»): it asks for the code HERE, before
-     * anything changes; a wrong code changes nothing and counts towards a lockout, so the
-     * recovery link cannot bypass the second factor.
+     * The one place a second factor enters this flow: asked HERE, before anything changes, so the
+     * recovery link cannot bypass it. A wrong code changes nothing, leaves the link usable and
+     * counts towards the lock. Only an account with 2FA is asked; the form shows the field then.
      */
     private function passesSecondFactor(BackendUser $user): bool
     {
-        return true;
+        if (!$user->hasTotp()) {
+            return true;
+        }
+        $check = BackendTwoFactor::create()->check($user, $this->postString('code'));
+        $this->secondFactorRefusal = $check->refusal();
+
+        return $check === TotpCheck::Passed;
     }
 
-    private function renderResetForm(string $token, ?string $error = null, ?BackendUserValidator $validator = null): HtmlResponse
+    private function renderResetForm(string $token, BackendUser $user, ?string $error = null, ?BackendUserValidator $validator = null): HtmlResponse
     {
-        // Live strength meter (hint only) and show-password toggle, both self-init on DOM ready.
-        $this->layoutManager->addJs('password-meter', self::NAMESPACE);
-        $this->layoutManager->addJs('password-toggle', self::NAMESPACE);
-
-        return $this->html($this->baseContext([
+        $response = $this->html($this->baseContext([
             'mode'              => 'form',
             'error'             => $error,
             'token'             => $token,
             'validator'         => $validator,
             'passwordMinLength' => $this->passwordTier()->minLength(),
+            'askCode'           => $user->hasTotp(),
         ]));
+
+        // Live strength meter (hint only) and show-password toggle, both self-init on DOM ready.
+        // ⚠️ After html(): only then do they load behind core.js, which creates _Z77.
+        $this->layoutManager->addJs('password-meter', self::NAMESPACE);
+        $this->layoutManager->addJs('password-toggle', self::NAMESPACE);
+
+        return $response;
     }
 
     private function handlePost(): HtmlResponse|RedirectResponse
@@ -192,7 +273,27 @@ class LoginController extends BackendAbstractController
             return $this->renderForm(['error' => 'Ungültige Anmeldedaten.', 'username' => $username]);
         }
 
+        // Password right, 2FA on: no identity yet. The reservation above stays, the code page
+        // hands it back once the code passed. Whoever was signed in in this browser is signed out.
+        if ($user->hasTotp()) {
+            $auth->logout();
+            DI::getSessionManager()->remove(BackendTwoFactor::ENROLMENT_KEY);
+            DI::getSessionManager()->regenerate();
+            DI::getSessionManager()->set(self::PENDING_KEY, ['id' => $user->getId(), 'at' => $now, 'auth_epoch' => $user->getAuthEpoch()]);
+
+            return $this->redirect('/backend/system/login/code');
+        }
+
         $throttle->succeeded($username, $ip, $now);
+
+        return $this->completeLogin($auth, $user);
+    }
+
+    /** The identity, the greeting, the nag, the way on: the same for both ways through the login. */
+    private function completeLogin(AuthService $auth, BackendUser $user): RedirectResponse
+    {
+        // A secret read with a cookie stolen earlier must not survive into this login.
+        DI::getSessionManager()->remove(BackendTwoFactor::ENROLMENT_KEY);
         $auth->login();
 
         $this->messageService->pushFlashAfterRedirect('success', 'Hallo ' . $user->getUsername() . ', du bist angemeldet');
@@ -247,9 +348,13 @@ class LoginController extends BackendAbstractController
      */
     private function renderForm(array $extra): HtmlResponse
     {
-        // Show-password toggle on the password field (self-inits on DOM ready).
+        $response = $this->html($this->baseContext($extra));
+
+        // Show-password toggle on the password field (self-inits on DOM ready). ⚠️ After html():
+        // only then does it load behind core.js, which creates _Z77.
         $this->layoutManager->addJs('password-toggle', self::NAMESPACE);
-        return $this->html($this->baseContext($extra));
+
+        return $response;
     }
 
     private function baseContext(array $extra = []): array
@@ -257,21 +362,6 @@ class LoginController extends BackendAbstractController
         return array_merge([
             'csrfToken' => DI::getCsrfService()->getToken(),
         ], $extra);
-    }
-
-    /**
-     * The limits are installation policy (`config/client/auth.inc.php`); a seed-once file from
-     * before SEC-004 has no such keys and gets the class's defaults.
-     */
-    private function loginThrottle(): LoginThrottle
-    {
-        $config = DI::getConfigManager()->getBaseConfig('config/auth', throwError: false);
-
-        return new LoginThrottle(
-            LoginThrottle::defaultDir(),
-            max(1, (int) $config->get('loginFailuresPerUsernameIp', LoginThrottle::FAILURES_PER_USERNAME_IP)),
-            max(1, (int) $config->get('loginFailuresPerIp', LoginThrottle::FAILURES_PER_IP)),
-        );
     }
 
     /**

@@ -1,6 +1,6 @@
 # alert
 
-2026-09-02
+2026-11-01
 
 ## entry
 
@@ -103,7 +103,7 @@ recipient constant:
 - When probing an external dependency on a schedule (API revalidation, backup run, import) → the caller MUST report both outcomes (`failure()` AND `success()`) — success is what closes an incident and anchors the staleness age
 - When adding a delivery path → MUST implement `AlertChannelInterface` in project code or an add-on package; provider credentials MUST NOT live in the kernel
 - When a channel cannot deliver → it MAY throw; it MUST NOT be relied on to throw silently — the service contains it (error_log) and continues
-- When choosing the state directory → MUST use `var/lib/alert` (shared branch, `AlertService::defaultDir()`); MUST NOT use `var/cache` (a release switch would reset incident state)
+- When choosing the state directory → MUST use `var/lib/alert` (shared branch, `AlertService::defaultDir()`); MUST NOT use `var/cache` (a release switch would reset incident state). The one exception is an alert ABOUT `var/lib`: the backend's code lock keeps its state under `data/framework/auth/alert` ([`login.md`](login.md) «code refused»), also shared across releases
 - When wiring alerting into a framework-agnostic library → MUST keep the library reporting plain results; the framework-side caller reports to AlertService — the library MUST NOT depend on this namespace
 - When writing alert wording → the built-in channel is terse English; a project wanting different wording MUST ship its own channel, not patch the kernel one
 
@@ -115,7 +115,7 @@ recipient constant:
 
 ## known issues
 
-_(none)_
+- **ALERT-STATE-001** — resolved 2026-11-01. A state file that could not be written (full quota, permissions) did not stop the dispatch: the next probe read «ok» again and announced the same outage, one mail per probe. Now `write()` reports it, a log line says so, and nothing is sent. Don't assume alerts survive a dead state: no state, no mail. A state directory that cannot be CREATED still throws, as before; the caller decides, the backend's code lock catches it. Verified: `tests/alert-service.php` F1/F2, `tests/backend-2fa.php` (D).
 
 ## pending
 

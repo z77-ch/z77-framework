@@ -132,6 +132,21 @@ try {
 $check('E2 broken channel does not break the caller', $survived && $kind === AlertKind::Outage);
 $check('E3 … and the next channel still fired', count($recording->sent) === 1);
 
+// ── state that cannot be written ────────────────────────────────────────────
+// A directory where the state file should be: the write fails, the read finds nothing. Without
+// the state every probe would read «ok» and announce the same outage again.
+$noState = $work . '/no-state';
+mkdir($noState);
+mkdir($noState . '/' . hash('sha256', 'flood') . '.json');
+$recording = new RecordingChannel();
+$flood = new AlertService($noState, [$recording]);
+$floodKinds = [];
+for ($i = 0; $i < 5; $i++) {
+    $floodKinds[] = @$flood->failure('flood', 'network');
+}
+$check('F1 unwritable state: five failures, no mail', count($recording->sent) === 0);
+$check('F2 … and no throw, the caller is told nothing was dispatched', $floodKinds === [null, null, null, null, null]);
+
 // ── cleanup + result ─────────────────────────────────────────────────────────
 
 $rm = function (string $dir) use (&$rm): void {

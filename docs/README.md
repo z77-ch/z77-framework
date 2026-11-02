@@ -88,7 +88,7 @@ Structure is enforced by `npm run docs:check` ([docs-lint/STANDARD.md](../docs-l
 | installer, `composer install`, project setup | [topics/installer.md](topics/installer.md) |
 | jobs, cron, queue, scheduling, background work, z77-run CLI, throttling, long-running tasks | [topics/jobs.md](topics/jobs.md) |
 | JavaScript build, minify / minifizieren, `.min.js`, VS Code minify on save, `tests/js-min-markers.php`, terser / `npm run build:js` (optional), vendor marker `@z77-js` | [topics/js-build.md](topics/js-build.md) |
-| login, auth, session, AccessGuard | [topics/login.md](topics/login.md) |
+| login, auth, session, AccessGuard, backend 2FA / second factor / Zwei-Faktor-Schutz, lost device, 2FA reset | [topics/login.md](topics/login.md) |
 | lottie, animation, `<lottie-figure>`, poster | [topics/lottie.md](topics/lottie.md) |
 | mail, email, e-mail versand / configure email sending, SMTP, contact form / kontaktformular, form mail, emailConfig, sender / from address, EmailService, backend mail settings | [topics/mail.md](topics/mail.md) |
 | mail outbox / Postausgang, bulk mail / Massenversand, mail queue, batch sending / Versand in Paketen, `mail-outbox` job, `OutboxService`, `OutboxDraft`, `OutboxMail`, `mail_outbox`, retry / erneut senden, attachment provider / Anhang-Provider, `mailAttachments`, `outboxConfig`, document mail / Belege per E-Mail, newsletter, module-mailing | [topics/mailing.md](topics/mailing.md) |

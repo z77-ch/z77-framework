@@ -5,6 +5,8 @@ namespace Z77\Module\Member\Services;
 use Z77\Module\Member\Entities\MemberAccount;
 use Z77\Persistence\Resolver\DataSourceResolver;
 use Z77\Persistence\Resolver\UnifiedEntityManager;
+use Z77\Shared\Auth\Totp;
+use Z77\Shared\Auth\TotpVault;
 
 /**
  * 2FA lifecycle on the profile (B8 spec): begin() stores the secret encrypted
@@ -25,7 +27,7 @@ final class TotpSetup
     {
         return new self(
             new MemberAccounts(new UnifiedEntityManager(new DataSourceResolver(['file' => 'File']))),
-            TotpVault::create(),
+            MemberTotp::vault(),
         );
     }
 

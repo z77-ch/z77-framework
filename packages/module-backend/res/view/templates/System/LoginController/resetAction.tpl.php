@@ -5,6 +5,7 @@
 /** @var int $passwordMinLength */
 /** @var string $csrfToken */
 /** @var \Z77\Shared\Validators\BackendUserValidator|null $validator */
+/** @var bool $askCode the account has 2FA, so the reset asks for the code */
 
 $passwordError = $validator !== null && $validator->hasFieldError('password') ? $validator->getFieldError('password') : null;
 ?>
@@ -57,6 +58,22 @@ $passwordError = $validator !== null && $validator->hasFieldError('password') ? 
                         autocomplete="new-password"
                     >
                 </div>
+                <?php if ($askCode ?? false): ?>
+                <div class="be-form__group">
+                    <label class="be-form__label" for="code">Code aus der Authenticator-App</label>
+                    <input
+                        class="be-form__control"
+                        type="text"
+                        id="code"
+                        name="code"
+                        inputmode="numeric"
+                        autocomplete="one-time-code"
+                        pattern="[0-9]{6}"
+                        maxlength="6"
+                        required
+                    >
+                </div>
+                <?php endif; ?>
                 <button class="be-btn be-btn--primary be-btn--full" type="submit">Passwort speichern</button>
             </form>
         <?php endif; ?>

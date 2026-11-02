@@ -114,6 +114,17 @@ $errors   = ['count' => count($validator->getFieldErrors()), 'target' => $fieldI
             <?php endif; ?>
             <?= raw($fieldError('sender_identities')) ?>
         </div>
+        <?php // Own account only (login.md BACKEND-2FA-001): the dialog takes its account from the session.
+              // The button replaces this form in the popup; unsaved changes above are dropped. ?>
+        <?php if ($isSelf ?? false): ?>
+        <div class="be-form__section">Zwei-Faktor-Schutz <small>(optional: die Anmeldung fragt zusätzlich nach einem Code aus einer App)</small></div>
+        <div class="be-form__field">
+            <p class="be-form__hint"><?= $entry->hasTotp() ? 'Aktiv seit ' . e(date('d.m.Y', (int) strtotime($entry->getTotpActivatedAt()))) . '.' : 'Nicht aktiv.' ?></p>
+            <div class="be-rows__adders">
+                <button type="button" class="be-btn be-btn--ghost be-btn--sm" data-fetch-get="/backend/system/backend-user/two-factor"><?= $entry->hasTotp() ? 'Entfernen …' : 'Einrichten …' ?></button>
+            </div>
+        </div>
+        <?php endif; ?>
         <div class="be-form__section">Rollen <small>(mindestens eine; die höchste bestimmt die Zugriffsstufe)</small></div>
         <div class="be-form__field" data-z77-field-wrapper>
             <div class="be-form__tag-grid">

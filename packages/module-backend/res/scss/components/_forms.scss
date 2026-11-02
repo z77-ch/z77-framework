@@ -91,6 +91,10 @@
 .be-form__hint                                    { font-size: .75rem; color: var(--be-muted); margin-top: .15rem; }
 /* A hint that warns (the Drive: «liefert öffentlich aus»). */
 .be-form__hint--warn                              { color: var(--be-warn); }
+/* The 2FA enrolment: the QR brings its own white ground and quiet zone, the key is selected as one. */
+.be-form__qr                                      { width: 13.75rem; max-width: 100%; margin: .5rem auto; }
+.be-form__qr svg                                  { display: block; width: 100%; height: auto; }
+.be-form__secret                                  { user-select: all; white-space: nowrap; }
 
 /* ── Grid variants (replace the per-template `style="grid-template-columns:…"`) ── */
 /* One field per line — a narrow modal. */

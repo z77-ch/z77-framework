@@ -1,6 +1,6 @@
 # backend
 
-2026-10-23
+2026-11-01
 
 ## entry
 
@@ -61,6 +61,10 @@ SOURCE=/packages/module-backend/res/view/templates/System/BackendUserController/
 SOURCE=/packages/module-backend/res/view/templates/System/BackendUserController/edit.tpl.php
 SOURCE=/packages/module-backend/res/view/templates/System/BackendUserController/confirmDelete.tpl.php
 SOURCE=/packages/module-backend/res/view/templates/System/BackendUserController/_row.tpl.php
+SOURCE=/packages/module-backend/res/view/templates/System/BackendUserController/twoFactor.tpl.php
+SOURCE=/packages/module-backend/res/view/templates/System/BackendUserController/confirmTwoFactorReset.tpl.php
+SOURCE=/packages/module-backend/src/TwoFactor/BackendTwoFactor.php
+SOURCE=/tests/backend-2fa.php
 SOURCE=/packages/module-backend/res/assets/js/backend-user/list.js
 SOURCE=/packages/module-backend/res/assets/js/password-meter.js
 SOURCE=/packages/kernel/shared/src/Validators/BackendUserValidator.php
@@ -362,6 +366,8 @@ machinery: it extends `BackendAbstractController` directly (not
   format-only; separate from the sender identities below, which stay display data).
   `passwordHash` / `roles` / `sortKey` are re-set server-side after
   `mapFromArray` — never trusted from the body. `authEpoch` has no setter at all, so a body cannot reach it.
+- **Roles** (owner 2026-11-01, login.md «second factor»): against the actor's roles in the STORE, nobody grants a role above his own level (the form offers only what he may grant, `rolesRefusal()` is the gate), and an account above his level is out of reach: no edit form, no save, no delete, the row ⋮ says why. The same level stays editable. The last SUPER_USER cannot be demoted, checked in one lock with the write (`keepingASuperUser()`). Reordering the list (`moveAction`) is not gated by this: it moves a row, it changes nothing about the account. A changed role raises the target's stamp, so his sessions end; the actor changing his own keeps his session. A new user's stamp is `time()`, and deleting ends the user's reset link and guard file. A changed own password or role also changes this session's id, so a copied cookie ends with the other sessions.
+- **Second factor** (login.md BACKEND-2FA-001): the section «Zwei-Faktor-Schutz» in the form shows only on the user's OWN row, with the status and a button that opens the dialog `two-factor` in the same popup (`twoFactor.tpl.php`: QR, key, password, code; or the code that switches it off, posting to `two-factor-enable` / `two-factor-disable`). The avatar panel's «Konto» section opens the same dialog (`shellTools['twoFactor']`, by `canReach()`), so an editor, who has no user list, reaches it too; the three actions are lowered to EDITOR in `backendConfig` and take no id from the request. Another user's form shows nothing of it. The row ⋮ offers «2FA zurücksetzen» (`confirm-two-factor-reset`, `two-factor-reset`, SUPER_USER in `backendConfig`) when `totpResetRefusal()` has nothing against it: actor SUPER_USER, target not the actor, target has 2FA; the actions ask it again. `totpSecret`, `totpActivatedAt`, `totpLastStep` have no setter, so a body cannot reach them. No screen of its own and no canvas board: a section and two dialogs. **Not seen in a browser.**
 - **Saving a new password** (login.md LOGIN-RESET-001) raises the user's session stamp, so his other
   sessions end; the user changing his OWN password keeps the session he is in
   (`AuthService::renewSessionStamp()`). A new password or a new `email` also ends his open reset link.
@@ -492,4 +498,5 @@ design. Owned by [`security.md`](security.md) — see it for the gating rules.
 - **AUTH-B003** — resolved 2026-07-16. `backendConfig.inc.php` `controllers` map slimmed to **deviation-only**: entries exist solely for GUEST (`LoginController`, `SetupController`), SUPER_USER (`BackupController`), and defaultAction deviations (`DashboardController` → `overview`, `DocumentController` → `preview`). Everything else inherits `moduleRole: ADMIN` (fallback chain `actionRole → controllerRole → moduleRole` in `AuthService::resolveRoleForCurrentController`) and the new module-level `defaultAction: 'list'` convention (consumed by `getDefaultActionForController`'s existing module fallback — zero code change). A forgotten controller/action defaults to ADMIN, never to open; `/backend/system/system` still 404s (convention resolves `list`, the method does not exist → `setAction()` throws). A commented full-schema example stays in the config for developers. **Trigger was a real CE incident:** a project had to copy the whole `backendConfig` into `override/` to add one controller — the copy then shadowed the framework's `service`-group addition (file overrides REPLACE, they do not merge) and needed a manual re-sync. With deviation-only there is no reason to override the file for a plain ADMIN controller at all. Role matrix verified in the skeleton (guest 302, admin blocked from backup with 302, superUser full access, convention-list URLs 200). Config-tier merging itself was raised and deliberately NOT pursued (owner decision 2026-07-16: overrides are the developer's domain, the framework never reaches into them).
 
 ## pending
+
 - **CACHE-B001** — `cache.controllers` map (page-cache TTL per controller) is still flat / not group-nested, and `ModuleManager::getCachePolicy()` looks it up by the URL-form controller segment while the access-control map uses PascalCase base names — two separate pre-existing inconsistencies in the same map. Currently empty in both module configs (no live data), so it is latent + performance-only (a collision yields a wrong cache TTL, not a security issue). Fix together with the key-form mismatch in a focused cache pass: nest `cache.controllers` by group and align the key form. Deliberately excluded from the AUTH-B002 fix to avoid mixing a security change with an unrelated cache key-form bug. See [`cache.md`](cache.md).

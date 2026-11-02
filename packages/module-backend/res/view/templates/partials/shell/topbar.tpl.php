@@ -232,6 +232,15 @@ foreach ($sections as $item) {
 
                 <div class="backend-service-panel__section">
                     <div class="backend-service-panel__section-label">Konto</div>
+                    <?php if (!empty($tools['twoFactor'])): ?>
+                    <button type="button" class="backend-service-panel__row" role="menuitem" data-fetch-get="/backend/system/backend-user/two-factor">
+                        <span class="backend-service-panel__row-icon"><svg class="be-icon" width="14" height="14" aria-hidden="true"><use href="#icon-lock"/></svg></span>
+                        <span class="backend-service-panel__row-body">
+                            <span class="backend-service-panel__row-label">Zwei-Faktor-Schutz</span>
+                            <span class="backend-service-panel__row-sub">Anmeldung mit Code aus einer App</span>
+                        </span>
+                    </button>
+                    <?php endif; ?>
                     <a href="/backend/system/login/logout" class="backend-service-panel__row backend-service-panel__row--danger">
                         <span class="backend-service-panel__row-icon"><svg class="be-icon" width="14" height="14" aria-hidden="true"><use href="#icon-logout"/></svg></span>
                         <span class="backend-service-panel__row-body">

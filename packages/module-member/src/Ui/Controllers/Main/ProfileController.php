@@ -18,11 +18,11 @@ use Z77\Core\DI,
     Z77\Module\Member\Services\MemberLog,
     Z77\Module\Member\Services\MemberSession,
     Z77\Module\Member\Services\TenantChoice,
-    Z77\Module\Member\Services\Totp,
     Z77\Module\Member\Services\TotpSetup,
     Z77\Module\Member\Ui\Controllers\AbstractMemberController,
     Z77\Persistence\Resolver\DataSourceResolver,
     Z77\Persistence\Resolver\UnifiedEntityManager,
+    Z77\Shared\Auth\Totp,
     Z77\Shared\Qr\QrCode
 ;
 
@@ -549,7 +549,18 @@ class ProfileController extends AbstractMemberController
             $error = 'Der Code ist ungültig — bitte scannen Sie den QR-Code und versuchen Sie es erneut.';
         }
 
-        $secret = $setup->begin($account);
+        try {
+            $secret = $setup->begin($account);
+        } catch (\RuntimeException $e) {
+            // A damaged key file (TotpVault never overwrites one): logged there, nothing to set up.
+            error_log('ProfileController: 2FA setup refused — ' . $e->getMessage());
+            $this->messageService->pushFlashAfterRedirect(
+                'error',
+                'Der Zwei-Faktor-Schutz kann wegen eines technischen Problems gerade nicht eingerichtet werden. Bitte informieren Sie den Betreiber.'
+            );
+
+            return $this->redirect('/member/main/profile?bereich=zweifa');
+        }
         $uri    = Totp::otpauthUri('AXO3', $account->getEmail(), $secret);
 
         return $this->html([

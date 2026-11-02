@@ -8,6 +8,7 @@ use Z77\Core\Controller\AbstractBaseController,
     Z77\Core\Http\RequestMode,
     Z77\Module\Backend\Ui\Assistant\BackendAssistant,
     Z77\Module\Backend\Ui\BackendMenu,
+    Z77\Shared\Auth\LoginThrottle,
     Z77\Shared\Auth\PasswordTier,
     Z77\Shared\Controller\RouteInfoTrait
 ;
@@ -78,6 +79,22 @@ abstract class BackendAbstractController extends AbstractBaseController
         return PasswordTier::fromName(is_string($name) ? $name : null);
     }
 
+    /**
+     * The password limits, for every place that verifies one (the login, the 2FA enrolment). The
+     * limits are installation policy (`config/client/auth.inc.php`); a seed-once file from before
+     * SEC-004 has no such keys and gets the class's defaults.
+     */
+    protected function loginThrottle(): LoginThrottle
+    {
+        $config = DI::getConfigManager()->getBaseConfig('config/auth', throwError: false);
+
+        return new LoginThrottle(
+            LoginThrottle::defaultDir(),
+            max(1, (int) $config->get('loginFailuresPerUsernameIp', LoginThrottle::FAILURES_PER_USERNAME_IP)),
+            max(1, (int) $config->get('loginFailuresPerIp', LoginThrottle::FAILURES_PER_IP)),
+        );
+    }
+
     /** Pushes an error flash and returns a failed Fetch envelope — the standard backend fetch error path. */
     protected function fetchError(string $text): FetchResponse
     {
@@ -139,6 +156,7 @@ abstract class BackendAbstractController extends AbstractBaseController
                 'debug'      => $auth->canReach($user, 'backend', 'system', 'system', 'toggle-debug'),
                 'noindex'    => $auth->canReach($user, 'backend', 'system', 'system', 'toggle-noindex'),
                 'clearCache' => $auth->canReach($user, 'backend', 'system', 'system', 'clear-cache'),
+                'twoFactor'  => $auth->canReach($user, 'backend', 'system', 'backend-user', 'two-factor'),
             ];
 
             // The KI-Assistent replaces the «Hilfe» trigger (ADR-055) — page loads only (the
@@ -182,7 +200,7 @@ abstract class BackendAbstractController extends AbstractBaseController
      * same reason as in `Bootstrap` — an edited systemConfig must show
      * without «Cache leeren».
      */
-    private static function installationLabel(): string
+    protected static function installationLabel(): string
     {
         $name = trim((string) DI::getConfigManager()
             ->getBaseConfig(configName: 'config/systemConfig', throwError: false, cachePersist: false)

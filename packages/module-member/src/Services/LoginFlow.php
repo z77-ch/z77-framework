@@ -8,6 +8,9 @@ use Z77\Module\Member\Entities\MemberPendingLogin;
 use Z77\Module\Member\Entities\MemberToken;
 use Z77\Persistence\Resolver\DataSourceResolver;
 use Z77\Persistence\Resolver\UnifiedEntityManager;
+use Z77\Shared\Auth\Totp;
+use Z77\Shared\Auth\TotpGuard;
+use Z77\Shared\Auth\TotpVault;
 use Z77\Shared\Mail\EmailMessage;
 
 /**
@@ -93,8 +96,8 @@ final class LoginFlow
             ),
             new MemberSession(DI::getSessionManager()),
             RegistrationFlow::create($confirmUrl),
-            TotpVault::create(),
-            TotpGuard::create(),
+            MemberTotp::vault(),
+            MemberTotp::guard(),
             DeviceKeys::create(),
             new PendingLogins($uem),
             static fn(EmailMessage $mail): bool => DI::getEmailService()->send($mail),

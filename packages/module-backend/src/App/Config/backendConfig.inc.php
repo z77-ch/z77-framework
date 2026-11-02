@@ -113,6 +113,18 @@ return [
             'AssistantController' => [
                 'controllerRole' => AuthRole::EDITOR,
             ],
+            // The user list stays ADMIN. Every backend user manages the 2FA of his OWN account
+            // (no id from the request); the reset for a lost device is the governor's (login.md
+            // BACKEND-2FA-001). The action re-checks the reset's rule too.
+            'BackendUserController' => [
+                'actions' => [
+                    'twoFactorAction'             => AuthRole::EDITOR,
+                    'twoFactorEnableAction'       => AuthRole::EDITOR,
+                    'twoFactorDisableAction'      => AuthRole::EDITOR,
+                    'confirmTwoFactorResetAction' => AuthRole::SUPER_USER,
+                    'twoFactorResetAction'        => AuthRole::SUPER_USER,
+                ],
+            ],
         ],
         'content' => [
             // The content editor is the editor's workplace (ADR-045): list, edit,
