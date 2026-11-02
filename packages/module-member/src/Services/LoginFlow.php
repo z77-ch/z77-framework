@@ -184,8 +184,12 @@ final class LoginFlow
     public function request(string $email, bool $remember = false, ?int $now = null, string $ip = ''): bool
     {
         $now     = $now ?? time();
-        $allowed = ($ip === '' || $this->throttle->allowIp($ip, $this->mailsPerIp, $now))
-            && $this->throttle->allow($email, $now);
+        $origin = $ip === '' || $this->throttle->allowIp($ip, $this->mailsPerIp, $now);
+        if (!$origin) {
+            // The visitor must see nothing, the operator must: without an address, the log is not a list of people.
+            error_log('LoginFlow: login mail held back, this origin is over its hourly limit (' . $this->mailsPerIp . ')');
+        }
+        $allowed = $origin && $this->throttle->allow($email, $now);
         $account = $allowed ? $this->accounts->findByEmail($email) : null;
         $plain   = null;
 

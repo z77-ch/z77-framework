@@ -408,7 +408,9 @@ check('over the limit: the same answer', $flow->request('erfunden9@example.ch', 
 check('...no mail', count($mails) === 3);
 check('...a waiting record all the same', $msession->pendingLoginId() !== null);
 check('...the same for a known address', $flow->request('bekannt@example.ch', false, $tMail, '203.0.113.7') === true && count($mails) === 3);
-$throttleFiles = glob($base . '/member-throttle/*') ?: [];
+$limitLine = $logTail();
+check('...the operator is told in the log', str_contains($limitLine, 'LoginFlow: login mail held back, this origin is over its hourly limit'), substr($limitLine, -200));
+check('...without the address of the visitor or the mailbox', !str_contains($limitLine, '203.0.113.7') && !str_contains($limitLine, 'erfunden9') && !str_contains($limitLine, 'bekannt@'));$throttleFiles = glob($base . '/member-throttle/*') ?: [];
 check('another origin is not held', $flow->request('bekannt@example.ch', false, $tMail, '203.0.113.8') === true && count($mails) === 4);
 // An origin over its limit must not use up the address's allowance: the known address got its
 // first count only from the other origin, so four more go out from there.
