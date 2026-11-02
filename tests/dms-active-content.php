@@ -12,7 +12,7 @@
  *       mismatch in either direction, a variant judged by its OWN extension and MIME;
  *   (C) `materialize()` still writes the safe ones, byte-identical, in a public active folder only;
  *   (D) the bodies: the base guard is the verified handler block and nothing else, the partition
- *       guard adds plain text at the top level and the safe list (read by content: no Apache here);
+ *       guard adds nosniff and no type of its own (read by content: no Apache here);
  *   (E) an old or changed guard is replaced, an identical one is left alone and costs no sweep;
  *   (F) a hand-placed tree beside a partition survives untouched and gets no guard; inside a
  *       partition only a provable copy goes, the rest stays and is counted; a second run does
@@ -297,9 +297,8 @@ check('base guard: exactly the verified block under its comments', str_ends_with
 check('base guard: no safe list, no nosniff, no type outside the block',
     !str_contains($baseBody, 'ForceType None') && !str_contains($baseBody, 'nosniff') && substr_count($baseBody, 'ForceType') === 1 && substr_count($baseBody, 'SetHandler') === 1, $baseBody);
 check('the block is byte-identical to the old guard\'s', str_ends_with($oldBase, $execBlock) && str_ends_with($baseBody, $execBlock));
-check('partition guard: plain text at the top level, no SetHandler there', $topLevel($partBody) === ['ForceType text/plain'], json_encode($topLevel($partBody)));
-$safeList = implode('|', UploadTypes::STATIC_SAFE);
-check('partition guard: the safe list comes from the constant', str_contains($partBody, "<FilesMatch \"(?i)\\.({$safeList})\$\">\n    ForceType None\n</FilesMatch>"), $partBody);
+check('partition guard: nothing at the top level, it took images and PDFs along on a real host', $topLevel($partBody) === [], json_encode($topLevel($partBody)));
+check('partition guard: no type but the one inside the executable block', substr_count($partBody, 'ForceType') === 1 && !str_contains($partBody, 'ForceType None'), $partBody);
 check('partition guard: the verified block on the executable extensions', str_contains($partBody, $execBlock), $partBody);
 check('partition guard: nosniff, guarded by the module', str_contains($partBody, "<IfModule mod_headers.c>\n    Header always set X-Content-Type-Options \"nosniff\"\n</IfModule>"), $partBody);
 foreach (['base' => [$baseBody, ['FilesMatch', 'ForceType', 'SetHandler']], 'partition' => [$partBody, ['FilesMatch', 'ForceType', 'Header', 'IfModule', 'SetHandler']]] as $name => [$body, $want]) {
@@ -313,13 +312,12 @@ foreach (['base' => [$baseBody, ['FilesMatch', 'ForceType', 'SetHandler']], 'par
     check("{$name} guard: FileInfo-level directives only (no deny, no rewrite, no Options)", array_keys($directives) === $want, implode(',', array_keys($directives)));
 }
 preg_match_all('/<FilesMatch "(.+)">/', $partBody, $m);
-$safeRx = '/' . str_replace('/', '\\/', $m[1][0]) . '/';
-foreach (['x.jpg', 'x.JPG', 'a.b.s.webp', 'x.pdf', 'x.mp4', 'x.aac'] as $name) {
-    check("safe block matches {$name}", preg_match($safeRx, $name) === 1);
+check('partition guard: one block only, the executable one, so no rule can touch an image or a PDF', count($m[1]) === 1);
+$execRx = '/' . str_replace('/', '\\/', $m[1][0]) . '/';
+foreach (['x.jpg', 'x.JPG', 'a.b.s.webp', 'x.pdf', 'x.mp4', 'x.aac', 'x.svg', 'x.json'] as $name) {
+    check("the block leaves {$name} alone", preg_match($execRx, $name) === 0);
 }
-foreach (['x.html', 'x.svg', 'x.xml', 'x.txt', 'x.js', 'x.jpg.html', 'jpg', 'xjpg', 'x.jpgx', 'x.php'] as $name) {
-    check("safe block does not match {$name}", preg_match($safeRx, $name) === 0);
-}
+check('the block takes x.php', preg_match($execRx, 'x.php') === 1);
 
 echo "(E) replacing\n";
 $base = $work . '/e';

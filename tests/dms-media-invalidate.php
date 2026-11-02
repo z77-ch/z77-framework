@@ -223,7 +223,7 @@ echo "(A) gate change\n";
 foreach (['offen/foto.jpg', 'offen/foto.w480.jpg', 'offen/bilder/bild.jpg', 'offen/bilder/bild.w480.jpg', 'offen/bilder/tief/schrift.pdf', 'offen/reise/gezuegelt.jpg'] as $p) {
     check("a public hit writes the copy: {$p}", $fill($p));
 }
-check('the partition guard exists', str_contains((string) @file_get_contents($media . '/offen/.htaccess'), 'ForceType None'));
+check('the partition guard exists', str_contains((string) @file_get_contents($media . '/offen/.htaccess'), 'DMS-ACTIVE-001'));
 $guard = (string) file_get_contents($media . '/offen/.htaccess');
 
 $r = $gateMode(3, 'Bilder', 'protected');
@@ -291,7 +291,7 @@ foreach (['offen/foto.jpg', 'offen/bilder/bild.jpg'] as $p) {
     check("partition renamed: nothing at the old path: {$p}", $reachable($p) === '', $reachable($p));
 }
 check('partition renamed: the old directory keeps its files and its guard', is_file($media . '/offen/.htaccess') && $handIntact() === []);
-check('partition renamed: at the new path, with a guard of its own', $fill('geoeffnet/foto.jpg') && str_contains((string) @file_get_contents($media . '/geoeffnet/.htaccess'), 'ForceType None'));
+check('partition renamed: at the new path, with a guard of its own', $fill('geoeffnet/foto.jpg') && str_contains((string) @file_get_contents($media . '/geoeffnet/.htaccess'), 'DMS-ACTIVE-001'));
 $rename(2, 'Offen', 'public');
 check('renamed back onto its old directory', is_file($media . '/offen/hand.js') && $reachable('geoeffnet/foto.jpg') === '');
 $slugOf = static fn(int $id): string => (string) (array_column(json_decode((string) file_get_contents($site . '/data/documents/folders.json'), true), null, 'id')[$id]['slug'] ?? '');

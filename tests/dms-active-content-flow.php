@@ -157,8 +157,8 @@ if ($up) {
         check("{$name}: next hit static (no PHP headers)", $st === 200 && !isset($h['content-disposition']) && !isset($h['x-content-type-options']), json_encode($h));
     }
 
-    check('the base guard came with the first copy, handler level only', str_contains((string) @file_get_contents($media . '/.htaccess'), 'SetHandler none') && !str_contains((string) @file_get_contents($media . '/.htaccess'), 'ForceType None'));
-    check('the partition guard too', str_contains((string) @file_get_contents($media . '/offen/.htaccess'), 'ForceType None'));
+    check('the base guard came with the first copy, handler level only', str_contains((string) @file_get_contents($media . '/.htaccess'), 'SetHandler none') && !str_contains((string) @file_get_contents($media . '/.htaccess'), 'DMS-ACTIVE-001'));
+    check('the partition guard too', str_contains((string) @file_get_contents($media . '/offen/.htaccess'), 'DMS-ACTIVE-001'));
 
     echo "(C) one request to a non-existent path repairs an old installation\n";
     $old = "# z77 DMS (DMS-MEDIA-PHP-001): static copies only — nothing here is ever run.\n<FilesMatch \"\\.(php)\$\">\n    SetHandler none\n</FilesMatch>\n";
@@ -177,8 +177,8 @@ if ($up) {
     [$st] = $go('/media/gibt/es/nicht.jpg');
     check('a non-existent path: 404', $st === 404, (string) $st);
     $guard = (string) @file_get_contents($media . '/.htaccess');
-    check('... the base guard is replaced, handler level only', $guard !== $old && str_contains($guard, 'SetHandler none') && !str_contains($guard, 'ForceType None'));
-    check('... the partition has its guard', str_contains((string) @file_get_contents($media . '/offen/.htaccess'), 'ForceType None'));
+    check('... the base guard is replaced, handler level only', $guard !== $old && str_contains($guard, 'SetHandler none') && !str_contains($guard, 'DMS-ACTIVE-001'));
+    check('... the partition has its guard', str_contains((string) @file_get_contents($media . '/offen/.htaccess'), 'DMS-ACTIVE-001'));
     check('... .html, .svg and .xml copies are gone', !is_file($media . '/offen/seite.html') && !is_file($media . '/offen/zeichnung.svg') && !is_file($media . '/offen/daten.xml'));
     check('... .jpg and .pdf stay', is_file($media . '/offen/foto.jpg') && is_file($media . '/offen/schrift.pdf'));
     check('... a hand-placed file in the partition stays', is_file($media . '/offen/hand.js'));
@@ -212,7 +212,7 @@ if ($up) {
     file_put_contents($media . '/offen/seite.html', 'old copy, active');
     [$st, , $b] = $go('/backend/documents/drive/list?folder=2');
     check('the Drive opens and lists the documents', $st === 200 && str_contains($b, 'dms-filelist'), $st . ' ' . substr(strip_tags($b), 0, 300));
-    check('... both guards are back, the copy gone, the hand-placed tree there', (string) @file_get_contents($media . '/.htaccess') !== $old && str_contains((string) @file_get_contents($media . '/offen/.htaccess'), 'ForceType None')
+    check('... both guards are back, the copy gone, the hand-placed tree there', (string) @file_get_contents($media . '/.htaccess') !== $old && str_contains((string) @file_get_contents($media . '/offen/.htaccess'), 'DMS-ACTIVE-001')
         && !is_file($media . '/offen/seite.html') && is_file($media . '/demo/iso/a.js'));
 }
 
