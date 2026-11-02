@@ -146,6 +146,8 @@ check('XHR (progress needs it)',          str_contains($js, 'new XMLHttpRequest'
 check('the CSRF header is sent',          str_contains($js, 'X-CSRF-Token'));
 check('commands run once, at the end',    str_contains($js, 'this.commands') && str_contains($js, 'handleEnvelope'));
 check('a nested drop does not double up', str_contains($js, 'stopPropagation'));
+check('«Ja» to the question really overwrites: the item remembers it and the queue sends it (the question came back for ever before)',
+    str_contains($js, 'item.overwrite = true;') && str_contains($js, 'this.send(next, !!next.overwrite)'));
 check('the four conflict modes are handled',
     str_contains($js, "'overwrite'") && str_contains($js, "'skip'") && str_contains($js, "'error'") && str_contains($js, "item.state = 'asking'"));
 
