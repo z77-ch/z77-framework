@@ -1421,12 +1421,14 @@ final class DocumentService
         if ($dir === null || !is_dir($dir)) {
             return;
         }
+        $stuck = [];
         foreach (array_merge([BlobStorage::ORIGINAL], array_keys($doc->getVariants())) as $variant) {
             $file = $dir . '/' . $this->materializedName($doc, $variant);
-            if (is_file($file)) {
-                @unlink($file);
+            if (is_file($file) && !$this->removeCopy($file)) {
+                $stuck[] = $file;
             }
         }
+        $this->reportStuckCopies($stuck);
     }
 
     /**
@@ -1459,7 +1461,8 @@ final class DocumentService
         if (!is_dir($dir)) {
             return;
         }
-        $this->removeCopies($folderId, $dir);
+        $stuck = $this->removeCopies($folderId, $dir);
+        $this->reportStuckCopies($stuck);
         $this->pruneEmptyDirectories($dir);
         if ($pathGoesAway && !str_contains($relPath, '/')) {
             $this->removeBareGuard($dir);
@@ -1487,14 +1490,20 @@ final class DocumentService
         return true;
     }
 
-    /** The folder's copies in $dir, then its subfolders' in their directories. Never through a link. */
-    private function removeCopies(int $folderId, string $dir): void
+    /**
+     * The folder's copies in $dir, then its subfolders' in their directories. Never through a link.
+     *
+     * @return list<string> the copies that could not be removed
+     */
+    private function removeCopies(int $folderId, string $dir): array
     {
-        $docs = $this->documents->findByFolder($folderId); // the trash too: its copies must not stay either
+        $stuck = [];
+        $docs  = $this->documents->findByFolder($folderId); // the trash too: its copies must not stay either
         foreach (@scandir($dir) ?: [] as $entry) {
             $path = $dir . '/' . $entry;
-            if ($entry !== '.' && $entry !== '..' && !is_dir($path) && $this->isCopyOf($entry, $docs)) {
-                @unlink($path); // a link to a file goes like a file, only the link
+            // A link to a file goes like a file, only the link.
+            if ($entry !== '.' && $entry !== '..' && !is_dir($path) && $this->isCopyOf($entry, $docs) && !$this->removeCopy($path)) {
+                $stuck[] = $path;
             }
         }
         foreach ($this->folders->findAll() as $child) {
@@ -1503,8 +1512,56 @@ final class DocumentService
             }
             $childDir = $dir . '/' . $child->getSlug();
             if (is_dir($childDir) && !is_link($childDir) && realpath($childDir) === realpath($dir) . DIRECTORY_SEPARATOR . $child->getSlug()) {
-                $this->removeCopies((int) $child->getId(), $childDir);
+                $stuck = array_merge($stuck, $this->removeCopies((int) $child->getId(), $childDir));
             }
+        }
+
+        return $stuck;
+    }
+
+    /**
+     * Deletes one copy. A read-only file is made writable first: on Windows that alone refuses the
+     * delete. Nothing stronger is tried: emptying the file would leave a broken image that the web
+     * server keeps serving and no later hit repairs, and the directory's rights are the host's.
+     */
+    private function removeCopy(string $path): bool
+    {
+        if (@unlink($path)) {
+            return true;
+        }
+        @chmod($path, 0644);
+        clearstatcache(true, $path);
+
+        return @unlink($path) || (!file_exists($path) && !is_link($path));
+    }
+
+    /**
+     * A copy left behind is served by the web server, past every gate: the change happened in the
+     * store, but the document may still be reachable. So it is never a plain success: a log line
+     * per path, and a message that stays until closed in the answer of the action, beside its own
+     * success. The answer is the action's, it keeps its status: the store did change, a repeat
+     * cannot help, and only someone with access to the server can.
+     *
+     * @param list<string> $paths
+     */
+    private function reportStuckCopies(array $paths): void
+    {
+        if ($paths === []) {
+            return;
+        }
+        $urls = [];
+        foreach ($paths as $path) {
+            error_log("[dms] media: cannot remove the copy '{$path}'; the web server may keep serving it. Delete it on the server.");
+            $urls[] = '/media/' . substr($path, strlen($this->mediaBase()) + 1);
+        }
+        $shown = implode(', ', array_slice($urls, 0, 5)) . (count($urls) > 5 ? ' und ' . (count($urls) - 5) . ' weitere' : '');
+        try {
+            DI::getMessageService()->pushMessage('error', (count($urls) === 1
+                ? 'Eine öffentliche Kopie konnte nicht entfernt werden und ist möglicherweise noch erreichbar: '
+                : count($urls) . ' öffentliche Kopien konnten nicht entfernt werden und sind möglicherweise noch erreichbar: ')
+                . $shown . '. Bitte auf dem Server löschen oder die Rechte prüfen.');
+        } catch (\Throwable) {
+            // No request behind this call (a job, a harness): the log line stands.
         }
     }
 

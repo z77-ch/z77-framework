@@ -14,6 +14,8 @@
  *   (D) a link: never followed by the invalidation, no copy written behind one, no folder walk into it;
  *   (E) a new partition does not take over a hand-placed directory; a partition keeps its own slug;
  *   (F) a move to where a folder already stands changes nothing: the slug, the URL, the copy;
+ *   (G) a copy that cannot be deleted: a read-only one goes all the same; one that truly cannot goes
+ *       into the log and into the answer, which tells the person it may still be reachable.
  *
  * Run: php tests/dms-media-invalidate.php
  */
@@ -390,6 +392,70 @@ check('...its URL still answers', $guest()->go('/media/mit-hand/roh.jpg')[0] ===
 check('...a move that moves nothing removes no copy', is_file($media . '/mit-hand/roh.jpg') && is_file($media . '/mit-hand/unter/unten.jpg'));
 $r = $admin->fetchPost($api . 'folder-move', ['id' => 13, 'entity_csrf' => $entity(13), 'folder_id' => 10], $token);
 check('a subfolder moved to its own parent: its slug and copy stay', !str_contains($r[2], '"status":"error"') && $slugOf(13) === 'unter' && is_file($media . '/mit-hand/unter/unten.jpg'), substr($r[2], 0, 160));
+
+// ── (G) a copy that cannot be deleted ───────────────────────────────────────
+echo "(G) a copy that cannot be deleted\n";
+check('a read-only copy to start from', $fill('stur/stur.jpg'));
+chmod($media . '/stur/stur.jpg', 0444);
+$r = $gateMode(11, 'Stur', 'protected');
+check('read-only: protected, the copy is gone all the same', !is_file($media . '/stur/stur.jpg') && $reachable('stur/stur.jpg') === '', $reachable('stur/stur.jpg'));
+check('read-only: nothing to warn about', !str_contains($r[2], 'noch erreichbar'), substr($r[2], 0, 300));
+
+/**
+ * Makes a file that the server's user can really not delete, on either system. False: not possible
+ * here (a root user), and the section says so.
+ */
+$lockCopy = static function (string $file) use (&$unlockCopy): bool {
+    if (DIRECTORY_SEPARATOR === '\\') {
+        $win = str_replace('/', '\\', $file);
+        exec('icacls "' . $win . '" /deny *S-1-1-0:(DE,WA,WD) 2>NUL', $o1, $a);
+        exec('icacls "' . dirname($win) . '" /deny *S-1-1-0:(DC) 2>NUL', $o2, $b);
+        return $a === 0 && $b === 0;
+    }
+    chmod(dirname($file), 0555);
+    return !is_writable(dirname($file));
+};
+$unlockCopy = static function (string $file): void {
+    if (DIRECTORY_SEPARATOR === '\\') {
+        $win = str_replace('/', '\\', $file);
+        exec('icacls "' . $win . '" /remove:d *S-1-1-0 2>NUL');
+        exec('icacls "' . dirname($win) . '" /remove:d *S-1-1-0 2>NUL');
+        return;
+    }
+    chmod(dirname($file), 0755);
+};
+$logs = static fn(): string => (string) @file_get_contents($site . '/logs/php-error.log') . (string) @file_get_contents($base . '/server.log');
+$copyPath = $media . '/fest/fest.jpg';
+check('a copy that will not go', $fill('fest/fest.jpg') && $fill('fest/beide.jpg'));
+if ($lockCopy($copyPath)) {
+    register_shutdown_function(static function () use ($unlockCopy, $copyPath): void { $unlockCopy($copyPath); });
+    $probeUnlink = @unlink($copyPath);
+    clearstatcache();
+    check('...the test really holds it: this user cannot delete it', !$probeUnlink && is_file($copyPath));
+
+    $r = $gateMode(12, 'Fest', 'protected');
+    check('the folder is protected in the store', str_contains((string) file_get_contents($site . '/data/documents/folders.json'), '"protected"'));
+    check('the answer is NOT plain success: it says the copy may still be reachable', str_contains($r[2], 'noch erreichbar'), substr($r[2], 0, 300));
+    check('...and names what to do and which file', str_contains($r[2], 'auf dem Server') && str_contains($r[2], 'fest\/fest.jpg'), substr($r[2], 0, 400));
+    check('...a copy that could go, went', !is_file($media . '/fest/beide.jpg'));
+    check('the log names the path', str_contains($logs(), "cannot remove the copy") && str_contains($logs(), 'fest/fest.jpg'));
+    $st = $guest()->go('/media/fest/fest.jpg');
+    check('the guest\'s hit, this is what the warning is about', $st[0] === 200 && is_file($copyPath), (string) $st[0]);
+
+    // One document's gate, and a move of a directory with a stuck copy.
+    $unlockCopy($copyPath);
+    $gateMode(12, 'Fest', 'public');
+    clearstatcache();
+    check('freed: the gate change removes it', !is_file($copyPath));
+    $fill('fest/fest.jpg');
+    $lockCopy($copyPath);
+    $r = $admin->fetchPost($api . 'actions?type=document&id=10', ['value' => false], $token);
+    check('one document deactivated: the same warning', str_contains($r[2], 'noch erreichbar') && str_contains($r[2], 'fest\/fest.jpg'), substr($r[2], 0, 300));
+    $unlockCopy($copyPath);
+    $admin->fetchPost($api . 'actions?type=document&id=10', ['value' => true], $token);
+} else {
+    echo "  (a file that cannot be deleted is not possible here: this part skipped)\n";
+}
 
 $src = (string) file_get_contents($root . '/packages/module-dms/src/Services/DocumentService.php');
 check('no whole-directory wipe is left', !str_contains($src, 'rrmdir'));
