@@ -7,6 +7,10 @@
  * modifies a file — the developer maintains sftp.json by hand; this
  * script only warns.
  *
+ * Also names what a whole-file config override under `override/` lacks of
+ * the framework's file: a warning only, it never changes the exit code
+ * (lib.php `releases_overrideWarnings`).
+ *
  * Usage: php .releases/check.php   (from the project root or anywhere)
  */
 
@@ -18,6 +22,21 @@ $sftpFile    = $projectRoot . '/.vscode/sftp.json';
 
 $errors = [];
 $warn   = static function (string $msg) use (&$errors): void { $errors[] = $msg; };
+
+require __DIR__ . '/lib.php';
+
+// Before anything can end the run. A warning only: whatever goes wrong in here, the check goes on.
+try {
+    $configWarnings = function_exists('releases_overrideWarnings') ? releases_overrideWarnings($projectRoot) : [];
+} catch (\Throwable $e) {
+    $configWarnings = ['config overrides not compared: ' . $e->getMessage()];
+}
+if ($configWarnings !== []) {
+    fwrite(STDOUT, count($configWarnings) . " config override warning(s), they do not fail this check:\n");
+    foreach ($configWarnings as $line) {
+        fwrite(STDOUT, "  ! {$line}\n");
+    }
+}
 
 $load = static function (string $file, string $label) use ($warn): ?array {
     if (!is_file($file)) {
@@ -180,7 +199,6 @@ foreach ($ignore as $ig) {
     }
 }
 
-require __DIR__ . '/lib.php';
 if (is_file($projectRoot . '/composer.json')) {
     foreach (releases_pathRepos($projectRoot) as $repo) {
         $target = $projectRoot . '/vendor/' . $repo['name'];

@@ -443,3 +443,210 @@ function releases_httpHead(string $url): array
     }
     return [(int) $m[1], $headers];
 }
+
+/**
+ * What a project's whole-file config override leaves out (packaging.md PKG-OVERRIDE-001). A config
+ * under `override/` replaces the framework's file whole, first match wins, no merging: a key the
+ * framework gained later is silently absent there, and so is a mail form or a job. Compares
+ * `override/z77/**` with the framework's file of the same path: top-level keys, for `emailConfig`
+ * also `forms` entries, for a module config (`App/Config`) also `jobs` entries.
+ *
+ * Only reads and only warns. Local files, no server. Neither side is executed: a project's config
+ * may do anything and names classes no autoloader knows here, so both are read with the tokenizer.
+ * A file whose `return` is not a plain array cannot be judged and says so.
+ *
+ * @return list<string> one sentence per finding, paths relative to the project
+ */
+function releases_overrideWarnings(string $projectRoot): array
+{
+    $root = rtrim(str_replace('\\', '/', $projectRoot), '/');
+    $base = $root . '/override/z77';
+    if (!is_dir($base)) {
+        return [];
+    }
+
+    $warnings = [];
+    $files    = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($base, FilesystemIterator::SKIP_DOTS | FilesystemIterator::UNIX_PATHS));
+    $list     = [];
+    foreach ($files as $file) {
+        $path = str_replace('\\', '/', (string) $file);
+        if (str_ends_with($path, '.inc.php') && basename(dirname($path)) === 'Config') {
+            $list[] = $path;
+        }
+    }
+    sort($list);
+
+    foreach ($list as $path) {
+        $rel       = substr($path, strlen($base) + 1);
+        $framework = releases_frameworkFileFor($root, $rel);
+        if ($framework === null) {
+            continue; // the project's own config: nothing to compare it with
+        }
+        $name    = 'override/z77/' . $rel;
+        $ours    = releases_configKeys((string) file_get_contents($path));
+        $theirs  = releases_configKeys((string) file_get_contents($framework));
+        if ($ours === null || $theirs === null) {
+            $warnings[] = $name . ': ' . ($ours === null ? 'its' : "the framework file's") . ' return is not a plain array, not compared';
+            continue;
+        }
+
+        $missing = array_values(array_diff(array_keys($theirs), array_keys($ours)));
+        if ($missing !== []) {
+            $warnings[] = $name . ' replaces the framework file whole and lacks: ' . implode(', ', $missing);
+        }
+        $nested = [];
+        if (basename($path) === 'emailConfig.inc.php') {
+            $nested[] = 'forms';
+        }
+        if (str_contains($rel, '/App/Config/')) {
+            $nested[] = 'jobs';
+        }
+        foreach ($nested as $key) {
+            $gone = array_values(array_diff($theirs[$key] ?? [], $ours[$key] ?? []));
+            if ($gone !== []) {
+                $warnings[] = $name . " lacks these '{$key}' entries: " . implode(', ', $gone);
+            }
+        }
+    }
+
+    return $warnings;
+}
+
+/**
+ * The framework's file behind an override path (`module/member/src/…`, `shared/src/…`), from the
+ * project's vendor/, else from a path repository of its composer.json; null when there is none.
+ */
+function releases_frameworkFileFor(string $root, string $rel): ?string
+{
+    if (preg_match('#^module/([a-z0-9-]+)/(.+)$#', $rel, $m) === 1) {
+        $package = 'module-' . $m[1];
+        $inside  = $m[2];
+    } elseif (preg_match('#^(core|shared|persistence)/(.+)$#', $rel, $m) === 1) {
+        $package = 'kernel';
+        $inside  = $m[1] . '/' . $m[2];
+    } else {
+        return null;
+    }
+
+    $candidate = $root . '/vendor/z77/' . $package . '/' . $inside;
+    if (is_file($candidate)) {
+        return $candidate;
+    }
+
+    $composer = json_decode((string) @file_get_contents($root . '/composer.json'), true);
+    foreach ((array) ($composer['repositories'] ?? []) as $repo) {
+        if (!is_array($repo) || ($repo['type'] ?? null) !== 'path') {
+            continue;
+        }
+        $url = (string) ($repo['url'] ?? '');
+        foreach (array_merge(glob($root . '/' . $url) ?: [], glob($url) ?: []) as $dir) {
+            $pkg = json_decode((string) @file_get_contents($dir . '/composer.json'), true);
+            if (($pkg['name'] ?? null) === 'z77/' . $package && is_file($dir . '/' . $inside)) {
+                return $dir . '/' . $inside;
+            }
+        }
+    }
+
+    return null;
+}
+
+/**
+ * The string keys of the array a config file returns, each with the string keys of its own value:
+ * `['forms' => ['contactForm', …], 'loginUrl' => []]`. Read from the tokens, nothing runs. Null when
+ * the first top-level `return` is not a plain array literal, or the literal spreads something in.
+ *
+ * @return array<string, list<string>>|null
+ */
+function releases_configKeys(string $php): ?array
+{
+    $tokens = array_values(array_filter(
+        token_get_all($php),
+        static fn($t): bool => !is_array($t) || !in_array($t[0], [T_WHITESPACE, T_COMMENT, T_DOC_COMMENT], true)
+    ));
+
+    $depth = 0;
+    $count = count($tokens);
+    for ($i = 0; $i < $count; $i++) {
+        $token = $tokens[$i];
+        if ($token === '{' || $token === '(' || $token === '[' || (is_array($token) && in_array($token[0], [T_CURLY_OPEN, T_DOLLAR_OPEN_CURLY_BRACES, T_ATTRIBUTE], true))) {
+            $depth++;
+        } elseif ($token === '}' || $token === ')' || $token === ']') {
+            $depth--;
+        } elseif ($depth === 0 && is_array($token) && $token[0] === T_RETURN) {
+            $opensAt = releases_arrayOpensAt($tokens, $i + 1);
+            if ($opensAt === null) {
+                return null;
+            }
+            $keys = [];
+            $end  = releases_readArrayKeys($tokens, $opensAt, 1, $keys);
+
+            // Anything but the closing `;` behind the literal (`[…] + $more`): not plain.
+            return $end === null || ($tokens[$end + 1] ?? ';') !== ';' ? null : $keys;
+        }
+    }
+
+    return null;
+}
+
+/** The index of the first token inside an array literal that starts at $i, or null when none starts there. */
+function releases_arrayOpensAt(array $tokens, int $i): ?int
+{
+    if (($tokens[$i] ?? null) === '[') {
+        return $i + 1;
+    }
+    if (is_array($tokens[$i] ?? null) && $tokens[$i][0] === T_ARRAY && ($tokens[$i + 1] ?? null) === '(') {
+        return $i + 2;
+    }
+
+    return null;
+}
+
+/**
+ * Walks one array literal from its first inner token. Level 1 collects the keys and the keys of
+ * their values, level 2 only the keys. Returns the index of the closing token; null on a spread at
+ * level 1, which makes the key list unknowable.
+ *
+ * @param array<string|int, mixed> $keys
+ */
+function releases_readArrayKeys(array $tokens, int $i, int $level, array &$keys): ?int
+{
+    $depth = 0; // brackets of a value inside this literal
+    $count = count($tokens);
+    for (; $i < $count; $i++) {
+        $token = $tokens[$i];
+        if ($token === '{' || $token === '(' || $token === '[' || (is_array($token) && in_array($token[0], [T_CURLY_OPEN, T_DOLLAR_OPEN_CURLY_BRACES, T_ATTRIBUTE], true))) {
+            $depth++;
+            continue;
+        }
+        if ($token === '}' || $token === ')' || $token === ']') {
+            if ($depth === 0) {
+                return $i;
+            }
+            $depth--;
+            continue;
+        }
+        if ($depth !== 0) {
+            continue;
+        }
+        if (is_array($token) && $token[0] === T_ELLIPSIS && $level === 1) {
+            return null;
+        }
+        if (is_array($token) && $token[0] === T_CONSTANT_ENCAPSED_STRING && is_array($tokens[$i + 1] ?? null) && $tokens[$i + 1][0] === T_DOUBLE_ARROW) {
+            $key = stripcslashes(substr($token[1], 1, -1));
+            if ($level === 2) {
+                $keys[] = $key;
+                continue;
+            }
+            $keys[$key] = [];
+            $opensAt    = releases_arrayOpensAt($tokens, $i + 2);
+            if ($opensAt !== null) {
+                $inner = [];
+                $end   = releases_readArrayKeys($tokens, $opensAt, 2, $inner);
+                $keys[$key] = $inner;
+                $i = (int) $end;
+            }
+        }
+    }
+
+    return null;
+}

@@ -1,6 +1,6 @@
 # packaging
 
-2026-11-01
+2026-11-02
 
 Public since 2026-07-15: the monorepo and all split repos are public on GitHub and every package (`z77/kernel`, the three modules, `z77/skeleton`, `z77/docs`) is registered on Packagist with release tags (`1.0.x`). `z77-ch/kernel` + `module-frontend/backend/dms` are the active split targets; the obsolete `z77-ch/core`, `/shared`, `/persistence` repos are archived (read-only), superseded by kernel.
 
@@ -19,6 +19,9 @@ SOURCE=/packages/module-backend/composer.json
 SOURCE=/packages/module-dms/composer.json
 SOURCE=/skeleton/composer.json
 SOURCE=/tools/build-stamp.php
+SOURCE=/.releases/check.php
+SOURCE=/.releases/lib.php
+SOURCE=/tests/releases-override-check.php
 SOURCE=/packages/kernel/shared/src/Build/BuildInfo.php
 SOURCE=/packages/module-backend/res/view/templates/partials/shell/topbar.tpl.php
 
@@ -97,10 +100,12 @@ Changing the package alone changes nothing a browser sees.
 - When restoring dev junctions → MUST delete `vendor/z77/build.json` (`vendor-dev.bat` does), or the local backend reports the last deploy's date for a working tree that has moved on.
 - When displaying the stamp → MUST show the `dirty` marker with the commit and MUST NOT render an empty string for an unknown commit; `BuildInfo::label()` returns `unbekannt` for that case.
 - When adding a CLI binary to a package's `bin` list → MUST run `composer update z77/<pkg>` in every consuming project; `composer install` and `vendor-deploy.bat` do NOT create the new `vendor/bin` entry (PKG-005).
+- When adding a key to a framework config, a mail form to `emailConfig` or a job to a module config → a project overriding that file whole does not get it; `php .releases/check.php` names what its override lacks (PKG-OVERRIDE-001), and the project decides. MUST NOT fix an override by script: leaving a key out may be its decision, and the framework code's default then applies.
 - When changing a package's `res/assets/` (CSS, JS, images) → MUST run `composer install` in every consuming project afterwards; the served copy lives in `public/{assetDir}/{module}` and a `path`-repo/junction setup makes `vendor/` look current while `public/` is stale. A hand copy from `vendor/` (what the installer itself suggests for a file it kept) is fine — the next install sees both sides in sync and adopts it into the publication record (INST-ASSET-DIFF-001).
 
 ## known issues
 
+- **PKG-OVERRIDE-001** — built 2026-11-02 (owner, hardening H6). A config under `override/` replaces the framework's file whole, so a key, a `forms` entry or a `jobs` entry the framework gained later is silently absent there: mail recipients no form lists, a job that does not exist. `.releases/check.php` compares `override/z77/**/Config/*.inc.php` with the framework's file of that path (project `vendor/z77/`, else a path repository of its `composer.json`): top-level keys, `forms` entries of `emailConfig`, `jobs` entries of a module config under `App/Config`. Only warns, on STDOUT, before anything else, and never changes the exit code; never writes, never reaches a server (`.releases/RULES.md`). Neither file is executed: a project's config may run anything and names classes no autoloader knows there, so `releases_configKeys()` reads the tokens. Don't assume: a `return array_merge(...)` or `[...] + $x` is not compared, and says so; a missing key is not always a fault, the code's default applies to most of them; a config in a subdirectory of `Config` (`Ui/Config/Main/*`) is a controller's, not compared; a project's own package has no counterpart and is skipped. Verified: `tests/releases-override-check.php` (temp project, a trap that would show execution, the script end to end with exit 0, the parser against `require` on every framework config). **The master copy only:** each project keeps its own `.releases/` (see pending).
 - **PKG-EXPORT-001** — resolved in the script 2026-11-01. `vendor-deploy.php` copied the working tree, so the gitignored `docs/_local` (maintainer notes, no credentials found by a pattern scan) went to the server with every release of a project that requires `z77/docs`, outside the docroot; uncommitted changes went along too, and the installer published uncommitted CSS into `public/` through the links. Now it exports the last commit, runs the installer again from the copies, and names what it left out. Verified: `tests/releases-export.php`, and a full run in a throwaway project with changed files in the framework's working tree: the build, its `public/` assets and its stamp held the commit; first real deploy the same day, stamp not dirty, nothing gitignored in `vendor/z77`. Don't assume the bytes match a Windows working tree: the export writes the stored LF while files published earlier may hold CRLF, so a byte-for-byte fence between `vendor/` and `public/` can fail without a fault, compare with line endings normalised. The copies already on the servers were removed by the owner's decision the same day (one installation had them, in every kept release). Don't assume every project has it: each project keeps its own copy of `.releases/`, see pending. A source that is no git tree is still copied as it stands, with a warning.
 - **PKG-001**: don't assume the split preserves per-file history — the action is a snapshot copy, each monorepo push produces one commit in the target. The workflow uses a shallow checkout (no `splitsh-lite`, so full history is not needed).
 - **ARCH-PKG-002** — resolved 2026-07-09 by ADR-023. The former circular triangle `core ↔ shared ↔ persistence` is gone: the three ship as one `z77/kernel` package, so their internal references are no longer a Composer dependency. Modules depend downward on the single foundation.
@@ -111,6 +116,7 @@ Changing the package alone changes nothing a browser sees.
 
 ## pending
 
+- **PKG-OVERRIDE-001: every project's `.releases/`** — `check.php`, `lib.php` and `RULES.md` are the owner's to copy; until then a project's check says nothing about its overrides.
 - **PKG-EXPORT-001: every project's `.releases/`** — each keeps its own copy of `lib.php` and `vendor-deploy.php`, and only a project with the new copies builds from the commit.
 
 ## see also

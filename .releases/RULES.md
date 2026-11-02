@@ -15,7 +15,7 @@ Not a comment, not a commit message — an approval recorded here in this file.
 | `RULES.md` | these rules — copied verbatim, never edited per project |
 | `target.json` | this project's server target (committed; contains no secret, only the SSH alias and paths) |
 | `target.example.json` | template for `target.json` |
-| `check.php` | verifies `target.json`, `.vscode/sftp.json` and the local `vendor/` state against the rules — warns, never uploads |
+| `check.php` | verifies `target.json`, `.vscode/sftp.json` and the local `vendor/` state against the rules — warns, never uploads. Also names what a whole-file config override lacks of the framework's file: a warning that never changes its exit code |
 | `sftp.example.json` | template for `.vscode/sftp.json` (gitignored; the developer copies and maintains it) |
 | `deploy.php` | uploads ONE release over ssh (tar stream, every shared name excluded), sets the signposts into `shared/`, compares the installer-generated configs (legacy whole-`config` layout only — obsolete under the ADR-036 split) — refuses an existing or running release |
 | `switch.php` | bends `next` or `current` at a release over ssh: link target per `target.link_target`, the deny files in `shared/`, the `X-Z77-Release` proof across the realpath TTL, then probes the door from outside |
