@@ -8,9 +8,9 @@
  *       spent step; the old class names still work; the backend's key file and guard directory are
  *       its own;
  *   (B) the new fields: a store without the keys loads and saves, a form body cannot set them;
- *   (C) the member's TOTP is unaffected: same key path and guard directory, a secret encrypted
- *       before the move still reads, setup / login / lock through the real LoginFlow, no replay
- *       check added;
+ *   (C) the member's TOTP keeps its paths: same key path and guard directory, a secret encrypted
+ *       before the move still reads, setup / login / lock through the real LoginFlow, and since
+ *       member.md MEMBER-2FA-001 a spent code is refused there too (the detail: tests/member-2fa.php);
  *   (D) concurrency across real processes: of 6 parallel uses of one code exactly one passes; of 12
  *       parallel wrong guesses no more than 5 reach the check before the lock;
  *   (E) the real flow through the framework in PHP's built-in server, with browser-like cookies:
@@ -154,7 +154,7 @@ $step = intdiv($t, Totp::PERIOD_SECONDS);
 check('one period of drift is tolerated, both ways', Totp::verify($rfc, Totp::code($rfc, $t - 30), $t) && Totp::verify($rfc, Totp::code($rfc, $t + 30), $t));
 check('two periods are not', !Totp::verify($rfc, Totp::code($rfc, $t - 60), $t) && !Totp::verify($rfc, Totp::code($rfc, $t + 60), $t));
 check('malformed codes are refused', !Totp::verify($rfc, '12345', 59) && !Totp::verify($rfc, 'abcdef', 59) && !Totp::verify($rfc, '', 59));
-check('verify() takes the same code as often as asked (the member relies on nothing else)', Totp::verify($rfc, Totp::code($rfc, $t), $t) && Totp::verify($rfc, Totp::code($rfc, $t), $t));
+check('verify() takes the same code as often as asked: the replay check is the caller\'s', Totp::verify($rfc, Totp::code($rfc, $t), $t) && Totp::verify($rfc, Totp::code($rfc, $t), $t));
 check('acceptedStep: the step of the code', Totp::acceptedStep($rfc, Totp::code($rfc, $t), $t) === $step);
 check('acceptedStep: the step of a code with drift', Totp::acceptedStep($rfc, Totp::code($rfc, $t - 30), $t) === $step - 1 && Totp::acceptedStep($rfc, Totp::code($rfc, $t + 30), $t) === $step + 1);
 check('acceptedStep: a spent step is refused (RFC 6238 §5.2)', Totp::acceptedStep($rfc, Totp::code($rfc, $t), $t, $step) === null);
@@ -392,18 +392,19 @@ $accounts = new MemberAccounts($uem);
 $account  = new MemberAccount();
 $account->setEmail('max.muster@example.ch');
 $accounts->save($account);
-$setup  = new TotpSetup($accounts, MemberTotp::vault());
+$memberSession = new MemberSession($session);
+$setup  = new TotpSetup($accounts, MemberTotp::vault(), MemberTotp::guard(), $memberSession);
 $now    = 1_900_000_020;
-$secret = $setup->begin($account);
-check('member setup: pending, not active', $account->hasPendingTotpSetup() && !$account->hasTotp());
-check('member setup: a reload shows the same secret', $setup->begin($account) === $secret);
+$secret = $setup->begin($account, $now);
+check('member setup: running in the session, nothing in the store', $setup->running($account, $now) === $secret && !$account->hasTotp() && $account->getTotpSecret() === null);
+$reload = $setup->begin($account, $now);
+check('member setup: a new open makes a new secret (member.md MEMBER-2FA-001)', $reload !== $secret);
+$secret = $reload;
 check('member setup: a wrong code stays off', !$setup->confirm($account, '000000', $now) && !$account->hasTotp());
 check('member setup: a right code activates', $setup->confirm($account, Totp::code($secret, $now), $now) && $account->hasTotp());
 $stored = $accounts->findById((string) $account->getId());
 check('member secret: ciphertext in the store, under the member key', $stored->getTotpSecret() !== $secret && MemberTotp::vault()->decrypt((string) $stored->getTotpSecret()) === $secret);
-check('member: the same code still confirms twice (no replay check, not changed)', Totp::verify($secret, Totp::code($secret, $now), $now));
 
-$memberSession = new MemberSession($session);
 $memberFlow = new LoginFlow(
     $accounts,
     new TokenService($uem),
@@ -422,15 +423,17 @@ $accountId = (string) $account->getId();
 $memberSession->startTotpPending($accountId, false, $now);
 check('member login: a wrong code is counted', $memberFlow->confirmTotp('000000', $now + 1) === LoginFlow::TOTP_INVALID);
 $memberSession->startTotpPending($accountId, false, $now);
-check('member login: the right code starts the session', $memberFlow->confirmTotp(Totp::code($secret, $now + 2), $now + 2) === LoginFlow::SESSION);
+check('member login: the confirming code is spent', $memberFlow->confirmTotp(Totp::code($secret, $now), $now + 2) === LoginFlow::TOTP_INVALID);
 $memberSession->startTotpPending($accountId, false, $now);
-check('member login: the same code again still passes (reported, not changed)', $memberFlow->confirmTotp(Totp::code($secret, $now + 2), $now + 3) === LoginFlow::SESSION);
+check('member login: the right code starts the session', $memberFlow->confirmTotp(Totp::code($secret, $now + 30), $now + 30) === LoginFlow::SESSION);
 $memberSession->startTotpPending($accountId, false, $now);
-for ($i = 0; $i < 4; $i++) {
-    $memberFlow->confirmTotp('000000', $now + 4);
+check('member login: the same code again is refused (replay, member.md MEMBER-2FA-001)', $memberFlow->confirmTotp(Totp::code($secret, $now + 30), $now + 31) === LoginFlow::TOTP_INVALID);
+$memberSession->startTotpPending($accountId, false, $now);
+for ($i = 0; $i < 3; $i++) {
+    $memberFlow->confirmTotp('000000', $now + 34);
 }
-check('member login: the fifth failure locks', $memberFlow->confirmTotp('000000', $now + 4) === LoginFlow::TOTP_LOCKED);
-check('member login: while locked the right code is refused', $memberFlow->confirmTotp(Totp::code($secret, $now + 5), $now + 5) === LoginFlow::TOTP_LOCKED);
+check('member login: the fifth failure locks', $memberFlow->confirmTotp('000000', $now + 34) === LoginFlow::TOTP_LOCKED);
+check('member login: while locked the right code is refused', $memberFlow->confirmTotp(Totp::code($secret, $now + 60), $now + 60) === LoginFlow::TOTP_LOCKED);
 check('member guard: its file is where it was', count(glob($base . '/var/lib/throttle/totp-guard/*.json') ?: []) === 1);
 check('member: no backend guard or key involved', !is_dir($base . '/var/lib/throttle/backend-totp-guard') && !is_file($base . '/data/framework/auth/totp.key'));
 $setup->resetByOperator($account);
@@ -446,7 +449,7 @@ try {
 check('member setup with a damaged key: begin() refuses, the file stays', $thrown && file_get_contents($keyFile) === $goodKey . "\n");
 file_put_contents($keyFile, $goodKey);
 $profileSrc = (string) file_get_contents(__DIR__ . '/../packages/module-member/src/Ui/Controllers/Main/ProfileController.php');
-check('…the profile catches it and answers with a message, not a 500', preg_match('/try \{\s*\$secret = \$setup->begin\(\$account\);\s*\} catch \(\\\\RuntimeException \$e\) \{.*?technischen Problems.*?return \$this->redirect\(/s', $profileSrc) === 1);
+check('…the profile catches it and answers with a message, not a 500', preg_match('/try \{\s*\$secret \?\?= \$setup->begin\(\$account\);\s*\} catch \(\\\\RuntimeException \$e\) \{.*?technischen Problems.*?return \$this->redirect\(/s', $profileSrc) === 1);
 unset($_SESSION['member.totp_pending']);
 $_SESSION = [];
 

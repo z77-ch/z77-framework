@@ -27,6 +27,8 @@ final class MemberSession
     private const KEY_TOTP_SINCE   = 'member.totpPendingAt';
     private const KEY_TOTP_REMEMBER = 'member.totpPendingRemember';
     private const KEY_PENDING_LOGIN = 'member.pendingLoginId';
+    /** A running 2FA setup (TotpSetup): vault ciphertext, never the plain secret. */
+    private const KEY_TOTP_ENROLMENT = 'member.totpEnrolment';
 
     /**
      * ADR-037: the reference the signed-in account CHOSE to work for. Written
@@ -60,6 +62,7 @@ final class MemberSession
         $this->regenerate();
         $this->session->remove('auth_user');
         $this->session->remove(self::KEY_ACTIVE_TENANT);
+        $this->clearTotpEnrolment();
         $this->session->set(self::KEY_ACCOUNT, $accountId);
         $this->session->set(self::KEY_LAST_SEEN, $now ?? time());
     }
@@ -107,6 +110,7 @@ final class MemberSession
         $this->session->remove(self::KEY_ACCOUNT);
         $this->session->remove(self::KEY_LAST_SEEN);
         $this->session->remove(self::KEY_ACTIVE_TENANT);
+        $this->clearTotpEnrolment();
         $this->clearTotpPending();
         $this->regenerate();
     }
@@ -180,6 +184,29 @@ final class MemberSession
         $this->session->remove(self::KEY_TOTP_PENDING);
         $this->session->remove(self::KEY_TOTP_SINCE);
         $this->session->remove(self::KEY_TOTP_REMEMBER);
+    }
+
+    // ── the running 2FA setup ──────────────────────────────────────────────
+
+    public function setTotpEnrolment(string $accountId, int $at, string $ciphertext): void
+    {
+        $this->session->set(self::KEY_TOTP_ENROLMENT, ['account_id' => $accountId, 'at' => $at, 'secret' => $ciphertext]);
+    }
+
+    /** @return array{account_id:string, at:int, secret:string}|null */
+    public function totpEnrolment(): ?array
+    {
+        $pending = $this->session->get(self::KEY_TOTP_ENROLMENT);
+        if (!is_array($pending) || !is_string($pending['account_id'] ?? null) || !is_string($pending['secret'] ?? null)) {
+            return null;
+        }
+
+        return ['account_id' => $pending['account_id'], 'at' => (int) ($pending['at'] ?? 0), 'secret' => $pending['secret']];
+    }
+
+    public function clearTotpEnrolment(): void
+    {
+        $this->session->remove(self::KEY_TOTP_ENROLMENT);
     }
 
     // ── the waiting login (B8 stage D) ─────────────────────────────────────

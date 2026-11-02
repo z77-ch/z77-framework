@@ -133,6 +133,13 @@ class MemberAccount
     private ?string $totpActivatedAt = null;
 
     /**
+     * The last time step accepted, so a code works once (RFC 6238 §5.2). A row written before the
+     * field, or with the key removed by hand, reads 0: nothing spent. ⚠️ Deliberately WITHOUT a
+     * setter, like the backend's: a form body carrying this key has no effect.
+     */
+    private int $totpLastStep = 0;
+
+    /**
      * Appearance: 'light', 'dark' — or null, which is not a third look but the
      * absence of a decision, and then the system's `prefers-color-scheme`
      * decides (the stylesheet is written that way round).
@@ -231,6 +238,17 @@ class MemberAccount
 
     public function setTotpSecret(?string $totpSecret): void { $this->totpSecret = $totpSecret; }
     public function setTotpActivatedAt(?string $totpActivatedAt): void { $this->totpActivatedAt = $totpActivatedAt; }
+    public function getTotpLastStep(): int { return $this->totpLastStep; }
+    /** A code was accepted: its time step cannot be used again. */
+    public function recordTotpStep(int $step): void { $this->totpLastStep = $step; }
+
+    /** 2FA is off: removed with a code, or reset by an operator. */
+    public function clearTotp(): void
+    {
+        $this->totpSecret      = null;
+        $this->totpActivatedAt = null;
+        $this->totpLastStep    = 0;
+    }
 
     public function getTheme(): ?string { return $this->theme; }
 

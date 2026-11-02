@@ -335,7 +335,7 @@ final class BackendTwoFactor
      */
     private function locked(BackendUser $user, callable $work, ?callable $whenNoLock = null): mixed
     {
-        $handle = $this->acquire((int) $user->getId());
+        $handle = $this->guard->acquire((string) $user->getId());
         if ($handle === null) {
             if ($whenNoLock !== null) {
                 return $whenNoLock();
@@ -349,28 +349,9 @@ final class BackendTwoFactor
             return $fresh instanceof BackendUser ? $work($fresh) : null;
         } finally {
             if ($handle !== null) {
-                flock($handle, LOCK_UN);
-                fclose($handle);
+                $this->guard->release($handle);
             }
         }
-    }
-
-    /** @return resource|null */
-    private function acquire(int $userId)
-    {
-        if (!is_dir($this->guardDir)) {
-            @mkdir($this->guardDir, 0755, true);
-        }
-        $handle = @fopen($this->guardDir . '/' . hash('sha256', (string) $userId) . '.lock', 'c');
-        if ($handle === false) {
-            return null;
-        }
-        if (!flock($handle, LOCK_EX)) {
-            fclose($handle);
-            return null;
-        }
-
-        return $handle;
     }
 
     private function save(BackendUser $user): void

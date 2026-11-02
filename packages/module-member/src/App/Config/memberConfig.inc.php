@@ -162,6 +162,18 @@ return [
     // testing needs more headroom.
     'loginRequestsPerHour' => 5,
 
+    // How many login mails one origin may trigger per hour, whatever the
+    // address: the address counter above does not hold someone who invents a
+    // new address on every try. Silent like it, the waiting page appears
+    // either way. Generous on purpose: one address can be a whole office.
+    'loginRequestsPerHourPerIp' => 30,
+
+    // The name an authenticator app shows for this account's code, set when
+    // someone sets up 2FA. Empty = the installation's name or host
+    // ({@see \Z77\Module\Member\Services\MemberTotp::issuer()}). Only a label:
+    // existing secrets keep working and keep the name they were given.
+    'totpIssuer' => '',
+
     // NOTE: the blocked countries used to sit here as `blockedCountries`.
     // They are INSTALLATION DATA now — `data/framework/forms/blocked-countries.json`,
     // written by the operator on Service → Formular-Protokoll

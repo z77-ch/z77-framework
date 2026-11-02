@@ -8,6 +8,7 @@ use Z77\Core\DI,
     Z77\Core\Http\Response\RedirectResponse,
     Z77\Module\Member\Services\LoginFlow,
     Z77\Module\Member\Services\MemberAuth,
+    Z77\Module\Member\Services\TotpCodeCheck,
     Z77\Module\Member\Ui\Controllers\AbstractMemberController,
     Z77\Module\Member\Ui\Form\LoginFormDefinition,
     Z77\Shared\Controller\PublicFormCheckTrait,
@@ -50,7 +51,9 @@ class LoginController extends AbstractMemberController
 
         $onValid = fn($valid): bool => $this->loginFlow()->request(
             (string)$valid->get('email'),
-            (bool)$valid->get('remember')
+            (bool)$valid->get('remember'),
+            null,
+            (string)DI::getRequest()->getClientIp()
         );
 
         if ($form->process($onValid)) {
@@ -275,9 +278,11 @@ class LoginController extends AbstractMemberController
 
             return $this->html([
                 'pageTitle' => 'Code eingeben',
-                'error'     => $outcome === LoginFlow::TOTP_LOCKED
-                    ? 'Zu viele Fehlversuche — bitte warten Sie 15 Minuten.'
-                    : 'Der Code ist ungültig — bitte versuchen Sie es erneut.',
+                'error'     => match ($outcome) {
+                    LoginFlow::TOTP_LOCKED      => 'Zu viele Fehlversuche — bitte warten Sie 15 Minuten.',
+                    LoginFlow::TOTP_UNAVAILABLE => TotpCodeCheck::UNAVAILABLE_MESSAGE,
+                    default                     => 'Der Code ist ungültig oder wurde bereits verwendet — bitte warten Sie auf den nächsten Code.',
+                },
             ]);
         }
 

@@ -10,7 +10,8 @@ use Z77\Core\Controller\AbstractBaseController,
     Z77\Module\Backend\Ui\BackendMenu,
     Z77\Shared\Auth\LoginThrottle,
     Z77\Shared\Auth\PasswordTier,
-    Z77\Shared\Controller\RouteInfoTrait
+    Z77\Shared\Controller\RouteInfoTrait,
+    Z77\Shared\Site\InstallationLabel
 ;
 
 abstract class BackendAbstractController extends AbstractBaseController
@@ -188,31 +189,13 @@ abstract class BackendAbstractController extends AbstractBaseController
     }
 
     /**
-     * What the topbar calls this installation: `installationName` from
-     * systemConfig, or — unset, which is the seed — the host of
-     * `canonicalBaseUrl`, which already differs per installation. Empty only
-     * where neither is set; the shell then shows nothing rather than a guess
-     * (the missing `canonicalBaseUrl` has its own banner).
-     *
-     * Read here and not published as a constant like `CANONICAL_BASE_URL`:
-     * that one exists because a cron entry needs it too, this is chrome of
-     * the backend shell and of nothing else. `cachePersist: false` for the
-     * same reason as in `Bootstrap` — an edited systemConfig must show
-     * without «Cache leeren».
+     * What the topbar calls this installation ({@see InstallationLabel}). Empty
+     * only where neither name nor origin is set; the shell then shows nothing
+     * rather than a guess (the missing `canonicalBaseUrl` has its own banner).
      */
     protected static function installationLabel(): string
     {
-        $name = trim((string) DI::getConfigManager()
-            ->getBaseConfig(configName: 'config/systemConfig', throwError: false, cachePersist: false)
-            ->getInstallationName('')
-        );
-        if ($name !== '') {
-            return $name;
-        }
-
-        $base = defined('CANONICAL_BASE_URL') ? CANONICAL_BASE_URL : '';
-
-        return $base === '' ? '' : (string) preg_replace('#^https?://#', '', $base);
+        return InstallationLabel::current();
     }
 
     /**

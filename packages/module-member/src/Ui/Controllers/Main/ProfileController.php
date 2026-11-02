@@ -17,7 +17,9 @@ use Z77\Core\DI,
     Z77\Module\Member\Services\MemberAuth,
     Z77\Module\Member\Services\MemberLog,
     Z77\Module\Member\Services\MemberSession,
+    Z77\Module\Member\Services\MemberTotp,
     Z77\Module\Member\Services\TenantChoice,
+    Z77\Module\Member\Services\TotpCodeCheck,
     Z77\Module\Member\Services\TotpSetup,
     Z77\Module\Member\Ui\Controllers\AbstractMemberController,
     Z77\Persistence\Resolver\DataSourceResolver,
@@ -514,9 +516,10 @@ class ProfileController extends AbstractMemberController
 
     /**
      * 2FA setup (B8): GET shows the QR (server-rendered data-URI via the
-     * kernel Qr facade) plus the manual-entry key; POST confirms with the
-     * app code — only then is 2FA active. A reload re-shows the SAME pending
-     * secret (TotpSetup::begin resumes).
+     * kernel Qr facade) plus the manual-entry key, with a NEW secret on every
+     * open, held in the session as ciphertext (TotpSetup); POST confirms with
+     * the app code — only then does anything reach the store. A wrong code
+     * re-shows the same QR, so nobody has to scan twice for a typo.
      */
     protected function totpAction(): HtmlResponse|RedirectResponse
     {
@@ -532,23 +535,32 @@ class ProfileController extends AbstractMemberController
         $request = DI::getRequest();
         $error   = '';
 
-        if ($request->isPost()) {
-            if (DI::getCsrfService()->validate((string)$request->getPostParameter('csrf_token'))
-                && $setup->confirm($account, (string)$request->getPostParameter('code'))
-            ) {
-                $this->messageService->pushFlashAfterRedirect(
-                    'success',
-                    'Zwei-Faktor-Schutz ist aktiv — ab jetzt fragt die Anmeldung nach dem App-Code.'
-                );
+        $secret  = null;
 
-                // Where one stood: the 2FA section, now showing the new state.
-                return $this->redirect('/member/main/profile?bereich=zweifa');
+        if ($request->isPost()) {
+            if (DI::getCsrfService()->validate((string)$request->getPostParameter('csrf_token'))) {
+                // Dead counters refuse the right code too: switching on would lock the person out.
+                if (!$setup->canCheckCodes($account)) {
+                    $this->messageService->pushFlashAfterRedirect('error', TotpCodeCheck::UNAVAILABLE_MESSAGE);
+
+                    return $this->redirect('/member/main/profile?bereich=zweifa');
+                }
+                if ($setup->confirm($account, (string)$request->getPostParameter('code'))) {
+                    $this->messageService->pushFlashAfterRedirect(
+                        'success',
+                        'Zwei-Faktor-Schutz ist aktiv — ab jetzt fragt die Anmeldung nach dem App-Code.'
+                    );
+
+                    // Where one stood: the 2FA section, now showing the new state.
+                    return $this->redirect('/member/main/profile?bereich=zweifa');
+                }
             }
-            $error = 'Der Code ist ungültig — bitte scannen Sie den QR-Code und versuchen Sie es erneut.';
+            $error  = 'Der Code ist ungültig — bitte scannen Sie den QR-Code und versuchen Sie es erneut.';
+            $secret = $setup->running($account);
         }
 
         try {
-            $secret = $setup->begin($account);
+            $secret ??= $setup->begin($account);
         } catch (\RuntimeException $e) {
             // A damaged key file (TotpVault never overwrites one): logged there, nothing to set up.
             error_log('ProfileController: 2FA setup refused — ' . $e->getMessage());
@@ -559,7 +571,7 @@ class ProfileController extends AbstractMemberController
 
             return $this->redirect('/member/main/profile?bereich=zweifa');
         }
-        $uri    = Totp::otpauthUri('AXO3', $account->getEmail(), $secret);
+        $uri    = Totp::otpauthUri(MemberTotp::issuer(), $account->getEmail(), $secret);
 
         return $this->html([
             'pageTitle' => 'Zwei-Faktor-Schutz einrichten',
@@ -592,12 +604,10 @@ class ProfileController extends AbstractMemberController
         $request = DI::getRequest();
         if ($request->getMode() === RequestMode::Fetch) {
             // CSRF: the Fetch gate in AccessGuard, as in themeAction.
-            $code = (string) ($request->getJsonBody()['code'] ?? '');
-            if (!TotpSetup::create()->remove($account, $code)) {
-                $this->messageService->pushFlash(
-                    'error',
-                    'Entfernen fehlgeschlagen — der App-Code ist erforderlich und muss gültig sein.'
-                );
+            $code    = (string) ($request->getJsonBody()['code'] ?? '');
+            $outcome = TotpSetup::create()->removeWithCode($account, $code);
+            if ($outcome !== TotpCodeCheck::PASSED) {
+                $this->messageService->pushFlash('error', self::totpRemoveRefusal($outcome));
 
                 return $this->fetch()->setStatus('error');
             }
@@ -605,17 +615,25 @@ class ProfileController extends AbstractMemberController
 
             return $this->fetch()->setRedirect('/member/main/profile?bereich=zweifa');
         }
-        if (DI::getCsrfService()->validate((string)$request->getPostParameter('csrf_token'))
-            && TotpSetup::create()->remove($account, (string)$request->getPostParameter('code'))
-        ) {
+        $outcome = DI::getCsrfService()->validate((string)$request->getPostParameter('csrf_token'))
+            ? TotpSetup::create()->removeWithCode($account, (string)$request->getPostParameter('code'))
+            : TotpCodeCheck::WRONG;
+        if ($outcome === TotpCodeCheck::PASSED) {
             $this->messageService->pushFlashAfterRedirect('success', 'Zwei-Faktor-Schutz entfernt.');
         } else {
-            $this->messageService->pushFlashAfterRedirect(
-                'error',
-                'Entfernen fehlgeschlagen — der App-Code ist erforderlich und muss gültig sein.'
-            );
+            $this->messageService->pushFlashAfterRedirect('error', self::totpRemoveRefusal($outcome));
         }
 
         return $this->redirect('/member/main/profile?bereich=zweifa');
+    }
+
+    /** What the person is told when a code did not remove 2FA. */
+    private static function totpRemoveRefusal(string $outcome): string
+    {
+        return match ($outcome) {
+            TotpCodeCheck::LOCKED      => 'Zu viele Fehlversuche — bitte warten Sie 15 Minuten.',
+            TotpCodeCheck::UNAVAILABLE => TotpCodeCheck::UNAVAILABLE_MESSAGE,
+            default                    => 'Entfernen fehlgeschlagen — der App-Code ist erforderlich, muss gültig sein und darf noch nicht verwendet worden sein.',
+        };
     }
 }

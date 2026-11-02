@@ -92,6 +92,18 @@ function realFlowAddMember(string $site, string $root, array $memberConfig = [],
         }
     }
 
+    // The login form loads the frontend's public-form script.
+    $source = $packages . 'module-frontend/res/assets/js';
+    foreach (new RecursiveIteratorIterator(new RecursiveDirectoryIterator($source, FilesystemIterator::SKIP_DOTS)) as $file) {
+        $to = $site . '/public/assets/frontend/js' . str_replace('\\', '/', substr($file->getPathname(), strlen($source)));
+        if ($file->isFile()) {
+            if (!is_dir(dirname($to))) {
+                mkdir(dirname($to), 0777, true);
+            }
+            copy($file->getPathname(), $to);
+        }
+    }
+
     if (!is_dir($site . '/data/framework/member')) {
         mkdir($site . '/data/framework/member', 0777, true);
     }

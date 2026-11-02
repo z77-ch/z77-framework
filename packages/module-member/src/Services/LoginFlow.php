@@ -8,7 +8,6 @@ use Z77\Module\Member\Entities\MemberPendingLogin;
 use Z77\Module\Member\Entities\MemberToken;
 use Z77\Persistence\Resolver\DataSourceResolver;
 use Z77\Persistence\Resolver\UnifiedEntityManager;
-use Z77\Shared\Auth\Totp;
 use Z77\Shared\Auth\TotpGuard;
 use Z77\Shared\Auth\TotpVault;
 use Z77\Shared\Mail\EmailMessage;
@@ -57,6 +56,11 @@ final class LoginFlow
 
     public const TOTP_INVALID = 'invalid';
     public const TOTP_LOCKED  = 'locked';
+    /** The counters cannot count: every code is refused, the right one too. */
+    public const TOTP_UNAVAILABLE = 'unavailable';
+
+    /** Login mails per origin and hour when memberConfig names none. Generous: one address can be an office. */
+    public const DEFAULT_PER_IP = 30;
 
     /** Landing after a successful login when memberConfig names none. */
     public const DEFAULT_LANDING = '/member/main/profile';
@@ -65,6 +69,7 @@ final class LoginFlow
      * @param \Closure(EmailMessage): bool $sendMail
      * @param string $redeemUrl   absolute URL of the redeem action; token appended
      * @param string $registerUrl absolute URL of the registration page (no-account mail)
+     * @param int    $mailsPerIp  login mails per origin and hour
      */
     public function __construct(
         private MemberAccounts $accounts,
@@ -79,6 +84,7 @@ final class LoginFlow
         private \Closure $sendMail,
         private string $redeemUrl,
         private string $registerUrl,
+        private int $mailsPerIp = self::DEFAULT_PER_IP,
     ) {
     }
 
@@ -103,6 +109,7 @@ final class LoginFlow
             static fn(EmailMessage $mail): bool => DI::getEmailService()->send($mail),
             $redeemUrl,
             $registerUrl,
+            self::requestsPerHourPerIp(),
         );
     }
 
@@ -122,6 +129,16 @@ final class LoginFlow
             ?->get('loginRequestsPerHour', MemberThrottle::MAX_PER_HOUR) ?? MemberThrottle::MAX_PER_HOUR);
 
         return $configured > 0 ? $configured : MemberThrottle::MAX_PER_HOUR;
+    }
+
+    /** memberConfig `loginRequestsPerHourPerIp`, default {@see DEFAULT_PER_IP}. */
+    public static function requestsPerHourPerIp(): int
+    {
+        $configured = (int) (DI::getModuleManager()
+            ->getModuleConfig('member')
+            ?->get('loginRequestsPerHourPerIp', self::DEFAULT_PER_IP) ?? self::DEFAULT_PER_IP);
+
+        return $configured > 0 ? $configured : self::DEFAULT_PER_IP;
     }
 
     /**
@@ -158,11 +175,17 @@ final class LoginFlow
      * went out or not. Without a link it simply never turns green — which is
      * also what a throttled visitor sees, deliberately. The throttle keeps
      * doing its job; it just stops being visible.
+     *
+     * Two counters: the origin holds someone inventing a fresh address on every
+     * try, the address holds someone hammering one. ⚠️ The origin is asked
+     * FIRST: an origin over its limit must not use up a stranger's address
+     * allowance. $ip '' = no usable address, the address counter still holds.
      */
-    public function request(string $email, bool $remember = false, ?int $now = null): bool
+    public function request(string $email, bool $remember = false, ?int $now = null, string $ip = ''): bool
     {
         $now     = $now ?? time();
-        $allowed = $this->throttle->allow($email, $now);
+        $allowed = ($ip === '' || $this->throttle->allowIp($ip, $this->mailsPerIp, $now))
+            && $this->throttle->allow($email, $now);
         $account = $allowed ? $this->accounts->findByEmail($email) : null;
         $plain   = null;
 
@@ -407,9 +430,10 @@ final class LoginFlow
 
     /**
      * The code prompt submit (B8: only a valid app code creates the session).
-     * 'session' | 'invalid' (wrong code, counted) | 'locked' (five failures →
-     * 15-minute window; the RIGHT code is refused too) | 'dead' (nothing
-     * pending or the prompt window expired — back to the request page).
+     * 'session' | 'invalid' (wrong or spent code, counted) | 'locked' (five
+     * failures → 15-minute window; the RIGHT code is refused too) | 'unavailable'
+     * (the counters cannot count: fails closed, the right code too) | 'dead'
+     * (nothing pending or the prompt window expired — back to the request page).
      */
     public function confirmTotp(string $code, ?int $now = null): string
     {
@@ -419,31 +443,32 @@ final class LoginFlow
         if ($accountId === null) {
             return self::DEAD;
         }
-        if ($this->totpGuard->isLocked($accountId, $now)) {
-            return self::TOTP_LOCKED;
-        }
 
-        $account = $this->accounts->findById($accountId);
-        $secret  = $account?->getTotpSecret() !== null ? $this->totpVault->decrypt($account->getTotpSecret()) : null;
-        if ($account === null || $secret === null) {
-            $this->session->clearTotpPending();
+        $check   = new TotpCodeCheck($this->accounts, $this->totpVault, $this->totpGuard);
+        $outcome = $check->judge($accountId, $code, $now, static function (MemberAccount $fresh, int $step): void {
+            $fresh->recordTotpStep($step);
+        });
 
-            return self::DEAD; // account or vault entry gone — start over
-        }
+        switch ($outcome) {
+            case TotpCodeCheck::LOCKED:
+                return self::TOTP_LOCKED;
+            case TotpCodeCheck::WRONG:
+                return self::TOTP_INVALID;
+            case TotpCodeCheck::UNAVAILABLE:
+                return self::TOTP_UNAVAILABLE;
+            case TotpCodeCheck::GONE:
+                $this->session->clearTotpPending();
 
-        if (!Totp::verify($secret, $code, $now)) {
-            $this->totpGuard->recordFailure($accountId, $now);
-
-            return $this->totpGuard->isLocked($accountId, $now) ? self::TOTP_LOCKED : self::TOTP_INVALID;
+                return self::DEAD; // account or vault entry gone — start over
         }
 
         $remember = $this->session->totpPendingRemember();
 
-        $this->totpGuard->reset($accountId);
         $this->session->clearTotpPending();
         $this->session->start($accountId, $now);
         MemberLog::write('login', $accountId, ['detail' => 'totp']);
-        if ($remember) {
+        $account = $remember ? $this->accounts->findById($accountId) : null;
+        if ($account !== null) {
             $this->deviceKeys->issueFor($account, null, $now);
         }
 
