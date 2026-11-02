@@ -768,7 +768,14 @@ check('the message: the address, a German subject, the module\'s template',
     $message->getTo() === 'max.muster@example.ch' && str_contains($message->getSubject(), 'bereit') && $message->getTemplate() === 'emails/zipReady' && $message->getTemplateNameSpace() === 'Z77\\Module\\Dms');
 $context = $message->getContext();
 check('the link: the canonical origin + the one route constant, no id, no token', $context['link'] === 'https://example.ch' . ZipBundleService::DRIVE_VIEW_ROUTE && !str_contains($context['link'], '?'), $context['link']);
-check('the default subject is neutral, neither du nor Sie', $message->getSubject() === 'ZIP-Download bereit', $message->getSubject());
+$withSender = ZipBundleService::mailMessage('a@example.ch', 'https://example.ch/', ['documents' => 1, 'bytes' => 1, 'expires' => 1, 'sender' => "Muster\r\nBcc: x@example.ch AG"]);
+check('the sender stands in the subject, on one line', $withSender->getSubject() === 'ZIP-Download bereit — Muster Bcc: x@example.ch AG', $withSender->getSubject());
+$withOwn = ZipBundleService::mailMessage('a@example.ch', 'https://example.ch/', ['documents' => 1, 'bytes' => 1, 'expires' => 1, 'sender' => 'Muster AG'], ['ready' => ['subject' => 'Abholbereit']]);
+check('a project\'s own subject without the placeholder stays as written', $withOwn->getSubject() === 'Abholbereit', $withOwn->getSubject());
+foreach (['zipReady', 'zipFailed'] as $mailTpl) {
+    check("{$mailTpl}: the logo slot at the top, filled at send time, gone without a source", str_contains((string) file_get_contents(dirname(__DIR__) . "/packages/module-dms/res/view/templates/emails/{$mailTpl}.tpl.php"), '<p data-z77-inline="logo"'));
+}
+check('the default subject without a sender is neutral, neither du nor Sie', $message->getSubject() === 'ZIP-Download bereit', $message->getSubject());
 $thrown = false;
 try { ZipBundleService::mailMessage('a@example.ch', '  ', ['documents' => 1, 'bytes' => 1, 'expires' => 1]); } catch (RuntimeException) { $thrown = true; }
 check('no canonical base URL: it throws instead of mailing a dead link', $thrown);
@@ -2110,7 +2117,7 @@ check('no zipMail: the framework\'s', $plain['url'] === ZipBundleService::DRIVE_
 $inst = ZipBundleService::mailSettings($cfgMail);
 check('default: the installation\'s fields, the rest the framework\'s', $inst['url'] === '/konto' && $inst['ready']['subject'] === 'Installation' && $inst['ready']['template'] === 'emails/zipReady');
 $hostCfg = ZipBundleService::mailSettings($cfgMail, 'host');
-check('a host on top: its fields only', $hostCfg['url'] === 'https://www.example.ch/dokumente' && $hostCfg['ready']['subject'] === 'Installation' && $hostCfg['failed']['template'] === 'emails/hostFailed' && $hostCfg['failed']['subject'] === 'ZIP-Download fehlgeschlagen');
+check('a host on top: its fields only', $hostCfg['url'] === 'https://www.example.ch/dokumente' && $hostCfg['ready']['subject'] === 'Installation' && $hostCfg['failed']['template'] === 'emails/hostFailed' && $hostCfg['failed']['subject'] === 'ZIP-Download fehlgeschlagen — {absender}');
 check('an unknown profile: the installation\'s', ZipBundleService::mailSettings($cfgMail, 'nope') === $inst);
 $msg = ZipBundleService::mailMessage('a@example.ch', '', ['kind' => 'failed', 'documents' => 1, 'bytes' => 1, 'expires' => 1], $hostCfg);
 check('an absolute target needs no base URL', $msg->getContext()['link'] === 'https://www.example.ch/dokumente' && $msg->getTemplate() === 'emails/hostFailed' && $msg->getTemplateNameSpace() === 'Z77\\Module\\Member');
