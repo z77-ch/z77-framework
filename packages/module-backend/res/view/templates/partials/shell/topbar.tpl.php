@@ -242,7 +242,7 @@ foreach ($sections as $item) {
                     </button>
                     <?php endif; ?>
                     <form method="post" action="/backend/system/login/logout">
-                        <input type="hidden" name="csrf_token" value="<?= e($csrfToken ?? '') ?>">
+                        <?= $this->partial('partials/csrfField', [], 'Z77\Shared') ?>
                         <button type="submit" class="backend-service-panel__row backend-service-panel__row--danger">
                             <span class="backend-service-panel__row-icon"><svg class="be-icon" width="14" height="14" aria-hidden="true"><use href="#icon-logout"/></svg></span>
                             <span class="backend-service-panel__row-body">

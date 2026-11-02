@@ -29,6 +29,7 @@
         <?= $this->partial('partials/shell/userMenu', [
             'memberUser'  => $memberUser,
             'memberTheme' => $memberTheme ?? '',
+            'csrfToken'   => \Z77\Core\DI::getCsrfService()->getToken(), // a project's copy of userMenu may read it
         ]) ?>
         <?php endif; ?>
     </div>

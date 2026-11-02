@@ -26,6 +26,8 @@ SOURCE=/packages/module-backend/src/Ui/Config/layoutConfig.inc.php
 SOURCE=/packages/module-backend/src/Ui/Controllers/System/LoginController.php
 SOURCE=/packages/module-backend/res/view/templates/System/LoginController/loginAction.tpl.php
 SOURCE=/packages/module-backend/res/view/templates/System/LoginController/forgotAction.tpl.php
+SOURCE=/packages/module-backend/res/view/templates/System/LoginController/logoutAction.tpl.php
+SOURCE=/packages/kernel/shared/res/view/templates/partials/csrfField.tpl.php
 SOURCE=/packages/module-backend/res/view/templates/System/LoginController/resetAction.tpl.php
 SOURCE=/packages/module-backend/res/view/templates/emails/passwordReset.tpl.php
 SOURCE=/packages/module-backend/res/view/templates/emails/passwordChanged.tpl.php
@@ -174,8 +176,10 @@ LoginController::codeAction()
 ### POST `/backend/system/login/logout` (SEC-GET-001)
 
 ```text
-#[HttpMethod('POST'), Csrf]                    // GET: 404, as any wrong method; no token: 303 to /. Nothing changes
 LoginController::logoutAction()
+  → GET, or a POST whose token does not fit      // a stale tab, an old link, a bookmark
+       → the page «Abmelden» with a fresh token  // never a silent refusal; it signs nobody out itself
+  → POST with the session's token:
   → AuthService::logout()     // removes auth_user via SessionManager
   → MessageService::pushFlashAfterRedirect('info', 'Du wurdest abgemeldet')
   → redirect /login (alias)
@@ -403,7 +407,8 @@ guard never sends a customer to the admin login. Details: `member.md`
 - When setting the current user → MUST use guest identity (`id=0`, `isLoggedIn()=false`); MUST NOT store `null`
 - When access-controlling a module's controllers → MUST set `moduleRole` as the restrictive baseline and add a `controllers` entry ONLY for a deviation (looser: GUEST login/setup; stricter: SUPER_USER backup; or a non-`list` defaultAction); MUST NOT restate the baseline per controller/action — an unlisted controller/action inherits the fallback chain `actionRole → controllerRole → moduleRole` and is never open (AUTH-B003, see backend.md)
 - When configuring `loginUrl` in `backendConfig.inc.php` → MUST use the alias `/login`, NOT the canonical 4-segment URL — the alias is resistant to future URL restructuring
-- When offering a way out of the backend → MUST be a form that POSTs to `/backend/system/login/logout` with the hidden `csrf_token` (`partials/shell/topbar`, the frontend's `partials/adminOverlay`); MUST NOT be a link: a GET answers 404 and signs nobody out. **A project's own logout link or template override must move to the form** (SEC-GET-001, [`security.md`](security.md)).
+- When offering a way out of the backend → MUST be a form that POSTs to `/backend/system/login/logout`, its token from `partials/csrfField` (`partials/shell/topbar`, the frontend's `partials/adminOverlay`); MUST NOT be a link: a GET only shows the confirm page. **A project's own logout link or template override should move to the form** (SEC-GET-001, [`security.md`](security.md)).
+- When a logout's token does not fit → MUST answer the confirm page with a fresh token; MUST NOT refuse silently (`#[Csrf]` would redirect to `/` with no word, and the person believes he has left) and MUST NOT sign out without the token.
 - When handling a login POST → MUST validate the session-global CSRF token (`CsrfService::validate()`) before checking credentials; on failure MUST re-render the form with a generic "Sitzung abgelaufen" message. `AccessGuard` does NOT cover the login form (it skips non-Fetch requests, and the login page itself runs without auth).
 - When building the reset link → MUST take the origin from `Request::getBaseUrl()` (`canonicalBaseUrl`); MUST NOT read the `Host` header: a forged Host would put the attacker's domain into a genuine mail and hand him the token (SEC-005).
 - When storing a reset token → MUST store only its SHA-256 (`PasswordResetTokens`); the plaintext exists in the mail only and MUST NOT reach a log.

@@ -43,7 +43,7 @@
  * @var list<array{ref:string,label:string,active:bool}> $memberTenants  the
  *      granted tenants — EMPTY unless there are at least two
  * @var string $memberTenantBack  where the choice returns to (this page)
- * @var string $csrfToken
+ * @var string $csrfToken  no longer read here (partials/csrfField); still handed in for a project's copy
  * @var bool   $showHelp  the controller attached help (`$helpBlock`) — the skeleton decides
  *
  * ── Why the help trigger sits HERE (ADR-048 addendum, owner 2026-10-09) ──
@@ -73,7 +73,7 @@ $memberTenants = $memberTenants ?? [];
         <div class="me-tenant__panel" aria-label="<?= e($noun) ?> wählen">
             <?php foreach ($memberTenants as $tenant): ?>
             <form method="post" action="/member/main/profile/mandant" class="me-tenant__form">
-                <input type="hidden" name="csrf_token" value="<?= e($csrfToken ?? '') ?>">
+                <?= $this->partial('partials/csrfField', [], 'Z77\Shared') ?>
                 <input type="hidden" name="mandant" value="<?= e($tenant['ref']) ?>">
                 <input type="hidden" name="back" value="<?= e($memberTenantBack ?? '') ?>">
                 <button type="submit"
@@ -138,8 +138,10 @@ $memberTenants = $memberTenants ?? [];
 
             <div class="me-account__divider"></div>
 
+            <?php /* The token from the service, whatever this partial was handed: the plain shape's
+                     header calls it with less than the rail shape's skeleton (SEC-GET-001). */ ?>
             <form method="post" action="/member/main/logout" class="me-account__form">
-                <input type="hidden" name="csrf_token" value="<?= e($csrfToken ?? '') ?>">
+                <?= $this->partial('partials/csrfField', [], 'Z77\Shared') ?>
                 <button type="submit" class="me-account__row me-account__row--out">Abmelden</button>
             </form>
         </div>

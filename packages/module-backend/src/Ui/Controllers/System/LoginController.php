@@ -9,8 +9,6 @@ use Z77\Core\Http\Response\HtmlResponse,
     Z77\Module\Backend\TwoFactor\BackendTwoFactor,
     Z77\Module\Backend\TwoFactor\TotpCheck,
     Z77\Module\Backend\Ui\Controllers\BackendAbstractController,
-    Z77\Shared\Attributes\Csrf,
-    Z77\Shared\Attributes\HttpMethod,
     Z77\Shared\Auth\PasswordPolicy,
     Z77\Shared\Entities\BackendUser,
     Z77\Shared\Libraries\Convention\Naming,
@@ -102,12 +100,19 @@ class LoginController extends BackendAbstractController
     }
 
     /**
-     * POST with the session's token only: a logout on GET lets any page sign the user out with an
-     * image tag, and a prefetch does it by accident. A GET answers as every wrong method does.
+     * Signs out on a POST with the session's token only: on a GET any page could sign the user out
+     * with an image tag, and a prefetch would do it by accident. Everything else gets a small page
+     * with a fresh token and a button, never a silent refusal (SEC-GET-001): a stale tab's token is
+     * no attack, and the person believes he has left. The page itself signs nobody out, and a
+     * cross-site POST carries no session cookie (SameSite=Lax) to act on.
      */
-    #[HttpMethod('POST'), Csrf]
-    protected function logoutAction(): RedirectResponse
+    protected function logoutAction(): HtmlResponse|RedirectResponse
     {
+        $request = DI::getRequest();
+        if (!$request->isPost() || !$this->csrfIsValid()) {
+            return $this->html($this->baseContext(['stale' => $request->isPost()]));
+        }
+
         DI::getAuthService()->logout();
         DI::getSessionManager()->remove(self::PENDING_KEY);
         DI::getSessionManager()->remove(BackendTwoFactor::ENROLMENT_KEY);

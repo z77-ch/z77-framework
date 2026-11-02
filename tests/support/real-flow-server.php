@@ -115,6 +115,9 @@ final class RealFlowBrowser
     /** @var array<string, string> */
     public array $cookies = [];
 
+    /** @var list<string> every Set-Cookie line this browser received */
+    public array $setCookies = [];
+
     public function __construct(private int $port)
     {
     }
@@ -156,6 +159,7 @@ final class RealFlowBrowser
             $name = strtolower(trim($name));
             $out[$name] = trim($value);
             if ($name === 'set-cookie' && preg_match('/^([^=]+)=([^;]*)/', trim($value), $c)) {
+                $this->setCookies[] = trim($value);
                 $this->cookies[$c[1]] = $c[2];
             }
         }

@@ -88,11 +88,9 @@ $dev   = $overlayDev ?? null;    // admins, only under DEBUG (controller-gated)
         </div>
         <?php endif; ?>
 
-        <?php if ($form): ?>
         <form method="post" action="/backend/system/login/logout" class="z77-admin-overlay__form">
-            <input type="hidden" name="csrf_token" value="<?= e($form['csrfToken']) ?>">
+            <?= $this->partial('partials/csrfField', [], 'Z77\Shared') ?>
             <button type="submit" class="z77-admin-overlay__logout">Abmelden</button>
         </form>
-        <?php endif; ?>
     </div>
 </aside>
