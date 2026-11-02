@@ -355,6 +355,7 @@ purge is one directory removal. Images get **eager, config-profile-driven** deri
 
 ## pending
 
+- **DMS-ZIP-001 — several documents as one ZIP (approved by the owner 2026-11-02, in progress):** [`../03-development/dms-zip-download-bauplan.md`](../03-development/dms-zip-download-bauplan.md). Recommended: a virtual ZIP, a job computes the checksums only and each range is answered from the original blobs, so nothing is stored twice.
 - **Bulk selection + bulk actions v1 (delete/move) — BUILT + selection UI skeleton-confirmed 2026-07-16.**
   Confirmed in the skeleton browser test: checkboxes (after the `appearance: auto` fix — the
   backend normalize strips ALL form-control appearance, see [`css-dms.md`](css-dms.md)), bulkbar
