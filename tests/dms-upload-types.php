@@ -21,7 +21,8 @@
  *   (F) Upload/SaveService default to an EMPTY list when built without config;
  *   (G) DMS-MEDIA-PHP-001: executable extensions are refused whatever the sniff, a
  *       stored one is never copied into the docroot, and the media guard `.htaccess`
- *       takes the script handler away from exactly those extensions.
+ *       takes the script handler away from those extensions (the guard's other rules
+ *       and its replacing: `tests/dms-active-content.php`, DMS-ACTIVE-001).
  *
  * Run: php tests/dms-upload-types.php
  */
@@ -174,14 +175,14 @@ $guardDir = sys_get_temp_dir() . '/z77-media-guard-' . getmypid();
 $guard = (string) @file_get_contents($guardDir . '/.htaccess');
 check('media guard written: handler off, plain text, no deny',
     str_contains($guard, 'SetHandler none') && str_contains($guard, 'ForceType text/plain') && !str_contains($guard, 'Require all denied'), $guard);
-preg_match('/<FilesMatch "(.+)">/', $guard, $m);
+preg_match('/<FilesMatch "([^"]+)">/', $guard, $m);
 $rx = isset($m[1]) ? '/' . $m[1] . '/' : '/^$/';
 check('guard matches exactly the executable extensions',
     preg_match($rx, 'x.php') === 1 && preg_match($rx, 'x.phtml') === 1 && preg_match($rx, 'x.shtml') === 1
     && preg_match($rx, 'x.jpg') === 0 && preg_match($rx, 'x.php.jpg') === 0 && preg_match($rx, 'x.pdf') === 0, $m[1] ?? '');
 file_put_contents($guardDir . '/.htaccess', 'custom');
 (new ReflectionMethod(DocumentService::class, 'ensureMediaGuard'))->invoke(null, $guardDir);
-check('an existing guard is left alone', file_get_contents($guardDir . '/.htaccess') === 'custom');
+check('a different guard is replaced (DMS-ACTIVE-001; it used to be left alone)', file_get_contents($guardDir . '/.htaccess') === $guard);
 @unlink($guardDir . '/.htaccess');
 @rmdir($guardDir);
 (new ReflectionMethod(DocumentService::class, 'ensureMediaGuard'))->invoke(null, $guardDir);

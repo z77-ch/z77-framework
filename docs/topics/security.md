@@ -1,6 +1,6 @@
 # security
 
-2026-11-01
+2026-11-02
 
 ## entry
 
@@ -37,6 +37,9 @@ SOURCE=/packages/kernel/shared/src/Forms/FormGuard.php
 SOURCE=/packages/kernel/shared/src/Attributes/Csrf.php
 SOURCE=/packages/kernel/core/src/Session/SessionManager.php
 SOURCE=/packages/kernel/core/src/Exception/ExceptionHandler.php
+SOURCE=/packages/kernel/core/src/Http/Response/DeliveryPolicy.php
+SOURCE=/tests/file-delivery-policy.php
+SOURCE=/tests/file-delivery-browser.php
 RUNTIME=/skeleton/config/auth.inc.php
 RUNTIME=/skeleton/data/framework/auth/backendUsers.json
 
@@ -139,6 +142,7 @@ still the right tool for a non-form endpoint that needs the same protections.
 - When a logged-in user has `passwordWeak` set → MUST push the nag via `messageService->pushMessageAfterRedirect('error', …)` on the post-login redirect; MUST NOT suppress it after the first login.
 - When writing the setup token → MUST place it under `data/` (filesystem-readable only); MUST NOT write it under `public/` (would be web-reachable and re-open the race).
 - When gating setup (`SetupController`, `/backend/system/setup/setup`) → MUST refuse once any user exists (locked) AND require a matching on-disk token (`hash_equals`); MUST delete the token after the admin is created (single-use). MUST NOT expose setup via a friendly `/setup` alias in `navigation.json` (a one-shot bootstrap route stays out of user-editable runtime navigation).
+- When a file reaches a browser → MUST go through `FileResponse` / `BytesResponse`: `DeliveryPolicy` is an allowlist on the type, sets nosniff and the sandbox, and no caller can opt out. A new response class that sends file bytes MUST apply it too. A file under `public/` is served by the web server by extension, past this policy: anything user-supplied there MUST be on a safe extension list with a guard. Hand-placed developer files beside the DMS partitions are the developer's and stay untouched; a DMS partition's hand-placed files are served as text (DMS-ACTIVE-001, [`documents.md`](documents.md)).
 - When rendering an error page with `DEBUG` off → MUST show a generic page without file paths or stack traces (see SEC-002).
 
 ## see also
@@ -152,6 +156,8 @@ still the right tool for a non-form endpoint that needs the same protections.
 
 ## known issues
 
+- **DMS-ACTIVE-001** — resolved 2026-11-02. Stored XSS through file delivery: an uploaded HTML, SVG or XHTML ran on the application's domain, with the session of whoever opened it, and in a public folder from a static copy with no login. Three lines: `DeliveryPolicy` at output, a static copy only for a safe extension with a safe MIME, a versioned guard per DMS partition that removes old copies provably made by the DMS. Hand-placed files outside a partition are not touched; inside one they are served as text. After a deploy one request to a non-existent `/media/...` path repairs an installation whose Drive nobody opened. Detail, verification and what is not verified (the guard on a real Apache): [`documents.md`](documents.md).
+- **Lottie expressions** (open, reported with DMS-ACTIVE-001, not exploited): `module-frontend`'s `lottie.min.js` is the full player, which evaluates expressions inside the JSON with `eval`. A page that plays a Lottie file from a DMS folder runs what that file holds, on the page's origin, for whoever can write to the folder. Only where a project uses `partials/lottie` with such a file. Fix: the player build without expressions, after checking no project animation needs them.
 - **Backend 2FA** — built 2026-11-01, optional per user, TOTP only: [`login.md`](login.md) BACKEND-2FA-001 with its residual risks. Verified by `tests/backend-2fa.php`; confirmed by the owner on a real installation on 2026-11-02, release from framework commit 3662e38 (2FA and «Passwort vergessen»; what that does not cover: login.md `## pending`). The code lock fails closed on dead counters, by the owner's decision, while `LoginThrottle` keeps failing open: the second factor has no limit without its counter, the password keeps its bcrypt. How to read and fix it: login.md «code refused».
 - **SEC-001** — resolved 2026-06-02 (Phase 4). No credential is shipped anymore: `backendUsers.default.json` was removed and `Install::provisionAdmin()` creates the admin at install (interactive: hidden password prompt; non-interactive: one-time `SETUP_TOKEN` under `data/`, admin deferred to `/backend/system/setup/setup`). Was CWE-1392 / OWASP A07.
 - **`config/client/auth.inc.php` tenants** — introduced for `passwordTier` (PWD-POLICY-001, resolved). Since 2026-11-01 it also holds the login thresholds (SEC-004): `loginFailuresPerUsernameIp`, `loginFailuresPerIp`. Who is told when the backend refuses 2FA codes on dead counters is not here: Service → E-Mail, entry `backendCodeLock` (login.md). The file is seed-once, so an existing installation does not have them and runs on the defaults in `LoginThrottle` (`auth.default.inc.php` is bound to the same constants, one value in one place); add a key only to deviate. NOTE: per-user auth properties (e.g. `secondFactor`) do NOT belong here; they live on the `BackendUser` entity (see roadmap below). Only a global *mandate* could ever be a config key.

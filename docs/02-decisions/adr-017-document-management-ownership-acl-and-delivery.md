@@ -3,6 +3,14 @@
 **Status:** `[APPROVED]` — supersedes ADR-016; scope model partly superseded by ADR-020
 **Date:** 2026-06-17 (revised 2026-06-20)
 
+> **Revision 2026-11-02 — only inert types materialize (DMS-ACTIVE-001, owner approved).** The web
+> server types a static copy by extension, with no PHP and no login, so a public HTML or SVG was
+> active on the domain. A copy is now written only for a safe extension with a safe MIME; every other
+> public document stays on the PHP path, every hit, answered by `DeliveryPolicy`. The table below
+> holds for those types only. Not every file under `public/media` is a materialization: it may hold
+> hand-placed developer files beside the partitions, and the framework touches only partitions. See
+> [`documents.md`](../topics/documents.md).
+
 > **Revision 2026-09-07 — materialization is a lazily filled cache, not an eager mirror.** The
 > `public/media` copy is still a regenerable projection of blob + metadata with no own state — but
 > it is no longer REBUILT on every mutation. The eager `rebuildMaterialization()` (wipe + re-copy
