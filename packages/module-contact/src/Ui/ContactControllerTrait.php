@@ -2,6 +2,7 @@
 namespace Z77\Module\Contact\Ui;
 
 use Z77\Core\DI,
+    Z77\Shared\Attributes\Csrf,
     Z77\Core\Http\Response\FetchResponse,
     Z77\Core\Http\Response\HtmlResponse,
     Z77\Core\Services\TemplateRenderer,
@@ -124,7 +125,11 @@ trait ContactControllerTrait
      * (type + address block). Nothing here is managed before the service
      * persists it, so the new entity is built straight from the body; a
      * refusal renders it back with the errors.
+     *
+     * `#[Csrf]`: the global check covers Fetch POSTs only, and this body arrives the same without the
+     * fetch header (security.md, page-mode POST). core.js sends the token as a header, so the form works.
      */
+    #[Csrf]
     protected function addAction(): HtmlResponse|FetchResponse
     {
         $form   = new ContactForm(addressRequired: false);

@@ -2,6 +2,7 @@
 namespace Z77\Module\Financial\Ui;
 
 use Z77\Core\DI,
+    Z77\Shared\Attributes\Csrf,
     Z77\Core\Http\Response\FetchResponse,
     Z77\Core\Http\Response\HtmlResponse,
     Z77\Module\Financial\Entities\FiscalYear,
@@ -414,7 +415,11 @@ trait FiscalYearControllerTrait
      * «Geschäftsjahr eröffnen»: GET shows the proposal — the next year, or with `?prior=1` the
      * year before the earliest (owner 2026-09-29) — POST opens through the service, which
      * accepts either (the validator checks contiguity at both ends).
+     *
+     * `#[Csrf]`: the global check covers Fetch POSTs only, and this body arrives the same without the
+     * fetch header (security.md, page-mode POST). core.js sends the token as a header, so the form works.
      */
+    #[Csrf]
     protected function openAction(): HtmlResponse|FetchResponse
     {
         $prior     = DI::getRequest()->getGetParameter('prior') === '1' && $this->fiscalYears()->earliest() !== null;

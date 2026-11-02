@@ -2,6 +2,7 @@
 namespace Z77\Module\Financial\Ui;
 
 use Z77\Core\DI,
+    Z77\Shared\Attributes\Csrf,
     Z77\Core\Http\Response\FetchResponse,
     Z77\Core\Http\Response\HtmlResponse,
     Z77\Core\Services\TemplateRenderer,
@@ -159,7 +160,13 @@ trait AccountControllerTrait
 
     // ── add / edit ───────────────────────────────────────────────────────
 
-    /** «Konto anlegen» — nothing is managed before the service persists it, so the entity is built from the body. */
+    /**
+     * «Konto anlegen» — nothing is managed before the service persists it, so the entity is built from the body.
+     *
+     * `#[Csrf]`: the global check covers Fetch POSTs only, and this body arrives the same without the
+     * fetch header (security.md, page-mode POST). core.js sends the token as a header, so the form works.
+     */
+    #[Csrf]
     protected function addAction(): HtmlResponse|FetchResponse
     {
         $account   = new Account(['type' => AccountType::Asset->value]);
