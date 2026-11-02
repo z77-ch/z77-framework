@@ -1,4 +1,5 @@
 lottie.js / lottie.min.js — lottie-web 5.12.2 (https://github.com/airbnb/lottie-web),
+its light build (build/player/lottie_light.min.js: SVG renderer, no expressions, no eval),
 bundled unmodified as the player for <lottie-figure> (lottie-figure.js).
 
 The MIT License (MIT)
