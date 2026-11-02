@@ -198,6 +198,7 @@ prototype handoff (`{projekt}/work/docs/topics/partial-labels.md`).
 
 ## known issues
 
+- **LAYOUT-FETCH-SKEL-001** — resolved 2026-11-02 (owner's test on a real installation). A module without its own `html-fetch-skeleton.tpl.php` answered every fetch that reached one of its pages with a 500: module-member's login, after the browser followed a redirect in fetch mode. `LayoutManager` now falls back to the one in `Z77\Shared`; a module's own still wins. Open: such a fetch receives the login page's `main` as its answer, not a signal that the session ended; a caller that wants one needs the guard to answer an envelope.
 - **PARTIAL-LABELS-001** — built 2026-07-17 (see «partial labels» section). Verified: gate
   matrix (flag/DEBUG/roles) + marker wrapping via CLI harness against the real zihlundsee
   templates; live guest request with flag set stays marker- and script-free. Open: visual

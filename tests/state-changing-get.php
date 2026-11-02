@@ -426,6 +426,15 @@ check('admin-overlay.css: the logout button', (bool) preg_match('/\.z77-admin-ov
 $backendScss = (string) file_get_contents($root . '/packages/module-backend/res/scss/components/_service-panel.scss');
 check('backend panel: the row is already styled for a button in a form', str_contains($backendScss, '.backend-service-panel form') && str_contains($backendScss, 'border:        none'));
 
+// A fetch that a redirect leads to the member's login (a second tab after signing out): the module
+// has no fetch skeleton of its own, the kernel's stands in. It answered a 500 before.
+$guestFetch = $new();
+$r = $guestFetch->fetchGet('/member/main/login');
+check('a fetch to the member login is answered, not a 500', $r[0] === 200, 'status ' . $r[0]);
+check('...as the page\'s main only, no skeleton', !str_contains($r[2], '<html') && !str_contains($r[2], '<body'), substr($r[2], 0, 120));
+$r = $guestFetch->go('/member/main/login');
+check('...the full page still has its skeleton', $r[0] === 200 && str_contains($r[2], '<body'), 'status ' . $r[0]);
+
 echo "\nstate-changing-get: {$pass} passed, {$fail} failed\n";
 if ($fail > 0) {
     echo "--- server log tail ---\n" . substr((string) @file_get_contents($base . '/server.log'), -1500) . "\n";

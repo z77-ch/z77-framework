@@ -240,7 +240,7 @@ $lmSrc = (string) file_get_contents(__DIR__ . '/../packages/kernel/core/src/Serv
 check('W3 run() completes the fetch main of every HtmlResponse',
     (bool) preg_match('/\$response instanceof HtmlResponse\)\s*\{[^}]*\$this->layoutManager->completeFetchMain\(\);/s', $base));
 check('W4 initialize() marks fetch mode before returning early',
-    (bool) preg_match('/FETCH_SKELETON\);\s*\$this->fetchMode = true;\s*return \$this;/', $lmSrc));
+    (bool) preg_match('/setFetchSkeleton\(\);\s*\$this->fetchMode = true;\s*return \$this;/', $lmSrc));
 
 echo "\n{$pass} passed, {$fail} failed\n";
 exit($fail > 0 ? 1 : 0);
