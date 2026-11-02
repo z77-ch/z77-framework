@@ -111,6 +111,25 @@ check('the project\'s own package is skipped', !str_contains($all, 'ownConfig'),
 check('the trap did not run: nothing executes the file', !is_file($p . '/override/z77/module/member/src/App/Config/SIDE-EFFECT'));
 check('exactly the expected sentences', count($warnings) === 5, $all);
 
+// A nested value that is not a literal: its entries are unknowable, so no false alarm.
+$r = $base . '/computed';
+$put($r . '/vendor/z77/kernel/shared/src/Config/emailConfig.inc.php', "<?php return ['from' => 'x', 'forms' => ['contactForm' => [], 'backendCodeLock' => []]];");
+$put($r . '/vendor/z77/module-member/src/App/Config/memberConfig.inc.php', "<?php return ['jobs' => ['one' => [], 'two' => []], 'a' => 1];");
+$put($r . '/override/z77/shared/src/Config/emailConfig.inc.php', "<?php\n\$fw = ['forms' => []];\nreturn ['from' => 'y', 'forms' => \$fw['forms'] + ['eigenes' => []]];\n");
+$put($r . '/override/z77/module/member/src/App/Config/memberConfig.inc.php', "<?php\nreturn ['a' => 1, 'jobs' => [...\$more, 'eigener' => []]];\n");
+$c = implode("\n", releases_overrideWarnings($r));
+check("'forms' => \$fw['forms'] + […]: no missing forms claimed", !str_contains($c, "lacks these 'forms'"), $c);
+check('...it says it did not compare them', str_contains($c, "emailConfig.inc.php: its 'forms' is not a plain array, not compared"), $c);
+check("'jobs' => [...\$more, …]: no missing jobs claimed", !str_contains($c, "lacks these 'jobs'"), $c);
+check('...it says it did not compare them', str_contains($c, "memberConfig.inc.php: its 'jobs' is not a plain array, not compared"), $c);
+$put($r . '/override/z77/shared/src/Config/emailConfig.inc.php', "<?php\nreturn ['from' => 'y', 'forms' => ['contactForm' => []] + \$more];\n");
+$put($r . '/override/z77/module/member/src/App/Config/memberConfig.inc.php', "<?php\nreturn ['a' => 1, 'jobs' => array_merge(\$a, \$b)];\n");
+$c = implode("\n", releases_overrideWarnings($r));
+check('a literal with something added behind it, array_merge: not compared either', str_contains($c, "'forms' is not a plain array") && str_contains($c, "'jobs' is not a plain array") && !str_contains($c, 'lacks these'), $c);
+$put($r . '/override/z77/shared/src/Config/emailConfig.inc.php', "<?php\nreturn ['from' => 'y', 'forms' => ['contactForm' => []]];\n");
+$c = implode("\n", releases_overrideWarnings($r));
+check('a plain list is still compared', str_contains($c, "lacks these 'forms' entries: backendCodeLock"), $c);
+
 // ── (B) the framework from a path repository ───────────────────────────────
 echo "(B) a path repository\n";
 $q = $base . '/repo-project';

@@ -444,6 +444,9 @@ function releases_httpHead(string $url): array
     return [(int) $m[1], $headers];
 }
 
+/** Marks a spread inside a nested array literal, in the key list of {@see releases_readArrayKeys()}. */
+const RELEASES_SPREAD = "\0spread";
+
 /**
  * What a project's whole-file config override leaves out (packaging.md PKG-OVERRIDE-001). A config
  * under `override/` replaces the framework's file whole, first match wins, no merging: a key the
@@ -453,7 +456,8 @@ function releases_httpHead(string $url): array
  *
  * Only reads and only warns. Local files, no server. Neither side is executed: a project's config
  * may do anything and names classes no autoloader knows here, so both are read with the tokenizer.
- * A file whose `return` is not a plain array cannot be judged and says so.
+ * A file whose `return` is not a plain array cannot be judged and says so, and so does a `forms` or
+ * `jobs` that is computed (`$fw['forms'] + […]`, a spread): its entries are unknown, not missing.
  *
  * @return list<string> one sentence per finding, paths relative to the project
  */
@@ -502,7 +506,14 @@ function releases_overrideWarnings(string $projectRoot): array
             $nested[] = 'jobs';
         }
         foreach ($nested as $key) {
-            $gone = array_values(array_diff($theirs[$key] ?? [], $ours[$key] ?? []));
+            if (!array_key_exists($key, $theirs) || !array_key_exists($key, $ours)) {
+                $gone = array_key_exists($key, $theirs) ? (array) $theirs[$key] : [];
+            } elseif ($ours[$key] === null || $theirs[$key] === null) {
+                $warnings[] = $name . ': ' . ($ours[$key] === null ? 'its' : "the framework file's") . " '{$key}' is not a plain array, not compared";
+                continue;
+            } else {
+                $gone = array_values(array_diff($theirs[$key], $ours[$key]));
+            }
             if ($gone !== []) {
                 $warnings[] = $name . " lacks these '{$key}' entries: " . implode(', ', $gone);
             }
@@ -552,10 +563,11 @@ function releases_frameworkFileFor(string $root, string $rel): ?string
 
 /**
  * The string keys of the array a config file returns, each with the string keys of its own value:
- * `['forms' => ['contactForm', …], 'loginUrl' => []]`. Read from the tokens, nothing runs. Null when
- * the first top-level `return` is not a plain array literal, or the literal spreads something in.
+ * `['forms' => ['contactForm', …], 'loginUrl' => null]`. Null as a value: not a plain array literal,
+ * its keys are unknown. Read from the tokens, nothing runs. Null as the result: the first top-level
+ * `return` is not a plain array literal, or the literal spreads something in.
  *
- * @return array<string, list<string>>|null
+ * @return array<string, list<string>|null>|null
  */
 function releases_configKeys(string $php): ?array
 {
@@ -628,8 +640,12 @@ function releases_readArrayKeys(array $tokens, int $i, int $level, array &$keys)
         if ($depth !== 0) {
             continue;
         }
-        if (is_array($token) && $token[0] === T_ELLIPSIS && $level === 1) {
-            return null;
+        if (is_array($token) && $token[0] === T_ELLIPSIS) {
+            if ($level === 1) {
+                return null;
+            }
+            $keys[] = RELEASES_SPREAD;
+            continue;
         }
         if (is_array($token) && $token[0] === T_CONSTANT_ENCAPSED_STRING && is_array($tokens[$i + 1] ?? null) && $tokens[$i + 1][0] === T_DOUBLE_ARROW) {
             $key = stripcslashes(substr($token[1], 1, -1));
@@ -637,13 +653,16 @@ function releases_readArrayKeys(array $tokens, int $i, int $level, array &$keys)
                 $keys[] = $key;
                 continue;
             }
-            $keys[$key] = [];
+            $keys[$key] = null;
             $opensAt    = releases_arrayOpensAt($tokens, $i + 2);
             if ($opensAt !== null) {
                 $inner = [];
                 $end   = releases_readArrayKeys($tokens, $opensAt, 2, $inner);
-                $keys[$key] = $inner;
-                $i = (int) $end;
+                $i     = (int) $end;
+                // Only a literal alone counts: a spread inside or anything behind it (`[…] + $x`) is computed.
+                if (!in_array(RELEASES_SPREAD, $inner, true) && in_array($tokens[$i + 1] ?? ',', [',', ']', ')'], true)) {
+                    $keys[$key] = $inner;
+                }
             }
         }
     }
