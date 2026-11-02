@@ -736,6 +736,94 @@ console.log('L  live listener');
         check('L21 …which asks its own URL', fetchQueue[1] && fetchQueue[1].url === '/status2', fetchQueue[1] && fetchQueue[1].url);
     }
 
+    // A listener's reload or redirect waits while someone is at work (owner 2026-11-02).
+    {
+        const { ctx, document, fetchQueue, timers, fire } = setup();
+        const moved = [];
+        ctx.location.reload = () => moved.push('reload');
+        document.qsa['dialog[open]'] = [new El('dialog')];
+        const target = new El('div');
+        document.qsa['#progress'] = [target];
+        fire();
+        fetchQueue[0].answer(json({ commands: [
+            { action: 'update-text', target: '#progress', text: 'fertig' },
+            { action: 'reload' },
+        ] }));
+        await settle();
+        check('L30 an open dialog: the reload waits', moved.length === 0, moved.length);
+        check('L31 …the rest of the answer ran', target.textContent === 'fertig', target.textContent);
+        const calm = () => timers.filter((t) => t.ms === 2000);
+        check('L32 …one calm check, and the listener goes on', calm().length === 1 && timers.length === 2, timers.length);
+        calm()[0].fn();
+        check('L33 still open: still no reload, it looks again', moved.length === 0 && calm().length === 2, calm().length);
+        document.qsa['dialog[open]'] = [];
+        calm()[1].fn();
+        check('L34 dialog closed: the reload happens, once', moved.length === 1, moved.length);
+    }
+    {
+        const { ctx, document, fetchQueue, timers, fire } = setup();
+        const moved = [];
+        ctx.location.reload = () => moved.push('reload');
+        document.qsa['form[data-dirty="dirty"]'] = [new El('form')];
+        fire();
+        fetchQueue[0].answer(json({ commands: [{ action: 'reload' }] }));
+        await settle();
+        fire();
+        fetchQueue[1].answer(json({ commands: [{ action: 'reload' }] }));
+        await settle();
+        const calm = timers.filter((t) => t.ms === 2000);
+        check('L35 unsaved changes: the reload waits, a second answer adds no second wait', moved.length === 0 && calm.length === 1, calm.length);
+        document.qsa['form[data-dirty="dirty"]'] = [];
+        calm[0].fn();
+        check('L36 saved: one reload', moved.length === 1, moved.length);
+    }
+    {
+        const { ctx, document, fetchQueue, timers, fire } = setup();
+        const moved = [];
+        ctx.location.reload = () => moved.push('reload');
+        const typed = new El('input', { type: 'text', value: 'halb getippt', defaultValue: '' });
+        const hidden = new El('input', { type: 'hidden', value: 'x', defaultValue: '' });
+        document.qsa['input, textarea, select option'] = [hidden, typed];
+        fire();
+        fetchQueue[0].answer(json({ commands: [{ action: 'reload' }] }));
+        await settle();
+        check('L37 a typed field in a form nobody tracks: the reload waits', moved.length === 0);
+        typed.value = '';
+        timers.filter((t) => t.ms === 2000)[0].fn();
+        check('L38 back to its loaded value, a hidden field does not count: reload', moved.length === 1, moved.length);
+    }
+    {
+        const { ctx, document, fetchQueue, timers, fire } = setup();
+        document.qsa['dialog[open]'] = [new El('dialog')];
+        fire();
+        fetchQueue[0].answer(json({ redirect: { url: '/weiter' } }));
+        await settle();
+        timers.filter((t) => t.ms === 0).forEach((t) => t.fn());
+        check('L39 a redirect waits the same way', ctx.location.href === 'http://test/page', ctx.location.href);
+        document.qsa['dialog[open]'] = [];
+        timers.filter((t) => t.ms === 2000)[0].fn();
+        timers.filter((t) => t.ms === 0).forEach((t) => t.fn());
+        check('L40 …and happens when the dialog is closed', ctx.location.href === '/weiter', ctx.location.href);
+    }
+    {
+        const { ctx, fetchQueue, fire } = setup();
+        const moved = [];
+        ctx.location.reload = () => moved.push('reload');
+        fire();
+        fetchQueue[0].answer(json({ commands: [{ action: 'reload' }] }));
+        await settle();
+        check('L41 nobody at work: the reload happens at once', moved.length === 1, moved.length);
+    }
+    {
+        // An ordinary fetch the user started is not touched: only the listener holds.
+        const { ctx, document } = makeContext();
+        const moved = [];
+        ctx.location.reload = () => moved.push('reload');
+        document.qsa['dialog[open]'] = [new El('dialog')];
+        ctx._Z77.core.fetch.handleEnvelope({ status: 'success', commands: [{ action: 'reload' }] }, '/x');
+        check('L42 a reload from the user\'s own action stays immediate', moved.length === 1, moved.length);
+    }
+
     const retries = [
         ['a network failure', (q) => q.fail(new Error('net'))],
         ['a 500', (q) => q.answer(response({ status: 500, type: 'application/json', body: { status: 'error', flashes: [{ type: 'error', text: 'x' }] } }))],

@@ -44,6 +44,7 @@ const MARKERS = [
         '_z77CollectFormData',      // top-level name the templates call — mangled = broken pages
         'data-submit-navigate',     // SUBMIT-NAV-001 (2026-10-10)
         'submitNavigate',
+        'dialog[open]',             // a listener's reload waits while someone is at work (2026-11-02)
         '_z77Busy',                 // busy guard against double submits (H2, 2026-10-13)
         'unusable',                 // windows / error pages through the envelope (2026-10-13)
         'js.requestFailed',
