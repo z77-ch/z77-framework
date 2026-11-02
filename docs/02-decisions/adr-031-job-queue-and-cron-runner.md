@@ -1,7 +1,7 @@
 # ADR-031 — Job Queue: One CLI Runner, Cooperative Slicing, Cron Actor
 
-**Status:** `[APPROVED]` — addendum to decision 4 approved by the owner 2026-09-23
-**Date:** 2026-08-07 · addendum 2026-09-23 (a deleting job that ships a schedule)
+**Status:** `[APPROVED]` — addenda to decision 4 approved by the owner 2026-09-23 and 2026-11-02
+**Date:** 2026-08-07 · addenda 2026-09-23 and 2026-11-02 (a deleting job that ships a schedule)
 
 ---
 
@@ -164,3 +164,16 @@ and so does every backup job). What it never meant to protect is data the instal
 not keep. Any further exception names its duty in the config comment, in the job's topic and
 here — «the operator would forget» is not a duty. Rule and reasoning: [`jobs.md`](../topics/jobs.md)
 JOBS-SCHED-001; the job: [`stats.md`](../topics/stats.md).
+
+## Addendum 2026-11-02 — the third exception: `dms-zip-cleanup` (approved by the owner)
+
+The ZIP download of the DMS (DMS-ZIP-001) keeps a personal manifest per bundle: file names, and an
+address while a mail is pending. An expired bundle is refused by its gate whether a job runs or not,
+but its manifest stays on disk until something removes it, and if nobody opens a bundle again nothing
+does. The owner's requirement at the start: it must not lie there for ever, a job clears it away.
+
+`dms-zip-cleanup` therefore ships `daily@03:50`, by the test of the addendum above: **the deletion
+fulfils a duty**, removing personal data on time. It deletes only this job's own expired manifests and
+leftovers under `data/dms/zips`, never a document, and the seeded schedule belongs to the operator like
+any other. `JobSchedules::seed()` creates the record on an existing installation's next pass.
+Rule: [`jobs.md`](../topics/jobs.md) JOBS-SCHED-001; the job: [`documents.md`](../topics/documents.md).

@@ -30,6 +30,7 @@ $work = str_replace('\\', '/', sys_get_temp_dir()) . '/z77-file-range-' . getmyp
 @mkdir($work, 0777, true);
 
 require $root . '/packages/kernel/core/src/Http/Response/ResponseInterface.php';
+require $root . '/packages/kernel/core/src/Http/Response/ByteRange.php';
 require $root . '/packages/kernel/core/src/Http/Response/FileResponse.php';
 
 use Z77\Core\Http\Response\FileResponse;

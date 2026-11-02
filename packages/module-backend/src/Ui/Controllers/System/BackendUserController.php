@@ -14,6 +14,8 @@ use Z77\Core\Http\Response\HtmlResponse,
     Z77\Persistence\File\Storage\FileStorage,
     Z77\Shared\Attributes\Fetch,
     Z77\Shared\Attributes\HttpMethod,
+    Z77\Shared\Auth\AccountRemovedListeners,
+    Z77\Shared\Auth\AuthUser,
     Z77\Shared\Auth\PasswordPolicy,
     Z77\Shared\Auth\Totp,
     Z77\Shared\Entities\BackendUser,
@@ -631,6 +633,8 @@ class BackendUserController extends BackendAbstractController
             error_log('BackendUserController: open reset link of a deleted user not revoked — ' . $e->getMessage());
         }
         BackendTwoFactor::create()->forgetAccount($id);
+        // And what other modules hold for it. By the removed id, not the session removing it.
+        AccountRemovedListeners::announce(new AuthUser(['id' => $id, 'realm' => AuthUser::REALM_BACKEND]));
 
         return $this->fetch()
             ->setStatus('success')

@@ -82,6 +82,7 @@ const MARKERS = [
         'chunk-download-sw',        // the service worker beside it (save path a)
         '__z77-download/',          // its synthetic download URL
         'showSaveFilePicker',       // save path b
+        'body.error',               // a refused piece shows the server's reason (DMS-ZIP-001)
     ],
     'packages/module-dms/res/assets/js/documents/chunk-download-sw.js' => [
         '__z77-download/',          // the only URLs the worker answers

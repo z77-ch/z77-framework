@@ -470,6 +470,7 @@ design. Owned by [`security.md`](security.md) — see it for the gating rules.
 - [`metadata.md`](metadata.md) — `MetaDataController` (SEO metadata CRUD), the `'public'` view-area flag, and the read path injected as `$metaData`
 - [`../02-decisions/adr-052-backend-dashboard-registry.md`](../02-decisions/adr-052-backend-dashboard-registry.md) — the dashboard registry: key, entry kinds, weights, placement by route, `canReach()`, failure isolation, no cache
 - [`backup.md`](backup.md) — `maxAgeDays`, the backup policy key the dashboard's backup warning reads
+- When a backend user is removed → MUST call the kernel's `AccountRemovedListeners::announce()` with the removed identity (realm `backend`, its id), after it is really gone, never with the session removing it; other modules declare under `accountRemovedListeners` what they clear (e.g. the DMS's ZIP bundles); a failure there is logged and stops no removal.
 
 ## known issues
 

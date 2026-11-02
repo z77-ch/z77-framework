@@ -1,6 +1,6 @@
 # backup
 
-2026-10-22
+2026-11-02
 
 ## entry
 
@@ -218,6 +218,7 @@ moving.
 - When exposing backup actions in the backend → MUST keep every action `AuthRole::SUPER_USER` (the archive IS the user store) and mutations Fetch-POST (global CSRF) + per-archive entity token
 - When adding another CLI task → MUST follow ADR-028 (own `bin/` script in the owning package, Composer `bin`, boot only what it needs)
 - When changing what a `data` or `full` archive contains → MUST keep `data/framework/jobs` excluded (`BackupService::DATA_EXCLUDES`, applied to both types and NOT configurable); it is transient runtime state and it changes while the archive is being written (BACKUP-JOBS-001)
+- When changing what a `data` or `full` archive contains → MUST keep `data/dms/zips` excluded (`BackupService::DATA_EXCLUDES`, same standing): ZIP bundles of the Drive are personal manifests with an expiry, rewritten while a job counts their checksums, and nothing is lost by leaving them out, a bundle is made again in a click ([`documents.md`](documents.md) DMS-ZIP-001)
 - When a directory must stay out of every full archive for a reason that is not the operator's to weigh (personal data with a retention promise — `logs/stats`) → MUST add it to `BackupService::FIXED_EXCLUDES` (appended in code, unconditionally); MUST NOT put it into `DEFAULT_EXCLUDES` / `backup.default.inc.php` alone — that is a seed-once copy and never reaches an existing installation (BACKUP-LIB-001, twice)
 - When changing what retention keeps → MUST go through `RetentionPolicy` (pure names-in/names-out, so `tests/backup-retention.php` can replay timelines) and MUST preserve the late-discovery property: some kept archive predates a mistake that is N days old; MUST NOT let any retention config delete the just-written archive (the newest name always survives — asserted in the harness)
 - When touching the archive walk → the descent MUST stay PATH-BASED (`scandir` + `is_dir`) and MUST keep the realpath visited set next to it — the pair in `ZipArchiver::addTree()`. MUST NOT swap it back to `RecursiveDirectoryIterator`: without `FOLLOW_SYMLINKS` a linked directory is a silent leaf, and WITH the flag a Windows junction still is (its directory entry reports type «unknown» — measured, BACKUP-SYMLINK-001). Following without the set recurses forever on a cycle; the set without following changes nothing

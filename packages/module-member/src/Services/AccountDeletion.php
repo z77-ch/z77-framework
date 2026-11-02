@@ -6,6 +6,8 @@ use Z77\Core\DI;
 use Z77\Module\Member\Entities\MemberAccount;
 use Z77\Persistence\Resolver\DataSourceResolver;
 use Z77\Persistence\Resolver\UnifiedEntityManager;
+use Z77\Shared\Auth\AccountRemovedListeners;
+use Z77\Shared\Auth\AuthUser;
 
 /**
  * The person deletes her own account (2026-09-14; Art. 32 revDSG is the
@@ -22,7 +24,8 @@ use Z77\Persistence\Resolver\UnifiedEntityManager;
  *                                      before the person confirms
  *
  * Order: project first, then the module. The other way round would leave a
- * project row pointing at an account that is gone if the hook fails.
+ * project row pointing at an account that is gone if the hook fails. Last,
+ * once it is really gone, the other modules ({@see AccountRemovedListeners}).
  *
  * The session is NOT ended here — the controller does that, because it is
  * the one holding it. Nothing is mailed to the person: she is on the page.
@@ -99,6 +102,9 @@ final class AccountDeletion
         $this->pendingLogins->purge($now);
 
         MemberLog::write('account.delete', $id, ['detail' => $detail]);
+
+        // What other modules hold for it: declared by them, this module knows none of them.
+        AccountRemovedListeners::announce(new AuthUser(['id' => $id, 'realm' => AuthUser::REALM_MEMBER]));
 
         return $detail;
     }
