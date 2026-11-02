@@ -460,5 +460,5 @@ guard never sends a customer to the admin login. Details: `member.md`
 
 ## pending
 
-- **Click through 2FA on a real installation (BACKEND-2FA-001):** switch on with a real app, log in, wrong code, switch off, the reset form with the field, the admin reset with its mail. Look at the dialog in light and dark.
+- **Rest of the 2FA click-through (BACKEND-2FA-001):** the owner confirmed on a real installation on 2026-11-02 that 2FA works and that «Passwort vergessen» works. Not reported one by one, so check if in doubt: the admin reset with its mail, the lock after five wrong codes, the `backendCodeLock` row in Service → E-Mail, the dialog in light and dark.
 - **Enter the recovery addresses:** every existing account starts without one, and without one the forgot form sends nothing. The first admin is provisioned without one too (installer and `SetupController` do not ask); security.md's roadmap wanted it asked at setup.
