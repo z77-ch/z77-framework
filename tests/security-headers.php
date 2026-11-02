@@ -59,8 +59,19 @@ $r = SecurityHeaders::resolved(['x-frame-options' => 'DENY']);
 check('another spelling replaces, it does not add', ($r['x-frame-options'] ?? '') === 'DENY' && !isset($r['X-Frame-Options']));
 $r = SecurityHeaders::resolved(['Strict-Transport-Security' => 'max-age=31536000']);
 check('a project adds one', ($r['Strict-Transport-Security'] ?? '') === 'max-age=31536000' && count($r) === count(SecurityHeaders::DEFAULTS) + 1);
-$r = SecurityHeaders::resolved(['X-Frame-Options' => false]);
-check('a non-string switches off instead of sending nonsense', !isset($r['X-Frame-Options']));
+$headerLog = $base . '/headers.log';
+ini_set('log_errors', '1');
+ini_set('error_log', $headerLog);
+$r = SecurityHeaders::resolved(['X-Frame-Options' => false, 'Referrer-Policy' => 42, 'Content-Security-Policy' => ['a']]);
+check('a value neither string nor null keeps the default', ($r['X-Frame-Options'] ?? '') === 'SAMEORIGIN' && ($r['Referrer-Policy'] ?? '') === SecurityHeaders::DEFAULTS['Referrer-Policy'] && ($r['Content-Security-Policy'] ?? '') === SecurityHeaders::DEFAULTS['Content-Security-Policy'], json_encode($r));
+$logged = (string) @file_get_contents($headerLog);
+check('...and logs each, by name', str_contains($logged, "'X-Frame-Options'") && str_contains($logged, "'Referrer-Policy'") && str_contains($logged, "'Content-Security-Policy'") && str_contains($logged, 'keeps its default'), $logged);
+@unlink($headerLog);
+$r = SecurityHeaders::resolved(['Strict-Transport-Security: max-age=1', 'X-Frame-Options' => null, 5 => 'x']);
+check('a list-style file: no header named 0 or 5', !isset($r[0]) && !isset($r['0']) && !isset($r[5]) && !isset($r['5']), json_encode(array_keys($r)));
+check('...the named entry still counts', !isset($r['X-Frame-Options']));
+check('...and it logs', str_contains((string) @file_get_contents($headerLog), 'not a header name'), (string) @file_get_contents($headerLog));
+ini_restore('error_log');
 
 // ── (B) the real stack ──────────────────────────────────────────────────────
 echo "(B) real stack\n";
@@ -122,7 +133,8 @@ $carries = static function (string $where, array $response) use ($valuesOf): voi
 };
 
 $carries('backend login', $raw($port, '/login'));
-$carries('a 404 page', $raw($port, '/backend/system/login/logout'));
+$carries('a 404 page', $raw($port, '/frontend/main/index/gibt-es-auch-nicht'));
+$carries('the logout\'s confirm page', $raw($port, '/backend/system/login/logout'));
 $carries('an unknown route', $raw($port, '/frontend/main/index/gibt-es-nicht'));
 $carries('HEAD on the login', $raw($port, '/login', 'HEAD'));
 
@@ -167,12 +179,16 @@ check('added: its HSTS', $valuesOf($p[1], 'Strict-Transport-Security') === ['max
 check('the rest stays', $valuesOf($p[1], 'X-Content-Type-Options') === ['nosniff'] && count($valuesOf($p[1], 'Content-Security-Policy-Report-Only')) === 1);
 $cached = $raw($port, '/');
 check('a cached page follows the file at once', $valuesOf($cached[1], 'X-Frame-Options') === [] && $valuesOf($cached[1], 'Strict-Transport-Security') === ['max-age=60'] && strtolower($cacheOf($cached)) === 'hit', $cacheOf($cached));
-$e404 = $raw($port, '/backend/system/login/logout');
+$e404 = $raw($port, '/frontend/main/index/gibt-es-auch-nicht');
 check('an error page too', $e404[0] === 404 && $valuesOf($e404[1], 'X-Frame-Options') === [] && $valuesOf($e404[1], 'Strict-Transport-Security') === ['max-age=60']);
 
 file_put_contents($projectFile, "<?php\nthrow new RuntimeException('broken');\n");
 $b = $raw($port, '/login');
 check('a file that throws: the page goes out with the defaults', $b[0] === 200 && $valuesOf($b[1], 'X-Frame-Options') === ['SAMEORIGIN']);
+file_put_contents($projectFile, "<?php\nreturn ['nosniff', 'X-Frame-Options' => false];\n");
+$b = $raw($port, '/login');
+$names = array_column($b[1], 0);
+check('a list-style file through the stack: no header named 0, the default stays', $b[0] === 200 && !in_array('0', $names, true) && $valuesOf($b[1], 'X-Frame-Options') === ['SAMEORIGIN'], json_encode($names));
 file_put_contents($projectFile, "<?php\nreturn 'kein Array';\n");
 $b = $raw($port, '/login');
 check('a file that returns no array: the defaults', $b[0] === 200 && $valuesOf($b[1], 'X-Frame-Options') === ['SAMEORIGIN']);

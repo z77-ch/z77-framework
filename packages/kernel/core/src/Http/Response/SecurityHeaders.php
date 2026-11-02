@@ -20,7 +20,8 @@ use Z77\Shared\Libraries\ConfigLocator;
  * whoever visited once. A project that knows its hosts adds it in its file.
  *
  * A project records only what deviates, in `config/client/securityHeaders.inc.php` (optional, not
- * seeded): header name => value, null or '' switches a header off, a new name adds one.
+ * seeded): header name => value, null or '' switches a header off, a new name adds one. Anything else
+ * is logged: a value of another type keeps the default, an entry without a name is ignored.
  */
 final class SecurityHeaders
 {
@@ -62,13 +63,21 @@ final class SecurityHeaders
     {
         $merged = self::DEFAULTS;
         foreach ($project as $name => $value) {
+            if (!is_string($name)) {
+                error_log("SecurityHeaders: entry {$name} is not a header name, ignored: the file holds name => value");
+                continue;
+            }
+            if ($value !== null && !is_string($value)) {
+                error_log("SecurityHeaders: the value of '{$name}' is neither text nor null, it keeps its default");
+                continue;
+            }
             // The name decides, not its spelling: `x-frame-options` must not send a second header.
             foreach (array_keys($merged) as $known) {
-                if (strcasecmp((string) $name, $known) === 0) {
+                if (strcasecmp($name, $known) === 0) {
                     unset($merged[$known]);
                 }
             }
-            $merged[(string) $name] = is_string($value) ? trim($value) : '';
+            $merged[$name] = trim((string) $value);
         }
 
         return array_filter($merged, static fn(string $value): bool => $value !== '');
