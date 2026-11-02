@@ -242,6 +242,7 @@ function serviceOver(string $work, array $options = []): ZipBundleService
         $options['started'] ?? null,
         $options['perPerson'] ?? 1_000_000,
         $options['installation'] ?? 1_000_000,
+        $options['each'] ?? null,
     );
 }
 
@@ -2619,7 +2620,42 @@ rrmdir($root . '/data/dms/zips');
 
 check('the config offers the caps', ($cfg['zipMaxBundlesPerPerson'] ?? 0) === 20 && ($cfg['zipMaxBundles'] ?? 0) === 2000, json_encode([$cfg['zipMaxBundlesPerPerson'] ?? null, $cfg['zipMaxBundles'] ?? null]));
 
-check('the config offers the hooks, all off', array_key_exists('zipMailAddressHook', $cfg) && $cfg['zipMailAddressHook'] === null && array_key_exists('zipDocumentGateHook', $cfg) && $cfg['zipDocumentGateHook'] === null
+// zipDownloadEachHook: every download from byte 0, for a project that records each one.
+$eachCalls = [];
+$eachMode  = 'record';
+$recording = serviceOver($root, ['each' => static function (string $id, array $ids) use (&$eachCalls, &$eachMode): void {
+    if ($eachMode === 'throw') {
+        throw new RuntimeException('the project\'s record is away');
+    }
+    $eachCalls[] = [$id, $ids];
+}] + $options);
+$e1 = $recording->open([101, 102]);
+$recording->prepare($all());
+$eid = $e1['id'];
+check('each: not by opening or preparing', $eachCalls === []);
+$recording->serve($eid, '', null, true);
+check('each: not by a HEAD', $eachCalls === []);
+$recording->serve($eid, 'bytes=999999999-');
+check('each: not by an unsatisfiable range', $eachCalls === []);
+$eachEtag = 'zip-' . substr(hash('sha256', $eid . '|' . implode(',', array_column(manifestAt(ABS_BASE_PATH . "/data/dms/zips/{$eid}/manifest.json")['entries'], 'checksum'))), 0, 32);
+$recording->serve($eid, 'bytes=0-9', '"' . $eachEtag . '"');
+check('each: not by a 304', $eachCalls === []);
+$setCtl('denied', [7, 102]);
+check('each: not by a refused piece', refused(fn () => $recording->serve($eid, 'bytes=0-9'), 403) && $eachCalls === []);
+$setCtl('denied', [7]);
+$recording->serve($eid, 'bytes=0-9');
+check('each: the first piece, bundle id and document ids', $eachCalls === [[$eid, [101, 102]]], json_encode($eachCalls));
+$recording->serve($eid, 'bytes=10-19');
+check('each: not by a later piece', count($eachCalls) === 1, json_encode($eachCalls));
+$recording->serve($eid, 'bytes=0-9');
+check('each: a second download is recorded again', count($eachCalls) === 2, json_encode($eachCalls));
+$recording->serve($eid);
+check('each: a whole answer without Range is one too', count($eachCalls) === 3, json_encode($eachCalls));
+$eachMode = 'throw';
+check('each: a failing hook does not break the download', $recording->serve($eid, 'bytes=0-9') instanceof ByteSourceResponse);
+check('each: … and is logged', str_contains((string) file_get_contents($errorLog), 'zipDownloadEachHook failed'));
+
+check('the config offers the hooks, all off', array_key_exists('zipDownloadEachHook', $cfg) && $cfg['zipDownloadEachHook'] === null && array_key_exists('zipMailAddressHook', $cfg) && $cfg['zipMailAddressHook'] === null && array_key_exists('zipDocumentGateHook', $cfg) && $cfg['zipDocumentGateHook'] === null
     && array_key_exists('zipDownloadStartedHook', $cfg) && $cfg['zipDownloadStartedHook'] === null && ($cfg['zipMail'] ?? 1) === []);
 
 echo "\n{$pass} ok, {$fail} failed\n";
