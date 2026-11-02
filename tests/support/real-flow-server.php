@@ -144,6 +144,7 @@ final class RealFlowBrowser
         }
         $opts['header'] = implode("\r\n", $head);
         $body   = (string) @file_get_contents("http://127.0.0.1:{$this->port}{$path}", false, stream_context_create(['http' => $opts]));
+        clearstatcache(); // the server is another process: a file it removed must not look present here
         $status = 0;
         $out    = [];
         foreach ($http_response_header ?? [] as $line) {
