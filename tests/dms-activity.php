@@ -324,6 +324,14 @@ ActivityMemoHook::$calls = [];
 ActivityLog::document(ActivityEvent::DOCUMENT_DELETED, 5, 6);
 check('an identity that fails: the record still goes, with an empty actor, and is logged', (ActivityMemoHook::$calls[0]->actorKey ?? 'x') === '' && str_contains(substr($logged(), $before), 'no actor'), substr($logged(), $before));
 
+// A stateless route (the API) registers no AuthService by design: a normal case, not a failure.
+check('this part runs without an AuthService', !DI::getInstance()->has('AuthService'));
+$before = strlen($logged());
+ActivityLog::useHook(ActivityMemoHook::class);
+ActivityMemoHook::$calls = [];
+ActivityLog::document(ActivityEvent::DOCUMENT_UPLOADED, 5, 6);
+check('no AuthService: the record goes with an empty actor, not one log line', count(ActivityMemoHook::$calls) === 1 && ActivityMemoHook::$calls[0]->actorKey === '' && substr($logged(), $before) === '', substr($logged(), $before));
+
 ActivityLog::reset();
 $cfg = require $repo . '/packages/module-dms/src/App/Config/dmsConfig.inc.php';
 check('the framework config offers the key, off', array_key_exists('activityHook', $cfg) && $cfg['activityHook'] === null);
