@@ -67,6 +67,7 @@ const MARKERS = [
         'data-fetch-live',          // the live listener (FETCH-LIVE-001, 2026-11-01)
         'stop-live',
         'X-Z77-Live',               // … its questions do not count as activity on an idle clock
+        '.size',                    // … a select compared with what the browser selects by itself (2026-11-03)
     ],
     'packages/kernel/shared/res/assets/js/upload.js' => [
         'data-upload-transport',    // another wire for big files — the DMS chunked upload (F3, 2026-10-31)

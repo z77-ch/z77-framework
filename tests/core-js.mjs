@@ -86,6 +86,7 @@ class El {
     querySelectorAll(sel) { return this.qsa[sel] || []; }
     querySelector(sel) { return (this.qsa[sel] || [])[0] || null; }
     closest() { return null; }
+    cloneNode() { return new El(this.tagName, { type: this.type }); }
     contains(x) { return x === this; }
     matches() { return false; }
     focus() {}
@@ -626,8 +627,8 @@ console.log('L  live listener');
 {
     const json = (body) => response({ type: 'application/json', body: { status: 'success', ...body } });
     const settle = async () => { for (let i = 0; i < 6; i++) await tick(); };
-    const setup = (attrs = {}) => {
-        const made = makeContext();
+    const setup = (attrs = {}, src = SOURCE) => {
+        const made = makeContext(src);
         const el = new El('div', { isConnected: true });
         el.setAttribute('data-fetch-live', '/status');
         Object.entries(attrs).forEach(([k, v]) => el.setAttribute(k, v));
@@ -778,12 +779,24 @@ console.log('L  live listener');
         check('L36 saved: one reload', moved.length === 1, moved.length);
     }
     {
+        const { ctx, document, fetchQueue, fire } = setup();
+        const moved = [];
+        ctx.location.reload = () => moved.push('reload');
+        const closed = new El('form');
+        closed.closest = (sel) => (sel === 'dialog:not([open])' ? new El('dialog') : null);
+        document.qsa['form[data-dirty="dirty"]'] = [closed];
+        fire();
+        fetchQueue[0].answer(json({ commands: [{ action: 'reload' }] }));
+        await settle();
+        check('L36.1 unsaved changes in a closed dialog: reload', moved.length === 1, moved.length);
+    }
+    {
         const { ctx, document, fetchQueue, timers, fire } = setup();
         const moved = [];
         ctx.location.reload = () => moved.push('reload');
         const typed = new El('input', { type: 'text', value: 'halb getippt', defaultValue: '' });
         const hidden = new El('input', { type: 'hidden', value: 'x', defaultValue: '' });
-        document.qsa['input, textarea, select option'] = [hidden, typed];
+        document.qsa['input, textarea, select'] = [hidden, typed];
         fire();
         fetchQueue[0].answer(json({ commands: [{ action: 'reload' }] }));
         await settle();
@@ -791,6 +804,57 @@ console.log('L  live listener');
         typed.value = '';
         timers.filter((t) => t.ms === 2000)[0].fn();
         check('L38 back to its loaded value, a hidden field does not count: reload', moved.length === 1, moved.length);
+    }
+    // A select counts as changed only against what the browser selects by itself (FETCH-LIVE-001,
+    // z77-rudaz.ch 2026-11-03: a finished job stood at 83 % for ever behind a select without `selected`).
+    for (const [label, src] of [['core.js', SOURCE], ['core.min.js', MIN_SOURCE]]) {
+        const opt = (selected, defaultSelected = false, disabled = false) =>
+            new El('option', { selected, defaultSelected, matches: (sel) => sel === ':disabled' && disabled });
+        const select = (options, props = {}) => new El('select', { options, multiple: false, size: 0, ...props });
+        const inClosedDialog = (field) => { field.closest = (sel) => (sel === 'dialog:not([open])' ? new El('dialog') : null); return field; };
+        const cleaned = (type, value, defaultValue, clean) => new El('input', { type, value, defaultValue,
+            cloneNode: () => ({ set value(v) { this.read = clean(v); }, get value() { return this.read; } }) });
+        const fileInput = (value) => new El('input', { type: 'file', value, defaultValue: 'stray',
+            cloneNode: () => ({ set value(v) { throw new Error('InvalidStateError: ' + v); } }) });
+        const cases = [
+            ['a single select without `selected`, untouched: first option', select([opt(true), opt(false)]), false],
+            ['… the first enabled option, the disabled one before it skipped', select([opt(false, false, true), opt(true)]), false],
+            ['… the user picked another one', select([opt(false), opt(true)]), true],
+            ['… the user picked the disabled first one by script', select([opt(true, false, true), opt(false)]), true],
+            ['two `selected` in a single select, untouched: the last one wins', select([opt(false, true), opt(true, true)]), false],
+            ['… the user went to the earlier one', select([opt(true, true), opt(false, true)]), true],
+            ['a marked option, untouched', select([opt(false), opt(true, true)]), false],
+            ['… the user went back to the first', select([opt(true), opt(false, true)]), true],
+            ['a list (size 5) without `selected`, untouched: nothing selected', select([opt(false), opt(false)], { size: 5 }), false],
+            ['… the user picked one', select([opt(true), opt(false)], { size: 5 }), true],
+            ['a multiple select, nothing selected, untouched', select([opt(false), opt(false)], { multiple: true }), false],
+            ['… one picked', select([opt(false), opt(true)], { multiple: true }), true],
+            ['… two marked, both still selected', select([opt(true, true), opt(true, true)], { multiple: true }), false],
+            ['… two marked, one taken away', select([opt(true, true), opt(false, true)], { multiple: true }), true],
+            ['… one marked, another added', select([opt(true, true), opt(true)], { multiple: true }), true],
+            ['a select without options', select([]), false],
+            // The browser's clean-up of a value, as Edge shows it (2026-11-03).
+            ['a range without `value`, untouched', cleaned('range', '50', '', () => '50'), false],
+            ['… moved', cleaned('range', '70', '', () => '50'), true],
+            ['a color without `value`, untouched', cleaned('color', '#000000', '', () => '#000000'), false],
+            ['a color in capitals, untouched', cleaned('color', '#ffffff', '#FFFFFF', (v) => v.toLowerCase()), false],
+            ['… changed', cleaned('color', '#000000', '#FFFFFF', (v) => v.toLowerCase()), true],
+            ['a file input, nothing picked, with a stray `value`: never written to', fileInput(''), false],
+            ['… a file picked', fileInput('C:\fakepath\a.pdf'), true],
+            // A closed dialog is put away (owner 2026-11-03): the field counts again when it opens.
+            ['a typed field in a closed dialog', inClosedDialog(new El('input', { type: 'text', value: 'x', defaultValue: '' })), false],
+            ['a changed select in a closed dialog', inClosedDialog(select([opt(false), opt(true)])), false],
+        ];
+        for (const [i, [name, field, waits]] of cases.entries()) {
+            const { ctx, document, fetchQueue, fire } = setup({}, src);
+            const moved = [];
+            ctx.location.reload = () => moved.push('reload');
+            document.qsa['input, textarea, select'] = [field];
+            fire();
+            fetchQueue[0].answer(json({ commands: [{ action: 'reload' }] }));
+            await settle();
+            check(`L38.${i + 1} [${label}] ${name}: ${waits ? 'the reload waits' : 'reload'}`, moved.length === (waits ? 0 : 1), moved.length);
+        }
     }
     {
         const { ctx, document, fetchQueue, timers, fire } = setup();
