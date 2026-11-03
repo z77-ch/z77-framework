@@ -34,8 +34,8 @@ Placeholders used below (z77.ch values as the example):
 - PHP ≥ 8.4 CLI with `mbstring fileinfo gd apcu` (`apc.enable_cli=1`), Composer 2, Git —
   [dev-environment.md](dev-environment.md).
 - Local MariaDB on `127.0.0.1`.
-- The framework monorepo at `Z:\z77\z77-ch-framework-1.0.0`. The project lives NEXT to it —
-  the path repositories in `composer.json` are relative (`../z77-ch-framework-1.0.0/…`).
+- The framework monorepo at `Z:\pkg\z77-framework`. The project lives under `Z:\z77` —
+  the path repositories in `composer.json` are relative (`../../pkg/z77-framework/…`).
 - An SSH alias for the host in `~/.ssh/config` (key login, no password in any file).
 
 ---
@@ -51,7 +51,7 @@ Placeholders used below (z77.ch values as the example):
      `z77/docs`.
    - `repositories`: one path repository per package, symlinked:
      ```json
-     {"type": "path", "url": "../z77-ch-framework-1.0.0/packages/kernel", "options": {"symlink": true}}
+     {"type": "path", "url": "../../pkg/z77-framework/packages/kernel", "options": {"symlink": true}}
      ```
      `module-mandator` belongs in the list as soon as `module-financial`, `-debtor`, `-article`
      or `-order` is required — they depend on it.
