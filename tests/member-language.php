@@ -323,15 +323,17 @@ check('a guest: no prefix = the default', $langOf($guest->go('/member/main/login
 $b = $signIn($siteOn, $portOn, 'acc-fr');
 $profile = $b->go('/member/main/profile');
 check('signed in: the account\'s language on a prefix-less URL', $profile[0] === 200 && $langOf($profile) === 'fr', $profile[0] . ' ' . $langOf($profile));
-check('… on an /en/ URL too: the account decides', $langOf($b->go('/en/member/main/profile')) === 'fr');
+$r = $b->go('/en/member/main/profile?bereich=konto');
+check('… a prefixed URL after sign-in moves to the same page without the prefix', $r[0] === 302 && ($r[1]['location'] ?? '') === '/member/main/profile?bereich=konto', $r[0] . ' ' . (string)($r[1]['location'] ?? ''));
+check('… and no link of the signed-in page carries a prefix', !preg_match('#(href|action)="/(fr|en|de)/#', $profile[2]));
 check('the profile names the language, in its own name', str_contains($profile[2], 'Français') && str_contains($profile[2], 'name="language"'));
 $b2 = $signIn($siteOn, $portOn, 'acc-none');
-check('an account without a language: the default, whatever the URL', $langOf($b2->go('/fr/member/main/profile')) === 'de');
+check('an account without a language: the default', $langOf($b2->go('/member/main/profile')) === 'de');
 
 // Change it on the profile (page POST, no script).
 $tok = preg_match('/name="csrf_token" value="([^"]+)"/', $b2->go('/member/main/profile')[2], $m) ? $m[1] : '';
 $r   = $b2->go('/member/main/profile/konto', ['csrf_token' => $tok, 'first_name' => 'Hans', 'last_name' => '', 'company' => '', 'language' => 'en']);
-check('a new language on the profile: a redirect …', in_array($r[0], [302, 303], true), (string)$r[0]);
+check('a new language on the profile: a redirect without a prefix …', in_array($r[0], [302, 303], true) && str_starts_with((string)($r[1]['location'] ?? ''), '/member/main/profile'), $r[0] . ' ' . (string)($r[1]['location'] ?? ''));
 check('… and the next page is English', $langOf($b2->go('/member/main/profile')) === 'en');
 $rows = array_column((array)json_decode((string)file_get_contents($siteOn . '/data/framework/member/accounts.json'), true), null, 'id');
 check('… stored on the account', ($rows['acc-none']['language'] ?? null) === 'en', json_encode($rows['acc-none'] ?? null));
@@ -370,6 +372,11 @@ check('French account: the profile in French, no key, no German', str_contains($
 check('… and no URL switch for a signed-in member', !str_contains($frProfile[2], 'me-lang__link'));
 $devices = $b->go('/member/main/profile?bereich=geraete');
 check('French devices section: no key, no German', $leak($devices) === '' && !str_contains($visible($devices), 'Geräte'), $leak($devices));
+// Signing out: a guest again, in the account's language through the URL.
+$out = $signIn($siteOn, $portOn, 'acc-fr');
+$tok = preg_match('/name="csrf_token" value="([^"]+)"/', $out->go('/member/main/logout')[2], $m) ? $m[1] : '';
+$r   = $out->go('/member/main/logout', ['csrf_token' => $tok]);
+check('signing out lands on the login in the account\'s language', in_array($r[0], [302, 303], true) && ($r[1]['location'] ?? '') === '/fr/member/main/login', $r[0] . ' ' . (string)($r[1]['location'] ?? ''));
 $deAcc = $signIn($siteOn, $portOn, 'acc-none');
 $deProfile = $deAcc->go('/member/main/profile');
 check('German account: the old texts', str_contains($visible($deProfile), 'Ihre Angaben aus der Registrierung') && str_contains($visible($deProfile), 'Zwei-Faktor-Schutz') && $leak($deProfile) === '', $leak($deProfile));

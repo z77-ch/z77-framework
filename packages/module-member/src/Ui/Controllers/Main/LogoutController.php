@@ -36,6 +36,8 @@ class LogoutController extends AbstractMemberController
 
         $this->messageService->pushFlashAfterRedirect('success', t('member.logout.done'));
 
-        return $this->redirect('/member/main/login');
+        // A guest from here on, but still in the account's language: the door keeps it
+        // through the URL (ADR-056).
+        return $this->redirect(localizedUrl('/member/main/login', DI::getTranslator()->currentLanguage()));
     }
 }

@@ -31,7 +31,9 @@ the language would get lost on the first internal link, and a job has no URL at 
    signed-in request into that module in the identity's language (`AuthUser::getLanguage()`,
    set by the module's AuthBridge), also on a URL with another prefix. Without the key
    nothing changes: the URL alone decides (axo3, zihlundsee). A backend identity carries no
-   language and is never re-languaged.
+   language and is never re-languaged. **After sign-in no URL carries a language prefix**
+   (owner, same day): `localizedUrl()` builds the prefix-less form, a signed-in page view on
+   `/fr/member/…` is redirected to `/member/…`; the prefix exists for guests only.
 3. **Mails go out in the recipient's language, with or without a request.**
    `EmailMessage::language($code)`; `EmailService` renders body and layout inside
    `Translator::inLanguage()`, so every `t()` in the templates answers in it. Subjects are

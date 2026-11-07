@@ -405,7 +405,8 @@ class ProfileController extends AbstractMemberController
 
         (new MemberSession(DI::getSessionManager()))->end();
 
-        return $this->redirect('/member/main/login?konto=geloescht');
+        // The person is a guest now; the door keeps her language through the URL (ADR-056).
+        return $this->redirect(localizedUrl('/member/main/login?konto=geloescht', DI::getTranslator()->currentLanguage()));
     }
 
     /**
