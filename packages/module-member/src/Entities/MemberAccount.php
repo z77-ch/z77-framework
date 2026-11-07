@@ -154,6 +154,19 @@ class MemberAccount
     private ?string $theme = null;
 
     /**
+     * The person's language (ADR-056, z77-rudaz.ch 2026-11-07): a two-letter code, or null for
+     * «not chosen», which means the installation's default language. Mails to her go out in
+     * it; her pages render in it where the module sets `languageFromAccount`. Set by herself
+     * on the profile, by the invitation she redeemed, or by the registration page's language.
+     *
+     * The entity checks the SHAPE only; whether the installation still offers the code is
+     * decided where it is rendered ({@see \Z77\Core\Services\I18n::resolve()}), so a language
+     * dropped later falls back to the default instead of breaking a mail.
+     */
+    #[Clean('nullable', 'ident')]
+    private ?string $language = null;
+
+    /**
      * B8 «angemeldet bleiben»: one entry per device that may resume a session
      * without a new magic link. The plaintext key exists only in the device's
      * cookie — here lives its SHA-256 hash. Entries are managed exclusively by
@@ -261,6 +274,22 @@ class MemberAccount
     public function setTheme(?string $theme): void
     {
         $this->theme = in_array($theme, self::THEMES, true) ? $theme : null;
+    }
+
+    public function getLanguage(): ?string { return $this->language; }
+
+    /** Anything that is not two letters means «not chosen» — the default language. */
+    public function setLanguage(?string $language): void
+    {
+        $this->language = self::normalizeLanguage($language);
+    }
+
+    /** A two-letter code, lowercased, or null. Shared with the invitation token. */
+    public static function normalizeLanguage(?string $language): ?string
+    {
+        $language = strtolower(trim((string)$language));
+
+        return preg_match('/^[a-z]{2}$/D', $language) === 1 ? $language : null;
     }
 
     /** @return array<int,array<string,string>> */

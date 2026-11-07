@@ -4,38 +4,36 @@
  * token plaintext ever exists. Rendered inside the shared emails/layout;
  * plain-text derivation per HtmlToText contract (block tags → line breaks).
  *
+ * Texts: `member.mail.*` in the module dictionary (res/i18n), rendered in the
+ * recipient's language (EmailMessage::language(), ADR-056).
+ *
  * @var \Z77\Module\Member\Entities\MemberAccount $account
  * @var string $confirmUrl
  */
 $name = trim(($account->getFirstName() ?? '') . ' ' . ($account->getLastName() ?? ''));
 ?>
-<p>Guten Tag<?= $name !== '' ? ' ' . e($name) : '' ?></p>
+<p><?= e($name !== '' ? t('member.mail.greetingName', ['name' => $name]) : t('member.mail.greeting')) ?></p>
 
 <p>
-    Vielen Dank für Ihre Registrierung. Bitte bestätigen Sie Ihre
-    E-Mail-Adresse über den folgenden Link:
+    <?= e(t('member.mail.confirm.lead')) ?>
 </p>
 
 <p>
     <a href="<?= e($confirmUrl) ?>"
        style="display:inline-block;padding:10px 20px;background-color:#222222;color:#ffffff;text-decoration:none;">
-        E-Mail-Adresse bestätigen
+        <?= e(t('member.mail.confirm.button')) ?>
     </a>
 </p>
 
 <p>
-    Falls die Schaltfläche nicht funktioniert, öffnen Sie diese Adresse in
-    Ihrem Browser:<br>
+    <?= e(t('member.mail.buttonFallback')) ?><br>
     <a href="<?= e($confirmUrl) ?>"><?= e($confirmUrl) ?></a>
 </p>
 
 <p>
-    Der Link ist 7 Tage gültig. Nach der Bestätigung prüfen wir Ihre
-    Registrierung und schalten Ihren Zugang frei — Sie erhalten dann eine
-    weitere E-Mail.
+    <?= e(t('member.mail.confirm.validity')) ?>
 </p>
 
 <p>
-    Falls Sie sich nicht registriert haben, ignorieren Sie diese E-Mail —
-    es entsteht kein Konto ohne diese Bestätigung.
+    <?= e(t('member.mail.confirm.ignore')) ?>
 </p>

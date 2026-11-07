@@ -22,40 +22,33 @@
 $fromInvite = (bool)($fromInvite ?? false);
 $fromJoin   = (bool)($fromJoin ?? false);
 $declined   = (bool)($declined ?? false);
-$noun       = \Z77\Module\Member\Services\TenantNoun::fromConfig(); // the word for the tenant (memberConfig tenantNoun)
+$noun       = \Z77\Module\Member\Services\TenantNoun::current(); // the word for the tenant (memberConfig tenantNoun), as placeholders of this language
 ?>
 <div class="me-card">
 <?php if ($declined): ?>
-    <h1 class="me-card__title">Einladung abgelehnt</h1>
+    <h1 class="me-card__title"><?= e(t('member.thanks.declinedTitle')) ?></h1>
     <p class="me-card__lead">
-        Es ist nichts geschehen — Ihr Konto ist unverändert, und der Link aus
-        der Einladung wirkt nicht mehr. Falls Sie es sich anders überlegen,
-        kann <?= e($noun->with('der', 'nom')) ?> Sie erneut einladen.
+        <?= e(t('member.thanks.declined', $noun)) ?>
     </p>
 <?php elseif ($fromJoin): ?>
-    <h1 class="me-card__title">Vielen Dank</h1>
+    <h1 class="me-card__title"><?= e(t('member.thanks.title')) ?></h1>
     <p class="me-card__lead">
-        <?= e(ucfirst($noun->with('der', 'nom'))) ?> ist Ihrem Konto hinzugefügt und wartet auf die
-        Freischaltung. Sie erhalten eine E-Mail, sobald es so weit ist — danach
-        wählen Sie nach der Anmeldung, für <?= e($noun->with('welch', 'acc')) ?> Sie arbeiten.
+        <?= e(t('member.thanks.join', $noun)) ?>
     </p>
-    <p class="me-card__aside"><a href="/member/main/login">Zur Anmeldung</a></p>
+    <p class="me-card__aside"><a href="<?= e(localizedUrl('/member/main/login')) ?>"><?= e(t('member.invite.toLogin')) ?></a></p>
 <?php elseif ($fromInvite): ?>
-    <h1 class="me-card__title">Vielen Dank</h1>
+    <h1 class="me-card__title"><?= e(t('member.thanks.title')) ?></h1>
     <p class="me-card__lead">
-        Ihr Zugang ist beantragt. Ihre E-Mail-Adresse ist durch die Einladung
-        bereits bestätigt — wir prüfen den Zugang und schalten ihn frei. Sie
-        erhalten eine E-Mail, sobald es so weit ist.
+        <?= e(t('member.thanks.invite')) ?>
     </p>
 <?php else: ?>
-    <h1 class="me-card__title">Vielen Dank</h1>
+    <h1 class="me-card__title"><?= e(t('member.thanks.title')) ?></h1>
     <p class="me-card__lead">
-        Wir haben Ihre Angaben erhalten und Ihnen eine E-Mail geschickt.
-        Bitte folgen Sie dem Link darin.
+        <?= e(t('member.thanks.register')) ?>
     </p>
     <p class="me-card__aside">
-        Keine E-Mail erhalten? Prüfen Sie den Spam-Ordner oder
-        <a href="/member/main/resend">fordern Sie den Link erneut an</a>.
+        <?= e(t('member.thanks.noMail')) ?>
+        <a href="<?= e(localizedUrl('/member/main/resend')) ?>"><?= e(t('member.thanks.resend')) ?></a>.
     </p>
 <?php endif; ?>
 </div>

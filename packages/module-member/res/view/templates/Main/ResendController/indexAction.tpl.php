@@ -12,10 +12,9 @@
  */
 ?>
 <div class="me-card">
-    <h1 class="me-card__title">Link erneut anfordern</h1>
+    <h1 class="me-card__title"><?= e(t('member.resend.title')) ?></h1>
     <p class="me-card__lead">
-        Geben Sie Ihre E-Mail-Adresse ein — wir senden Ihnen den
-        Bestätigungslink erneut.
+        <?= e(t('member.resend.lead')) ?>
     </p>
 
     <?= $this->partial('partials/publicForm', [

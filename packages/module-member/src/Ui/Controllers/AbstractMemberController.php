@@ -5,6 +5,7 @@ namespace Z77\Module\Member\Ui\Controllers;
 use Z77\Core\Controller\AbstractBaseController;
 use Z77\Core\DI;
 use Z77\Core\Http\Response\HtmlResponse;
+use Z77\Core\Http\Response\RedirectResponse;
 use Z77\Module\Member\Entities\MemberAccount;
 use Z77\Module\Member\Services\InvitationFlow;
 use Z77\Module\Member\Services\MemberAuth;
@@ -78,6 +79,14 @@ abstract class AbstractMemberController extends AbstractBaseController
         }
 
         $this->addAreas($context);
+
+        // The guest's language switch keeps the query (ADR-056): an invitation or a login
+        // link carries its token there, and a new language must not lose it.
+        if (!array_key_exists('memberQuery', $context)) {
+            $uri = DI::getRequest()->getRawRequestUri();
+            $cut = strpos($uri, '?');
+            $context['memberQuery'] = $cut === false ? '' : substr($uri, $cut);
+        }
 
         return parent::html($context);
     }
@@ -200,12 +209,12 @@ abstract class AbstractMemberController extends AbstractBaseController
 
             $active  = $navigation->isActive($entry);
             $areas[] = [
-                'name'   => $entry->getName(),
+                'name'   => self::areaLabel($entry),
                 'url'    => $navigation->urlFor($entry),
                 'active' => $active,
             ];
             if ($active) {
-                $current = $entry->getName();
+                $current = self::areaLabel($entry);
                 // The area one is standing IN is not a row to go to. The
                 // switcher still lists it (marked active) — that panel says
                 // where one is, the rail says where one can go.
@@ -214,7 +223,7 @@ abstract class AbstractMemberController extends AbstractBaseController
 
             $text   = $meta[$target] ?? null;
             $rail[] = [
-                'name'    => $entry->getName(),
+                'name'    => self::areaLabel($entry),
                 'url'     => $navigation->urlFor($entry),
                 'meta'    => $text,
                 // Stacked only WITH a number: an empty second line would be a
@@ -248,6 +257,19 @@ abstract class AbstractMemberController extends AbstractBaseController
      * account has one; `mb_*` throughout, since «Ürs» must not become a broken
      * byte.
      */
+    /**
+     * An area's name in the current language (ADR-056): the dictionary key
+     * `nav.member.<controller>.<action>` (lowercase) when a dictionary has it — a project
+     * names its areas in its own `res/i18n` — else the navigation entry's name, as before.
+     */
+    private static function areaLabel(object $entry): string
+    {
+        $key   = 'nav.member.' . strtolower(trim((string)$entry->getController())) . '.' . strtolower(trim((string)$entry->getAction()));
+        $label = t($key);
+
+        return $label !== $key ? $label : (string)$entry->getName();
+    }
+
     private static function initials(?string $firstName, ?string $lastName, string $email): string
     {
         $letters = '';
@@ -316,5 +338,31 @@ abstract class AbstractMemberController extends AbstractBaseController
     protected function absoluteUrl(string $path): string
     {
         return DI::getRequest()->getBaseUrl() . $path;
+    }
+
+    /**
+     * Every redirect of this module stays in the current language (ADR-056): a guest on
+     * `/fr/member/main/login` who submits lands on `/fr/member/main/login/warten`, not on the
+     * German page. Own paths only, and a path that already carries a language is left alone
+     * (a `back` taken from the request URI). In the default language nothing changes — the
+     * path stays prefix-less, exactly as before.
+     */
+    protected function redirect(string $url, int $status = 302): RedirectResponse
+    {
+        return parent::redirect(self::localized($url), $status);
+    }
+
+    /** An own path in the current language; anything else unchanged. */
+    protected static function localized(string $url): string
+    {
+        if ($url === '' || $url[0] !== '/' || str_starts_with($url, '//')) {
+            return $url;
+        }
+        $first = strtolower(explode('/', ltrim($url, '/'), 2)[0]);
+        if (preg_match('/^[a-z]{2}$/D', $first) === 1 && DI::getI18n()->isValidLanguage($first)) {
+            return $url;
+        }
+
+        return localizedUrl($url);
     }
 }

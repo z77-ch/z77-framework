@@ -11,6 +11,13 @@
  */
 
 require_once __DIR__ . '/../packages/kernel/core/src/autoload/prod/php/Helper.php';
+// The shell's labels come from the module dictionary (ADR-056).
+require_once __DIR__ . '/../vendor/autoload.php';
+if (!defined('ABS_BASE_PATH')) {
+    define('ABS_BASE_PATH', str_replace('\\', '/', sys_get_temp_dir()) . '/z77-shell-actions-none');
+}
+require_once __DIR__ . '/support/TestTranslator.php';
+\Z77\Tests\Support\TestTranslator::install(\Z77\Tests\Support\TestTranslator::packages('module-member'));
 
 $pass = 0;
 $fail = 0;

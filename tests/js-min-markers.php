@@ -72,11 +72,16 @@ const MARKERS = [
     'packages/kernel/shared/res/assets/js/upload.js' => [
         'data-upload-transport',    // another wire for big files — the DMS chunked upload (F3, 2026-10-31)
         'data-upload-transport-config',
+        'js.upload.overwriteAsk',   // its texts in the reader's language (ADR-056, 2026-11-07)
+    ],
+    'packages/module-member/res/assets/js/shell.js' => [
+        'member.js.themeNotSaved',  // its two messages in the reader's language (ADR-056, 2026-11-07)
     ],
     'packages/module-dms/res/assets/js/documents/chunk-upload.js' => [
         'Z77ChunkUpload',           // the standalone API a project page calls (F3, 2026-10-31)
         'dms-chunk',                // the upload component's transport
         '/chunk-status?upload_id=', // resume after a broken chunk
+        'dms.js.upload.finishLost', // its messages in the reader's language (ADR-056, 2026-11-07)
     ],
     'packages/module-dms/res/assets/js/documents/chunk-download.js' => [
         'Z77ChunkDownload',         // the standalone API a project page calls (DMS-CHUNK-DL-001, 2026-10-31)
@@ -84,6 +89,7 @@ const MARKERS = [
         '__z77-download/',          // its synthetic download URL
         'showSaveFilePicker',       // save path b
         'body.error',               // a refused piece shows the server's reason (DMS-ZIP-001)
+        'dms.js.download.changed',  // its messages in the reader's language (ADR-056, 2026-11-07)
     ],
     'packages/module-dms/res/assets/js/documents/chunk-download-sw.js' => [
         '__z77-download/',          // the only URLs the worker answers

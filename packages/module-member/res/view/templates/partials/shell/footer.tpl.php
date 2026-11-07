@@ -20,7 +20,7 @@ if (empty($memberUser) && $note === '') {
     <div class="me-shell__bar">
         <?php if (!empty($memberUser)): ?>
         <span class="me-shell__who">
-            Angemeldet als <?= e($memberUser['email']) ?><?= $memberUser['name'] !== '' ? ' — ' . e($memberUser['name']) : '' ?>
+            <?= e(t('member.shell.signedInAs')) ?> <?= e($memberUser['email']) ?><?= $memberUser['name'] !== '' ? ' — ' . e($memberUser['name']) : '' ?>
         </span>
         <?php endif; ?>
         <?php if ($note !== ''): ?>

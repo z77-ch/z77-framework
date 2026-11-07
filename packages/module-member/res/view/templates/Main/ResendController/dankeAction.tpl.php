@@ -9,9 +9,8 @@
  */
 ?>
 <div class="me-card">
-    <h1 class="me-card__title">Anfrage erhalten</h1>
+    <h1 class="me-card__title"><?= e(t('member.resend.thanksTitle')) ?></h1>
     <p class="me-card__lead">
-        Falls zu dieser Adresse ein Konto besteht, haben wir Ihnen soeben eine
-        E-Mail geschickt. Bitte prüfen Sie auch den Spam-Ordner.
+        <?= e(t('member.resend.thanks')) ?>
     </p>
 </div>

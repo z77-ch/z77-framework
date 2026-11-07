@@ -12,16 +12,15 @@
  */
 ?>
 <div class="me-card">
-    <h1 class="me-card__title">Anmelden</h1>
+    <h1 class="me-card__title"><?= e(t('member.login.title')) ?></h1>
     <?php if (!empty($deleted)): ?>
     <div class="me-band me-band--info">
         <span class="me-band__dot" aria-hidden="true"></span>
-        <span class="me-band__text">Ihr Konto ist gelöscht. Danke, dass Sie dabei waren.</span>
+        <span class="me-band__text"><?= e(t('member.login.deleted')) ?></span>
     </div>
     <?php endif; ?>
     <p class="me-card__lead">
-        Geben Sie Ihre E-Mail-Adresse ein — wir senden Ihnen einen
-        Anmelde-Link. Ein Passwort gibt es nicht.
+        <?= e(t('member.login.lead')) ?>
     </p>
 
     <?= $this->partial('partials/publicForm', [
@@ -34,6 +33,6 @@
     ], 'Z77\\Module\\Frontend') ?>
 
     <p class="me-card__aside">
-        Noch kein Konto? <a href="/member/main/register">Jetzt registrieren</a>
+        <?= e(t('member.login.noAccount')) ?> <a href="<?= e(localizedUrl('/member/main/register')) ?>"><?= e(t('member.login.register')) ?></a>
     </p>
 </div>

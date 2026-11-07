@@ -67,7 +67,7 @@ $work       = !empty($railItems) || $actionList !== [] || $workList !== [];
          whole left side, not just the pane (spec v1.4.1). The primitive allows
          the split — see its markup contract. */ ?>
 <body class="me-body me-body--shell" data-z77-split-root<?= !empty($detailOpen) ? ' data-z77-split-overlay="detail"' : '' ?>>
-    <input type="checkbox" id="me-drawer" class="me-drawer" aria-label="Auswahl ein- und ausblenden"<?= empty($detailOpen) ? ' checked' : '' ?>>
+    <input type="checkbox" id="me-drawer" class="me-drawer" aria-label="<?= e(t('member.shell.toggleList')) ?>"<?= empty($detailOpen) ? ' checked' : '' ?>>
     <?= $flash ?? '' ?>
 
     <?= $this->partial('partials/shell/headLeft', [

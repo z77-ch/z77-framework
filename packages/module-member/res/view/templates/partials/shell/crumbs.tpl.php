@@ -11,7 +11,7 @@
  * @var array<int,array{label:string, url?:string, here?:bool}> $crumbs
  */
 ?>
-<nav class="me-crumb" aria-label="Pfad">
+<nav class="me-crumb" aria-label="<?= e(t('member.shell.path')) ?>">
     <?php foreach ($crumbs as $i => $crumb): ?>
     <?php if ($i > 0): ?><span class="me-crumb__sep" aria-hidden="true">›</span><?php endif; ?>
 

@@ -25,9 +25,9 @@ class ConfirmController extends AbstractMemberController
 
         return $this->html([
             'pageTitle' => match ($outcome) {
-                RegistrationFlow::CONFIRMED => 'E-Mail bestätigt',
-                RegistrationFlow::ALREADY   => 'Bereits bestätigt',
-                default                     => 'Link nicht mehr gültig',
+                RegistrationFlow::CONFIRMED => t('member.confirm.title'),
+                RegistrationFlow::ALREADY   => t('member.confirm.alreadyTitle'),
+                default                     => t('member.confirm.deadTitle'),
             },
             'outcome' => $outcome,
         ]);

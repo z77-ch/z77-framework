@@ -14,6 +14,19 @@
              overrides that one file. */ ?>
     <header class="me-header">
         <?= $this->partial('partials/brandMark', ['class' => 'me-brand'], 'Z77\\Shared') ?>
+        <?php /* The guest's language switch (ADR-056): the module's `languages`, built by
+                 the kernel (`$languageSwitch`, empty after sign-in where the account
+                 decides). The query travels along — an invitation or a login link keeps
+                 its token when the guest changes the language. */ ?>
+        <?php if (!empty($languageSwitch)): ?>
+        <nav class="me-lang" aria-label="<?= e(t('nav.aria.language')) ?>">
+            <?php foreach ($languageSwitch as $lang): ?>
+            <a href="<?= e($lang['url'] . ($memberQuery ?? '')) ?>" lang="<?= e($lang['code']) ?>"
+               class="me-lang__link<?= $lang['active'] ? ' me-lang__link--active' : '' ?>"
+               <?= $lang['active'] ? 'aria-current="true"' : '' ?>><?= e(t('lang.' . $lang['code'], [], $lang['code'])) ?></a>
+            <?php endforeach; ?>
+        </nav>
+        <?php endif; ?>
     </header>
     <main class="me-main">
         <?= $main ?? '' ?>

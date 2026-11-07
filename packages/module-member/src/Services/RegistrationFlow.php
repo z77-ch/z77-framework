@@ -213,7 +213,7 @@ final class RegistrationFlow
             return true;
         }
 
-        $account = $this->accounts->register($email, $company, $firstName, $lastName, $now, $origin, $termsVersion);
+        $account = $this->accounts->register($email, $company, $firstName, $lastName, $now, $origin, $termsVersion, MemberLanguage::forNewAccount());
         if ($account === null) {
             // Raced: the address got its account between lookup and insert —
             // same answer as the existing-account branch above.
@@ -308,13 +308,15 @@ final class RegistrationFlow
     {
         $this->accounts->activate($account, [AuthRole::CUSTOMER], $this->activationHook, $now);
 
+        $language = MemberLanguage::of($account);
         ($this->sendMail)(
             (new EmailMessage())
                 ->to($account->getEmail())
-                ->subject('Ihr Zugang ist freigeschaltet')
+                ->language($language)
+                ->subject(t('member.mail.activated.subject', [], $language))
                 ->template('emails/activated', 'Z77\\Module\\Member', [
                     'account'  => $account,
-                    'loginUrl' => $loginUrl,
+                    'loginUrl' => MemberLanguage::url($loginUrl, $language),
                 ])
         );
     }
@@ -350,12 +352,15 @@ final class RegistrationFlow
             $now
         );
 
-        $link = $this->confirmUrl . (str_contains($this->confirmUrl, '?') ? '&' : '?')
-              . 'token=' . urlencode($plain);
+        $language = MemberLanguage::of($account);
+        $confirm  = MemberLanguage::url($this->confirmUrl, $language);
+        $link     = $confirm . (str_contains($confirm, '?') ? '&' : '?')
+                  . 'token=' . urlencode($plain);
 
         return (new EmailMessage())
             ->to($account->getEmail())
-            ->subject('Bitte bestätigen Sie Ihre E-Mail-Adresse')
+            ->language($language)
+            ->subject(t('member.mail.confirm.subject', [], $language))
             ->template('emails/confirm', 'Z77\\Module\\Member', [
                 'account'    => $account,
                 'confirmUrl' => $link,
@@ -364,9 +369,12 @@ final class RegistrationFlow
 
     private function existingAccountMail(MemberAccount $account): EmailMessage
     {
+        $language = MemberLanguage::of($account);
+
         return (new EmailMessage())
             ->to($account->getEmail())
-            ->subject('Sie haben bereits ein Konto')
+            ->language($language)
+            ->subject(t('member.mail.existing.subject', [], $language))
             ->template('emails/existing-account', 'Z77\\Module\\Member', [
                 'account' => $account,
             ]);

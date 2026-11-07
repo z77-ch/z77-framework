@@ -25,7 +25,7 @@ class LogoutController extends AbstractMemberController
     {
         $request = DI::getRequest();
         if (!$request->isPost() || !DI::getCsrfService()->validate((string)$request->getPostParameter('csrf_token'))) {
-            return $this->html(['pageTitle' => 'Abmelden', 'stale' => $request->isPost()]);
+            return $this->html(['pageTitle' => t('member.logout.title'), 'stale' => $request->isPost()]);
         }
 
         LoginFlow::create(
@@ -34,7 +34,7 @@ class LogoutController extends AbstractMemberController
             $this->absoluteUrl('/member/main/confirm'),
         )->logout();
 
-        $this->messageService->pushFlashAfterRedirect('success', 'Sie sind abgemeldet.');
+        $this->messageService->pushFlashAfterRedirect('success', t('member.logout.done'));
 
         return $this->redirect('/member/main/login');
     }

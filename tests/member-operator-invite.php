@@ -68,6 +68,9 @@ function check(string $label, bool $ok, string $got = ''): void
 // The file persistence asks DI for the CacheManager — the minimal container
 // (same shape as entity-announcement.php).
 Z77\Core\DI::getInstance(true)->set('CacheManager', Z77\Core\Libraries\CacheManager::class, true);
+// Subjects and bodies come from the module dictionary (ADR-056).
+require_once __DIR__ . '/support/TestTranslator.php';
+\Z77\Tests\Support\TestTranslator::install(\Z77\Tests\Support\TestTranslator::packages('module-member'));
 
 $uem      = new UnifiedEntityManager(new DataSourceResolver(['file' => 'File']));
 $accounts = new MemberAccounts($uem);

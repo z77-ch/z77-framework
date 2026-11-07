@@ -8,7 +8,6 @@ use Z77\Core\DI,
     Z77\Core\Http\Response\RedirectResponse,
     Z77\Module\Member\Services\LoginFlow,
     Z77\Module\Member\Services\MemberAuth,
-    Z77\Module\Member\Services\TotpCodeCheck,
     Z77\Module\Member\Ui\Controllers\AbstractMemberController,
     Z77\Module\Member\Ui\Form\LoginFormDefinition,
     Z77\Shared\Controller\PublicFormCheckTrait,
@@ -61,7 +60,7 @@ class LoginController extends AbstractMemberController
         }
 
         return $this->html([
-            'pageTitle' => 'Anmelden',
+            'pageTitle' => t('member.login.title'),
             // «Konto gelöscht» is said ONCE, through the query: the session
             // that would have carried a flash ended with the account.
             'deleted'   => (string)DI::getRequest()->getGetParameter('konto') === 'geloescht',
@@ -89,7 +88,7 @@ class LoginController extends AbstractMemberController
         }
 
         return $this->html([
-            'pageTitle' => 'Anmeldung angefordert',
+            'pageTitle' => t('member.wait.title'),
             'digits'    => $pending?->getCheckDigits() ?? '',
             'repeated'  => $this->askedBefore(),
         ]);
@@ -180,7 +179,7 @@ class LoginController extends AbstractMemberController
             if ((string)$request->getPostParameter('decision') === 'confirm') {
                 if ($flow->approve($token) === LoginFlow::APPROVED) {
                     return $this->html([
-                        'pageTitle' => 'Anmeldung bestätigt',
+                        'pageTitle' => t('member.redeem.confirmedTitle'),
                         'confirmed' => true,
                         'pending'   => null,
                         'token'     => '',
@@ -203,7 +202,7 @@ class LoginController extends AbstractMemberController
         }
 
         return $this->html([
-            'pageTitle' => 'Anmeldung bestätigen',
+            'pageTitle' => t('member.redeem.title'),
             'confirmed' => false,
             'pending'   => $context['pending'],
             'token'     => $token,
@@ -241,7 +240,7 @@ class LoginController extends AbstractMemberController
 
         $this->messageService->pushFlashAfterRedirect(
             'error',
-            'Dieser Anmelde-Link ist nicht mehr gültig — fordern Sie einen neuen an.'
+            t('member.login.deadLink')
         );
 
         return $this->redirect('/member/main/login');
@@ -270,18 +269,18 @@ class LoginController extends AbstractMemberController
             if ($outcome === LoginFlow::DEAD) {
                 $this->messageService->pushFlashAfterRedirect(
                     'error',
-                    'Die Anmeldung ist abgelaufen — fordern Sie einen neuen Link an.'
+                    t('member.login.expired')
                 );
 
                 return $this->redirect('/member/main/login');
             }
 
             return $this->html([
-                'pageTitle' => 'Code eingeben',
+                'pageTitle' => t('member.totp.title'),
                 'error'     => match ($outcome) {
-                    LoginFlow::TOTP_LOCKED      => 'Zu viele Fehlversuche — bitte warten Sie 15 Minuten.',
-                    LoginFlow::TOTP_UNAVAILABLE => TotpCodeCheck::UNAVAILABLE_MESSAGE,
-                    default                     => 'Der Code ist ungültig oder wurde bereits verwendet — bitte warten Sie auf den nächsten Code.',
+                    LoginFlow::TOTP_LOCKED      => t('member.totp.locked'),
+                    LoginFlow::TOTP_UNAVAILABLE => t('member.totp.unavailable'),
+                    default                     => t('member.totp.invalid'),
                 },
             ]);
         }
@@ -290,7 +289,7 @@ class LoginController extends AbstractMemberController
             return $this->redirect('/member/main/login');
         }
 
-        return $this->html(['pageTitle' => 'Code eingeben', 'error' => '']);
+        return $this->html(['pageTitle' => t('member.totp.title'), 'error' => '']);
     }
 
     private function hasTotpPending(): bool

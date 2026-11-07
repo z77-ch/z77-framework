@@ -200,9 +200,13 @@ final class InvitationFlow
      * @param MemberAccount $inviter who invites — named in the mail and kept on
      *        the token; its RIGHT to invite for $tenantRef is the caller's to
      *        check, not this flow's
+     * @param ?string $language the language the invited person reads (ADR-056): the mail goes
+     *        out in it, the link opens the redemption page in it, an account BORN from the
+     *        invitation keeps it. Null or a language the installation does not offer = the
+     *        default language. A known address keeps its own choice.
      * @return self::SENT|self::ALREADY_TAKEN|self::THROTTLED|self::INVALID
      */
-    public function invite(MemberAccount $inviter, string $tenantRef, string $email, ?int $now = null): string
+    public function invite(MemberAccount $inviter, string $tenantRef, string $email, ?int $now = null, ?string $language = null): string
     {
         $name = trim(($inviter->getFirstName() ?? '') . ' ' . ($inviter->getLastName() ?? ''));
 
@@ -211,7 +215,9 @@ final class InvitationFlow
             (string)$inviter->getId(),
             $tenantRef,
             $email,
-            $now
+            $now,
+            null,
+            $language
         );
     }
 
@@ -229,16 +235,17 @@ final class InvitationFlow
      * @param ?SenderIdentity $sender how the operator signs this mail (mail.md
      *        «sender identity», usually `SenderIdentities::choose()`); null =
      *        the installation's name. One that cannot sign refuses before a token exists.
+     * @param ?string $language as in {@see invite()}: the invited person's language
      * @return self::SENT|self::ALREADY_TAKEN|self::THROTTLED|self::INVALID
      */
-    public function inviteAsOperator(string $operatorName, int $operatorId, string $tenantRef, string $email, ?int $now = null, ?SenderIdentity $sender = null): string
+    public function inviteAsOperator(string $operatorName, int $operatorId, string $tenantRef, string $email, ?int $now = null, ?SenderIdentity $sender = null, ?string $language = null): string
     {
         $operatorName = trim($operatorName);
         if ($operatorName === '' || $operatorId <= 0 || ($sender !== null && $sender->problems() !== [])) {
             return self::INVALID;
         }
 
-        return $this->issue($operatorName, self::OPERATOR_PREFIX . $operatorId, $tenantRef, $email, $now, $sender);
+        return $this->issue($operatorName, self::OPERATOR_PREFIX . $operatorId, $tenantRef, $email, $now, $sender, $language);
     }
 
     /**
@@ -246,8 +253,11 @@ final class InvitationFlow
      *
      * @return self::SENT|self::ALREADY_TAKEN|self::THROTTLED|self::INVALID
      */
-    private function issue(string $inviterName, string $inviterRef, string $tenantRef, string $email, ?int $now, ?SenderIdentity $sender = null): string
+    private function issue(string $inviterName, string $inviterRef, string $tenantRef, string $email, ?int $now, ?SenderIdentity $sender = null, ?string $language = null): string
     {
+        // Stored only when it is an offered, non-default language: the token says «French»
+        // or nothing. What is not offered is the default, as everywhere (I18n::resolve()).
+        $language = MemberLanguage::storable($language);
         $now       = $now ?? time();
         $tenantRef = trim($tenantRef);
         if ($tenantRef === '') {
@@ -280,10 +290,11 @@ final class InvitationFlow
             $email,
             $inviterRef,
             self::INVITE_TTL_SECONDS,
-            $now
+            $now,
+            $language
         );
 
-        ($this->sendMail)($this->signed($this->inviteMail($inviterName, $tenantRef, $email, $plain, $existing !== null), $sender));
+        ($this->sendMail)($this->signed($this->inviteMail($inviterName, $tenantRef, $email, $plain, $existing !== null, $language), $sender));
 
         return self::SENT;
     }
@@ -372,7 +383,7 @@ final class InvitationFlow
             return $this->redeemAsJoin($token, $existing, (string)$plainToken, $tenantRef, $now);
         }
 
-        $account = $this->accounts->registerFromInvite($email, $firstName, $lastName, $now);
+        $account = $this->accounts->registerFromInvite($email, $firstName, $lastName, $now, $token->getLanguage());
         if ($account === null) {
             // Raced: the address got its account between lookup and insert.
             // The link is NOT consumed — the next submit takes the join path.
@@ -430,14 +441,16 @@ final class InvitationFlow
             throw new \InvalidArgumentException('Sender identity cannot sign: ' . implode(' ', $sender->problems()));
         }
 
+        $language = MemberLanguage::of($account);
         ($this->sendMail)($this->signed(
             (new EmailMessage())
                 ->to($account->getEmail())
-                ->subject('Ihr Zugang zu «' . ($this->tenantLabel)($tenantRef) . '» ist freigeschaltet')
+                ->language($language)
+                ->subject(t('member.mail.joinActivated.subject', ['tenant' => ($this->tenantLabel)($tenantRef)], $language))
                 ->template('emails/join-activated', 'Z77\\Module\\Member', [
                     'account'    => $account,
                     'tenantName' => ($this->tenantLabel)($tenantRef),
-                    'loginUrl'   => $loginUrl,
+                    'loginUrl'   => MemberLanguage::url($loginUrl, $language),
                 ]),
             $sender
         ));
@@ -517,10 +530,15 @@ final class InvitationFlow
         string $tenantRef,
         string $email,
         string $plain,
-        bool $known
+        bool $known,
+        ?string $language = null
     ): EmailMessage {
-        $link = $this->inviteUrl . (str_contains($this->inviteUrl, '?') ? '&' : '?')
-              . 'invite=' . urlencode($plain);
+        // The page behind the link opens in the invited person's language — she is a guest
+        // there, and a guest's page speaks the URL's (ADR-056).
+        $language = MemberLanguage::resolve($language);
+        $invite   = MemberLanguage::url($this->inviteUrl, $language);
+        $link     = $invite . (str_contains($invite, '?') ? '&' : '?')
+                  . 'invite=' . urlencode($plain);
 
         // «Einladung zu «Muster AG»» — without a label hook the label is the bare
         // reference, then the noun stands in: «Einladung zur Verwaltung / zum Projekt».
@@ -528,9 +546,10 @@ final class InvitationFlow
 
         return (new EmailMessage())
             ->to($email)
+            ->language($language)
             ->subject($label !== '' && $label !== $tenantRef
-                ? 'Einladung zu «' . $label . '»'
-                : 'Einladung ' . TenantNoun::fromConfig()->zu())
+                ? t('member.mail.invite.subject', ['tenant' => $label], $language)
+                : t('member.mail.invite.subjectNoun', TenantNoun::params($language), $language))
             ->template('emails/invite', 'Z77\\Module\\Member', [
                 // The recipient has to be able to place this mail: who invited
                 // him, and for whom. An invitation without both reads like

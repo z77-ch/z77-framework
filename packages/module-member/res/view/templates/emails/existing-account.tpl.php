@@ -6,19 +6,19 @@
  * the only place the existing account is mentioned — visible only to the
  * address owner.
  *
+ * Texts: `member.mail.*` in the module dictionary (res/i18n), rendered in the
+ * recipient's language (EmailMessage::language(), ADR-056).
+ *
  * @var \Z77\Module\Member\Entities\MemberAccount $account
  */
 $name = trim(($account->getFirstName() ?? '') . ' ' . ($account->getLastName() ?? ''));
 ?>
-<p>Guten Tag<?= $name !== '' ? ' ' . e($name) : '' ?></p>
+<p><?= e($name !== '' ? t('member.mail.greetingName', ['name' => $name]) : t('member.mail.greeting')) ?></p>
 
 <p>
-    Zu dieser E-Mail-Adresse besteht bereits ein Konto — eine erneute
-    Registrierung ist nicht nötig.
+    <?= e(t('member.mail.existing.lead')) ?>
 </p>
 
 <p>
-    Sie können sich wie gewohnt anmelden. Falls Sie diese Anfrage nicht selbst
-    ausgelöst haben, können Sie diese E-Mail ignorieren; an Ihrem Konto wurde
-    nichts geändert.
+    <?= e(t('member.mail.existing.body')) ?>
 </p>

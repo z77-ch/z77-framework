@@ -530,13 +530,19 @@ final class LoginFlow
      */
     private function loginMail(MemberAccount $account, string $plain, MemberPendingLogin $record): EmailMessage
     {
-        $link = $this->redeemUrl . (str_contains($this->redeemUrl, '?') ? '&' : '?')
-              . 'token=' . urlencode($plain);
+        // The account's language (ADR-056): the mail, and the page behind the link — a browser
+        // without the session lands on the confirmation page as a guest, and a guest's page
+        // speaks the URL's language.
+        $language = MemberLanguage::of($account);
+        $redeem   = MemberLanguage::url($this->redeemUrl, $language);
+        $link     = $redeem . (str_contains($redeem, '?') ? '&' : '?')
+                  . 'token=' . urlencode($plain);
 
         return (new EmailMessage())
             ->to($account->getEmail())
+            ->language($language)
             // Digits first: a subject ENDING in a number is a spam signal (KAM_NUMSUBJECT).
-            ->subject('Prüfzahl ' . $record->getCheckDigits() . ' — Anmeldung bestätigen')
+            ->subject(t('member.mail.login.subject', ['digits' => $record->getCheckDigits()], $language))
             ->template('emails/login-link', 'Z77\\Module\\Member', [
                 'account'  => $account,
                 'loginUrl' => $link,
@@ -546,13 +552,14 @@ final class LoginFlow
             ]);
     }
 
+    /** No account, no language of its own: the page's that asked (the current one). */
     private function noAccountMail(string $email): EmailMessage
     {
         return (new EmailMessage())
             ->to(MemberAccount::normalizeEmail($email))
-            ->subject('Zu dieser Adresse besteht kein Konto')
+            ->subject(t('member.mail.noAccount.subject'))
             ->template('emails/no-account', 'Z77\\Module\\Member', [
-                'registerUrl' => $this->registerUrl,
+                'registerUrl' => MemberLanguage::url($this->registerUrl, DI::getTranslator()->currentLanguage()),
             ]);
     }
 }

@@ -80,6 +80,13 @@ class FakeCsrf
     public function validate(string $token): bool { return $this->ok; }
 }
 
+// The helper of the same name (Helper.php) needs the routing services; this double only
+// proves that the blur-check URL goes through it (TRANS-CHECK-URL-001).
+function localizedUrl(string $canonicalUrl, ?string $language = null): string
+{
+    return '/fr' . $canonicalUrl;
+}
+
 class FakeTranslator
 {
     public function t(string $key): string { return $key; }
@@ -275,6 +282,7 @@ $validCalled = false;
 $lines = logLines();
 check('process() returns false (re-render)', $ok === false);
 check('the send error is shown',             ($handler->viewContext()['formError'] ?? '') === 'form.error.send');
+check('the blur check answers in the page\'s language (localizedUrl)', ($handler->viewContext()['checkUrl'] ?? '') === '/fr/test/main/form/check', (string) ($handler->viewContext()['checkUrl'] ?? ''));
 check('the project callback never ran',      $validCalled === false);
 check('outcome geo is logged',               ($lines[0]['outcome'] ?? '') === 'geo');
 

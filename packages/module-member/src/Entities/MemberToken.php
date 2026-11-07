@@ -96,6 +96,14 @@ class MemberToken
      */
     private bool $remember = false;
 
+    /**
+     * Invitations only (ADR-056): the language the inviter chose for the person. The mail went
+     * out in it, the redemption page renders in it, and an account BORN from the invitation
+     * takes it over. Null = the default language. A known address keeps its own choice.
+     */
+    #[Clean('nullable', 'ident')]
+    private ?string $language = null;
+
     public function __construct(array $data = [])
     {
         if ($data) {
@@ -114,6 +122,8 @@ class MemberToken
     public function getEmail(): ?string { return $this->email; }
     public function getInvitedBy(): ?string { return $this->invitedBy; }
     public function getRevokedAt(): ?string { return $this->revokedAt; }
+    public function getLanguage(): ?string { return $this->language; }
+    public function setLanguage(?string $language): void { $this->language = MemberAccount::normalizeLanguage($language); }
 
     public function setTokenHash(string $tokenHash): void { $this->tokenHash = $tokenHash; }
     public function setValidUntil(string $validUntil): void { $this->validUntil = $validUntil; }

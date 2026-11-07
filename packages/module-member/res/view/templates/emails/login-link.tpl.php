@@ -9,6 +9,9 @@
  * numbers differ. No sentence may leave open which of the two the reader
  * should compare.
  *
+ * Texts: `member.mail.login.*` in the module dictionary (res/i18n), rendered in
+ * the account's language (EmailMessage::language(), ADR-056).
+ *
  * @var \Z77\Module\Member\Entities\MemberAccount $account
  * @var string $loginUrl
  * @var string $digits  four digits, also in the subject
@@ -17,48 +20,39 @@
  */
 $name = trim(($account->getFirstName() ?? '') . ' ' . ($account->getLastName() ?? ''));
 ?>
-<p>Guten Tag<?= $name !== '' ? ' ' . e($name) : '' ?></p>
+<p><?= e($name !== '' ? t('member.mail.greetingName', ['name' => $name]) : t('member.mail.greeting')) ?></p>
 
-<p>Für Ihr Konto wurde eine Anmeldung angefordert:</p>
+<p><?= e(t('member.mail.login.requested')) ?></p>
 
 <p>
-    <strong style="font-size:20px;letter-spacing:3px;">Prüfzahl <?= e($digits) ?></strong><br>
-    <?= e($when) ?> Uhr · <?= e($device) ?>
+    <strong style="font-size:20px;letter-spacing:3px;"><?= e(t('member.mail.login.digits', ['digits' => $digits])) ?></strong><br>
+    <?= e(t('member.mail.login.when', ['when' => $when, 'device' => $device])) ?>
 </p>
 
 <p>
-    <strong>Vergleichen Sie zuerst:</strong> Auf dem Bildschirm, an dem Sie die
-    Anmeldung angefordert haben, steht dieselbe Prüfzahl. Stimmen die beiden
-    Zahlen überein, ist es Ihre Anmeldung.
+    <strong><?= e(t('member.mail.login.compareHead')) ?></strong> <?= e(t('member.mail.login.compare')) ?>
 </p>
 
 <p>
     <a href="<?= e($loginUrl) ?>"
        style="display:inline-block;padding:10px 20px;background-color:#222222;color:#ffffff;text-decoration:none;">
-        Anmeldung fortsetzen
+        <?= e(t('member.mail.login.button')) ?>
     </a>
 </p>
 
 <p>
-    Öffnet sich der Link im selben Browser, in dem Sie die Anmeldung
-    angefordert haben, sind Sie sofort angemeldet. Öffnet er sich anderswo
-    (etwa auf dem Handy), melden Sie sich dort an — oder lassen die Anmeldung
-    auf dem anderen Gerät zu.
+    <?= e(t('member.mail.login.where')) ?>
 </p>
 
 <p>
-    Falls die Schaltfläche nicht funktioniert, öffnen Sie diese Adresse in
-    Ihrem Browser:<br>
+    <?= e(t('member.mail.buttonFallback')) ?><br>
     <a href="<?= e($loginUrl) ?>"><?= e($loginUrl) ?></a>
 </p>
 
 <p>
-    <strong>Kennen Sie diese Prüfzahl nicht?</strong> Dann hat jemand anderes
-    eine Anmeldung mit Ihrer E-Mail-Adresse gestartet. Löschen Sie diese
-    E-Mail einfach — solange Sie den Link nicht öffnen und bestätigen,
-    passiert nichts.
+    <strong><?= e(t('member.mail.login.strangerHead')) ?></strong> <?= e(t('member.mail.login.stranger')) ?>
 </p>
 
 <p>
-    Der Link ist 15 Minuten gültig und funktioniert genau einmal.
+    <?= e(t('member.mail.login.validity')) ?>
 </p>

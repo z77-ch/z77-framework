@@ -82,8 +82,28 @@ $fb-info-tint: $fb-bg;
 // its own look through the overridden partial.
 .me-header {
     display: flex;
-    justify-content: center;
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
     padding: 3rem 1rem 0;
+}
+
+// The guest's language switch on the door pages (ADR-056): a quiet row of
+// endonyms under the mark. Only for guests — after sign-in the account decides.
+.me-lang {
+    display: flex;
+    gap: 0.75rem;
+    font-size: 0.8125rem;
+}
+
+.me-lang__link {
+    color: var(--text-2, #{$fb-text-2});
+    text-decoration: none;
+
+    &:hover,
+    &:focus-visible { color: var(--text, #{$fb-text}); text-decoration: underline; }
+
+    &--active { color: var(--text, #{$fb-text}); font-weight: 600; }
 }
 
 .me-brand {

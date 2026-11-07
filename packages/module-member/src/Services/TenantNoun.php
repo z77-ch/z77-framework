@@ -157,6 +157,92 @@ final class TenantNoun
         return self::PRONOUN[self::checkCase($case)][$this->gender];
     }
 
+    /**
+     * The noun as `t()` placeholders for a sentence in $language (ADR-056). This class is German
+     * grammar — the configured noun IS the German word. Other languages get the bare word only,
+     * `{$noun}` / `{$nouns}`, and their dictionary sentences are written so that no article has to
+     * agree with it («votre {$noun}», «the {$noun}»). Their word: memberConfig `tenantNoun.<lang>`
+     * (`['singular' => 'projet', 'plural' => 'projets']`), else — for the default noun only — the
+     * module dictionary's `member.tenant.*`, else the German word, which is wrong but visible.
+     *
+     * German additionally gets the inflected forms the German sentences use, named after the call
+     * that builds them: `nounZu` = zu(), `nounThisAcc`/`nounThisNom`/`nounThisDat` = with('dies', …),
+     * `nounWhichAcc` = with('welch','acc'), `nounYourDat` = with('Ihr','dat'), `nounTheNom` /
+     * `nounTheDat` = with('der', …), `nounExistingDat` = with('ein','dat','bestehend'),
+     * `nounWhichNom` = article('der','nom') (the relative pronoun), `nounPronounAcc` = pronoun('acc').
+     *
+     * @return array<string, string>
+     */
+    public static function params(string $language): array
+    {
+        $noun = self::fromConfig();
+        if ($language === 'de') {
+            return [
+                'noun'         => $noun->singular(),
+                'nouns'        => $noun->plural(),
+                'nounZu'       => $noun->zu(),
+                'nounThisAcc'  => $noun->with('dies', 'acc'),
+                'nounWhichAcc' => $noun->with('welch', 'acc'),
+                'nounYourDat'  => $noun->with('Ihr', 'dat'),
+                'nounTheNom'   => $noun->with('der', 'nom'),
+                'nounTheDat'   => $noun->with('der', 'dat'),
+                'nounTheNomCap' => ucfirst($noun->with('der', 'nom')), // at the start of a sentence
+                'nounThisNom'  => $noun->with('dies', 'nom'),
+                'nounThisNomCap' => ucfirst($noun->with('dies', 'nom')),
+                'nounThisDat'  => $noun->with('dies', 'dat'),
+                'nounExistingDat' => $noun->with('ein', 'dat', 'bestehend'),
+                'nounWhichNom' => $noun->article('der', 'nom'),   // the relative pronoun: die / der / das
+                'nounPronounAcc' => $noun->pronoun('acc'),
+            ];
+        }
+
+        $words = self::configuredWords($language);
+        if ($words === null && $noun->singular() === 'Verwaltung') {
+            $words = [t('member.tenant.singular', [], $language), t('member.tenant.plural', [], $language)];
+        }
+
+        return [
+            'noun'  => $words[0] ?? $noun->singular(),
+            'nouns' => $words[1] ?? $noun->plural(),
+        ];
+    }
+
+    /**
+     * {@see params()} for the language the page renders in right now.
+     *
+     * @return array<string, string>
+     */
+    public static function current(): array
+    {
+        try {
+            $language = DI::getTranslator()->currentLanguage();
+        } catch (\Throwable) {
+            $language = 'de';
+        }
+
+        return self::params($language);
+    }
+
+    /** @return array{0:string,1:string}|null memberConfig `tenantNoun.<lang>` */
+    private static function configuredWords(string $language): ?array
+    {
+        try {
+            $raw = DI::getConfigManager()
+                ->getArrayConfig('App/Config/memberConfig', 'Z77\\Module\\Member')
+                ->get('tenantNoun', []);
+        } catch (\Throwable) {
+            return null;
+        }
+        $entry    = is_array($raw) && is_array($raw[$language] ?? null) ? $raw[$language] : [];
+        $singular = trim((string)($entry['singular'] ?? ''));
+        if ($singular === '') {
+            return null;
+        }
+        $plural = trim((string)($entry['plural'] ?? ''));
+
+        return [$singular, $plural !== '' ? $plural : $singular];
+    }
+
     private static function checkCase(string $case): string
     {
         if (!in_array($case, self::CASES, true)) {

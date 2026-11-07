@@ -15,16 +15,22 @@ $open   = array_filter($memberships ?? [], static fn(array $m): bool => !empty($
 ?>
 <dl class="me-field" data-konto-fields>
     <?php if ($name !== ''): ?>
-    <dt>Name</dt>
+    <dt><?= e(t('member.profile.name')) ?></dt>
     <dd><?= e($name) ?></dd>
     <?php endif; ?>
-    <dt>E-Mail</dt>
-    <dd><?= e($account->getEmail()) ?> <span class="me-quiet">— Ihr Zugang</span></dd>
+    <dt><?= e(t('member.form.email')) ?></dt>
+    <dd><?= e($account->getEmail()) ?> <span class="me-quiet">— <?= e(t('member.profile.yourAccess')) ?></span></dd>
     <?php if ($account->getCompany() !== null): ?>
-    <dt>Firma / <?= e(\Z77\Module\Member\Services\TenantNoun::fromConfig()->singular()) ?></dt>
+    <dt><?= e(t('member.form.company', \Z77\Module\Member\Services\TenantNoun::current())) ?></dt>
     <dd><?= e($account->getCompany()) ?></dd>
     <?php endif; ?>
-    <dt>Status</dt>
+    <?php /* ADR-056: only where the account's language decides the pages. */ ?>
+    <?php if (\Z77\Module\Member\Services\MemberLanguage::offered() !== []): ?>
+    <?php $language = \Z77\Module\Member\Services\MemberLanguage::of($account); ?>
+    <dt><?= e(t('member.lang.label')) ?></dt>
+    <dd lang="<?= e($language) ?>"><?= e(t('lang.' . $language, [], $language)) ?></dd>
+    <?php endif; ?>
+    <dt><?= e(t('member.profile.status')) ?></dt>
     <?php /* The status the PERSON experiences, not the record's field: an
              active account whose every access is paused reads «pausiert»
              — «aktiv» there was true of the login and false of everything
@@ -33,16 +39,16 @@ $open   = array_filter($memberships ?? [], static fn(array $m): bool => !empty($
     <?php
     $paused = array_filter($closed, static fn(array $m): bool => ($m['state'] ?? '') === 'paused');
     if (!$account->isActive()) {
-        $statusText = 'wartet auf Freischaltung';
+        $statusText = t('member.profile.stateWaiting');
         $statusNote = '';
     } elseif ($closed !== [] && $open === [] && $paused !== []) {
-        $statusText = 'pausiert';
-        $statusNote = 'Konto und Anmeldung bleiben bestehen';
+        $statusText = t('member.profile.statePaused');
+        $statusNote = t('member.profile.statePausedNote');
     } elseif ($closed !== [] && $open === []) {
-        $statusText = 'wartet auf Freischaltung';
+        $statusText = t('member.profile.stateWaiting');
         $statusNote = '';
     } else {
-        $statusText = 'aktiv';
+        $statusText = t('member.profile.stateActive');
         $statusNote = '';
     }
     ?>

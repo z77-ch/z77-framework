@@ -33,42 +33,31 @@
 ?>
 <div class="me-card" data-login-wait>
     <div data-login-wait-pending>
-    <h1 class="me-card__title">Anmeldung angefordert</h1>
+    <h1 class="me-card__title"><?= e(t('member.wait.title')) ?></h1>
     <p class="me-card__lead">
-        Falls zu dieser Adresse ein Konto besteht, ist eine E-Mail unterwegs.
-        Sie können sie hier oder auf einem anderen Gerät öffnen — zum Beispiel
-        auf dem Handy.
+        <?= e(t('member.wait.lead')) ?>
     </p>
 
     <?php if ($digits !== ''): ?>
     <p class="me-check">
-        Prüfzahl dieser Anmeldung: <strong class="me-check__digits"><?= e($digits) ?></strong>
+        <?= e(t('member.wait.digits')) ?> <strong class="me-check__digits"><?= e($digits) ?></strong>
     </p>
     <p class="me-card__note">
-        Diese Zahl steht auch in der E-Mail — im Betreff und im Text.
-        Öffnen Sie den Link in diesem Browser, sind Sie sofort angemeldet.
-        Öffnen Sie ihn auf einem anderen Gerät, lassen Sie dort die Anmeldung
-        für dieses Gerät zu — es meldet sich dann automatisch an. Lassen Sie
-        diese Seite so lange offen.
+        <?= e(t('member.wait.howto')) ?>
     </p>
     <p class="me-card__note">
-        Zeigt die E-Mail eine <strong>andere</strong> Zahl, gehört sie zu einer
-        anderen Anmeldung — bestätigen Sie sie dann nicht.
+        <?= raw(t('member.wait.otherHtml')) ?>
     </p>
-    <p class="me-card__note">Warte auf die Bestätigung …</p>
+    <p class="me-card__note"><?= e(t('member.wait.waiting')) ?></p>
     <?php endif; ?>
 
     <?php if ($repeated): ?>
     <p class="me-card__aside">
-        <strong>Sie haben in dieser Stunde schon einmal einen Link angefordert.</strong>
-        Sehen Sie im <strong>Spam-Ordner</strong> nach — dort landet die E-Mail
-        am häufigsten. Massgeblich ist die <strong>zuletzt geschickte E-Mail</strong>:
-        ihr Link gilt, frühere sind damit hinfällig. Fordern Sie keinen neuen an —
-        jede weitere Anforderung macht den vorherigen Link ungültig.
+        <?= raw(t('member.wait.repeatedHtml')) ?>
     </p>
     <?php else: ?>
     <p class="me-card__aside">
-        Keine E-Mail erhalten? <a href="/member/main/login">Erneut anfordern</a>
+        <?= e(t('member.wait.noMail')) ?> <a href="<?= e(localizedUrl('/member/main/login')) ?>"><?= e(t('member.wait.again')) ?></a>
     </p>
     <?php endif; ?>
     </div>
@@ -79,23 +68,21 @@
              for a closed tab — login-wait.js sets its href from the poll
              answer (landing, or the code prompt when 2FA is on). */ ?>
     <div data-login-wait-done hidden>
-        <h1 class="me-card__title">Sie sind angemeldet</h1>
+        <h1 class="me-card__title"><?= e(t('member.wait.doneTitle')) ?></h1>
         <p class="me-card__lead">
-            Die Anmeldung ist in einem anderen Tab dieses Browsers erfolgt.
-            Diesen Tab können Sie schliessen.
+            <?= e(t('member.wait.doneLead')) ?>
         </p>
-        <a class="me-btn" href="/member/main/login" data-login-wait-done-link>Weiter</a>
+        <a class="me-btn" href="<?= e(localizedUrl('/member/main/login')) ?>" data-login-wait-done-link><?= e(t('member.wait.doneButton')) ?></a>
     </div>
 
     <?php /* The request is gone: its window passed (poll 'dead', or the
              script's own 15-minute limit), or the link was used elsewhere. */ ?>
     <div data-login-wait-dead hidden>
-        <h1 class="me-card__title">Anfrage abgelaufen</h1>
+        <h1 class="me-card__title"><?= e(t('member.wait.deadTitle')) ?></h1>
         <p class="me-card__lead">
-            Diese Anmeldung gilt nicht mehr — sie ist abgelaufen oder wurde
-            bereits anderswo beantwortet.
+            <?= e(t('member.wait.deadLead')) ?>
         </p>
-        <a class="me-btn" href="/member/main/login">Neuen Link anfordern</a>
+        <a class="me-btn" href="<?= e(localizedUrl('/member/main/login')) ?>"><?= e(t('member.wait.deadButton')) ?></a>
     </div>
     <?php endif; ?>
 </div>

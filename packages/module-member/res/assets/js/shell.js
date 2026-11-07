@@ -81,7 +81,7 @@
                         // a switch that springs back for no visible reason.
                         if (!envelope) {
                             _Z77.core.flash.show('error',
-                                'Die Ansicht wurde nicht gespeichert — bitte laden Sie die Seite neu.');
+                                _Z77.core.i18n.t('member.js.themeNotSaved', 'Die Ansicht wurde nicht gespeichert — bitte laden Sie die Seite neu.'));
                         }
                     }
                 });
@@ -223,7 +223,7 @@
                 box.checked = !open;   // the server did not take it
                 if (!envelope) {
                     _Z77.core.flash.show('error',
-                        'Änderung nicht gespeichert — bitte laden Sie die Seite neu.');
+                        _Z77.core.i18n.t('member.js.changeNotSaved', 'Änderung nicht gespeichert — bitte laden Sie die Seite neu.'));
                 }
             }
         });

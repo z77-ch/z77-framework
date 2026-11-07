@@ -4,26 +4,28 @@
  * freigeschaltet»). Rejection sends NO automatic mail by spec — what we
  * write, we write ourselves.
  *
+ * Texts: `member.mail.*` in the module dictionary (res/i18n), rendered in the
+ * recipient's language (EmailMessage::language(), ADR-056).
+ *
  * @var \Z77\Module\Member\Entities\MemberAccount $account
  * @var string $loginUrl absolute URL of the member entry point
  */
 $name = trim(($account->getFirstName() ?? '') . ' ' . ($account->getLastName() ?? ''));
 ?>
-<p>Guten Tag<?= $name !== '' ? ' ' . e($name) : '' ?></p>
+<p><?= e($name !== '' ? t('member.mail.greetingName', ['name' => $name]) : t('member.mail.greeting')) ?></p>
 
 <p>
-    Ihr Zugang ist freigeschaltet — Sie können sich ab sofort anmelden:
+    <?= e(t('member.mail.activated.lead')) ?>
 </p>
 
 <p>
     <a href="<?= e($loginUrl) ?>"
        style="display:inline-block;padding:10px 20px;background-color:#222222;color:#ffffff;text-decoration:none;">
-        Zum Login
+        <?= e(t('member.mail.toLogin')) ?>
     </a>
 </p>
 
 <p>
-    Falls die Schaltfläche nicht funktioniert, öffnen Sie diese Adresse in
-    Ihrem Browser:<br>
+    <?= e(t('member.mail.buttonFallback')) ?><br>
     <a href="<?= e($loginUrl) ?>"><?= e($loginUrl) ?></a>
 </p>

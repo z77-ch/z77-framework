@@ -373,6 +373,7 @@ address in config:
 
 ## rules
 
+- When a template mail goes to a person who reads another language than the request's (ADR-056) → MUST set `EmailMessage::language($code)`: `EmailService` renders body AND layout inside `Translator::inLanguage()` (every `t()` answers in it, the layout's `<html lang>` and the templates' `$mailLanguage` say it) — and MUST translate the subject with the same code, which the service does not touch. Null = the current language, as before.
 - When sending mail → MUST build a `Message` and pass it to `Mailer::send()` (`Mailer::create()`); MUST NOT hand-assemble MIME or open an SMTP socket outside `SmtpTransport`.
 - When putting any user/data-derived text into a header (subject, display name, attachment filename) → MUST route it through `Message`/`Attachment` (which reject CR/LF and sanitise); MUST NOT concatenate raw input into a header line.
 - When mailing a document → MUST go through `DocumentService::send()` (it enforces the `DocumentKind::mailable()` policy + reads bytes via `BlobStorage`); MUST NOT read the blob and build the attachment in a controller.

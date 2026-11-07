@@ -15,6 +15,7 @@ use Z77\Core\DI,
     Z77\Module\Member\Services\DeviceKeys,
     Z77\Module\Member\Services\MemberAccounts,
     Z77\Module\Member\Services\MemberAuth,
+    Z77\Module\Member\Services\MemberLanguage,
     Z77\Module\Member\Services\MemberLog,
     Z77\Module\Member\Services\MemberSession,
     Z77\Module\Member\Services\MemberTotp,
@@ -60,14 +61,14 @@ class ProfileController extends AbstractMemberController
         $request = DI::getRequest();
 
         $sections = [
-            'konto'   => ['name' => 'Konto', 'meta' => $account->getEmail()],
+            'konto'   => ['name' => t('member.profile.account'), 'meta' => $account->getEmail()],
             'zweifa'  => [
-                'name' => 'Zwei-Faktor-Schutz',
-                'meta' => $account->hasTotp() ? 'aktiv' : 'nicht aktiv',
+                'name' => t('member.profile.twoFactor'),
+                'meta' => t($account->hasTotp() ? 'member.profile.on' : 'member.profile.off'),
             ],
             'geraete' => [
-                'name' => 'Angemeldete Geräte',
-                'meta' => count($devices) === 1 ? '1 Gerät' : count($devices) . ' Geräte',
+                'name' => t('member.profile.devices'),
+                'meta' => self::deviceCount(count($devices)),
             ],
         ];
 
@@ -94,7 +95,7 @@ class ProfileController extends AbstractMemberController
         }
 
         return $this->html([
-            'pageTitle'    => 'Profil',
+            'pageTitle'    => t('member.shell.profile'),
             'account'      => $account,
             'devices'      => $devices,
             // Every membership the project reports, usable or not — the
@@ -105,6 +106,8 @@ class ProfileController extends AbstractMemberController
             'memberships'  => \Z77\Module\Member\Services\TenantChoice::create()->memberships($account),
             'section'      => $section,
             'dialogId'     => self::ACCOUNT_DIALOG_ID,
+            // ADR-056: the languages the account may choose; empty = no field.
+            'languages'    => MemberLanguage::offered(),
             // «Konto löschen» — the dialog's id and what the PROJECT wants
             // the person to read before confirming (a tenant left without
             // its owner, an access that ends).
@@ -112,7 +115,7 @@ class ProfileController extends AbstractMemberController
             'deletionNotices' => AccountDeletion::noticesFor($account),
             'railItems'    => $rail,
             'crumbs'       => [
-                ['label' => 'Profil'],
+                ['label' => t('member.shell.profile')],
                 ['label' => $sections[$section]['name'], 'here' => true],
             ],
             'shellAction' => $this->sectionAction($section, $account->hasTotp(), $devices !== []),
@@ -133,18 +136,18 @@ class ProfileController extends AbstractMemberController
             // Opens the dialog on the page — no second route, no fragment: the
             // two fields are already here, and a form the size of a business
             // card does not need a page of its own.
-            return ['label' => 'Bearbeiten', 'dialog' => self::ACCOUNT_DIALOG_ID];
+            return ['label' => t('member.profile.edit'), 'dialog' => self::ACCOUNT_DIALOG_ID];
         }
 
         if ($section === 'zweifa') {
             return $hasTotp
                 ? null   // removal asks for a code and therefore lives in the form
-                : ['label' => 'Jetzt einrichten', 'href' => '/member/main/profile/totp'];
+                : ['label' => t('member.profile.setUp'), 'href' => '/member/main/profile/totp'];
         }
 
         if ($section === 'geraete' && $hasDevices) {
             return [
-                'label'  => 'Alle abmelden',
+                'label'  => t('member.profile.signOutAll'),
                 'href'   => '/member/main/profile/device-remove-all',
                 'method' => 'post',
                 'quiet'  => true,
@@ -189,12 +192,12 @@ class ProfileController extends AbstractMemberController
         if ($choice->choose($account, $ref)) {
             $this->messageService->pushFlashAfterRedirect(
                 'success',
-                'Sie arbeiten jetzt für «' . $choice->labelFor($account, $ref) . '».'
+                t('member.profile.tenantChosen', ['tenant' => $choice->labelFor($account, $ref)])
             );
         } else {
             $this->messageService->pushFlashAfterRedirect(
                 'error',
-                ucfirst(\Z77\Module\Member\Services\TenantNoun::fromConfig()->with('dies', 'nom')) . ' steht Ihnen nicht zur Wahl.'
+                t('member.profile.tenantRefused', \Z77\Module\Member\Services\TenantNoun::current())
             );
         }
 
@@ -221,7 +224,7 @@ class ProfileController extends AbstractMemberController
 
         if ($account === null) {
             return $response->setStatus('error')
-                ->addFlash('error', 'Ihre Sitzung ist abgelaufen — bitte melden Sie sich neu an.');
+                ->addFlash('error', t('member.profile.sessionExpired'));
         }
 
         // No CSRF check here: `#[Fetch]` makes this action reachable in Fetch
@@ -295,21 +298,43 @@ class ProfileController extends AbstractMemberController
             return $value === '' ? null : mb_substr($value, 0, 120);
         };
 
-        $before = [$account->getFirstName(), $account->getLastName(), $account->getCompany()];
+        $before = [$account->getFirstName(), $account->getLastName(), $account->getCompany(), $account->getLanguage()];
         $account->setFirstName($clean($input('first_name')));
         $account->setLastName($clean($input('last_name')));
         $account->setCompany($clean($input('company')));
+
+        // ADR-056: the language, only where the profile offers one, and only an offered
+        // one. The default is stored as «none» (null), so the account follows the
+        // installation's default until the person picks another.
+        $offered = MemberLanguage::offered();
+        $wanted  = (string)$input('language');
+        if ($offered !== [] && in_array($wanted, $offered, true)) {
+            $account->setLanguage(MemberLanguage::storable($wanted));
+        }
 
         $this->accounts()->save($account);
         $this->profileHook()?->__invoke($account);
 
         // WHICH fields changed, never the values — the log says a name was
         // changed on that day, not what it was.
+        $languageChanged = $before[3] !== $account->getLanguage();
         $changed = array_keys(array_filter(
-            ['first_name' => $before[0] !== $account->getFirstName(), 'last_name' => $before[1] !== $account->getLastName(), 'company' => $before[2] !== $account->getCompany()]
+            ['first_name' => $before[0] !== $account->getFirstName(), 'last_name' => $before[1] !== $account->getLastName(), 'company' => $before[2] !== $account->getCompany(), 'language' => $languageChanged]
         ));
         if ($changed !== []) {
             MemberLog::write('profile.update', (string)$account->getId(), ['detail' => implode(',', $changed)]);
+        }
+
+        // A new language changes every text of the page, not just the values: the
+        // page is rendered again (in the new language — the next request reads it
+        // from the account), instead of swapping the value list in place.
+        if ($languageChanged) {
+            // In the NEW language: the page that shows it is rendered in it.
+            $this->messageService->pushFlashAfterRedirect('success', t('member.profile.saved', [], MemberLanguage::of($account)));
+
+            return $isFetch
+                ? $this->fetch()->setRedirect('/member/main/profile?bereich=konto')
+                : $this->redirect('/member/main/profile?bereich=konto');
         }
 
         if ($isFetch) {
@@ -318,7 +343,7 @@ class ProfileController extends AbstractMemberController
             // open page `<dialog>` where the host has no popup). Nothing here
             // can be refused field by field: every field is optional and is
             // cut to 120 characters, so there is no error state to re-render.
-            $this->messageService->pushFlash('success', 'Ihre Angaben sind gespeichert.');
+            $this->messageService->pushFlash('success', t('member.profile.saved'));
             $fields = (new TemplateRenderer('Z77\\Module\\Member'))->partial('Main/ProfileController/_kontoFields', [
                 'account'     => $account,
                 'memberships' => TenantChoice::create()->memberships($account),
@@ -329,7 +354,7 @@ class ProfileController extends AbstractMemberController
                 ->addCommand('close-modal', []);
         }
 
-        $this->messageService->pushFlashAfterRedirect('success', 'Ihre Angaben sind gespeichert.');
+        $this->messageService->pushFlashAfterRedirect('success', t('member.profile.saved'));
 
         return $this->redirect('/member/main/profile?bereich=konto');
     }
@@ -361,7 +386,7 @@ class ProfileController extends AbstractMemberController
         if ($typed === '' || $typed !== mb_strtolower(trim((string)$account->getEmail())) || !$confirmed) {
             $this->messageService->pushFlashAfterRedirect(
                 'error',
-                'Nichts gelöscht: zum Bestätigen tippen Sie Ihre E-Mail-Adresse genau so, wie sie oben steht, und setzen den Haken.'
+                t('member.profile.deleteUnconfirmed')
             );
 
             return $this->redirect('/member/main/profile?bereich=konto');
@@ -372,7 +397,7 @@ class ProfileController extends AbstractMemberController
         } catch (\Throwable $e) {
             $this->messageService->pushFlashAfterRedirect(
                 'error',
-                'Löschen nicht möglich — nichts wurde entfernt: ' . $e->getMessage()
+                t('member.profile.deleteRefused', ['reason' => $e->getMessage()])
             );
 
             return $this->redirect('/member/main/profile?bereich=konto');
@@ -434,10 +459,10 @@ class ProfileController extends AbstractMemberController
         ) {
             $this->messageService->pushFlashAfterRedirect(
                 'success',
-                'Das Gerät ist abgemeldet — es verlangt beim nächsten Besuch einen neuen Anmelde-Link.'
+                t('member.profile.deviceRemoved')
             );
         } else {
-            $this->messageService->pushFlashAfterRedirect('error', 'Dieses Gerät ist nicht (mehr) in der Liste.');
+            $this->messageService->pushFlashAfterRedirect('error', t('member.profile.deviceUnknown'));
         }
 
         // Back to WHERE ONE STOOD (the rule from the widget find, 2026-08-15):
@@ -457,7 +482,7 @@ class ProfileController extends AbstractMemberController
         $devices = DeviceKeys::create();
 
         if (!$devices->revoke($account, $device)) {
-            $this->messageService->pushFlash('error', 'Dieses Gerät ist nicht (mehr) in der Liste.');
+            $this->messageService->pushFlash('error', t('member.profile.deviceUnknown'));
 
             return $this->fetch()->setStatus('error');
         }
@@ -466,7 +491,7 @@ class ProfileController extends AbstractMemberController
         if ($left === 0) {
             $this->messageService->pushFlashAfterRedirect(
                 'success',
-                'Das Gerät ist abgemeldet — es verlangt beim nächsten Besuch einen neuen Anmelde-Link.'
+                t('member.profile.deviceRemoved')
             );
 
             return $this->fetch()->setRedirect('/member/main/profile?bereich=geraete');
@@ -474,7 +499,7 @@ class ProfileController extends AbstractMemberController
 
         $this->messageService->pushFlash(
             'success',
-            'Das Gerät ist abgemeldet — es verlangt beim nächsten Besuch einen neuen Anmelde-Link.'
+            t('member.profile.deviceRemoved')
         );
 
         // The id is one the account held (revoke() found it) — hex, so it is
@@ -483,11 +508,11 @@ class ProfileController extends AbstractMemberController
             ->removeRow('device', $device)
             ->addCommand('update-text', [
                 'target' => '[data-device-count]',
-                'text'   => $left . ' Gerät' . ($left === 1 ? '' : 'e') . ' bleiben angemeldet',
+                'text'   => self::devicesStaying($left),
             ])
             ->addCommand('update-text', [
                 'target' => 'a.me-item[href="/member/main/profile?bereich=geraete"] .me-item__meta',
-                'text'   => $left === 1 ? '1 Gerät' : $left . ' Geräte',
+                'text'   => self::deviceCount($left),
             ]);
     }
 
@@ -507,7 +532,7 @@ class ProfileController extends AbstractMemberController
             DeviceKeys::create()->revokeAll($account);
             $this->messageService->pushFlashAfterRedirect(
                 'success',
-                'Alle Geräte sind abgemeldet — jeder Zugang verlangt wieder einen Anmelde-Link.'
+                t('member.profile.allRemoved')
             );
         }
 
@@ -541,21 +566,21 @@ class ProfileController extends AbstractMemberController
             if (DI::getCsrfService()->validate((string)$request->getPostParameter('csrf_token'))) {
                 // Dead counters refuse the right code too: switching on would lock the person out.
                 if (!$setup->canCheckCodes($account)) {
-                    $this->messageService->pushFlashAfterRedirect('error', TotpCodeCheck::UNAVAILABLE_MESSAGE);
+                    $this->messageService->pushFlashAfterRedirect('error', t('member.totp.unavailable'));
 
                     return $this->redirect('/member/main/profile?bereich=zweifa');
                 }
                 if ($setup->confirm($account, (string)$request->getPostParameter('code'))) {
                     $this->messageService->pushFlashAfterRedirect(
                         'success',
-                        'Zwei-Faktor-Schutz ist aktiv — ab jetzt fragt die Anmeldung nach dem App-Code.'
+                        t('member.profile.totpOn')
                     );
 
                     // Where one stood: the 2FA section, now showing the new state.
                     return $this->redirect('/member/main/profile?bereich=zweifa');
                 }
             }
-            $error  = 'Der Code ist ungültig — bitte scannen Sie den QR-Code und versuchen Sie es erneut.';
+            $error  = t('member.profile.totpSetupWrong');
             $secret = $setup->running($account);
         }
 
@@ -566,7 +591,7 @@ class ProfileController extends AbstractMemberController
             error_log('ProfileController: 2FA setup refused — ' . $e->getMessage());
             $this->messageService->pushFlashAfterRedirect(
                 'error',
-                'Der Zwei-Faktor-Schutz kann wegen eines technischen Problems gerade nicht eingerichtet werden. Bitte informieren Sie den Betreiber.'
+                t('member.profile.totpSetupBroken')
             );
 
             return $this->redirect('/member/main/profile?bereich=zweifa');
@@ -574,7 +599,7 @@ class ProfileController extends AbstractMemberController
         $uri    = Totp::otpauthUri(MemberTotp::issuer(), $account->getEmail(), $secret);
 
         return $this->html([
-            'pageTitle' => 'Zwei-Faktor-Schutz einrichten',
+            'pageTitle' => t('member.totpSetup.title'),
             'qrDataUri' => QrCode::pngDataUri($uri, 220),
             'secret'    => trim(chunk_split($secret, 4, ' ')),
             'error'     => $error,
@@ -611,7 +636,7 @@ class ProfileController extends AbstractMemberController
 
                 return $this->fetch()->setStatus('error');
             }
-            $this->messageService->pushFlashAfterRedirect('success', 'Zwei-Faktor-Schutz entfernt.');
+            $this->messageService->pushFlashAfterRedirect('success', t('member.profile.totpOff'));
 
             return $this->fetch()->setRedirect('/member/main/profile?bereich=zweifa');
         }
@@ -619,7 +644,7 @@ class ProfileController extends AbstractMemberController
             ? TotpSetup::create()->removeWithCode($account, (string)$request->getPostParameter('code'))
             : TotpCodeCheck::WRONG;
         if ($outcome === TotpCodeCheck::PASSED) {
-            $this->messageService->pushFlashAfterRedirect('success', 'Zwei-Faktor-Schutz entfernt.');
+            $this->messageService->pushFlashAfterRedirect('success', t('member.profile.totpOff'));
         } else {
             $this->messageService->pushFlashAfterRedirect('error', self::totpRemoveRefusal($outcome));
         }
@@ -627,13 +652,29 @@ class ProfileController extends AbstractMemberController
         return $this->redirect('/member/main/profile?bereich=zweifa');
     }
 
+    /** «1 Gerät» / «3 Geräte» — the rail's line under «Angemeldete Geräte». */
+    private static function deviceCount(int $n): string
+    {
+        return $n === 1 ? t('member.profile.deviceOne') : t('member.profile.deviceMany', ['count' => $n]);
+    }
+
+    /** The headline of the device list: how many stay signed in. */
+    public static function devicesStaying(int $n): string
+    {
+        return match (true) {
+            $n === 0 => t('member.profile.stayingNone'),
+            $n === 1 => t('member.profile.stayingOne'),
+            default  => t('member.profile.stayingMany', ['count' => $n]),
+        };
+    }
+
     /** What the person is told when a code did not remove 2FA. */
     private static function totpRemoveRefusal(string $outcome): string
     {
         return match ($outcome) {
-            TotpCodeCheck::LOCKED      => 'Zu viele Fehlversuche — bitte warten Sie 15 Minuten.',
-            TotpCodeCheck::UNAVAILABLE => TotpCodeCheck::UNAVAILABLE_MESSAGE,
-            default                    => 'Entfernen fehlgeschlagen — der App-Code ist erforderlich, muss gültig sein und darf noch nicht verwendet worden sein.',
+            TotpCodeCheck::LOCKED      => t('member.totp.locked'),
+            TotpCodeCheck::UNAVAILABLE => t('member.totp.unavailable'),
+            default                    => t('member.profile.totpRemoveFailed'),
         };
     }
 }

@@ -185,6 +185,22 @@ return [
     // is data, not configuration. A project that still sets `blockedCountries`
     // here is IGNORED — nothing reads it any more.
 
+    // ADR-056 (2026-11-07, z77-rudaz.ch): a signed-in member reads her pages in
+    // HER language — the account's (profile → Konto), not the URL's. Before the
+    // sign-in only the URL decides (`/fr/member/main/login`). With it, the
+    // profile offers the languages of `languages` below (at least two) and a
+    // self-registration records the page's language. Off = everything as
+    // before: the URL alone decides, accounts carry no language unless an
+    // invitation gave them one. Mails go to an account in its language either
+    // way (none set = the default).
+    'languageFromAccount' => false,
+
+    // The languages this area offers (i18n.md, per-module switch): the choice
+    // on the profile (only with `languageFromAccount`) and the guest's switch.
+    // Must contain the default language. Empty = the default language only,
+    // no switch, no choice.
+    //   'languages' => ['de', 'fr', 'en'],
+
     // Where a member lands after a successful login — the redeemed link, the
     // confirmed second factor, the waiting page's poll, and a visit to the
     // login while already signed in all use this one value

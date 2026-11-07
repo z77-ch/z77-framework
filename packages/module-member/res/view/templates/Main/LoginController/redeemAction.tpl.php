@@ -19,38 +19,32 @@
 ?>
 <div class="me-card">
 <?php if ($confirmed): ?>
-    <h1 class="me-card__title">Anmeldung bestätigt</h1>
+    <h1 class="me-card__title"><?= e(t('member.redeem.confirmedTitle')) ?></h1>
     <p class="me-card__lead">
-        Das Gerät, an dem die Anmeldung angefordert wurde, meldet sich jetzt an
-        — das dauert wenige Sekunden. Sie können dieses Fenster schliessen.
+        <?= e(t('member.redeem.confirmedLead')) ?>
     </p>
 <?php else: ?>
-    <h1 class="me-card__title">Anmeldung bestätigen</h1>
+    <h1 class="me-card__title"><?= e(t('member.redeem.title')) ?></h1>
 
     <?php if ($pending !== null): ?>
     <p class="me-card__lead">
-        Diese Anmeldung wurde in einem anderen Browser oder auf einem anderen
-        Gerät angefordert:
+        <?= e(t('member.redeem.elsewhere')) ?>
     </p>
     <dl class="me-profile">
-        <dt>Prüfzahl</dt>
+        <dt><?= e(t('member.redeem.digits')) ?></dt>
         <dd><strong class="me-check__digits"><?= e($pending->getCheckDigits()) ?></strong></dd>
-        <dt>Angefordert</dt>
-        <dd><?= e(date('d.m.Y, H:i', (int)strtotime($pending->getRequestedAt()))) ?> Uhr</dd>
-        <dt>Gerät</dt>
+        <dt><?= e(t('member.redeem.requested')) ?></dt>
+        <dd><?= e(t('member.redeem.at', ['when' => date('d.m.Y, H:i', (int)strtotime($pending->getRequestedAt()))])) ?></dd>
+        <dt><?= e(t('member.redeem.device')) ?></dt>
         <dd><?= e($pending->getLabel()) ?></dd>
     </dl>
     <p class="me-card__note">
-        Das andere Gerät lassen Sie nur zu, wenn dort dieselbe Prüfzahl steht.
-        Steht dort <strong>keine</strong> oder eine andere, hat jemand anderes
-        die Anmeldung gestartet: Lassen Sie sie nicht zu.
+        <?= raw(t('member.redeem.warnHtml')) ?>
     </p>
 
     <?php else: ?>
     <p class="me-card__lead">
-        Zu diesem Link wartet kein Gerät mehr auf eine Bestätigung — die
-        Anfrage ist abgelaufen oder wurde bereits beantwortet. Sie können sich
-        aber hier anmelden.
+        <?= e(t('member.redeem.nobody')) ?>
     </p>
     <?php endif; ?>
 
@@ -60,20 +54,20 @@
              only action on this page that can help a stranger — so an
              inattentive reader must reach for the big one by default. */ ?>
     <div class="me-decision">
-        <form method="post" action="/member/main/login/redeem" class="fe-form" novalidate>
+        <form method="post" action="<?= e(localizedUrl('/member/main/login/redeem')) ?>" class="fe-form" novalidate>
             <input type="hidden" name="csrf_token" value="<?= e($csrfToken) ?>">
             <input type="hidden" name="token" value="<?= e($token) ?>">
             <input type="hidden" name="decision" value="here">
-            <button class="fe-form__submit" type="submit">Jetzt hier anmelden</button>
+            <button class="fe-form__submit" type="submit"><?= e(t('member.redeem.here')) ?></button>
         </form>
 
         <?php if ($pending !== null): ?>
-        <form method="post" action="/member/main/login/redeem" class="fe-form" novalidate>
+        <form method="post" action="<?= e(localizedUrl('/member/main/login/redeem')) ?>" class="fe-form" novalidate>
             <input type="hidden" name="csrf_token" value="<?= e($csrfToken) ?>">
             <input type="hidden" name="token" value="<?= e($token) ?>">
             <input type="hidden" name="decision" value="confirm">
             <button class="me-decision__other" type="submit">
-                Anmeldung auf dem anderen Gerät zulassen (<?= e($pending->getLabel()) ?>)
+                <?= e(t('member.redeem.other', ['device' => $pending->getLabel()])) ?>
             </button>
         </form>
         <?php endif; ?>

@@ -91,7 +91,12 @@ rrmdir($root);
 mkdir($root . '/chunks', 0777, true);
 mkdir($root . '/in', 0777, true);
 mkdir($root . '/sink', 0777, true);
-define('ABS_BASE_PATH', $root); // LocalBlobStorage (J) — nothing else reads it here
+define('ABS_BASE_PATH', $root); // LocalBlobStorage (J), and the runtime dictionary layer (none here)
+
+// The refusals come from the module dictionary (ADR-056): a real Translator, German.
+require_once __DIR__ . '/../packages/kernel/core/src/autoload/prod/php/Helper.php';
+require_once __DIR__ . '/support/TestTranslator.php';
+\Z77\Tests\Support\TestTranslator::install(\Z77\Tests\Support\TestTranslator::packages('module-dms'));
 
 // ── fakes: gate, owner, store ──────────────────────────────────────────────────
 $writable = [7];          // folders the session principal may write

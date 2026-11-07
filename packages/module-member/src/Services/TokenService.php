@@ -79,7 +79,8 @@ final class TokenService
         string $email,
         string $invitedBy,
         int $ttlSeconds,
-        ?int $now = null
+        ?int $now = null,
+        ?string $language = null
     ): string {
         $now ??= time();
 
@@ -96,6 +97,7 @@ final class TokenService
         $token->setTenantRef($tenantRef);
         $token->setEmail($email);
         $token->setInvitedBy($invitedBy);
+        $token->setLanguage($language);
         $token->setValidUntil(date(DATE_ATOM, $now + $ttlSeconds));
 
         $this->uem->persist($token);

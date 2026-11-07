@@ -57,6 +57,9 @@ if (!is_file($autoload)) {
 }
 require $autoload;
 require_once __DIR__ . '/../packages/kernel/core/src/autoload/prod/php/Helper.php';
+// Mail subjects and bodies come from the module dictionary (ADR-056).
+require_once __DIR__ . '/support/TestTranslator.php';
+\Z77\Tests\Support\TestTranslator::install(\Z77\Tests\Support\TestTranslator::packages('module-dms'));
 
 // The monorepo autoloader does not map module-member (same loader as tests/member-operator-invite.php).
 spl_autoload_register(static function (string $class): void {
@@ -719,11 +722,11 @@ echo "(G) mail\n";
 $mails = [];
 $mailMode = 'ok';
 $b = $svc->open([1, 2], '', true);
-check('requested: pending, the address kept only for the job', $manifest($b['id'])['mail'] === ['state' => 'pending', 'to' => 'max.muster@example.ch'], json_encode($manifest($b['id'])['mail']));
+check('requested: pending, the address kept only for the job (+ the asking page\'s language)', $manifest($b['id'])['mail'] === ['state' => 'pending', 'to' => 'max.muster@example.ch', 'language' => 'de'], json_encode($manifest($b['id'])['mail']));
 check('the view does not show the address', !str_contains(json_encode($b), 'max.muster'));
 $svc->prepare($all());
 check('ready: one mail, to the address, with numbers only, no name',
-    count($mails) === 1 && $mails[0][0] === 'max.muster@example.ch' && array_keys($mails[0][1]) === ['kind', 'documents', 'bytes', 'expires', 'reason', 'profile']
+    count($mails) === 1 && $mails[0][0] === 'max.muster@example.ch' && array_keys($mails[0][1]) === ['kind', 'documents', 'bytes', 'expires', 'reason', 'profile', 'language']
     && $mails[0][1]['kind'] === 'ready' && $mails[0][1]['documents'] === 2 && $mails[0][1]['bytes'] === 400_000 && $mails[0][1]['reason'] === '' && $mails[0][1]['profile'] === '', json_encode($mails));
 $m = $manifest($b['id']);
 check('recorded as sent, the address gone from the manifest', $m['mail']['state'] === 'sent' && !isset($m['mail']['to']) && !str_contains(json_encode($m), 'max.muster'), json_encode($m['mail']));
@@ -779,6 +782,15 @@ check('the default subject without a sender is neutral, neither du nor Sie', $me
 $thrown = false;
 try { ZipBundleService::mailMessage('a@example.ch', '  ', ['documents' => 1, 'bytes' => 1, 'expires' => 1]); } catch (RuntimeException) { $thrown = true; }
 check('no canonical base URL: it throws instead of mailing a dead link', $thrown);
+// ADR-056: the stored reason is a key; the mail says it in its own language, an old manifest's German stays.
+$reasonOf = static fn(string $reason, string $lang): string => (string) ZipBundleService::mailMessage('a@example.ch', 'https://example.ch/', ['kind' => 'failed', 'documents' => 1, 'bytes' => 1, 'expires' => 1, 'reason' => $reason, 'language' => $lang])->getContext()['reason'];
+check('the reason key: German exactly as the sentence it replaced', $reasonOf('dms.zip.fail.changed', 'de') === 'Ein Dokument wurde inzwischen geändert. Das ZIP muss neu erstellt werden.', $reasonOf('dms.zip.fail.changed', 'de'));
+check('… French and English, no key showing', !str_contains($reasonOf('dms.zip.fail.changed', 'fr') . $reasonOf('dms.zip.fail.changed', 'en'), 'dms.') && str_contains($reasonOf('dms.zip.fail.changed', 'fr'), 'ZIP doit être recréé'), $reasonOf('dms.zip.fail.changed', 'fr'));
+check('… an old manifest\'s German sentence passes unchanged', $reasonOf('Eine Datei konnte nicht gelesen werden.', 'fr') === 'Eine Datei konnte nicht gelesen werden.');
+$frSubject = ZipBundleService::mailMessage('a@example.ch', 'https://example.ch/', ['documents' => 1, 'bytes' => 1, 'expires' => 1, 'language' => 'fr'])->getSubject();
+check('the default subject in the bundle\'s language', $frSubject === 'Téléchargement ZIP prêt', $frSubject);
+$dictKeys = static fn(string $l): array => array_keys((array) json_decode((string) file_get_contents(dirname(__DIR__) . "/packages/module-dms/res/i18n/{$l}.json"), true));
+check('the three DMS dictionaries carry the same keys', $dictKeys('de') === $dictKeys('fr') && $dictKeys('de') === $dictKeys('en'));
 extract($context);
 ob_start();
 include __DIR__ . '/../packages/module-dms/res/view/templates/emails/zipReady.tpl.php';
@@ -1173,6 +1185,7 @@ $wire = static function () use ($session, $site): void {
     ->set('ConfigManager', fn ($c) => new \Z77\Core\Libraries\ConfigManager($c->get('FileFinder'), $c->get('CacheManager')), true)
     ->set('ModuleManager', fn ($c) => new \Z77\Core\Services\ModuleManager($c->get('ConfigManager')), true)
     ->set('I18n', fn ($c) => new \Z77\Core\Services\I18n($c->get('ConfigManager')), true)
+    ->set('Translator', fn () => new \Z77\Core\Services\Translator(), true)
     ->set('DataSourceResolver', fn () => new \Z77\Persistence\Resolver\DataSourceResolver(['file' => 'File']), true)
     ->set('UnifiedEntityManager', fn ($c) => new \Z77\Persistence\Resolver\UnifiedEntityManager($c->get('DataSourceResolver')), true)
     ->set('EmailService', fn () => new EmailService(), true)
@@ -2085,7 +2098,7 @@ $b = $openFailing(true, 'host');
 $svc->prepare($all());
 $st = $svc->state($b['id']);
 check('a failed bundle with a mail requested sends one, kind failed, with the reason, no name',
-    $st['state'] === 'failed' && count($mails) === 1 && $mails[0][1]['kind'] === 'failed' && str_contains($mails[0][1]['reason'], 'geändert') && !str_contains(json_encode($mails), 'Hook Eins') && $mails[0][1]['profile'] === 'host', json_encode($mails, JSON_UNESCAPED_UNICODE));
+    $st['state'] === 'failed' && count($mails) === 1 && $mails[0][1]['kind'] === 'failed' && $mails[0][1]['reason'] === 'dms.zip.fail.changed' /* a key since ADR-056, the mail translates it */ && !str_contains(json_encode($mails), 'Hook Eins') && $mails[0][1]['profile'] === 'host', json_encode($mails, JSON_UNESCAPED_UNICODE));
 check('… recorded as sent, the address gone', $st['mail']['state'] === 'sent' && !str_contains((string) file_get_contents($dirOf($b['id']) . '/manifest.json'), 'max.muster'));
 $svc->prepare($all());
 check('… once', count($mails) === 1);
@@ -2117,7 +2130,7 @@ check('no zipMail: the framework\'s', $plain['url'] === ZipBundleService::DRIVE_
 $inst = ZipBundleService::mailSettings($cfgMail);
 check('default: the installation\'s fields, the rest the framework\'s', $inst['url'] === '/konto' && $inst['ready']['subject'] === 'Installation' && $inst['ready']['template'] === 'emails/zipReady');
 $hostCfg = ZipBundleService::mailSettings($cfgMail, 'host');
-check('a host on top: its fields only', $hostCfg['url'] === 'https://www.example.ch/dokumente' && $hostCfg['ready']['subject'] === 'Installation' && $hostCfg['failed']['template'] === 'emails/hostFailed' && $hostCfg['failed']['subject'] === 'ZIP-Download fehlgeschlagen — {absender}');
+check('a host on top: its fields only', $hostCfg['url'] === 'https://www.example.ch/dokumente' && $hostCfg['ready']['subject'] === 'Installation' && $hostCfg['failed']['template'] === 'emails/hostFailed' && $hostCfg['failed']['subject'] === 'dms.mail.zipFailed.subject'); // a dictionary key since ADR-056
 check('an unknown profile: the installation\'s', ZipBundleService::mailSettings($cfgMail, 'nope') === $inst);
 $msg = ZipBundleService::mailMessage('a@example.ch', '', ['kind' => 'failed', 'documents' => 1, 'bytes' => 1, 'expires' => 1], $hostCfg);
 check('an absolute target needs no base URL', $msg->getContext()['link'] === 'https://www.example.ch/dokumente' && $msg->getTemplate() === 'emails/hostFailed' && $msg->getTemplateNameSpace() === 'Z77\\Module\\Member');

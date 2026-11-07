@@ -122,6 +122,9 @@ register_shutdown_function(static function () use ($base): void {
 DI::getInstance(true)->set('CacheManager', CacheManager::class, true);
 $uem = new UnifiedEntityManager(new DataSourceResolver(['file' => 'File']));
 DI::getInstance()->set('UnifiedEntityManager', $uem, true);
+// Mail subjects come from the module dictionary (ADR-056).
+require_once __DIR__ . '/support/TestTranslator.php';
+\Z77\Tests\Support\TestTranslator::install(\Z77\Tests\Support\TestTranslator::packages('module-member'));
 
 $_SESSION = [];
 $session  = new SessionManager();

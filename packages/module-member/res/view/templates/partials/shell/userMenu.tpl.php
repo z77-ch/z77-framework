@@ -57,22 +57,22 @@ $memberTenants = $memberTenants ?? [];
 <div class="me-shell__head-r">
     <?php /* Narrow only (member.scss): the menu icon, FIRST in the header, opens the
              drawer — a label of the skeleton's `#me-drawer` checkbox, no script. */ ?>
-    <label class="me-shell__burger" for="me-drawer" title="Auswahl">
+    <label class="me-shell__burger" for="me-drawer" title="<?= e(t('member.shell.list')) ?>">
         <svg class="me-icon" width="20" height="20" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
             <path d="M4 6h16M4 12h16M4 18h16"/>
         </svg>
-        <span class="me-account__sr">Auswahl ein- und ausblenden</span>
+        <span class="me-account__sr"><?= e(t('member.shell.toggleList')) ?></span>
     </label>
     <?php if ($memberTenants !== []): ?>
-    <?php $noun = \Z77\Module\Member\Services\TenantNoun::fromConfig()->singular(); // the word for the tenant (memberConfig tenantNoun) ?>
+    <?php $noun = \Z77\Module\Member\Services\TenantNoun::current(); // the word for the tenant (memberConfig tenantNoun), as placeholders of this language ?>
     <details class="me-tenant">
-        <summary class="me-shell__tenant me-tenant__summary" title="<?= e($noun) ?> wechseln">
+        <summary class="me-shell__tenant me-tenant__summary" title="<?= e(t('member.shell.switchTenant', $noun)) ?>">
             <span class="me-tenant__label"><?= e($memberTenant) ?></span>
             <span class="me-tenant__caret" aria-hidden="true">▾</span>
         </summary>
-        <div class="me-tenant__panel" aria-label="<?= e($noun) ?> wählen">
+        <div class="me-tenant__panel" aria-label="<?= e(t('member.shell.chooseTenant', $noun)) ?>">
             <?php foreach ($memberTenants as $tenant): ?>
-            <form method="post" action="/member/main/profile/mandant" class="me-tenant__form">
+            <form method="post" action="<?= e(localizedUrl('/member/main/profile/mandant')) ?>" class="me-tenant__form">
                 <?= $this->partial('partials/csrfField', [], 'Z77\Shared') ?>
                 <input type="hidden" name="mandant" value="<?= e($tenant['ref']) ?>">
                 <input type="hidden" name="back" value="<?= e($memberTenantBack ?? '') ?>">
@@ -84,7 +84,7 @@ $memberTenants = $memberTenants ?? [];
         </div>
     </details>
     <?php elseif (trim($memberTenant ?? '') !== ''): ?>
-    <span class="me-shell__tenant" title="Angezeigter Bestand"><?= e($memberTenant) ?></span>
+    <span class="me-shell__tenant" title="<?= e(t('member.shell.shownTenant')) ?>"><?= e($memberTenant) ?></span>
     <?php endif; ?>
 
     <?= !empty($showHelp) ? $this->partial('partials/helpTrigger', [], 'Z77\Shared') : '' ?>
@@ -104,8 +104,8 @@ $memberTenants = $memberTenants ?? [];
                 <path d="M12 2.6v2.2M12 19.2v2.2M4.2 12H2M22 12h-2.2M6.3 6.3 4.8 4.8M19.2 19.2l-1.5-1.5M17.7 6.3l1.5-1.5M4.8 19.2l1.5-1.5"/>
             </svg>
         </span>
-        <span class="me-theme__label me-theme__label--dark">Dunkle Ansicht einschalten</span>
-        <span class="me-theme__label me-theme__label--light">Helle Ansicht einschalten</span>
+        <span class="me-theme__label me-theme__label--dark"><?= e(t('member.shell.themeDark')) ?></span>
+        <span class="me-theme__label me-theme__label--light"><?= e(t('member.shell.themeLight')) ?></span>
     </button>
 
     <?php if (!empty($memberUser)): ?>
@@ -114,10 +114,10 @@ $memberTenants = $memberTenants ?? [];
                 aria-haspopup="true" aria-expanded="false" aria-controls="me-account-panel"
                 title="<?= e($name !== '' ? $name : $memberUser['email']) ?>">
             <span aria-hidden="true"><?= e($memberUser['initials'] ?? '') ?></span>
-            <span class="me-account__sr">Konto-Menü öffnen</span>
+            <span class="me-account__sr"><?= e(t('member.shell.openAccount')) ?></span>
         </button>
 
-        <div class="me-account__panel" id="me-account-panel" hidden data-member-menu-panel aria-label="Konto">
+        <div class="me-account__panel" id="me-account-panel" hidden data-member-menu-panel aria-label="<?= e(t('member.shell.account')) ?>">
             <div class="me-account__identity">
                 <span class="me-account__avatar me-account__avatar--static" aria-hidden="true"><?= e($memberUser['initials'] ?? '') ?></span>
                 <span class="me-account__who">
@@ -133,16 +133,16 @@ $memberTenants = $memberTenants ?? [];
             <?php /* The profile is the PERSON's (ADR-038) and belongs to the
                      avatar, not to the tenant's navigation — a project may
                      still list it as an area, but this is its home. */ ?>
-            <a class="me-account__row" href="/member/main/profile">Profil</a>
-            <a class="me-account__row" href="/member/main/profile?bereich=geraete">Geräte &amp; 2FA</a>
+            <a class="me-account__row" href="<?= e(localizedUrl('/member/main/profile')) ?>"><?= e(t('member.shell.profile')) ?></a>
+            <a class="me-account__row" href="<?= e(localizedUrl('/member/main/profile?bereich=geraete')) ?>"><?= e(t('member.shell.devices')) ?></a>
 
             <div class="me-account__divider"></div>
 
             <?php /* The token from the service, whatever this partial was handed: the plain shape's
                      header calls it with less than the rail shape's skeleton (SEC-GET-001). */ ?>
-            <form method="post" action="/member/main/logout" class="me-account__form">
+            <form method="post" action="<?= e(localizedUrl('/member/main/logout')) ?>" class="me-account__form">
                 <?= $this->partial('partials/csrfField', [], 'Z77\Shared') ?>
-                <button type="submit" class="me-account__row me-account__row--out">Abmelden</button>
+                <button type="submit" class="me-account__row me-account__row--out"><?= e(t('member.logout.button')) ?></button>
             </form>
         </div>
     </div>

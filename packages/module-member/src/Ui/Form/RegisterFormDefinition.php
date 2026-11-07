@@ -39,23 +39,23 @@ class RegisterFormDefinition extends FormDefinition
     {
         return [
             'email' => [
-                'label'        => 'E-Mail',
+                'label'        => t('member.form.email'),
                 'type'         => self::TYPE_EMAIL,
                 'autocomplete' => 'email',
                 'rules'        => ['required' => true, 'email' => true, 'max' => 254],
             ],
             'company' => [
-                'label'        => 'Firma / ' . \Z77\Module\Member\Services\TenantNoun::fromConfig()->singular(),
+                'label'        => t('member.form.company', \Z77\Module\Member\Services\TenantNoun::current()),
                 'autocomplete' => 'organization',
                 'rules'        => ['required' => true, 'min' => 2, 'max' => 120],
             ],
             'first_name' => [
-                'label'        => 'Vorname',
+                'label'        => t('member.form.firstName'),
                 'autocomplete' => 'given-name',
                 'rules'        => ['required' => true, 'min' => 2, 'max' => 80],
             ],
             'last_name' => [
-                'label'        => 'Nachname',
+                'label'        => t('member.form.lastName'),
                 'autocomplete' => 'family-name',
                 'rules'        => ['required' => true, 'min' => 2, 'max' => 80],
             ],

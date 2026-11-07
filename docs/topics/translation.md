@@ -31,6 +31,17 @@ SOURCE=/packages/kernel/shared/res/assets/js/core.js
 SOURCE=/packages/kernel/core/data/framework/i18n/de.default.json
 SOURCE=/packages/kernel/core/data/framework/i18n/fr.default.json
 SOURCE=/packages/kernel/core/data/framework/i18n/route-slugs.fr.default.json
+SOURCE=/packages/module-member/res/i18n/de.json
+SOURCE=/packages/module-member/res/i18n/fr.json
+SOURCE=/packages/module-member/res/i18n/en.json
+SOURCE=/packages/kernel/shared/res/i18n/de.json
+SOURCE=/packages/kernel/shared/res/i18n/fr.json
+SOURCE=/packages/kernel/shared/res/i18n/en.json
+SOURCE=/packages/module-dms/res/i18n/de.json
+SOURCE=/packages/module-dms/res/i18n/fr.json
+SOURCE=/packages/module-dms/res/i18n/en.json
+SOURCE=/tests/member-language.php
+SOURCE=/tests/support/TestTranslator.php
 SOURCE=/packages/module-frontend/res/view/templates/partials/header.tpl.php
 SOURCE=/packages/module-frontend/res/view/templates/partials/footer.tpl.php
 
@@ -49,11 +60,30 @@ translate *text*; slugs translate *URL segments*. Canonical = the default langua
 mail template, where there is no request; only the language argument has to be passed
 explicitly then (it defaults to the current request's).
 
-- **UI strings** — `t(key, params, lang)` reads `{lang}.json` (flat `key → value`):
+- **UI strings** — `t(key, params, lang)` reads the language's dictionary (flat `key → value`):
   current language → `defaultLanguage` → the key itself. Keys are namespaced
-  (`nav.*`, `footer.*`, `common.*`). Template usage: `<?= e(t('footer.pages')) ?>` —
-  `t()` returns the raw string, the caller escapes. Navigation display names use
+  (`nav.*`, `footer.*`, `common.*`, a module's `member.*`, a project's `rudaz.*`). Template
+  usage: `<?= e(t('footer.pages')) ?>` — `t()` returns the raw string, the caller escapes.
+  Placeholders (`{$name}`) are inserted UNESCAPED since 2026-11-07 (no caller used params
+  before): the caller's `e()` escapes the whole sentence once. A key ending in `Html` is
+  markup — its caller escapes the placeholders itself and prints the result with `raw()`
+  (`member.mail.invite.leadHtml`). Navigation display names use
   `t('nav.' . $entry->getAction())` so the entry stays slim (no per-language field).
+- **Three dictionary layers (I18N-LAYERS-001, ADR-056, 2026-11-07)**, merged per language,
+  later wins: (1) PACKAGE `<package>/res/i18n/{lang}.json` — a module's own strings, read live
+  from the package (no seeding, so `composer update` brings new keys to installed projects);
+  (2) PROJECT `override/z77/<ns>/res/i18n/{lang}.json` — the project's keys and its rewording
+  of a package key, versioned in its repo; (3) RUNTIME `data/framework/i18n/{lang}.json` —
+  installer-seeded from the core `*.default.json`, edited by the backend tool. Layers 1–2 are
+  found through the FileFinder namespace roots (override first, package last); ⚠️ an override
+  root only counts when it also has a `src/` directory (FileFinder skips a root without it).
+  A file that is not a JSON object is skipped with a log line, never a broken page.
+- **The current language** is `Translator::currentLanguage()`: an `inLanguage($code, fn)` scope
+  if one is open, else the request's (`Request::getLanguage()` — the URL's, or the account's
+  under ADR-056), else (no request, a job) the default. `t()`, `clientDictionary()` and
+  `localizedUrl()` all ask it. `EmailService` opens the scope for a mail with
+  `EmailMessage::language()` set, so templates and the layout render in the recipient's
+  language without passing it to every `t()`.
 - **URL slugs** — `SlugTranslator` maps single segments both ways. Only non-default
   languages have a table (`route-slugs.{lang}.json`, canonical → localized); the
   default has none (identity). **The table translates the ALIAS PART of a URL and
@@ -101,7 +131,9 @@ explicitly then (it defaults to the current request's).
   channel reads the island once at boot (`load()`), then `t(key, fallback)` resolves a
   key, degrading to the fallback literal (then the key) when the string is missing — so
   JS never breaks if the island is absent. The inlined block is, by construction, the
-  exact list of what the client needs; grep `js\.` to discover the JS-only keys.
+  exact list of what the client needs; grep `js\.` to discover the JS-only keys. Since
+  2026-11-07 a module or project namespace has its own client keys too: `<ns>.js.*`
+  (`member.js.*`, `rudaz.js.*`, `Translator::isClientKey()`), read the same way.
 - **One indexed form per page** (SEO-301): in a non-default language the localized
   ALIAS path is the single indexed URL. Reaching an aliased page via its canonical (or
   any non-localized) spelling `301`s to the localized form — `/fr/privacy` →
@@ -159,6 +191,9 @@ discriminator.
 ## rules
 
 - When outputting a static UI string in a template → MUST use `t('namespaced.key')` wrapped in `e()`; MUST NOT hard-wire the literal text. Add the key to every language dictionary (`de.json` is the default and the fallback).
+- When a MODULE adds strings → MUST put them into its package dictionary `res/i18n/{lang}.json` under the module's namespace (`member.*`, `dms.*`); MUST NOT add them to the core `*.default.json` seeds, which never reach an installed project (TRANS-SEED-001). When a PROJECT adds strings → MUST put them into `override/z77/<ns>/res/i18n/{lang}.json` under its own namespace (`rudaz.*`); MUST NOT hand-edit `data/framework/i18n/*.json` for it (that is the operator's layer, not versioned).
+- When a mail goes to a person → MUST set `EmailMessage::language($code)` to the recipient's language (an account's: `MemberLanguage::of()`; none known: leave it null = the current one) and MUST translate the subject with the same code, `t($key, $params, $code)`; MUST NOT rely on the request's language in a job, an API call or a backend action that mails a member.
+- When a sentence needs markup around a placeholder → MUST name the key `…Html`, escape every placeholder value at the call (`e()`) and print the result with `raw()`; MUST NOT put markup into a key without that suffix, whose callers escape the whole sentence.
 - When rendering a navigation entry's display name → MUST use `t('nav.' . $entry->getAction())`; MUST NOT read `$entry->getName()` for display (that is the canonical/default identifier).
 - When displaying a LANGUAGE NAME (not its bare code) → MUST use `t('lang.' . $code)` for the name in the current UI language, or `t('lang.' . $code, [], $code)` for the ENDONYM (each language in its own name — the standard for a language switcher, forced by the target-language 3rd arg); MUST add `lang.<code>` to each dictionary (the frontend switch uses this — `partials/header.tpl.php`, both the topbar and the mobile overlay). MUST NOT hard-wire the names in a template and MUST NOT inject a parallel `$langLabels` map (it duplicates `t()` and needs plumbing). A bare `strtoupper($code)` is acceptable ONLY for a deliberately compact code-only switcher.
 - When rendering an internal link to a navigation entry → MUST take the canonical URL from `NavigationService::urlFor($entry)` (alias-aware, ADR-015) and pass it through `localizedUrl()` for the current language; MUST NOT emit `$entry->getUrl()` raw (that is the 4-tuple path, not the public URL). For the page's own canonical/hreflang use `AbstractBaseController::currentCanonicalPath()`.
@@ -168,6 +203,7 @@ discriminator.
 - When a localized value happens to equal the path of ANOTHER alias that has no table entry of its own → MUST check that alias first: the translated lookup wins, so the other alias is shadowed in that language. Not machine-validated (it is a data-level collision across two files).
 - When resolving the request language in `SlugTranslator`/`Translator` consumers → MUST treat the default language as canonical (no table, no prefix); MUST NOT create a `route-slugs.{default}.json`.
 - When adding a new public page → MUST add its `nav.<action>` dict keys (all languages); a localized URL additionally needs a `route-slugs` entry — without it the canonical URL still works.
+- When a kernel or module SCRIPT outside `core.js` shows a text (upload component, chunk upload/download) → MUST read it through `_Z77.core.i18n.t(key, '<German literal>')` with the key in the package dictionary — `js.*` for `kernel/shared` (`js.upload.*`), `<ns>.js.*` for a module (`dms.js.*`) — and fill placeholders `{$name}` itself (the client `t()` has none); MUST keep the German literal as the fallback, so a page without the data island (or a stale `.min.js`) still reads as before. A new key in a script MUST also become a marker in `tests/js-min-markers.php`, so a `.min.js` not re-saved fails.
 - When a string is rendered by `core.js` (client-built markup) → MUST add it under the `js.*` namespace in every language dictionary and read it via `_Z77.core.i18n.t('js.<key>', '<fallback>')`; MUST NOT hard-wire the literal in JS. If the string is also rendered server-side (shared vocabulary) → reuse the existing key (e.g. `common.close`) and add it to `Translator::SHARED_CLIENT_KEYS` so it travels to the client. MUST NOT duplicate a shared string under a separate `js.*` key.
 - When emitting SEO head links → MUST render them from the `$seo` context (`AbstractBaseController::buildSeoLinks()`) in `partials/head/seo.tpl.php`; MUST NOT build canonical/alternate URLs ad-hoc in a template. Canonical is always emitted (self-referencing); `hreflang` alternates only in a ≥2-language environment.
 - When editing translation values / slugs at runtime → SHOULD use the backend translation tool (`/backend/content/translation`), which validates slug invariants and clears the page cache; hand-editing the runtime JSON works but skips both. All writes MUST go to the RUNTIME files, never the `*.default.json` seeds (installer-owned, regenerated on reinstall). New keys still originate in code via a `t('key')` call — the tool fills values, it does not discover usage.
@@ -194,14 +230,16 @@ discriminator.
   remainder is no longer rewritten by the table. Verified: `php tests/routing-alias-first.php`
   (59 checks) plus an end-to-end run against a real installation with `kontakt → contact`.
 
-- **TRANS-CHECK-URL-001** — open. Don't assume a public form's blur check answers in the
-  page's language: `PublicFormHandler::checkUrl()` builds the endpoint as
-  `/{module}/{group}/{controller}/check` from the current `Request` getters, with NO
-  language prefix. On `/fr/contact` the check request therefore arrives prefix-less, the
-  default language is rendered (a prefix-less URL always renders `defaultLanguage`,
-  I18N-LANG-STABLE-001), and the field message comes back German on a French page. Fix is
-  a `localizedUrl()` around the assembled path — untouched here because it is a behaviour
-  change on every project that ships a public form.
+- **TRANS-CHECK-URL-001** — resolved 2026-11-07 (ADR-056 part 5, z77-rudaz.ch). The blur check
+  of a public form answered in the default language on a non-default page:
+  `PublicFormHandler::checkUrl()` built `/{module}/{group}/{controller}/check` without a
+  prefix, and a prefix-less URL renders `defaultLanguage` (I18N-LANG-STABLE-001). Now the
+  derived path AND a definition's explicit `checkUrl()` (a canonical path) go through
+  `localizedUrl()`: `/fr/member/main/login` checks at `/fr/member/main/login/check` and gets
+  «E-mail n'a pas un format valide». The default language keeps the prefix-less path it
+  always had — no change for a German page. Verified: `tests/form-geo-guard.php` (the URL
+  goes through `localizedUrl()`) and ad hoc on a real stack (PHP built-in server, member
+  login on `/` and `/fr/`, the check answered in German and French).
 
 - **TRANS-SLUG-PATTERN-001** — open. Don't assume every live `route-slugs` table can be
   edited in the backend tool: `TranslationCatalog::SLUG_PATTERN`
@@ -234,7 +272,8 @@ discriminator.
 ## pending
 
 - **Content URL slug table** — only if content URLs ever localize their slug; today content is addressed by canonical slug + language, so no table is needed.
-- **TRANS-SEED-001 — missing-key adoption in the backend editor (ADR-032 scope decision, 2026-08-08)** — runtime catalogs are file-level seed-once, so UI-string keys added to the shipped `*.default.json` after installation never reach an existing project. Decided: this is NOT the ADR-032 entity import (catalogs are flat `key → value` maps, no entities) — instead `TranslationCatalog` gets a small compare-and-adopt feature: list keys present in the vendor default but absent in the runtime catalog, adopt selected ones (never overwrite an existing value). See [`../03-development/review-import-adr-032.md`](../03-development/review-import-adr-032.md) IMP-R012.
+- **The backend translation tool knows only the runtime layer** — package and project keys (I18N-LAYERS-001) do not appear in its grid; a value typed there for such a key still wins (runtime layer). Showing the merged key set read-only is the obvious next step, if operators need it.
+- **TRANS-SEED-001 — missing-key adoption in the backend editor (ADR-032 scope decision, 2026-08-08)** — partly answered 2026-11-07: a MODULE's strings now live in its package dictionary and reach installed projects without seeding; what remains is the core `*.default.json` (nav/footer/common keys). Runtime catalogs are file-level seed-once, so UI-string keys added to the shipped `*.default.json` after installation never reach an existing project. Decided: this is NOT the ADR-032 entity import (catalogs are flat `key → value` maps, no entities) — instead `TranslationCatalog` gets a small compare-and-adopt feature: list keys present in the vendor default but absent in the runtime catalog, adopt selected ones (never overwrite an existing value). See [`../03-development/review-import-adr-032.md`](../03-development/review-import-adr-032.md) IMP-R012.
 
 ## see also
 

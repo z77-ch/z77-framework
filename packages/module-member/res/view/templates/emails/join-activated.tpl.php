@@ -7,31 +7,35 @@
  * sentence: he signs in as always and CHOOSES the tenant in the header.
  * Rejection sends NO automatic mail, as with accounts.
  *
+ * Texts: `member.mail.*` in the module dictionary (res/i18n), rendered in the
+ * recipient's language (EmailMessage::language(), ADR-056). A `…Html` key is
+ * markup: its placeholders are escaped HERE, the sentence goes out raw.
+ *
  * @var \Z77\Module\Member\Entities\MemberAccount $account
- * @var string $tenantName readable name of the added tenant
- * @var string $loginUrl   absolute URL of the member entry point
+ * @var string $tenantName   readable name of the added tenant
+ * @var string $loginUrl     absolute URL of the member entry point
+ * @var string $mailLanguage the language this mail renders in (EmailService)
  */
 $name = trim(($account->getFirstName() ?? '') . ' ' . ($account->getLastName() ?? ''));
-$noun = \Z77\Module\Member\Services\TenantNoun::fromConfig(); // the word for the tenant (memberConfig tenantNoun)
+// the word for the tenant (memberConfig tenantNoun), in the forms this language's sentence needs
+$noun = \Z77\Module\Member\Services\TenantNoun::params($mailLanguage ?? 'de');
 ?>
-<p>Guten Tag<?= $name !== '' ? ' ' . e($name) : '' ?></p>
+<p><?= e($name !== '' ? t('member.mail.greetingName', ['name' => $name]) : t('member.mail.greeting')) ?></p>
 
 <p>
-    Ihr Zugang zu <strong><?= e($tenantName) ?></strong> ist freigeschaltet.
-    Melden Sie sich wie gewohnt an und wählen Sie oben im Kopf der Seite,
-    für <?= e($noun->with('welch', 'acc')) ?> Sie gerade arbeiten — ein Wechsel braucht keine
-    neue Anmeldung.
+    <?= raw(t('member.mail.joinActivated.leadHtml', array_map('e', $noun) + [
+        'tenant' => '<strong>' . e($tenantName) . '</strong>',
+    ])) ?>
 </p>
 
 <p>
     <a href="<?= e($loginUrl) ?>"
        style="display:inline-block;padding:10px 20px;background-color:#222222;color:#ffffff;text-decoration:none;">
-        Zum Login
+        <?= e(t('member.mail.toLogin')) ?>
     </a>
 </p>
 
 <p>
-    Falls die Schaltfläche nicht funktioniert, öffnen Sie diese Adresse in
-    Ihrem Browser:<br>
+    <?= e(t('member.mail.buttonFallback')) ?><br>
     <a href="<?= e($loginUrl) ?>"><?= e($loginUrl) ?></a>
 </p>

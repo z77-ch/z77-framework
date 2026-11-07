@@ -11,18 +11,17 @@
  */
 ?>
 <div class="me-card">
-    <h1 class="me-card__title">Zwei-Faktor-Schutz einrichten</h1>
+    <h1 class="me-card__title"><?= e(t('member.totpSetup.title')) ?></h1>
     <p class="me-card__lead">
-        Scannen Sie den QR-Code mit Ihrer Authenticator-App (z.&nbsp;B. Google
-        Authenticator, Aegis, 2FAS) und bestätigen Sie mit dem angezeigten Code.
+        <?= e(t('member.totpSetup.lead')) ?>
     </p>
 
     <p style="text-align:center">
-        <img src="<?= e($qrDataUri) ?>" alt="QR-Code für die Authenticator-App" width="220" height="220">
+        <img src="<?= e($qrDataUri) ?>" alt="<?= e(t('member.totpSetup.qrAlt')) ?>" width="220" height="220">
     </p>
 
     <p class="me-card__aside">
-        Ohne Kamera: Schlüssel von Hand eingeben —
+        <?= e(t('member.totpSetup.manual')) ?>
         <code style="user-select:all"><?= e($secret) ?></code>
     </p>
 
@@ -33,12 +32,12 @@
     <form method="post" class="fe-form" novalidate>
         <input type="hidden" name="csrf_token" value="<?= e($csrfToken) ?>">
         <div class="fe-form__row">
-            <label for="totp-code">Code aus der App</label>
+            <label for="totp-code"><?= e(t('member.totpSetup.code')) ?></label>
             <input id="totp-code" type="text" name="code" inputmode="numeric" autocomplete="one-time-code"
                    pattern="[0-9]{6}" maxlength="6" required autofocus>
         </div>
-        <button class="fe-form__submit" type="submit">Aktivieren</button>
+        <button class="fe-form__submit" type="submit"><?= e(t('member.totpSetup.activate')) ?></button>
     </form>
 
-    <p class="me-card__aside"><a href="/member/main/profile">Abbrechen</a></p>
+    <p class="me-card__aside"><a href="<?= e(localizedUrl('/member/main/profile')) ?>"><?= e(t('member.logout.cancel')) ?></a></p>
 </div>

@@ -5,22 +5,23 @@
  * only the address owner learns there is nothing — with the way to change
  * that.
  *
+ * Texts: `member.mail.*` in the module dictionary (res/i18n). No account, no
+ * language of its own: it renders in the language of the page that asked.
+ *
  * @var string $registerUrl
  */
 ?>
-<p>Guten Tag</p>
+<p><?= e(t('member.mail.greeting')) ?></p>
 
 <p>
-    Für diese E-Mail-Adresse wurde soeben eine Anmeldung angefordert — es
-    besteht dazu aber kein Konto.
+    <?= e(t('member.mail.noAccount.lead')) ?>
 </p>
 
 <p>
-    Falls Sie ein Konto erstellen möchten, registrieren Sie sich hier:<br>
+    <?= e(t('member.mail.noAccount.register')) ?><br>
     <a href="<?= e($registerUrl) ?>"><?= e($registerUrl) ?></a>
 </p>
 
 <p>
-    Falls Sie diese Anfrage nicht selbst ausgelöst haben, können Sie diese
-    E-Mail ignorieren.
+    <?= e(t('member.mail.ignore')) ?>
 </p>

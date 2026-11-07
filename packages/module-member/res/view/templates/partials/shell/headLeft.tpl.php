@@ -26,7 +26,7 @@
     <div class="me-switcher" data-member-areas>
         <button type="button" class="me-switcher__btn" data-member-areas-trigger
                 aria-haspopup="true" aria-expanded="false" aria-controls="me-area-panel"
-                title="Bereich wechseln">
+                title="<?= e(t('member.shell.switchArea')) ?>">
             <?php /* Dasselbe Zeichen wie im Backend (Lucide grid, ADR-033
                      spricht von EINER Geste an beiden Orten): dort kommt es
                      aus dem Icon-Sprite, hier steht die Geometrie inline —
@@ -40,7 +40,7 @@
                 <rect x="3" y="14" width="7" height="7" rx="1"/>
                 <rect x="14" y="14" width="7" height="7" rx="1"/>
             </svg>
-            <span class="me-account__sr">Bereich wechseln</span>
+            <span class="me-account__sr"><?= e(t('member.shell.switchArea')) ?></span>
         </button>
 
         <?php /* Anchored to the right of the switcher, i.e. flush with the seam:
@@ -48,7 +48,7 @@
                  leave the screen — the same anchor the account panel uses at
                  the other edge, for the same reason. */ ?>
         <div class="me-account__panel" id="me-area-panel" hidden
-             data-member-areas-panel aria-label="Bereiche">
+             data-member-areas-panel aria-label="<?= e(t('member.shell.areas')) ?>">
             <?php foreach ($areas as $area): ?>
             <a class="me-account__row<?= $area['active'] ? ' me-account__row--active' : '' ?>"
                href="<?= e($area['url']) ?>"<?= $area['active'] ? ' aria-current="page"' : '' ?>><?= e($area['name']) ?></a>

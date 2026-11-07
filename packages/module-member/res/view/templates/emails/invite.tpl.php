@@ -13,56 +13,50 @@
  * account this address already has. `$known` is told to the recipient only —
  * it is his own account, and the inviting master never learns it.
  *
- * @var string $tenantName readable name of the project reference
- * @var string $inviter    name (or address) of the inviting account
+ * Texts: `member.mail.invite.*` in the module dictionary (res/i18n), rendered in
+ * the language the inviter chose (ADR-056). A `…Html` key is markup: its
+ * placeholders are escaped HERE, the sentence goes out raw.
+ *
+ * @var string $tenantName   readable name of the project reference
+ * @var string $inviter      name (or address) of the inviting account
  * @var string $inviteUrl
  * @var int    $validDays
- * @var bool   $known      the invited address already has an account
+ * @var bool   $known        the invited address already has an account
+ * @var string $mailLanguage the language this mail renders in (EmailService)
  */
 $known = (bool)($known ?? false);
-$noun  = \Z77\Module\Member\Services\TenantNoun::fromConfig(); // the word for the tenant (memberConfig tenantNoun)
+// the word for the tenant (memberConfig tenantNoun), in the forms this language's sentence needs
+$noun  = \Z77\Module\Member\Services\TenantNoun::params($mailLanguage ?? 'de');
 ?>
-<p>Guten Tag</p>
+<p><?= e(t('member.mail.greeting')) ?></p>
 
 <p>
-    <?= e($inviter) ?> hat Sie eingeladen, für
-    <strong><?= e($tenantName) ?></strong> mitzuarbeiten.
+    <?= raw(t('member.mail.invite.leadHtml', [
+        'inviter' => e($inviter),
+        'tenant'  => '<strong>' . e($tenantName) . '</strong>',
+    ])) ?>
 </p>
 
-<?php if ($known): ?>
 <p>
-    Zu Ihrer E-Mail-Adresse besteht bereits ein Konto. Über den folgenden Link
-    fügen Sie <?= e($noun->with('dies', 'acc')) ?> Ihrem Konto hinzu — Ihr Konto, Ihre
-    Anmeldung und Ihre Geräte bleiben, wie sie sind:
+    <?= e(t($known ? 'member.mail.invite.known' : 'member.mail.invite.new', $noun + ['tenant' => $tenantName])) ?>
 </p>
-<?php else: ?>
-<p>
-    Über den folgenden Link richten Sie Ihren Zugang ein — Sie geben nur noch
-    Ihren Namen an, Ihre E-Mail-Adresse ist durch diese Einladung bereits
-    bestätigt:
-</p>
-<?php endif; ?>
 
 <p>
     <a href="<?= e($inviteUrl) ?>"
        style="display:inline-block;padding:10px 20px;background-color:#222222;color:#ffffff;text-decoration:none;">
-        Einladung annehmen
+        <?= e(t('member.mail.invite.button')) ?>
     </a>
 </p>
 
 <p>
-    Falls die Schaltfläche nicht funktioniert, öffnen Sie diese Adresse in
-    Ihrem Browser:<br>
+    <?= e(t('member.mail.buttonFallback')) ?><br>
     <a href="<?= e($inviteUrl) ?>"><?= e($inviteUrl) ?></a>
 </p>
 
 <p>
-    Der Link ist <?= (int)$validDays ?> Tage gültig und nur einmal verwendbar.
-    Nach Ihrer Anmeldung prüfen wir den Zugang und schalten ihn frei — Sie
-    erhalten dann eine weitere E-Mail.
+    <?= e(t('member.mail.invite.validity', ['days' => (int)$validDays])) ?>
 </p>
 
 <p>
-    Falls Sie diese Einladung nicht erwartet haben, ignorieren Sie diese
-    E-Mail — ohne den Link <?= $known ? 'ändert sich an Ihrem Konto nichts' : 'entsteht kein Konto' ?>.
+    <?= e(t($known ? 'member.mail.invite.ignoreKnown' : 'member.mail.invite.ignoreNew')) ?>
 </p>

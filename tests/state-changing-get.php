@@ -310,7 +310,7 @@ foreach ([
     'module-backend/res/view/templates/partials/shell/topbar.tpl.php',
     'module-frontend/res/view/templates/partials/adminOverlay.tpl.php',
 ] as $tpl) {
-    check("{$tpl}: the logout form takes its token from partials/csrfField", (bool) preg_match('#/logout"[^>]*>\s*<\?= \$this->partial\(\'partials/csrfField\'#', (string) file_get_contents($root . '/packages/' . $tpl)));
+    check("{$tpl}: the logout form takes its token from partials/csrfField", (bool) preg_match('#/logout(?:\'\)\) \?>)?"[^>]*>\s*<\?= \$this->partial\(\'partials/csrfField\'#', (string) file_get_contents($root . '/packages/' . $tpl)));
 }
 $b = $new();
 $memberLogin($b, 'acc-plain');

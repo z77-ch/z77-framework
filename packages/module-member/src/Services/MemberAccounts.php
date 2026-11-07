@@ -58,7 +58,8 @@ final class MemberAccounts
         ?string $lastName,
         ?int $now = null,
         ?string $origin = null,
-        ?string $termsVersion = null
+        ?string $termsVersion = null,
+        ?string $language = null
     ): ?MemberAccount {
         if ($this->findByEmail($email) !== null) {
             return null;
@@ -71,6 +72,7 @@ final class MemberAccounts
         $account->setFirstName($firstName);
         $account->setLastName($lastName);
         $account->setOrigin($origin);
+        $account->setLanguage($language);
         $account->acceptTerms($termsVersion, $now);
         $account->setCreatedAt(date(DATE_ATOM, $now ?? time()));
 
@@ -94,7 +96,8 @@ final class MemberAccounts
         string $email,
         ?string $firstName,
         ?string $lastName,
-        ?int $now = null
+        ?int $now = null,
+        ?string $language = null
     ): ?MemberAccount {
         $now ??= time();
 
@@ -107,6 +110,8 @@ final class MemberAccounts
         $account->setEmail($email);
         $account->setFirstName($firstName);
         $account->setLastName($lastName);
+        // The language the inviter chose (ADR-056) — the person was invited in it.
+        $account->setLanguage($language);
         $account->setCreatedAt(date(DATE_ATOM, $now));
         $account->markConfirmed(date(DATE_ATOM, $now));
 

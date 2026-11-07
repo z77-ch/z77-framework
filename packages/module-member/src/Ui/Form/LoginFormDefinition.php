@@ -22,13 +22,13 @@ class LoginFormDefinition extends FormDefinition
     {
         return [
             'email' => [
-                'label'        => 'E-Mail',
+                'label'        => t('member.form.email'),
                 'type'         => self::TYPE_EMAIL,
                 'autocomplete' => 'email',
                 'rules'        => ['required' => true, 'email' => true, 'max' => 254],
             ],
             'remember' => [
-                'label' => 'Auf diesem Gerät angemeldet bleiben',
+                'label' => t('member.form.remember'),
                 'type'  => self::TYPE_CHECKBOX,
                 'rules' => [],
             ],

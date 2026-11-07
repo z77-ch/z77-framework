@@ -87,7 +87,7 @@ class RegisterController extends AbstractMemberController
         }
 
         return $this->html([
-            'pageTitle'  => 'Registrieren',
+            'pageTitle'  => t('member.register.title'),
             'invite'     => null,
             'origin'     => $origin,
             'originNote' => $this->originNote($origin),
@@ -117,7 +117,7 @@ class RegisterController extends AbstractMemberController
 
         if ($token === null) {
             return $this->html([
-                'pageTitle'  => 'Einladung',
+                'pageTitle'  => t('member.invite.pageTitle'),
                 'invite'     => ['dead' => true],
             ] + $this->emptyFormContext());
         }
@@ -153,7 +153,7 @@ class RegisterController extends AbstractMemberController
         }
 
         return $this->html([
-            'pageTitle' => 'Einladung annehmen',
+            'pageTitle' => t('member.invite.title'),
             'invite'    => [
                 'dead'    => false,
                 'join'    => false,
@@ -194,7 +194,7 @@ class RegisterController extends AbstractMemberController
         }
 
         return $this->html([
-            'pageTitle' => 'Einladung annehmen',
+            'pageTitle' => t('member.invite.title'),
             'invite'    => [
                 'dead'       => false,
                 'join'       => true,
@@ -267,7 +267,7 @@ class RegisterController extends AbstractMemberController
         $declined   = trim((string) $request->getGetParameter('abgelehnt')) !== '';
 
         return $this->html([
-            'pageTitle'  => $declined ? 'Einladung abgelehnt' : ($fromInvite ? 'Zugang beantragt' : 'Registrierung erhalten'),
+            'pageTitle'  => t($declined ? 'member.thanks.declinedTitle' : ($fromInvite ? 'member.thanks.inviteTitle' : 'member.thanks.registerTitle')),
             'fromInvite' => $fromInvite,
             // A join (ADR-037/038): the person HAS a login already, so the
             // page says «wait for the mail, then choose the tenant» rather

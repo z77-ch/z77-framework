@@ -12,25 +12,22 @@ use Z77\Module\Member\Services\RegistrationFlow;
 ?>
 <div class="me-card">
 <?php if ($outcome === RegistrationFlow::CONFIRMED): ?>
-    <h1 class="me-card__title">E-Mail bestätigt</h1>
+    <h1 class="me-card__title"><?= e(t('member.confirm.title')) ?></h1>
     <p class="me-card__lead">
-        Vielen Dank — Ihre E-Mail-Adresse ist bestätigt. Wir prüfen Ihre
-        Registrierung und schalten Ihren Zugang frei. Sie erhalten eine E-Mail,
-        sobald es so weit ist.
+        <?= e(t('member.confirm.lead')) ?>
     </p>
 <?php elseif ($outcome === RegistrationFlow::ALREADY): ?>
-    <h1 class="me-card__title">Bereits bestätigt</h1>
+    <h1 class="me-card__title"><?= e(t('member.confirm.alreadyTitle')) ?></h1>
     <p class="me-card__lead">
-        Diese E-Mail-Adresse ist bereits bestätigt — es gibt nichts weiter zu
-        tun. Sie erhalten eine E-Mail, sobald Ihr Zugang freigeschaltet ist.
+        <?= e(t('member.confirm.already')) ?>
     </p>
 <?php else: ?>
-    <h1 class="me-card__title">Link nicht mehr gültig</h1>
+    <h1 class="me-card__title"><?= e(t('member.confirm.deadTitle')) ?></h1>
     <p class="me-card__lead">
-        Dieser Bestätigungslink ist abgelaufen oder wurde bereits verwendet.
+        <?= e(t('member.confirm.dead')) ?>
     </p>
     <p class="me-card__aside">
-        <a href="/member/main/resend">Neuen Bestätigungslink anfordern</a>
+        <a href="<?= e(localizedUrl('/member/main/resend')) ?>"><?= e(t('member.confirm.resend')) ?></a>
     </p>
 <?php endif; ?>
 </div>

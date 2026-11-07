@@ -29,12 +29,12 @@ class InviteFormDefinition extends FormDefinition
     {
         return [
             'first_name' => [
-                'label'        => 'Vorname',
+                'label'        => t('member.form.firstName'),
                 'autocomplete' => 'given-name',
                 'rules'        => ['required' => true, 'min' => 2, 'max' => 80],
             ],
             'last_name' => [
-                'label'        => 'Nachname',
+                'label'        => t('member.form.lastName'),
                 'autocomplete' => 'family-name',
                 'rules'        => ['required' => true, 'min' => 2, 'max' => 80],
             ],

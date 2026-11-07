@@ -20,7 +20,7 @@ class ResendFormDefinition extends FormDefinition
     {
         return [
             'email' => [
-                'label'        => 'E-Mail',
+                'label'        => t('member.form.email'),
                 'type'         => self::TYPE_EMAIL,
                 'autocomplete' => 'email',
                 'rules'        => ['required' => true, 'email' => true, 'max' => 254],

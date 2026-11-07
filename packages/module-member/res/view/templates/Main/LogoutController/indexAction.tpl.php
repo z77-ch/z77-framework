@@ -7,11 +7,11 @@
  */
 ?>
 <div class="me-card">
-    <h1 class="me-card__title">Abmelden</h1>
-    <p class="me-card__lead"><?= !empty($stale) ? 'Sitzung abgelaufen: bitte Abmelden bestätigen.' : 'Bitte Abmelden bestätigen.' ?></p>
-    <form method="post" action="/member/main/logout" class="fe-form" novalidate>
+    <h1 class="me-card__title"><?= e(t('member.logout.title')) ?></h1>
+    <p class="me-card__lead"><?= e(t(!empty($stale) ? 'member.logout.stale' : 'member.logout.confirm')) ?></p>
+    <form method="post" action="<?= e(localizedUrl('/member/main/logout')) ?>" class="fe-form" novalidate>
         <?= $this->partial('partials/csrfField', [], 'Z77\Shared') ?>
-        <button class="fe-form__submit" type="submit" autofocus>Abmelden</button>
+        <button class="fe-form__submit" type="submit" autofocus><?= e(t('member.logout.button')) ?></button>
     </form>
-    <p class="me-card__aside"><a href="/member/main/login">Abbrechen</a></p>
+    <p class="me-card__aside"><a href="<?= e(localizedUrl('/member/main/login')) ?>"><?= e(t('member.logout.cancel')) ?></a></p>
 </div>

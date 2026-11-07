@@ -13,7 +13,7 @@
  * @var array<int,array{id:string, label:string, active?:bool}> $tabs
  */
 ?>
-<nav class="me-tabs" role="tablist" aria-label="Abschnitte">
+<nav class="me-tabs" role="tablist" aria-label="<?= e(t('member.shell.sections')) ?>">
     <?php foreach ($tabs as $tab): ?>
     <button type="button" class="me-tabs__tab<?= !empty($tab['active']) ? ' is-active' : '' ?>"
             role="tab" aria-selected="<?= !empty($tab['active']) ? 'true' : 'false' ?>"

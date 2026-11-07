@@ -49,10 +49,13 @@ final class MemberAuthBridge implements AuthBridgeInterface
 
         $account = MemberAuth::create()->current();
         if ($account !== null) {
+            // The account's language travels with the identity: where the requested module
+            // sets `languageFromAccount`, the kernel renders the request in it (ADR-056).
             $auth->establishMemberIdentity(
                 (string)$account->getId(),
                 $account->getEmail(),
                 $account->getRoles(),
+                $account->getLanguage(),
             );
         } else {
             $auth->clearMemberIdentity();

@@ -29,7 +29,7 @@
 use Z77\Module\Member\Services\InvitationFlow;
 use Z77\Module\Member\Services\TenantNoun;
 
-$noun     = TenantNoun::fromConfig(); // the word for the tenant (memberConfig tenantNoun)
+$noun     = TenantNoun::current(); // the word for the tenant (memberConfig tenantNoun), as placeholders of this language
 $isInvite = is_array($invite ?? null);
 $isDead   = $isInvite && ($invite['dead'] ?? false);
 $isJoin   = $isInvite && !$isDead && ($invite['join'] ?? false);
@@ -37,66 +37,57 @@ $taken    = $isInvite && (($invite['outcome'] ?? null) === InvitationFlow::ALREA
 ?>
 <div class="me-card">
 <?php if ($isDead): ?>
-    <h1 class="me-card__title">Einladung nicht mehr gültig</h1>
+    <h1 class="me-card__title"><?= e(t('member.invite.deadTitle')) ?></h1>
     <p class="me-card__lead">
-        Diese Einladung ist abgelaufen oder wurde zurückgezogen.
+        <?= e(t('member.invite.deadLead')) ?>
     </p>
     <p class="me-card__aside">
         <?php /* Deliberately no resend: only the person who invited may renew
                  an invitation — otherwise the recipient keeps his own access
                  to the tenant alive (B7 v1.1.0). */ ?>
-        Bitte wenden Sie sich an die Person, die Sie eingeladen hat — sie kann
-        Ihnen eine neue Einladung schicken.
+        <?= e(t('member.invite.deadAside')) ?>
     </p>
 
 <?php elseif ($taken): ?>
-    <h1 class="me-card__title">Einladung annehmen</h1>
+    <h1 class="me-card__title"><?= e(t('member.invite.title')) ?></h1>
     <?php /* Whatever state — the address is on this tenant
              already. The link is consumed; nothing to do but sign in. */ ?>
     <p class="me-card__lead" role="alert">
-        Ihre E-Mail-Adresse gehört bereits zu <?= e($noun->with('dies', 'dat')) ?>. Melden Sie sich
-        einfach an — diese Einladung wird nicht mehr gebraucht.
+        <?= e(t('member.invite.taken', $noun)) ?>
     </p>
-    <p class="me-card__aside"><a href="/member/main/login">Zur Anmeldung</a></p>
+    <p class="me-card__aside"><a href="<?= e(localizedUrl('/member/main/login')) ?>"><?= e(t('member.invite.toLogin')) ?></a></p>
 
 <?php elseif ($isJoin): ?>
-    <h1 class="me-card__title"><?= e($noun->singular()) ?> hinzufügen?</h1>
+    <h1 class="me-card__title"><?= e(t('member.invite.joinTitle', $noun)) ?></h1>
     <p class="me-card__lead">
-        Sie wurden eingeladen, für <strong><?= e((string)$invite['tenantName']) ?></strong>
-        mitzuarbeiten. Zu Ihrer Adresse <strong><?= e((string)$invite['email']) ?></strong>
-        besteht bereits ein Konto — es bleibt, wie es ist. Wenn Sie zustimmen,
-        kommt <?= e($noun->with('dies', 'nom')) ?> zu Ihrem Konto hinzu, und Sie wählen nach
-        der Anmeldung, für wen Sie gerade arbeiten.
+        <?= raw(t('member.invite.joinLeadHtml', array_map('e', $noun) + [
+            'tenant' => '<strong>' . e((string)$invite['tenantName']) . '</strong>',
+            'email'  => '<strong>' . e((string)$invite['email']) . '</strong>',
+        ])) ?>
     </p>
     <p class="me-card__aside">
-        Wir prüfen den Zugang und schalten ihn frei; Sie erhalten dann eine
-        E-Mail. Sie können den Zugang jederzeit wieder ablegen — <?= e($noun->with('der', 'nom')) ?>,
-        <?= e($noun->article('der', 'nom')) ?> Sie eingeladen hat, kann ihn ebenso pausieren oder entfernen.
+        <?= e(t('member.invite.joinAside', $noun)) ?>
     </p>
 
     <?php /* One form, two buttons. `decision` decides; there is nothing else
              to type. No JS — a POST with a name attribute is the whole of it. */ ?>
     <form method="post" class="fe-form me-decision" novalidate>
         <input type="hidden" name="csrf_token" value="<?= e($csrfToken) ?>">
-        <button class="fe-form__submit" type="submit" name="decision" value="add"><?= e($noun->singular()) ?> hinzufügen</button>
-        <button class="fe-form__submit fe-form__submit--quiet" type="submit" name="decision" value="decline">Ablehnen</button>
+        <button class="fe-form__submit" type="submit" name="decision" value="add"><?= e(t('member.invite.joinAdd', $noun)) ?></button>
+        <button class="fe-form__submit fe-form__submit--quiet" type="submit" name="decision" value="decline"><?= e(t('member.invite.joinDecline')) ?></button>
     </form>
 
 <?php elseif ($isInvite): ?>
-    <h1 class="me-card__title">Einladung annehmen</h1>
+    <h1 class="me-card__title"><?= e(t('member.invite.title')) ?></h1>
     <p class="me-card__lead">
-        Sie wurden eingeladen, an <?= e($noun->with('ein', 'dat', 'bestehend')) ?> mitzuarbeiten.
-        Geben Sie noch Ihren Namen an — Ihre E-Mail-Adresse ist durch die
-        Einladung bereits bestätigt. Anschliessend prüfen wir den Zugang und
-        schalten ihn frei.
+        <?= e(t('member.invite.lead', $noun)) ?>
     </p>
 
     <?php /* The address is TEXT, not a field: it comes from the token, and a
              pre-filled input would only look unchangeable (B7 v1.1.0). */ ?>
     <p class="me-card__aside">
-        Ihre E-Mail-Adresse: <strong><?= e((string)$invite['email']) ?></strong><br>
-        Sie lässt sich hier nicht ändern — die Einladung gilt genau für diese
-        Adresse.
+        <?= e(t('member.invite.address')) ?> <strong><?= e((string)$invite['email']) ?></strong><br>
+        <?= e(t('member.invite.addressFixed')) ?>
     </p>
 
     <?= $this->partial('partials/publicForm', [
@@ -109,11 +100,9 @@ $taken    = $isInvite && (($invite['outcome'] ?? null) === InvitationFlow::ALREA
     ], 'Z77\\Module\\Frontend') ?>
 
 <?php else: ?>
-    <h1 class="me-card__title">Registrieren</h1>
+    <h1 class="me-card__title"><?= e(t('member.register.title')) ?></h1>
     <p class="me-card__lead">
-        Erstellen Sie Ihr Konto. Sie erhalten anschliessend eine E-Mail mit einem
-        Bestätigungslink — erst danach prüfen wir Ihre Registrierung und schalten
-        Ihren Zugang frei.
+        <?= e(t('member.register.lead')) ?>
     </p>
 
     <?php /* Der Satz zum Angebot, über das jemand hergekommen ist

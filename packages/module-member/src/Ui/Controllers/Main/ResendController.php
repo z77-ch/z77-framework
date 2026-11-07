@@ -33,13 +33,13 @@ class ResendController extends AbstractMemberController
             return $this->redirect('/member/main/resend/danke');
         }
 
-        return $this->html(['pageTitle' => 'Link erneut anfordern'] + $form->viewContext());
+        return $this->html(['pageTitle' => t('member.resend.title')] + $form->viewContext());
     }
 
     /** PRG target. */
     protected function dankeAction(): HtmlResponse
     {
-        return $this->html(['pageTitle' => 'Link angefordert']);
+        return $this->html(['pageTitle' => t('member.resend.thanksPageTitle')]);
     }
 
     /** Per-field blur validation (public-form standard). */
