@@ -430,6 +430,16 @@ check('the redemption goes through', in_array($r[0], [302, 303], true) && str_co
 $rows = array_column((array)json_decode((string)file_get_contents($siteOn . '/data/framework/member/accounts.json'), true), null, 'email');
 check('… the account has the language CONFIRMED, not the token\'s', ($rows['eingeladen@example.ch']['language'] ?? null) === 'en', json_encode($rows['eingeladen@example.ch'] ?? null));
 
+// A browser with a signed-in member opens an invitation (forwarded, or the inviter's own
+// browser): the link's language, not the signed-in account's — #[UrlLanguage].
+$signedInvite = $b->go('/en/member/main/register?invite=' . $inviteOnDisk($siteOn, 'weitergeleitet@example.ch', 'en'));
+check('signed in (French account) + /en invitation: 200 in English, no redirect', $signedInvite[0] === 200 && $langOf($signedInvite) === 'en', $signedInvite[0] . ' ' . $langOf($signedInvite) . ' ' . (string)($signedInvite[1]['location'] ?? ''));
+check('… the guest switch is there again', str_contains($signedInvite[2], 'me-lang__link'));
+$signedConfirm = $b->go('/en/member/main/confirm?token=nope');
+check('… a confirmation link too', $signedConfirm[0] === 200 && $langOf($signedConfirm) === 'en', $signedConfirm[0] . ' ' . $langOf($signedConfirm));
+$r = $b->go('/en/member/main/profile');
+check('… while an account page still sheds the prefix', $r[0] === 302 && ($r[1]['location'] ?? '') === '/member/main/profile', $r[0] . ' ' . (string)($r[1]['location'] ?? ''));
+
 // The join path (the address has an account): YES/NO, no language — the profile stays.
 $join = $guest->go('/member/main/register?invite=' . $inviteOnDisk($siteOn, 'none@example.ch', 'fr'));
 check('the join page asks no language', $join[0] === 200 && str_contains($join[2], 'name="decision"') && !str_contains($join[2], 'name="language"'));

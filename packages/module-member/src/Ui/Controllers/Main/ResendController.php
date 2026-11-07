@@ -8,7 +8,8 @@ use Z77\Core\Http\Response\HtmlResponse,
     Z77\Module\Member\Ui\Controllers\AbstractMemberController,
     Z77\Module\Member\Ui\Form\ResendFormDefinition,
     Z77\Shared\Controller\PublicFormCheckTrait,
-    Z77\Shared\Forms\PublicFormHandler
+    Z77\Shared\Forms\PublicFormHandler,
+    Z77\Shared\Attributes\UrlLanguage
 ;
 
 /**
@@ -16,7 +17,10 @@ use Z77\Core\Http\Response\HtmlResponse,
  * token (devaluing the old one) for a registered account, sends the
  * existing-account mail for a confirmed/active one, and does nothing for an
  * unknown address — the danke page is the same in every case (anti-oracle).
+ *
+ * #[UrlLanguage]: a guest act — the URL's language, whoever is signed in (ADR-056).
  */
+#[UrlLanguage]
 class ResendController extends AbstractMemberController
 {
     use PublicFormCheckTrait;

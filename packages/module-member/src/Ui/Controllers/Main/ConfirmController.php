@@ -5,7 +5,8 @@ namespace Z77\Module\Member\Ui\Controllers\Main;
 use Z77\Core\DI,
     Z77\Core\Http\Response\HtmlResponse,
     Z77\Module\Member\Services\RegistrationFlow,
-    Z77\Module\Member\Ui\Controllers\AbstractMemberController
+    Z77\Module\Member\Ui\Controllers\AbstractMemberController,
+    Z77\Shared\Attributes\UrlLanguage
 ;
 
 /**
@@ -14,7 +15,10 @@ use Z77\Core\DI,
  * already («bereits bestätigt», the double click), dead (unknown, expired
  * or used link → the template offers the resend link). The template renders
  * per outcome; no outcome reveals more than the spec's wording.
+ *
+ * #[UrlLanguage]: a guest act — the URL's language, whoever is signed in (ADR-056).
  */
+#[UrlLanguage]
 class ConfirmController extends AbstractMemberController
 {
     protected function indexAction(): HtmlResponse

@@ -12,7 +12,8 @@ use Z77\Core\DI,
     Z77\Module\Member\Ui\Form\LoginFormDefinition,
     Z77\Shared\Controller\PublicFormCheckTrait,
     Z77\Shared\Forms\FormGuard,
-    Z77\Shared\Forms\PublicFormHandler
+    Z77\Shared\Forms\PublicFormHandler,
+    Z77\Shared\Attributes\UrlLanguage
 ;
 
 /**
@@ -20,7 +21,10 @@ use Z77\Core\DI,
  * owns CSRF/bot/validation/rate limit; the flow adds the per-address throttle
  * and the anti-oracle mail choice) and redeem it. A signed-in visitor is sent
  * straight to the profile.
+ *
+ * #[UrlLanguage]: a guest act — the URL's language, whoever is signed in (ADR-056).
  */
+#[UrlLanguage]
 class LoginController extends AbstractMemberController
 {
     use PublicFormCheckTrait;

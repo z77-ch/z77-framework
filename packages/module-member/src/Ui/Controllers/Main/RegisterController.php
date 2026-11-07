@@ -13,7 +13,8 @@ use Z77\Core\DI,
     Z77\Module\Member\Ui\Form\InviteFormDefinition,
     Z77\Module\Member\Ui\Form\RegisterFormDefinition,
     Z77\Shared\Controller\PublicFormCheckTrait,
-    Z77\Shared\Forms\PublicFormHandler
+    Z77\Shared\Forms\PublicFormHandler,
+    Z77\Shared\Attributes\UrlLanguage
 ;
 
 /**
@@ -33,7 +34,10 @@ use Z77\Core\DI,
  * states his name, nothing else. The address comes from the token and the
  * project reference is already known, so there is no address field and no
  * company field to fill in or to tamper with.
+ *
+ * #[UrlLanguage]: a guest act — the URL's language, whoever is signed in (ADR-056).
  */
+#[UrlLanguage]
 class RegisterController extends AbstractMemberController
 {
     use PublicFormCheckTrait;
