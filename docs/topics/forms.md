@@ -110,7 +110,8 @@ field name, the form partial and the notification-mail body can both be generic.
   the EULA's keep-current duty). Details and licence terms: [`geoip.md`](geoip.md).
 - **Rules are an associative array**, not a string mini-language: `['required' => true,
   'min' => 2, 'max' => 80, 'email' => true, 'accepted' => true]`. A declared `options` map
-  is the whitelist for that field's value. The set is deliberately small — new rules only
+  is the whitelist for that field's value; a spec's `default` preselects it on the blank
+  form only (`PublicForm::blank()`) — a submit carries what was sent. The set is deliberately small — new rules only
   when a real form needs one.
 - **One message per field, translated.** Texts come from `form.error.{rule}` with
   `{$label}` / `{$min}` / `{$max}` placeholders and can be overridden per field via the

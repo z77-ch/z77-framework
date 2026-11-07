@@ -128,7 +128,11 @@ class RegisterController extends AbstractMemberController
 
         $this->layoutManager->addJs('public-form', 'Z77\\Module\\Frontend', 'footer', true);
 
-        $form    = PublicFormHandler::create(new InviteFormDefinition());
+        // ADR-056: the language field (where the module offers a choice) is preselected
+        // with the inviter's choice, else the page's — the person confirms or changes it.
+        $form    = PublicFormHandler::create(new InviteFormDefinition(
+            $token->getLanguage() ?? DI::getTranslator()->currentLanguage()
+        ));
         $outcome = null;
 
         $onValid = function ($valid) use ($invites, $plainToken, &$outcome): bool {
@@ -136,6 +140,9 @@ class RegisterController extends AbstractMemberController
                 $plainToken,
                 (string)$valid->get('first_name') ?: null,
                 (string)$valid->get('last_name') ?: null,
+                null,
+                // Empty where the form has no language field: the token's, as before.
+                (string)$valid->get('language') ?: null,
             );
             $outcome = $result['outcome'];
 
@@ -279,12 +286,16 @@ class RegisterController extends AbstractMemberController
 
     /**
      * Per-field blur validation (public-form standard). Both forms declare
-     * `first_name` and `last_name` with identical rules, and those are the only
-     * fields the invitation form has — so one definition answers for both and
-     * the check endpoint needs no knowledge of which form is on screen.
+     * `first_name` and `last_name` with identical rules, so the check endpoint
+     * needs no knowledge of which form is on screen: a field only the invitation
+     * form has (`language`, ADR-056) is checked against that form, every other
+     * one against the registration form.
      */
     protected function checkAction(): JsonResponse
     {
-        return $this->blurCheck(new RegisterFormDefinition());
+        $register = new RegisterFormDefinition();
+        $field    = (string)DI::getRequest()->getPostParameter('field');
+
+        return $this->blurCheck($register->hasField($field) ? $register : new InviteFormDefinition());
     }
 }

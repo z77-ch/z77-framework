@@ -115,6 +115,7 @@
     "member.invite.lead": "Vous avez été invité à collaborer. Indiquez encore votre nom — votre adresse e-mail est déjà confirmée par l’invitation. Nous vérifions ensuite l’accès et l’activons.",
     "member.invite.address": "Votre adresse e-mail :",
     "member.invite.addressFixed": "Elle ne peut pas être modifiée ici — l’invitation est valable exactement pour cette adresse.",
+    "member.invite.language": "Langue de votre compte (modifiable dans le profil)",
     "member.thanks.title": "Merci beaucoup",
     "member.thanks.declinedTitle": "Invitation refusée",
     "member.thanks.declined": "Rien n’a changé — votre compte est inchangé et le lien de l’invitation n’est plus valable. Si vous changez d’avis, vous pouvez être invité à nouveau.",

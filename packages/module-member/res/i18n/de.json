@@ -115,6 +115,7 @@
     "member.invite.lead": "Sie wurden eingeladen, an {$nounExistingDat} mitzuarbeiten. Geben Sie noch Ihren Namen an — Ihre E-Mail-Adresse ist durch die Einladung bereits bestätigt. Anschliessend prüfen wir den Zugang und schalten ihn frei.",
     "member.invite.address": "Ihre E-Mail-Adresse:",
     "member.invite.addressFixed": "Sie lässt sich hier nicht ändern — die Einladung gilt genau für diese Adresse.",
+    "member.invite.language": "Sprache für Ihr Konto (im Profil änderbar)",
     "member.thanks.title": "Vielen Dank",
     "member.thanks.declinedTitle": "Einladung abgelehnt",
     "member.thanks.declined": "Es ist nichts geschehen — Ihr Konto ist unverändert, und der Link aus der Einladung wirkt nicht mehr. Falls Sie es sich anders überlegen, kann {$nounTheNom} Sie erneut einladen.",

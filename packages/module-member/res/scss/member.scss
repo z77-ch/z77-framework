@@ -1753,6 +1753,29 @@ button.me-account__row {
                 border-color: var(--err, #{$fb-err});
             }
         }
+
+        // A choice (the account language on the invitation, ADR-056): the
+        // fieldset reads like the other rows — legend as their label, no box —
+        // and each option is a line with the control before its text.
+        &--radio {
+            padding: 0;
+            border: 0;
+
+            legend {
+                margin-bottom: 0.25rem;
+                padding: 0;
+                font-size: 0.875rem;
+                color: var(--text-2, inherit);
+            }
+
+            label {
+                display: flex;
+                gap: 0.5rem;
+                align-items: center;
+                font-size: 1rem;
+                color: var(--text, inherit);
+            }
+        }
     }
 
     &__hint {

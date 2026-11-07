@@ -357,13 +357,19 @@ final class InvitationFlow
      * this the recipient redeems with any address he likes and the reference
      * gets somebody other than the one the inviter meant.
      *
+     * $language is the one the person CONFIRMED on the redemption page (ADR-056): it
+     * wins over the token's for the account born here; null keeps the token's. An
+     * EXISTING account (the join) keeps its own — a link opened without signing in
+     * changes no profile setting; the person changes it in the profile.
+     *
      * @return array{outcome: string, account: ?MemberAccount}
      */
     public function redeem(
         ?string $plainToken,
         ?string $firstName,
         ?string $lastName,
-        ?int $now = null
+        ?int $now = null,
+        ?string $language = null
     ): array {
         $now   = $now ?? time();
         $token = $this->inspect($plainToken, $now);
@@ -383,7 +389,13 @@ final class InvitationFlow
             return $this->redeemAsJoin($token, $existing, (string)$plainToken, $tenantRef, $now);
         }
 
-        $account = $this->accounts->registerFromInvite($email, $firstName, $lastName, $now, $token->getLanguage());
+        $account = $this->accounts->registerFromInvite(
+            $email,
+            $firstName,
+            $lastName,
+            $now,
+            $language !== null ? MemberLanguage::storable($language) : $token->getLanguage()
+        );
         if ($account === null) {
             // Raced: the address got its account between lookup and insert.
             // The link is NOT consumed — the next submit takes the join path.

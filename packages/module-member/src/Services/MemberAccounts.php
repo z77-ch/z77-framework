@@ -110,7 +110,8 @@ final class MemberAccounts
         $account->setEmail($email);
         $account->setFirstName($firstName);
         $account->setLastName($lastName);
-        // The language the inviter chose (ADR-056) — the person was invited in it.
+        // The language the person confirmed on the redemption page, else the one the
+        // inviter chose (ADR-056) — InvitationFlow::redeem() decides which.
         $account->setLanguage($language);
         $account->setCreatedAt(date(DATE_ATOM, $now));
         $account->markConfirmed(date(DATE_ATOM, $now));

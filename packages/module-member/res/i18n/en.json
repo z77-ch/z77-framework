@@ -115,6 +115,7 @@
     "member.invite.lead": "You have been invited to work on an existing {$noun}. Just enter your name — your e-mail address is already confirmed by the invitation. We then review the access and activate it.",
     "member.invite.address": "Your e-mail address:",
     "member.invite.addressFixed": "It cannot be changed here — the invitation is valid for exactly this address.",
+    "member.invite.language": "Language for your account (can be changed in your profile)",
     "member.thanks.title": "Thank you",
     "member.thanks.declinedTitle": "Invitation declined",
     "member.thanks.declined": "Nothing has happened — your account is unchanged and the link in the invitation no longer works. If you change your mind, you can be invited again.",

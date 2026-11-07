@@ -42,6 +42,10 @@ the language would get lost on the first internal link, and a job has no URL at 
 4. **An invitation carries a language.** `invite()` / `inviteAsOperator()` take
    `?string $language`; the token keeps it, the mail and the link (`/fr/member/…`) use it,
    an account BORN from the invitation takes it over. A known address keeps its own.
+   **The invited person confirms it** (owner, same day): where the module offers a choice,
+   the redemption form shows the languages (each in its own name), the token's preselected
+   (else the page's); the confirmed one is the new account's. The join path (YES/NO without
+   sign-in) asks none and changes no existing account — that is the profile's job.
 5. **Dictionaries come in three layers:** package `res/i18n/{lang}.json` (live from the
    package, no seeding) < project `override/z77/<ns>/res/i18n/{lang}.json` (versioned in
    the project) < runtime `data/framework/i18n/{lang}.json` (backend tool). A project adds

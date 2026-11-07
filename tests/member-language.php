@@ -257,6 +257,24 @@ $flow->inviteAsOperator('Adrian Muster', 7, 'p2', 'neu@example.ch', null, null, 
 $flow->redeem($tokenFrom($mails[0]), null, null);
 check('a known address keeps its own language', $accounts->findByEmail('neu@example.ch')?->getLanguage() === 'en');
 
+// The language the person confirms on the redemption page (follow-up 2026-11-07).
+$mails = [];
+$flow->inviteAsOperator('Adrian Muster', 7, 'p6', 'bestaetigt@example.ch', null, null, 'fr');
+$res = $flow->redeem($tokenFrom($mails[0]), 'Bea', 'Muster', null, 'en');
+check('redeem with a confirmed language: it wins over the token\'s', ($res['account'] ?? null)?->getLanguage() === 'en' && $accounts->findByEmail('bestaetigt@example.ch')?->getLanguage() === 'en');
+$mails = [];
+$flow->inviteAsOperator('Adrian Muster', 7, 'p7', 'standard@example.ch', null, null, 'fr');
+$res = $flow->redeem($tokenFrom($mails[0]), 'Sepp', 'Muster', null, 'de');
+check('… the default confirmed is stored as «none»', $res['outcome'] === InvitationFlow::REDEEMED && $accounts->findByEmail('standard@example.ch')?->getLanguage() === null);
+$mails = [];
+$flow->inviteAsOperator('Adrian Muster', 7, 'p8', 'fremd@example.ch', null, null, 'fr');
+$res = $flow->redeem($tokenFrom($mails[0]), 'Ida', 'Muster', null, 'it');
+check('… an unoffered one is not stored', $res['outcome'] === InvitationFlow::REDEEMED && $accounts->findByEmail('fremd@example.ch')?->getLanguage() === null);
+$mails = [];
+$flow->inviteAsOperator('Adrian Muster', 7, 'p9', 'neu@example.ch', null, null, 'fr');
+$res = $flow->redeem($tokenFrom($mails[0]), null, null, null, 'de');
+check('the join path: a language given changes the existing account\'s nothing', $res['outcome'] === InvitationFlow::JOINED && $accounts->findByEmail('neu@example.ch')?->getLanguage() === 'en');
+
 $mails = [];
 $flow->inviteAsOperator('Adrian Muster', 7, 'p3', 'it@example.ch', null, null, 'it');
 check('an unoffered language: the default mail, nothing stored', $mails[0]->getLanguage() === 'de' && $flow->inspect($tokenFrom($mails[0]))?->getLanguage() === null && !str_contains((string)$mails[0]->getContext()['inviteUrl'], '/it/'));
@@ -381,11 +399,48 @@ $deAcc = $signIn($siteOn, $portOn, 'acc-none');
 $deProfile = $deAcc->go('/member/main/profile');
 check('German account: the old texts', str_contains($visible($deProfile), 'Ihre Angaben aus der Registrierung') && str_contains($visible($deProfile), 'Zwei-Faktor-Schutz') && $leak($deProfile) === '', $leak($deProfile));
 
+echo "(I) real stack: the invited person confirms the language\n";
+/** An open invitation on disk; returns the plain token. */
+$inviteOnDisk = static function (string $site, string $email, ?string $language) use (&$tokenId): string {
+    $file   = $site . '/data/framework/member/tokens.json';
+    $plain  = bin2hex(random_bytes(16));
+    $onDisk = is_file($file) ? (array)json_decode((string)file_get_contents($file), true) : [];
+    $onDisk[] = ['id' => ++$tokenId, 'token_hash' => hash('sha256', $plain), 'account_ref' => null, 'purpose' => 'invite', 'valid_until' => date(DATE_ATOM, time() + 600), 'used_at' => null, 'tenant_ref' => 'p1', 'email' => $email, 'invited_by' => 'acc-fr', 'language' => $language];
+    file_put_contents($file, json_encode(array_values($onDisk), JSON_PRETTY_PRINT));
+    return $plain;
+};
+$checked = static fn(array $page): string => preg_match('#name="language" value="([a-z]{2})"[^>]*\bchecked#', $page[2], $m) ? $m[1] : '';
+
+$plain = $inviteOnDisk($siteOn, 'eingeladen@example.ch', 'fr');
+$guest = new RealFlowBrowser($portOn);
+$page  = $guest->go('/fr/member/main/register?invite=' . $plain);
+check('the redemption page offers the language, each in its own name', $page[0] === 200 && substr_count($page[2], 'name="language"') === 3 && str_contains($page[2], '<span>Français</span>') && str_contains($page[2], '<span>English</span>') && str_contains($page[2], '<span>Deutsch</span>'), (string)$page[0]);
+check('… the token\'s language preselected', $checked($page) === 'fr', $checked($page));
+check('… under the names', strpos($page[2], 'name="last_name"') < strpos($page[2], 'name="language"'));
+$deGuest = new RealFlowBrowser($portOn);
+$dePage  = $deGuest->go('/en/member/main/register?invite=' . $inviteOnDisk($siteOn, 'ohne@example.ch', null));
+check('a token without a language: the page\'s preselected', $checked($dePage) === 'en', $checked($dePage));
+$blur = $guest->go('/fr/member/main/register/check', ['field' => 'language', 'value' => 'it']);
+check('the blur check knows the field: an unoffered value is refused', $blur[0] === 200 && str_contains($blur[2], '"valid":false'), $blur[0] . ' ' . $blur[2]);
+
+$tok = preg_match('/name="csrf_token" value="([^"]+)"/', $page[2], $m) ? $m[1] : '';
+sleep(4); // the public form's time trap
+$r = $guest->go('/fr/member/main/register?invite=' . $plain, ['csrf_token' => $tok, 'first_name' => 'Eva', 'last_name' => 'Muster', 'language' => 'en', 'website' => '', 'fax' => '']);
+check('the redemption goes through', in_array($r[0], [302, 303], true) && str_contains((string)($r[1]['location'] ?? ''), '/member/main/register/danke'), $r[0] . ' ' . (string)($r[1]['location'] ?? ''));
+$rows = array_column((array)json_decode((string)file_get_contents($siteOn . '/data/framework/member/accounts.json'), true), null, 'email');
+check('… the account has the language CONFIRMED, not the token\'s', ($rows['eingeladen@example.ch']['language'] ?? null) === 'en', json_encode($rows['eingeladen@example.ch'] ?? null));
+
+// The join path (the address has an account): YES/NO, no language — the profile stays.
+$join = $guest->go('/member/main/register?invite=' . $inviteOnDisk($siteOn, 'none@example.ch', 'fr'));
+check('the join page asks no language', $join[0] === 200 && str_contains($join[2], 'name="decision"') && !str_contains($join[2], 'name="language"'));
+
 [$siteOff, $portOff] = $makeSite('off', []);
 $b3 = $signIn($siteOff, $portOff, 'acc-fr');
 $page = $b3->go('/member/main/profile');
 check('without the setting: the URL decides, also signed in', $page[0] === 200 && $langOf($page) === 'de' && $langOf($b3->go('/fr/member/main/profile')) === 'fr');
 check('… and the profile offers no language', !str_contains($page[2], 'name="language"'));
+$off = (new RealFlowBrowser($portOff))->go('/fr/member/main/register?invite=' . $inviteOnDisk($siteOff, 'aus@example.ch', 'fr'));
+check('… and the redemption page asks none: the name form as before', $off[0] === 200 && str_contains($off[2], 'name="last_name"') && !str_contains($off[2], 'name="language"'));
 
 echo "\n{$pass} ok, {$fail} failed\n";
 exit($fail === 0 ? 0 : 1);
