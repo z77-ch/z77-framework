@@ -109,10 +109,14 @@ $ceInput = function (array $f, mixed $value, string $bfAttr) use ($ceHint, $ceDo
             . '<span class="be-switch__track"><span class="be-switch__thumb"></span></span>'
             . '<span class="be-switch__label">' . e($label) . '</span></label>';
     }
-    // text | url (and any unknown kind) → single-line input
-    $type = $kind === 'url' ? 'url' : 'text';
+    // text | url (and any unknown kind) → single-line input. Kind `url` is NOT
+    // rendered as type="url": the browser accepts only absolute URLs there and
+    // blocks the submit of a site-relative target (`/netzwerk`, `#anchor`) that
+    // BlockSchemaValidator::safeUrl() allows. The server is the only check
+    // (CE-URL-001); inputmode only brings up the URL keyboard.
+    $urlAttr = $kind === 'url' ? ' inputmode="url" spellcheck="false"' : '';
     return '<label class="ce-field"><span class="ce-field__label">' . e($label) . '</span>'
-        . '<input type="' . $type . '" ' . $bf . ' value="' . e((string)$value) . '" autocomplete="off">' . $ceHint($f) . '</label>';
+        . '<input type="text"' . $urlAttr . ' ' . $bf . ' value="' . e((string)$value) . '" autocomplete="off">' . $ceHint($f) . '</label>';
 };
 
 // One scalar-list row (<input data-bv>, or <textarea data-bv> for `item: textarea`

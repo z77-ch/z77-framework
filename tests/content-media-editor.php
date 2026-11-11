@@ -261,7 +261,9 @@ check('media-image: THE media field, its input with data-bf + data-bk="document"
     && preg_match('#<input type="hidden" data-bf="documentId" data-bk="document" value="" data-media-field-input>#', $tpl) === 1, substr($tpl, 0, 600));
 check('… «Auswählen …» opens the picker at the content partition, images, public', str_contains($tpl, 'data-window-open="/backend/documents/drive/pick?target=dms-mf-')
     && str_contains($tpl, '&amp;root=' . $cid . '&amp;accept=image&amp;public=1"'));
-$gtpl = $template($html, 'media-gallery');
+check('kind `url` (media-image › link) is a text input: the browser must not refuse `/contact` (CE-URL-001)', preg_match('#<input type="text" inputmode="url" spellcheck="false" data-bf="link"#', $tpl) === 1
+    && !str_contains($html, 'type="url"'), substr($tpl, 0, 900));
+$gtpl =$template($html, 'media-gallery');
 check('media-gallery: the row template holds a media field with data-bf-sub', preg_match('#<template data-ce-row-tpl>.*data-bf-sub="documentId" data-bk="document".*data-media-field-input.*</template>#s', $gtpl) === 1, substr($gtpl, 0, 400));
 check('… the object row carries ↑ / ↓', str_contains($gtpl, 'data-ce-row-up') && str_contains($gtpl, 'data-ce-row-down'));
 $envelope = preg_match('#<script type="application/json" data-z77-envelope>(.*?)</script>#s', $html, $e) === 1 ? (array) json_decode($e[1], true) : [];
