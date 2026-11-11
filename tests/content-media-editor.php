@@ -279,6 +279,7 @@ check('… granted: `editor` write, `admin` manage on the new partition', $roleA
 $pickQ = ['target' => 'f1', 'root' => (string) $cid, 'accept' => 'image', 'public' => '1'];
 [$s, $html] = $get($reto, $retoToken, '/backend/documents/drive/pick?' . http_build_query($pickQ));
 check('an EDITOR opens the picker at the content partition', $s === 200 && str_contains($html, 'data-window="dms-pick"'), "{$s} " . substr($html, 0, 300));
+check('… one folder, nothing below it: no tree column, the grid takes the width', !str_contains($html, 'dms-pick__tree') && str_contains($html, 'dms-pick__body--single'));
 $boundary = 'z77' . bin2hex(random_bytes(8));
 $body     = '';
 foreach ($pickQ + ['folder_id' => (string) $cid] as $k => $v) {
