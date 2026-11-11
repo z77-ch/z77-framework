@@ -990,9 +990,7 @@ packages/module-backend/res/view/templates/
   in-place save (the row changes, the page stays), the invoice editor as a window; (3)
   `confirmFinalize` as a window (DEBTOR-WIN-002: `core.js` needs an opener for a GET form); (4)
   count badges beside lists after an inserted / removed row (owner's word). Also open: the
-  owner's live look at the upload (`fetch.md` pending), `.min.js` for `core.js` / `upload.js` /
-  `upload-poster.js` (the owner re-saves them in VS Code — minify on save, owner decision
-  2026-10-13, `js-build.md`; `tests/js-min-markers.php` shows what is stale), the
+  owner's live look at the upload (`fetch.md` pending), the
   stray `public/assets/dms/js/documents/drive_at-*.js` on z77.ch, ADR-046 addendum awaiting the
   owner's word, NO tag since `1.6.0`. Rule: a framework CSS/JS change reaches a project only
   after `composer install` there — publish before asking the owner to look.

@@ -3,24 +3,25 @@
  * build-js — produce the `.min.js` that production serves.
  *
  * `JavascriptManager` serves `name.min.js` in production and `name.js` in
- * debug (docs/topics/js-build.md). Nothing generated those `.min.js` files
- * until now: they were minified by hand, so some were stale, five were plain
- * copies of the commented source, and four were missing (the manager then
- * falls back to the unminified file and writes a warning on every request).
+ * debug (docs/topics/js-build.md, JS-BUILD-002).
  *
- * OPTIONAL since 2026-10-13: the owner writes the `.min.js` with VS Code
- * (minify on save) and `php tests/js-min-markers.php` checks them
- * (js-build.md, JS-BUILD-002). This script stays for a machine that has terser:
- *   npm run build:js        write every .min.js that differs from terser's output
- *   npm run build:js -- --check   write nothing, exit 1 if one differs — compares
- *                           against terser's bytes, so an editor-made .min.js
- *                           always "differs"; not a freshness check any more
+ * ONE minifier, two ways to run it (owner decision 2026-11-11): the owner's VS
+ * Code extension «autominify» (minify on save) and this script give the SAME
+ * bytes — both run terser with the extension's options `{ mangle: false }`, and
+ * this script prefers the terser the extension bundles. The assistant minifies
+ * with it after every change to a `*.js`; `php tests/js-min-markers.php` checks
+ * the result either way.
  *
- * It needs terser on PATH (`npm i -g terser`) — deliberately not a
- * devDependency: it is a maintainer tool, a project never runs it.
+ *   npm run build:js -- <file.js> …   minify the named sources (the usual call)
+ *   npm run build:js                  every source under packages/…/res/assets/js
+ *   npm run build:js -- --check       write nothing, exit 1 if one differs
+ *
+ * terser is looked up in: the autominify extension, a local node_modules, the
+ * global npm root — deliberately not a devDependency: a project never runs it.
  */
 
-import { execFileSync } from 'node:child_process';
+import { createRequire } from 'node:module';
+import { homedir } from 'node:os';
 import { readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -39,6 +40,7 @@ const VENDOR_MARKER = '@z77-js: vendor';
 const MARKER_WINDOW = 400; // bytes — the marker belongs in the first line
 
 const check = process.argv.includes('--check');
+const named = process.argv.slice(2).filter((arg) => !arg.startsWith('--')).map((arg) => resolve(arg));
 
 /** Every `*.js` under a package's `res/assets/js`, excluding `*.min.js`. */
 function sources(dir, found = []) {
@@ -84,61 +86,70 @@ function exists(path) {
 }
 
 /*
- * terser is run as a node script, not through a shell: on Windows the PATH
- * entry is a `.cmd` shim, and `shell: true` would concatenate our arguments
- * into a command line instead of passing them (node DEP0190). Resolving the
- * package's own entry point avoids both the shim and the quoting.
+ * The extension's terser first: the same version as a save in VS Code, so both
+ * ways write identical bytes. Then a local or a global install.
  */
-function terserEntry() {
+function terserModule() {
+    const roots = [];
+    const extensions = join(homedir(), '.vscode', 'extensions');
+    if (exists(extensions)) {
+        for (const name of readdirSync(extensions).sort().reverse()) {
+            if (name.startsWith('caffeineonice.autominify-')) roots.push(join(extensions, name, 'node_modules'));
+        }
+    }
     const prefix = process.env.npm_config_prefix;
-    const roots = [
-        join(ROOT, 'node_modules'),                                  // local, if a project ever adds it
+    roots.push(
+        join(ROOT, 'node_modules'),
         ...(prefix ? [join(prefix, 'node_modules'), join(prefix, 'lib', 'node_modules')] : []),
         ...(process.env.APPDATA ? [join(process.env.APPDATA, 'npm', 'node_modules')] : []),
         '/usr/local/lib/node_modules',
         '/usr/lib/node_modules',
-    ];
+    );
 
     for (const root of roots) {
-        const entry = join(root, 'terser', 'bin', 'terser');
-        try {
-            statSync(entry);
-            return entry;
-        } catch { /* keep looking */ }
+        if (exists(join(root, 'terser'))) {
+            return createRequire(join(root, 'noop.js'))('terser');
+        }
     }
-    console.error('terser not found — install it with: npm i -g terser');
+    console.error('terser not found — install the VS Code extension «autominify» or: npm i -g terser');
     process.exit(2);
 }
 
-const TERSER = terserEntry();
+const terser = terserModule();
 
-function minify(path) {
-    // Defaults on purpose: terser mangles local scopes only, so the globals
-    // the templates call (`_Z77`, `_z77CollectFormData`) keep their names, and
-    // property names (`el.name`, `file.name`) are never touched.
-    // No source map — production ships none today and the versioned file name
-    // (`name_at-{mtime}.min.js`) would have to carry one too.
-    return execFileSync(process.execPath, [TERSER, path, '--compress', '--mangle'], {
-        encoding: 'utf8',
-        maxBuffer: 64 * 1024 * 1024,
-    });
+// The extension's default options, on purpose: no mangling, so the globals the
+// templates call (`_Z77`, `_z77CollectFormData`) and every local keep their
+// names — what a save in VS Code writes. No source map — production ships none
+// and the versioned file name (`name_at-{mtime}.min.js`) would have to carry one.
+const OPTIONS = { mangle: false };
+
+async function minify(source) {
+    return (await terser.minify(source, OPTIONS)).code;
 }
 
 const rows = [];
 let changed = 0;
 let failed = 0;
 
-for (const dir of assetDirs()) {
-    for (const src of sources(dir)) {
+const all = assetDirs().flatMap((dir) => sources(dir));
+for (const path of named) {
+    if (!all.includes(path)) {
+        console.error(`not a source under packages/…/res/assets/js: ${relative(ROOT, path)}`);
+        process.exit(2);
+    }
+}
+
+{
+    for (const src of (named.length ? named : all)) {
         const target = src.slice(0, -3) + '.min.js';
         const source = readFileSync(src, 'utf8');
         const vendor = source.slice(0, MARKER_WINDOW).includes(VENDOR_MARKER);
 
         let output;
         try {
-            output = vendor ? source : minify(src);
+            output = vendor ? source : await minify(source);
         } catch (error) {
-            rows.push([relative(ROOT, target), 'FEHLER', String(error.stderr || error.message).trim().split('\n')[0]]);
+            rows.push([relative(ROOT, target), 'FEHLER', String(error.message).trim().split('\n')[0]]);
             failed++;
             continue;
         }

@@ -133,6 +133,10 @@ before deviating.
 - Always follow conventions from `docs/01-handbook/conventions.md`
 - Old framework (wdv-622): always read → analyze → review → decide → only then integrate. Never copy directly.
 - Language: all code, comments, docs, and exception messages in English. Communicate with the developer in German.
+- After changing a `*.js` under `packages/*/res/assets/js` → minify it yourself with
+  `npm run build:js -- <file.js>` (the same terser and options as the owner's VS Code save),
+  then `php tests/js-min-markers.php`. Do not hand the re-save to the developer. →
+  [`js-build.md`](docs/topics/js-build.md) JS-BUILD-003.
 
 ### Talking to the developer
 

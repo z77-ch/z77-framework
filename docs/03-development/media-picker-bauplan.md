@@ -79,7 +79,7 @@ contract for P2b: `documents.md` MEDIA-PICK-001. **Deviations:** no `pickListAct
 `pickChooseAction` — a folder click reloads the window (`data-window-link`, so the upload is
 bound again with the new folder), the choice is the POST of `pick`; the opener is addressed by
 the field's DOM id (`target`), re-keyed by the script for a clone; `ensurePublic()` refuses a
-`sealed` partition. **Open:** `.min.js` of `core.js` and `media-field.js`; owner's look and a
+`sealed` partition. **Open:** owner's look and a
 click-through on a real installation.
 
 **For P2b (the editor):** render `partials/mediaField` with `name` = the block field's input
