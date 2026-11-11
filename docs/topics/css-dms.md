@@ -1,6 +1,6 @@
 # css-dms
 
-2026-10-22
+2026-11-11
 
 ## entry
 
@@ -15,6 +15,7 @@ SOURCE=/packages/module-dms/res/assets/css
 SOURCE=/packages/module-dms/res/scss/tokens/_colors.scss
 SOURCE=/packages/module-backend/res/scss/components/_dms-host.scss
 SOURCE=/packages/module-dms/res/scss/components/_split-host.scss
+SOURCE=/packages/module-dms/res/scss/components/_media.scss
 SOURCE=/packages/kernel/shared/res/scss/components/_split.scss
 SOURCE=/packages/module-dms/res/view/templates/Documents/DriveController/listAction.tpl.php
 SOURCE=/packages/module-dms/src/App/Config/dmsConfig.inc.php
@@ -67,7 +68,8 @@ packages/module-dms/res/scss/
 │   ├── _drive.scss        .dms-drive — FRAME + pane look only; layout is .z77-split
 │   ├── _tree.scss         .dms-tree — left folder hierarchy (depth via --dms-depth)
 │   ├── _filelist.scss     .dms-file — middle document rows (thumbnail / kind icon, badge, actions)
-│   └── _preview.scss      .dms-preview — right pane (media + metadata + actions)
+│   ├── _preview.scss      .dms-preview — right pane (media + metadata + actions)
+│   └── _media.scss        .dms-media-field / .dms-pick — NOT in dms.css: compiled into the HOST bundle (backend base.scss), bound in _dms-host.scss
 └── dms.scss               Entry: the single always-loaded bundle (tokens + base + components)
 ```
 
@@ -135,6 +137,7 @@ host only and, at equal specificity but later load order, would override the bin
 
 ## rules
 
+- When a dms component must render OUTSIDE the Drive page (the media field in any backend form, the media picker window over any page — documents.md MEDIA-PICK-001) → MUST live in its own partial (`components/_media.scss`) that the HOST compiles into its own bundle (backend: `base.scss`) and binds in its host file (`_dms-host.scss`, `.be .dms-media-field, .be .dms-pick`); its neutral defaults (`--dms-media-*`) stand on the component roots, not on `.dms` — the `.dms` wrapper and `dms.css` are not on those pages (the split of the shared `_windows.scss` / `_upload.scss`). MUST NOT add it to `dms.scss` (it would not reach the pages that need it and would load twice on the Drive).
 - When styling any colour, font, spacing, radius, shadow, transition, or z-index in dms CSS → MUST reference a `--dms-*` token; values MUST NOT be hardcoded outside `tokens/_*.scss`.
 - When declaring `--dms-*` tokens → MUST place them on the `.dms` wrapper selector in `tokens/_*.scss`; MUST NOT declare design tokens on `:root` (ADR-018).
 - When adding a token a dms component needs → MUST add it to `.dms` (keep the set complete); MUST NOT rely on a host token leaking into the fragment.

@@ -1,6 +1,6 @@
 # block-types
 
-2026-10-22
+2026-11-11
 
 ## entry
 
@@ -20,6 +20,8 @@ SOURCE=/packages/kernel/shared/src/Content/Renderer/HeadingRenderer.php
 SOURCE=/packages/module-frontend/src/Content/Renderer/HeroRenderer.php
 SOURCE=/packages/module-frontend/src/Content/Renderer/SectionBlockRenderer.php
 SOURCE=/packages/module-frontend/src/App/Config/frontendConfig.inc.php
+SOURCE=/packages/module-dms/src/Content/Renderer/MediaBlockRenderer.php
+SOURCE=/packages/kernel/shared/src/Content/BlockSchemaValidator.php
 
 ## mental model
 
@@ -28,6 +30,7 @@ A block type is **one `BlockRenderer` class** (`type()` + `schema()` + `render()
 - Core types (`heading`, `text`, `list`, `image`) live in `Z77\Shared\Content\Renderer` and are seeded by `DefaultBlockRegistry::create()`. Design-specific types live in a module (e.g. `Z77\Module\Frontend\Content\Renderer`) and are added via that module's `contentBlocks`.
 - Renderers are **stateless** (no constructor) — `InlineMarkdown` is passed into `render()` per call, so `assemble()` can `new` them with no args.
 - `schema()` is the authoring contract (one descriptor per field: `key`, `kind`, `label`, optional `options`/`item`/`default`); see [`../02-decisions/adr-011-block-field-schema.md`](../02-decisions/adr-011-block-field-schema.md). ADR-044 adds optional `required`, `maxLength`, `min`/`max` (lists), `inline` (`bold|italic|link|break`) and `links` (`targets`, `localize`) — checked on save, and applied when a template reads through `ContentView` ([`../02-decisions/adr-044-content-blueprints.md`](../02-decisions/adr-044-content-blueprints.md)). A list with `item: 'textarea'` is edited as paragraphs.
+- **A renderer that needs a service** (2026-11-11, the DMS image blocks): the contract stays no-arg, so a non-DI service is built once per request on first use in a private static of the renderer (`MediaBlockRenderer::documents()` → `DocumentService::create()`, the `mediaUrl()` pattern); a harness sets that static by reflection. A block that references a document stores its `id` in a field of kind `document` (`BlockSchemaValidator` checks the shape only) and lives in the module that owns the documents ([`content.md`](content.md) «DMS image blocks»).
 - The block **storage** shape is just `{type, ...fields}` in the document's `blocks` array — a new type needs **no** change to `Content`.
 - Deploy: PHP (renderer + config) is symlinked → effective immediately. New SCSS classes need `npm run build:frontend` + `composer install -d skeleton` (copies compiled CSS to `public`).
 - **Starter set (2026-10-22):** the frontend module ships `hero`, `text-section`, `cards`, `image-text`, `cta`, `form` (+ `footer`) — the building blocks of the starter pages ([`content.md`](content.md) «Starter pages»). The new ones extend `SectionBlockRenderer`: they declare fields with bounds and inline profiles (`text()`, `textarea()`, `paragraphs()`), the pages read them through blueprint slots and `partials/sections/*`, and `render()` is a generic stream fallback. A designed type of a project can extend it the same way.
@@ -92,6 +95,7 @@ What you get for free: editor type + form, validation, stream rendering, and bes
 - When the type is design-specific → MUST place the renderer in the module namespace (e.g. `Z77\Module\Frontend\Content\Renderer`) and register via `contentBlocks`; MUST NOT add it to core's `DefaultBlockRegistry` (keeps core free of module markup).
 - When declaring `schema()` → MUST list exactly the fields `render()` reads (same keys); MUST NOT let schema and render drift (the editor builds the form from `schema()`).
 - When the change is PHP only (renderer + config) → no asset deploy is needed (packages are symlinked); when new SCSS classes are added → MUST run `npm run build:frontend`, then get the compiled CSS into `public/assets` — `public/` is seed-once (ADR-024), so `composer install` won't update an existing file: delete it (or `skeleton/public`) + `composer install -d skeleton` to re-seed, or copy it in by hand.
+- When `render()` needs a service (DMS, mail, …) → MUST keep the renderer no-arg and reach the service lazily (built once per request on first use, `MediaBlockRenderer::documents()`); MUST NOT add a constructor, register the renderer in DI, or let a block type in `shared` depend on a module's service (`shared → module-*` is forbidden — the type moves into that module).
 - When a repeated type is read in bespoke mode → MUST use `Content::blocks($type)` (list) or an index; MUST NOT assume a unique named slot for a type that can appear more than once.
 
 ## see also

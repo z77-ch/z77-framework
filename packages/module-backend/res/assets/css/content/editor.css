@@ -113,6 +113,10 @@
     color: var(--be-text, #0f172a);
 }
 .ce-row--object { align-items: stretch; }
+/* ↑ / ↓ of an object row (a gallery's image order, media-picker P2b) — stacked beside the fields. */
+.ce-row__move { display: flex; flex-direction: column; gap: .2rem; }
+.ce-row:first-child > .ce-row__move [data-ce-row-up],
+.ce-row:last-child > .ce-row__move [data-ce-row-down] { visibility: hidden; }
 .ce-row__fields {
     flex: 1 1 auto;
     display: flex;

@@ -272,6 +272,9 @@ class ContentController extends BackendAbstractController
                 $content->setBlocks($blueprint->enforce($content->getBlocks(), $storedBlocks, $schemas));
             }
             $validator->useBlueprint($blueprint);
+            // A CHANGED document reference must name a document the store lets stand there
+            // (media-picker P2b) — the picker is the convenience, this is the gate.
+            $validator->useDocuments($extensions->documents(), $storedBlocks);
         }
 
         $validator ??= new ContentValidator($content, $knownTypes, $this->repo(), $isNew, $rawBlocks, $schemas);
@@ -346,6 +349,7 @@ class ContentController extends BackendAbstractController
             'entityHash' => $entityHash,
             'validator'  => $validator,
             'rawBlocks'  => $rawBlocks,
+            'documents'  => $extensions->documents(),
         ]);
         $this->layoutManager->addPartials('edit', 'Content/ContentController', self::NAMESPACE);
         $response->addCommand('load-script', [
@@ -353,6 +357,7 @@ class ContentController extends BackendAbstractController
             'init'  => 'content-editor',
             'scope' => '[data-z77-popup-body]',
         ]);
+        $this->loadMediaField($response, $extensions);
         return $response;
     }
 
@@ -438,6 +443,7 @@ class ContentController extends BackendAbstractController
             $validator->guardStoredState($entityHash);
 
             // Only the blocks change — never title, active, identity or stamps.
+            $storedBlocks = $content->getBlocks();
             $posted = json_decode($rawBlocks, true);
             $content->setBlocks($blueprint->enforceSlot(
                 $slotKey,
@@ -446,6 +452,7 @@ class ContentController extends BackendAbstractController
                 $schemas
             ));
             $validator->useBlueprint($blueprint);
+            $validator->useDocuments($extensions->documents(), $storedBlocks);
 
             if ($validator->isValid()) {
                 $service = ContentVariantService::create();
@@ -497,6 +504,7 @@ class ContentController extends BackendAbstractController
             'slot'       => $slot,
             'slotUrl'    => $slotUrl,
             'slotTarget' => $intoSet ? $preview : '',
+            'documents'  => $extensions->documents(),
         ]);
 
         if ($request->getMode() === RequestMode::Fetch) {
@@ -507,6 +515,7 @@ class ContentController extends BackendAbstractController
                 'init'  => 'content-editor',
                 'scope' => '[data-z77-popup-body]',
             ]);
+            $this->loadMediaField($response, $extensions);
             return $response;
         }
 
@@ -521,8 +530,33 @@ class ContentController extends BackendAbstractController
         $this->layoutManager->addCss('content/editor', self::NAMESPACE);
         $this->layoutManager->addJs('content/editor', self::NAMESPACE);
         $this->layoutManager->addJs('content/slot', self::NAMESPACE);
+        if ($extensions->documents() !== null) {
+            // The media field of `document` fields (module-dms, media-picker P2b).
+            $this->layoutManager->addJs(self::MEDIA_FIELD_JS, self::MEDIA_FIELD_NS);
+        }
 
         return $response;
+    }
+
+    /** The media field's script (module-dms) — loaded where the editor shows `document` fields. */
+    private const MEDIA_FIELD_JS = 'documents/media-field';
+    private const MEDIA_FIELD_NS = 'Z77\\Module\\Dms';
+
+    /**
+     * A fetched editor (the popup, the slot form re-rendered after a failed save) loads the
+     * media field's script with the form — only when an asset store answers for `document`
+     * fields (ContentExtensions::documents(), declared by module-dms).
+     */
+    private function loadMediaField(HtmlResponse $response, ContentExtensions $extensions): void
+    {
+        if ($extensions->documents() === null) {
+            return;
+        }
+        $response->addCommand('load-script', [
+            'src'   => $this->layoutManager->resolveJsPath(self::MEDIA_FIELD_JS, self::MEDIA_FIELD_NS),
+            'init'  => 'dms-media-field',
+            'scope' => '[data-z77-popup-body]',
+        ]);
     }
 
     /** An error of the slot editor: a flash on a fetch, a 404 on the page. */

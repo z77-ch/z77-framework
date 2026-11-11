@@ -12,6 +12,12 @@
  *                                    hide "+" at max and "×" at min (the server checks too)
  *     [data-ce-rows] > [data-ce-row] live rows; [data-bv] scalar / [data-bf-sub] object sub-field
  *     [data-ce-row-tpl]              <template> for a fresh row
+ *     [data-ce-row-up] / [-down]     move an object row among its siblings (a gallery's order)
+ *   [data-bk="document"]             a DMS document id: the hidden input of the media field
+ *                                    (module-dms `partials/mediaField`) — read as its value like
+ *                                    any input; the picker's `set-value` and «Entfernen» fire
+ *                                    `change`, which re-serialises. A cloned row's field gets a
+ *                                    fresh id from documents/media-field.js at its click.
  *   [data-ce-raw]                    unknown-type block → emit its JSON verbatim
  *   [data-ce-tpl="<type>"]           <template> for a fresh block of that type
  *   input[name="blocks"][data-ce-json]   hidden submit field (kept in sync)
@@ -149,6 +155,17 @@
 
             if (t.closest('[data-ce-remove]')) {
                 if (block) { block.remove(); updateEmpty(); sync(); }
+                return;
+            }
+            var moveUp = t.closest('[data-ce-row-up]');
+            if (moveUp || t.closest('[data-ce-row-down]')) {
+                var moved = t.closest('[data-ce-row]');
+                var other = moved && (moveUp ? moved.previousElementSibling : moved.nextElementSibling);
+                if (other && other.hasAttribute('data-ce-row')) {
+                    if (moveUp) moved.parentNode.insertBefore(moved, other);
+                    else moved.parentNode.insertBefore(other, moved);
+                    sync();
+                }
                 return;
             }
             if (t.closest('[data-ce-row-remove]')) {

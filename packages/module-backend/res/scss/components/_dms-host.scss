@@ -76,3 +76,18 @@
     --dms-control-font-size:   var(--font-size-sm);
     --dms-control-font-weight: var(--font-weight-medium);
 }
+
+// The media field and its picker window (module-dms `components/_media.scss`, compiled into
+// this bundle — they stand in any backend form, not only on the Drive page). Same binding idea:
+// the backend's surfaces, lines and accent, so palette and dark mode follow.
+.be .dms-media-field,
+.be .dms-pick {
+    --dms-media-line:        var(--be-line);
+    --dms-media-ground:      var(--be-field);
+    --dms-media-card:        var(--be-surface2);
+    --dms-media-muted:       var(--be-muted);
+    --dms-media-accent:      var(--be-accent);
+    --dms-media-accent-soft: var(--be-accent-soft);
+    --dms-media-warn:        color-mix(in srgb, var(--be-warn) 75%, var(--be-text));
+    --dms-media-radius:      var(--radius-md);
+}

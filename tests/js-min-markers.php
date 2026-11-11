@@ -68,6 +68,7 @@ const MARKERS = [
         'stop-live',
         'X-Z77-Live',               // … its questions do not count as activity on an idle clock
         '.size',                    // … a select compared with what the browser selects by itself (2026-11-03)
+        ':modal',                   // WIN-002: a window opened over the shared popup lives inside the dialog (2026-11-11)
     ],
     'packages/kernel/shared/res/assets/js/upload.js' => [
         'data-upload-transport',    // another wire for big files — the DMS chunked upload (F3, 2026-10-31)
@@ -97,6 +98,13 @@ const MARKERS = [
     ],
     'packages/module-dms/res/assets/js/documents/drive.js' => [
         'data-dms-chunk-download',  // a large document's Download goes in pieces (DMS-CHUNK-DL-001)
+    ],
+    'packages/module-backend/res/assets/js/content/editor.js' => [
+        'data-ce-row-up',           // a gallery's image order: ↑ / ↓ of an object row (media picker P2b, 2026-11-11)
+    ],
+    'packages/module-dms/res/assets/js/documents/media-field.js' => [
+        'data-media-field-clear',   // «Entfernen» of the media field (media picker P1, 2026-11-11)
+        'dms-media-field',          // … its load-script init, which re-keys a cloned field
     ],
 ];
 

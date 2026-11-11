@@ -1,0 +1,33 @@
+/* DMS image blocks (block types `media-image` and `media-gallery`, rendered by module-dms).
+   The class names are the DMS renderers'; this is the frontend's default look — a project
+   restyles them (same split as the preview bar). The grid needs no layout file: the
+   tiles wrap by width. */
+.media-image,
+.media-gallery {
+    margin: var(--fe-space-6) 0;
+}
+
+.media-image__img,
+.media-gallery__img {
+    display:    block;
+    width:      100%;
+    height:     auto;
+    background: var(--fe-surface-alt);
+}
+
+.media-image__link { display: block; }
+
+.media-image__caption,
+.media-gallery__caption {
+    margin-top: var(--fe-space-2);
+    font-size:  var(--fe-fs-sm);
+    color:      var(--fe-muted);
+}
+
+.media-gallery {
+    display:               grid;
+    grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
+    gap:                   var(--fe-space-5);
+}
+
+.media-gallery__item { margin: 0; }

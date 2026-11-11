@@ -12,6 +12,7 @@
 /** @var array{key:string, type:string, label:string}|null $slot  slot mode (ADR-045 §4, ContentController::slotAction): only this slot, no metadata */
 /** @var string $slotUrl     slot mode: where the form posts */
 /** @var string $slotTarget  slot mode: the preview set a save creates the document in ('' = the document shown) */
+/** @var \Z77\Shared\Content\DocumentReferences|null $documents  the asset store behind `document` fields (ContentExtensions) */
 
 // Slot mode is the page editor in an iframe: one slot card, no title/active/slug
 // fields (they are not the page's text), cancel tells the parent window.
@@ -52,14 +53,41 @@ $ceHint = function (array $f) use ($actions): string {
     return '<small class="ce-field__hint">Erlaubt: ' . e(implode(' · ', $parts)) . '</small>';
 };
 
-// One scalar input (text | textarea | url | select | bool). $bfAttr is the
+// A `document` field (a DMS document id, media-picker P2b) — THE media field of the asset store
+// (`partials/mediaField`, module-dms): thumbnail, «Auswählen …» opens the picker window at the
+// store's content root, «Entfernen». Its hidden input carries the editor's data-bf / data-bf-sub
+// like any input (no `name`: only `blocks` is posted). Inside a row `<template>` the field's id
+// is cloned with it; media-field.js gives a clone a fresh id at its click. Without a store
+// (`contentDocuments` not declared) the field stays a plain id input below.
+$documents  = $documents ?? null;
+$ceDocRoot  = null;
+$ceDocument = function (array $f, mixed $value, string $bfAttr) use ($documents, &$ceDocRoot): string {
+    $ceDocRoot ??= $documents->pickerRoot();
+    $key = (string)($f['key'] ?? '');
+    return $this->partial('partials/mediaField', [
+        'value'      => is_scalar($value) ? (string)$value : '',
+        'label'      => (string)($f['label'] ?? $key),
+        'root'       => $ceDocRoot,
+        'accept'     => is_string($f['accept'] ?? null) ? $f['accept'] : '',
+        'public'     => ($f['public'] ?? true) !== false,
+        'required'   => !empty($f['required']),
+        'inputAttrs' => [$bfAttr => $key, 'data-bk' => 'document'],
+        'class'      => 'ce-media',
+    ], 'Z77\\Module\\Dms');
+};
+
+// One scalar input (text | textarea | url | select | bool | document). $bfAttr is the
 // data-attribute the editor JS reads ('data-bf' for top-level, 'data-bf-sub'
 // inside an object list row). Sub-fields are always read as plain strings.
-$ceInput = function (array $f, mixed $value, string $bfAttr) use ($ceHint): string {
+$ceInput = function (array $f, mixed $value, string $bfAttr) use ($ceHint, $ceDocument, $documents): string {
     $key   = (string)($f['key'] ?? '');
     $kind  = (string)($f['kind'] ?? 'text');
     $label = (string)($f['label'] ?? $key);
     $bf    = $bfAttr . '="' . e($key) . '" data-bk="' . e($kind) . '"';
+
+    if ($kind === 'document' && $documents !== null) {
+        return $ceDocument($f, $value, $bfAttr);
+    }
 
     if ($kind === 'textarea') {
         return '<label class="ce-field"><span class="ce-field__label">' . e($label) . '</span>'
@@ -99,7 +127,8 @@ $ceScalarRow = function (string $value = '', string $itemKind = 'text'): string 
         . '</div>';
 };
 
-// One object-list row (sub-fields via data-bf-sub).
+// One object-list row (sub-fields via data-bf-sub). ↑ / ↓ move it among its siblings — the
+// order of a gallery's images is the order on the page (media-picker P2b).
 $ceObjectRow = function (array $itemSchema, array $values) use ($ceInput): string {
     $fields = '';
     foreach ($itemSchema as $sub) {
@@ -107,6 +136,10 @@ $ceObjectRow = function (array $itemSchema, array $values) use ($ceInput): strin
     }
     return '<div class="ce-row ce-row--object" data-ce-row>'
         . '<div class="ce-row__fields">' . $fields . '</div>'
+        . '<div class="ce-row__move">'
+        . '<button type="button" class="be-icon-btn" data-ce-row-up title="Nach oben">&uarr;</button>'
+        . '<button type="button" class="be-icon-btn" data-ce-row-down title="Nach unten">&darr;</button>'
+        . '</div>'
         . '<button type="button" class="be-icon-btn be-icon-btn--danger" data-ce-row-remove title="Entfernen">&times;</button>'
         . '</div>';
 };

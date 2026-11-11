@@ -2,7 +2,8 @@
 namespace Z77\Module\Backend\Ui\Controllers\Documents;
 
 use Z77\Module\Backend\Ui\Controllers\BackendAbstractController,
-    Z77\Module\Dms\Ui\DriveControllerTrait;
+    Z77\Module\Dms\Ui\DriveControllerTrait,
+    Z77\Module\Dms\Ui\MediaPickerTrait;
 
 /**
  * Backend mount of the DMS Drive fragment (ADR-018 / ADR-019 / ADR-020). All logic,
@@ -13,9 +14,13 @@ use Z77\Module\Backend\Ui\Controllers\BackendAbstractController,
  * `documents`, ADMIN); the layout is pinned to `module-dms` via
  * `Ui/Config/Documents/driveControllerConfig.inc.php`.
  *
- * URL: /backend/documents/drive/list.
+ * It also mounts the media picker ({@see MediaPickerTrait}) — the window behind every
+ * backend media field (`partials/mediaField`, module-dms).
+ *
+ * URL: /backend/documents/drive/list · /drive/pick · /drive/pick-upload.
  */
 class DriveController extends BackendAbstractController
 {
     use DriveControllerTrait;
+    use MediaPickerTrait;
 }
