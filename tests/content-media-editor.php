@@ -79,6 +79,7 @@ $hash = password_hash('Passwort-Sehr-Lang-1', PASSWORD_BCRYPT, ['cost' => 4]);
 realFlowSite($site, $repo, [
     ['id' => 9, 'username' => 'chef', 'name' => 'Max Muster', 'email' => 'max.muster@example.ch', 'password_hash' => $hash, 'roles' => ['superUser'], 'sort_key' => 0],
     ['id' => 7, 'username' => 'erna', 'name' => 'Erna Muster', 'email' => 'erna.muster@example.ch', 'password_hash' => $hash, 'roles' => ['admin'], 'sort_key' => 1],
+    ['id' => 8, 'username' => 'reto', 'name' => 'Reto Muster', 'email' => 'reto.muster@example.ch', 'password_hash' => $hash, 'roles' => ['editor'], 'sort_key' => 2],
 ]);
 // The DMS on the installation, with a project's override of its config (a blueprint, the remap).
 $finder = (string) file_get_contents($site . '/config/fileFinder.inc.php');
@@ -223,6 +224,7 @@ $login = static function (string $user) use ($browser): array {
 [$chef, $chefToken, $st] = $login('chef');
 check('a real login (chef)', $st === 200 && $chefToken !== '', (string) $st);
 [$erna, $ernaToken] = $login('erna');
+[$reto, $retoToken] = $login('reto');
 
 $fetch  = static fn (string $t): array => ['Sec-Fetch-Mode: cors', 'X-Requested-With: XMLHttpRequest', 'X-CSRF-Token: ' . $t];
 $get    = static fn (Closure $who, string $t, string $path): array => $who($path, null, $fetch($t));
@@ -267,6 +269,29 @@ $scripts  = array_values(array_filter($envelope['commands'] ?? [], static fn (ar
 $media    = array_values(array_filter($scripts, static fn (array $c): bool => str_contains((string) ($c['src'] ?? ''), '/documents/media-field')))[0] ?? [];
 check('the answer loads documents/media-field with the editor (init dms-media-field, the popup body)', ($media['init'] ?? '') === 'dms-media-field'
     && ($media['scope'] ?? '') === '[data-z77-popup-body]' && count($scripts) === 2, json_encode($scripts));
+
+// The editor role (owner 2026-11-11): the new partition grants `editor` write and `admin`
+// manage — role ACEs match by exact name, so each role is granted on its own.
+$aces    = $readJson($site . '/data/documents/access_control.json');
+$roleAce = static fn (string $role): ?string => (array_values(array_filter($aces, static fn (array $a): bool => ($a['resource_type'] ?? '') === 'folder'
+    && (int) ($a['resource_id'] ?? 0) === $cid && ($a['subject_type'] ?? '') === 'role' && ($a['subject_id'] ?? '') === $role))[0] ?? [])['rights'] ?? null;
+check('… granted: `editor` write, `admin` manage on the new partition', $roleAce('editor') === 'write' && $roleAce('admin') === 'manage', json_encode($aces));
+$pickQ = ['target' => 'f1', 'root' => (string) $cid, 'accept' => 'image', 'public' => '1'];
+[$s, $html] = $get($reto, $retoToken, '/backend/documents/drive/pick?' . http_build_query($pickQ));
+check('an EDITOR opens the picker at the content partition', $s === 200 && str_contains($html, 'data-window="dms-pick"'), "{$s} " . substr($html, 0, 300));
+$boundary = 'z77' . bin2hex(random_bytes(8));
+$body     = '';
+foreach ($pickQ + ['folder_id' => (string) $cid] as $k => $v) {
+    $body .= "--{$boundary}\r\nContent-Disposition: form-data; name=\"{$k}\"\r\n\r\n{$v}\r\n";
+}
+$body .= "--{$boundary}\r\nContent-Disposition: form-data; name=\"files[]\"; filename=\"Redaktor.png\"\r\nContent-Type: application/octet-stream\r\n\r\n" . TestPng::bytes(80, 50) . "\r\n--{$boundary}--\r\n";
+$up    = $json($reto('/backend/documents/drive/pick-upload', $body, array_merge($fetch($retoToken), ["Content-Type: multipart/form-data; boundary={$boundary}"])));
+$retoDoc = (int) ($up['data']['id'] ?? 0);
+check('… uploads into it', ($up['status'] ?? '') === 'success' && $retoDoc > 0, json_encode($up));
+[$s] = $get($reto, $retoToken, '/backend/documents/document/preview?id=' . $retoDoc . '&variant=s');
+check('… and loads its thumbnail (document/preview is EDITOR)', $s === 200, (string) $s);
+[$s] = $get($reto, $retoToken, '/backend/documents/drive/list');
+check('… the Drive itself stays closed to him', $s !== 200, (string) $s);
 
 // ═══════════════════════════════════════════════════════════════════════════════════
 echo "(B) the save judges a changed reference\n";

@@ -165,9 +165,24 @@ return [
         ],
         'documents' => [
             // Byte delivery only (Drive preview/thumbnail + download) — deviates
-            // from the `list` convention only.
+            // from the `list` convention only. The preview is EDITOR: the media
+            // field shows the chosen image's thumbnail in the content editor.
             'DocumentController' => [
                 'defaultAction' => 'preview',
+                'actions'       => [
+                    'previewAction' => AuthRole::EDITOR,
+                ],
+            ],
+            // The Drive stays ADMIN; its media picker (MEDIA-PICK-001) is EDITOR —
+            // editors choose and upload content images (owner 2026-11-11). This is
+            // the coarse first line only: what an editor sees and where he may
+            // upload is the DMS ACL (`ContentDocuments` grants `editor` write on
+            // the «Inhalte» partition it creates).
+            'DriveController' => [
+                'actions' => [
+                    'pickAction'       => AuthRole::EDITOR,
+                    'pickUploadAction' => AuthRole::EDITOR,
+                ],
             ],
         ],
         // Installation service tools. Backups contain the whole user store

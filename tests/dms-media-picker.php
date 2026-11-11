@@ -417,6 +417,25 @@ try {
 }
 check('a sealed partition: refused, stays sealed', $threw && $mode($rootId) === 'sealed');
 
+echo "(G) ModuleDrive::grantRole\n";
+$acesOf = static fn (): array => array_values(array_filter(json_decode((string) file_get_contents($site . '/data/documents/access_control.json'), true) ?: [],
+    static fn (array $a): bool => ($a['resource_type'] ?? '') === 'folder' && (int) ($a['resource_id'] ?? 0) === $rootId && ($a['subject_type'] ?? '') === 'role'));
+$rightOf = static fn (string $role): array => array_column(array_filter($acesOf(), static fn (array $a): bool => $a['subject_id'] === $role), 'rights');
+$drive = DocumentService::create()->forModule('projekte');
+$drive->grantRole('editor', 'read');
+check('a role ACE on the partition root', $rightOf('editor') === ['read'], json_encode($acesOf()));
+$drive->grantRole('editor', 'write');
+check('… raised, not duplicated', $rightOf('editor') === ['write'], json_encode($acesOf()));
+$drive->grantRole('editor', 'read');
+check('… never lowered', $rightOf('editor') === ['write'], json_encode($acesOf()));
+$drive->grantRole('admin', 'manage');
+check('… each role on its own', $rightOf('admin') === ['manage'] && $rightOf('editor') === ['write']);
+$bad = 0;
+foreach ([['editor', 'own'], ['', 'read'], ['a b', 'read']] as [$r, $x]) {
+    try { $drive->grantRole($r, $x); } catch (\InvalidArgumentException) { $bad++; }
+}
+check('an unknown right or a malformed role name: refused', $bad === 3 && count($acesOf()) === 2);
+
 echo "\n{$pass} passed, {$fail} failed\n";
 if ($fail > 0) {
     echo "server log:\n" . substr((string) @file_get_contents($base . '/server.log'), -3000) . "\n";

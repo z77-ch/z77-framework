@@ -1,6 +1,6 @@
 # Bauplan — images from the DMS for content and project forms
 
-**Status:** draft for review — 2026-11-11
+**Status:** P1 + P2 built and committed 2026-11-11; P3 is the project's
 **Owner decisions (2026-11-11):** customers manage texts and images themselves; new pages stay
 developer work; the framework provides as much as possible, because every new site has the
 same needs — a project's own backend screens (e.g. z77.ch «Webseiten › Projekte») are built
@@ -132,9 +132,8 @@ public renderer, so no flow needs it. **Decision 3:** the content partition is t
 `content` through `forModule('content', 'Inhalte')`, remapped only via `moduleFolders`; made
 public when created (`ModuleDrive::created()`), never afterwards. `MediaField::publicRefusal()`
 now asks `isPubliclyDelivered()` first and only names the reason. Harness
-`tests/content-media-editor.php` 31/0; end to end in Chrome 14/0. **Open:** the role gate
-(`documents` is ADMIN, the content editor EDITOR — an editor cannot open the picker yet);
-no grant on a fresh `content` partition (only a super user sees it); `.min.js` of
+`tests/content-media-editor.php` 31/0; end to end in Chrome 14/0. **Resolved after the review (owner 2026-11-11):** pick / pick-upload / preview are EDITOR;
+a fresh `content` partition grants `editor` write, `admin` manage (`ModuleDrive::grantRole`). **Open:** `.min.js` of
 `content/editor.js`, `core.js`, `media-field.js`.
 
 - `BlockSchemaValidator`: kind `document` (shape only), `required` honoured.
@@ -169,4 +168,5 @@ z77-ch-48 after P1 is committed.
 - ~~Which partition do content images go to by default?~~ Answered 2026-11-11 (P2b): module
   key `content` (partition «Inhalte», public when created), remapped through
   `dmsConfig['moduleFolders']` — no second config place.
-- Who may pick: `documents` actions are ADMIN, the content editor is EDITOR (owner decision).
+- ~~Who may pick~~ Answered 2026-11-11: an editor — pick, pick-upload and preview are EDITOR; the DMS ACL
+  decides the rest.
