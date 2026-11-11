@@ -517,3 +517,25 @@ canvas board»). What was decided while building — each binding until the owne
 ## Addendum 2026-10-24 — two order statuses after invoicing (owner decision)
 
 An order in the Faktura-Journal showed «Gebucht» although nothing was posted (owner's server test). The order now carries TWO statuses after invoicing, both in phase `closed`: the default of `closed` (seed `invoiced` «Fakturiert», «Wird gesetzt beim Fakturieren») is set by «Fakturieren» and by «Neu fakturieren»; the row flagged `set_on_posting` (seed `booked` «Gebucht», «Wird gesetzt beim Verbuchen» — one for all, never on the default's row, never selectable by hand) is set when «Journal verbuchen» posts the invoice. The edit lock still follows the invoice (issued = editable, posted = locked), not the phase. Debtor does not name order: `JournalPostingService::post()` calls the module-agnostic `InvoicePostedListener`s declared under `invoicePostedListeners` inside its unit of work (all or nothing); module-order's listener moves the linked orders (log trigger `journal-posting`, version + 1, stock unchanged). Existing installations receive `invoiced` through module-order's idempotent `OrderStatusUpgrade` of the seed-once status file; an order invoiced earlier stays `booked` while its invoice is still issued — the posting leaves it, «Neu fakturieren» moves it to «Fakturiert». Details: `order.md` «Two statuses after invoicing», `debtor.md` «The posting hook».
+
+## Addendum 2026-11-11 — an imported document adopted as posted (owner decision)
+
+The wdv import (ADR-040 decision 9) wrote its documents with `assignNumber()` + `finalize($ref)` —
+`invoicing` → `final`, nothing posted, the postings came with the imported journal. Step 3 removed
+`Invoice::finalize()`; the build plan (§11) had called the import «unaffected» because it writes final
+documents only — the TRANSITION it used was gone (z77.ch cut-over run 2026-11-11: all 296 invoices
+refused). Owner decision 2026-11-11: the framework provides the import's path, not a workaround in the
+importer.
+
+**`Invoice::adoptPosted(?string $ledgerEntryRef, string $by, \DateTimeImmutable $at)`** — a SEPARATE
+transition `invoicing` → `final` beside the Faktura-Journal, for a document that was issued and posted
+in ANOTHER system. It requires the original number (`assignNumber()` with the numbered payment part
+first), posts nothing, writes no stamp, no archived PDF and no `invoice_revision` row, and has no journal
+posting — the state decision 22 already defines for a document posted before the journal (`posted_by` /
+`posted_at` = the importer and the import time). The table's rule «transitions, one way each» holds for
+documents CREATED here; an adopted one was never issued here, so it cannot pass through `issued` without
+inventing a stamp and an archive that never existed. No screen and no service calls it — only an import.
+What reads such a document: reprint renders live (`InvoiceArchive::pdf()`, no revision row), the open
+amount, payments, credit notes, dunning and the year close ask the state `final` only (`isPosted()`,
+`InvoiceRepository` aggregates) — nothing reads the stamp, `issued_at` or the journal posting of a
+`final` document. Harness `tests/module-debtor.php` IMP1–IMP6.

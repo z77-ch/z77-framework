@@ -364,7 +364,7 @@ updates, `journal-entry.*` (posts) / amends.
   deploy or a quiet moment); before step 3 every installation has an empty journal.
 - z77.ch (dev / test) and `z77ch_initial`: run the migrations with `z77-db migrate`; the symlinked
   packages fail with «Unknown column» until they run (as with every debtor migration).
-- The wdv import (ADR-040 decision 9) writes `final` documents only — unaffected.
+- The wdv import (ADR-040 decision 9) writes `final` documents only — ~~unaffected~~ affected: the transition it used (`Invoice::finalize()`) was removed in step 3; since 2026-11-11 it uses `Invoice::adoptPosted()` (ADR-054 addendum 2026-11-11).
 
 ## 12. Test plan
 

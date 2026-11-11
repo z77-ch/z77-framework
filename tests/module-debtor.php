@@ -229,6 +229,8 @@ if (($argv[1] ?? '') === '--order-book-worker') {
         ->set('ConfigManager', fn($c) => new ConfigManager($c->get('FileFinder'), $c->get('CacheManager')), true)
         ->set('ModuleManager', fn($c) => new ModuleManager($c->get('ConfigManager')), true)
         ->set('I18n', fn($c) => new I18n($c->get('ConfigManager')), true)
+        // The shared upload partial speaks through t() since ADR-056 (the bank import's form).
+        ->set('Translator', fn() => new \Z77\Core\Services\Translator(), true)
         ->set('DataSourceResolver', fn() => new DataSourceResolver(['file' => 'File', 'doctrine' => 'Doctrine']), true)
         ->set('UnifiedEntityManager', fn($c) => new UnifiedEntityManager($c->get('DataSourceResolver')), true);
     DI::getCacheManager()->setCacheDir($workerBase . '/var/cache/' . $workerName);
@@ -378,6 +380,8 @@ $wireDi = static function () use ($base): UnifiedEntityManager {
         ->set('ConfigManager', fn($c) => new ConfigManager($c->get('FileFinder'), $c->get('CacheManager')), true)
         ->set('ModuleManager', fn($c) => new ModuleManager($c->get('ConfigManager')), true)
         ->set('I18n', fn($c) => new I18n($c->get('ConfigManager')), true)
+        // The shared upload partial speaks through t() since ADR-056 (the bank import's form).
+        ->set('Translator', fn() => new \Z77\Core\Services\Translator(), true)
         ->set('DataSourceResolver', fn() => new DataSourceResolver(['file' => 'File', 'doctrine' => 'Doctrine']), true)
         ->set('UnifiedEntityManager', fn($c) => new UnifiedEntityManager($c->get('DataSourceResolver')), true)
     ;
@@ -6016,6 +6020,43 @@ $f9Label = $f9Summary['blocked'] > 0 ? 'Faktura-Journal gesperrt (neu fakturiere
 check('FJ91 step 9: the dashboard names the journal with its count (urgent while «Neu fakturieren» blocks it, else todo); the drafts entry says «nicht fakturiert»',
     ($f9Entries[$f9Label] ?? null)?->count === $f9Summary['count'] && !isset($f9Entries['Rechnungsentwürfe nicht verbucht']),
     json_encode(array_keys($f9Entries), JSON_UNESCAPED_UNICODE));
+
+
+// ── IMP. An imported document adopted as posted (ADR-054 addendum 2026-11-11, the wdv import) ──
+echo "IMP. Invoice::adoptPosted() — a document issued and posted elsewhere: final, no stamp, no archive, no journal; payable, credit-note target, reprint\n";
+$impEm  = $wireDi();
+$impSvc = $service($impEm);
+$impDoc = $impSvc->invoice($f4Draft('2026-12-05', 'Import aus wdv', '200.00'));
+$impNo  = 26129901;
+$impDoc->assignNumber($impNo, $impSvc->bookedPaymentPart($impDoc)->numbered($f7Customer, $impNo, 'Rechnung ' . $impNo));
+$impDoc->adoptPosted('2026/9901', 'wdv-import', new \DateTimeImmutable('2026-12-05 12:00:00'));
+$impEm->flush();
+$impId  = (int) $impDoc->getId();
+$impRow = $invoiceRow($impId);
+check('IMP1 adopted: state final with its ORIGINAL number and the ledger reference of the existing entry; no stamp, not issued, no journal posting, no archived revision; posted by the importer; NOTHING posted (no journal entry with its key)',
+    $impRow['state'] === 'final' && (int) $impRow['number'] === $impNo && $impRow['ledger_entry_ref'] === '2026/9901' && $impRow['document_stamp'] === null
+    && $impRow['issued_at'] === null && $impRow['journal_posting_id'] === null && $impRow['posted_by'] === 'wdv-import'
+    && (int) $db->fetchOne('SELECT COUNT(*) FROM invoice_revision WHERE invoice_id = ?', [$impId]) === 0
+    && !in_array($impId, array_column($wireDi()->getRepository(Invoice::class)->journalVersions(), 'id'), true),
+    json_encode($impRow));
+$impTwice = caught(fn() => $readInvoice($impId)->adoptPosted('2026/9902', 'wdv-import', new \DateTimeImmutable()), \LogicException::class)?->getMessage();
+$impBare  = $service($wireDi())->invoice($f4Draft('2026-12-05', 'ohne Nummer', '10.00'));
+$impNoNum = caught(fn() => $impBare->adoptPosted(null, 'wdv-import', new \DateTimeImmutable()), \LogicException::class)?->getMessage();
+check('IMP2 adopted once, from a draft only; a draft without its number is refused',
+    str_contains((string) $impTwice, 'no longer a draft') && str_contains((string) $impNoNum, 'original number'), json_encode([$impTwice, $impNoNum]));
+$impPdf = (new \Z77\Module\Debtor\Pdf\InvoiceArchive($wireDi()))->pdf($readInvoice($impId));
+check('IMP3 the reprint renders live (no archived file — the state of a document posted before the journal)', str_starts_with($impPdf, '%PDF'));
+$impOpen = (new InvoicingService($wireDi(), 'tester'))->openAmount($readInvoice($impId));
+check('IMP4 an open item: its open amount is the gross total', $impOpen->toDecimal() === $impRow['gross_total'], $impOpen->toDecimal());
+(new PaymentService($wireDi(), 'tester'))->record(new PaymentDraft($impId, day('2026-12-10'), chf('100.00'), chf('0.00'), chf('0.00'), 'qr'));
+$impOpen2 = (new InvoicingService($wireDi(), 'tester'))->openAmount($readInvoice($impId));
+check('IMP5 a payment is allocated to it (partial): the open amount drops by the payment', $impOpen2->toDecimal() === bcsub((string) $impRow['gross_total'], '100.00', 2), $impOpen2->toDecimal());
+$impCn = $service($wireDi())->invoice(InvoiceDraft::creditNote($impId, $mid, day('2026-12-11'), 'CHF', [
+    LineDraft::service('Korrektur Import', '1.000', 'Std.', chf('10.00'), 'UN', '3400'),
+]));
+check('IMP6 a credit note against it is accepted (a draft referencing the imported invoice)', $impCn->isCreditNote() && $impCn->getCreditNoteOf()?->getId() === $impId);
+$service($wireDi())->discard((int) $impCn->getId(), (int) $impCn->getVersion());
+$service($wireDi())->discard((int) $impBare->getId(), (int) $impBare->getVersion());
 
 
 // ── result ───────────────────────────────────────────────────────────────

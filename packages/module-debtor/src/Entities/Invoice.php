@@ -643,6 +643,38 @@ class Invoice
         $this->changedAt      = $at;
     }
 
+    /**
+     * `invoicing` → `final` for an IMPORTED document that was issued and posted in another system
+     * (ADR-054 addendum 2026-11-11; ADR-040 decision 9, the wdv import). The import's own
+     * transition, beside the Faktura-Journal, NOT a shortcut through it: the document was issued
+     * and posted elsewhere, so it carries no stamp, no archived PDF (`invoice_revision`), no
+     * journal posting — the state of a document posted before the journal (ADR-054 decision 22).
+     * Nothing is posted here: `$ledgerEntryRef` names a journal entry that already exists (the
+     * import brought it with the journal). Reprints render live (`InvoiceArchive::pdf()`).
+     *
+     * The number is assigned first ({@see assignNumber()}, the original number and the numbered
+     * payment part). Only the import calls it — no screen and no service of the framework does.
+     *
+     * @param string|null $ledgerEntryRef `{year}/{number}` of the existing journal entry; null for a
+     *                                    document that posted nothing (a text-only document)
+     */
+    public function adoptPosted(?string $ledgerEntryRef, string $by, \DateTimeImmutable $at): void
+    {
+        $this->assertInvoicing('adopted as posted');
+        if ($this->number === null) {
+            throw new \LogicException('An imported document carries its original number (assignNumber()) before it is adopted as posted');
+        }
+        if ($ledgerEntryRef !== null && (trim($ledgerEntryRef) === '' || mb_strlen($ledgerEntryRef) > self::LEDGER_REF_LENGTH)) {
+            throw new \LogicException('A ledger entry reference is 1-' . self::LEDGER_REF_LENGTH . ' characters or null');
+        }
+        $this->state          = InvoiceState::Final->value;
+        $this->ledgerEntryRef = $ledgerEntryRef;
+        $this->postedBy       = $by;
+        $this->postedAt       = $at;
+        $this->changedBy      = $by;
+        $this->changedAt      = $at;
+    }
+
     // ── corrections while in the Faktura-Journal (ADR-054 decisions 8–11, 14; step 4 of the build plan) ──
 
     /**
