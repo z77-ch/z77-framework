@@ -510,6 +510,19 @@ label.be-list__cell { cursor: pointer; }
 .be-list__state--closed,
 .be-list__state--vat-settled { color: var(--be-warn); }
 
+/* ── Row thumbnail (`.be-list__thumb`) ──
+ * A document's small picture in a cell (the receipt journal's photo, the DMS `s` variant): portrait,
+ * cropped, framed; an empty frame when there is none. The row keeps its one line. */
+.be-list__thumb {
+    display:       block;
+    width:         1.5rem;
+    height:        2rem;
+    object-fit:    cover;
+    border:        1px solid var(--be-line);
+    border-radius: 2px;
+    background:    var(--be-field);
+}
+
 /* ── Section toggles (`.be-list__toggle`) ──
  * A switch of the list's scope as a LINK — the state is the address, one click, no form, no
  * script. The box is drawn by CSS; `--on` fills it. */

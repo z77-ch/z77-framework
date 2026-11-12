@@ -19,6 +19,7 @@
  *      in the path, one in the own name, order, limit), marks; no HTML from strings
  *   P  price mode: rows convert with their own rate (net ↔ gross, half away from zero);
  *      dated rates on a code picker ([data-rate-keep-label] — the invoice editor)
+ *   S  line sums: an empty quantity counts 1 in a lump-sum row (option[data-sum-single])
  *   K  the article picker's parts: pick-list steps, the `add-row` and `focus` commands (a clone
  *      of the template, `__i__` replaced, the value + change, the focus), the window context
  *      (data-window-with, autofocus, Esc), no HTML from strings
@@ -379,6 +380,32 @@ console.log('P  price mode, dated rates');
     check('P3 dated rates: the service date empty → the invoice date (2018) decides — UN 7.7 on both selects; [data-rate-keep-label] keeps the code «UN», the plain one shows «7.7 %»; a changed rate fires change',
         select.options[1].getAttribute('data-rate') === '7.7' && select.options[1].textContent === 'UN' && plain.options[0].textContent === '7.7 %'
         && select.events.includes('change'), [select.options[1].getAttribute('data-rate'), select.options[1].textContent, plain.options[0].textContent]);
+}
+
+// ── S: line sums — a lump sum counts once (the invoice editor's type, owner 2026-11-12) ──
+console.log('S  line sums');
+{
+    const { ctx } = makeContext();
+    const sumRow = (qty, price, discount, single) => {
+        const r = new El('div');
+        const out = new El('span');
+        r.qsa['[data-sum-qty]'] = [new El('input', { value: qty })];
+        r.qsa['[data-sum-price]'] = [new El('input', { value: price })];
+        r.qsa['[data-sum-discount]'] = [new El('input', { value: discount })];
+        r.qsa['[data-sum-amount]'] = [out];
+        if (single) r.qsa['option[data-sum-single]:checked'] = [new El('option')];
+        return { r, out };
+    };
+    const rows = [sumRow('', '10.00', '', false), sumRow('', '50.00', '10', true), sumRow('2', '10.00', '', false), sumRow('3', '5.00', '', true)];
+    const scope = new El('div');
+    const net = new El('span'), gross = new El('span');
+    scope.qsa['[data-row]'] = rows.map((x) => x.r);
+    scope.qsa['[data-sum-net]'] = [net];
+    scope.qsa['[data-sum-gross]'] = [gross];
+    ctx._Z77.core.sums.update(scope);
+    check('S1 an empty quantity counts 1 only in a row whose selected option is [data-sum-single] (a lump sum: 50.00 less 10 % → 45.00); a service row without a quantity counts nothing; a typed quantity always counts (3 × 5.00)',
+        rows.map((x) => x.out.textContent).join('|') === '|45.00|20.00|15.00' && net.textContent === '80.00' && gross.textContent === '80.00',
+        [rows.map((x) => x.out.textContent), net.textContent]);
 }
 
 // ── K: the article picker's parts — pick list, add-row, focus, window context (owner 2026-10-19) ──

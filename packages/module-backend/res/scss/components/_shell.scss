@@ -147,7 +147,8 @@ body.backend {
 // values; redeclared here so an input or a table head inside the island derives from the
 // island's dark set instead of carrying the light page field into the rail.
 .be:not([data-be-theme="dark"]) :is(.be-shell-col--1, .be-shell-band__slot--1, .be-shell-crumb__slot--1, .be-shell-tabs__slot--1, .be-shell-topbar__mod) {
-    --be-field:       color-mix(in srgb, var(--be-surface2) 97%, var(--be-text));
+    color-scheme: dark;   // the island's native controls and scrollbars match its dark ground (DARK-NATIVE-001)
+    --be-field:      color-mix(in srgb, var(--be-surface2) 97%, var(--be-text));
     --be-line-strong: color-mix(in srgb, var(--be-line) 80%, var(--be-muted));
     --be-row-tint:    color-mix(in srgb, var(--be-surface2) 96%, var(--be-text));
 }
@@ -444,6 +445,7 @@ body.backend {
 // Dark theme: the dark accent-soft lies too close to the dark surface to tint anything, so the
 // card mixes the (light) page accent itself in — a dark surface with a palette cast, light text.
 @mixin shell-card {
+    color-scheme:     light;   // back to the page's scheme over the island (DARK-NATIVE-001); dark below
     --be-surface:     var(--be-surface-page);
     --be-text:        var(--be-text-page);
     --be-muted:       var(--be-muted-page);
@@ -463,6 +465,7 @@ body.backend {
     box-shadow:    0 8px 24px rgba(0, 0, 0, .35);
 
     .be[data-be-theme="dark"] & {
+        color-scheme:      dark;
         --shell-card-bg:   color-mix(in srgb, var(--be-accent-page) 9%, var(--be-surface-page));
         --shell-card-line: color-mix(in srgb, var(--be-accent-page) 28%, var(--be-surface-page));
         --shell-card-hi:   color-mix(in srgb, var(--be-accent-page) 20%, var(--be-surface-page));

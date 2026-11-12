@@ -1,6 +1,15 @@
 /* Tokens on the .be viewArea wrapper, not :root (ADR-018). The [data-be-*] theme/
    palette overrides below keep the same specificity (0,1,0) as .be → cascade unchanged. */
 .be {
+    /* The theme for what the BROWSER draws (DARK-NATIVE-001, 2026-11-12): the option list of a
+       native <select>, the date/time picker, the default ground and ink of a form control,
+       scrollbars. Page CSS does not reach those surfaces — without `color-scheme` the browser
+       drew them light under a dark theme, and a select whose text inherits the theme's light ink
+       (the order window's status field) showed white on white, readable only on hover. Declared
+       once with the theme attribute (dark below), never per control; the dark island of the
+       light theme (`_shell.scss`) sets its own. */
+    color-scheme: light;
+
     --color-primary:        #2563eb;
     --color-primary-dark:   #1d4ed8;
     --color-primary-light:  #60a5fa;
@@ -94,6 +103,8 @@
 
 /* Salbei dark (default) — the draft's dark block */
 [data-be-theme="dark"] {
+    color-scheme: dark;   /* native controls, pickers and scrollbars follow the theme (see .be) */
+
     --be-bg:          #141816;
     --be-surface:     #181d1b;
     --be-surface2:    #1c211f;

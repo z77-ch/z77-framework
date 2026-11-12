@@ -473,8 +473,8 @@ trait OrderControllerTrait
             'canBook'         => $order !== null && !$order->isDeleted() && $invoice === null && $status !== null && $status->getPhase()->isBookable(),
             // «Neu fakturieren …» (ADR-054 decision 12): while the invoice is in the Faktura-Journal.
             'canReinvoice'    => $order !== null && !$order->isDeleted() && $invoice !== null && $invoice->isInJournal(),
-            // «Auftrag löschen …» (ADR-054 decision 14): null = allowed.
-            'deleteRefusal'   => $order !== null ? $service->deleteRefusal($order) : null,
+            // «Auftrag löschen …» (ADR-054 decision 14).
+            'canDelete'       => $order !== null && $service->deleteRefusal($order) === null,
             // A stored total of 0 (owner 2026-10-20): no booking print — the window says «Erledigt» instead.
             'zeroTotal'       => $order?->getTotalGross()?->isZero() ?? false,
             'phase'           => $status?->getPhase(),

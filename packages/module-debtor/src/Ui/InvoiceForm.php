@@ -16,8 +16,10 @@ use Z77\Shared\Money\Money;
 /**
  * The document editor's form (P3 part 3): a posted form ↔ an
  * {@see InvoiceDraft}. Plain PHP arrays in and out, no JavaScript (Rule 7):
- * a fixed number of line rows, «Weitere Zeilen» is a submit the server
- * answers with more rows (the journal's Sammelbuchung model).
+ * the rows are read in POSTED order (the order the user arranged them — the
+ * mask uses core.js «rows» like the order window: ⋮⋮ drags, ⇥ indents, × removes,
+ * «+ Zeile» adds); without the script «+ Zeile» and × are submits the server
+ * answers with the changed rows ({@see applyOp()}).
  *
  * Three modes, one form:
  *
@@ -35,9 +37,10 @@ use Z77\Shared\Money\Money;
  *     invoice (the rounding line excepted) to be cut down to what is
  *     credited; no payment target (a credit note has no payment part).
  *
- * A line row: type (Leistung | Pauschale | Text), «unter» (the row is printed
+ * A line row: type (Leistung | Pauschale | Text), `child` (the ⇥ indent: the row is printed
  * beneath the nearest preceding top-level row — ONE level, the service
- * refuses more), text, quantity + unit (Leistung), price, discount in percent
+ * refuses more), the line `code` (the eyebrow above the text, at most
+ * InvoiceLine::CODE_LENGTH characters), text, quantity + unit (Leistung), price, discount in percent
  * (two decimals → stored in hundredths), tax code (the shared picker of
  * module-vat) and revenue account (the shared account datalist). A row with
  * neither text nor price nor quantity is ignored. The rules of the document
@@ -219,6 +222,28 @@ final class InvoiceForm
         }
 
         return $this;
+    }
+
+    /**
+     * A row operation of the no-script path (Rule 7): `more` adds MORE_ROWS empty rows («+ Zeile»),
+     * `remove:{i}` drops row i (×). True = applied — the screen answers with the form, nothing is
+     * saved. With the script core.js «rows» does both in place and the op is never posted.
+     */
+    public function applyOp(string $op): bool
+    {
+        if ($op === 'more') {
+            $this->addRows(self::MORE_ROWS);
+
+            return true;
+        }
+        if (preg_match('/^remove:(\d+)$/', $op, $m) === 1) {
+            unset($this->rows[(int) $m[1]]);
+            $this->rows = array_values($this->rows) ?: [self::EMPTY_ROW];
+
+            return true;
+        }
+
+        return false;
     }
 
     public function addRows(int $count): self
@@ -416,6 +441,10 @@ final class InvoiceForm
     private function lineDraft(int $i, array $row): ?LineDraft
     {
         $type = $row['type'];
+        // Judged here so that the error lands on the eyebrow field (the service refuses it once more, `line`).
+        if (mb_strlen($row['code']) > InvoiceLine::CODE_LENGTH) {
+            $this->rowErrors[$i]['code'] = 'Code: höchstens ' . InvoiceLine::CODE_LENGTH . ' Zeichen.';
+        }
         if ($type === 'text') {
             if ($row['text'] === '') {
                 $this->rowErrors[$i]['text'] = 'Text fehlt.';

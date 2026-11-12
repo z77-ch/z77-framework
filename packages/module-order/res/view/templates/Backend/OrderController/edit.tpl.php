@@ -4,7 +4,9 @@
  * existing one, ONE form, ONE save. A plain form, no JavaScript of its own (Rule 7): the
  * positions use the shared core.js blocks «rows» (add, remove, drag & drop, indent), «autosize»
  * and «line sums» — without the script «+ Artikel», «+ Textzeile» and × are submits that come
- * back with the changed rows; the article number is typed (core.js «fill» completes the row) or chosen in
+ * back with the changed rows. The row parts the invoice editor shares are partials: the handle
+ * (kernel `partials/rowHandle`), the text with the line code as its eyebrow (`partials/rowText`)
+ * and the totals (debtor's `partials/documentTotals`). The article number is typed (core.js «fill» completes the row) or chosen in
  * article's searching picker (`article-pick`, a window over this one — the row's magnifier fills
  * THAT row, «+ Artikel» a new one; owner 2026-10-19); `csrf_token` is the page-mode field (`#[Csrf]`), an existing order also
  * carries the entity token and the VERSION it was rendered from (the optimistic lock of
@@ -69,7 +71,7 @@
  * @var string $orderTitle  «Offerte» / «Auftragsbestätigung» (by the phase)
  * @var bool $canBook
  * @var bool $canReinvoice  the invoice is in the Faktura-Journal — «Neu fakturieren …» (ADR-054 decision 12)
- * @var string|null $deleteRefusal  why «Auftrag löschen …» is not offered; null = offered (ADR-054 decision 14)
+ * @var bool $canDelete  «Auftrag löschen …» is offered — no posted invoice, not deleted (ADR-054 decision 14)
  * @var \Z77\Module\Order\Entities\OrderPhase|null $phase  the order's phase, null = a new order
  * @var callable $fmt
  * @var string $csrfToken
@@ -79,8 +81,8 @@
  * @var string $windowWidth
  */
 use Z77\Module\Debtor\Entities\LineType;
+use Z77\Module\Order\Entities\SalesOrderLine;
 use Z77\Module\Order\Ui\OrderForm;
-use Z77\Module\Vat\Entities\TaxRate;
 
 $actionBase = $actionBase ?? \Z77\Module\Order\Ui\OrderLayout::BASE;
 $window     = !empty($window);
@@ -190,7 +192,9 @@ if (!$isNew) {
         $extra .= '<a class="be-btn ' . ($invoice->getReissueNeeded() !== null ? 'be-btn--confirm-open' : 'be-btn--ghost') . '" href="' . e($actionBase . '/confirm-reinvoice?id=' . $id) . '" title="Die Rechnung aus dem Auftrag neu fakturieren — gleiche Nummer (neue Version) oder Ersatz mit neuer Nummer">Neu fakturieren …</a>';
     }
     // «Auftrag löschen …» (ADR-054 decision 14): while no posted invoice exists — the dialog in this window.
-    if (($deleteRefusal ?? 'x') === null) {
+    // A bool, not the refusal: a null-coalescing default read the allowed null as «missing» and hid
+    // the button on every order (ORDER-DELETE-001, owner's browser test 2026-11-12).
+    if (!empty($canDelete)) {
         $extra .= '<a class="be-btn be-btn--ghost" href="' . e($actionBase . '/confirm-delete?id=' . $id) . '" data-window-link title="Auftrag löschen — er bleibt mit Nummer und Grund unter «Gelöscht», das Lager wird zurückgebucht">Löschen …</a>';
     }
 }
@@ -403,23 +407,19 @@ $addressFields = fn(string $field): string => $this->partial('Backend/ContactCon
             $art  = $row['article'] !== '' ? ($articles[$row['article']] ?? null) : null;
             // The VAT rate of the line: the article's tax code (D3), a kept free line's own (display only).
             $code = $art !== null ? $art['taxCode'] : $row['tax_code'];
-            $rows = max(1, substr_count($row['text'], "\n") + 1);
-            // The line code as an EYEBROW above the text (owner 2026-11-12: e.g. the service date — in
-            // wdv the overwritten article code; here the article number stays the article). Empty by
-            // default, never filled from the article; printed above the text only when set.
-            $eyebrow = '<input class="be-input be-input--sm be-rows__eyebrow" type="text" id="' . $rid . 'code" name="' . $p . '[code]" value="' . e($row['code'] ?? '') . '" maxlength="16" spellcheck="false" placeholder="Code" data-help-key="code" aria-label="Code" aria-invalid="' . $invalid($err('code')) . '">';
+            // The handle (⋮⋮ + ⇥) and the text cell with the line code as its EYEBROW are the shared row
+            // parts (kernel `partials/rowHandle` / `partials/rowText`; debtor's invoice editor renders the
+            // same). The code (owner 2026-11-12: e.g. the service date — in wdv the overwritten article
+            // code; here the article number stays the article) is empty by default, never filled from
+            // the article; printed above the text only when set.
+            $textCell = fn(bool $wide, array $attrs): string => $this->partial('partials/rowText', [
+                'name' => $p, 'id' => $rid, 'text' => $row['text'], 'code' => $row['code'] ?? '', 'codeLength' => SalesOrderLine::CODE_LENGTH,
+                'title' => !$text, 'wide' => $wide, 'textInvalid' => $err('text') !== '', 'codeInvalid' => $err('code') !== '', 'textAttrs' => $attrs,
+            ], 'Z77\\Shared');
             ob_start(); ?>
             <div class="be-list__item" data-row>
                 <div class="be-list__row be-rows__row<?= $text ? ' be-rows__row--text' : '' ?>" data-fill-scope>
-                    <span class="be-list__cell be-rows__handle">
-                        <?php if ($editable): ?>
-                        <button type="button" class="be-rows__grip" data-row-grip hidden title="Verschieben: ziehen oder Alt+↑ / Alt+↓" aria-label="Zeile verschieben (ziehen oder Alt+Pfeil auf / ab)">⋮⋮</button>
-                        <?php endif; ?>
-                        <label class="be-rows__indent" title="Einrücken: unter die Position darüber">
-                            <input type="checkbox" class="be-rows__indent-input" id="<?= $rid ?>child" name="<?= $p ?>[child]" value="1"<?= $row['child'] !== '' ? ' checked' : '' ?> data-row-indent data-help-key="child" aria-label="Unter die Position darüber einrücken" aria-invalid="<?= $invalid($err('child')) ?>">
-                            <span aria-hidden="true">⇥</span>
-                        </label>
-                    </span>
+                    <?= $this->partial('partials/rowHandle', ['name' => $p, 'id' => $rid, 'child' => $row['child'] !== '', 'movable' => $editable, 'invalid' => $err('child') !== ''], 'Z77\\Shared') ?>
                     <span class="be-list__cell be-list__cell--num be-list__cell--muted" data-row-no><?= e($no) ?></span>
                     <span class="be-list__cell">
                         <?php if ($row['id'] !== ''): ?><input type="hidden" name="<?= $p ?>[id]" value="<?= e($row['id']) ?>"><?php endif; ?>
@@ -428,11 +428,11 @@ $addressFields = fn(string $field): string => $this->partial('Backend/ContactCon
                         <span class="badge badge--muted"><?= e(OrderForm::TYPES[$text ? 'text' : 'service']) ?></span>
                     </span>
                     <?php if ($text): ?>
-                    <span class="be-list__cell be-rows__text be-rows__wide"><?= raw($eyebrow) ?><span class="be-rows__body"><textarea class="be-input be-input--sm" id="<?= $rid ?>text" name="<?= $p ?>[text]" rows="<?= $rows ?>" data-autosize data-help-key="text" aria-label="Text" aria-invalid="<?= $invalid($err('text')) ?>"><?= e($row['text']) ?></textarea></span></span>
+                    <?= raw($textCell(true, [])) ?>
                     <?php else: ?>
                     <?php // The number is typed (when known — the fastest path) or chosen in the picker (the magnifier, owner 2026-10-19); no datalist since 2026-10-20 (owner: the picker searches). ?>
                     <span class="be-list__cell be-rows__article"><input class="be-input be-input--sm" type="text" id="<?= $rid ?>article" name="<?= $p ?>[article]" value="<?= e($row['article']) ?>" spellcheck="false" data-fill-url="<?= e($actionBase . '/article-defaults') ?>" data-fill-with="order_date service_from price_mode" data-help-key="article" aria-label="Artikel" aria-invalid="<?= $invalid($err('article')) ?>"<?= $art !== null ? ' title="' . e($art['name']) . '"' : '' ?><?= $row['id'] !== '' && $row['article'] === '' ? ' placeholder="ohne Artikel"' : '' ?>><?php if ($editable): $pick = \Z77\Module\Article\Ui\ArticlePicker::url($pickUrl, ['target' => $rid . 'article'] + $pickState); ?><a class="be-rows__pick" href="<?= e($pick) ?>" target="_blank" rel="noopener" data-window-open="<?= e($pick) ?>" data-window-with="<?= e($pickWith) ?>" title="Artikel wählen …" aria-label="Artikel wählen …"><svg class="be-icon" width="13" height="13" aria-hidden="true"><use href="#icon-search"/></svg></a><?php endif; ?></span>
-                    <span class="be-list__cell be-rows__text"><?= raw($eyebrow) ?><span class="be-rows__body"><textarea class="be-input be-input--sm" id="<?= $rid ?>text" name="<?= $p ?>[text]" rows="<?= $rows ?>" data-autosize="title" data-fill-key="text" data-help-key="text" aria-label="Text" aria-invalid="<?= $invalid($err('text')) ?>"><?= e($row['text']) ?></textarea></span></span>
+                    <?= raw($textCell(false, ['data-fill-key' => 'text'])) ?>
                     <span class="be-list__cell be-list__cell--num"><input class="be-input be-input--sm" type="text" id="<?= $rid ?>quantity" name="<?= $p ?>[quantity]" value="<?= e($row['quantity']) ?>" inputmode="decimal" data-sum-qty data-help-key="quantity" aria-label="Menge" aria-invalid="<?= $invalid($err('quantity')) ?>"></span>
                     <span class="be-list__cell"><input class="be-input be-input--sm" type="text" id="<?= $rid ?>unit" name="<?= $p ?>[unit]" value="<?= e($row['unit']) ?>" maxlength="16" data-fill-key="unit" data-help-key="unit" aria-label="Einheit" aria-invalid="<?= $invalid($err('unit')) ?>"></span>
                     <span class="be-list__cell be-list__cell--num"><input class="be-input be-input--sm" type="text" id="<?= $rid ?>price" name="<?= $p ?>[price]" value="<?= e($row['price']) ?>" inputmode="decimal" data-fill-key="price" data-sum-price data-price-mode-price data-help-key="price" aria-label="Preis" aria-invalid="<?= $invalid($err('price')) ?>"></span>
@@ -541,26 +541,17 @@ $addressFields = fn(string $field): string => $this->partial('Backend/ContactCon
                 </div>
                 <?php // The total: debtor's preview of the STORED order (D11) — what the booking print would invoice
                       // today. While rows are typed, core.js «line sums» shows what they add up to (without the
-                      // rounding, labelled so); the save answers with the preview again. ?>
-                <div class="be-form__totals" aria-live="polite">
-                    <div><span>Total netto</span><span data-sum-net><?= $preview !== null ? e($fmt($preview->getNetTotal())) : ($isNew ? '0.00' : '–') ?></span></div>
-                    <?php if ($liableToVat): ?>
-                    <div class="be-form__totals-group" data-sum-taxes>
-                        <template data-sum-tax><div class="be-form__totals-sub"><span>MWST <span data-sum-tax-rate></span> % auf <span data-sum-tax-base></span></span><span data-sum-tax-amount></span></div></template>
-                        <?php foreach ($preview?->getTaxes() ?? [] as $tax): ?>
-                        <div class="be-form__totals-sub"><span>MWST <?= e(TaxRate::formatPercent($tax->getTaxRate())) ?> % auf <?= e($fmt($tax->getBase())) ?></span><span><?= e($fmt($tax->getTax())) ?></span></div>
-                        <?php endforeach; ?>
-                    </div>
-                    <?php endif; ?>
-                    <?php if ($preview !== null && !$preview->getRounding()->isZero()): ?>
-                    <div class="be-form__totals-sub" data-sum-stored><span>Rundung</span><span><?= e($fmt($preview->getRounding())) ?></span></div>
-                    <?php endif; ?>
-                    <div class="be-form__totals-grand"><span>Total <?= e($currency) ?></span><span data-sum-gross><?= $preview !== null ? e($fmt($preview->getGrossTotal())) : ($isNew ? '0.00' : '–') ?></span></div>
-                    <?php if ($preview !== null): ?>
-                    <div class="be-form__totals-note" data-sum-stored>gespeichert — so würde das Fakturieren heute fakturieren</div>
-                    <?php endif; ?>
-                    <div class="be-form__totals-note" data-sum-live hidden>laufend aus den Zeilen, ohne Rundung — massgebend ist das Total nach dem Speichern</div>
-                </div>
+                      // rounding, labelled so); the save answers with the preview again. Debtor's shared foot
+                      // (`partials/documentTotals`, the invoice editor renders the same). ?>
+                <?= $this->partial('partials/documentTotals', [
+                    'document' => $preview,
+                    'currency' => $currency,
+                    'vat'      => $liableToVat,
+                    'none'     => $isNew ? '0.00' : '–',
+                    'stored'   => 'gespeichert — so würde das Fakturieren heute fakturieren',
+                    'live'     => 'laufend aus den Zeilen, ohne Rundung — massgebend ist das Total nach dem Speichern',
+                    'fmt'      => $fmt,
+                ], 'Z77\\Module\\Debtor') ?>
             </div>
             <?php if ($previewProblems !== []): ?>
             <div class="be-modal__alert be-modal__alert--error">

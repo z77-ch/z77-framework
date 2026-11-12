@@ -76,12 +76,35 @@ $vat = $form->withVat;
 <p>Die Zahlungsfrist und ein allfälliges Skonto. «wie beim Debitor» = die Konditionen, die beim Debitor hinterlegt sind (die Auswahl nennt sie) — so, wie sie beim Speichern gelten. Eine andere Wahl gilt nur für dieses Dokument. <strong>Debitor anpassen</strong> ändert die Konditionen, die beim Kunden hinterlegt sind (für alle künftigen Dokumente); nach dem Schliessen nennt die Auswahl die neuen.</p>
 </section>
 
+<section data-help-field="type">
 <h3>Positionen</h3>
 <ul>
     <li><strong>Leistung</strong>: Menge × Preis (Menge mit höchstens drei Dezimalen, auch negativ).</li>
     <li><strong>Pauschale</strong>: ein Preis, keine Menge.</li>
     <li><strong>Text</strong>: nur Text — keine Menge, kein Preis, <?= $vat ? 'kein MWST-Code, ' : '' ?>kein Konto.</li>
-    <li><strong>unter</strong>: die Zeile wird unter der Position darüber gedruckt (eine Ebene, z.B. der Inhalt eines Pakets zu 0.00). Nur eine Position mit Preis trägt Unterpositionen.</li>
+</ul>
+<?php if (!$isFinal): ?>
+<p><strong>+ Zeile</strong> fügt unten eine Zeile an, <strong>×</strong> entfernt eine. Die Reihenfolge ist die Druckreihenfolge: mit <strong>⋮⋮</strong> eine Zeile an ihren Platz ziehen (oder ⋮⋮ anwählen und <strong>Alt+↑ / Alt+↓</strong>); eine Position nimmt ihre eingerückten Zeilen mit. Die Nummern 1, 1.1, 2 … stellen sich dabei neu. <strong>Betrag</strong> und das Total darunter rechnen beim Tippen mit (ohne Rundung) — massgebend ist das Total nach dem Speichern.</p>
+<?php endif; ?>
+</section>
+
+<section data-help-field="child">
+<h3>Einrücken ⇥</h3>
+<p>Eingeschaltet, steht die Zeile <strong>unter der Position darüber</strong> (eine Ebene, Nummer 1.1) und wird mit ihr gedruckt — z.B. der Inhalt eines Pakets zu 0.00 oder eine Textzeile mit Details. Nur eine Position mit Preis trägt Unterpositionen.</p>
+</section>
+
+<section data-help-field="code">
+<h3>Code</h3>
+<p>Das kleine Feld über dem Text — eine kurze Angabe zur Zeile, z.B. das <strong>Leistungsdatum</strong> («12.11.2026»), höchstens 16 Zeichen. Es bleibt leer, bis du etwas eintippst. Gedruckt wird es klein über dem Text der Position; leer nimmt es keinen Platz weg.</p>
+</section>
+
+<section data-help-field="text">
+<h3>Text</h3>
+<p>Was gedruckt wird, auch über mehrere Zeilen — das Feld wächst mit. Die <strong>erste Zeile</strong> einer Position mit Preis ist ihr Titel (hervorgehoben), darunter kann eine Beschreibung stehen.</p>
+</section>
+
+<h3>Beträge und Konten</h3>
+<ul>
     <li>Rabatt in Prozent, auf den Positionsbetrag. Leere Zeilen werden ignoriert.</li>
 <?php if ($vat): ?>
     <li>MWST-Code und Ertragskonto: angeboten werden die aktiven; ein Code, den das Dokument schon trägt, bleibt wählbar.</li>

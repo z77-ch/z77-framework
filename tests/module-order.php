@@ -366,12 +366,12 @@ $ocPost = (new OrderForm())->fromPost(['contact' => '7', 'order_date' => '2026-1
     ['type' => 'text', 'text' => 'Danke'],
 ]])->toDraft(['1001' => 11], ['' => null]);
 $ocEdit = (string) file_get_contents($root . '/packages/module-order/res/view/templates/Backend/OrderController/edit.tpl.php');
-check('D9 OrderLineDraft: `code` is the last named parameter (default null) — article(code:), text(code:) and beneath() keep it; the window: startFrom() rows carry it, a posted row\'s `code` reaches the draft (trimmed like every row field), a row without one sends \'\'; the window shows it as the eyebrow field above the text (owner 2026-11-12), empty for a new row',
+check('D9 OrderLineDraft: `code` is the last named parameter (default null) — article(code:), text(code:) and beneath() keep it; the window: startFrom() rows carry it, a posted row\'s `code` reaches the draft (trimmed like every row field), a row without one sends \'\'; the window shows it as the eyebrow field above the text (owner 2026-11-12) through the kernel partial `partials/rowText` (F21), empty for a new row',
     $ocL::article(11, '1', code: 'A')->code === 'A' && $ocL::text('x', code: 'T')->code === 'T' && $ocL::article(11, '1', code: 'P')->beneath($ocL::text('c'))->code === 'P'
     && (new $ocL())->code === null
     && array_column($ocForm->rows(), 'code') === ['W-01', ''] && $ocPost !== null && $ocPost->lines[0]->code === 'W-02' && $ocPost->lines[1]->code === ''
-    && str_contains($ocEdit, 'class="be-input be-input--sm be-rows__eyebrow" type="text" id="\' . $rid . \'code" name="\' . $p . \'[code]" value="\' . e($row[\'code\'] ?? \'\') . \'" maxlength="16"')
-    && !str_contains($ocEdit, 'type="hidden" name="<?= $p ?>[code]"') && str_contains($ocEdit, "'tax_code' => '', 'code' => ''];"));
+    && str_contains($ocEdit, "\$this->partial('partials/rowText', [") && str_contains($ocEdit, "'code' => \$row['code'] ?? '', 'codeLength' => SalesOrderLine::CODE_LENGTH,")
+    && !str_contains($ocEdit, '[code]"') && str_contains($ocEdit, "'tax_code' => '', 'code' => ''];"));
 
 // ── L. the subject label, pure (offline) ─────────────────────────────────
 
@@ -648,6 +648,30 @@ check('F19 the shared field: `subject_label`, maxlength 80, a <datalist> of the 
     && !str_contains($flHtmlOld, 'data-prefill') && !str_contains($flHtmlOld, '<datalist') && str_contains($flHtmlOld, 'aria-invalid="true"') && str_contains($flHtmlOld, '>zu lang</small>')
     && str_contains($pickTrait, "'target'    => 'input[name=\"subject_label\"][data-prefill]',") && str_contains($pickTrait, "'untouched' => true,")
     && str_contains($coreJs, "if (!el.hasAttribute('data-prefill') || el.value !== el.getAttribute('data-prefill')) return;"));
+// The shared row parts (owner 2026-11-12: the invoice editor looks like the order window — Rule 9): kernel's
+// `partials/rowHandle` / `partials/rowText`, debtor's `partials/documentTotals`; both templates render them.
+$rowPartial = static function (string $file, array $vars) use ($root): string {
+    extract($vars);
+    ob_start();
+    include $root . '/packages/kernel/shared/res/view/templates/partials/' . $file . '.tpl.php';
+    return (string) ob_get_clean();
+};
+$rpHandle   = $rowPartial('rowHandle', ['name' => 'rows[2]', 'id' => 'order-row-2-', 'child' => true, 'invalid' => true]);
+$rpFixed    = $rowPartial('rowHandle', ['name' => 'rows[2]', 'id' => 'order-row-2-', 'child' => false, 'movable' => false]);
+$rpText     = $rowPartial('rowText', ['name' => 'rows[2]', 'id' => 'order-row-2-', 'text' => "Beratung\nvor Ort", 'code' => '12.11.2026', 'codeLength' => 16, 'codeInvalid' => true, 'textAttrs' => ['data-fill-key' => 'text']]);
+$rpTextRow  = $rowPartial('rowText', ['name' => 'rows[__i__]', 'id' => 'order-row-__i__-', 'text' => '', 'code' => '', 'codeLength' => 16, 'title' => false, 'wide' => true]);
+$rpInvoice  = (string) file_get_contents($root . '/packages/module-debtor/res/view/templates/Backend/InvoiceController/form.tpl.php');
+check('F21 the shared row parts: rowHandle = the handle cell (⋮⋮ grip rendered hidden only when movable, ⇥ indent checkbox `{name}[child]` checked, help key `child`, aria-invalid); rowText = the eyebrow `{name}[code]` (maxlength, help key `code`, aria-invalid) above the textarea in `.be-rows__body` (rows = its lines, `data-autosize="title"` unless a text row, `--wide` spans, extra attributes); the order window AND the invoice editor render both and debtor\'s `partials/documentTotals`',
+    str_contains($rpHandle, '<span class="be-list__cell be-rows__handle">') && str_contains($rpHandle, 'class="be-rows__grip" data-row-grip hidden')
+    && str_contains($rpHandle, 'id="order-row-2-child" name="rows[2][child]" value="1" checked data-row-indent data-help-key="child"') && str_contains($rpHandle, 'aria-invalid="true"')
+    && !str_contains($rpFixed, 'data-row-grip') && !str_contains($rpFixed, ' checked')
+    && str_contains($rpText, '<span class="be-list__cell be-rows__text"><input class="be-input be-input--sm be-rows__eyebrow" type="text" id="order-row-2-code" name="rows[2][code]" value="12.11.2026" maxlength="16" spellcheck="false" placeholder="Code" data-help-key="code" aria-label="Code" aria-invalid="true"><span class="be-rows__body"><textarea')
+    && str_contains($rpText, 'name="rows[2][text]" rows="2" data-autosize="title" data-help-key="text"') && str_contains($rpText, 'data-fill-key="text">Beratung' . "\n" . 'vor Ort</textarea></span></span>')
+    && str_contains($rpTextRow, 'be-rows__text be-rows__wide') && str_contains($rpTextRow, 'name="rows[__i__][text]" rows="1" data-autosize data-help-key="text"')
+    && str_contains($orderTpl, "\$this->partial('partials/rowHandle', [") && str_contains($rpInvoice, "\$this->partial('partials/rowHandle', [")
+    && str_contains($rpInvoice, "\$this->partial('partials/rowText', [")
+    && str_contains($orderTpl, "\$this->partial('partials/documentTotals', [") && str_contains($rpInvoice, "\$this->partial('partials/documentTotals', [")
+    && !str_contains($orderTpl, 'data-sum-net') && !str_contains($rpInvoice, 'data-sum-net') && !str_contains($rpInvoice, 'be-switch'));
 
 // ── P. the order's PDFs (offline where possible) ─────────────────────────
 
@@ -723,6 +747,13 @@ $ocNoteTpl = (string) file_get_contents($root . '/packages/module-order/res/view
 check('P6 the line code: pdf/order and pdf/deliveryNote hand every row its code as `eyebrow` (pdf/table prints it small above the text, owner 2026-11-12) — the delivery note with a coded line prints it',
     str_contains($orderPdfTpl, "'eyebrow' => \$line->getCode(),") && str_contains($ocNoteTpl, "'eyebrow' => \$line->getCode(),")
     && str_starts_with($ocBytes, '%PDF-') && str_contains($ocBytes, '(Pinot Noir 2022)') && str_contains($ocBytes, '(OCX-0001)'));
+
+// ORDER-DELETE-001: «Löschen …» on a bool — `$deleteRefusal ?? 'x'` hid it on every order.
+$delEdit = (string) file_get_contents($root . '/packages/module-order/res/view/templates/Backend/OrderController/edit.tpl.php');
+$delCtl  = (string) file_get_contents($root . '/packages/module-order/src/Ui/OrderControllerTrait.php');
+check('P7 «Auftrag löschen …» (ORDER-DELETE-001): the window offers it on the bool `canDelete` the controller computes (no posted invoice), never on a `?? \'x\'` default that swallows the allowed null',
+    str_contains($delEdit, 'if (!empty($canDelete)) {') && !str_contains($delEdit, "\$deleteRefusal ?? 'x'")
+    && str_contains($delCtl, "'canDelete'       => \$order !== null && \$service->deleteRefusal(\$order) === null,"));
 
 // ── C. the year-close warning (offline) ──────────────────────────────────
 

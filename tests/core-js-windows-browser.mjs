@@ -53,6 +53,18 @@ const FILES = {
         + '<script src="/core.js"></script></body></html>'],
     '/bare.html': ['text/html; charset=utf-8', head + '<body class="be-bare"><main class="be-bare__main" data-z77-popup><div class="be-bare__body" data-z77-popup-body>'
         + '<form><button type="button" id="opener" data-window-open="/win.html">Auswählen</button></form></div></main><script src="/core.js"></script></body></html>'],
+    // WIN-003: a long page behind a window whose content is longer than the screen (the order
+    // window over the order list), and a window opened from it (the customer picker).
+    '/long.html': ['text/html; charset=utf-8', '<div data-window="order" data-window-entity="order:1" data-window-title="A-180321 · Support 2026">'
+        + '<button type="button" id="childopener" data-window-open="/win.html">Kunde</button>'
+        + Array.from({ length: 120 }, (_, i) => '<p>Zeile ' + i + '</p>').join('') + '</div>'],
+    '/scroll.html': ['text/html; charset=utf-8', head + '<body><div id="page"><button type="button" id="pageopener" data-window-open="/long.html">Auftrag</button>'
+        + Array.from({ length: 300 }, (_, i) => '<p>Liste ' + i + '</p>').join('') + '</div><script src="/core.js"></script></body></html>'],
+    // DARK-NATIVE-001: what the browser draws itself (a native option list, a date picker)
+    // follows the theme attribute.
+    '/theme.html': ['text/html; charset=utf-8', head.replace('class="be"', 'class="be" data-be-theme="dark"') + '<body>'
+        + '<label class="be-status-field"><span class="be-status-field__label">Status</span><select id="status"><option>Terminauftrag</option></select></label>'
+        + '<input type="date" id="date" class="be-input"></body></html>'],
 };
 const server = createServer((req, res) => {
     const hit = FILES[req.url.split('?')[0]];
@@ -66,7 +78,7 @@ const BASE = 'http://127.0.0.1:' + server.address().port;
 const profile = mkdtempSync(join(tmpdir(), 'z77-win-browser-'));
 const debugPort = 9300 + Math.floor(Math.random() * 500);
 const browser = spawn(BROWSER, ['--headless=new', '--disable-gpu', '--window-size=1280,900', '--remote-debugging-port=' + debugPort,
-    '--user-data-dir=' + profile, '--no-first-run', 'about:blank'], { stdio: 'ignore' });
+    '--user-data-dir=' + profile, '--no-first-run', '--disable-smooth-scrolling', 'about:blank'], { stdio: 'ignore' });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 let ws;
@@ -91,6 +103,16 @@ async function esc() {
     for (const type of ['rawKeyDown', 'keyUp']) {
         await send('Input.dispatchKeyEvent', { type, key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 27 });
     }
+}
+/* A trusted mouse wheel at a point (or the centre of an element), then a moment for the scroll. */
+async function wheel(at, deltaY) {
+    const p = typeof at === 'string'
+        ? await ev(`(function(){var e=document.querySelector(${JSON.stringify(at)}); if(!e) return null; var r=e.getBoundingClientRect(); return [r.left+r.width/2, r.top+Math.min(r.height/2, 40)];})()`)
+        : at;
+    if (!p) return false;
+    await send('Input.dispatchMouseEvent', { type: 'mouseWheel', x: p[0], y: p[1], deltaX: 0, deltaY });
+    await sleep(250);
+    return true;
 }
 async function until(expr, ms = 3000) {
     const end = Date.now() + ms;
@@ -176,6 +198,67 @@ try {
     check('<main> is inert behind it', await ev(`document.querySelector('main').inert`));
     await esc();
     check('Esc closes it, <main> is live', await until(`${WINDOWS} === 0 && !document.querySelector('main').inert`));
+
+    // WIN-003 (owner 2026-11-12, the order window over the order list): the wheel moved the page
+    // behind and the window with it. A window stands fixed in the viewport, its content scrolls
+    // inside, the page behind stays where it is while a window is open — and scrolls again after.
+    console.log('4 a window over a long page stays put — the page behind does not scroll (WIN-003)');
+    const PAGE_Y = `Math.round(window.scrollY)`;
+    const WIN_TOP = (sel = '.z77-window') => `Math.round(document.querySelector(${JSON.stringify(sel)}).getBoundingClientRect().top)`;
+    await send('Page.navigate', { url: BASE + '/scroll.html' });
+    await until(`!!(window._Z77 && _Z77.core && _Z77.core.windows)`);
+    await click('#pageopener');
+    await until(`${WINDOWS} === 1`);
+    const top0 = await ev(WIN_TOP());
+    for (let i = 0; i < 4; i++) await wheel('.z77-window__body', 1500);
+    check('the wheel over the window scrolls its own content …', await ev(`document.querySelector('.z77-window__body').scrollTop`) > 0);
+    check('… to its end and no further: the page behind stays, the window stays', await ev(PAGE_Y) === 0 && await ev(WIN_TOP()) === top0
+        && await ev(`document.querySelector('[data-z77-windows]').scrollTop`) === 0, [await ev(PAGE_Y), await ev(WIN_TOP()), top0]);
+    await wheel('.z77-window__head', 1500);
+    check('the wheel over the title bar moves nothing', await ev(PAGE_Y) === 0 && await ev(WIN_TOP()) === top0, [await ev(PAGE_Y), await ev(WIN_TOP())]);
+    await wheel([12, 450], 1500);
+    check('the wheel over the backdrop moves nothing (scroll lock)', await ev(PAGE_Y) === 0 && await ev(WIN_TOP()) === top0, [await ev(PAGE_Y), await ev(WIN_TOP())]);
+    await ev(`document.querySelector('.z77-window__body').scrollTop = 0`);
+    await click('#childopener');
+    check('a window opened from it lies over its parent', await until(`!!document.querySelector('[data-z77-window-parent]')`)
+        && await ev(`(function(){var w=document.querySelector('[data-z77-window-parent]'),r=w.getBoundingClientRect(),h=document.elementFromPoint(r.left+r.width/2,r.top+r.height/2);return !!h&&w.contains(h);})()`));
+    await wheel('[data-z77-window-parent]', 1500);
+    check('the wheel over the child moves neither the page nor the parent', await ev(PAGE_Y) === 0 && await ev(WIN_TOP('[data-z77-window]:not([data-z77-window-parent])')) === top0);
+    await esc();
+    await until(`${WINDOWS} === 1`);
+    await click('.z77-window__full');
+    check('full screen covers the viewport', await until(`document.querySelector('.z77-window').classList.contains('is-full')`)
+        && await ev(`(function(){var r=document.querySelector('.z77-window').getBoundingClientRect();return r.top===0&&Math.round(r.height)===innerHeight;})()`));
+    for (let i = 0; i < 4; i++) await wheel('.z77-window__body', 1500);
+    check('… and the wheel in it leaves the page where it was', await ev(PAGE_Y) === 0 && await ev(WIN_TOP()) === 0, [await ev(PAGE_Y), await ev(WIN_TOP())]);
+    await click('.z77-window__full');
+    await esc();
+    await until(`${WINDOWS} === 0`);
+    await wheel([640, 450], 600);
+    check('the last window closed: the page scrolls again', await ev(PAGE_Y) > 0, await ev(PAGE_Y));
+    await send('Emulation.setDeviceMetricsOverride', { width: 390, height: 800, deviceScaleFactor: 1, mobile: false });
+    await ev(`window.scrollTo(0, 0)`);
+    await click('#pageopener');
+    await until(`${WINDOWS} === 1`);
+    check('phone: the window covers the viewport', await ev(`(function(){var r=document.querySelector('.z77-window').getBoundingClientRect();return Math.round(r.top)===0&&Math.round(r.height)===innerHeight;})()`),
+        await ev(`JSON.stringify(document.querySelector('.z77-window').getBoundingClientRect())`));
+    for (let i = 0; i < 4; i++) await wheel('.z77-window__body', 1500);
+    check('phone: the wheel scrolls the window\'s content, not the page', await ev(PAGE_Y) === 0 && await ev(WIN_TOP()) === 0
+        && await ev(`document.querySelector('.z77-window__body').scrollTop`) > 0, [await ev(PAGE_Y), await ev(WIN_TOP())]);
+    await esc();
+    await until(`${WINDOWS} === 0`);
+    await send('Emulation.clearDeviceMetricsOverride');
+
+    // DARK-NATIVE-001 (owner 2026-11-12): the status select's option list was white on white in
+    // the dark theme. What the browser draws (option list, date picker) follows `color-scheme`.
+    console.log('5 native controls follow the theme (DARK-NATIVE-001)');
+    await send('Page.navigate', { url: BASE + '/theme.html' });
+    await until(`document.readyState === 'complete'`);
+    const SCHEME = (sel) => `getComputedStyle(document.querySelector(${JSON.stringify(sel)})).colorScheme`;
+    check('dark theme: the status select and a date input are drawn dark', await ev(SCHEME('#status')) === 'dark' && await ev(SCHEME('#date')) === 'dark',
+        [await ev(SCHEME('#status')), await ev(SCHEME('#date'))]);
+    await ev(`document.documentElement.setAttribute('data-be-theme', 'light')`);
+    check('the theme switch to light: drawn light', await ev(SCHEME('#status')) === 'light' && await ev(SCHEME('#date')) === 'light');
 } catch (e) {
     fail++;
     console.log('  FAIL ' + (e && e.message ? e.message : e));

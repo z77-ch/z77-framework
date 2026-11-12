@@ -4,8 +4,12 @@
  * one, the order window's model — the read view `detail` is gone) — a new
  * invoice, a document in `invoicing` (the editor), a FINAL document
  * (read-only), or a credit note against a final invoice. A plain form
- * (Rule 7): a fixed number of line rows, «Weitere Zeilen» submits and comes
- * back with more. `csrf_token` is the page-mode field (`#[Csrf]`); an edit
+ * (Rule 7): the positions look and work like the order window's (owner
+ * 2026-11-12) — the shared core.js blocks «rows», «autosize» and «line sums»
+ * and the shared row parts (kernel `partials/rowHandle`, `partials/rowText`
+ * with the line code as the eyebrow, debtor's `partials/documentTotals`);
+ * without the script «+ Zeile» and × are submits that come back with the
+ * changed rows. `csrf_token` is the page-mode field (`#[Csrf]`); an edit
  * also carries the entity token and the VERSION it was rendered from (the
  * optimistic lock of `reinvoice()`).
  *
@@ -49,7 +53,8 @@
  *       «Debitor anpassen» beside the label (the shared `_terms` / `_debtorEdit`,
  *       reloaded when the debtor dialog closes — `data-popup-refresh`), the
  *       Zahlungsziel (an invoice; a credit note has no payment part) —,
- * then the positions as one block with «Preise» in its head. «Preise» converts
+ * then the positions as one block with «Preise» in its head and the totals at
+ * its foot. «Preise» converts
  * the typed prices at once (core.js «price mode», owner 2026-10-19 — the block
  * is the scope, each row's MWST select carries its rate as `data-rate`,
  * following the service date through core.js «dated rates»); the hidden
@@ -328,33 +333,127 @@ if ($isEdit) {
             </div>
         </div>
 
-        <?php // The positions: one block, «Preise» in its head (the order window's place, owner 2026-10-19). ?>
-        <div class="be-form__block" data-price-mode>
-            <div class="be-form__block-head">
-                <h3 class="be-list__section-title">Positionen</h3>
-                <?php // Without VAT the price mode changes no amount (owner 2026-10-21): the select is hidden, its value still posted. ?>
-                <div class="be-form__field" data-z77-field-wrapper<?= $form->withVat ? '' : ' hidden' ?>>
-                    <label for="invoice-price_mode">Preise</label>
-                    <select id="invoice-price_mode" name="price_mode" data-price-mode-select aria-invalid="<?= $invalid($form->error('price_mode')) ?>">
-                        <option value="net"<?= $form->header('price_mode') === 'net' ? ' selected' : '' ?>>netto (exkl. MWST)</option>
-                        <option value="gross"<?= $form->header('price_mode') === 'gross' ? ' selected' : '' ?>>brutto (inkl. MWST)</option>
-                    </select>
-                    <?= raw($fieldError($form->error('price_mode'))) ?>
-                    <input type="hidden" name="prices_mode" value="<?= e($form->header('prices_mode')) ?>" data-price-mode-shown>
+        <?php // The positions (owner 2026-11-12: the order window's look): one block, the bar (title, «+ Zeile»,
+              // «Preise») and the column head ONE sticky top (`.be-rows__top`), the totals at its foot. The rows
+              // are a SORT ORDER — ⋮⋮ drags a row (its indented rows with it), ⇥ indents it beneath the row
+              // above, × removes it, «+ Zeile» adds one (core.js «rows» in place; without the script «+ Zeile»
+              // and × are submits — `InvoiceForm::applyOp()` —, the order is the rendered one). The totals
+              // follow the typing (core.js «line sums», display only) until the save answers with the stored
+              // document. «Preise» converts the typed prices at once (core.js «price mode», owner 2026-10-19).
+        // The columns: handle (⋮⋮ + ⇥) · Pos. · Art · Text (the line code as its eyebrow) · Menge · Einheit ·
+        // Preis · Rabatt % · MWST · Konto · Betrag · ×. Unlike the order's: the TYPE is a select of the row
+        // (Leistung | Pauschale | Text — free lines, no article), so every row carries every cell (a changed
+        // type needs no other markup), and the revenue account is typed (Konto). Without VAT (the mandator is
+        // not liable, owner 2026-10-21 — `$form->withVat`) no MWST column and no rates: core.js «price mode»
+        // keeps every price as it is, the service computes without VAT anyway.
+        $cols = '3.6rem 2.4rem 7rem minmax(12rem, 3fr) 4.5rem 4.5rem 6.5rem 4.5rem' . ($form->withVat ? ' 7rem' : '') . ' 6rem 7rem 1.8rem';
+        // The row's amount as typed (quantity × price less the discount; a lump sum is its price) — shown
+        // only, the save decides; '' when a value is not a number yet.
+        $amount = static function (array $row): string {
+            $num = static function (string $v): ?float {
+                $v = str_replace(["'", '’', ' ', ','], ['', '', '', '.'], trim($v));
+                return is_numeric($v) ? (float) $v : null;
+            };
+            $qty   = $row['type'] === 'lump-sum' && trim($row['quantity']) === '' ? 1.0 : $num($row['quantity']);
+            $price = $num($row['price']);
+            if ($row['type'] === 'text' || $qty === null || $price === null) {
+                return '';
+            }
+            return number_format($qty * $price * (1 - ($num($row['discount']) ?? 0.0) / 100), 2, '.', "'");
+        };
+        // One row of the positions — the server's rows and the <template> row share it ($i = '__i__'). The
+        // handle and the text cell (the code as its eyebrow) are the shared row parts of the order window too.
+        $lineRow = function (int|string $i, array $row, string $no) use ($form, $taxCodes, $taxRates, $accounts, $editable, $amount): string {
+            $p    = 'rows[' . $i . ']';
+            $rid  = 'invoice-row-' . $i . '-';
+            $err  = static fn(string $f): string => is_int($i) ? $form->rowError($i, $f) : '';
+            $bad  = static fn(string $f): string => $err($f) !== '' ? 'true' : 'false';
+            $text = $row['type'] === 'text';
+            ob_start(); ?>
+            <div class="be-list__item" data-row>
+                <div class="be-list__row be-rows__row<?= $text ? ' be-rows__row--text' : '' ?>">
+                    <?= $this->partial('partials/rowHandle', ['name' => $p, 'id' => $rid, 'child' => $row['child'] !== '', 'movable' => $editable, 'invalid' => $err('child') !== ''], 'Z77\\Shared') ?>
+                    <span class="be-list__cell be-list__cell--num be-list__cell--muted" data-row-no><?= e($no) ?></span>
+                    <span class="be-list__cell">
+                        <?php // A lump sum has no quantity: «line sums» counts it once (`data-sum-single`). ?>
+                        <select class="be-input be-input--sm" id="<?= $rid ?>type" name="<?= $p ?>[type]" data-help-key="type" aria-label="Art">
+                            <?php foreach (InvoiceForm::TYPES as $value => $label): ?>
+                            <option value="<?= e($value) ?>"<?= $row['type'] === $value ? ' selected' : '' ?><?= $value === 'lump-sum' ? ' data-sum-single' : '' ?>><?= e($label) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </span>
+                    <?= $this->partial('partials/rowText', [
+                        'name' => $p, 'id' => $rid, 'text' => $row['text'], 'code' => $row['code'] ?? '', 'codeLength' => \Z77\Module\Debtor\Entities\InvoiceLine::CODE_LENGTH,
+                        'title' => !$text, 'textInvalid' => $err('text') !== '', 'codeInvalid' => $err('code') !== '',
+                    ], 'Z77\\Shared') ?>
+                    <span class="be-list__cell be-list__cell--num"><input class="be-input be-input--sm" type="text" id="<?= $rid ?>quantity" name="<?= $p ?>[quantity]" value="<?= e($row['quantity']) ?>" inputmode="decimal" data-sum-qty aria-label="Menge" aria-invalid="<?= $bad('quantity') ?>"></span>
+                    <span class="be-list__cell"><input class="be-input be-input--sm" type="text" id="<?= $rid ?>unit" name="<?= $p ?>[unit]" value="<?= e($row['unit']) ?>" maxlength="16" aria-label="Einheit"></span>
+                    <span class="be-list__cell be-list__cell--num"><input class="be-input be-input--sm" type="text" id="<?= $rid ?>price" name="<?= $p ?>[price]" value="<?= e($row['price']) ?>" inputmode="decimal" data-price-mode-price data-sum-price aria-label="Preis" aria-invalid="<?= $bad('price') ?>"></span>
+                    <span class="be-list__cell be-list__cell--num"><input class="be-input be-input--sm" type="text" id="<?= $rid ?>discount" name="<?= $p ?>[discount]" value="<?= e($row['discount']) ?>" inputmode="decimal" data-sum-discount aria-label="Rabatt in Prozent" aria-invalid="<?= $bad('discount') ?>"></span>
+                    <?php if ($form->withVat): ?>
+                    <span class="be-list__cell"><?= $this->partial('partials/taxCodeSelect', [
+                        'codes' => $taxCodes, 'name' => $p . '[tax_code]', 'selected' => $row['tax_code'], 'id' => $rid . 'tax_code',
+                        'label' => 'MWST-Code', 'invalid' => $err('tax_code') !== '',
+                        // The rate per code for «Preise» and the line sums (core.js «price mode», «line sums»); the label stays the code.
+                        'rates' => $taxRates ?? [],
+                        'attrs' => ['data-price-mode-rate' => true, 'data-sum-rate' => true, 'data-rate-schedule-ref' => 'invoice-vat', 'data-rate-keep-label' => true],
+                    ], 'Z77\\Module\\Vat') ?></span>
+                    <?php endif; ?>
+                    <span class="be-list__cell"><input class="be-input be-input--sm" type="text" id="<?= $rid ?>account" name="<?= $p ?>[account]" value="<?= e($row['account']) ?>"<?= $accounts !== [] ? ' list="invoice-accounts"' : '' ?> inputmode="numeric" aria-label="Konto" aria-invalid="<?= $bad('account') ?>"></span>
+                    <span class="be-list__cell be-list__cell--num be-list__cell--amount" data-sum-amount><?= e($amount($row)) ?></span>
+                    <span class="be-list__cell be-rows__end">
+                        <?php if ($editable): ?>
+                        <button type="submit" class="be-rows__remove" name="op" value="remove:<?= e((string) $i) ?>" formnovalidate data-row-remove title="Zeile entfernen" aria-label="Zeile entfernen">×</button>
+                        <?php endif; ?>
+                    </span>
                 </div>
+                <?php $messages = is_int($i) ? array_filter(array_map($err, ['child', 'code', 'text', 'quantity', 'price', 'discount', 'tax_code', 'account'])) : []; ?>
+                <?php if ($messages !== []): ?>
+                <div class="be-list__row">
+                    <span class="be-list__cell be-list__cell--wrap be-list__cell--span">
+                        <?php foreach (array_unique($messages) as $message): ?>
+                        <small class="be-form__field-error"><?= e($message) ?></small>
+                        <?php endforeach; ?>
+                    </span>
+                </div>
+                <?php endif; ?>
             </div>
+            <?php return (string) ob_get_clean();
+        };
+        $blank = ['type' => 'service', 'child' => '', 'text' => '', 'quantity' => '', 'unit' => '', 'price' => '', 'discount' => '', 'tax_code' => '', 'account' => '', 'code' => ''];
+        ?>
+        <div class="be-form__block" data-sum data-price-mode>
             <?= $this->partial('partials/accountDatalist', ['id' => 'invoice-accounts', 'accounts' => $accounts], 'Z77\\Module\\Mandator') ?>
-            <?php // Without VAT (the mandator is not liable, owner 2026-10-21 — `$form->withVat`): no MWST column and no
-                  // rates, so core.js «price mode» keeps every price as it is; the service computes without VAT anyway. ?>
             <?php if ($form->withVat): ?>
             <?php // The rate history for core.js «dated rates»: the rows' `data-rate` follows «Leistung von» (else the invoice date) live. ?>
             <script type="application/json" data-rate-schedule="invoice-vat" data-rate-date="service_from invoice_date"><?= json_encode($rateSchedule ?? [], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?></script>
             <?php endif; ?>
-            <div class="be-list__frame">
-                <div class="be-list__table" style="--be-list-cols: 7.5rem 3rem minmax(12rem, 3fr) 5rem 4.5rem 7rem 4.5rem<?= $form->withVat ? ' 7rem' : '' ?> 6rem">
+            <div class="be-list__frame be-list__frame--stick">
+                <div class="be-list__table be-rows" style="--be-list-cols: <?= e($cols) ?>" data-rows="rows">
+                    <div class="be-rows__top">
+                    <div class="be-form__block-head be-rows__bar">
+                        <h3 class="be-list__section-title">Positionen</h3>
+                        <?php if ($editable): ?>
+                        <div class="be-rows__adders">
+                            <?php // With the script ONE row from the template; without it a submit that comes back with more rows. ?>
+                            <button type="submit" class="be-btn be-btn--add be-btn--sm" name="op" value="more" formnovalidate data-row-add="line"><span aria-hidden="true">+</span> Zeile</button>
+                        </div>
+                        <?php endif; ?>
+                        <?php // Without VAT the price mode changes no amount (owner 2026-10-21): the select is hidden, its value still posted. ?>
+                        <div class="be-form__field" data-z77-field-wrapper<?= $form->withVat ? '' : ' hidden' ?>>
+                            <label for="invoice-price_mode">Preise</label>
+                            <select id="invoice-price_mode" name="price_mode" data-sum-mode data-price-mode-select aria-invalid="<?= $invalid($form->error('price_mode')) ?>">
+                                <option value="net"<?= $form->header('price_mode') === 'net' ? ' selected' : '' ?>>netto (exkl. MWST)</option>
+                                <option value="gross"<?= $form->header('price_mode') === 'gross' ? ' selected' : '' ?>>brutto (inkl. MWST)</option>
+                            </select>
+                            <?= raw($fieldError($form->error('price_mode'))) ?>
+                            <input type="hidden" name="prices_mode" value="<?= e($form->header('prices_mode')) ?>" data-price-mode-shown>
+                        </div>
+                    </div>
                     <div class="be-list__head">
+                        <span class="be-list__col"></span>
+                        <span class="be-list__col be-list__col--num">Pos.</span>
                         <span class="be-list__col">Art</span>
-                        <span class="be-list__col" title="unter der Position darüber">unter</span>
                         <span class="be-list__col">Text</span>
                         <span class="be-list__col be-list__col--num">Menge</span>
                         <span class="be-list__col">Einheit</span>
@@ -362,53 +461,34 @@ if ($isEdit) {
                         <span class="be-list__col be-list__col--num">Rabatt %</span>
                         <?php if ($form->withVat): ?><span class="be-list__col">MWST</span><?php endif; ?>
                         <span class="be-list__col">Konto</span>
+                        <span class="be-list__col be-list__col--num">Betrag</span>
+                        <span class="be-list__col"></span>
                     </div>
-                    <?php foreach ($form->rows() as $i => $row): $p = 'rows[' . $i . ']'; $id = 'invoice-row-' . $i . '-'; ?>
-                    <div class="be-list__item" data-row>
-                        <div class="be-list__row">
-                            <span class="be-list__cell">
-                                <select class="be-input be-input--sm" id="<?= $id ?>type" name="<?= $p ?>[type]" aria-label="Art Zeile <?= $i + 1 ?>">
-                                    <?php foreach (InvoiceForm::TYPES as $value => $label): ?>
-                                    <option value="<?= e($value) ?>"<?= $row['type'] === $value ? ' selected' : '' ?>><?= e($label) ?></option>
-                                    <?php endforeach; ?>
-                                </select>
-                            </span>
-                            <span class="be-list__cell"><label class="be-switch be-switch--sm"><input type="checkbox" class="be-switch__input" id="<?= $id ?>child" name="<?= $p ?>[child]" value="1"<?= $row['child'] !== '' ? ' checked' : '' ?> aria-label="Zeile <?= $i + 1 ?> unter der Position darüber" aria-invalid="<?= $invalid($form->rowError($i, 'child')) ?>"><span class="be-switch__track"><span class="be-switch__thumb"></span></span></label></span>
-                            <span class="be-list__cell"><textarea class="be-input be-input--sm" id="<?= $id ?>text" name="<?= $p ?>[text]" rows="1" aria-label="Text Zeile <?= $i + 1 ?>" aria-invalid="<?= $invalid($form->rowError($i, 'text')) ?>"><?= e($row['text']) ?></textarea><?php if (($row['code'] ?? '') !== ''): // the line code — no field yet (owner 2026-10-22), carried through ?><input type="hidden" name="<?= $p ?>[code]" value="<?= e($row['code']) ?>"><?php endif; ?></span>
-                            <span class="be-list__cell be-list__cell--num"><input class="be-input be-input--sm" type="text" id="<?= $id ?>quantity" name="<?= $p ?>[quantity]" value="<?= e($row['quantity']) ?>" inputmode="decimal" aria-label="Menge Zeile <?= $i + 1 ?>" aria-invalid="<?= $invalid($form->rowError($i, 'quantity')) ?>"></span>
-                            <span class="be-list__cell"><input class="be-input be-input--sm" type="text" id="<?= $id ?>unit" name="<?= $p ?>[unit]" value="<?= e($row['unit']) ?>" maxlength="16" aria-label="Einheit Zeile <?= $i + 1 ?>"></span>
-                            <span class="be-list__cell be-list__cell--num"><input class="be-input be-input--sm" type="text" id="<?= $id ?>price" name="<?= $p ?>[price]" value="<?= e($row['price']) ?>" inputmode="decimal" data-price-mode-price aria-label="Preis Zeile <?= $i + 1 ?>" aria-invalid="<?= $invalid($form->rowError($i, 'price')) ?>"></span>
-                            <span class="be-list__cell be-list__cell--num"><input class="be-input be-input--sm" type="text" id="<?= $id ?>discount" name="<?= $p ?>[discount]" value="<?= e($row['discount']) ?>" inputmode="decimal" aria-label="Rabatt Zeile <?= $i + 1 ?>" aria-invalid="<?= $invalid($form->rowError($i, 'discount')) ?>"></span>
-                            <?php if ($form->withVat): ?>
-                            <span class="be-list__cell"><?= $this->partial('partials/taxCodeSelect', [
-                                'codes' => $taxCodes, 'name' => $p . '[tax_code]', 'selected' => $row['tax_code'], 'id' => $id . 'tax_code',
-                                'label' => 'MWST-Code Zeile ' . ($i + 1), 'invalid' => $form->rowError($i, 'tax_code') !== '',
-                                // The rate per code for «Preise» (core.js «price mode»); the label stays the code.
-                                'rates' => $taxRates ?? [],
-                                'attrs' => ['data-price-mode-rate' => true, 'data-rate-schedule-ref' => 'invoice-vat', 'data-rate-keep-label' => true],
-                            ], 'Z77\\Module\\Vat') ?></span>
-                            <?php endif; ?>
-                            <span class="be-list__cell"><input class="be-input be-input--sm" type="text" id="<?= $id ?>account" name="<?= $p ?>[account]" value="<?= e($row['account']) ?>"<?= $accounts !== [] ? ' list="invoice-accounts"' : '' ?> inputmode="numeric" aria-label="Konto Zeile <?= $i + 1 ?>" aria-invalid="<?= $invalid($form->rowError($i, 'account')) ?>"></span>
-                        </div>
-                        <?php $messages = array_filter(array_map(fn($f) => $form->rowError($i, $f), ['child', 'text', 'quantity', 'price', 'discount', 'tax_code', 'account'])); ?>
-                        <?php if ($messages !== []): ?>
-                        <div class="be-list__row">
-                            <span class="be-list__cell be-list__cell--wrap be-list__cell--span">
-                                <?php foreach (array_unique($messages) as $message): ?>
-                                <small class="be-form__field-error"><?= e($message) ?></small>
-                                <?php endforeach; ?>
-                            </span>
-                        </div>
-                        <?php endif; ?>
                     </div>
+                    <?php $pos = 0; $sub = 0; ?>
+                    <?php foreach ($form->rows() as $i => $row):
+                        // The position number as core.js «rows» counts it: an indented row under its parent (1.1).
+                        if ($row['child'] !== '' && $pos > 0) { $sub++; $no = $pos . '.' . $sub; } else { $pos++; $sub = 0; $no = (string) $pos; } ?>
+                    <?= raw($lineRow($i, $row, $no)) ?>
                     <?php endforeach; ?>
+                    <?php if ($editable): ?>
+                    <template data-row-template="line"><?= raw($lineRow('__i__', $blank, '')) ?></template>
+                    <?php endif; ?>
                 </div>
             </div>
-            <?php if ($editable): ?>
-            <div class="be-rows__adders">
-                <button type="submit" class="be-btn be-btn--add be-btn--sm" name="op" value="more" formnovalidate><span aria-hidden="true">+</span> Weitere Zeilen</button>
+            <div class="be-form__foot">
+                <div class="be-form__audit"></div>
+                <?php // The STORED totals of the document (debtor's shared foot — the order window's too); while rows
+                      // are typed core.js «line sums» shows what they add up to, without the rounding, labelled so. ?>
+                <?= $this->partial('partials/documentTotals', [
+                    'document' => $document,
+                    'currency' => \Z77\Module\Debtor\Services\DebtorCurrency::base(),
+                    'vat'      => $form->withVat,
+                    'stored'   => $editable ? 'gespeichert' : '',
+                    'live'     => 'laufend aus den Zeilen, ohne Rundung — massgebend ist das Total nach dem Speichern',
+                    'fmt'      => $fmt,
+                ], 'Z77\\Module\\Debtor') ?>
             </div>
-            <?php endif; ?>
         </div>
         </fieldset>
 

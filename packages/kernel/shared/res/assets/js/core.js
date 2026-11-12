@@ -2452,6 +2452,8 @@ _Z77.core.autosize = (function () {
  *     [data-sum-mode]             optional select: 'gross' = the prices include VAT
  *     [data-row]                  a line — it counts with a [data-sum-qty] and a [data-sum-price]:
  *       [data-sum-qty] [data-sum-price] [data-sum-discount]  fields (the discount in percent)
+ *       option[data-sum-single]   selected in the row (a lump sum — the invoice editor's type):
+ *                                 an empty [data-sum-qty] counts 1
  *       [data-sum-rate]           the VAT rate in percent: `data-rate` of the selected <option> of
  *                                 a select, else of the element itself; none = no VAT
  *       [data-sum-amount]         the line amount (textContent), empty while a value is no number
@@ -2495,7 +2497,8 @@ _Z77.core.sums = (function () {
         scope.querySelectorAll('[data-row]').forEach(function (row) {
             var qty = row.querySelector('[data-sum-qty]'), price = row.querySelector('[data-sum-price]');
             if (!qty || !price) return;
-            var q = _num(qty.value), p = _num(price.value);
+            var single = qty.value.trim() === '' && row.querySelector('option[data-sum-single]:checked');
+            var q = single ? 1 : _num(qty.value), p = _num(price.value);
             var discountField = row.querySelector('[data-sum-discount]');
             var d = discountField && discountField.value.trim() !== '' ? _num(discountField.value) : 0;
             var out = row.querySelector('[data-sum-amount]');

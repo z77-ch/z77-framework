@@ -110,6 +110,14 @@
    2026-10-22) takes two tracks of the fill grid; on a phone the grid is one column anyway. */
 .be-form__grid--fill > .be-form__field--wide { grid-column: span 2; }
 
+/* A field across the whole grid — a long text in the two-column modal grid (the receipt window). */
+.be-form__grid > .be-form__field--full { grid-column: 1 / -1; }
+
+/* What a record still needs before its next step (a receipt before «Journal verbuchen»): «— fehlt»
+   at the label, the control's border in the warning colour. A field error (`aria-invalid`) wins. */
+.be-form__missing { color: var(--be-warn); font-weight: 500; }
+.be-form__field [data-missing] { border-color: var(--be-warn); }
+
 /* A rule between two parts of a modal form (the Drive's edit: texts · delivery · access). */
 .be-form__divider {
     margin:     .75rem 0;

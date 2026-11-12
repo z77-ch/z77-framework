@@ -2423,6 +2423,14 @@ check('P3C30 GET add: the editor with the action bar first (ADR-049), the debtor
     && count($host->context['form']->rows()) === \Z77\Module\Debtor\Ui\InvoiceForm::ROWS_NEW
     && array_filter($host->context['taxCodes'], fn($c) => !$c->isActive()) === [] && str_contains($formHtml, '<datalist id="invoice-accounts">') && str_contains($formHtml, 'list="invoice-accounts"')
     && $host->help->has() && $noScript($formHtml));
+check('P3C30b the positions look and work like the order window\'s (owner 2026-11-12): core.js «rows» (`data-rows="rows"`), the SHARED row parts — kernel `partials/rowHandle` (⋮⋮ grip rendered hidden, ⇥ indent checkbox `rows[0][child]`, no «unter» switch) and `partials/rowText` (the line code as the VISIBLE eyebrow `rows[0][code]`, maxlength 16, above an autosize textarea with the first line as title) —, position numbers, line sums (`data-sum`, a lump sum counts once: `data-sum-single`) with debtor\'s shared totals, ONE row template; without the script «+ Zeile» (op=more) and × (op=remove:i) are submits',
+    str_contains($formHtml, 'data-rows="rows"') && str_contains($formHtml, '<button type="button" class="be-rows__grip" data-row-grip hidden')
+    && str_contains($formHtml, 'id="invoice-row-0-child" name="rows[0][child]" value="1" data-row-indent') && !str_contains($formHtml, 'be-switch__input')
+    && str_contains($formHtml, 'class="be-input be-input--sm be-rows__eyebrow" type="text" id="invoice-row-0-code" name="rows[0][code]" value="" maxlength="16"')
+    && str_contains($formHtml, 'id="invoice-row-0-text" name="rows[0][text]" rows="1" data-autosize="title"') && str_contains($formHtml, 'data-row-no>1</span>')
+    && str_contains($formHtml, '<div class="be-form__block" data-sum data-price-mode>') && str_contains($formHtml, '<span data-sum-net>') && str_contains($formHtml, 'value="lump-sum" data-sum-single')
+    && substr_count($formHtml, 'data-row-template="line"') === 1 && str_contains($formHtml, 'name="op" value="more" formnovalidate data-row-add="line"')
+    && str_contains($formHtml, 'name="op" value="remove:0" formnovalidate data-row-remove'));
 $post = [
     'contact' => (string) $mid, 'invoice_date' => '2026-07-01', 'service_from' => '2026-06-30', 'service_to' => '', 'price_mode' => 'net', 'terms' => '', 'target' => 'qr', 'op' => 'save',
     'rows' => [
@@ -2446,7 +2454,12 @@ check('P3C31 POST add → invoice(): a new DRAFT in invoicing (no number, no ran
 $useRequest([], ['op' => 'more'] + $post);
 $host = $invoiceHost();
 $host->addAction();
-check('P3C32 «Weitere Zeilen» is a submit: the same form back with more rows, nothing written', count($host->context['form']->rows()) === 4 + \Z77\Module\Debtor\Ui\InvoiceForm::MORE_ROWS && (int) $db->fetchOne('SELECT MAX(id) FROM invoice') === $newId);
+check('P3C32 «+ Zeile» without the script is a submit (op=more): the same form back with more rows, nothing written', count($host->context['form']->rows()) === 4 + \Z77\Module\Debtor\Ui\InvoiceForm::MORE_ROWS && (int) $db->fetchOne('SELECT MAX(id) FROM invoice') === $newId);
+$useRequest([], ['op' => 'remove:1'] + $post);
+$host = $invoiceHost();
+$host->addAction();
+check('P3C32b × without the script is a submit (op=remove:i): the same form back without that row, the others in their order, nothing written',
+    array_column($host->context['form']->rows(), 'text') === ['Paket Web', 'Danke.', ''] && (int) $db->fetchOne('SELECT MAX(id) FROM invoice') === $newId);
 $bad = $post;
 $bad['rows'][0]['quantity'] = '1.2345';
 $bad['rows'][0]['tax_code'] = '';
@@ -3911,10 +3924,10 @@ check('V11 a prices_mode that names no mode is refused on `price_mode`; a row wh
 $vFormTpl = file_get_contents($vTpl . '/form.tpl.php');
 $vTaxTpl  = file_get_contents(dirname($package) . '/module-vat/res/view/templates/partials/taxCodeSelect.tpl.php');
 check('V12 the editor wires core.js «price mode» like the order window: the positions block is the scope, «Preise» its select, the hidden `prices_mode` its shown mode, each row (`data-row`) its price and its MWST select with the rate per option (`data-rate` from VatRates::shownRates, module-vat\'s taxCodeSelect `rates`); «dated rates» follows the service date (else the invoice date) and keeps the CODE labels',
-    str_contains($vFormTpl, '<div class="be-form__block" data-price-mode>') && str_contains($vFormTpl, 'name="price_mode" data-price-mode-select')
+    str_contains($vFormTpl, '<div class="be-form__block" data-sum data-price-mode>') && str_contains($vFormTpl, 'name="price_mode" data-sum-mode data-price-mode-select')
     && str_contains($vFormTpl, 'name="prices_mode" value="<?= e($form->header(\'prices_mode\')) ?>" data-price-mode-shown')
     && str_contains($vFormTpl, '<div class="be-list__item" data-row>') && str_contains($vFormTpl, 'data-price-mode-price')
-    && str_contains($vFormTpl, "'data-price-mode-rate' => true, 'data-rate-schedule-ref' => 'invoice-vat', 'data-rate-keep-label' => true")
+    && str_contains($vFormTpl, "'data-price-mode-rate' => true, 'data-sum-rate' => true, 'data-rate-schedule-ref' => 'invoice-vat', 'data-rate-keep-label' => true")
     && str_contains($vFormTpl, 'data-rate-schedule="invoice-vat" data-rate-date="service_from invoice_date"')
     && str_contains($vTaxTpl, "' data-rate=\"' . e(\$rates[\$code->getCode()]) . '\"'")
     && str_contains($vTrait, "->shownRates(\$taxCodes, \$this->invoiceRateDate(\$form))") && str_contains($vTrait, '->schedule($taxCodes)')
@@ -4354,7 +4367,7 @@ $mvTpl   = (string) file_get_contents($package . '/res/view/templates/Backend/In
 $mvTrait = (string) file_get_contents($package . '/src/Ui/InvoiceControllerTrait.php');
 check('MV8 the editor without VAT: no tax code asked, the price NOT converted between the modes (10.00 stays), no VatRates needed; the MWST column and the rate schedule only with VAT; the trait asks chargesVat() for every form',
     $mvDraft !== null && $mvDraft->lines[0]->taxCode === '' && $mvDraft->lines[0]->unitPrice->toDecimal() === '10.00'
-    && str_contains($mvTpl, '<?php if ($form->withVat): ?><span class="be-list__col">MWST</span><?php endif; ?>') && str_contains($mvTpl, "4.5rem<?= \$form->withVat ? ' 7rem' : '' ?> 6rem")
+    && str_contains($mvTpl, '<?php if ($form->withVat): ?><span class="be-list__col">MWST</span><?php endif; ?>') && str_contains($mvTpl, "4.5rem' . (\$form->withVat ? ' 7rem' : '') . ' 6rem 7rem 1.8rem'")
     && substr_count($mvTrait, '->chargesVat(') === 3);
 $mvSummary = (string) file_get_contents($package . '/res/view/templates/pdf/documentSummary.tpl.php');
 $mvInvTpl  = (string) file_get_contents($package . '/res/view/templates/pdf/invoice.tpl.php');
@@ -4448,7 +4461,7 @@ $lcFinal = $readInvoice($lcDoc->getId());
 check('LC3 the code is part of the snapshot (ADR-041 decision 6): a re-issue replaces the lines with their codes whole; the booked document keeps them — no setter',
     $lcCodes($lcRe) === ['LCX-0003', null, 'LCX-0004']
     && $lcFinal->isPosted() && $lcCodes($lcFinal) === ['LCX-0003', null, 'LCX-0004'] && !method_exists(InvoiceLine::class, 'setCode'));
-// The editor has NO code field (owner: storage only) — a hidden input carries it through an edit and into a credit note.
+// The editor shows the code as the eyebrow above the text (owner 2026-11-12, the order window's shared `partials/rowText`).
 $lcHeader = ['contact' => (string) $mid, 'invoice_date' => '2026-12-24', 'service_from' => '2026-12-24', 'price_mode' => 'net'];
 $lcEdit   = (new \Z77\Module\Debtor\Ui\InvoiceForm('CHF'))->startFrom($lcRe);
 $lcCnForm = (new \Z77\Module\Debtor\Ui\InvoiceForm('CHF', \Z77\Module\Debtor\Entities\InvoiceKind::CreditNote, $lcFinal))->startCreditNote(day('2026-12-24'));
@@ -4456,10 +4469,15 @@ $lcCnPost = (new \Z77\Module\Debtor\Ui\InvoiceForm('CHF', \Z77\Module\Debtor\Ent
 $lcCn     = $service($wireDi())->invoice($lcCnPost->toDraft());
 $lcPosted = (new \Z77\Module\Debtor\Ui\InvoiceForm('CHF'))->fromPost($lcHeader + ['rows' => [['type' => 'text', 'text' => 'Hinweis', 'code' => ' T-9 ']]])->toDraft();
 $lcFormTpl = (string) file_get_contents($package . '/res/view/templates/Backend/InvoiceController/form.tpl.php');
-check('LC4 the editor: startFrom() rows carry the code; a posted row\'s `code` reaches the draft; a credit note from the invoice copies its lines\' codes (the form round trip); the mask posts it as a HIDDEN input only — no visible field',
+$lcRowTpl  = (string) file_get_contents(dirname($package) . '/kernel/shared/res/view/templates/partials/rowText.tpl.php');
+$lcLong    = (new \Z77\Module\Debtor\Ui\InvoiceForm('CHF'))->fromPost($lcHeader + ['rows' => [['type' => 'text', 'text' => 'Hinweis', 'code' => str_repeat('x', 17)]]]);
+$lcLongDraft = $lcLong->toDraft();
+check('LC4 the editor: startFrom() rows carry the code; a posted row\'s `code` reaches the draft; a credit note from the invoice copies its lines\' codes (the form round trip); the mask shows it as the VISIBLE eyebrow through the shared `partials/rowText` (maxlength = CODE_LENGTH, help key `code`) — no hidden input; 17 characters are a row error ON the code field («N Fehler» links `invoice-row-0-code`)',
     array_column($lcEdit->rows(), 'code') === ['LCX-0003', '', 'LCX-0004', ''] && $lcPosted?->lines[0]->code === 'T-9'
     && $lcCn->isCreditNote() && $lcCodes($lcCn) === ['LCX-0003', null, 'LCX-0004']
-    && str_contains($lcFormTpl, "<input type=\"hidden\" name=\"<?= \$p ?>[code]\" value=\"<?= e(\$row['code']) ?>\">") && !str_contains($lcFormTpl, 'type="text" id="<?= $id ?>code"'));
+    && str_contains($lcFormTpl, "partial('partials/rowText', [") && str_contains($lcFormTpl, "'codeLength' => \\Z77\\Module\\Debtor\\Entities\\InvoiceLine::CODE_LENGTH")
+    && !str_contains($lcFormTpl, '[code]" value=') && str_contains($lcRowTpl, 'name="<?= e($name) ?>[code]"') && str_contains($lcRowTpl, 'data-help-key="code"')
+    && $lcLongDraft === null && $lcLong->rowError(0, 'code') === 'Code: höchstens 16 Zeichen.' && in_array('invoice-row-0-code', $lcLong->invalidIds(), true));
 $lcPdf    = \Z77\Module\Debtor\Pdf\InvoicePdf::of($lcFinal, $wireDi())->withoutCompression()->output();
 $lcInvTpl = (string) file_get_contents($package . '/res/view/templates/pdf/invoice.tpl.php');
 [, $lcFit] = \Z77\Module\Debtor\Pdf\DocumentColumns::table('CHF', [['cells' => ['Beratung', '2', 'h', '100.00', '', '8.1 %', '200.00'], 'eyebrow' => 'LCX-0003']], true);

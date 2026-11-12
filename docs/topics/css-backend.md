@@ -1,6 +1,6 @@
 # css-backend
 
-2026-10-23
+2026-11-12
 
 ## entry
 
@@ -46,6 +46,7 @@ packages/module-backend/res/scss/
 │   ├── _icon.scss          .be-icon — presentation for <use> sprite icons (stroke/currentColor/caps)
 │   ├── _input-look.scss    mixins only (no CSS): `rest` + `focus` + `quiet` (a control in a table row) — THE input look every text control includes
 │   ├── _forms.scss
+│   ├── _docview.scss       .be-docview — a stored document LARGE beside the fields of its record (the receipt window, 2026-11-12)
 │   ├── _switch.scss        .be-switch reusable on/off toggle slider
 │   ├── _cards.scss
 │   ├── _alerts.scss
@@ -145,6 +146,7 @@ itself into `public/` is NOT touched — that file belongs to the project.
 | A list FILTER over a long tree (the article list's product group): the field, «×», the no-script link list, the popover (search, path, one level, counts, «›», `mark`) | `components/_tree-picker.scss` (`.be-tree-picker` / `__field` / `__panel` / `__pop` / `__row` …) — markup from the kernel's `partials/treePicker`, behaviour core.js «tree picker» |
 | A searching CHOICE window (the article picker over the order window, 2026-10-19): toolbar with tree picker + search field, the compact list whose number button picks and whose cells are its labels, the active row on the accent; the order row's magnifier beside the article number | `components/_pick-list.scss` (`.be-pick` / `__bar` / `__find` / `__item`, `.be-rows__article` / `__pick`) — markup module-article's `Backend/ArticlePicker/pick`, behaviour core.js «pick list» |
 | A header cell that sorts AND searches (the magnifier opens the column's search pop-up — HTML `popover`, «{Spalte} suchen», no JS, owner 2026-10-16), a row state icon, scope toggles as links | `components/_list.scss` (`.be-list__find` / `__sort` / `__find-icon` / `__find-value` / `__find-pop` / `__find-input`, `.be-list__state--*`, `.be-list__toggle`) — first consumer: the journal list (FIN-JOURNAL-CAPTURE-001); rendered by the kernel's `partials/listHead` over a `ListDefinition` since 2026-10-08 — [`listing.md`](listing.md) |
+| A document beside the record it belongs to (the photo of a receipt left, its fields right; one column on a narrow window), a document's small picture in a list cell, «— fehlt» at the label of a field a next step needs, a field across the whole two-column grid | `components/_docview.scss` (`.be-docview` / `__media` / `__frame` / `__meta` / `__fields`), `components/_list.scss` (`.be-list__thumb`), `components/_forms.scss` (`.be-form__missing` + `[data-missing]`, `.be-form__field--full`) — first consumer: module-receipt's «Belegjournal» (2026-11-12, `receipt.md`) |
 | Login page | `components/_login.scss` |
 | GUEST full-page wrapper (login/setup, no chrome) | `components/_guest.scss` (`.be-guest`) |
 | Shell (3-column grid, header slots, add-picker, columns/drawers, topbar right cluster env/bell/avatar, `body.backend` base, responsive) | `components/_shell.scss` |
@@ -230,6 +232,7 @@ default first), the panel anchors right inside the viewport.
 | Webseiten › Navigation | «+ Eintrag» | create |
 | Webseiten › Nav Alias | «+ Alias» | create |
 | Finanzen › Journal | «Buchen» | confirm |
+| Finanzen › Belegjournal | «Journal verbuchen …» (built 2026-11-12, `receipt.md` — disabled with its reason only while empty; the confirmation page takes the cut-off; the toolbar carries the tabs «Im Journal» · «Verbuchte Journale») | confirm (built) |
 | Finanzen › Auswertungen | — | n/a |
 | Finanzen (whole area) | fiscal year at the TOP OF THE RAIL | selection (built) |
 | Aufträge › Aufträge | «+ Neuer Auftrag» (opens the order window; built 2026-10-14, `order.md`) — the toolbar carries the six view tabs, «Buchungsdruck …» the selection bar of «Zu fakturieren» | create (built) |
@@ -244,6 +247,8 @@ default first), the panel anchors right inside the viewport.
 | Stammdaten › Geschäftsjahre | «+ Geschäftsjahr» | create |
 | Stammdaten › Kontenplan | «+ Konto» | create |
 | Stammdaten › MWST-Codes | «+ Steuercode» | create |
+| Stammdaten › Belegvorlagen | «+ Vorlage» (opens the template window; built 2026-11-12, `receipt.md`) | create (built) |
+| Stammdaten › Zahlungsarten | «+ Zahlungsart» (the window of «Bezahlt mit», E10; built 2026-11-12, `receipt.md`) | create (built) |
 | Stammdaten › Debitoren | — (since 2026-10-12: a debtor is made in the contact dialog, role «Debitor» — `debtor.md`) | n/a |
 | Stammdaten › Zahlungskonditionen | «+ Kondition» | create |
 | Stammdaten › Zahlungsziele | «+ Zahlungsziel» | create |
@@ -253,6 +258,7 @@ default first), the panel anchors right inside the viewport.
 | Stammdaten › Artikel | «+ Artikel» (opens the article window — with `?group=` while the list is filtered by a product group, the rail-top picker; built 2026-10-14, `article.md`) | create (built) |
 | Stammdaten › Adresstypen | «+ Adresstyp» | create |
 | Stammdaten › Benutzer | «+ Benutzer» | create |
+| Stammdaten › Geräte | «+ Gerät koppeln» (opens the pairing window — QR + code; built 2026-11-12, `api.md`) | create (built) |
 | Service › Backup | «↓ Daten sichern \| ▾» (main part = Daten) | split picker (built) |
 | Service › E-Mail | — | n/a |
 | Service › Jobs | — | n/a |
@@ -365,6 +371,7 @@ packages/module-backend/res/view/templates/
 
 - When a backend SCSS change must be visible in a PROJECT → MUST run `npm run build:backend` (framework) AND `composer install` (project); the browser serves `public/assets/backend/css/base.css`, not the package file. MUST NOT conclude from a fresh `vendor/` that the project is current — with path repos/junctions `vendor/` is always current and `public/` is not (INST-ASSET-DIFF-001).
 - When styling colors, spacing, or effects → MUST use `--be-*` token variables; values MUST NOT be hardcoded
+- When a surface sets its own dark or light ground (a theme, an island) → MUST declare `color-scheme` with it; MUST NOT fix a native control's option list or picker per control — the browser draws those from `color-scheme` (DARK-NATIVE-001)
 - When declaring tokens (`--be-*`, `--color-*`, `--space-*`, …) → MUST place the default block on the `.be` wrapper selector (the four `tokens/_*.scss` files), keeping the `[data-be-palette]` / `[data-be-theme]` override blocks after it; MUST NOT declare design tokens on `:root` (ADR-018; only `@font-face` in `tokens/_fonts.scss` stays global)
 - When adding component styles → MUST live in `components/_*.scss`; MUST NOT be added to layout files
 - When an embedded foreign fragment (`.dms`, later others) must follow the backend palette / dark mode → MUST bind that fragment's OWN tokens to `--be-*` in `components/_dms-host.scss` using a two-class selector (`.be .dms`, specificity `(0,2,0)` — the fragment's bundle loads AFTER `base.css`, so a one-class binding loses); MUST NOT edit the fragment's SCSS to reference `--be-*` (that breaks it for every other host — ADR-018 rule 4, [`css-dms.md`](css-dms.md) DMS-HOST-BIND-001)
@@ -406,6 +413,7 @@ packages/module-backend/res/view/templates/
 
 ## known issues
 
+- **DARK-NATIVE-001** — fixed 2026-11-12 (owner's browser test, dark theme: the option list of the order window's STATUS select — «Terminauftrag» … — white on white, readable only on hover). What the BROWSER draws — the option list of a native `<select>`, the date/time picker, a control's default ground and ink, scrollbars — does not take page CSS; it follows `color-scheme`, and the backend declared none, so it was drawn light under the dark theme. A select whose text inherits the theme's light ink without an option rule of its own (`.be-status-field select`: `color: inherit; background: transparent`; only `select.be-input option` named both) then showed light text on the light list. Root cause in `tokens/_colors.scss` (no `color-scheme` with the theme), not in the select. Fix: `color-scheme: light` on `.be`, `dark` on `[data-be-theme="dark"]` — the same element and attribute the server renders and `appearance.js` switches, so the theme switch follows without a reload; the light theme's dark island (`_shell.scss`) declares `dark`, its light card (`shell-card`) `light` again. There is no «system» theme in the backend (`UserPreferences::isDarkMode()` is light or dark), so `prefers-color-scheme` has nothing to answer here. Verified: `tests/core-js-windows-browser.mjs` section 5 (computed `color-scheme` of the status select and a date input, dark and after the switch to light).
 - **ROWS-001** — added 2026-10-18 (first user: the order's positions, owner decisions 2026-10-18,
   `order.md` «Positions block»). Don't build row add / remove / reorder per screen: `components/_rows.scss`
   (`.be-rows` on a standard list table — `__handle` with the ⋮⋮ `__grip` and the ⇥ `__indent` toggle,
@@ -420,7 +428,13 @@ packages/module-backend/res/view/templates/
   indent is a checkbox shown as a toggle button, against the rule «on/off → `.be-switch`» — the owner
   asked for an indent control at the far left of each row (2026-10-18); a switch per row would weigh
   more than the row's data. Tokens only (both themes, every palette). Not seen in a browser yet
-  (drag, mirror alignment, touch).
+  (drag, mirror alignment, touch). **Shared markup since 2026-11-12** (owner: the invoice editor looks
+  like the order window): don't write a row's handle or text cell by hand — the handle is kernel
+  `partials/rowHandle` (grip only when movable, the ⇥ checkbox `{name}[child]`), the text cell kernel
+  `partials/rowText` (the line code as the `__eyebrow` above the textarea in `__body`, `title` / `wide`
+  / `textAttrs`), the foot debtor's `partials/documentTotals`; the order window and debtor's invoice
+  editor render them. «line sums» counts an empty quantity as 1 in a row whose selected option is
+  `[data-sum-single]` (the invoice's lump sum; `tests/core-js.mjs` S1). No SCSS change.
 - **RADIOTABS-001** — added 2026-10-08 (owner: «ja gerne Mandant mit Reiter»; first user: Stammdaten › Firma › Mandant, [`mandator.md`](mandator.md)). A reusable pattern for tabs over sections of ONE page: `components/_radiotabs.scss`. The radios are visually hidden (absolute, 1px, `opacity: 0` — focusable, arrow keys switch them like any radio group) and come BEFORE the panels, so `.be-radiotabs__radio[data-tab="N"]:checked ~ .be-radiotabs__panel[data-tab="N"] { display: block }` shows one panel. The tabs are `<label for>` in the toolbar — not siblings of the radios — so the active underline and the focus ring come through the shell: `.be-shell:has(.be-radiotabs__radio[data-tab="N"]:checked) .be-viewtabs__tab--for[data-tab="N"]` (and `:focus-visible` → a 2px accent outline on the label). Both generated by an SCSS `@for` up to `$be-radiotabs-max: 6`. `:has()` is in every current browser; without it the panels still switch, only the underline does not follow (no server-side `is-active` fallback — it would stay on the first tab after a switch, which is worse than none). Matched by POSITION, not id, so the SCSS knows no screen — hence one set per shell page. Phone: `.be-shell-band__slot--2 .be-viewtabs` scrolls sideways (`overflow-x: auto`, no scrollbar, tabs `flex: none`) instead of wrapping or pushing the action square — the band stays one line, the square stays at the right end (`_shell.scss`, mobile block; also covers the five finance-report tabs).
 - **RADIOTABS-002** — added 2026-10-14 (first user: the order window, module-order — Auftrag · Verlauf · Belege, the owner's board). Don't assume the RADIOTABS-001 underline reaches a window: core.js appends windows to `body`, outside `.be-shell`, so `.be-shell:has(…)` never matches there. `_radiotabs.scss` gained the IN-CONTAINER variant: `.be-radiotabs > .be-viewtabs` after the radios — `.be-radiotabs__radio[data-tab=N]:checked ~ .be-viewtabs .be-viewtabs__tab--for[data-tab=N]` (and `:focus-visible`) light the label without `:has()`, scoped to the container, so several windows with radio tabs side by side do not light each other; the group gets a bottom rule (`--be-line`), the tabs a vertical padding (they have no band to stretch in), the first tab's text on the edge. The panels switch as before. `base.css` rebuilt (`npm run build:backend`). Not verified in a browser.
 - **HIDDEN-RESET-001** — fixed 2026-10-08. `[hidden]` did not hide a button: the UA rule `[hidden] { display: none }` weighs one attribute and loses against any class that sets `display` — `.be-icon-btn` (flex), `.be-btn` (inline-flex) — so the Drive's folder tools (`list.hc2`, `drive.js` sets `hidden`) and the content editor's add/remove buttons (`editor.js`) stayed visible. Now ONE reset in `base/_normalize.scss`: `[hidden] { display: none !important; }`, global in base.css — safe because base.css is the backend's only stylesheet and frontend / member load their own bundles. Checked before: no backend template or script sets `hidden` while expecting the element to show (all users toggle the attribute: `panel-toggle.js`, `core.js` layer, `appearance.js`, `cache.js`, `editor.js`, `drive.js`); the six component-level `&[hidden] { display: none }` patches (`_shell.scss` ×3, `_shell-banner.scss`, `_service-panel.scss`, kernel `_windows.scss`) are redundant now but harmless — left in place. ⚠️ Consequence: an element that should be shown by a CSS class must not carry `hidden` — remove the attribute instead.

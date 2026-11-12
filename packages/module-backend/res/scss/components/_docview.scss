@@ -1,0 +1,76 @@
+// ── Document beside its record (`.be-docview`) ──────────────────────────────
+// A stored document LARGE on the left, the record's fields on the right — the slip lies beside the
+// fields that are typed off it (first user: the receipt window of module-receipt, board
+// «Belegjournal», owner-approved 2026-11-12). Module-agnostic (Rule 9): any window that shows a
+// DMS document next to the record it belongs to uses it. One column on a narrow window.
+//
+//   <div class="be-docview">
+//     <figure class="be-docview__media">
+//       <a class="be-docview__frame" href="…" target="_blank"><img src="…" alt="…"></a>
+//       <figcaption class="be-docview__meta">name · size <a href="…">Original öffnen</a></figcaption>
+//     </figure>
+//     <div class="be-docview__fields">…the form fields…</div>
+//   </div>
+//
+// No zoom or rotation of its own (no script): the frame scrolls, «Original öffnen» shows the file
+// in the browser's own viewer.
+
+.be-docview {
+    display:               grid;
+    grid-template-columns: minmax(0, 1.1fr) minmax(18rem, 1fr);
+    gap:                   var(--space-4);
+    align-items:           start;
+}
+
+@media (max-width: 56rem) {
+    .be-docview { grid-template-columns: minmax(0, 1fr); }
+}
+
+.be-docview__media {
+    display:        flex;
+    flex-direction: column;
+    gap:            .4rem;
+    min-width:      0;
+    margin:         0;
+}
+
+.be-docview__frame {
+    display:         flex;
+    align-items:     center;
+    justify-content: center;
+    min-height:      16rem;
+    max-height:      70vh;
+    overflow:        auto;
+    background:      var(--be-bg);
+    border:          1px solid var(--be-line);
+    border-radius:   var(--radius-sm);
+}
+.be-docview__frame img { display: block; max-width: 100%; height: auto; }
+
+// A document that is no image (a PDF): its thumbnail when it has one, and the word to open it.
+.be-docview__frame--file {
+    flex-direction:  column;
+    gap:             .5rem;
+    text-decoration: none;
+}
+
+.be-docview__frame--empty {
+    padding:    var(--space-4);
+    color:      var(--be-muted);
+    font-size:  var(--font-size-sm);
+    text-align: center;
+}
+
+.be-docview__meta {
+    display:     flex;
+    flex-wrap:   wrap;
+    align-items: baseline;
+    gap:         .25rem 1rem;
+    font-size:   .75rem;
+    color:       var(--be-muted);
+}
+.be-docview__meta a { margin-left: auto; }
+.be-docview__name   { overflow-wrap: anywhere; }
+
+.be-docview__fields { min-width: 0; }
+.be-docview__fields > .be-form__section:first-child { margin-top: 0; }

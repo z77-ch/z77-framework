@@ -118,7 +118,7 @@ use Z77\Core\DI,
  * redirect to the mask) — the fallback.
  *
  * No JavaScript of its own (Rule 7): plain forms (`#[Csrf]`, the
- * `csrf_token` field), «Weitere Zeilen» is a submit. The using class MUST
+ * `csrf_token` field), «+ Zeile» and × are submits without the script. The using class MUST
  * provide (via its host base): `html()`, `redirect()`, `fetch()`, `em()`,
  * `$layoutManager`, `$messageService`, `$help`.
  */
@@ -567,9 +567,7 @@ trait InvoiceControllerTrait
         }
         $post = $request->getPostParameters();
         $form->fromPost($post);
-        if (($post['op'] ?? '') === 'more') {
-            $form->addRows(InvoiceForm::MORE_ROWS);
-
+        if ($form->applyOp((string) ($post['op'] ?? ''))) {   // «+ Zeile» / × without the script
             return $this->invoiceFormPage($form, null);
         }
         $draft = $form->toDraft(VatRates::from($this->em()));
@@ -635,9 +633,7 @@ trait InvoiceControllerTrait
         }
         $version = (int) ($post['version'] ?? 0);   // what THIS form was rendered from, not what is stored now
         $form->fromPost($post, $document, partyFixed: !$issued);
-        if (($post['op'] ?? '') === 'more') {
-            $form->addRows(InvoiceForm::MORE_ROWS);
-
+        if ($form->applyOp((string) ($post['op'] ?? ''))) {   // «+ Zeile» / × without the script
             return $this->invoiceFormPage($form, $document, $version);
         }
         $draft = $form->toDraft(VatRates::from($this->em()));
@@ -919,9 +915,7 @@ trait InvoiceControllerTrait
         }
         $post = $request->getPostParameters();
         $form->fromPost($post);
-        if (($post['op'] ?? '') === 'more') {
-            $form->addRows(InvoiceForm::MORE_ROWS);
-
+        if ($form->applyOp((string) ($post['op'] ?? ''))) {   // «+ Zeile» / × without the script
             return $this->invoiceFormPage($form, null);
         }
         $draft = $form->toDraft(VatRates::from($this->em()));
@@ -1074,7 +1068,7 @@ trait InvoiceControllerTrait
             'version'    => $version,
             'entityCsrf' => $document === null ? '' : DI::getCsrfService()->generateEntityToken('invoice', (int) $document->getId()),
             // The hash of the state the window was LOADED with, handed back through a POST that
-            // re-renders without saving («Weitere Zeilen», errors) — core.js «dirty forms».
+            // re-renders without saving («+ Zeile» or × without the script, errors) — core.js «dirty forms».
             'dirtyBase'  => preg_match('/^[0-9a-f]{8}$/', (string) (DI::getRequest()->getPostParameters()['_dirty_base'] ?? '')) === 1 ? (string) DI::getRequest()->getPostParameters()['_dirty_base'] : '',
             // The customer of a NEW invoice: the field with «Kunde wählen …» (CustomerPicker, owner 2026-10-15) — a contact
             // without a profile is made a debtor first («Debitor anlegen», owner 2026-10-18). The number is in the title.
