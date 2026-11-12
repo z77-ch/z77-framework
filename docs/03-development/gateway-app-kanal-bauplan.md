@@ -232,6 +232,13 @@ Diskussion des Bauplans mit dem Owner; ersetzen, was oben in Teil B anders steht
   einen Besitzer mit höheren Rollen) — wie gebaut (`api.md` «backend screen «Geräte»»).
 - **E15 — Koppel-Code 10 Zeichen** (`ABCDE-FGHJK`, ADR-057) statt der 6 des Boards —
   bestätigt 2026-11-12; der QR-Code ist der Normalfall.
+- **E16 — «Journal verbuchen» als Fenster, Stichtag vorgeschlagen = heute** (Owner 2026-11-12,
+  nach dem ersten Test: «Ende Vormonat» liess das Fenster leer wirken; ändert den Vorschlag
+  von E11, die Regel «nur bis zum Stichtag, ein unvollständiger blockiert» bleibt). Das
+  Fenster zeigt bei Fehlern bis zum Datum NUR die Fehler (welcher Beleg, was fehlt, Link
+  zum Beleg), sonst kurz was gebucht wird (Anzahl, Summe, MWST) und «Jetzt buchen»; das
+  Datum bleibt änderbar. Das Faktura-Journal bekommt dasselbe Fenster (ohne Datum) — ein
+  gemeinsamer Baustein (Regel 9; löst DEBTOR-WIN-002).
 - **Boards abgenommen 2026-11-12:** die vier Boards «Belege per Handy» auf dem
   Developer-Canvas (Belegvorlagen, Belegjournal, Geräte, z77 App) — «passt soweit alles».
   Mit E10 kommt «Bezahlt mit» dazu (Stammdaten-Liste wie Belegvorlagen; Auswahl auf dem
