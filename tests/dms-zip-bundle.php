@@ -776,8 +776,9 @@ check('the sender stands in the subject, on one line', $withSender->getSubject()
 $withOwn = ZipBundleService::mailMessage('a@example.ch', 'https://example.ch/', ['documents' => 1, 'bytes' => 1, 'expires' => 1, 'sender' => 'Muster AG'], ['ready' => ['subject' => 'Abholbereit']]);
 check('a project\'s own subject without the placeholder stays as written', $withOwn->getSubject() === 'Abholbereit', $withOwn->getSubject());
 foreach (['zipReady', 'zipFailed'] as $mailTpl) {
-    check("{$mailTpl}: the logo slot at the top, filled at send time, gone without a source", str_contains((string) file_get_contents(dirname(__DIR__) . "/packages/module-dms/res/view/templates/emails/{$mailTpl}.tpl.php"), '<p data-z77-inline="logo"'));
+    check("{$mailTpl}: no logo slot of its own — the shared emails/layout carries it (one logo, 2026-11-12)", !str_contains((string) file_get_contents(dirname(__DIR__) . "/packages/module-dms/res/view/templates/emails/{$mailTpl}.tpl.php"), 'data-z77-inline'));
 }
+check('the shared emails/layout carries the logo slot above the body', str_contains((string) file_get_contents(dirname(__DIR__) . '/packages/kernel/shared/res/view/templates/emails/layout.tpl.php'), '<p data-z77-inline="logo" style="margin:0 0 24px;"></p>' . "\n" . '                        <?= raw($emailBody) ?>'));
 check('the default subject without a sender is neutral, neither du nor Sie', $message->getSubject() === 'ZIP-Download bereit', $message->getSubject());
 $thrown = false;
 try { ZipBundleService::mailMessage('a@example.ch', '  ', ['documents' => 1, 'bytes' => 1, 'expires' => 1]); } catch (RuntimeException) { $thrown = true; }
