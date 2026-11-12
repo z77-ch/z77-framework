@@ -2,7 +2,7 @@
 
 **Status:** `[CONCEPT]` — owner decisions 2026-11-12; critical review 2026-11-12 (independent
 reviewer, read-only, claims checked against the code) worked in — §10 lists what it changed.
-Open: the owner decision in §11, then build.
+Owner decision A9 (§11) taken 2026-11-12; build.
 **Date:** 2026-11-12
 **Supersedes in part:** [ADR-057](../02-decisions/adr-057-api-device-channel.md) — decisions 4
 (pairing), 5 (scopes chosen per device), 6 (scopes independent of the owner's roles) and the
@@ -222,8 +222,8 @@ TTL, a cap on live records, the e-mail-change notice. Kept as sound: a code inst
 link/QR, the device cookie model, the file entity for app users, live scope checks, no receipt
 migration, the removal of pairing, the direct code mail, «e-mail code only».
 
-## 11. Open — owner decision
+## 11. Decided — who administers app users
 
-- **Self-service (review: E14 would be dropped silently).** Today an EDITOR pairs his OWN
-  phone. With app users: may an EDITOR create / manage his OWN app user (linked to himself,
-  scopes he holds), or does only an ADMIN create app users?
+- **A9 — Only an ADMIN creates and manages app users** (owner 2026-11-12). No self-service:
+  this replaces E14 (an EDITOR paired his own phone). The actor rule of §4 applies on top
+  (never for a person with roles above the actor's).
