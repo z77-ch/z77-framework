@@ -5,7 +5,8 @@ use Z77\Core\Config\AuthRole;
 
 // ⚠️ A project override of this file REPLACES it (first-source-match) — an
 // override must carry the FULL config, not just the added keys. What a project
-// typically adds: `apiKeyResolver`, `apiServices`, `rateLimitPerHour`.
+// typically adds: `apiKeyResolver`, `apiServices`, `rateLimitPerHour`; it keeps
+// `apiDeviceResolver` when the installation offers the device channel (ADR-057).
 return [
     'defaultGroup'  => 'main',
     'groupDefaults' => [
@@ -44,14 +45,22 @@ return [
     'rateLimitPerHour' => 600,
 
     // endpoint => FQCN implementing Z77\Shared\Api\ApiServiceInterface.
-    // Declared by the PROJECT override; `health` is built in (GatewayController)
-    // and cannot be redeclared.
+    // Declared by the PROJECT override; `health` and `devices` are built in
+    // (ServiceRegistry) and cannot be redeclared. A service that implements
+    // ScopedApiServiceInterface is open to POST and to devices (ADR-057).
     'apiServices' => [],
 
     // FQCN implementing Z77\Shared\Auth\TenantKeyResolverInterface — declared
     // by the PROJECT override (exactly one per installation; the ApiKeyGuard
     // fails fast otherwise).
     // 'apiKeyResolver' => \Override\Namespace\ApiKeyResolver::class,
+
+    // The device channel (ADR-057): paired phones/PCs reach the gateway with the
+    // HttpOnly cookie `z77_api_device` instead of a bearer key. FQCN implementing
+    // Z77\Shared\Auth\DeviceKeyResolverInterface; module-api ships it. Remove the
+    // key (or leave it out of an override) and the channel is OFF: the cookie is
+    // ignored, `POST /api/v1/devices/pair` answers 401 like any keyless call.
+    'apiDeviceResolver' => \Z77\Module\Api\Services\ApiDevices::class,
 
     'controllers' => [
         'main' => [

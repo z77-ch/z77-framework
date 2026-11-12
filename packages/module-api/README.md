@@ -13,5 +13,12 @@ A project provides the data: it overrides `apiConfig.inc.php` to declare its
 `ApiServiceInterface` implementation). The framework ships the mechanism, the
 project the payload.
 
+Besides the bearer key (machine channel), the gateway accepts paired devices
+(device channel, ADR-057): a phone or PC paired once from the backend carries
+an HttpOnly cookie, holds narrow scopes, and reaches only services that
+implement `ScopedApiServiceInterface`. Pairing (`POST /api/v1/devices/pair`),
+`GET /api/v1/devices/me`, device storage (`framework/api/devices.json`) and the
+idempotency of writing requests are part of this module.
+
 Contract: `docs/03-development/api-envelope-v1-*.md` in the
 [framework monorepo](https://github.com/z77-ch/z77-framework).

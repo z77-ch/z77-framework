@@ -58,7 +58,7 @@ Structure is enforced by `npm run docs:check` ([docs-lint/STANDARD.md](../docs-l
 | You are working on / keywords | Read |
 |---|---|
 | alert, alarm, outage notification, operator mail/SMS, escalation, monitoring signal | [topics/alert.md](topics/alert.md) |
-| API, /api, module-api, bearer key, tenant key, stateless route, ApiKeyGuard, JSON endpoint, data broker | [topics/api.md](topics/api.md) |
+| API, /api, module-api, bearer key, tenant key, stateless route, ApiKeyGuard, JSON endpoint, data broker, device channel, device pairing, scope, Idempotency-Key | [topics/api.md](topics/api.md) |
 | new backend area / screen, action cell, Aktionszelle, where does a button go, toolbar, tabs, switch, help button | [01-handbook/backend-screen.md](01-handbook/backend-screen.md) |
 | backend, dashboard, service panel, user preferences, system pages | [topics/backend.md](topics/backend.md) |
 | backup, restore, z77-backup CLI | [topics/backup.md](topics/backup.md) |

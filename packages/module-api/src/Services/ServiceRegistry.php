@@ -12,12 +12,14 @@ use Z77\Core\Services\ModuleManager,
  * framework ships the mechanism, the project declares its services in its
  * override config.
  *
- * `health` is built in and cannot be redeclared. A duplicate endpoint across
- * modules, an unknown class, or a wrong type is a config error and throws
- * (fail fast, not open).
+ * `health` and `devices` (the device channel's pairing and `me`, ADR-057) are
+ * built in and cannot be redeclared. A duplicate endpoint across modules, an
+ * unknown class, or a wrong type is a config error and throws (fail fast, not open).
  */
 final class ServiceRegistry
 {
+    private const BUILT_IN = ['health', 'devices'];
+
     /** @var array<string, class-string>|null endpoint => FQCN, built once per request */
     private ?array $declared = null;
 
@@ -29,6 +31,9 @@ final class ServiceRegistry
     {
         if ($endpoint === 'health') {
             return new HealthService();
+        }
+        if ($endpoint === 'devices') {
+            return new DevicesService();
         }
 
         $fqcn = $this->declaredServices()[$endpoint] ?? null;
@@ -57,8 +62,8 @@ final class ServiceRegistry
                 continue;
             }
             foreach ($declared as $endpoint => $fqcn) {
-                if ($endpoint === 'health') {
-                    throw new \LogicException('apiServices: `health` is built in and cannot be redeclared.');
+                if (in_array($endpoint, self::BUILT_IN, true)) {
+                    throw new \LogicException("apiServices: `{$endpoint}` is built in and cannot be redeclared.");
                 }
                 if (isset($services[$endpoint])) {
                     throw new \LogicException("apiServices: endpoint '{$endpoint}' is declared by more than one module.");
