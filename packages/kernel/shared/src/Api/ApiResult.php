@@ -46,6 +46,18 @@ final class ApiResult
     }
 
     /**
+     * Accepted (202, envelope v1 addition 2026-11-12, ADR-058): the request was taken and will
+     * have its effect elsewhere — `devices/login` answers it for EVERY address alike, whether a
+     * code went out or not. No ETag (nothing to revalidate); $headers as in {@see payload()}.
+     *
+     * @param array<string,string> $headers
+     */
+    public static function accepted(array $data, array $headers = []): self
+    {
+        return new self($data, null, 202, '', '', null, $headers);
+    }
+
+    /**
      * Failure. $retryAfter (seconds) only where the envelope defines it
      * (429 throttled, 503 snapshot_pending).
      */

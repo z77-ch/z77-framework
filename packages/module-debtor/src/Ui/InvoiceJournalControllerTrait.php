@@ -3,8 +3,10 @@ namespace Z77\Module\Debtor\Ui;
 
 use Z77\Core\DI,
     Z77\Core\Http\Response\BytesResponse,
+    Z77\Core\Http\Response\FetchResponse,
     Z77\Core\Http\Response\HtmlResponse,
     Z77\Core\Http\Response\RedirectResponse,
+    Z77\Core\Http\WindowOrigin,
     Z77\Module\Debtor\Entities\Invoice,
     Z77\Module\Debtor\Pdf\JournalPdf,
     Z77\Module\Debtor\Repositories\InvoiceRepository,
@@ -29,7 +31,9 @@ use Z77\Core\DI,
  * The recipe (backend-screen.md):
  *
  *   - action cell (hc1): «Journal verbuchen …» — the entry's most frequent action, a green
- *     confirm; disabled with its reason while the journal is empty or blocked;
+ *     confirm that opens the posting WINDOW (owner decision E16; origin the list region); disabled
+ *     with its reason while the journal is empty — a blocked journal opens it, the window shows
+ *     only the errors;
  *   - toolbar (hc2): the tabs «Im Journal» · «Verbuchte Journale», then the tool «Journal
  *     drucken» (the journal list as PDF); «Hilfe» at its right end (HELP-003);
  *   - the pending step at the top: «n Dokumente im Journal · Total … · ältestes Datum …», or the
@@ -39,14 +43,14 @@ use Z77\Core\DI,
  *     it the totals per VAT code and in all (credit notes negative). Tab «Verbuchte Journale»: the
  *     posting protocols, each with its journal list (PDF) — one row action, a helper icon.
  *
- * Actions: `list`, `pdf` (`?posting=` for a posted batch), `confirm-post` (a PAGE: count, totals,
- * the entries the posting books per account, the versions seen), `post` (POST, `#[Csrf]` →
- * {@see JournalPostingService::post()} — always the whole journal, owner decision O7).
+ * Actions: `list`, `pdf` (`?posting=` for a posted batch), `confirm-post` (a WINDOW, E16 — the
+ * errors only, or count, total, VAT per code and «Jetzt buchen»; the versions seen), `post` (POST,
+ * `#[Csrf]` → {@see JournalPostingService::post()} — always the whole journal, owner decision O7).
  *
- * No JavaScript of its own (Rule 7): links and plain forms; the server re-judges everything
- * (`post()` compares every version under its locks and refuses a blocked or changed journal).
- * The using class MUST provide (via its host base): `html()`, `redirect()`, `bytes()`, `em()`,
- * `$layoutManager`, `$messageService`, `$help`.
+ * No JavaScript of its own (Rule 7): links, plain forms and the shared window markup; the server
+ * re-judges everything (`post()` compares every version under its locks and refuses a blocked or
+ * changed journal). The using class MUST provide (via its host base): `html()`, `fetch()`,
+ * `redirect()`, `bytes()`, `em()`, `$layoutManager`, `$messageService`, `$help`.
  */
 trait InvoiceJournalControllerTrait
 {
@@ -144,14 +148,16 @@ trait InvoiceJournalControllerTrait
     }
 
     /**
-     * «Journal verbuchen …» — the last look (a PAGE, the booking print's confirmation model): how
-     * many documents, the totals per VAT code and in all, the journal entries the posting books
-     * summed per account (`preview()` — the same `PostingBuilder` the posting calls), the blockers.
-     * The form carries every document's `{id}:{version}` — the journal as THIS page shows it; the
-     * posting refuses when it changed since.
+     * «Journal verbuchen …» — the posting WINDOW (owner decision E16, the shared
+     * `partials/postConfirm` without a date; without the script a page): a document flagged «Neu
+     * fakturieren nötig» or a missing receivable account (`preview()` — the same `PostingBuilder` the
+     * posting calls — throws) → only the errors, each document a link to its mask; else count, the
+     * signed total, the VAT per code and «Jetzt buchen». The form carries every document's
+     * `{id}:{version}` — the journal as THIS window shows it; the posting refuses when it changed since.
      */
     protected function confirmPostAction(): HtmlResponse
     {
+        $request   = DI::getRequest();
         $documents = $this->journalService()->pending();
         $preview   = null;
         $problem   = null;
@@ -160,15 +166,20 @@ trait InvoiceJournalControllerTrait
         } catch (AccountNotConfiguredException $e) {
             $problem = $e->getMessage();
         }
+        // The journal's help explains the posting: in the window's title bar, as a page in the top bar.
+        $this->help->attach('Backend/InvoiceJournalController/list.help', self::JOURNAL_NS, [], 'Hilfe: Faktura-Journal');
         $response = $this->html([
-            'documents'  => $documents,
-            'totals'     => $this->journalService()->totals(),
-            'blockers'   => $this->journalService()->blockers($documents),
-            'preview'    => $preview,
-            'problem'    => $problem,
-            'currency'   => DebtorCurrency::base(),
-            'actionBase' => $this->journalListBase(),
-            'fmt'        => static fn(?Money $m) => AmountFormat::of($m),
+            'documents'   => $documents,
+            'totals'      => $this->journalService()->totals(),
+            'blockers'    => $this->journalService()->blockers($documents),
+            'preview'     => $preview,
+            'problem'     => $problem,
+            'currency'    => DebtorCurrency::base(),
+            'actionBase'  => $this->journalListBase(),
+            'invoiceBase' => $this->journalInvoiceBase(),
+            'fmt'         => static fn(?Money $m) => AmountFormat::of($m),
+            'window'      => ListDefinition::isFetch($request),
+            'origin'      => WindowOrigin::of($request),
         ]);
         $this->layoutManager->removeSection('main');
         $this->layoutManager->addPartials('confirmPost', 'Backend/InvoiceJournalController', self::JOURNAL_NS);
@@ -177,13 +188,15 @@ trait InvoiceJournalControllerTrait
     }
 
     /**
-     * The POST of «Journal verbuchen» (`#[Csrf]`): the pairs the confirmation carried to
-     * `JournalPostingService::post()` — ONE unit of work, all or nothing — and a 303 to the tab
-     * «Verbuchte Journale» with the flash; a refusal (empty, blocked, changed, the bookkeeping's)
-     * answers the journal with the German sentence — nothing was posted.
+     * The POST of «Journal verbuchen» (`#[Csrf]`): the pairs the window carried to
+     * `JournalPostingService::post()` — ONE unit of work, all or nothing. Fetched (the window): the
+     * flash, the window closes, the list region it was opened from reloads; a refusal (empty,
+     * blocked, changed, the bookkeeping's — a closed year, a settled VAT period) re-renders the
+     * window with the German sentence — nothing was posted. As a page: a 303 to «Verbuchte
+     * Journale», a refusal a 303 to the journal.
      */
     #[Csrf]
-    protected function postAction(): RedirectResponse
+    protected function postAction(): FetchResponse|RedirectResponse
     {
         $request = DI::getRequest();
         $pairs   = $request->isPost() ? self::journalPairs($request->getPostParameters()['doc'] ?? null) : [];
@@ -191,19 +204,40 @@ trait InvoiceJournalControllerTrait
         try {
             $protocol = $this->journalService()->post($pairs);
         } catch (DebtorException $e) {
-            $this->messageService->pushFlashAfterRedirect('error', $e instanceof JournalRefusedException ? $e->getMessage() : 'Nichts wurde verbucht: ' . $e->getMessage());
-
-            return $this->redirect($back, 303);
+            return $this->journalPostRefused($e instanceof JournalRefusedException ? $e->getMessage() : 'Nichts wurde verbucht: ' . $e->getMessage(), $back);
         } catch (\Doctrine\DBAL\Exception $e) {
             error_log('debtor journal posting: ' . get_class($e) . ': ' . $e->getMessage());
-            $this->messageService->pushFlashAfterRedirect('error', 'Nichts wurde verbucht: ' . (LockConflict::is($e) ? LockConflict::MESSAGE : 'die Datenbank hat das Verbuchen abgelehnt — nochmals versuchen; bleibt es dabei, steht die Ursache im Fehlerprotokoll.'));
 
-            return $this->redirect($back, 303);
+            return $this->journalPostRefused('Nichts wurde verbucht: ' . (LockConflict::is($e) ? LockConflict::MESSAGE : 'die Datenbank hat das Verbuchen abgelehnt — nochmals versuchen; bleibt es dabei, steht die Ursache im Fehlerprotokoll.'), $back);
         }
         $count = $protocol->getDocumentCount();
-        $this->messageService->pushFlashAfterRedirect('success', 'Journal verbucht: ' . ($count === 1 ? '1 Dokument' : $count . ' Dokumente') . ' (Nr. ' . $protocol->getFirstNumber() . ' – ' . $protocol->getLastNumber() . '), Total ' . AmountFormat::of($protocol->getGrossTotal()) . '.');
+        $flash = 'Journal verbucht: ' . ($count === 1 ? '1 Dokument' : $count . ' Dokumente') . ' (Nr. ' . $protocol->getFirstNumber() . ' – ' . $protocol->getLastNumber() . '), Total ' . AmountFormat::of($protocol->getGrossTotal()) . '.';
+        if (ListDefinition::isFetch($request)) {
+            $this->messageService->pushFlash('success', $flash);
+            $response = $this->fetch()->setStatus('success')->addCommand('close-window');
+            $origin   = WindowOrigin::of($request);
+            if (str_starts_with($origin, 'region:')) {
+                $response->addCommand('refresh-region', ['name' => substr($origin, strlen('region:'))]);
+            }
+
+            return $response;
+        }
+        $this->messageService->pushFlashAfterRedirect('success', $flash);
 
         return $this->redirect($back . '?view=posted', 303);
+    }
+
+    /** Nothing was posted: fetched, the window again (the journal as it is now) with the sentence; as a page, back to the journal. */
+    private function journalPostRefused(string $message, string $back): FetchResponse|RedirectResponse
+    {
+        if (ListDefinition::isFetch(DI::getRequest())) {
+            $this->messageService->pushFlash('error', $message);
+
+            return $this->fetch()->setStatus('error')->addCommand('open-window', ['url' => $this->journalListBase() . '/confirm-post', 'replace' => true]);
+        }
+        $this->messageService->pushFlashAfterRedirect('error', $message);
+
+        return $this->redirect($back, 303);
     }
 
     /**

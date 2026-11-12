@@ -38,8 +38,9 @@ use Doctrine\DBAL\Exception\RetryableException,
  *
  * The recipe (backend-screen.md):
  *
- *   - action cell (hc1): «Journal verbuchen …» — the entry's most frequent action, a green confirm;
- *     disabled with its reason while the journal is empty;
+ *   - action cell (hc1): «Journal verbuchen …» — the entry's most frequent action, a green confirm
+ *     that opens the posting WINDOW (E16; origin: the list region); disabled with its reason while
+ *     the journal is empty;
  *   - toolbar (hc2): the tabs «Im Journal» · «Verbuchte Journale»; «Hilfe» at its right end (HELP-003);
  *   - the pending step at the top: «n Belege im Journal · noch nicht verbucht · Total … · ältester
  *     vom …», or — red — what keeps receipts from being posted, each with a link to its window;
@@ -58,10 +59,13 @@ use Doctrine\DBAL\Exception\RetryableException,
  *   - `confirm-delete` — «Löschen …»: `delete()`; when it answers the photo's document id (no split
  *     part names it any more), the switch «Foto auch löschen» moves it to the DMS trash through
  *     `DocumentService::delete()` — the session's own DMS right (`manage`) decides, as in the Drive;
- *   - `confirm-post` — «Journal verbuchen …»: a PAGE with the cut-off (E11, default
- *     {@see ReceiptJournalPostingService::defaultCutOff()}), the run, what blocks it, the VAT per code
- *     and the entries per account; the form carries every receipt's `{id}:{version}`;
- *   - `post` (POST, `#[Csrf]`) — `ReceiptJournalPostingService::post()`, all or nothing.
+ *   - `confirm-post` — «Journal verbuchen …»: a WINDOW (E16, the shared `partials/postConfirm`;
+ *     without the script a page) with the cut-off (E11, proposed TODAY —
+ *     {@see ReceiptJournalPostingService::defaultCutOff()}; a GET form re-renders the window): only
+ *     the errors when a receipt up to it cannot be posted, else the short summary and «Jetzt
+ *     buchen»; the form carries the cut-off and every receipt's `{id}:{version}`;
+ *   - `post` (POST, `#[Csrf]`) — `ReceiptJournalPostingService::post()`, all or nothing; fetched,
+ *     the window closes and the list region reloads, a refusal re-renders the window.
  *
  * The using class MUST provide (via its host base): `html()`, `fetch()`, `fetchError()`,
  * `redirect()`, `em()`, `$layoutManager`, `$messageService`, `$help`.
@@ -335,36 +339,39 @@ trait ReceiptJournalControllerTrait
     // ── «Journal verbuchen» ──────────────────────────────────────────────
 
     /**
-     * «Journal verbuchen …» — the last look (a PAGE, the Faktura-Journal's model) for the run up to
-     * the CUT-OFF (`?cutoff=YYYY-MM-DD`, E11; default the last day of the previous month): how many
-     * receipts, their total, what blocks the run, the VAT per code and the entries per account — all
-     * from `preview()`, the builder the posting calls. The form carries the cut-off and every
-     * receipt's `{id}:{version}`; the posting refuses when the run changed since.
+     * «Journal verbuchen …» — the posting WINDOW (owner decision E16; without the script a page) for
+     * the run up to the CUT-OFF (`?cutoff=YYYY-MM-DD`, E11; proposed today,
+     * {@see ReceiptJournalPostingService::defaultCutOff()}). Everything from `preview()`, the builder
+     * the posting calls: a blocked receipt up to the cut-off → only the errors, each a link to its
+     * window; else count, total, VAT per code and «Jetzt buchen». The form carries the cut-off and
+     * every receipt's `{id}:{version}`; the posting refuses when the run changed since. The date is a
+     * GET form inside the window (core.js `data-window-form`) — a change re-renders this action.
      */
     protected function confirmPostAction(): HtmlResponse
     {
-        $raw     = trim((string) DI::getRequest()->getGetParameter('cutoff'));
+        $request = DI::getRequest();
+        $raw     = trim((string) $request->getGetParameter('cutoff'));
         $cutOff  = $raw === '' ? null : ManualEntryForm::parseDate($raw);
-        $note    = $raw !== '' && $cutOff === null ? 'Der Stichtag «' . $raw . '» ist kein Datum — es gilt der vorgeschlagene.' : '';
+        $note    = $raw !== '' && $cutOff === null ? 'Der Stichtag «' . $raw . '» ist kein Datum — es gilt heute.' : '';
         $cutOff ??= ReceiptJournalPostingService::defaultCutOff();
         $preview = $this->receiptPosting()->preview($cutOff);
         $pending = $this->receiptJournal()->pending();
-        $choices = new ReceiptChoices($this->em());
 
-        // The journal's help explains the run and the cut-off (section `cutoff`); on this page it
-        // stands in the top bar (not a list).
+        // The journal's help explains the run and the cut-off (section `cutoff`): in the window's
+        // title bar, as a page in the top bar.
         $this->help->attach('Backend/ReceiptJournalController/list.help', self::RECEIPT_JOURNAL_NS, [], 'Hilfe: Belegjournal');
         $response = $this->html([
-            'preview'      => $preview,
-            'cutOff'       => $cutOff,
-            'note'         => $note,
-            'blockers'     => self::receiptBlockers($preview['blocked'], $pending),
-            'later'        => count($pending) - count($preview['seen']),
-            'taxLabels'    => $this->receiptTaxLabels($preview['vat']),
-            'accountNames' => array_combine(array_map(static fn(array $r) => $r['account'], $preview['rows']), array_map(static fn(array $r) => $choices->accountName($r['account']), $preview['rows'])) ?: [],
-            'currency'     => ReceiptFields::currency(),
-            'actionBase'   => $this->receiptJournalBase(),
-            'fmt'          => static fn(?Money $m) => AmountFormat::of($m),
+            'preview'    => $preview,
+            'cutOff'     => $cutOff,
+            'note'       => $note,
+            'blockers'   => self::receiptBlockers($preview['blocked'], $pending),
+            'later'      => count($pending) - count($preview['seen']),
+            'taxLabels'  => $this->receiptTaxLabels($preview['vat']),
+            'currency'   => ReceiptFields::currency(),
+            'actionBase' => $this->receiptJournalBase(),
+            'fmt'        => static fn(?Money $m) => AmountFormat::of($m),
+            'window'     => ListDefinition::isFetch($request),
+            'origin'     => WindowOrigin::of($request),
         ]);
         $this->layoutManager->removeSection('main');
         $this->layoutManager->addPartials('confirmPost', 'Backend/ReceiptJournalController', self::RECEIPT_JOURNAL_NS);
@@ -373,13 +380,15 @@ trait ReceiptJournalControllerTrait
     }
 
     /**
-     * The POST of «Journal verbuchen» (`#[Csrf]`): the cut-off and the pairs the confirmation carried
-     * to `ReceiptJournalPostingService::post()` — ONE unit of work, all or nothing — and a 303 to the
-     * tab «Verbuchte Journale» with the flash; a refusal (empty, changed, incomplete, the ledger's)
-     * answers the confirmation page again with the German sentence — nothing was posted.
+     * The POST of «Journal verbuchen» (`#[Csrf]`): the cut-off and the pairs the window carried to
+     * `ReceiptJournalPostingService::post()` — ONE unit of work, all or nothing. Fetched (the
+     * window): the flash, the window closes, the list region it was opened from reloads; a refusal
+     * (empty, changed, incomplete, the ledger's) re-renders the window for THAT cut-off with the
+     * German sentence — nothing was posted. As a page: a 303 to «Verbuchte Journale», a refusal a
+     * 303 back to the confirmation.
      */
     #[Csrf]
-    protected function postAction(): RedirectResponse
+    protected function postAction(): FetchResponse|RedirectResponse
     {
         $request = DI::getRequest();
         $post    = $request->isPost() ? $request->getPostParameters() : [];
@@ -387,26 +396,36 @@ trait ReceiptJournalControllerTrait
         $cutOff  = ManualEntryForm::parseDate($raw);
         $back    = $this->receiptJournalBase() . '/confirm-post' . ($cutOff !== null ? '?cutoff=' . $cutOff->format('Y-m-d') : '');
         if ($cutOff === null) {
-            $this->messageService->pushFlashAfterRedirect('error', 'Nichts wurde verbucht: ohne gültigen Stichtag.');
-
-            return $this->redirect($back, 303);
+            return $this->receiptPostRefused('Nichts wurde verbucht: ohne gültigen Stichtag.', $back);
         }
         try {
             $protocol = $this->receiptPosting()->post($cutOff, self::receiptPairs($post['rec'] ?? null));
         } catch (ReceiptException $e) {
-            $this->messageService->pushFlashAfterRedirect('error', $e instanceof ReceiptRefusedException ? $e->getMessage() : 'Nichts wurde verbucht: ' . $e->getMessage());
-
-            return $this->redirect($back, 303);
+            return $this->receiptPostRefused($e instanceof ReceiptRefusedException ? $e->getMessage() : 'Nichts wurde verbucht: ' . $e->getMessage(), $back);
         } catch (\Doctrine\DBAL\Exception $e) {
             error_log('receipt journal posting: ' . get_class($e) . ': ' . $e->getMessage());
-            $this->messageService->pushFlashAfterRedirect('error', 'Nichts wurde verbucht: ' . (self::receiptLockConflict($e) ? self::RECEIPT_LOCK_MESSAGE : 'die Datenbank hat das Verbuchen abgelehnt — nochmals versuchen; bleibt es dabei, steht die Ursache im Fehlerprotokoll.'));
 
-            return $this->redirect($back, 303);
+            return $this->receiptPostRefused('Nichts wurde verbucht: ' . (self::receiptLockConflict($e) ? self::RECEIPT_LOCK_MESSAGE : 'die Datenbank hat das Verbuchen abgelehnt — nochmals versuchen; bleibt es dabei, steht die Ursache im Fehlerprotokoll.'), $back);
         }
         $count = $protocol->getReceiptCount();
-        $this->messageService->pushFlashAfterRedirect('success', 'Belegjournal verbucht bis ' . $cutOff->format('d.m.Y') . ': ' . ($count === 1 ? '1 Beleg' : $count . ' Belege') . ', Total ' . AmountFormat::of($protocol->getGrossTotal()) . '.');
+        $flash = 'Belegjournal verbucht bis ' . $cutOff->format('d.m.Y') . ': ' . ($count === 1 ? '1 Beleg' : $count . ' Belege') . ', Total ' . AmountFormat::of($protocol->getGrossTotal()) . '.';
+        if (ListDefinition::isFetch($request)) {
+            return $this->receiptSaved($flash);
+        }
+        $this->messageService->pushFlashAfterRedirect('success', $flash);
 
         return $this->redirect($this->receiptJournalBase() . '/list?view=' . ReceiptJournalListing::VIEW_POSTED, 303);
+    }
+
+    /** Nothing was posted: fetched, the window again for that cut-off with the sentence; as a page, back to the confirmation. */
+    private function receiptPostRefused(string $message, string $back): FetchResponse|RedirectResponse
+    {
+        if (ListDefinition::isFetch(DI::getRequest())) {
+            return $this->fetchError($message)->addCommand('open-window', ['url' => $back, 'replace' => true]);
+        }
+        $this->messageService->pushFlashAfterRedirect('error', $message);
+
+        return $this->redirect($back, 303);
     }
 
     // ── answers and helpers ──────────────────────────────────────────────
@@ -431,7 +450,11 @@ trait ReceiptJournalControllerTrait
         return $response;
     }
 
-    /** Close the window and reload the list region it came from; without the script: flash + list. */
+    /**
+     * Close the window and reload what it came from — the list region, or the window it was opened
+     * from (a receipt fixed out of «Journal verbuchen»: that window's errors / summary follow);
+     * without the script: flash + list.
+     */
     private function receiptSaved(string $flash): FetchResponse|RedirectResponse
     {
         $request = DI::getRequest();
@@ -445,6 +468,8 @@ trait ReceiptJournalControllerTrait
         $origin   = WindowOrigin::of($request);
         if (str_starts_with($origin, 'region:')) {
             $response->addCommand('refresh-region', ['name' => substr($origin, strlen('region:'))]);
+        } elseif (str_starts_with($origin, 'window:')) {
+            $response->addCommand('refresh-window', ['window' => substr($origin, strlen('window:'))]);
         }
 
         return $response;

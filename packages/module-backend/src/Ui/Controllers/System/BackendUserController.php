@@ -67,10 +67,12 @@ class BackendUserController extends BackendAbstractController
      * from {@see AuthRole::getRoleHierarchy()} (SSOT) — this controller never
      * defines which roles exist. {@see ROLE_LABELS} supplies the German text per
      * existing role; an unlabeled (newly added) role falls back to its key.
+     * Public and static: the screen «App-Benutzer» (module-api, mounted by
+     * {@see ApiAppUserController}) names roles with the same words.
      *
      * @return array<string,string> role key => display label, highest role first
      */
-    private function roleLabels(): array
+    public static function roleLabels(): array
     {
         $hierarchy = AuthRole::getRoleHierarchy();
         arsort($hierarchy); // highest weight first

@@ -163,8 +163,9 @@ final class GatewayController
 
     /**
      * Method and scope (ADR-057). null = may proceed; the error result otherwise.
-     * The anonymous principal exists only on the pairing call — the guard lets
-     * nothing else through without a credential; the check here is the second lock.
+     * The anonymous principal exists only on the sign-in calls (`devices/login`,
+     * `devices/verify`, ADR-058) — the guard lets nothing else through without a
+     * credential; the check here is the second lock.
      */
     private function access(ApiServiceInterface $service, string $method, string $endpoint, ApiRequest $apiRequest): ?ApiResult
     {
@@ -179,7 +180,7 @@ final class GatewayController
 
         $principal = $apiRequest->principal;
         if ($principal === null) {
-            return array_merge([self::VERSION, $endpoint], $apiRequest->slugs) === ApiKeyGuard::PAIRING_SLUGS
+            return $asked === 'post' && ApiKeyGuard::isAnonymousPath(array_merge([self::VERSION, $endpoint], $apiRequest->slugs))
                 ? null
                 : ApiResult::error('unauthorized', 401, 'Missing credential.');
         }
@@ -200,7 +201,7 @@ final class GatewayController
      * null while the caller stays under its hourly limit; the 429 result past
      * it. Counted per CONNECTION when the resolver names one (`keyRef`) — a
      * chatty connection must not eat a sibling's quota — else per tenant; a
-     * device per device, the anonymous pairing call per source /64.
+     * device per device, the anonymous sign-in calls per source /64.
      */
     private function throttle(?ApiPrincipal $principal, Request $request): ?ApiResult
     {

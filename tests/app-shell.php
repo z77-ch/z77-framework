@@ -2,18 +2,23 @@
 
 /**
  * The app shell `/app` through the real stack (CLI, PHP's built-in server) — plan A6 / T6, the
- * ADR-057 addendum 2026-11-12. What is load-bearing:
+ * ADR-057 addendum 2026-11-12, ADR-058 (code sign-in instead of pairing). What is load-bearing:
  *
- *   (A) the pages: start and pairing answer 200 with the ENFORCED app CSP exactly once (script,
+ *   (A) the pages: start and sign-in answer 200 with the ENFORCED app CSP exactly once (script,
  *       style, image from the own origin, no `unsafe-inline` / `unsafe-eval`, no framing), the
  *       global page CSP stays observing on the login page; the HTML holds no inline script, no
  *       `style=` attribute and no `on…=` handler, loads its scripts from /assets/ and links the
  *       manifest; the receipt screen (module-receipt's `appScreens`) is in the start page, hidden
- *       until the device's scope shows it; the pairing code from the QR is in the field, an odd
- *       one is not, and the page sends no Referer;
+ *       until the device's scope shows it; the start page offers the sign-out; the sign-in page has
+ *       the e-mail step and the code step (`one-time-code`), puts nothing from the address into
+ *       the page and shows no tries counter; /app/pair is gone (404);
  *   (B) the manifest: `scope` and `start_url` /app/, standalone, the installation's icons;
- *   (C) the service worker: served from /app/sw.js as JavaScript with its own CSP;
- *   (D) /app/anything else is a 404; the pages carry no device data (the cookie is on /api only).
+ *   (C) the service worker: served from /app/sw.js as JavaScript with its own CSP, cache v2
+ *       (the pairing shell dropped on installed phones), /app/login among its pages;
+ *   (D) /app/anything else is a 404; the pages carry no device data (the cookie is on /api only);
+ *   (E) the queue cards of `app.js` (source and min): a WAITING entry offers «Verwerfen» too, with
+ *       its own question — the sign-out refusal «Erst senden oder verwerfen» always has its action
+ *       (owner 2026-11-12); the cards are built with DOM nodes and textContent only.
  *
  * Run: php tests/app-shell.php
  */
@@ -158,15 +163,20 @@ check('A7 the receipt screen (module-receipt appScreens) is there, HIDDEN until 
 check('A8 the page carries no device data and no account field (E2): the cookie is on /api only',
     !str_contains($html, 'debit') && !str_contains($html, 'credit_account') && !str_contains($html, 'z77_api_device'));
 
-[$status, $lines, $html] = $get('/app/pair?code=ABCDE-FGHJK');
-check('A9 /app/pair → 200, the app CSP enforced once, no Referer (the code is in the address)',
-    $status === 200 && $values($lines, 'Content-Security-Policy') === [AppController::CSP] && $values($lines, 'Referrer-Policy') === ['no-referrer'],
-    $status . ' ' . implode(' | ', $values($lines, 'Referrer-Policy')));
-check('A10 the code from the QR is in the field', str_contains($html, 'name="code" value="ABCDE-FGHJK"'));
-check('A11 the pairing page holds no inline script, style attribute or handler', $inlineViolations($html) === [], implode(', ', $inlineViolations($html)));
-check('A12 without JS the form only reloads the page (GET /app/pair) and a notice says why', str_contains($html, 'method="get" action="/app/pair"') && str_contains($html, '<noscript>'));
-[, , $html] = $get('/app/pair?code=' . rawurlencode('"><script>alert(1)</script>'));
-check('A13 an odd code is not put into the field (and nothing unescaped)', str_contains($html, 'name="code" value=""') && !str_contains($html, 'alert(1)'));
+check('A9 the start page offers «Auf diesem Gerät abmelden», hidden until the device is known',
+    preg_match('#<p class="za-pad za-stack" data-app-account hidden>\s*<button type="button" class="za-link" data-app-logout>Auf diesem Gerät abmelden</button>#', $html) === 1);
+
+[$status, $lines, $html] = $get('/app/login?email=' . rawurlencode('"><script>alert(1)</script>') . '&code=123456');
+check('A10 /app/login → 200, the app CSP enforced once', $status === 200 && $values($lines, 'Content-Security-Policy') === [AppController::CSP], $status . ' ' . substr($html, 0, 300));
+check('A11 two steps on one page: the e-mail form, then the code form (hidden) with autocomplete="one-time-code", numeric',
+    str_contains($html, 'data-app-login-email') && preg_match('#<form class="za-stack" method="get" action="/app/login" data-app-login-code hidden novalidate>#', $html) === 1
+    && str_contains($html, 'name="email"') && str_contains($html, 'autocomplete="one-time-code"') && str_contains($html, 'inputmode="numeric"')
+    && str_contains($html, 'Neuen Code anfordern'));
+check('A12 nothing from the address is put into the page (no e-mail, no code, nothing unescaped); no tries counter',
+    !str_contains($html, 'alert(1)') && !str_contains($html, '123456') && !preg_match('/value="[^"]+"/', $html) && !preg_match('/Versuche? übrig|noch \d+ Versuch/i', $html));
+check('A13 the same text for every address; the sign-in page holds no inline script, style attribute or handler; without JS the forms only reload the page',
+    str_contains($html, 'Wenn diese Adresse für die App freigeschaltet ist') && $inlineViolations($html) === []
+    && substr_count($html, 'method="get" action="/app/login"') === 2 && str_contains($html, '<noscript>'), implode(', ', $inlineViolations($html)));
 
 [$status, $lines] = $get('/login');
 check('A14 the global default is untouched: the login page keeps the observing page CSP and only frame-ancestors enforced',
@@ -188,14 +198,29 @@ check('C1 /app/sw.js → 200 as JavaScript (a worker registers only from a scrip
     $status === 200 && str_starts_with(($values($lines, 'Content-Type')[0] ?? ''), 'text/javascript') && $values($lines, 'X-Content-Type-Options') === ['nosniff'],
     $status . ' ' . implode(' | ', $values($lines, 'Content-Type')));
 check('C2 … with the worker\'s own CSP, revalidated on every navigation', $values($lines, 'Content-Security-Policy') === ["default-src 'self'"] && $values($lines, 'Cache-Control') === ['no-cache']);
-check('C3 … the shell worker itself (its cache, never /api)', str_contains($body, 'z77-app-v1') && str_contains($body, '/api/'));
+check('C3 … the shell worker itself: cache v2 (ADR-058 — drops the pairing shell), /app/login among its pages, never /api',
+    preg_match('/["\x27]z77-app-v2["\x27]/', $body) === 1 && !str_contains($body, 'z77-app-v1') && preg_match('#["\x27]/app/login["\x27]#', $body) === 1
+    && preg_match('#["\x27]/app/pair["\x27]#', $body) !== 1 && str_contains($body, '/api/'));
 
 // ── (D) the rest ──────────────────────────────────────────────────────────────────────────
 echo "(D) other paths\n";
 [$status] = $get('/app/nope');
 check('D1 /app/anything else → 404', $status === 404, (string) $status);
-[$status] = $get('/app/pair/x');
-check('D2 /app/pair/x → 404', $status === 404, (string) $status);
+[$status] = $get('/app/pair?code=ABCDE-FGHJK');
+check('D2 /app/pair is gone (ADR-058) → 404', $status === 404, (string) $status);
+[$status] = $get('/app/login/x');
+check('D3 /app/login/x → 404', $status === 404, (string) $status);
+
+// ── (E) the queue cards ───────────────────────────────────────────────────────────────────
+echo "(E) queue cards (app.js)\n";
+$appJs  = (string) file_get_contents($root . '/packages/module-api/res/assets/js/app.js');
+$appMin = (string) file_get_contents($root . '/packages/module-api/res/assets/js/app.min.js');
+$cardFn = preg_match('/function card\(entry\) \{(.*?)\n    \}\n/s', $appJs, $m) === 1 ? $m[1] : '';
+check('E1 a waiting entry can be discarded: «Verwerfen» outside the refused-only branch, with its own question; «Bearbeiten» stays for a refused one',
+    $cardFn !== '' && preg_match("/if \\(refused(?: && !foreign)?\\) \\{[^}]*'Bearbeiten'.*?\\n        \\}\\n        var drop = el\\('button', 'za-link', 'Verwerfen'\\)/s", $cardFn) === 1
+    && str_contains($cardFn, 'Diesen wartenden Eintrag verwerfen') && str_contains($cardFn, 'queue.remove(entry.key)'));
+check('E2 … built with DOM nodes and textContent, no innerHTML / insertAdjacentHTML in the shell; the min carries it',
+    !preg_match('/innerHTML|insertAdjacentHTML|outerHTML/', $appJs) && str_contains($appMin, 'Diesen wartenden Eintrag verwerfen') && str_contains($appMin, 'Erst senden oder verwerfen'));
 
 if ($fail > 0) {
     echo "\n--- server log (tail) ---\n" . implode("\n", array_slice(file($base . '/server.log', FILE_IGNORE_NEW_LINES) ?: [], -25)) . "\n";

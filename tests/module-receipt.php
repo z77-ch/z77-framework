@@ -167,9 +167,10 @@ check('O7b split (E12): the parts sum to the original; the new part shares photo
 check('O7c a split part must be positive and smaller than the receipt',
     caught(fn() => $whole->splitOff(chf('37.70'), 'O', new \DateTimeImmutable()), \LogicException::class) !== null
     && caught(fn() => $whole->splitOff(chf('0.00'), 'O', new \DateTimeImmutable()), \LogicException::class) !== null);
-check('O7d the default cut-off (E11) is the last day of the previous month',
-    ReceiptJournalPostingService::defaultCutOff(new \DateTimeImmutable('2026-11-12 15:00'))->format('Y-m-d') === '2026-10-31'
-    && ReceiptJournalPostingService::defaultCutOff(new \DateTimeImmutable('2026-01-05'))->format('Y-m-d') === '2025-12-31');
+check('O7d the proposed cut-off is TODAY at midnight (owner decision E16 — replaces E11\'s «last day of the previous month»)',
+    ReceiptJournalPostingService::defaultCutOff(new \DateTimeImmutable('2026-11-12 15:00'))->format('Y-m-d H:i') === '2026-11-12 00:00'
+    && ReceiptJournalPostingService::defaultCutOff(new \DateTimeImmutable('2026-01-05'))->format('Y-m-d') === '2026-01-05'
+    && ReceiptJournalPostingService::defaultCutOff()->format('Y-m-d') === (new \DateTimeImmutable('today'))->format('Y-m-d'));
 check('O8 the VAT decision is a code OR «without VAT», never both (the entity refuses)',
     caught(fn() => $r2->correct(new \DateTimeImmutable('2026-11-03'), chf('1.00'), 'x', '6200', '1000', 'VI', true, 'P', new \DateTimeImmutable()), \LogicException::class) !== null);
 check('O9 a non-positive amount is refused by the entity; an incomplete receipt cannot be posted',
@@ -208,8 +209,9 @@ $targets = [
     'payment-methods'   => \Z77\Module\Receipt\Api\PaymentMethodsService::class,
     'receipts'          => \Z77\Module\Receipt\Api\ReceiptsService::class,
 ];
-check('O17 the config registers the three targets, offers the scope receipt.capture to the Geräte screen and contributes the app screen',
+check('O17 the config registers the three targets, offers the scope receipt.capture to app users — minimum role EDITOR in the backend, never for members (ADR-058) — and contributes the app screen',
     ($receiptConfig['apiServices'] ?? null) === $targets && isset($receiptConfig['apiDeviceScopes']['receipt.capture']['label'], $receiptConfig['apiDeviceScopes']['receipt.capture']['hint'])
+    && ($receiptConfig['apiDeviceScopes']['receipt.capture']['realms'] ?? null) === ['backend' => \Z77\Core\Config\AuthRole::EDITOR]
     && ($receiptConfig['appScreens']['receipt']['scope'] ?? '') === 'receipt.capture' && ($receiptConfig['appScreens']['receipt']['template'] ?? '') === 'App/receipt'
     && is_file($root . '/packages/module-receipt/res/view/templates/App/receipt.tpl.php')
     && is_file($root . '/packages/module-receipt/res/assets/js/app/receipt.js') && is_file($root . '/packages/module-receipt/res/assets/js/app/receipt.min.js'));
@@ -225,7 +227,7 @@ $machine = new \Z77\Shared\Api\ApiRequest('zihlundsee', [], [], null, 'pilot', m
 $refusals = array_map(static fn(string $class) => (new $class())->handle($machine), $targets);
 check('O19 a machine (bearer) caller is refused by every target with 403 before anything is read or written (the gateway\'s scope check lets it through, ADR-057)',
     array_map(static fn($r) => [$r->status, $r->errorCode], $refusals) === array_fill_keys(array_keys($targets), [403, 'forbidden']));
-$apiDevice = \Z77\Shared\Auth\ApiPrincipal::device('7', '3', 'Peter Muster', ['receipt.capture'], 'iPhone Peter');
+$apiDevice = \Z77\Shared\Auth\ApiPrincipal::device('7', 'iPhone Peter', '5', 'backend', '3', 'Peter Muster', ['receipt.capture']);
 $sub = (new \Z77\Module\Receipt\Api\ReceiptsService())->handle(new \Z77\Shared\Api\ApiRequest('device', ['x'], method: 'post', principal: $apiDevice));
 check('O20 a sub-path of a target is 404 unknown_endpoint', $sub->status === 404 && $sub->errorCode === 'unknown_endpoint');
 $offered = defined(ReceiptTemplate::class . '::ICONS') ? array_keys(constant(ReceiptTemplate::class . '::ICONS')) : [];
@@ -331,11 +333,12 @@ check('S12 the list: a fetch region; the state icon opens the window from that r
     && substr_count($tpl('ReceiptJournalController/listAction'), "for=\"<?= e(\$definition->inputId('f_") === 4
     && str_contains($tpl('ReceiptJournalController/listAction'), '>vollständig<') && str_contains($tpl('ReceiptJournalController/listAction'), "'Konten fehlen'")
     && str_contains($tpl('ReceiptJournalController/listAction'), 'data-journal-totals') && str_contains($tpl('ReceiptJournalController/listAction'), 'data-journal-missing'));
-check('S13 the action cell: «Journal verbuchen …» green (confirm) to the confirmation page, disabled with its reason while empty; the toolbar two tabs; the confirmation carries the cut-off, the {id}:{version} pairs and its own GET form of the cut-off',
-    str_contains($tpl('ReceiptJournalController/act'), 'be-btn be-btn--confirm') && str_contains($tpl('ReceiptJournalController/act'), "'/confirm-post'") && str_contains($tpl('ReceiptJournalController/act'), 'disabled title="Das Belegjournal ist leer')
+check('S13 the action cell: «Journal verbuchen …» green (confirm), opening the posting window, disabled with its reason while empty; the toolbar two tabs; the confirmation is the shared window (partials/postConfirm, E16) with the cut-off as its filter and the {id}:{version} pairs',
+    str_contains($tpl('ReceiptJournalController/act'), 'be-btn be-btn--confirm') && str_contains($tpl('ReceiptJournalController/act'), "'/confirm-post'") && str_contains($tpl('ReceiptJournalController/act'), 'data-window-open="<?= e($url) ?>"')
+    && str_contains($tpl('ReceiptJournalController/act'), 'disabled title="Das Belegjournal ist leer')
     && str_contains($tpl('ReceiptJournalController/toolbar'), "'Im Journal'") && str_contains($tpl('ReceiptJournalController/toolbar'), "'Verbuchte Journale'")
-    && str_contains($tpl('ReceiptJournalController/confirmPost'), 'name="cutoff" value="<?= e($cutOff->format(\'Y-m-d\')) ?>"') && str_contains($tpl('ReceiptJournalController/confirmPost'), 'name="rec[]"')
-    && str_contains($tpl('ReceiptJournalController/confirmPost'), 'method="get" action="<?= e($actionBase) ?>/confirm-post"'));
+    && str_contains($tpl('ReceiptJournalController/confirmPost'), "\$this->partial('partials/postConfirm'") && str_contains($tpl('ReceiptJournalController/confirmPost'), "'cutoff' => \$cutOff->format('Y-m-d'), 'rec' =>")
+    && str_contains($tpl('ReceiptJournalController/confirmPost'), "'action'  => \$actionBase . '/confirm-post'"));
 
 // Help (ADR-048): a section for every field a window or list names — F1 lands where the user is.
 $helpKeys = static function (string $src): array {
@@ -818,7 +821,8 @@ check('SM2 … rendered: a fetch region, a row per receipt opening its window, t
     && str_contains($listHtml, '>1000<') && str_contains($listHtml, '>Kasse<') && str_contains($listHtml, '>Peter</label>') && str_contains($listHtml, 'data-journal-blocked="1"')
     && preg_match('/data-journal-totals.*?>VI<.*?data-journal-missing/s', $listHtml) === 1, mb_substr(strip_tags($listHtml), 0, 600));
 $actHtml = $render('Backend/ReceiptJournalController/act', $host->context);
-check('SM3 the action cell: «Journal verbuchen …» a green link to the confirmation (the journal is not empty)', str_contains($actHtml, 'be-btn--confirm" href="/backend/finance/receipt-journal/confirm-post"'));
+check('SM3 the action cell: «Journal verbuchen …» a green link that opens the posting WINDOW (E16), the list region as its origin (the journal is not empty)',
+    str_contains($actHtml, 'be-btn--confirm" href="/backend/finance/receipt-journal/confirm-post" data-window-open="/backend/finance/receipt-journal/confirm-post" data-origin="region:receipt-journal-find-list"'), $actHtml);
 $useRequest(['f_text' => 'benz']);
 $host = $journalHost();
 $host->listAction();
@@ -908,39 +912,72 @@ check('SM14 the last receipt of its photo: «Foto auch löschen» offered, off b
     && str_contains($render('Backend/ReceiptJournalController/confirmDelete', $host->context), 'name="delete_photo" value="1" data-help-key="delete_photo">'));
 
 // ── «Journal verbuchen» ──
-$useRequest(['cutoff' => '2026-11-30']);
+// The posting WINDOW (owner decision E16): the shared `partials/postConfirm`, errors only or a short summary.
+$useRequest(['_origin' => 'region:receipt-journal-find-list'], null, true);
 $host = $journalHost();
 $host->confirmPostAction();
 $cpHtml = $render('Backend/ReceiptJournalController/confirmPost', $host->context);
-check('SM15 the confirmation up to 30.11.: the old receipt (2025) is in the run and BLOCKS it — the reason, the link, NO «Journal verbuchen» button; the pairs and the cut-off are in the form',
-    !$host->context['preview']['postable'] && count($host->context['blockers']) === 1 && str_contains($cpHtml, 'data-journal-blocked="1"') && !str_contains($cpHtml, '>Journal verbuchen</button>')
-    && str_contains($cpHtml, 'name="cutoff" value="2026-11-30"') && str_contains($cpHtml, 'name="rec[]" value="' . $c5->getId() . ':') && ($host->layoutManager->sections['main'] ?? []) === ['Backend/ReceiptJournalController/confirmPost']);
+check('SM15 the window (fetched, no date asked): the cut-off proposed is TODAY; the window markup (mask receipt-journal-post, entity, title, the origin carried back); the date a GET form that re-renders the window (data-window-form="change"), «Schliessen» closes it; the help attached',
+    $host->context['cutOff']->format('Y-m-d') === (new \DateTimeImmutable('today'))->format('Y-m-d') && $host->context['window'] === true
+    && str_contains($cpHtml, 'data-window="receipt-journal-post" data-window-entity="receipt-journal:open" data-window-title="Belegjournal verbuchen"')
+    && str_contains($cpHtml, 'name="_origin" value="region:receipt-journal-find-list"') && str_contains($cpHtml, 'action="/backend/finance/receipt-journal/confirm-post" class="be-list__section" data-window-form="change"')
+    && str_contains($cpHtml, 'id="receipt-cutoff" name="cutoff" value="' . (new \DateTimeImmutable('today'))->format('Y-m-d') . '"') && str_contains($cpHtml, 'data-popup-close>Schliessen</button>')
+    && $host->help->has() && ($host->layoutManager->sections['main'] ?? []) === ['Backend/ReceiptJournalController/confirmPost'], mb_substr($cpHtml, 0, 900));
+check('SM16 … with a blocked receipt up to the date (the 2025 one, no fiscal year): ONLY the errors — the receipt, what is wrong, a link that opens its window —, no summary, no «Jetzt buchen», no pairs in the form',
+    !$host->context['preview']['postable'] && str_contains($cpHtml, 'data-post-confirm="errors"') && str_contains($cpHtml, 'data-post-confirm-errors="1"')
+    && str_contains($cpHtml, 'data-window-open="/backend/finance/receipt-journal/edit?id=' . $c5->getId() . '">30.12.2025 · Altjahr</a> — ') && str_contains($cpHtml, 'kein Geschäftsjahr')
+    && !str_contains($cpHtml, 'Jetzt buchen') && !str_contains($cpHtml, 'type="submit" class="be-btn be-btn--confirm"') && !str_contains($cpHtml, 'name="rec[]"')
+    && !str_contains($cpHtml, 'data-post-confirm-facts') && !str_contains($cpHtml, 'data-post-confirm-vat'), strip_tags($cpHtml));
 $useRequest(['cutoff' => 'gestern']);
 $host = $journalHost();
 $host->confirmPostAction();
-check('SM16 an unreadable cut-off: the default (the last day of the previous month) with a note', $host->context['cutOff'] == ReceiptJournalPostingService::defaultCutOff() && str_contains($host->context['note'], 'kein Datum'));
-// Delete the old receipt, then post the November run through the screen.
+check('SM17 an unreadable cut-off: today with a note; as a page (no script) the same content with its heading and «Zum Journal»',
+    $host->context['cutOff'] == ReceiptJournalPostingService::defaultCutOff() && str_contains($host->context['note'], 'kein Datum') && $host->context['window'] === false
+    && str_contains($page = $render('Backend/ReceiptJournalController/confirmPost', $host->context), '<h2 class="be-list__section-title">Belegjournal verbuchen</h2>') && !str_contains($page, 'data-window=')
+    && str_contains($page, 'href="/backend/finance/receipt-journal/list" data-window-link>Zum Journal</a>'));
+// A receipt fixed out of the window (its window opened from it, origin window:<id>): the posting window follows.
+$c5r = (new ReceiptJournalService($wire()))->find((int) $c5->getId());
+$useRequest(['id' => (string) $c5->getId()], ['version' => (string) $c5r->getVersion(), 'date' => '2025-12-30', 'amount' => $c5r->getAmount()->toDecimal(), 'text' => 'Altjahr',
+    'debit' => (string) $c5r->getDebitAccount(), 'credit' => (string) $c5r->getCreditAccount(), 'tax_code' => (string) $c5r->getTaxCode(), '_origin' => 'window:3'], true);
+$fixed = $journalHost()->editAction();
+check('SM17b a receipt saved from a window opened out of «Journal verbuchen» closes and reloads THAT window (refresh-window), not a list',
+    $fixed instanceof \Z77\Core\Http\Response\FetchResponse && $commands($fixed) === ['close-window', 'refresh-window'] && ($envelope($fixed)['commands'][1]['window'] ?? '') === '3',
+    json_encode($fixed instanceof \Z77\Core\Http\Response\FetchResponse ? $envelope($fixed) : null));
+// Delete the old receipt, then post the November run through the window.
 (new ReceiptJournalService($wire(), 'Owner'))->delete((int) $c5->getId(), $versionOf((int) $c5->getId()));
-$useRequest(['cutoff' => '2026-11-30']);
+$useRequest(['cutoff' => '2026-11-30', '_origin' => 'region:receipt-journal-find-list'], null, true);
 $host = $journalHost();
 $host->confirmPostAction();
 $cpHtml = $render('Backend/ReceiptJournalController/confirmPost', $host->context);
 $pairs  = array_map(static fn($p) => $p['id'] . ':' . $p['version'], $host->context['preview']['seen']);
-check('SM17 … now postable: the button, the «ohne MWST» row, the entries per account with names and the totals',
-    $host->context['preview']['postable'] && str_contains($cpHtml, '>Journal verbuchen</button>') && str_contains($cpHtml, 'data-journal-vat') && str_contains($cpHtml, 'ohne MWST')
-    && str_contains($cpHtml, 'data-journal-preview') && str_contains($cpHtml, '6200</span> ') && $pairs === [$c6->getId() . ':' . $versionOf((int) $c6->getId())], json_encode($pairs));
+check('SM18 … now postable: the SHORT summary (count, total, VAT per code with «ohne MWST»), the green «Jetzt buchen»; the POST carries the cut-off and every receipt\'s {id}:{version}; no entries per account',
+    $host->context['preview']['postable'] && str_contains($cpHtml, 'data-post-confirm="summary"') && str_contains($cpHtml, '<button type="submit" class="be-btn be-btn--confirm">Jetzt buchen</button>')
+    && str_contains($cpHtml, 'data-post-confirm-facts') && str_contains($cpHtml, 'Belege bis 30.11.2026') && str_contains($cpHtml, 'data-post-confirm-vat') && str_contains($cpHtml, 'ohne MWST')
+    && str_contains($cpHtml, 'action="/backend/finance/receipt-journal/post"') && str_contains($cpHtml, 'name="cutoff" value="2026-11-30"') && str_contains($cpHtml, 'name="rec[]" value="' . $pairs[0] . '"')
+    && !str_contains($cpHtml, 'data-post-confirm-errors') && !str_contains($cpHtml, 'data-journal-preview') && !str_contains($cpHtml, 'data-post-confirm-note')
+    && $pairs === [$c6->getId() . ':' . $versionOf((int) $c6->getId())], json_encode($pairs));
+check('SM18b the later receipts that stay are ONE muted line of the summary; nothing up to the date → the sentence, no button',
+    str_contains($render('Backend/ReceiptJournalController/confirmPost', ['later' => 2] + $host->context), '<p class="be-form__hint be-list__cell--muted" data-post-confirm-note>2 spätere Belege bleiben im Journal.</p>')
+    && str_contains($empty = $render('Backend/ReceiptJournalController/confirmPost', ['preview' => ['seen' => [], 'postable' => false] + $host->context['preview']] + $host->context), 'data-post-confirm="empty"')
+    && str_contains($empty, 'kein Beleg im Belegjournal') && !str_contains($empty, 'Jetzt buchen'));
 $useRequest([], ['cutoff' => '2026-11-30', 'rec' => [$c6->getId() . ':1']]);
 $host = $journalHost();
 $host->postAction();
-check('SM18 a stale pair: nothing posted, back to the confirmation of THAT cut-off with the German refusal',
+$useRequest([], ['cutoff' => '2026-11-30', 'rec' => [$c6->getId() . ':1'], '_origin' => 'region:receipt-journal-find-list'], true);
+$winHost = $journalHost();
+$refused = $winHost->postAction();
+check('SM19 a changed run (a stale pair): nothing posted — as a page back to the confirmation of THAT cut-off; in the window the German refusal and the window re-rendered for that cut-off (open-window replace)',
     $host->redirectedTo === '/backend/finance/receipt-journal/confirm-post?cutoff=2026-11-30' && ($host->messageService->flashes[0][0] ?? '') === 'error'
-    && $db->fetchOne('SELECT state FROM receipt WHERE id = ?', [$c6->getId()]) === 'captured');
-$useRequest([], ['cutoff' => '2026-11-30', 'rec' => $pairs]);
+    && $refused instanceof \Z77\Core\Http\Response\FetchResponse && $envelope($refused)['status'] === 'error' && $commands($refused) === ['open-window']
+    && ($envelope($refused)['commands'][0]['url'] ?? '') === '/backend/finance/receipt-journal/confirm-post?cutoff=2026-11-30' && ($envelope($refused)['commands'][0]['replace'] ?? false) === true
+    && ($winHost->messageService->flashes[0][0] ?? '') === 'error' && $db->fetchOne('SELECT state FROM receipt WHERE id = ?', [$c6->getId()]) === 'captured',
+    json_encode($refused instanceof \Z77\Core\Http\Response\FetchResponse ? $envelope($refused) : null, JSON_UNESCAPED_UNICODE));
+$useRequest([], ['cutoff' => '2026-11-30', 'rec' => $pairs, '_origin' => 'region:receipt-journal-find-list'], true);
 $host = $journalHost();
-$host->postAction();
-check('SM19 posted through the screen: the run of 30.11. is posted, the protocol written, a 303 to «Verbuchte Journale» with the flash',
-    $host->redirectedTo === '/backend/finance/receipt-journal/list?view=posted' && ($host->messageService->flashes[0][0] ?? '') === 'success'
-    && str_contains($host->messageService->flashes[0][1], 'bis 30.11.2026: 1 Beleg') && $db->fetchOne('SELECT state FROM receipt WHERE id = ?', [$c6->getId()]) === 'posted'
+$posted = $host->postAction();
+check('SM19b «Jetzt buchen» in the window: the run of 30.11. is posted, the protocol written; the window closes, the list region reloads, the flash',
+    $posted instanceof \Z77\Core\Http\Response\FetchResponse && $commands($posted) === ['close-window', 'refresh-region'] && ($envelope($posted)['commands'][1]['name'] ?? '') === 'receipt-journal-find-list'
+    && ($host->messageService->flashes[0][0] ?? '') === 'success' && str_contains($host->messageService->flashes[0][1], 'bis 30.11.2026: 1 Beleg') && $db->fetchOne('SELECT state FROM receipt WHERE id = ?', [$c6->getId()]) === 'posted'
     && $count('receipt_journal_posting') === 2, json_encode($host->messageService->flashes, JSON_UNESCAPED_UNICODE));
 $useRequest(['id' => (string) $c6->getId()], null, true);
 $host = $journalHost();
@@ -1016,7 +1053,7 @@ $apiRequest = static function (string $method, array $body = [], ?string $photoB
         $files['photo'] = [new \Z77\Shared\ValueObjects\UploadedFile('IMG_0815.HEIC', $tmp, strlen($photoBytes), 'image/heic')];
     }
     return new \Z77\Shared\Api\ApiRequest('device', [], method: $method, body: $body, files: $files,
-        principal: \Z77\Shared\Auth\ApiPrincipal::device('7', '3', 'Peter Muster', ['receipt.capture'], 'iPhone Peter'), idempotencyKey: $key);
+        principal: \Z77\Shared\Auth\ApiPrincipal::device('7', 'iPhone Peter', '5', 'backend', '3', 'Peter Muster', ['receipt.capture']), idempotencyKey: $key);
 };
 $wire();
 $tiles   = (new \Z77\Module\Receipt\Api\ReceiptTemplatesService())->handle($apiRequest('get'));
@@ -1048,7 +1085,7 @@ check('MA4 a bad capture → 422 invalid_fields, the German message per field (a
     && ($bad->fields['photo'] ?? '') === 'Das Foto fehlt.' && $count('receipt') === $rowsBefore + 1 && count($docs()) === $docsBefore, json_encode($bad->fields, JSON_UNESCAPED_UNICODE));
 $tooBig = (new \Z77\Module\Receipt\Api\ReceiptsService())->handle(new \Z77\Shared\Api\ApiRequest('device', [], method: 'post', body: ['amount' => '5.00'],
     files: ['photo' => [new \Z77\Shared\ValueObjects\UploadedFile('big.jpg', '', 0, 'image/jpeg', UPLOAD_ERR_INI_SIZE)]],
-    principal: \Z77\Shared\Auth\ApiPrincipal::device('7', '3', 'Peter Muster', ['receipt.capture'], 'iPhone Peter'), idempotencyKey: 'c0ffee00-0000-4000-8000-000000000002'));
+    principal: \Z77\Shared\Auth\ApiPrincipal::device('7', 'iPhone Peter', '5', 'backend', '3', 'Peter Muster', ['receipt.capture']), idempotencyKey: 'c0ffee00-0000-4000-8000-000000000002'));
 check('MA5 an upload PHP refused (too large) says so, not «Das Foto fehlt.»', $tooBig->status === 422 && str_contains($tooBig->fields['photo'] ?? '', 'zu gross'), json_encode($tooBig->fields, JSON_UNESCAPED_UNICODE));
 $heic = (new \Z77\Module\Receipt\Api\ReceiptsService())->handle($apiRequest('post', ['amount' => '5.00'], "\x00\x00\x00\x18ftypheic not converted", 'c0ffee00-0000-4000-8000-000000000003'));
 check('MA6 a photo the phone did not convert (HEIC bytes) is refused by the capture\'s sniff (T2)', $heic->status === 422 && isset($heic->fields['photo']), json_encode($heic->fields, JSON_UNESCAPED_UNICODE));

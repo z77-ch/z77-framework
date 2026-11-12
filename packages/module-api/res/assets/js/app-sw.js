@@ -1,8 +1,8 @@
 /**
- * The service worker of the app shell (plan A6 / T6) — served by AppController from /app/sw.js,
+ * The service worker of the app shell (plan A6 / T6, ADR-058) — served by AppController from /app/sw.js,
  * so its scope is /app/ and nothing else of the site.
  *
- *   the shell pages (/app/, /app/pair)   network first; the last good answer is the offline copy
+ *   the shell pages (/app/, /app/login)  network first; the last good answer is the offline copy
  *   the shell's assets (/assets/…)       cache first — their names carry the version (`_at-…`),
  *                                        an older version of the same file is dropped
  *   the manifest and the icons           network first, the copy without network
@@ -12,8 +12,10 @@
  * sent when the app is open and online. Nothing cached here is a secret — the device cookie never
  * reaches a script, and responses of /api are not stored.
  */
-var CACHE = 'z77-app-v1';
-var PAGES = ['/app/', '/app/pair'];
+// v2 (ADR-058): the pairing page is gone — a new name drops the v1 cache (and its /app/pair copy)
+// on every installed phone at activation.
+var CACHE = 'z77-app-v2';
+var PAGES = ['/app/', '/app/login'];
 var STATIC = /^\/(app\/manifest\.webmanifest|web-app-manifest-\d+x\d+\.png|apple-touch-icon\.png|favicon\.ico)$/;
 var VERSIONED = /_at-[0-9a-z]+(\.min)?\.(js|css)$/;
 

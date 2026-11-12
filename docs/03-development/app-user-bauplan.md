@@ -2,7 +2,10 @@
 
 **Status:** `[CONCEPT]` — owner decisions 2026-11-12; critical review 2026-11-12 (independent
 reviewer, read-only, claims checked against the code) worked in — §10 lists what it changed.
-Owner decision A9 (§11) taken 2026-11-12; build.
+Owner decision A9 (§11) taken 2026-11-12; build. Recorded as
+[ADR-058](../02-decisions/adr-058-app-users-email-code-login.md); steps 1, 3 and 4 built 2026-11-12
+(`topics/api.md`); step 2 (board «App-Benutzer», developer canvas) approved by the owner 2026-11-12,
+step 5 (backend screen «App-Benutzer», «Geräte» removed) built 2026-11-12.
 **Date:** 2026-11-12
 **Supersedes in part:** [ADR-057](../02-decisions/adr-057-api-device-channel.md) — decisions 4
 (pairing), 5 (scopes chosen per device), 6 (scopes independent of the owner's roles) and the
@@ -197,7 +200,12 @@ Built-in endpoint `devices` (no new reserved name):
    anti-oracle (same answer and record for unknown addresses), the lockout immunity.
 4. **App shell:** `/app/login`, redirect, logout with the queue rule, SW cache bump; remove
    `/app/pair`. Tests.
-5. **Backend «App-Benutzer»** after the board; remove «Geräte». Tests.
+5. **Backend «App-Benutzer»** after the board; remove «Geräte». Tests. — **Built 2026-11-12**
+   (`topics/api.md` «backend screen «App-Benutzer»», `tests/module-api-app-users-ui.php`). Lead
+   decisions on the board's open questions: deactivating is a danger button «Deaktivieren …» with a
+   question, reactivating «Aktivieren …» (no switch); a person above the actor is listed, its window
+   read-only; choosing the person proposes the person's backend e-mail. Not built: «Belege dieses
+   App-Benutzers» (module-api does not know the journal — api.md API-010).
 6. **Docs:** api.md, receipt.md (minimum role of `receipt.capture`), security.md, the
    envelope doc, consumer-project deploy notes; `docs:check`.
 

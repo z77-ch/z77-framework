@@ -6,7 +6,9 @@ use Z77\Core\Config\AuthRole;
 // ⚠️ A project override of this file REPLACES it (first-source-match) — an
 // override must carry the FULL config, not just the added keys. What a project
 // typically adds: `apiKeyResolver`, `apiServices`, `rateLimitPerHour`; it keeps
-// `apiDeviceResolver` when the installation offers the device channel (ADR-057).
+// `apiDeviceResolver` when the installation offers the device channel (ADR-057),
+// `accountRemovedListeners` (ADR-058) and the route `/app/login` (an override still
+// carrying `/app/pair` must replace it — ADR-058 removed pairing).
 return [
     'defaultGroup'  => 'main',
     'groupDefaults' => [
@@ -38,7 +40,7 @@ return [
             'action'     => 'handle',
             'stateless'  => true,
         ],
-        // The app shell (plan A6 / T6): server-rendered pages for a paired phone, NOT stateless
+        // The app shell (plan A6 / T6): server-rendered pages for a signed-in phone, NOT stateless
         // (a plain page request). The device cookie lives on /api only, so these pages never
         // see it — the shell asks the gateway (`devices/me`) from the client. The screens come
         // from the modules (`appScreens`, AppScreens). The manifest and the service worker sit
@@ -49,11 +51,12 @@ return [
             'controller' => 'app',
             'action'     => 'start',
         ],
-        '/app/pair' => [
+        // The code sign-in of an app user (ADR-058; replaces /app/pair of ADR-057).
+        '/app/login' => [
             'module'     => 'api',
             'group'      => 'app',
             'controller' => 'app',
-            'action'     => 'pair',
+            'action'     => 'login',
         ],
         '/app/manifest.webmanifest' => [
             'module'     => 'api',
@@ -85,12 +88,15 @@ return [
     // fails fast otherwise).
     // 'apiKeyResolver' => \Override\Namespace\ApiKeyResolver::class,
 
-    // The device channel (ADR-057): paired phones/PCs reach the gateway with the
-    // HttpOnly cookie `z77_api_device` instead of a bearer key. FQCN implementing
-    // Z77\Shared\Auth\DeviceKeyResolverInterface; module-api ships it. Remove the
-    // key (or leave it out of an override) and the channel is OFF: the cookie is
-    // ignored, `POST /api/v1/devices/pair` answers 401 like any keyless call.
+    // The device channel (ADR-057, ADR-058): signed-in phones/PCs reach the gateway
+    // with the HttpOnly cookie `z77_api_device` instead of a bearer key. FQCN
+    // implementing Z77\Shared\Auth\DeviceKeyResolverInterface; module-api ships it.
+    // Remove the key (or leave it out of an override) and the channel is OFF: the
+    // cookie is ignored, `POST /api/v1/devices/login` answers 401 like any keyless call.
     'apiDeviceResolver' => \Z77\Module\Api\Services\ApiDevices::class,
+
+    // A deleted backend user's app user is deactivated: devices revoked, codes spent (ADR-058).
+    'accountRemovedListeners' => [\Z77\Module\Api\Services\ApiAppUserAccountListener::class],
 
     'controllers' => [
         'main' => [
@@ -102,14 +108,14 @@ return [
                 ],
             ],
         ],
-        // GUEST: a phone has no backend login — the gateway behind the pages decides (ADR-057).
+        // GUEST: a phone has no backend login — the gateway behind the pages decides (ADR-057/058).
         'app' => [
             'AppController' => [
                 'defaultAction'  => 'start',
                 'controllerRole' => AuthRole::GUEST,
                 'actions'        => [
                     'startAction'         => AuthRole::GUEST,
-                    'pairAction'          => AuthRole::GUEST,
+                    'loginAction'         => AuthRole::GUEST,
                     'manifestAction'      => AuthRole::GUEST,
                     'serviceWorkerAction' => AuthRole::GUEST,
                 ],

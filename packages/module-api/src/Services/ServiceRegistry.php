@@ -12,7 +12,7 @@ use Z77\Core\Services\ModuleManager,
  * framework ships the mechanism, the project declares its services in its
  * override config.
  *
- * `health` and `devices` (the device channel's pairing and `me`, ADR-057) are
+ * `health` and `devices` (the device channel's code sign-in, `me` and sign-out — ADR-057, ADR-058) are
  * built in and cannot be redeclared. A duplicate endpoint across modules, an
  * unknown class, or a wrong type is a config error and throws (fail fast, not open).
  */

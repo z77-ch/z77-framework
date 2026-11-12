@@ -12,22 +12,23 @@ use Z77\Core\Controller\AbstractBaseController,
 ;
 
 /**
- * The app shell `/app` (plan A6 / T6, ADR-057 addendum): what a paired phone opens — a PWA without
- * a store. Generic: it knows pairing and the device's scopes, the screens come from the modules
- * (`appScreens`, {@see AppScreens}).
+ * The app shell `/app` (plan A6 / T6, ADR-057 addendum, ADR-058): what a signed-in phone opens — a
+ * PWA without a store. Generic: it knows the sign-in and the device's scopes, the screens come
+ * from the modules (`appScreens`, {@see AppScreens}).
  *
  *   /app/                      start — every contributed screen, each hidden until the device
- *                              shows the screen's scope (`GET /api/v1/devices/me`, client side)
- *   /app/pair?code=…           pairing — the QR of the backend screen «Geräte» opens it with the
- *                              code filled in; typing the code is the other way
+ *                              shows the screen's scope (`GET /api/v1/devices/me`, client side);
+ *                              without a valid device the script goes to /app/login
+ *   /app/login                 the code sign-in of an app user (ADR-058): the app e-mail, then
+ *                              the code from the mail — one page, two steps
  *   /app/manifest.webmanifest  the web app manifest (`scope` and `start_url` /app/)
  *   /app/sw.js                 the service worker — served under /app/ so its scope is /app/
  *
  * The pages carry no user data: the device cookie is on `/api` only (Path, SameSite=Strict), so the
  * server cannot know here who asks — the page's script asks the gateway and builds the lists with
- * DOM nodes and `textContent`. Pairing and sending need the header `X-Z77-App` (ADR-057 CSRF rule),
- * which a plain form cannot send: without JavaScript the pages say so instead of offering a form
- * that would end in a JSON 403.
+ * DOM nodes and `textContent`. Signing in and sending need the header `X-Z77-App` (ADR-057 CSRF
+ * rule), which a plain form cannot send: without JavaScript the pages say so instead of offering a
+ * form that would end in a JSON 403.
  *
  * Every HTML answer carries an ENFORCED CSP ({@see CSP}). It is set here, before the answer, and
  * `SecurityHeaders::send()` keeps a header an action already set — the per-answer mechanism the
@@ -47,9 +48,6 @@ final class AppController extends AbstractBaseController
         . "connect-src 'self'; worker-src 'self'; manifest-src 'self'; object-src 'none'; "
         . "base-uri 'self'; form-action 'self'; frame-ancestors 'none'";
 
-    /** The pairing code as the backend shows it (ApiDevices: `ABCDE-FGHJK`), loosely — the server checks. */
-    private const CODE_PATTERN = '/^[A-Za-z0-9 -]{1,24}$/';
-
     protected function startAction(): HtmlResponse
     {
         $this->pageOnly();
@@ -66,17 +64,16 @@ final class AppController extends AbstractBaseController
         return $response;
     }
 
-    protected function pairAction(): HtmlResponse
+    /**
+     * The code sign-in (ADR-058): nothing from the address goes into the page — no e-mail, no
+     * code; the script runs both steps against `devices/login` and `devices/verify`.
+     */
+    protected function loginAction(): HtmlResponse
     {
         $this->pageOnly();
         $this->appHeaders();
-        // The code is in this page's address: it must not leave in a Referer header.
-        header('Referrer-Policy: no-referrer');
 
-        $code = DI::getRequest()->getGetParameter('code');
-        $code = is_string($code) && preg_match(self::CODE_PATTERN, trim($code)) === 1 ? strtoupper(trim($code)) : '';
-
-        return $this->html(['code' => $code, 'page' => 'pair']);
+        return $this->html(['page' => 'login']);
     }
 
     protected function manifestAction(): JsonResponse

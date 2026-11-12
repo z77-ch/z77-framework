@@ -1,10 +1,10 @@
 [
     {
-        "key": "geraete",
-        "name": "Geräte",
+        "key": "app-benutzer",
+        "name": "App-Benutzer",
         "module": "backend",
         "group": "system",
-        "controller": "api-device",
+        "controller": "api-app-user",
         "action": "list",
         "slot": "",
         "active": true,

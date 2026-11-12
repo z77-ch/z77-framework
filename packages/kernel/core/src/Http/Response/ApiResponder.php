@@ -52,6 +52,7 @@ final class ApiResponder
             }
         }
 
-        return new JsonResponse($result->data, 200, $headers);
+        // 200, or 202 for an accepted request (ApiResult::accepted()).
+        return new JsonResponse($result->data, $result->status, $headers);
     }
 }

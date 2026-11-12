@@ -20,8 +20,8 @@ use Z77\Shared\Money\Money;
  * the PATTERN of debtor's Faktura-Journal (ADR-054 decisions 5–7, `JournalPostingService`), not
  * its classes:
  *
- *   - {@see preview()} — the RUN up to a CUT-OFF date (E11; default {@see defaultCutOff()}, the
- *     last day of the previous month): every captured receipt dated on or before it, as the
+ *   - {@see preview()} — the RUN up to a CUT-OFF date (E11; default {@see defaultCutOff()}, today
+ *     since E16): every captured receipt dated on or before it, as the
  *     `{id, version}` list `post()` takes; what blocks the run (incomplete, not buildable, no fiscal
  *     year, a closed or VAT-settled period) with its German reason; the entries summed per account.
  *     The same {@see ReceiptPostingBuilder::build()} as the posting;
@@ -49,10 +49,14 @@ final class ReceiptJournalPostingService
         $this->actor = $actor !== null ? Actor::normalize($actor) : null;
     }
 
-    /** The default cut-off (E11): the last day of the month before $today. */
+    /**
+     * The proposed cut-off: TODAY (owner decision E16, 2026-11-12 — replaces E11's «last day of the
+     * previous month», which made the window look empty; a receipt is never dated in the future, so
+     * today's run is the whole journal). The one rule — the window proposes it, `preview()` defaults to it.
+     */
     public static function defaultCutOff(?\DateTimeImmutable $today = null): \DateTimeImmutable
     {
-        return ($today ?? new \DateTimeImmutable())->setTime(0, 0)->modify('first day of this month')->modify('-1 day');
+        return ($today ?? new \DateTimeImmutable())->setTime(0, 0);
     }
 
     /**

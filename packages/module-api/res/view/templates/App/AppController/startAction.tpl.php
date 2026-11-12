@@ -2,8 +2,9 @@
 /** Start of the app shell (`/app/`, AppController::startAction): the queue banner and the waiting
  *  entries (filled by `_Z77.app.shell` — DOM nodes and textContent, never HTML), then every screen
  *  a module contributes (`appScreens`), each HIDDEN until the device shows the screen's scope
- *  (`GET /api/v1/devices/me`). The scope only decides what is shown; the gateway decides what the
- *  device may do. */
+ *  (`GET /api/v1/devices/me`; 401 → /app/login). The scope only decides what is shown; the gateway
+ *  decides what the device may do. At the end the sign-out of this device (ADR-058) — refused by
+ *  the script while the queue holds unsent entries. */
 /** @var list<array{key: string, scope: string, title: string, template: string, js: list<string>, nameSpace: string}> $screens */
 ?>
 <div class="za-banner" data-app-banner hidden>
@@ -21,6 +22,9 @@
         <?= $this->partial($screen['template'], ['screen' => $screen], $screen['nameSpace']) ?>
     </section>
 <?php endforeach; ?>
+<p class="za-pad za-stack" data-app-account hidden>
+    <button type="button" class="za-link" data-app-logout>Auf diesem Gerät abmelden</button>
+</p>
 <noscript>
     <p class="za-pad za-notice">Die App braucht JavaScript. Bitte JavaScript im Browser einschalten.</p>
 </noscript>

@@ -111,6 +111,12 @@ $expect = [
     ['finance', 'receipt-journal', 'post',       AuthRole::ADMIN],
     ['finance', 'receipt-template', 'edit',      AuthRole::ADMIN],
     ['finance', 'payment-method', 'toggle-active', AuthRole::ADMIN],
+    // App-Benutzer (module-api, ADR-058 A9): no own rule — the module role ADMIN; «Geräte» (EDITOR) is gone.
+    ['system',  'api-app-user', 'list',          AuthRole::ADMIN],
+    ['system',  'api-app-user', 'add',           AuthRole::ADMIN],
+    ['system',  'api-app-user', 'deactivate',    AuthRole::ADMIN],
+    ['system',  'api-app-user', 'revoke',        AuthRole::ADMIN],
+    ['system',  'api-device', 'list',            AuthRole::ADMIN],
     ['content', 'unknown',    'list',            AuthRole::ADMIN],   // a forgotten controller is never open
 ];
 foreach ($expect as [$group, $controller, $action, $want]) {

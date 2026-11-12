@@ -130,6 +130,9 @@ final class IdempotencyStore
                 array_map('strval', (array) ($r['fields'] ?? []))
             );
         }
+        if ((int) ($r['status'] ?? 200) === 202) {
+            return ApiResult::accepted((array) ($r['data'] ?? []), (array) ($r['headers'] ?? []));
+        }
         return ApiResult::payload(
             (array) ($r['data'] ?? []),
             isset($r['etag']) ? (string) $r['etag'] : null,

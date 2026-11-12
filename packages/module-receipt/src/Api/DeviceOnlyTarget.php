@@ -17,7 +17,7 @@ use Z77\Shared\Api\ApiResult;
  */
 trait DeviceOnlyTarget
 {
-    /** The scope a device needs for every receipt target — the Geräte screen offers it by this key. */
+    /** The scope a device needs for every receipt target — an app user is given it by this key (ADR-058). */
     public const SCOPE = 'receipt.capture';
 
     /** null when a paired device asks for the endpoint itself; the refusal otherwise. */

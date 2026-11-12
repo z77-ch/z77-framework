@@ -7,7 +7,7 @@
 ?>
 <h3>Belegvorlage</h3>
 <p>Eine Belegvorlage ist eine <strong>Kachel auf dem Handy</strong> — «Tanken», «Büromaterial», «Spesen Essen». Sie sagt, <strong>was</strong> gekauft wurde: das Soll-Konto und den MWST-Code. <strong>Wie</strong> bezahlt wurde (Kasse, Firmenkarte, privat ausgelegt — das Haben-Konto) wählt das Handy daneben unter «Bezahlt mit»; das sind die Zahlungsarten unter Stammdaten › Finanzen.</p>
-<p>Jedes gekoppelte Handy zeigt alle <strong>aktiven</strong> Vorlagen in ihrer Reihenfolge, dazu immer «Ohne Vorlage». Eine Änderung gilt für neue Belege; ein erfasster Beleg hat Soll und MWST beim Erfassen übernommen und behält sie. Eine Vorlage wird nie gelöscht, nur <strong>deaktiviert</strong> (Schalter «Aktiv» in der Liste) — die Belege, die sie tragen, behalten sie.</p>
+<p>Jedes angemeldete Handy zeigt alle <strong>aktiven</strong> Vorlagen in ihrer Reihenfolge, dazu immer «Ohne Vorlage». Eine Änderung gilt für neue Belege; ein erfasster Beleg hat Soll und MWST beim Erfassen übernommen und behält sie. Eine Vorlage wird nie gelöscht, nur <strong>deaktiviert</strong> (Schalter «Aktiv» in der Liste) — die Belege, die sie tragen, behalten sie.</p>
 <section data-help-field="label">
 <h3>Name</h3>
 <p>So heisst die Kachel auf dem Handy, und so lautet der Text eines Belegs, wenn auf dem Handy keiner getippt wird. Kurz halten: «Tanken», «Parkieren».</p>

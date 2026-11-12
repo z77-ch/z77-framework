@@ -3,17 +3,17 @@
 namespace Z77\Module\Api\Ui;
 
 /**
- * Layout config for a host that mounts the device screen (ADR-018 pattern): the host's
- * `Ui/Config/System/apiDeviceControllerConfig.inc.php` delegates here (one line) and pins the
+ * Layout config for a host that mounts the screen «App-Benutzer» (ADR-018 pattern): the host's
+ * `Ui/Config/System/apiAppUserControllerConfig.inc.php` delegates here (one line) and pins the
  * page body to the fragment's `listAction` template in `module-api`.
  */
-final class ApiDeviceLayout
+final class ApiAppUserLayout
 {
     /** Namespace that owns the fragment's templates. */
     public const NS = 'Z77\Module\Api';
 
-    /** URL root of the backend mount (Stammdaten › System › Geräte). */
-    public const BASE = '/backend/system/api-device';
+    /** URL root of the backend mount (Stammdaten › System › App-Benutzer). */
+    public const BASE = '/backend/system/api-app-user';
 
     /** @return array<string, mixed> */
     public static function config(): array
@@ -23,7 +23,7 @@ final class ApiDeviceLayout
                 'body' => [
                     'main' => [[
                         'nameSpace' => self::NS,
-                        'path'      => 'Backend/ApiDeviceController',
+                        'path'      => 'Backend/ApiAppUserController',
                         'name'      => 'listAction',
                     ]],
                 ],

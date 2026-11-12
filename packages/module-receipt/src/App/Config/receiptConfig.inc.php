@@ -54,9 +54,15 @@ return [
         'payment-methods'   => \Z77\Module\Receipt\Api\PaymentMethodsService::class,
         'receipts'          => \Z77\Module\Receipt\Api\ReceiptsService::class,
     ],
-    // The scope the backend screen «Geräte» offers for these targets (module-api ApiDeviceScopes).
+    // The scope an app user can be given for these targets (module-api ApiDeviceScopes, ADR-058):
+    // the linked person needs at least EDITOR in the backend — the role of the employees who
+    // capture (review B7); no `member` key = never for members.
     'apiDeviceScopes' => [
-        'receipt.capture' => ['label' => 'Belege erfassen', 'hint' => 'Das Gerät darf Belege mit Foto und Betrag ins Belegjournal erfassen.'],
+        'receipt.capture' => [
+            'label'  => 'Belege erfassen',
+            'hint'   => 'Belege mit Foto und Betrag ins Belegjournal erfassen.',
+            'realms' => ['backend' => AuthRole::EDITOR],
+        ],
     ],
     // The screen this module contributes to the app shell `/app` (module-api AppScreens): shown
     // to a device holding `receipt.capture`. Template and script live in this package.

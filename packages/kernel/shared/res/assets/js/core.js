@@ -33,6 +33,9 @@
  *                                 the trigger; Esc, a click outside or on an item closes it (see «context menu»)
  *   [data-window-open="<url>"]    opens a controller-led window (ADR-047, see «windows»);
  *     [data-window-with="a b"]    the form fields a, b ride along as query parameters
+ *   form[data-window-form]        a GET form: inside a window it re-renders THAT window, outside
+ *                                 one it opens its answer as a window; ="change" also on a field
+ *                                 change (see «windows»)
  *   [data-fetch-region="<name>"]  a part of the page that reloads alone —
  *     a[data-fetch-region-link] / form[data-fetch-region-form] inside it (see «fetch regions»)
  *   [data-fetch-live="<url>"]     asks <url> at intervals, the answer's commands do the rest;
@@ -888,6 +891,11 @@ _Z77.core.fetch = (function () {
         var region = scope ? scope.querySelector('[data-fetch-region="' + p.name + '"]') : null;
         if (region) _Z77.core.region.load(region, region.getAttribute('data-fetch-region-src') || window.location.href);
     });
+    // {action: 'refresh-window', window} — an open window reloads its own content from the
+    // address it last loaded (a record fixed in a child window: the parent's summary follows).
+    registerCommand('refresh-window', function (p) {
+        _Z77.core.windows.reload(_Z77.core.windows.byId(p.window));
+    });
 
     /* ── update [data-field] slots inside a container ──────────────────── */
     registerCommand('update-fields', function (p, data) {
@@ -1108,6 +1116,20 @@ _Z77.core.region = (function () {
  *                               every window carries in its title bar (owner 2026-10-17)
  *   <form method="post">        is sent by fetch as FormData to its action; the answer is HTML
  *                               (this window's new content, e.g. errors) or an envelope
+ *   form[data-window-form]      a GET form (opt-in; first user: the cut-off of «Journal verbuchen»,
+ *                               owner decision E16, 2026-11-12): its action with its fields as
+ *                               the query (empty ones left out, the submitter's name/value with
+ *                               them) loads into THIS window, the origin kept — the controller
+ *                               re-renders the whole content for the new values. Outside a window
+ *                               the same submit OPENS the answer as a window (origin as for
+ *                               [data-window-open]; fields associated by `form=` count — the
+ *                               ticked rows of a list). `data-window-form="change"`: a field
+ *                               change submits too — a select or switch at once, a typed field
+ *                               (date, text, number) when it loses the focus, so typing is never
+ *                               cut off by a re-render. Loads into one window are numbered: an
+ *                               older answer arriving after a newer one is dropped. A form with
+ *                               `target` other than `_self` is the browser's. Without the script
+ *                               it is a plain GET — the controller renders the same URL as a page.
  *
  * Identity = mask + entity: the same mask on the same record opens ONCE (a second click brings
  * it to the front). Two masks on one record are allowed — unless an editable field (a named
@@ -1384,13 +1406,53 @@ _Z77.core.windows = (function () {
     /* Loads <url> into an open window (read view ↔ edit form); the origin stays the window's. */
     function load(win, url) {
         var target = _url(url, win._z77Origin);
+        // Numbered per window: a GET form that re-renders on every change can send a second load
+        // before the first answered — only the latest fills the window.
+        var ticket = win._z77Load = (win._z77Load || 0) + 1;
         return _get(target, { window: win.getAttribute('data-z77-window') }).then(function (html) {
-            if (html === null || !win.isConnected) return;
+            if (html === null || !win.isConnected || win._z77Load !== ticket) return;
             fill(win, html, target);
             front(win);
             var auto = win.querySelector('[autofocus]');
             if (auto) auto.focus();
         });
+    }
+
+    /* The window's content again, from the address it last loaded (`refresh-window`). */
+    function reload(win) {
+        if (win && win.isConnected && win._z77Src) return load(win, win._z77Src);
+        return null;
+    }
+
+    /* A GET form's address: its action (or the submitter's formaction) with its fields as the
+     * query — the submitter's name/value with them, empty values left out (as a region form). */
+    function formUrl(form, submitter) {
+        var action = submitter && submitter.hasAttribute('formaction') ? submitter.formAction : form.action;
+        var u = new URL(action, window.location.href);
+        var params = new URLSearchParams();
+        var data = submitter ? new FormData(form, submitter) : new FormData(form);
+        data.forEach(function (value, key) {
+            if (typeof value === 'string' && value !== '') params.append(key, value);
+        });
+        u.search = params.toString();
+        return u.toString();
+    }
+
+    /* A form[data-window-form] sends itself: into its window, or as a new window. */
+    function _sendForm(form, submitter) {
+        var url = formUrl(form, submitter);
+        var win = of(form);
+        if (win) return load(win, url);
+        return open(url, { origin: _originOf(form), parent: '' });
+    }
+
+    /* A field of a form[data-window-form="change"] that waits for its blur before it submits. */
+    function _typed(el) {
+        return el.tagName === 'TEXTAREA' || (el.tagName === 'INPUT' && /^(date|datetime-local|month|week|time|text|search|number|email|tel|url)$/.test((el.type || 'text').toLowerCase()));
+    }
+    function _submitForm(form) {
+        if (typeof form.requestSubmit === 'function') form.requestSubmit();
+        else form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
     }
 
     /* The content's [autofocus] field (a picker's search), else the window itself. */
@@ -1492,6 +1554,32 @@ _Z77.core.windows = (function () {
             if (e.target.closest('[data-window-close], [data-popup-close]')) { close(win); return; }
             front(win);
         });
+        // A GET form[data-window-form]: re-renders its window, or opens its answer as one.
+        document.addEventListener('submit', function (e) {
+            var form = e.target;
+            if (e.defaultPrevented || !form || !form.hasAttribute || !form.hasAttribute('data-window-form')) return;
+            var sub = e.submitter || null;
+            var method = (sub && sub.getAttribute('formmethod')) || form.getAttribute('method') || 'get';
+            if (method.toLowerCase() !== 'get') return;
+            var target = (sub && sub.getAttribute('formtarget')) || form.getAttribute('target') || '';
+            if (target !== '' && target !== '_self') return;
+            e.preventDefault();
+            _sendForm(form, sub);
+        });
+        // ="change": a choice submits at once; a typed field waits until it loses the focus.
+        document.addEventListener('change', function (e) {
+            var el = e.target, form = el && el.form;
+            if (!form || form.getAttribute('data-window-form') !== 'change' || !of(form)) return;
+            if (_typed(el) && document.activeElement === el) { el._z77WindowFormDue = true; return; }
+            el._z77WindowFormDue = false;
+            _submitForm(form);
+        });
+        document.addEventListener('focusout', function (e) {
+            var el = e.target;
+            if (!el || !el._z77WindowFormDue) return;
+            el._z77WindowFormDue = false;
+            if (el.isConnected && el.form && el.form.getAttribute('data-window-form') === 'change') _submitForm(el.form);
+        });
         document.addEventListener('submit', function (e) {
             var form = e.target;
             var win = of(form);
@@ -1527,7 +1615,7 @@ _Z77.core.windows = (function () {
         });
     }
 
-    return { open: open, load: load, fill: fill, close: close, front: front, byId: byId, of: of, scope: scope, all: all, bind: bind };
+    return { open: open, load: load, reload: reload, formUrl: formUrl, fill: fill, close: close, front: front, byId: byId, of: of, scope: scope, all: all, bind: bind };
 })();
 
 /* ── help (ADR-048) ────────────────────────────────────────────────────────

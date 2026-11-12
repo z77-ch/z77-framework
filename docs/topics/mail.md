@@ -281,8 +281,10 @@ ADMIN) — built per
   its own text, such as an alert: the entry has no template, is read with
   `EmailService::formRecipients()`, `sendForm()` still throws on it, and the edit mask
   offers the recipients only; `'note'` says in the list and the mask what it is for.
-  First user: `backendCodeLock` ([`login.md`](login.md) «code refused»). A project with
-  its own `emailConfig` copies the entry, the whole file wins.
+  First user: `backendCodeLock` ([`login.md`](login.md) «code refused»); second:
+  `apiLoginCap` (an address reached the daily limit of z77 App sign-in codes,
+  [`api.md`](api.md) «app users», ADR-058). A project with its own `emailConfig` copies
+  the entries, the whole file wins.
 
 ## document mail kinds — «Beleg-Mails» (step 3 of the mail plan, 2026-10-22)
 

@@ -50,7 +50,7 @@ Ordered by how soon the screen is used. Each line names the screen; the steps ar
 **Receipts and the phone app**
 
 19. Belegjournal screens — «Foto auch löschen» off by default, no «Löschen …» on master data (module first registered in a project). → [receipt.md](../topics/receipt.md)
-20. `/app` on an iPhone and an Android phone — camera, JPEG scaling, HEIC, home-screen install, offline queue, cookie separation on iOS; the «Geräte» screen (QR scan, live switch). → [api.md](../topics/api.md), [receipt.md](../topics/receipt.md)
+20. `/app` on an iPhone and an Android phone — camera, JPEG scaling, HEIC, home-screen install, offline queue, cookie separation on iOS; the code sign-in and the backend screen «App-Benutzer» (not seen in a browser yet). → [api.md](../topics/api.md), [receipt.md](../topics/receipt.md)
 
 **Backend look and controls**
 
@@ -119,7 +119,7 @@ Size: S ≈ hours, M ≈ a day or two, L ≈ several days. Top first.
 |---|---|---|---|---|
 | 1 | Sticky totals line at the order window's bottom | S | — | [order.md](../topics/order.md) |
 | 2 | Documents by e-mail: offer, order confirmation, delivery note, dunning (attachment provider per PDF + send action) | M each | mail kinds already declared | [mailing.md](../topics/mailing.md), [order.md](../topics/order.md), [debtor.md](../topics/debtor.md) |
-| 3 | DEBTOR-WIN-002 — booking-print confirmation as a window; then `confirmFinalize` as a window | M | a core.js opener for GET forms | [debtor.md](../topics/debtor.md), [css-backend.md](../topics/css-backend.md) |
+| 3 | DEBTOR-WIN-002 — booking-print confirmation as a window; then `confirmFinalize` as a window | S | the core.js opener for GET forms is built (`form[data-window-form]`, 2026-11-12, E16) | [debtor.md](../topics/debtor.md), [css-backend.md](../topics/css-backend.md) |
 | 4 | SEC-002 — error handler on `DEBUG`, incl. the boot phase | S | — | [security.md](../topics/security.md) |
 | 5 | INST-CONFIG-001 — classify bootstrap / moduleManager / fileFinder config | S | blocks Packagist | [installer.md](../topics/installer.md) |
 | 6 | API-009 — device cookie re-issue | M | design first; due before the first device is a year old | [api.md](../topics/api.md) |

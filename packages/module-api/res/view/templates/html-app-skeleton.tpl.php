@@ -7,7 +7,7 @@
  *
  *  The icons of the installation itself (`/web-app-manifest-*.png`, `/apple-touch-icon.png`,
  *  `/favicon.ico`) are the files every z77 project serves from public/. */
-/** @var string $page start|pair */
+/** @var string $page start|login */
 ?>
 <html lang="de" class="za">
 <head>

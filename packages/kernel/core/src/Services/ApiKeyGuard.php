@@ -26,11 +26,14 @@ use Z77\Core\DI,
  * cookie request must carry `X-Z77-App: 1` and, where the browser sends an
  * `Origin`, it must name this host; a POST must send one. Otherwise 403.
  *
- * One door opens WITHOUT a credential: the pairing call
- * (`POST /api/v1/devices/pair`, {@see PAIRING_SLUGS}) — it is how a device gets
- * its cookie. It passes as an anonymous request (principal null) under the same
- * header/Origin rule, and only while a device resolver is declared; the pairing
- * service throttles and checks the one-time code.
+ * One door opens WITHOUT a credential: the code sign-in of an app user
+ * (`POST /api/v1/devices/login` and `/verify`, {@see ANONYMOUS_SLUGS}, ADR-058) —
+ * it is how a device gets its cookie. Both pass as an anonymous request
+ * (principal null) under the same header/Origin rule, and only while a device
+ * resolver is declared; module-api throttles them and judges the code. They stay
+ * anonymous even when the browser carries a device cookie: a request with a
+ * principal passes the idempotency store, which keeps the answer's headers — and
+ * verify's `Set-Cookie` carries the plaintext secret.
  *
  * Verification only — key storage, administration, and revocation are behind
  * {@see TenantKeyResolverInterface} (`apiKeyResolver`, project code, exactly
@@ -56,8 +59,11 @@ class ApiKeyGuard implements RequestGuardInterface
     /** The device cookie (ADR-057): HttpOnly, Secure, SameSite=Strict, path `/api`. */
     public const DEVICE_COOKIE = 'z77_api_device';
 
-    /** The one anonymous call: the slugs of `POST /api/v1/devices/pair`. */
-    public const PAIRING_SLUGS = ['v1', 'devices', 'pair'];
+    /**
+     * The anonymous door (ADR-058): the slugs of `POST /api/v1/devices/login` and
+     * `POST /api/v1/devices/verify` — nothing else passes without a credential.
+     */
+    public const ANONYMOUS_SLUGS = [['v1', 'devices', 'login'], ['v1', 'devices', 'verify']];
 
     private ?ApiPrincipal $principal = null;
     private bool $passed = false;
@@ -80,8 +86,8 @@ class ApiKeyGuard implements RequestGuardInterface
 
         $devices = $this->deviceResolver();
         if ($devices !== null) {
-            // Pairing first: a phone carrying a dead cookie must still be able to pair anew.
-            if ($this->isPairingRequest($request)) {
+            // The sign-in first: a phone carrying a dead cookie must still be able to sign in anew.
+            if (self::isAnonymousRequest($request)) {
                 return $this->appOriginDenied($request) ?? $this->pass(null);
             }
 
@@ -93,7 +99,7 @@ class ApiKeyGuard implements RequestGuardInterface
                 }
                 $principal = $devices->resolve($cookie);
                 if ($principal === null || !$principal->isDevice()) {
-                    // Unknown, revoked, expired, owner gone — one answer.
+                    // Unknown, revoked, expired, app user inactive, person gone — one answer.
                     return $this->unauthThrottled() ?? $this->unauthorized('Invalid device.');
                 }
                 return $this->pass($principal);
@@ -105,7 +111,7 @@ class ApiKeyGuard implements RequestGuardInterface
 
     /**
      * Who called: the machine or device principal, or null for the anonymous
-     * pairing call. Only valid after enforce() passed.
+     * sign-in calls. Only valid after enforce() passed.
      */
     public function getPrincipal(): ?ApiPrincipal
     {
@@ -146,9 +152,16 @@ class ApiKeyGuard implements RequestGuardInterface
         return $this->principal;
     }
 
-    private function isPairingRequest(Request $request): bool
+    /** A POST to one of {@see ANONYMOUS_SLUGS}. Public: the gateway asks the same question (second lock). */
+    public static function isAnonymousRequest(Request $request): bool
     {
-        return $request->getMethod() === 'post' && $request->getSlugs() === self::PAIRING_SLUGS;
+        return $request->getMethod() === 'post' && self::isAnonymousPath($request->getSlugs());
+    }
+
+    /** @param list<string> $slugs `[v1, devices, login]` */
+    public static function isAnonymousPath(array $slugs): bool
+    {
+        return in_array($slugs, self::ANONYMOUS_SLUGS, true);
     }
 
     /**

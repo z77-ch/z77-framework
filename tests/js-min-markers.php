@@ -112,9 +112,13 @@ const MARKERS = [
         'X-Z77-App',                // the device channel's mandatory header (ADR-057)
         'Idempotency-Key',          // a submission's key, kept for every resend (E7)
         'z77:app-edit',             // a refused queue entry opened for correction
+        'devices/verify',           // the code sign-in (ADR-058)
+        'Erst senden oder verwerfen', // no sign-out while the queue holds unsent entries (ADR-058)
+        'Von einem anderen Zugang erfasst', // a capture goes out only under its own app user (S1)
+        'Diesen wartenden Eintrag verwerfen', // a WAITING entry can be discarded too, also offline (owner 2026-11-12)
     ],
     'packages/module-api/res/assets/js/app-sw.js' => [
-        'z77-app-v1',               // the shell cache; /api is never cached
+        'z77-app-v2',               // the shell cache (v2: pairing gone, ADR-058); /api is never cached
     ],
     'packages/module-receipt/res/assets/js/app/receipt.js' => [
         'data-receipt-template',    // the tiles (E2)

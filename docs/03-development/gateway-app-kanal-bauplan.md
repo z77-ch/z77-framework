@@ -230,8 +230,13 @@ Diskussion des Bauplans mit dem Owner; ersetzen, was oben in Teil B anders steht
 - **E14 — Wer koppelt (bestätigt 2026-11-12):** jeder Backend-Benutzer ab EDITOR koppelt,
   benennt und sperrt seine eigenen Geräte; ADMIN und höher sieht und verwaltet alle (nie für
   einen Besitzer mit höheren Rollen) — wie gebaut (`api.md` «backend screen «Geräte»»).
+  **Ersetzt durch [ADR-058](../02-decisions/adr-058-app-users-email-code-login.md) A9
+  (2026-11-12):** es wird nicht mehr gekoppelt; nur ein ADMIN legt App-Benutzer an und verwaltet
+  sie (nie für eine Person mit höheren Rollen).
 - **E15 — Koppel-Code 10 Zeichen** (`ABCDE-FGHJK`, ADR-057) statt der 6 des Boards —
-  bestätigt 2026-11-12; der QR-Code ist der Normalfall.
+  bestätigt 2026-11-12; der QR-Code ist der Normalfall. **Hinfällig durch
+  [ADR-058](../02-decisions/adr-058-app-users-email-code-login.md) A7 (2026-11-12):** Koppeln samt
+  Code und QR ist entfernt; die Anmeldung läuft über einen 6-stelligen Code per E-Mail.
 - **E16 — «Journal verbuchen» als Fenster, Stichtag vorgeschlagen = heute** (Owner 2026-11-12,
   nach dem ersten Test: «Ende Vormonat» liess das Fenster leer wirken; ändert den Vorschlag
   von E11, die Regel «nur bis zum Stichtag, ein unvollständiger blockiert» bleibt). Das
@@ -239,6 +244,9 @@ Diskussion des Bauplans mit dem Owner; ersetzen, was oben in Teil B anders steht
   zum Beleg), sonst kurz was gebucht wird (Anzahl, Summe, MWST) und «Jetzt buchen»; das
   Datum bleibt änderbar. Das Faktura-Journal bekommt dasselbe Fenster (ohne Datum) — ein
   gemeinsamer Baustein (Regel 9; löst DEBTOR-WIN-002).
+  *Gebaut 2026-11-12:* `Z77\Shared` `partials/postConfirm` + core.js `form[data-window-form]`
+  (`fetch.md` WIN-GETFORM-001); `defaultCutOff()` = heute. Von DEBTOR-WIN-002 ist damit der
+  core.js-Teil gelöst; «Fakturieren …» als Fenster bleibt offen (`debtor.md`).
 - **Boards abgenommen 2026-11-12:** die vier Boards «Belege per Handy» auf dem
   Developer-Canvas (Belegvorlagen, Belegjournal, Geräte, z77 App) — «passt soweit alles».
   Mit E10 kommt «Bezahlt mit» dazu (Stammdaten-Liste wie Belegvorlagen; Auswahl auf dem

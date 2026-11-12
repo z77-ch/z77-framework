@@ -11,8 +11,9 @@ namespace Z77\Shared\Auth;
  *
  * Contract for implementations:
  *   - the server stores only SHA-256 of the secret, compared with hash_equals()
- *   - an unknown, revoked or expired device, or one whose owner is gone,
- *     returns null — the guard answers 401 without distinguishing (no oracle)
+ *   - an unknown, revoked or expired device, one whose app user is inactive or
+ *     whose linked person is gone (ADR-058), returns null — the guard answers
+ *     401 without distinguishing (no oracle)
  *   - the returned principal is built with {@see ApiPrincipal::device()}
  */
 interface DeviceKeyResolverInterface

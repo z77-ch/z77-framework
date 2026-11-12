@@ -266,7 +266,7 @@ _Z77.app.receipt = (function () {
             } else if (api.isTransient(r) && done.stored) {
                 confirmed(done.entry.summary, null, true);
             } else if (r.status === 401) {
-                window.location.replace('/app/pair');
+                window.location.replace('/app/login');
             } else if (api.isTransient(r)) {
                 fieldError('_', 'Kein Netz, und dieses Gerät kann nichts zwischenspeichern. Bitte später senden.');
             } else {
@@ -370,7 +370,7 @@ _Z77.app.receipt = (function () {
                 renderTiles(r.data.templates || []);
                 tileNotice('');
             } else if (r.status === 403) {
-                tileNotice('Dieses Gerät darf keine Belege erfassen. Im Backend unter «Geräte» prüfen.');
+                tileNotice('Dein App-Zugang darf keine Belege erfassen. Bitte beim Administrator nachfragen.');
             } else {
                 tileNotice('Die Vorlagen sind nicht geladen — «Ohne Vorlage» geht immer.');
             }

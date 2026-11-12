@@ -232,13 +232,13 @@ default first), the panel anchors right inside the viewport.
 | Webseiten › Navigation | «+ Eintrag» | create |
 | Webseiten › Nav Alias | «+ Alias» | create |
 | Finanzen › Journal | «Buchen» | confirm |
-| Finanzen › Belegjournal | «Journal verbuchen …» (built 2026-11-12, `receipt.md` — disabled with its reason only while empty; the confirmation page takes the cut-off; the toolbar carries the tabs «Im Journal» · «Verbuchte Journale») | confirm (built) |
+| Finanzen › Belegjournal | «Journal verbuchen …» (built 2026-11-12, `receipt.md` — disabled with its reason only while empty; opens the posting WINDOW with the cut-off, proposed today (E16, `partials/postConfirm`); the toolbar carries the tabs «Im Journal» · «Verbuchte Journale») | confirm (built) |
 | Finanzen › Auswertungen | — | n/a |
 | Finanzen (whole area) | fiscal year at the TOP OF THE RAIL | selection (built) |
 | Aufträge › Aufträge | «+ Neuer Auftrag» (opens the order window; built 2026-10-14, `order.md`) — the toolbar carries the six view tabs, «Buchungsdruck …» the selection bar of «Zu fakturieren» | create (built) |
 | Aufträge › Debitoren | — | n/a |
 | Aufträge › Rechnungen | «+ Rechnung» | create |
-| Aufträge › Faktura-Journal | «Journal verbuchen …» (built 2026-10-23, ADR-054 — disabled with its reason while empty or blocked; the toolbar carries the tabs «Im Journal» · «Verbuchte Journale» and «Journal drucken») | confirm |
+| Aufträge › Faktura-Journal | «Journal verbuchen …» (built 2026-10-23, ADR-054 — disabled with its reason while empty; opens the posting WINDOW, errors only while blocked — E16, 2026-11-12; the toolbar carries the tabs «Im Journal» · «Verbuchte Journale» and «Journal drucken») | confirm |
 | Aufträge › Zahlungseingänge | «+ camt.054 einlesen» | create |
 | Aufträge › Mahnungen | — (the Stichtag is a work-area form) | n/a |
 | Kontakte | «+ Kontakt» | create |
@@ -258,7 +258,7 @@ default first), the panel anchors right inside the viewport.
 | Stammdaten › Artikel | «+ Artikel» (opens the article window — with `?group=` while the list is filtered by a product group, the rail-top picker; built 2026-10-14, `article.md`) | create (built) |
 | Stammdaten › Adresstypen | «+ Adresstyp» | create |
 | Stammdaten › Benutzer | «+ Benutzer» | create |
-| Stammdaten › Geräte | «+ Gerät koppeln» (opens the pairing window — QR + code; built 2026-11-12, `api.md`) | create (built) |
+| Stammdaten › App-Benutzer | «+ App-Benutzer» (opens the window of a new app user — person first; built 2026-11-12, `api.md`; replaces «Geräte» and its «+ Gerät koppeln») | create (built) |
 | Service › Backup | «↓ Daten sichern \| ▾» (main part = Daten) | split picker (built) |
 | Service › E-Mail | — | n/a |
 | Service › Jobs | — | n/a |

@@ -5192,6 +5192,7 @@ $fjHost = function () use ($fjHostBase) {
         protected function em() { return DI::getUnifiedEntityManager(); }
         protected function html(array $context = []): \Z77\Core\Http\Response\HtmlResponse { $this->context = $context; return new \Z77\Core\Http\Response\HtmlResponse(null, $context); }
         protected function redirect(string $url, int $status = 302): \Z77\Core\Http\Response\RedirectResponse { $this->redirectedTo = $url; return new \Z77\Core\Http\Response\RedirectResponse($url, $status); }
+        protected function fetch(): \Z77\Core\Http\Response\FetchResponse { return new \Z77\Core\Http\Response\FetchResponse(); }
         protected function bytes(string $content, string $filename, string $mimeType, bool $inline = true): \Z77\Core\Http\Response\BytesResponse { $this->bytes = ['content' => $content, 'filename' => $filename, 'mime' => $mimeType, 'inline' => $inline]; return new \Z77\Core\Http\Response\BytesResponse($content, $filename, $mimeType, $inline); }
         private function journalService(): \Z77\Module\Debtor\Services\JournalPostingService { return new \Z77\Module\Debtor\Services\JournalPostingService($this->em(), 'buchhalter'); }
     };
@@ -5332,15 +5333,21 @@ $host = $fjHost();
 $host->listAction();
 $fjBlockedHtml = $fjList($host);
 $fjBlockedAct  = $renderSlot($host, 'hc1');
+$useRequest(['_origin' => 'region:invoice-journal-find-list']);
+$GLOBALS['z77TestFetch'] = true;
 $host = $fjHost();
 $host->confirmPostAction();
+$GLOBALS['z77TestFetch'] = false;
 $fjBlockedConfirm = $renderMain($host);
 $fjJ1 = $journalCount();
-check('FJ19 BLOCKED (decision 9): a document with «Neu fakturieren nötig» — the action cell disabled with the reason, the red band names the document and the reason, the confirmation has no button, and post() refuses `blocked` — nothing posted',
-    str_contains($fjBlockedAct, 'disabled') && str_contains($fjBlockedAct, 'Verbuchen gesperrt') && str_contains($fjBlockedHtml, 'data-journal-blocked="1"') && str_contains($fjBlockedHtml, 'Betrag geändert (Harness)')
-    && str_contains($fjBlockedHtml, 'Neu fakturieren nötig') && !str_contains($fjBlockedConfirm, 'type="submit"') && str_contains($fjBlockedConfirm, 'Verbuchen gesperrt')
+check('FJ19 BLOCKED (decision 9): a document with «Neu fakturieren nötig» — the action cell OPENS the posting window (E16), the red band names the document and the reason; the window shows ONLY the errors (the document linked to its mask, the reason), no summary, no button, no pairs; post() refuses `blocked` — nothing posted',
+    !str_contains($fjBlockedAct, 'disabled') && str_contains($fjBlockedAct, 'data-window-open="/backend/finance/invoice-journal/confirm-post" data-origin="region:invoice-journal-find-list"')
+    && str_contains($fjBlockedHtml, 'data-journal-blocked="1"') && str_contains($fjBlockedHtml, 'Betrag geändert (Harness)') && str_contains($fjBlockedHtml, 'Neu fakturieren nötig')
+    && str_contains($fjBlockedConfirm, 'data-post-confirm="errors"') && str_contains($fjBlockedConfirm, 'data-window="invoice-journal-post" data-window-entity="invoice-journal:open"')
+    && str_contains($fjBlockedConfirm, 'Verbuchen gesperrt') && str_contains($fjBlockedConfirm, 'data-window-open="/backend/finance/invoice/edit?id=' . $fjB->getId() . '"') && str_contains($fjBlockedConfirm, 'Betrag geändert (Harness)')
+    && !str_contains($fjBlockedConfirm, 'type="submit"') && !str_contains($fjBlockedConfirm, 'name="doc[]"') && !str_contains($fjBlockedConfirm, 'data-post-confirm-facts')
     && $fjRefused(fn() => $fjJournal()->post($wireDi()->getRepository(Invoice::class)->journalVersions())) === \Z77\Module\Debtor\Services\JournalRefusedException::BLOCKED
-    && $journalCount() === $fjJ1 && $stateOf($fjB->getId()) === 'issued' && $fjPosted() === $fjP0);
+    && $journalCount() === $fjJ1 && $stateOf($fjB->getId()) === 'issued' && $fjPosted() === $fjP0, strip_tags($fjBlockedConfirm));
 $db->executeStatement('UPDATE invoice SET reissue_needed = NULL WHERE id = ?', [$fjB->getId()]);
 
 // The journal list as PDF.
@@ -5361,19 +5368,29 @@ $host->confirmPostAction();
 $fjConfirm = $renderMain($host);
 $fjSeen    = array_map(fn($d) => $d->getId() . ':' . $d->getVersion(), $host->context['documents']);
 $fjPreview = $host->context['preview'];
-check('FJ21 the confirmation «Journal verbuchen …»: a PAGE with the one green button (POST, CSRF field) carrying every document as {id}:{version}, the totals per VAT code and «Was gebucht wird» — the entries summed per account (Σ debit = Σ credit)',
+check('FJ21 the confirmation «Journal verbuchen …» (the shared window E16; here the no-script PAGE): the SHORT summary — count, total, VAT per code — and the one green «Jetzt buchen» (POST, CSRF field) carrying every document as {id}:{version}; no date, no entries per account on screen; the preview behind it balances (Σ debit = Σ credit); its help attached',
     $host->layoutManager->sections['main'] === ['Backend/InvoiceJournalController/confirmPost'] && str_contains($fjConfirm, 'action="/backend/finance/invoice-journal/post"') && str_contains($fjConfirm, 'name="csrf_token"')
-    && str_contains($fjConfirm, 'type="submit"') && array_filter($fjSeen, fn($p) => !str_contains($fjConfirm, 'value="' . $p . '"')) === [] && count($fjSeen) === 2
-    && $fjPreview['entries'] === 2 && str_contains($fjConfirm, 'data-journal-preview')
-    && array_reduce($fjPreview['rows'], fn(Money $s, array $r) => $s->add($r['debit']), chf('0.00'))->equals(array_reduce($fjPreview['rows'], fn(Money $s, array $r) => $s->add($r['credit']), chf('0.00'))));
+    && str_contains($fjConfirm, '<button type="submit" class="be-btn be-btn--confirm">Jetzt buchen</button>') && array_filter($fjSeen, fn($p) => !str_contains($fjConfirm, 'name="doc[]" value="' . $p . '"')) === [] && count($fjSeen) === 2
+    && str_contains($fjConfirm, 'data-post-confirm="summary"') && str_contains($fjConfirm, 'data-post-confirm-facts') && str_contains($fjConfirm, 'data-post-confirm-vat') && str_contains($fjConfirm, '>UN<')
+    && !str_contains($fjConfirm, 'data-window-form') && !str_contains($fjConfirm, 'data-journal-preview') && str_contains($fjConfirm, '>Faktura-Journal verbuchen</h2>') && str_contains($fjConfirm, '>Zum Journal</a>')
+    && $fjPreview['entries'] === 2 && $host->help->has()
+    && array_reduce($fjPreview['rows'], fn(Money $s, array $r) => $s->add($r['debit']), chf('0.00'))->equals(array_reduce($fjPreview['rows'], fn(Money $s, array $r) => $s->add($r['credit']), chf('0.00'))), strip_tags($fjConfirm));
 $fjD = $service($wireDi())->invoice($withTarget('qr', '2026-10-05'));
 $service($wireDi())->issue([$at($fjD->getId())]);
 $useRequest([], ['doc' => $fjSeen]);
 $host = $fjHost();
 $host->postAction();
-check('FJ22 a document issued after the confirmation: «Journal verbuchen» with the pairs seen is refused `changed` («ein Dokument ins Faktura-Journal gekommen») — nothing posted (always the whole journal, owner decision O7), back to the journal with the error',
+$useRequest([], ['doc' => $fjSeen, '_origin' => 'region:invoice-journal-find-list']);
+$GLOBALS['z77TestFetch'] = true;
+$fjWinHost = $fjHost();
+$fjWinRefused = $fjWinHost->postAction();
+$GLOBALS['z77TestFetch'] = false;
+$fjWinEnv = $fjWinRefused instanceof \Z77\Core\Http\Response\FetchResponse ? (fn() => $this->build())->call($fjWinRefused) : [];
+check('FJ22 a document issued after the confirmation: «Journal verbuchen» with the pairs seen is refused `changed` («ein Dokument ins Faktura-Journal gekommen») — nothing posted (always the whole journal, owner decision O7); as a page back to the journal with the error, in the window the error and the window re-rendered (open-window replace)',
     $host->redirectedTo === '/backend/finance/invoice-journal/list' && ($host->messageService->flashes[0][0] ?? '') === 'error' && str_contains($host->messageService->flashes[0][1] ?? '', 'ins Faktura-Journal gekommen')
-    && $journalCount() === $fjJ1 && $stateOf($fjA->getId()) === 'issued' && $stateOf($fjD->getId()) === 'issued' && $fjPosted() === $fjP0);
+    && ($fjWinEnv['status'] ?? '') === 'error' && ($fjWinEnv['commands'] ?? []) === [['action' => 'open-window', 'url' => '/backend/finance/invoice-journal/confirm-post', 'replace' => true]]
+    && ($fjWinHost->messageService->flashes[0][0] ?? '') === 'error' && str_contains($fjWinHost->messageService->flashes[0][1] ?? '', 'ins Faktura-Journal gekommen')
+    && $journalCount() === $fjJ1 && $stateOf($fjA->getId()) === 'issued' && $stateOf($fjD->getId()) === 'issued' && $fjPosted() === $fjP0, json_encode($fjWinEnv, JSON_UNESCAPED_UNICODE));
 
 // A document dated in 2027 — a year without a fiscal year: the ledger refuses, the WHOLE posting rolls back.
 $fjE = $service($wireDi())->invoice($withTarget('qr', '2027-01-12'));
@@ -5409,9 +5426,13 @@ $fjSeen    = array_map(fn($d) => $d->getId() . ':' . $d->getVersion(), $host->co
 $fjPreview = $host->context['preview'];
 $fjSigned  = array_reduce($host->context['documents'], fn(Money $s, Invoice $d) => $s->add($d->getGrossTotal()->multiply($d->kind()->sign())), chf('0.00'));
 $fjNumbers = array_map(fn($d) => (int) $d->getNumber(), $host->context['documents']);
-$useRequest([], ['doc' => $fjSeen]);
+// «Jetzt buchen» in the window (fetched): the answer closes it and reloads the list region it came from.
+$useRequest([], ['doc' => $fjSeen, '_origin' => 'region:invoice-journal-find-list']);
+$GLOBALS['z77TestFetch'] = true;
 $host = $fjHost();
-$host->postAction();
+$fjPostAnswer = $host->postAction();
+$GLOBALS['z77TestFetch'] = false;
+$fjPostEnv  = $fjPostAnswer instanceof \Z77\Core\Http\Response\FetchResponse ? (fn() => $this->build())->call($fjPostAnswer) : [];
 $fjProtocol = $db->fetchAssociative('SELECT * FROM invoice_journal_posting ORDER BY id DESC LIMIT 1');
 $fjAll4     = [$fjA->getId(), $fjB->getId(), $fjD->getId(), $fjE->getId()];
 $fjRefs     = array_map(fn(int $id) => (string) $invoiceRow($id)['ledger_entry_ref'], $fjAll4);
@@ -5425,14 +5446,15 @@ $fjPreviewNet = [];
 foreach ($fjPreview['rows'] as $fjRow) {
     $fjPreviewNet[$fjRow['account']] = $fjRow['debit']->subtract($fjRow['credit']);
 }
-check('FJ26 «Journal verbuchen» (JournalPostingService::post(), ONE unit of work): all four final, posted by «buchhalter» / at, each naming the ONE protocol (count 4, first / last number, the signed gross total, who / when); one journal entry each with the key invoice:{id}:final on its INVOICE date; the answer is the tab «Verbuchte Journale» with the flash',
+check('FJ26 «Journal verbuchen» (JournalPostingService::post(), ONE unit of work): all four final, posted by «buchhalter» / at, each naming the ONE protocol (count 4, first / last number, the signed gross total, who / when); one journal entry each with the key invoice:{id}:final on its INVOICE date; the window\'s answer closes it and reloads the list region, with the flash',
     array_map($stateOf, $fjAll4) === ['final', 'final', 'final', 'final'] && $journalCount() === $fjJ1 + 4 && $fjPosted() === $fjP0 + 1
     && (int) $fjProtocol['document_count'] === 4 && (int) $fjProtocol['first_number'] === min($fjNumbers) && (int) $fjProtocol['last_number'] === max($fjNumbers)
     && $fjProtocol['gross_total'] === $fjSigned->toDecimal() && $fjProtocol['posted_by'] === 'buchhalter'
     && array_filter($fjAll4, fn(int $id) => (int) $invoiceRow($id)['journal_posting_id'] !== (int) $fjProtocol['id'] || $invoiceRow($id)['posted_by'] !== 'buchhalter' || $invoiceRow($id)['posted_at'] === null) === []
     && $entryRow($fjRefs[3])['idempotency_key'] === 'invoice:' . $fjE->getId() . ':final' && $entryRow($fjRefs[3])['entry_date'] === '2027-01-12' && $entryRow($fjRefs[0])['entry_date'] === '2026-10-03'
-    && $host->redirectedTo === '/backend/finance/invoice-journal/list?view=posted' && ($host->messageService->flashes[0][0] ?? '') === 'success' && str_contains($host->messageService->flashes[0][1] ?? '', 'Journal verbucht: 4 Dokumente'),
-    json_encode([$fjProtocol, $host->messageService->flashes], JSON_UNESCAPED_UNICODE));
+    && ($fjPostEnv['status'] ?? '') === 'success' && ($fjPostEnv['commands'] ?? []) === [['action' => 'close-window'], ['action' => 'refresh-region', 'name' => 'invoice-journal-find-list']]
+    && ($host->messageService->flashes[0][0] ?? '') === 'success' && str_contains($host->messageService->flashes[0][1] ?? '', 'Journal verbucht: 4 Dokumente'),
+    json_encode([$fjProtocol, $host->messageService->flashes, $fjPostEnv], JSON_UNESCAPED_UNICODE));
 check('FJ27 the preview IS the posting: what the confirmation showed per account (receivable, revenue, rounding) is what the ledger now holds on those accounts for the four entries (the VAT lines by their category\'s account)',
     $fjPreview['entries'] === 4 && isset($fjPreviewNet['1100'], $fjPreviewNet['3400'], $fjLedger['1100'], $fjLedger['3400'])
     && $fjPreviewNet['1100']->equals($fjLedger['1100']) && $fjPreviewNet['3400']->equals($fjLedger['3400'])

@@ -1,12 +1,14 @@
 /**
- * _Z77.app — the client of the app shell under /app (plan A6 / T6, ADR-057).
+ * _Z77.app — the client of the app shell under /app (plan A6 / T6, ADR-057, ADR-058).
  *
  *   _Z77.app.store   IndexedDB: the last answers (`kv`) and the waiting submissions (`queue`)
  *   _Z77.app.api     the gateway's device channel: `X-Z77-App: 1` on every call, the
  *                    `Idempotency-Key` of a submission, ETag revalidation with an offline copy
  *   _Z77.app.queue   the offline queue: a submission is stored BEFORE it is sent and removed only
- *                    when the server confirmed it (E7); a resend carries the same key
- *   _Z77.app.shell   pairing, the device («me»), which screens to show, the banner, the worker
+ *                    when the server confirmed it (E7); a resend carries the same key; an entry
+ *                    goes out only under the app user that captured it (S1)
+ *   _Z77.app.shell   the code sign-in, the device («me»), which screens to show, the banner,
+ *                    the sign-out, the worker
  *
  * Rule 7: nothing here decides — the gateway checks credential, scope, header and origin, the
  * targets check every value. Nothing stored here is a secret: the device credential is an HttpOnly
@@ -61,6 +63,10 @@ _Z77.app.store = (function () {
         },
         set: function (key, value) {
             return run('kv', 'readwrite', function (s) { return s.put(value, key); }).catch(function () {});
+        },
+        /** Forgets every kept answer and `me` — at sign-out; the queue is not touched. */
+        clear: function () {
+            return run('kv', 'readwrite', function (s) { return s.clear(); }).catch(function () {});
         },
         /** Rejects when the device has no IndexedDB — the caller then sends without the safety net. */
         put: function (entry) {
@@ -158,17 +164,35 @@ _Z77.app.queue = (function () {
     var api = _Z77.app.api;
     var _busy = false;
     var _offline = false;
+    var _owner = null;
 
     function changed() {
         document.dispatchEvent(new CustomEvent('z77:app-queue'));
     }
 
     /**
-     * Stores a submission before it is sent:
+     * The app user signed in now (`appUser` of devices/me, devices/verify), set by the shell. The
+     * queue belongs to the browser, not to a person: an entry carries the app user it was
+     * captured by and goes out only under that sign-in (security review S1) — after another
+     * person signs in on this browser, the entries of before wait as «foreign» until discarded.
+     * The server cannot tell (the capture would simply be booked to whoever sends it).
+     */
+    function owner(appUserId) {
+        _owner = appUserId ? String(appUserId) : null;
+    }
+
+    /** Captured by the app user signed in now? An entry without a stamp is nobody's — foreign. */
+    function isMine(entry) {
+        return _owner !== null && entry.appUser === _owner;
+    }
+
+    /**
+     * Stores a submission before it is sent, stamped with the app user signed in now:
      * {key, screen, endpoint, fields, fileField, file: {bytes, type, name}|null,
-     *  summary: {title, amount, text, date}, noun: [one, many], created, state, error}
+     *  summary: {title, amount, text, date}, noun: [one, many], created, state, error, appUser}
      */
     function add(entry) {
+        entry.appUser = _owner;
         return store.put(entry).then(function () { changed(); return true; }, function () { return false; });
     }
 
@@ -178,7 +202,7 @@ _Z77.app.queue = (function () {
 
     /**
      * Sends one entry with its own key. Confirmed → removed. No network / 429 / 5xx → stays
-     * waiting. 401 → stays (the shell re-pairs, the entry goes with the new pairing). Any other
+     * waiting. 401 → stays (the shell signs in anew, the entry goes after it). Any other
      * refusal: `immediate` (the form is open, it shows the errors) removes it, otherwise it stays
      * as «refused» with the server's errors until the person edits or discards it.
      */
@@ -207,17 +231,20 @@ _Z77.app.queue = (function () {
         });
     }
 
-    /** Sends every waiting entry, oldest first; stops at the first that cannot go now. */
+    /**
+     * Sends every waiting entry of the app user signed in now, oldest first; stops at the first
+     * that cannot go now. Entries of another app user are never sent (S1).
+     */
     function flush() {
         if (_busy) return Promise.resolve();
         _busy = true;
         return store.all().then(function (entries) {
-            var waiting = entries.filter(function (e) { return e.state !== 'refused'; });
+            var waiting = entries.filter(function (e) { return e.state !== 'refused' && isMine(e); });
             var step = function (i) {
                 if (i >= waiting.length) return null;
                 return send(waiting[i], false).then(function (r) {
                     if (r.status === 401) {
-                        window.location.replace('/app/pair');
+                        window.location.replace('/app/login');
                         return null;
                     }
                     if (api.isTransient(r)) return null;
@@ -233,6 +260,8 @@ _Z77.app.queue = (function () {
         remove: remove,
         send: send,
         flush: flush,
+        owner: owner,
+        isMine: isMine,
         all: store.all,
         isOffline: function () { return _offline; }
     };
@@ -276,7 +305,7 @@ _Z77.app.shell = (function () {
                 return r.data.device;
             }
             if (r.status === 401) {
-                window.location.replace('/app/pair');
+                window.location.replace('/app/login');
                 return 'away';
             }
             if (r.status === 0) {
@@ -293,10 +322,12 @@ _Z77.app.shell = (function () {
             var loading = q('[data-app-loading]');
             if (loading) loading.hidden = true;
             if (!device) return;
+            queue.owner(device.appUser);
             showDevice(device);
             if (!revealScreens(device.scopes || [])) {
-                notice('Für dieses Gerät ist keine Funktion freigeschaltet. Im Backend unter «Geräte» ändern.');
+                notice('Für deinen App-Zugang ist keine Funktion freigeschaltet. Bitte beim Administrator nachfragen.');
             }
+            showAccount();
             _device = device;
             _readyFns.splice(0).forEach(function (fn) { fn(device); });
             renderQueue();
@@ -335,7 +366,7 @@ _Z77.app.shell = (function () {
             var banner = q('[data-app-banner]');
             var list = q('[data-app-queue]');
             if (!banner || !list) return;
-            var waiting = entries.filter(function (e) { return e.state !== 'refused'; });
+            var waiting = entries.filter(function (e) { return e.state !== 'refused' && queue.isMine(e); });
             banner.hidden = waiting.length === 0;
             if (waiting.length > 0) {
                 var noun = waiting[0].noun || ['Eintrag', 'Einträge'];
@@ -370,9 +401,11 @@ _Z77.app.shell = (function () {
     }
 
     function card(entry) {
+        // Captured under another sign-in on this browser (S1): never sent, only discarded.
+        var foreign = !queue.isMine(entry);
         var refused = entry.state === 'refused';
         var s = entry.summary || {};
-        var box = el('div', 'za-card ' + (refused ? 'za-card-refused' : 'za-card-wait'));
+        var box = el('div', 'za-card ' + (refused || foreign ? 'za-card-refused' : 'za-card-wait'));
         var head = el('span', 'za-row');
         head.appendChild(el('strong', '', s.title || ''));
         head.appendChild(el('span', 'za-mono', s.amount || ''));
@@ -383,26 +416,32 @@ _Z77.app.shell = (function () {
         box.appendChild(sub);
 
         var status = el('span', 'za-card-status');
-        status.appendChild(svgIcon(refused ? 'za-i-alert' : 'za-i-clock', 'za-icon-sm'));
-        status.appendChild(el('span', '', refused ? refusal(entry.error) : 'wird gesendet, sobald Netz da ist'));
+        status.appendChild(svgIcon(refused || foreign ? 'za-i-alert' : 'za-i-clock', 'za-icon-sm'));
+        status.appendChild(el('span', '', foreign ? 'Von einem anderen Zugang erfasst — verwerfen'
+            : refused ? refusal(entry.error) : 'wird gesendet, sobald Netz da ist'));
         box.appendChild(status);
 
-        if (refused) {
-            var actions = el('span', 'za-card-actions');
+        // A refused entry can be corrected or discarded; a waiting one discarded (owner 2026-11-12) —
+        // so the sign-out's «Erst senden oder verwerfen» always has its action, also offline.
+        var actions = el('span', 'za-card-actions');
+        if (refused && !foreign) {
             var edit = el('button', 'za-link', 'Bearbeiten');
             edit.type = 'button';
             edit.addEventListener('click', function () {
                 document.dispatchEvent(new CustomEvent('z77:app-edit', { detail: { entry: entry } }));
             });
-            var drop = el('button', 'za-link', 'Verwerfen');
-            drop.type = 'button';
-            drop.addEventListener('click', function () {
-                if (window.confirm('Diesen Eintrag verwerfen? Er wird nicht gesendet.')) queue.remove(entry.key);
-            });
             actions.appendChild(edit);
-            actions.appendChild(drop);
-            box.appendChild(actions);
         }
+        var drop = el('button', 'za-link', 'Verwerfen');
+        drop.type = 'button';
+        drop.addEventListener('click', function () {
+            var question = refused || foreign
+                ? 'Diesen Eintrag verwerfen? Er wird nicht gesendet.'
+                : 'Diesen wartenden Eintrag verwerfen? Er wird nicht mehr gesendet — was schon unterwegs ist, kann trotzdem ankommen.';
+            if (window.confirm(question)) queue.remove(entry.key);
+        });
+        actions.appendChild(drop);
+        box.appendChild(actions);
         return box;
     }
 
@@ -413,68 +452,147 @@ _Z77.app.shell = (function () {
             return Object.keys(error.fields).map(function (k) { return error.fields[k]; }).join(' ');
         }
         switch (error.code) {
-            case 'forbidden': return 'Dieses Gerät darf das nicht (mehr). Im Backend unter «Geräte» prüfen.';
+            case 'forbidden': return 'Dein App-Zugang darf das nicht (mehr). Bitte beim Administrator nachfragen.';
             case 'idempotency_conflict': return 'Doppelt gesendet mit anderem Inhalt. Bitte neu erfassen.';
             case 'bad_request': return 'Die Anfrage war unvollständig. Bitte nochmals senden.';
             default: return 'Der Server hat den Eintrag nicht angenommen.';
         }
     }
 
-    // ── pairing ────────────────────────────────────────────────────────────
+    // ── sign-out ───────────────────────────────────────────────────────────
 
-    function pair() {
+    /**
+     * «Auf diesem Gerät abmelden»: revokes this device on the server and forgets the kept answers.
+     * Refused while the queue holds anything unsent — the queue belongs to the browser, and a
+     * waiting entry must never go out later under another person's sign-in (ADR-058).
+     */
+    function showAccount() {
+        var box = q('[data-app-account]');
+        var button = q('[data-app-logout]');
+        if (!box || !button) return;
+        box.hidden = false;
+        button.addEventListener('click', function () {
+            queue.all().then(function (entries) {
+                if (entries.length > 0) {
+                    notice('Erst senden oder verwerfen: ' + entries.length
+                        + (entries.length === 1 ? ' Eintrag ist' : ' Einträge sind') + ' noch nicht gesendet.');
+                    return;
+                }
+                if (!window.confirm('Auf diesem Gerät abmelden? Danach braucht es einen neuen Code per E-Mail.')) return;
+                button.disabled = true;
+                api.request('POST', 'devices/logout', { idempotencyKey: api.uuid() }).then(function (r) {
+                    if (r.ok || r.status === 401) {
+                        store.clear().then(function () { window.location.replace('/app/login'); });
+                        return;
+                    }
+                    button.disabled = false;
+                    notice(r.status === 0 ? 'Kein Netz — Abmelden geht nur online.' : 'Abmelden hat nicht geklappt (' + r.status + ').');
+                });
+            });
+        });
+    }
+
+    // ── sign-in ────────────────────────────────────────────────────────────
+
+    /**
+     * The code sign-in (ADR-058): the app e-mail → `devices/login` (the same answer for every
+     * address), then the code from the mail → `devices/verify` (the device cookie). One generic
+     * text for every refused code, no count of tries left.
+     */
+    function login() {
         var worker = registerWorker();
-        var form = q('[data-app-pair]');
-        if (!form) return;
-        var input = form.querySelector('input[name="code"]');
-        var error = form.querySelector('[data-error-for="code"]');
-        var button = form.querySelector('[data-app-pair-submit]');
+        var emailForm = q('[data-app-login-email]');
+        var codeForm = q('[data-app-login-code]');
+        if (!emailForm || !codeForm) return;
+        var emailInput = emailForm.querySelector('input[name="email"]');
+        var emailError = emailForm.querySelector('[data-error-for="email"]');
+        var send = emailForm.querySelector('[data-app-login-send]');
+        var codeInput = codeForm.querySelector('input[name="code"]');
+        var codeError = codeForm.querySelector('[data-error-for="code"]');
+        var verify = codeForm.querySelector('[data-app-login-verify]');
+        var again = codeForm.querySelector('[data-app-login-again]');
 
-        // The code is a one-time secret: out of the address bar (and its history) once read.
-        if (window.location.search) window.history.replaceState(null, '', '/app/pair');
-
-        function fail(message) {
-            text(error, message);
-            error.hidden = false;
-            button.disabled = false;
-            button.textContent = 'Koppeln';
+        function show(el, message) {
+            text(el, message);
+            el.hidden = message === '';
         }
 
-        form.addEventListener('submit', function (event) {
+        function busy(button, on, label) {
+            button.disabled = on;
+            button.textContent = label;
+        }
+
+        emailForm.addEventListener('submit', function (event) {
             event.preventDefault();
-            error.hidden = true;
-            var code = input.value.trim();
-            if (code === '') {
-                fail('Bitte den Code eingeben.');
+            show(emailError, '');
+            var email = emailInput.value.trim();
+            if (email === '') {
+                show(emailError, 'Bitte die App-E-Mail eingeben.');
                 return;
             }
-            button.disabled = true;
-            button.textContent = 'Wird gekoppelt …';
-            api.request('POST', 'devices/pair', { body: { code: code } }).then(function (r) {
-                if (r.ok && r.data && r.data.device) {
-                    store.set('me', r.data.device);
-                    // Let the worker take over first, so the start page is kept for offline use.
-                    var waited = Promise.race([
-                        worker.then(function (reg) { return reg ? navigator.serviceWorker.ready : null; }),
-                        new Promise(function (resolve) { window.setTimeout(resolve, 2500); })
-                    ]);
-                    waited.then(function () { window.location.replace('/app/'); });
+            busy(send, true, 'Wird angefordert …');
+            api.request('POST', 'devices/login', { body: { email: email } }).then(function (r) {
+                busy(send, false, 'Code anfordern');
+                if (r.status === 202) {
+                    emailForm.hidden = true;
+                    codeForm.hidden = false;
+                    codeInput.value = '';
+                    show(codeError, '');
+                    codeInput.focus();
                     return;
                 }
                 switch (r.status) {
-                    case 0: fail('Kein Netz. Bitte nochmals versuchen, sobald das Handy online ist.'); break;
-                    case 400: fail('Bitte den Code eingeben.'); break;
-                    case 403: fail('Der Code ist ungültig, abgelaufen oder schon benutzt. Im Backend einen neuen Code erzeugen.'); break;
-                    case 429: fail('Zu viele Versuche. Bitte in einer Stunde nochmals.'); break;
-                    default: fail('Koppeln hat nicht geklappt (' + r.status + ').');
+                    case 0: show(emailError, 'Kein Netz. Bitte nochmals versuchen, sobald das Handy online ist.'); break;
+                    case 400: show(emailError, 'Bitte die App-E-Mail eingeben.'); break;
+                    case 429: show(emailError, 'Zu viele Anfragen aus diesem Netz. Bitte in einer Stunde nochmals.'); break;
+                    default: show(emailError, 'Das hat nicht geklappt (' + r.status + ').');
                 }
             });
+        });
+
+        codeForm.addEventListener('submit', function (event) {
+            event.preventDefault();
+            show(codeError, '');
+            var code = codeInput.value.replace(/\s+/g, '');
+            if (!/^[0-9]{6}$/.test(code)) {
+                show(codeError, 'Bitte den 6-stelligen Code aus der E-Mail eingeben.');
+                return;
+            }
+            busy(verify, true, 'Wird angemeldet …');
+            api.request('POST', 'devices/verify', { body: { code: code } }).then(function (r) {
+                if (r.ok && r.data && r.data.device) {
+                    // Another person may have been signed in here: the answers kept for the last
+                    // one (templates, `me`) go first (S1); the queue stays — foreign entries wait
+                    // there to be discarded, never sent.
+                    var saved = store.clear().then(function () { return store.set('me', r.data.device); });
+                    // Let the worker take over first, so the start page is kept for offline use.
+                    var waited = saved.then(function () { return Promise.race([
+                        worker.then(function (reg) { return reg ? navigator.serviceWorker.ready : null; }),
+                        new Promise(function (resolve) { window.setTimeout(resolve, 2500); })
+                    ]); });
+                    waited.then(function () { window.location.replace('/app/'); });
+                    return;
+                }
+                busy(verify, false, 'Anmelden');
+                switch (r.status) {
+                    case 0: show(codeError, 'Kein Netz. Bitte nochmals versuchen, sobald das Handy online ist.'); break;
+                    case 429: show(codeError, 'Zu viele Versuche aus diesem Netz. Bitte in einer Stunde nochmals.'); break;
+                    default: show(codeError, 'Code falsch oder abgelaufen — neuen Code anfordern.');
+                }
+            });
+        });
+
+        again.addEventListener('click', function () {
+            codeForm.hidden = true;
+            emailForm.hidden = false;
+            show(codeError, '');
+            emailInput.focus();
         });
     }
 
     var page = document.body ? document.body.getAttribute('data-app-page') : '';
     if (page === 'start') start();
-    else if (page === 'pair') pair();
+    else if (page === 'login') login();
 
     return { ready: ready, notice: notice, refusal: refusal, svgIcon: svgIcon, el: el };
 })();

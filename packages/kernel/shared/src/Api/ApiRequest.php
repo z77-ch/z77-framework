@@ -19,7 +19,7 @@ final class ApiRequest
 {
     /**
      * @param string            $tenantId    tenant resolved by the ApiKeyGuard (`device` for a
-     *                                       device principal, '' for the anonymous pairing call)
+     *                                       device principal, '' for the anonymous sign-in calls)
      * @param list<string>      $slugs       path segments after the endpoint (e.g. a dataset name)
      * @param array<string,mixed> $params    query parameters, passed through untouched (e.g. lang)
      * @param string|null       $ifNoneMatch raw If-None-Match header value, if the client sent one
@@ -30,7 +30,7 @@ final class ApiRequest
      * @param array<string,mixed> $body      POST only: the form fields, or the decoded JSON body
      *                                       when the request sent no form fields
      * @param array<string,list<UploadedFile>> $files POST only: uploaded files per form field
-     * @param ApiPrincipal|null $principal   who called; null only for the anonymous pairing call
+     * @param ApiPrincipal|null $principal   who called; null only for the anonymous sign-in calls (ADR-058)
      * @param string|null       $idempotencyKey the `Idempotency-Key` header of a POST, if sent
      */
     public function __construct(
@@ -47,7 +47,7 @@ final class ApiRequest
     ) {
     }
 
-    /** The device principal, or null on the machine channel (and the pairing call). */
+    /** The device principal, or null on the machine channel (and the sign-in calls). */
     public function device(): ?ApiPrincipal
     {
         return $this->principal !== null && $this->principal->isDevice() ? $this->principal : null;

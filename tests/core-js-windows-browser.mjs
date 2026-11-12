@@ -15,7 +15,9 @@
  *      the popup; closing the popup takes its window along and leaves nothing inert;
  *   2  over a page (unchanged): the window in <body>, the page inert, Esc closes it;
  *   3  over the bare page of the slot editor (html-bare-skeleton: the popup root is a <main>, not
- *      a dialog): the window opens, takes the focus, Esc closes it.
+ *      a dialog): the window opens, takes the focus, Esc closes it;
+ *   6  a GET form[data-window-form="change"] inside a window (E16): «Anzeigen» re-renders the
+ *      window in place, a choice at once, a focused date only when it loses the focus.
  *
  * The pages are static (core.js + the backend's base.css, served by this script); the window's
  * content is a static answer. What it cannot prove: the server side — tests/dms-media-picker.php.
@@ -65,9 +67,21 @@ const FILES = {
     '/theme.html': ['text/html; charset=utf-8', head.replace('class="be"', 'class="be" data-be-theme="dark"') + '<body>'
         + '<label class="be-status-field"><span class="be-status-field__label">Status</span><select id="status"><option>Terminauftrag</option></select></label>'
         + '<input type="date" id="date" class="be-input"></body></html>'],
+    // E16 (owner 2026-11-12): a GET form inside a window re-renders THAT window ([data-window-form]).
+    // The answer echoes what it was asked for, so the test sees which load filled the window.
+    '/post.html': (url) => {
+        const cut = /^\d{4}-\d{2}-\d{2}$/.test(url.searchParams.get('cutoff') || '') ? url.searchParams.get('cutoff') : '2026-11-12';
+        const k = url.searchParams.get('k') === 'b' ? 'b' : 'a';
+        return ['text/html; charset=utf-8', '<div data-window="journal-post" data-window-entity="journal:open" data-window-title="Journal verbuchen">'
+            + '<form method="get" action="/post.html" data-window-form="change"><input type="date" id="cutoff" name="cutoff" value="' + cut + '">'
+            + '<select id="sel" name="k"><option' + (k === 'a' ? ' selected' : '') + '>a</option><option' + (k === 'b' ? ' selected' : '') + '>b</option></select>'
+            + '<button type="submit" id="show">Anzeigen</button></form><p id="shown">' + cut + '|' + k + '</p></div>'];
+    },
+    '/postpage.html': ['text/html; charset=utf-8', head + '<body><div id="page"><button type="button" id="postopener" data-window-open="/post.html">Journal verbuchen</button></div><script src="/core.js"></script></body></html>'],
 };
 const server = createServer((req, res) => {
-    const hit = FILES[req.url.split('?')[0]];
+    const entry = FILES[req.url.split('?')[0]];
+    const hit = typeof entry === 'function' ? entry(new URL(req.url, 'http://local')) : entry;
     if (!hit) { res.writeHead(404); res.end(); return; }
     res.writeHead(200, { 'Content-Type': hit[0] });
     res.end(hit[1]);
@@ -259,6 +273,26 @@ try {
         [await ev(SCHEME('#status')), await ev(SCHEME('#date'))]);
     await ev(`document.documentElement.setAttribute('data-be-theme', 'light')`);
     check('the theme switch to light: drawn light', await ev(SCHEME('#status')) === 'light' && await ev(SCHEME('#date')) === 'light');
+
+    console.log('6 a GET form inside a window re-renders that window ([data-window-form], E16)');
+    await send('Page.navigate', { url: BASE + '/postpage.html' });
+    await until(`!!(window._Z77 && _Z77.core && _Z77.core.windows)`);
+    await click('#postopener');
+    const SHOWN = `(document.getElementById('shown')||{}).textContent`;
+    check('the window opens with the proposed date', await until(`${SHOWN} === '2026-11-12|a'`), await ev(SHOWN));
+    await ev(`document.getElementById('cutoff').value = '2026-10-31'`);
+    await click('#show');
+    check('«Anzeigen» re-renders the window in place: the new date, still one window, the page not left',
+        await until(`${SHOWN} === '2026-10-31|a'`) && await ev(WINDOWS) === 1 && await ev(`location.pathname`) === '/postpage.html', [await ev(SHOWN), await ev(WINDOWS), await ev(`location.pathname`)]);
+    await ev(`(function(){var s=document.getElementById('sel'); s.value='b'; s.dispatchEvent(new Event('change',{bubbles:true}));})()`);
+    check('a choice re-renders at once (the date kept)', await until(`${SHOWN} === '2026-10-31|b'`), await ev(SHOWN));
+    await ev(`(function(){var d=document.getElementById('cutoff'); d.focus(); d.value='2026-09-30'; d.dispatchEvent(new Event('change',{bubbles:true}));})()`);
+    await sleep(400);
+    const typing = await ev(SHOWN);
+    await ev(`document.getElementById('cutoff').blur()`);
+    check('a date changed while it has the focus waits; leaving the field re-renders', typing === '2026-10-31|b' && await until(`${SHOWN} === '2026-09-30|b'`), [typing, await ev(SHOWN)]);
+    await esc();
+    await until(`${WINDOWS} === 0`);
 } catch (e) {
     fail++;
     console.log('  FAIL ' + (e && e.message ? e.message : e));

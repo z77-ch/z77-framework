@@ -37,6 +37,9 @@
  *      asks its «fill» first, then the quantity (no second ask on the blur's change); after the
  *      last field of the last row a new row; textarea, Shift / Ctrl, IME and a container without
  *      the attribute left alone
+ *   G  a GET form in a window ([data-window-form], owner decision E16): re-renders its window
+ *      (fields as the query, origin kept, the latest load wins), ="change" (a choice at once, a
+ *      typed field on its blur), outside a window it opens one, refresh-window, what is not taken
  *
  * What it cannot prove: layout, focus, real event order — those need a browser.
  * Run: node tests/core-js.mjs
@@ -1129,6 +1132,84 @@ console.log('E  Enter in the rows');
         const e = enter(a.f.unit);
         check('E16 a [data-rows] without data-rows-enter (the backend user\'s senders) keeps the form\'s Enter', !e.defaultPrevented && document.activeElement === a.f.unit);
     }
+}
+
+// ── G: a GET form in a window ([data-window-form], owner decision E16, 2026-11-12) ──────────
+console.log('G  GET form in a window');
+{
+    const { ctx, document, fetchQueue } = makeContext();
+    // FormData over the stub form's `pairs` (+ the submitter), as the browser builds it.
+    ctx.FormData = class {
+        constructor(form, sub) { this.pairs = form.pairs.slice(); if (sub && sub.name) this.pairs.push([sub.name, sub.value]); }
+        forEach(fn) { this.pairs.forEach(([k, v]) => fn(v, k)); }
+    };
+    ctx._Z77.core.windows.bind();
+    const body = new El('div'), title = new El('span'), head = new El('header');
+    const win = new El('section', { isConnected: true });
+    win.setAttribute('data-z77-window', '4');
+    win.qsa = { '.z77-window__body': [body], '.z77-window__title': [title], '.z77-window__head': [head] };
+    win._z77Origin = 'region:receipt-journal-find-list';
+    document.qsa['[data-z77-windows] > [data-z77-window]'] = [win];
+    const inWin = (sel) => (sel === '[data-z77-window]' ? win : null);
+    let submitted = 0;
+    const form = new El('form', { action: 'http://test/j/confirm-post', pairs: [['cutoff', '2026-11-30'], ['empty', '']], requestSubmit() { submitted++; }, closest: inWin });
+    form.setAttribute('method', 'get');
+    form.setAttribute('data-window-form', 'change');
+    const submit = (target, submitter = null) => {
+        const e = { target, submitter, defaultPrevented: false, preventDefault() { this.defaultPrevented = true; } };
+        document.dispatch('submit', e);
+        return e;
+    };
+    const e1 = submit(form);
+    check('G1 inside a window: the GET form is taken (no page load), its fields as the query (an empty one left out), the window\'s origin kept',
+        e1.defaultPrevented && fetchQueue.length === 1 && fetchQueue[0].url === 'http://test/j/confirm-post?cutoff=2026-11-30&_origin=region%3Areceipt-journal-find-list', fetchQueue.map((f) => f.url));
+    form.pairs = [['cutoff', '2026-10-31']];
+    submit(form);
+    fetchQueue[1].answer(response({ body: '<div data-window="journal-post">NEW</div>' }));
+    await tick(); await tick(); await tick();
+    fetchQueue[0].answer(response({ body: '<div data-window="journal-post">OLD</div>' }));
+    await tick(); await tick(); await tick();
+    check('G2 the latest load fills the window — an older answer arriving after it is dropped; the window remembers the new address',
+        body.innerHTML === '<div data-window="journal-post">NEW</div>' && /cutoff=2026-10-31/.test(win._z77Src), [body.innerHTML, win._z77Src]);
+
+    const select = new El('select', { form });
+    document.dispatch('change', { target: select });
+    const date = new El('input', { type: 'date', form, isConnected: true });
+    document.activeElement = date;
+    document.dispatch('change', { target: date });
+    const whileTyping = submitted;
+    document.dispatch('focusout', { target: date });
+    check('G3 data-window-form="change": a choice submits at once; a typed date only when it loses the focus (typing is never cut off)',
+        whileTyping === 1 && submitted === 2, [whileTyping, submitted]);
+    form.setAttribute('data-window-form', '');
+    document.dispatch('change', { target: select });
+    check('G4 without ="change" a field change sends nothing', submitted === 2, submitted);
+
+    const before = fetchQueue.length;
+    ctx._Z77.core.fetch.handleEnvelope({ commands: [{ action: 'refresh-window', window: '4' }] }, '/x');
+    check('G5 refresh-window: the window loads its last address again', fetchQueue.length === before + 1 && fetchQueue[before].url === win._z77Src, fetchQueue[before] && fetchQueue[before].url);
+
+    const pageForm = new El('form', { action: 'http://test/inv/confirm-finalize', pairs: [['doc', '1'], ['doc', '2']] });
+    pageForm.setAttribute('data-window-form', '');
+    const e2 = submit(pageForm, new El('button', { name: 'op', value: 'go' }));
+    const opened = fetchQueue[fetchQueue.length - 1].url;
+    check('G6 outside a window the same submit OPENS its answer as a window: every value (a list of ticked rows), the submitter\'s name/value, origin page',
+        e2.defaultPrevented && opened === 'http://test/inv/confirm-finalize?doc=1&doc=2&op=go&_origin=page', opened);
+
+    const postForm = new El('form', { action: 'http://test/x', pairs: [] });
+    postForm.setAttribute('method', 'post');
+    postForm.setAttribute('data-window-form', '');
+    const blank = new El('form', { action: 'http://test/x.pdf', pairs: [] });
+    blank.setAttribute('data-window-form', '');
+    blank.setAttribute('target', '_blank');
+    const plain = new El('form', { action: 'http://test/x', pairs: [] });
+    const n = fetchQueue.length;
+    check('G7 not taken: a POST form, a form into another tab, a GET form without the attribute (the browser sends them)',
+        !submit(postForm).defaultPrevented && !submit(blank).defaultPrevented && !submit(plain).defaultPrevented && fetchQueue.length === n);
+
+    const from = SOURCE.indexOf('function formUrl('), to = SOURCE.indexOf('function _submitForm(');
+    check('G8 the GET-form path builds no HTML and runs no code from strings (Rule 7)',
+        from > 0 && to > from && !/innerHTML|outerHTML|insertAdjacentHTML|eval\(/.test(SOURCE.slice(from, to)));
 }
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed');

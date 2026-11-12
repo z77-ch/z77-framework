@@ -17,6 +17,8 @@ SOURCE=/packages/kernel/shared/src/Auth/LoginThrottle.php
 SOURCE=/packages/kernel/shared/src/Auth/Totp.php
 SOURCE=/packages/kernel/shared/src/Auth/TotpGuard.php
 SOURCE=/packages/kernel/shared/src/Auth/TotpVault.php
+SOURCE=/packages/kernel/shared/src/Auth/LoginCodeStore.php
+SOURCE=/tests/login-code-store.php
 SOURCE=/packages/module-member/src/Services/TotpCodeCheck.php
 SOURCE=/packages/module-backend/src/TwoFactor/BackendTwoFactor.php
 SOURCE=/packages/kernel/shared/src/Throttle/FileThrottle.php
@@ -63,6 +65,18 @@ z77 is open source — anything shipped is public, including the default admin h
 - The configured tier is resolved once per controller via `BackendAbstractController::passwordTier()` (reads `config/auth`); the installer resolves it from its merged `authConfig`. Both funnel through `PasswordTier::fromName()`: an ABSENT value → the safe `strong` default, an unknown NON-EMPTY value (typo) → **fatal `\ValueError`** — fail-loud / fail-secure, never a silent downgrade of a security setting. The default in `auth.default.inc.php` is bound to the enum (`PasswordTier::Strong->value`), so a typo in the default itself is a fatal at load time too.
 - The live meter (`password-meter.js`) mirrors the policy as a hint; the tier's min length is passed to it via the `data-z77-password-min` attribute. The server policy is the authority on save.
 - bcrypt cost 12 for hashing.
+- **The phone's sign-in (ADR-058)** is a third door beside the backend and the member login: an
+  app user receives a 6-digit code by mail and types it in the z77 App, no password. ONE factor
+  (the mailbox) — hence capture-only scopes (P4). Its credentials are two cookies on `Path=/api`,
+  both HttpOnly + SameSite=Strict (+ Secure on HTTPS): the request nonce `z77_api_login` (15 min)
+  and the device cookie `z77_api_device` (400 days, only `sha256(secret)` stored). Anti-oracle as
+  the member login: the same 202 and a record for every address; one generic refusal for every
+  code; a mail failure is never answered. Tries are counted under a file lock
+  (`LoginCodeStore`, kernel), not by `FileThrottle`. An anonymous door must not mint a file
+  per caller-chosen value nor carry a caller-chosen text into an operator mail: the per-address
+  counters, the cap marker and the operator alert exist only for an app user's address, and
+  every mail goes out after the response (security review M1). Details and the accepted residual risks:
+  [`api.md`](api.md) «app users», ADR-058.
 
 ## install / setup model (agreed 2026-06-02)
 
@@ -161,6 +175,7 @@ still the right tool for a non-form endpoint that needs the same protections.
 - When something answers with an HTML document → MUST go through `HtmlResponse` or call `SecurityHeaders::send()` after its `Content-Type`, as the error pages do; a stricter value an action sets first stays (`no-referrer` on the reset page).
 - When a page area of the framework itself is built to run under an ENFORCED CSP (today: the app shell `/app`, `AppController::CSP`, ADR-057 addendum) → MUST set that one `Content-Security-Policy` in the action BEFORE the answer (`SecurityHeaders::send()` keeps it and sends no second one), MUST keep its templates free of inline script, `style=` and `on…=` and MUST prove it with a real-stack harness (`tests/app-shell.php`); MUST NOT weaken `SecurityHeaders::DEFAULTS` for it.
 - When a project needs another security header value, or none, or one more → MUST write only the deviation into `config/client/securityHeaders.inc.php` (header name => value, null switches off); MUST NOT send it from a template or a controller: a second `Content-Security-Policy` is added to the first by the browser, it does not replace it. A `Header always set` in `public/.htaccess` wins over that file (SEC-HEAD-001).
+- When a credential is judged by a short code (the app sign-in, later a member code) → MUST use `LoginCodeStore` (one record per request with a nonce cookie, count-compare-spend under `flock`); MUST NOT key a record by the account or let a new request replace an old one (anyone could lock a known address out), MUST NOT count tries with `FileThrottle` (ADR-058).
 - When rendering an error page with `DEBUG` off → MUST show a generic page without file paths or stack traces (see SEC-002).
 
 ## see also
@@ -170,6 +185,7 @@ still the right tool for a non-form endpoint that needs the same protections.
 - [`installer.md`](installer.md) — install flow, data-file seeding, debug flag
 - [`messages.md`](messages.md) — `pushMessageAfterRedirect` persistent channel used by the nag
 - [`forms.md`](forms.md) — `PublicFormHandler`: the standard cascade that applies `FormGuard` + the in-action CSRF check for every public form
+- [`api.md`](api.md) — the app users' e-mail-code sign-in (ADR-058): device and nonce cookies, the anonymous door, `LoginCodeStore`
 - [`member.md`](member.md) — the customer login: the TOTP door the backend's shares its kernel classes with, the magic link this topic's roadmap can reuse, and where SEC-005 bites hardest (MEM-006)
 
 ## known issues

@@ -2,6 +2,11 @@
 
 **Status:** `[APPROVED]` — owner decision 2026-11-12 (technical proposals T1, T3, T5 of the
 [gateway plan](../03-development/gateway-app-kanal-bauplan.md), section A5); built 2026-11-12.
+**Superseded in part by [ADR-058](adr-058-app-users-email-code-login.md)** (2026-11-12): decisions
+4 (pairing — replaced by the e-mail-code sign-in of an app user), 5 (devices owned by a backend user,
+scopes per device — devices now belong to an app user, its scopes apply) and 6 (scopes independent
+of the owner's roles — reversed: a minimum role per realm, checked live), and the pairing context.
+The rest stands; where it says «pairing», read «code sign-in».
 **Date:** 2026-11-12
 **Extends:** the API envelope v1 ([`api-envelope-v1-2026-09-02.md`](../03-development/api-envelope-v1-2026-09-02.md))
 — additively; v1 stays valid for every machine client.
