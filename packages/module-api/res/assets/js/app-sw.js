@@ -59,17 +59,34 @@ function networkFirst(request, key) {
     });
 }
 
+/**
+ * A cache that does not answer within CACHE_MS counts as a miss: the network serves. Firefox's
+ * origin storage (Cache API and IndexedDB share it) was seen hanging on 2026-11-12 — the page
+ * then had no stylesheet at all.
+ */
+var CACHE_MS = 2000;
+
+function withinCacheTime(promise) {
+    return Promise.race([
+        promise,
+        new Promise(function (resolve) { setTimeout(function () { resolve(null); }, CACHE_MS); })
+    ]).catch(function () { return null; });
+}
+
 function cacheFirst(request, url) {
-    return caches.open(CACHE).then(function (cache) {
-        return cache.match(request).then(function (hit) {
-            if (hit) return hit;
-            return fetch(request).then(function (response) {
-                if (response.ok) {
-                    var copy = response.clone();
-                    dropOlder(cache, url).then(function () { cache.put(request, copy); });
-                }
-                return response;
-            });
+    var opened = withinCacheTime(caches.open(CACHE));
+    return opened.then(function (cache) {
+        return cache ? withinCacheTime(cache.match(request)) : null;
+    }).then(function (hit) {
+        if (hit) return hit;
+        return fetch(request).then(function (response) {
+            if (response.ok) {
+                var copy = response.clone();
+                opened.then(function (cache) {
+                    if (cache) dropOlder(cache, url).then(function () { cache.put(request, copy); });
+                });
+            }
+            return response;
         });
     });
 }
