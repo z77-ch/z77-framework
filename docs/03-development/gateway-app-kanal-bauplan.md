@@ -227,6 +227,11 @@ Diskussion des Bauplans mit dem Owner; ersetzen, was oben in Teil B anders steht
 - **E12 — Ein MWST-Code pro Beleg.** Ein seltener gemischter Beleg wird im Journal
   **aufgeteilt**: zwei Belege, dasselbe Foto, Beträge zusammen = Original.
 - **E13 — Gerät sperren ist endgültig.** Wiederverwenden = neu koppeln; kein «aktiv»-Schalter.
+- **E14 — Wer koppelt (bestätigt 2026-11-12):** jeder Backend-Benutzer ab EDITOR koppelt,
+  benennt und sperrt seine eigenen Geräte; ADMIN und höher sieht und verwaltet alle (nie für
+  einen Besitzer mit höheren Rollen) — wie gebaut (`api.md` «backend screen «Geräte»»).
+- **E15 — Koppel-Code 10 Zeichen** (`ABCDE-FGHJK`, ADR-057) statt der 6 des Boards —
+  bestätigt 2026-11-12; der QR-Code ist der Normalfall.
 - **Boards abgenommen 2026-11-12:** die vier Boards «Belege per Handy» auf dem
   Developer-Canvas (Belegvorlagen, Belegjournal, Geräte, z77 App) — «passt soweit alles».
   Mit E10 kommt «Bezahlt mit» dazu (Stammdaten-Liste wie Belegvorlagen; Auswahl auf dem
