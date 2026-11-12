@@ -4462,10 +4462,10 @@ check('LC4 the editor: startFrom() rows carry the code; a posted row\'s `code` r
     && str_contains($lcFormTpl, "<input type=\"hidden\" name=\"<?= \$p ?>[code]\" value=\"<?= e(\$row['code']) ?>\">") && !str_contains($lcFormTpl, 'type="text" id="<?= $id ?>code"'));
 $lcPdf    = \Z77\Module\Debtor\Pdf\InvoicePdf::of($lcFinal, $wireDi())->withoutCompression()->output();
 $lcInvTpl = (string) file_get_contents($package . '/res/view/templates/pdf/invoice.tpl.php');
-[, $lcFit] = \Z77\Module\Debtor\Pdf\DocumentColumns::table('CHF', [['cells' => ['Beratung', '2', 'h', '100.00', '', '8.1 %', '200.00'], 'code' => 'LCX-0003']], true);
-check('LC5 the PDF: every line row of pdf/invoice carries `code` (DocumentColumns keeps the key beside the cut cells — an override of the layout or of pdf/table reads $row[\'code\']); the framework\'s print does NOT contain it',
-    str_contains($lcInvTpl, "'code'   => \$line->getCode(),") && ($lcFit[0]['code'] ?? null) === 'LCX-0003' && count($lcFit[0]['cells']) === 6
-    && str_starts_with($lcPdf, '%PDF') && str_contains($lcPdf, '(Beratung)') && !str_contains($lcPdf, 'LCX-'));
+[, $lcFit] = \Z77\Module\Debtor\Pdf\DocumentColumns::table('CHF', [['cells' => ['Beratung', '2', 'h', '100.00', '', '8.1 %', '200.00'], 'eyebrow' => 'LCX-0003']], true);
+check('LC5 the PDF: every line row of pdf/invoice hands its code to pdf/table as `eyebrow` (DocumentColumns keeps the key beside the cut cells); the print shows it above the text (owner 2026-11-12)',
+    str_contains($lcInvTpl, "'eyebrow' => \$line->getCode(),") && ($lcFit[0]['eyebrow'] ?? null) === 'LCX-0003' && count($lcFit[0]['cells']) === 6
+    && str_starts_with($lcPdf, '%PDF') && str_contains($lcPdf, '(Beratung)') && str_contains($lcPdf, '(LCX-0003)'));
 
 // ── O. the booking print of module-order on the REAL ledger (concurrency review 2026-10-16) ──
 // order.md «Concurrency review»: the order's booking print (`OrderService::book()`) joins debtor's

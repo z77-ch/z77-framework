@@ -1,7 +1,7 @@
 # ADR-041 — VAT model: tax codes with dated rates, computed once, carried
 
 **Status:** `[APPROVED]` — approved by the owner 2026-09-21 (P0 of [`order-debtor-financial-bauplan.md`](../03-development/order-debtor-financial-bauplan.md)); addendum to decision 7 approved by the owner 2026-09-22; addendum «a mandator not liable to VAT» — owner decision 2026-10-21
-**Date:** 2026-09-21 · addendum 2026-09-22 (rate snapshot on the journal line) · addendum 2026-10-21 (a mandator not liable to VAT) · addendum 2026-10-22 (the no-VAT note is part of the snapshot) · addendum 2026-10-22 (the line code is part of the line snapshot)
+**Date:** 2026-09-21 · addendum 2026-09-22 (rate snapshot on the journal line) · addendum 2026-10-21 (a mandator not liable to VAT) · addendum 2026-10-22 (the no-VAT note is part of the snapshot) · addendum 2026-10-22 (the line code is part of the line snapshot; its print 2026-11-12)
 
 ---
 
@@ -147,3 +147,6 @@ may carry a short code (`invoice_line.code`, the wdv `shop_positions.code`). It 
 composing and read from THERE — decision 6 applied to one more line field: a re-issue replaces it with the
 lines, a booked document keeps it, a credit note copies it from its invoice's lines. Not a VAT concern; the
 framework's layouts do not print it (a project's override decides — `debtor.md` «The line code»).
+*Superseded in its last sentence on 2026-11-12 (owner decision):* the framework's layouts print the code
+small above the line's text (`pdf/table` `eyebrow`, `pdf.md`); a line without a code takes no space. The
+snapshot rule is unchanged.

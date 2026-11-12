@@ -20,8 +20,9 @@ use Z77\Module\Order\Services\OrderLineDraft;
  * reference; order.md rule), the type (Leistung | Text — no «Pauschale» in an order since
  * 2026-10-18: a stored lump sum shows as «Leistung» × 1), the INDENT flag `child` (beneath the
  * nearest preceding non-indented row — one level, today's parent line), the ARTICLE number (a
- * typed or chosen in article's picker), text, quantity (negative = a return), unit, price,
- * discount. Every priced row is an article (ADR-043 addendum 2026-10-18); a free priced line the
+ * typed or chosen in article's picker), the line CODE (a short eyebrow above the text, e.g. the
+ * service date — empty unless typed, owner 2026-11-12), text, quantity (negative = a return), unit,
+ * price, discount. Every priced row is an article (ADR-043 addendum 2026-10-18); a free priced line the
  * order already holds comes back without an article and the SERVICE keeps it while unchanged —
  * its stored tax code rides along for the display only (`tax_code`, never sent). An article line
  * with an empty text / unit / price takes the article's values when it is SAVED (`OrderService`,
@@ -67,7 +68,7 @@ final class OrderForm
 
     /** The service's field names → the form's. */
     private const HEADER_FIELDS = ['contact_id' => 'contact', 'payment_terms_code' => 'terms', 'status_code' => 'status'];
-    private const ROW_FIELDS    = ['variant' => 'article', 'unit_price' => 'price', 'children' => 'child', 'code' => 'text'];   // the code has no field yet — its error shows at the text
+    private const ROW_FIELDS    = ['variant' => 'article', 'unit_price' => 'price', 'children' => 'child'];
 
     /**
      * The head. `prices_mode` (hidden, owner 2026-10-18) = the mode the row PRICES are in: rendered
@@ -159,7 +160,7 @@ final class OrderForm
                 'price'    => $line->getUnitPrice()?->toDecimal() ?? '',
                 'discount' => InvoiceForm::formatPercent($line->getDiscountPercent()),
                 'tax_code' => $line->getVariant() === null ? (string) $line->getTaxCode() : '',
-                'code'     => (string) $line->getCode(),   // no field (owner 2026-10-22: storage only) — a hidden input carries it
+                'code'     => (string) $line->getCode(),   // the eyebrow field above the text (owner 2026-11-12)
             ];
         }
 

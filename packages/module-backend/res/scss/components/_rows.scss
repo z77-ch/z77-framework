@@ -9,6 +9,8 @@
 //     .be-rows__handle            the first cell: ⋮⋮ grip (`.be-rows__grip`, `[data-row-grip]`) and
 //                                 the ⇥ indent toggle (`.be-rows__indent`, a checkbox `[data-row-indent]`)
 //     .be-rows__text              the text cell — indented while the row's toggle is on
+//     .be-rows__eyebrow           a small field above the text (the line code, e.g. a date)
+//     .be-rows__body              the text's own box under the eyebrow (autosize's mirror host)
 //     .be-rows__wide              a cell over `--be-rows-span` tracks (a text row's text)
 //     .be-rows__rate              a value shown as text (the VAT rate from the article)
 //     .be-rows__end / __remove    the last cell with ×
@@ -87,6 +89,29 @@
     line-height:   1.4;
     field-sizing:  content;
 }
+
+// The line code as an EYEBROW above the text (owner 2026-11-12, e.g. the service date): small and
+// quiet, a field only on hover / focus. The text sits in its own box (`__body`) so that autosize's
+// mirror covers the text alone, not the eyebrow.
+.be-rows__eyebrow.be-input {
+    display:          block;
+    width:            100%;
+    max-width:        12rem;
+    margin-bottom:    2px;
+    padding-block:    0;
+    min-height:       0;
+    height:           auto;
+    font-size:        var(--font-size-xs);
+    line-height:      1.4;
+    color:            var(--be-muted);
+    border-color:     transparent;
+    background-color: transparent;
+}
+.be-rows__eyebrow.be-input::placeholder { color: var(--be-muted); opacity: .45; }
+.be-rows__eyebrow.be-input:hover,
+.be-rows__eyebrow.be-input:focus { border-color: var(--be-line-strong); }
+.be-rows__eyebrow.be-input[aria-invalid="true"] { border-color: var(--be-danger); }
+.be-rows__body { display: block; }
 
 // Indented beneath the row above (1.1): the text steps in, an elbow line leads to it.
 .be-rows [data-row]:has([data-row-indent]:checked) .be-rows__text {
@@ -178,6 +203,6 @@ select.be-input.be-rows__rate:disabled {
 // The mirror must wrap exactly like the field: same box (the field's classes), same line height,
 // the same left edge when the row is indented — and the title differs in COLOUR only (a bolder
 // face would move the caret off its glyphs).
-.be-rows__text > [data-autosize-mirror] { line-height: 1.4; }
-.be-rows [data-row]:has([data-row-indent]:checked) .be-rows__text > [data-autosize-mirror] { left: 1.4rem; }
+// The host is the text's own box (`__body`, inside the indent padding) — no extra offset.
+.be-rows__body > [data-autosize-mirror] { line-height: 1.4; }
 [data-autosize-mirror] [data-autosize-title] { color: var(--be-text); }

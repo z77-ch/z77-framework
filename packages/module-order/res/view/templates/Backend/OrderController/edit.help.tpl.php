@@ -96,6 +96,11 @@ $vat = $liableToVat ?? true;
 <p>Die Artikelnummer — eintippen, wenn bekannt, sonst mit der Lupe suchen und wählen. Sobald ein Artikel gewählt ist, füllt die Zeile <strong>Text, Einheit und Preis</strong> (der Preis am Auftragsdatum) — überschreiben lässt sich alles; ein anderer Artikel füllt sie neu. <?= $vat ? 'Der <strong>MWST-Satz</strong> steht in der Spalte MWST, das Ertragskonto zeigt der Auftrag nicht: beides kommt immer vom Artikel' : 'Das Ertragskonto zeigt der Auftrag nicht: es kommt immer vom Artikel' ?> (ein anderes Konto ist ein anderer Artikel). Was leer bleibt, übernimmt das Speichern vom Artikel.</p>
 </section>
 
+<section data-help-field="code">
+<h3>Code</h3>
+<p>Das kleine Feld über dem Text — eine kurze Angabe zur Zeile, z.B. das <strong>Leistungsdatum</strong> («12.11.2026»), höchstens 16 Zeichen. Es bleibt leer, bis du etwas eintippst; der Artikel füllt es nicht. Gedruckt wird es klein über dem Text der Position — auf Offerte, Auftragsbestätigung, Lieferschein und Rechnung. Leer nimmt es keinen Platz weg.</p>
+</section>
+
 <section data-help-field="text">
 <h3>Text</h3>
 <p>Was gedruckt wird, auch über mehrere Zeilen — das Feld wächst mit. Bei einem Artikel ist die <strong>erste Zeile</strong> sein Name (hervorgehoben), darunter kann eine Beschreibung stehen. Eine Zeile ohne Artikel, Text, Menge und Preis wird beim Speichern weggelassen.</p>

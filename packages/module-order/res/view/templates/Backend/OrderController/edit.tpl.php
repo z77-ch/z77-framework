@@ -404,6 +404,10 @@ $addressFields = fn(string $field): string => $this->partial('Backend/ContactCon
             // The VAT rate of the line: the article's tax code (D3), a kept free line's own (display only).
             $code = $art !== null ? $art['taxCode'] : $row['tax_code'];
             $rows = max(1, substr_count($row['text'], "\n") + 1);
+            // The line code as an EYEBROW above the text (owner 2026-11-12: e.g. the service date — in
+            // wdv the overwritten article code; here the article number stays the article). Empty by
+            // default, never filled from the article; printed above the text only when set.
+            $eyebrow = '<input class="be-input be-input--sm be-rows__eyebrow" type="text" id="' . $rid . 'code" name="' . $p . '[code]" value="' . e($row['code'] ?? '') . '" maxlength="16" spellcheck="false" placeholder="Code" data-help-key="code" aria-label="Code" aria-invalid="' . $invalid($err('code')) . '">';
             ob_start(); ?>
             <div class="be-list__item" data-row>
                 <div class="be-list__row be-rows__row<?= $text ? ' be-rows__row--text' : '' ?>" data-fill-scope>
@@ -419,17 +423,16 @@ $addressFields = fn(string $field): string => $this->partial('Backend/ContactCon
                     <span class="be-list__cell be-list__cell--num be-list__cell--muted" data-row-no><?= e($no) ?></span>
                     <span class="be-list__cell">
                         <?php if ($row['id'] !== ''): ?><input type="hidden" name="<?= $p ?>[id]" value="<?= e($row['id']) ?>"><?php endif; ?>
-                        <?php if (($row['code'] ?? '') !== ''): // the line code — no field yet (owner 2026-10-22), carried through ?><input type="hidden" name="<?= $p ?>[code]" value="<?= e($row['code']) ?>"><?php endif; ?>
                         <input type="hidden" name="<?= $p ?>[type]" value="<?= $text ? 'text' : 'service' ?>">
                         <?php if ($art === null && $row['tax_code'] !== ''): ?><input type="hidden" name="<?= $p ?>[tax_code]" value="<?= e($row['tax_code']) ?>"><?php endif; ?>
                         <span class="badge badge--muted"><?= e(OrderForm::TYPES[$text ? 'text' : 'service']) ?></span>
                     </span>
                     <?php if ($text): ?>
-                    <span class="be-list__cell be-rows__text be-rows__wide"><textarea class="be-input be-input--sm" id="<?= $rid ?>text" name="<?= $p ?>[text]" rows="<?= $rows ?>" data-autosize data-help-key="text" aria-label="Text" aria-invalid="<?= $invalid($err('text')) ?>"><?= e($row['text']) ?></textarea></span>
+                    <span class="be-list__cell be-rows__text be-rows__wide"><?= raw($eyebrow) ?><span class="be-rows__body"><textarea class="be-input be-input--sm" id="<?= $rid ?>text" name="<?= $p ?>[text]" rows="<?= $rows ?>" data-autosize data-help-key="text" aria-label="Text" aria-invalid="<?= $invalid($err('text')) ?>"><?= e($row['text']) ?></textarea></span></span>
                     <?php else: ?>
                     <?php // The number is typed (when known — the fastest path) or chosen in the picker (the magnifier, owner 2026-10-19); no datalist since 2026-10-20 (owner: the picker searches). ?>
                     <span class="be-list__cell be-rows__article"><input class="be-input be-input--sm" type="text" id="<?= $rid ?>article" name="<?= $p ?>[article]" value="<?= e($row['article']) ?>" spellcheck="false" data-fill-url="<?= e($actionBase . '/article-defaults') ?>" data-fill-with="order_date service_from price_mode" data-help-key="article" aria-label="Artikel" aria-invalid="<?= $invalid($err('article')) ?>"<?= $art !== null ? ' title="' . e($art['name']) . '"' : '' ?><?= $row['id'] !== '' && $row['article'] === '' ? ' placeholder="ohne Artikel"' : '' ?>><?php if ($editable): $pick = \Z77\Module\Article\Ui\ArticlePicker::url($pickUrl, ['target' => $rid . 'article'] + $pickState); ?><a class="be-rows__pick" href="<?= e($pick) ?>" target="_blank" rel="noopener" data-window-open="<?= e($pick) ?>" data-window-with="<?= e($pickWith) ?>" title="Artikel wählen …" aria-label="Artikel wählen …"><svg class="be-icon" width="13" height="13" aria-hidden="true"><use href="#icon-search"/></svg></a><?php endif; ?></span>
-                    <span class="be-list__cell be-rows__text"><textarea class="be-input be-input--sm" id="<?= $rid ?>text" name="<?= $p ?>[text]" rows="<?= $rows ?>" data-autosize="title" data-fill-key="text" data-help-key="text" aria-label="Text" aria-invalid="<?= $invalid($err('text')) ?>"><?= e($row['text']) ?></textarea></span>
+                    <span class="be-list__cell be-rows__text"><?= raw($eyebrow) ?><span class="be-rows__body"><textarea class="be-input be-input--sm" id="<?= $rid ?>text" name="<?= $p ?>[text]" rows="<?= $rows ?>" data-autosize="title" data-fill-key="text" data-help-key="text" aria-label="Text" aria-invalid="<?= $invalid($err('text')) ?>"><?= e($row['text']) ?></textarea></span></span>
                     <span class="be-list__cell be-list__cell--num"><input class="be-input be-input--sm" type="text" id="<?= $rid ?>quantity" name="<?= $p ?>[quantity]" value="<?= e($row['quantity']) ?>" inputmode="decimal" data-sum-qty data-help-key="quantity" aria-label="Menge" aria-invalid="<?= $invalid($err('quantity')) ?>"></span>
                     <span class="be-list__cell"><input class="be-input be-input--sm" type="text" id="<?= $rid ?>unit" name="<?= $p ?>[unit]" value="<?= e($row['unit']) ?>" maxlength="16" data-fill-key="unit" data-help-key="unit" aria-label="Einheit" aria-invalid="<?= $invalid($err('unit')) ?>"></span>
                     <span class="be-list__cell be-list__cell--num"><input class="be-input be-input--sm" type="text" id="<?= $rid ?>price" name="<?= $p ?>[price]" value="<?= e($row['price']) ?>" inputmode="decimal" data-fill-key="price" data-sum-price data-price-mode-price data-help-key="price" aria-label="Preis" aria-invalid="<?= $invalid($err('price')) ?>"></span>
@@ -453,7 +456,7 @@ $addressFields = fn(string $field): string => $this->partial('Backend/ContactCon
                         <?php endif; ?>
                     </span>
                 </div>
-                <?php $messages = is_int($i) ? array_filter(array_map($err, ['type', 'child', 'article', 'text', 'quantity', 'unit', 'price', 'discount', 'tax_code'])) : []; ?>
+                <?php $messages = is_int($i) ? array_filter(array_map($err, ['type', 'child', 'article', 'code', 'text', 'quantity', 'unit', 'price', 'discount', 'tax_code'])) : []; ?>
                 <?php if ($messages !== []): ?>
                 <div class="be-list__row">
                     <span class="be-list__cell be-list__cell--wrap be-list__cell--span">
@@ -466,7 +469,7 @@ $addressFields = fn(string $field): string => $this->partial('Backend/ContactCon
             </div>
             <?php return (string) ob_get_clean();
         };
-        $blank = ['id' => '', 'type' => 'service', 'child' => '', 'article' => '', 'text' => '', 'quantity' => '', 'unit' => '', 'price' => '', 'discount' => '', 'tax_code' => ''];
+        $blank = ['id' => '', 'type' => 'service', 'child' => '', 'article' => '', 'text' => '', 'quantity' => '', 'unit' => '', 'price' => '', 'discount' => '', 'tax_code' => '', 'code' => ''];
         ?>
         <?php // «Preise» converts the rows at once (core.js «price mode», owner 2026-10-18); `prices_mode` says
               // which mode the prices are in — the server converts at the save when it is still the other. ?>

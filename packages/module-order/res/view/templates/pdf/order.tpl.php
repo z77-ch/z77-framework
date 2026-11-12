@@ -105,9 +105,8 @@ foreach ($preview->getLines() as $line) {
         ],
         'indent' => $line->getParentLine() !== null ? 4 : 0,
         'lead'   => true,   // the first line (the title) bold, the description below — text lines too (owner 2026-10-18/19)
-        // The line code (owner 2026-10-22) — OFFERED to an override (of this layout or of `pdf/table`),
-        // never drawn here: whether it prints is the designer's decision. Null = none.
-        'code'   => $line->getCode(),
+        // The line code as an eyebrow above the text (owner 2026-11-12, e.g. the service date); null = none, no space.
+        'eyebrow' => $line->getCode(),
     ];
 }
 // The line table of debtor's documents — the same columns, the discount column only when used, the

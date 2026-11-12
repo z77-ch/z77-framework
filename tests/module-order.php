@@ -366,11 +366,12 @@ $ocPost = (new OrderForm())->fromPost(['contact' => '7', 'order_date' => '2026-1
     ['type' => 'text', 'text' => 'Danke'],
 ]])->toDraft(['1001' => 11], ['' => null]);
 $ocEdit = (string) file_get_contents($root . '/packages/module-order/res/view/templates/Backend/OrderController/edit.tpl.php');
-check('D9 OrderLineDraft: `code` is the last named parameter (default null) — article(code:), text(code:) and beneath() keep it; the window: startFrom() rows carry it, a posted row\'s `code` reaches the draft (trimmed like every row field), a row without one sends \'\'; the window posts it as a HIDDEN input only',
+check('D9 OrderLineDraft: `code` is the last named parameter (default null) — article(code:), text(code:) and beneath() keep it; the window: startFrom() rows carry it, a posted row\'s `code` reaches the draft (trimmed like every row field), a row without one sends \'\'; the window shows it as the eyebrow field above the text (owner 2026-11-12), empty for a new row',
     $ocL::article(11, '1', code: 'A')->code === 'A' && $ocL::text('x', code: 'T')->code === 'T' && $ocL::article(11, '1', code: 'P')->beneath($ocL::text('c'))->code === 'P'
     && (new $ocL())->code === null
     && array_column($ocForm->rows(), 'code') === ['W-01', ''] && $ocPost !== null && $ocPost->lines[0]->code === 'W-02' && $ocPost->lines[1]->code === ''
-    && str_contains($ocEdit, "<input type=\"hidden\" name=\"<?= \$p ?>[code]\" value=\"<?= e(\$row['code']) ?>\">"));
+    && str_contains($ocEdit, 'class="be-input be-input--sm be-rows__eyebrow" type="text" id="\' . $rid . \'code" name="\' . $p . \'[code]" value="\' . e($row[\'code\'] ?? \'\') . \'" maxlength="16"')
+    && !str_contains($ocEdit, 'type="hidden" name="<?= $p ?>[code]"') && str_contains($ocEdit, "'tax_code' => '', 'code' => ''];"));
 
 // ── L. the subject label, pure (offline) ─────────────────────────────────
 
@@ -705,7 +706,7 @@ check('P5 the «Betreffname» (owner 2026-10-21): the delivery note prints «Pro
     str_contains($labelBytes, '(Projekt: Wein fuer das Fest)') && str_contains($bytes, '(Wein fuer das Fest)') && !str_contains($bytes, 'Projekt')
     && str_contains($orderPdfTpl, '$order->subjectLine(), 4.6)') && !str_contains($orderPdfTpl, '$order->getSubject(), 4.6)'));
 
-// The line code is OFFERED to the PDF rows, never printed by the framework's layouts (owner 2026-10-22).
+// The line code is printed as an eyebrow above the line's text (owner 2026-11-12; until then only offered).
 $ocNote = new SalesOrder(44, $contact, 'scheduled', SalesOrder::SOURCE_BACKEND, null, 'harness', new \DateTimeImmutable('2026-10-14'));
 $ocNote->describe($contact, 'Wein fuer das Fest', new \DateTimeImmutable('2026-10-14'), null, null, PriceMode::Net, 'CHF', null, null, null);
 $ocNl = withId(new SalesOrderLine($ocNote), 211);
@@ -719,9 +720,9 @@ try {
     $ocBytes = 'ERROR ' . $e->getMessage();
 }
 $ocNoteTpl = (string) file_get_contents($root . '/packages/module-order/res/view/templates/pdf/deliveryNote.tpl.php');
-check('P6 the line code: pdf/order and pdf/deliveryNote hand every row its `code` (for an override), the delivery note with a coded line prints exactly as before — the code is NOT in the print',
-    str_contains($orderPdfTpl, "'code'   => \$line->getCode(),") && str_contains($ocNoteTpl, "'code'   => \$line->getCode(),")
-    && str_starts_with($ocBytes, '%PDF-') && str_contains($ocBytes, '(Pinot Noir 2022)') && !str_contains($ocBytes, 'OCX-'));
+check('P6 the line code: pdf/order and pdf/deliveryNote hand every row its code as `eyebrow` (pdf/table prints it small above the text, owner 2026-11-12) — the delivery note with a coded line prints it',
+    str_contains($orderPdfTpl, "'eyebrow' => \$line->getCode(),") && str_contains($ocNoteTpl, "'eyebrow' => \$line->getCode(),")
+    && str_starts_with($ocBytes, '%PDF-') && str_contains($ocBytes, '(Pinot Noir 2022)') && str_contains($ocBytes, '(OCX-0001)'));
 
 // ── C. the year-close warning (offline) ──────────────────────────────────
 
@@ -1224,7 +1225,7 @@ check('M35 liable again: the same order is computed WITH VAT as before (tax rows
     && str_starts_with($m35Pdf, '%PDF-') && str_contains($m35Pdf, '(MWST)') && !str_contains($m35Pdf, 'Rechnungssteller'));
 
 // The line code (owner 2026-10-22): stored through create / update, '' → null, 17 characters refused on its field,
-// carried into debtor's preview (the order PDFs' rows) — the confirmation does not print it.
+// carried into debtor's preview (the order PDFs' rows) — the confirmation prints it above the text (owner 2026-11-12).
 // Gross 16.65 × 2 = 33.30: no rounding line (the mandator here has no rounding account, M33).
 $m36 = $svc->create(new $D($contactId, '2026-10-21', 'Code', priceMode: 'gross', lines: [$L::article($grossId, '2', code: ' AB-1 '), $L::text('Danke', code: '')]));
 $m36Row = $db->fetchFirstColumn('SELECT code FROM sales_order_line WHERE order_id = ? ORDER BY position', [(int) $m36->getId()]);
@@ -1239,11 +1240,11 @@ try {
 } catch (\Throwable $e) {
     $m36Pdf = 'ERROR ' . $e->getMessage();
 }
-check('M36 the line code: create stores it trimmed (sales_order_line.code «AB-1»), \'\' → NULL; 17 characters refused on `lines.0.code` («Code: höchstens 16 Zeichen.»); update rewrites it in place (same line id); debtor\'s preview carries it on its lines; the confirmation does not print it',
+check('M36 the line code: create stores it trimmed (sales_order_line.code «AB-1»), \'\' → NULL; 17 characters refused on `lines.0.code` («Code: höchstens 16 Zeichen.»); update rewrites it in place (same line id); debtor\'s preview carries it on its lines; the confirmation prints it',
     $m36Row === ['AB-1', null] && ($m36Err['lines.0.code'] ?? null) === 'Code: höchstens 16 Zeichen.'
     && array_map(static fn($l) => $l->getCode(), $m36Up->getLines()) === ['AB-2', 'T-1'] && $m36Up->getLines()[0]->getId() === $m36->getLines()[0]->getId()
     && array_map(static fn($l) => $l->getCode(), array_values(array_filter($m36Preview->getLines(), static fn($l) => $l->type() !== LineType::Rounding))) === ['AB-2', 'T-1']
-    && str_starts_with($m36Pdf, '%PDF-') && !str_contains($m36Pdf, 'AB-2') && !str_contains($m36Pdf, 'T-1'));
+    && str_starts_with($m36Pdf, '%PDF-') && str_contains($m36Pdf, '(AB-2)') && str_contains($m36Pdf, '(T-1)'));
 
 // E-mail and phone of the addresses (owner 2026-10-22, step 1 of the mail plan): the columns, the snapshots stored
 // on the order, the refusal of a bad e-mail, and the booked invoice's address (debtor's preview = the booking print).
