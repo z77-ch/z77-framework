@@ -602,10 +602,12 @@ check('F13 «Artikel wählen …» (owner 2026-10-19): the order mounts article\
     && str_contains($coreJs, "registerCommand('add-row'") && str_contains($coreJs, "registerCommand('focus'") && str_contains($coreJs, "'data-window-with'"));
 check('F14 the positions\' sticky top (owner 2026-10-20): the bar — title, «+ Artikel» / «+ Textzeile», «Preise» — and the column head in ONE `.be-rows__top` inside the rows grid, in a frame without a scrollport; no adders below the table',
     preg_match('#<div class="be-list__frame be-list__frame--stick">\s*<div class="be-list__table be-rows"[^
-]*data-rows="rows">\s*<div class="be-rows__top">\s*<div class="be-form__block-head be-rows__bar">\s*<h3 class="be-list__section-title">Positionen</h3>#', $orderTpl) === 1
+]*data-rows="rows" data-rows-enter="article">\s*<div class="be-rows__top">\s*<div class="be-form__block-head be-rows__bar">\s*<h3 class="be-list__section-title">Positionen</h3>#', $orderTpl) === 1
     && strpos($orderTpl, 'value="add-text"') < strpos($orderTpl, 'id="order-price_mode"')
     && strpos($orderTpl, 'id="order-price_mode"') < strpos($orderTpl, '<span class="be-list__col be-list__col--num">Pos.</span>')
     && substr_count($orderTpl, 'class="be-rows__adders"') === 1);
+check('F14b Enter in the positions (owner 2026-11-12): the rows carry `data-rows-enter="article"` — core.js «rows» moves on, asks the article\'s fill first, adds an article row after the last field and never saves (tests/core-js.mjs E)',
+    substr_count($orderTpl, 'data-rows="rows" data-rows-enter="article"') === 1 && str_contains($orderTpl, '<template data-row-template="article">'));
 check('F16 the status field of an existing order (owner 2026-10-20): editable → a select `status` (the current status + OrderStatuses::targets()), moved by «Speichern» (update(moveTo:)); locked → the link «Status ändern …» stays',
     str_contains($orderTpl, '} elseif ($statusChoices !== []) {') && str_contains($orderTpl, 'foreach ($statusChoices as $row) {')
     && str_contains($orderTpl, 'href="\' . e($actionBase . \'/status?id=\' . $id) . \'" data-window-link title="Status ändern …"')

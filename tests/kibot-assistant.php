@@ -342,6 +342,11 @@ check('no superglobals, no direct response', preg_match('/\$_(SERVER|POST|GET|SE
 $baseCtl = (string) file_get_contents(__DIR__ . '/../packages/module-backend/src/Ui/Controllers/BackendAbstractController.php');
 check('shell: assistant only when enabled, page mode only', str_contains($baseCtl, 'BackendAssistant::enabled()') && str_contains($baseCtl, 'RequestMode::Page'));
 
+// The classic trigger's label is `t('common.help')` (ADR-056, the reader's language — the member
+// shell renders it too): a real Translator over kernel/shared's dictionary, as other harnesses do.
+require_once __DIR__ . '/support/TestTranslator.php';
+\Z77\Tests\Support\TestTranslator::install(\Z77\Tests\Support\TestTranslator::packages('kernel/shared'));
+
 $trigger  = __DIR__ . '/../packages/kernel/shared/res/view/templates/partials/helpTrigger.tpl.php';
 $renderer = new TemplateRenderer('Z77\\Shared');
 $classic  = $renderer->render($trigger, ['assistant' => null]);

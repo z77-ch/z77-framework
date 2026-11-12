@@ -59,6 +59,8 @@ const MARKERS = [
         'data-pick-search',         // «Artikel wählen …»: the pick list's keys (2026-10-19)
         'data-window-with',         // … the order's date and price mode ride along to the picker
         'add-row',                  // … «+ Artikel»: the chosen article lands in a new row
+        'data-rows-enter',          // Enter in the positions moves on, never saves (owner 2026-11-12)
+        '_z77FillCommitted',        // … the article's fill asked on Enter is not asked again on blur
         'data-help-key',            // HELP-002
         'refresh-region',           // ADR-047 windows
         'data-menu-open',           // the row ⋮ as a context menu (owner 2026-10-22)

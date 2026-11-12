@@ -32,6 +32,11 @@
  *      hidden tab waits and asks on return, a closed dialog, a removed or replaced element,
  *      stop-live, 204, silent retry on network / 5xx / 429, the end on 401 / 403 / 404 / an error
  *      envelope / HTML (no popup, no jump), the stale answer, one listener per element
+ *   E  Enter in the rows ([data-rows-enter], owner 2026-11-12): never a submit; on like Tab
+ *      (skipping the indent, disabled / read-only / tabindex -1 / unshown fields); the article
+ *      asks its «fill» first, then the quantity (no second ask on the blur's change); after the
+ *      last field of the last row a new row; textarea, Shift / Ctrl, IME and a container without
+ *      the attribute left alone
  *
  * What it cannot prove: layout, focus, real event order — those need a browser.
  * Run: node tests/core-js.mjs
@@ -86,6 +91,7 @@ class El {
     dispatch(t, e) { (this.listeners[t] || []).forEach((fn) => fn(e)); }
     querySelectorAll(sel) { return this.qsa[sel] || []; }
     querySelector(sel) { return (this.qsa[sel] || [])[0] || null; }
+    getClientRects() { return this.noBox ? [] : [{}]; }
     closest() { return null; }
     cloneNode() { return new El(this.tagName, { type: this.type }); }
     contains(x) { return x === this; }
@@ -951,6 +957,177 @@ console.log('L  live listener');
         fetchQueue[0].answer(response({ type: 'application/json', body: { status: 'error', flashes: [{ type: 'error', text: 'Nicht möglich' }] } }));
         await settle();
         check('L24 an error envelope: its flash once, then it ends', flashes.children.length === 1 && timers.length === 0);
+    }
+}
+
+// ── E: Enter in the rows ([data-rows-enter], owner 2026-11-12) ──────────────
+// The owner's browser test: Enter in the article number saved at once (implicit submission) while
+// «fill» was still asking — a mixed row was stored. Enter in a row now moves on and never submits.
+console.log('E  Enter in the rows');
+{
+    const FIELDS = 'input, select, textarea';
+    const FIRST = 'input:not([type="hidden"]):not([type="checkbox"]), textarea, select';
+    const settle = async () => { for (let i = 0; i < 6; i++) await tick(); };
+    const setup = (attrs = { 'data-rows': 'rows', 'data-rows-enter': 'article' }) => {
+        const env = makeContext();
+        const { ctx, document } = env;
+        ctx.Event = class { constructor(type, init) { this.type = type; this.bubbles = !!(init && init.bubbles); } };
+        ctx._Z77.core.rows.bind();
+        ctx._Z77.core.fill.bind();
+        const box = new El('div', { attrs: { ...attrs } });
+        box.events = [];
+        box.dispatchEvent = (e) => box.events.push(e.type);
+        const field = (row, tag, props = {}, attrs = {}) => {
+            const el = new El(tag, Object.assign({ type: tag === 'input' ? 'text' : tag, value: '', defaultValue: '' }, props));
+            Object.assign(el.attrs, attrs);
+            el.closest = (sel) => (sel === '[data-row]' || sel === '[data-fill-scope]' ? row : null);
+            el.matches = (sel) => (sel === ':disabled' ? !!el.disabled : /^\[[\w-]+\]$/.test(sel) && el.hasAttribute(sel.slice(1, -1)));
+            el.focus = () => { document.activeElement = el; };
+            el.dispatchEvent = () => {};
+            return el;
+        };
+        const makeRow = () => {
+            const row = new El('div', { attrs: { 'data-row': '' } });
+            const f = {
+                hidden: field(row, 'input', { type: 'hidden' }),
+                indent: field(row, 'input', { type: 'checkbox' }, { 'data-row-indent': '' }),
+                article: field(row, 'input', {}, { 'data-fill-url': '/o/article-defaults' }),
+                code: field(row, 'input'),
+                text: field(row, 'textarea', {}, { 'data-fill-key': 'text' }),
+                qty: field(row, 'input', {}, { 'data-sum-qty': '' }),
+                unit: field(row, 'input', {}, { 'data-fill-key': 'unit' }),
+                price: field(row, 'input', {}, { 'data-fill-key': 'price' }),
+                discount: field(row, 'input'),
+                rate: field(row, 'select', { disabled: true, tabIndex: -1 }),
+            };
+            row.qsa[FIELDS] = Object.values(f);
+            row.qsa['[data-sum-qty]'] = [f.qty];
+            row.qsa['[data-fill-key]'] = [f.text, f.unit, f.price];
+            box.appendChild(row);
+            return { row, f };
+        };
+        const template = () => {
+            const row = new El('div', { attrs: { 'data-row': '' } });
+            const first = field(row, 'input', {}, { 'data-fill-url': '/o/article-defaults' });
+            row.qsa['*'] = [first];
+            row.qsa[FIRST] = [first];
+            const tpl = new El('template', { content: { firstElementChild: { cloneNode: () => row } } });
+            tpl.closest = () => box;
+            box.qsa['template[data-row-template="article"]'] = [tpl];
+            return { row, first };
+        };
+        const enter = (target, mods = {}) => {
+            const e = Object.assign({ key: 'Enter', target, defaultPrevented: false, preventDefault() { this.defaultPrevented = true; } }, mods);
+            document.dispatch('keydown', e);
+            return e;
+        };
+        return { ...env, box, makeRow, template, enter };
+    };
+
+    {
+        const { document, makeRow, enter } = setup();
+        const a = makeRow(), b = makeRow();
+        document.activeElement = a.f.unit;
+        const e1 = enter(a.f.unit);
+        check('E1 Enter in a one-line field of a row: no submit (prevented), the focus on the next field (like Tab)',
+            e1.defaultPrevented && document.activeElement === a.f.price);
+        enter(a.f.code);
+        check('E2 the code → the text (a textarea is a stop)', document.activeElement === a.f.text);
+        const e3 = enter(a.f.discount);
+        check('E3 the last field of a row → the first field of the next row; the disabled tabindex -1 rate, the hidden field and the indent checkbox skipped',
+            e3.defaultPrevented && document.activeElement === b.f.article);
+        a.f.price.readOnly = true;
+        enter(a.f.unit);
+        const readOnlySkipped = document.activeElement === a.f.discount;
+        b.f.unit.noBox = true;
+        b.f.price.tabIndex = -1;
+        enter(b.f.qty);
+        check('E4 skipped too: a read-only field, a field not shown (no box), a tabindex -1 field',
+            readOnlySkipped && document.activeElement === b.f.discount);
+        document.activeElement = a.f.text;
+        const e5 = enter(a.f.text);
+        check('E5 a textarea keeps Enter (a line break): not prevented, the focus stays', !e5.defaultPrevented && document.activeElement === a.f.text);
+        document.activeElement = a.f.unit;
+        const mods = [{ shiftKey: true }, { ctrlKey: true }, { altKey: true }, { metaKey: true }].map((m) => enter(a.f.unit, m));
+        check('E6 Shift / Ctrl / Alt / Meta + Enter in a one-line field: no submit (prevented), but no move either (lead decision 2026-11-12)',
+            mods.every((e) => e.defaultPrevented) && document.activeElement === a.f.unit);
+        const ime = [{ isComposing: true }, { keyCode: 229 }].map((m) => enter(a.f.unit, m));
+        check('E6b an IME composition is left to the browser (not prevented, no move)',
+            ime.every((e) => !e.defaultPrevented) && document.activeElement === a.f.unit);
+    }
+
+    {
+        const { document, box, makeRow, template, enter } = setup();
+        makeRow();
+        const b = makeRow();
+        const t = template();
+        document.activeElement = b.f.discount;
+        const shifted = enter(b.f.discount, { shiftKey: true });
+        check('E6c Shift+Enter in the last field of the last row: prevented, no new row',
+            shifted.defaultPrevented && box.children.length === 2 && document.activeElement === b.f.discount);
+        const e = enter(b.f.discount);
+        check('E7 the last field of the last row: a new row of the container\'s kind (data-rows-enter) appended, its first field focused, the box fires input',
+            e.defaultPrevented && box.children.length === 3 && box.children[2] === t.row && document.activeElement === t.first && box.events.includes('input'),
+            [box.children.length, box.events]);
+    }
+
+    {
+        const { document, box, makeRow, enter } = setup();
+        const a = makeRow();
+        document.activeElement = a.f.discount;
+        const e = enter(a.f.discount);
+        check('E8 no template (a booked document): Enter still never submits, nothing added, the focus stays',
+            e.defaultPrevented && box.children.length === 1 && document.activeElement === a.f.discount);
+    }
+
+    {
+        const { document, fetchQueue, makeRow, enter } = setup();
+        const a = makeRow();
+        a.f.article.value = 'SD-32';
+        document.activeElement = a.f.article;
+        const e = enter(a.f.article);
+        check('E9 Enter in the article with a new number: no submit, the fill asks, the focus waits for the answer',
+            e.defaultPrevented && fetchQueue.length === 1 && fetchQueue[0].url.includes('value=SD-32') && document.activeElement === a.f.article,
+            fetchQueue.map((q) => q.url));
+        fetchQueue[0].answer(response({ type: 'application/json', body: { status: 'success', data: { fill: { text: 'Brot', unit: 'Stk', price: '3.50' } } } }));
+        await settle();
+        check('E10 the answer fills the row, then the focus lands on the quantity', a.f.text.value === 'Brot' && a.f.price.value === '3.50' && document.activeElement === a.f.qty,
+            [a.f.text.value, a.f.price.value]);
+        document.dispatch('change', { target: a.f.article });
+        check('E11 the blur\'s change after the Enter does not ask a second time', fetchQueue.length === 1, fetchQueue.length);
+        a.f.article.value = 'SD-33';
+        document.dispatch('change', { target: a.f.article });
+        check('E12 a later change (typed + Tab, the picker) still asks', fetchQueue.length === 2, fetchQueue.length);
+    }
+
+    {
+        const { document, fetchQueue, makeRow, enter } = setup();
+        const a = makeRow();
+        a.f.article.value = a.f.article.defaultValue = 'SD-32';
+        document.activeElement = a.f.article;
+        const e = enter(a.f.article);
+        await settle();
+        check('E13 Enter in an unchanged article: no ask, straight to the quantity', e.defaultPrevented && fetchQueue.length === 0 && document.activeElement === a.f.qty);
+        a.f.article.value = 'SD-64';
+        document.activeElement = a.f.article;
+        enter(a.f.article);
+        document.activeElement = a.f.discount;   // tabbed on while the fill asks
+        fetchQueue[0].answer(response({ type: 'application/json', body: { status: 'success', data: { fill: { text: 'Milch' } } } }));
+        await settle();
+        check('E14 moved on while the fill asked: the answer fills, the focus is left where the user is',
+            a.f.text.value === 'Milch' && document.activeElement === a.f.discount);
+        document.activeElement = a.f.article;
+        enter(a.f.article);
+        await settle();
+        check('E15 Enter again on the value asked last: no second ask', fetchQueue.length === 1 && document.activeElement === a.f.qty, fetchQueue.length);
+    }
+
+    {
+        const { document, makeRow, enter } = setup({ 'data-rows': 'identity' });
+        const a = makeRow();
+        document.activeElement = a.f.unit;
+        const e = enter(a.f.unit);
+        check('E16 a [data-rows] without data-rows-enter (the backend user\'s senders) keeps the form\'s Enter', !e.defaultPrevented && document.activeElement === a.f.unit);
     }
 }
 

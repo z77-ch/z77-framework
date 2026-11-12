@@ -480,8 +480,10 @@ $addressFields = fn(string $field): string => $this->partial('Backend/ContactCon
             <?php if ($liableToVat): ?>
             <script type="application/json" data-rate-schedule="order-vat" data-rate-date="service_from order_date"><?= json_encode($rateSchedule ?? [], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?></script>
             <?php endif; ?>
+            <?php // `data-rows-enter`: Enter in a row moves on (the article asks its fill first, then the quantity)
+                  // and adds an article row after the last field — it never saves (core.js «rows», owner 2026-11-12). ?>
             <div class="be-list__frame be-list__frame--stick">
-                <div class="be-list__table be-rows" style="--be-list-cols: <?= e($cols) ?>; --be-rows-span: <?= $span ?>" data-rows="rows">
+                <div class="be-list__table be-rows" style="--be-list-cols: <?= e($cols) ?>; --be-rows-span: <?= $span ?>" data-rows="rows" data-rows-enter="article">
                     <div class="be-rows__top">
                     <div class="be-form__block-head be-rows__bar">
                         <h3 class="be-list__section-title">Positionen</h3>

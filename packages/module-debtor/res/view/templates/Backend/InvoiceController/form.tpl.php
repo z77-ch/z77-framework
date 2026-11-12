@@ -428,8 +428,9 @@ if ($isEdit) {
             <?php // The rate history for core.js «dated rates»: the rows' `data-rate` follows «Leistung von» (else the invoice date) live. ?>
             <script type="application/json" data-rate-schedule="invoice-vat" data-rate-date="service_from invoice_date"><?= json_encode($rateSchedule ?? [], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?></script>
             <?php endif; ?>
+            <?php // `data-rows-enter`: Enter in a row moves on like Tab and adds a line after the last field — it never saves (core.js «rows»). ?>
             <div class="be-list__frame be-list__frame--stick">
-                <div class="be-list__table be-rows" style="--be-list-cols: <?= e($cols) ?>" data-rows="rows">
+                <div class="be-list__table be-rows" style="--be-list-cols: <?= e($cols) ?>" data-rows="rows" data-rows-enter="line">
                     <div class="be-rows__top">
                     <div class="be-form__block-head be-rows__bar">
                         <h3 class="be-list__section-title">Positionen</h3>
