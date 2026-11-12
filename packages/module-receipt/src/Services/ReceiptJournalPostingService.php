@@ -58,8 +58,13 @@ final class ReceiptJournalPostingService
     /**
      * What {@see post()} would book for the run up to $cutOff.
      *
-     * @return array{cutOff: \DateTimeImmutable, seen: list<array{id: int, version: int}>, blocked: list<array{id: int, reason: string}>, postable: bool, entries: int, gross: Money, rows: list<array{account: string, debit: Money, credit: Money}>}
-     *         `seen` = every receipt of the run (what `post()` takes); `postable` = the run is not empty and nothing blocks it
+     * The VAT totals (`vat`, `withoutVat`) are read off the SAME built lines — the one line of a
+     * receipt that carries the tax data — so the screen never computes VAT itself (receipt.md).
+     *
+     * @return array{cutOff: \DateTimeImmutable, seen: list<array{id: int, version: int}>, blocked: list<array{id: int, reason: string}>, postable: bool, entries: int, gross: Money, rows: list<array{account: string, debit: Money, credit: Money}>, vat: list<array{code: string, rate: int, base: Money, tax: Money}>, withoutVat: Money, blockedGross: Money}
+     *         `seen` = every receipt of the run (what `post()` takes); `postable` = the run is not empty and nothing blocks it;
+     *         `gross` = the postable receipts; `vat` = per code and rate the net base and the tax of the postable receipts, by code;
+     *         `withoutVat` = the gross of the postable receipts without a tax line; `blockedGross` = the gross of the blocked ones
      */
     public function preview(?\DateTimeImmutable $cutOff = null): array
     {
@@ -69,34 +74,69 @@ final class ReceiptJournalPostingService
         $seen     = [];
         $blocked  = [];
         $rows     = [];
+        $vat      = [];
         $gross    = Money::zero($currency);
+        $without  = Money::zero($currency);
+        $blockedGross = Money::zero($currency);
         foreach ($this->receipts()->pending($cutOff) as $receipt) {
             $seen[] = ['id' => (int) $receipt->getId(), 'version' => $receipt->getVersion()];
             try {
                 $request = $builder->build($receipt);
                 $this->assertPeriodTakes($receipt, $request->hasTaxLine());
             } catch (ReceiptRefusedException $e) {
-                $blocked[] = ['id' => (int) $receipt->getId(), 'reason' => $e->getMessage()];
+                $blocked[]    = ['id' => (int) $receipt->getId(), 'reason' => $e->getMessage()];
+                $blockedGross = $blockedGross->add($receipt->getAmount());
                 continue;
             }
-            $gross = $gross->add($receipt->getAmount());
+            $gross   = $gross->add($receipt->getAmount());
+            $taxLine = null;
             foreach ($request->lines as $line) {
                 $rows[$line->account] ??= ['account' => $line->account, 'debit' => Money::zero($currency), 'credit' => Money::zero($currency)];
                 $rows[$line->account]['debit']  = $rows[$line->account]['debit']->add($line->debit);
                 $rows[$line->account]['credit'] = $rows[$line->account]['credit']->add($line->credit);
+                if ($line->taxCode !== null) {
+                    $taxLine = $line;
+                }
             }
+            if ($taxLine === null) {
+                $without = $without->add($receipt->getAmount());
+                continue;
+            }
+            $key = $taxLine->taxCode . '|' . $taxLine->taxRate;
+            $vat[$key] ??= ['code' => (string) $taxLine->taxCode, 'rate' => (int) $taxLine->taxRate, 'base' => Money::zero($currency), 'tax' => Money::zero($currency)];
+            $vat[$key]['base'] = $vat[$key]['base']->add($taxLine->taxBase);
+            $vat[$key]['tax']  = $vat[$key]['tax']->add($taxLine->taxAmount);
         }
         ksort($rows, SORT_STRING);
+        ksort($vat, SORT_STRING);
 
         return [
-            'cutOff'   => $cutOff,
-            'seen'     => $seen,
-            'blocked'  => $blocked,
-            'postable' => $seen !== [] && $blocked === [],
-            'entries'  => count($seen) - count($blocked),
-            'gross'    => $gross,
-            'rows'     => array_values($rows),
+            'cutOff'       => $cutOff,
+            'seen'         => $seen,
+            'blocked'      => $blocked,
+            'postable'     => $seen !== [] && $blocked === [],
+            'entries'      => count($seen) - count($blocked),
+            'gross'        => $gross,
+            'rows'         => array_values($rows),
+            'vat'          => array_values($vat),
+            'withoutVat'   => $without,
+            'blockedGross' => $blockedGross,
         ];
+    }
+
+    /**
+     * The protocols of «Journal verbuchen» — the tab «Verbuchte Journale».
+     *
+     * @return list<ReceiptJournalPosting>
+     */
+    public function protocols(int $offset, int $limit, bool $newestFirst = true): array
+    {
+        return $this->em->getRepository(ReceiptJournalPosting::class)->page($offset, $limit, $newestFirst);
+    }
+
+    public function countProtocols(): int
+    {
+        return $this->em->getRepository(ReceiptJournalPosting::class)->countAll();
     }
 
     /**

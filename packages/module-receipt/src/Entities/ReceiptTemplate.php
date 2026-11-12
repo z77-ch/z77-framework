@@ -34,6 +34,23 @@ class ReceiptTemplate
 {
     use ArrayMappable;
 
+    /**
+     * The symbol set a template's tile may show — key → German name (the board «Belegvorlagen»: a
+     * fixed choice, no upload, no emoji). The backend offers exactly these; the app shell maps each
+     * key to its glyph and falls back to its default symbol for '' or a key it does not know. The
+     * validator keeps accepting any key of the right shape (a key written before the set grew).
+     */
+    public const ICONS = [
+        'fuel'     => 'Tanken',
+        'office'   => 'Büro',
+        'meal'     => 'Essen',
+        'parking'  => 'Parkieren',
+        'transit'  => 'Bahn / ÖV',
+        'mail'     => 'Post',
+        'tools'    => 'Werkzeug',
+        'receipt'  => 'Beleg',
+    ];
+
     /** Server-controlled — no setter; the collection store assigns it. */
     private ?int $id = null;
 

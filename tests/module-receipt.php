@@ -201,6 +201,180 @@ check('O16 … a text file, an empty upload and one byte over the limit refused,
     $sniff("MZ\x90\x00 not a photo")[0] === null && str_contains($sniff('hello')[1], 'Nur ein Foto')
     && $sniff('')[1] === 'Das Foto fehlt.' && $sniff(str_repeat('a', ReceiptCaptureService::MAX_PHOTO_BYTES + 1))[0] === null);
 
+// ── O. the API targets and the app screen (wave 2, part E) ──
+$receiptConfig = require $root . '/packages/module-receipt/src/App/Config/receiptConfig.inc.php';
+$targets = [
+    'receipt-templates' => \Z77\Module\Receipt\Api\ReceiptTemplatesService::class,
+    'payment-methods'   => \Z77\Module\Receipt\Api\PaymentMethodsService::class,
+    'receipts'          => \Z77\Module\Receipt\Api\ReceiptsService::class,
+];
+check('O17 the config registers the three targets, offers the scope receipt.capture to the Geräte screen and contributes the app screen',
+    ($receiptConfig['apiServices'] ?? null) === $targets && isset($receiptConfig['apiDeviceScopes']['receipt.capture']['label'], $receiptConfig['apiDeviceScopes']['receipt.capture']['hint'])
+    && ($receiptConfig['appScreens']['receipt']['scope'] ?? '') === 'receipt.capture' && ($receiptConfig['appScreens']['receipt']['template'] ?? '') === 'App/receipt'
+    && is_file($root . '/packages/module-receipt/res/view/templates/App/receipt.tpl.php')
+    && is_file($root . '/packages/module-receipt/res/assets/js/app/receipt.js') && is_file($root . '/packages/module-receipt/res/assets/js/app/receipt.min.js'));
+$scopes = [];
+foreach ($targets as $endpoint => $class) {
+    $svc = new $class();
+    $scopes[$endpoint] = [$svc->scopeFor('get', []), $svc->scopeFor('post', [])];
+}
+check('O18 each target declares receipt.capture for exactly its method: the lists GET, receipts POST (anything else 405)',
+    $scopes === ['receipt-templates' => ['receipt.capture', null], 'payment-methods' => ['receipt.capture', null], 'receipts' => [null, 'receipt.capture']], json_encode($scopes));
+$machine = new \Z77\Shared\Api\ApiRequest('zihlundsee', [], [], null, 'pilot', method: 'post', body: ['amount' => '1.00'],
+    principal: new \Z77\Shared\Auth\ApiPrincipal('zihlundsee', 'pilot'), idempotencyKey: 'k-00000001');
+$refusals = array_map(static fn(string $class) => (new $class())->handle($machine), $targets);
+check('O19 a machine (bearer) caller is refused by every target with 403 before anything is read or written (the gateway\'s scope check lets it through, ADR-057)',
+    array_map(static fn($r) => [$r->status, $r->errorCode], $refusals) === array_fill_keys(array_keys($targets), [403, 'forbidden']));
+$apiDevice = \Z77\Shared\Auth\ApiPrincipal::device('7', '3', 'Peter Muster', ['receipt.capture'], 'iPhone Peter');
+$sub = (new \Z77\Module\Receipt\Api\ReceiptsService())->handle(new \Z77\Shared\Api\ApiRequest('device', ['x'], method: 'post', principal: $apiDevice));
+check('O20 a sub-path of a target is 404 unknown_endpoint', $sub->status === 404 && $sub->errorCode === 'unknown_endpoint');
+$offered = defined(ReceiptTemplate::class . '::ICONS') ? array_keys(constant(ReceiptTemplate::class . '::ICONS')) : [];
+check('O21 the phone draws every symbol the backend offers (ReceiptTemplate::ICONS ⊆ ReceiptIcons::GLYPHS); an unknown key draws the default',
+    $offered !== [] && array_diff($offered, array_keys(\Z77\Module\Receipt\Services\ReceiptIcons::GLYPHS)) === []
+    && \Z77\Module\Receipt\Services\ReceiptIcons::resolve('rocket') === \Z77\Module\Receipt\Services\ReceiptIcons::DEFAULT, json_encode($offered));
+
+// ── S. the backend screens, offline (wave 2 D1: board «Belegvorlagen» / «Belegjournal», E10) ──
+
+echo "S. Backend screens — navigation, mounts, fragments, templates, help (offline)\n";
+
+$pkg      = $root . '/packages/module-receipt';
+$tplDir   = $pkg . '/res/view/templates/Backend';
+$tpl      = static fn(string $rel): string => (string) @file_get_contents($tplDir . '/' . $rel . '.tpl.php');
+$uiSrc    = $sourceOf($pkg . '/src/Ui');
+$seed     = json_decode((string) file_get_contents($pkg . '/data/framework/routing/navigation.d/module-receipt.json'), true);
+$seedKeys = array_column($seed, null, 'key');
+check('S1 the seed ships three leaves: «Belegjournal» under Finanzen, «Belegvorlagen» and «Zahlungsarten» under Stammdaten › Finanzen — backend/finance routes to the three mounts',
+    array_keys($seedKeys) === ['belegjournal', 'belegvorlagen', 'zahlungsarten']
+    && $seedKeys['belegjournal']['parent_key'] === 'finanzen' && $seedKeys['belegjournal']['controller'] === 'receipt-journal'
+    && $seedKeys['belegvorlagen']['parent_key'] === 'stammdaten-finanzen' && $seedKeys['belegvorlagen']['controller'] === 'receipt-template'
+    && $seedKeys['zahlungsarten']['parent_key'] === 'stammdaten-finanzen' && $seedKeys['zahlungsarten']['controller'] === 'payment-method'
+    && array_unique(array_column($seed, 'group')) === ['finance'] && array_unique(array_column($seed, 'module')) === ['backend'] && array_unique(array_column($seed, 'action')) === ['list']);
+
+// A fresh install merges every seed: «Belegjournal» right after «Journal», the master data after «MWST-Codes».
+$navRoots  = array_map(static fn(string $p) => $root . '/packages/' . $p . '/data', ['kernel/core', 'module-financial', 'module-vat', 'module-mandator', 'module-receipt']);
+$navMerged = \Z77\Shared\Import\NavigationSeeds::merge(\Z77\Shared\Import\NavigationSeeds::read(\Z77\Shared\Import\NavigationSeeds::discover($navRoots)), [])['records'];
+$navByKey  = array_column(array_filter($navMerged, static fn($r) => $r['key'] !== null), null, 'key');
+$navKids   = static function (string $parent) use ($navMerged, $navByKey): array {
+    $kids = array_values(array_filter($navMerged, static fn($r) => $r['parent_id'] === ($navByKey[$parent]['id'] ?? -1)));
+    usort($kids, static fn($a, $b) => $a['sort_key'] <=> $b['sort_key']);
+    return array_column($kids, 'name');
+};
+check('S2 fresh install: Finanzen = Journal, Belegjournal, Auswertungen, …; Stammdaten › Finanzen ends with MWST-Codes, Belegvorlagen, Zahlungsarten',
+    array_slice($navKids('finanzen'), 0, 3) === ['Journal', 'Belegjournal', 'Auswertungen']
+    && array_slice($navKids('stammdaten-finanzen'), -3) === ['MWST-Codes', 'Belegvorlagen', 'Zahlungsarten'], json_encode([$navKids('finanzen'), $navKids('stammdaten-finanzen')], JSON_UNESCAPED_UNICODE));
+
+$hosts = [
+    'ReceiptJournal'  => [\Z77\Module\Receipt\Ui\ReceiptJournalControllerTrait::class,  'journal',        'Backend/ReceiptJournalController',  'receipt-journal'],
+    'ReceiptTemplate' => [\Z77\Module\Receipt\Ui\ReceiptTemplateControllerTrait::class, 'templates',      'Backend/ReceiptTemplateController', 'receipt-template'],
+    'PaymentMethod'   => [\Z77\Module\Receipt\Ui\PaymentMethodControllerTrait::class,   'paymentMethods', 'Backend/PaymentMethodController',   'payment-method'],
+];
+$hostOk = true;
+foreach ($hosts as $name => [$trait, $layout, $path, $url]) {
+    $host   = (string) @file_get_contents($root . '/packages/module-backend/src/Ui/Controllers/Finance/' . $name . 'Controller.php');
+    $config = (string) @file_get_contents($root . '/packages/module-backend/src/Ui/Config/Finance/' . lcfirst($name) . 'ControllerConfig.inc.php');
+    $pinned = \Z77\Module\Receipt\Ui\ReceiptLayout::$layout()['levelElements']['body']['main'][0] ?? [];
+    $hostOk = $hostOk && str_contains($host, 'use ' . substr($trait, strrpos($trait, '\\') + 1) . ';') && str_contains($host, 'extends BackendAbstractController')
+        && str_contains($config, 'ReceiptLayout::' . $layout . '()')
+        && $pinned === ['nameSpace' => 'Z77\Module\Receipt', 'path' => $path, 'name' => 'listAction'];
+}
+check('S3 three thin hosts in module-backend (ADR-018): Finance/{ReceiptJournal,ReceiptTemplate,PaymentMethod}Controller use the traits; their layout configs pin the fragment\'s listAction in module-receipt', $hostOk);
+check('S4 the mount URLs live once, in ReceiptLayout, and match the seed routes',
+    \Z77\Module\Receipt\Ui\ReceiptLayout::JOURNAL_BASE === '/backend/finance/receipt-journal' && \Z77\Module\Receipt\Ui\ReceiptLayout::TEMPLATE_BASE === '/backend/finance/receipt-template'
+    && \Z77\Module\Receipt\Ui\ReceiptLayout::PAYMENT_METHOD_BASE === '/backend/finance/payment-method'
+    && substr_count($uiSrc, "'/backend/finance/") === 3);
+
+$methods = static fn(string $trait): array => array_map(static fn(\ReflectionMethod $m) => $m->getName(), (new \ReflectionClass($trait))->getMethods());
+$csrfOn  = static fn(string $trait, string $method): bool => (new \ReflectionMethod($trait, $method))->getAttributes(\Z77\Shared\Attributes\Csrf::class) !== [];
+$jm      = $methods(\Z77\Module\Receipt\Ui\ReceiptJournalControllerTrait::class);
+check('S5 the journal fragment: list, edit, split, confirm-delete, the two fill helpers, confirm-post, post — every write #[Csrf]; no other write path',
+    array_values(array_intersect(['listAction', 'editAction', 'splitAction', 'confirmDeleteAction', 'templateFillAction', 'paymentFillAction', 'confirmPostAction', 'postAction'], $jm)) === ['listAction', 'editAction', 'splitAction', 'confirmDeleteAction', 'templateFillAction', 'paymentFillAction', 'confirmPostAction', 'postAction']
+    && $csrfOn(\Z77\Module\Receipt\Ui\ReceiptJournalControllerTrait::class, 'editAction') && $csrfOn(\Z77\Module\Receipt\Ui\ReceiptJournalControllerTrait::class, 'splitAction')
+    && $csrfOn(\Z77\Module\Receipt\Ui\ReceiptJournalControllerTrait::class, 'confirmDeleteAction') && $csrfOn(\Z77\Module\Receipt\Ui\ReceiptJournalControllerTrait::class, 'postAction')
+    && count(array_filter($jm, static fn($m) => str_ends_with($m, 'Action'))) === 8);
+$masterOk = true;
+foreach ([\Z77\Module\Receipt\Ui\ReceiptTemplateControllerTrait::class, \Z77\Module\Receipt\Ui\PaymentMethodControllerTrait::class] as $trait) {
+    $mm = $methods($trait);
+    $toggle = (new \ReflectionMethod($trait, 'toggleActiveAction'));
+    $masterOk = $masterOk && array_values(array_filter($mm, static fn($m) => str_ends_with($m, 'Action'))) === ['listAction', 'addAction', 'editAction', 'toggleActiveAction']
+        && $csrfOn($trait, 'addAction') && $csrfOn($trait, 'editAction')
+        && $toggle->getAttributes(\Z77\Shared\Attributes\Fetch::class) !== [] && $toggle->getAttributes(\Z77\Shared\Attributes\HttpMethod::class) !== [];
+}
+check('S6 the two master-data fragments: list, add, edit and the «Aktiv» switch (Fetch, POST) — NO delete (receipts keep the code, ADR-043 decision 19)', $masterOk);
+check('S7 Rule 4 / Rule 3: no superglobal and no hand-made response in the screens; the photo address comes from module-dms (MediaField), never built here',
+    !preg_match('/\$_(GET|POST|SERVER|REQUEST|FILES|COOKIE)\b/', $uiSrc) && !preg_match('/new\s+\\\\?(Z77\\\\Core\\\\Http\\\\Response\\\\)?(Html|Redirect|Fetch|Json|Bytes)Response\s*\(/', $uiSrc)
+    && str_contains($uiSrc, 'MediaField::previewUrl(') && str_contains($uiSrc, 'MediaField::thumbUrl(')
+    && !str_contains($uiSrc . implode('', array_map('file_get_contents', glob($tplDir . '/*/*.tpl.php'))), '/document/preview'));
+$dmsField = (string) file_get_contents($root . '/packages/module-dms/src/Ui/MediaField.php');
+check('S8 module-dms builds the gated preview address in ONE place: MediaField::previewUrl() (thumbUrl() goes through it)',
+    substr_count($dmsField, "'/document/preview?id='") === 1 && str_contains($dmsField, "self::previewUrl(\$doc, \$base, 's')"));
+
+$backendTemplates = glob($tplDir . '/*/*.tpl.php');
+check('S9 the templates: the journal nine (list, action cell, toolbar, list help, window, window help, split, delete, confirmation), the two master-data lists six each (list, row, action cell, window, two helps)',
+    count(glob($tplDir . '/ReceiptJournalController/*.tpl.php')) === 9 && count(glob($tplDir . '/ReceiptTemplateController/*.tpl.php')) === 6
+    && count(glob($tplDir . '/PaymentMethodController/*.tpl.php')) === 6, (string) count($backendTemplates));
+$windows = ['ReceiptJournalController/edit', 'ReceiptJournalController/split', 'ReceiptJournalController/confirmDelete', 'ReceiptTemplateController/edit', 'PaymentMethodController/edit'];
+$winOk   = true;
+foreach ($windows as $w) {
+    $src   = $tpl($w);
+    $winOk = $winOk && str_contains($src, 'data-window="') && str_contains($src, "partial('partials/modalActions'") && !str_contains($src, 'be-modal__footer')
+        && preg_match('/<div class="be-(form__grid|form__field|docview)/', $src, $fm, PREG_OFFSET_CAPTURE) === 1 && strpos($src, "partial('partials/modalActions'") < $fm[0][1] && str_contains($src, 'name="csrf_token"');
+}
+check('S10 every window declares its mask, carries the session token and opens with the shared action row (ADR-049) — before any field, no footer', $winOk);
+check('S11 the receipt window: «Aufteilen …» (ghost) and «Löschen …» (danger) load into the window; the version travels; the photo beside the fields (.be-docview); template and «Bezahlt mit» fill through core.js «fill» (no script, Rule 7)',
+    str_contains($tpl('ReceiptJournalController/edit'), "/split?id=' . \$id) . '\" data-window-link") && str_contains($tpl('ReceiptJournalController/edit'), 'be-btn be-btn--danger" href="\' . e($actionBase . \'/confirm-delete?id=')
+    && str_contains($tpl('ReceiptJournalController/edit'), 'name="version"') && str_contains($tpl('ReceiptJournalController/edit'), 'class="be-docview"')
+    && str_contains($tpl('ReceiptJournalController/edit'), "data-fill-url=\"<?= e(\$actionBase . '/template-fill') ?>\"") && str_contains($tpl('ReceiptJournalController/edit'), "data-fill-url=\"<?= e(\$actionBase . '/payment-fill') ?>\"")
+    && str_contains($tpl('ReceiptJournalController/edit'), 'data-fill-key="debit"') && str_contains($tpl('ReceiptJournalController/edit'), 'data-fill-key="credit"') && str_contains($tpl('ReceiptJournalController/edit'), 'data-fill-key="tax_code"')
+    && !preg_match('/<script\b/i', implode('', array_map('file_get_contents', $backendTemplates))));
+check('S12 the list: a fetch region; the state icon opens the window from that region; the cells label their magnifiers; «vollständig» / «Konten fehlen»; the totals per VAT code and the row «fehlt»',
+    str_contains($tpl('ReceiptJournalController/listAction'), 'data-fetch-region="<?= e($region) ?>"') && str_contains($tpl('ReceiptJournalController/listAction'), 'data-origin="region:<?= e($region) ?>"')
+    && substr_count($tpl('ReceiptJournalController/listAction'), "for=\"<?= e(\$definition->inputId('f_") === 4
+    && str_contains($tpl('ReceiptJournalController/listAction'), '>vollständig<') && str_contains($tpl('ReceiptJournalController/listAction'), "'Konten fehlen'")
+    && str_contains($tpl('ReceiptJournalController/listAction'), 'data-journal-totals') && str_contains($tpl('ReceiptJournalController/listAction'), 'data-journal-missing'));
+check('S13 the action cell: «Journal verbuchen …» green (confirm) to the confirmation page, disabled with its reason while empty; the toolbar two tabs; the confirmation carries the cut-off, the {id}:{version} pairs and its own GET form of the cut-off',
+    str_contains($tpl('ReceiptJournalController/act'), 'be-btn be-btn--confirm') && str_contains($tpl('ReceiptJournalController/act'), "'/confirm-post'") && str_contains($tpl('ReceiptJournalController/act'), 'disabled title="Das Belegjournal ist leer')
+    && str_contains($tpl('ReceiptJournalController/toolbar'), "'Im Journal'") && str_contains($tpl('ReceiptJournalController/toolbar'), "'Verbuchte Journale'")
+    && str_contains($tpl('ReceiptJournalController/confirmPost'), 'name="cutoff" value="<?= e($cutOff->format(\'Y-m-d\')) ?>"') && str_contains($tpl('ReceiptJournalController/confirmPost'), 'name="rec[]"')
+    && str_contains($tpl('ReceiptJournalController/confirmPost'), 'method="get" action="<?= e($actionBase) ?>/confirm-post"'));
+
+// Help (ADR-048): a section for every field a window or list names — F1 lands where the user is.
+$helpKeys = static function (string $src): array {
+    preg_match_all('/<section data-help-field="([a-z_]+)"/', $src, $m);
+    return $m[1];
+};
+$fieldKeys = static function (string $src): array {
+    preg_match_all('/\sname="([a-z_]+)(?:\[\])?"/', $src, $n);
+    preg_match_all('/data-help-key="([a-z_]+)"/', $src, $k);
+    return array_values(array_diff(array_unique(array_merge($n[1], $k[1])), ['csrf_token', '_origin', 'version', 'entity_csrf', 'rec', 'cutoff']));
+};
+$helpOk = [];
+foreach ([
+    'ReceiptJournalController/edit.help'  => ['ReceiptJournalController/edit', 'ReceiptJournalController/split', 'ReceiptJournalController/confirmDelete'],
+    'ReceiptTemplateController/edit.help' => ['ReceiptTemplateController/edit'],
+    'PaymentMethodController/edit.help'   => ['PaymentMethodController/edit'],
+] as $help => $forms) {
+    $need = array_merge(...array_map(static fn($f) => $fieldKeys($tpl($f)), $forms));
+    $missingHelp = array_diff($need, $helpKeys($tpl($help)));
+    if ($missingHelp !== [] || !str_contains($tpl($help), '<h3>')) {
+        $helpOk[$help] = array_values($missingHelp);
+    }
+}
+$listHelp = $tpl('ReceiptJournalController/list.help');
+check('S14 every window field has its help section (receipt: date, amount, text, template, payment_method, debit, credit, tax_code, split, delete_photo; template: label, code, icon, position, debit_account, tax_code; payment method: label, code, credit_account, position) behind a general heading',
+    $helpOk === [] && count($helpKeys($tpl('ReceiptJournalController/edit.help'))) === 10, json_encode($helpOk));
+check('S15 the list helps: the journal one a section per magnifier and one for the cut-off; the two master-data lists a short help each; every list attaches its help in the toolbar (HELP-003)',
+    $helpKeys($listHelp) === ['f_date', 'f_text', 'f_amount', 'f_by', 'cutoff'] && str_contains($tpl('ReceiptTemplateController/list.help'), '<h3>Belegvorlagen</h3>')
+    && str_contains($tpl('PaymentMethodController/list.help'), '<h3>Zahlungsarten</h3>') && substr_count($uiSrc, "toolbar: true)") === 3);
+check('S16 the symbol set (ReceiptTemplate::ICONS) is what the window offers, every key a valid icon key',
+    array_reduce(array_keys(ReceiptTemplate::ICONS), static function ($ok, $key) {
+        $v = new ReceiptTemplateValidator(new ReceiptTemplate(['code' => 'ok', 'label' => 'Ok', 'icon' => $key, 'debit_account' => '6200']));
+        $v->isValid();
+        return $ok && !$v->hasFieldError('icon');
+    }, true) && str_contains($tpl('ReceiptTemplateController/edit'), 'ReceiptTemplate::ICONS as $key => $name'));
+$css = (string) file_get_contents($root . '/packages/module-backend/res/assets/css/base.css');
+check('S17 the backend stylesheet carries the shared blocks the screens use: .be-docview (document beside its record), .be-list__thumb, .be-form__missing, .be-form__field--full (built from the SCSS)',
+    str_contains($css, '.be-docview{') && str_contains($css, '.be-list__thumb{') && str_contains($css, '.be-form__missing{') && str_contains($css, '.be-form__field--full{'));
+
 // ── M. database ──────────────────────────────────────────────────────────
 
 $credentials = [
@@ -543,6 +717,341 @@ check('M39 deleting the last receipt of a photo: the photo STAYS in the DMS, its
     $docId === $c4->getDocumentId() && count($docs()) === $docsBefore && in_array($docId, array_map('intval', array_column($docs(), 'id')), true));
 check('M40 a delete without an actor and without a session refuses to guess who', caught(fn() => (new ReceiptJournalService($wire()))->delete((int) $c6->getId(), 1), \LogicException::class) !== null
     && $db->fetchOne('SELECT COUNT(*) FROM receipt WHERE id = ?', [$c6->getId()]) == 1);
+
+// ── SM. the backend screens through host doubles (wave 2 D1) ─────────────
+// The traits run as the backend mounts them: a host double provides html() / fetch() / redirect() /
+// em() and the layout, message and help objects; DI gets a Request and a CSRF double. The DMS photo
+// (a session-gated read) and its delete are the two host seams a harness host overrides. The
+// templates render through the REAL TemplateRenderer (FileFinder → this package and kernel/shared).
+
+echo "SM. Backend screens — list, window, split, delete, fill, «Journal verbuchen», master data (database)\n";
+require_once $root . '/packages/kernel/core/src/autoload/prod/php/Helper.php';
+
+$useRequest = function (array $get, ?array $post = null, bool $fetch = false, array $json = []) use ($wire): \Z77\Persistence\Resolver\UnifiedEntityManager {
+    $em = $wire();
+    \Z77\Core\DI::getInstance()->set('Request', fn() => new class($get, $post, $fetch, $json) {
+        public function __construct(private array $get, private ?array $post, private bool $fetch, private array $json) {}
+        public function getGetParameter(string $p): mixed { return $this->get[$p] ?? null; }
+        public function isPost(): bool { return $this->post !== null; }
+        public function getPostParameters(): array { return $this->post ?? []; }
+        public function getMode(): \Z77\Core\Http\RequestMode { return $this->fetch ? \Z77\Core\Http\RequestMode::Fetch : \Z77\Core\Http\RequestMode::Page; }
+        public function getJsonBody(): array { return $this->json; }
+    }, true);
+    \Z77\Core\DI::getInstance()->set('CsrfService', fn() => new class {
+        public function getToken(): string { return 'tok-session'; }
+        public function generateEntityToken(string $context, int $id): string { return "tok-{$context}-{$id}"; }
+        public function validateEntityToken(string $token, string $context, int $id): bool { return $token === "tok-{$context}-{$id}"; }
+    }, true);
+    return $em;
+};
+/** The members every host double shares (the BackendAbstractController surface the traits use). */
+trait ScreenHostDouble
+{
+    public array $context = [];
+    public object $layoutManager;
+    public object $messageService;
+    public object $help;
+    public ?string $redirectedTo = null;
+    public function __construct()
+    {
+        $this->help          = new \Z77\Core\Services\HelpService();
+        $this->layoutManager = new class {
+            public array $sections = [];
+            public function removeSection(string $s): void { unset($this->sections[$s]); }
+            public function addPartials(string $name, string $path, string $ns, string $section = 'main'): void { $this->sections[$section][] = $path . '/' . $name; }
+        };
+        $this->messageService = new class {
+            public array $flashes = [];
+            public function pushFlashAfterRedirect(string $type, string $message): void { $this->flashes[] = [$type, $message]; }
+            public function pushFlash(string $type, string $message): void { $this->flashes[] = [$type, $message, 'in-place']; }
+        };
+    }
+    protected function em() { return \Z77\Core\DI::getUnifiedEntityManager(); }
+    protected function html(array $context = []): \Z77\Core\Http\Response\HtmlResponse { $this->context = $context; return new \Z77\Core\Http\Response\HtmlResponse(null, $context); }
+    protected function redirect(string $url, int $status = 302): \Z77\Core\Http\Response\RedirectResponse { $this->redirectedTo = $url; return new \Z77\Core\Http\Response\RedirectResponse($url, $status); }
+    protected function fetch(): \Z77\Core\Http\Response\FetchResponse { return new \Z77\Core\Http\Response\FetchResponse(); }
+    protected function fetchError(string $text): \Z77\Core\Http\Response\FetchResponse { $this->messageService->pushFlash('error', $text); return $this->fetch()->setStatus('error'); }
+}
+$journalHost = fn() => new class {
+    use ScreenHostDouble;
+    use \Z77\Module\Receipt\Ui\ReceiptJournalControllerTrait { listAction as public; editAction as public; splitAction as public; confirmDeleteAction as public; templateFillAction as public; paymentFillAction as public; confirmPostAction as public; postAction as public; }
+    public array $deletedPhotos = [];
+    private function receiptJournal(): ReceiptJournalService { return new ReceiptJournalService($this->em(), 'Owner'); }
+    private function receiptPosting(): ReceiptJournalPostingService { return new ReceiptJournalPostingService($this->em(), 'Owner'); }
+    private function receiptPhotos(array $documentIds): array
+    {
+        $out = [];
+        foreach ($documentIds as $id) {
+            $out[$id] = ['state' => 'doc', 'id' => $id, 'name' => 'beleg-' . $id . '.jpg', 'mime' => 'image/jpeg', 'size' => '1 KB', 'isImage' => true,
+                'previewUrl' => '/backend/documents/document/preview?id=' . $id, 'thumbUrl' => '/backend/documents/document/preview?id=' . $id . '&variant=s', 'canDelete' => true];
+        }
+        return $out;
+    }
+    private function receiptDeletePhoto(int $documentId): void { $this->deletedPhotos[] = $documentId; }
+};
+$templateHost = fn() => new class {
+    use ScreenHostDouble;
+    use \Z77\Module\Receipt\Ui\ReceiptTemplateControllerTrait { listAction as public; addAction as public; editAction as public; toggleActiveAction as public; }
+};
+$methodHost = fn() => new class {
+    use ScreenHostDouble;
+    use \Z77\Module\Receipt\Ui\PaymentMethodControllerTrait { listAction as public; addAction as public; editAction as public; toggleActiveAction as public; }
+};
+$render   = static fn(string $path, array $context): string => (new \Z77\Core\Services\TemplateRenderer('Z77\\Module\\Receipt'))->partial($path, $context);
+$envelope = static fn(\Z77\Core\Http\Response\FetchResponse $r): array => (fn() => $this->build())->call($r);
+$commands = static fn(\Z77\Core\Http\Response\FetchResponse $r): array => array_column($envelope($r)['commands'] ?? [], 'action');
+$c6 = (new ReceiptJournalService($wire()))->find((int) $c6->getId());
+
+// ── the list ──
+$useRequest([]);
+$host = $journalHost();
+$host->listAction();
+$listHtml = $render('Backend/ReceiptJournalController/listAction', $host->context);
+check('SM1 the list (page): the two captured receipts by date, the band RED — the old receipt has no fiscal year —, the help in the toolbar, action cell and toolbar added',
+    array_map(static fn($r) => $r->getId(), $host->context['receipts']) === [$c5->getId(), $c6->getId()] && $host->context['totals']['count'] === 2
+    && count($host->context['blockers']) === 1 && $host->context['blockers'][0]['id'] === $c5->getId() && str_contains($host->context['blockers'][0]['reason'], 'kein Geschäftsjahr')
+    && $host->help->has() && ($host->layoutManager->sections['hc1'] ?? []) === ['Backend/ReceiptJournalController/act'] && ($host->layoutManager->sections['hc2'] ?? []) === ['Backend/ReceiptJournalController/toolbar'],
+    json_encode([$host->context['blockers'] ?? null, $host->layoutManager->sections]));
+check('SM2 … rendered: a fetch region, a row per receipt opening its window, the photo thumbnail through the DMS address, «vollständig», Haben and «Bezahlt mit» (E10), who captured it (E8), the blocked band with the link, the VAT row VI and the row «fehlt»',
+    str_contains($listHtml, 'data-fetch-region="receipt-journal-find-list"') && str_contains($listHtml, 'data-window-open="/backend/finance/receipt-journal/edit?id=' . $c6->getId() . '"')
+    && str_contains($listHtml, 'src="/backend/documents/document/preview?id=' . $c6->getDocumentId() . '&amp;variant=s"') && substr_count($listHtml, '>vollständig<') === 2
+    && str_contains($listHtml, '>1000<') && str_contains($listHtml, '>Kasse<') && str_contains($listHtml, '>Peter</label>') && str_contains($listHtml, 'data-journal-blocked="1"')
+    && preg_match('/data-journal-totals.*?>VI<.*?data-journal-missing/s', $listHtml) === 1, mb_substr(strip_tags($listHtml), 0, 600));
+$actHtml = $render('Backend/ReceiptJournalController/act', $host->context);
+check('SM3 the action cell: «Journal verbuchen …» a green link to the confirmation (the journal is not empty)', str_contains($actHtml, 'be-btn--confirm" href="/backend/finance/receipt-journal/confirm-post"'));
+$useRequest(['f_text' => 'benz']);
+$host = $journalHost();
+$host->listAction();
+$useRequest(['view' => 'posted']);
+$posted = $journalHost();
+$posted->listAction();
+$postedHtml = $render('Backend/ReceiptJournalController/listAction', $posted->context);
+check('SM4 the magnifier searches the database (text «benz» → the one receipt); the tab «Verbuchte Journale» lists the protocol of M30 (3 receipts, 1\'120.50)',
+    array_map(static fn($r) => $r->getId(), $host->context['receipts']) === [$c6->getId()] && count($posted->context['protocols']) === 1
+    && str_contains($postedHtml, 'data-journal-posting="' . $protocol->getId() . '"') && str_contains($postedHtml, e("1'120.50")));
+
+// ── the receipt window ──
+$useRequest(['id' => (string) $c6->getId(), '_origin' => 'region:receipt-journal-find-list'], null, true);
+$host = $journalHost();
+$host->editAction();
+$editHtml = $render('Backend/ReceiptJournalController/edit', $host->context);
+check('SM5 the window (fetched): mask receipt-edit for receipt:<id>, the photo LARGE through the DMS preview, the values (VI selected, Soll 6200 «…», Haben 1000), the template and «Bezahlt mit» as fill helpers, the version; its help attached',
+    str_contains($editHtml, 'data-window="receipt-edit" data-window-entity="receipt:' . $c6->getId() . '"') && str_contains($editHtml, '<img src="/backend/documents/document/preview?id=' . $c6->getDocumentId() . '" alt="Foto des Belegs">')
+    && str_contains($editHtml, '<option value="VI" selected>') && str_contains($editHtml, 'value="6200"') && str_contains($editHtml, 'value="1000"')
+    && str_contains($editHtml, '<option value="tanken" selected>Tanken') && str_contains($editHtml, '<option value="kasse" selected>Kasse') && str_contains($editHtml, 'name="version" value="' . $c6->getVersion() . '"')
+    && str_contains($editHtml, '<datalist id="receipt-accounts">') && !str_contains($editHtml, '— fehlt') && $host->help->has());
+$editPost = fn(array $post) => $useRequest(['id' => (string) $c6->getId()], $post + ['_origin' => 'region:receipt-journal-find-list'], true);
+$editPost(['version' => '99', 'date' => '2026-11-06', 'amount' => '25.00', 'text' => 'Benzin', 'debit' => '6200', 'credit' => '1000', 'tax_code' => 'VI']);
+$host = $journalHost();
+$stale = $host->editAction();
+check('SM6 a stale version: refused as a fetch error with the German sentence, nothing written', $stale instanceof \Z77\Core\Http\Response\FetchResponse && $envelope($stale)['status'] === 'error'
+    && str_contains($host->messageService->flashes[0][1] ?? '', 'inzwischen geändert') && $versionOf((int) $c6->getId()) === $c6->getVersion());
+$editPost(['version' => (string) $c6->getVersion(), 'date' => '2026-11-06', 'amount' => 'abc', 'text' => 'Benzin', 'debit' => '1', 'credit' => '1000', 'tax_code' => 'VI']);
+$host = $journalHost();
+$host->editAction();
+$errHtml = $render('Backend/ReceiptJournalController/edit', $host->context);
+check('SM7 bad values: the window again with the field messages (amount, debit — a group), what was typed kept, the «n Fehler» link; nothing written',
+    isset($host->context['errors']['amount'], $host->context['errors']['debit']) && str_contains($errHtml, 'value="abc"') && str_contains($errHtml, 'aria-invalid="true"')
+    && str_contains($errHtml, 'data-z77-field-error') && $versionOf((int) $c6->getId()) === $c6->getVersion(), json_encode($host->context['errors'] ?? null, JSON_UNESCAPED_UNICODE));
+$editPost(['version' => (string) $c6->getVersion(), 'date' => '2026-11-06', 'amount' => '25.00', 'text' => 'Benzin Tankstelle', 'debit' => '6200', 'credit' => '1020', 'tax_code' => '-']);
+$host  = $journalHost();
+$saved = $host->editAction();
+$row6  = $db->fetchAssociative('SELECT text, credit_account, tax_code, without_vat, changed_by, version, payment_method_code FROM receipt WHERE id = ?', [$c6->getId()]);
+check('SM8 saved: the correction is written (Haben 1020, «ohne MWST» from the select\'s «-»), who changed it; «Bezahlt mit» stays the phone\'s; the answer closes the window and reloads the list region',
+    $saved instanceof \Z77\Core\Http\Response\FetchResponse && $commands($saved) === ['close-window', 'refresh-region'] && ($envelope($saved)['commands'][1]['name'] ?? '') === 'receipt-journal-find-list'
+    && $row6['text'] === 'Benzin Tankstelle' && $row6['credit_account'] === '1020' && $row6['tax_code'] === null && (int) $row6['without_vat'] === 1 && $row6['changed_by'] === 'Owner'
+    && $row6['payment_method_code'] === 'kasse' && (int) $row6['version'] === $c6->getVersion() + 1 && str_contains($host->messageService->flashes[0][1] ?? '', 'vollständig'), json_encode([$row6, $host->messageService->flashes]));
+
+// ── the fill helpers ──
+$fill = function (string $action, string $value) use ($useRequest, $journalHost, $envelope): array {
+    $useRequest(['value' => $value], null, true);
+    return $envelope($journalHost()->$action())['data']['fill'] ?? ['none'];
+};
+check('SM9 «Vorlage» fills Soll and the VAT decision (a code, «-» for a template without VAT); «Bezahlt mit» fills Haben; an unknown code fills nothing',
+    $fill('templateFillAction', 'tanken') === ['debit' => '6200', 'tax_code' => 'VI'] && $fill('templateFillAction', 'parken') === ['debit' => '6200', 'tax_code' => '-']
+    && $fill('paymentFillAction', 'karte') === ['credit' => '1020'] && $fill('templateFillAction', 'nope') === [] && $fill('paymentFillAction', '') === []);
+
+// ── split ──
+$v6 = $versionOf((int) $c6->getId());
+$useRequest(['id' => (string) $c6->getId()], ['version' => (string) $v6, 'amount' => '25.00', '_origin' => 'region:receipt-journal-find-list'], true);
+$host = $journalHost();
+$host->splitAction();
+$splitHtml = $render('Backend/ReceiptJournalController/split', $host->context);
+check('SM10 «Aufteilen …»: a part not smaller than the receipt is refused under the field, in the split window', isset($host->context['errors']['amount'])
+    && str_contains($splitHtml, 'data-window="receipt-split"') && str_contains($splitHtml, 'aria-invalid="true"') && $versionOf((int) $c6->getId()) === $v6);
+$useRequest(['id' => (string) $c6->getId()], ['version' => (string) $v6, 'amount' => '5.00', '_origin' => 'region:receipt-journal-find-list'], true);
+$host  = $journalHost();
+$split = $host->splitAction();
+$parts = $db->fetchAllAssociative('SELECT id, amount, document_id FROM receipt WHERE document_id = ? ORDER BY id', [$c6->getDocumentId()]);
+check('SM11 split 25.00 → 20.00 + 5.00 sharing the photo; the window closes, the list reloads, the flash names the new part',
+    count($parts) === 2 && $parts[0]['amount'] === '20.00' && $parts[1]['amount'] === '5.00' && $parts[0]['document_id'] === $parts[1]['document_id']
+    && $commands($split) === ['close-window', 'refresh-region'] && str_contains($host->messageService->flashes[0][1] ?? '', 'Beleg ' . $parts[1]['id']), json_encode([$parts, $host->messageService->flashes], JSON_UNESCAPED_UNICODE));
+$partId = (int) $parts[1]['id'];
+
+// ── delete ──
+$useRequest(['id' => (string) $partId], null, true);
+$host = $journalHost();
+$host->confirmDeleteAction();
+$delHtml = $render('Backend/ReceiptJournalController/confirmDelete', $host->context);
+check('SM12 «Löschen …» of a split part: the photo is SHARED — no «Foto auch löschen», the reason said; the delete in the danger look',
+    $host->context['offerPhoto'] === false && $host->context['sharedPhoto'] === true && !str_contains($delHtml, 'name="delete_photo"') && str_contains($delHtml, 'aufgeteilter Teil')
+    && str_contains($delHtml, 'be-btn be-btn--danger'));
+$useRequest(['id' => (string) $partId], ['version' => (string) $versionOf($partId), 'delete_photo' => '1', '_origin' => 'region:receipt-journal-find-list'], true);
+$host = $journalHost();
+$del  = $host->confirmDeleteAction();
+check('SM13 deleted with the switch on anyway: the part is gone, the shared photo is NOT deleted (delete() answered null)',
+    $commands($del) === ['close-window', 'refresh-region'] && $db->fetchOne('SELECT COUNT(*) FROM receipt WHERE id = ?', [$partId]) == 0 && $host->deletedPhotos === []);
+$useRequest(['id' => (string) $c6->getId()], null, true);
+$host = $journalHost();
+$host->confirmDeleteAction();
+check('SM14 the last receipt of its photo: «Foto auch löschen» offered, off by default', $host->context['offerPhoto'] === true
+    && str_contains($render('Backend/ReceiptJournalController/confirmDelete', $host->context), 'name="delete_photo" value="1" data-help-key="delete_photo">'));
+
+// ── «Journal verbuchen» ──
+$useRequest(['cutoff' => '2026-11-30']);
+$host = $journalHost();
+$host->confirmPostAction();
+$cpHtml = $render('Backend/ReceiptJournalController/confirmPost', $host->context);
+check('SM15 the confirmation up to 30.11.: the old receipt (2025) is in the run and BLOCKS it — the reason, the link, NO «Journal verbuchen» button; the pairs and the cut-off are in the form',
+    !$host->context['preview']['postable'] && count($host->context['blockers']) === 1 && str_contains($cpHtml, 'data-journal-blocked="1"') && !str_contains($cpHtml, '>Journal verbuchen</button>')
+    && str_contains($cpHtml, 'name="cutoff" value="2026-11-30"') && str_contains($cpHtml, 'name="rec[]" value="' . $c5->getId() . ':') && ($host->layoutManager->sections['main'] ?? []) === ['Backend/ReceiptJournalController/confirmPost']);
+$useRequest(['cutoff' => 'gestern']);
+$host = $journalHost();
+$host->confirmPostAction();
+check('SM16 an unreadable cut-off: the default (the last day of the previous month) with a note', $host->context['cutOff'] == ReceiptJournalPostingService::defaultCutOff() && str_contains($host->context['note'], 'kein Datum'));
+// Delete the old receipt, then post the November run through the screen.
+(new ReceiptJournalService($wire(), 'Owner'))->delete((int) $c5->getId(), $versionOf((int) $c5->getId()));
+$useRequest(['cutoff' => '2026-11-30']);
+$host = $journalHost();
+$host->confirmPostAction();
+$cpHtml = $render('Backend/ReceiptJournalController/confirmPost', $host->context);
+$pairs  = array_map(static fn($p) => $p['id'] . ':' . $p['version'], $host->context['preview']['seen']);
+check('SM17 … now postable: the button, the «ohne MWST» row, the entries per account with names and the totals',
+    $host->context['preview']['postable'] && str_contains($cpHtml, '>Journal verbuchen</button>') && str_contains($cpHtml, 'data-journal-vat') && str_contains($cpHtml, 'ohne MWST')
+    && str_contains($cpHtml, 'data-journal-preview') && str_contains($cpHtml, '6200</span> ') && $pairs === [$c6->getId() . ':' . $versionOf((int) $c6->getId())], json_encode($pairs));
+$useRequest([], ['cutoff' => '2026-11-30', 'rec' => [$c6->getId() . ':1']]);
+$host = $journalHost();
+$host->postAction();
+check('SM18 a stale pair: nothing posted, back to the confirmation of THAT cut-off with the German refusal',
+    $host->redirectedTo === '/backend/finance/receipt-journal/confirm-post?cutoff=2026-11-30' && ($host->messageService->flashes[0][0] ?? '') === 'error'
+    && $db->fetchOne('SELECT state FROM receipt WHERE id = ?', [$c6->getId()]) === 'captured');
+$useRequest([], ['cutoff' => '2026-11-30', 'rec' => $pairs]);
+$host = $journalHost();
+$host->postAction();
+check('SM19 posted through the screen: the run of 30.11. is posted, the protocol written, a 303 to «Verbuchte Journale» with the flash',
+    $host->redirectedTo === '/backend/finance/receipt-journal/list?view=posted' && ($host->messageService->flashes[0][0] ?? '') === 'success'
+    && str_contains($host->messageService->flashes[0][1], 'bis 30.11.2026: 1 Beleg') && $db->fetchOne('SELECT state FROM receipt WHERE id = ?', [$c6->getId()]) === 'posted'
+    && $count('receipt_journal_posting') === 2, json_encode($host->messageService->flashes, JSON_UNESCAPED_UNICODE));
+$useRequest(['id' => (string) $c6->getId()], null, true);
+$host = $journalHost();
+$host->editAction();
+$roHtml = $render('Backend/ReceiptJournalController/edit', $host->context);
+$useRequest([]);
+$emptyHost = $journalHost();
+$emptyHost->listAction();
+check('SM20 a posted receipt opens read-only (no save, no split, no delete, «verbucht als …»); the empty journal disables «Journal verbuchen …» with its reason',
+    !str_contains($roHtml, '>Speichern</button>') && !str_contains($roHtml, '/split?id=') && str_contains($roHtml, 'verbucht als ' . $db->fetchOne('SELECT ledger_entry_ref FROM receipt WHERE id = ?', [$c6->getId()]))
+    && str_contains($render('Backend/ReceiptJournalController/act', $emptyHost->context), 'disabled title="Das Belegjournal ist leer'));
+
+// ── master data: Belegvorlagen, Zahlungsarten ──
+$useRequest([]);
+$host = $templateHost();
+$host->listAction();
+$tplList = $render('Backend/ReceiptTemplateController/listAction', $host->context);
+check('SM21 «Belegvorlagen»: every template in tile order (the inactive one too), the receipts per template, symbol name, Soll with the account name, «ohne» for no VAT; «+ Vorlage» in the action cell; help in the toolbar',
+    array_map(static fn($r) => $r->getCode(), $host->context['rows']) === ['buero', 'tanken', 'parken'] && ($host->context['usage']['tanken'] ?? 0) >= 1
+    && str_contains($tplList, 'data-entity="receiptTemplate:' . $tanken->getId() . '"') && str_contains($tplList, '>Tanken</span>') && str_contains($tplList, '· inaktiv')
+    && ($host->layoutManager->sections['hc1'] ?? []) === ['Backend/ReceiptTemplateController/act'] && $host->help->has(), json_encode($host->context['usage'] ?? null));
+$useRequest(['id' => (string) $tanken->getId()], ['entity_csrf' => 'tok-receiptTemplate-' . $tanken->getId(), 'code' => 'hacked', 'label' => 'Tanken Auto', 'icon' => 'fuel', 'debit_account' => '6200', 'tax_code' => 'VI', 'position' => '15', '_origin' => 'region:receipt-template-list'], true);
+$host = $templateHost();
+$r    = $host->editAction();
+$tk   = (new ReceiptTemplateService($wire()))->find('tanken');
+check('SM22 the template window saves through the service: label and position written, the code NOT (fixed); the window closes, the list reloads',
+    $commands($r) === ['close-window', 'refresh-region'] && $tk !== null && $tk->getLabel() === 'Tanken Auto' && $tk->getPosition() === 15 && $tk->isActive()
+    && (new ReceiptTemplateService($wire()))->find('hacked') === null);
+$useRequest([], ['code' => 'post', 'label' => 'Porti', 'icon' => 'mail', 'debit_account' => '1', 'tax_code' => '', 'position' => '60', '_origin' => 'region:receipt-template-list'], true);
+$host = $templateHost();
+$host->addAction();
+$addHtml = $render('Backend/ReceiptTemplateController/edit', $host->context);
+check('SM23 a new template naming a GROUP account: the window again with the message under «Soll», what was typed kept, the symbol «Post» selected — nothing saved',
+    $host->context['validator']->hasFieldError('debit_account') && str_contains($addHtml, 'data-window="receipt-template-edit"') && str_contains($addHtml, '<option value="mail" selected>Post</option>')
+    && str_contains($addHtml, 'value="Porti"') && (new ReceiptTemplateService($wire()))->find('post') === null);
+$useRequest([], ['code' => 'post', 'label' => 'Porti', 'icon' => 'mail', 'debit_account' => '6500', 'tax_code' => '', 'position' => '60'], false);
+$host = $templateHost();
+$host->addAction();
+$porti = (new ReceiptTemplateService($wire()))->find('post');
+check('SM24 … with an account: created active, without VAT; as a page the answer is a 303 to the list', $porti !== null && $porti->isActive() && $porti->isWithoutVat() && $porti->getIcon() === 'mail'
+    && $host->redirectedTo === '/backend/finance/receipt-template/list');
+$useRequest(['id' => (string) $porti->getId()], null, true, ['value' => false]);
+$host = $templateHost();
+$tg   = $host->toggleActiveAction();
+check('SM25 the «Aktiv» switch deactivates and answers with its row in place (FETCH-ROW-001)', !(new ReceiptTemplateService($wire()))->find('post')->isActive()
+    && $commands($tg) === ['replace-html'] && str_contains($envelope($tg)['commands'][0]['html'] ?? '', 'data-entity="receiptTemplate:' . $porti->getId() . '"'));
+$useRequest([]);
+$host = $methodHost();
+$host->listAction();
+$pmList = $render('Backend/PaymentMethodController/listAction', $host->context);
+check('SM26 «Zahlungsarten» in the same look: in choice order, Haben with the account name, the receipts per method, «+ Zahlungsart»',
+    array_map(static fn($r) => $r->getCode(), $host->context['rows']) === ['karte', 'kasse'] && str_contains($pmList, 'data-entity="paymentMethod:' . $kasse->getId() . '"')
+    && str_contains($pmList, '>1000</span>') && ($host->context['usage']['kasse'] ?? 0) >= 1 && ($host->layoutManager->sections['hc1'] ?? []) === ['Backend/PaymentMethodController/act']);
+$useRequest(['id' => (string) $karte->getId()], ['entity_csrf' => 'wrong', 'label' => 'X', 'credit_account' => '1020', 'position' => '5'], true);
+$host = $methodHost();
+$bad  = $host->editAction();
+$useRequest(['id' => (string) $karte->getId()], ['entity_csrf' => 'tok-paymentMethod-' . $karte->getId(), 'label' => 'Firmenkarte Visa', 'credit_account' => '9999', 'position' => '5'], true);
+$host = $methodHost();
+$host->editAction();
+$pmErr = $host->context['validator']->hasFieldError('credit_account');
+$useRequest(['id' => (string) $karte->getId()], ['entity_csrf' => 'tok-paymentMethod-' . $karte->getId(), 'label' => 'Firmenkarte Visa', 'credit_account' => '1020', 'position' => '5', '_origin' => 'region:payment-method-list'], true);
+$host = $methodHost();
+$ok   = $host->editAction();
+check('SM27 the payment-method window: a foreign entity token refused, an unknown account refused under «Haben», then saved; the window closes',
+    $envelope($bad)['status'] === 'error' && $pmErr && $commands($ok) === ['close-window', 'refresh-region'] && (new PaymentMethodService($wire()))->find('karte')->getLabel() === 'Firmenkarte Visa');
+
+// ── the API targets against the database (wave 2, part E) ──
+$apiRequest = static function (string $method, array $body = [], ?string $photoBytes = null, ?string $key = null) use ($base): \Z77\Shared\Api\ApiRequest {
+    $files = [];
+    if ($photoBytes !== null) {
+        $tmp = $base . '/upload-' . bin2hex(random_bytes(4)) . '.tmp';
+        file_put_contents($tmp, $photoBytes);
+        $files['photo'] = [new \Z77\Shared\ValueObjects\UploadedFile('IMG_0815.HEIC', $tmp, strlen($photoBytes), 'image/heic')];
+    }
+    return new \Z77\Shared\Api\ApiRequest('device', [], method: $method, body: $body, files: $files,
+        principal: \Z77\Shared\Auth\ApiPrincipal::device('7', '3', 'Peter Muster', ['receipt.capture'], 'iPhone Peter'), idempotencyKey: $key);
+};
+$wire();
+$tiles   = (new \Z77\Module\Receipt\Api\ReceiptTemplatesService())->handle($apiRequest('get'));
+$methods = (new \Z77\Module\Receipt\Api\PaymentMethodsService())->handle($apiRequest('get'));
+check('MA1 GET receipt-templates / payment-methods: the ACTIVE rows in order, without accounts (E2, E10), with an ETag',
+    count($tiles->data['templates'] ?? []) > 0 && array_keys($tiles->data['templates'][0]) === ['code', 'label', 'icon', 'position']
+    && array_column($tiles->data['templates'], 'code') === array_map(static fn($t) => $t->getCode(), (new ReceiptTemplateService($wire()))->active())
+    && ($methods->data['payment_methods'] ?? null) === array_map(static fn($m) => ['code' => $m->getCode(), 'label' => $m->getLabel()], (new PaymentMethodService($wire()))->active())
+    && $tiles->etag !== null && $methods->etag !== null, json_encode([$tiles->data, $methods->data], JSON_UNESCAPED_UNICODE));
+$wire();
+$rowsBefore = $count('receipt');
+$apiKey     = '9b2f6c1e-5d4a-4e3b-8a7c-0123456789ab';
+$apiFields  = ['amount' => '88.10', 'date' => '2026-11-10', 'text' => 'Tankstelle Oberland', 'template' => 'tanken', 'payment_method' => 'kasse'];
+$ok    = (new \Z77\Module\Receipt\Api\ReceiptsService())->handle($apiRequest('post', $apiFields, jpeg(), $apiKey));
+$okRow = $db->fetchAssociative('SELECT * FROM receipt WHERE id = ?', [$ok->data['receipt']['id'] ?? 0]) ?: [];
+check('MA2 POST receipts: 200 with the JOURNAL position (no ledger number, E1) and «Beleg erfasst»; captured with template and payment method, the owner as «erfasst von», device id and label (E8), the Idempotency-Key as capture key (E7)',
+    $ok->status === 200 && ($ok->data['message'] ?? '') === 'Beleg erfasst'
+    && ($ok->data['receipt'] ?? null) == ['id' => (int) ($okRow['id'] ?? 0), 'date' => '2026-11-10', 'amount' => '88.10', 'text' => 'Tankstelle Oberland', 'template' => 'tanken', 'payment_method' => 'kasse', 'state' => 'captured']
+    && ($okRow['captured_by'] ?? '') === 'Peter Muster' && ($okRow['device_id'] ?? '') === '7' && ($okRow['device_name'] ?? '') === 'iPhone Peter'
+    && ($okRow['capture_key'] ?? '') === $apiKey && ($okRow['debit_account'] ?? '') === '6200' && ($okRow['credit_account'] ?? '') === '1000' && $count('receipt') === $rowsBefore + 1,
+    json_encode([$ok->status, $ok->data, $ok->fields, $okRow], JSON_UNESCAPED_UNICODE));
+$again = (new \Z77\Module\Receipt\Api\ReceiptsService())->handle($apiRequest('post', $apiFields, jpeg(), $apiKey));
+check('MA3 the same key again (a queue resend after the gateway\'s 24 h) answers THAT receipt and stores nothing',
+    ($again->data['receipt']['id'] ?? null) === ($ok->data['receipt']['id'] ?? -1) && $count('receipt') === $rowsBefore + 1);
+$docsBefore = count($docs());
+$bad = (new \Z77\Module\Receipt\Api\ReceiptsService())->handle($apiRequest('post', ['amount' => '0', 'date' => '2099-01-01', 'template' => 'gibtsnicht', 'payment_method' => 'bar'], null, 'c0ffee00-0000-4000-8000-000000000001'));
+check('MA4 a bad capture → 422 invalid_fields, the German message per field (amount, date, template, payment_method, photo); nothing stored',
+    $bad->status === 422 && $bad->errorCode === 'invalid_fields' && count(array_intersect(['amount', 'date', 'template', 'payment_method', 'photo'], array_keys($bad->fields))) === 5
+    && ($bad->fields['photo'] ?? '') === 'Das Foto fehlt.' && $count('receipt') === $rowsBefore + 1 && count($docs()) === $docsBefore, json_encode($bad->fields, JSON_UNESCAPED_UNICODE));
+$tooBig = (new \Z77\Module\Receipt\Api\ReceiptsService())->handle(new \Z77\Shared\Api\ApiRequest('device', [], method: 'post', body: ['amount' => '5.00'],
+    files: ['photo' => [new \Z77\Shared\ValueObjects\UploadedFile('big.jpg', '', 0, 'image/jpeg', UPLOAD_ERR_INI_SIZE)]],
+    principal: \Z77\Shared\Auth\ApiPrincipal::device('7', '3', 'Peter Muster', ['receipt.capture'], 'iPhone Peter'), idempotencyKey: 'c0ffee00-0000-4000-8000-000000000002'));
+check('MA5 an upload PHP refused (too large) says so, not «Das Foto fehlt.»', $tooBig->status === 422 && str_contains($tooBig->fields['photo'] ?? '', 'zu gross'), json_encode($tooBig->fields, JSON_UNESCAPED_UNICODE));
+$heic = (new \Z77\Module\Receipt\Api\ReceiptsService())->handle($apiRequest('post', ['amount' => '5.00'], "\x00\x00\x00\x18ftypheic not converted", 'c0ffee00-0000-4000-8000-000000000003'));
+check('MA6 a photo the phone did not convert (HEIC bytes) is refused by the capture\'s sniff (T2)', $heic->status === 422 && isset($heic->fields['photo']), json_encode($heic->fields, JSON_UNESCAPED_UNICODE));
 
 echo "\n{$pass} passed, {$fail} failed\n";
 exit($fail === 0 ? 0 : 1);

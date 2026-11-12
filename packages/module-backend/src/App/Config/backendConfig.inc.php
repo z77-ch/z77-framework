@@ -125,6 +125,13 @@ return [
                     'twoFactorResetAction'        => AuthRole::SUPER_USER,
                 ],
             ],
+            // Stammdaten › System › Geräte (module-api, ADR-057): every backend user pairs and
+            // blocks HIS OWN devices — a credential of his, like his second factor; the user
+            // governor (ADMIN and up) sees all and acts for owners not above him. The trait
+            // decides per device (ApiDeviceAccess); this is only the coarse first line.
+            'ApiDeviceController' => [
+                'controllerRole' => AuthRole::EDITOR,
+            ],
         ],
         'content' => [
             // The content editor is the editor's workplace (ADR-045): list, edit,

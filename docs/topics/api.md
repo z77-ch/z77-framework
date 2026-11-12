@@ -1,6 +1,6 @@
 # api
 
-2026-09-02
+2026-11-12
 
 ## entry
 
@@ -35,6 +35,33 @@ SOURCE=/docs/02-decisions/adr-057-api-device-channel.md
 SOURCE=/tests/api-stateless-guard.php
 SOURCE=/tests/api-contract-throttle.php
 SOURCE=/tests/api-device-channel.php
+SOURCE=/packages/module-api/src/Services/ApiDeviceScopes.php
+SOURCE=/packages/module-api/src/Ui/ApiDeviceControllerTrait.php
+SOURCE=/packages/module-api/src/Ui/ApiDeviceAccess.php
+SOURCE=/packages/module-api/src/Ui/ApiDeviceListing.php
+SOURCE=/packages/module-api/src/Ui/ApiDevicePairing.php
+SOURCE=/packages/module-api/src/Ui/ApiDeviceLayout.php
+SOURCE=/packages/module-api/res/view/templates/Backend/ApiDeviceController/listAction.tpl.php
+SOURCE=/packages/module-api/res/view/templates/Backend/ApiDeviceController/_row.tpl.php
+SOURCE=/packages/module-api/res/view/templates/Backend/ApiDeviceController/pair.tpl.php
+SOURCE=/packages/module-api/res/view/templates/Backend/ApiDeviceController/_pairStatus.tpl.php
+SOURCE=/packages/module-api/res/view/templates/Backend/ApiDeviceController/edit.tpl.php
+SOURCE=/packages/module-api/res/view/templates/Backend/ApiDeviceController/confirmRevoke.tpl.php
+SOURCE=/packages/module-api/data/framework/routing/navigation.d/module-api.json
+SOURCE=/packages/module-backend/src/Ui/Controllers/System/ApiDeviceController.php
+SOURCE=/packages/module-backend/src/Ui/Config/System/apiDeviceControllerConfig.inc.php
+SOURCE=/tests/module-api-devices-ui.php
+SOURCE=/packages/module-api/src/Services/AppScreens.php
+SOURCE=/packages/module-api/src/Ui/Controllers/App/AppController.php
+SOURCE=/packages/module-api/src/Ui/AppScriptResponse.php
+SOURCE=/packages/module-api/src/Ui/Config/layoutConfig.inc.php
+SOURCE=/packages/module-api/res/view/templates/html-app-skeleton.tpl.php
+SOURCE=/packages/module-api/res/view/templates/App/AppController/startAction.tpl.php
+SOURCE=/packages/module-api/res/view/templates/App/AppController/pairAction.tpl.php
+SOURCE=/packages/module-api/res/assets/css/app.css
+SOURCE=/packages/module-api/res/assets/js/app.js
+SOURCE=/packages/module-api/res/assets/js/app-sw.js
+SOURCE=/tests/app-shell.php
 RUNTIME=/skeleton/data/framework/api/devices.json
 RUNTIME=/skeleton/var/lib/api/pairing
 RUNTIME=/skeleton/var/lib/api/idempotency
@@ -86,7 +113,11 @@ themselves to POST and to devices by implementing `ScopedApiServiceInterface`
 service stays GET/HEAD and machine-only. A device POST needs `Idempotency-Key`;
 `IdempotencyStore` replays a resend instead of running it twice. `ApiRequest`
 carries `method`, `body`, `files`, `principal`, `idempotencyKey` (named, with
-neutral defaults — positional callers unchanged).
+neutral defaults — positional callers unchanged). The device principal also
+names the device (`deviceLabel`, 2026-11-12 — «Handy <Benutzer> · <Gerät>», E8).
+A refusal of VALUES is `ApiResult::invalidFields()`: 422 `invalid_fields` with
+`error.fields` (field → German message), replayed with its fields by the
+idempotency store (envelope addition 2026-11-12).
 
 Conditional GET: a service returns its payload with the content hash as ETag;
 the responder answers 304 when the client's `If-None-Match` matches — services
@@ -113,6 +144,9 @@ them (AXO3: `X-Axo3-Retry-After` while another process rebuilds the stock). Cont
 | `/api/v1/units` | project-declared | AXO3: passthrough of the per-tenant snapshot (`SnapshotData` shape), `meta.hash` as ETag |
 | `/api/v1/devices/pair` | built-in (`DevicesService`) | POST, anonymous: pairing code → device cookie (ADR-057) |
 | `/api/v1/devices/me` | built-in (`DevicesService`) | GET, any paired device: label, owner name, scopes |
+| `/api/v1/receipt-templates` | module-receipt (`Api\ReceiptTemplatesService`) | GET, device with `receipt.capture`: the active templates `{code, label, icon, position}`, ETag ([`receipt.md`](receipt.md)) |
+| `/api/v1/payment-methods` | module-receipt (`Api\PaymentMethodsService`) | GET, device with `receipt.capture`: `{code, label}`, ETag |
+| `/api/v1/receipts` | module-receipt (`Api\ReceiptsService`) | POST multipart, device with `receipt.capture`: capture into the receipt journal; 422 `invalid_fields` with German `error.fields` |
 
 ## request log
 
@@ -128,6 +162,88 @@ throttles failed auth per source /64 (30/h) — past the limit the answer is a
 429 with `Retry-After` and NO log line. Not a guessing risk (32 random bytes),
 a disk risk on shared hosting: the flood itself must stop reaching the disk.
 
+## backend screen «Geräte»
+
+Stammdaten › System › Geräte, next to «Benutzer» (board «Geräte» on the developer canvas,
+approved 2026-11-12; built the same day). Logic and templates in module-api
+(`ApiDeviceControllerTrait`, ADR-018 pattern), mounted by module-backend's
+`System/ApiDeviceController`; URL `/backend/system/api-device/…`; navigation seed key
+`geraete` in `module-api.json`.
+
+- **List** — a standard list (`ApiDeviceListing`): tabs «Aktiv» (default) · «Alle» (blocked
+  ones stay readable: who captured what); columns state icon (phone = live, lock = blocked;
+  opens the device window) · ⋮ · Name · Besitzer (both searched) · Berechtigungen · Gerät (the
+  browser label of the pairing, `ApiDevice::agent`) · Gekoppelt · Zuletzt benutzt (to the hour,
+  «heute 08:14») · Status pill. Rows from the file collection, searched and sorted in PHP over
+  the whole set (fixed `match`). Action cell «+ Gerät koppeln»; the ⋮ context menu «Öffnen» ·
+  «Sperren …».
+- **Pairing window** (`pair`) — owner, device name, one switch per offered scope; a code is
+  created as the window opens and again on «Neuer Code» (the code shown before is withdrawn,
+  `cancelPairingCode()` — owner and scopes are IN the code). Shows a real QR (SVG, kernel
+  `QrCode` facade) of `<origin>/app/pair?code=<code>` (the app shell's page, API-008; origin =
+  `canonicalBaseUrl`, on a development box without one the address in use), the code as text,
+  `<host>/app` for typing, valid-until with a `<progress>` and «noch m:ss», «Wartet auf das
+  Handy …». The status box is a LIVE LISTENER (fetch.md FETCH-LIVE-001, every 5 s, no module
+  script): `pair-status?ticket=` asks `ApiDevices::pairingState()` about a code of THIS session
+  (the ticket is a random session key — the code never travels in a URL) and answers the box
+  anew, or — paired — `open-window` (replace) with the new device's window plus
+  `refresh-region` of the list.
+- **Device window** (`edit`) — only name and scopes change (`ApiDevices::update()`); the facts
+  in one muted line; «Sperren …» loads the confirm into the window (`confirm-revoke`, answers at
+  the bottom — a confirm without input); `revoke` blocks, the window shows the blocked device,
+  the list reloads. Blocked = read-only, no «aktiv» switch (E13: final, re-pair instead).
+- **Permissions** (`ApiDeviceAccess`, the existing model) — controller role EDITOR: every
+  backend user pairs, renames and blocks HIS OWN devices (a credential of his, like his second
+  factor). Whoever governs the users (ADMIN and up, the role of Stammdaten › Benutzer) sees all
+  devices and acts for another owner — never for one whose roles lie above his own (the user
+  list's rule); the actor's roles from the store. Scopes stay independent of the owner's roles.
+- **Scopes offered** (`ApiDeviceScopes`) — `scopeFor()` cannot list what it would answer, so
+  the module that owns a target DECLARES its scope with words in its config:
+  `'apiDeviceScopes' => ['receipt.capture' => ['label' => 'Belege erfassen', 'hint' => '…']]`
+  (collected across modules like `apiServices`; bad name, missing label, double declaration
+  throw). Undeclared scopes are not offered; one a device still holds shows by its key.
+- Tested by `tests/module-api-devices-ui.php` (service additions, scopes, access, listing,
+  pairing URL/QR, templates incl. Rule 7). **Not seen in a browser.**
+
+## app shell `/app`
+
+The phone's side of the device channel (plan A6 / T6, board «z77 App» approved 2026-11-12,
+[ADR-057 addendum](../02-decisions/adr-057-api-device-channel.md)). module-api owns a GENERIC
+shell; the module that owns a target contributes its screen (`appScreens`, `AppScreens`).
+
+- **Routes** (reserved, NOT stateless, module-api group `app`, `AppController`): `/app/` start ·
+  `/app/pair?code=…` pairing (the QR of «Geräte»; `Referrer-Policy: no-referrer`, the script
+  drops the code from the address) · `/app/manifest.webmanifest` (`scope` / `start_url` `/app/`,
+  standalone, the installation's `/web-app-manifest-*.png`) · `/app/sw.js` (the worker, served
+  under /app/ so its scope is /app/ — `AppScriptResponse`, because `bytes()`/`file()` turn every
+  script into `text/plain` on purpose). `/app/<anything else>` → 404.
+- **No device on the page.** The cookie is `Path=/api`, so the server cannot know the device
+  here: the pages are frames; `_Z77.app.shell` asks `GET devices/me` (401 → `/app/pair`), shows
+  the screens whose scope the device holds (all are rendered `hidden`), and the screen scripts
+  build their lists from the gateway with DOM nodes + `textContent`.
+- **Enforced CSP** on both pages (`AppController::CSP`: `default-src 'self'`, `script-src` /
+  `style-src` / `img-src 'self'`, no `unsafe-*`, `frame-ancestors 'none'`), set in the action
+  before the answer — `SecurityHeaders` keeps it; the global default stays observing. Hence: no
+  inline script, no `style=`, icons as inline sprites, the photo preview a `<canvas>` (no
+  `blob:` image).
+- **`_Z77.app`** (`app.js`): `store` (IndexedDB `z77-app`: `kv` = last GET answers with ETag,
+  `me`, screen preferences; `queue` = waiting submissions), `api` (`X-Z77-App: 1`, ETag + offline
+  copy, UUID keys), `queue` (stored BEFORE sending, removed only on 2xx; no network / 429 / 5xx
+  → waits; 401 → re-pair, entry kept; other refusal → `refused` with the server's errors, «Bearbeiten»
+  / «Verwerfen»), `shell` (pairing, `me`, banner «n Belege warten auf Netz», worker). Nothing in
+  the store is a secret (Rule 7) — the photo and values of a waiting receipt are the device
+  owner's own data.
+- **Worker** (`app-sw.js`): network-first for the two pages (last good answer = offline copy),
+  cache-first for versioned `/assets/…_at-…` (older version dropped), never `/api`. The queue
+  is NOT in the worker (no Background Sync on iOS): it flushes when the app is open — on start,
+  on `online`, every 30 s while visible.
+- **Without JavaScript** nothing can be sent: the device channel demands the `X-Z77-App` header
+  (ADR-057 decision 3), which a plain form cannot set. The pages say so (`<noscript>`); the
+  pairing form then only reloads itself (GET), never posts into a JSON 403.
+- Tested by `tests/app-shell.php` (real stack: CSP once and enforced, no inline script/style/
+  handler, manifest, worker type and CSP, 404s, the global default untouched). **Not run on a
+  real phone** (API-008).
+
 ## rules
 
 - When adding an API endpoint → MUST implement `ApiServiceInterface` in project code and declare it under `apiServices` in the project's apiConfig override; MUST NOT add endpoint knowledge to the gateway
@@ -142,8 +258,13 @@ a disk risk on shared hosting: the flood itself must stop reaching the disk.
 - When a service accepts POST or devices → MUST implement `ScopedApiServiceInterface` and name the scope per method (`area.verb`, e.g. `receipt.capture`); MUST NOT check scopes, the X-Z77-App header or the Origin itself — the gateway and guard do
 - When a service writes on behalf of a person → MUST read the device from `$request->device()` and refuse a machine caller (a bearer key passes the scope check by design); MUST treat the device principal as data, MUST NOT act as its owner (no AuthService on the stateless path)
 - When reading request data in a service → MUST use `ApiRequest` (`body`, `file()`, `files`, `principal`); MUST NOT reach for `$_POST` / `$_FILES` / the kernel `Request`
-- When pairing a device or changing its scopes → MUST go through `ApiDevices` (`createPairingCode`, `revoke`); MUST grant only the scopes the device needs, independent of the owner's roles; MUST NOT store the cookie secret or the plain pairing code
+- When pairing a device or changing its scopes → MUST go through `ApiDevices` (`createPairingCode`, `cancelPairingCode`, `update`, `revoke`); MUST grant only the scopes the device needs, independent of the owner's roles; MUST NOT store the cookie secret or the plain pairing code; MUST NOT reactivate a revoked device (E13 — `update()` refuses it, re-pair instead)
+- When a module offers a target to devices → MUST declare its scope under `apiDeviceScopes` in its own config with a German `label` (and an optional `hint`) — the pairing window offers only declared scopes; MUST NOT hard-wire a scope list into module-api or the screen
+- When the backend shows a pairing code's state → MUST ask `ApiDevices::pairingState()` with a code kept in the session (ticket); MUST NOT put the code into a URL or a client-side poll of its own (live listener only)
 - When a client sends a writing request on the device channel → MUST send `Idempotency-Key` (a UUID per logical submission, reused on resend)
+- When a service refuses the VALUES of a request → MUST return `ApiResult::invalidFields($fields)` (422 `invalid_fields`, field → message for the person, in `error.fields`); MUST NOT invent another error shape or put field messages into `message`
+- When a module offers a screen to the phone → MUST declare it under `appScreens` in its own config (scope, title, template and scripts of that module) and build its lists with DOM nodes + `textContent`; MUST NOT add a screen to module-api, MUST NOT write inline script or `style=` (the app CSP is enforced)
+- When the app shell stores something on the device → MUST store only what the screens show and the waiting submissions; MUST NOT store a credential, token or role flag (the device cookie is HttpOnly and stays so); MUST delete a queue entry only after the server confirmed it
 
 ## see also
 
@@ -164,7 +285,7 @@ _(none)_
 - **API-003 — contract test for v1**: a test pinning the envelope (status codes, error codes, payload field list) so a deploy cannot change it silently; part of the freeze after the zihlundsee pilot.
 - **API-004 — emonitor adapter service** (AXO3): `UnitsService` is PropBase-only; emonitor tenants need their own adapter (sequencing step 4), response stays upstream-neutral.
 - **API-005 — site client swap** (z77/propbase → generic snapshot client): strip token/credentials handling, add the axo3 transport (Bearer + If-None-Match/304); store + TTL revalidation stay. Pilot: zihlundsee. Handoff: `work/docs/handoff-api-client-2026-09-02.md` in the zihlundsee project — including the runtime media/document-URL question that MUST be settled before stripping the client.
-- **API-007 — backend screen «Geräte»** (ADR-057): pair via QR/code (`ApiDevices::createPairingCode()`), list, scopes, revoke — under System. Built only after the owner has seen a board (backend-screen recipe). Until then devices can be paired only from code.
-- **API-008 — app shell `/app`** (plan T6): manifest + service worker scoped to `/app/`, enforced CSP `default-src 'self'`, `_Z77.app` (mandatory header, Idempotency-Key per submission, offline queue without secrets), pairing page `/app/pair?code=…`.
+- **API-010 — «Geräte» follow-ups** (the screen itself built 2026-11-12, section «backend screen «Geräte»»): (a) ~~module-receipt must declare `apiDeviceScopes` → `receipt.capture` («Belege erfassen»)~~ — declared 2026-11-12 (receiptConfig, with the app screen); (b) the board's ⋮ item «Belege dieses Geräts» and the window's «n Belege erfasst» are NOT built — module-api must not know the receipt journal; needs a module-agnostic contribution (a target module declares a link per device) — owner decision; (c) the board showed a 6-character code, the screen shows ADR-057's 10 (`ABCDE-FGHJK`, ~49 bits) — owner to confirm; (d) look in a browser (QR scan, live switch to the device window).
+- **API-008 — app shell `/app`** (plan T6): **built 2026-11-12** (section «app shell `/app`»; generic shell in module-api, the receipt screen from module-receipt). Open: (a) the live test on an iPhone and an Android phone — camera via `capture="environment"`, `createImageBitmap` of an iPhone photo (HEIC) and its EXIF orientation, install to the home screen, offline start, the queue after a dead spot; (b) **iOS keeps the cookies of a home-screen app apart from Safari's**: a phone paired in Safari (QR) may have to pair again inside the installed app (the start page then lands on `/app/pair`, the code can be typed) — confirm on a device and say so in the «Geräte» window if true; (c) the app's name is the fixed «z77 App» (manifest, bar) — an installation name, if wanted, needs a source (owner); (d) «Fertig» on the confirmation returns to the tiles like «Nächster Beleg» (a web app cannot close itself).
 - **API-009 — device cookie refresh**: the cookie lives 400 days (browser cap) and is not re-issued yet; a device in daily use must re-pair after that. Re-issue on `devices/me` needs the plaintext, which only the request carries — design before the first device reaches a year.
 - **API-006 — packaging**: `z77/module-api` exists only in the monorepo + AXO3 path repo; split repo, workflow matrix entry, and Packagist registration per [`packaging.md`](packaging.md) before any non-local deploy.

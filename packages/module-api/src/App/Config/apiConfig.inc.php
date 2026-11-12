@@ -11,6 +11,7 @@ return [
     'defaultGroup'  => 'main',
     'groupDefaults' => [
         'main' => 'gateway',
+        'app'  => 'app',     // the app shell /app (reserved routes below)
     ],
     'defaultAction' => 'handle',
     // Roles never gate the API — the ApiKeyGuard replaces the AccessGuard on
@@ -36,6 +37,35 @@ return [
             'controller' => 'gateway',
             'action'     => 'handle',
             'stateless'  => true,
+        ],
+        // The app shell (plan A6 / T6): server-rendered pages for a paired phone, NOT stateless
+        // (a plain page request). The device cookie lives on /api only, so these pages never
+        // see it — the shell asks the gateway (`devices/me`) from the client. The screens come
+        // from the modules (`appScreens`, AppScreens). The manifest and the service worker sit
+        // under /app/ because a worker's scope is the path it is served from.
+        '/app' => [
+            'module'     => 'api',
+            'group'      => 'app',
+            'controller' => 'app',
+            'action'     => 'start',
+        ],
+        '/app/pair' => [
+            'module'     => 'api',
+            'group'      => 'app',
+            'controller' => 'app',
+            'action'     => 'pair',
+        ],
+        '/app/manifest.webmanifest' => [
+            'module'     => 'api',
+            'group'      => 'app',
+            'controller' => 'app',
+            'action'     => 'manifest',
+        ],
+        '/app/sw.js' => [
+            'module'     => 'api',
+            'group'      => 'app',
+            'controller' => 'app',
+            'action'     => 'service-worker',
         ],
     ],
 
@@ -69,6 +99,19 @@ return [
                 'controllerRole' => AuthRole::GUEST,
                 'actions'        => [
                     'handleAction' => AuthRole::GUEST,
+                ],
+            ],
+        ],
+        // GUEST: a phone has no backend login — the gateway behind the pages decides (ADR-057).
+        'app' => [
+            'AppController' => [
+                'defaultAction'  => 'start',
+                'controllerRole' => AuthRole::GUEST,
+                'actions'        => [
+                    'startAction'         => AuthRole::GUEST,
+                    'pairAction'          => AuthRole::GUEST,
+                    'manifestAction'      => AuthRole::GUEST,
+                    'serviceWorkerAction' => AuthRole::GUEST,
                 ],
             ],
         ],

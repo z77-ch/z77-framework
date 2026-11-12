@@ -18,7 +18,8 @@ use Z77\Shared\Traits\ArrayMappable;
  * «captured by» (E8). Collection mode: devices per installation are few.
  *
  * Written only by {@see \Z77\Module\Api\Services\ApiDevices}; no form ever maps
- * onto this entity (the backend screen sets label and scopes through the service).
+ * onto this entity (the backend screen «Geräte» sets label and scopes through
+ * ApiDevices::update()).
  */
 #[Entity('file', 'framework/api/devices.json')]
 class ApiDevice
@@ -41,6 +42,13 @@ class ApiDevice
     /** Display name («iPhone Peter»), given at pairing or derived from the user agent. */
     private string $label = '';
 
+    /**
+     * What the browser said at pairing («Safari · iPhone», {@see \Z77\Module\Api\Services\ApiDevices::label()}) —
+     * the list's «Gerät», a hint to recognise the phone, never an identity. '' on rows paired
+     * before 2026-11-12's backend screen.
+     */
+    private string $agent = '';
+
     /** @var list<string> what the device may reach — narrow, independent of the owner's roles */
     private array $scopes = [];
 
@@ -58,6 +66,7 @@ class ApiDevice
     public function getId(): ?int          { return $this->id; }
     public function getOwnerId(): int      { return $this->ownerId; }
     public function getLabel(): string     { return $this->label; }
+    public function getAgent(): string     { return $this->agent; }
     /** @return list<string> */
     public function getScopes(): array     { return $this->scopes; }
     public function getKeyHash(): string   { return $this->keyHash; }
@@ -68,6 +77,7 @@ class ApiDevice
 
     public function setOwnerId(int $ownerId): void          { $this->ownerId = $ownerId; }
     public function setLabel(string $label): void           { $this->label = $label; }
+    public function setAgent(string $agent): void           { $this->agent = $agent; }
     /** @param list<string> $scopes */
     public function setScopes(array $scopes): void          { $this->scopes = array_values($scopes); }
     public function setKeyHash(string $keyHash): void       { $this->keyHash = $keyHash; }

@@ -1,0 +1,41 @@
+[
+    {
+        "key": "belegjournal",
+        "name": "Belegjournal",
+        "module": "backend",
+        "group": "finance",
+        "controller": "receipt-journal",
+        "action": "list",
+        "slot": "",
+        "active": true,
+        "param": "",
+        "sort_key": 0,
+        "parent_key": "finanzen"
+    },
+    {
+        "key": "belegvorlagen",
+        "name": "Belegvorlagen",
+        "module": "backend",
+        "group": "finance",
+        "controller": "receipt-template",
+        "action": "list",
+        "slot": "",
+        "active": true,
+        "param": "",
+        "sort_key": 3,
+        "parent_key": "stammdaten-finanzen"
+    },
+    {
+        "key": "zahlungsarten",
+        "name": "Zahlungsarten",
+        "module": "backend",
+        "group": "finance",
+        "controller": "payment-method",
+        "action": "list",
+        "slot": "",
+        "active": true,
+        "param": "",
+        "sort_key": 4,
+        "parent_key": "stammdaten-finanzen"
+    }
+]

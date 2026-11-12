@@ -245,6 +245,12 @@ Vorschläge im nächsten Abschnitt, vom Owner freigegeben 2026-11-12.
 > T2 and T4 (wave 1, part B) are built as `packages/module-receipt` — templates, payment methods,
 > the receipt journal, capture without a session, correction, split, «Journal verbuchen» up to a
 > cut-off (E1–E12), no screens and no API target yet; see [`topics/receipt.md`](../topics/receipt.md).
+>
+> Wave 2, part E (2026-11-12): the receipt targets `receipt-templates`, `payment-methods` (GET) and
+> `receipts` (POST) and the app shell `/app` (T6; generic shell in module-api, the receipt screen
+> contributed by module-receipt) are built — [ADR-057 addendum](../02-decisions/adr-057-api-device-channel.md),
+> [`topics/api.md`](../topics/api.md) «app shell». B4's `accounts` / `vat-codes` are replaced by
+> templates and payment methods (E2, E10). Open: the live test on iPhone and Android.
 
 Grundlage: Code-Stand `edce35b`. Korrektur zu A3 Zeile 7: das Framework setzt bereits eine
 CSP (`SecurityHeaders::DEFAULTS`: `frame-ancestors 'self'` erzwungen, `default-src 'self'`

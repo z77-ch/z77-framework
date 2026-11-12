@@ -114,6 +114,7 @@ final class IdempotencyStore
             'code'        => $result->errorCode,
             'message'     => $result->errorMessage,
             'retry_after' => $result->retryAfter,
+            'fields'      => $result->fields,
         ];
     }
 
@@ -125,7 +126,8 @@ final class IdempotencyStore
                 (string) $r['code'],
                 (int) ($r['status'] ?? 500),
                 (string) ($r['message'] ?? ''),
-                isset($r['retry_after']) ? (int) $r['retry_after'] : null
+                isset($r['retry_after']) ? (int) $r['retry_after'] : null,
+                array_map('strval', (array) ($r['fields'] ?? []))
             );
         }
         return ApiResult::payload(

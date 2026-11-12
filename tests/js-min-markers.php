@@ -106,6 +106,19 @@ const MARKERS = [
         'data-media-field-clear',   // «Entfernen» of the media field (media picker P1, 2026-11-11)
         'dms-media-field',          // … its load-script init, which re-keys a cloned field
     ],
+    'packages/module-api/res/assets/js/app.js' => [
+        'X-Z77-App',                // the device channel's mandatory header (ADR-057)
+        'Idempotency-Key',          // a submission's key, kept for every resend (E7)
+        'z77:app-edit',             // a refused queue entry opened for correction
+    ],
+    'packages/module-api/res/assets/js/app-sw.js' => [
+        'z77-app-v1',               // the shell cache; /api is never cached
+    ],
+    'packages/module-receipt/res/assets/js/app/receipt.js' => [
+        'data-receipt-template',    // the tiles (E2)
+        'payment_method',           // «Bezahlt mit» (E10)
+        'image/jpeg',               // the photo scaled to JPEG on the phone (B3, T2)
+    ],
 ];
 
 const VENDOR_MARKER = '@z77-js: vendor';

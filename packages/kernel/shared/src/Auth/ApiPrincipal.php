@@ -31,7 +31,9 @@ final class ApiPrincipal
     public const DEVICE_TENANT = 'device';
 
     /**
-     * @param list<string> $scopes device only: what the device may reach (`receipt.capture`, …)
+     * @param list<string> $scopes      device only: what the device may reach (`receipt.capture`, …)
+     * @param string|null  $deviceLabel device only: the device's name as paired («iPhone Peter») —
+     *                                  a target records it with what it captured (E8)
      */
     public function __construct(
         public readonly string $tenantId,
@@ -40,13 +42,14 @@ final class ApiPrincipal
         public readonly ?string $ownerId = null,
         public readonly ?string $ownerName = null,
         public readonly array $scopes = [],
+        public readonly ?string $deviceLabel = null,
     ) {
     }
 
     /** @param list<string> $scopes */
-    public static function device(string $deviceId, string $ownerId, string $ownerName, array $scopes): self
+    public static function device(string $deviceId, string $ownerId, string $ownerName, array $scopes, ?string $label = null): self
     {
-        return new self(self::DEVICE_TENANT, null, $deviceId, $ownerId, $ownerName, array_values($scopes));
+        return new self(self::DEVICE_TENANT, null, $deviceId, $ownerId, $ownerName, array_values($scopes), $label);
     }
 
     public function isDevice(): bool

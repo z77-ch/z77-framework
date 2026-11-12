@@ -40,6 +40,65 @@ class ReceiptRepository extends DoctrineRepository
         return array_values($qb->getQuery()->getResult());
     }
 
+    /**
+     * One page of the «Belegjournal» list — the captured receipts matching $search, sorted by the
+     * fixed map (the id breaks every tie). SQL for the ids, then the entities in that order.
+     *
+     * @return list<Receipt>
+     */
+    public function search(ReceiptSearch $search, int $offset, int $limit): array
+    {
+        [$where, $params, $types] = $this->searchWhere($search);
+        $dir   = $search->descending ? 'DESC' : 'ASC';
+        $order = match ($search->sort) {
+            'amount' => "amount {$dir}, receipt_date {$dir}, id {$dir}",
+            default  => "receipt_date {$dir}, id {$dir}",
+        };
+        $ids = $this->connection()->fetchFirstColumn(
+            "SELECT id FROM receipt{$where} ORDER BY {$order} LIMIT ? OFFSET ?",
+            array_merge($params, [max(1, $limit), max(0, $offset)]),
+            array_merge($types, [ParameterType::INTEGER, ParameterType::INTEGER])
+        );
+        if ($ids === []) {
+            return [];
+        }
+        $byId = [];
+        foreach ($this->em()->createQueryBuilder()->select('r')->from(Receipt::class, 'r')->where('r.id IN (:ids)')->setParameter('ids', array_map('intval', $ids))->getQuery()->getResult() as $receipt) {
+            $byId[$receipt->getId()] = $receipt;
+        }
+
+        return array_values(array_filter(array_map(static fn($id) => $byId[(int) $id] ?? null, $ids)));
+    }
+
+    /** How many captured receipts match $search — the list's pager and badge. SQL. */
+    public function countSearch(ReceiptSearch $search): int
+    {
+        [$where, $params, $types] = $this->searchWhere($search);
+
+        return (int) $this->connection()->fetchOne("SELECT COUNT(*) FROM receipt{$where}", $params, $types);
+    }
+
+    /**
+     * How many receipts (any state) carry each template code — the «Belege» column of the master
+     * data: a used template is deactivated, never deleted. SQL.
+     *
+     * @return array<string, int> code → count, only codes in use
+     */
+    public function countByTemplate(): array
+    {
+        return array_map('intval', $this->connection()->fetchAllKeyValue('SELECT template_code, COUNT(*) FROM receipt WHERE template_code IS NOT NULL GROUP BY template_code'));
+    }
+
+    /**
+     * How many receipts (any state) carry each payment method code («Bezahlt mit», E10). SQL.
+     *
+     * @return array<string, int> code → count, only codes in use
+     */
+    public function countByPaymentMethod(): array
+    {
+        return array_map('intval', $this->connection()->fetchAllKeyValue('SELECT payment_method_code, COUNT(*) FROM receipt WHERE payment_method_code IS NOT NULL GROUP BY payment_method_code'));
+    }
+
     /** How many OTHER receipts (any state) name the photo $documentId — split parts share one (E12). SQL. */
     public function countSharingDocument(int $documentId, int $exceptId): int
     {
@@ -123,5 +182,43 @@ class ReceiptRepository extends DoctrineRepository
             'gross' => (string) ($sum['gross'] ?? '0.00'),
             'rows'  => array_map(static fn(array $r) => ['id' => (int) $r['id'], 'receipt_date' => (string) $r['receipt_date'], 'text' => (string) $r['text'], 'amount' => (string) $r['amount']], $rows),
         ];
+    }
+
+    /**
+     * The WHERE of {@see search()} / {@see countSearch()} — always the captured receipts, every
+     * value bound.
+     *
+     * @return array{0: string, 1: list<mixed>, 2: list<ParameterType>}
+     */
+    private function searchWhere(ReceiptSearch $search): array
+    {
+        $where  = ['state = ?'];
+        $params = [ReceiptState::Captured->value];
+        $types  = [ParameterType::STRING];
+        $add = static function (string $sql, mixed $value) use (&$where, &$params, &$types): void {
+            $where[]  = $sql;
+            $params[] = $value;
+            $types[]  = ParameterType::STRING;
+        };
+        if ($search->dateFrom !== null) {
+            $add('receipt_date >= ?', $search->dateFrom);
+        }
+        if ($search->dateTo !== null) {
+            $add('receipt_date <= ?', $search->dateTo);
+        }
+        if ($search->text !== null && $search->text !== '') {
+            $add('text LIKE ?', '%' . addcslashes($search->text, '\\%_') . '%');
+        }
+        if ($search->amount !== null) {
+            $add('amount = ?', $search->amount);
+        }
+        if ($search->capturedBy !== null && $search->capturedBy !== '') {
+            $like     = '%' . addcslashes($search->capturedBy, '\\%_') . '%';
+            $where[]  = '(captured_by LIKE ? OR device_name LIKE ?)';
+            array_push($params, $like, $like);
+            array_push($types, ParameterType::STRING, ParameterType::STRING);
+        }
+
+        return [' WHERE ' . implode(' AND ', $where), $params, $types];
     }
 }

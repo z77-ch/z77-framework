@@ -141,6 +141,25 @@ final class HarnessReceiptsService implements ScopedApiServiceInterface
     }
 }
 
+/** Refuses an empty amount per field — the shape of the receipt target's 422 (envelope addition). */
+final class HarnessCheckedService implements ScopedApiServiceInterface
+{
+    public static int $executed = 0;
+
+    public function scopeFor(string $method, array $slugs): ?string
+    {
+        return $method === 'post' ? 'receipt.capture' : null;
+    }
+
+    public function handle(ApiRequest $request): ApiResult
+    {
+        self::$executed++;
+        return ($request->body['amount'] ?? '') === ''
+            ? ApiResult::invalidFields(['amount' => 'Der Betrag fehlt.'])
+            : ApiResult::payload(['ok' => true]);
+    }
+}
+
 final class HarnessAdminService implements ScopedApiServiceInterface
 {
     public function scopeFor(string $method, array $slugs): ?string
@@ -314,7 +333,11 @@ $cookie = $m[1] ?? '';
 $json = (string) @file_get_contents($base . '/data/framework/api/devices.json');
 check('B11 devices.json holds sha256(secret), never the secret',
     $secret !== '' && str_contains($json, hash('sha256', $secret)) && !str_contains($json, $secret));
-check('B12 the code file is gone', (glob($base . '/var/lib/api/pairing/*') ?: []) === []);
+$left = glob($base . '/var/lib/api/pairing/*') ?: [];
+check('B12 the code file is gone; only the `.paired` marker stays (the device id, for the backend window — never the code)',
+    (glob($base . '/var/lib/api/pairing/*.json') ?: []) === [] && count($left) === 1
+    && basename($left[0]) === hash('sha256', str_replace('-', '', $plain)) . '.paired'
+    && (string) file_get_contents($left[0]) === $deviceId);
 
 $r = $call('post', '/api/v1/devices/pair', $app, null, ['code' => $plain]);
 check('B13 the same code again → 403 (single use)', $r['status'] === 403 && $code($r) === 'forbidden');
@@ -438,6 +461,72 @@ check('C30 cap: at most MAX live devices per owner', count($live) === ApiDevices
 check('C31 … the oldest-used one (PC) went', $devices->resolve($paired['cookie']) === null);
 
 check('C32 UA label fallback', ApiDevices::label('Mozilla/5.0 (Linux; Android 14) Chrome/120 Mobile Safari/537') === 'Chrome · Android');
+
+// ── D. field errors in the envelope; the receipt targets through the gateway (wave 2) ────────
+echo "D. invalid_fields, receipt targets\n";
+
+$withReceipt = $fakeModuleManager(['api' => $apiConfig + ['apiServices' => []], 'receipt' => ['apiServices' => [
+    'receipt-templates' => \Z77\Module\Receipt\Api\ReceiptTemplatesService::class,
+    'payment-methods'   => \Z77\Module\Receipt\Api\PaymentMethodsService::class,
+    'receipts'          => \Z77\Module\Receipt\Api\ReceiptsService::class,
+    'checked'           => HarnessCheckedService::class,
+]]]);
+$withReceipt->fakeConfigs['api']['apiServices'] = ['units' => HarnessUnitsService::class];
+
+// A fresh owner: C30 filled the first owner's device cap.
+$clerk = new BackendUser();
+$clerk->setUsername('anna');
+$clerk->setName('Anna Beispiel');
+$uem->persist($clerk);
+$uem->flush();
+$capture = $devices->redeemPairingCode($devices->createPairingCode((int) $clerk->getId(), 'iPhone Beleg', ['receipt.capture']));
+$bare    = $devices->redeemPairingCode($devices->createPairingCode((int) $clerk->getId(), 'ohne Scope', []));
+check('D1 the device principal carries the device label (E8: «Handy <Benutzer> · <Gerätename>»)',
+    $devices->resolve($capture['cookie'])?->deviceLabel === 'iPhone Beleg');
+
+$k = 'a1b2c3d4-0000-4000-8000-00000000000a';
+$r1 = $call('post', '/api/v1/checked', $app + ['Idempotency-Key' => $k], $capture['cookie'], ['amount' => ''], [], $withReceipt);
+check('D2 ApiResult::invalidFields → 422 invalid_fields, the field messages in error.fields',
+    $r1['status'] === 422 && $code($r1) === 'invalid_fields' && ($r1['data']['error']['fields'] ?? null) === ['amount' => 'Der Betrag fehlt.'], json_encode($r1['data']));
+$r2 = $call('post', '/api/v1/checked', $app + ['Idempotency-Key' => $k], $capture['cookie'], ['amount' => ''], [], $withReceipt);
+check('D3 a resend replays the 422 WITH its fields, the service ran once', $r2['status'] === 422 && $r2['data'] === $r1['data'] && HarnessCheckedService::$executed === 1);
+$r = $call('get', '/api/v1/nope', $bearer, null, [], [], $withReceipt);
+check('D4 every other error body keeps its two keys', array_keys($r['data']['error'] ?? []) === ['code', 'message']);
+
+// Templates and payment methods are file master data — written straight into the store here (the
+// services check the accounts against the chart, which needs the database: tests/module-receipt.php).
+$seed = static function (object $row) use ($uem): void { $uem->persist($row); $uem->flush(); };
+$seed(new \Z77\Module\Receipt\Entities\ReceiptTemplate(['code' => 'tanken', 'label' => 'Tanken', 'icon' => 'fuel', 'debit_account' => '6200', 'tax_code' => 'VI', 'position' => 20]));
+$seed(new \Z77\Module\Receipt\Entities\ReceiptTemplate(['code' => 'porti', 'label' => 'Porti', 'icon' => 'mail', 'debit_account' => '6500', 'tax_code' => '', 'position' => 10]));
+$seed(new \Z77\Module\Receipt\Entities\ReceiptTemplate(['code' => 'alt', 'label' => 'Alt', 'debit_account' => '6500', 'tax_code' => '', 'position' => 1, 'active' => false]));
+$seed(new \Z77\Module\Receipt\Entities\PaymentMethod(['code' => 'kasse', 'label' => 'Kasse', 'credit_account' => '1000', 'position' => 10]));
+
+$r = $call('get', '/api/v1/receipt-templates', $app, $capture['cookie'], [], [], $withReceipt);
+check('D5 GET receipt-templates (device with receipt.capture): the ACTIVE templates in tile order — code, label, icon, position; no account, no VAT (E2)',
+    $r['status'] === 200 && $r['data'] === ['templates' => [
+        ['code' => 'porti', 'label' => 'Porti', 'icon' => 'mail', 'position' => 10],
+        ['code' => 'tanken', 'label' => 'Tanken', 'icon' => 'fuel', 'position' => 20],
+    ]] && isset($r['headers']['ETag']), json_encode($r));
+$etag = (string) ($r['headers']['ETag'] ?? '');
+$_SERVER['HTTP_IF_NONE_MATCH'] = $etag;
+$r = $call('get', '/api/v1/receipt-templates', $app, $capture['cookie'], [], [], $withReceipt);
+unset($_SERVER['HTTP_IF_NONE_MATCH']);
+check('D6 … with the ETag again → 304', $r['status'] === 304);
+$r = $call('get', '/api/v1/payment-methods', $app, $capture['cookie'], [], [], $withReceipt);
+check('D7 GET payment-methods: code and label, no credit account (E10)', $r['status'] === 200 && $r['data'] === ['payment_methods' => [['code' => 'kasse', 'label' => 'Kasse']]], json_encode($r['data']));
+$r = $call('get', '/api/v1/receipt-templates', $app, $bare['cookie'], [], [], $withReceipt);
+check('D8 a device without receipt.capture → 403', $r['status'] === 403 && $code($r) === 'forbidden');
+$r = $call('get', '/api/v1/receipt-templates', $bearer, null, [], [], $withReceipt);
+$r2 = $call('post', '/api/v1/receipts', $bearer + ['Origin' => 'https://example.ch'], null, ['amount' => '1.00'], $upload, $withReceipt);
+check('D9 a machine (bearer) caller passes the gateway but the targets refuse it → 403 (GET and POST)',
+    $r['status'] === 403 && $code($r) === 'forbidden' && $r2['status'] === 403 && $code($r2) === 'forbidden', json_encode([$r['data'], $r2['data']]));
+$r = $call('get', '/api/v1/receipts', $app, $capture['cookie'], [], [], $withReceipt);
+$r2 = $call('post', '/api/v1/receipt-templates', $app + ['Idempotency-Key' => 'b1b2c3d4-0000'], $capture['cookie'], [], [], $withReceipt);
+check('D10 receipts is POST only, the lists GET only → 405', $r['status'] === 405 && $r2['status'] === 405);
+$r = $call('get', '/api/v1/receipt-templates/x', $app, $capture['cookie'], [], [], $withReceipt);
+check('D11 a sub-path → 404 unknown_endpoint', $r['status'] === 404 && $code($r) === 'unknown_endpoint');
+$r = $call('post', '/api/v1/receipts', $app, $capture['cookie'], ['amount' => '1.00'], $upload, $withReceipt);
+check('D12 POST receipts without Idempotency-Key → 400 (the capture key is the request\'s key, E7)', $r['status'] === 400);
 
 // ── result ───────────────────────────────────────────────────────────────────
 

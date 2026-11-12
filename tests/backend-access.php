@@ -106,6 +106,11 @@ $expect = [
     // The Faktura-Journal (ADR-054 step 3): no own rule — the module role ADMIN, like every debtor screen; posting included.
     ['finance', 'invoice-journal', 'list',       AuthRole::ADMIN],
     ['finance', 'invoice-journal', 'post',       AuthRole::ADMIN],
+    // The receipt screens (module-receipt, wave 2 D1): no own rule — the module role ADMIN, posting included.
+    ['finance', 'receipt-journal', 'list',       AuthRole::ADMIN],
+    ['finance', 'receipt-journal', 'post',       AuthRole::ADMIN],
+    ['finance', 'receipt-template', 'edit',      AuthRole::ADMIN],
+    ['finance', 'payment-method', 'toggle-active', AuthRole::ADMIN],
     ['content', 'unknown',    'list',            AuthRole::ADMIN],   // a forgotten controller is never open
 ];
 foreach ($expect as [$group, $controller, $action, $want]) {

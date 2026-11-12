@@ -133,3 +133,46 @@ live, and what the envelope says about cookies.
 | Reusing module-member's `DeviceKeys` class | bound to `MemberAccount`; the pattern is reused, the class is not |
 | Scope as a PHP attribute on the service class | cannot differ per sub-path or method without a second mechanism; `instanceof` + one method is simpler |
 | SameSite=Strict alone as CSRF protection | depends on the browser alone; the header + Origin check costs nothing and holds where SameSite does not |
+
+---
+
+## Addendum 2026-11-12 — the app shell `/app` and the first targets (wave 2, part E)
+
+Built on the approved board «z77 App» (developer canvas, row «Belege per Handy») and plan T6.
+Not a new owner decision — the placement below is a technical one, recorded here because it
+fixes where every later phone screen goes.
+
+1. **A generic shell in module-api, screens from the modules.** module-api owns `/app` (start,
+   pairing, manifest, service worker, `_Z77.app`): pairing and «what may this device do» are the
+   gateway's knowledge. A module that owns a target contributes its screen through config,
+   `'appScreens' => ['receipt' => ['scope', 'title', 'template', 'js']]` (`AppScreens`, merged like
+   `apiServices`), rendered inside the start page and shown when the device holds the scope.
+   Rejected: everything in module-receipt (the next target — `content.edit`, `mail.send` — would
+   need a second app, a second manifest and a second pairing page; Key Rule 9); a screen per
+   route under `/app/<screen>` (a tile tap must open the camera in the same user gesture, so the
+   receipt views share one page). module-receipt still never names module-api.
+2. **The pages are not stateless and carry no device.** The cookie stays `Path=/api` (decision 2):
+   widening it to `/app` would hand a credential to page requests that do not need it. The pages
+   are server-rendered frames; the client asks `devices/me` and the targets, and builds the lists
+   with `textContent`.
+3. **Enforced CSP for `/app` only**, set by the action before the answer — the mechanism
+   `SecurityHeaders::send()` already offers (a header the action set stays). The global page CSP
+   keeps observing. The shell is built for it: no inline script or style, inline SVG sprites, the
+   photo preview a `<canvas>`.
+4. **The service worker is served by the controller** (`/app/sw.js`, `AppScriptResponse`): a
+   worker's scope is the path it is served from, and `bytes()` / `file()` deliberately turn any
+   script into `text/plain` (DeliveryPolicy). The response carries only the framework's own asset.
+5. **The offline queue lives in the page** (IndexedDB), not in the worker: no Background Sync on
+   iOS. An entry is stored before sending and removed on the server's 2xx; its `Idempotency-Key`
+   is kept for every resend and becomes the receipt's capture key, so a resend after the
+   gateway's 24 h still finds the first receipt (E7).
+6. **Envelope v1, additively:** 422 `invalid_fields` with `error.fields` (field → German message)
+   for a refusal of values (`ApiResult::invalidFields()`); the idempotency store replays it with
+   its fields. `ApiPrincipal` gains `deviceLabel` (E8: the journal shows the device's name).
+7. **Without JavaScript** the device channel cannot be used: decision 3 requires a header a plain
+   form cannot send. The pages say so; this is accepted, not worked around (a session-backed form
+   door would be the rejected «mobile backend page», E0).
+
+Tested by `tests/app-shell.php` (real stack) and the D section of `tests/api-device-channel.php`;
+the receipt targets by `tests/module-receipt.php` (O17–O21, MA1–MA6). Not yet run on a phone
+(`topics/api.md` API-008).

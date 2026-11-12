@@ -127,8 +127,8 @@ final class ApiDevices implements DeviceKeyResolverInterface
     public function redeemPairingCode(string $code, ?string $userAgent = null, ?int $now = null): ?array
     {
         $now  = $now ?? time();
-        $code = preg_replace('/[^A-Z0-9]/', '', strtoupper($code)) ?? '';
-        if (strlen($code) !== self::CODE_LENGTH) {
+        $code = self::plainCode($code);
+        if ($code === null) {
             return null;
         }
 
@@ -150,13 +150,67 @@ final class ApiDevices implements DeviceKeyResolverInterface
         }
 
         $label = trim((string) ($record['label'] ?? ''));
+        $agent = self::label($userAgent);
 
-        return $this->issue(
+        $paired = $this->issue(
             $ownerId,
-            $label !== '' ? $label : self::label($userAgent),
+            $label !== '' ? $label : $agent,
+            $agent,
             self::normalizeScopes((array) ($record['scopes'] ?? [])),
             $now
         );
+        $this->markPaired($file, (int) $paired['device']->getId());
+
+        return $paired;
+    }
+
+    /**
+     * Where a code stands, for the backend window that shows it (it asks every few seconds):
+     *
+     *   - `waiting` — stored and not expired: nobody has redeemed it yet;
+     *   - `paired`  — redeemed; `deviceId` names the new device (the marker lives as long as
+     *                 an unredeemed code would, then the sweep takes it);
+     *   - `gone`    — expired, withdrawn, swept — or being redeemed in this very moment (the
+     *                 claim has renamed the file, the marker is not written yet). The caller
+     *                 knows when it created the code; before that time is up it asks again.
+     *
+     * @return array{state: 'waiting'|'paired'|'gone', deviceId: ?int}
+     */
+    public function pairingState(string $code, ?int $now = null): array
+    {
+        $now  = $now ?? time();
+        $code = self::plainCode($code);
+        if ($code === null) {
+            return ['state' => 'gone', 'deviceId' => null];
+        }
+
+        $file   = $this->pairingFile($code);
+        $marker = is_file(self::markerFile($file)) ? (string) file_get_contents(self::markerFile($file)) : '';
+        if (preg_match('/^\d{1,10}$/', $marker) === 1) {
+            return ['state' => 'paired', 'deviceId' => (int) $marker];
+        }
+
+        $record = is_file($file) ? json_decode((string) @file_get_contents($file), true) : null;
+        if (is_array($record) && (int) ($record['expires_at'] ?? 0) >= $now) {
+            return ['state' => 'waiting', 'deviceId' => null];
+        }
+
+        return ['state' => 'gone', 'deviceId' => null];
+    }
+
+    /**
+     * «Neuer Code» in the backend: the code shown before dies at once instead of living out its
+     * ten minutes. True when an unredeemed code was withdrawn.
+     */
+    public function cancelPairingCode(string $code): bool
+    {
+        $code = self::plainCode($code);
+        if ($code === null) {
+            return false;
+        }
+        $file = $this->pairingFile($code);
+
+        return is_file($file) && @unlink($file);
     }
 
     // ── the credential ───────────────────────────────────────────────────────
@@ -192,7 +246,8 @@ final class ApiDevices implements DeviceKeyResolverInterface
             (string) $device->getId(),
             (string) $owner->getId(),
             $owner->getName() !== '' ? $owner->getName() : $owner->getUsername(),
-            $device->getScopes()
+            $device->getScopes(),
+            $device->getLabel()
         );
     }
 
@@ -209,16 +264,52 @@ final class ApiDevices implements DeviceKeyResolverInterface
     }
 
     /**
+     * The backend's device window: name and scopes of a LIVE device. A revoked one stays as it
+     * was (E13 — blocking is final, a new pairing is the way back); an empty name falls back to
+     * what the browser said at pairing.
+     *
+     * @param list<string> $scopes
+     * @return ApiDevice|null null: unknown or revoked
+     * @throws \InvalidArgumentException bad scope name
+     */
+    public function update(int $deviceId, string $label, array $scopes): ?ApiDevice
+    {
+        $scopes = self::normalizeScopes($scopes);
+        $device = $this->find($deviceId);
+        if ($device === null || $device->isRevoked()) {
+            return null;
+        }
+
+        $label = mb_substr(trim($label), 0, self::LABEL_LENGTH);
+        $device->setLabel($label !== '' ? $label : ($device->getAgent() !== '' ? $device->getAgent() : 'Device'));
+        $device->setScopes($scopes);
+        $this->save($device);
+
+        return $device;
+    }
+
+    /**
      * The owner's devices, revoked ones included, newest use first.
      *
      * @return list<ApiDevice>
      */
     public function listFor(int $ownerId): array
     {
-        $devices = array_values(array_filter(
-            $this->all(),
+        return array_values(array_filter(
+            $this->listAll(),
             static fn(ApiDevice $d): bool => $d->getOwnerId() === $ownerId
         ));
+    }
+
+    /**
+     * Every device of the installation, revoked ones included, newest use first — the
+     * backend list of whoever governs the users.
+     *
+     * @return list<ApiDevice>
+     */
+    public function listAll(): array
+    {
+        $devices = $this->all();
         usort($devices, static fn(ApiDevice $a, ApiDevice $b): int
             => self::stamp($b->getLastUsedAt()) <=> self::stamp($a->getLastUsedAt()));
         return $devices;
@@ -300,13 +391,14 @@ final class ApiDevices implements DeviceKeyResolverInterface
      * @param list<string> $scopes
      * @return array{device: ApiDevice, cookie: string}
      */
-    private function issue(int $ownerId, string $label, array $scopes, int $now): array
+    private function issue(int $ownerId, string $label, string $agent, array $scopes, int $now): array
     {
         $secret = bin2hex(random_bytes(32));
 
         $device = new ApiDevice();
         $device->setOwnerId($ownerId);
         $device->setLabel(mb_substr($label, 0, self::LABEL_LENGTH));
+        $device->setAgent(mb_substr($agent, 0, self::LABEL_LENGTH));
         $device->setScopes($scopes);
         $device->setKeyHash(hash('sha256', $secret));
         $device->setCreatedAt(date(DATE_ATOM, $now));
@@ -358,6 +450,30 @@ final class ApiDevices implements DeviceKeyResolverInterface
     private function pairingFile(string $code): string
     {
         return $this->pairingDir . '/' . hash('sha256', $code) . '.json';
+    }
+
+    /** `<hash>.paired` beside the code's file: the device id, for {@see pairingState()}. */
+    private static function markerFile(string $pairingFile): string
+    {
+        return substr($pairingFile, 0, -strlen('.json')) . '.paired';
+    }
+
+    /** Not a `.json`, so the sweep takes it once it is older than a code may live. */
+    private function markPaired(string $pairingFile, int $deviceId): void
+    {
+        $marker = self::markerFile($pairingFile);
+        $tmp    = $marker . '.' . bin2hex(random_bytes(4)) . '.tmp';
+        if (file_put_contents($tmp, (string) $deviceId) === false || !@rename($tmp, $marker)) {
+            @unlink($tmp);   // the window then waits out the code's time — the device is paired regardless
+        }
+    }
+
+    /** The ten code symbols, case, spaces and dashes forgiven; null when it cannot be a code. */
+    private static function plainCode(string $code): ?string
+    {
+        $code = preg_replace('/[^A-Z0-9]/', '', strtoupper($code)) ?? '';
+
+        return strlen($code) === self::CODE_LENGTH ? $code : null;
     }
 
     private function ensurePairingDir(): void

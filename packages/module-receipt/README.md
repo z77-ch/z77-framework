@@ -11,8 +11,10 @@ Faktura-Journal (ADR-054). Depends on `z77/kernel`, `z77/persistence-doctrine` (
 [z77-ch/z77-framework](https://github.com/z77-ch/z77-framework) monorepo
 (`packages/module-receipt`); not yet a split target or on Packagist.
 
-State: **wave 1 (2026-11-12)** — entities, migration and services; no backend screen yet (the
-board comes first, Rule 8) and no API target yet (wave 2, module-api).
+State: **wave 1 (2026-11-12)** — entities, migration and services; **wave 2** — the backend
+screens «Belegjournal», «Belegvorlagen», «Zahlungsarten» (fragments in `Ui\`, mounted by
+module-backend under `/backend/finance/…`, menu seed `navigation.d/module-receipt.json`); the
+phone's API targets and app screen are described in the topic doc.
 
 - `ReceiptTemplate` / `PaymentMethod` (file, `data/framework/receipt/receipt_templates.json` /
   `payment_methods.json`, not seeded) — code, label, (icon,) debit account and VAT code ('' =

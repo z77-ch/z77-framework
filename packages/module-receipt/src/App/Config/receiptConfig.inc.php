@@ -11,10 +11,14 @@ use Z77\Module\Receipt\Entities\ReceiptJournalPosting;
  * 2026-11-12): receipt templates and payment methods, the receipt journal a phone captures into,
  * the owner's correction and split, «Journal verbuchen» up to a cut-off into module-financial.
  *
- * This module has NO routes and no view area of its own. Its backend screens (Stammdaten
- * «Belegvorlagen» and «Bezahlt mit», the mask «Belegjournal») come after the owner-approved board
- * (Rule 8); its API targets (`receipt-templates`, `receipts`) are registered with module-api in
- * wave 2.
+ * This module has NO routes and no view area of its own. Its backend screens are fragments
+ * ({@see \Z77\Module\Receipt\Ui\ReceiptJournalControllerTrait} «Belegjournal»,
+ * {@see \Z77\Module\Receipt\Ui\ReceiptTemplateControllerTrait} «Belegvorlagen»,
+ * {@see \Z77\Module\Receipt\Ui\PaymentMethodControllerTrait} «Zahlungsarten») mounted by host
+ * controllers in module-backend under `/backend/finance/…` (ADR-018 pattern); their menu entries
+ * come from this package's seed `data/framework/routing/navigation.d/module-receipt.json`. Its API targets (`receipt-templates`, `payment-methods`, `receipts`) and its screen in
+ * the app shell `/app` are declared below (`apiServices`, `appScreens`) — module-api finds them,
+ * this package never names module-api.
  *
  * Storage (ADR-039 decision 5 — announced here, nothing scans a directory): `Receipt` and
  * `ReceiptJournalPosting` are Doctrine (migrations in `res/migrations`); `ReceiptTemplate` and
@@ -41,6 +45,28 @@ return [
         'period-close'  => [UnpostedReceiptsCheck::class],
         'ledger-report' => [UnpostedReceiptsCheck::class],
         'vat-return'    => [UnpostedReceiptsCheck::class],
+    ],
+
+    // The phone's targets on module-api's gateway (wave 2, ADR-057): every one answers a paired
+    // device with the scope `receipt.capture` only — a bearer key is refused (DeviceOnlyTarget).
+    'apiServices' => [
+        'receipt-templates' => \Z77\Module\Receipt\Api\ReceiptTemplatesService::class,
+        'payment-methods'   => \Z77\Module\Receipt\Api\PaymentMethodsService::class,
+        'receipts'          => \Z77\Module\Receipt\Api\ReceiptsService::class,
+    ],
+    // The scope the backend screen «Geräte» offers for these targets (module-api ApiDeviceScopes).
+    'apiDeviceScopes' => [
+        'receipt.capture' => ['label' => 'Belege erfassen', 'hint' => 'Das Gerät darf Belege mit Foto und Betrag ins Belegjournal erfassen.'],
+    ],
+    // The screen this module contributes to the app shell `/app` (module-api AppScreens): shown
+    // to a device holding `receipt.capture`. Template and script live in this package.
+    'appScreens' => [
+        'receipt' => [
+            'scope'    => 'receipt.capture',
+            'title'    => 'Belege',
+            'template' => 'App/receipt',
+            'js'       => ['app/receipt'],
+        ],
     ],
 
     // Nothing here renders a page.

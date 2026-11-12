@@ -65,6 +65,10 @@ Additive — nothing above changes for a machine client. Decision and reasoning:
   5xx is not kept — retrying it runs again.
 - **Revocation:** a revoked device gets 401 `unauthorized` on its next request,
   like an unknown cookie (no oracle).
+- **Module targets** (payload contracts per service, not part of this page):
+  `receipt-templates`, `payment-methods` (GET) and `receipts` (POST, 422
+  `invalid_fields`) of module-receipt — [`topics/receipt.md`](../topics/receipt.md).
+  The app shell under `/app` that calls them: [`topics/api.md`](../topics/api.md).
 
 ## Status codes
 
@@ -78,6 +82,7 @@ Additive — nothing above changes for a machine client. Decision and reasoning:
 | 404 | unknown version, endpoint, or dataset | error body |
 | 405 | method not allowed on this endpoint | error body |
 | 409 | `Idempotency-Key` reused for a different request (added 2026-11-12) | error body |
+| 422 | the request was well-formed but a service refused its VALUES (added 2026-11-12, device channel: `POST /api/v1/receipts`) | error body + `error.fields` |
 | 429 | rate limit exceeded | error body + `Retry-After: <seconds>` |
 | 500 | service/upstream failure not covered above | error body (never a stack trace, never HTML) |
 | 503 | axo3-side snapshot not yet built for this tenant (fresh setup) | error body + `Retry-After` |
@@ -111,9 +116,20 @@ Every non-2xx/304 response has exactly this shape:
 - `code` is machine-readable and FROZEN: `unauthorized`, `forbidden`,
   `unknown_version`, `unknown_endpoint`, `unknown_dataset`,
   `method_not_allowed`, `throttled`, `snapshot_pending`, `internal`;
-  added 2026-11-12 (device channel): `bad_request`, `idempotency_conflict`.
+  added 2026-11-12 (device channel): `bad_request`, `idempotency_conflict`,
+  `invalid_fields` (422).
   New codes may be added; existing codes never change meaning.
 - `message` is human-readable English, not frozen, never parsed by clients.
+- **`fields`** (added 2026-11-12) — only on 422 `invalid_fields`: an object
+  field name → message for the person who typed the value (German in this
+  framework; the client shows it under the field). Every other error body keeps
+  exactly `code` and `message`; a resend under the same `Idempotency-Key` replays
+  it with its `fields`:
+
+  ```json
+  {"error": {"code": "invalid_fields", "message": "Receipt refused, see fields.",
+             "fields": {"amount": "Der Betrag fehlt.", "photo": "Das Foto fehlt."}}}
+  ```
 - Services report failures through `ApiResult` error variants (or a typed
   `ApiException`); the api module maps them to code + status. Services never
   touch `header()` or emit output.
