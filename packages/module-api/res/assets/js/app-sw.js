@@ -14,7 +14,8 @@
  */
 // v2 (ADR-058): the pairing page is gone — a new name drops the v1 cache (and its /app/pair copy)
 // on every installed phone at activation.
-var CACHE = 'z77-app-v2';
+// v3: drops the copies v2 may hold of an asset that was not a stylesheet / script ({@see isAssetType}).
+var CACHE = 'z77-app-v3';
 var PAGES = ['/app/', '/app/login'];
 var STATIC = /^\/(app\/manifest\.webmanifest|web-app-manifest-\d+x\d+\.png|apple-touch-icon\.png|favicon\.ico)$/;
 var VERSIONED = /_at-[0-9a-z]+(\.min)?\.(js|css)$/;
@@ -73,6 +74,18 @@ function withinCacheTime(promise) {
     ]).catch(function () { return null; });
 }
 
+/**
+ * Only a real stylesheet / script is kept: an HTML page answered with 200 under an asset's name
+ * (a release whose assets were not yet published) was kept as «the stylesheet» and served forever
+ * — the versioned name does not change while the file does not (2026-11-12, every browser).
+ */
+function isAssetType(url, response) {
+    var type = (response.headers.get('Content-Type') || '').toLowerCase();
+    if (/\.css$/.test(url.pathname)) return type.indexOf('text/css') === 0;
+    if (/\.js$/.test(url.pathname)) return type.indexOf('javascript') !== -1;
+    return false;
+}
+
 function cacheFirst(request, url) {
     var opened = withinCacheTime(caches.open(CACHE));
     return opened.then(function (cache) {
@@ -80,7 +93,7 @@ function cacheFirst(request, url) {
     }).then(function (hit) {
         if (hit) return hit;
         return fetch(request).then(function (response) {
-            if (response.ok) {
+            if (response.ok && isAssetType(url, response)) {
                 var copy = response.clone();
                 opened.then(function (cache) {
                     if (cache) dropOlder(cache, url).then(function () { cache.put(request, copy); });

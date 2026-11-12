@@ -198,8 +198,8 @@ check('C1 /app/sw.js → 200 as JavaScript (a worker registers only from a scrip
     $status === 200 && str_starts_with(($values($lines, 'Content-Type')[0] ?? ''), 'text/javascript') && $values($lines, 'X-Content-Type-Options') === ['nosniff'],
     $status . ' ' . implode(' | ', $values($lines, 'Content-Type')));
 check('C2 … with the worker\'s own CSP, revalidated on every navigation', $values($lines, 'Content-Security-Policy') === ["default-src 'self'"] && $values($lines, 'Cache-Control') === ['no-cache']);
-check('C3 … the shell worker itself: cache v2 (ADR-058 — drops the pairing shell), /app/login among its pages, never /api',
-    preg_match('/["\x27]z77-app-v2["\x27]/', $body) === 1 && !str_contains($body, 'z77-app-v1') && preg_match('#["\x27]/app/login["\x27]#', $body) === 1
+check('C3 … the shell worker itself: cache v3 (drops v2\'s copies of a non-asset answer), an asset kept only with its own content type, /app/login among its pages, never /api',
+    preg_match('/["\x27]z77-app-v3["\x27]/', $body) === 1 && str_contains($body, 'isAssetType') && preg_match('#["\x27]/app/login["\x27]#', $body) === 1
     && preg_match('#["\x27]/app/pair["\x27]#', $body) !== 1 && str_contains($body, '/api/'));
 
 // ── (D) the rest ──────────────────────────────────────────────────────────────────────────

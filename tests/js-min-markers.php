@@ -118,7 +118,7 @@ const MARKERS = [
         'Diesen wartenden Eintrag verwerfen', // a WAITING entry can be discarded too, also offline (owner 2026-11-12)
     ],
     'packages/module-api/res/assets/js/app-sw.js' => [
-        'z77-app-v2',               // the shell cache (v2: pairing gone, ADR-058); /api is never cached
+        'z77-app-v3',               // the shell cache (v3: only real css/js kept); /api is never cached
     ],
     'packages/module-receipt/res/assets/js/app/receipt.js' => [
         'data-receipt-template',    // the tiles (E2)
