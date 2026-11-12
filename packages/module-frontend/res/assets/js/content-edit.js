@@ -85,6 +85,7 @@
     var layer = null;        // pencils of elements in the page flow
     var fixedLayer = null;   // pencils of position:fixed elements + the outline
     var frame = null;
+    var frameEl = null;      // the element the outline currently marks
     var items = [];          // {el, btn}
     var modal = null;        // {root, iframe, opener, overflow}
     var queued = false;
@@ -150,6 +151,9 @@
             var box = place(item, taken);
             if (box) taken.push(box);
         });
+        // The outline is position:fixed too: it follows its element on scroll
+        // and resize, or it would stay at the old viewport place (CE-FRAME-001).
+        if (frameEl) showFrame(frameEl);
     }
 
     function schedule() {
@@ -160,6 +164,7 @@
 
     /* Dashed outline of the element while its button is hovered or focused. */
     function showFrame(el) {
+        frameEl = el;
         var r = el.getBoundingClientRect();
         frame.style.top    = Math.round(r.top) + 'px';
         frame.style.left   = Math.round(r.left) + 'px';
@@ -169,7 +174,19 @@
     }
 
     function hideFrame() {
+        frameEl = null;
         frame.hidden = true;
+    }
+
+    /* Focus draws the outline only when the browser shows a focus ring
+     * (keyboard): closeModal() returns focus to the pencil also after a
+     * mouse close, and that must not leave an outline behind. */
+    function focusVisible(btn) {
+        try {
+            return btn.matches(':focus-visible');
+        } catch (e) {
+            return true;   // a browser without :focus-visible
+        }
     }
 
     function open(url, label, opener) {
@@ -267,7 +284,7 @@
             btn.title = name(label);
             btn.addEventListener('click', function () { open(url, label, btn); });
             btn.addEventListener('mouseenter', function () { showFrame(el); });
-            btn.addEventListener('focus', function () { showFrame(el); });
+            btn.addEventListener('focus', function () { if (focusVisible(btn)) showFrame(el); });
             btn.addEventListener('mouseleave', hideFrame);
             btn.addEventListener('blur', hideFrame);
 
