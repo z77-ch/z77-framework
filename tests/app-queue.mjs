@@ -74,7 +74,7 @@ function boot() {
         addEventListener: () => {},
         dispatchEvent: () => {}
     };
-    const window = { indexedDB: idb, location: { replace: (url) => sent.push('redirect ' + url) } };
+    const window = { indexedDB: idb, setTimeout, clearTimeout, location: { replace: (url) => sent.push('redirect ' + url) } };
     const ctx = {
         window, document, console, setTimeout, structuredClone,
         CustomEvent: class { constructor(type, init) { this.type = type; this.detail = init && init.detail; } },

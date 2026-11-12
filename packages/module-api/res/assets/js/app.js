@@ -24,6 +24,13 @@ _Z77.app.store = (function () {
     var VERSION = 1;
     var _db = null;
 
+    /**
+     * An open that never answers (seen in Firefox: a damaged or locked profile store, a pending
+     * `blocked`) must not hang the app — after OPEN_MS it counts as «no IndexedDB»: reads come back
+     * empty, a submission is sent without the safety net. The next call tries again.
+     */
+    var OPEN_MS = 3000;
+
     function open() {
         if (_db) return _db;
         _db = new Promise(function (resolve, reject) {
@@ -31,14 +38,22 @@ _Z77.app.store = (function () {
                 reject(new Error('IndexedDB unavailable'));
                 return;
             }
-            var req = window.indexedDB.open(DB, VERSION);
+            var timer = window.setTimeout(function () { reject(new Error('IndexedDB open timed out')); }, OPEN_MS);
+            var req;
+            try {
+                req = window.indexedDB.open(DB, VERSION);
+            } catch (e) {
+                window.clearTimeout(timer);
+                reject(e);
+                return;
+            }
             req.onupgradeneeded = function () {
                 var db = req.result;
                 if (!db.objectStoreNames.contains('kv')) db.createObjectStore('kv');
                 if (!db.objectStoreNames.contains('queue')) db.createObjectStore('queue', { keyPath: 'key' });
             };
-            req.onsuccess = function () { resolve(req.result); };
-            req.onerror = function () { reject(req.error); };
+            req.onsuccess = function () { window.clearTimeout(timer); resolve(req.result); };
+            req.onerror = function () { window.clearTimeout(timer); reject(req.error); };
         });
         _db.catch(function () { _db = null; });
         return _db;
@@ -482,7 +497,10 @@ _Z77.app.shell = (function () {
                 button.disabled = true;
                 api.request('POST', 'devices/logout', { idempotencyKey: api.uuid() }).then(function (r) {
                     if (r.ok || r.status === 401) {
-                        store.clear().then(function () { window.location.replace('/app/login'); });
+                        Promise.race([
+                            store.clear(),
+                            new Promise(function (resolve) { window.setTimeout(resolve, 2500); })
+                        ]).then(function () { window.location.replace('/app/login'); });
                         return;
                     }
                     button.disabled = false;
@@ -566,11 +584,14 @@ _Z77.app.shell = (function () {
                     // there to be discarded, never sent.
                     var saved = store.clear().then(function () { return store.set('me', r.data.device); });
                     // Let the worker take over first, so the start page is kept for offline use.
-                    var waited = saved.then(function () { return Promise.race([
-                        worker.then(function (reg) { return reg ? navigator.serviceWorker.ready : null; }),
+                    // The cap covers the store too: the device cookie is set, nothing here may
+                    // keep the person on this page (Firefox hung in the store, 2026-11-12).
+                    Promise.race([
+                        saved.then(function () {
+                            return worker.then(function (reg) { return reg ? navigator.serviceWorker.ready : null; });
+                        }),
                         new Promise(function (resolve) { window.setTimeout(resolve, 2500); })
-                    ]); });
-                    waited.then(function () { window.location.replace('/app/'); });
+                    ]).then(function () { window.location.replace('/app/'); });
                     return;
                 }
                 busy(verify, false, 'Anmelden');
