@@ -1,6 +1,6 @@
 # login
 
-2026-11-02
+2026-11-12
 
 ## entry
 
@@ -468,6 +468,6 @@ guard never sends a customer to the admin login. Details: `member.md`
 
 ## pending
 
-- **SEC-GET-001, seen on a real host (2026-11-02, owner):** Abmelden on a normal member page and one without a rail, the confirmation page, and that only its button signs out. **Not seen:** a stale tab with «angemeldet bleiben» after the session is gone (proved in `tests/state-changing-get.php` only), the confirmation page in dark mode, member 2FA with a real authenticator app.
-- **Rest of the 2FA click-through (BACKEND-2FA-001):** the owner confirmed on a real installation on 2026-11-02, on a release built from framework commit 3662e38, that 2FA works and that «Passwort vergessen» works, with the code asked on an account with 2FA. The recipient in Service → E-Mail, `backendCodeLock` (4b7f681), the owner entered on a later release from ae6e2e7; an alert mail itself has not been seen on a real installation. Not reported one by one, so check if in doubt: the admin reset with its mail, the lock after five wrong codes, the dialog in light and dark.
-- **Enter the recovery addresses:** every existing account starts without one, and without one the forgot form sends nothing. The first admin is provisioned without one too (installer and `SetupController` do not ask); security.md's roadmap wanted it asked at setup.
+- **SEC-GET-001, not yet seen on a real host** (Abmelden itself and the confirmation page were, by the owner 2026-11-02): a stale tab with «angemeldet bleiben» after the session is gone (only `tests/state-changing-get.php`), the confirmation page in dark mode, member 2FA with a real authenticator app.
+- **Rest of the 2FA click-through (BACKEND-2FA-001)** — 2FA and «Passwort vergessen» confirmed by the owner on a real installation 2026-11-02 (release from 3662e38), `backendCodeLock` recipient entered. Not seen: an alert mail on a real installation, the admin reset with its mail, the lock after five wrong codes, the dialog in light and dark.
+- **Enter the recovery addresses:** every existing account starts without one, and without one the forgot form sends nothing. The first admin is provisioned without one too (installer and `SetupController` do not ask); asking at setup is open in security.md's pending.

@@ -1,6 +1,6 @@
 # backup
 
-2026-11-02
+2026-11-12
 
 ## entry
 
@@ -245,8 +245,8 @@ moving.
 
 ## pending
 
-- **Run a real restore once** (RESTORE-001): `php vendor/bin/z77-restore <db archive>` against z77.ch, then `z77-db` must report the schema as current and the backend must come up. Can only happen on a machine that HAS MariaDB — measured 2026-10-09: no `mysqldump` / `mysql` and no MariaDB service on PC 2, which is the machine the restore tool was written for (`docs/_local/handoff-2026-10-09-z77ch-database-second-pc.md`, steps 2–5 still open there). The archives in that project's `backup/` travelled with the synced working copy; they were taken on PC 1.
-- Existing (pre-1.1.0) projects do not get the «Service» navigation section automatically (navigation data is seed-once). The fix is BUILT (ADR-032): the backend data import proposes the missing shipped entries — see [`import.md`](import.md). Manual creation via the navigation UI remains the fallback on installations whose framework predates the import screen.
+- **Run a real restore once** (RESTORE-001): `php vendor/bin/z77-restore <db archive>` against z77.ch, then `z77-db` must report the schema as current and the backend must come up. Needs a machine with MariaDB (PC 2 had none on 2026-10-09; a local `z77ch_main` answered `z77-db status` on 2026-11-12). Not run yet as far as git shows.
+- Per installation: a pre-1.1.0 project gets the «Service» navigation section (seed-once) only through the backend data import (ADR-032, [`import.md`](import.md)); fallback where the framework predates the import screen: create it by hand in the navigation UI.
 
 ## see also
 

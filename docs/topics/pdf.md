@@ -1,6 +1,6 @@
 # pdf
 
-2026-10-23
+2026-11-12
 
 ## entry
 
@@ -78,11 +78,10 @@ The framework writes PDFs through ONE facade, `Z77\Shared\Pdf\PdfDocument`, over
 
 ## pending
 
-- **Validate the first printed QR-bill** against the SIX validation portal (`validation.iso-payments.ch`) and with a bank's scanner app; adjust the geometry of `pdf/qrBill` if the portal objects. Owner's installation (z77.ch) is the place — `debtor.md` «install module-debtor in z77.ch».
-- **The eyebrow in print — built 2026-11-12, not seen on paper**: owner's look at an Offerte, a Lieferschein and a Rechnung with coded lines (an indented line, a page break with an eyebrow row).
+- **Validate the first printed QR-bill** against the SIX validation portal (`validation.iso-payments.ch`) and with a bank's scanner app; adjust `pdf/qrBill` if the portal objects. Place: the owner's installation (z77.ch) — needs the QR-IBAN (debtor.md, PDF-PRINT-001).
 - **Labels per language** for the invoice PDF and the payment part (de / fr / it / en) — with the document texts per language (debtor.md).
-- **Storage** of the invoice PDF in the Drive — agreed and deferred (debtor.md «Storage of the PDF»); the facade is unaffected, a DMS consumer would take `output()` bytes. Since 2026-10-23 every ISSUED invoice version is archived as a FILE by debtor itself (`data/archive/debtor/…`, ADR-054 decision 25) — the Drive question is about offering it there, not about keeping it.
-- **Further documents** the owner named (2026-10-06): an article data sheet (module-article) — expected to reuse `pdf/table` and `pdf/letterhead` and to add nothing to the facade. The first consumers outside debtor came with P7 slim step 8 (2026-10-14): module-order's `pdf/order` (Offerte / Auftragsbestätigung, amounts from debtor's preview) and `pdf/deliveryNote` (no prices) — letterhead, address window and table reused, nothing added to the facade (`order.md`).
+- Deferred: offering the archived invoice PDF in the Drive (debtor.md «Storage of the PDF»); every issued version is already archived as a file (`data/archive/debtor/…`, ADR-054 decision 25).
+- Later: an article data sheet (module-article, owner 2026-10-06) — expected to reuse `pdf/table` and `pdf/letterhead` and add nothing to the facade.
 
 ## see also
 

@@ -1,6 +1,6 @@
 # mail
 
-2026-10-23
+2026-11-12
 
 ## entry
 
@@ -528,24 +528,14 @@ address in config:
 ## pending
 
 - Manual check: send a document from the backend `documents` UI over `transport='smtp'` (the SMTP transport itself is proven live since 2026-09-11, the document attachment path is not).
-- Phase 7 (integration): a module example (Fakturen) that generates a PDF → `saveGenerated()` → `DocumentService::send()`.
-- **v3 Kundenstamm:** resolve `ref:{source}:{id}` recipient entries against the customer
-  master (extend `EmailService::resolveRecipients()`, add the UI picker + lift the
-  validator rejection) — see the v2 bauplan's «Bewusst NICHT» section. Blocked until the
-  Kundenstamm exists.
-- **DEBUG mail redirect (`mail.redirectAllTo`):** reroute every outgoing mail to one
-  developer inbox while `DEBUG` is on, regardless of the resolved `to` — the structural
-  alternative to the seed-address convention (would let config `to` be the real recipient
-  from day one). Deferred (YAGNI): build when a second form/project makes accidental
-  pre-launch client mail a real risk. See the «seed-address convention» section.
-- From control system (owner note 2026-07-18): a later mechanism guarantees any
-  `EmailMessage::from()` is domain-conform (SPF/DKIM/DMARC) — until then From stays the
-  `config/client/mail.inc.php` installation identity.
-- **E-mail logo — built 2026-10-23 (owner decision of the day), owner's live look open**: upload the ≈ 100 px wide PNG into the project (e.g. `assets/mail/logo.png`), set Mandant › Briefkopf › «Logo (E-Mail)», send a document mail on next.z77.ch (booking print → «Alle per E-Mail senden …»), check it in Outlook (desktop + web) and Gmail: the logo at the top at its size, no «Bilder herunterladen» prompt, NOT listed as an attachment, the PDF there; the text alternative with blank lines between the paragraphs. Needs the mandator migration `Version20261023120000` (mandator.md pending).
-- **Beleg-Mails, owner's live look**: Service › E-Mail › «Beleg-Mails» (the rows, «Anpassen», the dialog per language, the switch, «Zurücksetzen») — built 2026-10-22, not seen in a browser.
+- Phase 7 (integration): a module example (Fakturen) that generates a PDF → `saveGenerated()` → `DocumentService::send()`. Possibly superseded by module-mailing's invoice mails (provider `invoice-pdf`, f1086d6) — unverified.
+- **E-mail logo — owner's live look open** (built 2b09a5d, 2026-10-23): set Mandant › Briefkopf › «Logo (E-Mail)» (≈ 100 px PNG), send a document mail (booking print → «Alle per E-Mail senden …»), check Outlook (desktop + web) and Gmail: logo at its size, no «Bilder herunterladen» prompt, not listed as an attachment, the PDF there, blank lines between paragraphs in the text part. Needs mandator migration `Version20261023120000`: applied on `z77ch_main`, missing on `z77ch_initial`, live server unknown.
+- **Beleg-Mails — owner's look open**: Service › E-Mail › «Beleg-Mails» (rows, «Anpassen», the dialog per language, the switch, «Zurücksetzen») — built and committed f1086d6 (2026-10-22), not seen in a browser.
 - **Beleg-Mails for offer / order confirmation / delivery note / dunning**: the kinds are declared (prepared); each needs its attachment provider and a send action (mailing.md step 3).
-- Re-add `RUNTIME=/skeleton/config/mail.inc.php` to the file map after the next clean-install
-  regenerates `skeleton/` (installer seeds it now).
+- **v3 Kundenstamm:** resolve `ref:{source}:{id}` recipient entries against the customer master (extend `EmailService::resolveRecipients()`, add the UI picker + lift the validator rejection) — see the v2 bauplan's «Bewusst NICHT» section. Was blocked until a Kundenstamm exists; module-debtor exists now — whether it is that master is unverified.
+- **DEBUG mail redirect (`mail.redirectAllTo`):** reroute every outgoing mail to one developer inbox while `DEBUG` is on. Deferred (YAGNI): build when a second form/project makes accidental pre-launch client mail a real risk. See the «seed-address convention» section.
+- From control system (owner note 2026-07-18): a later mechanism guarantees any `EmailMessage::from()` is domain-conform (SPF/DKIM/DMARC) — until then From stays the `config/client/mail.inc.php` installation identity.
+- Re-add `RUNTIME=/skeleton/config/mail.inc.php` to the file map — the installer has regenerated it (`skeleton/config/mail.inc.php` exists, checked 2026-11-12).
 
 ## see also
 

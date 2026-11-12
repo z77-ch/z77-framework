@@ -1,6 +1,6 @@
 # security
 
-2026-11-02
+2026-11-12
 
 ## entry
 
@@ -197,39 +197,9 @@ still the right tool for a non-form endpoint that needs the same protections.
 
 ## pending
 
-- **Error handler** (fixes SEC-002) — branch on the framework `DEBUG` flag; generic production page without paths/traces.
-- **Reject a mismatching `Host`** (optional hardening on top of SEC-005, deliberately not built) — answer 400/421 when the request's `Host` differs from `canonicalBaseUrl`. Defense-in-depth against further Host tricks, but it breaks apex-vs-www and staging setups, so it needs its own opt-in switch and a migration story. Not urgent: with the origin configured, a forged `Host` no longer reaches any generated URL.
-- **Backend editor for `systemConfig`** — SUPER_USER-gated, so `canonicalBaseUrl` can be corrected without a deploy (ADR-030 leaves the file hand-maintained for now). Must clear APCu + page cache on write, like the existing debug/noindex toggles.
-- **Enforcing the page CSP** — it only observes (SEC-HEAD-001). The app shell `/app` already runs under an enforced CSP of its own (2026-11-12, `AppController::CSP`); the website and the backend do not. Needs a decision about the Google Fonts in `partials/head/fonts`, a look at a real installation's console, and a project's own templates read first.
-- **Docroot/deny hardening, nginx part** — the Apache side is done (INST-DENY-001, 2026-09-02: the installer seeds `Require all denied` `.htaccess` files into `data/`, `config/`, `logs/`; see [`installer.md`](installer.md)). Equivalent nginx `location` deny snippets are still only documentation-by-hand; on nginx the correct docroot remains the only defence.
-- **Roadmap (stronger auth)** — second factor is a **per-user** property on the `BackendUser` entity (decided 2026-06-03), set by the admin in the user-edit form or by the user themselves (self-service later) — NOT installation/module config (a global config cannot hold per-account TOTP secrets). New field `secondFactor` (`none` / `totp` / `magic`) + a `SecondFactor` enum in `shared/src/Auth/` (domain value of `BackendUser`, alongside `PasswordTier`); TOTP enrolment adds a stored secret field. The login flow (`AuthService` / `LoginController`) branches on it. Separate, optional, later: a *mandate* policy (e.g. \"admins must enable 2FA\") — global/role-level, distinct from the per-user enablement field. Also: Passkeys/WebAuthn (passwordless, phishing-resistant); email on the account (set at setup) for password reset + 2FA delivery — email belongs on the account, NOT in `composer.json` as an install gate. See [`login.md`](login.md) (BackendUser entity) + [`backend.md`](backend.md) (user-edit form).
-  **Status note 2026-08-07:** none of this is done for `BackendUser`. What exists is a working
-  TOTP implementation in `module-member` (RFC 6238 with the RFC vectors, AES-256-GCM secret
-  vault, 5-failure / 15-minute lockout, QR enrolment) plus a passwordless magic-link login —
-  but for CUSTOMER accounts on a separate identity, not for `BackendUser`
-  (see [`member.md`](member.md), [`../02-decisions/adr-029-member-session-and-framework-acl.md`](../02-decisions/adr-029-member-session-and-framework-acl.md)).
-  Those services are reusable for the admin login when this roadmap item is taken up; the
-  `secondFactor` field, the enum and the `AuthService` branch are still missing.
-  **Owner decisions 2026-09-22 (raised by the z77.ch P2 exit check — the developer was locked out
-  of his own backend, and there is no recovery path):**
-  - **Self-service recovery is required.** A customer who cannot get into the backend must not
-    have to ask the developer.
-  - **Both ways, selectable per user.** Either a password with a «Passwort vergessen» link (a
-    one-time, short-lived link to the account's e-mail sets a new password), or passwordless
-    sign-in by magic link. Both reuse the `module-member` link mechanism.
-  - **2FA (TOTP) must be possible** on top of either way. The recovery link does not bypass the
-    second factor.
-  - **Timing:** after P3 (module-debtor) of the order/debtor/financial Bauplan. Until then, a
-    lost admin password is reset by hand on the server.
-  **Status 2026-11-01:** the password way is built («Passwort vergessen», one-time link valid 30
-  minutes; [`login.md`](login.md) LOGIN-RESET-001), with the recovery address on the account
-  (`BackendUser.email`), but it is not yet asked for at setup and every existing account starts
-  without one.
-  **Status 2026-11-01, later:** 2FA (TOTP) is built, optional per user and switched on by the user
-  himself ([`login.md`](login.md) BACKEND-2FA-001); the recovery link does not bypass it; a lost
-  device is an admin reset. It is not the shape sketched above: three fields on `BackendUser`
-  (`totp_secret`, `totp_activated_at`, `totp_last_step`), no `secondFactor` field and no enum, and
-  the admin cannot set it in the user form, only reset it. The owner's flow of that day decided
-  against recovery codes and against a magic link as a second factor. Still open: passwordless
-  sign-in by magic link, «selectable per user», a mandate, Passkeys/WebAuthn. The member's TOTP
-  has what the backend's got since 2026-11-02 ([`member.md`](member.md) MEMBER-2FA-001).
+- **Error handler** (fixes SEC-002) — branch on the framework `DEBUG` flag; generic production page without paths/traces, also in the boot phase before `Bootstrap` sets `display_errors`.
+- **Reject a mismatching `Host`** (optional hardening on top of SEC-005, deliberately not built) — 400/421 when `Host` differs from `canonicalBaseUrl`. Breaks apex-vs-www and staging setups, so it needs its own opt-in switch and a migration story. Not urgent.
+- **Backend editor for `systemConfig`** — SUPER_USER-gated, so `canonicalBaseUrl` can be corrected without a deploy (ADR-030 leaves the file hand-maintained for now). Must clear APCu + page cache on write, like the debug/noindex toggles.
+- **Enforcing the page CSP** — it only observes (SEC-HEAD-001); `/app` already runs under its own enforced CSP (`AppController::CSP`). Needs a decision about the Google Fonts in `partials/head/fonts`, a look at a real installation's console, and a project's own templates read first.
+- **Docroot/deny hardening, nginx part** — Apache is done (INST-DENY-001, [`installer.md`](installer.md)); equivalent nginx `location` deny snippets are only documentation-by-hand.
+- **Stronger backend auth, still open** (owner decisions 2026-09-22; built so far: «Passwort vergessen» LOGIN-RESET-001 and optional TOTP BACKEND-2FA-001, see [`login.md`](login.md)): passwordless sign-in by magic link, the way «selectable per user», a 2FA *mandate* (global/role-level, the only part that could ever be a config key), Passkeys/WebAuthn, and asking the recovery e-mail at setup. The `module-member` link and TOTP services are reusable ([`member.md`](member.md), [ADR-029](../02-decisions/adr-029-member-session-and-framework-acl.md)).

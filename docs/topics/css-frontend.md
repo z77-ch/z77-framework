@@ -1,6 +1,6 @@
 # css-frontend
 
-2026-07-12
+2026-11-12
 
 ## entry
 
@@ -234,5 +234,4 @@ packages/module-frontend/res/view/templates/
 
 ## pending
 
-- Verify the design end-to-end in a browser across all six pages and three breakpoints before treating this starter as shippable.
-- **CSS-WRAPPER-TOKENS (C1)** — done 2026-06-22: frontend tokens moved `:root` → `.fe`, wrapper on `<html class="fe">`, recompiled. Part of [`../03-development/css-wrapper-token-bauplan.md`](../03-development/css-wrapper-token-bauplan.md); awaiting the PAUSE-1 visual test together with the backend (C2).
+- **PAUSE-1 visual test** — check the starter design in a browser across all six pages and three breakpoints before treating it as shippable, together with the backend (C2) after the wrapper-token move (CSS-WRAPPER-TOKENS C1, done 2026-06-22; [`../03-development/css-wrapper-token-bauplan.md`](../03-development/css-wrapper-token-bauplan.md) still reads «PAUSE 1: visueller Test ausstehend»).

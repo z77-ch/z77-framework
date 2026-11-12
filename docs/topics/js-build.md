@@ -1,6 +1,6 @@
 # js-build
 
-2026-11-11
+2026-11-12
 
 ## entry
 
@@ -76,7 +76,7 @@ Such a file is NOT re-saved through the minify-on-save extension: its `.min.js` 
 
 ## pending
 
-- Run `php tests/js-min-markers.php` in whatever pre-deploy step exists once there is one (`.releases/check.php` could call it).
+- Run `php tests/js-min-markers.php` before a deploy: `.releases/check.php` is the pre-deploy step now but does not call it, and it runs in a project, where the framework's `tests/` is not present — decide where the call belongs (e.g. the framework's own release/tag step).
 - Decide whether `.min.js` should carry a source map. Not today: the map would need its own versioned name beside `name_at-{mtime}.min.js` and nothing currently reads one.
 
 ## see also

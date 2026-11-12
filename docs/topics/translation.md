@@ -271,9 +271,9 @@ discriminator.
 
 ## pending
 
-- **Content URL slug table** — only if content URLs ever localize their slug; today content is addressed by canonical slug + language, so no table is needed.
+- **TRANS-SEED-001 — missing-key adoption in the backend editor** (decided, ADR-032 scope 2026-08-08; IMP-R012 in [`../03-development/review-import-adr-032.md`](../03-development/review-import-adr-032.md)) — module strings reach installed projects through package dictionaries since 2026-11-07; what remains is the core `*.default.json` (nav/footer/common): runtime catalogs are seed-once, so keys added later never reach an existing project. Build in `TranslationCatalog` (not the entity import): list keys in the vendor default but absent in the runtime catalog, adopt selected ones, never overwrite an existing value.
 - **The backend translation tool knows only the runtime layer** — package and project keys (I18N-LAYERS-001) do not appear in its grid; a value typed there for such a key still wins (runtime layer). Showing the merged key set read-only is the obvious next step, if operators need it.
-- **TRANS-SEED-001 — missing-key adoption in the backend editor (ADR-032 scope decision, 2026-08-08)** — partly answered 2026-11-07: a MODULE's strings now live in its package dictionary and reach installed projects without seeding; what remains is the core `*.default.json` (nav/footer/common keys). Runtime catalogs are file-level seed-once, so UI-string keys added to the shipped `*.default.json` after installation never reach an existing project. Decided: this is NOT the ADR-032 entity import (catalogs are flat `key → value` maps, no entities) — instead `TranslationCatalog` gets a small compare-and-adopt feature: list keys present in the vendor default but absent in the runtime catalog, adopt selected ones (never overwrite an existing value). See [`../03-development/review-import-adr-032.md`](../03-development/review-import-adr-032.md) IMP-R012.
+- **Content URL slug table** — only if content URLs ever localize their slug; today content is addressed by canonical slug + language, so no table is needed.
 
 ## see also
 

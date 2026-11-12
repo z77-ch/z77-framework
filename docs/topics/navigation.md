@@ -1,6 +1,6 @@
 # navigation
 
-2026-10-10
+2026-11-12
 
 ## entry
 
@@ -507,10 +507,7 @@ first time that alias is saved through the backend (`mapToArray` writes every pr
 
 ## pending
 
-
 - **ADR-015 addendum for `Navigation::param` (NAV-PARAM-002)** — write a short `docs/02-decisions` ADR recording that navigation MAY carry an OUTBOUND UI-state query param (switch trigger, like `?via=`), while routing stays param-free (the ADR-015 core). Until then the decision lives in NAV-PARAM-002 above.
-
-- **Umgebungs-Switcher — Rollen-Gate (offen)** — `getViewAreas()` filtert heute nur auf Erreichbarkeit (mind. ein navigierbarer Eintrag), nicht auf Rolle; der Backend-Topbar ist ohnehin auth-gated, daher aufgeschoben. (Der frühere Env-Delete-Schutz ist mit ADR-022 gegenstandslos — Umgebungen sind Config, es gibt keinen Delete-Pfad mehr.)
-
-- **NAV-SEED-002 — the position of a seeded entry in a populated menu** (owner decision needed): keep add-only-append and tell packages their `sort_key` is a hint, OR insert at the seed's `sort_key` and shift the existing siblings (an ADR-050 amendment, a change to installer step 15b and `tests/navigation-seeds.php`). Today z77.ch shows «Aufträge» behind Drive, Stammdaten and Service until re-sorted by hand.
-- **Subnav — Folgepunkte aus NAV-SUBNAV-001** — drei bewusst offen gelassene Punkte aus der Subnav-Refaktorierung (2026-06-02): (1) **inert-Styling** — der Modifier `backend-tree-node--inert` (Leaf ohne erreichbare URL) ist gesetzt, aber im SCSS noch ungestylt; rendert wie ein normaler Knoten. (2) **inaktive Einträge** — die Subnav nutzt `getChildren()` (ungefiltert), inaktive Einträge (`active: false`) werden weiterhin gerendert — Abweichung von der `active`-Regel (kein öffentliches active-gefiltertes `getChildren`; `getActiveChildren` ist privat im NavigationService). (3) **Opener-Summary klickbar** — ein Opener-Knoten mit eigenem Link ist aktuell nur Toggle, nicht klickbar (Erreichbarkeit via Ref-auf-sich-selbst-Kind, id-18-Muster); offen, ob Summary zusätzlich Link sein soll.
+- **NAV-SEED-002 — the position of a seeded entry in a populated menu** (owner decision needed): keep add-only-append and tell packages their `sort_key` is a hint, OR insert at the seed's `sort_key` and shift the existing siblings (an ADR-050 amendment, a change to installer step 15b and `tests/navigation-seeds.php`). Until then every new seed in z77.ch is re-sorted by hand.
+- **Umgebungs-Switcher — role gate (deferred)** — `getViewAreas()` filters only on reachability (at least one navigable entry), not on role; the backend topbar is auth-gated anyway.
+- **Subnav follow-ups from NAV-SUBNAV-001 (2026-06-02), open on purpose:** (1) the modifier `backend-tree-node--inert` (leaf without a reachable URL) is set but unstyled in the SCSS; (2) the subnav uses the unfiltered `getChildren()`, so inactive entries (`active: false`) still render — `getActiveChildren()` is private in `NavigationService`; (3) an opener node with its own link is only a toggle — open whether the summary should also be a link (owner).

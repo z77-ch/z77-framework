@@ -1,6 +1,6 @@
 # alert
 
-2026-11-01
+2026-11-12
 
 ## entry
 
@@ -119,6 +119,5 @@ recipient constant:
 
 ## pending
 
-- **ALERT-001 — zihlundsee wiring**: the pilot's revalidate ACTION (the server side behind the JS background fetch — there is no cron) reports both outcomes to AlertService; part of the site-client swap (api.md API-005; client handoff in the zihlundsee project).
-- **ALERT-002 — AXO3 counterpart**: the server-side `last_used_at` aging watch («customer stopped fetching») is AXO3 project code, same edge/state shape — tracked in the AXO3 project, referenced here because neither side alone covers the silent failure.
+- **ALERT-002 — AXO3 counterpart**: the server-side `last_used_at` aging watch («customer stopped fetching») is AXO3 project code, same edge/state shape — tracked in the AXO3 project (state there unverified), referenced here because neither side alone covers the silent failure. (ALERT-001, the zihlundsee wiring, is done project-side: `Axo3Factory::alertHook()` reports success and failure, 2364d83 in the zihlundsee.ch project.)
 - **ALERT-003 — SMS channel**: interface is ready; an SMS implementation needs a provider decision (account, credentials, cost) — project or add-on package, not kernel.

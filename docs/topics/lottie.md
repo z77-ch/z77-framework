@@ -1,6 +1,6 @@
 # lottie
 
-2026-11-02
+2026-11-12
 
 ## entry
 
@@ -52,5 +52,4 @@ A Lottie on a page is **decoration with a static fallback**: the poster image is
 
 ## pending
 
-- The comments in `partials/lottie.tpl.php` and the frontend `layoutConfig` still say ~300 KB, and `lottie-figure.js` still offers `canvas`: comments only, left for the next edit of those files (owner's limit of H4: assets and docs).
-- The `.min.js` twins are copies, not minified builds (the player is already minified; the component is ~10 KB).
+- The comments in `partials/lottie.tpl.php` and the frontend `layoutConfig` still say ~300 KB, and `lottie-figure.js` still offers `canvas` (checked 2026-11-12): comments only, left for the next edit of those files (owner's limit of H4: assets and docs).

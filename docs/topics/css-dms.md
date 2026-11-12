@@ -1,6 +1,6 @@
 # css-dms
 
-2026-11-11
+2026-11-12
 
 ## entry
 
@@ -290,13 +290,5 @@ host only and, at equal specificity but later load order, would override the bin
 
 ## pending
 
-- **R6b done (2026-06-29).** `.dms`-base + the `.dms-` Drive components (icon, button, drive, tree,
-  filelist, preview) are built and compiled into `dms.css`, and **wired into the backend host**: a
-  backend `DriveController` (group `documents`, ADMIN) renders the `.dms` 3-pane fragment at
-  `/backend/documents/drive/list`, loading `dms.css` page-scoped via `addCss('dms','Z77\Module\Dms')`;
-  the bundle is published to `public/assets/dms`. Verified with seeded data (real template + controller
-  VM + real `dms.css`, headless: `temp/dms-drive-live.png`). Open: full admin click-through (no dev
-  login), live image thumbnails (GD not loaded). Detail: [`../03-development/dms-umbauplan.md`](../03-development/dms-umbauplan.md) R6b.
-- Later R6: upload, ACL panel, delivery-mode control components; the public/share materialization.
-- Visual PAUSE+TEST: verify the embedded fragment in a real host (backend first) + a host token
-  override once the integration lands.
+- **Share materialization components** — the last R6 piece without CSS (`public/share/<hash>/…`, not built; tracked in [`documents.md`](documents.md) pending). Upload, ACL and delivery-mode controls are built (combined edit modal, 2026-07-03).
+- **A host token override over `.dms`** — never exercised: a project overriding a `--dms-*` token from the host side and checking the fragment follows (unverified). The backend host itself is in daily use.

@@ -1,6 +1,6 @@
 # contact
 
-2026-10-22
+2026-11-12
 
 ## entry
 
@@ -142,14 +142,13 @@ SOURCE=/packages/module-contact/src/Dashboard/ContactDashboard.php
 
 ## pending
 
-- **E-mail and phone of an address — built 2026-10-22, not committed, not seen in a browser** (owner decision of the day, «mental model» above): **migrations to apply** on `z77ch_initial` and on z77.ch (`z77-db migrate`; not run on any project database by the build) — contact `Version20261022160000` (`address.email` / `phone`), debtor `Version20261022160000` (`invoice.addr_email` / `addr_phone`), order `Version20261022160000` (`sales_order.bill_/ship_ email` / `phone`); the packages are symlinked into the test project, so its contact, invoice and order screens fail with «Unknown column» until they run. Then: the importer fills the address e-mail / phone from wdv; an existing installation adds the type «Newsletter» (CONTACT-SEED-001). Harness `tests/module-contact.php` A10–A12, B2, B7, C9b, D15b, D27b, D27c.
-- **Usability review 2026-10-15** ([`usability-review-2026-10-15-contact-debtor-order.md`](../03-development/usability-review-2026-10-15-contact-debtor-order.md) §4): proposals waiting for the owner — the first address's name taken from the contact when left empty (A2), the roles that are ON as badges in the list row, read for the page in one query (B2), the name opens «Bearbeiten» (B3), «Rollen» first in the dialog (B1), a role that needs an address (A1, through `ContactRoleInterface`).
-
-- **Backend group `contact`** — proposed here (`groupDefaults['contact'] = 'contact'`, URLs `/backend/contact/…`), not owner-confirmed. Alternatives: the `finance` group next to the tax codes, or a broader «Stammdaten» group. Renaming touches `backendConfig`, the two host controllers, the `*ListBase()` defaults and this doc.
-- **Snapshot shape** — closed 2026-09-23 with the invoice (`debtor.md`, P3 part 2): a document stores the ten `Address` fields as FLAT COLUMNS through an embeddable of the consuming module (`Z77\Module\Debtor\Entities\AddressSnapshot`, `#[ORM\Embedded(columnPrefix: 'addr_')]` on `invoice`), filled with `AddressSnapshot::of($address)` at issue — no JSON, no reference to `address` / `contact_address`; this module still carries no serialisation of its own. The invoice takes the contact's `invoice`-typed link, else `main`, else the first, by `ContactAddress::getTypeCode()` — so `AddressTypes::resolve(code)` was NOT needed and stays unbuilt (no caller); it comes back if a consumer ever snapshots the TYPE rather than the address.
-- **Import of `AddressType`** (adopt a seed change into an existing installation, ADR-032): needs `#[ImportIdentity(['code'])]`, `importEntities` in `contactConfig`, and the module-side validator seam module-vat is waiting for too (`vat.md` pending). Same blocker, same fix.
-- `tests/module-contact.php` covers the traits by reflection and source checks (no delete actions; the in-place answers, E13c/E13d); a request-level check of the screens (mount, hc1/hc2 slots, toggle, the optional address block on «add») is manual in a project installation until a controller harness exists.
-- Publishing: the package is not a split target yet (`.github/workflows/split.yml`, repo `z77-ch/module-contact`, Packagist) — owner's step when the package is ready to publish.
+- **E-mail and phone of an address** (committed `4d3a359`; migrations `Version20261022160000` of contact / debtor / order applied on `z77ch_main` and `z77ch_initial`; the owner saw the order window's address e-mail / phone 2026-11-12): still open — the z77.ch-initial importer fills the address e-mail / phone from wdv; an existing installation adds the type «Newsletter» (CONTACT-SEED-001).
+- **Usability review 2026-10-15** ([`usability-review-2026-10-15-contact-debtor-order.md`](../03-development/usability-review-2026-10-15-contact-debtor-order.md) §4) — proposals waiting for the owner: the first address's name taken from the contact when left empty (A2), the active roles as badges in the list row, read in one query (B2), the name opens «Bearbeiten» (B3), «Rollen» first in the dialog (B1), a role that needs an address (A1, through `ContactRoleInterface`).
+- **Backend group `contact`** — proposed (`groupDefaults['contact'] = 'contact'`, URLs `/backend/contact/…`), not owner-confirmed. Alternatives: the `finance` group next to the tax codes, or a broader «Stammdaten» group. Renaming touches `backendConfig`, the two host controllers, the `*ListBase()` defaults and this doc.
+- **Import of `AddressType`** (adopt a seed change, ADR-032): needs `#[ImportIdentity(['code'])]`, `importEntities` in `contactConfig`, and the module-side validator seam module-vat waits for too (`vat.md`). Same blocker, same fix.
+- Kept on purpose: `AddressTypes::resolve(code)` stays unbuilt (no caller — documents snapshot the address, not the type).
+- Kept on purpose: a request-level check of the screens (mount, hc1/hc2 slots, toggle, the optional address block on «add») stays manual until a controller harness exists.
+- Publishing: not a split target yet (`.github/workflows/split.yml`, repo `z77-ch/module-contact`, Packagist) — owner's step.
 
 ## see also
 

@@ -1,6 +1,6 @@
 # routing
 
-2026-11-01
+2026-11-12
 
 ## entry
 
@@ -279,11 +279,4 @@ Anything thrown later and caught nowhere (an action, a template, the dispatcher)
 
 ## pending
 
-- **ROUTE-DYN-001** — dynamic friendly detail routes (`/schweiz/stadt/basel` → one action that resolves the entity). **Design + core implemented via ADR-015 (NavigationAlias + content slugs), NOT the earlier `UrlAlias` sketch** (that direction was rejected — see ADR-015 Rejected Alternatives). The matcher (`matchAlias`, longest-prefix — opt-in per alias via `accepts_slugs` since 2026-09-17, ROUTE-ALIAS-002), content-slug capture (`getSlugs`), and outbound (`urlFor`) shipped in Phases 1–4 (navigation.md NAV-ALIAS-001). The remaining pieces below are **decided** (forks D2–D4, recorded in ADR-015 §D2–D4) but **deferred until the first real detail-page controller exists** (decision 2026-06-09 — no cache/metadata infrastructure on spec without a consumer). They will be built ad-hoc alongside that controller, on the decided designs:
-  - **PageCache collision (D2):** `PageIdentity` keys HTML by the 4-tuple, not the URL → detail URLs sharing one action collide. Decided: cache key becomes `(language, localized URL path)`; invalidation per-URL + `clearAll()` on deploy.
-  - **Entity-slug translation scaling (D3):** `bale↔basel` must come from an **indexed** store (fed by entities), not flat `route-slugs.{lang}.json`. _(Amended 2026-09-17: the second half of this line — "the `SlugTranslator` normalizes all segments to canonical, the action stays language-agnostic" — is superseded. Content slugs reach the action raw; whatever store is built, it is the action's lookup, not a rewrite of the URL on the way in.)_
-  - **Metadata from entity (D4):** detail pages set title/description at runtime from the entity (override hook), not navId.
-
-  (The **NavigationUrlResolver extraction** — Phase 5, point 4 — is done; see `navigation.md` NAV-RESOLVER-001.)
-
-  See [`navigation.md`](navigation.md) (alias model), [`translation.md`](translation.md) (segment translation), [`metadata.md`](metadata.md) (navId-keyed metadata + the entity path).
+- **ROUTE-DYN-001** — dynamic friendly detail routes (`/schweiz/stadt/basel` → one action that resolves the entity). Core shipped via ADR-015 (NavigationAlias + content slugs, `matchAlias` with opt-in `accepts_slugs`, `getSlugs`, `urlFor`; navigation.md NAV-ALIAS-001, NAV-RESOLVER-001). Deferred until the first real detail-page controller exists (decision 2026-06-09), then built on the decided designs of ADR-015 §D2–D4: PageCache key `(language, localized URL path)` (D2); entity-slug translation from an indexed store fed by entities — the action's lookup, not a URL rewrite (D3, amended 2026-09-17); metadata from the entity via an override hook (D4). See [`navigation.md`](navigation.md), [`translation.md`](translation.md), [`metadata.md`](metadata.md).

@@ -1,6 +1,6 @@
 # member
 
-2026-11-02
+2026-11-12
 
 ## entry
 
@@ -223,11 +223,10 @@ master invites address ─▶ token + mail ─┬─ unknown address: name form 
 ## pending
 
 - **Click through the profile rows (MEMBER-FORM-ACTIONS-001)** — the two dialogs (row under the title, Enter saves, the Konto save updates the values and closes), «Abmelden» on one of several devices (row gone, counts updated) and on the last one (page), «2FA entfernen» with a wrong and a right code.
-- **Roll device keys lazily (MEM-008)** — optional: only when `last_used_at` is older than a day, keeping the documented rolling-90-day semantics. Low value at today's write frequency; the reason to do it is if the idle window ever shrinks.
-- **Read the User-Agent through `Request`** — `LoginFlow::request()`, `DeviceKeys` (key label) and the kernel's `FormLog` still read `$_SERVER['HTTP_USER_AGENT']` directly (CLAUDE.md rule 4). Needs a `Request` accessor and a way in for the harness, which runs without a DI container; one change for all three places, not part of the 2026-09-19 login simplification.
+- **Roll device keys lazily (MEM-008)** — optional: only when `last_used_at` is older than a day, keeping the rolling-90-day semantics. Low value at today's write frequency.
+- **Read the User-Agent through `Request`** — the accessor exists now (`Request::getUserAgent()`, used by the statistics); `LoginFlow::request()`, `DeviceKeys` (key label) and the kernel's `FormLog` still read `$_SERVER['HTTP_USER_AGENT']` directly (CLAUDE.md rule 4). Move all three in one change; the harness runs without a DI container and needs a way in.
 - **Set `canonicalBaseUrl` per installation** — one line in `config/client/systemConfig.inc.php`; without it the member pages throw as soon as they build a link (ADR-030).
 - Member session vs. framework ACL is an open architecture question — framed in ADR-029, to be decided when a role-based member application is built.
-- ~~The member layout registers the `member-main` nav slot but does not render it~~ — resolved 2026-08-12: the shell renders it, as the AREAS in the header's four-square switcher. A project that wants none simply leaves the slot empty; the switcher then does not appear.
 
 ## see also
 

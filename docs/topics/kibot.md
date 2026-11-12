@@ -1,6 +1,6 @@
 # kibot
 
-2026-10-25
+2026-11-12
 
 ## entry
 
@@ -128,21 +128,19 @@ return [
 - KIBOT-BODY-CAP: don't assume `limits.maxBodyBytes` caps the raw upload — `Request::getJsonBody()` reads the body unbounded; the adapter checks the re-encoded size, Guard caps count and length per message.
 - KIBOT-CSRF-ENVELOPE: don't expect an SSE error when the `X-CSRF-Token` header is missing — AccessGuard answers with a FetchResponse envelope before the action runs; the widget then ends with an empty answer.
 - KIBOT-STANDALONE-ASSETS: don't look for `bot.js` / `bot.css` in `packages/kibot/public/` — they live in `res/assets/` (installer convention); the standalone demo needs a copy into `public/` (gitignored).
-- KIBOT-ASSIST-MIN: don't assume a window's title-bar button is the assistant in production yet — that code is in `core.js`; until `core.min.js` is re-saved (VS Code), production windows keep «Hilfe» (the top bar / toolbar trigger is the assistant already). `tests/js-min-markers.php` fails on `data-kibot-ready` until then.
 - KIBOT-ASSIST-LABEL: don't assume «KI-Assistent» on the trigger means the panel opens — the label is decided server-side (configured + key); if bot.js fails to load or its config fetch fails, the click opens the classic help.
 - KIBOT-ASSIST-TITLE: don't expect a human title for a help topic without a static heading before its first field section — the index then names it from the path (`Invoice – form`). A heading whose text depends on controller variables carries `data-help-title="…"` for the index (resolved 2026-10-25 for the invoice form «Rechnung und Gutschrift» and the Faktura-Journal list).
 - KIBOT-ASSIST-ASSETS: don't expect cache busting on `/assets/kibot/js/bot.js` — it is loaded directly by the skeleton (not through JavascriptManager), no version query, no `.min.js`.
+- KIBOT-HARNESS-T: don't render `partials/helpTrigger` in a harness without a Translator — its classic label is `t('common.help')` (ADR-056); `tests/kibot-assistant.php` fataled from ab231b9 (2026-11-07) until it installed `tests/support/TestTranslator.php` over kernel/shared (fixed 2026-11-12, 75/0).
 
 ## pending
 
 - Live test with a real key (bin/ask.php, standalone widget, z77 project) — and of the backend assistant (panel, context, «Hilfetext anzeigen», window button).
-- Re-save `core.js` in VS Code (→ `core.min.js`, KIBOT-ASSIST-MIN).
 - Board for the assistant panel on the developer canvas (backend-screen recipe) — built without one by the owner's direct order.
 - Decide whether the assistant also stands on screens WITHOUT attached help (today: only where «Hilfe» stood).
-- General heading for `InvoiceController/form.help` and `InvoiceJournalController/list.help` (KIBOT-ASSIST-TITLE).
 - KIBOT-SOURCE-ROOT: decide the source root for the release layout — `shared/kibot` relative to the release means a `target.shared` entry `shared/kibot` (→ `<root>/shared/shared/kibot`); `data/kibot` would ride on the already shared `data/`.
 - KIBOT-STREAM-RESPONSE: consider a typed `StreamResponse` + `$this->stream()` helper (ADR-003 addendum) instead of streaming inside the action before `void()`.
-- Packaging: `z77/kibot` is not a split target and not on Packagist yet; not in `skeleton/composer.json`.
+- Packaging: `z77/kibot` is not a split target and not on Packagist yet; not in `skeleton/composer.json` (checked 2026-11-12).
 
 ## see also
 

@@ -1,6 +1,6 @@
 # entity-data-handling
 
-2026-08-03
+2026-11-12
 
 ## entry
 
@@ -330,9 +330,9 @@ Mechanics (reference implementation: `NavigationController` + its `edit.tpl.php`
 
 ## pending
 
-- Convention-based validator resolution: `$em->getValidator($entity)` resolves `{Namespace}\Validators\{EntityName}Validator` — not yet implemented; validators are instantiated explicitly for now
-- Validator rule set is minimal (notEmpty, minLength, maxLength, isEmail, isUrl, isAlpha*) — extend as needed per entity
-- `BodyCleaner` filter registry is hardcoded in the constructor — if external packages need custom filters, expose `BodyCleaner::registry()->register('name', $factory)` as a documented extension point
+- Convention-based validator resolution: `$em->getValidator($entity)` resolving `{Namespace}\Validators\{EntityName}Validator` — not implemented; validators are instantiated explicitly.
+- Validator rule set is minimal (notEmpty, minLength, maxLength, isEmail, isUrl, isAlpha*) — extend as needed per entity.
+- `BodyCleaner::registry()->register('name', $factory)` exists (public `FilterRegistry::register()`) but is not documented as an extension point; the built-in filters are fixed in the `FilterRegistry` constructor — document it when an external package needs a custom filter.
 
 ## see also
 

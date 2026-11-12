@@ -149,8 +149,8 @@ RUNTIME=/skeleton/config/client/database.inc.php
 ## pending
 
 - Mapping for foreign-currency document amounts (plan §6.2: a document keeps currency and rate) — `MoneyType` covers the base currency only; whether those columns become minor units + a currency column, or something else, is undecided and not designed here.
-- DOCTRINE-CACHE-001: settled without a deploy step (owner, 2026-09-21). With `opcache.validate_timestamps` on, the regenerated files' new mtime suffices; with it off, backend «Cache leeren» (web SAPI) invalidates the right pool. A CLI `migrate` runs on `next`, whose release-local cache directory the web process has not compiled yet. No generation segment. Still worth one look on a host with timestamps off when one appears.
-- Publishing: the package is not a split target yet (`.github/workflows/split.yml`, repo `z77-ch/persistence-doctrine`, Packagist) — owner's step when the package is ready to publish.
+- DOCTRINE-CACHE-001 (settled by the owner 2026-09-21, no deploy step): still worth one look on a host with `opcache.validate_timestamps` off, when one appears.
+- Publishing: the package is not a split target yet (`.github/workflows/split.yml`, repo `z77-ch/persistence-doctrine`, Packagist; checked 2026-11-12) — owner's step when the package is ready to publish.
 
 ## see also
 

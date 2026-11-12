@@ -122,6 +122,7 @@ New features from idea to implementation.
 | Document/Folder | Content |
 |---|---|
 | [roadmap.md](03-development/roadmap.md) | Milestones and priorities |
+| [pendenzen-2026-11-12.md](03-development/pendenzen-2026-11-12.md) | Prioritized open items of all topics (look / decide / build / limits) |
 | [triage.md](03-development/triage.md) | Process: when is what addressed |
 | [ideas/](03-development/ideas/) | Raw ideas — not yet evaluated |
 | [concepts/](03-development/concepts/) | Elaborated concepts — under discussion |

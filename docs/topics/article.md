@@ -1,6 +1,6 @@
 # article
 
-2026-10-14
+2026-11-12
 
 ## entry
 
@@ -162,18 +162,17 @@ Owner 2026-10-14: «Der Baum reicht vorerst, ich muss ja irgendwie Waren gruppie
 
 ## pending
 
-- Run `tests/module-article.php` section B on PC1 (ARTICLE-DB-001).
 - P7b: the journal ledger behind `StockLedger` (tables keyed by variant id, the difference booking, corrections with reason, stocktake through `openWorkChecks` scope `stocktake`, the stock column on the list) — plan §8.2; `StockLedgers::default()` switches then.
 - The article number of a NEW article could later come from a number range (A2 «free or from a number range») — not in slim; the field is typed.
 - **wdv import (P5b / P8)**: wdv's four fixed levels `group1..group4` map to a PATH in the product-group tree — the import creates the missing nodes level by level (a `ProductGroupDraft` per level, parent = the previous one, empty levels skipped) and places each product on the deepest one. The value lists of plan §4b «Migration effort» (country / region that slipped onto a group level) are decided BEFORE that mapping.
 - **Variants with OPTIONS** (vintage, size — plan §4b «Variant options are DATA») — later, with the shop; today a product has its hidden default variant only.
-- **Shop categories (MULTI-placement, Magento-style)** — later, with the shop (the owner found the idea interesting, 2026-10-14): an article in SEVERAL shop categories, a separate structure from the ONE accounting group of A1. Not built; the product-group tree stays the accounting classification.
-- **Discount group and turnover statistics per product group** (plan §4b A1 names them; A6 derives a group-wide discount from the tree) — nothing reads them yet; built when a consumer needs them.
+- **Shop categories (MULTI-placement, Magento-style)** — later, with the shop (owner 2026-10-14): an article in SEVERAL shop categories, a structure separate from the ONE accounting group of A1. The product-group tree stays the accounting classification.
+- **Discount group and turnover statistics per product group** (plan §4b A1, A6) — nothing reads them yet; built when a consumer needs them.
 - Reorder sibling groups (ARTICLE-GROUP-ORDER-001): drag & drop via `TreeService::reorderInto()` or alphabetical — owner's call.
 - Owner look at the remaining layout decision of ARTICLE-GROUP-TREE-UI-001 (a: the hub tree; b — the rail picker — was replaced by the toolbar tree picker 2026-10-18), and at the coordinator defaults (group mandatory, any node, «Allgemein»).
-- Owner look at the article picker in the browser (built 2026-10-19; verified by the harnesses — module-article Q / B27, module-order F13 / M28, core-js K — and an offline render, not yet clicked live): the row's magnifier, «+ Artikel» → a new row, typing / ↑↓ / Enter / Esc, the group popover inside the window, the page without the script.
-- Owner look at the tree picker in the browser (built 2026-10-18 from the approved prototype; verified by the harnesses and a jsdom run, not yet clicked live). Known limit, as before with the rail picker: the picker sits in the toolbar OUTSIDE the list's fetch region, so after a search / sort inside the region its links still carry the state of the page load (the search typed since is dropped when a group is chosen); the counts likewise stay those of the page load until the next page load.
-- The actor: `ArticleService` takes the actor from its caller (the screen passes the logged-in user). The shared actor resolution (debtor.md pending: «when a third module needs it, it moves to the kernel's shared») is not done here — module-debtor was out of scope for this step.
+- Owner look at the article picker in the browser (built 2026-10-19; verified by harnesses — module-article Q / B27, module-order F13 / M28, core-js K — and an offline render, not yet clicked live): the row's magnifier, «+ Artikel» → a new row, typing / ↑↓ / Enter / Esc, the group popover inside the window, the page without the script.
+- Owner look at the tree picker in the browser (built 2026-10-18; harnesses + jsdom, not yet clicked live). Known limit: the picker sits in the toolbar OUTSIDE the list's fetch region, so after a search / sort its links and counts keep the state of the page load (a search typed since is dropped when a group is chosen).
+- The actor: `ArticleService` takes the actor from its caller (the screen passes the logged-in user). The shared actor resolution (debtor.md pending: «when a third module needs it, it moves to the kernel's shared») is not done.
 
 ## see also
 

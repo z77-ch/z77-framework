@@ -1,6 +1,6 @@
 # vat
 
-2026-10-21
+2026-11-12
 
 ## entry
 
@@ -114,12 +114,10 @@ SOURCE=/docs/03-development/order-debtor-financial-bauplan.md
 
 ## pending
 
-- **ESTV form mapping (country pack `CH`, P5)**: `ADR-041` decision 9 — code + rate → form field (200, 302, 312, 342, 400, 405, …), consumed only by financial's VAT return. Deferred to P5 with the return itself; the seed is the P1 content of the pack. Place: `packages/module-vat/src/CountryPack/` once a consumer exists.
-- **Snapshot serialisation** — closed 2026-09-23 without a serialiser in this module: the invoice stores `ResolvedRate` as columns of its lines (`invoice_line.tax_code` / `tax_rate` / `tax_label`) and `TaxSummaryEntry` as rows of `invoice_tax` (code, category, label, rate, base, tax) — `debtor.md`, P3 part 2. No `toArray()` / `fromArray()` was needed. The **code picker** («active codes for a new document») was built with the draft editor of P3 part 3 (above, «The tax-code picker»); `InvoicingService` still refuses a deactivated code on a NEW document (`tax-code-inactive`) as the last line.
-- **Import of `TaxCode` / `TaxRate`** (adopt a seed change into an existing installation, ADR-032): needs `#[ImportIdentity(['code'])]` / `#[ImportIdentity(['code', 'validFrom'])]`, `importEntities` in `vatConfig`, and a validator factory — today `ImportServiceFactory::fromDi()` in the kernel wires validators by a fixed map, so a module cannot register its own without a kernel edit. Needs a module-side seam first; the import must then write rates through `VatMasterData::addRate()`.
-- `tests/module-vat.php` covers the trait by reflection and source checks (no remove action for a code; the in-place answers) and renders `_row` and the edit dialog through a template double; a request-level check of the screen (mount, hc1 slot, toggle) is manual in a project installation until a controller harness exists.
-
-- **The journal forms' tax-code select** (`ManualEntryForm` rows, the one-line MwSt row) read the shared list but still render their own `<select>`; switch them to `partials/taxCodeSelect` when those templates are next touched (the one-line form filters reverse charge — the partial takes the filtered list as it is).
+- **ESTV form mapping (country pack `CH`, P5)**: ADR-041 decision 9 — code + rate → form field (200, 302, 312, 342, 400, 405, …), consumed only by financial's VAT return. Deferred to P5 part 2 (financial.md); place: `packages/module-vat/src/CountryPack/` once a consumer exists.
+- **Import of `TaxCode` / `TaxRate`** (adopt a seed change, ADR-032): needs `#[ImportIdentity(['code'])]` / `#[ImportIdentity(['code', 'validFrom'])]`, `importEntities` in `vatConfig`, and a module-side validator seam — today `ImportServiceFactory::fromDi()` wires validators by a fixed map (a kernel edit per module). Writes rates through `VatMasterData::addRate()`.
+- **The journal forms' tax-code select** (`ManualEntryForm` rows, the one-line MwSt row) still render their own `<select>`; switch to `partials/taxCodeSelect` when those templates are next touched (the one-line form passes its reverse-charge-filtered list).
+- Kept on purpose: a request-level check of the screen (mount, hc1 slot, toggle) stays manual until a controller harness exists (`tests/module-vat.php` covers the trait by reflection and the templates through a double).
 
 ## see also
 

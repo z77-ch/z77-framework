@@ -157,14 +157,15 @@ A phone captures a receipt — photo, gross amount, optionally a text, a TEMPLAT
 
 ## pending
 
-- Backend screens, not built (2026-11-12, cheap but not on the first pass): «Journal drucken» — the journal list as PDF (the toolbar tool of the board) and the print icon per protocol in «Verbuchte Journale»; zoom and rotate of the photo in the window (no script yet — «Original öffnen» shows it in the browser's viewer); the fiscal-year selection at the top of the rail (the board filters by receipt date — deliberately left out: a filter would hide open receipts of another year, backend-screen.md §4 «a pending step must be visible»)
-- Owner look: the switch «Foto auch löschen» is OFF by default (the board said «das Foto geht mit»; the domain decision «keep» is still open, see below); the master data have NO «Löschen …» (the board offered it for a never-used template — the domain deletes nothing, ADR-043 decision 19)
-- The phone (API targets + app screen, built 2026-11-12): the live test on an iPhone and an Android phone — camera, the JPEG scaling of an iPhone photo, the offline queue ([`api.md`](api.md) API-008); the receipts of one device from the «Geräte» window need a module-agnostic link (api.md API-010 b)
-- Owner decisions: delete a receipt's photo with the receipt or keep it (built: keep); HEIC (built: refused, the phone converts to JPEG); the mandator not liable to VAT (RECEIPT-VAT-001); whether «ohne MWST» counts as the VAT decision of a complete receipt (built: yes)
-- Correction of a POSTED receipt: through the ledger as its source (`LedgerService::amend()` / `retract()` / `reverse()` with source `receipt`), not built
-- A public line builder in module-financial for the one-line entry (RECEIPT-BUILD-001) — the smallest additive seam, when a second caller needs it
-- Dashboard entry («n Belege im Belegjournal») — module-backend's `dashboard` list, with the screens
-- The link from a journal entry to its receipt photo in financial's journal (financial knows no module — needs a source-link registry, not designed)
+- **Owner's look — backend screens** (committed `658ca7c` / `3a8b8f6`): the switch «Foto auch löschen» is OFF by default; the master data have NO «Löschen …» (the domain deletes nothing, ADR-043 decision 19).
+- **Owner's look — the phone** (`3a8b8f6`): live test on an iPhone and an Android phone — camera, the JPEG scaling of an iPhone photo, the offline queue ([`api.md`](api.md) API-008).
+- **Owner decisions** (each built one way, to confirm): delete a receipt's photo with the receipt or keep it (built: keep); HEIC (built: refused, the phone converts to JPEG); the mandator not liable to VAT (RECEIPT-VAT-001); «ohne MWST» counts as the VAT decision of a complete receipt (built: yes).
+- **Module not registered in the local project DBs**: `Version20261112100000` is not among the migration namespaces of z77.ch or z77.ch-initial (`z77-db status` 2026-11-12) — enable the module there before the look.
+- Not built (cheap, not on the first pass): «Journal drucken» (the journal list as PDF) and the print icon per protocol in «Verbuchte Journale»; zoom / rotate of the photo in the window. Deliberately left out: the fiscal-year selection (a filter would hide open receipts of another year, backend-screen.md §4).
+- Not built: the dashboard entry («n Belege im Belegjournal») in module-backend's `dashboard` list.
+- Not built: correction of a POSTED receipt through the ledger as its source (`LedgerService::amend()` / `retract()` / `reverse()` with source `receipt`).
+- Not built: the receipts of one device from the «Geräte» window (needs api.md API-010 b); the link from a journal entry to its receipt photo (financial knows no module — needs a source-link registry, not designed).
+- Deferred: a public line builder in module-financial for the one-line entry (RECEIPT-BUILD-001) — when a second caller needs it.
 
 ## see also
 

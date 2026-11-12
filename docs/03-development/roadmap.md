@@ -12,6 +12,10 @@
 | M4 — First Production Use | `[OPEN]` | Integration into a live project |
 | Release 2.0.0 — Business Suite | `[WAITING]` | First release with the business-suite modules (order, debtor, financial, mandator, vat, contact, article, persistence-doctrine …) on Packagist. Owner 2026-10-22: **waits until the owner has installed the suite on the server.** Then: release checklist in `docs/03-development/` (pattern `public-release-bauplan.md`), breaking changes since `1.6.0` (upgrade notes, `CHANGELOG.md`), `split.yml` + repos + Packagist for the new packages, handbook coverage of the new modules (CLAUDE.md publish rule), tag `2.0.0`. Today only kernel, module-frontend, module-backend, module-dms are on Packagist (last tag `1.6.0`). |
 
+## Open items — prioritized list
+
+The swept, prioritized list of every topic's `## pending` (owner looks, owner decisions, ready to build, known limits): [pendenzen-2026-11-12.md](pendenzen-2026-11-12.md). The topic docs stay the source of truth.
+
 ## Current Priorities (vor Publikation)
 
 1. **Backend Dashboard** — Dashboard-Controller als erster geschützter Bereich

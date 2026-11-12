@@ -1,6 +1,6 @@
 # packaging
 
-2026-11-02
+2026-11-12
 
 Public since 2026-07-15: the monorepo and all split repos are public on GitHub and every package (`z77/kernel`, the three modules, `z77/skeleton`, `z77/docs`) is registered on Packagist with release tags (`1.0.x`). `z77-ch/kernel` + `module-frontend/backend/dms` are the active split targets; the obsolete `z77-ch/core`, `/shared`, `/persistence` repos are archived (read-only), superseded by kernel.
 
@@ -116,8 +116,8 @@ Changing the package alone changes nothing a browser sees.
 
 ## pending
 
-- **PKG-OVERRIDE-001: every project's `.releases/`** — `check.php`, `lib.php` and `RULES.md` are the owner's to copy; until then a project's check says nothing about its overrides.
-- **PKG-EXPORT-001: every project's `.releases/`** — each keeps its own copy of `lib.php` and `vendor-deploy.php`, and only a project with the new copies builds from the commit.
+- **PKG-OVERRIDE-001 / PKG-EXPORT-001: every project's `.releases/`** — owner copies `check.php`, `lib.php`, `RULES.md` and `vendor-deploy.php` into each project; until then a project's check says nothing about its overrides and it builds from the working tree, not the commit. Compared 2026-11-12 (line endings ignored): current in z77.ch and archsult.com; differs in z77.ch-initial (all four), zihlundsee.ch (`lib.php`), axo3.ch and rudaz.ch (`check.php`, `lib.php`, `RULES.md`).
+- Owner decision: which further packages become split targets. `split.yml` has 5 (kernel, module-frontend, module-backend, module-dms, docs; checked 2026-11-12); not split: module-api (api.md API-006), kibot, persistence-doctrine (each with its own pending) and module-article, -contact, -debtor, -financial, -mailing, -mandator, -member, -order, -receipt, -vat.
 
 ## see also
 

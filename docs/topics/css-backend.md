@@ -420,10 +420,10 @@ packages/module-backend/res/view/templates/
   `__text`, `__wide` over `--be-rows-span` tracks, `__rate` (a value shown as text), `__end` / `__remove`,
   `__row--text` tinted with `--be-row-tint`, `__adders`) goes with core.js «rows» (`[data-rows]`,
   `[data-row]`, `[data-row-grip]`, `[data-row-indent]`, `[data-row-no]`, `[data-row-remove]`,
-  `template[data-row-template]`, `[data-row-add]` — the contract in the core.js header), «autosize»
+  `template[data-row-template]`, `[data-row-add]`, `[data-rows-enter]` — Enter moves on and never saves, order.md ORDER-ENTER-001 — the contract in the core.js header), «autosize»
   (`textarea[data-autosize]`; `="title"` paints the first line as a title through a mirror
   `[data-autosize-mirror]` over the field — colour only, a bolder face would move the caret) and
-  «line sums» (`[data-sum]`, display only) and — since 2026-10-18 — «price mode» (`[data-price-mode]`: a price-mode switch re-converts the rows in place, the hidden `[data-price-mode-shown]` tells the server the mode the prices are in; order.md `## pending` «Price mode»). The indent is visible without the script (`:has()` on the
+  «line sums» (`[data-sum]`, display only) and — since 2026-10-18 — «price mode» (`[data-price-mode]`: a price-mode switch re-converts the rows in place, the hidden `[data-price-mode-shown]` tells the server the mode the prices are in; ADR-043 addendum 2026-10-18 «the debtor carries the price mode»). The indent is visible without the script (`:has()` on the
   checkbox), the grip is rendered `hidden` and revealed by the script. **Deviation, recorded**: the ⇥
   indent is a checkbox shown as a toggle button, against the rule «on/off → `.be-switch`» — the owner
   asked for an indent control at the far left of each row (2026-10-18); a switch per row would weigh
@@ -877,293 +877,24 @@ packages/module-backend/res/view/templates/
 
 - **CSS-CHOICE-001** — resolved 2026-05-30. Selected radios/checkboxes were only weakly indicated (bare native control). Added the shared `.be-choice` component in `_forms.scss`: an `appearance:none` box with a `::after` checkmark on `:checked`, type-agnostic so radio and checkbox look identical; optional `.be-choice--filled` tints the whole row (`color-mix` on `--be-accent`). The `NavigationController/edit.tpl.php` group picker migrated from the old `.be-form__tag-label` chip to `.be-choice`.
 
+- Don't assume the owner sees a framework CSS/JS change in a project before `composer install` ran there — publish to the project first, then ask him to look.
+
+- Don't read EDGE-001's «text on the edge» literally since ADR-051 (2026-10-17): it means «card on the edge»; the text sits the card padding further in.
+
 ## pending
 
-- **The other «…» confirm buttons (added 2026-10-18, ADR-033 addendum 2026-10-18).** The order
-  window and the invoice detail take `.be-btn--confirm-open` for «Buchungsdruck …»; the list
-  action cells (invoice list «Buchungsdruck …», dunning «Mahnlauf starten …») still FILL — review
-  them with the owner (the action cell's island has its own confirm look), and decide whether
-  other window rows take `cancelKind` 'quiet' too.
-
-- **Cards on the window ground, quiet inputs — backend-wide (added 2026-10-16, ADR-051 + its
-  addendum 2026-10-17: the draft IS the target look).** Mockup: `temp/order-mask-draft.html`
-  (gitignored, owner machine).
-  **BUILT 2026-10-17, not seen in a browser** (base.css + dms.css compiled and copied with the
-  fonts to z77.ch `public/assets/`): palette Salbei as the default, the three derived roles, the
-  faces, and the draft's forms through the shared components — values in
-  [backend theme tokens](#backend-theme-tokens---be-). Where the forms landed:
-  - **Cards:** `.be-list__section` is the card (`--be-surface2`, 1px `--be-line`, `--radius-card`,
-    padding 12/16, gap `--space-3`) — every list, every window form (order, article, journal,
-    invoice …). `.be-modal__body` is the card of a dialog (the dialog itself is `--be-bg` with a
-    `--be-line-strong` frame); a section inside a dialog body or inside a section is flat. An
-    action row (`.z77-form-actions`) that is a section's child becomes the card's head strip
-    (`_form-actions-host.scss`). Dashboard module cards and the login box take the card ground
-    and radius.
-  - **Titles:** `.be-list__section-title` and `.be-form__section` = the draft's block title (xs,
-    uppercase, `.09em`, bold, accent; a `<small>` in it plain and muted). The section header lost
-    its 2px rule; the column head (`.be-list__head`) is plain case with one `--be-line-strong`
-    rule and the card behind it (`--be-list-ground`).
-  - **Inputs:** `look.rest` = radius 5 on `--be-field`; `look.quiet` for every `.be-input` /
-    `.be-form__control` in a `.be-list__row`; numeric cells (`.be-list__cell--num`, and an input
-    in one) in the mono face, right-aligned, tabular. Checkbox / reveal boxes on `--be-field`.
-  - **Buttons:** secondary = card ground + `--be-line-strong`, accent line on hover (the draft's
-    `.btn`); primary ink = `--be-on-accent-page` (white in light, the dark ground in dark — every
-    dark accent was white-on-light before). «Speichern» stays the accent.
-  - **Pills:** `.badge` = the draft's `.chip` (soft ground, tone ink, radius 999, plain case),
-    tokens only — it was light-only. Tones mix toward `--be-text` for readable ink.
-  - **Bars:** `.be-modal__header` and `.z77-window__head` = card ground + line below, title 18px
-    semibold (the draft's `.bar`); window close 32px, hover on `--be-field`; window body padded
-    on all sides (the ground around the cards).
-  - **Drive:** `_dms-host.scss` binds the faces and the new fragment tokens `--dms-control-*`
-    (point 5 below) plus `--dms-line-strong` → `--be-line-strong`, `--dms-on-accent` →
-    `--be-on-accent-page`.
-  **Owner to look at first:** an order window (Salbei light AND dark — cards, head strip, quiet
-  position inputs, mono numbers), a plain list (Stammdaten › Artikel), a dialog (Kontakte ›
-  Adresstyp bearbeiten), the journal one-line entry, the Drive (buttons), a list with badges
-  (Mahnungen / Rechnungen), the dashboard and login; then the picker: Werkbank must look as
-  before apart from the new forms. **Open:** the draft's status SELECT as a pill in the window
-  title bar and its text rows (`--be-row-tint` on a text line) wait for the order window's new
-  layout (`order.md`); the shell island in Salbei is an addition the draft does not show —
-  owner's word; ADR-051 addendum point 5 (Citrus / Lagune / Sonne cards, Citrus / Sonne accents)
-  still open; EDGE-001's «text on the edge» now means «card on the edge», the text sits the card
-  padding further in.
-  **Consistency audit 2026-10-16** (templates of all backend modules, grep) — fix BEFORE or WITH
-  the token change, else the new look lands unevenly:
-  1. *Save in dialogs was the accent, the rule said green* — RESOLVED by the owner the other
-     way: «Speichern» = accent everywhere (ADR-033 addendum 2026-10-16). Windows and the
-     journal are right as they are; only the action cell of Stammdaten › Mandant moves from
-     `confirm` to `primary`.
-  2. DONE 2026-10-17 — *the input look was defined four times* (five: `.be-form__control` too).
-     Now ONE place: `components/_input-look.scss`, mixins `rest($radius)` (line, corner,
-     ground, ink) and `focus` (accent line + ring), included by `.be-form__control`,
-     `.be-form__field input/select` (+ `.be-form__grid > select`), `.be-form__param-row input`,
-     `.be-input` (which the column search `.be-list__find-input` carries) and
-     `.be-list__filter-input`. Mixins, not a shared selector list, so each rule keeps its place
-     in the cascade: the compiled CSS differs only in declaration ORDER inside those blocks
-     (verified by diffing the expanded build). `--be-field` / the quiet table variant now change
-     `look.rest`. Leftover: `select.be-input option` keeps its own `--be-surface` ground.
-  3. DONE 2026-10-17 — *raw checkboxes*: selections → `be-choice` (`label.be-choice` +
-     `be-choice__input`: debtor invoice list `doc[]`, dunning list `doc[]`); on/off →
-     `be-switch` (invoice editor «unter» `be-switch--sm`, mandator «Mehrwertsteuerpflichtig»
-     — the field caption is now the switch's own label, `.be-form__field > .be-switch`;
-     content editor `bool` field, its `.ce-field--bool` rule dropped from `content/editor.css`;
-     Drive upload «Originalbild unverändert ausliefern»). Names, values, `form=`, ids, `data-*`
-     kept (harness strings `name="doc[]" value="…"`, `type="checkbox" id="mandator-liable"`
-     still match). Drive `_list` `.dms-file__select`: the fragment cannot carry a backend class
-     (ADR-018 rule 3), so the box is DRAWN in the choice look in the DMS's own
-     `_filelist.scss` with `--dms-*` tokens (border, accent fill, check mark, focus ring);
-     hover-reveal and bulk-bar `:checked` hooks unchanged. Drive `_tree` `.dms-tree__switch`
-     is NOT a raw box: a visually hidden disclosure state (like `__disclosure-input`) — left
-     as is. Order `edit` / `_row` skipped (window being rebuilt).
-  4. DONE 2026-10-17 (the audited files) — *inline `style=`* replaced by classes (see `## what
-     goes where`) or dropped (`--node-depth:0` = the default, `margin:0` on forms): Import
-     `listAction` / `_plan`, FormLog `listAction` / `_blocked` / `confirm*`, Stats `listAction`
-     / `_report` / `reportAction`, Translation `listAction` / `edit`, Drive `_edit` /
-     `_actions` / `_trash` / `_upload`, debtor (bank import rows, invoice detail / form, the
-     `--node-depth:0` rows) and financial (journal form, fiscal-year placeholder ⋮, report range
-     form). Their dead `.be-list__section__head` became the standard section header + hint.
-     **Stays inline on purpose:** column tracks (`--be-list-cols`, `--be-form-cols` — also the
-     Drive's ACL grant row now — and `$definition->style()` / `$cols`), a tree depth
-     (`--node-depth:<?= $depth ?>`, `--dms-depth`), the Stats report's bar / chart percentages.
-     The Stats link-page notice and the report's own extras live in the report's `<style>`
-     block (the link page loads no backend stylesheet). **Look to check:** headers of Import /
-     Translation now carry the standard section rule; Drive edit sections use `.be-form__section`
-     (caps) with the note as a hint below; the ACL grant row and the Import / Stats selects and
-     link field are real `.be-input` controls now (they were stripped bare); the unreadable
-     blocklist is an error alert. **Leftover (not audited):** ~70 static inline styles in
-     Content / MetaData / Navigation / NavigationAlias / EmailSettings / Job / BackendUser
-     templates, the skeletons, contact / vat rows, and the smaller Drive dialogs (`move`,
-     `_folderMove`, `_bulkMove`, `_bulkConfirmDelete`, `confirmDelete`, `_trashConfirmPurge`,
-     `FolderController/edit`) — most map onto the new classes directly. `.be-table` (form log)
-     has no look of its own.
-  5. DONE 2026-10-17 — *Drive buttons kept their own geometry* (`dms-btn`). Owner 2026-10-16:
-     the Drive takes the backend's control look too (one look per kind, Rule 8). The fragment
-     got `--dms-control-padding-y|-x|-radius|-font-size|-font-weight` (defaults = its old
-     values, other hosts unchanged); `_dms-host.scss` binds them to the `.be-btn` geometry and
-     binds the two faces. The Drive has no text inputs of its own (its dialogs are backend
-     templates). Revises DMS-HOST-BIND-001 for controls and faces only ([`css-dms.md`](css-dms.md)).
-  Member (`me-*`) is its own area and out of scope.
-
-- **Resume here (2026-10-10, after the context compact) — the forms rework is BUILT, not yet
-  seen in a browser.** Owner rules of the day: R1 every form's actions in ONE fixed row (the
-  bottom bar only for the field-less confirm), R2 window or modal by default, a page only where
-  a reload is needed — ADR-049 «Revision 2026-10-10», ADR-047 «Addendum 2026-10-10», the
-  inventory and the status per step in
-  [`../03-development/forms-actions-review-2026-10-10.md`](../03-development/forms-actions-review-2026-10-10.md)
-  §4. What stands (FORM-ACTIONS-002, `fetch.md` FETCH-ROW-001, each module's 2026-10-10 entry):
-  the `order` first aid, the partial `partials/modalActions`, every dialog of every module on it
-  (lint in `tests/form-actions.php`: 0 footers left), `FetchResponse` row helpers, `core.js`
-  wiring + focus keeping for inserted HTML, `close-modal` for native dialogs, in-place answers
-  across the backend and the modules, the invoice editor / payment as windows, Stats and Import
-  actions in the toolbar (`data-shell-slot="hc2"` is the slot's hook), the member profile by
-  fetch. Verified by 23 offline harnesses; the DB-backed ones (financial 502, debtor 425,
-  contact 121, mandator 100) could NOT run on this machine (no `z77test` password here) — their
-  new assertions are unexecuted. **Next, in order:** (1) run the DB harnesses on a machine with
-  `%USERPROFILE%\.z77\mariadb.txt`; (2) the owner's browser look — one dialog per module, a
-  field-less confirm (bar at the bottom), the DMS edit modal, the Stats toolbar button, an
-  in-place save (the row changes, the page stays), the invoice editor as a window; (3)
-  `confirmFinalize` as a window (DEBTOR-WIN-002: `core.js` needs an opener for a GET form); (4)
-  count badges beside lists after an inserted / removed row (owner's word). Also open: the
-  owner's live look at the upload (`fetch.md` pending), the
-  stray `public/assets/dms/js/documents/drive_at-*.js` on z77.ch, ADR-046 addendum awaiting the
-  owner's word, NO tag since `1.6.0`. Rule: a framework CSS/JS change reaches a project only
-  after `composer install` there — publish before asking the owner to look.
-- **Resume here (2026-10-09) — the backend action standard is BUILT and COMMITTED**
-  (`9f34c29` foundation + screens, `0c592b6` change log / Mandant tabs / journal help,
-  `20a4f0b` the member head's help trigger). What it covers: the shell foundation (band =
-  top-bar height, inset action cell in the palette's island accent, `be-btn--confirm`,
-  rail-top `railSelect`, phone square icon, underline tabs, `[hidden]` reset, radio tabs),
-  every screen migrated to the [action cell table](#action-cell-per-area-target), the split
-  pickers «↓ Daten sichern | ▾» and «+ Texteintrag | ▾» (the main part NAMES what it does),
-  the tinted picker card and the variant-B fiscal-year select, Mandant as radio tabs, the
-  journal MwSt switch AFTER «Betrag», «gelöschte zeigen» replaced by the screen Finanzen ›
-  Änderungsprotokoll, the context help («? Hilfe» in the top bar and in the member head,
-  field sections, F1 — ADR-048 addendum). Rules for new areas:
-  [`backend-screen.md`](../01-handbook/backend-screen.md); mockups: the developer canvas
-  <https://claude.ai/artifact/4hTQySATC3KMhqxN7RZMGh>. Tests green at the last runs:
-  financial 502, debtor 425, mandator 100, vat 153, contact 121, navigation-seeds 44,
-  listing 20, persistence-doctrine-migrations 104. Published to z77.ch (8077, PHP 8.5.11
-  since 2026-10-09). **Next, in order:** (1) the owner's live look is still open for most
-  screens (all areas, dark mode, one other palette, phone width, journal help: click Soll →
-  «? Hilfe», F1 in Betrag) — every entry below marked «Not verified live» waits on it;
-  (2) `core.js`: close a picker / select on an outside click and on Escape; (3) the
-  SYSTEM-WIDE UPLOAD component (owner 2026-10-08, started 2026-10-09: one modern upload for
-  everything — click opens the dialog, single or multiple as the controller prescribes;
-  drag & drop of one or several files uploads at once; the whole work area is the drop
-  target; per-file progress and errors; three forms: action cell, form field, phone; Drive
-  gives up its own upload) — design draft on the canvas board «Upload — Entwurf». It
-  SUPERSEDES the earlier interim for «+ camt.054 einlesen» (act button as its own small
-  upload form with `data-submit-on-change`); that interim is not built and should not be —
-  reading a camt.054 works today through the `#bank-upload` anchor (owner, 2026-10-09).
-  Open owner question: the Übersetzungen language tabs (not built — the list shows every
-  language per row).
-- **Top bar shows the area selection short on a phone** («Finanzen · 2026», canvas «Mobile»).
-  Not built: the top bar is its own body section and does not know the selection; it needs the
-  selection to hand a short label to the shell (e.g. a second, tiny `railSelect` companion
-  section the topbar partial echoes). Decide whether it is worth it once the drawer has been
-  used on a phone.
-- **Look at the standard live** (8077, light/dark, two palettes, phone width): the inset
-  island-accent cell, the backup split picker and its solid panel, the green confirm in dark
-  mode, the heavier secondary buttons, the underline tabs.
-
-- **LIST-ANATOMY-001 — the backend has no list component, it has a navigation-tree row.**
-  `.be-tree--hub` is a fixed 6-column grid `[toggle | active switch | ⋮ | name | url | route]`;
-  exactly 1 of the 12 list screens is actually a tree. Inventory (all 12 read in source,
-  2026-08-08): rows carry **3–10 real fields** into 3 text slots, so 8 screens glue several
-  values into one `·`-separated string that is `nowrap` + ellipsis — with no column headers
-  anywhere, truncated fields are unrecoverable. Columns 1/2 are empty-but-reserved on 11/8 of 12
-  screens (10 templates render an empty `<span class="be-tree__toggle">` purely to fill the
-  grid). 4 screens need row actions the ⋮ cannot hold and hack `style="grid-column:6"` against
-  the grid, twice with an identical explanatory comment. Two section-head variants exist and one
-  (`.be-list__section__head`, used by translation/backup/job/import) has **zero CSS** — its look
-  comes entirely from inline styles, which is why those four screens differ from the other four.
-  Sorting, pagination and column headers do not exist at all; `_tables.scss` and
-  `_pagination.scss` are fully defined and used by nothing. Blocking for the planned order-
-  processing and accounting modules. Full inventory, findings B1–B11 and the derived
-  requirements: [`../03-development/arbeitsflaeche-bauplan.md`](../03-development/arbeitsflaeche-bauplan.md).
-  Depends on the ADR-018 revision 2026-08-08 (shared structural layout primitives) because the
-  content layer must also render in a frontend host (DMS → customer invoices).
-
-- **Remove orphaned `.be-tree__actions` (LIST-ACTIONS-HUB-001).** After the `⋮`-hub rollout no template references `.be-tree__actions` anymore (repo-wide grep: only `components/_list.scss` line ~164). Dead: the `.be-tree__actions` rule + the flex `order` overrides added by LIST-ACTIONS-SWITCH-001 (`.be-tree__toggle { order:-2 }`, `.be-tree__actions { order:-1 }`). The base `.be-tree__row` (padding/border/hover) stays — only the flex layout is superseded by `.be-tree--hub`'s grid. Removal needs a `base.css` rebuild + a quick visual pass across the 7 lists before it lands.
-
-- **SHELL-REBUILD Phase 1 — DONE (2026-07-03).** The backend chrome is being rebuilt to the
-  approved 3-column shell (prototype: artifact; topbar + column 1 orientation | 2 content | 3
-  preview). **Phase 1 (structure) is built SAFELY IN PARALLEL** — the legacy `html-default-skeleton`
-  + `partials/header` + `_topbar.scss`/`_desktop.scss` are UNTOUCHED; revert = point `layoutConfig`
-  `documentTpl` back to `html-default-skeleton` (one line). New: `html-shell-skeleton.tpl.php`
-  (grid), `partials/shell/topbar.tpl.php` (module switcher from nav top-groups + `ModuleIcons`
-  config-map, search, env/bell/avatar reused; version moved into the service-panel footer),
-  `partials/shell/preview.tpl.php` (column 3, optional — `data-col3="off"` default), the
-  `components/_shell.scss` component (`.be-shell*`, self-contained grid + own responsive rules,
-  independent of the legacy `layout/*.scss`), and `res/assets/js/shell.js` (drag-resize columns 1+3,
-  mobile sandwich/preview drawers; the panels run on the shared `panel-toggle.js`). `layoutConfig`
-  switched `documentTpl` + added the `shellTopbar`/`preview` body sections + registered `shell` js.
-  New sprite icons: `x`, `grid`, `globe`, `database`, `hard-drive`, `eye`. Verified: `php -l` clean,
-  SCSS compiled (`.be-shell*` in base.css), css/js deployed to `skeleton/public`. **To see it:
-  clear cache + hard refresh.** **Phase-1 rough edges (by design):** column 2 still hosts each
-  action template WITH its own inline `.backend-content-header` (the strict aligned header BAND
-  across all columns is Phase 2 — needs a header-slot mechanism + per-template migration); column 3
-  is off until a controller opts in (Phase 3); the GUEST login/setup pages render in the shell with
-  an empty topbar/column 1 (tied to LAYOUT-B001 — they want their own skeleton). `shell.js` has no
-  `.min.js` yet (dev/DEBUG serves the non-min).
-  **Shell look refined (2026-07-03, from the prototype):** (a) **dark left band** — column 1 + the
-  topbar module zone (`.be-shell-topbar__mod`, `height:100%`) form a "dark island": a LIGHT-MODE-only,
-  PER-PALETTE local `--be-*` token override on those wrappers paints them a very dark variant of each
-  palette's main colour (indigo/green/coral/turquoise/berry/amber), so the subnav tree + module
-  switcher + header partial render dark-appropriate with no component CSS; `.be-shell-col--1`/`__mod`
-  background is `var(--be-nav, --be-surface)` so DARK mode drops the override and the band blends into
-  the normal dark UI. The values live in `_shell.scss` (component-scoped, `.be[data-be-palette=…]:not([data-be-theme="dark"])`);
-  a 1px `box-shadow` on `__mod` hides the light topbar border under the band. (b) **module panel icon**
-  (`.be-shell-mod__apps`) is now borderless/transparent with a 30px glyph (hover/open → accent).
-  Open: fold this dark-band token set into the palette workbench + decide fixed-vs-per-palette for the
-  real token file.
-  **Phase 2 STARTED — header slot mechanism, piloted on `content/content/list` (2026-07-03):** the
-  shell's header slots (hc1 over column 1, hc2 over column 2) are **controller/action partials**.
-  Mechanism: an action registers a partial into a named body section via
-  `LayoutManager::addPartials($file, $path, $ns, 'hc1'|'hc2')`; `HtmlView::renderPartials()` renders
-  EVERY section with the same action context, so the partial gets the action's vars ($editLanguage …);
-  each section surfaces as `$hc1` / `$hc2`. (**Both details below are superseded** — the slots are no
-  longer sticky children of their column but one grid row of their own, `.be-shell-band__slot`, and the
-  band renders unconditionally: see SHELL-BAND-ROW-001 and HEADER-BAND-ALWAYS-001 above.)
-  As originally built: a sticky slot at the top of
-  its column (`.be-shell-col__head--sticky`). **Aligned band:** the skeleton rendered BOTH slots
-  whenever EITHER was set (`$hasHead`), both used `.be-shell-col__head` (min-height 46px) → same height,
-  so the band lines up across the columns; per-column sticky bg (hc1 = `--be-nav` dark band, hc2 =
-  `--be-bg`); the redundant `.backend-subnav__header` (section title) is hidden in the shell (the
-  topbar module switcher shows it). As built for `content/content/list`: `hc1.tpl.php` = the add action
-  («+ Inhalt», dark left slot per the prototype), `hc2.tpl.php` = the editing-language switcher;
-  `ContentController::listAction` adds both; the inline `.backend-content-header` + lang switch were
-  REMOVED from `listAction.tpl.php`.
-  **Generalized — convention auto-loader + all list views migrated (2026-07-03):** the per-action
-  `addPartials` boilerplate is GONE. `BackendAbstractController::html()` → `loadHeaderSlots()`
-  auto-loads convention partials for the CURRENT controller/action into hc1/hc2/hc3 IF present:
-  `{Group}/{Controller}/{action}.hc1|hc2|hc3.tpl.php` (dir = the namespace segment after
-  `Ui\Controllers`; action = the method minus `Action`; existence via
-  `FileFinder::getFirstTplMatch(throwError:false)`). A view just DROPS IN the files. Migrated (inline
-  `.backend-content-header` removed from each `listAction.tpl.php`, complex sub-structures kept in the
-  body): **content** (`list.hc1` add / `list.hc2` lang switch), **navigation** (`list.hc1` add /
-  `list.hc2` live filter + print + aliases; group tabs stay in body), **metadata** (`list.hc2` lang
-  switch, no add; env tabs stay in body), **users** (`list.hc1` add). **translation** migrated too
-  (2026-07-04): two add kinds (UI-Texte / Routen-Slugs) → `list.hc1` is an add-PICKER panel («＋ Eintrag»
-  opens a small dropdown to choose Text / Slug) built on the shared panel-toggle contract; `hc2` is left
-  free for other controls (e.g. a future select-all). New reusable component `.be-shell-add` /
-  `__panel` / `__item` in `_shell.scss`. The section heads keep only their titles. `php -l` clean; SCSS
-  rebuilt this
-  round (templates + controllers live via the vendor symlink). Verify live (cache clear + hard
-  refresh) across all five areas. Next: hc3 (column-3 slot) when a view needs the preview column;
-  optional shared partials/helpers for the repeated «+ add» button + language switcher.
-
-  **Drive (DMS) migrated to the shell header band (2026-07-03):** the DMS Drive is special — a
-  self-contained `.dms-drive` fragment with its OWN toolbar (breadcrumb PANE + upload/new-folder/trash),
-  wired by `module-dms/res/assets/js/documents/drive.js`. The toolbar is now split into the shell header
-  band like the other views: **hc1** = «Hochladen» (dark left slot, `.be-btn--primary` +
-  `data-drive-upload`), **hc2** = the folder PATH left (the DMS `_breadcrumb` partial, unchanged) + «Neuer
-  Ordner»/«Papierkorb» as `.be-icon-btn` icons right. The two partials live in **module-backend**
-  (`Documents/DriveController/list.hc{1,2}.tpl.php`) so `loadHeaderSlots()` auto-loads them for
-  `Z77\Module\Backend\Ui\Controllers\Documents\DriveController` (dir `Documents/DriveController`, action
-  `list`); the fragment (`module-dms/.../listAction.tpl.php`) drops its `.dms-drive__toolbar` and is now a
-  pure 3-pane grid (`_drive.scss`: toolbar row removed). Key mechanics: (a) the breadcrumb KEEPS its
-  `.dms-drive__breadcrumb` class + server-built `data-*-url`s, so `DriveControllerTrait::panes` still
-  refreshes it in place (`replace-html` = `outerHTML`, document-wide target) after every navigation — it
-  just lives in hc2 now; hc2 wraps it in `.dms` to supply the `--dms-*` tokens. (b) drive.js's scope
-  guards changed from `.closest('.dms-drive')` to `.closest('[data-drive-scope]')`, and the marker sits on
-  BOTH the fragment AND the header slots (hc1 button, hc2 `.be-drive-head` wrapper), because the Drive's
-  interactive surface now spans two DOM subtrees. New backend sprite icons: `upload`, `folder-plus`. New
-  CSS: `.be-drive-head` (hc2 flex: path grows, icons right) in `_shell.scss`. `php -l` clean; dms.css +
-  base.css + drive.js rebuilt & deployed to `skeleton/public`. **Verify live:** upload / new-folder /
-  trash open their modals, folder navigation refreshes the breadcrumb path in the header, crumb links +
-  folder edit/move/delete (in-crumb, when a folder is selected) still work — all from the header band.
-  Next: hc3 (column-3 slot) when a view needs the preview column; optional shared partials/helpers for
-  the repeated «+ add» button + language switcher.
-
-  **Migration ABGESCHLOSSEN (2026-07-04):** the last two views on the legacy content-header —
-  `content/navigation-group/list` + `content/navigation-alias/list` — were migrated to the header band
-  (each a `list.hc1` add button; inline `.backend-content-header` removed). Repo-wide grep now shows
-  **0** templates using `.backend-content-header` → every backend view renders through the shell. The
-  rebuild is **functionally complete**; only the Legacy-Cleanup remains (delete the now-dead
-  `partials/header` + `partials/footer`, split `_topbar.scss`, detach `body.backend`, retire the
-  `html-default-skeleton` default). Full inventory + ordered cleanup plan + the pre-deletion
-  verification checklist: [`../03-development/shell-rebuild-abschluss-analyse.md`](../03-development/shell-rebuild-abschluss-analyse.md).
-  hc3 (preview column) and the dark-band token fold are deferred (dark-band → cleanup step 5).
-
-- **CSS-WRAPPER-TOKENS (C2)** — done 2026-06-22: backend token blocks moved `:root` → `.be`, wrapper class added to `<html class="be">` (alongside the existing `data-be-*` attrs), recompiled. Palette/theme overrides unchanged (equal specificity, source order preserved). Part of [`../03-development/css-wrapper-token-bauplan.md`](../03-development/css-wrapper-token-bauplan.md); awaiting the PAUSE-1 visual test (all palettes × light/dark, modals).
+- **The other «…» confirm buttons (ADR-033 addendum 2026-10-18)** — owner to decide: the list action cells (invoice list «Buchungsdruck …», dunning «Mahnlauf starten …») still FILL while the order window and invoice detail take `.be-btn--confirm-open`; and whether other window rows take `cancelKind` 'quiet' too.
+- **Owner's look at ADR-051 (cards on the window ground, quiet inputs; built 2026-10-17 in 0659e9b, not seen in a browser):** an order window (Salbei light AND dark — cards, head strip, quiet position inputs, mono numbers), a plain list (Stammdaten › Artikel), a dialog (Kontakte › Adresstyp bearbeiten), the journal one-line entry, the Drive buttons, a list with badges (Mahnungen / Rechnungen), dashboard and login, Werkbank unchanged apart from the forms; the Import / Translation section headers, the Drive edit sections, the ACL grant row, the Import / Stats selects (audit point 4). Mockup: `temp/order-mask-draft.html` (owner machine).
+- **ADR-051, owner's word open:** the shell island in Salbei (not in the draft); addendum point 5 (Citrus / Lagune / Sonne cards, Citrus / Sonne accents).
+- **Stammdaten › Mandant: «Speichern» from `be-btn--confirm` to `primary`** (ADR-033 addendum 2026-10-16: Speichern = accent everywhere) — `MandatorController/editAct.tpl.php` still carries `be-btn--confirm`. Size XS.
+- **Inline-style leftover (not audited 2026-10-17):** ~70 static inline styles in Content / MetaData / Navigation / NavigationAlias / EmailSettings / Job / BackendUser templates, the skeletons, contact / vat rows and the smaller Drive dialogs (`move`, `_folderMove`, `_bulkMove`, `_bulkConfirmDelete`, `confirmDelete`, `_trashConfirmPurge`, `FolderController/edit`) — most map onto existing classes. `.be-table` (form log) has no look of its own.
+- **Forms rework (2026-10-10, FORM-ACTIONS-002, from 5c67f83; DB harnesses green 2026-10-17, 9eb5db9) — owner's browser look:** one dialog per module, a field-less confirm (bar at the bottom), the DMS edit modal, the Stats toolbar button, an in-place save (row changes, page stays), the invoice editor as a window. Inventory: [`../03-development/forms-actions-review-2026-10-10.md`](../03-development/forms-actions-review-2026-10-10.md) §4. `confirmFinalize` as a window waits on DEBTOR-WIN-002 ([`debtor.md`](debtor.md)).
+- **Count badges beside lists after an inserted / removed row** — owner's word open (2026-10-10).
+- **ADR-046 addendum 2026-10-10** (installer takes back its own leftovers) — built, owner approval pending. No release tag since `1.6.0` — owner to decide when to tag.
+- **Look at the action standard live** (2026-10-09, `9f34c29` / `0c592b6` / `20a4f0b`; 8077, light/dark, two palettes, phone width): the inset island-accent cell, the backup split picker and its solid panel, the green confirm in dark mode, the heavier secondary buttons, the underline tabs, journal help (click Soll → «? Hilfe», F1 in Betrag); every entry marked «Not verified live» in known issues waits on it.
+- **Close a picker / select on an outside click and on Escape** (core.js, open from 2026-10-09) — `panel-toggle.js` dropdowns already close on both; whether the remaining pickers / `railSelect` do is unverified.
+- **Übersetzungen language tabs** — owner question open (not built; the list shows every language per row).
+- **Top bar shows the area selection short on a phone** («Finanzen · 2026», canvas «Mobile») — not built: the top bar does not know the selection. Decide whether it is worth it once the drawer has been used on a phone.
+- **Migrate the remaining v1 lists (`.be-tree--hub`) to `.be-list` v2 (LIST-ANATOMY-001 → LIST-V2-001)** — ~20 list templates still on v1 (Content, MetaData, Navigation, NavigationAlias, Translation, EmailSettings, Import, Job, BackendUser, contact, debtor / financial master data, product groups). Size L, one screen at a time. Inventory: [`../03-development/arbeitsflaeche-bauplan.md`](../03-development/arbeitsflaeche-bauplan.md).
+- **Remove orphaned `.be-tree__actions` (LIST-ACTIONS-HUB-001)** — no template uses it; the rule in `components/_list.scss` (~line 750) and the flex `order` overrides of LIST-ACTIONS-SWITCH-001 are dead. Needs a `base.css` rebuild + a quick visual pass over the v1 lists.
+- **Deferred from the shell rebuild:** hc3 (preview column) until a view needs it; fold the dark-band token set from `_shell.scss` into the palette file (cleanup step 5 of [`../03-development/shell-rebuild-abschluss-analyse.md`](../03-development/shell-rebuild-abschluss-analyse.md)). Known limit: `select.be-input option` keeps its own `--be-surface` ground.
