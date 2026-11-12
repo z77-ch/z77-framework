@@ -460,6 +460,7 @@ Installer creates the override dirs, registers the module in `moduleManager.inc.
 
 ## pending
 
+- **INST-OVERRIDE-ASSETS-001 (2026-11-11, reported by the archsult.com session; owner's go open)** — assets under a project's `override/…/res/assets` are never published by the installer (only package assets reach `public/assets`). Every project needs its own copy step (archsult: `scripts/build-assets.mjs` for the frontend, `bin/setup-archsult.php` → `BackendAssets` for the backend). Wanted: a documented installer step (or a hook) for project-owned assets.
 - ARCH-C: split into separate classes (v1.1, low priority)
 - Audited with INST-ASSET-DIFF-001 and deliberately left alone: `data/**/*.json` and the
   seed-once `config/client/*` files (seed-once BY DESIGN — they hold what the project entered;

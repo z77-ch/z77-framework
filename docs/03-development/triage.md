@@ -67,6 +67,8 @@ All known ideas with initial assessment:
 | Framework Core (Routing, Autoloading) | — integrated — | None | Fundamental | Large | **1** |
 | Backend Triage Profile for Jodit | — no document yet — | No core needed | Medium | Small | **3** |
 | Central Widget System | — no document yet — | Content Template System | High | Medium | **4** |
+| Invoice Layout Settings (customer adjusts her invoice, live preview) | [ideas/invoice-layout-settings.md](ideas/invoice-layout-settings.md) | module-debtor PDF rendering | High (every invoicing project) | Medium–Large | — not yet triaged |
+| Automated Updates (release rollout to installations) | [ideas/automated-updates.md](ideas/automated-updates.md) | release system (`.releases/`) | High (every installation) | Medium | — parked |
 
 ### Priority Legend
 - **1** = First (blocker for everything else)
