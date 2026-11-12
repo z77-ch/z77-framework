@@ -1,6 +1,6 @@
 # installer
 
-2026-10-22
+2026-11-12
 
 ## entry
 
@@ -460,26 +460,8 @@ Installer creates the override dirs, registers the module in `moduleManager.inc.
 
 ## pending
 
+- **INST-NAV-SHARED-001 (2026-11-12, reported by the z77.ch session at the mobile-receipts deploy)** — `seedNavigation()` (step 15b) merges the packages' `navigation.d` seeds only into the LOCAL `data/framework/routing/navigation.json`. On a release layout whose `data/` is SHARED (`.releases/target.json` `shared`), the server's navigation never gets a new module's entries: z77.ch merged «Geräte», «Belegjournal», «Belegvorlagen», «Zahlungsarten» by an ad-hoc script over `NavigationSeeds::discover()` / `read()` / `merge()` on the release's vendor data roots. Wanted: a bin step (e.g. `vendor/bin/z77-nav-seed --data=<shared data dir>`, add-only like ADR-050, idempotent, dry-run first) the deploy can run against the shared data. Reminder for a consumer project adding a module: besides `require` + the path repo, the module's namespace MUST be in the project's `autoload.psr-4` («adding a module» above), else `moduleManager.inc.php` does not register it — no routes, no migrations seen by `z77-db`.
 - **INST-OVERRIDE-ASSETS-001 (2026-11-11, reported by the archsult.com session; owner's go open)** — assets under a project's `override/…/res/assets` are never published by the installer (only package assets reach `public/assets`). Every project needs its own copy step (archsult: `scripts/build-assets.mjs` for the frontend, `bin/setup-archsult.php` → `BackendAssets` for the backend). Wanted: a documented installer step (or a hook) for project-owned assets.
+- **INST-CONFIG-001** (blocks Packagist publication) — classify the remaining framework-derived config targets `bootstrap.inc.php`, `moduleManager.inc.php`, `fileFinder.inc.php`: regenerate-always is likely correct, confirm each carries no developer-adjusted value. Done so far: `i18n.inc.php` and `auth.inc.php` seed-once, `public/` seed-once (ADR-024), data files file-level seed-once with the backend import as the merge answer (ADR-032), navigation add-only merge ([ADR-050](../02-decisions/adr-050-module-navigation-seeds.md)).
 - ARCH-C: split into separate classes (v1.1, low priority)
-- Audited with INST-ASSET-DIFF-001 and deliberately left alone: `data/**/*.json` and the
-  seed-once `config/client/*` files (seed-once BY DESIGN — they hold what the project entered;
-  the record-and-refresh answer would be wrong there, the merge answer is the backend import,
-  ADR-032), the generated `config/vendor/*` (regenerated every run — cannot go stale),
-  `cron/run.php`, the deny `.htaccess` files and the project `CLAUDE.md` (seed-once,
-  developer-owned, a framework change there is a manual migration note, not an install-time
-  write).
-- **INST-CONFIG-001** (partially resolved 2026-07-11): reassess the installer's overwrite policy before Packagist publication. Audit **every file the installer writes** (all `writeXxxConfig()` steps, `writeDataFiles()`, public asset copy, `copyFiles()`) and decide per file whether an install/update may overwrite it. Classify each target as: regenerate-always vs. seed-once (like data files) vs. merge. Blocks publication.
-  - DONE: `config/client/i18n.inc.php` → seed-once (`writeI18nConfig()` skips if it exists). Defines the project's languages, which the developer adapts after install; an update must not clobber that.
-  - DONE: `config/client/auth.inc.php` → seed-once (`writeAuthConfig()` skips if it exists). Holds installation-wide auth policy (e.g. `passwordTier`) the developer adapts after install.
-  - DONE: `copyFiles()` (public entry files) + public asset copy → seed-once on first install only (ADR-024, INST-ASSET-002). `public/` is developer-owned; the installer never overwrites it.
-  - TODO: classify the remaining framework-derived config targets — `bootstrap.inc.php`, `moduleManager.inc.php`, `fileFinder.inc.php` (regenerate-always is likely correct, but confirm each carries no developer-adjusted value before publication).
-  - DECIDED 2026-08-08: `writeDataFiles()` stays **seed-once at file level** — the installer never merges records into an existing runtime file. The `merge` class is served by a separate, manual data import in the backend (ADR-032). Consistent with ADR-024/025: the installer reports, the developer decides.
-  - SUPERSEDED for the navigation 2026-09-29 by [ADR-050](../02-decisions/adr-050-module-navigation-seeds.md) (owner: «jedes Modul stellt seine Navigationspunkte bei der Installation zur Verfügung — dann nie mehr überschrieben»): step 15b merges `navigation.json` ADD-ONLY by record identity. Every other data file stays file-level seed-once.
-
-- **INST-SEED-001** — resolved 2026-08-08. `writeDataFiles()` now walks **every installed framework package**: data roots are derived from each package's framework psr-4 paths via the same `stripSrc` logic `buildPaths()` uses (`core/src` → `{install}/core/data`, `src` → `{install}/data`; new helper `frameworkDataRoots()`, install paths from Composer's `InstallationManager`, deduped, metapackages skipped). Previously only the kernel's own `core/data` was scanned, so module seeds never reached a project — concretely `packages/module-dms/data/documents/folders.default.json` (the DMS Drive root). On a rel-path collision across packages the first wins; seed-once protects existing runtime data either way. Verified in the skeleton: removed `data/documents/folders.json` → `composer install` seeds it from module-dms (Drive root, `key: "drive"`, `system: true`); re-install skips everything (0 writes).
-
-- **INST-IMPORT-001** — resolved 2026-08-08 (ADR-032 phases 1–6 built). The record-level `merge`
-  answer is the backend data import: `/backend/service/import/list` (SUPER_USER), core in
-  `Z77\Shared\Import`. Single source of truth from here: [`import.md`](import.md). Remaining
-  v2 work (mysqldump reader, `ImportMapping`, upload form) is tracked THERE, not here.
+- Audited with INST-ASSET-DIFF-001 and deliberately left alone (seed-once or regenerated by design): `data/**/*.json`, the seed-once `config/client/*` files (ADR-032), the generated `config/vendor/*`, `cron/run.php`, the deny `.htaccess` files and the project `CLAUDE.md` — a framework change there is a manual migration note.
