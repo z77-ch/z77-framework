@@ -217,9 +217,23 @@ Diskussion des Bauplans mit dem Owner; ersetzen, was oben in Teil B anders steht
   koppelt; das Journal zeigt «Handy <Benutzer> · <Gerätename>».
 - **E9 — KI/OCR** (Betrag, Datum aus dem Foto): später, immer nur Vorschlag — bestätigt
   offenen Entscheid 6.
+- **E10 — «Bezahlt mit» statt festem Haben** (ändert E2/E3): eine Belegvorlage kennt nur
+  Soll und MWST-Code. Beim Erfassen wählt das Handy zusätzlich die **Zahlungsart**
+  (Kasse, Firmenkarte, privat ausgelegt …) — eigene kleine Stammdaten mit je einem
+  Haben-Konto, Muster wie die Vorlagen. Vollständig = Soll, Haben und MWST gesetzt.
+- **E11 — Verbuchen mit Stichtag:** «Journal verbuchen» nimmt einen Stichtag (vorbelegt:
+  letzter Tag des Vormonats); nur Belege bis dahin. Ein unvollständiger Beleg bis zum
+  Stichtag blockiert den ganzen Lauf (wie das Faktura-Journal).
+- **E12 — Ein MWST-Code pro Beleg.** Ein seltener gemischter Beleg wird im Journal
+  **aufgeteilt**: zwei Belege, dasselbe Foto, Beträge zusammen = Original.
+- **E13 — Gerät sperren ist endgültig.** Wiederverwenden = neu koppeln; kein «aktiv»-Schalter.
+- **Boards abgenommen 2026-11-12:** die vier Boards «Belege per Handy» auf dem
+  Developer-Canvas (Belegvorlagen, Belegjournal, Geräte, z77 App) — «passt soweit alles».
+  Mit E10 kommt «Bezahlt mit» dazu (Stammdaten-Liste wie Belegvorlagen; Auswahl auf dem
+  Erfassen-Bildschirm des Handys; im Belegjournal statt der festen Haben-Spalte).
 
 Noch offen (technisch): Entscheide 1–3 und 7 oben; Ort und Form des Belegjournals —
-Vorschläge im nächsten Abschnitt, zur Freigabe durch den Owner.
+Vorschläge im nächsten Abschnitt, vom Owner freigegeben 2026-11-12.
 
 ## Technische Vorschläge 2026-11-12 (zur Freigabe)
 
@@ -227,6 +241,10 @@ Vorschläge im nächsten Abschnitt, zur Freigabe durch den Owner.
 > as [ADR-057 — The device channel of the API gateway](../02-decisions/adr-057-api-device-channel.md);
 > the gateway part (Umsetzungsschritte 2 and the model/pairing/guard of 3) is built, see
 > [`topics/api.md`](../topics/api.md).
+>
+> T2 and T4 (wave 1, part B) are built as `packages/module-receipt` — templates, payment methods,
+> the receipt journal, capture without a session, correction, split, «Journal verbuchen» up to a
+> cut-off (E1–E12), no screens and no API target yet; see [`topics/receipt.md`](../topics/receipt.md).
 
 Grundlage: Code-Stand `edce35b`. Korrektur zu A3 Zeile 7: das Framework setzt bereits eine
 CSP (`SecurityHeaders::DEFAULTS`: `frame-ancestors 'self'` erzwungen, `default-src 'self'`

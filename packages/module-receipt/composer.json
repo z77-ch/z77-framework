@@ -1,0 +1,41 @@
+{
+    "name": "z77/module-receipt",
+    "description": "Z77 Receipt Module | receipt templates as master data, the receipt journal a phone captures into (photo, amount, text, optional template), the owner's correction and «Journal verbuchen» into module-financial (gateway-app-kanal-bauplan T4, ADR-054 pattern).",
+    "type": "library",
+    "keywords": ["php", "framework", "receipt", "expense", "journal", "bookkeeping", "z77"],
+    "homepage": "https://github.com/z77-ch/z77-framework",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Peter Ruepp",
+            "email": "peter.ruepp@z77.ch"
+        }
+    ],
+    "autoload": {
+        "psr-4": {
+            "Z77\\Module\\Receipt\\": "src/"
+        }
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true,
+    "extra": {
+        "branch-alias": {
+            "dev-main": "1.0.x-dev"
+        }
+    },
+    "require": {
+        "php": ">=8.4",
+        "z77/kernel": "^1.0",
+        "z77/persistence-doctrine": "^1.0",
+        "z77/module-vat": "^1.0",
+        "z77/module-mandator": "^1.0",
+        "z77/module-financial": "^1.0",
+        "z77/module-dms": "^1.0"
+    },
+    "support": {
+        "issues": "https://github.com/z77-ch/z77-framework/issues",
+        "source": "https://github.com/z77-ch/module-receipt",
+        "docs": "https://github.com/z77-ch/z77-framework/tree/main/docs"
+    },
+    "readme": "README.md"
+}
