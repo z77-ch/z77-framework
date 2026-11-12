@@ -352,3 +352,16 @@ for currencies without two places; the split reasoning corrected (a Swiss suppli
 with Swiss VAT); the two-value search condition; the phone's reopened queue entry and null amount;
 «ESTV-Kurs übernehmen» a plain submit, no core.js change; the rate normalised before
 `Money::multiply()`; `splitOff()` without `setAmounts()`. Owner answers Q2–Q5 recorded as F10–F13.
+
+## 11. Boards (step 1) — drawn 2026-11-12, owner's look open
+
+On the developer canvas (version 31, row «Belege in Fremdwährung — Entwurf 2026-11-12»): the receipt
+window (state A card, CHF empty; state B cash, rate applied, posting-text preview), the journal row +
+band + «Journal verbuchen» window with «CHF fehlt», the phone capture with the CHF | EUR toggle.
+Not yet looked at rendered. Open board questions (variant 1 drawn each time):
+
+1. The rate field — in the amount row or a row of its own below it?
+2. The ESTV hint — «Monatsmittel 10/2026: 0.9507» or «1 EUR = 0.9507 CHF» (T10)?
+3. The phone hint text — the owner's wording or T11's (the phone has no CHF field to leave empty)?
+4. A CHF receipt — foreign amount and rate hidden or disabled?
+5. The posting-text preview in the window — wanted (not in this plan yet)?
