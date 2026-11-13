@@ -168,6 +168,7 @@ A phone captures a receipt — photo, gross amount, optionally a text, a TEMPLAT
 - Not built: correction of a POSTED receipt through the ledger as its source (`LedgerService::amend()` / `retract()` / `reverse()` with source `receipt`).
 - Not built: the receipts of one device or app user in the backend (needs api.md API-010 a, now for «App-Benutzer»); the link from a journal entry to its receipt photo (financial knows no module — needs a source-link registry, not designed).
 - Deferred: a public line builder in module-financial for the one-line entry (RECEIPT-BUILD-001) — when a second caller needs it.
+- Idea (owner 2026-11-13, not triaged): incoming PDF invoices read from a folder, recognised (QR-bill rules first, Claude for the unknown) and written into this journal; a creditor module as the next stage → [`invoice-intake-automation.md`](../03-development/ideas/invoice-intake-automation.md).
 
 ## see also
 

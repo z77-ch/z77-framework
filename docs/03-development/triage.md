@@ -69,6 +69,7 @@ All known ideas with initial assessment:
 | Central Widget System | — no document yet — | Content Template System | High | Medium | **4** |
 | Invoice Layout Settings (customer adjusts her invoice, live preview) | [ideas/invoice-layout-settings.md](ideas/invoice-layout-settings.md) | module-debtor PDF rendering | High (every invoicing project) | Medium–Large | — not yet triaged |
 | Automated Updates (release rollout to installations) | [ideas/automated-updates.md](ideas/automated-updates.md) | release system (`.releases/`) | High (every installation) | Medium | — parked |
+| Invoice Intake Automation (PDF folder → recognised, rules, receipt journal; creditors next stage) | [ideas/invoice-intake-automation.md](ideas/invoice-intake-automation.md) | module-receipt, kibot client | High (every bookkeeping installation) | Medium–Large | — not yet triaged |
 
 ### Priority Legend
 - **1** = First (blocker for everything else)
