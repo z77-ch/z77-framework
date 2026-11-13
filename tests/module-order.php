@@ -395,7 +395,7 @@ check('L5 suggestions(): merged, normalised, without duplicates (case ignored), 
 
 echo "V. List tabs are the phases (offline)\n";
 $viewOfSeed = array_combine(array_keys($byCode), array_map(static fn($s) => OrderListing::viewOf($s), array_values($byCode)));
-check('V1 each seed status falls into the tab of its PHASE: opened → Eröffnet; scheduled → Termin; delivered, to-invoice → Geliefert; cancelled → Storniert — the closed phase by who sets it (owner 2026-11-13): invoiced → Fakturiert, booked → Gebucht, done → Erledigt',
+check('V1 each seed status falls into the tab of its PHASE: opened → Eröffnet; scheduled → Termin; delivered, to-invoice → Geliefert; cancelled → Abgelegt (the phase `cancelled`, owner 2026-11-13) — the closed phase by who sets it (owner 2026-11-13): invoiced → Fakturiert, booked → Gebucht, done → Erledigt',
     $viewOfSeed === ['opened' => 'new', 'scheduled' => 'confirmed', 'delivered' => 'delivered', 'to-invoice' => 'delivered', 'invoiced' => 'invoiced', 'booked' => 'booked', 'done' => 'done', 'cancelled' => 'cancelled']);
 check('V1b a NEW closed status set by hand lands in «Erledigt», one flagged «Journal verbuchen» in «Gebucht» — by the flags, not the code',
     OrderListing::viewOf(status('paid', OrderPhase::Closed)) === 'done' && OrderListing::viewOf($postingIn('posted', OrderPhase::Closed)) === 'booked'

@@ -54,7 +54,7 @@ final class OrderListing
         self::VIEW_INVOICED  => 'Fakturiert',
         self::VIEW_BOOKED    => 'Gebucht',
         self::VIEW_DONE      => 'Erledigt',
-        self::VIEW_CANCELLED => 'Storniert',
+        self::VIEW_CANCELLED => 'Abgelegt',   // owner 2026-11-13 (was «Storniert»)
         self::VIEW_ALL       => 'Alle',
         self::VIEW_DELETED   => 'Gelöscht',
     ];

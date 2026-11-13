@@ -34,7 +34,7 @@ enum OrderPhase: string
             self::Confirmed => 'Termin',       // owner 2026-10-16 (was «Bestätigt»)
             self::Delivered => 'Geliefert',
             self::Closed    => 'Abgeschlossen',
-            self::Cancelled => 'Storniert',
+            self::Cancelled => 'Abgelegt',     // owner 2026-11-13 (was «Storniert» — the phase holds more than cancelled orders)
         };
     }
 

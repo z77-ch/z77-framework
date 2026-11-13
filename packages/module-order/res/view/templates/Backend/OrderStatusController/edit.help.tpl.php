@@ -27,7 +27,7 @@
     <li><strong>Termin</strong> — Bestellung, Terminauftrag, Dienstleistung: lagerführende Artikel sind <strong>reserviert</strong>; Fakturieren möglich. «Lieferschein …» liefert.</li>
     <li><strong>Geliefert</strong> — bereitgestellt, geliefert, zu fakturieren: die Ware ist aus dem Lager, der Bestand ist <strong>verbraucht</strong>; Fakturieren möglich.</li>
     <li><strong>Abgeschlossen</strong> — fakturiert, gebucht, erledigt: verbraucht; bearbeitbar nur, solange die Rechnung im Faktura-Journal steht (dann «Neu fakturieren»). In der Auftragsliste drei Reiter: der Status des Fakturierens → «Fakturiert», der von «Journal verbuchen» → «Gebucht», jeder andere → «Erledigt».</li>
-    <li><strong>Storniert</strong> — der Auftrag findet nicht statt: nichts reserviert oder verbraucht, nicht mehr bearbeitbar. Nach einer fakturierten Rechnung wird nicht storniert.</li>
+    <li><strong>Abgelegt</strong> — beendet ohne Warenbewegung und aufbewahrt (z.B. Status «Storniert», «Abgelehnt», «Offerte angenommen»): nichts reserviert oder verbraucht, nicht mehr bearbeitbar. Nach einer fakturierten Rechnung nicht möglich.</li>
 </ul>
 <p>Ob eine Position überhaupt Lager bewegt, entscheidet der <strong>Artikel</strong> («führt Bestand») — eine Dienstleistung oder eine freie Position nie, in keiner Phase. Ein Wechsel in eine gleiche oder spätere Phase ist immer erlaubt; zurück nur, solange keine Rechnung verbucht ist. Kommt dabei verbrauchte Ware zurück ins Lager, wird ein Grund verlangt.</p>
 </section>

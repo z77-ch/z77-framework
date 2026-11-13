@@ -15,7 +15,7 @@
     <li><strong>Fakturiert</strong> — die Rechnung ist erstellt und steht im Faktura-Journal; der Auftrag ist noch änderbar (danach «Neu fakturieren …»).</li>
     <li><strong>Gebucht</strong> — die Rechnung ist verbucht; gesperrt. In beiden Reitern zeigt die Spalte <strong>Zahlung</strong> den Zahlungsstand der Rechnung.</li>
     <li><strong>Erledigt</strong> — von Hand abgeschlossen: die Ware ist abgebucht, es gibt keine Rechnung (kein Umsatz); gesperrt.</li>
-    <li><strong>Storniert</strong> — kommt nicht zustande, keine Warenbewegung; gesperrt.</li>
+    <li><strong>Abgelegt</strong> — beendet ohne Warenbewegung und aufbewahrt: z.B. eine abgelehnte Offerte, ein zurückgezogener Auftrag (Status «Storniert»); gesperrt.</li>
     <li><strong>Alle</strong> — jeder Auftrag (ausser den gelöschten).</li>
     <li><strong>Gelöscht</strong> — Erfassungsfehler und Ähnliches: mit Nummer und Grund aufbewahrt, keine Warenbewegung; nichts mehr änderbar.</li>
 </ul>

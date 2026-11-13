@@ -13,7 +13,7 @@
  * where the phase knows it (owner 2026-10-16): «Startstatus für neue Aufträge» (`start` — one for
  * all, in «Eröffnet» and «Termin») and the action default (`phase_default`), worded by the phase —
  * «Wird gesetzt beim Druck der Auftragsbestätigung» … (`OrderPhase::defaultSwitchLabel()`); «Eröffnet»
- * and «Storniert» have no action default. A status of «Abgeschlossen» has a third switch, «Wird gesetzt beim
+ * and «Abgelegt» have no action default. A status of «Abgeschlossen» has a third switch, «Wird gesetzt beim
  * Verbuchen» (`set_on_posting`, owner 2026-10-24 — the status «Journal verbuchen» sets, e.g. «Gebucht»).
  * Setting a switch takes it from the status that held it.
  *

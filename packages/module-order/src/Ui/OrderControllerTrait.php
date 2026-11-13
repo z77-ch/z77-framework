@@ -68,7 +68,7 @@ use Z77\Core\DI,
  * URL `/backend/order/order/…`.
  *
  *   - `list` — a STANDARD LIST ({@see OrderListing}): the view tabs are the PHASES in the
- *     toolbar (Eröffnet · Termin · Geliefert · Fakturiert · Gebucht · Erledigt · Storniert · Alle · Gelöscht, each with its
+ *     toolbar (Eröffnet · Termin · Geliefert · Fakturiert · Gebucht · Erledigt · Abgelegt · Alle · Gelöscht, each with its
  *     count), the state icon opens the order WINDOW, «Zahlung» in «Fakturiert» / «Gebucht» from debtor's
  *     `PaymentStates` (one query for the page); in «Termin» and «Geliefert» the selection bar
  *     «Buchungsdruck …». Action cell: «+ Neuer Auftrag»;

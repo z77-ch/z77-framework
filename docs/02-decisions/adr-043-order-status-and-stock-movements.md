@@ -479,15 +479,19 @@ it vanish into one tab with the invoiced and the hand-closed ones. Amends point 
 behaviour and its name in the status master data stay.
 
 1. **The list's tabs:** Eröffnet · Termin · Geliefert · **Fakturiert** · **Gebucht** · **Erledigt** ·
-   Storniert · Alle · Gelöscht (`?view=invoiced|booked|done`; `closed` is no view any more).
+   Abgelegt · Alle · Gelöscht (`?view=invoiced|booked|done`; `closed` is no view any more).
 2. **Derived, still not configured** — a closed status falls into a tab by WHO sets it
    (`OrderListing::viewOf()`): `setOnPosting` (only «Journal verbuchen» sets it) → Gebucht; the
    phase default (only «Fakturieren» / «Neu fakturieren» set it) → Fakturiert; every other closed
    status (set by hand — `OrderStatuses::refusal()` keeps the two system statuses out of a status
    change) → Erledigt. A new closed status lands in «Erledigt» without code.
 3. **The meaning the tabs carry** (owner): «Erledigt» = goods moved, no invoice, no revenue (the
-   addendum 2026-10-20's «never invoiced»); «Storniert» = no goods movement; «Gelöscht» (ADR-054
+   addendum 2026-10-20's «never invoiced»); «Abgelegt» = no goods movement; «Gelöscht» (ADR-054
    decision 14) = an entry error and the like, no goods movement, kept read-only with its reason.
-   «Erledigt» and «Gelöscht» stay apart because their stock effect is opposite; «Storniert» and
+   «Erledigt» and «Gelöscht» stay apart because their stock effect is opposite; «Abgelegt» and
    «Gelöscht» stay apart so a business case is not mixed with entry errors.
 4. «Zahlung» shows in «Fakturiert» («nicht verbucht» while in the journal) and «Gebucht».
+5. **The phase `cancelled` reads «Abgelegt»** (owner, same day; was «Storniert»): it holds every
+   order ended WITHOUT goods movement and kept — a declined quote, a withdrawn order, the copy of
+   an accepted quote — not only cancellations. The enum value stays `cancelled` (a name is a label,
+   addendum 2026-10-16 point 1); the seed STATUS «Storniert» (code `cancelled`) stays a status of it.

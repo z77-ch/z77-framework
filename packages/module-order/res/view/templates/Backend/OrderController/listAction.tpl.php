@@ -1,7 +1,7 @@
 <?php
 /**
  * Aufträge › Aufträge (plan §9.3; the owner's board on the developer canvas) — one VIEW tab at a
- * time (toolbar): Eröffnet · Termin · Geliefert · Fakturiert · Gebucht · Erledigt · Storniert · Alle · Gelöscht — the
+ * time (toolbar): Eröffnet · Termin · Geliefert · Fakturiert · Gebucht · Erledigt · Abgelegt · Alle · Gelöscht — the
  * PHASES (`OrderListing::viewOf()`, ADR-043 addendum 2026-10-15). A STANDARD LIST (listing.md): the head and the
  * search form are the kernel's partials over {@see \Z77\Module\Order\Ui\OrderListing}, the rows
  * are `_row`; no CSS and no JavaScript of its own:
