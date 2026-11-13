@@ -12,6 +12,8 @@ use Doctrine\DBAL\Exception as DBALException,
     Z77\Module\Debtor\Entities\BankMessage,
     Z77\Module\Debtor\Entities\BankTransaction,
     Z77\Module\Debtor\Entities\TransactionState,
+    Z77\Module\Debtor\Services\BankImportArchive,
+    Z77\Module\Debtor\Services\BankImportRefusedException,
     Z77\Module\Debtor\Services\BankImportService,
     Z77\Module\Debtor\Services\DebtorException,
     Z77\Module\Debtor\Services\InvoicingService,
@@ -78,7 +80,9 @@ trait BankImportControllerTrait
     /**
      * What this screen lets in (the ONE place, read by the client's attributes AND by the
      * server's check — `UploadPolicy`): camt.054 messages are XML, a month is a few hundred
-     * KB, several files in one go is the normal case (a bank hands out one per day).
+     * KB, several files in one go is the normal case (a bank hands out one per day). A ZIP of
+     * such XML files too (owner 2026-11-13 — the LUKB delivers one): each XML inside is
+     * imported on its own ({@see bankImportZip()}).
      *
      * `onConflict: error` — a message already imported is not something to overwrite: the
      * transactions behind it may be booked. The import service refuses it by message id and
@@ -90,14 +94,14 @@ trait BankImportControllerTrait
             endpoint:   $this->bankImportListBase() . '/upload',
             field:      'file',
             multiple:   true,
-            accept:     ['.xml'],
+            accept:     ['.xml', '.zip'],
             maxBytes:   self::BANK_FILE_LIMIT,
             onConflict: UploadPolicy::CONFLICT_ERROR,
             // The action cell is narrow and the label stands next to an ↑: «camt.054
             // Upload» says it, «camt.054-Dateien hierher ziehen» overflows the cell
             // (owner 2026-10-10).
             label:      'camt.054 Upload',
-            hint:       'XML · bis 5 MB · mehrere',
+            hint:       'XML oder ZIP · bis 5 MB · mehrere',
         );
     }
 
@@ -179,6 +183,9 @@ trait BankImportControllerTrait
         if ($refusal !== null) {
             return $this->bankUploadRefusal($fetch, $file->originalName, $file->originalName . ': ' . $refusal);
         }
+        if (strtolower(pathinfo($file->originalName, PATHINFO_EXTENSION)) === 'zip') {
+            return $this->bankImportZip($fetch, $file->originalName, (string) $file->bytes());
+        }
 
         try {
             $message = $this->bankImportService()->import((string) $file->bytes(), $file->originalName);
@@ -189,13 +196,14 @@ trait BankImportControllerTrait
                 . $counts['ignored'] . ' ignoriert.';
 
             if ($fetch) {
-                // The list behind the component shows the new message — reloading is the
-                // honest refresh here: the page is a plain list, not a fetch region.
+                // The list behind the component shows the new message — its region replaced,
+                // not the page reloaded: the rows of files refused in the same run stay
+                // readable (owner 2026-11-13, upload.js `leavesRows()`).
                 return $this->json([
                     'status'   => 'ok',
                     'name'     => $file->originalName,
                     'message'  => $counts['matched'] . ' zugeordnet, ' . $counts['unmatched'] . ' offen',
-                    'commands' => [['action' => 'reload']],
+                    'commands' => [$this->bankMessagesRegion()],
                 ]);
             }
 
@@ -205,6 +213,63 @@ trait BankImportControllerTrait
         } catch (DebtorException $e) {
             return $this->bankUploadRefusal($fetch, $file->originalName, $e->getMessage());
         }
+    }
+
+    /**
+     * A ZIP of camt.054 files (owner 2026-11-13): every XML inside imported on its own, each in
+     * its own unit of work — a message imported before (`DUPLICATE_MESSAGE`, typically the XML
+     * uploaded alone the same day) is skipped quietly, not a failure. ONE answer for the ZIP:
+     * ok when nothing failed («2 Meldungen importiert, 1 bereits vorhanden»), else an error that
+     * names each refused file — the ones imported stay imported. Page mode: the flash and the list.
+     */
+    private function bankImportZip(bool $fetch, string $zipName, string $bytes): RedirectResponse|JsonResponse
+    {
+        try {
+            $files = BankImportArchive::xmlFiles($bytes);
+        } catch (DebtorException $e) {
+            return $this->bankUploadRefusal($fetch, $zipName, $zipName . ': ' . $e->getMessage());
+        }
+
+        $imported = 0;
+        $skipped  = 0;
+        $failed  = [];
+        foreach ($files as $entry) {
+            try {
+                $this->bankImportService()->import($entry['xml'], $entry['name']);
+                $imported++;
+            } catch (BankImportRefusedException $e) {
+                if ($e->reason === BankImportRefusedException::DUPLICATE_MESSAGE) {
+                    $skipped++;
+                } else {
+                    $failed[] = $entry['name'] . ': ' . $e->getMessage();
+                }
+            } catch (DebtorException $e) {
+                $failed[] = $entry['name'] . ': ' . $e->getMessage();
+            }
+        }
+
+        $summary = ($imported === 1 ? '1 Meldung importiert' : $imported . ' Meldungen importiert')
+            . ($skipped > 0 ? ', ' . $skipped . ' bereits vorhanden' : '');
+        if ($failed !== []) {
+            $message = $zipName . ': ' . $summary . ' — nicht übernommen: ' . implode(' · ', $failed);
+            if ($fetch && $imported > 0) {
+                // The imported ones show up in the list; the row keeps saying what was refused.
+                return $this->json(['status' => 'error', 'name' => $zipName, 'message' => $message, 'commands' => [$this->bankMessagesRegion()]]);
+            }
+
+            return $this->bankUploadRefusal($fetch, $zipName, $message);
+        }
+        if ($fetch) {
+            return $this->json([
+                'status'   => 'ok',
+                'name'     => $zipName,
+                'message'  => $summary,
+                'commands' => [$this->bankMessagesRegion()],
+            ]);
+        }
+        $this->messageService->pushFlashAfterRedirect('success', $zipName . ': ' . $summary . '.');
+
+        return $this->redirect($this->bankImportListBase() . '/list', 303);
     }
 
     /** One refusal, two shapes — the row's message in fetch mode, the flash on a page. */
@@ -380,6 +445,24 @@ trait BankImportControllerTrait
         $this->messageService->pushFlashAfterRedirect('error', $text);
 
         return $this->redirect($this->bankImportListBase() . '/detail?id=' . $message->getId(), 303);
+    }
+
+    /**
+     * The list's messages region as a `replace-html` command — the answer of an upload that
+     * imported something (the same partial the page renders).
+     *
+     * @return array{action: string, target: string, html: string}
+     */
+    private function bankMessagesRegion(): array
+    {
+        return [
+            'action' => 'replace-html',
+            'target' => '[data-bank-messages]',
+            'html'   => $this->bankRenderPartial('messages', [
+                'messages'   => $this->bankImportService()->recent(50),
+                'actionBase' => $this->bankImportListBase(),
+            ]),
+        ];
     }
 
     /** A partial of this fragment as a string — the HTML a fetch answer carries (the same template the page renders). */

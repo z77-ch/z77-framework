@@ -222,7 +222,11 @@ foreach (['duplicate', 'conflict', 'validation'] as $status) {
 }
 check('data.message is read',            str_contains($js, 'data.message'));
 check('flashes/messages reach core',     str_contains($js, 'answer.flashes') && str_contains($js, 'handleEnvelope'));
-check('commands are held back on a failed run', str_contains($js, 'if (failed === 0 && commands.length'));
+check('on a failed run only commands that leave the rows alone run (owner 2026-11-13)',
+    str_contains($js, 'if (failed > 0) {') && str_contains($js, 'return self.leavesRows(cmd);')
+    && preg_match("/leavesRows = function \(cmd\) \{\s*if \(!cmd \|\| cmd\.action !== 'replace-html'/", $js) === 1
+    && str_contains($js, '!target.contains(this.form) && !(this.list && target.contains(this.list))'));
+check('a refusal may carry a region update — kept like the commands of a success', substr_count($js, 'this.keepCommands(answer.commands);') === 2);
 
 echo "\nthe Drive gave up its own uploader\n";
 $driveTrait = (string) file_get_contents(__DIR__ . '/../packages/module-dms/src/Ui/DriveControllerTrait.php');

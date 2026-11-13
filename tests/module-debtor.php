@@ -1297,7 +1297,7 @@ check('I5m the three master-data fragments carry an add action and an active swi
 
 $templateDir = $package . '/res/view/templates/Backend';
 $templates   = glob($templateDir . '/*/*.tpl.php');
-check('I6 every master-data screen has its list template, its edit template and its header slot; the document screens (P3 part 3) add six (since 2026-10-21 the facts partial `_facts` in place of the read view `detail` — one mask), the payment form and the delete confirmation (P4 part 1) two, the bank import list and detail (P4 part 2) two, the dunning list (P4 part 3) one, the open-item list and its toolbar (2026-10-07) two, the action cells of the invoice list and the bank import (ADR-033 rev. 2026-10-08) two — the «+ Debitor» cell of the debtor master data removed 2026-10-12; the row partials of the in-place answers (ADR-047 addendum 2026-10-10: bank transaction + unbooked bar, payment terms, payment target, debtor contact) five; the booking print\'s refusal page (2026-10-10) one; the editor\'s party picker and its «+ Kontakt» window (DEBTOR-CONTACT-001, 2026-10-10) two; the customer picker field and window (2026-10-15) two; its «Debitor anlegen» dialog (2026-10-18) one; the shared editor head (2026-10-19: title, terms + its reload answer, «Debitor anpassen», the fixed party) five and the card «Rechnung» of the invoice one; the list helps of invoices, open items, bank import and dunning (HELP-003, 2026-10-20) four; the result list of the booking print and its mail confirmation (step 3 of the mail plan, 2026-10-22) two; the action row of the result list `resultActions` (2026-10-23) one; the Faktura-Journal (ADR-054 step 3, 2026-10-23: list, action cell, toolbar, confirmation, help) five; «Rechnung löschen …» of an issued document (ADR-054 step 6, 2026-10-24) one; the dunning notice row ⋮ `noticeActions` and the shared one-document mail confirmation `DocumentMail/confirm` (owner 2026-11-13) two', count($templates) === 59, count($templates));
+check('I6 every master-data screen has its list template, its edit template and its header slot; the document screens (P3 part 3) add six (since 2026-10-21 the facts partial `_facts` in place of the read view `detail` — one mask), the payment form and the delete confirmation (P4 part 1) two, the bank import list and detail (P4 part 2) two, the dunning list (P4 part 3) one, the open-item list and its toolbar (2026-10-07) two, the action cells of the invoice list and the bank import (ADR-033 rev. 2026-10-08) two — the «+ Debitor» cell of the debtor master data removed 2026-10-12; the row partials of the in-place answers (ADR-047 addendum 2026-10-10: bank transaction + unbooked bar, payment terms, payment target, debtor contact) five; the booking print\'s refusal page (2026-10-10) one; the editor\'s party picker and its «+ Kontakt» window (DEBTOR-CONTACT-001, 2026-10-10) two; the customer picker field and window (2026-10-15) two; its «Debitor anlegen» dialog (2026-10-18) one; the shared editor head (2026-10-19: title, terms + its reload answer, «Debitor anpassen», the fixed party) five and the card «Rechnung» of the invoice one; the list helps of invoices, open items, bank import and dunning (HELP-003, 2026-10-20) four; the result list of the booking print and its mail confirmation (step 3 of the mail plan, 2026-10-22) two; the action row of the result list `resultActions` (2026-10-23) one; the Faktura-Journal (ADR-054 step 3, 2026-10-23: list, action cell, toolbar, confirmation, help) five; «Rechnung löschen …» of an issued document (ADR-054 step 6, 2026-10-24) one; the dunning notice row ⋮ `noticeActions` and the shared one-document mail confirmation `DocumentMail/confirm` (owner 2026-11-13) two; the bank import's messages region `messages` (owner 2026-11-13) one', count($templates) === 60, count($templates));
 check('I6b the master-data rows are ONE partial each, rendered by the list and answered in place (replaceRow / insertRow, DEBTOR-WIN-003) — no `reload` left for a one-row save or switch of terms, targets or debtors',
     array_reduce([['PaymentTerms', 'paymentTerms'], ['PaymentTarget', 'paymentTarget'], ['DebtorProfile', 'debtorContact']], fn($ok, $p) => $ok
         && str_contains(file_get_contents($templateDir . '/' . $p[0] . 'Controller/listAction.tpl.php'), "partial('Backend/" . $p[0] . "Controller/_row'")
@@ -3226,6 +3226,7 @@ $bankHost = function () {
         private function bankImportService(): BankImportService { return new BankImportService($this->em(), 'bankimport'); }
         private function bankInvoicingService(): InvoicingService { return new InvoicingService($this->em(), 'bankimport'); }
         protected function fetch(): \Z77\Core\Http\Response\FetchResponse { return new \Z77\Core\Http\Response\FetchResponse(); }
+        protected function json(array $data, int $status = 200): \Z77\Core\Http\Response\JsonResponse { return new \Z77\Core\Http\Response\JsonResponse($data, $status); }
         // The kernel's TemplateRenderer needs the file finder — the harness renders with its own double.
         private function bankRenderPartial(string $name, array $context): string { return $GLOBALS['renderer']->partial('Backend/BankImportController/' . $name, $context); }
     };
@@ -3323,6 +3324,74 @@ check('R19 source guards: the trait never persists itself, every write goes thro
         }
         return false;
     })());
+
+echo "R. … a ZIP of camt.054 files (owner 2026-11-13 — the LUKB delivers one)\n";
+$zipOf = function (array $entries) use ($base): string {
+    $path = $base . '/upload-' . bin2hex(random_bytes(4)) . '.zip';
+    $zip  = new \ZipArchive();
+    $zip->open($path, \ZipArchive::CREATE | \ZipArchive::OVERWRITE);
+    foreach ($entries as $name => $bytes) {
+        $zip->addFromString($name, $bytes);
+    }
+    $zip->close();
+    return $path;
+};
+$r4Xml  = $camtXml('MSG-R4', [['amount' => '3.80', 'date' => '2026-07-05', 'ref' => $qrrOf(1000, $invD->getNumber()), 'txid' => 'D-rest']]);
+$r5Xml  = $camtXml('MSG-R5', []);
+$zipR5  = $zipOf(['camt/MSG-R5.xml' => $r5Xml, 'MSG-R4.xml' => $r4Xml, 'liesmich.txt' => 'x', '__MACOSX/._MSG-R5.xml' => 'x']);
+$zipFiles = \Z77\Module\Debtor\Services\BankImportArchive::xmlFiles((string) file_get_contents($zipR5));
+$zipNone  = (function () use ($zipOf) { try { \Z77\Module\Debtor\Services\BankImportArchive::xmlFiles((string) file_get_contents($zipOf(['liesmich.txt' => 'x']))); return ''; } catch (BankImportRefusedException $e) { return $e->getMessage(); } })();
+$zipBad   = (function () { try { \Z77\Module\Debtor\Services\BankImportArchive::xmlFiles('not a zip'); return ''; } catch (BankImportRefusedException $e) { return $e->getMessage(); } })();
+check('R20 BankImportArchive: the XML entries of a ZIP by their base name, in archive order — other files and macOS metadata skipped; no XML inside or not a ZIP → refused with a German reason',
+    array_column($zipFiles, 'name') === ['MSG-R5.xml', 'MSG-R4.xml'] && $zipFiles[0]['xml'] === $r5Xml
+    && $zipNone === 'Die ZIP-Datei enthält keine XML-Datei.' && $zipBad === 'Die ZIP-Datei lässt sich nicht öffnen.');
+$GLOBALS['z77TestUpload'] = ['file' => new \Z77\Shared\ValueObjects\UploadedFile('LUKB_camt054.zip', $zipR5, filesize($zipR5), 'application/zip')];
+$useRequest([], []);
+$host = $bankHost();
+$host->uploadAction();
+$GLOBALS['z77TestUpload'] = [];
+check('R21 upload of a ZIP (page mode): each XML imported on its own, the one imported before (MSG-R4) skipped quietly — success flash «1 Meldung importiert, 1 bereits vorhanden», back to the list; the policy takes .zip',
+    $bank($wireDi())->recent(1)[0]->getMessageId() === 'MSG-R5' && $host->redirectedTo === '/backend/finance/bank-import/list'
+    && ($host->messageService->flashes[0][0] ?? '') === 'success' && str_contains($host->messageService->flashes[0][1] ?? '', '1 Meldung importiert, 1 bereits vorhanden')
+    && (int) $db->fetchOne("SELECT COUNT(*) FROM bank_message WHERE message_id = 'MSG-R4'") === 1);
+$zipBroken = $zipOf(['kaputt.xml' => '<Document>nicht camt</Document>']);
+$GLOBALS['z77TestUpload'] = ['file' => new \Z77\Shared\ValueObjects\UploadedFile('kaputt.zip', $zipBroken, filesize($zipBroken), 'application/zip')];
+$GLOBALS['z77TestFetch']  = true;
+$useRequest([], []);
+$host   = $bankHost();
+$answer = $host->uploadAction();
+$GLOBALS['z77TestFetch']  = false;
+$GLOBALS['z77TestUpload'] = [];
+$zipJson = $answer instanceof \Z77\Core\Http\Response\JsonResponse ? (fn() => $this->data)->call($answer) : null;
+check('R22 a ZIP with a file that is no camt.054 (fetch mode): ONE error envelope for the ZIP that names the refused file — no reload command',
+    is_array($zipJson) && ($zipJson['status'] ?? '') === 'error' && str_contains($zipJson['message'] ?? '', 'kaputt.xml:') && !isset($zipJson['commands']));
+$zipMixed = $zipOf(['MSG-R6.xml' => $camtXml('MSG-R6', []), 'kaputt.xml' => '<Document>nicht camt</Document>']);
+$GLOBALS['z77TestUpload'] = ['file' => new \Z77\Shared\ValueObjects\UploadedFile('gemischt.zip', $zipMixed, filesize($zipMixed), 'application/zip')];
+$GLOBALS['z77TestFetch']  = true;
+$useRequest([], []);
+$host   = $bankHost();
+$answer = $host->uploadAction();
+$GLOBALS['z77TestFetch']  = false;
+$GLOBALS['z77TestUpload'] = [];
+$mixJson = $answer instanceof \Z77\Core\Http\Response\JsonResponse ? (fn() => $this->data)->call($answer) : null;
+check('R22b a ZIP with one good and one refused file (fetch mode): the error names the refused one AND carries the messages region (replace-html [data-bank-messages] with MSG-R6) — the list shows what got through, the row keeps the reason',
+    is_array($mixJson) && ($mixJson['status'] ?? '') === 'error' && str_contains($mixJson['message'] ?? '', '1 Meldung importiert') && str_contains($mixJson['message'] ?? '', 'kaputt.xml:')
+    && ($mixJson['commands'][0]['action'] ?? '') === 'replace-html' && ($mixJson['commands'][0]['target'] ?? '') === '[data-bank-messages]'
+    && str_contains($mixJson['commands'][0]['html'] ?? '', 'data-bank-messages') && str_contains($mixJson['commands'][0]['html'] ?? '', 'MSG-R6'));
+$tmpR7 = $base . '/upload-r7.xml';
+file_put_contents($tmpR7, $camtXml('MSG-R7', []));
+$GLOBALS['z77TestUpload'] = ['file' => new \Z77\Shared\ValueObjects\UploadedFile('camt054-r7.xml', $tmpR7, filesize($tmpR7), 'text/xml')];
+$GLOBALS['z77TestFetch']  = true;
+$useRequest([], []);
+$host   = $bankHost();
+$answer = $host->uploadAction();
+$GLOBALS['z77TestFetch']  = false;
+$GLOBALS['z77TestUpload'] = [];
+$r7Json = $answer instanceof \Z77\Core\Http\Response\JsonResponse ? (fn() => $this->data)->call($answer) : null;
+check('R23 an XML upload in fetch mode answers the messages REGION, not a reload (owner 2026-11-13 — a refused file of the same run keeps its row); the list page renders the same region',
+    is_array($r7Json) && ($r7Json['status'] ?? '') === 'ok' && count($r7Json['commands'] ?? []) === 1
+    && ($r7Json['commands'][0]['target'] ?? '') === '[data-bank-messages]' && str_contains($r7Json['commands'][0]['html'] ?? '', 'MSG-R7')
+    && str_contains($listHtml, 'data-bank-messages'));
 
 // ── T. P4 part 3: dunning, the fee as a document kind (plan §6.5, owner 2026-10-06) ──
 
@@ -4713,7 +4782,7 @@ check('BM4 the header actions are plain links of the run: «Alle per E-Mail send
 $bmRequest(['ids' => $bmIdList, 'back' => '/backend/order/order/list?view=invoiced']);
 $host = $bmHost();
 $host->bookingResultAction();
-check('BM4b a local backend `back` (module-order passes «Fakturiert») is kept and offered as «Zurück»', $host->context['back'] === '/backend/order/order/list?view=invoiced' && str_contains($renderMain($host), 'href="/backend/order/order/list?view=closed">Zurück</a>'));
+check('BM4b a local backend `back` (module-order passes «Fakturiert») is kept and offered as «Zurück»', $host->context['back'] === '/backend/order/order/list?view=invoiced' && str_contains($renderMain($host), 'href="/backend/order/order/list?view=invoiced">Zurück</a>'));
 
 $bmTmpBefore = count(glob(sys_get_temp_dir() . '/z77zip*') ?: []);
 $bmRequest(['ids' => $bmIdList]);
