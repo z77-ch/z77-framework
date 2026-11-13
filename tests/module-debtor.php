@@ -1297,7 +1297,7 @@ check('I5m the three master-data fragments carry an add action and an active swi
 
 $templateDir = $package . '/res/view/templates/Backend';
 $templates   = glob($templateDir . '/*/*.tpl.php');
-check('I6 every master-data screen has its list template, its edit template and its header slot; the document screens (P3 part 3) add six (since 2026-10-21 the facts partial `_facts` in place of the read view `detail` — one mask), the payment form and the delete confirmation (P4 part 1) two, the bank import list and detail (P4 part 2) two, the dunning list (P4 part 3) one, the open-item list and its toolbar (2026-10-07) two, the action cells of the invoice list and the bank import (ADR-033 rev. 2026-10-08) two — the «+ Debitor» cell of the debtor master data removed 2026-10-12; the row partials of the in-place answers (ADR-047 addendum 2026-10-10: bank transaction + unbooked bar, payment terms, payment target, debtor contact) five; the booking print\'s refusal page (2026-10-10) one; the editor\'s party picker and its «+ Kontakt» window (DEBTOR-CONTACT-001, 2026-10-10) two; the customer picker field and window (2026-10-15) two; its «Debitor anlegen» dialog (2026-10-18) one; the shared editor head (2026-10-19: title, terms + its reload answer, «Debitor anpassen», the fixed party) five and the card «Rechnung» of the invoice one; the list helps of invoices, open items, bank import and dunning (HELP-003, 2026-10-20) four; the result list of the booking print and its mail confirmation (step 3 of the mail plan, 2026-10-22) two; the action row of the result list `resultActions` (2026-10-23) one; the Faktura-Journal (ADR-054 step 3, 2026-10-23: list, action cell, toolbar, confirmation, help) five; «Rechnung löschen …» of an issued document (ADR-054 step 6, 2026-10-24) one', count($templates) === 57, count($templates));
+check('I6 every master-data screen has its list template, its edit template and its header slot; the document screens (P3 part 3) add six (since 2026-10-21 the facts partial `_facts` in place of the read view `detail` — one mask), the payment form and the delete confirmation (P4 part 1) two, the bank import list and detail (P4 part 2) two, the dunning list (P4 part 3) one, the open-item list and its toolbar (2026-10-07) two, the action cells of the invoice list and the bank import (ADR-033 rev. 2026-10-08) two — the «+ Debitor» cell of the debtor master data removed 2026-10-12; the row partials of the in-place answers (ADR-047 addendum 2026-10-10: bank transaction + unbooked bar, payment terms, payment target, debtor contact) five; the booking print\'s refusal page (2026-10-10) one; the editor\'s party picker and its «+ Kontakt» window (DEBTOR-CONTACT-001, 2026-10-10) two; the customer picker field and window (2026-10-15) two; its «Debitor anlegen» dialog (2026-10-18) one; the shared editor head (2026-10-19: title, terms + its reload answer, «Debitor anpassen», the fixed party) five and the card «Rechnung» of the invoice one; the list helps of invoices, open items, bank import and dunning (HELP-003, 2026-10-20) four; the result list of the booking print and its mail confirmation (step 3 of the mail plan, 2026-10-22) two; the action row of the result list `resultActions` (2026-10-23) one; the Faktura-Journal (ADR-054 step 3, 2026-10-23: list, action cell, toolbar, confirmation, help) five; «Rechnung löschen …» of an issued document (ADR-054 step 6, 2026-10-24) one; the dunning notice row ⋮ `noticeActions` and the shared one-document mail confirmation `DocumentMail/confirm` (owner 2026-11-13) two', count($templates) === 59, count($templates));
 check('I6b the master-data rows are ONE partial each, rendered by the list and answered in place (replaceRow / insertRow, DEBTOR-WIN-003) — no `reload` left for a one-row save or switch of terms, targets or debtors',
     array_reduce([['PaymentTerms', 'paymentTerms'], ['PaymentTarget', 'paymentTarget'], ['DebtorProfile', 'debtorContact']], fn($ok, $p) => $ok
         && str_contains(file_get_contents($templateDir . '/' . $p[0] . 'Controller/listAction.tpl.php'), "partial('Backend/" . $p[0] . "Controller/_row'")
@@ -3472,15 +3472,15 @@ $useRequest(['as_of' => '2026-08-12']);
 $host = $dunHost();
 $host->listAction();
 $listHtml = $renderer->partial('Backend/DunningController/listAction', $host->context);
-check('T11 the list as of 12.8.: the due invoice with its checkbox, open amount and next level; the runs so far with their notices and the PDF link',
+check('T11 the list as of 12.8.: the due invoice with its checkbox, open amount and next level; the runs so far with their notices and the row ⋮ (notice-actions: «PDF öffnen», «Per E-Mail senden …» — owner 2026-11-13)',
     in_array($invF->getId(), $dueIds($host->context['due']), true) && str_contains($listHtml, 'name="doc[]" value="' . $invF->getId() . '"') && str_contains($listHtml, 'Zahlungserinnerung')
-    && str_contains($listHtml, 'Mahnlauf starten') && str_contains($listHtml, 'notice-pdf?id=' . $n2->getId()) && str_contains($listHtml, 'data-dunning-notice=')
+    && str_contains($listHtml, 'Mahnlauf starten') && str_contains($listHtml, 'data-menu-open="/backend/finance/dunning/notice-actions?id=' . $n2->getId() . '"') && str_contains($listHtml, 'data-dunning-notice=')
     && preg_match('/class="z77-form-actions">.*?be-btn--confirm.*?Mahnlauf starten/s', $listHtml) === 1 && !str_contains($listHtml, 'data-selection-bar=')
     && strpos($listHtml, 'Mahnlauf starten</span>') < strpos($listHtml, 'data-due-invoice=') && !str_contains(file_get_contents($package . '/src/Ui/DunningControllerTrait.php'), "'hc1'"));
 $dunListHelp = $renderer->partial('Backend/DunningController/list.help', []);
 check('T11b the list\'s help (HELP-003): attached with `toolbar: true` («Hilfe» at the right end of the toolbar); the due list, «Mahnlauf starten», the runs with their PDF; one field section — «Stichtag» (`as_of`), the field the list carries',
     $listHelp($host, 'DunningController', 'Hilfe: Mahnungen')
-    && str_contains($dunListHelp, 'Mahnlauf starten') && str_contains($dunListHelp, '<strong>PDF</strong>')
+    && str_contains($dunListHelp, 'Mahnlauf starten') && str_contains($dunListHelp, '<strong>PDF öffnen</strong>') && str_contains($dunListHelp, '<strong>Per E-Mail senden …</strong>')
     && preg_match_all('/<section data-help-field="([a-z_]+)">/', $dunListHelp, $mDF) === 1 && $mDF[1] === ['as_of'] && str_contains($listHtml, 'name="as_of" value="2026-08-12"'));
 $useRequest([], ['as_of' => '2026-08-12', 'doc' => [(string) $invF->getId()]]);
 $host = $dunHost();
@@ -4996,6 +4996,150 @@ check('BM25 … the mandator\'s «Logo (E-Mail)» at the top: multipart/related,
     && preg_match('/Content-Type: text\/plain; charset=UTF-8\r\nContent-Transfer-Encoding: quoted-printable\r\n\r\n(.*?)\r\n--=_z77_alt_/s', $bmEml, $bmText) === 1
     && str_contains(quoted_printable_decode($bmText[1]), "\r\n\r\nPlease find attached our invoice " . $bmNum[0]) && str_contains(quoted_printable_decode($bmText[1]), "Kind regards\r\nBuchhaltung\r\n"),
     json_encode(quoted_printable_decode($bmText[1] ?? ''), JSON_UNESCAPED_UNICODE));
+
+// The dunning notice by e-mail (owner 2026-11-13, «the way invoices are sent»): one notice, one mail, through
+// the shared DocumentMailer — the confirmation page, the POST, the provider `dunning-pdf` at send time, resend,
+// the refusal without an address, the row ⋮. A notice of section T (in the schema — also from the checkpoint).
+echo "BM. … the dunning notice by e-mail (owner 2026-11-13)\n";
+$bdHost = function () {
+    return new class {
+        use \Z77\Module\Debtor\Ui\DunningControllerTrait { listAction as public; noticeActionsAction as public; confirmNoticeMailAction as public; noticeMailAction as public; }
+        public array $context = [];
+        public object $layoutManager;
+        public object $messageService;
+        public object $help;
+        public ?string $redirectedTo = null;
+        public ?string $fetchErrorText = null;
+        public ?\Z77\Shared\Entities\BackendUser $mailUser = null;
+        public function __construct()
+        {
+            $this->mailUser = new \Z77\Shared\Entities\BackendUser(['username' => 'mahner', 'sender_identities' => [
+                ['name' => 'Sabine Sachbearbeiter', 'email' => 'sabine@example.ch'],
+                ['name' => 'Buchhaltung', 'email' => 'buchhaltung@example.ch'],
+            ]]);
+            (new \ReflectionProperty(\Z77\Shared\Entities\BackendUser::class, 'id'))->setValue($this->mailUser, 42);
+            $this->help = new \Z77\Core\Services\HelpService();
+            $this->layoutManager = new class {
+                public array $sections = [];
+                public function removeSection(string $s): void { unset($this->sections[$s]); }
+                public function addPartials(string $name, string $path, string $ns, string $section = 'main'): void { $this->sections[$section][] = $path . '/' . $name; }
+            };
+            $this->messageService = new class {
+                public array $flashes = [];
+                public function pushFlashAfterRedirect(string $type, string $message): void { $this->flashes[] = [$type, $message]; }
+            };
+        }
+        protected function em() { return DI::getUnifiedEntityManager(); }
+        protected function html(array $context = []): \Z77\Core\Http\Response\HtmlResponse { $this->context = $context; return new \Z77\Core\Http\Response\HtmlResponse(null, $context); }
+        protected function fetchError(string $text): \Z77\Core\Http\Response\FetchResponse { $this->fetchErrorText = $text; return (new \Z77\Core\Http\Response\FetchResponse())->setStatus('error'); }
+        protected function redirect(string $url, int $status = 302): \Z77\Core\Http\Response\RedirectResponse { $this->redirectedTo = $url; return new \Z77\Core\Http\Response\RedirectResponse($url, $status); }
+        protected function bytes(string $content, string $filename, string $mimeType, bool $inline = true): \Z77\Core\Http\Response\BytesResponse { return new \Z77\Core\Http\Response\BytesResponse($content, $filename, $mimeType, $inline); }
+        private function dunningService(): \Z77\Module\Debtor\Services\DunningService { return new \Z77\Module\Debtor\Services\DunningService($this->em(), 'mahner'); }
+        private function dunningMailSenders(): \Z77\Shared\Mail\SenderIdentities { return new \Z77\Shared\Mail\SenderIdentities($this->mailUser); }
+        private function dunningMailActor(): string { return 'mahner'; }
+    };
+};
+$bdNoticeId = (int) $db->fetchOne('SELECT id FROM dunning_notice ORDER BY id LIMIT 1');
+$bdInvoiceId = (int) $db->fetchOne('SELECT invoice_id FROM dunning_notice WHERE id = ?', [$bdNoticeId]);
+$bdKeepMail  = (string) $db->fetchOne('SELECT addr_email FROM invoice WHERE id = ?', [$bdInvoiceId]);
+$bdKeepLang  = (string) $db->fetchOne('SELECT language FROM invoice WHERE id = ?', [$bdInvoiceId]);
+$db->executeStatement("UPDATE invoice SET addr_email = 'mahnung@kunde.ch', language = 'de' WHERE id = ?", [$bdInvoiceId]);
+$bdEm      = $bmRequest([]);
+$bdNotice  = $bdEm->getRepository(\Z77\Module\Debtor\Entities\DunningNotice::class)->find($bdNoticeId);
+$bdLevel   = (new \Z77\Module\Debtor\Services\DunningService($bdEm, 'mahner'))->levelOf($bdNotice);
+$bdInvNr   = (string) $bdNotice->getInvoice()->getNumber();
+$bdCompany = \Z77\Module\Debtor\Services\Creditor::mandator($bdEm)?->getName() ?? '';
+$bdName    = ($bdLevel?->getLabel() ?? $bdNotice->getLevelCode()) . ' zu Rechnung ' . $bdInvNr;
+$bdMail    = (new \Z77\Module\Debtor\Mail\DunningMails($bdEm))->compose($bdNotice, new \Z77\Shared\Mail\SenderIdentity('Max Muster', 'max@example.ch'));
+check('BD1 the notice\'s mail from `EmailService::documentMail()`, kind `dunning`: to the billing e-mail ON the invoice, subject «Zahlungserinnerung zu Rechnung <nr> — <mandator>», the text with the number and the notice\'s OPEN amount, {anzeigename} under the greeting',
+    $bdMail['to'] === 'mahnung@kunde.ch' && $bdMail['kind'] === 'dunning' && $bdMail['language'] === 'de'
+    && $bdMail['subject'] === rtrim('Zahlungserinnerung zu Rechnung ' . $bdInvNr . ($bdCompany !== '' ? ' — ' . $bdCompany : ''))
+    && str_contains($bdMail['body'], 'Unsere Rechnung ' . $bdInvNr . ' über CHF ' . \Z77\Shared\Money\AmountFormat::of($bdNotice->getOpenAmount()) . ' ist noch offen.')
+    && str_contains($bdMail['body'], "Freundliche Grüsse\nMax Muster"),
+    json_encode($bdMail, JSON_UNESCAPED_UNICODE));
+
+$bmRequest(['id' => (string) $bdNoticeId]);
+$host = $bdHost();
+$host->confirmNoticeMailAction();
+$bdConfirm = $renderMain($host);
+check('BD2 «Per E-Mail senden …» of a notice: the shared confirmation PAGE (Backend/DocumentMail/confirm) — the address, the subject, «Senden als» with both identities, the button «E-Mail senden», the form posting the notice id to notice-mail',
+    $host->layoutManager->sections['main'] === ['Backend/DocumentMail/confirm'] && str_contains($bdConfirm, 'action="/backend/finance/dunning/notice-mail"')
+    && str_contains($bdConfirm, 'name="id" value="' . $bdNoticeId . '"') && str_contains($bdConfirm, 'mahnung@kunde.ch') && str_contains($bdConfirm, e($bdName) . ' · per E-Mail senden')
+    && str_contains($bdConfirm, '<select id="sender-identity" name="sender">') && str_contains($bdConfirm, 'E-Mail senden') && !str_contains($bdConfirm, 'data-window='),
+    strip_tags($bdConfirm));
+
+$bmRequest([], ['id' => (string) $bdNoticeId, 'sender' => '1']);
+$host = $bdHost();
+$host->noticeMailAction();
+$bdRows = $db->fetchAllAssociative('SELECT * FROM mail_outbox WHERE source = ? ORDER BY id', ['dunning:' . $bdNoticeId]);
+check('BD3 the POST queues ONE outbox mail — source dunning:<id>, the attachment ONLY as the reference dunning-pdf:<id>, the chosen identity «Buchhaltung» (user 42), the dunning text stored —, back to the list with «<Stufe> zu Rechnung <nr>: E-Mail im Postausgang — Versand 10 pro Minute.»',
+    count($bdRows) === 1 && json_decode($bdRows[0]['attachments'], true) === ['dunning-pdf:' . $bdNoticeId] && $bdRows[0]['recipient_email'] === 'mahnung@kunde.ch'
+    && $bdRows[0]['sender_name'] === 'Buchhaltung' && (int) $bdRows[0]['sender_user_id'] === 42 && $bdRows[0]['created_by'] === 'mahner' && $bdRows[0]['state'] === 'queued'
+    && str_contains($bdRows[0]['html_body'], 'Unsere Rechnung ' . $bdInvNr) && $host->redirectedTo === '/backend/finance/dunning/list'
+    && ($host->messageService->flashes[0] ?? []) === ['success', $bdName . ': E-Mail im Postausgang — Versand 10 pro Minute.'],
+    json_encode([$host->messageService->flashes, count($bdRows)], JSON_UNESCAPED_UNICODE));
+
+$bdProviders = \Z77\Module\Mailing\Attachments\AttachmentProviders::fromModules(DI::getModuleManager());
+$bdPdf = $bdProviders->resolve('dunning-pdf:' . $bdNoticeId);
+check('BD4 the provider `dunning-pdf` (registered by module-debtor): accepts an existing notice (junk, an unknown id refused at queue time); resolves the notice PDF at SEND time — named like the screen\'s PDF (DunningPdf::fileName), a PDF',
+    $bdProviders->has('dunning-pdf') && $bdProviders->refusal('dunning-pdf:' . $bdNoticeId) === null && $bdProviders->refusal('dunning-pdf:999999') !== null && $bdProviders->refusal('dunning-pdf:x') !== null
+    && $bdPdf->filename === \Z77\Module\Debtor\Pdf\DunningPdf::fileName($bdNotice, $bdLevel) && $bdPdf->mimeType === 'application/pdf' && str_starts_with($bdPdf->bytes, '%PDF-'));
+
+$bmRequest(['id' => (string) $bdNoticeId]);
+$host = $bdHost();
+$host->noticeActionsAction();
+$bdMenu = $renderMain($host);
+$bmRequest(['id' => (string) $bdNoticeId]);
+$host = $bdHost();
+$host->confirmNoticeMailAction();
+$bdAgain = $renderMain($host);
+$bmRequest([], ['id' => (string) $bdNoticeId, 'sender' => '0']);
+$host = $bdHost();
+$host->noticeMailAction();
+check('BD5 resend: the row ⋮ offers «PDF öffnen» and now «Erneut senden …»; the confirmation shows «Bereits: E-Mail an mahnung@kunde.ch im Postausgang seit …» and «Erneut senden»; the POST queues a SECOND mail, the flash says «(erneut)»',
+    str_contains($bdMenu, '<div class="be-menu" role="menu"') && str_contains($bdMenu, '/backend/finance/dunning/notice-pdf?id=' . $bdNoticeId) && str_contains($bdMenu, 'Erneut senden …')
+    && str_contains($bdMenu, 'href="/backend/finance/dunning/confirm-notice-mail?id=' . $bdNoticeId . '"')
+    && str_contains($bdAgain, 'Bereits: E-Mail an mahnung@kunde.ch im Postausgang seit') && str_contains($bdAgain, 'Erneut senden')
+    && (int) $db->fetchOne('SELECT COUNT(*) FROM mail_outbox WHERE source = ?', ['dunning:' . $bdNoticeId]) === 2
+    && str_contains($host->messageService->flashes[0][1] ?? '', 'E-Mail im Postausgang (erneut)'),
+    strip_tags($bdMenu . ' | ' . $bdAgain));
+
+$bmRequest(['as_of' => (new \DateTimeImmutable('today'))->format('Y-m-d')]);
+$host = $bdHost();
+$host->listAction();
+$bdList = $renderer->partial('Backend/DunningController/listAction', $host->context);
+check('BD6 the runs list per notice: the billing e-mail, «Versand» = the newest outbox line (from `dunning:<id>`), the row ⋮ (data-menu-open → notice-actions)',
+    str_contains($bdList, 'mahnung@kunde.ch') && str_contains($bdList, 'E-Mail an mahnung@kunde.ch im Postausgang seit')
+    && str_contains($bdList, 'data-menu-open="/backend/finance/dunning/notice-actions?id=' . $bdNoticeId . '"'),
+    json_encode([str_contains($bdList, 'mahnung@kunde.ch'), str_contains($bdList, 'E-Mail an mahnung@kunde.ch im Postausgang seit'), str_contains($bdList, 'notice-actions?id=' . $bdNoticeId), array_keys($host->context['deliveries'] ?? []), count($host->context['runs'] ?? [])]));
+
+$db->executeStatement("UPDATE invoice SET addr_email = '' WHERE id = ?", [$bdInvoiceId]);
+$bdBefore = (int) $db->fetchOne('SELECT COUNT(*) FROM mail_outbox');
+$bmRequest(['id' => (string) $bdNoticeId]);
+$host = $bdHost();
+$host->confirmNoticeMailAction();
+$bdNone = $renderMain($host);
+$bmRequest([], ['id' => (string) $bdNoticeId, 'sender' => '0']);
+$host = $bdHost();
+$host->noticeMailAction();
+$bdNoneFlash = $host->messageService->flashes[0] ?? [];
+$bmRequest([], ['id' => '999999', 'sender' => '0']);
+$host = $bdHost();
+$host->noticeMailAction();
+$bdGone = $host->messageService->flashes[0] ?? [];
+$bmRequest([], ['id' => (string) $bdNoticeId, 'sender' => '5']);
+$host = $bdHost();
+$host->noticeMailAction();
+$bdForeign = $host->messageService->flashes[0] ?? [];
+check('BD7 refused, nothing queued: a notice whose invoice has NO e-mail — the confirmation says «keine E-Mail-Adresse — keine E-Mail möglich» without a button, the POST «… keine E-Mail-Adresse — keine E-Mail eingereiht.»; an unknown notice («Mahnung nicht gefunden»); a foreign identity index',
+    (int) $db->fetchOne('SELECT COUNT(*) FROM mail_outbox') === $bdBefore
+    && str_contains($bdNone, 'keine E-Mail-Adresse — keine E-Mail möglich') && !str_contains($bdNone, 'type="submit"') && !str_contains($bdNone, 'name="sender"')
+    && $bdNoneFlash === ['error', $bdName . ': keine E-Mail-Adresse — keine E-Mail eingereiht.']
+    && $bdGone === ['error', 'Mahnung nicht gefunden'] && ($bdForeign[0] ?? '') === 'error' && str_contains($bdForeign[1] ?? '', 'gehört nicht zu deinem User'),
+    json_encode([$bdNoneFlash, $bdGone, $bdForeign], JSON_UNESCAPED_UNICODE));
+// The dunning mails are not the run's business beyond this block: cancelled, the invoice's address restored.
+$db->executeStatement("UPDATE mail_outbox SET state = 'cancelled' WHERE source = ? AND state = 'queued'", ['dunning:' . $bdNoticeId]);
+$db->executeStatement('UPDATE invoice SET addr_email = ?, language = ? WHERE id = ?', [$bdKeepMail, $bdKeepLang, $bdInvoiceId]);
 
 // ── FJ. the Faktura-Journal — steps 1 and 2 of the build plan (ADR-054, owner 2026-10-23) ──
 // Schema and predicates (steps 1–2): the readers are proven by flipping one posted document's state in SQL and

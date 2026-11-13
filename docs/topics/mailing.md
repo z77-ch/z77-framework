@@ -1,6 +1,6 @@
 # mailing
 
-2026-11-12
+2026-11-13
 
 ## entry
 
@@ -53,7 +53,7 @@ The outbox is the shared base for every mail that goes out in numbers (step 2 of
 - **Templates are rendered at QUEUE time** (`EmailService::renderBody()`, body template inside `emails/layout`, override-first) — the row holds what goes out; `template` keeps `Namespace:path` for traceability. A finished HTML (`OutboxDraft::html()`) is stored as given; a text-only draft stores no HTML. An empty `text_body` is derived with `HtmlToText` at SEND time.
 - **The sending ACCOUNT is never in a draft** — the `Mailer` fills the From address from `config/client/mail.inc.php` (Service › E-Mail), as for the form mails. Reply-To is per mail (validated).
 - **The person signs** (owner 2026-10-23): a mail a staff member triggers carries his SENDER IDENTITY — `OutboxDraft::withSender(SenderIdentity, userId)` (mail.md «sender identities»). The row keeps a SNAPSHOT: `sender_user_id` (the backend user, no foreign key — users are file records), `sender_name`, `sender_email`. At send time `OutboxSender` sets the From display name to `sender_name` (address still the account's) and Reply-To to «sender_name <sender_email>». `queueBatch()` checks the identity with `SenderIdentity::problems()` and refuses a draft that has an identity AND its own Reply-To. A row without identity (`''`) sends as before.
-- **Attachments are references** `type:id` (`invoice-pdf:123`), resolved at send time by the provider a module registered for the type. The outbox knows no document module.
+- **Attachments are references** `type:id` (`invoice-pdf:123`), resolved at send time by the provider a module registered for the type. The outbox knows no document module. Registered today (2026-11-13): debtor `invoice-pdf:<id>@<revision>` and `dunning-pdf:<notice id>`, order `order-pdf:<order id>@<kind>` (quote, order confirmation, delivery note — one provider for the three PDFs).
 - **Inline images too are resolved at SEND time, not stored** (owner 2026-10-23, the e-mail logo): the queued HTML keeps the template's empty slot `data-z77-inline="logo"`; the kernel `Mailer::send()` fills it (`InlineImages`, mail.md «inline images») when `OutboxSender` hands the message over — so a logo changed after queueing is the one that goes out, a missing file sends the mail without it, and the row holds no path. The outbox itself names no image source (module-mandator registers `logo`). The window's HTML preview shows the slot empty (a `cid:` cannot load there).
 - **`source`** (opaque, `invoice:123`, `newsletter:5`) and **`batch_id`** (one `queueBatch()` = one batch, 32 hex) group the rows for the screen and for steps 3 / 4.
 - **What went out for a source** (`OutboxMailRepository::deliveriesOf(list<source>)`, step 3, 2026-10-22): plain rows (`to`, `state`, `created_at`, `sent_at`, `batch_id`, `created_by`, since 2026-10-23 `sender` / `sender_email`, since 2026-10-24 `attachments` — the references the mail was queued with, so a document module tells WHICH version went out: debtor's `invoice-pdf:<id>@<revision>`, ADR-054 decision 21) per source, one indexed query — how a document module shows «per E-Mail an … gesendet am …» without knowing the entity. Read-only; the state changes stay the transitions'.
@@ -146,14 +146,15 @@ final class InvoicePdfAttachment implements \Z77\Module\Mailing\Attachments\Atta
 - **Owner's look — Faktura-Journal step 8** (committed `ca1d86e`): a replaced / deleted invoice cancels its `queued` mails; the successor goes out as `invoice-replacement` (Service › E-Mail › Beleg-Mails lists it).
 - **Owner to confirm** (raised 2026-10-22): (1) the default subject «Rechnung {nummer} — {absender}» instead of «Rechnung {nummer}» (KAM_NUMSUBJECT, mail.md); (2) the booking print lands on the result list, the combined PDF is «Alle als ein PDF» there; (3) the confirm page's eye icon per order = `invoice-preview`.
 - **Owner decision — empty `fromAddress`** (proposal, not built): today every outbox mail then fails with «Message has no From address.» and is retried until `maxAttempts`. Options: the confirm pages / the Postausgang band warn; the job pauses like an unconfigured mailer instead of burning attempts.
-- **Documents by e-mail beyond invoice / credit note**: offer, order confirmation, delivery note, dunning — a provider per PDF and a send action (the mail kinds are declared already; order.md, debtor.md).
+- **Owner's look — documents by e-mail beyond invoice / credit note** (built 2026-11-13: the order's «Senden ▾» — offer, order confirmation, delivery note —, the dunning notice's ⋮ «Per E-Mail senden …»; the shared core `Mail\DocumentMailer` in module-debtor): order.md and debtor.md `## pending`. «Alle per E-Mail» for a dunning RUN is a board proposal (debtor.md).
 - **Step 4 — newsletter** to selected contacts with an unsubscribe link: a newsletter entity, recipient selection, the unsubscribe token and page; drafts with `withSource('newsletter:<id>')`.
 - Later: a list help (`list.help.tpl.php`, HELP-003) — no field needs explaining yet.
 
 ## see also
 
 - [`mail.md`](mail.md) — the kernel mail stack the job sends through (`Message`, `Mailer`, the sender from `config/client/mail.inc.php`, `FileTransport` for development, `EmailService::renderBody()`)
-- [`debtor.md`](debtor.md) — step 3: the provider `invoice-pdf`, the booking print's result list with «Alle per E-Mail senden …» (one batch per click, source `invoice:<id>`), the history read through `deliveriesOf()`
+- [`order.md`](order.md) — the order's documents by e-mail: provider `order-pdf`, «Senden ▾», sources `quote:<id>` / `order-confirmation:<id>` / `delivery-note:<id>`
+- [`debtor.md`](debtor.md) — step 3: the provider `invoice-pdf`, the shared core `Mail\DocumentMailer` every document mail goes through (2026-11-13), the dunning notice (`dunning-pdf`, source `dunning:<id>`), the booking print's result list with «Alle per E-Mail senden …» (one batch per click, source `invoice:<id>`), the history read through `deliveriesOf()`
 - [`jobs.md`](jobs.md) — the runner, `JobResult::again(cursor, notBefore)`, the job lock and the heartbeat the screen reads
 - [`persistence-doctrine.md`](persistence-doctrine.md) — `doctrineEntities`, module migrations, the registry-by-config-key pattern `mailAttachments` follows
 - [`backend.md`](backend.md) — the Service group and the dashboard registry (ADR-052) `MailingDashboard` contributes to

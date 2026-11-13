@@ -24,6 +24,7 @@ use Z77\Core\DI,
     Z77\Module\Debtor\Entities\PaymentTarget,
     Z77\Module\Debtor\Entities\PaymentTerms,
     Z77\Module\Debtor\Invoicing\SubjectLabel,
+    Z77\Module\Debtor\Mail\DocumentMailer,
     Z77\Module\Debtor\Pdf\InvoicePdf,
     Z77\Module\Debtor\Repositories\DebtorProfileRepository,
     Z77\Module\Debtor\Repositories\InvoiceRepository,
@@ -41,6 +42,7 @@ use Z77\Core\DI,
     Z77\Module\Order\Entities\OrderStatus,
     Z77\Module\Order\Entities\SalesOrder,
     Z77\Module\Order\Entities\SalesOrderStatusChange,
+    Z77\Module\Order\Mail\OrderMails,
     Z77\Module\Order\Pdf\OrderPdf,
     Z77\Module\Order\Repositories\SalesOrderRepository,
     Z77\Module\Order\Repositories\SalesOrderStatusChangeRepository,
@@ -88,6 +90,10 @@ use Z77\Core\DI,
  *     moves it into `confirmed` first (`printConfirmation()`), the answer is the PDF in a new tab;
  *     `confirm-delivery-note` + `delivery-note` — the delivery note, the same way into `delivered`
  *     (`printDeliveryNote()`, D6);
+ *   - `confirm-mail` + `mail` — «Senden ▾» (owner 2026-11-13): ONE document the order has today
+ *     (quote, order confirmation, delivery note — `OrderMails::documentsOf()`) by e-mail, debtor's
+ *     shared confirmation in the same window, the POST queues one outbox mail (the PDF rendered at
+ *     send time, `Mail\OrderPdfAttachment`); a mail never moves the order;
  *   - `confirm-book` + `book` — the BOOKING PRINT from the window (one order) or the selection bar
  *     (several): a confirmation PAGE (the DEBTOR-WIN-002 pattern) → POST into a NEW TAB →
  *     `OrderService::book()` → a redirect to debtor's RESULT LIST of the booked invoices
@@ -478,6 +484,8 @@ trait OrderControllerTrait
             // A stored total of 0 (owner 2026-10-20): no booking print — the window says «Erledigt» instead.
             'zeroTotal'       => $order?->getTotalGross()?->isZero() ?? false,
             'phase'           => $status?->getPhase(),
+            // «Senden ▾» (owner 2026-11-13): the documents the order has today, by e-mail — only with module-mailing.
+            'mailDocuments'   => $order !== null && $this->orderMails()->mailer()->available() ? OrderMails::documentsOf($order, $status?->getPhase()) : [],
         ]);
     }
 
@@ -946,6 +954,132 @@ trait OrderControllerTrait
     private function orderPrintRefused(string $message, ?SalesOrder $order): HtmlResponse
     {
         return $this->orderPage('printRefused', ['message' => $message, 'order' => $order]);
+    }
+
+    // ── the documents by e-mail (owner 2026-11-13) ──────────────────────
+
+    /**
+     * «Senden ▾» → «Offerte …» / «Auftragsbestätigung …» / «Lieferschein …» — loaded into the order
+     * window (`data-window-link`, mask `order-mail`): debtor's shared confirmation
+     * (`Backend/DocumentMail/confirm`) — the billing e-mail of the order, the subject of the kind in the
+     * customer's language, «Senden als», what went out before (sending again is allowed). Offered only
+     * for a document the order HAS today (`OrderMails::documentsOf()` — a mail never moves the order);
+     * no address → «keine E-Mail-Adresse», no button.
+     */
+    protected function confirmMailAction(): HtmlResponse|FetchResponse|RedirectResponse
+    {
+        $request = DI::getRequest();
+        $order   = $this->orderOfRequest();
+        if ($order === null) {
+            return $this->orderRefuse('Auftrag nicht gefunden');
+        }
+        $kind = trim((string) $request->getGetParameter('doc'));
+        if (($refusal = $this->orderMailRefusal($order, $kind)) !== null) {
+            return $this->orderRefuse($refusal);
+        }
+        $mails   = $this->orderMails();
+        $senders = $this->orderMailSenders();
+        $reason  = $mails->skipReason($order);
+        $id      = (int) $order->getId();
+
+        return $this->orderPage('confirm', [
+            'documentName' => OrderMails::documentName($kind, $order),
+            'mail'         => $reason === null ? $mails->compose($order, $kind, $senders->default()) : null,
+            'reason'       => $reason,
+            'addressNote'  => 'Die E-Mail-Adresse ist die der Rechnungsadresse des Auftrags (Karte «Kunde» › «Rechnung») — dort ergänzen und speichern.',
+            'before'       => $mails->deliveries($kind, [$id])[$id] ?? [],
+            'senders'      => $senders->viewModel(),
+            'mailable'     => $mails->mailer()->available(),
+            'mailReady'    => DocumentMailer::mailReady(),
+            'action'       => $this->orderListBase() . '/mail?id=' . $id,
+            'hidden'       => ['doc' => $kind],
+            'cancelHref'   => $this->orderListBase() . '/edit?id=' . $id,
+            'window'       => $this->orderIsFetch(),
+            'windowMask'   => 'order-mail',
+            'windowEntity' => 'sales-order:' . $id,
+            'origin'       => WindowOrigin::of($request),
+        ], 'Backend/DocumentMail', 'Z77\\Module\\Debtor');
+    }
+
+    /**
+     * The POST of the confirmation (`#[Csrf]`): the order and the document re-judged (Rule 7 — the
+     * document must still be one the order has, the identity one of the CURRENT user's, the address
+     * there), then ONE outbox mail (`OrderMails::queue()`, source `<kind>:<id>`, attachment
+     * `order-pdf:<id>@<kind>` — the PDF rendered at send time). Success: the order back into the
+     * window with the flash «Offerte 12: E-Mail im Postausgang — Versand 10 pro Minute.»; a refusal
+     * stays in the window (error flash). Without the script: flash and the order as a page.
+     */
+    #[Csrf]
+    protected function mailAction(): FetchResponse|RedirectResponse
+    {
+        $request = DI::getRequest();
+        $order   = $request->isPost() ? $this->orderOfRequest() : null;
+        if ($order === null) {
+            return $this->orderRefuse('Auftrag nicht gefunden');
+        }
+        $post = $request->getPostParameters();
+        $kind = trim((string) ($post['doc'] ?? ''));
+        if (($refusal = $this->orderMailRefusal($order, $kind)) !== null) {
+            return $this->orderRefuse($refusal);
+        }
+        $senders = $this->orderMailSenders();
+        $sender  = $senders->choose($post[\Z77\Shared\Mail\SenderIdentities::FIELD] ?? null);
+        if ($sender === null) {
+            return $this->orderRefuse('Nichts wurde eingereiht: ' . ($senders->isEmpty() ? \Z77\Shared\Mail\SenderIdentities::MISSING : 'Der gewählte Absender gehört nicht zu deinem User.'));
+        }
+        $mails = $this->orderMails();
+        $name  = OrderMails::documentName($kind, $order);
+        if (($reason = $mails->skipReason($order)) !== null) {
+            return $this->orderRefuse($name . ': ' . $reason . ' — keine E-Mail eingereiht.');
+        }
+        $id    = (int) $order->getId();
+        $again = DocumentMailer::isCovered($mails->deliveries($kind, [$id])[$id] ?? []);
+        try {
+            $mails->queue($order, $kind, $this->orderMailActor(), $sender, $senders->userId());
+        } catch (\InvalidArgumentException | \RuntimeException $e) {   // a draft the outbox refused, no outbox
+            return $this->orderRefuse('Nichts wurde eingereiht: ' . $e->getMessage());
+        }
+
+        return $this->orderSaved($id, $mails->mailer()->queuedMessage($name, $again));
+    }
+
+    /**
+     * Why $order's document $kind is not mailed — German, null when it is: not a document kind, not one
+     * the order has today (a quote's order confirmation, a confirmed order's delivery note: their print
+     * moves the order; a cancelled or deleted order mails nothing), module-mailing missing.
+     */
+    private function orderMailRefusal(SalesOrder $order, string $kind): ?string
+    {
+        if (!isset(OrderMails::NAMES[$kind])) {
+            return 'Unbekannter Beleg — nichts gesendet.';
+        }
+        $status = $this->orderService()->statuses()->byCode($order->getStatusCode());
+        if (!in_array($kind, OrderMails::documentsOf($order, $status?->getPhase()), true)) {
+            return OrderMails::documentName($kind, $order) . ' gibt es so nicht per E-Mail — gesendet wird, was der Auftrag heute druckt, ohne ihn weiterzusetzen.';
+        }
+        if (!$this->orderMails()->mailer()->available()) {
+            return 'Das Modul «Mailing» (Postausgang) ist nicht installiert — Belege können nicht per E-Mail gesendet werden.';
+        }
+
+        return null;
+    }
+
+    /** The order's mail side; a harness host replaces it. */
+    private function orderMails(): OrderMails
+    {
+        return new OrderMails($this->em(), $this->orderService());
+    }
+
+    /** The logged-in user's sender identities («Senden als»); a harness host hands in a user. */
+    private function orderMailSenders(): \Z77\Shared\Mail\SenderIdentities
+    {
+        return \Z77\Shared\Mail\SenderIdentities::ofCurrentUser();
+    }
+
+    /** Who queued the mail (the outbox row's `created_by`); a harness host names one. */
+    private function orderMailActor(): string
+    {
+        return DI::getAuthService()->getCurrentUser()->getUserName();
     }
 
     // ── the booking print ────────────────────────────────────────────────

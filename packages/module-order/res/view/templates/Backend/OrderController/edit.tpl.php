@@ -17,7 +17,10 @@
  * shared `partials/modalActions`, FIRST in the form: Speichern · the STATUS as a select saved with
  * «Speichern» (owner 2026-10-20; a locked order: a pill that opens «Status ändern …») · «Drucken ▾» — by the PHASE
  * (ADR-043 addendum 2026-10-15): Offerte / Auftragsbestätigung (PDF, new tab), «Auftragsbestätigung
- * …» (a quote: it confirms the order) or «Lieferschein …», Rechnungsvorschau (PDF) · Buchungsdruck …
+ * …» (a quote: it confirms the order) or «Lieferschein …», Rechnungsvorschau (PDF) · «Senden ▾» —
+ * the documents the order has today by e-mail (owner 2026-11-13: a quote its «Offerte …», from
+ * `confirmed` «Auftragsbestätigung …», from `delivered` also «Lieferschein …»; debtor's shared
+ * confirmation in this window; only with module-mailing) · Buchungsdruck …
  * (only a bookable phase without an invoice — a plain link that leaves the window, the
  * DEBTOR-WIN-002 pattern) · Schliessen · «N Fehler». A cancelled order prints nothing.
  *
@@ -72,6 +75,7 @@
  * @var bool $canBook
  * @var bool $canReinvoice  the invoice is in the Faktura-Journal — «Neu fakturieren …» (ADR-054 decision 12)
  * @var bool $canDelete  «Auftrag löschen …» is offered — no posted invoice, not deleted (ADR-054 decision 14)
+ * @var list<string> $mailDocuments  «Senden ▾»: the mail kinds of the documents the order has today (`OrderMails::documentsOf()`), [] = no menu
  * @var \Z77\Module\Order\Entities\OrderPhase|null $phase  the order's phase, null = a new order
  * @var callable $fmt
  * @var string $csrfToken
@@ -181,6 +185,15 @@ if (!$isNew) {
         // A CSS-only menu (`<details>`, the `.be-shell-add--select` anatomy) — no script (Rule 7).
         $extra .= '<details class="be-shell-add be-shell-add--select"><summary class="be-btn be-btn--ghost">Drucken ▾</summary>'
             . '<div class="be-shell-add__panel" role="menu" aria-label="Drucken">' . implode('', $prints) . '</div></details>';
+    }
+    // «Senden ▾» (owner 2026-11-13, «the way invoices are sent»): the documents the order HAS today by e-mail
+    // (`OrderMails::documentsOf()` — a mail never moves the order), each opening debtor's shared confirmation
+    // in THIS window. The same `<details>` menu as «Drucken ▾»; only with module-mailing.
+    $mailDocuments = $mailDocuments ?? [];
+    if ($mailDocuments !== []) {
+        $sends = array_map(static fn(string $kind): string => '<a class="be-shell-add__item" href="' . e($actionBase . '/confirm-mail?id=' . $id . '&doc=' . $kind) . '" data-window-link title="' . e(\Z77\Module\Order\Mail\OrderMails::NAMES[$kind]) . ' per E-Mail senden — an die Rechnungsadresse">' . e(\Z77\Module\Order\Mail\OrderMails::NAMES[$kind]) . ' …</a>', $mailDocuments);
+        $extra .= '<details class="be-shell-add be-shell-add--select"><summary class="be-btn be-btn--ghost">Senden ▾</summary>'
+            . '<div class="be-shell-add__panel" role="menu" aria-label="Senden">' . implode('', $sends) . '</div></details>';
     }
     // Total 0 (owner 2026-10-20): no invoice, no «Fakturieren …» — the hint stands under the action row.
     if ($canBook && empty($zeroTotal)) {

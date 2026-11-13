@@ -1,6 +1,6 @@
 # mail
 
-2026-11-12
+2026-11-13
 
 ## entry
 
@@ -296,9 +296,9 @@ installation's identity (`config/client/mail.inc.php`), as for every mail; nothi
 | Piece | Detail |
 |---|---|
 | Kinds | DECLARED by the module that owns the document, config key `documentMails` (kind => `label`, `subject` / `body` per language, `placeholders` name => description) — `DocumentMailKinds::fromModules()`, the registry pattern of `mailAttachments`; a project adds one through `App/Config/documentMailsConfig.inc.php`. German (`de`) required; a kind is lower-case kebab; two modules declaring one kind is refused |
-| Shipped | module-debtor: `invoice` «Rechnung», `credit-note` «Gutschrift» (SENT — debtor.md), `dunning` «Mahnung» (prepared); module-order: `quote` «Offerte», `order-confirmation` «Auftragsbestätigung», `delivery-note` «Lieferschein» (prepared — no send action yet). Each de + en |
+| Shipped | module-debtor: `invoice` «Rechnung», `credit-note` «Gutschrift», `dunning` «Mahnung» (SENT — the dunning notice per notice since 2026-11-13, debtor.md); module-order: `quote` «Offerte», `order-confirmation` «Auftragsbestätigung», `delivery-note` «Lieferschein» (SENT since 2026-11-13 — the order window's «Senden ▾», order.md). Each de + en. Every sender goes through debtor's shared `Mail\DocumentMailer` (recipient rule, `documentMail()`, the outbox queue, the history) |
 | Defaults | subject «Rechnung {nummer} — {absender}» (en «Invoice {nummer} — {absender}»), a short neutral text («Im Anhang erhalten Sie unsere Rechnung {nummer} über {betrag}, zahlbar bis {faellig}.») closed by «Freundliche Grüsse / {anzeigename} / {absender}» (en «Kind regards …», 2026-10-23 — every kind of debtor and order). The subject does NOT end in the number (KAM_NUMSUBJECT, rule above) |
-| Placeholders | debtor's kinds: `{nummer}` document number, `{kunde}` name of the billing address, `{betrag}` total with currency («CHF 1'234.50»), `{datum}` document date, `{faellig}` due date (invoice), `{absender}` mandator name (the company), `{anzeigename}` the display name of the sender identity chosen under «Senden als» (owner 2026-10-23) — filled by `Mail\InvoiceMails::values()`; a placeholder without a value stays as written |
+| Placeholders | debtor's kinds: `{nummer}` document number, `{kunde}` name of the billing address, `{betrag}` total with currency («CHF 1'234.50»), `{datum}` document date, `{faellig}` due date (invoice), `{absender}` mandator name (the company), `{anzeigename}` the display name of the sender identity chosen under «Senden als» (owner 2026-10-23) — filled by `Mail\InvoiceMails::values()` (`Mail\DunningMails` for `dunning`: `{betrag}` the notice's open amount, `{datum}` the notice date); module-order's kinds the same names from `Mail\OrderMails` (`{betrag}` the stored total, `{datum}` the order date, the delivery note's «Leistung von»); `{absender}` / `{anzeigename}` by `DocumentMailer`; a placeholder without a value stays as written |
 | Override | `EmailDocumentSetting` (file entity, `data/framework/mail/emailDocumentSettings.json`): subjects / bodies per language + `active`. While active it wins COMPLETELY (the form mails' rule); switched off it is kept but dormant; «Zurücksetzen» deletes it. Validator: German subject and text required, a subject CR/LF-free and ≤ 150, a text ≤ 5000 |
 | Resolution | `EmailService::documentMail(kind, language, values)` — the ONE place: record (active) else declaration; the document's language when BOTH its subject and text are filled, else `de`; `{name}` replaced (line breaks of a value flattened in the subject); a body LINE of nothing but placeholders that all resolved to '' is dropped (2026-10-23 — `{anzeigename}` on its own line leaves no blank line when empty). Answers text — the sender (the outbox) renders the body through `emails/documentMail` (paragraphs escaped, line breaks `<br>`) inside `emails/layout` |
 | Screen | Service › E-Mail › «Beleg-Mails»: one row per kind (label, kind, the effective German subject, languages, origin «Modul» / «Backend» / «Backend inaktiv»), the switch where a record exists, ⋮ → «Bearbeiten» / «Zurücksetzen», «Anpassen» on a module-only row. Actions `document-actions`, `document-edit`, `document-toggle-active`, `confirm-document-reset`, `document-reset` of `EmailSettingsController`; the dialog has subject + text per language and the placeholder list |
@@ -322,8 +322,8 @@ resized (the operator uploads the right size).
 
 ## sender identities — «Senden als» (owner decision 2026-10-23)
 
-A mail a staff member triggers (today «Alle per E-Mail senden …» of the booking print; later
-offer, order confirmation, newsletter) goes out in HIS name. The SMTP account stays the sender —
+A mail a staff member triggers («Alle per E-Mail senden …» of the booking print; since 2026-11-13
+the order's «Senden ▾» and the dunning notice; later the newsletter) goes out in HIS name. The SMTP account stays the sender —
 SPF / DKIM / DMARC are aligned to it — and the person only signs:
 
 | Header | Value |
@@ -536,7 +536,7 @@ address in config:
 - Phase 7 (integration): a module example (Fakturen) that generates a PDF → `saveGenerated()` → `DocumentService::send()`. Possibly superseded by module-mailing's invoice mails (provider `invoice-pdf`, f1086d6) — unverified.
 - **E-mail logo — owner's live look open** (built 2b09a5d, 2026-10-23): set Mandant › Briefkopf › «Logo (E-Mail)» (≈ 100 px PNG), send a document mail (booking print → «Alle per E-Mail senden …»), check Outlook (desktop + web) and Gmail: logo at its size, no «Bilder herunterladen» prompt, not listed as an attachment, the PDF there, blank lines between paragraphs in the text part. Needs mandator migration `Version20261023120000`: applied on `z77ch_main`, missing on `z77ch_initial`, z77.ch live server applied (checked 2026-11-13 at the deploy of 9bf79bf). Since 7cb4e30 the logo sits in the shared `emails/layout` — check it on an invoice mail AND on the app sign-in code mail.
 - **Beleg-Mails — owner's look open**: Service › E-Mail › «Beleg-Mails» (rows, «Anpassen», the dialog per language, the switch, «Zurücksetzen») — built and committed f1086d6 (2026-10-22), not seen in a browser.
-- **Beleg-Mails for offer / order confirmation / delivery note / dunning**: the kinds are declared (prepared); each needs its attachment provider and a send action (mailing.md step 3).
+- **Owner's look — Beleg-Mails for offer / order confirmation / delivery note / dunning** (SENT since 2026-11-13 — providers `order-pdf` / `dunning-pdf`, the order's «Senden ▾», the dunning notice's ⋮): order.md and debtor.md `## pending`.
 - **v3 Kundenstamm:** resolve `ref:{source}:{id}` recipient entries against the customer master (extend `EmailService::resolveRecipients()`, add the UI picker + lift the validator rejection) — see the v2 bauplan's «Bewusst NICHT» section. Was blocked until a Kundenstamm exists; module-debtor exists now — whether it is that master is unverified.
 - **DEBUG mail redirect (`mail.redirectAllTo`):** reroute every outgoing mail to one developer inbox while `DEBUG` is on. Deferred (YAGNI): build when a second form/project makes accidental pre-launch client mail a real risk. See the «seed-address convention» section.
 - From control system (owner note 2026-07-18): a later mechanism guarantees any `EmailMessage::from()` is domain-conform (SPF/DKIM/DMARC) — until then From stays the `config/client/mail.inc.php` installation identity.

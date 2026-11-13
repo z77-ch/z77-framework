@@ -136,14 +136,16 @@ return [
     // Booked documents by e-mail (step 3 of the mail plan, owner 2026-10-22). Read only where
     // module-mailing is installed (debtor only SUGGESTS it): the outbox resolves the attachment
     // `invoice-pdf:<id>` at send time — the PDF from the snapshot, what the booking print printed.
+    // `dunning-pdf:<notice id>` (owner 2026-11-13): the dunning notice rendered at send time.
     'mailAttachments' => [
         \Z77\Module\Debtor\Mail\InvoicePdfAttachment::TYPE => \Z77\Module\Debtor\Mail\InvoicePdfAttachment::class,
+        \Z77\Module\Debtor\Mail\DunningPdfAttachment::TYPE => \Z77\Module\Debtor\Mail\DunningPdfAttachment::class,
     ],
 
     // The document mail kinds this module sends («Beleg-Mails», kernel DocumentMailKinds): the
     // SEED of subject and text per language — the operator edits them under Service › E-Mail ›
     // Beleg-Mails (a record there wins while active). Placeholders are filled by
-    // `Mail\InvoiceMails::values()`. `dunning` is prepared (the same shape), not sent yet.
+    // `Mail\InvoiceMails::values()`; `dunning` by `Mail\DunningMails` (sent per notice since 2026-11-13).
     // Subjects do not END in a number (mail.md, KAM_NUMSUBJECT) — hence «… — {absender}».
     'documentMails' => [
         'invoice' => [

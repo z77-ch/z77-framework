@@ -371,9 +371,17 @@ $em = $wireDi();
 // Step 3 of the mail plan (2026-10-22): module-debtor registers the booked document's PDF.
 $debtorDeclared = (require $root . '/packages/module-debtor/src/App/Config/debtorConfig.inc.php')['mailAttachments'] ?? null;
 $debtorRegistry = is_array($debtorDeclared) ? new AttachmentProviders($debtorDeclared) : null;
-check('C7 module-debtor declares the type `invoice-pdf` under mailAttachments — a provider the registry accepts (implements AttachmentProvider, no-arg constructor); module-mailing names no document module',
-    $debtorRegistry?->types() === ['invoice-pdf'] && ($debtorDeclared['invoice-pdf'] ?? '') === 'Z77\\Module\\Debtor\\Mail\\InvoicePdfAttachment'
-    && !str_contains(implode('', array_map('file_get_contents', glob($package . '/src/*/*.php'))), 'Module\\Debtor'));
+check('C7 module-debtor declares the types `invoice-pdf` and `dunning-pdf` (the dunning notice, owner 2026-11-13) under mailAttachments — providers the registry accepts (implement AttachmentProvider, no-arg constructor); module-mailing names no document module',
+    $debtorRegistry?->types() === ['invoice-pdf', 'dunning-pdf'] && ($debtorDeclared['invoice-pdf'] ?? '') === 'Z77\\Module\\Debtor\\Mail\\InvoicePdfAttachment'
+    && ($debtorDeclared['dunning-pdf'] ?? '') === 'Z77\\Module\\Debtor\\Mail\\DunningPdfAttachment'
+    && !str_contains(implode('', array_map('file_get_contents', glob($package . '/src/*/*.php'))), 'Module\\Debtor')
+    && !str_contains(implode('', array_map('file_get_contents', glob($package . '/src/*/*.php'))), 'Module\\Order'));
+// The order's PDFs (owner 2026-11-13): module-order registers ONE provider for its three documents.
+$orderDeclared = (require $root . '/packages/module-order/src/App/Config/orderConfig.inc.php')['mailAttachments'] ?? null;
+$orderRegistry = is_array($orderDeclared) ? new AttachmentProviders($orderDeclared) : null;
+check('C7b module-order declares the type `order-pdf` (quote, order confirmation, delivery note — `order-pdf:<id>@<kind>`) under mailAttachments; the outbox accepts the reference shape',
+    $orderRegistry?->types() === ['order-pdf'] && ($orderDeclared['order-pdf'] ?? '') === 'Z77\\Module\\Order\\Mail\\OrderPdfAttachment'
+    && (string) \Z77\Module\Mailing\Attachments\AttachmentReference::parse('order-pdf:12@order-confirmation') === 'order-pdf:12@order-confirmation');
 
 // ── D. queueing ──────────────────────────────────────────────────────────
 

@@ -4,9 +4,13 @@ namespace Z77\Module\Debtor\Ui;
 use Doctrine\DBAL\Exception as DBALException,
     Z77\Core\DI,
     Z77\Core\Http\Response\BytesResponse,
+    Z77\Core\Http\Response\FetchResponse,
     Z77\Core\Http\Response\HtmlResponse,
     Z77\Core\Http\Response\RedirectResponse,
     Z77\Module\Debtor\Accounting\AccountingRefusedException,
+    Z77\Module\Debtor\Entities\DunningNotice,
+    Z77\Module\Debtor\Mail\DocumentMailer,
+    Z77\Module\Debtor\Mail\DunningMails,
     Z77\Module\Debtor\Pdf\DunningPdf,
     Z77\Module\Debtor\Services\DebtorException,
     Z77\Module\Debtor\Services\DunningService,
@@ -30,10 +34,20 @@ use Doctrine\DBAL\Exception as DBALException,
  *     the runs so far with their notices and a «PDF» link each;
  *   - `run` — the POST (`#[Csrf]`): `DunningService::run()` — the notices
  *     and the fee documents in one unit of work; a refusal is the flash;
- *   - `notice-pdf` — one notice as PDF, inline (`?id=`).
+ *   - `notice-pdf` — one notice as PDF, inline (`?id=`);
+ *   - `notice-actions` — a notice row's ⋮ (owner 2026-11-13, the result
+ *     list's row menu): «PDF öffnen», «Per E-Mail senden …» / «Erneut
+ *     senden …»;
+ *   - `confirm-notice-mail` / `notice-mail` — ONE notice by e-mail (owner
+ *     2026-11-13, «the way invoices are sent»): the shared confirmation
+ *     page (`Backend/DocumentMail/confirm`) and its POST (`#[Csrf]`) — one
+ *     outbox mail through `Mail\DunningMails`, signed by the identity
+ *     chosen under «Senden als», the notice PDF rendered at send time.
  *
- * Page forms, no JavaScript (Rule 7). Every write goes through
- * {@see DunningService}.
+ * Page forms (Rule 7); the row ⋮ needs core.js (MENU-001) — without the
+ * script the notice PDF stays reachable from the invoice's mask
+ * («Mahnungen»). Every write goes through {@see DunningService}; a mail
+ * through the outbox.
  */
 trait DunningControllerTrait
 {
@@ -69,8 +83,10 @@ trait DunningControllerTrait
             'asOf'        => $asOf,
             'due'         => $due,
             'notice'      => $notice,
-            'runs'        => $this->dunningService()->runs(20),
+            'runs'        => $runs = $this->dunningService()->runs(20),
             'levelOf'     => fn($n) => $this->dunningService()->levelOf($n),
+            // What went out per notice (owner 2026-11-13): the «Versand» column, from the outbox.
+            'deliveries'  => $this->dunningMails()->deliveries(self::dunningNoticeIds($runs)),
             'actionBase'  => $this->dunningListBase(),
             'invoiceBase' => '/backend/finance/invoice',
             'fmt'         => static fn(?Money $m) => AmountFormat::of($m),
@@ -118,6 +134,161 @@ trait DunningControllerTrait
         $level = $this->dunningService()->levelOf($notice);
 
         return $this->bytes(DunningPdf::of($notice, $level, $this->em())->output(), DunningPdf::fileName($notice, $level), 'application/pdf');
+    }
+
+    // ── the notice by e-mail (owner 2026-11-13) ─────────────────────────
+
+    /** A notice row's ⋮ — «PDF öffnen» and «Per E-Mail senden …» (or «Erneut senden …» once one waits or went out). */
+    protected function noticeActionsAction(): HtmlResponse|FetchResponse
+    {
+        $notice = $this->dunningNoticeOfRequest(DI::getRequest()->getGetParameter('id'));
+        if ($notice === null) {
+            return $this->fetchError('Mahnung nicht gefunden');
+        }
+        $mails    = $this->dunningMails();
+        $response = $this->html([
+            'notice'     => $notice,
+            'actionBase' => $this->dunningListBase(),
+            'mailable'   => $mails->mailer()->available(),
+            'again'      => DocumentMailer::isCovered($mails->deliveries([(int) $notice->getId()])[(int) $notice->getId()] ?? []),
+        ]);
+        $this->layoutManager->removeSection('main');
+        $this->layoutManager->addPartials('noticeActions', 'Backend/DunningController', self::DUNNING_NS);
+
+        return $response;
+    }
+
+    /**
+     * «Per E-Mail senden …» of one notice — the shared confirmation PAGE: the billing e-mail ON the
+     * invoice, the subject of the kind `dunning` in the invoice's language, «Senden als», what went out
+     * before (sending again is allowed). No address → «keine E-Mail-Adresse», no button.
+     */
+    protected function confirmNoticeMailAction(): HtmlResponse|RedirectResponse
+    {
+        $notice = $this->dunningNoticeOfRequest(DI::getRequest()->getGetParameter('id'));
+        if ($notice === null) {
+            return $this->dunningNoticeMissing();
+        }
+        $mails    = $this->dunningMails();
+        $senders  = $this->dunningMailSenders();
+        $reason   = DunningMails::skipReason($notice);
+        $id       = (int) $notice->getId();
+        $response = $this->html([
+            'documentName' => $this->dunningNoticeName($notice),
+            'mail'         => $reason === null ? $mails->compose($notice, $senders->default()) : null,
+            'reason'       => $reason,
+            'addressNote'  => 'Die Adresse ist die Rechnungsadresse auf ' . $notice->getInvoice()->documentName() . '; ein fakturierter Beleg ändert sie nicht mehr.',
+            'before'       => $mails->deliveries([$id])[$id] ?? [],
+            'senders'      => $senders->viewModel(),
+            'mailable'     => $mails->mailer()->available(),
+            'mailReady'    => DocumentMailer::mailReady(),
+            'action'       => $this->dunningListBase() . '/notice-mail',
+            'hidden'       => ['id' => (string) $id],
+            'cancelHref'   => $this->dunningListBase() . '/list',
+            'window'       => false,
+        ]);
+        $this->layoutManager->removeSection('main');
+        $this->layoutManager->addPartials('confirm', 'Backend/DocumentMail', self::DUNNING_NS);
+
+        return $response;
+    }
+
+    /**
+     * The POST (`#[Csrf]`): the notice re-read, the identity re-checked against the CURRENT user
+     * (Rule 7), no address → refused with the reason; then ONE outbox mail (`DunningMails::queue()`,
+     * source `dunning:<id>`, attachment `dunning-pdf:<id>`). Back to the list with the flash.
+     */
+    #[Csrf]
+    protected function noticeMailAction(): RedirectResponse
+    {
+        $request = DI::getRequest();
+        $post    = $request->isPost() ? $request->getPostParameters() : [];
+        $notice  = $this->dunningNoticeOfRequest($post['id'] ?? null);
+        if ($notice === null) {
+            return $this->dunningNoticeMissing();
+        }
+        $list    = $this->dunningListBase() . '/list';
+        $name    = $this->dunningNoticeName($notice);
+        $senders = $this->dunningMailSenders();
+        $sender  = $senders->choose($post[\Z77\Shared\Mail\SenderIdentities::FIELD] ?? null);
+        if ($sender === null) {
+            $this->messageService->pushFlashAfterRedirect('error', 'Nichts wurde eingereiht: ' . ($senders->isEmpty() ? \Z77\Shared\Mail\SenderIdentities::MISSING : 'Der gewählte Absender gehört nicht zu deinem User.'));
+
+            return $this->redirect($list, 303);
+        }
+        if (($reason = DunningMails::skipReason($notice)) !== null) {
+            $this->messageService->pushFlashAfterRedirect('error', $name . ': ' . $reason . ' — keine E-Mail eingereiht.');
+
+            return $this->redirect($list, 303);
+        }
+        $mails = $this->dunningMails();
+        $id    = (int) $notice->getId();
+        $again = DocumentMailer::isCovered($mails->deliveries([$id])[$id] ?? []);
+        try {
+            $mails->queue($notice, $this->dunningMailActor(), $sender, $senders->userId());
+        } catch (\InvalidArgumentException | \RuntimeException $e) {   // a draft the outbox refused, no outbox
+            $this->messageService->pushFlashAfterRedirect('error', 'Nichts wurde eingereiht: ' . $e->getMessage());
+
+            return $this->redirect($list, 303);
+        }
+        $this->messageService->pushFlashAfterRedirect('success', $mails->mailer()->queuedMessage($name, $again));
+
+        return $this->redirect($list, 303);
+    }
+
+    /** The notice a request value names, or null. */
+    private function dunningNoticeOfRequest(mixed $value): ?DunningNotice
+    {
+        $id = is_scalar($value) && preg_match('/^\s*([1-9]\d{0,9})\s*$/', (string) $value, $m) === 1 ? (int) $m[1] : 0;
+
+        return $id > 0 ? $this->dunningService()->notice($id) : null;
+    }
+
+    private function dunningNoticeMissing(): RedirectResponse
+    {
+        $this->messageService->pushFlashAfterRedirect('error', 'Mahnung nicht gefunden');
+
+        return $this->redirect($this->dunningListBase() . '/list', 303);
+    }
+
+    /** «Zahlungserinnerung zu Rechnung 26100012» — the level's label (its code when the ladder lost it) and the invoice. */
+    private function dunningNoticeName(DunningNotice $notice): string
+    {
+        return ($this->dunningService()->levelOf($notice)?->getLabel() ?? $notice->getLevelCode()) . ' zu ' . $notice->getInvoice()->documentName();
+    }
+
+    /**
+     * @param list<\Z77\Module\Debtor\Entities\DunningRun> $runs
+     * @return list<int>
+     */
+    private static function dunningNoticeIds(array $runs): array
+    {
+        $ids = [];
+        foreach ($runs as $run) {
+            foreach ($run->getNotices() as $notice) {
+                $ids[] = (int) $notice->getId();
+            }
+        }
+
+        return $ids;
+    }
+
+    /** The mail side of the notice; a harness host replaces it. */
+    private function dunningMails(): DunningMails
+    {
+        return new DunningMails($this->em());
+    }
+
+    /** The logged-in user's sender identities («Senden als»); a harness host hands in a user. */
+    private function dunningMailSenders(): \Z77\Shared\Mail\SenderIdentities
+    {
+        return \Z77\Shared\Mail\SenderIdentities::ofCurrentUser();
+    }
+
+    /** Who queued the mail (the outbox row's `created_by`); a harness host names one. */
+    private function dunningMailActor(): string
+    {
+        return \Z77\Module\Debtor\Services\Actor::current();
     }
 
     /** `Y-m-d` from the request, today when absent or unreadable. */

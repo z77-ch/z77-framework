@@ -458,7 +458,7 @@ check('I5 the booking print posts in the SAME tab (no blank target, no data-subm
 check('I5b the booking print\'s confirm page offers the invoice preview per order (eye icon, new tab) before booking (owner 2026-10-22)',
     str_contains($confirmBookTpl, "/invoice-preview?id=' . \$order->getId()") && str_contains($confirmBookTpl, '#icon-eye'));
 $orderKinds = new \Z77\Shared\Mail\DocumentMailKinds((require $root . '/packages/module-order/src/App/Config/orderConfig.inc.php')['documentMails']);
-check('I6 the order declares its document mail kinds in the shape of debtor\'s (prepared, not sent yet): quote, order-confirmation, delivery-note — each in de + en, subjects not ending in a number',
+check('I6 the order declares its document mail kinds in the shape of debtor\'s (sent since 2026-11-13, M40–M47): quote, order-confirmation, delivery-note — each in de + en, subjects not ending in a number',
     array_keys($orderKinds->all()) === ['quote', 'order-confirmation', 'delivery-note']
     && array_filter(array_keys($orderKinds->all()), fn($k) => $orderKinds->languages($k) !== ['de', 'en'] || preg_match('/\d\s*$/', $orderKinds->get($k)['subject']['de']) === 1) === []);
 
@@ -1338,6 +1338,234 @@ check('M39 the status-file upgrade (OrderStatusUpgrade): an old file gains `invo
     && $m39Rules->postingTarget()?->getCode() === 'booked' && $m39Rows['booked']['label'] === 'Verbucht' && count($m39Rows) === 8
     && (int) $m39Rows['invoiced']['position'] < (int) $m39Rows['booked']['position']);
 file_put_contents($m39File, $m39Keep);
+
+// ── M40–M48: the order's documents by e-mail (owner 2026-11-13, «the way invoices are sent») ──
+// module-mailing joins the installation here (the sections above run without it — optional for order).
+echo "M. … the order's documents by e-mail through the outbox (owner 2026-11-13)\n";
+$packages['Mailing'] = $root . '/packages/module-mailing';
+$namespaces = "'Z77\\\\Shared\\\\' => ['sourcePaths' => ['{$root}/packages/kernel/shared']],\n";
+foreach ($packages as $name => $path) {
+    $namespaces .= "'Z77\\\\Module\\\\{$name}\\\\' => ['sourcePaths' => ['{$path}']],\n";
+}
+$write('config/vendor/fileFinder.inc.php', "<?php return ['resourceDir' => ['sourceDir' => 'src', 'tplDir' => 'res/view/templates'], 'namespaces' => [\n{$namespaces}]];");
+$write('config/vendor/moduleManager.inc.php', "<?php return ['modulePrefix' => 'Module', 'frameworkPrefix' => 'Z77', 'defaultModule' => 'order', 'modules' => ['vat' => [], 'contact' => [], 'mandator' => [], 'debtor' => [], 'article' => [], 'order' => [], 'mailing' => []]];");
+$rm($base . '/var/cache');
+\Z77\Core\DI::getInstance(true)
+    ->set('CacheManager', \Z77\Core\Libraries\CacheManager::class, true)
+    ->set('FileFinder', fn($c) => new \Z77\Core\Libraries\FileFinder($c->get('CacheManager')), true)
+    ->set('ConfigManager', fn($c) => new \Z77\Core\Libraries\ConfigManager($c->get('FileFinder'), $c->get('CacheManager')), true)
+    ->set('ModuleManager', fn($c) => new \Z77\Core\Services\ModuleManager($c->get('ConfigManager')), true)
+    ->set('I18n', fn($c) => new \Z77\Core\Services\I18n($c->get('ConfigManager')), true)
+    ->set('Translator', fn() => new \Z77\Core\Services\Translator(), true)
+    ->set('DataSourceResolver', fn() => new \Z77\Persistence\Resolver\DataSourceResolver(['file' => 'File', 'doctrine' => 'Doctrine']), true)
+    ->set('UnifiedEntityManager', fn($c) => new \Z77\Persistence\Resolver\UnifiedEntityManager($c->get('DataSourceResolver')), true)
+    // The outbox renders the body at queue time.
+    ->set('EmailService', fn() => new \Z77\Shared\Mail\EmailService(), true);
+\Z77\Core\DI::getCacheManager()->setCacheDir($base . '/var/cache');
+$em = \Z77\Core\DI::getUnifiedEntityManager();
+[$code, $out] = $run(['command' => 'migrate']);
+$mlTables = $db->fetchFirstColumn('SHOW TABLES');
+$mlSvc    = new \Z77\Module\Order\Services\OrderService($em, 'harness', $spy);
+$mlMails  = new \Z77\Module\Order\Mail\OrderMails($em, $mlSvc);
+$mlCompany = (string) $db->fetchOne('SELECT name FROM mandator ORDER BY id LIMIT 1');
+$mlSender  = new \Z77\Shared\Mail\SenderIdentity('Sabine Sachbearbeiter', 'sabine@example.ch');
+$OM = \Z77\Module\Order\Mail\OrderMails::class;
+$mlQuote = $mlSvc->create(new $D($contactId, '2026-11-13', 'Mailtest', priceMode: 'gross', lines: [$L::article($grossId, '2')], billingAddress: $m37Bill));
+$mlQuote = $em->getRepository(SalesOrder::class)->withLines((int) $mlQuote->getId());
+check('M40 module-mailing joins (migrate 0, mail_outbox); WHICH documents an order mails (`OrderMails::documentsOf()`, a mail never moves the order): a quote its «Offerte», confirmed the «Auftragsbestätigung», delivered and closed also the «Lieferschein»; cancelled, a deleted order, an unknown phase nothing' . ($code !== 0 ? ' — ' . trim($out) : ''),
+    $code === 0 && in_array('mail_outbox', $mlTables, true) && $mlMails->mailer()->available()
+    && $OM::documentsOf($mlQuote, OrderPhase::New) === ['quote'] && $OM::documentsOf($mlQuote, OrderPhase::Confirmed) === ['order-confirmation']
+    && $OM::documentsOf($mlQuote, OrderPhase::Delivered) === ['order-confirmation', 'delivery-note'] && $OM::documentsOf($mlQuote, OrderPhase::Closed) === ['order-confirmation', 'delivery-note']
+    && $OM::documentsOf($mlQuote, OrderPhase::Cancelled) === [] && $OM::documentsOf($mlQuote, null) === []);
+
+$mlComposed = $mlMails->compose($mlQuote, 'quote', $mlSender);
+$mlNr       = $mlQuote->documentNumber();
+check('M41 the quote\'s mail from `EmailService::documentMail()`: to the BILLING e-mail of the order (rechnung@muster.ch), kind `quote`, subject «Offerte <nr> — <mandator>», the text with the number and {anzeigename} = the chosen identity under the greeting, language de',
+    $mlComposed['to'] === 'rechnung@muster.ch' && $mlComposed['kind'] === 'quote' && $mlComposed['language'] === 'de'
+    && $mlComposed['subject'] === 'Offerte ' . $mlNr . ' — ' . $mlCompany
+    && str_contains($mlComposed['body'], 'Im Anhang erhalten Sie unsere Offerte ' . $mlNr . '.') && str_contains($mlComposed['body'], "Freundliche Grüsse\nSabine Sachbearbeiter\n" . $mlCompany),
+    json_encode($mlComposed, JSON_UNESCAPED_UNICODE));
+
+$mlBatch = $mlMails->queue($mlQuote, 'quote', 'harness', $mlSender, 42);
+$mlRows  = $db->fetchAllAssociative('SELECT * FROM mail_outbox WHERE source = ? ORDER BY id', ['quote:' . $mlQuote->getId()]);
+check('M42 queued: ONE outbox row in its own batch — source quote:<id>, the attachment ONLY as the reference order-pdf:<id>@quote (no bytes, no path), the identity as sender (user 42), the body `emails/documentMail` with the text; the job is queued',
+    count($mlRows) === 1 && $mlRows[0]['batch_id'] === $mlBatch && strlen($mlBatch) === 32
+    && json_decode($mlRows[0]['attachments'], true) === ['order-pdf:' . $mlQuote->getId() . '@quote'] && $mlRows[0]['recipient_email'] === 'rechnung@muster.ch'
+    && $mlRows[0]['subject'] === 'Offerte ' . $mlNr . ' — ' . $mlCompany && $mlRows[0]['template'] === 'Z77\\Shared:emails/documentMail'
+    && $mlRows[0]['sender_name'] === 'Sabine Sachbearbeiter' && (int) $mlRows[0]['sender_user_id'] === 42 && $mlRows[0]['state'] === 'queued'
+    && str_contains($mlRows[0]['html_body'], 'Im Anhang erhalten Sie unsere Offerte ' . $mlNr) && !str_contains($mlRows[0]['attachments'], '.pdf')
+    && (new \Z77\Shared\Jobs\JobQueue($em))->hasOpenEntry('mail-outbox'),
+    json_encode(array_map(fn($r) => [$r['source'], $r['attachments'], $r['subject']], $mlRows), JSON_UNESCAPED_UNICODE));
+
+// The provider builds the PDF at SEND time from the order as it then stands; the KIND names it (not the phase).
+$mlProviders = \Z77\Module\Mailing\Attachments\AttachmentProviders::fromModules(\Z77\Core\DI::getModuleManager());
+$mlConfirmed = $mlSvc->printConfirmation((int) $mlQuote->getId(), $mlQuote->getVersion());   // the quote moves on after queueing
+$mlQuotePdf  = $mlProviders->resolve('order-pdf:' . $mlQuote->getId() . '@quote');
+$mlConfPdf   = $mlProviders->resolve('order-pdf:' . $mlQuote->getId() . '@order-confirmation');
+$mlNotePdf   = $mlProviders->resolve('order-pdf:' . $mlQuote->getId() . '@delivery-note');
+check('M43 the provider `order-pdf` (registered by module-order): accepts an existing order with one of the three kinds (junk, an unknown order, another kind refused at queue time); resolves at SEND time — the quote mailed before the order was confirmed still attaches «offerte-<nr>.pdf», the confirmation «auftragsbestaetigung-<nr>.pdf», the delivery note «lieferschein-<nr>.pdf», each a PDF',
+    $mlConfirmed->getStatusCode() === 'scheduled' && $mlProviders->has('order-pdf')
+    && $mlProviders->refusal('order-pdf:' . $mlQuote->getId() . '@quote') === null && $mlProviders->refusal('order-pdf:' . $mlQuote->getId() . '@invoice') !== null
+    && $mlProviders->refusal('order-pdf:999999@quote') !== null && $mlProviders->refusal('order-pdf:abc') !== null
+    && $mlQuotePdf->filename === 'offerte-' . $mlNr . '.pdf' && $mlConfPdf->filename === 'auftragsbestaetigung-' . $mlNr . '.pdf' && $mlNotePdf->filename === 'lieferschein-' . $mlNr . '.pdf'
+    && str_starts_with($mlQuotePdf->bytes, '%PDF-') && str_starts_with($mlConfPdf->bytes, '%PDF-') && str_starts_with($mlNotePdf->bytes, '%PDF-') && $mlQuotePdf->mimeType === 'application/pdf');
+
+// No address → said plainly, refused; no billing snapshot → the customer's invoice address (its e-mail).
+$mlNoMail = $mlSvc->create(new $D($contactId, '2026-11-13', 'Ohne Mail', priceMode: 'gross', lines: [$L::article($grossId, '1')],
+    billingAddress: new \Z77\Module\Debtor\Entities\AddressSnapshot('', '', '', 'Muster AG', '', 'Weg', '1', '6000', 'Luzern', 'CH', '', '')));
+$mlFallback = $mlSvc->create(new $D($contactId, '2026-11-13', 'Fallback', priceMode: 'gross', lines: [$L::article($grossId, '1')]));
+$mlRowsBefore = (int) $db->fetchOne('SELECT COUNT(*) FROM mail_outbox');
+$mlNoMailQueue = null;
+try { $mlMails->queue($mlNoMail, 'quote', 'harness', $mlSender); } catch (\LogicException $e) { $mlNoMailQueue = $e->getMessage(); }
+check('M44 an order whose billing address has NO e-mail: skipReason «keine E-Mail-Adresse», queueing refused (LogicException), nothing written; an order without a billing snapshot mails to the customer\'s invoice address (debitor@muster.ch)',
+    $mlMails->skipReason($mlNoMail) === 'keine E-Mail-Adresse' && $mlNoMailQueue !== null && str_contains($mlNoMailQueue, 'keine E-Mail-Adresse')
+    && (int) $db->fetchOne('SELECT COUNT(*) FROM mail_outbox') === $mlRowsBefore
+    && $mlMails->skipReason($mlFallback) === null && $mlMails->compose($mlFallback, 'quote')['to'] === 'debitor@muster.ch');
+
+// The window's confirmation and its POST (a host double over the trait, the shared debtor template).
+require_once $root . '/packages/kernel/core/src/autoload/prod/php/Helper.php';
+$mlRenderer = new class($root . '/packages') {
+    public function __construct(private string $pkg) {}
+    public function partial(string $path, array $context = [], ?string $ns = null): string
+    {
+        $dir = match ($ns) {
+            'Z77\\Shared'        => $this->pkg . '/kernel/shared/res/view/templates/',
+            'Z77\\Module\\Debtor' => $this->pkg . '/module-debtor/res/view/templates/',
+            default              => $this->pkg . '/module-order/res/view/templates/',
+        };
+        return (function (string $z77TplPath, array $z77TplContext) { extract($z77TplContext, EXTR_SKIP); ob_start(); require $z77TplPath; return ob_get_clean(); })->call($this, $dir . $path . '.tpl.php', $context);
+    }
+};
+$mlUseRequest = function (array $get, ?array $post = null, bool $fetch = true): void {
+    $_GET = $get; $_POST = $post ?? [];
+    $GLOBALS['z77MlPost'] = $post !== null; $GLOBALS['z77MlFetch'] = $fetch;
+    \Z77\Core\DI::getInstance()->set('Request', fn() => new class {
+        public function getGetParameter(string $p): mixed { return $_GET[$p] ?? null; }
+        public function isPost(): bool { return $GLOBALS['z77MlPost']; }
+        public function getPostParameters(): array { return $_POST; }
+        public function getMode(): \Z77\Core\Http\RequestMode { return $GLOBALS['z77MlFetch'] ? \Z77\Core\Http\RequestMode::Fetch : \Z77\Core\Http\RequestMode::Page; }
+    }, true);
+};
+$mlHost = function () use ($mlSvc) {
+    return new class($mlSvc) {
+        use \Z77\Module\Order\Ui\OrderControllerTrait { confirmMailAction as public; mailAction as public; }
+        public array $context = [];
+        public object $layoutManager;
+        public object $messageService;
+        public object $help;
+        public ?string $redirectedTo = null;
+        public ?string $fetchErrorText = null;
+        public ?\Z77\Shared\Entities\BackendUser $mailUser;
+        public function __construct(private \Z77\Module\Order\Services\OrderService $svc)
+        {
+            $this->mailUser = new \Z77\Shared\Entities\BackendUser(['username' => 'sachbearbeiter', 'sender_identities' => [
+                ['name' => 'Sabine Sachbearbeiter', 'email' => 'sabine@example.ch'],
+                ['name' => 'Verkauf', 'email' => 'verkauf@example.ch'],
+            ]]);
+            (new \ReflectionProperty(\Z77\Shared\Entities\BackendUser::class, 'id'))->setValue($this->mailUser, 42);
+            $this->help = new \Z77\Core\Services\HelpService();
+            $this->layoutManager = new class {
+                public array $sections = [];
+                public function removeSection(string $s): void { unset($this->sections[$s]); }
+                public function addPartials(string $name, string $path, string $ns, string $section = 'main'): void { $this->sections[$section][] = [$path . '/' . $name, $ns]; }
+            };
+            $this->messageService = new class {
+                public array $flashes = [];
+                public function pushFlashAfterRedirect(string $type, string $message): void { $this->flashes[] = [$type, $message]; }
+                public function pushFlash(string $type, string $message): void { $this->flashes[] = [$type, $message, 'in-place']; }
+            };
+        }
+        protected function em() { return \Z77\Core\DI::getUnifiedEntityManager(); }
+        protected function html(array $context = []): \Z77\Core\Http\Response\HtmlResponse { $this->context = $context; return new \Z77\Core\Http\Response\HtmlResponse(null, $context); }
+        protected function fetch(): \Z77\Core\Http\Response\FetchResponse { return new \Z77\Core\Http\Response\FetchResponse(); }
+        protected function fetchError(string $text): \Z77\Core\Http\Response\FetchResponse { $this->fetchErrorText = $text; return (new \Z77\Core\Http\Response\FetchResponse())->setStatus('error'); }
+        protected function redirect(string $url, int $status = 302): \Z77\Core\Http\Response\RedirectResponse { $this->redirectedTo = $url; return new \Z77\Core\Http\Response\RedirectResponse($url, $status); }
+        protected function bytes(string $content, string $filename, string $mimeType, bool $inline = true): \Z77\Core\Http\Response\BytesResponse { return new \Z77\Core\Http\Response\BytesResponse($content, $filename, $mimeType, $inline); }
+        private function orderService(): \Z77\Module\Order\Services\OrderService { return $this->svc; }
+        private function orderMailSenders(): \Z77\Shared\Mail\SenderIdentities { return new \Z77\Shared\Mail\SenderIdentities($this->mailUser); }
+        private function orderMailActor(): string { return 'sachbearbeiter'; }
+    };
+};
+$mlRender = fn($host) => implode('', array_map(fn($p) => $mlRenderer->partial($p[0], $host->context, $p[1]), $host->layoutManager->sections['main'] ?? []));
+$mlCommands = fn(\Z77\Core\Http\Response\FetchResponse $r): array => (new \ReflectionProperty($r, 'commands'))->getValue($r);
+
+$mlId = (int) $mlConfirmed->getId();
+$mlUseRequest(['id' => (string) $mlId, 'doc' => 'order-confirmation', '_origin' => 'region:order-find-list']);
+$host = $mlHost();
+$host->confirmMailAction();
+$mlConfirm = $mlRender($host);
+check('M45 «Senden ▾» → «Auftragsbestätigung …» opens debtor\'s shared confirmation IN the order window (mask order-mail, record sales-order:<id>): the billing e-mail, the subject «Auftragsbestätigung <nr> — …», «Senden als» with both identities (the first preselected), the button «E-Mail senden», the form posting `doc` to /mail?id=',
+    $host->layoutManager->sections['main'] === [['Backend/DocumentMail/confirm', 'Z77\\Module\\Debtor']]
+    && str_contains($mlConfirm, 'data-window="order-mail" data-window-entity="sales-order:' . $mlId . '"') && str_contains($mlConfirm, 'action="/backend/order/order/mail?id=' . $mlId . '"')
+    && str_contains($mlConfirm, 'name="doc" value="order-confirmation"') && str_contains($mlConfirm, 'rechnung@muster.ch') && str_contains($mlConfirm, '«Auftragsbestätigung ' . $mlNr . ' — ' . e($mlCompany) . '»')
+    && str_contains($mlConfirm, '<select id="sender-identity" name="sender">') && str_contains($mlConfirm, 'E-Mail senden') && !str_contains($mlConfirm, 'Erneut senden'),
+    strip_tags($mlConfirm));
+
+$mlUseRequest(['id' => (string) $mlId], ['doc' => 'order-confirmation', 'sender' => '1', '_origin' => 'region:order-find-list']);
+$host = $mlHost();
+$mlAnswer = $host->mailAction();
+$mlConfRows = $db->fetchAllAssociative('SELECT * FROM mail_outbox WHERE source = ? ORDER BY id', ['order-confirmation:' . $mlId]);
+$mlCmds = $mlAnswer instanceof \Z77\Core\Http\Response\FetchResponse ? $mlCommands($mlAnswer) : [];
+check('M46 the POST queues ONE mail as the CHOSEN identity (index 1 «Verkauf») — source order-confirmation:<id>, attachment order-pdf:<id>@order-confirmation —, answers the order back into the window (open-window, replace) with «Auftragsbestätigung <nr>: E-Mail im Postausgang — Versand 10 pro Minute.»',
+    count($mlConfRows) === 1 && $mlConfRows[0]['sender_name'] === 'Verkauf' && json_decode($mlConfRows[0]['attachments'], true) === ['order-pdf:' . $mlId . '@order-confirmation']
+    && $mlConfRows[0]['created_by'] === 'sachbearbeiter'
+    && ($mlCmds[0]['action'] ?? '') === 'open-window' && ($mlCmds[0]['url'] ?? '') === '/backend/order/order/edit?id=' . $mlId
+    && ($host->messageService->flashes[0] ?? []) === ['success', 'Auftragsbestätigung ' . $mlNr . ': E-Mail im Postausgang — Versand 10 pro Minute.', 'in-place'],
+    json_encode([$mlCmds, $host->messageService->flashes, count($mlConfRows)], JSON_UNESCAPED_UNICODE));
+
+// Resend: the confirmation says what went out, the button reads «Erneut senden», the POST queues a second mail.
+$mlUseRequest(['id' => (string) $mlId, 'doc' => 'order-confirmation']);
+$host = $mlHost();
+$host->confirmMailAction();
+$mlAgain = $mlRender($host);
+$mlUseRequest(['id' => (string) $mlId], ['doc' => 'order-confirmation', 'sender' => '0']);
+$host = $mlHost();
+$host->mailAction();
+check('M47 resend allowed: the confirmation shows «Bereits: E-Mail an rechnung@muster.ch im Postausgang seit … · als Verkauf» and «Erneut senden»; the POST queues a SECOND mail for the same document, the flash says «(erneut)»',
+    str_contains($mlAgain, 'Bereits: E-Mail an rechnung@muster.ch im Postausgang seit') && str_contains($mlAgain, '· als Verkauf') && str_contains($mlAgain, 'Erneut senden')
+    && (int) $db->fetchOne('SELECT COUNT(*) FROM mail_outbox WHERE source = ?', ['order-confirmation:' . $mlId]) === 2
+    && str_contains($host->messageService->flashes[0][1] ?? '', 'E-Mail im Postausgang (erneut)'),
+    strip_tags($mlAgain));
+
+// Refusals (Rule 7 — the server judges again): a document the order does not have today (the delivery
+// note of a confirmed order: its print moves the order), no address, no identity / a foreign index.
+$mlBefore = (int) $db->fetchOne('SELECT COUNT(*) FROM mail_outbox');
+$mlUseRequest(['id' => (string) $mlId], ['doc' => 'delivery-note', 'sender' => '0']);
+$host = $mlHost();
+$host->mailAction();
+$mlNotOffered = $host->fetchErrorText;
+$mlUseRequest(['id' => (string) $mlNoMail->getId(), 'doc' => 'quote']);
+$host = $mlHost();
+$host->confirmMailAction();
+$mlNoMailPage = $mlRender($host);
+$mlUseRequest(['id' => (string) $mlNoMail->getId()], ['doc' => 'quote', 'sender' => '0']);
+$host = $mlHost();
+$host->mailAction();
+$mlNoMailPost = $host->fetchErrorText;
+$mlUseRequest(['id' => (string) $mlId], ['doc' => 'order-confirmation', 'sender' => '5']);
+$host = $mlHost();
+$host->mailAction();
+$mlForeign = $host->fetchErrorText;
+$mlUseRequest(['id' => (string) $mlId], ['doc' => 'order-confirmation', 'sender' => '0']);
+$host = $mlHost();
+$host->mailUser = new \Z77\Shared\Entities\BackendUser(['username' => 'neu']);
+$host->mailAction();
+$mlNone = $host->fetchErrorText;
+check('M48 refused, nothing queued: the delivery note of a confirmed order («… gibt es so nicht per E-Mail …»); an order without e-mail — the confirmation says «keine E-Mail-Adresse» without a send button, the POST refuses; a foreign identity index; a user without identity («Erfasse zuerst …»)',
+    (int) $db->fetchOne('SELECT COUNT(*) FROM mail_outbox') === $mlBefore
+    && str_contains((string) $mlNotOffered, 'Lieferschein ' . $mlNr . ' gibt es so nicht per E-Mail')
+    && str_contains($mlNoMailPage, 'keine E-Mail-Adresse — keine E-Mail möglich') && !str_contains($mlNoMailPage, 'type="submit"') && !str_contains($mlNoMailPage, 'name="sender"')
+    && str_contains((string) $mlNoMailPost, 'keine E-Mail-Adresse — keine E-Mail eingereiht')
+    && str_contains((string) $mlForeign, 'gehört nicht zu deinem User') && str_contains((string) $mlNone, 'Erfasse zuerst eine E-Mail an deinem User.'),
+    json_encode([$mlNotOffered, $mlNoMailPost, $mlForeign, $mlNone], JSON_UNESCAPED_UNICODE));
+
+// The window's «Senden ▾»: the documents of the phase, each a window link to the confirmation.
+$mlEdit = (string) file_get_contents($root . '/packages/module-order/res/view/templates/Backend/OrderController/edit.tpl.php');
+$mlTrait = (string) file_get_contents($root . '/packages/module-order/src/Ui/OrderControllerTrait.php');
+check('M49 the order window offers «Senden ▾» (the «Drucken ▾» anatomy) only for `mailDocuments` = `OrderMails::documentsOf()` of the phase and only with module-mailing; each item a `data-window-link` to confirm-mail?id=&doc=',
+    str_contains($mlEdit, '<summary class="be-btn be-btn--ghost">Senden ▾</summary>') && str_contains($mlEdit, "'/confirm-mail?id=' . \$id . '&doc=' . \$kind) . '\" data-window-link")
+    && str_contains($mlTrait, "'mailDocuments'   => \$order !== null && \$this->orderMails()->mailer()->available() ? OrderMails::documentsOf(\$order, \$status?->getPhase()) : [],"));
+
 $db->executeStatement('DELETE FROM mandator');
 
 echo "\n{$pass} passed, {$fail} failed\n";

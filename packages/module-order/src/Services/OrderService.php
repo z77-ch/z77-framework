@@ -680,6 +680,18 @@ final class OrderService
     }
 
     /**
+     * The billing address of the order's documents: the billing snapshot stored on the order, else the
+     * customer's invoice address as debtor chooses it — the address the preview, the quote / the order
+     * confirmation and the booked invoice carry (`OrderInvoiceDraft` passes the snapshot, debtor falls
+     * back to `invoiceAddressOf()`). Its e-mail is where the order's documents are mailed (owner
+     * 2026-10-22 / 2026-11-13); null when the customer has no address at all.
+     */
+    public function billingAddressOf(SalesOrder $order): ?\Z77\Module\Debtor\Entities\AddressSnapshot
+    {
+        return $order->billingAddress() ?? $this->invoicing()->invoiceAddressOf($order->getContact());
+    }
+
+    /**
      * The status rules over the master data as it is now — after the one-time data upgrade of the
      * status file ({@see OrderStatusUpgrade}, owner 2026-10-24). Never called inside a unit of work.
      */

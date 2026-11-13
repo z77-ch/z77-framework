@@ -8,7 +8,7 @@
 <h3>Mahnungen</h3>
 <p>Oben die <strong>fälligen Mahnungen</strong> auf einen Stichtag: jede verbuchte Rechnung mit offenem Betrag, für die die nächste Mahnstufe fällig ist — mit dem offenen Betrag, der bisherigen und der nächsten Stufe und deren Gebühr. Debitoren mit Mahnsperre erscheinen nicht. Die Stufen, ihre Fristen und Gebühren stehen unter Stammdaten › Aufträge › Mahnstufen.</p>
 <p><strong>Mahnlauf starten</strong> erstellt für jede angekreuzte Rechnung eine Mahnung auf der nächsten Stufe, datiert auf den Stichtag; alle Fälligen sind vorab angekreuzt. Trägt die Stufe eine Gebühr, wird dazu ein Gebühren-Beleg erstellt und verbucht (ohne MWST). Hat sich seit dem Anzeigen etwas geändert, wird der ganze Lauf abgewiesen und nichts erstellt.</p>
-<p>Unten die <strong>Mahnläufe</strong> bisher, je mit ihren Mahnungen: Rechnung, Stufe, offener Betrag, der Gebühren-Beleg und <strong>PDF</strong> — die Mahnung zum Drucken, in einem neuen Tab.</p>
+<p>Unten die <strong>Mahnläufe</strong> bisher, je mit ihren Mahnungen: Rechnung, Stufe, offener Betrag, der Gebühren-Beleg, die E-Mail-Adresse der Rechnung und was per E-Mail ging. Das ⋮ einer Mahnung: <strong>PDF öffnen</strong> — die Mahnung zum Drucken, in einem neuen Tab — und <strong>Per E-Mail senden …</strong> — die Mahnung als PDF an die E-Mail-Adresse der Rechnungsadresse, mit «Senden als»; nochmals senden heisst dort <strong>Erneut senden …</strong>. Fehlt die Adresse, sagt es die Bestätigung. Betreff und Text: Service › E-Mail › Beleg-Mails, «Mahnung».</p>
 
 <section data-help-field="as_of">
 <h3>Stichtag</h3>

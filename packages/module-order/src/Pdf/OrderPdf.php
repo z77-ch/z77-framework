@@ -49,11 +49,13 @@ final class OrderPdf
 
     /**
      * The quote / order confirmation. $preview = `OrderService::preview($order)` (lines loaded).
+     * $name names the document instead of the phase — «Offerte» / «Auftragsbestätigung» of a mail
+     * (owner 2026-11-13: the mail queued as a quote attaches a quote, `Mail\OrderPdfAttachment`).
      */
-    public static function order(SalesOrder $order, ?OrderStatus $status, Invoice $preview, UnifiedEntityManager $em): PdfDocument
+    public static function order(SalesOrder $order, ?OrderStatus $status, Invoice $preview, UnifiedEntityManager $em, ?string $name = null): PdfDocument
     {
         $mandator = Creditor::mandator($em);
-        $title    = self::orderTitle($status) . ' ' . $order->documentNumber();
+        $title    = ($name ?? self::orderTitle($status)) . ' ' . $order->documentNumber();
         $numbers  = [];
         foreach ($order->getLines() as $line) {
             if ($line->getVariant() !== null && $line->getId() !== null) {

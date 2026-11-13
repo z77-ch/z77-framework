@@ -53,10 +53,16 @@ return [
     // module-backend collects every module's `dashboard` list (`DashboardContributors`).
     'dashboard' => [\Z77\Module\Order\Dashboard\OrderDashboard::class],
 
-    // The document mail kinds of the order's prints («Beleg-Mails», kernel DocumentMailKinds) —
-    // PREPARED in the shape of debtor's invoice / credit note (step 3 of the mail plan, owner
-    // 2026-10-22): editable under Service › E-Mail › Beleg-Mails, not sent yet (no send action
-    // and no attachment provider for the order PDFs so far — mail.md pending).
+    // The order's PDFs as outbox attachments (owner 2026-11-13): `order-pdf:<id>@<kind>`, rendered at
+    // send time. Read only where module-mailing is installed (order only SUGGESTS it).
+    'mailAttachments' => [
+        \Z77\Module\Order\Mail\OrderPdfAttachment::TYPE => \Z77\Module\Order\Mail\OrderPdfAttachment::class,
+    ],
+
+    // The document mail kinds of the order's prints («Beleg-Mails», kernel DocumentMailKinds) — in
+    // the shape of debtor's invoice / credit note (step 3 of the mail plan, owner 2026-10-22),
+    // editable under Service › E-Mail › Beleg-Mails; SENT since 2026-11-13 from the order window's
+    // «Senden ▾» (`Mail\OrderMails`, placeholders filled there).
     'documentMails' => [
         'quote' => [
             'label'        => 'Offerte',

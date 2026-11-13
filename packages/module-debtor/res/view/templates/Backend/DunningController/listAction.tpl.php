@@ -3,7 +3,9 @@
  * Mahnungen (P4 part 3, plan §6.5) — the due list as of a day, with a
  * checkbox per invoice and «Mahnlauf starten» in the selection bar ABOVE it
  * (green confirm, ADR-033 rev. 2026-10-08); below, the runs so far with
- * their notices and a «PDF» link each. Page forms, no JavaScript (Rule 7);
+ * their notices — per notice the billing e-mail, what the outbox holds for
+ * it («Versand») and the row ⋮ «PDF öffnen» / «Per E-Mail senden …»
+ * (owner 2026-11-13, the result list's row; core.js MENU-001). Page forms (Rule 7);
  * `csrf_token` is the page-mode field (`#[Csrf]`). The as-of day is a GET
  * form of its own (a different day re-reads the list).
  *
@@ -12,6 +14,7 @@
  * @var string|null $notice  why the due list could not be built (no levels)
  * @var list<\Z77\Module\Debtor\Entities\DunningRun> $runs
  * @var callable $levelOf  notice → DunningLevel|null
+ * @var array<int, list<array<string, mixed>>> $deliveries  notice id => outbox rows of `dunning:<id>` (empty without module-mailing)
  * @var callable $fmt
  * @var string $csrfToken  provided by html()
  * @var string $actionBase
@@ -19,6 +22,7 @@
  */
 $actionBase  = $actionBase ?? '/backend/finance/dunning';
 $invoiceBase = $invoiceBase ?? '/backend/finance/invoice';
+$deliveries  = $deliveries ?? [];
 ?>
 <div class="be-list">
     <div class="be-list__section">
@@ -79,7 +83,7 @@ $invoiceBase = $invoiceBase ?? '/backend/finance/invoice';
                 </div>
                 <?php endforeach; ?>
             </div>
-            <p class="be-form__hint">Der Mahnlauf erstellt je angekreuzte Rechnung eine Mahnung auf der nächsten Stufe, datiert auf den Stichtag. Trägt die Stufe eine Gebühr, wird ein Gebühren-Beleg erstellt und verbucht (ohne MWST). Die Mahnung als PDF: unten in der Liste.</p>
+            <p class="be-form__hint">Der Mahnlauf erstellt je angekreuzte Rechnung eine Mahnung auf der nächsten Stufe, datiert auf den Stichtag. Trägt die Stufe eine Gebühr, wird ein Gebühren-Beleg erstellt und verbucht (ohne MWST). Die Mahnung als PDF oder per E-Mail: unten in der Liste, ⋮ in ihrer Zeile.</p>
         </form>
     </div>
 
@@ -93,8 +97,8 @@ $invoiceBase = $invoiceBase ?? '/backend/finance/invoice';
         <?php endif; ?>
         <?php foreach ($runs as $run): ?>
         <div class="be-form__section">Mahnlauf vom <?= e($run->getRunDate()->format('d.m.Y')) ?> <small class="be-list__cell--muted">· <?= e($run->getCreatedBy()) ?>, <?= e($run->getCreatedAt()->format('d.m.Y H:i')) ?></small></div>
-        <div class="be-list__table" style="--be-list-cols: 7rem minmax(10rem, 2fr) 9rem 8rem 9rem 5rem">
-            <?php foreach ($run->getNotices() as $n): $lvl = $levelOf($n); $fee = $n->getFeeInvoice(); ?>
+        <div class="be-list__table" style="--be-list-cols: 7rem minmax(10rem, 2fr) 9rem 8rem 9rem minmax(9rem, 1.4fr) minmax(9rem, 1.4fr) 3.75rem">
+            <?php foreach ($run->getNotices() as $n): $lvl = $levelOf($n); $fee = $n->getFeeInvoice(); $email = trim($n->getInvoice()->getAddress()->getEmail()); $sent = $deliveries[(int) $n->getId()] ?? []; ?>
             <div class="be-list__item" data-dunning-notice="<?= (int) $n->getId() ?>">
                 <div class="be-list__row">
                     <span class="be-list__cell"><a href="<?= e($invoiceBase) ?>/edit?id=<?= (int) $n->getInvoice()->getId() ?>"><?= e($n->getInvoice()->documentName()) ?></a></span>
@@ -102,7 +106,9 @@ $invoiceBase = $invoiceBase ?? '/backend/finance/invoice';
                     <span class="be-list__cell"><?= e($lvl?->getLabel() ?? $n->getLevelCode()) ?></span>
                     <span class="be-list__cell be-list__cell--num"><?= e($fmt($n->getOpenAmount())) ?></span>
                     <span class="be-list__cell"><?= $fee !== null ? '<a href="' . e($invoiceBase . '/edit?id=' . (int) $fee->getId()) . '">' . e($fee->documentName()) . '</a> ' . e($fmt($fee->getGrossTotal())) : '<span class="be-list__cell--muted">keine Gebühr</span>' ?></span>
-                    <span class="be-list__cell"><a href="<?= e($actionBase) ?>/notice-pdf?id=<?= (int) $n->getId() ?>" target="_blank" rel="noopener">PDF</a></span>
+                    <span class="be-list__cell be-list__cell--wrap"><?php if ($email !== ''): ?><?= e($email) ?><?php if (\Z77\Module\Debtor\Mail\DocumentMailer::recipient($email) === ''): ?> <small class="be-list__cell--muted">(ungültig)</small><?php endif; ?><?php else: ?><span class="be-list__cell--muted">keine E-Mail-Adresse</span><?php endif; ?></span>
+                    <span class="be-list__cell be-list__cell--wrap be-list__cell--muted"><?= $sent !== [] ? e(\Z77\Module\Debtor\Mail\DocumentMailer::deliveryLine($sent[count($sent) - 1])) : '' ?></span>
+                    <span class="be-list__cell"><button type="button" class="be-icon-btn" title="Aktionen" aria-haspopup="menu" aria-expanded="false" aria-label="Aktionen Mahnung zu <?= e($n->getInvoice()->documentName()) ?>" data-menu-open="<?= e($actionBase . '/notice-actions?id=' . (int) $n->getId()) ?>">⋮</button></span>
                 </div>
             </div>
             <?php endforeach; ?>

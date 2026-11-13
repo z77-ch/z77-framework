@@ -2,16 +2,10 @@
 
 namespace Z77\Module\Debtor\Mail;
 
-use Z77\Core\DI;
 use Z77\Module\Debtor\Entities\Invoice;
 use Z77\Module\Debtor\Entities\InvoiceKind;
-use Z77\Module\Debtor\Services\Creditor;
-use Z77\Module\Mailing\Outbox\OutboxDraft;
-use Z77\Module\Mailing\Outbox\OutboxSettings;
 use Z77\Module\Mailing\Ui\OutboxListing;
 use Z77\Module\Mailing\Outbox\OutboxService;
-use Z77\Module\Mailing\Entities\OutboxMail;
-use Z77\Module\Mailing\Repositories\OutboxMailRepository;
 use Z77\Persistence\Resolver\UnifiedEntityManager;
 use Z77\Shared\Mail\DocumentMailKinds;
 use Z77\Shared\Mail\EmailService;
@@ -51,6 +45,11 @@ use Z77\Shared\Money\AmountFormat;
  * module-mailing is OPTIONAL for debtor (`composer.json` suggest, the
  * financial pattern): {@see available()} says whether the outbox is there;
  * nothing of module-mailing is touched while it is not.
+ *
+ * Since 2026-11-13 the recipient rule, the composition, the queue and the history are the shared
+ * {@see DocumentMailer} (Rule 9 — the dunning notice and module-order's documents use it too);
+ * this class keeps what is the invoice's own: the kind by document kind, the replacement, the
+ * revision-bound attachment, «covered» per version, the run of the result list.
  */
 final class InvoiceMails
 {
@@ -64,10 +63,10 @@ final class InvoiceMails
      * The values of `OutboxMail::STATE_*`, written out: module-mailing is optional, and a constant
      * expression naming its class would load it.
      */
-    public const COVERING_STATES = ['queued', 'sending', 'sent'];
+    public const COVERING_STATES = DocumentMailer::COVERING_STATES;
 
     /** Of {@see COVERING_STATES}, the ones still waiting. */
-    private const WAITING_STATES = ['queued', 'sending'];
+    private const WAITING_STATES = DocumentMailer::WAITING_STATES;
 
     /** Document kind → document mail kind; a kind not listed is not mailed (yet). */
     private const MAIL_KINDS = [
@@ -78,17 +77,20 @@ final class InvoiceMails
     /** The mail kind of a document that REPLACED another (ADR-054 decision 23, owner decision O8). */
     public const REPLACEMENT_KIND = 'invoice-replacement';
 
+    private DocumentMailer $mailer;
+
     public function __construct(
         private UnifiedEntityManager $em,
-        private ?EmailService $emailService = null,
-        private ?DocumentMailKinds $kinds = null,
+        ?EmailService $emailService = null,
+        ?DocumentMailKinds $kinds = null,
     ) {
+        $this->mailer = new DocumentMailer($em, $emailService, $kinds);
     }
 
     /** Whether the outbox (module-mailing) is installed and registered. */
     public function available(): bool
     {
-        return class_exists(OutboxService::class) && DI::getModuleManager()->getModuleConfig(self::MODULE) !== null;
+        return $this->mailer->available();
     }
 
     public static function source(Invoice $document): string
@@ -105,9 +107,7 @@ final class InvoiceMails
     /** The billing e-mail of the document's snapshot when it is an address, else ''. */
     public static function recipientOf(Invoice $document): string
     {
-        $email = trim($document->getAddress()->getEmail());
-
-        return $email !== '' && filter_var($email, FILTER_VALIDATE_EMAIL) !== false ? $email : '';
+        return DocumentMailer::recipient($document->getAddress()->getEmail());
     }
 
     /**
@@ -119,8 +119,7 @@ final class InvoiceMails
         return match (true) {
             !$document->isIssued()                  => 'nicht fakturiert',
             self::mailKindOf($document) === null    => 'für ' . $document->kind()->label() . ' gibt es keine Beleg-Mail',
-            self::recipientOf($document) === ''     => trim($document->getAddress()->getEmail()) === '' ? 'keine E-Mail-Adresse' : 'E-Mail-Adresse ungültig',
-            default                                 => null,
+            default                                 => DocumentMailer::addressProblem($document->getAddress()->getEmail()),
         };
     }
 
@@ -140,7 +139,7 @@ final class InvoiceMails
             'betrag'   => $document->getCurrency() . ' ' . AmountFormat::of($document->getGrossTotal()),
             'datum'    => $document->getInvoiceDate()->format('d.m.Y'),
             'faellig'  => $document->kind()->isPayable() ? $document->getDueDate()->format('d.m.Y') : '',
-            'absender' => Creditor::mandator($this->em)?->getName() ?? '',
+            'absender' => $this->mailer->senderCompany(),
             // The display name of the identity chosen under «Senden als» (owner 2026-10-23);
             // '' without one — a line holding only it then disappears (documentMail()).
             'anzeigename' => $sender?->name ?? '',
@@ -218,12 +217,22 @@ final class InvoiceMails
         if (($reason = self::skipReason($document)) !== null) {
             throw new \LogicException($document->documentName() . ': ' . $reason);
         }
-        $kind = (string) $this->mailKindFor($document);
-        $mail = $this->emailService()->documentMail($kind, $document->getLanguage(), $this->values($document, $sender), $this->kinds());
-        // A placeholder without a value (no mandator name) must not leave a dangling dash.
-        $mail['subject'] = (string) preg_replace('/[\s—–·:-]+$/u', '', $mail['subject']);
 
-        return ['to' => self::recipientOf($document), 'kind' => $kind] + $mail;
+        return $this->mailer->compose($this->documentMail($document, $sender), $sender);
+    }
+
+    /** $document as the shared core's {@see DocumentMail}: its kind, the snapshot's address and language, the revision-bound PDF. */
+    private function documentMail(Invoice $document, ?SenderIdentity $sender): DocumentMail
+    {
+        return new DocumentMail(
+            (string) $this->mailKindFor($document),
+            $document->getAddress()->getEmail(),
+            self::customerOf($document),
+            $document->getLanguage(),
+            $this->values($document, $sender),
+            self::attachmentOf($document),
+            self::source($document),
+        );
     }
 
     /**
@@ -248,27 +257,18 @@ final class InvoiceMails
         }
         $queued  = [];
         $skipped = [];
-        $drafts  = [];
+        $mails   = [];
         foreach ($documents as $document) {
             if (self::skipReason($document) !== null) {
                 $skipped[] = $document;
                 continue;
             }
-            $mail  = $this->compose($document, $sender);
-            $draft = OutboxDraft::template($mail['to'], $mail['subject'], 'emails/documentMail', 'Z77\\Shared', ['body' => $mail['body']], self::customerOf($document))
-                ->withLanguage($mail['language'])
-                ->withAttachments([self::attachmentOf($document)])
-                ->withSource(self::source($document))
-                ->withSender($sender, $userId);
-            $drafts[] = $draft;
+            $mails[]  = $this->documentMail($document, $sender);
             $queued[] = $document;
         }
-        if ($drafts === []) {
-            return ['batch' => '', 'queued' => [], 'skipped' => $skipped];
-        }
-        $rows = (new OutboxService($this->em))->queueBatch($drafts, $actor);
+        $batch = $this->mailer->queue($mails, $actor, $sender, $userId);
 
-        return ['batch' => $rows[0]->getBatchId(), 'queued' => $queued, 'skipped' => $skipped];
+        return ['batch' => $batch, 'queued' => $queued, 'skipped' => $skipped];
     }
 
     /**
@@ -281,17 +281,7 @@ final class InvoiceMails
      */
     public function deliveries(array $ids): array
     {
-        if ($ids === [] || !$this->available()) {
-            return [];
-        }
-        /** @var OutboxMailRepository $mails */
-        $mails  = $this->em->getRepository(OutboxMail::class);
-        $result = [];
-        foreach ($mails->deliveriesOf(array_map(static fn(int $id) => self::SOURCE_PREFIX . $id, $ids)) as $source => $rows) {
-            $result[(int) substr($source, strlen(self::SOURCE_PREFIX))] = $rows;
-        }
-
-        return $result;
+        return $this->mailer->deliveries(self::SOURCE_PREFIX, $ids);
     }
 
     /**
@@ -387,22 +377,13 @@ final class InvoiceMails
     /** The outbox's pace in German («10 pro Minute») from its ONE setting; '' without the outbox. */
     public function rate(): string
     {
-        return $this->available() ? OutboxSettings::fromModules(DI::getModuleManager())->rateText() : '';
+        return $this->mailer->rate();
     }
 
     /** German, one line per delivery: «gesendet an a@b.ch am 22.10.2026 18:04» — the mask's history and the result list. */
     public static function deliveryLine(array $delivery): string
     {
-        $when = static fn(?\DateTimeImmutable $at): string => $at !== null ? $at->format('d.m.Y H:i') : '';
-
-        $as = trim((string) ($delivery['sender'] ?? ''));
-
-        return (match ($delivery['state']) {
-            'sent'      => 'per E-Mail an ' . $delivery['to'] . ' gesendet am ' . $when($delivery['sent_at']),
-            'failed'    => 'E-Mail an ' . $delivery['to'] . ' fehlgeschlagen (eingereiht ' . $when($delivery['created_at']) . ')',
-            'cancelled' => 'E-Mail an ' . $delivery['to'] . ' abgebrochen (eingereiht ' . $when($delivery['created_at']) . ')',
-            default     => 'E-Mail an ' . $delivery['to'] . ' im Postausgang seit ' . $when($delivery['created_at']),
-        }) . ($as !== '' ? ' · als ' . $as : '');
+        return DocumentMailer::deliveryLine($delivery);
     }
 
     private static function customerOf(Invoice $document): string
@@ -410,15 +391,5 @@ final class InvoiceMails
         $address = $document->getAddress();
 
         return trim($address->getFirstName() . ' ' . $address->getName());
-    }
-
-    private function emailService(): EmailService
-    {
-        return $this->emailService ??= DI::getEmailService();
-    }
-
-    private function kinds(): DocumentMailKinds
-    {
-        return $this->kinds ??= DocumentMailKinds::fromModules(DI::getModuleManager());
     }
 }
