@@ -17,6 +17,7 @@
  * @var string|null $reason   why not («keine E-Mail-Adresse», …), null when it can
  * @var string $addressNote   where the address comes from (the document's billing address …)
  * @var list<array<string, mixed>> $before  the outbox rows of this document, oldest first
+ * @var bool|null $again      sent before — omitted: judged from $before
  * @var array{identities: array<int, string>, selected: int, missing: string, editUrl: string, field: string} $senders
  * @var bool   $mailable   module-mailing installed
  * @var bool   $mailReady  the mail config is complete (else the mail waits in the outbox)
@@ -34,7 +35,7 @@ use Z77\Module\Debtor\Mail\DocumentMailer;
 $window   = !empty($window);
 $senders  = $senders ?? ['identities' => []];
 $before   = $before ?? [];
-$again    = DocumentMailer::isCovered($before);
+$again    = $again ?? DocumentMailer::isCovered($before);   // the caller may judge per version (the invoice)
 $canSend  = !empty($mailable) && $mail !== null && $senders['identities'] !== [];
 $title    = $documentName . ' · ' . ($again ? 'erneut per E-Mail senden' : 'per E-Mail senden');
 $winAttr  = $window

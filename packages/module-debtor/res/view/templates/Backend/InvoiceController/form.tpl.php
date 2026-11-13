@@ -21,7 +21,8 @@
  *     (the confirmation in this window), «Buchungsdruck …» (the confirmation
  *     PAGE of this one draft — a plain link that leaves the window,
  *     DEBTOR-WIN-002);
- *   - a booked document: «PDF» (the reprint), «Zahlung erfassen …» while
+ *   - a booked document: «PDF» (the reprint), «Per E-Mail …» (this document
+ *     by e-mail, also again — the confirmation in this window), «Zahlung erfassen …» while
  *     something is open (an invoice), «Gutschrift erstellen …» (an invoice);
  *     nothing else on a final credit note.
  * Under the positions the facts of an existing document (`_facts`: ledger
@@ -34,8 +35,8 @@
  * fields travel along (the form is the confirmation). An invoice may change its
  * customer (owner decision O4 — a replacement): the customer picker as for a new
  * invoice. Its action row: «PDF» (the archived file), «Rechnung löschen …» (the
- * confirmation with a mandatory reason, in this window), «Senden …» (the result
- * list of this document — the mail of the current version).
+ * confirmation with a mandatory reason, in this window), «Per E-Mail …» (the mail
+ * of the current version, in this window).
  *
  * LAYOUT = the order window's head (owner 2026-10-19; ADR-051 «cards on the
  * ground»): the form is the window ground (`.be-form--blocks`, `_forms.scss`),
@@ -161,12 +162,15 @@ if ($isEdit) {
     /** A link that stays in the window (ADR-047): `data-window-link`; on a page a plain link. */
     $winBtn = static fn(string $href, string $label, string $title = ''): string
         => '<a class="be-btn be-btn--ghost" href="' . e($href) . '" data-window-link' . ($title !== '' ? ' title="' . e($title) . '"' : '') . '>' . e($label) . '</a>';
+    // «Per E-Mail …» (owner 2026-11-13): THIS document by e-mail — the confirmation in this window; sent before,
+    // it says so and the button reads «Erneut senden». A document is sent again one at a time, never as a run.
+    $mailBtn = $winBtn($actionBase . '/confirm-document-mail?id=' . $id, 'Per E-Mail …', 'Diesen Beleg per E-Mail senden — auch erneut');
     if ($editable && $document->isInJournal()) {
         // An issued document in the Faktura-Journal (ADR-054, steps 4 / 6 / 8): its archived PDF, its deletion
         // (with a reason, in this window) and the mail of its current version (the result list — a page).
         $extra .= '<a class="be-btn be-btn--ghost" href="' . e($pdfUrl) . '" target="_blank" rel="noopener" title="Das abgelegte PDF der aktuellen Version (neuer Tab)">PDF</a>';
         $extra .= $winBtn($actionBase . '/confirm-delete?id=' . $id, 'Rechnung löschen …', 'Die fakturierte, noch nicht verbuchte Rechnung löschen — sie bleibt mit Nummer und Grund unter «Gelöscht»');
-        $extra .= '<a class="be-btn be-btn--ghost" href="' . e($actionBase . '/booking-result?' . http_build_query(['ids' => (string) $id])) . '" title="PDF, ZIP und E-Mail dieser Rechnung">Senden …</a>';
+        $extra .= $mailBtn;
     } elseif ($editable) {
         // A draft (owner 2026-10-10 / 2026-10-13): the preview, the delete, and the booking print — which leaves
         // the window for its confirmation PAGE (DEBTOR-WIN-002) and then prints into a new tab.
@@ -176,9 +180,8 @@ if ($isEdit) {
     } else {
         $extra .= '<a class="be-btn be-btn--ghost" href="' . e($pdfUrl) . '" target="_blank" rel="noopener" title="Als PDF öffnen (neuer Tab)">PDF</a>';
         if ($document->isIssued()) {
-            // A posted document is sent again the same way as one in the journal (owner 2026-11-13: «Erneut
-            // senden» was nowhere to be found once the journal was posted) — the result list, its row ⋮.
-            $extra .= '<a class="be-btn be-btn--ghost" href="' . e($actionBase . '/booking-result?' . http_build_query(['ids' => (string) $id])) . '" title="PDF, ZIP und E-Mail dieser Rechnung — auch erneut senden">Senden …</a>';
+            // A posted document is mailed (again) the same way as one in the journal (owner 2026-11-13).
+            $extra .= $mailBtn;
         }
         if (!$document->isCreditNote() && isset($openAmount) && !$openAmount->isZero()) {
             $extra .= $winBtn($actionBase . '/payment?id=' . $id, 'Zahlung erfassen …');

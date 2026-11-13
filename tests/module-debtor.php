@@ -4634,7 +4634,7 @@ $bmRequest = function (array $get, ?array $post = null) use ($useRequest): Unifi
 };
 $bmHost = function () {
     return new class {
-        use \Z77\Module\Debtor\Ui\InvoiceControllerTrait { finalizeAction as public; bookingResultAction as public; resultActionsAction as public; pdfAllAction as public; zipAction as public; confirmMailAction as public; mailAction as public; editAction as public; }
+        use \Z77\Module\Debtor\Ui\InvoiceControllerTrait { finalizeAction as public; bookingResultAction as public; resultActionsAction as public; pdfAllAction as public; zipAction as public; confirmMailAction as public; mailAction as public; editAction as public; confirmDocumentMailAction as public; documentMailAction as public; }
         public array $context = [];
         public object $layoutManager;
         public object $messageService;
@@ -4958,6 +4958,31 @@ $bmForgedGet = $host->redirectedTo;
 $host = $bmPost(['ids' => $bmIdList, 'resend' => '999999', 'sender' => '0']);
 check('BM22 a `resend` that is not a document of the run (a draft, an unknown id) is refused on the page and in the POST — nothing queued (Rule 7)',
     $bmForgedGet === '/backend/finance/invoice/list' && $host->redirectedTo === '/backend/finance/invoice/list' && ($host->messageService->flashes[0][0] ?? '') === 'error' && $bmCountRows() === $bmBefore);
+
+// «Per E-Mail …» in the document's window (owner 2026-11-13): ONE document, sent again from there — the shared
+// confirmation; sent before → «Bereits: …» and «Erneut senden»; no address → no button; a draft is refused.
+$bmDocMail = function (string $id) use ($bmRequest, $bmHost, $renderMain): array {
+    $bmRequest(['id' => $id]);
+    $h = $bmHost();
+    $h->confirmDocumentMailAction();
+    return [$h, $h->redirectedTo === null ? $renderMain($h) : ''];
+};
+[$host, $bmDX] = $bmDocMail((string) $bmX->getId());
+[, $bmDY]      = $bmDocMail((string) $bmY->getId());
+[$bmDHost, ]   = $bmDocMail((string) $bmDraft->getId());
+$bmBefore = $bmCountRows();
+$bmRequest([], ['id' => (string) $bmX->getId(), 'sender' => '1']);
+$host = $bmHost();
+$host->documentMailAction();
+$bmDocResent = $db->fetchAssociative('SELECT * FROM mail_outbox ORDER BY id DESC LIMIT 1');
+check('BM22b «Per E-Mail …» of ONE document (the window, owner 2026-11-13): Backend/DocumentMail/confirm posting the id to document-mail — sent before: «Bereits: …» and «Erneut senden»; no address: «keine E-Mail-Adresse», no button; a draft: refused; the POST queues one mail as the chosen identity and lands on the document mask with «(erneut)»',
+    str_contains($bmDX, 'action="/backend/finance/invoice/document-mail"') && str_contains($bmDX, '<input type="hidden" name="id" value="' . $bmX->getId() . '">')
+    && str_contains($bmDX, 'data-mail-before') && str_contains($bmDX, 'Erneut senden') && str_contains($bmDX, 'kunde@example.ch')
+    && str_contains($bmDY, 'keine E-Mail-Adresse') && !str_contains($bmDY, 'type="submit"')
+    && $bmDHost->redirectedTo === '/backend/finance/invoice/list'
+    && $bmCountRows() === $bmBefore + 1 && $bmDocResent['source'] === 'invoice:' . $bmX->getId() && $bmDocResent['sender_name'] === 'Buchhaltung'
+    && $host->redirectedTo === '/backend/finance/invoice/edit?id=' . $bmX->getId() && str_contains($host->messageService->flashes[0][1] ?? '', 'E-Mail im Postausgang (erneut)'),
+    json_encode([strip_tags($bmDY), $host->redirectedTo, $host->messageService->flashes], JSON_UNESCAPED_UNICODE));
 
 $db->executeStatement("UPDATE mail_outbox SET state = 'sent', sent_at = '2026-08-06 10:00:00' WHERE source LIKE 'invoice:%' AND state = 'queued'");
 [$host, $bmL] = $bmResult();
@@ -5861,8 +5886,8 @@ $f4Post = function (int $id, array $changes) use ($useRequest, $f4Host, $invoice
 $f4V0 = $invoiceRow($f4S);
 $hostSave = $f4Post($f4S, ['row.text' => 'Beratung, korrigiert']);
 $f4Band = $renderMain($hostSave);
-check('FJ49 the mask of an issued manual document is EDITABLE (no disabled fieldset, «Speichern», «PDF», «Rechnung löschen …», «Senden …», the issued band); «Speichern» of a changed text answers the SAME mask with the band «Neue version mit gleicher Nummer — geändert: Positionen» and «Neue Version bestätigen» (op=confirm, expect=revision) — nothing written yet',
-    !str_contains($f4Mask, '<fieldset class="be-form__fieldset" disabled') && str_contains($f4Mask, 'Rechnung löschen …') && str_contains($f4Mask, 'Senden …') && str_contains($f4Mask, 'data-invoice-issued')
+check('FJ49 the mask of an issued manual document is EDITABLE (no disabled fieldset, «Speichern», «PDF», «Rechnung löschen …», «Per E-Mail …», the issued band); «Speichern» of a changed text answers the SAME mask with the band «Neue version mit gleicher Nummer — geändert: Positionen» and «Neue Version bestätigen» (op=confirm, expect=revision) — nothing written yet',
+    !str_contains($f4Mask, '<fieldset class="be-form__fieldset" disabled') && str_contains($f4Mask, 'Rechnung löschen …') && str_contains($f4Mask, 'Per E-Mail …') && str_contains($f4Mask, 'data-invoice-issued')
     && ($hostSave->context['correction'] ?? null)?->isRevision() && str_contains($f4Band, 'data-invoice-correction="revision"') && str_contains($f4Band, 'name="expect" value="revision"')
     && str_contains($f4Band, 'value="confirm"') && str_contains($f4Band, 'Neue Version bestätigen') && $invoiceRow($f4S) == $f4V0,
     strip_tags(substr($f4Band, 0, 3000)));

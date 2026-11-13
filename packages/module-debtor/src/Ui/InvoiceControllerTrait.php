@@ -1529,6 +1529,92 @@ trait InvoiceControllerTrait
     }
 
     /**
+     * «Per E-Mail …» of ONE issued document, from its window (owner 2026-11-13: the window offers
+     * «PDF», «Per E-Mail …», «Gutschrift erstellen …»; a document is sent again HERE, one at a time —
+     * a run is never mailed again). The shared confirmation `Backend/DocumentMail/confirm`: the
+     * address ON the document, subject and language, «Senden als», what went out before — the button
+     * then reads «Erneut senden». Fetched, the content of the document's window; else a page.
+     */
+    protected function confirmDocumentMailAction(): HtmlResponse|RedirectResponse
+    {
+        $request  = DI::getRequest();
+        $document = $this->invoiceResultDocuments($request->getGetParameter('id'))[0] ?? null;
+        if ($document === null) {
+            return $this->invoiceNotFound();
+        }
+        $mails   = $this->invoiceMails();
+        $senders = $this->invoiceMailSenders();
+        $id      = (int) $document->getId();
+        $reason  = InvoiceMails::skipReason($document);
+        $before  = $mails->available() ? ($mails->deliveries([$id])[$id] ?? []) : [];
+        $window  = $this->invoiceIsFetch();
+
+        $response = $this->html([
+            'documentName' => $document->documentName(),
+            'mail'         => $reason === null ? $mails->compose($document, $senders->default()) : null,
+            'reason'       => $reason,
+            'addressNote'  => 'Die Adresse ist die Rechnungsadresse auf dem Beleg; ein fakturierter Beleg ändert sie nicht mehr.',
+            'before'       => $before,
+            // «Erneut» per VERSION (ADR-054 decision 21): a mail of an earlier revision does not count.
+            'again'        => InvoiceMails::isCovered($before, $document),
+            'senders'      => $senders->viewModel(),
+            'mailable'     => $mails->available(),
+            'mailReady'    => \Z77\Module\Debtor\Mail\DocumentMailer::mailReady(),
+            'action'       => $this->invoiceListBase() . '/document-mail',
+            'hidden'       => ['id' => (string) $id],
+            'cancelHref'   => $this->invoiceMaskUrl($id),
+            'window'       => $window,
+            'windowMask'   => 'invoice-mail',
+            'windowEntity' => 'invoice:' . $id,
+            'origin'       => WindowOrigin::of($request),
+        ]);
+        $this->layoutManager->removeSection('main');
+        $this->layoutManager->addPartials('confirm', 'Backend/DocumentMail', self::INVOICE_NS);
+
+        return $response;
+    }
+
+    /**
+     * The POST of «Per E-Mail …» (`#[Csrf]`): the document re-read (issued), the identity re-checked
+     * against the CURRENT user (Rule 7), no address → refused with the reason; then ONE outbox mail
+     * (`InvoiceMails::queue()` — covered or not, the deliberate second mail). Back to the document's
+     * mask with the flash.
+     */
+    #[Csrf]
+    protected function documentMailAction(): RedirectResponse|FetchResponse
+    {
+        $request  = DI::getRequest();
+        $post     = $request->isPost() ? $request->getPostParameters() : [];
+        $document = $this->invoiceResultDocuments($post['id'] ?? null)[0] ?? null;
+        if ($document === null) {
+            return $this->invoiceNotFound();
+        }
+        $id      = (int) $document->getId();
+        $senders = $this->invoiceMailSenders();
+        $sender  = $senders->choose($post[\Z77\Shared\Mail\SenderIdentities::FIELD] ?? null);
+        if ($sender === null) {
+            return $this->invoiceToMask($id, 'error', 'Nichts wurde eingereiht: ' . ($senders->isEmpty() ? \Z77\Shared\Mail\SenderIdentities::MISSING : 'Der gewählte Absender gehört nicht zu deinem User.'));
+        }
+        if (($reason = InvoiceMails::skipReason($document)) !== null) {
+            return $this->invoiceToMask($id, 'error', $document->documentName() . ': ' . $reason . ' — keine E-Mail eingereiht.');
+        }
+        $mails = $this->invoiceMails();
+        $again = InvoiceMails::isCovered($mails->deliveries([$id])[$id] ?? [], $document);
+        try {
+            $mails->queue([$document], $this->invoiceMailActor(), $sender, $senders->userId());
+        } catch (\InvalidArgumentException | \RuntimeException $e) {   // a draft the outbox refused, no outbox
+            return $this->invoiceToMask($id, 'error', 'Nichts wurde eingereiht: ' . $e->getMessage());
+        }
+        $rate = $mails->rate();
+        $text = $document->documentName() . ': E-Mail im Postausgang' . ($again ? ' (erneut)' : '') . ($rate !== '' ? ' — Versand ' . $rate : '') . '.';
+        if ($this->invoiceIsFetch()) {
+            return $this->invoiceWindowSaved($id, WindowOrigin::of($request), $text);
+        }
+
+        return $this->invoiceToMask($id, 'success', $text);
+    }
+
+    /**
      * The document a `resend` value names — null when none is given, false when it is not one of
      * the run's $documents (a forged or stale id: refused, Rule 7).
      *
