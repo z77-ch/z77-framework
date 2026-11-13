@@ -105,7 +105,7 @@ $system  = render('emails/layout', ['emailBody' => '<p>Dein Anmeldecode: 482 913
 check('C1 a body without its own closing (the app code, «ZIP bereit»): the layout adds «Diese Nachricht wurde maschinell erstellt.» — once',
     substr_count($system, 'Diese Nachricht wurde maschinell erstellt.') === 1 && !str_contains($system, 'Fragen beantwortet'));
 check('C2 the divider and the company: the full name bold, the address line, the contact line — smaller and grey, after the note',
-    str_contains($system, 'border-top:3px solid #9a9aa8') && str_contains($system, '<strong style="color:#444444;">Muster AG</strong><br>Bahnhofstrasse 12 · 8001 Zürich<br>+41 44 123 45 00 · info@muster.example · muster.example</p>')
+    str_contains($system, 'border-top:1px solid #e0e0e0;font-size:0') && !str_contains($system, '3px solid') && str_contains($system, '<strong style="color:#444444;">Muster AG</strong><br>Bahnhofstrasse 12 · 8001 Zürich<br>+41 44 123 45 00 · info@muster.example · muster.example</p>')
     && str_contains($system, 'font-size:11.5px') && strpos($system, 'maschinell erstellt') < strpos($system, 'Muster AG'));
 $wrapped = render('emails/layout', ['emailBody' => $doc, 'subject' => 'Rechnung', 'mailLanguage' => 'de', 'mailCompany' => $company]);
 check('C3 a document mail (its own closing): no second note; the company after the closing block',
