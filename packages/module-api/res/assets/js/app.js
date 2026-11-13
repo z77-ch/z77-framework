@@ -121,6 +121,12 @@ _Z77.app.api = (function () {
         }
         return fetch(BASE + endpoint, init).then(function (res) {
             var etag = res.headers.get('ETag');
+            // The access is gone (deactivated, signed out elsewhere, device revoked): whatever was
+            // asked, the person signs in anew — never a screen working on against a 401. The
+            // sign-in page's own calls answer 401 only as «not signed in yet».
+            if (res.status === 401 && document.body && document.body.getAttribute('data-app-page') !== 'login') {
+                window.location.replace('/app/login');
+            }
             if (res.status === 304) return { status: 304, ok: true, data: null, error: null, etag: etag };
             return res.json().catch(function () { return {}; }).then(function (json) {
                 var ok = res.status >= 200 && res.status < 300;
@@ -312,11 +318,17 @@ _Z77.app.shell = (function () {
 
     // ── start ──────────────────────────────────────────────────────────────
 
-    function start() {
-        registerWorker();
-        api.request('GET', 'devices/me').then(function (r) {
+    /**
+     * Asks the server who this device is now — at start AND every time the app comes back to the
+     * front (owner 2026-11-13: a deactivated app user kept his tiles while the app stayed open).
+     * 401 → the sign-in. No network → the last answer kept here, SAID so in the notice: the tiles
+     * then show the last known state, and what is captured waits for the server, which decides.
+     */
+    function askMe() {
+        return api.request('GET', 'devices/me').then(function (r) {
             if (r.ok && r.data && r.data.device) {
                 store.set('me', r.data.device);
+                notice('');
                 return r.data.device;
             }
             if (r.status === 401) {
@@ -325,13 +337,33 @@ _Z77.app.shell = (function () {
             }
             if (r.status === 0) {
                 return store.get('me').then(function (me) {
-                    if (!me) notice('Kein Netz — die App war auf diesem Gerät noch nie verbunden.');
+                    notice(me
+                        ? 'Kein Netz — die App zeigt den letzten bekannten Stand.'
+                        : 'Kein Netz — die App war auf diesem Gerät noch nie verbunden.');
                     return me || null;
                 });
             }
             notice('Der Server hat die App abgewiesen (' + r.status + ').');
             return null;
-        }).then(function (device) {
+        });
+    }
+
+    /** Back in front: the scopes may have changed or the access may be gone. */
+    function recheck() {
+        if (!_device) return;
+        askMe().then(function (device) {
+            if (!device || device === 'away') return;
+            _device = device;
+            showDevice(device);
+            if (!revealScreens(device.scopes || [])) {
+                notice('Für deinen App-Zugang ist keine Funktion freigeschaltet. Bitte beim Administrator nachfragen.');
+            }
+        });
+    }
+
+    function start() {
+        registerWorker();
+        askMe().then(function (device) {
             if (device === 'away') return;
             text(q('[data-app-loading]'), '');
             var loading = q('[data-app-loading]');
@@ -350,7 +382,12 @@ _Z77.app.shell = (function () {
         });
 
         document.addEventListener('z77:app-queue', renderQueue);
-        window.addEventListener('online', function () { queue.flush(); });
+        window.addEventListener('online', function () { recheck(); queue.flush(); });
+        document.addEventListener('visibilitychange', function () {
+            if (document.visibilityState === 'visible') recheck();
+        });
+        // A page restored from the browser's back/forward cache runs no script anew.
+        window.addEventListener('pageshow', function (event) { if (event.persisted) recheck(); });
         window.setInterval(function () {
             if (document.visibilityState === 'visible') queue.flush();
         }, 30000);

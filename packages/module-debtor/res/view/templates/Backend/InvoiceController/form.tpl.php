@@ -175,6 +175,11 @@ if ($isEdit) {
         $extra .= '<a class="be-btn be-btn--confirm-open" href="' . e($actionBase . '/confirm-finalize?' . http_build_query(['doc' => [$id . ':' . (int) ($version ?? $document->getVersion())]])) . '" title="Nummer vergeben, PDF ablegen und drucken — ins Faktura-Journal, noch nicht verbucht">Fakturieren …</a>';
     } else {
         $extra .= '<a class="be-btn be-btn--ghost" href="' . e($pdfUrl) . '" target="_blank" rel="noopener" title="Als PDF öffnen (neuer Tab)">PDF</a>';
+        if ($document->isIssued()) {
+            // A posted document is sent again the same way as one in the journal (owner 2026-11-13: «Erneut
+            // senden» was nowhere to be found once the journal was posted) — the result list, its row ⋮.
+            $extra .= '<a class="be-btn be-btn--ghost" href="' . e($actionBase . '/booking-result?' . http_build_query(['ids' => (string) $id])) . '" title="PDF, ZIP und E-Mail dieser Rechnung — auch erneut senden">Senden …</a>';
+        }
         if (!$document->isCreditNote() && isset($openAmount) && !$openAmount->isZero()) {
             $extra .= $winBtn($actionBase . '/payment?id=' . $id, 'Zahlung erfassen …');
         }

@@ -707,6 +707,7 @@ php tests/module-debtor.php --from=BM  # fresh schema + temp installation, the s
 
 ## known issues
 
+- **DEBTOR-RESEND-001** — fixed 2026-11-13 (owner's test on z77.ch: «Erneut senden gibt es nicht»). A POSTED invoice offered no way to its mail: «Senden …» (→ the result list, its row ⋮ «Erneut senden …») stood only on a document IN the Faktura-Journal, and the outbox offers «Erneut senden» only for a FAILED mail. The window of every issued document (`isIssued()`: in the journal or posted) now carries «Senden …» (`InvoiceController/form.tpl.php`).
 - **DEBTOR-FJ-ARCHIVE-001** — added 2026-10-23 (step 3). Don't assume every archive file has a row: a caller that JOINS `InvoicingService::invoiceAndIssue()` into its own unit of work and fails AFTER the call leaves the files of that call behind unless it calls `InvoicingService::discardArchived()` (`OrderService::book()` does). Such an orphan is harmless (no row names it; the same number + revision + stamp overwrites it), but it is not cleaned up by anything. Archive files are never deleted by the application — by design (GeBüV, ADR-054 legal note 1).
 - **DEBTOR-FJ-DASH-001** — resolved 2026-10-24 (step 9): the dashboard shows «Faktura-Journal nicht verbucht» (urgent «gesperrt (neu fakturieren)»); financial's report pages ask the scope `ledger-report` and show `Close\UnpostedJournalHint` above the report; `Close\JournalForVatReturnCheck` is registered under `vat-return` for the VAT return (P5 part 2 — asked by nobody yet).
 
